@@ -1,3 +1,6 @@
+-- Tags: no-darwin, no-old-analyzer
+-- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
+-- no-old-analyzer: distributed Cascades planning requires the analyzer, like the other make_distributed_plan tests.
 
 -- `JoinCommutativity` must not swap ASOF joins: the "closest preceding value"
 -- is resolved per left row, so the result depends on which side is which.
@@ -8,6 +11,7 @@ SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;
+SET automatic_parallel_replicas_mode = 0;
 SET enable_join_runtime_filters = 0;
 SET param__internal_cascades_cluster_node_count = 4;
 SET query_plan_optimize_join_order_randomize = 0;
@@ -24,8 +28,7 @@ INSERT INTO t_asof_small SELECT number % 10, 100 + number FROM numbers(20);
 INSERT INTO t_asof_big SELECT number % 10, number % 200, (number % 10) * 1000 + number % 200 FROM numbers(50000);
 
 SELECT '-- 1. ASOF JOIN: per-left-row closest match';
-SELECT count(), sum(r.v) FROM t_asof_small AS l ASOF JOIN t_asof_big AS r ON l.k = r.k AND l.t >= r.t
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT count(), sum(r.v) FROM t_asof_small AS l ASOF JOIN t_asof_big AS r ON l.k = r.k AND l.t >= r.t;
 
 SELECT '-- 2. Baseline without Cascades';
 SELECT count(), sum(r.v) FROM t_asof_small AS l ASOF JOIN t_asof_big AS r ON l.k = r.k AND l.t >= r.t
@@ -33,7 +36,7 @@ SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 
 SELECT '-- 3. RightAny (any_join_distinct_right_table_keys) must not be swapped either';
 SELECT count() FROM t_asof_small AS l ANY INNER JOIN t_asof_big AS r ON l.k = r.k
-SETTINGS any_join_distinct_right_table_keys = 1, distributed_plan_fallback_to_local_execution = 0;
+SETTINGS any_join_distinct_right_table_keys = 1;
 
 -- A plain INNER ALL join is commutable even when `USING` casts a mismatched key type to the
 -- supertype: `swapInputs` remaps the cast to the new side. The swap wins here (20-row build side
@@ -49,8 +52,7 @@ SELECT sum(explain LIKE '%swapped%') FROM (
     SELECT count() FROM t_tc_small INNER JOIN t_asof_big USING (k)
     SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1
 ) SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
-SELECT count() FROM t_tc_small INNER JOIN t_asof_big USING (k)
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT count() FROM t_tc_small INNER JOIN t_asof_big USING (k);
 SELECT count() FROM t_tc_small INNER JOIN t_asof_big USING (k)
 SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 

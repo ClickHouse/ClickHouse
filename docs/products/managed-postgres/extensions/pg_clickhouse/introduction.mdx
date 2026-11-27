@@ -11,7 +11,7 @@ keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhou
 
 [pg_clickhouse], an open-source PostgreSQL extension, runs analytics queries
 on ClickHouse right from PostgreSQL without rewriting any SQL. It supports
-PostgreSQL 14 and later and ClickHouse v23 and later.
+PostgreSQL 13 and later and ClickHouse v23 and later.
 
 Once [ClickPipes](/integrations/clickpipes/home) starts syncing data ClickHouse,
 use pg_clickhouse to quickly and easily [import foreign tables] into a
@@ -230,7 +230,7 @@ CREATE EXTENSION pg_clickhouse SCHEMA env;
 
 ## Dependencies {#dependencies}
 
-The `pg_clickhouse` extension requires [PostgreSQL] 14 or higher, [libcurl],
+The `pg_clickhouse` extension requires [PostgreSQL] 13 or higher, [libcurl],
 [libuuid]. Building the extension requires a C and C++ compiler, [libSSL], [GNU
 make], and [CMake].
 

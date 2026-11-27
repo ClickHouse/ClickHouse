@@ -50,8 +50,8 @@ enum class ToStartOfIntervalOverload
 };
 
 /// Clamps a rounded timestamp into a narrowing result type instead of wrapping, so that the result stays
-/// monotonic over the whole argument range. DateTime64 arguments, and a Date floored to whole days, round
-/// outside DateTime; the out-of-range rounding of the other argument types is defined in DateLUTImpl.
+/// monotonic over the whole argument range. Only DateTime64 arguments round outside Date and DateTime; the
+/// out-of-range rounding of the other argument types is defined in DateLUTImpl, so they pass saturate = false.
 template <bool saturate, typename FieldType>
 FieldType saturatingResultCast(Int64 value)
 {
@@ -251,7 +251,7 @@ private:
         const DateLUTImpl & time_zone,
         Int64 scale_multiplier)
     {
-        std::optional<DateLUTImpl::ModularDivisor> modular_divisor;
+        std::optional<Int64> modular_divisor;
         if constexpr (unit == IntervalKind::Kind::Minute)
             modular_divisor = time_zone.minuteIntervalModularDivisor(static_cast<UInt64>(num_units));
         else if constexpr (unit == IntervalKind::Kind::Second)
@@ -263,11 +263,7 @@ private:
         }
         if (!modular_divisor)
             return false;
-        const Int64 divisor = modular_divisor->divisor;
-        /// Below the epoch the offset of some zones has a sub-divisor component, and the rounding is not
-        /// modular there; such rows take the generic path one by one, the rest of the column keeps the fast
-        /// one. `DateTime` cannot represent a negative timestamp, so it is never concerned.
-        [[maybe_unused]] const bool valid_before_epoch = modular_divisor->valid_before_epoch;
+        const Int64 divisor = *modular_divisor;
 
         const size_t size = time_data.size();
         using ResultFieldType = typename ResultContainer::value_type;
@@ -293,27 +289,22 @@ private:
             static_assert(std::is_same_v<TimeColumnType, ColumnDateTime64>);
             /// There is no 64-bit vector multiply-high instruction, so these loops stay scalar.
             const libdivide::divider<Int64, libdivide::BRANCHFULL> scale_divider(scale_multiplier);
-            /// The whole seconds rounded towards negative infinity, see `wholeSecondsRoundedDown`.
-            auto whole_seconds = [&](Int64 value)
-            {
-                const Int64 whole = value / scale_divider;
-                return whole * scale_multiplier > value ? whole - 1 : whole;
-            };
             if (divisor == 1)
             {
                 /// A one-second interval never consults the LUT, so it needs no range check.
 #pragma clang loop vectorize(disable)
                 for (size_t i = 0; i != size; ++i)
-                    result_data[i] = saturatingResultCast<saturate, ResultFieldType>(whole_seconds(static_cast<Int64>(time_data[i])));
+                    result_data[i] = saturatingResultCast<saturate, ResultFieldType>(static_cast<Int64>(time_data[i]) / scale_divider);
                 return true;
             }
             const libdivide::divider<Int64, libdivide::BRANCHFULL> divider(divisor);
+#pragma clang loop vectorize(disable)
             for (size_t i = 0; i != size; ++i)
             {
-                const Int64 t = whole_seconds(static_cast<Int64>(time_data[i]));
+                const Int64 t = static_cast<Int64>(time_data[i]) / scale_divider;
                 /// Out of the LUT range the offset is extrapolated and can have a sub-divisor component
                 /// (e.g. `Asia/Kolkata` is +5:53:28 before 1906), so the rounding is not modular there.
-                if (unlikely(!DateLUTImpl::isTimeInLUTRange(t) || (t < 0 && !valid_before_epoch)))
+                if (unlikely(!DateLUTImpl::isTimeInLUTRange(t)))
                 {
                     result_data[i] = saturatingResultCast<saturate, ResultFieldType>(
                         ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
@@ -406,11 +397,7 @@ private:
         }
         else // Overload: Default
         {
-            /// Flooring a `Date` to whole days yields seconds, and the top of the `Date` domain is past `UInt32`
-            /// seconds, so a narrowing `DateTime` result has to clamp here too. `Date32` is excluded: clamping its
-            /// pre-epoch values into an unsigned codomain would collapse distinct buckets.
-            constexpr bool saturate = std::is_same_v<TimeDataType, DataTypeDateTime64>
-                || (std::is_same_v<TimeDataType, DataTypeDate> && unit == IntervalKind::Kind::Day);
+            constexpr bool saturate = std::is_same_v<TimeDataType, DataTypeDateTime64>;
 
             if constexpr ((unit == IntervalKind::Kind::Second || unit == IntervalKind::Kind::Minute || unit == IntervalKind::Kind::Hour)
                 && (std::is_same_v<TimeColumnType, ColumnDateTime> || std::is_same_v<TimeColumnType, ColumnDateTime64>))
@@ -445,23 +432,6 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
-
-    /// Documentation-only — the result type depends on the input time's width and the interval kind:
-    /// nano/micro/milli/second/minute/hour produce DateTime/DateTime64 results,
-    /// day/week/month/quarter/year produce Date/Date32 results. The exact
-    /// scale and Date/DateTime variant comes from the interval kind and the
-    /// `enable_extended_results_for_datetime_functions` setting.
-    /// The optional third and fourth positions are two independent optional groups: the
-    /// third argument is either a constant `origin` value or a constant timezone `String`,
-    /// and the four-argument form takes both an `origin` and a timezone. The matcher
-    /// tries to skip an optional group first, so a `(value, interval, timezone)` call
-    /// binds the `String` to the timezone position without requiring an `origin`.
-    /// The interval, origin and timezone positions are all constant
-    /// (see `getArgumentsThatAreAlwaysConstant`).
-    String getSignatureString() const override
-    {
-        return "(DateOrDateTime, const Interval, [const DateOrDateTime], [const String]) -> DateOrDateTime";
-    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -522,8 +492,7 @@ public:
                     break;
             }
 
-            const DataTypePtr & type_arg1 = arguments[0].type;
-            if (enable_extended_results_for_datetime_functions && (isDate32(type_arg1) || isDateTime64(type_arg1)))
+            if (enable_extended_results_for_datetime_functions)
             {
                 if (result_type == ResultType::Date)
                     result_type = ResultType::Date32;
@@ -722,17 +691,17 @@ toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
             )",
             R"(
-┌─toStartOfInterval(toDateTime('2023-01-15 14:30:00'), toIntervalMonth(1))─┐
-│                                                               2023-01-01 │
-└──────────────────────────────────────────────────────────────────────────┘
+┌─toStartOfInt⋯alMonth(1))─┐
+│               2023-01-01 │
+└──────────────────────────┘
             )"},
             {"Using origin point", R"(
 SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, toDateTime('2023-01-01 14:35:30'))
             )",
             R"(
-┌─toStartOfInterval(toDateTime('2023-01-01 14:45:00'), toIntervalMinute(1), toDateTime('2023-01-01 14:35:30'))─┐
-│                                                                                          2023-01-01 14:44:30 │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─toStartOfInt⋯14:35:30'))─┐
+│      2023-01-01 14:44:30 │
+└──────────────────────────┘
             )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {20, 1};

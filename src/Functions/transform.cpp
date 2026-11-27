@@ -98,52 +98,70 @@ namespace
         bool useDefaultImplementationForNothing() const override { return false; }
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-        /// Documentation-only — looks up `value` in `array_from` and returns
-        /// the parallel element from `array_to`; otherwise returns `default`
-        /// (or `value` itself if no default is provided). The result type is
-        /// the least common supertype of `array_to`'s element type and
-        /// (optionally) `default`'s type — too dynamic to model in the DSL.
-        /// transform(x, array_from, array_to[, default]) returns the least supertype of the
-        /// `array_to` element type and either `x` (3-arg form) or `default` (4-arg form). The
-        /// declarative path computes that; `getReturnTypeImpl` below is authoritative-but-examined:
-        /// it defers the type to the signature and only applies `checkAllowedType`.
-        String getSignatureString() const override
-        {
-            return "(T : Any, Array(Any), Array(U : Any)) -> leastSupertype(U, T)"
-                   " OR (T : Any, Array(Any), Array(U : Any), D : Any) -> leastSupertype(U, D)";
-        }
-
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-        {
-            DataTypes data_types(arguments.size());
-            for (size_t i = 0; i < arguments.size(); ++i)
-                data_types[i] = arguments[i].type;
-            return getReturnTypeImpl(data_types);
-        }
-
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
-            /// The 3-argument form additionally requires that `x` and the `array_to` element are
-            /// both numeric or both strings — a constraint the declarative `leastSupertype` does not
-            /// express (e.g. it would happily unify Enum and String). Keep enforcing it here.
-            if (arguments.size() == 3)
+            const auto args_size = arguments.size();
+            if (args_size != 3 && args_size != 4)
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Number of arguments for function {} doesn't match: "
+                    "passed {}, should be 3 or 4",
+                    getName(),
+                    args_size);
+
+            const DataTypePtr & type_x = arguments[0];
+
+            const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(arguments[1].get());
+
+            if (!type_arr_from)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument of function {}, must be array of source values to transform from",
+                    getName());
+
+            const auto type_arr_from_nested = type_arr_from->getNestedType();
+
+            const DataTypeArray * type_arr_to = checkAndGetDataType<DataTypeArray>(arguments[2].get());
+
+            if (!type_arr_to)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Third argument of function {}, must be array of destination values to transform to",
+                    getName());
+
+            const DataTypePtr & type_arr_to_nested = type_arr_to->getNestedType();
+
+            if (args_size == 3)
             {
-                const DataTypePtr & type_x = arguments[0];
-                if (const auto * type_arr_to = checkAndGetDataType<DataTypeArray>(arguments[2].get()))
-                {
-                    const DataTypePtr & type_arr_to_nested = type_arr_to->getNestedType();
-                    if ((type_x->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
-                        || (isString(type_x) != isString(type_arr_to_nested)))
-                        throw Exception(
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Function {} has signature: "
-                            "transform(T, Array(T), Array(U), U) -> U; "
-                            "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
-                            getName());
-                }
+                if ((type_x->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
+                    || (isString(type_x) != isString(type_arr_to_nested)))
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Function {} has signature: "
+                        "transform(T, Array(T), Array(U), U) -> U; "
+                        "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
+                        getName());
+
+                auto ret = tryGetLeastSupertype(DataTypes{type_arr_to_nested, type_x});
+                if (!ret)
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Function {} has signature: "
+                        "transform(T, Array(T), Array(U), U) -> U; "
+                        "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
+                        getName());
+                checkAllowedType(ret);
+                return ret;
             }
 
-            auto ret = IFunction::getReturnTypeImpl(arguments);
+            auto ret = tryGetLeastSupertype(DataTypes{type_arr_to_nested, arguments[3]});
+            if (!ret)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} has signature: "
+                    "transform(T, Array(T), Array(U), U) -> U; "
+                    "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
+                    getName());
             checkAllowedType(ret);
             return ret;
         }
@@ -710,13 +728,11 @@ namespace
                 ErrorCodes::ILLEGAL_COLUMN, "Second and third arguments of function {} must be constant arrays", "transform");
 
         const ColumnPtr & from_column_uncast = array_from->getDataPtr();
-        const DataTypePtr & from_array_nested_type
-            = typeid_cast<const DataTypeArray &>(*arguments[1].type).getNestedType();
 
         cache->from_column = castColumn(
             {
                 from_column_uncast,
-                from_array_nested_type,
+                typeid_cast<const DataTypeArray &>(*arguments[1].type).getNestedType(),
                 arguments[1].name
             },
             from_type);
@@ -771,12 +787,6 @@ namespace
 
         WhichDataType which(from_type);
 
-        /// A `String`/`FixedString` entry that is not an `Enum` member is already rejected by the cast
-        /// above, and comparing it below would put the member's numeric value against its name.
-        /// A numeric entry is cast without a membership check, so it still needs the comparison.
-        const bool cast_checked_enum_membership = isEnum(removeNullable(from_type))
-            && isStringOrFixedString(removeNullable(from_array_nested_type));
-
         /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
         if (isNativeNumber(which) || which.isDecimal32() || which.isDecimal64() || which.isEnum())
         {
@@ -784,7 +794,8 @@ namespace
             auto & table = *cache->table_num_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (which.isEnum() /// The correctness of strings are already checked by casting them to the Enum type.
+                    || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
                     UInt64 key = 0;
                     auto * dst = reinterpret_cast<char *>(&key);
@@ -807,7 +818,7 @@ namespace
             auto & table = *cache->table_string_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
                     std::string_view ref = cache->from_column->getDataAt(i);
                     table.insertIfNotPresent(ref, i);
@@ -820,7 +831,7 @@ namespace
             auto & table = *cache->table_anything_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
                     SipHash hash;
                     cache->from_column->updateHashWithValue(i, hash);
@@ -845,22 +856,6 @@ namespace
         bool useDefaultImplementationForNulls() const override { return false; }
         bool useDefaultImplementationForNothing() const override { return false; }
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
-
-        /// Documentation-only — see `FunctionTransform`. The result type is
-        /// the least common supertype of `array_to`'s element type and
-        /// (optionally) `default`'s type, which isn't expressible in the DSL.
-        String getSignatureString() const override
-        {
-            return "(Any, Array(Any), Array(Any), [Any]) -> Any";
-        }
-
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-        {
-            DataTypes data_types(arguments.size());
-            for (size_t i = 0; i < arguments.size(); ++i)
-                data_types[i] = arguments[i].type;
-            return getReturnTypeImpl(data_types);
-        }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
@@ -999,53 +994,44 @@ Requirements:
     {
         "transform(T, Array(T), Array(U), U) -> U",
         R"(
-CREATE TABLE hits (SearchEngineID UInt8, Referer String) ENGINE = Memory;
-
-INSERT INTO hits VALUES
-    (2, 'http://yandex.ru/search'),
-    (2, 'http://yandex.ru/news'),
-    (2, 'http://mail.yandex.ru/'),
-    (3, 'http://google.ru/search'),
-    (4, 'http://duckduckgo.com/'),
-    (0, 'http://vkontakte.ru/feed'),
-    (0, '');
-
 SELECT
 transform(SearchEngineID, [2, 3], ['Yandex', 'Google'], 'Other') AS title,
 count() AS c
-FROM hits
+FROM test.hits
 WHERE SearchEngineID != 0
 GROUP BY title
-ORDER BY c DESC, title
+ORDER BY c DESC
         )",
         R"(
-┌─title──┬─c─┐
-│ Yandex │ 3 │
-│ Google │ 1 │
-│ Other  │ 1 │
-└────────┴───┘
+┌─title─────┬──────c─┐
+│ Yandex    │ 498635 │
+│ Google    │ 229872 │
+│ Other     │ 104472 │
+└───────────┴────────┘
         )"
     },
     {
         "transform(T, Array(T), Array(T)) -> T",
         R"(
--- Without a default, a domain that is not listed is returned unchanged.
 SELECT
 transform(domain(Referer), ['yandex.ru', 'google.ru', 'vkontakte.ru'], ['www.yandex', 'example.com', 'vk.com']) AS s, count() AS c
-FROM hits
+FROM test.hits
 GROUP BY domain(Referer)
-ORDER BY count() DESC, s
+ORDER BY count() DESC
 LIMIT 10
         )",
         R"(
-┌─s──────────────┬─c─┐
-│ www.yandex     │ 2 │
-│                │ 1 │
-│ duckduckgo.com │ 1 │
-│ example.com    │ 1 │
-│ mail.yandex.ru │ 1 │
-│ vk.com         │ 1 │
-└────────────────┴───┘
+┌─s──────────────┬───────c─┐
+│                │ 2906259 │
+│ www.yandex     │  867767 │
+│ ███████.ru     │  313599 │
+│ mail.yandex.ru │  107147 │
+│ ██████.ru      │  100355 │
+│ █████████.ru   │   65040 │
+│ news.yandex.ru │   64515 │
+│ ██████.net     │   59141 │
+│ example.com    │   57316 │
+└────────────────┴─────────┘
         )"
     }
     };

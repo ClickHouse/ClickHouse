@@ -60,9 +60,5 @@ if (TARGET ch_contrib::vectorscan)
     target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::vectorscan)
 endif()
 
-if (TARGET ch_contrib::xgboost)
-    target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::xgboost)
-endif()
-
 add_subdirectory(Embedded)
 target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::sparsehash)

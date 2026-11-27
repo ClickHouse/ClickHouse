@@ -16,7 +16,6 @@
             </backup_disk_local_plain>
         </disks>
     </storage_configuration>
-    <custom_local_disks_base_directory>/local_plain/</custom_local_disks_base_directory>
     <backups>
         <allowed_disk>backup_disk_s3_plain</allowed_disk>
         <allowed_disk>backup_disk_local_plain</allowed_disk>

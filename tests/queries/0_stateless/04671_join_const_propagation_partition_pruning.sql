@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-old-analyzer
 
 -- A column that is constant in a JOIN input is invisible inside the join condition and in a filter
 -- above the join, because both see it as an ordinary column. Constants are substituted so that

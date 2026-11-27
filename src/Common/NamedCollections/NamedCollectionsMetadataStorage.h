@@ -19,8 +19,6 @@ public:
 
     MutableNamedCollectionPtr create(const ASTCreateNamedCollectionQuery & query);
 
-    MutableNamedCollectionPtr createOrReplace(const ASTCreateNamedCollectionQuery & query);
-
     void remove(const std::string & collection_name);
 
     bool removeIfExists(const std::string & collection_name);

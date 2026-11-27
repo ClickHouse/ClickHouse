@@ -282,11 +282,39 @@ public:
         return name == "obfuscateQueryWithSeed";
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (name == "obfuscateQueryWithSeed")
-            return "(String, Integer | String) -> String";
-        return "(String, [Integer | String]) -> String";
+        {
+            if (arguments.size() != 2)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Function {} requires exactly 2 arguments", getName());
+        }
+        else
+        {
+            if (arguments.empty())
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Function {} requires at least 1 argument", getName());
+
+            if (arguments.size() > 2)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Function {} requires at most 2 arguments", getName());
+        }
+
+        // First argument must be string
+        if (!isString(arguments[0].type))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "First argument of function {} must be String", getName());
+
+        // For both `obfuscateQuery` and `obfuscateQueryWithSeed`, second argument must be integer or String.
+        if (arguments.size() == 2)
+        {
+            if (!isInteger(arguments[1].type) && !isString(arguments[1].type))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Second argument of function {} must be an integer type or String", getName());
+        }
+
+        return std::make_shared<DataTypeString>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -325,7 +353,7 @@ REGISTER_FUNCTION(obfuscateQuery)
          "SELECT a FROM b, SELECT c FROM d"},
         {"Different rows produce different results",
          "SELECT obfuscateQuery('SELECT 1') AS a, obfuscateQuery('SELECT 1') AS b",
-         "SELECT 1\tSELECT 1"}
+         "A B"}
     };
 
     FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
@@ -376,13 +404,13 @@ Features:
     FunctionDocumentation::Examples obfuscate_query_with_seed_examples = {
         {"Deterministic obfuscation with integer seed",
          "SELECT obfuscateQueryWithSeed('SELECT name FROM users', 42)",
-         "SELECT name FROM users"},
+         "SELECT fruit FROM table"},
         {"Deterministic obfuscation with string seed",
          "SELECT obfuscateQueryWithSeed('SELECT id, value FROM data', 'myseed')",
-         "SELECT id, value FROM data"},
+         "SELECT a, b FROM c"},
         {"Same seed produces same result",
          "SELECT obfuscateQueryWithSeed('SELECT 1', 100) = obfuscateQueryWithSeed('SELECT 1', 100)",
-         "1"}
+         "true"}
     };
 
     FunctionDocumentation obfuscate_query_with_seed_documentation = {

@@ -53,12 +53,6 @@ ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 SETTINGS enable_compression = 1;
 ```
 
-### `connection_auto_close` {#connection-auto-close}
-
-Allows to automatically close the connection after query execution, i.e. disable connection reuse. When set to `0`, each table of the database keeps its connections in its own pool for the next query.
-
-Default value: `1`.
-
 ## TLS/SSL {#tls-ssl}
 
 The credentials of an encrypted connection to MySQL are passed as [named collection](/concepts/features/configuration/server-config/named-collections) keys (or as key-value arguments):

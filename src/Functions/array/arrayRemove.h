@@ -28,11 +28,6 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
-    {
-        return "(A : Array, Any) -> A";
-    }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override;
 

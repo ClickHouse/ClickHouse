@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/types.h>
-#include <Common/HiddenSecret.h>
 #include <Common/maskURIPassword.h>
 
 #include <functional>
@@ -32,13 +31,11 @@ inline bool maskURLCredentials(String & value)
     /// parser can read still reaches a log.
     if (findURIAuthority(value) == String::npos && value.contains('@'))
     {
-        value = HIDDEN_SECRET;
+        value = "[HIDDEN]";
         return true;
     }
 
-    /// `maskURIUserinfo` ends the authority where the RFC does, but the consumer of the value may read a
-    /// wider userinfo, as the MongoDB driver does in `mongodb://u:1?pw@1@host`.
-    bool masked = maskURIUserinfo(value) || maskURIPassword(&value);
+    bool masked = maskURIUserinfo(value);
     masked |= maskPresignedURLParameters(value);
     return masked;
 }

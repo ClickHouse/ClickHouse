@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Common/Exception.h>
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 
@@ -37,8 +38,8 @@ public:
     {}
 
     /// Check the token quotas (and the sticky exceeded flag). Returns true if a limit is met or
-    /// exceeded, false otherwise. Should be called before issuing an API call. The API-call limit is
-    /// enforced separately by `recordApiCall`.
+    /// exceeded, false otherwise. Lets a caller skip building and submitting a request that
+    /// `recordApiCall` would refuse anyway. The API-call limit is enforced separately by `recordApiCall`.
     bool checkQuotas();
 
     /// Count one outbound API call against the request quota, only while under the limit. Should be
@@ -49,10 +50,15 @@ public:
     /// throws when `throw_on_quota_exceeded`. Exact: `api_calls` never exceeds the limit.
     bool recordApiCall();
 
-    /// Record token usage reported by a response, including one whose body was rejected as malformed: the
-    /// provider billed for it either way. Kept separate from `recordApiCall`, which counts the request itself.
+    /// Record token usage on a successful response. Tokens are only billed by the provider when the call succeeds,
+    /// so this is kept separate and called only after the response is parsed.
     void recordTokens(UInt64 in_tokens, UInt64 out_tokens);
 
+    /// Throws if the query was killed or exceeded its time limit.
+    void throwIfCancelled() const;
+
+    /// Whether the query was killed or exceeded its time limit. Does not throw.
+    bool isCancelled() const;
 
 private:
     const UInt64 max_input_tokens;
@@ -60,6 +66,9 @@ private:
     const UInt64 max_api_calls;
     const bool throw_on_quota_exceeded;
     const std::weak_ptr<QueryStatus> query_status;
+
+    /// Sticky: used to check for requests submitted by a cancelled query (may outlive its `QueryStatus`).
+    mutable std::atomic<bool> cancelled = false;
 
     std::mutex mutex;
     bool quota_exceeded TSA_GUARDED_BY(mutex) = false;
@@ -71,9 +80,6 @@ private:
     /// per `throw_on_quota_exceeded`) when a token quota is met. Shared by `checkQuotas` and
     /// `recordApiCall` so a call is never started once a quota is known-exhausted.
     bool quotasExceededLocked() TSA_REQUIRES(mutex);
-
-    /// Throws if the query was killed or exceeded its time limit.
-    void throwIfCancelled() const;
 };
 
 }

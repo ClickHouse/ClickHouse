@@ -235,8 +235,7 @@ public:
         UInt64 commit_id,
         time_t commit_time,
         time_t transaction_start_time_,
-        const std::string & exception_message = {},
-        const UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths = {});
+        const std::string & exception_message = {});
 
 private:
     Chunk generateImpl();

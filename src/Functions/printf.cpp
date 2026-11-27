@@ -171,12 +171,19 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// format string + 0+ substitution args (numbers or strings).
-        return
-            "(format String) -> String"
-            " OR (format String, sub NativeNumber | StringOrFixedString, ...) -> String";
+        auto is_native_number_or_string = [](const IDataType & type)
+        {
+            return isNativeNumber(type) || isStringOrFixedString(type);
+        };
+
+        FunctionArgumentDescriptors mandatory_args{{"format", &isString, nullptr, "String"}};
+        FunctionArgumentDescriptor variadic_args{"sub", is_native_number_or_string, nullptr, "Native number or String"};
+
+        validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, variadic_args);
+
+        return std::make_shared<DataTypeString>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

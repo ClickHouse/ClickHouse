@@ -5,8 +5,6 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 
-#include <functional>
-
 namespace DB
 {
 
@@ -78,10 +76,6 @@ public:
     explicit PuffinSchemaReader(ReadBuffer & in_);
     NamesAndTypesList readSchema() override;
 };
-
-/// Validates the `deletion-vector-v1` blob envelope (length, magic, CRC) and calls `on_position`
-/// for every deleted row position in ascending order.
-void forEachDeletionVectorPosition(std::string_view blob, const std::function<void(UInt64)> & on_position);
 
 class FormatFactory;
 void registerInputFormatPuffin(FormatFactory & factory);

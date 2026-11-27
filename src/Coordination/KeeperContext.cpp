@@ -19,7 +19,6 @@
 #include <Disks/DiskSelector.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
-#include <Common/saturatedWaitDuration.h>
 #include <base/getMemoryAmount.h>
 
 #include <boost/algorithm/string.hpp>
@@ -82,7 +81,6 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
         KeeperFeatureFlag::PERSISTENT_WATCHES,
         KeeperFeatureFlag::TRY_REMOVE,
         KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA,
-        KeeperFeatureFlag::LIST_WITH_OPTIONS,
         KeeperFeatureFlag::MAX_REQUEST_SIZE,
     };
 
@@ -110,17 +108,6 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
 
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
     digest_enabled_on_commit = config.getBool("keeper_server.digest_enabled_on_commit", false);
-    remove_orphaned_nodes_on_startup = config.getBool("keeper_server.remove_orphaned_nodes_on_startup", false);
-
-    /// Orphaned-nodes cleanup is implemented only by the in-memory nodes storage
-    /// (`KeeperMemNodesStorage`). Refuse the combination instead of silently accepting a recovery
-    /// setting that would never run.
-    if (remove_orphaned_nodes_on_startup && getCoordinationSettings()[CoordinationSetting::use_lsmt_storage])
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "'keeper_server.remove_orphaned_nodes_on_startup' is not supported with 'use_lsmt_storage'. "
-            "Set 'keeper_server.coordination_settings.use_lsmt_storage' to false to run the orphaned-nodes recovery, "
-            "then re-enable it after a successful startup");
 
     initializeFeatureFlags(config);
     initializeDisks(config);
@@ -303,16 +290,6 @@ bool KeeperContext::digestEnabled() const
 bool KeeperContext::digestEnabledOnCommit() const
 {
     return digest_enabled_on_commit;
-}
-
-bool KeeperContext::removeOrphanedNodesOnStartup() const
-{
-    return remove_orphaned_nodes_on_startup;
-}
-
-void KeeperContext::setRemoveOrphanedNodesOnStartup(bool remove_orphaned_nodes_on_startup_)
-{
-    remove_orphaned_nodes_on_startup = remove_orphaned_nodes_on_startup_;
 }
 
 void KeeperContext::setDigestEnabled(bool digest_enabled_)
@@ -793,8 +770,6 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
             return feature_flags.isEnabled(KeeperFeatureFlag::REMOVE_RECURSIVE);
         case Coordination::OpNum::ListRecursive:
             return feature_flags.isEnabled(KeeperFeatureFlag::GET_CHILDREN_RECURSIVE);
-        case Coordination::OpNum::ListWithOptions:
-            return feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS);
         case Coordination::OpNum::CheckStat:
             return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT);
         case Coordination::OpNum::Create2:
@@ -858,7 +833,7 @@ bool KeeperContext::waitCommittedUpto(uint64_t log_idx, uint64_t wait_timeout_ms
     wait_commit_upto_idx = log_idx;
     bool success = last_committed_log_idx_cv.wait_for(
         lock,
-        saturatedWaitMilliseconds(wait_timeout_ms),
+        std::chrono::milliseconds(wait_timeout_ms),
         [&] { return shutdown_called || lastCommittedIndex() >= wait_commit_upto_idx; });
 
     wait_commit_upto_idx.reset();

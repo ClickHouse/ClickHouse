@@ -84,18 +84,14 @@ keeperclusters.clickhouse.com        2025-01-06T00:00:00Z
 Si quieres configurar las opciones para desplegar el operador, sigue estos pasos.
 
 <Steps>
-  <Step>
-    ### Clonar el repositorio
-
+  <Step title="Clonar el repositorio" id="clone-the-repository">
     ```bash
     git clone https://github.com/ClickHouse/clickhouse-operator.git
     cd clickhouse-operator
     ```
   </Step>
 
-  <Step>
-    ### Configurar las opciones de instalación
-
+  <Step title="Configurar las opciones de instalación" id="configure-installation-options">
     Edita config/default/kustomization.yaml para habilitar o deshabilitar funciones según sea necesario.
 
     * Para deshabilitar los webhooks, comenta las secciones `[WEBHOOK]` y `[CERTMANAGER]`.
@@ -104,9 +100,7 @@ Si quieres configurar las opciones para desplegar el operador, sigue estos pasos
     * Para habilitar las políticas de red del operador, descomenta la sección `[NETWORK POLICY]`.
   </Step>
 
-  <Step>
-    ### Compilar y desplegar
-
+  <Step title="Compilar y desplegar" id="build-and-deploy">
     Compila los manifiestos del operador y aplícalos:
 
     ```bash

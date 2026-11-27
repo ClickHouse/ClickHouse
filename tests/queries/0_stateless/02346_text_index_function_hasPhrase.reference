@@ -42,39 +42,6 @@
 [1]
 [2]
 [2,3]
--- Array(String) input columns
--- index tokens are [quick, brown, fox]
-[1]
-[1]
--- adjacent across elements
-[1]
-[1]
-[2,3]
--- Array(Nullable(String)) input columns
-[1]
-[1]
-[1]
-[1]
--- Array(String) input columns with positions
-[1]
-[1]
-[1]
--- the array tokenizer makes each element one token
--- an element matches as a whole token, and the index answers it
-[1]
-[1]
--- adjacent elements
-[1]
-[1]
--- a token that no element holds
-[2]
--- the array tokenizer with support_phrase_search
-[1]
-[1]
--- Array phrase
-[1]
-[1]
-[2]
 -- asciiCJK tokenizer
 [1,4]
 [1]
@@ -126,11 +93,7 @@ Text index should choose 50% of granules
 Description: text GRANULARITY 100000000
 Parts: 1/1
 Granules: 512/1024
-hasPhrase with a matching 3rd argument uses the index
-Description: text GRANULARITY 100000000
-Parts: 1/1
-Granules: 256/1024
-hasPhrase with a different 3rd argument bypasses the index
+hasPhrase with 3rd argument bypasses the index
 NOT hasPhrase - Text index analysis
 NOT hasPhrase should choose all parts and granules
 Description: text GRANULARITY 100000000

@@ -35,8 +35,7 @@ public:
         const String & comment,
         std::unique_ptr<NATSSettings> nats_settings_,
         LoadingStrictnessLevel mode,
-        bool authentication_determined_by_table_,
-        bool fresh_definition_);
+        bool authentication_determined_by_table_);
 
     ~StorageNATS() override;
 
@@ -77,9 +76,6 @@ public:
     INATSConsumerPtr popConsumer();
     INATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
-    /// Makes the streaming task subscribe the consumers again before its next cycle.
-    void markConsumersNotReady() { consumers_ready.store(false); }
-
     const String & getFormatName() const { return format_name; }
 
 private:
@@ -100,10 +96,7 @@ private:
     NATSHandler event_handler;
     std::unique_ptr<ThreadFromGlobalPool> event_loop_thread;
 
-    mutable std::mutex consumers_connection_mutex;
-    NATSConnectionPtr consumers_connection TSA_GUARDED_BY(consumers_connection_mutex); /// Connection for all consumers
-    /// Serializes `createConsumersConnection` and `createConsumers`, which both background tasks call.
-    std::mutex consumers_setup_mutex;
+    NATSConnectionPtr consumers_connection; /// Connection for all consumers
     NATSConfiguration configuration;
 
     std::atomic<size_t> num_created_consumers = 0;
@@ -131,11 +124,10 @@ private:
 
     mutable bool drop_table = false;
     bool throw_on_startup_failure;
-    bool fresh_definition;
 
     void scheduleStreamingTasksImpl() override;
 
-    INATSConsumerPtr createConsumer(const NATSConnectionPtr & connection) TSA_REQUIRES(consumers_setup_mutex);
+    INATSConsumerPtr createConsumer();
     INATSProducerPtr createProducer(String subject);
 
     bool isSubjectInSubscriptions(const std::string & subject);
@@ -144,18 +136,13 @@ private:
     void initializeConsumersFunc();
     void threadFunc();
 
-    NATSConnectionPtr getConsumersConnection() const;
-    void setConsumersConnection(NATSConnectionPtr connection) TSA_REQUIRES(consumers_setup_mutex);
     void createConsumersConnection();
     void createConsumers();
-    void dropConsumers() TSA_REQUIRES(consumers_setup_mutex);
+    void dropConsumers();
 
     bool subscribeConsumers();
-    /// Replaces the subscription of every consumer that stopped consuming and has an empty queue.
-    void resubscribeStaleConsumers();
+    bool consumersNeedResubscribe();
     void unsubscribeConsumers();
-    /// Unsubscribes the consumers in the pool which are still subscribed, without touching `consumers_ready`.
-    void unsubscribeHandedBackConsumers();
 
     void stopEventLoop();
 

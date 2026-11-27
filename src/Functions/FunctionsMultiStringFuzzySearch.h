@@ -27,6 +27,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -62,13 +63,19 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const String elem_type = DataTypeNumber<typename Impl::ResultType>{}.getName();
-        if constexpr (Impl::is_column_array)
-            return "(String, const NativeUInt, Array(String)) -> Array(" + elem_type + ")";
-        else
-            return "(String, const NativeUInt, Array(String)) -> " + elem_type;
+        if (!isString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
+
+        if (!isUInt(arguments[1]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[1]->getName(), getName());
+
+        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[2].get());
+        if (!array_type || !checkAndGetDataType<DataTypeString>(array_type->getNestedType().get()))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[2]->getName(), getName());
+
+        return Impl::getReturnType();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

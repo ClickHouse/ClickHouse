@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel
 -- Tag no-parallel: failpoint use_delayed_remote_source is global and can force
 -- DelayedSource on concurrent tests and break them (same pattern as 02863).
 

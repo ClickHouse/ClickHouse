@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Band join `a.t >= b.t_lo AND a.t <= b.t_hi` with `a.t = 0..N-1` and `b = [k, k+5]`
 -- for `k = 0..N-1` must produce exactly `6 * N - 15` pairs.
 

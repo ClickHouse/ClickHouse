@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -43,9 +44,17 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(T : AggregateFunction) -> aggregateFunctionReturnType(T)";
+        const DataTypeAggregateFunction * type = checkAndGetDataType<DataTypeAggregateFunction>(arguments[0].get());
+        if (!type)
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Argument for function '{}' must have type AggregateFunction - state of aggregate function."
+                " Got '{}' instead", getName(), arguments[0]->getName());
+        }
+
+        return type->getReturnType();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override

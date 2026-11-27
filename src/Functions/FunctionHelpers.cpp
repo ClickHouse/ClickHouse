@@ -98,11 +98,11 @@ ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName
 namespace
 {
 
-String withOrdinalEnding(size_t argument_index)
+String withOrdinalEnding(size_t i)
 {
-    /// `argument_index` is a zero-based argument index; produce the ordinal for the human-facing position `n = argument_index + 1`
+    /// `i` is a zero-based argument index; produce the ordinal for the human-facing position `n = i + 1`
     /// (1st, 2nd, 3rd, 4th, ...). The teens 11, 12, 13 use "th" despite ending in 1, 2, 3.
-    const size_t n = argument_index + 1;
+    const size_t n = i + 1;
     const char * suffix = "th";
     if (n % 100 < 11 || n % 100 > 13)
     {
@@ -136,13 +136,13 @@ void validateArgumentsImpl(
         if (argument_index >= arguments.size())
             break;
 
-        const auto & arg = arguments[argument_index];
+        const auto & arg = arguments[i + argument_offset];
         const auto & descriptor = descriptors[i];
         if (int error_code = descriptor.isValid(arg.type, arg.column); error_code != 0)
             throw Exception(
                 error_code,
                 "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
-                withOrdinalEnding(argument_index),
+                withOrdinalEnding(argument_offset + i),
                 descriptor.name,
                 function_name,
                 descriptor.type_name,
@@ -156,14 +156,14 @@ void validateVariadicArgumentsImpl(
     size_t argument_offset,
     const FunctionArgumentDescriptor & variadic_descriptor)
 {
-    for (size_t argument_index = argument_offset; argument_index < arguments.size(); ++argument_index)
+    for (size_t i = argument_offset; i < arguments.size(); ++i)
     {
-        const auto & arg = arguments[argument_index];
+        const auto & arg = arguments[i];
         if (int error_code = variadic_descriptor.isValid(arg.type, arg.column); error_code != 0)
             throw Exception(
                 error_code,
                 "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
-                withOrdinalEnding(argument_index),
+                withOrdinalEnding(i),
                 variadic_descriptor.name,
                 function_name,
                 variadic_descriptor.type_name,

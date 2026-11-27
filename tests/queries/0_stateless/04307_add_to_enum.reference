@@ -90,20 +90,3 @@ CREATE TABLE default.enum_modify_then_add_different\n(\n    `x` Enum8(\'a\' = 1,
 "b","cc"
 ======= ALTER AST VALIDATION ===============
 ======= ADD ENUM VALUES SYNTAX ERRORS ===============
-======= MERGETREE ===============
-a	10
-b	20
-0
-x	Enum8(\'a\' = 1, \'b\' = 2)
-======= MERGETREE SORTING KEY ===============
-a
-b
-======= MERGETREE PARTITION KEY ===============
-a	10
-b	20
-======= REPLICATED MERGETREE ===============
-a	10
-b	20
-0
-0
-x	Enum8(\'a\' = 1, \'b\' = 2)

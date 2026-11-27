@@ -85,7 +85,7 @@ SELECT count() > 0 FROM (
 
 DROP TABLE tab;
 
-SELECT 'preprocessor is applied on the row-scan path too';
+SELECT 'preprocessor is applied only on the index path';
 
 CREATE TABLE tab
 (
@@ -98,20 +98,22 @@ ORDER BY id;
 
 INSERT INTO tab SELECT number, if(number < 10, 'Hello World', 'foo bar') FROM numbers(1000);
 
-SELECT '-- SELECT-list position: preprocessor applied';
+-- The tokenizer is always applied; the preprocessor (lower) only on the index path, so 'hello' matches via the index (use_skip_indexes = 1) but not row-level.
+SELECT '-- SELECT-list position: preprocessor not applied';
 
 SELECT countIf(hasAnyTokens(s, 'hello')) FROM tab;
 
-SELECT '-- SELECT-list position is unaffected by a sibling WHERE that uses the index';
+-- The SELECT-list rewrite must not borrow the preprocessor from a sibling WHERE that makes the index useful.
+SELECT '-- SELECT-list preprocessor is not applied even when a sibling WHERE uses the index';
 
 SELECT countIf(hasAnyTokens(s, 'hello')) FROM tab WHERE hasAnyTokens(s, 'world') SETTINGS use_skip_indexes = 1;
 
-SELECT '-- WHERE is consistent across use_skip_indexes';
+SELECT '-- WHERE: preprocessor applied only with use_skip_indexes = 1';
 
 SELECT count() FROM tab WHERE hasAnyTokens(s, 'hello') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasAnyTokens(s, 'hello') SETTINGS use_skip_indexes = 1;
 
-SELECT '-- EXPLAIN: SELECT-list injects the preprocessor and the tokenizer';
+SELECT '-- EXPLAIN: SELECT-list injects the tokenizer but not the preprocessor';
 
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (
     EXPLAIN actions = 1
@@ -133,6 +135,7 @@ ORDER BY id;
 
 INSERT INTO tab SELECT number, if(number < 10, 'Hello', 'World') FROM numbers(1000);
 
+-- Unlike the preprocessor, the postprocessor normalizes tokens on every path, so a case-mismatched needle matches the same in the SELECT list, at use_skip_indexes = 0, and via the index.
 SELECT '-- SELECT-list position: postprocessor applied';
 
 SELECT countIf(hasToken(s, 'HELLO')), countIf(hasAnyTokens(s, ['HELLO'])) FROM tab;

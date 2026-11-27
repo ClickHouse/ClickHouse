@@ -56,7 +56,7 @@ Read replicas in ClickHouse Managed Postgres use a WAL shipping architecture rat
 
 ### WAL shipping from object storage {#wal-shipping-from-object-storage}
 
-When your primary database processes transactions, it generates Write-Ahead Log (WAL) records. These WAL segments are continuously archived to object storage. Read replicas fetch and replay these WAL segments from object storage to stay synchronized with the primary.
+When your primary database processes transactions, it generates Write-Ahead Log (WAL) records. These WAL segments are continuously archived to object storage (S3). Read replicas fetch and replay these WAL segments from object storage to stay synchronized with the primary.
 
 This architecture differs from [high availability standbys](/products/managed-postgres/high-availability), which use streaming replication with a direct connection to the primary.
 

@@ -91,25 +91,15 @@ static void fillDataWithTableColumns(
     if (table_lock == nullptr)
         return; // table was dropped while acquiring the lock
 
-    const auto * alias = table->as<StorageAlias>();
     const auto snapshot = table->getInMemoryMetadataPtr(context, false);
     const auto & columns = snapshot->getColumns();
-    NameSet chain_granted;
-    if (alias)
-    {
-        Names all_columns;
-        all_columns.reserve(columns.size());
-        for (const auto & column : columns)
-            all_columns.push_back(column.name);
-        chain_granted = alias->filterColumnsGrantedThroughChain(context, AccessType::SHOW_COLUMNS, all_columns);
-    }
-
     for (const auto & column : columns)
     {
         if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
             continue;
 
-        if (alias && !chain_granted.contains(column.name))
+        if (const auto * alias = table->as<StorageAlias>();
+            alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name))
             continue;
 
         res_columns[0]->insert(column.name);

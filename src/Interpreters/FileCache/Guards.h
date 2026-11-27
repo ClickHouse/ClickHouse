@@ -19,32 +19,54 @@ namespace ProfileEvents
 namespace DB
 {
 /**
- * Locking order - when taking a lock, every lock already held must be strictly above it here:
+ * FileCache::get/getOrSet/set
+ * 1. CacheMetadataGuard::Lock (take key lock and release metadata lock)
+ * 2. KeyGuard::Lock (hold till the end of the method)
  *
- *   FileCache::apply_settings_mutex
- *   > FileCache::dynamic_resize_lock  (exclusive, try_lock_for: doDynamicResize; shared, try_lock: tryReserve, tryIncreasePriority)
- *   > CacheStateGuard                 (makes growth atomic: `canFit` + `entryAdd`; decrements are lock-free, so
- *                                      `entrySub` is callable under KeyGuard, and `getSize(Lock)` is exact only
- *                                      with respect to concurrent growth - its sole difference from `getSizeApprox`)
- *   > FileCacheQueryLimit::mutex      (`doTryReserve` calls `tryGetQueryContext` under the state lock)
- *   > CachePriorityGuard              (one per queue; taken by the priority itself, or by `EvictionCandidates`
- *                                      through `Iterator::getPriorityGuard`;
- *                                      SLRU: both sub-queues share one guard, entries move between them;
- *                                      Overcommit/Split wrappers: no own guard, `getPriorityGuard` throws)
- *   > CacheMetadataGuard
- *   > KeyGuard
- *   > FileSegmentGuard
+ * FileCache::tryReserve
+ * 1. CachePriorityGuard::WriteLock, CachePriorityGuard::ReadLock
+ * 2. KeyGuard::Lock (taken without metadata lock)
+ * 3. any number of KeyGuard::Lock's for files which are going to be evicted (taken via metadata lock)
+ * 4. CacheStateGuard (to update state (total size/elements) after successful space reservation).
  *
- * Leaf mutexes (nothing above is taken while they are held):
+ * FileCache::removeIfExists
+ * 1. CachePriorityGuard::WriteLock
+ * 2. KeyGuard::Lock (taken via metadata lock)
+ * 3. FileSegmentGuard::Lock
  *
- *   ShardedMap shard mutexes | LRUFileCachePriority::eviction_pos_mutex
- *   | LRUFileCachePriority::invalidated_mutex | SLRUIterator::entry_mutex
+ * FileCache::removeAllReleasable
+ * 1. CachePriorityGuard::WriteLock
+ * 2. any number of KeyGuard::Lock's locks (taken via metadata lock), but at a moment of time only one key lock can be hold
+ * 3. FileSegmentGuard::Lock
  *
- * The CacheStateGuard > CachePriorityGuard edge is exercised only by startup load (`add` takes the
- * queue write lock under the state lock) and by dynamic-resize entry removal and restore
- * (`EvictionCandidates::removeQueueEntries` / `restoreQueueEntries`).
+ * FileCache::getSnapshot (for all cache)
+ * 1. metadata lock
+ * 2. any number of KeyGuard::Lock's locks (taken via metadata lock), but at a moment of time only one key lock can be hold
+ * 3. FileSegmentGuard::Lock
  *
- * Introspection and system-table locks are not included.
+ * FileCache::getSnapshot(key)
+ * 1. KeyGuard::Lock (taken via metadata lock)
+ * 2. FileSegmentGuard::Lock
+ *
+ * FileSegment::complete
+ * 1. KeyGuard::Lock (taken without metadata lock)
+ * 2. FileSegmentGuard::Lock
+ *
+ * Rules:
+ * 1. Priority of locking: CachePriorityGuard::Lock > CacheMetadataGuard::Lock > KeyGuard::Lock > FileSegmentGuard::Lock
+ *
+ *
+ *                                 _CachePriorityGuard_ / _CacheStateGuard
+ *                                 1. FileCache::tryReserve
+ *                                 2. FileCache::removeIfExists(key)
+ *                                 3. FileCache::removeAllReleasable
+ *                                 4. FileSegment::complete
+ *
+ *             _KeyGuard_                                      _CacheMetadataGuard_
+ *             1. all from CachePriorityGuard                  1. getOrSet/get/set
+ *             2. getOrSet/get/Set
+ *
+ * *This table does not include locks taken for introspection and system tables.
  */
 
 /**
@@ -86,9 +108,7 @@ private:
     SharedMutex mutex;
 };
 
-/// Makes cache growth atomic: `canFit` followed by the size/elements increment.
-/// Does not protect the counters themselves - decrements are lock-free (see the
-/// locking-order comment at the top of this file).
+/// State lock protects cache total size/elements counters.
 struct CacheStateGuard : private boost::noncopyable
 {
     struct Lock : public ProfiledExclusiveLock<std::timed_mutex>

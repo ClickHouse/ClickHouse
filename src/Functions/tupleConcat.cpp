@@ -27,11 +27,6 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
-    {
-        return "(T1 : Tuple, ...) -> concatTuples(T1, ...)";
-    }
-
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptor variadic_args{"tupleN", &isTuple, nullptr, "Tuple"};
@@ -102,7 +97,7 @@ Combines tuples passed as arguments.
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple containing all elements from the input tuples.", {"Tuple(T)"}};
     FunctionDocumentation::Examples examples = {
-        {"Usage example", "SELECT tupleConcat((1, 2), ('a',), (true, false))", "(1,2,'a',true,false)"}
+        {"Usage example", "SELECT tupleConcat((1, 2), ('a',), (true, false))", "(1, 2, 'a', true, false)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Tuple;

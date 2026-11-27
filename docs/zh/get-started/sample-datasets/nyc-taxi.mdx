@@ -1,670 +1,317 @@
 ---
-description: '借助一个涵盖纽约市自 2009 年以来数十亿条出租车和网约车（Uber、Lyft 等）行程的数据集来探索 ClickHouse'
+description: '纽约市自 2009 年以来的数十亿条出租车和网约车（Uber、Lyft 等）行程数据'
 sidebarTitle: '纽约出租车数据'
 slug: /getting-started/example-datasets/nyc-taxi
-title: '基于纽约出租车数据集的地理空间分析'
+title: '纽约出租车数据'
 doc_type: 'guide'
 keywords: ['示例数据集', 'nyc taxi', '教程', '示例数据', '入门']
 ---
 
 import { RunnableCode } from "/snippets/zh/components/RunnableCode/RunnableCode.jsx";
 
-<View title="Cloud">
-  在本教程中，您将探索如何使用 ClickHouse 对海量数据运行分析查询。
-  此外，您还将学习如何使用字典扩充数据，以及如何编写连接查询。
+纽约出租车数据样本包含自 2009 年以来始发于纽约市的 30 多亿条出租车和网约车 (Uber、Lyft 等) 行程。本入门指南使用的是一个包含 300 万行的样本。
 
-  ## 前置条件
+完整数据集可通过以下几种方式获取：
 
-  完成本教程需要准备：
+* 直接从 S3 或 GCS 将数据导入 ClickHouse Cloud
+* 下载预先准备好的分区
+* 或者，您也可以在我们的演示环境 [sql.clickhouse.com](https://sql.clickhouse.com/?query=U0VMRUNUIGNvdW50KCkgRlJPTSBueWNfdGF4aS50cmlwcw\&chart=eyJ0eXBlIjoibGluZSIsImNvbmZpZyI6eyJ0aXRsZSI6IlRlbXBlcmF0dXJlIGJ5IGNvdW50cnkgYW5kIHllYXIiLCJ4YXhpcyI6InllYXIiLCJ5YXhpcyI6ImNvdW50KCkiLCJzZXJpZXMiOiJDQVNUKHBhc3Nlbmdlcl9jb3VudCwgJ1N0cmluZycpIn19) 中查询完整数据集。
 
-  * 一个 [ClickHouse Cloud 账户](https://clickhouse.cloud/signUp?loc=docs-sample-datasets-nyc-taxi) (注册即可获赠 300 美元免费额度)
-  * [一个 ClickHouse Cloud 服务](/zh/get-started/setup/cloud#1-create-a-clickhouse-service)
+<Note>
+  以下示例查询是在 ClickHouse Cloud 的 **生产环境** 实例上执行的。更多信息请参见
+  [&quot;Playground 规格说明&quot;](/zh/get-started/sample-datasets/playground#specifications)。
+</Note>
 
-  <Steps titleSize="h2">
-    <Step title="创建表" id="create-a-new-table">
-      本教程使用的数据集是纽约市出租车数据集，其中包含数百万次出租车行程的详细信息，涵盖小费金额、通行费、支付方式等列。
-
-      1. 在左侧菜单中选择 **SQL 控制台**
-      2. 点击主页图标旁的 **+** 选项卡，新建一个查询
-      3. 在 SQL 编辑器中输入以下查询，然后点击 **运行**：
-
-      ```sql Expandable
-      CREATE TABLE trips
-      (
-          `trip_id` UInt32,
-          `vendor_id` Enum8('1' = 1, '2' = 2, '3' = 3, '4' = 4, 'CMT' = 5, 'VTS' = 6, 'DDS' = 7, 'B02512' = 10, 'B02598' = 11, 'B02617' = 12, 'B02682' = 13, 'B02764' = 14, '' = 15),
-          `pickup_date` Date,
-          `pickup_datetime` DateTime,
-          `dropoff_date` Date,
-          `dropoff_datetime` DateTime,
-          `store_and_fwd_flag` UInt8,
-          `rate_code_id` UInt8,
-          `pickup_longitude` Float64,
-          `pickup_latitude` Float64,
-          `dropoff_longitude` Float64,
-          `dropoff_latitude` Float64,
-          `passenger_count` UInt8,
-          `trip_distance` Float64,
-          `fare_amount` Float32,
-          `extra` Float32,
-          `mta_tax` Float32,
-          `tip_amount` Float32,
-          `tolls_amount` Float32,
-          `ehail_fee` Float32,
-          `improvement_surcharge` Float32,
-          `total_amount` Float32,
-          `payment_type` Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4),
-          `trip_type` UInt8,
-          `pickup` FixedString(25),
-          `dropoff` FixedString(25),
-          `cab_type` Enum8('yellow' = 1, 'green' = 2, 'uber' = 3),
-          `pickup_nyct2010_gid` Int8,
-          `pickup_ctlabel` Float32,
-          `pickup_borocode` Int8,
-          `pickup_ct2010` String,
-          `pickup_boroct2010` String,
-          `pickup_cdeligibil` String,
-          `pickup_ntacode` FixedString(4),
-          `pickup_ntaname` String,
-          `pickup_puma` UInt16,
-          `dropoff_nyct2010_gid` UInt8,
-          `dropoff_ctlabel` Float32,
-          `dropoff_borocode` UInt8,
-          `dropoff_ct2010` String,
-          `dropoff_boroct2010` String,
-          `dropoff_cdeligibil` String,
-          `dropoff_ntacode` FixedString(4),
-          `dropoff_ntaname` String,
-          `dropoff_puma` UInt16
-      )
-      ENGINE = MergeTree
-      PARTITION BY toYYYYMM(pickup_date)
-      ORDER BY pickup_datetime;
-      ```
-    </Step>
-
-    <Step title="插入数据" id="add-the-dataset">
-      创建好表之后，接下来从 S3 中的 CSV 文件导入纽约市出租车数据。
-
-      以下命令会从 S3 中的两个文件 `trips_1.tsv.gz` 和 `trips_2.tsv.gz` 向 trips 表插入约 2,000,000 行数据：
-
-      ```sql Expandable
-      INSERT INTO trips
-      SELECT * FROM s3(
-          'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{1..2}.gz',
-          'TabSeparatedWithNames', "
-          `trip_id` UInt32,
-          `vendor_id` Enum8('1' = 1, '2' = 2, '3' = 3, '4' = 4, 'CMT' = 5, 'VTS' = 6, 'DDS' = 7, 'B02512' = 10, 'B02598' = 11, 'B02617' = 12, 'B02682' = 13, 'B02764' = 14, '' = 15),
-          `pickup_date` Date,
-          `pickup_datetime` DateTime,
-          `dropoff_date` Date,
-          `dropoff_datetime` DateTime,
-          `store_and_fwd_flag` UInt8,
-          `rate_code_id` UInt8,
-          `pickup_longitude` Float64,
-          `pickup_latitude` Float64,
-          `dropoff_longitude` Float64,
-          `dropoff_latitude` Float64,
-          `passenger_count` UInt8,
-          `trip_distance` Float64,
-          `fare_amount` Float32,
-          `extra` Float32,
-          `mta_tax` Float32,
-          `tip_amount` Float32,
-          `tolls_amount` Float32,
-          `ehail_fee` Float32,
-          `improvement_surcharge` Float32,
-          `total_amount` Float32,
-          `payment_type` Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4),
-          `trip_type` UInt8,
-          `pickup` FixedString(25),
-          `dropoff` FixedString(25),
-          `cab_type` Enum8('yellow' = 1, 'green' = 2, 'uber' = 3),
-          `pickup_nyct2010_gid` Int8,
-          `pickup_ctlabel` Float32,
-          `pickup_borocode` Int8,
-          `pickup_ct2010` String,
-          `pickup_boroct2010` String,
-          `pickup_cdeligibil` String,
-          `pickup_ntacode` FixedString(4),
-          `pickup_ntaname` String,
-          `pickup_puma` UInt16,
-          `dropoff_nyct2010_gid` UInt8,
-          `dropoff_ctlabel` Float32,
-          `dropoff_borocode` UInt8,
-          `dropoff_ct2010` String,
-          `dropoff_boroct2010` String,
-          `dropoff_cdeligibil` String,
-          `dropoff_ntacode` FixedString(4),
-          `dropoff_ntaname` String,
-          `dropoff_puma` UInt16
-      ") SETTINGS input_format_try_infer_datetimes = 0
-      ```
-
-      等待数据插入完成，此过程大约会下载 150MB 数据。
-      数据插入完成后，查看 `trips` 表中的行数：
-
-      ```sql
-      SELECT count() FROM trips
-      ```
-
-      您应该会得到 1,999,657 行结果
-    </Step>
-
-    <Step title="分析数据" id="analyze-the-data">
-      数据加载完成后，即可运行一些查询来分析数据。
-
-      * 计算平均小费金额：
-        ```sql
-        SELECT round(avg(tip_amount), 2) FROM trips
-        ```
-
-      * 按乘客人数计算平均费用：
-        ```sql
-        SELECT
-            passenger_count,
-            ceil(avg(total_amount),2) AS average_total_amount
-        FROM trips
-        GROUP BY passenger_count
-        ```
-
-      * 计算每个社区每天的上车次数：
-        ```sql
-        SELECT
-          pickup_date,
-          pickup_ntaname,
-          SUM(1) AS number_of_trips
-        FROM trips
-        GROUP BY pickup_date, pickup_ntaname
-        ORDER BY pickup_date ASC
-        ```
-
-      * 计算每次行程的时长 (以分钟计) ，然后按行程时长对结果分组：
-        ```sql
-        SELECT
-          avg(tip_amount) AS avg_tip,
-          avg(fare_amount) AS avg_fare,
-          avg(passenger_count) AS avg_passenger,
-          count() AS count,
-          truncate(date_diff('second', pickup_datetime, dropoff_datetime)/60) as trip_minutes
-        FROM trips
-        WHERE trip_minutes > 0
-        GROUP BY trip_minutes
-        ORDER BY trip_minutes DESC
-        ```
-
-      * 按小时细分显示每个社区在一天中各时段的上车次数：
-        ```sql
-        SELECT
-            pickup_ntaname,
-            toHour(pickup_datetime) as pickup_hour,
-            SUM(1) AS pickups
-        FROM trips
-        WHERE pickup_ntaname != ''
-        GROUP BY pickup_ntaname, pickup_hour
-        ORDER BY pickup_ntaname, pickup_hour
-        ```
-    </Step>
-
-    <Step title="创建字典" id="create-a-dictionary">
-      接下来，您将创建一个名为 `taxi_zone_dictionary` 的字典 (即存储在内存中的键值对映射) ，用于建立位置 ID 与纽约市行政区名称之间的映射关系，其数据来源于一个包含纽约市所有社区的 CSV 文件。
-      这些位置 ID 对应 trips 表中的 `pickup_nyct2010_gid` 和 `dropoff_nyct2010_gid` 列。
-
-      下表摘录了您将使用的 CSV 文件的部分内容。文件中的 `LocationID` 列对应 `trips` 表中的 `pickup_nyct2010_gid` 和 `dropoff_nyct2010_gid` 列：
-
-      | LocationID | Borough       | Zone                    | service&#95;zone |
-      | ---------- | ------------- | ----------------------- | ---------------- |
-      | 1          | EWR           | Newark Airport          | EWR              |
-      | 2          | Queens        | Jamaica Bay             | Boro Zone        |
-      | 3          | Bronx         | Allerton/Pelham Gardens | Boro Zone        |
-      | 4          | Manhattan     | Alphabet City           | Yellow Zone      |
-      | 5          | Staten Island | Arden Heights           | Boro Zone        |
-
-      运行以下 SQL 命令，创建名为 `taxi_zone_dictionary` 的字典，并使用 S3 中的 CSV 文件填充该字典。该文件的 URL 为 `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv`。
-
-      ```sql
-      CREATE DICTIONARY taxi_zone_dictionary
-      (
-        `LocationID` UInt16 DEFAULT 0,
-        `Borough` String,
-        `Zone` String,
-        `service_zone` String
-      )
-      PRIMARY KEY LocationID
-      SOURCE(HTTP(URL 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv' FORMAT 'CSVWithNames'))
-      LIFETIME(MIN 0 MAX 0)
-      LAYOUT(HASHED_ARRAY())
-      ```
-
-      <Note>
-        将 `LIFETIME` 设置为 0 会禁用自动更新，以避免向我们的 S3 桶发送不必要的请求流量。在其他场景下，您可以按需进行不同的配置。详情请参见 [使用 LIFETIME 刷新字典数据](/zh/reference/statements/create/dictionary/lifetime)。
-      </Note>
-
-      验证操作是否成功。以下查询应返回 265 行，即每个社区一行：
-
-      ```sql
-      SELECT * FROM taxi_zone_dictionary
-      ```
-    </Step>
-
-    <Step title="使用字典执行查询">
-      你可以使用 `dictGet` 函数 ([或其变体](/zh/reference/functions/regular-functions/ext-dict-functions)) 从字典中获取值。
-      只需传入字典名称、要获取的值以及键 (在本示例中为 `taxi_zone_dictionary` 的 `LocationID` 列) ，即可得到对应的值。
-      例如，以下查询返回 `LocationID` 为 132 (即 JFK 机场) 的 `Borough`：
-
-      ```sql
-      SELECT dictGet('taxi_zone_dictionary', 'Borough', 132)
-      ```
-
-      JFK 位于 Queens (皇后区) 。请注意，检索该值所用的时间几乎为 0：
-
-      ```response
-      ┌─dictGet('taxi_zone_dictionary', 'Borough', 132)─┐
-      │ Queens                                          │
-      └─────────────────────────────────────────────────┘
-
-      1 rows in set. Elapsed: 0.004 sec.
-      ```
-
-      使用 `dictHas` 函数可以检查字典中是否存在某个键。例如，以下查询会返回 `1` (在 ClickHouse 中表示 &quot;true&quot;) ：
-
-      ```sql
-      SELECT dictHas('taxi_zone_dictionary', 132)
-      ```
-
-      以下查询返回 0，因为字典中的 `LocationID` 不包含值 4567：
-
-      ```sql
-      SELECT dictHas('taxi_zone_dictionary', 4567)
-      ```
-
-      在查询中使用 `dictGet` 函数获取行政区的名称。例如：
-
-      ```sql
-      SELECT
-        count(1) AS total,
-        dictGetOrDefault('taxi_zone_dictionary','Borough', toUInt64(pickup_nyct2010_gid), 'Unknown') AS borough_name
-      FROM trips
-      WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
-      GROUP BY borough_name
-      ORDER BY total DESC
-      ```
-
-      此查询按行政区统计了终点为 LaGuardia 或 JFK 机场的出租车行程数。结果如下所示，可以看到有相当多行程的上车社区是未知的：
-
-      ```response
-      ┌─total─┬─borough_name──┐
-      │ 23683 │ Unknown       │
-      │  7053 │ Manhattan     │
-      │  6828 │ Brooklyn      │
-      │  4458 │ Queens        │
-      │  2670 │ Bronx         │
-      │   554 │ Staten Island │
-      │    53 │ EWR           │
-      └───────┴───────────────┘
-
-      7 rows in set. Elapsed: 0.019 sec. Processed 2.00 million rows, 4.00 MB (105.70 million rows/s., 211.40 MB/s.)
-      ```
-    </Step>
-
-    <Step title="执行连接" id="perform-a-join">
-      最后，编写一些查询，将 `taxi_zone_dictionary` 与你的 `trips` 表进行连接。
-
-      先从一个简单的 `JOIN` 开始，其作用与上文的机场查询类似：
-
-      ```sql
-      SELECT
-          count(1) AS total,
-          Borough
-      FROM trips
-      JOIN taxi_zone_dictionary ON toUInt64(trips.pickup_nyct2010_gid) = taxi_zone_dictionary.LocationID
-      WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
-      GROUP BY Borough
-      ORDER BY total DESC
-      ```
-
-      返回的结果与 `dictGet` 查询的结果完全相同：
-
-      ```response
-      ┌─total─┬─Borough───────┐
-      │  7053 │ Manhattan     │
-      │  6828 │ Brooklyn      │
-      │  4458 │ Queens        │
-      │  2670 │ Bronx         │
-      │   554 │ Staten Island │
-      │    53 │ EWR           │
-      └───────┴───────────────┘
-
-      6 rows in set. Elapsed: 0.034 sec. Processed 2.00 million rows, 4.00 MB (59.14 million rows/s., 118.29 MB/s.)
-      ```
-
-      <Note>
-        请注意，上述 `JOIN` 查询的输出与前面使用 `dictGetOrDefault` 的查询结果相同 (只是不包含 `Unknown` 值) 。
-        实际上，ClickHouse 在底层是对 `taxi_zone_dictionary` 字典调用 `dictGet` 函数，只不过 SQL 开发人员对 `JOIN` 语法更为熟悉。
-      </Note>
-
-      此查询返回小费金额最高的 1000 条行程记录，然后将每一行与该字典进行内连接：
-
-      ```sql
-      SELECT *
-      FROM trips
-      JOIN taxi_zone_dictionary
-      ON trips.dropoff_nyct2010_gid = taxi_zone_dictionary.LocationID
-      WHERE tip_amount > 0
-      ORDER BY tip_amount DESC
-      LIMIT 1000
-      ```
-
-      <Tip>
-        建议只列出查询真正需要的列，避免使用 SELECT *。由于 ClickHouse 按列存储数据，查询的列越少，需要读取、解压和处理的数据量就越少。
-      </Tip>
-    </Step>
-  </Steps>
-
-  ## 后续步骤
-
-  如需进一步了解 ClickHouse，请参阅以下文档：
-
-  * [ClickHouse 主索引简介](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)：了解 ClickHouse 如何在查询时利用稀疏主索引高效定位相关数据。
-  * [集成外部数据源](/zh/integrations/home)：了解各类数据源集成方案，包括文件、Kafka、PostgreSQL、数据管道等。
-  * [在 ClickHouse 中可视化数据](/zh/integrations/connectors/data-visualization/index)：将您常用的 UI/BI 工具连接到 ClickHouse。
-  * [SQL 参考](/zh/reference/home)：浏览 ClickHouse 中可用于转换、处理和分析数据的 SQL 函数。
-</View>
-
-<View title="开源">
-  纽约出租车数据样本包含自 2009 年以来始发于纽约市的 30 多亿次出租车和网约车 (Uber、Lyft 等) 行程。本入门指南使用的是其中 300 万行的样本。
-
-  完整数据集可以通过以下几种方式获取：
-
-  * 将数据从 S3 或 GCS 直接插入到 ClickHouse Cloud 中
-  * 下载预先准备好的分区
-  * 或者，你也可以在我们的演示环境 [sql.clickhouse.com](https://sql.clickhouse.com/?query=U0VMRUNUIGNvdW50KCkgRlJPTSBueWNfdGF4aS50cmlwcw\&chart=eyJ0eXBlIjoibGluZSIsImNvbmZpZyI6eyJ0aXRsZSI6IlRlbXBlcmF0dXJlIGJ5IGNvdW50cnkgYW5kIHllYXIiLCJ4YXhpcyI6InllYXIiLCJ5YXhpcyI6ImNvdW50KCkiLCJzZXJpZXMiOiJDQVNUKHBhc3Nlbmdlcl9jb3VudCwgJ1N0cmluZycpIn19) 中查询完整数据集。
-
-  <Note>
-    以下示例查询均在 ClickHouse Cloud 的 **Production** 实例上执行。更多信息请参阅
-    [&quot;Playground 规格&quot;](/zh/get-started/sample-datasets/playground#specifications)。
-  </Note>
-
+<div id="create-the-table-trips">
   ## 创建 trips 表
+</div>
 
-  首先，创建一张用于存储出租车行程数据的表：
+首先创建一个用于存储出租车行程的表：
 
-  ```sql
+```sql
 
-  CREATE DATABASE nyc_taxi;
+CREATE DATABASE nyc_taxi;
 
-  CREATE TABLE nyc_taxi.trips_small (
-      trip_id             UInt32,
-      pickup_datetime     DateTime,
-      dropoff_datetime    DateTime,
-      pickup_longitude    Nullable(Float64),
-      pickup_latitude     Nullable(Float64),
-      dropoff_longitude   Nullable(Float64),
-      dropoff_latitude    Nullable(Float64),
-      passenger_count     UInt8,
-      trip_distance       Float32,
-      fare_amount         Float32,
-      extra               Float32,
-      tip_amount          Float32,
-      tolls_amount        Float32,
-      total_amount        Float32,
-      payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
-      pickup_ntaname      LowCardinality(String),
-      dropoff_ntaname     LowCardinality(String)
-  )
-  ENGINE = MergeTree
-  PRIMARY KEY (pickup_datetime, dropoff_datetime);
-  ```
+CREATE TABLE nyc_taxi.trips_small (
+    trip_id             UInt32,
+    pickup_datetime     DateTime,
+    dropoff_datetime    DateTime,
+    pickup_longitude    Nullable(Float64),
+    pickup_latitude     Nullable(Float64),
+    dropoff_longitude   Nullable(Float64),
+    dropoff_latitude    Nullable(Float64),
+    passenger_count     UInt8,
+    trip_distance       Float32,
+    fare_amount         Float32,
+    extra               Float32,
+    tip_amount          Float32,
+    tolls_amount        Float32,
+    total_amount        Float32,
+    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+    pickup_ntaname      LowCardinality(String),
+    dropoff_ntaname     LowCardinality(String)
+)
+ENGINE = MergeTree
+PRIMARY KEY (pickup_datetime, dropoff_datetime);
+```
 
+<div id="load-the-data-directly-from-object-storage">
   ## 直接从对象存储加载数据
+</div>
 
-  用户可以先获取一小部分数据 (300 万行) 来熟悉该数据集。这些数据以 TSV 文件形式存放在对象存储中，使用 `s3` 表函数即可轻松地以流式方式导入
-  ClickHouse Cloud。
+用户可以先获取一小部分数据 (300 万行) 来熟悉数据内容。数据以 TSV 文件形式存储在对象存储中，可通过 `s3` 表函数轻松流式导入 ClickHouse Cloud。
 
-  S3 和 GCS 中存储的数据完全相同，任选一个选项卡即可。
+同一份数据同时存储在 S3 和 GCS 中；请选择任一选项卡。
 
-  <Tabs>
-    <Tab title="S3">
-      以下命令会将 S3 存储桶中的三个文件以流式方式写入 `trips_small` 表 (`{0..2}` 语法是一个通配符，匹配值 0、1 和 2) ：
+<Tabs>
+  <Tab title="S3">
+    以下命令会将 S3 存储桶中的三个文件流式导入 `trips_small` 表 (`{0..2}` 语法是 0、1 和 2 的通配符) ：
 
-      ```sql
-      INSERT INTO nyc_taxi.trips_small
-      SELECT
-          trip_id,
-          pickup_datetime,
-          dropoff_datetime,
-          pickup_longitude,
-          pickup_latitude,
-          dropoff_longitude,
-          dropoff_latitude,
-          passenger_count,
-          trip_distance,
-          fare_amount,
-          extra,
-          tip_amount,
-          tolls_amount,
-          total_amount,
-          payment_type,
-          pickup_ntaname,
-          dropoff_ntaname
-      FROM s3(
-          'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..2}.gz',
-          'TabSeparatedWithNames'
-      );
-      ```
-    </Tab>
-
-    <Tab title="GCS">
-      以下命令会将 GCS 存储桶中的三个文件以流式方式写入 `trips` 表 (`{0..2}` 语法是一个通配符，匹配值 0、1 和 2) ：
-
-      ```sql
-      INSERT INTO nyc_taxi.trips_small
-      SELECT
-          trip_id,
-          pickup_datetime,
-          dropoff_datetime,
-          pickup_longitude,
-          pickup_latitude,
-          dropoff_longitude,
-          dropoff_latitude,
-          passenger_count,
-          trip_distance,
-          fare_amount,
-          extra,
-          tip_amount,
-          tolls_amount,
-          total_amount,
-          payment_type,
-          pickup_ntaname,
-          dropoff_ntaname
-      FROM gcs(
-          'https://storage.googleapis.com/clickhouse-public-datasets/nyc-taxi/trips_{0..2}.gz',
-          'TabSeparatedWithNames'
-      );
-      ```
-    </Tab>
-  </Tabs>
-
-  ## 示例查询
-
-  以下查询基于上文所述的样本执行。你可以在 [sql.clickhouse.com](https://sql.clickhouse.com/?query=U0VMRUNUIGNvdW50KCkgRlJPTSBueWNfdGF4aS50cmlwcw\&chart=eyJ0eXBlIjoibGluZSIsImNvbmZpZyI6eyJ0aXRsZSI6IlRlbXBlcmF0dXJlIGJ5IGNvdW50cnkgYW5kIHllYXIiLCJ4YXhpcyI6InllYXIiLCJ5YXhpcyI6ImNvdW50KCkiLCJzZXJpZXMiOiJDQVNUKHBhc3Nlbmdlcl9jb3VudCwgJ1N0cmluZycpIn19) 上针对完整数据集运行这些示例查询，只需将下面的查询改为使用表 `nyc_taxi.trips`。
-
-  我们来看看插入了多少行：
-
-  <RunnableCode>
     ```sql
-    SELECT count()
-    FROM nyc_taxi.trips_small;
-    ```
-  </RunnableCode>
-
-  每个 TSV 文件大约有 100 万行，3 个文件总共有 3,000,317 行。我们先看几行数据：
-
-  <RunnableCode>
-    ```sql
-    SELECT *
-    FROM nyc_taxi.trips_small
-    LIMIT 10;
-    ```
-  </RunnableCode>
-
-  可以看到，这些列包含上车和下车日期、地理坐标、车费明细、纽约街区等信息。
-
-  我们再运行几个查询。下面这个查询会显示上车次数最多的 10 个街区：
-
-  <RunnableCode>
-    ```sql
+    INSERT INTO nyc_taxi.trips_small
     SELECT
-       pickup_ntaname,
-       count(*) AS count
-    FROM nyc_taxi.trips_small WHERE pickup_ntaname != ''
-    GROUP BY pickup_ntaname
-    ORDER BY count DESC
-    LIMIT 10;
+        trip_id,
+        pickup_datetime,
+        dropoff_datetime,
+        pickup_longitude,
+        pickup_latitude,
+        dropoff_longitude,
+        dropoff_latitude,
+        passenger_count,
+        trip_distance,
+        fare_amount,
+        extra,
+        tip_amount,
+        tolls_amount,
+        total_amount,
+        payment_type,
+        pickup_ntaname,
+        dropoff_ntaname
+    FROM s3(
+        'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..2}.gz',
+        'TabSeparatedWithNames'
+    );
     ```
-  </RunnableCode>
+  </Tab>
 
-  下面这个查询会按乘客数量显示平均车费：
+  <Tab title="GCS">
+    以下命令会将 GCS 存储桶中的三个文件流式导入 `trips` 表 (`{0..2}` 语法是 0、1 和 2 的通配符) ：
 
-  ```sql runnable view='chart' chart_config='eyJ0eXBlIjoiYmFyIiwiY29uZmlnIjp7InhheGlzIjoicGFzc2VuZ2VyX2NvdW50IiwieWF4aXMiOiJhdmcodG90YWxfYW1vdW50KSIsInRpdGxlIjoiQXZlcmFnZSBmYXJlIGJ5IHBhc3NlbmdlciBjb3VudCJ9fQ'
-  SELECT
-     passenger_count,
-     avg(total_amount)
+    ```sql
+    INSERT INTO nyc_taxi.trips_small
+    SELECT
+        trip_id,
+        pickup_datetime,
+        dropoff_datetime,
+        pickup_longitude,
+        pickup_latitude,
+        dropoff_longitude,
+        dropoff_latitude,
+        passenger_count,
+        trip_distance,
+        fare_amount,
+        extra,
+        tip_amount,
+        tolls_amount,
+        total_amount,
+        payment_type,
+        pickup_ntaname,
+        dropoff_ntaname
+    FROM gcs(
+        'https://storage.googleapis.com/clickhouse-public-datasets/nyc-taxi/trips_{0..2}.gz',
+        'TabSeparatedWithNames'
+    );
+    ```
+  </Tab>
+</Tabs>
+
+<div id="sample-queries">
+  ## 示例查询
+</div>
+
+以下查询基于上文所述的样本执行。你可以在完整数据集上通过 [sql.clickhouse.com](https://sql.clickhouse.com/?query=U0VMRUNUIGNvdW50KCkgRlJPTSBueWNfdGF4aS50cmlwcw\&chart=eyJ0eXBlIjoibGluZSIsImNvbmZpZyI6eyJ0aXRsZSI6IlRlbXBlcmF0dXJlIGJ5IGNvdW50cnkgYW5kIHllYXIiLCJ4YXhpcyI6InllYXIiLCJ5YXhpcyI6ImNvdW50KCkiLCJzZXJpZXMiOiJDQVNUKHBhc3Nlbmdlcl9jb3VudCwgJ1N0cmluZycpIn19) 运行这些示例查询，并将下面的查询改为使用表 `nyc_taxi.trips`。
+
+先来看看插入了多少行：
+
+<RunnableCode>
+  ```sql
+  SELECT count()
+  FROM nyc_taxi.trips_small;
+  ```
+</RunnableCode>
+
+每个 TSV 文件大约有 100 万行，3 个文件总共有 3,000,317 行。我们先看几行数据：
+
+<RunnableCode>
+  ```sql
+  SELECT *
   FROM nyc_taxi.trips_small
-  WHERE passenger_count < 10
-  GROUP BY passenger_count;
+  LIMIT 10;
   ```
+</RunnableCode>
 
-  下图展示了乘客数量与行程距离之间的相关性：
+可以看到，这些列包含上车和下车日期、地理坐标、车费明细、纽约街区等信息。
 
-  ```sql runnable chart_config='eyJ0eXBlIjoiaG9yaXpvbnRhbCBiYXIiLCJjb25maWciOnsieGF4aXMiOiJwYXNzZW5nZXJfY291bnQiLCJ5YXhpcyI6ImRpc3RhbmNlIiwic2VyaWVzIjoiY291bnRyeSIsInRpdGxlIjoiQXZnIGZhcmUgYnkgcGFzc2VuZ2VyIGNvdW50In19'
+我们再运行几个查询。下面这个查询会显示上车次数最多的 10 个街区：
+
+<RunnableCode>
+  ```sql
   SELECT
-      passenger_count,
-      avg(trip_distance) AS distance,
-      count() AS c
-  FROM nyc_taxi.trips_small
-  GROUP BY passenger_count
-  ORDER BY passenger_count ASC
+     pickup_ntaname,
+     count(*) AS count
+  FROM nyc_taxi.trips_small WHERE pickup_ntaname != ''
+  GROUP BY pickup_ntaname
+  ORDER BY count DESC
+  LIMIT 10;
   ```
+</RunnableCode>
 
-  ## 下载预先准备的分区
+下面这个查询会按乘客数量显示平均车费：
 
-  <Note>
-    以下步骤介绍了原始数据集的相关信息，以及将预先准备好的分区加载到自管理 ClickHouse 服务器环境中的方法。
-  </Note>
+```sql runnable view='chart' chart_config='eyJ0eXBlIjoiYmFyIiwiY29uZmlnIjp7InhheGlzIjoicGFzc2VuZ2VyX2NvdW50IiwieWF4aXMiOiJhdmcodG90YWxfYW1vdW50KSIsInRpdGxlIjoiQXZlcmFnZSBmYXJlIGJ5IHBhc3NlbmdlciBjb3VudCJ9fQ'
+SELECT
+   passenger_count,
+   avg(total_amount)
+FROM nyc_taxi.trips_small
+WHERE passenger_count < 10
+GROUP BY passenger_count;
+```
 
-  有关数据集的说明及下载方法，请参阅 https://github.com/toddwschneider/nyc-taxi-data 和 http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html。
+下图展示了乘客数量与行程距离之间的相关性：
 
-  下载完成后，将得到约 227 GB 的未压缩 CSV 文件数据。在 1 Gbit 带宽的连接下，下载大约需要一小时 (从 s3.amazonaws.com 并行下载至少能跑满 1 Gbit 带宽的一半) 。
-  部分文件可能下载不完整。请检查文件大小，并重新下载看起来有问题的文件。
+```sql runnable chart_config='eyJ0eXBlIjoiaG9yaXpvbnRhbCBiYXIiLCJjb25maWciOnsieGF4aXMiOiJwYXNzZW5nZXJfY291bnQiLCJ5YXhpcyI6ImRpc3RhbmNlIiwic2VyaWVzIjoiY291bnRyeSIsInRpdGxlIjoiQXZnIGZhcmUgYnkgcGFzc2VuZ2VyIGNvdW50In19'
+SELECT
+    passenger_count,
+    avg(trip_distance) AS distance,
+    count() AS c
+FROM nyc_taxi.trips_small
+GROUP BY passenger_count
+ORDER BY passenger_count ASC
+```
 
-  ```bash
-  $ curl -O https://datasets.clickhouse.com/trips_mergetree/partitions/trips_mergetree.tar
-  # Validate the checksum
-  $ md5sum trips_mergetree.tar
-  # Checksum should be equal to: f3b8d469b41d9a82da064ded7245d12c
-  $ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # path to ClickHouse data directory
-  $ # check permissions of unpacked data, fix if required
-  $ sudo service clickhouse-server restart
-  $ clickhouse-client --query "select count(*) from datasets.trips_mergetree"
-  ```
+<div id="download-of-prepared-partitions">
+  ## 已准备好分区的下载
+</div>
 
-  <Info>
-    如果要运行下文所述的查询，你需要使用完整的表名 `datasets.trips_mergetree`。
-  </Info>
+<Note>
+  以下步骤提供有关原始数据集的信息，以及将已准备好的分区加载到自管理 ClickHouse server 环境中的方法。
+</Note>
 
-  ## 单服务器测试结果
+有关数据集的说明和下载说明，请参见 https://github.com/toddwschneider/nyc-taxi-data 和 http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html。
 
-  Q1:
+下载后将得到约 227 GB 的未压缩 CSV 文件数据。通过 1 Gbit 连接下载大约需要一小时 (从 s3.amazonaws.com 并行下载时，至少可利用 1 Gbit 通道一半以上的带宽) 。
+某些文件可能无法完整下载。请检查文件大小，并重新下载任何看起来有问题的文件。
 
-  ```sql
-  SELECT cab_type, count(*) FROM trips_mergetree GROUP BY cab_type;
-  ```
+```bash
+$ curl -O https://datasets.clickhouse.com/trips_mergetree/partitions/trips_mergetree.tar
+# 验证校验和
+$ md5sum trips_mergetree.tar
+# 校验和应为：f3b8d469b41d9a82da064ded7245d12c
+$ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # ClickHouse 数据目录路径
+$ # 检查解压后数据的权限，如有需要请修复
+$ sudo service clickhouse-server restart
+$ clickhouse-client --query "select count(*) from datasets.trips_mergetree"
+```
 
-  0.490 秒。
+<Info>
+  如果你要运行下面所述的查询，必须使用完整的表名 `datasets.trips_mergetree`。
+</Info>
 
-  Q2：
+<div id="results-on-single-server">
+  ## 单个服务器上的结果
+</div>
 
-  ```sql
-  SELECT passenger_count, avg(total_amount) FROM trips_mergetree GROUP BY passenger_count;
-  ```
+Q1:
 
-  1.224 秒。
+```sql
+SELECT cab_type, count(*) FROM trips_mergetree GROUP BY cab_type;
+```
 
-  Q3：
+0.490 秒。
 
-  ```sql
-  SELECT passenger_count, toYear(pickup_date) AS year, count(*) FROM trips_mergetree GROUP BY passenger_count, year;
-  ```
+Q2:
 
-  2.104 秒。
+```sql
+SELECT passenger_count, avg(total_amount) FROM trips_mergetree GROUP BY passenger_count;
+```
 
-  Q4：
+1.224 秒。
 
-  ```sql
-  SELECT passenger_count, toYear(pickup_date) AS year, round(trip_distance) AS distance, count(*)
-  FROM trips_mergetree
-  GROUP BY passenger_count, year, distance
-  ORDER BY year, count(*) DESC;
-  ```
+Q3:
 
-  3.593 秒。
+```sql
+SELECT passenger_count, toYear(pickup_date) AS year, count(*) FROM trips_mergetree GROUP BY passenger_count, year;
+```
 
-  所用服务器如下：
+2.104 秒。
 
-  两颗 Intel(R) Xeon(R) CPU E5-2650 v2 @ 2.60GHz，共 16 个物理核心，128 GiB RAM，8 块 6 TB 硬盘组成硬件 RAID-5
+Q4:
 
-  执行时间取三次运行中的最佳结果。不过从第二次运行开始，查询会从文件系统缓存中读取数据。除此之外不会进行任何其他缓存：每次运行时，数据都会被完整读取并处理。
+```sql
+SELECT passenger_count, toYear(pickup_date) AS year, round(trip_distance) AS distance, count(*)
+FROM trips_mergetree
+GROUP BY passenger_count, year, distance
+ORDER BY year, count(*) DESC;
+```
 
-  在三台服务器上创建表：
+3.593 秒。
 
-  在每台服务器上：
+使用了以下服务器：
 
-  ```sql
-  CREATE TABLE default.trips_mergetree_third ( trip_id UInt32,  vendor_id Enum8('1' = 1, '2' = 2, 'CMT' = 3, 'VTS' = 4, 'DDS' = 5, 'B02512' = 10, 'B02598' = 11, 'B02617' = 12, 'B02682' = 13, 'B02764' = 14),  pickup_date Date,  pickup_datetime DateTime,  dropoff_date Date,  dropoff_datetime DateTime,  store_and_fwd_flag UInt8,  rate_code_id UInt8,  pickup_longitude Float64,  pickup_latitude Float64,  dropoff_longitude Float64,  dropoff_latitude Float64,  passenger_count UInt8,  trip_distance Float64,  fare_amount Float32,  extra Float32,  mta_tax Float32,  tip_amount Float32,  tolls_amount Float32,  ehail_fee Float32,  improvement_surcharge Float32,  total_amount Float32,  payment_type_ Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4),  trip_type UInt8,  pickup FixedString(25),  dropoff FixedString(25),  cab_type Enum8('yellow' = 1, 'green' = 2, 'uber' = 3),  pickup_nyct2010_gid UInt8,  pickup_ctlabel Float32,  pickup_borocode UInt8,  pickup_boroname Enum8('' = 0, 'Manhattan' = 1, 'Bronx' = 2, 'Brooklyn' = 3, 'Queens' = 4, 'Staten Island' = 5),  pickup_ct2010 FixedString(6),  pickup_boroct2010 FixedString(7),  pickup_cdeligibil Enum8(' ' = 0, 'E' = 1, 'I' = 2),  pickup_ntacode FixedString(4),  pickup_ntaname Enum16('' = 0, 'Airport' = 1, 'Allerton-Pelham Gardens' = 2, 'Annadale-Huguenot-Prince\'s Bay-Eltingville' = 3, 'Arden Heights' = 4, 'Astoria' = 5, 'Auburndale' = 6, 'Baisley Park' = 7, 'Bath Beach' = 8, 'Battery Park City-Lower Manhattan' = 9, 'Bay Ridge' = 10, 'Bayside-Bayside Hills' = 11, 'Bedford' = 12, 'Bedford Park-Fordham North' = 13, 'Bellerose' = 14, 'Belmont' = 15, 'Bensonhurst East' = 16, 'Bensonhurst West' = 17, 'Borough Park' = 18, 'Breezy Point-Belle Harbor-Rockaway Park-Broad Channel' = 19, 'Briarwood-Jamaica Hills' = 20, 'Brighton Beach' = 21, 'Bronxdale' = 22, 'Brooklyn Heights-Cobble Hill' = 23, 'Brownsville' = 24, 'Bushwick North' = 25, 'Bushwick South' = 26, 'Cambria Heights' = 27, 'Canarsie' = 28, 'Carroll Gardens-Columbia Street-Red Hook' = 29, 'Central Harlem North-Polo Grounds' = 30, 'Central Harlem South' = 31, 'Charleston-Richmond Valley-Tottenville' = 32, 'Chinatown' = 33, 'Claremont-Bathgate' = 34, 'Clinton' = 35, 'Clinton Hill' = 36, 'Co-op City' = 37, 'College Point' = 38, 'Corona' = 39, 'Crotona Park East' = 40, 'Crown Heights North' = 41, 'Crown Heights South' = 42, 'Cypress Hills-City Line' = 43, 'DUMBO-Vinegar Hill-Downtown Brooklyn-Boerum Hill' = 44, 'Douglas Manor-Douglaston-Little Neck' = 45, 'Dyker Heights' = 46, 'East Concourse-Concourse Village' = 47, 'East Elmhurst' = 48, 'East Flatbush-Farragut' = 49, 'East Flushing' = 50, 'East Harlem North' = 51, 'East Harlem South' = 52, 'East New York' = 53, 'East New York (Pennsylvania Ave)' = 54, 'East Tremont' = 55, 'East Village' = 56, 'East Williamsburg' = 57, 'Eastchester-Edenwald-Baychester' = 58, 'Elmhurst' = 59, 'Elmhurst-Maspeth' = 60, 'Erasmus' = 61, 'Far Rockaway-Bayswater' = 62, 'Flatbush' = 63, 'Flatlands' = 64, 'Flushing' = 65, 'Fordham South' = 66, 'Forest Hills' = 67, 'Fort Greene' = 68, 'Fresh Meadows-Utopia' = 69, 'Ft. Totten-Bay Terrace-Clearview' = 70, 'Georgetown-Marine Park-Bergen Beach-Mill Basin' = 71, 'Glen Oaks-Floral Park-New Hyde Park' = 72, 'Glendale' = 73, 'Gramercy' = 74, 'Grasmere-Arrochar-Ft. Wadsworth' = 75, 'Gravesend' = 76, 'Great Kills' = 77, 'Greenpoint' = 78, 'Grymes Hill-Clifton-Fox Hills' = 79, 'Hamilton Heights' = 80, 'Hammels-Arverne-Edgemere' = 81, 'Highbridge' = 82, 'Hollis' = 83, 'Homecrest' = 84, 'Hudson Yards-Chelsea-Flatiron-Union Square' = 85, 'Hunters Point-Sunnyside-West Maspeth' = 86, 'Hunts Point' = 87, 'Jackson Heights' = 88, 'Jamaica' = 89, 'Jamaica Estates-Holliswood' = 90, 'Kensington-Ocean Parkway' = 91, 'Kew Gardens' = 92, 'Kew Gardens Hills' = 93, 'Kingsbridge Heights' = 94, 'Laurelton' = 95, 'Lenox Hill-Roosevelt Island' = 96, 'Lincoln Square' = 97, 'Lindenwood-Howard Beach' = 98, 'Longwood' = 99, 'Lower East Side' = 100, 'Madison' = 101, 'Manhattanville' = 102, 'Marble Hill-Inwood' = 103, 'Mariner\'s Harbor-Arlington-Port Ivory-Graniteville' = 104, 'Maspeth' = 105, 'Melrose South-Mott Haven North' = 106, 'Middle Village' = 107, 'Midtown-Midtown South' = 108, 'Midwood' = 109, 'Morningside Heights' = 110, 'Morrisania-Melrose' = 111, 'Mott Haven-Port Morris' = 112, 'Mount Hope' = 113, 'Murray Hill' = 114, 'Murray Hill-Kips Bay' = 115, 'New Brighton-Silver Lake' = 116, 'New Dorp-Midland Beach' = 117, 'New Springville-Bloomfield-Travis' = 118, 'North Corona' = 119, 'North Riverdale-Fieldston-Riverdale' = 120, 'North Side-South Side' = 121, 'Norwood' = 122, 'Oakland Gardens' = 123, 'Oakwood-Oakwood Beach' = 124, 'Ocean Hill' = 125, 'Ocean Parkway South' = 126, 'Old Astoria' = 127, 'Old Town-Dongan Hills-South Beach' = 128, 'Ozone Park' = 129, 'Park Slope-Gowanus' = 130, 'Parkchester' = 131, 'Pelham Bay-Country Club-City Island' = 132, 'Pelham Parkway' = 133, 'Pomonok-Flushing Heights-Hillcrest' = 134, 'Port Richmond' = 135, 'Prospect Heights' = 136, 'Prospect Lefferts Gardens-Wingate' = 137, 'Queens Village' = 138, 'Queensboro Hill' = 139, 'Queensbridge-Ravenswood-Long Island City' = 140, 'Rego Park' = 141, 'Richmond Hill' = 142, 'Ridgewood' = 143, 'Rikers Island' = 144, 'Rosedale' = 145, 'Rossville-Woodrow' = 146, 'Rugby-Remsen Village' = 147, 'Schuylerville-Throgs Neck-Edgewater Park' = 148, 'Seagate-Coney Island' = 149, 'Sheepshead Bay-Gerritsen Beach-Manhattan Beach' = 150, 'SoHo-TriBeCa-Civic Center-Little Italy' = 151, 'Soundview-Bruckner' = 152, 'Soundview-Castle Hill-Clason Point-Harding Park' = 153, 'South Jamaica' = 154, 'South Ozone Park' = 155, 'Springfield Gardens North' = 156, 'Springfield Gardens South-Brookville' = 157, 'Spuyten Duyvil-Kingsbridge' = 158, 'St. Albans' = 159, 'Stapleton-Rosebank' = 160, 'Starrett City' = 161, 'Steinway' = 162, 'Stuyvesant Heights' = 163, 'Stuyvesant Town-Cooper Village' = 164, 'Sunset Park East' = 165, 'Sunset Park West' = 166, 'Todt Hill-Emerson Hill-Heartland Village-Lighthouse Hill' = 167, 'Turtle Bay-East Midtown' = 168, 'University Heights-Morris Heights' = 169, 'Upper East Side-Carnegie Hill' = 170, 'Upper West Side' = 171, 'Van Cortlandt Village' = 172, 'Van Nest-Morris Park-Westchester Square' = 173, 'Washington Heights North' = 174, 'Washington Heights South' = 175, 'West Brighton' = 176, 'West Concourse' = 177, 'West Farms-Bronx River' = 178, 'West New Brighton-New Brighton-St. George' = 179, 'West Village' = 180, 'Westchester-Unionport' = 181, 'Westerleigh' = 182, 'Whitestone' = 183, 'Williamsbridge-Olinville' = 184, 'Williamsburg' = 185, 'Windsor Terrace' = 186, 'Woodhaven' = 187, 'Woodlawn-Wakefield' = 188, 'Woodside' = 189, 'Yorkville' = 190, 'park-cemetery-etc-Bronx' = 191, 'park-cemetery-etc-Brooklyn' = 192, 'park-cemetery-etc-Manhattan' = 193, 'park-cemetery-etc-Queens' = 194, 'park-cemetery-etc-Staten Island' = 195),  pickup_puma UInt16,  dropoff_nyct2010_gid UInt8,  dropoff_ctlabel Float32,  dropoff_borocode UInt8,  dropoff_boroname Enum8('' = 0, 'Manhattan' = 1, 'Bronx' = 2, 'Brooklyn' = 3, 'Queens' = 4, 'Staten Island' = 5),  dropoff_ct2010 FixedString(6),  dropoff_boroct2010 FixedString(7),  dropoff_cdeligibil Enum8(' ' = 0, 'E' = 1, 'I' = 2),  dropoff_ntacode FixedString(4),  dropoff_ntaname Enum16('' = 0, 'Airport' = 1, 'Allerton-Pelham Gardens' = 2, 'Annadale-Huguenot-Prince\'s Bay-Eltingville' = 3, 'Arden Heights' = 4, 'Astoria' = 5, 'Auburndale' = 6, 'Baisley Park' = 7, 'Bath Beach' = 8, 'Battery Park City-Lower Manhattan' = 9, 'Bay Ridge' = 10, 'Bayside-Bayside Hills' = 11, 'Bedford' = 12, 'Bedford Park-Fordham North' = 13, 'Bellerose' = 14, 'Belmont' = 15, 'Bensonhurst East' = 16, 'Bensonhurst West' = 17, 'Borough Park' = 18, 'Breezy Point-Belle Harbor-Rockaway Park-Broad Channel' = 19, 'Briarwood-Jamaica Hills' = 20, 'Brighton Beach' = 21, 'Bronxdale' = 22, 'Brooklyn Heights-Cobble Hill' = 23, 'Brownsville' = 24, 'Bushwick North' = 25, 'Bushwick South' = 26, 'Cambria Heights' = 27, 'Canarsie' = 28, 'Carroll Gardens-Columbia Street-Red Hook' = 29, 'Central Harlem North-Polo Grounds' = 30, 'Central Harlem South' = 31, 'Charleston-Richmond Valley-Tottenville' = 32, 'Chinatown' = 33, 'Claremont-Bathgate' = 34, 'Clinton' = 35, 'Clinton Hill' = 36, 'Co-op City' = 37, 'College Point' = 38, 'Corona' = 39, 'Crotona Park East' = 40, 'Crown Heights North' = 41, 'Crown Heights South' = 42, 'Cypress Hills-City Line' = 43, 'DUMBO-Vinegar Hill-Downtown Brooklyn-Boerum Hill' = 44, 'Douglas Manor-Douglaston-Little Neck' = 45, 'Dyker Heights' = 46, 'East Concourse-Concourse Village' = 47, 'East Elmhurst' = 48, 'East Flatbush-Farragut' = 49, 'East Flushing' = 50, 'East Harlem North' = 51, 'East Harlem South' = 52, 'East New York' = 53, 'East New York (Pennsylvania Ave)' = 54, 'East Tremont' = 55, 'East Village' = 56, 'East Williamsburg' = 57, 'Eastchester-Edenwald-Baychester' = 58, 'Elmhurst' = 59, 'Elmhurst-Maspeth' = 60, 'Erasmus' = 61, 'Far Rockaway-Bayswater' = 62, 'Flatbush' = 63, 'Flatlands' = 64, 'Flushing' = 65, 'Fordham South' = 66, 'Forest Hills' = 67, 'Fort Greene' = 68, 'Fresh Meadows-Utopia' = 69, 'Ft. Totten-Bay Terrace-Clearview' = 70, 'Georgetown-Marine Park-Bergen Beach-Mill Basin' = 71, 'Glen Oaks-Floral Park-New Hyde Park' = 72, 'Glendale' = 73, 'Gramercy' = 74, 'Grasmere-Arrochar-Ft. Wadsworth' = 75, 'Gravesend' = 76, 'Great Kills' = 77, 'Greenpoint' = 78, 'Grymes Hill-Clifton-Fox Hills' = 79, 'Hamilton Heights' = 80, 'Hammels-Arverne-Edgemere' = 81, 'Highbridge' = 82, 'Hollis' = 83, 'Homecrest' = 84, 'Hudson Yards-Chelsea-Flatiron-Union Square' = 85, 'Hunters Point-Sunnyside-West Maspeth' = 86, 'Hunts Point' = 87, 'Jackson Heights' = 88, 'Jamaica' = 89, 'Jamaica Estates-Holliswood' = 90, 'Kensington-Ocean Parkway' = 91, 'Kew Gardens' = 92, 'Kew Gardens Hills' = 93, 'Kingsbridge Heights' = 94, 'Laurelton' = 95, 'Lenox Hill-Roosevelt Island' = 96, 'Lincoln Square' = 97, 'Lindenwood-Howard Beach' = 98, 'Longwood' = 99, 'Lower East Side' = 100, 'Madison' = 101, 'Manhattanville' = 102, 'Marble Hill-Inwood' = 103, 'Mariner\'s Harbor-Arlington-Port Ivory-Graniteville' = 104, 'Maspeth' = 105, 'Melrose South-Mott Haven North' = 106, 'Middle Village' = 107, 'Midtown-Midtown South' = 108, 'Midwood' = 109, 'Morningside Heights' = 110, 'Morrisania-Melrose' = 111, 'Mott Haven-Port Morris' = 112, 'Mount Hope' = 113, 'Murray Hill' = 114, 'Murray Hill-Kips Bay' = 115, 'New Brighton-Silver Lake' = 116, 'New Dorp-Midland Beach' = 117, 'New Springville-Bloomfield-Travis' = 118, 'North Corona' = 119, 'North Riverdale-Fieldston-Riverdale' = 120, 'North Side-South Side' = 121, 'Norwood' = 122, 'Oakland Gardens' = 123, 'Oakwood-Oakwood Beach' = 124, 'Ocean Hill' = 125, 'Ocean Parkway South' = 126, 'Old Astoria' = 127, 'Old Town-Dongan Hills-South Beach' = 128, 'Ozone Park' = 129, 'Park Slope-Gowanus' = 130, 'Parkchester' = 131, 'Pelham Bay-Country Club-City Island' = 132, 'Pelham Parkway' = 133, 'Pomonok-Flushing Heights-Hillcrest' = 134, 'Port Richmond' = 135, 'Prospect Heights' = 136, 'Prospect Lefferts Gardens-Wingate' = 137, 'Queens Village' = 138, 'Queensboro Hill' = 139, 'Queensbridge-Ravenswood-Long Island City' = 140, 'Rego Park' = 141, 'Richmond Hill' = 142, 'Ridgewood' = 143, 'Rikers Island' = 144, 'Rosedale' = 145, 'Rossville-Woodrow' = 146, 'Rugby-Remsen Village' = 147, 'Schuylerville-Throgs Neck-Edgewater Park' = 148, 'Seagate-Coney Island' = 149, 'Sheepshead Bay-Gerritsen Beach-Manhattan Beach' = 150, 'SoHo-TriBeCa-Civic Center-Little Italy' = 151, 'Soundview-Bruckner' = 152, 'Soundview-Castle Hill-Clason Point-Harding Park' = 153, 'South Jamaica' = 154, 'South Ozone Park' = 155, 'Springfield Gardens North' = 156, 'Springfield Gardens South-Brookville' = 157, 'Spuyten Duyvil-Kingsbridge' = 158, 'St. Albans' = 159, 'Stapleton-Rosebank' = 160, 'Starrett City' = 161, 'Steinway' = 162, 'Stuyvesant Heights' = 163, 'Stuyvesant Town-Cooper Village' = 164, 'Sunset Park East' = 165, 'Sunset Park West' = 166, 'Todt Hill-Emerson Hill-Heartland Village-Lighthouse Hill' = 167, 'Turtle Bay-East Midtown' = 168, 'University Heights-Morris Heights' = 169, 'Upper East Side-Carnegie Hill' = 170, 'Upper West Side' = 171, 'Van Cortlandt Village' = 172, 'Van Nest-Morris Park-Westchester Square' = 173, 'Washington Heights North' = 174, 'Washington Heights South' = 175, 'West Brighton' = 176, 'West Concourse' = 177, 'West Farms-Bronx River' = 178, 'West New Brighton-New Brighton-St. George' = 179, 'West Village' = 180, 'Westchester-Unionport' = 181, 'Westerleigh' = 182, 'Whitestone' = 183, 'Williamsbridge-Olinville' = 184, 'Williamsburg' = 185, 'Windsor Terrace' = 186, 'Woodhaven' = 187, 'Woodlawn-Wakefield' = 188, 'Woodside' = 189, 'Yorkville' = 190, 'park-cemetery-etc-Bronx' = 191, 'park-cemetery-etc-Brooklyn' = 192, 'park-cemetery-etc-Manhattan' = 193, 'park-cemetery-etc-Queens' = 194, 'park-cemetery-etc-Staten Island' = 195),  dropoff_puma UInt16) ENGINE = MergeTree(pickup_date, pickup_datetime, 8192);
-  ```
+两颗 Intel(R) Xeon(R) CPU E5-2650 v2 @ 2.60GHz，共 16 个物理核心，128 GiB RAM，8x6 TB 硬盘，采用硬件 RAID-5
 
-  在源服务器上：
+执行时间取三次运行中的最佳结果。但从第二次运行开始，查询会从文件系统缓存中读取数据。不会发生进一步缓存：每次运行都会重新读出并处理数据。
 
-  ```sql
-  CREATE TABLE trips_mergetree_x3 AS trips_mergetree_third ENGINE = Distributed(perftest, default, trips_mergetree_third, rand());
-  ```
+在三台服务器上创建一个表：
 
-  以下查询会重新分配数据：
+在每台服务器上：
 
-  ```sql
-  INSERT INTO trips_mergetree_x3 SELECT * FROM trips_mergetree;
-  ```
+```sql
+CREATE TABLE default.trips_mergetree_third ( trip_id UInt32,  vendor_id Enum8('1' = 1, '2' = 2, 'CMT' = 3, 'VTS' = 4, 'DDS' = 5, 'B02512' = 10, 'B02598' = 11, 'B02617' = 12, 'B02682' = 13, 'B02764' = 14),  pickup_date Date,  pickup_datetime DateTime,  dropoff_date Date,  dropoff_datetime DateTime,  store_and_fwd_flag UInt8,  rate_code_id UInt8,  pickup_longitude Float64,  pickup_latitude Float64,  dropoff_longitude Float64,  dropoff_latitude Float64,  passenger_count UInt8,  trip_distance Float64,  fare_amount Float32,  extra Float32,  mta_tax Float32,  tip_amount Float32,  tolls_amount Float32,  ehail_fee Float32,  improvement_surcharge Float32,  total_amount Float32,  payment_type_ Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4),  trip_type UInt8,  pickup FixedString(25),  dropoff FixedString(25),  cab_type Enum8('yellow' = 1, 'green' = 2, 'uber' = 3),  pickup_nyct2010_gid UInt8,  pickup_ctlabel Float32,  pickup_borocode UInt8,  pickup_boroname Enum8('' = 0, 'Manhattan' = 1, 'Bronx' = 2, 'Brooklyn' = 3, 'Queens' = 4, 'Staten Island' = 5),  pickup_ct2010 FixedString(6),  pickup_boroct2010 FixedString(7),  pickup_cdeligibil Enum8(' ' = 0, 'E' = 1, 'I' = 2),  pickup_ntacode FixedString(4),  pickup_ntaname Enum16('' = 0, 'Airport' = 1, 'Allerton-Pelham Gardens' = 2, 'Annadale-Huguenot-Prince\'s Bay-Eltingville' = 3, 'Arden Heights' = 4, 'Astoria' = 5, 'Auburndale' = 6, 'Baisley Park' = 7, 'Bath Beach' = 8, 'Battery Park City-Lower Manhattan' = 9, 'Bay Ridge' = 10, 'Bayside-Bayside Hills' = 11, 'Bedford' = 12, 'Bedford Park-Fordham North' = 13, 'Bellerose' = 14, 'Belmont' = 15, 'Bensonhurst East' = 16, 'Bensonhurst West' = 17, 'Borough Park' = 18, 'Breezy Point-Belle Harbor-Rockaway Park-Broad Channel' = 19, 'Briarwood-Jamaica Hills' = 20, 'Brighton Beach' = 21, 'Bronxdale' = 22, 'Brooklyn Heights-Cobble Hill' = 23, 'Brownsville' = 24, 'Bushwick North' = 25, 'Bushwick South' = 26, 'Cambria Heights' = 27, 'Canarsie' = 28, 'Carroll Gardens-Columbia Street-Red Hook' = 29, 'Central Harlem North-Polo Grounds' = 30, 'Central Harlem South' = 31, 'Charleston-Richmond Valley-Tottenville' = 32, 'Chinatown' = 33, 'Claremont-Bathgate' = 34, 'Clinton' = 35, 'Clinton Hill' = 36, 'Co-op City' = 37, 'College Point' = 38, 'Corona' = 39, 'Crotona Park East' = 40, 'Crown Heights North' = 41, 'Crown Heights South' = 42, 'Cypress Hills-City Line' = 43, 'DUMBO-Vinegar Hill-Downtown Brooklyn-Boerum Hill' = 44, 'Douglas Manor-Douglaston-Little Neck' = 45, 'Dyker Heights' = 46, 'East Concourse-Concourse Village' = 47, 'East Elmhurst' = 48, 'East Flatbush-Farragut' = 49, 'East Flushing' = 50, 'East Harlem North' = 51, 'East Harlem South' = 52, 'East New York' = 53, 'East New York (Pennsylvania Ave)' = 54, 'East Tremont' = 55, 'East Village' = 56, 'East Williamsburg' = 57, 'Eastchester-Edenwald-Baychester' = 58, 'Elmhurst' = 59, 'Elmhurst-Maspeth' = 60, 'Erasmus' = 61, 'Far Rockaway-Bayswater' = 62, 'Flatbush' = 63, 'Flatlands' = 64, 'Flushing' = 65, 'Fordham South' = 66, 'Forest Hills' = 67, 'Fort Greene' = 68, 'Fresh Meadows-Utopia' = 69, 'Ft. Totten-Bay Terrace-Clearview' = 70, 'Georgetown-Marine Park-Bergen Beach-Mill Basin' = 71, 'Glen Oaks-Floral Park-New Hyde Park' = 72, 'Glendale' = 73, 'Gramercy' = 74, 'Grasmere-Arrochar-Ft. Wadsworth' = 75, 'Gravesend' = 76, 'Great Kills' = 77, 'Greenpoint' = 78, 'Grymes Hill-Clifton-Fox Hills' = 79, 'Hamilton Heights' = 80, 'Hammels-Arverne-Edgemere' = 81, 'Highbridge' = 82, 'Hollis' = 83, 'Homecrest' = 84, 'Hudson Yards-Chelsea-Flatiron-Union Square' = 85, 'Hunters Point-Sunnyside-West Maspeth' = 86, 'Hunts Point' = 87, 'Jackson Heights' = 88, 'Jamaica' = 89, 'Jamaica Estates-Holliswood' = 90, 'Kensington-Ocean Parkway' = 91, 'Kew Gardens' = 92, 'Kew Gardens Hills' = 93, 'Kingsbridge Heights' = 94, 'Laurelton' = 95, 'Lenox Hill-Roosevelt Island' = 96, 'Lincoln Square' = 97, 'Lindenwood-Howard Beach' = 98, 'Longwood' = 99, 'Lower East Side' = 100, 'Madison' = 101, 'Manhattanville' = 102, 'Marble Hill-Inwood' = 103, 'Mariner\'s Harbor-Arlington-Port Ivory-Graniteville' = 104, 'Maspeth' = 105, 'Melrose South-Mott Haven North' = 106, 'Middle Village' = 107, 'Midtown-Midtown South' = 108, 'Midwood' = 109, 'Morningside Heights' = 110, 'Morrisania-Melrose' = 111, 'Mott Haven-Port Morris' = 112, 'Mount Hope' = 113, 'Murray Hill' = 114, 'Murray Hill-Kips Bay' = 115, 'New Brighton-Silver Lake' = 116, 'New Dorp-Midland Beach' = 117, 'New Springville-Bloomfield-Travis' = 118, 'North Corona' = 119, 'North Riverdale-Fieldston-Riverdale' = 120, 'North Side-South Side' = 121, 'Norwood' = 122, 'Oakland Gardens' = 123, 'Oakwood-Oakwood Beach' = 124, 'Ocean Hill' = 125, 'Ocean Parkway South' = 126, 'Old Astoria' = 127, 'Old Town-Dongan Hills-South Beach' = 128, 'Ozone Park' = 129, 'Park Slope-Gowanus' = 130, 'Parkchester' = 131, 'Pelham Bay-Country Club-City Island' = 132, 'Pelham Parkway' = 133, 'Pomonok-Flushing Heights-Hillcrest' = 134, 'Port Richmond' = 135, 'Prospect Heights' = 136, 'Prospect Lefferts Gardens-Wingate' = 137, 'Queens Village' = 138, 'Queensboro Hill' = 139, 'Queensbridge-Ravenswood-Long Island City' = 140, 'Rego Park' = 141, 'Richmond Hill' = 142, 'Ridgewood' = 143, 'Rikers Island' = 144, 'Rosedale' = 145, 'Rossville-Woodrow' = 146, 'Rugby-Remsen Village' = 147, 'Schuylerville-Throgs Neck-Edgewater Park' = 148, 'Seagate-Coney Island' = 149, 'Sheepshead Bay-Gerritsen Beach-Manhattan Beach' = 150, 'SoHo-TriBeCa-Civic Center-Little Italy' = 151, 'Soundview-Bruckner' = 152, 'Soundview-Castle Hill-Clason Point-Harding Park' = 153, 'South Jamaica' = 154, 'South Ozone Park' = 155, 'Springfield Gardens North' = 156, 'Springfield Gardens South-Brookville' = 157, 'Spuyten Duyvil-Kingsbridge' = 158, 'St. Albans' = 159, 'Stapleton-Rosebank' = 160, 'Starrett City' = 161, 'Steinway' = 162, 'Stuyvesant Heights' = 163, 'Stuyvesant Town-Cooper Village' = 164, 'Sunset Park East' = 165, 'Sunset Park West' = 166, 'Todt Hill-Emerson Hill-Heartland Village-Lighthouse Hill' = 167, 'Turtle Bay-East Midtown' = 168, 'University Heights-Morris Heights' = 169, 'Upper East Side-Carnegie Hill' = 170, 'Upper West Side' = 171, 'Van Cortlandt Village' = 172, 'Van Nest-Morris Park-Westchester Square' = 173, 'Washington Heights North' = 174, 'Washington Heights South' = 175, 'West Brighton' = 176, 'West Concourse' = 177, 'West Farms-Bronx River' = 178, 'West New Brighton-New Brighton-St. George' = 179, 'West Village' = 180, 'Westchester-Unionport' = 181, 'Westerleigh' = 182, 'Whitestone' = 183, 'Williamsbridge-Olinville' = 184, 'Williamsburg' = 185, 'Windsor Terrace' = 186, 'Woodhaven' = 187, 'Woodlawn-Wakefield' = 188, 'Woodside' = 189, 'Yorkville' = 190, 'park-cemetery-etc-Bronx' = 191, 'park-cemetery-etc-Brooklyn' = 192, 'park-cemetery-etc-Manhattan' = 193, 'park-cemetery-etc-Queens' = 194, 'park-cemetery-etc-Staten Island' = 195),  pickup_puma UInt16,  dropoff_nyct2010_gid UInt8,  dropoff_ctlabel Float32,  dropoff_borocode UInt8,  dropoff_boroname Enum8('' = 0, 'Manhattan' = 1, 'Bronx' = 2, 'Brooklyn' = 3, 'Queens' = 4, 'Staten Island' = 5),  dropoff_ct2010 FixedString(6),  dropoff_boroct2010 FixedString(7),  dropoff_cdeligibil Enum8(' ' = 0, 'E' = 1, 'I' = 2),  dropoff_ntacode FixedString(4),  dropoff_ntaname Enum16('' = 0, 'Airport' = 1, 'Allerton-Pelham Gardens' = 2, 'Annadale-Huguenot-Prince\'s Bay-Eltingville' = 3, 'Arden Heights' = 4, 'Astoria' = 5, 'Auburndale' = 6, 'Baisley Park' = 7, 'Bath Beach' = 8, 'Battery Park City-Lower Manhattan' = 9, 'Bay Ridge' = 10, 'Bayside-Bayside Hills' = 11, 'Bedford' = 12, 'Bedford Park-Fordham North' = 13, 'Bellerose' = 14, 'Belmont' = 15, 'Bensonhurst East' = 16, 'Bensonhurst West' = 17, 'Borough Park' = 18, 'Breezy Point-Belle Harbor-Rockaway Park-Broad Channel' = 19, 'Briarwood-Jamaica Hills' = 20, 'Brighton Beach' = 21, 'Bronxdale' = 22, 'Brooklyn Heights-Cobble Hill' = 23, 'Brownsville' = 24, 'Bushwick North' = 25, 'Bushwick South' = 26, 'Cambria Heights' = 27, 'Canarsie' = 28, 'Carroll Gardens-Columbia Street-Red Hook' = 29, 'Central Harlem North-Polo Grounds' = 30, 'Central Harlem South' = 31, 'Charleston-Richmond Valley-Tottenville' = 32, 'Chinatown' = 33, 'Claremont-Bathgate' = 34, 'Clinton' = 35, 'Clinton Hill' = 36, 'Co-op City' = 37, 'College Point' = 38, 'Corona' = 39, 'Crotona Park East' = 40, 'Crown Heights North' = 41, 'Crown Heights South' = 42, 'Cypress Hills-City Line' = 43, 'DUMBO-Vinegar Hill-Downtown Brooklyn-Boerum Hill' = 44, 'Douglas Manor-Douglaston-Little Neck' = 45, 'Dyker Heights' = 46, 'East Concourse-Concourse Village' = 47, 'East Elmhurst' = 48, 'East Flatbush-Farragut' = 49, 'East Flushing' = 50, 'East Harlem North' = 51, 'East Harlem South' = 52, 'East New York' = 53, 'East New York (Pennsylvania Ave)' = 54, 'East Tremont' = 55, 'East Village' = 56, 'East Williamsburg' = 57, 'Eastchester-Edenwald-Baychester' = 58, 'Elmhurst' = 59, 'Elmhurst-Maspeth' = 60, 'Erasmus' = 61, 'Far Rockaway-Bayswater' = 62, 'Flatbush' = 63, 'Flatlands' = 64, 'Flushing' = 65, 'Fordham South' = 66, 'Forest Hills' = 67, 'Fort Greene' = 68, 'Fresh Meadows-Utopia' = 69, 'Ft. Totten-Bay Terrace-Clearview' = 70, 'Georgetown-Marine Park-Bergen Beach-Mill Basin' = 71, 'Glen Oaks-Floral Park-New Hyde Park' = 72, 'Glendale' = 73, 'Gramercy' = 74, 'Grasmere-Arrochar-Ft. Wadsworth' = 75, 'Gravesend' = 76, 'Great Kills' = 77, 'Greenpoint' = 78, 'Grymes Hill-Clifton-Fox Hills' = 79, 'Hamilton Heights' = 80, 'Hammels-Arverne-Edgemere' = 81, 'Highbridge' = 82, 'Hollis' = 83, 'Homecrest' = 84, 'Hudson Yards-Chelsea-Flatiron-Union Square' = 85, 'Hunters Point-Sunnyside-West Maspeth' = 86, 'Hunts Point' = 87, 'Jackson Heights' = 88, 'Jamaica' = 89, 'Jamaica Estates-Holliswood' = 90, 'Kensington-Ocean Parkway' = 91, 'Kew Gardens' = 92, 'Kew Gardens Hills' = 93, 'Kingsbridge Heights' = 94, 'Laurelton' = 95, 'Lenox Hill-Roosevelt Island' = 96, 'Lincoln Square' = 97, 'Lindenwood-Howard Beach' = 98, 'Longwood' = 99, 'Lower East Side' = 100, 'Madison' = 101, 'Manhattanville' = 102, 'Marble Hill-Inwood' = 103, 'Mariner\'s Harbor-Arlington-Port Ivory-Graniteville' = 104, 'Maspeth' = 105, 'Melrose South-Mott Haven North' = 106, 'Middle Village' = 107, 'Midtown-Midtown South' = 108, 'Midwood' = 109, 'Morningside Heights' = 110, 'Morrisania-Melrose' = 111, 'Mott Haven-Port Morris' = 112, 'Mount Hope' = 113, 'Murray Hill' = 114, 'Murray Hill-Kips Bay' = 115, 'New Brighton-Silver Lake' = 116, 'New Dorp-Midland Beach' = 117, 'New Springville-Bloomfield-Travis' = 118, 'North Corona' = 119, 'North Riverdale-Fieldston-Riverdale' = 120, 'North Side-South Side' = 121, 'Norwood' = 122, 'Oakland Gardens' = 123, 'Oakwood-Oakwood Beach' = 124, 'Ocean Hill' = 125, 'Ocean Parkway South' = 126, 'Old Astoria' = 127, 'Old Town-Dongan Hills-South Beach' = 128, 'Ozone Park' = 129, 'Park Slope-Gowanus' = 130, 'Parkchester' = 131, 'Pelham Bay-Country Club-City Island' = 132, 'Pelham Parkway' = 133, 'Pomonok-Flushing Heights-Hillcrest' = 134, 'Port Richmond' = 135, 'Prospect Heights' = 136, 'Prospect Lefferts Gardens-Wingate' = 137, 'Queens Village' = 138, 'Queensboro Hill' = 139, 'Queensbridge-Ravenswood-Long Island City' = 140, 'Rego Park' = 141, 'Richmond Hill' = 142, 'Ridgewood' = 143, 'Rikers Island' = 144, 'Rosedale' = 145, 'Rossville-Woodrow' = 146, 'Rugby-Remsen Village' = 147, 'Schuylerville-Throgs Neck-Edgewater Park' = 148, 'Seagate-Coney Island' = 149, 'Sheepshead Bay-Gerritsen Beach-Manhattan Beach' = 150, 'SoHo-TriBeCa-Civic Center-Little Italy' = 151, 'Soundview-Bruckner' = 152, 'Soundview-Castle Hill-Clason Point-Harding Park' = 153, 'South Jamaica' = 154, 'South Ozone Park' = 155, 'Springfield Gardens North' = 156, 'Springfield Gardens South-Brookville' = 157, 'Spuyten Duyvil-Kingsbridge' = 158, 'St. Albans' = 159, 'Stapleton-Rosebank' = 160, 'Starrett City' = 161, 'Steinway' = 162, 'Stuyvesant Heights' = 163, 'Stuyvesant Town-Cooper Village' = 164, 'Sunset Park East' = 165, 'Sunset Park West' = 166, 'Todt Hill-Emerson Hill-Heartland Village-Lighthouse Hill' = 167, 'Turtle Bay-East Midtown' = 168, 'University Heights-Morris Heights' = 169, 'Upper East Side-Carnegie Hill' = 170, 'Upper West Side' = 171, 'Van Cortlandt Village' = 172, 'Van Nest-Morris Park-Westchester Square' = 173, 'Washington Heights North' = 174, 'Washington Heights South' = 175, 'West Brighton' = 176, 'West Concourse' = 177, 'West Farms-Bronx River' = 178, 'West New Brighton-New Brighton-St. George' = 179, 'West Village' = 180, 'Westchester-Unionport' = 181, 'Westerleigh' = 182, 'Whitestone' = 183, 'Williamsbridge-Olinville' = 184, 'Williamsburg' = 185, 'Windsor Terrace' = 186, 'Woodhaven' = 187, 'Woodlawn-Wakefield' = 188, 'Woodside' = 189, 'Yorkville' = 190, 'park-cemetery-etc-Bronx' = 191, 'park-cemetery-etc-Brooklyn' = 192, 'park-cemetery-etc-Manhattan' = 193, 'park-cemetery-etc-Queens' = 194, 'park-cemetery-etc-Staten Island' = 195),  dropoff_puma UInt16) ENGINE = MergeTree(pickup_date, pickup_datetime, 8192);
+```
 
-  耗时 2454 秒。
+在源服务器上：
 
-  在三台服务器上：
+```sql
+CREATE TABLE trips_mergetree_x3 AS trips_mergetree_third ENGINE = Distributed(perftest, default, trips_mergetree_third, rand());
+```
 
-  Q1: 0.212 秒。
-  Q2: 0.438 秒。
-  Q3: 0.733 秒。
-  Q4: 1.241 秒。
+以下查询将重新分布数据：
 
-  这在意料之中，因为这些查询呈线性扩展。
+```sql
+INSERT INTO trips_mergetree_x3 SELECT * FROM trips_mergetree;
+```
 
-  我们还提供了一个由 140 台服务器组成的集群上的测试结果：
+这需要 2454 秒。
 
-  Q1: 0.028 秒
-  Q2: 0.043 秒
-  Q3: 0.051 秒
-  Q4: 0.072 秒
+在三台服务器上：
 
-  在这种情况下，查询处理时间主要取决于网络延迟。
-  我们运行查询时使用的客户端与集群位于不同的数据中心，因此额外增加了约 20 毫秒的延迟。
+Q1：0.212 秒。
+Q2：0.438 秒。
+Q3：0.733 秒。
+Q4：1.241 秒。
 
-  ## 摘要
+这并不意外，因为这些查询的扩展是线性的。
 
-  | 服务器                | Q1    | Q2    | Q3    | Q4    |
-  | ------------------ | ----- | ----- | ----- | ----- |
-  | 1, E5-2650v2       | 0.490 | 1.224 | 2.104 | 3.593 |
-  | 3, E5-2650v2       | 0.212 | 0.438 | 0.733 | 1.241 |
-  | 1, AWS c5n.4xlarge | 0.249 | 1.279 | 1.738 | 3.527 |
-  | 1, AWS c5n.9xlarge | 0.130 | 0.584 | 0.777 | 1.811 |
-  | 3, AWS c5n.9xlarge | 0.057 | 0.231 | 0.285 | 0.641 |
-  | 140, E5-2650v2     | 0.028 | 0.043 | 0.051 | 0.072 |
-</View>
+我们还得到了一个由 140 台服务器组成的集群的结果：
+
+Q1：0.028 秒。
+Q2：0.043 秒。
+Q3：0.051 秒。
+Q4：0.072 秒。
+
+在这种情况下，查询处理时间首先取决于网络延迟。
+我们运行查询时，客户端所在的数据中心与集群所在的数据中心不同，因此额外增加了大约 20 毫秒的延迟。
+
+<div id="summary">
+  ## 总结
+</div>
+
+| 服务器数               | Q1    | Q2    | Q3    | Q4    |
+| ------------------ | ----- | ----- | ----- | ----- |
+| 1, E5-2650v2       | 0.490 | 1.224 | 2.104 | 3.593 |
+| 3, E5-2650v2       | 0.212 | 0.438 | 0.733 | 1.241 |
+| 1, AWS c5n.4xlarge | 0.249 | 1.279 | 1.738 | 3.527 |
+| 1, AWS c5n.9xlarge | 0.130 | 0.584 | 0.777 | 1.811 |
+| 3, AWS c5n.9xlarge | 0.057 | 0.231 | 0.285 | 0.641 |
+| 140, E5-2650v2     | 0.028 | 0.043 | 0.051 | 0.072 |

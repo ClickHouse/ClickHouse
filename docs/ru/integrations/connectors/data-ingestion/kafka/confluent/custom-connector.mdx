@@ -1,9 +1,9 @@
 ---
-sidebarTitle: 'Kafka Connector Sink как Custom Connector'
+sidebarTitle: 'Kafka Connector Sink на Confluent Platform'
 slug: /integrations/kafka/cloud/confluent/custom-connector
-description: 'Загрузка и запуск ClickHouse Connector Sink в Confluent Cloud в качестве Custom Connector (Custom Connector)'
-title: 'ClickHouse Connector Sink как Custom Connector в Confluent Cloud'
-keywords: ['интеграция Confluent с ClickHouse', 'коннектор Kafka для ClickHouse', 'ClickHouse sink для Kafka Connect', 'Confluent Platform ClickHouse', 'Custom Connector Confluent']
+description: 'Использование ClickHouse Connector Sink с Kafka Connect и ClickHouse'
+title: Интеграция Confluent Platform с ClickHouse
+keywords: ['интеграция Confluent с ClickHouse', 'коннектор Kafka для ClickHouse', 'ClickHouse sink для Kafka Connect', 'Confluent Platform ClickHouse', 'пользовательский коннектор Confluent']
 doc_type: 'guide'
 ---
 
@@ -30,24 +30,24 @@ picture-in-picture"
 Мы предполагаем, что вы знакомы со следующим:
 
 * [ClickHouse Connector Sink](/ru/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink)
-* Confluent Cloud и [Custom Connectors](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/overview.html).
+* Confluent Platform и [Custom Connectors](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/overview.html).
 
-<Note>
-  На этой странице описано, как самостоятельно загрузить коннектор в Confluent Cloud. Если вам не требуется определённая версия коннектора или пользовательские настройки, проще воспользоваться [полностью управляемым коннектором](/ru/integrations/connectors/data-ingestion/kafka/confluent/confluent-cloud).
-</Note>
+<div id="the-official-kafka-connector-from-clickhouse-with-confluent-platform">
+  ## Официальный коннектор Kafka от ClickHouse для Confluent Platform
+</div>
 
-## Официальный коннектор Kafka от ClickHouse в качестве Custom Connector {#the-official-kafka-connector-from-clickhouse-with-confluent-platform}
+<div id="installing-on-confluent-platform">
+  ### Установка на Confluent Platform
+</div>
 
-### Установка в качестве Custom Connector {#installing-on-confluent-platform}
-
-Это краткое руководство поможет вам быстро начать работу с ClickHouse Sink Connector в качестве Custom Connector в Confluent Cloud.
+Это краткое руководство поможет вам быстро начать работу с ClickHouse Sink Connector на Confluent Platform.
 Подробнее см. в [официальной документации Confluent](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-qs.html#uploading-and-launching-the-connector).
 
 <div id="create-a-topic">
   #### Создайте топик
 </div>
 
-Создать топик в Confluent Cloud довольно просто; подробные инструкции приведены [здесь](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html).
+Создать топик в Confluent Platform довольно просто; подробные инструкции приведены [здесь](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html).
 
 <div id="important-notes">
   #### Важные примечания
@@ -56,7 +56,9 @@ picture-in-picture"
 * Имя Kafka топика должно совпадать с именем таблицы ClickHouse. Это можно изменить с помощью трансформера (например, [`ExtractTopic`](https://docs.confluent.io/platform/current/connect/transforms/extracttopic.html)).
 * Большее количество партиций не всегда означает более высокую производительность — подробности и советы по оптимизации производительности смотрите в нашем будущем руководстве.
 
-#### Установка коннектора {#install-connector}
+<div id="install-connector">
+  #### Установка коннектора
+</div>
 
 Вы можете скачать коннектор из нашего [репозитория](https://github.com/ClickHouse/clickhouse-kafka-connect/releases) — не стесняйтесь также оставлять там комментарии и сообщать о проблемах!
 

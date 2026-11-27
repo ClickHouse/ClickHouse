@@ -19,11 +19,11 @@
     </create_query>
 
     <create_query>
-        create table distributed_table_1 (id int) as remote('127.0.0.{{1,2}}', currentDatabase(), local_table_1)
+        create table distributed_table_1 (id int) engine = Distributed(test_cluster_two_shard_three_replicas_localhost, currentDatabase(), local_table_1)
     </create_query>
 
     <create_query>
-        create table distributed_table_2 (id int) as remote('127.0.0.{{1,2}}', currentDatabase(), local_table_2)
+        create table distributed_table_2 (id int) engine = Distributed(test_cluster_two_shard_three_replicas_localhost, currentDatabase(), local_table_2)
     </create_query>
 
     <fill_query>

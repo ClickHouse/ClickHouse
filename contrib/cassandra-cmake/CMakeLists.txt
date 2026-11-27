@@ -90,7 +90,7 @@ elseif (OS_FREEBSD OR OS_DARWIN)
 endif ()
 
 # Determine if sigpipe is available
-if (OS_LINUX OR OS_SUNOS)
+if (OS_LINUX)
     set (HAVE_SIGTIMEDWAIT 1)
 else (OS_FREEBSD OR OS_DARWIN)
     set (HAVE_NOSIGPIPE 1)

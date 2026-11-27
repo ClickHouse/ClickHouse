@@ -30,11 +30,6 @@ public:
 
     ActionLock getCleanupLock() { return cleanup_blocker.cancel(); }
 
-    bool isCleanupCancelled() const
-    {
-        return cleanup_blocker.isCancelled();
-    }
-
 protected:
     MergeTreeData & data;
 

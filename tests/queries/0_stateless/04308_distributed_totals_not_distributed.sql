@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: make_distributed_plan requires the analyzer.
+
 -- Regression test: WITH TOTALS produces a totals stream that the distributed exchange protocol
 -- does not carry. make_distributed_plan rejects such plans rather than silently running them
 -- single-node.
@@ -11,9 +14,9 @@ SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_def
 
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0, max_rows_to_group_by = 0;
+SET automatic_parallel_replicas_mode = 0;
 
 SELECT '-- WITH TOTALS';
-SELECT a, sum(v) FROM t_totals_guard GROUP BY a WITH TOTALS ORDER BY a
-SETTINGS distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
+SELECT a, sum(v) FROM t_totals_guard GROUP BY a WITH TOTALS ORDER BY a; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE t_totals_guard;

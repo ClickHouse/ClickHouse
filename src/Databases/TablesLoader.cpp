@@ -2,8 +2,6 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
-#include <Databases/DatabaseOnDisk.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -170,34 +168,8 @@ void TablesLoader::buildDependencyGraph()
 {
     for (const auto & [table_name, table_metadata] : metadata.parsed_tables)
     {
-        /// Metadata written before the table names were qualified at CREATE time can contain
-        /// unqualified names, which are repaired against the owning database when the definition is
-        /// attached. Both graphs have to describe the names the attached storage will actually use,
-        /// so repair a copy of the definition the same way here — otherwise a legacy bare
-        /// `dictGet('dict', ...)` or `x IN source` would be registered as `default.dict` /
-        /// `default.source`, leaving `check_table_dependencies` and
-        /// `check_referential_table_dependencies` guarding the wrong object and the loading edge
-        /// that the repair itself relies on missing.
-        ASTPtr ast = table_metadata.ast;
-        const bool is_dictionary = ast->as<const ASTCreateQuery &>().is_dictionary;
-        if (!is_dictionary)
-        {
-            ast = ast->clone();
-            qualifyNamesFromLegacyMetadata(ast->as<ASTCreateQuery &>(), table_name.database, global_context);
-        }
-
-        /// The names which are still unqualified after the repair have to be resolved the same way
-        /// in both graphs. A bare dictionary name is the case where the repair cannot do it on its
-        /// own: `ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase` only qualifies a
-        /// name it already knows, and no DDL dictionary is registered yet while the graph is being
-        /// built, so the name stays bare here and is repaired later, when the definition is
-        /// attached. Resolving it against the database owning the table - like the loading graph
-        /// does - keeps the two graphs describing the same object, instead of guarding a
-        /// `default.dict` which does not exist. The definitions of the dictionaries are not
-        /// repaired, so they keep resolving against the default database of the server.
-        const String referential_database = is_dictionary ? global_context->getCurrentDatabase() : table_name.database;
-        auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, ast, referential_database, /*can_throw*/ false, /*validate_current_database*/ false);
-        auto new_loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, table_name, ast, table_name.database);
+        auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast, global_context->getCurrentDatabase(), /*can_throw*/ false, /*validate_current_database*/ false);
+        auto new_loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast);
 
         if (!new_ref_dependencies.dependencies.empty())
             referential_dependencies.addDependencies(table_name, new_ref_dependencies.dependencies);
@@ -239,7 +211,7 @@ void TablesLoader::removeUnresolvableDependencies()
             /// Tables depend on a XML dictionary.
             LOG_WARNING(
                 log,
-                "Tables {} depend on XML dictionary {}, but XML dictionaries are loaded independently. "
+                "Tables {} depend on XML dictionary {}, but XML dictionaries are loaded independently."
                 "Consider converting it to DDL dictionary.",
                 fmt::join(all_loading_dependencies.getDependents(table_id), ", "),
                 table_id);
@@ -260,7 +232,7 @@ void TablesLoader::removeUnresolvableDependencies()
         size_t num_dependents = 0;
         all_loading_dependencies.getNumberOfAdjacents(table_id, num_dependencies, num_dependents);
         if (num_dependencies || !num_dependents)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not have dependencies and dependent tables as it expected to. "
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not have dependencies and dependent tables as it expected to."
                                                        "It's a bug", table_id);
 
         return true; /// Exclude this dependency.

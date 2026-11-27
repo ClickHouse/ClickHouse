@@ -16,14 +16,6 @@ namespace DB
   * `query` is the query parsed so far (ASTSelectWithUnionQuery), and `pos` must point to the first `|>` token.
   * On success, `query` is replaced with the transformed query.
   */
-class ParserPipeOperators : public IParserBase
-{
-public:
-    std::map<String, Documentation> getDocumentation() const override;
-
-protected:
-    const char * getName() const override { return "pipe operators"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
+bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected);
 
 }

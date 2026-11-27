@@ -1,0 +1,40 @@
+<clickhouse>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>
+        <!-- No exit snapshot, so the restart in this test comes back with a tail to replay. -->
+        <create_snapshot_on_exit>false</create_snapshot_on_exit>
+
+        <coordination_settings>
+            <operation_timeout_ms>5000</operation_timeout_ms>
+            <session_timeout_ms>10000</session_timeout_ms>
+            <!-- Tiny cache: the replay cannot be served from memory, so every entry of the
+                 tail goes through the commit read path this test is about. -->
+            <latest_logs_cache_size_threshold>1</latest_logs_cache_size_threshold>
+            <latest_logs_cache_entry_count_threshold>1</latest_logs_cache_entry_count_threshold>
+            <rotate_log_storage_interval>1000</rotate_log_storage_interval>
+            <!-- Never snapshot during the test, so the whole log is the replay tail. -->
+            <snapshot_distance>1000000</snapshot_distance>
+            <raft_logs_level>information</raft_logs_level>
+            <compress_logs>false</compress_logs>
+            <!-- Commit read-ahead on, with a zero serve deadline. Zero means "do not wait for the
+                 fill at all", so every commit read that misses the decoded window takes the
+                 fallback path by construction. That is what makes this test deterministic on a
+                 local disk: it does not depend on the fill losing a timing race, only on whether
+                 the fallback then destroys the fill's progress. -->
+            <log_readahead_commit_window_bytes>16777216</log_readahead_commit_window_bytes>
+            <log_readahead_serve_wait_timeout_ms>0</log_readahead_serve_wait_timeout_ms>
+        </coordination_settings>
+
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>node1</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>

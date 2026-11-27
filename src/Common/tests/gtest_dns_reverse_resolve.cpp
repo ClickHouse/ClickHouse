@@ -3,7 +3,6 @@
 #include <cmath>
 #include <Common/DNSPTRResolverProvider.h>
 #include <Common/DNSResolver.h>
-#include <base/scope_guard.h>
 #include <Poco/Net/IPAddress.h>
 #include <random>
 
@@ -11,9 +10,6 @@ namespace DB
 {
 TEST(Common, ReverseDNS)
 {
-    /// Re-enable the cache of the process-wide resolver, as it is by default, for the tests that run after this one.
-    SCOPE_EXIT(DNSResolver::instance().setDisableCacheFlag(false));
-
     auto func = [&]()
     {
         // Good random seed, good engine

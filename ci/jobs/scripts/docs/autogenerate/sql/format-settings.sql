@@ -76,10 +76,7 @@ WITH
        ''),
     if(type != '' AND default != '', format('<SettingsInfoBlock type="{}" default_value="{}" />', type, default), ''),
     if(rows != '', printf('\n\n<VersionHistory rows={%s}/>\n\n', rows), ''),
-    -- `system.settings` already trims the newlines surrounding a description, so no trimming
-    -- is needed here. `trim(BOTH ...)` takes a set of characters rather than a suffix, so
-    -- trimming '\n' would strip trailing `n` and `\` from the text itself.
-    description)
+    trim(BOTH '\\n' FROM description))
     FROM settings_with_change_history
     LEFT JOIN setting_aliases sa ON settings_with_change_history.name = sa.alias_for
     ORDER BY name

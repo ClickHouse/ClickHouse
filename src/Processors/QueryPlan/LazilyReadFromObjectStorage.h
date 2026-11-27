@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
@@ -46,7 +45,7 @@ struct ObjectStorageLazyMaterializingRows : public ILazyMaterializingRows
 
     /// Filled by filterRangesAndFillRows: the files that contain surviving rows, in the order of
     /// their file index, with the sorted row indexes to read from each of them.
-    VectorWithMemoryTracking<FileRows> rows_in_files;
+    std::vector<FileRows> rows_in_files;
 
     LazyObjectStorageFileRegistryPtr file_registry;
 

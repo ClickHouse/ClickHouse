@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 struct FirstSignificantSubdomainCustomLookup
@@ -42,7 +43,24 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    String getSignatureString() const override { return "(String, const StringOrFixedString) -> String"; }
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (!isString(arguments[0].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}. Must be String.",
+                arguments[0].type->getName(), getName());
+        if (!isString(arguments[1].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of second argument (TLD_list_name) of function {}. Must be String/FixedString.",
+                arguments[1].type->getName(), getName());
+        const auto * column = arguments[1].column.get();
+        if (!column || !checkAndGetColumnConstStringOrFixedString(column))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "The second argument of function {} should be a constant string with the name of the custom TLD",
+                getName());
+
+        return arguments[0].type;
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {

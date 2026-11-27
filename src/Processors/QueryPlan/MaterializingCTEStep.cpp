@@ -1,8 +1,6 @@
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 
-#include <Analyzer/TableNode.h>
-#include <Analyzer/traverseQueryTree.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -286,25 +284,6 @@ void removeDelayedMaterializingCTEsStepFor(QueryPlan & plan, const MaterializedC
 
     removeDelayedMaterializingCTEsStepIf(
         plan, [&](DelayedMaterializingCTEsStep & step) { return step.eraseCTEs(ctes_to_remove); });
-}
-
-MaterializedCTESet collectMaterializedCTEsFromQueryTree(const QueryTreeNodePtr & node)
-{
-    MaterializedCTESet result;
-    if (!node)
-        return result;
-
-    traverseQueryTree(node, Everything{},
-        [&](const QueryTreeNodePtr & current_node)
-        {
-            if (const auto * table_node = current_node->as<TableNode>())
-            {
-                if (auto cte = table_node->getMaterializedCTE())
-                    result.insert(std::move(cte));
-            }
-        });
-
-    return result;
 }
 
 }

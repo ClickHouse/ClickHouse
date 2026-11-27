@@ -50,9 +50,17 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(StringOrFixedString, String, String) -> String";
+        FunctionArgumentDescriptors args{
+            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
+            {"pattern", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"replacement", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
+        };
+
+        validateFunctionArguments(*this, arguments, args);
+
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

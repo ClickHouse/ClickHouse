@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Tags: no-msan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

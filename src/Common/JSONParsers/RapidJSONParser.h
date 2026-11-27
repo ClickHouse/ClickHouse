@@ -19,19 +19,11 @@ namespace DB
 
 /// This class can be used as an argument for the template class FunctionJSON.
 /// It provides ability to parse JSONs using rapidjson library.
-struct RapidJSONParser /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - value_pool_buffer is arena storage, written before read
+struct RapidJSONParser
 {
-    RapidJSONParser() = default; /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-    /// `document` points to `value_pool`, whose bookkeeping lives inside `value_pool_buffer`, so a
-    /// copy or a move would leave one of the three aiming into the other object.
-    RapidJSONParser(const RapidJSONParser &) = delete;
-    RapidJSONParser & operator=(const RapidJSONParser &) = delete;
-    RapidJSONParser(RapidJSONParser &&) = delete;
-    RapidJSONParser & operator=(RapidJSONParser &&) = delete;
-
-    /// Allocations past the small inline pool buffer go through the memory tracker, so a huge or
-    /// deeply nested untrusted document is rejected with MEMORY_LIMIT_EXCEEDED instead of allocating
-    /// without bound (see RapidJSONMemoryTrackerAllocator).
+    /// The DOM, parser stack and string copies are accounted against the memory tracker, so a
+    /// huge or deeply nested untrusted document is rejected with MEMORY_LIMIT_EXCEEDED instead of
+    /// allocating without bound (see RapidJSONMemoryTrackerAllocator).
     using PoolAllocator = rapidjson::MemoryPoolAllocator<RapidJSONMemoryTrackerAllocator>;
     using Value = rapidjson::GenericValue<rapidjson::UTF8<>, PoolAllocator>;
     using Document = rapidjson::GenericDocument<rapidjson::UTF8<>, PoolAllocator, RapidJSONMemoryTrackerAllocator>;
@@ -187,10 +179,8 @@ struct RapidJSONParser /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-m
     };
 
     /// Parses a JSON document, returns the reference to its root element if succeeded.
-    /// Every `Element` obtained earlier from this parser is invalidated: the memory is reused.
     bool parse(std::string_view json, Element & result)
     {
-        value_pool.Clear();
         rapidjson::MemoryStream ms(json.data(), json.size());
         rapidjson::EncodedInputStream<rapidjson::UTF8<>, rapidjson::MemoryStream> is(ms);
         document.ParseStream(is);
@@ -206,14 +196,7 @@ struct RapidJSONParser /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-m
 #endif
 
 private:
-    /// The pool serves allocations from this buffer first, with 8-byte alignment as rapidjson
-    /// requires, and falls back to memory-tracked chunks that `Clear` releases while keeping the
-    /// buffer. Declared before `value_pool` and `document` so both are destroyed while the storage
-    /// they point into is still alive.
-    static constexpr size_t value_pool_buffer_size = 8192;
-    alignas(8) char value_pool_buffer[value_pool_buffer_size];
-    PoolAllocator value_pool{value_pool_buffer, value_pool_buffer_size};
-    Document document{&value_pool};
+    Document document;
 };
 
 inline ALWAYS_INLINE RapidJSONParser::Array RapidJSONParser::Element::getArray() const

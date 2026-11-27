@@ -18,19 +18,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_OF_ENUM;
 }
 
-namespace
-{
-
-/// Out of line: an inlined `throw` would put a `-fstack-protector-strong` canary on
-/// `getNameForValue`, which runs per row. Value by value, so no local's address escapes.
-template <typename T>
-[[noreturn]] NO_INLINE void throwUnknownElementOfEnum(T value)
-{
-    throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unexpected value {} in enum", toString(value));
-}
-
-}
-
 template <typename T>
 EnumValues<T>::EnumValues(const Values & values_, ValidationMode validation_mode)
     : values(values_)
@@ -133,57 +120,53 @@ void EnumValues<T>::buildLookupStructures(ValidationMode validation_mode)
 }
 
 template <typename T>
-const std::string * EnumValues<T>::findNameForValue(T value) const
+bool EnumValues<T>::hasValue(T value) const
+{
+    std::string_view ignored;
+    return getNameForValue(value, ignored);
+}
+
+template <typename T>
+std::string_view EnumValues<T>::getNameForValue(T value) const
+{
+    std::string_view result;
+    if (!getNameForValue(value, result))
+        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unexpected value {} in enum", toString(value));
+    return result;
+}
+
+template <typename T>
+bool EnumValues<T>::getNameForValue(T value, std::string_view & result) const
 {
     if (use_direct_value_lookup)
     {
         T min_val = values.front().second;
         T max_val = values.back().second;
         if (value < min_val || value > max_val)
-            return nullptr;
+            return false;
         /// Cast to Int32 first to avoid signed overflow
         size_t arr_idx = static_cast<size_t>(static_cast<Int32>(value) - static_cast<Int32>(min_val));
         uint16_t idx = value_to_index[arr_idx];
         if (idx == INVALID_INDEX)
-            return nullptr;
-        return &values[idx].first;
+            return false;
+        result = values[idx].first;
+        return true;
     }
     else
     {
         /// Early bounds check
         if (value < values.front().second || value > values.back().second)
-            return nullptr;
+            return false;
         /// Binary search on values (already sorted by value)
         auto it = std::lower_bound(values.begin(), values.end(), value,
             [](const Value & v, T val) { return v.second < val; });
         if (it != values.end() && it->second == value)
-            return &it->first;
-        return nullptr;
-    }
-}
-
-template <typename T>
-bool EnumValues<T>::hasValue(T value) const
-{
-    return findNameForValue(value) != nullptr;
-}
-
-template <typename T>
-std::string_view EnumValues<T>::getNameForValue(T value) const
-{
-    if (const auto * name = findNameForValue(value))
-        return *name;
-    throwUnknownElementOfEnum(value);
-}
-
-template <typename T>
-bool EnumValues<T>::getNameForValue(T value, std::string_view & result) const
-{
-    const auto * name = findNameForValue(value);
-    if (!name)
+        {
+            result = it->first;
+            return true;
+        }
         return false;
-    result = *name;
-    return true;
+    }
 }
 
 template <typename T>

@@ -350,14 +350,6 @@ struct AddDaysImpl
 {
     static constexpr auto name = "addDays";
 
-    /// Kept out of line: in a fixed-offset time zone every row takes the arithmetic shortcut, so the
-    /// table walk must not be inlined into that loop.
-    static NO_INLINE NO_SANITIZE_UNDEFINED UInt32 addDaysThroughLUT(
-        UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
-    {
-        return static_cast<UInt32>(time_zone.addDays(t, delta));
-    }
-
     template <bool fixed_offset>
     static NO_SANITIZE_UNDEFINED DateTime64 executeWithOffsetMode(
         DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
@@ -392,7 +384,6 @@ struct AddDaysImpl
         {
             if (time_zone.dayShiftStaysWithinLUT(t, delta))
                 return static_cast<UInt32>(t + delta * DATE_SECONDS_PER_DAY);
-            return addDaysThroughLUT(t, delta, time_zone);
         }
         return static_cast<UInt32>(time_zone.addDays(t, delta));
     }
@@ -499,7 +490,6 @@ struct AddWeeksImpl
         {
             if (weeksToDays(delta, days) && time_zone.dayShiftStaysWithinLUT(t, days))
                 return static_cast<UInt32>(t + days * DATE_SECONDS_PER_DAY);
-            return AddDaysImpl::addDaysThroughLUT(t, days, time_zone);
         }
         else
             weeksToDays(delta, days);
@@ -708,15 +698,6 @@ struct SubtractIntervalImpl : public Transform
         return Transform::execute(t, negated, time_zone, utc_time_zone, scale);
     }
 
-    /// Reached only for `delta == INT64_MIN`, where the negation wraps. Kept out of line: the table
-    /// walk must not be inlined into a fixed-offset loop whose other rows take the shortcut.
-    template <typename T>
-    static NO_INLINE auto executeNegationOverflow(
-        T t, Int64 negated, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
-    {
-        return Transform::template executeWithOffsetMode<false>(t, negated, time_zone, utc_time_zone, scale);
-    }
-
     template <bool fixed_offset, typename T>
     auto executeWithOffsetMode(
         T t,
@@ -726,13 +707,8 @@ struct SubtractIntervalImpl : public Transform
         UInt16 scale) const
     {
         Int64 negated = 0;
-        if constexpr (fixed_offset)
-        {
-            if (!negate(delta, negated))
-                return executeNegationOverflow(t, negated, time_zone, utc_time_zone, scale);
-        }
-        else
-            negate(delta, negated);
+        if (!negate(delta, negated))
+            return Transform::template executeWithOffsetMode<false>(t, negated, time_zone, utc_time_zone, scale);
         return Transform::template executeWithOffsetMode<fixed_offset>(t, negated, time_zone, utc_time_zone, scale);
     }
 
@@ -1018,31 +994,6 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    /// Documentation-only — adds/subtracts the integer/float `delta` of the
-    /// given interval unit (encoded in `Transform`) to/from a date or
-    /// date-time value. The optional 3rd argument is a constant time-zone
-    /// string. The concrete result type depends on the input date type and
-    /// the precision of the interval unit (e.g. `addSeconds(Date, ...)`
-    /// promotes to `DateTime`).
-    String getSignatureString() const override
-    {
-        return "(Date | Date32 | Time | Time64 | DateTime | DateTime64 | String, NativeNumber, [const String]) -> Any";
-    }
-
-    /// The declarative signature above is documentation-only: the exact result type is not
-    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
-    /// Route the types-only path to it as well, so the base
-    /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
-    /// would reject valid calls or evaluate an uncaptured return-type name).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-        return getReturnTypeImpl(columns);
-    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

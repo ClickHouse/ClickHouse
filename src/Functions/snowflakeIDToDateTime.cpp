@@ -49,19 +49,22 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// (UInt64 value, [const NativeUInt epoch, [String tz]]). Note tz requires epoch, so the
-        /// optional groups can't be flattened to `(UInt64, [const NativeUInt], [String])` — that
-        /// would erroneously accept `(UInt64, "tz")`.
-        if (allow_nonconst_timezone_arguments)
-            return
-                "(UInt64, const NativeUInt, const tz String) -> DateTime(tz)"
-                " OR (UInt64, const NativeUInt, [String]) -> DateTime"
-                " OR (UInt64) -> DateTime";
-        return
-            "(UInt64, const NativeUInt, const tz String) -> DateTime(tz)"
-            " OR (UInt64, [const NativeUInt]) -> DateTime";
+        FunctionArgumentDescriptors args{
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt64), nullptr, "UInt64"}
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "const UInt*"},
+            {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
+        };
+        validateFunctionArguments(*this, arguments, args, optional_args);
+
+        String timezone;
+        if (arguments.size() == 3)
+            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, allow_nonconst_timezone_arguments);
+
+        return std::make_shared<DataTypeDateTime>(timezone);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -117,16 +120,22 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (allow_nonconst_timezone_arguments)
-            return
-                "(UInt64, const NativeUInt, const tz String) -> DateTime64(3, tz)"
-                " OR (UInt64, const NativeUInt, [String]) -> DateTime64(3)"
-                " OR (UInt64) -> DateTime64(3)";
-        return
-            "(UInt64, const NativeUInt, const tz String) -> DateTime64(3, tz)"
-            " OR (UInt64, [const NativeUInt]) -> DateTime64(3)";
+        FunctionArgumentDescriptors args{
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt64), nullptr, "UInt64"}
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "const UInt*"},
+            {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
+        };
+        validateFunctionArguments(*this, arguments, args, optional_args);
+
+        String timezone;
+        if (arguments.size() == 3)
+            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, allow_nonconst_timezone_arguments);
+
+        return std::make_shared<DataTypeDateTime64>(3, timezone);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -213,9 +222,9 @@ Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wik
 SELECT snowflakeIDToDateTime64(7204436857747984384) AS res
         )",
         R"(
-┌─────────────────────res─┐
-│ 2024-06-06 10:59:58.851 │
-└─────────────────────────┘
+┌─────────────────res─┐
+│ 2024-06-06 10:59:58 │
+└─────────────────────┘
         )"
     }
     };

@@ -2,7 +2,6 @@
 #include <Processors/ISimpleTransform.h>
 #include <Columns/FilterDescription.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include <Interpreters/SetSpillable.h>
 
 namespace DB
 {
@@ -27,33 +26,19 @@ public:
         std::optional<std::pair<UInt64, String>> condition_ = std::nullopt,
         bool update_row_numbers_info_ = false);
 
-    /// Use this overload when the transformed header (the header after the expression, but before
-    /// removing the filter column) is already known (computed once per step) to avoid recomputing
-    /// it in every instance: the computation is linear in the size of the expression's DAG, and a
-    /// step creates one transform per stream.
-    FilterTransform(
-        SharedHeader header_, SharedHeader transformed_header_, ExpressionActionsPtr expression_, String filter_column_name_,
-        bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr,
-        std::optional<std::pair<UInt64, String>> condition_ = std::nullopt,
-        bool update_row_numbers_info_ = false);
-
     static Block
     transformHeader(const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column);
 
     String getName() const override { return "FilterTransform"; }
-    std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
     Status prepare() override;
 
     void transform(Chunk & chunk) override;
 
-    void onCancel() noexcept override;
-
     static bool canUseType(const DataTypePtr & type);
 
 private:
     ExpressionActionsPtr expression;
-    SetSpillables set_spillables;
     String filter_column_name;
     bool remove_filter_column;
     bool on_totals;
@@ -84,8 +69,6 @@ private:
     void removeFilterIfNeed(Columns & columns) const;
 
     void writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info);
-    /// For a chunk that is filtered only partially, see `MarkRangesInfo::rows_per_mark`.
-    void writeMarksWithoutMatchesIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info, const IFilterDescription & filter_description);
 };
 
 }

@@ -24,9 +24,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "() -> String";
+        return std::make_shared<DataTypeString>();
     }
 
     bool isDeterministic() const override { return false; }
@@ -59,9 +59,9 @@ INSERT INTO tmp (*) VALUES ('a');
 SELECT count(DISTINCT t) FROM (SELECT initialQueryID() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
         )",
         R"(
-┌─countDistinct(t)─┐
-│                1 │
-└──────────────────┘
+┌─count(DISTINCT t)─┐
+│                 1 │
+└───────────────────┘
         )"
     }
     };

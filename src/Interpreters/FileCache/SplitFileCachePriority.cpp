@@ -13,26 +13,12 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 namespace
 {
 size_t getRatio(size_t total, double ratio)
 {
     return std::lround(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0));
 }
-}
-
-CachePriorityGuard & SplitFileCachePriority::getPriorityGuard() const
-{
-    /// Callers must lock the inner Data/System priority that owns the entry; there is nothing
-    /// meaningful to serialize at the wrapper level.
-    throw Exception(
-        ErrorCodes::LOGICAL_ERROR,
-        "SplitFileCachePriority has no structural lock; use inner priority locks");
 }
 
 SplitFileCachePriority::SplitFileCachePriority(
@@ -105,24 +91,28 @@ std::string SplitFileCachePriority::getStateInfoForLog(const CacheStateGuard::Lo
         + " SystemPriority: " + getPriority(SegmentType::System).getStateInfoForLog(lock);
 }
 
-void SplitFileCachePriority::shuffle()
+void SplitFileCachePriority::shuffle(const CachePriorityGuard::WriteLock & lock)
 {
-    getPriority(SegmentType::Data).shuffle();
-    getPriority(SegmentType::System).shuffle();
+    getPriority(SegmentType::Data).shuffle(lock);
+    getPriority(SegmentType::System).shuffle(lock);
 }
 
-IFileCachePriority::PriorityDumpPtr SplitFileCachePriority::dump()
+IFileCachePriority::PriorityDumpPtr SplitFileCachePriority::dump(
+    const CachePriorityGuard::ReadLock & lock)
 {
-    auto data_dump = getPriority(SegmentType::Data).dump();
-    auto system_dump = getPriority(SegmentType::System).dump();
+    auto data_dump = getPriority(SegmentType::Data).dump(lock);
+    auto system_dump = getPriority(SegmentType::System).dump(lock);
     data_dump->merge(*system_dump);
     return data_dump;
 }
 
-void SplitFileCachePriority::iterate(IterateFunc func, FileCacheReserveStat & stat)
+void SplitFileCachePriority::iterate(
+    IterateFunc func,
+    FileCacheReserveStat & stat,
+    const CachePriorityGuard::ReadLock & lock)
 {
-    getPriority(SegmentType::Data).iterate(func, stat);
-    getPriority(SegmentType::System).iterate(func, stat);
+    getPriority(SegmentType::Data).iterate(func, stat, lock);
+    getPriority(SegmentType::System).iterate(func, stat, lock);
 }
 
 bool SplitFileCachePriority::modifySizeLimits(
@@ -198,11 +188,13 @@ IFileCachePriority::IteratorPtr SplitFileCachePriority::add( /// NOLINT
     KeyMetadataPtr key_metadata,
     size_t offset,
     size_t size,
+    const CachePriorityGuard::WriteLock & write_lock,
     const CacheStateGuard::Lock * state_lock,
     bool is_initial_load)
 {
     const auto type = getPriorityType(key_metadata->origin->segment_type);
-    return getPriority(type).add(key_metadata, offset, size, state_lock, is_initial_load);
+    return getPriority(type).add(
+        key_metadata, offset, size, write_lock, state_lock, is_initial_load);
 }
 
 IFileCachePriority::IteratorPtr SplitFileCachePriority::addForRestore( /// NOLINT
@@ -210,12 +202,12 @@ IFileCachePriority::IteratorPtr SplitFileCachePriority::addForRestore( /// NOLIN
     size_t offset,
     size_t size,
     QueueEntryType original_queue_type,
-    const CachePriorityGuard::WriteLock & lock,
+    const CachePriorityGuard::WriteLock & write_lock,
     const CacheStateGuard::Lock * state_lock)
 {
     const auto type = getPriorityType(key_metadata->origin->segment_type);
     return getPriority(type).addForRestore(
-        key_metadata, offset, size, original_queue_type, lock, state_lock);
+        key_metadata, offset, size, original_queue_type, write_lock, state_lock);
 }
 
 bool SplitFileCachePriority::canFit( /// NOLINT
@@ -274,11 +266,13 @@ bool SplitFileCachePriority::collectCandidatesForEviction(
     EvictionInfo & eviction_info,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
+    InvalidatedEntriesInfos & invalidated_entries,
     IFileCachePriority::IteratorPtr reservee,
     EvictionCursor eviction_cursor,
     size_t max_candidates_size,
     bool is_total_space_cleanup,
     const OriginInfo & origin_info,
+    CachePriorityGuard & priority_guard,
     CacheStateGuard & state_guard)
 {
     if (!eviction_info.requiresEviction())
@@ -289,16 +283,16 @@ bool SplitFileCachePriority::collectCandidatesForEviction(
         chassert(!reservee);
         FileCacheReserveStat data_stat;
         bool success = getPriority(SegmentType::Data).collectCandidatesForEviction(
-            eviction_info, data_stat, res, /* reservee */nullptr,
+            eviction_info, data_stat, res, invalidated_entries, /* reservee */nullptr,
             eviction_cursor, max_candidates_size,
-            is_total_space_cleanup, origin_info, state_guard);
+            is_total_space_cleanup, origin_info, priority_guard, state_guard);
 
         /// Collect candidates even if success == false, we will process them anyway.
         FileCacheReserveStat system_stat;
         success &= getPriority(SegmentType::System).collectCandidatesForEviction(
-            eviction_info, system_stat, res, /* reservee */nullptr,
+            eviction_info, system_stat, res, invalidated_entries, /* reservee */nullptr,
             eviction_cursor, max_candidates_size,
-            is_total_space_cleanup, origin_info, state_guard);
+            is_total_space_cleanup, origin_info, priority_guard, state_guard);
 
         stat += data_stat;
         stat += system_stat;
@@ -307,18 +301,19 @@ bool SplitFileCachePriority::collectCandidatesForEviction(
 
     const auto type = getPriorityType(origin_info.segment_type);
     return getPriority(type).collectCandidatesForEviction(
-        eviction_info, stat, res, reservee,
+        eviction_info, stat, res, invalidated_entries, reservee,
         eviction_cursor, max_candidates_size,
-        is_total_space_cleanup, origin_info, state_guard);
+        is_total_space_cleanup, origin_info, priority_guard, state_guard);
 }
 
 bool SplitFileCachePriority::tryIncreasePriority(
     Iterator & iterator,
     bool is_space_reservation_complete,
+    CachePriorityGuard & queue_guard,
     CacheStateGuard & state_guard)
 {
     const auto type = getPriorityType(iterator.getEntry()->getKeyMetadata()->origin->segment_type);
-    return getPriority(type).tryIncreasePriority(iterator, is_space_reservation_complete, state_guard);
+    return getPriority(type).tryIncreasePriority(iterator, is_space_reservation_complete, queue_guard, state_guard);
 }
 
 void SplitFileCachePriority::resetEvictionPos(EvictionCursor cursor)
@@ -358,11 +353,6 @@ IFileCachePriority::EntryPtr SplitFileCachePriority::SplitIterator::getEntry() c
 void SplitFileCachePriority::SplitIterator::remove(const CachePriorityGuard::WriteLock & lock)
 {
     iterator->remove(lock);
-}
-
-void SplitFileCachePriority::SplitIterator::remove()
-{
-    iterator->remove();
 }
 
 void SplitFileCachePriority::SplitIterator::invalidate() noexcept

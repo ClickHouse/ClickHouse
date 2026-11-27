@@ -53,9 +53,9 @@ public:
         return 2;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        return "(Any, Any) -> Float64";
+        return std::make_shared<DataTypeFloat64>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -161,7 +161,7 @@ Using this type of coordinate system speeds up execution, but of course is not p
 SELECT polygonsDistanceSpherical([[[(0, 0), (0, 0.1), (0.1, 0.1), (0.1, 0)]]], [[[(10., 10.), (10., 40.), (40., 40.), (40., 10.), (10., 10.)]]])
         )",
         R"(
-0.24372872211133823
+0.24372872211133834
         )"
     }
     };

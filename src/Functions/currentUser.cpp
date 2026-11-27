@@ -35,9 +35,9 @@ public:
         return 0;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "() -> String";
+        return std::make_shared<DataTypeString>();
     }
 
     bool isDeterministic() const override { return false; }
