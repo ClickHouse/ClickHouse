@@ -88,14 +88,17 @@ bool KerberosInit::hasFreshTicket() const
 
     krb5_timestamp now = 0;
     bool fresh = false;
-    if (!krb5_timeofday(k5.ctx, &now))
+    /// A postdated ticket is invalid until the KDC validates it, so it is not usable yet.
+    if (!(tgt.ticket_flags & TKT_FLG_INVALID) && !krb5_timeofday(k5.ctx, &now))
     {
-        /// Kerberos timestamps are unsigned 32-bit values stored in signed ones, so subtract them as such.
-        const auto delta = [](krb5_timestamp a, krb5_timestamp b) { return static_cast<int32_t>(static_cast<uint32_t>(a) - static_cast<uint32_t>(b)); };
-        const krb5_timestamp start = tgt.times.starttime ? tgt.times.starttime : tgt.times.authtime;
-        const int64_t lifetime = delta(tgt.times.endtime, start);
-        const int64_t remaining = delta(tgt.times.endtime, now);
-        fresh = lifetime > 0 && remaining * 5 > lifetime;
+        /// Kerberos timestamps are unsigned 32-bit values stored in signed ones (they stay valid after 2038).
+        const auto seconds = [](krb5_timestamp t) { return static_cast<int64_t>(static_cast<uint32_t>(t)); };
+        const int64_t start = seconds(tgt.times.starttime ? tgt.times.starttime : tgt.times.authtime);
+        const int64_t end = seconds(tgt.times.endtime);
+        const int64_t current = seconds(now);
+        const int64_t lifetime = end - start;
+        const int64_t remaining = end - current;
+        fresh = start <= current && lifetime > 0 && remaining * 5 > lifetime;
     }
     krb5_free_cred_contents(k5.ctx, &tgt);
     return fresh;
