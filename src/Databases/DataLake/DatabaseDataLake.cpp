@@ -16,6 +16,7 @@
 #include <Databases/DataLake/StaticStorageCredentials.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <base/scope_guard.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBuffer.h>
@@ -1324,8 +1325,19 @@ void DatabaseDataLake::evictStatefulTable(const String & name) const
             return;
         storage = std::move(it->second.storage);
         stateful_tables.erase(it);
+        ++stateful_tables_shutting_down;
     }
+    SCOPE_EXIT(finishStatefulTablesShutdown(1));
     storage->shutdown(/*is_drop*/ false);
+}
+
+void DatabaseDataLake::finishStatefulTablesShutdown(size_t count) const
+{
+    {
+        std::lock_guard lock(stateful_tables_mutex);
+        stateful_tables_shutting_down -= count;
+    }
+    stateful_tables_shut_down.notify_all();
 }
 
 StoragePtr DatabaseDataLake::tryGetTableImpl(
@@ -2117,18 +2129,27 @@ void DatabaseDataLake::shutdownStatefulTables()
     {
         std::lock_guard lock(stateful_tables_mutex);
         tables.swap(stateful_tables);
+        stateful_tables_shutting_down += tables.size();
     }
-    for (auto & [table_name, table] : tables)
     {
-        try
+        SCOPE_EXIT(finishStatefulTablesShutdown(tables.size()));
+        for (auto & [table_name, table] : tables)
         {
-            table.storage->shutdown(/*is_drop*/ false);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to shutdown stateful data lake table " + table_name);
+            try
+            {
+                table.storage->shutdown(/*is_drop*/ false);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to shutdown stateful data lake table " + table_name);
+            }
         }
     }
+
+    /// `evictStatefulTable` or another call of this function may still shut down a table that it took from the cache
+    /// before, for example a table with the previous settings when `applySettingsChanges` calls this. Wait for it too.
+    std::unique_lock lock(stateful_tables_mutex);
+    stateful_tables_shut_down.wait(lock, [this]() TSA_REQUIRES(stateful_tables_mutex) { return stateful_tables_shutting_down == 0; });
 }
 
 void registerDatabaseDataLake(DatabaseFactory & factory);
