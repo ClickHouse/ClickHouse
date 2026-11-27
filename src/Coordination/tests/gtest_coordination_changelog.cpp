@@ -14,6 +14,11 @@
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 
+#if USE_SSL
+#include <Disks/DiskEncrypted.h>
+#include <IO/FileEncryptionCommon.h>
+#endif
+
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/MapConfiguration.h>
 
@@ -2713,6 +2718,89 @@ TYPED_TEST(CoordinationChangelogTest, ValidRunsMaintenanceInvariants)
     changelog_read.readChangelogAndInitWriter(0, 0);
     changelog_read.checkValidRunsConsistencyForTests();
 }
+
+#if USE_SSL
+// On an encrypted disk `force_sync` is always disabled, and the file buffer is a `WriteBufferFromEncryptedFile`
+// on top of the buffer of the wrapped disk. Flushed entries must be readable from the still open active file,
+// including the entries appended after the file was reopened.
+TYPED_TEST(CoordinationChangelogTest, EncryptedDiskReadFlushedEntriesFromActiveFile)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "Log locations are recorded only for uncompressed logs; body always uses compress_logs=false.";
+
+    ChangelogDirTest test("./logs");
+
+    auto disk_settings = std::make_unique<DB::DiskEncryptedSettings>();
+    const DB::SecretString key{"1234567890123456"};
+    const auto fingerprint = DB::FileEncryption::calculateKeyFingerprint(key);
+    disk_settings->wrapped_disk = std::make_shared<DB::DiskLocal>("LogDisk", "./logs");
+    disk_settings->current_algorithm = DB::FileEncryption::Algorithm::AES_128_CTR;
+    disk_settings->all_keys[fingerprint] = key;
+    disk_settings->current_key = key;
+    disk_settings->current_key_fingerprint = fingerprint;
+    this->keeper_context->setLogDisk(std::make_shared<DB::DiskEncrypted>("EncryptedLogDisk", std::move(disk_settings)));
+
+    // Tiny cache forces entries to disk; all entries stay in one file and are much smaller than the file buffer.
+    const DB::LogFileSettings settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 100,
+        .latest_logs_cache_size_threshold = 1,
+    };
+
+    const auto payload = [](uint64_t index) { return "encrypted_" + std::to_string(index); };
+
+    const auto append_entries = [&](DB::KeeperLogStore & store, uint64_t from, uint64_t to)
+    {
+        for (uint64_t i = from; i <= to; ++i)
+        {
+            auto entry = getLogEntry(payload(i), i * 10);
+            store.append(entry);
+        }
+        // flush() twice: the first waits for the flush of the entries, the second drains their locations
+        // into logs_location and evicts all entries except the last one from the latest logs cache.
+        ASSERT_TRUE(store.flush());
+        ASSERT_TRUE(store.flush());
+    };
+
+    const auto check_entries_from_file = [&](DB::KeeperLogStore & store, uint64_t from, uint64_t to)
+    {
+        for (uint64_t i = from; i <= to; ++i)
+        {
+            const uint64_t file_reads_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromFile];
+            auto entry = store.entry_at(i);
+            ASSERT_NE(entry, nullptr) << "index " << i;
+            const uint64_t file_reads_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromFile];
+            EXPECT_GT(file_reads_after, file_reads_before) << "index " << i;
+
+            const auto expected = getLogEntry(payload(i), i * 10);
+            EXPECT_EQ(entry->get_term(), expected->get_term()) << "index " << i;
+            ASSERT_EQ(entry->get_buf().size(), expected->get_buf().size()) << "index " << i;
+            EXPECT_EQ(memcmp(entry->get_buf().data_begin(), expected->get_buf().data_begin(), expected->get_buf().size()), 0)
+                << "index " << i;
+        }
+    };
+
+    {
+        DB::KeeperLogStore changelog(settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        changelog.init(0, 0);
+
+        append_entries(changelog, 1, 4);
+
+        // The writer is still open: the entries are read from the file that was only flushed, not finalized.
+        check_entries_from_file(changelog, 2, 3);
+    }
+
+    // Continue the same file: the locations of the new entries must take its existing size into account.
+    DB::KeeperLogStore changelog(settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    changelog.init(0, 0);
+
+    append_entries(changelog, 5, 8);
+
+    check_entries_from_file(changelog, 5, 7);
+    check_entries_from_file(changelog, 2, 3);
+}
+#endif
 
 // Tests: per-peer read-ahead
 
