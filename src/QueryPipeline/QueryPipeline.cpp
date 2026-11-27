@@ -1,5 +1,6 @@
 #include <QueryPipeline/QueryPipeline.h>
 
+#include <algorithm>
 #include <iterator>
 #include <tuple>
 #include <Common/MapWithMemoryTracking.h>
@@ -205,15 +206,19 @@ static void initRowsBeforeLimit(const Processors & pipeline_processors, IOutputF
     UnorderedMapWithMemoryTracking<const OutputPort *, OutputPort *> paired_sources;
     /// Producers of the `DelayedPorts` inputs that have no output (its delayed pipelines), followed from every output.
     UnorderedMapWithMemoryTracking<const IProcessor *, VectorWithMemoryTracking<OutputPort *>> unpaired_sources;
+    /// Owners of `paired_sources`, a few per pipeline: searched for every pushed child, cheaper than a hash lookup.
+    VectorWithMemoryTracking<const IProcessor *> paired_processors;
     for (const auto & processor : pipeline_processors)
     {
         if (auto * offset = typeid_cast<OffsetTransform *>(processor.get()); offset && offset->getOffset() == 0)
         {
+            paired_processors.push_back(offset);
             for (auto & output : offset->getOutputs())
                 paired_sources.emplace(&output, &offset->getPairedInputPort(output).getOutputPort());
         }
         else if (auto * delayed = typeid_cast<DelayedPortsProcessor *>(processor.get()))
         {
+            paired_processors.push_back(delayed);
             for (auto & output : delayed->getOutputs())
                 paired_sources.emplace(&output, &delayed->getPairedInputPort(output).getOutputPort());
             for (auto & input : delayed->getInputs())
@@ -225,12 +230,12 @@ static void initRowsBeforeLimit(const Processors & pipeline_processors, IOutputF
     auto push_child = [&](OutputPort & output, IProcessor * limit, ssize_t limit_port)
     {
         OutputPort * port = &output;
-        for (auto it = paired_sources.find(port); it != paired_sources.end(); it = paired_sources.find(port))
+        while (std::ranges::contains(paired_processors, &port->getProcessor()))
         {
             if (auto unpaired = unpaired_sources.find(&port->getProcessor()); unpaired != unpaired_sources.end())
                 for (auto * source : unpaired->second)
                     queue.push({ &source->getProcessor(), limit, limit_port });
-            port = it->second;
+            port = paired_sources.at(port);
         }
         queue.push({ &port->getProcessor(), limit, limit_port });
     };
