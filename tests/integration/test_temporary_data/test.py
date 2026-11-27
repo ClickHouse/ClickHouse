@@ -136,9 +136,12 @@ def test_distinct_cancellation_releases_temporary_data(start_cluster, cancel_sta
 
     baseline_files = temporary_files()
     query_id = str(uuid.uuid4())
-    query = "SELECT DISTINCT number FROM system.numbers FORMAT Null"
+    # A `DISTINCT` over a source that never ends stays in memory, so the input has an end, far beyond the
+    # point where the test cancels the query.
+    query = "SELECT DISTINCT number FROM numbers(1000000000000000) FORMAT Null"
     settings = {
         "max_threads": 1,
+        "max_rows_to_read": 0,
         "max_bytes_before_external_distinct": "1M",
         "max_bytes_ratio_before_external_distinct": 0,
         "max_untracked_memory": 0,
