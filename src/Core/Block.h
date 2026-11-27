@@ -7,6 +7,7 @@
 #include <Core/NamesAndTypes.h>
 
 #include <initializer_list>
+#include <utility>
 #include <vector>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -38,6 +39,10 @@ private:
     Container data;
     IndexByName index_by_name;
 
+    /// The number of rows of a block that has no columns, see `setRowsWithoutColumns`.
+    /// It is zero while the block has columns: the rows are in the columns then.
+    size_t rows_without_columns = 0;
+
 public:
     BlockInfo info;
 
@@ -45,6 +50,27 @@ public:
     Block(std::initializer_list<ColumnWithTypeAndName> il);
     Block(const ColumnsWithTypeAndName & data_); /// NOLINT
     Block(ColumnsWithTypeAndName && data_); /// NOLINT
+
+    Block(const Block &) = default;
+    Block & operator=(const Block &) = default;
+
+    /// A block that was moved from has neither columns nor rows, the same as a `Chunk`.
+    Block(Block && other) noexcept
+        : data(std::move(other.data))
+        , index_by_name(std::move(other.index_by_name))
+        , rows_without_columns(std::exchange(other.rows_without_columns, 0))
+        , info(std::move(other.info))
+    {
+    }
+
+    Block & operator=(Block && other) noexcept
+    {
+        data = std::move(other.data);
+        index_by_name = std::move(other.index_by_name);
+        rows_without_columns = std::exchange(other.rows_without_columns, 0);
+        info = std::move(other.info);
+        return *this;
+    }
 
     /// insert the column at the specified position
     void insert(size_t position, ColumnWithTypeAndName elem);
@@ -116,8 +142,22 @@ public:
     [[nodiscard]] Serializations getSerializations() const;
     [[nodiscard]] Serializations getSerializations(const SerializationInfoByName & hints) const;
 
-    /// Returns number of rows from first column in block, not equal to nullptr. If no columns, returns 0.
+    /// Returns the number of rows: from the first column in the block that is not nullptr,
+    /// and for a block with no columns, the number set by `setRowsWithoutColumns` (zero by default).
     [[nodiscard]] size_t rows() const;
+
+    /// Sets the number of rows of a block that has no columns. Such a block is not empty when the number
+    /// is not zero: its rows carry no values at all, and their number is all the data there is. It is what
+    /// a shard produces for `SELECT count() OVER () FROM distributed_table WHERE x > 0`, where the
+    /// initiator needs the number of rows and nothing else.
+    ///
+    /// The number of rows of a block with no columns is never derived: removing every column of a block
+    /// leaves a block without rows, and so does making a block out of a header with no columns
+    /// (`cloneWithColumns`, `setColumns`). The code that turns rows into a block with no columns has to
+    /// call this method. Inserting a column resets the number: the block takes its rows from its columns then.
+    ///
+    /// It is a logical error to call it for a block that has columns.
+    void setRowsWithoutColumns(size_t num_rows);
 
     [[nodiscard]] size_t columns() const { return data.size(); }
 
@@ -130,7 +170,11 @@ public:
     /// Approximate number of allocated bytes in memory - for profiling and limits.
     [[nodiscard]] size_t allocatedBytes() const;
 
-    [[nodiscard]] bool empty() const { return !columns(); }
+    /// The block has neither columns nor rows, the same as for a `Chunk`: it is not data at all, but the
+    /// absence of it, e.g. the end of the data, or a timeout while waiting for it. A header is empty when
+    /// it has no columns. A block with no columns is not empty when it has rows, see
+    /// `setRowsWithoutColumns`: ask `columns` to know whether there are columns.
+    [[nodiscard]] bool empty() const { return data.empty() && rows_without_columns == 0; }
 
     /** Get a list of column names separated by commas. */
     [[nodiscard]] std::string dumpNames() const;

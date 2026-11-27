@@ -43,6 +43,9 @@ public:
     [[nodiscard]] const ColumnsSubstreams & getColumnsSubstreams() const { return writer->getColumnsSubstreams(); }
     void finish(bool sync);
     void cancel() noexcept override;
+
+private:
+    NameSet files_to_remove_after_finish;
 };
 
 using MergedColumnOnlyOutputStreamPtr = std::shared_ptr<MergedColumnOnlyOutputStream>;

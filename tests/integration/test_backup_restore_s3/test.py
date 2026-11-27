@@ -358,6 +358,10 @@ def test_backup_to_s3_disk_fsyncs_local_metadata(cluster):
     # actually stored plus the .backup manifest, so FileSync must equal num_entries + 1, which fails if
     # any single metadata file is left unsynced. num_entries, not num_files: num_files also counts the
     # entries that were skipped (e.g. as empty), and a file that is never written is never synced.
+    # disk_s3 has `persistent_removal_log` enabled, and a backup removes its lock file when it finishes:
+    # that is one more synced write per backup, whatever fsync_backup_files is.
+    lock_file_removal_syncs = 1
+
     def assert_every_file_synced(backup_events):
         num_entries = int(
             node.query(
@@ -365,7 +369,7 @@ def test_backup_to_s3_disk_fsyncs_local_metadata(cluster):
                 f" WHERE query_id = '{backup_events['query_id']}'"
             ).strip()
         )
-        assert backup_events["FileSync"] == num_entries + 1, (num_entries, backup_events)
+        assert backup_events["FileSync"] == num_entries + 1 + lock_file_removal_syncs, (num_entries, backup_events)
         # The directory count follows the part layout, so it is only bounded here; the archive arm
         # below pins an exact count.
         assert backup_events["DirectorySync"] >= 1, backup_events
@@ -373,7 +377,7 @@ def test_backup_to_s3_disk_fsyncs_local_metadata(cluster):
     # An archive (`.tar`: zip is rejected on object storage) is packed into one file written directly
     # into the disk root, so exactly one metadata file and one metadata directory are synced.
     def assert_archive_synced(backup_events):
-        assert backup_events["FileSync"] == 1, backup_events
+        assert backup_events["FileSync"] == 1 + lock_file_removal_syncs, backup_events
         assert backup_events["DirectorySync"] == 1, backup_events
 
     backup_events, _ = check_backup_and_restore(
@@ -392,14 +396,15 @@ def test_backup_to_s3_disk_fsyncs_local_metadata(cluster):
     )
     assert_archive_synced(backup_events)
 
-    # The opt-out issues no sync of either kind, so the counts above are attributable to the setting.
+    # The opt-out leaves only the sync of the lock file removal, so the rest of the counts above is
+    # attributable to the setting.
     backup_events, _ = check_backup_and_restore(
         cluster,
         "default",
         f"Disk('disk_s3', '{new_backup_name()}')",
         backup_settings={"fsync_backup_files": 0},
     )
-    assert backup_events.get("FileSync", 0) == 0, backup_events
+    assert backup_events.get("FileSync", 0) == lock_file_removal_syncs, backup_events
     assert backup_events.get("DirectorySync", 0) == 0, backup_events
 
     # A plain-rewritable disk keeps its metadata in the object storage too, so there is no local file

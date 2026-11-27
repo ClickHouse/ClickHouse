@@ -371,6 +371,60 @@ DROP HANDLER [IF EXISTS] name [ON CLUSTER cluster]
 CREATE HANDLER my_handler URL '/my_handler' AS SELECT version();
 DROP HANDLER my_handler;
 ```
+
+## DROP INDEX {#drop-index}
+
+Introduced in: v22.7.0
+
+Deletes a data skipping index of a `MergeTree`-family table. It is a standalone form of [`ALTER TABLE ... DROP INDEX`](/reference/statements/alter/skipping-index#drop-index) and requires the same `ALTER DROP INDEX` privilege.
+
+**Syntax**
+
+```sql
+DROP INDEX [IF EXISTS] name ON [db.]table [ON CLUSTER cluster]
+```
+
+**Example**
+
+```sql
+DROP INDEX idx_s ON t;
+```
+
+## DROP WORKLOAD {#drop-workload}
+
+Introduced in: v24.11.0
+
+Deletes a workload created by [CREATE WORKLOAD](/reference/statements/create/workload). A workload that is the parent of another workload cannot be dropped. Requires the `DROP WORKLOAD` privilege.
+
+**Syntax**
+
+```sql
+DROP WORKLOAD [IF EXISTS] name [ON CLUSTER cluster]
+```
+
+**Example**
+
+```sql
+DROP WORKLOAD development;
+```
+
+## DROP RESOURCE {#drop-resource}
+
+Introduced in: v24.11.0
+
+Deletes a resource created by [CREATE RESOURCE](/reference/statements/create/resource). A resource used in the `FOR` clause of a workload setting cannot be dropped. Requires the `DROP RESOURCE` privilege.
+
+**Syntax**
+
+```sql
+DROP RESOURCE [IF EXISTS] name [ON CLUSTER cluster]
+```
+
+**Example**
+
+```sql
+DROP RESOURCE local_io;
+```
 )DOCS_MD",
         .syntax = R"(
 DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster] [SYNC]
@@ -386,6 +440,9 @@ DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM 
 DROP FUNCTION [IF EXISTS] function_name [ON CLUSTER cluster]
 DROP NAMED COLLECTION [IF EXISTS] name [ON CLUSTER cluster]
 DROP HANDLER [IF EXISTS] name [ON CLUSTER cluster]
+DROP INDEX [IF EXISTS] name ON [db.]table [ON CLUSTER cluster]
+DROP WORKLOAD [IF EXISTS] name [ON CLUSTER cluster]
+DROP RESOURCE [IF EXISTS] name [ON CLUSTER cluster]
 )",
         .related = {"DETACH", "TRUNCATE", "UNDROP", "CREATE"},
     };
