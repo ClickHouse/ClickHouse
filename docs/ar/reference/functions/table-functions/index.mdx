@@ -8,7 +8,9 @@ doc_type: 'reference'
 
 دوال الجداول هي أساليب لإنشاء الجداول.
 
-## الاستخدام {#usage}
+<div id="usage">
+  ## الاستخدام
+</div>
 
 يمكن استخدام دوال الجداول في العبارة [`FROM`](/ar/reference/statements/select/from)
 ضمن استعلام `SELECT`. على سبيل المثال، يمكنك استخدام `SELECT` لقراءة البيانات من ملف على جهازك
@@ -86,7 +88,5 @@ cat numbers.csv
 ```
 
 <Note>
-  تحتاج معظم دوال الجداول إلى صلاحية `CREATE TEMPORARY TABLE` لتعمل، لذلك يُرفض أي `SELECT` أو `INSERT`
-  ينفّذ إحداها عندما تكون قيمة
-  [`readonly`](/ar/concepts/features/configuration/settings/permissions-for-queries#readonly) مضبوطة على 1.
+  لا يمكنك استخدام دوال الجداول إذا كان الإعداد [allow&#95;ddl](/ar/reference/settings/session-settings/allow#allow_ddl) معطّلًا.
 </Note>

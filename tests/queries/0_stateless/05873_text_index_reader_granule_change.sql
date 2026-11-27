@@ -4,7 +4,7 @@
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab (id UInt64, text String, INDEX idx(text) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'pfor') GRANULARITY 1)
+CREATE TABLE tab (id UInt64, text String, INDEX idx(text) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking') GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 64, index_granularity_bytes = '10Mi', text_index_posting_list_block_size = 16;
 

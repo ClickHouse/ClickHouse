@@ -58,11 +58,11 @@ public:
 
     void tryUpdateConnection();
 
-    [[nodiscard]] bool isConnected() const { return connection != nullptr && connection->is_open(); }
+    bool isConnected() const { return connection != nullptr && connection->is_open(); }
 
     const ConnectionInfo & getConnectionInfo() { return connection_info; }
 
-    [[nodiscard]] String getInfoForLog() const { return connection_info.host_port; }
+    String getInfoForLog() const { return connection_info.host_port; }
 
 private:
 

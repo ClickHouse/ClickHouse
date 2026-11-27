@@ -36,9 +36,6 @@ private:
 
     std::vector<PortsData> ports_data;
 
-    /// Inputs are not requested before an output asks for data.
-    bool was_output_needed = false;
-
     /// `Pull` stage: it ends when all input ports are closed.
     /// `Push` stage: it starts immediately after the `Pull` stage and it ends
     ///               when all queued full/partial chunks are pushed to output ports excluding the offset.

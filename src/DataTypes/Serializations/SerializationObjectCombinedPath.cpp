@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/Serializations/SerializationObjectCombinedPath.h>
 #include <Interpreters/castColumn.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
@@ -78,11 +77,11 @@ struct DeserializeBinaryBulkStateObjectCombinedPath : public ISerialization::Des
     ISerialization::DeserializeBinaryBulkStatePtr literal_state;
     ISerialization::DeserializeBinaryBulkStatePtr sub_object_state;
 
-    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateObjectCombinedPath>(*this);
-        new_state->literal_state = literal_state ? literal_state->clone(context) : nullptr;
-        new_state->sub_object_state = sub_object_state ? sub_object_state->clone(context) : nullptr;
+        new_state->literal_state = literal_state ? literal_state->clone() : nullptr;
+        new_state->sub_object_state = sub_object_state ? sub_object_state->clone() : nullptr;
         return new_state;
     }
 };

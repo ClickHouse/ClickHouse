@@ -13,14 +13,11 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/SecretArgumentsSpec.h>
-#include <Storages/Kafka/Kafka_fwd.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
-#include <Storages/Kafka/KafkaConfigLoader.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
@@ -47,7 +44,6 @@
 
 #include <cppkafka/cppkafka.h>
 #include <librdkafka/rdkafka.h>
-#include <Databases/IDatabase.h>
 
 #if USE_KRB5
 #    include <Access/KerberosInit.h>
@@ -128,10 +124,6 @@ void registerStorageKafka(StorageFactory & factory)
             &args.table_id,
             args.storage_def->settings))
         {
-            /// The named collection is checked every time, also when the definition is read back from metadata
-            /// (server startup, short `ATTACH`): the collection can change after the table is created.
-            KafkaConfigLoader::checkNamedCollection(*named_collection);
-
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
         }
@@ -375,12 +367,6 @@ void registerStorageKafka(StorageFactory & factory)
     factory.registerStorage(
         "Kafka",
         creator_fn,
-        SecretArgumentsSpec{
-            /// Kafka(named_collection, kafka_sasl_password = '...'); the legacy positional form carries no
-            /// secret and makes the collection name optional, so a named argument can be the first one.
-            .secret_settings = Kafka::settingsToHide(),
-            .settings_as_arguments = true,
-        },
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::KAFKA,
@@ -388,6 +374,8 @@ void registerStorageKafka(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+
 # Kafka table engine
 
 <Tip>
@@ -442,10 +430,8 @@ Required parameters:
 
 - `kafka_broker_list` — A comma-separated list of brokers (for example, `localhost:9092`).
 - `kafka_topic_list` — A list of Kafka topics.
-- `kafka_group_name` — A group of Kafka consumers. Reading margins are tracked for each group separately. If you do not want messages to be duplicated in the cluster, use the same group name everywhere. Supports macro expansion (e.g., `'consumers_{replica}'`), which lets each replica use its own consumer group and read all messages.
+- `kafka_group_name` — A group of Kafka consumers. Reading margins are tracked for each group separately. If you do not want messages to be duplicated in the cluster, use the same group name everywhere.
 - `kafka_format` — Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](/reference/formats/index) section.
-
-The values of `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_client_id` and `kafka_schema` support macro expansion: `{database}` and `{table}` are replaced with the table's database and name, and other macros such as `{shard}` and `{replica}` are taken from the server's `macros` configuration.
 
 Optional parameters:
 
@@ -485,82 +471,6 @@ Note: Kafka brokers must be configured with `broker.rack` and `replica.selector.
 - `kafka_map_virtual_columns_on_write` — If enabled, columns with special names `_key`, `_timestamp`, `_headers.name` and `_headers.value` in the table schema are mapped to the corresponding Kafka message metadata on `INSERT` and are excluded from the message payload. See [Mapping columns to Kafka message metadata](#mapping-columns-to-kafka-message-metadata). Default: `false`.
 - `kafka_partition_shard_num` — The current shard number for static partition-to-shard affinity. Must be between 1 and `kafka_shard_count` inclusive. Partitions are assigned by the formula `partition_id % kafka_shard_count == kafka_partition_shard_num - 1`. Supports macro expansion (e.g., `'{shard}'`). Must be used together with `kafka_shard_count`. Only supported with StorageKafka2 (requires `kafka_keeper_path` and `kafka_replica_name`). Default: `''` (disabled).
 - `kafka_shard_count` — Total number of shards participating in consumption. Used together with `kafka_partition_shard_num` to statically assign partitions. Must be used together with `kafka_partition_shard_num`. Only supported with StorageKafka2. Default: `0` (disabled).
-
-## TLS and SASL with named collections {#kafka-tls-sasl-named-collections}
-
-The Kafka table engine exposes only a subset of [librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) settings as table-level `kafka_*` parameters (for example `kafka_security_protocol`, `kafka_sasl_mechanism`, `kafka_sasl_username`, and `kafka_sasl_password`). **TLS certificate paths, private keys, and key passwords are not table settings**; configure them as extended `librdkafka` properties.
-
-For `ENGINE = Kafka(named_collection)`:
-
-- Top-level `kafka_*` keys in the named collection are Kafka table-engine settings (brokers, topic, format, and the protocol/SASL settings listed above).
-- Keys with the `kafka.` prefix in `CREATE NAMED COLLECTION`, or nested under `<kafka>` in XML, are forwarded to `librdkafka`. Underscores in the key name are converted to dots (for example `kafka.ssl_ca_location` → `ssl.ca.location`, or `<ssl_ca_location>` under `<kafka>` → `ssl.ca.location`).
-
-When a named collection is used, **the global server `<kafka>` block in `config.xml` is not merged**. Each collection must include every extended property the table needs (including TLS files and `security.protocol` when it is not set via non-empty table `SETTINGS`).
-
-A named collection created with `CREATE NAMED COLLECTION` accepts only `librdkafka` properties on the [allowlist](https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/Kafka/KafkaConfigLoader.cpp), such as `security.protocol`, `sasl.username`, and `fetch.min.bytes`. If a table uses a collection with an unlisted property, ClickHouse returns `BAD_ARGUMENTS`. To use other supported properties, such as `sasl.kerberos.keytab` or `sasl.oauthbearer.token.endpoint.url`, define the collection in the server configuration file. This restriction also applies to properties added with `ALTER NAMED COLLECTION` after the table was created.
-
-In a named collection created with SQL, pass the contents of the file instead of its path: `ssl.key.pem`, `ssl.certificate.pem`, `ssl.ca.pem`, `https.ca.pem`, and `sasl.oauthbearer.assertion.private.key.pem`. The value `probe` of `ssl.ca.location` and `https.ca.location` is also accepted, because it is not a path.
-
-A common layout for `SASL_SSL` with client certificates: store the certificates, the private key, and `ssl.key.password` in the named collection; set `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format`, and optionally `kafka_sasl_username` / `kafka_sasl_password` in the table `SETTINGS` clause. Both `kafka.security_protocol` and `kafka_security_protocol` set `security.protocol`, and the non-empty table setting wins. If the collection already stores that property, the table setting is a named collection override: it requires `SHOW NAMED COLLECTIONS SECRETS` on the collection, and it fails with `Override not allowed` if the key is `NOT OVERRIDABLE`. The same applies to `kafka_sasl_mechanism`, `kafka_sasl_username`, and `kafka_sasl_password`.
-
-Example with a named collection created with SQL, which contains the certificates and the private key in the PEM format:
-
-```sql
-CREATE NAMED COLLECTION kafka_mtls AS
-    kafka.security_protocol = 'SASL_SSL',
-    kafka.sasl_mechanism = 'PLAIN',
-    kafka.ssl_ca_pem = '-----BEGIN CERTIFICATE-----
-...
------END CERTIFICATE-----',
-    kafka.ssl_certificate_pem = '-----BEGIN CERTIFICATE-----
-...
------END CERTIFICATE-----',
-    kafka.ssl_key_pem = '-----BEGIN ENCRYPTED PRIVATE KEY-----
-...
------END ENCRYPTED PRIVATE KEY-----',
-    kafka.ssl_key_password = 'secret';
-
-CREATE TABLE queue (
-    id UInt64,
-    payload String
-) ENGINE = Kafka(kafka_mtls)
-SETTINGS
-    kafka_broker_list = 'broker:9092',
-    kafka_topic_list = 'topic',
-    kafka_group_name = 'group',
-    kafka_format = 'JSONEachRow',
-    kafka_sasl_username = 'user',
-    kafka_sasl_password = 'password';
-```
-
-The same extended settings in an XML-defined collection, which can refer to the files instead (the files must exist on every ClickHouse server that runs consumers for the table):
-
-```xml
-<clickhouse>
-    <named_collections>
-        <kafka_mtls>
-            <kafka>
-                <security_protocol>SASL_SSL</security_protocol>
-                <sasl_mechanism>PLAIN</sasl_mechanism>
-                <ssl_ca_location>/etc/clickhouse/certs/ca.pem</ssl_ca_location>
-                <ssl_certificate_location>/etc/clickhouse/certs/client.pem</ssl_certificate_location>
-                <ssl_key_location>/etc/clickhouse/certs/client.key</ssl_key_location>
-                <ssl_key_password>secret</ssl_key_password>
-            </kafka>
-        </kafka_mtls>
-    </named_collections>
-</clickhouse>
-```
-
-See the [librdkafka configuration reference](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) for all TLS-related properties. For server-wide defaults without named collections, see [Configuration](#configuration) below.
-
-## OAUTHBEARER/OIDC authentication {#oauthbearer-oidc-authentication}
-
-`OAUTHBEARER` authentication uses [librdkafka configuration properties](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md). Configure `sasl.oauthbearer.method`, `sasl.oauthbearer.client.id`, `sasl.oauthbearer.client.secret`, `sasl.oauthbearer.token.endpoint.url`, and `sasl.oauthbearer.scope` for the OIDC client credentials flow.
-
-When defining these properties in ClickHouse XML, replace periods with underscores. For example, use `<sasl_oauthbearer_client_id>` for `sasl.oauthbearer.client.id`.
-
-For `ENGINE = Kafka(named_collection)`, extended `librdkafka` settings (including OIDC) use the same `kafka.` / `<kafka>` namespace described in [TLS and SASL with named collections](#kafka-tls-sasl-named-collections). The global server `<kafka>` configuration is not merged when a named collection is used, so each collection must include all required OIDC properties. See [Kafka named collections](/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication) for a complete example.
 
 Examples:
 
@@ -659,24 +569,6 @@ Example, using [named collections](/concepts/features/configuration/server-confi
 ```
 To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
-The following table settings control how often the consumed data is written to the materialized views:
-
-- `kafka_max_block_size` — a block is flushed as soon as it has this many rows. Default: `max_insert_block_size` divided by `kafka_num_consumers`.
-- `kafka_flush_interval_ms` — a block is flushed after this time even if it is not full. Default: [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms) (7500 ms). Decrease it to reduce the delay between producing a message and seeing it in the target table.
-- `kafka_consumer_reschedule_ms` — when there are no new messages, the engine waits this long before polling again. Default: `500` ms.
-
-These are settings of the Kafka table, set in its `SETTINGS` clause. They cannot be set in the `<kafka>` section of the server configuration file: every key there is passed to librdkafka as a property (see [Configuration](#configuration)), so for example `<flush_interval_ms>` is not a ClickHouse setting there.
-
-```sql
-CREATE TABLE queue (timestamp UInt64, level String, message String)
-ENGINE = Kafka
-SETTINGS kafka_broker_list = 'localhost:9092',
-         kafka_topic_list = 'topic',
-         kafka_group_name = 'group1',
-         kafka_format = 'JSONEachRow',
-         kafka_flush_interval_ms = 1000;
-```
-
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
 ```sql
@@ -765,7 +657,7 @@ The AWS region is automatically extracted from the broker endpoint using pattern
 
 **AWS Credentials:**
 
-By default, the server does not resolve any AWS credentials for `AWS_MSK_IAM`, and authentication fails with `AWS credentials are empty or expired`. To let the server authenticate with its ambient AWS identity, add to your server configuration:
+Credentials are always loaded from `~/.aws/credentials` and `~/.aws/config` (AWS profile files) when present. To also enable EC2 instance profiles, environment variables (`AWS_ACCESS_KEY_ID`, etc.), ECS task roles, and other automatic credential sources, add to your server configuration:
 
 ```xml
 <kafka>
@@ -773,15 +665,7 @@ By default, the server does not resolve any AWS credentials for `AWS_MSK_IAM`, a
 </kafka>
 ```
 
-The ambient credential sources are: environment variables (`AWS_ACCESS_KEY_ID`, etc.), EC2 instance profiles (IMDS), IAM roles for service accounts (IRSA), ECS task roles, SSO, and the `~/.aws/credentials` and `~/.aws/config` profile files.
-
 This setting can only be configured by server administrators. Default: `false`.
-
-<Warning>
-This setting is unsafe. When it is enabled, every user with the `KAFKA` source grant and `CREATE TABLE` can select the `AWS_MSK_IAM` mechanism, the broker list, and the AWS region in table settings. The server then signs a `kafka-cluster:Connect` token with its own AWS identity and sends the token to the user-chosen broker. The token contains the AWS access key ID and the full STS session token, and the receiving host can replay it against MSK clusters in that region as the server.
-
-Enable this setting only if you trust every user who can create Kafka tables with the server's AWS identity. Restrict the hosts that Kafka tables can connect to with [remote_url_allow_hosts](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts), which is empty (allow all hosts) by default.
-</Warning>
 
 **PrivateLink and Custom DNS:**
 

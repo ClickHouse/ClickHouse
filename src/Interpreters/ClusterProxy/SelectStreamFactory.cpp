@@ -24,7 +24,6 @@
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -38,6 +37,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsBool prefer_localhost_replica;
@@ -60,6 +60,56 @@ namespace FailPoints
 namespace ClusterProxy
 {
 
+/// select query has database, table and table function names as AST pointers
+/// Creates a copy of query, changes database, table and table function names.
+ASTPtr rewriteSelectQuery(
+    ContextPtr context,
+    const ASTPtr & query,
+    const std::string & remote_database,
+    const std::string & remote_table,
+    ASTPtr table_function_ptr)
+{
+    auto modified_query_ast = query->clone();
+
+    ASTSelectQuery & select_query = modified_query_ast->as<ASTSelectQuery &>();
+
+    // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
+    // settings won't break any remote parser. It's also more reasonable since the query settings
+    // are written into the query context and will be sent by the query pipeline.
+    select_query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+
+    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        if (table_function_ptr)
+            select_query.addTableFunction(table_function_ptr);
+        else
+            select_query.replaceDatabaseAndTable(remote_database, remote_table);
+
+        /// Restore long column names (cause our short names are ambiguous).
+        /// TODO: aliased table functions & CREATE TABLE AS table function cases
+        if (!table_function_ptr)
+        {
+            RestoreQualifiedNamesVisitor::Data data;
+            data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query->as<ASTSelectQuery &>(), 0));
+            data.remote_table.database = remote_database;
+            data.remote_table.table = remote_table;
+            RestoreQualifiedNamesVisitor(data).visit(modified_query_ast);
+        }
+    }
+
+    /// To make local JOIN works, default database should be added to table names.
+    /// But only for JOIN section, since the following should work using default_database:
+    /// - SELECT * FROM d WHERE value IN (SELECT l.value FROM l) ORDER BY value
+    ///   (see 01487_distributed_in_not_default_db)
+    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase(),
+        /* only_replace_current_database_function_= */false,
+        /* only_replace_in_join_= */true);
+    visitor.visit(modified_query_ast);
+
+    return modified_query_ast;
+}
+
+
 SelectStreamFactory::SelectStreamFactory(
     SharedHeader header_,
     const StorageSnapshotPtr & storage_snapshot_,
@@ -72,29 +122,46 @@ SelectStreamFactory::SelectStreamFactory(
 
 void SelectStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
-    const QueryTreeNodePtr & query_tree,
+    const ASTPtr & query_ast,
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
     ContextPtr context,
-    QueryPlanPtrs & local_plans,
+    std::vector<QueryPlanPtr> & local_plans,
     Shards & remote_shards,
     UInt32 shard_count,
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator,
     const UnavailableShardTrackerPtr & unavailable_shard_tracker)
 {
-    if (query.tree != query_tree)
-    {
-        /// Convert grouping function specializations (e.g. __groupingForGroupingSets -> grouping)
-        /// so the AST contains the generic function name that the shard's analyzer can re-resolve.
-        /// Use a clone to keep the original query_tree with specialized functions intact,
-        /// since it is reused later for getSampleBlock / plan building.
-        auto query_tree_for_ast = query_tree->clone();
-        removeGroupingFunctionSpecializations(query_tree_for_ast);
+    createForShardImpl(
+        shard_info,
+        query_ast,
+        {},
+        main_table,
+        table_func_ptr,
+        std::move(context),
+        local_plans,
+        remote_shards,
+        shard_count,
+        parallel_replicas_enabled,
+        std::move(shard_filter_generator),
+        unavailable_shard_tracker);
+}
 
-        query = {.tree = query_tree, .ast = queryNodeToDistributedSelectQuery(query_tree_for_ast), .header = {}, .planner_context = {}};
-    }
-
+void SelectStreamFactory::createForShardImpl(
+    const Cluster::ShardInfo & shard_info,
+    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const StorageID & main_table,
+    const ASTPtr & table_func_ptr,
+    ContextPtr context,
+    std::vector<QueryPlanPtr> & local_plans,
+    Shards & remote_shards,
+    UInt32 shard_count,
+    bool parallel_replicas_enabled,
+    AdditionalShardFilterGenerator shard_filter_generator,
+    const UnavailableShardTrackerPtr & unavailable_shard_tracker) const
+{
     ContextPtr context_without_parallel_replicas;
 
     /// `local_storage` is the table the local plan will read, null when it is not resolved.
@@ -120,7 +187,7 @@ void SelectStreamFactory::createForShard(
         }
 
         local_plans.emplace_back(createLocalPlan(
-            query.ast->clone(), *header, local_context, processed_stage, shard_info.shard_num, shard_count));
+            query_ast, *header, local_context, processed_stage, shard_info.shard_num, shard_count));
     };
 
     // If lazy is true, a lazy pipe will be created. It will try to use the local replica and, if not possible, will use DelayedSource for reading from remote replica.
@@ -134,21 +201,19 @@ void SelectStreamFactory::createForShard(
 
         /// Disable for distributed_group_by_no_merge now, because distributed-over-distributed only works up to FetchColumns,
         /// But distributed_group_by_no_merge requires Complete.
-        if (settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
+        if (settings[Setting::allow_experimental_analyzer] && settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
         {
             query_plan = createLocalPlan(
-                query.ast->clone(), *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database);
+                query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database);
 
             shard_header = query_plan->getCurrentHeader();
         }
         else
         {
-            /// The same for all shards with this query tree, so do not plan the query again for each of them.
-            if (!query.header)
-                std::tie(query.header, query.planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
-
-            shard_header = query.header;
-            planner_context = query.planner_context;
+            if (settings[Setting::allow_experimental_analyzer])
+                std::tie(shard_header, planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
+            else
+                shard_header = header;
         }
 
         /// Strip initiator-only settings from the query text forwarded to the shard. The AST carries them
@@ -156,8 +221,8 @@ void SelectStreamFactory::createForShard(
         /// which `queryNodeToDistributedSelectQuery` (`QueryNode::toAST`) materializes into the SELECT's
         /// `SETTINGS`. They are irrelevant to the remote query and can trip `UNKNOWN_SETTING` on an older
         /// shard during a rolling upgrade; the inter-server settings packet is stripped separately in
-        /// `updateSettings`. The local plan (`emplace_local_stream`) keeps the unstripped query.
-        auto forwarded_query = query.ast->clone();
+        /// `updateSettings`. The local plan (`emplace_local_stream`) keeps the unstripped `query_ast`.
+        auto forwarded_query = query_ast->clone();
         stripInitiatorOnlySettingsFromQuery(forwarded_query);
 
         remote_shards.emplace_back(Shard{
@@ -283,6 +348,41 @@ void SelectStreamFactory::createForShard(
     }
     else
         emplace_remote_stream();
+}
+
+void SelectStreamFactory::createForShard(
+    const Cluster::ShardInfo & shard_info,
+    const QueryTreeNodePtr & query_tree,
+    const StorageID & main_table,
+    const ASTPtr & table_func_ptr,
+    ContextPtr context,
+    std::vector<QueryPlanPtr> & local_plans,
+    Shards & remote_shards,
+    UInt32 shard_count,
+    bool parallel_replicas_enabled,
+    AdditionalShardFilterGenerator shard_filter_generator,
+    const UnavailableShardTrackerPtr & unavailable_shard_tracker)
+{
+    /// Convert grouping function specializations (e.g. __groupingForGroupingSets -> grouping)
+    /// so the AST contains the generic function name that the shard's analyzer can re-resolve.
+    /// Use a clone to keep the original query_tree with specialized functions intact,
+    /// since it is reused later for getSampleBlock / plan building.
+    auto query_tree_for_ast = query_tree->clone();
+    removeGroupingFunctionSpecializations(query_tree_for_ast);
+
+    createForShardImpl(
+        shard_info,
+        queryNodeToDistributedSelectQuery(query_tree_for_ast),
+        query_tree,
+        main_table,
+        table_func_ptr,
+        std::move(context),
+        local_plans,
+        remote_shards,
+        shard_count,
+        parallel_replicas_enabled,
+        std::move(shard_filter_generator),
+        unavailable_shard_tracker);
 }
 
 

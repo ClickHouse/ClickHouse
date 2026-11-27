@@ -50,14 +50,14 @@ public:
         format_settings.xml.valid_output_on_exception = false;
     }
 
-    [[nodiscard]] String getName() const override { return function_name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    String getName() const override { return function_name; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_str = ColumnString::create();
         ColumnString::Chars & vec = col_str->getChars();
@@ -100,7 +100,7 @@ public:
                 /// `size_t` underflow in `ColumnString::sizeAt`. The check against `buffer.buffer().begin()`
                 /// additionally keeps the position within the current working buffer so `--buffer.position()`
                 /// never moves the cursor before it.
-                const size_t row_start = i == 0 ? 0 : offsets[static_cast<ssize_t>(i) - 1];
+                const size_t row_start = i == 0 ? 0 : offsets[i - 1];
                 if (buffer.count() > row_start && buffer.position() > buffer.buffer().begin()
                     && buffer.position()[-1] == '\n')
                     --buffer.position();
@@ -150,11 +150,7 @@ public:
         for (const auto & argument : arguments)
             arguments_column_names.push_back(argument.name);
 
-        /// The format name can arrive wrapped, e.g. from `formatRow(toLowCardinality('CSV'), ...)`.
-        const auto & format_name_argument = arguments.at(0).column;
-        const auto format_name_column
-            = format_name_argument ? format_name_argument->convertToFullColumnIfLowCardinality() : nullptr;
-        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(format_name_column.get()))
+        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments.at(0).column.get()))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
                 std::make_shared<FunctionFormatRow>(function_name, no_newline, name_col->getValue<String>(), std::move(arguments_column_names), getContext()),
                 DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
@@ -162,7 +158,7 @@ public:
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument to {} must be a format name", getName());
     }
 
-    String getSignatureString() const override { return "(const String, Any, ...) -> String"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }
 
 private:
     const char * function_name;
@@ -215,13 +211,13 @@ SETTINGS format_custom_result_before_delimiter='<prefix>\n', format_custom_resul
         R"DOCS_MD(
 ┌─formatRow('CustomSeparated', number, 'good')─┐
 │ <prefix>                                    ↴│
-│↳0	good                                  ↴│
+│↳0	good                                     ↴│
 │↳<suffix>                                     │
 │ <prefix>                                    ↴│
-│↳1	good                                  ↴│
+│↳1	good                                     ↴│
 │↳<suffix>                                     │
 │ <prefix>                                    ↴│
-│↳2	good                                  ↴│
+│↳2	good                                     ↴│
 │↳<suffix>                                     │
 └──────────────────────────────────────────────┘
         )DOCS_MD"

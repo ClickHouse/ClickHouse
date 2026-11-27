@@ -5,12 +5,13 @@
 #include <functional>
 #include <memory>
 
-#include <Common/SecretString.h>
 #include <Common/callOnce.h>
 #include <Common/SSHWrapper.h>
 #include <Common/SettingsChanges.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
+
+#include <Formats/FormatSettings.h>
 
 #include <IO/ReadBufferFromPocoSocketChunked.h>
 #include <IO/WriteBufferFromPocoSocketChunked.h>
@@ -61,13 +62,13 @@ public:
 
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
-        const String & user_, std::string_view password_,
+        const String & user_, const String & password_,
         const String & proto_send_chunked_, const String & proto_recv_chunked_,
         const SSHKey & ssh_private_key_,
         const String & jwt_,
         const String & quota_key_,
         const String & cluster_,
-        std::string_view cluster_secret_,
+        const String & cluster_secret_,
         const String & client_name_,
         Protocol::Compression compression_,
         Protocol::Secure secure_,
@@ -217,21 +218,20 @@ public:
 
     void setAddressConnectTimeoutExpired() { address_connect_timeout_expired = true; }
 
-    void setFormatSettings(const FormatSettings & settings) override;
+    void setFormatSettings(const FormatSettings & settings) override
+    {
+        format_settings = settings;
+    }
 
     UInt64 getParallelReplicasProtocolVersion() const { return server_parallel_replicas_protocol_version; }
     UInt64 getQueryPlanSerializationVersion() const { return server_query_plan_serialization_version; }
-    UInt64 getWorkerClusterFunctionProtocolVersion() const { return worker_cluster_function_protocol_version; }
-
-    /// Frees the buffers of the last query, so that the query that allocated them frees them, not the next one.
-    void releaseQueryBuffers() noexcept;
 
 private:
     String host;
     UInt16 port;
     String default_database;
     String user;
-    SecretString password;
+    String password;
     String proto_send_chunked;
     String proto_recv_chunked;
     String proto_send_chunked_srv;
@@ -247,7 +247,7 @@ private:
 
     /// For inter-server authorization
     String cluster;
-    SecretString cluster_secret;
+    String cluster_secret;
     /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET
     String salt;
     /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
@@ -350,9 +350,8 @@ private:
 
     AsyncCallback async_callback = {};
 
-    std::shared_ptr<const FormatSettings> format_settings;
+    std::optional<FormatSettings> format_settings;
 
-    std::optional<FormatSettings> optionalFormatSettings() const;
     void connect(const ConnectionTimeouts & timeouts);
 
     /// Establishes the transport for `connect`: either by connecting to one of the addresses the host
@@ -363,7 +362,6 @@ private:
 
     void cancel() noexcept;
     void reset() noexcept;
-    void resetQueryBuffers();
 
 #if USE_SSH
     void performHandshakeForSSHAuth();

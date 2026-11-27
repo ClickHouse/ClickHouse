@@ -6,6 +6,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/castTypeToEither.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/TargetSpecific.h>
 
@@ -55,10 +56,7 @@ MULTITARGET_FUNCTION_X86_V4(
                 for (auto & partial_sum : partial_sums)
                     sum += partial_sum;
 
-                /// Tail: process remaining elements that don't fill a full unroll block.
-                /// clang 22 unrolled it by 4 on its own and clang 23 does not, which made `dotProduct` of 150-element
-                /// `BFloat16` arrays 15% slower on the x86 CI machines; the order of the additions stays the same.
-                _Pragma("clang loop vectorize(disable) unroll_count(4)")
+                /// Tail: process remaining elements that don't fill a full unroll block
                 for (; i < array_size; ++i)
                     sum += static_cast<ResultType>(data_x[prev + i]) * static_cast<ResultType>(data_y[prev + i]);
 
@@ -109,16 +107,55 @@ struct DotProduct
 {
     static constexpr auto name = "arrayDotProduct";
 
-    /// Declarative signature. The result is `NumberTraits::ResultOfAdditionMultiplication` of the
-    /// two element types (the `additionMultiplicationResult` type function), except that same-type
-    /// `Float32 x Float32` and `BFloat16 x BFloat16` both accumulate to `Float32` (matching
-    /// `arrayNorm` / `arrayDistance`) — spelled here as the two leading alternatives. The accepted
-    /// element types are exactly `isNativeNumber(t) || isBFloat16(t)`.
-    static constexpr std::string_view signature =
-        "(Array(Float32), Array(Float32)) -> Float32"
-        " OR (Array(BFloat16), Array(BFloat16)) -> Float32"
-        " OR (Array(L : NativeNumber | BFloat16), Array(R : NativeNumber | BFloat16))"
-        " -> additionMultiplicationResult(L, R)";
+    static DataTypePtr getReturnType(const DataTypePtr & left, const DataTypePtr & right)
+    {
+        using Types = TypeList<
+            DataTypeBFloat16,
+            DataTypeFloat32,
+            DataTypeFloat64,
+            DataTypeUInt8,
+            DataTypeUInt16,
+            DataTypeUInt32,
+            DataTypeUInt64,
+            DataTypeInt8,
+            DataTypeInt16,
+            DataTypeInt32,
+            DataTypeInt64>;
+        Types types;
+
+        DataTypePtr result_type;
+        bool valid = castTypeToEither(
+            types,
+            left.get(),
+            [&](const auto & left_)
+            {
+                return castTypeToEither(
+                    types,
+                    right.get(),
+                    [&](const auto & right_)
+                    {
+                        using LeftType = typename std::decay_t<decltype(left_)>::FieldType;
+                        using RightType = typename std::decay_t<decltype(right_)>::FieldType;
+                        using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<LeftType, RightType>::Type;
+
+                        /// Same-type `Float32` and `BFloat16` both accumulate to `Float32` (matching
+                        /// `arrayNorm`/`arrayDistance`); everything else uses the promoted arithmetic type.
+                        if constexpr ((std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>)
+                                   || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<RightType, BFloat16>))
+                            result_type = std::make_shared<DataTypeFloat32>();
+                        else
+                            result_type = std::make_shared<DataTypeNumber<ResultType>>();
+                        return true;
+                    });
+            });
+
+        if (!valid)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Arguments of function {} only support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
+                name);
+        return result_type;
+    }
 
     template <typename Type>
     struct State
@@ -154,13 +191,34 @@ class FunctionArrayScalarProduct final : public IFunction
 public:
     static constexpr auto name = Kernel::name;
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayScalarProduct>(); }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override { return String(Kernel::signature); }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        std::array<DataTypePtr, 2> nested_types;
+        for (size_t i = 0; i < 2; ++i)
+        {
+            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
+            if (!array_type)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments for function {} must be of type Array", getName());
+
+            const auto & nested_type = array_type->getNestedType();
+            if (!isNativeNumber(nested_type) && !WhichDataType(nested_type).isBFloat16())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} cannot process values of type {}",
+                    getName(),
+                    nested_type->getName());
+
+            nested_types[i] = nested_type;
+        }
+
+        return Kernel::getReturnType(nested_types[0], nested_types[1]);
+    }
 
 #define SUPPORTED_TYPES(ACTION) \
     ACTION(UInt8) \
@@ -175,7 +233,7 @@ public:
     ACTION(Float32) \
     ACTION(Float64)
 
-    [[nodiscard]] ColumnPtr
+    ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         DataTypePtr type_x = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
@@ -202,7 +260,7 @@ public:
 
 private:
     template <typename LeftType>
-    [[nodiscard]] ColumnPtr executeWithLeftType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeWithLeftType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         DataTypePtr type_y = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
 
@@ -227,11 +285,10 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    [[nodiscard]] ColumnPtr executeWithLeftAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
+    ColumnPtr executeWithLeftAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
     {
-        /// Compute the result type from the input types; this must match the declarative
-        /// `signature` (`additionMultiplicationResult`, with the `Float32`/`BFloat16` same-type
-        /// special cases). Doing it here avoids an extra dispatch level (10x fewer instantiations).
+        /// Compute result type from input types, matching getReturnType logic.
+        /// This avoids an extra dispatch level (10x fewer template instantiations).
         using ResultType = std::conditional_t<
             (std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>)
                 || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<RightType, BFloat16>),
@@ -242,7 +299,7 @@ private:
     }
 
     template <typename ResultType, typename LeftType, typename RightType>
-    [[nodiscard]] ColumnPtr executeWithResultTypeAndLeftTypeAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
+    ColumnPtr executeWithResultTypeAndLeftTypeAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
     {
         if (typeid_cast<const ColumnConst *>(col_x.get()))
         {
@@ -273,7 +330,7 @@ private:
                 || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<ResultType, Float32>)))
         {
             /// SIMD-optimized path: one batched call over all rows keeps the load stream continuous.
-#if USE_X86_64_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE
             if (isArchSupported(TargetArch::x86_64_v4))
                 dotProductBatchImpl_x86_64_v4<ResultType, LeftType>(data_x.data(), data_y.data(), offsets_x.data(), result_data.data(), input_rows_count);
             else
@@ -320,7 +377,7 @@ private:
     }
 
     template <typename ResultType, typename LeftType, typename RightType>
-    [[nodiscard]] ColumnPtr executeWithLeftArgConst(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
+    ColumnPtr executeWithLeftArgConst(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
     {
         col_x = assert_cast<const ColumnConst *>(col_x.get())->getDataColumnPtr();
         col_y = col_y->convertToFullColumnIfConst();
@@ -359,7 +416,7 @@ private:
                 || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<ResultType, Float32>)))
         {
             /// SIMD-optimized path: one batched call over all rows keeps the column load stream continuous.
-#if USE_X86_64_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE
             if (isArchSupported(TargetArch::x86_64_v4))
                 dotProductConstBatchImpl_x86_64_v4<ResultType, LeftType>(data_x.data(), data_y.data(), array_size, result.data(), input_rows_count);
             else

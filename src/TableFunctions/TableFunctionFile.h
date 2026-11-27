@@ -23,9 +23,6 @@ public:
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
-    /// A table over an explicit path keeps its data in a local unreplicated file, see `StorageFile::hasUnreplicatedTableDataOnDisk`.
-    bool hasUnreplicatedTableDataOnDisk() const override { return fd < 0; }
-
 protected:
     int fd = -1;
     std::optional<StorageFile::FileSource> file_source;
@@ -36,7 +33,7 @@ protected:
 private:
     StoragePtr getStorage(
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
-        const std::string & table_name, const std::string & compression_method_, bool is_insert_query, bool is_table_definition) const override;
+        const std::string & table_name, const std::string & compression_method_, bool) const override;
     const char * getStorageEngineName() const override { return "File"; }
 };
 

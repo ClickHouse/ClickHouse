@@ -11,7 +11,6 @@
 #include <Common/typeid_cast.h>
 #include <Poco/SHA1Engine.h>
 #include <Access/Common/OneTimePassword.h>
-#include <Access/OneTimePasswordUsageTracker.h>
 
 #include <base/types.h>
 #include "config.h"
@@ -54,7 +53,7 @@ namespace
         engine.update(password_double_sha1.data(), sha1_size);
         const Poco::SHA1Engine::Digest & digest = engine.digest();
 
-        Digest calculated_password_sha1(sha1_size);
+        Poco::SHA1Engine::Digest calculated_password_sha1(sha1_size);
         for (size_t i = 0; i < sha1_size; ++i)
             calculated_password_sha1[i] = static_cast<UInt8>(scrambled_password[i] ^ digest[i]);
 
@@ -91,7 +90,7 @@ namespace
             && external_authenticators.checkKerberosCredentials(authentication_method.getKerberosRealm(), *gss_acceptor_context);
     }
 
-    std::string computeScramSHA256ClientProof(const Digest & salted_password [[maybe_unused]], const std::string& auth_message [[maybe_unused]])
+    std::string computeScramSHA256ClientProof(const std::vector<uint8_t> & salted_password [[maybe_unused]], const std::string& auth_message [[maybe_unused]])
     {
 #if USE_SSL
         auto client_key = hmacSHA256(salted_password, "Client Key");
@@ -117,13 +116,6 @@ namespace
         /// client proof: their password hash is empty, and using it as an HMAC key would throw,
         /// aborting the whole authentication instead of letting the next method of the user be tried.
         if (authentication_method.getType() != AuthenticationType::SCRAM_SHA256_PASSWORD)
-            return false;
-
-        /// The SCRAM client proof is derived from the password alone, so it cannot carry or verify
-        /// a one-time password. Accepting it would let the client skip the second factor.
-        /// The PostgreSQL frontend refuses to run the SCRAM exchange for such users (see `getScramSalt`);
-        /// this check keeps the bypass closed for any other producer of SCRAM credentials.
-        if (authentication_method.getOneTimePassword())
             return false;
 
         const auto & client_proof = scram_sha256_credentials->getClientProof();
@@ -467,11 +459,7 @@ bool Authentication::mysqlNative41CannotVerify(const AuthenticationData & authen
     }
 }
 
-bool Authentication::consumeOneTimePassword(
-    const Credentials & credentials,
-    const String & user_name,
-    const AuthenticationData & authentication_method,
-    OneTimePasswordUsageTracker & usage_tracker)
+bool Authentication::consumeOneTimePassword(const Credentials & credentials, const AuthenticationData & authentication_method)
 {
     const auto & otp_secret = authentication_method.getOneTimePassword();
     if (!otp_secret)
@@ -486,7 +474,7 @@ bool Authentication::consumeOneTimePassword(
     if (one_time_password.empty())
         return true;
 
-    return usage_tracker.tryConsume(user_name, one_time_password, *otp_secret);
+    return checkAndConsumeOneTimePassword(one_time_password, *otp_secret);
 }
 
 }

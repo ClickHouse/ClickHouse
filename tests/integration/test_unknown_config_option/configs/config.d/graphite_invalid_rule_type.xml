@@ -1,0 +1,18 @@
+<clickhouse>
+    <!--
+        Negative case: a section shaped like a `GraphiteMergeTree` rollup whose `<pattern>` carries an
+        unrecognized `<rule_type>not_a_rule_type</rule_type>`. Every child name is recognized and the
+        rule has a `<function>`, but `appendGraphitePattern` resolves the value through `ruleType`,
+        which throws `BAD_ARGUMENTS` ("invalid rule type") for anything other than
+        `all`/`plain`/`tagged`/`tag_list`, so the section would never load. The unknown-key validator
+        must mirror that semantic check and reject the whole section as an unknown top-level key (a
+        typo). The node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG`.
+    -->
+    <graphite_invalid_rule_type>
+        <pattern>
+            <regexp>click_cost</regexp>
+            <function>any</function>
+            <rule_type>not_a_rule_type</rule_type>
+        </pattern>
+    </graphite_invalid_rule_type>
+</clickhouse>

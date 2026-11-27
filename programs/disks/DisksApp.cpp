@@ -2,11 +2,11 @@
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/SignalHandlers.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/Config/getConfigPath.h>
 #include <Common/Macros.h>
 #include <DisksClient.h>
 #include <ICommand.h>
@@ -48,7 +48,7 @@ namespace ErrorCodes
 
 LineReader::Patterns DisksApp::query_extenders = {"\\"};
 LineReader::Patterns DisksApp::query_delimiters = {""};
-[[clang::no_destroy]] String DisksApp::word_break_characters = " \t\v\f\a\b\r\n";
+String DisksApp::word_break_characters = " \t\v\f\a\b\r\n";
 
 CommandPtr DisksApp::getCommandByName(const String & command) const
 {
@@ -208,7 +208,7 @@ bool DisksApp::processQueryText(const String & text)
     {
         return true;
     }
-    if (isExitString(text))
+    if (exit_strings.contains(text))
         return false;
     CommandPtr command;
 
@@ -435,6 +435,19 @@ void DisksApp::initializeHistoryFile()
     else
         history_file = home_path + "/.disks-file-history";
 
+    if (!history_file.empty() && !fs::exists(history_file))
+    {
+        try
+        {
+            FS::createFile(history_file);
+        }
+        catch (const ErrnoException & e)
+        {
+            if (e.getErrno() != EEXIST)
+                throw;
+        }
+    }
+
     history_max_entries = config().getUInt("history-max-entries", 1000000);
 }
 
@@ -465,13 +478,9 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     auto component_guard = Coordination::setCurrentComponent("DisksApp");
     std::vector<std::string> keys;
     config().keys(keys);
-    /// A configuration file can be written in XML or in YAML, so the default one is looked up with
-    /// every supported extension, not only with `.xml`.
-    const bool has_explicit_config = config().has("config-file");
-    const String config_path = has_explicit_config ? config().getString("config-file")
-                                                   : getConfigPathForAnySupportedFormat(getDefaultConfigFileName());
-    if (has_explicit_config || fs::exists(config_path))
+    if (config().has("config-file") || fs::exists(getDefaultConfigFileName()))
     {
+        String config_path = config().getString("config-file", getDefaultConfigFileName());
         try
         {
             ConfigProcessor config_processor(config_path, false, false);
