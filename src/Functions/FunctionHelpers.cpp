@@ -584,14 +584,22 @@ static std::optional<UInt64> findValueAboveInt64(const PaddedPODArray<UInt64> & 
     return {};
 }
 
-void checkIntegerArgumentFitsInt64(const IColumn & column, std::string_view function_name, std::string_view argument_name)
+static const ColumnVector<UInt64> * getUInt64Values(const IColumn & column)
 {
     const IColumn * values = &column;
     if (const auto * column_const = typeid_cast<const ColumnConst *>(values))
         values = &column_const->getDataColumn();
+    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(values))
+        values = column_low_cardinality->getDictionary().getNestedNotNullableColumn().get();
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(values))
+        values = &column_nullable->getNestedColumn();
+    return typeid_cast<const ColumnVector<UInt64> *>(values);
+}
 
+void checkIntegerArgumentFitsInt64(const IColumn & column, std::string_view function_name, std::string_view argument_name)
+{
     /// Only UInt64 can exceed Int64, which `IColumn::getInt` returns: 2^63 or more would be read as a negative number
-    const auto * column_uint64 = typeid_cast<const ColumnVector<UInt64> *>(values);
+    const auto * column_uint64 = getUInt64Values(column);
     if (!column_uint64)
         return;
 
@@ -602,23 +610,6 @@ void checkIntegerArgumentFitsInt64(const IColumn & column, std::string_view func
             argument_name,
             function_name,
             *max_value);
-}
-
-static bool uint64ColumnMayHoldValueAboveInt64(const IColumn & column)
-{
-    const IColumn * values = &column;
-    if (const auto * column_const = typeid_cast<const ColumnConst *>(values))
-        values = &column_const->getDataColumn();
-    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(values))
-        values = column_low_cardinality->getDictionary().getNestedNotNullableColumn().get();
-    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(values))
-        values = &column_nullable->getNestedColumn();
-
-    const auto * column_uint64 = typeid_cast<const ColumnVector<UInt64> *>(values);
-    if (!column_uint64)
-        return true;
-
-    return findValueAboveInt64(column_uint64->getData()).has_value();
 }
 
 bool uint64ArgumentMayHoldUnusedValues(const ColumnsWithTypeAndName & arguments)
@@ -641,8 +632,10 @@ bool uint64ArgumentMayHoldUnusedValues(const ColumnsWithTypeAndName & arguments)
 
     for (const auto & argument : arguments)
     {
-        if (WhichDataType(removeNullable(removeLowCardinality(argument.type))).isUInt64()
-            && (!argument.column || uint64ColumnMayHoldValueAboveInt64(*argument.column)))
+        if (!WhichDataType(removeNullable(removeLowCardinality(argument.type))).isUInt64())
+            continue;
+        const auto * column_uint64 = argument.column ? getUInt64Values(*argument.column) : nullptr;
+        if (!column_uint64 || findValueAboveInt64(column_uint64->getData()))
             return true;
     }
     return false;

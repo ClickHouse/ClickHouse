@@ -128,3 +128,4 @@ SELECT substring('abc', toUInt64(1), toInt64('-9223372036854775808'));
 SELECT substring('abc', toInt64('-9223372036854775808'), toInt64(-1));
 SELECT substring(CAST(NULL, 'Nullable(String)'), toUInt64(1), toInt64('-9223372036854775808'));
 SELECT substring('abc', toUInt64(1), nullIf(if(number = 0, toInt64('-9223372036854775808'), 2), toInt64('-9223372036854775808'))) FROM numbers(2);
+SELECT arraySlice(materialize([1, 2, 3]), materialize(2), materialize(toInt64('-9223372036854775808')));
