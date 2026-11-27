@@ -368,6 +368,10 @@ public:
     /// Get a sequential consistent view of current parts.
     PartitionIdToMaxBlock getMaxAddedBlocks() const;
 
+    /// The cutoff of a read with `select_sequential_consistency`: `getMaxAddedBlocks`, with the partitions named by
+    /// the block numbers of a lightweight update (`Context::getPartitionIdToMaxBlock`) clamped to those numbers.
+    PartitionIdToMaxBlock getMaxBlocksToReadWithSequentialConsistency(ContextPtr local_context) const;
+
     void addLastSentPart(const MergeTreePartInfo & info);
 
     /// Wait required amount of milliseconds to give other replicas a chance to
