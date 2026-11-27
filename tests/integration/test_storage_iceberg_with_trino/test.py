@@ -146,10 +146,11 @@ def iceberg_db(started_cluster_with_trino):
     return started_cluster_with_trino
 
 
-def _engine_clause(table_name: str) -> str:
+def _engine_clause(table_name: str, data_format: str = "") -> str:
+    format_argument = f", '{data_format}'" if data_format else ""
     return (
         f"ENGINE = IcebergS3('http://minio:9000/{WAREHOUSE_BUCKET}/{table_name}/', "
-        f"'{MINIO_ACCESS_KEY}', '{MINIO_SECRET_KEY}')"
+        f"'{MINIO_ACCESS_KEY}', '{MINIO_SECRET_KEY}'{format_argument})"
     )
 
 
@@ -471,6 +472,64 @@ def test_v3_iceberg_system_tables(iceberg_db):
         f'SELECT count(*) FROM "{NAMESPACE}"."{table_name}$history"',
     )
     assert history.strip() == "2", f"$history count: {history!r}"
+
+
+# ClickHouse writes `Time`/`Time64` as Iceberg `time` into data files of each format; Trino reads them.
+@pytest.mark.parametrize(
+    "time_type, data_format",
+    [("Time", "Parquet"), ("Time64(3)", "ORC"), ("Time64(6)", "Avro")],
+)
+def test_time_type(iceberg_db, time_type, data_format):
+    cluster = iceberg_db
+    node = cluster.instances["node1"]
+
+    table_name = f"time_type_table_{_get_uuid_str()}"
+    full = f"{CATALOG_DATABASE}.`{NAMESPACE}.{table_name}`"
+
+    node.query(
+        f"""
+        CREATE TABLE {full} (time_key {time_type}, time_value {time_type})
+        {_engine_clause(table_name, data_format)}
+        PARTITION BY identity(time_key)
+        SETTINGS iceberg_format_version = 3
+        """,
+        settings=WRITE_SETTINGS,
+    )
+
+    node.query(
+        f"""
+        INSERT INTO {full} VALUES
+            ('01:00:00', '01:10:00'),
+            ('01:00:00', '01:20:00'),
+            ('02:00:00', '02:10:00'),
+        """,
+        settings=WRITE_SETTINGS,
+    )
+
+    out = _trino_exec(
+        cluster,
+        f'SELECT time_key, time_value FROM "{NAMESPACE}"."{table_name}" ORDER BY time_key, time_value',
+    )
+    expected = "01:00:00.000000\t01:10:00.000000\n01:00:00.000000\t01:20:00.000000\n02:00:00.000000\t02:10:00.000000\n"
+    assert out == expected, f"expected {expected!r}, got {out!r}"
+
+    out = _trino_exec(
+        cluster,
+        f'SELECT time_key, time_value FROM "{NAMESPACE}"."{table_name}" WHERE time_key = time \'01:00:00\' ORDER BY time_key, time_value',
+    )
+    expected = "01:00:00.000000\t01:10:00.000000\n01:00:00.000000\t01:20:00.000000\n"
+    assert out == expected, f"expected {expected!r}, got {out!r}"
+
+    out = _trino_exec(
+        cluster,
+        f'SELECT time_key, time_value FROM "{NAMESPACE}"."{table_name}" WHERE time_value = time \'01:20:00\' ORDER BY time_key, time_value',
+    )
+    expected = "01:00:00.000000\t01:20:00.000000\n"
+    assert out == expected, f"expected {expected!r}, got {out!r}"
+
+    # And ClickHouse reads back what it wrote.
+    out = node.query(f"SELECT time_key, time_value FROM {full} WHERE time_value = '01:20:00' ORDER BY ALL")
+    assert out == "01:00:00.000000\t01:20:00.000000\n", out
 
 
 def test_optimize_manifest_trino_field_ids(iceberg_db):

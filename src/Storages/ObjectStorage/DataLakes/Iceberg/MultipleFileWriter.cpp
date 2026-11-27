@@ -86,6 +86,7 @@ MultipleFileWriter::MultipleFileWriter(
     , write_format(std::move(write_format_))
     , sample_block(sample_block_)
 {
+    Iceberg::checkIcebergTimeColumnsAreWritable(*column_mapper, *sample_block, write_format);
 }
 
 void MultipleFileWriter::startNewFile()

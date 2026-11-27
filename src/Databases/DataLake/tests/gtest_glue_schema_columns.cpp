@@ -187,7 +187,7 @@ TEST(GlueSchemaColumns, NestedTypesParseableByGlueFallback)
         ]})json"));
     EXPECT_EQ(glue_type, "struct<a:map<string,decimal(9,2)>,b:array<bigint>>");
 
-    auto parsed = getType(glue_type, /*nullable=*/true);
+    auto parsed = getType(glue_type, /*nullable=*/true, /*time_as_int64=*/false);
     EXPECT_EQ(parsed->getName(), "Tuple(a Map(String, Nullable(Decimal(9, 2))), b Array(Nullable(Int64)))");
 }
 

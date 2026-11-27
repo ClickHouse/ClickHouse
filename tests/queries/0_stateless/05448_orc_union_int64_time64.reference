@@ -1,0 +1,45 @@
+Variant(Int64, Time64(6))
+n	Nullable(Int64)					
+v	Variant(Int64, Time64(6))					
+0	0	Int64
+1	12:34:56.123456	Time64(6)
+2	\N	None
+3	3000	Int64
+4	12:34:56.123456	Time64(6)
+5	\N	None
+0	0	UInt64
+1	12:34:56.123	Time64(3)
+2	\N	None
+3	3000	UInt64
+4	12:34:56.123	Time64(3)
+5	\N	None
+Variant(UInt64, Time64(6))
+n	Nullable(Int64)					
+v	Variant(Int64, Time64(6))					
+0	0	Int64
+1	12:34:56.123456	Time64(6)
+2	\N	None
+3	3000	Int64
+4	12:34:56.123456	Time64(6)
+5	\N	None
+0	0	UInt64
+1	12:34:56.123	Time64(3)
+2	\N	None
+3	3000	UInt64
+4	12:34:56.123	Time64(3)
+5	\N	None
+Variant(Int64, Time)
+n	Nullable(Int64)					
+v	Variant(Int64, Time64(6))					
+0	0	Int64
+1	12:34:56.000000	Time64(6)
+2	\N	None
+3	3000	Int64
+4	12:34:56.000000	Time64(6)
+5	\N	None
+0	0	UInt64
+1	12:34:56.000	Time64(3)
+2	\N	None
+3	3000	UInt64
+4	12:34:56.000	Time64(3)
+5	\N	None
