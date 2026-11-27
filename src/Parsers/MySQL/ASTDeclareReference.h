@@ -33,11 +33,11 @@ public:
         SET_DEFAULT
     };
 
-    MatchKind kind{};
+    MatchKind kind;
     String reference_table_name;
     ASTPtr reference_expression;
-    ReferenceOption on_delete_option{};
-    ReferenceOption on_update_option{};
+    ReferenceOption on_delete_option;
+    ReferenceOption on_update_option;
 
     ASTPtr clone() const override;
 
@@ -53,7 +53,7 @@ protected:
 class ParserDeclareReference : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "reference declaration"; }
+    const char * getName() const override { return "reference declaration"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

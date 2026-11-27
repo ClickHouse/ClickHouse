@@ -8,44 +8,28 @@ namespace DB
 class UnionStep : public IQueryPlanStep
 {
 public:
-    /// `max_threads` is used to limit the number of threads for the result pipeline.
-    /// `allow_narrowing` opts this step into the `max_streams_for_union_step` cap from
-    /// `BuildQueryPipelineSettings`. Set it for a step that unites the branches a query asks for -
-    /// SQL `UNION ALL` / `UNION DISTINCT`, and a `Merge` table expanded into the reads of its
-    /// underlying tables (`ReadFromMerge::expandForParallelReplicas`), which is the same thing
-    /// written differently. Other call sites (for example, `ClusterProxy` for distributed queries,
-    /// `StorageBuffer`, `MergeTask`, projection optimizations) reuse `UnionStep` for plumbing and
-    /// must not be narrowed, because shuffling streams via `ConcatProcessor` would break ordering
-    /// invariants of downstream transforms such as `GroupingAggregatedTransform` for
-    /// memory-efficient distributed aggregation.
-    /// The flag is part of the plan, so it is serialized, and every node that executes a shipped
-    /// fragment narrows the same unions the node that built it decided to narrow.
-    explicit UnionStep(SharedHeaders input_headers_, size_t max_threads_ = 0, bool allow_narrowing_ = false);
+    /// max_threads is used to limit the number of threads for result pipeline.
+    explicit UnionStep(SharedHeaders input_headers_, size_t max_threads_ = 0);
 
-    [[nodiscard]] String getName() const override { return "Union"; }
+    String getName() const override { return "Union"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
     void describePipeline(FormatSettings & settings) const override;
 
-    [[nodiscard]] size_t getMaxThreads() const { return max_threads; }
-    [[nodiscard]] bool isNarrowingAllowed() const { return allow_narrowing; }
-    void disableNarrowing() { allow_narrowing = false; }
+    size_t getMaxThreads() const { return max_threads; }
 
     void serialize(Serialization & ctx) const override;
-    [[nodiscard]] bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    [[nodiscard]] QueryPlanStepPtr clone() const override;
-
-    [[nodiscard]] bool hasCorrelatedExpressions() const override { return false; }
+    bool hasCorrelatedExpressions() const override { return false; }
 
 private:
     void updateOutputHeader() override;
 
     size_t max_threads;
-    bool allow_narrowing;
 };
 
 }

@@ -19,7 +19,6 @@
 */
 
 #include <Common/Exception.h>
-#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -63,7 +62,7 @@ consteval UInt16 get_iterations()
  * Template parameter 'step': Current step within chunk, [0, width].
  */
 template <UnsignedInteger T, UInt8 bits, UInt8 step, UInt16 values>
-ALWAYS_INLINE_NO_SANITIZE_UNSIGNED_OVERFLOW void bitPackStep(const T * __restrict in, T * __restrict out, const T base, const UInt16 index, T & agg)
+ALWAYS_INLINE void bitPackStep(const T * __restrict in, T * __restrict out, const T base, const UInt16 index, T & agg)
 {
     constexpr UInt8 width = get_width<T>();
     static_assert(bits <= width);
@@ -186,7 +185,7 @@ consteval auto makeBitPackDispatchTable()
  * Template parameter 'step': Current step within chunk, [0, width).
  */
 template <UnsignedInteger T, UInt8 bits, UInt8 step, UInt16 values>
-ALWAYS_INLINE_NO_SANITIZE_UNSIGNED_OVERFLOW void bitUnpackStep(const T * __restrict in, T * __restrict out, const T base, const UInt16 index, T & pack)
+ALWAYS_INLINE void bitUnpackStep(const T * __restrict in, T * __restrict out, const T base, const UInt16 index, T & pack)
 {
     constexpr UInt8 width = get_width<T>();
     static_assert(bits <= width);

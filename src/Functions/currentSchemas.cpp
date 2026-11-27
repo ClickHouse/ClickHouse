@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -9,11 +8,15 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
 namespace
 {
 
-class FunctionCurrentSchemas final : public IFunction
+class FunctionCurrentSchemas : public IFunction
 {
     const String db_name;
 
@@ -29,26 +32,31 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(Bool) -> Array(String)";
+        // For compatibility, function implements the same signature as Postgres'
+        const bool argument_is_valid = arguments.size() == 1 && isBool(arguments.front());
+        if (!argument_is_valid)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be bool", getName());
+
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    [[nodiscard]] bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeArray(std::make_shared<DataTypeString>())
                                .createColumnConst(input_rows_count, Array { db_name });
@@ -67,7 +75,7 @@ Same as function [`currentDatabase`](#currentDatabase) but
 Function `currentSchemas` only exists for compatibility with PostgreSQL.
 Please use `currentDatabase` instead.
 
-Also see the [`SET` statement](/reference/statements/use).
+Also see the [`SET` statement](/sql-reference/statements/use).
     )";
     FunctionDocumentation::Syntax syntax = "currentSchemas(bool)";
     FunctionDocumentation::Arguments arguments = {

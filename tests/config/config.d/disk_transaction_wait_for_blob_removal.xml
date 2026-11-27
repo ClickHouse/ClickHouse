@@ -1,3 +1,0 @@
-<clickhouse>
-    <disk_transaction_wait_for_blob_removal>false</disk_transaction_wait_for_blob_removal>
-</clickhouse>

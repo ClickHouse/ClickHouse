@@ -21,11 +21,9 @@ public:
     explicit LocalDirectorySyncGuard(const String & full_path);
     ~LocalDirectorySyncGuard() override;
 
-    /// Synchronize and close the descriptor. Propagates errors; subsequent calls are no-ops.
-    void sync() override;
-
 private:
     int fd = -1;
 };
 
 }
+

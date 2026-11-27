@@ -1,4 +1,4 @@
--- Tags: distributed, no-parallel, no-flaky-check
+-- Tags: distributed, no-parallel
 
 set send_logs_level = 'error';
 

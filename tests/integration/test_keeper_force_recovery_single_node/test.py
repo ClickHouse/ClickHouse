@@ -1,7 +1,9 @@
 import os
+import socket
 import time
 
 import pytest
+from kazoo.client import KazooClient, KazooRetry
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
@@ -54,21 +56,12 @@ def close_zk(zk):
     zk.close()
 
 
-def replace_zk(node_zks, i, nodename):
-    try:
-        close_zk(node_zks[i])
-    except Exception:
-        pass
-    node_zks[i] = get_fake_zk(nodename)
-
-
 def test_cluster_recovery(started_cluster):
     node_zks = []
     try:
         keeper_utils.wait_nodes(cluster, nodes)
 
-        for node in nodes:
-            node_zks.append(get_fake_zk(node.name))
+        node_zks = [get_fake_zk(node.name) for node in nodes]
 
         data_in_cluster = []
 
@@ -91,7 +84,7 @@ def test_cluster_recovery(started_cluster):
         # we potentially killed the leader node so we give time for election
         for _ in range(100):
             try:
-                replace_zk(node_zks, 1, nodes[1].name)
+                node_zks[1] = get_fake_zk(nodes[1].name, timeout=30.0)
                 add_data(node_zks[1], "/test_force_recovery_extra", "somedataextra")
                 break
             except Exception as ex:
@@ -106,7 +99,7 @@ def test_cluster_recovery(started_cluster):
         nodes[0].start_clickhouse()
         keeper_utils.wait_until_connected(cluster, nodes[0])
 
-        replace_zk(node_zks, 0, nodes[0].name)
+        node_zks[0] = get_fake_zk(nodes[0].name)
         wait_and_assert_data(node_zks[0], "/test_force_recovery_extra", "somedataextra")
 
         # stop all nodes
@@ -125,11 +118,10 @@ def test_cluster_recovery(started_cluster):
         nodes[0].start_clickhouse()
         keeper_utils.wait_until_connected(cluster, nodes[0])
 
-        node_zks.append(get_fake_zk(nodes[0].name))
-        assert_all_data(node_zks[-1])
+        assert_all_data(get_fake_zk(nodes[0].name))
     finally:
-        for zk_conn in node_zks:
-            try:
+        try:
+            for zk_conn in node_zks:
                 close_zk(zk_conn)
-            except Exception:
-                pass
+        except:
+            pass

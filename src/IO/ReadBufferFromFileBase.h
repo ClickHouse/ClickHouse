@@ -22,15 +22,6 @@
 namespace DB
 {
 
-struct IOSchedulingSettings;
-
-/// A consistent snapshot of a remote object's metadata, fetched in a single request.
-struct RemoteFileMetadata
-{
-    size_t size = 0;
-    time_t last_modification_time = 0;
-};
-
 class ReadBufferFromFileBase : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileName, public WithFileSize
 {
 public:
@@ -71,18 +62,12 @@ public:
 
     virtual bool isCached() const { return false; }
 
-    /// Query the actual object's size and last modification time directly from remote storage.
+    /// Query the actual object size directly from remote storage.
     /// Unlike tryGetFileSize(), which typically returns a pre-known cached value passed at construction time,
     /// this method issues a real metadata request (e.g. S3 HeadObject, Azure GetProperties) and reflects
-    /// the current state of the object. Both fields come from a single request, so they form a consistent
-    /// snapshot -- useful for detecting (and confirming, via the timestamp) that an object was overwritten
-    /// between listing and reading.
+    /// the current state of the object. Useful for detecting mismatches between the expected and actual size.
     /// Returns std::nullopt for non-remote or local file buffers.
-    virtual std::optional<RemoteFileMetadata> getRemoteFileMetadata() const { return std::nullopt; }
-
-    /// IO issued from now on uses the given links. An open request issued with the previous links is
-    /// dropped first, so the caller must call it while the previous links are still valid.
-    virtual void setIOSchedulingSettings(const IOSchedulingSettings & /*io_scheduling*/) {}
+    virtual std::optional<size_t> getRemoteFileSize() const { return std::nullopt; }
 
 protected:
     std::optional<size_t> file_size;

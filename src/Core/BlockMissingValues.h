@@ -4,7 +4,6 @@
 #include <boost/dynamic_bitset.hpp>
 #include <Processors/Chunk.h>
 #include <Common/PODArray_fwd.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -20,9 +19,9 @@ public:
     void init(size_t num_columns);
 
     /// Get mask for column, column_idx is index inside corresponding block
-    [[nodiscard]] const RowsBitMask & getDefaultsBitmask(size_t column_idx) const;
+    const RowsBitMask & getDefaultsBitmask(size_t column_idx) const;
     /// Check that we have to replace default value at least in one of columns
-    [[nodiscard]] bool hasDefaultBits(size_t column_idx) const;
+    bool hasDefaultBits(size_t column_idx) const;
     /// Set bit for a specified row in a single column.
     void setBit(size_t column_idx, size_t row_idx);
     /// Set bits for all rows in a single column.
@@ -30,11 +29,11 @@ public:
     void setBitsFromNullMap(size_t column_idx, const PaddedPODArray<UInt8> & null_map);
 
     void clear();
-    [[nodiscard]] bool empty() const;
-    [[nodiscard]] size_t getNumColumns() const;
+    bool empty() const;
+    size_t getNumColumns() const;
 
 private:
-    using RowsMaskByColumnId = VectorWithMemoryTracking<RowsBitMask>;
+    using RowsMaskByColumnId = std::vector<RowsBitMask>;
 
     /// If rows_mask_by_column_id[column_id][row_id] is true related value in Block should be replaced with column default.
     /// It could contain less rows than related block.

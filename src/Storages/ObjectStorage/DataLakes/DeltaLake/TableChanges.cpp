@@ -7,7 +7,6 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Formats/FormatFactory.h>
 #include <Common/logger_useful.h>
@@ -77,8 +76,8 @@ DB::NamesAndTypesList TableChanges::getSchemaUnlocked() const
     if (schema.has_value())
         return schema.value();
 
-    using KernelSharedSchema = KernelPointerWrapper<::SharedSchema, ::free_schema>;
-    KernelSharedSchema kernel_schema(::table_changes_schema(getTableChanges().get()));
+    using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_schema>;
+    KernelSharedSchema kernel_schema(ffi::table_changes_schema(getTableChanges().get()));
     schema = convertToClickHouseSchema(kernel_schema.get(), engine.get());
 
     LOG_TRACE(log, "Table schema: {}, source header: {}", schema->toString(), header.dumpNames());
@@ -91,17 +90,17 @@ TableChanges::KernelTableChanges & TableChanges::getTableChanges() const
         return table_changes;
 
     auto * engine_builder = helper->createBuilder();
-    engine = KernelUtils::unwrapResult(::builder_build(engine_builder), "builder_build");
+    engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
     table_changes = version_range.second.has_value()
         ? KernelUtils::unwrapResult(
-            ::table_changes_between_versions(
+            ffi::table_changes_between_versions(
                 KernelUtils::toDeltaString(helper->getTableLocation()),
                 engine.get(),
                 version_range.first,
                 version_range.second.value()),
             "table_changes_between_versions")
         : KernelUtils::unwrapResult(
-            ::table_changes_from_version(
+            ffi::table_changes_from_version(
                 KernelUtils::toDeltaString(helper->getTableLocation()),
                 engine.get(),
                 version_range.first),
@@ -120,7 +119,7 @@ TableChanges::KernelTableChangesScanIterator & TableChanges::getTableChangesScan
     {
         auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception, getContext());
         table_changes_scan = KernelUtils::unwrapResult(
-            ::table_changes_scan(
+            ffi::table_changes_scan(
                 getTableChanges().release(),
                 engine.get(),
                 predicate.get()),
@@ -129,7 +128,7 @@ TableChanges::KernelTableChangesScanIterator & TableChanges::getTableChangesScan
     else
     {
         table_changes_scan = KernelUtils::unwrapResult(
-            ::table_changes_scan(
+            ffi::table_changes_scan(
                 getTableChanges().release(),
                 engine.get(),
                 /* predicate */nullptr),
@@ -140,7 +139,7 @@ TableChanges::KernelTableChangesScanIterator & TableChanges::getTableChangesScan
         std::rethrow_exception(engine_predicate_exception);
 
     table_changes_scan_iterator = KernelUtils::unwrapResult(
-        ::table_changes_scan_execute(table_changes_scan.get(), engine.get()),
+        ffi::table_changes_scan_execute(table_changes_scan.get(), engine.get()),
         "table_changes_scan_execute");
 
     LOG_TEST(log, "Initialized table changes scan iterator");
@@ -152,13 +151,13 @@ DB::Chunk TableChanges::next()
 {
     std::lock_guard lock(mutex);
 
-    ::ArrowFFIData * ffi_arrow_data = KernelUtils::unwrapResult(
-        ::scan_table_changes_next(getTableChangesScanIterator().get()),
+    ffi::ArrowFFIData * ffi_arrow_data = KernelUtils::unwrapResult(
+        ffi::scan_table_changes_next(getTableChangesScanIterator().get()),
         "scan_table_changes_next");
 
     if (!ffi_arrow_data)
         return {};
-    SCOPE_EXIT({ ::free_arrow_ffi_data(ffi_arrow_data); });
+    SCOPE_EXIT({ ffi::free_arrow_ffi_data(ffi_arrow_data); });
     if (ffi_arrow_data->array.length == 0)
         return {};
 
@@ -167,7 +166,12 @@ DB::Chunk TableChanges::next()
         reinterpret_cast<ArrowSchema *>(&ffi_arrow_data->schema));
 
     if (!record_batch.ok())
-        DB::throwFromArrowStatus(record_batch.status(), DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to create chunks batch");
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::UNKNOWN_EXCEPTION,
+            "Failed to create chunks batch: {}",
+            record_batch.status().ToString());
+    }
 
     /// Validate validity bitmaps before building the table: Table::FromRecordBatches computes
     /// each column's null_count, and Arrow derives an unknown FieldNode null_count by scanning
@@ -176,7 +180,8 @@ DB::Chunk TableChanges::next()
 
     auto table_result = arrow::Table::FromRecordBatches(std::vector<std::shared_ptr<arrow::RecordBatch>>{*record_batch});
     if (!table_result.ok())
-        DB::throwFromArrowStatus(table_result.status(), DB::ErrorCodes::UNKNOWN_EXCEPTION, "Error while reading batch of Arrow data");
+        throw DB::Exception(DB::ErrorCodes::UNKNOWN_EXCEPTION,
+            "Error while reading batch of Arrow data: {}", table_result.status().ToString());
 
     const std::shared_ptr<arrow::Table> & table = *table_result;
     const size_t num_rows = (*table_result)->num_rows();

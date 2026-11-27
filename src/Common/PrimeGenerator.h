@@ -159,7 +159,7 @@ public:
         chassert(std::is_sorted(primes.begin(), primes.end()));
     }
 
-    [[nodiscard]] const std::vector<UInt32> & getPrimes() const { return primes; }
+    const std::vector<UInt32> & getPrimes() const { return primes; }
 
 private:
     /// Marks or gets the bit corresponding to odd number at index idx (0 -> 3, 1 -> 5, 2 -> 7, ...)
@@ -372,7 +372,10 @@ private:
             return false;
 
         /// Compute segment_end = min(segment_begin + SEGMENT_SIZE, range_high_odd), overflow-safe.
-        UInt64 segment_end = segment_begin + std::min(SEGMENT_SIZE, range_high_odd - segment_begin);
+        UInt64 segment_end = segment_begin + SEGMENT_SIZE;
+        if (unlikely(segment_end < segment_begin))
+            segment_end = MAX_UINT64; /// clamp on overflow (MAX_UINT64 is odd)
+        segment_end = std::min(segment_end, range_high_odd);
 
         chassert((segment_begin & 1) == 1);
         chassert((segment_end & 1) == 1);

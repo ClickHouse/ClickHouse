@@ -1,12 +1,13 @@
 #pragma once
+#include <cassert>
 #include <cstddef>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <memory>
 #include <mutex>
 #include <utility>
 
 #include <boost/core/noncopyable.hpp>
 
+#include <Common/PODArray.h>
 #include <IO/ReadBuffer.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Chunk.h>
@@ -30,15 +31,15 @@ class PasteJoinAlgorithm final : public IMergingAlgorithm
 public:
     explicit PasteJoinAlgorithm(JoinPtr table_join, const SharedHeaders & input_headers, size_t max_block_size_);
 
-    [[nodiscard]] const char * getName() const override { return "PasteJoinAlgorithm"; }
+    const char * getName() const override { return "PasteJoinAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
-    [[nodiscard]] MergedStats getMergedStats() const override;
+    MergedStats getMergedStats() const override;
 
 private:
     /// For `USING` join key columns should have values from right side instead of defaults
-    UnorderedMapWithMemoryTracking<size_t, size_t> left_to_right_key_remap;
+    std::unordered_map<size_t, size_t> left_to_right_key_remap;
 
     std::array<Chunk, 2> chunks;
 

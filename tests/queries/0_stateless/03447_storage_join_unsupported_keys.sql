@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS segmented_ctr_cache;
 DROP TABLE IF EXISTS bookmarks_join;

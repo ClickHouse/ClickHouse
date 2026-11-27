@@ -57,7 +57,7 @@ public:
     void reload();
 
 
-    [[nodiscard]] bool in(RegionID lhs, RegionID rhs) const
+    bool in(RegionID lhs, RegionID rhs) const
     {
         if (lhs >= parents.size())
             return false;
@@ -68,63 +68,63 @@ public:
         return lhs != 0;
     }
 
-    [[nodiscard]] RegionID toCity(RegionID region) const
+    RegionID toCity(RegionID region) const
     {
         if (region >= city.size())
             return 0;
         return city[region];
     }
 
-    [[nodiscard]] RegionID toCountry(RegionID region) const
+    RegionID toCountry(RegionID region) const
     {
         if (region >= country.size())
             return 0;
         return country[region];
     }
 
-    [[nodiscard]] RegionID toArea(RegionID region) const
+    RegionID toArea(RegionID region) const
     {
         if (region >= area.size())
             return 0;
         return area[region];
     }
 
-    [[nodiscard]] RegionID toDistrict(RegionID region) const
+    RegionID toDistrict(RegionID region) const
     {
         if (region >= district.size())
             return 0;
         return district[region];
     }
 
-    [[nodiscard]] RegionID toContinent(RegionID region) const
+    RegionID toContinent(RegionID region) const
     {
         if (region >= continent.size())
             return 0;
         return continent[region];
     }
 
-    [[nodiscard]] RegionID toTopContinent(RegionID region) const
+    RegionID toTopContinent(RegionID region) const
     {
         if (region >= top_continent.size())
             return 0;
         return top_continent[region];
     }
 
-    [[nodiscard]] RegionID toParent(RegionID region) const
+    RegionID toParent(RegionID region) const
     {
         if (region >= parents.size())
             return 0;
         return parents[region];
     }
 
-    [[nodiscard]] RegionDepth getDepth(RegionID region) const
+    RegionDepth getDepth(RegionID region) const
     {
         if (region >= depths.size())
             return 0;
         return depths[region];
     }
 
-    [[nodiscard]] RegionPopulation getPopulation(RegionID region) const
+    RegionPopulation getPopulation(RegionID region) const
     {
         if (region >= populations.size())
             return 0;

@@ -308,13 +308,13 @@ private:
     VectorWithMemoryTracking<Float64> weights;
     Float64 bias{0.0};
 
-    Float64 learning_rate{};
-    Float64 l2_reg_coef{};
-    UInt64 batch_capacity{};
+    Float64 learning_rate;
+    Float64 l2_reg_coef;
+    UInt64 batch_capacity;
 
     UInt64 iter_num = 0;
     VectorWithMemoryTracking<Float64> gradient_batch;
-    UInt64 batch_size{};
+    UInt64 batch_size;
 
     std::shared_ptr<IGradientComputer> gradient_computer;
     std::shared_ptr<IWeightsUpdater> weights_updater;
@@ -333,7 +333,7 @@ template <
 class AggregateFunctionMLMethod final : public IAggregateFunctionDataHelper<Data, AggregateFunctionMLMethod<Data, Name>>
 {
 public:
-    [[nodiscard]] String getName() const override { return Name::name; }
+    String getName() const override { return Name::name; }
 
     explicit AggregateFunctionMLMethod(
         UInt32 param_num_,
@@ -359,10 +359,10 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     /// This function is called from evalMLMethod function for correct predictValues call
-    [[nodiscard]] DataTypePtr getReturnTypeToPredict() const override
+    DataTypePtr getReturnTypeToPredict() const override
     {
         return std::make_shared<DataTypeNumber<Float64>>();
     }
@@ -389,7 +389,7 @@ public:
         this->data(place).add(columns, row_num);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override { this->data(place).merge(this->data(rhs)); }
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override { this->data(place).merge(this->data(rhs)); }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override { this->data(place).write(buf); }
 

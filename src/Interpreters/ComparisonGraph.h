@@ -46,8 +46,8 @@ struct GraphComponent
         NodeContainer nodes;
         std::optional<size_t> constant_index;
 
-        [[nodiscard]] bool hasConstant() const;
-        [[nodiscard]] Node getConstant() const;
+        bool hasConstant() const;
+        Node getConstant() const;
         void buildConstants();
     };
 
@@ -112,38 +112,38 @@ public:
 
     static ComparisonGraphCompareResult atomToCompareResult(const Formula & atom);
 
-    [[nodiscard]] ComparisonGraphCompareResult compare(const Node & left, const Node & right) const;
+    ComparisonGraphCompareResult compare(const Node & left, const Node & right) const;
 
     /// It's possible that left <expected> right
-    [[nodiscard]] bool isPossibleCompare(ComparisonGraphCompareResult expected, const Node & left, const Node & right) const;
+    bool isPossibleCompare(ComparisonGraphCompareResult expected, const Node & left, const Node & right) const;
 
     /// It's always true that left <expected> right
-    [[nodiscard]] bool isAlwaysCompare(ComparisonGraphCompareResult expected, const Node & left, const Node & right) const;
+    bool isAlwaysCompare(ComparisonGraphCompareResult expected, const Node & left, const Node & right) const;
 
     /// Returns all expressions from component to which @node belongs if any.
-    [[nodiscard]] NodeContainer getEqual(const Node & node) const;
+    NodeContainer getEqual(const Node & node) const;
 
     /// Returns constant expression from component to which @node belongs if any.
-    [[nodiscard]] std::optional<Node> getEqualConst(const Node & node) const;
+    std::optional<Node> getEqualConst(const Node & node) const;
 
     /// Finds component id to which @node belongs if any.
-    [[nodiscard]] std::optional<std::size_t> getComponentId(const Node & node) const;
+    std::optional<std::size_t> getComponentId(const Node & node) const;
 
     /// Returns all expressions from component.
-    [[nodiscard]] NodeContainer getComponent(size_t id) const;
+    NodeContainer getComponent(size_t id) const;
 
-    [[nodiscard]] size_t getNumOfComponents() const { return graph.vertices.size(); }
+    size_t getNumOfComponents() const { return graph.vertices.size(); }
 
-    [[nodiscard]] bool hasPath(size_t left, size_t right) const;
+    bool hasPath(size_t left, size_t right) const;
 
     /// Find constants lessOrEqual and greaterOrEqual.
     /// For int and double linear programming can be applied here.
     /// Returns: {constant, is strict less/greater}
-    [[nodiscard]] std::optional<std::pair<Field, bool>> getConstUpperBound(const Node & node) const;
-    [[nodiscard]] std::optional<std::pair<Field, bool>> getConstLowerBound(const Node & node) const;
+    std::optional<std::pair<Field, bool>> getConstUpperBound(const Node & node) const;
+    std::optional<std::pair<Field, bool>> getConstLowerBound(const Node & node) const;
 
     /// Returns all expression in graph.
-    [[nodiscard]] std::vector<NodeContainer> getVertices() const;
+    std::vector<NodeContainer> getVertices() const;
 
 private:
     /// Receives graph, in which each vertex corresponds to one expression.
@@ -171,13 +171,13 @@ private:
     };
 
     static ComparisonGraphCompareResult pathToCompareResult(Path path, bool inverse);
-    [[nodiscard]] std::optional<Path> findPath(size_t start, size_t finish) const;
+    std::optional<Path> findPath(size_t start, size_t finish) const;
 
     /// Calculate @dists.
     static std::map<std::pair<size_t, size_t>, Path> buildDistsFromGraph(const Graph & g);
 
     /// Calculate @nodeconst_lower_bound and @node_const_lower_bound.
-    [[nodiscard]] std::pair<std::vector<ssize_t>, std::vector<ssize_t>> buildConstBounds() const;
+    std::pair<std::vector<ssize_t>, std::vector<ssize_t>> buildConstBounds() const;
 
     /// Direct acyclic graph in which each vertex corresponds
     /// to one equivalence class of expressions.

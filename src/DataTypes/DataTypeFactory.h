@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/IAST_fwd.h>
-#include <Common/Documentation.h>
 #include <Common/IFactoryWithAliases.h>
 #include <DataTypes/DataTypeCustom.h>
 
@@ -31,57 +30,51 @@ private:
 public:
     static DataTypeFactory & instance();
 
-    [[nodiscard]] DataTypePtr get(const String & full_name) const;
-    [[nodiscard]] DataTypePtr get(const String & family_name, const ASTPtr & parameters) const;
-    [[nodiscard]] DataTypePtr get(const ASTPtr & ast) const;
-    [[nodiscard]] DataTypePtr getCustom(DataTypeCustomDescPtr customization) const;
-    [[nodiscard]] DataTypePtr getCustom(const String & base_name, DataTypeCustomDescPtr customization) const;
+    DataTypePtr get(const String & full_name) const;
+    DataTypePtr get(const String & family_name, const ASTPtr & parameters) const;
+    DataTypePtr get(const ASTPtr & ast) const;
+    DataTypePtr getCustom(DataTypeCustomDescPtr customization) const;
+    DataTypePtr getCustom(const String & base_name, DataTypeCustomDescPtr customization) const;
 
     /// Return nullptr in case of error.
-    [[nodiscard]] DataTypePtr tryGet(const String & full_name) const;
-    [[nodiscard]] DataTypePtr tryGet(const String & family_name, const ASTPtr & parameters) const;
-    [[nodiscard]] DataTypePtr tryGet(const ASTPtr & ast) const;
+    DataTypePtr tryGet(const String & full_name) const;
+    DataTypePtr tryGet(const String & family_name, const ASTPtr & parameters) const;
+    DataTypePtr tryGet(const ASTPtr & ast) const;
 
     /// Register a type family by its name.
-    void registerDataType(const String & family_name, Value creator, Case case_sensitiveness = Case::Sensitive, Documentation documentation = {});
+    void registerDataType(const String & family_name, Value creator, Case case_sensitiveness = Case::Sensitive);
 
     /// Register a simple data type, that have no parameters.
-    void registerSimpleDataType(const String & name, SimpleCreator creator, Case case_sensitiveness = Case::Sensitive, Documentation documentation = {});
+    void registerSimpleDataType(const String & name, SimpleCreator creator, Case case_sensitiveness = Case::Sensitive);
 
     /// Register a customized type family
-    void registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, Case case_sensitiveness = Case::Sensitive, Documentation documentation = {});
+    void registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, Case case_sensitiveness = Case::Sensitive);
 
     /// Register a simple customized data type
-    void registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, Case case_sensitiveness = Case::Sensitive, Documentation documentation = {});
-
-    /// Returns the embedded documentation for a data type family (empty if none was registered).
-    [[nodiscard]] Documentation getDocumentation(const String & family_name) const;
+    void registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, Case case_sensitiveness = Case::Sensitive);
 
 private:
     template <bool nullptr_on_error>
-    [[nodiscard]] DataTypePtr getImpl(const String & full_name) const;
+    DataTypePtr getImpl(const String & full_name) const;
     template <bool nullptr_on_error>
-    [[nodiscard]] DataTypePtr getImpl(const String & family_name, const ASTPtr & parameters) const;
+    DataTypePtr getImpl(const String & family_name, const ASTPtr & parameters) const;
     template <bool nullptr_on_error>
-    [[nodiscard]] DataTypePtr getImpl(const ASTPtr & ast) const;
+    DataTypePtr getImpl(const ASTPtr & ast) const;
     template <bool nullptr_on_error>
-    [[nodiscard]] const Value * findCreatorByName(const String & family_name) const;
+    const Value * findCreatorByName(const String & family_name) const;
 
     DataTypesDictionary data_types;
 
     /// Case insensitive data types will be additionally added here with lowercased name.
     DataTypesDictionary case_insensitive_data_types;
 
-    /// Embedded documentation, keyed by data type family name.
-    std::unordered_map<String, Documentation> data_type_documentations;
-
     DataTypeFactory();
 
-    [[nodiscard]] const DataTypesDictionary & getMap() const override { return data_types; }
+    const DataTypesDictionary & getMap() const override { return data_types; }
 
-    [[nodiscard]] const DataTypesDictionary & getCaseInsensitiveMap() const override { return case_insensitive_data_types; }
+    const DataTypesDictionary & getCaseInsensitiveMap() const override { return case_insensitive_data_types; }
 
-    [[nodiscard]] String getFactoryName() const override { return "DataTypeFactory"; }
+    String getFactoryName() const override { return "DataTypeFactory"; }
 };
 
 void registerDataTypeNumbers(DataTypeFactory & factory);

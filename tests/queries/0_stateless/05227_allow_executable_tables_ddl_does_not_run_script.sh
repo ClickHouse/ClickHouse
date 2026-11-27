@@ -42,20 +42,20 @@ CONFIG
 # Gate closed: the definition is accepted and the refused read spawns nothing.
 $CLICKHOUSE_LOCAL --config-file="${CONFIG_FILE}" --query "
 SET allow_executable_tables = 0;
-CREATE TABLE t_gate (x UInt32) ENGINE = Executable('marker.sh', 'TSV') SETTINGS command_read_timeout = 30000;
+CREATE TABLE t_gate (x UInt32) ENGINE = Executable('marker.sh', 'TSV');
 SELECT * FROM t_gate;
 " 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
 
 # Gate open: defining and wrapping still run nothing.
 $CLICKHOUSE_LOCAL --config-file="${CONFIG_FILE}" --query "
-CREATE TABLE t_gate (x UInt32) ENGINE = Executable('marker.sh', 'TSV') SETTINGS command_read_timeout = 30000;
+CREATE TABLE t_gate (x UInt32) ENGINE = Executable('marker.sh', 'TSV');
 CREATE VIEW v_gate AS SELECT * FROM t_gate;
 "
 if [ -e "${MARKER}" ]; then echo "script ran"; else echo "script did not run"; fi
 
 # Positive control: proves the marker is observable, so the check above is not vacuous.
 $CLICKHOUSE_LOCAL --config-file="${CONFIG_FILE}" --query "
-CREATE TABLE t_gate (x UInt32) ENGINE = Executable('marker.sh', 'TSV') SETTINGS command_read_timeout = 30000;
+CREATE TABLE t_gate (x UInt32) ENGINE = Executable('marker.sh', 'TSV');
 SELECT * FROM t_gate;
 "
 if [ -e "${MARKER}" ]; then echo "script ran"; else echo "script did not run"; fi
@@ -63,7 +63,7 @@ if [ -e "${MARKER}" ]; then echo "script ran"; else echo "script did not run"; f
 # A pooled worker started by a permitted read survives the gate closing: the refused read neither
 # reuses nor respawns it, and reopening the gate serves from the same worker.
 $CLICKHOUSE_LOCAL --config-file="${CONFIG_FILE}" --ignore-error --query "
-CREATE TABLE t_pool (x UInt32) ENGINE = ExecutablePool('marker_pool.sh', 'TSV', (SELECT 7)) SETTINGS send_chunk_header = 1, pool_size = 1, command_read_timeout = 30000;
+CREATE TABLE t_pool (x UInt32) ENGINE = ExecutablePool('marker_pool.sh', 'TSV', (SELECT 7)) SETTINGS send_chunk_header = 1, pool_size = 1;
 SELECT * FROM t_pool;
 SET allow_executable_tables = 0;
 SELECT * FROM t_pool;

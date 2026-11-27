@@ -9,13 +9,11 @@ if [ "${OS}" = "Linux" ]
 then
     if [ "${ARCH}" = "x86_64" -o "${ARCH}" = "amd64" ]
     then
-        # The default build targets x86-64-v3 which requires AVX2, BMI1, BMI2, FMA, etc.
-        # On older hardware, fall back to the compat build (plain x86-64, SSE2 baseline).
-        # Check avx2 as a proxy, since every real CPU with AVX2 also has the other v3 features.
-        if grep -q avx2 /proc/cpuinfo
+        # Require at least x86-64 + SSE4.2 (introduced in 2006). On older hardware fall back to plain x86-64 (introduced in 1999) which
+        # guarantees at least SSE2. The caveat is that plain x86-64 builds are much less tested than SSE 4.2 builds.
+        HAS_SSE42=$(grep sse4_2 /proc/cpuinfo)
+        if [ "${HAS_SSE42}" ]
         then
-            # The `amd64musl` path is kept for release branches built before the switch to the
-            # static musl binary, which publish a glibc binary under `amd64`.
             if ldd --version 2>&1 | grep -q musl
             then
                 DIR="amd64musl"
@@ -70,272 +68,34 @@ then
     exit 1
 fi
 
-# Sets `profile` to the startup file that should get the PATH line,
-# and `extra_profile` to a second one when a single file cannot cover every shell.
-detect_shell_profile() {
-    target_os="$1"
-    user_shell=""
-    if [ -n "${SHELL}" ]; then
-        user_shell=$(basename "${SHELL}")
-    fi
-
-    profile=""
-    extra_profile=""
-
-    case "${user_shell}" in
-        zsh)
-            # zsh falls back to the home directory only when ZDOTDIR is unset, not when it is empty.
-            zsh_dir="${ZDOTDIR-${HOME}}"
-            if [ -f "${zsh_dir}/.zshrc" ]; then
-                profile="${zsh_dir}/.zshrc"
-            elif [ -f "${zsh_dir}/.zprofile" ]; then
-                profile="${zsh_dir}/.zprofile"
-            else
-                profile="${zsh_dir}/.zshrc"
-            fi
-            ;;
-        bash)
-            # A login shell reads only the first of these that exists.
-            login_profile=""
-            for name in .bash_profile .bash_login .profile; do
-                if [ -f "${HOME}/${name}" ]; then
-                    login_profile="${HOME}/${name}"
-                    break
-                fi
-            done
-            if [ "${target_os}" = "Darwin" ]; then
-                # Terminals on macOS start login shells.
-                profile="${login_profile:-${HOME}/.bash_profile}"
-            else
-                # Terminals start non-login shells, which read only .bashrc; an ssh login reads it
-                # only if the login file sources it.
-                profile="${HOME}/.bashrc"
-                login_profile="${login_profile:-${HOME}/.profile}"
-                if ! grep -E -q '^[^#]*(\.|source)[[:space:]]+[^#]*\.bashrc' "${login_profile}" 2>/dev/null; then
-                    extra_profile="${login_profile}"
-                fi
-            fi
-            ;;
-        fish)
-            profile="${XDG_CONFIG_HOME:-${HOME}/.config}/fish/config.fish"
-            ;;
-        *)
-            if [ -f "${HOME}/.zshrc" ]; then
-                profile="${HOME}/.zshrc"
-            elif [ -f "${HOME}/.bashrc" ]; then
-                profile="${HOME}/.bashrc"
-            elif [ -f "${HOME}/.bash_profile" ]; then
-                profile="${HOME}/.bash_profile"
-            elif [ -f "${HOME}/.profile" ]; then
-                profile="${HOME}/.profile"
-            else
-                if [ "${target_os}" = "Darwin" ]; then
-                    profile="${HOME}/.zshrc"
-                else
-                    profile="${HOME}/.bashrc"
-                fi
-            fi
-            ;;
-    esac
-}
-
-# Whether the file has a line, not commented out, that puts ~/.local/bin into PATH.
-path_in_profile() {
-    [ -f "$1" ] && grep -v '^[[:space:]]*#' "$1" | grep -i 'path' \
-        | grep -F -q -e "${HOME}/.local/bin" -e '$HOME/.local/bin' -e '${HOME}/.local/bin' -e '~/.local/bin'
-}
-
-add_path_to_profile() {
-    mkdir -p "$(dirname "$1")"
-    if [ -f "$1" ] && [ -n "$(tail -c 1 "$1" 2>/dev/null)" ]; then
-        echo "" >> "$1"
-    fi
-    echo "# Added by ClickHouse installer" >> "$1"
-    printf '%s\n' "${path_line}" >> "$1"
-}
-
 clickhouse_download_filename_prefix="clickhouse"
 clickhouse="$clickhouse_download_filename_prefix"
 
-# If something already exists at this path, pick a non-clashing name (clickhouse.0, clickhouse.1, ...).
-# Do not prompt interactively here: this script is commonly run as `curl https://clickhouse.com/ | sh`,
-# where the script itself is delivered on stdin. A `read` would consume bytes from that same pipe,
-# desyncing the shell parser and producing spurious syntax errors.
-# Use `-e` together with `-L` so that directories and broken symlinks are also treated as occupied
-# (a dangling symlink is invisible to `-e` alone, and `curl -o` would then fail on it).
-i=0
-while [ -e "$clickhouse" ] || [ -L "$clickhouse" ]
-do
-    clickhouse="${clickhouse_download_filename_prefix}.${i}"
-    i=$(($i+1))
-done
-
-# The `master` build by default. `CLICKHOUSE_BRANCH=latest` selects the newest release branch,
-# any other value names a folder on builds.clickhouse.com, such as `26.10`.
-CLICKHOUSE_BRANCH="${CLICKHOUSE_BRANCH:-master}"
-if [ "${CLICKHOUSE_BRANCH}" = "latest" ]
+if [ -f "$clickhouse" ]
 then
-    CLICKHOUSE_BRANCH=$(curl -fsSL https://clickhouse.com/data/version_date.tsv | sed -n 's/^v\([0-9]*\.[0-9]*\)\..*/\1/p' | sort -uV | tail -n 1)
-    [ -n "${CLICKHOUSE_BRANCH}" ] || { echo "Cannot find the latest release branch in version_date.tsv."; exit 1; }
+    read -p "ClickHouse binary ${clickhouse} already exists. Overwrite? [y/N] " answer
+    if [ "$answer" = "y" -o "$answer" = "Y" ]
+    then
+        rm -f "$clickhouse"
+    else
+        i=0
+        while [ -f "$clickhouse" ]
+        do
+            clickhouse="${clickhouse_download_filename_prefix}.${i}"
+            i=$(($i+1))
+        done
+    fi
 fi
 
-URL="https://builds.clickhouse.com/${CLICKHOUSE_BRANCH}/${DIR}/clickhouse"
+URL="https://builds.clickhouse.com/master/${DIR}/clickhouse"
 echo
 echo "Will download ${URL} into ${clickhouse}"
 echo
 curl "${URL}" -o "${clickhouse}" && chmod a+x "${clickhouse}" || exit 1
-
-# Highlight the commands with increased intensity when the output is a terminal,
-# in the same style as `clickhouse install` does.
-if [ -t 1 ]
-then
-    HILITE="$(printf '\033[1m')"
-    END_HILITE="$(printf '\033[0m')"
-else
-    HILITE=""
-    END_HILITE=""
-fi
-
 echo
 echo "Successfully downloaded the ClickHouse binary, you can run it as:
-    ${HILITE}./${clickhouse}${END_HILITE}"
+    ./${clickhouse}"
 
 echo
 echo "You can also install it:
-${HILITE}sudo ./${clickhouse} install${END_HILITE}"
-
-# Also install clickhousectl, the CLI for ClickHouse local and Cloud.
-# Set CLICKHOUSE_ONLY=1 to skip.
-if [ -z "${CLICKHOUSE_ONLY}" ]
-then
-    chctl_target=
-    if [ "${OS}" = "Linux" ]
-    then
-        if [ "${ARCH}" = "x86_64" -o "${ARCH}" = "amd64" ]
-        then
-            chctl_target="x86_64-unknown-linux-musl"
-        elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]
-        then
-            chctl_target="aarch64-unknown-linux-musl"
-        fi
-    elif [ "${OS}" = "Darwin" ]
-    then
-        if [ "${ARCH}" = "x86_64" -o "${ARCH}" = "amd64" ]
-        then
-            chctl_target="x86_64-apple-darwin"
-        elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]
-        then
-            chctl_target="aarch64-apple-darwin"
-        fi
-    fi
-
-    if [ -n "${chctl_target}" ]
-    then
-        echo
-        echo "Fetching the latest clickhousectl release..."
-        chctl_tag=$(curl -fsSL "https://api.github.com/repos/ClickHouse/clickhousectl/releases/latest" \
-            | grep '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')
-
-        if [ -n "${chctl_tag}" ]
-        then
-            chctl_install_dir="${HOME}/.local/bin"
-            chctl_archive="clickhousectl-${chctl_target}-${chctl_tag}.tar.gz"
-            chctl_url="https://builds.clickhouse.com/clickhousectl/${chctl_archive}"
-            echo "Will download ${chctl_url} into ${chctl_install_dir}/clickhousectl"
-            chctl_tmp=$(mktemp -d)
-            if mkdir -p "${chctl_install_dir}" \
-                && curl -fsSL "${chctl_url}" -o "${chctl_tmp}/${chctl_archive}" \
-                && tar -xzf "${chctl_tmp}/${chctl_archive}" -C "${chctl_tmp}" \
-                && mv -f "${chctl_tmp}/clickhousectl-${chctl_target}-${chctl_tag}/clickhousectl" "${chctl_install_dir}/clickhousectl"
-            then
-                chmod a+x "${chctl_install_dir}/clickhousectl"
-                ln -sf "${chctl_install_dir}/clickhousectl" "${chctl_install_dir}/chctl"
-                echo
-                echo "Successfully installed clickhousectl to ${chctl_install_dir}/clickhousectl"
-                echo "Created alias: chctl -> clickhousectl"
-                case ":$PATH:" in
-                    *":${chctl_install_dir}:"*) ;;
-                    *)
-                        detect_shell_profile "${OS}"
-                        profile_file="${profile}"
-                        # Keep only the files that still need the line.
-                        if [ -n "${extra_profile}" ] && path_in_profile "${extra_profile}"; then
-                            extra_profile=""
-                        fi
-                        if [ -n "${extra_profile}" ] && path_in_profile "${profile_file}"; then
-                            profile_file="${extra_profile}"
-                            extra_profile=""
-                        fi
-                        pretty_profile="~/${profile_file#"${HOME}/"}"
-                        if [ "${pretty_profile}" = "~/${profile_file}" ]; then
-                            pretty_profile="${profile_file}"
-                        fi
-                        pretty_profiles="${pretty_profile}"
-                        if [ -n "${extra_profile}" ]; then
-                            pretty_profiles="${pretty_profile} and ~/${extra_profile#"${HOME}/"}"
-                        fi
-
-                        # The line refers to $HOME literally, so a home path with special characters is not expanded again.
-                        case "${user_shell}" in
-                            fish) path_line='set -gx PATH "$HOME/.local/bin" $PATH' ;;
-                            *) path_line='export PATH="$HOME/.local/bin:$PATH"' ;;
-                        esac
-
-                        in_profile=0
-                        if path_in_profile "${profile_file}"; then
-                            in_profile=1
-                        fi
-
-                        if [ "${in_profile}" = "1" ]; then
-                            echo
-                            echo "NOTE: ${chctl_install_dir} is not in your current PATH, but it is configured in ${pretty_profile}."
-                            echo "Restart your terminal session or run:"
-                            echo
-                            echo "  source ${pretty_profile}"
-                        else
-                            asked=0
-                            if [ -z "${NONINTERACTIVE}" ] && ( : < /dev/tty ) 2>/dev/null; then
-                                echo
-                                printf "Do you want to add '%s' to PATH in %s? [Y/n] " "${chctl_install_dir}" "${pretty_profiles}" > /dev/tty
-                                if read -r reply < /dev/tty 2>/dev/null; then
-                                    asked=1
-                                    case "${reply}" in
-                                        [yY]*|"")
-                                            add_path_to_profile "${profile_file}"
-                                            if [ -n "${extra_profile}" ]; then
-                                                add_path_to_profile "${extra_profile}"
-                                            fi
-                                            echo "Added ${path_line} to ${pretty_profiles}"
-                                            echo "Run 'source ${pretty_profile}' or restart your shell to update PATH."
-                                            ;;
-                                        *)
-                                            echo "Skipped updating ${pretty_profiles}."
-                                            echo "You can manually add it by running:"
-                                            echo
-                                            echo "  ${path_line}"
-                                            ;;
-                                    esac
-                                fi
-                            fi
-
-                            if [ "${asked}" = "0" ]; then
-                                echo
-                                echo "NOTE: ${chctl_install_dir} is not in your PATH."
-                                echo "Add it by running:"
-                                echo
-                                echo "  ${path_line}"
-                                echo
-                                echo "You may want to add that line to your shell profile (${pretty_profiles})."
-                            fi
-                        fi
-                        ;;
-                esac
-            else
-                echo "Warning: failed to download clickhousectl. Continuing."
-            fi
-            rm -rf "${chctl_tmp}"
-        else
-            echo "Warning: could not determine the latest clickhousectl release. Continuing."
-        fi
-    fi
-fi
+sudo ./${clickhouse} install"

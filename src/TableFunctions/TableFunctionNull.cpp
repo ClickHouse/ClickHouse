@@ -69,17 +69,13 @@ ColumnsDescription TableFunctionNull::getActualTableStructure(ContextPtr context
     return default_structure;
 }
 
-StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool /*is_insert_query*/) const
+StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool /*is_insert_query*/) const
 {
     ColumnsDescription columns;
     if (structure != "auto")
         columns = parseColumnsListFromString(structure, context);
     else if (!structure_hint.empty())
         columns = structure_hint;
-    /// A table created from this function gets its stored columns as `cached_columns`: without a structure argument they are
-    /// its structure, as for the object storage functions, not `dummy UInt8`.
-    else if (!cached_columns.empty())
-        columns = std::move(cached_columns);
     else
         columns = default_structure;
 
@@ -92,42 +88,7 @@ StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, Conte
 
 void registerTableFunctionNull(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionNull>({.description = R"DOCS_MD(
-Creates a temporary table of the specified structure with the [Null](/reference/engines/table-engines/special/null) table engine. According to the `Null`-engine properties, the table data is ignored and the table itself is immediately dropped right after the query execution. The function is used for the convenience of test writing and demonstrations.
-
-## Syntax {#syntax}
-
-```sql
-null('structure')
-```
-
-## Argument {#argument}
-
-- `structure` — A list of columns and column types. [String](/reference/data-types/string).
-
-## Returned value {#returned-value}
-
-A temporary `Null`-engine table with the specified structure.
-
-## Example {#example}
-
-Query with the `null` function:
-
-```sql
-INSERT INTO function null('x UInt64') SELECT * FROM numbers_mt(1000000000);
-```
-can replace three queries:
-
-```sql
-CREATE TABLE t (x UInt64) ENGINE = Null;
-INSERT INTO t SELECT * FROM numbers_mt(1000000000);
-DROP TABLE IF EXISTS t;
-```
-
-## Related {#related}
-
-- [Null table engine](/reference/engines/table-engines/special/null)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionNull>({}, {.allow_readonly = true});
 }
 
 }

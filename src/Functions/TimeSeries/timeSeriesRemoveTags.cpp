@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesRemoveTags(group, ['tag_name_1', 'tag_name_2', ...]) removes specified tags from a tags group,
 /// and returns the new tags group.
-class FunctionTimeSeriesRemoveTags final : public IFunction
+class FunctionTimeSeriesRemoveTags : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesRemoveTags";
@@ -24,29 +24,18 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesRemoveTags>(context); }
     explicit FunctionTimeSeriesRemoveTags(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    size_t getNumberOfArguments() const override { return 2; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     /// Function timeSeriesRemoveTags uses information stored in the query context, it's deterministic in the scope of the current query.
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return true; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
 
-    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
-    [[nodiscard]] bool isStateful() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
-
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(UInt64, const Array(String | IsNothing)) -> UInt64";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
         return std::make_shared<DataTypeUInt64>();
@@ -64,7 +53,7 @@ public:
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstTagNames(name, arguments, 1);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto old_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0);
         auto tags_to_remove = TimeSeriesTagsFunctionHelpers::extractConstTagNamesFromArgument(name, arguments, 1);
@@ -85,8 +74,8 @@ REGISTER_FUNCTION(TimeSeriesRemoveTags)
     FunctionDocumentation::Description description = R"(
 Removes specified tags from a group of tags.
 If some of the specified tags are not in the group of tags the function ignores them.
-See also function [timeSeriesRemoveTag()](/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag),
-[timeSeriesRemoveAllTagsExcept()](/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
+See also function [timeSeriesRemoveTag()](/sql-reference/functions/time-series-functions#timeSeriesRemoveTag),
+[timeSeriesRemoveAllTagsExcept()](/sql-reference/functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesRemoveTags(group, tags_to_remove)";
     FunctionDocumentation::Arguments arguments = {

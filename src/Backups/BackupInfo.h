@@ -16,23 +16,20 @@ struct BackupInfo
     std::vector<Field> args;
     ASTPtr function_arg;
     ASTs kv_args;
-    NamedCollectionPtr frozen_named_collection;
 
-    [[nodiscard]] String toString() const;
-    static BackupInfo fromString(std::string_view str);
+    String toString() const;
+    static BackupInfo fromString(const String & str);
 
-    [[nodiscard]] ASTPtr toAST() const;
+    ASTPtr toAST() const;
     static BackupInfo fromAST(const IAST & ast);
 
-    [[nodiscard]] String toStringForLogging() const;
+    String toStringForLogging() const;
 
-    /// The context resolves non-literal `extra_credentials` keys and values the way
-    /// `collectCredentials` does when the locator is opened; without one only literals are read.
-    void copyS3CredentialsTo(BackupInfo & dest, ContextPtr context = nullptr) const;
+    void copyS3CredentialsTo(BackupInfo & dest) const;
 
     /// Whether `copyS3CredentialsTo` would succeed (both sides are `S3` without named collections
     /// and this backup locator carries explicit credentials).
-    [[nodiscard]] bool canCopyS3CredentialsTo(const BackupInfo & dest, ContextPtr context = nullptr) const;
+    bool canCopyS3CredentialsTo(const BackupInfo & dest) const;
 
     /// Returns a copy without `S3` credentials: positional key/secret arguments are removed,
     /// credential key-value arguments and trailing `extra_credentials` are removed, and credentials
@@ -42,16 +39,12 @@ struct BackupInfo
     /// `base_backup` setting, or from the server-side configuration.
     /// The context is used to evaluate non-literal argument keys and `url` overrides the same way
     /// `getNamedCollection` does; without a context such expressions are rejected.
-    [[nodiscard]] BackupInfo withoutS3Credentials(ContextPtr context = nullptr) const;
+    BackupInfo withoutS3Credentials(ContextPtr context = nullptr) const;
 
     /// Gets the named collection specified by id_arg, checks access rights,
     /// and applies any key-value overrides from kv_args.
     /// Returns nullptr if id_arg is empty (i.e., no named collection is used).
-    [[nodiscard]] NamedCollectionPtr getNamedCollection(ContextPtr context) const;
-
-    /// Stores a private copy of the resolved named collection so later identity generation
-    /// and backup creation use the same collection state.
-    [[nodiscard]] BackupInfo freezeNamedCollection(ContextPtr context) const;
+    NamedCollectionPtr getNamedCollection(ContextPtr context) const;
 };
 
 }

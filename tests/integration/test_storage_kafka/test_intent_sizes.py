@@ -1,10 +1,7 @@
 import logging
 
-
-import pytest
-
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
+from helpers.kafka.common_direct import *
+from helpers.kafka.common_direct import _VarintBytes
 import helpers.kafka.common as k
 
 
@@ -22,7 +19,7 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
     main_configs=["configs/kafka.xml", "configs/named_collection.xml"],
-    user_configs=["configs/users.xml", "configs/users_mv_dedup.xml"],
+    user_configs=["configs/users.xml"],
     with_kafka=True,
     with_zookeeper=True,  # For Replicated Table
     macros={
@@ -52,7 +49,29 @@ def kafka_cluster():
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
-    k.clean_test_database_and_topics(instance, cluster)
+    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
+    admin_client = k.get_admin_client(cluster)
+
+    def get_topics_to_delete():
+        return [t for t in admin_client.list_topics() if not t.startswith("_")]
+
+    topics = get_topics_to_delete()
+    logging.debug(f"Deleting topics: {topics}")
+    result = admin_client.delete_topics(topics)
+    for topic, error in result.topic_error_codes:
+        if error != 0:
+            logging.warning(f"Received error {error} while deleting topic {topic}")
+        else:
+            logging.info(f"Deleted topic {topic}")
+
+    retries = 0
+    topics = get_topics_to_delete()
+    while len(topics) != 0:
+        logging.info(f"Existing topics: {topics}")
+        if retries >= 5:
+            raise Exception(f"Failed to delete topics {topics}")
+        retries += 1
+        time.sleep(0.5)
     yield  # run test
 
 
@@ -117,17 +136,12 @@ def test_good_intent_size(kafka_cluster):
         # Do an extra check to make sure wait_for_log_line in `check_intent_size` didn't caught the wrong line
         assert instance.wait_for_log_line(f"Saving intent of 1 for topic-partition \\[{topic_name}:0\\] at offset {INVALID_KAFKA_OFFSET}", repetitions=2)
 
-        # Check that intent size is correct with multiple messages.
-        # Both records must already be in the topic when the batching cycle starts,
-        # otherwise the cycle's flush window can expire between them and each is
-        # consumed alone.
-        instance.query("SYSTEM STOP test.kafka")
+        # Check that intent size is correct with multiple messages
         k.kafka_produce(
             kafka_cluster,
             topic_name,
-            ["message_4", "message_5"]
+            [f"message_4", "message_5"]
         )
-        instance.query("SYSTEM START test.kafka")
 
         consumed_messages = instance.query_with_retry("SELECT * FROM test.dst", retry_count = 30, sleep_time = 1, check_callback=lambda x: len(TSV(x)) == 3)
         logging.debug(f"Consumed messages: {consumed_messages}")
@@ -135,103 +149,6 @@ def test_good_intent_size(kafka_cluster):
 
         result = instance.query("SELECT * FROM test.dst ORDER BY a")
         assert TSV(result) == TSV("message_3\nmessage_4\nmessage_5")
-
-
-def test_intent_replay_after_failed_insert(kafka_cluster):
-    # When an insert fails after the intent was saved, the retry must consume exactly the intended
-    # number of messages, even if more messages arrived in the meantime, and even if the replay was
-    # interrupted by SYSTEM STOP. Otherwise the retried batch would differ from the failed one, its
-    # block hash would not match, and deduplication could not drop the rows that the failed insert
-    # already committed.
-    instance.rotate_logs()
-
-    topic_name = "topic_intent_replay"
-
-    create_kafka_query = k.generate_new_create_table_query(
-        "kafka",
-        "a String",
-        topic_list=topic_name,
-        format="LineAsString",
-        settings={"kafka_flush_interval_ms": 2000},
-    )
-
-    k.kafka_produce(kafka_cluster, topic_name, [f"message_{i}" for i in range(1, 4)])
-
-    with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
-        # The first failpoint makes the Keeper commit of the first insert succeed, but report a
-        # hardware fault; the second one fails the recovery from the fault, and with
-        # `insert_keeper_max_retries` = 0 (set in the users config) there is no retry either. The
-        # insert reports `UNKNOWN_STATUS_OF_INSERT` while its data stays committed. This mimics an
-        # insert that succeeded on the server, but whose confirmation was lost, e.g. a failed
-        # quorum check.
-        instance.query(
-            "SYSTEM ENABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op"
-        )
-        instance.query(
-            "SYSTEM ENABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
-        )
-        try:
-            instance.query(
-                f"""
-                CREATE TABLE test.dst (
-                    a String,
-                )
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/dst_intent_replay', 'r1')
-                ORDER BY a;
-
-                {create_kafka_query};
-
-                CREATE MATERIALIZED VIEW test.kafka_mv TO test.dst AS
-                SELECT
-                    a
-                FROM test.kafka;
-                """
-            )
-
-            # The first batch seals with 3 messages when the flush interval expires, and its
-            # insert is about to start.
-            instance.wait_for_log_line(
-                f"Saving intent of 3 for topic-partition \\[{topic_name}:0\\]"
-            )
-
-            # Halt the table before producing more messages. The in-flight insert is past the
-            # source, so it is allowed to finish: it commits the rows, but reports a failure, so
-            # the committed offset stays behind and the intent of 3 remains. The replay cannot run
-            # until START, so when it runs, all the messages are already in the topic, and the
-            # replay must consume only the 3 intended ones for deduplication to drop the block that
-            # the failed insert committed. The new messages must go into a later batch.
-            instance.query("SYSTEM STOP test.kafka")
-            instance.wait_for_log_line("UNKNOWN_STATUS_OF_INSERT")
-            # Pin the test premise: the failed insert committed its rows.
-            instance.query_with_retry(
-                "SELECT count() FROM test.dst",
-                retry_count=30,
-                sleep_time=1,
-                check_callback=lambda x: int(x) == 3,
-            )
-
-            k.kafka_produce(
-                kafka_cluster, topic_name, [f"message_{i}" for i in range(4, 11)]
-            )
-            instance.query("SYSTEM START test.kafka")
-
-            instance.query_with_retry(
-                "SELECT count() FROM test.dst",
-                retry_count=60,
-                sleep_time=1,
-                check_callback=lambda x: int(x) >= 10,
-            )
-
-            expected = sorted(f"message_{i}" for i in range(1, 11))
-            result = instance.query("SELECT a FROM test.dst ORDER BY a")
-            assert TSV(result) == TSV("\n".join(expected))
-        finally:
-            instance.query(
-                "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
-            )
-            instance.query(
-                "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op"
-            )
 
 
 if __name__ == "__main__":

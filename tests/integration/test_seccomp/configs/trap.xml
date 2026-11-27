@@ -1,3 +1,0 @@
-<clickhouse>
-    <seccomp>trap</seccomp>
-</clickhouse>

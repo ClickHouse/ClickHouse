@@ -1,7 +1,0 @@
-<clickhouse>
-    <s3>
-        <backups>
-            <endpoint>http://minio1:9001/root/backups/</endpoint>
-        </backups>
-    </s3>
-</clickhouse>

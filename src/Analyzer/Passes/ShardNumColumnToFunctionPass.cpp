@@ -47,7 +47,7 @@ public:
             return;
 
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-        if (!storage_snapshot->metadata->isVirtualColumn(column.name))
+        if (!storage->isVirtualColumn(column.name, storage_snapshot->metadata))
             return;
 
         const auto column_type = column_node->getColumnType();

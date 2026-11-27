@@ -1,6 +1,0 @@
-scalar add, one thread (all 1):
-70	70
-parallel, small blocks (all 1):
-70	70
-addMany (all 1):
-70	70

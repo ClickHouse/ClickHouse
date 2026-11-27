@@ -47,15 +47,7 @@ public:
     using Base = COWHelper<IColumnHelper<ColumnMap>, ColumnMap>;
 
     static Ptr create(const ColumnPtr & keys, const ColumnPtr & values, const ColumnPtr & offsets, const StatisticsPtr & statistics_ = {});
-    static Ptr create(const ColumnPtr & column, const StatisticsPtr & statistics_ = {})
-    {
-        /// Per the doc comment above, callers may keep their own immutable reference — the
-        /// underlying column may be shared. `assumeMutable` would `chassert(use_count() == 1)`
-        /// and abort. Bypass the assertion via `const_cast` + `getPtr` — equivalent to the old
-        /// `assumeMutable` fast path. The result is returned as `Ptr` (immutable), and any
-        /// mutation must go through `IColumn::mutate`, which deep-clones shared sub-columns.
-        return ColumnMap::create(const_cast<IColumn *>(column.get())->getPtr(), statistics_);
-    }
+    static Ptr create(const ColumnPtr & column, const StatisticsPtr & statistics_ = {}) { return ColumnMap::create(column->assumeMutable(), statistics_); }
     static Ptr create(ColumnPtr && arg, const StatisticsPtr & statistics_ = {}) { return create(arg, statistics_); }
 
     static MutablePtr create(MutableColumnPtr && nested_, const StatisticsPtr & statistics_ = {}) { return Base::create(std::move(nested_), statistics_); }
@@ -74,10 +66,7 @@ public:
     void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
     bool isDefaultAt(size_t n) const override;
-    UInt64 getNumberOfDefaultRows() const override;
-    bool hasOnlyTypeDefaults() const override;
     std::string_view getDataAt(size_t n) const override;
-    bool supportsGetDataAt() const override { return false; }
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
@@ -87,9 +76,10 @@ public:
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
-    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
+    WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -108,7 +98,7 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
+    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #else
@@ -121,7 +111,7 @@ public:
                         size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const override;
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
+    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
     void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
@@ -133,19 +123,10 @@ public:
     void rollback(const ColumnCheckpoint & checkpoint) override;
     void forEachMutableSubcolumn(MutableColumnCallback callback) override;
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
-    ColumnPlanes getPlanes() const override;
     void forEachSubcolumn(ColumnCallback callback) const override;
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
     bool structureEquals(const IColumn & rhs) const override;
-    void finalize() override
-    {
-        /// `nested` can be shared by a row-input format serializer that retains a `ColumnPtr` to it
-        /// between rows of the same chunk; the format then calls `finalize()` on the owning column
-        /// while the borrowed reference is still alive. Go through the const dereference so that
-        /// `WrappedPtr` does not trigger its `use_count() == 1` assertion in this safe case.
-        const auto & nested_ref = nested;
-        const_cast<IColumn &>(*nested_ref).finalize();
-    }
+    void finalize() override { nested->finalize(); }
     bool isFinalized() const override { return nested->isFinalized(); }
 
     const ColumnArray & getNestedColumn() const;
@@ -162,15 +143,15 @@ public:
     bool hasDynamicStructure() const override { return nested->hasDynamicStructure(); }
     bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeExactDynamicStructureFrom(const IColumn & source) override;
-    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
+    void chooseDynamicStructureForMerge(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override { nested->fixDynamicStructure(); }
 
     const StatisticsPtr & getStatistics() const { return statistics; }
     StatisticsPtr getOrCalculateStatistics() const;
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
-    Statistics calculateStatisticsForRange(size_t start, size_t end) const;
+    StatisticsPtr calculateStatisticsForRange(size_t start, size_t end) const;
     bool hasStatistics() const override { return true; }
-    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
+    void takeOrCalculateStatisticsFrom(const Columns & source_columns) override;
 };
 
 }

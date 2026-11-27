@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesCopyTags(dest_group, src_group, ['tag_name_1', 'tag_name_2', ...])
 /// copies specified tags from the `src` group to the `dest` group, and returns the new tags group.
-class FunctionTimeSeriesCopyTags final : public IFunction
+class FunctionTimeSeriesCopyTags : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesCopyTags";
@@ -24,29 +24,18 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesCopyTags>(context); }
     explicit FunctionTimeSeriesCopyTags(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
+    size_t getNumberOfArguments() const override { return 3; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
     /// Function timeSeriesCopyTags uses information stored in the query context, it's deterministic in the scope of the current query.
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return true; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
 
-    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
-    [[nodiscard]] bool isStateful() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
-
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(UInt64, UInt64, const Array(String | IsNothing)) -> UInt64";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
         return std::make_shared<DataTypeUInt64>();
@@ -67,20 +56,17 @@ public:
 
     using Group = ContextTimeSeriesTagsCollector::Group;
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto dest_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0, /* return_single_element_if_const_column = */ true);
         auto src_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 1, /* return_single_element_if_const_column = */ true);
-        chassert((dest_groups.size() == input_rows_count) || (dest_groups.size() == 1));
-        chassert((src_groups.size() == input_rows_count) || (src_groups.size() == 1));
+        chassert((dest_groups.size() == input_rows_count) || (src_groups.size() == input_rows_count));
 
         auto tags_to_copy = TimeSeriesTagsFunctionHelpers::extractConstTagNamesFromArgument(name, arguments, 2);
 
-        VectorWithMemoryTracking<Group> new_groups;
+        std::vector<Group> new_groups;
 
-        if ((dest_groups.size() == 1) && (src_groups.size() == 1))
-            new_groups.assign(input_rows_count, tags_collector->copyTags(dest_groups[0], src_groups[0], tags_to_copy));
-        else if (dest_groups.size() == 1)
+        if (dest_groups.size() == 1)
             new_groups = tags_collector->copyTags(dest_groups[0], src_groups, tags_to_copy);
         else if (src_groups.size() == 1)
             new_groups = tags_collector->copyTags(dest_groups, src_groups[0], tags_to_copy);

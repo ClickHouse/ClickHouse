@@ -186,8 +186,6 @@ private:
     size_t _globalProfilerRealTimePeriodNs;
     size_t _globalProfilerCPUTimePeriodNs;
     ThreadVec _threads;
-    /// Released threads that did not exit within the join timeout, joined in `stopAll`.
-    ThreadVec _retiredThreads;
     mutable FastMutex _mutex;
 };
 

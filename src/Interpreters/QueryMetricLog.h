@@ -4,8 +4,8 @@
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ThreadStatus.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Interpreters/PeriodicLog.h>
 #include <Interpreters/ProcessList.h>
@@ -44,7 +44,7 @@ struct QueryMetricLogElement
 
 struct QueryMetricLogStatusInfo
 {
-    UInt64 interval_milliseconds{};
+    UInt64 interval_milliseconds;
     std::chrono::system_clock::time_point last_collect_time;
     std::chrono::system_clock::time_point next_collect_time;
     std::vector<ProfileEvents::Count> last_profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
@@ -64,7 +64,7 @@ public:
     UInt64 thread_id TSA_GUARDED_BY(getMutex()) = CurrentThread::get().thread_id;
 
     /// Return a reference to the mutex, used for Thread Sanitizer annotations.
-    [[nodiscard]] Mutex & getMutex() const TSA_RETURN_CAPABILITY(mutex)
+    Mutex & getMutex() const TSA_RETURN_CAPABILITY(mutex)
     {
         if (!mutex)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutex cannot be NULL");
@@ -72,11 +72,7 @@ public:
     }
 
     void scheduleNext(String query_id) TSA_REQUIRES(getMutex());
-    std::optional<QueryMetricLogElement> createLogMetricElement(
-        const String & query_id,
-        const QueryStatusInfo & query_info,
-        TimePoint query_info_time,
-        bool is_final = false) TSA_REQUIRES(getMutex());
+    std::optional<QueryMetricLogElement> createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint query_info_time, bool schedule_next = true) TSA_REQUIRES(getMutex());
 
 private:
     /// We need to be able to move it for the hash map, so we need to add an indirection here.

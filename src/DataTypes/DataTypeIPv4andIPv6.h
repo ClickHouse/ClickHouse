@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class DataTypeIPv4 final : public IDataType
+class DataTypeIPv4 : public IDataType
 {
 public:
     static constexpr bool is_parametric = false;
@@ -48,10 +48,10 @@ public:
     bool isCategorial() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
 
-    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override { return SerializationIP<IPv4>::create(); }
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override { return std::make_shared<SerializationIP<IPv4>>(); }
 };
 
-class DataTypeIPv6 final : public IDataType
+class DataTypeIPv6 : public IDataType
 {
 public:
     static constexpr bool is_parametric = false;
@@ -87,7 +87,7 @@ public:
     bool isCategorial() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
 
-    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override { return SerializationIP<IPv6>::create(); }
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override { return std::make_shared<SerializationIP<IPv6>>(); }
 };
 
 

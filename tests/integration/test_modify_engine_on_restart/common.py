@@ -1,3 +1,4 @@
+from helpers.cluster import ClickHouseCluster
 
 
 def get_table_path(node, table, database):

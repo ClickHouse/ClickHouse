@@ -9,17 +9,12 @@ namespace DB::Parquet
 SharedResourcesExt::Limits SharedResourcesExt::getLimitsPerReader(const FormatParserSharedResources & parser_shared_resources, double fraction)
 {
     const SharedResourcesExt & ext = *static_cast<const SharedResourcesExt *>(parser_shared_resources.opaque.get());
-    fraction = getMemoryFractionPerReader(parser_shared_resources, fraction);
+    size_t n = parser_shared_resources.num_streams.load(std::memory_order_relaxed);
+    fraction /= static_cast<double>(std::max(n, size_t(1)));
     return Limits {
         .memory_low_watermark = size_t(ext.total_memory_low_watermark * fraction),
         .memory_high_watermark = size_t(ext.total_memory_high_watermark * fraction),
         .parsing_threads = size_t(std::max(std::lround(parser_shared_resources.parsing_runner.getMaxThreads() * fraction + .5), 1l))};
-}
-
-double SharedResourcesExt::getMemoryFractionPerReader(const FormatParserSharedResources & parser_shared_resources, double fraction)
-{
-    size_t n = parser_shared_resources.num_streams.load(std::memory_order_relaxed);
-    return fraction / static_cast<double>(std::max(n, size_t(1)));
 }
 
 #ifdef OS_LINUX

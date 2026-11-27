@@ -1,5 +1,6 @@
 -- An if chain or an ORDER BY tuple that contains a GROUP BY key reads the key from the aggregation result.
 
+SET enable_analyzer = 1;
 SET optimize_if_transform_strings_to_enum = 0;
 
 -- A constant-condition `if` key nested in an `if` chain (#125803).
@@ -14,7 +15,7 @@ SELECT n, if(n = 5, toString(n), if(m > 1, 'p', 'q')) AS e FROM (SELECT number A
 
 -- A key whose `then` branch is itself a chain.
 SELECT n FROM (SELECT number AS n, number % 2 = 1 AS a, number % 3 = 1 AS p, number % 5 = 1 AS q FROM numbers(6)) GROUP BY n, if(a, if(p, 'u', if(q, 'v', 'w')), 'y') ORDER BY if(n = 5, 'x', if(a, if(p, 'u', if(q, 'v', 'w')), 'y')), n SETTINGS group_by_use_nulls = 0, optimize_if_chain_to_multiif = 1;
-SELECT n, if(a, if(p, 'u', if(q, 'v', 'w')), 'y') AS k FROM (SELECT number AS n, number % 2 = 1 AS a, number % 3 = 1 AS p, number % 5 = 1 AS q FROM numbers(6)) GROUP BY n, k ORDER BY if(n = 5, 'x', k), n SETTINGS group_by_use_nulls = 0, optimize_if_chain_to_multiif = 1, enable_identifier_resolve_cache = 1;
+SELECT n, if(a, if(p, 'u', if(q, 'v', 'w')), 'y') AS k FROM (SELECT number AS n, number % 2 = 1 AS a, number % 3 = 1 AS p, number % 5 = 1 AS q FROM numbers(6)) GROUP BY n, k ORDER BY if(n = 5, 'x', k), n SETTINGS group_by_use_nulls = 0, optimize_if_chain_to_multiif = 1;
 
 -- A chain without a key is still rewritten.
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT n, if(n = 1, 'a', if(n = 2, 'b', 'c')) FROM (SELECT arrayJoin([1, 2]) AS n) GROUP BY ROLLUP(n) SETTINGS group_by_use_nulls = 1, optimize_if_chain_to_multiif = 1) WHERE explain ILIKE '%function_name: multiIf%';

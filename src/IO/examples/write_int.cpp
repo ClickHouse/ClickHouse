@@ -1,6 +1,5 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
-#include <Examples/clickhouse_examples.h>
 
 using namespace DB;
 
@@ -14,7 +13,7 @@ static void NO_INLINE write(WriteBuffer & out, size_t size)
 }
 
 
-int mainEntryExampleWriteInt(int, char **)
+int main(int, char **)
 {
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);
     write(out, 80);

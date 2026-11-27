@@ -3,6 +3,7 @@
 -- took the key from its left table. Only the outermost JOIN keeps the alias lookup; USING keys at different levels of the
 -- join tree follow the same rule.
 
+SET enable_analyzer = 1;
 SET analyzer_compatibility_join_using_top_level_identifier = 1;
 SET joined_subquery_requires_alias = 0;
 
@@ -29,10 +30,6 @@ JOIN (SELECT 10 AS k, 20 AS m) t2 USING (k)
 JOIN (SELECT 20 AS m) t3 USING (m)
 JOIN (SELECT 2 AS b, 7 AS c) t4 USING (b);
 
-SELECT 'WITH alias follows the same rule';
-WITH a + 1 AS b SELECT t2.b AS right_b FROM (SELECT 1 AS a, 3 AS b) t1 JOIN (SELECT 3 AS b) t2 USING (b) JOIN (SELECT 1 AS z) t3 ON 1 = 1;
-WITH a + 1 AS b SELECT t3.b AS right_b FROM (SELECT 1 AS a, 3 AS b) t1 JOIN (SELECT 1 AS z) t2 ON 1 = 1 JOIN (SELECT 2 AS b) t3 USING (b);
-
 SELECT 'comma JOIN counts as a level';
 SELECT a + 1 AS b, t2.b AS right_b FROM (SELECT 1 AS a, 3 AS b) t1 JOIN (SELECT 3 AS b) t2 USING (b), (SELECT 1 AS z) t3;
 
@@ -48,8 +45,6 @@ SELECT tuple(t1.*) AS k, t3.k AS right_k FROM (SELECT 1 AS a) t1, (SELECT 1 AS z
 
 SELECT 'the key is computed before the joins of the left side: a column retyped by an inner USING keeps the type it is read with';
 SELECT tuple(t1.a) AS k, toTypeName(k), t3.k AS right_k, toTypeName(right_k)
-FROM (SELECT toUInt8(1) AS a) t1 JOIN (SELECT toUInt16(1) AS a) t2 USING (a) JOIN (SELECT tuple(toUInt16(1)) AS k) t3 USING (k);
-SELECT tuple(t1.*) AS k, toTypeName(k), t3.k AS right_k, toTypeName(right_k)
 FROM (SELECT toUInt8(1) AS a) t1 JOIN (SELECT toUInt16(1) AS a) t2 USING (a) JOIN (SELECT tuple(toUInt16(1)) AS k) t3 USING (k);
 -- An unqualified matcher expands the key column of the inner USING JOIN from both of its tables, as in PREWHERE,
 -- so the expression has no single source table and is not a key.

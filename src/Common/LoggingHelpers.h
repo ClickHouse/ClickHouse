@@ -32,7 +32,7 @@ public:
     LogFrequencyLimiterImpl * operator->() { return this; }
     bool is(Poco::Message::Priority priority) { return logger->is(priority); }
     LogFrequencyLimiterImpl * getChannel() { return this; }
-    [[nodiscard]] const String & name() const { return logger->name(); }
+    const String & name() const { return logger->name(); }
 
     void log(Poco::Message && msg);
 
@@ -55,9 +55,11 @@ class LogSeriesLimiter
     /// Hash(logger_name) -> (last_logged_time_s, accepted, muted)
     using SeriesRecords = std::unordered_map<UInt64, std::tuple<time_t, size_t, size_t>>;
 
-    /// Defined out of line: a static local in a header-defined function gives every shared
-    /// object its own copy.
-    static SeriesRecords & getSeriesRecords() TSA_REQUIRES(mutex);
+    static SeriesRecords & getSeriesRecords() TSA_REQUIRES(mutex)
+    {
+        static SeriesRecords records;
+        return records;
+    }
 
     LoggerPtr logger = nullptr;
     bool accepted = false;
@@ -68,7 +70,7 @@ public:
 
     LogSeriesLimiter * operator->() { return this; }
     bool is(Poco::Message::Priority priority) { return logger->is(priority); }
-    [[nodiscard]] const String & name() const { return logger->name(); }
+    const String & name() const { return logger->name(); }
 
     LogSeriesLimiter * getChannel();
     void log(Poco::Message && message);
@@ -104,7 +106,7 @@ public:
         return true;
     }
     LogToStrImpl * getChannel() { return this; }
-    [[nodiscard]] const String & name() const { return logger->name(); }
+    const String & name() const { return logger->name(); }
 
     void log(Poco::Message && message)
     {

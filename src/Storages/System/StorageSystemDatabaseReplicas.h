@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 
 namespace DB
@@ -15,7 +15,7 @@ class DatabaseReplicated;
 
 /** Implements `database replicas` system table, which provides information about the status of the replicated databases.
   */
-class StorageSystemDatabaseReplicas final : public StorageWithCommonVirtualColumns
+class StorageSystemDatabaseReplicas final : public IStorage
 {
 public:
     using TPools = StatusRequestsPools<DatabaseReplicated>;
@@ -26,9 +26,7 @@ public:
 
     std::string getName() const override { return "SystemDatabaseReplicas"; }
 
-    static VirtualColumnsDescription createVirtuals();
-
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

@@ -24,9 +24,6 @@ GEN="SELECT
     map(toString(number), toString(number % 2)) AS m,
     (toString(number), toString(number % 2)) AS t,
     toFixedString(toString(number), 3) AS fs,
-    number::Variant(UInt64, String) AS v,
-    initializeAggregation('quantileState(0.5)', number) AS agg,
-    toBFloat16(number) AS bf,
     number AS u
 FROM numbers(6)"
 

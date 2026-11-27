@@ -1,3 +1,4 @@
+SET allow_experimental_analyzer = 1;
 SET enable_parallel_replicas = 0;
 
 CREATE TABLE t0 (c0 Int, c1 Int ALIAS 1) ENGINE = Memory;

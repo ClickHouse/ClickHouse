@@ -7,26 +7,23 @@ namespace DB
 {
 
 /// arrayConcat(arr1, ...) - concatenate arrays.
-class FunctionArrayConcat final : public IFunction
+class FunctionArrayConcat : public IFunction
 {
 public:
     static constexpr auto name = "arrayConcat";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayConcat>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(T : Array, ...) -> leastSupertype(T, ...)";
-    }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 };
 
 }

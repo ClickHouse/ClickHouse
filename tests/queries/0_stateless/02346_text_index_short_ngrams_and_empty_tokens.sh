@@ -56,6 +56,8 @@ SELECT count() FROM tab WHERE hasAllTokens(message, '');
 
 SELECT tokens('abc', 'ngrams', 4) AS tokens;
 
+SELECT count() FROM tab WHERE hasToken(message, 'abc');
+
 -- Arrays
 SELECT count() FROM tab WHERE hasAnyTokens(arr, ['abc']);
 SELECT count() FROM tab WHERE hasAllTokens(arr, ['abc']);

@@ -67,51 +67,8 @@
     <!-- Suppress server-client version mismatch message when the client connects to the server. -->
     <!-- <server_client_version_message>false</server_client_version_message> -->
 
-    <!-- Print queries before execution. This overrides the 'enabled if interactive' default and
-         further override is possible with &#45;&#45;echo. -->
-    <!-- <echo>false</echo> -->
-
-    <!-- Print query ID before execution. This overrides the 'enabled if interactive' default and
-         further override is possible with &#45;&#45;echo-query-id. -->
-    <!-- <echo_query_id>false</echo_query_id> -->
-
-    <!-- Format the echoed queries. This overrides the 'enabled if interactive' default and
-         further override is possible with &#45;&#45;echo-formatted. -->
-    <!-- <echo_formatted>false</echo_formatted> -->
-
-    <!-- Toggle syntax highlighting of the command prompt and the echoed queries. -->
-    <!-- <highlight>false</highlight> -->
-
-    <!-- Show as-you-type autocompletion hints. -->
-    <!-- <hints>false</hints> -->
-
-    <!-- Toggle the display of the progress table by pressing the space key. When disabled,
-         the progress table is printed after each query in interactive mode. -->
-    <!-- <enable_progress_table_toggle>false</enable_progress_table_toggle> -->
-
-    <!-- Print memory usage to stderr in non-interactive mode (same as &#45;&#45;memory-usage).
-         Values: 'none', 'default', 'readable'. -->
-    <!-- <print-memory-to-stderr>readable</print-memory-to-stderr> -->
-
-    <!-- Emit the ASCII BEL character to stderr when a query finishes after running for at
-         least this many seconds (same as &#45;&#45;chime). Set to 0 to disable. -->
-    <!-- <chime-threshold-seconds>0</chime-threshold-seconds> -->
-
-    <!-- Print ProfileEvents packets (same as &#45;&#45;print-profile-events). Enable-only:
-         there is no CLI form to disable it, so setting this to true here is equivalent to
-         always passing &#45;&#45;print-profile-events. -->
-    <!-- <print-profile-events>true</print-profile-events> -->
-
-    <!-- Delay in milliseconds between printing ProfileEvents packets
-         (same as &#45;&#45;profile-events-delay-ms). 18446744073709551615 prints only totals,
-         0 prints every single packet. Takes effect together with print-profile-events. -->
-    <!-- <profile-events-delay-ms>18446744073709551615</profile-events-delay-ms> -->
-
     <!-- Fall back CLI client to Ctrl+R for regular search like before, while Ctrl+T does fuzzy search. -->
     <!-- <interactive_history_legacy_keymap>true</interactive_history_legacy_keymap> -->
-
-    <!-- Disable rainbow parentheses. Useful where they clash with terminal color settings. -->
-    <!-- <rainbow_parentheses>false</rainbow_parentheses> -->
 
     <!--
         Settings adjustable via command-line parameters

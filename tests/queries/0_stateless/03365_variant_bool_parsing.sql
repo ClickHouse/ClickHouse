@@ -1,3 +1,4 @@
+set enable_variant_type=1;
 
 select 't'::Variant(String, Bool) as v, variantType(v);
 select 'on'::Variant(String, Bool) as v, variantType(v);

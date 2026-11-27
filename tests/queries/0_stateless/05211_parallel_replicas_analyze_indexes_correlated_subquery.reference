@@ -1,6 +1,0 @@
-correlated predicate: analysis ok 1, coordinators 0
-correlated predicate, subquery SETTINGS: analysis ok 1, coordinators 0
-correlated predicate, nested one level deeper: analysis ok 1, coordinators 0
-uncorrelated predicate: analysis ok 1, any coordinator 1
-plain query uses parallel replicas: 1
-correlated predicate result matches non-parallel: 1

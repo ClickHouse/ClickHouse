@@ -1,8 +1,0 @@
-shared	30000
-shared primary key prunes	1
-cast	30000
-tuple	30000
-reordered tuple	30000
-reordered tuple primary key prunes	1
-subset of the key	30000
-concurrent	30000

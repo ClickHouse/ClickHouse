@@ -42,8 +42,7 @@
                          #"\{quorum_reads\}" (str (boolean (:quorum test)))
                          #"\{snapshot_distance\}" (str (:snapshot-distance test))
                          #"\{stale_log_gap\}" (str (:stale-log-gap test))
-                         #"\{reserved_log_items\}" (str (:reserved-log-items test))
-                         #"\{use_bg_thread_for_snapshot_io\}" (str (if (:use-bg-thread-for-snapshot-io test) 1 0))}]
+                         #"\{reserved_log_items\}" (str (:reserved-log-items test))}]
     (reduce #(clojure.string/replace %1 (get %2 0) (get %2 1)) config-template replacement-map)))
 
 (defn install-configs

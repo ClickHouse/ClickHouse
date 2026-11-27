@@ -1,13 +1,10 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <IO/Operators.h>
-#include <IO/ReadHelpers.h>
 #include <Interpreters/AggregateDescription.h>
-#include <Analyzer/TableQualifiers.h>
-#include <Core/Block.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/JSONBuilder.h>
+#include <Core/Block.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -100,36 +97,6 @@ void AggregateDescription::explain(WriteBuffer & out, const std::string & prefix
     }
 }
 
-void AggregateDescription::explainPretty(ExplainFormatSettings & settings) const
-{
-    auto & out = settings.out;
-
-    if (function)
-        out << function->getName();
-
-    const Array & aggregate_parameters = function ? function->getParameters() : parameters;
-    bool first_param = true;
-    for (const auto & param : aggregate_parameters)
-    {
-        out << (first_param ? "(" : ", ");
-        first_param = false;
-        out << applyVisitor(FieldVisitorToString(), param);
-    }
-    if (!aggregate_parameters.empty())
-        out << ')';
-
-    out << '(';
-    bool first = true;
-    for (const auto & arg : argument_names)
-    {
-        if (!first)
-            out << ", ";
-        first = false;
-        out << QueryPlanFormat::formatColumnPretty(arg, settings.pretty_names);
-    }
-    out << ')';
-}
-
 void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
 {
     map.add("Name", column_name);
@@ -167,21 +134,12 @@ void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
     map.add("Arguments", std::move(args_array));
 }
 
-void serializeAggregateDescriptions(
-    const AggregateDescriptions & aggregates, WriteBuffer & out, bool for_cache_key, const Block * input_header)
+void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, WriteBuffer & out)
 {
     writeVarUInt(aggregates.size(), out);
     for (const auto & aggregate : aggregates)
     {
-        /// `column_name` is the rendered call (`calculateActionNodeName`), a label rather than semantic
-        /// state, and the shard rewrite can render it differently for the same aggregate by inlining
-        /// aliases. A cache key leaves it out and keeps what the call is made of - the argument names, the
-        /// function and its parameters, all written below. The argument names, which are column
-        /// references, still go through `writeCacheKeyColumnName`.
-        if (for_cache_key)
-            writeStringBinary(String{}, out);
-        else
-            writeStringBinary(aggregate.column_name, out);
+        writeStringBinary(aggregate.column_name, out);
 
         UInt64 num_args = aggregate.argument_names.size();
         const auto & argument_types = aggregate.function->getArgumentTypes();
@@ -198,10 +156,7 @@ void serializeAggregateDescriptions(
         writeVarUInt(num_args, out);
         for (size_t i = 0; i < num_args; ++i)
         {
-            if (for_cache_key)
-                writeCacheKeyColumnName(aggregate.argument_names[i], input_header, out);
-            else
-                writeStringBinary(aggregate.argument_names[i], out);
+            writeStringBinary(aggregate.argument_names[i], out);
             encodeDataType(argument_types[i], out);
         }
 
@@ -213,16 +168,16 @@ void serializeAggregateDescriptions(
     }
 }
 
-void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity)
+void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in)
 {
-    UInt64 num_aggregates = 0;
+    UInt64 num_aggregates;
     readVarUInt(num_aggregates, in);
     aggregates.resize(num_aggregates);
     for (auto & aggregate : aggregates)
     {
         readStringBinary(aggregate.column_name, in);
 
-        UInt64 num_args = 0;
+        UInt64 num_args;
         readVarUInt(num_args, in);
         aggregate.argument_names.resize(num_args);
 
@@ -232,13 +187,13 @@ void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBu
         for (auto & arg_name : aggregate.argument_names)
         {
             readStringBinary(arg_name, in);
-            argument_types.emplace_back(decodeDataType(in, max_type_complexity));
+            argument_types.emplace_back(decodeDataType(in));
         }
 
         String function_name;
         readStringBinary(function_name, in);
 
-        UInt64 num_params = 0;
+        UInt64 num_params;
         readVarUInt(num_params, in);
         aggregate.parameters.resize(num_params);
         for (auto & param : aggregate.parameters)
@@ -250,62 +205,6 @@ void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBu
             function_name, action, argument_types, aggregate.parameters, properties);
     }
 
-}
-
-void serializeAggregateDescriptionsWithoutArguments(
-    const AggregateDescriptions & aggregates, WriteBuffer & out, bool for_cache_key, const Block * /*input_header*/)
-{
-    writeVarUInt(aggregates.size(), out);
-    for (const auto & aggregate : aggregates)
-    {
-        /// A rendered label, left out of a cache key - see `serializeAggregateDescriptions`.
-        if (for_cache_key)
-            writeStringBinary(String{}, out);
-        else
-            writeStringBinary(aggregate.column_name, out);
-        writeStringBinary(aggregate.function->getName(), out);
-
-        const auto & argument_types = aggregate.function->getArgumentTypes();
-        writeVarUInt(argument_types.size(), out);
-        for (const auto & argument_type : argument_types)
-            encodeDataType(argument_type, out);
-
-        writeVarUInt(aggregate.parameters.size(), out);
-        for (const auto & param : aggregate.parameters)
-            writeFieldBinary(param, out);
-    }
-}
-
-void deserializeAggregateDescriptionsWithoutArguments(AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity)
-{
-    UInt64 num_aggregates = 0;
-    readVarUInt(num_aggregates, in);
-    aggregates.resize(num_aggregates);
-    for (auto & aggregate : aggregates)
-    {
-        readStringBinary(aggregate.column_name, in);
-
-        String function_name;
-        readStringBinary(function_name, in);
-
-        UInt64 num_args = 0;
-        readVarUInt(num_args, in);
-        DataTypes argument_types;
-        argument_types.reserve(num_args);
-        for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
-            argument_types.emplace_back(decodeDataType(in, max_type_complexity));
-
-        UInt64 num_params = 0;
-        readVarUInt(num_params, in);
-        aggregate.parameters.resize(num_params);
-        for (auto & param : aggregate.parameters)
-            param = readFieldBinary(in);
-
-        /// `argument_names` stays empty, mirroring the writer's state (see the header comment).
-        AggregateFunctionProperties properties;
-        aggregate.function = AggregateFunctionFactory::instance().get(
-            function_name, NullsAction::EMPTY, argument_types, aggregate.parameters, properties);
-    }
 }
 
 void checkDeserializedAggregateArguments(const AggregateDescriptions & aggregates, const Block & header)
@@ -432,52 +331,6 @@ void checkDeserializedMergedAggregatesLayout(
                 "Duplicate key or aggregate function {} in a deserialized query plan step merging aggregate states",
                 layout[i].name);
     }
-}
-
-namespace
-{
-
-/// A single chunk of a merge-only input is finalized as is, with the functions of its columns rather than those of the plan,
-/// while the output header takes the result types from the plan. Functions with the same state representation
-/// (like `quantile` and `quantiles`) may have different result types. `layout` is already checked to start with the keys and the states.
-void checkDeserializedMergedStatesResultTypes(
-    const Names & keys, const AggregateDescriptions & aggregates, const ColumnsWithTypeAndName & layout)
-{
-    for (size_t i = 0; i < aggregates.size(); ++i)
-    {
-        const auto & aggregate = aggregates[i];
-        const auto & column = layout[keys.size() + i];
-        const auto & state_function = typeid_cast<const DataTypeAggregateFunction &>(*column.type).getFunction();
-        if (!state_function->getResultType()->equals(*aggregate.function->getResultType()))
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "The state of aggregate function {} has type {} in the input of a deserialized query plan step, "
-                "which is finalized to {} instead of {}",
-                aggregate.column_name, column.type->getName(), state_function->getResultType()->getName(),
-                aggregate.function->getResultType()->getName());
-    }
-}
-
-}
-
-void checkDeserializedMergeOnlyInput(const Names & keys, const AggregateDescriptions & aggregates, const Block & header)
-{
-    /// The transforms address the whole input with a mask built for the keys and the states only.
-    const auto & layout = header.getColumnsWithTypeAndName();
-    checkDeserializedMergedAggregatesLayout(keys, aggregates, layout, /*exact=*/ true);
-    /// Checked even without `final`: the step may be made final later (`setFinal`), and the states
-    /// of a legitimate plan come from the same functions anyway.
-    checkDeserializedMergedStatesResultTypes(keys, aggregates, layout);
-}
-
-void checkDeserializedGroupByModifierInput(
-    const Names & keys, const AggregateDescriptions & aggregates, bool final, const Block & header)
-{
-    /// `RollupTransform` and `CubeTransform` always finalize the states (both planners build the steps with `final`),
-    /// so a step without it would advertise states in the output header but produce finalized values.
-    if (!final)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "A deserialized `Rollup` or `Cube` step must finalize the aggregate states");
-
-    checkDeserializedMergeOnlyInput(keys, aggregates, header);
 }
 
 }

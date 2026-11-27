@@ -31,8 +31,6 @@ public:
 
     ~LimitReadBuffer() override;
 
-    bool poll(size_t timeout_microseconds) override;
-
 private:
     ReadBuffer * in;
     std::unique_ptr<ReadBuffer> holder;
@@ -42,7 +40,7 @@ private:
     LimitReadBuffer(ReadBuffer * in_, bool owns, size_t limit_, bool throw_exception_, std::optional<size_t> exact_limit_, std::string exception_message_);
 
     bool nextImpl() override;
-    [[nodiscard]] size_t getEffectiveBufferSize() const;
+    size_t getEffectiveBufferSize() const;
 };
 
 }

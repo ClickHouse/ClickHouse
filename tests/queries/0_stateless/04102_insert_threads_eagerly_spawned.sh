@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-async-insert, no-parallel-replicas, no-s3-storage
+# Tags: no-parallel, no-replicated-database, no-async-insert, no-parallel-replicas, no-s3-storage
+# no-parallel: checks thread count, which can be affected by concurrent queries
 # no-replicated-database: query_log lookup assumes single-node execution
 # no-async-insert: test measures synchronous INSERT pipeline threading
 # no-parallel-replicas: parallel replicas settings alter query execution plans and thread allocation

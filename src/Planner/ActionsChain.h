@@ -48,15 +48,10 @@ public:
       * Input column names initialized using actions dag nodes with INPUT type.
       * If use_actions_nodes_as_output_columns = true output columns are initialized using actions dag nodes.
       * If additional output columns are specified they are added to output columns.
-      * If additional input columns are specified they are required from the child step in addition to the
-      * inputs of the actions dag. A correlated subquery of this step is not part of the dag - it is planned
-      * as a join over the step's input - so the columns it correlates on have to be named here, otherwise
-      * the child step prunes them and the subquery cannot be planned.
       */
     explicit ActionsChainStep(ActionsAndProjectInputsFlagPtr actions_,
         bool use_actions_nodes_as_output_columns = true,
-        ColumnsWithTypeAndName additional_output_columns_ = {},
-        NameSet additional_input_columns_ = {});
+        ColumnsWithTypeAndName additional_output_columns_ = {});
 
     /// Get actions
     ActionsAndProjectInputsFlagPtr & getActions()
@@ -65,19 +60,19 @@ public:
     }
 
     /// Get actions
-    [[nodiscard]] const ActionsAndProjectInputsFlagPtr & getActions() const
+    const ActionsAndProjectInputsFlagPtr & getActions() const
     {
         return actions;
     }
 
     /// Get available output columns
-    [[nodiscard]] const ColumnsWithTypeAndName & getAvailableOutputColumns() const
+    const ColumnsWithTypeAndName & getAvailableOutputColumns() const
     {
         return available_output_columns;
     }
 
     /// Get input column names
-    [[nodiscard]] const NameSet & getInputColumnNames() const
+    const NameSet & getInputColumnNames() const
     {
         return input_columns_names;
     }
@@ -85,25 +80,21 @@ public:
     /** Get child required output columns names.
       * Initialized during finalizeOutputColumns method call.
       */
-    [[nodiscard]] const NameSet & getChildRequiredOutputColumnsNames() const
+    const NameSet & getChildRequiredOutputColumnsNames() const
     {
         return child_required_output_columns_names;
     }
 
     /** Finalize step output columns and remove unnecessary input columns.
       * If actions dag node has same name as child input column, it is added to actions output nodes.
-      *
-      * `source_const_inputs` names source-constant INPUTs to keep even if no output depends on them,
-      * so folding does not orphan-and-drop them and the column stays in the stream at distributed
-      * stage boundaries. Literals/aliases are excluded.
       */
-    void finalizeInputAndOutputColumns(const NameSet & child_input_columns, const NameSet & source_const_inputs);
+    void finalizeInputAndOutputColumns(const NameSet & child_input_columns);
 
     /// Dump step into buffer
     void dump(WriteBuffer & buffer) const;
 
     /// Dump step
-    [[nodiscard]] String dump() const;
+    String dump() const;
 
 private:
     void initialize();
@@ -119,8 +110,6 @@ private:
     ColumnsWithTypeAndName available_output_columns;
 
     ColumnsWithTypeAndName additional_output_columns;
-
-    NameSet additional_input_columns;
 };
 
 /// Query actions chain
@@ -134,18 +123,18 @@ public:
     }
 
     /// Get steps
-    [[nodiscard]] const ActionsChainSteps & getSteps() const
+    const ActionsChainSteps & getSteps() const
     {
         return steps;
     }
 
     /// Get steps size
-    [[nodiscard]] size_t getStepsSize() const
+    size_t getStepsSize() const
     {
         return steps.size();
     }
 
-    [[nodiscard]] const ActionsChainStepPtr & at(size_t index) const
+    const ActionsChainStepPtr & at(size_t index) const
     {
         if (index >= steps.size())
             throw std::out_of_range("actions chain access is out of range");
@@ -202,13 +191,13 @@ public:
     }
 
     /// Get last step available output columns
-    [[nodiscard]] const ColumnsWithTypeAndName & getLastStepAvailableOutputColumns() const
+    const ColumnsWithTypeAndName & getLastStepAvailableOutputColumns() const
     {
         return steps.back()->getAvailableOutputColumns();
     }
 
     /// Get last step available output columns or throw exception if chain is empty
-    [[nodiscard]] const ColumnsWithTypeAndName & getLastStepAvailableOutputColumnsOrThrow() const
+    const ColumnsWithTypeAndName & getLastStepAvailableOutputColumnsOrThrow() const
     {
         if (steps.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ActionsChain is empty");
@@ -217,7 +206,7 @@ public:
     }
 
     /// Get last step available output columns or null if chain is empty
-    [[nodiscard]] const ColumnsWithTypeAndName * getLastStepAvailableOutputColumnsOrNull() const
+    const ColumnsWithTypeAndName * getLastStepAvailableOutputColumnsOrNull() const
     {
         if (steps.empty())
             return nullptr;
@@ -225,14 +214,14 @@ public:
         return &steps.back()->getAvailableOutputColumns();
     }
 
-    /// Finalize chain. See `ActionsChainStep::finalizeInputAndOutputColumns` for `source_const_inputs`.
-    void finalize(const NameSet & source_const_inputs = {});
+    /// Finalize chain
+    void finalize();
 
     /// Dump chain into buffer
     void dump(WriteBuffer & buffer) const;
 
     /// Dump chain
-    [[nodiscard]] String dump() const;
+    String dump() const;
 
 private:
     ActionsChainSteps steps;

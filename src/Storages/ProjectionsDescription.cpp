@@ -1,11 +1,6 @@
 #include <Storages/ProjectionsDescription.h>
-#include <DataTypes/DataTypeString.h>
 
-#include <base/sort.h>
-#include <Access/AccessControl.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/FilterDescription.h>
 #include <Common/iota.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -14,12 +9,14 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/QueryNode.h>
-#include <Interpreters/ExpressionContainsArrayJoin.h>
-#include <Planner/PlannerProjection.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/TableNode.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -30,8 +27,6 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISink.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
@@ -39,9 +34,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
@@ -55,27 +47,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_PROJECTION_IN_TABLE;
+    extern const int UNKNOWN_SETTING;
     extern const int BAD_ARGUMENTS;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
 {
 
 extern const SettingsBool enable_positional_arguments_for_projections;
-extern const SettingsBool prefer_column_name_to_alias;
-
-}
-
-namespace MergeTreeSetting
-{
-
-extern const MergeTreeSettingsUInt64 index_granularity_bytes;
-extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
-extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
-extern const MergeTreeSettingsBool add_minmax_index_for_temporal_columns;
-extern const MergeTreeSettingsBool add_minmax_index_for_block_number_column;
-extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
 
 }
 
@@ -113,13 +92,9 @@ ProjectionDescription ProjectionDescription::clone() const
     other.primary_key_max_column_name = primary_key_max_column_name;
     other.partition_value_indices = partition_value_indices;
     other.with_parent_part_offset = with_parent_part_offset;
-    other.with_block_number = with_block_number;
-    other.with_block_offset = with_block_offset;
     other.index = index;
-    other.settings_changes = settings_changes;
-    other.has_index_granularity_overrides = has_index_granularity_overrides;
-    if (where_clause_ast)
-        other.where_clause_ast = where_clause_ast->clone();
+    other.index_granularity = index_granularity;
+    other.index_granularity_bytes = index_granularity_bytes;
 
     return other;
 }
@@ -129,43 +104,34 @@ ProjectionsDescription ProjectionsDescription::clone() const
     ProjectionsDescription other;
     for (const auto & projection : projections)
         other.add(projection.clone());
-    for (const auto & definition_ast : unavailable)
-        other.addUnavailable(definition_ast->clone());
 
     return other;
 }
 
 bool ProjectionDescription::operator==(const ProjectionDescription & other) const
 {
-    return name == other.name
-        && definition_ast->formatIgnoringRedundantParentheses() == other.definition_ast->formatIgnoringRedundantParentheses();
+    return name == other.name && definition_ast->formatWithSecretsOneLine() == other.definition_ast->formatWithSecretsOneLine();
 }
 
 namespace
 {
 
-/// Fake storage which stands in for the missing `FROM` clause of a projection query
-/// when the projection metadata is built.
-///
-/// It has the name of `system.one`, which is what a `SELECT` without a `FROM` clause reads from anyway.
+/// Fake storage used to build projection metadata
 class StorageProjectionSource final : public IStorage
 {
 public:
-    StorageProjectionSource(const ColumnsDescription & columns_description, VirtualColumnsDescription virtuals)
-        : IStorage({DatabaseCatalog::SYSTEM_DATABASE, "one"})
+    explicit StorageProjectionSource(ColumnsDescription columns_description)
+        : IStorage({"_", "_"})
     {
         StorageInMemoryMetadata storage_metadata;
         storage_metadata.setColumns(columns_description);
-        storage_metadata.setVirtuals(std::move(virtuals));
         setInMemoryMetadata(storage_metadata);
+        VirtualColumnsDescription desc;
+        desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "");
+        setVirtuals(std::move(desc));
     }
 
     std::string getName() const override { return "ProjectionSource"; }
-
-    /// The storage is not a table of the catalog, it only borrows the name of `system.one`, so the
-    /// row policies and the `additional_table_filters` of that name must not be applied to it: they
-    /// would change the metadata of the projection.
-    bool isSyntheticDataSource() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
 
@@ -184,9 +150,31 @@ public:
     }
 };
 
+/// Provides source data for the projection pipeline
+class ProjectionDataSource : public ISource
+{
+public:
+    explicit ProjectionDataSource(SharedHeader block)
+        : ISource(std::make_shared<const Block>(block->cloneEmpty()))
+        , chunk(block->getColumns(), block->rows())
+    {
+    }
+
+    String getName() const override { return "ProjectionDataSource"; }
+
+    /// Avoid tracking read progress for projection calculation pipeline.
+    std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
+
+protected:
+    Chunk generate() override { return std::move(chunk); }
+
+private:
+    Chunk chunk;
+};
+
 /// Collects processed data from the projection pipeline into a single chunk,
 /// Enforces that projections cannot increase the number of rows beyond the original input.
-class ProjectionDataSink final : public ISink
+class ProjectionDataSink : public ISink
 {
 public:
     ProjectionDataSink(SharedHeader header, size_t max_rows_allowed_)
@@ -231,31 +219,35 @@ private:
     const size_t max_rows_allowed;
 };
 
-StoragePtr createProjectionQuerySource(const ColumnsDescription & columns, VirtualColumnsDescription virtuals)
+}
+
+void ProjectionDescription::loadSettings(const SettingsChanges & changes)
 {
-    return std::make_shared<StorageProjectionSource>(columns, std::move(virtuals));
+    for (const auto & [setting, value] : changes)
+    {
+        if (setting == "index_granularity")
+            index_granularity = value.safeGet<UInt64>();
+        else if (setting == "index_granularity_bytes")
+            index_granularity_bytes = value.safeGet<UInt64>();
+        else
+            throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}' for projections", setting);
+    }
+
+    /// These checks are permanent sensible safeguards: they apply both to projection creation and projection loading,
+    /// and are not expected to change in the future. Keeping them unconditional simplifies the implementation.
+
+    if (index_granularity && *index_granularity < 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "projection index_granularity: value {} makes no sense", *index_granularity);
+
+    if (index_granularity_bytes && *index_granularity_bytes > 0 && *index_granularity_bytes < 1024)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "projection index_granularity_bytes: {} is lower than 1024", *index_granularity_bytes);
+
+    if (index_granularity_bytes && *index_granularity_bytes == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "projection index_granularity_bytes cannot be 0, which leads to fixed granularity");
 }
 
-/// A projection part stores a persistent virtual column only when its query selects it, so only ephemeral ones are always available.
-VirtualColumnsDescription createProjectionVirtuals(const KeyDescription * partition_key)
-{
-    VirtualColumnsDescription virtuals;
-    for (const auto & virtual_column : MergeTreeData::createVirtuals(partition_key))
-        if (virtual_column.isEphemeral())
-            virtuals.add(virtual_column);
-
-    return virtuals;
-}
-
-}
-
-ProjectionDescription ProjectionDescription::getProjectionFromAST(
-    const ASTPtr & definition_ast,
-    const ColumnsDescription & columns,
-    const KeyDescription * partition_key,
-    const ContextPtr & query_context,
-    LoadingStrictnessLevel mode,
-    bool attach_short_syntax)
+ProjectionDescription
+ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context)
 {
     const auto * projection_definition = definition_ast->as<ASTProjectionDeclaration>();
 
@@ -278,127 +270,31 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     {
         chassert(projection_definition->type);
         result.index = ProjectionIndexFactory::instance().get(*projection_definition);
+        result.index->fillProjectionDescription(result, projection_definition->index, columns, query_context);
+        if (projection_definition->with_settings)
+            result.loadSettings(projection_definition->with_settings->changes);
+        return result;
     }
 
-    /// Compute effective MergeTree settings for the projection (defaults possibly contributed by
-    /// the projection index, with user-supplied WITH SETTINGS overrides applied on top). This must
-    /// happen before fillProjectionDescription[ByQuery] because the latter reconstructs settings
-    /// from result.settings_changes to drive implicit-minmax skip-index creation.
-    auto merge_tree_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
     if (projection_definition->with_settings)
-        merge_tree_settings->applyChanges(projection_definition->with_settings->changes, query_context, isLoadingFromExistingMetadata(mode));
-    result.settings_changes = merge_tree_settings->changes();
+        result.loadSettings(projection_definition->with_settings->changes);
 
-    /// Track whether the effective settings include index_granularity or index_granularity_bytes overrides
-    /// (from either the projection index's getDefaultSettings() or the user's explicit SETTINGS clause),
-    /// so that checkProperties can reject projections with granularity overrides on non-adaptive tables.
-    for (const auto & change : result.settings_changes)
-    {
-        if (change.name == "index_granularity" || change.name == "index_granularity_bytes")
-        {
-            result.has_index_granularity_overrides = true;
-            break;
-        }
-    }
-
-    if (result.index)
-    {
-        result.index->fillProjectionDescription(result, projection_definition->index, columns, partition_key, query_context, *merge_tree_settings);
-    }
-    else
-    {
-        fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, partition_key, query_context, *merge_tree_settings);
-    }
-
-    /// `WITH SETTINGS` is part of the table definition, so it is checked whenever that is
-    if (isFreshTableDefinition(mode, attach_short_syntax))
-    {
-        /// `arrayJoin` is the one function that changes the number of rows, while a projection part is
-        /// written alongside the parent part row by row: `ProjectionDataSink` rejects a block with more
-        /// rows than the parent with a `LOGICAL_ERROR`, so such a projection makes every insert fail.
-        /// The check runs on the raw AST, so it also has to look through the two indirections the
-        /// analyzer would have resolved later: the `unnest` alias (resolved by canonical name, so the
-        /// verdict does not depend on `normalize_function_names`) and a SQL UDF body that is inlined
-        /// into the projection query when it is built. `expressionContainsArrayJoin` does both.
-        if (expressionContainsArrayJoin(projection_definition->query))
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Projection '{}' cannot contain arrayJoin, because it changes the number of rows", result.name);
-
-        static const std::unordered_set<std::string_view> ALLOWED_PROJECTION_SETTINGS = {
-            "index_granularity",
-            "index_granularity_bytes",
-            "add_minmax_index_for_numeric_columns",
-            "add_minmax_index_for_string_columns",
-            "add_minmax_index_for_temporal_columns",
-            "add_minmax_index_for_block_number_column",
-            "add_minmax_index_for_block_offset_column",
-            "min_compress_block_size",
-            "max_compress_block_size",
-            "min_bytes_for_wide_part",
-            "min_level_for_wide_part",
-            "min_rows_for_wide_part",
-            "ratio_of_defaults_for_sparse_serialization",
-            "write_marks_for_substreams_in_compact_parts",
-            "serialization_info_version",
-            "nullable_serialization_version",
-            "string_serialization_version",
-            "replace_long_file_name_to_hash",
-            "map_serialization_version",
-            "map_serialization_version_for_zero_level_parts",
-            "propagate_types_serialization_versions_to_nested_types",
-        };
-
-        for (const auto & change : result.settings_changes)
-        {
-            if (!ALLOWED_PROJECTION_SETTINGS.contains(change.name))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is not allowed for projections", change.name);
-        }
-
-        /// What `WITH SETTINGS` changes from the defaults this projection would otherwise have.
-        auto default_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
-        query_context->checkMergeTreeSettingsConstraints(*default_settings, merge_tree_settings->changesFrom(*default_settings));
-
-        query_context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
-        merge_tree_settings->sanityCheck(
-            query_context->getMergeMutateExecutor()->getMaxTasksCount(),
-            query_context->wasBackgroundPoolAutoLowered());
-    }
-
-    /// Ensure index_granularity_bytes is non-zero to prevent the projection from falling back
-    /// to fixed granularity. Enforced unconditionally (both CREATE and ATTACH paths).
-    if ((*merge_tree_settings)[MergeTreeSetting::index_granularity_bytes] == 0)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "projection index_granularity_bytes cannot be 0, which leads to fixed granularity");
-    }
-
+    fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, query_context);
     return result;
 }
 
 void ProjectionDescription::fillProjectionDescriptionByQuery(
-    ProjectionDescription & result,
-    const ASTProjectionSelectQuery & query,
-    const ColumnsDescription & columns,
-    const KeyDescription * partition_key,
-    const ContextPtr & query_context,
-    const MergeTreeSettings & projection_settings)
+    ProjectionDescription & result, const ASTProjectionSelectQuery & query, const ColumnsDescription & columns, ContextPtr query_context)
 {
     auto projection_order_by = query.orderBy();
     result.query_ast = query.cloneToASTSelect();
-
-    /// Store the WHERE clause AST if present (Issue #74234).
-    /// This will be used by the optimizer to check if a query's WHERE implies
-    /// this projection's WHERE, and during materialization to filter rows.
-    auto projection_where = query.where();
-    if (projection_where)
-        result.where_clause_ast = projection_where->clone();
 
     /// Prevent normal projection from storing parent part offset if the parent table defines `_parent_part_offset` or
     /// `_part_offset` as physical columns, which would cause a conflict. Parent table cannot defines `_part_index` as
     /// physical column either because it's used to build part offset mapping during merge.
     bool can_hold_parent_part_offset = !(columns.has("_part_index") || columns.has("_part_offset") || columns.has("_parent_part_offset"));
 
-    StoragePtr storage = createProjectionQuerySource(columns, MergeTreeData::createVirtuals(partition_key));
+    StoragePtr storage = std::make_shared<StorageProjectionSource>(columns);
 
     bool positional_arguments_for_projections = query_context->getSettingsRef()[Setting::enable_positional_arguments_for_projections];
 
@@ -406,35 +302,26 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     /// works correctly even in DatabaseReplicated mode (where query_kind == SECONDARY_QUERY).
     auto mut_context = Context::createCopy(query_context);
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
-    /// Projection required-columns must always expand ALIAS columns, regardless of session settings.
-    mut_context->setSetting("optimize_respect_aliases", true);
-    /// Resolve aliases as a reload of the stored definition does, which analyzes it with the server settings.
-    mut_context->setSetting(
-        "prefer_column_name_to_alias", query_context->getGlobalContext()->getSettingsRef()[Setting::prefer_column_name_to_alias].value);
-    /// A projection is always calculated locally. With parallel replicas the analysis treats the source as remote
-    /// and replaces the right hand side of `GLOBAL IN` in the stored query in place with a temporary table, which
-    /// does not exist when the projection is calculated. The context may be the global one (with the settings of the
-    /// default profile) when the storage is created or attached, so a session setting cannot prevent it.
-    mut_context->setSetting("enable_parallel_replicas", Field(0));
     mut_context->setQueryKindInitial();
 
-    bool is_aggregate = false;
+    bool is_aggregate;
     {
         /// Use all column names and types but as Ordinary columns for the Analyzer. This avoids
         /// QueryAnalyzer::initializeTableExpressionData eagerly resolving ALIAS column expressions
         /// (which may fail when session settings like allow_nonconst_timezone_arguments are unavailable,
         /// e.g. during ATTACH TABLE), while still allowing the projection query to reference any column
         /// including table-level ALIAS columns by name.
-        StoragePtr analyzer_storage
-            = createProjectionQuerySource(ColumnsDescription(columns.getAll()), MergeTreeData::createVirtuals(partition_key));
+        StoragePtr analyzer_storage = std::make_shared<StorageProjectionSource>(ColumnsDescription(columns.getAll()));
 
-        auto query_tree = buildProjectionQueryTree(result.query_ast, analyzer_storage, mut_context);
+        auto query_tree = buildQueryTree(result.query_ast, mut_context);
         auto & query_node = query_tree->as<QueryNode &>();
+        query_node.getJoinTree() = std::make_shared<TableNode>(analyzer_storage, mut_context);
+
+        QueryTreePassManager query_tree_pass_manager(mut_context);
+        addQueryTreePasses(query_tree_pass_manager, /*only_analyze=*/true);
+        query_tree_pass_manager.runOnlyResolve(query_tree);
 
         is_aggregate = query_node.hasGroupBy() || hasAggregateFunctionNodes(query_tree);
-
-        ConvertToASTOptions ast_options;
-        ast_options.fully_qualified_identifiers = false;
 
         /// Expand aliases in projection ORDER BY using the Analyzer-resolved query tree.
         /// cloneToASTSelect() appends the ORDER BY expression as the last SELECT child,
@@ -442,31 +329,10 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         if (projection_order_by)
         {
             auto & projection_nodes = query_node.getProjection().getNodes();
+            ConvertToASTOptions ast_options;
+            ast_options.fully_qualified_identifiers = false;
             projection_order_by = projection_nodes.back()->toAST(ast_options);
             projection_order_by->setAlias({});
-        }
-
-        /// An identifier in `WHERE` may refer to an alias of the query, not to the column: the rows are filtered
-        /// by the resolved `WHERE`, in which a substituted alias keeps its name.
-        if (result.where_clause_ast)
-            result.where_clause_ast = query_node.getWhere()->toAST(ast_options);
-    }
-
-    /// With `WHERE` the query runs to `WithMergeableState`, whose header holds the results of the `SELECT` expressions,
-    /// so the `ORDER BY` appended to `SELECT` is replaced with the columns it reads: the part stores those, not its result.
-    if (projection_order_by && result.where_clause_ast && !is_aggregate)
-    {
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
-        const auto virtuals = metadata_snapshot->virtuals;
-        auto & select_list = result.query_ast->as<ASTSelectQuery &>().select()->children;
-        select_list.pop_back();
-        for (const auto & column :
-             KeyDescription::getKeyFromAST(projection_order_by, columns, virtuals, query_context).expression->getRequiredColumns())
-        {
-            /// A column of the source table, which an alias of the same name does not replace.
-            auto identifier = make_intrusive<ASTIdentifier>(column);
-            IdentifierSemantic::setMembership(*identifier, 0);
-            select_list.push_back(std::move(identifier));
         }
     }
 
@@ -476,18 +342,13 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         storage,
         {},
         /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
-        SelectQueryOptions{(is_aggregate || result.where_clause_ast) ? QueryProcessingStage::WithMergeableState : QueryProcessingStage::FetchColumns}
+        SelectQueryOptions{is_aggregate ? QueryProcessingStage::WithMergeableState : QueryProcessingStage::FetchColumns}
             .modify()
             .ignoreAlias()
             .ignoreASTOptimizations()
             .ignoreSettingConstraints());
 
     result.required_columns = select.getRequiredColumns();
-    /// the old analysis can take an EPHEMERAL column as the smallest one, but a part does not store it
-    std::erase_if(result.required_columns, [&](const String & column_name) { return columns.getEphemeral().contains(column_name); });
-    /// the calculation counts the rows of the block, so the block needs a column
-    if (result.required_columns.empty())
-        result.required_columns.push_back(ExpressionActions::getSmallestColumn(columns.getAllPhysical()).name);
     result.sample_block = *select.getSampleBlock();
 
     StorageInMemoryMetadata metadata;
@@ -501,10 +362,6 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
         if (projection_order_by)
             throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, ORDER BY cannot be specified");
-
-        /// Aggregate projections with WHERE are now supported: the optimizer's predicate
-        /// implication check (doesQueryFilterImplyProjectionWhere) ensures a filtered
-        /// aggregate projection is only selected when the query's filter covers it.
 
         result.type = ProjectionDescription::Type::Aggregate;
         if (const auto & group_expression_list = query_select.groupBy())
@@ -527,8 +384,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
                 order_expression = function_node;
             }
             auto columns_with_state = ColumnsDescription(result.sample_block.getNamesAndTypesList());
-            metadata.sorting_key = KeyDescription::getKeyFromAST(order_expression, columns_with_state, {}, query_context);
-            metadata.primary_key = KeyDescription::getKeyFromAST(order_expression, columns_with_state, {}, query_context);
+            metadata.sorting_key = KeyDescription::getSortingKeyFromAST(order_expression, columns_with_state, query_context, {});
+            metadata.primary_key = KeyDescription::getKeyFromAST(order_expression, columns_with_state, query_context);
             metadata.primary_key.definition_ast = nullptr;
         }
         else
@@ -542,11 +399,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     else
     {
         result.type = ProjectionDescription::Type::Normal;
-
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
-        const auto virtuals = metadata_snapshot->virtuals;
-        metadata.sorting_key = KeyDescription::getKeyFromAST(projection_order_by, columns, virtuals, query_context);
-        metadata.primary_key = KeyDescription::getKeyFromAST(projection_order_by, columns, virtuals, query_context);
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(projection_order_by, columns, query_context, {});
+        metadata.primary_key = KeyDescription::getKeyFromAST(projection_order_by, columns, query_context);
         metadata.primary_key.definition_ast = nullptr;
     }
 
@@ -560,10 +414,6 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         result.with_parent_part_offset = true;
         std::erase_if(result.required_columns, [](const String & s) { return s.contains("_part_offset"); });
     }
-
-    /// Track whether projection stores _block_number/_block_offset from the parent table.
-    result.with_block_number = result.sample_block.has(BlockNumberColumn::name);
-    result.with_block_offset = result.sample_block.has(BlockOffsetColumn::name);
 
     ColumnsDescription metadata_columns;
     for (const auto & column_with_type_name : result.sample_block)
@@ -592,39 +442,21 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     }
 
     metadata.setColumns(std::move(metadata_columns));
-    metadata.setVirtuals(createProjectionVirtuals(partition_key));
-
-    /// Initialize implicit-minmax skip indices from the effective projection-level MergeTree settings
-    /// (defaults from the projection index plus any user-supplied WITH SETTINGS overrides).
-    metadata.add_minmax_index_for_numeric_columns = projection_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
-    metadata.add_minmax_index_for_string_columns = projection_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
-    metadata.add_minmax_index_for_temporal_columns = projection_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
-    metadata.add_minmax_index_for_block_number_column = projection_settings[MergeTreeSetting::add_minmax_index_for_block_number_column];
-    metadata.add_minmax_index_for_block_offset_column = projection_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column];
-    metadata.addImplicitIndicesForVirtualColumns(query_context);
-    for (const auto & column : metadata.columns)
-        metadata.addImplicitIndicesForColumn(column, query_context);
-
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
 }
 
 ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     const ColumnsDescription & columns,
-    const ASTPtr & partition_columns,
+    ASTPtr partition_columns,
     const Names & minmax_columns,
     const KeyDescription & primary_key,
-    const KeyDescription * partition_key,
-    const ContextPtr & query_context)
+    ContextPtr query_context)
 {
     ProjectionDescription result;
 
     auto select_query = make_intrusive<ASTProjectionSelectQuery>();
     ASTPtr select_expression_list = make_intrusive<ASTExpressionList>();
-    /// The i-th min/max pair below is answered from slot i of the part min-max index, whose own order is
-    /// derived the same way: from the partition key column names, never from the table column order.
-    Names sorted_minmax_columns = minmax_columns;
-    ::sort(sorted_minmax_columns.begin(), sorted_minmax_columns.end());
-    for (const auto & column : sorted_minmax_columns)
+    for (const auto & column : minmax_columns)
     {
         select_expression_list->children.push_back(makeASTFunction("min", make_intrusive<ASTIdentifier>(column)));
         select_expression_list->children.push_back(makeASTFunction("max", make_intrusive<ASTIdentifier>(column)));
@@ -649,17 +481,17 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
 
     if (partition_columns && !partition_columns->children.empty())
     {
-        auto partition_columns_copy = partition_columns->clone();
-        for (const auto & partition_column : partition_columns_copy->children)
+        partition_columns = partition_columns->clone();
+        for (const auto & partition_column : partition_columns->children)
             KeyDescription::moduloToModuloLegacyRecursive(partition_column);
-        select_query->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, std::move(partition_columns_copy));
+        select_query->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, partition_columns->clone());
     }
 
     result.definition_ast = select_query;
     result.name = MINMAX_COUNT_PROJECTION_NAME;
     result.query_ast = select_query->cloneToASTSelect();
 
-    StoragePtr storage = createProjectionQuerySource(columns, MergeTreeData::createVirtuals(partition_key));
+    StoragePtr storage = std::make_shared<StorageProjectionSource>(columns);
     InterpreterSelectQuery select(
         result.query_ast,
         query_context,
@@ -709,7 +541,6 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     result.type = ProjectionDescription::Type::Aggregate;
     StorageInMemoryMetadata metadata;
     metadata.setColumns(ColumnsDescription(result.sample_block.getNamesAndTypesList()));
-    metadata.setVirtuals(createProjectionVirtuals(partition_key));
     metadata.partition_key = KeyDescription::buildEmptyKey();
     metadata.sorting_key = KeyDescription::buildEmptyKey();
     metadata.primary_key = KeyDescription::buildEmptyKey();
@@ -717,25 +548,16 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     return result;
 }
 
+void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr query_context)
+{
+    *this = getProjectionFromAST(definition_ast, new_columns, query_context);
+}
+
 Block ProjectionDescription::calculate(
     const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr) const
 {
     if (index)
-    {
-        if (block.rows() > index->getMaxRows())
-        {
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Cannot calculate projection index with {} rows, which exceeds the limit ({}) "
-                "for projection index '{}' (Type: {}).",
-                block.rows(),
-                index->getMaxRows(),
-                name,
-                index->getName());
-        }
         return index->calculate(*this, block, starting_offset, context, perm_ptr);
-    }
-
     return calculateByQuery(block, starting_offset, context, perm_ptr);
 }
 
@@ -748,10 +570,42 @@ Block ProjectionDescription::calculateByQuery(
     if (block.rows() == 0)
         return sample_block.cloneEmpty();
 
+    auto mut_context = Context::createCopy(context);
+    /// We ignore aggregate_functions_null_for_empty cause it changes aggregate function types.
+    /// Now, projections do not support in on SELECT, and (with this change) should ignore on INSERT as well.
+    mut_context->setSetting("aggregate_functions_null_for_empty", Field(0));
+    mut_context->setSetting("transform_null_in", Field(0));
+    const bool positional_arguments_for_projections = context->getSettingsRef()[Setting::enable_positional_arguments_for_projections];
+
+    /// Disable positional arguments. Positional references are unsafe/unsupported in this context (e.g., within
+    /// internal queries like those used for Projection definitions), as they rely on a fixed column order and alias
+    /// resolution that is neither guaranteed nor sensible here.
+    ///
+    /// Setting `enable_positional_arguments_for_projections` may enable positional arguments for projections.
+    /// It is needed for compatibility with existing projections that use positional arguments to allow successful cluster upgrade.
+    mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
+
+    ASTPtr query_ast_copy = nullptr;
+
     /// Only keep required columns
     Block source_block;
     for (const auto & column : required_columns)
         source_block.insert(block.getByName(column));
+
+    /// Respect the _row_exists column.
+    if (block.has(RowExistsColumn::name))
+    {
+        query_ast_copy = query_ast->clone();
+        auto * select_row_exists = query_ast_copy->as<ASTSelectQuery>();
+        if (!select_row_exists)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get ASTSelectQuery when adding _row_exists = 1. It's a bug");
+
+        select_row_exists->setExpression(
+            ASTSelectQuery::Expression::WHERE,
+            makeASTOperator("equals", make_intrusive<ASTIdentifier>(RowExistsColumn::name), make_intrusive<ASTLiteral>(1)));
+
+        source_block.insert(block.getByName(RowExistsColumn::name));
+    }
 
     /// Create "_part_offset" column when needed for projection with parent part offsets
     if (with_parent_part_offset)
@@ -778,48 +632,22 @@ Block ProjectionDescription::calculateByQuery(
         source_block.insert({std::move(column), std::move(uint64), "_part_offset"});
     }
 
-    /// Drop lightweight-deleted rows, after `_part_offset` is generated so the survivors keep their parent offsets
-    if (block.has(RowExistsColumn::name))
-    {
-        FilterDescription row_exists_filter(*block.getByName(RowExistsColumn::name).column);
-        const size_t existing_rows = row_exists_filter.countBytesInFilter();
-        if (existing_rows == 0)
-            return sample_block.cloneEmpty();
-        if (existing_rows != block.rows())
-            for (auto & column : source_block)
-                column.column = row_exists_filter.filter(*column.column, static_cast<ssize_t>(existing_rows));
-    }
-
-    /** A normal projection without `WHERE` stores the columns it requires as they are, so they are
-      * taken from the source block directly.
-      */
-    if (type == ProjectionDescription::Type::Normal && !where_clause_ast)
-    {
-        Block projection_block;
-        for (const auto & column : sample_block)
-        {
-            String source_column_name
-                = with_parent_part_offset && column.name == "_parent_part_offset" ? String("_part_offset") : column.name;
-            auto source_column = source_block.getColumnOrSubcolumnByName(source_column_name);
-            source_column.name = column.name;
-            projection_block.insert(std::move(source_column));
-        }
-        return projection_block;
-    }
-
-    /// `_part_offset` is added above, so it is an ordinary column of the source block.
-    ProjectionPlanner planner(query_ast, ColumnsDescription(source_block.getNamesAndTypesList()), context);
-    auto plan = type == ProjectionDescription::Type::Aggregate
-        ? planner.buildPlanForAggregateProjection(std::move(source_block))
-        : planner.buildPlanForNormalProjection(std::move(source_block));
-
-    auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
-    builder->resize(1);
+    auto builder = InterpreterSelectQuery(
+                       query_ast_copy ? query_ast_copy : query_ast,
+                       mut_context,
+                       Pipe(std::make_shared<ProjectionDataSource>(std::make_shared<const Block>(std::move(source_block)))),
+                       SelectQueryOptions{
+                           type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
+                                                                       : QueryProcessingStage::WithMergeableState}
+                           .ignoreASTOptimizations()
+                           .ignoreSettingConstraints())
+                       .buildQueryPipeline();
+    builder.resize(1);
 
     // Generate aggregated blocks with rows less or equal than the original block.
     // There should be only one output block after this transformation.
-    auto sink = std::make_shared<ProjectionDataSink>(builder->getSharedHeader(), block.rows());
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+    auto sink = std::make_shared<ProjectionDataSink>(builder.getSharedHeader(), block.rows());
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     pipeline.complete(sink);
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
@@ -827,7 +655,6 @@ Block ProjectionDescription::calculateByQuery(
     /// Always return the proper header, even if nothing was accumulated, in case the caller needs to use it
     Block projection_block = sink->isAccumulatedSomething() ? sink->getPort().getHeader().cloneWithColumns(sink->detachAccumulatedColumns())
                                                             : sink->getPort().getHeader().cloneEmpty();
-
     /// Rename parent _part_offset to _parent_part_offset column
     if (with_parent_part_offset)
     {
@@ -839,22 +666,6 @@ Block ProjectionDescription::calculateByQuery(
         projection_block.erase("_part_offset");
         projection_block.insert(std::move(new_column));
     }
-
-    /// The projection part is written by the names of the projection metadata, and the writer
-    /// silently drops the columns which are not there. So a column missing from the result must not
-    /// go unnoticed: it would write a projection part without that column, which is then read back
-    /// as the default value of its type.
-    for (const auto & column : sample_block)
-        if (!projection_block.has(column.name))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Projection {} calculated the columns {} while its metadata describes the columns {}. It's a bug",
-                name,
-                projection_block.dumpNames(),
-                sample_block.dumpNames());
-
-    for (auto & col : projection_block)
-        col.column = col.column->convertToFullColumnIfConst();
 
     return projection_block;
 }
@@ -869,14 +680,10 @@ String ProjectionsDescription::toString() const
     for (const auto & projection : projections)
         list.children.push_back(projection.definition_ast);
 
-    return list.formatIgnoringRedundantParentheses();
+    return list.formatWithSecretsOneLine();
 }
 
-ProjectionsDescription ProjectionsDescription::parse(
-    const String & str,
-    const ColumnsDescription & columns,
-    const KeyDescription * parent_partition_key,
-    const ContextPtr & query_context)
+ProjectionsDescription ProjectionsDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr query_context)
 {
     ProjectionsDescription result;
     if (str.empty())
@@ -887,7 +694,7 @@ ProjectionsDescription ProjectionsDescription::parse(
 
     for (const auto & projection_ast : list->children)
     {
-        auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, parent_partition_key, query_context);
+        auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, query_context);
         result.add(std::move(projection));
     }
 
@@ -924,19 +731,6 @@ void ProjectionsDescription::add(ProjectionDescription && projection, const Stri
             ErrorCodes::ILLEGAL_PROJECTION, "Cannot add projection {}: projection with this name already exists", projection.name);
     }
 
-    for (const auto & definition_ast : unavailable)
-    {
-        if (definition_ast->as<const ASTProjectionDeclaration &>().name != projection.name)
-            continue;
-        if (if_not_exists)
-            return;
-        throw Exception(
-            ErrorCodes::ILLEGAL_PROJECTION,
-            "Cannot add projection {}: a projection with this name is declared but could not be analyzed when the table "
-            "was loaded. Drop it first, or remove the cause recorded in the server log and restart the server",
-            projection.name);
-    }
-
     auto insert_it = projections.cend();
 
     if (first)
@@ -961,14 +755,6 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
     auto it = map.find(projection_name);
     if (it == map.end())
     {
-        for (auto unavailable_it = unavailable.begin(); unavailable_it != unavailable.end(); ++unavailable_it)
-        {
-            if ((*unavailable_it)->as<const ASTProjectionDeclaration &>().name != projection_name)
-                continue;
-            unavailable.erase(unavailable_it);
-            return;
-        }
-
         if (if_exists)
             return;
 
@@ -983,40 +769,25 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
     map.erase(it);
 }
 
-void ProjectionsDescription::addUnavailable(ASTPtr definition_ast)
+std::vector<String> ProjectionsDescription::getAllRegisteredNames() const
 {
-    unavailable.push_back(std::move(definition_ast));
-}
-
-Names ProjectionsDescription::getUnavailableNames() const
-{
-    Names names;
-    names.reserve(unavailable.size());
-    for (const auto & definition_ast : unavailable)
-        names.push_back(definition_ast->as<const ASTProjectionDeclaration &>().name);
-    return names;
-}
-
-void ProjectionsDescription::replace(ProjectionDescription && projection)
-{
-    auto it = map.find(projection.name);
-    if (it == map.end())
-        throw Exception(
-            ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
-            "There is no projection {} in table{}",
-            projection.name,
-            getHintsMessage(projection.name));
-
-    *it->second = std::move(projection);
-}
-
-VectorWithMemoryTracking<String> ProjectionsDescription::getAllRegisteredNames() const
-{
-    VectorWithMemoryTracking<String> names;
+    std::vector<String> names;
     names.reserve(map.size());
     for (const auto & pair : map)
         names.push_back(pair.first);
     return names;
+}
+
+ExpressionActionsPtr
+ProjectionsDescription::getSingleExpressionForProjections(const ColumnsDescription & columns, ContextPtr query_context) const
+{
+    ASTPtr combined_expr_list = make_intrusive<ASTExpressionList>();
+    for (const auto & projection : projections)
+        for (const auto & projection_expr : projection.query_ast->children)
+            combined_expr_list->children.push_back(projection_expr->clone());
+
+    auto syntax_result = TreeRewriter(query_context).analyze(combined_expr_list, columns.getAllPhysical());
+    return ExpressionAnalyzer(combined_expr_list, syntax_result, query_context).getActions(false);
 }
 
 }

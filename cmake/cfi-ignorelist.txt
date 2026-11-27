@@ -1,7 +1,0 @@
-# Exemptions from Clang CFI (`-fsanitize-ignorelist`), only for build tools that are not linked into `clickhouse`.
-# Code linked into `clickhouse` must be fixed instead.
-
-# Build-time code generator, not linked into the server.
-# `GroupMatcher::emit` casts a matcher to `RuleMatcher *` when it is not one.
-[cfi]
-src:*/contrib/llvm-project/llvm/utils/TableGen/*
