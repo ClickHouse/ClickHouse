@@ -70,6 +70,7 @@ enum class ErrorCode : Int16
     NON_EMPTY_GROUP = 68,
     GROUP_ID_NOT_FOUND = 69,
     UNSUPPORTED_COMPRESSION_TYPE = 76,
+    FENCED_INSTANCE_ID = 82,
     INVALID_RECORD = 87,
 };
 
@@ -101,6 +102,8 @@ public:
     std::optional<String> nullableString();
     String bytes() { return nullableBytes().value_or(String{}); }
     std::optional<String> nullableBytes();
+    /// The same without a copy: the result refers to the message.
+    std::optional<std::string_view> nullableBytesView();
 
     /// The length of an array, -1 for a null array.
     Int32 arrayLength();
@@ -115,6 +118,9 @@ public:
     [[nodiscard]] size_t remaining() const { return end - pos; }
 
 private:
+    /// A length in the compact encoding of the flexible versions, -1 for null. It is not larger than the rest of the message.
+    Int64 compactLength();
+
     const char * pos;
     const char * end;
     bool flexible;
@@ -188,9 +194,14 @@ struct RecordBatch
     [[nodiscard]] bool isControl() const { return attributes & 0x20; }
 };
 
-/// Parses a sequence of record batches, verifying the checksums and decompressing the records.
+/// Checks the layout and the checksums of a sequence of record batches, without decoding the records.
 /// Only the message format v2 (magic 2) is supported, as in the Produce request since version 3.
-std::vector<RecordBatch> parseRecordBatches(std::string_view data);
+void validateRecordBatches(std::string_view data);
+
+/// Reads the next record batch of a sequence, verifying the checksum and decompressing the records.
+/// The batches are decoded one at a time, so that a request does not keep all of them decoded in memory.
+/// `max_decoded_size` limits the memory of the decoded batch: the decompressed records and the parsed objects.
+RecordBatch readRecordBatch(Reader & reader, size_t max_decoded_size);
 
 /// Appends one uncompressed record batch of the message format v2.
 /// The offsets of the records must be ascending and fit into 32 bits relative to the first one.

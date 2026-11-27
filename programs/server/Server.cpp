@@ -4906,7 +4906,7 @@ void Server::createServers(
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ false);
-                socket.setReceiveTimeout(Poco::Timespan());
+                /// The receive timeout is set by the handler of a connection, see `KafkaHandler::run`.
                 socket.setSendTimeout(settings[Setting::send_timeout]);
                 Kafka::BrokerSettings kafka_settings;
                 kafka_settings.load(config, "kafka_protocol");
@@ -4933,7 +4933,7 @@ void Server::createServers(
 #if USE_SSL
                 Poco::Net::SecureServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(Poco::Timespan());
+                /// The receive timeout is set by the handler of a connection, see `KafkaHandler::run`.
                 socket.setSendTimeout(settings[Setting::send_timeout]);
                 Kafka::BrokerSettings kafka_settings;
                 kafka_settings.load(config, "kafka_protocol");

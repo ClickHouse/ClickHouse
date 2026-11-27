@@ -2,6 +2,8 @@
 #include <Server/Kafka/KafkaError.h>
 #include <Server/Kafka/KafkaGroupCoordinator.h>
 
+#include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -29,7 +31,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CANNOT_POLL;
+    extern const int SOCKET_TIMEOUT;
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
     extern const int TABLE_ALREADY_EXISTS;
 }
@@ -157,6 +161,10 @@ void KafkaHandler::run()
 {
     setThreadName(ThreadName::KAFKA_HANDLER);
 
+    /// The time to wait for a request is not limited: the connection is polled, see below. But the time of one read
+    /// from the socket is, e.g. for a part of a TLS record: nothing else interrupts a blocking read.
+    socket().setReceiveTimeout(Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(settings.request_receive_timeout_ms) * 1000));
+
     in = std::make_shared<ReadBufferFromPocoSocket>(socket(), read_event);
     out = std::make_shared<WriteBufferFromPocoSocket>(socket(), write_event);
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::KAFKA, secure);
@@ -177,8 +185,13 @@ void KafkaHandler::run()
             if (in->eof())
                 return;
 
-            Int32 size = 0;
-            readBinaryBigEndian(size, *in);
+            /// The first byte of a request has arrived: the rest of it has to arrive in a limited time.
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(settings.request_receive_timeout_ms);
+
+            char size_bytes[sizeof(Int32)];
+            if (!readRequestBytes(size_bytes, sizeof(size_bytes), deadline))
+                return;
+            const Int32 size = Reader(size_bytes, size_bytes + sizeof(size_bytes)).int32();
             if (size < 0 || static_cast<UInt64>(size) > settings.max_request_size)
             {
                 LOG_WARNING(log, "Kafka request of size {} exceeds the limit of {} bytes, closing the connection", size, settings.max_request_size);
@@ -186,7 +199,8 @@ void KafkaHandler::run()
             }
 
             String request(size, '\0');
-            in->readStrict(request.data(), size);
+            if (!readRequestBytes(request.data(), size, deadline))
+                return;
 
             if (expect_raw_sasl_token)
             {
@@ -202,6 +216,41 @@ void KafkaHandler::run()
     {
         tryLogCurrentException(log, "Kafka connection is closed because of an exception");
     }
+}
+
+bool KafkaHandler::readRequestBytes(char * to, size_t size, std::chrono::steady_clock::time_point deadline)
+{
+    /// The data is read as it arrives, instead of a blocking read of the whole request: a client that sent
+    /// a part of a request and stalled must not hold the thread forever, and must not delay the shutdown of the server.
+    while (size)
+    {
+        while (!in->poll(100000))
+        {
+            if (isCancelled())
+                return false;
+            if (std::chrono::steady_clock::now() >= deadline)
+                throw Exception(ErrorCodes::SOCKET_TIMEOUT,
+                    "Timeout exceeded while receiving a Kafka request: the whole request has not arrived in {} ms", settings.request_receive_timeout_ms);
+        }
+
+        if (in->eof())
+            throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "The connection is closed by the client in the middle of a Kafka request");
+
+        const size_t bytes = std::min(size, in->available());
+        memcpy(to, in->position(), bytes);
+        in->position() += bytes;
+        to += bytes;
+        size -= bytes;
+    }
+    return true;
+}
+
+bool KafkaHandler::isGroupAccessGranted(bool write) const
+{
+    /// The state of the consumer groups is protected by the grants on the table of their committed offsets,
+    /// as the offsets themselves: `SELECT` to see the groups, `INSERT` to be a member of a group or to change it.
+    return session->sessionContext()->getAccess()->isGranted(
+        write ? AccessType::INSERT : AccessType::SELECT, settings.database, settings.offsets_table);
 }
 
 bool KafkaHandler::processRequest(const String & request)
@@ -592,7 +641,7 @@ bool KafkaHandler::produce(const RequestHeader & header, Reader & request, Write
         {
             PartitionResult & result = partition_results.emplace_back();
             result.partition = request.int32();
-            auto records = request.nullableBytes();
+            auto records = request.nullableBytesView();
             request.taggedFields();
 
             if (transactional_id)
@@ -618,7 +667,7 @@ bool KafkaHandler::produce(const RequestHeader & header, Reader & request, Write
             try
             {
                 if (records)
-                    Kafka::produce(*resolution.topic, result.partition, parseRecordBatches(*records), make_context);
+                    Kafka::produce(*resolution.topic, result.partition, *records, settings.max_decoded_batch_size, make_context);
             }
             catch (...)
             {
@@ -1024,7 +1073,11 @@ void KafkaHandler::joinGroup(const RequestHeader & header, Reader & request, Wri
     join.client_id = header.client_id;
     join.client_host = "/" + socket().peerAddress().host().toString();
 
-    auto result = GroupCoordinator::instance().joinGroup(join, settings.group_initial_rebalance_delay_ms, [this] { return isCancelled(); });
+    GroupCoordinator::JoinResult result;
+    if (isGroupAccessGranted(/* write = */ true))
+        result = GroupCoordinator::instance().joinGroup(join, settings.group_initial_rebalance_delay_ms, [this] { return isCancelled(); });
+    else
+        result.error = ErrorCode::GROUP_AUTHORIZATION_FAILED;
     if (result.member_id.empty())
         result.member_id = join.member_id;
 
@@ -1063,8 +1116,9 @@ void KafkaHandler::syncGroup(const RequestHeader & header, Reader & request, Wri
     String group_id = request.string();
     Int32 generation_id = request.int32();
     String member_id = request.string();
+    std::optional<String> group_instance_id;
     if (version >= 3)
-        request.nullableString(); /// group instance id
+        group_instance_id = request.nullableString();
     if (version >= 5)
     {
         request.nullableString(); /// protocol type
@@ -1082,7 +1136,11 @@ void KafkaHandler::syncGroup(const RequestHeader & header, Reader & request, Wri
     }
     request.taggedFields();
 
-    auto result = GroupCoordinator::instance().syncGroup(group_id, generation_id, member_id, assignments, [this] { return isCancelled(); });
+    GroupCoordinator::SyncResult result;
+    if (isGroupAccessGranted(/* write = */ true))
+        result = GroupCoordinator::instance().syncGroup(group_id, generation_id, member_id, group_instance_id, assignments, [this] { return isCancelled(); });
+    else
+        result.error = ErrorCode::GROUP_AUTHORIZATION_FAILED;
 
     if (version >= 1)
         response.int32(0); /// throttle time
@@ -1101,11 +1159,14 @@ void KafkaHandler::heartbeat(const RequestHeader & header, Reader & request, Wri
     String group_id = request.string();
     Int32 generation_id = request.int32();
     String member_id = request.string();
+    std::optional<String> group_instance_id;
     if (header.api_version >= 3)
-        request.nullableString(); /// group instance id
+        group_instance_id = request.nullableString();
     request.taggedFields();
 
-    ErrorCode error = GroupCoordinator::instance().heartbeat(group_id, generation_id, member_id);
+    ErrorCode error = ErrorCode::GROUP_AUTHORIZATION_FAILED;
+    if (isGroupAccessGranted(/* write = */ true))
+        error = GroupCoordinator::instance().heartbeat(group_id, generation_id, member_id, group_instance_id);
 
     if (header.api_version >= 1)
         response.int32(0); /// throttle time
@@ -1136,9 +1197,12 @@ void KafkaHandler::leaveGroup(const RequestHeader & header, Reader & request, Wr
     }
     request.taggedFields();
 
+    const bool access_granted = isGroupAccessGranted(/* write = */ true);
     std::vector<ErrorCode> errors;
-    for (const auto & [member_id, _] : members)
-        errors.push_back(GroupCoordinator::instance().leaveGroup(group_id, member_id));
+    for (const auto & [member_id, group_instance_id] : members)
+        errors.push_back(access_granted
+            ? GroupCoordinator::instance().leaveGroup(group_id, member_id, group_instance_id)
+            : ErrorCode::GROUP_AUTHORIZATION_FAILED);
 
     if (version >= 1)
         response.int32(0); /// throttle time
@@ -1149,7 +1213,7 @@ void KafkaHandler::leaveGroup(const RequestHeader & header, Reader & request, Wr
     }
     else
     {
-        response.errorCode(ErrorCode::NONE);
+        response.errorCode(access_granted ? ErrorCode::NONE : ErrorCode::GROUP_AUTHORIZATION_FAILED);
         response.arrayLength(members.size());
         for (size_t i = 0; i < members.size(); ++i)
         {
@@ -1170,8 +1234,9 @@ void KafkaHandler::offsetCommit(const RequestHeader & header, Reader & request, 
     String group_id = request.string();
     Int32 generation_id = request.int32();
     String member_id = request.string();
+    std::optional<String> group_instance_id;
     if (version >= 7)
-        request.nullableString(); /// group instance id
+        group_instance_id = request.nullableString();
     if (version <= 4)
         request.int64(); /// retention time
 
@@ -1201,7 +1266,9 @@ void KafkaHandler::offsetCommit(const RequestHeader & header, Reader & request, 
     }
     request.taggedFields();
 
-    ErrorCode error = GroupCoordinator::instance().validateOffsetCommit(group_id, generation_id, member_id);
+    ErrorCode error = ErrorCode::GROUP_AUTHORIZATION_FAILED;
+    if (isGroupAccessGranted(/* write = */ true))
+        error = GroupCoordinator::instance().validateOffsetCommit(group_id, generation_id, member_id, group_instance_id);
     if (error == ErrorCode::NONE)
     {
         try
@@ -1318,7 +1385,10 @@ void KafkaHandler::listGroups(const RequestHeader & header, Reader & request, Wr
 {
     request.taggedFields();
 
-    auto groups = GroupCoordinator::instance().listGroups();
+    /// Only the groups that the user is allowed to see are listed, as in Kafka.
+    std::vector<GroupCoordinator::GroupListing> groups;
+    if (isGroupAccessGranted(/* write = */ false))
+        groups = GroupCoordinator::instance().listGroups();
     if (header.api_version >= 1)
         response.int32(0); /// throttle time
     response.errorCode(ErrorCode::NONE);
@@ -1347,10 +1417,15 @@ void KafkaHandler::describeGroups(const RequestHeader & header, Reader & request
     if (version >= 1)
         response.int32(0); /// throttle time
     response.arrayLength(group_ids.size());
+    const bool access_granted = isGroupAccessGranted(/* write = */ false);
     for (const auto & group_id : group_ids)
     {
-        auto description = GroupCoordinator::instance().describeGroup(group_id);
-        response.errorCode(ErrorCode::NONE);
+        GroupCoordinator::GroupDescription description;
+        if (access_granted)
+            description = GroupCoordinator::instance().describeGroup(group_id);
+        else
+            description.group_id = group_id;
+        response.errorCode(access_granted ? ErrorCode::NONE : ErrorCode::GROUP_AUTHORIZATION_FAILED);
         response.string(description.group_id);
         response.string(description.state);
         response.string(description.protocol_type);

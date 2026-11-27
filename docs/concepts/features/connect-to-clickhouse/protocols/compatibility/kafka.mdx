@@ -58,6 +58,12 @@ The interface is configured in the `kafka_protocol` section:
         <log_queries>false</log_queries>
         <!-- The maximum size of a request in bytes. -->
         <max_request_size>104857600</max_request_size>
+        <!-- The maximum memory in bytes for the decoded records of one batch of a producer:
+             the decompressed data and the parsed records. -->
+        <max_decoded_batch_size>1073741824</max_decoded_batch_size>
+        <!-- The time in milliseconds to receive a whole request after its first byte.
+             A connection that stalls in the middle of a request is closed. -->
+        <request_receive_timeout_ms>60000</request_receive_timeout_ms>
         <!-- The delay of the first rebalance of a new consumer group, as group.initial.rebalance.delay.ms of Kafka. -->
         <group_initial_rebalance_delay_ms>3000</group_initial_rebalance_delay_ms>
         <!-- The table with the committed offsets of consumer groups, in the database above. -->
@@ -137,7 +143,7 @@ The offsets are stable across merges, because the `_block_number` and `_block_of
 
 ## Authentication and access control {#authentication}
 
-Clients authenticate with SASL `PLAIN` as ClickHouse users. A client without SASL authentication connects as the user set by the `default_session_user` server setting, with an empty password. The requests are executed as queries of the user, so the user needs the `SELECT` privilege on a topic to consume it, the `INSERT` privilege to produce into it, `CREATE TABLE` and `DROP TABLE` to create and delete topics, and `INSERT` and `SELECT` on the table of committed offsets to use consumer groups. The logins are shown with `interface = 'Kafka'` in `system.session_log`.
+Clients authenticate with SASL `PLAIN` as ClickHouse users. A client without SASL authentication connects as the user set by the `default_session_user` server setting, with an empty password. The requests are executed as queries of the user, so the user needs the `SELECT` privilege on a topic to consume it, the `INSERT` privilege to produce into it, `CREATE TABLE` and `DROP TABLE` to create and delete topics, and `INSERT` and `SELECT` on the table of committed offsets to use consumer groups. The grants on the table of committed offsets protect the consumer groups themselves as well: joining a group, heartbeats, leaving a group (including the removal of other members) and committing offsets need `INSERT`, and listing and describing the groups and fetching the committed offsets need `SELECT`. The grants are checked even if the table does not exist yet. A row policy on a topic hides the records from a consumer, but the offsets of the partition, including the end offset, are the same for all users. The logins are shown with `interface = 'Kafka'` in `system.session_log`.
 
 ## TLS {#tls}
 
@@ -169,9 +175,11 @@ ENGINE = ReplacingMergeTree(commit_time)
 ORDER BY (group_id, topic, partition);
 ```
 
+Static membership (the `group.instance.id` setting of a consumer) is supported. A consumer that restarts with the same instance id takes the place of its previous incarnation: it keeps the assignment, and a stable group does not rebalance. The requests of the previous incarnation are rejected with the `FENCED_INSTANCE_ID` error, so only one consumer with an instance id is a member of the group. A static member does not leave the group when it stops; it is removed when its session times out.
+
 ## Producers {#producers}
 
-The records of a batch are inserted with one `INSERT` query, so the settings of the user apply. For example, with `async_insert = 1` in the settings profile of the user, the batches of many producers are combined into one part. A batch of an idempotent producer is deduplicated by its producer id and sequence number with `insert_deduplication_token`, so a retried batch is not inserted twice, as long as the deduplication of inserts is enabled for the table (`non_replicated_deduplication_window` for non-replicated tables). All compression types (`gzip`, `snappy`, `lz4`, `zstd`) are supported. The response to a producer does not contain the offsets of the written records.
+The records of a batch are inserted with one `INSERT` query, so the settings of the user apply. For example, with `async_insert = 1` in the settings profile of the user, the batches of many producers are combined into one part. A batch of an idempotent producer is deduplicated by its producer id and sequence number with `insert_deduplication_token`, so a retried batch is not inserted twice, as long as the deduplication of inserts is enabled for the table (`non_replicated_deduplication_window` for non-replicated tables). All compression types (`gzip`, `snappy`, `lz4`, `zstd`) are supported. The batches of a request are decoded one at a time, within the memory limit of the user (`max_memory_usage`) and `kafka_protocol.max_decoded_batch_size`. The response to a producer does not contain the offsets of the written records.
 
 ## Supported requests {#supported-requests}
 

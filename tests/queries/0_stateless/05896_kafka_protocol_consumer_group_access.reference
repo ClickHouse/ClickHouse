@@ -1,0 +1,29 @@
+Access to the groups
+join: 0 1 True
+sync: (0, b'assignment')
+list: 0 False
+describe: True
+join: True
+sync: True
+heartbeat: True
+leave: True
+commit: True
+list: 0 True
+describe: True
+heartbeat: 0
+leave: 0
+Static membership
+join: 0 1 True
+sync: (0, b'assignment')
+join after restart: 0 True True True
+sync after restart: (0, b'assignment')
+heartbeat after restart: 0
+heartbeat of the previous member: True
+sync of the previous member: True
+join of the previous member: True
+describe: True
+leave: 0
+A commit without group membership after the last member died
+join: 0 1
+commit: 0
+1	0	1

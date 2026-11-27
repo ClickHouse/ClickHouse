@@ -10,7 +10,9 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
+#include <Common/ThreadStatus.h>
 #include <Common/quoteString.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
@@ -61,6 +63,11 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+namespace Setting
+{
+    extern const SettingsUInt64 max_memory_usage;
+}
+
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool enable_block_number_column;
@@ -80,6 +87,8 @@ void BrokerSettings::load(const Poco::Util::AbstractConfiguration & config, cons
     cluster_id = config.getString(prefix + ".cluster_id", cluster_id);
     log_queries = config.getBool(prefix + ".log_queries", log_queries);
     max_request_size = config.getUInt64(prefix + ".max_request_size", max_request_size);
+    max_decoded_batch_size = config.getUInt64(prefix + ".max_decoded_batch_size", max_decoded_batch_size);
+    request_receive_timeout_ms = config.getUInt64(prefix + ".request_receive_timeout_ms", request_receive_timeout_ms);
     group_initial_rebalance_delay_ms = config.getUInt64(prefix + ".group_initial_rebalance_delay_ms", group_initial_rebalance_delay_ms);
     offsets_table = config.getString(prefix + ".offsets_table", offsets_table);
     topic_engine = config.getString(prefix + ".topic_engine", topic_engine);
@@ -222,8 +231,9 @@ TopicResolution makeTopic(
     return res;
 }
 
-/// The number of rows of a block is cached, because the high watermark is computed on every Fetch request.
-class LastBlockRowsCache
+/// The end offset of a block is cached, because the high watermark is computed on every Fetch request.
+/// It is the same for all users: it is computed from all rows of the block, regardless of the row policies.
+class BlockEndOffsetCache
 {
 public:
     std::optional<UInt64> get(const String & key, Int64 block_number)
@@ -235,15 +245,15 @@ public:
         return it->second.second;
     }
 
-    void set(const String & key, Int64 block_number, UInt64 rows)
+    void set(const String & key, Int64 block_number, UInt64 end_offset)
     {
         std::lock_guard lock(mutex);
-        cache[key] = {block_number, rows};
+        cache[key] = {block_number, end_offset};
     }
 
-    static LastBlockRowsCache & instance()
+    static BlockEndOffsetCache & instance()
     {
-        static LastBlockRowsCache res;
+        static BlockEndOffsetCache res;
         return res;
     }
 
@@ -257,27 +267,58 @@ String tableName(const Topic & topic)
     return topic.table_id.getFullTableName();
 }
 
+/// The columns of the table with the parts of a record.
+Names recordColumnNames(const Topic & topic)
+{
+    Names res;
+    if (topic.key_type)
+        res.push_back("key");
+    if (topic.value_type)
+        res.push_back("value");
+    for (const auto & column : topic.value_columns)
+        res.push_back(column.name);
+    if (topic.timestamp_type)
+        res.push_back("timestamp");
+    if (topic.headers_type)
+        res.push_back("headers");
+    return res;
+}
+
+/// The bounds of a partition are computed without a query of the user, and the records are not always read,
+/// so the right to read the records is checked explicitly.
+void checkReadAccess(const Topic & topic, const ContextPtr & context)
+{
+    context->checkAccess(AccessType::SELECT, topic.table_id, recordColumnNames(topic));
+}
+
 /// The number of the next offset in the block, i.e. the max `_block_offset` + 1.
-UInt64 getBlockEndOffset(const Topic & topic, const String & partition_id, Int64 block_number, const QueryContextFactory & make_context)
+/// The query is internal, not of the user of the connection: a row policy or a setting of a user must not
+/// change the high watermark, which is cached and shared between the users.
+UInt64 getBlockEndOffset(const Topic & topic, const String & partition_id, Int64 block_number, const ContextPtr & context)
 {
     String cache_key = fmt::format("{}\n{}\n{}", toString(topic.storage->getStorageID().uuid), tableName(topic), partition_id);
-    if (auto cached = LastBlockRowsCache::instance().get(cache_key, block_number))
+    if (auto cached = BlockEndOffsetCache::instance().get(cache_key, block_number))
         return *cached;
+
+    auto internal_context = Context::createCopy(context->getGlobalContext());
+    internal_context->makeQueryContext();
+    internal_context->setCurrentQueryId({});
 
     UInt64 result = 0;
     runSelect(
         fmt::format(
             "SELECT count(), max(_block_offset) FROM {} WHERE _partition_id = {} AND _block_number = {}",
             tableName(topic), quoteString(partition_id), block_number),
-        make_context(),
+        internal_context,
         [&](const Block & block)
         {
             if (block.rows() && block.getByPosition(0).column->getUInt(0))
                 result = block.getByPosition(1).column->getUInt(0) + 1;
             return true;
-        });
+        },
+        /* internal = */ true);
 
-    LastBlockRowsCache::instance().set(cache_key, block_number, result);
+    BlockEndOffsetCache::instance().set(cache_key, block_number, result);
     return result;
 }
 
@@ -355,8 +396,10 @@ std::map<String, Int64> getSafeBlockNumbers(const Topic & topic)
     return subscription.snapshot().safe_block_numbers;
 }
 
-std::map<Int32, PartitionState> getPartitionStates(const Topic & topic, const std::vector<Int32> & partitions, const QueryContextFactory & make_context)
+std::map<Int32, PartitionState> getPartitionStates(const Topic & topic, const std::vector<Int32> & partitions, const ContextPtr & context)
 {
+    checkReadAccess(topic, context);
+
     std::map<String, Int64> min_block_numbers;
     for (const auto & part : topic.data->getDataPartsVectorForInternalUsage())
     {
@@ -383,7 +426,7 @@ std::map<Int32, PartitionState> getPartitionStates(const Topic & topic, const st
         if (auto it = safe_block_numbers.find(partition_id); it != safe_block_numbers.end() && it->second >= 0)
         {
             state.safe_block_number = it->second;
-            UInt64 end_offset = getBlockEndOffset(topic, partition_id, it->second, make_context);
+            UInt64 end_offset = getBlockEndOffset(topic, partition_id, it->second, context);
             state.high_watermark = std::max(state.high_watermark, makeOffset(it->second, end_offset));
         }
     }
@@ -530,7 +573,9 @@ bool readPartitions(
         headers_expression = fmt::format("CAST({} AS Map(String, String))", backQuote("headers"));
 
     String query = fmt::format(
-        "SELECT _partition_id, _block_number, _block_offset, {}, {}, {}, {} FROM {} STREAM BOUNDED CURSOR {{{}}} WHERE {}",
+        /// The bound of the read is in `PREWHERE`, so that it is applied by the streaming read before sorting the blocks,
+        /// regardless of the settings of the user: a condition in `WHERE` is applied after it, unless it is moved to `PREWHERE`.
+        "SELECT _partition_id, _block_number, _block_offset, {}, {}, {}, {} FROM {} STREAM BOUNDED CURSOR {{{}}} PREWHERE {}",
         nullableStringExpression(topic.key_type, "key"),
         valueExpression(topic),
         timestamp_expression,
@@ -627,7 +672,7 @@ std::vector<FetchPartitionResult> fetch(
         if (topic.hasPartition(request.partition))
             partitions.push_back(request.partition);
 
-    const auto states = getPartitionStates(topic, partitions, make_context);
+    const auto states = getPartitionStates(topic, partitions, make_context());
 
     std::map<String, PendingRead> pending;
 
@@ -716,18 +761,48 @@ std::vector<FetchPartitionResult> fetch(
 void produce(
     const Topic & topic,
     Int32 partition,
-    const std::vector<RecordBatch> & batches,
+    std::string_view record_batches,
+    size_t max_decoded_batch_size,
     const QueryContextFactory & make_context)
 {
-    for (const auto & batch : batches)
+    /// The names of the inserted columns, in the order of the block below.
+    Names column_names;
+    for (const auto & column : topic.value_columns)
+        column_names.push_back(column.name);
+    if (!topic.partition_column.empty())
+        column_names.push_back(topic.partition_column);
+    if (topic.key_type)
+        column_names.push_back("key");
+    if (topic.value_type)
+        column_names.push_back("value");
+    if (topic.timestamp_type)
+        column_names.push_back("timestamp");
+    if (topic.headers_type)
+        column_names.push_back("headers");
+
+    /// Nothing is written if a batch of the request is damaged.
+    validateRecordBatches(record_batches);
+
+    Reader reader(record_batches.data(), record_batches.data() + record_batches.size());
+    while (!reader.eof())
     {
+        auto context = make_context();
+
+        /// The records are decoded only for a user who may insert them, in the scope of the `INSERT` query and
+        /// under its memory limit, and one batch at a time: a small compressed batch is decoded into a lot of memory.
+        context->checkAccess(AccessType::INSERT, topic.table_id, column_names);
+        QueryScope query_scope = QueryScope::create(context);
+        if (const UInt64 max_memory_usage = context->getSettingsRef()[Setting::max_memory_usage])
+            CurrentThread::getGroup()->memory_tracker.setOrRaiseHardLimit(max_memory_usage);
+
+        const RecordBatch batch = readRecordBatch(reader, max_decoded_batch_size);
+
         if (batch.isTransactional() || batch.isControl())
             throw Error(ErrorCode::INVALID_RECORD, ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported");
 
         if (batch.records.empty())
             continue;
 
-        auto context = make_context();
         Block block;
 
         /// The index of the record of every row: a message in a format may contain any number of rows.
@@ -864,7 +939,8 @@ void produce(
                 "kafka:{}:{}:{}:{}", batch.producer_id, batch.producer_epoch, partition, batch.base_sequence)));
         }
 
-        runQueryWithData(query, context);
+        chassert(block.getNames() == column_names);
+        executeQueryWithData(query, context);
     }
 }
 
@@ -872,7 +948,7 @@ void produce(
 OffsetForTimestamp getOffsetForTimestamp(const Topic & topic, Int32 partition, Int64 timestamp, const QueryContextFactory & make_context)
 {
     OffsetForTimestamp res;
-    const auto states = getPartitionStates(topic, {partition}, make_context);
+    const auto states = getPartitionStates(topic, {partition}, make_context());
     const auto & state = states.at(partition);
 
     if (timestamp == -1)
@@ -973,10 +1049,10 @@ void deleteTopic(const StorageID & table_id, const QueryContextFactory & make_co
 }
 
 
-void runSelect(const String & query, ContextMutablePtr context, const std::function<bool(const Block &)> & on_block)
+void runSelect(const String & query, ContextMutablePtr context, const std::function<bool(const Block &)> & on_block, bool internal)
 {
     QueryScope query_scope = QueryScope::create(context);
-    auto [ast, io] = executeQuery(query, context);
+    auto [ast, io] = executeQuery(query, context, QueryFlags{.internal = internal});
 
     try
     {
@@ -1002,6 +1078,11 @@ void runSelect(const String & query, ContextMutablePtr context, const std::funct
 void runQueryWithData(const String & query_with_data, ContextMutablePtr context)
 {
     QueryScope query_scope = QueryScope::create(context);
+    executeQueryWithData(query_with_data, context);
+}
+
+void executeQueryWithData(const String & query_with_data, ContextMutablePtr context)
+{
     ReadBufferFromString in(query_with_data);
     NullWriteBuffer out;
     executeQuery(in, out, context, {});

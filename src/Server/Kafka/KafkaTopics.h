@@ -59,6 +59,13 @@ struct BrokerSettings
 
     UInt64 max_request_size = 100 * 1024 * 1024;
 
+    /// The limit of memory for the decoded records of one batch of a Produce request: the decompressed data and the parsed records.
+    /// The batches of a request are decoded one at a time. It protects from the batches that are small only when compressed.
+    UInt64 max_decoded_batch_size = 1024 * 1024 * 1024;
+
+    /// The time to receive a whole request after its first byte. A connection that stalls in the middle of a request is closed.
+    UInt64 request_receive_timeout_ms = 60000;
+
     /// The delay of the first rebalance of a group, to let more members join, as `group.initial.rebalance.delay.ms` of Kafka.
     UInt64 group_initial_rebalance_delay_ms = 3000;
 
@@ -134,8 +141,9 @@ struct PartitionState
     Int64 safe_block_number = -1;
 };
 
-/// The current committed bounds of the partitions of a topic.
-std::map<Int32, PartitionState> getPartitionStates(const Topic & topic, const std::vector<Int32> & partitions, const QueryContextFactory & make_context);
+/// The current committed bounds of the partitions of a topic. They do not depend on the user: the high watermark
+/// is after the last committed row, even if a row policy hides it. Checks that the user of `context` may read the records.
+std::map<Int32, PartitionState> getPartitionStates(const Topic & topic, const std::vector<Int32> & partitions, const ContextPtr & context);
 
 /// The highest block numbers of the committed prefix of every partition, by partition id.
 std::map<String, Int64> getSafeBlockNumbers(const Topic & topic);
@@ -166,12 +174,14 @@ std::vector<FetchPartitionResult> fetch(
     size_t max_bytes,
     const QueryContextFactory & make_context);
 
-/// Inserts the record batches into one partition as one block per batch.
+/// Inserts the encoded record batches into one partition as one block per batch.
 /// For an idempotent producer, the batch is deduplicated by its producer id, epoch and sequence number.
+/// The batches are decoded one at a time, each within `max_decoded_batch_size` and the memory limit of its `INSERT` query.
 void produce(
     const Topic & topic,
     Int32 partition,
-    const std::vector<RecordBatch> & batches,
+    std::string_view record_batches,
+    size_t max_decoded_batch_size,
     const QueryContextFactory & make_context);
 
 struct OffsetForTimestamp
@@ -197,12 +207,16 @@ void createTopic(
 void deleteTopic(const StorageID & table_id, const QueryContextFactory & make_context);
 
 /// Runs a query and passes the blocks of its result to the callback, which returns false to stop the query.
-void runSelect(const String & query, ContextMutablePtr context, const std::function<bool(const Block &)> & on_block);
+/// An internal query is a query of the server, not of a user.
+void runSelect(const String & query, ContextMutablePtr context, const std::function<bool(const Block &)> & on_block, bool internal = false);
 
 /// Runs a query with no result.
 void runQuery(const String & query, ContextMutablePtr context);
 
 /// Runs an INSERT query with the data after the query text.
 void runQueryWithData(const String & query_with_data, ContextMutablePtr context);
+
+/// The same in the query scope of the caller.
+void executeQueryWithData(const String & query_with_data, ContextMutablePtr context);
 
 }

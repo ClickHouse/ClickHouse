@@ -52,6 +52,24 @@ String GroupCoordinator::metadataForProtocol(const Member & member, const String
     return {};
 }
 
+GroupCoordinator::Members::iterator GroupCoordinator::findStaticMember(Group & group, const std::optional<String> & group_instance_id)
+{
+    if (!group_instance_id)
+        return group.members.end();
+    return std::find_if(group.members.begin(), group.members.end(),
+        [&](const auto & member) { return member.second.group_instance_id == group_instance_id; });
+}
+
+ErrorCode GroupCoordinator::checkMember(Group & group, const String & member_id, const std::optional<String> & group_instance_id)
+{
+    /// The instance id of a static member belongs to its latest member id: the previous one is fenced.
+    if (auto it = findStaticMember(group, group_instance_id); it != group.members.end() && it->first != member_id)
+        return ErrorCode::FENCED_INSTANCE_ID;
+    if (!group.members.contains(member_id))
+        return ErrorCode::UNKNOWN_MEMBER_ID;
+    return ErrorCode::NONE;
+}
+
 void GroupCoordinator::prepareRebalance(Group & group, Clock::time_point now, std::chrono::milliseconds initial_delay)
 {
     const bool initial = group.state == State::Empty;
@@ -161,6 +179,20 @@ GroupCoordinator::JoinResult GroupCoordinator::joinGroup(const JoinRequest & req
     Group & group = groups[request.group_id];
     expireMembers(group, now);
 
+    /// A static member (with `group.instance.id`) that joins without a member id has restarted:
+    /// it takes the place of the member with the same instance id, see below.
+    String replaced_member_id;
+    if (request.member_id.empty())
+    {
+        if (auto it = findStaticMember(group, request.group_instance_id); it != group.members.end())
+            replaced_member_id = it->first;
+    }
+    else if (ErrorCode error = checkMember(group, request.member_id, request.group_instance_id); error != ErrorCode::NONE)
+    {
+        result.error = error;
+        return result;
+    }
+
     if (!group.members.empty())
     {
         if (group.protocol_type != request.protocol_type)
@@ -175,7 +207,7 @@ GroupCoordinator::JoinResult GroupCoordinator::joinGroup(const JoinRequest & req
         {
             bool supported = std::all_of(group.members.begin(), group.members.end(), [&](const auto & member)
             {
-                if (member.first == request.member_id)
+                if (member.first == request.member_id || member.first == replaced_member_id)
                     return true;
                 const auto & protocols = member.second.protocols;
                 return std::any_of(protocols.begin(), protocols.end(), [&](const auto & protocol) { return protocol.first == name; });
@@ -194,15 +226,27 @@ GroupCoordinator::JoinResult GroupCoordinator::joinGroup(const JoinRequest & req
     }
 
     String member_id = request.member_id;
-    if (member_id.empty())
+    bool keeps_assignment = false;
+    if (!replaced_member_id.empty())
+    {
+        /// The restarted static member gets a new member id and keeps the state of the previous one, including its assignment.
+        /// The requests with the previous member id are fenced from now on, see `checkMember`.
+        member_id = fmt::format("{}-{}", *request.group_instance_id, toString(UUIDHelpers::generateV4()));
+        auto node = group.members.extract(replaced_member_id);
+        node.key() = member_id;
+        node.mapped().member_id = member_id;
+        /// The group does not have to rebalance if it is stable and the member supports the same protocols as before.
+        keeps_assignment = group.state == State::Stable && node.mapped().protocols == request.protocols;
+        group.members.insert(std::move(node));
+        if (group.leader == replaced_member_id)
+            group.leader = member_id;
+        /// The requests of the previous member that are waiting.
+        cv.notify_all();
+    }
+    else if (member_id.empty())
     {
         member_id = fmt::format("{}-{}", request.client_id.empty() ? "member" : request.client_id, toString(UUIDHelpers::generateV4()));
         group.members[member_id].member_id = member_id;
-    }
-    else if (!group.members.contains(member_id))
-    {
-        result.error = ErrorCode::UNKNOWN_MEMBER_ID;
-        return result;
     }
 
     group.protocol_type = request.protocol_type;
@@ -216,7 +260,27 @@ GroupCoordinator::JoinResult GroupCoordinator::joinGroup(const JoinRequest & req
         member.rebalance_timeout_ms = request.rebalance_timeout_ms > 0 ? request.rebalance_timeout_ms : request.session_timeout_ms;
         member.protocols = request.protocols;
         member.last_heartbeat = now;
-        member.awaiting = Member::Awaiting::Join;
+        member.awaiting = keeps_assignment ? Member::Awaiting::None : Member::Awaiting::Join;
+    }
+
+    auto fill_result = [&]
+    {
+        result.generation_id = group.generation;
+        result.protocol_type = group.protocol_type;
+        result.protocol_name = group.protocol_name;
+        result.leader = group.leader;
+        result.member_id = member_id;
+
+        if (member_id == group.leader)
+            for (const auto & [id, other] : group.members)
+                result.members.push_back({id, other.group_instance_id, metadataForProtocol(other, group.protocol_name)});
+    };
+
+    if (keeps_assignment)
+    {
+        /// The member continues in the current generation: its SyncGroup request returns the assignment it had.
+        fill_result();
+        return result;
     }
 
     if (group.state != State::PreparingRebalance)
@@ -234,7 +298,7 @@ GroupCoordinator::JoinResult GroupCoordinator::joinGroup(const JoinRequest & req
         auto it = group.members.find(member_id);
         if (it == group.members.end())
         {
-            result.error = ErrorCode::UNKNOWN_MEMBER_ID;
+            result.error = checkMember(group, member_id, request.group_instance_id);
             return result;
         }
 
@@ -258,16 +322,7 @@ GroupCoordinator::JoinResult GroupCoordinator::joinGroup(const JoinRequest & req
     member.awaiting = Member::Awaiting::None;
     member.last_heartbeat = Clock::now();
 
-    result.generation_id = group.generation;
-    result.protocol_type = group.protocol_type;
-    result.protocol_name = group.protocol_name;
-    result.leader = group.leader;
-    result.member_id = member_id;
-
-    if (member_id == group.leader)
-        for (const auto & [id, other] : group.members)
-            result.members.push_back({id, other.group_instance_id, metadataForProtocol(other, group.protocol_name)});
-
+    fill_result();
     return result;
 }
 
@@ -275,6 +330,7 @@ GroupCoordinator::SyncResult GroupCoordinator::syncGroup(
     const String & group_id,
     Int32 generation_id,
     const String & member_id,
+    const std::optional<String> & group_instance_id,
     const std::vector<std::pair<String, String>> & assignments,
     const IsCancelled & is_cancelled)
 {
@@ -292,12 +348,12 @@ GroupCoordinator::SyncResult GroupCoordinator::syncGroup(
     auto now = Clock::now();
     expireMembers(group, now);
 
-    auto it = group.members.find(member_id);
-    if (it == group.members.end())
+    if (ErrorCode error = checkMember(group, member_id, group_instance_id); error != ErrorCode::NONE)
     {
-        result.error = ErrorCode::UNKNOWN_MEMBER_ID;
+        result.error = error;
         return result;
     }
+    auto it = group.members.find(member_id);
 
     if (generation_id != group.generation)
     {
@@ -336,9 +392,9 @@ GroupCoordinator::SyncResult GroupCoordinator::syncGroup(
 
         cv.wait_until(lock, std::min(deadline, now + max_wait_slice));
         expireMembers(group, Clock::now());
-        if (!group.members.contains(member_id))
+        if (ErrorCode error = checkMember(group, member_id, group_instance_id); error != ErrorCode::NONE)
         {
-            result.error = ErrorCode::UNKNOWN_MEMBER_ID;
+            result.error = error;
             return result;
         }
     }
@@ -357,7 +413,7 @@ GroupCoordinator::SyncResult GroupCoordinator::syncGroup(
     return result;
 }
 
-ErrorCode GroupCoordinator::heartbeat(const String & group_id, Int32 generation_id, const String & member_id)
+ErrorCode GroupCoordinator::heartbeat(const String & group_id, Int32 generation_id, const String & member_id, const std::optional<String> & group_instance_id)
 {
     std::lock_guard lock(mutex);
     auto group_it = groups.find(group_id);
@@ -368,11 +424,10 @@ ErrorCode GroupCoordinator::heartbeat(const String & group_id, Int32 generation_
     auto now = Clock::now();
     expireMembers(group, now);
 
-    auto it = group.members.find(member_id);
-    if (it == group.members.end())
-        return ErrorCode::UNKNOWN_MEMBER_ID;
+    if (ErrorCode error = checkMember(group, member_id, group_instance_id); error != ErrorCode::NONE)
+        return error;
 
-    it->second.last_heartbeat = now;
+    group.members.at(member_id).last_heartbeat = now;
     if (generation_id != group.generation)
         return ErrorCode::ILLEGAL_GENERATION;
     if (group.state == State::PreparingRebalance)
@@ -380,7 +435,7 @@ ErrorCode GroupCoordinator::heartbeat(const String & group_id, Int32 generation_
     return ErrorCode::NONE;
 }
 
-ErrorCode GroupCoordinator::leaveGroup(const String & group_id, const String & member_id)
+ErrorCode GroupCoordinator::leaveGroup(const String & group_id, const String & member_id, const std::optional<String> & group_instance_id)
 {
     std::lock_guard lock(mutex);
     auto group_it = groups.find(group_id);
@@ -388,8 +443,20 @@ ErrorCode GroupCoordinator::leaveGroup(const String & group_id, const String & m
         return ErrorCode::UNKNOWN_MEMBER_ID;
 
     Group & group = group_it->second;
-    if (!group.members.erase(member_id))
-        return ErrorCode::UNKNOWN_MEMBER_ID;
+    if (member_id.empty() && group_instance_id)
+    {
+        /// A static member is removed by its instance id, e.g. by an admin client: it does not leave the group when it stops.
+        auto it = findStaticMember(group, group_instance_id);
+        if (it == group.members.end())
+            return ErrorCode::UNKNOWN_MEMBER_ID;
+        group.members.erase(it);
+    }
+    else
+    {
+        if (ErrorCode error = checkMember(group, member_id, group_instance_id); error != ErrorCode::NONE)
+            return error;
+        group.members.erase(member_id);
+    }
 
     auto now = Clock::now();
     if (group.members.empty())
@@ -413,13 +480,18 @@ ErrorCode GroupCoordinator::leaveGroup(const String & group_id, const String & m
     return ErrorCode::NONE;
 }
 
-ErrorCode GroupCoordinator::validateOffsetCommit(const String & group_id, Int32 generation_id, const String & member_id)
+ErrorCode GroupCoordinator::validateOffsetCommit(const String & group_id, Int32 generation_id, const String & member_id, const std::optional<String> & group_instance_id)
 {
     if (group_id.empty())
         return ErrorCode::INVALID_GROUP_ID;
 
     std::lock_guard lock(mutex);
     auto group_it = groups.find(group_id);
+
+    /// The members whose sessions have timed out are removed first: nothing else removes the last member
+    /// of a group that died without leaving it, and it must not block the commits below forever.
+    if (group_it != groups.end())
+        expireMembers(group_it->second, Clock::now());
 
     /// A commit outside of group membership, e.g. by a consumer with manually assigned partitions.
     if (generation_id < 0 && member_id.empty())
@@ -433,11 +505,10 @@ ErrorCode GroupCoordinator::validateOffsetCommit(const String & group_id, Int32 
         return ErrorCode::UNKNOWN_MEMBER_ID;
 
     Group & group = group_it->second;
-    expireMembers(group, Clock::now());
 
+    if (ErrorCode error = checkMember(group, member_id, group_instance_id); error != ErrorCode::NONE)
+        return error;
     auto it = group.members.find(member_id);
-    if (it == group.members.end())
-        return ErrorCode::UNKNOWN_MEMBER_ID;
     if (generation_id != group.generation)
         return ErrorCode::ILLEGAL_GENERATION;
     /// The members commit their offsets before rejoining, while the group is preparing a rebalance,

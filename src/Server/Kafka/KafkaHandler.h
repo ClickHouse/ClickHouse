@@ -8,6 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Poco/Net/TCPServerConnection.h>
 
+#include <chrono>
 #include <memory>
 
 
@@ -62,6 +63,12 @@ private:
     void authenticateDefaultUserIfNeeded();
     ContextMutablePtr makeQueryContext();
     [[nodiscard]] bool isCancelled() const;
+
+    /// Reads a part of a request, which has to arrive before the deadline. Returns false if the server is shutting down.
+    bool readRequestBytes(char * to, size_t size, std::chrono::steady_clock::time_point deadline);
+
+    /// Whether the user may see the consumer groups, or, with `write`, be a member of a group and change it.
+    [[nodiscard]] bool isGroupAccessGranted(bool write) const;
 
     String advertisedHost();
     Int32 advertisedPort();

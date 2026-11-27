@@ -18,6 +18,13 @@ namespace DB::Kafka
   * The state of the groups is kept in memory of this server, and every server is the coordinator of all groups,
   * so the members of a group must connect to the same server.
   * The committed offsets are stored in a table, see `commitOffsets`.
+  *
+  * A member with a group instance id (`group.instance.id` of the client) is a static member (KIP-345).
+  * When it restarts and joins without a member id, it takes the place of the member with the same instance id:
+  * it gets a new member id and keeps the assignment, without a rebalance if the group is stable.
+  * The requests with the previous member id get the error `FENCED_INSTANCE_ID`, so only one client
+  * with an instance id is a member of the group. A static member does not leave the group when it stops:
+  * it is removed when its session times out.
   */
 class GroupCoordinator
 {
@@ -72,14 +79,17 @@ public:
         const String & group_id,
         Int32 generation_id,
         const String & member_id,
+        const std::optional<String> & group_instance_id,
         const std::vector<std::pair<String, String>> & assignments,
         const IsCancelled & is_cancelled);
 
-    ErrorCode heartbeat(const String & group_id, Int32 generation_id, const String & member_id);
-    ErrorCode leaveGroup(const String & group_id, const String & member_id);
+    ErrorCode heartbeat(const String & group_id, Int32 generation_id, const String & member_id, const std::optional<String> & group_instance_id);
+
+    /// A static member can be removed by its instance id, with an empty member id.
+    ErrorCode leaveGroup(const String & group_id, const String & member_id, const std::optional<String> & group_instance_id);
 
     /// Whether a member may commit offsets for the group.
-    ErrorCode validateOffsetCommit(const String & group_id, Int32 generation_id, const String & member_id);
+    ErrorCode validateOffsetCommit(const String & group_id, Int32 generation_id, const String & member_id, const std::optional<String> & group_instance_id);
 
     struct GroupListing
     {
@@ -121,6 +131,7 @@ private:
     struct Member
     {
         String member_id;
+        /// Set for a static member.
         std::optional<String> group_instance_id;
         String client_id;
         String client_host;
@@ -149,6 +160,8 @@ private:
         Stable,
     };
 
+    using Members = std::map<String, Member>;
+
     struct Group
     {
         State state = State::Empty;
@@ -156,7 +169,7 @@ private:
         String protocol_type;
         String protocol_name;
         String leader;
-        std::map<String, Member> members;
+        Members members;
         Clock::time_point rebalance_deadline;
         Clock::time_point initial_delay_deadline;
     };
@@ -167,6 +180,13 @@ private:
     void tryCompleteJoin(Group & group, Clock::time_point now);
     void expireMembers(Group & group, Clock::time_point now);
     static String metadataForProtocol(const Member & member, const String & protocol);
+
+    /// The member with the group instance id, if any.
+    static Members::iterator findStaticMember(Group & group, const std::optional<String> & group_instance_id);
+
+    /// Checks that the member id is of a member of the group, and that it is the current member id of the static member
+    /// with the group instance id, if it is set.
+    static ErrorCode checkMember(Group & group, const String & member_id, const std::optional<String> & group_instance_id);
 
     std::mutex mutex;
     std::condition_variable cv;

@@ -1,0 +1,15 @@
+Row policies
+filtered: 0 5 10 10
+filtered, after the visible records: 0 [[]] True
+full: 0 10 10 True
+No access
+fetch: True -1 []
+the end offset: True
+Reading in portions without the automatic PREWHERE
+records: 510 more than one fetch: True
+Memory limit of a producer
+small batch: 0
+large batch: True
+small batch: 0
+1	small
+3	small
