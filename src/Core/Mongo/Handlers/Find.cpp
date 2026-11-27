@@ -4,6 +4,7 @@
 #include <Core/Mongo/Handlers/Find.h>
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
 #include <Parsers/Mongo/ParserMongoFilter.h>
+#include <Parsers/Mongo/Utils.h>
 #include <Parsers/Mongo/parseMongoQuery.h>
 
 #include <IO/WriteBufferFromString.h>
@@ -102,10 +103,9 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
     /// be `db`.
     auto mongo_dialect_query = fmt::format("db.{}.find({})", collection.collection, serialized_filter);
     /// Mongo reads `limit: 0` as no limit at all and a negative limit as its absolute
-    /// value, the same way `count` does. The magnitude is taken in the unsigned domain,
-    /// where negating the smallest `Int64` is well-defined.
+    /// value, the same way `count` does.
     if (limit && *limit != 0)
-        mongo_dialect_query += fmt::format(".limit({})", *limit < 0 ? -static_cast<UInt64>(*limit) : static_cast<UInt64>(*limit));
+        mongo_dialect_query += fmt::format(".limit({})", Mongo::limitMagnitude(*limit));
     if (skip && *skip != 0)
         mongo_dialect_query += fmt::format(".skip({})", *skip);
     if (!sorting.empty())

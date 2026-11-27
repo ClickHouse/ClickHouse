@@ -68,8 +68,7 @@ QueryMetadata::QueryMetadata(
     : database_name(std::move(database_name_))
     , collection_name(std::move(collection_name_))
     , query_type(query_type_)
-    , limit(limit_ ? std::optional<size_t>(
-          *limit_ < 0 ? -static_cast<UInt64>(*limit_) : static_cast<UInt64>(*limit_)) : std::nullopt)
+    , limit(limit_ ? std::optional<size_t>(limitMagnitude(*limit_)) : std::nullopt)
     , offset(offset_ ? std::optional<size_t>(static_cast<size_t>(*offset_)) : std::nullopt)
     , order_by(order_by_)
 {

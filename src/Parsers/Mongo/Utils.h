@@ -44,6 +44,18 @@ const char * findKth(const char * begin, const char * end, size_t k)
     return iter;
 }
 
+/** The magnitude of a `limit`: a negative one asks for as many documents as its absolute value.
+  * It is computed without negating an unsigned value, which wraps around and is what the
+  * `unsigned-integer-overflow` check of UBSan reports. Adding one first keeps the negation of the
+  * signed value inside the `Int64` range for the smallest `Int64` as well.
+  */
+inline UInt64 limitMagnitude(Int64 value)
+{
+    if (value < 0)
+        return static_cast<UInt64>(-(value + 1)) + 1;
+    return static_cast<UInt64>(value);
+}
+
 std::pair<const char *, const char *> getMetadataSubstring(const char * begin, const char * end);
 
 std::pair<const char *, const char *> getSettingsSubstring(const char * begin, const char * end);

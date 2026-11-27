@@ -3,6 +3,7 @@
 #include <Core/Mongo/Handlers/Count.h>
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
 #include <Parsers/Mongo/ParserMongoQuery.h>
+#include <Parsers/Mongo/Utils.h>
 #include <Parsers/Mongo/parseMongoQuery.h>
 
 #include <IO/WriteBufferFromString.h>
@@ -60,7 +61,7 @@ std::vector<Document> CountHandler::handle(const std::vector<OpMessageSection> &
     if (skip != 0)
         mongo_dialect_query += fmt::format(".skip({})", skip);
     if (limit != 0)
-        mongo_dialect_query += fmt::format(".limit({})", limit < 0 ? -static_cast<UInt64>(limit) : static_cast<UInt64>(limit));
+        mongo_dialect_query += fmt::format(".limit({})", Mongo::limitMagnitude(limit));
 
     const auto max_query_size = mongo_dialect_query.size();
     /// The reparse runs under the parser limits of the session, the same ones the Mongo dialect
