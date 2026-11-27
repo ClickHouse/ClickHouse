@@ -138,7 +138,17 @@ void Reader::readTail()
         metadata.emplace();
 
     if (options.keep_serialized_file_tail)
-        options.serialized_file_tail.assign(tail, tail_size - tail_length, tail_length);
+    {
+        if (options.serialized_file_tail.size() < tail_length)
+        {
+            /// The first read guessed a 16 KiB directory. Do not retain only that
+            /// prefix when the complete tail is needed for a metadata-cache entry.
+            options.serialized_file_tail.resize(tail_length);
+            stream->read(options.serialized_file_tail.data(), tail_length, file_size - tail_length);
+        }
+        else
+            options.serialized_file_tail.assign(tail, tail_size - tail_length, tail_length);
+    }
 }
 
 const Proto::Metadata & Reader::getMetadata()
