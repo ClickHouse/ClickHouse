@@ -557,6 +557,10 @@ public:
     /// It doesn't check cache
     IndexPtr tryGetIndex() const;
 
+    /// The index if it is loaded or in the primary index cache, and nullptr otherwise. It never reads the index from
+    /// disk, and the returned pointer keeps the index alive if it is evicted from the cache afterwards.
+    IndexPtr getIndexIfInMemory() const;
+
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
 
     /// The path that identifies the part in the caches shared between tables.

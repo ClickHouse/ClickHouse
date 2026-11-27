@@ -741,6 +741,19 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::tryGetIndex() const
     return index;
 }
 
+IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndexIfInMemory() const
+{
+    if (auto loaded_index = tryGetIndex())
+        return loaded_index;
+
+    auto index_cache = storage.getPrimaryIndexCache();
+    if (!index_cache)
+        return nullptr;
+
+    /// A lookup only: an index that is not in the cache (e.g. evicted a moment ago) is not loaded.
+    return index_cache->get(PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart()));
+}
+
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::loadIndexToCache(PrimaryIndexCache & index_cache) const
 {
     auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());

@@ -106,14 +106,21 @@ std::optional<UInt64> estimateDistinctValuesOfFirstKeyColumnFromPrimaryIndex(con
 {
     static constexpr size_t max_sampled_marks = 4096;
 
+    /// The indexes are taken once, by a lookup that does not load them, and held until the end: an index evicted
+    /// from the primary index cache in the meantime is neither read from disk nor freed while it is examined.
+    std::vector<IMergeTreeDataPart::IndexPtr> indexes;
+    indexes.reserve(parts.size());
+
     UInt64 total_rows = 0;
     size_t total_granules = 0;
     for (const auto & part : parts)
     {
         const auto & data_part = part.data_part;
-        /// The index is not loaded: it is not worth reading from disk for an estimate.
-        if (!data_part->isIndexInMemory())
+        /// The index is not in memory: it is not worth reading from disk for an estimate.
+        auto index = data_part->getIndexIfInMemory();
+        if (!index)
             return std::nullopt;
+        indexes.push_back(std::move(index));
         total_rows += data_part->rows_count;
         total_granules += data_part->index_granularity->getMarksCountWithoutFinal();
     }
@@ -132,14 +139,14 @@ std::optional<UInt64> estimateDistinctValuesOfFirstKeyColumnFromPrimaryIndex(con
 
     /// First the changes, which tell whether there is an estimate, without hashing the values.
     Float64 sum_part_distinct_values = 0;
-    for (const auto & part : parts)
+    for (size_t part_index = 0; part_index < parts.size(); ++part_index)
     {
-        const auto & data_part = part.data_part;
+        const auto & data_part = parts[part_index].data_part;
         const size_t marks = data_part->index_granularity->getMarksCount();
         const size_t granules = data_part->index_granularity->getMarksCountWithoutFinal();
-        const auto index = data_part->getIndex();
+        const auto & index = indexes[part_index];
         /// The column is not kept in memory (see `primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns`).
-        if (!index || index->empty() || (*index)[0]->size() != marks)
+        if (index->empty() || (*index)[0]->size() != marks)
             return std::nullopt;
         if (granules == 0)
             continue;
