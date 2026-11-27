@@ -28,9 +28,6 @@ template <typename Parse>
 void checkRoundTrip(const String & text, Parse && parse)
 {
     String written = parse(text);
-    /// Some writers do not escape the strings that their readers unescape, such as the part names.
-    if (text.contains('\\'))
-        return;
     String written_again;
     try
     {
@@ -109,8 +106,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
                 break;
             case 5:
             {
-                /// `quorum/last_part` of the partitions with a quorum insert. Not written again: the parts are
-                /// an unordered map, which can write them in another order after they are read back.
+                /// `quorum/last_part` of the partitions with a quorum insert. Not written again: the parts are an unordered
+                /// map, which can write them in another order, and the reader unescapes what the writer does not escape.
                 ReplicatedMergeTreeQuorumAddedParts parts(format_version);
                 parts.fromString(text);
                 std::ignore = parts.getMaxInsertedBlocks();
