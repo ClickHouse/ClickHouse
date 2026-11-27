@@ -933,6 +933,10 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       them and logs this per table instead of refusing to start, which is what #115941 made it do on purpose.
 #       Requires the `StorageKeeperMap` logger AND the backquoted fixture-table prefix, so the same message on any
 #       other KeeperMap table - the shape a real metadata-compatibility regression takes - still fails this job.
+# `RefreshTask` + a `test_*_r.bad_mv` view + `Keeper server doesn't have all feature flags` is the same class for
+#       `04218_refreshable_mv_secondary_create`, whose `ATTACH`ed coordinated view a Keeper drawn without
+#       `create_if_not_exists` stops already in the stress phase; a stop of the file before its final `DROP DATABASE`
+#       leaves it to the upgraded server, which on the same flags stops it again. Any other stopped view still fails.
 # `shard_1.data` + `ReplicatedMergeTreeAttachThread` + a read-only initialization on an empty `columns` znode is
 #       `02980_dist_insert_readonly_replica` breaking it on purpose; an injected fault can stop the file before its
 #       final `DROP DATABASE`. Other tables and error codes still fail; a `columns` value cut inside its header does not.
@@ -1166,6 +1170,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "Cluster: Code: 198.*Not found address of host: \(.\)\1\{63,\}" \
     | grep -av -e "getInfoIfClickHouseDictionarySource.*Code: 198\. DB::NetException: Not found address of host: \[x\. (DNS_ERROR)" \
     | grep -av -e "StorageKeeperMap (.*\.\`05024_keeper_map_parenthesized_metadata.*Failed to activate table because of invalid metadata in ZooKeeper" \
+    | grep -av -e "RefreshTask(test_[a-z0-9_]*_r\.bad_mv): Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS\. The view is stopped\." \
     | grep -av -e "<Error> shard_1\.data (ReplicatedMergeTreeAttachThread): Initialization failed, table will remain readonly\. Error: Code: 27\. DB::Exception: Cannot parse input: expected 'columns format version: 1.n' at end of stream" \
     | grep -av -e "SystemLogQueue.*Queue had been full" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
