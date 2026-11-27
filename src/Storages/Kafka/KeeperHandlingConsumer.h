@@ -88,6 +88,9 @@ public:
     using MessageSinkFunction
         = std::function<bool(ReadBufferPtr, const MessageInfo &, bool /*has_more_polled_messages*/, bool /*stalled*/, bool /*replaying_intent*/)>;
 
+    /// Appended to the `is_active` data by replicas able to publish demand.
+    static constexpr auto DEMAND_AWARE_SUFFIX = ":demand_aware";
+
     ~KeeperHandlingConsumer();
 
     KeeperHandlingConsumer(

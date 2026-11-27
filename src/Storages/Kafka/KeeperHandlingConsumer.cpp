@@ -459,10 +459,11 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
     for (const auto & name : candidates)
         is_active_paths.push_back(keeper_path / "replicas" / name / "is_active");
 
-    auto is_active_responses = keeper->exists(is_active_paths);
+    auto is_active_responses = keeper->tryGet(is_active_paths);
 
     size_t active_replica_count = 0;
     std::vector<String> lockless_active_replicas;
+    std::unordered_set<String> demand_unaware_lockless;
     for (size_t i = 0; i < candidates.size(); ++i)
     {
         const auto & response = is_active_responses[i];
@@ -472,26 +473,23 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
             throw Coordination::Exception::fromPath(response.error, is_active_paths[i]);
 
         ++active_replica_count;
-        if (!replicas_with_lock.contains(candidates[i]))
-            lockless_active_replicas.push_back(std::move(candidates[i]));
+        if (replicas_with_lock.contains(candidates[i]))
+            continue;
+        lockless_active_replicas.push_back(candidates[i]);
+        /// Without the suffix the replica runs the old code and cannot publish demand.
+        if (!response.data.ends_with(DEMAND_AWARE_SUFFIX))
+            demand_unaware_lockless.insert(candidates[i]);
     }
 
     std::unordered_map<String, String> demand_of_lockless;
-    std::unordered_set<String> demand_unaware_lockless;
     if (!lockless_active_replicas.empty())
     {
         Strings demand_paths;
-        Strings awareness_paths;
         demand_paths.reserve(lockless_active_replicas.size());
-        awareness_paths.reserve(lockless_active_replicas.size());
         for (const auto & replica : lockless_active_replicas)
-        {
             demand_paths.push_back(fs::path(keeper_path) / "replicas" / replica / "demand");
-            awareness_paths.push_back(fs::path(keeper_path) / "replicas" / replica / "demand_aware");
-        }
 
         auto demand_responses = keeper->tryGet(demand_paths);
-        auto awareness_responses = keeper->exists(awareness_paths);
         for (size_t i = 0; i < lockless_active_replicas.size(); ++i)
         {
             const auto & demand_response = demand_responses[i];
@@ -499,11 +497,6 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
                 demand_of_lockless.emplace(lockless_active_replicas[i], demand_response.data);
             else if (demand_response.error != Coordination::Error::ZNONODE)
                 throw Coordination::Exception::fromPath(demand_response.error, demand_paths[i]);
-
-            if (awareness_responses[i].error == Coordination::Error::ZNONODE)
-                demand_unaware_lockless.insert(lockless_active_replicas[i]);
-            else if (awareness_responses[i].error != Coordination::Error::ZOK)
-                throw Coordination::Exception::fromPath(awareness_responses[i].error, awareness_paths[i]);
         }
     }
 

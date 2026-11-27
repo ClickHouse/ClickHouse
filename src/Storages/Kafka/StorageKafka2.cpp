@@ -231,7 +231,6 @@ StorageKafka2::~StorageKafka2()
     /// The `librdkafka` callbacks dereference `this`, so the consumers must go first. Same as `StorageKafka`.
     if (!shutdown_called)
         shutdown(false);
-    demand_aware_node.reset();
     replica_is_active_node.reset();
 }
 
@@ -254,9 +253,6 @@ void StorageKafka2::partialShutdown()
     /// EphemeralNodeHolder stores a raw ZooKeeper reference, so resetting it here prevents a
     /// use-after-free: setZooKeeper() called afterwards may free the old session, and the holder's
     /// destructor would then access a dangling reference when checking zookeeper.expired().
-    /// The marker goes first: it must be released while we still own `is_active`,
-    /// otherwise a concurrent activation of this identity could lose its marker to our stale holder.
-    demand_aware_node = nullptr;
     replica_is_active_node = nullptr;
 }
 
@@ -305,12 +301,16 @@ bool StorageKafka2::activate()
             auto zookeeper = getZooKeeper();
 
             String is_active_path = fs::path(replica_path) / "is_active";
-            zookeeper->deleteEphemeralNodeIfContentMatches(is_active_path, active_node_identifier);
+            String is_active_data = active_node_identifier + KeeperHandlingConsumer::DEMAND_AWARE_SUFFIX;
+            /// The bare identifier is what the previous version left behind after an upgrade.
+            zookeeper->deleteEphemeralNodeIfContentMatches(
+                is_active_path,
+                [this, &is_active_data](const String & content) { return content == is_active_data || content == active_node_identifier; });
 
             try
             {
                 /// Simultaneously declare that this replica is active, and update the host.
-                zookeeper->create(is_active_path, active_node_identifier, zkutil::CreateMode::Ephemeral);
+                zookeeper->create(is_active_path, is_active_data, zkutil::CreateMode::Ephemeral);
             }
             catch (const Coordination::Exception & e)
             {
@@ -326,21 +326,10 @@ bool StorageKafka2::activate()
             }
             replica_is_active_node = zkutil::EphemeralNodeHolder::existing(is_active_path, *zookeeper);
 
-            String demand_aware_path = fs::path(replica_path) / "demand_aware";
-            demand_aware_node = zkutil::EphemeralNodeHolder::tryCreate(demand_aware_path, *zookeeper);
-            if (!demand_aware_node)
-            {
-                /// A marker left by a previous registration of this identity can still be bound
-                /// to another live session; we hold `is_active`, so take the marker back.
-                zookeeper->tryRemove(demand_aware_path);
-                demand_aware_node = zkutil::EphemeralNodeHolder::create(demand_aware_path, *zookeeper);
-            }
-
             return true;
         }
         catch (const Coordination::Exception & e)
         {
-            demand_aware_node = nullptr;
             replica_is_active_node = nullptr;
             LOG_ERROR(log, "Couldn't start replica: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
             return false;
@@ -348,7 +337,6 @@ bool StorageKafka2::activate()
         }
         catch (const Exception & e)
         {
-            demand_aware_node = nullptr;
             replica_is_active_node = nullptr;
             if (e.code() != ErrorCodes::REPLICA_IS_ALREADY_ACTIVE)
                 throw;
