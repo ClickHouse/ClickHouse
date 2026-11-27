@@ -19,9 +19,11 @@ ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $users"
 ${CLICKHOUSE_CLIENT} -m --query "
 CREATE TABLE $db.t (sort_key UInt64, id UInt64, secret String) ENGINE = MergeTree ORDER BY sort_key;
 CREATE TABLE $db.t_alias ENGINE = Alias('t');
+CREATE TABLE $db.t_mat (sort_key UInt64, id UInt64, m UInt64 MATERIALIZED id) ENGINE = MergeTree ORDER BY sort_key;
 CREATE MATERIALIZED VIEW $db.mv ENGINE = MergeTree ORDER BY sort_key AS SELECT * FROM $db.t;
 CREATE USER $users IDENTIFIED WITH no_password;
 GRANT SELECT(sort_key, id), OPTIMIZE ON $db.t TO $u_cols;
+GRANT SELECT(sort_key, id), OPTIMIZE ON $db.t_mat TO $u_cols;
 GRANT OPTIMIZE ON $db.t TO $u_opt;
 GRANT SELECT, OPTIMIZE ON $db.t TO $u_full;
 GRANT SELECT, OPTIMIZE ON $db.t_alias TO $u_full;
@@ -83,6 +85,8 @@ check 'asterisk except      ' "$u_cols" "OPTIMIZE TABLE $db.t DRY RUN PARTS $par
 check 'COLUMNS matcher      ' "$u_cols" "OPTIMIZE TABLE $db.t DRY RUN PARTS $parts DEDUPLICATE BY sort_key, COLUMNS('^se')"
 check 'DEDUPLICATE, no list ' "$u_cols" "OPTIMIZE TABLE $db.t DRY RUN PARTS $parts DEDUPLICATE"
 check 'no list, SELECT      ' "$u_full" "OPTIMIZE TABLE $db.t DRY RUN PARTS $parts DEDUPLICATE"
+check 'no list, MATERIALIZED' "$u_cols" "OPTIMIZE TABLE $db.t_mat FINAL DEDUPLICATE" m
+check 'BY *, MATERIALIZED   ' "$u_cols" "OPTIMIZE TABLE $db.t_mat FINAL DEDUPLICATE BY *" m
 check 'FINAL, not granted   ' "$u_cols" "OPTIMIZE TABLE $db.t FINAL DEDUPLICATE BY sort_key, secret"
 count
 

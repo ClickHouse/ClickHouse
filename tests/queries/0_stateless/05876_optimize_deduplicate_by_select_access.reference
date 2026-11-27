@@ -8,6 +8,8 @@ asterisk except      : OK
 COLUMNS matcher      : (ACCESS_DENIED) hides secret
 DEDUPLICATE, no list : (ACCESS_DENIED) hides secret
 no list, SELECT      : OK
+no list, MATERIALIZED: (ACCESS_DENIED) hides m
+BY *, MATERIALIZED   : OK
 FINAL, not granted   : (ACCESS_DENIED) hides secret
 rows: 6
 -- through an Alias, SELECT is also required on the target
