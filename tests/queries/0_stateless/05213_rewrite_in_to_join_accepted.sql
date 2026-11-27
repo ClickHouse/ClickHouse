@@ -194,14 +194,16 @@ SELECT groupArray(toString(c)) FROM (SELECT row_number() OVER (ORDER BY id) IN (
 
 SELECT '-- The same IN in two clauses of one query builds one join';
 SELECT countIf(explain LIKE '%JoinLogical%'), countIf(explain LIKE '%Set%') > 0
-FROM (EXPLAIN keep_logical_steps = 1 SELECT id NOT IN (SELECT k FROM s) AS c FROM t WHERE (id NOT IN (SELECT k FROM s)) OR b > 3);
+FROM (EXPLAIN keep_logical_steps = 1 SELECT id NOT IN (SELECT k FROM s) AS c FROM t WHERE (id NOT IN (SELECT k FROM s)) OR b > 3)
+SETTINGS enable_parallel_replicas = 0;
 
 SELECT groupArray(concat(toString(id), toString(c))) FROM (SELECT id, id NOT IN (SELECT k FROM s) AS c FROM t WHERE (id NOT IN (SELECT k FROM s)) OR b > 3 ORDER BY id) SETTINGS rewrite_in_to_join = 0;
 SELECT groupArray(concat(toString(id), toString(c))) FROM (SELECT id, id NOT IN (SELECT k FROM s) AS c FROM t WHERE (id NOT IN (SELECT k FROM s)) OR b > 3 ORDER BY id) SETTINGS rewrite_in_to_join = 1;
 
 SELECT '-- The same IN in two clauses, spelled with a WITH alias';
 SELECT countIf(explain LIKE '%JoinLogical%'), countIf(explain LIKE '%Set%') > 0
-FROM (EXPLAIN keep_logical_steps = 1 WITH id NOT IN (SELECT k FROM s) AS c SELECT id, c FROM t WHERE c OR b > 3);
+FROM (EXPLAIN keep_logical_steps = 1 WITH id NOT IN (SELECT k FROM s) AS c SELECT id, c FROM t WHERE c OR b > 3)
+SETTINGS enable_parallel_replicas = 0;
 
 SELECT groupArray(concat(toString(id), toString(c))) FROM (WITH id NOT IN (SELECT k FROM s) AS c SELECT id, c FROM t WHERE c OR b > 3 ORDER BY id) SETTINGS rewrite_in_to_join = 0;
 SELECT groupArray(concat(toString(id), toString(c))) FROM (WITH id NOT IN (SELECT k FROM s) AS c SELECT id, c FROM t WHERE c OR b > 3 ORDER BY id) SETTINGS rewrite_in_to_join = 1;
@@ -295,7 +297,8 @@ SELECT count() FROM t WHERE (1 + (SELECT max(v) FROM w WHERE w.k = t.id)) IN (SE
 
 SELECT '-- An IN inside the left argument of another IN builds one join for each';
 SELECT countIf(explain LIKE '%JoinLogical%'), countIf(explain LIKE '%Set%') > 0
-FROM (EXPLAIN keep_logical_steps = 1 SELECT count() FROM t WHERE (id IN (SELECT k FROM s)) IN (SELECT toUInt8(1)));
+FROM (EXPLAIN keep_logical_steps = 1 SELECT count() FROM t WHERE (id IN (SELECT k FROM s)) IN (SELECT toUInt8(1)))
+SETTINGS enable_parallel_replicas = 0;
 
 SELECT count() FROM t WHERE (id IN (SELECT k FROM s)) IN (SELECT toUInt8(1)) SETTINGS rewrite_in_to_join = 0;
 SELECT count() FROM t WHERE (id IN (SELECT k FROM s)) IN (SELECT toUInt8(1)) SETTINGS rewrite_in_to_join = 1;
