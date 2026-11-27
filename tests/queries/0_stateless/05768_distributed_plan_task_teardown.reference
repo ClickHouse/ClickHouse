@@ -1,3 +1,10 @@
-100	100000
-finished query: one controller per worker, dropped at the end: 1
-killed query: tasks ended after the kill	1	succeeded	0
+-- finished: a query with persisted exchanges runs its tasks in three waves, keeps one query controller for all of them and
+-- drops it at its end (both worker addresses of the test cluster are this server, so one controller); the result equals local.
+┌─tasks─┬─workers─┬─controllers_created─┬─controllers_dropped─┬─result_same─┐
+│     5 │       2 │                   1 │                   1 │           1 │
+└───────┴─────────┴─────────────────────┴─────────────────────┴─────────────┘
+-- killed: the kill ends the query's tasks (some readers end on their own before it, so only that some end after it is
+-- shown), none of the tasks that end after the kill reports a success, and the query controller is dropped.
+┌─tasks─┬─workers─┬─tasks_ended_after_kill─┬─succeeded_after_kill─┬─controllers_created─┬─controllers_dropped─┐
+│     7 │       2 │                      1 │                    0 │                   1 │                   1 │
+└───────┴─────────┴────────────────────────┴──────────────────────┴─────────────────────┴─────────────────────┘
