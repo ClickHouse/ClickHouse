@@ -30,9 +30,9 @@ public:
     [[nodiscard]] TableExpressionModifiers getTableExpressionModifiers() const { return table_expression_modifiers; }
     [[nodiscard]] bool useParallelReplicas() const { return use_parallel_replicas; }
     bool & useParallelReplicas() { return use_parallel_replicas; }
-    PrewhereInfoPtr getPrewhereInfo() const { return prewhere_info; }
-    FilterDAGInfoPtr getRowLevelFilter() const { return row_level_filter; }
-    const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & getNodeNameToInputNodeColumn() const { return node_name_to_input_node_column; }
+    [[nodiscard]] PrewhereInfoPtr getPrewhereInfo() const { return prewhere_info; }
+    [[nodiscard]] FilterDAGInfoPtr getRowLevelFilter() const { return row_level_filter; }
+    [[nodiscard]] const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & getNodeNameToInputNodeColumn() const { return node_name_to_input_node_column; }
 
     [[nodiscard]] QueryPlanStepPtr clone() const override;
 private:

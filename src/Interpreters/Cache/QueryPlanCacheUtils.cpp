@@ -276,7 +276,7 @@ public:
         }
     }
 
-    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &) const
+    [[nodiscard]] bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &) const
     {
         return !has_non_deterministic_functions;
     }
