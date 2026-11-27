@@ -9,7 +9,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -401,23 +400,15 @@ void optimizeTreeSecondPass(
         && optimization_settings.lazy_materialization_for_join && !optimization_settings.make_distributed_plan;
     const bool can_apply_join_lazy_materialization
         = join_lazy_materialization_enabled && !optimization_settings.enable_parallel_replicas;
-    /// The automatic parallel replicas probe may have parallel replicas enabled when its
-    /// single-node plan does not. Keep both plans on the same build-side cost model under LIMIT.
-    const bool preserve_build_side_for_lazy_materialization = join_lazy_materialization_enabled
-        && (!optimization_settings.enable_parallel_replicas || optimization_settings.find_single_node_read);
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
             /// Lazy materialization can remove output-only columns after join reordering.
             /// Keep row-based build-side selection beneath a LIMIT eligible for that pass.
-            const bool under_lazy_limit = preserve_build_side_for_lazy_materialization
-                && std::ranges::any_of(stack, [&](const auto & frame)
-                {
-                    const auto * limit = typeid_cast<const LimitStep *>(frame.node->step.get());
-                    const auto max_limit = optimization_settings.max_limit_for_lazy_materialization;
-                    return limit && !limit->withTies() && limit->getLimit() != 0
-                        && (max_limit == 0 || limit->getLimit() <= max_limit);
-                });
+            const bool under_lazy_limit = std::ranges::any_of(stack, [&](const auto & frame)
+            {
+                return shouldPreserveJoinBuildSideForLazyMaterialization(*frame.node, optimization_settings);
+            });
             optimizeJoinLogical(frame_node, nodes, optimization_settings, !under_lazy_limit);
             optimizeJoinLegacy(frame_node, nodes, optimization_settings);
             useMemoryBufferForCommonSubplanResult(frame_node, optimization_settings);

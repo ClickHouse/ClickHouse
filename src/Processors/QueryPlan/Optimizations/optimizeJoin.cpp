@@ -26,6 +26,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
@@ -573,6 +574,20 @@ static bool canFlattenThroughExpression(const ActionsDAG & dag, bool merge_expre
     return canMergeExpressionIntoJoinGraph(dag, merge_expression_into_join);
 }
 
+bool shouldPreserveJoinBuildSideForLazyMaterialization(
+    const QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings)
+{
+    /// The automatic parallel replicas probe must use the same cost model as its single-node plan.
+    if (!settings.optimize_lazy_materialization || !settings.lazy_materialization_for_join || settings.make_distributed_plan
+        || (settings.enable_parallel_replicas && !settings.find_single_node_read))
+        return false;
+
+    const auto * limit = typeid_cast<const LimitStep *>(node.step.get());
+    const auto max_limit = settings.max_limit_for_lazy_materialization;
+    return limit && !limit->withTies() && limit->getLimit() != 0
+        && (max_limit == 0 || limit->getLimit() <= max_limit);
+}
+
 static size_t addChildQueryGraph(
     QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit,
     bool below_null_supplying)
@@ -636,15 +651,19 @@ static size_t addChildQueryGraph(
     /// those child Join to get proper statistics to use in the parent Join reordering.
     {
         auto * child_node = node;
+        bool allow_input_width_estimation = graph.context->allow_input_width_estimation;
         while (child_node->children.size() == 1)
         {
+            /// This child can be optimized before the outer traversal visits its enclosing LIMIT.
+            if (shouldPreserveJoinBuildSideForLazyMaterialization(*child_node, graph.context->optimization_settings))
+                allow_input_width_estimation = false;
             child_node = child_node->children[0];
         }
 
         auto * child_join_step = typeid_cast<JoinStepLogical *>(child_node->step.get());
         if (child_join_step && !child_join_step->isOptimized())
         {
-            optimizeJoinLogicalImpl(child_join_step, *child_node, nodes, graph.context->optimization_settings, graph.context->allow_input_width_estimation);
+            optimizeJoinLogicalImpl(child_join_step, *child_node, nodes, graph.context->optimization_settings, allow_input_width_estimation);
         }
     }
 
