@@ -12,7 +12,8 @@ SET flatten_nested = 1;
 SELECT '{{ format }}';
 INSERT INTO FUNCTION file({{ path }}) SELECT
     number AS id,
-    if(number = 0, [(1, tuple(11), [tuple(5), tuple(6)]), (2, tuple(12), [])], [])::Array(Tuple(p Int32, s Tuple(a Int32), l Array(Tuple(c Int32)))) AS n
+    if(number = 0, [(1, tuple(11), [tuple(5), tuple(6)], [[tuple(7), tuple(8)], []]), (2, tuple(12), [], [])], [])::Array(Tuple(p Int32, s Tuple(a Int32), l Array(Tuple(c Int32)), m Array(Array(Tuple(c Int32))))) AS n,
+    if(number = 0, [[tuple(5), tuple(6)], []], [])::Array(Array(Tuple(c Int32))) AS ll
 FROM numbers(2);
 
 SELECT 'alone', id, n.q FROM file({{ path }}, 'id UInt64, n Nested(p Int32, q Nullable(Int32))') ORDER BY id;
@@ -20,6 +21,9 @@ SELECT 'beside one', id, n.p, n.q FROM file({{ path }}, 'id UInt64, n Nested(p I
 SELECT 'array join', id, n.p, n.q FROM file({{ path }}, 'id UInt64, n Nested(p Int32, q Nullable(Int32))') ARRAY JOIN n ORDER BY id, n.p;
 SELECT 'through a tuple', id, `n.s.a`, `n.s.b` FROM file({{ path }}, 'id UInt64, `n.s.a` Array(Int32), `n.s.b` Array(Nullable(Int32))') ORDER BY id;
 SELECT 'through an inner array', id, `n.l.d` FROM file({{ path }}, 'id UInt64, `n.l.d` Array(Array(Nullable(Int32)))') ORDER BY id;
+SELECT 'list of lists, alone', id, `ll.d` FROM file({{ path }}, 'id UInt64, `ll.d` Array(Array(Nullable(Int32)))') ORDER BY id;
+SELECT 'list of lists', id, `ll.c`, `ll.d` FROM file({{ path }}, 'id UInt64, `ll.c` Array(Array(Int32)), `ll.d` Array(Array(Nullable(Int32)))') ORDER BY id;
+SELECT 'list of lists in a member', id, `n.m.c`, `n.m.d` FROM file({{ path }}, 'id UInt64, `n.m.c` Array(Array(Array(Int32))), `n.m.d` Array(Array(Array(Nullable(Int32))))') ORDER BY id;
 SELECT 'default', id, `n.p`, `n.q` FROM file({{ path }}, 'id UInt64, `n.p` Array(Int32), `n.q` Array(Int32) DEFAULT arrayMap(x -> x * 10, `n.p`)') ORDER BY id SETTINGS input_format_defaults_for_omitted_fields = 1;
 SELECT 'alone, default', id, `n.q` FROM file({{ path }}, 'id UInt64, `n.q` Array(Int32) DEFAULT [7]') ORDER BY id SETTINGS input_format_defaults_for_omitted_fields = 1;
 SELECT 'through a tuple, alone, default', id, `n.s.b` FROM file({{ path }}, 'id UInt64, `n.s.b` Array(Int32) DEFAULT [7]') ORDER BY id SETTINGS input_format_defaults_for_omitted_fields = 1;

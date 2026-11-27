@@ -1188,6 +1188,11 @@ static const ORC::Type * traverseDownORCTypeByName(
         /// In this case, we should skip possible array type and traverse down to its nested struct type.
         const auto * array_type = typeid_cast<const DataTypeArray *>(removeNullable(type).get());
         const auto * orc_nested_type = orc_type->getSubtype(0);
+        if (array_type && ORC::LIST == orc_nested_type->getKind())
+        {
+            type = array_type->getNestedType();
+            return traverseDownORCTypeByName(target, orc_nested_type, type, ignore_case, ambiguous, list_element);
+        }
         if (array_type && ORC::STRUCT == orc_nested_type->getKind())
         {
             if (list_element)
