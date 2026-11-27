@@ -1747,9 +1747,8 @@ static bool hasInputNamedLikeExpression(const ActionsDAG & dag)
     return std::ranges::any_of(dag.getInputs(), [](const auto * input) { return input->result_name.contains('('); });
 }
 
-/// Index analysis finds the nodes of a key by name, and a stored column can have the name of an expression.
-/// This makes a copy of the filter where a node that is named like a key node of the other kind is a column that
-/// the key does not read: an expression named like a column of the key, and a column named like a node that the key computes.
+/// See `resolveKeyNameCollisions`. The nodes of the other kind are: an expression named like a column that the key reads,
+/// and a column named like a node that the key computes.
 struct KeyNameCollisionResolver
 {
     struct KeyNames
@@ -1872,6 +1871,19 @@ struct KeyNameCollisionResolver
     }
 };
 
+std::optional<ActionsDAG> resolveKeyNameCollisions(
+    const ActionsDAG::Node & predicate, const ActionsDAG * filter_dag, const ActionsDAG & key_dag, const ContextPtr & context)
+{
+    if (!hasInputNamedLikeExpression(key_dag) && !(filter_dag && hasInputNamedLikeExpression(*filter_dag)))
+        return {};
+
+    const KeyNameCollisionResolver::KeyNames key_names(key_dag);
+    KeyNameCollisionResolver resolver(key_names, context);
+    const auto & resolved_predicate = resolver.copy(predicate);
+    resolver.dag.getOutputs().push_back(&resolved_predicate);
+    return std::move(resolver.dag);
+}
+
 void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
 {
     /// So far the only supported function is mortonEncode and hilbertEncode (Morton and Hilbert curves).
@@ -1984,11 +1996,8 @@ KeyCondition::KeyCondition(
 
     has_filter = true;
 
-    const auto * predicate = filter_dag.predicate;
-    std::optional<KeyNameCollisionResolver::KeyNames> key_names;
-    std::optional<KeyNameCollisionResolver> name_collision_resolver;
-    if (hasInputNamedLikeExpression(key_expr_->getActionsDAG()) || hasInputNamedLikeExpression(*filter_dag.dag))
-        predicate = &name_collision_resolver.emplace(key_names.emplace(key_expr_->getActionsDAG()), context).copy(*predicate);
+    const auto resolved_filter = resolveKeyNameCollisions(*filter_dag.predicate, &*filter_dag.dag, key_expr_->getActionsDAG(), context);
+    const auto * predicate = resolved_filter ? resolved_filter->getOutputs().front() : filter_dag.predicate;
 
     RPNBuilder<RPNElement> builder(predicate, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
     {

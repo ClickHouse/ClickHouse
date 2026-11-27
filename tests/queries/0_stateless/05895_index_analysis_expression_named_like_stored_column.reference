@@ -1,0 +1,18 @@
+primary key	1
+primary key, the column	1
+primary key, indexHint	1
+primary key, nested	1
+mutation	0
+partition key	1
+projection key	1
+minmax	1
+set	1
+set on a function	1
+bloom_filter	1
+tokenbf_v1	1
+ngrambf_v1	1
+text	1
+all indexes, the column	1
+lambda	1
+ARRAY JOIN	1
+arrayJoin	1

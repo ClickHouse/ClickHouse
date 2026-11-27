@@ -48,6 +48,13 @@ struct ActionsDAGWithInversionPushDown
 };
 
 
+/// Index analysis finds the nodes of a key by name, and a stored column can have the name of an expression.
+/// Returns the filter for the analysis of the key `key_dag`: a copy where a node that is named like a key node of the
+/// other kind is a column that the key does not read. Its only output is the predicate. Returns nullopt if no such node
+/// is possible. `filter_dag` is the DAG of the predicate, if the caller has it.
+std::optional<ActionsDAG> resolveKeyNameCollisions(
+    const ActionsDAG::Node & predicate, const ActionsDAG * filter_dag, const ActionsDAG & key_dag, const ContextPtr & context);
+
 struct DeterministicKeyTransformDag
 {
     ExpressionActionsPtr actions;

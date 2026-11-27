@@ -6,6 +6,7 @@
 #include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
 #include <Functions/Regexps.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
 #include <Core/Defines.h>
@@ -1054,6 +1055,10 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilterText::createIndexAggregator
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const
 {
+    std::optional<ActionsDAG> resolved_filter;
+    if (predicate && (resolved_filter = resolveKeyNameCollisions(*predicate, nullptr, index.expression->getActionsDAG(), context)))
+        predicate = resolved_filter->getOutputs().front();
+
     return std::make_shared<MergeTreeConditionBloomFilterText>(
         predicate, context, index.sample_block, params, tokenizer.get(), getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression));
 }

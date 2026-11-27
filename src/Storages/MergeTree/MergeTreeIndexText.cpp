@@ -24,6 +24,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
@@ -2557,6 +2558,10 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
 
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
+    std::optional<ActionsDAG> resolved_filter;
+    if (predicate && (resolved_filter = resolveKeyNameCollisions(*predicate, nullptr, index.expression->getActionsDAG(), context)))
+        predicate = resolved_filter->getOutputs().front();
+
     return std::make_shared<MergeTreeIndexConditionText>(
         predicate, context, index.sample_block, normalized_index_column_name, tokenizer.get(),
         preprocessor, postprocessor, params.enable_positions, getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression),
