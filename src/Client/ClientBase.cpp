@@ -7532,6 +7532,16 @@ void ClientBase::runInteractive()
         const String text = trim(question, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
         return std::ranges::find(repeat_last_input_aliases, text) != repeat_last_input_aliases.end();
     };
+
+    /// A line of the AI-chat forms that is a `/`-command and not a question: `processAIChat` runs
+    /// it as the command itself, without the model. Returns the command as it is run, or nothing.
+    const auto slash_command_of_ai_question = [](const String & question) -> std::optional<String>
+    {
+        String text = trim(question, [](char c) { return isWhitespaceASCII(c); });
+        if (isClientSlashCommand(trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
+            return text;
+        return {};
+    };
 #endif
 
     String last_input;
@@ -7565,8 +7575,8 @@ void ClientBase::runInteractive()
         /// agent, not SQL - route it directly, bypassing the SQL conveniences below.
         if (lr->inAIMode())
         {
-            /// `last_input` is not updated: it feeds the `.` / `/` repeat aliases of the SQL
-            /// mode, which must keep repeating the last SQL query, not an AI question.
+            /// `last_input` is not updated by a question: it feeds the `.` / `/` repeat aliases
+            /// of the SQL mode, which must keep repeating the last SQL query, not an AI question.
             try
             {
                 /// A lone repeat alias is not a question: it repeats the last SQL query, like in
@@ -7577,7 +7587,14 @@ void ClientBase::runInteractive()
                         break;
                 }
                 else
+                {
                     processAIChat(input);
+                    /// A `/`-command typed here ran as the command itself, so it is what the
+                    /// aliases repeat next, like after a `/`-command of the SQL mode. Otherwise a
+                    /// `/` after it would run an older SQL query again.
+                    if (auto command = slash_command_of_ai_question(input))
+                        last_input = std::move(*command);
+                }
             }
             catch (const Exception & e)
             {
@@ -7668,10 +7685,13 @@ void ClientBase::runInteractive()
             if (!processQueryText(input))
                 break;
 #if USE_CLIENT_AI
-            /// Like the AI-mode branch above: the inline `? ...` AI commands must not feed the
-            /// `.` / `/` repeat aliases, which repeat the last SQL query, not an AI question.
-            const bool is_inline_ai_command = trim(input, [](char c) { return isWhitespaceASCII(c); }).starts_with("?");
-            if (!is_inline_ai_command)
+            /// Like the AI-mode branch above: the inline `? ...` questions must not feed the
+            /// `.` / `/` repeat aliases, which repeat the last SQL query, not an AI question. An
+            /// inline `? /command` is not a question: it ran as the command, and is repeated.
+            const String trimmed_input = trim(input, [](char c) { return isWhitespaceASCII(c); });
+            const bool is_inline_ai_question
+                = trimmed_input.starts_with("?") && !slash_command_of_ai_question(trimmed_input.substr(1));
+            if (!is_inline_ai_question)
                 last_input = input;
 #else
             last_input = input;

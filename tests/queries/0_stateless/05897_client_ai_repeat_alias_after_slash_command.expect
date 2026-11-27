@@ -1,0 +1,83 @@
+#!/usr/bin/expect -f
+# Tags: no-fasttest
+# no-fasttest: the AI agent of the client is not compiled in the fast test build.
+
+# A `/`-command typed in the AI-chat mode is not a question: it runs as the command itself. So it
+# is also what a repeat alias (`/` or `.`) repeats next, like after a `/`-command of the SQL mode,
+# and not the SQL query that was run before it. No AI provider is configured here, so a line that
+# reached the agent would be answered with a complaint about the provider instead.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+expect_after {
+    -i $any_spawn_id eof     { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; unset OPENAI_API_KEY ANTHROPIC_API_KEY ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+send -- "SELECT 'repeated' || 'result'"
+expect -ex "result'"
+send -- "\r"
+expect "repeatedresult"
+expect ":) "
+
+# A leading `?` switches the line editor into the AI-chat mode instead of being inserted.
+# (`-ex`: a `?` in a glob pattern would match any character.)
+send -- "?"
+expect -ex ":?"
+send -- "/dialect"
+expect -ex "/dialect"
+send -- "\r"
+expect {
+    "not available" { exit 1 }
+    "Current dialect: clickhouse" {}
+}
+expect -ex ":?"
+
+# The alias repeats the command, and not the query that was run before it.
+send -- "/"
+expect -ex "/"
+send -- "\r"
+expect {
+    "not available" { exit 1 }
+    "repeatedresult" { exit 1 }
+    "Current dialect: clickhouse" {}
+}
+expect -ex ":?"
+
+# So does the other alias, with the surrounding whitespace and the trailing `;` it allows.
+send -- " . ;"
+expect -ex ";"
+send -- "\r"
+expect {
+    "not available" { exit 1 }
+    "repeatedresult" { exit 1 }
+    "Current dialect: clickhouse" {}
+}
+expect -ex ":?"
+
+# Quit: `Ctrl-C` abandons the line, and `Ctrl-D` then exits from the empty prompt it redraws (the
+# echo of the `^C` separates that prompt from the earlier ones).
+send -- "\3"
+expect {
+    eof      {}
+    -ex "^C" {
+        expect {
+            eof          {}
+            -re {:[)?]}  { send -- "\4" ; expect eof }
+        }
+    }
+}
