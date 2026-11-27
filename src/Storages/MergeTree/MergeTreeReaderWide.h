@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/StreamWithSizeHint.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 namespace DB
@@ -114,7 +115,7 @@ private:
         mutable std::mutex mutex;
         std::map<String, std::unique_ptr<MergeTreeReaderStream>> streams;
         std::unordered_set<String> prefetched;
-        std::unordered_map<String, RangesRead> ranges_read TSA_GUARDED_BY(mutex);
+        UnorderedMapWithMemoryTracking<String, RangesRead> ranges_read TSA_GUARDED_BY(mutex);
         bool count_ranges TSA_GUARDED_BY(mutex) = false;
     };
 
