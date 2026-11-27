@@ -388,112 +388,11 @@ namespace
         return makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags), make_intrusive<ASTLiteral>(tag_name));
     }
 
-    /// Makes a regular expression of a PromQL matcher match only whole values, as Prometheus does.
-    /// Prometheus wraps the regex as `^(?:...)$`, but here the group is added only when the regex has an alternation
-    /// or an inline multiline flag at the top level: a leading group stops `extractFixedPrefixFromRegularExpression`,
-    /// so `{__name__=~"node_.*"}` or `{__name__=~"^(node_foo|node_bar)$"}` would lose the primary key on `metric_name`.
-    String anchorRegex(const String & regex)
-    {
-        size_t depth = 0;
-        bool in_class = false;
-        bool in_quote = false;
-        bool top_level_alternation = false;
-        bool top_level_multiline = false;
-        bool ends_with_anchor = false;
-        for (size_t pos = 0; pos < regex.size(); ++pos)
-        {
-            char c = regex[pos];
-            ends_with_anchor = false;
-            if (in_quote)
-            {
-                /// Everything after `\Q` is literal up to `\E` or the end of the regex.
-                if (c == '\\' && pos + 1 < regex.size() && regex[pos + 1] == 'E')
-                {
-                    in_quote = false;
-                    ++pos;
-                }
-            }
-            else if (c == '\\')
-            {
-                if (pos + 1 < regex.size() && regex[pos + 1] == 'Q')
-                    in_quote = true;
-                ++pos;
-            }
-            else if (in_class)
-            {
-                if (c == ']')
-                    in_class = false;
-                else if (c == '[' && pos + 1 < regex.size() && regex[pos + 1] == ':')
-                {
-                    /// A POSIX named class such as `[:alpha:]` is a part of the enclosing class, its `]` does not close it.
-                    /// RE2 treats `[:` without a following `:]` as literal characters.
-                    if (size_t end_of_named_class = regex.find(":]", pos + 2); end_of_named_class != String::npos)
-                        pos = end_of_named_class + 1;
-                }
-            }
-            else if (c == '[')
-            {
-                in_class = true;
-                /// A `]` right after `[` or `[^` is literal.
-                if (pos + 1 < regex.size() && regex[pos + 1] == '^')
-                    ++pos;
-                if (pos + 1 < regex.size() && regex[pos + 1] == ']')
-                    ++pos;
-            }
-            else if (c == '(')
-            {
-                /// An inline flag group like `(?m)` at the top level would also apply to the `$` appended after the regex,
-                /// and in the multiline mode `$` matches before every newline, so the regex must be wrapped into a group.
-                if (depth == 0 && pos + 1 < regex.size() && regex[pos + 1] == '?')
-                {
-                    bool negated = false;
-                    bool multiline = false;
-                    size_t flag_pos = pos + 2;
-                    for (; flag_pos < regex.size(); ++flag_pos)
-                    {
-                        char flag = regex[flag_pos];
-                        if (flag == '-')
-                            negated = true;
-                        else if (flag == 'm')
-                            multiline = !negated;
-                        else if (flag != 'i' && flag != 's' && flag != 'U')
-                            break;
-                    }
-                    if (multiline && flag_pos < regex.size() && regex[flag_pos] == ')')
-                        top_level_multiline = true;
-                }
-                ++depth;
-            }
-            else if (c == ')')
-            {
-                if (depth > 0)
-                    --depth;
-            }
-            else if (c == '|' && depth == 0)
-                top_level_alternation = true;
-            else if (c == '$')
-                ends_with_anchor = true;
-        }
-
-        String res = regex;
-        /// A quote can extend to the end of the regex, and it must not swallow the anchor or the group added after it.
-        if (in_quote)
-            res += "\\E";
-
-        if (top_level_alternation || top_level_multiline)
-            return "^(?:" + res + ")$";
-
-        if (!res.starts_with('^'))
-            res = '^' + res;
-        if (!ends_with_anchor)
-            res += '$';
-        return res;
-    }
 
     ASTPtr matcherToAST(const PrometheusQueryTree::Matcher & matcher, const std::unordered_map<String, String> & column_name_by_tag_name)
     {
         std::string_view function_name;
-        bool add_anchors = false;
+        bool is_regexp = false;
         bool add_not = false;
 
         auto matcher_type = matcher.matcher_type;
@@ -501,14 +400,16 @@ namespace
         {
             case PrometheusQueryTree::MatcherType::EQ:  function_name = "equals"; break;
             case PrometheusQueryTree::MatcherType::NE:  function_name = "notEquals"; break;
-            case PrometheusQueryTree::MatcherType::RE:  function_name = "match"; add_anchors = true; break;
-            case PrometheusQueryTree::MatcherType::NRE: function_name = "match"; add_anchors = true; add_not = true; break;
+            /// A regular expression of a PromQL matcher must match only whole values, as in Prometheus,
+            /// which is what `fullMatch` does.
+            case PrometheusQueryTree::MatcherType::RE:  function_name = "fullMatch"; is_regexp = true; break;
+            case PrometheusQueryTree::MatcherType::NRE: function_name = "fullMatch"; is_regexp = true; add_not = true; break;
         }
 
         String value = matcher.label_value;
-        if (add_anchors)
+        if (is_regexp)
         {
-            /// `IN` matches exactly what the fully anchored regex matches, and the primary key can filter by it.
+            /// `IN` matches exactly what the whole-value regex matches, and the primary key can filter by it.
             if (auto terms = tryGetLiteralAlternatives(value))
             {
                 /// A single term is an equality, which the text index on tags can serve too.
@@ -522,8 +423,6 @@ namespace
                 return makeASTFunction(add_not ? "notIn" : "in",
                     tagNameToAST(matcher.label_name, column_name_by_tag_name), makeASTFunction("tuple", std::move(literals)));
             }
-
-            value = anchorRegex(value);
         }
         ASTPtr res = makeASTFunction(function_name, tagNameToAST(matcher.label_name, column_name_by_tag_name), make_intrusive<ASTLiteral>(value));
         if (add_not)

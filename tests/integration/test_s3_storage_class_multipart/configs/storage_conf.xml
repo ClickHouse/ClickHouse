@@ -18,6 +18,7 @@
                 <!-- The endpoint is the recording mock, which is only started after the server is up,
                      so the startup access check cannot reach it yet. -->
                 <skip_access_check>true</skip_access_check>
+                <persistent_removal_log>true</persistent_removal_log>
             </s3_intelligent_tiering>
         </disks>
         <policies>

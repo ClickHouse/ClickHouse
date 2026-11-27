@@ -53,6 +53,18 @@ Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd
 
 启用将输出中的 LowCardinality 类型表示为 Dictionary Arrow 类型
 
+## output_format_arrow_max_record_batch_size_bytes {#output_format_arrow_max_record_batch_size_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="2147483646" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "2147483646"},{"label": "新增设置，用于限制 `Arrow` 和 `ArrowStream` 输出中单个记录批次的大小。默认值即 Arrow 自身的寻址上限，因此不会改变现有行为。"}]}]} />
+
+`Arrow` 和 `ArrowStream` 输出格式中单个记录批次的 `Utf8`、`Binary` 和 `List` 缓冲区的上界，同样适用于 `Vortex` 输出格式写入时所依据的 Arrow 记录批次。如果某个块中的字符串、二进制值或列表元素超过该值，该块将被拆分为多个记录批次写入。
+
+[output&#95;format&#95;arrow&#95;record&#95;batch&#95;size&#95;bytes](/zh/reference/settings/formats/output-format#output_format_arrow_record_batch_size_bytes) 是用于合并小块的目标值，而此设置则是用于拆分大块的上限。默认值是 Arrow 能够寻址的最大值，因为 Arrow 使用 32 位整数表示这些缓冲区的偏移量；设置更大的值不会产生任何效果。
+
+只有上述缓冲区会受到限制：定宽类型的列不存在偏移量溢出的问题，因此始终保留在同一个批次中。单行数据同样不会被拆分，因此超过该限制的行仍会生成一个超出限制的批次。
+
 ## output_format_arrow_record_batch_size {#output_format_arrow_record_batch_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -141,9 +153,18 @@ Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd
 
 在 Arrow 格式中对字典索引使用有符号整数
 
+## output_format_arrow_uuid_as_fixed_byte_array {#output_format_arrow_uuid_as_fixed_byte_array}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置，用于将 UUID 写为普通的 FixedSizeBinary(16)，不附带 `arrow.uuid` 扩展类型。"}]}]} />
+
+将 `UUID` 值写为普通的 Arrow `FixedSizeBinary(16)`，字段元数据中不附带 `arrow.uuid` 扩展类型。
+适用于不支持 `arrow.uuid` 扩展类型的 Arrow 读取器。
+
 ## output_format_avro_codec {#output_format_avro_codec}
 
-用于输出的压缩编解码器。可选值：&#39;null&#39;、&#39;deflate&#39;、&#39;snappy&#39;、&#39;zstd&#39;。
+用于输出的压缩编解码器。可选值：&#39;null&#39;、&#39;deflate&#39;、&#39;snappy&#39;、&#39;zstd&#39;、&#39;bzip2&#39;、&#39;xz&#39;。
 
 ## output_format_avro_confluent_subject {#output_format_avro_confluent_subject}
 
@@ -1202,6 +1223,14 @@ SQLite 输出中使用的表名
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "如果为 true，则将 ' 转义为 ''；否则使用 \\' 进行转义"}]}]} />
 
 如果为 true，则将 &#39; 转义为 &#39;&#39;；否则使用 \&#39; 进行转义
+
+## output_format_vortex_string_as_string {#output_format_vortex_string_as_string}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新增设置，用于将 `Vortex` 格式的 `String` 列写为 `Utf8`，与 `Binary` 相比，Vortex 对 `Utf8` 的压缩效果更好。"}]}]} />
+
+将 `Vortex` 格式的 `String` 列写为 `Utf8`，而非 `Binary`。Vortex 对 `Utf8` 的压缩效果更好。`Utf8` 值必须是有效的 UTF-8，但 Vortex 写入器不会对此进行校验，因此 ClickHouse 会检查每个值，一旦发现无效的 UTF-8 值即抛出异常；如需将此类数据写为 `Binary`，请禁用此设置。`FixedString` 列始终写为 `Binary`。这两种类型读回时均为 `String`。
 
 ## output_format_write_statistics {#output_format_write_statistics}
 

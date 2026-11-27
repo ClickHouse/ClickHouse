@@ -77,7 +77,7 @@ gh_retry() {
       if [ "$wait_s" -gt 900 ]; then wait_s=900; fi
       echo "good-prs: GraphQL rate limit reached, waiting ${wait_s}s for the window to reset (attempt $attempt/$GH_RETRIES)" >&2
       sleep "$wait_s"
-    elif grep -qiE 'HTTP (408|429|5[0-9][0-9])|Service Unavailable|Bad Gateway|Gateway Time-?out|couldn.t respond|timed out|connection reset|unexpected EOF|TLS handshake' "$errfile"; then
+    elif grep -qiE 'HTTP (408|429|5[0-9][0-9])|Service Unavailable|Bad Gateway|Gateway Time-?out|couldn.t respond|Something went wrong while executing your query|timed out|connection reset|unexpected EOF|TLS handshake' "$errfile"; then
       sleep "$delay"; delay=$(( delay * 2 ))
     else
       return 1   # permanent error: no point burning attempts on it

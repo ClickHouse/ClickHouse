@@ -1,8 +1,8 @@
 ---
 slug: /intro
-sidebarTitle: 'Qu’est-ce que ClickHouse ?'
+sidebarTitle: 'Qu’est-ce que ClickHouse ?'
 description: 'ClickHouse® est un système de gestion de base de données SQL orienté colonnes (SGBD) pour le traitement analytique en ligne (OLAP). Il est disponible à la fois en tant que logiciel open source et en tant qu’offre Cloud.'
-title: 'Qu’est-ce que ClickHouse ?'
+title: 'Qu’est-ce que ClickHouse ?'
 keywords: ['ClickHouse', 'base de données en colonnes', 'base de données OLAP', 'base de données analytique', 'base de données haute performance']
 doc_type: 'guide'
 ---
@@ -10,7 +10,7 @@ doc_type: 'guide'
 ClickHouse® est un système de gestion de base de données (SGBD) SQL haute performance orienté colonnes pour le traitement analytique en ligne (OLAP). Il est disponible à la fois en tant que [logiciel open source](https://github.com/ClickHouse/ClickHouse) et sous forme d’[offre Cloud](https://clickhouse.com/cloud).
 
 <div id="what-are-analytics">
-  ## Qu’est-ce que l’analytique ?
+  ## Qu’est-ce que l’analytique ? {#what-are-analytics}
 </div>
 
 L’analytique, également appelée OLAP (Online Analytical Processing), désigne des requêtes SQL comportant des calculs complexes (par exemple, des agrégations, du traitement de chaînes de caractères ou des calculs arithmétiques) sur de très grands volumes de données.
@@ -19,11 +19,9 @@ Contrairement aux requêtes transactionnelles (ou OLTP, Online Transaction Proce
 
 Dans de nombreux cas d’usage, les [requêtes analytiques doivent être « en temps réel »](https://clickhouse.com/engineering-resources/what-is-real-time-analytics), c’est-à-dire renvoyer un résultat en moins d’une seconde.
 
-<div id="row-oriented-vs-column-oriented-storage">
-  ## Stockage orienté lignes ou orienté colonnes
-</div>
+## Stockage orienté lignes ou orienté colonnes {#row-oriented-vs-column-oriented-storage}
 
-Un tel niveau de performance ne peut être atteint qu’avec la bonne « orientation » des données.
+Un tel niveau de performance ne peut être atteint qu’avec la bonne « orientation » des données.
 
 Les bases de données stockent les données soit [en lignes, soit en colonnes](https://clickhouse.com/engineering-resources/what-is-columnar-database).
 
@@ -31,7 +29,7 @@ Dans une base de données orientée lignes, les lignes successives d’une table
 
 ClickHouse est une base de données orientée colonnes. Dans ce type de système, les tables sont stockées sous forme de collection de colonnes, c’est-à-dire que les valeurs de chaque colonne sont stockées séquentiellement les unes à la suite des autres. Cette disposition rend plus difficile la reconstitution de lignes individuelles (car il existe désormais des écarts entre les valeurs d’une même ligne), mais les opérations sur les colonnes, comme les filtres ou l’agrégation, deviennent bien plus rapides que dans une base de données orientée lignes.
 
-La différence s’illustre le mieux avec un exemple de requête exécutée sur 100 millions de lignes de [données réelles anonymisées d’analyse du trafic web](/fr/get-started/sample-datasets/anon-web-analytics-metrica) :
+La différence s’illustre le mieux avec un exemple de requête exécutée sur 100 millions de lignes de [données réelles anonymisées d’analyse du trafic web](/fr/get-started/sample-datasets/anon-web-analytics-metrica) :
 
 ```sql
 SELECT MobilePhoneModel, count() AS c
@@ -47,81 +45,69 @@ ORDER BY c DESC
 LIMIT 8;
 ```
 
-Vous pouvez [exécuter cette requête dans le ClickHouse SQL Playground](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs\&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ\&run_query=true) qui sélectionne et filtre [quelques-unes seulement parmi plus de 100](https://sql.clickhouse.com/?query=U0VMRUNUIG5hbWUKRlJPTSBzeXN0ZW0uY29sdW1ucwpXSEVSRSBkYXRhYmFzZSA9ICdtZXRyaWNhJyBBTkQgdGFibGUgPSAnaGl0cyc7\&tab=results\&run_query=true) colonnes existantes, et renvoie le résultat en quelques millisecondes :
+Vous pouvez [exécuter cette requête dans le ClickHouse SQL Playground](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs\&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ\&run_query=true) qui sélectionne et filtre [quelques-unes seulement parmi plus de 100](https://sql.clickhouse.com/?query=U0VMRUNUIG5hbWUKRlJPTSBzeXN0ZW0uY29sdW1ucwpXSEVSRSBkYXRhYmFzZSA9ICdtZXRyaWNhJyBBTkQgdGFibGUgPSAnaGl0cyc7\&tab=results\&run_query=true) colonnes existantes, et renvoie le résultat en quelques millisecondes :
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Exemple de requête dans une base de données orientée colonnes](/images/column-oriented-example-query.webp)
-
-</Frame>
-
+  <Frame>
+    ![Exemple de requête dans une base de données orientée colonnes](/images/column-oriented-example-query.webp)
+  </Frame>
 </div>
 
-Comme vous pouvez le voir dans la section des statistiques du schéma ci-dessus, la requête a traité 100 millions de lignes en 92 millisecondes, soit un débit de plus d’un milliard de lignes par seconde, ou un peu moins de 7 Go de données transférées par seconde.
+Comme vous pouvez le voir dans la section des statistiques du schéma ci-dessus, la requête a traité 100 millions de lignes en 92 millisecondes, soit un débit de plus d’un milliard de lignes par seconde, ou un peu moins de 7 Go de données transférées par seconde.
 
 **SGBD orienté lignes**
 
-Dans une base de données orientée lignes, même si la requête ci-dessus ne traite que quelques-unes des colonnes existantes, le système doit tout de même charger du disque vers la mémoire les données d’autres colonnes. Cela s’explique par le fait que les données sont stockées sur le disque en fragments appelés [blocs](https://en.wikipedia.org/wiki/Block_\(data_storage\)) (généralement de taille fixe, par exemple 4 Ko ou 8 Ko). Les blocs sont les plus petites unités de données lues du disque vers la mémoire. Lorsqu’une application ou une base de données demande des données, le sous-système d’E/S disque du système d’exploitation lit les blocs nécessaires sur le disque. Même si seule une partie d’un bloc est nécessaire, le bloc entier est chargé en mémoire (en raison de la conception du disque et du système de fichiers) :
+Dans une base de données orientée lignes, même si la requête ci-dessus ne traite que quelques-unes des colonnes existantes, le système doit tout de même charger du disque vers la mémoire les données d’autres colonnes. Cela s’explique par le fait que les données sont stockées sur le disque en fragments appelés [blocs](https://en.wikipedia.org/wiki/Block_\(data_storage\)) (généralement de taille fixe, par exemple 4 Ko ou 8 Ko). Les blocs sont les plus petites unités de données lues du disque vers la mémoire. Lorsqu’une application ou une base de données demande des données, le sous-système d’E/S disque du système d’exploitation lit les blocs nécessaires sur le disque. Même si seule une partie d’un bloc est nécessaire, le bloc entier est chargé en mémoire (en raison de la conception du disque et du système de fichiers) :
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Structure de base de données orientée lignes](/images/row-oriented.webp)
-
-</Frame>
-
+  <Frame>
+    ![Structure de base de données orientée lignes](/images/row-oriented.webp)
+  </Frame>
 </div>
 
 **SGBD orienté colonnes**
 
 Comme les valeurs de chaque colonne sont stockées séquentiellement, les unes à la suite des autres sur le disque, aucune donnée inutile n&#39;est chargée lorsque la requête ci-dessus est exécutée.
-Comme le stockage et le transfert par blocs du disque vers la mémoire sont alignés sur le mode d&#39;accès aux données des requêtes analytiques, seules les colonnes nécessaires à une requête sont lues sur le disque, ce qui évite des E/S inutiles sur des données non utilisées. C&#39;est [bien plus rapide](https://benchmark.clickhouse.com/) que le stockage par ligne, où des lignes entières (y compris des colonnes non pertinentes) sont lues :
+Comme le stockage et le transfert par blocs du disque vers la mémoire sont alignés sur le mode d&#39;accès aux données des requêtes analytiques, seules les colonnes nécessaires à une requête sont lues sur le disque, ce qui évite des E/S inutiles sur des données non utilisées. C&#39;est [bien plus rapide](https://benchmark.clickhouse.com/) que le stockage par ligne, où des lignes entières (y compris des colonnes non pertinentes) sont lues :
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Structure d'une base de données orientée colonnes](/images/column-oriented.webp)
-
-</Frame>
-
+  <Frame>
+    ![Structure d'une base de données orientée colonnes](/images/column-oriented.webp)
+  </Frame>
 </div>
 
 <div id="data-replication-and-integrity">
-  ## Réplication et intégrité des données
+  ## Réplication et intégrité des données {#data-replication-and-integrity}
 </div>
 
 ClickHouse utilise un mécanisme de réplication multi-maître asynchrone pour garantir un stockage redondant des données sur plusieurs nœuds. Une fois les données écrites sur n’importe quelle réplique disponible, toutes les autres répliques récupèrent leur copie en arrière-plan. Le système maintient des données identiques sur les différentes répliques. La récupération après la plupart des défaillances s’effectue automatiquement, ou semi-automatiquement dans les cas complexes.
 
 <div id="role-based-access-control">
-  ## Contrôle d’accès basé sur les rôles
+  ## Contrôle d’accès basé sur les rôles {#role-based-access-control}
 </div>
 
 ClickHouse assure la gestion des comptes utilisateurs à l’aide de requêtes SQL et permet de configurer un contrôle d’accès basé sur les rôles, semblable à celui que l’on trouve dans la norme ANSI SQL et dans les systèmes de gestion de bases de données relationnelles les plus répandus.
 
 <div id="sql-support">
-  ## Prise en charge de SQL
+  ## Prise en charge de SQL {#sql-support}
 </div>
 
 ClickHouse prend en charge un [langage de requête déclaratif fondé sur SQL](/fr/reference/home), qui est dans de nombreux cas identique à la norme ANSI SQL. Les clauses de requête prises en charge incluent [GROUP BY](/fr/reference/statements/select/group-by), [ORDER BY](/fr/reference/statements/select/order-by), les sous-requêtes dans [FROM](/fr/reference/statements/select/from), la clause [JOIN](/fr/reference/statements/select/join), l&#39;opérateur [IN](/fr/reference/statements/in), les [fonctions de fenêtre](/fr/reference/functions/window-functions/index) et les sous-requêtes scalaires.
 
 <div id="approximate-calculation">
-  ## Calcul approximatif
+  ## Calcul approximatif {#approximate-calculation}
 </div>
 
 ClickHouse permet de privilégier les performances au détriment de la précision. Par exemple, certaines de ses fonctions d&#39;agrégation calculent de manière approximative le nombre de valeurs distinctes, la médiane et les quantiles. De plus, les requêtes peuvent être exécutées sur un échantillon des données afin d&#39;obtenir rapidement un résultat approximatif. Enfin, les agrégations peuvent être effectuées sur un nombre limité de clés plutôt que sur l&#39;ensemble des clés. Selon le degré de déséquilibre dans la répartition des clés, cela peut fournir un résultat raisonnablement précis tout en utilisant bien moins de ressources qu&#39;un calcul exact.
 
 <div id="adaptive-join-algorithms">
-  ## Algorithmes de jointure adaptatifs
+  ## Algorithmes de jointure adaptatifs {#adaptive-join-algorithms}
 </div>
 
 ClickHouse choisit l&#39;algorithme de jointure de façon adaptative : il commence par des jointures de hachage rapides et bascule vers des jointures de fusion lorsqu&#39;il y a plus d&#39;une grande table.
 
 <div id="superior-query-performance">
-  ## Excellentes performances des requêtes
+  ## Excellentes performances des requêtes {#superior-query-performance}
 </div>
 
 ClickHouse est réputé pour offrir des performances de requête extrêmement rapides.

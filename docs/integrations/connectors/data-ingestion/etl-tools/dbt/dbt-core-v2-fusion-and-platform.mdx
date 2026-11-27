@@ -29,7 +29,7 @@ ClickHouse is the first community adapter on dbt OSS, dbt v2 and the dbt platfor
 **dbt OSS** is the open-source (Apache 2.0) build of the v2 engine. See [terminology and availability](#terminology) for how it relates to dbt v2 and the dbt platform.
 </Note>
 
-Live status is tracked in [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660) (v2 parity with v1, one sub-issue per area) and [ClickHouse/dbt-clickhouse#555](https://github.com/ClickHouse/dbt-clickhouse/issues/555) (dbt v2).
+The dbt v2 adapter is at feature parity with `dbt-clickhouse` 1.10.3, the dbt Core 1.x version of the adapter released in September 2026, with a few exceptions listed in [v1 vs v2 parity](#parity) section.
 
 #### Try ClickHouse in the dbt platform {#request-access}
 
@@ -48,11 +48,9 @@ dbt is available in several forms, and the same adapter can run in more than one
 
 ## Details on current status {#v2-adapter-status}
 
-Beta means that almost all v1 features work with documented limits. The features that are still pending are listed in [v1 vs v2 parity](#parity) and that list shrinks with every release. We recommend evaluating dbt v2 in development or staging first, and keeping production on dbt Core 1.x if your project depends on any of the pending features or you need the guarantees of a GA release.
+Beta means that the v2 adapter is at feature parity with `dbt-clickhouse` 1.10.3, with a few exceptions listed in [v1 vs v2 parity](#parity) section. We recommend evaluating dbt v2 in development or staging first, and keeping production on dbt Core 1.x if your project depends on any of the pending features or you need the guarantees of a GA release.
 
-We measure the dbt v2 adapter against the dbt Core 1.x integration test suite of `dbt-clickhouse`. **Today,** the adapter passes ~98% of the v1 suite (270 of the 276 tests that apply to dbt v2). The remaining failures are engine-side differences, not ClickHouse ones: query comments, `query_id` in run results and the check for a hook configured under both `pre-hook` and `pre_hook`. See [v1 vs v2 parity](#parity) for the feature-by-feature picture.
-
-**Next steps**: query comments, `query_id` in run results, `dbt source freshness` from table metadata, fixes for the remaining bugs and passing the full v1 test suite to ensure full parity. The progress of all of these is tracked in [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660), with one sub-issue per area.
+**Next steps**: closing the remaining exceptions and keeping v2 in step with new `dbt-clickhouse` releases. Beyond beta we're going to continue working on the rest of the [dbt v2 specific functionality](#v2-functionality).
 
 GA is on the roadmap. We are working with dbt Labs on the timeline and will update this page when it's ready.
 
@@ -62,7 +60,7 @@ Features exclusive to v2, such as the ClickHouse SQL intelligence (static analys
 
 ### v1 vs v2 parity {#parity}
 
-The tables below compare the features available in `dbt-clickhouse` (v1) with their status in the dbt v2 adapter. Every feature listed is supported in v1 unless the notes say otherwise; the status column is for dbt v2 and applies equally to dbt OSS. The evolution of every pending item is tracked in [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660).
+The tables below compare the features available in `dbt-clickhouse` (v1) with their status in the dbt v2 adapter. Every feature listed is supported in v1 unless the notes say otherwise; the status column is for dbt v2 and applies equally to dbt OSS. The reference is `dbt-clickhouse` 1.10.3: everything it ships works in v2 except the rows marked Partial or Not yet and the behaviors listed under [Not planned for v2](#not-planned).
 
 <Badge color="green">Supported</Badge> works today · <Badge color="yellow">Partial</Badge> works with limits · <Badge color="red">Not yet</Badge> pending implementation.
 
@@ -76,7 +74,7 @@ The tables below compare the features available in `dbt-clickhouse` (v1) with th
 | `materialized_view` | ClickHouse MV that transforms at insert time. | <Badge color="green">Supported</Badge> | |
 | `dictionary` | ClickHouse dictionary for key lookups and joins. | <Badge color="green">Supported</Badge> | |
 | `snapshot` | Type 2 slowly changing dimensions. | <Badge color="green">Supported</Badge> | |
-| `seed` | Load CSVs as tables. | <Badge color="green">Supported</Badge> | Numeric column types are inferred as `Int64`/`Float64` instead of `Int32`/`Float32`; use `column_types` to set them explicitly. |
+| `seed` | Load CSVs as tables. | <Badge color="yellow">Partial</Badge> | Numeric column types are inferred as `Int64`/`Float64` instead of `Int32`/`Float32`; use `column_types` to set them explicitly. Rows are loaded with batched `INSERT ... VALUES` statements instead of a single `insert ... format CSV`. `query_settings` set on a seed is ignored ([ClickHouse/dbt-clickhouse#812](https://github.com/ClickHouse/dbt-clickhouse/issues/812)). |
 | `ephemeral` | Inline CTE, no object created. | <Badge color="green">Supported</Badge> | |
 | `distributed_table`, `distributed_incremental` | Sharded tables behind a Distributed engine. | <Badge color="green">Supported</Badge> | Self-managed clusters with `cluster` set in the profile, as in v1. |
 
@@ -110,7 +108,7 @@ The tables below compare the features available in `dbt-clickhouse` (v1) with th
 | `ON CLUSTER` and replicated engines | DDL fan-out on self-managed clusters. | <Badge color="green">Supported</Badge> | Set `cluster` in the profile. DDL fans out to every node, except on `Replicated` databases where it is not needed; `disable_on_cluster` turns it off per model. |
 | `EXCHANGE TABLES` | Atomic swap on rebuild. | <Badge color="green">Supported</Badge> | |
 | Custom connection settings | Profile-level `custom_settings`. | <Badge color="green">Supported</Badge> | |
-| ClickHouse server version | Minimum server version. | <Badge color="green">Supported</Badge> | 25.3+ on both engines. Reading `UUID` columns on v2 requires 26.7+ (older servers cannot convert `UUID` to Arrow). |
+| ClickHouse server version | Minimum server version. | <Badge color="green">Supported</Badge> | 25.3+ on both engines. Reading `UUID` columns on v2 requires 26.7+, see [Not planned for v2](#not-planned). |
 
 #### Macros and operations {#parity-macros-and-operations}
 
@@ -120,8 +118,8 @@ The tables below compare the features available in `dbt-clickhouse` (v1) with th
 | Cross-database macros | Helpers such as those in `dbt-utils`. | <Badge color="green">Supported</Badge> | |
 | Grants | `GRANT` statements from model config. | <Badge color="green">Supported</Badge> | |
 | `dbt clone` | Zero-copy `CLONE AS` between environments. | <Badge color="green">Supported</Badge> | MergeTree tables, seeds, snapshots and incrementals are cloned with `CLONE AS`; views and other engines fall back to views, as in v1. |
-| Query ID in run results | `query_id` in `adapter_response` for `system.query_log` correlation. | <Badge color="red">Not yet</Badge> | |
-| `query-comment` | Query comment configuration. | <Badge color="red">Not yet</Badge> | `query-comment: null` is not honored yet. |
+| Query ID in run results | `query_id` in `adapter_response` for `system.query_log` correlation. | <Badge color="green">Supported</Badge> | |
+| Source freshness with `loaded_at_field` or `loaded_at_query` | `dbt source freshness` from a timestamp column or a custom query. | <Badge color="red">Not yet</Badge> | Fails with `should have a timestamp type, but got UInt32`. A source with neither setting stops the whole command instead of failing on its own as in v1. Tracked in [ClickHouse/dbt-clickhouse#813](https://github.com/ClickHouse/dbt-clickhouse/issues/813). |
 
 #### Connectivity and auth {#parity-connectivity-and-auth}
 
@@ -129,16 +127,20 @@ The tables below compare the features available in `dbt-clickhouse` (v1) with th
 |---------|--------------|--------|-------|
 | Protocol | How dbt talks to ClickHouse. | <Badge color="green">Supported</Badge> | ADBC (Arrow over HTTP) on v2; HTTP and native on v1. |
 | Username and password, TLS | Standard auth. | <Badge color="green">Supported</Badge> | |
-| mTLS client certificates | `client_cert`, `client_cert_key`. | <Badge color="red">Not yet</Badge> | Driver work; the keys are accepted but ignored. |
-| HTTP client options | `connect_timeout`, `send_receive_timeout`, `sync_request_timeout`, `compress_block_size`, `server_host_name`. | <Badge color="red">Not yet</Badge> | Accepted but ignored; `server_host_name` is unavailable. |
+| mTLS client certificates | `client_cert`, `client_cert_key`. | <Badge color="red">Not yet</Badge> | Driver work; the keys are accepted but ignored ([ClickHouse/dbt-clickhouse#794](https://github.com/ClickHouse/dbt-clickhouse/issues/794)). |
+| HTTP client options | `connect_timeout`, `send_receive_timeout`, `server_host_name`. | <Badge color="red">Not yet</Badge> | Driver work; the keys are accepted but ignored ([ClickHouse/dbt-clickhouse#795](https://github.com/ClickHouse/dbt-clickhouse/issues/795)). |
+| Connection reuse | `reuse_connections: false` opens a new connection per model. | <Badge color="red">Not yet</Badge> | The key is accepted but ignored ([ClickHouse/dbt-clickhouse#815](https://github.com/ClickHouse/dbt-clickhouse/issues/815)). |
 
 #### Not planned for v2 {#not-planned}
 
-A few v1 options are deliberately not carried over to v2. They are listed here so the parity tables above only contain work that is planned.
+A few v1 behaviors are not carried over to v2 and will not be. They are listed here, with the alternative that works, so the parity tables above only contain work that is planned.
 
 | Feature | What it does in v1 | Why it is not planned |
 |---------|--------------------|-----------------------|
 | `verify: false` | Skips TLS certificate validation. | It keeps the encryption but drops the authentication, so anyone on the path can impersonate the server and read the credentials. v2 always validates certificates and ignores the key. Use a certificate signed by a CA the client trusts. Open an issue if you need it in v2. |
+| `sync_request_timeout`, `compress_block_size` | Configure the native-protocol client. | The native-protocol client exists only in v1. v2 connects through the ADBC driver, which is HTTP-only, so there is nothing for these keys to configure. |
+| `database:` on a source | Sets the ClickHouse database of the source when the source has no `schema:`. | v2 ignores the key and resolves the source as `<source name>.<table>`, so the model fails with `Database <source name> does not exist`. Write `schema: <database>` on the source instead. That form works on both engines. |
+| `UUID` columns on ClickHouse servers older than 26.7 | Any query can return `UUID` columns. | v2 receives query results in Arrow format, and servers before 26.7 cannot convert `UUID` to Arrow, so a `SELECT` that returns a `UUID` column fails with `The type 'UUID' ... is not supported for conversion into Arrow data format`. This is a server-side limitation with no adapter workaround. Use ClickHouse 26.7 or newer. |
 
 ### dbt v2 specific functionality {#v2-functionality}
 
@@ -150,8 +152,8 @@ dbt v2 adds capabilities that have no equivalent in dbt Core 1.x. They are outsi
 | Static analysis | Compile-time SQL validation and type checking without querying the warehouse. | <Badge color="red">Not yet</Badge> | Forced to `off` for ClickHouse projects until the dialect exists. |
 | Column-level lineage in the dbt platform | Column lineage view built from the run artifacts. | <Badge color="yellow">Partial</Badge> | Renders only with identifier quoting disabled in `dbt_project.yml`; the platform's fallback parser rejects backtick-quoted names ([dbt-labs/dbt#16646](https://github.com/dbt-labs/dbt/issues/16646)). |
 | Column-level lineage from the engine | Lineage written by `dbt docs generate` for the local docs site. | <Badge color="red">Not yet</Badge> | Needs static analysis. |
-| LSP and VS Code extension | Dialect-aware autocomplete and column awareness while editing. | <Badge color="red">Not yet</Badge> | Needs the dialect. |
-| Source freshness from table metadata | `dbt source freshness` without `loaded_at_field`, from the table's last modification time. | <Badge color="blue">In progress</Badge> | Being implemented. Today the command fails for sources without `loaded_at_field`. |
+| LSP and VS Code extension | Dialect-aware autocomplete and column awareness while editing. | <Badge color="yellow">Partial</Badge> | Projects open and run in the official [dbt VS Code extension](https://marketplace.visualstudio.com/items?itemName=dbtLabsInc.dbt), but its LSP features (autocomplete, column awareness...) are not available for ClickHouse yet. |
+| Source freshness from table metadata | `dbt source freshness` for sources with neither `loaded_at_field` nor `loaded_at_query`, from the table's last modification time. | <Badge color="blue">In progress</Badge> | Being implemented ([ClickHouse/dbt-clickhouse#814](https://github.com/ClickHouse/dbt-clickhouse/issues/814)). |
 | Semantic Layer / MetricFlow | Metrics defined in dbt and queried through the Semantic Layer. | <Badge color="red">Not yet</Badge> | ClickHouse support is merged in MetricFlow; we are working with dbt Labs to enable it in the Semantic Layer. |
 | Record and replay of adapter calls | `--fs-record` / `--fs-replay` re-run a job without a warehouse. | <Badge color="yellow">Partial</Badge> | ClickHouse catalog details (`ON CLUSTER`, `EXCHANGE`, MV links) are not recorded, so a replay can render different DDL. |
 | More authentication methods in the dbt platform | How the platform connects to ClickHouse. | <Badge color="yellow">Partial</Badge> | Username and password only today; more methods are planned. |

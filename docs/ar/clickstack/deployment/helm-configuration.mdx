@@ -14,9 +14,7 @@ keywords: ['تهيئة ClickStack', 'أسرار Helm', 'إعداد مفتاح AP
 
 يغطي هذا الدليل خيارات التهيئة لعمليات نشر ClickStack باستخدام Helm. للتثبيت الأساسي، راجع [دليل النشر الرئيسي باستخدام Helm](/ar/clickstack/deployment/helm).
 
-<div id="values-organization">
-  ## تنظيم القيم
-</div>
+## تنظيم القيم {#values-organization}
 
 تنظّم مخطط Helm بالإصدار v2.x القيم حسب نوع مورد Kubernetes ضمن الكتلة `hyperdx:`:
 
@@ -46,26 +44,22 @@ hyperdx:
   tasks:          # K8s CronJob specs
 ```
 
-تمرّ جميع متغيرات البيئة عبر موردين ذوي اسمين ثابتين، يشترك فيهما كلٌّ من نشر HyperDX **و** OTEL Collector عبر `envFrom`:
+تمرّ جميع متغيرات البيئة عبر موردين ذوي اسمين ثابتين، يشترك فيهما كلٌّ من نشر واجهة مستخدم ClickStack **و** OTEL Collector عبر `envFrom`:
 
-* **`clickstack-config`** ConfigMap — يُعبَّأ من `hyperdx.config`
-* **`clickstack-secret`** Secret — يُعبَّأ من `hyperdx.secrets`
+* **`clickstack-config`** ConfigMap — يُعبَّأ من `hyperdx.config`
+* **`clickstack-secret`** Secret — يُعبَّأ من `hyperdx.secrets`
 
-لم يعد هناك ConfigMap منفصل مخصّص لـ OTEL. ويقرأ كلٌّ من عبئي العمل من المصادر نفسها.
+لم يعد هناك ConfigMap منفصل مخصّص لـ OTEL. ويقرأ كلٌّ من عبئي العمل من المصادر نفسها.
 
-<div id="api-key-setup">
-  ## إعداد مفتاح API
-</div>
+## إعداد مفتاح API {#api-key-setup}
 
 بعد نشر ClickStack بنجاح، اضبط مفتاح API لتمكين جمع بيانات القياس عن بُعد:
 
-1. **ادخل إلى مثيل HyperDX الخاص بك** عبر مورد الإدخال المُعَدّ أو نقطة نهاية الخدمة
-2. **سجّل الدخول إلى لوحة معلومات HyperDX** ثم انتقل إلى إعدادات الفريق لإنشاء مفتاح API أو استرداده
+1. **ادخل إلى مثيل واجهة مستخدم ClickStack الخاص بك** عبر مورد الدخول المُعَدّ أو نقطة نهاية الخدمة
+2. **سجّل الدخول إلى لوحة معلومات واجهة مستخدم ClickStack** ثم انتقل إلى إعدادات الفريق لإنشاء مفتاح API أو استرداده
 3. **حدّث النشر لديك** باستخدام مفتاح API بإحدى الطرق التالية:
 
-<div id="api-key-values-file">
-  ### الطريقة 1: التحديث باستخدام Helm upgrade مع ملف values
-</div>
+### الطريقة 1: التحديث باستخدام Helm upgrade مع ملف values {#api-key-values-file}
 
 أضِف مفتاح API إلى `values.yaml`:
 
@@ -81,18 +75,14 @@ hyperdx:
 helm upgrade my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-<div id="api-key-set-flag">
-  ### الطريقة 2: التحديث باستخدام Helm upgrade مع الخيار --set
-</div>
+### الطريقة 2: التحديث باستخدام Helm upgrade مع الخيار `--set` {#api-key-set-flag}
 
 ```shell
 helm upgrade my-clickstack clickstack/clickstack \
   --set hyperdx.secrets.HYPERDX_API_KEY="your-api-key-here"
 ```
 
-<div id="restart-pods">
-  ### أعد تشغيل الحاويات القرنية لتطبيق التغييرات
-</div>
+### أعد تشغيل الحاويات القرنية لتطبيق التغييرات {#restart-pods}
 
 بعد تحديث مفتاح API، أعد تشغيل الحاويات القرنية لكي تعتمد التهيئة الجديدة:
 
@@ -104,15 +94,11 @@ kubectl rollout restart deployment my-clickstack-clickstack-app
   تنشئ مخطط Helm تلقائيًا Kubernetes secret (`clickstack-secret`) من قيم الإعداد الخاصة بك. ولا تحتاج إلى أي إعداد إضافي لـ secret إلا إذا أردت استخدام External Secret.
 </Note>
 
-<div id="secret-management">
-  ## إدارة الأسرار
-</div>
+## إدارة الأسرار {#secret-management}
 
 للتعامل مع البيانات الحساسة مثل مفاتيح API أو بيانات اعتماد قاعدة البيانات، يوفّر مخطط بالإصدار v2.x موردًا موحّدًا باسم `clickstack-secret` يُعبَّأ من `hyperdx.secrets`.
 
-<div id="default-secret-values">
-  ### القيم الافتراضية للأسرار
-</div>
+### القيم الافتراضية للأسرار {#default-secret-values}
 
 تتضمّن المخطط قيماً افتراضية لجميع الأسرار. يمكنك تجاوزها في `values.yaml`:
 
@@ -125,9 +111,7 @@ hyperdx:
     MONGODB_PASSWORD: "your-mongodb-password"
 ```
 
-<div id="using-external-secret">
-  ### استخدام Secret خارجي في Kubernetes
-</div>
+### استخدام Secret خارجي في Kubernetes {#using-external-secret}
 
 في عمليات النشر في بيئة الإنتاج، عندما تريد إبقاء بيانات الاعتماد منفصلة عن قيم Helm، استخدم Secret خارجيًا في Kubernetes:
 
@@ -148,15 +132,11 @@ hyperdx:
   existingConfigSecret: "my-clickstack-secrets"
 ```
 
-<div id="ingress-setup">
-  ## إعداد الإدخال
-</div>
+## إعداد الدخول {#ingress-setup}
 
-لنشر واجهة مستخدم HyperDX وواجهة برمجة التطبيقات الخاصة به عبر اسم نطاق، فعِّل الإدخال في ملف `values.yaml`.
+لنشر واجهة مستخدم ClickStack وواجهة برمجة التطبيقات الخاصة به عبر اسم نطاق، فعِّل الدخول في ملف `values.yaml`.
 
-<div id="general-ingress-configuration">
-  ### التكوين العام للإدخال
-</div>
+### التكوين العام للإدخال {#general-ingress-configuration}
 
 ```yaml
 hyperdx:
@@ -173,9 +153,7 @@ hyperdx:
   يجب أن يتطابق `hyperdx.frontendUrl` مع اسم مضيف مورد الإدخال وأن يتضمن البروتوكول (على سبيل المثال، `https://hyperdx.yourdomain.com`). ويضمن ذلك أن تعمل جميع الروابط وملفات تعريف الارتباط وعمليات إعادة التوجيه المُنشأة على النحو الصحيح.
 </Info>
 
-<div id="enabling-tls">
-  ### تمكين TLS ‏(HTTPS)
-</div>
+### تمكين TLS ‏(HTTPS) {#enabling-tls}
 
 لتأمين عملية النشر باستخدام HTTPS:
 
@@ -199,9 +177,7 @@ hyperdx:
       tlsSecretName: "hyperdx-tls"
 ```
 
-<div id="example-ingress-configuration">
-  ### مثال على إعداد الإدخال
-</div>
+### مثال على إعداد الإدخال {#example-ingress-configuration}
 
 للاطلاع، إليك كيف يبدو مورد الإدخال الذي أُنشئ:
 
@@ -232,9 +208,7 @@ spec:
       secretName: hyperdx-tls
 ```
 
-<div id="common-ingress-pitfalls">
-  ### المشكلات الشائعة في الإدخال
-</div>
+### المشكلات الشائعة في الإدخال {#common-ingress-pitfalls}
 
 **إعداد المسار وإعادة الكتابة:**
 
@@ -259,9 +233,7 @@ spec:
 kubectl -n ingress-nginx get pods -l app.kubernetes.io/name=ingress-nginx -o jsonpath="{.items[0].spec.containers[0].image}"
 ```
 
-<div id="otel-collector-ingress">
-  ## الإدخال لـ OTEL collector
-</div>
+## الإدخال لـ OTEL collector {#otel-collector-ingress}
 
 إذا كنت بحاجة إلى تعريض نقاط نهاية OTEL collector (للتتبعات والمقاييس والسجلات) عبر الإدخال، فاستخدم إعداد `additionalIngresses`. ويُعد ذلك مفيدًا لإرسال بيانات القياس عن بُعد من خارج العنقود أو لاستخدام نطاق مخصص للـ OTEL collector.
 
@@ -299,9 +271,7 @@ hyperdx:
 
 بدلًا من ذلك، يمكنك استخدام [`additionalManifests`](/ar/clickstack/deployment/helm-additional-manifests) لتعريف موارد إدخال مخصصة بالكامل، مثل AWS ALB Ingress.
 
-<div id="otel-collector-configuration">
-  ## تهيئة OTEL collector
-</div>
+## تهيئة OTEL collector {#otel-collector-configuration}
 
 يُنشر OTEL Collector عبر مخطط Helm الرسمي الخاص بـ OpenTelemetry Collector بوصفه المخطط الفرعي `otel-collector:`. قم بتهيئته مباشرةً ضمن `otel-collector:` في values الخاصة بك:
 
@@ -330,9 +300,7 @@ otel-collector:
 
 اطّلع على [مخطط Helm الخاص بـ OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector) للاطلاع على جميع قيم المخطط الفرعي المتاحة.
 
-<div id="mongodb-configuration">
-  ## تهيئة MongoDB
-</div>
+## تهيئة MongoDB {#mongodb-configuration}
 
 تتولى إدارة MongoDB مشغّل MCK عبر مورد مخصص من النوع `MongoDBCommunity`. ويُعرَض قسم CR spec كما هو من `mongodb.spec`:
 
@@ -361,9 +329,7 @@ mongodb:
 
 يتم تعيين كلمة مرور MongoDB في `hyperdx.secrets.MONGODB_PASSWORD`. راجع [وثائق MCK](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity) للاطلاع على جميع حقول CRD المتاحة.
 
-<div id="clickhouse-configuration">
-  ## إعداد ClickHouse
-</div>
+## إعداد ClickHouse {#clickhouse-configuration}
 
 تُدار ClickHouse بواسطة ClickHouse Operator عبر الموارد المخصصة `ClickHouseCluster` و`KeeperCluster`. وتُولَّد مواصفات CR لكليهما حرفيًا من values:
 
@@ -396,9 +362,7 @@ clickhouse:
 
 تُؤخذ بيانات اعتماد مستخدم ClickHouse من `hyperdx.secrets` (وليس من `clickhouse.config.users` كما في v1.x). راجع [دليل تهيئة ClickHouse Operator](/ar/products/kubernetes-operator/guides/configuration) للاطّلاع على جميع حقول CRD المتاحة.
 
-<div id="troubleshooting-ingress">
-  ## استكشاف أخطاء الإدخال وإصلاحها
-</div>
+## استكشاف أخطاء الإدخال وإصلاحها {#troubleshooting-ingress}
 
 **تحقق من مورد الإدخال:**
 
@@ -435,9 +399,7 @@ curl -I https://hyperdx.yourdomain.com/_next/static/chunks/main-xxxx.js
 
 * بعد إجراء التغييرات، امسح ذاكرة التخزين المؤقت للمتصفح وأي ذاكرة تخزين مؤقت لـ CDN/الوكيل لتجنّب تحميل ملفات قديمة
 
-<div id="customizing-values">
-  ## تخصيص القيم
-</div>
+## تخصيص القيم {#customizing-values}
 
 يمكنك تخصيص الإعدادات باستخدام خيارات `--set`:
 
@@ -457,9 +419,7 @@ helm show values clickstack/clickstack > values.yaml
 helm install my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-<div id="next-steps">
-  ## الخطوات التالية
-</div>
+## الخطوات التالية {#next-steps}
 
 * [خيارات النشر](/ar/clickstack/deployment/helm-deployment-options) - الأنظمة الخارجية وعمليات النشر بالحد الأدنى
 * [عمليات النشر على Cloud](/ar/clickstack/deployment/helm-cloud) - إعدادات GKE وEKS وAKS

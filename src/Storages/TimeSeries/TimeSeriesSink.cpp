@@ -7,7 +7,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/NaNUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/DecimalFunctions.h>
@@ -40,6 +39,7 @@
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/validateTimeSeriesHistograms.h>
 #include <base/EnumReflection.h>
+#include <base/bit_cast.h>
 #include <base/sort.h>
 
 #include <algorithm>
@@ -424,10 +424,19 @@ namespace
     /// shared with the aggregate functions merging the rows of the samples tables.
     auto makeFloatSampleWins(const IColumn & ts_values)
     {
-        return [&ts_values](size_t kept_index, size_t new_index)
+        const auto * const float32_values = typeid_cast<const ColumnFloat32 *>(&ts_values);
+        return [&ts_values, float32_values](size_t kept_index, size_t new_index)
         {
-            return TimeSeriesDuplicateTimestampRule::compareFloatSamples(
-                ts_values.getFloat64(new_index), ts_values.getFloat64(kept_index)) > 0;
+            /// Float32 values are compared as Float32, because widening them would quiet a signaling NaN.
+            if (float32_values)
+            {
+                const Float32 kept = float32_values->getData()[kept_index];
+                const Float32 winner = TimeSeriesDuplicateTimestampRule::floatSampleWinner(kept, float32_values->getData()[new_index]);
+                return bit_cast<UInt32>(winner) != bit_cast<UInt32>(kept);
+            }
+            const Float64 kept = ts_values.getFloat64(kept_index);
+            const Float64 winner = TimeSeriesDuplicateTimestampRule::floatSampleWinner(kept, ts_values.getFloat64(new_index));
+            return bit_cast<UInt64>(winner) != bit_cast<UInt64>(kept);
         };
     }
 

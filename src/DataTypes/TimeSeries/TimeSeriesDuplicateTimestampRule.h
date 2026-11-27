@@ -1,11 +1,12 @@
 #pragma once
 
 #include <Common/NaNUtils.h>
-#include <DataTypes/TimeSeries/PrometheusStaleMarker.h>
 #include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
+#include <base/bit_cast.h>
 #include <base/types.h>
 
-#include <type_traits>
+#include <algorithm>
+#include <cmath>
 
 
 namespace DB
@@ -21,38 +22,20 @@ namespace DB
 /// unless it is a gauge (see TimeSeriesHistogramCounterResetRule).
 namespace TimeSeriesDuplicateTimestampRule
 {
-    /// An order over the float samples `lhs` and `rhs`: the greater sample is preferred. Returns a negative number, 0 or a positive
-    /// number. The stale marker is less than any other NaN, a NaN less than any number; NaNs of one kind are equal, as are `0.0` and
-    /// `-0.0`.
-    template <typename ValueType>
-    int compareFloatSamples(ValueType lhs, ValueType rhs)
-    {
-        const auto rank = [](ValueType value)
-        {
-            if (!isNaN(value))
-                return 2;
-            /// A `Float32` value can't hold the stale marker.
-            if constexpr (std::is_same_v<ValueType, Float64>)
-            {
-                if (isPrometheusStaleMarker(value))
-                    return 0;
-            }
-            return 1;
-        };
-        const int lhs_rank = rank(lhs);
-        const int rhs_rank = rank(rhs);
-        if (lhs_rank != rhs_rank)
-            return (lhs_rank < rhs_rank) ? -1 : 1;
-        if (lhs < rhs)
-            return -1;
-        return (lhs > rhs) ? 1 : 0;
-    }
-
-    /// The kept one of the float samples `kept` and `candidate` with the same timestamp; of equal samples `kept`.
+    /// The kept one of the float samples `kept` and `candidate` with the same timestamp. The result doesn't depend on the order of
+    /// the arguments.
     template <typename ValueType>
     ValueType floatSampleWinner(ValueType kept, ValueType candidate)
     {
-        return (compareFloatSamples(candidate, kept) > 0) ? candidate : kept;
+        /// Of two NaNs the greater bit pattern wins, so a quiet NaN beats the Prometheus stale marker 0x7ff0000000000002.
+        if (isNaN(kept))
+            return (isNaN(candidate) && bit_cast<UInt64>(kept) > bit_cast<UInt64>(candidate)) ? kept : candidate;
+        if (isNaN(candidate))
+            return kept;
+        /// Of +0 and -0 the +0 wins, so equal values also resolve independently of order.
+        if (kept == candidate)
+            return std::signbit(kept) ? candidate : kept;
+        return std::max(kept, candidate);
     }
 
     /// An order over the payload (every element but `timestamp`) of the histogram samples `lhs` and `rhs` of `view`: the greater
@@ -63,7 +46,7 @@ namespace TimeSeriesDuplicateTimestampRule
     /// 4. the other elements in the stored order, compared as `IColumn::compareAt` compares them (arrays and tuples lexicographically);
     ///    of the counter reset hint only the gauge marker, so samples differing in their counter hints only are equal.
     /// Floats compare as in `CompareHelper`: a NaN is less than any number, two NaNs are equal, as are `0.0` and `-0.0`; only for
-    /// payloads equal up to those does the kept sample depend on the order of the samples (the limit of `compareFloatSamples` too).
+    /// payloads equal up to those does the kept sample depend on the order of the samples.
     int compareHistogramSamples(const TimeSeriesHistogramPayloadColumnsView & view, size_t lhs, size_t rhs);
 
     /// The same order for the sample `lhs` of `lhs_view` and the sample `rhs` of `rhs_view`.
