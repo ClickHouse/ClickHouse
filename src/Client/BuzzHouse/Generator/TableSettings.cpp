@@ -412,6 +412,12 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          false)},
     {"min_bytes_for_compact_part", bytesRangeSetting},
     {"min_bytes_for_full_part_storage", bytesRangeSetting},
+    {"min_bytes_for_object_shared_data_main_serialization_version",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, UINT32_C(100) * UINT32_C(1024) * UINT32_C(1024))); },
+         {"0", "1"},
+         false)},
     {"min_bytes_for_wide_part",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -523,7 +529,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          },
          {"'map'", "'map_with_buckets'", "'advanced'", "'advanced_chunked'"},
          false)},
-    {"object_shared_data_serialization_version_for_zero_level_parts",
+    {"object_shared_data_serialization_version_for_small_parts",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
@@ -751,6 +757,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"use_adaptive_write_buffer_for_dynamic_subcolumns", trueOrFalseSetting},
     {"use_compact_variant_discriminators_serialization", trueOrFalseSetting},
     {"use_const_adaptive_granularity", trueOrFalseSetting},
+    {"use_object_shared_data_serialization_version_for_small_parts_on_insert", trueOrFalseSetting},
     {"use_primary_key_cache", trueOrFalseSetting},
     {"vertical_merge_algorithm_min_bytes_to_activate", bytesRangeSetting},
     {"vertical_merge_algorithm_min_columns_to_activate",

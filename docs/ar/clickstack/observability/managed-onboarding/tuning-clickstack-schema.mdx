@@ -1,0 +1,85 @@
+---
+slug: /clickstack/observability/managed-onboarding/tuning-clickstack-schema
+title: 'ضبط Self-managed ClickHouse Observability - تحسين المخطط'
+description: 'حسّن مخطط ClickStack لتحقيق أداء استعلام أفضل وكفاءة تخزين أعلى في Self-managed ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['clickstack', 'tuning', 'schema', 'managed', 'observability', 'performance', 'optimization', 'storage']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+sidebarTitle: 'ضبط مخطط ClickStack'
+---
+
+إذا كنت تشغّل ClickStack منذ فترة، فلا بد أنك لاحظت أن المخطط الافتراضي يلبّي معظم أحمال العمل الخاصة بإمكانية المراقبة دون الحاجة إلى أي تعديلات. تتناول هذه الصفحة الحالات التي لم يعد فيها ذلك كافيًا: كأن يبدأ زمن الانتقال للاستعلامات بالارتفاع، أو أن تنحرف أنماط الوصول لديك عن الأنماط التي صُمِّمت لها القيم الافتراضية.
+
+تكفي أربعة تحسينات لتغطية معظم ما يُحدث فرقًا على أرض الواقع، وقد رُتّبت تقريبًا بحسب الجهد الذي يتطلبه كل منها. فالتحسينان الأول والثاني تغييرات محلية عبر `ALTER TABLE` يمكنك تطبيقها تدريجيًا. أما الثالث فتظهر فائدته عندما يتكرر تنفيذ التجميع نفسه على لوحة معلومات. في حين يتطلب الرابع ترحيل الجدول، ما يجعله الأكثر تعقيدًا.
+
+جاءت الملخصات أدناه موجزة عن قصد. للاطلاع على الأسباب الكامنة وراء كل تغيير، ونتائج اختبارات الأداء، وخطوات تطبيقه على البيانات الموجودة، راجع [ضبط الأداء](/ar/clickstack/self-configured/managing/performance-tuning).
+
+<Steps>
+  <Step title="تجسيد السمات الأكثر استعلامًا" id="materialize-attributes">
+    تتطلب التصفية على `LogAttributes['service.version']` أن يحمّل ClickHouse خريطة `LogAttributes` بأكملها ويفك ترميزها لكل صف يفحصه. أما عند ترقية الـ attribute إلى column من النوع `MATERIALIZED`، فيصبح عامل التصفية نفسه مجرد قراءة لـ column، وعادةً ما يكون أسرع بمرتبة عشرية كاملة. يعيد ClickStack كتابة عامل التصفية تلقائيًا بمجرد وجود الـ column، لذا تظل عمليات البحث المحفوظة ولوحات المعلومات تعمل دون أي تغيير.
+
+    اختر السمات التي تستعلم عنها كثيرًا فعلًا. فكل column مُجسَّد يكلّف مساحة تخزين ووقتًا إضافيًا عند الإدراج، لذا فالمبدأ هنا هو &quot;رقِّ ما تستخدمه&quot; لا &quot;رقِّ كل شيء&quot;.
+
+    ```sql
+    ALTER TABLE otel_logs
+      ADD COLUMN ServiceVersion LowCardinality(String)
+      MATERIALIZED LogAttributes['service.version'];
+    ```
+
+    تبقى قيم الـ column الجديد فارغة في الصفوف الموجودة مسبقًا ما لم تنفّذ أيضًا `ALTER TABLE otel_logs MATERIALIZE COLUMN ServiceVersion`.
+
+    اقرأ المزيد: [تجسيد السمات الأكثر استعلامًا](/ar/clickstack/self-configured/managing/performance-tuning#materialize-frequently-queried-attributes).
+  </Step>
+
+  <Step title="إضافة فهارس تخطي البيانات" id="add-skip-indexes">
+    تتيح فهارس تخطي البيانات لـ ClickHouse استبعاد حبيبات البيانات التي لا يمكن أن تطابق عامل التصفية، فيتحول الفحص الكامل إلى قراءة صغيرة موجّهة. وثمة ثلاثة أنواع تستحق المعرفة:
+
+    * **الفهارس النصية** (`text(tokenizer = ...)`) على column من نوع string وعلى مصفوفات `mapKeys`/`*AttributeItems`. ويتضمنها مخطط السجلات الافتراضي بالفعل.
+    * **فهارس Min-max** على الـ column الرقمية التي تُصفّى حسب النطاق، ويُعد `Duration` في التتبّع المثال النموذجي على ذلك.
+    * **مرشحات Bloom** لعمليات البحث بالمساواة على القيم ذات عدد العناصر الكبير، في إصدارات ClickHouse التي لا تدعم الفهارس النصية بعد.
+
+    ```sql
+    ALTER TABLE otel_traces ADD INDEX idx_duration Duration TYPE minmax GRANULARITY 1;
+    ALTER TABLE otel_traces MATERIALIZE INDEX idx_duration;
+    ```
+
+    لا يكون فهرس التخطي مجديًا مقارنةً بتكلفة تقييمه إلا إذا استبعد حبيبات بيانات فعلًا. لذا تحقّق من ذلك باستخدام `EXPLAIN indexes = 1` على استعلام نموذجي قبل أن تفترض أنه أحدث فرقًا.
+
+    اقرأ المزيد: [إضافة فهارس تخطي البيانات](/ar/clickstack/self-configured/managing/performance-tuning#adding-skip-indexes).
+  </Step>
+
+  <Step title="الحساب المسبق لعمليات التجميع المتكررة" id="materialized-views">
+    عندما يُنفَّذ التجميع نفسه مرارًا على لوحة معلومات (أهم الخدمات حسب معدل الأخطاء، أو زمن الانتقال p99 لكل نقطة نهاية، أو عدد الطلبات في الدقيقة)، يحسب العرض المُجسَّد النتيجة في وقت الإدراج ويكتبها في جدول تجميع تلخيصي صغير. وعندها تستعلم لوحات المعلومات من هذا الجدول بدلًا من السجلات أو التتبّعات الخام، وهو أقل تكلفة بكثير.
+
+    يؤتي هذا ثماره عندما تكون لوحة المعلومات كثيرة الاستخدام والجدول الأساسي كبيرًا. أما الثمن فهو بعض استهلاك المعالج في وقت الإدراج، وجدول إضافي يحتاج إلى صيانة.
+
+    اقرأ المزيد: [الاستفادة من العروض المُجسَّدة](/ar/clickstack/self-configured/managing/performance-tuning#exploiting-materialized-views).
+  </Step>
+
+  <Step title="اختيار مفتاح أساسي يناسب نمط الوصول لديك" id="choose-primary-key">
+    يتحكم المفتاح الأساسي في ترتيب الصفوف على القرص. فعوامل التصفية على الـ column الأولى من هذا المفتاح تتيح لـ ClickHouse الانتقال مباشرةً إلى الجزء المعني من البيانات، أما عوامل التصفية التي لا تبدأ بأحد هذه الـ column فتفحص القسم بأكمله.
+
+    يلائم مفتاح السجلات الافتراضي `(toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)` استعلامات من نوع &quot;ما الذي حدث في آخر N دقيقة للخدمة X&quot;. وإذا كانت معظم استعلاماتك تبدأ بـ column مختلف (معرّف مستأجر، أو معرّف عميل، أو منطقة)، فإن تغيير المفتاح الأساسي ليبدأ بذلك الـ column هو أكثر تغيير تأثيرًا يمكنك إجراؤه.
+
+    ```sql
+    CREATE TABLE otel_logs_v2
+    (
+      -- نفس الأعمدة الموجودة في otel_logs
+    )
+    ENGINE = MergeTree
+    ORDER BY (TenantId, ServiceName, Timestamp);
+    ```
+
+    لا يسمح ClickHouse بتعديل المفتاح الأساسي لجدول قائم، لذا يتطلب الأمر ترحيل الجدول ولا يكفي فيه أمر `ALTER` بسيط. ويشرح دليل ضبط الأداء خطوات إنشاء الجدول الجديد، وإعادة توجيه الاستيعاب، واستخدام جدول `Merge` لتظل لوحات المعلومات الحالية تعمل على البيانات القديمة والجديدة معًا.
+
+    اقرأ المزيد: [تعديل المفتاح الأساسي](/ar/clickstack/self-configured/managing/performance-tuning#modifying-the-primary-key).
+  </Step>
+</Steps>
+
+## قراءات إضافية {#further-reading}
+
+* [ضبط الأداء](/ar/clickstack/self-configured/managing/performance-tuning): الدليل الكامل، بما في ذلك الإسقاطات وتسريع البحث عن الصفوف.
+* [الجداول والمخططات المستخدمة في ClickStack](/ar/clickstack/self-configured/ingesting-data/schemas): تعريفات DDL القياسية التي تستند إليها هذه التحسينات.
+* [الانتقال إلى بيئة الإنتاج](/ar/clickstack/self-configured/managing/production): توصيات أشمل لبيئة الإنتاج.

@@ -10,9 +10,7 @@ doc_type: 'guide'
 
 Les exemples suivants montrent de façon très simple comment charger des données JSON structurées et semi-structurées. Pour des JSON plus complexes, notamment avec des structures imbriquées, consultez le guide [**Concevoir un schéma JSON**](/fr/guides/clickhouse/data-formats/json/schema).
 
-<div id="loading-structured-json">
-  ## Chargement de JSON structuré
-</div>
+## Chargement de JSON structuré {#loading-structured-json}
 
 Dans cette section, nous supposons que les données JSON sont au format [`NDJSON`](https://github.com/ndjson/ndjson-spec) (JSON délimité par des sauts de ligne), connu sous le nom de [`JSONEachRow`](/fr/reference/formats/JSON/JSONEachRow) dans ClickHouse, et bien structurées, c&#39;est-à-dire que les noms de colonnes et les types sont fixes. `NDJSON` est le format privilégié pour le chargement de données JSON en raison de sa concision et de son utilisation efficace de l&#39;espace, mais d&#39;autres formats sont pris en charge, aussi bien en [entrée qu&#39;en sortie](/fr/reference/formats/JSON/JSON).
 
@@ -131,11 +129,9 @@ FORMAT JSONEachRow
 
 Ces exemples supposent l&#39;utilisation du format `JSONEachRow`. D&#39;autres formats JSON courants sont également pris en charge, et des exemples de leur utilisation sont disponibles [ici](/fr/guides/clickhouse/data-formats/json/formats).
 
-<div id="loading-semi-structured-json">
-  ## Chargement de JSON semi-structuré
-</div>
+## Chargement de JSON semi-structuré {#loading-semi-structured-json}
 
-Dans l’exemple précédent, nous avons chargé un JSON statique avec des noms de clés et des types bien connus. Or, ce n’est souvent pas le cas : des clés peuvent être ajoutées ou leur type peut changer. C’est fréquent dans des cas d’usage comme les données d’observabilité.
+Dans l’exemple précédent, nous avons chargé un JSON statique avec des noms de clés et des types bien connus. Or, ce n’est souvent pas le cas : des clés peuvent être ajoutées ou leur type peut changer. C’est fréquent dans des cas d’usage comme les données d’observabilité.
 
 ClickHouse gère cela grâce à un type [`JSON`](/fr/reference/data-types/newjson) dédié.
 
@@ -159,11 +155,9 @@ Prenons l’exemple suivant, tiré d’une version enrichie du [jeu de données 
 
 ```
 
-La colonne `tags` est ici imprévisible, et il nous est donc impossible de la modéliser. Pour charger ces données, nous pouvons utiliser notre schéma précédent, mais en ajoutant une colonne `tags` supplémentaire de type [`JSON`](/fr/reference/data-types/newjson) :
+La colonne `tags` est ici imprévisible, et il nous est donc impossible de la modéliser. Pour charger ces données, nous pouvons utiliser notre schéma précédent, mais en ajoutant une colonne `tags` supplémentaire de type [`JSON`](/fr/reference/data-types/newjson) :
 
 ```sql
-SET enable_json_type = 1;
-
 CREATE TABLE pypi_with_tags
 (
     `date` Date,
@@ -180,7 +174,11 @@ ENGINE = MergeTree
 ORDER BY (project, date);
 ```
 
-Nous remplissons la table en suivant la même approche que pour le jeu de données d’origine :
+<Note>
+  Dans les versions 24.8 à 25.2, activez le type `JSON` avec `SET allow_experimental_json_type = 1;` avant de créer la table.
+</Note>
+
+Nous remplissons la table en suivant la même approche que pour le jeu de données d’origine :
 
 ```sql
 INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
@@ -215,9 +213,7 @@ LIMIT 2
 
 Notez ici la différence de performances lors du chargement des données. La colonne JSON nécessite une inférence de type au moment de l’insertion, ainsi qu’un espace de stockage supplémentaire si certaines colonnes peuvent avoir plusieurs types. Bien que le type JSON puisse être configuré (voir [Concevoir un schéma JSON](/fr/guides/clickhouse/data-formats/json/schema)) pour offrir des performances équivalentes à celles d’une déclaration explicite des colonnes, il a été conçu pour être flexible par défaut. Cette flexibilité a toutefois un coût.
 
-<div id="when-to-use-the-json-type">
-  ### Quand utiliser le type JSON
-</div>
+### Quand utiliser le type JSON {#when-to-use-the-json-type}
 
 Utilisez le type JSON lorsque vos données :
 

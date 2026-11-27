@@ -348,6 +348,8 @@ VectorWithMemoryTracking<std::pair<String, String>> JoinStepLogical::describeJoi
 
     description.emplace_back("Type", toString(join_operator.kind));
     description.emplace_back("Strictness", toString(join_operator.strictness));
+    if (join_operator.set_operation != JoinSetOperation::None)
+        description.emplace_back("Set operation", String(toString(join_operator.set_operation)));
     description.emplace_back("Locality", toString(join_operator.locality));
     description.emplace_back("Expression", formatJoinCondition(join_operator.expression));
     return description;
@@ -2067,6 +2069,47 @@ static void constructBlockNestedLoopJoinStep(
         nodes, makeDescription("Post Join Actions"));
 }
 
+/// `INTERSECT` compares all columns, so a joined row has the same values on both sides. Outputs the probe side columns
+/// under the names of the build side ones, so nothing after the join changes.
+static void outputFromProbe(
+    const JoinOperator & join_operator, JoinExpressionActions & expression_actions, ActionsDAG::NodeRawConstPtrs & actions_after_join)
+{
+    /// For each build side column, find the probe side column that its key compares it with.
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> probe_column_for;
+    for (const auto & key : join_operator.expression)
+    {
+        auto [op, left, right] = key.asBinaryPredicate();
+        if (left.fromRight())
+            std::swap(left, right);
+        const bool input_columns
+            = left.getNode()->type == ActionsDAG::ActionType::INPUT && right.getNode()->type == ActionsDAG::ActionType::INPUT;
+        if (op != JoinConditionOperator::NullSafeEquals || !left.fromLeft() || !right.fromRight() || !input_columns)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "A key of the join that executes `INTERSECT` does not compare a column of each side: {}", key.dump());
+        probe_column_for[right.getNode()] = left.getNode();
+    }
+
+    /// Replace each build side output by the probe side column with the same values. Other outputs, such as a constant
+    /// left when nothing of the result is used, stay.
+    auto dag = expression_actions.getActionsDAG();
+    for (auto & output : actions_after_join)
+    {
+        if (!JoinActionRef(output, expression_actions).fromRight())
+            continue;
+
+        const auto * column = output->type == ActionsDAG::ActionType::ALIAS ? output->children.front() : output;
+        auto it = probe_column_for.find(column);
+        if (it == probe_column_for.end() || !it->second->result_type->equals(*output->result_type))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "The output {} of the join that executes `INTERSECT` has no key with a probe side column of the same type",
+                output->result_name);
+
+        const auto * from_probe = &dag->addAlias(*it->second, output->result_name);
+        std::ranges::replace(dag->getOutputs(), output, from_probe);
+        output = from_probe;
+    }
+}
+
 static QueryPlanNode buildPhysicalJoinImpl(
     VectorWithMemoryTracking<QueryPlanNode *> children,
     JoinOperator join_operator,
@@ -2074,7 +2117,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     JoinSettings join_settings,
     JoinAlgorithmParams join_algorithm_params,
     SortingStep::Settings sorting_settings,
-    const ActionsDAG::NodeRawConstPtrs & actions_after_join,
+    ActionsDAG::NodeRawConstPtrs actions_after_join,
     const QueryPlanOptimizationSettings & optimization_settings,
     QueryPlan::Nodes & nodes,
     LogicalJoinInfo && logical_join_info,
@@ -2082,6 +2125,16 @@ static QueryPlanNode buildPhysicalJoinImpl(
     const UnorderedMapWithMemoryTracking<String, ColumnStats> & right_relation_column_stats)
 {
     auto * logical_lookup = typeid_cast<JoinStepLogicalLookup *>(children.back()->step.get());
+
+    /// The size limits of a join would truncate the result of a set operation. `Dynamic` keys are hashed the same way as
+    /// in the set operation.
+    if (join_operator.set_operation != JoinSetOperation::None)
+    {
+        join_settings.join_algorithms = {JoinAlgorithm::HASH};
+        join_settings.allow_dynamic_type_in_join_keys = true;
+        join_settings.max_rows_in_join = 0;
+        join_settings.max_bytes_in_join = 0;
+    }
 
     auto table_join = std::make_shared<TableJoin>(join_settings, logical_lookup && logical_lookup->useNulls(),
         Context::getGlobalContextInstance()->getGlobalTemporaryVolume(),
@@ -2133,6 +2186,17 @@ static QueryPlanNode buildPhysicalJoinImpl(
     {
         if (node->type == ActionsDAG::ActionType::ALIAS)
         planning_context.actions_after_join_map[node->result_name] = node->children.at(0);
+    }
+
+    if (join_operator.set_operation == JoinSetOperation::IntersectDistinct)
+    {
+        /// The outputs are columns of the first arm, or only a constant when nothing of the result is used.
+        const bool first_arm_is_left = std::ranges::none_of(
+            actions_after_join, [&](const auto * output) { return JoinActionRef(output, expression_actions).fromRight(); });
+
+        /// The build side of `INTERSECT` is needed only for the keys if the rows come from the probe side.
+        if (!first_arm_is_left)
+            outputFromProbe(join_operator, expression_actions, actions_after_join);
     }
 
     /// Selectivity estimates for the InequalityJoin key condition choice; only needed when the choice is
@@ -3115,7 +3179,7 @@ void JoinStepLogical::serialize(Serialization & ctx) const
     auto actions_dag = expression_actions.getActionsDAG();
     actions_dag->serialize(ctx.out, ctx.registry);
 
-    join_operator.serialize(ctx.out, actions_dag.get());
+    join_operator.serialize(ctx.out, actions_dag.get(), ctx.step_version);
     serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
 
     /// A step that crosses the wire tells the receiver which decisions were already taken on it, so
@@ -3193,7 +3257,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     auto right_header = ctx.input_headers.back();
     JoinExpressionActions expression_actions(*left_header, *right_header, std::move(actions_dag));
 
-    auto join_operator = JoinOperator::deserialize(ctx.in, expression_actions);
+    auto join_operator = JoinOperator::deserialize(ctx.in, expression_actions, ctx.step_version);
     auto actions_after_join = deserializeNodeList(ctx.in, id_to_node);
 
     SortingStep::Settings sort_settings(ctx.settings);
@@ -3308,7 +3372,9 @@ void registerJoinStep(QueryPlanStepRegistry & registry);
 
 void registerJoinStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Join", JoinStepLogical::deserialize);
+    /// Version 1 adds the set operation of the join.
+    const QueryPlanStepRegistry::StepVersions versions{{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_OPERATION_AS_JOIN}};
+    registry.registerStep("Join", JoinStepLogical::deserialize, versions);
 }
 
 

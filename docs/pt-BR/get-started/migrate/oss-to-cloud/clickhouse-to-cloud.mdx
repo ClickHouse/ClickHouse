@@ -12,40 +12,30 @@ import AddARemoteSystem from '/snippets/pt-BR/_add_remote_ip_access_list_detail.
 import CompatibilityNote from '/snippets/pt-BR/compatibility.mdx';
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Migrando ClickHouse autogerenciado](/images/integrations/migration/self-managed-01.webp)
-
-</Frame>
-
+  <Frame>
+    ![Migrando ClickHouse autogerenciado](/images/integrations/migration/self-managed-01.webp)
+  </Frame>
 </div>
 
 Este guia mostra como migrar de um servidor ClickHouse autogerenciado para o ClickHouse Cloud, além de como migrar entre serviços do ClickHouse Cloud.
 A função [`remoteSecure`](/pt-BR/reference/functions/table-functions/remote) é usada em consultas `SELECT` e `INSERT` para permitir o acesso a servidores remotos do ClickHouse, o que torna a migração de tabelas tão simples quanto escrever uma consulta `INSERT INTO` com um `SELECT` embutido.
 
-<div id="migrating-from-self-managed-clickhouse-to-clickhouse-cloud">
-  ## Migrando de ClickHouse autogerenciado para ClickHouse Cloud
-</div>
+## Migrando de ClickHouse autogerenciado para ClickHouse Cloud {#migrating-from-self-managed-clickhouse-to-clickhouse-cloud}
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Migrando ClickHouse autogerenciado](/images/integrations/migration/self-managed-02.webp)
-
-</Frame>
-
+  <Frame>
+    ![Migrando ClickHouse autogerenciado](/images/integrations/migration/self-managed-02.webp)
+  </Frame>
 </div>
 
-Independentemente de a tabela de origem estar em shards e/ou ser replicada, no ClickHouse Cloud você só precisa criar uma tabela de destino (pode omitir o parâmetro `Engine` dessa tabela; `SharedMergeTree` será selecionado automaticamente como o mecanismo da tabela),
+Independentemente de a tabela de origem estar em shards e/ou ser replicada, no ClickHouse Cloud você só precisa criar uma tabela de destino (pode omitir o parâmetro Engine dessa tabela; `SharedMergeTree` será selecionado automaticamente como o mecanismo da tabela),
 e o ClickHouse Cloud cuidará automaticamente do escalonamento vertical e horizontal.
 Você não precisa se preocupar com como replicar e dividir a tabela em shards.
 
 Neste exemplo, o servidor ClickHouse autogerenciado é a *origem* e o serviço ClickHouse Cloud é o *destino*.
 
 <div id="overview">
-  ### Visão geral
+  ### Visão geral {#overview}
 </div>
 
 O processo é:
@@ -57,7 +47,7 @@ O processo é:
 5. Remova o usuário somente leitura do serviço de origem
 
 <div id="migration-of-tables-from-one-system-to-another">
-  ### Migração de tabelas de um sistema para outro:
+  ### Migração de tabelas de um sistema para outro: {#migration-of-tables-from-one-system-to-another}
 </div>
 
 Este exemplo migra uma tabela de um servidor ClickHouse autogerenciado para o ClickHouse Cloud.
@@ -65,7 +55,7 @@ Este exemplo migra uma tabela de um servidor ClickHouse autogerenciado para o Cl
 <CompatibilityNote />
 
 <div id="on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data">
-  ### No sistema ClickHouse de origem (o sistema que atualmente armazena os dados)
+  ### No sistema ClickHouse de origem (o sistema que atualmente armazena os dados) {#on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data}
 </div>
 
 * Adicione um usuário com permissão somente de leitura para ler a tabela de origem (`db.table` neste exemplo)
@@ -88,9 +78,7 @@ FROM system.tables
 WHERE database = 'db' AND table = 'table'
 ```
 
-<div id="on-the-destination-clickhouse-cloud-system">
-  ### No sistema ClickHouse Cloud de destino:
-</div>
+### No sistema ClickHouse Cloud de destino: {#on-the-destination-clickhouse-cloud-system}
 
 * Crie o banco de dados de destino:
 
@@ -111,13 +99,9 @@ CREATE TABLE db.table ...
 * Use a função `remoteSecure` para extrair os dados a partir da origem autogerenciada
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Migrando o ClickHouse autogerenciado](/images/integrations/migration/self-managed-03.webp)
-
-</Frame>
-
+  <Frame>
+    ![Migrando o ClickHouse autogerenciado](/images/integrations/migration/self-managed-03.webp)
+  </Frame>
 </div>
 
 ```sql
@@ -132,13 +116,9 @@ remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
 * Use a função `remoteSecure` para enviar os dados para o serviço ClickHouse Cloud
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Migrando o ClickHouse autogerenciado](/images/integrations/migration/self-managed-04.webp)
-
-</Frame>
-
+  <Frame>
+    ![Migrando o ClickHouse autogerenciado](/images/integrations/migration/self-managed-04.webp)
+  </Frame>
 </div>
 
 <Tip>
@@ -155,18 +135,12 @@ remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
 'default', 'PASS') SELECT * FROM db.table
 ```
 
-<div id="migrating-between-clickhouse-cloud-services">
-  ## Migração entre serviços do ClickHouse Cloud
-</div>
+## Migração entre serviços do ClickHouse Cloud {#migrating-between-clickhouse-cloud-services}
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Migração de ClickHouse autogerenciado](/images/integrations/migration/self-managed-05.webp)
-
-</Frame>
-
+  <Frame>
+    ![Migração de ClickHouse autogerenciado](/images/integrations/migration/self-managed-05.webp)
+  </Frame>
 </div>
 
 Alguns casos de uso para migrar dados entre serviços do ClickHouse Cloud:
@@ -177,13 +151,9 @@ Alguns casos de uso para migrar dados entre serviços do ClickHouse Cloud:
 Neste exemplo, há dois serviços do ClickHouse Cloud, que serão chamados de *origem* e *destino*. Os dados serão extraídos da origem para o destino. Embora você também possa optar por enviar, a extração é mostrada porque usa um usuário somente leitura.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Migração de ClickHouse autogerenciado](/images/integrations/migration/self-managed-06.webp)
-
-</Frame>
-
+  <Frame>
+    ![Migração de ClickHouse autogerenciado](/images/integrations/migration/self-managed-06.webp)
+  </Frame>
 </div>
 
 Há algumas etapas na migração:
@@ -197,7 +167,7 @@ Há algumas etapas na migração:
 7. Remova o usuário somente leitura do serviço de origem
 
 <div id="add-a-read-only-user-to-the-source-service">
-  #### Adicione um usuário somente leitura ao serviço de origem
+  #### Adicione um usuário somente leitura ao serviço de origem {#add-a-read-only-user-to-the-source-service}
 </div>
 
 * Adicione um usuário somente leitura que possa ler a tabela de origem (`db.table` neste exemplo)
@@ -220,7 +190,7 @@ Há algumas etapas na migração:
   ```
 
 <div id="duplicate-the-table-structure-on-the-destination-service">
-  #### Duplique a estrutura da tabela no serviço de destino
+  #### Duplique a estrutura da tabela no serviço de destino {#duplicate-the-table-structure-on-the-destination-service}
 </div>
 
 No destino, crie o banco de dados, caso ele ainda não exista:
@@ -239,7 +209,7 @@ No destino, crie o banco de dados, caso ele ainda não exista:
   ```
 
 <div id="allow-remote-access-to-the-source-service">
-  #### Permita acesso remoto ao serviço de origem
+  #### Permita acesso remoto ao serviço de origem {#allow-remote-access-to-the-source-service}
 </div>
 
 Para extrair dados da origem para o destino, o serviço de origem precisa permitir conexões. Desative temporariamente a funcionalidade &quot;lista de acesso por IP&quot; no serviço de origem.
@@ -251,7 +221,7 @@ Para extrair dados da origem para o destino, o serviço de origem precisa permit
 Modifique a lista de permissões e permita acesso de **Anywhere** temporariamente. Consulte a documentação de [lista de acesso por IP](/pt-BR/products/cloud/guides/security/connectivity/setting-ip-filters) para mais detalhes.
 
 <div id="copy-the-data-from-source-to-destination">
-  #### Copie os dados da origem para o destino
+  #### Copie os dados da origem para o destino {#copy-the-data-from-source-to-destination}
 </div>
 
 * Use a função `remoteSecure` para extrair os dados do serviço de origem no ClickHouse Cloud
@@ -265,13 +235,13 @@ Modifique a lista de permissões e permita acesso de **Anywhere** temporariament
 * Verifique os dados no serviço de destino
 
 <div id="re-establish-the-ip-access-list-on-the-source">
-  #### Restabeleça a lista de acesso por IP na origem
+  #### Restabeleça a lista de acesso por IP na origem {#re-establish-the-ip-access-list-on-the-source}
 </div>
 
 Se você exportou a lista de acesso antes, pode reimportá-la usando **Share**; caso contrário, adicione novamente os IPs à lista de acesso.
 
 <div id="remove-the-read-only-exporter-user">
-  #### Remova o usuário somente leitura `exporter`
+  #### Remova o usuário somente leitura `exporter` {#remove-the-read-only-exporter-user}
 </div>
 
 ```sql

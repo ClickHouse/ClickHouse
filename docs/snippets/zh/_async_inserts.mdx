@@ -5,10 +5,10 @@ title: 异步插入
 当客户端侧批处理不可行时，ClickHouse 的异步插入提供了一种强有力的替代方案。这在可观测性工作负载中尤其有价值，因为成百上千个 agent 会持续发送数据——日志、指标、链路追踪——而且这些数据通常都是小型、实时的载荷。在这类环境中，在客户端侧缓冲数据会增加复杂性，因为需要集中式队列来确保能够发送足够大的批次。
 
 <Note>
-  不建议在同步模式下发送大量小批次，这会导致创建许多 parts，进而造成查询性能下降，并引发[&quot;too many part&quot;](/zh/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts)错误。
+  不建议在同步模式下发送大量小批次，这会导致创建许多 parts，进而造成查询性能下降，并引发[&quot;parts 过多&quot;](/zh/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts)错误。
 </Note>
 
-异步插入会先将传入数据写入内存缓冲区，再根据可配置的阈值将其刷写到存储，从而把批处理责任从客户端转移到服务器端。这种方式可显著减少 parts 创建开销、降低 CPU 使用率，并确保摄取即使在高并发下也能保持高效。
+异步插入会先将传入数据写入内存缓冲区，再根据可配置的阈值将其刷写到存储，从而把批处理责任从客户端转移到服务端。这种方式可显著减少 parts 创建开销、降低 CPU 使用率，并确保摄取即使在高并发下也能保持高效。
 
 其核心行为由 [`async_insert`](/zh/reference/settings/session-settings/async-insert#async_insert) 设置控制。
 
@@ -32,27 +32,27 @@ title: 异步插入
 
 可以通过 [`wait_for_async_insert`](/zh/reference/settings/session-settings/wait-for#wait_for_async_insert) 设置进一步细化异步插入的行为。
 
-当该值设为 1 (默认值) 时，ClickHouse 只有在数据成功写入磁盘后才会确认插入。这样可以提供更强的持久性保障，也让错误处理更直接：如果在刷写期间发生问题，错误会返回给客户端。对于大多数生产场景，尤其是在必须可靠跟踪插入失败时，建议使用此模式。
+当该值设为 1 (默认值) 时，ClickHouse 只有在数据成功写入磁盘后才会确认插入。因此，客户端需要等待其批次达到刷写阈值、等待出现空闲的刷写线程 ([`async_insert_threads`](/zh/reference/settings/server-settings/settings/async-insert#async_insert_threads)，默认值为 16) ，并等待刷写本身完成。这样可以提供更强的持久性保障，也让错误处理更直接：如果在刷写期间发生问题，错误会返回给客户端。对于大多数生产场景，尤其是在必须可靠跟踪插入失败时，建议使用此模式。
 
 [基准测试](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) 表明，得益于自适应插入以及稳定的 part 创建行为，它在并发场景下也能很好地扩展——无论是运行 200 个还是 500 个客户端。
 
-将 `wait_for_async_insert = 0` 设为 0 会启用“发出即忘”模式。在这种模式下，server 会在数据进入缓冲区后立即确认插入，而不会等待其写入存储。
+将 `wait_for_async_insert = 0` 设为 0 会启用“发出即忘”模式。在这种模式下，服务端 会在数据进入缓冲区后立即确认插入，而不会等待其写入存储。
 
-这种方式可实现超低延迟插入和最高吞吐量，非常适合高速度、低关键性的数据场景。但这也有代价：无法保证数据一定会持久化，错误只会在刷写期间暴露，而且失败的插入也没有 dead-letter queue——要追踪失败，只能事后检查服务器日志和系统表。只有在你的 workload 可以容忍数据丢失时，才应使用此模式。
+这种方式可实现超低延迟插入和最高吞吐量，非常适合高速度、低关键性的数据场景。但这也有代价：无法保证数据一定会持久化，错误只会在刷写期间暴露，而且失败的插入也没有死信队列——要追踪失败，只能事后检查服务端日志和系统表。只有在你的 工作负载 可以容忍数据丢失时，才应使用此模式。
 
 [基准测试还表明](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)，当缓冲区刷写不频繁时 (例如每 30 秒一次) ，part 数量会显著减少，CPU 使用率也会更低，但静默失败的风险依然存在。
 
-我们的强烈建议是：如果使用异步插入，请使用 `async_insert=1,wait_for_async_insert=1`。使用 `wait_for_async_insert=0` 风险很高，因为即使发生错误，你的 INSERT 客户端也可能毫不知情；此外，如果客户端在 ClickHouse server 需要降低写入速度并施加反压以确保服务可靠性时仍持续快速写入，还可能导致潜在过载。
+我们的强烈建议是：如果使用异步插入，请使用 `async_insert=1,wait_for_async_insert=1`。使用 `wait_for_async_insert=0` 风险很高，因为即使发生错误，你的 INSERT 客户端也可能毫不知情；此外，如果客户端在 ClickHouse 服务端 需要降低写入速度并施加反压以确保服务可靠性时仍持续快速写入，还可能导致潜在过载。
 
 ### 自适应异步插入 {#adaptive-async-inserts}
 
 从 24.2 版本开始，ClickHouse 默认使用自适应刷写超时 ([`async_insert_use_adaptive_busy_timeout`](/zh/reference/settings/session-settings/async-insert#async_insert_use_adaptive_busy_timeout))。不再使用固定的刷写间隔，而是根据传入数据速率，在最小值 ([`async_insert_busy_timeout_min_ms`](/zh/reference/settings/session-settings/async-insert#async_insert_busy_timeout_min_ms)，默认 50 毫秒) 和最大值 ([`async_insert_busy_timeout_max_ms`](/zh/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms)，默认 200 毫秒，Cloud 上为 1000 毫秒) 之间动态调整超时。
 
-当数据频繁到达时，超时会保持更接近最小值，以便更早刷写并降低端到端延迟。当数据较为稀疏时，超时则会增大并趋近最大值，以积累更大的批次。这在默认模式 (`wait_for_async_insert=1`) 下尤其有用，因为如果使用固定且较高的超时，即使数据已经可以刷写，客户端仍需阻塞等待整个时间间隔结束。
+超时按队列分片 (`async_insert_threads`，默认 16) 跟踪，而非按表跟踪。持续而频繁的插入操作会使超时逐渐趋近最大值，因此在默认模式 (`wait_for_async_insert=1`) 下，每次插入在得到确认之前都需要等待更长时间。插入操作放缓后，超时会回退并趋近最小值。经过较长时间的空闲期后，下一次插入可以跳过超时，立即刷写。
 
 ### 错误处理 {#error-handling}
 
-Schema 验证和数据解析发生在缓冲区 刷写 时，而不是在收到插入时进行。如果某个插入查询中的任意一行出现解析错误或类型错误，**该查询中的所有数据都不会被 刷写**——整个查询的载荷都会被拒绝。在默认模式 (`wait_for_async_insert=1`) 下，错误会返回给客户端。在发出即忘模式下，错误会被写入服务器日志和 [`system.asynchronous_inserts`](/zh/reference/system-tables/asynchronous_inserts) 表。
+Schema 验证和数据解析发生在缓冲区 刷写 时，而不是在收到插入时进行。如果某个插入查询中的任意一行出现解析错误或类型错误，**该查询中的所有数据都不会被 刷写**——整个查询的载荷都会被拒绝。在默认模式 (`wait_for_async_insert=1`) 下，错误会返回给客户端。在发出即忘模式下，错误会被写入服务器日志和 [`system.asynchronous_insert_log`](/zh/reference/system-tables/asynchronous_insert_log) 表。
 
 目标端的查找和授权也会在刷写时，依据届时的目录和访问控制状态重新评估，而不是依据收到插入时的状态。在收到插入后、刷写缓冲区前，如果有 materialized view 关联到目标端，或有授权被撤销，都会影响此次刷写。
 
@@ -99,7 +99,7 @@ Schema 验证和数据解析发生在缓冲区 刷写 时，而不是在收到�
 </Note>
 
 <div id="flushing-buffers-on-shutdown">
-  ### 关闭时刷新缓冲区
+  ### 关闭时刷新缓冲区 {#flushing-buffers-on-shutdown}
 </div>
 
 如需刷新所有待处理的 async insert 缓冲区 (例如在优雅关闭期间或维护前) ，请运行：
@@ -111,7 +111,7 @@ SYSTEM FLUSH ASYNC INSERT QUEUE
 这可确保在服务器停止前，所有缓冲的数据都会先写入存储。
 
 <div id="comparison-with-buffer-tables">
-  ### 与缓冲表的比较
+  ### 与缓冲表的比较 {#comparison-with-buffer-tables}
 </div>
 
 异步插入是 [缓冲表](/zh/reference/engines/table-engines/special/buffer) 的现代替代方案。主要区别如下：

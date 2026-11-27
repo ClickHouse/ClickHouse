@@ -685,10 +685,12 @@ static void gatherColumnFromRows(ColumnType * col, const RowPointers & rows, siz
     }
     else
         col->reserve(col->size() + count);
+    /// Check the range once, not for every row.
+    const char * const * selected_rows = std::span(rows).subspan(begin, count).data();
     for (size_t i = 0; i < count; ++i)
     {
         /// TODO: try prefetching the rows.
-        const char * row = rows[begin + i];
+        const char * row = selected_rows[i];
         chassert(row != nullptr);
 
         if constexpr (with_null_map)

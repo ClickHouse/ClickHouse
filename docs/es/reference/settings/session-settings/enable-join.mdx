@@ -47,8 +47,10 @@ Filtra el lado izquierdo usando el conjunto de claves de JOIN recopiladas del la
 
 Descarta gránulos del lado de sondeo de un JOIN mediante el filtro en tiempo de ejecución generado a partir del lado de construcción; consulta `enable_join_runtime_filters`.
 Solo tiene efecto si `use_skip_indexes_on_data_read = 1`.
-Solo se pueden descartar gránulos si la join key es una columna de la clave primaria del lado de sondeo o está cubierta por un índice de omisión `minmax`, `set` o `bloom_filter`.
+Solo se pueden descartar gránulos si la join key es una columna de la clave primaria del lado de sondeo, está cubierta por un índice de omisión `minmax`, `set` o `bloom_filter` o es el índice global de fila `_part_starting_offset + _part_offset`. Un self-join sobre el índice global de fila, que obtiene las filas encontradas por una subconsulta, lee únicamente los gránulos de esas filas. El índice global de fila identifica una fila solo dentro de una misma consulta, por lo que ambos lados del JOIN deben leer la tabla en la misma consulta.
 Si el filtro en tiempo de ejecución conserva los valores exactos de la clave, el predicado utilizado para descartar gránulos es un conjunto `IN` de esos valores; de lo contrario, se utiliza el rango entre el valor mínimo y el máximo de la clave (lo que permite descartar menos gránulos).
+
+En una tabla Iceberg, la configuración también permite omitir archivos de datos completos, así como los grupos de filas y las páginas Parquet de los archivos que se leen; consulta [use&#95;join&#95;runtime&#95;filters&#95;for&#95;iceberg&#95;pruning](/es/reference/settings/session-settings/use#use_join_runtime_filters_for_iceberg_pruning). Esto no depende de `use_skip_indexes_on_data_read`.
 
 Funciona con réplicas paralelas (`enable_parallel_replicas = 1`): cada réplica descarta los gránulos que lee mediante el filtro que ella misma ha construido. Ese filtro puede ser parcial (en un JOIN `RIGHT`, el lado de construcción es el que se reparte entre las réplicas, por lo que el filtro de cada réplica solo cubre su propia parte), pero el resultado sigue siendo correcto, ya que solo se reparte uno de los lados del JOIN, cada par de filas coincidentes se encuentra en una única réplica y cada réplica genera una parte disjunta del resultado.
 

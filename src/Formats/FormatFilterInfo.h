@@ -56,6 +56,7 @@ struct FormatTopKFilterInfo
     bool track_row_group_best_values = false;
     /// If false, the threshold only orders and skips whole row groups by their statistics: no row is compared with it.
     bool filter_rows = true;
+    Names columns_deciding_threshold;
 };
 
 /// Throws INCORRECT_DATA if `type` at `path`, or any field nested in it, has no id in `field_ids` (a `ColumnMapper` storage encoding).
@@ -237,6 +238,8 @@ struct FormatFilterInfo
     /// Once all its filters are built, the format may skip the row groups whose statistics cannot contain
     /// a key of them. Only the Parquet format uses it.
     std::shared_ptr<const RuntimeFilterPruningPredicate> join_runtime_filter_predicate;
+    /// Whether checking it on pages may read a column index that the Parquet metadata cache cannot keep.
+    bool join_runtime_filter_reads_uncached_column_index = false;
 
     /// Output columns are consumed only by `min` / `max`: the format may return any rows with the same per-column min and max.
     bool min_max_from_statistics = false;

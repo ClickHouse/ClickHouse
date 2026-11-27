@@ -119,8 +119,9 @@ struct TopKAggregationHeapBase
     void exchangeSharedBoundary();
 
     /// Per-row on the paths the typed fast path does not cover (`String`, composite, and
-    /// anything the numeric dispatch rejects), hence inline.
-    [[nodiscard]] bool shouldSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
+    /// anything the numeric dispatch rejects), hence inline. The libc++ hardening checks make it too big for the
+    /// inliner, so it is forced.
+    [[nodiscard]] ALWAYS_INLINE bool shouldSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
     {
         chassert(!frozen);
         chassert(hasBoundary());

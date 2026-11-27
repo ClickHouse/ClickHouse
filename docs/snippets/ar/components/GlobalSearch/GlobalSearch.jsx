@@ -33,7 +33,9 @@ export const GlobalSearch = ({ placeholder = "ابحث في مستندات Click
     const keyStaging = "d3e2792740610240ff7bcf2c2a78a33012812eb4f3e34d54"
     const keyLocal = "b25e5cf856ec9da60d250578b59dace8417359feeedcbc6b"
     const apiKey = /\.mintlify\.(?:app|site)$/.test(window.location.hostname) ? keyStaging : keyLocal
-    const embedUrl = "https://cdn.jsdelivr.net/npm/@inkeep/cxkit-js@0.5/dist/embed.js"
+    // Pinned with its subresource integrity hash (see the update instructions in inkeep-init.js).
+    const embedUrl = "https://cdn.jsdelivr.net/npm/@inkeep/cxkit-js@0.5.119/dist/embed.js"
+    const embedIntegrity = "sha384-+Gf6Mr27hHCxYbuIDvsYAH5kgS5v8WYmSCrsokwyFn0SDpTn0sdeq88sHj3nphi0"
     const config = {
       baseSettings: {
         apiKey,
@@ -142,6 +144,8 @@ export const GlobalSearch = ({ placeholder = "ابحث في مستندات Click
         script.id = "inkeep-embed-js-script"
         script.type = "module"
         script.src = embedUrl
+        script.integrity = embedIntegrity
+        script.crossOrigin = "anonymous"
         script.onload = () => {
           const embedApi = window.__inkeepEmbedJs || window.Inkeep
           if (embedApi && typeof embedApi.EmbeddedSearch === "function") {

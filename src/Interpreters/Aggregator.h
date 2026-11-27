@@ -665,6 +665,15 @@ public:
     /// rows from `claimed_partitions` of the `partitions` ends.
     static bool singleLevelPartitionChunkEndsForFanOut(size_t rows, size_t claimed_partitions, size_t partitions, size_t output_streams);
 
+    /// The adaptive verdict of a finished run (see `adaptiveStagingVerdict`) with the kind of run that it
+    /// holds for: a run with a lone producer, which thaws by a bound of its own, or a run with several (see
+    /// `AggregationEntry`).
+    struct AdaptiveStagingVerdict
+    {
+        bool lone_producer;
+        bool repeat_dominated;
+    };
+
     /// Records the adaptive verdict of the run in the hash-table statistics when the run measured one (see
     /// `adaptiveStagingVerdict`). The in-memory merge records it inside `prepareVariantsToMerge`; the external merge
     /// never reaches that, so its finish path calls this instead.
@@ -722,11 +731,12 @@ public:
     /// itself takes, as with the 16 bytes of a `-ForEach` state over such a function.
     bool hasHeavyStates() const { return has_heavy_states; }
 
-    /// The pool threshold of a merge while its workers are busy (see `ParallelMergeThreshold`): a worker's share of the
-    /// merge work that the producers of `session` estimated, within fixed bounds, or the upper bound without a session.
-    /// The session's producers have finished. Once the workers run out of work, any group above the lower bound takes
-    /// the pool.
-    ParallelMergeThreshold parallelMergeThreshold(const AdaptiveAggregationSession * session) const;
+    /// The pool threshold of a merge while its workers are busy (see `ParallelMergeThreshold`): the share of
+    /// one of the merge's `workers` in the merge work that the producers of `session` estimated, within fixed
+    /// bounds, or the upper bound without a session. The caller guarantees that the merge has at least one
+    /// worker and that the session's producers have finished. Once the workers run out of work, any group
+    /// above the lower bound takes the pool.
+    ParallelMergeThreshold parallelMergeThreshold(const AdaptiveAggregationSession * session, size_t workers) const;
 
     using BucketToChunks = std::map<Int32, AggregatedChunks>;
     /// Merge partially aggregated chunks separated to buckets into one data structure.
@@ -1108,9 +1118,9 @@ private:
         std::atomic<bool> & is_cancelled) const;
 
     /// The adaptive verdict of a finished run: whether at least half of the producers whose tables froze
-    /// thawed, so that later runs of the query should not engage the adaptive aggregation, or nothing when
-    /// the run measured nothing.
-    std::optional<bool> adaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const;
+    /// thawed, so that later runs of the same kind should not engage the adaptive aggregation, or nothing
+    /// when the run measured nothing.
+    std::optional<AdaptiveStagingVerdict> adaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const;
 
     /// Whether a frozen producer thaws, checked between blocks: its own staged stream repeats its misses so
     /// much that its table would do better absorbing them in place (see the tuning constants in

@@ -14,8 +14,6 @@ echo "
 $CLICKHOUSE_LOCAL --config $CLICKHOUSE_TEST_UNIQUE_NAME.xml -m -q "
 CREATE TABLE test (x UInt32) ENGINE=Memory;
 
-SET enable_json_type = 1;
-
 CREATE TABLE IF NOT EXISTS test2
 (
     a UInt32
