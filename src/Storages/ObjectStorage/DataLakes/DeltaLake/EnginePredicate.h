@@ -48,7 +48,6 @@ public:
             exception = exception_;
     }
 
-    [[nodiscard]] const DB::ActionsDAG & getFilterDAG() const { return filter; }
     [[nodiscard]] DB::ContextPtr getContext() const { return context; }
     [[nodiscard]] const DB::FormatSettings & getFormatSettings() const { return format_settings; }
 
