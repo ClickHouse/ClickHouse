@@ -1117,6 +1117,8 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
                             variable = writeStagedString(variable, string->getDataAt(rows[i]));
                         else if (const auto & serialized_size = serialized_in_scratch[j])
                         {
+                            /// The loop above serialized the value into the scratch range of the row.
+                            chassert(scratch);
                             memcpy(variable, scratch, *serialized_size);
                             variable += *serialized_size;
                             scratch += *serialized_size;
