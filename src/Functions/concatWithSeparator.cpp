@@ -369,7 +369,7 @@ Values of types other than `String` and `FixedString` are converted to strings u
         .examples = {
             {"Skip null values", "SELECT concatWithSeparatorIgnoreNulls(',', 'x', NULL, 'y') AS result", "x,y"}
         },
-        .introduced_in = {26, 11},
+        .introduced_in = {26, 12},
         .category = FunctionDocumentation::Category::String
     };
 
