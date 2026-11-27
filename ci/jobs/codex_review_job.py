@@ -66,11 +66,14 @@ STATUS_PREFIX = "Status:"
 VERDICT_APPROVE = "✅ Approve"
 VERDICT_REQUEST_CHANGES = "⚠️ Request changes"
 VERDICT_BLOCK = "❌ Block"
+# Nothing to change in the PR, but pre-existing issues it found have no GitHub issue yet.
+VERDICT_COMMENT = "💬 Comment"
 # The emoji variation selector and the spacing are optional, the words are matched case-insensitively.
 _VERDICT_PATTERNS = {
     VERDICT_APPROVE: r"✅\s*(?i:approve)",
     VERDICT_REQUEST_CHANGES: r"⚠\ufe0f?\s*(?i:request\s+changes)",
     VERDICT_BLOCK: r"❌\s*(?i:block)",
+    VERDICT_COMMENT: r"💬\s*(?i:comment)",
 }
 
 
@@ -149,6 +152,10 @@ Tools:
 - Resolve or unresolve bot-authored review threads with:
   `{GH_PREFIX} python3 -m ci.praktika.gh resolve-pr-review-thread --thread-id <thread_node_id>`
   `{GH_PREFIX} python3 -m ci.praktika.gh unresolve-pr-review-thread --thread-id <thread_node_id>`.
+- Search for an existing issue about a pre-existing defect with
+  `{GH_PREFIX} gh search issues --repo {repo_name} --state open --limit 10 '<keywords>'`; for `ClickHouse/ClickHouse-private`,
+  search `ClickHouse/ClickHouse` too. The search API allows 30 requests per minute: search once per defect, with the
+  function or setting name and one word of the symptom.
 - To reproduce a finding, download a CI binary as described in
   `.claude/skills/review/references/binaries.md` into `./ci/tmp`, and run it there.
 - Do NOT run `python3 -m ci.praktika run ...` (for example to run tests): you are inside a CI job, and
@@ -222,7 +229,7 @@ fetch the threads again to get the ids of the new ones. A finding without a thre
 Do NOT post the summary yourself: the job script will post it after you finish.
 The first line of the Final Verdict section must be exactly one of these lines, copied verbatim with no
 bold, list marker or other text on it: `{STATUS_PREFIX} {VERDICT_APPROVE}`, `{STATUS_PREFIX} {VERDICT_REQUEST_CHANGES}`,
-`{STATUS_PREFIX} {VERDICT_BLOCK}`. The job reads the verdict from this line, and `{STATUS_PREFIX} {VERDICT_APPROVE}`
+`{STATUS_PREFIX} {VERDICT_BLOCK}`, `{STATUS_PREFIX} {VERDICT_COMMENT}`. The job reads the verdict from this line, and `{STATUS_PREFIX} {VERDICT_APPROVE}`
 makes it submit a GitHub approval of the PR on your behalf.
 """
 
