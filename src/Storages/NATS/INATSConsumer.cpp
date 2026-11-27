@@ -103,7 +103,7 @@ bool INATSConsumer::receive(UInt64 timeout_ms)
 {
     if (pending)
         return true;
-    if (!subscribed || !connection.isConnected())
+    if (!subscribed || connection.hasFailed())
         return false;
 
     try
@@ -149,7 +149,7 @@ ReadBufferPtr INATSConsumer::consume(std::optional<UInt64> timeout_ms)
         Stopwatch watch;
         while (!receive(std::min(WAIT_SLICE_MS, *timeout_ms - std::min(*timeout_ms, watch.elapsedMilliseconds()))))
         {
-            if (stopped || watch.elapsedMilliseconds() >= *timeout_ms || !subscribed || !connection.isConnected())
+            if (stopped || watch.elapsedMilliseconds() >= *timeout_ms || !subscribed || connection.hasFailed())
                 return nullptr;
         }
     }
@@ -186,24 +186,30 @@ void INATSConsumer::respond(std::vector<String> & messages, std::string_view pay
 
 void INATSConsumer::finishAndReturnUnprocessed(SkippedMessages skipped_messages_action)
 {
-    respond(consumed_messages, "-NAK");
-    respond(skipped_messages, skipped_messages_action == SkippedMessages::Acknowledge ? "+ACK" : "-NAK");
-
     /// What was received but not consumed goes back too.
     std::vector<String> buffered;
     if (pending && !pending->reply.empty())
         buffered.push_back(pending->reply);
     pending.reset();
-    if (needsAck())
+    if (subscribed && !connection.hasFailed())
     {
-        while (receive(0))
+        try
         {
-            if (!pending->reply.empty())
-                buffered.push_back(pending->reply);
-            pending.reset();
+            auto drained = drainBeforeUnsubscribe();
+            buffered.insert(buffered.end(), drained.begin(), drained.end());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Cannot receive the remaining messages from NATS");
         }
     }
-    pending.reset();
+
+    /// Unsubscribe before the messages are returned: otherwise the server delivers them again at once to a pull request
+    /// of this consumer that is still waiting, and they stay unacknowledged until the ACK deadline.
+    unsubscribe();
+
+    respond(consumed_messages, "-NAK");
+    respond(skipped_messages, skipped_messages_action == SkippedMessages::Acknowledge ? "+ACK" : "-NAK");
     respond(buffered, "-NAK");
 }
 

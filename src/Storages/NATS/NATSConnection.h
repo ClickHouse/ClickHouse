@@ -44,8 +44,11 @@ public:
     NATSConnection(const NATSConfiguration & configuration_, LoggerPtr log_);
     ~NATSConnection();
 
-    /// Whether there is a connection, nothing has failed and the server has not closed it.
+    /// Whether there is a connection, nothing has failed and the server has not closed it. Reads what is already there.
     bool isConnected();
+
+    /// Whether there is no connection or something has failed already. Does not touch the socket.
+    [[nodiscard]] bool hasFailed() const { return !connection || !connection->getError().empty(); }
 
     /// Connects, closing the previous connection first. Throws `CANNOT_CONNECT_NATS`.
     void connect();

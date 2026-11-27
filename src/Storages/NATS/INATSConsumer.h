@@ -64,8 +64,8 @@ public:
         ReturnToBroker,
     };
 
-    /// Return to the broker every message that was delivered but not committed, so it is redelivered at once
-    /// instead of after the ACK deadline. Must run while the subscription is alive.
+    /// Unsubscribe, and return to the broker every message that was delivered but not committed, so it is redelivered
+    /// at once instead of after the ACK deadline.
     void finishAndReturnUnprocessed(SkippedMessages skipped_messages_action);
 
     void ackConsumed();
@@ -110,6 +110,9 @@ protected:
     virtual std::optional<NATSClient::Message> receiveImpl(UInt64 timeout_ms) = 0;
 
     virtual bool needsAck() const { return false; }
+
+    /// Before unsubscribing: waits until nothing more is going to be delivered, and returns the reply subjects of what was.
+    virtual std::vector<String> drainBeforeUnsubscribe() { return {}; }
 
 private:
     /// Reads the next message into `pending`, waiting at most `timeout_ms`. Returns whether there is one.

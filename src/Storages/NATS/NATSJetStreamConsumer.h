@@ -28,6 +28,7 @@ protected:
     void subscribeImpl() override;
     void unsubscribeImpl() override;
     std::optional<NATSClient::Message> receiveImpl(UInt64 timeout_ms) override;
+    std::vector<String> drainBeforeUnsubscribe() override;
 
 private:
     void requestPull();

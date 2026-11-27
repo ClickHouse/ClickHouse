@@ -86,6 +86,38 @@ void NATSJetStreamConsumer::unsubscribeImpl()
     pull_outstanding = false;
 }
 
+std::vector<String> NATSJetStreamConsumer::drainBeforeUnsubscribe()
+{
+    /// A pull request cannot be cancelled, and the server keeps delivering to it, also the messages that are returned
+    /// right after this, until it expires. So wait for its end: then the returned messages go to the next pull request.
+    std::vector<String> replies;
+    while (pull_outstanding)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        if (now > pull_expires_at + PULL_EXPIRY_GRACE)
+            break;
+
+        const auto wait = std::chrono::duration_cast<std::chrono::microseconds>(pull_expires_at + PULL_EXPIRY_GRACE - now);
+        auto message = getConnection().receive(Poco::Timespan(wait.count()));
+        if (!message)
+            break;
+        if (message->sid != sid)
+            continue;
+
+        if (message->status == 0)
+        {
+            if (!message->reply.empty())
+                replies.push_back(message->reply);
+            if (--pull_remaining == 0)
+                pull_outstanding = false;
+        }
+        else if (message->status != 100)
+            pull_outstanding = false;
+    }
+    pull_outstanding = false;
+    return replies;
+}
+
 void NATSJetStreamConsumer::requestPull()
 {
     const auto expires_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(PULL_EXPIRES).count();
