@@ -332,7 +332,7 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, AST
         catch (const Exception & e)
         {
             auto pos = host_port.find('/');
-            if (!allow_excessive_path_in_host || pos == String::npos)
+            if (e.code() != ErrorCodes::BAD_ARGUMENTS || !allow_excessive_path_in_host || pos == String::npos)
                 throw;
 
             LOG_WARNING(getLogger("StorageMongoDB"), "Failed to parse MongoDB connection string: '{}', trying to remove everything after slash from the hostname", e.what());

@@ -6,6 +6,8 @@ create_as BAD_ARGUMENTS
 insert_function BAD_ARGUMENTS
 disk BAD_ARGUMENTS
 disk_connection_string_and_key BAD_ARGUMENTS
+disk_container_exists BAD_ARGUMENTS
+backup_no_create BAD_ARGUMENTS
 on_cluster BAD_ARGUMENTS
 create_valid_key OK
 attach OK

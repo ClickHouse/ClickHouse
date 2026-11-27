@@ -35,6 +35,9 @@ run create_as "CREATE TABLE ${db}.t_as AS azureBlobStorage('$AZURE_URL', '$cont'
 run insert_function "INSERT INTO FUNCTION azureBlobStorage('$AZURE_URL', '$cont', 'x.csv', 'devstoreaccount1', 'NotBase64Key1', 'CSV', 'auto', 'a String') SELECT 'x'"
 run disk "CREATE TABLE ${db}.t_disk (a Int8) ENGINE = MergeTree ORDER BY a SETTINGS disk = disk(type = 'azure_blob_storage', storage_account_url = '$AZURE_URL', container_name = '$cont', account_name = 'devstoreaccount1', account_key = 'NotBase64Key1')"
 run disk_connection_string_and_key "CREATE TABLE ${db}.t_disk2 (a Int8) ENGINE = MergeTree ORDER BY a SETTINGS disk = disk(type = 'azure_blob_storage', connection_string = 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=$AZURE_KEY;BlobEndpoint=$AZURE_URL;', container_name = '$cont', account_name = 'devstoreaccount1', account_key = 'NotBase64Key1')"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${db}.t_src (a Int8) ENGINE = MergeTree ORDER BY a"
+run disk_container_exists "CREATE TABLE ${db}.t_disk3 (a Int8) ENGINE = MergeTree ORDER BY a SETTINGS disk = disk(type = 'azure_blob_storage', storage_account_url = '$AZURE_URL', container_name = '$cont', container_already_exists = 1, account_name = 'devstoreaccount1', account_key = 'NotBase64Key1')"
+run backup_no_create "BACKUP TABLE ${db}.t_src TO AzureBlobStorage('$AZURE_URL', '$cont', 'backup_${db}', 'devstoreaccount1', 'NotBase64Key1') SETTINGS azure_attempt_to_create_container = 0"
 run on_cluster "CREATE TABLE ${db}.t_on_cluster ON CLUSTER test_shard_localhost (a String) ENGINE = AzureBlobStorage('$AZURE_URL', '$cont', 'x.csv', 'devstoreaccount1', 'NotBase64Key1', 'CSV') FORMAT Null" --distributed_ddl_output_mode=throw
 
 # A table whose stored named collection gets an invalid key still loads; only a new one is rejected.
@@ -47,5 +50,5 @@ run attach "ATTACH TABLE ${db}.t_nc" --ast_fuzzer_any_query=0
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${db}' AND name = 't_nc'"
 run create_invalid_key "CREATE TABLE ${db}.t_nc2 (a String) ENGINE = AzureBlobStorage($nc)" --ast_fuzzer_any_query=0
 
-${CLICKHOUSE_CLIENT} --ast_fuzzer_any_query=0 --query "DROP TABLE IF EXISTS ${db}.t_nc, ${db}.t_nc2"
+${CLICKHOUSE_CLIENT} --ast_fuzzer_any_query=0 --query "DROP TABLE IF EXISTS ${db}.t_nc, ${db}.t_nc2, ${db}.t_src"
 ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION IF EXISTS $nc"

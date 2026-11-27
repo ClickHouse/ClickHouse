@@ -490,12 +490,13 @@ std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & par
     if (!params.endpoint.sas_auth.empty() || !params.endpoint.additional_params.empty())
         return params.createForContainer();
 
-    if (params.endpoint.container_already_exists.value_or(false) || readonly)
-    {
+    if (readonly)
         return params.createForContainer();
-    }
 
     checkAccountKey(params);
+
+    if (params.endpoint.container_already_exists.value_or(false))
+        return params.createForContainer();
 
     if (!params.endpoint.container_already_exists.has_value())
     {
