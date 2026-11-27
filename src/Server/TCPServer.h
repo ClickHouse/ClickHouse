@@ -94,6 +94,7 @@ private:
     std::atomic<bool> is_open = true;
     std::atomic<size_t> current_connections = 0;
     std::atomic<size_t> current_threads = 0;
+    std::atomic<size_t> waiting_connections = 0;
     std::atomic<size_t> refused_connections = 0;
     LoggerPtr log;
 };

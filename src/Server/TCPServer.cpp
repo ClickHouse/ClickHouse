@@ -139,10 +139,7 @@ void TCPServer::run()
 #endif
                         connection_socket.setNoDelay(no_delay);
 
-                    /// Read first: only this thread adds connections, and a finishing one leaves `current_threads` first.
-                    const size_t connections = current_connections;
-                    const size_t threads = current_threads;
-                    if (connections - threads >= max_queued)
+                    if (waiting_connections >= max_queued)
                     {
                         ++refused_connections;
                         LOG_WARNING(log, "Refusing connection from {}, reached max queue size {}",
@@ -150,11 +147,13 @@ void TCPServer::run()
                         continue;
                     }
 
-                    /// Created before the counter is incremented, because creating it may throw.
+                    /// Created before the counters are incremented, because creating it may throw.
                     TCPServerThreadPool::Job job = [this, connection_socket] { serveConnection(connection_socket); };
                     ++current_connections;
+                    ++waiting_connections;
                     if (!thread_pool.trySchedule(std::move(job)))
                     {
+                        --waiting_connections;
                         --current_connections;
                         ++refused_connections;
                         LOG_WARNING(log, "Refusing connection from {}: cannot start a thread for it",
@@ -184,6 +183,7 @@ void TCPServer::run()
 
 void TCPServer::serveConnection(const Poco::Net::StreamSocket & connection_socket)
 {
+    --waiting_connections;
     /// A connection that was still waiting for a thread when the server stopped is dropped.
     if (is_open)
     {
