@@ -1032,6 +1032,11 @@ void KafkaConfigLoader::checkNamedCollection(const NamedCollection & collection)
 
 bool KafkaConfigLoader::isSensitiveNamedCollectionKey(std::string_view key)
 {
+    /// `XMLConfiguration` interprets indices, escapes and empty path components. The spelling in the AST
+    /// can therefore differ from the key read by the client. Hide the value without interpreting the path here.
+    if (key.find_first_of("[\\") != std::string_view::npos || key.starts_with('.') || key.ends_with('.') || key.contains(".."))
+        return true;
+
     const auto property = namedCollectionPropertyKey(key);
     return !property.empty() && isSensitiveProperty(normalizeKafkaPropertyName(String(property)));
 }
