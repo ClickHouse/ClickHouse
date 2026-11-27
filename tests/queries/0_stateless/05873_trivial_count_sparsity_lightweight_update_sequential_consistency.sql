@@ -19,8 +19,9 @@ SET optimize_trivial_count_query = 1;
 INSERT INTO t_sparsity_lwu_sequential VALUES (1, 0, 0);
 INSERT INTO t_sparsity_lwu_sequential VALUES (2, 0, 0);
 INSERT INTO t_sparsity_lwu_sequential VALUES (3, 0, 0);
+INSERT INTO t_sparsity_lwu_sequential VALUES (4, 0, 0);
 
--- The update allocates a block number only in the partition 1, and its subquery reads both partitions 1 and 2.
+-- Each update allocates a block number only in its own partition, and its subquery reads all the partitions.
 UPDATE t_sparsity_lwu_sequential SET y = (SELECT count() FROM t_sparsity_lwu_sequential WHERE x = 0)
 IN PARTITION 1 WHERE p = 1
 SETTINGS select_sequential_consistency = 1, optimize_trivial_count_with_sparsity_filter = 0;
@@ -30,9 +31,13 @@ IN PARTITION 2 WHERE p = 2
 SETTINGS select_sequential_consistency = 1, optimize_trivial_count_with_sparsity_filter = 1;
 
 -- Without `select_sequential_consistency`, only the partitions with the allocated block numbers are read.
-UPDATE t_sparsity_lwu_sequential SET x = 1, y = (SELECT count() FROM t_sparsity_lwu_sequential WHERE x = 0)
+UPDATE t_sparsity_lwu_sequential SET y = (SELECT count() FROM t_sparsity_lwu_sequential WHERE x = 0)
 IN PARTITION 3 WHERE p = 3
 SETTINGS select_sequential_consistency = 0, optimize_trivial_count_with_sparsity_filter = 0;
+
+UPDATE t_sparsity_lwu_sequential SET y = (SELECT count() FROM t_sparsity_lwu_sequential WHERE x = 0)
+IN PARTITION 4 WHERE p = 4
+SETTINGS select_sequential_consistency = 0, optimize_trivial_count_with_sparsity_filter = 1;
 
 SELECT p, y FROM t_sparsity_lwu_sequential ORDER BY p;
 
