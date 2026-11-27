@@ -127,8 +127,9 @@ ColumnPtr gatherArrayRows(
     }
 
     /// An element that takes more memory than its index makes the index smaller than the result, and one `index`
-    /// sizes the nested result exactly, while appending rows or chunks grows it.
-    if (data.byteSize() > data.size() * sizeof(UInt64))
+    /// sizes the nested result exactly, while appending rows or chunks grows it. `byteSize` of `LowCardinality` counts its
+    /// dictionary, which `index` shares.
+    if (!data.lowCardinality() && data.byteSize() > data.size() * sizeof(UInt64))
     {
         if (current_offset == 0)
             return ColumnArray::create(data.cloneEmpty(), std::move(res_offsets_column));
