@@ -3,8 +3,10 @@
 #include <Columns/FilterDescription.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/BlocksMarshallingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
@@ -72,7 +74,9 @@ void removeSetsOfAlwaysFalseScope(QueryPlan::Node & node, QueryPlan::Nodes & nod
         }
 
         if (!typeid_cast<const ExpressionStep *>(current->step.get())
-            && !typeid_cast<const DelayedCreatingSetsStep *>(current->step.get()))
+            && !typeid_cast<const DelayedCreatingSetsStep *>(current->step.get())
+            && !typeid_cast<const ExtremesStep *>(current->step.get())
+            && !typeid_cast<const BlocksMarshallingStep *>(current->step.get()))
             return;
     }
 
