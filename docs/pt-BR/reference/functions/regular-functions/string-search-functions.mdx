@@ -976,7 +976,7 @@ Antes da pesquisa, a função tokeniza o `input` e, quando ela for uma `String`,
 Se a coluna não tiver nenhum índice de texto definido, o tokenizador `splitByNonAlpha` será usado — a menos que um tokenizador seja fornecido como terceiro argumento opcional.
 O argumento `tokenizer` deve ser um de `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `array`, `ngrams`, `asciiCJK` ou `icu`.
 
-Se `input` for um [Array(String)](/pt-BR/reference/data-types/array), seus elementos são tokenizados como qualquer outra entrada e seus tokens formam uma única sequência por linha, de modo que uma phrase pode abranger dois elementos. Com o tokenizador `array`, cada elemento é um token; é assim que se faz a busca em uma coluna de valores já tokenizados.
+Se `input` for um [Array(String)](/pt-BR/reference/data-types/array), seus elementos são tokenizados como qualquer outra entrada, e uma phrase deve estar contida em um único elemento. Com o tokenizador `array`, cada elemento é um token e uma phrase abrange elementos consecutivos; é assim que se faz a busca em uma coluna de valores já tokenizados.
 Se `phrase` for um [Array(String)](/pt-BR/reference/data-types/array), seus elementos são os tokens a serem buscados, em ordem e
 incluindo duplicatas. Elementos vazios da phrase são ignorados, pois nenhum tokenizador produz um token vazio.
 
@@ -1033,28 +1033,28 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick fox')
 └─────────────────────────────────────────────────────┘
 ```
 
-**Sequência de tokens fornecida como arrays**
+**Valores já tokenizados com o tokenizador `array`**
 
 ```sql title=Query
-SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'], 'array')
 ```
 
 ```response title=Response
-┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])─┐
-│                                                               1 │
-└─────────────────────────────────────────────────────────────────┘
+┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'], 'array')─┐
+│                                                                        1 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Phrase que abrange dois elementos**
+**Uma phrase não se estende por dois elementos**
 
 ```sql title=Query
-SELECT hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])
+SELECT hasPhrase(['the quick', 'brown fox'], 'quick brown')
 ```
 
 ```response title=Response
-┌─hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])─┐
-│                                                         1 │
-└───────────────────────────────────────────────────────────┘
+┌─hasPhrase(['the quick', 'brown fox'], 'quick brown')─┐
+│                                                    0 │
+└──────────────────────────────────────────────────────┘
 ```
 
 ## hasSubsequence {#hasSubsequence}

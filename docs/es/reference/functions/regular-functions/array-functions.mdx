@@ -3486,7 +3486,8 @@ Introducido en: v20.4.0
 Aplica una función de agregación a los elementos del array en los rangos especificados y devuelve un array con el resultado correspondiente a cada rango.
 La función devolverá el mismo resultado que varias llamadas a `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`.
 La única diferencia es que la longitud es sin signo: una longitud mayor que el valor máximo de `Int64` selecciona el resto del array,
-mientras que `arraySlice` interpreta ese valor como una longitud negativa.
+mientras que `arraySlice` interpreta ese valor como una longitud negativa. Del mismo modo, un índice `UInt64` mayor que el valor máximo de `Int64`
+queda más allá del final del array.
 
 **Sintaxis**
 

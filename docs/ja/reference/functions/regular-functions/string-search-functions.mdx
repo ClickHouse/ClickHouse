@@ -977,7 +977,7 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 カラムにテキスト索引が定義されていない場合は、省略可能な第 3 引数としてトークナイザーが指定されていない限り、代わりに `splitByNonAlpha` トークナイザーが使用されます。
 トークナイザー引数には、`splitByNonAlpha`、`splitByString`、`splitByRegexp`、`array`、`ngrams`、`asciiCJK`、`icu` のいずれかを指定する必要があります。
 
-`input` が [Array(String)](/ja/reference/data-types/array) の場合、その要素は他の入力と同様にトークン化され、行ごとに 1 つのトークン列としてまとめられるため、フレーズが 2 つの要素にまたがることもあります。`array` トークナイザーを使用すると各要素がそのまま 1 つのトークンとなるため、すでにトークン化済みの値を格納したカラムを検索できます。
+`input` が [Array(String)](/ja/reference/data-types/array) の場合、その要素は他の入力と同様にトークン化され、フレーズは単一の要素内に収まっている必要があります。`array` トークナイザーを使用すると各要素がそのまま 1 つのトークンとなり、フレーズは連続する要素にまたがって照合されます。すでにトークン化済みの値を格納したカラムは、この方法で検索します。
 `phrase` が [Array(String)](/ja/reference/data-types/array) の場合、その要素が検索対象のトークンとなり、順序どおり、
 重複も含めて扱われます。空のトークンを生成するトークナイザーは存在しないため、空のフレーズ要素は無視されます。
 
@@ -1034,28 +1034,28 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick fox')
 └─────────────────────────────────────────────────────┘
 ```
 
-**配列で指定したトークン列**
+**`array` トークナイザーを使用した、すでにトークン化済みの値**
 
 ```sql title=Query
-SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'], 'array')
 ```
 
 ```response title=Response
-┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])─┐
-│                                                               1 │
-└─────────────────────────────────────────────────────────────────┘
+┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'], 'array')─┐
+│                                                                        1 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-**2つの要素にまたがるフレーズ**
+**フレーズは 2 つの要素にまたがらない**
 
 ```sql title=Query
-SELECT hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])
+SELECT hasPhrase(['the quick', 'brown fox'], 'quick brown')
 ```
 
 ```response title=Response
-┌─hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])─┐
-│                                                         1 │
-└───────────────────────────────────────────────────────────┘
+┌─hasPhrase(['the quick', 'brown fox'], 'quick brown')─┐
+│                                                    0 │
+└──────────────────────────────────────────────────────┘
 ```
 
 ## hasSubsequence {#hasSubsequence}

@@ -130,6 +130,8 @@ CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
+بالنسبة إلى جداول عائلة `MergeTree`، يقبل `CLEAR COLUMN` أيضًا الأعمدة الافتراضية [`_block_number` و`_block_offset`](/ar/reference/engines/table-engines/mergetree-family/mergetree#virtual-columns). ويؤدي استخدام أيٍّ من الاسمين إلى مسح كليهما، بحيث يُرجع الجزء القيمة الدنيا لرقم الكتلة الخاص به بوصفها `_block_number`، و`_part_offset` بوصفها `_block_offset`.
+
 ## COMMENT COLUMN {#comment-column}
 
 ```sql

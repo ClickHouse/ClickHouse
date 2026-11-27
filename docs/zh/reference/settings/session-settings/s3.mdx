@@ -75,6 +75,18 @@ initial: `data.Parquet.gz` -&gt; `data.1.Parquet.gz` -&gt; `data.2.Parquet.gz`�
 
 ListObject 请求一次批次中可返回的最大文件数
 
+## s3_list_object_parallelism {#s3_list_object_parallelism}
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "新增设置，用于在兼容 S3 的对象存储（`s3` 和 `s3Cluster` 表函数、`S3` 表引擎，以及它们的 `gcs`、`cosn`、`oss` 别名）上列出通配符路径：通过并行遍历公共前缀树，发起多个并发的 `ListObjects` 请求。"}]}]} />
+
+从兼容 S3 的对象存储读取数据且路径包含通配符时，用于列出文件的并发 `ListObjects` 请求数。适用于 `s3` 表函数、`S3` 表引擎、`s3Cluster` 表函数，以及它们的 `gcs`、`cosn`、`oss` 别名。
+
+当该值大于 `1` 时，将以此数量的线程并行遍历“目录”树 (即由 `/` 分隔符构成的公共前缀) 来列出匹配的文件，而不是在单个串行流中对整个前缀逐页列出。对于包含数百万个对象的桶，这可以大幅提升查询速度，尤其适用于分层分区的布局 (例如 `year=*/month=*/`) ，因为不匹配的子树会在遍历过程中被整体剪枝。
+
+值为 `1` (默认值) 时，保持此前的串行列出行为。递归通配符 (`**`) 始终使用串行列出。
+
 ## s3_min_upload_part_size {#s3_min_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />

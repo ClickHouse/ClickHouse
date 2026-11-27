@@ -184,6 +184,18 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
   Это настройка экспертного уровня, которую разработчикам следует использовать только для отладки. В будущем настройка может быть изменена обратно несовместимым образом или удалена.
 </Note>
 
+## query_plan_join_multiway_merge {#query_plan_join_multiway_merge}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Новая настройка"}]}]} />
+
+Выполняет поддерево внутренних JOIN с алгоритмом `full_sorting_merge`, ключи которых равны между собой, как одно соединение слиянием всех его входов, а не как дерево JOIN с двумя входами. Каждый вход читается один раз в порядке ключа, а каждый столбец копируется в результат один раз.
+
+Применяется к JOIN типа `INNER` со строгостью `ALL` и одним условием. При включённой настройке `query_plan_join_shard_by_pk_ranges` JOIN разделяется по диапазонам первичного ключа всех участвующих таблиц.
+
 ## query_plan_join_order_use_interesting_orders {#query_plan_join_order_use_interesting_orders}
 
 <BetaBadge />

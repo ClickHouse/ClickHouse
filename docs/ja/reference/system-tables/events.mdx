@@ -5149,6 +5149,10 @@ Data TLB の参照
 
 プライマリインデックスキャッシュでエントリが見つからず、インデックスファイルをメモリに読み込む必要があった回数です。これはコストの高い処理であり、クエリのレイテンシを増加させます。
 
+### PrometheusRemoteWriteDroppedExemplars {#prometheusremotewritedroppedexemplars}
+
+Prometheus remote-write プロトコル経由で受信したものの、TimeSeries テーブルが exemplar を保存しないため削除された exemplar の数です。書き込みが保存された時点でのみカウントされます。非同期 INSERT の場合は、flush が成功した時点でカウントされます。
+
 ### QueriesWithSubqueries {#querieswithsubqueries}
 
 すべてのサブクエリを含めたクエリ数
@@ -7396,6 +7400,10 @@ WebAssembly コードの実行にかかった時間
 ### WasmTotalExecuteMicroseconds {#wasmtotalexecutemicroseconds}
 
 WebAssemblyコードの実行に要した時間
+
+### WriteBufferFromAzureBytes {#writebufferfromazurebytes}
+
+Azure に書き込まれたバイト数。
 
 ### WriteBufferFromFileDescriptorWrite {#writebufferfromfiledescriptorwrite}
 

@@ -75,6 +75,18 @@ Valores possíveis:
 
 Número máximo de arquivos que podem ser retornados em lote pela requisição ListObject
 
+## s3_list_object_parallelism {#s3_list_object_parallelism}
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Nova configuração para listar caminhos com globs em armazenamento de objetos compatível com S3 (as funções de tabela `s3` e `s3Cluster`, o motor de tabela `S3` e seus aliases `gcs`, `cosn` e `oss`) com várias requisições `ListObjects` concorrentes, percorrendo em paralelo a árvore de prefixos comuns."}]}]} />
+
+Número de requisições `ListObjects` concorrentes usadas para listar arquivos quando o caminho contém globs, em leituras de armazenamento de objetos compatível com S3: a função de tabela `s3`, o motor de tabela `S3`, a função de tabela `s3Cluster` e seus aliases `gcs`, `cosn` e `oss`.
+
+Quando maior que `1`, os arquivos correspondentes são listados percorrendo a árvore de &quot;diretórios&quot; (os prefixos comuns formados pelo delimitador `/`) com essa quantidade de threads em paralelo, em vez de paginar todo o prefixo em um único stream serial. Isso pode acelerar drasticamente consultas em buckets com milhões de objetos, especialmente em layouts particionados hierarquicamente (por exemplo, `year=*/month=*/`), nos quais subárvores inteiras sem correspondência são descartadas durante a varredura.
+
+O valor `1` (padrão) mantém o comportamento anterior de listagem serial. Globs recursivos (`**`) sempre usam listagem serial.
+
 ## s3_min_upload_part_size {#s3_min_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />

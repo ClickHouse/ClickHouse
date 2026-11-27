@@ -184,6 +184,18 @@ EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部�
   これは開発者がデバッグ目的でのみ使用すべき、上級者向けの設定です。この設定は将来、後方互換性のない変更が加えられたり、削除されたりする可能性があります。
 </Note>
 
+## query_plan_join_multiway_merge {#query_plan_join_multiway_merge}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+キーが互いに等しい `full_sorting_merge` の内部結合からなる部分木を、2 入力の結合を組み合わせたツリーとしてではなく、すべての入力をまとめた 1 つのマージ結合として実行します。各入力はキー順に 1 回だけ読み取られ、各カラムは結果に 1 回だけコピーされます。
+
+strictness が `ALL` で、条件が 1 つの `INNER` 結合に適用されます。`query_plan_join_shard_by_pk_ranges` を併用すると、結合は対象となるすべてのテーブルの主キー範囲に基づいて分割されます。
+
 ## query_plan_join_order_use_interesting_orders {#query_plan_join_order_use_interesting_orders}
 
 <BetaBadge />

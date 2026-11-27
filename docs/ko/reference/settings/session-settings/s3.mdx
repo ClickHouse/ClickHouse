@@ -75,6 +75,18 @@ initial: `data.Parquet.gz` -&gt; `data.1.Parquet.gz` -&gt; `data.2.Parquet.gz` �
 
 ListObject 요청으로 한 번에 반환할 수 있는 최대 파일 수
 
+## s3_list_object_parallelism {#s3_list_object_parallelism}
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "공통 접두사 트리를 병렬로 탐색하여 여러 개의 `ListObjects` 요청을 동시에 보내는 방식으로 S3 호환 객체 스토리지(`s3` 및 `s3Cluster` 테이블 함수, `S3` 테이블 엔진, 그리고 이들의 별칭인 `gcs`, `cosn`, `oss`)에서 글롭 경로의 목록을 조회하는 새로운 설정입니다."}]}]} />
+
+S3 호환 객체 스토리지에서 데이터를 읽을 때 경로에 글롭 패턴이 포함되어 있으면 파일 목록을 조회하는 데 사용하는 동시 `ListObjects` 요청 수입니다. 적용 대상은 `s3` 테이블 함수, `S3` 테이블 엔진, `s3Cluster` 테이블 함수, 그리고 이들의 별칭인 `gcs`, `cosn`, `oss`입니다.
+
+값이 `1`보다 크면 전체 접두사를 하나의 직렬 스트림으로 페이지 단위로 조회하는 대신, 설정한 값만큼의 스레드로 &quot;디렉터리&quot; 트리(`/` 구분자로 형성되는 공통 접두사)를 병렬로 탐색하여 일치하는 파일 목록을 조회합니다. 이를 통해 객체가 수백만 개에 달하는 버킷에 대한 쿼리 속도를 크게 높일 수 있습니다. 특히 계층적으로 파티션으로 구분된 레이아웃(예: `year=*/month=*/`)에서는 탐색 중에 일치하지 않는 하위 트리 전체가 프루닝되므로 효과가 더욱 큽니다.
+
+값이 `1`(기본값)이면 기존의 직렬 목록 조회 방식이 그대로 유지됩니다. 재귀적 글롭(`**`)은 항상 직렬 목록 조회를 사용합니다.
+
 ## s3_min_upload_part_size {#s3_min_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />

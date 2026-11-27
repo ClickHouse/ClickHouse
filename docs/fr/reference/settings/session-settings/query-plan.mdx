@@ -184,6 +184,18 @@ Ne prend effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations
   Il s’agit d’un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs qu’à des fins de débogage. Ce paramètre peut évoluer de manière non rétrocompatible ou être supprimé ultérieurement.
 </Note>
 
+## query_plan_join_multiway_merge {#query_plan_join_multiway_merge}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
+
+Exécute un sous-arbre de jointures internes `full_sorting_merge` dont les clés sont égales entre elles sous la forme d&#39;une jointure par fusion unique portant sur toutes ses entrées, plutôt que sous la forme d&#39;un arbre de jointures à deux entrées. Chaque entrée est lue une seule fois dans l&#39;ordre de la clé, et chaque colonne n&#39;est copiée qu&#39;une seule fois dans l&#39;ensemble de résultats.
+
+S&#39;applique aux jointures `INNER` de strictness `ALL` comportant une seule condition. Avec `query_plan_join_shard_by_pk_ranges`, la jointure est divisée selon les plages de clé primaire de toutes ses tables.
+
 ## query_plan_join_order_use_interesting_orders {#query_plan_join_order_use_interesting_orders}
 
 <BetaBadge />

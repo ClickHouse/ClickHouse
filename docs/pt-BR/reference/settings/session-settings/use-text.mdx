@@ -13,6 +13,16 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+## use_text_index_for_substring_search {#use_text_index_for_substring_search}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Nova configuração"}]}]} />
+
+Usa o índice de texto para `position(s, 'value') > 0` e para as comparações equivalentes de `positionUTF8`, `countSubstrings` e de suas versões que não diferenciam maiúsculas de minúsculas, avaliando-as como `s LIKE '%value%'` (`ILIKE` no caso das funções que não diferenciam maiúsculas de minúsculas).
+
+Desabilitado por padrão porque a varredura de dicionário que avalia esse pattern pode ser mais lenta do que a busca diretamente na coluna, por exemplo, quando a maioria das linhas tem um token próprio, como um id único.
+
 ## use_text_index_header_cache {#use_text_index_header_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

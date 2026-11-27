@@ -184,6 +184,18 @@ Solo tiene efecto si la configuración [query&#95;plan&#95;enable&#95;optimizati
   Esta es una configuración de nivel experto que solo deben usar los desarrolladores para depuración. La configuración puede cambiar en el futuro de forma incompatible con versiones anteriores o eliminarse.
 </Note>
 
+## query_plan_join_multiway_merge {#query_plan_join_multiway_merge}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
+
+Ejecuta un subárbol de uniones internas `full_sorting_merge` cuyas claves son iguales entre sí como una única unión por mezcla de todas sus entradas, en lugar de como un árbol de uniones de dos entradas. Cada entrada se lee una sola vez en el orden de la clave y cada columna se copia una sola vez al resultado.
+
+Se aplica a uniones `INNER` con estrictez `ALL` y una única condición. Con `query_plan_join_shard_by_pk_ranges`, la unión se divide por rangos de clave primaria de todas sus tablas.
+
 ## query_plan_join_order_use_interesting_orders {#query_plan_join_order_use_interesting_orders}
 
 <BetaBadge />

@@ -75,6 +75,18 @@ Valeurs possibles :
 
 Nombre maximal de fichiers pouvant être renvoyés en lot par la requête ListObject
 
+## s3_list_object_parallelism {#s3_list_object_parallelism}
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Nouveau paramètre permettant de lister les chemins avec motif glob sur un stockage d’objet compatible S3 (les fonctions de table `s3` et `s3Cluster`, le table engine `S3` et leurs alias `gcs`, `cosn`, `oss`) à l’aide de plusieurs requêtes `ListObjects` concurrentes, en parcourant en parallèle l’arborescence des préfixes communs."}]}]} />
+
+Nombre de requêtes `ListObjects` concurrentes utilisées pour lister les fichiers lorsque le chemin contient des motifs glob, lors des lectures depuis un stockage d’objet compatible S3 : la fonction de table `s3`, le table engine `S3`, la fonction de table `s3Cluster`, ainsi que leurs alias `gcs`, `cosn` et `oss`.
+
+Lorsque la valeur est supérieure à `1`, les fichiers correspondants sont listés en parcourant l’arborescence de « répertoires » (les préfixes communs formés par le délimiteur `/`) avec autant de fils d’exécution en parallèle, au lieu de paginer l’intégralité du préfixe dans un seul flux séquentiel. Cela peut accélérer considérablement les requêtes portant sur des buckets contenant des millions d’objets, en particulier avec des dispositions partitionnées hiérarchiquement (par exemple `year=*/month=*/`), où des sous-arbres entiers sans correspondance sont élagués pendant le parcours.
+
+Une valeur de `1` (par défaut) conserve l’ancien comportement d’énumération séquentielle. Les motifs glob récursifs (`**`) utilisent toujours l’énumération séquentielle.
+
 ## s3_min_upload_part_size {#s3_min_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />

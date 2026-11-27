@@ -5149,6 +5149,10 @@ Join 모드로 패치 파트를 적용할 때 해시 테이블에 추가된 행�
 
 프라이머리 인덱스 캐시에서 엔트리를 찾지 못한 횟수입니다. 이 경우 인덱스 파일을 메모리에 로드해야 하며, 이는 비용이 큰 작업이므로 쿼리 지연 시간을 증가시킵니다.
 
+### PrometheusRemoteWriteDroppedExemplars {#prometheusremotewritedroppedexemplars}
+
+Prometheus 원격 쓰기(remote-write) 프로토콜로 수신되었으나 TimeSeries 테이블이 exemplar를 저장하지 않아 삭제된 exemplar의 수입니다. 쓰기(write)가 저장된 경우에만 집계되며, 비동기 삽입은 플러시가 성공했을 때 집계됩니다.
+
 ### 서브쿼리를 포함한 쿼리 {#querieswithsubqueries}
 
 모든 서브쿼리를 포함한 쿼리의 수
@@ -7396,6 +7400,10 @@ WebAssembly 코드 실행에 소요된 시간
 ### WasmTotalExecuteMicroseconds {#wasmtotalexecutemicroseconds}
 
 WebAssembly 코드 실행에 걸린 시간
+
+### WriteBufferFromAzureBytes {#writebufferfromazurebytes}
+
+Azure에 기록된 바이트 수입니다.
 
 ### WriteBufferFromFileDescriptorWrite {#writebufferfromfiledescriptorwrite}
 

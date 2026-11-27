@@ -3486,7 +3486,8 @@ Introduzido em: v20.4.0
 Aplica uma função de agregação aos elementos do array nos intervalos especificados e retorna um array contendo o resultado correspondente a cada intervalo.
 A função retornará o mesmo resultado que várias chamadas de `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`.
 A única diferença é que o comprimento é sem sinal: um comprimento maior que o valor máximo de `Int64` seleciona o restante do array,
-enquanto `arraySlice` interpreta esse valor como um comprimento negativo.
+enquanto `arraySlice` interpreta esse valor como um comprimento negativo. Da mesma forma, um índice `UInt64` maior que o valor máximo de `Int64`
+fica além do fim do array.
 
 **Sintaxe**
 

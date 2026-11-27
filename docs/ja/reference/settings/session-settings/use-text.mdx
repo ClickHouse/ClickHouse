@@ -13,6 +13,16 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
+## use_text_index_for_substring_search {#use_text_index_for_substring_search}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+`position(s, 'value') > 0`、および `positionUTF8`、`countSubstrings` とそれらの大文字と小文字を区別しない版による同等の比較を `s LIKE '%value%'` (大文字と小文字を区別しない関数の場合は `ILIKE`) として評価し、テキスト索引を使用します。
+
+このようなパターンを評価する辞書スキャンは、カラムを直接検索するよりも遅くなる場合があるため、デフォルトでは無効になっています。たとえば、重複のない ID のように、ほとんどの行がそれぞれ固有のトークンを持つ場合がこれに該当します。
+
 ## use_text_index_header_cache {#use_text_index_header_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

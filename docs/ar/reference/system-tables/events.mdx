@@ -5150,6 +5150,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد المرات التي لم يُعثر فيها على إدخال في ذاكرة التخزين المؤقت للفهرس الأساسي، ما اضطرنا إلى تحميل ملف فهرس إلى الذاكرة، وهي عملية مكلفة تزيد من زمن استجابة الاستعلام.
 
+### PrometheusRemoteWriteDroppedExemplars {#prometheusremotewritedroppedexemplars}
+
+عدد العيّنات النموذجية (exemplars) المستلَمة عبر بروتوكول Prometheus remote-write والتي حُذفت لأن جدول TimeSeries لا يخزّن العيّنات النموذجية. ولا تُحتسب إلا عند تخزين عملية الكتابة، أو عند نجاح عملية التفريغ في حالة الإدراج غير المتزامن.
+
 ### QueriesWithSubqueries {#querieswithsubqueries}
 
 عدد الاستعلامات شاملاً جميع الاستعلامات الفرعية
@@ -7397,6 +7401,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### WasmTotalExecuteMicroseconds {#wasmtotalexecutemicroseconds}
 
 الوقت المستغرق في تنفيذ شيفرة WebAssembly
+
+### WriteBufferFromAzureBytes {#writebufferfromazurebytes}
+
+عدد البايتات المكتوبة إلى Azure.
 
 ### WriteBufferFromFileDescriptorWrite {#writebufferfromfiledescriptorwrite}
 

@@ -13,6 +13,16 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+## use_text_index_for_substring_search {#use_text_index_for_substring_search}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "nouveau paramètre"}]}]} />
+
+Utilise l’index de texte pour `position(s, 'value') > 0` ainsi que pour les comparaisons équivalentes avec `positionUTF8`, `countSubstrings` et leurs variantes case-insensitive, en les évaluant sous la forme `s LIKE '%value%'` (`ILIKE` pour les fonctions case-insensitive).
+
+Désactivé par défaut, car le parcours du dictionnaire nécessaire pour évaluer un tel motif peut s’avérer plus lent que la recherche directe dans la colonne, par exemple lorsque la plupart des lignes possèdent leur propre jeton, comme un identifiant unique.
+
 ## use_text_index_header_cache {#use_text_index_header_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

@@ -3475,10 +3475,11 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
 引入版本：v20.4.0
 
-对给定范围内的数组元素应用聚合函数，并返回一个数组，其中包含每个范围对应的结果。
+对给定范围内的 array 元素应用聚合函数，并返回一个 array，其中包含每个范围对应的结果。
 该函数返回的结果与多次执行 `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)` 相同。
-唯一的区别在于，此处的 length 是无符号的：若 length 大于 `Int64` 的最大值，则会选取数组的剩余全部元素；
-而 `arraySlice` 会将此类值视为负数长度。
+唯一的区别在于，此处的 length 是无符号的：若 length 大于 `Int64` 的最大值，则会选取 array 的剩余全部元素；
+而 `arraySlice` 会将此类值视为负数长度。同样，若 `UInt64` 类型的索引大于 `Int64` 的最大值，
+则会被视为位于 array 末尾之后。
 
 **语法**
 
@@ -3489,12 +3490,12 @@ arrayReduceInRanges(agg_f, ranges, arr1[, arr2, ... ,arrN])
 **参数**
 
 * `agg_f` — 要使用的聚合函数名称。[`String`](/zh/reference/data-types/string)
-* `ranges` — 要聚合的范围。由元组 `(i, r)` 组成的数组，其中 `i` 表示起始索引，`r` 表示聚合范围。[`Array(T)`](/zh/reference/data-types/array) 或 [`Tuple(T)`](/zh/reference/data-types/tuple)
-* `arr1[, arr2, ... ,arrN]` — 作为聚合函数参数的 N 个数组。[`Array(T)`](/zh/reference/data-types/array)
+* `ranges` — 要聚合的范围。由元组 `(i, r)` 组成的 array，其中 `i` 表示起始索引，`r` 表示聚合范围。[`Array(T)`](/zh/reference/data-types/array) 或 [`Tuple(T)`](/zh/reference/data-types/tuple)
+* `arr1[, arr2, ... ,arrN]` — 作为聚合函数参数的 N 个 array。[`Array(T)`](/zh/reference/data-types/array)
 
 **返回值**
 
-返回一个数组，包含在指定范围内执行聚合函数得到的结果。[`Array(T)`](/zh/reference/data-types/array)
+返回一个 array，包含在指定范围内执行聚合函数得到的结果。[`Array(T)`](/zh/reference/data-types/array)
 
 **示例**
 

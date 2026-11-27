@@ -5150,6 +5150,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Количество случаев, когда запись не находилась в кэше первичного индекса, и поэтому приходилось загружать в память файл индекса — это ресурсоёмкая операция, увеличивающая задержку запроса.
 
+### PrometheusRemoteWriteDroppedExemplars {#prometheusremotewritedroppedexemplars}
+
+Количество exemplars, полученных по протоколу Prometheus remote-write и отброшенных, так как таблица TimeSeries не хранит exemplars. Они учитываются только после сохранения записи, а при асинхронной вставке — после успешного сброса данных на диск.
+
 ### Запросы с подзапросами {#querieswithsubqueries}
 
 Количество запросов, включая все подзапросы
@@ -7397,6 +7401,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 ### WasmTotalExecuteMicroseconds {#wasmtotalexecutemicroseconds}
 
 Время, затраченное на выполнение кода WebAssembly
+
+### WriteBufferFromAzureBytes {#writebufferfromazurebytes}
+
+Количество байтов, записанных в Azure.
 
 ### WriteBufferFromFileDescriptorWrite {#writebufferfromfiledescriptorwrite}
 

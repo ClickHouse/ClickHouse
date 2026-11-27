@@ -5149,6 +5149,10 @@ CPU 时钟，一种高分辨率的按 CPU 计时器
 
 主索引缓存未命中条目的次数，因此不得不将索引文件加载到内存中；这是一项代价高昂的操作，会增加查询延迟。
 
+### PrometheusRemoteWriteDroppedExemplars {#prometheusremotewritedroppedexemplars}
+
+通过 Prometheus 远程写入协议接收、但因 TimeSeries 表不存储 exemplar 而被丢弃的 exemplar 数量。仅在写入的数据成功存储后才计数；若为异步插入，则在刷写成功时计数。
+
 ### 包含子查询的查询 {#querieswithsubqueries}
 
 统计包含其所有子查询的查询数量
@@ -7396,6 +7400,10 @@ Vortex 扫描产出的拆分数量
 ### WasmTotalExecuteMicroseconds {#wasmtotalexecutemicroseconds}
 
 执行 WebAssembly 代码耗费的时间
+
+### WriteBufferFromAzureBytes {#writebufferfromazurebytes}
+
+已写入 Azure 的字节数。
 
 ### WriteBufferFromFileDescriptorWrite {#writebufferfromfiledescriptorwrite}
 

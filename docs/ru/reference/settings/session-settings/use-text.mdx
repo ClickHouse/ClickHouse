@@ -13,6 +13,16 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+## use_text_index_for_substring_search {#use_text_index_for_substring_search}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Новая настройка"}]}]} />
+
+Использовать текстовый индекс для `position(s, 'value') > 0` и эквивалентных сравнений с `positionUTF8`, `countSubstrings` и их регистронезависимыми вариантами, вычисляя их как `s LIKE '%value%'` (`ILIKE` для регистронезависимых функций).
+
+По умолчанию отключено, поскольку сканирование по словарю, с помощью которого вычисляется такой шаблон регулярного выражения, может работать медленнее, чем поиск по столбцу, например когда в большинстве строк есть собственный token, такой как уникальный id.
+
 ## use_text_index_header_cache {#use_text_index_header_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

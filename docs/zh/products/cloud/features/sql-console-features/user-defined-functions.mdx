@@ -243,24 +243,24 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o arm64/main .
 
 以下设置可在控制台和 API 中配置。表中列出的默认值为 ClickHouse Cloud 的默认值，部分与开源版本的默认值不同。
 
-| 设置            | 适用于               | 默认值            | 说明                                                                                                                                                      |
-| ------------- | ----------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 类型            | 两者                | -              | `executable_pool` 或 `executable`                                                                                                                        |
-| 运行时类型         | 两者                | -              | `python3.11` 或 `Native`                                                                                                                                 |
-| 格式            | 两者                | `TabSeparated` | 任意 ClickHouse [输入/输出格式](/zh/reference/formats/index)。`Native` 和 `JSONEachRow` 格式还会序列化参数名称和返回值名称。                                                           |
-| 返回值名称         | 两者                | 未设置            | 返回值的名称 (API 中为 `returnName`，Terraform 中为 `return_name`) 。使用 `Native` 和 `JSONEachRow` 格式时，进程必须用此名称标记其结果列；未设置时，沿用开源默认值 `result`。                          |
-| 池大小           | `executable_pool` | 3              | 每个副本上的常驻进程数。不适用于 `executable`。                                                                                                                          |
-| 最大命令执行时间 (秒)  | `executable_pool` | 10             | 处理单个数据块的最长时间。`executable` 也接受此设置，但不会生效。                                                                                                                 |
-| 命令读取超时 (毫秒)   | 两者                | 10000          | 从命令的 stdout 读取数据的超时时间。                                                                                                                                  |
-| 命令写入超时 (毫秒)   | 两者                | 10000          | 向命令的 stdin 写入数据的超时时间。                                                                                                                                   |
-| Send chunk header        | 两者                | false          | 在每个块之前发送行数。参见[格式与块头](#formats-and-chunk-headers)。                                                                                                     |
-| 确定性           | 两者                | false          | 允许查询缓存存储调用此函数的查询结果。参见[确定性函数与查询缓存](#deterministic-functions-and-the-query-cache)。                                                                        |
-| 内存限制 (MiB)    | 两者                | 沙箱默认值          | 每个沙箱进程可使用的最大内存。参见[内存限制](#memory-limit)。                                                                                                                 |
-| 网络访问          | Python 运行时        | 在控制台中启用        | 允许向公网端点发起出站连接。在控制台中创建的 Python UDF 始终启用此功能；在 API 和 Terraform 中，可通过 `sandboxType` 选择 `netenable` 或 `basic`。Native UDF 无法启用网络访问。参见[网络访问](#network-access)。 |
+| 设置                | 适用于               | 默认值            | 说明                                                                                                                                                      |
+| ----------------- | ----------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 类型                | 两者                | -              | `executable_pool` 或 `executable`                                                                                                                        |
+| 运行时类型             | 两者                | -              | `python3.11` 或 `Native`                                                                                                                                 |
+| 格式                | 两者                | `TabSeparated` | 任意 ClickHouse [输入/输出格式](/zh/reference/formats/index)。`Native` 和 `JSONEachRow` 格式还会序列化参数名称和返回值名称。                                                           |
+| 返回值名称             | 两者                | 未设置            | 返回值的名称 (API 中为 `returnName`，Terraform 中为 `return_name`) 。使用 `Native` 和 `JSONEachRow` 格式时，进程必须用此名称标记其结果列；未设置时，沿用开源默认值 `result`。                          |
+| 池大小               | `executable_pool` | 3              | 每个副本上的常驻进程数。不适用于 `executable`。                                                                                                                          |
+| 最大命令执行时间 (秒)      | `executable_pool` | 10             | 处理单个数据块的最长时间。`executable` 也接受此设置，但不会生效。                                                                                                                 |
+| 命令读取超时 (毫秒)       | 两者                | 10000          | 从命令的 stdout 读取数据的超时时间。                                                                                                                                  |
+| 命令写入超时 (毫秒)       | 两者                | 10000          | 向命令的 stdin 写入数据的超时时间。                                                                                                                                   |
+| Send chunk header | 两者                | false          | 在每个块之前发送行数。参见[格式与块头](#formats-and-chunk-headers)。                                                                                                       |
+| 确定性               | 两者                | false          | 允许查询缓存存储调用此函数的查询结果。参见[确定性函数与查询缓存](#deterministic-functions-and-the-query-cache)。                                                                        |
+| 内存限制 (MiB)        | 两者                | 沙箱默认值          | 每个沙箱进程可使用的最大内存。参见[内存限制](#memory-limit)。                                                                                                                 |
+| 网络访问              | Python 运行时        | 在控制台中启用        | 允许向公网端点发起出站连接。在控制台中创建的 Python UDF 始终启用此功能；在 API 和 Terraform 中，可通过 `sandboxType` 选择 `netenable` 或 `basic`。Native UDF 无法启用网络访问。参见[网络访问](#network-access)。 |
 
 以下开源设置由 ClickHouse Cloud 统一管理，无法针对单个 UDF 修改：`command_termination_timeout`、`lifetime`、`stderr_reaction`、`check_exit_code` 和 `execute_direct`。`pool_size` 的开源默认值为 16，而 Cloud 默认值为 3。完整的开源设置列表请参见[可执行用户自定义函数](/zh/reference/functions/regular-functions/udf#executable-user-defined-functions)。
 
-函数名称必须匹配 `^[A-Za-z][A-Za-z0-9_]*$`，在组织内必须唯一，且不能与 ClickHouse 内置函数重名；API 会拒绝保留名称。每个参数都必须有符合相同模式的名称；无论使用哪种格式，API 和 Terraform 都要求提供参数名称。包含符号链接的归档文件会被拒绝。
+函数名称必须匹配 `^[A-Za-z][A-Za-z0-9_]*$`，在组织内必须唯一，且不能与 ClickHouse 内置函数重名；API 会拒绝保留名称。每个参数都必须有符合相同模式的名称；无论使用哪种格式，API 和 Terraform 都要求提供参数名称。参数类型和返回类型只能包含 `[a-zA-Z0-9_-(), :]` 中的字符。包含符号链接的归档文件会被拒绝。
 
 ### 格式与块头 {#formats-and-chunk-headers}
 

@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
-  // Продакшен-рендерер Mintlify вычисляет экспортируемый компонент, не
-  // сохраняя привязки области видимости модуля. Ленивое состояние хранит сгенерированные данные в
-  // этой области вычисления, создавая их лишь один раз при монтировании.
+  // Рендерер Mintlify в продакшене вычисляет экспортируемый компонент, не
+  // сохраняя привязки на уровне модуля. Ленивое состояние хранит сгенерированные данные
+  // в этой области вычисления и создаёт их лишь один раз при монтировании.
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -269,7 +269,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "async_insert_*",
-      count: 11,
+      count: 12,
       settings: [
         { name: "async_insert", path: "/async-insert#async_insert", default: "1" },
         { name: "async_insert_busy_timeout_decrease_rate", path: "/async-insert#async_insert_busy_timeout_decrease_rate", default: "0.2" },
@@ -281,7 +281,8 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "async_insert_max_query_number", path: "/async-insert#async_insert_max_query_number", default: "450" },
         { name: "async_insert_poll_timeout_ms", path: "/async-insert#async_insert_poll_timeout_ms", default: "10" },
         { name: "async_insert_select_as_async_insert", path: "/async-insert#async_insert_select_as_async_insert", default: "1" },
-        { name: "async_insert_use_adaptive_busy_timeout", path: "/async-insert#async_insert_use_adaptive_busy_timeout", default: "1" }
+        { name: "async_insert_use_adaptive_busy_timeout", path: "/async-insert#async_insert_use_adaptive_busy_timeout", default: "1" },
+        { name: "async_insert_use_deduplication_cache", path: "/async-insert#async_insert_use_deduplication_cache", default: "1" }
       ],
       children: []
     },
@@ -2427,7 +2428,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "query_plan_*",
-      count: 60,
+      count: 61,
       settings: [
         { name: "query_plan_aggregation_bucket_top_k", path: "/query-plan#query_plan_aggregation_bucket_top_k", default: "1" },
         { name: "query_plan_aggregation_having_prefilter", path: "/query-plan#query_plan_aggregation_having_prefilter", default: "1" },
@@ -2443,6 +2444,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "query_plan_filter_push_down", path: "/query-plan#query_plan_filter_push_down", default: "1" },
         { name: "query_plan_filter_push_down_below_limit_by", path: "/query-plan#query_plan_filter_push_down_below_limit_by", default: "1" },
         { name: "query_plan_fuse_filter_into_array_join", path: "/query-plan#query_plan_fuse_filter_into_array_join", default: "1" },
+        { name: "query_plan_join_multiway_merge", path: "/query-plan#query_plan_join_multiway_merge", default: "0" },
         { name: "query_plan_join_order_use_interesting_orders", path: "/query-plan#query_plan_join_order_use_interesting_orders", default: "1" },
         { name: "query_plan_join_shard_by_pk_ranges", path: "/query-plan#query_plan_join_shard_by_pk_ranges", default: "1" },
         { name: "query_plan_join_swap_table", path: "/query-plan#query_plan_join_swap_table", default: "auto" },
@@ -2627,7 +2629,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "s3_*",
-      count: 19,
+      count: 20,
       settings: [
         { name: "s3_base", path: "/s3#s3_base", default: '""' },
         { name: "s3_check_objects_after_upload", path: "/s3#s3_check_objects_after_upload", default: "0" },
@@ -2635,6 +2637,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "s3_create_new_file_on_insert", path: "/s3#s3_create_new_file_on_insert", default: "0" },
         { name: "s3_ignore_file_doesnt_exist", path: "/s3#s3_ignore_file_doesnt_exist", default: "0" },
         { name: "s3_list_object_keys_size", path: "/s3#s3_list_object_keys_size", default: "1000" },
+        { name: "s3_list_object_parallelism", path: "/s3#s3_list_object_parallelism", default: "1" },
         { name: "s3_min_upload_part_size", path: "/s3#s3_min_upload_part_size", default: "16777216" },
         { name: "s3_path_filter_limit", path: "/s3#s3_path_filter_limit", default: "1000" },
         { name: "s3_request_payer", path: "/s3#s3_request_payer", default: "none" },
@@ -3077,8 +3080,9 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "use_text_*",
-      count: 6,
+      count: 7,
       settings: [
+        { name: "use_text_index_for_substring_search", path: "/use-text#use_text_index_for_substring_search", default: "0" },
         { name: "use_text_index_header_cache", path: "/use-text#use_text_index_header_cache", default: "1" },
         { name: "use_text_index_like_evaluation_by_dictionary_scan", path: "/use-text#use_text_index_like_evaluation_by_dictionary_scan", default: "1" },
         { name: "use_text_index_negative_tokens_cache", path: "/use-text#use_text_index_negative_tokens_cache", default: "1" },
@@ -3494,7 +3498,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count === 1 ? "настройка" : "настроек"}`
+    const countLabel = `${entry.count} ${entry.count === 1 ? "настройка" : "настройки"}`
 
     return (
       <div key={key} className="min-w-max">

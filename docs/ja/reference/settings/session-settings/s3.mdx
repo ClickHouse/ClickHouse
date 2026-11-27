@@ -75,6 +75,18 @@ initial: `data.Parquet.gz` -&gt; `data.1.Parquet.gz` -&gt; `data.2.Parquet.gz`, 
 
 ListObject リクエストで一度に返されるファイルの最大数
 
+## s3_list_object_parallelism {#s3_list_object_parallelism}
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "共通プレフィックスのツリーを並列に走査し、複数の `ListObjects` リクエストを同時実行することで、S3 互換オブジェクトストレージ (`s3` および `s3Cluster` テーブル関数、`S3` テーブルエンジン、およびそれらの別名 `gcs`、`cosn`、`oss`) 上の glob パターンを含むパスを一覧表示する新しい設定。"}]}]} />
+
+S3 互換オブジェクトストレージからの読み取り (`s3` テーブル関数、`S3` テーブルエンジン、`s3Cluster` テーブル関数、およびそれらの別名 `gcs`、`cosn`、`oss`) で、パスに glob パターンが含まれる場合に、ファイルの一覧表示に使用する `ListObjects` リクエストの同時実行数です。
+
+`1` より大きい場合は、プレフィックス全体を単一の逐次ストリームでページングするのではなく、この数のスレッドで「ディレクトリ」ツリー (`/` 区切り文字によって形成される共通プレフィックス) を並列に走査し、一致するファイルを一覧表示します。これにより、数百万のオブジェクトを含むバケットに対するクエリを大幅に高速化できます。特に階層的にパーティション分割されたレイアウト (例: `year=*/month=*/`) では、一致しない部分木全体が走査中に除外されるため、効果が顕著です。
+
+値が `1` (デフォルト) の場合は、従来どおり逐次的に一覧表示されます。再帰的な glob パターン (`**`) では、常に逐次的な一覧表示が使用されます。
+
 ## s3_min_upload_part_size {#s3_min_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />

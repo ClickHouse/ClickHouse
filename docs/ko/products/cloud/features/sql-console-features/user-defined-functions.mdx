@@ -253,14 +253,14 @@ wire 프로토콜은 Python 런타임과 동일합니다. 프로세스는 stdin�
 | 최대 명령 실행 시간(초) | `executable_pool` | 10             | 데이터 블록 하나를 처리하는 데 허용되는 최대 시간입니다. `executable`에도 지정할 수 있지만 아무런 효과가 없습니다.                                                                                                                                                 |
 | 명령 읽기 타임아웃(ms) | 둘 다               | 10000          | 명령의 stdout에서 읽을 때 적용되는 타임아웃입니다.                                                                                                                                                                                         |
 | 명령 쓰기 타임아웃(ms) | 둘 다               | 10000          | 명령의 stdin에 쓸 때 적용되는 타임아웃입니다.                                                                                                                                                                                            |
-| 청크 헤더 전송       | 둘 다               | false          | 각 청크 앞에 행 수를 전송합니다. [포맷과 청크 헤더](#formats-and-chunk-headers)를 참고하십시오.                                                                                                                                                    |
+| Send chunk header       | 둘 다               | false          | 각 청크 앞에 행 수를 전송합니다. [포맷과 청크 헤더](#formats-and-chunk-headers)를 참고하십시오.                                                                                                                                                    |
 | 결정론적           | 둘 다               | false          | 이 함수를 호출하는 쿼리의 결과를 쿼리 캐시에 저장할 수 있게 합니다. [결정론적 함수와 쿼리 캐시](#deterministic-functions-and-the-query-cache)를 참고하십시오.                                                                                                         |
-| 메모리 한도(MiB)    | 둘 다               | 샌드박스 기본값       | 샌드박스 프로세스당 최대 메모리입니다. [메모리 한도](#memory-limit)를 참고하십시오.                                                                                                                                                                  |
-| 네트워크 액세스       | Python 런타임        | 콘솔에서는 활성화됨     | 공개 엔드포인트로의 아웃바운드 연결을 허용합니다. 콘솔에서 생성한 Python UDF는 항상 이 기능이 활성화된 상태로 빌드됩니다. API와 Terraform에서는 `sandboxType`으로 `netenable` 또는 `basic` 중 하나를 선택합니다. 네이티브 UDF에서는 네트워크 액세스를 활성화할 수 없습니다. [네트워크 액세스](#network-access)를 참고하십시오. |
+| 메모리 제한(MiB)    | 둘 다               | 샌드박스 기본값       | 샌드박스 프로세스당 최대 메모리입니다. [메모리 제한](#memory-limit)를 참고하십시오.                                                                                                                                                                  |
+| 네트워크 액세스       | Python 런타임        | 콘솔에서는 활성화됨     | 공개 엔드포인트로의 아웃바운드 연결을 허용합니다. 콘솔에서 생성한 Python UDF는 항상 이 기능이 활성화된 상태로 빌드됩니다. API와 Terraform에서는 `sandboxType`으로 `netenable` 또는 `basic` 중 하나를 선택합니다. Native UDF에서는 네트워크 액세스를 활성화할 수 없습니다. [네트워크 액세스](#network-access)를 참고하십시오. |
 
 다음 오픈 소스 설정은 ClickHouse Cloud에서 관리하므로 UDF별로 변경할 수 없습니다: `command_termination_timeout`, `lifetime`, `stderr_reaction`, `check_exit_code`, `execute_direct`. `pool_size`의 기본값은 오픈 소스에서는 16이지만 Cloud에서는 3입니다. 오픈 소스 설정 전체 목록은 [실행형 사용자 정의 함수](/ko/reference/functions/regular-functions/udf#executable-user-defined-functions)에서 확인할 수 있습니다.
 
-함수 이름은 `^[A-Za-z][A-Za-z0-9_]*$` 패턴과 일치해야 하고, 조직 내에서 고유해야 하며, ClickHouse 내장 함수의 이름과 같을 수 없습니다. 예약된 이름은 API에서 거부됩니다. 모든 인수에는 같은 패턴을 따르는 이름을 지정해야 하며, API와 Terraform에서는 포맷과 관계없이 인수 이름이 필수입니다. 심볼릭 링크가 포함된 아카이브는 거부됩니다.
+함수 이름은 `^[A-Za-z][A-Za-z0-9_]*$` 패턴과 일치해야 하고, 조직 내에서 고유해야 하며, ClickHouse 내장 함수의 이름과 같을 수 없습니다. 예약된 이름은 API에서 거부됩니다. 모든 인수에는 같은 패턴을 따르는 이름을 지정해야 하며, API와 Terraform에서는 포맷과 관계없이 인수 이름이 필수입니다. 인수 유형과 반환 유형에는 `[a-zA-Z0-9_-(), :]` 문자만 사용할 수 있습니다. 심볼릭 링크가 포함된 아카이브는 거부됩니다.
 
 ### 포맷과 청크 헤더 {#formats-and-chunk-headers}
 

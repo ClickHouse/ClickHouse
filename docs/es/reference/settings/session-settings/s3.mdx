@@ -75,6 +75,18 @@ Posibles valores:
 
 Número máximo de archivos que la solicitud ListObject puede devolver en un lote
 
+## s3_list_object_parallelism {#s3_list_object_parallelism}
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Nueva configuración para listar rutas con patrones glob en almacenamiento de objetos S3-compatible (las funciones de tabla `s3` y `s3Cluster`, el motor de tabla `S3` y sus alias `gcs`, `cosn`, `oss`) mediante varias solicitudes `ListObjects` concurrentes, recorriendo en paralelo el árbol de prefijos comunes."}]}]} />
+
+Número de solicitudes `ListObjects` concurrentes que se utilizan para listar archivos cuando la ruta contiene patrones glob, en lecturas desde almacenamiento de objetos S3-compatible: la función de tabla `s3`, el motor de tabla `S3`, la función de tabla `s3Cluster` y sus alias `gcs`, `cosn` y `oss`.
+
+Cuando el valor es mayor que `1`, los archivos coincidentes se listan recorriendo el árbol de «directorios» (los prefijos comunes formados por el delimitador `/`) con ese número de threads en paralelo, en lugar de paginar todo el prefijo en un único stream secuencial. Esto puede acelerar drásticamente las consultas sobre buckets con millones de objetos, sobre todo en disposiciones con particionado jerárquico (p. ej., `year=*/month=*/`), en las que se descartan durante el recorrido subárboles completos que no coinciden.
+
+Un valor de `1` (el predeterminado) mantiene el comportamiento anterior de enumeración secuencial. Los patrones glob recursivos (`**`) siempre usan enumeración secuencial.
+
 ## s3_min_upload_part_size {#s3_min_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />

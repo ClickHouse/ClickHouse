@@ -3480,10 +3480,11 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
 導入バージョン: v20.4.0
 
-指定した範囲内の配列要素に集約関数を適用し、各範囲に対応する結果を格納した配列を返します。
+指定した範囲内のArray要素に集約関数を適用し、各範囲に対応する結果を格納したArrayを返します。
 この関数は、`arrayReduce(agg_func, arraySlice(arr1, index, length), ...)` を複数回実行した場合と同じ結果を返します。
-唯一の違いは、length が符号なしとして扱われる点です。`Int64` の最大値を超える length を指定すると配列の残りすべてが選択されますが、
-`arraySlice` ではそのような値は負の length として解釈されます。
+唯一の違いは、length が符号なしとして扱われる点です。`Int64` の最大値を超える length を指定するとArrayの残りすべてが選択されますが、
+`arraySlice` ではそのような値は負の length として解釈されます。同様に、`Int64` の最大値を超える `UInt64` のインデックスは
+Arrayの末尾より後ろを指すものとして扱われます。
 
 **構文**
 
@@ -3494,12 +3495,12 @@ arrayReduceInRanges(agg_f, ranges, arr1[, arr2, ... ,arrN])
 **引数**
 
 * `agg_f` — 使用する 集約関数 の名前。[`String`](/ja/reference/data-types/string)
-* `ranges` — 集約する範囲。集約を開始するインデックス `i` と、集約対象の範囲 `r` を含む `(i, r)` 形式の Tuple の配列。[`Array(T)`](/ja/reference/data-types/array) または [`Tuple(T)`](/ja/reference/data-types/tuple)
-* `arr1[, arr2, ... ,arrN]` — 集約関数 に渡す N 個の配列。[`Array(T)`](/ja/reference/data-types/array)
+* `ranges` — 集約する範囲。集約を開始するインデックス `i` と、集約対象の範囲 `r` を含む `(i, r)` 形式の Tuple のArray。[`Array(T)`](/ja/reference/data-types/array) または [`Tuple(T)`](/ja/reference/data-types/tuple)
+* `arr1[, arr2, ... ,arrN]` — 集約関数 に渡す N 個のArray。[`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-指定した範囲に対する 集約関数 の結果を含む配列を返します。[`Array(T)`](/ja/reference/data-types/array)
+指定した範囲に対する 集約関数 の結果を含むArrayを返します。[`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 

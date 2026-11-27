@@ -13,6 +13,16 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+## use_text_index_for_substring_search {#use_text_index_for_substring_search}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+يستخدم الفهرس النصي مع `position(s, 'value') > 0` والمقارنات المكافئة لها في `positionUTF8` و`countSubstrings` وصيغها التي تعمل دون حساسية لحالة الأحرف، وذلك بتقييمها على أنها `s LIKE '%value%'` (أو `ILIKE` للدوال التي تعمل دون حساسية لحالة الأحرف).
+
+هذا الإعداد معطّل افتراضيًا لأن مسح القاموس الذي يقيّم مثل هذا النمط قد يكون أبطأ من البحث في العمود، كما هو الحال مثلًا عندما تحتوي معظم الصفوف على رمز خاص بكل منها، مثل معرّف مميز.
+
 ## use_text_index_header_cache {#use_text_index_header_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

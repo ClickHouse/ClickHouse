@@ -184,6 +184,18 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
   هذا إعداد مخصص للخبراء لا ينبغي أن يستخدمه المطورون إلا لأغراض التصحيح. قد يتغير هذا الإعداد مستقبلًا بطرق غير متوافقة مع الإصدارات السابقة أو قد يُزال.
 </Note>
 
+## query_plan_join_multiway_merge {#query_plan_join_multiway_merge}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+ينفّذ جزءًا فرعيًا من عمليات الربط الداخلي من نوع `full_sorting_merge` التي تتساوى مفاتيحها فيما بينها كعملية ربط بالدمج واحدة تشمل جميع مدخلاتها، بدلًا من شجرة من عمليات الربط ثنائية المدخلات. تُقرأ كل المدخلات مرة واحدة بترتيب المفتاح، ويُنسخ كل عمود إلى النتيجة مرة واحدة فقط.
+
+يسري على عمليات الربط من نوع `INNER` ذات الصرامة `ALL` والشرط الواحد. ومع تفعيل `query_plan_join_shard_by_pk_ranges`، يُقسَّم الربط وفق نطاقات المفتاح الأساسي لجميع جداوله.
+
 ## query_plan_join_order_use_interesting_orders {#query_plan_join_order_use_interesting_orders}
 
 <BetaBadge />

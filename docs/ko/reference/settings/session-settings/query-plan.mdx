@@ -184,6 +184,18 @@ JOIN 이후의 필터가 일치하지 않는 행 또는 일치하는 행에 대�
   개발자가 디버깅 목적으로만 사용해야 하는 전문가 수준의 설정입니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
 </Note>
 
+## query_plan_join_multiway_merge {#query_plan_join_multiway_merge}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+
+키가 서로 동일한 `full_sorting_merge` 내부 조인(inner join)의 하위 트리(subtree)를, 입력이 2개인 조인들로 구성된 트리 대신 모든 입력을 대상으로 하는 단일 병합 조인(merge join)으로 실행합니다. 각 입력은 키 순서대로 한 번만 읽히고, 각 컬럼은 결과(result)에 한 번만 복사됩니다.
+
+엄격성이 `ALL`이고 조건이 하나인 `INNER` 조인에 적용됩니다. `query_plan_join_shard_by_pk_ranges`를 함께 사용하면 조인에 참여하는 모든 테이블의 프라이머리 키 범위를 기준으로 조인이 분할됩니다.
+
 ## query_plan_join_order_use_interesting_orders {#query_plan_join_order_use_interesting_orders}
 
 <BetaBadge />

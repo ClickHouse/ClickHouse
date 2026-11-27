@@ -5150,6 +5150,10 @@ Número de veces que se encontró una entrada en la caché del índice primario,
 
 Número de veces que no se encontró una entrada en la caché del índice primario, por lo que fue necesario cargar un archivo de índice en memoria, una operación costosa que aumenta la latencia de la consulta.
 
+### PrometheusRemoteWriteDroppedExemplars {#prometheusremotewritedroppedexemplars}
+
+Número de exemplars recibidos mediante el protocolo remote-write de Prometheus y descartados porque la table TimeSeries no almacena exemplars. Solo se contabilizan cuando la escritura se almacena; en el caso de una inserción asíncrona, cuando su vaciado se realiza correctamente.
+
 ### QueriesWithSubqueries {#querieswithsubqueries}
 
 Número de consultas con todas las subconsultas
@@ -7397,6 +7401,10 @@ Tiempo empleado en ejecutar código WebAssembly
 ### WasmTotalExecuteMicroseconds {#wasmtotalexecutemicroseconds}
 
 Tiempo invertido en ejecutar código WebAssembly
+
+### WriteBufferFromAzureBytes {#writebufferfromazurebytes}
+
+Bytes escritos en Azure.
 
 ### WriteBufferFromFileDescriptorWrite {#writebufferfromfiledescriptorwrite}
 

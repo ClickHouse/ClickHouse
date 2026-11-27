@@ -130,6 +130,8 @@ CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
+`MergeTree`ファミリーのテーブルでは、`CLEAR COLUMN` は仮想カラム [`_block_number` と `_block_offset`](/ja/reference/engines/table-engines/mergetree-family/mergetree#virtual-columns) も受け付けます。どちらの名前を指定しても両方がクリアされ、その結果、データパートは `_block_number` として自身の最小ブロック番号を、`_block_offset` として `_part_offset` を返すようになります。
+
 ## COMMENT COLUMN {#comment-column}
 
 ```sql

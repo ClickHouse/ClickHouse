@@ -184,6 +184,18 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
   这是一项专家级设置，仅供开发人员调试时使用。该设置未来可能会以不向后兼容的方式变更或被移除。
 </Note>
 
+## query_plan_join_multiway_merge {#query_plan_join_multiway_merge}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+对于由 `full_sorting_merge` 内连接构成、且各连接键彼此相等的子树，将其作为一个涵盖所有输入的归并连接来执行，而不是执行由双输入连接组成的连接树。每个输入只按键的顺序读取一次，每一列也只复制到结果中一次。
+
+适用于严格性为 `ALL` 且只有一个条件的 `INNER` 连接。若启用 `query_plan_join_shard_by_pk_ranges`，该连接会按其所有表的主键范围进行拆分。
+
 ## query_plan_join_order_use_interesting_orders {#query_plan_join_order_use_interesting_orders}
 
 <BetaBadge />
