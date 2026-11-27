@@ -97,9 +97,9 @@ public:
 
         explicit SubcolumnCreator(size_t n_) : n(n_) {}
 
-        [[nodiscard]] [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override;
-        [[nodiscard]] [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
-        [[nodiscard]] [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override;
+        [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override;
+        [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
+        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev, const DataTypePtr &) const override;
     };
 };
 

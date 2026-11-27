@@ -1070,7 +1070,7 @@ private:
 
     /// The products of numbers. `T` is the type of the result, `ComputeT` is the type in which it is calculated.
     template <typename T, typename ComputeT>
-    [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] ColumnPtr executeNumeric(
+    [[nodiscard]] ColumnPtr executeNumeric(
         const EinsumSignature & signature,
         const VectorWithMemoryTracking<TensorRows> & tensors,
         size_t input_rows_count) const

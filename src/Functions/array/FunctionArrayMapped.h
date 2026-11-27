@@ -113,7 +113,7 @@ public:
     /// The functions that map every element to a new one (`arrayMap`) return `FixedArray` of the same size.
     static constexpr bool keeps_fixed_array_size = requires { Impl::keeps_fixed_array_size; };
 
-    [[nodiscard]] [[nodiscard]] bool useDefaultImplementationForFixedArray() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForFixedArray() const override { return false; }
 
     void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
@@ -125,7 +125,7 @@ public:
         arguments[0] = arguments_without_fixed_array[0];
     }
 
-    [[nodiscard]] [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto return_type = getReturnTypeForArrays(removeFixedArrayFromArguments(arguments));
         if (auto size = getSizeOfFixedArrayResult(arguments))
@@ -144,7 +144,7 @@ private:
     }
 
     /// The result is `FixedArray` if the function keeps the size and all the arrays are `FixedArray` of the same size.
-    [[nodiscard]] [[nodiscard]] std::optional<size_t> getSizeOfFixedArrayResult(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] std::optional<size_t> getSizeOfFixedArrayResult(const ColumnsWithTypeAndName & arguments) const
     {
         if constexpr (!keeps_fixed_array_size)
             return {};

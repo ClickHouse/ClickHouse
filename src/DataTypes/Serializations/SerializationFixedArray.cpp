@@ -167,7 +167,7 @@ SerializationPtr SerializationFixedArray::SubcolumnCreator::create(const Seriali
     return SerializationFixedArray::create(prev, prev_type, n);
 }
 
-ColumnPtr SerializationFixedArray::SubcolumnCreator::create(const ColumnPtr & prev) const
+ColumnPtr SerializationFixedArray::SubcolumnCreator::create(const ColumnPtr & prev, const DataTypePtr &) const
 {
     return ColumnFixedArray::create(prev, n);
 }
