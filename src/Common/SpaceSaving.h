@@ -9,9 +9,11 @@
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/transformEndianness.h>
 
 #include <Common/FailPoint.h>
 
+#include <cstring>
 #include <vector>
 
 
@@ -307,8 +309,26 @@ public:
             new_list.push_back(counter);
 
         size_t return_size = std::min(new_list.size(), capacity());
+        /// A total order on the written bytes: the same counters are written as the same bytes on every host, whatever the order of ties.
         ::partial_sort(
-            new_list.begin(), new_list.begin() + return_size, new_list.end(), [](const auto & l, const auto & r) { return l > r; });
+            new_list.begin(), new_list.begin() + return_size, new_list.end(),
+            [](const auto & l, const auto & r)
+            {
+                if (l > r)
+                    return true;
+                if (r > l)
+                    return false;
+                if constexpr (std::is_same_v<TKey, std::string_view>)
+                    return l.key < r.key;
+                else
+                {
+                    TKey l_key = l.key;
+                    TKey r_key = r.key;
+                    transformEndianness<std::endian::little>(l_key);
+                    transformEndianness<std::endian::little>(r_key);
+                    return memcmp(&l_key, &r_key, sizeof(TKey)) < 0;
+                }
+            });
 
         writeVarUInt(return_size, wb);
         for (size_t i = 0; i < return_size; i++)

@@ -1,0 +1,31 @@
+-- { echo }
+-- Six of the seven values have the same count, so the counters of these states tie.
+
+SELECT count() FROM (SELECT topKState(3)(number % 7) FROM numbers(1000) INTERSECT DISTINCT SELECT topKState(3)(number % 7) FROM numbers(1000));
+1
+SELECT count() FROM (SELECT topKState(3)(number % 7) FROM numbers(1000) INTERSECT DISTINCT SELECT topKState(3)(number % 7) FROM numbers(1000)) SETTINGS rewrite_intersect_except_distinct_to_join = 0;
+1
+SELECT count() FROM (SELECT topKState(3)(number % 7) FROM numbers(1000) EXCEPT DISTINCT SELECT topKState(3)(number % 7) FROM numbers(1000));
+0
+SELECT count() FROM (SELECT topKState(3)(number % 7) AS s FROM numbers(1000)) AS a JOIN (SELECT topKState(3)(number % 7) AS s FROM numbers(1000)) AS b ON a.s <=> b.s SETTINGS join_algorithm = 'hash';
+1
+SELECT count() FROM (SELECT topKWeightedState(3)(number % 7, 1) FROM numbers(1000) INTERSECT DISTINCT SELECT topKWeightedState(3)(number % 7, 1) FROM numbers(1000));
+1
+SELECT count() FROM (SELECT approx_top_kState(3)(number % 7) FROM numbers(1000) INTERSECT DISTINCT SELECT approx_top_kState(3)(number % 7) FROM numbers(1000));
+1
+SELECT count() FROM (SELECT approx_top_sumState(3)(number % 7, 1) FROM numbers(1000) INTERSECT DISTINCT SELECT approx_top_sumState(3)(number % 7, 1) FROM numbers(1000));
+1
+SELECT count() FROM (SELECT topKState(3)(toString(number % 7)) FROM numbers(1000) INTERSECT DISTINCT SELECT topKState(3)(toString(number % 7)) FROM numbers(1000));
+1
+SELECT count() FROM (SELECT topKState(3)((number % 7, 'a')) FROM numbers(1000) INTERSECT DISTINCT SELECT topKState(3)((number % 7, 'a')) FROM numbers(1000));
+1
+-- NaN and -NaN are not ordered by `<`, 0 and -0 are equal under it, but they are four different keys.
+SELECT count() FROM (SELECT topKState(3)(multiIf(number % 7 = 0, nan, number % 7 = 1, reinterpretAsFloat64(toUInt64('18444492273895866368')), number % 7 = 2, 0., number % 7 = 3, -0., toFloat64(number % 7))) FROM numbers(1000) INTERSECT DISTINCT SELECT topKState(3)(multiIf(number % 7 = 0, nan, number % 7 = 1, reinterpretAsFloat64(toUInt64('18444492273895866368')), number % 7 = 2, 0., number % 7 = 3, -0., toFloat64(number % 7))) FROM numbers(1000));
+1
+-- The same counters built from the rows in the opposite order.
+SELECT count() FROM (SELECT topKState(3)(number % 7) FROM numbers(1000) INTERSECT DISTINCT SELECT topKState(3)(number % 7) FROM (SELECT number FROM numbers(1000) ORDER BY number DESC));
+1
+SELECT count() FROM (SELECT topKState(3)(toString(number % 7)) FROM numbers(1000) INTERSECT DISTINCT SELECT topKState(3)(toString(number % 7)) FROM (SELECT number FROM numbers(1000) ORDER BY number DESC));
+1
+SELECT count() FROM (SELECT topKState(3)(multiIf(number % 7 = 0, nan, number % 7 = 1, reinterpretAsFloat64(toUInt64('18444492273895866368')), number % 7 = 2, 0., number % 7 = 3, -0., toFloat64(number % 7))) FROM numbers(1000) INTERSECT DISTINCT SELECT topKState(3)(multiIf(number % 7 = 0, nan, number % 7 = 1, reinterpretAsFloat64(toUInt64('18444492273895866368')), number % 7 = 2, 0., number % 7 = 3, -0., toFloat64(number % 7))) FROM (SELECT number FROM numbers(1000) ORDER BY number DESC));
+1
