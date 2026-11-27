@@ -31,6 +31,7 @@
 
     <query>SELECT {func}(key, val) FROM sum_map_{scale} FORMAT Null</query>
     <query>SELECT {func}((key, val)) FROM sum_map_{scale} FORMAT Null</query>
+    <query>SELECT sumMap(map(concat('https://example.com/page/', toString(number)), number)) FROM numbers(300000) FORMAT Null</query>
 
     <drop_query>DROP TABLE sum_map_{scale}</drop_query>
 </test>

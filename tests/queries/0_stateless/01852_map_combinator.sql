@@ -85,3 +85,7 @@ SELECT sumMap(map(CAST(number % 3, 'Time64(3)'), number)) FROM numbers(10) SETTI
 SELECT groupArrayMap(map('a', 1), number % 2) FROM numbers(3);
 SELECT anyMap(map('a', number), number % 2) FROM numbers(3);
 SELECT toTypeName(groupArrayMapState(map('a', 1), number % 2)) FROM numbers(1);
+
+-- `String` and `FixedString` keys longer than the small string buffer are sorted byte-wise
+SELECT arrayMap(k -> substring(k, 26), mapKeys(sumMap(map(concat('https://example.com/page/', toString(number % 5 * 7)), 1)))) FROM numbers(10);
+SELECT arrayMap(k -> substring(toString(k), 27), mapKeys(sumMap(map(toFixedString(leftPad(toString(number % 5 * 7), 30, 'x'), 30), 1)))) FROM numbers(10);
