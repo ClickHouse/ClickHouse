@@ -1313,6 +1313,16 @@
     </iceberg_rest_catalog>
     -->
 
+    <!-- Experimental SQL LLM gateway. All participating servers must use the same Keeper path.
+         <allow_experimental_llm_query>true</allow_experimental_llm_query>
+         <llm_query><keeper_path>/clickhouse/llm_gateway/production/deployments</keeper_path></llm_query>
+    -->
+    <llm_query_log>
+        <database>system</database>
+        <table>llm_query_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </llm_query_log>
+
     <!-- Query log. Used only for queries with setting log_queries = 1. -->
     <query_log>
         <!-- What table to insert data. If table is not exist, it will be created.

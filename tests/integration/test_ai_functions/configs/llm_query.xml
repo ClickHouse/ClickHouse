@@ -1,0 +1,15 @@
+<clickhouse>
+    <allow_experimental_llm_query>true</allow_experimental_llm_query>
+    <llm_query>
+        <keeper_path>/clickhouse/test_ai_functions/llm_deployments</keeper_path>
+    </llm_query>
+    <llm_query_log>
+        <database>system</database>
+        <table>llm_query_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </llm_query_log>
+    <named_collections_storage>
+        <type>keeper</type>
+        <path>/clickhouse/test_ai_functions/named_collections</path>
+    </named_collections_storage>
+</clickhouse>

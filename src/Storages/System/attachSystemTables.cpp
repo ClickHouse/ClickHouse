@@ -111,6 +111,7 @@
 #include <Storages/System/StorageSystemQueryResultCache.h>
 #include <Storages/System/StorageSystemUserQueryLog.h>
 #include <Storages/System/StorageSystemNamedCollections.h>
+#include <Storages/System/StorageSystemLLMDeployments.h>
 #include <Storages/System/StorageSystemHandlers.h>
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
 #include <Storages/System/StorageSystemCertificates.h>
@@ -3606,6 +3607,16 @@ SELECT * FROM system.stemmers;
 .description
 Contains information about available certificates and their sources.
 )DOCS_MD");
+    attach<StorageSystemLLMDeployments>(context, system_database, "llm_deployments", R"DOCS_MD(
+Configures deployments used by `llmQuery`. Rows are stored in the Keeper snapshot configured by
+`llm_query.keeper_path`; servers sharing that path share configuration. Request limits are enforced
+independently on each server and reset on restart. Insert a new deployment with `INSERT` and remove
+one with `DELETE FROM system.llm_deployments WHERE name = 'deployment_name'`. An existing name cannot
+be inserted again. A weight of zero disables routing to a deployment. The `credentials` column
+references a named collection; it never contains the API key. The feature requires
+`allow_experimental_llm_query`. The registry supports at most 1024 deployments and a 256 KiB snapshot.
+)DOCS_MD");
+
     attachNoDescription<StorageSystemNamedCollections>(context, system_database, "named_collections", R"DOCS_MD(
 .description
 Contains a list of all named collections which were created via SQL query or parsed from configuration file.

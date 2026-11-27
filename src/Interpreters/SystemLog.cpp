@@ -45,6 +45,7 @@
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/LLMQueryLog.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/IcebergMetadataLog.h>

@@ -1,0 +1,131 @@
+---
+description: 'Route synchronous language model requests from SQL using Keeper-backed deployment configuration.'
+sidebarTitle: 'SQL LLM gateway'
+slug: /use-cases/AI/llm-query
+title: 'SQL LLM gateway'
+doc_type: 'guide'
+---
+
+# SQL LLM gateway {#sql-llm-gateway}
+
+`llmQuery` sends a synchronous text request to a configured model route and returns its answer as a `String`.
+The experimental gateway selects deployments by weight and records request lifecycle events in `system.llm_query_log`.
+It reuses the provider protocols supported by the AI functions.
+
+## Enable the gateway {#enable-the-gateway}
+
+Configure Keeper and enable the feature on every participating server:
+
+```xml
+<clickhouse>
+    <allow_experimental_llm_query>true</allow_experimental_llm_query>
+    <llm_query>
+        <keeper_path>/clickhouse/llm_gateway/production/deployments</keeper_path>
+    </llm_query>
+    <named_collections_storage>
+        <type>keeper</type>
+        <path>/clickhouse/llm_gateway/production/credentials</path>
+    </named_collections_storage>
+    <llm_query_log>
+        <database>system</database>
+        <table>llm_query_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </llm_query_log>
+</clickhouse>
+```
+
+Servers sharing `keeper_path` share deployment configuration. Keeper must be available when reading or changing that configuration.
+The gateway reads one complete, versioned snapshot per input block; a management write uses a version-checked Keeper update.
+The first version supports at most 1024 deployments and a 256 KiB configuration snapshot.
+
+Provider credentials use [named collections](/operations/named-collections).
+The example also enables their Keeper storage backend, so SQL-created credentials are shared across servers.
+These paths must be separate: the deployment path holds a configuration snapshot, while the collection path contains collection entries.
+Deployment replication alone does not replicate named collections defined in a server's local configuration.
+The named-collection storage setting applies to all SQL-created named collections on the server.
+Plan the migration of existing local collections before changing their storage backend.
+
+## Register deployments {#register-deployments}
+
+Create a named collection using an actual provider endpoint and credentials:
+
+```sql
+CREATE NAMED COLLECTION provider_a AS
+    provider = 'openai',
+    endpoint = 'https://provider.example/v1/chat/completions',
+    api_key = '<provider-api-key>';
+```
+
+Register a deployment. The API key is referenced through the collection and is not copied into the deployment table:
+
+```sql
+INSERT INTO system.llm_deployments
+    (name, route, credentials, model, weight, max_requests_per_minute, max_concurrent_requests)
+VALUES
+    ('chat_a', 'chat', 'provider_a', 'upstream-model', 100, 600, 16);
+```
+
+Additional deployments with the same `route` participate in weighted routing. A weight of zero disables a deployment.
+Only deployments with available capacity participate in selection. If none has capacity, the request throws an exception.
+There is no implicit model substitution after a provider exception and no automatic retry.
+
+`max_requests_per_minute` uses a fixed 60-second window on each server.
+`max_concurrent_requests` counts HTTP calls executing on that server.
+A limit of zero means unlimited. Counters reset when the server restarts; these are admission limits, not durable spending budgets.
+Two servers each configured with a limit of 600 requests can together issue 1200 requests in their respective windows.
+
+Duplicate deployment names are rejected. To replace a deployment in this version, delete it and insert its replacement:
+
+```sql
+DELETE FROM system.llm_deployments WHERE name = 'chat_a';
+```
+
+The deletion requires an exact, literal deployment name. Configuration changes do not interrupt calls already in progress.
+
+## Send a question {#send-a-question}
+
+```sql
+SELECT llmQuery('chat', 'What is 2 + 2?');
+
+SELECT llmQuery('chat', 'Explain column storage',
+    map('system_prompt', 'Be concise.', 'temperature', '0.2', 'max_tokens', '128'));
+```
+
+The route and parameter map must be constant. `prompt` can be a column; each input row that is actually evaluated produces a request.
+A `NULL` prompt returns `NULL` without contacting the provider.
+`EXPLAIN` and expressions eliminated by query optimization do not send requests.
+The function is non-deterministic and is not eligible for constant folding.
+Repeated SQL expressions and distributed query execution must not be used to infer an exactly-once provider-call guarantee.
+
+The optional map accepts `system_prompt`, `temperature` between 0 and 2, and `max_tokens` between 1 and 1000000.
+Unknown and duplicate parameters are rejected. The actual provider may accept a narrower parameter range.
+The route determines the model and credentials; they cannot be overridden through this map.
+As in the AI text functions, control characters other than tab, newline and carriage return are replaced with spaces before transmission.
+
+Execution requires the `llmQuery` privilege (included in `AI FUNCTIONS`) and `NAMED COLLECTION` access to the active deployments in the route.
+Management uses the normal table `INSERT` and `ALTER DELETE` privileges. Endpoint filtering, HTTPS restrictions,
+`allow_ai_functions` and the existing per-query AI quotas also apply.
+
+## Inspect request events {#inspect-request-events}
+
+The gateway enqueues `RequestStart` before dispatch and appends `RequestFinish` or `RequestException` after completion.
+The two events share `request_id`. Use `query_id` and `initial_query_id` to associate them with the SQL query.
+The start event contains the prompt; the terminal event contains the response and known provider token usage.
+An exception before dispatch, such as denied access or exhausted deployment capacity, does not create a provider request event.
+
+```sql
+SYSTEM FLUSH LOGS llm_query_log;
+
+SELECT request_id, type, route, deployment, response, input_tokens, output_tokens, exception_code
+FROM system.llm_query_log
+WHERE query_id = '<query-id>'
+ORDER BY event_time_microseconds;
+```
+
+Like other system logs, events are buffered and flushed asynchronously. A successful SQL response does not guarantee that its events
+have reached disk; an abnormal server exit or logging failure can lose buffered events.
+The table contains prompt and response content. Configure its access and retention as for other sensitive system logs.
+Provider keys are not recorded.
+
+This version uses non-streaming HTTP calls. Cancelling a query prevents subsequent rows from being dispatched but does not guarantee
+that an HTTP call already sent is interrupted before its socket timeout. A cancelled or failed call can still be billed by the provider.

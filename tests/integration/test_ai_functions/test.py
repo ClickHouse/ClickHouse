@@ -19,7 +19,12 @@ MOCK_PORT = 18123
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("node", stay_alive=True)
+instance = cluster.add_instance(
+    "node", stay_alive=True, with_zookeeper=True, main_configs=["configs/llm_query.xml"]
+)
+llm_replica = cluster.add_instance(
+    "llm_replica", stay_alive=True, with_zookeeper=True, main_configs=["configs/llm_query.xml"]
+)
 
 
 def run_mock_server():
@@ -3156,3 +3161,206 @@ def test_shutdown_after_cancelling_query_with_request_in_flight(started_cluster)
 
     instance.restart_clickhouse()
     assert instance.query("SELECT aiGenerate('x', map('credentials', 'ai_slow'))").strip() != ""
+
+
+def test_llm_query_routes_and_records_results(started_cluster):
+    deployment = unique_query_id("llm_deployment")
+    query_id = unique_query_id("llm_request")
+    instance.query(
+        f"INSERT INTO system.llm_deployments VALUES "
+        f"('{deployment}', '{deployment}', 'ai_mock', 'test-model', 1, 0, 2)"
+    )
+    try:
+        assert instance.query(
+            f"SELECT llmQuery('{deployment}', 'question ' || toString(number)) "
+            "FROM numbers(3)", query_id=query_id
+        ) == "question 0\nquestion 1\nquestion 2\n"
+        instance.query("SYSTEM FLUSH LOGS llm_query_log")
+        events = instance.query(
+            "SELECT type, count(), sum(input_tokens), sum(output_tokens) "
+            f"FROM system.llm_query_log WHERE query_id = '{query_id}' "
+            "GROUP BY type ORDER BY type"
+        )
+        assert events == "RequestStart\t3\t0\t0\nRequestFinish\t3\t30\t15\n"
+        assert instance.query(
+            "SELECT count() FROM (SELECT request_id FROM system.llm_query_log "
+            f"WHERE query_id = '{query_id}' GROUP BY request_id HAVING count() = 2)"
+        ) == "3\n"
+        assert instance.query(
+            f"SELECT llmQuery('{deployment}', NULL::Nullable(String))"
+        ) == "\\N\n"
+        params_id = unique_query_id("llm_params")
+        assert instance.query(
+            f"SELECT llmQuery('{deployment}', 'options', "
+            "map('system_prompt', 'be concise', 'max_tokens', '64', 'temperature', '0.2'))",
+            query_id=params_id,
+        ) == "options\n"
+        instance.query("SYSTEM FLUSH LOGS llm_query_log")
+        assert instance.query(
+            "SELECT system_prompt, max_tokens, round(temperature, 1) "
+            f"FROM system.llm_query_log WHERE query_id = '{params_id}' AND type = 'RequestStart'"
+        ) == "be concise\t64\t0.2\n"
+        user = unique_query_id("llm_user")
+        instance.query(f"CREATE USER {user}")
+        try:
+            sql = f"SELECT llmQuery('{deployment}', 'authorized')"
+            assert "ACCESS_DENIED" in instance.query_and_get_error(sql, user=user)
+            instance.query(f"GRANT llmQuery ON *.* TO {user}")
+            assert "ACCESS_DENIED" in instance.query_and_get_error(sql, user=user)
+            instance.query(f"GRANT NAMED COLLECTION ON ai_mock TO {user}")
+            assert instance.query(sql, user=user) == "authorized\n"
+            assert "ACCESS_DENIED" in instance.query_and_get_error(
+                "SELECT prompt, response FROM system.llm_query_log", user=user
+            )
+        finally:
+            instance.query(f"DROP USER {user}")
+        explain_id = unique_query_id("llm_explain")
+        instance.query(f"EXPLAIN SELECT llmQuery('{deployment}', 'no dispatch')", query_id=explain_id)
+        instance.query("SYSTEM FLUSH LOGS llm_query_log")
+        assert instance.query(
+            f"SELECT count() FROM system.llm_query_log WHERE query_id = '{explain_id}'"
+        ) == "0\n"
+    finally:
+        instance.query(f"DELETE FROM system.llm_deployments WHERE name = '{deployment}'")
+
+
+def test_llm_configuration_is_shared_and_limits_are_local(started_cluster):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    name = unique_query_id("llm_shared")
+    credential = unique_query_id("llm_credentials")
+    instance.query(
+        f"CREATE NAMED COLLECTION {credential} AS provider = 'openai', "
+        f"endpoint = 'http://node:{MOCK_PORT}/v1/chat/completions', api_key = 'test-key'"
+    )
+    barrier = Barrier(2)
+
+    def insert_deployment(node, suffix):
+        barrier.wait(timeout=10)
+        node.query(
+            f"INSERT INTO system.llm_deployments VALUES "
+            f"('{name}_{suffix}', '{name}', '{credential}', 'test-model', 1, 1, 1)"
+        )
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(insert_deployment, instance, "a"),
+                executor.submit(insert_deployment, llm_replica, "b"),
+            ]
+            for future in futures:
+                future.result(timeout=30)
+        for node in (instance, llm_replica):
+            wait_condition(
+                lambda: node.query(f"SELECT count() FROM system.named_collections WHERE name = '{credential}'"),
+                lambda result: result == "1\n",
+                max_attempts=30,
+                delay=0.1,
+            )
+            assert node.query(
+                f"SELECT count() FROM system.llm_deployments WHERE route = '{name}'"
+            ) == "2\n"
+            # Each server can independently use both deployments once.
+            for _ in range(2):
+                assert node.query(
+                    f"SELECT llmQuery('{name}', 'shared model')",
+                    settings={"ai_function_allow_insecure_endpoint": 1},
+                ) == "shared model\n"
+            assert "LIMIT_EXCEEDED" in node.query_and_get_error(
+                f"SELECT llmQuery('{name}', 'over limit')",
+                settings={"ai_function_allow_insecure_endpoint": 1},
+            )
+        llm_replica.restart_clickhouse()
+        assert llm_replica.query(
+            f"SELECT count() FROM system.llm_deployments WHERE route = '{name}'"
+        ) == "2\n"
+        # A restarted server recovers configuration; local admission counters reset.
+        assert llm_replica.query(
+            f"SELECT llmQuery('{name}', 'after restart')",
+            settings={"ai_function_allow_insecure_endpoint": 1},
+        ) == "after restart\n"
+    finally:
+        instance.query(f"DELETE FROM system.llm_deployments WHERE name = '{name}_a'")
+        instance.query(f"DELETE FROM system.llm_deployments WHERE name = '{name}_b'")
+        instance.query(f"DROP NAMED COLLECTION {credential}")
+
+
+def test_llm_provider_exception_records_terminal_event(started_cluster):
+    name = unique_query_id("llm_exception")
+    query_id = unique_query_id("llm_exception_query")
+    instance.query(
+        f"CREATE NAMED COLLECTION {name} AS provider = 'openai', "
+        f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/content_filter', api_key = 'test-key'"
+    )
+    instance.query(
+        f"INSERT INTO system.llm_deployments VALUES "
+        f"('{name}', '{name}', '{name}', 'test-model', 1, 0, 1)"
+    )
+    try:
+        error = instance.query_and_get_error(
+            f"SELECT llmQuery('{name}', 'question')", query_id=query_id
+        )
+        assert "AI_PROVIDER_RESPONSE_INCOMPLETE" in error
+        instance.query("SYSTEM FLUSH LOGS llm_query_log")
+        assert instance.query(
+            "SELECT type FROM system.llm_query_log "
+            f"WHERE query_id = '{query_id}' ORDER BY type"
+        ) == "RequestStart\nRequestException\n"
+        # An exception releases capacity for a subsequent request.
+        assert "AI_PROVIDER_RESPONSE_INCOMPLETE" in instance.query_and_get_error(
+            f"SELECT llmQuery('{name}', 'another question')"
+        )
+    finally:
+        instance.query(f"DELETE FROM system.llm_deployments WHERE name = '{name}'")
+        instance.query(f"DROP NAMED COLLECTION {name}")
+
+
+def test_llm_concurrency_limit_and_start_event_before_response(started_cluster):
+    from concurrent.futures import ThreadPoolExecutor
+
+    name = unique_query_id("llm_concurrent")
+    query_id = unique_query_id("llm_gated_query")
+
+    def control(operation):
+        return instance.exec_in_container(
+            ["curl", "-s", f"http://localhost:{MOCK_PORT}/llm-gate/{operation}"]
+        )
+
+    control("reset")
+    instance.query(
+        f"CREATE NAMED COLLECTION {name} AS provider = 'openai', "
+        f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/gated', api_key = 'test-key'"
+    )
+    instance.query(
+        f"INSERT INTO system.llm_deployments VALUES "
+        f"('{name}', '{name}', '{name}', 'test-model', 1, 0, 1)"
+    )
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            request = executor.submit(
+                instance.query, f"SELECT llmQuery('{name}', 'first')", query_id=query_id
+            )
+            try:
+                wait_condition(
+                    lambda: json.loads(control("state")),
+                    lambda state: state["started"],
+                    max_attempts=30,
+                    delay=0.1,
+                )
+                instance.query("SYSTEM FLUSH LOGS llm_query_log")
+                assert instance.query(
+                    "SELECT type FROM system.llm_query_log "
+                    f"WHERE query_id = '{query_id}'"
+                ) == "RequestStart\n"
+                assert "LIMIT_EXCEEDED" in instance.query_and_get_error(
+                    f"SELECT llmQuery('{name}', 'second')"
+                )
+            finally:
+                control("release")
+            assert request.result(timeout=15) == "first\n"
+        assert instance.query(f"SELECT llmQuery('{name}', 'third')") == "third\n"
+    finally:
+        control("release")
+        instance.query(f"DELETE FROM system.llm_deployments WHERE name = '{name}'")
+        instance.query(f"DROP NAMED COLLECTION {name}")

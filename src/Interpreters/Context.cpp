@@ -24,6 +24,7 @@
 #include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
 #include <base/getMemoryAmount.h>
 #include <Common/Stopwatch.h>
+#include <Common/MemoryTrackerSwitcher.h>
 #include <Common/formatReadable.h>
 #include <Common/Throttler.h>
 #include <Common/ThrottlerArray.h>
@@ -99,6 +100,7 @@
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/WasmModuleManager.h>
+#include <Interpreters/LLMDeploymentRegistry.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
 #include <Core/SettingsQuirks.h>
@@ -442,6 +444,8 @@ namespace MergeTreeSetting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsBool allow_experimental_llm_query;
+    extern const ServerSettingsString llm_query_keeper_path;
     extern const ServerSettingsUInt64 max_remote_read_connections;
     extern const ServerSettingsUInt64 background_buffer_flush_schedule_pool_size;
     extern const ServerSettingsUInt64 background_common_pool_size;
@@ -735,6 +739,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::shared_ptr<IWorkloadEntityStorage> workload_entity_storage;
 
     mutable std::unique_ptr<WasmModuleManager> wasm_module_manager;
+    mutable std::once_flag llm_registry_once;
+    mutable std::shared_ptr<LLMDeploymentRegistry> llm_deployment_registry;
 
 #if USE_NLP
     mutable OnceFlag synonyms_extensions_initialized;
@@ -8337,6 +8343,26 @@ bool Context::hasTraceCollector() const
     return shared->hasTraceCollector();
 }
 
+
+std::shared_ptr<LLMQueryLog> Context::getLLMQueryLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->system_logs ? shared->system_logs->llm_query_log : nullptr;
+}
+
+std::shared_ptr<LLMDeploymentRegistry> Context::getLLMDeploymentRegistry() const
+{
+    const auto & server_settings = getServerSettings();
+    if (!server_settings[ServerSetting::allow_experimental_llm_query])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Enable `allow_experimental_llm_query` to use `llmQuery`");
+    std::call_once(shared->llm_registry_once, [&]
+    {
+        MemoryTrackerSwitcher switcher(&total_memory_tracker);
+        String keeper_path = server_settings[ServerSetting::llm_query_keeper_path];
+        shared->llm_deployment_registry = std::make_shared<LLMDeploymentRegistry>(std::move(keeper_path));
+    });
+    return shared->llm_deployment_registry;
+}
 
 std::shared_ptr<QueryLog> Context::getQueryLog() const
 {

@@ -67,21 +67,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// Strip control characters (U+0000..U+001F except \t \n \r) that break JSON serialization.
-String sanitizeForModel(std::string_view input)
-{
-    String output;
-    output.reserve(input.size());
-    for (unsigned char ch : input)
-    {
-        if (ch < 0x20 && ch != '\t' && ch != '\n' && ch != '\r')
-            output.push_back(' ');
-        else
-            output.push_back(static_cast<char>(ch));
-    }
-    return output;
-}
-
 /// Whether an endpoint host refers to the local machine.
 bool isLoopbackHost(const String & host)
 {
@@ -234,6 +219,71 @@ UInt64 FunctionBaseAI::AIParams::getUInt(std::string_view key) const
     return getResolvedAIParam(values, key).safeGet<UInt64>();
 }
 
+/// Strip control characters (U+0000..U+001F except \t \n \r) that break JSON serialization.
+String FunctionBaseAI::sanitizeForModel(std::string_view input)
+{
+    String output;
+    output.reserve(input.size());
+    for (unsigned char ch : input)
+    {
+        if (ch < 0x20 && ch != '\t' && ch != '\n' && ch != '\r')
+            output.push_back(' ');
+        else
+            output.push_back(static_cast<char>(ch));
+    }
+    return output;
+}
+
+FunctionBaseAI::AINamedCollectionConfig FunctionBaseAI::resolveAINamedCollection(const ContextPtr & context, const String & credentials)
+{
+    context->checkAccess(AccessType::NAMED_COLLECTION, credentials);
+    const auto & collection = NamedCollectionFactory::instance().get(credentials);
+    if (!context->getServerSettings()[ServerSetting::ai_function_allow_sql_named_collections]
+        && collection->getSourceId() != NamedCollection::SourceId::CONFIG)
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "AI named collection '{}' is not defined in the server configuration file, and the server setting "
+            "'ai_function_allow_sql_named_collections' is disabled", credentials);
+
+    AINamedCollectionConfig result;
+    result.source = collection;
+    result.collection_name = credentials;
+    result.provider = collection->getOrDefault<String>("provider", "");
+    result.endpoint = collection->getOrDefault<String>("endpoint", "");
+    result.api_key = collection->getOrDefault<SecretString>("api_key");
+    result.api_version = collection->getOrDefault<String>("api_version", "");
+
+    if (result.provider.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'provider'", credentials);
+    if (result.endpoint.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", credentials);
+
+    /// The endpoint can carry a secret, so the error below names only the collection.
+    Poco::URI endpoint_uri;
+    try
+    {
+        endpoint_uri = Poco::URI(result.endpoint);
+    }
+    catch (const Poco::SyntaxException &)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' has a malformed endpoint", credentials);
+    }
+
+    context->getRemoteHostFilter().checkURL(endpoint_uri);
+
+    /// Refuse to send prompts and API keys over an unencrypted connection to a remote host.
+    /// Local hosts are exempt, the `ai_function_allow_insecure_endpoint` setting overrides the check.
+    if (endpoint_uri.getScheme() != "https"
+        && !isLoopbackHost(endpoint_uri.getHost())
+        && !context->getSettingsRef()[Setting::ai_function_allow_insecure_endpoint])
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "AI named collection '{}' uses an insecure endpoint: prompts and the API key would be sent to a "
+            "remote host over an unencrypted connection. Use an 'https://' endpoint, or set "
+            "'ai_function_allow_insecure_endpoint' to allow plaintext requests to remote hosts.",
+            credentials);
+
+    return result;
+}
+
 FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
     const ContextPtr & context,
     const ColumnsWithTypeAndName & arguments,
@@ -283,49 +333,9 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "AI function requires credentials: pass 'credentials' in the parameter map or set the default-credentials setting");
 
-    context->checkAccess(AccessType::NAMED_COLLECTION, credentials);
-    const auto & collection = NamedCollectionFactory::instance().get(credentials);
-    if (!context->getServerSettings()[ServerSetting::ai_function_allow_sql_named_collections]
-        && collection->getSourceId() != NamedCollection::SourceId::CONFIG)
-        throw Exception(ErrorCodes::ACCESS_DENIED,
-            "AI named collection '{}' is not defined in the server configuration file, and the server setting "
-            "'ai_function_allow_sql_named_collections' is disabled", credentials);
-
     AIParams params;
-    params.collection.collection_name = credentials;
-    params.collection.provider = collection->getOrDefault<String>("provider", "");
-    params.collection.endpoint = collection->getOrDefault<String>("endpoint", "");
-    params.collection.api_key = collection->getOrDefault<SecretString>("api_key");
-    params.collection.api_version = collection->getOrDefault<String>("api_version", "");
-
-    if (params.collection.provider.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'provider'", credentials);
-    if (params.collection.endpoint.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", credentials);
-
-    /// The endpoint can carry a secret, so the error below names only the collection.
-    Poco::URI endpoint_uri;
-    try
-    {
-        endpoint_uri = Poco::URI(params.collection.endpoint);
-    }
-    catch (const Poco::SyntaxException &)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' has a malformed endpoint", credentials);
-    }
-
-    context->getRemoteHostFilter().checkURL(endpoint_uri);
-
-    /// Refuse to send prompts and API keys over an unencrypted connection to a remote host.
-    /// Local hosts are exempt, the `ai_function_allow_insecure_endpoint` setting overrides the check.
-    if (endpoint_uri.getScheme() != "https"
-        && !isLoopbackHost(endpoint_uri.getHost())
-        && !context->getSettingsRef()[Setting::ai_function_allow_insecure_endpoint])
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "AI named collection '{}' uses an insecure endpoint: prompts and the API key would be sent to a "
-            "remote host over an unencrypted connection. Use an 'https://' endpoint, or set "
-            "'ai_function_allow_insecure_endpoint' to allow plaintext requests to remote hosts.",
-            credentials);
+    params.collection = resolveAINamedCollection(context, credentials);
+    const auto & collection = params.collection.source;
 
     /// A function that does not declare `model` (i.e. `aiEmbed`, which takes it as an argument) must
     /// not silently ignore a `model` defined in the named collection: reject it instead.

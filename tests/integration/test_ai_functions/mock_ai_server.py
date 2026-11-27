@@ -92,6 +92,8 @@ DEFAULT_EMBED_DIM = 4
 # multi-threaded query issues. `_LOCK` guards the shared mutable state against those concurrent handlers.
 _LOCK = threading.Lock()
 LAST_REQUEST = {"path": None, "body": None, "headers": {}}
+LLM_REQUEST_STARTED = threading.Event()
+LLM_REQUEST_RELEASE = threading.Event()
 
 # Number of upcoming requests to the flaky endpoints (`/v1/chat/flaky`, `/v1/embeddings_flaky`)
 # that should fail with a simulated transient network error before they start succeeding.
@@ -270,6 +272,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
 
+        if parsed.path == "/llm-gate/reset":
+            LLM_REQUEST_STARTED.clear()
+            LLM_REQUEST_RELEASE.clear()
+            self._send_json(200, {})
+            return
+        if parsed.path == "/llm-gate/state":
+            self._send_json(200, {"started": LLM_REQUEST_STARTED.is_set()})
+            return
+        if parsed.path == "/llm-gate/release":
+            LLM_REQUEST_RELEASE.set()
+            self._send_json(200, {})
+            return
+
         if parsed.path == "/health":
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
@@ -323,6 +338,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             LAST_REQUEST["path"] = parsed.path
             LAST_REQUEST["body"] = body
             LAST_REQUEST["headers"] = {k.lower(): v for k, v in self.headers.items()}
+
+        if parsed.path == "/v1/chat/gated":
+            LLM_REQUEST_STARTED.set()
+            if LLM_REQUEST_RELEASE.wait(timeout=60):
+                self._send_json(200, make_success_response(extract_user_message(body)))
+            else:
+                self._send_json(503, {"error": {"message": "test request was not released"}})
+            return
 
         if parsed.path in ("/v1/metrics/openai", "/v1/metrics/anthropic"):
             # A known delay provides a lower bound for the request timer.

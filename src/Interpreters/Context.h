@@ -154,6 +154,8 @@ class QueryConditionCache;
 class EncryptionHeaderCache;
 class ISystemLog;
 class QueryLog;
+class LLMQueryLog;
+class LLMDeploymentRegistry;
 class QueryMetricLog;
 class QueryThreadLog;
 class QueryViewsLog;
@@ -1991,6 +1993,8 @@ public:
 
     /// Nullptr if the query log is not ready for this moment.
     std::shared_ptr<QueryLog> getQueryLog() const;
+    std::shared_ptr<LLMQueryLog> getLLMQueryLog() const;
+    std::shared_ptr<LLMDeploymentRegistry> getLLMDeploymentRegistry() const;
     std::shared_ptr<QueryThreadLog> getQueryThreadLog() const;
     std::shared_ptr<QueryViewsLog> getQueryViewsLog() const;
     std::shared_ptr<TraceLog> getTraceLog() const;

@@ -470,6 +470,7 @@ enum class AccessType : uint16_t
     M(aiRedact, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiRedact() */\
     M(aiSimilarity, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiSimilarity() */\
     M(aiTranslate, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiTranslate() */\
+    M(llmQuery, "", GLOBAL, AI_FUNCTIONS) /* allows to execute `llmQuery` */\
     M(AI_FUNCTIONS, "", GROUP, ALL) /* allows to execute all AI functions */\
     \
     /* Consts */ \

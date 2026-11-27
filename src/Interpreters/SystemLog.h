@@ -14,6 +14,7 @@
 #include <boost/noncopyable.hpp>
 
 #define LIST_OF_ALL_SYSTEM_LOGS(M) \
+    M(LLMQueryLog, llm_query_log, "Records the start and terminal events of `llmQuery` requests, including prompts, responses and provider token usage. Events are flushed asynchronously.") \
     M(QueryLog,              query_log,            DB::SYSTEM_LOG_DOCUMENTATION_QUERY_LOG) \
     M(QueryThreadLog,        query_thread_log,     DB::SYSTEM_LOG_DOCUMENTATION_QUERY_THREAD_LOG) \
     M(PartLog,               part_log,             DB::SYSTEM_LOG_DOCUMENTATION_PART_LOG) \

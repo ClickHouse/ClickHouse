@@ -965,6 +965,10 @@ A value of `0` means no limitation.
 <max_named_collection_num_to_throw>400</max_named_collection_num_to_throw>
 ```
 )", 0) \
+    DECLARE(Bool, allow_experimental_llm_query, false, R"(
+Enable `llmQuery` and the Keeper-backed `system.llm_deployments` registry.
+Set `llm_query.keeper_path` to the shared Keeper path. Runtime request limits are per server.
+)", EXPERIMENTAL) \
     DECLARE(Bool, ai_function_allow_sql_named_collections, true, R"(
 Allows AI functions (such as `aiGenerate`, `aiEmbed`, `aiSimilarity`) to use named collections created with `CREATE NAMED COLLECTION`.
 When disabled, AI functions accept only named collections defined in the server configuration file, and using any other collection throws an exception.
@@ -2167,6 +2171,10 @@ that no disk of this type reads is reported as `UNKNOWN_ELEMENT_IN_CONFIG` inste
 
 /// Settings with a path are server settings with at least one layer of nesting that have a fixed structure (no lists, lists, enumerations, repetitions, ...).
 #define LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, DECLARE_WITH_ALIAS) \
+    DECLARE(String, llm_query_keeper_path, "", R"(
+Keeper node containing the deployment snapshot used by `llmQuery`.
+Servers sharing this path share deployment configuration; runtime request limits remain per server.
+)", EXPERIMENTAL, "llm_query.keeper_path") \
     DECLARE(String, named_collections_storage_type, "local", R"(
 The storage type for named collections. Possible values are `local`, `local_encrypted`, `keeper`,
 `keeper_encrypted`, `zookeeper`, and `zookeeper_encrypted`.
@@ -2474,6 +2482,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "user_defined_executable_functions_config",
         "user_defined_executable_function_drivers_config",
         "nb_models",
+        "llm_query",
         /// Definition elements of the files loaded by the three `*_config` globs above;
         /// they are top-level keys when those files are placed in `config.d`.
         "dictionary",
@@ -2544,6 +2553,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
 
         /// System log tables
         "query_log",
+        "llm_query_log",
         "query_thread_log",
         "part_log",
         "background_schedule_pool_log",

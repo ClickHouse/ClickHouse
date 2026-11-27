@@ -22,6 +22,7 @@
     M(PartLogElement) \
     M(BackgroundSchedulePoolLogElement) \
     M(QueryLogElement) \
+    M(LLMQueryLogElement) \
     M(QueryThreadLogElement) \
     M(QueryViewsLogElement) \
     M(SessionLogElement) \

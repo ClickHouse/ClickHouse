@@ -5,6 +5,7 @@
 #include <Functions/AI/IAIProvider.h>
 #include <Functions/AI/AIQuotaTracker.h>
 #include <Functions/AI/AIRequestExecutor.h>
+#include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Core/Field.h>
@@ -89,12 +90,17 @@ public:
     /// parameter (it may be overridden via the map), so it is not part of the connection config.
     struct AINamedCollectionConfig
     {
+        NamedCollectionPtr source;
         String collection_name;
         String provider;
         String endpoint;
         SecretString api_key;
         String api_version;
     };
+
+    static String sanitizeForModel(std::string_view input);
+
+    static AINamedCollectionConfig resolveAINamedCollection(const ContextPtr & context, const String & credentials);
 
     /// Resolved parameters for one AI-function call: the named-collection connection config plus the
     /// per-parameter values (map override -> named collection -> declared default). Only keys that
