@@ -15,15 +15,11 @@ doc_type: 'reference'
 | -- | -- | -- |
 | ✔  | ✔  |    |
 
-<div id="description">
-  ## 说明
-</div>
+## 说明 {#description}
 
 [Apache ORC](https://orc.apache.org/) 是一种在 [Hadoop](https://hadoop.apache.org/) 生态中广泛使用的列式存储格式。
 
-<div id="data-types-matching-orc">
-  ## 数据类型匹配
-</div>
+## 数据类型匹配 {#data-types-matching-orc}
 
 下表比较了支持的 ORC 数据类型，以及它们在 `INSERT` 和 `SELECT` 查询中对应的 ClickHouse [数据类型](/zh/reference/data-types/index)。
 
@@ -54,14 +50,12 @@ doc_type: 'reference'
 * ORC `Union` 列会被读取为由 union 的分支类型构成的 [Variant](/zh/reference/data-types/variant)，而 `Variant` 列会被写入为由其分支类型构成的 ORC `Union`。请注意，`Variant` 会对其分支类型排序，因此分支顺序可能与 ORC 文件不同。不支持包含重复分支类型的 union (例如 `uniontype<int,int>`) 。
 * `Array` 可以嵌套，也可以接受 `Nullable` 类型的值作为参数。`Tuple` 和 `Map` 类型同样可以嵌套。
 * ClickHouse 表列的数据类型不必与对应的 ORC 数据字段一致。插入数据时，ClickHouse 会根据上表解释数据类型，然后将数据[转换](/zh/reference/functions/regular-functions/type-conversion-functions#CAST)为 ClickHouse 表列设置的数据类型。
+* 介于 `1969-12-31 23:59:59.001` 与 `1969-12-31 23:59:59.999999999` (UTC) 之间的 `DateTime64` 值会被写入为 `1970-01-01 00:00:00`。这是 [ORC 规范](https://orc.apache.org/specification/ORCv1/#timestamp-columns)中的一个缺陷：该规范分别存储时间戳的秒数和纳秒数，且纳秒数不能为负。参考实现会为纳秒数超过 999999 的负时间戳加上一秒，读取器再将其减去，但这样一来，介于 -1 秒到 0 秒之间的时间戳就会被存储为 0 秒，读回时变成纪元之后的时间。各实现写入这类时间戳的方式不尽相同：Apache ORC 的 Java 和 C++ 写入器写入后，读回的结果会晚一秒；而 Arrow ORC adapter (PyArrow) 会写入负的纳秒数，这既不符合规范，也会被 Java 读取器拒绝。ClickHouse 则改为写入纪元时间，所有读取器读回的结果都一致。
+* 当时间戳的写入器时区与读取器时区不同时，由于写入器会加上这一秒，Apache ORC 的 Java 读取器和 ClickHouse 会在时区转换之前减去这一秒，而 Apache ORC 的 C++ 读取器 (PyArrow 也使用该读取器) 则在转换之后才减去。因此，无论文件由哪个写入器生成，C++ 读取器在读取 1970 年之前、且与纪元相差不超过时区偏移量的时间戳时，都可能出现一秒的偏差。
 
-<div id="example-usage">
-  ## 使用示例
-</div>
+## 使用示例 {#example-usage}
 
-<div id="inserting-data">
-  ### 插入数据
-</div>
+### 插入数据 {#inserting-data}
 
 使用名为 `football.orc`、包含以下数据的 ORC 文件：
 
@@ -93,9 +87,7 @@ doc_type: 'reference'
 INSERT INTO football FROM INFILE 'football.orc' FORMAT ORC;
 ```
 
-<div id="reading-data">
-  ### 读取数据
-</div>
+### 读取数据 {#reading-data}
 
 使用 `ORC` 格式读取数据：
 
@@ -110,9 +102,7 @@ FORMAT ORC
   ORC 是一种二进制格式，无法在终端中以人类可读的形式显示。请使用 `INTO OUTFILE` 将 ORC 文件输出到文件。
 </Tip>
 
-<div id="format-settings">
-  ## 格式设置
-</div>
+## 格式设置 {#format-settings}
 
 | 设置                                                                                                                                                                                              | 描述                                          | 默认值     |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ------- |

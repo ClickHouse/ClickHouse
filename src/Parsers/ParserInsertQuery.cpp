@@ -1,4 +1,3 @@
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -32,14 +31,9 @@ namespace
 /// Only in that case does an INSERT with a SELECT carry inline data following the FORMAT clause.
 bool selectReadsInlineDataViaInputFunction(const ASTPtr & ast)
 {
-    if (!ast)
-        return false;
-    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "input")
-        return true;
-    for (const auto & child : ast->children)
-        if (selectReadsInlineDataViaInputFunction(child))
-            return true;
-    return false;
+    ASTPtr input_function;
+    ASTInsertQuery::tryFindInputFunction(ast, input_function);
+    return input_function != nullptr;
 }
 
 }

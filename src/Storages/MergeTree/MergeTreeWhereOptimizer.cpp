@@ -1298,14 +1298,15 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
 bool MergeTreeWhereOptimizer::cannotBeMoved(
     const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context, NodeResultCache & cache) const
 {
+    /// disallow arrayJoin expressions to be moved to PREWHERE
+    /// PREWHERE must give exactly one filter value per row read
+    if (node.getArrayJoinArgument())
+        return true;
+
     if (node.isFunction())
     {
         auto function_node = node.toFunctionNode();
         auto function_name = function_node.getFunctionName();
-
-        /// disallow arrayJoin expressions to be moved to PREWHERE for now
-        if (function_name == "arrayJoin")
-            return true;
 
         /// Disallow GLOBAL IN conditions from being moved to PREWHERE.
         /// GLOBAL IN sets are populated via external tables attached by `ReadFromRemote`;

@@ -2,8 +2,8 @@
 sidebarTitle: 'Prompts'
 slug: /agents/prompts
 title: 'Prompts'
-description: 'Bibliothèque de prompts sauvegardés pour ClickHouse Agents'
-keywords: ['IA', 'ClickHouse Cloud', 'agents', 'prompts', 'templates']
+description: 'Bibliothèque de prompts enregistrés pour ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'prompts', 'templates']
 doc_type: 'reference'
 ---
 
@@ -11,81 +11,61 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
-La bibliothèque Prompts permet d’enregistrer et de réutiliser des prompts en langage naturel que vous saisissez régulièrement. Considérez-la comme des extraits réutilisables pour votre composer — pratique lorsque la même question d’analyse ou la même consigne de mise en forme revient d’une conversation à l’autre.
+La bibliothèque Prompts vous permet d&#39;enregistrer et de réutiliser les prompts en langage naturel que vous saisissez régulièrement. Considérez-la comme un ensemble d&#39;extraits prêts à l&#39;emploi pour la zone de saisie de la conversation : idéal lorsque la même question analytique ou la même consigne de mise en forme revient d&#39;une conversation à l&#39;autre.
 
-<div id="create-a-prompt">
-  ## Créer un prompt
-</div>
+## Créer un prompt {#create-a-prompt}
 
-Ouvrez le panneau Prompts à partir de l’icône **Prompts** dans la barre de navigation de gauche, puis cliquez sur le bouton **+** pour ouvrir le formulaire **Create Prompt**. Renseignez les champs :
+Ouvrez le panneau Prompts à partir de l&#39;icône **Prompts** dans la navigation de gauche, puis cliquez sur le bouton **+** pour ouvrir le formulaire **Create Prompt**. Renseignez les champs :
 
-* **Prompt Name** (obligatoire) - le nom affiché dans le sélecteur. Soyez explicite : *&quot;Utilisateurs actifs hebdomadaires par région&quot;* est préférable à *&quot;WAU&quot;*.
-* **Text** (obligatoire) - le texte qui sera effectivement inséré dans le composer.
-* **Special variables** - cliquez sur le bouton **Special variables** pour insérer des marqueurs de substitution, ou saisissez directement des marqueurs au format `{{name}}`. Le sélecteur vous invite à renseigner les valeurs avant l’insertion.
-* **Category**, **Description**, **Command** (facultatif) - pour organiser la bibliothèque, définir le texte d’aperçu dans le sélecteur et ajouter un raccourci d’appel rapide.
+* **Prompt Name** (obligatoire) - le nom affiché dans le sélecteur. Choisissez un nom explicite : *« Utilisateurs actifs hebdomadaires par région »* vaut mieux que *« WAU »*.
+* **Text** (obligatoire) - le texte qui sera inséré dans la zone de saisie.
+* **Special variables** - cliquez sur le bouton **Special variables** pour insérer des caractères de substitution, ou saisissez directement des marqueurs de type `{{name}}`. Le sélecteur vous invite à saisir les valeurs avant l&#39;insertion.
+* **Category**, **Description**, **Command** (facultatif) - pour organiser la bibliothèque, définir le texte d&#39;aperçu affiché dans le sélecteur et créer un raccourci d&#39;appel rapide.
 
 Cliquez ensuite sur **Create Prompt** en bas à droite.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Panneau Prompts avec le bouton + mis en évidence à gauche et le formulaire Create Prompt ouvert à droite, affichant les champs Prompt Name, Text, Category, Special variables, Description et Command, avec un bouton Create Prompt](/images/cloud/agent-builder/prompts/create-prompt.webp)
-
-</Frame>
-
+  <Frame>
+    ![Panneau Prompts avec le bouton + mis en évidence à gauche et le formulaire Create Prompt ouvert à droite, affichant les champs Prompt Name, Text, Category, Special variables, Description et Command, ainsi qu'un bouton Create Prompt](/images/cloud/agent-builder/prompts/create-prompt.webp)
+  </Frame>
 </div>
 
-<div id="use-a-prompt">
-  ## Utiliser un prompt
-</div>
+## Utiliser un prompt {#use-a-prompt}
 
-Dans le panneau Prompts, ouvrez le menu **...** d&#39;une carte de prompt et choisissez **Preview** :
+Dans le panneau Prompts, ouvrez le menu **...** d&#39;une carte de prompt et choisissez **Preview** :
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Panneau Prompts avec un prompt sélectionné, ses détails visibles à droite et un menu contextuel affichant les options Preview et Edit](/images/cloud/agent-builder/prompts/preview.webp)
-
-</Frame>
-
+  <Frame>
+    ![Panneau Prompts avec un prompt sélectionné, ses détails affichés à droite et un menu contextuel proposant les options Preview et Edit](/images/cloud/agent-builder/prompts/preview.webp)
+  </Frame>
 </div>
 
-L&#39;aperçu affiche le texte du prompt, ainsi que son auteur et sa date. Cliquez sur **Use Prompt** pour insérer le contenu dans le composer. Si le prompt contient des variables, renseignez-les d&#39;abord.
+L&#39;aperçu affiche le texte du prompt, ainsi que son auteur et sa date. Cliquez sur **Use Prompt** pour insérer le corps du prompt dans la zone de saisie. Si le prompt contient des variables, renseignez-les au préalable.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Fenêtre modale d'aperçu du prompt affichant le titre du prompt, l'auteur, la date, le contenu du texte et un bouton Use Prompt](/images/cloud/agent-builder/prompts/use-prompt-modal.webp)
-
-</Frame>
-
+  <Frame>
+    ![Boîte de dialogue modale d'aperçu du prompt affichant son titre, son auteur, sa date, le corps du texte et un bouton Use Prompt](/images/cloud/agent-builder/prompts/use-prompt-modal.webp)
+  </Frame>
 </div>
 
-<div id="share-prompts">
-  ## Partager les prompts
-</div>
+## Partager des prompts {#share-prompts}
 
-Par défaut, un prompt est privé et visible uniquement par la personne qui l’a créé. Le propriétaire peut modifier la visibilité d’un prompt comme suit :
+Par défaut, un prompt est privé et réservé à la personne qui l&#39;a créé. Le propriétaire peut modifier sa visibilité pour la définir sur :
 
 * **Utilisateurs ou groupes spécifiques** - toutes les personnes que vous désignez peuvent trouver et utiliser le prompt.
-* **À l’échelle de l’organisation** - tous les membres de votre organisation ClickHouse Cloud peuvent le trouver et l’utiliser.
+* **À l’échelle de l’organisation** - tous les membres de votre organisation ClickHouse Cloud peuvent le trouver et l&#39;utiliser.
 
-Les prompts utilisent le même modèle d’autorisations que les agents. Pour consulter la matrice complète des rôles et les actions autorisées pour chacun, voir [Partage et
+Les prompts reposent sur le même modèle de permissions que les agents. Pour obtenir la matrice complète des rôles et des actions autorisées pour chacun, consultez [Partage et
 accès](/fr/agents/sharing-and-access).
 
-<div id="prompts-vs-skills-vs-instructions">
-  ## Prompts vs. skills vs. instructions
-</div>
+## Prompts, compétences et instructions {#prompts-vs-skills-vs-instructions}
 
-Les Prompts, les skills et les agent instructions ajoutent tous du texte au modèle, mais ils se distinguent par ce qui les déclenche et par leur degré de persistance.
+Les prompts, les compétences et les instructions de l’agent ajoutent tous du texte au contexte du modèle, mais ils se distinguent par ce qui les déclenche et par leur persistance.
 
-* **Prompts** - texte que vous insérez vous-même dans le composer, modifié à chaque tour.
-* **[Skills](/fr/agents/builder/skills)** - ensembles d&#39;instructions que l&#39;agent charge lui-même lorsqu&#39;il les juge pertinents pour la tâche.
-* **Agent instructions** - le system prompt persistant de l&#39;agent, appliqué à chaque conversation.
+* **Prompts** - texte que vous insérez vous-même dans la zone de saisie, modifiable à chaque échange.
+* **[Compétences](/fr/agents/builder/skills)** - ensembles d’instructions que l’agent charge de lui-même lorsqu’il les juge pertinents pour la tâche.
+* **Instructions de l’agent** - l’instruction système persistante de l’agent, appliquée à chaque conversation.
 
-Optez pour un prompt lorsque vous souhaitez réutiliser une formulation tout en gardant, à chaque fois, le contrôle sur le texte. Optez pour un skill lorsque vous voulez que l&#39;agent applique
-les mêmes consignes de façon cohérente à un type de tâche sans avoir à les saisir. Optez pour des agent instructions lorsque le comportement doit être conservé pendant toute la
-durée de vie de l&#39;agent.
+Optez pour un prompt lorsque vous souhaitez réutiliser une formulation tout en gardant la maîtrise de sa rédaction à chaque fois. Optez pour une compétence lorsque vous souhaitez que l’agent applique
+les mêmes consignes de manière cohérente pour un type de tâche donné, sans avoir à les saisir. Optez pour les instructions de l’agent lorsque le comportement doit s’appliquer pendant toute
+la durée de vie de l’agent.

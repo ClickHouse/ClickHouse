@@ -28,6 +28,10 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+/// Identifies a batch of blobs in the removal queue.
+using BatchId = std::string;
+using BatchIds = std::vector<BatchId>;
+
 /// Tries to provide some "transactions" interface, which allow
 /// to execute (commit) operations simultaneously. We don't provide
 /// any snapshot isolation here, so no read operations in transactions
@@ -121,6 +125,7 @@ public:
             throwNotImplemented();
     }
     virtual StoredObjects getSubmittedForRemovalBlobs() = 0;
+    virtual BatchIds getSubmittedForRemovalBatches() { return {}; }
 
     /// Create metadata file on paths with content consisting of objects
     virtual void createMetadataFile(const std::string & path, const StoredObjects & objects) = 0;
@@ -331,9 +336,19 @@ public:
     }
 
     using BlobsToRemove = std::unordered_map<StoredObject, LocationSet>;
+    /// Blobs that share one queue node. Record the batch only after all its blobs are removed from all locations.
+    struct BatchToRemove
+    {
+        BatchId batch_id;
+        BlobsToRemove blobs;
+    };
+    using BatchesToRemove = std::vector<BatchToRemove>;
     virtual BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & /*cluster*/, int64_t /*max_count*/) { return {}; }
+    virtual BatchesToRemove getBatchesToRemove(const ClusterConfigurationPtr & /*cluster*/, int64_t /*max_count*/) { return {}; }
     virtual int64_t recordAsRemoved(const StoredObjects & /*blobs*/) { return 0; }
+    virtual int64_t recordBatchesAsRemoved(const BatchesToRemove & /*batches*/) { return 0; }
     [[nodiscard]] virtual bool hasPendingRemovalBlobs(const StoredObjects & /*blobs*/) const { return false; }
+    [[nodiscard]] virtual bool hasPendingRemovalBatches(const BatchIds & /*batch_ids*/) const { return false; }
     virtual int64_t getDeadBlobsQueueEstimate() { return 0; }
 
     /// Whether this storage ever puts anything into the queue of dead blobs above. The queue is drained in

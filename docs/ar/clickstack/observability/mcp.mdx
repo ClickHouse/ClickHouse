@@ -1,0 +1,147 @@
+---
+slug: /clickstack/observability/mcp
+title: 'خادم MCP في ClickStack'
+sidebarTitle: 'خادم MCP'
+description: 'ربط مساعدي الذكاء الاصطناعي بـ ClickHouse Observability باستخدام خادم بروتوكول سياق النموذج (MCP) في ClickStack'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'MCP', 'Model Context Protocol', 'AI', 'observability', 'ClickStack UI', 'Claude', 'Cursor', 'ClickHouse Cloud', 'OAuth']
+---
+
+يعتمد خادم MCP في ClickStack على [بروتوكول سياق النموذج (MCP)](https://modelcontextprotocol.io/) لتمكين مساعدي الذكاء الاصطناعي من التفاعل مع بيانات ClickHouse Observability لديك. وبمجرد الاتصال، يستطيع مساعد الذكاء الاصطناعي الاستعلام عن السجلات وبيانات التتبّع والمقاييس، وإدارة لوحات المعلومات والتنبيهات، واستكشاف مصادر البيانات، والتعامل مع عمليات البحث المحفوظة، وكل ذلك باللغة الطبيعية.
+
+ويتيح لك ذلك استخدام أدوات مثل [Claude Code](https://docs.anthropic.com/en/docs/claude-code) أو [Cursor](https://www.cursor.com/) أو أي عميل متوافق مع MCP للتحقيق في الحوادث، وإنشاء لوحات المعلومات، وإدارة إعدادات إمكانية المراقبة لديك دون مغادرة بيئة التطوير.
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/FaL5iOgNogg?si=dUbsRQe4wYuZ78zt" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+## الاتصال بـ ClickHouse Observability {#managed-clickstack}
+
+يتصل ClickHouse Observability عبر نقطة نهاية MCP السحابية على العنوان `https://mcp.clickhouse.cloud/clickstack`، ويستخدم OAuth 2.0 للتحقق من الهوية. ولا تدعم نقطة النهاية هذه المصادقة باستخدام مفتاح API.
+
+### المتطلبات المسبقة {#managed-prerequisites}
+
+* خدمة ClickHouse Cloud قيد التشغيل ومفعّل فيها [إمكانية المراقبة](/ar/clickstack/observability/getting-started)
+* [تفعيل MCP](/ar/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server) على الخدمة: افتح وحدة تحكم ClickHouse Cloud، وانقر على **Connect**، واختر **Connect with MCP**، ثم شغّل مفتاح التبديل
+
+### نقطة النهاية {#managed-endpoint}
+
+```text
+https://mcp.clickhouse.cloud/clickstack
+```
+
+تعتمد المصادقة على OAuth 2.0. فعند اتصال عميل MCP لأول مرة، يفتح نافذة في المتصفح لتسجّل الدخول باستخدام بيانات اعتماد ClickHouse Cloud الخاصة بك، دون الحاجة إلى مفتاح API.
+
+### توصيل عميل MCP {#managed-connecting-a-client}
+
+افتح **Team Settings → API &amp; Agents** في خدمة ClickHouse Observability لنسخ تهيئة جاهزة لعميل MCP. تتضمن التهيئة المُنشأة معرّف الخدمة، بحيث تُوجَّه الطلبات إلى تلك الخدمة تحديدًا.
+
+ويمكنك بدلًا من ذلك استخدام أحد الأمثلة أدناه. سيطلب منك العميل إكمال المصادقة عبر OAuth عند الاتصال.
+
+<Tabs>
+  <Tab title="Claude Code">
+    ```shell
+    claude mcp add --transport http clickstack https://mcp.clickhouse.cloud/clickstack
+    ```
+
+    شغّل Claude Code ونفّذ الأمر `/mcp`، ثم اختر `clickstack` لإكمال تدفق OAuth.
+  </Tab>
+
+  <Tab title="Cursor">
+    أضف ما يلي إلى `.cursor/mcp.json`:
+
+    ```json
+    {
+      "mcpServers": {
+        "clickstack": {
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="VS Code">
+    أضف ما يلي إلى `.vscode/mcp.json`:
+
+    ```json
+    {
+      "servers": {
+        "clickstack": {
+          "type": "http",
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="OpenCode">
+    أضف ما يلي إلى `opencode.json`:
+
+    ```json
+    {
+      "mcp": {
+        "clickstack": {
+          "type": "remote",
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="LibreChat">
+    أضف ما يلي إلى `librechat.yaml`:
+
+    ```yaml
+    mcpServers:
+      clickstack:
+        type: streamable-http
+        url: https://mcp.clickhouse.cloud/clickstack
+    ```
+  </Tab>
+
+  <Tab title="أخرى">
+    يمكن لأي عميل MCP يدعم **Streamable HTTP** مع OAuth الاتصال بالخدمة. هيّئه باستخدام ما يلي:
+
+    * **URL:** `https://mcp.clickhouse.cloud/clickstack`
+  </Tab>
+</Tabs>
+
+### استهداف خدمة محددة {#managed-service-override}
+
+في غياب ترويسة `x-service-id`، تُوجَّه الطلبات افتراضيًا إلى أول خدمة لإمكانية المراقبة تم توفيرها لحسابك واستخدمها. لتغيير الخدمة الافتراضية، افتح **User Preferences** في ClickStack واختر خدمة افتراضية.
+
+لاستهداف خدمة محددة من عميل MCP بعينه، مرِّر `x-service-id: <YOUR_SERVICE_ID>` كترويسة في تهيئته. وتتجاوز هذه الترويسة الخدمة الافتراضية.
+
+## ما الذي يمكنك فعله باستخدام MCP؟ {#capabilities}
+
+بمجرد الاتصال، يصبح بإمكان مساعد الذكاء الاصطناعي لديك الوصول إلى مجموعة من الأدوات التي تغطي المجالات الأساسية للخدمة، ومنها:
+
+* **الاستعلام عن البيانات** — البحث في السجلات والتتبّعات والمقاييس وتجميعها باستخدام منشئ الاستعلامات أو صيغة البحث أو SQL مباشر.
+* **مصادر البيانات** — استعراض مصادر البيانات المتاحة، والاتصالات بقواعد البيانات، ومخططات الأعمدة، ومفاتيح السمات.
+* **لوحات المعلومات** — إنشاء لوحات المعلومات وتحديثها وحذفها وفحصها، إلى جانب البطاقات التي تحتويها.
+* **التنبيهات** — إنشاء التنبيهات وتحديثها وفحصها، إلى جانب سجل تقييمها.
+* **عمليات البحث المحفوظة** — إنشاء تعريفات عمليات البحث المحفوظة القابلة لإعادة الاستخدام وتحديثها وفحصها.
+* **خطافات الويب** — استعراض وجهات webhook المتاحة لإشعارات التنبيهات.
+* **الفرق** — استعراض الفرق التي ينتمي إليها المستخدم الحالي وتحديد الفريق النشط.
+
+قد تتوسع مجموعة الأدوات المتاحة بمرور الوقت، وسيكتشف عميل MCP لديك الأدوات المتاحة تلقائيًا عند الاتصال.
+
+## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+
+<Accordion title="تدفق OAuth لا يكتمل">
+  * تأكد من أن عميل MCP الذي تستخدمه يدعم OAuth 2.0. فالعملاء التي لا تدعم سوى رمز حامل أو النقل عبر stdio لا يمكنها التحقق من الهوية مع نقطة نهاية Cloud.
+  * تحقق من أن متصفحك لا يحظر النافذة المنبثقة أو إعادة التوجيه الخاصة بـ OAuth.
+  * تحقق من أن حساب ClickHouse Cloud الخاص بك يملك صلاحية الوصول إلى المؤسسة والخدمة.
+</Accordion>
+
+<Accordion title="MCP مفعّل لكن العميل يتعذّر عليه الاتصال">
+  * تأكد من أنك تستخدم نقطة نهاية إمكانية المراقبة (`https://mcp.clickhouse.cloud/clickstack`)، وليس نقطة نهاية MCP السحابية العامة (`https://mcp.clickhouse.cloud/mcp`).
+  * تحقق من أن [MCP مفعّل](/ar/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server) على الخدمة في وحدة تحكم ClickHouse Cloud.
+</Accordion>
+
+<Accordion title="الطلبات تُوجَّه إلى خدمة غير مقصودة">
+  في غياب الترويسة `x-service-id`، تُوجَّه الطلبات افتراضيًا إلى أول خدمة إمكانية مراقبة جرى توفيرها واستخدامها في حسابك. يمكنك تغيير الخدمة الافتراضية من **User Preferences** في ClickStack، أو تمرير الترويسة لاستهداف خدمة محددة. راجع [استهداف خدمة محددة](#managed-service-override).
+</Accordion>

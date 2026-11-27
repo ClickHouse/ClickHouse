@@ -15,11 +15,11 @@ ClickStack では、イベント (ログやトレース) に対して全文検�
 使用されます。
 
 <div id="search-features">
-  ## Search 機能
+  ## Search 機能 {#search-features}
 </div>
 
 <div id="natural-language-syntax">
-  ### 自然言語の検索構文
+  ### 自然言語の検索構文 {#natural-language-syntax}
 </div>
 
 * 検索では大文字と小文字は区別されません
@@ -35,17 +35,13 @@ ClickStack では、イベント (ログやトレース) に対して全文検�
 * 完全一致は二重引用符で指定できます (例: `"Error tests not found"`)
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Search](/images/use-cases/observability/hyperdx-27.webp)
-
-</Frame>
-
+  <Frame>
+    ![検索](/images/use-cases/observability/hyperdx-27.webp)
+  </Frame>
 </div>
 
 <div id="column-search">
-  #### カラム/プロパティ検索
+  #### カラム/プロパティ検索 {#column-search}
 </div>
 
 * カラムや JSON/map のプロパティは、`column:value` を使って検索できます (例: `level:Error`,
@@ -56,7 +52,7 @@ ClickStack では、イベント (ログやトレース) に対して全文検�
   `duration:*`)
 
 <div id="time-input">
-  ### 時刻入力
+  ### 時刻入力 {#time-input}
 </div>
 
 * 時刻入力では、自然言語の入力を受け付けます (例: `1 hour ago`, `yesterday`,
@@ -66,7 +62,7 @@ ClickStack では、イベント (ログやトレース) に対して全文検�
 * ヒストグラムのバーをハイライトして、特定の時間範囲にズームインすることもできます。
 
 <div id="sql-syntax">
-  ### SQL 検索構文
+  ### SQL 検索構文 {#sql-syntax}
 </div>
 
 必要に応じて、検索入力を SQL モードに切り替えられます。すると、検索条件として有効な
@@ -74,43 +70,33 @@ SQL の WHERE 句をそのまま使用できます。これは、Lucene 構文�
 クエリに便利です。
 
 <div id="select-statement">
-  ### SELECT ステートメント
+  ### SELECT ステートメント {#select-statement}
 </div>
 
 検索結果に表示するカラムを指定するには、`SELECT`
 入力欄を使用できます。これは、Search ページで選択するカラムを指定するための SQL の SELECT 式です。
 現時点では別名はサポートされていません (例: `column as "alias"` は使用できません) 。
 
-<div id="saved-searches">
-  ## 保存済み検索
-</div>
+## 保存済み検索 {#saved-searches}
 
 検索を保存しておくと、後ですばやくアクセスできます。保存した検索は `Saved Searches` ページに表示されるため、よく使う検索クエリを毎回組み直さなくても簡単に見直せます。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![保存済み検索の一覧ページ](/images/use-cases/observability/clickstack-saved-search-listing.webp)
-
-</Frame>
-
+  <Frame>
+    ![保存済み検索の一覧ページ](/images/use-cases/observability/clickstack-saved-search-listing.webp)
+  </Frame>
 </div>
 
 検索を保存するには、検索クエリを設定して保存ボタンをクリックするだけです。後で識別しやすいように、保存済み検索にはわかりやすい名前を付けられます。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![検索を保存する](/images/use-cases/observability/clickstack-saved-search.webp)
-
-</Frame>
-
+  <Frame>
+    ![検索の保存](/images/use-cases/observability/clickstack-saved-search.webp)
+  </Frame>
 </div>
 
 <div id="alerts-on-saved-searches">
-  ### 保存済み検索にアラートを追加する
+  ### 保存済み検索にアラートを追加する {#alerts-on-saved-searches}
 </div>
 
 保存済み検索にはアラートを設定でき、特定の条件を満たしたときに通知を受け取れます。保存済み検索に一致するイベント数が指定したしきい値を上回った場合または下回った場合にトリガーされるよう、アラートを設定できます。
@@ -118,7 +104,7 @@ SQL の WHERE 句をそのまま使用できます。これは、Lucene 構文�
 アラートの設定と構成の詳細については、[Alerts ドキュメント](/ja/clickstack/features/alerts)を参照してください。
 
 <div id="tagging">
-  ### タグ付け
+  ### タグ付け {#tagging}
 </div>
 
 <Tagging />

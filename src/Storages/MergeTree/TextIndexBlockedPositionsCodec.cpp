@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <numeric>
 
@@ -98,8 +99,11 @@ void TextIndexBlockedPositionsCodec::Encoder::finishDocument(bool sorted)
     /// The first position of a document is stored absolute, the rest as deltas.
     std::adjacent_difference(first, last, first);
 
-    frequencies_minus_one.push_back(static_cast<UInt32>(freq - 1));
-    has_frequency_run |= freq > 1;
+    if (freq > 1)
+    {
+        frequency_exceptions.push_back(static_cast<UInt32>(docs_in_block));
+        frequency_exceptions.push_back(static_cast<UInt32>(freq - 1));
+    }
 
     ++docs_in_block;
     ++num_docs;
@@ -124,16 +128,24 @@ size_t TextIndexBlockedPositionsCodec::Encoder::encodeBlock(PaddedPODArray<UInt8
     out.resize(begin + PFor::maxCompressedBytes<UInt32>(docs_in_block) + PFor::maxCompressedBytes<UInt32>(values.size()));
     auto * block_begin = reinterpret_cast<uint8_t *>(out.data() + begin);
 
-    size_t offset = has_frequency_run
-        ? PFor::encodeBlocks<UInt32>(std::span<const UInt32>(frequencies_minus_one.data(), frequencies_minus_one.size()), PFor::Delta::none, block_begin)
-        : PFor::encodeZeros(docs_in_block, block_begin);
+    size_t offset = 0;
+    if (frequency_exceptions.empty())
+    {
+        offset = PFor::encodeZeros(docs_in_block, block_begin);
+    }
+    else
+    {
+        std::array<UInt32, BLOCK_DOCS> frequencies_minus_one{};
+        for (size_t i = 0; i < frequency_exceptions.size(); i += 2)
+            frequencies_minus_one[frequency_exceptions[i]] = frequency_exceptions[i + 1];
+        offset = PFor::encodeBlocks<UInt32>(std::span<const UInt32>(frequencies_minus_one.data(), docs_in_block), PFor::Delta::none, block_begin);
+    }
     offset += PFor::encodeBlocks<UInt32>(std::span<const UInt32>(values.data(), values.size()), PFor::Delta::none, block_begin + offset);
 
     chassert(offset <= out.size() - begin);
     out.resize(begin + offset);
     values.clear();
-    frequencies_minus_one.clear();
-    has_frequency_run = false;
+    frequency_exceptions.clear();
     open_document_begin = 0;
     docs_in_block = 0;
     return offset;

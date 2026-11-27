@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
-std::function<void()> makeCancellationCheck(const char * function_name)
+std::function<void()> makeCancellationCheck(std::string function_name)
 {
     /// Resolved from the executing thread rather than from the context that built the caller: a function
     /// instance can be stored in table metadata and then run by any later query.
@@ -27,11 +27,11 @@ std::function<void()> makeCancellationCheck(const char * function_name)
 
     /// A false return means the deadline passed under the `break` overflow mode; a partial result from a
     /// function is a wrong value rather than a smaller one, so it throws either way.
-    return [process_list_element, function_name]
+    return [process_list_element, name = std::move(function_name)]
     {
         if (!process_list_element->checkTimeLimit())
             throw Exception(
-                ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", function_name);
+                ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
     };
 }
 

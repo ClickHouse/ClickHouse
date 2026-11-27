@@ -8,6 +8,7 @@
                 <secret_access_key>clickhouse</secret_access_key>
                 <key_compatibility_prefix>test</key_compatibility_prefix>
                 <key_template>[a-z]{3}-first-random-part/new-style-prefix/[a-z]{3}/[a-z]{29}</key_template>
+                <persistent_removal_log>true</persistent_removal_log>
             </s3>
             <cached_s3>
                 <type>cache</type>

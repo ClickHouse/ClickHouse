@@ -49,6 +49,14 @@ SELECT 절에서 GROUP BY 키의 min/max/any/anyLast 집계 함수를 제거합�
 * 0 — 항상,
 * 음의 정수 - 절대 사용 안 함.
 
+## optimize_constant_columns_after_filter {#optimize_constant_columns_after_filter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "동등 프레디케이트를 통해 필터를 통과한 모든 값이 상수와 같다는 것이 보장되면, 필터링된 컬럼을 `ColumnConst`로 대체하는 새로운 설정입니다."}]}]} />
+
+동등 프레디케이트를 통해 필터를 통과한 모든 값이 상수와 같다는 것이 보장되면, 필터링된 컬럼을 `ColumnConst`로 대체합니다.
+
 ## optimize_count_from_files {#optimize_count_from_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -265,6 +273,18 @@ SELECT * FROM test2;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "후속 최적화(예: `JOIN`을 통한 프레디케이트 pushdown, projection 재작성)로 `MergeTree` 읽기 단계 위에 추가된 필터를 기존 `PREWHERE` 체인에 병합할 수 있도록, 두 번째 `PREWHERE` 승격 패스를 활성화하는 새로운 설정입니다."}]}]} />
 
 후속 쿼리 계획 최적화로 `MergeTree` 읽기 단계 위에 추가 필터가 배치될 수 있는 경우(예: `JOIN`을 통한 프레디케이트 pushdown, projection 재작성), 그 이후 두 번째 `PREWHERE` 승격 패스를 실행합니다. 기존 `PREWHERE`가 이미 있으면 새 필터는 별도의 필터 단계로 남지 않고 여기에 `AND`로 병합됩니다.
+
+## optimize_projection_skip_index_ratio {#optimize_projection_skip_index_ratio}
+
+<SettingsInfoBlock type="Float" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "프로젝션(projection) 선택 시 비용을 비교하기 전에 기반 테이블의 지연 적용 스킵 인덱스를 언제 적용할지 제어하는 새로운 설정입니다. 가장 적합한 프로젝션(projection) 후보가 상위 테이블의 프라이머리 키 기준 마크 추정치에서 이 비율을 초과하여 읽는 경우에만 추가 패스가 실행됩니다. 이전 값인 1.0으로 설정하면 기존 동작으로 돌아갑니다. ratio = 1이면 이 보정 과정은 실행되지 않습니다. 이 과정은 어차피 프라이머리 키 기준 비교에서 제외되는 후보에만 영향을 줄 수 있기 때문입니다."}]}]} />
+
+`use_skip_indexes_on_data_read`가 활성화되어 있으면 기반 테이블의 스킵 인덱스가 데이터 읽기 시점에 적용되므로, 일반 프로젝션(projection)(Normal Projection) 후보와 비교하는 마크 수는 프라이머리 키만으로 추정됩니다. 가장 적합한 일반 프로젝션(projection) 후보가 이 추정치에서 이 비율을 초과하여 읽고, 기반 테이블에 해당 쿼리에 사용할 수 있는 스킵 인덱스가 있으면, 계획 단계에서 기반 테이블에 스킵 인덱스를 적용하고 보정된 마크 수를 비교에 사용합니다. `0`이면 항상 스킵 인덱스를 적용하고, `1`이면 프라이머리 키 기준 비교를 그대로 유지합니다. 집계 프로젝션(projection)에는 영향을 주지 않습니다.
+
+가능한 값:
+
+* `[0, 1]` 범위의 부동소수점 값
 
 ## optimize_qbit_distance_function_reads {#optimize_qbit_distance_function_reads}
 

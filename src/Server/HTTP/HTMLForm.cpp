@@ -138,7 +138,7 @@ void HTMLForm::read(ReadBuffer & in)
 void HTMLForm::readQuery(ReadBuffer & in)
 {
     size_t fields = 0;
-    char ch = 0;  // silence "uninitialized" warning from gcc-*
+    char ch = 0;
     bool is_first = true;
 
     while (true)
@@ -288,7 +288,7 @@ bool HTMLForm::MultipartReadBuffer::skipToNextBoundary()
 std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf)
 {
     std::string line;
-    char ch = 0;  // silence "uninitialized" warning from gcc-*
+    char ch = 0;
 
     /// If we don't append CRLF, it means that we may have to prepend CRLF from previous content line, which wasn't the boundary.
     if (in.read(ch))

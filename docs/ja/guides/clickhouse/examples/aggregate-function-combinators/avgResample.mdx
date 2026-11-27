@@ -7,22 +7,16 @@ sidebarTitle: 'avgResample'
 doc_type: 'reference'
 ---
 
-<div id="description">
-  ## 説明
-</div>
+## 説明 {#description}
 
 [`Resample`](/ja/reference/functions/aggregate-functions/combinators#-resample)
 コンビネータは、[`count`](/ja/reference/functions/aggregate-functions/count)
 集約関数に適用することで、指定したキーカラムの値を固定数 (`N`)
 のインターバルに分けてカウントできます。
 
-<div id="example-usage">
-  ## 使用例
-</div>
+## 使用例 {#example-usage}
 
-<div id="basic-example">
-  ### 基本例
-</div>
+### 基本例 {#basic-example}
 
 例を見てみましょう。従業員の `name`、`age`、`wage` を持つ
 テーブルを作成し、そこにいくつかのデータを挿入します:
@@ -35,7 +29,7 @@ CREATE TABLE employee_data
     wage Float32
 ) 
 ENGINE = MergeTree()
-ORDER BY tuple()
+ORDER BY tuple();
 
 INSERT INTO employee_data (name, age, wage) VALUES
     ('John', 16, 10.0),
@@ -46,9 +40,9 @@ INSERT INTO employee_data (name, age, wage) VALUES
     ('Brian', 60, 16.0);
 ```
 
-年齢が区間 `[30,60)`
+年齢がインターバル `[30,60)`
 および `[60,75)` に含まれる人々の平均賃金を求めてみましょう (`[` は排他的、`)` は包含的です) 。年齢は整数で
-表現されるため、対象となる年齢は区間 `[30, 59]` および `[60,74]` になります。
+表現されるため、対象となる年齢はインターバル `[30, 59]` および `[60,74]` になります。
 これを行うには、`avg` 集約関数に `Resample` コンビネータを適用します。
 
 ```sql
@@ -68,9 +62,7 @@ FROM avg_wage;
 └──────────────────┘
 ```
 
-<div id="see-also">
-  ## 関連項目
-</div>
+## 関連項目 {#see-also}
 
 * [`count`](/ja/reference/functions/aggregate-functions/count)
 * [`Resample コンビネータ`](/ja/reference/functions/aggregate-functions/combinators#-resample)

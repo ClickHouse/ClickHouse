@@ -161,7 +161,7 @@ public:
         const ParquetKeptStatistics::Ranges & ranges,
         size_t ranges_bytes);
 
-    /// Keeps copies of the offset indexes of `entries`, read from the file of `cell`, in `cell` and counts them in its weight,
+    /// Keeps copies of the offset and column indexes of `entries`, read from the file of `cell`, in `cell` and counts them in its weight,
     /// if the cache still holds `cell` (or a cell that replaced it) under `key`. Moves the cell in the cache like a hit.
     void keepOffsetIndexes(
         const ParquetMetadataCacheKey & key, const MappedPtr & cell, const VectorWithMemoryTracking<Parquet::KeptOffsetIndexes::Entry> & entries);

@@ -8,7 +8,7 @@ keywords: ['skipping indexes', 'data skipping', 'desempenho', 'indexação', 'bo
 ---
 
 <div id="introduction">
-  ## Introdução
+  ## Introdução {#introduction}
 </div>
 
 Muitos fatores afetam o desempenho das consultas no ClickHouse. O elemento crítico na maioria dos cenários é se o ClickHouse consegue usar a chave primária ao avaliar a condição da cláusula WHERE da consulta. Portanto, selecionar uma chave primária que atenda aos padrões de consulta mais comuns é essencial para um projeto de tabela eficaz.
@@ -19,23 +19,21 @@ Em um banco de dados relacional tradicional, uma abordagem para esse problema é
 
 Em vez disso, o ClickHouse fornece um tipo diferente de índice que, em circunstâncias específicas, pode melhorar significativamente a velocidade das consultas. Essas estruturas são chamadas de índices &quot;Skip&quot; porque permitem que o ClickHouse ignore a leitura de fragmentos significativos de dados que certamente não contêm valores correspondentes.
 
-<div id="basic-operation">
-  ## Operação básica
-</div>
+## Operação básica {#basic-operation}
 
-Você só pode usar data skipping indexes na família de tabelas MergeTree. Cada data skipping index tem quatro argumentos principais:
+Você só pode usar data skipping indexes na família de tabelas MergeTree. Cada data skipping indexes tem quatro argumentos principais:
 
 * Nome do índice. O nome do índice é usado para criar o arquivo de índice em cada partição. Além disso, ele é necessário como parâmetro ao remover ou materializar o índice.
 * Expressão do índice. A expressão do índice é usada para calcular o conjunto de valores armazenados no índice. Ela pode ser uma combinação de colunas, operadores simples e/ou um subconjunto de funções determinado pelo tipo de índice.
 * TYPE. O tipo de índice controla o cálculo que determina se é possível pular a leitura e a avaliação de cada bloco de índice.
 * GRANULARITY. Cada bloco indexado consiste em GRANULARITY grânulos. Por exemplo, se a granularidade do índice primário da tabela for de 8192 linhas, e a granularidade do índice for 4, cada &quot;bloco&quot; indexado terá 32768 linhas.
 
-Quando um usuário cria um data skipping index, há dois arquivos adicionais no diretório de cada data part da tabela.
+Quando um usuário cria um data skipping indexes, há dois arquivos adicionais no diretório de cada data part da tabela.
 
 * `skp_idx_{index_name}.idx`, que contém os valores ordenados da expressão
 * `skp_idx_{index_name}.mrk2`, que contém os deslocamentos correspondentes nos arquivos de dados das colunas associadas.
 
-Se alguma parte da condição de filtragem da cláusula WHERE corresponder à expressão do skip index durante a execução de uma consulta e a leitura dos arquivos de coluna relevantes, o ClickHouse usará os dados do arquivo de índice para determinar se cada bloco de dados relevante precisa ser processado ou pode ser ignorado (supondo que o bloco ainda n&#39;ão tenha sido excluído pela aplicação da chave primária). Para usar um exemplo bem simplificado, considere a tabela a seguir carregada com dados previsíveis.
+Se alguma parte da condição de filtragem da cláusula WHERE corresponder à expressão do índice de exclusão durante a execução de uma consulta e a leitura dos arquivos de coluna relevantes, o ClickHouse usará os dados do arquivo de índice para determinar se cada bloco de dados relevante precisa ser processado ou pode ser ignorado (supondo que o bloco ainda não tenha sido excluído pela aplicação da chave primária). Para usar um exemplo bem simplificado, considere a tabela a seguir carregada com dados previsíveis.
 
 ```sql
 CREATE TABLE skip_table
@@ -66,13 +64,13 @@ SELECT * FROM skip_table WHERE my_value IN (125, 700)
 8192 rows in set. Elapsed: 0.079 sec. Processed 100.00 million rows, 800.10 MB (1.26 billion rows/s., 10.10 GB/s.
 ```
 
-Agora adicione um skip index bem básico:
+Agora adicione um índice de exclusão bem básico:
 
 ```sql
 ALTER TABLE skip_table ADD INDEX vix my_value TYPE set(100) GRANULARITY 2;
 ```
 
-Normalmente, os skip indexes são aplicados apenas aos dados recém-inseridos, portanto, apenas adicionar o índice não afetará a consulta acima.
+Normalmente, os índices de exclusão são aplicados apenas aos dados recém-inseridos, portanto, apenas adicionar o índice não afetará a consulta acima.
 
 Para indexar os dados já existentes, use esta instrução:
 
@@ -103,16 +101,12 @@ De forma mais visual, foi assim que as 4096 linhas com `my_value` igual a 125 fo
 foram ignoradas sem precisar ser lidas do disco:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Simple Skip](/images/guides/best-practices/simple_skip.webp)
-
-</Frame>
-
+  <Frame>
+    ![Simple Skip](/images/guides/best-practices/simple_skip.webp)
+  </Frame>
 </div>
 
-Você pode acessar informações detalhadas sobre o uso de skip indexes ativando o trace ao executar consultas. No
+Você pode acessar informações detalhadas sobre o uso de índices de exclusão ativando o trace ao executar consultas. No
 clickhouse-client, defina `send_logs_level`:
 
 ```sql
@@ -120,20 +114,20 @@ SET send_logs_level='trace';
 ```
 
 Isso fornecerá informações úteis para depuração ao tentar ajustar o SQL da consulta e os índices da tabela.  A partir do
-exemplo acima, o log de depuração mostra que o skip index descartou todos os grânulos, exceto dois:
+exemplo acima, o log de depuração mostra que o índice de exclusão descartou todos os grânulos, exceto dois:
 
 ```sql
 <Debug> default.skip_table (933d4b2c-8cea-4bf9-8c93-c56e900eefd1) (SelectExecutor): Index `vix` has dropped 6102/6104 granules.
 ```
 
 <div id="skip-index-types">
-  ## Tipos de índices de omissão
+  ## Tipos de índices de omissão {#skip-index-types}
 </div>
 
 {/* vale off */}
 
 <div id="minmax">
-  ### minmax
+  ### minmax {#minmax}
 </div>
 
 {/* vale on */}
@@ -147,7 +141,7 @@ Esse tipo de índice só funciona corretamente com uma expressão escalar ou Tup
 {/* vale off */}
 
 <div id="set">
-  ### set
+  ### set {#set}
 </div>
 
 {/* vale on */}
@@ -160,7 +154,7 @@ O custo, o desempenho e a eficácia desse índice dependem da cardinalidade dent
 {/* vale off */}
 
 <div id="text">
-  ### text
+  ### text {#text}
 </div>
 
 {/* vale on */}
@@ -171,7 +165,7 @@ O índice de texto oferece suporte eficiente à pesquisa de texto completo e a b
 Consulte a documentação do índice de texto para mais detalhes [aqui](/pt-BR/reference/engines/table-engines/mergetree-family/textindexes).
 
 <div id="bloom-filter-types">
-  ### Tipos de filtro de Bloom
+  ### Tipos de filtro de Bloom {#bloom-filter-types}
 </div>
 
 Um *filtro de Bloom* é uma estrutura de dados que permite testar, com eficiência de espaço, a pertinência a um conjunto, ao custo de uma pequena chance de falsos positivos. Um falso positivo não é uma preocupação significativa no caso de skip indexes, porque a única desvantagem é ler alguns blocos desnecessários. No entanto, esse potencial de falsos positivos também significa que é esperado que a expressão indexada seja verdadeira; caso contrário, dados válidos podem ser ignorados.
@@ -196,7 +190,7 @@ Esse índice também pode ser útil para buscas em texto, especialmente em idiom
 > O text index fornece um verdadeiro índice invertido, com melhor desempenho de busca, comportamento mais previsível e mais flexibilidade e desempenho em comparação com índices de filtro de Bloom baseados em token.
 
 <div id="skip-index-functions">
-  ## Funções de skip indexes
+  ## Funções de skip indexes {#skip-index-functions}
 </div>
 
 O objetivo principal dos skip indexes é limitar a quantidade de dados analisados pelas consultas mais comuns. Dada a natureza analítica dos dados no ClickHouse, o formato dessas consultas, na maioria dos casos, inclui expressões funcionais. Portanto, para serem eficientes, os skip indexes precisam interagir corretamente com funções comuns. Isso pode ocorrer quando:
@@ -208,7 +202,7 @@ Cada tipo de skip index funciona com um subconjunto das funções do ClickHouse 
 [aqui](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#functions-support). Em geral, índices do tipo set e índices baseados em filtro de Bloom (outro tipo de índice set) não são ordenados e, portanto, não funcionam com intervalos. Em contraste, índices minmax funcionam particularmente bem com intervalos, já que determinar se eles se intersectam é muito rápido. A eficácia das funções de correspondência parcial LIKE, startsWith, endsWith e hasToken depende do tipo de índice usado, da expressão do índice e da estrutura específica dos dados.
 
 <div id="skip-index-settings">
-  ## Configurações de skip indexes
+  ## Configurações de skip indexes {#skip-index-settings}
 </div>
 
 Há duas configurações disponíveis que se aplicam a skip indexes.
@@ -221,22 +215,16 @@ Há duas configurações disponíveis que se aplicam a skip indexes.
   índice fará com que seja retornada uma exceção para qualquer consulta que não use o índice listado.  Isso evita que consultas mal escritas
   consumam recursos do servidor.
 
-<div id="skip-best-practices">
-  ## Boas práticas para skip indexes
-</div>
+## Boas práticas para índices de exclusão {#skip-best-practices}
 
-Os skip indexes não são intuitivos, especialmente para quem está acostumado com índices secundários baseados em linhas no universo dos RDBMS ou com índices invertidos de bancos de documentos. Para trazer algum benefício, um data skipping index do ClickHouse precisa evitar leituras de grânulos em quantidade suficiente para compensar o custo de calculá-lo. Fundamentalmente, se um valor ocorrer mesmo uma única vez em um bloco indexado, isso significa que o bloco inteiro precisará ser carregado na memória e avaliado, e o custo do índice terá sido incorrido desnecessariamente.
+Os índices de exclusão não são intuitivos, especialmente para quem está acostumado com índices secundários baseados em linhas no universo dos RDBMS ou com índices invertidos de bancos de documentos. Para trazer algum benefício, um data skipping indexes do ClickHouse precisa evitar leituras de grânulos em quantidade suficiente para compensar o custo de calculá-lo. Fundamentalmente, se um valor ocorrer mesmo uma única vez em um bloco indexado, isso significa que o bloco inteiro precisará ser carregado na memória e avaliado, e o custo do índice terá sido incorrido desnecessariamente.
 
 Considere a seguinte distribuição de dados:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Exemplo ruim](/images/guides/best-practices/bad_skip.webp)
-
-</Frame>
-
+  <Frame>
+    ![Exemplo ruim](/images/guides/best-practices/bad_skip.webp)
+  </Frame>
 </div>
 
 Suponha que a chave primária/ORDER BY seja `timestamp` e que exista um índice em `visitor_id`. Considere a seguinte consulta:
@@ -247,13 +235,13 @@ SELECT timestamp, url FROM table WHERE visitor_id = 1001`
 
 Um índice secundário tradicional seria muito vantajoso com esse tipo de distribuição de dados. Em vez de ler todas as 32768 linhas para encontrar
 as 5 linhas com o visitor&#95;id solicitado, o índice secundário incluiria apenas cinco localizações de linhas, e somente essas cinco linhas seriam
-lidas do disco. O exato oposto acontece com um data skipping index do ClickHouse. Todos os 32768 valores na coluna `visitor_id` serão testados
-independentemente do tipo de skip index.
+lidas do disco. O exato oposto acontece com um data skipping indexes do ClickHouse. Todos os 32768 valores na coluna `visitor_id` serão testados
+independentemente do tipo de índice de exclusão.
 
 Consequentemente, o impulso natural de tentar acelerar consultas do ClickHouse simplesmente adicionando um índice às
-colunas-chave geralmente está errado. Essa funcionalidade avançada só deve ser usada depois de investigar outras alternativas, como modificar a chave primária (consulte [How to Pick a Primary Key](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes)), usar projeções ou usar visões materializadas. Mesmo quando um data skipping index é apropriado, muitas vezes será necessário ajustar cuidadosamente tanto o índice quanto a tabela.
+colunas-chave geralmente está errado. Essa funcionalidade avançada só deve ser usada depois de investigar outras alternativas, como modificar a chave primária (consulte [How to Pick a Primary Key](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes)), usar projeções ou usar visões materializadas. Mesmo quando um data skipping indexes é apropriado, muitas vezes será necessário ajustar cuidadosamente tanto o índice quanto a tabela.
 
-Na maioria dos casos, um skip index útil exige uma forte correlação entre a chave primária e a coluna/expressão não primária de interesse.
+Na maioria dos casos, um índice de exclusão útil exige uma forte correlação entre a chave primária e a coluna/expressão não primária de interesse.
 Se não houver correlação (como no diagrama acima), as chances de que a condição de filtragem seja satisfeita por pelo menos uma das linhas no
 bloco de vários milhares de valores é alta, e poucos blocos serão ignorados. Em contraste, se um intervalo de valores da chave primária (como a hora do
 dia) estiver fortemente associado aos valores na possível coluna de índice (como idades de telespectadores), então um índice do tipo minmax
@@ -263,22 +251,20 @@ exemplo, todos os eventos de um determinado site&#95;id poderiam ser agrupados e
 seja um timestamp contendo eventos de um grande número de sites. Isso resultará em muitos grânulos que contêm apenas alguns IDs de site, então muitos
 blocos poderão ser ignorados ao pesquisar por um valor específico de site&#95;id.
 
-Outro bom candidato para um skip index são expressões de alta cardinalidade em que cada valor individual é relativamente esparso nos dados. Um exemplo
+Outro bom candidato para um índice de exclusão são expressões de alta cardinalidade em que cada valor individual é relativamente esparso nos dados. Um exemplo
 poderia ser uma plataforma de observabilidade que rastreia códigos de erro em requisições de API. Certos códigos de erro, embora raros nos dados, podem ser particularmente
-importantes para buscas. Um skip index do tipo set na coluna error&#95;code permitiria ignorar a grande maioria dos blocos que não contêm
+importantes para buscas. Um índice de exclusão do tipo set na coluna error&#95;code permitiria ignorar a grande maioria dos blocos que não contêm
 erros e, portanto, melhorar significativamente consultas focadas em erros.
 
 Por fim, a principal boa prática é testar, testar, testar. Novamente, ao contrário de índices secundários b-tree ou índices invertidos para busca em documentos,
-o comportamento de um data skipping index não é facilmente previsível. Adicioná-los a uma tabela gera um custo significativo tanto na ingestão de dados quanto em consultas
+o comportamento de um data skipping indexes não é facilmente previsível. Adicioná-los a uma tabela gera um custo significativo tanto na ingestão de dados quanto em consultas
 que, por qualquer motivo, não se beneficiam do índice. Eles sempre devem ser testados em dados do mundo real, e os testes devem
 incluir variações do tipo, do tamanho da granularidade e de outros parâmetros. Os testes frequentemente revelarão padrões e armadilhas que não são óbvios apenas com
 experimentos mentais.
 
-<div id="related-docs">
-  ## Documentação relacionada
-</div>
+## Documentação relacionada {#related-docs}
 
 * [Guia de boas práticas](/pt-BR/concepts/best-practices/using-data-skipping-indices)
-* [Exemplos de índices de omissão de dados](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes-examples)
-* [Manipulação de índices de omissão de dados](/pt-BR/reference/statements/alter/skipping-index)
-* [Informações sobre tabela de sistema](/pt-BR/reference/system-tables/data_skipping_indices)
+* [Exemplos de data skipping indexes](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes-examples)
+* [Manipulação de data skipping indexes](/pt-BR/reference/statements/alter/skipping-index)
+* [Informações da tabela de sistema](/pt-BR/reference/system-tables/data_skipping_indices)

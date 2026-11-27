@@ -5,8 +5,6 @@
 -- target's ReplicatedMergeTreeSink, which performs the unified-hash deduplication governed by the
 -- target's replicated_deduplication_window. Two identical async inserts must collapse to a single copy.
 
-SET allow_experimental_alias_table_engine = 1;
-
 DROP TABLE IF EXISTS alias_async_dedup_table;
 DROP TABLE IF EXISTS alias_async_dedup_target SYNC;
 

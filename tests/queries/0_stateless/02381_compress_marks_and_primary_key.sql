@@ -16,8 +16,15 @@ select * from test_02381_compress where a = 1000 limit 1;
 optimize table test_02381_compress final;
 select * from test_02381_compress where a = 1000 limit 1;
 
--- Compare the size of marks on disk
-select table, sum(rows), sum(bytes_on_disk) sum_bytes, sum(marks_bytes) sum_marks_bytes, (sum_bytes - sum_marks_bytes) exclude_marks from system.parts_columns where active and database = currentDatabase() and table like 'test_02381%' group by table order by table;
+-- Compare the sizes on disk. The tables hold the same data, so the compressed marks are several times smaller,
+-- and the rest of the part is smaller as well, because the primary key is compressed.
+-- The exact sizes are not checked, because they depend on the versions of the compression libraries.
+select
+    sumIf(rows, table = 'test_02381') as rows_plain,
+    sumIf(rows, table = 'test_02381_compress') as rows_compressed,
+    3 * sumIf(marks_bytes, table = 'test_02381_compress') < sumIf(marks_bytes, table = 'test_02381') as marks_are_smaller,
+    sumIf(bytes_on_disk - marks_bytes, table = 'test_02381_compress') < sumIf(bytes_on_disk - marks_bytes, table = 'test_02381') as primary_key_is_smaller
+from system.parts_columns where active and database = currentDatabase() and table like 'test_02381%';
 
 -- Switch to compressed and uncompressed
 -- Test wide part
@@ -35,7 +42,13 @@ select * from test_02381 where a = 10000 limit 1;
 optimize table test_02381 final;
 select * from test_02381 where a = 10000 limit 1;
 
-select table, sum(rows), sum(bytes_on_disk) sum_bytes, sum(marks_bytes) sum_marks_bytes, (sum_bytes - sum_marks_bytes) exclude_marks  from system.parts_columns where active and  database = currentDatabase() and table like 'test_02381%' group by table order by table;
+-- The tables have swapped the settings: now `test_02381` is the one with the compressed marks and primary key.
+select
+    sumIf(rows, table = 'test_02381') as rows_compressed,
+    sumIf(rows, table = 'test_02381_compress') as rows_plain,
+    3 * sumIf(marks_bytes, table = 'test_02381') < sumIf(marks_bytes, table = 'test_02381_compress') as marks_are_smaller,
+    sumIf(bytes_on_disk - marks_bytes, table = 'test_02381') < sumIf(bytes_on_disk - marks_bytes, table = 'test_02381_compress') as primary_key_is_smaller
+from system.parts_columns where active and database = currentDatabase() and table like 'test_02381%';
 
 drop table if exists test_02381;
 drop table if exists test_02381_compress;

@@ -351,26 +351,26 @@ SELECT cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list');
 
 ## cutToFirstSignificantSubdomainCustomWithWWW {#cutToFirstSignificantSubdomainCustomWithWWW}
 
-استُحدث في: v21.1.0
+أُضيف في: v21.1.0
 
-يعيد الجزء من اسم النطاق الذي يتضمن النطاقات الفرعية العليا حتى أول نطاق فرعي مهم، من دون إزالة &#39;www&#39;. ويقبل اسم قائمة TLD مخصصة. قد يكون ذلك مفيدًا إذا كنت بحاجة إلى قائمة TLD محدَّثة أو كانت لديك قائمة مخصصة.
+يعيد الجزء من اسم النطاق الذي يتضمن النطاقات الفرعية ذات المستوى الأعلى حتى أول نطاق فرعي مهم، من دون إزالة &#39;www&#39;. ويقبل اسم قائمة TLD مخصصة. قد يكون ذلك مفيدًا إذا كنت بحاجة إلى قائمة TLD محدَّثة أو كانت لديك قائمة مخصصة.
 
 **مثال على التهيئة**
 
-````yaml
+```yaml
 <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
 <top_level_domains_lists>
     <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
     <public_suffix_list>public_suffix_list.dat</public_suffix_list>
     <!-- NOTE: path is under top_level_domains_path -->
 </top_level_domains_lists>
-    
+```
 
-**Syntax**
+**الصيغة**
 
 ```sql
 cutToFirstSignificantSubdomainCustomWithWWW(url, tld_list_name)
-````
+```
 
 **الوسيطات**
 
@@ -394,31 +394,31 @@ SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_lis
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## cutToFirstSignificantSubdomainCustomWithWWWRFC {#cutToFirstSignificantSubdomainRFC}
+## cutToFirstSignificantSubdomainCustomWithWWWRFC {#cutToFirstSignificantSubdomainCustomWithWWWRFC}
 
 أُضيف في: v22.10.0
 
-يعيد الجزء من النطاق الذي يتضمن النطاقات الفرعية العليا حتى أول نطاق فرعي مهم، من دون إزالة `www`.
+يعيد الجزء من النطاق الذي يتضمن النطاقات الفرعية ذات المستوى الأعلى حتى أول نطاق فرعي مهم، من دون إزالة `www`.
 يقبل اسم قائمة TLD مخصصة.
-قد يكون هذا مفيدًا إذا كنت بحاجة إلى قائمة TLD محدَّثة أو إذا كانت لديك قائمة مخصصة.
+قد يكون هذا مفيدًا إذا كنت بحاجة إلى قائمة TLD محدَّثة أو إذا كانت لديك قائمة مخصصة.
 مشابه لـ [cutToFirstSignificantSubdomainCustomWithWWW](#cutToFirstSignificantSubdomainCustomWithWWW)، لكنه متوافق مع [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
 
 **مثال على التهيئة**
 
-````xml
-{/* <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> */}
+```xml
+<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
 <top_level_domains_lists>
-    {/* https://publicsuffix.org/list/public_suffix_list.dat */}
+    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
     <public_suffix_list>public_suffix_list.dat</public_suffix_list>
-    {/* NOTE: path is under top_level_domains_path */}
+    <!-- NOTE: path is under top_level_domains_path -->
 </top_level_domains_lists>
-    
+```
 
-**Syntax**
+**الصيغة**
 
 ```sql
 cutToFirstSignificantSubdomainCustomWithWWWRFC(url, tld_list_name)
-````
+```
 
 **الوسيطات**
 
@@ -440,7 +440,7 @@ SELECT cutToFirstSignificantSubdomainCustomWithWWWRFC('https://www.subdomain.exa
 example.custom
 ```
 
-## cutToFirstSignificantSubdomainRFC {#cutToFirstSignificantSubdomainWithWWW}
+## cutToFirstSignificantSubdomainRFC {#cutToFirstSignificantSubdomainRFC}
 
 أُضيف في: v22.10.0
 
@@ -476,7 +476,7 @@ SELECT
 └─────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## cutToFirstSignificantSubdomainWithWWW {#cutToFirstSignificantSubdomainWithWWWRFC}
+## cutToFirstSignificantSubdomainWithWWW {#cutToFirstSignificantSubdomainWithWWW}
 
 أُضيفت في: v20.12.0
 
@@ -515,7 +515,7 @@ SELECT
 └──────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────┴─────────────────────────────────────────────┘
 ```
 
-## cutToFirstSignificantSubdomainWithWWWRFC {#cutURLParameter}
+## cutToFirstSignificantSubdomainWithWWWRFC {#cutToFirstSignificantSubdomainWithWWWRFC}
 
 أُضيف في: v22.10.0
 
@@ -551,7 +551,7 @@ SELECT
 └───────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## cutURLParameter {#cutWWW}
+## cutURLParameter {#cutURLParameter}
 
 أُضيف في: v1.1.0
 
@@ -590,7 +590,7 @@ SELECT
 └──────────────────────────────┴───────────────────────────┘
 ```
 
-## cutWWW {#decodeURLComponent}
+## cutWWW {#cutWWW}
 
 قُدِّمت في: v1.1.0
 
@@ -624,7 +624,7 @@ SELECT cutWWW('http://www.example.com/path?query=value#fragment');
 └────────────────────────────────────────────────────────────┘
 ```
 
-## decodeURLComponent {#decodeURLFormComponent}
+## decodeURLComponent {#decodeURLComponent}
 
 قُدِّمت في: v1.1.0
 
@@ -658,7 +658,7 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 └────────────────────────────────────────┘
 ```
 
-## decodeURLFormComponent {#domain}
+## decodeURLFormComponent {#decodeURLFormComponent}
 
 أُضيف في: v1.1.0
 
@@ -694,7 +694,7 @@ SELECT decodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT%201+2%2B3') A
 └───────────────────────────────────────────┘
 ```
 
-## domain {#domainRFC}
+## domain {#domain}
 
 قُدِّم في: v1.1.0
 
@@ -730,7 +730,7 @@ SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk');
 └────────────────────────────────────────────────────────┘
 ```
 
-## domainRFC {#domainWithoutWWW}
+## domainRFC {#domainRFC}
 
 أُضيف في: v22.10.0
 
@@ -769,7 +769,7 @@ SELECT
 └───────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## domainWithoutWWW {#domainWithoutWWWRFC}
+## domainWithoutWWW {#domainWithoutWWW}
 
 قُدِّمت في: v1.1.0
 
@@ -803,7 +803,7 @@ SELECT domainWithoutWWW('http://paul@www.example.com:80/');
 └─────────────────────────────────────────────────────┘
 ```
 
-## domainWithoutWWWRFC {#encodeURLComponent}
+## domainWithoutWWWRFC {#domainWithoutWWWRFC}
 
 استُحدثت في: v1.1.0
 
@@ -839,7 +839,7 @@ SELECT
 └─────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## encodeURLComponent {#encodeURLFormComponent}
+## encodeURLComponent {#encodeURLComponent}
 
 قُدِّمت في: v22.3.0
 
@@ -873,7 +873,7 @@ SELECT encodeURLComponent('http://127.0.0.1:8123/?query=SELECT 1;') AS EncodedUR
 └──────────────────────────────────────────────────────────┘
 ```
 
-## encodeURLFormComponent {#extractURLParameter}
+## encodeURLFormComponent {#encodeURLFormComponent}
 
 أُضيفت في: v22.3.0
 
@@ -909,7 +909,7 @@ SELECT encodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT 1 2+3') AS En
 └───────────────────────────────────────────────────────────┘
 ```
 
-## extractURLParameter {#extractURLParameterNames}
+## extractURLParameter {#extractURLParameter}
 
 أُضيف في: v1.1.0
 
@@ -946,7 +946,7 @@ SELECT extractURLParameter('http://example.com/?param1=value1&param2=value2', 'p
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## extractURLParameterNames {#extractURLParameters}
+## extractURLParameterNames {#extractURLParameterNames}
 
 تم تقديمه في: v1.1.0
 
@@ -981,7 +981,7 @@ SELECT extractURLParameterNames('http://example.com/?param1=value1&param2=value2
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## extractURLParameters {#firstSignificantSubdomain}
+## extractURLParameters {#extractURLParameters}
 
 أُضيفت في: v1.1.0
 
@@ -1016,7 +1016,7 @@ SELECT extractURLParameters('http://example.com/?param1=value1&param2=value2');
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## firstSignificantSubdomain {#firstSignificantSubdomainCustom}
+## firstSignificantSubdomain {#firstSignificantSubdomain}
 
 قُدِّمت في: v1.1.0
 
@@ -1055,7 +1055,7 @@ SELECT firstSignificantSubdomain('https://news.clickhouse.com/')
 └───────────────────────────────────────────────────────────┘
 ```
 
-## firstSignificantSubdomainCustom {#firstSignificantSubdomainCustomRFC}
+## firstSignificantSubdomainCustom {#firstSignificantSubdomainCustom}
 
 أُضيفت في: v21.1.0
 
@@ -1088,7 +1088,7 @@ SELECT firstSignificantSubdomainCustom('https://news.example.com', 'public_suffi
 example
 ```
 
-## firstSignificantSubdomainCustomRFC {#firstSignificantSubdomainRFC}
+## firstSignificantSubdomainCustomRFC {#firstSignificantSubdomainCustomRFC}
 
 قُدِّم في: v22.10.0
 
@@ -1121,7 +1121,7 @@ SELECT firstSignificantSubdomainCustomRFC('https://news.example.com', 'public_su
 example
 ```
 
-## firstSignificantSubdomainRFC {#fragment}
+## firstSignificantSubdomainRFC {#firstSignificantSubdomainRFC}
 
 استُحدثت في: v22.10.0
 
@@ -1141,7 +1141,7 @@ firstSignificantSubdomainRFC(url)
 
 **أمثلة**
 
-## fragment {#netloc}
+## fragment {#fragment}
 
 أُضيف في: v1.1.0
 
@@ -1175,7 +1175,7 @@ SELECT fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-
 └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## netloc {#path}
+## netloc {#netloc}
 
 تم تقديمه في: v20.5.0
 
@@ -1209,7 +1209,7 @@ SELECT netloc('http://paul@www.example.com:80/');
 └───────────────────────────────────────────┘
 ```
 
-## path {#pathFull}
+## path {#path}
 
 أُضيف في: v1.1.0
 
@@ -1243,7 +1243,7 @@ SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/u
 └─────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## pathFull {#port}
+## pathFull {#pathFull}
 
 قُدِّم في: v1.1.0
 
@@ -1277,7 +1277,7 @@ SELECT pathFull('https://clickhouse.com/docs/reference/functions/regular-functio
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## port {#portRFC}
+## port {#port}
 
 قُدِّمت في: v20.5.0
 
@@ -1312,7 +1312,7 @@ SELECT port('https://clickhouse.com:8443/docs'), port('https://clickhouse.com/do
 └──────────────────────────────────────────┴──────────────────────────────────────────┘
 ```
 
-## portRFC {#protocol}
+## portRFC {#portRFC}
 
 استُحدث في: v22.10.0
 
@@ -1348,7 +1348,7 @@ SELECT port('http://user:password@example.com:8080/'), portRFC('http://user:pass
 └────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
 ```
 
-## protocol {#queryString}
+## protocol {#protocol}
 
 أُضيف في: v1.1.0
 
@@ -1386,7 +1386,7 @@ SELECT protocol('https://clickhouse.com/');
 └─────────────────────────────────────┘
 ```
 
-## queryString {#queryStringAndFragment}
+## queryString {#queryString}
 
 أُضيف في: v1.1.0
 
@@ -1420,7 +1420,7 @@ SELECT queryString('https://clickhouse.com/docs?query=value&param=123#section');
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-## queryStringAndFragment {#topLevelDomain}
+## queryStringAndFragment {#queryStringAndFragment}
 
 أُضيف في: v1.1.0
 
@@ -1454,9 +1454,9 @@ SELECT queryStringAndFragment('https://clickhouse.com/docs?query=value&param=123
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## topLevelDomain {#topLevelDomainRFC}
+## topLevelDomain {#topLevelDomain}
 
-قُدِّمت في: v1.1.0
+أُضيف في: v1.1.0
 
 يستخرج نطاق المستوى الأعلى من URL.
 
@@ -1471,19 +1471,19 @@ SELECT queryStringAndFragment('https://clickhouse.com/docs?query=value&param=123
   ```
 </Note>
 
-**البنية**
+**الصيغة**
 
 ```sql
 topLevelDomain(url)
 ```
 
-**المعاملات**
+**الوسيطات**
 
 * `url` — URL. [`String`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
-تعيد اسم النطاق إذا أمكن تفسير سلسلة الإدخال على أنها URL. وإلا، فتعيد سلسلة فارغة. [`String`](/ar/reference/data-types/string)
+تعيد اسم النطاق إذا أمكن أن تكون سلسلة الإدخال مُحلَّلة بوصفها URL. وإلا، فتعيد سلسلة فارغة. [`String`](/ar/reference/data-types/string)
 
 **أمثلة**
 
@@ -1499,14 +1499,14 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-## topLevelDomainRFC
+## topLevelDomainRFC {#topLevelDomainRFC}
 
 أُضيف في: v22.10.0
 
 يستخرج نطاق المستوى الأعلى من URL.
 وهو مشابه لـ [`topLevelDomain`](#topLevelDomain)، لكنه متوافق مع [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 topLevelDomainRFC(url)
@@ -1518,7 +1518,7 @@ topLevelDomainRFC(url)
 
 **القيمة المُعادة**
 
-اسم النطاق إذا أمكن تحليل سلسلة الإدخال باعتبارها URL. وإلا فستكون سلسلة فارغة. [`String`](/ar/reference/data-types/string)
+اسم النطاق إذا أمكن أن تكون سلسلة الإدخال مُحلَّلة بوصفها URL. وإلا فستكون سلسلة فارغة. [`String`](/ar/reference/data-types/string)
 
 **أمثلة**
 
