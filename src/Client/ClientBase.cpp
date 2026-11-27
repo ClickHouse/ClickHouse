@@ -2825,9 +2825,9 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     /// use a non-blocking check and append stdin only when it already has data. When there is no other data source,
     /// use the blocking check as before.
     bool have_data_in_stdin = (!parsed_insert_query || !parsed_insert_query->infile) && !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
-    if (!parsed_insert_query->infile && !is_interactive && !stdin_is_a_tty)
+    if ((!parsed_insert_query || !parsed_insert_query->infile) && !is_interactive && !stdin_is_a_tty)
     {
-        if (parsed_insert_query->data)
+        if (parsed_insert_query && parsed_insert_query->data)
         {
             const auto stdin_state = getStdinStateNonBlocking(*std_in, stdin_fd);
             have_data_in_stdin = stdin_state == StdinState::Data && isStdinNotEmptyAndValid(*std_in);
