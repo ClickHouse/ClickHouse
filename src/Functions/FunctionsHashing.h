@@ -669,7 +669,13 @@ struct ImplCityHash64
     using uint128_t = CityHash_v1_0_2::uint128;
 
     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
-    static auto apply(const char * s, const size_t len) { return CityHash_v1_0_2::CityHash64(s, len); }
+    ALWAYS_INLINE static auto apply(const char * s, const size_t len)
+    {
+        /// Values of a fixed size (UUIDs, numbers) are hashed inline, see `CityHash64UpTo16`.
+        if (__builtin_constant_p(len) && len <= 16)
+            return CityHash_v1_0_2::CityHash64UpTo16(s, len);
+        return CityHash_v1_0_2::CityHash64(s, len);
+    }
     static constexpr bool use_int_hash_for_pods = true;
     static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
