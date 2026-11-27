@@ -1,5 +1,5 @@
 [package]
-workspace = "../rust-contrib-workspace"
+workspace = ".."
 edition = "2021"
 name = "_ch_rust_vortex"
 version = "0.1.0"

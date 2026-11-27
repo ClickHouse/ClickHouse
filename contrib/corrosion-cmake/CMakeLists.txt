@@ -326,12 +326,24 @@ endif()
 # stepping into the crates. Affects Debug only (Release uses profile.release, where this is inert).
 option(REDUCE_RUST_DEBUG_INFO "Build vendored Rust crates with reduced debug info (cargo debug=1, the \"limited\" level) and no incremental caches" ON)
 if (REDUCE_RUST_DEBUG_INFO)
-    set(RUST_DEV_PROFILE "[profile.dev]
-debug = 1
+    set(RUST_DEV_PROFILE "debug = 1
 incremental = false
 ")
 else()
     set(RUST_DEV_PROFILE "")
+endif()
+
+# Reproducible builds, the counterpart of the `-ffile-prefix-map` of ENABLE_BUILD_PATH_MAPPING for C and C++.
+# Cargo's `trim-paths` remaps the paths that rustc writes into the code (panic locations, `file!`) and the debug info: the
+# directory of every package (to `<name>-<version>`), the build directory (to `/cargo/build-dir`), where build scripts
+# generate code, and the sources of the standard library from the `rust-src` component (to `/rustc/<commit>`), which
+# rustc uses instead of the remapped paths of the prebuilt standard library when the component is installed.
+if (ENABLE_BUILD_PATH_MAPPING)
+    set(RUST_TRIM_PATHS "trim-paths = \"all\"")
+    set(RUST_UNSTABLE_TRIM_PATHS "trim-paths = true")
+else()
+    set(RUST_TRIM_PATHS "")
+    set(RUST_UNSTABLE_TRIM_PATHS "")
 endif()
 
 # ccache cannot wrap rustc, so a new build directory compiles every Rust crate again. With RUST_BUILD_CACHE_DIR, Cargo keeps
@@ -364,7 +376,7 @@ if (RUST_BUILD_CACHE_DIR)
         endforeach()
     endforeach()
     string(SHA256 _rust_native_headers "${_rust_native_headers}")
-    set(_rust_build_key "${Rust_CARGO_TARGET}|${Rust_COMPILER_CACHED}|${Rust_VERSION}|${Rust_CARGO_CACHED}|${Rust_CARGO_VERSION}|${CMAKE_C_COMPILER}|${CMAKE_C_COMPILER_VERSION}|${CMAKE_CXX_COMPILER}|${CMAKE_CXX_COMPILER_VERSION}|${CMAKE_BUILD_TYPE_UC}|${ENABLE_THINLTO}|${RUSTFLAGS}|${RUST_CARGO_BUILD_STD}|${RUST_CFLAGS}|${RUST_CXXFLAGS}|${RUSTCWRAPPER}|${RUST_RELEASE_PROFILE_EXTRA}|${RUST_DEV_PROFILE}|${_rust_native_headers}")
+    set(_rust_build_key "${Rust_CARGO_TARGET}|${Rust_COMPILER_CACHED}|${Rust_VERSION}|${Rust_CARGO_CACHED}|${Rust_CARGO_VERSION}|${CMAKE_C_COMPILER}|${CMAKE_C_COMPILER_VERSION}|${CMAKE_CXX_COMPILER}|${CMAKE_CXX_COMPILER_VERSION}|${CMAKE_BUILD_TYPE_UC}|${ENABLE_THINLTO}|${RUSTFLAGS}|${RUST_CARGO_BUILD_STD}|${RUST_CFLAGS}|${RUST_CXXFLAGS}|${RUSTCWRAPPER}|${RUST_RELEASE_PROFILE_EXTRA}|${RUST_DEV_PROFILE}|${RUST_TRIM_PATHS}|${_rust_native_headers}")
     string(FIND "${_rust_build_key}" "${CMAKE_BINARY_DIR}/" _rust_build_key_has_build_dir)
     if (NOT _rust_build_key_has_build_dir EQUAL -1)
         message(FATAL_ERROR "RUST_BUILD_CACHE_DIR does not work for this configuration: its Rust compiler flags contain the build directory (as in musl builds), so no other build directory could reuse the cache")
