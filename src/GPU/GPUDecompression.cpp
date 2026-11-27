@@ -118,8 +118,10 @@ T * arrayAt(char * base, size_t & offset, size_t count)
     return values;
 }
 
-/// The chunks of one codec, which one batched call of nvcomp expands: where each is on the device, and where it goes.
-struct CodecCall
+/// The chunks of one codec that one batched call of nvcomp expands, in the arrays it takes: where each is on the device,
+/// and where it goes. nvcomp expands a chunk by a warp, so that thousands in one launch fill the device, and their
+/// statuses are checked with one wait on the device.
+struct NvcompBatch
 {
     GPUCodec codec;
     std::vector<const void *> compressed;
@@ -148,29 +150,29 @@ struct DecompressionBatch::State
 {
     explicit State(cuda::stream_ref stream_) : stream(stream_) { }
 
-    CodecCall & callOf(GPUCodec codec)
+    NvcompBatch & batchOf(GPUCodec codec)
     {
-        for (CodecCall & call : calls)
+        for (NvcompBatch & batch : batches)
         {
-            if (call.codec == codec)
-                return call;
+            if (batch.codec == codec)
+                return batch;
         }
-        CodecCall & call = calls.emplace_back();
-        call.codec = codec;
-        return call;
+        NvcompBatch & batch = batches.emplace_back();
+        batch.codec = codec;
+        return batch;
     }
 
     /// Queues the call of nvcomp and the copy of its statuses back to `host_results`.
-    void launch(const CodecCall & call);
+    void launch(const NvcompBatch & batch);
 
     /// Once the call is done, that every chunk expanded as its header says.
-    void check(const CodecCall & call) const;
+    void check(const NvcompBatch & batch) const;
 
     const cuda::stream_ref stream;
 
     /// The compressed bytes of each column on the device.
     std::vector<DeviceBuffer> uploaded;
-    std::vector<CodecCall> calls;
+    std::vector<NvcompBatch> batches;
 
     PinnedBuffer host_arguments;
     PinnedBuffer host_results;
@@ -201,7 +203,7 @@ void DecompressionBatch::add(const CompressedHostColumn & column, char * destina
     /// `nvcompBatchedZstdDecompressGetRequiredAlignments`.
     for (const auto & chunk : column.chunks)
     {
-        state->callOf(chunk.codec).add(uploaded + chunk.offset, chunk.compressed_bytes, destination, chunk.decompressed_bytes);
+        state->batchOf(chunk.codec).add(uploaded + chunk.offset, chunk.compressed_bytes, destination, chunk.decompressed_bytes);
         destination += chunk.decompressed_bytes;
     }
 }
@@ -210,33 +212,33 @@ GPUFuture<void> DecompressionBatch::expand()
 {
     /// The buffers are freed in the order of the stream, after what is queued on it.
     SCOPE_EXIT({
-        state->calls.clear();
+        state->batches.clear();
         state->uploaded.clear();
     });
 
     const cuda::stream_ref stream = state->stream;
-    for (const CodecCall & call : state->calls)
+    for (const NvcompBatch & batch : state->batches)
     {
-        state->launch(call);
+        state->launch(batch);
         GPUPromise<void>(stream).fulfill().get();
-        state->check(call);
+        state->check(batch);
     }
     return GPUPromise<void>(stream).fulfill();
 }
 
-void DecompressionBatch::State::launch(const CodecCall & call)
+void DecompressionBatch::State::launch(const NvcompBatch & batch)
 {
-    const size_t num_chunks = call.size();
+    const size_t num_chunks = batch.size();
     const size_t vector_bytes = num_chunks * sizeof(void *);
     const size_t arguments_bytes = 4 * vector_bytes;
     static_assert(sizeof(void *) == sizeof(size_t));
 
     host_arguments.clear();
     char * const arguments = growBy(host_arguments, arguments_bytes);
-    memcpy(arguments, call.compressed.data(), vector_bytes);
-    memcpy(arguments + vector_bytes, call.destinations.data(), vector_bytes);
-    memcpy(arguments + 2 * vector_bytes, call.compressed_bytes.data(), vector_bytes);
-    memcpy(arguments + 3 * vector_bytes, call.decompressed_bytes.data(), vector_bytes);
+    memcpy(arguments, batch.compressed.data(), vector_bytes);
+    memcpy(arguments + vector_bytes, batch.destinations.data(), vector_bytes);
+    memcpy(arguments + 2 * vector_bytes, batch.compressed_bytes.data(), vector_bytes);
+    memcpy(arguments + 3 * vector_bytes, batch.decompressed_bytes.data(), vector_bytes);
 
     waitOnFailure(stream, [&]
     {
@@ -259,14 +261,14 @@ void DecompressionBatch::State::launch(const CodecCall & call)
 
         size_t temp_bytes = 0;
         checkNvcomp(
-            decompressTempBytes(call.codec, num_chunks, call.max_decompressed, call.decompressed_total, &temp_bytes, stream),
+            decompressTempBytes(batch.codec, num_chunks, batch.max_decompressed, batch.decompressed_total, &temp_bytes, stream),
             "Cannot size nvcomp's scratch space");
         device_temp.clear();
         device_temp.grow(temp_bytes);
 
         checkNvcomp(
             decompressAsync(
-                call.codec,
+                batch.codec,
                 d_compressed,
                 d_compressed_bytes,
                 d_decompressed_bytes,
@@ -287,9 +289,9 @@ void DecompressionBatch::State::launch(const CodecCall & call)
     });
 }
 
-void DecompressionBatch::State::check(const CodecCall & call) const
+void DecompressionBatch::State::check(const NvcompBatch & batch) const
 {
-    const size_t num_chunks = call.size();
+    const size_t num_chunks = batch.size();
     size_t offset = 0;
     char * const results = const_cast<char *>(host_results.data());
     const size_t * actual_bytes = arrayAt<size_t>(results, offset, num_chunks);
@@ -299,8 +301,8 @@ void DecompressionBatch::State::check(const CodecCall & call) const
     {
         if (statuses[i] != nvcompSuccess)
             throw Exception(ErrorCodes::GPU_ERROR, "Block {} did not decompress: nvcomp status {}", i, static_cast<int>(statuses[i]));
-        if (actual_bytes[i] != call.decompressed_bytes[i])
-            throw Exception(ErrorCodes::GPU_ERROR, "Block {} expanded to {} bytes, expected {}", i, actual_bytes[i], call.decompressed_bytes[i]);
+        if (actual_bytes[i] != batch.decompressed_bytes[i])
+            throw Exception(ErrorCodes::GPU_ERROR, "Block {} expanded to {} bytes, expected {}", i, actual_bytes[i], batch.decompressed_bytes[i]);
     }
 }
 
