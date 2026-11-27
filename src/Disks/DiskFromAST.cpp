@@ -651,6 +651,16 @@ static ValidatedDiskConfig getValidatedTransientDiskConfig(
 
     checkTransientDiskLocalPaths(*config, context);
 
+    /// Starting a disk with `local` metadata and a persistent removal log loads the queue of removed
+    /// blobs that an earlier owner of the metadata left behind, and the background removal of the disk
+    /// then deletes them from the object storage. That goes directly to the object storage, so neither
+    /// a read-only disk nor the grants of the query stand in its way. A query-local disk exists to serve
+    /// one query and must never do maintenance on behalf of the data it was pointed at.
+    if (config->has("persistent_removal_log"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The description of a query-local disk cannot have `persistent_removal_log`: "
+            "a query must not replay the queue of removed blobs of the disk");
+
     return validated;
 }
 
