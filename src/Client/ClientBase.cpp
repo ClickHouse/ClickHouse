@@ -4883,6 +4883,12 @@ bool ClientBase::processAIChat(const String & text_)
         connection->reconnectIfNeeded(connection_parameters.timeouts);
     }
 
+    /// The connection may have been established again below the client, without `connect` being
+    /// called - just above, or since the last query was sent. What the client remembers about the
+    /// previous session is dropped before anything is decided on it: the `readonly` and the dialect
+    /// of the session below, and whether the conversation is started over.
+    noticeSessionReplacedByConnection();
+
     if (!is_local_command && aiSessionReadonly() == 1)
     {
         bool dialect_pin_required = true;
@@ -4906,10 +4912,6 @@ bool ClientBase::processAIChat(const String & text_)
             return true;
         }
     }
-
-    /// The connection may have been established again below the client, without `connect` being
-    /// called - above, or for a query the user ran since the previous turn.
-    noticeSessionReplacedByConnection();
 
     if (ai_agent_reset_pending)
     {
