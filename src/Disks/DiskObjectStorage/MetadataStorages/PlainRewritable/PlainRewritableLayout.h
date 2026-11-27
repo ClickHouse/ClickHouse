@@ -108,8 +108,8 @@ public:
     };
 
     /// Whether a key relative to the common key prefix can be the key of a blob or of a file (see `FileRemoteInfo::blob_key`): it is
-    /// relative, has no `.` or `..` components and no NULs, and is not under `__meta`, so that the object it names
-    /// stays among the blobs of this disk. A line feed is allowed: the name of a file may contain it, and the formats
+    /// relative, has no `.` or `..` components and no NULs, is not a fully qualified path (`s3://bucket/key`), and is not
+    /// under `__meta`, so that the object it names stays among the blobs of this disk. A line feed is allowed: the name of a file may contain it, and the formats
     /// that store keys (`prefix.path`, the marker of a blob removal, and the marker of a pending replacement) escape it.
     static bool isValidBlobKey(std::string_view blob_key);
 

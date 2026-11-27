@@ -1,4 +1,5 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/PlainRewritableSnapshotFile.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -188,6 +189,13 @@ PlainRewritableRemoteLayout readPlainRewritableSnapshot(ReadBuffer & in)
             readIntBinary(file_last_modified, compressed);
             file_info.last_modified = static_cast<time_t>(file_last_modified);
             readSnapshotString(file_info.blob_key, compressed);
+
+            /// The snapshot is applied as is, and the key is used to read and to delete the blob. So the key, also
+            /// the default one made of the remote path of the directory, must not name an object outside of the
+            /// blobs of this disk, the same way as a key in the file list of `prefix.path`.
+            if (const auto blob_key = getBlobKey(info, name, file_info); !PlainRewritableLayout::isValidBlobKey(blob_key))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid blob key '{}' of the file '{}' in the directory '{}' of the plain_rewritable snapshot file",
+                    blob_key, name, path);
 
             if (!info.files.emplace(std::move(name), file_info).second)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate file in the directory '{}' of the plain_rewritable snapshot file", path);

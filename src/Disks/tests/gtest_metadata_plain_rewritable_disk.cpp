@@ -3043,6 +3043,84 @@ TEST_F(MetadataPlainRewritableDiskTest, SnapshotWithMalformedBlockIsNotRead)
     EXPECT_EQ(reader.listDirectory("A"), std::vector<std::string>({"file"}));
 }
 
+/// A snapshot is applied as is (a read-only disk does not list the object storage), so a key of a blob in it,
+/// explicit or made of the remote path of the directory, must not name an object outside of the blobs of the disk.
+TEST_F(MetadataPlainRewritableDiskTest, SnapshotWithBlobKeyOutsideOfDiskIsNotRead)
+{
+    auto make_snapshot = [](const std::string & directory_remote_path, const std::string & blob_key)
+    {
+        PlainRewritableRemoteLayout layout;
+        layout.emplace("", DirectoryRemoteInfo{PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, "etag", 0, {}});
+        DirectoryRemoteInfo directory{directory_remote_path, "etag", 0, {}};
+        FileRemoteInfo file{};
+        file.bytes_size = 4;
+        file.blob_key = blob_key;
+        directory.files.emplace("file", file);
+        layout.emplace("A", std::move(directory));
+
+        std::string data;
+        WriteBufferFromString out(data);
+        writePlainRewritableSnapshot(layout, out);
+        out.finalize();
+        return data;
+    };
+
+    auto is_read = [](const std::string & data)
+    {
+        ReadBufferFromString in(data);
+        try
+        {
+            readPlainRewritableSnapshot(in);
+            return true;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA) << e.message();
+            EXPECT_THAT(e.message(), testing::HasSubstr("Invalid blob key"));
+            return false;
+        }
+    };
+
+    EXPECT_TRUE(is_read(make_snapshot("abcdefgh", "")));
+    EXPECT_TRUE(is_read(make_snapshot("abcdefgh", "ijklmnop/file")));
+
+    for (const auto & outside : std::vector<std::string>{"/other-prefix", "..", "a/../..", "__meta", "s3://other-bucket"})
+    {
+        /// The explicit key.
+        EXPECT_FALSE(is_read(make_snapshot("abcdefgh", outside + "/victim.bin"))) << outside;
+        /// The default key: the remote path of the directory and the name of the file.
+        EXPECT_FALSE(is_read(make_snapshot(outside, ""))) << outside;
+    }
+
+    /// A read-only disk does not take such a snapshot, so the file is not read from the outside of the disk.
+    const std::string test = "SnapshotWithBlobKeyOutsideOfDiskIsNotRead";
+    auto writer = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+    {
+        auto tx = writer->createTransaction();
+        tx->createDirectory("A");
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath("A/file").serialize(), "test");
+        tx->createMetadataFile("A/file", {StoredObject("A/file", "A/file", size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+    const auto expected_objects = writer->getStorageObjects("A/file");
+    ASSERT_EQ(expected_objects.size(), 1);
+
+    const auto forged_snapshot = make_snapshot("abcdefgh", "/other-prefix/victim.bin");
+    const auto snapshot_key = fmt::format("{}/__meta/{}", object_storage->getCommonKeyPrefix(), PlainRewritableLayout::SNAPSHOT_FILE_NAME);
+    {
+        WriteBufferFromFile out(snapshot_key);
+        out.write(forged_snapshot.data(), forged_snapshot.size());
+        out.finalize();
+    }
+
+    auto reader_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("reader", object_storage->getCommonKeyPrefix(), /*read_only_=*/ true));
+    MetadataStorageFromPlainRewritableObjectStorage reader(reader_storage, "", hard_links_enabled);
+    const auto objects = reader.getStorageObjects("A/file");
+    ASSERT_EQ(objects.size(), 1);
+    EXPECT_EQ(objects.front().remote_path, expected_objects.front().remote_path);
+}
+
 TEST_F(MetadataPlainRewritableDiskTest, WriterWithSnapshotsDisabledRemovesSnapshot)
 {
     const std::string test = "WriterWithSnapshotsDisabledRemovesSnapshot";
@@ -4373,7 +4451,7 @@ TEST_F(MetadataPlainRewritableDiskTest, BlobRemovalMarkerWithInvalidKeyRemovesNo
 
     EXPECT_EQ(parse("abc/def"), Kind::BlobRemoval);
     EXPECT_EQ(parse("__root/file.txt"), Kind::BlobRemoval);
-    for (const auto & blob_key : std::vector<std::string>{"/other/victim.bin", "../victim.bin", "a/../../victim.bin", "a/./b", ".", "__meta/a/prefix.path", std::string("a\0b", 3)})
+    for (const auto & blob_key : std::vector<std::string>{"/other/victim.bin", "../victim.bin", "a/../../victim.bin", "a/./b", ".", "__meta/a/prefix.path", "s3://other-bucket/victim.bin", std::string("a\0b", 3)})
         EXPECT_EQ(parse(blob_key), Kind::Malformed) << blob_key;
 
     /// The backup of a pending replacement is copied over its target, so the target is checked the same way.
@@ -4430,7 +4508,7 @@ TEST_F(MetadataPlainRewritableDiskTest, BlobRemovalMarkerWithInvalidKeyRemovesNo
 TEST_F(MetadataPlainRewritableDiskTest, ExplicitFileListWithInvalidKeyRemovesNothing)
 {
     EXPECT_EQ(parsePrefixPath("a/\nfiles: 1\nf\tabc/def\t6\n").files.at(0).blob_key, "abc/def");
-    for (const auto & blob_key : std::vector<std::string>{"/other/victim.bin", "../victim.bin", "a/../../victim.bin", "a/./b", "__meta/a/prefix.path"})
+    for (const auto & blob_key : std::vector<std::string>{"/other/victim.bin", "../victim.bin", "a/../../victim.bin", "a/./b", "__meta/a/prefix.path", "s3://other-bucket/victim.bin"})
         EXPECT_THROW(parsePrefixPath(fmt::format("a/\nfiles: 1\nf\t{}\t6\n", blob_key)), Exception) << blob_key;
 
     thread_local_rng.seed(42);

@@ -6,6 +6,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
+#include <Common/FullyQualifiedObjectPath.h>
 #include <Common/getRandomASCIIString.h>
 #include <base/find_symbols.h>
 
@@ -158,6 +159,12 @@ std::string PlainRewritableLayout::makeBlobRemovalTombstoneContent(const std::st
 bool PlainRewritableLayout::isValidBlobKey(std::string_view blob_key)
 {
     if (blob_key.empty() || blob_key.starts_with('/') || blob_key.contains('\0'))
+        return false;
+
+    /// An object storage takes a fully qualified path (`s3://bucket/key`) as a key in another bucket, see
+    /// `S3ObjectStorage::splitBucketAndKey`. With an empty common key prefix the key of a blob is passed as is.
+    /// A key of this disk is never of this form: it has no empty components.
+    if (trySplitFullyQualifiedObjectPath(blob_key))
         return false;
 
     std::vector<std::string> parts;
