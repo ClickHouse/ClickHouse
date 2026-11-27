@@ -158,7 +158,8 @@ void ASTDictionaryLayout::formatImpl(WriteBuffer & ostr,
                                      FormatState & state,
                                      FormatStateStacked frame) const
 {
-    ostr << "LAYOUT(" << Poco::toUpper(layout_type);
+    /// The parser reads the layout name as one identifier and accepts any bare word.
+    ostr << "LAYOUT(" << backQuoteIfNotBareWord(Poco::toUpper(layout_type));
 
     if (has_brackets)
         ostr << "(";

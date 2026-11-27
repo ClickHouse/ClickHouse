@@ -15,7 +15,7 @@ doc_type: 'guide'
 
 Les captures d’écran de ce guide proviennent de la console SQL de [ClickHouse Cloud](https://console.clickhouse.cloud). Toutes les requêtes fonctionnent aussi bien sur Cloud que sur des déploiements auto-gérés.
 
-ClickHouse propose trois façons de lire des formats de table ouverts : les fonctions de table, les moteurs de table et le moteur de base de données [`DataLakeCatalog`](/fr/reference/engines/database-engines/datalake). **Si vos tables se trouvent dans un catalogue de données** (Glue, Unity Catalog, REST, entre autres), connectez-vous à `DataLakeCatalog` afin d’accéder à toutes vos tables Iceberg/Delta via une seule fonction. Les sections sur les fonctions de table et les moteurs de table ci-dessous conviennent mieux aux requêtes ad hoc ou lorsque vous connaissez un chemin de stockage spécifique et n’utilisez pas de catalogue.
+ClickHouse propose trois façons de lire des formats de table ouverts : les fonctions de table, les moteurs de table et le moteur de base de données [`DataLakeCatalog`](/fr/reference/engines/database-engines/datalake). **Si vos tables se trouvent dans un catalogue de données** (Glue, Unity Catalog, REST, entre autres), connectez-vous à `DataLakeCatalog` afin d’accéder à toutes vos tables Iceberg/Delta via une seule fonction. Les sections sur les fonctions de table et les moteurs de table ci-dessous conviennent mieux aux requêtes ad hoc ou lorsque vous connaissez un chemin de stockage spécifique et n’utilisez pas de catalogue.
 
 <Steps>
   <Step title="Interroger directement des données Iceberg" id="query-directly">
@@ -40,13 +40,9 @@ ClickHouse propose trois façons de lire des formats de table ouverts : les fon
     ```
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Requête Iceberg](/images/datalake/iceberg-query-direct.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Requête Iceberg](/images/datalake/iceberg-query-direct.webp)
+      </Frame>
     </div>
 
     ClickHouse lit directement les métadonnées Iceberg depuis S3 et détermine automatiquement le schéma. La même approche fonctionne pour [`deltaLake()`](/fr/reference/functions/table-functions/deltalake), [`hudi()`](/fr/reference/functions/table-functions/hudi) et [`paimon()`](/fr/reference/functions/table-functions/paimon).
@@ -75,13 +71,9 @@ ClickHouse propose trois façons de lire des formats de table ouverts : les fon
     ```
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Requête Iceberg](/images/datalake/iceberg-query-engine.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Requête Iceberg](/images/datalake/iceberg-query-engine.webp)
+      </Frame>
     </div>
 
     Le moteur de table prend en charge la mise en cache des données, la mise en cache des métadonnées, l’évolution du schéma et le time travel. Consultez le guide [Interroger directement](/fr/guides/use-cases/data-warehousing/getting-started/querying-directly) pour en savoir plus sur les fonctionnalités du moteur de table, ainsi que la [matrice de compatibilité](/fr/guides/use-cases/data-warehousing/support-matrix) pour une comparaison complète des fonctionnalités.
@@ -175,13 +167,9 @@ ClickHouse propose trois façons de lire des formats de table ouverts : les fon
     Cette requête parcourt l’intégralité du jeu de données dans S3, car Iceberg ne tient pas compte du filtre `counterid` — prévoyez plusieurs secondes d’exécution.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Requête Iceberg](/images/datalake/iceberg-query.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Requête Iceberg](/images/datalake/iceberg-query.webp)
+      </Frame>
     </div>
 
     Créez maintenant une table MergeTree et chargez les données :
@@ -217,13 +205,9 @@ ClickHouse propose trois façons de lire des formats de table ouverts : les fon
     ```
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Requête ClickHouse](/images/datalake/clickhouse-query.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Requête ClickHouse](/images/datalake/clickhouse-query.webp)
+      </Frame>
     </div>
 
     Comme `counterid` est la première colonne de la clé `ORDER BY`, l’index primaire sparse de ClickHouse saute directement aux granules pertinentes et ne lit que les lignes correspondant à `counterid = 38`, au lieu de parcourir l’ensemble des 100 millions de lignes. Le résultat est un gain de vitesse spectaculaire.

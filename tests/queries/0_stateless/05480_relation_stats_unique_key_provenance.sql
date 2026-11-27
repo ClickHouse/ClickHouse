@@ -7,11 +7,11 @@
 
 -- A UNIQUE KEY read drops the rows superseded by later inserts through the delete bitmaps of its snapshot. They are not
 -- lightweight deletes and leave no mutation, but the part statistics still cover them. So once a part has a superseded
--- row, its statistics no longer describe the read: IEJoin does not pick its key conditions by their min/max but falls
+-- row, its statistics no longer describe the read: InequalityJoin does not pick its key conditions by their min/max but falls
 -- back to syntax order.
 
 SET enable_unique_key = 1;
-SET join_algorithm = 'ie_join';
+SET join_algorithm = 'inequality';
 SET join_use_nulls = 0;
 SET enable_parallel_replicas = 0;
 SET use_statistics = 1;

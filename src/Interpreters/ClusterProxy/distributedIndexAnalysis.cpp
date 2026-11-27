@@ -526,9 +526,8 @@ private:
         {
             ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisScheduledReplicas);
             auto exception_ptr = result.exception;
-            result.thread = ThreadFromGlobalPool([this, thread_group = CurrentThread::getGroup(), &local_parts, local_marks, local_rows, &local_result, exception_ptr]()
+            result.thread = ThreadFromGlobalPool(attachedJob(ThreadName::DISTRIBUTED_INDEX_ANALYSIS, [this, &local_parts, local_marks, local_rows, &local_result, exception_ptr]()
             {
-                ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_INDEX_ANALYSIS);
                 try
                 {
                     LOG_TRACE(logger, "Resolving {} parts ({} marks, {} rows) from local replica {}: {}",
@@ -542,7 +541,7 @@ private:
                 {
                     *exception_ptr = std::current_exception();
                 }
-            });
+            }));
         }
         return result;
     }
@@ -868,7 +867,7 @@ void parseIndexAnalysisBlock(Block block, IndexAnalysisPartsRanges & result)
     for (size_t i = 0; i < col_part_name.size(); ++i)
     {
         auto & ranges_dst = result[std::string(col_part_name.getDataAt(i))];
-        for (size_t range_i = col_ranges_array_offsets[i - 1]; range_i < col_ranges_array_offsets[i]; ++range_i)
+        for (size_t range_i = col_ranges_array_offsets[static_cast<ssize_t>(i) - 1]; range_i < col_ranges_array_offsets[i]; ++range_i)
             ranges_dst.push_back(MarkRange{col_range_start[range_i], col_range_end[range_i]});
     }
 }

@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/SecretArgumentsSpec.h>
 #include <Storages/Kafka/Kafka_fwd.h>
@@ -20,6 +21,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
+#include <Storages/Kafka/KafkaConfigLoader.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
@@ -127,6 +129,12 @@ void registerStorageKafka(StorageFactory & factory)
             &args.table_id,
             args.storage_def->settings))
         {
+            /// Only for a statement of the user: a replayed definition must stay loadable, and consumers and producers check the collection again.
+            const auto local_context = args.getLocalContext();
+            if (!isLoadingFromExistingMetadata(args.mode) && !isSecondaryDDLReplay(local_context)
+                && !local_context->isRecoveryFromStoredMetadata())
+                KafkaConfigLoader::checkNamedCollection(*named_collection);
+
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
         }
@@ -373,7 +381,7 @@ void registerStorageKafka(StorageFactory & factory)
         SecretArgumentsSpec{
             /// Kafka(named_collection, kafka_sasl_password = '...'); the legacy positional form carries no
             /// secret and makes the collection name optional, so a named argument can be the first one.
-            .secret_settings = Kafka::SETTINGS_TO_HIDE,
+            .secret_settings = Kafka::settingsToHide(),
             .settings_as_arguments = true,
         },
         StorageFactory::StorageFeatures{
@@ -492,17 +500,27 @@ For `ENGINE = Kafka(named_collection)`:
 
 When a named collection is used, **the global server `<kafka>` block in `config.xml` is not merged**. Each collection must include every extended property the table needs (including TLS files and `security.protocol` when it is not set via non-empty table `SETTINGS`).
 
-A common layout for `SASL_SSL` with client certificates: store TLS paths and `ssl.key.password` in the named collection; set `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format`, and optionally `kafka_sasl_username` / `kafka_sasl_password` in the table `SETTINGS` clause. Both `kafka.security_protocol` and `kafka_security_protocol` set `security.protocol`, and the non-empty table setting wins. If the collection already stores that property, the table setting is a named collection override: it requires `SHOW NAMED COLLECTIONS SECRETS` on the collection, and it fails with `Override not allowed` if the key is `NOT OVERRIDABLE`. The same applies to `kafka_sasl_mechanism`, `kafka_sasl_username`, and `kafka_sasl_password`.
+A named collection created with `CREATE NAMED COLLECTION` accepts only `librdkafka` properties on the [allowlist](https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/Kafka/KafkaConfigLoader.cpp), such as `security.protocol`, `sasl.username`, and `fetch.min.bytes`. If a table uses a collection with an unlisted property, ClickHouse returns `BAD_ARGUMENTS`. To use other supported properties, such as `sasl.kerberos.keytab` or `sasl.oauthbearer.token.endpoint.url`, define the collection in the server configuration file. This restriction also applies to properties added with `ALTER NAMED COLLECTION` after the table was created.
 
-Example (certificate paths must exist on every ClickHouse server that runs consumers for the table):
+In a named collection created with SQL, pass the contents of the file instead of its path: `ssl.key.pem`, `ssl.certificate.pem`, `ssl.ca.pem`, `https.ca.pem`, and `sasl.oauthbearer.assertion.private.key.pem`. The value `probe` of `ssl.ca.location` and `https.ca.location` is also accepted, because it is not a path.
+
+A common layout for `SASL_SSL` with client certificates: store the certificates, the private key, and `ssl.key.password` in the named collection; set `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format`, and optionally `kafka_sasl_username` / `kafka_sasl_password` in the table `SETTINGS` clause. Both `kafka.security_protocol` and `kafka_security_protocol` set `security.protocol`, and the non-empty table setting wins. If the collection already stores that property, the table setting is a named collection override: it requires `SHOW NAMED COLLECTIONS SECRETS` on the collection, and it fails with `Override not allowed` if the key is `NOT OVERRIDABLE`. The same applies to `kafka_sasl_mechanism`, `kafka_sasl_username`, and `kafka_sasl_password`.
+
+Example with a named collection created with SQL, which contains the certificates and the private key in the PEM format:
 
 ```sql
 CREATE NAMED COLLECTION kafka_mtls AS
     kafka.security_protocol = 'SASL_SSL',
     kafka.sasl_mechanism = 'PLAIN',
-    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
-    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
-    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_ca_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_certificate_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_key_pem = '-----BEGIN ENCRYPTED PRIVATE KEY-----
+...
+-----END ENCRYPTED PRIVATE KEY-----',
     kafka.ssl_key_password = 'secret';
 
 CREATE TABLE queue (
@@ -518,7 +536,7 @@ SETTINGS
     kafka_sasl_password = 'password';
 ```
 
-The same extended settings in an XML-defined collection:
+The same extended settings in an XML-defined collection, which can refer to the files instead (the files must exist on every ClickHouse server that runs consumers for the table):
 
 ```xml
 <clickhouse>
@@ -643,6 +661,24 @@ Example, using [named collections](/concepts/features/configuration/server-confi
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+
+The following table settings control how often the consumed data is written to the materialized views:
+
+- `kafka_max_block_size` — a block is flushed as soon as it has this many rows. Default: `max_insert_block_size` divided by `kafka_num_consumers`.
+- `kafka_flush_interval_ms` — a block is flushed after this time even if it is not full. Default: [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms) (7500 ms). Decrease it to reduce the delay between producing a message and seeing it in the target table.
+- `kafka_consumer_reschedule_ms` — when there are no new messages, the engine waits this long before polling again. Default: `500` ms.
+
+These are settings of the Kafka table, set in its `SETTINGS` clause. They cannot be set in the `<kafka>` section of the server configuration file: every key there is passed to librdkafka as a property (see [Configuration](#configuration)), so for example `<flush_interval_ms>` is not a ClickHouse setting there.
+
+```sql
+CREATE TABLE queue (timestamp UInt64, level String, message String)
+ENGINE = Kafka
+SETTINGS kafka_broker_list = 'localhost:9092',
+         kafka_topic_list = 'topic',
+         kafka_group_name = 'group1',
+         kafka_format = 'JSONEachRow',
+         kafka_flush_interval_ms = 1000;
+```
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 

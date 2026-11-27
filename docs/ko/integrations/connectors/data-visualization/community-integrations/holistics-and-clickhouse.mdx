@@ -16,7 +16,7 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
 ClickHouse를 Holistics에 연결하면 팀은 코드 기반 시맨틱 레이어를 바탕으로 빠르고 안정적인 AI 기반 셀프서비스 환경을 활용할 수 있습니다. 비즈니스 사용자는 드래그 앤 드롭과 AI를 통해 데이터를 자신 있게 탐색할 수 있으며, 메트릭 정의는 Git에서 재사용 가능하고 조합 가능하며 버전 관리되도록 유지할 수 있습니다.
 
 <div id="prerequisites">
-  ## 사전 요구사항
+  ## 사전 요구사항 {#prerequisites}
 </div>
 
 연결하기 전에 다음 사항을 확인하십시오:
@@ -25,9 +25,7 @@ ClickHouse를 Holistics에 연결하면 팀은 코드 기반 시맨틱 레이어
 * **네트워크 액세스:** [Holistics의 IP 주소](https://docs.holistics.io/docs/connect/ip-whitelisting)에서 ClickHouse 서버에 접속할 수 있어야 합니다.
 * **데이터베이스 사용자:** 관리자 계정을 사용하는 대신 Holistics 전용 읽기 전용 사용자를 생성하십시오.
 
-<div id="recommended-privileges">
-  ### 권장 권한
-</div>
+### 권장 권한 {#recommended-privileges}
 
 전용 사용자는 쿼리할 테이블과 `system` 테이블(스키마 감지용)에 대한 `SELECT` 권한이 필요합니다.
 
@@ -46,21 +44,17 @@ GRANT SELECT ON system.* TO holistics_user;
     | **매개변수**          | **설명**                                                                          |
     | ----------------- | ------------------------------------------------------------------------------- |
     | **Host**          | ClickHouse 서버의 호스트명(예: `mz322.eu-central-1.aws.clickhouse.cloud`)입니다.           |
-    | **Port**          | ClickHouse Cloud(SSL/TLS)의 경우 **8443**입니다. SSL이 없는 자가 관리형 인스턴스의 경우 **8123**입니다. |
+    | **포트**          | ClickHouse Cloud(SSL/TLS)의 경우 **8443**입니다. SSL이 없는 자가 관리형 인스턴스의 경우 **8123**입니다. |
     | **Database Name** | 연결할 데이터베이스의 이름입니다. 기본값은 일반적으로 `default`입니다.                                     |
-    | **Username**      | 데이터베이스 사용자 이름입니다. 기본값은 `default`입니다.                                            |
-    | **Password**      | 데이터베이스 사용자의 비밀번호입니다.                                                            |
+    | **사용자 이름**      | 데이터베이스 사용자 이름입니다. 기본값은 `default`입니다.                                            |
+    | **비밀번호**      | 데이터베이스 사용자의 비밀번호입니다.                                                            |
 
     ClickHouse Cloud 콘솔에서 **Connect** 버튼을 클릭한 다음 **HTTPS**를 선택하면 이 정보를 확인할 수 있습니다.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![ClickHouse Cloud 콘솔에서 Connect 버튼 위치](/images/integrations/data-visualization/holistics_01.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickHouse Cloud 콘솔에서 Connect 버튼 위치](/images/integrations/data-visualization/holistics_01.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -70,41 +64,29 @@ GRANT SELECT ON system.* TO holistics_user;
     1. **직접 연결(권장):** 방화벽 또는 ClickHouse Cloud IP 액세스 목록에 Holistics&#39; IP 주소를 허용 목록에 추가하십시오. IP 목록은 [IP Whitelisting guide](https://docs.holistics.io/docs/connect/ip-whitelisting)에서 확인할 수 있습니다.
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![ClickHouse Cloud에서 IP 허용 목록 추가 예시](/images/integrations/data-visualization/holistics_02.webp)
-
-       </Frame>
-
+         <Frame>
+           ![ClickHouse Cloud에서 IP 허용 목록 추가 예시](/images/integrations/data-visualization/holistics_02.webp)
+         </Frame>
        </div>
 
     2. **Reverse SSH Tunnel:** 데이터베이스가 비공개 네트워크(VPC)에 있어 공개적으로 노출할 수 없는 경우 [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel)을 사용하십시오.
   </Step>
 
   <Step title="Holistics에 데이터 소스 추가" id="step-3-add-data-source-in-holistics">
-    1. Holistics에서 **Settings → Data Sources**로 이동하십시오.
+    1. Holistics에서 **Settings → 데이터 소스(Data Sources)**로 이동하십시오.
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Holistics 설정에서 Data Sources로 이동](/images/integrations/data-visualization/holistics_03.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Holistics 설정에서 데이터 소스(Data Sources)로 이동](/images/integrations/data-visualization/holistics_03.webp)
+         </Frame>
        </div>
 
-    2. **New Data Source**를 클릭하고 **ClickHouse**를 선택하십시오.
+    2. **New 데이터 소스**를 클릭하고 **ClickHouse**를 선택하십시오.
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![새 데이터 소스 목록에서 ClickHouse 선택](/images/integrations/data-visualization/holistics_04.webp)
-
-       </Frame>
-
+         <Frame>
+           ![새 데이터 소스 목록에서 ClickHouse 선택](/images/integrations/data-visualization/holistics_04.webp)
+         </Frame>
        </div>
 
     3. 1단계에서 수집한 정보로 양식을 작성하십시오.
@@ -112,30 +94,22 @@ GRANT SELECT ON system.* TO holistics_user;
        | **필드**            | **설정**                                                   |
        | ----------------- | -------------------------------------------------------- |
        | **Host**          | ClickHouse 호스트명                                          |
-       | **Port**          | `8443` (또는 `8123`)                                       |
+       | **포트**          | `8443` (또는 `8123`)                                       |
        | **Require SSL**   | 8443 포트를 사용하는 경우 **ON**으로 설정합니다(ClickHouse Cloud에서는 필수). |
        | **Database Name** | `default` (또는 사용 중인 특정 DB)                               |
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Holistics에서 ClickHouse 연결 정보 입력](/images/integrations/data-visualization/holistics_05.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Holistics에서 ClickHouse 연결 정보 입력](/images/integrations/data-visualization/holistics_05.webp)
+         </Frame>
        </div>
 
-    4. **Test Connection**을 클릭하십시오.
+    4. **연결 테스트**를 클릭하십시오.
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Holistics에서 ClickHouse 연결 테스트 성공](/images/integrations/data-visualization/holistics_06.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Holistics에서 ClickHouse 연결 테스트 성공](/images/integrations/data-visualization/holistics_06.webp)
+         </Frame>
        </div>
 
        * **성공:** **Save**를 클릭하십시오.
@@ -144,7 +118,7 @@ GRANT SELECT ON system.* TO holistics_user;
 </Steps>
 
 <div id="known-limitations">
-  ## 알려진 제한 사항
+  ## 알려진 제한 사항 {#known-limitations}
 </div>
 
 Holistics는 ClickHouse의 대부분의 표준 SQL 기능을 지원하지만, 다음과 같은 예외가 있습니다:

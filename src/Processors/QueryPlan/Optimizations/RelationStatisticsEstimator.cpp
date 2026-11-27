@@ -23,9 +23,12 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/StorageValues.h>
+#include <Storages/IStorage.h>
 #include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -506,13 +509,30 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
         ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
         if (!analyzed_result)
         {
-            /// Range analysis normally enforces throwing read limits and memoizes its result.
-            /// At this stage, however, later planning may make the executed read exempt from those
-            /// limits. In that case use an estimation-only analysis; execution will analyze again
-            /// after its final read mode is known.
-            analyzed_result = reading->hasThrowingReadRowLimit()
-                ? reading->selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/true)
-                : reading->selectRangesToRead();
+            /// A read of the probe plan of automatic parallel replicas has no index conditions, and takes the
+            /// analysis of its single-node read if that plan is chosen. Estimate from that analysis as well, or from
+            /// the one the single-node estimate ran under a throwing read limit, which it does not keep as the read's,
+            /// so that the probe chooses what the single-node plan chose. Without either, leave the read without an
+            /// estimate rather than analyze it here, which would repeat the work and prune nothing.
+            if (options.find_single_node_read && *options.find_single_node_read)
+            {
+                if (const auto * single_node_read = (*options.find_single_node_read)(*reading))
+                {
+                    analyzed_result = single_node_read->getAnalyzedResult();
+                    if (!analyzed_result)
+                        analyzed_result = single_node_read->getAnalyzedResultForEstimation();
+                }
+            }
+            else
+            {
+                /// Range analysis normally enforces throwing read limits and memoizes its result.
+                /// At this stage, however, later planning may make the executed read exempt from those
+                /// limits. In that case use an estimation-only analysis; execution will analyze again
+                /// after its final read mode is known.
+                analyzed_result = reading->hasThrowingReadRowLimit()
+                    ? reading->selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/true)
+                    : reading->selectRangesToRead();
+            }
         }
 
         /// An exact empty range selection proves that the relation is empty. Other empty
@@ -695,6 +715,28 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
         return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name, .source = RowEstimateSource::Statistics};
+    }
+
+    /// The block of a `StorageValues`, e.g. the block inserted into the source table of a materialized view.
+    /// The step applies no filter itself, so with a filter above it the row count is an upper bound.
+    if (const auto * reading = typeid_cast<const ReadFromStorageStep *>(step))
+    {
+        /// `totalRows` of another storage can lock what the pipe of this step has locked already, as `StorageJoin` does.
+        const auto * storage = typeid_cast<const StorageValues *>(reading->getStorage().get());
+        if (!storage)
+            return {};
+
+        if (auto total_rows = storage->totalRows(reading->getContext()))
+        {
+            const bool rows_exact = !filter && !mayStopReadingEarly(reading->getQueryInfo());
+            return RelationStats{
+                .estimated_rows = *total_rows,
+                .table_name = storage->getStorageID().getTableName(),
+                .imprecise_estimate = !rows_exact,
+                .rows_exact = rows_exact,
+                .source = RowEstimateSource::Statistics};
+        }
+        return {};
     }
 
     /// We cannot do typeid_cast<const ReadFromSystemOneStep *>(step)

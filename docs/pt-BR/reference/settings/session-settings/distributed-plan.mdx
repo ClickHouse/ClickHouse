@@ -20,12 +20,15 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 <ExperimentalBadge />
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+<SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "8"},{"label": "Nova configuração experimental."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Por padrão, escolhe o número de tarefas de leitura com base nas linhas a serem lidas e no número de workers."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "8"},{"label": "Nova configuração experimental."}]}]} />
 
-Número padrão de tarefas para leitura paralela em consulta distribuída. As tarefas são distribuídas entre as réplicas.
-Usada pelo planejador distribuído baseado em regras. O otimizador baseado em custo define o fan-out da leitura com base no custo estimado e não usa esta configuração.
+Número de tarefas para leitura paralela em consultas distribuídas. As tarefas são repartidas entre os workers.
+
+`0` define o número automaticamente: uma tarefa a cada `distributed_plan_min_rows_per_reader` linhas selecionadas pela leitura, com no mínimo uma e no máximo o número de workers.
+
+Usada pelo planejador distribuído baseado em regras. O otimizador baseado em custo define o fan-out de leitura com base no custo estimado e não usa esta configuração.
 
 ## distributed_plan_default_shuffle_join_bucket_count {#distributed_plan_default_shuffle_join_bucket_count}
 
@@ -145,6 +148,17 @@ Quando `send_logs_level` encaminha os logs das tarefas de worker sem estado para
 
 Número máximo de linhas para usar broadcast join em vez de shuffle join no plano de consulta distribuída.
 Uma heurística para o planejador distribuído baseado em regras. Quando o otimizador baseado em custo está habilitado, a escolha entre broadcast e shuffle é feita com base no custo estimado, e esta configuração não tem efeito.
+
+## distributed_plan_min_rows_per_reader {#distributed_plan_min_rows_per_reader}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1000000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1000000"},{"label": "Nova configuração experimental."}]}]} />
+
+Número mínimo de linhas por tarefa de leitura quando `distributed_plan_default_reader_bucket_count` está definido como `0`.
+Usado pelo planejador distribuído baseado em regras.
 
 ## distributed_plan_optimize_exchanges {#distributed_plan_optimize_exchanges}
 

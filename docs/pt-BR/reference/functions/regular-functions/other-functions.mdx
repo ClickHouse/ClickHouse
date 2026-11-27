@@ -27,6 +27,8 @@ import { DeprecatedBadge } from "/snippets/pt-BR/components/DeprecatedBadge/Depr
 Introduzido em: v20.1.0
 
 Retorna o nome de domínio totalmente qualificado do servidor ClickHouse.
+Se a função for executada no contexto de uma tabela distribuída, ela gera uma coluna normal com valores específicos de cada shard.
+Caso contrário, produz um valor constante.
 
 <Note>
   Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
@@ -6361,11 +6363,11 @@ uniqThetaIntersect(uniqThetaSketch,uniqThetaSketch)
 
 **Argumentos**
 
-* `uniqThetaSketch` — objeto uniqThetaSketch. [`Tuple`](/pt-BR/reference/data-types/tuple) ou [`Array`](/pt-BR/reference/data-types/array) ou [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`String`](/pt-BR/reference/data-types/string) ou [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal`](/pt-BR/reference/data-types/decimal)
+* `uniqThetaSketch` — objeto uniqThetaSketch. [`AggregateFunction(uniqTheta, T)`](/pt-BR/reference/data-types/aggregatefunction). [`AggregateFunction(uniqTheta, T)`](/pt-BR/reference/data-types/aggregatefunction)
 
 **Valor retornado**
 
-Um novo uniqThetaSketch contendo o resultado da interseção. [`UInt64`](/pt-BR/reference/data-types/int-uint)
+Um novo uniqThetaSketch contendo o resultado da interseção. [`AggregateFunction(uniqTheta, T)`](/pt-BR/reference/data-types/aggregatefunction)
 
 **Exemplos**
 
@@ -6397,11 +6399,11 @@ uniqThetaNot(uniqThetaSketch,uniqThetaSketch)
 
 **Argumentos**
 
-* `uniqThetaSketch` — objeto do tipo uniqThetaSketch. [`Tuple`](/pt-BR/reference/data-types/tuple) ou [`Array`](/pt-BR/reference/data-types/array) ou [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`String`](/pt-BR/reference/data-types/string) ou [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal`](/pt-BR/reference/data-types/decimal)
+* `uniqThetaSketch` — objeto uniqThetaSketch. [`AggregateFunction(uniqTheta, T)`](/pt-BR/reference/data-types/aggregatefunction). [`AggregateFunction(uniqTheta, T)`](/pt-BR/reference/data-types/aggregatefunction)
 
 **Valor retornado**
 
-Retorna um novo uniqThetaSketch contendo o resultado de a&#95;not&#95;b. [`UInt64`](/pt-BR/reference/data-types/int-uint)
+Retorna um novo uniqThetaSketch contendo o resultado de a&#95;not&#95;b. [`AggregateFunction(uniqTheta, T)`](/pt-BR/reference/data-types/aggregatefunction)
 
 **Exemplos**
 
@@ -6433,11 +6435,11 @@ uniqThetaUnion(uniqThetaSketch,uniqThetaSketch)
 
 **Argumentos**
 
-* `uniqThetaSketch` — objeto uniqThetaSketch. [`Tuple`](/pt-BR/reference/data-types/tuple) ou [`Array`](/pt-BR/reference/data-types/array) ou [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`String`](/pt-BR/reference/data-types/string) ou [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal`](/pt-BR/reference/data-types/decimal)
+* `uniqThetaSketch` — objeto uniqThetaSketch. [`AggregateFunction(uniqTheta, T)`](/pt-BR/reference/data-types/aggregatefunction). [`AggregateFunction(uniqTheta, T)`](/pt-BR/reference/data-types/aggregatefunction)
 
 **Valor retornado**
 
-Retorna um novo uniqThetaSketch com o resultado da união. [`UInt64`](/pt-BR/reference/data-types/int-uint)
+Retorna um novo uniqThetaSketch com o resultado da união. [`AggregateFunction(uniqTheta, T)`](/pt-BR/reference/data-types/aggregatefunction)
 
 **Exemplos**
 

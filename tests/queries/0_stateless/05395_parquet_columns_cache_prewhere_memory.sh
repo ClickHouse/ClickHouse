@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel
+# Random settings limits: input_format_parquet_max_block_size=(65409, None); input_format_parquet_prefer_block_bytes=(16744704, 16744704)
 # no-fasttest: Parquet support is not built in fast-test images
 # no-parallel: the columns cache is system-wide, and the test drops it to reset its admission control
 

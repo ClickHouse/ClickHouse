@@ -1,4 +1,6 @@
 #include <Columns/ColumnTuple.h>
+#include <array>
+#include <string_view>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeInterval.h>
@@ -71,19 +73,31 @@ struct L2SquaredLabel { static constexpr auto name = "2Squared"; };
 struct LinfLabel { static constexpr auto name = "inf"; };
 struct LpLabel { static constexpr auto name = "p"; };
 
-constexpr std::string makeFirstLetterUppercase(const std::string & str)
+/// "tuple" + `Name` with the first letter uppercased + `suffix`, built at compile time so that the function name is a
+/// constant rather than a `std::string` with a static initializer per instantiation.
+template <class FuncName, size_t suffix_size>
+constexpr auto makeTupleFunctionName(const char (&suffix)[suffix_size])
 {
-    std::string res(str);
-    res[0] += 'A' - 'a';
+    constexpr std::string_view base = FuncName::name;
+    constexpr std::string_view prefix = "tuple";
+    std::array<char, prefix.size() + base.size() + suffix_size> res{};
+    size_t pos = 0;
+    for (char c : prefix)
+        res[pos++] = c;
+    for (size_t i = 0; i < base.size(); ++i)
+        res[pos++] = (i == 0 && base[i] >= 'a' && base[i] <= 'z') ? static_cast<char>(base[i] - 'a' + 'A') : base[i];
+    for (size_t i = 0; i < suffix_size; ++i) /// including the terminating zero
+        res[pos++] = suffix[i];
     return res;
 }
+
 
 template <class FuncName>
 class FunctionTupleOperator final : public ITupleFunction
 {
 public:
-    /// constexpr cannot be used because std::string allocations cannot persist past constant evaluation
-    static inline auto name = "tuple" + makeFirstLetterUppercase(FuncName::name);
+    static constexpr auto name_storage = makeTupleFunctionName<FuncName>("");
+    static constexpr const char * name = name_storage.data();
 
     explicit FunctionTupleOperator(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleOperator>(context_); }
@@ -293,8 +307,8 @@ template <class FuncName>
 class FunctionTupleOperatorByNumber final : public ITupleFunction
 {
 public:
-    /// constexpr cannot be used because std::string allocations cannot persist past constant evaluation
-    static inline auto name = "tuple" + makeFirstLetterUppercase(FuncName::name) + "ByNumber";
+    static constexpr auto name_storage = makeTupleFunctionName<FuncName>("ByNumber");
+    static constexpr const char * name = name_storage.data();
 
     explicit FunctionTupleOperatorByNumber(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleOperatorByNumber>(context_); }

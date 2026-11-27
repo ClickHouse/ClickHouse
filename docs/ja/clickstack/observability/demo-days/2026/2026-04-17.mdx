@@ -1,0 +1,92 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-04-17
+title: 'デモデイズ - 2026-04-17'
+sidebarTitle: '2026-04-17'
+description: '2026-04-17 の ClickStack デモデー'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+---
+
+## ログとトレースの要約 {#summarize-logs-and-traces}
+
+*デモ担当者: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/TWsFyWt-tD8" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+HyperDX に、ログ、トレース、パターンのいずれでも利用できる AI 要約機能が追加されました。新しい要約ボタンを使うと、テレメトリデータが読みやすい要約にまとめられます。イベントを 1 件ずつ手作業で確認しなくても、一連のイベントで何が起きたのかをすばやく把握できます。
+
+このアーキテクチャは Anthropic (または同様の) API と連携できるよう設計されています。また、フォローアップの会話にも対応する構成になっており、最初の要約の後もユーザーが続けて質問できます。
+
+**関連 プルリクエスト:** [#2108](https://github.com/hyperdxio/hyperdx/pull/2108) feat: AI summarize with extensible subjects, trace context, and security hardening, [#2100](https://github.com/hyperdxio/hyperdx/pull/2100) Implement real AI summarize callbacks with smart tone mode
+
+## イベントデルタのヒートマップをチャートビルダーに統合 {#event-deltas-heatmap-into-chart-builder}
+
+*デモ担当者: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BLVhIQjocwE" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+イベントデルタのヒートマップ可視化をメインのチャートビルダーへ移行する作業が進んでおり、HyperDX の他の可視化と同じく標準のチャートタイプとして利用できるようになります。これまでは専用のビューでしか使えませんでしたが、今後は Chart Explorer 内で他のチャートタイプと並んで利用できます。
+
+完了後は、イベントデルタのヒートマップをダッシュボードタイルに直接配置できるようになり、他のチャートと同様にフィールドのフィルタリングや時間範囲の指定も行えます。この作業は現在進行中です。
+
+**関連プルリクエスト:** [#2107](https://github.com/hyperdxio/hyperdx/pull/2107) feat: Wire heatmap chart into dashboard editor and tile rendering, [#2102](https://github.com/hyperdxio/hyperdx/pull/2102) Implement reusable Heatmap chart with Event Deltas support
+
+## スキーマ改善のためのベンチマーク測定 {#benchmarking-for-schema-improvements}
+
+*デモ担当者: [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/_B7TmIiXZyM" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Aaron が、HyperDX で更新されたデフォルトの OpenTelemetry ログスキーマのベンチマーク結果を解説します。主な変更点は、レガシーの `timestamp_time` カラム (秒単位の粒度を持つ 32 ビットの Unix タイムスタンプ) を削除し、ナノ秒精度を備えた `timestamp` のみを使用するようにしたことです。これにより、スキーマのカラムが 1 つ減ります。幅広いクエリのベンチマークにおいて、更新後のスキーマはほぼすべてのケースで旧スキーマと同等以上のパフォーマンスを示しました。
+
+最終的なスキーマには読み取り順序の最適化も含まれており、選択性の高いクエリで顕著な効果が得られています。比較的出現頻度の低い map の値の検索はベースラインと比べて約 2 倍高速になり、出現頻度の高い値のルックアップではさらに大きく改善しました。挿入パフォーマンスはわずかに上昇していますが (維持すべきカラムが増えるため) 、クエリパフォーマンスは全体的に同等または向上しており、迷わず適用できるアップグレードといえます。
+
+**関連 プルリクエスト:** [#2125](https://github.com/hyperdxio/hyperdx/pull/2125) feat: optimized default otel-logs schema
+
+## 自動補完の改善 {#improvements-to-autocomplete}
+
+*デモ担当者: [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/8zDZx49uYQo" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+HyperDX の自動補完が大幅に刷新され、はるかに高いカーディナリティへの対応と値の高速な読み込みが可能になります。新しい実装はロールアップテーブル (キー・バリューのペアを 15 分ごとの時間バケットで事前集約する `AggregatingMergeTrees`) を基盤としており、キー入力のたびに生データにクエリを実行する代わりに、事前計算済みのはるかに小さなデータセットから読み取ります。2億3,000万行のステージングインスタンスを対象としたライブデモでは、`hostname` のような high-cardinality なフィールドでも、自動補完は目立った遅延なく素早く値を読み込みました。
+
+このシステムは、キーのみのロールアップ (すべてのキーを返すものの値は返さず、カーディナリティによるオーバーヘッドを抑える方式) と、完全なキー・バリューのロールアップの両方をサポートしています。キーのロールアップのみが存在する場合、値のルックアップステップでは既存の値フェッチ戦略にフォールバックします。ロールアップテーブルがまったく検出されない場合も、現在の動作に支障なくフォールバックします。また Aaron は、値のロールアップ対象とするキーを制御する allow-list の UI が将来追加されれば、特に高カーディナリティのデータを扱うお客様にとって有用だろうと述べています。
+
+**関連 プルリクエスト:** [#2128](https://github.com/hyperdxio/hyperdx/pull/2128) feat: fast and full autocomplete, [#2127](https://github.com/hyperdxio/hyperdx/pull/2127) feat: better autocomplete
+
+## SQL によるアラート機能の改善 {#improvements-to-alerting-with-sql}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BOk-LC0y2no" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+先週追加された生のSQL による折れ線チャートおよび棒グラフ向けのアラートに続き、HyperDX では生のSQL による数値チャートに対するアラートもサポートされるようになりました。また、アラート設定時の時間フィルタのパラメータが必須ではなくなりました。省略すると警告が表示されますが、時間次元を一切含まないクエリも正式に有効なクエリとして扱われます。これにより、ClickHouse クラスター数が期待値と一致するかどうかの確認など、時間によって変化しない設定値やシステムメトリクスに対するアラートを簡単に設定できます。
+
+さらに、新しいしきい値の種類として not-equals、is-above、at-most、between、outside が追加されました。単純な「より大きい」比較だけでなく、より柔軟にアラート条件を表現できるようになります。加えて、アラート履歴がタイルエディタ内に直接表示されるようになりました。発火中のアラートが特定のダッシュボードタイルに紐づいている場合、ユーザーはダッシュボードを離れることなく、履歴全体の確認、トリガー要因の把握、アラートの確認応答やサイレンスを行えます。
+
+**関連 プルリクエスト:** [#2073](https://github.com/hyperdxio/hyperdx/pull/2073) feat: Implement alerting for Raw SQL-based dashboard tiles, [#2114](https://github.com/hyperdxio/hyperdx/pull/2114) feat: Support alerts on Raw SQL Number Charts, [#2122](https://github.com/hyperdxio/hyperdx/pull/2122) feat: Add additional alert threshold types, [#2130](https://github.com/hyperdxio/hyperdx/pull/2130) feat: Add between and not-between alert thresholds, [#2123](https://github.com/hyperdxio/hyperdx/pull/2123) feat: Add alert history + ack to alert editor
+
+## アラート実行中のエラー {#errors-during-alert-execution}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/b3G8kFiQiUg" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+アラートの実行に失敗した場合、HyperDX はそのエラーを通知なしに破棄するのではなく、UI 上に直接表示するようになりました。これまでは、アラート履歴に原因不明のギャップが生じることがあり、エラーメッセージも表示されず、何が問題だったのかをデバッグする手段もありませんでした。現在では、無効なクエリ、Webhook の配信失敗、Webhook 設定の欠落や誤りなど、失敗の種類ごとに異なるエラーアイコンがインラインで表示されます。
+
+エラーアイコンをクリックすると、問題の診断と解決に必要な詳細情報が表示されます。そのため、サーバーログを調べたりサポートに問い合わせたりしなくても、設定に誤りのあるアラートを修正できます。目指しているのは、アラートの失敗にユーザー自身がセルフサービスで対処できるようにすることです。エラーを確認し、原因を理解し、修正する、という流れです。
+
+**関連するプルリクエスト:** [#2132](https://github.com/hyperdxio/hyperdx/pull/2132) feat: Show alert execution errors in the UI, [#2136](https://github.com/hyperdxio/hyperdx/pull/2136) fix: Hide potentially-sensitive alert errors

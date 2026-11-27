@@ -138,7 +138,7 @@ SELECT extractAllGroupsVertical(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 Introducido en: v26.7.0
 
-Divide el texto en n-gramas usando la misma tokenización que un Diccionario Naive Bayes (el layout [`NAIVE_BAYES`](/es/reference/statements/create/dictionary/layouts/naive-bayes)): modo `byte`, `codepoint` o `token`, con padding de límites opcional. Úselo para crear los datos de entrenamiento preagregados `(ngram, class_id, count)` que consume ese Diccionario, de modo que los n-gramas de entrenamiento coincidan exactamente con lo que [`naiveBayesClassifier`](/es/reference/functions/regular-functions/machine-learning-functions#naivebayesclassifier) produce durante la consulta.
+Divide el texto en n-gramas usando la misma tokenización que un Diccionario Naive Bayes (el layout [`NAIVE_BAYES`](/es/reference/statements/create/dictionary/layouts/naive-bayes)): modo `byte`, `codepoint` o `token`, con relleno de límites opcional. Úselo para crear los datos de entrenamiento preagregados `(ngram, class_id, count)` que consume ese Diccionario, de modo que los n-gramas de entrenamiento coincidan exactamente con lo que [`naiveBayesClassifier`](/es/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifier) produce durante la consulta.
 
 **Sintaxis**
 
@@ -170,7 +170,7 @@ SELECT naiveBayesNgrams('the cat sat', 2, 'token');
 ['the cat','cat sat']
 ```
 
-**Bigramas de tokens con padding en los bordes**
+**Bigramas de tokens con relleno de límites**
 
 ```sql title=Query
 SELECT naiveBayesNgrams('cat', 2, 'token', '<s>', '</s>');
@@ -180,7 +180,7 @@ SELECT naiveBayesNgrams('cat', 2, 'token', '<s>', '</s>');
 ['<s> cat','cat </s>']
 ```
 
-**Bigramas de bytes con relleno en los extremos (resultado mostrado en hexadecimal)**
+**Bigramas de bytes con relleno de límites (resultado mostrado en hexadecimal)**
 
 ```sql title=Query
 SELECT arrayMap(x -> hex(x), naiveBayesNgrams('xy', 2, 'byte', '0x01', '0xFF'));
@@ -190,7 +190,7 @@ SELECT arrayMap(x -> hex(x), naiveBayesNgrams('xy', 2, 'byte', '0x01', '0xFF'));
 ['0178','7879','79FF']
 ```
 
-**Bigramas de puntos de código con relleno en los límites (resultado mostrado en hexadecimal)**
+**Bigramas de puntos de código con relleno de límites (resultado mostrado en hexadecimal)**
 
 ```sql title=Query
 SELECT arrayMap(x -> hex(x), naiveBayesNgrams('ab', 2, 'codepoint', '0x10FFFE', '0x10FFFF'));
@@ -424,7 +424,7 @@ Pueden seleccionarse subcadenas vacías cuando:
 * la cadena original está vacía mientras que la expresión regular no lo está.
 
 <Note>
-  La configuración [`splitby_max_substrings_includes_remaining_string`](/es/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (valor predeterminado: `0`) controla si la cadena restante se incluye en el último elemento del array de resultados cuando el argumento `max_substrings > 0`.
+  La configuración [`splitby_max_substrings_includes_remaining_string`](/es/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (valor predeterminado: `0`) controla si la cadena restante se incluye en el último elemento del array resultante cuando el argumento `max_substrings > 0`.
 </Note>
 
 **Sintaxis**

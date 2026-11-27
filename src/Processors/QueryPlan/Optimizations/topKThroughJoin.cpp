@@ -22,6 +22,7 @@
 #include <base/scope_guard.h>
 
 #include <algorithm>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -388,9 +389,9 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         /// excludes, because they are created only once. So drop the child plans this probe creates; they are created
         /// again when they are needed. The probe asks a superset of the tables the second pass sees, so its verdict
         /// stays conservative.
-        std::vector<ReadFromMerge *> merges_without_child_plans;
+        VectorWithMemoryTracking<ReadFromMerge *> merges_without_child_plans;
         {
-            std::vector<QueryPlan::Node *> stack{preserved_input_node};
+            VectorWithMemoryTracking<QueryPlan::Node *> stack{preserved_input_node};
             while (!stack.empty())
             {
                 auto * current = stack.back();

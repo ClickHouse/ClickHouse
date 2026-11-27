@@ -4,6 +4,7 @@
 #include <Compression/registerCompressionCodecs.h>
 #include <DataTypes/IDataType.h>
 #include <base/unaligned.h>
+#include <base/sanitizer_defs.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -78,8 +79,10 @@ void CompressionCodecDelta::updateHash(SipHash & hash) const
 namespace
 {
 
+/// Delta coding is modular arithmetic by definition: the difference of two values wraps around,
+/// and the decoder recovers the original value by wrapping back.
 template <typename T>
-void compressDataForType(const char * source, UInt32 source_size, char * dest)
+void NO_SANITIZE_UNSIGNED_OVERFLOW compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
     if (source_size % sizeof(T) != 0)
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with Delta codec, data size {} is not aligned to {}", source_size, sizeof(T));
@@ -160,6 +163,7 @@ T decompressBlocks(const char * source, char * dest, size_t blocks)
 #endif
 
 template <typename T>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 UInt32 decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
 {
     if (source_size % sizeof(T) != 0)

@@ -16,6 +16,7 @@
 #include <Databases/DataLake/StaticStorageCredentials.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBuffer.h>
@@ -241,6 +242,23 @@ DataLake::TableNameFilter toCatalogTableNameFilter(const TablesFilter & tables_f
             break;
     }
     return filter;
+}
+
+/// Readable listed tables kept by `keep_table_name`, each once: a catalog can list a table more than once.
+VectorWithMemoryTracking<String> getVisibleTableNames(const DataLake::CatalogTables & catalog_tables, const IDatabase::FilterByNameFunction & keep_table_name)
+{
+    VectorWithMemoryTracking<String> names;
+    UnorderedSetWithMemoryTracking<std::string_view> seen;
+    for (const auto & catalog_table : catalog_tables)
+    {
+        if (!catalog_table.is_readable)
+            continue;
+        if (keep_table_name && !keep_table_name(catalog_table.name))
+            continue;
+        if (seen.insert(catalog_table.name).second)
+            names.push_back(catalog_table.name);
+    }
+    return names;
 }
 
 }
@@ -1512,7 +1530,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
             /// because this table is actually stateless like a table function.
             /* is_table_function */true,
             getFormatSettings(context_copy),
-            getCatalog());
+            catalog);
 
         if (context_->hasQueryContext() && context_->getSettingsRef()[Setting::log_queries])
             context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, storage_cluster->getName());
@@ -1540,7 +1558,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         /* comment */"",
         getFormatSettings(context_copy),
         LoadingStrictnessLevel::CREATE,
-        getCatalog(),
+        catalog,
         /* if_not_exists*/true,
         /* is_datalake_query*/true,
         distributed_processing,
@@ -1655,17 +1673,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
     /// and apply the name filter once, matching getLightweightTablesIterator (SHOW TABLES).
     /// The catalog listing is scoped by namespace at best, so drop the names the query cannot
     /// ask for here too - each surviving name costs a per-table metadata fetch below.
-    const auto keep_table_name = combineFilters(filter_by_table_name, tables_filter);
-
-    DB::Names iceberg_tables;
-    for (const auto & catalog_table : catalog_tables)
-    {
-        if (!catalog_table.is_readable)
-            continue;
-        if (keep_table_name && !keep_table_name(catalog_table.name))
-            continue;
-        iceberg_tables.push_back(catalog_table.name);
-    }
+    const auto iceberg_tables = getVisibleTableNames(catalog_tables, combineFilters(filter_by_table_name, tables_filter));
 
     auto & pool = Context::getGlobalContextInstance()->getIcebergCatalogThreadpool();
 
@@ -1748,9 +1756,6 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
     size_t future_index = 0;
     for (const auto & table_name : iceberg_tables)
     {
-        if (filter_by_table_name && !filter_by_table_name(table_name))
-            continue;
-
         /// futures[future_index].get() rethrows for the general-purpose path when metadata
         /// access is required (see the per-table catch above), preserving the original
         /// abort-on-error contract for consumers that dereference the storage unconditionally.
@@ -1807,18 +1812,8 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
         LOG_DEBUG(log, "Cannot list the tables of the DataLakeCatalog database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 
-    const auto keep_table_name = combineFilters(filter_by_table_name, tables_filter);
-
-    for (const auto & catalog_table : catalog_tables)
-    {
-        /// Skip tables ClickHouse cannot read, so SHOW TABLES stays consistent with the
-        /// full getTablesIterator path without a per-table metadata fetch.
-        if (!catalog_table.is_readable)
-            continue;
-        if (keep_table_name && !keep_table_name(catalog_table.name))
-            continue;
-        result.emplace_back(catalog_table.name);
-    }
+    for (auto & name : getVisibleTableNames(catalog_tables, combineFilters(filter_by_table_name, tables_filter)))
+        result.emplace_back(std::move(name));
 
     ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, result.size());
     return result;
@@ -2085,17 +2080,26 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         const auto * database_engine_define = args.create_query.storage;
         const auto & database_engine_name = args.engine_name;
 
+        /// A catalog of databases replicated through a coordination service replays the stored definition as a
+        /// `CREATE` query marked with `isRecoveryFromStoredMetadata`. It is an existing definition as well: it was
+        /// already validated where it was created, so the validations of a fresh `CREATE` below are skipped for it
+        /// just as for `ATTACH`, and an unreachable or unauthorized catalog (for example, a deleted IAM role of an
+        /// S3 Tables catalog) must not abort the whole replay and block startup.
+        const bool is_recovery_from_stored_metadata = args.context->isRecoveryFromStoredMetadata();
+        const bool is_stored_definition = args.create_query.attach || is_recovery_from_stored_metadata;
+
         DatabaseDataLakeSettings database_settings;
         if (database_engine_define->settings)
-            database_settings.loadFromQuery(*database_engine_define, args.create_query.attach);
+            database_settings.loadFromQuery(*database_engine_define, is_stored_definition);
 
         std::string_view auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
-        /// Validate `auth_header` on CREATE only (matches the `allow_experimental_database_*`
-        /// gates below, which also self-skip on attach). An already-persisted database whose
+        /// Validate `auth_header` on a fresh CREATE only (matches the `allow_experimental_database_*`
+        /// gates below, which also self-skip for a stored definition). An already-persisted database whose
         /// `auth_header` was accepted by an older version must still attach at startup, so a
         /// single misconfigured database cannot block the server from starting. The malformed
-        /// header is then reported lazily on first use of the database.
-        if (!args.create_query.attach && !auth_header_str.empty())
+        /// header is then reported lazily on first use of the database, and a header forbidden by
+        /// `http_forbid_headers` is still never sent: `RestCatalog::validateAuthHeaders` rejects it first.
+        if (!is_stored_definition && !auth_header_str.empty())
         {
             /// Only headers with a valid `name: value` format are accepted.
             auto pos = auth_header_str.find(':');
@@ -2169,7 +2173,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
             case DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
             {
-                if (!args.create_query.attach
+                if (!is_stored_definition
                     && !args.context->getSettingsRef()[Setting::allow_database_iceberg])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2177,7 +2181,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_database_iceberg");
                 }
 
-                if (!args.create_query.attach && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_HORIZON)
+                if (!is_stored_definition && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_HORIZON)
                 {
                     const bool has_credential = !database_settings[DatabaseDataLakeSetting::catalog_credential].value.empty();
                     const bool has_auth_header = !database_settings[DatabaseDataLakeSetting::auth_header].value.empty();
@@ -2208,7 +2212,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     }
                 }
 
-                if (!args.create_query.attach && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
+                if (!is_stored_definition && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
                 {
                     /// Require exactly one auth method: a bearer token, a refresh token (needs a client id,
                     /// a secret only for confidential app registrations), or a client id + secret pair.
@@ -2265,7 +2269,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             }
             case DatabaseDataLakeCatalogType::GLUE:
             {
-                if (!args.create_query.attach
+                if (!is_stored_definition
                     && !args.context->getSettingsRef()[Setting::allow_database_glue_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2277,7 +2281,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             }
             case DatabaseDataLakeCatalogType::UNITY:
             {
-                if (!args.create_query.attach
+                if (!is_stored_definition
                     && !args.context->getSettingsRef()[Setting::allow_database_unity_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2289,7 +2293,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             }
             case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
             {
-                if (!args.create_query.attach
+                if (!is_stored_definition
                     && !args.context->getSettingsRef()[Setting::enable_database_hms_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2301,7 +2305,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             }
             case DatabaseDataLakeCatalogType::PAIMON_REST:
             {
-                if (!args.create_query.attach
+                if (!is_stored_definition
                     && !args.context->getSettingsRef()[Setting::enable_database_paimon_rest_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2313,7 +2317,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             }
             case DatabaseDataLakeCatalogType::S3_TABLES:
             {
-                if (!args.create_query.attach
+                if (!is_stored_definition
                     && !args.context->getSettingsRef()[Setting::allow_database_iceberg])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2337,7 +2341,9 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         /// loader's attach (server startup) as a metadata load so a now-restricted catalog is left unavailable
         /// instead of aborting startup. The loader flag, not `internal`, is the discriminator: wrappers such as
         /// `PARALLEL WITH` run user statements as internal ones, and a user `ATTACH DATABASE` stays fail-closed.
-        const bool is_loading_from_existing_metadata = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
+        /// A replay of a stored definition as `CREATE` (see `is_recovery_from_stored_metadata` above) counts as well.
+        const bool is_loading_from_existing_metadata
+            = (args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH) || is_recovery_from_stored_metadata;
 
         return std::make_shared<DatabaseDataLake>(
             args.database_name,
@@ -2352,7 +2358,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             /// definition. They shouldn't do network I/O: an unreachable or unauthorized catalog must not block them.
             /// Keyed on the attach and restore flags, not `internal`: a user `CREATE` wrapped in `PARALLEL WITH` or
             /// `EXECUTE AS` runs as an internal query and must still build the catalog eagerly.
-            /*is_existing_definition=*/args.create_query.attach || args.is_restore_from_backup);
+            /*is_existing_definition=*/is_stored_definition || args.is_restore_from_backup);
     };
     /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
     /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism
@@ -2361,7 +2367,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
     /// we need a function to check if the url is S3 or Azure.
     /// right now we assume it's a S3 url
     auto secret_arguments = s3DatabaseSecretArguments();
-    secret_arguments.secret_settings = DataLake::SETTINGS_TO_HIDE;
+    secret_arguments.secret_settings = DataLake::settingsToHide();
     factory.registerDatabase("DataLakeCatalog", create_fn, std::move(secret_arguments), {
         .supports_arguments = true,
         .supports_settings = true,
@@ -2412,7 +2418,7 @@ The following settings are supported:
 | `catalog_type`          | Type of catalog: `glue`, `unity` (Delta, or Delta and Iceberg with `use_unity_catalog_v2`), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, flat namespaces), `horizon` (Snowflake Horizon Iceberg REST) |
 | `warehouse`             | The warehouse/database name to use in the catalog.                                      |
 | `catalog_credential`    | Authentication credential for the catalog (e.g., API key or token)                      |
-| `use_unity_catalog_v2`  | For `catalog_type = 'unity'`: use the new implementation, which serves both Delta Lake and Iceberg tables. Default: `false`. Set it on `CREATE`, or change it for an existing database with `ALTER DATABASE ... MODIFY SETTING`. |
+| `use_unity_catalog_v2`  | For `catalog_type = 'unity'`: use the new implementation, which serves both Delta Lake and Iceberg tables. Default: `true`. Set it on `CREATE`, or change it for an existing database with `ALTER DATABASE ... MODIFY SETTING`. |
 | `auth_header`           | Custom HTTP header for authentication with the catalog service                          |
 | `auth_scope`            | OAuth2 scope for authentication (if using OAuth)                                        |
 | `storage_endpoint`      | Endpoint URL for the underlying storage                                                 |

@@ -12,11 +12,11 @@ import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTra
 <Info>
   **TL;DR**
 
-  Recopila y visualiza logs del sistema de EC2 en ClickStack con OpenTelemetry Collector y enriquecimiento automático de metadatos de EC2 (ID de instancia, región, AZ, tipo de instancia). Incluye un dataset de demostración y un dashboard preconfigurado.
+  Recopila y visualiza logs del sistema de EC2 en ClickStack con OpenTelemetry Collector y enriquecimiento automático de metadatos de EC2 (ID de instancia, región, AZ, tipo de instancia). Incluye un conjunto de datos de demostración y un dashboard preconfigurado.
 </Info>
 
 <div id="existing-ec2">
-  ## Integración con una instancia de EC2 existente
+  ## Integración con una instancia de EC2 existente {#existing-ec2}
 </div>
 
 Esta sección explica cómo instalar OpenTelemetry Collector en sus instancias de EC2 para recopilar logs del sistema y enviarlos a ClickStack con enriquecimiento automático de metadatos de EC2. Esta arquitectura distribuida está lista para producción y escala a varias instancias.
@@ -30,7 +30,7 @@ Esta sección explica cómo instalar OpenTelemetry Collector en sus instancias d
 Si desea probar la integración de logs de host de EC2 antes de configurar su instancia de producción, puede hacerlo con nuestra configuración preconfigurada y datos de muestra en la sección [&quot;Conjunto de datos de demostración&quot;](/es/clickstack/integration-examples/host-logs/ec2#demo-dataset).
 
 <div id="prerequisites">
-  ##### Requisitos previos
+  ##### Requisitos previos {#prerequisites}
 </div>
 
 * Instancia de ClickStack en ejecución (puede ser on-premise, en la nube o local)
@@ -276,8 +276,8 @@ Si desea probar la integración de logs de host de EC2 antes de configurar su in
     </Info>
   </Step>
 
-  <Step title="Verificación de logs en HyperDX" id="verifying-logs">
-    Una vez que el collector esté en ejecución, inicia sesión en HyperDX y verifica que los logs estén llegando con metadatos de EC2:
+  <Step title="Verificación de logs en la UI de ClickStack" id="verifying-logs">
+    Una vez que el collector esté en ejecución, inicia sesión en la UI de ClickStack y verifica que los logs estén llegando con metadatos de EC2:
 
     1. Ve a la vista de búsqueda
     2. Establece `source` en `Logs`
@@ -291,29 +291,21 @@ Si desea probar la integración de logs de host de EC2 antes de configurar su in
        * `cloud.availability_zone`
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Vista de búsqueda de logs de EC2](/images/clickstack/host-logs/ec2/search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Vista de búsqueda de logs de EC2](/images/clickstack/host-logs/ec2/search-view.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Detalle de log de EC2 con metadatos](/images/clickstack/host-logs/ec2/log-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Detalle de log de EC2 con metadatos](/images/clickstack/host-logs/ec2/log-view.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## Conjunto de datos de demostración
+  ## Conjunto de datos de demostración {#demo-dataset}
 </div>
 
 Para quienes quieran probar la integración de log de host de EC2 antes de configurar sus instancias de producción, proporcionamos un conjunto de datos de ejemplo con metadatos simulados de EC2.
@@ -418,43 +410,35 @@ Para quienes quieran probar la integración de log de host de EC2 antes de confi
       -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
       -v "$(pwd)/ec2-host-logs-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
       -v "$(pwd)/journal.log:/tmp/host-demo/journal.log:ro" \
-      docker.hyperdx.io/hyperdx/hyperdx-all-in-one:latest
+      clickhouse/clickstack-all-in-one:latest
     ```
   </Step>
 
-  <Step title="Verifica los logs en HyperDX" id="verify-demo-logs">
+  <Step title="Verifica los logs en la UI de ClickStack" id="verify-demo-logs">
     Una vez que el collector esté en ejecución:
 
-    1. Abre [HyperDX](http://localhost:8080/) e inicia sesión en tu cuenta (puede que primero tengas que crear una cuenta)
+    1. Abre la [UI de ClickStack](http://localhost:8080/) e inicia sesión en tu cuenta (puede que primero tengas que crear una cuenta)
     2. Ve a la vista de búsqueda y establece el source en `Logs`
     3. Establece el intervalo de tiempo en **2025-11-10 00:00:00 - 2025-11-13 00:00:00**
     4. Filtra por `source:ec2-demo`
     5. Expande una entrada de log para ver los metadatos de EC2 en los atributos del recurso
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Vista de búsqueda de logs de EC2](/images/clickstack/host-logs/ec2/search-view-demo.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Vista de búsqueda de logs de EC2](/images/clickstack/host-logs/ec2/search-view-demo.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Detalle de log de EC2 con metadatos](/images/clickstack/host-logs/ec2/log-view-demo.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Detalle de log de EC2 con metadatos](/images/clickstack/host-logs/ec2/log-view-demo.webp)
+      </Frame>
     </div>
 
     <Info>
       **Visualización de la zona horaria**
 
-      HyperDX muestra los timestamps en la zona horaria local de tu navegador. Los datos de demostración abarcan **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**. El intervalo de tiempo amplio garantiza que veas los logs de demostración independientemente de tu ubicación. Una vez que veas los logs, puedes reducir el intervalo a un período de 24 horas para obtener visualizaciones más claras.
+      La UI de ClickStack muestra los timestamps en la zona horaria local de tu navegador. Los datos de demostración abarcan **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**. El intervalo de tiempo amplio garantiza que veas los logs de demostración independientemente de tu ubicación. Una vez que veas los logs, puedes reducir el intervalo a un período de 24 horas para obtener visualizaciones más claras.
     </Info>
 
     Deberías ver logs con un contexto simulado de EC2 que incluye:
@@ -466,11 +450,9 @@ Para quienes quieran probar la integración de log de host de EC2 antes de confi
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## Dashboard y visualización
-</div>
+## Dashboard y visualización {#dashboards}
 
-Para ayudarte a empezar a monitorizar los logs de host de EC2 con ClickStack, proporcionamos visualizaciones esenciales con contexto de la nube.
+Para ayudarte a empezar a realizar la monitorización de los logs de host de EC2 con ClickStack, proporcionamos visualizaciones esenciales con contexto de la nube.
 
 <Steps>
   <Step title="Descargar la configuración del dashboard" id="download">
@@ -478,29 +460,21 @@ Para ayudarte a empezar a monitorizar los logs de host de EC2 con ClickStack, pr
   </Step>
 
   <Step title="Importa el dashboard preconfigurado" id="import-dashboard">
-    1. Abre HyperDX y ve a la sección dashboard
-    2. Haz clic en **Import Dashboard** en la esquina superior derecha, en el menú de los tres puntos
+    1. Abre la UI de ClickStack y ve a la sección dashboard
+    2. Haz clic en **Importar Panel** en la esquina superior derecha, en el menú de los tres puntos
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Botón para importar dashboard](/images/clickstack/import-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Botón para importar dashboard](/images/clickstack/import-dashboard.webp)
+      </Frame>
     </div>
 
-    3. Sube el archivo `host-logs-dashboard.json` y haz clic en **Finish Import**
+    3. Sube el archivo `host-logs-dashboard.json` y haz clic en **Finalizar Importación**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Finalizar importación](/images/clickstack/host-logs/import-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Finalizar importación](/images/clickstack/host-logs/import-dashboard.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -508,13 +482,9 @@ Para ayudarte a empezar a monitorizar los logs de host de EC2 con ClickStack, pr
     El dashboard se creará con todas las visualizaciones ya configuradas:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Dashboard de logs de EC2](/images/clickstack/host-logs/host-logs-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Dashboard de logs de EC2](/images/clickstack/host-logs/host-logs-dashboard.webp)
+      </Frame>
     </div>
 
     Puedes filtrar las visualizaciones del dashboard por contexto de EC2:
@@ -530,11 +500,11 @@ Para ayudarte a empezar a monitorizar los logs de host de EC2 con ClickStack, pr
 </Steps>
 
 <div id="troubleshooting">
-  ## Solución de problemas
+  ## Solución de problemas {#troubleshooting}
 </div>
 
 <div id="no-metadata">
-  ### Los metadatos de EC2 no aparecen en los logs
+  ### Los metadatos de EC2 no aparecen en los logs {#no-metadata}
 </div>
 
 **Verifica que el servicio de metadatos de EC2 sea accesible:**
@@ -562,9 +532,7 @@ sudo journalctl -u otelcol-contrib -f | grep -i "ec2\|metadata\|resourcedetectio
 # Si se ejecuta en primer plano, revisar stdout
 ```
 
-<div id="no-logs">
-  ### No se muestran logs en HyperDX
-</div>
+### No se muestran logs en la UI de ClickStack {#no-logs}
 
 **Verifica que los archivos de syslog existan y que se estén escribiendo:**
 
@@ -582,24 +550,24 @@ cat /var/log/syslog | head -20
 **Verifique la conectividad de red con ClickStack:**
 
 ```bash
-# Probar el endpoint OTLP
+# Test OTLP endpoint
 curl -v http://YOUR_CLICKSTACK_HOST:4318/v1/logs
 
-# Debería obtenerse una respuesta (incluso si hay un error, significa que el endpoint es accesible)
+# Should get a response (even if error, means endpoint is reachable)
 ```
 
 **Compruebe los logs del collector para detectar errores:**
 
 ```bash
-# Si se ejecuta en primer plano
-# Buscar mensajes de error en stdout
+# If running in foreground
+# Look for error messages in stdout
 
-# Si se ejecuta como servicio systemd
+# If running as systemd service
 sudo journalctl -u otelcol-contrib -f | grep -i "error\|failed"
 ```
 
 <div id="logs-not-parsing">
-  ### Análisis incorrecto de los logs
+  ### Análisis incorrecto de los logs {#logs-not-parsing}
 </div>
 
 **Verifica el formato de syslog:**
@@ -621,7 +589,7 @@ tail -5 /var/log/messages
 Si el formato no coincide, use la pestaña de configuración correspondiente en la sección [Crear configuración del collector](#create-config), según su distribución.
 
 <div id="systemd-issues">
-  ### El collector no se inicia como servicio de systemd
+  ### El collector no se inicia como servicio de systemd {#systemd-issues}
 </div>
 
 **Comprueba el estado del servicio:**
@@ -643,7 +611,7 @@ sudo journalctl -u otelcol-contrib -n 50
 * Problemas de permisos al leer archivos de log
 
 <div id="next-steps">
-  ## Próximos pasos
+  ## Próximos pasos {#next-steps}
 </div>
 
 * Configura [alertas](/es/clickstack/features/alerts) para eventos críticos del sistema (fallos del servicio, fallos de autenticación, advertencias sobre el disco)
@@ -651,8 +619,6 @@ sudo journalctl -u otelcol-contrib -n 50
 * Correlaciona el log de host de EC2 con los logs de la aplicación para una resolución de problemas más completa
 * Crea dashboards personalizados para la supervisión de seguridad (intentos de SSH, uso de `sudo`, bloqueos del firewall)
 
-<div id="going-to-production">
-  ## Paso a producción
-</div>
+## Paso a producción {#going-to-production}
 
 Esta guía instala el OpenTelemetry Collector directamente en instancias de EC2, que es el patrón recomendado para entornos de producción en la monitorización a nivel de host. Para gestionar collectors en muchas instancias, considere usar herramientas de gestión de configuración (Ansible, Chef, Puppet) o el OpenTelemetry Operator en entornos de Kubernetes. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para la configuración de producción.

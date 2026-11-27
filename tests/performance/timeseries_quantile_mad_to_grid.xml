@@ -1,0 +1,38 @@
+<test>
+    <settings>
+        <enable_time_series_aggregate_functions>1</enable_time_series_aggregate_functions>
+    </settings>
+
+    <!--
+        `timeSeriesQuantileToGrid` and `timeSeriesMadToGrid` (PromQL `quantile_over_time`, `mad_over_time`): windows of one
+        bucket select the order statistics from unsorted values, overlapping windows are kept sorted.
+    -->
+
+    <create_query>
+        CREATE TABLE ts_order_statistics (id UInt16, timestamp DateTime, value Float64) ENGINE = MergeTree ORDER BY (id, timestamp)
+    </create_query>
+
+    <!-- 1000 series, one sample every 15s over (0, 86400] -> 5760 samples/series, 5.76M rows, pseudo-random values. -->
+    <fill_query>
+        INSERT INTO ts_order_statistics
+        SELECT
+            (number % 1000)::UInt16 AS id,
+            toDateTime((intDiv(number, 1000) + 1) * 15) AS timestamp,
+            (sipHash64(number) % 1000000) / 1000 AS value
+        FROM numbers_mt(1000 * 5760)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE ts_order_statistics FINAL</fill_query>
+
+    <!-- Instant query, like `quantile_over_time(0.95, x[1d])`: one window of 5760 samples per series. -->
+    <query>SELECT id, timeSeriesQuantileToGrid(86400, 86400, 0, 86400)(timestamp, value, 0.95) FROM ts_order_statistics GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesMadToGrid(86400, 86400, 0, 86400)(timestamp, value) FROM ts_order_statistics GROUP BY id FORMAT Null</query>
+
+    <!-- Window = step, like `[$__interval]`: 144 windows of 40 samples per series. -->
+    <query>SELECT id, timeSeriesQuantileToGrid(600, 86400, 600, 600)(timestamp, value, 0.95) FROM ts_order_statistics GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesMadToGrid(600, 86400, 600, 600)(timestamp, value) FROM ts_order_statistics GROUP BY id FORMAT Null</query>
+
+    <!-- Overlapping windows (5 buckets per window), kept sorted: must not change. -->
+    <query>SELECT id, timeSeriesQuantileToGrid(3600, 86400, 60, 300)(timestamp, value, 0.95) FROM ts_order_statistics GROUP BY id FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS ts_order_statistics</drop_query>
+</test>

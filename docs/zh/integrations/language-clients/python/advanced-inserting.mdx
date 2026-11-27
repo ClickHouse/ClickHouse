@@ -45,9 +45,11 @@ assert qr.first_row[0] == 113
 
 ### 写入格式 {#write-formats}
 
-只有少数类型实现了写入格式。在大多数情况下，ClickHouse Connect 会根据列中第一个非 NULL 的数据值自动判断正确的写入格式。例如，当 `DateTime` 列的第一个值是整数时，client 会将其视为纪元秒。
+只有少数类型实现了写入格式。在大多数情况下，ClickHouse Connect 会根据列中第一个非 NULL 的数据值自动判断正确的写入格式。例如，当 `DateTime` 列的第一个值是整数时，Client 会将其视为纪元秒。
 
 通常无需覆盖写入格式，但 `clickhouse_connect.datatypes.format` 中的方法可以在全局范围内进行设置。像 `Array`、`Nullable` 和 `LowCardinality` 这样的容器包装器会保留其元素类型的格式行为。
+
+直接插入 8-64 位整数列时，浮点 NaN 和无穷大会被拒绝并抛出 `DataError`，可空列和嵌套值也是如此。在可为空的整数列中，请使用 `None` 表示 SQL NULL；不可为空的整数列则会拒绝 `None`。无论使用哪种编解码器，`insert_df` 都会在可为空的整数列中将缺失值写为 NULL，在不可为空的整数列中写为 0。
 
 #### 写入格式选项 {#write-format-options}
 
@@ -63,7 +65,7 @@ assert qr.first_row[0] == 113
 | Interval*             | int                                |                   | 值为以该时间间隔类型单位计量的有符号 64 位计数。                                                                          |
 | String                | str or bytes                       |                   | 同一列中的值必须始终统一为文本或字节类型。                                                                               |
 | FixedString           | bytes                              | string            | 字符串值会以零字节填充。空字节会写入为全零字节。                                                                            |
-| Enum[8,16]            | str or int                         |                   | 可将标签作为字符串插入，或插入其底层整数值。                                                                              |
+| Enum[8,16]            | str or int                         |                   | 可将标签作为字符串插入，或以整数编码插入。同一列中可以混用标签和编码。                                                                 |
 | Date                  | datetime.date or datetime.datetime | int               | 整数值会被解释为自 1970-01-01 起的天数。                                                                          |
 | Date32                | datetime.date or datetime.datetime | int               | 整数值会被解释为有符号的天数偏移。                                                                                   |
 | DateTime              | datetime.datetime                  | int               | 整数值会被解释为纪元秒。                                                                                        |
@@ -82,6 +84,12 @@ assert qr.first_row[0] == 113
 | MultiPoint            | Sequence[tuple]                    |                   | 每个点为一个二元组。插入 MultiPoint 值需要 ClickHouse 26.8 或更高版本。                                                  |
 | Geometry              | tuple or list                      |                   | Point 值为二元组。对于基于列表的值 (包括 MultiPoint) ，请使用 `typed_variant` 包装以选择相应的几何成员类型。                           |
 | QBit                  | Sequence[float]                    |                   | 安装 NumPy 后，会自动使用它来更快地进行比特转置。                                                                        |
+
+#### 枚举值 {#enum-values}
+
+未知的字符串标签会引发 `clickhouse_connect.driver.exceptions.DataError` 异常，错误信息中包含列名和无效标签。此规则同样适用于 `Array` 和 `Tuple` 值内部以及 Pandas DataFrame。空字符串只有在属于已声明的标签时才有效。
+
+使用 Python 列表执行插入操作时，仅 `Nullable(Enum8(...))` 或 `Nullable(Enum16(...))` 列接受 `None`。对于不可为空的枚举列，`insert_df` 会在序列化之前将缺失值转换为整数 0。
 
 #### Date 和 Date32 值 {#date-and-date32-values}
 
@@ -233,9 +241,11 @@ assert [row[0].hour for row in results.result_rows] == [1, 10, 16]
 全局 `naive_datetime_insert` 设置用于控制插入不带时区的原生 Python `datetime` 对象。它也适用于 `DateTime64` 列接受的不带时区的 ISO 字符串。
 
 * `"local"` 是 1.x 中的默认值。调用 `.timestamp()` 时，Python 会根据进程时区解释该值，从而保持现有行为。
-* `"server"` 会将该值解释为 `DateTime` 或 `DateTime64` 列所声明时区中的墙钟时间。如果该列未指定时区，则使用客户端连接时获取的服务器时区。
+* `"server"` 会将该值解释为 `DateTime` 或 `DateTime64` 列所声明时区中的墙钟时间。如果该列未指定时区，则使用客户端 (Client) 连接时获取的服务器时区。
 
-请在插入前设置该选项。序列化每个包含 Python `datetime` 对象或 `DateTime64` ISO 字符串的原生插入列时，都会读取此选项，因此更改会应用于现有客户端和可复用的插入上下文。
+在 `"local"` 模式下使用 Python 编解码器时，如果在 Windows 上 `.timestamp()` 因值接近或早于纪元而引发 `OSError`，驱动程序会附加其检测到的本地时区后重试。如需使用历史时区规则，请在导入驱动程序之前安装 `tzlocal`，或将 `TZ` 设置为可解析的 IANA 时区名称。否则，回退时可能会使用固定偏移量，与历史上的夏令时规则不符。
+
+请在插入前设置该选项。序列化每个包含 Python `datetime` 对象或 `DateTime64` ISO 字符串的原生插入列时，都会读取此选项，因此更改会应用于现有客户端 (Client) 和可复用的插入上下文。
 
 ```python
 from datetime import datetime
@@ -267,7 +277,7 @@ epoch_timestamp = int(naive_time.replace(tzinfo=timezone.utc).timestamp())
 client.insert("events", [[epoch_timestamp]], column_names=["event_time"])
 ```
 
-不含时区信息的 `datetime` 查询参数使用独立的 `naive_datetime_binding` 设置。默认的 `"wall"` 模式会按原样发送日期时间字段，不进行主机本地时区转换。请参阅[参数 argument](/zh/integrations/language-clients/python/driver-api#parameters-argument)部分。
+不含时区信息的 `datetime` 查询参数使用独立的 `naive_datetime_binding` 设置。默认的 `"wall"` 模式会按原样发送日期时间字段，不进行主机本地时区转换。请参阅[参数](/zh/integrations/language-clients/python/driver-api#parameters-argument)部分。
 
 #### 带有时区元数据的 DateTime 列 {#datetime-columns-with-timezone-metadata}
 

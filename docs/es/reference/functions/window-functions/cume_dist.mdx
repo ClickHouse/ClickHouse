@@ -15,12 +15,12 @@ Calcula la distribución acumulada de un valor dentro de un grupo de valores; es
 ```sql
 cume_dist ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+        | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
 
-La definición predeterminada y obligatoria del marco de ventana es `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+La función siempre lee la partición completa; si se especifica una trama de ventana, se ignora.
 
 Para obtener más información sobre la sintaxis de las funciones de ventana, consulte: [Funciones de ventana - Sintaxis](/es/reference/functions/window-functions/index#syntax).
 

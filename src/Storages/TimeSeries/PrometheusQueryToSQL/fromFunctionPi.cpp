@@ -1,14 +1,8 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionPi.h>
 
-#include <Common/Exception.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <numbers>
-
-
-namespace DB::ErrorCodes
-{
-    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
-}
 
 
 namespace DB::PrometheusQueryToSQL
@@ -17,15 +11,9 @@ namespace DB::PrometheusQueryToSQL
 SQLQueryPiece fromFunctionPi(
     const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
-    const auto & function_name = function_node->function_name;
-    chassert(isFunctionPi(function_name));
+    chassert(isFunctionPi(function_node->function_name));
 
-    if (!arguments.empty())
-    {
-        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                        "Function '{}' expects no arguments, but was called with {} arguments",
-                        function_name, arguments.size());
-    }
+    checkNumberOfArguments(function_node, arguments, 0);
 
     /// This implementation is similar to the implementation of function fromLiteral().
     auto node_range = context.node_range_getter.get(function_node);
