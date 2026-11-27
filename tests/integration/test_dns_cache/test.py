@@ -563,8 +563,15 @@ def test_dns_resolver_filter_cache_disabled(cluster_ready):
     assert "After filtering there are no resolved address for host(test_host)" in str(e.value)
 
 
-@pytest.mark.parametrize("network", ["loopback", "none"])
-def test_unreachable_nameserver_fails_fast(cluster_ready, network):
+@pytest.mark.parametrize(
+    "network, nameservers",
+    [
+        ("loopback", ["127.0.0.2"]),
+        ("none", ["127.0.0.2"]),
+        ("loopback", ["127.0.0.2", "127.0.0.2"]),
+    ],
+)
+def test_unreachable_nameserver_fails_fast(cluster_ready, network, nameservers):
     """
     A lookup must fail right away, not after the resolver timeout, when the
     nameserver cannot be reached, as in a sandbox without a network where
@@ -572,14 +579,16 @@ def test_unreachable_nameserver_fails_fast(cluster_ready, network):
     listen there. Here `clickhouse local` resolves the host name for `fqdn`,
     which is not in `/etc/hosts`, through a nameserver on a loopback port where
     nothing listens (an ICMP port-unreachable error comes back), or in a network
-    namespace where the loopback is down (`sendto` fails). The resolver timeout
-    is 30 s, so the lookup is cut by `timeout` if it waits for it.
+    namespace where the loopback is down (`sendto` fails), also when the same
+    nameserver is listed twice. The resolver timeout is 30 s, so the lookup is
+    cut by `timeout` if it waits for it.
     https://github.com/ClickHouse/ClickHouse/issues/134703
     """
     script = r"""
 set -e
 dir=$(mktemp -d)
-printf 'nameserver 127.0.0.2\noptions timeout:30 attempts:1\n' > "$dir/resolv.conf"
+for ns in $NAMESERVERS; do printf 'nameserver %s\n' "$ns"; done > "$dir/resolv.conf"
+printf 'options timeout:30 attempts:1\n' >> "$dir/resolv.conf"
 printf '127.0.0.1 localhost\n' > "$dir/hosts"
 mount --bind "$dir/resolv.conf" /etc/resolv.conf
 mount --bind "$dir/hosts" /etc/hosts
@@ -587,7 +596,11 @@ timeout 20 clickhouse local --query 'SELECT fqdn() = hostName()'
 """
     unshare = ["unshare", "--mount"] + (["--net"] if network == "none" else [])
     result = node9.exec_in_container(
-        unshare + ["bash", "-c", script], privileged=True, user="root"
+        ["env", f"NAMESERVERS={' '.join(nameservers)}"]
+        + unshare
+        + ["bash", "-c", script],
+        privileged=True,
+        user="root",
     )
     assert result == "1\n"
 
