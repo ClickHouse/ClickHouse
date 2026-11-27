@@ -14,24 +14,18 @@ import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.m
 
 このステップバイステップガイドでは、[MySQL ClickPipe](/ja/integrations/clickpipes/mysql/index) を使用して、Amazon Aurora MySQL から ClickHouse Cloud にデータをレプリケートするよう設定する方法を説明します。MySQL CDC (変更データキャプチャ) に関するよくある質問については、[MySQL よくある質問ページ](/ja/integrations/clickpipes/mysql/faq) を参照してください。
 
-<div id="enable-binlog-retention-aurora">
-  ## バイナリログ保持を有効にする
-</div>
+## バイナリログの保持期間を有効にする {#enable-binlog-retention-aurora}
 
-バイナリログは、MySQL サーバーインスタンスで行われたデータ変更に関する情報を含む一連のログファイルであり、レプリケーションにはバイナリログファイルが必要です。Aurora MySQL でバイナリログ保持を設定するには、[バイナリログを有効にし](#enable-binlog-logging)、[binlog の保持期間を延長する](#binlog-retention-interval)必要があります。
+バイナリログは、MySQL サーバーインスタンスで行われたデータ変更に関する情報を含む一連のログファイルであり、レプリケーションにはバイナリログファイルが必要です。Aurora MySQL でバイナリログの保持期間を設定するには、[バイナリログを有効にし](#enable-binlog-logging)、[binlog の保持期間を延長する](#binlog-retention-interval)必要があります。
 
 <Steps>
   <Step title="自動バックアップでバイナリログを有効にする" id="enable-binlog-logging">
     自動バックアップ機能によって、MySQL でバイナリログを有効にするかどうかが決まります。自動バックアップは、RDS Console で **Modify** &gt; **Additional configuration** &gt; **Backup** に移動し、**Enable automated backups** チェックボックスを選択することで (まだ選択されていない場合) インスタンスに設定できます。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Aurora で自動バックアップを有効にする](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Aurora で自動バックアップを有効にする](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
+      </Frame>
     </div>
 
     レプリケーションのユースケースに応じて、**Backup retention period** は十分に長い値に設定することを推奨します。
@@ -42,7 +36,7 @@ import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.m
       ClickPipes がレプリケーションの再開を試みた際、設定された binlog の保持期間が原因で必要な binlog ファイルがすでに削除されていると、ClickPipe はエラー状態になり、再同期が必要になります。
     </Warning>
 
-    デフォルトでは、Aurora MySQL はバイナリログをできるだけ早く削除します (つまり、*遅延パージ*) 。障害発生時でもレプリケーションに必要な バイナリログ ファイルを利用できるようにするため、binlog の保持期間は少なくとも **72 時間** に延長することを推奨します。バイナリログ の保持期間 ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours)) を設定するには、[`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration) プロシージャを使用します。
+    デフォルトでは、Aurora MySQL はバイナリログをできるだけ早く削除します (つまり、*遅延パージ*) 。障害発生時でもレプリケーションに必要な バイナリログ ファイルを利用できるようにするため、binlog の保持期間は少なくとも **72 時間** に延長することを推奨します。バイナリログの保持期間 ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours)) を設定するには、[`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration) プロシージャを使用します。
 
     [//]: # "注: 多くの CDC（変更データキャプチャ）プロバイダーは、Aurora RDS の最大保持期間（7 日間 / 168 時間）を推奨しています。これはディスク使用量に影響するため、ここでは控えめに最小 3 日間 / 72 時間を推奨しています。"
 
@@ -54,9 +48,7 @@ import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.m
   </Step>
 </Steps>
 
-<div id="binlog-settings">
-  ## binlog 設定を構成する
-</div>
+## binlog 設定を構成する {#binlog-settings}
 
 パラメータグループは、RDS Console で MySQL インスタンスをクリックし、**Configuration** タブに移動すると確認できます。
 
@@ -65,27 +57,19 @@ import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.m
 </Tip>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Aurora でパラメータグループを確認する場所](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/aurora_config.webp)
-
-</Frame>
-
+  <Frame>
+    ![Aurora でパラメータグループを確認する場所](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/aurora_config.webp)
+  </Frame>
 </div>
 
 <br />
 
-パラメータグループのリンクをクリックすると、その詳細ページに移動します。右上に **Edit** ボタンが表示されるはずです。
+パラメータグループのリンクをクリックすると、その詳細ページに移動します。右上に **編集** ボタンが表示されるはずです。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![パラメータグループの編集](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
-
-</Frame>
-
+  <Frame>
+    ![パラメータグループの編集](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
+  </Frame>
 </div>
 
 <br />
@@ -95,46 +79,32 @@ import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.m
 1. `binlog_format` を `ROW` に設定します。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Binlog フォーマットを ROW に設定](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
-
-</Frame>
-
+  <Frame>
+    ![Binlog フォーマットを ROW に設定](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
+  </Frame>
 </div>
 
 2. `binlog_row_metadata` を `FULL` に設定します。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Binlog 行メタデータ](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
-
-</Frame>
-
+  <Frame>
+    ![Binlog 行メタデータ](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
+  </Frame>
 </div>
 
 3. `binlog_row_image` を `FULL` に設定します。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Binlog 行イメージ](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
-
-</Frame>
-
+  <Frame>
+    ![Binlog 行イメージ](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
+  </Frame>
 </div>
 
 <br />
 
 その後、右上の **Save Changes** をクリックします。変更を反映するには、インスタンスの再起動が必要な場合があります。Aurora インスタンスの **Configuration** タブで、パラメータグループのリンクの横に `Pending reboot` と表示されていれば、それが目印です。
 
-<div id="gtid-mode">
-  ## GTID モードを有効にする (推奨)
-</div>
+## GTID モードを有効にする (推奨) {#gtid-mode}
 
 <Tip>
   MySQL ClickPipe は、GTID モードを使用しないレプリケーションにも対応しています。ただし、パフォーマンス向上とトラブルシューティングのしやすさのため、GTID モードを有効にすることを推奨します。
@@ -147,25 +117,19 @@ GTID ベースのレプリケーションは、Amazon Aurora MySQL v2 (MySQL 5.7
 1. RDS Console で、MySQL インスタンスをクリックします。
 2. **Configuration** タブをクリックします。
 3. パラメータグループのリンクをクリックします。
-4. 右上の **Edit** ボタンをクリックします。
+4. 右上の **編集** ボタンをクリックします。
 5. `enforce_gtid_consistency` を `ON` に設定します。
 6. `gtid-mode` を `ON` に設定します。
 7. 右上の **Save Changes** をクリックします。
 8. 変更を反映するため、インスタンスを再起動します。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![GTID が有効](/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp)
-
-</Frame>
-
+  <Frame>
+    ![GTID 有効化済み](/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp)
+  </Frame>
 </div>
 
-<div id="configure-database-user">
-  ## データベースユーザーを設定する
-</div>
+## データベースユーザーを設定する {#configure-database-user}
 
 管理者ユーザーとして Aurora MySQL インスタンスに接続し、次のコマンドを実行します。
 
@@ -175,10 +139,10 @@ GTID ベースのレプリケーションは、Amazon Aurora MySQL v2 (MySQL 5.7
    CREATE USER 'clickpipes_user'@'%' IDENTIFIED BY 'some-password';
    ```
 
-2. スキーマに対する権限を付与します。次の例は、`mysql` データベースに対する権限を示しています。レプリケーション対象の各データベースとホストについて、これらのコマンドを繰り返します。
+2. スキーマに対する権限を付与します。次の例は、`clickpipes` データベースに対する権限を示しています。レプリケーション対象の各データベースとホストについて、これらのコマンドを繰り返します。
 
    ```sql
-   GRANT SELECT ON `mysql`.* TO 'clickpipes_user'@'host';
+   GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
    ```
 
 3. ユーザーにレプリケーション権限を付与します。
@@ -188,50 +152,46 @@ GTID ベースのレプリケーションは、Amazon Aurora MySQL v2 (MySQL 5.7
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
+4. ClickPipes が binlog の保持期間の設定を読み取れるようにします。
+
+   ```sql
+   GRANT SELECT ON `mysql`.`rds_configuration` TO 'clickpipes_user'@'%';
+   ```
+
 <div id="iam-authentication">
-  ### IAM認証を使用する (任意)
+  ### IAM認証を使用する (任意) {#iam-authentication}
 </div>
 
 <IAMAuthentication engine="mysql" service="aurora" />
 
 <div id="configure-network-access">
-  ## ネットワークアクセスを設定する
+  ## ネットワークアクセスを設定する {#configure-network-access}
 </div>
 
 <div id="ip-based-access-control">
-  ### IP ベースのアクセス制御
+  ### IP ベースのアクセス制御 {#ip-based-access-control}
 </div>
 
-Aurora MySQL インスタンスへのトラフィックを制限するには、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/networking/static-ips) を、Aurora のセキュリティグループの **Inbound rules** に追加します。
+Aurora MySQL インスタンスへのトラフィックを制限するには、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/networking/static-ips) を、Aurora のセキュリティグループの **インバウンドルール** に追加します。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Aurora MySQL でセキュリティグループはどこで確認できますか？](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
-
-</Frame>
-
+  <Frame>
+    ![Aurora MySQL でのセキュリティグループの場所](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![上記のセキュリティグループのインバウンドルールを編集](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
-
-</Frame>
-
+  <Frame>
+    ![上記のセキュリティグループのインバウンドルールを編集](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+  </Frame>
 </div>
 
 <div id="private-access-via-aws-privatelink">
-  ### AWS PrivateLink 経由のプライベートアクセス
+  ### AWS PrivateLink 経由のプライベートアクセス {#private-access-via-aws-privatelink}
 </div>
 
 Aurora MySQL インスタンスにプライベートネットワーク経由で接続するには、AWS PrivateLink を使用できます。接続の設定については、[ClickPipes 向け AWS PrivateLink セットアップガイド](/ja/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)を参照してください。
 
-<div id="whats-next">
-  ## 次のステップ
-</div>
+## 次のステップ {#whats-next}
 
 Amazon Aurora MySQL インスタンスで binlogレプリケーションが設定され、ClickHouse Cloud への安全な接続が確立されたら、[最初の MySQL ClickPipe を作成できます](/ja/integrations/clickpipes/mysql/index#create-your-clickpipe)。MySQL CDC (変更データキャプチャ) に関する一般的な質問については、[MySQL よくある質問ページ](/ja/integrations/clickpipes/mysql/faq)を参照してください。

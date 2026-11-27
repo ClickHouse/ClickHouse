@@ -8,22 +8,16 @@ doc_type: 'guide'
 
 Денормализация данных — это метод в ClickHouse, при котором используются плоские таблицы, чтобы минимизировать задержку выполнения запросов, избегая операций JOIN.
 
-<div id="comparing-normalized-vs-denormalized-schemas">
-  ## Сравнение нормализованных и денормализованных схем
-</div>
+## Сравнение нормализованных и денормализованных схем {#comparing-normalized-vs-denormalized-schemas}
 
 Денормализация данных предполагает намеренный отказ от нормализации, чтобы оптимизировать производительность базы данных для конкретных шаблонов запросов. В нормализованных базах данных данные распределяются по нескольким связанным таблицам, чтобы минимизировать избыточность и обеспечить целостность данных. Денормализация, напротив, снова вводит избыточность: таблицы объединяются, данные дублируются, а вычисляемые поля включаются в одну или меньшее число таблиц — то есть JOIN фактически переносится со времени выполнения запроса на время вставки.
 
 Этот подход снижает потребность в сложных JOIN во время выполнения запроса и может значительно ускорить операции чтения, поэтому он хорошо подходит для приложений с высокой нагрузкой на чтение и сложными запросами. Однако он может усложнить запись и сопровождение данных, поскольку любые изменения в дублируемых данных нужно распространять на все экземпляры, чтобы сохранять согласованность.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Денормализация в ClickHouse](/images/data-modeling/denormalization-diagram.webp)
-
-</Frame>
-
+  <Frame>
+    ![Денормализация в ClickHouse](/images/data-modeling/denormalization-diagram.webp)
+  </Frame>
 </div>
 
 <br />
@@ -31,7 +25,7 @@ doc_type: 'guide'
 Распространённый приём, ставший популярным благодаря NoSQL-решениям, — денормализовать данные при отсутствии поддержки `JOIN`, фактически сохраняя всю статистику или связанные строки в родительской строке в виде столбцов и вложенных объектов. Например, в типовой схеме блога можно хранить все `Comments` как `Array` объектов в соответствующих постах.
 
 <div id="when-to-use-denormalization">
-  ## Когда использовать денормализацию
+  ## Когда использовать денормализацию {#when-to-use-denormalization}
 </div>
 
 В целом мы рекомендуем денормализовывать данные в следующих случаях:
@@ -46,7 +40,7 @@ doc_type: 'guide'
 Работу по денормализации можно выполнять как в ClickHouse, так и на стороне источника, например с помощью [Apache Flink](/ru/integrations/connectors/data-ingestion/apache-flink).
 
 <div id="avoid-denormalization-on-frequently-updated-data">
-  ## Избегайте денормализации для часто обновляемых данных
+  ## Избегайте денормализации для часто обновляемых данных {#avoid-denormalization-on-frequently-updated-data}
 </div>
 
 Для ClickHouse денормализация — один из способов оптимизировать производительность запросов, но применять её следует с осторожностью. Если данные обновляются часто и должны актуализироваться почти в реальном времени, этого подхода лучше избегать. Он подходит в случаях, когда основная таблица в основном работает только на добавление или может периодически полностью перезагружаться батчами, например раз в день.
@@ -63,7 +57,7 @@ doc_type: 'guide'
 Поэтому на практике чаще используется процесс батч-обновления, при котором все денормализованные объекты периодически перезагружаются.
 
 <div id="practical-cases-for-denormalization">
-  ## Практические случаи денормализации
+  ## Практические случаи денормализации {#practical-cases-for-denormalization}
 </div>
 
 Рассмотрим несколько практических примеров, в которых денормализация может быть оправданна, а также случаи, где предпочтительнее альтернативные подходы.
@@ -74,9 +68,7 @@ doc_type: 'guide'
 
 *В каждом из следующих примеров будем считать, что существует запрос, требующий использования обеих таблиц в JOIN.*
 
-<div id="posts-and-votes">
-  ### Posts and Votes
-</div>
+### Posts and Votes {#posts-and-votes}
 
 Голоса, относящиеся к постам, представлены в отдельных таблицах. Ниже показаны оптимизированная схема и команда вставки для загрузки данных:
 
@@ -91,7 +83,7 @@ CREATE TABLE votes
         `BountyAmount` UInt8
 )
 ENGINE = MergeTree
-ORDER BY (VoteTypeId, CreationDate, PostId)
+ORDER BY (VoteTypeId, CreationDate, PostId);
 
 INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet', NOSIGN)
 ```
@@ -147,20 +139,14 @@ LIMIT 5
 
 Ключевое наблюдение здесь состоит в том, что для большинства видов анализа достаточно агрегированной статистики голосов по каждому посту — денормализовывать всю информацию о голосах не требуется. Например, текущий столбец `Score` представляет собой такую статистику, то есть общее число положительных голосов минус число отрицательных. В идеале эту статистику можно было бы получать во время выполнения запроса с помощью простого поиска по ключу (см. [словари](/ru/concepts/features/dictionaries/index)).
 
-<div id="users-and-badges">
-  ### Users and Badges
-</div>
+### Users and Badges {#users-and-badges}
 
 Теперь рассмотрим наши `Users` и `Badges`:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![схема Users и Badges](/images/data-modeling/denormalization-schema.webp)
-
-</Frame>
-
+  <Frame>
+    ![схема Users и Badges](/images/data-modeling/denormalization-schema.webp)
+  </Frame>
 </div>
 
 <p />
@@ -174,7 +160,7 @@ CREATE TABLE users
 (
     `Id` Int32,
     `Reputation` LowCardinality(String),
-    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
     `DisplayName` String,
     `LastAccessDate` DateTime64(3, 'UTC'),
     `AboutMe` String,
@@ -200,7 +186,7 @@ CREATE TABLE badges
     `TagBased` Bool
 )
 ENGINE = MergeTree
-ORDER BY UserId
+ORDER BY UserId;
 
 INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
 ```
@@ -217,7 +203,7 @@ INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3
 0 rows in set. Elapsed: 18.126 sec. Processed 51.29 million rows, 797.05 MB (2.83 million rows/s., 43.97 MB/s.)
 ```
 
-Хотя пользователи могут часто получать значки, вряд ли этот набор данных нужно обновлять чаще одного раза в день. Связь между значками и пользователями — один ко многим. Возможно, мы можем просто денормализовать значки в записи пользователей в виде списка Tuple? Хотя это возможно, быстрая проверка, чтобы определить максимальное число значков у одного пользователя, показывает, что это не лучший вариант:
+Хотя пользователи могут часто получать значки, вряд ли этот набор данных нужно обновлять чаще одного раза в день. Связь между значками и пользователями — один ко многим. Возможно, мы можем просто денормализовать значки в записи пользователей в виде списка кортежей? Хотя это возможно, быстрая проверка, чтобы определить максимальное число значков у одного пользователя, показывает, что это не лучший вариант:
 
 ```sql
 SELECT UserId, count() AS c FROM badges GROUP BY UserId ORDER BY c DESC LIMIT 5
@@ -237,9 +223,7 @@ SELECT UserId, count() AS c FROM badges GROUP BY UserId ORDER BY c DESC LIMIT 5
 
 > Возможно, имеет смысл денормализовать статистику из Badges в Users, например число значков. Такой пример мы рассмотрим при использовании словарей для этого набора данных при вставке.
 
-<div id="posts-and-postlinks">
-  ### Posts и PostLinks
-</div>
+### Posts и PostLinks {#posts-and-postlinks}
 
 `PostLinks` связывают `Posts`, которые пользователи считают связанными или дублирующими друг друга. Следующий запрос показывает схему и команду загрузки:
 
@@ -253,7 +237,7 @@ CREATE TABLE postlinks
   `LinkTypeId` Enum('Linked' = 1, 'Duplicate' = 3)
 )
 ENGINE = MergeTree
-ORDER BY (PostId, RelatedPostId)
+ORDER BY (PostId, RelatedPostId);
 
 INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet', NOSIGN)
 ```
@@ -306,16 +290,14 @@ FROM
 
 Ниже мы используем это как пример денормализации.
 
-<div id="simple-statistic-example">
-  ### Простой пример статистики
-</div>
+### Простой пример статистики {#simple-statistic-example}
 
 В большинстве случаев денормализация сводится к добавлению в родительскую строку одного столбца или показателя. Например, мы можем просто захотеть обогатить наши посты числом дубликатов — для этого достаточно добавить один столбец.
 
 ```sql
 CREATE TABLE posts_with_duplicate_count
 (
-  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+  `Id` Int32 CODEC(Delta, Default),
    ... -other columns
    `DuplicatePosts` UInt16
 ) ENGINE = MergeTree
@@ -337,16 +319,14 @@ LEFT JOIN
 ) AS postlinks ON posts.Id = postlinks.PostId
 ```
 
-<div id="exploiting-complex-types-for-one-to-many-relationships">
-  ### Использование сложных типов для связей «один-ко-многим»
-</div>
+### Использование сложных типов для связей «один-ко-многим» {#exploiting-complex-types-for-one-to-many-relationships}
 
 Чтобы выполнить денормализацию, часто требуется использовать сложные типы. Если денормализуется связь «один-к-одному» с небольшим числом столбцов, можно просто добавить соответствующие поля, сохранив их исходные типы, как показано выше. Однако для более крупных объектов это часто нежелательно, а для связей «один-ко-многим» — невозможно.
 
 В случаях со сложными объектами или связями «один-ко-многим» можно использовать:
 
-* Именованные Tuple — позволяют представить связанную структуру в виде набора столбцов.
-* Array(Tuple) или Nested — массив именованных Tuple, также известный как Nested, где каждый элемент представляет объект. Применимо к связям «один-ко-многим».
+* Именованные кортежи — позволяют представить связанную структуру в виде набора столбцов.
+* Array(Tuple) или Nested — массив именованных кортежей, также известный как Nested, где каждый элемент представляет объект. Применимо к связям «один-ко-многим».
 
 В качестве примера ниже показано, как денормализовать `PostLinks` в `Posts`.
 
@@ -356,7 +336,7 @@ LEFT JOIN
 SET flatten_nested=0
 CREATE TABLE posts_with_links
 (
-  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+  `Id` Int32 CODEC(Delta, Default),
    ... -other columns
    `LinkedPosts` Nested(CreationDate DateTime64(3, 'UTC'), PostId Int32),
    `DuplicatePosts` Nested(CreationDate DateTime64(3, 'UTC'), PostId Int32),
@@ -386,7 +366,7 @@ LEFT JOIN (
 
 ```response
 0 rows in set. Elapsed: 155.372 sec. Processed 66.37 million rows, 76.33 GB (427.18 thousand rows/s., 491.25 MB/s.)
-Пиковое потребление памяти: 6.98 GiB.
+Peak memory usage: 6.98 GiB.
 ```
 
 > Обратите внимание, сколько времени это заняло. Нам удалось денормализовать 66 млн строк примерно за 2 минуты. Как мы увидим позже, эту операцию можно выполнять по расписанию.
@@ -411,11 +391,11 @@ DuplicatePosts: [('2017-04-11 12:18:37.260',3922739),('2017-04-11 12:18:37.260',
 ```
 
 <div id="orchestrating-and-scheduling-denormalization">
-  ## Оркестрация и выполнение денормализации по расписанию
+  ## Оркестрация и выполнение денормализации по расписанию {#orchestrating-and-scheduling-denormalization}
 </div>
 
 <div id="batch">
-  ### Батч
+  ### Батч {#batch}
 </div>
 
 Для использования денормализации нужен процесс преобразования, который можно выполнять и оркестрировать.
@@ -427,8 +407,6 @@ DuplicatePosts: [('2017-04-11 12:18:37.260',3922739),('2017-04-11 12:18:37.260',
 * **[Refreshable Materialized Views](/ru/concepts/features/materialized-views/refreshable-materialized-view)** - Refreshable materialized views можно использовать для периодического запуска запроса по расписанию с записью результатов в целевую таблицу. При выполнении запроса представление обеспечивает атомарное обновление целевой таблицы. Это даёт встроенный в ClickHouse механизм планирования такой работы.
 * **Внешние инструменты** - Использование таких инструментов, как [dbt](https://www.getdbt.com/) и [Airflow](https://airflow.apache.org/), для периодического запуска преобразования. [Интеграция ClickHouse для dbt](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/index) гарантирует, что это выполняется атомарно: создаётся новая версия целевой таблицы, а затем она атомарно обменивается с версией, обслуживающей запросы (через команду [EXCHANGE](/ru/reference/statements/exchange)).
 
-<div id="streaming">
-  ### Стриминг
-</div>
+### Стриминг {#streaming}
 
 В качестве альтернативы это можно выполнить вне ClickHouse, до вставки, с помощью технологий стриминга, таких как [Apache Flink](/ru/integrations/connectors/data-ingestion/apache-flink). Также для выполнения этого процесса по мере вставки данных можно использовать инкрементальные [materialized views](/ru/concepts/features/materialized-views/cascading-materialized-views).

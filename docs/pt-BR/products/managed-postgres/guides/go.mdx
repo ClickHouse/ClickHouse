@@ -7,10 +7,6 @@ keywords: ['managed postgres', 'go', 'golang', 'pgx', 'pgxpool', 'golang-migrate
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-go-beta" />
-
 [pgx](https://github.com/jackc/pgx) é o driver PostgreSQL mais usado em Go, e `pgxpool` é o seu pool de conexões. Neste guia, você vai conectar um serviço Go ao ClickHouse Managed Postgres por TLS verificado, criar uma tabela `todos` com uma migração do [golang-migrate](https://github.com/golang-migrate/migrate) e atender a requisições de criação, leitura, atualização e exclusão em um servidor `net/http`.
 
 ## Pré-requisitos {#prerequisites}

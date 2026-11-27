@@ -23,16 +23,16 @@ void Partition::advance(const SlidingBlocks & blocks)
     RowNumber & end = partition_bounds.end;
     while (!partition_bounds.end_visible && end < blocks.end())
     {
-        const SlidingBlock & block = blocks.blockAt(end.block);
+        const VectorWithMemoryTracking<bool> & partition_starts = blocks.blockAt(end.block).index.partition_starts;
 
-        int64_t next_start = end.row;
-        while (next_start < block.rows_count && !block.index.partition_starts[next_start])
+        size_t next_start = static_cast<size_t>(end.row);
+        while (next_start < partition_starts.size() && !partition_starts[next_start])
             ++next_start;
 
-        const int64_t rows_passed = next_start - end.row;
+        const int64_t rows_passed = static_cast<int64_t>(next_start) - end.row;
         partition_bounds.rows_count += rows_passed;
         end = blocks.move(end, rows_passed);
-        if (next_start < block.rows_count)
+        if (next_start < partition_starts.size())
             finish();
     }
 }

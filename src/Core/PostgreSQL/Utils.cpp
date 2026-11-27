@@ -63,6 +63,15 @@ ConnectionInfo formatConnectionString(
     add_credential("sslcert", ssl_params.ssl_cert, ssl_params.ssl_cert_pem, "sslcert", "sslcert_pem");
     add_credential("sslkey", ssl_params.ssl_key, ssl_params.ssl_key_pem, "sslkey", "sslkey_pem");
 
+    /// Keep libpq from presenting an ambient default credential (`~/.postgresql/postgresql.{crt,key}`):
+    /// a user-chosen connection must not authenticate with the service account's default certificate or
+    /// key. Both halves must be bound explicitly - a certificate alone (public material) would still let
+    /// libpq pair it with the default key file. A configured path or PEM contents for each is still sent.
+    const bool has_client_cert = !ssl_params.ssl_cert.empty() || !ssl_params.ssl_cert_pem.empty();
+    const bool has_client_key = !ssl_params.ssl_key.empty() || !ssl_params.ssl_key_pem.empty();
+    if (!has_client_cert || !has_client_key)
+        out << " sslcertmode=disable";
+
     connection_info.connection_string = out.str();
     connection_info.host_port = host + ':' + DB::toString(port);
     return connection_info;

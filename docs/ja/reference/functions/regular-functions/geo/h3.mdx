@@ -59,14 +59,14 @@ SELECT h3IsValid(630814730351855103) AS h3IsValid;
 h3GetResolution(h3index)
 ```
 
-**パラメータ**
+**パラメーター**
 
 * `h3index` — 六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint)。
 
 **戻り値**
 
 * インデックスの解像度。範囲: `[0, 15]`。[UInt8](/ja/reference/data-types/int-uint)。
-* インデックスが無効な場合、この関数はランダムな値を返します。インデックスを確認するには [h3IsValid](#h3isvalid) を使用してください。[UInt8](/ja/reference/data-types/int-uint)。
+* インデックスが無効な場合、この関数はデフォルトでは例外をスローしますが、[`functions_h3_default_if_invalid`](/ja/reference/settings/session-settings/other#functions_h3_default_if_invalid) が有効な場合は `0` を返します。インデックスを確認するには [h3IsValid](#h3isvalid) を使用してください。[UInt8](/ja/reference/data-types/int-uint)。
 
 **例**
 
@@ -644,13 +644,14 @@ SELECT stringToH3('89184926cc3ffff') AS index;
 h3GetResolution(index)
 ```
 
-**パラメータ**
+**パラメーター**
 
 * `index` — 六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint).
 
 **戻り値**
 
 * インデックスの解像度。範囲: `[0, 15]`。[UInt8](/ja/reference/data-types/int-uint).
+* 無効なインデックスの場合、デフォルトでは例外をスローします。`functions_h3_default_if_invalid` が有効な場合は `0` を返します。
 
 **例**
 
