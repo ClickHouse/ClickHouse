@@ -1,3 +1,4 @@
+-- Random settings limits: prefer_external_sort_block_bytes=(None, 1)
 -- Results of `ORDER BY ... LIMIT BY ... LIMIT` with the per-stream outer limit (`query_plan_push_down_limit_below_limit_by`)
 -- in the shapes where each sorted stream stops early: outer `OFFSET`, both sort directions, `LIMIT n BY` with n > 1,
 -- `LIMIT BY` offset, buffered read in order, `FINAL`, parallel replicas and a distributed read. Issue https://github.com/ClickHouse/ClickHouse/issues/113110.
@@ -14,6 +15,21 @@ INSERT INTO t_lbol SELECT number % 5000, number + 100000 FROM numbers(20000);
 INSERT INTO t_lbol SELECT (number * 7) % 5000, number + 200000 FROM numbers(20000);
 INSERT INTO t_lbol SELECT number % 300, number + 300000 FROM numbers(3000);
 
+CREATE TABLE t_lbol_final (k UInt32, v UInt32, ver UInt32) ENGINE = ReplacingMergeTree(ver) ORDER BY k SETTINGS index_granularity = 64;
+SYSTEM STOP MERGES t_lbol_final;
+INSERT INTO t_lbol_final SELECT number, number, 1 FROM numbers(5000);
+INSERT INTO t_lbol_final SELECT number, number + 1000000, 2 FROM numbers(5000);
+
+-- Every key has 100 rows in each of four parts.
+CREATE TABLE t_lbol_rows (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY (k, v) SETTINGS index_granularity = 64;
+SYSTEM STOP MERGES t_lbol_rows;
+INSERT INTO t_lbol_rows SELECT intDiv(number, 100), number FROM numbers(50000);
+INSERT INTO t_lbol_rows SELECT intDiv(number, 100), number + 1000000 FROM numbers(50000);
+INSERT INTO t_lbol_rows SELECT intDiv(number, 100), number + 2000000 FROM numbers(50000);
+INSERT INTO t_lbol_rows SELECT intDiv(number, 100), number + 3000000 FROM numbers(50000);
+
+-- Small blocks, so that the streams stop inside a part. With a large `prefer_external_sort_block_bytes` the buffered read
+-- in order reads whole parts ahead in these blocks, hence the limit on it above.
 SET query_plan_push_limit_by_into_sort = 1, query_plan_push_down_limit_below_limit_by = 1, optimize_read_in_order = 1, max_block_size = 7;
 
 SELECT 'desc, offset';
@@ -78,23 +94,14 @@ SELECT 'asc, n = 3, m = 6, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT 
 SELECT 'asc, n = 3, m = 6, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 5 WITH TIES));
 
 -- `FINAL`: the replaced row of every key must not come back.
-CREATE TABLE t_lbol_final (k UInt32, v UInt32, ver UInt32) ENGINE = ReplacingMergeTree(ver) ORDER BY k SETTINGS index_granularity = 64;
-SYSTEM STOP MERGES t_lbol_final;
-INSERT INTO t_lbol_final SELECT number, number, 1 FROM numbers(5000);
-INSERT INTO t_lbol_final SELECT number, number + 1000000, 2 FROM numbers(5000);
 SELECT 'final';
 SELECT k, v FROM t_lbol_final FINAL ORDER BY k DESC LIMIT 1 BY k LIMIT 4 OFFSET 2;
 
--- Rows read. Every key has 100 rows in each of four parts, so for `LIMIT n OFFSET m BY k LIMIT l OFFSET o` the stream of
--- a part needs `ceil((l + o) / n)` groups and stops within a granule after them. Parallel replicas are disabled: with them
--- the rows are read on the replicas and `read_rows` varies from run to run.
-CREATE TABLE t_lbol_rows (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY (k, v) SETTINGS index_granularity = 64;
-SYSTEM STOP MERGES t_lbol_rows;
-INSERT INTO t_lbol_rows SELECT intDiv(number, 100), number FROM numbers(50000);
-INSERT INTO t_lbol_rows SELECT intDiv(number, 100), number + 1000000 FROM numbers(50000);
-INSERT INTO t_lbol_rows SELECT intDiv(number, 100), number + 2000000 FROM numbers(50000);
-INSERT INTO t_lbol_rows SELECT intDiv(number, 100), number + 3000000 FROM numbers(50000);
-
+-- Rows read. For `LIMIT n OFFSET m BY k LIMIT l OFFSET o` the stream of a part of `t_lbol_rows` needs `ceil((l + o) / n)`
+-- groups and stops within a granule after them. One thread, so that every part is read by one stream: with more threads a
+-- part can be split into several streams. Parallel replicas are disabled: with them the rows are read on the replicas and
+-- `read_rows` varies from run to run.
+SET max_threads = 1;
 SELECT k, v FROM t_lbol_rows ORDER BY k DESC, v DESC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 0 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|desc, n = 1, m = 0, offset = 0|1|7|0|4' FORMAT Null;
 SELECT k, v FROM t_lbol_rows ORDER BY k DESC, v DESC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 5 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|desc, n = 1, m = 0, offset = 5|1|7|5|4' FORMAT Null;
 SELECT k, v FROM t_lbol_rows ORDER BY k DESC, v DESC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 0 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|desc, n = 1, m = 2, offset = 0|1|7|0|4' FORMAT Null;

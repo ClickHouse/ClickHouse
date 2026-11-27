@@ -259,7 +259,7 @@ SELECT extract(explain, 'Per-stream LIMIT BY.*') FROM (EXPLAIN actions = 1 SELEC
 DROP TABLE test_outer_limit;
 
 -- Groups of 10000 rows in each of four parts: a stream needs 4 groups for `LIMIT 3 BY` and `LIMIT 3 OFFSET 1 BY`,
--- not the 10 that counting groups needs.
+-- not the 10 that counting groups needs. One thread, so that every part is read by one stream.
 DROP TABLE IF EXISTS test_outer_limit_rows;
 CREATE TABLE test_outer_limit_rows (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY (k, v) SETTINGS index_granularity = 1000;
 SYSTEM STOP MERGES test_outer_limit_rows;
@@ -267,8 +267,8 @@ INSERT INTO test_outer_limit_rows SELECT intDiv(number, 10000), number FROM numb
 INSERT INTO test_outer_limit_rows SELECT intDiv(number, 10000), number + 1000000 FROM numbers(200000);
 INSERT INTO test_outer_limit_rows SELECT intDiv(number, 10000), number + 2000000 FROM numbers(200000);
 INSERT INTO test_outer_limit_rows SELECT intDiv(number, 10000), number + 3000000 FROM numbers(200000);
-SELECT k, v FROM test_outer_limit_rows ORDER BY k DESC, v DESC LIMIT 3 BY k LIMIT 10 SETTINGS max_block_size = 1000, log_comment = '04238_outer_limit_rows';
-SELECT k, v FROM test_outer_limit_rows ORDER BY k DESC, v DESC LIMIT 3 OFFSET 1 BY k LIMIT 10 SETTINGS max_block_size = 1000, log_comment = '04238_outer_limit_rows_offset';
+SELECT k, v FROM test_outer_limit_rows ORDER BY k DESC, v DESC LIMIT 3 BY k LIMIT 10 SETTINGS max_block_size = 1000, max_threads = 1, log_comment = '04238_outer_limit_rows';
+SELECT k, v FROM test_outer_limit_rows ORDER BY k DESC, v DESC LIMIT 3 OFFSET 1 BY k LIMIT 10 SETTINGS max_block_size = 1000, max_threads = 1, log_comment = '04238_outer_limit_rows_offset';
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, read_rows < 200000 FROM system.query_log WHERE log_comment LIKE '04238_outer_limit_rows%' AND current_database = currentDatabase() AND type = 'QueryFinish' ORDER BY log_comment;
 DROP TABLE test_outer_limit_rows;
