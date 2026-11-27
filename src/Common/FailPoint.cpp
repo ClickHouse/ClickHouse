@@ -47,6 +47,7 @@ static struct InitFiu
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
+    REGULAR(replicas_status_replica_turns_readonly) \
     REGULAR(parallel_sync_paths_fail_fsync) \
     REGULAR(deduplication_log_fail_durable_drop_sync) \
     REGULAR(parallel_sync_paths_interrupt_fsync) \
@@ -242,6 +243,7 @@ static struct InitFiu
     ONCE(write_buffer_valid_utf8_finalize_throw) \
     ONCE(http_output_finalize_throw) \
     ONCE(http_push_delayed_results_throw) \
+    ONCE(prometheus_handler_finalize_throw) \
     ONCE(terminate_with_exception) \
     ONCE(terminate_with_std_exception) \
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
