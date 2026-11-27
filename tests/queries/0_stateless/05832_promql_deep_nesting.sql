@@ -1,5 +1,7 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-flaky-check
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
+-- Tag no-flaky-check: ANTLR locks a mutex several times per token, and the thread fuzzer of the flaky check migrates
+-- the thread to another CPU on every lock and unlock, so parsing these long queries takes minutes there.
 
 -- A deeply nested PromQL query must fail with `TOO_DEEP_RECURSION`. It used to overflow the stack of the thread,
 -- and the server was terminated by a segmentation fault.
