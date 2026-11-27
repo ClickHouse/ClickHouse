@@ -115,6 +115,14 @@ public:
     [[nodiscard]] String getName() const override;
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+
+    /// The `JSON` settings apply only to a `JSON` or `Dynamic` value, e.g. not to `x[1]` of an `Array(UInt64)`.
+    [[nodiscard]] bool resultDependsOnSetting(
+        const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & result_type) const override
+    {
+        return std::ranges::any_of(
+            arguments, [&](const DataTypePtr & type) { return conversionResultDependsOnSetting(setting, type, result_type); });
+    }
     /// A lazily replicated array argument is consumed by gathering from the compact nested column.
     /// When true it materializes the compacted representation to a full column.
     [[nodiscard]] bool useDefaultImplementationForReplicatedColumns() const override { return false; }

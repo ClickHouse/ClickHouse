@@ -627,6 +627,14 @@ public:
     /// The setting decides which paths count for the same arguments, see `IFunctionBase::updateHash`.
     void updateHash(SipHash & hash) const override { hash.update(skip_null_typed_paths); }
 
+    /// The `JSON` settings apply only to a `JSON` or `Dynamic` value, e.g. not to `x[1]` of an `Array(UInt64)`.
+    [[nodiscard]] bool resultDependsOnSetting(
+        const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & result_type) const override
+    {
+        return std::ranges::any_of(
+            arguments, [&](const DataTypePtr & type) { return conversionResultDependsOnSetting(setting, type, result_type); });
+    }
+
     [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
