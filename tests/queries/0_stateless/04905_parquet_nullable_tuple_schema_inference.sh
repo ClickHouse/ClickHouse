@@ -104,11 +104,11 @@ $CLICKHOUSE_LOCAL -m -q "
     SET $OPTS;
     SELECT p.1 FROM file('${T}_top.parquet', Parquet) ORDER BY 1;"
 
-echo '--- hinted read with every element missing still rejects: the null map is unrecoverable'
+echo '--- hinted read with every element missing: the null map is read from a leaf'
 $CLICKHOUSE_LOCAL -m -q "
     SET $OPTS;
-    SELECT * FROM file('${T}_top.parquet', Parquet, 'p Nullable(Tuple(zzz UInt8))')
-        SETTINGS input_format_parquet_allow_missing_columns = 1;" 2>&1 | grep -c 'TYPE_MISMATCH'
+    SELECT * FROM file('${T}_top.parquet', Parquet, 'p Nullable(Tuple(zzz UInt8))') ORDER BY toString(p)
+        SETTINGS input_format_parquet_allow_missing_columns = 1;"
 
 echo '--- sibling formats infer the same shape from the same data'
 $CLICKHOUSE_LOCAL -m -q "

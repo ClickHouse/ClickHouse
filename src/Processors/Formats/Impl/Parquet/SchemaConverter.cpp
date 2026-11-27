@@ -549,7 +549,7 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
         return false;
 
     primitive_column_idx += 1;
-    if (sample_block && levels.back().rep > 0)
+    if (sample_block && (levels.back().rep > 0 || group_null_map_leaves_depth > 0))
         leaves_in_arrays.push_back({.schema_idx = schema_idx - 1, .column_idx = primitive_column_idx - 1, .levels = levels});
     if (!node.requested)
         return true;
@@ -1177,6 +1177,12 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     nullable_tuple_group_depth += nullable_group ? 1 : 0;
     SCOPE_EXIT({ nullable_tuple_group_depth -= nullable_group ? 1 : 0; });
 
+    /// The definition levels of each leaf of an OPTIONAL group with an all-REQUIRED subtree are the group null map.
+    const bool group_null_map_from_leaf = sample_block && node.requested && group_is_optional
+        && (nullable_group || (!options.format.null_as_default && tupleSubtreeIsAllRequired(file_metadata.schema, tuple_schema_idx)));
+    group_null_map_leaves_depth += group_null_map_from_leaf ? 1 : 0;
+    SCOPE_EXIT({ group_null_map_leaves_depth -= group_null_map_from_leaf ? 1 : 0; });
+
     const DataTypeTuple * tuple_type_hint = typeid_cast<const DataTypeTuple *>(node.type_hint.get());
     if (node.type_hint && !tuple_type_hint && !typeid_cast<const DataTypeObject *>(node.type_hint.get()))
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple, requested type is {}", node.getNameForLogging(), node.type_hint->getName());
@@ -1357,15 +1363,14 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     /// wrapped in ColumnNullable using the group null map. Make input_type Nullable(Tuple(...)) so
     /// the outer restore in processSubtree sees no type change (needs_cast stays off); the wrapping
     /// is done in Reader::formOutputColumn keyed by OutputColumnInfo::nullable_group.
-    /// The group null map is reconstructed from a physical leaf's definition levels, so at least one
-    /// leaf must actually be read. With allow_missing_columns, every requested element can be a
-    /// synthetic default (no physical leaf); then the null map is unrecoverable, so reject rather
-    /// than fabricate an all-non-null map that silently drops the struct nulls.
+    /// No requested element is in the file: read a leaf for the group null map.
+    if (group_null_map_from_leaf && primitive_start == primitive_columns.size())
+        addLevelsOnlyPrimitive(leaves_start, leaves_in_arrays.size(), levels.back().rep, node.name, /*group_nulls=*/ true);
+    /// A group without a decodable leaf has no null map in the file.
     if (nullable_group && primitive_start == primitive_columns.size())
         throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Requested type of column {} doesn't match parquet schema: physically nullable Tuple has no "
-            "physical elements to read (all requested elements are missing), so its null map cannot be "
-            "reconstructed; requested type is {}", node.getNameForLogging(), node.type_hint->getName());
+            "Requested type of column {} doesn't match parquet schema: physically nullable Tuple has no leaf to read its null "
+            "map from; requested type is {}", node.getNameForLogging(), node.type_hint->getName());
     if (nullable_group)
         output_type = makeNullable(output_type);
 
@@ -1423,7 +1428,8 @@ static bool setPhysicalValuesDecoder(const parq::SchemaElement & element, PageDe
     return true;
 }
 
-std::optional<size_t> SchemaConverter::addLevelsOnlyPrimitive(size_t leaves_start, size_t leaves_end, UInt8 arrays, const String & name)
+std::optional<size_t> SchemaConverter::addLevelsOnlyPrimitive(
+    size_t leaves_start, size_t leaves_end, UInt8 arrays, const String & name, bool group_nulls)
 {
     UnorderedSetWithMemoryTracking<size_t> read_column_idxs;
     for (const auto & primitive : primitive_columns)
@@ -1465,7 +1471,8 @@ std::optional<size_t> SchemaConverter::addLevelsOnlyPrimitive(size_t leaves_star
     primitive.column_idx = leaf.column_idx;
     primitive.schema_idx = leaf.schema_idx;
     primitive.name = name;
-    primitive.output_nullable = !leaf.levels.back().is_array;
+    primitive.output_nullable = !group_nulls && !leaf.levels.back().is_array;
+    primitive.group_nullable = group_nulls && nullable_tuple_group_depth > 0;
     primitive.decoder = std::move(decoder);
     primitive.decoded_type = decoded_type;
     primitive.output_type = primitive.decoded_type;

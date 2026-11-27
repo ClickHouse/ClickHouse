@@ -53,6 +53,8 @@ struct SchemaConverter
     /// PrimitiveColumnInfo::group_nullable set: their definition-level null map equals the group
     /// null map, so we keep it and later wrap the assembled ColumnTuple in ColumnNullable.
     size_t nullable_tuple_group_depth = 0;
+    /// >0 while recursing a requested OPTIONAL group whose null map may have to be read from one of its leaves.
+    size_t group_null_map_leaves_depth = 0;
 
     /// The key is the parquet column name, without ColumnMapper.
     UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> geo_columns;
@@ -151,7 +153,8 @@ private:
         }
     };
 
-    /// Every leaf under an array, in schema order, so the leaves of a subtree are a contiguous range.
+    /// Every leaf under an array or under a group counted by group_null_map_leaves_depth, in schema order, so the leaves of a
+    /// subtree are a contiguous range.
     struct LeafInArray
     {
         size_t schema_idx = 0;
@@ -189,7 +192,9 @@ private:
     /// The sizes of an array are stored only in the leaves under it. Adds a primitive column with
     /// PrimitiveColumnInfo::levels_only_arrays = `arrays` and no output, for one of the leaves
     /// leaves_in_arrays[leaves_start, leaves_end). Returns its index in primitive_columns, or nullopt if no leaf is read.
-    std::optional<size_t> addLevelsOnlyPrimitive(size_t leaves_start, size_t leaves_end, UInt8 arrays, const String & name);
+    /// With group_nulls, the leaf's nulls are the group's, read as for its other leaves.
+    std::optional<size_t> addLevelsOnlyPrimitive(
+        size_t leaves_start, size_t leaves_end, UInt8 arrays, const String & name, bool group_nulls = false);
 
     /// If the requested column at `pos` is `arr.missing`, where `arr` is in tuples_in_arrays and has
     /// no element `missing`, outputs it as arrays of defaults sized like `arr` and returns true.
