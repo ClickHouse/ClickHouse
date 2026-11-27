@@ -496,7 +496,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     automatic_parallel_replicas_statistics_drift_ratio = from[Setting::automatic_parallel_replicas_statistics_drift_ratio];
     automatic_parallel_replicas_remember_boundary = from[Setting::automatic_parallel_replicas_remember_boundary];
     automatic_parallel_replicas_undecided_retry_after_executions = from[Setting::automatic_parallel_replicas_undecided_retry_after_executions];
-    /// Only `considerEnablingParallelReplicas` reads the hash, and it returns at once when the mode is 0.
+    /// The hash is read only when the mode is on.
     if (automatic_parallel_replicas_mode)
         parallel_replicas_boundary_settings_hash = parallelReplicasBoundarySettingsHash(from);
 
