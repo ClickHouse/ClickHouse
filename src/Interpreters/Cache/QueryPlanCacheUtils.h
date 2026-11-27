@@ -18,6 +18,10 @@ tryBuildPreAnalysisQueryPlanCacheLookup(const ASTPtr & ast, const ContextPtr & c
 
 bool astContainsInTableExpressionForQueryPlanCache(ASTPtr ast);
 
+/// Whether the query reads a scalar of the query context with `__getScalar`. The value of the scalar is sent
+/// by the client along with the query and is folded into the plan, so such a query bypasses the cache.
+bool astContainsQueryContextScalarsForQueryPlanCache(const ASTPtr & ast);
+
 /// Checks the analyzed query tree for nondeterministic functions that are not visible in the AST:
 /// identifiers resolved to functions and expanded `ALIAS` columns. Such plans must not be cached.
 bool queryTreeContainsNonDeterministicFunctionsForQueryPlanCache(const QueryTreeNodePtr & query_tree);

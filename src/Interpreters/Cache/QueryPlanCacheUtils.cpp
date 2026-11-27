@@ -289,6 +289,10 @@ bool isRefreshTargetForQueryPlanCache(const ContextPtr & context, const StorageI
     return context->getRefreshSet().tryGetTaskForInnerTable(storage_id) != nullptr;
 }
 
+/// `__getScalar('name')` reads a scalar that the client sends along with the query. The analyzer folds its
+/// value into a constant of the plan, while the cache key has only the name of the scalar.
+constexpr auto query_context_scalar_function_name = "__getScalar";
+
 bool queryTreeContainsNonDeterministicFunctionsForQueryPlanCache(const QueryTreeNodePtr & query_tree)
 {
     NonDeterministicFunctionsFinderVisitor visitor;
@@ -330,6 +334,10 @@ std::optional<Names> collectFunctionsForQueryPlanCacheEntry(const QueryTreeNodeP
     std::set<String> function_names;
     FunctionNamesCollectorVisitor(function_names).visit(query_tree);
 
+    /// The value of a query-context scalar is folded into the plan, see `astContainsQueryContextScalarsForQueryPlanCache`.
+    if (function_names.contains(query_context_scalar_function_name))
+        return {};
+
     const auto & function_factory = FunctionFactory::instance();
     for (const auto & name : function_names)
         if (!function_factory.has(name))
@@ -345,6 +353,17 @@ void checkFunctionsForQueryPlanCacheHit(const ContextPtr & context, const Names 
     const auto & function_factory = FunctionFactory::instance();
     for (const auto & name : functions)
         function_factory.get(name, context)->checkAccessOnBuild();
+}
+
+bool astContainsQueryContextScalarsForQueryPlanCache(const ASTPtr & ast)
+{
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == query_context_scalar_function_name)
+        return true;
+
+    return std::ranges::any_of(ast->children, [](const ASTPtr & child)
+    {
+        return child && astContainsQueryContextScalarsForQueryPlanCache(child);
+    });
 }
 
 bool astContainsInTableExpressionForQueryPlanCache(ASTPtr ast)
