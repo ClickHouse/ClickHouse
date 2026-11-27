@@ -32,3 +32,5 @@ check()
 check JSONCompactEachRow '[1,2]\n[1]\n[1,2,3]\n'
 check JSONCompactStringsEachRow '["1","2"]\n["1"]\n["1","2","3"]\n'
 check JSONCompactEachRowWithNames '["c1","c2"]\n[1,2]\n[1]\n'
+# The header and the types row decide the schema of WithNamesAndTypes, and count() does not depend on the setting.
+check JSONCompactEachRowWithNamesAndTypes '["c1","c2"]\n["String","String"]\n["a","b"]\n["c"]\n'
