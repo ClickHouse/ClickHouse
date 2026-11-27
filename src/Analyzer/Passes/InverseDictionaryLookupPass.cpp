@@ -326,7 +326,7 @@ tryResolveViewInnerQueryForInspection(const TableNode & table_node, const Contex
 
     /// A sealed view hides its definition from the invoker (see `StorageView::isSealed`), so its body
     /// must not leak into the outer query tree, e.g. through `EXPLAIN QUERY TREE`.
-    if (view && !view->isParameterizedView() && !table_node.hasTableExpressionModifiers()
+    if (view && !view->isParameterizedView() && !table_node.hasTableExpressionModifiers() && !context->hasInsertionTable()
         && !view->isSealed(*storage_snapshot->metadata, context))
     {
         auto view_context = StorageView::getViewSubqueryContext(context, storage_snapshot);
