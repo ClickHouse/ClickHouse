@@ -7,6 +7,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The consumers cannot connect to the broker, keep the errors of librdkafka out of the output of the queries.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --send_logs_level=none"
+
 # Properties in the `consumer` section of a Kafka named collection and in the `kafka_topic` section of a consumed topic
 # are set for the consumer, properties in the `producer` section are not. No broker is needed: the properties are set
 # when the consumer is created. The topic is `topic`, so its legacy section `kafka_topic` has the name of a new syntax section.
@@ -76,7 +79,7 @@ echo "secret shown: $($CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE kafka_secret" | g
 # The overrides of a collection from the server configuration file are checked as the keys of a collection created by SQL.
 echo "file path override rejected: $($CLICKHOUSE_CLIENT -q "
     CREATE TABLE kafka_paths (x UInt64) ENGINE = Kafka(kafka_config_file_paths, \`kafka.ssl_key_location\` = '/etc/passwd')
-" 2>&1 | grep -c 'Kafka property \`ssl.key.location\` can only be specified')"
+" 2>&1 | grep -c 'Kafka property .ssl.key.location. can only be specified')"
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE kafka_config (x UInt64) ENGINE = Kafka(kafka_config_file_paths, \`kafka.consumer.fetch_min_bytes\` = '555')
         SETTINGS kafka_poll_timeout_ms = 100, kafka_flush_interval_ms = 100
