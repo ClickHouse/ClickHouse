@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# Tag no-fasttest: the `ParquetMetadata` format needs Arrow, which is not built in the fast test.
+# Tag no-fasttest: the `ParquetMetadata` format needs the Parquet library, which is not built in the fast test.
 
 # The `ParquetMetadata` format limits the nesting depth of the Parquet schema with `max_parser_depth`,
-# and always with a hard ceiling, because Arrow builds the schema tree recursively.
+# like the native Parquet reader, and checks the stack size if the limit is raised or removed.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Writes a Parquet file without row groups, with a column nested in the given number of groups.
+# Writes a Parquet file without row groups, with a column nested in the given number of `REQUIRED` groups,
+# which do not increase the definition and repetition levels. The groups have empty names to keep the path short.
 # It is written directly, because ClickHouse does not parse such deep types.
 function write_deep_parquet()
 {
@@ -55,7 +56,7 @@ def struct_list(items):
 
 depth = int(sys.argv[1])
 schema = [schema_element(b"schema", num_children=1)]
-schema += [schema_element(b"c", repetition=1, num_children=1) for _ in range(depth)]
+schema += [schema_element(b"", repetition=0, num_children=1)] * depth
 schema += [schema_element(b"c", physical_type=1, repetition=1)]
 # FileMetaData: 1 version, 2 schema, 3 num_rows, 4 row_groups.
 metadata = field(1, I32) + zigzag(1) + field(1, LIST) + struct_list(schema) + field(1, I64) + zigzag(0) + field(1, LIST) + struct_list([]) + b"\x00"
@@ -69,9 +70,9 @@ write_deep_parquet 100 "$file"
 $CLICKHOUSE_LOCAL -q "SELECT num_columns FROM file('$file', ParquetMetadata)"
 $CLICKHOUSE_LOCAL --max_parser_depth 50 -q "SELECT num_columns FROM file('$file', ParquetMetadata)" 2>&1 | grep -o -m1 'TOO_DEEP_RECURSION'
 
-# Raising `max_parser_depth` or setting it to 0 (unlimited) does not remove the hard ceiling.
-write_deep_parquet 100000 "$file"
+# If `max_parser_depth` is raised or set to 0 (unlimited), the stack size check stops the recursion.
+write_deep_parquet 1000000 "$file"
 $CLICKHOUSE_LOCAL --max_parser_depth 0 -q "SELECT num_columns FROM file('$file', ParquetMetadata)" 2>&1 | grep -o -m1 'TOO_DEEP_RECURSION'
-$CLICKHOUSE_LOCAL --max_parser_depth 1000000 -q "SELECT num_columns FROM file('$file', ParquetMetadata)" 2>&1 | grep -o -m1 'TOO_DEEP_RECURSION'
+$CLICKHOUSE_LOCAL --max_parser_depth 10000000 -q "SELECT num_columns FROM file('$file', ParquetMetadata)" 2>&1 | grep -o -m1 'TOO_DEEP_RECURSION'
 
 rm -f "$file"

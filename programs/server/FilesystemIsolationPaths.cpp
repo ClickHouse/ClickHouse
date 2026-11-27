@@ -241,7 +241,16 @@ private:
     /// With `only_file_in_shared_directory`, a file directly in `/` or in `/tmp` is visible on its own instead of its
     /// directory: the root directory cannot be visible, and the directory `/tmp` of the host would cover the private
     /// writable `/tmp` and expose the temporary files of everything else on the host.
-    void addLocation(const fs::path & path, Access access, const std::string & source, bool only_file_in_shared_directory = false)
+    ///
+    /// With `skip_unreachable`, nothing more is added from the first location that the server cannot reach, as a
+    /// directory inside one that it cannot search, as `/root/.aws` for a server that does not run as root: it cannot
+    /// read anything there anyway, and the isolation could not resolve the location.
+    void addLocation(
+        const fs::path & path,
+        Access access,
+        const std::string & source,
+        bool only_file_in_shared_directory = false,
+        bool skip_unreachable = false)
     {
         std::error_code error;
         /// The same limit on the number of links as in the kernel, against a loop.
@@ -266,10 +275,11 @@ private:
                     add(current, access, source);
                 return;
             }
-            if (only_file_in_shared_directory && isSharedDirectory(current.parent_path()))
-                add(current, access, source);
-            else
-                add(current.parent_path(), access, source);
+            const fs::path location
+                = only_file_in_shared_directory && isSharedDirectory(current.parent_path()) ? current : current.parent_path();
+            if (skip_unreachable && isUnreachable(location))
+                return;
+            add(location, access, source);
 
             if (i == max_links || !FS::isSymlinkNoThrow(current))
                 return;
@@ -282,6 +292,15 @@ private:
             /// it means the parent of the target of that link, which `resolvePath` follows as the kernel does.
             current = absolute(target.string(), "/");
         }
+    }
+
+    /// Whether the server cannot know if the path exists, as for a path inside a directory that it cannot search
+    /// (`EACCES`). A path that does not exist is not unreachable: it is skipped by the isolation.
+    static bool isUnreachable(const fs::path & path)
+    {
+        /// For a path that does not exist, `fs::exists` clears the error.
+        std::error_code error;
+        return !fs::exists(path, error) && error;
     }
 
     /// The root directory or `/tmp`, also through links, as `/var/tmp -> /tmp`.
@@ -919,7 +938,7 @@ private:
             const char * value = std::getenv(name); // NOLINT(concurrency-mt-unsafe)
             if (value && *value)
                 addLocation(absolute(value, runtime_directory), Access::ReadOnly, fmt::format("the environment variable {}", name),
-                    /* only_file_in_shared_directory = */ true);
+                    /* only_file_in_shared_directory = */ true, /* skip_unreachable = */ true);
         }
 
         /// The default location of the configuration and the credentials of the AWS SDK, `~/.aws/config` and
@@ -939,7 +958,8 @@ private:
                 /// `~/.aws/credentials -> /mnt/cloud-credentials/credentials`.
                 for (const char * name : {"config", "credentials"})
                     if (const fs::path file = aws_directory / name; FS::isSymlinkNoThrow(file))
-                        addLocation(file, Access::ReadOnly, source, /* only_file_in_shared_directory = */ true);
+                        addLocation(
+                            file, Access::ReadOnly, source, /* only_file_in_shared_directory = */ true, /* skip_unreachable = */ true);
             }
         }
     }
