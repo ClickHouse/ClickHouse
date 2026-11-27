@@ -5130,7 +5130,7 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
     /// as the memory-efficient merging (`GroupingAggregatedTransform`) of a remote result relies on it.
     std::vector<std::optional<AggregatedChunk>> res(Method::Data::NUM_BUCKETS);
 
-    auto converter = [this, &next_bucket_to_merge, &method, &data_variants, &res, final](size_t thread_id)
+    auto converter = [this, &next_bucket_to_merge, &method, &data_variants, &res, final](const size_t thread_id)
     {
         while (true)
         {
@@ -5151,10 +5151,10 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
     ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
     /// Reserve the tracking slots before scheduling: otherwise `enqueueAndKeepTrack` could throw after the pool
     /// has accepted a job, and nothing would wait for that job while it uses `converter` and `res` by reference.
-    runner.reserve(max_threads);
+    runner.reserve(max_threads - 1);
     try
     {
-        for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
+        for (size_t thread_id = 0; thread_id < max_threads - 1; ++thread_id)
         {
             if (use_thread_pool)
                 /// Passing converter as a reference is fine, it will outlive runner. Also it's arguments will outlive it too
@@ -5164,6 +5164,7 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
             else
                 converter(thread_id);
         }
+        converter(max_threads - 1);
     }
     catch (...) // Ok: wait for parallel tasks to finish before rethrowing
     {
@@ -6122,13 +6123,12 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
             const size_t threads = std::min({params.max_threads, variants_to_convert.size(), max_parallel_two_level_conversions});
             /// Reserve the tracking slots before scheduling: otherwise `enqueueAndKeepTrack` could throw after the pool
             /// has accepted a job, and nothing would wait for that job while it uses `converter` by reference.
-            runner.reserve(threads);
+            runner.reserve(threads - 1);
             try
             {
-                /// Passing converter as a reference is fine: `runner` waits for all tasks before
-                /// this scope (and the captured state) is destroyed.
-                for (size_t i = 0; i < threads; ++i)
-                    runner.enqueueAndKeepTrack([&converter]() { converter(); }, Priority{});
+                for (size_t i = 0; i < threads - 1; ++i)
+                    runner.enqueueAndKeepTrack(converter, Priority{});
+                converter();
             }
             catch (...) // Ok: wait for parallel tasks to finish before rethrowing
             {
@@ -6710,11 +6710,11 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
                 CurrentMetrics::AggregatorThreads,
                 CurrentMetrics::AggregatorThreadsActive,
                 CurrentMetrics::AggregatorThreadsScheduled,
-                params.max_threads);
+                params.max_threads - 1);
             ThreadPoolCallbackRunnerLocal<void> runner(merge_bucket_pool, ThreadName::AGGREGATOR_POOL);
             try
             {
-                for (size_t i = 0; i < params.max_threads; ++i)
+                for (size_t i = 0; i < params.max_threads - 1; ++i)
                 {
                     result.aggregates_pools.push_back(std::make_shared<Arena>());
                     Arena * aggregates_pool = result.aggregates_pools.back().get();
@@ -6722,6 +6722,8 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
                     /// This is fine as runner has a narrower scope than those references and its destructor will be called first
                     runner.enqueueAndKeepTrack([&merge_bucket, aggregates_pool]() { merge_bucket(aggregates_pool); });
                 }
+                result.aggregates_pools.push_back(std::make_shared<Arena>());
+                merge_bucket(result.aggregates_pools.back().get());
             }
             catch (...)
             {
