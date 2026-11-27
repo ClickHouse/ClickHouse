@@ -2015,6 +2015,84 @@ def test_permanent_detach_keeps_column_subset_of_remaining_tables(started_cluste
         cursor.execute(f"DROP TABLE IF EXISTS {detached}")
 
 
+def test_failed_permanent_detach_keeps_column_subset_of_readded_table(started_cluster):
+    # A `DETACH TABLE ... PERMANENTLY` that fails after the table left the publication re-adds the table
+    # and reloads it. The re-add has to publish the table with its column subset again: the nested table
+    # has only these columns, so with all columns published the consumer refuses the table on its next
+    # `Relation` message, and its changes are acknowledged without being applied.
+    ip = started_cluster.postgres_ip
+    port = started_cluster.postgres_port
+    conn = get_postgres_conn(ip=ip, port=port, database=True)
+    cursor = conn.cursor()
+
+    restricted = "failed_detach_subset_cols"
+    other = "failed_detach_subset_other"
+
+    try:
+        cursor.execute(f"DROP TABLE IF EXISTS {restricted}")
+        cursor.execute(f"DROP TABLE IF EXISTS {other}")
+        cursor.execute(
+            f"CREATE TABLE {restricted} "
+            "(key integer PRIMARY KEY, val integer, extra integer NOT NULL)"
+        )
+        cursor.execute(f"CREATE TABLE {other} (key integer PRIMARY KEY, val integer)")
+        cursor.execute(
+            f"INSERT INTO {restricted} SELECT i, 100 + i, 900 + i FROM generate_series(0, 4) AS i"
+        )
+        cursor.execute(
+            f"INSERT INTO {other} SELECT i, 200 + i FROM generate_series(0, 2) AS i"
+        )
+
+        pg_manager.create_materialized_db(
+            ip=ip,
+            port=port,
+            settings=[
+                f"materialized_postgresql_tables_list = '{restricted}(key, val), {other}'",
+                "materialized_postgresql_backoff_min_ms = 100",
+                "materialized_postgresql_backoff_max_ms = 100",
+            ],
+        )
+        assert_nested_table_is_created(instance, restricted)
+        assert_nested_table_is_created(instance, other)
+        wait_for_replicated_rows(f"`test_database`.`{restricted}`", 5)
+        wait_for_replicated_rows(f"`test_database`.`{other}`", 3)
+
+        failpoint = "materialized_postgresql_fail_after_publication_removal"
+        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            error = instance.query_and_get_error(
+                f"DETACH TABLE test_database.{restricted} PERMANENTLY"
+            )
+            assert "Injected failure" in error
+        finally:
+            instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # The publication has the column subset again.
+        cursor.execute(
+            "SELECT attnames FROM pg_publication_tables "
+            f"WHERE tablename = '{restricted}'"
+        )
+        assert [sorted(row[0]) for row in cursor.fetchall()] == [["key", "val"]]
+
+        # The failed DETACH is a no-op: ongoing replication of the table keeps working.
+        cursor.execute(f"INSERT INTO {restricted} VALUES (5, 105, 905)")
+        cursor.execute(f"DELETE FROM {restricted} WHERE key = 0")
+        cursor.execute(f"INSERT INTO {other} VALUES (3, 203)")
+        wait_for_replicated_rows(f"`test_database`.`{other}`", 4)
+        wait_for_replicated_rows(f"`test_database`.`{restricted}`", 5)
+        assert (
+            instance.query(
+                f"SELECT key, val FROM test_database.{restricted} ORDER BY key"
+            )
+            == "1\t101\n2\t102\n3\t103\n4\t104\n5\t105\n"
+        )
+        assert replicated_columns(restricted) == ["_sign", "_version", "key", "val"]
+    finally:
+        pg_manager.drop_materialized_db()
+        cursor.execute(f"DROP TABLE IF EXISTS {restricted}")
+        cursor.execute(f"DROP TABLE IF EXISTS {other}")
+
+
 def test_materialized_postgresql_tables_list_rejects_empty_element(started_cluster):
     # `materialized_postgresql_tables_list` is split on commas without dropping empty tokens, so a
     # doubled comma leaves an element with no bytes while the quoting pass reads that element's last

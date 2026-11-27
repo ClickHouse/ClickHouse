@@ -5313,9 +5313,13 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
         /// snapshot is being loaded would stay in the nested table for good. The consumer is stopped above, and it
         /// skips the changes of this table before `start_lsn` (see `addNested` below). If the reload fails, the
         /// table stays published but not materialized, which is a supported state (see `addTableToPublication`).
+        /// The table is published with the same column subset the snapshot and the nested table use
+        /// (`getTableAllowedColumns`). This matters when a table with a column subset is re-added after a failed
+        /// permanent detach: published with all its columns, its next `Relation` message would not match the
+        /// nested table, the consumer would skip the table and keep advancing the slot without applying its changes.
         {
             pqxx::nontransaction tx(replication_connection.getRef());
-            addTableToPublication(tx, postgres_table_name);
+            addTableToPublication(tx, postgres_table_name, getTableAllowedColumns(postgres_table_name));
         }
 
         fiu_do_on(FailPoints::materialized_postgresql_pause_before_snapshot_export,
