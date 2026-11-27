@@ -103,7 +103,7 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
         const auto & nested = column_nullable->getNestedColumnPtr();
         auto nested_no_lc = recursiveRemoveLowCardinality(nested);
         if (nested.get() != nested_no_lc.get())
-            res = ColumnNullable::create(nested_no_lc, column_nullable->getNullMapColumnPtr());
+            res = ColumnNullable::create(nested_no_lc, column_nullable->tryGetNullMapColumnPtr());
     }
     else if (const auto * column_array = typeid_cast<const ColumnArray *>(column.get()))
     {
@@ -203,7 +203,7 @@ ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const 
                 return column;
 
             /// Keep the original null map, only change the nested data.
-            return ColumnNullable::create(nested_result, column_nullable->getNullMapColumnPtr());
+            return ColumnNullable::create(nested_result, column_nullable->tryGetNullMapColumnPtr());
         }
     }
 

@@ -64,7 +64,7 @@ static void fixFloatSignedZeroExtremes(Field & min_val, Field & max_val, const I
         return;
 
     const auto * nullable_col = checkAndGetColumn<ColumnNullable>(&column);
-    ConstNullMapPtr null_map = nullable_col ? &nullable_col->getNullMapData() : nullptr;
+    ConstNullMapPtr null_map = nullable_col ? nullable_col->tryGetNullMapData() : nullptr;
     const IColumn & nested_col = nullable_col ? nullable_col->getNestedColumn() : column;
 
     auto scan = [&](const auto & data)
@@ -145,7 +145,7 @@ void DataFileStatistics::update(const Chunk & chunk)
     {
         const auto & col = chunk.getColumns()[i];
         const auto * nullable_col = checkAndGetColumn<ColumnNullable>(col.get());
-        ConstNullMapPtr null_map = nullable_col ? &nullable_col->getNullMapData() : nullptr;
+        ConstNullMapPtr null_map = nullable_col ? nullable_col->tryGetNullMapData() : nullptr;
         if (null_map)
             null_counts[i] += countBytesInFilter(*null_map);
         else if (const auto * variant_col = getVariantColumn(*col); variant_col && !required_field_ids.contains(field_ids[i]))

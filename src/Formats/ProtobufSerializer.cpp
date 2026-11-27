@@ -139,7 +139,9 @@ namespace
         {
             const auto & const_nullable = std::as_const(*column_nullable);
             popBackBorrowed(borrowColumnRef(const_nullable.getNestedColumnPtr()), n);
-            borrowColumnRef(const_nullable.getNullMapColumnPtr()).popBack(n);
+            /// A column without a null map has no NULLs, and its size is the size of the nested column.
+            if (const auto * null_map = const_nullable.tryGetNullMapColumn())
+                const_cast<ColumnUInt8 &>(*null_map).popBack(n);
         }
         else
         {
@@ -190,12 +192,16 @@ namespace
         }
         else if (auto * column_nullable = typeid_cast<ColumnNullable *>(&column))
         {
+            /// The default row is NULL, so the null map is needed. It is created before the nested column grows,
+            /// and `materializeNullMap` only reads the size of the nested column, so it is safe while
+            /// the nested column is also held by the serializer of the nested field.
+            column_nullable->materializeNullMap();
             const auto & const_nullable = std::as_const(*column_nullable);
             auto & nested_column = borrowColumnRef(const_nullable.getNestedColumnPtr());
             insertDefaultBorrowed(nested_column);
             try
             {
-                assert_cast<ColumnUInt8 &>(borrowColumnRef(const_nullable.getNullMapColumnPtr())).getData().push_back(true);
+                const_cast<ColumnUInt8 &>(*const_nullable.tryGetNullMapColumn()).getData().push_back(true);
             }
             catch (...)
             {
@@ -2290,8 +2296,7 @@ namespace
         void writeRow(size_t row_num) override
         {
             const auto & column_nullable = assert_cast<const ColumnNullable &>(*column);
-            const auto & null_map = column_nullable.getNullMapData();
-            if (!null_map[row_num])
+            if (!column_nullable.isNullAt(row_num))
                 nested_serializer->writeRow(row_num);
         }
 

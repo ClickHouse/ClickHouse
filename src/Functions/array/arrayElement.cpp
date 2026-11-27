@@ -302,7 +302,7 @@ private:
     static bool isNullableJSON(const DataTypePtr & type);
 
     /// Fold the null map of a `Nullable(JSON)` first argument into the path extracted from its nested
-    /// column, so that the outer NULLs are visible in the result.
+    /// column, so that the outer NULLs are visible in the result. A null `null_map_column` means no NULLs.
     static ColumnPtr applyOuterNullMap(
         const ColumnPtr & element_column, const DataTypePtr & element_type, const ColumnPtr & null_map_column);
 
@@ -1144,13 +1144,13 @@ ColumnPtr FunctionArrayElement<mode>::executeArrayStringConst(
     if (!col_nested_elem)
         return nullptr;
 
-    const auto * string_null_map = col_nullable ? &col_nullable->getNullMapColumn() : nullptr;
+    const auto * string_null_map = col_nullable ? col_nullable->tryGetNullMapColumn() : nullptr;
     auto res_string = ColumnString::create();
     auto res_offsets = ColumnArray::ColumnOffsets::create();
-    auto res_string_null_map = col_nullable ? ColumnUInt8::create() : nullptr;
+    auto res_string_null_map = string_null_map ? ColumnUInt8::create() : nullptr;
     if (index.getType() == Field::Types::UInt64 || (index.getType() == Field::Types::Int64 && index.safeGet<Int64>() >= 0))
     {
-        if (col_nullable)
+        if (string_null_map)
             ArrayElementArrayStringImpl<mode>::template vectorConst<false, true>(
                 col_nested_elem->getChars(),
                 col_array->getOffsets(),
@@ -1179,7 +1179,7 @@ ColumnPtr FunctionArrayElement<mode>::executeArrayStringConst(
     }
     else if (index.getType() == Field::Types::Int64)
     {
-        if (col_nullable)
+        if (string_null_map)
             ArrayElementArrayStringImpl<mode>::template vectorConst<true, true>(
                 col_nested_elem->getChars(),
                 col_array->getOffsets(),
@@ -1249,20 +1249,23 @@ ColumnPtr FunctionArrayElement<mode>::executeArrayNumberConst(
     if (!res_array)
         return nullptr;
 
+    const NullMap * null_map = col_nullable ? col_nullable->tryGetNullMapData() : nullptr;
+
     ColVecType * res_data = nullptr;
     ColumnNullable * res_nullable = typeid_cast<ColumnNullable *>(&res_array->getData());
     if (!res_nullable)
         res_data = typeid_cast<ColVecType *>(&res_array->getData());
-    else
+    else if (null_map)
         res_data = typeid_cast<ColVecType *>(&res_nullable->getNestedColumn());
+    else
+        res_data = typeid_cast<ColVecType *>(&res_nullable->getNestedColumnNoMaterialize());
 
-    const NullMap * null_map = col_nullable ? &col_nullable->getNullMapData() : nullptr;
     auto & res_offsets = res_array->getOffsets();
-    NullMap * res_null_map = res_nullable ? &res_nullable->getNullMapData() : nullptr;
+    NullMap * res_null_map = res_nullable && null_map ? &res_nullable->getNullMapData() : nullptr;
 
     if (index.getType() == Field::Types::UInt64 || (index.getType() == Field::Types::Int64 && index.safeGet<Int64>() >= 0))
     {
-        if (col_nullable)
+        if (null_map)
             ArrayElementArrayNumImpl<DataType, mode>::template vectorConst<false, true>(
                 col_nested_elem->getData(),
                 col_array->getOffsets(),
@@ -1295,7 +1298,7 @@ ColumnPtr FunctionArrayElement<mode>::executeArrayNumberConst(
         /// Negative array indices work this way:
         /// arr[-1] is the element at offset 0 from the last
         /// arr[-2] is the element at offset 1 from the last and so on.
-        if (col_nullable)
+        if (null_map)
             ArrayElementArrayNumImpl<DataType, mode>::template vectorConst<true, true>(
                 col_nested_elem->getData(),
                 col_array->getOffsets(),
@@ -1357,18 +1360,21 @@ ColumnPtr FunctionArrayElement<mode>::executeArrayNumber(
     if (!res_array)
         return nullptr;
 
+    const NullMap * null_map = col_nullable ? col_nullable->tryGetNullMapData() : nullptr;
+
     ColVecType * res_data = nullptr;
     ColumnNullable * res_nullable = typeid_cast<ColumnNullable *>(&res_array->getData());
     if (!res_nullable)
         res_data = typeid_cast<ColVecType *>(&res_array->getData());
-    else
+    else if (null_map)
         res_data = typeid_cast<ColVecType *>(&res_nullable->getNestedColumn());
+    else
+        res_data = typeid_cast<ColVecType *>(&res_nullable->getNestedColumnNoMaterialize());
 
-    const NullMap * null_map = col_nullable ? &col_nullable->getNullMapData() : nullptr;
     auto & res_offsets = res_array->getOffsets();
-    NullMap * res_null_map = res_nullable ? &res_nullable->getNullMapData() : nullptr;
+    NullMap * res_null_map = res_nullable && null_map ? &res_nullable->getNullMapData() : nullptr;
 
-    if (col_nullable)
+    if (null_map)
         ArrayElementArrayNumImpl<DataType, mode>::template vector<IndexType, true>(
             col_nested_elem->getData(),
             col_array->getOffsets(),
@@ -1445,12 +1451,12 @@ ColumnPtr FunctionArrayElement<mode>::executeArrayString(
     if (!col_nested_elem)
         return nullptr;
 
-    const auto * string_null_map = col_nullable ? &col_nullable->getNullMapColumn() : nullptr;
+    const auto * string_null_map = col_nullable ? col_nullable->tryGetNullMapColumn() : nullptr;
     auto res_string = ColumnString::create();
     auto res_offsets = ColumnArray::ColumnOffsets::create();
-    auto res_string_null_map = col_nullable ? ColumnUInt8::create() : nullptr;
+    auto res_string_null_map = string_null_map ? ColumnUInt8::create() : nullptr;
 
-    if (col_nullable)
+    if (string_null_map)
         ArrayElementArrayStringImpl<mode>::template vector<IndexType, true>(
             col_nested_elem->getChars(),
             col_array->getOffsets(),
@@ -2205,10 +2211,12 @@ ColumnPtr FunctionArrayElement<mode>::executeJSON(
         col = assert_cast<const ColumnConst &>(*col).getDataColumnPtr();
 
     /// Unwrap a `Nullable(JSON)` carrier and keep its null map to fold into the extracted path below.
+    bool is_nullable = false;
     ColumnPtr null_map_column;
     if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(col.get()))
     {
-        null_map_column = nullable_col->getNullMapColumnPtr();
+        is_nullable = true;
+        null_map_column = nullable_col->tryGetNullMapColumnPtr();
         col = nullable_col->getNestedColumnPtr();
         object_type = assert_cast<const DataTypeNullable &>(*object_type).getNestedType();
     }
@@ -2216,7 +2224,7 @@ ColumnPtr FunctionArrayElement<mode>::executeJSON(
     auto element_type = object_type->getSubcolumnType(subcolumn_name);
     auto result_column = object_type->getSubcolumn(subcolumn_name, col);
 
-    if (null_map_column)
+    if (is_nullable)
         result_column = applyOuterNullMap(result_column, element_type, null_map_column);
 
     /// The default `LowCardinality` handling rebuilds the dictionary itself and dispatches here with the
@@ -2249,6 +2257,9 @@ ColumnPtr FunctionArrayElement<mode>::applyOuterNullMap(
     /// the subcolumn directly.
     if (canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(element_type) || canContainNull(*element_type))
         return NullableSubcolumnCreator(null_map_column).create(element_column, element_type);
+
+    if (!null_map_column)
+        return element_column;
 
     /// A typed path that has no NULL representation at all (e.g. `Array`, `Map`) is default-filled for the
     /// outer-NULL rows, matching the stored subcolumn, instead of leaking the payload hidden under the mask.
@@ -2386,11 +2397,11 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
     ColumnPtr index_column_holder = recursiveRemoveLowCardinality(col_index_array->getDataPtr());
     const ColumnNullable * nullable_index = checkAndGetColumn<ColumnNullable>(index_column_holder.get());
     const IColumn & index_data_col = nullable_index ? nullable_index->getNestedColumn() : *index_column_holder;
-    const NullMap * index_null_map = nullable_index ? &nullable_index->getNullMapData() : nullptr;
+    const NullMap * index_null_map = nullable_index ? nullable_index->tryGetNullMapData() : nullptr;
 
     const ColumnNullable * nullable_data = checkAndGetColumn<ColumnNullable>(&data_col);
     const IColumn & inner_data = nullable_data ? nullable_data->getNestedColumn() : data_col;
-    const NullMap * source_null_map = nullable_data ? &nullable_data->getNullMapData() : nullptr;
+    const NullMap * source_null_map = nullable_data ? nullable_data->tryGetNullMapData() : nullptr;
 
     /// For const source, every row uses the same single array (offset 0..data_offsets[0])
     const size_t const_array_size = is_data_const ? data_offsets[0] : 0;
@@ -2684,7 +2695,7 @@ template <typename T>
     const IColumn & unwrapped_qbit
         = qbit_is_const ? assert_cast<const ColumnConst &>(*arguments[0].column).getDataColumn() : *arguments[0].column;
     const auto * nullable_qbit = checkAndGetColumn<ColumnNullable>(&unwrapped_qbit);
-    const auto * source_null_map = nullable_qbit ? &nullable_qbit->getNullMapData() : nullptr;
+    const auto * source_null_map = nullable_qbit ? nullable_qbit->tryGetNullMapData() : nullptr;
     const auto & qbit_col = assert_cast<const ColumnQBit &>(nullable_qbit ? nullable_qbit->getNestedColumn() : unwrapped_qbit);
     const auto & tuple = qbit_col.getNestedData();
 
@@ -2704,7 +2715,7 @@ template <typename T>
     ColumnPtr index_holder = recursiveRemoveLowCardinality(index_array->getDataPtr());
     const auto * nullable_index = checkAndGetColumn<ColumnNullable>(index_holder.get());
     const IColumn & index_data = nullable_index ? nullable_index->getNestedColumn() : *index_holder;
-    const NullMap * index_null_map = nullable_index ? &nullable_index->getNullMapData() : nullptr;
+    const NullMap * index_null_map = nullable_index ? nullable_index->tryGetNullMapData() : nullptr;
     const auto & offsets = index_array->getOffsets();
     const size_t total_indices = input_rows_count ? offsets[static_cast<ssize_t>(input_rows_count) - 1] : 0;
 
@@ -2712,7 +2723,7 @@ template <typename T>
     auto & result_data = result->getData();
     memset(result_data.data(), 0, total_indices * sizeof(T));
 
-    const bool result_is_nullable = is_null_mode || nullable_index || source_null_map;
+    const bool result_is_nullable = is_null_mode || nullable_index || nullable_qbit;
     ColumnUInt8::MutablePtr null_map;
     if (result_is_nullable)
         null_map = ColumnUInt8::create(total_indices, UInt8(0));
@@ -2847,7 +2858,7 @@ template <typename T>
     const IColumn & unwrapped_qbit
         = qbit_is_const ? assert_cast<const ColumnConst &>(*arguments[0].column).getDataColumn() : *arguments[0].column;
     const auto * nullable_qbit = checkAndGetColumn<ColumnNullable>(&unwrapped_qbit);
-    const auto * source_null_map = nullable_qbit ? &nullable_qbit->getNullMapData() : nullptr;
+    const auto * source_null_map = nullable_qbit ? nullable_qbit->tryGetNullMapData() : nullptr;
     const auto & qbit_col = assert_cast<const ColumnQBit &>(nullable_qbit ? nullable_qbit->getNestedColumn() : unwrapped_qbit);
     const auto & tuple = qbit_col.getNestedData();
 
@@ -2863,7 +2874,7 @@ template <typename T>
     ColumnUInt8::MutablePtr null_map;
     if constexpr (is_null_mode)
         null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
-    else if (source_null_map || index_is_nullable)
+    else if (nullable_qbit || index_is_nullable)
         null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
 
     auto plane_chars = [&](size_t group, size_t bit) -> const UInt8 *
@@ -2983,7 +2994,7 @@ template <typename T>
     {
         const auto * nullable_index = checkAndGetColumn<ColumnNullable>(&index_column);
         const IColumn & nested_index_column = nullable_index ? nullable_index->getNestedColumn() : index_column;
-        const auto * index_null_map = nullable_index ? &nullable_index->getNullMapData() : nullptr;
+        const auto * index_null_map = nullable_index ? nullable_index->tryGetNullMapData() : nullptr;
 
         auto execute_index_type = [&]<typename IndexType>() -> bool
         {
@@ -3407,7 +3418,7 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
             arguments[1],
         };
 
-        builder.initSource(nullable_col.getNullMapData().data());
+        builder.initSource(nullable_col.getNullMapRawDataOrZeros());
     }
     else
     {
@@ -3422,7 +3433,7 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
             arguments[1],
         };
 
-        builder.initSource(nullable_col.getNullMapData().data());
+        builder.initSource(nullable_col.getNullMapRawDataOrZeros());
     }
 
     auto res = perform(source_columns, tmp_ret_type, builder, input_rows_count);
@@ -3508,7 +3519,7 @@ ColumnPtr FunctionArrayElement<mode>::executeReplicated(
     if (is_array_of_nullable)
     {
         const auto & nullable_data = assert_cast<const ColumnNullable &>(*data);
-        builder.initSource(nullable_data.getNullMapData().data());
+        builder.initSource(nullable_data.getNullMapRawDataOrZeros());
         data = &nullable_data.getNestedColumn();
     }
 

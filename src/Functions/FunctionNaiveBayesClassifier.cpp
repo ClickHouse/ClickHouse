@@ -196,7 +196,7 @@ public:
         if (input_nullable)
         {
             effective_arguments[1].column = input_nullable->getNestedColumnPtr();
-            null_map = &input_nullable->getNullMapData();
+            null_map = input_nullable->tryGetNullMapData();
         }
 
         executeNaiveBayes(
@@ -207,7 +207,7 @@ public:
             { data[i] = (null_map && (*null_map)[i]) ? 0 : model.classify(text, scratch); });
 
         if (input_nullable)
-            return ColumnNullable::create(std::move(result_column), input_nullable->getNullMapColumnPtr());
+            return ColumnNullable::create(std::move(result_column), input_nullable->tryGetNullMapColumnPtr());
         return result_column;
     }
 };
@@ -255,7 +255,7 @@ public:
         if (input_nullable)
         {
             effective_arguments[1].column = input_nullable->getNestedColumnPtr();
-            null_map = &input_nullable->getNullMapData();
+            null_map = input_nullable->tryGetNullMapData();
         }
 
         executeNaiveBayes(
@@ -282,7 +282,7 @@ public:
         ColumnPtr tuple_column = ColumnTuple::create(std::move(tuple_columns));
 
         if (input_nullable)
-            return ColumnNullable::create(tuple_column, input_nullable->getNullMapColumnPtr());
+            return ColumnNullable::create(tuple_column, input_nullable->tryGetNullMapColumnPtr());
         return tuple_column;
     }
 };
@@ -332,7 +332,7 @@ public:
         if (input_nullable)
         {
             effective_arguments[1].column = input_nullable->getNestedColumnPtr();
-            null_map = &input_nullable->getNullMapData();
+            null_map = input_nullable->tryGetNullMapData();
         }
 
         executeNaiveBayes(
@@ -361,7 +361,7 @@ public:
         ColumnPtr array_column = ColumnArray::create(std::move(nested_col), std::move(offsets_col));
 
         if (input_nullable && result_type->isNullable())
-            return ColumnNullable::create(array_column, input_nullable->getNullMapColumnPtr());
+            return ColumnNullable::create(array_column, input_nullable->tryGetNullMapColumnPtr());
         return array_column;
     }
 };

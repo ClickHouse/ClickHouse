@@ -94,9 +94,10 @@ public:
             ColumnPtr full = argument.column->convertToFullColumnIfConst();
             const IColumn * source = full.get();
             const NullMap * source_nulls = nullptr;
+            const bool source_is_nullable = source->isNullable();
             if (const auto * nullable = checkAndGetColumn<ColumnNullable>(source))
             {
-                source_nulls = &nullable->getNullMapData();
+                source_nulls = nullable->tryGetNullMapData();
                 source = &nullable->getNestedColumn();
             }
 
@@ -132,7 +133,7 @@ public:
                 null_map->getData()[i] = 0;
             }
 
-            if (source_nulls)
+            if (source_is_nullable)
                 return ColumnNullable::create(std::move(values), std::move(null_map));
             return values;
         }
@@ -142,7 +143,7 @@ public:
         const NullMap * source_nulls = nullptr;
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(source))
         {
-            source_nulls = &nullable->getNullMapData();
+            source_nulls = nullable->tryGetNullMapData();
             source = &nullable->getNestedColumn();
         }
 

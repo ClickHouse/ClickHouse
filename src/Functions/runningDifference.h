@@ -245,13 +245,12 @@ public:
 
         auto res_column = removeNullable(result_type)->createColumn();
         const auto * src_column = src.column.get();
-        ColumnPtr null_map_column = nullptr;
+        const ColumnNullable * src_nullable = checkAndGetColumn<ColumnNullable>(src_column);
         const NullMap * null_map = nullptr;
-        if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(src_column))
+        if (src_nullable)
         {
-            src_column = &nullable_column->getNestedColumn();
-            null_map_column = nullable_column->getNullMapColumnPtr();
-            null_map = &nullable_column->getNullMapData();
+            src_column = &src_nullable->getNestedColumn();
+            null_map = src_nullable->tryGetNullMapData();
         }
 
         dispatchForSourceType(*removeNullable(src.type), [&](auto field_type_tag)
@@ -262,8 +261,8 @@ public:
                 assert_cast<ColumnVector<DstFieldType<SrcFieldType>> &>(*res_column).getData(), null_map);
         });
 
-        if (null_map_column)
-            return ColumnNullable::create(std::move(res_column), null_map_column);
+        if (src_nullable)
+            return ColumnNullable::create(std::move(res_column), src_nullable->tryGetNullMapColumnPtr());
         return res_column;
     }
 };

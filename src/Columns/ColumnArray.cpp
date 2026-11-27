@@ -1265,9 +1265,15 @@ ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_h
     const auto & filtered_array_of_nested = assert_cast<const ColumnArray &>(*filtered_array_of_nested_owner);
     const auto & filtered_offsets = filtered_array_of_nested.getOffsetsPtr();
 
+    const auto * null_map = nullable_elems.tryGetNullMapData();
+    if (!null_map)
+        return ColumnArray::create(
+            ColumnNullable::create(filtered_array_of_nested.getDataPtr()),
+            filtered_offsets);
+
     auto res_null_map = ColumnUInt8::create();
 
-    filterArraysImplOnlyData(nullable_elems.getNullMapData(), getOffsets(), res_null_map->getData(), filt, result_size_hint);
+    filterArraysImplOnlyData(*null_map, getOffsets(), res_null_map->getData(), filt, result_size_hint);
 
     return ColumnArray::create(
         ColumnNullable::create(
@@ -1941,7 +1947,13 @@ ColumnPtr ColumnArray::replicateNullable(const Offsets & replicate_offsets) cons
     /// fire. `replicate` is a `const` method and does not mutate the inputs.
     auto array_of_nested = ColumnArray::create(nullable.getNestedColumnPtr(), getOffsetsPtr())
             ->replicate(replicate_offsets);
-    auto array_of_null_map = ColumnArray::create(nullable.getNullMapColumnPtr(), getOffsetsPtr())
+
+    if (!nullable.hasNullMap())
+        return ColumnArray::create(
+            ColumnNullable::create(assert_cast<const ColumnArray &>(*array_of_nested).getDataPtr()),
+            assert_cast<const ColumnArray &>(*array_of_nested).getOffsetsPtr());
+
+    auto array_of_null_map = ColumnArray::create(nullable.tryGetNullMapColumnPtr(), getOffsetsPtr())
             ->replicate(replicate_offsets);
 
     return ColumnArray::create(

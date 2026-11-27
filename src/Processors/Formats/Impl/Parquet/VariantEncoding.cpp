@@ -1098,7 +1098,7 @@ const ColumnString & unwrapLeaf(const IColumn & column, const NullMap *& out_nul
     const IColumn * inner = &column;
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
     {
-        out_null_map = &nullable->getNullMapData();
+        out_null_map = nullable->tryGetNullMapData();
         inner = &nullable->getNestedColumn();
     }
     const auto * string = typeid_cast<const ColumnString *>(inner);

@@ -55,8 +55,8 @@ static ColumnPtr getDateTime64RoundTripLossMap(
 
     const auto & values = assert_cast<const ColumnDecimal<DateTime64> &>(*source.column).getData();
     const auto & restored_values = assert_cast<const ColumnDecimal<DateTime64> &>(restored_nullable.getNestedColumn()).getData();
-    const auto & not_converted = converted_nullable.getNullMapData();
-    const auto & not_restored = restored_nullable.getNullMapData();
+    const UInt8 * not_converted = converted_nullable.getNullMapRawDataOrZeros();
+    const UInt8 * not_restored = restored_nullable.getNullMapRawDataOrZeros();
     auto result = ColumnUInt8::create(values.size());
     auto & loss_map = result->getData();
     for (size_t row = 0; row < values.size(); ++row)
@@ -102,7 +102,8 @@ ColumnPtr getDateTime64CastLossMap(
     {
         const auto & nullable = assert_cast<const ColumnNullable &>(*column);
         /// An all-NULL source has no timestamp to check and needs no structural conversion.
-        if (countBytesInFilter(nullable.getNullMapData()) == nullable.size())
+        const auto * nulls = nullable.tryGetNullMapData();
+        if (nulls && countBytesInFilter(*nulls) == nullable.size())
             return {};
 
         auto loss_map = getDateTime64CastLossMap(
@@ -110,11 +111,14 @@ ColumnPtr getDateTime64CastLossMap(
         if (!loss_map)
             return {};
 
+        /// A column without a null map has no NULLs to exclude.
+        if (!nulls)
+            return loss_map;
+
         auto result = IColumn::mutate(std::move(loss_map));
         auto & values = assert_cast<ColumnUInt8 &>(*result).getData();
-        const auto & nulls = nullable.getNullMapData();
         for (size_t row = 0; row < values.size(); ++row)
-            values[row] &= !nulls[row];
+            values[row] &= !(*nulls)[row];
         return result;
     }
 

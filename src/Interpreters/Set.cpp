@@ -763,7 +763,7 @@ ColumnPtr Set::castToKeyType(const ColumnWithTypeAndName & column, size_t key, C
             values = converted_nullable.getNestedColumnPtr();
             /// The NULLs of the conversion are the values that did not fit. Even when the set can hold a
             /// NULL, a value that merely does not fit is not that NULL.
-            non_member_rows = mergeNullMaps(std::move(non_member_rows), converted_nullable.getNullMapColumnPtr());
+            non_member_rows = mergeNullMaps(std::move(non_member_rows), converted_nullable.tryGetNullMapColumnPtr());
         }
         else
         {

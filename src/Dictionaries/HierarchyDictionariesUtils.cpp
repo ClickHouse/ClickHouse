@@ -92,7 +92,7 @@ namespace
             if (hierarchical_attribute_parent_key_column->isNullable())
             {
                 const auto * parent_key_column_typed = assert_cast<const ColumnNullable *>(hierarchical_attribute_parent_key_column.get());
-                in_key_column_nullable_mask = &parent_key_column_typed->getNullMapData();
+                in_key_column_nullable_mask = parent_key_column_typed->tryGetNullMapData();
                 parent_key_column_non_null = parent_key_column_typed->getNestedColumnPtr();
             }
 

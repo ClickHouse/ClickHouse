@@ -125,7 +125,7 @@ protected:
             if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*col))
             {
                 actual_columns.push_back(&nullable->getNestedColumn());
-                null_maps.push_back(&nullable->getNullMapColumn());
+                null_maps.push_back(nullable->tryGetNullMapColumn());
             }
             else
             {
@@ -154,7 +154,8 @@ protected:
             if (null_maps[k] != nullptr)
             {
                 const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_maps[k]).getData();
-                if (null_map[row] == 1)
+                /// Any nonzero byte of the null map means NULL.
+                if (null_map[row] != 0)
                 {
                     size_t bucket = k / 8;
                     size_t offset = k % 8;

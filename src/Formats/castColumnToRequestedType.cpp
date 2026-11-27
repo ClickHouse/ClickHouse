@@ -98,12 +98,13 @@ ColumnWithTypeAndName prepareForCast(
         const auto & from_null_column = assert_cast<const ColumnNullable &>(*from.column);
         ColumnWithTypeAndName nested{from_null_column.getNestedColumnPtr(), from_null->getNestedType(), from.name};
         const DataTypePtr to_nested = removeNullable(to);
-        const auto & null_map = from_null_column.getNullMapData();
-        const bool has_nulls = !memoryIsZero(null_map.data(), 0, null_map.size());
+        /// A column without a null map has no NULLs.
+        const NullMap * null_map = from_null_column.tryGetNullMapData();
+        const bool has_nulls = null_map && !memoryIsZero(null_map->data(), 0, null_map->size());
         const bool strip_nullable = !to_can_be_null
             && (settings.null_as_default || (settings.null_tuple_as_default && isTuple(nested.type) && isTuple(to)));
         if (has_nulls && strip_nullable && settings.null_as_default && block_missing_values)
-            block_missing_values->setBitsFromNullMap(column_i, null_map);
+            block_missing_values->setBitsFromNullMap(column_i, *null_map);
 
         /// The column zero under a NULL row is the default of `to` only for an equal type with a trivial default.
         /// `CAST` itself keeps the NULL rows of every type but a tuple.
@@ -112,7 +113,7 @@ ColumnWithTypeAndName prepareForCast(
                                : settings.allow_types_conversion && to_can_be_null && isTuple(nested.type)
                                    && !nested.type->equals(*to_nested));
         if (convert_visible_rows)
-            return {castRowsNotInNullMap(nested, to, null_map, settings), to, from.name};
+            return {castRowsNotInNullMap(nested, to, *null_map, settings), to, from.name};
 
         if (strip_nullable)
         {
@@ -122,7 +123,7 @@ ColumnWithTypeAndName prepareForCast(
         }
 
         nested = prepareForCast(nested, to_nested, settings);
-        from.column = ColumnNullable::create(nested.column, from_null_column.getNullMapColumnPtr());
+        from.column = ColumnNullable::create(nested.column, from_null_column.tryGetNullMapColumnPtr());
         from.type = std::make_shared<DataTypeNullable>(nested.type);
         return from;
     }

@@ -217,8 +217,8 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
     {
         /// We have to replace values masked by NULLs with defaults.
         if (column.column)
-            if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&*column.column))
-                column.column = JoinCommon::filterWithBlanks(column.column, nullable_column->getNullMapColumn().getData(), true);
+            if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&*column.column); nullable_column && nullable_column->hasNullMap())
+                column.column = JoinCommon::filterWithBlanks(column.column, *nullable_column->tryGetNullMapData(), true);
 
         JoinCommon::removeColumnNullability(column);
     }
@@ -1047,9 +1047,10 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
                 if (asof_const_column->isNullAt(0))
                     return false;
             }
-            else
+            else if (const auto * asof_null_map = assert_cast<const ColumnNullable &>(*all_key_columns.at(asof_key_name)).tryGetNullMapData())
             {
-                const auto & asof_column_nullable = assert_cast<const ColumnNullable &>(*all_key_columns.at(asof_key_name)).getNullMapData();
+                /// A column without a null map has no NULLs.
+                const auto & asof_column_nullable = *asof_null_map;
 
                 auto new_selector = ScatteredBlock::Indexes::create();
                 auto & new_selector_data = new_selector->getData();

@@ -225,7 +225,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
         auto variant_serialization = variant_type->getDefaultSerialization();
 
         const auto & nullable_shared_variant = assert_cast<const ColumnNullable &>(*shared_variant_column);
-        const auto & shared_null_map = nullable_shared_variant.getNullMapData();
+        const UInt8 * shared_null_map = nullable_shared_variant.getNullMapRawDataOrZeros();
         const auto & shared_variant = assert_cast<const ColumnString &>(nullable_shared_variant.getNestedColumn());
         const FormatSettings format_settings;
         for (size_t i = 0; i != shared_variant.size(); ++i)

@@ -52,7 +52,16 @@ void gatherFieldRows(const IColumn & column, const RowDataStore::FieldLayout & f
     const IColumn * tuple_column = &column;
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
     {
-        nullable->getNullMapColumn().gatherRangeIntoRows(dst, row_length, field.offset, start, length, overflow_cursor, /*null_map=*/ nullptr);
+        if (const auto * null_map = nullable->tryGetNullMapColumn())
+        {
+            null_map->gatherRangeIntoRows(dst, row_length, field.offset, start, length, overflow_cursor, /*null_map=*/ nullptr);
+        }
+        else
+        {
+            /// A column without a null map has no NULLs.
+            for (size_t row = 0; row < length; ++row)
+                dst[row * row_length + field.offset] = 0;
+        }
         tuple_column = &nullable->getNestedColumn();
     }
 

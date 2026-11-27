@@ -83,7 +83,10 @@ void FunctionArrayReverse::executeData(const IColumn & src_data, const ColumnArr
     ColumnNullable * res_nullable_col = typeid_cast<ColumnNullable *>(&res_data);
 
     const IColumn * src_inner_col = src_nullable_col ? &src_nullable_col->getNestedColumn() : &src_data;
-    IColumn * res_inner_col = res_nullable_col ? &res_nullable_col->getNestedColumn() : &res_data;
+    const ColumnUInt8 * src_null_map = src_nullable_col ? src_nullable_col->tryGetNullMapColumn() : nullptr;
+    IColumn * res_inner_col = &res_data;
+    if (res_nullable_col)
+        res_inner_col = src_null_map ? &res_nullable_col->getNestedColumn() : &res_nullable_col->getNestedColumnNoMaterialize();
 
     false // NOLINT
         || executeNumber<UInt8>(*src_inner_col, offsets, *res_inner_col)
@@ -113,10 +116,10 @@ void FunctionArrayReverse::executeData(const IColumn & src_data, const ColumnArr
 
     chassert(bool(src_nullable_col) == bool(res_nullable_col));
 
-    if (src_nullable_col)
-        if (!executeNumber<UInt8>(src_nullable_col->getNullMapColumn(), offsets, res_nullable_col->getNullMapColumn()))
+    if (src_null_map)
+        if (!executeNumber<UInt8>(*src_null_map, offsets, res_nullable_col->getNullMapColumn()))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of null map of the first argument of function {}",
-                src_nullable_col->getNullMapColumn().getName(), name);
+                src_null_map->getName(), name);
 }
 
 

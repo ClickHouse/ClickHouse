@@ -210,7 +210,8 @@ void PuffinColumnThetaSketch::update(const IColumn & column)
     const NullMap * null_map = nullptr;
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(full_column.get()))
     {
-        null_map = &nullable->getNullMapData();
+        /// nullptr if the column has no null map, which means it has no NULLs.
+        null_map = nullable->tryGetNullMapData();
         nested = nullable->getNestedColumnPtr();
     }
     impl->update(nested, null_map);

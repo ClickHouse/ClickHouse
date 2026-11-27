@@ -680,7 +680,7 @@ template <typename T>
 Elements<T> getElements(const NumericArraySource<T> & source, bool is_nullable)
 {
     const UInt8 * null_map
-        = is_nullable ? static_cast<const NullableArraySource<NumericArraySource<T>> &>(source).null_map.data() : nullptr;
+        = is_nullable ? static_cast<const NullableArraySource<NumericArraySource<T>> &>(source).null_map : nullptr;
     return {source.elements.data(), null_map, source.elements.size()};
 }
 

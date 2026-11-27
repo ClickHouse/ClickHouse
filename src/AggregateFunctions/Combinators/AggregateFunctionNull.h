@@ -17,6 +17,7 @@
 #include <absl/container/inlined_vector.h>
 
 #include <array>
+#include <cstring>
 
 #include "config.h"
 
@@ -289,23 +290,27 @@ public:
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             if (getFlag(place))
             {
+                /// Keep the result without a null map while there are no NULLs.
+                IColumn & to_nested = to_concrete.getNestedColumnNoMaterialize();
                 if constexpr (merge)
                 {
-                    nested_function->insertMergeResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
-                    to_concrete.getNullMapData().push_back(false);
+                    nested_function->insertMergeResultInto(nestedPlace(place), to_nested, arena);
+                    if (to_concrete.hasNullMap())
+                        to_concrete.getNullMapData().push_back(false);
                 }
                 else
                 {
-                    nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
+                    nested_function->insertResultInto(nestedPlace(place), to_nested, arena);
 
                     /// A nested call that threw has already restored the nested column itself.
                     try
                     {
-                        to_concrete.getNullMapData().push_back(false);
+                        if (to_concrete.hasNullMap())
+                            to_concrete.getNullMapData().push_back(false);
                     }
                     catch (...)
                     {
-                        nested_function->rollbackInsertResult(nestedPlace(place), to_concrete.getNestedColumn());
+                        nested_function->rollbackInsertResult(nestedPlace(place), to_nested);
                         throw;
                     }
                 }
@@ -341,8 +346,9 @@ public:
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             if (getFlag(place))
             {
-                to_concrete.getNullMapData().pop_back();
-                nested_function->rollbackInsertResult(nestedPlace(place), to_concrete.getNestedColumn());
+                if (to_concrete.hasNullMap())
+                    to_concrete.getNullMapData().pop_back();
+                nested_function->rollbackInsertResult(nestedPlace(place), to_concrete.getNestedColumnNoMaterialize());
             }
             else
             {
@@ -536,13 +542,27 @@ public:
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
         const IColumn * nested_column = &column->getNestedColumn();
-        const UInt8 * null_map = column->getNullMapData().data();
+        const auto * null_map_data = column->tryGetNullMapData();
+        if (!null_map_data)
+        {
+            /// No NULLs.
+            this->nested_function->addBatchSinglePlace(
+                row_begin, row_end, this->nestedPlace(place), &nested_column, arena, if_argument_pos);
+
+            if constexpr (result_is_nullable)
+                if (row_begin < row_end)
+                    this->setFlag(place);
+            return;
+        }
+
+        const UInt8 * null_map = null_map_data->data();
 
         this->nested_function->addBatchSinglePlaceNotNull(
             row_begin, row_end, this->nestedPlace(place), &nested_column, null_map, arena, if_argument_pos);
 
+        /// Any nonzero byte of the null map means NULL, so there is a value only if there is a zero byte.
         if constexpr (result_is_nullable)
-            if (!memoryIsByte(null_map, row_begin, row_end, 1))
+            if (row_begin < row_end && memchr(null_map + row_begin, 0, row_end - row_begin))
                 this->setFlag(place);
     }
 
@@ -556,7 +576,22 @@ public:
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
         const IColumn * nested_column = &column->getNestedColumn();
-        const UInt8 * null_map = column->getNullMapData().data();
+        const auto * null_map_data = column->tryGetNullMapData();
+        if (!null_map_data)
+        {
+            /// No NULLs.
+            this->nested_function->addBatchConsecutivePlaces(
+                row_begin, row_end, this->nestedPlace(place), place_stride, &nested_column, arena);
+
+            if constexpr (result_is_nullable)
+            {
+                for (size_t i = row_begin; i < row_end; ++i, place += place_stride)
+                    this->setFlag(place);
+            }
+            return;
+        }
+
+        const UInt8 * null_map = null_map_data->data();
 
         /// One call for all rows, the nested function skips the NULL ones itself, instead of a virtual call per row.
         this->nested_function->addBatchConsecutivePlacesNotNull(
@@ -665,8 +700,10 @@ public:
         Arena * arena) const override
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
-        const UInt8 * null_map = column->getNullMapData().data();
-        const bool has_nulls = !memoryIsZero(null_map, row_begin, row_end);
+        /// A column without a null map has no NULLs.
+        const auto * null_map_data = column->tryGetNullMapData();
+        const UInt8 * null_map = null_map_data ? null_map_data->data() : nullptr;
+        const bool has_nulls = null_map && !memoryIsZero(null_map, row_begin, row_end);
         if (has_nulls && hasManyNulls(null_map, row_begin, row_end))
         {
             addBatchLookupTable8RowByRow(row_begin, row_end, map, place_offset, std::move(init), key, columns, arena);
@@ -744,8 +781,10 @@ private:
         ssize_t if_argument_pos) const
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
-        const UInt8 * null_map = column->getNullMapData().data();
-        const bool has_nulls = !memoryIsZero(null_map, row_begin, row_end);
+        /// A column without a null map has no NULLs.
+        const auto * null_map_data = column->tryGetNullMapData();
+        const UInt8 * null_map = null_map_data ? null_map_data->data() : nullptr;
+        const bool has_nulls = null_map && !memoryIsZero(null_map, row_begin, row_end);
         if (if_argument_pos >= 0 || (has_nulls && hasManyNulls(null_map, row_begin, row_end)))
         {
             addBatchRowByRow<places_are_non_null>(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
@@ -1226,8 +1265,9 @@ public:
             {
                 const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[i]);
                 nested_columns[i] = &nullable_col.getNestedColumn();
-                const ColumnUInt8 & nullmap_column = nullable_col.getNullMapColumn();
-                nullable_filters.push_back(nullmap_column.getData().data());
+                /// The columns without a null map have no NULLs.
+                if (const auto * null_map = nullable_col.tryGetNullMapData())
+                    nullable_filters.push_back(null_map->data());
             }
             else
             {
@@ -1235,7 +1275,18 @@ public:
             }
         }
 
-        chassert(!nullable_filters.empty());
+        if (nullable_filters.empty())
+        {
+            /// No NULLs, and the `if` argument (if any) passes all rows.
+            if (row_begin < row_end)
+            {
+                this->setFlag(place);
+                this->nested_function->addBatchSinglePlace(
+                    row_begin, row_end, this->nestedPlace(place), nested_columns.data(), arena, -1);
+            }
+            return;
+        }
+
         bool found_one = false;
         if (nullable_filters.size() == 1)
         {

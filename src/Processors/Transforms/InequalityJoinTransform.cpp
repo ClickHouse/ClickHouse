@@ -461,8 +461,8 @@ InequalityJoinAlgorithm::SideValidity InequalityJoinAlgorithm::materializeSide(s
         const IColumn * key = comparison_keys[key_index].get();
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(key))
         {
-            const auto & null_map = nullable->getNullMapData();
-            exclude_rows([&](size_t row) { return null_map[row] != 0; });
+            if (const auto * null_map = nullable->tryGetNullMapData())
+                exclude_rows([&](size_t row) { return (*null_map)[row] != 0; });
             key = &nullable->getNestedColumn();
         }
         auto exclude_nan_rows = [&](const auto & typed_key)
@@ -1200,10 +1200,18 @@ IColumn::Filter InequalityJoinAlgorithm::evaluateResidualMask(const ColumnUInt64
     IColumn::Filter mask(num_pairs);
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(result.get()))
     {
-        const auto & null_map = nullable->getNullMapData();
+        const auto * null_map = nullable->tryGetNullMapData();
         const auto & values = assert_cast<const ColumnUInt8 &>(nullable->getNestedColumn()).getData();
-        for (size_t row = 0; row < num_pairs; ++row)
-            mask[row] = !null_map[row] && values[row];
+        if (null_map)
+        {
+            for (size_t row = 0; row < num_pairs; ++row)
+                mask[row] = !(*null_map)[row] && values[row];
+        }
+        else
+        {
+            for (size_t row = 0; row < num_pairs; ++row)
+                mask[row] = values[row] ? 1 : 0;
+        }
     }
     else
     {

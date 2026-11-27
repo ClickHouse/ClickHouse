@@ -574,7 +574,8 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
             /// The peeled wrapper's nulls make the rows under them invisible for every row-aligned
             /// descendant; compose them into the inherited set.
             NullMap combined_storage;
-            const NullMap * combined = ArrowIPC::unionNullMaps(col_nullable->getNullMapData(), ancestor_nulls, combined_storage);
+            const NullMap * own_nulls = col_nullable->tryGetNullMapData();
+            const NullMap * combined = own_nulls ? ArrowIPC::unionNullMaps(*own_nulls, ancestor_nulls, combined_storage) : ancestor_nulls;
             auto [new_nested, new_nested_type]
                 = reinterpretRawBytes(
                     col_nullable->getNestedColumnPtr(), from_no_null, to_type, combined, case_insensitive, field, format_settings,
@@ -584,7 +585,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
             if (new_nested.get() == col_nullable->getNestedColumnPtr().get() && new_nested_type.get() == from_no_null.get())
                 return {col, from_type};
             if (new_nested->canBeInsideNullable())
-                return {ColumnNullable::create(new_nested, col_nullable->getNullMapColumnPtr()),
+                return {ColumnNullable::create(new_nested, col_nullable->tryGetNullMapColumnPtr()),
                         std::make_shared<DataTypeNullable>(new_nested_type)};
             return {std::move(new_nested), std::move(new_nested_type)};
         }
@@ -683,7 +684,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
 
     const auto * nullable = typeid_cast<const ColumnNullable *>(col.get());
     const IColumn & nested = nullable ? nullable->getNestedColumn() : *col;
-    const NullMap * null_map = nullable ? &nullable->getNullMapData() : nullptr;
+    const NullMap * null_map = nullable ? nullable->tryGetNullMapData() : nullptr;
     /// A rewritten leaf keeps the source column's Nullable wrapper; the request's own wrappers are
     /// restored by the later cast.
     const auto with_source_nullability = [&](DataTypePtr type) -> DataTypePtr
@@ -717,7 +718,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
                 = ArrowIPC::deserializeOpaqueBinaryLeaf(*str, undefined_rows(), to_leaf, *field, format_settings))
             {
                 if (nullable && to_leaf->canBeInsideNullable())
-                    return {ColumnNullable::create(std::move(typed), nullable->getNullMapColumnPtr()),
+                    return {ColumnNullable::create(std::move(typed), nullable->tryGetNullMapColumnPtr()),
                             std::make_shared<DataTypeNullable>(to_leaf)};
                 return {ColumnPtr(std::move(typed)), to_leaf};
             }
@@ -749,7 +750,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
 
     ColumnPtr result = std::move(typed);
     if (nullable)
-        result = ColumnNullable::create(result, nullable->getNullMapColumnPtr());
+        result = ColumnNullable::create(result, nullable->tryGetNullMapColumnPtr());
     return {std::move(result), with_source_nullability(to_leaf)};
 }
 
