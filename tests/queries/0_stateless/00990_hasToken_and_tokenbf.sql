@@ -55,8 +55,7 @@ select max(id) from bloom_filter2 where hasTokenCaseInsensitive(s, 'ABC');
 -- accessing to many rows
 SELECT max(id) FROM bloom_filter WHERE hasToken(s, 'yyy'); -- { serverError TOO_MANY_ROWS }
 
--- this syntax is not supported by tokenbf
-SELECT max(id) FROM bloom_filter WHERE hasToken(s, 'zzz') == 1; -- { serverError TOO_MANY_ROWS }
+SELECT max(id) FROM bloom_filter WHERE hasToken(s, 'zzz') == 1;
 
 DROP TABLE bloom_filter;
 

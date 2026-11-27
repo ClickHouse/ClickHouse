@@ -69,7 +69,10 @@ Expression ((Project names + Projection))
         ReadFromMergeTree (default.03772_table_match)
         Indexes:
           PrimaryKey
-            Condition: true
+            Keys:
+              url
+            Condition: not((url in [\'http\', \'httq\')))
             Parts: 1/1
             Granules: 1/1
+            Search Algorithm: generic exclusion search
           Ranges: 1

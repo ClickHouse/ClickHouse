@@ -1,4 +1,4 @@
--- Text index condition looks through positive boolean wrappers around a supported atom,
+-- The analyzer removes positive boolean wrappers around a supported atom,
 -- so `hasToken(s, 'x') = true` prunes the same granules as the bare `hasToken(s, 'x')`.
 -- See https://github.com/ClickHouse/ClickHouse/issues/110012
 
@@ -33,10 +33,9 @@ SELECT 'true = atom', countIf(explain ILIKE '%Name: idx%') = 1 AND countIf(expla
 -- Works through a wrapped supported atom other than hasToken (equals).
 SELECT 'equals = true', countIf(explain ILIKE '%Name: idx%') = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE (s = 'the rare token here') = true);
 
--- Negative wrappers give no pruning benefit (NOT of a granule mask is always true), so the text
--- index must NOT be applied.
-SELECT '= false no prune', countIf(explain ILIKE '%Name: idx%') = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') = false);
-SELECT '!= true no prune', countIf(explain ILIKE '%Name: idx%') = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') != true);
+-- Negative wrappers become `NOT hasToken(...)`, which gives no pruning benefit (NOT of a granule mask is always true).
+SELECT '= false no prune', countIf(explain ILIKE '%Granules: 1/128%') = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') = false);
+SELECT '!= true no prune', countIf(explain ILIKE '%Granules: 1/128%') = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') != true);
 
 -- `= 5` is not a boolean spelling: leave to row-level evaluation, the text index must NOT be applied.
 SELECT '= 5 no prune', countIf(explain ILIKE '%Name: idx%') = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') = 5);
@@ -60,6 +59,23 @@ SELECT 'IN (true) null_in nullable', count() FROM tab_nullable WHERE hasToken(s,
 SELECT 'bare direct read', count() > 0 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare')) WHERE explain ILIKE '%__text_index_idx%';
 SELECT '= true direct read', count() > 0 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') = true) WHERE explain ILIKE '%__text_index_idx%';
 SELECT 'IN (true) direct read', count() > 0 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') IN (true)) WHERE explain ILIKE '%__text_index_idx%';
+-- A wrapped filter gets exactly the plan of the bare atom, and `= false` / `!= true` the plan of `NOT`.
+SELECT 'plan of bare atom',
+    (SELECT groupArray(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') = true))
+        = (SELECT groupArray(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare'))),
+    (SELECT groupArray(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') != false))
+        = (SELECT groupArray(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare'))),
+    (SELECT groupArray(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') IN (true)))
+        = (SELECT groupArray(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare'))),
+    (SELECT groupArray(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') IS TRUE))
+        = (SELECT groupArray(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare')));
+SELECT 'plan of NOT atom',
+    (SELECT groupArray(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') = false))
+        = (SELECT groupArray(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE NOT hasToken(s, 'rare'))),
+    (SELECT groupArray(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') != true))
+        = (SELECT groupArray(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE NOT hasToken(s, 'rare')));
+SELECT 'bare atom exact direct read', countIf(explain ILIKE '%FUNCTION hasToken%') = 0 AND countIf(explain ILIKE '%__text_index_idx%') > 0
+    FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare'));
 
 -- Results stay correct in every case.
 SELECT 'results',

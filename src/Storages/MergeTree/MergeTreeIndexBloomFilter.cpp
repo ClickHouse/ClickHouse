@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
 
+#include <Analyzer/Utils.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
@@ -17,6 +18,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <IO/ReadBufferFromString.h>
@@ -791,7 +793,18 @@ bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(const RPNBuilderTre
         }
     }
 
-    return traverseFunction(node, out, nullptr /*parent*/);
+    if (traverseFunction(node, out, nullptr /*parent*/))
+        return true;
+
+    /// A function that returns only 0, 1 or NULL and is itself an index expression, e.g. `has(arr, 'x')` with
+    /// `INDEX i has(arr, 'x') TYPE bloom_filter`, selects the same rows as `f = 1`.
+    if (node.isFunction() && isBooleanFunction(node.toFunctionNode().getFunctionName(), /*with_index_functions=*/ true))
+    {
+        out = RPNElement();
+        return traverseTreeEquals("equals", node, std::make_shared<DataTypeUInt8>(), Field(UInt64(1)), out, nullptr);
+    }
+
+    return false;
 }
 
 namespace

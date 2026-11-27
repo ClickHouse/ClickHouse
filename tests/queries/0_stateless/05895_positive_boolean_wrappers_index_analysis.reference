@@ -1,0 +1,52 @@
+pk bare	Parts: 1 | Granules: 2
+pk = true	Parts: 1 | Granules: 2
+pk != false	Parts: 1 | Granules: 2
+pk IN (true)	Parts: 1 | Granules: 2
+pk IS TRUE	Parts: 1 | Granules: 2
+pk LIKE = true	Parts: 1 | Granules: 2
+partition bare	Parts: 1 | Granules: 8, Parts: 1/2, Parts: 1/1, Parts: 1/1
+partition = true	Parts: 1 | Granules: 8, Parts: 1/2, Parts: 1/1, Parts: 1/1
+tokenbf bare	Parts: 1 | Granules: 1
+tokenbf = true	Parts: 1 | Granules: 1
+tokenbf != false	Parts: 1 | Granules: 1
+tokenbf IN (true)	Parts: 1 | Granules: 1
+tokenbf IS TRUE	Parts: 1 | Granules: 1
+bloom_filter bare	Parts: 1 | Granules: 1
+bloom_filter = 1	Parts: 1 | Granules: 1
+bloom_filter = true	Parts: 1 | Granules: 1
+bloom_filter = 0	15
+bloom_filter = 0 no index	15
+nullable = true	1
+nullable values	1	1	1	1	0
+nullable null_in	1
+nullable direct read	9
+nullable no direct read	9
+nullable short circuit	0
+select list wrappers	0
+values positive	1	1	1	1
+values negative	1	1	1	1
+values null_in	1
+bool result	1	1	1
+global not null in	0
+0
+0
+0
+0	\N	\N
+1	1	1
+pk expr bare	Parts: 1 | Granules: 5
+pk expr = 1	Parts: 1 | Granules: 5
+pk2 expr bare	Parts: 1 | Granules: 5
+pk2 expr = 1	Parts: 1 | Granules: 5
+partition expr bare	Parts: 1 | Granules: 4
+partition expr = 1	Parts: 1 | Granules: 4
+minmax expr bare	Parts: 1 | Granules: 4
+minmax expr = 1	Parts: 1 | Granules: 4
+expr values	4	4	4	4
+bloom_filter expr bare	Parts: 1 | Granules: 4
+bloom_filter expr = 1	Parts: 1 | Granules: 4
+bloom_filter expr IN (true)	Parts: 1 | Granules: 4
+bloom_filter expr values	4	12	16
+and expr GLOBAL IN (true)	Parts: 1 | Granules: 5
+and expr null_in	Parts: 1 | Granules: 5
+and expr != true	Parts: 1 | Granules: 12
+and expr values	4	4	12	4

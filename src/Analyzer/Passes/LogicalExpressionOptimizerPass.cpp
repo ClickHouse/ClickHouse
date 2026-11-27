@@ -53,17 +53,56 @@ using namespace std::literals;
 /// work budget for tryOptimizeAndCompareChain (forward-declared here to avoid touching the header).
 size_t & getTreeHashWorkCounter();
 
-static constexpr std::array boolean_functions{
-    "equals"sv,   "notEquals"sv,   "less"sv,   "greaterOrEquals"sv, "greater"sv,      "lessOrEquals"sv,    "in"sv,     "notIn"sv,
-    "globalIn"sv, "globalNotIn"sv, "nullIn"sv, "notNullIn"sv,       "globalNullIn"sv, "globalNullNotIn"sv, "isNull"sv, "isNotNull"sv,
-    "like"sv,     "notLike"sv,     "ilike"sv,  "notILike"sv,        "empty"sv,        "notEmpty"sv,        "not"sv,    "and"sv,
-    "or"sv};
-
-
-static bool isBooleanFunction(const String & func_name)
+/// A non-Nullable constant 0 or 1, e.g. `true`.
+static std::optional<UInt64> tryGetBooleanConstant(const QueryTreeNodePtr & node)
 {
-    return std::any_of(
-        boolean_functions.begin(), boolean_functions.end(), [&](const auto boolean_func) { return func_name == boolean_func; });
+    const auto * constant = node->as<ConstantNode>();
+    if (!constant || isNullableOrLowCardinalityNullable(constant->getResultType()))
+        return {};
+    UInt64 value = 0;
+    if (!constant->getValue().tryGet<UInt64>(value) || value > 1)
+        return {};
+    return value;
+}
+
+/// For `f = c`, `f != c`, `f IS [NOT DISTINCT FROM] c`, `f [GLOBAL] [NULL] IN (c)` with a constant `c` 0 or 1 that
+/// return the same value as `f` or `NOT f`: `f` and whether it is negated.
+static std::optional<std::pair<QueryTreeNodePtr, bool>> matchRedundantBooleanComparison(const FunctionNode & function_node)
+{
+    const auto & name = function_node.getFunctionName();
+    const bool is_in = name == "in" || name == "globalIn" || name == "nullIn" || name == "globalNullIn";
+    if (!is_in && name != "equals" && name != "notEquals" && name != "isNotDistinctFrom")
+        return {};
+    const auto & arguments = function_node.getArguments().getNodes();
+    if (arguments.size() != 2)
+        return {};
+    size_t function_index = 0;
+    auto constant = tryGetBooleanConstant(arguments[1]);
+    if (!constant && !is_in)
+    {
+        constant = tryGetBooleanConstant(arguments[0]);
+        function_index = 1;
+    }
+    if (!constant)
+        return {};
+    const auto * child = arguments[function_index]->as<FunctionNode>();
+    if (!child)
+        return {};
+    /// `RPNBuilder` splits `and`/`or`/`not`, which hides an index on the whole expression, and a `Bool` `f` would turn
+    /// the UInt8 result into `Bool`: only `f = 0/1` is removed around them.
+    const auto & child_name = child->getFunctionName();
+    if (name != "equals"
+        && (child_name == "and" || child_name == "or" || child_name == "not" || isBool(removeLowCardinality(child->getResultType()))))
+        return {};
+    /// A Nullable `f` keeps its wrapper, except `f = 0/1` around `boolean_functions`.
+    if (isNullableOrLowCardinalityNullable(child->getResultType()))
+    {
+        if (name != "equals" || !isBooleanFunction(child->getFunctionName()))
+            return {};
+    }
+    else if (!isBooleanFunction(child->getFunctionName(), /*with_index_functions=*/ true))
+        return {};
+    return std::pair{arguments[function_index], (*constant == 0) != (name == "notEquals")};
 }
 
 
@@ -2061,11 +2100,7 @@ public:
             return;
         }
 
-        if (function_node->getFunctionName() == "equals")
-        {
-            tryOptimizeOutRedundantEquals(node);
-            return;
-        }
+        tryOptimizeOutRedundantEquals(node);
     }
 
     void leaveImpl(QueryTreeNodePtr & node)
@@ -3034,46 +3069,16 @@ private:
 
     void tryOptimizeOutRedundantEquals(QueryTreeNodePtr & node)
     {
-        auto & function_node = node->as<FunctionNode &>();
-        chassert(function_node.getFunctionName() == "equals");
-
-        const auto function_arguments = function_node.getArguments().getNodes();
-        if (function_arguments.size() != 2)
+        auto match = matchRedundantBooleanComparison(node->as<FunctionNode &>());
+        if (!match)
             return;
 
-        const auto & lhs = function_arguments[0];
-        const auto & rhs = function_arguments[1];
-
-        UInt64 constant_value = 0;
-        bool is_lhs_const = false;
-        if (const auto * lhs_constant = lhs->as<ConstantNode>())
-        {
-            if (!lhs_constant->getValue().tryGet<UInt64>(constant_value) || constant_value > 1
-                || isNullableOrLowCardinalityNullable(lhs_constant->getResultType()))
-                return;
-            is_lhs_const = true;
-        }
-        else if (const auto * rhs_constant = rhs->as<ConstantNode>())
-        {
-            if (!rhs_constant->getValue().tryGet<UInt64>(constant_value) || constant_value > 1
-                || isNullableOrLowCardinalityNullable(rhs_constant->getResultType()))
-                return;
-            is_lhs_const = false;
-        }
-        else
-            return;
-
-        const auto & replacement_function = is_lhs_const ? rhs : lhs;
-
-        const FunctionNode * child_function = replacement_function->as<FunctionNode>();
-        if (!child_function || !isBooleanFunction(child_function->getFunctionName()))
-            return;
-
-        auto function_node_type = function_node.getResultType();
+        const auto & [replacement_function, negate] = *match;
+        auto function_node_type = node->getResultType();
         auto original_node = node;
 
-        // if we have something like `function = 0`, we need to add a `NOT` when dropping the `= 0`
-        if (constant_value == 0)
+        // `f = 0`, `f != 1`, `f IS FALSE` and `f IN (0)` become `NOT f`
+        if (negate)
         {
             auto not_resolver = FunctionFactory::instance().get("not", getContext());
             const auto not_node = std::make_shared<FunctionNode>("not");
