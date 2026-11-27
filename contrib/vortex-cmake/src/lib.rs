@@ -1436,9 +1436,17 @@ pub unsafe extern "C" fn vortex_ffi_expr_literal_timestamp(
     value: i64,
 ) -> *mut FFI_VortexExpression {
     expr_wrap(|| {
-        if unit == FFI_VortexTimeUnit::Days {
-            return None;
-        }
+        // Vortex checks the range of a timestamp with `jiff::Span::seconds` and the like, which
+        // panic rather than fail for a value out of range. A panic caught by `expr_wrap` would
+        // still be reported by the panic hook, so such a value is rejected here instead.
+        let span = match unit {
+            FFI_VortexTimeUnit::Days => return None,
+            FFI_VortexTimeUnit::Seconds => jiff::Span::new().try_seconds(value),
+            FFI_VortexTimeUnit::Milliseconds => jiff::Span::new().try_milliseconds(value),
+            FFI_VortexTimeUnit::Microseconds => jiff::Span::new().try_microseconds(value),
+            FFI_VortexTimeUnit::Nanoseconds => jiff::Span::new().try_nanoseconds(value),
+        };
+        span.and_then(|span| jiff::Timestamp::UNIX_EPOCH.checked_add(span)).ok()?;
         let tz = if timezone.is_null() {
             None
         } else {
