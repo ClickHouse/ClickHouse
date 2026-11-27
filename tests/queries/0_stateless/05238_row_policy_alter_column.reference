@@ -70,5 +70,8 @@ modified columns policy	[1]
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ILLEGAL_COLUMN
 alias policy after base rename	[1]
+-- an ALIAS column the policy reads pins the type of its base columns
+ALTER_OF_COLUMN_IS_FORBIDDEN
+alias over a modified column	[1]
 -- a database-wide policy counts too
 ALTER_OF_COLUMN_IS_FORBIDDEN

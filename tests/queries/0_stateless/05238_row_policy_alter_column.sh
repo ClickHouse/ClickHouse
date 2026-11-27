@@ -226,6 +226,16 @@ refused "ALTER TABLE ta DROP COLUMN tenant" ILLEGAL_COLUMN
 $CLICKHOUSE_CLIENT -q "ALTER TABLE ta RENAME COLUMN tenant TO tenant2"
 $CLICKHOUSE_CLIENT -q "SELECT 'alias policy after base rename', arraySort(groupArray(id)) FROM ta"
 
+echo "-- an ALIAS column the policy reads pins the type of its base columns"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tac (id UInt32, n UInt32, a UInt8 ALIAS n = 1, b UInt8 ALIAS a) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tac (id, n) VALUES (1, 1), (2, 2);
+CREATE ROW POLICY pac ON $DB.tac FOR SELECT USING b TO CURRENT_USER;
+"
+refused "ALTER TABLE tac MODIFY COLUMN n String" ALTER_OF_COLUMN_IS_FORBIDDEN
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tac MODIFY COLUMN n UInt32 CODEC(ZSTD)"
+$CLICKHOUSE_CLIENT -q "SELECT 'alias over a modified column', arraySort(groupArray(id)) FROM tac"
+
 echo "-- a database-wide policy counts too"
 $CLICKHOUSE_CLIENT -q "CREATE ROW POLICY pdb ON $DB.* FOR SELECT USING tenant = 1 TO CURRENT_USER"
 refused "ALTER TABLE t RENAME COLUMN tenant TO tenant2" ALTER_OF_COLUMN_IS_FORBIDDEN
@@ -239,6 +249,7 @@ DROP ROW POLICY pj ON $DB.tj;
 DROP ROW POLICY pn ON $DB.tn;
 DROP ROW POLICY pu ON $DB.tu;
 DROP ROW POLICY pa ON $DB.ta;
+DROP ROW POLICY pac ON $DB.tac;
 DROP ROW POLICY pf ON $DB.tf;
 DROP ROW POLICY plam ON $DB.tlam;
 DROP ROW POLICY ptt ON $DB.tt;
@@ -262,6 +273,7 @@ DROP TABLE tj;
 DROP TABLE tn;
 DROP TABLE tu;
 DROP TABLE ta;
+DROP TABLE tac;
 DROP TABLE tf;
 DROP TABLE tlam;
 DROP TABLE tt;

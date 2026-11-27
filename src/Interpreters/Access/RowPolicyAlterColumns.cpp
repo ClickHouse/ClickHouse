@@ -139,7 +139,7 @@ struct FilterNames
 /// a name binds as written first and with a `table.` or `db.table.` qualifier removed only after that (see
 /// `tryResolveIdentifierFromTableExpression`); an alter of a column removes the column itself, or every child of
 /// a nested one when no column has that name (see `getNameRange`)
-bool mentions(const String & name, const Strings & qualifiers, const AlterCommand & command, const ColumnsDescription & columns)
+bool mentions(const String & name, const Strings & qualifiers, const String & altered, const ColumnsDescription & columns)
 {
     Strings candidates{name};
     for (const auto & qualifier : qualifiers)
@@ -152,10 +152,30 @@ bool mentions(const String & name, const Strings & qualifiers, const AlterComman
             continue;
         return std::ranges::any_of(read, [&](const auto & storage_column)
         {
-            return columns.has(command.column_name) ? storage_column == command.column_name : storage_column.starts_with(command.column_name + ".");
+            return columns.has(altered) ? storage_column == altered : storage_column.starts_with(altered + ".");
         });
     }
     return false;
+}
+
+/// a new type of a column also changes the `ALIAS` columns that read it: `a UInt8 ALIAS n = 1` fails after `n String`
+Names changedColumns(const AlterCommand & command, const ColumnsDescription & columns)
+{
+    Names changed{command.column_name};
+    const std::vector<StorageID> no_tables;
+    for (size_t i = 0; command.type == AlterCommand::MODIFY_COLUMN && i < changed.size(); ++i)
+    {
+        for (const auto & column : columns)
+        {
+            if (column.default_desc.kind != ColumnDefaultKind::Alias || std::ranges::contains(changed, column.name))
+                continue;
+            FilterNames sources{no_tables, columns, {}, {}, {}};
+            sources.collect(column.default_desc.expression);
+            if (std::ranges::any_of(sources.names, [&](const auto & name) { return mentions(name, {}, changed[i], columns); }))
+                changed.push_back(column.name);
+        }
+    }
+    return changed;
 }
 
 /// a read through an `Alias` also applies the policies of its target chain (see `getRowPolicyFilterForStorage`),
@@ -220,11 +240,15 @@ void checkRowPoliciesBeforeAlter(const StoragePtr & table, const ColumnsDescript
         {
             if (!changes(command))
                 continue;
+            const auto changed = changedColumns(command, columns);
             if (std::ranges::any_of(policy_tables, [&](const auto & table_id)
                 {
                     Strings qualifiers{table_id.table_name + ".", table_id.database_name + "." + table_id.table_name + "."};
                     qualifiers.insert(qualifiers.end(), filter_names.qualifiers.begin(), filter_names.qualifiers.end());
-                    return std::ranges::any_of(filter_names.names, [&](const auto & name) { return mentions(name, qualifiers, command, columns); });
+                    return std::ranges::any_of(filter_names.names, [&](const auto & name)
+                    {
+                        return std::ranges::any_of(changed, [&](const auto & column) { return mentions(name, qualifiers, column, columns); });
+                    });
                 }))
             {
                 const char * action = command.type == AlterCommand::DROP_COLUMN ? "drop"
