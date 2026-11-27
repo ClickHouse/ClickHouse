@@ -990,6 +990,7 @@ void IcebergSchemaProcessor::checkTableSchemas(const Poco::JSON::Object & metada
 
 void IcebergSchemaProcessor::dropCachedSchema(Int32 schema_id)
 {
+    registered_metadata_object.reset();
     iceberg_table_schemas_by_ids.erase(schema_id);
     clickhouse_table_schemas_by_ids.erase(schema_id);
     std::erase_if(transform_dags_by_ids, [schema_id](const auto & item) { return item.first.first == schema_id || item.first.second == schema_id; });
@@ -1571,6 +1572,20 @@ Poco::JSON::Object::Ptr IcebergSchemaProcessor::getIcebergTableSchemaById(Int32 
     if (it == iceberg_table_schemas_by_ids.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with id {} is unknown", id);
     return it->second;
+}
+
+bool IcebergSchemaProcessor::isMetadataObjectRegistered(const Poco::JSON::Object::Ptr & metadata_object) const
+{
+    SharedLockGuard lock(mutex);
+    return registered_metadata_object && registered_metadata_object.get() == metadata_object.get();
+}
+
+void IcebergSchemaProcessor::markMetadataObjectRegistered(Poco::JSON::Object::Ptr metadata_object)
+{
+    {
+        std::lock_guard lock(mutex);
+        registered_metadata_object.swap(metadata_object);
+    }
 }
 
 void IcebergSchemaProcessor::registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id)
