@@ -1,0 +1,4 @@
+<test>
+    <query>SELECT mapPopulateSeries(map(toUInt128(number), toUInt8(1), toUInt128(number + 1024), toUInt8(2))) FROM numbers(5000) FORMAT Null;</query>
+    <query>SELECT mapPopulateSeries(map(toUInt256(number), toUInt8(1), toUInt256(number + 1024), toUInt8(2))) FROM numbers(5000) FORMAT Null;</query>
+</test>

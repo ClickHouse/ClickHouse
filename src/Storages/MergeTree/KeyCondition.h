@@ -531,6 +531,11 @@ public:
     /// without `can_be_false`, i.e. `relaxed`. Making one true directly needs `FUNCTION_UNKNOWN` instead.
     void relaxAtomsOverNaNHidingColumns(const DataTypes & key_types);
 
+    /// Whether an atom can claim a key value that carries a nested `NULL` or `NaN` as matching, see
+    /// `mayReadNullKeyValue`. Such a value can sit anywhere inside a range, so the analysis never answers
+    /// `can_be_false = false` for it, whatever the range is, and no range of marks can be exact.
+    [[nodiscard]] bool mayClaimNestedNullOrNaN(const DataTypes & key_types) const;
+
     [[nodiscard]] bool isSinglePoint() const { return single_point; }
 
     /// Does the filter condition have any ORs?
@@ -916,7 +921,8 @@ private:
         const Columns & set_columns,
         const DataTypes & set_types,
         SetAtomCandidate candidate,
-        const DataTypePtr & has_element_type);
+        const DataTypePtr & has_element_type,
+        const Set * source_set);
 
     /// Maps the predicate expression whose values are tested for set membership (the left-hand side
     /// of `IN`, or the element argument of `has`) onto key columns. Each matched tuple component has
@@ -939,7 +945,8 @@ private:
         SetIndexAnalysisResult analysis,
         bool allow_relaxed_pruning,
         AtomGroup & group,
-        const DataTypePtr & has_element_type = nullptr) const;
+        const DataTypePtr & has_element_type = nullptr,
+        const Set * source_set = nullptr) const;
 
     /// Checks that the index can not be used.
     ///

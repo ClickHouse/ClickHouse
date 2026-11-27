@@ -19,9 +19,7 @@ ClickHouse 系统及其运行环境，让您能够提前发现并应对
 和 Cloud 中均可用。本文将向您展示如何在
 Cloud 中使用高级仪表板。
 
-<div id="accessing-the-advanced-dashboard">
-  ## 访问高级仪表板
-</div>
+## 访问高级仪表板 {#accessing-the-advanced-dashboard}
 
 可通过以下路径访问高级仪表板：
 
@@ -29,18 +27,12 @@ Cloud 中使用高级仪表板。
   * `Monitoring` → `Advanced dashboard`
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![高级仪表板](/images/cloud/manage/monitoring/advanced_dashboard.webp)
-
-</Frame>
-
+  <Frame>
+    ![高级仪表板](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+  </Frame>
 </div>
 
-<div id="accessing-the-native-advanced-dashboard">
-  ## 访问原生高级仪表板
-</div>
+## 访问原生高级仪表板 {#accessing-the-native-advanced-dashboard}
 
 可通过以下路径访问原生高级仪表板：
 
@@ -52,37 +44,29 @@ Cloud 中使用高级仪表板。
 身份验证才能访问该仪表板。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![高级仪表板](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
-
-</Frame>
-
+  <Frame>
+    ![高级仪表板](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+  </Frame>
 </div>
 
 每个可视化都关联了一个用于填充数据的 SQL 查询。您可以
 点击铅笔图标编辑该查询。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![高级仪表板](/images/cloud/manage/monitoring/edit_visualization.webp)
-
-</Frame>
-
+  <Frame>
+    ![高级仪表板](/images/cloud/manage/monitoring/edit_visualization.webp)
+  </Frame>
 </div>
 
 <div id="out-of-box-visualizations">
-  ## 开箱即用的可视化
+  ## 开箱即用的可视化 {#out-of-box-visualizations}
 </div>
 
 高级仪表板中的默认图表旨在让您实时了解 ClickHouse 系统的运行状况。下面列出了每个图表及其说明。
 为便于查看，这些图表分为三类。
 
 <div id="clickhouse-specific">
-  ### ClickHouse 特有
+  ### ClickHouse 特有 {#clickhouse-specific}
 </div>
 
 这些指标专用于监控您的
@@ -99,7 +83,7 @@ ClickHouse 实例的健康状况和性能。
 | 每秒读取字节数            | 表示查询每秒读取的数据量                              |
 
 <div id="system-health-specific">
-  ### 系统健康状况相关
+  ### 系统健康状况相关 {#system-health-specific}
 </div>
 
 监控底层系统与监控 ClickHouse 本身同样重要。
@@ -116,7 +100,7 @@ ClickHouse 实例的健康状况和性能。
 | OS CPU Usage (Kernel)     | 运行内核代码时的 CPU 使用率          |
 
 <div id="clickhouse-cloud-specific">
-  ## ClickHouse Cloud 特定指标
+  ## ClickHouse Cloud 特定指标 {#clickhouse-cloud-specific}
 </div>
 
 ClickHouse Cloud 使用对象存储 (S3 类型) 来存储数据。监控该
@@ -137,14 +121,12 @@ ClickHouse Cloud 使用对象存储 (S3 类型) 来存储数据。监控该
 | 并发网络连接数                   | 跟踪当前并发网络连接的数量      |
 
 <div id="identifying-issues-with-the-advanced-dashboard">
-  ## 使用高级仪表板识别问题
+  ## 使用高级仪表板识别问题 {#identifying-issues-with-the-advanced-dashboard}
 </div>
 
 通过这种对 ClickHouse 服务健康状况的实时视图，您可以在问题影响业务之前大幅降低其影响，或更快地排查并解决问题。下面列出了一些您可以借助高级仪表板发现的问题。
 
-<div id="unbatched-inserts">
-  ### 非批量插入
-</div>
+### 非批量插入 {#unbatched-inserts}
 
 如[最佳实践文档](/zh/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous)中所述，如果能够以同步方式执行，建议始终将数据批量插入 ClickHouse。
 
@@ -152,30 +134,24 @@ ClickHouse Cloud 使用对象存储 (S3 类型) 来存储数据。监控该
 从而提高磁盘写入效率并减少合并
 操作。
 
-用于识别插入未充分优化问题的关键指标是 **Inserted Rows/sec** 和
-**Max Parts for Partition**
+用于识别插入未充分优化问题的关键指标是 **每秒插入行数** 和
+**单个分区的最大数据片段数**
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![非批量插入](/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp)
-
-</Frame>
-
+  <Frame>
+    ![非批量插入](/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp)
+  </Frame>
 </div>
 
-上面的示例显示，在 13h 到 14h 之间，**Inserted Rows/sec** 和 **Max Parts for Partition**
+上面的示例显示，在 13h 到 14h 之间，**每秒插入行数** 和 **单个分区的最大数据片段数**
 都出现了两次峰值。这表明我们正在以合理的速度摄取数据。
 
-随后我们看到，16h 之后 **Max Parts for Partition** 又出现了一次明显的峰值，但
-**Inserted Rows/sec speed** 却非常低。系统创建了大量 parts，
+随后我们看到，16h 之后 **单个分区的最大数据片段数** 又出现了一次明显的峰值，但
+**每秒插入行数 speed** 却非常低。系统创建了大量 parts，
 但生成的数据却很少，这说明这些 parts 的大小
 并不理想。
 
-<div id="resource-intensive-query">
-  ### 资源密集型查询
-</div>
+### 资源密集型查询 {#resource-intensive-query}
 
 运行会消耗大量资源 (如 CPU 或内存) 的 SQL 查询很常见。不过，监控这些查询并了解它们对部署整体性能的影响非常重要。
 
@@ -184,18 +160,12 @@ ClickHouse Cloud 使用对象存储 (S3 类型) 来存储数据。监控该
 下面是一个示例：CPU 使用率出现峰值，而每秒执行的查询数量并未明显变化。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![资源密集型查询](/images/cloud/manage/monitoring/resource_intensive_query.webp)
-
-</Frame>
-
+  <Frame>
+    ![资源密集型查询](/images/cloud/manage/monitoring/resource_intensive_query.webp)
+  </Frame>
 </div>
 
-<div id="bad-primary-key-design">
-  ### 糟糕的主键设计
-</div>
+### 糟糕的主键设计 {#bad-primary-key-design}
 
 你还可以通过高级仪表板发现另一个问题：主键设计不佳。
 如[“ClickHouse 主索引实用入门”](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#a-table-with-a-primary-key)中所述，
@@ -208,13 +178,9 @@ ClickHouse Cloud 使用对象存储 (S3 类型) 来存储数据。监控该
 为执行而选中了大量行。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![资源密集型查询](/images/cloud/manage/monitoring/selected_rows_sec.webp)
-
-</Frame>
-
+  <Frame>
+    ![资源密集型查询](/images/cloud/manage/monitoring/selected_rows_sec.webp)
+  </Frame>
 </div>
 
 你可以使用时间戳作为过滤器，在表 `system.query_log` 中

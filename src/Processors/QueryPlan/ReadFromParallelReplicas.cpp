@@ -107,7 +107,6 @@ ReadFromParallelReplicasStep::ReadFromParallelReplicasStep(
     , cluster(cluster_)
     , coordinator(std::move(coordinator_))
     , context(context_)
-    // , scalars(scalars_)
     // , storage_limits(std::move(storage_limits_))
     , log(getLogger("ReadFromParallelReplicas"))
     , pools_to_use(std::move(pools_to_use_))
@@ -184,7 +183,8 @@ Pipes ReadFromParallelReplicasStep::addPipes(const SharedHeader & out_header)
             pools_to_use[i]->getAddress());
 
         const size_t parallel_marshalling_threads
-            = (context->getSettingsRef()[Setting::max_threads] + pools_to_use.size() - 1) / pools_to_use.size();
+            = context->getSettingsRef()[Setting::max_threads] / pools_to_use.size()
+            + (context->getSettingsRef()[Setting::max_threads] % pools_to_use.size() != 0);
         Pipe pipe = createPipeForSingeReplica(pools_to_use[i], replica_info, out_header, parallel_marshalling_threads);
         remote_sources.emplace(replica_info.number_of_current_replica, pipe.getProcessors().front());
         pipes.emplace_back(std::move(pipe));
@@ -251,15 +251,24 @@ Pipe ReadFromParallelReplicasStep::createPipeForSingeReplica(
 
     chassert(output_header);
 
+    /// Only the shard scalars: scalar subquery values are already constants in the plan.
+    /// `_shard_num` of an enclosing distributed query is needed: without it a follower assumes the initiator
+    /// runs a local plan (see `canUseLocalPlanForParallelReplicas`) and skips its own index analysis.
+    Scalars scalars;
+    if (context->hasQueryContext())
+    {
+        for (const auto * name : {"_shard_num", "_shard_count"})
+            if (context->getQueryContext()->hasScalar(name))
+                scalars.emplace(name, context->getQueryContext()->getScalar(name));
+    }
+
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         pool,
         dumpQueryPlanShape(*query_plan),
         out_header,
         context,
         getThrottler(context),
-        /// Carries `_shard_num` of an enclosing distributed query: without it a follower assumes the initiator
-        /// runs a local plan (see `canUseLocalPlanForParallelReplicas`) and skips its own index analysis.
-        context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{},
+        scalars,
         context->getExternalTables(),
         QueryProcessingStage::QueryPlan,
         RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)},

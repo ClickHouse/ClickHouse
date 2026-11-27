@@ -1,0 +1,110 @@
+---
+sidebarTitle: 'Protection contre la suppression'
+slug: /cloud/manage/deletion-protection
+title: 'Protection contre la suppression de service'
+description: 'Bloquer la suppression d’un service ClickHouse Cloud tant que la protection n’est pas désactivée'
+keywords: ['protection contre la suppression', 'supprimer un service', 'ClickHouse Cloud', 'paramètres du service', 'deletionProtection']
+doc_type: 'guide'
+---
+
+La protection contre la suppression de service est un paramètre propre à chaque service qui bloque toute suppression tant que vous ne l’avez pas désactivée. Activez-la sur les services ClickHouse Cloud que vous souhaitez prémunir contre une suppression accidentelle, que ce soit depuis la Console Cloud, via l’[API ClickHouse Cloud](/fr/cloud/manage/api/api-overview) ou avec Terraform.
+
+<Note>
+  Cette fonctionnalité s’applique aux services ClickHouse Cloud, mais pas aux services [ClickHouse Managed Postgres](/fr/cloud/managed-postgres).
+</Note>
+
+La protection est désactivée par défaut. Sa désactivation n’entraîne pas la suppression du service. Un service protégé continue de fonctionner normalement : les requêtes, la mise à l’échelle et les autres paramètres ne sont pas affectés.
+
+Tant que la protection est activée, les requêtes de suppression sont rejetées : `DELETE /v1/organizations/{organizationId}/services/{serviceId}` renvoie le code HTTP `409` tant que vous n’avez pas désactivé la protection. Le service doit par ailleurs être arrêté avant de pouvoir être supprimé. La suppression s’effectue ensuite de manière asynchrone.
+
+## Qui peut la modifier {#who-can-change-it}
+
+L&#39;activation ou la désactivation de la protection nécessite la permission [`control-plane:service:delete`](/fr/cloud/security/console-roles). Les administrateurs de l&#39;organisation disposent de cette permission. Consultez [Rôles et permissions de la console](/fr/cloud/security/console-roles).
+
+Pour activer la protection, il faut également que la protection contre la suppression soit disponible pour l&#39;organisation, ce qui est le cas des organisations ClickHouse Cloud. Une création ou une mise à jour qui définit `deletionProtection` sur `true` renvoie une erreur HTTP `400` si l&#39;organisation n&#39;en dispose pas. La désactivation de la protection n&#39;est pas soumise à cette vérification : une requête qui définit `deletionProtection` sur `false` est acceptée, y compris pour un service déjà protégé.
+
+| Action                                               | Permission                                                                                                                          |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Activer ou désactiver l&#39;option dans la console   | `control-plane:service:delete` sur le service                                                                                       |
+| Définir `deletionProtection` sur un service existant | `control-plane:service:manage` et `control-plane:service:delete` sur le service                                                     |
+| Envoyer la valeur déjà définie pour le service       | `control-plane:service:manage` uniquement. Renvoyer la valeur actuelle ne nécessite pas `control-plane:service:delete`              |
+| Créer un service avec `deletionProtection: true`     | `control-plane:organization:create-service`, et `control-plane:service:delete` accordé pour tous les services de l&#39;organisation |
+| Supprimer le service                                 | `control-plane:service:delete` sur le service. Le service doit être arrêté et la protection désactivée                              |
+
+Les services ClickStack ne peuvent pas être mis à jour via l&#39;API cloud. Activez ou désactivez leur protection contre la suppression dans la console.
+
+## Activer ou désactiver la protection dans la console {#console}
+
+Ouvrez le service et accédez à **Paramètres**. Sous **Protection contre la suppression**, actionnez l’interrupteur. La modification est enregistrée immédiatement.
+
+L’interrupteur est accessible à toute personne disposant de l’autorisation `control-plane:service:delete` sur ce service. Lorsque la protection est activée, la console bloque la suppression tant que vous n’avez pas désactivé l’interrupteur.
+
+## Le définir avec l&#39;API cloud {#cloud-api}
+
+L&#39;objet service possède un champ booléen, `deletionProtection`. Définissez-le lors de la création d&#39;un service (`POST /v1/organizations/{organizationId}/services`) ou de sa mise à jour (`PATCH /v1/organizations/{organizationId}/services/{serviceId}`). Les réponses des requêtes de lecture et de listage incluent ce champ. En son absence, le service n&#39;est pas protégé.
+
+Pour activer la protection :
+
+```bash
+curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  -X PATCH \
+  -H "Content-Type: application/json" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID" \
+  -d '{"deletionProtection": true}'
+```
+
+Pour supprimer un service protégé, désactivez la protection, arrêtez le service, attendez qu’il soit arrêté, puis supprimez-le. `PATCH .../state` avec `"command": "stop"` nécessite `control-plane:service:manage` et renvoie une réponse avant l’arrêt effectif du service. Toute suppression tentée alors que le service est encore à l’état `stopping` est rejetée. Une demande de suppression visant un service protégé renvoie `409` et le service est conservé.
+
+Désactivez la protection :
+
+```bash
+curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  -X PATCH \
+  -H "Content-Type: application/json" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID" \
+  -d '{"deletionProtection": false}'
+```
+
+Demandez l&#39;arrêt :
+
+```bash
+curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  -X PATCH \
+  -H "Content-Type: application/json" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/state" \
+  -d '{"command": "stop"}'
+```
+
+Attendez que `result.state` ait la valeur `stopped`, puis lancez la suppression :
+
+```bash
+while [ "$(curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID" \
+  | jq -r '.result.state')" != "stopped" ]; do
+  sleep 5
+done
+
+curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  -X DELETE \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID"
+```
+
+## Terraform {#terraform}
+
+<Note>
+  `deletion_protection` n&#39;est pas disponible dans la dernière version publiée du fournisseur, [v3.43.0](https://github.com/ClickHouse/terraform-provider-clickhouse/releases/tag/v3.43.0). L&#39;attribut a été ajouté par [terraform-provider-clickhouse#799](https://github.com/ClickHouse/terraform-provider-clickhouse/pull/799), qui a été fusionnée mais ne figure encore dans aucune version publiée. Avec la v3.43.0, l&#39;exemple ci-dessous échoue avec une erreur d&#39;argument non pris en charge. Utilisez une version du fournisseur postérieure à la v3.43.0 qui inclut cet attribut.
+</Note>
+
+La ressource `clickhouse_service` accepte `deletion_protection`. Tant que sa valeur est `true`, `terraform destroy` ainsi que toute modification entraînant le remplacement du service échouent. Passez-la à `false` et appliquez cette modification séparément, avant de détruire le service.
+
+Retirer `deletion_protection` de la configuration ne modifie pas la valeur actuelle du paramètre.
+
+```hcl
+resource "clickhouse_service" "example" {
+  # ...
+
+  deletion_protection = true
+}
+```
+
+Pour définir `deletion_protection = true` lors de la création d&#39;un service, il faut une API key autorisée à supprimer tous les services de l&#39;organisation. Pour modifier ce paramètre par la suite, la permission de suppression sur ce service est requise.

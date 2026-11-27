@@ -37,6 +37,9 @@ struct ColumnWithTypeAndName;
 class ArrowIPCBlockInputFormat final : public IInputFormat
 {
 public:
+    /// Parses the WKB/WKT binary values of a decoded (possibly Nullable) String column into a geo column.
+    static ColumnPtr decodeGeoColumn(const ColumnPtr & source, const GeoColumnMetadata & geo_metadata, bool precise_float_parsing);
+
     ArrowIPCBlockInputFormat(
         ReadBuffer & in_, SharedHeader header_, bool stream_, size_t max_block_size_, const FormatSettings & format_settings_);
     ~ArrowIPCBlockInputFormat() override;
@@ -66,11 +69,12 @@ private:
     Chunk buildChunk(ArrowIPC::RecordBatchDecoder::DecodedColumns & decoded, size_t num_rows);
     /// Reinterprets the raw bytes of decoded fixed_size_binary / binary leaves as UUID / IPv6 / big integer
     /// in place when the requested header type asks for it (recursing through Nullable/Array/Tuple/Map), so
-    /// the raw 16/32 bytes are reinterpreted rather than text-parsed by the subsequent cast.
+    /// the raw 16/32 bytes are reinterpreted rather than text-parsed by the subsequent cast. With
+    /// `repair_variants`, a decoded `Variant` is rebuilt too, since a `Variant` -> `Variant` cast only ever
+    /// appends alternatives.
     void reinterpretRawByteColumns(
-        ColumnWithTypeAndName & column, const DataTypePtr & to_type, const ArrowIPC::ArrowField * field) const;
-    /// Parses the WKB/WKT binary values of a decoded (possibly Nullable) String column into a geo column.
-    static ColumnPtr decodeGeoColumn(const ColumnPtr & source, const GeoColumnMetadata & geo_metadata, bool precise_float_parsing);
+        ColumnWithTypeAndName & column, const DataTypePtr & to_type, const ArrowIPC::ArrowField * field,
+        bool repair_variants) const;
     bool readStreamBatch();
     bool readFileBatch();
     Chunk generateChunkFromBatch();
@@ -90,8 +94,8 @@ private:
     /// Values are decoded only for these fields; root row counts are validated for every field.
     /// The set is populated by `prepareReader`.
     UnorderedSetWithMemoryTracking<String> requested_top_level_fields;
-    /// Each requested column's target ClickHouse type, keyed by its normalized name (including dotted
-    /// subcolumn names like `t.d`). Passed to the decoder for the recursive `date32` numeric type hint: a
+    /// Each requested column's target ClickHouse type, keyed as `RecordBatchDecoder::bindRequestedTypes` binds it (including
+    /// dotted subcolumn names like `t.d`). Passed to the decoder for the recursive `date32` numeric type hint: a
     /// `date32` mapped (at any nesting) to a numeric target is read as the raw `Int32` day number without
     /// the `Date32` range check, matching the Apache Arrow library reader's numeric type-hint behavior.
     UnorderedMapWithMemoryTracking<String, DataTypePtr> requested_field_target_types;
@@ -122,6 +126,26 @@ private:
 
     std::atomic<int> is_stopped{0};
 };
+
+
+namespace ArrowIPC
+{
+
+/// Converts the decoded columns of a record batch into a chunk of `header`: matches the columns by name (or
+/// case-insensitively), extracts the subcolumns of `Nested` and struct fields, parses GeoParquet geometry,
+/// reinterprets raw bytes and casts to the requested types. A header column absent from the batch is filled
+/// with defaults when `allow_missing_columns`, and an exception otherwise. Used by the native `Arrow` formats and
+/// by the formats that receive Arrow data through the C data interface.
+Chunk buildChunk(
+    const Block & header,
+    RecordBatchDecoder::DecodedColumns & decoded,
+    size_t num_rows,
+    const FormatSettings & format_settings,
+    bool allow_missing_columns,
+    const UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> & geo_columns,
+    BlockMissingValues * block_missing_values);
+
+}
 
 }
 

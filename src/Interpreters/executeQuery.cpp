@@ -920,8 +920,13 @@ static void excludeFromOuterQueryQuota(const ASTPtr & query_ast, const QueryStat
 static constexpr size_t PLAN_RENDER_INITIAL_CHUNK_SIZE = 4096;
 
 /// A row whose plan could not be written says why, in place of the plan.
-static void writeQueryPlanError(String & query_plan, const String & reason)
+static void writeQueryPlanError(String & query_plan, String reason)
 {
+    /// The reason can be the message of any exception thrown while rendering the plan, which may
+    /// quote what it was rendering.
+    if (auto masker = SensitiveDataMasker::getInstance())
+        masker->wipeSensitiveData(reason);
+
     query_plan.clear();
     try
     {
@@ -3673,8 +3678,8 @@ static BlockIO executeQueryImpl(
                     context->setQueryMetadataCache(query_metadata_cache);
                 }
 
-                if (QueryPlanLogCapture::canCapturePlan(context, out_ast, internal))
-                    context->enablePlanLogCapture();
+                if (QueryPlanLogCapture::canCapturePlan(context, out_ast, query, internal))
+                    context->enablePlanLogCapture(QueryPlanLogCapture::collectedStatisticsFromSettings(settings));
 
                 if (out_ast)
                     interpreter = InterpreterFactory::instance().get(
@@ -4890,7 +4895,9 @@ void executeQuery(
 
         /// If not - copy enough data into 'parse_buf'.
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
-        LimitReadBuffer limit(*istr, {.read_no_more = max_query_size + 1});
+        /// One byte more than the limit detects a too long query; the limit may be the maximum of `size_t` already.
+        const size_t read_no_more = max_query_size == std::numeric_limits<size_t>::max() ? max_query_size : max_query_size + 1;
+        LimitReadBuffer limit(*istr, {.read_no_more = read_no_more});
         copyData(limit, out);
         out.finalize();
 
@@ -5076,9 +5083,11 @@ void executeQuery(
             String key = key_value.safeGet<Tuple>().at(0).safeGet<String>();
             String value = key_value.safeGet<Tuple>().at(1).safeGet<String>();
 
-            if (std::find_if(key.begin(), key.end(), isControlASCII) != key.end()
-                || std::find_if(value.begin(), value.end(), isControlASCII) != value.end())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The keys and values of the `http_response_headers` setting cannot contain ASCII control characters");
+            if (key.empty() || !std::all_of(key.begin(), key.end(), isHTTPTokenChar))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The keys of the `http_response_headers` setting must be valid HTTP header names");
+
+            if (std::any_of(value.begin(), value.end(), isControlOrDeleteASCII))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The values of the `http_response_headers` setting cannot contain ASCII control characters");
 
             if (!result_details.additional_headers.emplace(key, value).second)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are duplicate entries in the `http_response_headers` setting");

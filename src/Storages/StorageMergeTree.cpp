@@ -294,6 +294,8 @@ void StorageMergeTree::startup()
     if (shutdown_called.load())
         return;
 
+    delayMergesAfterStartup();
+
     const bool readonly = isTableReadonly();
     if (!readonly)
     {
@@ -539,6 +541,8 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
             "UNIQUE KEY is not supported for table {}: a disk of its storage policy does not support transactions",
             getStorageID().getNameForLogs());
 
+    stopDelayingMergesAfterStartup();
+
     const auto & settings = local_context->getSettingsRef();
     return std::make_shared<MergeTreeSink>(*this, metadata_snapshot, settings[Setting::max_partitions_per_insert_block], local_context);
 }
@@ -612,7 +616,10 @@ void StorageMergeTree::alter(
 
     auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context, /*with_alters*/ false, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets]);
     if (!maybe_mutation_commands.empty())
+    {
+        stopDelayingMergesAfterStartup();
         delayMutationOrThrowIfNeeded(nullptr, local_context);
+    }
 
     Int64 mutation_version = -1;
 
@@ -1491,6 +1498,7 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
 {
     assertNotReadonly();
+    stopDelayingMergesAfterStartup();
 
     delayMutationOrThrowIfNeeded(nullptr, query_context);
 
@@ -1587,6 +1595,7 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
 QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & commands, ContextPtr query_context)
 {
     assertNotReadonly();
+    stopDelayingMergesAfterStartup();
     auto context_copy = Context::createCopy(query_context);
 
     /// Unlike `StorageReplicatedMergeTree::updateLightweight`, the partitions of the scoped commands are
@@ -1603,6 +1612,9 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
 
     size_t timeout_ms = saturatedMilliseconds(context_copy->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()).count();
     waitForCommittingInsertsAndMutations(block_number, timeout_ms);
+    auto metadata_snapshot_handle = getInMemoryMetadataPtr(context_copy, false);
+    StorageMetadataPtr metadata_snapshot = metadata_snapshot_handle;
+    assertNoUnfinishedClearOfBlockColumns(block_number, metadata_snapshot);
 
     /// Here the block number of the update is reserved in `committing_blocks`, but its patch part is not committed yet.
     FailPointInjection::pauseFailPoint(FailPoints::mt_lightweight_update_pause_after_block_allocation);
@@ -1649,6 +1661,27 @@ bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
     return f.version < s.version;
 }
 
+}
+
+void StorageMergeTree::assertNoUnfinishedClearOfBlockColumns(Int64 block_number, const StorageMetadataPtr & metadata_snapshot) const
+{
+    /// The patch of the update would store the values of `_block_number` and `_block_offset` of the parts the mutation has
+    /// not rewritten yet, and it would be applied to the rewritten parts, which have other values: to other rows or to none.
+    std::unique_lock lock(currently_processing_in_background_mutex);
+    for (const auto & [version, entry] : current_mutations_by_version)
+    {
+        if (static_cast<Int64>(version) >= block_number)
+            break;
+
+        if (!std::ranges::any_of(*entry.commands, [&](const MutationCommand & command) { return command.isClearOfBlockColumns(*metadata_snapshot); }))
+            continue;
+
+        auto status = getIncompleteMutationsStatusUnlocked(version, lock, nullptr, /*from_another_mutation=*/ true);
+        if (status && !status->is_done)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot execute a lightweight update, because mutation {} that clears columns `_block_number` and `_block_offset` "
+                "is not finished. Wait until it finishes, or kill it", entry.file_name);
+    }
 }
 
 std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsStatus(
@@ -2823,6 +2856,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     cleanup_thread.wakeupEarlierIfNeeded();
 
+    const bool merges_delayed_after_startup = areMergesDelayedAfterStartup();
+
     StorageMetadataPtr metadata_snapshot;  // assigned under the lock below; used later when constructing the merge task
     MergeMutateSelectedEntryPtr merge_entry;
     MergeMutateSelectedEntryPtr mutate_entry;
@@ -2851,6 +2886,11 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         if (merger_mutator.merges_blocker.isCancelled())
             return false;
 
+        if (merges_delayed_after_startup)
+        {
+            LOG_TRACE(LogFrequencyLimiter(log.load(), 300), "Didn't start merge: merges are delayed after the table startup");
+        }
+        else
         {
             if (auto merge_select_result = selectPartsToMerge(metadata_snapshot, false, {}, false, shared_lock, lock, txn))
                 merge_entry = std::move(merge_select_result.value());
@@ -3279,6 +3319,7 @@ bool StorageMergeTree::optimize(
     ContextPtr local_context)
 {
     assertNotReadonly();
+    stopDelayingMergesAfterStartup();
 
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 

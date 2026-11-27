@@ -335,10 +335,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (!can_use_runtime_filter)
         return false;
 
-    /// When IEJoin takes this join (`ie_join` listed first in `join_algorithm` with a suitable
+    /// When InequalityJoin takes this join (`inequality` listed first in `join_algorithm` with a suitable
     /// ON expression), it is not executed by a hash-family algorithm: a runtime filter cannot
     /// be attached, and the algorithm list must not be pinned to hash-family ones below.
-    if (isIEJoinPreferred(join_operator, join_step->getJoinSettings()))
+    if (isInequalityJoinPreferred(join_operator, join_step->getJoinSettings()))
         return false;
 
     /// For `ASOF`, pruning `join_algorithms` below would force `hash` even if the user picked
@@ -351,7 +351,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             join_algorithms,
             [](JoinAlgorithm algorithm)
             {
-                return algorithm != JoinAlgorithm::DIRECT && algorithm != JoinAlgorithm::IE_JOIN
+                return algorithm != JoinAlgorithm::DIRECT && algorithm != JoinAlgorithm::INEQUALITY
                     && algorithm != JoinAlgorithm::GRACE_HASH && algorithm != JoinAlgorithm::PARTIAL_MERGE
                     && algorithm != JoinAlgorithm::PREFER_PARTIAL_MERGE && algorithm != JoinAlgorithm::DEFAULT;
             });
@@ -404,8 +404,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// 'Block structure mismatch in JoinStep'. A duplicated NON-key build column, or a duplicated key
     /// on the probe side (where the filter is only applied and preserves the header), is harmless, so
     /// guard the build-side keys specifically. Skipping the filter is always correctness-safe. Mirrors
-    /// JoinStepLogical::canRemoveUnusedColumns(), which disables a sibling optimization on duplicated
-    /// join-condition inputs.
+    /// `JoinStepLogical::analyzeUnneededColumns`, which keeps duplicated join-condition inputs when it
+    /// removes the unused columns.
     {
         NameSet build_key_names;
         for (const auto & condition : join_operator.expression)
@@ -693,10 +693,17 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     join_step->setHasRuntimeFilters();
 
+    /// A packed long key is hashed for every row that reaches the join, so only a filter that passes mostly the rows
+    /// which match saves that. A `LEFT ANTI` filter passes the misses.
+    if (!check_left_does_not_contain)
+        join_step->setRuntimeFilterKeepsMatchingRows();
     return true;
 }
 
-void collectAppliedJoinRuntimeFilters(const Stack & stack)
+namespace
+{
+
+void collectAppliedJoinRuntimeFiltersImpl(const Stack & stack, const NameSet * delivered_filter_ids)
 {
     const auto & frame = stack.back();
 
@@ -704,6 +711,24 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
     auto * object_storage_read_step = typeid_cast<ReadFromObjectStorageStep *>(frame.node->step.get());
     if (!read_step && !object_storage_read_step)
         return;
+
+    auto register_filter = [delivered_filter_ids, read_step, object_storage_read_step](const RuntimeFilterIndexAnalysisDescriptor & descr)
+    {
+        if (delivered_filter_ids && !delivered_filter_ids->contains(descr.filter_id))
+            return;
+        if (read_step)
+            read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr);
+        else if (object_storage_read_step && !descr.is_global_row_index)
+            object_storage_read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr);
+    };
+
+    if (delivered_filter_ids)
+    {
+        const auto & source_step = *static_cast<const SourceStepWithFilter *>(frame.node->step.get());
+        if (const auto & prewhere_info = source_step.getPrewhereInfo())
+            for (const auto & descr : findAppliedRuntimeFilters(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name))
+                register_filter(descr);
+    }
 
     /// Walk up from the reading step composing the filters through the expression steps,
     /// exactly like optimizePrimaryKeyConditionAndLimit does for the index analysis, so a
@@ -721,14 +746,7 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
                 filter_dag = ActionsDAG::merge((*it)->clone(), std::move(filter_dag));
 
             for (const auto & descr : findAppliedRuntimeFilters(filter_dag, filter_step->getFilterColumnName()))
-            {
-                if (read_step)
-                    read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(
-                        descr.filter_id, descr.key_column_name, descr.key_column_type, descr.is_global_row_index);
-                else if (object_storage_read_step && !descr.is_global_row_index)
-                    object_storage_read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(
-                        descr.filter_id, descr.key_column_name, descr.key_column_type);
-            }
+                register_filter(descr);
         }
         else if (const auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))
         {
@@ -740,6 +758,19 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
         else
             break;
     }
+}
+
+}
+
+void collectAppliedJoinRuntimeFilters(const Stack & stack)
+{
+    collectAppliedJoinRuntimeFiltersImpl(stack, nullptr);
+}
+
+void collectDeliveredJoinRuntimeFilters(QueryPlan::Node & root, const NameSet & delivered_filter_ids)
+{
+    Stack stack;
+    traverseQueryPlan(stack, root, [&](auto &) { collectAppliedJoinRuntimeFiltersImpl(stack, &delivered_filter_ids); });
 }
 
 }

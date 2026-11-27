@@ -307,13 +307,17 @@ struct AggregateFunctionMergedJSONPatchData
 
     void insertResultInto(
         IColumn & to,
+        const IDataType & result_type,
         const UnorderedMapWithMemoryTracking<String, SerializationPtr> & typed_path_serializations) const
     {
         auto & result_column = assert_cast<ColumnObject &>(to);
 
         if (entries.empty())
         {
-            result_column.insertDefault();
+            if (result_type.isDefaultInsertTrivial())
+                result_column.insertDefault();
+            else
+                result_type.insertDefaultInto(result_column);
             return;
         }
 
@@ -429,7 +433,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        this->data(place).insertResultInto(to, typed_path_serializations);
+        this->data(place).insertResultInto(to, *this->result_type, typed_path_serializations);
     }
 };
 

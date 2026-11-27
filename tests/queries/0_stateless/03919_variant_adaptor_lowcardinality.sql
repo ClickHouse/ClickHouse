@@ -3,7 +3,6 @@
 -- differs between type computation (nullptr columns = non-const) and execution
 -- (actual ColumnConst from scatter/filter), which could cause a type mismatch.
 
-SET allow_experimental_variant_type = 1;
 SET use_variant_as_common_type = 1;
 SET allow_suspicious_variant_types = 1;
 

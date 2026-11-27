@@ -6,25 +6,25 @@ keywords: ['managed postgres', 'postgresql', 'base de datos en la nube', 'servic
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.overview-beta" />
-
 ClickHouse Managed Postgres es un servicio gestionado de Postgres de nivel empresarial, diseñado para ofrecer rendimiento y escalar. Basado en almacenamiento NVMe ubicado físicamente junto al cómputo, ofrece hasta 10 veces más rendimiento para cargas de trabajo limitadas por el disco, en comparación con alternativas que usan almacenamiento conectado por red, como EBS.
 
-Desarrollado en colaboración con [Ubicloud](https://www.ubicloud.com/), cuyo equipo fundador cuenta con una trayectoria ofreciendo Postgres de primer nivel en Citus Data, Heroku y Microsoft, ClickHouse Managed Postgres resuelve los problemas de rendimiento a los que suelen enfrentarse las aplicaciones de rápido crecimiento: ingestión y actualizaciones más lentas, operaciones de vacuum lentas, mayor latencia de cola y picos de WAL provocados por IOPS de disco limitados.
+Desarrollado en colaboración con [Ubicloud](https://www.ubicloud.com/), cuyo equipo fundador cuenta con una trayectoria ofreciendo Postgres de primer nivel en Citus Data, Heroku y Microsoft, ClickHouse Managed Postgres resuelve los problemas de rendimiento a los que suelen enfrentarse las aplicaciones de rápido crecimiento: ingestión y actualizaciones más lentas, operaciones VACUUM lentas, mayor latencia de cola y picos de WAL provocados por IOPS de disco limitados.
 
 ## Postgres para transacciones, ClickHouse para analítica {#transactions-and-analytics}
 
 Use Postgres para las cargas de trabajo transaccionales de las aplicaciones (OLTP), como crear pedidos, actualizar el inventario y gestionar cuentas de usuario. Postgres es su sistema de registro: los cambios relacionados pueden confirmarse (commit) o revertirse en conjunto dentro de una misma transacción.
 
-Cuando su aplicación además necesite analítica sobre grandes conjuntos de datos, agregue un servicio de ClickHouse y conecte ambos con ClickPipes:
+Cuando su aplicación además necesite analítica sobre grandes conjuntos de datos, agregue un servicio de ClickHouse y conecte ambos con ClickPipes.
+
+<Note>
+  [WalShadow](/es/products/managed-postgres/sync-to-clickhouse/walshadow), ahora en vista previa privada, ofrece replicación de alto rendimiento y menor latencia de Postgres a ClickHouse.
+</Note>
 
 ```mermaid
 flowchart LR
-    Application -->|Reads and writes| Postgres
-    Postgres -->|Committed changes via ClickPipes| ClickHouse
-    Analytics -->|Queries| ClickHouse
+    Application -->|#nbsp;Reads and writes#nbsp;| Postgres
+    Postgres -->|#nbsp;CDC#nbsp;| ClickHouse
+    Analytics -->|#nbsp;Queries#nbsp;| ClickHouse
 ```
 
 1. Su aplicación lee y escribe datos operativos en Postgres, usando transacciones para agrupar cambios relacionados.
@@ -57,13 +57,13 @@ Para conocer los límites locales de NVMe en AWS, consulta [Optimizada para memo
 
 ClickHouse Managed Postgres está disponible en los siguientes proveedores de nube:
 
-| Proveedor de nube | Disponibilidad  |
-| ----------------- | --------------- |
-| AWS               | Public Beta     |
-| GCP               | Private Preview |
+| Proveedor de nube | Disponibilidad              |
+| ----------------- | --------------------------- |
+| AWS               | Disponible de forma general |
+| GCP               | vista previa privada             |
 
 <Note>
-  ClickHouse Managed Postgres en GCP se encuentra en Private Preview. Puedes apuntarte a la lista de espera de la Private Preview de GCP [aquí](https://clickhouse.com/cloud/postgres#gcp-waitlist). Consulta el [anuncio](https://clickhouse.com/blog/postgres-managed-by-clickhouse-gcp-private-preview) para obtener más información.
+  ClickHouse Managed Postgres en GCP se encuentra en vista previa privada. Puedes apuntarte a la lista de espera de la vista previa privada de GCP [aquí](https://clickhouse.com/cloud/postgres#gcp-waitlist). Consulta el [anuncio](https://clickhouse.com/blog/postgres-managed-by-clickhouse-gcp-private-preview) para obtener más información.
 </Note>
 
 ## Integración nativa con ClickHouse {#clickhouse-integration}
@@ -73,6 +73,10 @@ ClickHouse Managed Postgres se integra de forma nativa con ClickHouse para unifi
 ### Replicación de Postgres a ClickHouse {#postgres-replication}
 
 Replica tus datos de Postgres a ClickHouse con el [conector Postgres CDC de ClickPipes](/es/integrations/clickpipes/postgres/index). El conector gestiona tanto la carga inicial como la sincronización incremental continua, y ya ha sido probado en producción por cientos de clientes empresariales que mueven cientos de terabytes al mes.
+
+<Note>
+  [WalShadow](/es/products/managed-postgres/sync-to-clickhouse/walshadow), ya disponible en vista previa privada, ofrece replicación de alto rendimiento y con menor latencia de Postgres a ClickHouse.
+</Note>
 
 ### pg_clickhouse: capa de consulta unificada {#pg-clickhouse}
 

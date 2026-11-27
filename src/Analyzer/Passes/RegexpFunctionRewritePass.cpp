@@ -35,7 +35,7 @@ public:
             return;
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isOrdinaryFunction() || !isString(removeNullable(function_node->getResultType())))
+        if (!function_node || !function_node->isOrdinaryCall() || !isString(removeNullable(function_node->getResultType())))
             return;
 
         /// If a regular expression without alternatives starts with a ^ that has to match or ends with an unescaped $, rewrite

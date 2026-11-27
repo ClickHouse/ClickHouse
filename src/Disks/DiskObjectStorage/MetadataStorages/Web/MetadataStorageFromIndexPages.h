@@ -80,7 +80,6 @@ public:
         return 1;
     }
 
-    [[nodiscard]] bool supportsChmod() const override { return false; }
     [[nodiscard]] bool supportsStat() const override { return false; }
     [[nodiscard]] bool isReadOnly() const override { return true; }
     [[nodiscard]] bool isRemote() const override { return true; }

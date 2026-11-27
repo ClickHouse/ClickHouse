@@ -63,6 +63,11 @@ extern const int LIMIT_EXCEEDED;
 extern const int NOT_IMPLEMENTED;
 }
 
+namespace DB::Setting
+{
+extern const SettingsNonZeroUInt64 iceberg_metadata_previous_versions_max;
+}
+
 namespace DB::DataLakeStorageSetting
 {
 extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
@@ -606,7 +611,7 @@ static bool writeMetadataFiles(
     for (const auto & [partition_key, _] : data_files.files_by_partition)
         touched_partitions.insert(partition_key);
 
-    auto result = MetadataGenerator(metadata).generateNextMetadata(
+    auto result = MetadataGenerator(metadata, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]).generateNextMetadata(
         filename_generator,
         metadata_info.path,
         parent_snapshot,
@@ -1049,6 +1054,54 @@ void mutate(
         throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to create iceberg snapshot");
 }
 
+/// Iceberg (`TableMetadata.Builder.build`) requires each source column of the default partition spec and of the default
+/// sort order to be in `schema`; a `void` partition field, which format version 1 keeps for a removed field, needs none.
+static std::optional<String> findFieldWithoutSourceColumn(const Poco::JSON::Object::Ptr & metadata, const Poco::JSON::Object::Ptr & schema)
+{
+    const auto columns = IcebergSchemaProcessor::collectIcebergPrimitiveTypesById(schema->getArray(Iceberg::f_fields));
+    auto find_missing_source_id = [&](const Poco::JSON::Object::Ptr & field) -> std::optional<Int64>
+    {
+        if (field->has(Iceberg::f_source_id) && !columns.contains(field->getValue<Int64>(Iceberg::f_source_id)))
+            return field->getValue<Int64>(Iceberg::f_source_id);
+        if (const auto source_ids = field->getArray(Iceberg::f_source_ids))
+            for (UInt32 i = 0; i < source_ids->size(); ++i)
+                if (!columns.contains(source_ids->getElement<Int64>(i)))
+                    return source_ids->getElement<Int64>(i);
+        return std::nullopt;
+    };
+
+    if (metadata->has(Iceberg::f_partition_specs) && metadata->has(Iceberg::f_default_spec_id))
+    {
+        const auto default_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
+        const auto specs = metadata->getArray(Iceberg::f_partition_specs);
+        for (UInt32 i = 0; i < specs->size(); ++i)
+        {
+            const auto spec = specs->getObject(i);
+            if (spec->getValue<Int64>(Iceberg::f_spec_id) != default_spec_id)
+                continue;
+            const auto fields = spec->getArray(Iceberg::f_fields);
+            for (UInt32 j = 0; j < fields->size(); ++j)
+            {
+                const auto field = fields->getObject(j);
+                if (Poco::toLower(field->getValue<String>(Iceberg::f_transform)) == "void")
+                    continue;
+                if (auto id = find_missing_source_id(field))
+                    return fmt::format(
+                        "the partition field '{}' of the default partition spec has no source column with field id {}",
+                        field->getValue<String>(Iceberg::f_name), *id);
+            }
+        }
+    }
+
+    if (metadata->has(Iceberg::f_sort_orders) && metadata->has(Iceberg::f_default_sort_order_id))
+        if (const auto fields = getDefaultSortOrderFields(metadata))
+            for (UInt32 i = 0; i < fields->size(); ++i)
+                if (auto id = find_missing_source_id(fields->getObject(i)))
+                    return fmt::format("the default sort order has no source column with field id {}", *id);
+
+    return std::nullopt;
+}
+
 void alter(
     const AlterCommands & params,
     ContextPtr context,
@@ -1091,7 +1144,7 @@ void alter(
 
         const auto previous_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
 
-        auto metadata_json_generator = MetadataGenerator(metadata);
+        auto metadata_json_generator = MetadataGenerator(metadata, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]);
 
         switch (params[0].type)
         {
@@ -1127,13 +1180,25 @@ void alter(
         }
         if (new_schema)
         {
-            if (auto violation = IcebergSchemaProcessor::findSchemaViolation(*new_schema, /*is_table_schema=*/ true))
+            auto violation = IcebergSchemaProcessor::findSchemaViolation(*new_schema, /*is_table_schema=*/ true);
+            if (!violation)
+                violation = findFieldWithoutSourceColumn(metadata, new_schema);
+            if (violation)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter the Iceberg table, its new schema would be invalid: {}", *violation);
         }
 
-        std::string json_representation = stringifyJSON(metadata, 4);
-
         auto metadata_info = filename_generator.generateMetadataPathWithInfo();
+        const Int64 commit_timestamp = std::max<Int64>(
+            metadata->getValue<Int64>(Iceberg::f_last_updated_ms),
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+        metadata->set(Iceberg::f_last_updated_ms, commit_timestamp);
+        appendToMetadataLog(
+            metadata,
+            metadata_info.path.serialize(),
+            commit_timestamp,
+            context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]);
+
+        std::string json_representation = stringifyJSON(metadata, 4);
 
         auto hint_path = filename_generator.generateVersionHint();
 

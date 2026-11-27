@@ -421,6 +421,12 @@ static void skipFieldDelimiter(ReadBuffer & in)
     skipWhitespaceIfAny(in);
 }
 
+static void skipBinaryIntroducerIfAny(ReadBuffer & in)
+{
+    if (checkStringCaseInsensitive("_binary", in))
+        skipWhitespaceIfAny(in);
+}
+
 static void skipEndOfInsertQueryIfNeeded(ReadBuffer & in, String & table_name)
 {
     skipWhitespaceIfAny(in);
@@ -561,6 +567,7 @@ bool MySQLDumpRowInputFormat::readField(IColumn & column, size_t column_idx)
 {
     const auto & type = types[column_idx];
     const auto & serialization = serializations[column_idx];
+    skipBinaryIntroducerIfAny(*in);
     if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
         return SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *in, format_settings, serialization, type.get());
 
@@ -571,6 +578,7 @@ bool MySQLDumpRowInputFormat::readField(IColumn & column, size_t column_idx)
 void MySQLDumpRowInputFormat::skipField()
 {
     NullOutput out;
+    skipBinaryIntroducerIfAny(*in);
     readQuotedFieldInto(out, *in);
 }
 
@@ -607,6 +615,7 @@ std::optional<DataTypes> MySQLDumpSchemaReader::readRowAndGetDataTypes()
         if (!data_types.empty())
             skipFieldDelimiter(in);
 
+        skipBinaryIntroducerIfAny(in);
         readQuotedField(value, in);
         auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
         data_types.push_back(std::move(type));
