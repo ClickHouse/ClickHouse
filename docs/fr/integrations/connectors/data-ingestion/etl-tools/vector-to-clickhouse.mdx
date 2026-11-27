@@ -12,8 +12,6 @@ integration:
 keywords: ['vector', 'collecte de logs', 'observabilité', 'ingestion de données', 'pipeline']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -25,16 +23,16 @@ et à sa capacité à agréger rapidement de grandes quantités de données.
 Ce guide vous montre comment utiliser le pipeline de données populaire [Vector](https://vector.dev/docs/introduction/) pour lire en continu un fichier de log Nginx et l’envoyer vers ClickHouse.
 Les étapes ci-dessous sont similaires pour la lecture en continu de tout type de fichier de log.
 
-**Prérequis :**
+**Prérequis :**
 
 * Vous avez déjà ClickHouse opérationnel
 * Vous avez installé Vector
 
 <Steps>
   <Step title="Créer une base de données et une table" id="1-create-a-database-and-table">
-    Définissez une table pour stocker les événements de logs :
+    Définissez une table pour stocker les événements de logs :
 
-    1. Commencez par créer une base de données nommée `nginxdb` :
+    1. Commencez par créer une base de données nommée `nginxdb` :
 
     ```sql
     CREATE DATABASE IF NOT EXISTS nginxdb
@@ -59,7 +57,7 @@ Les étapes ci-dessous sont similaires pour la lecture en continu de tout type d
     Dans cette étape, vous allez voir comment configurer la journalisation de Nginx.
 
     1. La directive `access_log` suivante envoie les logs vers `/var/log/nginx/my_access.log` au format **combined**.
-       Cette valeur se place dans la section `http` de votre fichier `nginx.conf` :
+       Cette valeur se place dans la section `http` de votre fichier `nginx.conf` :
 
     ```bash
     http {
@@ -75,7 +73,7 @@ Les étapes ci-dessous sont similaires pour la lecture en continu de tout type d
     2. Veillez à redémarrer Nginx si vous avez dû modifier `nginx.conf`.
 
     3. Générez quelques événements dans le log d&#39;accès en visitant des pages sur votre serveur web.
-       Les logs au format **combined** se présentent comme suit :
+       Les logs au format **combined** se présentent comme suit :
 
     ```bash
     192.168.208.1 - - [12/Oct/2021:03:31:44 +0000] "GET / HTTP/1.1" 200 615 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
@@ -88,7 +86,7 @@ Les étapes ci-dessous sont similaires pour la lecture en continu de tout type d
     Vector collecte, transforme et achemine les logs, les métriques et les traces (appelés **sources**) vers de nombreux fournisseurs différents (appelés **sinks**), avec une compatibilité native avec ClickHouse.
     Les sources et les sinks sont définis dans un fichier de configuration nommé **vector.toml**.
 
-    1. Le fichier **vector.toml** suivant définit une **source** de type **file** qui lit en continu la fin de **my&#95;access.log**, et définit également un **sink** correspondant à la table **access&#95;logs** définie ci-dessus :
+    1. Le fichier **vector.toml** suivant définit une **source** de type **file** qui lit en continu la fin de **my&#95;access.log**, et définit également un **sink** correspondant à la table **access&#95;logs** définie ci-dessus :
 
     ```bash
     [sources.nginx_logs]
@@ -107,13 +105,17 @@ Les étapes ci-dessous sont similaires pour la lecture en continu de tout type d
 
     2. Démarrez Vector à l’aide de la configuration ci-dessus. Consultez la [documentation](https://vector.dev/docs/) de Vector pour plus de détails sur la définition des sources et des destinations.
 
-    3. Vérifiez que les logs d’accès sont bien insérés dans ClickHouse en exécutant la requête suivante. Vous devriez voir les logs d’accès dans votre table :
+    3. Vérifiez que les logs d’accès sont bien insérés dans ClickHouse en exécutant la requête suivante. Vous devriez voir les logs d’accès dans votre table :
 
     ```sql
     SELECT * FROM nginxdb.access_logs
     ```
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="Afficher les logs ClickHouse sous forme de tableau" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Afficher les logs ClickHouse sous forme de tableau](/images/integrations/data-ingestion/etl-tools/vector_01.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Analyser les journaux" id="4-parse-the-logs">
@@ -216,7 +218,11 @@ Les étapes ci-dessous sont similaires pour la lecture en continu de tout type d
     SELECT * FROM nginxdb.access_logs_view
     ```
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/vector_02.webp" size="lg" border alt="Consulter les logs ClickHouse analysés sous forme de tableau" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Consulter les logs ClickHouse analysés sous forme de tableau](/images/integrations/data-ingestion/etl-tools/vector_02.webp)
+      </Frame>
+    </div>
 
     <Note>
       La leçon ci-dessus a stocké les données dans deux tables, mais vous pouvez modifier la table initiale `nginxdb.access_logs` pour utiliser le moteur de table [`Null`](/fr/reference/engines/table-engines/special/null).

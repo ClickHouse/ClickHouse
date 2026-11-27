@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: Parquet is not supported in the fast test.
+# Random settings limits: output_format_parquet_max_dictionary_size=(1048576, None)
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

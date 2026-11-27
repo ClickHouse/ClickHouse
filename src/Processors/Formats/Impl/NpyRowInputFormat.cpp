@@ -1,3 +1,5 @@
+#include <base/arithmeticOverflow.h>
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <Processors/Formats/Impl/NpyRowInputFormat.h>
@@ -10,6 +12,7 @@
 #include <Columns/ColumnArray.h>
 #include <Common/FloatUtils.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/StringUtils.h>
 #include <base/unaligned.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBuffer.h>
@@ -333,7 +336,16 @@ void NpyRowInputFormat::readPrefix()
     /// 1 + d1 + d1*d2 + ... + d1*...*d(k-1), one sum term per nesting level.
     {
         size_t elements_per_row = header.shape[0] != 0 ? total_elements / header.shape[0] : total_elements;
-        size_t data_bytes_per_row = elements_per_row * element_size;
+        /// An element takes the memory of the destination column: a `String` adds an offset to its bytes even when empty,
+        /// and a fixed-size value (e.g. `FixedString` padding) takes at least its size.
+        size_t bytes_per_element = element_size;
+        if (isString(nested_type))
+            bytes_per_element += sizeof(UInt64);
+        else if (nested_type->haveMaximumSizeOfValue())
+            bytes_per_element = std::max(bytes_per_element, nested_type->getMaximumSizeOfValueInMemory());
+        size_t data_bytes_per_row = 0;
+        if (common::mulOverflow(elements_per_row, bytes_per_element, data_bytes_per_row))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Npy row size is too large: data byte count overflows");
 
         size_t total_offsets_per_row = 0;
         size_t cumulative_product = 1;
@@ -342,16 +354,16 @@ void NpyRowInputFormat::readPrefix()
             if (total_offsets_per_row > std::numeric_limits<size_t>::max() - cumulative_product)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Npy row size is too large: offset count overflows");
             total_offsets_per_row += cumulative_product;
-            /// cumulative_product * header.shape[i] can't overflow: it's a subset of the
-            /// already-validated total_elements product.
-            if (i + 1 < header.shape.size())
-                cumulative_product *= header.shape[i];
+            /// The validated `total_elements` product does not bound this one when a dimension is zero.
+            if (i + 1 < header.shape.size() && common::mulOverflow(cumulative_product, size_t(header.shape[i]), cumulative_product))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Npy row size is too large: offset count overflows");
         }
         if (total_offsets_per_row > std::numeric_limits<size_t>::max() / sizeof(UInt64))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Npy row size is too large: offset byte count overflows");
         size_t offset_bytes_per_row = total_offsets_per_row * sizeof(UInt64);
 
-        if (data_bytes_per_row > max_bytes_per_row - std::min(offset_bytes_per_row, max_bytes_per_row))
+        /// The offsets alone are checked too: with no data bytes, the second comparison would accept any number of them.
+        if (offset_bytes_per_row > max_bytes_per_row || data_bytes_per_row > max_bytes_per_row - offset_bytes_per_row)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Npy row size is too large: {} data bytes + {} offset bytes per row exceeds the {} byte limit",
@@ -390,11 +402,8 @@ NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, SharedHeader header_, Par
 
 size_t NpyRowInputFormat::countRows(size_t max_block_size)
 {
-    size_t count = 0;
-    if (counted_rows + max_block_size <= size_t(header.shape[0]))
-        count = max_block_size;
-    else
-        count = header.shape[0] - counted_rows;
+    /// From the remaining rows: `counted_rows + max_block_size` can overflow for a huge `max_block_size`.
+    size_t count = std::min(max_block_size, size_t(header.shape[0]) - counted_rows);
     counted_rows += count;
     return count;
 }
@@ -488,7 +497,7 @@ void NpyRowInputFormat::readAndInsertString(MutableColumnPtr column, const DataT
             tmp = decodeNumpyUnicode(tmp, npy_type.getEndianness());
         else
             /// NumPy pads `|S<n>` byte strings with zero bytes; zero bytes inside the value are part of it.
-            tmp.erase(tmp.find_last_not_of('\0') + 1);
+            trimRight(tmp, '\0');
         column_string.insertData(tmp.data(), tmp.size());
     }
 }

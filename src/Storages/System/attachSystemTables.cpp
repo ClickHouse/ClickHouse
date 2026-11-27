@@ -74,6 +74,7 @@
 #include <Storages/System/StorageSystemConstraints.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/System/StorageSystemZooKeeperInfo.h>
+#include <Storages/System/StorageSystemChangelog.h>
 #include <Storages/System/StorageSystemContributors.h>
 #include <Storages/System/StorageSystemErrors.h>
 #include <Storages/System/StorageSystemSessionQueryIds.h>
@@ -1526,6 +1527,7 @@ The following kinds of entities are collected (the value of the `type` column is
 
 - Functions (`Function`)
 - Aggregate functions (`Aggregate Function`)
+- Window functions (`Window Function`)
 - Table functions (`Table Function`)
 - Table engines (`Table Engine`)
 - Database engines (`Database Engine`)
@@ -1699,6 +1701,21 @@ SELECT * FROM system.contributors WHERE name = 'Olga Khvostikova'
 ┌─name─────────────┐
 │ Olga Khvostikova │
 └──────────────────┘
+```
+)DOCS_MD");
+    attach<StorageSystemChangelog>(context, system_database, "changelog", R"DOCS_MD(
+.description
+Contains the entries of the curated ClickHouse changelog (the repository's `CHANGELOG.md`), one row per entry of each feature release, so release notes can be queried with SQL.
+
+.examples
+Find recent JSON-related changes, newest release first:
+
+```sql
+SELECT version, category, description
+FROM system.changelog
+WHERE description ILIKE '%JSON%' AND version >= (26, 1, 0)
+ORDER BY version DESC
+LIMIT 3
 ```
 )DOCS_MD");
     attach<StorageSystemUsers>(context, system_database, "users", R"DOCS_MD(
@@ -1971,6 +1988,8 @@ marks_bytes:             48
 .description
 Contains information about existing projections in all tables.
 
+The `total_rows`, `data_compressed_bytes` and `data_uncompressed_bytes` columns are summed over the active parts of the table that contain the projection, so they are zero until the projection is built, for example by inserts made after it was added or by `ALTER TABLE ... MATERIALIZE PROJECTION`. For the size of each projection part, see [system.projection_parts](/operations/system-tables/projection_parts).
+
 .examples
 ```sql
 SELECT * FROM system.projections LIMIT 2 FORMAT Vertical;
@@ -1979,23 +1998,29 @@ SELECT * FROM system.projections LIMIT 2 FORMAT Vertical;
 ```text
 Row 1:
 ──────
-database:    default
-table:       landing
-name:        improved_sorting_key
-type:        Normal
-sorting_key: ['user_id','date']
-query:       SELECT * ORDER BY user_id, date
-settings:     {}
+database:                default
+table:                   landing
+name:                    improved_sorting_key
+type:                    Normal
+total_rows:              100000
+data_compressed_bytes:   27720
+data_uncompressed_bytes: 2300000
+sorting_key:             ['user_id','date']
+query:                   SELECT * ORDER BY user_id, date
+settings:                {}
 
 Row 2:
 ──────
-database:    default
-table:       landing
-name:        agg_no_key
-type:        Aggregate
-sorting_key: []
-query:       SELECT count()
-settings:     {}
+database:                default
+table:                   landing
+name:                    agg_no_key
+type:                    Aggregate
+total_rows:              1
+data_compressed_bytes:   29
+data_uncompressed_bytes: 3
+sorting_key:             []
+query:                   SELECT count()
+settings:                {}
 ```
 )DOCS_MD");
     attachNoDescription<StorageSystemConstraints>(context, system_database, "constraints", R"DOCS_MD(
@@ -2885,16 +2910,31 @@ Number of file segments evicted from a filesystem cache, labelled by cache name 
 Total bytes of file segments evicted from a filesystem cache, labelled by cache name and user id. Disabled by default; enable with `expose_prometheus_eviction_metrics` and `expose_prometheus_eviction_metrics_per_user`.
 
 ### `object_storage_queue_failures_total` {#object-storage-queue-failures-total}
-Number of `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) failures, labelled by database, table, processing stage (`read`, `set_processing`, `insert`, `commit`) and error code.
+Number of `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) failures, labelled by database, table, processing stage (`read`, `set_processing`, `insert`, `commit`, `after_processing`) and error code. For the `after_processing` stage the value is the number of objects for which the `after_processing` action (delete, tag or move) did not complete.
 
 ### `object_storage_queue_permanently_failed_files_total` {#object-storage-queue-permanently-failed-files-total}
 Number of `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) files given up on for good after exhausting retries (or with retries disabled), labelled by database and table. Each of these represents a file whose data will never be processed.
 
 ### `object_storage_queue_newest_seen_object_timestamp_seconds` {#object-storage-queue-newest-seen-object-timestamp-seconds}
-Unix timestamp of the last-modified time of the newest object seen so far by an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table, labelled by database and table.
+Unix timestamp of the last-modified time of the newest object seen so far by an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table, labelled by database and table. The series is removed when the table is dropped or detached. After a rename the series of the old name stays until the server restarts.
 
 ### `object_storage_queue_newest_committed_object_timestamp_seconds` {#object-storage-queue-newest-committed-object-timestamp-seconds}
-Unix timestamp of the last-modified time of the newest object fully processed so far by an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table, labelled by database and table.
+Unix timestamp of the last-modified time of the newest object fully processed so far by an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table, labelled by database and table. The series is removed when the table is dropped or detached. After a rename the series of the old name stays until the server restarts.
+
+### `object_storage_queue_processed_files_total` {#object-storage-queue-processed-files-total}
+Number of files committed as processed by this `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table on this server, labelled by database and table.
+
+### `object_storage_queue_last_poll_timestamp_seconds` {#object-storage-queue-last-poll-timestamp-seconds}
+Unix timestamp of the last time a background streaming thread of an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table on this server started a cycle that looks for files to process or started a batch of that cycle, labelled by database and table. It is set when a cycle starts, after the table registered itself as active in Keeper, and again before each batch of the cycle, so it advances also when the cycle finds no files or fails, and during a long backlog. It does not advance when the registration fails. The value 0 means that the table has not polled since it was started. It does not advance while the table has no ready attached materialized views, while streaming is stopped or paused, or while streaming is disabled on the server, because the table does not consume then. All streaming threads of a table write the same series, so it shows the newest cycle of any of them. The series is removed when the table is dropped or detached. After a rename the series of the old name stays until the server restarts.
+
+### `system_log_flushes_total` {#system-log-flushes-total}
+Number of attempts to flush the in-memory buffer of a system log to its table, labelled by the database and the table of the system log and by result (`success`, `failure`).
+
+### `system_log_flushed_rows_total` {#system-log-flushed-rows-total}
+Number of rows written by successful flushes of a system log, labelled by the database and the table of the system log.
+
+### `system_log_dropped_rows_total` {#system-log-dropped-rows-total}
+Number of rows of a system log that were lost, labelled by the database and the table of the system log and by reason: `queue_full` for rows that were not accepted because the in-memory buffer reached `max_size_rows` (it is updated when the buffer is taken for the next flush), `flush_failed` for rows of a flush that failed.
 
 .examples
 You can use a query like this to export all the dimensional metrics in the Prometheus format.
@@ -4058,9 +4098,13 @@ SELECT code_point, code_point_value, notation FROM system.unicode WHERE code_poi
         attach<StorageSystemUserQueryLog>(context, system_database, "user_query_log",
             R"DOCS_MD(
 .description
-Shows the current user their own query log records. It reads the query log table configured by the `query_log.database` and `query_log.table` server settings (`system.query_log` by default) and returns only the rows whose initiating user is equal to `currentUser()` (the initiating user is taken from `initial_user` when it is set, otherwise from `user`).
+Shows the current user their own query log records. It reads the query log table configured by the `query_log.database` and `query_log.table` server settings (`system.query_log` by default) and returns only the rows whose initiating user is equal to `currentUser()` (the initiating user is taken from `initial_user` when it is set, otherwise from `user`). An authenticated current user must be non-empty and match the reported initial user. The unauthenticated `clickhouse-local` client is the exception: it can read rows with an empty initiating user only when both user identities are empty and the query uses the `LOCAL` interface. In other cases, the table returns no rows.
 
 Unlike the query log table itself, `system.user_query_log` can be read without any grants, so users can inspect their own queries without being given access to the queries of others.
+
+Only top-level rows (`is_initial_query = 1`) are returned. Child rows, such as the queries a distributed query sends to other servers and what runs under the identity of `SQL SECURITY DEFINER` and `NONE` views, are omitted.
+
+A row policy that exposes `system.query_log` rows by user (`user`, `initial_user` or `authenticated_user`) also exposes those child rows, so add `is_initial_query = 1` to it or use `system.user_query_log`.
 
 This is only supported when the query log is stored locally. If `query_log.engine` is configured as `Distributed` or any other engine that delegates reads to another server, `system.user_query_log` refuses to read from it and throws an exception, because the required access check cannot be enforced across a ClickHouse-protocol server boundary. In that case, disable the table with `query_log.enable_user_query_log = 0`.
 

@@ -25,11 +25,11 @@ public:
     void add(std::string_view column_name, size_t idx);
     /// Fetches the position of the given column_name
     /// Returns NOT_FOUND in case the column_name is not in the map
-    size_t get(std::string_view column_name) const;
+    [[nodiscard]] size_t get(std::string_view column_name) const;
     /// Whether `column_name` matches some key; unlike `get`, does not throw for an ambiguous one
-    bool contains(std::string_view column_name) const;
+    [[nodiscard]] bool contains(std::string_view column_name) const;
 
-    size_t size() const;
+    [[nodiscard]] size_t size() const;
 
     /// Sets the expected size of the map
     void setSize(size_t size);
@@ -38,7 +38,7 @@ public:
     void initFromBlock(const Block & block);
 
     /// Compares two strings, using the same method as the one used internally
-    bool equal(std::string_view left, std::string_view right) const;
+    [[nodiscard]] bool equal(std::string_view left, std::string_view right) const;
 private:
     std::unique_ptr<IBlockNameMap> map;
 };

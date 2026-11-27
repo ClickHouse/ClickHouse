@@ -108,7 +108,7 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 
 ## 설정 {#settings}
 
-`PostgreSQL` 테이블 엔진(및 [`postgresql`](/ko/reference/functions/table-functions/postgresql) 테이블 함수)에서 사용하는 연결 풀은 `SETTINGS` 절을 사용해 테이블별로 구성할 수 있습니다. 설정을 지정하지 않으면 해당 쿼리 수준 `postgresql_*` 설정 값이 기본값으로 적용됩니다.
+`PostgreSQL` 테이블 엔진(및 [`postgresql`](/ko/reference/functions/table-functions/postgresql) 테이블 함수)에서 사용하는 연결 풀은 `SETTINGS` 절을 사용해 테이블별로 구성할 수 있습니다. 설정을 지정하지 않으면 해당 쿼리 수준 `postgresql_*` 설정 값이 기본값으로 적용됩니다. 백업에서 복원된 테이블을 제외한 새 테이블은 이렇게 가져온 값 중 서버의 값(예: `SET` 또는 사용자의 설정 프로파일(Settings Profile)로 지정된 값)과 다른 값을 자체 `SETTINGS`에 추가하므로, 서버를 재시작한 후에도 해당 값이 유지됩니다. 서버의 값과 같은 값은 저장되지 않으므로, 이러한 테이블은 이후 서버의 값이 변경되면 변경된 값을 따릅니다. 명명된 컬렉션에서 지정하는 설정은 쿼리 수준 설정에서 가져오지 않으므로 해당 설정에 대해서는 아무것도 저장되지 않습니다. 저장된 값은 테이블 `SETTINGS`의 일부이므로 이후 명명된 컬렉션에 추가된 동일한 키보다 우선 적용되며, 해당 키가 `NOT OVERRIDABLE`이면 `Override not allowed` 오류와 함께 테이블 로드에 실패합니다. 테이블의 `SETTINGS` 절에서 `name = DEFAULT`로 초기화한 설정은 쿼리 수준 설정에서 가져오지 않습니다.
 
 ### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
 
@@ -159,7 +159,7 @@ PostgreSQL 측의 `SELECT` 쿼리는 각 `SELECT` 쿼리 후 커밋되는 읽기
 
 `=`, `!=`, `>`, `>=`, `<`, `<=`, `IN`과 같은 단순한 `WHERE` 절은 PostgreSQL 서버에서 실행됩니다.
 
-모든 조인, 집계, 정렬, `IN [ array ]` 조건, 그리고 `LIMIT` 샘플링 제약은 PostgreSQL에 대한 쿼리가 완료된 후에만 ClickHouse에서 실행됩니다.
+모든 조인, 집계, 정렬, `IN [ array ]` 조건은 PostgreSQL에 대한 쿼리가 완료된 후 ClickHouse에서 실행됩니다. `LIMIT` 샘플링 제약은 안전하다고 판단되고 [external&#95;storage&#95;push&#95;down&#95;limit](/ko/reference/settings/session-settings/external-storage#external_storage_push_down_limit)이 활성화된 경우에만 PostgreSQL로 푸시되며, 그렇지 않으면 ClickHouse에서 실행됩니다.
 
 ## 테이블 이름 대신 쿼리 전달하기 {#passing-a-query}
 

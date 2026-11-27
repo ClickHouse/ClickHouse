@@ -1,0 +1,76 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-11-12
+title: 'Demo days - 2026-11-12'
+sidebarTitle: '2026-11-12'
+description: 'ClickStack demo days for 2026-11-12'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Text index block size and faster filter lookups {#text-index-block-size-and-faster-filter-lookups}
+
+*Demo by [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+ClickStack's filter panel could be slow to load and leave fields empty even when matching values existed. In the reported demo, a table with 537M log rows took about 30 seconds to return suggestions for only 22 of 100 keys. With these changes, the same panel returned suggestions for all 100 keys and loaded faster.
+
+The panel uses text indexes to discover Map keys and their values. For example, it might find the key `service` and offer values such as `checkout` and `billing`. This avoids scanning the raw logs, but opening the indexes was still expensive.
+
+Each text index has a sorted dictionary of tokens, divided into blocks. A header records where each block starts, allowing ClickHouse to jump to the relevant block. Larger blocks mean fewer entries in that header and less information to load before a lookup can begin. Aaron visually explains this in the video.
+
+The schema now sets `text_index_dictionary_block_size = 8192`, up from the previous default of 512, on `otel_logs`, `otel_traces`, and `hyperdx_sessions`. In a local benchmark, this reduced the header from 17.7 KB to 1.3 KB per part. The migration applies on ClickHouse 26.6 and later, including existing installations, and preserves explicit table settings. New parts use the larger blocks; existing parts retain their layout until they merge.
+
+The smaller header makes it practical to look up each key separately. Previously, all keys shared one query with a default limit of 3 million index records. A key with millions of distinct values, such as a request ID, could exhaust that limit and leave later keys without suggestions. That incomplete result could then be cached.
+
+For indexes configured with larger blocks, each key now has its own limit of 20,000 index records. Lookups run in parallel batches of 10 keys, so a key with many values cannot use another key's allowance. `topKWeighted` selects approximately the most common values among the records read, replacing the previous selection of alphabetically first values. Indexes configured with smaller blocks retain the older lookup approach within each batch.
+
+Initial key and value lookups also read fewer parts. By default, they inspect up to 20 parts from the middle of the size ranking. **Map key index parts** controls the number, and **Map key index part size** selects medium-sized, smallest, or largest parts. This reduces index reads, especially when they require fetching data from object storage. The trade-off is that suggestions can miss keys or values outside the selected parts, and the frequency estimates reflect only the records inspected. Load more for an individual key reads across all relevant parts.
+
+A separate fix shares one running `getMapKeys` query between matching concurrent callers. Previously, opening the search page could run the same reads twice. On the example table, those duplicated queries accounted for roughly 47 GiB of combined query memory. Each read now runs once.
+
+The larger blocks also improved text-index search performance in the reported benchmarks, with some queries around 60% faster at the same part count. A further change, still open, uses `topKWeighted` to discover common Map keys without grouping every distinct key. On a table with about 5.5M distinct keys per part, its reported benchmark reduced query time from 9.1 seconds to 2.6 seconds and memory from 14 GiB to 78 MiB.
+
+**Related PRs:** [#3611](https://github.com/ClickHouse/clickstack/pull/3611) Share one Map key read between concurrent callers, [#3635](https://github.com/ClickHouse/clickstack/pull/3635) Read a configurable set of parts for text index key and value lookups, [#3617](https://github.com/ClickHouse/clickstack/pull/3617) Show the most frequent text index values, in batches of 10 keys, [#3614](https://github.com/ClickHouse/clickstack/pull/3614) Find the most frequent Map keys with topKWeighted (open)
+
+## MCP server connections without custom headers {#mcp-server-connections-without-custom-headers}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok?start=396" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Previously, connecting an agent to the ClickStack MCP server in ClickHouse Cloud meant passing the service ID as a custom HTTP header. Most MCP clients don't make custom headers easy to set, and some don't allow them at all, so each agent needed its own hand-edited config.
+
+The service ID is now passed as a query parameter on the MCP URL by default, an approach the ClickHouse AI team had already used to get around the same limitation. Setting up an agent is now one command for the clients that support it (Codex, for example, previously meant pasting a block into its TOML config), and any client that can't run the command takes the URL as is.
+
+Claude Code removed support for custom headers in its MCP configuration right after this merged, so the header-based setup stopped working in production. Connections using the query parameter weren't affected.
+
+This applies to the Cloud MCP endpoint. The open source MCP server authenticates with a bearer token and has no service ID to pass. There, `npx @hyperdx/cli mcp install` asks for a personal or organization API key with hidden input, checks it, and writes the server into the Claude Code, Codex, Cursor and VS Code configs for you.
+
+## Datadog agent setup in getting started {#datadog-agent-setup-in-getting-started}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok?start=469" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+The getting started flow now lists the Datadog agent next to the other SDKs and collectors, so you can point existing Datadog agents at ClickStack without leaving the onboarding page. 
+
+The Datadog ingestion endpoint shown there comes from the ClickHouse Cloud data plane, which now passes that URL through to the front end along with the other endpoints. The setup instructions are pulled from the public docs, the same way every other SDK's are, so the page stays in step with the [Datadog migration guide](https://clickhouse.com/docs/clickstack/migration/datadog).
+
+The receiver itself translates Datadog log, trace and metric payloads into the OpenTelemetry data model inside the ClickStack collector, so existing agents and SDKs keep running unchanged. In open source ClickStack it listens on port 8126 and is turned on with `ENABLE_DATADOG_RECEIVER=true`.
+
+## Organization API keys {#organization-api-keys}
+
+*Demo by [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok?start=497" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Previously, the only bearer credential for the external API and the MCP server was a personal access key. That key stops working when its owner is removed from the team, so Terraform, CI and other automation set up with it broke, and teams worked around it with bot users.
+
+You can now create API keys owned by the team from **Team Settings** > **API & Agents**. Each key gets a description and an expiry of 30 days, one year or never. The full key is shown once at creation and stored as a SHA-256 hash. The list shows who created each key, when it was last used and when it expires, so you can spot keys that are rarely used or about to expire, and revoke them from the same place. Revoking or expiring a key takes effect on the next request.
+
+Each key is its own service account with the same permissions as any other user. Anything created with it (alerts, dashboards, saved searches) is attributed to the service account, never to the person who made the key, and keys made by someone who has since been removed show as "Deleted user" and keep working. Service accounts can't sign in and don't appear under **Members**. Keys can't invite people and can't create or revoke other keys.
+
+Organization keys work anywhere a personal key does: the external API v2, the MCP server and `npx @hyperdx/cli mcp install`. With the Terraform provider you pass the key together with your team ID. This is aimed at self-hosted deployments, and there's no RBAC behind it: open source ClickStack has no roles, so any team member can manage organization keys and a key can do whatever a user can.
+
+**Related PRs:** [#3435](https://github.com/ClickHouse/clickstack/pull/3435) Team-owned API keys

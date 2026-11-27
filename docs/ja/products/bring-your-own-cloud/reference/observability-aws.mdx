@@ -7,12 +7,10 @@ description: '組み込みダッシュボードと Prometheus メトリクスを
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 BYOCデプロイメントには包括的なオブザーバビリティ機能が備わっており、専用のPrometheus監視スタックや ClickHouseサーバーが直接公開するメトリクスエンドポイントを通じて、ClickHouseサービスを監視できます。監視データはお使いのクラウドアカウント内に保持されるため、監視インフラストラクチャを完全に制御できます。ClickHouseにエクスポートされる監視データは、[ネットワーク境界](/ja/products/bring-your-own-cloud/reference/network-security#outbound-connections)に記載された限定的な使用状況およびヘルステレメトリーのみです。これとは別に、ClickHouseのダッシュボードや、承認されたエスカレーション時にはClickHouseのエンジニアが、Tailscale経由でこのスタックをその場でクエリできますが、ClickHouse側には何も保持されません — [ClickHouse データアクセス](/ja/products/bring-your-own-cloud/reference/clickhouse-data-access)を参照してください。
 
 <div id="prometheus-monitoring">
-  ## Prometheus の監視アプローチ
+  ## Prometheus の監視アプローチ {#prometheus-monitoring}
 </div>
 
 BYOC では、Prometheus を使用してメトリクスを収集・可視化する主な方法が 2 つあります。
@@ -21,7 +19,7 @@ BYOC では、Prometheus を使用してメトリクスを収集・可視化す�
 2. **ClickHouse のメトリクスを直接スクレイプする**: 各 ClickHouse サービスが公開する `/metrics_all` エンドポイントに、独自の Prometheus デプロイメントを向けます。
 
 <div id="monitoring-approaches-comparison">
-  ### 監視方法の比較
+  ### 監視方法の比較 {#monitoring-approaches-comparison}
 </div>
 
 | Capability                | 組み込みのPrometheusスタック                                   | ClickHouseサービスからの直接スクレイピング                                  |
@@ -37,7 +35,7 @@ BYOC では、Prometheus を使用してメトリクスを収集・可視化す�
 **推奨**: ほとんどのユースケースでは、組み込みのPrometheusスタックとのインテグレーションを推奨します。これは、ClickHouseサーバーのメトリクスだけでなく、BYOCデプロイメント内のすべてのコンポーネント (ClickHouseサービス、Kubernetesクラスター、補助サービス) から包括的なメトリクスを取得できるためです。
 
 <div id="builtin-prometheus-stack">
-  ## 組み込み BYOC Prometheus スタック
+  ## 組み込み BYOC Prometheus スタック {#builtin-prometheus-stack}
 </div>
 
 ClickHouse BYOC は、Prometheus、Grafana、AlertManager、さらに必要に応じてメトリクスの長期保存用の Thanos を含む、完全な Prometheus 監視スタックを Kubernetes クラスター内にデプロイします。このスタックは、次の対象からメトリクスを収集します。
@@ -68,7 +66,7 @@ ClickHouse BYOC は、Prometheus、Grafana、AlertManager、さらに必要に�
 </Note>
 
 <div id="prometheus-stack-integration">
-  ### お使いの監視ツールとの統合
+  ### お使いの監視ツールとの統合 {#prometheus-stack-integration}
 </div>
 
 BYOC Prometheus スタックは、監視環境の中でいくつかの方法で活用できます。
@@ -107,7 +105,7 @@ scrape_configs:
 ```
 
 <div id="direct-prometheus-integration">
-  ## ClickHouse service の Prometheus インテグレーション
+  ## ClickHouse service の Prometheus インテグレーション {#direct-prometheus-integration}
 </div>
 
 ClickHouse service は Prometheus 互換のメトリクスエンドポイントを公開しているため、お使いの Prometheus インスタンスから直接スクレイプできます。この方法では ClickHouse 固有のメトリクスは取得できますが、Kubernetes や関連サービスのメトリクスは含まれません。
@@ -135,7 +133,7 @@ ClickHouse_CustomMetric_TotalNumberOfErrors{hostname="c-jet-ax-16-server-43d5baj
 ```
 
 <div id="authentication">
-  ### 認証
+  ### 認証 {#authentication}
 </div>
 
 メトリクスエンドポイントへのアクセスには、ClickHouseの認証情報による認証が必要です。`default` ユーザーを使用するか、メトリクスのスクレイピング専用に必要最小限の権限を持つ専用ユーザーを作成することを推奨します。
@@ -193,7 +191,7 @@ scrape_configs:
 * `<username>` と `<password>` をスクレイピングユーザーの認証情報に
 
 <div id="clickhouse-mixin">
-  ## ClickHouse Mixin
+  ## ClickHouse Mixin {#clickhouse-mixin}
 </div>
 
 すぐに使えるダッシュボード群を必要とするチーム向けに、ClickHouse は Prometheus **ClickHouse Mixin** を提供しています。これは、ClickHouse クラスターの監視用に特別に設計された、あらかじめ用意された Grafana ダッシュボードです。
@@ -203,21 +201,41 @@ scrape_configs:
 Prometheus インスタンスを ClickHouse の監視スタックに統合したら、次の手順で Grafana からメトリクスを可視化できます。
 
 1. **Grafana で Prometheus をデータソースとして追加する**
-   Grafana のサイドバーで「Data sources」に移動し、「Add data source」をクリックして「Prometheus」を選択します。接続するには、Prometheus インスタンスの URL と必要な認証情報を入力します。
+   Grafana のサイドバーで「データソース」に移動し、「データソースを追加」をクリックして「Prometheus」を選択します。接続するには、Prometheus インスタンスの URL と必要な認証情報を入力します。
 
-<Image img="/images/cloud/reference/byoc-mixin-1.webp" size="lg" alt="BYOC Mixin 1" background="black" />
+<div className="ch-image-lg ch-image-background-black">
+  <Frame>
+    ![BYOC Mixin 1](/images/cloud/reference/byoc-mixin-1.webp)
+  </Frame>
+</div>
 
-<Image img="/images/cloud/reference/byoc-mixin-2.webp" size="lg" alt="BYOC Mixin 2" background="black" />
+<div className="ch-image-lg ch-image-background-black">
+  <Frame>
+    ![BYOC Mixin 2](/images/cloud/reference/byoc-mixin-2.webp)
+  </Frame>
+</div>
 
-<Image img="/images/cloud/reference/byoc-mixin-3.webp" size="lg" alt="BYOC Mixin 3" background="black" />
+<div className="ch-image-lg ch-image-background-black">
+  <Frame>
+    ![BYOC Mixin 3](/images/cloud/reference/byoc-mixin-3.webp)
+  </Frame>
+</div>
 
 2. **ClickHouse ダッシュボードをインポートする**
    Grafana でダッシュボード画面に移動し、「Import」を選択します。ダッシュボードの JSON ファイルをアップロードするか、その内容を直接貼り付けます。JSON ファイルは ClickHouse Mix-in のリポジトリから取得できます。
    [ClickHouse Mix-in Dashboard JSON](https://github.com/ClickHouse/clickhouse-mixin/blob/main/dashboard_byoc.json)
 
-<Image img="/images/cloud/reference/byoc-mixin-4.webp" size="lg" alt="BYOC Mixin 4" background="black" />
+<div className="ch-image-lg ch-image-background-black">
+  <Frame>
+    ![BYOC Mixin 4](/images/cloud/reference/byoc-mixin-4.webp)
+  </Frame>
+</div>
 
 3. **メトリクスを確認する**
    ダッシュボードをインポートし、Prometheus のデータソースを設定すると、ClickHouse Cloud サービスのリアルタイム メトリクスが表示されます。
 
-<Image img="/images/cloud/reference/byoc-mixin-5.webp" size="lg" alt="BYOC Mixin 5" background="black" />
+<div className="ch-image-lg ch-image-background-black">
+  <Frame>
+    ![BYOC Mixin 5](/images/cloud/reference/byoc-mixin-5.webp)
+  </Frame>
+</div>

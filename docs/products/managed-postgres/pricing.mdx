@@ -107,7 +107,12 @@ On AWS, Managed Postgres is generally available and billed as follows from **Nov
 
 - **Backups:** backup storage equal to your provisioned disk is included. Additional backup storage is billed at the ClickHouse Cloud storage price for your region, for example, \$25.30 per TB-month in `us-east-1`. See [Backup and restore](/products/managed-postgres/backup-and-restore).
 - **Data transfer:** billed at [ClickHouse Cloud data transfer rates](/products/cloud/reference/billing/network-data-transfer). Network costs are expected to be low when your application and Managed Postgres are in the same region, and when Managed Postgres and ClickHouse are in the same region if you use ClickPipes.
-- **ClickPipes and WalShadow:** free for replicating data from Managed Postgres to ClickHouse.
+- **ClickPipes:** compute is free for replicating data from Managed Postgres to ClickHouse Cloud. Egress from Managed Postgres to ClickPipes is metered at the standard [data transfer rates](/products/cloud/reference/billing/network-data-transfer), so there is no network charge when Managed Postgres and ClickHouse Cloud are in the same region.
+- **WalShadow:** free for replicating data from Managed Postgres to ClickHouse Cloud during the private preview.
+
+<Note>
+Data transfer is classified by destination IP against the cloud provider's published IP ranges. Traffic to a destination whose IP is not in your region's published ranges is metered as public-internet egress, even when that destination is hosted on the same cloud provider — for example, a peer that uses its own IP block (BYOIP). If you connect to such a peer, contact [support](https://clickhouse.com/support/program) so we can review the classification.
+</Note>
 
 ### GCP Private Preview pricing {#gcp-private-preview-pricing}
 

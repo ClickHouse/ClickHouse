@@ -10,6 +10,7 @@
 #include <Common/Arena.h>
 #include <Common/PODArray.h>
 #include <Common/Hex.h>
+#include <Common/isValidUTF8.h>
 #include <Core/UUID.h>
 #include <Core/Settings.h>
 
@@ -298,6 +299,13 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
                     ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
                     "Cannot write {} partition value into non-nullable DeltaLake partition column '{}'",
                     is_null ? "NULL" : "empty-string", partition_columns[col]);
+
+            /// Partition values are stored in the Delta log, which is UTF-8 JSON.
+            if (!is_null_equivalent && !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Cannot write a partition value that is not valid UTF-8 into DeltaLake partition column '{}'",
+                    partition_columns[col]);
 
             PartitionValue pv;
             pv.name = partition_columns[col];

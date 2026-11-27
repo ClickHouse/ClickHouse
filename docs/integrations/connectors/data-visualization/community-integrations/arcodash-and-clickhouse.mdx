@@ -1,0 +1,66 @@
+---
+sidebarTitle: 'arcodash'
+slug: /integrations/arcodash
+keywords: ['clickhouse', 'arcodash', 'connect', 'integrate', 'visualization', 'dashboard', 'alerts']
+description: 'Connect arcodash to ClickHouse over the HTTP interface to build SQL dashboards and scheduled data checks.'
+title: 'Connecting arcodash to ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/components/Image.jsx";
+import { CommunityMaintainedBadge } from "/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge/>
+
+[arcodash](https://www.arcodash.com/connectors/clickhouse/?utm_source=clickhouse-docs&utm_medium=docs&utm_campaign=growth-v2&utm_content=clickhouse-docs-integration) is a hosted BI tool with data checks built in: SQL dashboards, an AI query assistant, and scheduled checks that alert by email, Slack, Teams, webhook, or PagerDuty. It connects to ClickHouse over the HTTP(S) interface.
+
+<Steps>
+<Step title="Gather your connection details" id="1-gather-your-connection-details">
+<ConnectionDetails />
+
+arcodash needs the host, the HTTP port (`8123`, or `8443` for ClickHouse Cloud with HTTPS), the user, the password, and the database.
+
+</Step>
+<Step title="Create a read-only user" id="2-create-a-read-only-user">
+
+```sql
+CREATE USER arcodash_ro IDENTIFIED BY 'change-me' SETTINGS readonly = 1;
+GRANT SELECT ON analytics.* TO arcodash_ro;
+GRANT SELECT ON system.columns TO arcodash_ro;
+```
+
+The schema browser reads `system.columns`.
+
+</Step>
+<Step title="Add the connector" id="3-add-the-connector">
+
+In arcodash, choose **Connect** > **ClickHouse** and enter the host, port, user, password, and database. Turn on HTTPS for ClickHouse Cloud, then run the connection test.
+
+<Image size="lg" img="/images/integrations/data-visualization/arcodash_01.png" alt="arcodash ClickHouse connector form" border />
+
+</Step>
+<Step title="Run a query and a check" id="4-run-a-query-and-a-check">
+
+```sql
+SELECT dateDiff('second', max(loaded_at), now()) AS seconds_since_last_row
+FROM analytics.events
+```
+
+Save the query as a monitor on `seconds_since_last_row` with the condition `>` `3600` to alert when a table stops receiving data.
+
+<Image size="lg" img="/images/integrations/data-visualization/arcodash_02.png" alt="arcodash monitor on a ClickHouse query" border />
+
+</Step>
+</Steps>
+
+## Limitations {#limitations}
+
+- arcodash uses the HTTP interface only, not the native port `9000`.
+- arcodash appends a `FORMAT` clause itself, so queries must not end with their own `FORMAT`.
+- Results are capped at 10,000 rows per query.
+- arcodash does not publish fixed outbound IP addresses, so the ClickHouse server must be reachable from the internet.

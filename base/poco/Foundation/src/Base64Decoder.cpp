@@ -29,7 +29,7 @@ bool Base64DecoderBuf::IN_ENCODING_URL_INIT = false;
 
 namespace
 {
-	static FastMutex mutex;
+	[[clang::no_destroy]] static FastMutex mutex;
 }
 
 

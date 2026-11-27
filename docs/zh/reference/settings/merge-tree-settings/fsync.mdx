@@ -12,18 +12,15 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置可在 [system.merge&#95;tree&#95;settings](/zh/reference/system-tables/merge_tree_settings) 中查看，且由 ClickHouse 源代码自动生成。
 
-<div id="fsync_after_insert">
-  ## fsync_after_insert
-</div>
+## fsync_after_insert {#fsync_after_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-对每个新插入的 分片 执行 fsync。会显著降低插入性能，
-不建议与 wide 分片 一同使用。
+对每个新插入的 分片 执行 fsync，确保在 `INSERT` 查询
+被确认时数据已持久化。会降低插入性能，在使用 wide 分片 时尤为明显。
+另请参见 `group_fsync_before_insert_finish`。
 
-<div id="fsync_part_directory">
-  ## fsync_part_directory
-</div>
+## fsync_part_directory {#fsync_part_directory}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

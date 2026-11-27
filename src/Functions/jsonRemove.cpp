@@ -126,7 +126,7 @@ public:
     /// Even with kParseNumbersAsStringsFlag, RapidJSON rejects valid exponents above
     /// the double range. Give its parser zero exponent digits, while retaining the
     /// original bytes and offsets for JSONTreeBuilder's raw-number slices.
-    Ch Peek() const
+    [[nodiscard]] Ch Peek() const
     {
         if (position == data.size())
             return '\0';
@@ -171,8 +171,8 @@ public:
         return masked_value;
     }
 
-    size_t Tell() const { return position; }
-    size_t getLastStringStart() const { return last_string_start; }
+    [[nodiscard]] size_t Tell() const { return position; }
+    [[nodiscard]] size_t getLastStringStart() const { return last_string_start; }
 
     Ch * PutBegin() { return nullptr; }
     void Put(Ch) { }
@@ -180,7 +180,7 @@ public:
 
 private:
     static bool isDigit(Ch value) { return value >= '0' && value <= '9'; }
-    Ch maskExponentDigit(Ch value) const { return in_exponent && isDigit(value) ? '0' : value; }
+    [[nodiscard]] Ch maskExponentDigit(Ch value) const { return in_exponent && isDigit(value) ? '0' : value; }
 
     std::string_view data;
     size_t position = 0;
@@ -266,7 +266,7 @@ public:
     }
 
     JSONNodes & getNodes() { return nodes; }
-    JSONNodeIndex getRoot() const { return root; }
+    [[nodiscard]] JSONNodeIndex getRoot() const { return root; }
 
 private:
     struct ContainerFrame
@@ -278,7 +278,7 @@ private:
 
     using ContainerStack = VectorWithMemoryTracking<ContainerFrame>;
 
-    JSONSlice getRawStringSlice() const
+    [[nodiscard]] JSONSlice getRawStringSlice() const
     {
         const size_t end_offset = stream.Tell();
         const size_t start_offset = stream.getLastStringStart();
@@ -593,7 +593,7 @@ public:
     {
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
     /// The captured parser settings decide whether constant JSONPaths are parsed or rejected,
     /// see `IFunctionBase::updateHash`.
@@ -603,13 +603,13 @@ public:
         hash.update(max_parser_backtracks);
     }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool canBeExecutedOnDefaultArguments() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto string_validator = static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString);
         FunctionArgumentDescriptors mandatory_args{
@@ -621,7 +621,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto paths = parseConstantPaths(arguments);
 
@@ -657,7 +657,7 @@ public:
     }
 
 private:
-    ParsedPaths parseConstantPaths(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] ParsedPaths parseConstantPaths(const ColumnsWithTypeAndName & arguments) const
     {
         ParsedPaths paths;
         paths.reserve(arguments.size() - 1);

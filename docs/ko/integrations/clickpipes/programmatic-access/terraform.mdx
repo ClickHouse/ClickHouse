@@ -56,6 +56,10 @@ provider에서 사용할 API Key를 생성하는 방법은 [API Key 관리](/ko/
 
 `id` 및 `state` 속성은 읽기 전용이며, 생성 후 ClickHouse Cloud에서 자동으로 채워집니다.
 
+## GCP Workload Identity (베타) {#gcp-workload-identity}
+
+아래 Workload Identity 예시를 사용하기 전에 [GCP Workload Identity 가이드](/ko/integrations/clickpipes/security/gcp-workload-identity#terraform)에 따라 ClickPipes에서 관리하는 서비스 계정을 확인한 후, 해당 서비스 계정에 소스 액세스 권한을 부여하십시오.
+
 ## 대상 {#destination}
 
 `destination` 블록은 모든 소스 타입에 공통으로 적용됩니다:
@@ -92,7 +96,7 @@ CDC 소스(Postgres, MySQL, MongoDB, BigQuery)의 대상 테이블은 소스 스
 
 ### Kafka {#kafka}
 
-지원되는 `type` 값은 `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`입니다.
+지원되는 `type` 값은 `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream` 및 비공개 프리뷰 단계인 `gcmk`입니다.
 
 ```hcl
 resource "clickhouse_clickpipe" "kafka_clickpipe" {
@@ -150,6 +154,58 @@ resource "clickhouse_clickpipe" "kafka_clickpipe" {
       type = "DateTime"
     }
   }
+}
+```
+
+#### GCP Workload Identity를 사용하는 Google Managed Kafka {#gcmk-workload-identity}
+
+ClickPipe를 생성하기 전에 ClickPipes 서비스 계정에 `roles/managedkafka.client` 역할을 부여하십시오. Google Managed Kafka에서는 TLS가 필수입니다. Kafka 접근 제어 목록(ACLs)에서 서비스 계정(`User:<service-account-email>`)이 선택한 토픽과 컨슈머 그룹에 대해 `READ` 및 `DESCRIBE` 액세스 권한을 갖도록 허용해야 합니다.
+
+```hcl
+resource "google_project_iam_member" "gcmk_client" {
+  project = var.gcp_project_id
+  role    = "roles/managedkafka.client"
+  member  = "serviceAccount:${data.clickhouse_clickpipes_service_context.service.gcp_workload_identity.principal}"
+}
+
+resource "clickhouse_clickpipe" "gcmk_clickpipe" {
+  name       = "My Google Managed Kafka ClickPipe"
+  service_id = var.service_id
+
+  source = {
+    kafka = {
+      type           = "gcmk"
+      format         = "JSONEachRow"
+      brokers        = "bootstrap.kafka.us-central1.managedkafka.example-project.cloud.goog:9092"
+      topics         = "events"
+      authentication = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+    }
+  }
+
+  destination = {
+    table         = "events"
+    managed_table = true
+    table_definition = {
+      engine = {
+        type = "MergeTree"
+      }
+    }
+    columns = [
+      {
+        name = "id"
+        type = "String"
+      }
+    ]
+  }
+
+  field_mappings = [
+    {
+      source_field      = "id"
+      destination_field = "id"
+    }
+  ]
+
+  depends_on = [google_project_iam_member.gcmk_client]
 }
 ```
 
@@ -478,6 +534,75 @@ resource "clickhouse_clickpipe" "gcs_clickpipe" {
 }
 ```
 
+#### GCP Workload Identity를 사용하는 GCS {#gcs-workload-identity}
+
+ClickPipes 서비스 계정에 [필요한 GCS 권한](/ko/integrations/clickpipes/object-storage/gcs/overview#permissions)을 부여한 후, 위의 `source` 블록을 다음과 같이 교체하십시오:
+
+```hcl
+source = {
+  object_storage = {
+    type           = "gcs"
+    url            = "gs://my-bucket/data/*.json"
+    format         = "JSONEachRow"
+    authentication = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+  }
+}
+```
+
+unordered 방식으로 수집하려면 `is_continuous = true`도 함께 설정하고, `projects/<project-id>/subscriptions/<subscription-id>` 형식의 전체 경로(fully-qualified) `queue_url`을 사용하십시오.
+
+### Google Cloud Pub/Sub {#pubsub}
+
+다음 예시에서는 Workload Identity를 사용합니다. ClickPipe를 생성하기 전에 ClickPipes 서비스 계정에 [필요한 Pub/Sub 권한](/ko/integrations/clickpipes/pubsub/auth#required-permissions)을 부여하십시오.
+
+```hcl
+resource "google_project_iam_member" "pubsub_access" {
+  project = var.gcp_project_id
+  role    = "roles/pubsub.editor"
+  member  = "serviceAccount:${data.clickhouse_clickpipes_service_context.service.gcp_workload_identity.principal}"
+}
+
+resource "clickhouse_clickpipe" "pubsub_clickpipe" {
+  name       = "My Pub/Sub ClickPipe"
+  service_id = var.service_id
+
+  source = {
+    pubsub = {
+      format         = "JSONEachRow"
+      project_id     = var.gcp_project_id
+      topic          = "events"
+      authentication = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+      seek_type      = "latest"
+    }
+  }
+
+  destination = {
+    table         = "events"
+    managed_table = true
+    table_definition = {
+      engine = {
+        type = "MergeTree"
+      }
+    }
+    columns = [
+      {
+        name = "id"
+        type = "String"
+      }
+    ]
+  }
+
+  field_mappings = [
+    {
+      source_field      = "id"
+      destination_field = "id"
+    }
+  ]
+
+  depends_on = [google_project_iam_member.pubsub_access]
+}
+```
+
 ### Azure Blob Storage {#abs}
 
 ```hcl
@@ -766,6 +891,30 @@ resource "clickhouse_clickpipe" "bigquery_snapshot_clickpipe" {
 
   destination {
     database = "default"
+  }
+}
+```
+
+#### GCP Workload Identity를 사용하는 BigQuery {#bigquery-workload-identity}
+
+ClickPipes 서비스 계정에 [필요한 BigQuery 및 GCS 권한](/ko/integrations/clickpipes/bigquery/overview#permissions)을 부여한 후, 위의 `source` 블록을 다음과 같이 대체하십시오.
+
+```hcl
+source = {
+  bigquery = {
+    authentication        = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+    project_id            = var.gcp_project_id
+    snapshot_staging_path = "gs://my-staging-bucket/staging/"
+
+    settings = {
+      replication_mode = "snapshot"
+    }
+
+    table_mappings = [{
+      source_dataset_name = "my_dataset"
+      source_table        = "my_table"
+      target_table        = "my_bigquery_table"
+    }]
   }
 }
 ```

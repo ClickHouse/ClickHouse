@@ -364,7 +364,7 @@ private:
     void sendProfileInfo(QueryState & state, const ProfileInfo & info);
     void sendTotals(QueryState & state, const Block & totals);
     void sendExtremes(QueryState & state, const Block & extremes);
-    bool shouldSendProfileEvents(const QueryState & state) const;
+    [[nodiscard]] bool shouldSendProfileEvents(const QueryState & state) const;
     void sendProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex) TSA_REQUIRES(callback_mutex);
     void sendSelectProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
     /// `final_report` is the report after all the data of the `INSERT` has been received.

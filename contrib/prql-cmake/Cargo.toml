@@ -8,6 +8,3 @@ version = "0.1.0"
 anstream = {version = "0.6.12"}
 prqlc = {version = "0.13.2", default-features = false}
 serde_json = "1.0"
-
-[lib]
-crate-type = ["staticlib"]

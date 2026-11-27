@@ -25,6 +25,7 @@
 #include <Common/StringUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <IO/ReadHelpers.h>
 
 namespace fs = std::filesystem;
 
@@ -57,6 +58,7 @@ public:
     String getName() const override { return "SetOrJoinSink"; }
     void consume(Chunk & chunk) override;
     void onFinish() override;
+    void onPipelineFinished() override;
 
 private:
     void cancelBuffers() noexcept;
@@ -135,7 +137,18 @@ void SetOrJoinSink::onFinish()
         backup_buf->finalize();
 
         table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
+
+        backup_stream.reset();
+        compressed_backup_buf.reset();
+        backup_buf.reset();
     }
+}
+
+void SetOrJoinSink::onPipelineFinished()
+{
+    /// A `timeout_overflow_mode = 'break'` stop cancels the sink before `onFinish` but is a successful exit.
+    if (isCancelled() && stage != Stage::Exception)
+        onFinish();
 }
 
 
@@ -389,7 +402,7 @@ void registerStorageSet(StorageFactory & factory)
         DiskPtr disk = args.getDisk(set_settings[SetSetting::disk]);
         return std::make_shared<StorageSet>(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings[SetSetting::persistent]);
-    }, SecretArgumentsSpec{}, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, },
+    }, SecretArgumentsSpec{}, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, .stores_data_on_disk = true, .supports_temporary = true, },
     Documentation{
         .description = R"DOCS_MD(
 <Note>

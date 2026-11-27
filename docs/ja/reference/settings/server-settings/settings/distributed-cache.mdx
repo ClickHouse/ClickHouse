@@ -12,15 +12,71 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouseサーバーを構成するもので、ClickHouseのソースコードから自動生成されています。
 
-## distributed_cache_apply_throttling_settings_from_client
+## distributed_cache_apply_throttling_settings_from_client {#distributed_cache_apply_throttling_settings_from_client}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />cache server がクライアントから受信したスロットリング設定を適用するかどうか。
 
-## distributed_cache_keep_up_free_connections_ratio
+## distributed_cache_keep_up_free_connections_ratio {#distributed_cache_keep_up_free_connections_ratio}
 
 <SettingsInfoBlock type="Float" default_value="0.1" changeable_without_restart="No" />分散キャッシュが空き接続として維持しようとする接続数のソフト制限です。空き接続数が distributed&#95;cache&#95;keep&#95;up&#95;free&#95;connections&#95;ratio * max&#95;connections を下回ると、その数がこの制限を再び上回るまで、最後のアクティビティが最も古い接続から順に閉じられます。
 
-## distributed_cache_write_pool_size
+## distributed_cache_temporary_data_background_retry_delay_milliseconds {#distributed_cache_temporary_data_background_retry_delay_milliseconds}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="30000" changeable_without_restart="No" />コミット済み一時データのバックグラウンド再試行を行うまでの遅延時間 (ミリ秒単位) 。
+
+## distributed_cache_temporary_data_cleanup_period_milliseconds {#distributed_cache_temporary_data_cleanup_period_milliseconds}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1000" changeable_without_restart="No" />コミット済みの一時データのうち、有効期限切れのものをクリーンアップする周期 (ミリ秒) 。
+
+## distributed_cache_temporary_data_confirmation_retry_delay_milliseconds {#distributed_cache_temporary_data_confirmation_retry_delay_milliseconds}
+
+<SettingsInfoBlock type="UInt64" default_value="500" changeable_without_restart="No" />コミット済みの一時データの公開確認を再試行するまでの遅延時間 (ミリ秒) 。
+
+## distributed_cache_temporary_data_control_hello_timeout_milliseconds {#distributed_cache_temporary_data_control_hello_timeout_milliseconds}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="2000" changeable_without_restart="No" />コミット済みの一時データ制御によってファイルの存続期間が延長されるのは、最大で「制御接続の hello の時刻 + このタイムアウト + 有効期限 (TTL)」までです (単位はミリ秒)。クライアントは hello の送信後、同じ時間だけ応答を待機します。クライアントが使用するのは自身の値で、これはコミット済みファイルの作成時 (バックグラウンドでの更新の場合は起動時) に読み込まれます。クライアントと分散キャッシュサーバーで値が異なっていても、ファイルの存続期間が「hello + 有効期限 (TTL)」より短くなることはありません。
+
+## distributed_cache_temporary_data_max_bytes_per_server {#distributed_cache_temporary_data_max_bytes_per_server}
+
+<SettingsInfoBlock type="UInt64" default_value="1099511627776" changeable_without_restart="No" />1 つの分散キャッシュサーバーが保持するコミット済み一時ファイルの合計サイズの上限 (バイト単位) です。コミット済み一時ファイルはファイルキャッシュ内に固定され、解放されるか有効期限が切れるまで追い出されません。この上限により、それらがキャッシュ内で占有できる容量が制限されます。デフォルトは 1 TiB です。上限に達すると、サーバーは新たなコミット済み一時ファイルの公開を拒否します。`0` の場合は無制限です。
+
+## distributed_cache_temporary_data_max_connections_bypassing_pool {#distributed_cache_temporary_data_max_connections_bypassing_pool}
+
+<SettingsInfoBlock type="UInt64" default_value="5000" changeable_without_restart="Yes" />ClickHouse Cloud でのみ有効。一時ファイルが接続プールを経由せずに開ける、分散キャッシュサーバーあたりの最大接続数です。この上限に達すると、一時データは `distributed_cache_wait_connection_from_pool_milliseconds` の間プールされた接続を待機し、それでも取得できなければ失敗します。`0` は無制限を意味します。コミット済みの一時データに関する短い制御用のやり取り (確認、更新、解放) は常に新規接続を開き、カウントの対象外です。再起動なしで変更できます。
+
+## distributed_cache_temporary_data_max_control_batch_ids {#distributed_cache_temporary_data_max_control_batch_ids}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1024" changeable_without_restart="No" />クライアントが 1 回の制御リクエストで送信できる、コミット済み一時データ ID の最大数です。65536 を超える値を指定した場合は、65536 (プロトコルの上限) に制限されます。
+
+## distributed_cache_temporary_data_max_files_per_server {#distributed_cache_temporary_data_max_files_per_server}
+
+<SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />1 つの分散キャッシュサーバーが保持できるコミット済み一時ファイルの最大数です。この上限は、ファイルの追跡に使用するメモリ量を抑えるための予備的な安全策にすぎないため、デフォルト値は大きめに設定されています。容量は主に `distributed_cache_temporary_data_max_bytes_per_server` によって制限されます。上限に達すると、サーバーは新たなコミット済み一時ファイルの公開を拒否します。`0` を指定すると無制限になります。
+
+## distributed_cache_temporary_data_pool_behaviour_on_limit {#distributed_cache_temporary_data_pool_behaviour_on_limit}
+
+<SettingsInfoBlock type="DistributedCachePoolBehaviourOnLimit" default_value="allocate_bypassing_pool" changeable_without_restart="Yes" />ClickHouse Cloud でのみ有効。接続プールの上限に達した場合に、一時データ用の分散キャッシュ接続がどのように動作するかを指定します。一時データにはフォールバック先となるオブジェクトストレージが存在しないため、デフォルトでは失敗とせず、プールを経由しない接続を開きます。この設定は、クエリおよびバックグラウンド処理 (マージ、バックアップ) の一時ファイルに適用されます。コミット済み一時データに関する短い制御用のやり取り (確認、更新、解放) は常に新規接続を開くため、この設定の影響を受けません。`wait` を指定した場合は、プールされた接続が空くまで `distributed_cache_wait_connection_from_pool_milliseconds` の間待機し、それでも取得できなければ失敗します。再起動なしで変更できます。
+
+## distributed_cache_temporary_data_renewal_period_seconds {#distributed_cache_temporary_data_renewal_period_seconds}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="900" changeable_without_restart="No" />コミット済みの一時データの所有権更新の周期 (秒単位)。
+
+## distributed_cache_temporary_data_ttl_seconds {#distributed_cache_temporary_data_ttl_seconds}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="3600" changeable_without_restart="No" />コミット済みの一時ファイルの存続期間 (秒単位) 。
+
+## distributed_cache_warmer_max_bytes_in_queue {#distributed_cache_warmer_max_bytes_in_queue}
+
+<SettingsInfoBlock type="UInt64" default_value="107374182400" changeable_without_restart="No" />ClickHouse Cloud でのみ有効。ローカルファイルシステムキャッシュを持たないディスクについて、キャッシュウォーマーがキューに保持する範囲の合計サイズの上限です。この上限を超えると、古い範囲から順に破棄されます (ローカルキャッシュがある場合、ウォーマーはその `max_size` を使用します) 。0 を指定すると無制限になります。
+
+## distributed_cache_warmer_max_file_segment_size {#distributed_cache_warmer_max_file_segment_size}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="33554432" changeable_without_restart="No" />ClickHouse Cloud でのみ有効。パーツのディスクにローカルのファイルシステムキャッシュがない場合に、キャッシュウォーマーがフェッチしたパーツを分散キャッシュへ読み込む際の範囲のサイズを指定します (ローカルキャッシュがある場合、ウォーマーはローカルキャッシュの `max_file_segment_size` を使用します) 。
+
+## distributed_cache_warmer_max_segments_in_queue {#distributed_cache_warmer_max_segments_in_queue}
+
+<SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />ClickHouse Cloud でのみ有効。ローカルのファイルシステムキャッシュを持たないディスクについて、キャッシュウォーマーがキューに保持する範囲の最大数です。この上限を超えると、古い範囲から順に破棄されます (ローカルキャッシュがある場合、ウォーマーはその `max_elements` を使用します) 。0 を指定すると無制限になります。
+
+## distributed_cache_write_pool_size {#distributed_cache_write_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />バックグラウンドスレッドで同時に実行できる分散キャッシュの書き込みリクエストの最大数です (全クエリ合計) 。この上限に達すると、ライトスルーcacheへの書き込みはスキップされます (データは引き続き object storage に書き込まれます) 。そのため、スロットの空きを待ってブロックされることも、スレッドが無制限に作成されることもありません。temporary data の書き込みはバックグラウンドスレッドを使用しないため、この上限の影響を受けません。
 

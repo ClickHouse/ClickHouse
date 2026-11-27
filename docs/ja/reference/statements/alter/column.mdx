@@ -177,7 +177,14 @@ ALTER COLUMN [IF EXISTS] name
 
 カラムの圧縮 CODEC の変更例については、[カラム圧縮コーデック](/ja/reference/statements/create/table/codec) を参照してください。
 
-カラムの TTL の変更例については、[カラム TTL](/ja/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl) を参照してください。
+実験的な設定 `enable_subcolumn_codecs` を有効にすると、`name` には `payload.ts` のようなサブカラムも指定できます。その場合、変更または削除できるのは `CODEC` のみです。詳しくは [サブカラムのコーデック](/ja/reference/statements/create/table#subcolumn-codecs) を参照してください。
+
+```sql
+ALTER TABLE visits MODIFY COLUMN payload.ts CODEC(DoubleDelta, ZSTD);
+ALTER TABLE visits MODIFY COLUMN payload.ts REMOVE CODEC;
+```
+
+カラムの 有効期限 (TTL) の変更例については、[カラム 有効期限 (TTL)](/ja/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl) を参照してください。
 
 カラムレベル設定の変更例については、[カラムレベル設定](/ja/reference/engines/table-engines/mergetree-family/mergetree#column-level-settings) を参照してください。
 

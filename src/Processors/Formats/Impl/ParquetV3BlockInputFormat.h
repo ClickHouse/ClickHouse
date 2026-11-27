@@ -42,12 +42,12 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     ParquetFileBucketInfo(UInt64 offset, UInt64 length);
     void serialize(WriteBuffer & buffer, size_t protocol_version) const override;
     void deserialize(ReadBuffer & buffer, size_t protocol_version) override;
-    String getIdentifier() const override;
-    String getFormatName() const override
+    [[nodiscard]] String getIdentifier() const override;
+    [[nodiscard]] String getFormatName() const override
     {
         return "Parquet";
     }
-    std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const override;
+    [[nodiscard]] std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const override;
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 
@@ -103,12 +103,19 @@ public:
     std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> getMatchedBuckets() const override;
     VectorWithMemoryTracking<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override;
     bool isTopKFilterApplied() const override;
+    [[nodiscard]] bool isJoinRuntimeFilterApplied() const override;
     bool isMinMaxFromStatisticsApplied() const override { return min_max_from_statistics; }
 
     void cacheFilterColumnStatistics() override;
 
     /// Use the columns cache, see `Parquet::ColumnsCacheOptions`. Must be called before the first read.
     void setColumnsCacheOptions(std::shared_ptr<const Parquet::ColumnsCacheOptions> options) { read_options.columns_cache = std::move(options); }
+
+    void setMapColumnsReadByOneSide(const NameSet & by_keys, const NameSet & by_values) override
+    {
+        read_options.map_columns_read_by_keys = by_keys;
+        read_options.map_columns_read_by_values = by_values;
+    }
 
 private:
     Chunk read() override;
@@ -157,6 +164,8 @@ private:
     /// Only a cell found in the cache keeps statistics: counting them moves the cell, which only a hit may do.
     ParquetMetadataCache::MappedPtr metadata_cache_cell;
     std::optional<ParquetMetadataCacheKey> metadata_cache_key;
+    /// The cell found in the cache (under `footer_cache_key`) that keeps the offset indexes the reader reads, see `read`.
+    ParquetMetadataCache::MappedPtr offset_indexes_cache_cell;
 };
 
 /// Skips a file version, without opening it, if the kept statistics show that the reader would prune every row group.

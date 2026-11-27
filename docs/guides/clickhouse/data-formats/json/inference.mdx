@@ -102,7 +102,7 @@ We can see that most columns have automatically been detected as `String`, with 
 <Info>
 **Controlling type detection**
 
-The auto-detection of dates and datetimes can be controlled through the settings [`input_format_try_infer_dates`](/reference/settings/formats/input-format#input_format_try_infer_dates) and [`input_format_try_infer_datetimes`](/reference/settings/formats/input-format#input_format_try_infer_datetimes) respectively (both enabled by default). The inference of objects as tuples is controlled by the setting [`input_format_json_try_infer_named_tuples_from_objects`](/reference/settings/formats/input-format#input_format_json_try_infer_named_tuples_from_objects). Other settings which control schema inference for JSON, such as the auto-detection of numbers, can be found [here](/concepts/features/interfaces/schema-inference#text-formats).
+The auto-detection of dates and datetimes can be controlled through the settings [`input_format_try_infer_dates`](/reference/settings/formats/input-format#input_format_try_infer_dates) and [`input_format_try_infer_datetimes`](/reference/settings/formats/input-format#input_format_try_infer_datetimes) respectively (both enabled by default). The inference of objects as tuples is controlled by the setting [`input_format_json_try_infer_named_tuples_from_objects`](/reference/settings/formats/input-format#input_format_json_try_infer_named_tuples_from_objects). Other settings which control schema inference for JSON, such as the auto-detection of numbers, can be found [here](/concepts/features/operations/insert/schema-inference#text-formats).
 </Info>
 
 ## Querying JSON {#querying-json}
@@ -334,6 +334,10 @@ With thousands of unique columns this approach to inference is slow. As an alter
 
 `JSONAsObject` treats the entire input as a single JSON object and stores it in a single column of type [`JSON`](/reference/data-types/newjson), making it better suited for highly dynamic or nested JSON payloads. 
 
+<Note>
+In versions 24.8 to 25.2, enable the `JSON` type by adding `allow_experimental_json_type = 1` to the `SETTINGS` clause of the `JSONAsObject` queries on this page.
+</Note>
+
 ```sql
 DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', NOSIGN, 'JSONAsObject')
 SETTINGS describe_compact_output = 1
@@ -402,7 +406,7 @@ In this case, `JSONAsObject` considers each row as a single [`JSON`](/reference/
 
 ```sql
 DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', NOSIGN, JSONAsObject)
-SETTINGS enable_json_type = 1, describe_compact_output = 1
+SETTINGS describe_compact_output = 1
 ```
 
 ```response
@@ -415,4 +419,4 @@ SETTINGS enable_json_type = 1, describe_compact_output = 1
 
 ## Further reading {#further-reading}
 
-To learn more about the data type inference, you can refer to [this](/concepts/features/interfaces/schema-inference) documentation page.
+To learn more about the data type inference, you can refer to [this](/concepts/features/operations/insert/schema-inference) documentation page.

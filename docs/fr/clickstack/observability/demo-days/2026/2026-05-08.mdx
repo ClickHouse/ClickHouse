@@ -1,0 +1,56 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-05-08
+title: 'Demo Days - 2026-05-08'
+sidebarTitle: '2026-05-08'
+description: 'Journées de démonstration ClickStack du 2026-05-08'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Amélioration de la gestion des secrets dans les webhooks {#improved-handling-of-secrets-in-webhooks}
+
+*Démonstration par [@dhable](https://github.com/dhable)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/aD7sT5dc470" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Les URL et les en-têtes des webhooks contiennent souvent des identifiants en clair. Une URL de webhook Slack inclut le jeton secret dans son chemin, et un webhook HTTP nécessite généralement un en-tête Authorization pour s’authentifier. Jusqu’à cette version, l’API interne de HyperDX chargée de lister et de modifier les webhooks renvoyait l’ensemble de ces informations à chaque requête : n’importe quel membre authentifié de l’équipe pouvait donc lire les secrets en interrogeant simplement l’API.
+
+Cette modification applique le même mécanisme de masquage que celui déjà utilisé par l’API publique. Les URL des webhooks sont renvoyées avec leur chemin remplacé par `****`, de sorte que le jeton Slack (ou toute autre clé intégrée au chemin) ne quitte jamais le serveur. Les en-têtes sont eux aussi masqués par défaut, car nous n’avons aucun moyen fiable de savoir lesquels contiennent des secrets : toutes les valeurs sont donc remplacées par `****` et seuls les noms des en-têtes restent visibles.
+
+Le formulaire de modification interprète la valeur masquée comme « aucun changement » : si vous n’y touchez pas, la valeur stockée est conservée ; si vous la modifiez, la nouvelle valeur est enregistrée ; si vous l’effacez, le champ est entièrement supprimé. Le fonctionnement reste ainsi intuitif dans le cas le plus courant (la modification d’un seul champ), sans que le véritable secret transite jamais par le navigateur.
+
+**PR associées :** [#2239](https://github.com/hyperdxio/hyperdx/pull/2239) [HDX-4173] Masquer les champs sensibles dans les réponses de l’API interne des webhooks
+
+## Métadonnées supplémentaires dans les alertes {#extra-metadata-in-alerts}
+
+*Démonstration par [@dhable](https://github.com/dhable)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/evEd7Cc9e1c" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Cette fonctionnalité répond à une demande formulée sur le Slack de la communauté : pouvoir ajouter un contexte libre aux alertes, un emplacement où consigner l’historique des seuils, des liens vers des guides d’exploitation ou des notes à l’intention de l’équipe d’astreinte. C’est aussi une source de vérité précieuse pour les résumés générés par l’IA : tout LLM qui traite une alerte déclenchée dispose désormais du raisonnement de l’opérateur lui-même, au lieu de devoir deviner l’intention à partir de la seule requête.
+
+Le champ de note prend en charge le rendu Markdown : sections repliables, listes et liens fonctionnent donc tous. Il est rattaché à la configuration de l’alerte et apparaît partout où celle-ci est affichée. L’UX n’est pas encore figée : le rendu Markdown constitue un point de départ, et vos retours sur la manière dont il devrait s’afficher sont les bienvenus.
+
+Cette PR en profite pour améliorer l’UX des alertes déclenchées dans les recherches enregistrées. L’icône de cloche du bouton Alertes affiche un point rouge lorsqu’une alerte se déclenche, la boîte de dialogue met en évidence l’alerte active au lieu de se contenter d’un lien, et le langage visuel s’aligne désormais sur celui des tuiles de tableau de bord pour le même état.
+
+**PRs associées :** [#2210](https://github.com/hyperdxio/hyperdx/pull/2210) [HDX-3044] Ajout d’un champ de note facultatif aux alertes
+
+## Thèmes possibles {#possible-themes}
+
+*Démonstration par [@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/JZYGz6ZOPf4" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Il s&#39;agissait d&#39;une expérimentation menée lors d&#39;un hackathon, qui a ajouté à l&#39;interface utilisateur de ClickStack trois thèmes inspirés des IDE : Nord (bleus arctiques), Catppuccin (pastel) et One Dark (style Atom), chacun décliné en variante claire et sombre. Nous avons essayé de générer des jetons de couleur à partir des thèmes d&#39;origine, ce qui a permis de faire l&#39;essentiel du travail, malgré quelques imperfections au niveau des couleurs de la barre latérale et du contraste des lignes, qui resteraient à corriger.
+
+La PR a finalement été clôturée sans être fusionnée. L&#39;équipe s&#39;oriente vers ClickUI, qui ne prend actuellement en charge qu&#39;un seul thème, et maintenir plusieurs jeux de jetons en parallèle représenterait une charge de travail permanente, surtout dès lors que l&#39;on vérifie rigoureusement le contraste pour chaque combinaison. Il a donc été décidé d&#39;attendre que ClickUI prenne lui-même en charge plusieurs thèmes.
+
+Un principe de conception issu de cette expérimentation nous semble toutefois à retenir pour le jour où le sujet reviendra sur la table. La première itération recolorait le logo HyperDX selon le thème, ce qui diluait l&#39;identité de la marque. L&#39;approche la plus propre : un thème clair affiche le logo sombre, un thème sombre affiche le logo clair, et le logotype vert de HyperDX reste lui-même inchangé.
+
+**PRs associées :** [#2191](https://github.com/hyperdxio/hyperdx/pull/2191) feat: add IDE-inspired themes (Nord, Catppuccin, One Dark)

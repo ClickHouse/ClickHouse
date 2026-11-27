@@ -1,0 +1,131 @@
+{
+  "format-version": 3,
+  "table-uuid": "afed8a22-4e46-48dc-9d9a-e8cfa2cd640c",
+  "location": "hdfs://localhost:20500/test-warehouse/test_default_part",
+  "last-sequence-number": 1,
+  "last-updated-ms": 1776501482719,
+  "last-column-id": 2,
+  "current-schema-id": 1,
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "fields": [
+        {
+          "id": 1,
+          "name": "i",
+          "required": false,
+          "type": "int"
+        }
+      ]
+    },
+    {
+      "type": "struct",
+      "schema-id": 1,
+      "fields": [
+        {
+          "id": 1,
+          "name": "i",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "id": 2,
+          "name": "j",
+          "required": false,
+          "type": "int",
+          "initial-default": -1
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 1,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": []
+    },
+    {
+      "spec-id": 1,
+      "fields": [
+        {
+          "name": "j",
+          "transform": "identity",
+          "source-id": 2,
+          "field-id": 1000
+        }
+      ]
+    }
+  ],
+  "last-partition-id": 1000,
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "properties": {
+    "owner": "root",
+    "write.parquet.compression-codec": "zstd"
+  },
+  "current-snapshot-id": 4871712590577795000,
+  "next-row-id": 2,
+  "refs": {
+    "main": {
+      "snapshot-id": 4871712590577795000,
+      "type": "branch"
+    }
+  },
+  "snapshots": [
+    {
+      "sequence-number": 1,
+      "snapshot-id": 4871712590577795000,
+      "timestamp-ms": 1776501457059,
+      "summary": {
+        "operation": "append",
+        "spark.app.id": "local-1776499633819",
+        "added-data-files": "2",
+        "added-records": "2",
+        "added-files-size": "784",
+        "changed-partition-count": "1",
+        "total-records": "2",
+        "total-files-size": "784",
+        "total-data-files": "2",
+        "total-delete-files": "0",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0",
+        "engine-version": "4.0.3-SNAPSHOT",
+        "app-id": "local-1776499633819",
+        "engine-name": "spark",
+        "iceberg-version": "Apache Iceberg 1.10.1 (commit ccb8bc435062171e64bc8b7e5f56e6aed9c5b934)"
+      },
+      "manifest-list": "hdfs://localhost:20500/test-warehouse/test_default_part/metadata/snap-4871712590577794979-1-80cb93fa-c2c3-40ae-b434-820828b5e52a.avro",
+      "schema-id": 0,
+      "first-row-id": 0,
+      "added-rows": 2
+    }
+  ],
+  "statistics": [],
+  "partition-statistics": [],
+  "snapshot-log": [
+    {
+      "timestamp-ms": 1776501457059,
+      "snapshot-id": 4871712590577795000
+    }
+  ],
+  "metadata-log": [
+    {
+      "timestamp-ms": 1776501427812,
+      "metadata-file": "hdfs://localhost:20500/test-warehouse/test_default_part/metadata/00000-3c5fd953-6d63-4191-aeed-fd5b27df2b31.metadata.json"
+    },
+    {
+      "timestamp-ms": 1776501457059,
+      "metadata-file": "hdfs://localhost:20500/test-warehouse/test_default_part/metadata/00001-135ef3a5-7ff1-4d39-9f53-2629acad2aa8.metadata.json"
+    },
+    {
+      "timestamp-ms": 1776501471669,
+      "metadata-file": "hdfs://localhost:20500/test-warehouse/test_default_part/metadata/00002-52873544-e39a-4a4a-99e2-5d49f79635b5.metadata.json"
+    }
+  ]
+}

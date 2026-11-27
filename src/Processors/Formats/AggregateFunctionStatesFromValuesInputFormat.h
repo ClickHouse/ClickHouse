@@ -42,12 +42,17 @@ public:
     void setRowsReadBefore(size_t rows) override { underlying->setRowsReadBefore(rows); }
     void setSerializationHints(const SerializationInfoByName & hints) override { underlying->setSerializationHints(hints); }
     void setSkippedUnknownFieldCallback(SkippedUnknownFieldCallback callback) override { underlying->setSkippedUnknownFieldCallback(std::move(callback)); }
+    void setMapColumnsReadByOneSide(const NameSet & by_keys, const NameSet & by_values) override
+    {
+        underlying->setMapColumnsReadByOneSide(by_keys, by_values);
+    }
     size_t getApproxBytesReadForChunk() const override { return underlying->getApproxBytesReadForChunk(); }
     void needOnlyCount() override { underlying->needOnlyCount(); }
     void setQueryParameters(const NameToNameMap & parameters) override { underlying->setQueryParameters(parameters); }
     std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> getMatchedBuckets() const override { return underlying->getMatchedBuckets(); }
     VectorWithMemoryTracking<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override { return underlying->getTopKBestValuesOfBuckets(); }
     bool isTopKFilterApplied() const override { return underlying->isTopKFilterApplied(); }
+    [[nodiscard]] bool isJoinRuntimeFilterApplied() const override { return underlying->isJoinRuntimeFilterApplied(); }
     bool isMinMaxFromStatisticsApplied() const override { return underlying->isMinMaxFromStatisticsApplied(); }
     void cacheFilterColumnStatistics() override { underlying->cacheFilterColumnStatistics(); }
 

@@ -53,4 +53,17 @@ TabSeparatedWithNames
 TabSeparatedWithNamesAndTypes
 Values
 LineAsString
+Batches
+One 3
+Npy [0,1,2,3,4]
+MySQLDump [(1,10),(2,20),(3,30),(4,40)]
+JSON [(1,'a'),(2,'b')]
+CustomSeparatedWithNames [(0,'0',[]),(1,'1',[0]),(2,'2',[]),(3,'3',[])]
+CustomSeparated [(0,'0',[]),(1,'1',[0]),(2,'2',[0,1]),(3,'3',[0,1,2])]
+CustomSeparated CSV [(true,'a'),(false,'b')]
+RowBinaryWithNamesAndTypes [(0,'0'),(1,'1'),(2,'2'),(3,'3')]
+TSV [(1,'a')]
+Template [(1,2),(3,4),(5,6),(7,8)]
+Values [2,42]
+FileLog 3
 OK

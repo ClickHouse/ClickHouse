@@ -50,26 +50,28 @@ public:
 
     StorageHDFSConfiguration() = default;
 
-    ObjectStorageType getType() const override { return type; }
-    std::string getTypeName() const override { return type_name; }
-    std::string getEngineName() const override { return engine_name; }
+    [[nodiscard]] ObjectStorageType getType() const override { return type; }
+    [[nodiscard]] std::string getTypeName() const override { return type_name; }
+    [[nodiscard]] std::string getEngineName() const override { return engine_name; }
 
-    bool supportsPartialPathPrefix() const override { return false; }
+    [[nodiscard]] bool supportsPartialPathPrefix() const override { return false; }
 
     /// Unlike s3 and azure, which are object storages,
     /// hdfs is a filesystem, so it cannot list files by partial prefix,
     /// only by directory.
     /// Therefore in the below methods we use supports_partial_prefix=false.
-    Path getRawPath() const override { return path; }
+    [[nodiscard]] Path getRawPath() const override { return path; }
     void setRawPath(const Path & p) override { path = p; }
-    const String & getRawURI() const override { return url; }
+    [[nodiscard]] std::string_view getRawURI() const override { return url; }
+    /// The raw URI is only the authority, so grants never filter paths, and any path is checked as the authority.
+    [[nodiscard]] String getURIForAccessCheck(const String & /*write_path*/) const override { return url; }
 
-    String getNamespace() const override { return ""; }
-    String getDataSourceDescription() const override { return url; }
+    [[nodiscard]] String getNamespace() const override { return ""; }
+    [[nodiscard]] String getDataSourceDescription() const override { return url; }
 
     /// The object storages created from now on reject writes and removals.
     void setReadOnly() { read_only = true; }
-    StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
+    [[nodiscard]] StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) override;
 

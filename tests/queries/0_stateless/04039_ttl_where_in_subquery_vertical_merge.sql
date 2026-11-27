@@ -1,8 +1,5 @@
 -- Regression test: TTL with WHERE ... IN (subquery) during vertical merge
 -- should not throw "Not-ready Set" exception.
--- The bug was that TTLDeleteFilterStep built expressions with Set objects in a "probe"
--- transform, but then transformPipeline() created new transforms with different Set objects
--- that were never filled by CreatingSetsStep.
 -- https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=96573&sha=893ca480970c279b42a296d63347c407cb1ba0df&name_0=PR&name_1=Stateless%20tests%20%28amd_debug%2C%20parallel%29
 
 DROP TABLE IF EXISTS t_ttl_in_subquery;

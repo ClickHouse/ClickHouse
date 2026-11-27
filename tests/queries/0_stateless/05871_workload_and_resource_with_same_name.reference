@@ -1,0 +1,14 @@
+--- created ---
+workload	05871_x	CREATE WORKLOAD `05871_x` SETTINGS max_io_requests = 10 FOR `05871_x`
+resource	05871_x	CREATE RESOURCE `05871_x` (WRITE DISK `05871_disk`, READ DISK `05871_disk`)
+--- statements address one kind only ---
+already exists
+cannot be dropped
+--- backup ---
+BACKUP_CREATED
+--- after drop ---
+--- restore ---
+RESTORED
+--- after restore ---
+workload	05871_x	CREATE WORKLOAD `05871_x` SETTINGS max_io_requests = 10 FOR `05871_x`
+resource	05871_x	CREATE RESOURCE `05871_x` (WRITE DISK `05871_disk`, READ DISK `05871_disk`)

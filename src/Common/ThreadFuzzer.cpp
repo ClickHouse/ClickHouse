@@ -18,6 +18,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/MemoryTracker.h>
+#include <Common/Silk/FiberScheduler.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
@@ -233,7 +234,7 @@ static void injectionImpl(
     double sleep_time_us_max)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
-    if (!ThreadFuzzer::isStarted())
+    if (!ThreadFuzzer::isStarted() || Silk::isInsideFiber())
         return;
 
     if (yield_probability > 0
@@ -399,22 +400,7 @@ void ThreadFuzzer::setup() const
 /// Starting from glibc 2.34 there are no internal symbols without version,
 /// so not __pthread_mutex_lock but __pthread_mutex_lock@2.2.5
 #if defined(OS_LINUX) and !defined(USE_MUSL) and !defined(__loongarch64)
-    /// You can get version from glibc/sysdeps/unix/sysv/linux/$ARCH/$BITS_OR_BYTE_ORDER/libc.abilist
-    #if defined(__amd64__)
-    #    define GLIBC_SYMVER "GLIBC_2.2.5"
-    #elif defined(__aarch64__)
-    #    define GLIBC_SYMVER "GLIBC_2.17"
-    #elif defined(__riscv) && (__riscv_xlen == 64)
-    #    define GLIBC_SYMVER "GLIBC_2.27"
-    #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    #    define GLIBC_SYMVER "GLIBC_2.17"
-    #elif (defined(__S390X__) || defined(__s390x__))
-    #    define GLIBC_SYMVER "GLIBC_2.2"
-    #elif defined(__e2k__)
-    #    define GLIBC_SYMVER "GLIBC_2.0"
-    #else
-    #    error Your platform is not supported.
-    #endif
+    #include <base/glibc_symver.h>
 
     #define GLIBC_COMPAT_SYMBOL(func) __asm__(".symver " #func "," #func "@" GLIBC_SYMVER);
 
@@ -459,7 +445,7 @@ FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER_USING_DLSYM)
 #else
 #define MAKE_WRAPPER_USING_INTERNAL_SYMBOLS(RET, NAME, ...) \
     extern "C" RET __##NAME(__VA_ARGS__);                   \
-    extern "C" RET NAME(__VA_ARGS__)                        \
+    extern "C" SHARED_ACROSS_DSO RET NAME(__VA_ARGS__)      \
     {                                                       \
         if (!ThreadFuzzer::isStarted())                     \
         {                                                   \

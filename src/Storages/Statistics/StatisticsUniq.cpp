@@ -74,7 +74,7 @@ bool StatisticsUniq::isCompatibleWith(const IStatistics & other) const
     return StatisticsUtils::isSame(*collector, *other_uniq->collector);
 }
 
-void StatisticsUniq::serialize(WriteBuffer & buf)
+void StatisticsUniq::serialize(WriteBuffer & buf, StatisticsFileVersion /*version*/)
 {
     if (collector->getNestedFunction())
         writeBinary(true, buf);
