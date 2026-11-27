@@ -1,0 +1,25 @@
+-- results
+10	45
+10	45
+10	45
+10	45
+10	2945
+10	45
+10	45
+-- an IN above a subquery read
+10	45
+10	45
+7	42
+10	45
+10	45
+3
+4
+5
+10	45
+-- shipped to replicas
+plain	1
+opt_out	0
+opt_out_outer	0
+opt_out_root	0
+-- what the replicas are sent: the range, never the IN
+1	1	1
