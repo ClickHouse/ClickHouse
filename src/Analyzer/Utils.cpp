@@ -1,5 +1,6 @@
 #include <Analyzer/Utils.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/JSONRoundTripFormatSettings.h>
 
 #include <Core/Settings.h>
 
@@ -25,21 +26,19 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/TypeTree.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnDynamic.h>
-#include <Columns/ColumnObject.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/validateColumnType.h>
 
-#include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
@@ -1545,28 +1544,16 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 namespace
 {
 
-/// `datetime64_as_numbers` is only set while building the text of a JSON/Object constant for exact
-/// serialization (columnConstantToExactLiteralAST). When set, typed DateTime64/Time64 leaves are
-/// rendered as a bare number instead of local date-time text, which round-trips losslessly and is
-/// unambiguous across DST overlaps: the shard reads the number back through the leaf's declared type
-/// (`JSONExtractTree`'s `DateTime64Node`/`Time64Node`). The two types read a bare
-/// number differently - a DateTime64 path reads a Unix timestamp in seconds, a Time64 path reads the
-/// raw scaled ticks - so each leaf is written in the form its own parser expects. Reading a DateTime64
-/// number as ticks again is only possible under the legacy `input_format_read_datetime_number_as_raw_value`
-/// (`compatibility` of `26.7` or below), where the JSON leaf of such a constant is off by the scale.
-/// This must not leak into dynamic JSON paths or Variant/Dynamic, where the value's type is inferred
-/// from the JSON token and a bare number would be read as a number, not a date-time.
-///
-/// `date_time_as_numbers` is the same answer for a plain `DateTime` leaf, and it is set for every consumer
-/// that re-applies the leaf's declared type. It is cleared wherever the value's type is inferred from the
-/// literal instead: `Variant`, `Dynamic`, dynamic `JSON` paths, shared data and `JSON` object names.
-Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool is_inside_object, bool datetime64_as_numbers, bool date_time_as_numbers)
+/// `date_time_as_numbers` writes a `DateTime` leaf as its Unix timestamp, which its declared type reads back exactly,
+/// and it is set for every consumer that re-applies the leaf's declared type. It is cleared wherever the value's type
+/// is inferred from the literal instead: `Variant` and `Dynamic`.
+Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool date_time_as_numbers)
 {
     /// Nesting is part of the value rather than of the query text, so no parser limit bounds it.
     checkStackSize();
 
     if (isColumnConst(*column))
-        return getFieldFromColumnForASTLiteralImpl(assert_cast<const ColumnConst& >(*column).getDataColumnPtr(), 0, data_type, is_inside_object, datetime64_as_numbers, date_time_as_numbers);
+        return getFieldFromColumnForASTLiteralImpl(assert_cast<const ColumnConst& >(*column).getDataColumnPtr(), 0, data_type, date_time_as_numbers);
 
     switch (data_type->getTypeId())
     {
@@ -1576,23 +1563,11 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             const auto & nullable_column = assert_cast<const ColumnNullable &>(*column);
             if (nullable_column.isNullAt(row))
                 return Null();
-            return getFieldFromColumnForASTLiteralImpl(nullable_column.getNestedColumnPtr(), row, nullable_data_type.getNestedType(), is_inside_object, datetime64_as_numbers, date_time_as_numbers);
+            return getFieldFromColumnForASTLiteralImpl(nullable_column.getNestedColumnPtr(), row, nullable_data_type.getNestedType(), date_time_as_numbers);
         }
         case TypeIndex::DateTime64: [[fallthrough]];
         case TypeIndex::Time64:
         {
-            /// DateTime64/Time64 are backed by a scaled Int64. Inside a JSON object the exact path renders
-            /// them as a bare number so the typed path parses them back losslessly (see above). The two
-            /// types read a bare number differently: a typed Time64 path reads an integer as the raw ticks,
-            /// while a typed DateTime64 path reads the number as a Unix timestamp in seconds and parses its
-            /// fractional part exactly (`readDateTime64AsNumber`), which is what the scaled decimal value
-            /// already spells out.
-            if (datetime64_as_numbers)
-            {
-                if (data_type->getTypeId() == TypeIndex::Time64)
-                    return Field(static_cast<Int64>((*column)[row].safeGet<DecimalField<Decimal64>>().getValue()));
-                return (*column)[row];
-            }
             if (data_type->getTypeId() == TypeIndex::Time64)
                 return (*column)[row];
             WriteBufferFromOwnString buf;
@@ -1632,36 +1607,14 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             Array array;
             array.reserve(end - start);
             for (size_t i = start; i != end; ++i)
-                array.push_back(getFieldFromColumnForASTLiteralImpl(nested_column, i, nested_data_type, is_inside_object, datetime64_as_numbers, date_time_as_numbers));
+                array.push_back(getFieldFromColumnForASTLiteralImpl(nested_column, i, nested_data_type, date_time_as_numbers));
             return array;
         }
         case TypeIndex::Map:
         {
-            /// If we are inside Object, return Map as Object value instead of Array(Tuple).
-            if (is_inside_object)
-            {
-                const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
-                const auto & map_column = assert_cast<const ColumnMap &>(*column);
-                const auto & offsets = map_column.getNestedColumn().getOffsets();
-                const auto & key_column = map_column.getNestedData().getColumnPtr(0);
-                const auto & value_column = map_column.getNestedData().getColumnPtr(1);
-                size_t start = offsets[static_cast<ssize_t>(row) - 1];
-                size_t end = offsets[row];
-                Object object;
-                for (size_t i = start; i != end; ++i)
-                {
-                    /// Keys become JSON object path names (always strings), so they keep the text form.
-                    auto key_field = convertFieldToString(getFieldFromColumnForASTLiteralImpl(key_column, i, map_type.getKeyType(), is_inside_object, false, false));
-                    auto value_field = getFieldFromColumnForASTLiteralImpl(value_column, i, map_type.getValueType(), is_inside_object, datetime64_as_numbers, date_time_as_numbers);
-                    object[key_field] = value_field;
-                }
-
-                return object;
-            }
-
             const auto & nested_type = assert_cast<const DataTypeMap &>(*data_type).getNestedType();
             const auto & nested_column = assert_cast<const ColumnMap &>(*column).getNestedColumnPtr();
-            return getFieldFromColumnForASTLiteralImpl(nested_column, row, nested_type, is_inside_object, datetime64_as_numbers, date_time_as_numbers);
+            return getFieldFromColumnForASTLiteralImpl(nested_column, row, nested_type, date_time_as_numbers);
         }
         case TypeIndex::Tuple:
         {
@@ -1670,7 +1623,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             Tuple tuple;
             tuple.reserve(element_columns.size());
             for (size_t i = 0; i != element_types.size(); ++i)
-                tuple.push_back(getFieldFromColumnForASTLiteralImpl(element_columns[i], row, element_types[i], is_inside_object, datetime64_as_numbers, date_time_as_numbers));
+                tuple.push_back(getFieldFromColumnForASTLiteralImpl(element_columns[i], row, element_types[i], date_time_as_numbers));
             return tuple;
         }
         case TypeIndex::Variant:
@@ -1684,7 +1637,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             size_t variant_offset = variant_column.offsetAt(row);
             /// The active type is not visible in the JSON token, and this walker emits no cast to the member
             /// type, so keep the text form for date-times.
-            return getFieldFromColumnForASTLiteralImpl(variant, variant_offset, variant_types[global_discr], is_inside_object, false, false);
+            return getFieldFromColumnForASTLiteralImpl(variant, variant_offset, variant_types[global_discr], false);
         }
         case TypeIndex::Dynamic:
         {
@@ -1692,7 +1645,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             const auto & variant_column = dynamic_column.getVariantColumn();
             auto global_discr = variant_column.globalDiscriminatorAt(row);
             if (global_discr != dynamic_column.getSharedVariantDiscriminator())
-                return getFieldFromColumnForASTLiteralImpl(dynamic_column.getVariantColumnPtr(), row, dynamic_column.getVariantInfo().variant_type, is_inside_object, false, false);
+                return getFieldFromColumnForASTLiteralImpl(dynamic_column.getVariantColumnPtr(), row, dynamic_column.getVariantInfo().variant_type, false);
 
             const auto & shared_variant = dynamic_column.getSharedVariant();
             auto value_data = shared_variant.getDataAt(variant_column.offsetAt(row));
@@ -1701,47 +1654,25 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             auto tmp_column = type->createColumn();
             tmp_column->reserve(1);
             type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, {});
-            return getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, type, is_inside_object, false, false);
+            return getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, type, false);
         }
         case TypeIndex::Object:
         {
-            const auto & object_column = assert_cast<const ColumnObject &>(*column);
-            /// The object of a type with the source is what parsing the source gives, so the source is the literal:
-            /// it keeps the text that `__source` reads.
-            if (object_column.hasSource() && !is_inside_object)
-                return Field(String(object_column.getSourceColumn().getDataAt(row)));
-
-            const auto & typed_paths_types = assert_cast<const DataTypeObject &>(*data_type).getTypedPaths();
-            Object object;
-            /// Typed paths have an explicit declared type, so DateTime64/Time64 leaves can be rendered as
-            /// exact ticks. Dynamic and shared-data paths infer their type from the JSON token and must
-            /// keep the text form (a bare integer there would be read back as an integer, not a date-time).
-            for (const auto & [path, path_column] : object_column.getTypedPaths())
-                object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, typed_paths_types.at(path), true, datetime64_as_numbers, date_time_as_numbers);
-
-            for (const auto & [path, path_column] : object_column.getDynamicPaths())
-                object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, std::make_shared<DataTypeDynamic>(), true, false, false);
-
-            const auto & shared_data_offsets = object_column.getSharedDataOffsets();
-            const auto [shared_paths, shared_values] = object_column.getSharedDataPathsAndValues();
-            size_t start = shared_data_offsets[static_cast<ssize_t>(row) - 1];
-            size_t end = shared_data_offsets[row];
-            auto dynamic_type = std::make_shared<DataTypeDynamic>();
-            auto dynamic_serialization = dynamic_type->getDefaultSerialization();
-
-            FormatSettings format_settings;
-            for (size_t i = start; i != end; ++i)
+            /// JSON has no literal syntax for its values, so the literal is its JSON text, which the receiver parses under
+            /// the type. The text of a value with the source (also nested) is the source, as the object is what parsing it
+            /// gives.
+            FormatSettings format_settings = getJSONRoundTripFormatSettings({});
+            format_settings.json.json_type_use_source = true;
+            /// A Unix timestamp is the same instant in any time zone, while the type of a dynamic value is inferred from
+            /// its text, so only date and time values of typed paths are written as timestamps.
+            format_settings.json.adjust_json_path_settings = [](FormatSettings & settings, bool typed)
             {
-                String path{shared_paths->getDataAt(i)};
-                auto value_data = shared_values->getDataAt(i);
-                ReadBufferFromMemory buf(value_data);
-                auto tmp_column = dynamic_type->createColumn();
-                tmp_column->reserve(1);
-                dynamic_serialization->deserializeBinary(*tmp_column, buf, format_settings);
-                object[path] = getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, dynamic_type, true, false, false);
-            }
-
-            return is_inside_object ? Field(object) : Field(convertObjectToString(object));
+                settings.date_time_output_format = typed ? FormatSettings::DateTimeOutputFormat::UnixTimestamp
+                                                         : FormatSettings::DateTimeOutputFormat::Simple;
+            };
+            WriteBufferFromOwnString buf;
+            data_type->getDefaultSerialization()->serializeTextJSON(*column, row, buf, format_settings);
+            return Field(buf.str());
         }
         default:
             return (*column)[row];
@@ -1752,7 +1683,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
 
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool date_time_as_numbers)
 {
-    return getFieldFromColumnForASTLiteralImpl(column, row, data_type, false, false, date_time_as_numbers);
+    return getFieldFromColumnForASTLiteralImpl(column, row, data_type, date_time_as_numbers);
 }
 
 /// True if a value of this type cannot be printed as a plain literal and re-parsed into the same type:
@@ -2036,15 +1967,8 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
                 columnConstantToExactLiteralASTImpl(std::move(tmp_column), 0, decoded_type, date_time_as_numbers), decoded_type);
         }
         case TypeIndex::Object:
-        {
-            /// JSON has no per-leaf literal syntax, so it is serialized as a JSON-text String cast to the
-            /// object type. Render typed DateTime64/Time64 leaves as bare numbers (datetime64_as_numbers) so
-            /// the shard reparses each into the exact stored value, instead of through the DST-ambiguous
-            /// local date-time text used by the default String path. Dynamic/shared-data paths keep the text
-            /// form because their value type is inferred from the JSON token.
-            return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteralImpl(
-                column, row, type, /*is_inside_object=*/false, /*datetime64_as_numbers=*/true, date_time_as_numbers));
-        }
+            /// JSON is a String with its JSON text cast to the type, see `getFieldFromColumnForASTLiteralImpl`.
+            return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteralImpl(column, row, type, date_time_as_numbers));
         default:
             return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type, date_time_as_numbers));
     }

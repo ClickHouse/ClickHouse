@@ -303,6 +303,8 @@ public:
     void materializeSourceForLastRow();
     /// JSON text of a default row with the defaults of the types in the typed paths, created once.
     const String & getDefaultSourceText();
+    /// The same text created on every call, for readers that must not touch the cache.
+    String createDefaultSourceText() const;
     /// Append the JSON text of default rows to the source column.
     void insertDefaultIntoSource(size_t length = 1);
 
@@ -429,7 +431,6 @@ private:
     /// Only for a failed default insert: it does not remove new dynamic paths or shared data entries.
     void restoreSizesAfterDefaultInsert(size_t prev_size);
     void expandSource(const Filter & mask, bool inverted);
-    String createDefaultSourceText() const;
     /// Copy the source column and fill rows after the end of the original column with default values.
     MutableColumnPtr cloneResizedSource(size_t new_size) const;
     void serializePathAndValueIntoArena(Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res) const;

@@ -10,6 +10,7 @@
 #include <Interpreters/castColumn.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/JSONExtractTree.h>
+#include <Formats/JSONRoundTripFormatSettings.h>
 #include <Formats/SchemaInferenceUtils.h>
 
 #if USE_SIMDJSON
@@ -2972,24 +2973,6 @@ bool newLeafTypedPathsNeedFormatParse(
     return false;
 }
 
-/// Settings for writing values as JSON text that is parsed back right away: numbers are written unquoted
-/// so they are read back as numbers, and inf and nan, which JSON has no number for, are quoted instead of
-/// being written as null.
-FormatSettings getJSONRoundTripFormatSettings(const FormatSettings & format_settings)
-{
-    FormatSettings result = format_settings;
-    result.json.quote_64bit_integers = false;
-    result.json.quote_denormals = true;
-    /// An internal round trip must be lossless and independent of the user's presentation settings, which
-    /// would otherwise change the stored value: shortest float text and canonical Boolean tokens.
-    result.float_precision = 0;
-    result.bool_true_representation = "true";
-    result.bool_false_representation = "false";
-    /// The text holds stored values, not user input, so a date/time is read back in its type's zone.
-    result.session_time_zone = nullptr;
-    return result;
-}
-
 /// The round trip of the optimized conversion: a DateTime is written as a CAST to String writes it, so a
 /// value converted through text does not depend on date_time_output_format or on how it is stored.
 FormatSettings getJSONRoundTripFormatSettingsForValues(const FormatSettings & format_settings)
@@ -3317,7 +3300,8 @@ ColumnPtr createSourceFromObject(const ColumnObject & column, const DataTypeObje
     ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*source, column.size());
     auto & write_buffer = write_helper.getWriteBuffer();
     FormatSettings settings = getJSONRoundTripFormatSettings(format_settings);
-    settings.json.json_type_use_source = false;
+    /// The converted value has no source of its own, and nested values with the source keep their text in it.
+    settings.json.json_type_use_source = true;
     auto serialization = type.getDefaultSerialization();
     for (size_t i = 0; i != column.size(); ++i)
     {
@@ -3851,8 +3835,9 @@ ColumnPtr convertObjectViaFormatParse(
     ColumnStringHelpers::WriteHelper<ColumnString> write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
     auto & write_buffer = write_helper.getWriteBuffer();
     FormatSettings format_settings = getJSONRoundTripFormatSettings(cast_settings.format_settings);
-    /// A conversion reparses the serialized object, so it must serialize the object, not the stored source.
-    format_settings.json.json_type_use_source = false;
+    /// The value has no source of its own (a value with the source is converted by parsing it), and the text of
+    /// nested values with the source is written as is, so that they keep it.
+    format_settings.json.json_type_use_source = true;
     auto serialization = arguments[0].type->getDefaultSerialization();
     for (size_t i = 0; i < input_rows_count; ++i)
     {

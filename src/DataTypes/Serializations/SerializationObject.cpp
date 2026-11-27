@@ -1,5 +1,6 @@
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/JSONRoundTripFormatSettings.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/DeserializationTask.h>
 #include <DataTypes/Serializations/SerializationObjectHelpers.h>
@@ -1647,11 +1648,11 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
                 column->insertDefault();
         }
 
-        /// The binary representation has no JSON text, so create it from the object,
-        /// after every path got the value for this row.
+        /// The binary representation has no JSON text, so create it from the object, after every path got
+        /// the value for this row. The text is parsed back by conversions, so it must be lossless.
         if (column_object.hasSource())
         {
-            FormatSettings format_settings_without_source = settings;
+            FormatSettings format_settings_without_source = getJSONRoundTripFormatSettings(settings);
             format_settings_without_source.json.json_type_use_source = false;
             WriteBufferFromOwnString buf;
             serializeText(column_object, prev_size, buf, format_settings_without_source);

@@ -134,6 +134,19 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
     /// For example:
     /// b.c, a.b, a.a, b.e, g, h.u.t -> a.a, a.b, b.c, b.e, g, h.u.t -> {"a" : {"a" : ..., "b" : ...}, "b" : {"c" : ..., "e" : ...}, "g" : ..., "h" : {"u" : {"t" : ...}}}.
 
+    /// See `adjust_json_path_settings`. The settings are copied only when it is set.
+    std::optional<FormatSettings> typed_paths_settings;
+    std::optional<FormatSettings> dynamic_paths_settings;
+    if (settings.json.adjust_json_path_settings)
+    {
+        typed_paths_settings.emplace(settings);
+        settings.json.adjust_json_path_settings(*typed_paths_settings, /*typed=*/ true);
+        dynamic_paths_settings.emplace(settings);
+        settings.json.adjust_json_path_settings(*dynamic_paths_settings, /*typed=*/ false);
+    }
+    const FormatSettings & typed_settings = typed_paths_settings ? *typed_paths_settings : settings;
+    const FormatSettings & dynamic_settings = dynamic_paths_settings ? *dynamic_paths_settings : settings;
+
     if (pretty)
         writeCString("{\n", ostr);
     else
@@ -252,21 +265,26 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
         /// Serialize value of current path.
         if (path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED)
         {
+            String path(path_info.path);
+            /// The type of a value of a typed `Dynamic` path is inferred from the text, as for a dynamic path.
+            const auto & path_settings = settings.json.adjust_json_path_settings && isDynamic(typed_paths_types.at(path))
+                ? dynamic_settings
+                : typed_settings;
             if (pretty)
-                typed_paths_serializations.at(String(path_info.path))->serializeTextJSONPretty(*path_info.column, path_info.row, ostr, settings, indent + current_prefix.size() + 1);
+                typed_paths_serializations.at(path)->serializeTextJSONPretty(*path_info.column, path_info.row, ostr, path_settings, indent + current_prefix.size() + 1);
             else
-                typed_paths_serializations.at(String(path_info.path))->serializeTextJSON(*path_info.column, path_info.row, ostr, settings);
+                typed_paths_serializations.at(path)->serializeTextJSON(*path_info.column, path_info.row, ostr, path_settings);
         }
         else if (path_info.type == ColumnObject::SortedPathsIterator::PathType::SHARED_DATA)
         {
-            SerializationDynamic::serializeBinaryEncodedValueTextJSON(it.getCurrentSharedDataValue(), ostr, settings, pretty, indent + current_prefix.size() + 1);
+            SerializationDynamic::serializeBinaryEncodedValueTextJSON(it.getCurrentSharedDataValue(), ostr, dynamic_settings, pretty, indent + current_prefix.size() + 1);
         }
         else
         {
             if (pretty)
-                dynamic_serialization->serializeTextJSONPretty(*path_info.column, path_info.row, ostr, settings, indent + current_prefix.size() + 1);
+                dynamic_serialization->serializeTextJSONPretty(*path_info.column, path_info.row, ostr, dynamic_settings, indent + current_prefix.size() + 1);
             else
-                dynamic_serialization->serializeTextJSON(*path_info.column, path_info.row, ostr, settings);
+                dynamic_serialization->serializeTextJSON(*path_info.column, path_info.row, ostr, dynamic_settings);
         }
     }
 

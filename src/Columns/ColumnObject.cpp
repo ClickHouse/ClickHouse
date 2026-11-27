@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/JSONRoundTripFormatSettings.h>
 #include <DataTypes/DataTypesCache.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeObject.h>
@@ -517,6 +518,10 @@ bool ColumnObject::isDefaultAt(size_t n) const
     if (!shared_data->isDefaultAt(n))
         return false;
 
+    /// The source is a part of the value: a default row also has the JSON text of the default.
+    if (hasSource() && getSourceColumn().getDataAt(n) != createDefaultSourceText())
+        return false;
+
     return true;
 }
 
@@ -571,6 +576,18 @@ UInt64 ColumnObject::getNumberOfDefaultRows() const
         add_non_defaults_of(*column);
 
     add_non_defaults_of(*shared_data);
+
+    /// The source is a part of the value: a default row also has the JSON text of the default.
+    if (hasSource() && num_non_default != num_rows)
+    {
+        const String default_text = createDefaultSourceText();
+        const auto & source_column = getSourceColumn();
+        for (size_t row = 0; row != num_rows; ++row)
+        {
+            if (!non_default_anywhere[row] && source_column.getDataAt(row) != default_text)
+                ++num_non_default;
+        }
+    }
 
     return num_rows - num_non_default;
 }
@@ -1176,7 +1193,8 @@ void ColumnObject::materializeSourceForLastRow()
         object_serialization = object_type->getDefaultSerialization();
 
     /// The source of this row is not written yet, so it cannot be used during serialization.
-    FormatSettings format_settings = getFormatSettings();
+    /// The text is parsed back by conversions, so it must be lossless.
+    FormatSettings format_settings = getJSONRoundTripFormatSettings(getFormatSettings());
     format_settings.json.json_type_use_source = false;
 
     auto & source_column = getSourceColumn();
@@ -1221,7 +1239,7 @@ String ColumnObject::createDefaultSourceText() const
     /// without such an element), so its text cannot always be created.
     object_type->insertDefaultInto(*default_row);
 
-    FormatSettings format_settings = getFormatSettings();
+    FormatSettings format_settings = getJSONRoundTripFormatSettings(getFormatSettings());
     format_settings.json.json_type_use_source = false;
     WriteBufferFromOwnString buf;
     if (object_serialization)

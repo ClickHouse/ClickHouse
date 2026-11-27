@@ -27,3 +27,15 @@ JOIN
 insert deduplication
 { "a" : 1 }
 {"a":1}
+nested values keep their source in conversions
+{"a":{"z":1,"b":2}}	{"z":1,"b":2}
+{"a":{"z":1,"b":2}}	{"z":1,"b":2}
+{"z":1,"b":2}
+a default has the JSON text of the default
+{ }
+{"a":1}
+{ "e" : "x" }
+{ }
+the text created for binary input is parsed back to the same value
+nan	{"f":"nan"}	nan
+{"a":42}	Int64
