@@ -1155,9 +1155,18 @@ void MergeTreeReaderTextIndex::setPrecomputedGranule(const IndexGranulesMap & gr
 
     if (it != granules.end() && it->second)
     {
+        /// The postings streams are keyed by the tokens of the granule, so a different granule invalidates them.
+        /// `readRows` opens them only once, so an initialized reader opens them again for the new granule.
+        const bool granule_changed = it->second != granule;
+
         resetCursors();
         postings_blocks.clear();
+        if (granule_changed)
+            large_postings_streams.clear();
         setIndexGranule(it->second);
+
+        if (granule_changed && is_initialized)
+            initializePostingStreams();
     }
 }
 
