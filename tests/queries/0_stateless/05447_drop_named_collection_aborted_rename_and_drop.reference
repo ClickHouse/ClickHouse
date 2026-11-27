@@ -1,0 +1,21 @@
+--- a failed DROP of a never loaded dictionary ---
+FAULT_INJECTED
+NAMED_COLLECTION_IS_USED
+1
+--- a RENAME that fails before the destination publishes the table ---
+FAULT_INJECTED
+NAMED_COLLECTION_IS_USED
+1
+--- a RENAME that fails to remove the source metadata after the destination published the table ---
+FAULT_INJECTED
+NAMED_COLLECTION_IS_USED
+1
+--- the same for a never loaded dictionary ---
+FAULT_INJECTED
+NAMED_COLLECTION_IS_USED
+1
+--- a RENAME DATABASE that fails after the database is published under the new name ---
+FAULT_INJECTED
+NAMED_COLLECTION_IS_USED
+--- the collections are released once the definitions are gone ---
+0

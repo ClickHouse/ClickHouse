@@ -57,6 +57,7 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     const PreformattedMessage & help_message,
     const StorageID * dependent_table_id = nullptr,
     const RemoteDescriptionCaller & caller = {},
-    bool limit_total_addresses = true);
+    bool limit_total_addresses = true,
+    String * used_named_collection_name = nullptr);
 
 }

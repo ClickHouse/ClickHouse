@@ -11,6 +11,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 
 
@@ -131,7 +132,17 @@ public:
     /// blocked while the table exists, matching the behavior of table engines that resolve named
     /// collections (see `tryGetNamedCollectionWithOverrides`). Transient uses of the table function in a
     /// query do not register anything.
-    virtual String getUsedNamedCollectionName() const { return {}; }
+    virtual String getUsedNamedCollectionName() const
+    {
+        return used_named_collection_name;
+    }
+
+    /// The name of the named collection the not yet parsed arguments `args` reference, decided from the
+    /// AST alone (see `tryGetUsedNamedCollectionName`), so it does not depend on whether a collection
+    /// with that name exists right now. Used for a table function persisted as the target of a `Remote`
+    /// table, which is resolved only at read time. A cluster table function takes a cluster name as
+    /// the first argument and never references a collection.
+    virtual std::optional<String> getNamedCollectionReferencedByArguments(const ASTs & args) const;
 
     /// The function sets the expression of `INSERT INTO FUNCTION ... PARTITION BY`.
     /// Only the interpreter of `INSERT INTO FUNCTION` calls it.
@@ -190,6 +201,16 @@ public:
     virtual ~ITableFunction() = default;
 
 protected:
+    void setUsedNamedCollectionName(String name)
+    {
+        used_named_collection_name = std::move(name);
+    }
+
+    String * getUsedNamedCollectionNameForUpdate()
+    {
+        return &used_named_collection_name;
+    }
+
     /// `cached_columns` come from the metadata of a table created `AS` this function, so `executeImpl` receives
     /// them only for such a table definition, including its replay, and never for a call in a query.
     static bool isTableDefinition(const ColumnsDescription & cached_columns) { return !cached_columns.empty(); }
@@ -232,6 +253,8 @@ private:
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
     /// privileges as if it was S3.
     virtual const char * getNonClusteredStorageEngineName() const;
+
+    String used_named_collection_name;
 
 protected:
     bool arguments_from_stored_definition = false;

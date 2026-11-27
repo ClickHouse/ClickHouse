@@ -86,7 +86,8 @@ public:
     /// in the error messages of the address parser.
     static Configuration getConfiguration(
         ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings,
-        const RemoteDescriptionCaller & caller, const StorageID * table_id = nullptr, const ASTSetQuery * settings = nullptr);
+        const RemoteDescriptionCaller & caller, const StorageID * table_id = nullptr, const ASTSetQuery * settings = nullptr,
+        String * used_named_collection_name = nullptr);
 
     static Configuration processNamedCollectionResult(
         const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_,

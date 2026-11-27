@@ -741,7 +741,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
         auto configuration = StoragePostgreSQL::getConfiguration(
             args.engine_args, args.getContext(), /*storage_settings=*/ nullptr,
-            globCaller("Table engine 'MaterializedPostgreSQL'"));
+            globCaller("Table engine 'MaterializedPostgreSQL'"), &args.table_id);
 
         /// A named collection may specify the endpoint as `addresses_expr`, which fills only
         /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
@@ -814,6 +814,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_sort_order = true,
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::POSTGRES,
             .has_builtin_setting_fn = MaterializedPostgreSQLSettings::hasBuiltin,
         },

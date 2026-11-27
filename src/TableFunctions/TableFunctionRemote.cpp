@@ -3,6 +3,7 @@
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/Distributed/DistributedSettings.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -18,6 +19,13 @@ namespace ErrorCodes
 }
 
 
+std::optional<String> TableFunctionRemote::getNamedCollectionReferencedByArguments(const ASTs & args) const
+{
+    if (is_cluster_function)
+        return std::nullopt;
+    return tryGetUsedNamedCollectionName(secure ? "RemoteSecure" : "Remote", args);
+}
+
 void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     ASTs & args_func = ast_function->children;
@@ -31,7 +39,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     /// of an older version, as the `Remote` table engine does.
     auto parsed = parseRemoteFunctionArguments(
         args, context, name, is_cluster_function, secure, help_message, /* dependent_table_id = */ nullptr, glob_caller,
-        /* limit_total_addresses = */ !arguments_from_stored_definition);
+        /* limit_total_addresses = */ !arguments_from_stored_definition, getUsedNamedCollectionNameForUpdate());
     cluster = std::move(parsed.cluster);
     remote_table_id = std::move(parsed.remote_table_id);
     sharding_key = std::move(parsed.sharding_key);

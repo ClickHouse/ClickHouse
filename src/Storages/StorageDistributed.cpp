@@ -50,6 +50,7 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -3001,6 +3002,10 @@ void registerStorageRemote(StorageFactory & factory)
                 /*listing_alternative=*/ {}},
             /* limit_total_addresses = */ !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()));
 
+        /// The table function target, e.g. `Remote('addr', url(nc, ...))`, is persisted in the metadata and
+        /// resolved only when the local shard is read, so the collections it references are held as well.
+        addNestedTableFunctionNamedCollectionDependencies(parsed.remote_table_function_ptr, args.table_id);
+
         DistributedSettings distributed_settings = args.getContext()->getDistributedSettings();
         if (args.storage_def->settings)
             distributed_settings.loadFromQuery(*args.storage_def);
@@ -3158,6 +3163,9 @@ void registerStorageRemote(StorageFactory & factory)
         .supports_settings = true,
         .supports_parallel_insert = true,
         .supports_schema_inference = true,
+        .supports_named_collections = true,
+        /// The same identifier is a cluster name when no collection with that name exists.
+        .named_collection_argument_is_ambiguous = true,
         .source_access_type = AccessTypeObjects::Source::REMOTE,
         .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
     };
