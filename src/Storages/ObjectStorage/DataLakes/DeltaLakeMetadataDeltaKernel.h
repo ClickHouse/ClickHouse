@@ -73,6 +73,8 @@ public:
 
     static bool supportsTotalBytes(ContextPtr, ObjectStorageType) { return true; }
 
+    static void checkInsertIsPossible(ContextPtr);
+
     /// CREATE TABLE entry point: validate the declared columns, write commit 0
     /// (fresh) or attach to an existing `_delta_log`, and register the table in the catalog when present.
     static void createInitial(

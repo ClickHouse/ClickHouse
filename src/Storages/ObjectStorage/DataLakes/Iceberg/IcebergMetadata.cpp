@@ -2206,17 +2206,19 @@ SinkToStoragePtr IcebergMetadata::write(
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
-    if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
-    {
-        checkTableRootIsQueriedPath("INSERT");
-        /// The schema the query planned the inserted columns with, pinned in the metadata snapshot like for a read.
-        std::optional<Int32> planned_schema_id;
-        if (metadata_snapshot && metadata_snapshot->datalake_table_state)
-            planned_schema_id = std::get<Iceberg::TableStateSnapshot>(*metadata_snapshot->datalake_table_state).schema_id;
-        return std::make_shared<IcebergStorageSink>(
-            object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id, planned_schema_id);
-    }
-    else
+    checkInsertIsPossible(context);
+    checkTableRootIsQueriedPath("INSERT");
+    /// The schema the query planned the inserted columns with, pinned in the metadata snapshot like for a read.
+    std::optional<Int32> planned_schema_id;
+    if (metadata_snapshot && metadata_snapshot->datalake_table_state)
+        planned_schema_id = std::get<Iceberg::TableStateSnapshot>(*metadata_snapshot->datalake_table_state).schema_id;
+    return std::make_shared<IcebergStorageSink>(
+        object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id, planned_schema_id);
+}
+
+void IcebergMetadata::checkInsertIsPossible(ContextPtr context)
+{
+    if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg])
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,

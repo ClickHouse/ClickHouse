@@ -264,6 +264,11 @@ SinkToStoragePtr StorageObjectStorageCluster::write(
         getPartitionedWriteAccessCheck());
 }
 
+void StorageObjectStorageCluster::checkInsertIsAllowed(ContextPtr local_context) const
+{
+    StorageObjectStorage::checkInsertIsPossible(configuration, local_context);
+}
+
 bool StorageObjectStorageCluster::supportsParallelInsert() const
 {
     if (configuration->isDataLakeConfiguration())

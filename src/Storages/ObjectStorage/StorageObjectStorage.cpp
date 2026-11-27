@@ -1034,6 +1034,29 @@ SinkToStoragePtr StorageObjectStorage::write(
         getPartitionedWriteAccessCheck());
 }
 
+void StorageObjectStorage::checkInsertIsAllowed(ContextPtr local_context) const
+{
+    checkInsertIsPossible(configuration, local_context);
+}
+
+void StorageObjectStorage::checkInsertIsPossible(
+    const StorageObjectStorageConfigurationPtr & configuration, const ContextPtr & local_context)
+{
+    const auto raw_path = configuration->getRawPath();
+
+    if (configuration->isArchive())
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table reads from an archive. Write into archive is not supported");
+    }
+
+    if (raw_path.hasGlobsIgnorePlaceholders())
+    {
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Table is in readonly mode because of globs in path");
+    }
+
+    configuration->checkInsertIsPossible(local_context);
+}
+
 SinkToStoragePtr StorageObjectStorage::createSink(
     const StorageObjectStorageConfigurationPtr & configuration,
     const ObjectStoragePtr & object_storage,
@@ -1047,17 +1070,7 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
     const auto & settings = configuration->getQuerySettings(local_context);
 
-    const auto raw_path = configuration->getRawPath();
-
-    if (configuration->isArchive())
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table reads from an archive. Write into archive is not supported");
-    }
-
-    if (raw_path.hasGlobsIgnorePlaceholders())
-    {
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Table is in readonly mode because of globs in path");
-    }
+    checkInsertIsPossible(configuration, local_context);
 
     if (!configuration->supportsWrites())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");

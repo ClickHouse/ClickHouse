@@ -91,6 +91,8 @@ public:
         ContextPtr context,
         bool async_insert) override;
 
+    void checkInsertIsAllowed(ContextPtr context) const override;
+
     static SinkToStoragePtr createSink(
         const StorageObjectStorageConfigurationPtr & configuration,
         const ObjectStoragePtr & object_storage,
@@ -100,6 +102,9 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const ContextPtr & context,
         const PartitionedWriteAccessCheck & write_access_check);
+
+    static void checkInsertIsPossible(
+        const StorageObjectStorageConfigurationPtr & configuration, const ContextPtr & context);
 
     void truncate(
         const ASTPtr & query,
