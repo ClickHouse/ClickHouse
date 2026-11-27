@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Checks a `min` and a `max` of `String` columns on the device against the CPU, without keys and grouped, over the
-# blocks the pipeline reads and over compressed blocks, with the strings expanded on the device and on the host.
+# Checks a `min` and a `max` of `String` columns on the device against the CPU, without keys and grouped, over
+# compressed blocks, with the strings expanded on the device and on the host.
 # Expanded on the device, both streams of a column - its bytes and the sizes of its rows - go there compressed, and
 # the device turns the sizes into offsets; the blocks are small and of an odd size, so that the two streams end in
 # the middle of each other's rows and a block ends in the middle of a size. The strings are empty, short, longer
@@ -90,19 +90,17 @@ function device_step()
     plan=$($CLICKHOUSE_CLIENT "${GPU_SETTINGS[@]}" --query "EXPLAIN $query")
     if [[ "$plan" == *"ReadFromGPUCompressedColumns"* ]]; then
         echo "compressed"
-    elif [[ "$plan" == *"GPUAggregating"* ]]; then
-        echo "blocks"
     else
         echo "cpu"
     fi
 }
 
-echo "- blocks"
+echo "- cpu"
 
-# A filter between the aggregation and the read keeps the device to the blocks the pipeline reads.
+# A filter between the aggregation and the read keeps the aggregation on the CPU, which the results match.
 WHERE="WHERE b < 200"
 SETTINGS="SETTINGS optimize_move_to_prewhere = 0"
-device_step "SELECT min(s), max(s) FROM gpu_min_max_strings $WHERE $SETTINGS" blocks
+device_step "SELECT min(s), max(s) FROM gpu_min_max_strings $WHERE $SETTINGS" cpu
 compare_with_cpu "SELECT min(s), max(s), min(t), max(t) FROM gpu_min_max_strings $WHERE $SETTINGS"
 compare_with_cpu "SELECT min(s), max(s), sum(v), min(k) FROM gpu_min_max_strings $WHERE $SETTINGS"
 compare_with_cpu "SELECT k, min(s), max(t) FROM gpu_min_max_strings $WHERE GROUP BY k ORDER BY k $SETTINGS"

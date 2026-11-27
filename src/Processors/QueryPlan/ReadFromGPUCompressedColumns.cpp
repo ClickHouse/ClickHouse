@@ -26,6 +26,7 @@
 #include <Storages/MergeTree/MergeTreeCompressedColumnsReader.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Common/JSONBuilder.h>
+#include <Common/ProfileEvents.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 
@@ -36,6 +37,11 @@
 #include <span>
 #include <string_view>
 #include <vector>
+
+namespace ProfileEvents
+{
+    extern const Event GPUDecompressionBytes;
+}
 
 namespace DB
 {
@@ -392,6 +398,7 @@ private:
             size_t remaining_bytes) override
         {
             codecOrThrow(block.method, names[column] + (stream == Stream::Sizes ? ".size" : ""), part);
+            ProfileEvents::increment(ProfileEvents::GPUDecompressionBytes, block.payload.size());
             source.stager.addCompressedBlock(
                 layoutStreamOf(column, stream), block.method, block.payload, block.decompressed_bytes, remaining_bytes, skipped, kept);
             bytes += kept;

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
-# Checks a `GROUP BY` by `String` keys on the device against the CPU: over the blocks the pipeline
-# reads, and over compressed blocks, with the strings' bytes expanded on the device and on the host.
+# Checks a `GROUP BY` by `String` keys on the device against the CPU over compressed blocks, with the strings' bytes expanded on the device and on the host.
 # The strings are empty, short and long, so that their bytes do not end where a compressed block
 # does, and there are several parts, so that the groups of the parts merge.
 #
@@ -16,7 +15,7 @@ $CLICKHOUSE_CLIENT --query "
     CREATE TABLE gpu_group_by_strings (s String, t String, k UInt16, v UInt64, i Int32, b UInt8)
     ENGINE = MergeTree ORDER BY tuple()
     SETTINGS min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1.0,
-        serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream', pack_string_sizes = 1;
+        serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream';
 
     SYSTEM STOP MERGES gpu_group_by_strings;
 "
@@ -79,19 +78,17 @@ function device_step()
     plan=$($CLICKHOUSE_CLIENT "${GPU_SETTINGS[@]}" --query "EXPLAIN $query")
     if [[ "$plan" == *"ReadFromGPUCompressedColumns"* ]]; then
         echo "compressed"
-    elif [[ "$plan" == *"GPUAggregating"* ]]; then
-        echo "blocks"
     else
         echo "cpu"
     fi
 }
 
-echo "- blocks"
+echo "- cpu"
 
-# A filter between the aggregation and the read keeps the device to the blocks the pipeline reads.
+# A filter between the aggregation and the read keeps the aggregation on the CPU, which the results match.
 WHERE="WHERE b < 200"
 SETTINGS="SETTINGS optimize_move_to_prewhere = 0"
-device_step "SELECT s, sum(v) FROM gpu_group_by_strings $WHERE GROUP BY s $SETTINGS" blocks
+device_step "SELECT s, sum(v) FROM gpu_group_by_strings $WHERE GROUP BY s $SETTINGS" cpu
 compare_with_cpu "SELECT s, sum(v), min(i), max(b) FROM gpu_group_by_strings $WHERE GROUP BY s ORDER BY s $SETTINGS"
 compare_with_cpu "SELECT s, k, sum(v), max(i) FROM gpu_group_by_strings $WHERE GROUP BY s, k ORDER BY s, k $SETTINGS"
 compare_with_cpu "SELECT t, s, min(v) FROM gpu_group_by_strings $WHERE GROUP BY t, s ORDER BY t, s $SETTINGS"

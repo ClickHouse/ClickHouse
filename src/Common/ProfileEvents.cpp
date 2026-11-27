@@ -524,9 +524,7 @@
     M(GPUAggregationRows, "Number of rows aggregated on a GPU by the experimental GPU aggregation.", ValueType::Number) \
     M(GPUAggregationBatches, "Number of batches of rows sent to a GPU by the experimental GPU aggregation. One batch is one transfer and one reduction or grouping.", ValueType::Number) \
     M(GPUAggregationMicroseconds, "Total time spent transferring batches of rows to a GPU and aggregating them there.", ValueType::Microseconds) \
-    M(GPUDecompressionMicroseconds, "Total time spent sending compressed blocks to a GPU and expanding them there.", ValueType::Microseconds) \
-    M(GPUDecompressionBytes, "Compressed bytes expanded on a GPU.", ValueType::Bytes) \
-    M(GPUDeviceWaitMicroseconds, "Total time the experimental GPU aggregation waited for the device to tell how many rows of a batch of strings it has.", ValueType::Microseconds) \
+    M(GPUDecompressionBytes, "Compressed bytes sent to a GPU to be expanded there by the experimental GPU aggregation.", ValueType::Bytes) \
     M(ExternalJoinWritePart, "Number of times a temporary file was written to disk for JOIN in external memory.", ValueType::Number) \
     M(ExternalJoinMerge, "Number of times temporary files were merged for JOIN in external memory.", ValueType::Number) \
     M(ExternalJoinCompressedBytes, "Number of compressed bytes written for JOIN in external memory.", ValueType::Bytes) \

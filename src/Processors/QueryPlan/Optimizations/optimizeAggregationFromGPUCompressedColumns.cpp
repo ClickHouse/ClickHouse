@@ -476,6 +476,15 @@ std::optional<ReadColumns> matchReducedColumns(
 
         if (!GPU::canAggregateOnDevice(key_types, argument_types, result_types, aggregate_kinds))
             GPU_COMPRESSED_REFUSE("keys or aggregated columns of types the device does not group by");
+
+        /// The read groups the rows by cuDF also without keys, which sums a `Float32` into a `Float32`, where ClickHouse
+        /// sums it into a `Float64`.
+        for (size_t i = 0; i < aggregate_kinds.size(); ++i)
+        {
+            if (aggregate_kinds[i] == GPU::GPUAggregationKind::Sum && argument_types[i]
+                && GPU::elementTypeOf(*argument_types[i]) == GPU::GPUElementType::Float32)
+                GPU_COMPRESSED_REFUSE("a sum of a Float32, which cuDF groups into a Float32");
+        }
     }
 
     return matched;
