@@ -12,6 +12,8 @@
 #if USE_AVRO
 
 #include <Columns/ColumnTuple.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
@@ -41,6 +43,12 @@ DataTypePtr makeNothingNullable(const DataTypePtr & type)
 {
     if (isNothing(type))
         return makeNullable(type);
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+        return std::make_shared<DataTypeArray>(makeNothingNullable(array_type->getNestedType()));
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+        return std::make_shared<DataTypeMap>(map_type->getKeyType(), makeNothingNullable(map_type->getValueType()));
 
     const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
     if (!tuple_type)
