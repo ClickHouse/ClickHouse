@@ -1156,8 +1156,13 @@ if (ENABLE_TESTS)
     grep_wyrd_gtest_sources("${ClickHouse_SOURCE_DIR}/src" wyrd_gtest_sources)
     clickhouse_add_executable(unit_tests_wyrd ${wyrd_gtest_sources})
 
+    # `dbms` references symbols defined in `clickhouse_functions` and `clickhouse_storages_system`
+    # (e.g. `StorageSystemNumbers`, `clearPointInPolygonCache`). Builds without function and data
+    # sections (the coverage build) cannot drop these references, so the libraries must be linked.
     target_link_libraries(unit_tests_wyrd PRIVATE
         clickhouse_wyrd_enabled
+        clickhouse_functions
+        clickhouse_storages_system
         dbms
     )
 endif ()
