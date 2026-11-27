@@ -548,3 +548,34 @@ def test_create_role_then_reference_it_no_unknown_role(started_cluster):
         assert "NO_RACE" in result, result
     finally:
         _race_cleanup(node)
+
+
+# A table with a user-chosen Keeper path can create nodes next to the access entities.
+# The name of the second node is another spelling of the id of the user.
+def test_foreign_nodes_among_entities(started_cluster):
+    node1.query("CREATE USER u_foreign")
+    user_id = node1.query("SELECT id FROM system.users WHERE name = 'u_foreign'").strip()
+    count_users = "SELECT count() FROM system.users WHERE name = 'u_foreign'"
+    try:
+        for table, name in (("q1", "evil"), ("q2", user_id.replace("-", ""))):
+            node1.query(
+                f"CREATE TABLE {table} (x UInt64) ENGINE = S3Queue('http://localhost:1/bucket/*', NOSIGN, 'CSV') "
+                f"SETTINGS mode = 'unordered', keeper_path = '/clickhouse/access/uuid/{name}'"
+            )
+
+        # The change of the list of nodes is delivered to `node2` by a watch.
+        node1.query("CREATE ROLE r_foreign")
+        assert_eq_with_retry(
+            node2, "SELECT count() FROM system.roles WHERE name = 'r_foreign'", "1\n"
+        )
+
+        node1.query("SYSTEM RELOAD USERS")
+        assert node1.query(count_users) == "1\n"
+
+        node1.restart_clickhouse()
+        assert node1.query(count_users) == "1\n"
+    finally:
+        node1.query("DROP TABLE IF EXISTS q1 SYNC")
+        node1.query("DROP TABLE IF EXISTS q2 SYNC")
+        node1.query("DROP ROLE IF EXISTS r_foreign")
+        node1.query("DROP USER IF EXISTS u_foreign")
