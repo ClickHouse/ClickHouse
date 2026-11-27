@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# `_headers` is an HTTP response-header Map only for the sources that read a response (url, URL,
-# urlCluster, Web object storage). For every other file-like storage a Hive path key of that name
-# must still resolve to the path value.
+# `_headers` is an HTTP response-header `Map` only for `url`, `URL`, `urlCluster` and `Web` object storage.
+# For every other file-like storage a Hive path key of that name must still resolve to the path value.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,7 +16,7 @@ SELECT 1;
 
 $CLICKHOUSE_CLIENT --use_hive_partitioning=1 -q "
 SELECT _headers FROM file('$DIR/_headers=abc/data.tsv', 'TSV', 'x UInt64');
--- The type pins that the Hive virtual resolves here, not a response-header Map.
+-- The type pins that the Hive virtual resolves here, not a response-header `Map`.
 SELECT toTypeName(_headers) FROM file('$DIR/_headers=abc/data.tsv', 'TSV', 'x UInt64');
 "
 
