@@ -13,14 +13,17 @@ SET allow_experimental_join_right_table_sorting = 0;
 DROP TABLE IF EXISTS sorted_probe;
 DROP TABLE IF EXISTS sorted_build;
 DROP TABLE IF EXISTS unsorted_build;
+DROP TABLE IF EXISTS different_sorted_build;
 
-CREATE TABLE sorted_probe (k UInt64, c UInt64) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE sorted_build (k UInt64, a UInt64, b Nullable(UInt64)) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE unsorted_build (k UInt64, a UInt64, b Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE sorted_probe (k UInt64, j UInt64, c UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE sorted_build (k UInt64, j UInt64, a UInt64, b Nullable(UInt64)) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE unsorted_build (k UInt64, j UInt64, a UInt64, b Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE different_sorted_build (k UInt64, j UInt64, a UInt64, b Nullable(UInt64)) ENGINE = MergeTree ORDER BY j;
 
-INSERT INTO sorted_probe SELECT number % 100, number FROM numbers(1000);
-INSERT INTO sorted_build SELECT number, number * 2, if(number % 10 = 0, NULL, number * 3) FROM numbers(100);
+INSERT INTO sorted_probe SELECT number % 100, number % 100 % 7, number FROM numbers(1000);
+INSERT INTO sorted_build SELECT number, number % 7, number * 2, if(number % 10 = 0, NULL, number * 3) FROM numbers(100);
 INSERT INTO unsorted_build SELECT * FROM sorted_build;
+INSERT INTO different_sorted_build SELECT * FROM sorted_build;
 
 SELECT count(), sum(a), sum(b) FROM sorted_probe AS l INNER JOIN sorted_build AS r ON l.k = r.k
 SETTINGS log_comment = '05814_sorted';
@@ -31,6 +34,18 @@ SETTINGS log_comment = '05814_sorted_left';
 SELECT count(), sum(a), sum(b) FROM sorted_probe AS l INNER JOIN unsorted_build AS r ON l.k = r.k
 SETTINGS log_comment = '05814_unsorted';
 
+-- The build side has a sorting key, but it starts with another column.
+SELECT count(), sum(a), sum(b) FROM sorted_probe AS l INNER JOIN different_sorted_build AS r ON l.k = r.k
+SETTINGS log_comment = '05814_other_column';
+
+-- With two keys, one key that both sides are sorted by is enough.
+SELECT count(), sum(a), sum(b) FROM sorted_probe AS l INNER JOIN sorted_build AS r ON l.k = r.k AND l.j = r.j
+SETTINGS log_comment = '05814_two_keys';
+
+-- The probe side is sorted by one key and the build side by the other.
+SELECT count(), sum(a), sum(b) FROM sorted_probe AS l INNER JOIN different_sorted_build AS r ON l.k = r.k AND l.j = r.j
+SETTINGS log_comment = '05814_two_keys_other_column';
+
 SYSTEM FLUSH LOGS text_log, query_log;
 
 SELECT log_comment, query_id IN (
@@ -38,9 +53,11 @@ SELECT log_comment, query_id IN (
     WHERE event_date >= yesterday() AND event_time >= now() - 600 AND message_format_string = '{}Initialized Row store with {} columns')
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
-    AND log_comment IN ('05814_sorted', '05814_sorted_left', '05814_unsorted') AND type = 'QueryFinish'
+    AND log_comment IN ('05814_sorted', '05814_sorted_left', '05814_unsorted', '05814_other_column', '05814_two_keys', '05814_two_keys_other_column')
+    AND type = 'QueryFinish'
 ORDER BY log_comment;
 
 DROP TABLE sorted_probe;
 DROP TABLE sorted_build;
 DROP TABLE unsorted_build;
+DROP TABLE different_sorted_build;
