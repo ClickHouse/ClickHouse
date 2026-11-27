@@ -21,7 +21,6 @@
 #include <Storages/StorageProxy.h>
 
 #include <algorithm>
-#include <optional>
 
 namespace DB
 {
@@ -42,6 +41,19 @@ bool removesColumn(const AlterCommand & command)
     return (command.type == AlterCommand::DROP_COLUMN && !command.clear) || command.type == AlterCommand::RENAME_COLUMN;
 }
 
+/// the storage columns a name reads when it resolves as written, like `tryResolveIdentifierFromStorage`: a column,
+/// a subcolumn that the type of its column has, or the flattened `Nested` group n of the columns n.x and n.y
+Names storageColumns(const String & name, const ColumnsDescription & columns)
+{
+    if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+        return {column->getNameInStorage()};
+    Names children;
+    if (name.find('.') == String::npos)
+        for (const auto & child : columns.getNested(name))
+            children.push_back(child.name);
+    return children;
+}
+
 /// the identifiers a filter reads, SQL UDF bodies included, lambda parameters and the subqueries over other tables excluded
 struct FilterNames
 {
@@ -49,18 +61,20 @@ struct FilterNames
     const ColumnsDescription & columns;
     NameSet names;
     NameSet visited_udfs;
+    /// `t.`, `db.t.` and `q.` of the checked tables that a subquery reads as `db.t AS q`
+    Strings qualifiers;
 
     /// an unqualified table binds in the database of the reader, so it counts in every database
-    bool readsCheckedTable(const ASTPtr & ast) const
+    [[nodiscard]] static bool binds(const ASTTableIdentifier & table, const StorageID & checked)
+    {
+        auto id = table.getTableId();
+        return checked.table_name == id.table_name && (id.database_name.empty() || checked.database_name == id.database_name);
+    }
+
+    [[nodiscard]] bool readsCheckedTable(const ASTPtr & ast) const
     {
         if (const auto * table = ast->as<ASTTableIdentifier>())
-        {
-            auto id = table->getTableId();
-            return std::ranges::any_of(tables, [&](const auto & checked)
-            {
-                return checked.table_name == id.table_name && (id.database_name.empty() || checked.database_name == id.database_name);
-            });
-        }
+            return std::ranges::any_of(tables, [&](const auto & checked) { return binds(*table, checked); });
         return std::ranges::any_of(ast->children, [&](const auto & child) { return readsCheckedTable(child); });
     }
 
@@ -72,6 +86,19 @@ struct FilterNames
             return;
 
         String name;
+        if (const auto * table = ast->as<ASTTableIdentifier>())
+        {
+            for (const auto & checked : tables)
+            {
+                if (!binds(*table, checked))
+                    continue;
+                qualifiers.push_back(checked.table_name + ".");
+                qualifiers.push_back(checked.database_name + "." + checked.table_name + ".");
+                if (auto alias = table->tryGetAlias(); !alias.empty())
+                    qualifiers.push_back(alias + ".");
+            }
+            return;
+        }
         if (const auto * identifier = ast->as<ASTIdentifier>())
         {
             name = identifier->name();
@@ -79,7 +106,7 @@ struct FilterNames
                 return;
             names.insert(name);
             /// a column takes priority over a SQL UDF of the same name, which a bare name calls only as a lambda, `arrayExists(udf, arr)`
-            if (columns.has(name))
+            if (!storageColumns(name, columns).empty())
                 return;
         }
         else if (const auto * function = ast->as<ASTFunction>())
@@ -102,31 +129,25 @@ struct FilterNames
     }
 };
 
-/// the storage column a name reads is its longest dotted prefix that is a column: j for j.user.name, n.x for a nested child n.x
-std::optional<String> storageColumn(String name, const ColumnsDescription & columns)
+/// a name binds as written first and with a `table.` or `db.table.` qualifier removed only after that (see
+/// `tryResolveIdentifierFromTableExpression`); an alter of a column removes the column itself, or every child of
+/// a nested one when no column has that name (see `getNameRange`)
+bool mentions(const String & name, const Strings & qualifiers, const String & column, const ColumnsDescription & columns)
 {
-    while (!columns.has(name))
-    {
-        auto dot = name.rfind('.');
-        if (dot == String::npos)
-            return {};
-        name.resize(dot);
-    }
-    return name;
-}
-
-/// a name binds as written first, an exact column or a column with a subcolumn path, and with the `table.` or `db.table.`
-/// qualifier removed only after that; an alter of a column removes the column itself, or every child of a nested one
-/// when no column has that name (see `getNameRange`)
-bool mentions(const String & name, const StorageID & table_id, const String & column, const ColumnsDescription & columns)
-{
-    std::vector<std::string_view> candidates{name};
-    for (const auto & qualifier : {table_id.table_name + ".", table_id.database_name + "." + table_id.table_name + "."})
+    Strings candidates{name};
+    for (const auto & qualifier : qualifiers)
         if (name.starts_with(qualifier))
-            candidates.push_back(std::string_view(name).substr(qualifier.size()));
+            candidates.push_back(name.substr(qualifier.size()));
     for (const auto & candidate : candidates)
-        if (auto storage_column = storageColumn(String(candidate), columns))
-            return columns.has(column) ? *storage_column == column : storage_column->starts_with(column + ".");
+    {
+        auto read = storageColumns(candidate, columns);
+        if (read.empty())
+            continue;
+        return std::ranges::any_of(read, [&](const auto & storage_column)
+        {
+            return columns.has(column) ? storage_column == column : storage_column.starts_with(column + ".");
+        });
+    }
     return false;
 }
 
@@ -178,7 +199,7 @@ void checkRowPoliciesBeforeAlter(const StoragePtr & table, const ColumnsDescript
         if (policy_tables.empty())
             continue;
 
-        FilterNames filter_names{tables, columns, {}, {}};
+        FilterNames filter_names{tables, columns, {}, {}, {}};
         for (const auto & filter : policy->filters)
         {
             if (filter.empty())
@@ -191,9 +212,11 @@ void checkRowPoliciesBeforeAlter(const StoragePtr & table, const ColumnsDescript
         {
             if (!removesColumn(command))
                 continue;
-            if (std::ranges::any_of(filter_names.names, [&](const auto & name)
+            if (std::ranges::any_of(policy_tables, [&](const auto & table_id)
                 {
-                    return std::ranges::any_of(policy_tables, [&](const auto & table_id) { return mentions(name, table_id, command.column_name, columns); });
+                    Strings qualifiers{table_id.table_name + ".", table_id.database_name + "." + table_id.table_name + "."};
+                    qualifiers.insert(qualifiers.end(), filter_names.qualifiers.begin(), filter_names.qualifiers.end());
+                    return std::ranges::any_of(filter_names.names, [&](const auto & name) { return mentions(name, qualifiers, command.column_name, columns); });
                 }))
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                     "Cannot {} column {}: row policy {} mentions it. Change or drop the policy first",
