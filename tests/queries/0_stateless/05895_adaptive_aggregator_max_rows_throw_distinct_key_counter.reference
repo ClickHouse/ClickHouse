@@ -1,0 +1,14 @@
+Staged keys: estimated
+thaws	0
+Keys of a thawed table, no aggregates: estimated
+thaws	1
+Keys of a thawed table, count: estimated
+thaws	1
+Keys of a thawed table, sum: estimated
+thaws	1
+A thawed table that takes its staged keys back: none
+100000
+thaws	1
+dropped counters: 1
+Over the limit by less than the margin: exact
+thaws	0
