@@ -91,26 +91,27 @@ void TCPServer::stop()
     if (!is_open)
         return;
 
-    {
-        /// The accept thread uses this object: it is joined even if `shutdownReceive` throws, and a failed join terminates.
-        SCOPE_EXIT({ if (accepting.exchange(false)) accept_thread.join(); });
+    /// Runs even if `shutdownReceive` throws: the accept thread uses this object (a failed join terminates).
+    SCOPE_EXIT({
+        if (accepting.exchange(false))
+            accept_thread.join();
 
-        // FIXME: On Darwin and illumos, shutdown(SHUT_RD) on a listening socket
-        // returns ENOTCONN, so accept() is not explicitly awakened.
+        // This notifies already established connections that they should stop serving
+        // queries and close their socket as soon as they can.
+        is_open = false;
+        // Stopping the accept thread leaves the socket open.
+        // To be able to hand over control of the listening port to a new server, and
+        // to get fast connection refusal instead of timeouts, we also need to close
+        // the listening socket.
+        socket.close();
+    });
+
+    // FIXME: On Darwin and illumos, shutdown(SHUT_RD) on a listening socket
+    // returns ENOTCONN, so accept() is not explicitly awakened.
 #if !defined(OS_DARWIN) && !defined(OS_SUNOS)
-        // Shutdown the listen socket before stopping tcp server to avoid 2.5second delay
-        socket.shutdownReceive();
+    // Shutdown the listen socket before stopping tcp server to avoid 2.5second delay
+    socket.shutdownReceive();
 #endif
-    }
-
-    // This notifies already established connections that they should stop serving
-    // queries and close their socket as soon as they can.
-    is_open = false;
-    // Stopping the accept thread leaves the socket open.
-    // To be able to hand over control of the listening port to a new server, and
-    // to get fast connection refusal instead of timeouts, we also need to close
-    // the listening socket.
-    socket.close();
 }
 
 void TCPServer::run()

@@ -21,7 +21,6 @@
 #include "Poco/Net/NetException.h"
 #include "Poco/NumberFormatter.h"
 #include "Poco/Timestamp.h"
-#include "Poco/Delegate.h"
 #include <memory>
 
 
@@ -32,25 +31,15 @@ namespace Net {
 HTTPServerConnection::HTTPServerConnection(const StreamSocket& socket, HTTPServerParams::Ptr pParams, HTTPRequestHandlerFactory::Ptr pFactory):
 	TCPServerConnection(socket),
 	_pParams(pParams),
-	_pFactory(pFactory),
-	_stopped(false)
+	_pFactory(pFactory)
 {
 	poco_check_ptr (pFactory);
 	
-	_pFactory->serverStopped += Poco::delegate(this, &HTTPServerConnection::onServerStopped);
 }
 
 
 HTTPServerConnection::~HTTPServerConnection()
 {
-	try
-	{
-		_pFactory->serverStopped -= Poco::delegate(this, &HTTPServerConnection::onServerStopped);
-	}
-	catch (...)
-	{
-		poco_unexpected();
-	}
 }
 
 
@@ -58,12 +47,10 @@ void HTTPServerConnection::run()
 {
 	std::string server = _pParams->getSoftwareVersion();
 	HTTPServerSession session(socket(), _pParams);
-	while (!_stopped && session.hasMoreRequests())
+	while (session.hasMoreRequests())
 	{
 		try
 		{
-			Poco::FastMutex::ScopedLock lock(_mutex);
-			if (!_stopped)
 			{
 				HTTPServerResponseImpl response(session);
 				HTTPServerRequestImpl request(response, session, _pParams);
@@ -146,37 +133,6 @@ void HTTPServerConnection::sendErrorResponse(HTTPServerSession& session, HTTPRes
 	response.setKeepAlive(false);
 	response.send();
 	session.setKeepAlive(false);
-}
-
-
-void HTTPServerConnection::onServerStopped(const bool& abortCurrent)
-{
-	_stopped = true;
-	if (abortCurrent)
-	{
-		try
-		{
-			// Note: On Windows, select() will not return if one of its socket is being
-			// shut down. Therefore we have to call close(), which works better.
-			// On other platforms, we do the more graceful thing.
-			socket().shutdown();
-		}
-		catch (...)
-		{
-		}
-	}
-	else
-	{
-		Poco::FastMutex::ScopedLock lock(_mutex);
-
-		try
-		{
-			socket().shutdown();
-		}
-		catch (...)
-		{
-		}
-	}
 }
 
 

@@ -2118,6 +2118,8 @@ The isolation is a facility of the Linux kernel. On other operating systems, `be
     DECLARE(UInt32, listen_backlog, 4096, R"(
 Backlog (queue size of pending connections) of the listen socket. The default value of `<4096>` is the same as that of linux 5.4+).
 
+It also limits the accepted connections of each listener that wait for one of the `max_connections` connection threads: when that many wait, the listener refuses new connections.
+
 Usually this value does not need to be changed, since:
 - The default value is large enough,
 - For accepting client's connections server has separate thread.

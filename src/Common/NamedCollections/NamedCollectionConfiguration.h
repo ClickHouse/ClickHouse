@@ -1,6 +1,7 @@
 #pragma once
 #include <queue>
 #include <set>
+#include <Poco/AutoPtr.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB

@@ -18,7 +18,6 @@
 #define Net_HTTPRequestHandlerFactory_INCLUDED
 
 
-#include "Poco/BasicEvent.h"
 #include "Poco/Net/Net.h"
 #include "Poco/SharedPtr.h"
 
@@ -61,14 +60,9 @@ namespace Net
         /// by setting the status of the response object that can be obtained through
         /// the request object (request.response()) to something other than 200 OK.
 
-    protected:
-        Poco::BasicEvent<const bool> serverStopped;
-
     private:
         HTTPRequestHandlerFactory(const HTTPRequestHandlerFactory &);
         HTTPRequestHandlerFactory & operator=(const HTTPRequestHandlerFactory &);
-
-        friend class HTTPServerConnection;
     };
 
 
