@@ -324,7 +324,10 @@ function restart # [static TLS surplus in bytes, for both servers]
         no_aslr_prefix="setarch $(uname -m) -R"
         if [ -n "${1:-}" ]
         then
-            tls_prefix="env GLIBC_TUNABLES=${GLIBC_TUNABLES:+$GLIBC_TUNABLES:}glibc.rtld.optional_static_tls=$1"
+            # A glibc binary moves the thread stacks by the static TLS surplus above its default of 512 bytes. A static
+            # musl binary (the release build) has no tunables: the ClickHouse fork of musl leaves a gap of the same size
+            # at the top of each new thread stack instead. Each library ignores the variable of the other.
+            tls_prefix="env GLIBC_TUNABLES=${GLIBC_TUNABLES:+$GLIBC_TUNABLES:}glibc.rtld.optional_static_tls=$1 MUSL_THREAD_STACK_GAP=$(( $1 - 512 ))"
         fi
     fi
 
@@ -1032,6 +1035,8 @@ local confirm_test confirm_test_file confirm_indexes confirm_time_left
 # stack placements and confirm a change only if it reproduces at two (step 4).
 # glibc puts the static TLS block, with its surplus (default 512), at the top of
 # every thread stack: the other two move the stacks 1/3 and 2/3 of a page lower.
+# For a static musl binary `restart` moves them by the same amounts with
+# `MUSL_THREAD_STACK_GAP`.
 local tls_surplus=("" $(( 512 + 21 * 64 )) $(( 512 + 43 * 64 )))
 local placement placements_done=0
 for placement in 0 1 2
