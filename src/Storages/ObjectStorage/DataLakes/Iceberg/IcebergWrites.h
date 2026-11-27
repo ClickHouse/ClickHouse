@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 #include <unordered_set>
+#include <variant>
 #include <Core/Range.h>
 #include <Core/SortDescription.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -57,6 +58,7 @@ struct DataFileColumnStatistics
     std::vector<std::pair<Int32, Int64>> nan_value_counts;
     std::vector<std::pair<Int32, String>> lower_bounds;
     std::vector<std::pair<Int32, String>> upper_bounds;
+    std::optional<std::vector<Int64>> split_offsets;
 };
 
 /// Per-file manifest-entry lineage (`added_snapshot_id`, data `sequence_number` and `file_sequence_number`) carried over for a manifest-only rewrite.
@@ -94,6 +96,44 @@ private:
 
 Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata);
 
+std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type);
+
+/// One file of a manifest.
+struct ManifestFileEntry
+{
+    Iceberg::IcebergPathFromMetadata path;
+    UInt64 record_count = 0;
+    UInt64 file_size_in_bytes = 0;
+    Row partition_value;
+    /// Empty for the format of the manifest.
+    String file_format = {};
+    std::optional<Int32> sort_order_id = std::nullopt;
+    /// Computed by the writer of the file (null for none), or copied verbatim from the manifest the file is carried over from.
+    std::variant<const DataFileStatistics *, DataFileColumnStatistics> statistics = static_cast<const DataFileStatistics *>(nullptr);
+    /// Unset if the new snapshot adds the file. Otherwise the file stays `EXISTING` with the lineage of the snapshot that added it.
+    std::optional<DataFileEntryLineage> existing_lineage = std::nullopt;
+};
+
+void generateManifestFile(
+    Poco::JSON::Object::Ptr metadata,
+    Poco::JSON::Object::Ptr partition_spec,
+    Int64 partition_spec_id,
+    const std::vector<String> & partition_columns,
+    const DataTypes & partition_types,
+    const std::vector<ManifestFileEntry> & entries,
+    SharedHeader sample_block,
+    Poco::JSON::Object::Ptr new_snapshot,
+    const String & format,
+    Iceberg::FileContentType content_type,
+    WriteBuffer & buf,
+    /// Override the sequence number and the snapshot id of the added entries, for a manifest regenerated with the lineage of
+    /// the snapshot that added it, which may already be expired.
+    std::optional<Int64> user_defined_sequence_number = std::nullopt,
+    std::optional<Int64> user_defined_snapshot_id = std::nullopt,
+    /// The schema of the manifest's Avro `schema` header; null for the table's current schema.
+    Poco::JSON::Object::Ptr schema_to_serialize = nullptr);
+
+/// The same with the files as parallel vectors.
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
@@ -143,11 +183,13 @@ struct ManifestListEntryCounts
     /// forward from an earlier snapshot or contains only pre-existing files (metadata-only
     /// rewrite), so its counts are reported as existing_*.
     bool counts_are_added = false;
+    Int64 existing_files_count = 0;
+    Int64 existing_rows_count = 0;
     /// When set, override the entry's `added_snapshot_id` / `sequence_number`, preserving the
     /// lineage of a manifest that was first added by an earlier snapshot and is carried
     /// forward into this manifest list.
-    std::optional<Int64> added_snapshot_id;
-    std::optional<Int64> added_sequence_number;
+    std::optional<Int64> added_snapshot_id = std::nullopt;
+    std::optional<Int64> added_sequence_number = std::nullopt;
 };
 
 void generateManifestList(
@@ -167,7 +209,38 @@ void generateManifestList(
     const std::vector<Int64> & entry_partition_spec_ids = {},
     const std::vector<ManifestPartitionSummary> & entry_partition_summaries = {},
     const std::vector<Int64> & entry_row_counts = {},
-    const std::vector<Int64> & entry_file_counts = {});
+    const std::vector<Int64> & entry_file_counts = {},
+    /// The serialized paths of the manifests of the parent snapshot not to carry over, because the new ones replace them.
+    const std::unordered_set<String> & replaced_manifest_paths = {});
+
+/// A manifest of data files written by the new snapshot, as its manifest list entry describes it.
+struct WrittenManifest
+{
+    Iceberg::IcebergPathFromMetadata path;
+    Int64 size = 0;
+    Int64 partition_spec_id = 0;
+    /// Unset for an unpartitioned table.
+    std::optional<ManifestPartitionSummary> partition_summary = std::nullopt;
+    Int64 added_files_count = 0;
+    Int64 added_rows_count = 0;
+    /// The files carried over from the manifests of the parent snapshot that this one replaces.
+    Int64 existing_files_count = 0;
+    Int64 existing_rows_count = 0;
+    /// The minimum data sequence number of the carried-over files; unset if there are none.
+    std::optional<Int64> min_existing_sequence_number = std::nullopt;
+    /// The manifests of the parent snapshot whose files this one carries over. The new manifest list does not reference them.
+    std::vector<Iceberg::IcebergPathFromMetadata> replaced_manifests = {};
+};
+
+/// The manifest list of `new_snapshot`: `manifests`, and the manifests of the parent snapshot that none of them replaces.
+void generateManifestList(
+    const Iceberg::IcebergPathResolver & path_resolver,
+    Poco::JSON::Object::Ptr metadata,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    Poco::JSON::Object::Ptr new_snapshot,
+    const std::vector<WrittenManifest> & manifests,
+    WriteBuffer & buf);
 
 class IcebergStorageSink final : public SinkToStorage
 {
@@ -235,6 +308,13 @@ private:
     void cancelBuffers();
     /// Best-effort removal of the written data files and manifests; never throws.
     void removeDataFilesAndManifests();
+    void removeManifests();
+    /// Writes a manifest of `entries`, which replaces `replaced_manifests` of the parent snapshot, and appends it to `written_manifests`.
+    void writeManifest(
+        const std::vector<ManifestFileEntry> & entries,
+        std::optional<ManifestPartitionSummary> partition_summary,
+        std::vector<Iceberg::IcebergPathFromMetadata> replaced_manifests,
+        Poco::JSON::Object::Ptr new_snapshot);
     /// Reads the latest committed metadata: on the first chunk to write the data files with it,
     /// after a commit lost to a concurrent commit to make it the base of the next attempt.
     void readLatestMetadata();
@@ -255,13 +335,10 @@ private:
     /// A commit attempt may have published the snapshot referencing the written files, so they must not be removed.
     bool commit_outcome_unknown = false;
 
-    /// The manifests are written once and reused on commit retries.
-    Strings manifest_entries_in_storage;
-    std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
-    std::vector<Int64> manifest_entry_sizes;
-    std::vector<Int64> manifest_entry_row_counts;
-    std::vector<Int64> manifest_entry_file_counts;
-    std::vector<ManifestPartitionSummary> entry_partition_summaries;
+    /// The manifests are written once and reused on commit retries, unless they depend on the parent snapshot.
+    std::vector<WrittenManifest> written_manifests;
+    /// Merged with the manifests of the parent snapshot, so a retry on top of another parent writes them again.
+    bool manifests_depend_on_parent = false;
 
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID table_id;

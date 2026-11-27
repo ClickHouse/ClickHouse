@@ -1,0 +1,11 @@
+--- the manifest of the old schema is not counted towards the threshold
+0	1	0	1
+0	1	0	2
+0	1	0	3
+--- three manifests of the current schema are merged
+0	1	0	1
+0	1	2	4
+1	\N
+2	20
+3	30
+4	40

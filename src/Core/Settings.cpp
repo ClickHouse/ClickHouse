@@ -10800,6 +10800,36 @@ snapshot, for [`use_iceberg_table_statistics_ndv`](#use_iceberg_table_statistics
 or Unity catalog throws.
 )", EXPERIMENTAL, \
         {"26.12", false, false, "New setting."}) \
+    DECLARE(Bool, iceberg_insert_merge_manifests, false, R"(
+An `INSERT` into an Iceberg table of format version 2 merges its new manifest files with the small manifest files of the
+previous snapshot, the way `MergeAppend` of Iceberg Java does, instead of only adding new manifest files. This bounds the
+number of manifest files that many small inserts leave behind, which otherwise grows with every insert and slows down
+reading until `OPTIMIZE TABLE ... MANIFEST` is run.
+
+The new manifest file of a partition takes over the entries of the newest manifest files of the previous snapshot with the
+same single partition, up to [iceberg_insert_manifest_target_size_bytes](#iceberg_insert_manifest_target_size_bytes) bytes
+of them, once there are at least [iceberg_insert_manifest_min_count_to_merge](#iceberg_insert_manifest_min_count_to_merge)
+manifest files together with the new one. Only manifest files with the partition spec, the schema and the file format of the
+insert are merged, and only of a single partition, so that `ALTER TABLE ... DROP PARTITION` keeps working. Nothing is merged
+with [iceberg_insert_single_manifest_for_all_partitions](#iceberg_insert_single_manifest_for_all_partitions).
+
+The table properties `commit.manifest-merge.enabled`, `commit.manifest.min-count-to-merge` and `commit.manifest.target-size-bytes`
+take precedence over the settings.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting."}) \
+    DECLARE(UInt64, iceberg_insert_manifest_min_count_to_merge, 100, R"(
+The minimum number of manifest files of a partition, the new manifest file of an `INSERT` into an Iceberg table included,
+before they are merged, see [iceberg_insert_merge_manifests](#iceberg_insert_merge_manifests). The default is the one of the
+Iceberg table property `commit.manifest.min-count-to-merge`, which takes precedence when set.
+)", 0, \
+        {"26.12", 100, 100, "New setting."}) \
+    DECLARE(UInt64, iceberg_insert_manifest_target_size_bytes, 8388608, R"(
+The maximum total size of the manifest files of the previous snapshot that the new manifest file of an `INSERT` into an
+Iceberg table takes over, see
+[iceberg_insert_merge_manifests](#iceberg_insert_merge_manifests). The default is the one of the Iceberg table property
+`commit.manifest.target-size-bytes`, which takes precedence when set.
+)", 0, \
+        {"26.12", 8388608, 8388608, "New setting."}) \
     DECLARE(Bool, iceberg_insert_single_manifest_for_all_partitions, false, R"(
 An `INSERT` into a partitioned Iceberg table writes one manifest file for all the partitions it touches, like Spark
 and PyIceberg, instead of one manifest file per partition. This holds per insert stream: every stream commits its own
