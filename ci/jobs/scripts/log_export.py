@@ -109,8 +109,10 @@ def get_credentials():
     if _credentials is None:
         creds_file = Path(CREDENTIALS_FILE)
         if creds_file.exists():
+            print(f"Reading CI Logs credentials from [{CREDENTIALS_FILE}]")
             _credentials = tuple(json.loads(creds_file.read_text()))
         else:
+            print(f"No [{CREDENTIALS_FILE}] - reading CI Logs credentials from AWS SSM")
             _credentials = fetch_credentials_from_aws()
     return _credentials
 
