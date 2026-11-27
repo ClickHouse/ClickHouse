@@ -1,6 +1,7 @@
 import base64
 import os.path
 import ssl
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -84,6 +85,15 @@ def execute_query_https(
         request, context=get_ssl_context(cert_name)
     ).read()
     return response.decode("utf-8")
+
+
+def assert_rejected(node, cert_name, reason):
+    # Every failed authentication is HTTP 403, so the reason is checked as well: otherwise a
+    # request rejected for another reason than the tested one would pass the test.
+    with pytest.raises(urllib.error.HTTPError) as err:
+        execute_query_https(node, "SELECT currentUser()", cert_name=cert_name)
+    assert err.value.code == 403
+    assert reason in err.value.read().decode("utf-8")
 
 
 def test_cert_only_authentication():
@@ -218,16 +228,27 @@ def test_cn_extraction_with_regexp():
         == "alice\n"
     )
 
+    # Without the regular expression the whole Common Name is the user name: no such user.
+    assert_rejected(node_cn, "client_uid", "Authentication failed")
+
+
+def test_cn_not_matching_regexp_is_rejected():
+    no_user_name = "Got an empty user name from TLS client certificate"
+
     # The Common Name 'client1' does not match the regular expression: there is no user name to
     # extract and the authentication fails, although the user 'client1' exists.
-    with pytest.raises(Exception) as err:
-        execute_query_https(node_cn_regexp, "SELECT currentUser()", cert_name="client1")
-    assert "403" in str(err.value)
+    assert_rejected(node_cn_regexp, "client1", no_user_name)
 
-    # Without the regular expression the whole Common Name is the user name: no such user.
-    with pytest.raises(Exception) as err:
-        execute_query_https(node_cn, "SELECT currentUser()", cert_name="client_uid")
-    assert "403" in str(err.value)
+    # The regular expression matches only a part of the Common Name 'xuid=alice,ou=Engineering'
+    # of 'client_uid_prefix-cert.pem'. It has to match the whole value, so 'alice' is not extracted.
+    assert_rejected(node_cn_regexp, "client_uid_prefix", no_user_name)
+
+
+def test_regexp_does_not_bypass_subject_check():
+    # 'client_uid_other_ou-cert.pem' has the Common Name 'uid=alice,ou=Sales': the regular
+    # expression extracts the user name 'alice' from it, but the user 'alice' is configured with
+    # the Common Name 'uid=alice,ou=Engineering', so the certificate does not authenticate it.
+    assert_rejected(node_cn_regexp, "client_uid_other_ou", "Authentication failed")
 
 
 def test_san_uri_extraction():
@@ -251,5 +272,12 @@ def test_san_uri_extraction():
                 node_san_uri, "SELECT currentUser()", cert_name="client1"
             )
         assert "403" in str(err.value)
+
+        # 'client_two_uris-cert.pem' has two URI entries, 'spiffe://foo.com/bar' and
+        # 'spiffe://foo.com/baz'. The first one is the name of the user and matches its configured
+        # subject, but the user name is ambiguous, so the authentication fails.
+        assert_rejected(
+            node_san_uri, "client_two_uris", "multiple Subject Alternative Name"
+        )
     finally:
         node_san_uri.query(f"DROP USER IF EXISTS '{user_name}'")
