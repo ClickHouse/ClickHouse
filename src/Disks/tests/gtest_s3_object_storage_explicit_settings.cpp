@@ -17,12 +17,19 @@
 #include <IO/S3/URI.h>
 #include <IO/S3RequestSettings.h>
 #include <IO/S3Settings.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <Interpreters/Context.h>
 
 namespace DB::S3RequestSetting
 {
     extern const S3RequestSettingsString upload_checksum_algorithm;
     extern const S3RequestSettingsString delete_checksum_algorithm;
+    extern const S3RequestSettingsUInt64 upload_part_size_multiply_parts_count_threshold;
+}
+
+namespace DB::ErrorCodes
+{
+    extern const int INVALID_SETTING_VALUE;
 }
 
 using namespace DB;
@@ -121,6 +128,35 @@ TEST(S3ObjectStorage, EndpointSettingsApplyWithoutExplicitSettings)
     auto settings = applyNewSettings({});
     EXPECT_EQ(settings.request_settings[S3RequestSetting::upload_checksum_algorithm].value, "MD5");
     EXPECT_EQ(settings.request_settings[S3RequestSetting::delete_checksum_algorithm].value, "MD5");
+}
+
+/// The stored settings of a table are not validated, so a write without a query context validates them itself.
+TEST(S3ObjectStorage, WriteWithoutQueryContextValidatesStoredSettings)
+{
+    auto context = getContext().context;
+    S3::URI uri("http://localhost:11111/test/explicit_settings/data.csv");
+    auto stored_settings = std::make_unique<S3Settings>();
+    stored_settings->request_settings[S3RequestSetting::upload_part_size_multiply_parts_count_threshold] = 0;
+    S3ObjectStorage storage(
+        createClient(uri),
+        std::move(stored_settings),
+        uri,
+        S3Capabilities{},
+        /* key_generator_= */ nullptr,
+        "StorageS3",
+        /* for_disk_s3_= */ false,
+        /* credentials_refresh_callback_= */ S3ObjectStorage::S3CredentialsRefreshCallback{},
+        context->shouldRestrictUserQueryS3Credentials());
+
+    try
+    {
+        storage.writeObject(StoredObject("data.csv"), WriteMode::Rewrite);
+        FAIL() << "writeObject accepted a zero upload_part_size_multiply_parts_count_threshold";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::INVALID_SETTING_VALUE) << e.message();
+    }
 }
 
 #endif
