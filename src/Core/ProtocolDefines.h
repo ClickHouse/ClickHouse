@@ -271,6 +271,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_L
 /// name is not written: the older peer does not store `String` columns in the hash join row store, so the setting has
 /// no effect there.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES = 21;
+/// First query-plan serialization version that carries the set operation of `Join` and the `skip_deduplication` and
+/// `deduplicates_except_join` flags of `Distinct`. Below it, the join of a set operation is not sent.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_OPERATION_AS_JOIN = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
@@ -402,6 +405,12 @@ static constexpr auto DBMS_MIN_REVISION_WITH_INSERT_RETURNING = 54495;
 /// `INSERT`) after it has received all the data. Older initiators do not expect it.
 static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_SECONDARY_INSERT = 54496;
 
+/// Send the number of rows of a block that has no columns. Such a block is not empty: its rows carry
+/// no values, which is what a shard produces for a query whose intermediate result needs nothing from
+/// it, e.g. `SELECT count() OVER () FROM distributed_table WHERE x > 0`. The count cannot be derived
+/// from the columns, and an older receiver rejects a column-less block that declares rows.
+static constexpr auto DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT = 54498;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -410,5 +419,5 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_SECONDARY
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54497;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54498;
 }

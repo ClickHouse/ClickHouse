@@ -27,9 +27,14 @@ public:
 
     bool isLast() { return finished.fetch_add(1) + 1 >= total; }
 
+    /// A probe stream whose input ended before the build finished, so it does not need the build side.
+    void addEmptyProbeStream() { empty_probe_streams.fetch_add(1); }
+    bool allProbeStreamsEmpty() const { return empty_probe_streams.load() >= total; }
+
 private:
     const size_t total;
     std::atomic_size_t finished{0};
+    std::atomic_size_t empty_probe_streams{0};
 };
 
 using FinishCounterPtr = std::shared_ptr<FinishCounter>;
@@ -107,6 +112,7 @@ private:
     bool has_virtual_row = false;
     bool stop_reading = false;
     bool process_non_joined = true;
+    bool stream_probe_empty = false;
     bool is_drained = false;
     bool is_last_drained = false;
 
