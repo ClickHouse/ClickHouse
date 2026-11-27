@@ -1,7 +1,7 @@
-#include <Interpreters/DiskSetImpl.h>
+#include <Interpreters/DiskSet/Impl.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <Interpreters/DiskSetBlockReader.h>
+#include <Interpreters/DiskSet/BlockReader.h>
 #include <base/sort.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>

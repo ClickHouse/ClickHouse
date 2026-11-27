@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/DiskSetImpl.h>
+#include <Interpreters/DiskSet/Impl.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/TemporaryFileFrameReader.h>

@@ -1,4 +1,4 @@
-#include <Interpreters/DiskSetKeys.h>
+#include <Interpreters/DiskSet/Keys.h>
 
 #include <Columns/ColumnsCommon.h>
 #include <Common/RadixSort.h>

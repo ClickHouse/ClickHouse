@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Interpreters/DiskSet.h>
-#include <Interpreters/DiskSetBlockCache.h>
-#include <Interpreters/DiskSetBlockFilters.h>
-#include <Interpreters/DiskSetBlockFormat.h>
+#include <Interpreters/DiskSet/DiskSet.h>
+#include <Interpreters/DiskSet/BlockCache.h>
+#include <Interpreters/DiskSet/BlockFilters.h>
+#include <Interpreters/DiskSet/BlockFormat.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/TemporaryFileFrameReader.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -157,7 +157,7 @@ private:
 
     std::optional<typename BlockFormat::Encoder> encoder;
 
-    /// Reads the blocks of the file for one lookup call. `DiskSetBlockReader.h` defines it.
+    /// Reads the blocks of the file for one lookup call. `BlockReader.h` defines it.
     class BlockReader;
 
     /// The set counts the keys of its pending block too, so that the limit on rows sees every key.

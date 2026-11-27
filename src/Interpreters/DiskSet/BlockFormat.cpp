@@ -1,4 +1,4 @@
-#include <Interpreters/DiskSetBlockFormat.h>
+#include <Interpreters/DiskSet/BlockFormat.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
