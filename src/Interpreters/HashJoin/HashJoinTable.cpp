@@ -3,6 +3,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
+#include <base/sanitizer_defs.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/joinDispatch.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
@@ -180,7 +181,9 @@ size_t HashJoinTable::cellSize() const
         maps);
 }
 
+/// The keys are reinterpreted signed values, so the range is computed in wrapping unsigned arithmetic.
 template <bool is_signed, typename Key, typename Maps>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 bool HashJoinTable::tryConvertToFixedHashMapImpl(Maps & maps_)
 {
     using SignedKey = std::make_signed_t<Key>;
@@ -232,7 +235,7 @@ bool HashJoinTable::tryConvertToFixedHashMapImpl(Maps & maps_)
     size_t range = static_cast<size_t>(max_key - min_key) + 1;
 
     using Mapped = typename Maps::MappedType;
-    auto convert_to_fixed_hash_map = [&]<size_t size_bits, Type range_type>()
+    auto convert_to_fixed_hash_map = [&]<size_t size_bits, Type range_type>() NO_SANITIZE_UNSIGNED_OVERFLOW
     {
         using RangeMap = HashJoin::JoinFixedHashMapWithSizeBits<Key, Mapped, size_bits>;
         auto range_map = std::make_shared<RangeMap>();
@@ -343,7 +346,7 @@ ColumnPtr probeFixedHashMap(
                 constexpr T t_hi = static_cast<T>(std::numeric_limits<BuildKey>::max());
                 const T * src = typed_col.getData().data();
 
-                auto probe_one = [&](size_t i) -> UInt8
+                auto probe_one = [&](size_t i) NO_SANITIZE_UNSIGNED_OVERFLOW -> UInt8
                 {
                     const T v = src[i];
                     if (v < t_lo || v > t_hi)

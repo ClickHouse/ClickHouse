@@ -1101,7 +1101,10 @@ const ColumnString & unwrapLeaf(const IColumn & column, const NullMap *& out_nul
         out_null_map = nullable->tryGetNullMapData();
         inner = &nullable->getNestedColumn();
     }
-    return assert_cast<const ColumnString &>(*inner);
+    const auto * string = typeid_cast<const ColumnString *>(inner);
+    if (!string)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed Parquet variant: metadata and value leaves must be binary strings");
+    return *string;
 }
 
 struct JSONNode
@@ -1291,7 +1294,7 @@ public:
             {
                 const auto & array = assert_cast<const ColumnArray &>(column);
                 const auto & nested_type = *assert_cast<const DataTypeArray &>(type).getNestedType();
-                const size_t begin = array.getOffsets()[row - 1];
+                const size_t begin = array.getOffsets()[static_cast<ssize_t>(row) - 1];
                 ArrayLayout::serialize(
                     array.getOffsets()[row] - begin,
                     [&](size_t i, String & values) { encodeNested(array.getData(), nested_type, begin + i, 1, values); },
@@ -1324,7 +1327,7 @@ public:
                 const auto & nested = assert_cast<const ColumnMap &>(column).getNestedColumn();
                 const auto & map_keys = assert_cast<const ColumnTuple &>(nested.getData()).getColumn(0);
                 const auto & map_values = assert_cast<const ColumnTuple &>(nested.getData()).getColumn(1);
-                const size_t begin = nested.getOffsets()[row - 1];
+                const size_t begin = nested.getOffsets()[static_cast<ssize_t>(row) - 1];
 
                 VectorWithMemoryTracking<std::string_view> row_keys(nested.getOffsets()[row] - begin);
                 for (size_t i = 0; i < row_keys.size(); ++i)

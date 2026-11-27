@@ -57,8 +57,10 @@ size_t adaptiveSpillMinBytes(const Aggregator::Params & params)
 /// Growing set states also retain distinct arguments, even when their group keys repeat. Their estimated
 /// payload is added to the per-key state cost. Switching in the middle of a stream retains the staged records
 /// as well as the new table, so the estimated state cost gets the same hysteresis as the calibrated bound of
-/// cheap states: both are multiplied by `adaptive_thaw_state_cost_multiplier`. Multiplication by the record
-/// count avoids division, and 128-bit products accommodate streams of billions of records without overflow.
+/// cheap states: both are multiplied by `adaptive_thaw_state_cost_multiplier`. The only producer of an
+/// aggregation weighs both once, because nothing merges its table on the ordinary path (see
+/// `adaptive_thaw_lone_producer_state_cost_multiplier`). Multiplication by the record count avoids division,
+/// and 128-bit products accommodate streams of billions of records without overflow.
 bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adaptive) const
 {
     if (!params.adaptiveMayThaw())
@@ -67,7 +69,7 @@ bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adap
     const auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
     const size_t distinct = frozen.getEstimatedStagedKeyCount();
     if (frozen.staged_records < adaptive_thaw_min_staged_records
-        || frozen.staged_records * adaptive_thaw_staged_share_inverse < frozen.rows
+        || (!adaptive.session->hasLoneProducer() && frozen.staged_records * adaptive_thaw_staged_share_inverse < frozen.rows)
         || frozen.staged_records <= distinct)
         return false;
 
@@ -75,8 +77,12 @@ bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adap
     const UInt128 state_bytes = static_cast<UInt128>(retained_bytes_per_key) * distinct
         + static_cast<UInt128>(adaptive_state_bytes_per_distinct_input) * frozen.getEstimatedDistinctInputCount();
 
+    const size_t state_cost_multiplier = adaptive.session->hasLoneProducer()
+        ? adaptive_thaw_lone_producer_state_cost_multiplier
+        : adaptive_thaw_state_cost_multiplier;
+
     return static_cast<UInt128>(frozen.staged_records - distinct) * frozen.staged_bytes
-        > state_bytes * frozen.staged_records * adaptive_thaw_state_cost_multiplier;
+        > state_bytes * frozen.staged_records * state_cost_multiplier;
 }
 
 void Aggregator::accountStagedBatch(
@@ -514,7 +520,7 @@ size_t Aggregator::spillAdaptiveProducer(
         return released;
 
     const size_t before = result.memoryUsage();
-    spillAdaptiveTable(result, adaptive, before + params.min_free_disk_space);
+    spillAdaptiveTable(result, adaptive, getTemporaryFileReserveSize(before, params.min_free_disk_space));
     const size_t after = result.memoryUsage();
     return released + (before > after ? before - after : 0);
 }
@@ -582,7 +588,7 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, Pa
             continue;
 
         const UInt64 partition_bytes = shared.spilled_partitions[partition].append(
-            shared.spill_scope, partitions, partition, unwritten_bytes + params.min_free_disk_space, space_check);
+            shared.spill_scope, partitions, partition, getTemporaryFileReserveSize(unwritten_bytes, params.min_free_disk_space), space_check);
         unwritten_bytes -= std::min<size_t>(unwritten_bytes, partition_bytes);
         spilled_bytes += partition_bytes;
         partitions.releasePartition(partition);
@@ -674,7 +680,7 @@ bool Aggregator::adaptiveTopKPruningFreesStaging(AggregatedDataVariants & table,
     return adaptive_thaw_pruned_share_inverse * adaptive.count_bins.rowsInBinsBelow(*top / divisor) >= frozen.staged_records;
 }
 
-std::optional<bool> Aggregator::adaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const
+std::optional<Aggregator::AdaptiveStagingVerdict> Aggregator::adaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const
 {
     /// A run measures the verdict only when some producer froze and the producers could thaw: a run that may
     /// not thaw gathers no evidence, and keeping its tables frozen whatever the repeats is what it asked for.
@@ -685,28 +691,28 @@ std::optional<bool> Aggregator::adaptiveStagingVerdict(const AdaptiveAggregation
     /// threads in every run, and its later runs take 1.23 times as long when they stay adaptive.
     if (!shared.frozen_producers || !params.adaptiveMayThaw())
         return std::nullopt;
-    return 2 * shared.thawed_producers >= shared.frozen_producers;
+    return AdaptiveStagingVerdict{
+        .lone_producer = shared.hasLoneProducer(), .repeat_dominated = 2 * shared.thawed_producers >= shared.frozen_producers};
 }
 
-/// The flushed variants' sizes are meaningless by the time the external path finishes, so a stored entry keeps its
-/// sizes: only the verdict is written, and only when the run measured one.
+/// The flushed variants' sizes are meaningless by the time the external path finishes, so a stored entry
+/// keeps its sizes and the verdict of the other kind of run: only the verdict of this run is written, and
+/// only when the run measured one.
 void Aggregator::recordAdaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const
 {
     const auto & stats_params = params.stats_collecting_params;
     if (!stats_params.isCollectionAndUseEnabled())
         return;
 
-    const auto repeat_dominated = adaptiveStagingVerdict(shared);
-    if (!repeat_dominated)
+    const auto verdict = adaptiveStagingVerdict(shared);
+    if (!verdict)
         return;
 
     auto & stats = getHashTablesStatistics<AggregationEntry>();
-    AggregationEntry entry{.adaptive_staging_repeat_dominated = *repeat_dominated};
+    AggregationEntry entry;
     if (const auto prev = stats.getSizeHint(stats_params))
-    {
-        entry.sum_of_sizes = prev->sum_of_sizes;
-        entry.median_size = prev->median_size;
-    }
+        entry = *prev;
+    entry.adaptiveStagingRepeatDominated(verdict->lone_producer) = verdict->repeat_dominated;
     stats.update(entry, stats_params);
 }
 

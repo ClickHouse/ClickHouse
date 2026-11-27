@@ -216,7 +216,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
     {
         /// Several clauses have no required right keys (see the `HashJoin` constructor), and the probe never
         /// scatters a block, so only these copies can run.
-        if constexpr (need_filter == join_features.need_filter)
+        if constexpr (need_filter == join_features.need_filter && !join_features.one_clause_only)
         {
             if (selector.isContinuousRange())
             {
@@ -271,9 +271,9 @@ template <
     typename AddedColumns>
 requires SetJoinMaps<MapsTemplate>
 void processMatch(
-    const typename KeyGetter::FindResult &,
+    [[maybe_unused]] const typename KeyGetter::FindResult & find_result,
     [[maybe_unused]] AddedColumns & added_columns,
-    JoinStuff::JoinUsedFlags &,
+    [[maybe_unused]] JoinStuff::JoinUsedFlags & used_flags,
     [[maybe_unused]] size_t i,
     size_t,
     IColumn::Offset &,
@@ -282,11 +282,20 @@ void processMatch(
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
     static_assert(
-        join_features.left && (join_features.is_semi_join || join_features.is_anti_join),
-        "A set map is only chosen for LEFT SEMI and LEFT ANTI");
+        (join_features.left && (join_features.is_semi_join || join_features.is_anti_join))
+            || (join_features.inner && join_features.is_any_join),
+        "A set map is only chosen for LEFT SEMI, LEFT ANTI and INNER ANY");
 
     if constexpr (join_features.is_semi_join)
+    {
         setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
+    }
+    else if constexpr (join_features.inner)
+    {
+        /// Only the first left row of a key is emitted. A set map has one disjunct, so the key is marked, not the row.
+        if (used_flags.template setUsedOnce<join_features.need_flags, /*flag_per_row=*/ false>(find_result))
+            setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
+    }
 }
 
 template <
@@ -562,7 +571,7 @@ static ColumnPtr buildAdditionalFilter(
                 auto new_col = src_col->column->cloneEmpty();
                 for (size_t i = 0; i < row_replicate_offset.size(); ++i)
                 {
-                    size_t rows = row_replicate_offset[i] - row_replicate_offset[i - 1];
+                    size_t rows = row_replicate_offset[i] - row_replicate_offset[static_cast<ssize_t>(i) - 1];
                     if (rows)
                     {
                         new_col->insertManyFrom(*src_col->column, selector[i], rows);
@@ -723,7 +732,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
 
         [[maybe_unused]] UInt64 matched_left = 0;
         size_t prev_replicated_row = 0;
-        auto * selected_right_row_it = selected_rows.begin();
         size_t find_result_index = 0;
         for (size_t i = 0, n = row_replicate_offset.size(); i < n; ++i)
         {
@@ -735,7 +743,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                 {
                     if (filter_flags[replicated_row])
                     {
-                        const UInt64 selected_ref = *selected_right_row_it;
+                        const UInt64 selected_ref = selected_rows[replicated_row];
                         if constexpr (join_features.is_semi_join || join_features.is_any_join)
                         {
                             /// For LEFT/INNER SEMI/ANY JOIN, we need to add only first appeared row from left,
@@ -780,8 +788,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                             used_flags.template setUsed<join_features.need_flags, true>(refWordBlockNo(selected_ref), refWordRowNo(selected_ref), 0);
                         }
                     }
-
-                    ++selected_right_row_it;
                 }
             }
             else
@@ -797,22 +803,19 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                         if (filter_flags[replicated_row])
                         {
                             any_matched = true;
-                            added_columns.appendFromBlock(*selected_right_row_it);
+                            added_columns.appendFromBlock(selected_rows[replicated_row]);
                             total_added_rows += 1;
                         }
-                        ++selected_right_row_it;
                     }
-                    else
+                    else if (filter_flags[replicated_row])
                     {
-                        if (filter_flags[replicated_row])
+                        any_matched = used_flags.template setUsedOnce<join_features.need_flags, false>(find_results[find_result_index]);
+                        if (any_matched)
                         {
-                            any_matched = true;
-                            added_columns.appendFromBlock(*selected_right_row_it);
-                            total_added_rows += 1;
-                            selected_right_row_it = selected_right_row_it + row_replicate_offset[i] - replicated_row;
-                            break;
+                            added_columns.appendFromBlock(selected_rows[replicated_row]);
+                            ++total_added_rows;
                         }
-                        ++selected_right_row_it;
+                        break;
                     }
                 }
             }
@@ -836,8 +839,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                 }
                 else
                 {
-                    if (!flag_per_row)
-                        used_flags.template setUsed<join_features.need_flags, false>(find_results[find_result_index]);
                     if (need_filter)
                         setUsed<true>(added_columns.filter, i, added_columns.matched_rows);
                 }

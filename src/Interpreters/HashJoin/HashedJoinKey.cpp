@@ -232,8 +232,8 @@ void HashedJoinKey::buildRange(size_t begin, size_t end, UInt128 * __restrict ke
 
             /// Moves the key of `rows[i]` from `chunk_keys[i]` to its row. A key moves to the same or a later position, so
             /// the keys are moved from the last one on.
-            for (size_t i = num_rows; i-- > 0;)
-                chunk_keys[rows[i] - chunk_begin] = chunk_keys[i];
+            for (size_t i = num_rows; i > 0; --i)
+                chunk_keys[rows[i - 1] - chunk_begin] = chunk_keys[i - 1];
         }
     }
 

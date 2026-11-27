@@ -19,7 +19,9 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "The setting is no longer experimental. The default is unchanged."}]}]}/>
 
-Initial number of grace hash join buckets
+The number of buckets the `grace_hash` join algorithm starts with. The rows of both tables are distributed between the buckets by the hash of the join keys; only one bucket is kept in memory, and the others are written to disk and joined later. When the bucket in memory exceeds the memory limits, the number of buckets is doubled, up to `grace_hash_join_max_buckets`.
+
+The value is rounded up to a power of two. A larger value avoids redistributing rows when the right table is known to be large, at the cost of more temporary files.
 
 ## grace_hash_join_max_buckets {#grace_hash_join_max_buckets}
 

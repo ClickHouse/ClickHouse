@@ -94,6 +94,9 @@ private:
 
     DataTypePtr & argument_type;
 
+    /// The weight is `UInt128` or `UInt256`, see `getWeight`.
+    bool weight_is_wide = false;
+
 public:
     AggregateFunctionQuantile(const DataTypes & argument_types_, const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, SecondArgumentType, FloatReturnType, returns_many, has_accuracy_parameter>>(
@@ -114,6 +117,12 @@ public:
                     "Second argument (weight) for function {} must be unsigned integer, but it has type {}",
                     Name::name,
                     argument_types_[1]->getName());
+            /// Only a weight is checked: the determinator of `quantileDeterministic` may be any value of its type.
+            if constexpr (!requires { Data::second_argument_is_determinator; })
+            {
+                const WhichDataType which_weight(argument_types_[1]);
+                weight_is_wide = which_weight.isUInt128() || which_weight.isUInt256();
+            }
         }
         else if constexpr (std::is_same_v<SecondArgumentType, Float64>)
         {
@@ -250,11 +259,27 @@ public:
         }
 
         if constexpr (std::is_same_v<SecondArgumentType, UInt64>)
-            this->data(place).add(value, columns[1]->getUInt(row_num));
+            this->data(place).add(value, getWeight(*columns[1], row_num));
         else if constexpr (std::is_same_v<SecondArgumentType, Float64>)
             this->data(place).add(value, columns[1]->getFloat64(row_num));
         else
             this->data(place).add(value);
+    }
+
+    /// The weights are `UInt64`: `getUInt` would narrow a wider one silently, so it is checked in its own type.
+    [[nodiscard]] UInt64 getWeight(const IColumn & column, size_t row_num) const
+    {
+        if (unlikely(weight_is_wide))
+        {
+            const Field weight = column[row_num];
+            const bool fits = weight.getType() == Field::Types::UInt128
+                ? weight.safeGet<UInt128>() <= std::numeric_limits<UInt64>::max()
+                : weight.safeGet<UInt256>() <= std::numeric_limits<UInt64>::max();
+            if (!fits)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The weight {} of function {} is too large: weights are at most the maximum of UInt64",
+                    weight.dump(), Name::name);
+        }
+        return column.getUInt(row_num);
     }
 
     void addBatchSinglePlace(

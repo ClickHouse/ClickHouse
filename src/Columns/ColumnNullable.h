@@ -296,15 +296,15 @@ public:
 
     /// Whether the column has a null map. If it does not, the column has no NULLs.
     /// If it does, the column may or may not have NULLs.
-    bool hasNullMap() const { return null_map != nullptr; }
+    [[nodiscard]] bool hasNullMap() const { return null_map != nullptr; }
 
     /// Return the null map, or nullptr if the column has no null map (and so has no NULLs).
-    const ColumnUInt8 * tryGetNullMapColumn() const
+    [[nodiscard]] const ColumnUInt8 * tryGetNullMapColumn() const
     {
         return hasNullMap() ? &assert_cast<const ColumnUInt8 &>(*null_map) : nullptr;
     }
 
-    ConstNullMapPtr tryGetNullMapData() const
+    [[nodiscard]] ConstNullMapPtr tryGetNullMapData() const
     {
         const auto * map = tryGetNullMapColumn();
         return map ? &map->getData() : nullptr;
@@ -312,10 +312,10 @@ public:
 
     /// Return the data of the null map, or a pointer to zeros if the column has no null map.
     /// For the code reading the null map by a raw pointer.
-    const UInt8 * getNullMapRawDataOrZeros() const;
+    [[nodiscard]] const UInt8 * getNullMapRawDataOrZeros() const;
 
     /// Can be passed to `ColumnNullable::create` to create a column with the same NULLs.
-    ColumnPtr tryGetNullMapColumnPtr() const { return hasNullMap() ? ColumnPtr(null_map) : ColumnPtr(); }
+    [[nodiscard]] ColumnPtr tryGetNullMapColumnPtr() const { return hasNullMap() ? ColumnPtr(null_map) : ColumnPtr(); }
 
     /// Return the column that represents the byte map, to modify it. These methods create the null map if it is absent.
     /// There are no const variants: the readers use `tryGetNullMapColumn`, `tryGetNullMapData`, or `tryGetNullMapColumnPtr`.

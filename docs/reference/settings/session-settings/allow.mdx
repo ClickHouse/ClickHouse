@@ -225,7 +225,9 @@ Disabling this refuses reads only: creating, attaching, dropping and describing 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Allow execute multiIf function columnar
+Allows the `multiIf` function to compute its result for a whole column at once instead of row by row, which is faster.
+
+The columnar execution is used only if the result type is a number, `Decimal`, a date or date-time type, `Enum`, `IPv4` or `IPv6`, and the function has at most 255 branches. In other cases the row-by-row execution is used regardless of this setting.
 
 ## allow_expire_snapshots {#allow_expire_snapshots}
 

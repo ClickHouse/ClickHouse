@@ -2,16 +2,12 @@
 slug: /cloud/managed-postgres/guides/cloudflare-workers
 sidebarTitle: 'Cloudflare Workers'
 title: 'استخدام Cloudflare Workers مع ClickHouse Managed Postgres'
-description: 'الاستعلام عن ClickHouse Managed Postgres من Cloudflare Worker عبر Hyperdrive باستخدام node-postgres، مع اتصال TLS موثَّق، وبيئة تطوير محلية، ونشر التطبيق على workers.dev'
+description: 'الاستعلام عن ClickHouse Managed Postgres من Cloudflare عامل عبر Hyperdrive باستخدام node-postgres، مع اتصال TLS موثَّق، وبيئة تطوير محلية، ونشر التطبيق على workers.dev'
 keywords: ['managed postgres', 'cloudflare', 'cloudflare workers', 'hyperdrive', 'wrangler', 'node-postgres', 'pg', 'serverless', 'edge', 'tls', 'verify-full']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-cloudflare-workers-beta" />
-
-تُشغّل [Cloudflare Workers](https://developers.cloudflare.com/workers/) شيفرتك على شبكة Cloudflare، في حين يحتفظ [Hyperdrive](https://developers.cloudflare.com/hyperdrive/) بمجمّع اتصالات من تلك الشبكة إلى قاعدة بياناتك، فلا يضطر كل طلب إلى تحمّل تكلفة مصافحة TCP وTLS جديدة. في هذا الدليل، ستُنشئ تهيئة Hyperdrive تتحقق من شهادة المثيل الخاص بك، ثم تبني Worker بلغة TypeScript يُنشئ الصفوف ويقرؤها باستخدام [`node-postgres`](https://node-postgres.com/) (`pg`)، وتُشغّله محليًا باستخدام `wrangler dev`، وأخيرًا تنشره على `workers.dev`.
+تُشغّل [Cloudflare Workers](https://developers.cloudflare.com/workers/) شيفرتك على شبكة Cloudflare، في حين يحتفظ [Hyperdrive](https://developers.cloudflare.com/hyperdrive/) بمجمّع اتصالات من تلك الشبكة إلى قاعدة بياناتك، فلا يضطر كل طلب إلى تحمّل تكلفة مصافحة TCP وTLS جديدة. في هذا الدليل، ستُنشئ تهيئة Hyperdrive تتحقق من شهادة المثيل الخاص بك، ثم تبني عاملًا بلغة TypeScript يُنشئ الصفوف ويقرؤها باستخدام [`node-postgres`](https://node-postgres.com/) (`pg`)، وتُشغّله محليًا باستخدام `wrangler dev`، وأخيرًا تنشره على `workers.dev`.
 
 ## المتطلبات الأساسية {#prerequisites}
 

@@ -14,9 +14,7 @@ doc_type: 'reference'
   同じスキーマ内でも、オブジェクトごとに異なる手法を適用できます。たとえば、`String` 型で扱うのが適したオブジェクトもあれば、`Map` 型で扱うのが適したオブジェクトもあります。`String` 型を一度選べば、それ以上スキーマに関する判断を行う必要はありません。一方で、以下に示すように、`Map` のキーの下にサブオブジェクトをネストすることもでき、JSON を表す `String` を含めることも可能です。
 </Info>
 
-<div id="using-string">
-  ## String 型の使用
-</div>
+## String 型の使用 {#using-string}
 
 オブジェクトが非常に動的で、予測可能な構造を持たず、任意にネストされたオブジェクトを含む場合は、`String` 型を使用する必要があります。値は、以下で示すように JSON 関数を使ってクエリ時に抽出できます。
 
@@ -39,7 +37,7 @@ CREATE TABLE people
     `tags` String
 )
 ENGINE = MergeTree
-ORDER BY username
+ORDER BY username;
 
 INSERT INTO people FORMAT JSONEachRow
 {"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021"}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
@@ -167,9 +165,7 @@ String 関数は、インデックスを使った明示的な型変換に比べ�
 
 このアプローチは柔軟である一方、パフォーマンスと構文の両面で明確なコストを伴うため、スキーマ内で非常に動的なオブジェクトに対してのみ使用すべきです。
 
-<div id="simple-json-functions">
-  ### シンプルな JSON 関数
-</div>
+### シンプルな JSON 関数 {#simple-json-functions}
 
 上記の例では、JSON* 関数ファミリーを使用しています。これらは [simdjson](https://github.com/simdjson/simdjson) ベースのフル機能の JSON パーサーを利用しており、厳密にパースを行い、異なるレベルにネストされた同じフィールドを区別します。これらの関数は、構文的には正しいものの整形が不十分な JSON も扱えます。たとえば、キーの間にスペースが 2 つ入っている場合です。
 

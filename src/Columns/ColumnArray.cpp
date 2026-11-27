@@ -153,7 +153,7 @@ MutableColumnPtr ColumnArray::cloneResized(size_t to_size) const
         /// Just cut column.
 
         res->getOffsets().assign(getOffsets().begin(), getOffsets().begin() + to_size);
-        res->getData().insertRangeFrom(getData(), 0, getOffsets()[to_size - 1]);
+        res->getData().insertRangeFrom(getData(), 0, getOffsets()[static_cast<ssize_t>(to_size) - 1]);
     }
     else
     {
@@ -334,7 +334,7 @@ std::optional<size_t> ColumnArray::getSerializedValueSize(size_t n, const IColum
 {
     const auto & offsets_data = getOffsets();
 
-    size_t pos = offsets_data[n - 1];
+    size_t pos = offsets_data[static_cast<ssize_t>(n) - 1];
     size_t end = offsets_data[n];
 
     size_t res = sizeof(offsets_data[0]);
@@ -389,8 +389,8 @@ void ColumnArray::computeHashInto(size_t row_begin, size_t row_end, UInt32 * has
     const auto & offsets_data = getOffsets();
 
     /// Hash only the elements that belong to the requested row range.
-    const size_t elem_begin = row_begin == 0 ? 0 : offsets_data[row_begin - 1];
-    const size_t elem_end = row_end == row_begin ? elem_begin : offsets_data[row_end - 1];
+    const size_t elem_begin = row_begin == 0 ? 0 : offsets_data[static_cast<ssize_t>(row_begin) - 1];
+    const size_t elem_end = row_end == row_begin ? elem_begin : offsets_data[static_cast<ssize_t>(row_end) - 1];
     const size_t num_elems = elem_end - elem_begin;
 
     PaddedPODArray<UInt32> elem_hash(num_elems);
@@ -711,7 +711,7 @@ size_t ColumnArray::byteSizeAt(size_t n) const
 {
     const auto & offsets_data = getOffsets();
 
-    size_t pos = offsets_data[n - 1];
+    size_t pos = offsets_data[static_cast<ssize_t>(n) - 1];
     size_t end = offsets_data[n];
 
     size_t res = sizeof(offsets_data[0]);
@@ -794,7 +794,7 @@ void ColumnArray::doInsertRangeFrom(const IColumn & src, size_t start, size_t le
         throwInsertRangeFromOutOfBound("ColumnArray", start, length, src_concrete.getOffsets().size());
 
     size_t nested_offset = src_concrete.offsetAt(start);
-    size_t nested_length = src_concrete.getOffsets()[start + length - 1] - nested_offset;
+    size_t nested_length = src_concrete.getOffsets()[static_cast<ssize_t>(start + length) - 1] - nested_offset;
 
     Offsets & cur_offsets = getOffsets();
     /// Reserve offsets before to make it more exception safe (in case of MEMORY_LIMIT_EXCEEDED)
@@ -833,6 +833,96 @@ MutableColumnPtr ColumnArray::getDataInRange(size_t start, size_t length) const
     return res;
 }
 
+
+void ColumnArray::insertFromEither(
+    const IColumn & src_true_, bool src_true_is_const, const IColumn & src_false_, bool src_false_is_const, const IColumn::Filter & condition)
+{
+    /// Above this average number of bytes per row, the elements are copied with one `insertRangeFrom` per row:
+    /// its virtual call is cheap compared with the copy, and the gather below would copy every element three times.
+    static constexpr size_t max_average_bytes_to_gather = 128;
+
+    const ColumnArray & src_true = assert_cast<const ColumnArray &>(src_true_);
+    const ColumnArray & src_false = assert_cast<const ColumnArray &>(src_false_);
+    const Offsets & true_offsets = src_true.getOffsets();
+    const Offsets & false_offsets = src_false.getOffsets();
+
+    const size_t rows = condition.size();
+    const UInt8 * condition_data = condition.data();
+
+    auto true_row = [&](size_t i) -> ssize_t { return src_true_is_const ? 0 : i; };
+    auto false_row = [&](size_t i) -> ssize_t { return src_false_is_const ? 0 : i; };
+
+    Offsets & res_offsets = getOffsets();
+    const size_t old_rows = res_offsets.size();
+    const Offset old_elements = res_offsets[static_cast<ssize_t>(old_rows) - 1];
+    res_offsets.resize(old_rows + rows);
+
+    Offset offset = old_elements;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        const size_t size_true = true_offsets[true_row(i)] - true_offsets[true_row(i) - 1];
+        const size_t size_false = false_offsets[false_row(i)] - false_offsets[false_row(i) - 1];
+        offset += condition_data[i] ? size_true : size_false;
+        res_offsets[old_rows + i] = offset;
+    }
+
+    const size_t elements = offset - old_elements;
+    if (elements == 0)
+        return;
+
+    /// The gather below copies all elements of both sources, a constant source contributes the elements of its row.
+    const size_t true_begin = src_true_is_const ? true_offsets[-1] : 0;
+    const size_t true_end = src_true_is_const ? true_offsets[0] : true_offsets.back();
+    const size_t false_begin = src_false_is_const ? false_offsets[-1] : 0;
+    const size_t false_end = src_false_is_const ? false_offsets[0] : false_offsets.back();
+    const size_t source_elements = true_end - true_begin + false_end - false_begin;
+
+    /// Discarded rows count too: in a `LEFT JOIN` with few matches, the unmatched arrays would be copied only to be dropped.
+    /// The size of a value that is not fixed (`String`, `Array`) is unbounded, so such values are not gathered.
+    if (!getData().valuesHaveFixedSize()
+        || std::max(elements, source_elements) * getData().sizeOfValueIfFixed() > rows * max_average_bytes_to_gather)
+    {
+        for (size_t i = 0; i < rows; ++i)
+        {
+            const ColumnArray & src = condition_data[i] ? src_true : src_false;
+            const ssize_t row = condition_data[i] ? true_row(i) : false_row(i);
+            getData().insertRangeFrom(src.getData(), src.offsetAt(row), src.sizeAt(row));
+        }
+        return;
+    }
+
+    /// The elements of the two sources do not line up with the rows, so the nested column cannot use `insertFromEither`.
+    /// Instead, the elements of both sources are concatenated and the result is gathered from them with `index`: a
+    /// constant number of virtual calls instead of one per row.
+    MutableColumnPtr concatenated = getData().cloneEmpty();
+    concatenated->reserve(source_elements);
+    concatenated->insertRangeFrom(src_true.getData(), true_begin, true_end - true_begin);
+    concatenated->insertRangeFrom(src_false.getData(), false_begin, false_end - false_begin);
+
+    /// Position in `concatenated` of the first element of a row: elements of `src_false` follow those of `src_true`.
+    auto true_start = [&](size_t i) { return true_offsets[true_row(i) - 1] - true_begin; };
+    auto false_start = [&](size_t i) { return false_offsets[false_row(i) - 1] - false_begin + (true_end - true_begin); };
+
+    auto indexes = ColumnUInt64::create(elements);
+    UInt64 * out = indexes->getData().data();
+    for (size_t i = 0; i < rows; ++i)
+    {
+        /// Both are computed so that the select is a `cmov`: a branch on a random condition is mispredicted.
+        const size_t start_if_true = true_start(i);
+        const size_t start_if_false = false_start(i);
+        const size_t start = condition_data[i] ? start_if_true : start_if_false;
+        const size_t size = res_offsets[old_rows + i] - res_offsets[static_cast<ssize_t>(old_rows + i) - 1];
+        for (size_t k = 0; k < size; ++k)
+            out[k] = start + k;
+        out += size;
+    }
+
+    ColumnPtr gathered = concatenated->index(*indexes, 0);
+    if (getData().empty())
+        data = std::move(gathered);
+    else
+        getData().insertRangeFrom(*gathered, 0, elements);
+}
 
 ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) const
 {
@@ -1010,8 +1100,8 @@ void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
     if (mask.size() < offsets_data.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
-    ssize_t index = mask.size() - 1;
-    ssize_t from = offsets_data.size() - 1;
+    ssize_t index = static_cast<ssize_t>(mask.size()) - 1;
+    ssize_t from = static_cast<ssize_t>(offsets_data.size()) - 1;
     offsets_data.resize_exact(mask.size());
     UInt64 last_offset = offsets_data[from];
     while (index >= 0)
@@ -1093,7 +1183,7 @@ ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hin
             /// If the array is not empty - copy content.
             if (array_size)
             {
-                size_t chars_to_copy = src_string_offsets[array_size + prev_src_offset - 1] - prev_src_string_offset;
+                size_t chars_to_copy = src_string_offsets[static_cast<ssize_t>(array_size + prev_src_offset) - 1] - prev_src_string_offset;
                 size_t res_chars_prev_size = res_chars.size();
                 res_chars.resize(res_chars_prev_size + chars_to_copy);
                 memcpy(&res_chars[res_chars_prev_size], &src_chars[prev_src_string_offset], chars_to_copy);
@@ -1111,7 +1201,7 @@ ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hin
         if (array_size)
         {
             prev_src_offset += array_size;
-            prev_src_string_offset = src_string_offsets[prev_src_offset - 1];
+            prev_src_string_offset = src_string_offsets[static_cast<ssize_t>(prev_src_offset) - 1];
         }
     }
 
@@ -1272,7 +1362,7 @@ void ColumnArray::filterString(const Filter & filt)
         {
             if (array_size)
             {
-                size_t chars_to_copy = src_string_offsets[array_size + prev_src_offset - 1] - prev_src_string_offset;
+                size_t chars_to_copy = src_string_offsets[static_cast<ssize_t>(array_size + prev_src_offset) - 1] - prev_src_string_offset;
                 if (result_chars_size != prev_src_string_offset)
                     memmove(&src_chars[result_chars_size], &src_chars[prev_src_string_offset], chars_to_copy);
                 result_chars_size += chars_to_copy;
@@ -1280,7 +1370,7 @@ void ColumnArray::filterString(const Filter & filt)
                 for (size_t j = 0; j < array_size; ++j)
                     src_string_offsets[j + prev_res_offset] = src_string_offsets[j + prev_src_offset] + prev_res_string_offset - prev_src_string_offset;
 
-                prev_res_string_offset = src_string_offsets[prev_res_offset + array_size - 1];
+                prev_res_string_offset = src_string_offsets[static_cast<ssize_t>(prev_res_offset + array_size) - 1];
             }
 
             prev_res_offset += array_size;
@@ -1290,7 +1380,7 @@ void ColumnArray::filterString(const Filter & filt)
         if (array_size)
         {
             prev_src_offset += array_size;
-            prev_src_string_offset = src_string_offsets[prev_src_offset - 1];
+            prev_src_string_offset = src_string_offsets[static_cast<ssize_t>(prev_src_offset) - 1];
         }
     }
 
@@ -1491,7 +1581,10 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     /// Convert indexes to UInt64 in case of overflow.
     auto nested_indexes_column = ColumnUInt64::create();
     PaddedPODArray<UInt64> & nested_indexes = nested_indexes_column->getData();
-    nested_indexes.reserve_exact(getOffsets().back());
+    size_t nested_size = 0;
+    for (size_t i = 0; i < limit; ++i)
+        nested_size += sizeAt(indexes[i]);
+    nested_indexes.reserve_exact(nested_size);
 
     auto res_offsets_column = ColumnOffsets::create(limit);
     Offsets & res_offsets = res_offsets_column->getData();
@@ -1617,6 +1710,11 @@ ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 {
     if (replicate_offsets.empty() || replicate_offsets.back() == 0)
         return cloneEmpty();
+
+    /// All arrays are empty, as in a default value materialized from a `ColumnConst`: the result is `replicate_offsets.back()`
+    /// empty arrays and no element is copied. The size check keeps a mismatch on the path below, which reports it.
+    if (size() == replicate_offsets.size() && data->empty())
+        return ColumnArray::create(data->cloneEmpty(), ColumnOffsets::create(replicate_offsets.back(), 0));
 
     if (typeid_cast<const ColumnUInt8 *>(data.get()))
         return replicateNumber<UInt8>(replicate_offsets);
@@ -1773,7 +1871,7 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
         /// The number of strings in the array.
         size_t value_size = src_offsets[i] - prev_src_offset;
         /// Number of characters in strings of the array.
-        size_t sum_chars_size = src_string_offsets[prev_src_offset + value_size - 1] - prev_src_string_offset;  /// -1th index is Ok, see PaddedPODArray.
+        size_t sum_chars_size = src_string_offsets[static_cast<ssize_t>(prev_src_offset + value_size) - 1] - prev_src_string_offset;  /// -1th index is Ok, see PaddedPODArray.
 
         for (size_t j = 0; j < size_to_replicate; ++j)
         {

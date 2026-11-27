@@ -38,7 +38,7 @@ public:
     bool supportsPooling() const override { return nested_supports_pooling; }
 
     const SerializationPtr & getNested() const { return nested; }
-    bool isCompactNullMap() const { return compact_null_map; }
+    [[nodiscard]] bool isCompactNullMap() const { return compact_null_map; }
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

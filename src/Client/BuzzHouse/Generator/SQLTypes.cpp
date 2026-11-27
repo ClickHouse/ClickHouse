@@ -35,6 +35,24 @@ static inline String nextFloatingPoint(RandomGenerator & rg, const bool extremes
         }
         ret += "0.0";
     }
+    else if (extremes && next_option < 97)
+    {
+        /// The edges of Float64 and Float32, and the values whose conversion to Int64/UInt64 overflows or loses precision
+        static const std::vector<String> values
+            = {"1.7976931348623157e308",
+               "2.2250738585072014e-308",
+               "4.9406564584124654e-324",
+               "3.4028234663852886e38",
+               "1.1754943508222875e-38",
+               "1.401298464324817e-45",
+               "9223372036854775807.0",
+               "9223372036854775808.0",
+               "18446744073709551615.0",
+               "18446744073709551616.0",
+               "9007199254740993.0"};
+        ret += rg.nextBool() ? "-" : "";
+        ret += rg.pickRandomly(values);
+    }
     else if (next_option < 373)
     {
         ret = std::to_string(rg.nextRandomInt32());
@@ -2377,7 +2395,7 @@ String appendDecimal(RandomGenerator & rg, const bool use_func, const uint32_t l
     /// ~20% chance of a special boundary value
     if (rg.nextSmallNumber() < 3)
     {
-        switch (rg.randomInt<uint32_t>(0, 3))
+        switch (rg.randomInt<uint32_t>(0, 4))
         {
             case 0:
                 /// Zero
@@ -2398,6 +2416,11 @@ String appendDecimal(RandomGenerator & rg, const bool use_func, const uint32_t l
                 /// Smallest non-zero: 0.00...01 (or 1.0 when scale == 0)
                 ret += rg.nextBool() ? "-" : "";
                 ret += right == 0 ? "1.0" : ("0." + String(right - 1, '0') + "1");
+                break;
+            case 4:
+                /// One past the maximum: 10^left, which overflows the precision
+                ret += rg.nextBool() ? "-" : "";
+                ret += "1" + String(left, '0') + ".0";
                 break;
             default: UNREACHABLE();
         }
