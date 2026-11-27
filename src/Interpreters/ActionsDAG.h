@@ -608,6 +608,8 @@ public:
       * @param equivalent_right_stream_column_to_left_stream_column - equivalent right stream column name to left stream column map.
       * @param cross_type_equivalent_columns - the equivalent columns whose replacement is a cast of the opposite side's
       * key rather than a rename of an equal-typed column.
+      * @param equivalent_expression_nodes - nodes of this DAG that compute an equivalent column which is an expression
+      * rather than an input, with the name of that column.
       * @param keep_runtime_filters_out_of_left_stream - the left stream is only matched against (RIGHT OUTER or ANTI join).
       * @param keep_runtime_filters_out_of_right_stream - the right stream is only matched against (LEFT OUTER or ANTI join).
       * @param filter_is_always_false - no row passes the filter, and a side whose emptiness empties the join output receives it.
@@ -623,6 +625,7 @@ public:
         const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
         const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
         const NameSet & cross_type_equivalent_columns,
+        const UnorderedMapWithMemoryTracking<const Node *, String> & equivalent_expression_nodes,
         bool keep_runtime_filters_out_of_left_stream,
         bool keep_runtime_filters_out_of_right_stream,
         bool filter_is_always_false);
@@ -685,8 +688,13 @@ public:
      *   - dag: the new actions
      *   - filter_pos: position of filter column in outputs
      *   - remove_filter: whether the filter column should be removed from original DAG after evaluation
+     *
+     * If cloned_nodes is given, it is filled with the node of the new actions for every node of the conjunction.
      */
-    static std::optional<ActionsForFilterPushDown> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+    static std::optional<ActionsForFilterPushDown> createActionsForConjunction(
+        NodeRawConstPtrs conjunction,
+        const ColumnsWithTypeAndName & all_inputs,
+        UnorderedMapWithMemoryTracking<const Node *, const Node *> * cloned_nodes = nullptr);
 
 private:
     NodeRawConstPtrs getParents(const Node * target) const;

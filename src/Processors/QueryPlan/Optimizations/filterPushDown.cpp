@@ -34,6 +34,7 @@
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -472,6 +473,114 @@ static VectorWithMemoryTracking<JoinActionRefPair> buildEquialentSetsForJoinStep
     return joining_keys;
 }
 
+/// The pushed-down filter computes a key and the JOIN computes it again, so the key must return the same
+/// value twice within one query and must not change the number of rows. This pass already requires both
+/// properties of the filters it pushes.
+static bool canComputeJoinKeyTwice(const JoinActionRef & key)
+{
+    static constexpr auto changes_between_evaluations = [](const IFunctionBase & function)
+    { return function.isStateful() || !function.isDeterministicInScopeOfQuery(); };
+
+    const auto key_dag = JoinExpressionActions::getSubDAG(key);
+    for (const auto & node : key_dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION)
+        {
+            if (changes_between_evaluations(*node.function_base))
+                return false;
+        }
+        else if (node.type != ActionsDAG::ActionType::INPUT
+            && node.type != ActionsDAG::ActionType::COLUMN
+            && node.type != ActionsDAG::ActionType::ALIAS)
+            return false;
+
+        if (ActionsDAG::hasUnsafeHiddenLambdaBody(node, changes_between_evaluations))
+            return false;
+    }
+    return true;
+}
+
+/// A JOIN key that is an expression, such as `toDate(l.ts)`, is not an input of the filter above the JOIN:
+/// the filter computes it again, so no input has the key's name. Returns the nodes of `filter_dag` that
+/// compute such a key from `key_names`, with the name of that key.
+static UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, String> findJoinKeyExpressionsInFilter(
+    const ActionsDAG & filter_dag,
+    const JoinStepLogical & join_step,
+    const VectorWithMemoryTracking<JoinActionRefPair> & equivalent_expressions,
+    const NameSet & key_names)
+{
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, String> key_nodes;
+    ActionsDAG::NodeRawConstPtrs key_nodes_list;
+    NameSet declined_names;
+    for (const auto & [lhs, rhs] : equivalent_expressions)
+    {
+        bool has_expression = false;
+        for (const auto & key : {lhs, rhs})
+        {
+            const auto * node = skipAliases(key.getNode());
+            if (node->type == ActionsDAG::ActionType::INPUT || !key_names.contains(key.getColumnName()))
+                continue;
+
+            has_expression = true;
+            if (key_nodes.emplace(node, key.getColumnName()).second)
+                key_nodes_list.push_back(node);
+        }
+
+        /// The replacement of a key is looked up by the key's name, so a pair declines both of its names.
+        if (has_expression && (!canComputeJoinKeyTwice(lhs) || !canComputeJoinKeyTwice(rhs)))
+        {
+            declined_names.insert(lhs.getColumnName());
+            declined_names.insert(rhs.getColumnName());
+        }
+    }
+
+    if (key_nodes_list.empty())
+        return {};
+
+    /// The filter reads the output of the JOIN and a key reads its input, so a column of the filter
+    /// is the column of the key only where the JOIN passes that input through under its own name.
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> passed_through_inputs;
+    for (const auto & output : join_step.getOutputActions())
+    {
+        const auto * node = output.getNode();
+        const auto * input = node->type == ActionsDAG::ActionType::INPUT ? node : nullptr;
+        if (auto [it, inserted] = passed_through_inputs.emplace(node->result_name, input); !inserted)
+            it->second = nullptr;
+    }
+
+    const auto matches = matchTrees(key_nodes_list, filter_dag, /*check_monotonicity=*/ false);
+
+    auto reads_passed_through_inputs = [&](const ActionsDAG::Node * filter_node)
+    {
+        return visitReachableNodes({filter_node}, [&](const ActionsDAG::Node * node)
+        {
+            if (node->type != ActionsDAG::ActionType::INPUT)
+                return VisitResult::Continue;
+
+            auto input_it = passed_through_inputs.find(node->result_name);
+            auto match_it = matches.find(node);
+            bool is_passed_through = input_it != passed_through_inputs.end() && input_it->second
+                && match_it != matches.end() && match_it->second.node == input_it->second;
+            return is_passed_through ? VisitResult::Continue : VisitResult::Stop;
+        });
+    };
+
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, String> result;
+    for (const auto & [filter_node, match] : matches)
+    {
+        if (!match.node || match.monotonicity)
+            continue;
+
+        auto key_it = key_nodes.find(match.node);
+        if (key_it == key_nodes.end() || declined_names.contains(key_it->second))
+            continue;
+
+        if (reads_passed_through_inputs(filter_node))
+            result.emplace(filter_node, key_it->second);
+    }
+    return result;
+}
+
 static void projectDagInputs(ActionsDAG & actions_dag)
 {
     auto & outputs = actions_dag.getOutputs();
@@ -794,27 +903,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             if (anyInTypeTree(*supertype, [](const IDataType & type) { return isFloat(type) || isDynamic(type) || isObject(type); }))
                 return;
 
-            /// The pushed-down filter computes this key and the JOIN computes it again, so the key must return
-            /// the same value twice within one query and must not change the number of rows. This pass already
-            /// requires both properties of the filters it pushes.
-            static constexpr auto changes_between_evaluations = [](const IFunctionBase & function)
-            { return function.isStateful() || !function.isDeterministicInScopeOfQuery(); };
-            const auto source_dag = JoinExpressionActions::getSubDAG(source);
-            for (const auto & node : source_dag.getNodes())
-            {
-                if (node.type == ActionsDAG::ActionType::FUNCTION)
-                {
-                    if (changes_between_evaluations(*node.function_base))
-                        return;
-                }
-                else if (node.type != ActionsDAG::ActionType::INPUT
-                    && node.type != ActionsDAG::ActionType::COLUMN
-                    && node.type != ActionsDAG::ActionType::ALIAS)
-                    return;
-
-                if (ActionsDAG::hasUnsafeHiddenLambdaBody(node, changes_between_evaluations))
-                    return;
-            }
+            if (!canComputeJoinKeyTwice(source))
+                return;
 
             cross_type_equivalent_columns.insert(replaced_name);
 
@@ -910,6 +1000,19 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         }
     }
 
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, String> equivalent_expression_nodes;
+    if (logical_join)
+    {
+        /// A cross-type key is replaced by a cast, which is only prepared for a key that is a column.
+        NameSet expression_key_names;
+        for (const auto & name : equivalent_columns_to_push_down)
+            if (!cross_type_equivalent_columns.contains(name))
+                expression_key_names.insert(name);
+
+        equivalent_expression_nodes = findJoinKeyExpressionsInFilter(
+            filter->getExpression(), *logical_join, equivalent_expressions, expression_key_names);
+    }
+
     const bool is_filter_column_const_before = isFilterColumnConst(*filter);
 
     /// Capture the original constant column value before push-down modifies the expression DAG.
@@ -939,6 +1042,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         equivalent_left_stream_column_to_right_stream_column,
         equivalent_right_stream_column_to_left_stream_column,
         cross_type_equivalent_columns,
+        equivalent_expression_nodes,
         left_stream_only_matched,
         right_stream_only_matched,
         filter_is_always_false);
