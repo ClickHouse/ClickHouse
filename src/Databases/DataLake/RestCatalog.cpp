@@ -412,7 +412,7 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(const CatalogState & catalog_s
         /// request fails with 401/403 and is retried with `update_token = true`, fetching
         /// a token with the snapshot's credentials.
         auto current = access_token.get();
-        if (!current || update_token)
+        if (!current || update_token || current->isExpired())
         {
             access_token.set(std::make_unique<AccessToken>(retrieveAccessToken(catalog_state.client_id, catalog_state.client_secret)));
             current = access_token.get();

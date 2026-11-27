@@ -1521,6 +1521,36 @@ TEST(RestCatalog, OneLakeRefreshTokenTransparentRenewal)
     EXPECT_GT(server.tokenRequests(), requests_before_storage_token);
 }
 
+TEST(RestCatalog, OneLakeClientCredentialsTokenTransparentRenewal)
+{
+    /// expires_in = 0: every issued access token is immediately expired, so every
+    /// catalog request must transparently request a new one with the client credentials.
+    RestCatalogTestServer server(CatalogShape::Empty, /* token_expires_in_seconds */ 0);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    OneLakeCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* onelake_tenant_id */"tenant-1",
+        /* onelake_client_id */"client-1",
+        /* onelake_client_secret */"secret-1",
+        /* bearer_token */"",
+        /* refresh_token */"",
+        /* auth_scope */"https://storage.azure.com/.default",
+        /* oauth_server_uri */server.getUrl() + "/token",
+        /* oauth_server_use_request_body */true,
+        /* flat_namespaces */false,
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
+
+    const auto requests_after_construction = server.tokenRequests();
+    EXPECT_GE(requests_after_construction, 1u);
+
+    EXPECT_TRUE(catalog.empty());
+    EXPECT_GT(server.tokenRequests(), requests_after_construction);
+}
+
 TEST(RestCatalog, OneLakeRefreshTokenExpiredThrowsWithAlterHint)
 {
     RestCatalogTestServer server(CatalogShape::Empty);
