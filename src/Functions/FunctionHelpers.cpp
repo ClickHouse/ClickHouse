@@ -60,6 +60,7 @@ namespace Setting
     extern const SettingsTimezone session_timezone;
     JSON_WRITING_RESULT_SETTINGS(DECLARE_JSON_WRITING_RESULT_SETTING)
     extern const SettingsBool decimal_check_overflow;
+    extern const SettingsBool cast_keep_nullable;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
 }
 
@@ -571,6 +572,12 @@ bool conversionResultDependsOnSetting(
         return has_type(to, is_text);
     if (std::ranges::contains(bool_settings, setting))
         return has_type(from, [&](const IDataType & type) { return is_text(type) || may_hold_any(type); }) || has_type(to, is_text);
+    /// The result of `CAST` keeps the `Nullable` of the argument, and of the other conversions the `NULL` of a `Dynamic` or `Variant`.
+    if (setting == FunctionResultSetting(Setting::cast_keep_nullable))
+    {
+        const auto type = removeLowCardinality(from);
+        return type->isNullable() || isDynamic(*type) || isVariant(*type);
+    }
     if (std::ranges::contains(json_writing_settings, setting))
         return has_type(from, may_hold_any) && has_type(to, is_text);
     if (std::ranges::contains(json_settings, setting))

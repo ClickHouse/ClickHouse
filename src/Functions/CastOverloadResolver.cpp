@@ -626,24 +626,25 @@ FunctionOverloadResolverPtr createCastOverloadResolver(ContextPtr context, CastT
 
 FunctionResultSettings getConversionResultSettings(ConversionResultKind kind)
 {
+    /// `cast_keep_nullable` keeps the result of every conversion of a `Dynamic` or `Variant` value `Nullable`.
     static constexpr FunctionResultSetting overflow_only[] = {
-        Setting::date_time_overflow_behavior
+        Setting::date_time_overflow_behavior, Setting::cast_keep_nullable
     };
 
     static constexpr FunctionResultSetting float_settings[] = {
-        Setting::date_time_overflow_behavior, Setting::precise_float_parsing
+        Setting::date_time_overflow_behavior, Setting::precise_float_parsing, Setting::cast_keep_nullable
     };
 
     static constexpr FunctionResultSetting date_time[] = {
-        Setting::date_time_overflow_behavior, Setting::cast_string_to_date_time_mode, Setting::session_timezone
+        Setting::date_time_overflow_behavior, Setting::cast_string_to_date_time_mode, Setting::session_timezone, Setting::cast_keep_nullable
     };
 
     static constexpr FunctionResultSetting date_time_best_effort[] = {
-        Setting::date_time_overflow_behavior, Setting::session_timezone
+        Setting::date_time_overflow_behavior, Setting::session_timezone, Setting::cast_keep_nullable
     };
 
     static constexpr FunctionResultSetting ip_address[] = {
-        Setting::cast_ipv4_ipv6_default_on_conversion_error
+        Setting::cast_ipv4_ipv6_default_on_conversion_error, Setting::cast_keep_nullable
     };
 
     static constexpr FunctionResultSetting string_settings[] = {
@@ -652,7 +653,7 @@ FunctionResultSettings getConversionResultSettings(ConversionResultKind kind)
         Setting::output_format_decimal_trailing_zeros, Setting::output_format_always_write_decimal_point_in_float_and_decimal,
         Setting::output_format_float_precision, Setting::output_format_trim_fixed_string,
         Setting::output_format_values_escape_quote_with_quote, Setting::type_json_skip_null_typed_paths,
-        Setting::json_type_escape_dots_in_keys, Setting::session_timezone,
+        Setting::json_type_escape_dots_in_keys, Setting::session_timezone, Setting::cast_keep_nullable,
         JSON_WRITING_RESULT_SETTINGS(LIST_JSON_WRITING_RESULT_SETTING)
     };
 
