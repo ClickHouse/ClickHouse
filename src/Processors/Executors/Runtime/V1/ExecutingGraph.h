@@ -205,10 +205,10 @@ public:
     /// Cancel every processor with the given reason.
     void cancel(IProcessor::CancelReason reason);
 
-    const Processors & getProcessors() const;
-    bool isAllFinished() const;
+    [[nodiscard]] const Processors & getProcessors() const;
+    [[nodiscard]] bool isAllFinished() const;
 
-    String dump() const;
+    [[nodiscard]] String dump() const;
 
 private:
     /// All graph nodes. Nodes type is forward-declared above so Node can hold a self-iterator.
@@ -242,7 +242,7 @@ private:
     /// register it in the processors map. Does not create edges — that is done separately by addEdges.
     Node & addNode(ProcessorPtr processor);
     Node & addNode(Processors::iterator processor_iter);
-    Node * getNodeToRemove(const ProcessorPtr & processor) const;
+    [[nodiscard]] Node * getNodeToRemove(const ProcessorPtr & processor) const;
     void removeNode(Node & node);
 
     /// Add single edge to edges list. Check processor is known.
@@ -307,7 +307,7 @@ private:
         /// Called before the threads start. Nothing is locked if a single thread updates the graph.
         void init(size_t num_threads);
 
-        ForThread forThread(size_t thread_num);
+        [[nodiscard]] ForThread forThread(size_t thread_num);
 
         /// Exclusive ownership.
         void lock();
@@ -331,7 +331,7 @@ private:
     bool multithreaded = false;
 
     /// Lock the status of a node, unless a single thread updates the graph.
-    std::unique_lock<std::mutex> lockStatus(Node & node) const;
+    [[nodiscard]] std::unique_lock<std::mutex> lockStatus(Node & node) const;
 
     /// Set when `updatePipeline` threw halfway through recording the processors an expansion
     /// added (an allocation failed, for example): the parent's ports are already connected to
