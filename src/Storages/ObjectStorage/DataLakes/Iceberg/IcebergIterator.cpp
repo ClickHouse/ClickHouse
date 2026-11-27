@@ -175,6 +175,13 @@ std::shared_ptr<const ActionsDAG> makeManifestFilterDag(const ActionsDAG * filte
 
 }
 
+bool Iceberg::positionDeleteMayReferenceDataFile(const ParsedManifestFileEntry & position_delete, const IcebergPathFromMetadata & data_file_path)
+{
+    const auto & lower = position_delete.lower_reference_data_file_path;
+    const auto & upper = position_delete.upper_reference_data_file_path;
+    return (!lower.has_value() || *lower <= data_file_path) && (!upper.has_value() || *upper >= data_file_path);
+}
+
 IcebergIterator::IcebergIterator(
     ObjectStoragePtr object_storage_,
     ContextPtr local_context_,
@@ -520,9 +527,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             {
                 const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
                 const auto & upper = position_delete->parsed_entry->upper_reference_data_file_path;
-                bool can_contain_data_file_deletes
-                    = (!lower.has_value() || *lower <= data_file_path)
-                    && (!upper.has_value() || *upper >= data_file_path);
+                bool can_contain_data_file_deletes = positionDeleteMayReferenceDataFile(*position_delete->parsed_entry, data_file_path);
                 /// Skip position deletes that do not match the data file path.
                 if (!can_contain_data_file_deletes)
                 {

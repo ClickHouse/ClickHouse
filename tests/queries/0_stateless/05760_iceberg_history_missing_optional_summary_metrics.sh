@@ -23,19 +23,20 @@ for fv in 1 2; do
     TABLE="t_fv${fv}"
     TABLE_PATH="${ROOT}/${TABLE}/"
 
-    # Two `append` snapshots: `getHistory` parses every summary, and an `append` passes the checks after it.
+    # Two `append` snapshots: `system.iceberg_history` parses every summary regardless of operation.
     ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
         CREATE TABLE ${TABLE} (x Int) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') SETTINGS iceberg_format_version = ${fv};
         INSERT INTO ${TABLE} VALUES (1);
         INSERT INTO ${TABLE} VALUES (2);"
 
     # Strip both metrics from every snapshot summary.
-    # `added-data-files` stays: an append with no added files is rejected before the summary matters.
+    # Only the two spec-optional metrics are stripped; every other summary field stays.
     iceberg_edit_metadata "${TABLE_PATH}metadata" '.snapshots[].summary |= del(."added-files-size", ."changed-partition-count")' > /dev/null
 
-    # `IcebergMetadata::optimize` reads the history before the compaction, which is v2-only. The cloud
-    # build gates `OPTIMIZE` by a member flag instead and may reject it with its own error. An unexpected
-    # error, `Can not convert empty value` on any build, is printed in full and breaks the reference.
+    # `OPTIMIZE` plans over the current snapshot only: on format version 2, with no position deletes, it returns
+    # without committing, and format version 1 is refused first. Either way it must not trip over the stripped
+    # summaries. The cloud build gates `OPTIMIZE` by a member flag instead and may reject it with its own error.
+    # An unexpected error, `Can not convert empty value` on any build, is printed in full and breaks the reference.
     if ! out=$(${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${TABLE}" 2>&1); then
         if grep -q 'Can not convert empty value' <<< "${out}" \
             || { [ "${IS_CLOUD}" != 1 ] && ! grep -q 'Compaction is supported only for format_version 2' <<< "${out}"; }; then

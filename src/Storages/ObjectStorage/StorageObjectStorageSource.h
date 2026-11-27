@@ -48,6 +48,10 @@ struct ObjectStorageTopKQueryConditionCacheKey
 };
 using ObjectStorageTopKQueryConditionCacheKeyPtr = std::shared_ptr<const ObjectStorageTopKQueryConditionCacheKey>;
 
+/// Replaces the identity-partition columns of `header` with their values from the manifest: a data file may not store them.
+std::optional<ActionsDAG> buildIdentityPartitionColumnsDag(
+    const Block & header, const std::vector<std::pair<String, Field>> & identity_partition_columns);
+
 /// Plain object storage: lists all objects of the query before returning the first one, to make the
 /// TopK query condition cache key from their ETags (see `ObjectStorageTopKQueryConditionCacheKey`).
 /// The objects are listed on the first call of `next`, which happens when the pipeline already runs:

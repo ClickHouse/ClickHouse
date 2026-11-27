@@ -628,7 +628,7 @@ static std::shared_ptr<const ActionsDAG> getFilterOverFileColumns(const ActionsD
     return std::make_shared<const ActionsDAG>(ActionsDAG::cloneSubDAG(outputs, /*remove_aliases=*/ true));
 }
 
-static std::optional<ActionsDAG> buildIdentityPartitionColumnsDag(
+std::optional<ActionsDAG> buildIdentityPartitionColumnsDag(
     const Block & header, const std::vector<std::pair<String, Field>> & identity_partition_columns)
 {
     std::unordered_map<std::string_view, const Field *> values_by_name;

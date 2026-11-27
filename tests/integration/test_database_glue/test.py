@@ -1539,6 +1539,81 @@ def test_writes_rebuild_after_glue_version_id_conflict(started_cluster):
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
+def test_optimize_rebuilds_after_glue_version_id_conflict(started_cluster):
+    node = started_cluster.instances["node1"]
+    proxy = started_cluster.get_container_id("sts.us-east-1.amazonaws.com")
+
+    test_ref = uuid.uuid4().hex
+    db_name = f"glue_cas_optimize_{test_ref}"
+    root_namespace = f"cas_optimize_{test_ref}"
+    table_name = f"t_{test_ref}"
+    table_ref = f"{db_name}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+    optimize_settings = {**write_settings, "allow_experimental_iceberg_compaction": 1}
+    failpoint = "glue_catalog_pause_before_update_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    schema = Schema(NestedField(field_id=1, name="x", field_type=StringType(), required=False))
+    create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), SortOrder(), table_name)
+
+    def load_table():
+        return catalog.load_table(f"{root_namespace}.{table_name}")
+
+    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
+    try:
+        node.query(f"INSERT INTO {table_ref} VALUES ('a'), ('b'), ('c');", settings=write_settings)
+        node.query(f"ALTER TABLE {table_ref} DELETE WHERE x = 'b';", settings=write_settings)
+        base_location = load_table().metadata_location
+
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        executor = ThreadPoolExecutor(max_workers=1)
+        try:
+            paused_optimize = executor.submit(
+                node.query, f"OPTIMIZE TABLE {table_ref}", settings=optimize_settings, timeout=120
+            )
+            node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+
+            # Another engine commits after OPTIMIZE has read the `VersionId` it sends with `UpdateTable`.
+            load_table().append(pa.table({"x": pa.array(["d"], pa.string())}))
+            winner = load_table()
+
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            # The stale `VersionId` is rejected once; OPTIMIZE is rebuilt on top of the other commit instead of failing.
+            paused_optimize.result(timeout=120)
+        finally:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            executor.shutdown(wait=False)
+
+        injected = started_cluster.exec_in_container(
+            proxy, ["curl", "-s", f"http://localhost:8081/injected/{root_namespace}"]
+        )
+        assert int(injected) == 1
+
+        after = load_table()
+        assert after.current_snapshot().parent_snapshot_id == winner.metadata.current_snapshot_id
+        assert after.current_snapshot().summary.operation.value == "replace"
+        assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "a\nc\nd\n"
+        assert node.query(
+            f"SELECT countIf(content = 'POSITION_DELETE') FROM system.iceberg_files WHERE database = '{db_name}' "
+            f"AND table = '{root_namespace}.{table_name}' SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        ) == "0\n"
+
+        # Only the metadata files of the append and of OPTIMIZE follow the base: the one of the rejected attempt is removed.
+        metadata_dir = "http://minio1:9001/" + base_location.split("://", 1)[1].rsplit("/", 1)[0]
+        metadata_files = node.query(
+            f"SELECT _file FROM s3('{metadata_dir}/*.metadata.json', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB')"
+        ).split()
+
+        def version(location):
+            return int(re.match(r"v?(\d+)", location.rsplit("/", 1)[-1]).group(1))
+
+        newer = sorted(name for name in metadata_files if version(name) > version(base_location))
+        assert newer == sorted(location.rsplit("/", 1)[1] for location in [winner.metadata_location, after.metadata_location])
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
 def test_alternating_commits_with_pyiceberg(started_cluster):
     # Iceberg Java and pyiceberg parse the table version only from `<N>-<uuid>.metadata.json`. When ClickHouse named
     # its files `v<N>.metadata.json`, pyiceberg restarted the version at 0 and a later ClickHouse commit wanted a name
