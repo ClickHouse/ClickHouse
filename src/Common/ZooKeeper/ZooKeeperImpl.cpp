@@ -1786,7 +1786,11 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 {
     /// Lower-bound pre-check (chroot/tracing added later, exact check in `sendThread`); outside the try below so an oversize fails alone, not the session.
     if (const size_t request_size = info.request->requestSize(use_xid_64); !checkRequestSize(request_size))
-        throw Exception::fromMessage(Error::ZBADARGUMENTS, formatRequestSizeExceeded(request_size, *info.request));
+    {
+        String message = formatRequestSizeExceeded(request_size, *info.request);
+        LOG_WARNING(log, "Rejecting request: {}", message);
+        throw Exception::fromMessage(Error::ZBADARGUMENTS, message);
+    }
 
     try
     {

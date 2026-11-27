@@ -127,6 +127,17 @@ void IcebergRESTCatalogWarehouseRegistry::checkStorageAccess(const String & name
 
 bool IcebergRESTCatalogWarehouseRegistry::create(const String & name, IcebergRESTCatalogWarehouseDefinition definition)
 {
+    /// Tables stay inside base location of their warehouse. Disjoint base locations keep tables of two warehouses apart.
+    /// TODO: Two creates that run at the same moment can both pass this check.
+    for (const auto & [other_name, other] : list())
+        if (other_name != name && locationsOverlap(definition.base_location, other.base_location))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Base location {} overlaps base location {} of warehouse {}",
+                definition.base_location,
+                other.base_location,
+                other_name);
+
     /// Nothing is stored until the role has been assumed and the location has been read.
     checkStorageAccess(name, definition);
 
@@ -144,6 +155,7 @@ bool IcebergRESTCatalogWarehouseRegistry::create(const String & name, IcebergRES
     ops.emplace_back(zkutil::makeCreateRequest(root, "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(root + "/namespaces", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(root + "/tables_by_uuid", "", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(root + "/locations", "", zkutil::CreateMode::Persistent));
     Coordination::Responses responses;
     const auto code = zookeeper->tryMulti(ops, responses);
     if (code == Coordination::Error::ZNODEEXISTS)
@@ -204,6 +216,7 @@ IcebergRESTCatalogWarehouseRegistry::DropResult IcebergRESTCatalogWarehouseRegis
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeRemoveRequest(root + "/namespaces", -1));
     ops.emplace_back(zkutil::makeRemoveRequest(root + "/tables_by_uuid", -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(root + "/locations", -1));
     ops.emplace_back(zkutil::makeRemoveRequest(root, -1));
     ops.emplace_back(zkutil::makeRemoveRequest(path, -1));
     Coordination::Responses responses;

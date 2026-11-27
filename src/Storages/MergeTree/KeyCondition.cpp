@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/BoolMask.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
@@ -2560,9 +2561,9 @@ static std::optional<std::pair<ColumnPtr, ColumnPtr>> neighbouringDecimalValues(
 }
 
 /// Whether the converted cast values have the bits of the floats they were cast from, and the converted neighbours of each
-/// cast value have other bits, all as `Float`. The bits, because a `Set` compares them (`bitEquals`): `-0.0` is not `0.0`
-/// there, so `d NOT IN (SELECT -0.0)` holds for `d = 0`, while the cast of `-0.0` is `0`. A comparison sees no other
-/// difference: a cast value never converts to `-0.0` or a NaN.
+/// cast value have other bits, all as `Float`. The bits are compared (`bitEquals`) to stay conservative: the cast of `-0.0`
+/// is `0`, which converts back to `0.0`, so a set holding `-0.0` is not used by the index, although a `Set` matches `-0.0`
+/// with `0.0`. A comparison sees no other difference: a cast value never converts to `-0.0` or a NaN.
 template <typename Float>
 static bool castValuesAreTheOnlyMatches(const IColumn & floats, const IColumn & cast_values, const IColumn & below, const IColumn & above)
 {
@@ -3466,6 +3467,25 @@ bool deterministicTransformMapsFloatZerosAlike(
     return (*transformed_zeros_column)[0] == (*transformed_zeros_column)[1];
 }
 
+/// Whether an element of a set, converted to the input type of `dag`, holds a float zero of any sign at any depth.
+/// An element that cannot be converted answers `true`, so that the caller stays conservative.
+bool setElementsHaveFloatZero(const ColumnPtr & set_column, const DataTypePtr & set_element_type, const DeterministicKeyTransformDag & dag)
+{
+    if (!anyInTypeTree(*dag.input_type, [](const IDataType & type) { return isFloat(type); }))
+        return false;
+
+    ColumnPtr input_column;
+    DataTypePtr input_type;
+    bool cast_is_exact = true;
+    if (!convertColumnForDeterministicDag(set_column, set_element_type, dag, input_column, input_type, cast_is_exact))
+        return true;
+
+    for (size_t i = 0; i < input_column->size(); ++i)
+        if (anyFieldSatisfies((*input_column)[i], isFloatZeroField))
+            return true;
+    return false;
+}
+
 }
 
 std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantByDeterministicKeyFunctions(
@@ -3830,6 +3850,14 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
             ColumnPtr transformed_set_column;
             DataTypePtr transformed_set_type;
             const auto & set_transforming_dag = *mapping.set_transform;
+
+            /// A `Set` matches a float zero with the zero of the other sign. When the transform tells the two apart
+            /// (`toString(-0.0)` is `'-0'`), the transformed element describes only one of them, and the index would
+            /// prune the rows holding the other one, as for a constant in `transformConstantByDeterministicKeyFunctions`.
+            if (setElementsHaveFloatZero(set_column, set_element_type, set_transforming_dag)
+                && !deterministicTransformMapsFloatZerosAlike(set_transforming_dag, set_transforming_dag.input_type, set_transforming_dag.input_name))
+                return false;
+
             bool dag_cast_is_exact = true;
             if (!applyDeterministicDagToColumn(
                     set_column,
@@ -5454,6 +5482,11 @@ void KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const B
         && readsInputNamedIn(*node_dag, info.columns_named_like_key_expressions))
         return;
 
+    /// A key expression is never non-deterministic, so a predicate that calls `rand` or `blockSize` (also inside a
+    /// lambda body) is not computed by a key column with the same name.
+    if (node_dag && !VirtualColumnUtils::isDeterministicInScopeOfQuery(node_dag))
+        return;
+
     /// For example, `ORDER BY a` and `WHERE a = 1`. Here, the function is "equals".
     if (node.isFunction())
     {
@@ -6074,6 +6107,11 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
                 .is_relaxed = false});
         }
     }
+
+    /// A `Tuple` compares a `Dynamic` or `Variant` element as its active member, with that member's own conversion,
+    /// which the cast of the constant into a key expression's input type in the sources below does not reproduce.
+    if (isTuple(const_type) && typeHasValueCarriers(*const_type))
+        return candidates;
 
     /// 2. The monotonic constant transform infers key constraints by transforming the
     /// constant with key functions. Such candidates are always relaxed, because the
@@ -7499,20 +7537,80 @@ BoolMask KeyCondition::checkInRange(
         });
 }
 
-/// Check if a type conversion function preserves the Field value when it's monotonic on the given range.
-/// For example, CAST between UInt8/16/32/64 types all store as UInt64 in Field, so when the CAST is
-/// monotonic (value fits in the target type), the Field value doesn't change.
-/// Similarly for Int8/16/32/64 (all stored as Int64).
-/// `DateTime` is a number of seconds stored as UInt32 (UInt64 in Field), so `toUnixTimestamp(DateTime)`
-/// and casts between `DateTime` and unsigned integers don't change the Field value either.
-/// In such cases we can skip the expensive function application (which creates columns and executes
-/// the function via the full column execution machinery) and just keep the original Field value.
+/// A type conversion between native integers of the same signedness, applied to a Field directly, without executing the function.
+/// UInt8/16/32/64 are all stored as UInt64 in Field, Int8/16/32/64 as Int64. `DateTime` is a number of seconds stored as UInt32
+/// (UInt64 in Field), so `toUnixTimestamp(DateTime)` and casts between `DateTime` and unsigned integers convert it the same way.
+/// A conversion to a type at least as wide as the source keeps the Field value; a narrower one wraps it around, keeping the
+/// low `result_size` bytes, as the conversion of a column does.
+struct IntegerCastOnField
+{
+    size_t from_size = 0;
+    size_t result_size = 0;
+    bool is_signed = false;
+
+    [[nodiscard]] bool keepsValue() const { return result_size >= from_size; }
+
+    /// Whether `apply` handles the Field: a narrowing conversion needs the representation of its family.
+    [[nodiscard]] bool canApply(const Field & value) const
+    {
+        return keepsValue() || value.getType() == (is_signed ? Field::Types::Int64 : Field::Types::UInt64);
+    }
+
+    /// Converts the value in place, which keeps the Field type (see `canApply`).
+    void apply(Field & value) const
+    {
+        if (keepsValue())
+            return;
+
+        const size_t shift = 64 - result_size * 8;
+        if (is_signed)
+        {
+            auto & v = value.safeGet<Int64>();
+            v = static_cast<Int64>(static_cast<UInt64>(v) << shift) >> shift;
+        }
+        else
+        {
+            auto & v = value.safeGet<UInt64>();
+            v = v << shift >> shift;
+        }
+    }
+};
+
+/// Check if a type conversion function can be applied to the Field value directly (see `IntegerCastOnField`).
+/// In such cases we can skip the expensive function application (which creates columns and executes the function via the full
+/// column execution machinery for every range, e.g. for every granule of a skip index).
 ///
-/// IMPORTANT: This must only return true for pure type conversion functions (see `is_cast`),
+/// IMPORTANT: This must only return a value for pure type conversion functions (see `is_cast`),
 /// NOT for arithmetic or other functions that happen to have compatible integer types on input/output.
-static bool functionIsCastPreservingFieldRepresentation(
+static std::optional<IntegerCastOnField> getIntegerCastOnField(
     const FunctionBasePtr & func, const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
+    /// This is called for every range (e.g. for every granule of a skip index), so the cheap checks go first.
+    WhichDataType from(*from_type);
+    WhichDataType to(*to_type);
+
+    /// `Date`, `Date32` and `DateTime64` must not be added here: `toDateTime(Date)`, `toUnixTimestamp(Date)`
+    /// and `toUnixTimestamp(DateTime64)` change the value, and this check only looks at the name and the types.
+    /// `Nullable` and `LowCardinality` types are not in either family, so they are rejected here too.
+    auto is_uint_or_datetime = [](WhichDataType which) { return which.isNativeUInt() || which.isDateTime(); };
+
+    /// Check that both types are in the same family before calling
+    /// getSizeOfValueInMemory, which throws for variable-length types like String.
+    const bool is_signed = from.isNativeInt() && to.isNativeInt();
+    if (!is_signed && !(is_uint_or_datetime(from) && is_uint_or_datetime(to)))
+        return {};
+
+    /// `Bool` and `SimpleAggregateFunction(f, Bool)` are stored as `UInt8`, yet a cast into them maps every nonzero value to 1.
+    if (to.isUInt8() && (isBool(to_type) || isSimpleAggregateFunctionOfBool(*to_type)))
+        return {};
+
+    IntegerCastOnField cast{
+        .from_size = from_type->getSizeOfValueInMemory(), .result_size = to_type->getSizeOfValueInMemory(), .is_signed = is_signed};
+
+    /// A conversion of a wider integer to `DateTime` does not wrap around: it is not a plain truncation.
+    if (!cast.keepsValue() && to.isDateTime())
+        return {};
+
     /// Only type conversion functions preserve Field values across integer type boundaries.
     /// Arithmetic functions like plus/minus change the value even with same-family types.
     const auto & name = func->getName();
@@ -7522,35 +7620,9 @@ static bool functionIsCastPreservingFieldRepresentation(
         || name == "toDateTime" || name == "toUnixTimestamp");
 
     if (!is_cast)
-        return false;
+        return {};
 
-    /// Nullable types don't have a fixed size in memory; this optimization only applies to plain integer types.
-    if (from_type->isNullable() || to_type->isNullable())
-        return false;
-
-    /// `Bool` and `SimpleAggregateFunction(f, Bool)` are stored as `UInt8`, yet a cast into them maps every nonzero value to 1.
-    if (isBool(to_type) || isSimpleAggregateFunctionOfBool(*to_type))
-        return false;
-
-    WhichDataType from(from_type);
-    WhichDataType to(to_type);
-
-    /// `Date`, `Date32` and `DateTime64` must not be added here: `toDateTime(Date)`, `toUnixTimestamp(Date)`
-    /// and `toUnixTimestamp(DateTime64)` change the value, and this check only looks at the name and the types.
-    auto is_uint_or_datetime = [](WhichDataType which) { return which.isNativeUInt() || which.isDateTime(); };
-
-    /// Check that both types are in the same family before calling
-    /// getSizeOfValueInMemory, which throws for variable-length types like String.
-    bool same_family = (is_uint_or_datetime(from) && is_uint_or_datetime(to))
-        || (from.isNativeInt() && to.isNativeInt());
-
-    if (!same_family)
-        return false;
-
-    /// We can only skip the function application when the target type is at least as wide
-    /// as the source type (widening or same-size cast). For narrowing casts (e.g. UInt32 -> UInt16),
-    /// truncation changes the actual value even though both use UInt64 in the Field representation.
-    return to_type->getSizeOfValueInMemory() >= from_type->getSizeOfValueInMemory();
+    return cast;
 }
 
 namespace
@@ -7582,7 +7654,10 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 
     /// The chain was built against a recursively `LowCardinality`-stripped key type, so seed it with the
     /// stripped type here rather than in each caller: several of them pass the key column's raw type.
-    DataTypePtr current_type = recursiveRemoveLowCardinality(key_type);
+    const DataTypePtr stripped_key_type = recursiveRemoveLowCardinality(key_type);
+    /// Points to the type of the current link's argument: the result types belong to the functions of the chain,
+    /// so they are not copied for every range.
+    const DataTypePtr * current_type = &stripped_key_type;
 
     /// The functions are evaluated on the endpoints of a key range, which are values the analysis
     /// substitutes rather than values the query asked about, so they can fail for an endpoint the
@@ -7606,26 +7681,30 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
             IFunction::Monotonicity monotonicity = single_point
                 ? IFunction::Monotonicity{true}
-                : func->getMonotonicityForRange(*current_type.get(), key_range.left, key_range.right);
+                : func->getMonotonicityForRange(**current_type, key_range.left, key_range.right);
 
             if (!monotonicity.is_monotonic)
             {
                 return {};
             }
 
-            auto result_type = func->getResultType();
+            const DataTypePtr & result_type = func->getResultType();
 
             /// For functions like CAST between integer types that share the same Field representation
-            /// (e.g., UInt16 and UInt64 both use UInt64 in Field), when the function is monotonic
-            /// on the given range, the Field values are guaranteed to be unchanged.
+            /// (e.g., UInt16 and UInt64 both use UInt64 in Field), the result is computed on the Field
+            /// directly: the value is kept, or wrapped around for a narrowing conversion.
             /// We can skip the expensive function application that creates columns and executes the function.
-            /// The monotonicity check already verified that the values fit in the target type.
             /// A bound referencing a column in the index block is advanced by the application itself:
             /// skipping would leave it on the previous column while `current_type` moves on.
-            bool skip_apply = key_range.left.isExplicit() && key_range.right.isExplicit()
-                && functionIsCastPreservingFieldRepresentation(func, current_type, result_type);
+            std::optional<IntegerCastOnField> integer_cast;
+            if (key_range.left.isExplicit() && key_range.right.isExplicit())
+                integer_cast = getIntegerCastOnField(func, *current_type, result_type);
+            if (integer_cast
+                && ((!key_range.left.isNull() && !integer_cast->canApply(key_range.left))
+                    || (!key_range.right.isNull() && !integer_cast->canApply(key_range.right))))
+                integer_cast.reset();
 
-            if (!skip_apply)
+            if (!integer_cast)
             {
                 /// If we apply function to open interval, we can get empty intervals in result.
                 /// E.g. for ('2020-01-03', '2020-01-20') after applying 'toYYYYMM' we will get ('202001', '202001').
@@ -7634,7 +7713,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
                 /// argument leaves a bound with no position in the `Range` order, so the range cannot be analyzed.
                 if (!key_range.left.isNull())
                 {
-                    auto transformed = applyFunction(func, function_number, current_type, key_range.left);
+                    auto transformed = applyFunction(func, function_number, *current_type, key_range.left);
                     if (!transformed || transformed->isNull())
                     {
                         ++num_unevaluable_chain_applications;
@@ -7646,7 +7725,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 
                 if (!key_range.right.isNull())
                 {
-                    auto transformed = applyFunction(func, function_number, current_type, key_range.right);
+                    auto transformed = applyFunction(func, function_number, *current_type, key_range.right);
                     if (!transformed || transformed->isNull())
                     {
                         ++num_unevaluable_chain_applications;
@@ -7661,12 +7740,18 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
                 /// Even though we skip the function application, we still need to make bounds included
                 /// (the function could map open bounds to the same point).
                 if (!key_range.left.isNull())
+                {
+                    integer_cast->apply(key_range.left);
                     key_range.left_included = true;
+                }
                 if (!key_range.right.isNull())
+                {
+                    integer_cast->apply(key_range.right);
                     key_range.right_included = true;
+                }
             }
 
-            current_type = result_type;
+            current_type = &result_type;
 
             if (!monotonicity.is_positive)
                 key_range.invert();
@@ -8208,6 +8293,21 @@ bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, co
 
         for (size_t key_column : element.key_columns)
             if (key_column < hyperrectangle.size() && rangeOfKeyColumnMayHoldNull(element, hyperrectangle[key_column], key_types, key_column))
+                return true;
+    }
+
+    return false;
+}
+
+bool KeyCondition::mayClaimNestedNullOrNaN(const DataTypes & key_types) const
+{
+    for (const auto & element : expandAtomGroups(rpn))
+    {
+        if (!atomIsNullForNullArgument(element.function) || !atomMayClaimNestedNullOrNaN(element))
+            continue;
+
+        for (size_t key_column : element.key_columns)
+            if (key_column < key_types.size() && key_types[key_column] && keyTypeMayHoldNestedNullOrNaN(key_types[key_column]))
                 return true;
     }
 

@@ -70,6 +70,10 @@ public:
     /// `element size * number of stride groups` FixedString streams, so this caps that to a sane value and
     /// prevents a huge dimension with a tiny stride from exhausting memory. Generous for real Matryoshka use.
     static constexpr size_t MAX_STRIDE_GROUPS = 1024;
+
+    /// Upper bound on the dimension (and therefore on the stride). Far above any real embedding size, and small enough that sizes
+    /// derived from it (bytes per bit plane, bytes per value) cannot overflow.
+    static constexpr size_t MAX_DIMENSION = 1048576;
 };
 
 }

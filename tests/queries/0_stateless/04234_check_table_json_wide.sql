@@ -1,7 +1,5 @@
 -- Tags: no-fasttest
 
-SET allow_experimental_json_type = 1;
-
 DROP TABLE IF EXISTS t_check_json_wide;
 
 CREATE TABLE t_check_json_wide (id UInt64, data JSON)
