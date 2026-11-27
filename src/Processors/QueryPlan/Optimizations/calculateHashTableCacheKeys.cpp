@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <unordered_map>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/ListWithMemoryTracking.h>
@@ -21,10 +22,12 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageValues.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -34,6 +37,14 @@ using namespace DB;
 
 namespace
 {
+
+/// `StorageValues` holds data that exists only for the query reading it, e.g. the block inserted into
+/// the source table of a materialized view: the same plan reads other rows on every execution.
+bool readsQueryLocalData(const IQueryPlanStep & step)
+{
+    const auto * read = typeid_cast<const ReadFromStorageStep *>(&step);
+    return read && typeid_cast<const StorageValues *>(read->getStorage().get());
+}
 
 UInt64 calculateHashFromStep(const ReadFromParallelRemoteReplicasStep & source)
 {
@@ -402,6 +413,15 @@ void calculateHashTableCacheKeys(
         SipHash hash{};
     };
 
+    /// A zero raw hash marks a sub-plan over query-local data: no `HashTablesStatistics` entry (sizes measured
+    /// by earlier joins, not table or column statistics) is kept for it. `cache_keys` are not affected.
+    const auto raw_hash_or_none = [&raw_hashes](const QueryPlan::Node & plan_node, UInt64 raw) -> UInt64
+    {
+        const bool query_local = readsQueryLocalData(*plan_node.step)
+            || std::ranges::any_of(plan_node.children, [&raw_hashes](const auto * child) { return raw_hashes.at(child) == 0; });
+        return query_local ? 0 : raw;
+    };
+
     // We use addresses of `left` and `right`, so they should be stable
     ListWithMemoryTracking<Frame> stack;
     stack.push_back({.node = &root});
@@ -443,7 +463,7 @@ void calculateHashTableCacheKeys(
                     frame.hash.update(cache_keys[node.children.at(0)]);
                     frame.hash.update(cache_keys[node.children.at(1)]);
                     const auto raw = frame.hash.get64();
-                    raw_hashes[&node] = raw;
+                    raw_hashes[&node] = raw_hash_or_none(node, raw);
                     cache_keys[&node] = raw;
 
                     stack.pop_back();
@@ -665,7 +685,7 @@ void calculateHashTableCacheKeys(
         else
         {
             const auto raw = frame.hash.get64();
-            raw_hashes[&node] = raw;
+            raw_hashes[&node] = raw_hash_or_none(node, raw);
             cache_keys[&node] = raw;
         }
 

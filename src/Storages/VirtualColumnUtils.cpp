@@ -545,13 +545,6 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
             }
         }
-        /// The supplier is the discriminator: only a storage that registers `_headers` as the
-        /// response-header `Map` fills `virtual_values.headers` (`url` family, `Web` object storage).
-        /// `isMap` only guards, since a Hive key of that name (branch below) can also infer as `Map`.
-        else if (virtual_column.name == "_headers" && virtual_values.headers && isMap(virtual_column.type))
-        {
-            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.headers)->convertToFullColumnIfConst());
-        }
         else if (virtual_column.name == "_data_lake_snapshot_version")
         {
             if (virtual_values.data_lake_snapshot_version)
@@ -637,6 +630,12 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), virtual_values.storage_id.getTableName())->convertToFullColumnIfConst());
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else if (virtual_column.name == "_headers" && virtual_values.http_response_headers)
+        {
+            /// Added here, in its place among the requested virtual columns, and not by the caller after the other ones:
+            /// the columns of the chunk must go in the order of the header of the source, which is the requested order.
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.http_response_headers)->convertToFullColumnIfConst());
         }
         else
         {

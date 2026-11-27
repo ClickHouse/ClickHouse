@@ -14,6 +14,7 @@ namespace DB
 {
 
 struct FormatSettings;
+struct Map;
 class Block;
 class Chunk;
 class NamesAndTypesList;
@@ -210,8 +211,6 @@ struct VirtualsForFileLikeStorage
     std::optional<Poco::Timestamp> last_modified { std::nullopt };
     const String * etag { nullptr };
     const std::map<String, String> * tags { nullptr };
-    /// Only available once the read buffer is open, so the caller materializes it.
-    const Map * headers { nullptr };
     std::optional<UInt64> data_lake_snapshot_version { std::nullopt };
     /// Original file path as stored in Iceberg metadata (before resolution to storage path).
     /// Used by Iceberg position deletes to reference data files in the metadata path format.
@@ -220,6 +219,8 @@ struct VirtualsForFileLikeStorage
     std::optional<UInt64> first_row_id = std::nullopt;
     ColumnPtr materialized_row_ids = {};
     ColumnPtr materialized_last_updated_sequence_numbers = {};
+    /// The HTTP response headers of the read: the value of the `_headers` virtual column of the storages which read over HTTP.
+    const Map * http_response_headers { nullptr };
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(

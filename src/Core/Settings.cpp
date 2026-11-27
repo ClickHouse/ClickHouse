@@ -733,6 +733,14 @@ Max number of requests that can be issued simultaneously before hitting request 
     DECLARE(UInt64, s3_list_object_keys_size, S3::DEFAULT_LIST_OBJECT_KEYS_SIZE, R"(
 Maximum number of files that could be returned in batch by ListObject request
 )", 0) \
+    DECLARE(UInt64, s3_list_object_parallelism, 1, R"(
+Number of concurrent `ListObjects` requests used to list files when the path contains globs, for reads from S3-compatible object storage: the `s3` table function, the `S3` table engine, the `s3Cluster` table function, and the `gcs`, `cosn`, `oss` aliases of them.
+
+When greater than `1`, the matching files are listed by walking the "directory" tree (the common prefixes formed by the `/` delimiter) with this many threads in parallel, instead of paginating the whole prefix in a single serial stream. This can dramatically speed up queries over buckets with millions of objects, especially for hierarchically partitioned layouts (e.g. `year=*/month=*/`), where whole non-matching subtrees are pruned during the walk.
+
+A value of `1` (the default) keeps the previous serial listing behavior. Recursive globs (`**`) always use serial listing.
+)", 0, \
+        {"26.12", 1, 1, "New setting to list globbed paths on S3-compatible object storage (the `s3` and `s3Cluster` table functions, the `S3` table engine, and their `gcs`, `cosn`, `oss` aliases) with several concurrent `ListObjects` requests by walking the common-prefix tree in parallel."}) \
     DECLARE(Bool, s3_use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, R"(
 When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
 When set to `false` than all attempts are made with identical timeouts.
@@ -1284,10 +1292,6 @@ Equality with a constant string is not moved for this reason: it is still applie
 
 Supported for reading from `MergeTree` tables and from the `Parquet` format. In `Parquet`, the filter is applied to pages with
 the `PLAIN`, `DELTA_LENGTH_BYTE_ARRAY`, `DELTA_BYTE_ARRAY`, and dictionary encodings.
-
-Note that the estimation of the input bytes collected for the automatic decision about parallel replicas
-(`RuntimeDataflowStatisticsInputBytes`) is based on the in-memory size of the read blocks, so it underestimates
-the amount of data read from disk when the values are replaced by empty strings.
 
 Possible values:
 
@@ -3372,6 +3376,13 @@ Not applied to `FINAL`, `ASOF`, joins with several disjuncts in `ON`, or when re
 )", 0, \
         {"26.10", false, true, "Enabled by default. A `full_sorting_merge` or `parallel_full_sorting_merge` JOIN of two MergeTree tables whose keys contain a prefix of both primary keys now runs as independent merge joins over primary-key ranges in parallel, instead of a single-threaded merge join. Hash joins are affected only when neither join runtime filters nor spilling to disk are in effect."}, \
         {"25.4", false, false, "New setting"}) \
+    \
+    DECLARE(Bool, query_plan_join_multiway_merge, false, R"(
+Execute a subtree of `full_sorting_merge` inner joins whose keys are equal to each other as one merge join of all its inputs instead of a tree of two-input joins. Every input is read once in the order of the key and every column is copied to the result once.
+
+Applies to `INNER` joins with `ALL` strictness and one condition. With `query_plan_join_shard_by_pk_ranges` the join is split by primary key ranges of all its tables.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting"}) \
     \
     DECLARE(Bool, query_plan_display_internal_aliases, false, R"(
 Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specified in the original query.
@@ -8071,6 +8082,10 @@ Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DIST
     DECLARE(SetOperationMode, except_default_mode, SetOperationMode::ALL, R"(
 Set default mode in EXCEPT query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without mode will throw exception.
 )", 0) \
+    DECLARE(Bool, rewrite_intersect_except_distinct_to_join, true, R"(
+Execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a hash join. `NULL` values compare equal, as in the set operation. The join always uses the `hash` algorithm and ignores `join_algorithm`, `max_rows_in_join` and `max_bytes_in_join`. Operations whose arms can produce totals, such as with `WITH TOTALS`, still run without a join.
+)", 0, \
+        {"26.12", false, true, "New setting to execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a join."}) \
     DECLARE(UInt64, max_streams_for_union_step, 0, R"(
 Limits the number of simultaneously active data streams in a `UNION` step (applies to `UNION ALL`, to `UNION DISTINCT`, because it is implemented via a `UNION ALL` step followed by a `DISTINCT` step, and to a `Merge` table read with plan-based parallel replicas, which is expanded into a union of the reads from its underlying tables). When a `UNION` query has many subqueries, all of them open their read buffers at the same time, leading to memory usage proportional to the number of subqueries. This setting inserts `Concat` processors to narrow the pipeline so that at most this many streams are active at once, drastically reducing peak memory. The actual limit is the minimum of this value and `max_threads * max_streams_for_union_step_to_max_threads_ratio` (either one being 0 means it is ignored). When both are 0, no narrowing is applied. The limit is also not applied when the query plan requires each output stream of the `UNION` to stay individually sorted (for example, when the read-in-order optimization is applied across the `UNION`); in that case correctness of the ordering takes precedence and narrowing is skipped.
 )", 0, \
@@ -8354,7 +8369,7 @@ Short-circuit a `JOIN` whose `ON` condition folds to a constant false by replaci
 )", 0, \
         {"26.8", false, true, "New setting to short-circuit a JOIN with a constant-false ON condition so the non-contributing side is not read. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no short-circuit)."}) \
     DECLARE(Bool, query_plan_remove_unused_joins, true, R"(
-Remove a `LEFT` or `RIGHT` `JOIN` if no column of its other side is read and it outputs every row of the preserved side exactly once: an `ANY` join, or a join whose other side is unique by the join keys, such as a subquery with `GROUP BY` or `DISTINCT` on them. The other side is then not read at all.
+Remove a `LEFT` or `RIGHT` `JOIN` if no column of its other side is read and it outputs every row of the preserved side exactly once: an `ANY` join, or a join whose other side is unique by the join keys, such as a subquery with `GROUP BY` or `DISTINCT` on them, or a table without a partition key whose `UNIQUE KEY` they cover. The other side is then not read at all.
 )", 0, \
         {"26.12", false, true, "New setting to remove a `LEFT` or `RIGHT` `JOIN` whose other side is not read and which outputs every row of the preserved side exactly once."}) \
     DECLARE(Bool, query_plan_convert_any_join_to_semi_or_anti_join, true, R"(
@@ -8935,6 +8950,10 @@ Timeout for polling data from asynchronous insert queue
 If it is set to true, use adaptive busy timeout for asynchronous inserts
 )", 0, \
         {"24.2", false, true, "Use adaptive asynchronous insert timeout"}) \
+    DECLARE(Bool, async_insert_use_deduplication_cache, true, R"(
+If true, an asynchronous insert into a table first checks the deduplication hashes of the inserted block against the in-memory cache of the hashes stored in ClickHouse Keeper. The cache of a replica can be stale after `TRUNCATE` or a partition drop on another replica, so the block can be wrongly treated as a duplicate and not inserted. If false, the cache is not used and duplicates are detected only by ClickHouse Keeper.
+)", 0, \
+        {"26.12", true, true, "New setting to disable the deduplication cache for asynchronous inserts."}) \
     DECLARE(Milliseconds, async_insert_busy_timeout_min_ms, 50, R"(
 If auto-adjusting is enabled through async_insert_use_adaptive_busy_timeout, minimum time to wait before dumping collected data per query since the first data appeared. It also serves as the initial value for the adaptive algorithm
 )", 0, \
@@ -11228,7 +11247,8 @@ Enable the experimental XGBoost integration: the `XGBOOST` dictionary layout and
     DECLARE(Bool, enable_elasticsearch, false, R"(
 Enable the experimental Elasticsearch integration: the `Elasticsearch` table engine and the `elasticsearch` table function.
 )", EXPERIMENTAL, \
-        {"26.11", false, false, "New setting to gate the experimental Elasticsearch integration (the `Elasticsearch` table engine and the `elasticsearch` table function)."}) \
+        {"26.11", false, false, "New setting to gate the experimental Elasticsearch integration (the `Elasticsearch` table engine and the `elasticsearch` table function)."}, \
+        {"26.10", false, false, "New setting to gate the experimental Elasticsearch integration (the `Elasticsearch` table engine and the `elasticsearch` table function)."}) \
     DECLARE_WITH_ALIAS(Bool, enable_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine. Possible values:
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
@@ -11375,6 +11395,12 @@ The accelerated patterns are `%value%`, `value%` and `%value`, as well as the `s
 A `multiSearchAny`, `multiSearchAnyUTF8`, `multiSearchAnyCaseInsensitive` or `multiSearchAnyCaseInsensitiveUTF8` call with one needle is searched as `%value%`.
 )", 0, \
         {"26.4", true, true, "New setting"}) \
+    DECLARE(Bool, use_text_index_for_substring_search, false, R"(
+Use the text index for `position(s, 'value') > 0` and the equivalent comparisons of `positionUTF8`, `countSubstrings` and their case-insensitive versions, by evaluating them as `s LIKE '%value%'` (`ILIKE` for the case-insensitive functions).
+
+Disabled by default because the dictionary scan that evaluates such a pattern can be slower than searching the column, e.g. when most rows have a token of their own, such as a unique id.
+)", 0, \
+        {"26.12", false, false, "New setting"}) \
     DECLARE(UInt64, text_index_like_min_pattern_length, 4, R"(
 Minimum length of the alphanumeric needle in a LIKE/ILIKE pattern, or of a `startsWith`/`endsWith` needle,
 required to use the text index LIKE evaluation by the dictionary scan.
