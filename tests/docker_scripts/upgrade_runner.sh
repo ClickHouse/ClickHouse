@@ -994,6 +994,10 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       it does not match. That scope is needed because the count line carries no error text of its own and
 #       `Authentication failed` above can already remove its partner line. Removable once the previous
 #       release's copies of these tests stop deleting a topic whose table may survive.
+# `Code: 669` + a `05816_kafka_server_local_file_properties_` collection + `kafka_altered_table` or `kafka_altered_null_table`
+#       is that test's table left detached: when a statement between its `DETACH` and the last `ATTACH` does not reach the
+#       server (stress worker 1 injects memory faults), the cleanup drops the collection but not the detached table, and the
+#       upgrade restart cannot attach it. Removable once the previous release's copy of the test detaches it `PERMANENTLY`.
 # `No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed` is the unique signature of
 #       issue #102259 (`getFileNameForRenamedColumnStream` uses `substr(0, N)` instead of `substr(N)`, producing
 #       `<renamed><original>.bin` instead of `<renamed>.bin`). The fix is in PR #102689; until it lands, the
@@ -1175,6 +1179,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "StorageKafka2.*Exception during get topic partitions from Kafka: Local: Broker transport failure" \
     | grep -av -e "StorageKafka.*\.\`[0-9]\{5\}_kafka.*Consumer error: Broker: Unknown topic or partition" \
     | grep -av -e "StorageKafka.*\.\`[0-9]\{5\}_kafka.*There were [0-9][0-9]* messages with an error" \
+    | grep -av -e "Code: 669\. DB::Exception: There is no named collection \`05816_kafka_server_local_file_properties_[^\`]*\`: Cannot attach table \`[^\`]*\`\.\`kafka_altered\(_null\)\?_table\` " \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
     | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
