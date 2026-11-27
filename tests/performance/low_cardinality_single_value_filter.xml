@@ -1,0 +1,26 @@
+<test>
+    <create_query>
+        CREATE TABLE lc_single_value (id UInt64, lc LowCardinality(String))
+        ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <!-- Control table. The result differs per dictionary key, so the filter is never constant here.
+         It guards against a regression from scanning the result dictionary on every call. -->
+    <create_query>
+        CREATE TABLE lc_many_values (id UInt64, lc LowCardinality(String))
+        ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>INSERT INTO lc_single_value SELECT number, '' FROM numbers_mt(50000000)</fill_query>
+    <fill_query>INSERT INTO lc_many_values SELECT number, toString(number % 100000) FROM numbers_mt(50000000)</fill_query>
+
+    <query>SELECT count() FROM lc_single_value WHERE lc != ''</query>
+    <query>SELECT id FROM lc_single_value WHERE lc != '' LIMIT 1</query>
+    <query>SELECT count() FROM lc_single_value WHERE length(lc) &gt; 0</query>
+
+    <query>SELECT count() FROM lc_many_values WHERE lc != '1'</query>
+    <query>SELECT count() FROM lc_many_values WHERE length(lc) &gt; 3</query>
+
+    <drop_query>DROP TABLE IF EXISTS lc_single_value</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lc_many_values</drop_query>
+</test>

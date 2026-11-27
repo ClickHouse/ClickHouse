@@ -1,0 +1,37 @@
+single value dictionary
+1000	0	1000	1000	20000
+constant false filter
+0
+0
+constant true filter
+1000
+500
+500
+non bool filter
+0
+0
+0
+1000
+mostly empty
+500	x
+500	x
+1
+1
+several keys with the same result
+1000
+zero or one row
+1
+1
+correlated subquery
+1
+constant and non constant parts in one query
+500
+500
+isConstant is a property of the query, not of the block
+0
+0
+0
+1	0
+mutation
+1000	0
+1000	1	7
