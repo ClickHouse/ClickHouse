@@ -1,4 +1,13 @@
-limit by	1	0	0
-limit until	1	0	0
-distinct	1	0	0
-limit by	2	0	1000000
+-- LIMIT BY without keys
+1
+1
+2	1
+2	1
+-- DISTINCT by constants
+1
+1
+2
+2
+-- The overflow mode break
+-- The overflow mode throw
+0

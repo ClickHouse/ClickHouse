@@ -1,71 +1,90 @@
 -- Tags: atomic-database
--- A query can stop reading its source before the bounded read of an incremental refresh finishes
--- (`LIMIT BY` and `DISTINCT` with constant keys, `LIMIT UNTIL`). The read then reports the end of its snapshot
--- as the cursor, so the next refresh does not read and append the same rows again.
+-- An incremental refresh resumes from the cursor that the bounded read of the previous refresh reports.
+-- A query can stop the read before its end when the rest of the rows cannot change the result (a `DISTINCT` by
+-- constants, a `LIMIT BY` without keys): the read still reports the cursor after all the rows, so the next refresh
+-- does not get them again. A query that returns a partial result (the overflow mode `break`) is rejected, because
+-- the rows that were not read would be lost.
+-- The source is larger than one chunk of the read, otherwise the read ends before it is stopped.
 
-DROP TABLE IF EXISTS incr_stop_src;
-DROP TABLE IF EXISTS incr_stop_tgt_limit_by;
-DROP TABLE IF EXISTS incr_stop_tgt_limit_until;
-DROP TABLE IF EXISTS incr_stop_tgt_distinct;
+DROP TABLE IF EXISTS es_src;
+DROP TABLE IF EXISTS es_tgt;
+DROP TABLE IF EXISTS es_mv;
 
-CREATE TABLE incr_stop_src (k UInt64) ENGINE = MergeTree ORDER BY k
-SETTINGS
-    enable_block_number_column = 1,
-    enable_block_offset_column = 1,
-    add_minmax_index_for_block_number_column = 1,
-    add_minmax_index_for_block_offset_column = 1,
-    part_minmax_index_columns = 'with_block_number_offset';
-CREATE TABLE incr_stop_tgt_limit_by (k UInt64) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE incr_stop_tgt_limit_until (k UInt64) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE incr_stop_tgt_distinct (k UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE es_src (k UInt64)
+ENGINE = MergeTree ORDER BY k
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+CREATE TABLE es_tgt (k UInt64) ENGINE = MergeTree ORDER BY k;
 
--- Many blocks of the source, so that the query stops long before the source is read to the end.
-INSERT INTO incr_stop_src SELECT number FROM numbers(1000000);
+INSERT INTO es_src SELECT number FROM numbers(100000);
 
-CREATE MATERIALIZED VIEW incr_stop_mv_limit_by
-    REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO incr_stop_tgt_limit_by EMPTY
-    AS SELECT k FROM incr_stop_src LIMIT 1 BY tuple()
+SELECT '-- LIMIT BY without keys';
+CREATE MATERIALIZED VIEW es_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO es_tgt EMPTY
+    AS SELECT k FROM es_src LIMIT 1 BY tuple()
+    SETTINGS max_block_size = 1, max_threads = 1, exact_rows_before_limit = 0;
+SYSTEM REFRESH VIEW es_mv;
+SYSTEM WAIT VIEW es_mv;
+SELECT count() FROM es_tgt;
+-- No new rows in the source: nothing is appended.
+SYSTEM REFRESH VIEW es_mv;
+SYSTEM WAIT VIEW es_mv;
+SELECT count() FROM es_tgt;
+-- Only the new rows are read.
+INSERT INTO es_src SELECT number FROM numbers(100000, 100000);
+SYSTEM REFRESH VIEW es_mv;
+SYSTEM WAIT VIEW es_mv;
+SELECT count(), countIf(k >= 100000) FROM es_tgt;
+SYSTEM REFRESH VIEW es_mv;
+SYSTEM WAIT VIEW es_mv;
+SELECT count(), countIf(k >= 100000) FROM es_tgt;
+DROP TABLE es_mv;
+TRUNCATE TABLE es_tgt;
+
+SELECT '-- DISTINCT by constants';
+CREATE MATERIALIZED VIEW es_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO es_tgt EMPTY
+    AS SELECT DISTINCT toUInt64(1) AS k FROM es_src
     SETTINGS max_block_size = 1, max_threads = 1;
+SYSTEM REFRESH VIEW es_mv;
+SYSTEM WAIT VIEW es_mv;
+SELECT count() FROM es_tgt;
+SYSTEM REFRESH VIEW es_mv;
+SYSTEM WAIT VIEW es_mv;
+SELECT count() FROM es_tgt;
+INSERT INTO es_src SELECT number FROM numbers(200000, 100000);
+SYSTEM REFRESH VIEW es_mv;
+SYSTEM WAIT VIEW es_mv;
+SELECT count() FROM es_tgt;
+SYSTEM REFRESH VIEW es_mv;
+SYSTEM WAIT VIEW es_mv;
+SELECT count() FROM es_tgt;
+DROP TABLE es_mv;
+TRUNCATE TABLE es_tgt;
 
-CREATE MATERIALIZED VIEW incr_stop_mv_limit_until
-    REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO incr_stop_tgt_limit_until EMPTY
-    AS SELECT k FROM incr_stop_src LIMIT UNTIL k = 1
-    SETTINGS max_block_size = 1, max_threads = 1;
+SELECT '-- The overflow mode break';
+CREATE MATERIALIZED VIEW es_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO es_tgt EMPTY
+    AS SELECT k FROM es_src
+    SETTINGS max_rows_to_read = 1, read_overflow_mode = 'break', max_block_size = 1, max_threads = 1; -- { serverError NOT_IMPLEMENTED }
+CREATE MATERIALIZED VIEW es_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO es_tgt EMPTY
+    AS SELECT DISTINCT k FROM es_src
+    SETTINGS max_rows_in_distinct = 1, distinct_overflow_mode = 'break', max_block_size = 1, max_threads = 1; -- { serverError NOT_IMPLEMENTED }
+CREATE MATERIALIZED VIEW es_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO es_tgt EMPTY
+    AS SELECT k FROM es_src
+    SETTINGS max_result_rows = 1, result_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
+CREATE MATERIALIZED VIEW es_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO es_tgt EMPTY
+    AS SELECT k FROM es_src
+    SETTINGS max_execution_time = 1, timeout_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
+SET read_overflow_mode = 'break';
+CREATE MATERIALIZED VIEW es_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO es_tgt EMPTY
+    AS SELECT k FROM es_src; -- { serverError NOT_IMPLEMENTED }
+SET read_overflow_mode = 'throw';
 
-CREATE MATERIALIZED VIEW incr_stop_mv_distinct
-    REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO incr_stop_tgt_distinct EMPTY
-    AS SELECT DISTINCT toUInt64(0) AS k FROM incr_stop_src
-    SETTINGS max_block_size = 1, max_threads = 1;
+SELECT '-- The overflow mode throw';
+-- The refresh fails and nothing is appended.
+CREATE MATERIALIZED VIEW es_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO es_tgt EMPTY
+    AS SELECT k FROM es_src SETTINGS max_rows_to_read = 1;
+SYSTEM REFRESH VIEW es_mv;
+SYSTEM WAIT VIEW es_mv; -- { serverError REFRESH_FAILED }
+SELECT count() FROM es_tgt;
 
--- Two refreshes without inserts in between append the rows once.
-SYSTEM REFRESH VIEW incr_stop_mv_limit_by;
-SYSTEM WAIT VIEW incr_stop_mv_limit_by;
-SYSTEM REFRESH VIEW incr_stop_mv_limit_by;
-SYSTEM WAIT VIEW incr_stop_mv_limit_by;
-SELECT 'limit by', count(), min(k), max(k) FROM incr_stop_tgt_limit_by;
-
-SYSTEM REFRESH VIEW incr_stop_mv_limit_until;
-SYSTEM WAIT VIEW incr_stop_mv_limit_until;
-SYSTEM REFRESH VIEW incr_stop_mv_limit_until;
-SYSTEM WAIT VIEW incr_stop_mv_limit_until;
-SELECT 'limit until', count(), min(k), max(k) FROM incr_stop_tgt_limit_until;
-
-SYSTEM REFRESH VIEW incr_stop_mv_distinct;
-SYSTEM WAIT VIEW incr_stop_mv_distinct;
-SYSTEM REFRESH VIEW incr_stop_mv_distinct;
-SYSTEM WAIT VIEW incr_stop_mv_distinct;
-SELECT 'distinct', count(), min(k), max(k) FROM incr_stop_tgt_distinct;
-
--- The rows inserted after the refresh are read by the next one.
-INSERT INTO incr_stop_src SELECT number FROM numbers(1000000, 10);
-SYSTEM REFRESH VIEW incr_stop_mv_limit_by;
-SYSTEM WAIT VIEW incr_stop_mv_limit_by;
-SELECT 'limit by', count(), min(k), max(k) FROM incr_stop_tgt_limit_by;
-
-DROP TABLE incr_stop_mv_limit_by;
-DROP TABLE incr_stop_mv_limit_until;
-DROP TABLE incr_stop_mv_distinct;
-DROP TABLE incr_stop_tgt_limit_by;
-DROP TABLE incr_stop_tgt_limit_until;
-DROP TABLE incr_stop_tgt_distinct;
-DROP TABLE incr_stop_src;
+DROP TABLE es_mv;
+DROP TABLE es_tgt;
+DROP TABLE es_src;
