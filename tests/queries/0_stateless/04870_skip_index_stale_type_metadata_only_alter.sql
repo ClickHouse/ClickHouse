@@ -146,7 +146,6 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_bool WHE
 SELECT count() FROM t_keep_bool WHERE v = 0;
 
 SELECT '-- 18. control: an UNCHANGED JSON column with a typed DateTime path keeps pruning';
-SET enable_json_type = 1;
 -- No ALTER at all here. A fail-closed fallback that merely asks "is a DateTime reachable from either
 -- side" answers yes for two byte-identical JSON types, and every non-trivial index over such a
 -- column would then lose pruning on every part forever.

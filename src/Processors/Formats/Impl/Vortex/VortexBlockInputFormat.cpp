@@ -12,7 +12,6 @@
 #include <Processors/Formats/Impl/ArrowIPC/ArrowIPCSchemaReader.h>
 #include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
 #include <Columns/ColumnsNumber.h>
-#include <boost/algorithm/string/case_conv.hpp>
 #include <Processors/Formats/Impl/Vortex/VortexFFIHelpers.h>
 #include <Processors/Formats/Impl/Vortex/VortexScanPlanner.h>
 #include <Processors/Port.h>
@@ -485,14 +484,8 @@ void VortexBlockInputFormat::prepareReader()
         auto geo_it = file_schema->custom_metadata.find("geo");
         geo_columns = parseGeoMetadataEncoding(geo_it != file_schema->custom_metadata.end() ? &geo_it->second : nullptr);
     }
-    requested_types.clear();
-    for (const auto & header_column : getPort().getHeader())
-    {
-        String name = header_column.name;
-        if (format_settings.arrow.case_insensitive_column_matching)
-            boost::to_lower(name);
-        requested_types[name] = header_column.type;
-    }
+    const ArrowIPC::DictionaryRegistry no_dictionaries;
+    requested_types = ArrowIPC::RecordBatchDecoder(*file_schema, format_settings, no_dictionaries).bindRequestedTypes(getPort().getHeader());
 
     const VortexScanPlan plan = planVortexScan(getPort().getHeader(), *file_schema, format_filter_info.get(), format_settings, log);
 

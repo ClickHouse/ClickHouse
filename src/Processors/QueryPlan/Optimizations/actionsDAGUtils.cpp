@@ -534,6 +534,42 @@ static PossiblyMonotonicChain buildPossiblyMonitinicChain(const ActionsDAG::Node
     return {node, std::move(chain)};
 }
 
+/// NULL and NaN are sorted at one end of the stream (see `nulls_direction`), and they stay there only if
+/// the function keeps them NULL and NaN. A function whose result cannot be NULL or NaN while its argument
+/// can (for example `sign`, which returns 1 for NaN, or `toInt64`) turns them into ordinary values at that
+/// end of the stream, so its result is not sorted even if the function is monotonic.
+static bool keepsNullAndNaN(const DataTypePtr & argument_type, const DataTypePtr & result_type)
+{
+    if (isNullableOrLowCardinalityNullable(argument_type) && !isNullableOrLowCardinalityNullable(result_type))
+        return false;
+
+    const auto argument = removeLowCardinalityAndNullable(argument_type);
+    if (!isFloat(argument))
+        return true;
+
+    /// A conversion to `BFloat16` keeps only the high half of a `Float32`, so a NaN whose payload is
+    /// in the low half (for example a signaling NaN) becomes an infinity.
+    const auto result = removeLowCardinalityAndNullable(result_type);
+    return isFloat(result) && (!WhichDataType(result).isBFloat16() || WhichDataType(argument).isBFloat16());
+}
+
+/// `Decimal` and `Interval` are stored as signed integers, so they have the same minimum as `Int*`.
+static bool isStoredAsSignedInteger(const DataTypePtr & type)
+{
+    return isInt(type) || isDecimal(type) || isInterval(type);
+}
+
+/// The range of the argument is not known here, so it can include the minimum of a signed integer type.
+/// A decreasing function such as `negate` maps it to itself if the result is not wider than the argument
+/// (`-x` is `x` for the minimum of `Int64`, `Decimal64` or `IntervalSecond`), and then the result is not sorted.
+static bool canOverflowAtMinimum(const DataTypePtr & argument_type, const DataTypePtr & result_type)
+{
+    const auto argument = removeLowCardinalityAndNullable(argument_type);
+    const auto result = removeLowCardinalityAndNullable(result_type);
+    return isStoredAsSignedInteger(argument) && (isInteger(result) || isStoredAsSignedInteger(result))
+        && result->getSizeOfValueInMemory() <= argument->getSizeOfValueInMemory();
+}
+
 /// Check whether all the function in chain are monotonic
 static bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicChain & chain)
 {
@@ -550,13 +586,20 @@ static bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicCha
         ++it;
 
         const auto & type = node->children[pos]->result_type;
+        if (!keepsNullAndNaN(type, node->result_type))
+            break;
+
         const Field field{};
         auto monotonicity = node->function_base->getMonotonicityForRange(*type, field, field);
         if (!monotonicity.is_monotonic)
             break;
 
         if (!monotonicity.is_positive)
+        {
+            if (canOverflowAtMinimum(type, node->result_type))
+                break;
             chain.changes_order = !chain.changes_order;
+        }
 
         chain.is_strict = chain.is_strict && monotonicity.is_strict && !hasNullConstantArgument(*node);
 
@@ -661,8 +704,13 @@ void applyActionsToSortDescription(
         if (sort_colunm.output)
             descr.column_name = sort_colunm.output->result_name;
 
+        /// A decreasing function keeps NaN/NULL at the same end of the stream,
+        /// so their placement relative to the flipped direction flips as well.
         if (sort_colunm.changes_order)
+        {
             descr.direction *= -1;
+            descr.nulls_direction *= -1;
+        }
 
         if (!sort_colunm.is_strict)
             break;

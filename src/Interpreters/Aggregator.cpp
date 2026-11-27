@@ -26,6 +26,7 @@
 #include <unordered_set>
 #include <base/memcmpSmall.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionInfo.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -112,6 +113,8 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char aggregator_merge_collect_states_throw[];
+    extern const char aggregator_convert_queued_states_throw[];
+    extern const char aggregator_convert_insert_results_throw[];
 }
 
 }
@@ -2692,6 +2695,9 @@ bool Aggregator::executeOnBlock(Columns columns,
         }
     }
 
+    /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+    replaceNegativeZeros(key_columns, materialized_columns);
+
     prepareAggregateInstructions(columns, aggregate_columns, materialized_columns, aggregate_functions_instructions, nested_columns_holder);
     block_columns_scope.reset();
 
@@ -4627,6 +4633,10 @@ Chunk Aggregator::insertResultsIntoColumns(
             ++aggregate_functions_destroy_index;
 
             aggregate_functions[destroy_index]->insertResultIntoBatch(0, places.size(), places.data(), offset, *final_aggregate_column, arena);
+            fiu_do_on(FailPoints::aggregator_convert_insert_results_throw,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault while inserting the results of a block");
+            });
         }
     }
     catch (...)
@@ -4639,7 +4649,6 @@ Chunk Aggregator::insertResultsIntoColumns(
 #if USE_EMBEDDED_COMPILER
         if (use_compiled_functions && is_aggregate_function_compiled[aggregate_functions_destroy_index])
         {
-            ++aggregate_functions_destroy_index;
             continue;
         }
 #endif
@@ -4820,6 +4829,11 @@ Chunks Aggregator::convertToBlockImplFinal(
         const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
         IColumn::SerializationSettings serialization_settings{
             .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+        if (unlikely(places.size() == 1))
+            fiu_do_on(FailPoints::aggregator_convert_queued_states_throw,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault while converting the states of a block");
+            });
         method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
         places.emplace_back(mapped);
 
@@ -4828,26 +4842,36 @@ Chunks Aggregator::convertToBlockImplFinal(
 
         if (!return_single_block && places.size() >= max_block_size)
         {
+            /// `insertResultsIntoColumns` owns the states of `places` from the call on, also when it throws, so the `catch` must not see them.
+            SCOPE_EXIT({ places.clear(); });
             chunks.emplace_back(
                 insertResultsIntoColumns(places, std::move(out_cols.value()), arena, has_null_key_data, use_compiled_functions));
-            places.clear();
             out_cols.reset();
             has_null_key_data = false;
         }
     };
 
-    if (allow_having_prefilter)
-        data.forEachValue([&](const auto & key, auto & mapped) { fill_block.template operator()<true>(key, mapped); });
-    else
-        data.forEachValue([&](const auto & key, auto & mapped) { fill_block.template operator()<false>(key, mapped); });
-
-    if (skipped)
-        ProfileEvents::increment(ProfileEvents::AggregationHavingPrefilterGroupsSkipped, skipped);
-
-    if (untruncated_keys)
+    try
     {
-        untruncated_keys->bytes = key_bytes_meter->getBytes();
-        untruncated_keys->sample_columns = key_bytes_meter->detachSample();
+        if (allow_having_prefilter)
+            data.forEachValue([&](const auto & key, auto & mapped) { fill_block.template operator()<true>(key, mapped); });
+        else
+            data.forEachValue([&](const auto & key, auto & mapped) { fill_block.template operator()<false>(key, mapped); });
+
+        if (skipped)
+            ProfileEvents::increment(ProfileEvents::AggregationHavingPrefilterGroupsSkipped, skipped);
+
+        if (untruncated_keys)
+        {
+            untruncated_keys->bytes = key_bytes_meter->getBytes();
+            untruncated_keys->sample_columns = key_bytes_meter->detachSample();
+        }
+    }
+    catch (...)
+    {
+        /// The cells of the queued states are already nulled, so the table no longer destroys them.
+        destroyDetachedSources(places, /*first_function=*/ 0, /*skip_compiled=*/ false);
+        throw;
     }
 
     if (return_single_block)

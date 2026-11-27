@@ -138,7 +138,9 @@ Possible values:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "2097152"},{"label": "Value is unified with `filesystem_prefetch_min_bytes_for_single_read_task`"}]}]}/>
 
-Min bytes to read per task.
+The minimum amount of compressed data, in bytes, that a single reading task reads from a part of a `MergeTree` table stored on a remote disk (for example, S3). Larger tasks mean fewer requests to the storage, while smaller tasks allow distributing the work between threads more evenly.
+
+The task size is not increased beyond the size at which every reading thread gets at least two tasks. The setting is also used to estimate the number of reading threads when deciding whether to use parallel replicas automatically.
 
 ## merge_tree_min_read_task_size {#merge_tree_min_read_task_size}
 
