@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexLegacyHypothesis.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -11,6 +12,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
@@ -207,6 +210,26 @@ bool isRepresentationPreservingConversion(const IDataType * from, const IDataTyp
         }
 
         return false;
+    }
+}
+
+bool missingMapKeyMatches(
+    const String & function_name, const DataTypePtr & map_value_type, const Field & constant, const DataTypePtr & constant_type, ContextPtr context)
+{
+    try
+    {
+        const auto value_type = removeLowCardinality(map_value_type);
+        auto missing_key_value = value_type->createColumn();
+        value_type->insertDefaultInto(*missing_key_value);
+        ColumnsWithTypeAndName arguments{
+            {ColumnConst::create(std::move(missing_key_value), 1), value_type, ""},
+            {constant_type->createColumnConst(1, constant), constant_type, ""}};
+        const auto function = FunctionFactory::instance().get(function_name, context)->build(arguments);
+        return function->execute(arguments, function->getResultType(), 1, /*dry_run=*/ false)->getBool(0);
+    }
+    catch (const Exception &)
+    {
+        return true;
     }
 }
 

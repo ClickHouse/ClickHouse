@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeString.h>
@@ -632,6 +633,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     const auto map_key_index = getKeyIndex(fmt::format("mapKeys({})", column_name));
     const auto map_value_index = getKeyIndex(fmt::format("mapValues({})", column_name));
     bool reads_map_element_against_values_index = false;
+    /// A missing key breaks the index for `notEquals` and `notLike` exactly where it does for `equals` and `like`.
+    const String missing_key_function = function_name == "notEquals" ? "equals" : (function_name == "notLike" ? "like" : function_name);
 
     if (key_node.isFunction())
     {
@@ -647,10 +650,13 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
               * We cannot skip keys that does not exist in map if comparison is with default type value because
               * that way we skip necessary granules where map key does not exist.
               */
-            if (const_value == value_type->getDefault())
+            auto first_argument = key_function_node.getArgumentAt(0);
+            const auto * map_type = typeid_cast<const DataTypeMap *>(first_argument.getDAGNode()->result_type.get());
+            if (const_value == value_type->getDefault()
+                || (map_type
+                    && missingMapKeyMatches(missing_key_function, map_type->getValueType(), const_value, value_type, key_node.getContext())))
                 return false;
 
-            auto first_argument = key_function_node.getArgumentAt(0);
             const auto map_column_name = first_argument.getColumnName();
             if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
             {
@@ -693,7 +699,9 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
             /// Same as arrayElement: skip when comparing with default value because
             /// the subcolumn returns default for keys that don't exist in the map.
-            if (const_value == value_type->getDefault())
+            if (const_value == value_type->getDefault()
+                || missingMapKeyMatches(
+                    missing_key_function, key_node.getDAGNode()->result_type, const_value, value_type, key_node.getContext()))
                 return false;
 
             if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))

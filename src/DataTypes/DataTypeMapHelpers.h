@@ -11,16 +11,19 @@
 namespace DB
 {
 
+class IDataType;
+
 /// Optimized extraction of values for a given constant key from a Map column
 /// stored as Array(Tuple(K, V)).
 ///
 /// For each row in [start, end), finds the key-value pair matching `key`
 /// and inserts the corresponding value into `result`. If the key is not found,
-/// inserts a default value (or null for Nullable value types).
+/// inserts the default of `value_type` (null for Nullable value types).
 void extractKeyValueFromMap(
     const IColumn & nested_column,
     const IColumn & key,
     IColumn & result,
+    const IDataType & value_type,
     size_t start,
     size_t end);
 

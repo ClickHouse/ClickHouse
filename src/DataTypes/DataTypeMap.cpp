@@ -225,6 +225,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(s
         map_serialization.getMapSerializationVersion(),
         key_column->getPtr(),
         read_whole_map ? getPtr() : nested,
+        value_type,
         read_whole_map);
     auto res = std::make_unique<SubcolumnInfo>();
     res->data = SubstreamData(key_value_serialization).withType(value_type);
@@ -237,7 +238,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(s
     {
         const auto & column_map = assert_cast<const ColumnMap &>(*data.column);
         auto value_column = value_type->createColumn();
-        extractKeyValueFromMap(*column_map.getNestedColumnPtr(), *key_column->getPtr(), *value_column, 0, data.column->size());
+        extractKeyValueFromMap(*column_map.getNestedColumnPtr(), *key_column->getPtr(), *value_column, *value_type, 0, data.column->size());
         res->data.column = std::move(value_column);
     }
 

@@ -21,12 +21,14 @@ SerializationMapKeyValue::SerializationMapKeyValue(
     MergeTreeMapSerializationVersion serialization_version_,
     ColumnPtr key_,
     const DataTypePtr & nested_type_,
+    const DataTypePtr & value_type_,
     bool read_whole_map_)
     : SerializationWrapper(value_serialization_)
     , map_nested_serialization(map_nested_serialization_)
     , serialization_version(serialization_version_)
     , key(std::move(key_))
     , nested_type(nested_type_)
+    , value_type(value_type_)
     , read_whole_map(read_whole_map_)
 {
 }
@@ -37,10 +39,11 @@ SerializationPtr SerializationMapKeyValue::create(
     MergeTreeMapSerializationVersion serialization_version_,
     ColumnPtr key_,
     const DataTypePtr & nested_type_,
+    const DataTypePtr & value_type_,
     bool read_whole_map_)
 {
     return std::shared_ptr<ISerialization>(new SerializationMapKeyValue(
-        value_serialization_, map_nested_serialization_, serialization_version_, std::move(key_), nested_type_, read_whole_map_));
+        value_serialization_, map_nested_serialization_, serialization_version_, std::move(key_), nested_type_, value_type_, read_whole_map_));
 }
 
 /// Deserialization state for reading a single key's value from a Map.
@@ -179,7 +182,7 @@ void SerializationMapKeyValue::deserializeBinaryBulkWithMultipleStreams(
     }
 
     /// Extract the value for the requested key from the deserialized Map data.
-    extractKeyValueFromMap(*nested_column, *key, column, nested_column->size() - num_read_rows, nested_column->size());
+    extractKeyValueFromMap(*nested_column, *key, column, *value_type, nested_column->size() - num_read_rows, nested_column->size());
 
     if (read_one_bucket)
         settings.path.pop_back();

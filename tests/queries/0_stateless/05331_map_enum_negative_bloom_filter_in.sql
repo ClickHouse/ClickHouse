@@ -1,7 +1,6 @@
--- For a missing key `arrayElement` over `Enum` map values returns the zero of the underlying integer,
--- which is not the default value of the `Enum` when it has a negative value. `m['k'] IN (...)` with
--- a set that contains the name of the value 0 is true for rows without the key, so a bloom filter
--- index on `mapValues` or `mapKeys` must not prune them.
+-- For a missing key `arrayElement` over `Enum` map values returns the default value of the `Enum`, its
+-- lowest value. `m['k'] IN (...)` with a set that contains its name is true for rows without the key,
+-- so a bloom filter index on `mapValues` or `mapKeys` must not prune them.
 DROP TABLE IF EXISTS t_map_enum_neg_values_bf;
 DROP TABLE IF EXISTS t_map_enum_neg_keys_bf;
 DROP TABLE IF EXISTS t_map_nullable_enum_neg_keys_bf;
@@ -37,6 +36,8 @@ SELECT id FROM t_map_enum_neg_keys_bf WHERE m['k'] IN ('z') ORDER BY id;
 SELECT id FROM t_map_enum_neg_keys_bf WHERE m['k'] IN ('a') ORDER BY id;
 SELECT id FROM t_map_enum_neg_keys_bf WHERE m['k'] IN ('z') ORDER BY id SETTINGS use_skip_indexes = 0;
 SELECT id FROM t_map_enum_neg_keys_bf WHERE m['k'] IN ('a') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT id FROM t_map_enum_neg_keys_bf WHERE m['k'] IN ('m') ORDER BY id;
+SELECT id FROM t_map_enum_neg_keys_bf WHERE m['k'] IN ('m') ORDER BY id SETTINGS use_skip_indexes = 0;
 
 -- Over `Nullable(Enum)` map values a missing key gives `NULL`, so the index can still prune by the name of the value 0.
 CREATE TABLE t_map_nullable_enum_neg_keys_bf

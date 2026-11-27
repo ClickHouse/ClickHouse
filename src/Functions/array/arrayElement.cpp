@@ -23,6 +23,7 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Utils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionLowCardinalityFastPath.h>
@@ -152,6 +153,24 @@ public:
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 
 private:
+    /// `masked_rows`: see `NullMapBuilder::initMask`.
+    [[nodiscard]] ColumnPtr executeMasked(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        const UInt8 * masked_rows) const;
+
+    /// Without a mask, the virtual `executeImpl`, which `FunctionWithLowCardinalityFastPath` overrides.
+    [[nodiscard]] ColumnPtr recurse(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        const UInt8 * masked_rows) const
+    {
+        return masked_rows ? executeMasked(arguments, result_type, input_rows_count, masked_rows)
+                           : executeImpl(arguments, result_type, input_rows_count);
+    }
+
     ColumnPtr perform(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
@@ -169,6 +188,7 @@ private:
         const ColumnArray::Offsets & offsets,
         const IColumn & data,
         IColumn & result,
+        const IDataType & element_type,
         ArrayImpl::NullMapBuilder<mode> & builder);
 
     template <typename DataType>
@@ -254,7 +274,11 @@ private:
      *  Currently implemented just as linear search in array.
      *  However, optimizations are possible.
      */
-    [[nodiscard]] ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+    [[nodiscard]] ColumnPtr executeMap(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        const UInt8 * masked_rows) const;
 
     /** For a JSON (Object) column, extract the combined subcolumn for the given key.
       */
@@ -349,8 +373,15 @@ public:
 
     ColumnPtr getNullMapColumnPtr() && { return std::move(sink_null_map_holder); }
 
+    /// Rows the caller makes NULL afterwards (a NULL index): a missing element there keeps the column default.
+    void initMask(const UInt8 * mask_) { mask = mask_; }
+    [[nodiscard]] const UInt8 * getMask() const { return mask; }
+    [[nodiscard]] const UInt8 * getSinkNullMap() const { return sink_null_map; }
+    [[nodiscard]] bool isMasked(size_t row) const { return mask && mask[row]; }
+
 private:
     const UInt8 * src_null_map = nullptr;
+    const UInt8 * mask = nullptr;
     UInt8 * sink_null_map = nullptr;
     MutableColumnPtr sink_null_map_holder;
     size_t index = 0;
@@ -360,6 +391,14 @@ private:
 
 namespace
 {
+
+void insertTypeDefault(IColumn & column, const IDataType & type, bool trivial_default)
+{
+    if (trivial_default)
+        column.insertDefault();
+    else
+        type.insertDefaultInto(column);
+}
 
 template <typename T, ArrayElementExceptionMode mode>
 struct ArrayElementNumImpl
@@ -374,6 +413,7 @@ struct ArrayElementNumImpl
         const ColumnArray::Offsets & offsets,
         const ColumnArray::Offset index,
         PaddedPODArray<T> & result,
+        T default_value,
         ArrayImpl::NullMapBuilder<mode> & builder)
     {
         size_t size = offsets.size();
@@ -396,7 +436,7 @@ struct ArrayElementNumImpl
             }
             else
             {
-                result[i] = T();
+                result[i] = builder.isMasked(i) ? T() : default_value;
                 builder.update();
             }
 
@@ -412,6 +452,7 @@ struct ArrayElementNumImpl
         const ColumnArray::Offsets & offsets,
         const PaddedPODArray<TIndex> & indices,
         PaddedPODArray<T> & result,
+        T default_value,
         ArrayImpl::NullMapBuilder<mode> & builder)
     {
         size_t size = offsets.size();
@@ -437,7 +478,7 @@ struct ArrayElementNumImpl
             }
             else
             {
-                result[i] = T();
+                result[i] = builder.isMasked(i) ? T() : default_value;
                 builder.update();
             }
 
@@ -925,10 +966,12 @@ struct ArrayElementGenericImpl
         const ColumnArray::Offsets & offsets,
         const ColumnArray::Offset index,
         IColumn & result,
+        const IDataType & type,
         ArrayImpl::NullMapBuilder<mode> & builder)
     {
         size_t size = offsets.size();
         result.reserve(size);
+        const bool trivial_default = (builder && result.canBeInsideNullable()) || type.isDefaultInsertTrivial();
 
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
@@ -943,7 +986,7 @@ struct ArrayElementGenericImpl
             }
             else
             {
-                result.insertDefault();
+                insertTypeDefault(result, type, trivial_default || builder.isMasked(i));
                 builder.update();
             }
 
@@ -959,10 +1002,12 @@ struct ArrayElementGenericImpl
         const ColumnArray::Offsets & offsets,
         const PaddedPODArray<TIndex> & indices,
         IColumn & result,
+        const IDataType & type,
         ArrayImpl::NullMapBuilder<mode> & builder)
     {
         size_t size = offsets.size();
         result.reserve(size);
+        const bool trivial_default = (builder && result.canBeInsideNullable()) || type.isDefaultInsertTrivial();
 
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
@@ -984,7 +1029,7 @@ struct ArrayElementGenericImpl
             }
             else
             {
-                result.insertDefault();
+                insertTypeDefault(result, type, trivial_default || builder.isMasked(i));
                 builder.update();
             }
 
@@ -1019,10 +1064,12 @@ ColumnPtr FunctionArrayElement<mode>::executeNumberConst(
     if (!col_res_vec)
         return nullptr;
 
+    const auto default_value = builder ? DataType{} : getTypeDefaultValue<ColVecType>(*result_type);
+
     if (index.getType() == Field::Types::UInt64 || (index.getType() == Field::Types::Int64 && index.safeGet<Int64>() >= 0))
     {
         ArrayElementNumImpl<DataType, mode>::template vectorConst<false>(
-            col_nested->getData(), col_array->getOffsets(), index.safeGet<UInt64>() - 1, col_res_vec->getData(), builder);
+            col_nested->getData(), col_array->getOffsets(), index.safeGet<UInt64>() - 1, col_res_vec->getData(), default_value, builder);
     }
     else if (index.getType() == Field::Types::Int64)
     {
@@ -1039,6 +1086,7 @@ ColumnPtr FunctionArrayElement<mode>::executeNumberConst(
             col_array->getOffsets(),
             -(static_cast<UInt64>(index.safeGet<Int64>()) + 1),
             col_res_vec->getData(),
+            default_value,
             builder);
     }
     else
@@ -1070,8 +1118,10 @@ ColumnPtr FunctionArrayElement<mode>::executeNumber(
     if (!col_res_vec)
         return nullptr;
 
+    const auto default_value = builder ? DataType{} : getTypeDefaultValue<ColVecType>(*result_type);
+
     ArrayElementNumImpl<DataType, mode>::template vector<IndexType>(
-        col_nested->getData(), col_array->getOffsets(), indices, col_res_vec->getData(), builder);
+        col_nested->getData(), col_array->getOffsets(), indices, col_res_vec->getData(), default_value, builder);
 
     return col_res;
 }
@@ -1495,13 +1545,14 @@ ColumnPtr FunctionArrayElement<mode>::executeGenericConst(
 
     const auto & col_nested = col_array->getData();
     auto col_res = col_nested.cloneEmpty();
+    const auto & nested_type = *assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
 
     if (index.getType() == Field::Types::UInt64 || (index.getType() == Field::Types::Int64 && index.safeGet<Int64>() >= 0))
         ArrayElementGenericImpl<mode>::template vectorConst<false>(
-            col_nested, col_array->getOffsets(), index.safeGet<UInt64>() - 1, *col_res, builder);
+            col_nested, col_array->getOffsets(), index.safeGet<UInt64>() - 1, *col_res, nested_type, builder);
     else if (index.getType() == Field::Types::Int64)
         ArrayElementGenericImpl<mode>::template vectorConst<true>(
-            col_nested, col_array->getOffsets(), -(static_cast<UInt64>(index.safeGet<Int64>() + 1)), *col_res, builder);
+            col_nested, col_array->getOffsets(), -(static_cast<UInt64>(index.safeGet<Int64>() + 1)), *col_res, nested_type, builder);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal type of array index");
 
@@ -1536,8 +1587,10 @@ ColumnPtr FunctionArrayElement<mode>::executeGeneric(
 
     const auto & col_nested = col_array->getData();
     auto col_res = col_nested.cloneEmpty();
+    const auto & nested_type = *assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
 
-    ArrayElementGenericImpl<mode>::template vector<IndexType>(col_nested, col_array->getOffsets(), indices, *col_res, builder);
+    ArrayElementGenericImpl<mode>::template vector<IndexType>(
+        col_nested, col_array->getOffsets(), indices, *col_res, nested_type, builder);
 
     return col_res;
 }
@@ -1558,6 +1611,7 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
         return nullptr;
 
     auto res = result_type->createColumn();
+    const bool trivial_default = (builder && res->canBeInsideNullable()) || result_type->isDefaultInsertTrivial();
 
     size_t rows = input_rows_count;
     const IColumn & array_elements = col_array->getData();
@@ -1580,7 +1634,7 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
         }
         else
         {
-            res->insertDefault();
+            insertTypeDefault(*res, *result_type, trivial_default || builder.isMasked(i));
             builder.update();
         }
     }
@@ -1862,6 +1916,9 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
     ColumnsWithTypeAndName temporary_results(2);
     temporary_results[1] = arguments[1];
 
+    /// With a sink, every missing element is NULL in the result: its tuple elements keep the column default.
+    const UInt8 * masked_rows = builder.getSinkNullMap() ? builder.getSinkNullMap() : builder.getMask();
+
     /// results of taking elements by index for arrays from each element of the tuples;
     Columns result_tuple_columns(tuple_size);
 
@@ -1873,7 +1930,7 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
         temporary_results[0] = array_of_tuple_section;
 
         auto type = getReturnTypeImpl({temporary_results[0].type, temporary_results[1].type});
-        auto col = executeImpl(temporary_results, type, input_rows_count);
+        auto col = recurse(temporary_results, type, input_rows_count, masked_rows);
         result_tuple_columns[i] = removeNullableIfNeeded(col, tuple_types[i]);
     }
 
@@ -2279,7 +2336,7 @@ String FunctionArrayElement<mode>::escapeJSONKeyIfNeeded(const String & key) con
 
 template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeMap(
-    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const UInt8 * masked_rows) const
 {
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
@@ -2336,7 +2393,7 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
         = {{values_array, std::make_shared<DataTypeArray>(type_map.getValueType()), ""},
            {std::move(indices_column), std::make_shared<DataTypeNumber<UInt64>>(), ""}};
 
-    return executeImpl(new_arguments, result_type, input_rows_count);
+    return recurse(new_arguments, result_type, input_rows_count, masked_rows);
 }
 
 template <ArrayElementExceptionMode mode>
@@ -2447,6 +2504,8 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
             result_col = ColVecType::create();
         auto & result_vec = result_col->getData();
         result_vec.resize(total_indices);
+        const auto out_of_bounds_value
+            = out_of_bounds_is_null ? DataType() : getTypeDefaultValue<ColVecType>(*removeNullable(result_element_type));
 
         NullMap * result_null_map = nullptr;
         MutableColumnPtr null_map_holder;
@@ -2493,7 +2552,7 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
                     }
                     else
                     {
-                        result_vec[out] = DataType();
+                        result_vec[out] = out_of_bounds_value;
                         if (result_null_map && out_of_bounds_is_null)
                             (*result_null_map)[out] = UInt8(1);
                     }
@@ -2553,7 +2612,8 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
     }
 
     /// Generic fallback path using insertFrom (handles String, Array, Tuple, etc.)
-    auto result_nested_col = removeNullable(result_element_type)->createColumn();
+    const auto result_nested_type = removeNullable(result_element_type);
+    auto result_nested_col = result_nested_type->createColumn();
     result_nested_col->reserve(total_indices);
 
     NullMap * result_null_map = nullptr;
@@ -2563,6 +2623,11 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
         null_map_holder = ColumnUInt8::create(total_indices, UInt8(0));
         result_null_map = &assert_cast<ColumnUInt8 &>(*null_map_holder).getData();
     }
+
+    /// A row under a NULL keeps the column default.
+    const bool trivial_default = result_nested_type->isDefaultInsertTrivial();
+    const bool null_index_trivial_default = trivial_default || result_null_map != nullptr;
+    const bool out_of_bounds_trivial_default = trivial_default || out_of_bounds_is_null;
 
     auto generic_process = [&]<typename IndexType>(const PaddedPODArray<IndexType> & indices)
     {
@@ -2578,7 +2643,7 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
             {
                 if (index_null_map && (*index_null_map)[k])
                 {
-                    result_nested_col->insertDefault();
+                    insertTypeDefault(*result_nested_col, *result_nested_type, null_index_trivial_default);
                     if (result_null_map)
                         (*result_null_map)[out] = UInt8(1);
                     continue;
@@ -2601,7 +2666,7 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
                 }
                 else
                 {
-                    result_nested_col->insertDefault();
+                    insertTypeDefault(*result_nested_col, *result_nested_type, out_of_bounds_trivial_default);
                     if (result_null_map && out_of_bounds_is_null)
                         (*result_null_map)[out] = UInt8(1);
                 }
@@ -3272,12 +3337,19 @@ ColumnPtr FunctionArrayElement<mode>::tryExecuteLowCardinality(
     if (index.getType() != Field::Types::String)
         return nullptr;
 
-    return recursiveRemoveLowCardinality(executeMap(arguments, result_type, input_rows_count));
+    return recursiveRemoveLowCardinality(executeMap(arguments, result_type, input_rows_count, nullptr));
 }
 
 template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    return executeMasked(arguments, result_type, input_rows_count, nullptr);
+}
+
+template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::executeMasked(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const UInt8 * masked_rows) const
 {
     /// A replicated column can arrive in either position.
     if (typeid_cast<const ColumnReplicated *>(arguments[0].column.get())
@@ -3308,7 +3380,10 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
             /// without turning the result into Nullable.
             auto nested_arguments = arguments;
             nested_arguments[1] = columnGetNested(arguments[1]);
-            auto result = executeImpl(nested_arguments, removeNullableOrLowCardinalityNullable(result_type), input_rows_count);
+            const UInt8 * index_null_map = nullptr;
+            if (result_type->isNullable() && !isColumnConst(*arguments[1].column))
+                index_null_map = assert_cast<const ColumnNullable &>(*arguments[1].column).getNullMapData().data();
+            auto result = recurse(nested_arguments, removeNullableOrLowCardinalityNullable(result_type), input_rows_count, index_null_map);
             /// `Nullable` inside `LowCardinality` lives in the dictionary, so the promotion is a dictionary
             /// rewrite, not an added null map. The only source that declares such a result here is a JSON
             /// path, and its key must be a constant `String`, so no NULL index row needs merging.
@@ -3346,7 +3421,7 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
 
     if (col_map || col_const_map)
-        return executeMap(arguments, result_type, input_rows_count);
+        return executeMap(arguments, result_type, input_rows_count, masked_rows);
 
     /// Array-of-indices mode: arr1[arr2] where arr2 is Array(Int*)
     if (checkAndGetDataType<DataTypeArray>(arguments[1].type.get()))
@@ -3378,6 +3453,7 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
     if (!is_array_of_nullable)
     {
         ArrayImpl::NullMapBuilder<mode> builder;
+        builder.initMask(masked_rows);
         auto res = perform(arguments, removeNullable(result_type), builder, input_rows_count);
 
         if (builder && res->canBeInsideNullable())
@@ -3388,6 +3464,7 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
 
     /// Perform initializations.
     ArrayImpl::NullMapBuilder<mode> builder;
+    builder.initMask(masked_rows);
     ColumnsWithTypeAndName source_columns;
 
     const DataTypePtr & input_type
@@ -3520,10 +3597,12 @@ ColumnPtr FunctionArrayElement<mode>::executeReplicated(
 
     const auto & replication_indexes = replicated_array->getIndexes();
     const auto & index_column = *args[1].column;
+    const auto element_type = removeNullable(assert_cast<const DataTypeArray &>(*args[0].type).getNestedType());
     /// Core loop to build result by dispatching based on the index type
     if (!tryEachType(
             IndexTypes{},
-            [&]<typename T>() { return gatherReplicated<T>(index_column, replication_indexes, offsets, *data, *result, builder); }))
+            [&]<typename T>()
+            { return gatherReplicated<T>(index_column, replication_indexes, offsets, *data, *result, *element_type, builder); }))
     {
         /// The index is not a plain numeric column (e.g. Nullable, or an array of indexes):
         /// materialize the array and let the generic path handle it.
@@ -3551,6 +3630,7 @@ bool FunctionArrayElement<mode>::gatherReplicated(
     const ColumnArray::Offsets & offsets,
     const IColumn & data,
     IColumn & result,
+    const IDataType & element_type,
     ArrayImpl::NullMapBuilder<mode> & builder)
 {
     const auto * index_vec = checkAndGetColumn<ColumnVector<IndexType>>(&index_column);
@@ -3559,6 +3639,7 @@ bool FunctionArrayElement<mode>::gatherReplicated(
 
     const auto & indices = index_vec->getData();
     size_t rows = indices.size();
+    const bool trivial_default = (builder && result.canBeInsideNullable()) || element_type.isDefaultInsertTrivial();
     /// Each output element is one insertFrom reading directly from the shared nested data
     for (size_t i = 0; i < rows; ++i)
     {
@@ -3578,7 +3659,7 @@ bool FunctionArrayElement<mode>::gatherReplicated(
         }
         else
         {
-            result.insertDefault();
+            insertTypeDefault(result, element_type, trivial_default);
             builder.update();
         }
     }

@@ -1122,6 +1122,26 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         if (set_contain_default_value)
             return false;
 
+        /// A missing key reads the inserted default of the value type, which the set compares after a cast to its type.
+        if (const auto * dag_node = key_node.getDAGNode())
+        {
+            const auto missing_key_type = removeLowCardinalityAndNullable(dag_node->result_type);
+            ColumnPtr set_contains_missing_key_value;
+            try
+            {
+                auto missing_key_column = missing_key_type->createColumn();
+                missing_key_type->insertDefaultInto(*missing_key_column);
+                set_contains_missing_key_value = prepared_set->execute(
+                    {ColumnWithTypeAndName{std::move(missing_key_column), missing_key_type, ""}}, false /*negative*/);
+            }
+            catch (const Exception &)
+            {
+                return false;
+            }
+            if (assert_cast<const ColumnUInt8 &>(*set_contains_missing_key_value).getData()[0])
+                return false;
+        }
+
         /// Over `Enum` map values `arrayElement` returns the zero of the underlying integer for a missing key,
         /// which is not necessarily the default value of the `Enum` (its first value), so check it as well.
         /// Over `Nullable(Enum)` map values a missing key gives `NULL` rather than the zero, so this is not needed.
@@ -1719,6 +1739,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     if (map_value_field.isNull() || map_value_field == Field(Int64(0)) || map_value_field == map_value_type->getDefault())
                         return false;
                 }
+                /// A missing key reads the inserted default, e.g. the first value of each `Enum` in a `Tuple`.
+                else if (missingMapKeyMatches("equals", map_value_type, value_field, value_type, key_node.getContext()))
+                    return false;
             }
 
             size_t position = 0;

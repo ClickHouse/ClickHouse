@@ -41,6 +41,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
@@ -2133,8 +2134,11 @@ static bool prepareSetsForDefaultValueEvaluation(const ActionsDAG & subdag, cons
 static bool mayBeTrueOnDefaultValue(const ActionsDAG & subdag)
 {
     const auto * input = subdag.getInputs().front();
+    auto default_column = input->result_type->createColumn();
+    input->result_type->insertDefaultInto(*default_column);
     ActionsDAG::IntermediateExecutionResult default_input;
-    default_input.emplace(input, ColumnWithTypeAndName(input->result_type->createColumnConstWithDefaultValue(1), input->result_type, input->result_name));
+    default_input.emplace(input, ColumnWithTypeAndName(
+        ColumnConst::create(std::move(default_column), 1), input->result_type, input->result_name));
 
     ColumnsWithTypeAndName result;
     try
