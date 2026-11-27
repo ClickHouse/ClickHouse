@@ -19,13 +19,13 @@ class MergeTreeReaderStream;
 /** Reads columns of a wide part by their marks, as `MergeTreeReaderWide` reads them but without the uncompressed cache,
   * for a consumer that decompresses them elsewhere, such as a GPU: as the compressed blocks they are stored in.
   *
-  * The columns are read together, always the one that is furthest behind in rows, so that the consumer has them within
-  * a block of each other and what waits there for the others is at most a block per column.
+  * It reads by ranges of marks, each range of every column from the block its first row is in, by the marks of the
+  * column's streams, so that the consumer has every column of exactly the rows of a range once `finishRange` tells it.
+  * The columns of a range are read together, always the one that is furthest behind in rows.
   *
-  * A column of values of varying width - a `String` - is two streams: its bytes, in the column's own file, which are
-  * read like the values of any other column, and their sizes, in the `.size` stream, which are read a little ahead of
-  * the bytes. How many of its rows are read is told by the bytes read, as the rows are as long as the average one. Such
-  * a column is read of whole parts only.
+  * A column of values of varying width - a `String` - is two streams: its bytes, in the column's own file, and their
+  * sizes, in the `.size` stream, which are read a little ahead of the bytes. Its sizes are of exactly the rows of a
+  * range; its bytes, whose ends the sizes tell, are the blocks of the range whole, past the end of the range in its last.
   */
 class MergeTreeCompressedColumnsReader
 {
@@ -51,11 +51,14 @@ public:
             = 0;
 
 
+        /// The range read ends: every column has `rows` rows of it.
+        virtual void finishRange(size_t rows) = 0;
+
         /// Between pieces, for the consumer to stop the read by throwing.
         virtual void checkCancelled() = 0;
     };
 
-    /// Reads the `ranges` of `part`, every row where there are none, as the compressed blocks of its columns.
+    /// Reads the `ranges` of `part`, one range of every row where there are none, as the compressed blocks of its columns.
     MergeTreeCompressedColumnsReader(
         const IMergeTreeDataPart & part,
         const std::vector<NameAndTypePair> & columns,
@@ -90,6 +93,7 @@ public:
     static size_t streamBytesOf(const IMergeTreeDataPart & part, const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path);
 
 private:
+    struct RangeStream;
     struct ColumnReader;
 
     /// Starts the next range of rows, returns false if there is none.
@@ -98,7 +102,6 @@ private:
     bool readPiece(Consumer & consumer);
     /// Checks that every column has exactly `num_rows` rows of the range read.
     void checkRowsRead(size_t num_rows) const;
-    void readSizes(Consumer & consumer, size_t column_index);
 
     const IMergeTreeDataPart & part;
     const MarkRanges ranges;

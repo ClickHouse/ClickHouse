@@ -20,117 +20,141 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-struct MergeTreeCompressedColumnsReader::ColumnReader
+/// A stream of a column read by ranges of marks: of a range, from the block its first row is in, the rows before it left
+/// out. A stream of a fixed width takes the bytes of the rows of the range; that of the bytes of strings, whose rows are
+/// as long as their sizes say, the blocks up to the end of the range whole, of which the consumer takes what it needs.
+struct MergeTreeCompressedColumnsReader::RangeStream
 {
-    ColumnReader(
+    RangeStream(
         const IMergeTreeDataPart & data_part,
         const NameAndTypePair & column,
         const MergeTreeReaderSettings & settings,
-        const MarkRanges & mark_ranges)
-        : name(column.name)
-        , is_variable(isString(*column.type))
-        , element_size(is_variable ? 1 : column.type->getSizeOfValueInMemory())
+        const MarkRanges & mark_ranges,
+        const ISerialization::SubstreamPath & path,
+        std::optional<size_t> element_size_)
+        : stream(openStream(data_part, column, settings, mark_ranges, path))
+        , element_size(element_size_)
+        , compressed_bytes(data_part.getColumnSize(column.name).data_compressed)
         , rows_of_part(data_part.rows_count)
     {
-        if (!mark_ranges.empty())
-        {
-            if (is_variable)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of varying width of part {} is read in ranges of marks", column.name, data_part.name);
-            compressed_bytes_of_part = data_part.getColumnSize(column.name).data_compressed;
-        }
-
-        stream = openStream(data_part, column, settings, mark_ranges);
-        expected_bytes = data_part.getColumnSize(column.name).data_compressed;
-
-        if (is_variable)
-        {
-            sizes_stream = openStream(data_part, column, settings, mark_ranges, stringSizesPath());
-            chars_total = streamBytesOf(data_part, column, {});
-            sizes_total = streamBytesOf(data_part, column, stringSizesPath());
-        }
     }
 
-    const String name;
-    const bool is_variable;
     std::unique_ptr<MergeTreeReaderStream> stream;
-    const size_t element_size;
-    size_t bytes_read = 0;
-    /// What the consumer is given of the column, of its compressed file. Only sizes what the consumer keeps.
-    size_t expected_bytes = 0;
-    size_t given_bytes = 0;
-    bool done = false;
-
-    /// Of a column of varying width: the stream of its sizes, the bytes of them read, and the bytes of both of its
-    /// streams in the part.
-    std::unique_ptr<MergeTreeReaderStream> sizes_stream;
-    size_t sizes_bytes_read = 0;
-    size_t sizes_total = 0;
-    size_t chars_total = 0;
-    bool sizes_done = false;
-    bool bytes_done = false;
-
-    /// Of a read in ranges of marks: of the range being read, the bytes of its rows and the bytes before them in the
-    /// block it starts in, which are left out.
-    std::optional<size_t> range_bytes;
-    size_t bytes_to_skip = 0;
-    size_t compressed_bytes_of_part = 0;
+    /// The bytes of a row, of a stream of a fixed width.
+    const std::optional<size_t> element_size;
+    const size_t compressed_bytes;
     const size_t rows_of_part;
 
-    /// From the first block of the range; the stream reads no further than the end of the range.
+    size_t range_bytes = 0;
+    size_t bytes_to_skip = 0;
+    size_t bytes_read = 0;
+    /// What the consumer is given of the stream, of its compressed file, and about what the range has. Only sizes what
+    /// the consumer keeps.
+    size_t given_bytes = 0;
+    size_t expected_bytes = 0;
+    bool done = false;
+
     void startRange(const MarkRange & range, size_t num_rows)
     {
         bytes_read = 0;
         given_bytes = 0;
         done = false;
-        range_bytes = num_rows * element_size;
+        range_bytes = num_rows * element_size.value_or(0);
         stream->adjustRightMark(range.end);
         stream->seekToMark(range.begin);
         bytes_to_skip = stream->getMark(range.begin).offset_in_decompressed_block;
-        expected_bytes = rows_of_part == 0 ? 0 : compressed_bytes_of_part * num_rows / rows_of_part + 1;
+        expected_bytes = rows_of_part == 0 ? 0 : compressed_bytes * num_rows / rows_of_part + 1;
     }
 
-    /// Reads the next piece of its streams in the background, if it does not already: a read buffer of a remote disk then
-    /// has it once the consumer asks for it, rather than waiting for the request then.
+    /// Reads its next block of the range to `consumer`.
+    void readBlock(Consumer & consumer, size_t column, Stream which)
+    {
+        const auto block = stream->readCompressedBlock();
+        if (!block)
+        {
+            done = true;
+            return;
+        }
+
+        const size_t skipped = std::min(bytes_to_skip, block->decompressed_bytes);
+        bytes_to_skip -= skipped;
+        size_t kept = block->decompressed_bytes - skipped;
+        if (element_size)
+            kept = std::min(kept, range_bytes - bytes_read);
+
+        if (kept != 0)
+        {
+            consumer.addCompressedBlock(column, which, *block, skipped, kept, expected_bytes > given_bytes ? expected_bytes - given_bytes : 0);
+            given_bytes += block->payload.size();
+        }
+        bytes_read += kept;
+        if (element_size && bytes_read == range_bytes)
+            done = true;
+    }
+
+    /// Reads the next piece in the background, if it does not already: a read buffer of a remote disk then has it once
+    /// the consumer asks for it, rather than waiting for the request then.
     void prefetch() const
     {
         if (!done)
             stream->getDataBuffer()->prefetch(Priority{});
-        if (sizes_stream && !sizes_done)
-            sizes_stream->getDataBuffer()->prefetch(Priority{});
+    }
+};
+
+/// A column: its values, or of a column of varying width - a `String` - its bytes and its sizes.
+struct MergeTreeCompressedColumnsReader::ColumnReader
+{
+    ColumnReader(const IMergeTreeDataPart & data_part, const NameAndTypePair & column, const MergeTreeReaderSettings & settings, const MarkRanges & mark_ranges)
+        : name(column.name)
+        , values(
+              data_part,
+              column,
+              settings,
+              mark_ranges,
+              {},
+              isString(*column.type) ? std::nullopt : std::optional<size_t>(column.type->getSizeOfValueInMemory()))
+        , rows_of_part(data_part.rows_count)
+    {
+        if (!isString(*column.type))
+            return;
+        sizes.emplace(data_part, column, settings, mark_ranges, stringSizesPath(), sizeof(UInt64));
+        chars_total = streamBytesOf(data_part, column, {});
     }
 
-    /// Of a column of varying width, the rows the bytes read make were every row as long as the average one.
+    const String name;
+    RangeStream values;
+    std::optional<RangeStream> sizes;
+    size_t chars_total = 0;
+    const size_t rows_of_part;
+
+    bool done() const { return values.done && (!sizes || sizes->done); }
+
+    /// Of a `String`, the rows the bytes read make were every row as long as the average one.
     size_t rowsRead() const
     {
-        if (!is_variable)
-            return bytes_read / element_size;
+        if (!sizes)
+            return values.bytes_read / *values.element_size;
         if (chars_total == 0)
-            return sizes_bytes_read / sizeof(UInt64);
-        return static_cast<size_t>(static_cast<unsigned __int128>(bytes_read) * rows_of_part / chars_total);
+            return sizes->bytes_read / sizeof(UInt64);
+        return static_cast<size_t>(static_cast<unsigned __int128>(values.bytes_read) * rows_of_part / chars_total);
     }
 
-    size_t remainingBytes() const { return expected_bytes > given_bytes ? expected_bytes - given_bytes : 0; }
+    /// A `String` reads the sizes of its rows ahead of their bytes: a block of sizes whenever those read cover no more
+    /// rows than the bytes read make, and only sizes once the bytes have ended.
+    bool readsSizesNext() const { return sizes && !sizes->done && (values.done || sizes->bytes_read / sizeof(UInt64) <= rowsRead()); }
 
-    size_t remainingSizesBytes() const { return sizes_total > sizes_bytes_read ? sizes_total - sizes_bytes_read : 0; }
-
-    /// A column of varying width reads the sizes of its rows ahead of their bytes: a block of sizes whenever those read
-    /// cover no more rows than the bytes read make, and only sizes once the bytes have ended.
-    bool readsSizesNext() const
+    void startRange(const MarkRange & range, size_t num_rows)
     {
-        return is_variable && !sizes_done && (bytes_done || sizes_bytes_read / sizeof(UInt64) <= rowsRead());
+        values.startRange(range, num_rows);
+        if (sizes)
+            sizes->startRange(range, num_rows);
     }
 
-    /// The file of the column's values, or of the bytes of a column of varying width, has ended.
-    void finishBytes()
+    void prefetch() const
     {
-        bytes_done = true;
-        done = !is_variable || sizes_done;
-    }
-
-    void finishSizes()
-    {
-        sizes_done = true;
-        done = bytes_done;
+        values.prefetch();
+        if (sizes)
+            sizes->prefetch();
     }
 };
 
@@ -140,7 +164,7 @@ MergeTreeCompressedColumnsReader::MergeTreeCompressedColumnsReader(
     const MergeTreeReaderSettings & settings,
     const MarkRanges & ranges_)
     : part(part_)
-    , ranges(ranges_)
+    , ranges(ranges_.empty() ? MarkRanges{MarkRange(0, part_.index_granularity->getMarksCountWithoutFinal())} : ranges_)
     , prefetches(part_.isStoredOnRemoteDisk() && settings.read_settings.remote_fs_settings.prefetch)
 {
     readers.reserve(columns.size());
@@ -226,6 +250,7 @@ bool MergeTreeCompressedColumnsReader::readNext(Consumer & consumer)
             return true;
 
         checkRowsRead(*range_rows);
+        consumer.finishRange(*range_rows);
         rows_read += *range_rows;
         range_rows.reset();
     }
@@ -243,16 +268,6 @@ void MergeTreeCompressedColumnsReader::prefetchStart()
 
 bool MergeTreeCompressedColumnsReader::startNextRange()
 {
-    /// Without ranges, the whole part is one range, which the readers start at on their own.
-    if (ranges.empty())
-    {
-        if (next_range != 0)
-            return false;
-        next_range = 1;
-        range_rows = part.rows_count;
-        return true;
-    }
-
     while (next_range < ranges.size())
     {
         const MarkRange & range = ranges[next_range++];
@@ -267,105 +282,48 @@ bool MergeTreeCompressedColumnsReader::startNextRange()
     return false;
 }
 
-void MergeTreeCompressedColumnsReader::readSizes(Consumer & consumer, size_t column_index)
-{
-    ColumnReader & column = *readers[column_index];
-
-    const auto block = column.sizes_stream->readCompressedBlock();
-    if (!block)
-    {
-        column.finishSizes();
-        return;
-    }
-
-    consumer.addCompressedBlock(column_index, Stream::Sizes, *block, 0, block->decompressed_bytes, column.remainingSizesBytes());
-    column.sizes_bytes_read += block->decompressed_bytes;
-}
-
 bool MergeTreeCompressedColumnsReader::readPiece(Consumer & consumer)
 {
+    size_t behind = readers.size();
+    for (size_t i = 0; i < readers.size(); ++i)
     {
-        size_t behind = readers.size();
-        for (size_t i = 0; i < readers.size(); ++i)
-        {
-            if (!readers[i]->done && (behind == readers.size() || readers[i]->rowsRead() < readers[behind]->rowsRead()))
-                behind = i;
-        }
-        if (behind == readers.size())
-            return false;
-
-        ColumnReader & column = *readers[behind];
-        if (column.readsSizesNext())
-        {
-            readSizes(consumer, behind);
-        }
-        else
-        {
-            const auto block = column.stream->readCompressedBlock();
-            if (!block)
-            {
-                column.finishBytes();
-                return true;
-            }
-
-            /// Of a range, the rows before it in its first block and after it in its last are left out.
-            size_t skipped = 0;
-            size_t kept = block->decompressed_bytes;
-            if (column.range_bytes)
-            {
-                skipped = std::min(column.bytes_to_skip, block->decompressed_bytes);
-                column.bytes_to_skip -= skipped;
-                kept = std::min(block->decompressed_bytes - skipped, *column.range_bytes - column.bytes_read);
-            }
-
-            if (kept != 0)
-            {
-                consumer.addCompressedBlock(behind, Stream::Values, *block, skipped, kept, column.remainingBytes());
-                column.given_bytes += block->payload.size();
-            }
-            column.bytes_read += kept;
-            if (column.range_bytes && column.bytes_read == *column.range_bytes)
-                column.finishBytes();
-        }
-
-        /// The column read gets its next piece in the background while the others are read and the consumer stages this
-        /// one, so that a reader has a request in flight for each of its columns rather than one at a time.
-        if (prefetches)
-            column.prefetch();
-
-        consumer.checkCancelled();
+        if (!readers[i]->done() && (behind == readers.size() || readers[i]->rowsRead() < readers[behind]->rowsRead()))
+            behind = i;
     }
+    if (behind == readers.size())
+        return false;
+
+    ColumnReader & column = *readers[behind];
+    if (column.readsSizesNext())
+        column.sizes->readBlock(consumer, behind, Stream::Sizes);
+    else
+        column.values.readBlock(consumer, behind, Stream::Values);
+
+    /// The column read gets its next piece in the background while the others are read and the consumer stages this one,
+    /// so that a reader has a request in flight for each of its columns rather than one at a time.
+    if (prefetches)
+        column.prefetch();
+
+    consumer.checkCancelled();
     return true;
 }
 
 void MergeTreeCompressedColumnsReader::checkRowsRead(size_t num_rows) const
 {
+    /// The bytes of a `String` are as many as its sizes say, which the consumer checks.
     for (const auto & reader : readers)
     {
-        if (reader->is_variable)
-        {
-            if (reader->sizes_bytes_read != num_rows * sizeof(UInt64) || reader->bytes_read != reader->chars_total)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Column {} of varying width of part {} holds {} bytes of sizes and {} bytes of {}, where the part has {} rows",
-                    reader->name,
-                    part.name,
-                    reader->sizes_bytes_read,
-                    reader->bytes_read,
-                    reader->chars_total,
-                    num_rows);
-            continue;
-        }
-
-        if (reader->bytes_read != num_rows * reader->element_size)
+        const RangeStream & fixed = reader->sizes ? *reader->sizes : reader->values;
+        if (fixed.bytes_read != fixed.range_bytes)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Column {} of part {} holds {} bytes, where {} rows of {} bytes are read",
+                "Column {} of part {} holds {} bytes{}, where {} rows of {} bytes are read",
                 reader->name,
                 part.name,
-                reader->bytes_read,
+                fixed.bytes_read,
+                reader->sizes ? " of sizes" : "",
                 num_rows,
-                reader->element_size);
+                *fixed.element_size);
     }
 }
 
