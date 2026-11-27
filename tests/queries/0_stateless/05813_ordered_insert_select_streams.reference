@@ -1,0 +1,28 @@
+ordered_rmt
+1
+4
+ordered_versioned
+1
+4
+ordered_cmt
+1
+4
+ordered_coalescing
+1
+4
+ordered_mt
+2
+8
+ordered_alias
+1
+4
+ordered_outer
+2
+8
+ordered_graphite
+1
+1
+4
+10	0
+10	0
+10	0

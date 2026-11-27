@@ -16,6 +16,7 @@
 #include <Databases/DataLake/StaticStorageCredentials.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBuffer.h>
@@ -241,6 +242,23 @@ DataLake::TableNameFilter toCatalogTableNameFilter(const TablesFilter & tables_f
             break;
     }
     return filter;
+}
+
+/// Readable listed tables kept by `keep_table_name`, each once: a catalog can list a table more than once.
+VectorWithMemoryTracking<String> getVisibleTableNames(const DataLake::CatalogTables & catalog_tables, const IDatabase::FilterByNameFunction & keep_table_name)
+{
+    VectorWithMemoryTracking<String> names;
+    UnorderedSetWithMemoryTracking<std::string_view> seen;
+    for (const auto & catalog_table : catalog_tables)
+    {
+        if (!catalog_table.is_readable)
+            continue;
+        if (keep_table_name && !keep_table_name(catalog_table.name))
+            continue;
+        if (seen.insert(catalog_table.name).second)
+            names.push_back(catalog_table.name);
+    }
+    return names;
 }
 
 }
@@ -1512,7 +1530,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
             /// because this table is actually stateless like a table function.
             /* is_table_function */true,
             getFormatSettings(context_copy),
-            getCatalog());
+            catalog);
 
         if (context_->hasQueryContext() && context_->getSettingsRef()[Setting::log_queries])
             context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, storage_cluster->getName());
@@ -1540,7 +1558,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         /* comment */"",
         getFormatSettings(context_copy),
         LoadingStrictnessLevel::CREATE,
-        getCatalog(),
+        catalog,
         /* if_not_exists*/true,
         /* is_datalake_query*/true,
         distributed_processing,
@@ -1655,17 +1673,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
     /// and apply the name filter once, matching getLightweightTablesIterator (SHOW TABLES).
     /// The catalog listing is scoped by namespace at best, so drop the names the query cannot
     /// ask for here too - each surviving name costs a per-table metadata fetch below.
-    const auto keep_table_name = combineFilters(filter_by_table_name, tables_filter);
-
-    DB::Names iceberg_tables;
-    for (const auto & catalog_table : catalog_tables)
-    {
-        if (!catalog_table.is_readable)
-            continue;
-        if (keep_table_name && !keep_table_name(catalog_table.name))
-            continue;
-        iceberg_tables.push_back(catalog_table.name);
-    }
+    const auto iceberg_tables = getVisibleTableNames(catalog_tables, combineFilters(filter_by_table_name, tables_filter));
 
     auto & pool = Context::getGlobalContextInstance()->getIcebergCatalogThreadpool();
 
@@ -1748,9 +1756,6 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
     size_t future_index = 0;
     for (const auto & table_name : iceberg_tables)
     {
-        if (filter_by_table_name && !filter_by_table_name(table_name))
-            continue;
-
         /// futures[future_index].get() rethrows for the general-purpose path when metadata
         /// access is required (see the per-table catch above), preserving the original
         /// abort-on-error contract for consumers that dereference the storage unconditionally.
@@ -1807,18 +1812,8 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
         LOG_DEBUG(log, "Cannot list the tables of the DataLakeCatalog database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 
-    const auto keep_table_name = combineFilters(filter_by_table_name, tables_filter);
-
-    for (const auto & catalog_table : catalog_tables)
-    {
-        /// Skip tables ClickHouse cannot read, so SHOW TABLES stays consistent with the
-        /// full getTablesIterator path without a per-table metadata fetch.
-        if (!catalog_table.is_readable)
-            continue;
-        if (keep_table_name && !keep_table_name(catalog_table.name))
-            continue;
-        result.emplace_back(catalog_table.name);
-    }
+    for (auto & name : getVisibleTableNames(catalog_tables, combineFilters(filter_by_table_name, tables_filter)))
+        result.emplace_back(std::move(name));
 
     ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, result.size());
     return result;
@@ -2423,7 +2418,7 @@ The following settings are supported:
 | `catalog_type`          | Type of catalog: `glue`, `unity` (Delta, or Delta and Iceberg with `use_unity_catalog_v2`), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, flat namespaces), `horizon` (Snowflake Horizon Iceberg REST) |
 | `warehouse`             | The warehouse/database name to use in the catalog.                                      |
 | `catalog_credential`    | Authentication credential for the catalog (e.g., API key or token)                      |
-| `use_unity_catalog_v2`  | For `catalog_type = 'unity'`: use the new implementation, which serves both Delta Lake and Iceberg tables. Default: `false`. Set it on `CREATE`, or change it for an existing database with `ALTER DATABASE ... MODIFY SETTING`. |
+| `use_unity_catalog_v2`  | For `catalog_type = 'unity'`: use the new implementation, which serves both Delta Lake and Iceberg tables. Default: `true`. Set it on `CREATE`, or change it for an existing database with `ALTER DATABASE ... MODIFY SETTING`. |
 | `auth_header`           | Custom HTTP header for authentication with the catalog service                          |
 | `auth_scope`            | OAuth2 scope for authentication (if using OAuth)                                        |
 | `storage_endpoint`      | Endpoint URL for the underlying storage                                                 |

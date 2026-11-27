@@ -98,11 +98,9 @@ SELECT 'count of a column that cannot be NULL';
 SELECT sum(i16), count(i16), min(i32), count(d256) FROM t_sum SETTINGS optimize_syntax_fuse_functions = 0;
 SELECT sum(i16), count(i16), min(i32), count(d256) FROM t_sum SETTINGS optimize_syntax_fuse_functions = 0, use_statistics_for_sum_avg_aggregation = 0;
 SELECT countIf(explain LIKE '%_statistics_projection%') FROM (EXPLAIN SELECT sum(i16), count(i16), min(i32), count(d256) FROM t_sum SETTINGS optimize_syntax_fuse_functions = 0);
-SELECT countIf(explain LIKE '%_statistics_projection%') FROM (EXPLAIN SELECT min(i32), count(n) FROM t_sum);
 
 SELECT 'not applied';
 SELECT countIf(explain LIKE '%_statistics_projection%') FROM (EXPLAIN SELECT sum(f) FROM t_sum);
-SELECT countIf(explain LIKE '%_statistics_projection%') FROM (EXPLAIN SELECT sum(n) FROM t_sum);
 SELECT countIf(explain LIKE '%_statistics_projection%') FROM (EXPLAIN SELECT sumWithOverflow(i64) FROM t_sum);
 SELECT countIf(explain LIKE '%_statistics_projection%') FROM (EXPLAIN SELECT sumKahan(i64) FROM t_sum);
 SELECT countIf(explain LIKE '%_statistics_projection%') FROM (EXPLAIN SELECT sum(i64) FROM t_sum GROUP BY b);

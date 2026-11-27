@@ -274,7 +274,7 @@ target_link_libraries(global-libs INTERFACE clang_rt_builtins)
 
 # $CACHE{}: contrib/CMakeLists.txt shadows WITH_COVERAGE to OFF in this scope,
 # so read the cache-level option instead.
-if (NOT (SANITIZE OR ENABLE_XRAY OR $CACHE{WITH_COVERAGE}))
+if (NOT (SANITIZE OR ENABLE_XRAY OR ENABLE_CFI_DIAGNOSTICS OR $CACHE{WITH_COVERAGE}))
     return()
 endif()
 
@@ -605,7 +605,7 @@ endif()
 # 6. UBSan (standalone)
 # ============================================================
 #
-if (SANITIZE STREQUAL "undefined")
+if (SANITIZE STREQUAL "undefined" OR ENABLE_CFI_DIAGNOSTICS)
     # UBSan standalone archive: ubsan + ubsan_standalone + preinit +
     # sanitizer_common + interception. Bundle list matches the OBJECT_LIBS for
     # clang_rt.ubsan_standalone (STATIC) in

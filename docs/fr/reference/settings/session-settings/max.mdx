@@ -84,12 +84,15 @@ Nombre maximal d’instantanés Paimon consommés par lecture incrémentielle. 0
 
 ## max_estimated_execution_time {#max_estimated_execution_time}
 
-<SettingsInfoBlock type="Secondes" default_value="0" />
+<SettingsInfoBlock type="Seconds" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "0"},{"label": "Séparer max_execution_time et max_estimated_execution_time"}]}]} />
 
 Temps d’exécution estimé maximal de la requête, en secondes. Vérifié pour chaque bloc de données
 à l’expiration de [`timeout_before_checking_execution_speed`](/fr/reference/settings/session-settings/other#timeout_before_checking_execution_speed).
+L’estimation repose sur une extrapolation à partir de la vitesse d’exécution actuelle de la requête.
+Si vous définissez `timeout_before_checking_execution_speed` sur 0, ce paramètre
+n’est pas vérifié.
 
 ## max_expanded_ast_elements {#max_expanded_ast_elements}
 
@@ -148,13 +151,15 @@ Ratio maximal entre le temps d&#39;attente CPU de l&#39;OS (métrique `OSCPUWait
 
 Le nombre maximal de répliques pour chaque shard lors de l’exécution d’une requête.
 
-Valeurs possibles :
+Valeurs possibles :
 
 * Entier positif.
 
 **Informations supplémentaires**
 
 Cette option peut produire des résultats différents selon les paramètres utilisés.
+
+Avec `parallel_replicas_mode` `sampling_key`, ou avec un mode à clé personnalisée sur un cluster comportant plus d’un shard, chaque réplique renvoie sa propre partie de l’ensemble de résultats du shard. Les répliques d’un shard ne sont utilisées conjointement que si l’initiateur agrège ou trie lui-même intégralement ces parties (par exemple, une agrégation sans clés `GROUP BY`). Dans les autres cas, par exemple pour `GROUP BY` avec `distributed_aggregation_memory_efficient` ou pour `ORDER BY`, le shard est lu à partir d’une seule réplique.
 
 ### Traitement en parallèle à l’aide de la clé `SAMPLE` {#parallel-processing-using-sample-key}
 

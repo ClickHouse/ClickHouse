@@ -1,0 +1,5 @@
+skip_correlated_1	0	1
+skip_correlated_2	0	1
+skip_correlated_exists	0	1
+skip_correlated_kept_in_from	1	0
+skip_correlated_view	1	0

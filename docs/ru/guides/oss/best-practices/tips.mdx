@@ -10,9 +10,7 @@ import SelfManaged from '/snippets/ru/_self_managed_only_automated.mdx';
 
 <SelfManaged />
 
-<div id="cpu-scaling-governor">
-  ## Регулятор управления частотой CPU
-</div>
+## Регулятор управления частотой CPU {#cpu-scaling-governor}
 
 Всегда используйте регулятор `performance`. Регулятор `on-demand` работает заметно хуже при стабильно высокой нагрузке.
 
@@ -20,16 +18,12 @@ import SelfManaged from '/snippets/ru/_self_managed_only_automated.mdx';
 $ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
-<div id="cpu-limitations">
-  ## Ограничения CPU
-</div>
+## Ограничения CPU {#cpu-limitations}
 
 Процессоры могут перегреваться. Используйте `dmesg`, чтобы проверить, не была ли тактовая частота CPU ограничена из-за перегрева.
 Ограничение также может устанавливаться извне, на уровне датацентра. Для отслеживания этого под нагрузкой можно использовать `turbostat`.
 
-<div id="ram">
-  ## Оперативная память
-</div>
+## Оперативная память {#ram}
 
 Для небольших объёмов данных (до ~200 ГБ в сжатом виде) лучше использовать объём памяти, сопоставимый с объёмом данных.
 Для больших объёмов данных и при обработке интерактивных (онлайн) запросов следует использовать достаточный объём оперативной памяти (128 ГБ или больше), чтобы горячий набор данных помещался в кэше страниц.
@@ -44,9 +38,7 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 Используйте `perf top`, чтобы отслеживать, сколько времени ядро тратит на управление памятью.
 Постоянные большие страницы памяти также не нужно выделять.
 
-<div id="using-less-than-16gb-of-ram">
-  ### Использование менее 16 ГБ оперативной памяти
-</div>
+### Использование менее 16 ГБ оперативной памяти {#using-less-than-16gb-of-ram}
 
 Рекомендуемый объём оперативной памяти — 32 ГБ или больше.
 
@@ -66,9 +58,7 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 * Чтобы очистить память, кэшированную аллокатором памяти, можно выполнить команду `SYSTEM JEMALLOC PURGE`.
 * Мы не рекомендуем использовать интеграции S3 или Kafka на машинах с небольшим объёмом оперативной памяти, поскольку для буферов им требуется значительный объём памяти.
 
-<div id="storage-subsystem">
-  ## Подсистема хранения
-</div>
+## Подсистема хранения {#storage-subsystem}
 
 Если бюджет позволяет использовать SSD, используйте SSD.
 Если нет — HDD. Подойдут SATA HDD со скоростью 7200 об/мин.
@@ -76,9 +66,7 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 Лучше отдать предпочтение большому числу серверов с локальными жесткими дисками, чем меньшему числу серверов с подключёнными дисковыми полками.
 Но для хранения архивов, к которым обращаются редко, дисковые полки тоже подойдут.
 
-<div id="raid">
-  ## RAID
-</div>
+## RAID {#raid}
 
 При использовании HDD их можно объединить в RAID-10, RAID-5, RAID-6 или RAID-50.
 В Linux лучше использовать программный RAID (с `mdadm`).
@@ -109,9 +97,7 @@ $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 
 Убедитесь, что [`fstrim`](https://en.wikipedia.org/wiki/Trim_\(computing\)) включён для дисков NVME и SSD в вашей ОС (обычно это реализуется с помощью задания cron или сервиса systemd).
 
-<div id="file-system">
-  ## Файловая система
-</div>
+## Файловая система {#file-system}
 
 Ext4 — самый надёжный вариант. Укажите параметр монтирования `noatime`. XFS тоже хорошо подходит.
 Большинство других файловых систем также должны работать без проблем.
@@ -123,24 +109,18 @@ FAT-32 и exFAT не поддерживаются из-за отсутствия
 
 Хотя ClickHouse может работать через NFS, это не лучший вариант.
 
-<div id="linux-kernel">
-  ## Ядро Linux
-</div>
+## Ядро Linux {#linux-kernel}
 
 Не используйте устаревшее ядро Linux.
 
-<div id="network">
-  ## Сеть
-</div>
+## Сеть {#network}
 
 Если вы используете IPv6, увеличьте размер кэша маршрутов.
 В ядре Linux до версии 3.2 было множество проблем с реализацией IPv6.
 
 По возможности используйте сеть со скоростью не менее 10 Гбит/с. 1 Гбит/с тоже подойдёт, но это будет значительно хуже для синхронизации реплик с десятками терабайт данных или для обработки распределённых запросов с большим объёмом промежуточных данных.
 
-<div id="huge-pages">
-  ## Большие страницы памяти
-</div>
+## Большие страницы памяти {#huge-pages}
 
 Всегда устанавливайте transparent huge pages в режим `madvise`. На старых ядрах (до 5.9) THP в режиме `always` может вызывать заметное снижение производительности — ядро тратит слишком много времени на дефрагментацию памяти, особенно в системах с 64 GB+ оперативной памяти. В ядре 5.9 появилась проактивная компакция, которая значительно лучше работает с THP, однако ClickHouse по-прежнему выводит предупреждение при запуске, если THP установлен в `always`, поэтому `madvise` остаётся рекомендуемым значением независимо от версии ядра.
 
@@ -156,9 +136,7 @@ $ GRUB_CMDLINE_LINUX_DEFAULT="transparent_hugepage=madvise ..."
 
 После этого выполните команду `sudo update-grub`, затем перезагрузите систему, чтобы изменения вступили в силу.
 
-<div id="hypervisor-configuration">
-  ## Конфигурация гипервизора
-</div>
+## Конфигурация гипервизора {#hypervisor-configuration}
 
 Если вы используете OpenStack, задайте
 
@@ -179,9 +157,7 @@ cpu_mode=host-passthrough
 Это необходимо, чтобы ClickHouse мог получать корректные данные через инструкцию `cpuid`.
 В противном случае возможны аварийные завершения с ошибкой `Illegal instruction`, если гипервизор запущен на старых моделях процессоров.
 
-<div id="zookeeper">
-  ## ClickHouse Keeper и ZooKeeper
-</div>
+## ClickHouse Keeper и ZooKeeper {#zookeeper}
 
 Для кластеров ClickHouse рекомендуется использовать ClickHouse Keeper вместо ZooKeeper. См. документацию по [ClickHouse Keeper](/ru/guides/oss/deployment-and-scaling/keeper/index)
 
@@ -253,12 +229,12 @@ preAllocSize=131072
 # is started. The default snapCount is 100000.
 snapCount=3000000
 
-# If this option is defined, requests will be will logged to a trace file named
+# If this option is defined, requests will be logged to a trace file named
 # traceFile.year.month.day.
 #traceFile=
 
 # Leader accepts client connections. Default value is "yes". The leader machine
-# coordinates updates. For higher update throughput at thes slight expense of
+# coordinates updates. For higher update throughput at the slight expense of
 # read throughput the leader can be configured to not accept clients and focus
 # on coordination.
 leaderServes=yes
@@ -337,14 +313,10 @@ script
 end script
 ```
 
-<div id="antivirus-software">
-  ## Антивирусное ПО
-</div>
+## Антивирусное ПО {#antivirus-software}
 
 Если вы используете антивирусное ПО, настройте его так, чтобы оно исключало из проверки каталоги с файлами данных ClickHouse (`/var/lib/clickhouse`), иначе производительность может снизиться, и во время ингестии данных и фоновых слияний могут возникать неожиданные ошибки.
 
-<div id="related-content">
-  ## См. также
-</div>
+## См. также {#related-content}
 
 * [Только начинаете работать с ClickHouse? Вот 13 «смертных грехов» и способы их избежать](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)

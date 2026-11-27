@@ -1983,7 +1983,6 @@ void registerStorageKeeperMap(StorageFactory & factory)
         SecretArgumentsSpec{},
         {
             .supports_sort_order = true,
-            .supports_parallel_insert = true,
         },
         Documentation{
             .description = R"DOCS_MD(

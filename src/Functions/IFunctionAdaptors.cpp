@@ -34,6 +34,36 @@ bool FunctionToFunctionBaseAdaptor::isInjective(const ColumnsWithTypeAndName & s
                 return false;
     }
 
+    /// The default implementation for NULLs collapses rows in two ways.
+    /// With a `Nullable` result, a row where one argument is NULL maps to NULL whatever the other
+    /// arguments hold, so an argument that can be NULL must not sit next to one that varies.
+    /// With a result that cannot be `Nullable` (e.g. `Array`), a NULL row is evaluated as `f(default)`,
+    /// so NULL and the default value of a varying `Nullable` argument share one result. A constant
+    /// NULL is the same `f(default)` on every row there and merges nothing.
+    if (function->useDefaultImplementationForNulls())
+    {
+        const bool result_is_nullable = isNullableOrLowCardinalityNullable(getResultType());
+
+        size_t non_constant_arguments = 0;
+        for (const auto & argument : sample_columns)
+            if (!argument.column || !isColumnConst(*argument.column))
+                ++non_constant_arguments;
+
+        for (const auto & argument : sample_columns)
+        {
+            const bool is_constant = argument.column && isColumnConst(*argument.column);
+            if (is_constant)
+            {
+                if (result_is_nullable && argument.column->onlyNull() && non_constant_arguments > 0)
+                    return false;
+            }
+            else if (isNullableOrLowCardinalityNullable(argument.type) && (!result_is_nullable || non_constant_arguments > 1))
+            {
+                return false;
+            }
+        }
+    }
+
     return function->isInjective(sample_columns);
 }
 

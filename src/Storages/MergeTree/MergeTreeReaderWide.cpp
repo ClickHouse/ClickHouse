@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/escapeForFileName.h>
 #include <Common/FailPoint.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Core/UUID.h>
 #include <IO/SharedThreadPools.h>
@@ -24,6 +25,7 @@ namespace ProfileEvents
 {
     extern const Event ColumnsCacheHits;
     extern const Event ColumnsCacheMisses;
+    extern const Event RuntimeDataflowStatisticsInputNanoseconds;
 }
 
 namespace DB
@@ -37,14 +39,6 @@ namespace FailPoints
 namespace
 {
     constexpr auto DATA_FILE_EXTENSION = ".bin";
-
-    /// The streams of these columns are known only after reading the serialization prefixes:
-    /// the structure of dynamic types and the number of buckets of non-basic `Map`s are stored there.
-    bool streamsDependOnPrefixes(const NameAndTypePair & column, const SerializationInfoByName & infos)
-    {
-        return column.getTypeInStorage()->hasDynamicStructure()
-            || infos.getSettings().map_serialization_version != MergeTreeMapSerializationVersion::BASIC;
-    }
 }
 
 namespace ErrorCodes
@@ -1006,6 +1000,12 @@ const MergeTreeReaderWide::ResolvedSubstreams * MergeTreeReaderWide::findResolve
     return it == resolved_substreams_by_column.end() ? nullptr : &it->second;
 }
 
+MergeTreeReaderWide::ResolvedSubstreams * MergeTreeReaderWide::findResolvedSubstreams(const String & column_name)
+{
+    const auto it = resolved_substreams_by_column.find(column_name);
+    return it == resolved_substreams_by_column.end() ? nullptr : &it->second;
+}
+
 const MergeTreeReaderWide::ResolvedSubstream & MergeTreeReaderWide::resolveSubstream(
     const ResolvedSubstreams * substreams,
     const NameAndTypePair & name_and_type,
@@ -1025,6 +1025,21 @@ const MergeTreeReaderWide::ResolvedSubstream & MergeTreeReaderWide::resolveSubst
     computed.stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, DATA_FILE_EXTENSION, data_part_info_for_read->getChecksums(), storage_settings);
     computed.cache_key = std::move(cache_key);
     return computed;
+}
+
+const MergeTreeReaderWide::ResolvedSubstream & MergeTreeReaderWide::resolveAndAddSubstream(
+    ResolvedSubstreams & substreams,
+    const NameAndTypePair & name_and_type,
+    const ISerialization::SubstreamPath & substream_path)
+{
+    ResolvedSubstream computed;
+    const auto & resolved = resolveSubstream(&substreams, name_and_type, substream_path, computed);
+    if (&resolved != &computed)
+        return resolved;
+
+    computed.avg_value_size_hint = avgValueSizeHintSlot(computed);
+    auto cache_key = computed.cache_key;
+    return substreams.emplace(std::move(cache_key), std::move(computed)).first->second;
 }
 
 double * MergeTreeReaderWide::avgValueSizeHintSlot(const ResolvedSubstream & resolved)
@@ -1165,6 +1180,44 @@ std::vector<MergeTreeReaderStream *> MergeTreeReaderWide::FileStreams::getAll() 
     return result;
 }
 
+void MergeTreeReaderWide::FileStreams::forEach(const std::function<void(const String & stream_name, MergeTreeReaderStream & stream)> & callback) const
+{
+    std::lock_guard lock(mutex);
+    for (const auto & [stream_name, stream] : streams)
+        callback(stream_name, *stream);
+}
+
+CompressedBlockRanges & MergeTreeReaderWide::getRangesRead(const String & stream_name)
+{
+    std::lock_guard lock(ranges_read_mutex);
+    return ranges_read[stream_name].ranges;
+}
+
+void MergeTreeReaderWide::setReadRangesRegistry(ReadRangesRegistryPtr registry)
+{
+    IMergeTreeReader::setReadRangesRegistry(std::move(registry));
+    /// The streams created later get their sink in `getOrAddStream`.
+    streams.forEach([&](const String & stream_name, MergeTreeReaderStream & stream) { stream.setRangesReadSink(&getRangesRead(stream_name)); });
+}
+
+void MergeTreeReaderWide::registerReadRanges()
+{
+    if (!read_ranges_registry)
+        return;
+
+    ProfileEventTimeIncrement<Time::Nanoseconds> watch(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds);
+    std::lock_guard lock(ranges_read_mutex);
+    for (auto & [stream_name, stream_ranges] : ranges_read)
+    {
+        if (stream_ranges.ranges.empty())
+            continue;
+        if (!stream_ranges.read_ranges)
+            stream_ranges.read_ranges = &read_ranges_registry->getReadRanges(
+                data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + stream_name);
+        read_ranges_registry->registerRanges(*stream_ranges.read_ranges, stream_ranges.ranges);
+    }
+}
+
 bool MergeTreeReaderWide::FileStreams::isPrefetched(const String & stream_name) const
 {
     std::lock_guard lock(mutex);
@@ -1225,6 +1278,8 @@ MergeTreeReaderStream & MergeTreeReaderWide::getOrAddStream(const ISerialization
                 std::move(marks_loader), profile_callback, clock_type);
             /// Streams of `Dynamic` subcolumns are created while a task reads, after the map was announced.
             stream->updateReadRequestMap(read_request_map);
+            if (read_ranges_registry)
+                stream->setRangesReadSink(&getRangesRead(stream_name));
             return stream;
         };
 
@@ -1559,11 +1614,13 @@ void MergeTreeReaderWide::readData(
     deserializePrefix(serialization, name_and_type, from_mark, deserialize_binary_bulk_state_map, cache, deserialize_states_cache, {});
 
     /// The substreams of the column resolved in `addStreams`; a path not found there (a dynamic subcolumn) is
-    /// resolved on the spot into `computed`, see `resolveSubstream`.
-    const auto * resolved_substreams = findResolvedSubstreams(name_and_type.name);
+    /// resolved once and added, see `resolveAndAddSubstream`.
+    auto * resolved_substreams = findResolvedSubstreams(name_and_type.name);
     const auto resolve = [&](const ISerialization::SubstreamPath & substream_path, ResolvedSubstream & computed) -> const ResolvedSubstream &
     {
-        return resolveSubstream(resolved_substreams, name_and_type, substream_path, computed);
+        if (resolved_substreams)
+            return resolveAndAddSubstream(*resolved_substreams, name_and_type, substream_path);
+        return resolveSubstream(nullptr, name_and_type, substream_path, computed);
     };
 
     deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
@@ -1632,6 +1689,12 @@ void MergeTreeReaderWide::readData(
 
     serialization->deserializeBinaryBulkWithMultipleStreams(
         column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+}
+
+bool MergeTreeReaderWide::streamsDependOnPrefixes(const NameAndTypePair & column, const SerializationInfoByName & infos)
+{
+    return column.getTypeInStorage()->hasDynamicStructure()
+        || infos.getSettings().map_serialization_version != MergeTreeMapSerializationVersion::BASIC;
 }
 
 std::unordered_map<String, std::vector<StreamWithSizeHint>> MergeTreeReaderWide::getAllColumnsSubstreams()
