@@ -1625,6 +1625,25 @@ static std::optional<const ORC::Type *> resolveORCFieldByIcebergId(
     return level_type;
 }
 
+static std::optional<UnorderedMapWithMemoryTracking<UInt64, String>>
+getORCTopLevelReadNames(const ORC::Type & file_schema, const ColumnMapper & column_mapper)
+{
+    const auto field_ids = getORCFieldIcebergIds(file_schema);
+    if (!field_ids)
+        return std::nullopt;
+    const auto & names = column_mapper.getFieldIdToClickHouseName();
+    UnorderedMapWithMemoryTracking<UInt64, String> read_names;
+    for (size_t i = 0; i < field_ids->size(); ++i)
+    {
+        const UInt64 column_id = file_schema.getSubtype(i)->getColumnId();
+        if (auto it = names.find((*field_ids)[i]); it != names.end())
+            read_names.emplace(column_id, it->second);
+        else if (ColumnMapper::isReservedIcebergFieldId((*field_ids)[i]))
+            read_names.emplace(column_id, file_schema.getFieldName(i));
+    }
+    return read_names;
+}
+
 void NativeORCBlockInputFormat::prepareFileReader()
 {
     getFileReader(*in, file_reader, format_settings, use_prefetch, min_bytes_for_seek, is_stopped);
@@ -1663,6 +1682,20 @@ void NativeORCBlockInputFormat::prepareFileReader()
         }
     }
 
+    auto top_level_read_names = column_mapper ? getORCTopLevelReadNames(file_schema, *column_mapper) : std::nullopt;
+    UnorderedMapWithMemoryTracking<String, size_t> top_level_fields_by_read_name;
+    if (top_level_read_names)
+        for (size_t i = 0; i < file_schema.getSubtypeCount(); ++i)
+            if (auto it = top_level_read_names->find(file_schema.getSubtype(i)->getColumnId()); it != top_level_read_names->end())
+                top_level_fields_by_read_name.emplace(it->second, i);
+    auto find_top_level_field = [&](const String & name) -> std::optional<size_t>
+    {
+        if (!top_level_read_names)
+            return findORCStructFieldByName(&file_schema, name, ignore_case);
+        auto it = top_level_fields_by_read_name.find(name);
+        return it == top_level_fields_by_read_name.end() ? std::nullopt : std::make_optional(it->second);
+    };
+
     UnorderedSetWithMemoryTracking<UInt64> include_typeids;
     VectorWithMemoryTracking<const ORC::Type *> requested_structs;
     /// A same-named field of an absent column has another field id: it is not read. The filter push-down resolves the
@@ -1689,7 +1722,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
         }
         if (column_mapper)
         {
-            if (auto field = findORCStructFieldByName(&file_schema, column.name, ignore_case))
+            if (auto field = find_top_level_field(column.name))
             {
                 updateIncludeTypeIds(
                     column.type,
@@ -1702,8 +1735,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
                 continue;
             }
             const String nested_table_name = Nested::extractTableName(column.name);
-            if (auto field = findORCStructFieldByName(&file_schema, nested_table_name, ignore_case);
-                field && nested_table_name != column.name)
+            if (auto field = find_top_level_field(nested_table_name); field && nested_table_name != column.name)
             {
                 const auto * nested_table_orc_type = file_schema.getSubtype(*field);
                 const auto orc_kind = nested_table_orc_type->getKind();
@@ -1791,13 +1823,15 @@ void NativeORCBlockInputFormat::prepareFileReader()
 
     orc_column_to_ch_column = std::make_unique<ORCColumnToCHColumn>(
         header,
+        file_schema,
         format_settings,
         std::move(count_only_fields),
         column_mapper,
         std::move(absent_columns),
         std::move(absent_column_defaults),
         std::move(nested_table_type_hints),
-        std::move(structs_without_field_ids));
+        std::move(structs_without_field_ids),
+        std::move(top_level_read_names));
 
     if (format_settings.orc.filter_push_down && format_filter_info && format_filter_info->key_condition && !sargs
         && !absent_column_has_namesake)
@@ -2014,15 +2048,18 @@ std::optional<size_t> NativeORCSchemaReader::readNumberOrRows()
 
 ORCColumnToCHColumn::ORCColumnToCHColumn(
     const Block & header_,
+    const ORC::Type & file_schema_,
     const FormatSettings & format_settings_,
     UnorderedSetWithMemoryTracking<UInt64> count_only_fields_,
     const ColumnMapper * column_mapper_,
     NameSet absent_columns_,
     UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults_,
     UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints_,
-    UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids_)
+    UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids_,
+    std::optional<UnorderedMapWithMemoryTracking<UInt64, String>> top_level_read_names_)
     : header(header_)
     , format_settings(format_settings_)
+    , file_schema(file_schema_)
     , allow_missing_columns(format_settings.orc.allow_missing_columns)
     , null_as_default(format_settings.null_as_default)
     , case_insensitive_matching(format_settings.orc.case_insensitive_column_matching)
@@ -2034,6 +2071,7 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     , absent_column_defaults(std::move(absent_column_defaults_))
     , nested_table_type_hints(std::move(nested_table_type_hints_))
     , structs_without_field_ids(std::move(structs_without_field_ids_))
+    , top_level_read_names(std::move(top_level_read_names_))
 {
 }
 
@@ -2056,11 +2094,18 @@ void ORCColumnToCHColumn::orcTableToCHChunk(
     orc_field_names.reserve(field_num);
     for (size_t i = 0; i < field_num; ++i)
     {
-        const auto & name = schema->getFieldName(i);
+        String name = schema->getFieldName(i);
         const auto * field = struct_batch->fields[i];
         if (!field)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC table field {} is null", name);
 
+        if (top_level_read_names)
+        {
+            auto it = top_level_read_names->find(schema->getSubtype(i)->getColumnId());
+            if (it == top_level_read_names->end())
+                continue;
+            name = it->second;
+        }
         name_to_column_ptr[name] = {field, schema->getSubtype(i)};
         orc_field_names.push_back(name);
     }
@@ -2808,6 +2853,19 @@ static bool orcUnionBranchPrefersType(const ORC::Type * orc_branch_type, const D
     }
 }
 
+static const ORC::Type & getORCTypeByColumnId(const ORC::Type & root, UInt64 id)
+{
+    const ORC::Type * node = &root;
+    while (node->getColumnId() != id)
+    {
+        UInt64 i = 0;
+        while (node->getSubtype(i)->getMaximumColumnId() < id)
+            ++i;
+        node = node->getSubtype(i);
+    }
+    return *node;
+}
+
 /// Variant sorts its nested types, so the positional correspondence between ORC union branches
 /// and the alternatives of an explicit (or inferred) Variant type hint is lost. Reconstruct it
 /// structurally: collect the alternatives each branch can be read as (orcUnionBranchMatchesType),
@@ -3007,9 +3065,11 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         /// The hints enable the explicit-schema conversions the scalar readers support (e.g.
         /// binary -> IPv6) and keep the branch types aligned with the hinted Variant (e.g.
         /// Array(Nullable(...)) produced by schema inference). See computeOrcUnionBranchHints for
-        /// how a branch's forced alternative is reconstructed; updateIncludeTypeIds calls the same
-        /// function so a hinted STRUCT branch's field pruning matches what is actually read here.
-        const DataTypes branch_hints = computeOrcUnionBranchHints(orc_type, type_hint, case_insensitive_matching);
+        /// how a branch's forced alternative is reconstructed.
+        /// Computed on the file's union, as in updateIncludeTypeIds: a pruned field can change which alternatives a branch matches.
+        const auto & file_union = getORCTypeByColumnId(file_schema, orc_type->getColumnId());
+        chassert(file_union.getSubtypeCount() == num_children);
+        const DataTypes branch_hints = computeOrcUnionBranchHints(&file_union, type_hint, case_insensitive_matching);
 
         /// Read each ORC union branch into its own column. ORC keeps a separate physical batch per
         /// branch. Variant branches are non-nullable, and an ORC union row can be non-null yet
