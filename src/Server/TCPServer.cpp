@@ -2,6 +2,7 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 
@@ -234,6 +235,13 @@ void TCPServer::serveConnection(const Poco::Net::StreamSocket & connection_socke
         ++current_threads;
         try
         {
+            /// Per connection: the state of one connection, such as memory flushed without a limit check, must not reach the next one.
+            ThreadStatus thread_status;
+            const auto & global_pool = GlobalThreadPool::instance();
+            if (unlikely(global_pool.global_profiler_real_time_period_ns != 0 || global_pool.global_profiler_cpu_time_period_ns != 0))
+                thread_status.initGlobalProfiler(
+                    global_pool.global_profiler_real_time_period_ns, global_pool.global_profiler_cpu_time_period_ns);
+
             std::unique_ptr<Poco::Net::TCPServerConnection> connection(factory->createConnection(connection_socket, *this));
             if (connection)
                 connection->run();
