@@ -14,7 +14,7 @@ doc_type: 'guide'
 
 * 稼働中の[ClickHouse Cloud サービス](/ja/get-started/setup/cloud)
 * 使用する IDE またはエージェント型開発ツール
-* ヘッドレス認証を行う場合は、必要な組織およびサービスへのアクセス権を持つ [ClickHouse Cloud API キー](/cloud/manage/openapi)
+* ヘッドレス認証を行う場合は、必要な組織およびサービスへのアクセス権を持つ [ClickHouse Cloud API キー](/ja/cloud/manage/openapi)
 
 ## Cloud でリモートMCPサーバーを有効にする {#enable-remote-mcp-server}
 
@@ -24,25 +24,17 @@ doc_type: 'guide'
 **Connect with MCP** を選択します。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Connect モーダルで MCP を選択](/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp)
-
-</Frame>
-
+  <Frame>
+    ![Connect モーダルで MCP を選択](/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp)
+  </Frame>
 </div>
 
 サービスで MCP を有効にするには、ボタンをオンにします。MCP を有効化または無効化するには、`control-plane:service:manage-mcp` アクセス許可が必要です ([Console roles and permissions](/ja/products/cloud/reference/security/console-roles#console-permissions) を参照) 。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![MCPサーバーを有効にする](/images/use-cases/AI_ML/MCP/2enable_mcp.webp)
-
-</Frame>
-
+  <Frame>
+    ![MCPサーバーを有効にする](/images/use-cases/AI_ML/MCP/2enable_mcp.webp)
+  </Frame>
 </div>
 
 表示された URL をコピーします。これは以下の URL と同じです。
@@ -52,18 +44,37 @@ https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="setup-clickhouse-cloud-remote-mcp-server">
-  ## 開発用にリモートMCPをセットアップする
+  ## 開発用にリモートMCPをセットアップする {#setup-clickhouse-cloud-remote-mcp-server}
 </div>
 
 以下からお使いのIDEまたはツールを選択し、対応するセットアップ手順に従ってください。
 
 ### ヘッドレス環境からの認証 {#headless-mcp-client-authentication}
 
-MCP クライアントがリモートホストやヘッドレスホスト上で動作しており、ブラウザベースの OAuth フローを利用するのが現実的でない場合は、代わりに [ClickHouse Cloud API キー](/cloud/manage/openapi) を使用して認証します。
+MCP クライアントがリモートホストやヘッドレスホスト上で動作しており、ブラウザベースの OAuth フローを利用するのが現実的でない場合は、代わりに [ClickHouse Cloud API キー](/ja/cloud/manage/openapi) を使用して認証します。
 
 1. ClickHouse Cloud コンソールで対象の組織を開き、**API Keys** を選択します。
 2. MCP クライアントがアクセスする組織およびサービスに必要な、最小限のロールとアクセス許可を付与したキーを作成し、キー ID とシークレットをダウンロードします。
-3. リモートホスト上で、シークレット管理システムを通じて認証情報を渡し、HTTP Basic 認証の値を作成します。
+
+   代わりに [`clickhousectl`](/ja/concepts/features/interfaces/cli) でキーを作成する場合は、ロール ID を確認したうえで、MCP ホスト用の IP 許可リストを指定してキーを作成します。`clickhousectl` を使用するには、キーの作成権限を持つ既存の API キーが必要です。
+
+   ```bash
+   clickhousectl cloud org role list
+   clickhousectl cloud key create --name mcp-headless --role-id <role_id> --ip-allow <host_ip>/32
+   ```
+
+   新しいキー ID とシークレットはこのコマンドの実行時に一度だけ表示されるため、シークレットマネージャーに保存してください。`--ip-allow` を指定しない場合、キーの IP 許可リストは空になり、すべてのアクセスが拒否されます。
+3. MCP クライアントからクエリを実行する各 ClickHouse サービスについて、汎用のクエリ API エンドポイントを設定します。
+
+   * サービスが起動していることを確認してから、**Settings** &gt; **クエリ API Endpoints** を開きます。
+   * **Allow use of クエリ API Endpoints** をオンにします。
+   * 汎用エンドポイントが存在しない場合は、**Enable generic クエリ API Endpoint** を選択します。MCP で使用するものと同じ API キーを選び、必要なデータへの読み取りアクセス権を持つデータベースロールを選択して、エンドポイントを作成します。
+   * 汎用エンドポイントがすでに存在する場合は、そのエンドポイントを編集し、許可するキーに MCP 用の API キーを追加します。エンドポイントに紐付けられたすべてのキーのクエリアクセス権は、そのエンドポイントのデータベースロールによって決まります。
+
+   API キーを使用して `list_databases`、`list_tables`、`run_select_query` を呼び出すには、このサービスレベルの設定が必要です。組織およびサービスのアクセス許可だけでは、エンドポイントへの API キーの紐付けとデータベースロールの代わりにはなりません。この設定はサービスごとに 1 回行えばよく、MCP ツールごとに保存クエリや個別のエンドポイントを用意する必要はありません。
+
+   `get_services_list` は成功するものの、クエリツールで「サービスが見つからない」または「認証情報にアクセス権がない」というエラーが返される場合は、汎用エンドポイントが有効になっており、同じ API キーが含まれていることを確認してください。OAuth クライアントはサインインしたユーザーの SQL コンソールのアクセス権を使用するため、この API キーの設定は不要です。
+4. リモートホスト上で、シークレット管理システムを通じて認証情報を渡し、HTTP Basic 認証の値を作成します。
 
 ```bash
 export CLICKHOUSE_CLOUD_API_KEY="<key_id>"
@@ -77,7 +88,7 @@ export CH_AUTH="Basic $(
 )"
 ```
 
-4. MCPクライアントを選択し、リモートMCPサーバーを追加します。
+5. MCPクライアントを選択し、リモートMCPサーバーを追加します。
 
 <Tabs>
   <Tab title="Claude Code" id="headless-auth-claude-code">
@@ -138,10 +149,10 @@ export CH_AUTH="Basic $(
 
 各クライアントのセッションで `CH_AUTH` を参照できる状態にしておいてください。また、API キー、シークレット、`CH_AUTH` の値はソース管理にコミットしないでください。Base64 エンコードは認証情報を暗号化するものではありません。
 
-この API キーによる方式では、ブラウザも、`clickhousectl` での別途ログインも必要ありません。
+この API キーによる方式では、ブラウザも、`clickhousectl` での別途ログインも必要ありません。同じホストで `clickhousectl` も使用する場合、`clickhousectl` は同じ `CLICKHOUSE_CLOUD_API_KEY` と `CLICKHOUSE_CLOUD_API_SECRET` 変数を読み取り、これらの変数はブラウザでのログインよりも優先されます。
 
 <div id="claude-code">
-  ### Claude Code
+  ### Claude Code {#claude-code}
 </div>
 
 作業ディレクトリで次のコマンドを実行し、ClickHouse Cloud MCPサーバーの設定をClaude Codeに追加します。
@@ -165,7 +176,7 @@ MCPサーバーを一覧表示するには、次のコマンドを実行しま�
 `clickhouse-cloud` を選択し、ClickHouse Cloud の認証情報を使って OAuth 認証を行います。
 
 <div id="claude-web">
-  ### Claude web UI
+  ### Claude web UI {#claude-web}
 </div>
 
 1. **Customize** &gt; **Connectors** に移動します
@@ -175,7 +186,7 @@ MCPサーバーを一覧表示するには、次のコマンドを実行しま�
 5. OAuth を使用して、ClickHouse Cloud の認証情報で認証します
 
 <div id="cursor">
-  ### Cursor
+  ### Cursor {#cursor}
 </div>
 
 1. [Cursor Marketplace](https://cursor.com/marketplace) でMCPサーバーを探してインストールします。
@@ -183,7 +194,7 @@ MCPサーバーを一覧表示するには、次のコマンドを実行しま�
 3. OAuth で認証します。
 
 <div id="visual-studio-code">
-  ### Visual Studio Code
+  ### Visual Studio Code {#visual-studio-code}
 </div>
 
 以下の設定を `.vscode/mcp.json` に追加します。
@@ -202,7 +213,7 @@ MCPサーバーを一覧表示するには、次のコマンドを実行しま�
 詳細については、[Visual Studio Code ドキュメント](https://code.visualstudio.com/docs/copilot/customization/mcp-servers)を参照してください。
 
 <div id="windsurf">
-  ### Windsurf
+  ### Windsurf {#windsurf}
 </div>
 
 以下の設定で`mcp_config.json`ファイルを編集してください。
@@ -221,7 +232,7 @@ MCPサーバーを一覧表示するには、次のコマンドを実行しま�
 詳しくは、[Windsurf docs](https://docs.windsurf.com/windsurf/cascade/mcp#adding-a-new-mcp)を参照してください。
 
 <div id="zed">
-  ### Zed
+  ### Zed {#zed}
 </div>
 
 ClickHouse をカスタムサーバーとして追加します。
@@ -241,7 +252,7 @@ Zed の設定の **context&#95;servers** に、以下を追加します。
 詳しくは、[Zed のドキュメント](https://zed.dev/docs/ai/mcp#as-custom-servers)を参照してください。
 
 <div id="codex">
-  ### Codex
+  ### Codex {#codex}
 </div>
 
 CLIでClickHouse Cloud MCPサーバーを追加するには、次のコマンドを実行します。
@@ -251,7 +262,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="example-usage">
-  ## 使用例
+  ## 使用例 {#example-usage}
 </div>
 
 接続したら、自然言語のプロンプトを使って ClickHouse Cloud を操作できます。
@@ -259,7 +270,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 利用可能なツールの一覧については、[ツールリファレンス](/ja/products/cloud/features/ai-ml/remote-mcp#available-tools)を参照してください。
 
 <div id="exploring-data">
-  ### データの探索
+  ### データの探索 {#exploring-data}
 </div>
 
 まず、何が利用できるかを確認しましょう。
@@ -272,7 +283,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 | &quot;名前が `events_` で始まるテーブルをすべて一覧表示してください&quot; | `list_tables` (`like` フィルタを使用) |
 
 <div id="running-queries">
-  ### 分析クエリの実行
+  ### 分析クエリの実行 {#running-queries}
 </div>
 
 自然言語で質問すると、エージェントがそれを SQL に変換します。
@@ -286,7 +297,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 `run_select_query` ツールで許可されているのは `SELECT` ステートメントのみです。すべてのクエリは読み取り専用です。
 
 <div id="managing-services">
-  ### サービスとインフラストラクチャの管理
+  ### サービスとインフラストラクチャの管理 {#managing-services}
 </div>
 
 ClickHouse Cloud リソースの状況を把握できます。
@@ -300,7 +311,7 @@ ClickHouse Cloud リソースの状況を把握できます。
 | &quot;このサービスで設定されている ClickPipes は？&quot; | `list_clickpipes`                  |
 
 <div id="monitoring-costs">
-  ### コストの監視
+  ### コストの監視 {#monitoring-costs}
 </div>
 
 | プロンプト                      | 呼び出されるツール                                              |
@@ -309,7 +320,7 @@ ClickHouse Cloud リソースの状況を把握できます。
 | 「3月1日から3月15日までの日次コストを表示して」 | `get_organization_cost` (`from_date` と `to_date` を指定)  |
 
 <div id="related-content">
-  ## 関連コンテンツ
+  ## 関連コンテンツ {#related-content}
 </div>
 
 * [ClickHouse Agent Skills](https://github.com/ClickHouse/agent-skills)

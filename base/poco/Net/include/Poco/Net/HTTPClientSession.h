@@ -20,6 +20,9 @@
 
 #include <istream>
 #include <ostream>
+#include <string_view>
+#include <vector>
+#include "Poco/NoDumpAllocator.h"
 #include "Poco/Net/HTTPResponseParser.h"
 #include "Poco/Net/HTTPSession.h"
 #include "Poco/Net/HTTPSessionFactory.h"
@@ -82,7 +85,7 @@ namespace Net
             /// If tunnel option is 'false' request will be send directly to proxy without CONNECT request.
             std::string username;
             /// Proxy server username.
-            std::string password;
+            std::vector<char, NoDumpAllocator<char>> password;
             /// Proxy server password.
             std::string nonProxyHosts;
             /// A regular expression defining hosts for which the proxy should be bypassed,
@@ -138,7 +141,8 @@ namespace Net
         /// Returns the port number of the target HTTP server.
 
         std::string getResolvedAddress() const;
-        /// Returns the resolved host name and port of the target HTTP server.
+        /// Returns the host:port of the last connect attempt (the proxy when one is used),
+        /// or the target host:port before the first connect.
 
         void setProxy(
             const std::string & host,
@@ -186,7 +190,7 @@ namespace Net
         /// Sets the password for proxy authentication.
         /// Only Basic authentication is supported.
 
-        const std::string & getProxyPassword() const;
+        std::string_view getProxyPassword() const [[clang::lifetimebound]];
         /// Returns the password for proxy authentication.
 
         void setProxyConfig(const ProxyConfig & config);
@@ -419,12 +423,12 @@ namespace Net
         /// Sets the proxy credentials (Proxy-Authorization header), if
         /// proxy username and password have been set.
 
-        StreamSocket proxyConnect();
-        /// Sends a CONNECT request to the proxy server and returns
-        /// a StreamSocket for the resulting connection.
+        StreamSocket proxyConnect(const SocketAddress * resolvedProxyAddress = nullptr);
+        /// Sends a CONNECT request to the proxy server (using `resolvedProxyAddress`
+        /// when given) and returns a StreamSocket for the resulting connection.
 
         void proxyTunnel();
-        /// Calls proxyConnect() and attaches the resulting StreamSocket
+        /// Calls `proxyConnect` and attaches the resulting StreamSocket
         /// to the HTTPClientSession.
 
         void setLastRequest(Poco::Timestamp time);
@@ -441,6 +445,7 @@ namespace Net
     private:
         std::string _host;
         std::string _resolved_host;
+        std::string _connect_address;
         Poco::UInt16 _port;
         ProxyConfig _proxyConfig;
         Poco::Timespan _keepAliveTimeout;
@@ -473,6 +478,8 @@ namespace Net
 
     inline std::string HTTPClientSession::getResolvedAddress() const
     {
+        if (!_connect_address.empty())
+            return _connect_address;
         return (_resolved_host.empty() ? _host : _resolved_host) + ':' + std::to_string(_port);
     }
 
@@ -519,9 +526,9 @@ namespace Net
     }
 
 
-    inline const std::string & HTTPClientSession::getProxyPassword() const
+    inline std::string_view HTTPClientSession::getProxyPassword() const
     {
-        return _proxyConfig.password;
+        return {_proxyConfig.password.data(), _proxyConfig.password.size()};
     }
 
 

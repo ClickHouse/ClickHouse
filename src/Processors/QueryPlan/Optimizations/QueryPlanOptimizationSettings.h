@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Joins.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SettingsEnums.h>
 #include <Common/Logger_fwd.h>
 #include <Interpreters/Context_fwd.h>
@@ -11,6 +12,7 @@
 #include <chrono>
 #include <cstddef>
 #include <functional>
+#include <memory>
 
 namespace DB
 {
@@ -28,8 +30,14 @@ class ReadFromMergeTree;
 
 struct DistributedPlanLocalObject;
 
+struct TableOccurrences;
+
 /// The read of the single-node plan that a read of the plan with parallel replicas stands for, or nullptr.
 using FindSingleNodeRead = std::function<const ReadFromMergeTree *(const ReadFromMergeTree &)>;
+/// `FindSingleNodeRead` before the builder of the plan with parallel replicas binds it the tables of both query trees,
+/// the single-node one first (`collectTableOccurrences`).
+using FindSingleNodeReadByOccurrence = std::function<const ReadFromMergeTree *(
+    const std::shared_ptr<const TableOccurrences> &, const std::shared_ptr<const TableOccurrences> &, const ReadFromMergeTree &)>;
 
 /// What the builder of the plan with parallel replicas for automatic parallel replicas produced. When
 /// it built nothing, `skip_reason` says which kind of reason stopped it, so that the optimization can
@@ -47,10 +55,14 @@ struct PlanWithParallelReplicas
 
     std::unique_ptr<QueryPlan> plan;
     SkipReason skip_reason = SkipReason::None;
+    /// The tables of the single-node query tree and of the tree `plan` was built from (`collectTableOccurrences`),
+    /// which tell apart the reads of a table read more than once.
+    std::shared_ptr<const TableOccurrences> single_node_table_occurrences = nullptr;
+    std::shared_ptr<const TableOccurrences> replicas_table_occurrences = nullptr;
 };
 
 using QueryPlanWithParallelReplicasBuilder
-    = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const FindSingleNodeRead &, const LoggerPtr &)>;
+    = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const FindSingleNodeReadByOccurrence &, const LoggerPtr &)>;
 
 struct QueryPlanOptimizationSettings
 {
@@ -101,6 +113,7 @@ struct QueryPlanOptimizationSettings
     bool convert_outer_join_to_inner_join;
     bool convert_outer_join_to_inner_join_transitively;
     bool short_circuit_constant_false_join;
+    bool remove_unused_joins;
     bool execute_functions_after_sorting;
     bool reuse_storage_ordering_for_window_functions;
     bool lift_up_union;
@@ -130,6 +143,9 @@ struct QueryPlanOptimizationSettings
     bool aggregation_having_prefilter;
     UInt64 top_k_optimization_observation_rows = 65536;
     bool top_k_optimization_shared_boundary = true;
+    /// The `distributed_group_by_top_k` of the initiator, on a parallel replicas follower only.
+    UInt64 distributed_group_by_top_k = 0;
+    UInt64 max_rows_to_group_by = 0;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -180,6 +196,7 @@ struct QueryPlanOptimizationSettings
     bool build_sets = true; /// this one doesn't have a corresponding setting
     bool materialize_ctes = true; /// this one doesn't have a corresponding setting
     bool query_plan_join_shard_by_pk_ranges;
+    bool query_plan_join_multiway_merge;
     bool join_seal_gated_reading;
 
     bool enable_cascades_optimizer = false;
@@ -292,7 +309,7 @@ struct QueryPlanOptimizationSettings
     UInt64 join_runtime_filter_min_probe_rows = 1000;
     bool join_runtime_filter_size_from_hash_table_stats = false;
 
-    std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
+    std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- assigned from `SettingFieldMultiEnum`, which converts only to std::vector
 
     size_t min_columns_for_join_lazy_indexing = 0;
     size_t max_limit_for_join_lazy_indexing = 0;
@@ -308,10 +325,15 @@ struct QueryPlanOptimizationSettings
     size_t max_parallel_replicas = 1;
     size_t automatic_parallel_replicas_mode;
     size_t min_bytes_per_task_for_reading;
+    /// Testing only: ignore the cap on how many threads a read can usefully occupy, which otherwise
+    /// decides a small read before the cost model is consulted. It does not touch
+    /// `automatic_parallel_replicas_min_bytes_per_replica`, which still applies on its own.
+    bool automatic_parallel_replicas_ignore_thresholds;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
     float automatic_parallel_replicas_max_duplicated_read_ratio;
     float automatic_parallel_replicas_statistics_drift_ratio;
     bool automatic_parallel_replicas_remember_boundary = true;
+    UInt64 automatic_parallel_replicas_undecided_retry_after_executions = 0;
     /// Folded into the key under which automatic parallel replicas remembers the boundary of the single-replica
     /// plan; see `parallelReplicasBoundarySettingsHash`.
     UInt64 parallel_replicas_boundary_settings_hash = 0;

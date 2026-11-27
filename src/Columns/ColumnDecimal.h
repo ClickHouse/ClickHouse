@@ -80,6 +80,13 @@ public:
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) final;
 #endif
 
+    void insertFromEither(
+        const IColumn & src_true,
+        bool src_true_is_const,
+        const IColumn & src_false,
+        bool src_false_is_const,
+        const IColumn::Filter & condition) final;
+
     void popBack(size_t n) final
     {
         if (n > size())
@@ -136,6 +143,7 @@ public:
     [[nodiscard]] bool isDefaultAt(size_t n) const final { return data[n].value == 0; }
 
     [[nodiscard]] bool hasOnlyTypeDefaults() const override;
+    [[nodiscard]] ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const final;
 
     [[nodiscard]] ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const final;
     void filter(const IColumn::Filter & filt) final;

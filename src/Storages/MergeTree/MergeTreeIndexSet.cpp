@@ -18,6 +18,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
 #include <Planner/PlannerActionsVisitor.h>
+#include <Storages/VirtualColumnUtils.h>
 
 namespace DB
 {
@@ -29,10 +30,10 @@ namespace ErrorCodes
 }
 
 /// 0b11 -- can be true and false at the same time
-static const Field UNKNOWN_FIELD(3u);
+[[clang::no_destroy]] static const Field UNKNOWN_FIELD(3u);
 
 /// 0b10 -- can be false only
-static const Field FALSE_FIELD(2u);
+[[clang::no_destroy]] static const Field FALSE_FIELD(2u);
 
 /// ColumnVariant::getExtremes, which ColumnDynamic delegates to, sets both bounds to Null without
 /// reading the rows, and a Null bound in Range means "unbounded", never "the value NULL".
@@ -563,10 +564,12 @@ static const ActionsDAG::NodeRawConstPtrs & getArguments(const ActionsDAG::Node 
     if (!result_dag_or_null)
         return index_hint.getActions().getOutputs();
 
-    /// Import the DAG and map argument pointers.
+    /// Nodes are not bound by name: a name in the hint need not denote the same value as in the
+    /// filter (an alias can be named like a column). Key columns are bound by `atomFromDAG`.
     auto actions_clone = index_hint.getActions().clone();
     chassert(storage);
-    result_dag_or_null->mergeNodes(std::move(actions_clone), storage);
+    *storage = actions_clone.getOutputs();
+    result_dag_or_null->unite(std::move(actions_clone));
     return *storage;
 }
 
@@ -671,8 +674,11 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
 
     RPNBuilderTreeNode tree_node(node_to_check, context);
 
+    /// A deterministic function like `plus(blockSize(), 1)` passes the check above, but its name still does not
+    /// make it the key column with the same name.
     auto column_name = tree_node.getColumnName();
-    if (auto key_column_it = key_columns.find(column_name); key_column_it != key_columns.end())
+    if (auto key_column_it = key_columns.find(column_name);
+        key_column_it != key_columns.end() && VirtualColumnUtils::isDeterministicInScopeOfQuery(node_to_check))
     {
         /// A name match does not imply a type match: the query-side node can carry a `Nullable` the
         /// granule does not.
@@ -841,7 +847,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     if (node.type == ActionsDAG::ActionType::FUNCTION)
     {
         auto column_name = tree_node.getColumnName();
-        if (key_columns.contains(column_name))
+        if (key_columns.contains(column_name) && VirtualColumnUtils::isDeterministicInScopeOfQuery(node_to_check))
             return false;
 
         auto function_name = node.function_base->getName();

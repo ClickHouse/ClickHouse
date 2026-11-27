@@ -17,6 +17,7 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregation.h>
 #include <Interpreters/AdaptiveAggregation/AdaptivePartitionLayout.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveTopKNullKey.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveTopKPruning.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveTopKThreshold.h>
 #include <Interpreters/AdaptiveAggregation/StagedRecords.h>
@@ -106,9 +107,10 @@ constexpr size_t adaptive_parallel_merge_max_work = 1'000'000;
 /// Each thread decides on its own stream: its baseline table would absorb only the repeats it sees itself,
 /// and a key that every thread stages once costs no more than the one cell per thread the baseline would
 /// keep. The repeat factor is estimated from a sparse sample of distinct staged hashes and the exact number
-/// of staged records. The repeats weigh only while the staged records are at least a share of the rows the
-/// frozen table saw (`adaptive_thaw_staged_share_inverse`): a table that absorbs nearly every row in place
-/// loses little to a sliver of repeated misses, and its thaw would give up the frozen table's merge.
+/// of staged records. For several producers, the repeats weigh only while the staged records are at least a
+/// share of the rows the frozen table saw (`adaptive_thaw_staged_share_inverse`): a table that absorbs nearly
+/// every row in place loses little to a sliver of repeated misses, and its thaw would give up the frozen
+/// table's merge; a lone producer has no such merge on its ordinary path.
 ///
 /// The weighting separates the shapes by how much a repeat costs. With an accurate cardinality estimate,
 /// a near-unique stream has repeat ~ 1 and wasted bytes ~ 0 regardless of the records' size. A stream of
@@ -122,9 +124,24 @@ constexpr size_t adaptive_parallel_merge_max_work = 1'000'000;
 /// at most ~ 275 (fixed-width arguments up to repeat ~ 12.5, count streams far below).
 /// `adaptive_thaw_min_staged_records` is the evidence floor of a thread before it may thaw. It is
 /// in records rather than bytes because the repeat estimate's confidence comes from sampled observations.
+///
+/// The only producer of an aggregation weighs the state cost once
+/// (`adaptive_thaw_lone_producer_state_cost_multiplier`), so its bound for cheap states is 75 bytes. For
+/// several producers the factor of four also stands for the merge of their ordinary path: every thread's
+/// table keeps a state for a key, and the merge of the tables pays for each of them. The ordinary path of a
+/// lone producer has no merge: its table is the result. So a repeated record only adds a second pass over
+/// what one in-place update does, and it is waste once the repeats outweigh the state itself. A count record
+/// of a `UInt64` key (9 bytes and the cost per record) thaws past 5.4 records per key instead of 18.6, and a
+/// record with one 8-byte argument past 4.1 instead of 13.5.
+/// The bound of 75 splits the measured shapes of one stream on one thread. Every shape that repeats its keys
+/// 9 times or more crosses it: staging them takes 1.1 to 2.2 times as long as an ordinary table, from 200
+/// thousand to 10 million keys. The streams that are faster frozen stay below it although they repeat: `hits`
+/// grouped by the minute and `UserID` opens with 3.1 records of 22 bytes per key (47 bytes) and settles at
+/// 1.75 over 52 million keys, where staging is 1.2 times faster.
 constexpr UInt64 adaptive_thaw_sample_mask = 0xFF;
 constexpr size_t adaptive_thaw_min_staged_records = 65'536;
 constexpr size_t adaptive_thaw_state_cost_multiplier = 4;
+constexpr size_t adaptive_thaw_lone_producer_state_cost_multiplier = 1;
 constexpr size_t adaptive_thaw_staged_share_inverse = 4;
 
 /// The thaw weighs every staged record at its bytes plus this fixed cost, for the lookup of its group that the merge
@@ -171,6 +188,12 @@ struct AdaptiveAggregationSession
 
     /// Whether some producer froze. Read after the finish barrier.
     bool engaged() const { return frozen_producers > 0; }
+
+    /// Whether the aggregation has one producer. Nothing merges the table of a lone producer on the ordinary
+    /// path, so its thaw weighs the state cost once (see
+    /// `adaptive_thaw_lone_producer_state_cost_multiplier`), and the verdict of its run holds only for the
+    /// runs with one producer (see `Aggregator::adaptiveStagingVerdict`).
+    bool hasLoneProducer() const { return producers == 1; }
 
     /// Whether the tables take the adaptive bucket merge (see `Aggregator::mergeAndConvertAdaptiveBucket`):
     /// when some producer froze, because only that merge drains the staged records, or when the merge prunes
@@ -226,8 +249,13 @@ struct AdaptiveAggregationSession
 
     /// Published under the same mutex and read after the finish barrier. Retained states contribute their
     /// merge-work estimates, and each staged record contributes one unit per aggregate using this merge.
-    /// The total and the producer count estimate each worker's share of the merge.
+    /// The total and the number of merge workers give each worker's share of the merge (see
+    /// `Aggregator::parallelMergeThreshold`).
     size_t estimated_merge_work = 0;
+
+    /// The producers that handed their tables over, published under the same mutex. Once every producer of
+    /// the session did, the counts in their tables sum to the NULL key's final count, which an ascending
+    /// top-K then offers before the merge (see `AdaptiveTopKNullKey::offerBeforeMerge`).
     size_t finished_producers = 0;
 
     /// The producers whose tables froze at least once, and those of them that thawed. Published under the
@@ -237,6 +265,18 @@ struct AdaptiveAggregationSession
 
     /// The cells of the producers' tables, published under the same mutex.
     size_t table_cells = 0;
+
+    /// A rank that `bucket_top_k` groups of a descending top-K are known to reach, the floor that the merge's
+    /// threshold starts from (see `AdaptiveTopKThreshold`): the largest of the producers' floors, each the threshold
+    /// of the ranks of the producer's own table (see `Aggregator::finishAdaptiveProducer`). Published under the same
+    /// mutex.
+    UInt64 top_k_floor = 0;
+
+    /// The NULL key of a top-K over a method that keeps it in a slot of its own (see `AdaptiveTopKNullKey`).
+    /// The producers that hold the NULL key add their ranks under the same mutex (see
+    /// `Aggregator::finishAdaptiveProducer`), and `Aggregator::prepareAdaptiveTopK` offers it to
+    /// `top_k_threshold`.
+    AdaptiveTopKNullKey top_k_null_key;
 
     /// The staged records the producers spilled over the external-aggregation threshold (see
     /// `Aggregator::spillAdaptivePartitions`): one raw stream per partition, shared by the producers and created by the
@@ -300,7 +340,7 @@ struct AdaptiveMergeTask
     PaddedPODArray<UInt32> merge_order;
     AggregateDataPtrs merge_group;
     PaddedPODArray<AggregateDataPtr> record_places;
-    RowStorePointers records;
+    RowPointers records;
     AdaptiveRecordRanges ranges;
     std::vector<std::pair<UInt64, UInt64>> best_counts_and_hashes;
     PaddedPODArray<UInt64> best_hashes;
@@ -314,8 +354,10 @@ struct AdaptiveMergeTask
 /// that serialize row by row, the kernel keeps the bytes as well, one key after another, and once for all the records
 /// of a constant key: building the key again would serialize it a second time. The kernel stages such a batch whenever
 /// the kept bytes reach `adaptive_miss_batch_max_key_bytes`. A fixed-width key is kept as its value, which the kernel
-/// has at hand, while reading it back from the key columns would pack it a second time. The arrays are cleared after
-/// every staging but keep their capacity.
+/// has at hand, while reading it back from the key columns would pack it a second time. A key of fixed-width
+/// values and a string is kept as its size, `sizeof(Keys)` plus the size of the string, from which the record
+/// format takes the size it stores, and the writer reads both parts from the key state.
+/// The arrays are cleared after every staging but keep their capacity.
 class AdaptiveMissBatch
 {
 public:
@@ -383,7 +425,14 @@ private:
     template <typename RecordKey, typename Key>
     ALWAYS_INLINE void addKey(const Key & key, [[maybe_unused]] bool keep_key_bytes)
     {
-        if constexpr (adaptive_key_stages_bytes<RecordKey>)
+        if constexpr (is_keys_and_packed_string<RecordKey>)
+        {
+            /// The state reads the packed values and the string in place, so the batch keeps only the size of
+            /// the key, which the record format turns into the size it stores (see
+            /// `StagedKeysAndPackedStringKey`).
+            key_sizes.push_back(sizeof(key.keys) + static_cast<std::string_view>(key.str).size());
+        }
+        else if constexpr (adaptive_key_stages_bytes<RecordKey>)
         {
             const auto bytes = static_cast<std::string_view>(key);
             /// The records of a constant key share the bytes kept for the first of them.
@@ -415,6 +464,20 @@ struct AdaptiveStagedBytes
     size_t record_bytes = 0;
 };
 
+/// Whether `Method` keeps the NULL key in a slot of its own outside the cells of its table (see
+/// `AggregationDataWithNullKey`), as the methods of a single `Nullable` or `LowCardinality` key do.
+template <typename Method>
+constexpr bool keeps_null_key_slot = Method::low_cardinality_optimization || Method::one_key_nullable_optimization;
+
+/// How the frozen local table took the rows of a block: the hits, and the rows of the NULL key, which go to
+/// the key's slot without a lookup (see `AdaptiveAggregationProducer::FrozenState`). The other rows are
+/// misses.
+struct AdaptiveLocalProbes
+{
+    size_t hits = 0;
+    size_t null_rows = 0;
+};
+
 /// Per-transform context of the adaptive aggregation: the thread's lifecycle phase and its
 /// phase-owned counters, its staged records, and the current block's misses.
 struct AdaptiveAggregationProducer
@@ -431,13 +494,17 @@ struct AdaptiveAggregationProducer
         size_t rows = 0;
     };
 
-    /// The adaptive phase proper: the local table only updates the keys it already holds
-    /// and misses are staged for the merge. Carries the post-freeze hit-rate
-    /// sampling: when the frozen table turns out to hold almost none of the stream's keys
-    /// (a uniform high-cardinality distribution), probing it is pure overhead on every row;
+    /// The adaptive phase proper: the local table only updates the keys it already holds and misses are
+    /// staged for the merge. The NULL key of a method that keeps it in a slot of its own (see
+    /// `keeps_null_key_slot`) is the exception: the table takes every row of that key into the slot, whether
+    /// it holds the key yet or not. A staged record keeps the nested value as its key, so such a row has no
+    /// record, and the slot never grows the table. The row takes no lookup, so it is neither a hit nor a miss.
+    ///
+    /// Carries the post-freeze hit-rate sampling: when the frozen table turns out to hold almost none of the
+    /// stream's keys (a uniform high-cardinality distribution), probing it is pure overhead on every row;
     /// after the sample window the kernel switches to staging ordinary blocks without the lookup.
-    /// Constant-key blocks still look up their one key, so they can keep growing the retained states
-    /// even after per-row probes are bypassed.
+    /// Constant-key blocks still look up their one key, so they can keep growing the retained states even
+    /// after per-row probes are bypassed.
     struct FrozenState
     {
         FrozenState(size_t used_arena_bytes_at_freeze_, size_t memory_usage_at_freeze_)

@@ -11,9 +11,17 @@ For pricing information, see the [ClickHouse Cloud Pricing](https://clickhouse.c
 ClickHouse Cloud bills based on the usage of compute, storage, [data transfer](/products/cloud/reference/billing/network-data-transfer) (egress over the internet and cross-region), and [ClickPipes](/integrations/clickpipes/home). 
 To understand what can affect your bill, and ways that you can manage your spend, keep reading.
 
+<Note>
+[Gen 2 compute](/products/cloud/features/compute-generations) is a Private Preview feature with pricing that differs from standard compute. See the Gen 2 documentation for its current terms.
+</Note>
+
 ## Managed Postgres {#managed-postgres}
 
 ClickHouse Managed Postgres follows the ClickHouse Cloud billing model for compute, storage, and data transfer. Each Managed Postgres instance retains backups for 7 days, and backup storage equal to the provisioned disk capacity is included. Additional backup storage is billed at the ClickHouse Cloud storage price for your region, for example, \$25.30 per TB-month in AWS `us-east-1`. Data egress is billed at the [ClickHouse Cloud data transfer rates](/products/cloud/reference/billing/network-data-transfer). See [Managed Postgres pricing](/products/managed-postgres/pricing) for details.
+
+## ClickHouse Observability {#clickhouse-observability}
+
+Fully managed [ClickHouse Observability](/clickstack/observability/overview) isn't billed on compute and storage. Logs and traces are billed on their uncompressed volume, and metrics on the number of data points, ingested each month. During the public beta, data is retained for 30 days. Self-managed ClickHouse Observability runs on your ClickHouse Cloud service and is billed for its compute and storage, as described on this page. For current rates, see the [pricing page](https://clickhouse.com/pricing).
 
 ## Amazon Web Services (AWS) example {#amazon-web-services-aws-example}
 

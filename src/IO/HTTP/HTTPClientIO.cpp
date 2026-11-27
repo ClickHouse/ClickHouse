@@ -15,6 +15,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -313,6 +314,8 @@ size_t HTTPResponseReadBuffer::readBody(char * to, size_t n)
     if (!session || !n)
         return 0;
 
+    checkBeforeRead();
+
     n = std::min(n, max_transfer_at_once);
 
     switch (encoding)
@@ -384,6 +387,7 @@ UInt64 HTTPResponseReadBuffer::readChunkLength()
     std::string line;
     while (line.size() < max_chunk_length_line)
     {
+        checkBeforeRead();
         const int ch = session->getCharRaw();
         if (ch == eof)
             throw Poco::Net::MessageException("Unexpected EOF");
@@ -395,7 +399,7 @@ UInt64 HTTPResponseReadBuffer::readChunkLength()
     if (line.size() >= 2 && line[line.size() - 2] == '\r' && line[line.size() - 1] == '\n')
         line.resize(line.size() - 2);
     else
-        throw Poco::Net::MessageException("Malformed chunked encoding");
+        throw Poco::Net::MalformedMessageException("Malformed chunked encoding");
 
     /// Chunk extensions are not interpreted, the same as in `Poco`.
     if (const size_t pos = line.find(';'); pos != std::string::npos)
@@ -403,7 +407,7 @@ UInt64 HTTPResponseReadBuffer::readChunkLength()
 
     unsigned chunk_length = 0;
     if (!Poco::NumberParser::tryParseHex(line, chunk_length))
-        throw Poco::Net::MessageException("Invalid chunk length");
+        throw Poco::Net::MalformedMessageException("Invalid chunk length");
 
     return chunk_length;
 }
@@ -412,12 +416,14 @@ void HTTPResponseReadBuffer::skipCRLF()
 {
     static const int eof = std::char_traits<char>::eof();
 
+    checkBeforeRead();
     const int c1 = session->getCharRaw();
+    checkBeforeRead();
     const int c2 = session->getCharRaw();
     if (c1 == eof || c2 == eof)
         throw Poco::Net::MessageException("Unexpected EOF");
     if (c1 != '\r' || c2 != '\n')
-        throw Poco::Net::MessageException("Malformed chunked encoding");
+        throw Poco::Net::MalformedMessageException("Malformed chunked encoding");
 }
 
 void HTTPResponseReadBuffer::markComplete()
@@ -477,6 +483,19 @@ static std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponseImpl(
     try
     {
         readHTTPResponseHeader(session);
+    }
+    catch (const Poco::Net::HTTPHeaderLimitException & e)
+    {
+        /// The peer sends the same header again, so this is not a network error, and the retry
+        /// loops which retry only network errors give up at once.
+        const Poco::Net::HTTPHeaderLimits limits = session.responseParser().limits();
+        /// The socket is at an unknown offset, see below.
+        session.reset();
+        throw Exception(
+            ErrorCodes::LIMIT_EXCEEDED,
+            "The header of the HTTP response exceeds a limit: {}. The limits are {} fields, {} bytes for a field name and {} bytes "
+            "for a field value, see the settings `http_max_fields`, `http_max_field_name_size` and `http_max_field_value_size`",
+            e.message(), limits.fields, limits.name_length, limits.value_length);
     }
     catch (const Poco::Exception &)
     {

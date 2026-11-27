@@ -14,6 +14,8 @@ then
         # Check avx2 as a proxy, since every real CPU with AVX2 also has the other v3 features.
         if grep -q avx2 /proc/cpuinfo
         then
+            # The `amd64musl` path is kept for release branches built before the switch to the
+            # static musl binary, which publish a glibc binary under `amd64`.
             if ldd --version 2>&1 | grep -q musl
             then
                 DIR="amd64musl"
@@ -67,6 +69,90 @@ then
     echo "Operating system '${OS}' / architecture '${ARCH}' is unsupported."
     exit 1
 fi
+
+# Sets `profile` to the startup file that should get the PATH line,
+# and `extra_profile` to a second one when a single file cannot cover every shell.
+detect_shell_profile() {
+    target_os="$1"
+    user_shell=""
+    if [ -n "${SHELL}" ]; then
+        user_shell=$(basename "${SHELL}")
+    fi
+
+    profile=""
+    extra_profile=""
+
+    case "${user_shell}" in
+        zsh)
+            # zsh falls back to the home directory only when ZDOTDIR is unset, not when it is empty.
+            zsh_dir="${ZDOTDIR-${HOME}}"
+            if [ -f "${zsh_dir}/.zshrc" ]; then
+                profile="${zsh_dir}/.zshrc"
+            elif [ -f "${zsh_dir}/.zprofile" ]; then
+                profile="${zsh_dir}/.zprofile"
+            else
+                profile="${zsh_dir}/.zshrc"
+            fi
+            ;;
+        bash)
+            # A login shell reads only the first of these that exists.
+            login_profile=""
+            for name in .bash_profile .bash_login .profile; do
+                if [ -f "${HOME}/${name}" ]; then
+                    login_profile="${HOME}/${name}"
+                    break
+                fi
+            done
+            if [ "${target_os}" = "Darwin" ]; then
+                # Terminals on macOS start login shells.
+                profile="${login_profile:-${HOME}/.bash_profile}"
+            else
+                # Terminals start non-login shells, which read only .bashrc; an ssh login reads it
+                # only if the login file sources it.
+                profile="${HOME}/.bashrc"
+                login_profile="${login_profile:-${HOME}/.profile}"
+                if ! grep -E -q '^[^#]*(\.|source)[[:space:]]+[^#]*\.bashrc' "${login_profile}" 2>/dev/null; then
+                    extra_profile="${login_profile}"
+                fi
+            fi
+            ;;
+        fish)
+            profile="${XDG_CONFIG_HOME:-${HOME}/.config}/fish/config.fish"
+            ;;
+        *)
+            if [ -f "${HOME}/.zshrc" ]; then
+                profile="${HOME}/.zshrc"
+            elif [ -f "${HOME}/.bashrc" ]; then
+                profile="${HOME}/.bashrc"
+            elif [ -f "${HOME}/.bash_profile" ]; then
+                profile="${HOME}/.bash_profile"
+            elif [ -f "${HOME}/.profile" ]; then
+                profile="${HOME}/.profile"
+            else
+                if [ "${target_os}" = "Darwin" ]; then
+                    profile="${HOME}/.zshrc"
+                else
+                    profile="${HOME}/.bashrc"
+                fi
+            fi
+            ;;
+    esac
+}
+
+# Whether the file has a line, not commented out, that puts ~/.local/bin into PATH.
+path_in_profile() {
+    [ -f "$1" ] && grep -v '^[[:space:]]*#' "$1" | grep -i 'path' \
+        | grep -F -q -e "${HOME}/.local/bin" -e '$HOME/.local/bin' -e '${HOME}/.local/bin' -e '~/.local/bin'
+}
+
+add_path_to_profile() {
+    mkdir -p "$(dirname "$1")"
+    if [ -f "$1" ] && [ -n "$(tail -c 1 "$1" 2>/dev/null)" ]; then
+        echo "" >> "$1"
+    fi
+    echo "# Added by ClickHouse installer" >> "$1"
+    printf '%s\n' "${path_line}" >> "$1"
+}
 
 clickhouse_download_filename_prefix="clickhouse"
 clickhouse="$clickhouse_download_filename_prefix"
@@ -170,13 +256,78 @@ then
                 case ":$PATH:" in
                     *":${chctl_install_dir}:"*) ;;
                     *)
-                        echo
-                        echo "NOTE: ${chctl_install_dir} is not in your PATH."
-                        echo "Add it by running:"
-                        echo
-                        echo "  export PATH=\"${chctl_install_dir}:\$PATH\""
-                        echo
-                        echo "You may want to add that line to your shell profile (~/.bashrc, ~/.zshrc, etc.)"
+                        detect_shell_profile "${OS}"
+                        profile_file="${profile}"
+                        # Keep only the files that still need the line.
+                        if [ -n "${extra_profile}" ] && path_in_profile "${extra_profile}"; then
+                            extra_profile=""
+                        fi
+                        if [ -n "${extra_profile}" ] && path_in_profile "${profile_file}"; then
+                            profile_file="${extra_profile}"
+                            extra_profile=""
+                        fi
+                        pretty_profile="~/${profile_file#"${HOME}/"}"
+                        if [ "${pretty_profile}" = "~/${profile_file}" ]; then
+                            pretty_profile="${profile_file}"
+                        fi
+                        pretty_profiles="${pretty_profile}"
+                        if [ -n "${extra_profile}" ]; then
+                            pretty_profiles="${pretty_profile} and ~/${extra_profile#"${HOME}/"}"
+                        fi
+
+                        # The line refers to $HOME literally, so a home path with special characters is not expanded again.
+                        case "${user_shell}" in
+                            fish) path_line='set -gx PATH "$HOME/.local/bin" $PATH' ;;
+                            *) path_line='export PATH="$HOME/.local/bin:$PATH"' ;;
+                        esac
+
+                        in_profile=0
+                        if path_in_profile "${profile_file}"; then
+                            in_profile=1
+                        fi
+
+                        if [ "${in_profile}" = "1" ]; then
+                            echo
+                            echo "NOTE: ${chctl_install_dir} is not in your current PATH, but it is configured in ${pretty_profile}."
+                            echo "Restart your terminal session or run:"
+                            echo
+                            echo "  source ${pretty_profile}"
+                        else
+                            asked=0
+                            if [ -z "${NONINTERACTIVE}" ] && ( : < /dev/tty ) 2>/dev/null; then
+                                echo
+                                printf "Do you want to add '%s' to PATH in %s? [Y/n] " "${chctl_install_dir}" "${pretty_profiles}" > /dev/tty
+                                if read -r reply < /dev/tty 2>/dev/null; then
+                                    asked=1
+                                    case "${reply}" in
+                                        [yY]*|"")
+                                            add_path_to_profile "${profile_file}"
+                                            if [ -n "${extra_profile}" ]; then
+                                                add_path_to_profile "${extra_profile}"
+                                            fi
+                                            echo "Added ${path_line} to ${pretty_profiles}"
+                                            echo "Run 'source ${pretty_profile}' or restart your shell to update PATH."
+                                            ;;
+                                        *)
+                                            echo "Skipped updating ${pretty_profiles}."
+                                            echo "You can manually add it by running:"
+                                            echo
+                                            echo "  ${path_line}"
+                                            ;;
+                                    esac
+                                fi
+                            fi
+
+                            if [ "${asked}" = "0" ]; then
+                                echo
+                                echo "NOTE: ${chctl_install_dir} is not in your PATH."
+                                echo "Add it by running:"
+                                echo
+                                echo "  ${path_line}"
+                                echo
+                                echo "You may want to add that line to your shell profile (${pretty_profiles})."
+                            fi
+                        fi
                         ;;
                 esac
             else

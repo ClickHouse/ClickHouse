@@ -110,6 +110,10 @@ String StorageObjectStorageCluster::getPathSample(ContextPtr context)
     /// the query during analysis. A key that is really needed for reading is probed again by the reader,
     /// which does report the error.
     query_settings.ignore_non_existent_file = true;
+    /// Force serial listing: see StorageObjectStorage::getPathSample. The sample path must be
+    /// deterministic (independent of `s3_list_object_parallelism`) so hive-partitioning detection
+    /// is stable.
+    query_settings.list_object_parallelism = 1;
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         query_settings,
@@ -604,17 +608,18 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         iterator,
         std::move(ids_of_hosts),
         /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes],
-        /* wait_for_owner */ std::chrono::milliseconds(local_context->getSettingsRef()[Setting::cluster_function_wait_for_replica_ms].totalMilliseconds()));
+        /* wait_for_owner */ std::chrono::milliseconds(local_context->getSettingsRef()[Setting::cluster_function_wait_for_replica_ms].totalMilliseconds()),
+        local_context->getProcessListElementSafe());
 
     auto callback = std::make_shared<TaskIterator>(
-        [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
+        [task_distributor, local_context](size_t number_of_current_replica, const std::atomic_bool & stop_waiting) mutable -> ClusterFunctionReadTaskResponsePtr
         {
             fiu_do_on(FailPoints::storage_cluster_read_sleep,
             {
                 sleepForSeconds(10);
             });
 
-            auto task = task_distributor->getNextTask(number_of_current_replica);
+            auto task = task_distributor->getNextTask(number_of_current_replica, &stop_waiting);
             if (task)
                 return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
             return std::make_shared<ClusterFunctionReadTaskResponse>();

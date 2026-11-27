@@ -23,6 +23,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
@@ -39,11 +40,13 @@
 #include <Common/DateLUT.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ErrnoException.h>
+#include <Common/FailPoint.h>
 #include <Common/Stopwatch.h>
 #include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IStoragePolicy.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/sortBlock.h>
@@ -91,6 +94,7 @@ extern const int NOT_IMPLEMENTED;
 extern const int FILE_ALREADY_EXISTS;
 extern const int STALE_VERSION;
 extern const int S3_ERROR;
+extern const int CANNOT_WRITE_TO_FILE;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -134,6 +138,12 @@ static constexpr size_t MAX_LIST_RETRIES = 5;
 
 namespace DB::Iceberg
 {
+
+void useUTCForORCTimestamps(FormatSettings & settings)
+{
+    settings.orc.reader_time_zone_name = "UTC";
+    settings.orc.writer_time_zone_name = "UTC";
+}
 
 using namespace DB;
 
@@ -586,6 +596,165 @@ void removeRejectedMetadataFile(
     object_storage->removeObjectIfExists(StoredObject(resolver.resolve(metadata_file_info.path)));
 }
 
+bool hasSnapshot(const Poco::JSON::Object::Ptr & metadata, Int64 snapshot_id)
+{
+    if (!metadata->has(f_snapshots))
+        return false;
+    auto snapshots = metadata->getArray(f_snapshots);
+    for (UInt32 i = 0; i < snapshots->size(); ++i)
+        if (snapshots->getObject(i)->getValue<Int64>(f_metadata_snapshot_id) == snapshot_id)
+            return true;
+    return false;
+}
+
+bool commitMetadataFile(
+    const IcebergPathResolver & resolver,
+    const GeneratedMetadataFileWithInfo & metadata_file_info,
+    const IcebergPathFromMetadata & version_hint_path,
+    const Poco::JSON::Object::Ptr & metadata,
+    const Poco::JSON::Object::Ptr & new_snapshot,
+    const String & base_catalog_metadata_location,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const StorageID & table_id,
+    bool create_version_hint,
+    const std::function<Poco::JSON::Object::Ptr()> & read_latest_metadata,
+    const MetadataCommitFailPoints & fail_points,
+    std::string_view operation,
+    bool & commit_outcome_unknown,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    LoggerPtr log)
+{
+    /// There are three cases:
+    /// 1. Without a catalog: write `v<N>.metadata.json`, which is the commit, and update the version hint.
+    /// 2. With a catalog that writes the metadata file itself (REST): update the catalog.
+    /// 3. With a catalog that does not write the metadata file (Glue): write `<N>-<uuid>.metadata.json` and update the catalog.
+    ///
+    /// The main complexity comes from network failures: a failed write of the metadata file or a failed update of the
+    /// catalog does not mean that it did not happen. Even a later GET/HEAD of the attempted file does not prove it: the
+    /// write request may be stuck in a slow proxy while the GET/HEAD request goes through a fast one.
+    ///
+    /// `commit_outcome_unknown` marks this uncertainty: while it is set, the caller does not remove the files of the
+    /// attempt, although the commit was not confirmed. Such situations are rare, so we only check for the positive outcome:
+    /// 1. The attempted file exists (GET/HEAD succeeds), but that alone does not mean that it is our write.
+    /// 2. If it holds our snapshot, it is our write, and the commit succeeded.
+    ///
+    /// Overall, the Iceberg commit protocol is complex and may leave garbage behind.
+    const Int64 snapshot_id = new_snapshot->getValue<Int64>(f_metadata_snapshot_id);
+    const String json_representation = stringifyJSON(metadata, 4);
+    const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
+
+    const auto check_fail_point = [](const char * name)
+    {
+        bool hit = false;
+        if (name)
+            fiu_do_on(name, { hit = true; });
+        return hit;
+    };
+    const auto pause_before_reconciliation = [&]
+    {
+        if (fail_points.pause_before_reconciliation)
+            FailPointInjection::pauseFailPoint(fail_points.pause_before_reconciliation);
+    };
+
+    LOG_DEBUG(log, "Committing metadata file {} with snapshot {}", metadata_file_info.path, snapshot_id);
+    bool committed = false;
+    if (!catalog) /// Without a catalog the write of the metadata file is the commit.
+    {
+        /// The request was lost, so nothing was written, but the writer cannot know it.
+        const bool request_lost = check_fail_point(fail_points.lose_request);
+        /// The name of the metadata file is the commit lock. Throws only if nothing was written.
+        committed = !request_lost && writeMetadataFile(resolver, metadata_file_info, json_representation, object_storage, context);
+        /// The write landed, but its response was lost.
+        if (check_fail_point(fail_points.lose_response))
+            committed = false;
+
+        if (!committed)
+        {
+            /// From here on the outcome is unknown, and the files are kept: `exists` and reading the metadata file may throw.
+            commit_outcome_unknown = true;
+
+            pause_before_reconciliation();
+            const auto attempted_path = resolver.resolve(metadata_file_info.path);
+            if (!object_storage->exists(StoredObject(attempted_path)))
+                throw Exception(
+                    ErrorCodes::CANNOT_WRITE_TO_FILE,
+                    "The outcome of the {} commit of the Iceberg table {} is unknown: the write of {} was not "
+                    "confirmed, and the file may still appear. Keeping the files of the commit, "
+                    "`ALTER TABLE ... EXECUTE remove_orphan_files` removes them if it does not",
+                    operation,
+                    table_id.getNameForLogs(),
+                    attempted_path);
+
+            committed = hasSnapshot(
+                getMetadataJSONObject(
+                    attempted_path, object_storage, nullptr, context, log, metadata_file_info.compression_method, std::nullopt),
+                snapshot_id);
+            if (committed)
+                LOG_INFO(log, "Commit of snapshot {} reported a failure, but {} holds it", snapshot_id, attempted_path);
+        }
+    }
+    else
+    {
+        /// A catalog that does not write the metadata file itself (Glue) needs it before the update. If its write is not
+        /// confirmed, the catalog is not updated, and nothing references the files of the attempt.
+        const bool metadata_file_written = catalog_writes_metadata_file
+            || writeMetadataFile(resolver, metadata_file_info, json_representation, object_storage, context);
+        if (metadata_file_written)
+        {
+            /// From here on the outcome is unknown, and the files are kept.
+            commit_outcome_unknown = true;
+
+            const auto catalog_filename = resolver.resolveForCatalog(metadata_file_info.path);
+            const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
+            committed = catalog->updateMetadata(
+                namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata);
+
+            if (!committed)
+            {
+                pause_before_reconciliation();
+                /// The catalog keeps no file per attempt: its pointer tells whether one landed.
+                committed = hasSnapshot(read_latest_metadata(), snapshot_id);
+                if (committed)
+                    LOG_INFO(log, "Commit of snapshot {} reported a failure, but the catalog holds it", snapshot_id);
+                else if (!catalog_writes_metadata_file)
+                    removeRejectedMetadataFile(resolver, metadata_file_info, object_storage);
+            }
+        }
+    }
+
+    if (!committed)
+    {
+        /// The attempt was refused.
+        commit_outcome_unknown = false;
+        LOG_DEBUG(log, "Commit of metadata file {} was refused", metadata_file_info.path);
+        return false;
+    }
+
+    /// The commit succeeded, so its files stay referenced even if advancing the version hint throws.
+    commit_outcome_unknown = true;
+    /// The version hint is not a part of the commit: if writing it fails, the next writer advances it.
+    if (!catalog_writes_metadata_file
+        && !tryWriteVersionHintFile(
+            resolver,
+            metadata_file_info,
+            version_hint_path,
+            object_storage,
+            context,
+            create_version_hint,
+            /* assert_version_exactly */ false))
+    {
+        LOG_WARNING(
+            log,
+            "Committed {}, but could not advance `version-hint.text` to version {}: readers that use it see an older version "
+            "until the next commit",
+            metadata_file_info.path,
+            metadata_file_info.version);
+    }
+    commit_outcome_unknown = false;
+    LOG_DEBUG(log, "Metadata file {} committed", metadata_file_info.path);
+    return true;
+}
 
 String normalizeIcebergTransformFunctionName(const String & function_name)
 {
@@ -2392,22 +2561,23 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::J
     return {schema, current_schema_id};
 }
 
-KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context)
+Poco::JSON::Array::Ptr getDefaultSortOrderFields(const Poco::JSON::Object::Ptr & metadata_object)
 {
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
     Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
 
-    Poco::JSON::Array::Ptr fields;
     for (UInt32 i = 0; i < sort_orders->size(); ++i)
     {
         auto sort_order = sort_orders->getObject(i);
         if (sort_order->getValue<Int64>(f_order_id) == sort_order_id)
-        {
-            fields = sort_order->getArray(f_fields);
-            break;
-        }
+            return sort_order->getArray(f_fields);
     }
+    return nullptr;
+}
 
+KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context, SortDescription * sort_description)
+{
+    auto fields = getDefaultSortOrderFields(metadata_object);
     if (!fields || fields->size() == 0)
         return KeyDescription{};
 
@@ -2421,6 +2591,7 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
     }
 
     String order_by_str;
+    std::vector<int> nulls_directions;
 
     for (UInt32 field_index = 0; field_index < fields->size(); ++field_index)
     {
@@ -2432,6 +2603,7 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
             return KeyDescription{};
         const auto & column_name = column->second;
         int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
+        nulls_directions.push_back(field->optValue<String>(f_null_order, "") == "nulls-first" ? -direction : direction);
         auto iceberg_transform_name = field->getValue<String>(f_transform);
         std::optional<TransformAndArgument> clickhouse_transform_name;
         try
@@ -2472,7 +2644,11 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
             order_by_str += fmt::format("{} DESC,", full_argument);
     }
     order_by_str.pop_back();
-    return KeyDescription::parse(order_by_str, ColumnsDescription(ch_schema), {}, local_context, true);
+    auto key = KeyDescription::parse(order_by_str, ColumnsDescription(ch_schema), {}, local_context, true);
+    if (sort_description)
+        for (size_t i = 0; i < key.column_names.size(); ++i)
+            sort_description->emplace_back(key.column_names[i], key.reverse_flags.empty() || !key.reverse_flags[i] ? 1 : -1, nulls_directions[i]);
+    return key;
 }
 
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type)
@@ -2482,41 +2658,41 @@ DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTyp
     return std::make_shared<DataTypeInt32>();
 }
 
-void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context)
+void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, SortDescription & result_sort_description, ContextPtr context)
 {
-    std::vector<String> initial_column_names;
-    std::unordered_set<String> initial_column_names_set;
-    for (const auto & column_name : block.getNames())
-    {
-        initial_column_names.push_back(column_name);
-        initial_column_names_set.insert(column_name);
-    }
-    /// A struct field in the key, e.g. `t.a`, is a subcolumn of a block column.
+    Block source_block;
     for (const auto & required_column : sort_description.expression->getRequiredColumns())
-        if (!block.has(required_column))
-            if (auto subcolumn = block.findSubcolumnByName(required_column))
-                block.insert(std::move(*subcolumn));
-    ASTPtr combined_expr_list = sort_description.expression_list_ast;
-
-    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, block.getNamesAndTypesList());
-    auto analyzer = ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
-    analyzer->execute(block);
-
-    ColumnsWithTypeAndName reordered_columns;
-    for (const auto & column_name : initial_column_names)
-        reordered_columns.push_back(block.getByName(column_name));
-    for (const auto & column : block.getColumnsWithTypeAndName())
-        if (!initial_column_names_set.contains(column.name))
-            reordered_columns.push_back(column);
-
-    block = Block(reordered_columns);
-    SortDescription result_sort_description;
-    for (size_t i = 0; i < sort_description.column_names.size(); ++i)
     {
-        if (sort_description.reverse_flags.empty() || !sort_description.reverse_flags[i])
-            result_sort_description.push_back(SortColumnDescription(sort_description.column_names[i]));
-        else
-            result_sort_description.push_back(SortColumnDescription(sort_description.column_names[i], -1));
+        if (block.has(required_column))
+            source_block.insert(block.getByName(required_column));
+        /// A struct field in the key, e.g. `t.a`, is a subcolumn of a block column.
+        else if (auto subcolumn = block.findSubcolumnByName(required_column))
+            source_block.insert(std::move(*subcolumn));
+    }
+
+    const auto & keys = sort_description.expression_list_ast->children;
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
+        String sort_column_name = sort_description.column_names[i];
+        const bool is_identifier = keys[i]->as<ASTIdentifier>();
+        if (!is_identifier || !block.has(sort_column_name))
+        {
+            /// Each key is evaluated alone on its own inputs, so a column named like the key is never taken for it.
+            /// A computed key is not named like a source column, which a later identity key may denote.
+            ASTPtr key_ast = keys[i];
+            auto syntax_result = TreeRewriter(context).analyze(key_ast, source_block.getNamesAndTypesList());
+            Block key_block;
+            for (const auto & column_name : syntax_result->requiredSourceColumns())
+                key_block.insert(source_block.getByName(column_name));
+            ExpressionAnalyzer(key_ast, syntax_result, context).getActions(false)->execute(key_block);
+
+            auto key_column = key_block.getByName(sort_column_name);
+            while (block.has(key_column.name) || (!is_identifier && source_block.has(key_column.name)))
+                key_column.name = "_" + key_column.name;
+            sort_column_name = key_column.name;
+            block.insert(std::move(key_column));
+        }
+        result_sort_description[i].column_name = sort_column_name;
     }
     sortBlock(block, result_sort_description);
 }
@@ -2612,6 +2788,12 @@ Field normalizePartitionValue(const Field & value, const DataTypePtr & type)
     if (value.getType() == Field::Types::String && WhichDataType(value_type).isDecimal())
         return decodePartitionDecimalByType(value.safeGet<String>(), *value_type);
 
+    if (value.getType() == Field::Types::String && WhichDataType(value_type).isUUID())
+    {
+        if (auto uuid = deserializeUUIDFromBinaryRepr(value.safeGet<String>()))
+            return *uuid;
+    }
+
     /// A decimal that a manifest already carried in a decoded form: bring it to the canonical carrier
     /// too, so that it matches the value decoded from the raw `fixed` of another manifest.
     if (Field::isDecimal(value.getType()) && value.getType() != Field::Types::Decimal256
@@ -2689,9 +2871,6 @@ PartitionColumnValues getIdentityPartitionColumnValues(
 
         Field value = convertFieldToTypeOrThrow(
             normalizePartitionValue(partition_key_value[partition_field.tuple_index], name_and_type->type), *name_and_type->type);
-        if (value.isNull())
-            continue;
-
         result.emplace_back(name_and_type->name, std::move(value));
     }
 

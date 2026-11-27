@@ -1,0 +1,41 @@
+---
+sidebarTitle: '自助服务预览'
+title: '自助服务预览'
+description: '在 ClickHouse Cloud 中启用公开预览功能，并申请访问私有预览功能。'
+keywords: ['ClickHouse Cloud 预览功能', '公开预览', '私有预览', '抢先体验']
+doc_type: 'guide'
+mode: 'wide'
+---
+
+import { PreviewFeatures } from "/snippets/zh/components/PreviewFeatures/PreviewFeatures.jsx";
+
+在 ClickHouse Cloud 的 **预览功能** 页面中，可以启用可用的公开预览功能，并为可用的私有预览功能申请访问权限。
+
+<Warning>
+  预览功能仍处于开发阶段，可能会发生变更，且不在 ClickHouse Cloud 标准 SLA 的保障范围内。
+</Warning>
+
+## 可用的预览功能 {#available-preview-features}
+
+此列表数据来自 ClickHouse Cloud，会随预览功能的新增、变更或移除而实时更新。
+
+<PreviewFeatures />
+
+<Note>
+  部分列出的预览功能可能并未向所有组织开放。如果您在 ClickHouse Cloud 中未看到某项预览功能，请联系 [Cloud 技术支持](https://clickhouse.com/support/program)。
+</Note>
+
+## 启用公开预览 {#enable-public-preview}
+
+1. 登录 Cloud 控制台，并选择相应的组织。
+2. 打开组织菜单，选择 **预览功能**。也可以通过组织侧边栏进入该页面。
+3. 找到目标功能，选择 **Learn more** 查看其要求和限制，然后打开对应的开关。如果开关处于禁用状态，请联系组织管理员启用该功能。
+4. 如果提供了 **Go to...** 或 **View in...** 服务链接，可通过该链接开始使用该功能。
+5. 如需提交反馈，请选择功能旁的 **Give feedback**：如果您会使用该功能，请选择 **Thumbs up**，否则选择 **Thumbs down**；您还可以在文本框中补充详细信息，并选择同意我们就该反馈与您联系；最后选择 **Send feedback**。
+
+## 启用私有预览 {#enable-private-preview}
+
+1. 找到相应的私有预览功能，点击 **Learn more**，查看其要求和限制。
+2. 点击 **Request access**。此操作只会提交访问请求，并不会立即启用该功能。ClickHouse Cloud 会在收到请求后向您确认。
+3. 请求获得批准且访问权限启用后，即可通过 **Go to...** 或 **View in...** 服务链接 (如有) 开始使用该功能。
+4. 如需提交反馈，请点击该功能旁的 **Give feedback**：如果您会使用该功能，请选择 **Thumbs up**，否则请选择 **Thumbs down**；您还可以在文本框中补充详细信息，并选择是否愿意就此反馈接受联系；最后点击 **Send feedback**。
