@@ -733,6 +733,14 @@ Max number of requests that can be issued simultaneously before hitting request 
     DECLARE(UInt64, s3_list_object_keys_size, S3::DEFAULT_LIST_OBJECT_KEYS_SIZE, R"(
 Maximum number of files that could be returned in batch by ListObject request
 )", 0) \
+    DECLARE(UInt64, s3_list_object_parallelism, 1, R"(
+Number of concurrent `ListObjects` requests used to list files when the path contains globs, for reads from S3-compatible object storage: the `s3` table function, the `S3` table engine, the `s3Cluster` table function, and the `gcs`, `cosn`, `oss` aliases of them.
+
+When greater than `1`, the matching files are listed by walking the "directory" tree (the common prefixes formed by the `/` delimiter) with this many threads in parallel, instead of paginating the whole prefix in a single serial stream. This can dramatically speed up queries over buckets with millions of objects, especially for hierarchically partitioned layouts (e.g. `year=*/month=*/`), where whole non-matching subtrees are pruned during the walk.
+
+A value of `1` (the default) keeps the previous serial listing behavior. Recursive globs (`**`) always use serial listing.
+)", 0, \
+        {"26.12", 1, 1, "New setting to list globbed paths on S3-compatible object storage (the `s3` and `s3Cluster` table functions, the `S3` table engine, and their `gcs`, `cosn`, `oss` aliases) with several concurrent `ListObjects` requests by walking the common-prefix tree in parallel."}) \
     DECLARE(Bool, s3_use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, R"(
 When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
 When set to `false` than all attempts are made with identical timeouts.
@@ -8942,6 +8950,10 @@ Timeout for polling data from asynchronous insert queue
 If it is set to true, use adaptive busy timeout for asynchronous inserts
 )", 0, \
         {"24.2", false, true, "Use adaptive asynchronous insert timeout"}) \
+    DECLARE(Bool, async_insert_use_deduplication_cache, true, R"(
+If true, an asynchronous insert into a table first checks the deduplication hashes of the inserted block against the in-memory cache of the hashes stored in ClickHouse Keeper. The cache of a replica can be stale after `TRUNCATE` or a partition drop on another replica, so the block can be wrongly treated as a duplicate and not inserted. If false, the cache is not used and duplicates are detected only by ClickHouse Keeper.
+)", 0, \
+        {"26.12", true, true, "New setting to disable the deduplication cache for asynchronous inserts."}) \
     DECLARE(Milliseconds, async_insert_busy_timeout_min_ms, 50, R"(
 If auto-adjusting is enabled through async_insert_use_adaptive_busy_timeout, minimum time to wait before dumping collected data per query since the first data appeared. It also serves as the initial value for the adaptive algorithm
 )", 0, \
