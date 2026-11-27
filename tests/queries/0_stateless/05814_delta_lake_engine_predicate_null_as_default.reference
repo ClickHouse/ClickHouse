@@ -11,6 +11,6 @@ t_date	toDate(d) < '2000-01-01'	1	1	1
 t_date	d = '2026-02-01'	1	1	2
 t_bool	NOT b	1	1	1
 t_notnull	s = 'x'	1	1	1
-t_cdf	s < 'x' SETTINGS delta_lake_snapshot_start_version = 0	2	2	0
-t_cdf	s != 'x' SETTINGS delta_lake_snapshot_start_version = 0	3	3	0
+t_cdf	s < 'x' SETTINGS delta_lake_snapshot_start_version = 0	2	2	2
+t_cdf	s != 'x' SETTINGS delta_lake_snapshot_start_version = 0	3	3	3
 t_cdf_pruned	2

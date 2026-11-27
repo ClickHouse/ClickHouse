@@ -111,7 +111,6 @@ ${CLICKHOUSE_CLIENT} --query "
     $(check t_date "d = '2026-02-01'")
     $(check t_bool "NOT b")
     $(check t_notnull "s = 'x'")
-    -- Change Data Feed scans count no \`DeltaLakeScannedFiles\`.
     $(check t_cdf "s < 'x'" "delta_lake_snapshot_start_version = 0")
     $(check t_cdf "s != 'x'" "delta_lake_snapshot_start_version = 0")
 
