@@ -1,15 +1,13 @@
 -- Tags: no-replicated-database
 -- Tag no-replicated-database: `DatabaseReplicated::dropTable` does not drop `TimeSeries` inner tables synchronously, and ON CLUSTER is not allowed there.
 
--- Regression test: with a legacy distributed DDL entry format (below `NORMALIZE_CREATE_ON_INITIATOR_VERSION`)
--- the initiator dispatches `CREATE TABLE ... ON CLUSTER` before `getColumnsDescription` runs, so tuple-element
--- `DEFAULT` expressions must be pulled up on the initiator - including the inner column lists of targets, e.g.
--- `SAMPLES INNER COLUMNS (...)` of a `TimeSeries` table, which were missed initially.
+-- Regression test: the initiator of `CREATE TABLE ... ON CLUSTER` must pull up tuple-element `DEFAULT` expressions
+-- before it dispatches the query - including the inner column lists of targets, e.g. `SAMPLES INNER COLUMNS (...)`
+-- of a `TimeSeries` table, which were missed initially.
 -- The declared `SAMPLES INNER COLUMNS` are not copied to the `RECENT SAMPLES` target, so it declares its own.
 -- See https://github.com/ClickHouse/ClickHouse/issues/2797.
 
 SET allow_experimental_time_series_table = 1;
-SET distributed_ddl_entry_format_version = 2;
 
 DROP TABLE IF EXISTS ts_tuple_default_cluster ON CLUSTER test_shard_localhost FORMAT Null;
 

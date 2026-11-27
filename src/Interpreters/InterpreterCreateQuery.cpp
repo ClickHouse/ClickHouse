@@ -4142,27 +4142,6 @@ BlockIO InterpreterCreateQuery::execute()
 
         if (is_create_database)
         {
-            /// Older distributed DDL entry formats dispatch the query before createTable() reaches
-            /// getColumnsDescription(). Normalize here so older workers receive a regular
-            /// column-level DEFAULT rather than the new Tuple element syntax. Inner column lists of
-            /// targets (e.g. `SAMPLES INNER COLUMNS (...)` of a TimeSeries table) are dispatched
-            /// the same way, so they are normalized too. The workers replay the query as a normalized
-            /// one, so an unversioned aggregate-function state in it gets version 0 there.
-            /// The workers flatten `Nested` declarations of the query as configured by its settings.
-            const bool flatten_nested = getContext()->getSettingsRef()[Setting::flatten_nested];
-            auto pull_up_tuple_element_defaults = [flatten_nested](const ASTColumns * columns_list)
-            {
-                if (!columns_list || !columns_list->columns)
-                    return;
-                pullUpTupleElementDefaultsInColumnList(
-                    *columns_list->columns, TupleElementDefaultStateVersion::PinOldest, flatten_nested);
-            };
-
-            pull_up_tuple_element_defaults(create.columns_list);
-            if (create.targets)
-                for (const auto & target : create.targets->targets)
-                    pull_up_tuple_element_defaults(target.inner_columns ? target.inner_columns->as<ASTColumns>() : nullptr);
-
             /// Authorize here: this is the last point that still runs as the real user, and worker legs
             /// run with no user by default.
             if (create.storage && create.storage->engine
