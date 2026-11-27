@@ -98,22 +98,23 @@ def fetch_credentials_from_aws():
 
 
 def get_credentials():
-    """The host and the password of the CI Logs cluster.
-
-    Read from the file the `fetch_ci_logs_credentials` pre-hook wrote on the host
-    when it exists (the container needs no AWS access then), otherwise from AWS
-    SSM directly (local runs and the pre-hook itself). Fetched once per process:
-    every server of the job exports to the same cluster.
+    """The host and the password of the CI Logs cluster, read from the file the
+    `fetch_ci_logs_credentials` pre-hook writes on the host, so the job container
+    needs no AWS access of its own. Raises `SecretFetchFailed` when the file is
+    absent - the pre-hook did not run or could not reach SSM - so callers skip the
+    export. Fetched once per process: every server of the job exports to the same
+    cluster.
     """
     global _credentials
     if _credentials is None:
         creds_file = Path(CREDENTIALS_FILE)
-        if creds_file.exists():
-            print(f"Reading CI Logs credentials from [{CREDENTIALS_FILE}]")
-            _credentials = tuple(json.loads(creds_file.read_text()))
-        else:
-            print(f"No [{CREDENTIALS_FILE}] - reading CI Logs credentials from AWS SSM")
-            _credentials = fetch_credentials_from_aws()
+        if not creds_file.exists():
+            raise SecretFetchFailed(
+                f"No CI Logs credentials file [{CREDENTIALS_FILE}] - the "
+                "fetch_ci_logs_credentials pre-hook did not run or failed"
+            )
+        print(f"Reading CI Logs credentials from [{CREDENTIALS_FILE}]")
+        _credentials = tuple(json.loads(creds_file.read_text()))
     return _credentials
 
 
