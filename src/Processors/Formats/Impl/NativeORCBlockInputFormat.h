@@ -162,7 +162,8 @@ public:
         NameSet absent_columns_ = {},
         UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults_ = {},
         UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints_ = {},
-        UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids_ = {});
+        UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids_ = {},
+        std::optional<UnorderedMapWithMemoryTracking<UInt64, String>> top_level_read_names_ = {});
 
     void orcTableToCHChunk(
         Chunk & res,
@@ -212,6 +213,8 @@ private:
     /// ORC column ids of the structs of the file a field of which has no Iceberg field id: their fields are matched by name,
     /// also when the fields read have one.
     const UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids;
+    /// If set, the names the top-level fields are read as, by ORC column id; a field without an entry is not read.
+    const std::optional<UnorderedMapWithMemoryTracking<UInt64, String>> top_level_read_names;
 };
 }
 #endif
