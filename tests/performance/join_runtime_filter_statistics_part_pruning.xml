@@ -1,0 +1,153 @@
+<test>
+    <!-- Basic-statistics part pruning across favorable, complex-type, no-pruning, and leading-PK workloads. -->
+    <settings>
+        <enable_join_runtime_filters>1</enable_join_runtime_filters>
+        <enable_join_runtime_filters_index_analysis>1</enable_join_runtime_filters_index_analysis>
+        <use_skip_indexes_on_data_read>1</use_skip_indexes_on_data_read>
+        <use_statistics_for_part_pruning>1</use_statistics_for_part_pruning>
+        <materialize_statistics_on_insert>1</materialize_statistics_on_insert>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+        <query_plan_join_swap_table>false</query_plan_join_swap_table>
+    </settings>
+
+    <create_query>
+        CREATE TABLE rf_stats_perf_fact (
+            p UInt16,
+            id UInt64,
+            k UInt64,
+            k32 UInt32,
+            kn Nullable(UInt64),
+            kf Float64,
+            v UInt64
+        )
+        ENGINE = MergeTree PARTITION BY p ORDER BY id
+        SETTINGS auto_statistics_types = 'basic'
+    </create_query>
+    <create_query>
+        CREATE TABLE rf_stats_perf_comp_pk (p UInt16, tenant_id UInt64, k UInt64, v UInt64)
+        ENGINE = MergeTree PARTITION BY p ORDER BY (tenant_id, k)
+        SETTINGS auto_statistics_types = 'basic'
+    </create_query>
+    <create_query>
+        CREATE TABLE rf_stats_perf_nullable_str (
+            p UInt16,
+            id UInt64,
+            s_sparse Nullable(String),
+            s_dense Nullable(String),
+            v UInt64
+        )
+        ENGINE = MergeTree PARTITION BY p ORDER BY id
+        SETTINGS auto_statistics_types = 'basic'
+    </create_query>
+    <create_query>
+        CREATE TABLE rf_stats_perf_many_parts (p UInt16, id UInt64, k UInt64, v UInt64)
+        ENGINE = MergeTree PARTITION BY p ORDER BY id
+        SETTINGS auto_statistics_types = 'basic'
+    </create_query>
+    <create_query>CREATE TABLE rf_stats_perf_dim_exact (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE rf_stats_perf_dim_band (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE rf_stats_perf_dim_spread (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE rf_stats_perf_dim_str (s String) ENGINE = MergeTree ORDER BY s</create_query>
+    <create_query>CREATE TABLE rf_stats_perf_dim_many (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+
+    <!-- 32 parts x 1M rows. Odd parts have all-NULL `kn`; every part contains `NaN` in `kf`. -->
+    <fill_query>
+        INSERT INTO rf_stats_perf_fact
+        SELECT
+            intDiv(number, 1000000) AS p,
+            number,
+            number,
+            toUInt32(number),
+            if(p % 2 = 1, NULL, number),
+            if(number % 100000 = 0, nan, toFloat64(number)),
+            number % 1000
+        FROM numbers(32000000)
+        SETTINGS max_partitions_per_insert_block = 64
+    </fill_query>
+    <fill_query>
+        INSERT INTO rf_stats_perf_comp_pk
+        SELECT intDiv(number, 1000000), number % 1000, number, number % 1000
+        FROM numbers(32000000)
+        SETTINGS max_partitions_per_insert_block = 64
+    </fill_query>
+    <!-- 32 parts x 500k rows. `s_sparse` is all-NULL in 31/32 parts; `s_dense` has non-NULLs in every part. -->
+    <fill_query>
+        INSERT INTO rf_stats_perf_nullable_str
+        SELECT
+            intDiv(number, 500000) AS p,
+            number,
+            if(p = 16, toString(number % 10000), NULL),
+            if(number % 17 = 0, NULL, toString(number % 10000)),
+            number % 1000
+        FROM numbers(16000000)
+        SETTINGS max_partitions_per_insert_block = 64
+    </fill_query>
+    <!-- 128 small parts x 50k rows to stress per-part statistics pruner overhead when nothing is pruned. -->
+    <fill_query>
+        INSERT INTO rf_stats_perf_many_parts
+        SELECT intDiv(number, 50000), number, number, number % 1000
+        FROM numbers(6400000)
+        SETTINGS max_partitions_per_insert_block = 256
+    </fill_query>
+    <!-- 100 keys in part 16: the exact set drops the other 31 parts. -->
+    <fill_query>INSERT INTO rf_stats_perf_dim_exact SELECT 16000000 + number * 1000 FROM numbers(100)</fill_query>
+    <!-- 20k keys in part 16: the range envelope drops the other 31 parts. -->
+    <fill_query>INSERT INTO rf_stats_perf_dim_band SELECT 16000000 + number FROM numbers(20000)</fill_query>
+    <!-- Keys across all 32 parts: nothing to prune. -->
+    <fill_query>INSERT INTO rf_stats_perf_dim_spread SELECT number * 100000 FROM numbers(320)</fill_query>
+    <fill_query>INSERT INTO rf_stats_perf_dim_str SELECT toString(number * 100) FROM numbers(50)</fill_query>
+    <!-- One key in each of the 128 parts: nothing to prune. -->
+    <fill_query>INSERT INTO rf_stats_perf_dim_many SELECT number * 50000 + 42 FROM numbers(128)</fill_query>
+
+    <!-- Exact set, non-PK `UInt64` (1/32 parts kept). -->
+    <query>SELECT count(), sum(f.v) FROM rf_stats_perf_fact AS f INNER JOIN rf_stats_perf_dim_exact AS d ON f.k = d.k</query>
+
+    <!-- Range envelope, non-PK `UInt64` (1/32 parts kept). -->
+    <query>SELECT count(), sum(f.v) FROM rf_stats_perf_fact AS f INNER JOIN rf_stats_perf_dim_band AS d ON f.k = d.k SETTINGS join_runtime_filter_exact_values_limit = 100</query>
+
+    <!-- Disjoint keys outside every part (0/32 parts kept). -->
+    <query>SELECT count(), sum(f.v) FROM rf_stats_perf_fact AS f INNER JOIN (SELECT k + 1000000000 AS k FROM rf_stats_perf_dim_exact) AS d ON f.k = d.k</query>
+
+    <!-- Non-leading key of `ORDER BY (tenant_id, k)` (1/32 parts kept). -->
+    <query>SELECT count(), sum(f.v) FROM rf_stats_perf_comp_pk AS f INNER JOIN rf_stats_perf_dim_exact AS d ON f.k = d.k</query>
+
+    <!-- `Nullable(UInt64)`: prunes 16 all-NULL parts + 15 out-of-range parts (1/32 parts kept). -->
+    <query>SELECT count(), sum(f.v) FROM rf_stats_perf_fact AS f INNER JOIN rf_stats_perf_dim_exact AS d ON f.kn = d.k</query>
+
+    <!-- `Nullable(String)` with NULL count only: 31 all-NULL parts pruned (1/32 parts kept). -->
+    <query>SELECT count(), sum(f.v) FROM rf_stats_perf_nullable_str AS f INNER JOIN rf_stats_perf_dim_str AS d ON f.s_sparse = d.s</query>
+
+    <!-- `Nullable(String)` with no all-NULL parts: nothing pruned (32/32 parts kept, overhead check). -->
+    <query>SELECT count(), sum(f.v) FROM rf_stats_perf_nullable_str AS f INNER JOIN rf_stats_perf_dim_str AS d ON f.s_dense = d.s</query>
+
+    <!-- `Float64` column with `NaN` in every part (1/32 parts kept). -->
+    <query>SELECT count(), sum(f.v) FROM rf_stats_perf_fact AS f INNER JOIN (SELECT toFloat64(k) AS k FROM rf_stats_perf_dim_exact) AS d ON f.kf = d.k</query>
+
+    <!-- `UInt32` probe key joined to `UInt64` build key via implicit cast (1/32 parts kept). -->
+    <query>SELECT count(), sum(f.v) FROM rf_stats_perf_fact AS f INNER JOIN rf_stats_perf_dim_exact AS d ON f.k32 = d.k</query>
+
+    <!-- Unfavorable: exact set hits all 32 parts (0 parts pruned). -->
+    <query>SELECT count(), sum(f.v) FROM rf_stats_perf_fact AS f INNER JOIN rf_stats_perf_dim_spread AS d ON f.k = d.k</query>
+
+    <!-- Unfavorable: range envelope spans all 32 parts (0 parts pruned). -->
+    <query>SELECT count(), sum(f.v) FROM rf_stats_perf_fact AS f INNER JOIN rf_stats_perf_dim_spread AS d ON f.k = d.k SETTINGS join_runtime_filter_exact_values_limit = 10</query>
+
+    <!-- Unfavorable: 128 small parts, every part matched (per-part pruner overhead check). -->
+    <query>SELECT count(), sum(f.v) FROM rf_stats_perf_many_parts AS f INNER JOIN rf_stats_perf_dim_many AS d ON f.k = d.k</query>
+
+    <!-- Leading PK high selectivity: stays on PK path without statistics overhead. -->
+    <query>SELECT count(), sum(f.v) FROM rf_stats_perf_fact AS f INNER JOIN rf_stats_perf_dim_exact AS d ON f.id = d.k</query>
+
+    <!-- Leading PK hitting all 32 parts: stays on PK path without statistics overhead. -->
+    <query>SELECT count(), sum(f.v) FROM rf_stats_perf_fact AS f INNER JOIN rf_stats_perf_dim_spread AS d ON f.id = d.k</query>
+
+    <drop_query>DROP TABLE IF EXISTS rf_stats_perf_fact</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rf_stats_perf_comp_pk</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rf_stats_perf_nullable_str</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rf_stats_perf_many_parts</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rf_stats_perf_dim_exact</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rf_stats_perf_dim_band</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rf_stats_perf_dim_spread</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rf_stats_perf_dim_str</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rf_stats_perf_dim_many</drop_query>
+</test>

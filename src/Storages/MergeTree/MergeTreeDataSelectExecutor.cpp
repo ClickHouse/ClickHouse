@@ -137,6 +137,7 @@ namespace Setting
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_statistics_for_part_pruning;
+    extern const SettingsUInt64 min_marks_per_part_to_load_statistics;
     extern const SettingsBool use_partition_minmax_for_primary_key_pruning;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
@@ -1028,6 +1029,101 @@ std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseInde
 }
 
 
+namespace
+{
+
+VectorWithMemoryTracking<std::pair<String, DataTypePtr>> getRequiredColumnTypesForStatistics(
+    const StorageMetadataPtr & metadata_snapshot,
+    const NameSet & required_columns)
+{
+    VectorWithMemoryTracking<std::pair<String, DataTypePtr>> result;
+    result.reserve(required_columns.size());
+    const auto & metadata_columns = metadata_snapshot->getColumns();
+    for (const auto & column_name : required_columns)
+    {
+        auto metadata_column = metadata_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+        result.emplace_back(column_name, metadata_column ? metadata_column->type : nullptr);
+    }
+    return result;
+}
+
+bool partCanMatchStatistics(
+    const IMergeTreeDataPart & part,
+    StatisticsPartPruner & statistics_pruner,
+    const VectorWithMemoryTracking<std::pair<String, DataTypePtr>> & required_column_types,
+    Estimates estimates,
+    LoggerPtr log)
+{
+    /// The statistics describe the values as they are stored in the part. When the part stores a
+    /// column with a type different from the current metadata, a read converts the values to the
+    /// current type (`IMergeTreeReader::performRequiredConversions`), so the statistics do not
+    /// describe what the query sees, unless the conversion keeps the representation (e.g. an
+    /// extended `Enum`). This happens independently of the mutations snapshot: e.g. with
+    /// `apply_mutations_on_fly = 0` the pending `MODIFY COLUMN` is not in the snapshot, and after
+    /// `KILL MUTATION` it is gone, while the conversion on read still happens.
+    /// Only the required columns are checked: the estimates may hold every column of the part.
+    for (const auto & [column_name, metadata_type] : required_column_types)
+    {
+        auto it = estimates.find(column_name);
+        if (it == estimates.end())
+            continue;
+
+        auto part_column = part.tryGetColumn(column_name);
+        if (!part_column || !metadata_type || !isRepresentationPreservingConversion(part_column->type.get(), metadata_type.get()))
+            estimates.erase(it);
+    }
+
+    if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
+    {
+        LOG_TRACE(log, "Part {} pruned by statistics", part.name);
+        return false;
+    }
+    return true;
+}
+
+}
+
+bool MergeTreeDataSelectExecutor::canUseStatisticsForPartPruning(
+    const MergeTreeData & data,
+    const SelectQueryInfo & query_info,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context)
+{
+    return context->getSettingsRef()[Setting::use_statistics_for_part_pruning]
+        && !query_info.isFinal()
+        && !(mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+        && !data.hasEnabledMaskingPolicies(context)
+        && !query_info.row_level_filter
+        && !getEffectiveRowPolicyFilter(data, context);
+}
+
+bool MergeTreeDataSelectExecutor::canPartMatchFilterByStatistics(
+    const MergeTreeData::DataPartPtr & part,
+    size_t num_marks,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ActionsDAG::Node & filter_node,
+    const ContextPtr & context,
+    LoggerPtr log)
+{
+    if (!part || part->isProjectionPart())
+        return true;
+
+    StatisticsPartPruner statistics_pruner(metadata_snapshot, filter_node, context);
+    if (statistics_pruner.isUseless())
+        return true;
+
+    const NameSet required_columns = statistics_pruner.getRequiredColumns();
+    std::optional<Estimates> estimates = part->tryGetEstimatesFromMemory(required_columns);
+    if (!estimates && num_marks >= context->getSettingsRef()[Setting::min_marks_per_part_to_load_statistics])
+        estimates = part->getEstimates(required_columns);
+
+    if (!estimates)
+        return true;
+
+    return partCanMatchStatistics(
+        *part, statistics_pruner, getRequiredColumnTypesForStatistics(metadata_snapshot, required_columns), std::move(*estimates), log);
+}
+
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     const RangesInDataParts & parts,
     const StorageMetadataPtr & metadata_snapshot,
@@ -1064,15 +1160,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     ///    which is reported to the client, reveals the values of the hidden rows. The policy is
     ///    either pushed into this read (possibly from a wrapper such as `Alias`) or belongs to
     ///    this table and is applied above the read (e.g. for a child of `Merge`).
-    if (!settings[Setting::use_statistics_for_part_pruning]
-        || query_info.isFinal()
-        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
-        || (!parts.empty() && parts.front().data_part->storage.hasEnabledMaskingPolicies(context))
-        || query_info.row_level_filter
-        || (!parts.empty() && getEffectiveRowPolicyFilter(parts.front().data_part->storage, context)))
-    {
+    if (parts.empty() || !canUseStatisticsForPartPruning(parts.front().data_part->storage, query_info, mutations_snapshot, context))
         return parts;
-    }
 
     if (!query_info.filter_actions_dag)
         return parts;
@@ -1084,46 +1173,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
         return parts;
 
     const NameSet required_columns = statistics_pruner.getRequiredColumns();
-
-    /// The current types of the required columns, resolved once for all parts (`nullptr` if absent).
-    std::vector<std::pair<String, DataTypePtr>> required_column_types;
-    required_column_types.reserve(required_columns.size());
-    const auto & metadata_columns = metadata_snapshot->getColumns();
-    for (const auto & column_name : required_columns)
-    {
-        auto metadata_column = metadata_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
-        required_column_types.emplace_back(column_name, metadata_column ? metadata_column->type : nullptr);
-    }
-
-    /// Whether the part can match the filter by its estimates.
-    auto part_can_match = [&](const RangesInDataPart & part, Estimates estimates)
-    {
-        /// The statistics describe the values as they are stored in the part. When the part stores a
-        /// column with a type different from the current metadata, a read converts the values to the
-        /// current type (`IMergeTreeReader::performRequiredConversions`), so the statistics do not
-        /// describe what the query sees, unless the conversion keeps the representation (e.g. an
-        /// extended `Enum`). This happens independently of the mutations snapshot: e.g. with
-        /// `apply_mutations_on_fly = 0` the pending `MODIFY COLUMN` is not in the snapshot, and after
-        /// `KILL MUTATION` it is gone, while the conversion on read still happens.
-        /// Only the required columns are checked: the estimates may hold every column of the part.
-        for (const auto & [column_name, metadata_type] : required_column_types)
-        {
-            auto it = estimates.find(column_name);
-            if (it == estimates.end())
-                continue;
-
-            auto part_column = part.data_part->tryGetColumn(column_name);
-            if (!part_column || !metadata_type || !isRepresentationPreservingConversion(part_column->type.get(), metadata_type.get()))
-                estimates.erase(it);
-        }
-
-        if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
-        {
-            LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
-            return false;
-        }
-        return true;
-    };
+    const auto required_column_types = getRequiredColumnTypesForStatistics(metadata_snapshot, required_columns);
 
     /// Statistics that are already in memory cost nothing, so the parts with them are always pruned.
     /// Only the parts whose statistics would be loaded count for the size of the read.
@@ -1145,7 +1195,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
         else if (auto estimates = parts[i].data_part->tryGetEstimatesFromMemory(required_columns))
         {
             decided_without_loading[i] = true;
-            can_match_without_loading[i] = part_can_match(parts[i], std::move(*estimates));
+            can_match_without_loading[i] = partCanMatchStatistics(
+                *parts[i].data_part, statistics_pruner, required_column_types, std::move(*estimates), log);
         }
         else
             parts_to_load_statistics.push_back(parts[i]);
@@ -1190,7 +1241,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
             }
             else if (load_statistics)
             {
-                can_match = part_can_match(part, std::move(parts_estimates[part_index]));
+                can_match = partCanMatchStatistics(
+                    *part.data_part, statistics_pruner, required_column_types, std::move(parts_estimates[part_index]), log);
             }
 
             if (can_match)

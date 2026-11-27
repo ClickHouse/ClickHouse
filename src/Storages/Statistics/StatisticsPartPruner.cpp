@@ -258,6 +258,13 @@ void collectFloatColumnsUnderNegation(
 
 } /// anonymous namespace
 
+bool StatisticsPartPruner::hasStatisticsForPartPruning(const ColumnDescription * column)
+{
+    if (!column)
+        return false;
+    return statisticsHasMinMaxForPartPruning(column->statistics) || hasBasicStatsOnNullableType(*column);
+}
+
 StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_, const ActionsDAG::Node & filter_node_, ContextPtr context_)
     : filter_dag(&filter_node_, context_, /* boolean_context */ true)
     , context(context_)

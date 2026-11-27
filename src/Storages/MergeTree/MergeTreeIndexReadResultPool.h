@@ -47,8 +47,8 @@ using SkipIndexReadResultPtr = std::shared_ptr<SkipIndexReadResult>;
 class MergeTreeSkipIndexReader
 {
 public:
-    /// Builds a predicate into the DAG to prune granules at read time, or nullptr for none.
-    using DynamicPredicateBuilder = std::function<const ActionsDAG::Node *(ActionsDAG &)>;
+    /// Returns a single-output DAG whose output is a predicate to prune granules at read time, or nullptr for none.
+    using DynamicPredicateBuilder = std::function<std::shared_ptr<const ActionsDAG>()>;
 
     /// Whether a dynamic skip index should be applied at read time.
     using DynamicSkipIndexFilter = std::function<bool(const IMergeTreeIndex &)>;
@@ -63,6 +63,7 @@ public:
         MergeTreeReaderSettings reader_settings_,
         DynamicPredicateBuilder dynamic_predicate_builder_,
         bool prune_primary_key_,
+        bool prune_statistics_,
         MergeTreeIndices dynamic_skip_indexes_,
         DynamicSkipIndexFilter dynamic_skip_index_filter_,
         ContextPtr context_,
@@ -100,6 +101,7 @@ private:
 
     DynamicPredicateBuilder dynamic_predicate_builder;
     bool prune_primary_key = false;
+    bool prune_statistics = false;
     /// Builds the predicate on `_part_starting_offset + _part_offset`, the global row index of the read: a granule is
     /// dropped if the range of global row indexes of its rows does not satisfy it. Unset if not pruned this way.
     DynamicPredicateBuilder global_row_index_predicate_builder;

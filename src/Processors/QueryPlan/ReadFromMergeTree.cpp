@@ -91,6 +91,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/Statistics/StatisticsPartPruner.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/CurrentThread.h>
@@ -3469,7 +3470,7 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const Runtim
         return;
     }
 
-    /// Prunable only if in the primary key or has a minmax/set/bloom_filter skip index.
+    /// Prunable by the primary key, a minmax/set/bloom_filter skip index, or column statistics.
     const auto & primary_key_columns = metadata.getPrimaryKey().column_names;
     const bool is_primary_key_column
         = std::find(primary_key_columns.begin(), primary_key_columns.end(), column_name) != primary_key_columns.end();
@@ -3486,12 +3487,14 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const Runtim
         }
     }
 
-    if (!is_primary_key_column && !has_applicable_skip_index)
+    const bool has_applicable_statistics = StatisticsPartPruner::hasStatisticsForPartPruning(metadata.getColumns().tryGet(column_name));
+
+    if (!is_primary_key_column && !has_applicable_skip_index && !has_applicable_statistics)
         return;
 
     join_runtime_filters_for_index_analysis.push_back(descriptor);
-    LOG_DEBUG(log, "Registered join runtime filter {} on column {} (primary_key={}, skip_index={})",
-        filter_id, column_name, is_primary_key_column, has_applicable_skip_index);
+    LOG_DEBUG(log, "Registered join runtime filter {} on column {} (primary_key={}, skip_index={}, statistics={})",
+        filter_id, column_name, is_primary_key_column, has_applicable_skip_index, has_applicable_statistics);
 }
 
 void ReadFromMergeTree::copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step)
@@ -6185,7 +6188,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         reader_settings.use_query_condition_cache = false;
 
     /// See the same gate in `selectRangesToRead`.
-    if (MergeTreeDataSelectExecutor::hasPendingAlterOrMetadataMutations(result.parts_with_ranges, mutations_snapshot))
+    const bool has_pending_alter_or_metadata_mutations
+        = MergeTreeDataSelectExecutor::hasPendingAlterOrMetadataMutations(result.parts_with_ranges, mutations_snapshot);
+    if (has_pending_alter_or_metadata_mutations)
         reader_settings.use_query_condition_cache = false;
 
     /// The granules a TopK read drops depend on the running threshold, i.e. on the rows of every part
@@ -6333,8 +6338,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (auto query_context = CurrentThread::tryGetQueryContext(); query_context && !join_runtime_filters_for_index_analysis.empty())
         runtime_filter_lookup = query_context->getRuntimeFilterLookup();
 
-    /// Now check if we have to use primary-key or skip indexes for join pruning
+    /// Now check if we have to use primary-key, statistics, or skip indexes for join pruning
     bool runtime_prune_primary_key = false;
+    bool runtime_prune_statistics = false;
     bool runtime_prune_global_row_index = false;
     /// A masking policy rewrites columns at read time like a pending mutation, so the on-disk primary index
     /// does not describe the values the query sees and must not be used to prune granules during the read.
@@ -6366,6 +6372,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         /// and under `FINAL` by use_skip_indexes_if_final as well.
         const bool collect_skip_indexes = context->getSettingsRef()[Setting::use_skip_indexes]
             && (!query_info.isFinal() || context->getSettingsRef()[Setting::use_skip_indexes_if_final]);
+        const bool can_prune_by_statistics = !has_pending_alter_or_metadata_mutations
+            && MergeTreeDataSelectExecutor::canUseStatisticsForPartPruning(data, query_info, mutations_snapshot, context);
 
         /// Need to check ignore_data_skipping_indices
         std::unordered_set<String> ignored_index_names; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- assigned from `parseIdentifiersOrStringLiteralsToSet`, which returns std::unordered_set
@@ -6384,6 +6392,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 runtime_prune_global_row_index = isRuntimeFilterGlobalRowIndexUsable(metadata);
                 continue;
             }
+            const bool is_leading_pk = !pk_columns.empty() && pk_columns.front() == descr.key_column_name;
+            if (can_prune_by_statistics && !is_leading_pk
+                && StatisticsPartPruner::hasStatisticsForPartPruning(metadata.getColumns().tryGet(descr.key_column_name)))
+                runtime_prune_statistics = true;
             if (std::find(pk_columns.begin(), pk_columns.end(), descr.key_column_name) != pk_columns.end())
             {
                 runtime_prune_primary_key = true;
@@ -6408,7 +6420,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         /// step, which is the invariant the parallel-replicas paths kept breaking; the granule counters only
         /// move once a granule is actually examined, which depends on the coordinator's assignment and on
         /// the filter being ready, so they cannot stand in for it.
-        if (runtime_prune_primary_key || runtime_prune_global_row_index || !runtime_skip_indexes.empty())
+        if (runtime_prune_primary_key || runtime_prune_statistics || runtime_prune_global_row_index || !runtime_skip_indexes.empty())
             ProfileEvents::increment(ProfileEvents::RuntimeFilterIndexAnalysisReads);
     }
 
@@ -6458,21 +6470,31 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         for (const auto & descr : runtime_filters_for_data_read)
             (descr.is_global_row_index ? global_row_index_descriptors : key_descriptors).push_back(descr);
 
-        if (!key_descriptors.empty())
-            dynamic_predicate_builder =
-                [lookup = runtime_filter_lookup, descriptors = key_descriptors, ctx = context]
-                (ActionsDAG & dag) -> const ActionsDAG::Node *
+        auto make_predicate_builder = [&](VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> descriptors_)
+        {
+            auto cached_predicate = std::make_shared<const RuntimeFilterPruningPredicate>(descriptors_, runtime_filter_lookup, context);
+            return [pred = std::move(cached_predicate),
+                    lookup = runtime_filter_lookup,
+                    descs = std::move(descriptors_),
+                    ctx = context]() -> std::shared_ptr<const ActionsDAG>
+            {
+                if (auto ready_dag = pred->tryGet())
+                    return *ready_dag;
+                auto dag = std::make_shared<ActionsDAG>();
+                if (const auto * predicate = buildRuntimeRangePredicate(*lookup, descs, *dag, ctx))
                 {
-                    return buildRuntimeRangePredicate(*lookup, descriptors, dag, ctx);
-                };
+                    dag->getOutputs() = {predicate};
+                    return dag;
+                }
+                return nullptr;
+            };
+        };
+
+        if (!key_descriptors.empty())
+            dynamic_predicate_builder = make_predicate_builder(key_descriptors);
 
         if (!global_row_index_descriptors.empty())
-            global_row_index_predicate_builder =
-                [lookup = runtime_filter_lookup, descriptors = std::move(global_row_index_descriptors), ctx = context]
-                (ActionsDAG & dag) -> const ActionsDAG::Node *
-                {
-                    return buildRuntimeRangePredicate(*lookup, descriptors, dag, ctx);
-                };
+            global_row_index_predicate_builder = make_predicate_builder(std::move(global_row_index_descriptors));
 
         const UInt64 bloom_filter_in_cap = context->getSettingsRef()[Setting::join_runtime_filter_exact_values_limit] / 100;
         dynamic_skip_index_filter =
@@ -6519,6 +6541,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 reader_settings,
                 dynamic_predicate_builder,
                 runtime_prune_primary_key,
+                runtime_prune_statistics,
                 runtime_skip_indexes,
                 dynamic_skip_index_filter,
                 context,
@@ -6528,7 +6551,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     /// Need a reader if the join runtime filter selected something to prune.
     /// The flags stay unset when the guard above bails (setting off or pending mutations).
-    if (!skip_index_reader && (runtime_prune_primary_key || runtime_prune_global_row_index || !runtime_skip_indexes.empty()))
+    if (!skip_index_reader
+        && (runtime_prune_primary_key || runtime_prune_statistics || runtime_prune_global_row_index || !runtime_skip_indexes.empty()))
     {
         skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
             UsefulSkipIndexes{},
@@ -6540,6 +6564,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             reader_settings,
             dynamic_predicate_builder,
             runtime_prune_primary_key,
+            runtime_prune_statistics,
             runtime_skip_indexes,
             dynamic_skip_index_filter,
             context,
@@ -6559,6 +6584,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             reader_settings,
             MergeTreeSkipIndexReader::DynamicPredicateBuilder{},
             /*prune_primary_key=*/false,
+            /*prune_statistics=*/false,
             MergeTreeIndices{},
             MergeTreeSkipIndexReader::DynamicSkipIndexFilter{},
             context,

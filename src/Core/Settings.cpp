@@ -11851,7 +11851,7 @@ When the hash join build side was converted to a FixedHashMap (see `enable_join_
     DECLARE(Bool, enable_join_runtime_filters_index_analysis, true, R"(
 Prune granules on the probe side of a JOIN with the runtime filter collected from the build side, see `enable_join_runtime_filters`.
 Only has an effect if `use_skip_indexes_on_data_read = 1`.
-Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, or is the global row index `_part_starting_offset + _part_offset`, can be pruned. A self-join on the global row index, which fetches the rows found by a subquery, reads only the granules of those rows. The global row index identifies a row only within one query, so both sides of the join must read the table in the same query.
+Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, or has column statistics usable for pruning (`basic` or `minmax` on a numeric or temporal column, or `basic` on a `Nullable` column, when `use_statistics_for_part_pruning = 1`), or is the global row index `_part_starting_offset + _part_offset`, can be pruned. A self-join on the global row index, which fetches the rows found by a subquery, reads only the granules of those rows. The global row index identifies a row only within one query, so both sides of the join must read the table in the same query.
 If the runtime filter kept the exact key values, the pruning predicate is an `IN` set of them, otherwise the minimum/maximum key range is used (this has a lower pruning power).
 
 For a read from object storage, the setting also allows skipping the Parquet row groups and pages of the files that are read, and whole data files of an Iceberg table, see [use_join_runtime_filters_for_iceberg_pruning](#use_join_runtime_filters_for_iceberg_pruning); that does not depend on `use_skip_indexes_on_data_read`.
@@ -11860,9 +11860,9 @@ Works with parallel replicas (`enable_parallel_replicas = 1`): each replica prun
 
 The granule pruning does not happen with a distributed query plan (`make_distributed_plan = 1`). There the setting is a no-op: the query returns the same result and the JOIN runtime filter itself behaves exactly as it does with this setting disabled, only the granule pruning is lost.
 
-With `FINAL` on the probe side, granules are pruned only by a join key that is a sorting key column of the table; a skip index is used for that only if `use_skip_indexes_if_final = 1`.
+With `FINAL` on the probe side, granules are pruned only by a join key that is a sorting key column of the table; a skip index is used for that only if `use_skip_indexes_if_final = 1`. Column statistics are not used under `FINAL`.
 
-The granule pruning is also skipped for a table with pending data or `ALTER` mutations or patch parts. This case is a no-op in the same sense.
+The granule pruning is also skipped for a table with pending data or `ALTER` mutations or patch parts. This case is a no-op in the same sense. Pruning by column statistics is also skipped when a row policy applies, or when any part still has a pending metadata mutation (`DROP` or `RENAME COLUMN`).
 )", 0, \
         {"26.10", false, true, "Enable pruning of granules on the probe (left) side of a JOIN by the runtime filter collected from the build (right) side."}, \
         {"26.9", false, false, "The JOIN runtime filters became a Production tier feature."}, \
