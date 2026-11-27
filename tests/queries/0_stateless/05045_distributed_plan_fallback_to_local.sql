@@ -10,7 +10,7 @@
 -- exercises the path it names. `GLOBAL IN` is deliberately absent: the initiator builds the set
 -- and ships its values with the worker tasks, so it distributes and is not a fallback case.
 
-SET enable_analyzer = 1, enable_parallel_replicas = 0;
+SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_fallback;
 CREATE TABLE t_fallback (k UInt32, v UInt64) ENGINE = MergeTree ORDER BY k;

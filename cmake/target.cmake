@@ -68,7 +68,7 @@ if (OS_WASM)
     set (ENABLE_GRPC OFF CACHE INTERNAL "")
     # Protobuf needs a `protoc` that runs on the host, and the nested native configure at the
     # bottom of the top-level `CMakeLists.txt` would be handed `emcc` as its host compiler.
-    # Arrow, Parquet and ORC hard-depend on it, so they go with it.
+    # Arrow and Parquet hard-depend on it, so they go with it.
     set (ENABLE_PROTOBUF OFF CACHE INTERNAL "")
     # Its `kj` library uses `fallocate` and friends unconditionally in its POSIX branch,
     # which the Emscripten libc does not provide.
@@ -183,8 +183,16 @@ if (CMAKE_CROSSCOMPILING)
             set (ENABLE_RUST OFF CACHE INTERNAL "")
         elseif (ARCH_S390X)
             set (ENABLE_GRPC OFF CACHE INTERNAL "")
+            set (ENABLE_PARQUET OFF CACHE INTERNAL "")
+            set (ENABLE_HDFS OFF CACHE INTERNAL "")
+            set (ENABLE_HIVE OFF CACHE INTERNAL "")
             set (ENABLE_ARROW_FLIGHT OFF CACHE INTERNAL "")
-            set (ENABLE_RUST OFF CACHE INTERNAL "")
+            set (ENABLE_AZURE_BLOB_STORAGE OFF CACHE INTERNAL "")
+            set (ENABLE_SZ3 OFF CACHE INTERNAL "")
+            set (ENABLE_VECTORSCAN OFF CACHE INTERNAL "")
+            set (ENABLE_MYSQL OFF CACHE INTERNAL "")
+            set (ENABLE_NLP OFF CACHE INTERNAL "")
+            set (ENABLE_DATASKETCHES OFF CACHE INTERNAL "")
     elseif (ARCH_LOONGARCH64)
             set (GLIBC_COMPATIBILITY OFF CACHE INTERNAL "")
             set (ENABLE_LDAP OFF CACHE INTERNAL "")

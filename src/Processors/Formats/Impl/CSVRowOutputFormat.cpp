@@ -22,7 +22,7 @@ CSVRowOutputFormat::CSVRowOutputFormat(WriteBuffer & out_, SharedHeader header_,
         data_types[i] = sample.safeGetByPosition(i).type;
 }
 
-void CSVRowOutputFormat::writeLine(const std::vector<String> & values)
+void CSVRowOutputFormat::writeLine(std::span<const String> values)
 {
     for (size_t i = 0; i < values.size(); ++i)
     {
@@ -53,6 +53,22 @@ void CSVRowOutputFormat::writePrefix()
         writeLine(type_names);
 }
 
+
+/// The body of `IRowOutputFormat::write`: in a final class the calls below are direct, without a virtual call per value.
+void CSVRowOutputFormat::write(const Columns & columns, size_t row_num)
+{
+    writeRowStartDelimiter();
+
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        if (i != 0)
+            writeFieldDelimiter();
+
+        writeField(*columns[i], *serializations[i], row_num);
+    }
+
+    writeRowEndDelimiter();
+}
 
 void CSVRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {

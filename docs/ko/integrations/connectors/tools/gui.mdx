@@ -59,22 +59,40 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="CHOps">
-  [CHOps](https://ch-ops.io)는 ClickHouse 클러스터를 관리하고 모니터링하기 위한 무료 오픈 소스 자체 호스팅 웹 대시보드입니다. ClickHouse의 HTTP 인터페이스를 브라우저 UI로 감싸 SQL 실행, 느린 쿼리 검사, 알림 구성, 백업 관리, 액세스 제어 기능을 제공합니다. HTTP로 접근할 수 있는 모든 ClickHouse 배포 환경에서 동작합니다. CHOps는 현재 ClickHouse 26.3 LTS를 지원하며, 그 밖의 최신 버전에서도 동작하지만 일부 기능이 지원되지 않을 수 있습니다.
+  [CHOps](https://ch-ops.io)는 ClickHouse 클러스터를 관리하고 모니터링하기 위한 무료 오픈 소스 자체 호스팅 웹 대시보드입니다. ClickHouse의 HTTP 인터페이스를 브라우저 UI로 감싸 SQL 실행, 느린 쿼리 검사, 알림 구성, 백업 관리, 액세스 제어 기능을 제공합니다. HTTP로 접근할 수 있는 모든 ClickHouse 배포 환경에서 동작합니다. CHOps는 현재 ClickHouse 26.3 LTS 및 26.8 LTS를 지원하며, 그 밖의 최신 버전에서도 동작하지만 일부 기능이 지원되지 않을 수 있습니다.
 
   기능:
 
+  * Kubernetes 기반 배포 지원
   * 자동 완성, `EXPLAIN` 유형, 22가지 형식의 결과 내보내기, 쿼리 프로파일러, 쿼리 메트릭 타임라인을 제공하는 SQL Editor
-  * 클러스터 개요: 쿼리 종료 기능을 갖춘 실시간 쿼리 모니터, 쿼리 분석 및 로그, 테이블 및 파트 검사, 머지 및 뮤테이션, 분산 DDL 큐
+  * 클러스터 개요: 쿼리 강제 종료 기능을 갖춘 실시간 쿼리 모니터, 쿼리 분석 및 로그, 테이블 및 파트 검사, 머지 및 뮤테이션, 분산 DDL 큐
   * 차트 빌더, 10가지 이상의 차트 유형, 구성 가능한 그리드 레이아웃을 갖춘 사용자 정의 대시보드
   * 과거 메트릭을 프레임 단위로 다시 볼 수 있는 DVR 방식의 재생 기능을 갖춘 모니터링
-  * 임계값 평가 및 이메일 알림을 지원하는 SQL 기반 알림 규칙
+  * SQL 기반 알림 규칙을 통한 Google Chat, Microsoft Teams, Slack 및 이메일 알림 예약
   * 액세스 제어: ClickHouse 사용자 및 역할 관리, 권한 부여 시각화, 설정 프로필 편집
   * S3 호환 저장소 대상 백업 및 복원 오케스트레이션, 백업 검색 및 저장소 프로필 관리
   * 인덱스 도구: 데이터 스키핑 인덱스 시각화, 프로젝션 관리, 보조 인덱스 생성
-  * 캘린더 히트맵과 필터 검색을 제공하는 예외, 오류, 텍스트 로그 뷰어
+  * 필터 검색을 제공하는 예외, 오류, 텍스트 로그 뷰어
   * 독립 실행형 단일 바이너리, Docker 또는 소스 코드로 배포
 
   [CHOps 소스 코드](https://github.com/Quantrail-Data/CH-Ops).
+</Accordion>
+
+<Accordion title="hmg-Borzoi">
+  [hmg-Borzoi](https://github.com/hyundaimotorgroup/hmg-borzoi)는 Apache 2.0 라이선스로 제공되는 ClickHouse 클러스터용 오픈 소스 자체 호스팅 웹 관리 플랫폼입니다. 클러스터 모니터링, SQL 실행, 데이터베이스 탐색, 액세스 관리를 하나의 인터페이스에서 제공합니다.
+
+  기능:
+
+  * 여러 ClickHouse 클러스터와 노드 상태를 모니터링하는 대시보드
+  * 쿼리 성능, 저장소, 복제, 머지, 뮤테이션 및 ClickHouse Keeper에 대한 클러스터 진단
+  * 구문 강조, 자동 완성, `EXPLAIN`, 쿼리 프로파일링을 제공하는 SQL Editor
+  * 스키마 탐색 및 테이블 데이터 계보(lineage) 시각화를 제공하는 데이터베이스 및 테이블 탐색기
+  * ClickHouse 사용자, 역할, 설정 프로필 및 권한 부여 관리
+  * 실행 이력 및 애플리케이션 감사 로그를 제공하는 규칙 기반 알림
+  * 애플리케이션 수준의 역할 기반 액세스 제어 및 ClickHouse 자격 증명 암호화 저장
+  * Docker Compose 또는 Kubernetes를 사용한 자체 호스팅 배포
+
+  [시작하기](https://github.com/hyundaimotorgroup/hmg-borzoi/blob/main/docs/en/getting-started.md).
 </Accordion>
 
 <Accordion title="LibreDB Studio">
@@ -84,7 +102,7 @@ doc_type: 'reference'
 
   * 스키마 인식 자동 완성, 여러 탭에서의 실행, 계획 트리로 렌더링되는 `EXPLAIN`을 제공하는 Monaco 기반 SQL Editor
   * 가상화된 결과 그리드, 필터링 및 CSV/JSON 내보내기를 제공하는 스키마 탐색기
-  * `system` 테이블 기반 모니터링: `system.metrics`, `system.parts`, `system.disks`의 서버 개요 및 파트 크기, `system.query_log`의 완료된 SQL 문, 종료 제어 기능을 갖춘 `system.processes`의 실행 중인 SQL 문
+  * `system` 테이블 기반 모니터링: `system.metrics`, `system.parts`, `system.disks`의 서버 개요 및 파트 크기, `system.query_log`의 완료된 SQL 문, 강제 종료 제어 기능을 갖춘 `system.processes`의 실행 중인 SQL 문
   * PostgreSQL, MySQL, Oracle, SQL Server, SQLite, MongoDB, Redis, Couchbase 및 Apache Druid와 동일한 인터페이스에서 ClickHouse를 사용하므로 분석 스토어와 이를 제공하는 OLTP 데이터베이스를 하나의 브라우저 탭에서 관리
   * MIT 빌드에 포함된 OIDC single sign-on, 역할 기반 접근 및 쿼리 감사 추적
 
@@ -96,14 +114,14 @@ doc_type: 'reference'
 
   기능:
 
-  * **AI 기반 인텔리전스**: 자연어를 사용해 데이터를 탐색하고, SQL 쿼리를 최적화 및 수정하며, 데이터를 시각화합니다.
-  * **공식 ClickHouse Agent Skills 통합**: [공식 모범 사례](https://github.com/ClickHouse/agent-skills)를 활용해 AI에 데이터베이스 최적화와 개선 방안을 요청합니다.
-  * **스마트 오류 진단**: 정확한 행과 컬럼 강조 표시로 구문 오류를 즉시 찾아내고, 한 번의 클릭으로 AI 기반 수정 제안을 받습니다.
-  * **시스템 테이블 검사**: 강력한 시각화 대시보드와 필터를 통해 `system.query_log`, `system.query_views_log`, `system.zookeeper`, `system.ddl_distributed_queue`, `system.part_log`, `system.processes`를 자세히 살펴보고 클러스터를 빠르게 파악합니다.
-  * **원클릭 Explain**: 시각적 AST 및 파이프라인 뷰를 통해 쿼리 실행 계획을 즉시 파악합니다.
-  * **종속성 그래프**: 테이블 관계를 시각화하고 materialized view, 분산 테이블 및 외부 시스템을 통한 데이터 흐름을 추적합니다.
+  * **AI 기반 인텔리전스**: 자연어로 데이터를 탐색하고, SQL 쿼리를 최적화 및 수정하며, 데이터를 시각화합니다.
+  * **공식 ClickHouse Agent Skills 통합**: [공식 모범 사례](https://github.com/ClickHouse/agent-skills)를 활용하여 AI에 데이터베이스 최적화 방안과 제안을 요청합니다.
+  * **스마트 오류 진단**: 오류가 발생한 행과 컬럼을 정확히 강조 표시하여 구문 오류를 즉시 찾아내고, 클릭 한 번으로 AI 기반 수정 제안을 받을 수 있습니다.
+  * **시스템 테이블 검사**: 강력한 시각화 대시보드와 필터를 통해 `system.query_log`, `system.query_views_log`, `system.zookeeper`, `system.ddl_distributed_queue`, `system.part_log`, `system.processes`를 심층적으로 분석하여 클러스터 상태를 빠르게 파악합니다.
+  * **원클릭 Explain**: 시각화된 AST 및 파이프라인 뷰로 쿼리 실행 계획을 즉시 파악합니다.
+  * **의존성 그래프**: 테이블 관계를 시각화하고 materialized view, Distributed 테이블 및 외부 시스템을 거치는 데이터 흐름을 추적합니다.
   * **클러스터 모니터링**: 실시간 메트릭, 머지 작업, 복제 상태, 쿼리 성능 등을 통해 모든 노드를 모니터링합니다.
-  * **개인정보 보호 및 보안**: 모든 SQL 쿼리가 브라우저에서 ClickHouse 서버로 직접 실행되므로 완전한 개인정보 보호가 보장됩니다.
+  * **개인정보 보호 및 보안**: 모든 SQL 쿼리는 브라우저에서 ClickHouse 서버로 직접 실행되므로 개인정보가 완벽하게 보호됩니다.
 
   [DataStoria 문서](https://docs.datastoria.app).
 </Accordion>
@@ -172,15 +190,15 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="HouseOps">
-  [HouseOps](https://github.com/HouseOps/HouseOps)는 macOS, Linux 및 Windows용 UI/IDE입니다.
+  [HouseOps](https://github.com/HouseOps/HouseOps)는 OSX, Linux 및 Windows용 UI/IDE입니다.
 
   기능:
 
-  * 구문 강조 표시를 지원하는 쿼리 빌더. 응답을 테이블 또는 JSON 뷰에서 확인할 수 있습니다.
+  * 구문 강조를 지원하는 쿼리 빌더. 응답을 테이블 또는 JSON 뷰로 확인할 수 있습니다.
   * 쿼리 결과를 CSV 또는 JSON으로 내보내기.
-  * 설명이 포함된 프로세스 목록, 쓰기 모드 및 프로세스 중지(`KILL`) 기능.
-  * 데이터베이스 그래프. 모든 테이블과 컬럼을 추가 정보와 함께 표시합니다.
-  * 컬럼 크기 빠른 보기.
+  * 설명이 포함된 프로세스 목록. 쓰기 모드. 프로세스 중지(`KILL`) 기능.
+  * 데이터베이스 그래프. 모든 테이블과 해당 컬럼을 추가 정보와 함께 표시합니다.
+  * 컬럼 크기 빠르게 확인.
   * 서버 구성.
 
   다음 기능은 개발 예정입니다:
@@ -198,21 +216,21 @@ doc_type: 'reference'
 
   기능:
 
-  * 필터링과 메타데이터를 제공하는 테이블 목록.
-  * 필터링 및 정렬을 지원하는 테이블 미리보기.
+  * 필터링 및 메타데이터를 지원하는 테이블 목록.
+  * 필터링 및 정렬을 지원하는 테이블 미리 보기.
   * 읽기 전용 쿼리 실행.
 </Accordion>
 
 <Accordion title="Redash">
   [Redash](https://github.com/getredash/redash)는 데이터 시각화 플랫폼입니다.
 
-  ClickHouse를 비롯한 여러 데이터 소스를 지원하며, 서로 다른 데이터 소스의 쿼리 결과를 하나의 최종 데이터셋으로 조인할 수 있습니다.
+  ClickHouse를 포함한 여러 데이터 소스를 지원하며, 서로 다른 데이터 소스의 쿼리 결과를 하나의 최종 데이터셋으로 결합할 수 있습니다.
 
   기능:
 
   * 강력한 쿼리 편집기.
   * 데이터베이스 탐색기.
-  * 데이터를 다양한 형식으로 표현할 수 있는 시각화 도구.
+  * 데이터를 다양한 형태로 표현할 수 있는 시각화 도구.
 </Accordion>
 
 <Accordion title="Grafana">
@@ -267,16 +285,25 @@ doc_type: 'reference'
   [cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/)은 테이블 스키마의 [PlantUML](https://plantuml.com/) 다이어그램을 생성하는 스크립트입니다.
 </Accordion>
 
-<Accordion title="ClickHouse 테이블 그래프">
-  [ClickHouse table graph](https://github.com/mbaksheev/clickhouse-table-graph)는 ClickHouse 테이블 간 의존성을 시각화하는 간단한 CLI 도구입니다. 이 도구는 `system.tables` 테이블에서 테이블 간 연결을 가져와 [mermaid](https://mermaid.js.org/syntax/flowchart.html) 형식의 의존성 흐름도를 생성합니다. 이 도구를 사용하면 테이블 의존성을 쉽게 시각화하고 ClickHouse 데이터베이스의 데이터 흐름을 파악할 수 있습니다. mermaid를 사용하므로 생성된 흐름도는 보기 좋고 markdown 문서에 쉽게 추가할 수 있습니다.
+<Accordion title="ClickHouse table graph">
+  [ClickHouse table graph](https://github.com/mbaksheev/clickhouse-table-graph)는 ClickHouse 테이블 간 의존성을 시각화하는 간단한 CLI 도구입니다. 이 도구는 `system.tables` 테이블에서 테이블 간 연결 정보를 가져와 [mermaid](https://mermaid.js.org/syntax/flowchart.html) 형식의 의존성 플로차트를 생성합니다.  이 도구를 사용하면 테이블 의존성을 손쉽게 시각화하고 ClickHouse 데이터베이스의 데이터 흐름을 파악할 수 있습니다. mermaid 덕분에 생성된 플로차트는 보기 좋으며 Markdown 문서에 쉽게 추가할 수 있습니다.
+</Accordion>
+
+<Accordion title="ch_insp">
+  [ch&#95;insp](https://github.com/renatko/ch_insp)는 ClickHouse materialized view, 그리고 소스 테이블과 대상 테이블 간의 데이터 흐름을 탐색하기 위한 오픈 소스 터미널 UI입니다.
+
+  * 소스 테이블, materialized view, 대상 간의 흐름을 시각화합니다.
+  * 컬럼 데이터 계보(lineage), 뷰 정의(view definition), 로컬 노드 메트릭을 확인합니다.
+  * 흐름을 검색 및 필터링하거나, SQL 스키마 덤프를 오프라인으로 탐색합니다.
+  * 읽기 전용 ClickHouse 쿼리만 사용합니다.
 </Accordion>
 
 <Accordion title="xeus-clickhouse">
-  [xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse)는 Jupyter에서 SQL로 CH 데이터를 쿼리할 수 있는 ClickHouse용 Jupyter 커널입니다.
+  [xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse)는 ClickHouse용 Jupyter 커널로, Jupyter에서 SQL로 CH 데이터를 쿼리할 수 있도록 지원합니다.
 </Accordion>
 
 <Accordion title="MindsDB Studio">
-  [MindsDB](https://mindsdb.com/)는 ClickHouse를 포함한 데이터베이스를 위한 오픈 소스 AI 계층으로, 최첨단 machine learning 모델을 손쉽게 개발, 학습 및 배포할 수 있습니다. MindsDB Studio(GUI)를 사용하면 데이터베이스의 데이터로 새 모델을 학습하고, 모델의 예측을 해석하며, 잠재적인 데이터 편향을 식별하고, Explainable AI 함수를 사용해 모델 정확도를 평가하고 시각화하여 Machine Learning 모델을 더 빠르게 조정하고 튜닝할 수 있습니다.
+  [MindsDB](https://mindsdb.com/)는 ClickHouse를 포함한 데이터베이스를 위한 오픈 소스 AI 레이어로, 최신 머신 러닝 모델을 손쉽게 개발, 학습, 배포할 수 있게 해 줍니다. MindsDB Studio(GUI)를 사용하면 데이터베이스에서 새 모델을 학습시키고, 모델의 예측을 해석하고, 잠재적인 데이터 편향을 식별할 수 있습니다. 또한 Explainable AI 기능으로 모델 정확도를 평가하고 시각화하여 머신 러닝 모델을 더 빠르게 조정하고 튜닝할 수 있습니다.
 </Accordion>
 
 <Accordion title="DBM">
@@ -319,12 +346,12 @@ doc_type: 'reference'
   기능:
 
   * 별도 설치 없이 SQL 코드를 실행할 수 있는 온라인 SQL Editor.
-  * 모든 프로세스와 뮤테이션을 모니터링할 수 있으며, 완료되지 않은 프로세스는 UI에서 종료할 수 있습니다.
+  * 모든 프로세스와 뮤테이션을 모니터링할 수 있으며, 완료되지 않은 프로세스는 UI에서 강제 종료할 수 있습니다.
   * 메트릭에는 클러스터 분석, 데이터 분석, 쿼리 분석이 포함됩니다.
 </Accordion>
 
 <Accordion title="ClickVisual">
-  [ClickVisual](https://clickvisual.net/)는 가벼운 오픈 소스 로그 쿼리, 분석 및 알림 시각화 플랫폼입니다.
+  [ClickVisual](https://clickvisual.net/)는 경량 오픈 소스 로그 쿼리, 분석 및 알림 시각화 플랫폼입니다.
 
   기능:
 
@@ -351,37 +378,37 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Uptrace">
-  [Uptrace](https://github.com/uptrace/uptrace)는 OpenTelemetry와 ClickHouse를 기반으로 분산 추적과 메트릭을 제공하는 APM 도구입니다.
+  [Uptrace](https://github.com/uptrace/uptrace)는 OpenTelemetry와 ClickHouse를 기반으로 분산 추적 및 메트릭을 제공하는 APM 도구입니다.
 
   기능:
 
   * [OpenTelemetry 추적](https://uptrace.dev/opentelemetry/distributed-tracing.html), 메트릭 및 로그.
-  * AlertManager를 통한 이메일/Slack/PagerDuty 알림.
-  * 스팬을 집계하는 SQL 유사 쿼리 언어.
-  * 메트릭을 쿼리하는 PromQL 유사 언어.
-  * 사전 구축된 메트릭 대시보드.
+  * AlertManager를 통한 Email/Slack/PagerDuty 알림.
+  * 스팬 집계를 위한 SQL 유사 쿼리 언어.
+  * 메트릭 조회를 위한 Promql 유사 언어.
+  * 사전 구성된 메트릭 대시보드.
   * YAML 구성을 통한 다중 사용자/프로젝트 지원.
 </Accordion>
 
 <Accordion title="clickhouse-monitoring">
-  [clickhouse-monitoring](https://github.com/duyet/clickhouse-monitoring)은 `system.*` 테이블을 기반으로 ClickHouse 클러스터를 모니터링하고 개요를 제공하는 간단한 Next.js 대시보드입니다.
+  [clickhouse-monitoring](https://github.com/duyet/clickhouse-monitoring)은 `system.*` 테이블을 활용하여 ClickHouse 클러스터를 모니터링하고 전체 현황을 한눈에 보여 주는 간단한 Next.js 대시보드입니다.
 
   기능:
 
-  * 쿼리 모니터: 현재 실행 중인 쿼리, 쿼리 이력, 쿼리 리소스(메모리, 읽은 파트, file&#95;open, ...), 리소스 사용량이 가장 큰 쿼리, 가장 많이 사용된 테이블 또는 컬럼 등
-  * 클러스터 모니터: 총 메모리/CPU 사용량, 분산 큐, 전역 설정, MergeTree 설정, 메트릭 등
-  * 테이블 및 파트 정보: 컬럼 수준의 세부 정보로 크기, 행 수, 압축률, 파트 크기 등
-  * 유용한 도구: Zookeeper 데이터 탐색, 쿼리 EXPLAIN, 쿼리 종료 등
-  * 메트릭 차트 시각화: 쿼리 및 리소스 사용량, 머지/뮤테이션 수, 머지 성능, 쿼리 성능 등
+  * 쿼리 모니터: 현재 쿼리, 쿼리 이력, 쿼리 리소스(메모리, 읽은 파트, file&#95;open 등), 비용이 가장 큰 쿼리, 가장 많이 사용된 테이블 또는 컬럼 등.
+  * 클러스터 모니터: 전체 메모리/CPU 사용량, 분산 큐, 전역 설정, mergetree 설정, 메트릭 등.
+  * 테이블 및 파트 정보: 컬럼 단위까지의 크기, 행 수, 압축, 파트 크기 등.
+  * 유용한 도구: Zookeeper 데이터 탐색, 쿼리 EXPLAIN, 쿼리 강제 종료 등.
+  * 메트릭 시각화 차트: 쿼리 및 리소스 사용량, 머지/뮤테이션 수, 머지 성능, 쿼리 성능 등.
 </Accordion>
 
 <Accordion title="CKibana">
-  [CKibana](https://github.com/TongchengOpenSource/ckibana)는 네이티브 Kibana UI를 사용하여 ClickHouse 데이터를 손쉽게 검색, 탐색, 시각화할 수 있는 경량 서비스입니다.
+  [CKibana](https://github.com/TongchengOpenSource/ckibana)는 네이티브 Kibana UI에서 ClickHouse 데이터를 손쉽게 검색, 탐색 및 시각화할 수 있게 해 주는 경량 서비스입니다.
 
   기능:
 
   * 네이티브 Kibana UI의 차트 요청을 ClickHouse 쿼리 구문으로 변환합니다.
-  * 쿼리 성능을 향상하기 위해 샘플링 및 캐싱과 같은 고급 기능을 지원합니다.
+  * 쿼리 성능 향상을 위해 샘플링, 캐싱 등의 고급 기능을 지원합니다.
   * ElasticSearch에서 ClickHouse로 마이그레이션한 사용자의 학습 부담을 최소화합니다.
 </Accordion>
 
@@ -405,9 +432,9 @@ doc_type: 'reference'
   [ClickLens](https://ntk148v.github.io/clicklens/)는 ClickHouse 데이터베이스를 관리하고 모니터링하기 위한 최신의 강력하고 사용자 친화적인 웹 인터페이스입니다. 개발자, 분석가, 관리자가 ClickHouse 클러스터를 효율적으로 활용할 수 있도록 포괄적인 도구 모음을 제공합니다. ClickHouse는 뛰어난 분석 데이터베이스이지만 CLI나 기본 도구로 관리하기는 어려울 수 있습니다. ClickLens는 다음 기능을 제공하여 이러한 간극을 해소합니다.
 
   * Discover - 모든 테이블을 위한 유연한 Kibana와 유사한 데이터 탐색
-  * SQL 콘솔 - 구문 강조 표시와 스트리밍 결과를 통해 쿼리 작성, 실행 및 분석
+  * SQL 콘솔 - 구문 강조와 스트리밍 결과를 통해 쿼리 작성, 실행 및 분석
   * 실시간 모니터링 - 클러스터 상태, 쿼리 성능 및 리소스 사용량 모니터링
-  * Schema Explorer - 데이터베이스, 테이블, 열, 파트 등을 탐색
+  * 스키마 탐색기(Schema Explorer) - 데이터베이스, 테이블, 컬럼, 파트 등을 탐색
   * 접근 제어 - UI에서 직접 사용자 및 역할 관리
   * 네이티브 RBAC - UI 권한은 ClickHouse 권한 부여에서 직접 파생됩니다
 
@@ -422,9 +449,9 @@ doc_type: 'reference'
   * **팀 접근 및 보안** - 애플리케이션 수준 RBAC(사전 정의된 역할 + 사용자 지정 역할, 데이터베이스/테이블별 세분화된 데이터 접근 규칙), 실제 세션 컨텍스트를 포함한 감사 로깅, AES-256-GCM으로 암호화된 서버 측 자격 증명을 제공합니다.
   * **멀티클러스터 플릿** - 하나의 화면에서 구성된 모든 클러스터를 확인할 수 있으며(status, 메모리, 활성 쿼리, 예외, 추세 스파크라인), 각 카드는 독립적으로 폴링되고 백엔드 스냅샷 폴러가 이를 뒷받침합니다.
   * **Chouse AI — Fleet Doctor** - 자율형 읽기 전용 AI SRE입니다. 보호된 `system.*` 전용 `SELECT` 도구(ClickHouse `readonly=1`)로 플릿을 스캔하고, 근본 원인을 짚어내며, 고비용 쿼리 심층 분석과 제안된 재작성을 포함한 구조화된 보고서를 작성합니다. 클러스터를 변경하는 일은 절대 없습니다.
-  * **모니터링 탭의 AI** - Query Logs 행에서 &quot;Optimize with Chouse AI&quot;를 사용해 재작성, 변경 전→변경 후 `EXPLAIN` 추정치 확인, SQL 워크스페이스에서 열기를 수행할 수 있으며, `system.errors` 행이나 part log 항목에서는 한 번의 클릭으로 &quot;Diagnose&quot;를 실행할 수 있습니다.
+  * **모니터링 탭의 AI** - Query Logs 행에서 &quot;Optimize with Chouse AI&quot;를 사용해 재작성, 변경 전→변경 후 `EXPLAIN` 추정치 확인, SQL 작업 공간에서 열기를 수행할 수 있으며, `system.errors` 행이나 part log 항목에서는 한 번의 클릭으로 &quot;Diagnose&quot;를 실행할 수 있습니다.
   * **임계값 알림** - 노드 메모리 %, 쿼리별 메모리, 장시간 실행 쿼리 규칙을 Slack과 이메일로 전달하며, 임계값 초과 시 자율형 근본 원인 분석이 함께 첨부됩니다.
-  * **전체 워크스페이스** - Monaco SQL Editor, 스키마 탐색기, kill 지원이 포함된 실시간 쿼리 보기, ClickHouse 네이티브 모니터링(메모리 세부 분석, 파트/머지, 레플리카 지연, 지연 시간 백분위수), 데이터 가져오기/내보내기를 제공합니다.
+  * **전체 워크스페이스** - Monaco SQL Editor, 스키마 탐색기(Schema Explorer), 강제 종료 지원이 포함된 실시간 쿼리 보기, ClickHouse 네이티브 모니터링(메모리 세부 분석, 파트/머지, 레플리카 지연, 지연 시간 백분위수), 데이터 가져오기/내보내기를 제공합니다.
 
   오픈소스(Apache 2.0)이며 온프레미스 우선입니다. 유료 티어 없이 모든 기능이 기본 제공됩니다.
 
@@ -444,30 +471,58 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Beekeeper Studio">
-  [Beekeeper Studio](https://www.beekeeperstudio.io/)는 ClickHouse를 지원하는 무료 오픈소스 SQL Editor 겸 데이터베이스 관리 도구입니다.
+  [Beekeeper Studio](https://www.beekeeperstudio.io/)는 ClickHouse를 지원하는 무료 오픈소스 SQL Editor이자 데이터베이스 관리 도구입니다.
 
-  주요 기능:
+  기능:
 
-  * 자동 완성과 멀티 탭 쿼리 실행을 지원하는 최신 SQL Editor
-  * 테이블, 뷰, 컬럼을 살펴볼 수 있는 스키마 브라우저
-  * 자주 사용하는 쿼리 저장 및 정리
-  * 크로스 플랫폼 데스크톱 앱(Windows, macOS, Linux) 지원 및 자체 호스팅/웹 에디션 제공
+  * 자동 완성과 다중 탭 쿼리 실행을 지원하는 최신 SQL Editor.
+  * 테이블, 뷰, 컬럼을 탐색할 수 있는 스키마 브라우저.
+  * 자주 사용하는 쿼리 저장 및 정리.
+  * 크로스 플랫폼 데스크톱 앱(Windows, macOS, Linux) 및 자체 호스팅/웹 에디션.
 
   [Beekeeper Studio 및 ClickHouse 가이드](https://docs.beekeeperstudio.io/user_guide/connecting/clickhouse/) · [GitHub](https://github.com/beekeeper-studio/beekeeper-studio)
 </Accordion>
 
 <Accordion title="Tabularis">
-  [Tabularis](https://github.com/TabularisDB/tabularis)는 Windows, macOS, Linux를 지원하는 오픈소스 데스크톱 SQL 워크스페이스이며 Apache 2.0 라이선스로 제공됩니다. ClickHouse 지원은 앱 내에서 설치하는 공식 plugin을 통해 제공되며, 이 plugin은 Rust `clickhouse` 클라이언트를 사용해 HTTP 인터페이스(`8123`, TLS 사용 시 `8443`)와 통신합니다.
+  [Tabularis](https://github.com/TabularisDB/tabularis)는 Apache 2.0 라이선스로 제공되는 Windows, macOS, Linux용 오픈소스 데스크톱 SQL 작업 공간입니다. ClickHouse 지원은 앱 안에서 설치하는 공식 플러그인으로 제공되며, 이 플러그인은 Rust `clickhouse` 클라이언트를 통해 HTTP 인터페이스(`8123`, TLS 사용 시 `8443`)와 통신합니다.
+
+  기능:
+
+  * 네이티브 ClickHouse 타입으로 데이터베이스, 테이블, 뷰를 탐색할 수 있으며, 데이터 스키핑 인덱스의 타입, 컬럼, granularity도 함께 표시합니다.
+  * 자동 완성, 다중 구문 실행, 결과 페이지네이션을 지원하는 Monaco 기반 SQL Editor.
+  * 데이터 그리드에서 바로 삽입, 업데이트, 삭제할 수 있으며, `CREATE TABLE`, `ALTER TABLE ... ADD/MODIFY/RENAME COLUMN`, `ADD INDEX`용 DDL을 생성합니다.
+  * MCP 서버가 내장되어 있어 AI 에이전트가 같은 앱에서 스키마를 읽고 쿼리를 실행할 수 있습니다.
+  * 하나의 창에서 PostgreSQL, MySQL, SQLite, DuckDB, Redis, MongoDB 등 다른 엔진과 함께 ClickHouse를 사용할 수 있습니다.
+
+  [Tabularis ClickHouse 플러그인](https://github.com/TabularisDB/tabularis-clickhouse-plugin) · [웹사이트](https://tabularis.dev)
+</Accordion>
+
+<Accordion title="DBine">
+  [DBine](https://github.com/addlayer-io/dbine)은 Windows, macOS, Linux를 지원하는 무료 오픈소스(Apache 2.0) 데스크톱 데이터베이스 관리 도구입니다. HTTP 인터페이스(`8123`, TLS 사용 시 `8443`)를 통해 ClickHouse에 연결하며, 130개 이상의 데이터베이스 및 클라우드 서비스를 하나의 윈도우에서 함께 다룰 수 있습니다.
 
   주요 기능:
 
-  * 네이티브 ClickHouse 타입을 지원하는 데이터베이스, 테이블, 뷰 탐색. data-skipping 인덱스의 타입, 컬럼, 세분화 수준도 함께 확인 가능
-  * Monaco 기반 SQL Editor로 자동 완성, 다중 SQL 문 실행, 페이지네이션된 결과 제공
-  * 데이터 그리드에서 Inline 삽입, UPDATE, 삭제 수행. `CREATE TABLE`, `ALTER TABLE ... ADD/MODIFY/RENAME COLUMN`, `ADD INDEX`에 대한 DDL 생성
-  * 내장 MCP Server를 통해 AI agents가 동일한 앱에서 스키마를 읽고 쿼리를 실행 가능
-  * 하나의 윈도우에서 ClickHouse와 함께 PostgreSQL, MySQL, SQLite, DuckDB, Redis, MongoDB 등 다양한 엔진 사용 가능
+  * ClickHouse 방언을 지원하는 SQL Editor. 테이블 및 컬럼 자동 완성과 `KILL QUERY`를 이용한 쿼리 취소 기능 제공
+  * 데이터베이스, 테이블, 뷰, 컬럼 탐색. 결과 그리드와 차트를 제공하며 CSV, JSON, XLSX, SQL 형식으로 내보내기 지원
+  * `ENGINE`, `ORDER BY`, `PARTITION BY`, TTL, 코덱을 설정할 수 있는 테이블 디자이너. 셀을 편집하면 `ALTER TABLE ... UPDATE` 뮤테이션이 생성되며, 실행 전에 검토 가능
+  * `EXPLAIN json = 1, indexes = 1` 기반 쿼리 계획, `system.processes` 기반 프로세스 목록, `system.query_log` 기반 프로파일러 제공
+  * 스키마 비교, 데이터 비교, 그리고 여러 데이터베이스를 쿼리한 뒤 DuckDB로 결과를 조인하는 노트북 기능
+  * SSH 터널, 시크릿 매니저 연동 비밀번호, 읽기 전용 연결, MCP 서버, 그리고 쿼리를 제안하되 사용자가 승인하기 전에는 아무것도 실행하지 않는 AI 어시스턴트 제공
 
-  [Tabularis ClickHouse plugin](https://github.com/TabularisDB/tabularis-clickhouse-plugin) · [웹사이트](https://tabularis.dev)
+  [웹사이트](https://dbine.com) · [다운로드](https://github.com/addlayer-io/dbine/releases)
+</Accordion>
+
+<Accordion title="QoreDB">
+  [QoreDB](https://github.com/QoreDB/QoreDB)는 Rust와 Tauri로 개발된 오픈 코어 데스크톱 데이터베이스 클라이언트로, ClickHouse를 네이티브로 지원합니다.
+
+  주요 기능:
+
+  * HTTP(8123) 및 HTTPS(8443) 인터페이스를 통한 연결
+  * 구문 강조, 자동 완성, 가상화된 결과 그리드를 제공하는 SQL Editor
+  * 실행 전 SQL 문을 분류하고, 운영 환경 연결에서 파괴적인 쿼리를 실행하기 전에 확인 요청
+  * `KILL QUERY`를 이용한 실행 중인 쿼리 취소
+  * 연결별 읽기 전용 모드(read-only mode) 지원
+  * macOS, Windows, Linux 지원. 코어는 Apache 2.0 라이선스로 제공
 </Accordion>
 
 ## 상용 {#commercial}
@@ -622,9 +677,9 @@ doc_type: 'reference'
   * 연결 시 서버 개요 제공 — 버전, 업타임, 실행 중인 쿼리, 활성 머지, 파트 및 스토리지 크기, 레플리카 상태, 클러스터와 노드를 한눈에 확인할 수 있습니다.
   * 시각적 쿼리 빌더(컬럼 선택기, 필터, 정렬, 제한)와, 구문 강조 및 연결별 쿼리 이력을 제공하는 Monaco SQL Editor를 함께 지원합니다.
   * `MergeTree` 계열, `ORDER BY`, `PARTITION BY`, `SETTINGS`, `Nullable()` 자동 래핑을 지원하는 시각적 `CREATE TABLE` 마법사를 제공합니다.
-  * 네이티브 ClickHouse 유형 처리 — `Nullable`, `Array`, `LowCardinality`, 중첩 객체를 지원합니다.
+  * 네이티브 ClickHouse 타입 처리 — `Nullable`, `Array`, `LowCardinality`, 중첩 객체를 지원합니다.
   * 벡터 검색 지원 — `Array(Float32)` 임베딩 컬럼을 간결한 벡터 셀로 렌더링하고, 2D 임베딩 시각화와 `cosineDistance`를 통한 Find Similar를 지원합니다.
-  * 결과 테이블에서 인라인 데이터 편집과 배치 저장을 지원하며, ClickHouse의 Native 형식을 사용한 CSV/JSON/SQL 내보내기와 가져오기도 지원합니다.
+  * 결과 테이블에서 인라인 데이터 편집과 배치 저장을 지원하며, ClickHouse의 Native 포맷을 사용한 CSV/JSON/SQL 내보내기와 가져오기도 지원합니다.
   * 연결 옵션: HTTP/HTTPS, 방화벽 뒤의 프라이빗 클러스터를 위한 SSH 터널, 운영 환경에서 안전하게 탐색할 수 있도록 선택적인 읽기 전용 모드 제공.
   * ClickHouse Cloud와 자체 호스팅 환경 모두에서 사용할 수 있습니다.
 </Accordion>
@@ -656,4 +711,20 @@ doc_type: 'reference'
   * Windows, macOS, Linux에서 사용할 수 있습니다.
 
   무료 Community Edition이 제공되며, 추가 기능이 필요하면 유료 에디션을 이용할 수 있습니다.
+</Accordion>
+
+<Accordion title="TableStudio">
+  [TableStudio](https://tablestudio.sh/databases/clickhouse)는 PostgreSQL, MySQL, SQLite, SQL Server 등 여러 데이터베이스와 함께 ClickHouse를 지원하는 네이티브 macOS 데이터베이스 클라이언트입니다.
+
+  기능:
+
+  * HTTP 인터페이스를 통해 직접 또는 SSH 터널을 거쳐 ClickHouse Cloud 및 자체 호스팅 서버에 연결합니다.
+  * 쿼리 실행 전에 `EXPLAIN ESTIMATE`로 쿼리가 읽을 행 수를 추정하며, 테이블 탐색 시에는 화면에 표시되는 컬럼만 읽습니다.
+  * `system.query_log` 기반의 쿼리 인사이트와 `EXPLAIN WHATIF`로 검증한 스킵 인덱스 제안을 제공합니다.
+  * 정렬 키, 파티셔닝, `Nullable` 컬럼, `LowCardinality` 후보에 대한 스키마 점검을 제공합니다.
+  * 장시간 실행 중인 뮤테이션, 실패한 머지, 정체된 복제 큐, 분산 INSERT에 대한 상태 점검을 제공합니다.
+  * Mac에서 로컬 ClickHouse 서버를 시작, 중지, 생성할 수 있으며, 위험한 변경 전에 복원 지점을 생성합니다.
+  * Claude Code, Codex, Cursor 같은 코딩 에이전트를 위한 MCP 서버와 플러그인을 제공합니다. 읽기 작업은 읽기 전용으로 수행되고, 운영 환경 변경 사항은 검토를 거치도록 스테이징됩니다.
+
+  7일 무료 체험판이 제공되며, 이후 일회성 라이선스로 구매할 수 있습니다.
 </Accordion>

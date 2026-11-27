@@ -1,5 +1,4 @@
 {
-  "icon": "/images/icons/icon-reference.svg",
   "item": "Reference",
   "pages": [
     "reference/home",
@@ -26,6 +25,7 @@
                 "reference/statements/alter/comment",
                 "reference/statements/alter/constraint",
                 "reference/statements/alter/database-comment",
+                "reference/statements/alter/database-setting",
                 "reference/statements/alter/delete",
                 "reference/statements/alter/named-collection",
                 "reference/statements/alter/order-by",
@@ -110,8 +110,10 @@
                 "reference/statements/create/masking-policy",
                 "reference/statements/create/function",
                 "reference/statements/create/handler",
+                "reference/statements/create/skipping-index",
                 "reference/statements/create/named-collection",
                 "reference/statements/create/quota",
+                "reference/statements/create/resource",
                 "reference/statements/create/role",
                 "reference/statements/create/row-policy",
                 "reference/statements/create/settings-profile",
@@ -127,7 +129,8 @@
                 },
                 "reference/statements/create/token",
                 "reference/statements/create/user",
-                "reference/statements/create/view"
+                "reference/statements/create/view",
+                "reference/statements/create/workload"
               ]
             },
             "reference/statements/delete",
@@ -177,6 +180,7 @@
                 "reference/statements/select/qualify",
                 "reference/statements/select/replace_modifier",
                 "reference/statements/select/sample",
+                "reference/statements/select/shuffle",
                 "reference/statements/select/union",
                 "reference/statements/select/where",
                 "reference/statements/select/with"
@@ -186,6 +190,7 @@
             "reference/statements/set",
             "reference/statements/show",
             "reference/statements/system",
+            "reference/statements/transactions",
             "reference/statements/truncate",
             "reference/statements/undrop",
             "reference/statements/update",
@@ -1004,6 +1009,7 @@
         },
         "reference/formats/Values",
         "reference/formats/Vertical",
+        "reference/formats/Vortex",
         "reference/formats/XML"
       ]
     },
@@ -1052,6 +1058,7 @@
         "reference/system-tables/blob_storage_log",
         "reference/system-tables/build_options",
         "reference/system-tables/certificates",
+        "reference/system-tables/changelog",
         "reference/system-tables/clusters",
         "reference/system-tables/codecs",
         "reference/system-tables/collations",
@@ -1060,6 +1067,7 @@
         "reference/system-tables/completions",
         "reference/system-tables/constraints",
         "reference/system-tables/contributors",
+        "reference/system-tables/connections",
         "reference/system-tables/crash_log",
         "reference/system-tables/current_roles",
         "reference/system-tables/dashboards",
@@ -1107,6 +1115,7 @@
         "reference/system-tables/iceberg_files",
         "reference/system-tables/iceberg_history",
         "reference/system-tables/iceberg_metadata_log",
+        "reference/system-tables/iceberg_metadata_log_entries",
         "reference/system-tables/information_schema",
         "reference/system-tables/instrumentation",
         "reference/system-tables/jemalloc_arena_bins",

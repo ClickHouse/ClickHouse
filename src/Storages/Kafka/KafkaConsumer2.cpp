@@ -202,6 +202,10 @@ void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic
     // Do this before `assign` starts fetching, otherwise messages may leak into the main queue before we detach it.
     try
     {
+        /// `assign` recreates the toppar of a still-assigned partition that librdkafka does not know (e.g. its topic was deleted),
+        /// so empty the assignment first: then the queues below belong to the toppars that `assign` fetches.
+        consumer->unassign();
+
         for (const auto & topic_partition : topic_partitions)
             queues.emplace(
                 TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()},
@@ -251,7 +255,10 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, co
 
         auto & queue_to_poll_from = queues.at(topic_partition);
         LOG_TRACE(log, "Batch size {}", batch_size);
-        const auto messages_to_pull = message_count.value_or(batch_size);
+        /// The requested count may exceed the configured batch size (e.g. when a large intent is
+        /// replayed), but a single pull must still respect `kafka_poll_max_batch_size`. The caller
+        /// pulls the rest with further calls.
+        const auto messages_to_pull = std::min<uint64_t>(message_count.value_or(batch_size), batch_size);
         /// Don't drop old messages immediately, since we may need them for virtual columns.
         auto new_messages = queue_to_poll_from.consume_batch(messages_to_pull, std::chrono::milliseconds(poll_timeout));
         num_messages_read += new_messages.size();

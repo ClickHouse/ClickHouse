@@ -12,7 +12,6 @@ SET query_plan_remove_redundant_distinct = 0;
 SET max_rows_in_distinct = 1000;
 SET max_bytes_in_distinct = 10000000;
 SET distinct_overflow_mode = 'throw';
-SET max_execution_time = 10;
 
 CREATE TABLE distinct_reused_limits (k UInt64) ENGINE = MergeTree ORDER BY k PARTITION BY k % 4;
 INSERT INTO distinct_reused_limits SELECT number % 200 FROM numbers(2000);
@@ -106,6 +105,6 @@ SELECT count() = 2 FROM
     )
     ARRAY JOIN [0, 1] AS x
 )
-SETTINGS max_rows_in_distinct = 2, distinct_overflow_mode = 'break';
+SETTINGS max_rows_in_distinct = 2, distinct_overflow_mode = 'break', max_execution_time = 10;
 
 DROP TABLE distinct_reused_limits;

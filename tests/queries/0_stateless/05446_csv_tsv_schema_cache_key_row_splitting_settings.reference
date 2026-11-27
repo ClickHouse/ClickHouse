@@ -11,16 +11,6 @@ c3	Nullable(String)
 c1	Nullable(String)
 c2	Nullable(String)
 c3	Nullable(String)
--- format_csv_allow_single_quotes CustomSeparated
-1
-c1	Nullable(String)
-c2	Nullable(String)
-c3	Nullable(String)
--- format_csv_allow_double_quotes CustomSeparated
-1
-c1	Nullable(String)
-c2	Nullable(String)
-c3	Nullable(String)
 -- input_format_csv_trim_whitespaces CSV
 1
 c1	Nullable(String)
@@ -44,3 +34,24 @@ CANNOT_EXTRACT_TABLE_STRUCTURE
 -- input_format_tsv_skip_trailing_empty_lines TSV
 3
 c1	Nullable(Int64)
+-- format_csv_allow_single_quotes CustomSeparated
+1
+c1	Nullable(String)
+c2	Nullable(String)
+c3	Nullable(String)
+-- format_csv_allow_double_quotes CustomSeparated
+1
+c1	Nullable(String)
+c2	Nullable(String)
+c3	Nullable(String)
+-- input_format_csv_allow_cr_end_of_line CustomSeparated
+3
+CANNOT_EXTRACT_TABLE_STRUCTURE
+-- format_csv_allow_single_quotes CustomSeparatedWithNamesAndTypes
+CANNOT_EXTRACT_TABLE_STRUCTURE
+-- format_csv_allow_double_quotes CustomSeparatedWithNamesAndTypes
+CANNOT_EXTRACT_TABLE_STRUCTURE
+-- input_format_csv_trim_whitespaces Template
+c1	Nullable(String)
+-- input_format_csv_allow_cr_end_of_line Template
+CANNOT_EXTRACT_TABLE_STRUCTURE

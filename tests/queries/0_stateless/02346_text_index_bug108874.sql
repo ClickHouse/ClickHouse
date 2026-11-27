@@ -10,7 +10,6 @@
 -- used, so a successful query with the correct count proves the index is used through every path.
 
 SET enable_full_text_index = 1;
-SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1; -- default; the setting that triggered the bug
 
 DROP TABLE IF EXISTS logs;
