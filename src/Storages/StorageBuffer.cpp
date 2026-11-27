@@ -350,21 +350,11 @@ void StorageBuffer::read(
             }
         }
 
-        /// The buffers' plan below is typed by the table the query names, so it must declare our column types.
+        /// The buffers' plan below declares the columns of the table the query names, so the ones it reads must have our types.
         if (query_table_node)
         {
-            /// The column the planner reads only to count rows carries no value of that type, unless a table filter reads it.
-            const String * row_count_only_column = nullptr;
-            const auto * table_expression_data
-                = query_info.planner_context ? query_info.planner_context->getTableExpressionDataOrNull(query_info.table_expression) : nullptr;
-            if (table_expression_data && table_expression_data->getRowCountOnlyColumnIdentifier()
-                && !table_expression_data->getRowLevelFilterActions() && !query_info.additional_filter_ast)
-                row_count_only_column = table_expression_data->getColumnNameOrNull(*table_expression_data->getRowCountOnlyColumnIdentifier());
-
             for (const auto & name : column_names)
             {
-                if (row_count_only_column && name == *row_count_only_column)
-                    continue;
                 auto query_column = query_table_node->getStorageSnapshot()->tryGetColumn(get_columns_options, name);
                 auto our_column = storage_snapshot->tryGetColumn(get_columns_options, name);
                 if (query_column && our_column && !query_column->type->equals(*our_column->type))
@@ -671,34 +661,11 @@ void StorageBuffer::read(
         buffers_select_query_options.view_source_in_subqueries
             = query_info.planner_context && query_info.planner_context->isViewSourceInSubqueries();
 
-        /// Column kinds must match this table, so the query below requests only the columns the buffers provide.
+        /// Column kinds must match the table the query names, so the query below requests only the columns the buffers provide.
         /// Name it as the query does, so the buffers' analyzer swaps it in and applies that table's filters.
-        auto buffers_columns = storage_snapshot->metadata->getColumns();
-        /// The buffers' planner picks the column a `count()` reads among the physical ones, so declare only those the pipe provides.
-        if (query_storage_id.getFullNameNotQuoted() != getStorageID().getFullNameNotQuoted())
-        {
-            NameSet pipe_column_names;
-            for (const auto & name : column_names)
-                if (auto column = storage_snapshot->tryGetColumn(get_columns_options, name))
-                    pipe_column_names.insert(column->getNameInStorage());
-
-            ColumnsDescription pipe_columns;
-            for (const auto & column : buffers_columns)
-                if (pipe_column_names.contains(column.name))
-                    pipe_columns.add(column);
-            /// The buffers' analyzer resolves the named table's filters, so it gets that table's ALIAS and EPHEMERAL columns.
-            const auto & query_columns = query_table_node->getStorageSnapshot()->metadata->getColumns();
-            for (const auto & column : query_columns)
-                if (!query_columns.hasPhysical(column.name) && !pipe_columns.has(column.name))
-                    pipe_columns.add(column);
-            /// The planner picks no column for a read of only virtual columns, and a table must declare one.
-            if (!pipe_columns.getAllPhysical().empty())
-                buffers_columns = std::move(pipe_columns);
-        }
-
         auto storage = std::make_shared<StorageValues>(
                 query_storage_id,
-                buffers_columns,
+                query_table_node ? query_table_node->getStorageSnapshot()->metadata->getColumns() : storage_snapshot->metadata->getColumns(),
                 std::move(pipe_from_buffers),
                 storage_snapshot->metadata->virtuals);
 

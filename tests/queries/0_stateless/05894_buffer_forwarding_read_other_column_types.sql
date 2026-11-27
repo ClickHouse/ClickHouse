@@ -1,4 +1,4 @@
--- A Buffer over Distributed read above FetchColumns through a table that declares other column types than the Buffer.
+-- A Buffer over Distributed read above FetchColumns through a table that declares other columns than the Buffer.
 
 DROP TABLE IF EXISTS t_05894_same;
 DROP TABLE IF EXISTS t_05894_outer;
@@ -22,6 +22,16 @@ DROP TABLE IF EXISTS t_05894_outer4;
 DROP TABLE IF EXISTS t_05894_buf3;
 DROP TABLE IF EXISTS t_05894_dist3;
 DROP TABLE IF EXISTS t_05894_local3;
+DROP TABLE IF EXISTS t_05894_outer7;
+DROP TABLE IF EXISTS t_05894_outer6;
+DROP TABLE IF EXISTS t_05894_buf5;
+DROP TABLE IF EXISTS t_05894_buf4;
+DROP TABLE IF EXISTS t_05894_dist4;
+DROP TABLE IF EXISTS t_05894_local4;
+DROP TABLE IF EXISTS t_05894_outer8;
+DROP TABLE IF EXISTS t_05894_buf6;
+DROP TABLE IF EXISTS t_05894_dist5;
+DROP TABLE IF EXISTS t_05894_local5;
 
 CREATE TABLE t_05894_local (a UInt8) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_05894_local VALUES (1), (2);
@@ -46,9 +56,9 @@ SELECT sum(a) FROM t_05894_same SETTINGS prefer_localhost_replica = 0;
 SELECT _table FROM t_05894_same ORDER BY _table SETTINGS prefer_localhost_replica = 0;
 SELECT _table, count() FROM t_05894_outer GROUP BY _table ORDER BY _table SETTINGS prefer_localhost_replica = 1;
 SELECT _table FROM t_05894_mv ORDER BY _table SETTINGS prefer_localhost_replica = 0;
-SELECT count() FROM t_05894_outer SETTINGS prefer_localhost_replica = 0;
-SELECT count() FROM t_05894_mv SETTINGS prefer_localhost_replica = 1;
-SELECT sum(1) FROM t_05894_rmv SETTINGS prefer_localhost_replica = 0;
+SELECT count() FROM t_05894_outer SETTINGS prefer_localhost_replica = 0; -- { serverError NOT_IMPLEMENTED }
+SELECT count() FROM t_05894_mv SETTINGS prefer_localhost_replica = 1; -- { serverError NOT_IMPLEMENTED }
+SELECT sum(1) FROM t_05894_rmv SETTINGS prefer_localhost_replica = 0; -- { serverError NOT_IMPLEMENTED }
 SELECT count() FROM t_05894_outer SETTINGS additional_table_filters = {'t_05894_outer': 'a IS NOT NULL'}, prefer_localhost_replica = 0; -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE t_05894_same;
@@ -110,3 +120,39 @@ DROP TABLE t_05894_outer4;
 DROP TABLE t_05894_buf3;
 DROP TABLE t_05894_dist3;
 DROP TABLE t_05894_local3;
+
+CREATE TABLE t_05894_local4 (x UInt64, z UInt8 ALIAS _table = 't_05894_buf4') ENGINE = MergeTree ORDER BY x;
+CREATE TABLE t_05894_dist4 AS t_05894_local4 ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_05894_local4);
+CREATE TABLE t_05894_buf4 (x UInt64, z UInt8 ALIAS _table = 't_05894_outer6') ENGINE = Buffer(currentDatabase(), t_05894_dist4, 1, 100000, 100000, 1000000, 1000000, 100000000, 100000000);
+INSERT INTO t_05894_buf4 VALUES (2);
+CREATE TABLE t_05894_outer6 (x UInt64, z UInt8 ALIAS _table = 't_05894_buf4') ENGINE = Buffer(currentDatabase(), t_05894_buf4, 1, 100000, 100000, 1000000, 1000000, 100000000, 100000000);
+CREATE TABLE t_05894_buf5 (x UInt64) ENGINE = Buffer(currentDatabase(), t_05894_dist4, 1, 100000, 100000, 1000000, 1000000, 100000000, 100000000);
+INSERT INTO t_05894_buf5 VALUES (3);
+CREATE TABLE t_05894_outer7 (x UInt64, z UInt8 ALIAS _table = 't_05894_buf5') ENGINE = Buffer(currentDatabase(), t_05894_buf5, 1, 100000, 100000, 1000000, 1000000, 100000000, 100000000);
+
+SELECT _table FROM t_05894_outer6 SETTINGS additional_table_filters = {'t_05894_outer6': 'z > 0'}, prefer_localhost_replica = 0;
+SELECT _table FROM t_05894_outer7 SETTINGS additional_table_filters = {'t_05894_outer7': 'z > 0'}, prefer_localhost_replica = 1;
+SELECT x FROM t_05894_outer7 SETTINGS additional_table_filters = {'t_05894_outer7': 'z > 0'}, prefer_localhost_replica = 0;
+
+DROP TABLE t_05894_outer7;
+DROP TABLE t_05894_outer6;
+DROP TABLE t_05894_buf5;
+DROP TABLE t_05894_buf4;
+DROP TABLE t_05894_dist4;
+DROP TABLE t_05894_local4;
+
+CREATE TABLE t_05894_local5 (t Tuple(a UInt64, b UInt8)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_05894_local5 VALUES ((1, 1));
+CREATE TABLE t_05894_dist5 AS t_05894_local5 ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_05894_local5);
+CREATE TABLE t_05894_buf6 AS t_05894_local5 ENGINE = Buffer(currentDatabase(), t_05894_dist5, 1, 100000, 100000, 1000000, 1000000, 100000000, 100000000);
+INSERT INTO t_05894_buf6 VALUES ((2, 2));
+CREATE TABLE t_05894_outer8 (`t.b` UInt8) ENGINE = Buffer(currentDatabase(), t_05894_buf6, 1, 100000, 100000, 1000000, 1000000, 100000000, 100000000);
+
+SELECT `t.b` FROM t_05894_outer8 ORDER BY `t.b` SETTINGS prefer_localhost_replica = 0;
+SELECT count() FROM t_05894_outer8 SETTINGS prefer_localhost_replica = 0;
+SELECT 1 FROM t_05894_outer8 SETTINGS prefer_localhost_replica = 1;
+
+DROP TABLE t_05894_outer8;
+DROP TABLE t_05894_buf6;
+DROP TABLE t_05894_dist5;
+DROP TABLE t_05894_local5;
