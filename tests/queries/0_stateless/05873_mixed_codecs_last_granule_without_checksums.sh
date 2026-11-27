@@ -22,14 +22,14 @@ ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" -q "
     SELECT 'several codecs', length(codec_block_counts) > 1 FROM mergeTreeCodecBlockCounts(currentDatabase(), t);
 "
 
-PART_PATH=$(${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" -q "SELECT path FROM system.parts WHERE table = 't' AND active")
+PART_PATH=$(${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't' AND active")
 
 ${CLICKHOUSE_BINARY} check-marks "${PART_PATH}"/*.mrk "${PART_PATH}"/*.bin > /dev/null && echo "check-marks OK"
 rm "${PART_PATH}/checksums.txt"
 
 ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" -q "
     SELECT 'rows', count() FROM t;
-    SELECT 'detached parts', count() FROM system.detached_parts;
+    SELECT 'detached parts', count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 't';
 "
 
 rm -rf "${WORKING_DIR}"
