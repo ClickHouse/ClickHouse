@@ -1563,7 +1563,7 @@ void Planner::buildPlanForQueryNode()
                 /*correlated_subtrees=*/{},
                 select_query_options,
                 "Before LIMIT BY",
-                useful_sets, /*allow_in_to_join=*/ !query_node.hasOrderBy());
+                useful_sets, /*allow_in_to_join=*/ !query_node.hasOrderBy() && !query_node.isShuffle());
             addLimitByStep(
                 query_plan,
                 limit_by_analysis_result,

@@ -1765,7 +1765,7 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
             select_query_options,
             "Before LIMIT BY",
             useful_sets,
-            /*allow_in_to_join=*/ !query_node.hasOrderBy());
+            /*allow_in_to_join=*/ !query_node.hasOrderBy() && !query_node.isShuffle());
         /// We don't apply LIMIT BY on remote nodes at all in the old infrastructure.
         /// https://github.com/ClickHouse/ClickHouse/blob/67c1e89d90ef576e62f8b1c68269742a3c6f9b1e/src/Interpreters/InterpreterSelectQuery.cpp#L1697-L1705
         /// Let's be optimistic and only don't skip offset (it will be skipped on the initiator).
