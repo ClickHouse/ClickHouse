@@ -167,6 +167,19 @@ public:
         select->tables()->children.push_back(element);
     }
 
+    /// Exchanges the two operands of the join added by `addJoin`.
+    void swapJoinOperands()
+    {
+        auto * first = select->tables()->children.front()->as<ASTTablesInSelectQueryElement>();
+        auto * second = select->tables()->children.back()->as<ASTTablesInSelectQueryElement>();
+        std::swap(first->table_expression, second->table_expression);
+        first->children.clear();
+        first->children.push_back(first->table_expression);
+        second->children.clear();
+        second->children.push_back(second->table_join);
+        second->children.push_back(second->table_expression);
+    }
+
     void addWhere(ASTPtr predicate)
     {
         if (stage > Stage::Where)
@@ -744,7 +757,11 @@ private:
         /// be named.
         builder.nest();
         ++join_ordinal;
-        builder.setSourceAlias(fmt::format("kql_left_{}", join_ordinal));
+        /// Fixed here: translating the right operand below may contain joins of its own, which
+        /// advance `join_ordinal`.
+        const String left_alias = fmt::format("kql_left_{}", join_ordinal);
+        const String right_alias = fmt::format("kql_right_{}", join_ordinal);
+        builder.setSourceAlias(left_alias);
 
         auto table_join = make_intrusive<ASTTableJoin>();
         table_join->strictness = JoinStrictness::All;
@@ -768,7 +785,7 @@ private:
                 table_join->strictness = JoinStrictness::Semi;
                 break;
             case KQLJoinKind::RightSemi:
-                table_join->kind = JoinKind::Right;
+                table_join->kind = JoinKind::Left;
                 table_join->strictness = JoinStrictness::Semi;
                 break;
             case KQLJoinKind::LeftAnti:
@@ -776,10 +793,18 @@ private:
                 table_join->strictness = JoinStrictness::Anti;
                 break;
             case KQLJoinKind::RightAnti:
-                table_join->kind = JoinKind::Right;
+                table_join->kind = JoinKind::Left;
                 table_join->strictness = JoinStrictness::Anti;
                 break;
         }
+
+        /// `rightsemi` and `rightanti` are written as a LEFT join with the operands exchanged
+        /// below, so the side a semi or anti join keeps is always the left table of the
+        /// generated join. A column of the left table keeps its own name in the result even
+        /// when the other side has a column with the same name, while a column of the right
+        /// table would be returned as `kql_right_N.name`, and a later operator could not
+        /// refer to it.
+        const bool keeps_right_side = op.join_kind == KQLJoinKind::RightSemi || op.join_kind == KQLJoinKind::RightAnti;
 
         /// Do not use `USING` even when both key names agree: unlike Kusto it coalesces the
         /// matching columns, while Kusto joins that return both sides keep both key columns.
@@ -789,8 +814,8 @@ private:
             ASTPtr condition;
             for (const auto & [left, right] : op.join_keys)
             {
-                ASTPtr left_key = make_intrusive<ASTIdentifier>(std::vector<String>{fmt::format("kql_left_{}", join_ordinal), left});
-                ASTPtr right_key = make_intrusive<ASTIdentifier>(std::vector<String>{fmt::format("kql_right_{}", join_ordinal), right});
+                ASTPtr left_key = make_intrusive<ASTIdentifier>(std::vector<String>{left_alias, left});
+                ASTPtr right_key = make_intrusive<ASTIdentifier>(std::vector<String>{right_alias, right});
                 ASTPtr equality = makeASTFunction("equals", std::move(left_key), std::move(right_key));
                 condition = condition ? ASTPtr(makeASTFunction("and", condition, equality)) : equality;
             }
@@ -798,7 +823,9 @@ private:
             table_join->children.push_back(condition);
         }
 
-        builder.addJoin(asTableExpression(*op.inputs.front(), fmt::format("kql_right_{}", join_ordinal)), table_join);
+        builder.addJoin(asTableExpression(*op.inputs.front(), right_alias), table_join);
+        if (keeps_right_side)
+            builder.swapJoinOperands();
 
         /// Semi and anti joins return only the columns of the side they keep.
         String kept_side;
@@ -806,11 +833,11 @@ private:
         {
             case KQLJoinKind::LeftSemi:
             case KQLJoinKind::LeftAnti:
-                kept_side = fmt::format("kql_left_{}", join_ordinal);
+                kept_side = left_alias;
                 break;
             case KQLJoinKind::RightSemi:
             case KQLJoinKind::RightAnti:
-                kept_side = fmt::format("kql_right_{}", join_ordinal);
+                kept_side = right_alias;
                 break;
             default:
                 break;

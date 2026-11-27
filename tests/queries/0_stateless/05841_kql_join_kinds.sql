@@ -58,3 +58,53 @@ datatable (LK:long, L:string) [1, 'a', 2, 'b']
 -- hint on the first line of the statement it could not parse.
 print '-- the set of kind names is closed --';
 datatable (K:long) [1] | join kind=sideways (datatable (K:long) [1]) on K; -- { clientError SYNTAX_ERROR }
+
+-- The remaining blocks are the cases where the kept side is easy to get wrong: a
+-- join inside the right input, which must not change the aliases of the outer join,
+-- and inputs that share column names, where the result must keep the plain names of
+-- the kept side so that a later `project`, `where` or `sort` can still refer to them.
+
+print '-- a join inside the right input keeps the aliases of the outer leftsemi join --';
+datatable (LK:long, L:string) [1, 'a', 2, 'b']
+| join kind=leftsemi (datatable (RK:long, R:string) [2, 'p', 3, 'q'] | join kind=inner (datatable (SK:long, S:string) [2, 'x', 3, 'y']) on $left.RK == $right.SK) on $left.LK == $right.RK
+| sort by LK asc;
+
+print '-- a join inside the right input keeps the aliases of the outer rightanti join --';
+datatable (LK:long, L:string) [1, 'a', 2, 'b']
+| join kind=rightanti (datatable (RK:long, R:string) [2, 'p', 3, 'q'] | join kind=inner (datatable (SK:long, S:string) [2, 'x', 3, 'y']) on $left.RK == $right.SK) on $left.LK == $right.RK
+| sort by RK asc;
+
+print '-- leftsemi with the same column names on both sides, then project --';
+datatable (K:long, V:string) [1, 'a', 2, 'b']
+| join kind=leftsemi (datatable (K:long, V:string) [2, 'p', 3, 'q']) on K
+| project K, V
+| sort by K asc;
+
+print '-- rightsemi with the same column names on both sides, then project --';
+datatable (K:long, V:string) [1, 'a', 2, 'b']
+| join kind=rightsemi (datatable (K:long, V:string) [2, 'p', 3, 'q']) on K
+| project K, V
+| sort by K asc;
+
+print '-- leftanti with the same column names on both sides, then project --';
+datatable (K:long, V:string) [1, 'a', 2, 'b']
+| join kind=leftanti (datatable (K:long, V:string) [2, 'p', 3, 'q']) on K
+| project K, V
+| sort by K asc;
+
+print '-- rightanti with the same column names on both sides, then project --';
+datatable (K:long, V:string) [1, 'a', 2, 'b']
+| join kind=rightanti (datatable (K:long, V:string) [2, 'p', 3, 'q']) on K
+| project K, V
+| sort by K asc;
+
+print '-- rightsemi with the same column names on both sides, then where --';
+datatable (K:long, V:string) [1, 'a', 2, 'b', 3, 'c']
+| join kind=rightsemi (datatable (K:long, V:string) [2, 'p', 3, 'q', 4, 'r']) on K
+| where V != 'p'
+| sort by K asc;
+
+print '-- rightanti with the same column names on both sides sorts by the right key --';
+datatable (K:long, V:string) [1, 'a', 2, 'b']
+| join kind=rightanti (datatable (K:long, V:string) [4, 'r', 2, 'p', 3, 'q']) on K
+| sort by K asc;
