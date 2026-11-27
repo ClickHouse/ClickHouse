@@ -29,6 +29,7 @@
 #include <fmt/format.h>
 #include <pcg_random.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <functional>
@@ -971,7 +972,7 @@ TEST(KeeperStorage, SetWatchesHoldsStorageMutexWhileReadingNodes)
     (*settings)[DB::CoordinationSetting::sorted_file_uncompressed_size] = 2048;
     /// The block cache keeps nothing, so every lookup of a flushed node takes the slow path.
     (*settings)[DB::CoordinationSetting::block_cache_size] = 1;
-    /// No merges: publishing a merge would wait for the paused lookup.
+    /// No merges: the staged runs stay as flushed.
     (*settings)[DB::CoordinationSetting::min_files_to_merge] = 1'000'000;
 
     auto keeper_context = std::make_shared<DB::KeeperContext>(/*standalone_keeper*/ true, settings);
@@ -1014,28 +1015,31 @@ TEST(KeeperStorage, SetWatchesHoldsStorageMutexWhileReadingNodes)
     }
     ASSERT_TRUE(expired);
 
+    /// Stop the flush and merge threads, so only the paused lookup below can hold storage_mutex.
+    state.background->shutdown();
+
     SCOPE_EXIT({ DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_lsmt_get_committed_node_after_repointing); });
 
-    /// Retried: an idle flush or merge thread holds storage_mutex shared for a moment when it wakes up.
     const auto lookup_excludes_publishers = [&](const std::function<void()> & send)
     {
         DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_lsmt_get_committed_node_after_repointing);
-        std::thread client(send);
-        DB::FailPointInjection::waitForPause(DB::FailPoints::keeper_lsmt_get_committed_node_after_repointing);
-        bool publisher_could_lock = false;
-        for (int attempt = 0; attempt < 100 && !publisher_could_lock; ++attempt)
+        std::atomic<bool> sent = false;
+        std::thread client([&]
         {
-            if (state.storage_mutex->try_lock())
-            {
-                state.storage_mutex->unlock();
-                publisher_could_lock = true;
-            }
-            else
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
+            send();
+            sent = true;
+            /// Ends the wait below if the lookup did not pause.
+            DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_lsmt_get_committed_node_after_repointing);
+        });
+        DB::FailPointInjection::waitForPause(DB::FailPoints::keeper_lsmt_get_committed_node_after_repointing);
+        const bool paused = !sent;
+        EXPECT_TRUE(paused) << "The lookup did not reach the failpoint";
+        const bool publisher_could_lock = paused && state.storage_mutex->try_lock();
+        if (publisher_could_lock)
+            state.storage_mutex->unlock();
         DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_lsmt_get_committed_node_after_repointing);
         client.join();
-        return !publisher_could_lock;
+        return paused && !publisher_could_lock;
     };
 
     {
