@@ -317,7 +317,7 @@ void registerBackupEngineS3(BackupFactory & factory)
 
         auto archive_params = makeBackupArchiveParams(params, location.archive_name);
 
-        /// Everything is captured by value: `snapshot_reader_creator` keeps a copy of this lambda in `BackupImpl`
+        /// Everything is captured by value: `snapshot_reader_creator` takes this lambda into `BackupImpl`, which keeps it
         /// after this function returns.
         auto make_reader = [access_key_id,
                             secret_access_key,
@@ -359,16 +359,16 @@ void registerBackupEngineS3(BackupFactory & factory)
         {
             auto reader = make_reader(S3::URI{s3_uri});
 
-            auto snapshot_reader_creator = [make_reader](const String & s3_uri_, const String & s3_bucket_)
+            auto snapshot_reader_creator = [make = std::move(make_reader)](const String & s3_uri_, const String & s3_bucket_)
             {
                 String full_uri = std::filesystem::path(s3_uri_) / s3_bucket_;
                 auto uri_for_lightweight = S3::URI{full_uri};
                 /// We set the prefix to "" because in meta file, object key is absolute path.
                 uri_for_lightweight.key = "";
-                return make_reader(uri_for_lightweight);
+                return make(uri_for_lightweight);
             };
 
-            return std::make_unique<BackupImpl>(params, archive_params, reader, snapshot_reader_creator);
+            return std::make_unique<BackupImpl>(params, archive_params, reader, std::move(snapshot_reader_creator));
         }
         else
         {
