@@ -21,9 +21,15 @@ class HashJoinMethods
 {
 public:
     /// Inserts the rows of a stored block into `table`, allocating in the arena of build stream `stream`.
-    /// With the spill budget of `join`, `checked = false` admits the rows whatever the budget says.
+    /// With the spill budget of `join`, `checked = false` admits the rows whatever the budget says, and `block_reserved = false`
+    /// admits them only while the map does not keep the block.
     static BuildResult insertFromBlockImpl(
-        HashJoin & join, HashJoinTable & table, const HashJoinTable::InsertRows & rows, size_t stream, bool checked = true);
+        HashJoin & join,
+        HashJoinTable & table,
+        const HashJoinTable::InsertRows & rows,
+        size_t stream,
+        bool checked = true,
+        bool block_reserved = true);
 
     static JoinResultPtr joinBlockImpl(
         const HashJoin & join,

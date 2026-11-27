@@ -22,7 +22,7 @@ extern const int LOGICAL_ERROR;
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
-    HashJoin & join, HashJoinTable & table, const HashJoinTable::InsertRows & rows, size_t stream, bool checked)
+    HashJoin & join, HashJoinTable & table, const HashJoinTable::InsertRows & rows, size_t stream, bool checked, bool block_reserved)
 {
     static_assert((STRICTNESS == JoinStrictness::Asof) == std::is_same_v<MapsTemplate, HashJoin::MapsAsof>);
     const HashJoinTable::InsertSettings settings{
@@ -36,7 +36,7 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
         return table.insert<MapsTemplate>(settings, rows, stream, add_bytes);
 
     const auto held_bytes = [&] { return join.spillHeldBytes(); };
-    const HashJoinTable::InsertBudget budget(*join.spill_budget, held_bytes, checked);
+    const HashJoinTable::InsertBudget budget(*join.spill_budget, held_bytes, checked, block_reserved);
     return table.insert<MapsTemplate>(settings, rows, stream, add_bytes, &budget);
 }
 

@@ -546,8 +546,8 @@ public:
     /// With a spill budget, each slot reserves the growth of its buckets before it inserts; a refused slot stops the block.
     struct InsertBudget
     {
-        InsertBudget(JoinSpillBudget & budget_, absl::FunctionRef<size_t()> held_bytes_, bool checked_)
-            : budget(budget_), held_bytes(held_bytes_), checked(checked_)
+        InsertBudget(JoinSpillBudget & budget_, absl::FunctionRef<size_t()> held_bytes_, bool checked_, bool block_reserved_)
+            : budget(budget_), held_bytes(held_bytes_), checked(checked_), block_reserved(block_reserved_)
         {
         }
 
@@ -555,6 +555,8 @@ public:
         absl::FunctionRef<size_t()> held_bytes;
         /// Otherwise the budget only counts the rows and never refuses them.
         bool checked;
+        /// Otherwise the stored block does not fit, and the insert is refused as soon as the map would keep the block.
+        bool block_reserved;
 
         [[nodiscard]] std::optional<size_t> reserve(size_t bytes) const
         {
@@ -913,6 +915,17 @@ private:
 
         HashMap & map = typedMap<TYPE, Maps>(*this);
 
+        BuildResult result;
+        const bool block_unreserved = budget && !budget->block_reserved;
+        /// ALL, ASOF and take-last-row maps keep every block.
+        if (block_unreserved && !is_set && (!mapped_one || is_asof_join || settings.any_take_last_row))
+        {
+            result.refused = true;
+            return result;
+        }
+        /// The map keeps the block from its first new key on.
+        const bool stop_at_new_key = block_unreserved && (!is_set || settings.must_keep_right_blocks);
+
         std::vector<ScatteredBlock::Selector> scattered;
         std::span<const ScatteredBlock::Selector> per_slot(&rows.selector, 1);
         /// If the key getter can build its keys ahead, the scatter builds them here once, for the inserts of all slots.
@@ -935,7 +948,7 @@ private:
             }
             else if (budget)
             {
-                const size_t worst_case = estimateSlotGrowth(map, 0, rows.selector.size(), {});
+                const size_t worst_case = estimateSlotGrowth(map, 0, stop_at_new_key ? 1 : rows.selector.size(), {});
                 worst_case_reserved = budget->reserve(worst_case);
                 if (!worst_case_reserved)
                 {
@@ -967,7 +980,6 @@ private:
         const size_t arena_bytes_before = arena.allocatedBytes();
         SCOPE_EXIT({ add_bytes(arena.allocatedBytes() - arena_bytes_before); });
 
-        BuildResult result;
         /// For ALL and ASOF join always insert values. The other maps keep the block only if a slot needs it.
         if constexpr (!is_set)
             result.is_inserted = !mapped_one || is_asof_join;
@@ -975,13 +987,32 @@ private:
         {
             const ScatteredBlock::Selector & selector = per_slot[slot];
             size_t growth_reserved = 0;
-            size_t key_limit = std::numeric_limits<size_t>::max();
+            size_t key_limit = stop_at_new_key ? 1 : std::numeric_limits<size_t>::max();
             if (budget)
             {
                 if (worst_case_reserved)
                 {
                     growth_reserved = *worst_case_reserved;
                     worst_case_reserved.reset();
+                }
+                else if (stop_at_new_key)
+                {
+                    auto reserved = budget->reserve(estimateSlotGrowth(map, slot, 1, {}));
+                    /// At its fill limit a bucket resizes for one new key, so the block goes in only if it has none.
+                    if constexpr (!is_partitioned_fixed_table<HashMap>)
+                    {
+                        if (!reserved)
+                        {
+                            const auto new_keys = selector.isContinuousRange()
+                                ? countNewKeys<TYPE, is_asof_join>(map, rows, selector.getRange())
+                                : countNewKeys<TYPE, is_asof_join>(map, rows, selector.getIndexes());
+                            if (std::ranges::all_of(new_keys, [](UInt32 keys) { return keys == 0; }))
+                                reserved = budget->reserve(0);
+                        }
+                    }
+                    if (!reserved)
+                        return false;
+                    growth_reserved = *reserved;
                 }
                 else
                 {
@@ -1061,9 +1092,11 @@ private:
             {
                 size_t next_row = 0;
                 insert_some(slot_rows, next_row);
-                if constexpr (!is_partitioned_fixed_table<HashMap>)
+                if (next_row != ScatteredBlock::Selector::size(slot_rows))
                 {
-                    if (next_row != ScatteredBlock::Selector::size(slot_rows))
+                    if (stop_at_new_key)
+                        return false;
+                    if constexpr (!is_partitioned_fixed_table<HashMap>)
                     {
                         if constexpr (std::is_same_v<std::decay_t<decltype(slot_rows)>, ScatteredBlock::Selector::Range>)
                             return insert_rest(ScatteredBlock::Selector::Range{slot_rows.first + next_row, slot_rows.second});

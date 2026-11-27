@@ -1162,6 +1162,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, JoinBuildContext conte
         auto * stored_columns = &new_block.back();
         size_t data_allocated_bytes = stored_columns->allocatedBytes();
         size_t reserved_nullmaps = 0;
+        bool block_reserved = true;
         if (spill_budget)
         {
             const auto & clause = table_join->getOnlyClause();
@@ -1181,19 +1182,22 @@ bool HashJoin::addBlockToJoin(const Block & source_block, JoinBuildContext conte
                 reserved_bytes = bytes;
             else
             {
+                /// A block of keys that the map already has is dropped after the insert, so it still goes in, neither stored nor
+                /// counted, and is refused if the map keeps it.
                 LOG_TRACE(
                     log,
-                    "{}The spill budget refused a block of {} rows: {} bytes, {} held, {} reserved",
+                    "{}The spill budget has no room for a block of {} rows: {} bytes, {} held, {} reserved",
                     instance_log_id, rows, bytes, spillHeldBytes(), spill_budget->getReserved());
-                refused = true;
-                return true;
+                block_reserved = false;
+                data_allocated_bytes = 0;
             }
         }
         stored_columns->block_no = data->stored_columns_index->add(stored_columns);
         data->addBytes(data->allocated_size, data_allocated_bytes);
         release_reserved(data_allocated_bytes);
         data->rows_to_join.fetch_add(rows, std::memory_order_relaxed);
-        build_stream.columns.splice(build_stream.columns.end(), new_block);
+        if (block_reserved)
+            build_stream.columns.splice(build_stream.columns.end(), new_block);
         doDebugAsserts();
 
         /// Takes the block out again, as if it was never added. Nothing may reference it.
@@ -1206,7 +1210,8 @@ bool HashJoin::addBlockToJoin(const Block & source_block, JoinBuildContext conte
             /// (and dereferences nullptr deterministically in release builds) instead of
             /// silently reading freed memory.
             data->stored_columns_index->clearEntry(stored_columns->block_no);
-            build_stream.columns.pop_back();
+            if (block_reserved)
+                build_stream.columns.pop_back();
             doDebugAsserts();
         };
 
@@ -1272,7 +1277,8 @@ bool HashJoin::addBlockToJoin(const Block & source_block, JoinBuildContext conte
             }
 
             bool is_inserted = false;
-            bool slot_refused = false;
+            /// An unstored block may go in only if just the map can keep it.
+            bool slot_refused = !block_reserved && (flag_per_row || has_right_not_joined);
 
             dispatchJoinShape(
                 kind,
@@ -1280,12 +1286,15 @@ bool HashJoin::addBlockToJoin(const Block & source_block, JoinBuildContext conte
                 maps_kind,
                 [&]<JoinKind kind_, JoinStrictness strictness_, typename Maps>()
                 {
+                    if (slot_refused)
+                        return;
                     const BuildResult result = HashJoinMethods<kind_, strictness_, Maps>::insertFromBlockImpl(
                         *this,
                         *data->tables[onexpr_idx],
                         {key_columns, stored_columns->selector, stored_columns->block_no, null_map, join_mask_col},
                         context.getStream(),
-                        checked);
+                        checked,
+                        block_reserved);
                     if (result.refused)
                     {
                         slot_refused = true;
@@ -1305,7 +1314,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, JoinBuildContext conte
 
             /// The rows that slots inserted before the refusal reference the block, but the caller frees the maps
             /// before anything reads them (only one disjunct has a budget).
-            if (slot_refused)
+            if (slot_refused || (!block_reserved && is_inserted))
             {
                 LOG_TRACE(log, "{}The spill budget refused a block with {} rows", instance_log_id, rows);
                 undo_block();

@@ -123,6 +123,23 @@ FROM (SELECT toFixedString(toString(number), 200) AS k FROM numbers(1000)) AS l
 ANY LEFT JOIN (SELECT toFixedString(toString(number % 1000), 200) AS k, intDiv(number, 1000000) AS v FROM numbers(1000000)) AS r USING (k)
 SETTINGS hash_join_layout = 'serial', max_threads = 1, max_bytes_before_external_join = 40000000, log_comment = 'spill_at_threshold_repeated_fixed_string_keys_fits';
 
+-- A short first block brings every key, and each later block repeats them: it is larger than the threshold, and dropped.
+SELECT 'repeated blocks fit', count(), sum(r.v)
+FROM (SELECT number AS k FROM numbers(1000)) AS l
+ANY LEFT JOIN (SELECT number AS k, toUInt64(0) AS v FROM numbers(1000) UNION ALL SELECT number % 1000 AS k, toUInt64(0) AS v FROM numbers(1000000)) AS r USING (k)
+SETTINGS hash_join_layout = 'serial', max_threads = 1, max_bytes_before_external_join = 200000, log_comment = 'spill_at_threshold_repeated_blocks_fits';
+
+SELECT 'repeated blocks fit, grace_hash', count(), sum(r.v)
+FROM (SELECT number AS k FROM numbers(1000)) AS l
+ANY LEFT JOIN (SELECT number AS k, toUInt64(0) AS v FROM numbers(1000) UNION ALL SELECT number % 1000 AS k, toUInt64(0) AS v FROM numbers(1000000)) AS r USING (k)
+SETTINGS join_algorithm = 'grace_hash', max_threads = 1, max_bytes_before_external_join = 200000, log_comment = 'spill_at_threshold_repeated_blocks_grace_fits';
+
+-- 2048 keys fill the hash table to its limit, where one more key would double it past the threshold.
+SELECT 'repeated blocks fit, full table', count(), sum(r.v)
+FROM (SELECT number AS k FROM numbers(2048)) AS l
+ANY LEFT JOIN (SELECT number AS k, toUInt64(0) AS v FROM numbers(2048) UNION ALL SELECT number % 2048 AS k, toUInt64(0) AS v FROM numbers(1000000)) AS r USING (k)
+SETTINGS hash_join_layout = 'serial', max_threads = 1, max_bytes_before_external_join = 300000, log_comment = 'spill_at_threshold_repeated_blocks_full_table_fits';
+
 -- One key in every right row: a split cannot separate it, so the bucket goes over the threshold instead of
 -- splitting until it runs out of buckets. `v` is 0 in every row, so `sum` does not depend on the row that
 -- `ANY` and `SEMI` keep.
@@ -190,6 +207,12 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comm
 SELECT replaceOne(log_comment, 'spill_at_threshold_', '') AS query, memory_usage < 80000000 AS split_early
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'spill_at_threshold_grace_spills';
+
+-- The dropped blocks of repeated keys, about 1 MB each, are not kept.
+SELECT replaceOne(log_comment, 'spill_at_threshold_', '') AS query, memory_usage < 12000000 AS blocks_dropped
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE 'spill\_at\_threshold\_repeated\_blocks%'
+ORDER BY event_time_microseconds;
 
 -- After several splits the peak stays near that of one bucket: a table twice the size of the one it needs takes it past 108 MB.
 SELECT replaceOne(log_comment, 'spill_at_threshold_', '') AS query, memory_usage < 108000000 AS sized_after_split
