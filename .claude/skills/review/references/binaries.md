@@ -61,14 +61,12 @@ FULL BUILDS: EARLIER COMMITS OF THE PR
 - The Evidence line names the job and the commit, for example `✅ Reproduced with Build (arm_asan_ubsan) of 1a2b3c4d (differs from the head only in tests)`.
 
 MASTER
-- To show behavior before the PR, or when the PR has no binary (documentation and CI only), use a master build. Only merge commits of master have them, and not all of them. Start the search at the merge base of the PR, so that the build is not newer than the base:
+- To show behavior before the PR, or when the PR has no binary (documentation and CI only), use a master build. Only merge commits of master have them, and not all of them:
   ```bash
-  base=$(gh api "repos/ClickHouse/ClickHouse/compare/master...<head sha>" --jq '.merge_base_commit.sha')
-  for sha in $(gh api "repos/ClickHouse/ClickHouse/commits?sha=$base&per_page=30" --jq '.[].sha')
+  for sha in $(gh api 'repos/ClickHouse/ClickHouse/commits?sha=master&per_page=30' --jq '.[].sha')
   do
     url="https://clickhouse-builds.s3.amazonaws.com/REFs/master/$sha/masterci/build_arm_release/clickhouse"
     curl -sfI "$url" > /dev/null && { echo "$url"; break; }
   done
   ```
-- These are builds of `ClickHouse/ClickHouse`. The base of a `ClickHouse/ClickHouse-private` PR is not in that repository: read the base code instead.
 - Replace `build_arm_release` with another job (`build_arm_debug`, `build_arm_asan_ubsan`, ...) for other build types. A `403` means that commit has no build; the loop goes on to the previous one.
