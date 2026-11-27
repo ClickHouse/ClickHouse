@@ -129,11 +129,13 @@ public:
     }
 
     /// Qualifies the names of a query sent to servers that use their own default database and replaces `currentDatabase()`.
-    /// Returns false, changing nothing, if a lambda may shadow a function whose call or arguments it rewrites.
+    /// Returns false, changing nothing, if a lambda may shadow a function whose call or arguments it rewrites,
+    /// or if a name it would rewrite may resolve to an expression or defines an alias.
     [[nodiscard]] bool tryBindQuerySentToOtherServers(ASTPtr & ast) const
     {
         if ((hasCurrentDatabaseCall(*ast) && hasNameThatMayResolveToLambda(*ast, isCurrentDatabaseName))
-            || hasNameThatMayResolveToLambda(*ast, isFunctionWithBoundArgumentsName))
+            || hasNameThatMayResolveToLambda(*ast, isFunctionWithBoundArgumentsName)
+            || hasArgumentThatCannotBeBound(*ast))
             return false;
 
         visit(ast);
@@ -476,6 +478,36 @@ private:
         for (const auto & child : ast.children)
         {
             if (hasNameThatMayResolveToLambda(*child, is_name))
+                return true;
+        }
+        return false;
+    }
+
+    /// The analyzer resolves a bare name on the right of `IN` or as a dictionary name as a column, an alias or a lambda parameter
+    /// first. A dictionary name literal with an alias is also the value of that alias.
+    static bool hasArgumentThatCannotBeBound(const IAST & ast)
+    {
+        if (const auto * function = ast.as<ASTFunction>(); function && function->arguments)
+        {
+            const auto & arguments = function->arguments->children;
+            const auto is_bare_identifier = [](const ASTPtr & argument)
+            {
+                const auto * identifier = dynamic_cast<const ASTIdentifier *>(argument.get());
+                return identifier && !identifier->compound();
+            };
+
+            if (functionIsInOrGlobalInOperator(function->name) && arguments.size() > 1 && is_bare_identifier(arguments[1]))
+                return true;
+            if (functionIsDictGet(function->name) && !arguments.empty()
+                && (is_bare_identifier(arguments[0]) || !arguments[0]->tryGetAlias().empty()))
+                return true;
+            if (function->name == "assignCentroid" && arguments.size() > 1 && !arguments[1]->tryGetAlias().empty())
+                return true;
+        }
+
+        for (const auto & child : ast.children)
+        {
+            if (hasArgumentThatCannotBeBound(*child))
                 return true;
         }
         return false;

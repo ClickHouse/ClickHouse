@@ -1,7 +1,10 @@
 dst
 centroid	600	0	700
+centroid_alias	600	0	700
 db	600	600	180300
 dict	600	0	1803000
+in_column	600	0	600
+in_lambda	600	0	3
 renamed	600	600	180300
 schema	600	600	180300
 shadow	600	0	180300
@@ -10,13 +13,17 @@ shadow_ident	600	0	180300
 shadow_in	600	0	360600
 shadow_param	600	0	180300
 shadow
+centroids_dict
 loc
 centroid	600	0	700
 db	600	600	180300
 dict	600	0	1803000
+dict_alias	600	0	1803000
+dict_ident	600	0	1
 in_subquery	299	0	89700
 in_table	299	0	89700
 shadow_dict	600	0	1800
+dct
 forwarded
 05951_1	1
 05951_2	1
@@ -26,4 +33,3 @@ forwarded
 05951_4	1
 05951_4a	1
 05951_5	1
-05951_6	1

@@ -75,6 +75,19 @@ INSERT INTO dst WITH ((a, b) -> a + b) AS notIn SELECT 'shadow_in', '', x NOT IN
 FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
 SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_2h';
 
+-- A name that may resolve to a column, an alias or a lambda parameter is not bound: these queries are not forwarded.
+INSERT INTO dst SELECT 'in_column', '', allow IN allow
+FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'allow UInt64')
+SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_2i';
+
+INSERT INTO dst SELECT 'in_lambda', '', indexOf(arrayMap(allow -> x IN allow, [[1], [2]]), 1)
+FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
+SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_2j';
+
+INSERT INTO dst SELECT 'centroid_alias', nm, assignCentroid([toFloat32(x), toFloat32(x)], 'centroids_dict' AS nm)
+FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
+SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_2k';
+
 INSERT INTO dst SELECT 'renamed', currentDatabase(), x AS database
 FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
 SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_2d';
@@ -97,6 +110,14 @@ INSERT INTO dist WITH ((d, a, k) -> length(d)) AS dictGetUInt64 SELECT 'shadow_d
 FROM fileCluster('test_cluster_two_shards_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
 SETTINGS parallel_distributed_insert_select = 2, distributed_foreground_insert = 1, log_comment = '05951_4b';
 
+INSERT INTO dist SELECT 'dict_alias', nm, dictGetUInt64('dct' AS nm, 'v', x)
+FROM fileCluster('test_cluster_two_shards_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
+SETTINGS parallel_distributed_insert_select = 2, distributed_foreground_insert = 1, log_comment = '05951_4c';
+
+INSERT INTO dist SELECT 'dict_ident', 'centroids_dict' AS dct, dictHas(dct, x)
+FROM fileCluster('test_cluster_two_shards_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
+SETTINGS parallel_distributed_insert_select = 2, distributed_foreground_insert = 1, log_comment = '05951_4d';
+
 INSERT INTO dist SELECT 'in_subquery', '', x
 FROM fileCluster('test_cluster_two_shards_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
 WHERE x IN (SELECT x FROM allow)
@@ -105,13 +126,15 @@ SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_5';
 INSERT INTO dist SELECT 'in_table', '', x
 FROM fileCluster('test_cluster_two_shards_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
 WHERE x IN allow
-SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_6';
+SETTINGS parallel_distributed_insert_select = 2, distributed_foreground_insert = 1, log_comment = '05951_6';
 
 SELECT 'dst';
 SELECT c, count(), countIf(s = currentDatabase()), sum(x) FROM dst GROUP BY c ORDER BY c;
 SELECT DISTINCT s FROM dst WHERE c IN ('shadow', 'shadow_ident', 'shadow_param');
+SELECT DISTINCT s FROM dst WHERE c = 'centroid_alias';
 SELECT 'loc';
 SELECT c, count(), countIf(s = currentDatabase()), sum(x) FROM loc GROUP BY c ORDER BY c;
+SELECT DISTINCT s FROM loc WHERE c = 'dict_alias';
 
 -- The queries that are expected to be forwarded were forwarded: the nodes ran the INSERT SELECT text itself.
 SYSTEM FLUSH LOGS query_log;
