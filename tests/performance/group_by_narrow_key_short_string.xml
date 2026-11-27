@@ -1,4 +1,4 @@
-<test>
+<test max_query_seconds="60">
     <!-- `GROUP BY` a `UInt32` and a `String` of 12 to 15 bytes, such as an ID or a date and a short name or code. The
          `keys32_packed_string` method keeps such strings inline in its keys; a wider fixed-width part leaves room for
          11 bytes only, and longer strings are stored out of line. The keys have 200 thousand groups in `k`, `s` and
@@ -11,7 +11,14 @@
          of each row instead.
 
          A `GROUP BY` without aggregate functions takes the key-only form of the method, whose cells hold the keys
-         alone. -->
+         alone.
+
+         The last query is ClickBench Q18 without the adaptive aggregator: a `UInt64`, a `UInt8` and a `String`, which
+         take the `keys128_packed_string` method, on the 100 million rows of `hits_100m_single`. It has far more
+         groups than the queries above, so its two-level buckets are large enough for the cost of merging the tables
+         of the threads into a bucket that was not reserved to show (see `Aggregator::mergeBucketImpl` and
+         https://github.com/ClickHouse/ClickHouse/issues/133908). `max_query_seconds` gives the query room on a
+         server without the reserve. -->
 
     <create_query>CREATE TABLE narrow_key_short_string (k UInt32, s String, k2 UInt32, s2 String) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE narrow_key_low_cardinality_string (k UInt32, s LowCardinality(String), w UInt32, t LowCardinality(String), v UInt32) ENGINE = MergeTree ORDER BY tuple()</create_query>
@@ -26,6 +33,7 @@
     <query>SELECT k, s, count() FROM narrow_key_low_cardinality_string WHERE w % 2 = 0 GROUP BY k, s FORMAT Null</query>
     <query>SELECT w, t, sum(v) FROM narrow_key_low_cardinality_string GROUP BY w, t FORMAT Null</query>
     <query>SELECT k, s FROM narrow_key_low_cardinality_string GROUP BY k, s FORMAT Null</query>
+    <query>SELECT UserID, toMinute(EventTime) AS m, SearchPhrase, count() FROM hits_100m_single GROUP BY UserID, m, SearchPhrase ORDER BY count() DESC LIMIT 10 SETTINGS enable_adaptive_aggregator = 0 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS narrow_key_short_string</drop_query>
     <drop_query>DROP TABLE IF EXISTS narrow_key_low_cardinality_string</drop_query>
