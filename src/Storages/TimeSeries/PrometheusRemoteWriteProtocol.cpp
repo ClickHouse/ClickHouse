@@ -7,6 +7,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
 #include <Core/DecimalFunctions.h>
@@ -31,6 +32,11 @@
 
 #include <chrono>
 
+
+namespace ProfileEvents
+{
+    extern const Event PrometheusRemoteWriteDroppedExemplars;
+}
 
 namespace DB
 {
@@ -238,10 +244,14 @@ Block makeBlock(
     return block;
 }
 
-void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutablePtr & context)
+/// Calls `on_accepted` once the block is stored; for an async insert that is when its flush succeeds.
+void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutablePtr & context, std::function<void()> on_accepted)
 {
     if (!block.rows())
+    {
+        on_accepted();
         return;
+    }
 
     auto insert_query = make_intrusive<ASTInsertQuery>();
     insert_query->table_id = storage.getStorageID();
@@ -263,7 +273,7 @@ void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutableP
     {
         if (async_insert)
         {
-            auto result = queue->pushQueryWithBlock(ast, std::move(block), context);
+            auto result = queue->pushQueryWithBlock(ast, std::move(block), context, /*queued_data_tracker=*/ nullptr, std::move(on_accepted));
             if (result.status != AsynchronousInsertQueue::PushResult::OK)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result of pushing a block to the asynchronous insert queue");
 
@@ -289,6 +299,7 @@ void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutableP
             executor.start();
             executor.push(std::move(block));
             executor.finish();
+            on_accepted();
         }
     }
     catch (...)
@@ -329,14 +340,25 @@ void PrometheusRemoteWriteProtocol::write(
 
     auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
-    insertBlock(makeBlock(time_series, metrics_metadata, *metadata, samples_column_name), *time_series_storage, getContext());
+    auto block = makeBlock(time_series, metrics_metadata, *metadata, samples_column_name);
+
+    size_t num_exemplars = 0;
+    for (const auto & element : time_series)
+        num_exemplars += element.exemplars_size();
+
+    insertBlock(std::move(block), *time_series_storage, getContext(), [num_exemplars]
+    {
+        if (num_exemplars)
+            ProfileEvents::increment(ProfileEvents::PrometheusRemoteWriteDroppedExemplars, num_exemplars);
+    });
 
     LOG_TRACE(
         log,
-        "{}: {} time series and {} metrics metadata written",
+        "{}: {} time series and {} metrics metadata written, {} exemplars dropped",
         storage_id.getNameForLogs(),
         time_series.size(),
-        metrics_metadata.size());
+        metrics_metadata.size(),
+        num_exemplars);
 }
 
 }

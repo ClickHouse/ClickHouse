@@ -192,7 +192,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
 
             if (offset_in_compressed_file || offset_in_decompressed_block)
             {
-                CompressedReadBufferFromFile compressed_file(std::move(rb));
+                CompressedReadBufferFromFile compressed_file(std::move(rb), /* allow_different_codecs */ true);
                 if (options.contains("no-checksum-validation"))
                     compressed_file.disableChecksumming();
                 compressed_file.seek(offset_in_compressed_file, offset_in_decompressed_block);
@@ -200,7 +200,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             }
             else
             {
-                CompressedReadBuffer from(*rb);
+                CompressedReadBuffer from(*rb, /* allow_different_codecs */ true);
                 if (options.contains("no-checksum-validation"))
                     from.disableChecksumming();
                 copyData(from, *wb);

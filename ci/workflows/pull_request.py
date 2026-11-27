@@ -130,7 +130,6 @@ workflow = Workflow.Config(
             for job in JobConfigs.build_llvm_coverage_job
         ],
         # TODO: stabilize new jobs and remove set_allow_failure
-        JobConfigs.lightweight_functional_tests_job,
         *[j.set_allow_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
         *[
             job.set_run_after(
