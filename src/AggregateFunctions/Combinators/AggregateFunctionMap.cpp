@@ -208,7 +208,6 @@ public:
         return types.back();
     }
 
-    /// Returns the nested state of the key, creating it if the key is new.
     ALWAYS_INLINE AggregateDataPtr findOrCreateNestedPlace(Data & data, const typename Data::SearchType & key, Arena * arena) const
     {
         auto it = data.merged_maps.find(key);
@@ -299,8 +298,7 @@ public:
         }
     }
 
-    /// A batch remembers the key at each of the first positions of a map with its nested state. A key equal to the one
-    /// remembered for its position skips the lookup, which is valid while the rows go to the same state.
+    /// The last key and its nested state per map position; valid only while the rows go to the same state.
     static constexpr size_t cached_key_positions = 16;
 
     struct KeyPositionCache
@@ -319,7 +317,6 @@ public:
             return CompareHelperEqual<KeyType>{}(lhs, rhs);
     }
 
-    /// Adds the elements [begin, end) of the map column, the map of one row, to the state `data`.
     void addMapCached(
         Data & data, const IColumn & key_column, const IColumn ** nested_columns, size_t begin, size_t end,
         KeyPositionCache & cache, Arena * arena) const
@@ -642,7 +639,6 @@ public:
         nested_func->destroy(tmp_place);
     }
 
-    /// `String` keys are sorted together with their nested states, so finalization neither copies them nor looks them up again.
     using SortedKey = std::conditional_t<std::is_same_v<KeyType, String>, std::pair<std::string_view, AggregateDataPtr>, KeyType>;
 
     static AggregateDataPtr nestedPlaceOf(decltype(Data::merged_maps) & merged_maps, const SortedKey & key)
