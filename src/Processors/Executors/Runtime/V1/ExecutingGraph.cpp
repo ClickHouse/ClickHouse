@@ -1,5 +1,4 @@
 #include <Common/StackWithMemoryTracking.h>
-#include <Common/DevectorWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/Executors/Runtime/V1/ExecutingGraph.h>
@@ -68,10 +67,62 @@ void ExecutingGraph::detachSpillables()
     spill_state.detachSpillables();
 }
 
-void ExecutingGraph::scheduleSpills(Queue & queue)
+void ExecutingGraph::scheduleSpills(Queue & queue, size_t thread_num)
 {
-    std::shared_lock nodes_lock(nodes_mutex);
+    auto thread_nodes_mutex = nodes_mutex.forThread(thread_num);
+    std::shared_lock nodes_lock(thread_nodes_mutex);
     spill_state.scheduleSpills(queue);
+}
+
+void ExecutingGraph::NodesMutex::init(size_t num_threads)
+{
+    thread_mutexes.reset();
+    num_thread_mutexes = 0;
+
+    if (num_threads <= 1)
+        return;
+
+    thread_mutexes = std::make_unique<ThreadMutex[]>(num_threads);
+    num_thread_mutexes = num_threads;
+}
+
+ExecutingGraph::NodesMutex::ForThread ExecutingGraph::NodesMutex::forThread(size_t thread_num)
+{
+    if (!num_thread_mutexes)
+        return ForThread(nullptr);
+
+    chassert(thread_num < num_thread_mutexes);
+    return ForThread(&thread_mutexes[thread_num].mutex);
+}
+
+void ExecutingGraph::NodesMutex::ForThread::lock_shared() TSA_NO_THREAD_SAFETY_ANALYSIS
+{
+    if (mutex)
+        mutex->lock_shared();
+}
+
+void ExecutingGraph::NodesMutex::ForThread::unlock_shared() TSA_NO_THREAD_SAFETY_ANALYSIS
+{
+    if (mutex)
+        mutex->unlock_shared();
+}
+
+void ExecutingGraph::NodesMutex::lock() TSA_NO_THREAD_SAFETY_ANALYSIS
+{
+    /// Always in the same order, so that two writers do not wait for each other.
+    for (size_t i = 0; i < num_thread_mutexes; ++i)
+        thread_mutexes[i].mutex.lock();
+}
+
+void ExecutingGraph::NodesMutex::unlock() TSA_NO_THREAD_SAFETY_ANALYSIS
+{
+    for (size_t i = num_thread_mutexes; i > 0; --i)
+        thread_mutexes[i - 1].mutex.unlock();
+}
+
+std::unique_lock<std::mutex> ExecutingGraph::lockStatus(Node & node) const
+{
+    return multithreaded ? std::unique_lock(node.status_mutex) : std::unique_lock<std::mutex>();
 }
 
 ExecutingGraph::SpillState::SpillState(Nodes & nodes_, MemoryReservation * memory_reservation_)
@@ -145,13 +196,14 @@ void ExecutingGraph::SpillState::unregisterSpillables(Node & node)
 
 bool ExecutingGraph::SpillState::scheduleSpill(Node & node, ISpillable * spillable, Queue & queue) const
 {
-    /// Caller owns `status_mutex`. The owning status excludes both `prepare` and `work`.
+    /// Caller owns `status_mutex`, or it is the only thread that updates the graph.
+    /// The owning status excludes both `prepare` and `work`.
     if (!memory_reservation || node.status != ExecStatus::Idle
         || !memory_reservation->scheduleSpill(spillable, node.processor()))
         return false;
     node.spill_target = spillable;
     node.status = ExecStatus::Executing;
-    queue.push(node.processor());
+    queue.push(&node);
     return true;
 }
 
@@ -177,18 +229,12 @@ void ExecutingGraph::SpillState::scheduleSpills(Queue & queue)
     {
         for (auto * node : candidate.owners)
         {
+            /// Spills are rare, so the mutex is locked even if a single thread updates the graph.
             std::lock_guard lock(node->status_mutex);
             if (scheduleSpill(*node, candidate.spillable, queue))
                 break;
         }
     }
-}
-
-ISpillable * ExecutingGraph::getSpillTarget(const IProcessor & processor)
-{
-    std::shared_lock lock(nodes_mutex);
-    /// The caller already owns this node's execution slot.
-    return processors_map.at(&processor)->spill_target;
 }
 
 ExecutingGraph::Node & ExecutingGraph::addNode(Processors::iterator processor_iter)
@@ -309,7 +355,7 @@ void ExecutingGraph::removeAffectedEdges(Node & node, const UnorderedSetWithMemo
     std::erase_if(node.direct_edges, is_removed_edge);
 }
 
-ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(DevectorWithMemoryTracking<Node *> & stack, Node & cur_node)
+ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(VectorWithMemoryTracking<Node *> & stack, Node & cur_node)
 {
     IProcessor::PipelineUpdate update = cur_node.processor()->updatePipeline();
 
@@ -342,7 +388,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(DevectorWithMemo
 }
 
 ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipelineImpl(
-    DevectorWithMemoryTracking<Node *> & stack, Node & cur_node, IProcessor::PipelineUpdate & update)
+    VectorWithMemoryTracking<Node *> & stack, Node & cur_node, IProcessor::PipelineUpdate & update)
 {
     IProcessor::CancelReason cancel_reason_if_cancelled = IProcessor::CancelReason::NotCancelled;
     {
@@ -411,7 +457,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipelineImpl(
             if (updated_node->status == ExecutingGraph::ExecStatus::Idle)
             {
                 updated_node->status = ExecutingGraph::ExecStatus::Preparing;
-                stack.push_front(updated_node);
+                stack.push_back(updated_node);
             }
         }
     }
@@ -421,7 +467,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipelineImpl(
         return UpdateNodeStatus::Cancelled;
 
     /// Add itself back to be prepared again.
-    stack.push_front(&cur_node);
+    stack.push_back(&cur_node);
 
     return UpdateNodeStatus::Done;
 }
@@ -475,8 +521,12 @@ void ExecutingGraph::accountFinishedProcessorInGroup(const ProcessorPtr & proces
     group_it->second->not_finished.fetch_sub(1);
 }
 
-void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
+void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue, size_t num_threads)
 {
+    /// The threads are not started yet.
+    multithreaded = num_threads > 1;
+    nodes_mutex.init(num_threads);
+
     StackWithMemoryTracking<Node *> stack;
     UpdateNodeBuffers buffers;
 
@@ -496,7 +546,7 @@ void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
         Node * node = stack.top();
         stack.pop();
 
-        updateNode(*node->processor(), queue, async_queue, buffers);
+        updateNode(*node, queue, async_queue, buffers, 0);
     }
 }
 
@@ -521,7 +571,8 @@ void ExecutingGraph::UpdateNodeBuffers::reset()
     resetBuffer(pending_expansion);
 }
 
-ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial, Queue & queue, Queue & async_queue, UpdateNodeBuffers & buffers)
+ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(
+    Node & initial, Queue & queue, Queue & async_queue, UpdateNodeBuffers & buffers, size_t thread_num)
 {
     Processors delayed_destruction;
     auto & updated_edges = buffers.updated_edges;
@@ -531,10 +582,11 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial
     /// The buffers may be left non-empty by a previous call that exited early or threw.
     buffers.reset();
 
-    std::shared_lock read_lock(nodes_mutex);
+    auto thread_nodes_mutex = nodes_mutex.forThread(thread_num);
+    std::shared_lock read_lock(thread_nodes_mutex);
 
-    /// Traversal starts from the node related to updated processor
-    updated_processors.push_back(processors_map.at(&initial));
+    /// Traversal starts from the node of the updated processor.
+    updated_processors.push_back(&initial);
 
     while (!updated_processors.empty() || !updated_edges.empty())
     {
@@ -542,14 +594,14 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial
 
         if (updated_processors.empty())
         {
-            auto * edge = updated_edges.front();
-            updated_edges.pop_front();
+            auto * edge = updated_edges.back();
+            updated_edges.pop_back();
 
             /// Here we have ownership on edge, but node can be concurrently accessed.
 
             auto & node = *edge->to;
 
-            std::unique_lock lock(node.status_mutex);
+            auto lock = lockStatus(node);
 
             ExecutingGraph::ExecStatus status = node.status;
 
@@ -563,7 +615,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial
                 if (status == ExecutingGraph::ExecStatus::Idle)
                 {
                     node.status = ExecutingGraph::ExecStatus::Preparing;
-                    updated_processors.push_front(edge->to);
+                    updated_processors.push_back(edge->to);
                     stack_top_lock = std::move(lock);
                 }
                 else
@@ -573,8 +625,8 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial
 
         if (!updated_processors.empty())
         {
-            Node * current = updated_processors.front();
-            updated_processors.pop_front();
+            Node * current = updated_processors.back();
+            updated_processors.pop_back();
 
             /// In this method we have ownership on node.
             auto & node = *current;
@@ -582,7 +634,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial
             bool need_update_pipeline = false;
 
             if (!stack_top_lock)
-                stack_top_lock.emplace(node.status_mutex);
+                stack_top_lock.emplace(lockStatus(node));
 
             {
                 std::unique_lock<std::mutex> lock(std::move(*stack_top_lock));
@@ -644,13 +696,13 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial
                     case IProcessor::Status::Ready:
                     {
                         node.status = ExecutingGraph::ExecStatus::Executing;
-                        queue.push(node.processor());
+                        queue.push(&node);
                         break;
                     }
                     case IProcessor::Status::Async:
                     {
                         node.status = ExecutingGraph::ExecStatus::Executing;
-                        async_queue.push(node.processor());
+                        async_queue.push(&node);
                         break;
                     }
                     case IProcessor::Status::UpdatePipeline:
@@ -674,14 +726,14 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial
                     for (auto it = node.post_updated_output_ports.rbegin(); it != node.post_updated_output_ports.rend(); ++it)
                     {
                         auto * edge = static_cast<ExecutingGraph::Edge *>(*it);
-                        updated_edges.push_front(edge);
+                        updated_edges.push_back(edge);
                         edge->update_info.trigger();
                     }
 
                     for (auto it = node.post_updated_input_ports.rbegin(); it != node.post_updated_input_ports.rend(); ++it)
                     {
                         auto * edge = static_cast<ExecutingGraph::Edge *>(*it);
-                        updated_edges.push_front(edge);
+                        updated_edges.push_back(edge);
                         edge->update_info.trigger();
                     }
 

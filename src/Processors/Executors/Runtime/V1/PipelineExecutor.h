@@ -80,9 +80,7 @@ private:
     std::once_flag cancel_exception_once;
     std::exception_ptr cancel_exception;
 
-    /// This queue can grow a lot and lead to OOM, so it is allocated through a tracking
-    /// allocator that throws instead of overcommitting.
-    using Queue = DevectorQueueWithMemoryTracking<IProcessor *>;
+    using Queue = ExecutingGraph::Queue;
 
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.

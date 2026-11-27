@@ -1,0 +1,5 @@
+<test>
+    <!-- The overhead of the pipeline executor per block: it updates the graph of processors after every executed task. -->
+    <query>SELECT sum(number) FROM (SELECT * FROM numbers_mt(1000000)) WHERE number % 2 = 0 SETTINGS max_threads = 1, max_block_size = 16 FORMAT Null</query>
+    <query>SELECT sum(number) FROM (SELECT * FROM numbers_mt(10000000)) WHERE number % 2 = 0 SETTINGS max_threads = 16, max_block_size = 16 FORMAT Null</query>
+</test>

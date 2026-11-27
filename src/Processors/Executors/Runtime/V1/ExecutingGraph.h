@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Common/DevectorWithMemoryTracking.h>
+#include <Common/CacheLine.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/QueueWithMemoryTracking.h>
 #include <Common/ListWithMemoryTracking.h>
 #include <Processors/Port.h>
 #include <Processors/IProcessor.h>
@@ -12,6 +11,7 @@
 #include <Common/SharedMutex.h>
 #include <atomic>
 #include <list>
+#include <memory>
 #include <mutex>
 
 
@@ -26,8 +26,11 @@ namespace Runtime::V1
 
 class ExecutingGraph
 {
+public:
+    /// Graph node. Represents single Processor. It is defined below.
     struct Node;
 
+private:
     /// Edge represents connection between OutputPort and InputPort.
     /// For every connection, two edges are created: direct and backward (it is specified by backward flag).
     struct Edge
@@ -72,11 +75,18 @@ class ExecutingGraph
     /// Forward decl so Node can hold an iterator into the owning Nodes list.
     using Nodes = ListWithMemoryTracking<struct Node>;
 
+public:
     /// Graph node. Represents single Processor.
+    /// The tasks of the executor are the nodes whose processors have to be executed: the executor keeps
+    /// the node of a processor, so that the graph does not look it up when the processor has been executed.
     struct Node
     {
         /// Iterator into the graph's processors list.
         Processors::iterator processor_iter{};
+
+        /// The processor itself: the executor reads it without the mutex of the graph,
+        /// while an expansion of the pipeline may change the list of processors.
+        IProcessor * processor_ptr = nullptr;
 
         /// Iterator into the graph's nodes list pointing at this node.
         Nodes::iterator self_iter{};
@@ -84,13 +94,14 @@ class ExecutingGraph
         /// Stable, monotonically-assigned id. Never reused. Used only for diagnostics (logs, system.processors_profile_log).
         uint64_t processors_id = 0;
 
-        [[nodiscard]] IProcessor * processor() const { return processor_iter->get(); }
+        [[nodiscard]] IProcessor * processor() const { return processor_ptr; }
 
         /// Direct edges are for output ports, back edges are for input ports.
         Edges direct_edges;
         Edges back_edges;
 
-        /// Current status. It is accessed concurrently, using mutex.
+        /// Current status. It is accessed concurrently, using mutex,
+        /// unless a single thread updates the graph (see `multithreaded`).
         ExecStatus status = ExecStatus::Idle;
         std::mutex status_mutex;
         /// Non-null for an independently scheduled spill; normal `work` must not run for this task.
@@ -114,27 +125,53 @@ class ExecutingGraph
         Port::UpdateInfo::UpdateList post_updated_output_ports;
 
         Node(Processors::iterator processor_iter_, uint64_t processors_id_)
-            : processor_iter(processor_iter_), processors_id(processors_id_)
+            : processor_iter(processor_iter_), processor_ptr(processor_iter_->get()), processors_id(processors_id_)
         {
         }
     };
 
-
-public:
+    /// A queue of tasks. The graph fills it, and then the executor takes all the tasks out of it, after every
+    /// executed task. Its memory is kept in between and is used again from the start once the queue is empty,
+    /// so that pushing a task does not allocate memory or move the other tasks every time.
     /// This queue can grow a lot and lead to OOM, so it is allocated through a tracking
     /// allocator that throws instead of overcommitting.
-    using Queue = DevectorQueueWithMemoryTracking<IProcessor *>;
+    class Queue
+    {
+    public:
+        void push(Node * node) { nodes.push_back(node); }
+
+        [[nodiscard]] Node * front() const { return nodes[head]; }
+
+        void pop()
+        {
+            ++head;
+            if (head == nodes.size())
+            {
+                nodes.clear();
+                head = 0;
+            }
+        }
+
+        [[nodiscard]] bool empty() const { return head == nodes.size(); }
+        [[nodiscard]] size_t size() const { return nodes.size() - head; }
+
+    private:
+        VectorWithMemoryTracking<Node *> nodes;
+        /// The index of the first task that is not taken yet.
+        size_t head = 0;
+    };
 
     ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_, MemoryReservation * memory_reservation_);
     ~ExecutingGraph();
 
     /// Called after workers stop, including cancellation and exception paths.
     void detachSpillables();
-    void scheduleSpills(Queue & queue);
-    ISpillable * getSpillTarget(const IProcessor & processor);
+    /// `thread_num` is the number of the calling thread, as in `updateNode`.
+    void scheduleSpills(Queue & queue, size_t thread_num);
 
     /// Traverse graph the first time to update all the childless nodes.
-    void initializeExecution(Queue & queue, Queue & async_queue);
+    /// `num_threads` is the maximum number of threads that will update the graph.
+    void initializeExecution(Queue & queue, Queue & async_queue, size_t num_threads);
 
     enum class UpdateNodeStatus
     {
@@ -146,8 +183,9 @@ public:
     /// so that memory is not allocated every time a processor is updated.
     struct UpdateNodeBuffers
     {
-        DevectorWithMemoryTracking<Edge *> updated_edges;
-        DevectorWithMemoryTracking<Node *> updated_processors;
+        /// Stacks: the last added element is processed first.
+        VectorWithMemoryTracking<Edge *> updated_edges;
+        VectorWithMemoryTracking<Node *> updated_processors;
         VectorWithMemoryTracking<Node *> pending_expansion;
 
         /// A buffer that has grown larger than this number of elements is released instead of being kept,
@@ -158,10 +196,11 @@ public:
         void reset();
     };
 
-    /// Update `initial` processor (call IProcessor::prepare).
+    /// Update the processor of the `initial` node (call `IProcessor::prepare`).
     /// Check parents and children of current processor and push them to stacks if they also need to be updated.
     /// If processor wants to be expanded, lock will be upgraded to get write access to pipeline.
-    UpdateNodeStatus updateNode(IProcessor & initial, Queue & queue, Queue & async_queue, UpdateNodeBuffers & buffers);
+    /// `thread_num` is the number of the calling thread, less than `num_threads` of `initializeExecution`.
+    UpdateNodeStatus updateNode(Node & initial, Queue & queue, Queue & async_queue, UpdateNodeBuffers & buffers, size_t thread_num);
 
     /// Cancel every processor with the given reason.
     void cancel(IProcessor::CancelReason reason);
@@ -221,8 +260,8 @@ private:
 
     /// Update graph after processor `node` returned UpdatePipeline status.
     /// All new nodes and nodes with updated ports are pushed into stack.
-    UpdateNodeStatus updatePipeline(DevectorWithMemoryTracking<Node *> & stack, Node & node);
-    UpdateNodeStatus updatePipelineImpl(DevectorWithMemoryTracking<Node *> & stack, Node & node, IProcessor::PipelineUpdate & update);
+    UpdateNodeStatus updatePipeline(VectorWithMemoryTracking<Node *> & stack, Node & node);
+    UpdateNodeStatus updatePipelineImpl(VectorWithMemoryTracking<Node *> & stack, Node & node, IProcessor::PipelineUpdate & update);
 
     /// Shared with QueryPipeline.
     std::shared_ptr<Processors> processors;
@@ -243,7 +282,56 @@ private:
     /// Monotonic counter for assigning Node::processors_id.
     uint64_t next_node_id = 0;
 
-    SharedMutex nodes_mutex;
+    /// A readers-writer mutex for the structure of the graph: the lists of nodes and edges, `processors_map` and
+    /// `removed_processors`. Every thread reads the structure after every executed task, and it is changed only
+    /// when the pipeline is expanded or processors are removed from it. With a single shared mutex, all the threads
+    /// would write to its cache line just to read the graph. So there is a mutex for every thread: a reader
+    /// locks only the mutex of its thread, and a writer locks the mutexes of all the threads.
+    /// The writer also has exclusive access to every node, as all the nodes are updated under the reader lock.
+    class NodesMutex
+    {
+    public:
+        /// What a thread locks to read the graph.
+        class ForThread
+        {
+        public:
+            explicit ForThread(SharedMutex * mutex_) : mutex(mutex_) {}
+
+            void lock_shared();
+            void unlock_shared();
+
+        private:
+            SharedMutex * mutex;
+        };
+
+        /// Called before the threads start. Nothing is locked if a single thread updates the graph.
+        void init(size_t num_threads);
+
+        ForThread forThread(size_t thread_num);
+
+        /// Exclusive ownership.
+        void lock();
+        void unlock();
+
+    private:
+        struct alignas(CH_CACHE_LINE_SIZE) ThreadMutex
+        {
+            SharedMutex mutex;
+        };
+
+        std::unique_ptr<ThreadMutex[]> thread_mutexes;
+        size_t num_thread_mutexes = 0;
+    };
+
+    NodesMutex nodes_mutex;
+
+    /// Whether several threads update the graph. If not, `updateNode` locks neither `nodes_mutex` nor the mutexes
+    /// of the nodes: it is called after every executed task, and the locks would be a noticeable part of its time.
+    /// `processors_mutex` is locked regardless, because `cancel` is called from other threads.
+    bool multithreaded = false;
+
+    /// Lock the status of a node, unless a single thread updates the graph.
+    std::unique_lock<std::mutex> lockStatus(Node & node) const;
 
     /// Set when `updatePipeline` threw halfway through recording the processors an expansion
     /// added (an allocation failed, for example): the parent's ports are already connected to
