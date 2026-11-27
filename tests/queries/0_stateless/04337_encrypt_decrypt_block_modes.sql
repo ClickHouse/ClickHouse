@@ -220,9 +220,9 @@ SELECT
         failure = 4 ? 'wrong aad' : aad) AS result
 ORDER BY n;
 
--- Empty plaintext encrypts to the tag only, and empty input decrypts to empty.
+-- Empty plaintext encrypts to the tag only, and `tryDecrypt` returns NULL for input without a tag.
 SELECT
     hex(encrypt('aes-128-gcm', '', 'key-key-key-key+', 'iviviviviviv')),
     hex(encrypt('aes-128-gcm', '', 'key-key-key-key+', 'iviviviviviv', 'aad')),
-    decrypt('aes-128-gcm', '', 'key-key-key-key+', 'iviviviviviv') = '',
+    tryDecrypt('aes-128-gcm', '', 'key-key-key-key+', 'iviviviviviv') IS NULL,
     decrypt('aes-128-gcm', encrypt('aes-128-gcm', '', 'key-key-key-key+', 'iviviviviviv'), 'key-key-key-key+', 'iviviviviviv') = '';

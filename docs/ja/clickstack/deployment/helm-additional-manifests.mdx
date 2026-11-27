@@ -14,9 +14,7 @@ keywords: ['ClickStack 追加マニフェスト', 'Helm カスタムリソース
 
 `additionalManifests` を使うと、ClickStack チャートとあわせて任意の Kubernetes オブジェクトをデプロイできます。これは、チャートが標準ではテンプレート化していないリソース (`NetworkPolicy`、`HorizontalPodAutoscaler`、`ServiceAccount`、`PodMonitor`、カスタム `Ingress` オブジェクトなど) や、その他の Kubernetes API オブジェクトをデプロイする場合に利用します。
 
-<div id="how-it-works">
-  ## 仕組み
-</div>
+## 仕組み {#how-it-works}
 
 `additionalManifests` の各エントリは、完全な Kubernetes リソース定義です。このチャートでは、次の処理が行われます。
 
@@ -40,9 +38,7 @@ additionalManifests:
       release: '{{ .Release.Name }}'
 ```
 
-<div id="values-file-constraints">
-  ## 値ファイルの制約
-</div>
+## 値ファイルの制約 {#values-file-constraints}
 
 `additionalManifests` は values ファイルで設定され、values ファイルは `tpl` が実行される前に YAML として解析されます。
 
@@ -63,9 +59,7 @@ labels:
   {{- include "clickstack.labels" . | nindent 2 }}
 ```
 
-<div id="available-chart-helpers">
-  ## 利用可能なチャートヘルパー
-</div>
+## 利用可能なチャートヘルパー {#available-chart-helpers}
 
 これらのヘルパーは `templates/_helpers.tpl` で定義されています。
 
@@ -80,13 +74,9 @@ labels:
 | `clickstack.clickhouse.fullname` | ClickHouse CR 名      | クォート付きスカラー内で安全       |
 | `clickstack.otel.fullname`       | OTel collector 名     | クォート付きスカラー内で安全       |
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
-<div id="serviceaccount">
-  ### ServiceAccount
-</div>
+### ServiceAccount {#serviceaccount}
 
 ```yaml
 additionalManifests:
@@ -102,11 +92,9 @@ additionalManifests:
         eks.amazonaws.com/role-arn: "arn:aws:iam::123456789:role/my-role"
 ```
 
-<div id="networkpolicy">
-  ### NetworkPolicy
-</div>
+### NetworkPolicy {#networkpolicy}
 
-HyperDXポッドへの受信トラフィックを制限します:
+ClickStack UIポッドへの受信トラフィックを制限します:
 
 ```yaml
 additionalManifests:
@@ -133,9 +121,7 @@ additionalManifests:
               port: 8000
 ```
 
-<div id="horizontalpodautoscaler">
-  ### HorizontalPodAutoscaler
-</div>
+### HorizontalPodAutoscaler {#horizontalpodautoscaler}
 
 ```yaml
 additionalManifests:
@@ -159,9 +145,7 @@ additionalManifests:
               averageUtilization: 75
 ```
 
-<div id="podmonitor">
-  ### PodMonitor (Prometheus Operator)
-</div>
+### PodMonitor (Prometheus Operator) {#podmonitor}
 
 ```yaml
 additionalManifests:
@@ -181,9 +165,7 @@ additionalManifests:
           interval: 30s
 ```
 
-<div id="aws-alb-ingress">
-  ### AWS ALB イングレス
-</div>
+### AWS ALB イングレス {#aws-alb-ingress}
 
 [AWS Load Balancer Controller](https://kubernetes-sigs.github.io/aws-load-balancer-controller/) を使用する場合は、チャートに組み込まれている nginx イングレスを無効にし、カスタムの ALB イングレスを定義します。
 
@@ -222,9 +204,7 @@ additionalManifests:
 
 内部OTel collector用イングレスとHPAを含むALBの完全な設定例については、[ALB の values 設定例](https://github.com/ClickHouse/ClickStack-helm-charts/tree/main/examples/alb-ingress)を参照してください。
 
-<div id="targetgroupbinding">
-  ### TargetGroupBinding
-</div>
+### TargetGroupBinding {#targetgroupbinding}
 
 明示的な `TargetGroupBinding` リソースが必要な ALB の構成では、
 
@@ -242,9 +222,7 @@ additionalManifests:
       targetType: ip
 ```
 
-<div id="advanced-wrapper-chart-templates">
-  ## 高度な使い方: ラッパーチャートテンプレート
-</div>
+## 高度な使い方: ラッパーチャートテンプレート {#advanced-wrapper-chart-templates}
 
 `include "clickstack.labels" . | nindent 4` のような構造用ヘルパーが必要な場合は、それらのブロックを values ファイルに直接記述するのではなく、ラッパーチャートテンプレート (`templates/*.yaml`) からレンダリングしてください。
 
@@ -261,13 +239,9 @@ data:
   appPort: "{{ .Values.hyperdx.ports.app }}"
 ```
 
-<div id="tips">
-  ## ヒント
-</div>
+## ヒント {#tips}
 
-<div id="helm-hooks">
-  ### Helm フック
-</div>
+### Helm フック {#helm-hooks}
 
 各 `additionalManifests` エントリは、個別の YAML ドキュメントとしてレンダリングされます。インストール時やアップグレード時の順序を制御するために、Helm フックのアノテーションを追加できます。
 
@@ -290,21 +264,15 @@ additionalManifests:
               command: ["./migrate.sh"]
 ```
 
-<div id="crd-ordering">
-  ### CRD の順序
-</div>
+### CRD の順序 {#crd-ordering}
 
 追加マニフェストに Custom resources (たとえば `PodMonitor`) が含まれる場合は、インストールまたはアップグレードの前に、その CRD があらかじめクラスター内に存在している必要があります。
 
-<div id="combining-multiple-resources">
-  ### 複数のリソースを組み合わせる
-</div>
+### 複数のリソースを組み合わせる {#combining-multiple-resources}
 
 `additionalManifests` はリストです。各エントリはリストの順にレンダリングされ、それぞれが独立した YAML ドキュメントになります。
 
-<div id="next-steps">
-  ## 次のステップ
-</div>
+## 次のステップ {#next-steps}
 
 * [メインの Helm ガイド](/ja/clickstack/deployment/helm) - 基本インストール
 * [設定ガイド](/ja/clickstack/deployment/helm-configuration) - API キー、シークレット、イングレス

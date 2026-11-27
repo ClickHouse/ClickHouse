@@ -83,6 +83,8 @@ namespace DB
 namespace FailPoints
 {
     extern const char async_insert_pause_before_schedule[];
+    extern const char async_insert_throw_before_schedule[];
+    extern const char async_insert_flush_pause_after_set_user[];
 }
 
 namespace Setting
@@ -97,6 +99,7 @@ namespace Setting
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool async_insert_use_adaptive_busy_timeout;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
+    extern const SettingsBool implicit_transaction;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsString insert_deduplication_token;
     extern const SettingsUInt64Auto insert_quorum;
@@ -109,6 +112,7 @@ namespace Setting
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replica_offset;
+    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
 }
 
 namespace ErrorCodes
@@ -118,12 +122,14 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int INVALID_SETTING_VALUE;
+    extern const int NOT_IMPLEMENTED;
     extern const int USER_EXPIRED;
     extern const int UNSUPPORTED_PARAMETER;
 }
 
-static const NameSet settings_to_skip
+[[clang::no_destroy]] static const NameSet settings_to_skip
 {
     /// We don't consider this setting because it is only for deduplication,
     /// which means we can put two inserts with different tokens in the same block safely.
@@ -339,6 +345,22 @@ void AsynchronousInsertQueue::InsertData::Entry::resetChunk()
     query_parameters.clear();
 }
 
+void AsynchronousInsertQueue::InsertData::Entry::runOnSuccess()
+{
+    if (!on_success)
+        return;
+
+    try
+    {
+        on_success();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("AsynchronousInsertQueue", "Failed to run the callback of a successful asynchronous insert");
+    }
+    on_success = {};
+}
+
 void AsynchronousInsertQueue::InsertData::Entry::finish(ResultProgress result)
 {
     if (finished.exchange(true))
@@ -492,8 +514,6 @@ void AsynchronousInsertQueue::clear()
 void AsynchronousInsertQueue::scheduleDataProcessingJob(
     const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num, ThreadGroupPtr current_query_thread_group)
 {
-    FailPointInjection::pauseFailPoint(FailPoints::async_insert_pause_before_schedule);
-
     /// Intuitively it seems reasonable to process first inserted blocks first.
     /// We add new chunks in the end of entries list, so they are automatically ordered by creation time
     chassert(!data->entries.empty());
@@ -503,26 +523,36 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
     /// Doing it in one place keeps the metrics correct for all the flush triggers.
     discountFromQueueMetrics(*data);
 
-    /// Wrap 'unique_ptr' with 'shared_ptr' to make this
-    /// lambda copyable and allow to save it to the thread pool.
-    auto data_shared = std::make_shared<InsertDataPtr>(std::move(data));
-
-    /// The job's own copy of the key outlives the pushing query and is freed on a flush thread that can't
-    /// uncharge it, so allocate and release it the same way, charged to neither side.
-    std::shared_ptr<const InsertQuery> job_key;
-    {
-        MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_query;
-        job_key = std::shared_ptr<const InsertQuery>(
-            new InsertQuery(key),
-            [](const InsertQuery * ptr)
-            {
-                MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_flush;
-                delete ptr;
-            });
-    }
-
+    /// Owned by `data` or `data_shared`, both alive in the `catch` below.
+    auto & entries = data->entries;
+    std::shared_ptr<InsertDataPtr> data_shared;
     try
     {
+        FailPointInjection::pauseFailPoint(FailPoints::async_insert_pause_before_schedule);
+
+        /// Wrap 'unique_ptr' with 'shared_ptr' to make this
+        /// lambda copyable and allow to save it to the thread pool.
+        data_shared = std::make_shared<InsertDataPtr>(std::move(data));
+
+        fiu_do_on(FailPoints::async_insert_throw_before_schedule,
+        {
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected memory limit exceeded while scheduling an asynchronous insert flush");
+        });
+
+        /// The job's own copy of the key outlives the pushing query and is freed on a flush thread that can't
+        /// uncharge it, so allocate and release it the same way, charged to neither side.
+        std::shared_ptr<const InsertQuery> job_key;
+        {
+            MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_query;
+            job_key = std::shared_ptr<const InsertQuery>(
+                new InsertQuery(key),
+                [](const InsertQuery * ptr)
+                {
+                    MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_flush;
+                    delete ptr;
+                });
+        }
+
         pool.scheduleOrThrowOnError(
             [this, job_key, global_context, current_query_thread_group, shard_num, my_data = data_shared]() mutable
             {
@@ -537,7 +567,9 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
     }
     catch (...)
     {
-        for (auto & entry : (**data_shared).entries)
+        /// The batch has left the queue and never reaches `processData`, so release what it would have.
+        CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, entries.size());
+        for (auto & entry : entries)
             entry->finish(std::current_exception());
     }
 }
@@ -679,7 +711,11 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
 }
 
 AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushQueryWithBlock(
-    ASTPtr query, Block && block, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker)
+    ASTPtr query,
+    Block && block,
+    ContextPtr query_context,
+    std::unique_ptr<MemoryTracker> queued_data_tracker,
+    std::function<void()> on_success)
 {
     /// The flush copies queued blocks into full columns with `insertRangeFrom`, whose `assert_cast` would misread a
     /// wrapped column (`Sparse`, `Replicated`, ...) at any nesting depth. Every producer materializes before queuing.
@@ -694,7 +730,8 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushQueryWithBlock(
 
     query = query->clone();
     preprocessInsertQuery(query, query_context);
-    return pushDataChunk(std::move(query), std::move(block), std::move(query_context), std::move(queued_data_tracker));
+    return pushDataChunk(
+        std::move(query), std::move(block), std::move(query_context), std::move(queued_data_tracker), std::move(on_success));
 }
 
 std::vector<std::string> AsynchronousInsertQueue::getInsertQueryIds(InsertData & data)
@@ -706,7 +743,11 @@ std::vector<std::string> AsynchronousInsertQueue::getInsertQueryIds(InsertData &
 }
 
 AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
-    ASTPtr query, DataChunk && chunk, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker)
+    ASTPtr query,
+    DataChunk && chunk,
+    ContextPtr query_context,
+    std::unique_ptr<MemoryTracker> queued_data_tracker,
+    std::function<void()> on_success)
 {
     const auto & settings = query_context->getSettingsRef();
     validateSettings(settings, log);
@@ -733,6 +774,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
         settings[Setting::insert_deduplication_token],
         insert_query.format,
         std::move(queued_data_tracker));
+    entry->on_success = std::move(on_success);
 
     /// If data is parsed on client we don't care of format which is written
     /// in INSERT query. Replace it to put all such queries into one bucket in queue.
@@ -997,6 +1039,21 @@ void AsynchronousInsertQueue::validateSettings(const Settings & settings, Logger
 
     if (settings[Setting::async_insert_busy_timeout_decrease_rate] <= 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'async_insert_busy_timeout_decrease_rate' must be greater than zero");
+}
+
+bool AsynchronousInsertQueue::checkInsideTransaction(const ContextPtr & query_context)
+{
+    const auto & settings = query_context->getSettingsRef();
+    if (!query_context->getCurrentTransaction() && !settings[Setting::implicit_transaction])
+        return false;
+
+    if (settings[Setting::throw_on_unsupported_query_inside_transaction])
+    {
+        if (settings[Setting::implicit_transaction])
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
+    }
+    return true;
 }
 
 void AsynchronousInsertQueue::flush(const std::vector<StorageID> & tables)
@@ -1290,18 +1347,6 @@ try
 
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
-    /// Fail closed if the authentication method that queued this insert has expired between enqueue
-    /// and flush. The synchronous path re-checks per query in `Session::checkIfUserIsStillValid`; the
-    /// deferred flush has no session, so without this a token could enqueue data just before expiry
-    /// and have the server flush it afterwards. The per-method expiry is part of the batching key, so
-    /// every entry in this batch shares it and they all fail closed together. 0 means no expiry.
-    if (key.authentication_valid_until != 0)
-    {
-        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        if (now > key.authentication_valid_until)
-            throw Exception(ErrorCodes::USER_EXPIRED, "Authentication method used to submit the deferred insert has expired");
-    }
-
     bool internal = true;
     bool async_insert = true;
 
@@ -1328,19 +1373,44 @@ try
         insert_context.reset();
     });
 
-    /// Access rights must be checked for the user who executed the initial INSERT query.
-    if (key.user_id)
+    /// Rethrown first in the guarded block below, so a failed identity restore is logged and inserts nothing.
+    std::exception_ptr identity_exception;
+    try
     {
-        /// Replay the whole originating identity in one call: the external (pushed) roles, the
-        /// credential grant limit and its expiry are restored together with the user, so a limited
-        /// credential does not regain the full user's rights and a pushed-role session does not fail
-        /// role revalidation.
-        insert_context->setUser(*key.user_id, key.external_roles, key.authentication_grants, key.authentication_valid_until);
-        /// `current_roles` are the session's *effective* current roles, which already include the
-        /// external roles restored above. Re-apply them without the grant check: external roles are not
-        /// locally granted, so a checked re-apply would throw `SET_NON_GRANTED_ROLE`; the locally
-        /// granted current roles are kept and the external ones come from `setUser`.
-        insert_context->setCurrentRoles(key.current_roles, /*check_grants=*/ false);
+        /// Fail closed if the authentication method that queued this insert has expired between enqueue
+        /// and flush. The synchronous path re-checks per query in `Session::checkIfUserIsStillValid`; the
+        /// deferred flush has no session, so without this a token could enqueue data just before expiry
+        /// and have the server flush it afterwards. The per-method expiry is part of the batching key, so
+        /// every entry in this batch shares it and they all fail closed together. 0 means no expiry.
+        if (key.authentication_valid_until != 0)
+        {
+            const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            if (now > key.authentication_valid_until)
+                throw Exception(ErrorCodes::USER_EXPIRED, "Authentication method used to submit the deferred insert has expired");
+        }
+
+        /// Access rights must be checked for the user who executed the initial INSERT query.
+        if (key.user_id)
+        {
+            /// Replay the whole originating identity in one call: the external (pushed) roles, the
+            /// credential grant limit and its expiry are restored together with the user, so a limited
+            /// credential does not regain the full user's rights and a pushed-role session does not fail
+            /// role revalidation.
+            insert_context->setUser(*key.user_id, key.external_roles, key.authentication_grants, key.authentication_valid_until);
+            FailPointInjection::pauseFailPoint(FailPoints::async_insert_flush_pause_after_set_user);
+            /// `current_roles` are the session's *effective* current roles, which already include the
+            /// external roles restored above. Re-apply them without the grant check: external roles are not
+            /// locally granted, so a checked re-apply would throw `SET_NON_GRANTED_ROLE`; the locally
+            /// granted current roles are kept and the external ones come from `setUser`.
+            insert_context->setCurrentRoles(key.current_roles, /*check_grants=*/ false);
+        }
+    }
+    catch (...)
+    {
+        identity_exception = std::current_exception();
+        /// A partially restored identity must not be used to log the failure.
+        insert_context = Context::createCopy(global_context);
+        insert_context->makeQueryContext();
     }
 
     /// Context::setUser only restores the access-control identity, not the ClientInfo user
@@ -1505,6 +1575,9 @@ try
 
     try
     {
+        if (identity_exception)
+            std::rethrow_exception(identity_exception);
+
         interpreter = std::make_unique<InterpreterInsertQuery>(
             key.query,
             insert_context,
@@ -1565,6 +1638,14 @@ try
 
         LOG_DEBUG(log, "Flushed {} rows, {} bytes", num_rows, num_bytes);
         queue_shard_flush_time_history.updateWithCurrentTime();
+
+        /// Run the success callbacks before the profile counters are snapshotted by `logQueryFinish`,
+        /// so that the events they increment are attributed to this flush in `system.query_log`.
+        for (const auto & entry : data->entries)
+        {
+            if (!entry->isFinished())
+                entry->runOnSuccess();
+        }
 
         LOG_DEBUG(log, "Asynchronous insert query logQueryFinish query_kind '{}', 'query_id {}'", query_log_elem.query_kind, query_log_elem.client_info.current_query_id);
         logQueryFinish(query_log_elem, insert_context, key.query, std::move(pileline_), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal, /*log_as_internal=*/ internal);

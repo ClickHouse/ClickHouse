@@ -46,12 +46,13 @@ cache during merge.
 
 Use the batch sorting queue to reduce per-row queue overhead when merging sorted streams.
 
-Only applies to merges that do not change rows, i.e. plain `MergeTree`
-(`Ordinary` merge mode). It has no effect on engines with merge-time
-semantics such as `ReplacingMergeTree`, `CollapsingMergeTree`,
-`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`,
-`GraphiteMergeTree` and `VersionedCollapsingMergeTree`, which keep using the
-default queue regardless of this setting.
+Applies only to the merges in `Ordinary` merge mode: the merges of plain `MergeTree` parts, including
+the merges that drop or rewrite rows (lightweight deletes, TTL deletes, patch parts of lightweight
+updates and `OPTIMIZE ... DEDUPLICATE`), and the merges of normal projection parts. The merge
+algorithms of engines with merge-time semantics, such as `ReplacingMergeTree`, `CollapsingMergeTree`,
+`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree` and
+`VersionedCollapsingMergeTree`, and of aggregate projection parts choose their own sorting queue, so
+this setting has no effect on them.
 
 ## merge_workload {#merge_workload}
 

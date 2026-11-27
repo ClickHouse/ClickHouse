@@ -56,6 +56,13 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
+    /// A row whose result is NULL, or an unused dictionary entry of a `LowCardinality` argument, may hold a UInt64 that
+    /// does not fit Int64, and `executeImpl` would throw for it
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return !uint64ArgumentMayHoldUnusedValues(arguments);
+    }
+
     [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (is_utf8)
@@ -143,6 +150,10 @@ public:
     {
         ColumnPtr column_string = arguments[0].column;
         ColumnPtr column_length = arguments[1].column;
+
+        /// The length is read with IColumn::getInt() below, so a UInt64 value that does not fit
+        /// Int64 must be rejected here rather than read as a negative length.
+        checkIntegerArgumentFitsInt64(*column_length, name, "length");
 
         const ColumnConst * column_length_const = checkAndGetColumn<ColumnConst>(column_length.get());
 

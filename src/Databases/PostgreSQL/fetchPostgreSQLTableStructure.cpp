@@ -526,7 +526,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
                 "format_type(a.atttypid, a.atttypmod) AS data_type " /// data type
                 "FROM pg_index i "
                 "JOIN pg_attribute a ON a.attrelid = i.indrelid "
-                "AND a.attnum = ANY(i.indkey) "
+                "AND a.attnum = ANY(i.indkey[0:i.indnkeyatts - 1]) " /// key columns only, indkey also lists the INCLUDE columns
                 "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) AND i.indisprimary "
                 "ORDER BY array_position(i.indkey::int2[], a.attnum)", where); /// in the order of the index columns
 
@@ -549,7 +549,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "t.oid = ix.indrelid "
             "and i.oid = ix.indexrelid "
             "and a.attrelid = t.oid "
-            "and a.attnum = ANY(ix.indkey) "
+            "and a.attnum = ANY(ix.indkey[0:ix.indnkeyatts - 1]) " /// key columns only, as above
             "and t.relkind in ('r', 'p') " /// simple tables
             "and t.relname = {} " /// Connection is already done to a needed database, only table name is needed.
             "and t.relnamespace = {} "

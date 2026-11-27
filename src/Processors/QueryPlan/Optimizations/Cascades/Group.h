@@ -24,6 +24,7 @@ constexpr GroupId INVALID_GROUP_ID = std::numeric_limits<GroupId>::max();
 
 class GroupExpression;
 using GroupExpressionPtr = std::shared_ptr<GroupExpression>;
+using GroupExpressions = VectorWithMemoryTracking<GroupExpressionPtr>;
 
 struct ExpressionStatistics;
 
@@ -71,12 +72,12 @@ public:
     void dump(WriteBuffer & out, const CostConfig & cost_config, String indent = {}) const;
     [[nodiscard]] String dump(const CostConfig & cost_config) const;
 
-    VectorWithMemoryTracking<GroupExpressionPtr> logical_expressions;
-    VectorWithMemoryTracking<GroupExpressionPtr> physical_expressions;
+    GroupExpressions logical_expressions;
+    GroupExpressions physical_expressions;
 
     /// Best implementation for various required properties, indexed by distribution
     /// shape (node_count, is_replicated) for O(1) bucket lookup.
-    UnorderedMapWithMemoryTracking<UInt64, VectorWithMemoryTracking<GroupExpressionPtr>> best_implementations;
+    UnorderedMapWithMemoryTracking<UInt64, GroupExpressions> best_implementations;
 
     /// Statistics for this group - shared by all expressions in the group
     /// since they all represent the same logical result

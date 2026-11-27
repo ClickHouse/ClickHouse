@@ -5,6 +5,7 @@
 
 #include <stack>
 
+#include <Common/CacheBase.h>
 #include <Common/logger_useful.h>
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
@@ -31,6 +32,18 @@ namespace
     std::mutex expression_jit_mutex;
     /// See `aggregator_jit_instance` in `Aggregator.cpp` for the rationale of `shared_ptr` ownership.
     std::shared_ptr<CHJIT> expression_jit_instance;
+
+    /// How many times each expression was seen, so it is compiled only after `min_count_to_compile_expression` uses.
+    /// SLRU: expressions seen once (e.g. with distinct literals) are evicted before the ones seen more often.
+    using ExpressionCompileCounter = CacheBase<UInt128, std::atomic<UInt64>, UInt128Hash>;
+    constexpr size_t MAX_EXPRESSION_COMPILE_COUNTER_ENTRIES = 10000;
+
+    ExpressionCompileCounter & getExpressionCompileCounter()
+    {
+        static ExpressionCompileCounter counter(
+            CurrentMetrics::end(), CurrentMetrics::end(), MAX_EXPRESSION_COMPILE_COUNTER_ENTRIES, MAX_EXPRESSION_COMPILE_COUNTER_ENTRIES);
+        return counter;
+    }
 }
 
 static std::shared_ptr<CHJIT> getJITInstancePtr()
@@ -43,8 +56,11 @@ static std::shared_ptr<CHJIT> getJITInstancePtr()
 
 void resetExpressionJITInstance()
 {
-    std::lock_guard lock(expression_jit_mutex);
-    expression_jit_instance.reset();
+    {
+        std::lock_guard lock(expression_jit_mutex);
+        expression_jit_instance.reset();
+    }
+    getExpressionCompileCounter().clear();
 }
 
 static LoggerPtr getLogger()
@@ -305,15 +321,10 @@ static FunctionBasePtr compile(
     const CompileDAG & dag,
     size_t min_count_to_compile_expression)
 {
-    static std::unordered_map<UInt128, UInt64, UInt128Hash> counter;
-    static std::mutex mutex;
-
     auto hash_key = dag.hash();
-    {
-        std::lock_guard lock(mutex);
-        if (counter[hash_key]++ < min_count_to_compile_expression)
-            return nullptr;
-    }
+    auto count = getExpressionCompileCounter().getOrSet(hash_key, [] { return std::make_shared<std::atomic<UInt64>>(0); }).first;
+    if ((*count)++ < min_count_to_compile_expression)
+        return nullptr;
 
     auto llvm_function = std::make_shared<LLVMFunction>(dag);
 
@@ -557,7 +568,10 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::getCompiledConjuncts(const Node & node)
     return conjuncts;
 }
 
-void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes)
+void ActionsDAG::compileFunctions(
+    size_t min_count_to_compile_expression,
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes,
+    std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag)
 {
     struct Data
     {
@@ -701,9 +715,15 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
             for (const auto * child : new_children)
                 arguments.emplace_back(child->column, child->result_type, child->result_name);
 
+            auto executable_function = fn->prepare(arguments);
+
+            /// Taken before the first replacement, so it holds the DAG as built.
+            if (uncompiled_actions_dag && !*uncompiled_actions_dag)
+                *uncompiled_actions_dag = std::make_shared<ActionsDAG>(clone());
+
             node->type = ActionsDAG::ActionType::FUNCTION;
             node->function_base = fn;
-            node->function = fn->prepare(arguments);
+            node->function = std::move(executable_function);
             node->children.swap(new_children);
             node->is_function_compiled = true;
             node->column = nullptr;

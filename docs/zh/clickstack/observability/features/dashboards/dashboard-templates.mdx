@@ -1,0 +1,65 @@
+---
+slug: /clickstack/observability/features/dashboards/dashboard-templates
+title: '仪表板模板'
+sidebarTitle: '仪表板模板'
+description: '在 ClickHouse Observability 中导入预构建仪表板模板'
+doc_type: 'guide'
+keywords: ['clickstack', 'dashboards', 'templates', 'import', 'observability']
+---
+
+ClickHouse Observability 内置了一个预构建仪表板模板库，可帮助您可视化常见的基础设施和应用程序遥测数据。一旦您的 ClickHouse 服务接收到模板所需的遥测数据，图表便会显示相应数据。
+
+## 浏览可用模板 {#browsing-templates}
+
+要浏览内置模板库，请前往 **仪表盘** 并点击 **Browse 仪表板模板**。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![浏览仪表板模板按钮](/images/clickstack/observability-browse-dashboard-templates.png)
+  </Frame>
+</div>
+
+随后会打开模板库，其中的模板按类别分组展示。在要使用的模板上点击 **Import** 即可。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![仪表板模板库](/images/clickstack/observability-dashboard-template-gallery.png)
+  </Frame>
+</div>
+
+## 导入模板 {#importing-a-template}
+
+在 **Step 2: Map Data** 中，检查 **Dashboard Name** 和 **Tags**，然后在 **To** 列中确认每个卡片和过滤器对应的数据源。数据源可能已预先选好。在下面的示例中，Node.js 运行时指标模板将其图表和服务过滤器映射到 **Metrics** source。点击 **完成导入** 即可创建仪表盘。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![仪表板模板导入](/images/clickstack/observability-import-dashboard-template.png)
+  </Frame>
+</div>
+
+## 预构建模板 {#pre-built-templates}
+
+### Browser RUM {#browser-rum}
+
+**Browser RUM** (真实用户监控) 模板提供 Core Web Vitals、页面加载百分位数、流量细分以及错误跟踪功能。该模板基于浏览器会话数据，这些会话需通过 HyperDX 浏览器 SDK 或 OpenTelemetry RUM 插桩，并发出 `rum.sessionId`。
+
+### OTel 运行时指标 {#otel-runtime-metrics}
+
+内置的 OTel 运行时指标模板专为已通过 [OpenTelemetry 运行时指标](https://opentelemetry.io/docs/specs/semconv/runtime/)进行插桩的应用程序而设计。
+
+| 模板                          | 描述                                             |
+| --------------------------- | ---------------------------------------------- |
+| **.NET Runtime Metrics**    | .NET 应用程序的垃圾回收、堆内存碎片、异常、线程池使用情况及 CPU 指标        |
+| **Go Runtime Metrics**      | Go 应用程序的内存使用量、内存分配、GC 目标、CPU 利用率及 goroutine 指标 |
+| **JVM Runtime Metrics**     | 基于 JVM 的应用程序的堆内存、CPU 利用率、线程及 GC 指标             |
+| **Node.js 运行时指标** | Node.js 应用程序的事件循环延迟、堆使用情况、CPU 利用率及 V8 内存       |
+| **Python Runtime Metrics**  | Python 应用程序的 CPU 利用率、内存使用量、GC 回收次数及线程数         |
+
+说明：
+
+* 每个模板都配置了[自定义筛选器](/zh/clickstack/observability/features/dashboards/overview#custom-filters)，用于筛选 [`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) 资源属性与该仪表盘运行时相匹配的服务。
+* 指标名称可能因 OpenTelemetry SDK 版本而异。如果您的 SDK 输出的指标名称不同，请[编辑可视化](/zh/clickstack/observability/features/dashboards/overview#dashboards-editing-visualizations)，使其与您的数据相匹配。
+
+## 自管理 schema {#self-configured-schemas}
+
+对于使用自定义指标表结构的自管理部署，请调整模板中的服务过滤器，使其查询相应的服务名称列和资源属性列。对于数据量较大的工作负载，可以考虑[物化频繁查询的属性](/zh/clickstack/self-configured/managing/performance-tuning#materialize-frequently-queried-attributes) (例如 `ResourceAttributes['telemetry.sdk.language']`) ，以缩短过滤器的加载时间。

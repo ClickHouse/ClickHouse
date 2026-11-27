@@ -23,5 +23,8 @@
     </substitutions>
 
     <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(toFloat64({expr}))</query>
+    <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(toBFloat16({expr}))</query>
     <query>SELECT count() FROM zeros(1000000) WHERE NOT ignore(toFloat64({expr_zero}))</query>
+    <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(toFloat64(if(cityHash64(number) % 2 = 0, toString(number % 1000), concat(toString(number % 100), '.', toString(number % 7)))))</query>
+    <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(toFloat64OrZero(concat(toString(number % 10), 'x')))</query>
 </test>

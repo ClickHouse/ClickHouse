@@ -76,6 +76,8 @@ public:
     }
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// An empty string is not a ULID.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {

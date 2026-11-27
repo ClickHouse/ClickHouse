@@ -195,13 +195,13 @@ SETTINGS iceberg_timestamp_ms = 1714636800000
 
 ### Delta Lake {#delta-lake-settings}
 
-Начиная с версии 25.6 ClickHouse читает Delta Lake из S3 и GCS с помощью Rust-ядра Delta Lake. В версии 26.8 и более поздних версиях параметр называется [`allow_delta_kernel_rs`](/ru/reference/settings/session-settings/allow#allow_delta_kernel_rs), а в версиях с 25.5 по 26.7 — `allow_experimental_delta_kernel_rs`. Для Azure Blob Storage используйте [deltaLakeAzure()](/ru/reference/functions/table-functions/deltalake) со старым механизмом чтения, поскольку там это ядро отключено. Без ядра недоступны отсечение партиций, change data feed и чтение версий снимков.
+ClickHouse читает данные Delta Lake с помощью ядра Delta Lake на Rust (`delta-kernel-rs`). Начиная с версии 26.11 это единственный считыватель Delta Lake, а настройка, которая позволяла его выбрать, устарела.
 
-#### Delta Kernel {#delta-kernel}
+#### Ядро Delta {#delta-kernel}
 
-Параметр Delta kernel должен быть включен для отсечения партиций, change data feed и чтения версии снимка. Начиная с версии 25.5, он включен по умолчанию для S3 и GCS. При его явном включении используйте имя, соответствующее вашей версии ClickHouse.
+В версиях до 26.11 параметр ядра Delta должен быть включен для отсечения партиций, change data feed и чтения версии снимка. Начиная с версии 25.5, он включен по умолчанию для S3 и GCS. Без ядра ClickHouse использует устаревший считыватель, который не поддерживает эти возможности. При его явном включении используйте имя, соответствующее вашей версии ClickHouse.
 
-Для версии 26.8 и более поздних:
+Для версий с 26.8 по 26.10:
 
 ```sql
 SET allow_delta_kernel_rs = 1;

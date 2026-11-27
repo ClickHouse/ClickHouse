@@ -4,8 +4,12 @@
          cgroup (which can include the page cache), and without the speculative growth reserve. -->
     <memory_worker_use_cgroup>false</memory_worker_use_cgroup>
     <memory_worker_rss_speculative_reserve_ratio>0</memory_worker_rss_speculative_reserve_ratio>
-    <query_log>
+    <!-- No system log flushes on its own during the test: a flush of another log around the memory measurement
+         would make the lowered server limit too low or too high for the flush of query_log. -->
+    <system_tables>
         <flush_interval_milliseconds>600000</flush_interval_milliseconds>
+    </system_tables>
+    <query_log>
         <flush_overcommit_wait_time_microseconds>1000000</flush_overcommit_wait_time_microseconds>
     </query_log>
 </clickhouse>

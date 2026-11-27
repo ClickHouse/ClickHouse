@@ -7,34 +7,34 @@ keywords: ['stratégies de déduplication', 'déduplication des données', 'upse
 doc_type: 'guide'
 ---
 
-**La déduplication** désigne le processus de ***suppression des lignes en double d’un jeu de données***. Dans une base de données OLTP, cela se fait facilement, car chaque ligne possède une clé primaire unique, mais au prix d’insertions plus lentes. Chaque ligne insérée doit d’abord être recherchée et, si elle est trouvée, remplacée.
+**La déduplication** désigne le processus de ***suppression des lignes dupliquées d’un jeu de données***. Dans une base de données OLTP, cela se fait facilement, car chaque ligne possède une clé primaire unique, mais au prix d’insertions plus lentes. Chaque ligne insérée doit d’abord être recherchée et, si elle est trouvée, remplacée.
 
-ClickHouse est conçu pour la rapidité d’insertion des données. Les fichiers de stockage sont immuables et ClickHouse ne vérifie pas l’existence d’une clé primaire avant d’insérer une ligne ; la déduplication demande donc un peu plus d’efforts. Cela signifie aussi que la déduplication n’est pas immédiate : elle est **différée**, ce qui entraîne quelques effets secondaires :
+ClickHouse est conçu pour la rapidité d’insertion des données. Les fichiers de stockage sont immuables et ClickHouse ne vérifie pas l’existence d’une clé primaire avant d’insérer une ligne ; la déduplication demande donc un peu plus d’efforts. Cela signifie aussi que la déduplication n’est pas immédiate : elle est **différée**, ce qui entraîne quelques effets secondaires :
 
 * À tout moment, votre table peut encore contenir des doublons (des lignes avec la même clé de tri)
-* La suppression effective des lignes en double se produit lors de la fusion des parts
+* La suppression effective des lignes dupliquées se produit lors de la fusion des parts
 * Vos requêtes doivent tenir compte de la possibilité de doublons
 
 <div class="transparent-table">
-  |                                                                                                    |                                                                                                                                                                                                                                                                                         |
-  | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | <span className="ch-image-sm"><Frame>![Logo de déduplication](/images/guides/developer/de_duplication.webp)</Frame></span> | ClickHouse propose une formation gratuite sur la déduplication et de nombreux autres sujets. Le [Deleting and Updating Data training module](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461) constitue un bon point de départ. |
+  |                                                                                                                            |                                                                                                                                                                                                                                                         |
+  | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | <span className="ch-image-sm"><Frame>![Logo de déduplication](/images/guides/developer/de_duplication.webp)</Frame></span> | ClickHouse propose une formation gratuite sur la déduplication et de nombreux autres sujets. Le [Module de formation Suppression et Mise à jour des Données](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461) constitue un bon point de départ. |
 </div>
 
 <div id="options-for-deduplication">
-  ## Options de déduplication
+  ## Options de déduplication {#options-for-deduplication}
 </div>
 
-La déduplication est mise en œuvre dans ClickHouse à l’aide des moteurs de table suivants :
+La déduplication est mise en œuvre dans ClickHouse à l’aide des moteurs de table suivants :
 
-1. Moteur de table `ReplacingMergeTree` : avec ce moteur de table, les lignes dupliquées ayant la même clé de tri sont supprimées lors des fusions. `ReplacingMergeTree` est une bonne option pour simuler un comportement d’upsert (lorsque vous souhaitez que les requêtes renvoient la dernière ligne insérée).
+1. Moteur de table `ReplacingMergeTree` : avec ce moteur de table, les lignes dupliquées ayant la même clé de tri sont supprimées lors des fusions. `ReplacingMergeTree` est une bonne option pour simuler un comportement d’upsert (lorsque vous souhaitez que les requêtes renvoient la dernière ligne insérée).
 
-2. Collapsing de lignes : les moteurs de table `CollapsingMergeTree` et `VersionedCollapsingMergeTree` utilisent une logique dans laquelle une ligne existante est « annulée » et une nouvelle ligne est insérée. Ils sont plus complexes à mettre en œuvre que `ReplacingMergeTree`, mais vos requêtes et agrégations peuvent être plus simples à écrire, sans avoir à vous soucier de savoir si les données ont déjà été fusionnées ou non. Ces deux moteurs de table sont utiles lorsque vous devez mettre à jour fréquemment les données.
+2. Collapsing de lignes : les moteurs de table `CollapsingMergeTree` et `VersionedCollapsingMergeTree` utilisent une logique dans laquelle une ligne existante est « annulée » et une nouvelle ligne est insérée. Ils sont plus complexes à mettre en œuvre que `ReplacingMergeTree`, mais vos requêtes et agrégations peuvent être plus simples à écrire, sans avoir à vous soucier de savoir si les données ont déjà été fusionnées ou non. Ces deux moteurs de table sont utiles lorsque vous devez mettre à jour fréquemment les données.
 
-Nous présentons ces deux techniques ci-dessous. Pour plus de détails, consultez notre [module de formation Deleting and Updating Data](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461), gratuit et disponible à la demande.
+Nous présentons ces deux techniques ci-dessous. Pour plus de détails, consultez notre [Module de formation Suppression et Mise à jour des Données](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461), gratuit et disponible à la demande.
 
 <div id="using-replacingmergetree-for-upserts">
-  ## Utilisation de ReplacingMergeTree pour les upserts
+  ## Utilisation de ReplacingMergeTree pour les upserts {#using-replacingmergetree-for-upserts}
 </div>
 
 Prenons un exemple simple dans lequel une table contient des commentaires Hacker News, avec une colonne `views` qui indique le nombre de fois qu’un commentaire a été consulté. Supposons que nous insérions une nouvelle ligne lorsqu’un article est publié, puis que nous effectuions chaque jour l’upsert d’une nouvelle ligne avec le nombre total de vues si cette valeur augmente :
@@ -107,11 +107,9 @@ Le résultat ne contient que 2 lignes, et la dernière ligne insérée est celle
   trouver la dernière valeur d&#39;une colonne.
 </Note>
 
-<div id="avoiding-final">
-  ### Éviter FINAL
-</div>
+### Éviter FINAL {#avoiding-final}
 
-Mettons de nouveau à jour la colonne `views` pour les deux lignes distinctes :
+Mettons de nouveau à jour la colonne `views` pour les deux lignes distinctes :
 
 ```sql
 INSERT INTO hackernews_rmt VALUES
@@ -141,7 +139,7 @@ FROM hackernews_rmt
 └────┴─────────┴─────────────────┴───────┘
 ```
 
-Au lieu d’utiliser `FINAL`, appuyons-nous sur une logique métier : nous savons que la colonne `views` augmente toujours. Nous pouvons donc sélectionner la ligne dont la valeur est la plus élevée à l’aide de la fonction `max`, après regroupement selon les colonnes souhaitées :
+Au lieu d’utiliser `FINAL`, appuyons-nous sur une logique métier : nous savons que la colonne `views` augmente toujours. Nous pouvons donc sélectionner la ligne dont la valeur est la plus élevée à l’aide de la fonction `max`, après regroupement selon les colonnes souhaitées :
 
 ```sql
 SELECT
@@ -162,10 +160,10 @@ GROUP BY (id, author, comment)
 
 Le regroupement, comme dans la requête ci-dessus, peut en réalité être plus efficace (en termes de performances des requêtes) que l’utilisation du mot-clé `FINAL`.
 
-Notre [module de formation Deleting and Updating Data](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461) approfondit cet exemple, notamment en expliquant comment utiliser une colonne `version` avec `ReplacingMergeTree`.
+Notre [Module de formation Suppression et Mise à jour des Données](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461) approfondit cet exemple, notamment en expliquant comment utiliser une colonne `version` avec `ReplacingMergeTree`.
 
 <div id="using-collapsingmergetree-for-updating-columns-frequently">
-  ## Utiliser CollapsingMergeTree pour mettre à jour fréquemment des colonnes
+  ## Utiliser CollapsingMergeTree pour mettre à jour fréquemment des colonnes {#using-collapsingmergetree-for-updating-columns-frequently}
 </div>
 
 La mise à jour d’une colonne consiste à supprimer une ligne existante et à la remplacer par de nouvelles valeurs. Comme vous l’avez déjà vu, ce type de mutation dans ClickHouse se produit *à terme*, lors des fusions. Si vous avez beaucoup de lignes à mettre à jour, il peut en réalité être plus efficace d’éviter `ALTER TABLE..UPDATE` et d’insérer simplement les nouvelles données en plus des données existantes. On pourrait ajouter une colonne indiquant si les données sont obsolètes ou nouvelles... et il existe justement déjà un moteur de table qui implémente ce comportement de façon très élégante, d’autant plus qu’il supprime automatiquement les données obsolètes à votre place. Voyons comment cela fonctionne.
@@ -251,7 +249,7 @@ Mais, bien sûr, l’utilisation de `FINAL` n’est pas recommandée pour les ta
 </Note>
 
 <div id="real-time-updates-from-multiple-threads">
-  ## Mises à jour en temps réel depuis plusieurs threads
+  ## Mises à jour en temps réel depuis plusieurs threads {#real-time-updates-from-multiple-threads}
 </div>
 
 Avec une table `CollapsingMergeTree`, les lignes s’annulent entre elles à l’aide d’une colonne sign, et l’état d’une ligne est déterminé par la dernière ligne insérée. Mais cela peut poser problème si vous insérez des lignes depuis différents threads, car elles peuvent être insérées dans le désordre. Dans ce cas, utiliser la « dernière » ligne ne fonctionne pas.
@@ -342,10 +340,8 @@ FROM hackernews_views_vcmt
 
 Une table `VersionedCollapsingMergeTree` est très pratique lorsque vous souhaitez mettre en œuvre la déduplication lors de l’insertion de lignes depuis plusieurs clients et/ou threads.
 
-<div id="why-arent-my-rows-being-deduplicated">
-  ## Pourquoi mes lignes ne sont-elles pas dédupliquées ?
-</div>
+## Pourquoi mes lignes ne sont-elles pas dédupliquées ? {#why-arent-my-rows-being-deduplicated}
 
-L’une des raisons pour lesquelles des lignes insérées peuvent ne pas être dédupliquées est l’utilisation d’une fonction ou d’une expression non idempotente dans votre instruction `INSERT`. Par exemple, si vous insérez des lignes avec la colonne `createdAt DateTime64(3) DEFAULT now()`, vos lignes seront forcément uniques, car chaque ligne aura une valeur par défaut unique pour la colonne `createdAt`. Le moteur de table MergeTree / ReplicatedMergeTree ne pourra donc pas dédupliquer les lignes, puisque chaque ligne insérée générera une somme de contrôle unique.
+L’une des raisons pour lesquelles des lignes insérées peuvent ne pas être dédupliquées est l’utilisation d’une fonction ou d’une expression non idempotente dans votre statement `INSERT`. Par exemple, si vous insérez des lignes avec la colonne `createdAt DateTime64(3) DEFAULT now()`, vos lignes sont forcément uniques, car chaque ligne aura une valeur par défaut unique pour la colonne `createdAt`. Le table engine MergeTree / ReplicatedMergeTree ne pourra pas savoir qu’il doit dédupliquer ces lignes, puisque chaque ligne insérée générera une somme de contrôle unique.
 
-Dans ce cas, vous pouvez définir votre propre `insert_deduplication_token` pour chaque lot de lignes afin de vous assurer que plusieurs insertions du même lot n’entraînent pas la réinsertion des mêmes lignes. Consultez la [documentation sur `insert_deduplication_token`](/fr/reference/settings/session-settings/insert#insert_deduplication_token) pour plus de détails sur l’utilisation de ce paramètre.
+Dans ce cas, vous pouvez définir votre propre `insert_deduplication_token` pour chaque batch de lignes, afin que plusieurs insertions d’un même batch n’entraînent pas la réinsertion des mêmes lignes. Pour plus de détails sur l’utilisation de ce paramètre, consultez la [documentation sur `insert_deduplication_token`](/fr/reference/settings/session-settings/insert#insert_deduplication_token).

@@ -83,7 +83,8 @@ namespace
     /// elements, and the hierarchy is kept aside to draw the nested header and footer.
     struct FlattenedColumns
     {
-        Block header;
+        /// Positional: names repeat across Tuples and the top level, possibly with different types.
+        ColumnsWithTypeAndName header;
         Columns columns;
 
         /// In DFS pre-order: parents before children, ordered by `begin` within a depth.
@@ -118,7 +119,7 @@ namespace
         }
         else
         {
-            flattened.header.insert(ColumnWithTypeAndName(type, name));
+            flattened.header.emplace_back(type, name);
             flattened.columns.push_back(column);
             flattened.depths.push_back(depth);
             flattened.max_depth = std::max(flattened.max_depth, depth);
@@ -199,7 +200,7 @@ bool PrettyBlockOutputFormat::cutInTheMiddle(size_t row_num, size_t num_rows, si
 /// Evaluate the visible width of the values and column names.
 /// Note that number of code points is just a rough approximation of visible string width.
 void PrettyBlockOutputFormat::calculateWidths(
-    const Block & header, const Chunk & chunk, bool split_by_lines, size_t value_width_limit,
+    const ColumnsWithTypeAndName & header, const Chunk & chunk, bool split_by_lines, size_t value_width_limit,
     const Widths & min_widths, bool & out_has_newlines,
     WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names)
 {
@@ -231,7 +232,7 @@ void PrettyBlockOutputFormat::calculateWidths(
     size_t prefix = firstCellPrefix(); // Tab character adjustment
     for (size_t i = 0; i < num_columns; ++i)
     {
-        const auto & elem = header.getByPosition(i);
+        const auto & elem = header[i];
         const auto & column = columns[i];
 
         widths[i].resize_fill(num_displayed_rows);
@@ -433,11 +434,14 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
     /// Named Tuple columns can be displayed split into subcolumns, with extra header lines for the names of their elements.
     FlattenedColumns flattened = flattenNamedTuples(*original_header, chunk.getColumns(), format_settings.pretty.named_tuples_as_subcolumns);
-    const Block & header = flattened.header;
+    const ColumnsWithTypeAndName & header = flattened.header;
     const Chunk displayed_chunk(std::move(flattened.columns), num_rows);
     const auto & columns = displayed_chunk.getColumns();
     const auto num_columns = displayed_chunk.getNumColumns();
-    const Serializations serializations = header.getSerializations();
+    Serializations serializations;
+    serializations.reserve(header.size());
+    for (const auto & elem : header)
+        serializations.push_back(elem.type->getDefaultSerialization());
 
     size_t cut_to_width = format_settings.pretty.max_value_width;
     /// The single-value exemption is decided by the logical shape of the result (one row, one column),
@@ -710,8 +714,9 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         for (size_t i = 0; i < num_columns; ++i)
             vertical_filler_size += max_widths[i] + 3;
 
+        /// There can be no columns at all: the rows of an intermediate result can carry no values.
         if (style == Style::Space)
-            vertical_filler_size -= 2;
+            vertical_filler_size -= std::min<size_t>(vertical_filler_size, 2);
         else
             vertical_filler_size += 1;
 
@@ -795,7 +800,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             {
                 name = names[column];
                 name_width = name_widths[column];
-                align_right = header.getByPosition(column).type->shouldAlignRightInPrettyFormats();
+                align_right = header[column].type->shouldAlignRightInPrettyFormats();
             }
 
             auto write_value = [&]
@@ -978,7 +983,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     else if (j != 0)
                         writePaddingSpace();
 
-                    const auto & type = header.getByPosition(j).type;
+                    const auto & type = header[j].type;
                     writeValueWithPadding(
                         *columns[j],
                         *serializations[j],
@@ -1135,6 +1140,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         is_cut = true;
         serialized_fragment.resize(UTF8::computeBytesBeforeWidth(
             reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), prefix, format_settings.pretty.max_value_width));
+        /// Narrower than `max_value_width` when a wide character does not fit.
+        size_t kept_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), prefix);
 
         if (color)
         {
@@ -1146,7 +1153,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         else
             serialized_fragment += ellipsis;
 
-        value_width = format_settings.pretty.max_value_width;
+        value_width = kept_width;
     }
 
     auto write_padding = [&]()
@@ -1177,7 +1184,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         write_padding();
     }
 
-    if (start_from_offset != serialized_value->size())
+    /// After a cut, the ellipsis takes the place of the line feed marker: the next line starts with `line_continuation`.
+    if (start_from_offset != serialized_value->size() && !is_cut)
     {
         if (color)
             out << "\033[90m";

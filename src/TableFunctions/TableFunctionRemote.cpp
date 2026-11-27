@@ -27,7 +27,11 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
 
     ASTs & args = args_func.at(0)->children;
 
-    auto parsed = parseRemoteFunctionArguments(args, context, name, is_cluster_function, secure, help_message);
+    /// A stored `CREATE TABLE ... AS remote(...)` keeps loading if it was accepted by the per-stage limit
+    /// of an older version, as the `Remote` table engine does.
+    auto parsed = parseRemoteFunctionArguments(
+        args, context, name, is_cluster_function, secure, help_message, /* dependent_table_id = */ nullptr, glob_caller,
+        /* limit_total_addresses = */ !arguments_from_stored_definition);
     cluster = std::move(parsed.cluster);
     remote_table_id = std::move(parsed.remote_table_id);
     sharding_key = std::move(parsed.sharding_key);
@@ -99,6 +103,13 @@ TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_
     : name{name_}, secure{secure_}
 {
     is_cluster_function = (name == "cluster" || name == "clusterAllReplicas");
+    /// `remoteSecure` is registered with the internal name `remote` (the secure flag is the only
+    /// difference), but the error about too many generated addresses has to name the table function
+    /// the user actually called.
+    glob_caller = RemoteDescriptionCaller{
+        fmt::format("Table function '{}'", (secure && name == "remote") ? "remoteSecure" : name),
+        TABLE_FUNCTION_REMOTE_MAX_ADDRESSES_SETTING,
+        /*listing_alternative=*/ {}};
     help_message = PreformattedMessage::create(
         "Table function '{}' requires from {} to {} parameters: "
         "{}",

@@ -10,8 +10,6 @@ pub use _ch_rust_pco;
 pub use _ch_rust_polyglot;
 #[cfg(feature = "prql")]
 pub use _ch_rust_prql;
-#[cfg(feature = "skim")]
-pub use _ch_rust_skim_rust;
 #[cfg(feature = "vortex")]
 pub use _ch_rust_vortex;
 #[cfg(feature = "wasmtime")]

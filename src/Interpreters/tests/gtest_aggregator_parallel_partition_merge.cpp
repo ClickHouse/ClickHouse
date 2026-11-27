@@ -75,6 +75,7 @@ Aggregator::Params makeParams(const Names & keys, const AggregateDescriptions & 
         /*enable_parallel_single_level_merge_=*/true,
         /*enable_parallel_single_level_merge_by_index_=*/true,
         /*enable_packed_string_keys_=*/true,
+        /*enable_fixed_and_packed_string_keys_=*/true,
         /*enable_adaptive_aggregator_=*/false,
         /*adaptive_aggregator_freeze_threshold_=*/0,
         /*adaptive_aggregator_freeze_threshold_bytes_=*/0,
@@ -151,7 +152,7 @@ struct Scenario
         {
             auto agg_chunk = aggregator.mergeSingleLevelPartitionsAndConvertToChunk(
                 prepared, /*final=*/true, num_partitions, partition, claimNothing, max_table_size / num_partitions,
-                aggregator.parallelMergeThreshold(/*session=*/nullptr), cancelled, /*updater=*/nullptr);
+                aggregator.parallelMergeThreshold(/*session=*/nullptr, /*workers=*/1), cancelled, /*updater=*/nullptr);
             for (const auto & [key, value] : renderChunk(agg_chunk.chunk, params.keys_size))
             {
                 EXPECT_TRUE(united.emplace(key, value).second) << "key " << key << " produced by two partitions";
@@ -177,7 +178,7 @@ struct Scenario
         {
             auto agg_chunk = aggregator.mergeSingleLevelPartitionsAndConvertToChunk(
                 prepared, /*final=*/false, num_partitions, partition, claimNothing, max_table_size / num_partitions,
-                aggregator.parallelMergeThreshold(/*session=*/nullptr), cancelled, /*updater=*/nullptr);
+                aggregator.parallelMergeThreshold(/*session=*/nullptr, /*workers=*/1), cancelled, /*updater=*/nullptr);
             const size_t rows = agg_chunk.chunk.getNumRows();
             auto columns = agg_chunk.chunk.detachColumns();
             for (size_t i = params.keys_size; i < columns.size(); ++i)

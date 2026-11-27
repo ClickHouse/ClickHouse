@@ -2,7 +2,10 @@
 title: Cloud에서의 딕셔너리 스니펫
 ---
 
-<Tip>
-  ClickHouse Cloud에서 딕셔리를 사용하는 경우, 딕셔너리를 만들 때는 DDL query 옵션을 사용하고 사용자 `default`로 생성하십시오.
-  또한 [Cloud Compatibility 가이드](/ko/products/cloud/guides/cloud-compatibility)에서 지원되는 딕셔너리 소스 목록도 확인하십시오.
-</Tip>
+<Note title="ClickHouse Cloud">
+  딕셔너리를 생성하려면 [`CREATE DICTIONARY`](/ko/reference/statements/create/dictionary#creating-a-dictionary-with-a-ddl-query)를 사용하십시오.
+
+  ClickHouse 테이블(table)에서 데이터를 읽는 딕셔너리를 생성할 때는 `SOURCE` 절에 전용 사용자의 사용자 이름과 비밀번호를 지정하십시오. 이 사용자에게는 원본 테이블에 대한 `SELECT` 권한(permission)이 있어야 합니다. 자세한 내용은 [ClickHouse 딕셔너리 소스 예시](/ko/reference/statements/create/dictionary/sources/clickhouse)를 참고하십시오.
+
+  [Cloud Compatibility 가이드](/ko/products/cloud/guides/cloud-compatibility)에서 지원되는 딕셔너리 소스 목록을 확인하십시오.
+</Note>

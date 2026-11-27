@@ -1,0 +1,313 @@
+---
+slug: /clickstack/observability/ingesting-data/vector
+description: 'Отправка данных в самостоятельно управляемый ClickHouse Observability с помощью приёмника Vector для ClickHouse.'
+title: 'Загрузка данных с помощью Vector'
+toc_max_heading_level: 2
+doc_type: 'guide'
+keywords: ['clickstack', 'vector', 'traces', 'observability', 'telemetry']
+sidebarTitle: 'Vector'
+---
+
+import InstallingVector from '/snippets/ru/_installing_vector.mdx';
+import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
+
+<Tabs>
+  <Tab title="Самоуправляемый" id="self-managed">
+    <Note>
+      Это руководство относится только к **самостоятельно управляемому ClickHouse Observability**. Приёмник ClickHouse в Vector записывает данные напрямую в таблицы, которыми управляете вы. Для полностью управляемого ClickHouse Observability требуется ингестия по OTLP; настройки конечной точки и аутентификации см. в разделе [Загрузка данных с помощью OpenTelemetry](/ru/clickstack/observability/ingesting-data/opentelemetry#fully-managed).
+    </Note>
+
+    [Vector](https://vector.dev) — это высокопроизводительный и независимый от вендоров конвейер данных обсервабилити. Обычно его используют для сбора, преобразования и маршрутизации журналов и метрик из самых разных источников; особенно популярен он для ингестии журналов благодаря гибкости и низкому потреблению ресурсов.
+
+    При использовании Vector с самостоятельно управляемым ClickHouse Observability пользователи сами отвечают за определение схем. Эти схемы могут следовать соглашениям OpenTelemetry, но могут быть и полностью пользовательскими, описывая собственные структуры событий. На практике ингестия через Vector чаще всего применяется для **журналов**, когда пользователям нужен полный контроль над разбором и обогащением данных до их записи в ClickHouse.
+
+    Это руководство посвящено загрузке данных в самостоятельно управляемый ClickHouse Observability с помощью Vector. Для простоты источники Vector и конфигурация конвейера подробно не рассматриваются. Основное внимание уделено настройке **приёмника**, который записывает данные в ClickHouse, и обеспечению совместимости итоговой схемы с самостоятельно управляемым ClickHouse Observability.
+
+    Единственное строгое требование к сервису — наличие в данных **столбца временной метки** (или эквивалентного поля времени), который можно указать при настройке источника данных в интерфейсе обсервабилити.
+
+## Отправка данных с помощью Vector {#sending-data-with-vector-self-configured}
+
+    <br />
+
+    В этом руководстве предполагается, что вы уже создали сервис «Самостоятельно управляемый ClickHouse Observability» и сохранили его учётные данные. Если это ещё не сделано, выполните шаги руководства [Начало работы](/ru/clickstack/self-configured/getting-started/managed) для Самостоятельно управляемого ClickHouse Observability до момента, когда будет предложено настроить Vector.
+
+    <Steps>
+      <Step title="Создание базы данных и таблицы" id="create-a-database-table-self-configured">
+        Перед ингестией данных в Vector необходимо определить таблицу и схему.
+
+        Сначала создайте базу данных. Это можно сделать в [консоли ClickHouse Cloud](/ru/products/cloud/features/sql-console-features/sql-console).
+
+        В примере ниже мы используем `logs`:
+
+        ```sql
+        CREATE DATABASE IF NOT EXISTS logs
+        ```
+
+        Создайте таблицу для ваших данных. Она должна соответствовать выходной схеме данных. В примере ниже предполагается классическая структура логов Nginx. Адаптируйте её под свои данные, придерживаясь [рекомендуемых практик проектирования схем](/ru/concepts/best-practices/select-data-type). Мы **настоятельно рекомендуем** ознакомиться с [концепцией первичных ключей](/ru/concepts/core-concepts/primary-indexes) и выбрать первичный ключ в соответствии с рекомендациями, изложенными [здесь](/ru/clickstack/self-configured/managing/performance-tuning#choosing-a-primary-key).
+
+        ```sql
+        CREATE TABLE logs.nginx_logs
+        (
+            `time_local` DateTime,
+            `remote_addr` IPv4,
+            `remote_user` LowCardinality(String),
+            `request` String,
+            `status` UInt16,
+            `body_bytes_sent` UInt64,
+            `http_referer` String,
+            `http_user_agent` String,
+            `http_x_forwarded_for` LowCardinality(String),
+            `request_time` Float32,
+            `upstream_response_time` Float32,
+            `http_host` String
+        )
+        ENGINE = MergeTree
+        ORDER BY (toStartOfMinute(time_local), status, remote_addr)
+        ```
+
+        <Info>
+          **Первичный ключ для Nginx**
+
+          Приведённый выше первичный ключ рассчитан на типичные шаблоны доступа к журналам Nginx в интерфейсе обсервабилити, однако в продакшн-средах его может потребоваться скорректировать с учётом вашей рабочей нагрузки.
+        </Info>
+      </Step>
+
+      <Step title="Добавьте приёмник ClickHouse в конфигурацию Vector" id="add-clickhouse-sink-to-config-self-configured">
+        Измените конфигурацию Vector, добавив приёмник ClickHouse, и обновите поле `inputs`, чтобы приёмник получал события из уже существующих конвейеров.
+
+        Эта конфигурация предполагает, что вышестоящий конвейер Vector уже **подготовил данные в соответствии с целевой схемой ClickHouse**, то есть поля разобраны, правильно названы и имеют типы, подходящие для вставки. Полный пример разбора и нормализации необработанных строк журнала в схему, подходящую для сервиса, приведён в [**примере с Nginx ниже**](#example-dataset-with-vector-self-configured).
+
+        ```yaml
+        sinks:
+          clickhouse:
+            type: clickhouse
+            inputs:
+              - your_input
+            endpoint: "<CLICKHOUSE_ENDPOINT>"
+            database: logs
+            format: json_each_row
+            table: nginx_logs
+            skip_unknown_fields: true
+            auth:
+              strategy: "basic"
+              user: "default"
+              password: "<CLICKHOUSE_PASSWORD>"
+        ```
+
+        По умолчанию мы рекомендуем использовать формат **`json_each_row`**, в котором каждое событие кодируется как отдельный объект JSON в одной строке. Это формат по умолчанию и рекомендуемый формат для сервиса при загрузке данных JSON; его следует предпочитать альтернативным форматам, например объектам JSON, закодированным в виде строк.
+
+        Приёмник ClickHouse также поддерживает **кодирование Arrow stream** (сейчас в стадии бета). Оно может обеспечить более высокую пропускную способность, но имеет существенные ограничения: база данных и таблица должны быть статическими, поскольку схема извлекается один раз при запуске, а динамическая маршрутизация не поддерживается. Поэтому кодирование Arrow лучше всего подходит для фиксированных, чётко определённых конвейеров ингестии.
+
+        Рекомендуем ознакомиться с доступными параметрами конфигурации приёмника в [документации Vector](https://vector.dev/docs/reference/configuration/sinks/clickhouse):
+
+        <Note>
+          В приведённом выше примере используется пользователь default для самостоятельно управляемого ClickHouse Observability. Для продакшн-развертываний мы рекомендуем [создать отдельного пользователя для ингестии](/ru/clickstack/self-configured/ingesting-data/collector#creating-an-ingestion-user-self-configured) с соответствующими разрешениями и ограничениями.
+        </Note>
+      </Step>
+
+      <Step title="Перейдите в интерфейс обсервабилити" id="navigate-to-clickstack-ui-self-configured">
+        Перейдите в свой сервис «Самостоятельно управляемый ClickHouse Observability» и выберите &quot;ClickStack&quot; в меню слева. Если вы уже прошли первоначальную настройку, интерфейс обсервабилити откроется в новой вкладке, и вы будете аутентифицированы автоматически. Если нет, пройдите первоначальную настройку, выберите Vector в качестве источника входных данных и нажмите «Launch ClickStack».
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![Запуск ClickStack для Vector](/images/clickstack/launch-clickstack-vector.webp)
+          </Frame>
+        </div>
+      </Step>
+
+      <Step title="Создать источник данных" id="create-a-datasource-managed-self-configured">
+        Создайте источник данных для логов. Если источников данных ещё нет, при первом входе вам будет предложено создать его. В противном случае перейдите в Team Settings и добавьте новый источник данных.
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![Создание источника данных — vector](/images/clickstack/create-vector-datasource.webp)
+          </Frame>
+        </div>
+
+        Приведённая выше конфигурация предполагает схему в стиле Nginx, где в качестве временной метки используется столбец `time_local`. По возможности это должен быть столбец временной метки, объявленный в первичном ключе. Этот столбец обязателен.
+
+        Мы также рекомендуем изменить `Default SELECT`, чтобы явно задать столбцы, возвращаемые в представлении логов. Если доступны дополнительные поля, например имя сервиса, уровень лога или столбец с телом сообщения, их также можно настроить. Кроме того, можно переопределить столбец временной метки для отображения, если он отличается от столбца, который используется в первичном ключе таблицы и был настроен выше.
+
+        В приведённом выше примере столбец `Body` в данных отсутствует. Вместо этого он задаётся SQL-выражением, которое восстанавливает строку журнала Nginx из доступных полей.
+
+        Другие доступные параметры описаны в [справочнике по конфигурации](/ru/clickstack/self-configured/managing/config).
+      </Step>
+
+      <Step title="Анализ данных" id="explore-the-data-managed-self-configured">
+        Перейдите в раздел журналов, чтобы изучить данные и начать работу с сервисом.
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![Журналы Nginx в интерфейсе обсервабилити](/images/clickstack/nginx-logs-vector-search.webp)
+          </Frame>
+        </div>
+      </Step>
+    </Steps>
+
+## Демонстрационный набор данных с Vector {#example-dataset-with-vector-self-configured}
+
+    Ниже для более полного примера используется **файл журнала Nginx**.
+
+    В этом руководстве предполагается, что вы уже создали сервис «Самостоятельно управляемый ClickHouse Observability» и сохранили его учётные данные. Если это ещё не сделано, выполните шаги руководства [Начало работы](/ru/clickstack/self-configured/getting-started/managed) для Самостоятельно управляемого ClickHouse Observability вплоть до этапа, на котором будет предложено настроить Vector.
+
+    <Steps>
+      <Step title="Установка Vector" id="installing-vector-self-configured">
+        <InstallingVector />
+      </Step>
+
+      <Step title="Скачать выборку данных" id="download-the-sample-data-self-configured">
+        <VectorSampleData />
+      </Step>
+
+      <Step title="Создайте базу данных и таблицу" id="create-database-table-nginx-managed-self-configured">
+        Перед ингестией данных Vector требует заранее определить таблицу и схему.
+
+        Сначала создайте базу данных. Это можно сделать в [консоли ClickHouse Cloud](/ru/products/cloud/features/sql-console-features/sql-console).
+
+        Создайте базу данных `logs`:
+
+        ```sql
+        CREATE DATABASE IF NOT EXISTS logs
+        ```
+
+        Создайте таблицу для своих данных.
+
+        ```sql
+        CREATE TABLE logs.nginx_logs
+        (
+            `time_local` DateTime,
+            `remote_addr` IPv4,
+            `remote_user` LowCardinality(String),
+            `request` String,
+            `status` UInt16,
+            `body_bytes_sent` UInt64,
+            `http_referer` String,
+            `http_user_agent` String,
+            `http_x_forwarded_for` LowCardinality(String),
+            `request_time` Float32,
+            `upstream_response_time` Float32,
+            `http_host` String
+        )
+        ENGINE = MergeTree
+        ORDER BY (toStartOfMinute(time_local), status, remote_addr)
+        ```
+
+        <Info>
+          **Первичный ключ для Nginx**
+
+          Приведённый выше первичный ключ рассчитан на типичные шаблоны доступа к журналам Nginx в интерфейсе обсервабилити, однако в продакшн-среде его может потребоваться скорректировать с учётом вашей рабочей нагрузки.
+        </Info>
+      </Step>
+
+      <Step title="Скопировать конфигурацию Vector" id="copy-vector-configuration-self-configured">
+        Скопируйте конфигурацию Vector и создайте файл `nginx.yaml`, указав значения `CLICKHOUSE_ENDPOINT` и `CLICKHOUSE_PASSWORD`.
+
+        ```yaml
+        data_dir: ./.vector-data
+        sources:
+          nginx_logs:
+            type: file
+            include:
+              - access.log
+            read_from: beginning
+
+        transforms:
+          decode_json:
+            type: remap
+            inputs:
+              - nginx_logs
+            source: |
+              . = parse_json!(to_string!(.message))
+              ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
+              # ClickHouse-friendly DateTime format
+              .time_local = format_timestamp!(ts, format: "%F %T")
+
+        sinks:
+          clickhouse:
+            type: clickhouse
+            inputs:
+              - decode_json
+            endpoint: "<CLICKHOUSE_ENDPOINT>"
+            database: logs
+            format: json_each_row
+            table: nginx_logs
+            skip_unknown_fields: true
+            auth:
+              strategy: "basic"
+              user: "default"
+              password: "<CLICKHOUSE_PASSWORD>"
+        ```
+
+        <Note>
+          В приведённом выше примере используется пользователь default для самостоятельно управляемого ClickHouse Observability. Для продакшн-развертываний рекомендуется [создать отдельного пользователя для ингестии](/ru/clickstack/self-configured/ingesting-data/collector#creating-an-ingestion-user-self-configured) с соответствующими разрешениями и ограничениями.
+        </Note>
+      </Step>
+
+      <Step title="Запустите Vector" id="start-vector-self-configured">
+        Запустите Vector с помощью следующей команды, предварительно создав каталог данных для хранения смещений в файлах.
+
+        ```bash
+        mkdir ./.vector-data
+        vector --config nginx.yaml
+        ```
+      </Step>
+
+      <Step title="Перейдите в интерфейс обсервабилити" id="navigate-to-clickstack-ui-nginx-managed-self-configured">
+        Перейдите в свой сервис «Самостоятельно управляемый ClickHouse Observability» и выберите &quot;ClickStack&quot; в меню слева. Если вы уже завершили первоначальную настройку, интерфейс обсервабилити откроется в новой вкладке, а аутентификация будет выполнена автоматически. В противном случае пройдите первоначальную настройку и, выбрав Vector в качестве источника входных данных, нажмите «Launch ClickStack».
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![Запуск ClickStack для Vector](/images/clickstack/launch-clickstack-vector.webp)
+          </Frame>
+        </div>
+      </Step>
+
+      <Step title="Создать источник данных" id="create-a-datasource-nginx-managed-self-configured">
+        Создайте источник данных для журналов. Если источников данных ещё нет, при первом входе вам будет предложено создать его. В противном случае перейдите в Team Settings и добавьте новый источник данных.
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![Создание источника данных — vector](/images/clickstack/create-vector-datasource.webp)
+          </Frame>
+        </div>
+
+        В этой конфигурации предполагается схема Nginx, в которой в качестве временной метки используется столбец `time_local`. Это столбец временной метки, объявленный в первичном ключе. Этот столбец обязателен.
+
+        Мы также задали выборку по умолчанию `time_local, remote_addr, status, request` — она определяет, какие столбцы возвращаются в представлении журналов.
+
+        В приведённом выше примере столбца `Body` в данных нет. Вместо этого он задан в виде SQL-выражения:
+
+        ```sql
+        concat(
+          remote_addr, ' ',
+          remote_user, ' ',
+          '[', formatDateTime(time_local, '%d/%b/%Y:%H:%M:%S %z'), '] ',
+          '"', request, '" ',
+          toString(status), ' ',
+          toString(body_bytes_sent), ' ',
+          '"', http_referer, '" ',
+          '"', http_user_agent, '" ',
+          '"', http_x_forwarded_for, '" ',
+          toString(request_time), ' ',
+          toString(upstream_response_time), ' ',
+          '"', http_host, '"'
+        )
+        ```
+
+        Таким образом строка журнала восстанавливается из структурированных полей.
+
+        Другие доступные параметры описаны в [справочнике по конфигурации](/ru/clickstack/self-configured/managing/config).
+      </Step>
+
+      <Step title="Исследуйте данные" id="explore-the-data-nginx-managed-self-configured">
+        Перейдите в представление поиска и выберите дату `October 20th, 2025`, чтобы изучить данные и начать работу с сервисом.
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![Интерфейс обсервабилити](/images/clickstack/nginx-logs-vector-search.webp)
+          </Frame>
+        </div>
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>

@@ -695,6 +695,7 @@ def main():
             f"cmake -DCMAKE_VERBOSE_MAKEFILE=1 -LA "
             f"-DCMAKE_BUILD_TYPE=None "
             f"-DENABLE_THINLTO=1 "
+            f"-DENABLE_THINLTO_CACHE=0 "
             f"-DCLICKHOUSE_PGO_PROFILE_PATH={PGO_PROFDATA_PATH} "
             f"-DENABLE_CLICKHOUSE_BOLT=ON "
             f"-DSANITIZE= "

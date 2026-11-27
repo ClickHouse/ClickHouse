@@ -1,0 +1,793 @@
+---
+slug: /clickstack/self-configured/managing/materialized-views
+title: 'Visões materializadas'
+sidebarTitle: 'Visões materializadas'
+description: 'Otimize o desempenho do Self-managed ClickHouse Observability com visões materializadas'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'observabilidade', 'visões materializadas', 'desempenho', 'otimização', 'visualizações', 'agregações']
+---
+
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+<Note>
+  Esta página trata do **Self-managed ClickHouse Observability**. Para a experiência totalmente gerenciada, que é a recomendada, consulte a documentação [aqui](/pt-BR/clickstack/observability/overview).
+</Note>
+
+<BetaBadge />
+
+## Introdução {#introduction}
+
+O Self-managed ClickHouse Observability pode usar [visões materializadas incrementais (IMV)](/pt-BR/concepts/features/materialized-views/incremental-materialized-view) para acelerar visualizações que dependem de consultas com uso intensivo de agregação, como o cálculo da duração média das requisições por minuto ao longo do tempo. Essa funcionalidade pode melhorar drasticamente o desempenho de consultas e costuma trazer mais benefícios para implantações maiores, a partir de cerca de 10 TB por dia, além de permitir escalar para a faixa de petabytes por dia. As visões materializadas incrementais estão em Beta e devem ser usadas com cautela.
+
+<Note>
+  Os alertas também podem se beneficiar das visões materializadas e passam a utilizá-las automaticamente.
+  Isso pode reduzir a sobrecarga computacional da execução de muitos alertas, principalmente porque eles costumam ser executados com muita frequência.
+  Reduzir o tempo de execução traz vantagens tanto em capacidade de resposta quanto em consumo de recursos.
+</Note>
+
+## O que são visões materializadas incrementais {#what-are-incremental-materialized-views}
+
+As visões materializadas incrementais permitem transferir o custo computacional do momento da execução da consulta para o momento da inserção, tornando as consultas `SELECT` significativamente mais rápidas.
+
+Diferentemente do que ocorre em bancos de dados transacionais como o Postgres, uma visão materializada no ClickHouse não é um snapshot armazenado. Ela atua como um gatilho que executa uma consulta sobre os blocos de dados à medida que são inseridos em uma tabela de origem. A saída dessa consulta é gravada em uma tabela de destino separada. Conforme mais dados são inseridos, novos resultados parciais são acrescentados e mesclados na tabela de destino. O resultado mesclado equivale a executar a agregação sobre todo o conjunto de dados original.
+
+A principal motivação para usar visões materializadas é que os dados gravados na tabela de destino representam o resultado de uma agregação, filtragem ou transformação. No serviço, elas são usadas exclusivamente para agregações. Esses resultados costumam ser muito menores do que os dados brutos de entrada e, com frequência, representam estados parciais de agregação. Somado à simplicidade de consultar a tabela de destino pré-agregada, isso reduz substancialmente a latência das consultas em comparação com a execução do mesmo cálculo sobre dados brutos no momento da execução da consulta.
+
+As visões materializadas no ClickHouse são atualizadas continuamente à medida que os dados chegam à tabela de origem, comportando-se mais como índices sempre atualizados. Isso difere de muitos outros bancos de dados, nos quais as visões materializadas são snapshots estáticos que precisam ser atualizados periodicamente, de forma semelhante às [visões materializadas atualizáveis](/pt-BR/concepts/features/materialized-views/refreshable-materialized-view) do ClickHouse.
+
+<div className="ch-image-md">
+  <Frame>
+    ![Diagrama de visão materializada](/images/materialized-view/materialized-view-diagram.webp)
+  </Frame>
+</div>
+
+As visões materializadas incrementais calculam apenas as alterações na visão à medida que novos dados chegam, deslocando o processamento para o momento da inserção. Como o ClickHouse é altamente otimizado para ingestão, o custo incremental de manter a visão para cada bloco inserido é pequeno em relação à economia obtida na execução das consultas. O custo de calcular a agregação é diluído ao longo das inserções, em vez de ser pago repetidamente a cada leitura. Consultar os resultados pré-agregados é, portanto, muito mais barato do que recalculá-los, o que reduz o custo operacional e garante desempenho quase em tempo real para as visualizações que dependem desses dados, mesmo em escala de petabytes.
+
+Esse modelo difere fundamentalmente de sistemas que recalculam visões inteiras a cada atualização ou dependem de atualizações agendadas. Para uma explicação mais aprofundada sobre como as visões materializadas funcionam e como criá-las, consulte o guia indicado acima.
+
+Cada visão materializada adiciona uma sobrecarga em insert-time, portanto elas devem ser usadas de forma seletiva.
+
+<Tip>
+  Crie visões apenas para os dashboards e visualizações mais usados.
+  Limite o uso a menos de 20 visões enquanto a funcionalidade estiver em beta.
+  Esse limite deve aumentar em versões futuras.
+</Tip>
+
+<Note>
+  Uma única visão materializada pode calcular várias métricas para diferentes agrupamentos, por exemplo, a duração mínima, máxima e p95 por nome de serviço em intervalos de um minuto. Assim, uma única visão pode atender a várias visualizações, e não apenas a uma. Por isso, é importante consolidar métricas em visões compartilhadas para maximizar o valor de cada visão e garantir que ela seja reutilizada em dashboards e fluxos de trabalho.
+</Note>
+
+Antes de prosseguir, recomendamos que você se aprofunde no funcionamento das visões materializadas no ClickHouse.
+Consulte nosso guia sobre [visões materializadas incrementais](/pt-BR/concepts/features/materialized-views/incremental-materialized-view) para mais detalhes.
+
+## Seleção de visualizações para aceleração {#selecting-visualizatons-for-acceleration}
+
+Antes de criar qualquer visão materializada, é importante entender quais visualizações você deseja acelerar e quais fluxos de trabalho são mais críticos para seus usuários.
+
+No serviço, as visões materializadas foram projetadas para **acelerar visualizações com uso intensivo de agregação**, ou seja, consultas que calculam uma ou mais métricas ao longo do tempo. Alguns exemplos são **duração média das requisições por minuto**, **contagens de requisições por serviço** ou **taxas de erro ao longo do tempo**. Uma visão materializada deve sempre conter uma agregação e um agrupamento por tempo, já que se destina a alimentar visualizações de séries temporais.
+
+Em geral, recomenda-se o seguinte:
+
+### Identifique visualizações de alto impacto {#identify-high-impact-visualizations}
+
+Os melhores candidatos à aceleração geralmente se enquadram em uma das seguintes categorias:
+
+* Visualizações de dashboard que são atualizadas com frequência e exibidas continuamente, como painéis de monitoramento de alto nível exibidos em telões.
+* Fluxos de trabalho de diagnóstico usados em runbooks, nos quais gráficos específicos são consultados repetidamente durante a resposta a incidentes e precisam retornar resultados rapidamente.
+* Funcionalidades centrais da UI, incluindo:
+  * Visualizações de histograma na página de busca.
+  * Visualizações usadas em dashboards predefinidos, como as visões de APM, Services ou Kubernetes.
+
+Essas visualizações costumam ser executadas repetidamente por diferentes usuários e em diferentes intervalos de tempo, o que as torna alvos ideais para transferir o processamento do momento da execução da consulta para o momento da inserção.
+
+### Equilibre o benefício com o custo em insert-time {#balance-benefit-against-insert-time-cost}
+
+As visões materializadas adicionam trabalho no momento da inserção, portanto devem ser criadas de forma seletiva e criteriosa. Nem toda visualização se beneficia da pré-agregação, e acelerar gráficos pouco utilizados geralmente não compensa a sobrecarga. Recomenda-se manter o número total de visões materializadas abaixo de 20.
+
+<Note>
+  Antes de ir para produção, sempre valide a sobrecarga de recursos introduzida pelas visões materializadas, em especial o uso de CPU, a E/S de disco e a [atividade de mesclagem](/pt-BR/resources/support-center/tips-and-tricks/too-many-parts). Cada visão materializada aumenta o trabalho em insert-time e gera partes adicionais, por isso é importante garantir que as mesclagens consigam acompanhar o ritmo e que as contagens de partes permaneçam estáveis. Isso pode ser monitorado por meio das [tabelas de sistema](/pt-BR/reference/system-tables/tables) e do [painel de observabilidade integrado](/pt-BR/guides/oss/deployment-and-scaling/monitoring/monitoring#built-in-advanced-observability-dashboard) no ClickHouse de código aberto, ou por meio das métricas integradas e dos [painéis de monitoramento no ClickHouse Cloud](/pt-BR/products/cloud/features/monitoring/advanced-dashboard). Consulte [Partes demais](/pt-BR/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) para obter orientações sobre como diagnosticar e mitigar contagens excessivas de partes.
+</Note>
+
+Depois de identificar as visualizações mais importantes, o próximo passo é a consolidação.
+
+### Consolide visualizações em visões compartilhadas {#consolidate-visualizations-into-shared-views}
+
+Todas as visões materializadas no serviço devem agrupar os dados por um intervalo de tempo usando funções como [`toStartOfMinute`](/pt-BR/reference/functions/regular-functions/date-time-functions#toStartOfMinute). No entanto, muitas visualizações também compartilham chaves de agrupamento adicionais, como nome do serviço, nome do span ou código de status. Quando várias visualizações usam as mesmas dimensões de agrupamento, muitas vezes uma única visão materializada é suficiente para atender a todas elas.
+
+Por exemplo (para rastros):
+
+* Duração média por nome do serviço ao longo do tempo  - `SELECT avg(Duration), toStartOfMinute(Timestamp) as time, ServiceName FROM otel_traces GROUP BY ServiceName, time`
+* Contagem de requisições por nome do serviço ao longo do tempo - `SELECT count() count, toStartOfMinute(Timestamp) as time, ServiceName FROM otel_traces GROUP BY ServiceName, time`
+* Duração média por código de status ao longo do tempo - `SELECT avg(Duration), toStartOfMinute(Timestamp) as time, StatusCode FROM otel_traces GROUP BY StatusCode, time`
+* Contagem de requisições por código de status ao longo do tempo - `SELECT count() count, toStartOfMinute(Timestamp) as time, StatusCode FROM otel_traces GROUP BY StatusCode, time`
+
+Em vez de criar uma visão materializada separada para cada consulta e gráfico, você pode combiná-las em uma única visão que agrega por nome do serviço e código de status. Essa visão pode calcular várias métricas, como contagem, duração média, duração máxima e percentis, que podem ser reutilizadas em diversas visualizações. Veja abaixo um exemplo de consulta que combina as anteriores:
+
+```sql
+SELECT avg(Duration), max(Duration), count(), quantiles(0.95,0.99)(Duration), toStartOfMinute(Timestamp) as time, ServiceName, StatusCode
+FROM otel_traces
+GROUP BY time, ServiceName, StatusCode
+```
+
+Consolidar visões dessa forma reduz a sobrecarga em insert-time, limita o número total de visões materializadas, diminui os problemas relacionados às contagens de partes e simplifica a manutenção contínua.
+
+Nesta etapa, **concentre-se nas consultas** que serão executadas pelas visualizações que você deseja acelerar. Na próxima seção, você verá um exemplo de como várias consultas de agregação podem ser combinadas em uma única visão materializada.
+
+## Criando uma visão materializada {#creating-a-materialized-view}
+
+Depois de identificar a visualização, ou o conjunto de visualizações, que você deseja acelerar, o próximo passo é identificar as consultas subjacentes. Na prática, isso significa inspecionar a configuração da visualização e revisar o SQL gerado, com atenção especial às métricas de agregação utilizadas e às funções aplicadas.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![SQL gerado](/images/clickstack/materialized_views/generated_sql.webp)
+  </Frame>
+</div>
+
+<Note>
+  Quando um componente não tiver um painel de depuração disponível na UI, os usuários podem inspecionar o console do navegador, onde todas as consultas são registradas.
+</Note>
+
+Depois de consolidar as consultas necessárias, você deve se familiarizar com as [**funções de estado de agregação**](/pt-BR/reference/data-types/aggregatefunction) do ClickHouse. As visões materializadas dependem dessas funções para transferir o processamento do momento da execução da consulta para o momento da inserção. Em vez de armazenar valores agregados finais, uma visão materializada calcula e armazena **estados de agregação intermediários**, que posteriormente são mesclados e finalizados no momento da execução da consulta. Normalmente, eles ocupam muito menos espaço do que a tabela original. Esses estados têm tipos de dados próprios e devem ser representados explicitamente no schema da tabela de destino.
+
+Para referência, a documentação do ClickHouse oferece uma visão geral detalhada e exemplos das funções de estado de agregação, bem como do motor de tabela usado para armazená-los — `AggregatingMergeTree`:
+
+* [Funções de agregação e estados](/pt-BR/reference/functions/aggregate-functions/index)
+* [Motor AggregatingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/aggregatingmergetree)
+
+Veja no vídeo abaixo um exemplo de como usar o AggregatingMergeTree e as funções de agregação:
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe src="https://www.youtube.com/embed/pryhI4F_zqQ" title="Estados de agregação no ClickHouse" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  </Frame>
+</div>
+
+É **altamente recomendável** familiarizar-se com esses conceitos antes de prosseguir.
+
+### Exemplo de visão materializada {#example-materialized-view}
+
+Considere a seguinte consulta original, que calcula a duração média, a duração máxima, a contagem de eventos e os percentis por minuto, agrupados por nome do serviço e código de status:
+
+```sql
+SELECT
+    toStartOfMinute(Timestamp),
+    ServiceName,
+    StatusCode,
+    count() AS count,
+    avg(Duration),
+    max(Duration),
+    quantiles(0.95, 0.99)(Duration)
+FROM otel_traces
+GROUP BY
+    time,
+    ServiceName,
+    StatusCode
+```
+
+Para acelerar esta consulta, crie uma tabela de destino `otel_traces_1m` para armazenar os estados de agregação correspondentes:
+
+```sql
+CREATE TABLE otel_traces_1m
+(
+    `Timestamp` DateTime,
+    `ServiceName` LowCardinality(String),
+    `StatusCode` LowCardinality(String),
+    `count` SimpleAggregateFunction(sum, UInt64),
+    `avg__Duration` AggregateFunction(avg, UInt64),
+    `max__Duration` SimpleAggregateFunction(max, Int64),
+    `quantiles__Duration` AggregateFunction(quantiles(0.95, 0.99), Int64)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY (Timestamp, ServiceName, StatusCode);
+```
+
+A definição da visão materializada `otel_traces_1m_mv` calcula e grava esses estados à medida que novos dados são inseridos:
+
+```sql
+CREATE MATERIALIZED VIEW otel_traces_1m_mv TO otel_traces_1m
+AS
+SELECT
+    toStartOfMinute(Timestamp) AS Timestamp,
+    ServiceName,
+    StatusCode,
+    count() AS count,
+    avgState(Duration) AS avg__Duration,
+    maxSimpleState(Duration) AS max__Duration,
+    quantilesState(0.95, 0.99)(Duration) AS quantiles__Duration
+FROM otel_v2.otel_traces
+GROUP BY
+    Timestamp,
+    ServiceName,
+    StatusCode;
+```
+
+Esta visão materializada é composta por duas partes:
+
+1. A tabela de destino, que define o schema e os tipos de estado de agregação usados para armazenar resultados intermediários. O motor [AggregatingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/aggregatingmergetree) é necessário para garantir que esses estados sejam mesclados corretamente em segundo plano.
+2. A consulta da visão materializada, executada automaticamente na inserção. Em comparação com a consulta original, ela usa funções de estado como `avgState` e `quantilesState` em vez das funções de agregação finais.
+
+O resultado é uma tabela compacta que armazena estados de agregação por minuto para cada nome de serviço e código de status. Seu tamanho cresce de forma previsível conforme o tempo e a cardinalidade e, após as mesclagens em segundo plano, ela representa o mesmo resultado que a execução da agregação original sobre os dados brutos. Consultar esta tabela é muito mais barato do que agregar diretamente a partir da tabela de rastros de origem, o que garante um desempenho de visualização rápido e consistente em escala.
+
+## Uso de visões materializadas {#materialized-view-usage-in-clickstack}
+
+Depois de criadas no ClickHouse, as visões materializadas devem ser registradas no serviço para que possam ser usadas automaticamente por visualizações, dashboards e alertas.
+
+### Registro de uma visão materializada {#registering-a-view}
+
+As visões materializadas devem ser registradas na **fonte de dados** da UI que corresponde à **tabela de origem original** da qual a visão foi derivada.
+
+<Steps>
+  <Step title="Editar a fonte de dados" id="edit-the-source">
+    Acesse a **fonte de dados** correspondente na UI e abra a caixa de diálogo **Edit configuration**. Role a página até a seção de visões materializadas.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Editar fontes de dados](/images/clickstack/materialized_views/edit_source.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Adicionar a visão materializada" id="add-the-materialized-view">
+    Selecione **Add materialized view** e, em seguida, escolha o banco de dados e a tabela de destino que sustentam a visão materializada.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Editar fontes de dados](/images/clickstack/materialized_views/add_view.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Selecionar métricas" id="select-metrics">
+    Na maioria dos casos, as colunas de timestamp, dimensão e métrica são inferidas automaticamente. Caso contrário, especifique-as manualmente.
+
+    Para as métricas, você deve mapear:
+
+    * O nome da coluna original, por exemplo, `Duration`, para
+    * A coluna agregada correspondente na visão materializada, por exemplo, `avg__Duration`
+
+    Para as dimensões, especifique todas as colunas, exceto o timestamp, usadas no agrupamento da visão.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Selecionar métricas](/images/clickstack/materialized_views/select_metrics.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Selecionar a granularidade de tempo" id="select-time-granularity">
+    Selecione a **granularidade de tempo** da visão materializada, por exemplo, um minuto.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Selecionar granularidade de tempo](/images/clickstack/materialized_views/select_time_granularity.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Selecionar a data mínima" id="specify-the-minimum-date">
+    Especifique a data mínima a partir da qual a visão materializada contém dados. Ela representa o timestamp mais antigo disponível na visão e normalmente corresponde ao momento em que a visão foi criada, desde que a ingestão tenha sido contínua.
+
+    <Note>
+      As visões materializadas **não são preenchidas automaticamente com dados históricos** ao serem criadas; portanto, conterão apenas linhas geradas a partir de dados inseridos após a criação.
+      Um guia completo sobre o carregamento de dados históricos em visões materializadas está disponível em [&quot;Backfilling Data.&quot;](/pt-BR/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables)
+    </Note>
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Selecionar tempo mínimo](/images/clickstack/materialized_views/select_min_time.webp)
+      </Frame>
+    </div>
+
+    Se o horário de início exato não for conhecido, você pode determiná-lo consultando o timestamp mínimo da tabela de destino, por exemplo:
+
+    ```sql
+    SELECT min(Timestamp) FROM otel_traces_1m
+    ```
+  </Step>
+
+  <Step title="Salvar a fonte de dados" id="save-the-source">
+    Salve a configuração da fonte de dados.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Salvar fonte de dados](/images/clickstack/materialized_views/save_source.webp)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+Depois de registrada, a visão materializada passa a ser usada automaticamente pelo serviço sempre que uma consulta for elegível, sem exigir alterações em dashboards, visualizações ou alertas. O serviço avalia cada consulta no momento da execução e determina se é possível aplicar uma visão materializada.
+
+### Verificando a aceleração em dashboards e visualizações {#verifying-acceleration-in-dashboards-and-visualizations}
+
+É importante lembrar que as visões materializadas incrementais contêm apenas dados inseridos **após a criação da visão**. Elas não são preenchidas automaticamente com dados históricos, o que as mantém leves e baratas de manter. Por esse motivo, os usuários devem especificar explicitamente o intervalo de tempo válido de uma visão ao registrá-la.
+
+<Note>
+  O serviço só usará uma visão materializada se o timestamp mínimo dela for menor ou igual ao início do intervalo de tempo da consulta, garantindo que a visão contenha todos os dados necessários. Embora as consultas sejam divididas internamente em subconsultas baseadas em tempo, as visões materializadas são aplicadas à consulta inteira ou a nenhuma parte dela. Melhorias futuras poderão permitir que as visões sejam usadas seletivamente nas subconsultas elegíveis.
+</Note>
+
+O serviço exibe indicadores visuais claros que confirmam se uma visão materializada está sendo usada.
+
+1. **Verifique o status da otimização** Ao visualizar um dashboard ou uma visualização, procure o ícone de raio ou `Accelerated`:
+
+* **Raio verde** indica que a consulta está sendo acelerada por uma visão materializada.
+* **Raio laranja** indica que a consulta está sendo executada na tabela de origem.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Visualização acelerada](/images/clickstack/materialized_views/accelerated_visual.webp)
+  </Frame>
+</div>
+
+2. **Inspecione os detalhes da otimização**  Clique no ícone de raio para abrir um painel de detalhes que mostra:
+
+* **Visão materializada ativa**: a visão selecionada para a consulta, incluindo sua contagem de linhas estimada.
+* **Visões materializadas ignoradas**: visões compatíveis que não foram selecionadas, com seus respectivos tamanhos de varredura estimados.
+* **Visões materializadas incompatíveis**: visões que não puderam ser usadas e o motivo específico de cada uma.
+
+3. **Entenda os motivos comuns de incompatibilidade** Uma visão materializada pode não ser usada se:
+
+* O **intervalo de tempo da consulta** começar antes do timestamp mínimo da visão.
+* A **granularidade da visualização** não for múltipla da granularidade da visão.
+* A **função de agregação** solicitada pela consulta não estiver presente na visão.
+* A consulta usar **expressões de contagem personalizadas**, como `count(if(...))`, que não podem ser derivadas dos estados de agregação da visão.
+
+Com esses indicadores, fica fácil confirmar se uma visualização está acelerada, entender por que uma determinada visão foi selecionada e diagnosticar por que uma visão não era elegível.
+
+### Como as visões materializadas são selecionadas para visualizações {#how-views-are-selected}
+
+Quando uma visualização é executada, o serviço pode ter vários candidatos disponíveis, incluindo a tabela base e várias visões materializadas. Para garantir o melhor desempenho, o serviço avalia e seleciona automaticamente a opção mais eficiente usando o mecanismo [`EXPLAIN ESTIMATE`](/pt-BR/reference/statements/explain#explain-estimate) do ClickHouse.
+
+O processo de seleção segue uma sequência bem definida:
+
+1. **Validação da compatibilidade**
+   Primeiro, o serviço determina se uma visão materializada é elegível para a consulta, verificando:
+   * **Cobertura temporal**: o intervalo de tempo da consulta deve estar inteiramente contido no intervalo de dados disponível na visão materializada.
+   * **Granularidade**: o intervalo de tempo da visualização deve ser igual ou mais amplo que a granularidade da visão.
+   * **Agregações**: as métricas solicitadas devem estar presentes na visão e poder ser calculadas a partir de seus estados de agregação.
+
+2. **Transformação da consulta**
+   Para as visões compatíveis, o serviço reescreve a consulta para que ela seja executada na tabela da visão materializada:
+   * As funções de agregação são mapeadas para as colunas materializadas correspondentes.
+   * Combinadores `-Merge` são aplicados aos estados de agregação.
+   * O agrupamento em intervalos de tempo é ajustado para se alinhar à granularidade da visão.
+
+3. **Seleção do melhor candidato**
+   Se houver várias visões materializadas compatíveis, o serviço executa uma consulta [`EXPLAIN ESTIMATE`](/pt-BR/reference/statements/explain#explain-estimate) para cada candidato e compara o número estimado de linhas e grânulos lidos. A visão com o menor custo estimado de varredura é selecionada.
+
+4. **Fallback controlado**
+   Se nenhuma visão materializada for compatível, o serviço recorre automaticamente à consulta na tabela de origem.
+
+Essa abordagem minimiza de forma consistente o volume de dados lidos e oferece desempenho previsível e de baixa latência, sem exigir alterações nas definições das visualizações.
+
+As visões materializadas continuam elegíveis mesmo quando as visualizações incluem filtros, restrições de busca ou agrupamento em intervalos de tempo, desde que todas as dimensões necessárias estejam presentes na visão. Isso permite que as visões acelerem dashboards, histogramas e gráficos filtrados sem exigir alterações nas definições das visualizações.
+
+#### Exemplo de escolha de visões materializadas {#example-of-choosing-materialized-view}
+
+Considere duas visões materializadas criadas sobre a mesma fonte de traces:
+
+* `otel_traces_1m`, agrupada por minuto, `ServiceName` e `StatusCode`
+* `otel_traces_1m_v2`, agrupada por minuto, `ServiceName`, `StatusCode` e `SpanName`
+
+A segunda visão contém chaves de agrupamento adicionais e, portanto, produz mais linhas e varre mais dados.
+
+Se uma visualização solicitar a **duração média por serviço ao longo do tempo**, ambas as visões serão tecnicamente válidas. O serviço executa uma consulta [`EXPLAIN ESTIMATE`](/pt-BR/reference/statements/explain#explain-estimate) para cada candidata e compara as contagens estimadas de grânulos, ou seja:
+
+```sql
+EXPLAIN ESTIMATE
+SELECT
+    toStartOfHour(Timestamp) AS hour,
+    ServiceName,
+    avgMerge(avg__Duration) AS avg__Duration
+FROM otel_v2.otel_traces_1m
+GROUP BY
+    hour,
+    ServiceName
+ORDER BY hour DESC
+```
+
+```response
+┌─database─┬─table──────────┬─parts─┬──rows─┬─marks─┐
+│ otel_v2  │ otel_traces_1m │     1 │ 49385 │     6 │
+└──────────┴────────────────┴───────┴───────┴───────┘
+
+1 row in set. Elapsed: 0.009 sec.
+```
+
+```sql
+EXPLAIN ESTIMATE
+SELECT
+    toStartOfHour(Timestamp) AS hour,
+    ServiceName,
+    avgMerge(avg__Duration) AS avg__Duration
+FROM otel_v2.otel_traces_1m_v2
+GROUP BY
+    hour,
+    ServiceName
+ORDER BY hour DESC
+```
+
+```response
+┌─database─┬─table─────────────┬─parts─┬───rows─┬─marks─┐
+│ otel_v2  │ otel_traces_1m_v2 │     1 │ 212519 │    26 │
+└──────────┴───────────────────┴───────┴────────┴───────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+Como `otel_traces_1m` é menor e varre menos grânulos, ela é selecionada automaticamente.
+
+Ambas as visões materializadas ainda têm desempenho superior ao de consultar diretamente a tabela base, mas selecionar a menor visão que atenda à consulta oferece o melhor desempenho.
+
+### Alertas {#alerts}
+
+As consultas de alertas usam visões materializadas automaticamente sempre que compatíveis. A mesma lógica de otimização se aplica, o que torna a avaliação dos alertas mais rápida.
+
+## Carregamento de dados históricos em uma visão materializada {#backfilling-a-materialized-view}
+
+Como observado anteriormente, as visões materializadas incrementais contêm apenas dados inseridos **após a criação da visão** e não são preenchidas automaticamente com dados históricos. Esse design mantém as visões leves e baratas de manter, mas também significa que elas não podem ser usadas em consultas que exijam dados anteriores ao timestamp mínimo da visão.
+
+Na maioria dos casos, isso é aceitável. Cargas de trabalho comuns de observabilidade concentram-se em dados recentes, como as últimas 24 horas, o que significa que uma visão recém-criada se torna totalmente utilizável em até um dia após sua criação. No entanto, para consultas que abrangem intervalos de tempo mais longos, a visão pode continuar inutilizável até que se passe tempo suficiente.
+
+Nesses casos, os usuários podem considerar fazer o **carregamento de dados históricos** na visão materializada.
+
+O carregamento de dados históricos pode ser **computacionalmente caro**. Em operação normal, as visões materializadas são populadas incrementalmente à medida que os dados chegam, o que distribui o custo de capacidade computacional de forma uniforme ao longo do tempo.
+
+O carregamento de dados históricos concentra esse trabalho em um período muito mais curto, **aumentando significativamente o uso de CPU e de memória por unidade de tempo.**
+
+Dependendo do tamanho do conjunto de dados e da janela de retenção, pode ser necessário escalonar temporariamente o cluster, seja verticalmente ou horizontalmente no ClickHouse Cloud, para concluir a carga de dados históricos em um prazo razoável.
+
+Se não forem provisionados recursos adicionais, o carregamento de dados históricos pode afetar negativamente as cargas de trabalho de produção, incluindo a latência das consultas e a vazão de ingestão. Para **conjuntos de dados muito grandes ou intervalos históricos longos, o carregamento de dados históricos pode ser impraticável** ou até mesmo inviável.
+
+Em resumo, o carregamento de dados históricos muitas vezes não compensa o custo e o risco operacional. Ele deve ser considerado apenas em casos excepcionais, em que a aceleração de consultas sobre dados históricos seja crítica. Se você optar por prosseguir, recomenda-se seguir a abordagem controlada descrita abaixo para equilibrar desempenho, custo e impacto na produção.
+
+### Abordagens de carregamento de dados históricos {#backfilling-approaches}
+
+<Info>
+  **Evite o POPULATE**
+
+  Não é recomendado usar o comando [POPULATE](/pt-BR/reference/statements/create/view#materialized-view) para o carregamento de dados históricos em visões materializadas, exceto em conjuntos de dados pequenos com a ingestão pausada. Esse operador pode deixar de capturar linhas inseridas na tabela de origem, já que a visão materializada é criada somente após a conclusão do hash do populate. Além disso, o populate é executado sobre todos os dados e fica vulnerável a interrupções ou a limites de memória em conjuntos de dados grandes.
+</Info>
+
+Suponha que você queira fazer a carga de dados históricos de uma visão materializada correspondente à agregação a seguir, que calcula métricas por minuto agrupadas por nome do serviço e código de status:
+
+```sql
+SELECT
+    toStartOfMinute(Timestamp),
+    ServiceName,
+    StatusCode,
+    count() AS count,
+    avg(Duration),
+    max(Duration),
+    quantiles(0.95, 0.99)(Duration)
+FROM otel_traces
+GROUP BY
+    time,
+    ServiceName,
+    StatusCode
+```
+
+Como mencionado anteriormente, as visões materializadas incrementais não são preenchidas com dados históricos automaticamente. Recomendamos os processos a seguir para realizar a carga de dados históricos com segurança, preservando o comportamento incremental para os novos dados.
+
+#### Carga direta de dados históricos usando `INSERT INTO SELECT` {#direct-backfill}
+
+Esta abordagem é mais adequada para **conjuntos de dados menores** ou **consultas de agregação relativamente leves**, em que a carga de dados históricos completa pode ser concluída em um tempo razoável sem esgotar os recursos do cluster. Em geral, ela é apropriada quando a consulta de carga de dados históricos pode ser executada em minutos ou, no máximo, em algumas horas, e quando aumentos temporários no uso de CPU e E/S são aceitáveis. Para conjuntos de dados maiores ou agregações mais custosas, considere as abordagens de carregamento de dados históricos incremental ou baseada em blocos, descritas a seguir.
+
+<Steps>
+  <Step title="Determine a cobertura atual da visão" id="determine-current-coverage-of-view">
+    Antes de qualquer carga de dados históricos, determine quais dados a visão materializada já contém. Para isso, consulte o timestamp mínimo presente na tabela de destino:
+
+    ```sql
+    SELECT min(Timestamp)
+    FROM otel_traces_1m;
+    ```
+
+    Esse timestamp representa o ponto mais antigo a partir do qual a visão consegue atender às consultas. Qualquer consulta do serviço que solicite dados anteriores a esse timestamp recorrerá à tabela base.
+  </Step>
+
+  <Step title="Decida se o carregamento de dados históricos é necessário" id="decide-whether-backfilling-is-neccessary">
+    Na maioria das implantações, as consultas se concentram em dados recentes, como as últimas 24 horas. Nesses casos, as visões recém-criadas tornam-se totalmente utilizáveis pouco depois de serem criadas, e o carregamento de dados históricos é desnecessário.
+
+    Se o timestamp retornado na etapa anterior for suficientemente antigo para os seus casos de uso, não é necessária nenhuma carga de dados históricos. O carregamento de dados históricos só deve ser considerado quando:
+
+    * As consultas abrangem com frequência longos intervalos históricos.
+    * A visão é crítica para o desempenho nesses intervalos.
+    * O tamanho do conjunto de dados e o custo da agregação tornam o carregamento de dados históricos viável.
+  </Step>
+
+  <Step title="Carregue os dados históricos ausentes" id="backfill-missing-historical-data">
+    Se o carregamento de dados históricos for necessário, preencha a tabela de destino da visão materializada com os timestamps anteriores ao mínimo atual, usando a consulta da visão modificada para ler apenas dados mais antigos que o timestamp registrado acima. Como a tabela de destino usa AggregatingMergeTree, a consulta de carga de dados históricos **deve inserir estados de agregação, não valores finais**.
+
+    <Warning>
+      Esta consulta pode processar grandes volumes de dados e consumir muitos recursos. Sempre verifique a capacidade disponível de CPU, memória e E/S antes de executar uma carga de dados históricos. Uma técnica útil é executar primeiro a consulta com `FORMAT Null` para estimar o tempo de execução e o uso de recursos.
+
+      Se a própria consulta tiver previsão de levar muitas horas para ser executada, esta abordagem **não é recomendada**.
+    </Warning>
+
+    Observe como a consulta a seguir adiciona uma cláusula `WHERE` para limitar a agregação aos dados anteriores ao timestamp mais antigo presente na visão:
+
+    ```sql
+    INSERT INTO otel_traces_1m
+    SELECT
+        toStartOfMinute(Timestamp) AS Timestamp,
+        ServiceName,
+        StatusCode,
+        count() AS count,
+        avgState(Duration) AS avg__Duration,
+        maxSimpleState(Duration) AS max__Duration,
+        quantilesState(0.95, 0.99)(Duration) AS quantiles__Duration
+    FROM otel_traces
+    WHERE Timestamp < (
+        SELECT min(Timestamp) FROM otel_traces_1m
+    )
+    GROUP BY
+        Timestamp,
+        ServiceName,
+        StatusCode;
+    ```
+  </Step>
+</Steps>
+
+#### Carregamento incremental de dados históricos usando uma Tabela Null {#incremental-backfill-null-table}
+
+Para conjuntos de dados maiores ou consultas de agregação que consomem mais recursos, uma carga de dados históricos direta com um único `INSERT INTO SELECT` pode ser impraticável ou arriscada. Nesses casos, recomenda-se uma abordagem de **carga incremental de dados históricos**. Esse método se aproxima mais do funcionamento normal das visões materializadas incrementais, processando os dados em blocos gerenciáveis em vez de agregar todo o conjunto de dados histórico de uma só vez.
+
+Essa abordagem é adequada quando:
+
+* A consulta de carga de dados históricos levaria muitas horas para ser executada.
+* O pico de uso de memória de uma agregação completa é alto demais.
+* Você deseja controlar rigorosamente o consumo de CPU e memória durante a carga de dados históricos.
+* Você precisa de um processo mais resiliente, que possa ser reiniciado com segurança em caso de interrupção.
+
+A ideia central é usar uma [**Tabela Null**](/pt-BR/reference/engines/table-engines/special/null) como buffer de ingestão. Embora a Tabela Null não armazene dados, todas as visões materializadas anexadas a ela continuam sendo executadas, o que permite calcular os estados de agregação incrementalmente à medida que os dados passam por ela.
+
+<Steps>
+  <Step title="Crie uma Tabela Null para o carregamento de dados históricos" id="create-null-table">
+    Crie uma Tabela Null leve, contendo apenas as colunas exigidas pela agregação da visão materializada. Isso minimiza a E/S e o uso de memória.
+
+    ```sql
+    CREATE TABLE otel_traces_backfill
+    (
+        Timestamp DateTime64(9),
+        ServiceName LowCardinality(String),
+        StatusCode LowCardinality(String),
+        Duration UInt64
+    )
+    ENGINE = Null;
+    ```
+  </Step>
+
+  <Step title="Anexe uma visão materializada à Tabela Null" id="attach-mv-to-null-table">
+    Em seguida, crie uma visão materializada sobre a Tabela Null que tenha como destino a mesma tabela de agregação usada pela sua visão materializada principal.
+
+    ```sql
+    CREATE MATERIALIZED VIEW otel_traces_1m_mv_backfill
+    TO otel_traces_1m
+    AS
+    SELECT
+        toStartOfMinute(Timestamp) AS Timestamp,
+        ServiceName,
+        StatusCode,
+        count() AS count,
+        avgState(Duration) AS avg__Duration,
+        maxSimpleState(Duration) AS max__Duration,
+        quantilesState(0.95, 0.99)(Duration) AS quantiles__Duration
+    FROM otel_traces_backfill
+    GROUP BY
+        Timestamp,
+        ServiceName,
+        StatusCode;
+    ```
+
+    Essa visão materializada será executada incrementalmente à medida que linhas forem inseridas na Tabela Null, produzindo estados de agregação em pequenos blocos.
+  </Step>
+
+  <Step title="Carregue os dados históricos incrementalmente" id="incremental-backfill">
+    Por fim, insira os dados históricos na Tabela Null. A visão materializada processará os dados bloco a bloco, gravando os estados de agregação na tabela de destino sem persistir as linhas brutas.
+
+    ```sql
+    INSERT INTO otel_traces_backfill
+    SELECT
+        Timestamp,
+        ServiceName,
+        StatusCode,
+        Duration
+    FROM otel_traces
+    WHERE Timestamp < (
+        SELECT min(Timestamp) FROM otel_traces_1m
+    );
+    ```
+
+    Como os dados são processados incrementalmente, o uso de memória permanece limitado e previsível, de forma bem semelhante ao comportamento normal de ingestão.
+
+    <Note>
+      Para maior segurança, considere direcionar a visão materializada de carga de dados históricos para uma tabela de destino temporária (por exemplo, `otel_traces_1m_v2`). Após a conclusão bem-sucedida da carga, [as partições podem ser movidas](/pt-BR/reference/statements/alter/partition#move-partition-to-table) para a tabela de destino principal, por exemplo, `ALTER TABLE otel_traces_1m_v2 MOVE PARTITION '2026-01-02' TO otel_traces_1m`. Isso facilita a recuperação caso a carga seja interrompida ou falhe devido a limites de recursos.
+    </Note>
+
+    Para mais detalhes sobre o ajuste desse processo, incluindo como melhorar o desempenho de insert e reduzir e controlar o uso de recursos, consulte [&quot;Backfilling.&quot;](/pt-BR/guides/clickhouse/data-modelling/backfilling#tuning-performance--resources)
+  </Step>
+</Steps>
+
+## Recomendações {#recommendations}
+
+As recomendações a seguir resumem as boas práticas para projetar e operar visões materializadas no serviço. Seguir estas diretrizes ajuda a garantir que as visões materializadas sejam eficazes, previsíveis e econômicas.
+
+### Seleção e alinhamento da granularidade {#granularity-selection-and-alignment}
+
+As visões materializadas só são usadas quando a granularidade da visualização ou do alerta é um **múltiplo exato** da granularidade da visão. A forma como essa granularidade é determinada depende do tipo de gráfico:
+
+* **Gráficos temporais** (gráficos de linha ou de barras com o tempo no eixo x):
+  A granularidade explícita do gráfico deve ser um múltiplo da granularidade da visão materializada.
+  Por exemplo, um gráfico de 10 minutos pode usar visões materializadas com granularidade de 10, 5, 2 ou 1 minuto, mas não visões de 20 ou 3 minutos.
+
+* **Gráficos sem eixo temporal** (gráficos de número, tabela ou resumo):
+  A granularidade efetiva é calculada como `(time range / 80)` e arredondada para cima até a granularidade mais próxima compatível com a UI. Essa granularidade derivada também deve ser um múltiplo da granularidade da visão materializada.
+
+Por causa dessas regras:
+
+* **Não crie visões materializadas com granularidade de 10 minutos**.
+  O serviço oferece suporte à granularidade de 15 minutos para gráficos e alertas, mas não à de 10 minutos. Portanto, uma visão materializada de 10 minutos seria incompatível com as visualizações e os alertas de 15 minutos, que são comuns.
+* Prefira granularidades de **1 minuto** ou **1 hora**, que se combinam bem com a maioria das configurações de gráficos e alertas.
+
+Uma granularidade maior (por exemplo, 1 hora) gera visões menores e reduz a sobrecarga de armazenamento, enquanto uma granularidade menor (por exemplo, 1 minuto) oferece mais flexibilidade para análises granulares. Escolha a menor granularidade que atenda aos seus fluxos de trabalho críticos.
+
+### Limite e consolide visões materializadas {#limit-and-consolidate-materialized-views}
+
+Cada visão materializada adiciona sobrecarga em insert-time e aumenta a pressão sobre partes e a sobrecarga de mesclagem.
+Recomendam-se as seguintes diretrizes:
+
+* **No máximo 20 visões materializadas** por fonte de dados.
+* **Cerca de 10 visões materializadas** costuma ser o ideal.
+* Consolide várias visualizações em uma única visão quando elas compartilharem dimensões.
+
+Sempre que possível, calcule várias métricas e alimente vários gráficos a partir da mesma visão materializada.
+
+### Escolha as dimensões com cuidado {#choose-dimensions-carefully}
+
+Inclua apenas as dimensões usadas com frequência para agrupamento ou filtragem:
+
+* Cada coluna de agrupamento adicional aumenta o tamanho da visão.
+* Equilibre a flexibilidade das consultas com o custo de armazenamento e de insert-time.
+* Filtros em colunas ausentes da visão farão com que o serviço recorra à tabela de origem.
+
+<Info>
+  **Dica**
+
+  Uma configuração de referência comum e quase sempre útil é uma visão materializada agrupada por **nome do serviço com uma métrica de contagem**, que possibilita histogramas rápidos e visões gerais por serviço na busca e nos dashboards.
+</Info>
+
+### Convenções de nomenclatura para colunas de agregação {#naming-conventions-for-aggregation-columns}
+
+As colunas de agregação de visões materializadas devem seguir uma convenção de nomenclatura rigorosa para permitir a inferência automática:
+
+* Padrão: `<aggFn>__<sourceColumn>`
+* Exemplos:
+  * `avg__Duration`
+  * `max__Duration`
+  * `count__` para contagens de linhas
+
+O serviço depende dessa convenção para mapear corretamente as consultas às colunas da visão materializada.
+
+### Quantis e seleção de sketch {#quantiles-and-sketch-selection}
+
+Funções de quantil diferentes têm características distintas de desempenho e armazenamento:
+
+* `quantiles` produz sketches maiores em disco, mas é mais barata de calcular no momento da inserção.
+* `quantileTDigest` é mais cara de calcular no momento da inserção, mas produz sketches menores, o que muitas vezes resulta em consultas mais rápidas à visão.
+
+Você pode especificar um tamanho de sketch (por exemplo, `quantile(0.5)` no momento da inserção para ambas as funções. O sketch resultante ainda pode ser consultado posteriormente para outros valores de quantil, por exemplo, `quantile(0.95)`. Recomendamos fazer testes para encontrar o melhor equilíbrio para sua carga de trabalho.
+
+### Valide a eficácia continuamente {#validate-effectiveness-continously}
+
+Verifique sempre se as visões materializadas estão trazendo benefícios reais:
+
+* Confirme o uso por meio dos indicadores de aceleração na UI.
+* Compare o desempenho de consultas antes e depois de habilitar a visão.
+* Monitore o uso de recursos e o comportamento de mesclagem.
+
+As visões materializadas devem ser tratadas como otimizações de desempenho que exigem revisões e ajustes periódicos à medida que os padrões de consulta evoluem.
+
+### Configurações avançadas {#advanced-configurations}
+
+Para cargas de trabalho mais complexas, é possível usar várias visões materializadas para atender a diferentes padrões de acesso. Por exemplo:
+
+* **Dados recentes em alta resolução com visões históricas de granularidade mais grossa**
+* **Visões no nível de serviço para visões gerais e visões no nível de endpoint para diagnósticos aprofundados**
+
+Esses padrões podem melhorar significativamente o desempenho quando aplicados de forma seletiva, mas só devem ser introduzidos depois que configurações mais simples tiverem sido validadas.
+
+Seguir essas recomendações ajuda a garantir que as visões materializadas continuem eficazes, fáceis de manter e alinhadas ao modelo de execução de consultas.
+
+## Limitações {#limitations}
+
+### Motivos comuns de incompatibilidade {#common-incompatibility-reasons}
+
+Uma visão materializada **não** será usada se qualquer uma das seguintes condições se aplicar:
+
+* **Intervalo de tempo da consulta**
+  O início do intervalo de tempo da consulta é anterior ao timestamp mínimo da visão materializada. Como as visões não são preenchidas com dados históricos automaticamente, elas só podem atender a consultas em intervalos de tempo que cobrem integralmente.
+
+* **Incompatibilidade de granularidade**
+  A granularidade efetiva da visualização deve ser um múltiplo exato da granularidade da visão materializada. Especificamente:
+
+  * Para **gráficos temporais** (gráficos de linha ou de barras com tempo no eixo x), a granularidade selecionada no gráfico deve ser um múltiplo da granularidade da visão. Por exemplo, um gráfico de 10 minutos pode usar visões materializadas de 10, 5, 2 ou 1 minuto, mas não visões de 20 ou de 3 minutos.
+  * Para **gráficos sem eixo temporal** (gráficos de número ou de tabela), a granularidade efetiva é calculada como `(time range / 80)`, arredondada para cima até a granularidade mais próxima suportada pela UI, e também deve ser um múltiplo da granularidade da visão.
+
+* **Funções de agregação sem suporte**
+  A consulta solicita uma agregação que não existe na visão materializada. Somente agregações explicitamente calculadas e armazenadas na visão podem ser usadas.
+
+* **Expressões de contagem personalizadas**
+  Consultas que usam expressões como `count(if(...))` ou outras contagens condicionais não podem ser derivadas de estados de agregação padrão e, portanto, não podem usar visões materializadas.
+
+### Restrições de design e operacionais {#design-and-operational-constraints}
+
+* **Sem carregamento automático de dados históricos**
+  As visões materializadas incrementais contêm apenas dados inseridos após sua criação. Acelerar consultas sobre dados históricos exige um carregamento explícito desses dados, o que pode ser caro ou inviável para grandes conjuntos de dados.
+
+* **Trade-offs de granularidade**
+  Visões com granularidade muito fina aumentam o tamanho do armazenamento e a sobrecarga em insert-time, enquanto visões de granularidade mais grossa reduzem a flexibilidade. A granularidade deve ser escolhida com cuidado, de acordo com os padrões de consulta esperados.
+
+* **Explosão de dimensões**
+  Adicionar muitas dimensões de agrupamento aumenta significativamente o tamanho da visão e pode reduzir sua eficácia. As visões devem incluir apenas as colunas de agrupamento e filtragem mais utilizadas.
+
+* **Escalabilidade limitada do número de visões**
+  Cada visão materializada adiciona sobrecarga em insert-time e contribui para a sobrecarga de mesclagem. Criar visões em excesso pode prejudicar a ingestão e as mesclagens em segundo plano.
+
+Conhecer essas limitações ajuda a garantir que as visões materializadas sejam usadas onde trazem benefício real e a evitar configurações que recorram silenciosamente a consultas mais lentas na tabela de origem.
+
+## Solução de problemas {#troubleshooting}
+
+### Visão materializada não está sendo usada {#materialied-view-not-being-used}
+
+**Verificação 1: intervalo de datas**
+
+* Abra o modal de otimização para ver se aparece &quot;Date range not supported.&quot;
+* Certifique-se de que o intervalo de datas da consulta seja posterior à data mínima da visão materializada.
+* Remova a data mínima se a visão materializada contiver todos os dados históricos.
+
+**Verificação 2: granularidade**
+
+* Verifique se a granularidade do gráfico é um múltiplo da granularidade da MV.
+* Tente definir o gráfico como &quot;Auto&quot; ou selecione manualmente uma granularidade compatível.
+
+**Verificação 3: agregações**
+
+* Verifique se o gráfico usa agregações presentes na MV.
+* Consulte &quot;Available aggregated columns&quot; no modal de otimização.
+
+**Verificação 4: dimensões**
+
+* Certifique-se de que as colunas de agrupamento estejam entre as colunas de dimensão da MV.
+* Confira &quot;Available group/filter columns&quot; no modal de otimização.
+
+### Consultas lentas em visões materializadas {#slow-mv-queries}
+
+**Problema 1: granularidade da visão materializada fina demais**
+
+* A MV tem linhas demais devido à granularidade muito baixa (por exemplo, 1 segundo).
+* Solução: crie uma MV com granularidade maior (por exemplo, 1 minuto ou 1 hora).
+
+**Problema 2: dimensões demais**
+
+* A MV tem alta cardinalidade devido ao grande número de colunas de dimensão.
+* Solução: limite as colunas de dimensão às mais usadas.
+
+**Problema 3: várias MVs com contagens de linhas elevadas**
+
+* O sistema está executando `EXPLAIN` em cada MV.
+* Solução: remova as MVs raramente usadas ou que são sempre ignoradas.
+
+### Erros de configuração {#config-errors}
+
+**Erro: &quot;At least one aggregated column is required&quot;**
+
+* Adicione pelo menos uma coluna agregada à configuração da MV.
+
+**Erro: &quot;Source column is required for non-count aggregations&quot;**
+
+* Especifique qual coluna deve ser agregada (apenas `count` dispensa a coluna de origem).
+
+**Erro: &quot;Invalid granularity format&quot;**
+
+* Use uma das granularidades predefinidas da lista suspensa.
+* O formato deve ser um intervalo SQL válido (por exemplo, `1 hour`, e não `1 h`).

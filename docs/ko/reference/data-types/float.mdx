@@ -54,13 +54,9 @@ ClickHouse의 Float 타입에는 다음과 같은 Aliases가 있습니다.
 
 테이블을 생성할 때 부동소수점 수에 대한 숫자 매개변수를 지정할 수 있지만(예: `FLOAT(12)`, `FLOAT(15, 22)`, `DOUBLE(12)`, `DOUBLE(4, 18)`), ClickHouse는 이를 무시합니다.
 
-<div id="using-floating-point-numbers">
-  ## 부동소수점 수 사용
-</div>
+## 부동소수점 수 사용 {#using-floating-point-numbers}
 
 * 부동소수점 수를 사용한 계산에서는 반올림 오류가 발생할 수 있습니다.
-
-{/* */}
 
 ```sql
 SELECT 1 - 0.9
@@ -74,15 +70,11 @@ SELECT 1 - 0.9
 * 부동소수점 계산에서는 무한대(`Inf`) 및 &quot;숫자가 아님&quot;(`NaN`)과 같은 값이 나올 수 있습니다. 계산 결과를 처리할 때는 이 점을 고려해야 합니다.
 * 텍스트에서 부동소수점 수를 파싱할 때, 결과가 기계에서 표현 가능한 가장 가까운 숫자가 아닐 수 있습니다.
 
-<div id="nan-and-inf">
-  ## NaN 및 Inf
-</div>
+## NaN 및 Inf {#nan-and-inf}
 
 표준 SQL과 달리 ClickHouse는 다음과 같은 부동소수점 수 범주를 지원합니다.
 
 * `Inf` – 무한대입니다.
-
-{/* */}
 
 ```sql
 SELECT 0.5 / 0
@@ -94,8 +86,6 @@ SELECT 0.5 / 0
 
 * `-Inf` — 음의 무한대입니다.
 
-{/* */}
-
 ```sql
 SELECT -0.5 / 0
 
@@ -105,8 +95,6 @@ SELECT -0.5 / 0
 ```
 
 * `NaN` — 숫자가 아닙니다.
-
-{/* */}
 
 ```sql
 SELECT 0 / 0
@@ -118,9 +106,7 @@ SELECT 0 / 0
 
 [ORDER BY 절](/ko/reference/statements/select/order-by) 섹션에서 `NaN` 정렬 규칙을 확인하십시오.
 
-<div id="nan-values-in-set-semantics">
-  ## 집합 의미론에서의 NaN 값
-</div>
+## 집합 의미론에서의 NaN 값 {#nan-values-in-set-semantics}
 
 IEEE 754 표준에서는 스칼라 비교 `NaN = NaN`의 결과가 `false`가 되도록 `NaN`을 정의합니다.
 ClickHouse도 `=` 연산자에서 이 규칙을 따릅니다.
@@ -162,9 +148,7 @@ FROM (SELECT arrayJoin([0./0., nan, log(-1.)]) AS x);
 
 같은 방식이 `DISTINCT`, `GROUP BY`, `JOIN` 키에도 적용됩니다.
 
-<div id="bfloat16">
-  ## BFloat16
-</div>
+## BFloat16 {#bfloat16}
 
 `BFloat16`은 8비트 지수부, 1비트 부호, 7비트 가수로 구성된 16비트 부동소수점 데이터 타입입니다.
 머신 러닝 및 AI 애플리케이션에 유용합니다.

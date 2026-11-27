@@ -10,41 +10,31 @@ doc_type: 'guide'
 Créer des applications interactives axées sur les données nécessite non seulement une base de données rapide, des données bien structurées et des requêtes optimisées.
 Votre front-end et vos microservices ont également besoin d’un moyen simple d’exploiter les données renvoyées par ces requêtes, de préférence via des API bien structurées.
 
-La fonctionnalité **Query API Endpoints** vous permet de créer un endpoint d’API directement à partir de n’importe quelle requête SQL enregistrée dans la console ClickHouse Cloud.
+La fonctionnalité **Query API Endpoints** vous permet de créer un endpoint d’API directement à partir de n’importe quelle requête SQL enregistrée dans la Console ClickHouse Cloud.
 Vous pourrez accéder à ces endpoints d’API via HTTP pour exécuter vos requêtes enregistrées, sans avoir à vous connecter à votre service ClickHouse Cloud à l’aide d’un driver natif.
 
-<div id="ip-access-control">
-  ## Contrôle d’accès IP
-</div>
+## Contrôle d’accès IP {#ip-access-control}
 
 Les Query API endpoints appliquent la liste d’autorisation d’IP définie au niveau de la clé API. Comme pour la SQL Console, les Query API endpoints font transiter les requêtes via l’infrastructure de ClickHouse, de sorte que les paramètres de liste d’autorisation IP au niveau du service ne s’appliquent pas.
 
-Pour limiter les clients autorisés à appeler vos Query API endpoints :
+Pour limiter les clients autorisés à appeler vos Query API endpoints :
 
 <Steps>
   <Step title="Ouvrir les paramètres de la clé API" id="open-settings">
-    1. Accédez à ClickHouse Cloud Console → **Organization** → **API Keys**
+    1. Accédez à la Console ClickHouse Cloud → **Organization** → **Clés API**
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Clés API](/images/cloud/guides/query-endpoints/console-api-keys.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Clés API](/images/cloud/guides/query-endpoints/console-api-keys.webp)
+      </Frame>
     </div>
 
-    2. Cliquez sur **Edit** à côté de la clé API utilisée pour les Query API endpoints
+    2. Cliquez sur **Modifier** à côté de la clé API utilisée pour les Query API endpoints
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Modifier](/images/cloud/guides/query-endpoints/api-key-edit.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Modifier](/images/cloud/guides/query-endpoints/api-key-edit.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -54,13 +44,9 @@ Pour limiter les clients autorisés à appeler vos Query API endpoints :
     3. Ajoutez autant d’entrées que nécessaire
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Emplacements spécifiques](/images/cloud/guides/query-endpoints/specific-locations.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Emplacements spécifiques](/images/cloud/guides/query-endpoints/specific-locations.webp)
+      </Frame>
     </div>
 
     La création de Query API endpoints nécessite un rôle Admin dans la Console et une clé API disposant des autorisations appropriées.

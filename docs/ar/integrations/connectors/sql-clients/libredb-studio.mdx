@@ -10,14 +10,13 @@ integration:
   - category: 'sql_client'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
 [LibreDB Studio](https://github.com/libredb/libredb-studio) هي بيئة تطوير متكاملة (IDE) لـ SQL، مفتوحة المصدر (MIT) ومستضافة ذاتيًا،
 تعمل داخل المتصفح. تتصل بـ ClickHouse عبر واجهة HTTP دون الحاجة إلى JDBC أو مشغّل أصلي،
-وتوفّر محرر SQL، ومستعرضًا لقواعد البيانات، وخطط `EXPLAIN`، ولوحة معلومات للمراقبة
+وتوفّر محرر SQL، ومستعرضًا لقواعد البيانات، وخطط `EXPLAIN`، ولوحة معلومات Monitoring
 مبنية على جداول `system`.
 
 ## قبل أن تبدأ {#before-you-begin}
@@ -71,7 +70,7 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
        منفذ HTTPS الخاص بالخادم (غالبًا `8443`). تتحقق جميع الأوضاع باستثناء `disable` من شهادة الخادم
        بالاستناد إلى جهات CA التي يثق بها خادم LibreDB Studio، وهو ما يصفه الوضع `verify-system`.
        ينجح ذلك مع ClickHouse Cloud ومع الخوادم التي تحمل شهادات صادرة عن CA موثوقة
-       للعموم. أما إذا كانت الشهادة موقّعة ذاتيًا أو صادرة عن CA خاصة، فراجع قسم
+       للعموم. أما إذا كانت الشهادة ذاتية التوقيع أو صادرة عن CA خاصة، فراجع قسم
        [استكشاف الأخطاء وإصلاحها](#troubleshooting).
     5. اختر **Test Connection**، ثم **Establish Connection**.
 
@@ -79,7 +78,11 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
     `clickhouse://localhost:8123/default` أو `https://reader:secret@ch.example.com:8443/analytics`.
     ويُفعَّل TLS تلقائيًا عند استخدام عنوان URL يبدأ بـ `https://`.
 
-    <Image img="/images/integrations/sql-clients/libredb-studio-new-connection.png" size="sm" border alt="مربع حوار New Connection في LibreDB Studio مع اختيار ClickHouse وملء المضيف والمنفذ 8123 واسم المستخدم وقاعدة البيانات، ونجاح اختبار الاتصال" />
+    <div className="ch-image-sm">
+      <Frame>
+        ![مربع حوار New Connection في LibreDB Studio مع اختيار ClickHouse وملء المضيف والمنفذ 8123 واسم المستخدم وقاعدة البيانات، ونجاح اختبار الاتصال](/images/integrations/sql-clients/libredb-studio-new-connection.png)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="شغّل استعلامًا" id="run-a-query">
@@ -102,13 +105,17 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
     LIMIT 10
     ```
 
-    <Image img="/images/integrations/sql-clients/libredb-studio-query.png" size="md" border alt="محرر SQL في LibreDB Studio يعرض استعلام uk_price_paid وشبكة نتائج بأنواع الأعمدة المعرّفة في ClickHouse" />
+    <div className="ch-image-md">
+      <Frame>
+        ![محرر SQL في LibreDB Studio يعرض استعلام uk_price_paid وشبكة نتائج بأنواع الأعمدة المعرّفة في ClickHouse](/images/integrations/sql-clients/libredb-studio-query.png)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 ## مراقبة ClickHouse {#monitor-clickhouse}
 
-تقرأ لوحة معلومات المراقبة هذه المصادر باستخدام المستخدم المحدد في الاتصال:
+تقرأ لوحة معلومات Monitoring هذه المصادر باستخدام المستخدم المحدد في الاتصال:
 
 | المجال                                                                  | مصدر ClickHouse                                                     |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------- |
@@ -128,7 +135,11 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
 لجدول أو قاعدة بيانات، وإيقاف استعلام قيد التنفيذ باستخدام `KILL QUERY ... SYNC`. وتتطلب هذه العمليات
 الأذونات المناسبة.
 
-<Image img="/images/integrations/sql-clients/libredb-studio-monitoring.png" size="md" border alt="نظرة عامة على المراقبة في LibreDB Studio لاتصال ClickHouse، تعرض إصدار الخادم، ومدة التشغيل، والاتصالات، وحجم التخزين، ونسبة إصابات ذاكرة التخزين المؤقت، وعدد الجداول" />
+<div className="ch-image-md">
+  <Frame>
+    ![نظرة عامة على المراقبة في LibreDB Studio لاتصال ClickHouse، تعرض إصدار الخادم، ومدة التشغيل، والاتصالات، وحجم التخزين، ونسبة إصابات ذاكرة التخزين المؤقت، وعدد الجداول](/images/integrations/sql-clients/libredb-studio-monitoring.png)
+  </Frame>
+</div>
 
 ## استكشاف الأخطاء وإصلاحها {#troubleshooting}
 

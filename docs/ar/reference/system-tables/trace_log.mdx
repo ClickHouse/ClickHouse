@@ -4,7 +4,7 @@ description: 'جدول نظامي يحتوي على تتبعات المكدس ا
 keywords: ['جدول نظامي', 'trace_log']
 slug: /operations/system-tables/trace_log
 title: 'system.trace_log'
-doc_type: 'مرجع'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
@@ -79,7 +79,7 @@ echo $(clickhouse client --query "$(cat chrome_trace.sql)") > trace.json
 * `thread_id` ([UInt64](/ar/reference/data-types/int-uint)) — معرّف thread.
 * `thread_name` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم thread.
 * `query_id` ([String](/ar/reference/data-types/string)) — معرّف الاستعلام الذي يمكن استخدامه للحصول على تفاصيل عن استعلام كان قيد التشغيل من system table المسماة query&#95;log.
-* `trace` ([Array(UInt64)](/ar/reference/data-types/array)) — stack trace عند لحظة أخذ العينة. على منصات ELF باستثناء FreeBSD، تُخزَّن العناوين داخل ملف ClickHouse binary الرئيسي كإزاحات فعلية داخل الملف، بينما تُخزَّن الإطارات الواقعة خارجه (المكتبات المشتركة وشيفرة JIT) بالقيمة 0.
+* `trace` ([Array(UInt64)](/ar/reference/data-types/array)) — stack trace عند لحظة أخذ العينة. باستثناء FreeBSD، تُخزَّن العناوين داخل ملف ClickHouse binary الرئيسي كإزاحات فعلية داخل الملف، بينما تُخزَّن الإطارات الواقعة خارجه (المكتبات المشتركة وشيفرة JIT) بالقيمة 0.
 * `size` ([Int64](/ar/reference/data-types/int-uint)) — بالنسبة إلى أنواع تتبّع الذاكرة، فهو حجم بالبايت: الحجم المخصّص لـ Memory وMemoryAllocatedWithoutCheck؛ والحجم المخصّص، بقيمة سالبة عند عملية deallocation، لـ MemorySample وJemallocSample؛ والذروة الجديدة للمتتبّع بالنسبة إلى MemoryPeak؛ وحجم التحميل على متتبّع الذاكرة العام بالنسبة إلى MemoryLargeAllocation. أما بالنسبة إلى أنواع التتبّع الأخرى فقيمته 0.
 * `ptr` ([UInt64](/ar/reference/data-types/int-uint)) — معرّف الـ chunk المخصّص، ويبقى هو نفسه عند تخصيصه وتحريره خلال تشغيل واحد للخادم. وهو ليس عنوان الـ chunk، إذ لا يُكشف عن هذا العنوان.
 * `memory_context` ([Enum8(&#39;Unknown&#39; = -1, &#39;Global&#39; = 0, &#39;User&#39; = 1, &#39;Process&#39; = 2, &#39;Thread&#39; = 3, &#39;Max&#39; = 4)](/ar/reference/data-types/enum)) — سياق memory tracker (فقط لـ Memory وMemoryPeak وMemoryLargeAllocation): يكون سياق `Unknown` غير معرّف لهذا trace&#95;type. ويمثّل `Global` سياق الخادم. ويمثّل `User` سياق المستخدم/الدمج. ويمثّل `Process` سياق العملية (أي الاستعلام). ويمثّل `Thread` سياق thread (thread الخاصة بعملية معيّنة). أما `Max` فهي قيمة خاصة تعني أن memory tracker غير محظور (للعمود blocked&#95;context).

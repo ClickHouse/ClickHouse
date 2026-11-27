@@ -1,0 +1,54 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/golang
+description: 'Installation et configuration de Golang pour ClickHouse Observability et les déploiements autogérés.'
+title: 'Golang'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
+sidebarTitle: 'Golang'
+---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/fr/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+Utilisez le SDK Go d&#39;OpenTelemetry pour envoyer des logs, des métriques et des traces vers ClickHouse Observability.
+
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+
+## Configurer OpenTelemetry {#set-up-opentelemetry}
+
+Suivez les [instructions officielles de configuration d&#39;OpenTelemetry pour Go](https://opentelemetry.io/docs/languages/go/getting-started/) pour initialiser le SDK et instrumenter votre application.
+
+Configurez l&#39;[exportation OTLP via HTTP](https://opentelemetry.io/docs/languages/go/exporters/) pour les signaux que vous souhaitez envoyer, à l&#39;aide des paramètres de connexion ci-dessous. Remplacez toutes les destinations fournies à titre d&#39;exemple dans la documentation en amont, y compris les surcharges d&#39;endpoint propres à chaque signal.
+
+## Configurer votre destination {#configure-destination}
+
+<Tabs>
+  <Tab title="Entièrement géré">
+    <BetaBadge label="Offre en version bêta" />
+
+    Ouvrez **Paramètres de l’équipe → Données → Télémétrie gérée** dans votre service, puis copiez le **point de terminaison OTLP HTTP** et l’**API key**. Utilisez le point de terminaison HTTPS complet, port compris :
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+
+  <Tab title="Autogéré">
+    Utilisez le point de terminaison OTLP HTTP et la clé d’ingestion de votre collecteur. Remplacez `https://` par `http://` si TLS n’est pas configuré sur votre collecteur. Pour configurer le collecteur, consultez [Ingestion avec OpenTelemetry](/fr/clickstack/observability/ingesting-data/opentelemetry#sending-otel-data-self-configured).
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+</Tabs>
+
+## Vérifier l&#39;ingestion {#verify-ingestion}
+
+Démarrez votre application instrumentée et générez de l&#39;activité. Dans ClickHouse Observability, sélectionnez un intervalle de temps récent et recherchez le nom du service de votre application dans Logs ou Traces. Si votre application émet des métriques, consultez Metrics après avoir laissé à l&#39;exportation le temps de s&#39;effectuer.
+
+Pour le dépannage de l&#39;instrumentation et de l&#39;exportateur, consultez la [documentation OpenTelemetry pour Go](https://opentelemetry.io/docs/languages/go/).

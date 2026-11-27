@@ -67,7 +67,7 @@ namespace
         };
     }
 
-    /// An Azure disk configured with `connection_string` is described by that whole string.
+    /// The other disk of a copy can be of any type, and its description can carry credentials, such as a password in a URL.
     String maskedDescription(const DataSourceDescription & description)
     {
         String result = description.description;

@@ -3,6 +3,7 @@
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -13,6 +14,14 @@ class ColumnMapper;
 
 namespace DB::Parquet
 {
+
+/// Checks that the schema tree, as described by the `num_children` fields from the file, fits in
+/// `FileMetaData::schema`. `Reader::readFileFooter` calls it, and the code that walks the schema
+/// (`SchemaConverter`, `schemaHasLeaf`) relies on it for bounds.
+void checkSchemaTree(const parq::FileMetaData & file_metadata);
+
+/// Whether the schema has a primitive column with this path, the names of its elements joined with '.'.
+bool schemaHasLeaf(const parq::FileMetaData & file_metadata, std::string_view path);
 
 /// Converting parquet schema to clickhouse schema + information for decoding.
 /// Used both for schema inference and for reading.
@@ -91,8 +100,14 @@ private:
         /// If `parquet_name` is nullopt, the clickhouse and parquet names are equal.
         String name;
         std::optional<String> parquet_name;
+        /// ColumnMapper's path of the node, if it differs from `name`: the mapper names a list element
+        /// `l.element`, while `name` is `l`. The mapped names of the children are relative to it.
+        std::optional<String> column_mapper_path;
         DataTypePtr type_hint;
         bool requested = false;
+        /// Index of the key_value tuple element not read, for a requested map read by one side. Not inherited by recursive calls.
+        std::optional<size_t> map_element_to_skip;
+        bool inside_skipped_map_element = false;
         /// The element or one of its ancestors is not in the data lake schema (see useColumnMapperIfNeeded).
         bool not_in_datalake_schema = false;
 
@@ -105,6 +120,11 @@ private:
             return parquet_name.has_value() ? *parquet_name : name;
         }
 
+        [[nodiscard]] const String & getColumnMapperPath() const
+        {
+            return column_mapper_path.has_value() ? *column_mapper_path : name;
+        }
+
         [[nodiscard]] String getNameForLogging() const
         {
             if (parquet_name.has_value() && *parquet_name != name)
@@ -114,6 +134,12 @@ private:
 
         void appendNameComponent(const String & parquet_field_name, std::string_view mapped_field_name)
         {
+            if (column_mapper_path.has_value())
+            {
+                if (!column_mapper_path->empty())
+                    *column_mapper_path += ".";
+                *column_mapper_path += mapped_field_name;
+            }
             if (!name.empty())
                 name += ".";
             name += mapped_field_name;
@@ -132,6 +158,7 @@ private:
             TraversalNode res = *this;
             res.schema_context = schema_context_;
             res.type_hint = std::move(type_hint_);
+            res.map_element_to_skip.reset();
             res.element = nullptr;
             res.output_idx.reset();
             return res;
@@ -152,6 +179,7 @@ private:
     struct TupleInArray
     {
         String name;
+        String column_mapper_path;
         size_t schema_idx = 0;
         size_t leaves_start = 0;
         size_t leaves_end = 0;
@@ -179,7 +207,8 @@ private:
     std::optional<size_t> addLevelsOnlyPrimitive(size_t leaves_start, size_t leaves_end, UInt8 arrays, const String & name);
 
     /// If the requested column at `pos` is `arr.missing`, where `arr` is in tuples_in_arrays and has
-    /// no element `missing`, outputs it as arrays of defaults sized like `arr` and returns true.
+    /// no element `missing`, outputs it as arrays of its `initial-default` (or of defaults, if missing columns are allowed)
+    /// sized like `arr` and returns true.
     bool addMissingElementOfTupleInArray(size_t pos);
 
     void processPrimitiveColumn(
@@ -199,6 +228,18 @@ private:
     /// column names with dots (e.g. `integer.col` in Iceberg).
     std::string_view useColumnMapperIfNeeded(
         const parq::SchemaElement & element, const String & current_path, bool & out_not_in_schema) const;
+
+    /// Whether the file proves the field at `path` of the ColumnMapper absent: all fields at its level of the file schema
+    /// have field ids and none of them is its id.
+    [[nodiscard]] bool isAbsentFromFile(const String & path) const;
+    /// The `initial-default` of the column or subcolumn `path` of the field `field` of the ColumnMapper as a value of `type`,
+    /// if the field is absent.
+    [[nodiscard]] std::optional<Field> getAbsentFieldDefault(const String & field, const String & path, const DataTypePtr & type) const;
+
+    /// The field ids of the top-level fields of the file, and of the fields of each of its structs by the path of the
+    /// struct; nullopt if one of them has no field id.
+    std::optional<UnorderedSetWithMemoryTracking<Int64>> top_level_field_ids;
+    UnorderedMapWithMemoryTracking<String, std::optional<UnorderedSetWithMemoryTracking<Int64>>> struct_field_ids;
 };
 
 }
