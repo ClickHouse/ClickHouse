@@ -3,6 +3,7 @@
 #include <memory>
 #include <time.h>
 #include <Compression/CompressedReadBufferBase.h>
+#include <Compression/ZstdIncrementalDecompressor.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/LoggingHelpers.h>
 
@@ -17,12 +18,14 @@ class MMappedFileCache;
 class CompressedReadBufferFromFile final : public CompressedReadBufferBase, public BufferWithOwnMemory<ReadBuffer>
 {
 private:
-      /** At any time, one of two things is true:
+      /** At any time, one of three things is true:
       * a) size_compressed = 0 and working_buffer is empty
       * b)
       *  - `working_buffer` contains the entire block.
       *  - `file_in` points to the end of this block.
       *  - `size_compressed` contains the compressed size of this block.
+      * c) as b), but `partial_decompressor.inProgress()`: `working_buffer` ends at the end of the decompressed part,
+      *  `file_in` is not read or seeked until the reader leaves the block, and the rest is read from `own_compressed_buffer`.
       */
     std::unique_ptr<ReadBufferFromFileBase> p_file_in;
     ReadBufferFromFileBase & file_in;
@@ -42,6 +45,12 @@ private:
     /// nextimpl_working_buffer_offset into account there as well.
     ///
     /* size_t nextimpl_working_buffer_offset; */
+
+    /// Decompresses only the beginning of a ZSTD block when a read needs only that (state c above).
+    ZstdIncrementalDecompressor partial_decompressor;
+
+    bool startPartialDecompression(size_t size_decompressed, size_t size_compressed_without_checksum, size_t min_bytes);
+    void continuePartialDecompression(size_t min_bytes);
 
     bool nextImpl() override;
 
