@@ -7661,7 +7661,15 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             const auto & setting_name = changed_setting.name;
             const auto & new_value = changed_setting.value;
             MergeTreeSettings::checkCanSet(setting_name, new_value);
-            const Field * current_value = current_changes.tryGet(setting_name);
+
+            /// A definition may state a setting more than once and the last occurrence is in effect, so a change is
+            /// compared with that one: the first could equal the new value while the effective one does not.
+            const Field * current_value = nullptr;
+            for (const auto & current_setting : current_changes)
+            {
+                if (current_setting.name == setting_name)
+                    current_value = &current_setting.value;
+            }
 
             if ((!current_value || *current_value != new_value)
                 && isReadonlySetting(setting_name)
