@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel
+# Tags: zookeeper, no-parallel, no-shared-merge-tree
 # Tag zookeeper: a CSN log entry is a znode under <transaction_log.zookeeper_path>/log.
 # Tag no-parallel: the transaction log is system-global - every transaction of the server commits
 #   into the one log that this test appends an entry to by hand.
+# Tag no-shared-merge-tree: a public build ignores the sub-lists, but in a SharedMergeTree build they
+#   name the tables whose changes a later SYSTEM SYNC TRANSACTION LOG waits to become visible, and the
+#   hand-written entry names tables that do not exist, so that wait could never end.
 
 # Test: Tx::CSNEntryData::deserialize reads the labelled sub-lists that follow the cross_replica_id
 # of a table line of a CSN log entry: P=<zookeeper path>, A=<added row names>, R=<removed row names>,
@@ -39,11 +42,32 @@ PAYLOAD="$PAYLOAD\n6442450945 R=row_r2 A=row_a3,row_a4 P=/zk/path/two"
 # Creates /log with its reserved entries and starts the thread that absorbs the new ones.
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC TRANSACTION LOG"
 
-# The next free CSN. Keeper raises the sequence counter of the parent on every create, so a name
-# appended by hand here does not take the name of the next real commit.
-CSN=$(($($CLICKHOUSE_CLIENT -q \
-    "SELECT max(toUInt64(substring(name, 5))) FROM system.zookeeper WHERE path = '$LOG_PATH'") + 1))
+# A free CSN above both ends of the log: above the largest name that /log still holds, and above the
+# snapshot this server has already loaded. The second half is what makes a rerun on the same server
+# deserialize the payload again - cleanup removes the node but leaves last_loaded_csn behind, and
+# loadNewEntries skips every name at or below it, so reusing max(/log) + 1 would let a later run pass
+# without parsing anything. Keeper raises the sequence counter of the parent on every create, so a
+# name appended by hand here does not take the name of the next real commit. Gaps are fine:
+# loadNewEntries orders and cuts the child list by CSN, it does not require consecutive names.
+CSN=$($CLICKHOUSE_CLIENT -q "SELECT greatest(
+    (SELECT max(toUInt64(substring(name, 5))) FROM system.zookeeper WHERE path = '$LOG_PATH'),
+    transactionLatestSnapshot()) + 1")
 NODE=$(printf 'csn-%010d' "$CSN")
+
+# Pins the premise of the assertions below: the snapshot is still behind the crafted CSN, so the
+# only way it can reach it is through deserialize accepting this entry.
+$CLICKHOUSE_CLIENT -q "SELECT 'snapshot_behind_crafted_csn', transactionLatestSnapshot() < $CSN"
+
+# The entry is system-global, so it is removed again on every exit path, before the assertions can
+# fail. Should deserialize ever reject the payload - the regression this test is here to catch - the
+# thread that loads new entries would retry that same entry forever and every later SYSTEM SYNC
+# TRANSACTION LOG on this server would time out. system.zookeeper only writes, so the node is
+# removed through Keeper, the way 05229_fetch_entry_for_local_part_missing_in_zookeeper.sh removes a
+# part node by hand. Registered before the insert, so an interrupt in between is covered too.
+cleanup() {
+    $CLICKHOUSE_KEEPER_CLIENT -q "rm '$LOG_PATH/$NODE'" > /dev/null 2>&1 || true
+}
+trap cleanup EXIT
 
 $CLICKHOUSE_CLIENT -q \
     "INSERT INTO system.zookeeper (path, name, value) VALUES ('$LOG_PATH', '$NODE', '$PAYLOAD')"
