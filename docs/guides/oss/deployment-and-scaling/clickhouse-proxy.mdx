@@ -93,11 +93,21 @@ the password. After authentication the connection is spliced byte for byte.
 
 When no routing rule needs the user or the database and no `on_first_seen_user` or
 `on_first_seen_database` hook is configured, MySQL connections are instead forwarded
-transparently and routed by peer address or the listener's default pool (no termination). Only
-`mysql_native_password` is mediated; TLS is not offered to the client on a MySQL listener so that the
-handshake stays readable. Because the client receives the proxy's greeting before the backend is
-chosen, the connection ID it learns from the greeting is not the backend's: use `KILL QUERY` with a
-query ID rather than killing a connection by the ID from the handshake.
+transparently and routed by peer address or the listener's default pool (no termination): the
+client and the backend then negotiate TLS between themselves. Only `mysql_native_password` is mediated.
+
+When the proxy terminates the handshake, it also terminates TLS: if a server certificate is
+configured in the `openSSL.server` section, the greeting offers TLS, and a client that asks for it
+(for example with `--ssl-mode=REQUIRED`) switches to TLS before it sends the user name and the
+authentication response. The backend leg is in plaintext. Without a server certificate TLS is not
+offered, and a client that requires it cannot connect.
+
+Because the client receives the proxy's greeting before the backend is chosen, the connection ID it
+learns from the greeting is not the backend's. The proxy assigns IDs that are unique among its own
+sessions and start at 2147483648, so that they do not coincide with the IDs of a backend, which
+counts its connections from zero: `KILL QUERY <connection ID>` (as `mysql` sends on Ctrl+C) and
+`mysql_kill` with the ID from the handshake find nothing to kill instead of reaching another
+session. Use `KILL QUERY` with a query ID.
 
 ## SSH {#ssh}
 
@@ -280,9 +290,8 @@ A rule without `protocol` applies only to the protocols whose connections can ha
 matches on: `query_type` is known only for `http`, `authorized_key` only for `ssh`, and `host` only for
 `http`, `native` (the SNI of a secure listener) and `tls`, while `user` and `database` are not known
 for `tls` and `stream`, and `database` is not known for `ssh`. Such a rule does not make the proxy parse the
-credentials of other protocols (e.g. downgrade the TLS negotiation of PostgreSQL), and it is not taken
-into account when choosing the health check port of the backends of its pool for them (nor for a
-plaintext `native` listener, if it matches on `host`).
+credentials of other protocols (e.g. downgrade the TLS negotiation of PostgreSQL), and the backends of
+its pool are not probed on the ports of these protocols because of it.
 Hostnames are matched case-insensitively, as DNS names are case-insensitive: the incoming value is
 lowercased before matching, exact `host` values are compared after lowercasing, and a `host_regexp`
 is compiled as case-insensitive (regexp captures substituted into a `backend_template` are therefore
@@ -352,17 +361,22 @@ Repeated connections can be pinned to the same backend, chosen by a consistent
 
 The proxy periodically probes every backend with a TCP connection (and a TLS handshake for a backend
 marked `<secure>1</secure>`, so a backend with a broken certificate is not kept in rotation), records
-latency, and marks a backend down after a number of consecutive failures (bringing it back up when it recovers). The
-probed port is the backend's `<health_check_port>` if set; otherwise the first configured port among
-`tcp_port`, `http_port`, `mysql_port`, `postgresql_port`, `ssh_port` and `raw_port`. A backend
-without any explicit port is probed on the port the listeners that route to it use: the protocol's
-default port (for example `8443` for a secure backend of an `http` listener, `9004` for a `mysql`
-listener), the first one in the order above if there are several, or the listener's port for a `tls`
-or `stream` listener (if such a backend is reachable on several different ports through different
-listeners, `health_check_port` is required). A backend that no listener routes to statically is
-probed on the default native port. Set
-`health_check_port` for a backend that is used through several protocols to the port whose
-availability matters most: the health state is tracked per backend, not per protocol.
+latency, and marks a backend down after a number of consecutive failures (bringing it back up when it recovers).
+
+A backend serves each protocol on its own port, and one of them can be down while the others work, so
+the health state is tracked per port of a backend, not per backend. The proxy probes every port that
+a listener reaches the backend on: the configured `tcp_port`, `http_port`, `mysql_port`,
+`postgresql_port`, `ssh_port` or `raw_port`, the protocol's default port if it is omitted (for example
+`8443` for a secure backend of an `http` listener, `9004` for a `mysql` listener), or the listener's
+port for a `tls` or `stream` listener without a `raw_port`. A port that is marked down, by the probe or
+by failed connections of clients, takes the backend out of rotation only for the listeners that reach
+it on this port: a backend whose `http_port` does not answer still receives native connections.
+A backend that no listener routes to is not probed.
+
+If a backend has a `<health_check_port>`, it is probed in addition, and it stands for the backend as
+a whole: while it does not answer, the backend is out of rotation for every protocol. Use it for a
+port that tells whether the server is ready to serve at all.
+
 If a backend has monitoring credentials (`<monitor_user>` / `<monitor_password>`), the proxy also polls
 its CPU and memory usage over HTTP (HTTPS for a secure backend), which the `least_resources` strategy
 uses.
@@ -376,7 +390,8 @@ not stall other connections.
 An HTTP listener can answer `/ping`, serve static pages, and expose a JSON status page describing
 all pools, their backends, and per-backend statistics. These endpoints are served by the proxy
 itself and do not require a user name or a backend. The status page is disabled by default; set
-`status_path` to enable it.
+`status_path` to enable it. For each backend, `alive` tells that none of its ports is marked down, and
+`ports_marked_down` lists the ports that are (`0` stands for the probe of `health_check_port`).
 
 ```xml
 <http>
