@@ -228,18 +228,6 @@ void ExecutingGraph::removeNode(Node & node)
     nodes.erase(node.self_iter);
 }
 
-ExecutingGraph::Node & ExecutingGraph::addNode(ProcessorPtr processor)
-{
-    /// Stands in for an allocation failure while a processor is being recorded (see `updatePipeline`).
-    fiu_do_on(FailPoints::executing_graph_add_node_fail,
-    {
-        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint {} is triggered", FailPoints::executing_graph_add_node_fail);
-    });
-
-    processors->push_back(std::move(processor));
-    return addNode(std::prev(processors->end()));
-}
-
 ExecutingGraph::Edge & ExecutingGraph::addEdge(Edges & edges, Edge edge, const Node & from, const IProcessor * to)
 {
     auto it = processors_map.find(to);
@@ -329,14 +317,9 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(DevectorWithMemo
     {
         expansion_failed = true;
         /// The ports of the pipeline's processors point at the new processors, and the pipeline is read after the graph is gone.
+        /// `to_add` is not empty only if the processor threw, before `updatePipelineImpl` spliced it into the pipeline.
         std::lock_guard guard(processors_mutex);
-        for (auto it = update.to_add.begin(); it != update.to_add.end();)
-        {
-            auto next = std::next(it);
-            if (std::ranges::find(*processors, *it) == processors->end())
-                processors->splice(processors->end(), update.to_add, it);
-            it = next;
-        }
+        processors->splice(processors->end(), update.to_add);
         throw;
     }
 }
@@ -348,10 +331,15 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipelineImpl(
     {
         std::lock_guard guard(processors_mutex);
 
-        /// Record new processors in pipeline
+        /// Record new processors in pipeline. Splicing transfers the list nodes without allocating, so every new
+        /// processor stays owned by the pipeline even if recording one of them throws.
+        const auto first_new = update.to_add.empty() ? processors->end() : update.to_add.begin();
+        processors->splice(processors->end(), update.to_add);
+
         const IProcessor & parent = *cur_node.processor();
-        for (const auto & new_proc : update.to_add)
+        for (auto it = first_new; it != processors->end(); ++it)
         {
+            const auto & new_proc = *it;
             /// Runtime-added processors (lazy reads, external sort, ...) usually have no step,
             /// so `EXPLAIN ANALYZE` would drop their stats. Attribute them to the parent step.
             /// The guard is deliberate: processors that already carry a step keep it.
@@ -359,7 +347,13 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipelineImpl(
             if (!new_proc->getQueryPlanStep())
                 new_proc->inheritQueryPlanStepFromParent(parent, parent.getQueryPlanStepGroup());
 
-            addNode(new_proc);
+            /// Stands in for an allocation failure while a processor is being recorded (see `updatePipeline`).
+            fiu_do_on(FailPoints::executing_graph_add_node_fail,
+            {
+                throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint {} is triggered", FailPoints::executing_graph_add_node_fail);
+            });
+
+            addNode(it);
         }
 
         /// Record removed processors in pending removal queue
@@ -382,8 +376,8 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipelineImpl(
         /// Propagate cancellation to newly added processors.
         if (cancel_reason != IProcessor::CancelReason::NotCancelled)
         {
-            for (auto & processor : update.to_add)
-                processor->cancel(cancel_reason);
+            for (auto it = first_new; it != processors->end(); ++it)
+                (*it)->cancel(cancel_reason);
 
             cancel_reason_if_cancelled = cancel_reason;
         }

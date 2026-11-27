@@ -28,10 +28,6 @@ using StorageLimitsList = ListWithMemoryTracking<StorageLimits>;
 class RowsBeforeStepCounter;
 using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 
-class IProcessor;
-using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = ListWithMemoryTracking<ProcessorPtr>;
-
 class StepWallClock;
 
 namespace Runtime::V1

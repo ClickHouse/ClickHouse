@@ -22,7 +22,7 @@
 #include <expected>
 #include <functional>
 #include <optional>
-#include <Common/ListWithMemoryTracking.h>
+#include <Processors/IProcessor_fwd.h>
 #include <Poco/Timespan.h>
 
 
@@ -49,10 +49,6 @@ using PartitionCommands = std::vector<PartitionCommand>;
 
 class DDLGuard;
 using DDLGuardPtr = std::unique_ptr<DDLGuard>;
-
-class IProcessor;
-using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = ListWithMemoryTracking<ProcessorPtr>;
 
 class Pipe;
 class QueryPlan;

@@ -1,5 +1,5 @@
 #pragma once
-#include <Common/ListWithMemoryTracking.h>
+#include <Processors/IProcessor_fwd.h>
 #include <memory>
 #include <vector>
 
@@ -13,10 +13,6 @@ class PushingAsyncSource;
 
 class IExecutor;
 using ExecutorPtr = std::shared_ptr<IExecutor>;
-
-class IProcessor;
-using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = ListWithMemoryTracking<ProcessorPtr>;
 
 /// Pushing executor for Chain of processors using several background threads.
 /// Typical usage is:

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/ListWithMemoryTracking.h>
+#include <Processors/IProcessor_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <atomic>
 #include <cstdint>
@@ -495,10 +495,6 @@ public:
         return *input_port;
     }
 };
-
-
-using InputPorts = ListWithMemoryTracking<InputPort>;
-using OutputPorts = ListWithMemoryTracking<OutputPort>;
 
 
 void connect(OutputPort & output, InputPort & input, bool reconnect = false);

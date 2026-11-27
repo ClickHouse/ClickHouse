@@ -201,7 +201,6 @@ private:
 
     /// Append a processor to the graph's processors list, create its Node, assign a stable id,
     /// register it in the processors map. Does not create edges — that is done separately by addEdges.
-    Node & addNode(ProcessorPtr processor);
     Node & addNode(Processors::iterator processor_iter);
     Node * getNodeToRemove(const ProcessorPtr & processor) const;
     void removeNode(Node & node);

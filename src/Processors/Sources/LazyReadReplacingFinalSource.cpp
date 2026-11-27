@@ -379,14 +379,15 @@ void LazyReadReplacingFinalSource::work()
 
 void LazyReadReplacingFinalSource::updatePipeline(PipelineUpdate & update)
 {
+    update.to_add = std::move(processors);
+
     inputs.emplace_back(pipeline_output->getHeader(), this);
     connect(*pipeline_output, inputs.back());
     inputs.back().setNeeded();
 
     /// We need to retag the processors in order to track their execution time correctly in EXPLAIN ANALYZE
-    for (auto & processor : processors)
+    for (auto & processor : update.to_add)
         processor->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
-    update.to_add = std::move(processors);
 }
 
 }
