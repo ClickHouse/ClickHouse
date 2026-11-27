@@ -63,6 +63,9 @@ public:
         /// with a given name, or with a given size and checksum, and for the size and checksum of a file. So it doesn't
         /// keep the rest of the information about its files, and can't be read from.
         bool for_file_lookups_only = false;
+        /// Download each pack of a packed backup on object storage once, into a temporary file kept until the backup is
+        /// destroyed. Off for a reader that lives as long as a `Backup` database. A base backup inherits it.
+        bool download_packs = true;
         ReadSettings read_settings;
         WriteSettings write_settings;
 #if CLICKHOUSE_CLOUD

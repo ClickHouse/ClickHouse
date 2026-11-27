@@ -151,6 +151,7 @@ def setup_cluster(request):
             "configs/blob_log.xml",
             "configs/remote_servers.xml",
             "configs/query_log.xml",
+            "configs/page_cache.xml",
         ]
         + request.param,
         user_configs=[
@@ -724,7 +725,7 @@ def _list_backup_objects(cluster, backup_name):
 
 def test_backup_to_s3_packed_format(cluster):
     # Packing coalesces many small backup data files into a few pack objects, cutting the objects (and PUT
-    # requests) written. Restore reads each packed member with one bounded GET and writes it with one PUT.
+    # requests) written. Restore downloads each pack with one GET and writes each member with one PUT.
     node = cluster.instances["node"]
     storage_policy = "policy_s3"
     backup_name = new_backup_name()
@@ -744,6 +745,8 @@ def test_backup_to_s3_packed_format(cluster):
     assert (
         restore_events["ReadBufferFromS3Bytes"] <= 2 * backup_size
     ), f"restore read {restore_events['ReadBufferFromS3Bytes']} bytes from a backup of {backup_size} bytes"
+    packs = sum(1 for o in backup_objects if o.object_name.rsplit("/", 1)[-1].startswith("packs_"))
+    assert restore_events.get("BackupPackDownloads", 0) == packs, f"events={restore_events} packs={packs}"
 
     # Fewer objects than files: the MinIO listing holds one object per entry plus the .backup manifest. The
     # listing is the ground truth, since native-copy CopyObject / UploadPartCopy events are not recorded in
@@ -798,6 +801,93 @@ def test_backup_to_s3_full_pack_is_single_put(cluster):
         assert requests["S3CreateMultipartUpload"] == 0, f"requests={requests} pack_sizes={pack_sizes}"
     finally:
         node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+
+
+def test_restore_from_s3_incremental_downloads_each_pack_once(cluster):
+    # RESTORE from object storage downloads each pack of a backup and of its base once, and reads members from there.
+    # Red if BackupPackDownloads != the number of pack objects, or if a Log file that grew since the base restores
+    # wrong. page_cache.xml and pread are pinned: a page cache block can start before a member, breaking base + delta.
+    node = cluster.instances["node"]
+    name = f"pack_download_{uuid.uuid4().hex}"
+    log_table = f"{name}_log"
+    backups = [f"{name}_base", name]
+    small_parts = (
+        "max_block_size=100, max_insert_block_size=100, min_insert_block_size_rows=0, min_insert_block_size_bytes=0, "
+        "max_insert_threads=1"
+    )
+
+    def insert(start):
+        node.query(
+            f"INSERT INTO {name} SELECT number, toString(number) FROM numbers({start}, 3000) SETTINGS {small_parts}"
+        )
+        # A Log table's files grow on insert, so the incremental backup stores only their new bytes.
+        node.query(f"INSERT INTO {log_table} SELECT number, toString(number) FROM numbers({start}, 3000)")
+
+    def destination(backup):
+        return f"S3('http://minio1:9001/root/data/backups/{backup}', 'minio', '{minio_secret_key}')"
+
+    def manifest(backup):
+        response = cluster.minio_client.get_object("root", f"data/backups/{backup}/.backup")
+        try:
+            return response.read().decode("utf-8")
+        finally:
+            response.close()
+            response.release_conn()
+
+    # Truncate system.query_log so the flush below covers only this test's rows.
+    node.query("TRUNCATE TABLE IF EXISTS system.query_log")
+    try:
+        node.query(
+            f"CREATE TABLE {name} (a UInt64, s String) ENGINE=MergeTree ORDER BY a "
+            "SETTINGS min_bytes_for_wide_part=0, min_bytes_for_full_part_storage=0"
+        )
+        node.query(f"SYSTEM STOP MERGES {name}")
+        node.query(f"CREATE TABLE {log_table} (a UInt64, s String) ENGINE=Log")
+        insert(0)
+        node.query(
+            f"BACKUP TABLE {name}, TABLE {log_table} TO {destination(backups[0])} SETTINGS backup_use_packed_format=1"
+        )
+        insert(3000)
+        node.query(
+            f"BACKUP TABLE {name}, TABLE {log_table} TO {destination(backups[1])} "
+            f"SETTINGS backup_use_packed_format=1, base_backup={destination(backups[0])}"
+        )
+
+        files = re.findall(r"<file>.*?</file>", manifest(backups[1]), re.S)
+        assert any("<base_size>" in f and "<packed>true</packed>" in f for f in files), "no packed file grew"
+        pack_sizes = [
+            o.size
+            for backup in backups
+            for o in _list_backup_objects(cluster, backup)
+            if o.object_name.rsplit("/", 1)[-1].startswith("packs_")
+        ]
+        assert len(pack_sizes) >= 2, pack_sizes
+
+        query_id = uuid.uuid4().hex
+        node.query(
+            f"RESTORE TABLE {name} AS {name}_restored, TABLE {log_table} AS {log_table}_restored "
+            f"FROM {destination(backups[1])}",
+            query_id=query_id,
+            settings={"use_page_cache_for_local_disks": 1, "local_filesystem_read_method": "pread"},
+        )
+        for table in (name, log_table):
+            expected = node.query(f"SELECT count(), sum(sipHash64(*)) FROM {table}")
+            assert node.query(f"SELECT count(), sum(sipHash64(*)) FROM {table}_restored") == expected, table
+
+        events = get_events_for_query(node, query_id)
+        assert events.get("BackupPackDownloads", 0) == len(pack_sizes), f"events={events} pack_sizes={pack_sizes}"
+        # The pack files are at the root of the temporary path, where a server restart would remove them too. Matched by
+        # size, since a background merge of a system table can hold its own temporary file there.
+        find = (
+            "find /var/lib/clickhouse/tmp/ -mindepth 1 -maxdepth 1 -ignore_readdir_race -type f -name 'tmp*' "
+            "-printf '%f %s\\n'"
+        )
+        left = node.exec_in_container(["bash", "-c", find]).splitlines()
+        assert not [f for f in left if int(f.split()[1]) in pack_sizes], f"left={left} pack_sizes={pack_sizes}"
+    finally:
+        for table in (name, log_table):
+            node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            node.query(f"DROP TABLE IF EXISTS {table}_restored SYNC")
 
 
 def _small_packed_table(node, table):

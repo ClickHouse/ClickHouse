@@ -8,6 +8,7 @@
 #include <Common/Logger_fwd.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <atomic>
 #include <map>
 #include <memory>
@@ -22,6 +23,7 @@ class IBackupWriter;
 class SeekableReadBuffer;
 class IArchiveReader;
 class IArchiveWriter;
+class TemporaryFileOnDisk;
 #if CLICKHOUSE_CLOUD && USE_SSL
 class BackupEncryptionSidecar;
 #endif
@@ -172,6 +174,14 @@ private:
         UInt64 size = 0;
     };
 
+    /// A pack object downloaded whole on its first read, kept until the backup is destroyed.
+    struct PackDownload
+    {
+        UInt64 size = 0; /// Of the pack object, set when the pack indexes are loaded.
+        std::mutex mutex;
+        std::unique_ptr<TemporaryFileOnDisk> file TSA_GUARDED_BY(mutex); /// Null until a download succeeds.
+    };
+
     /// Pack objects of a packed backup. Empty for other layouts.
     struct Packs
     {
@@ -179,6 +189,9 @@ private:
         UnorderedMapWithMemoryTracking<String, MemberLocation> member_locations;
         /// Number of pack objects: from the manifest on read, counted as they are written on write.
         size_t count = 0;
+        /// By pack id; empty unless restoring a packed backup from object storage to a local temporary volume. Sized once
+        /// at open and never resized, so a slot's address stays valid without `mutex`; each slot locks itself.
+        mutable VectorWithMemoryTracking<PackDownload> downloads;
         UInt64 total_size = 0; /// Total size of the written pack objects, front indexes included.
     };
 
@@ -188,7 +201,9 @@ private:
     /// Fails closed unless the pack indexes and the manifest agree on which data files are packed and on each
     /// member's size.
     void checkPacksMatchManifest(const UnorderedSetWithMemoryTracking<String> & declared_packed_files) const TSA_REQUIRES(mutex);
-    std::unique_ptr<ReadBufferFromFileBase> readPackedMember(const MemberLocation & member) const;
+    /// `pack_download` is the member's pack slot in `packs.downloads`, or null to read the member from the backup directly.
+    std::unique_ptr<ReadBufferFromFileBase> readPackedMember(const MemberLocation & member, PackDownload * pack_download) const;
+    std::unique_ptr<TemporaryFileOnDisk> downloadPack(const String & pack_object, UInt64 pack_object_size) const;
 
     /// How the backup's objects are laid out, set at construction. Packed is set only on write, from the setting;
     /// a read finds packed members via `packs.member_locations`.

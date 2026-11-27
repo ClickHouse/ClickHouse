@@ -245,6 +245,7 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
     backup_open_params.open_mode = IBackup::OpenMode::READ;
     backup_open_params.context = getContext();
     backup_open_params.backup_info = BackupInfo::fromString(config.backup_info);
+    backup_open_params.download_packs = false;
 
     try
     {

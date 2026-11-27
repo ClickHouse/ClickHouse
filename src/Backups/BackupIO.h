@@ -32,7 +32,9 @@ public:
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) = 0;
 
     /// Opens a pack object for reading one member through ReadBufferFromFileView. Local readers turn off O_DIRECT
-    /// and mmap here: O_DIRECT floors seek positions to its alignment, which the view can't track.
+    /// and mmap here: O_DIRECT floors seek positions to its alignment, which the view can't track. A page cache block can
+    /// start before the member, which `ConcatReadBufferFromFile` (base + delta) mishandles, so local readers turn the page
+    /// cache off too.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFileForPackedMember(const String & file_name) { return readFile(file_name); }
 
     /// The function copyFileToDisk() can be much faster than reading the file with readFile() and then writing it to some disk.

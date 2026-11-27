@@ -6,6 +6,9 @@
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupIO_S3.h>
 #include <Backups/findCharacterNotPreservedByXML.h>
+#include <Disks/IVolume.h>
+#include <Disks/TemporaryFileOnDisk.h>
+#include <Interpreters/Context.h>
 #include <IO/PackedFilesReader.h>
 #include <IO/PackedFilesIO.h>
 #include <fmt/format.h>
@@ -15,9 +18,11 @@
 #include <Common/StackTrace.h>
 #include <Common/StringUtils.h>
 #include <Common/Hex.h>
+#include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Core/ServerSettings.h>
 #include <Core/UUID.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <IO/Archives/IArchiveWriter.h>
@@ -55,10 +60,17 @@ namespace ProfileEvents
     extern const Event BackupReadMetadataMicroseconds;
     extern const Event BackupWriteMetadataMicroseconds;
     extern const Event BackupLockFileReads;
+    extern const Event BackupPackDownloads;
 }
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsString temporary_data_in_cache;
+    extern const ServerSettingsString tmp_policy;
+}
 
 namespace FailPoints
 {
@@ -88,6 +100,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INSECURE_PATH;
     extern const int FAULT_INJECTED;
+    extern const int NOT_ENOUGH_SPACE;
 }
 
 namespace fs = std::filesystem;
@@ -215,6 +228,20 @@ namespace
         write_file(info.data_file_name);
         for (const auto & data_file_copy : info.data_file_copies)
             write_file(data_file_copy);
+    }
+
+    /// Whether the temporary volume is local and cleaned of `tmp*` files at startup. Under `temporary_data_in_cache` it is
+    /// the filesystem cache's directory, which the cache neither cleans nor accounts; `tmp_policy` takes precedence over
+    /// it, as in `Server::main`.
+    bool isTemporaryVolumeLocal(const ContextPtr & context)
+    {
+        const auto volume = context->getGlobalTemporaryVolume();
+        if (!volume)
+            return false;
+        const auto & server_settings = context->getServerSettings();
+        if (server_settings[ServerSetting::tmp_policy].value.empty() && !server_settings[ServerSetting::temporary_data_in_cache].value.empty())
+            return false;
+        return std::ranges::none_of(volume->getDisks(), [](const DiskPtr & disk) { return disk->isRemote(); });
     }
 }
 
@@ -1094,6 +1121,11 @@ void BackupImpl::readBackupMetadata()
 
     if (reads_data)
     {
+        const bool download_whole_packs = params.download_packs
+            && (backup_info.backup_engine_name == "S3" || backup_info.backup_engine_name == "AzureBlobStorage")
+            && isTemporaryVolumeLocal(params.context);
+        if (download_whole_packs)
+            packs.downloads = VectorWithMemoryTracking<PackDownload>(packs.count);
         loadPackIndexes();
         checkPacksMatchManifest(declared_packed_files);
     }
@@ -1534,6 +1566,8 @@ void BackupImpl::loadPackIndexes()
                 quoteString(pack_object));
 
         const UInt64 pack_object_size = reader->getFileSize(pack_object);
+        if (!packs.downloads.empty())
+            packs.downloads[pack_id].size = pack_object_size;
         /// One entry per pack, sized as the whole object.
         ++num_entries;
         size_of_entries += pack_object_size;
@@ -1614,12 +1648,43 @@ void BackupImpl::checkPacksMatchManifest(const UnorderedSetWithMemoryTracking<St
     }
 }
 
-std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readPackedMember(const MemberLocation & member) const
+std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readPackedMember(const MemberLocation & member, PackDownload * pack_download) const
 {
-    /// TODO: opens the pack per member (a ranged GET each on S3); a batch-restore API could
-    /// open each pack once and slice all its members.
     const String pack_object = getBackupPackObjectName(member.pack_id);
-    return PackedFilesReader::viewMember(reader->readFileForPackedMember(pack_object), pack_object, member.offset, member.size);
+    if (!pack_download)
+        return PackedFilesReader::viewMember(reader->readFileForPackedMember(pack_object), pack_object, member.offset, member.size);
+
+    /// On object storage a request costs more than its bytes: the first reader downloads the whole pack under its mutex
+    /// (concurrent readers wait), and every member is read from the temporary file. A failed download leaves no file, so
+    /// the next reader retries.
+    const TemporaryFileOnDisk * file = nullptr;
+    {
+        std::lock_guard pack_lock{pack_download->mutex};
+        if (!pack_download->file)
+            pack_download->file = downloadPack(pack_object, pack_download->size);
+        file = pack_download->file.get();
+    }
+
+    /// Settings as in `IBackupReader::readFileForPackedMember`.
+    auto settings = PackedFilesReader::disableDirectIOAndMmap(params.read_settings);
+    settings.page_cache_settings.cache.reset();
+    auto in = file->getDisk()->readFile(file->getRelativePath(), settings, member.size);
+    return PackedFilesReader::viewMember(std::move(in), pack_object, member.offset, member.size);
+}
+
+std::unique_ptr<TemporaryFileOnDisk> BackupImpl::downloadPack(const String & pack_object, UInt64 pack_object_size) const
+{
+    auto reservation = params.context->getGlobalTemporaryVolume()->reserve(pack_object_size);
+    if (!reservation)
+        throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Backup {}: Not enough space on the temporary disk to download pack {} of {}",
+            backup_name_for_logging, quoteString(pack_object), ReadableSize(pack_object_size));
+
+    /// At the root of the temporary disk with the default prefix, so the server removes it at startup if it dies
+    /// before this backup is destroyed.
+    auto file = std::make_unique<TemporaryFileOnDisk>(reservation->getDisk());
+    reader->copyFileToDisk(pack_object, pack_object_size, /* encrypted_in_backup= */ false, file->getDisk(), file->getRelativePath(), WriteMode::Rewrite);
+    ProfileEvents::increment(ProfileEvents::BackupPackDownloads);
+    return file;
 }
 
 std::unique_ptr<ReadBufferFromFileBase>
@@ -1644,6 +1709,7 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
 
     BackupFileInfo info;
     std::optional<MemberLocation> packed_location;
+    PackDownload * pack_download = nullptr;
     {
         std::lock_guard lock{mutex};
         auto it = file_infos.find(size_and_checksum);
@@ -1658,7 +1724,11 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
         }
         info = it->second;
         if (auto pit = packs.member_locations.find(info.data_file_name); pit != packs.member_locations.end())
+        {
             packed_location = pit->second;
+            if (!packs.downloads.empty())
+                pack_download = &packs.downloads[pit->second.pack_id];
+        }
     }
 
     if (info.encrypted_by_disk != read_encrypted)
@@ -1678,7 +1748,7 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
         if (isArchive())
             read_buffer = archive_reader->readFile(info.data_file_name, /*throw_on_not_found=*/true);
         else if (packed_location)
-            read_buffer = readPackedMember(*packed_location);
+            read_buffer = readPackedMember(*packed_location, pack_download);
         else
             read_buffer = reader->readFile(info.data_file_name);
     }
