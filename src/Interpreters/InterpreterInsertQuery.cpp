@@ -6,6 +6,7 @@
 #include <Storages/StorageInput.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
@@ -36,6 +37,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Processors/Sinks/EmptySink.h>
+#include <Processors/Transforms/WaitForStreamingCursorTransform.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
@@ -122,6 +124,11 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool add_implicit_sign_column_constraint_for_collapsing_engine;
+}
+
+namespace FailPoints
+{
+    extern const char insert_pause_before_reading_serialization_hints[];
 }
 
 namespace ServerSetting
@@ -631,6 +638,18 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
 
     /// Reached only when the async route was never eligible: build the ordinary synchronous
     /// `INSERT ... SELECT` tail directly on the `SELECT` pipeline.
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// An incremental refresh: the target gets its input finished only after every read of the query reported its cursor.
+    if (auto streaming_cursor = context->getStreamingCursor())
+    {
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
+        {
+            return std::make_shared<WaitForStreamingCursorTransform>(in_header, streaming_cursor);
+        });
+    }
+#endif
+
     pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
         auto counting = std::make_shared<CountingTransform>(in_header, context->getQuota(), context->getNormalizedQueryHash());
@@ -1148,7 +1167,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, context, nullptr);
 
         if (settings[Setting::enable_parsing_to_custom_serialization])
-            format->setSerializationHints(table->getSerializationHints());
+        {
+            /// The format parses the columns with the types from `metadata_snapshot`; a concurrent `ALTER` may have changed them since.
+            FailPointInjection::pauseFailPoint(FailPoints::insert_pause_before_reading_serialization_hints);
+            format->setSerializationHints(table->getSerializationHints(*metadata_snapshot));
+        }
 
         auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), context, nullptr);
         pipeline.complete(std::move(pipe));

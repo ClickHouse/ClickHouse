@@ -69,6 +69,8 @@ MergeTreeCommitOrderSource::MergeTreeCommitOrderSource(
     , log(getLogger(fmt::format("MergeTreeCommitOrderSource::{}", UUIDHelpers::generateV4())))
     , read_state(stream_settings)
 {
+    if (!stream_settings.subscribe_for_updates)
+        pending_report = StreamingCursor::PendingReport(reading_context.context->getStreamingCursor());
 }
 
 IProcessor::Status MergeTreeCommitOrderSource::handleRunningPipeline()
@@ -119,6 +121,43 @@ IProcessor::Status MergeTreeCommitOrderSource::handleShutdown()
 {
     auto & output = outputs.front();
     chassert(output.isFinished());
+
+    /// The query does not need the rest of the rows of the bounded stream (e.g. a `DISTINCT` by constants or a `LIMIT BY`
+    /// without keys already has its result), so it stopped the read. A bounded read for an incremental refresh still has
+    /// to report the cursor after all the rows of its snapshot: these rows are consumed by the query, although they are not
+    /// read, and the next refresh must not get them again. It holds for every parallel stream of the read, including the
+    /// ones whose round did not start yet (or is being built), as the query may be stopped by another stream: otherwise their
+    /// partitions would be missing from the cursor, and the next refresh would read them again. If the query was stopped by
+    /// an exception or was cancelled instead, it fails, and the reported cursor is discarded along with it.
+    if (needsFinalCursor())
+    {
+        if (current_round.has_value())
+        {
+            read_state.finishReadRound(current_round->partitions, current_round->safe_block_numbers);
+        }
+        else if (pending_round.has_value())
+        {
+            read_state.finishReadRound(pending_round->partitions, pending_round->safe_block_numbers);
+        }
+        else
+        {
+            /// The subscription is cancelled: the query fails, and the cursor does not matter.
+            if (subscription->isDisabled())
+                return Status::Finished;
+
+            /// The snapshot of this stream is not assigned yet: wait for it (see `onUpdatePorts`).
+            const auto [safe_block_numbers, subscription_updated] = subscription->snapshot();
+            if (!subscription_updated)
+                return Status::Async;
+
+            const auto classification = classifyPartitions(read_state, safe_block_numbers, stream_settings);
+            read_state.updatePartitionSet(classification);
+            read_state.finishReadRound(classification, safe_block_numbers);
+        }
+
+        surfaceFinalCursor();
+        subscription->disable();
+    }
 
     if (inputs.empty() || !inputs.front().isConnected())
         return Status::Finished;
@@ -194,7 +233,9 @@ void MergeTreeCommitOrderSource::surfaceFinalCursor()
     if (!cursor)
         return;
 
+    final_cursor_surfaced = true;
     cursor->merge(mergeTreeCursorToCursorTree(read_state.getPartitionCursors()));
+    pending_report.finish();
 }
 
 bool MergeTreeCommitOrderSource::needToEmitGlobalIdle(const ClassifiedPartitions & partitions, bool subscription_updated)
@@ -228,6 +269,14 @@ IProcessor::Status MergeTreeCommitOrderSource::handleEmitGlobalIdle()
 }
 
 IProcessor::Status MergeTreeCommitOrderSource::prepare()
+{
+    const auto status = prepareImpl();
+    if (status == Status::Finished)
+        pending_report.finish();
+    return status;
+}
+
+IProcessor::Status MergeTreeCommitOrderSource::prepareImpl()
 {
     subscription->drain();
 
@@ -340,14 +389,23 @@ IProcessor::PipelineUpdate MergeTreeCommitOrderSource::updatePipeline()
     return update;
 }
 
+bool MergeTreeCommitOrderSource::needsFinalCursor() const
+{
+    return !stream_settings.subscribe_for_updates && !final_cursor_surfaced && reading_context.context->getStreamingCursor();
+}
+
 void MergeTreeCommitOrderSource::onUpdatePorts()
 {
-    if (outputs.front().isFinished())
+    /// A bounded read for an incremental refresh keeps the subscription until it gets its snapshot, see `handleShutdown`.
+    if (outputs.front().isFinished() && !needsFinalCursor())
         subscription->disable();
 }
 
 void MergeTreeCommitOrderSource::onCancel() noexcept
 {
+    /// The query fails, so the cursor does not matter.
+    pending_report.finish();
+
     /// disable() notifies through the wakeup pipe and may throw (e.g. on fd corruption);
     /// propagating from noexcept would terminate the server.
     try
