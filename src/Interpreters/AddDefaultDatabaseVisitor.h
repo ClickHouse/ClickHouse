@@ -9,7 +9,6 @@
 #include <Parsers/ASTRefreshStrategy.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -24,9 +23,6 @@
 #include <Interpreters/misc.h>
 #include <Poco/String.h>
 #include <set>
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
 
 namespace DB
 {
@@ -70,19 +66,12 @@ public:
         if (!tryVisitDynamicCast<ASTAlterQuery>(parent, ast) &&
             !tryVisitDynamicCast<ASTQueryWithTableAndOutput>(parent, ast) &&
             !tryVisitDynamicCast<ASTRenameQuery>(parent, ast) &&
-            !tryVisitDynamicCast<ASTSystemQuery>(parent, ast) &&
             !tryVisitDynamicCast<ASTFunction>(parent, ast))
         {}
     }
 
     void visit(ASTPtr & ast) const
     {
-        if (auto * subquery = ast->as<ASTSubquery>(); subquery && isCopyOfWithElementBody(*subquery))
-        {
-            visitCopyOfWithElementBody(*subquery, [&](ASTPtr & node) { visit(node); });
-            return;
-        }
-
         if (!tryVisit<ASTSelectQuery>(ast) &&
             !tryVisit<ASTSelectWithUnionQuery>(ast) &&
             !tryVisit<ASTFunction>(ast) &&
@@ -134,18 +123,7 @@ private:
 
     const String database_name;
     std::set<String> external_tables;
-    struct WithDeclaration
-    {
-        /// Whether a bare name that refers to the declaration is left unqualified.
-        bool hides_table = false;
-        bool is_recursive = false;
-    };
-
-    /// The declarations of the common table expressions of the enclosing select queries by name,
-    /// the nearest last.
-    mutable std::unordered_map<String, std::vector<WithDeclaration>> with_aliases;
-    /// The aliases of the expressions of the current select query.
-    mutable std::unordered_set<String> expression_aliases;
+    mutable std::unordered_set<String> with_aliases;
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
@@ -158,167 +136,22 @@ private:
                 tryVisit<ASTSelectQuery>(child);
             else if (child->as<ASTSelectIntersectExceptQuery>())
                 tryVisit<ASTSelectIntersectExceptQuery>(child);
-            /// A parenthesized operand with its own `SETTINGS` clause stays wrapped into a union of its own
-            /// (see `ParserUnionQueryElement`), as does a parenthesized union that is not lifted into this one.
-            else if (child->as<ASTSelectWithUnionQuery>())
-                tryVisit<ASTSelectWithUnionQuery>(child);
         }
     }
 
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
-        /// The callers of the full traversal expand the common table expressions with
-        /// `ApplyWithSubqueryVisitor` first, so a name it left in place is a table, except for a
-        /// reference of a recursive common table expression to itself: the names of a `WITH RECURSIVE`
-        /// list must not be qualified. They are visible in this select query and in its subqueries,
-        /// and are forgotten when the walk leaves it: another select query of the same `UNION`, or
-        /// a sibling subquery, may use the same name for a table, which has to be qualified.
-        auto enclosing_with_aliases = with_aliases;
-        addWithAliases(select);
-
-        /// The right argument of IN may refer to an alias of an expression defined elsewhere
-        /// in the query, possibly after the point of use - then it is not a table name.
-        /// Collect the aliases before descending into the children.
-        /// Like in `MarkTableIdentifiersVisitor`, only the aliases of the current select query
-        /// are considered: an alias is not visible inside a nested select query and vice versa.
-        auto enclosing_query_aliases = std::move(expression_aliases);
-        expression_aliases.clear();
-        for (const auto & child : select.children)
-            collectAliases(child);
+        if (select.recursive_with)
+            for (const auto & child : select.with()->children)
+            {
+                if (typeid_cast<ASTWithElement *>(child.get()))
+                    with_aliases.insert(child->as<ASTWithElement>()->name);
+            }
 
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
 
-        for (auto & child : select.children)
-        {
-            if (child.get() == select.with().get())
-                visitWithList(select, [&](ASTPtr & node) { visit(node); });
-            else
-                visit(child);
-        }
-
-        expression_aliases = std::move(enclosing_query_aliases);
-        with_aliases = std::move(enclosing_with_aliases);
-    }
-
-    /// Add the names of the common table expressions declared by the `WITH` clause of the select query.
-    void addWithAliases(const ASTSelectQuery & select) const
-    {
-        if (!select.with())
-            return;
-
-        for (const auto & child : select.with()->children)
-        {
-            if (const auto * with_element = typeid_cast<const ASTWithElement *>(child.get()))
-            {
-                with_aliases[with_element->name].push_back(
-                {
-                    .hides_table = select.recursive_with,
-                    .is_recursive = select.recursive_with && getRecursiveBodyBranches(with_element->subquery),
-                });
-            }
-        }
-    }
-
-    bool isWithAlias(const String & name) const
-    {
-        auto it = with_aliases.find(name);
-        return it != with_aliases.end() && !it->second.empty() && it->second.back().hides_table;
-    }
-
-    /// Walk the `WITH` list of the select query with `visit_child`, each element as a body of the
-    /// common table expression it declares.
-    template <typename Visit>
-    void visitWithList(ASTSelectQuery & select, Visit && visit_child) const
-    {
-        for (auto & child : select.with()->children)
-        {
-            if (auto * with_element = typeid_cast<ASTWithElement *>(child.get()))
-                visitWithElementBody(with_element->name, with_element->subquery, child, visit_child);
-            else
-                visit_child(child);
-        }
-    }
-
-    /// `ApplyWithSubqueryVisitor` replaces a reference to a common table expression with a copy of
-    /// its body, which keeps the name in `cte_name`. The copy is a body of the nearest declaration
-    /// of that name, like the element in the `WITH` list.
-    bool isCopyOfWithElementBody(const ASTSubquery & subquery) const
-    {
-        if (subquery.cte_name.empty())
-            return false;
-        auto it = with_aliases.find(subquery.cte_name);
-        return it != with_aliases.end() && !it->second.empty();
-    }
-
-    template <typename Visit>
-    void visitCopyOfWithElementBody(ASTSubquery & subquery, Visit && visit_child) const
-    {
-        String name = subquery.cte_name;
-        ASTPtr subquery_ptr = subquery.ptr();
-        for (auto & child : subquery.children)
-            visitWithElementBody(name, subquery_ptr, child, visit_child);
-    }
-
-    /// Walk the body of the nearest declaration of the common table expression `name`: `subquery`
-    /// is the body, and `node` is what contains it (the `WITH` element) or what it contains. Only
-    /// the recursive members of a recursive common table expression reference it, i.e. the branches
-    /// of its body after the first one. Inside the body of an ordinary one, and inside the seed of
-    /// a recursive one, its name is a table, unless an enclosing select query defines the same name.
-    template <typename Visit>
-    void visitWithElementBody(const String & name, const ASTPtr & subquery, ASTPtr & node, Visit && visit_child) const
-    {
-        auto & declarations = with_aliases[name];
-        const WithDeclaration declaration = declarations.back();
-        ASTs * branches = declaration.is_recursive ? getRecursiveBodyBranches(subquery) : nullptr;
-
-        declarations.pop_back();
-        visit_child(branches ? branches->front() : node);
-        with_aliases[name].push_back(declaration);
-
-        if (branches)
-        {
-            for (size_t i = 1; i < branches->size(); ++i)
-                visit_child((*branches)[i]);
-        }
-    }
-
-    /// The rule of `QueryTreeBuilder`: an element of a `WITH RECURSIVE` list is a recursive common
-    /// table expression when its body is a `UNION`, an `INTERSECT` or an `EXCEPT` of several queries,
-    /// possibly in parentheses. Returns the branches of such a body, the seed first, and null for
-    /// a body of a single select query, which is an ordinary common table expression.
-    static ASTs * getRecursiveBodyBranches(const ASTPtr & subquery)
-    {
-        if (!subquery || subquery->children.empty())
-            return nullptr;
-
-        IAST * body = subquery->children.front().get();
-        while (auto * union_query = body->as<ASTSelectWithUnionQuery>())
-        {
-            auto & selects = union_query->list_of_selects->children;
-            if (selects.size() != 1)
-                return &selects;
-            body = selects.front().get();
-        }
-
-        if (auto * intersect_except = body->as<ASTSelectIntersectExceptQuery>())
-            return &intersect_except->children;
-        return nullptr;
-    }
-
-    /// Collect aliases of expressions in the subtree, skipping nested select queries:
-    /// their aliases are collected when the visitor descends into them.
-    void collectAliases(const ASTPtr & ast) const
-    {
-        if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTTableExpression>())
-            return;
-
-        String alias = ast->tryGetAlias();
-        if (!alias.empty())
-            expression_aliases.insert(alias);
-
-        for (const auto & child : ast->children)
-            collectAliases(child);
+        visitChildren(select);
     }
 
     void visit(ASTSelectIntersectExceptQuery & select, ASTPtr &) const
@@ -437,8 +270,8 @@ private:
         /// There is temporary table with such name, should not be rewritten.
         if (external_tables.contains(identifier.shortName()))
             return;
-        /// This is a common table expression of an enclosing select query.
-        if (isWithAlias(identifier.name()))
+        /// This is WITH RECURSIVE alias.
+        if (with_aliases.contains(identifier.name()))
             return;
 
         auto qualified_identifier = make_intrusive<ASTTableIdentifier>(database_name, identifier.name());
@@ -488,15 +321,10 @@ private:
                     }
                     else if (is_operator_in && i == 1)
                     {
+                        /// XXX: for some unknown reason this place assumes that argument can't be an alias,
+                        ///      like in the similar code in `MarkTableIdentifierVisitor`.
                         if (auto * identifier = child->children[i]->as<ASTIdentifier>())
                         {
-                            /// The argument may be an alias of an expression defined elsewhere in the query,
-                            /// e.g. `SELECT 'foo' AS object WHERE (object IN (('foo', 'bar') AS objects)) AND object IN objects`.
-                            /// Then it is not a table name and must not be qualified with the database
-                            /// (the similar code in `MarkTableIdentifiersVisitor` also checks the aliases).
-                            if (!identifier->as<ASTTableIdentifier>() && expression_aliases.contains(identifier->name()))
-                                continue;
-
                             /// If identifier is broken then we can do nothing and get an exception
                             auto maybe_table_identifier = identifier->createTable();
                             if (maybe_table_identifier)
@@ -579,14 +407,6 @@ private:
             if (command_ast->to_database.empty())
                 command_ast->to_database = database_name;
         }
-    }
-
-    void visitDDL(ASTPtr & /* parent */, ASTSystemQuery & query, ASTPtr &) const
-    {
-        if (!query.table || query.database || only_replace_current_database_function)
-            return;
-
-        query.setDatabase(database_name);
     }
 
     void visitDDL(ASTPtr & parent, ASTFunction & function, ASTPtr & node) const

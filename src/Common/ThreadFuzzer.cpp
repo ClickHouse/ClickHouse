@@ -7,7 +7,6 @@
 #endif
 #include <sched.h>
 
-#include <mutex>
 #include <random>
 
 #include <base/sleep.h>
@@ -18,7 +17,6 @@
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/MemoryTracker.h>
-#include <Common/Silk/FiberScheduler.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
@@ -186,39 +184,15 @@ bool ThreadFuzzer::isEffective() const
     return false;
 }
 
-/// A period of 0 disarms the timer.
-static void setPerturbationTimer(uint64_t cpu_time_period_us)
-{
-    static constexpr UInt32 timer_precision = 1000000;
-
-    struct timeval interval{};
-    interval.tv_sec = cpu_time_period_us / timer_precision;
-    interval.tv_usec = cpu_time_period_us % timer_precision;
-
-    struct itimerval timer = {.it_interval = interval, .it_value = interval};
-
-    if (0 != setitimer(ITIMER_PROF, &timer, nullptr))
-        throw ErrnoException(ErrorCodes::CANNOT_CREATE_TIMER, "Failed to set profiling timer for thread fuzzer");
-}
-
-/// Keeps `started` consistent with `ITIMER_PROF` under concurrent `start`/`stop`. Never lock it in `signalHandler`.
-static std::mutex perturbation_state_mutex;
-
 void ThreadFuzzer::stop()
 {
-    std::lock_guard lock(perturbation_state_mutex);
     started.store(false, std::memory_order_relaxed);
-    if (instance().needsSetup())
-        setPerturbationTimer(0);
 }
 
 void ThreadFuzzer::start()
 {
-    std::lock_guard lock(perturbation_state_mutex);
     if (!instance().isEffective())
         return;
-    if (instance().needsSetup())
-        setPerturbationTimer(instance().cpu_time_period_us);
     started.store(true, std::memory_order_relaxed);
 }
 
@@ -234,7 +208,7 @@ static void injectionImpl(
     double sleep_time_us_max)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
-    if (!ThreadFuzzer::isStarted() || Silk::isInsideFiber())
+    if (!ThreadFuzzer::isStarted())
         return;
 
     if (yield_probability > 0
@@ -291,9 +265,6 @@ void ThreadFuzzer::maybeInjectSleep()
 /// NOTE We also have a query setting fault_probability, but it does not work for background operations (maybe we should fix it).
 void ThreadFuzzer::maybeInjectMemoryLimitException()
 {
-    if (!isStarted())
-        return;
-
     auto & fuzzer = ThreadFuzzer::instance();
     if (fuzzer.explicit_memory_exception_probability <= 0.0)
         return;
@@ -316,8 +287,6 @@ void ThreadFuzzer::setup() const
     if (!needsSetup())
         return;
 
-    std::lock_guard lock(perturbation_state_mutex);
-
     struct sigaction sa{};
     sa.sa_handler = signalHandler;
     sa.sa_flags = SA_RESTART;
@@ -337,7 +306,16 @@ void ThreadFuzzer::setup() const
     if (sigaction(SIGPROF, &sa, nullptr))
         throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Failed to setup signal handler for thread fuzzer");
 
-    setPerturbationTimer(cpu_time_period_us);
+    static constexpr UInt32 timer_precision = 1000000;
+
+    struct timeval interval{};
+    interval.tv_sec = cpu_time_period_us / timer_precision;
+    interval.tv_usec = cpu_time_period_us % timer_precision;
+
+    struct itimerval timer = {.it_interval = interval, .it_value = interval};
+
+    if (0 != setitimer(ITIMER_PROF, &timer, nullptr))
+        throw ErrnoException(ErrorCodes::CANNOT_CREATE_TIMER, "Failed to create profiling timer");
 }
 
 
@@ -400,7 +378,22 @@ void ThreadFuzzer::setup() const
 /// Starting from glibc 2.34 there are no internal symbols without version,
 /// so not __pthread_mutex_lock but __pthread_mutex_lock@2.2.5
 #if defined(OS_LINUX) and !defined(USE_MUSL) and !defined(__loongarch64)
-    #include <base/glibc_symver.h>
+    /// You can get version from glibc/sysdeps/unix/sysv/linux/$ARCH/$BITS_OR_BYTE_ORDER/libc.abilist
+    #if defined(__amd64__)
+    #    define GLIBC_SYMVER "GLIBC_2.2.5"
+    #elif defined(__aarch64__)
+    #    define GLIBC_SYMVER "GLIBC_2.17"
+    #elif defined(__riscv) && (__riscv_xlen == 64)
+    #    define GLIBC_SYMVER "GLIBC_2.27"
+    #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    #    define GLIBC_SYMVER "GLIBC_2.17"
+    #elif (defined(__S390X__) || defined(__s390x__))
+    #    define GLIBC_SYMVER "GLIBC_2.2"
+    #elif defined(__e2k__)
+    #    define GLIBC_SYMVER "GLIBC_2.0"
+    #else
+    #    error Your platform is not supported.
+    #endif
 
     #define GLIBC_COMPAT_SYMBOL(func) __asm__(".symver " #func "," #func "@" GLIBC_SYMVER);
 
@@ -409,12 +402,12 @@ void ThreadFuzzer::setup() const
 #endif
 
 /// The loongarch64's glibc_version is 2.36
-/// musl always uses the internal symbols: __pthread_mutex_lock is an ordinary
-/// strong symbol there (not versioned, not intercepted by ASan), while dlsym
-/// cannot look up symbols in a statically linked binary.
-#if (defined(ADDRESS_SANITIZER) && !defined(USE_MUSL)) || defined(__loongarch64)
+#if defined(ADDRESS_SANITIZER) || defined(__loongarch64)
 #if USE_JEMALLOC
 #error "ASan cannot be used with jemalloc"
+#endif
+#if defined(USE_MUSL)
+#error "ASan cannot be used with musl"
 #endif
 #include <dlfcn.h>
 
@@ -445,7 +438,7 @@ FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER_USING_DLSYM)
 #else
 #define MAKE_WRAPPER_USING_INTERNAL_SYMBOLS(RET, NAME, ...) \
     extern "C" RET __##NAME(__VA_ARGS__);                   \
-    extern "C" SHARED_ACROSS_DSO RET NAME(__VA_ARGS__)      \
+    extern "C" RET NAME(__VA_ARGS__)                        \
     {                                                       \
         if (!ThreadFuzzer::isStarted())                     \
         {                                                   \

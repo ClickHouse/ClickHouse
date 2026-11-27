@@ -1,15 +1,12 @@
 #pragma once
 
-#include "config.h"
 #include <chrono>
 #include <optional>
-#include <Common/Macros.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/UUID.h>
 #include <Storages/IStorage.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueBatchSizeOverride.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -46,11 +43,6 @@ public:
 
     String getName() const override { return engine_name; }
 
-#if CLICKHOUSE_CLOUD
-    ObjectStoragePtr getObjectStorage() const { return object_storage; }
-    StorageObjectStorageConfigurationPtr getObjectStorageConfiguration() const { return configuration; }
-#endif
-
     ObjectStorageType getType() { return type; }
 
     void read(
@@ -68,8 +60,7 @@ public:
     void alter(
         const AlterCommands & commands,
         ContextPtr local_context,
-        AlterLockHolder & table_lock_holder,
-        DDLGuardPtr & ddl_guard) override;
+        AlterLockHolder & table_lock_holder) override;
 
     void renameInMemory(const StorageID & new_table_id) override;
 
@@ -128,13 +119,11 @@ public:
         const Settings & settings,
         const ObjectStorageQueueSettings & queue_settings,
         UUID database_uuid = UUIDHelpers::Nil,
-        String * result_zookeeper_name = nullptr,
-        Macros::MacroExpansionInfo * result_macro_info = nullptr);
+        String * result_zookeeper_name = nullptr);
 
     static constexpr auto engine_names = {"S3Queue", "AzureQueue"};
 
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
-    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override;
 
 private:
     friend class ReadFromObjectStorageQueue;
@@ -152,7 +141,6 @@ private:
     std::string zookeeper_name;
     fs::path zk_path;
     const bool enable_logging_to_queue_log;
-    const bool parallel_inserts;
     mutable std::mutex mutex;
     UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);
     UInt64 polling_max_timeout_ms TSA_GUARDED_BY(mutex);
@@ -177,6 +165,7 @@ private:
 
     const std::optional<FormatSettings> format_settings;
 
+    UInt64 reschedule_processing_interval_ms TSA_GUARDED_BY(mutex);
 
     std::atomic<bool> startup_finished = false;
     std::atomic<bool> table_is_being_dropped = false;
@@ -187,11 +176,7 @@ private:
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;
     std::vector<BackgroundSchedulePoolTaskHolder> streaming_tasks;
     std::vector<UInt64> streaming_task_refresh_epochs;
-    /// The polling backoff of each streaming task, accessed only by that task (it never runs concurrently with itself).
-    /// It is per task, because with `parallel_inserts` the idle cycles of many tasks would otherwise
-    /// add up to one shared backoff, and a reset by the task which found files would not wake the others.
-    std::vector<UInt64> streaming_task_reschedule_intervals_ms;
-    ObjectStorageQueueBatchSizeOverride max_files_override;
+    std::atomic<size_t> max_files_override{0};
 
     LoggerPtr log;
 
@@ -231,24 +216,18 @@ private:
     /// A subset of logic executed by threadFunc.
     bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch);
     /// Apply after_processing action to successfully processed files.
-    void postProcess(
-        const StoredObjects & successful_objects,
-        UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths,
-        const ObjectStorageQueueMetadata & metadata) const;
+    void postProcess(const StoredObjects & successful_objects, const ObjectStorageQueueMetadata & metadata) const;
     /// Commit processed files to keeper as either successful or unsuccessful.
     void commit(
         bool insert_succeeded,
         size_t inserted_rows,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-        ObjectStorageQueueMetadata & metadata,
+        const ObjectStorageQueueMetadata & metadata,
         time_t transaction_start_time,
         const std::string & exception_message = {},
         int error_code = 0) const;
 
     const bool can_be_moved_between_databases;
-    /// Set when `zk_path` was expanded from a `{database}` macro, to the database name it was expanded
-    /// with. Empty when the path does not depend on the database name.
-    std::optional<String> keeper_path_database_name;
     const bool keep_data_in_keeper;
 
     const bool use_hive_partitioning;

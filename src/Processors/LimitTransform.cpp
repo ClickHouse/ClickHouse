@@ -4,7 +4,6 @@
 #include <Processors/Port.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
-#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -145,7 +144,6 @@ LimitTransform::Status LimitTransform::prepare()
     return prepare({ports_data.front().input_port}, {ports_data.front().output_port});
 }
 
-NO_SANITIZE_UNSIGNED_OVERFLOW
 LimitTransform::Status LimitTransform::preparePair(PortsData & data)
 {
     auto & output = *data.output_port;
@@ -342,7 +340,7 @@ void LimitTransform::splitChunk(PortsData & data)
 
     /// Check if other rows in current block equals to last one in limit
     /// when rows read >= offset + limit.
-    if (with_ties && !limit_is_unreachable && offset + limit <= rows_read && length)
+    if (with_ties && offset + limit <= rows_read && length)
     {
         UInt64 current_row_num = start + length;
         previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, current_row_num - 1);

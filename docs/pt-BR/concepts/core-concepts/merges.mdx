@@ -6,6 +6,8 @@ keywords: ['mesclagem']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 <div id="what-are-part-merges-in-clickhouse">
   ## O que são mesclagens de partes no ClickHouse?
 </div>
@@ -24,15 +26,7 @@ Para controlar o número de partes por tabela e implementar o item ② acima, o 
 
 O diagrama a seguir ilustra esse processo de mesclagem em segundo plano:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![mesclagem de partes](/images/managing-data/core-concepts/merges_01.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_01.webp" size="lg" alt="mesclagem de partes" />
 
 <br />
 
@@ -75,15 +69,7 @@ O resultado da [consulta documentada anteriormente](/pt-BR/concepts/core-concept
 
 No ClickHouse 24.10, um novo [dashboard de mesclagens](https://presentations.clickhouse.com/2024-release-24.10/index.html#17) foi adicionado aos [dashboards de monitoramento](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards) integrados. Disponível tanto no OSS quanto no Cloud por meio do manipulador HTTP `/merges`, podemos usá-lo para visualizar todas as mesclagens de partes da nossa tabela de exemplo:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![mesclagem de partes](/images/managing-data/core-concepts/merges-dashboard.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges-dashboard.webp" size="lg" alt="mesclagem de partes" />
 
 <br />
 
@@ -101,33 +87,19 @@ A gravação do dashboard acima mostra todo o processo, desde as inserções ini
 
 Um único servidor ClickHouse usa várias [threads de mesclagem](/pt-BR/reference/settings/server-settings/settings/background#background_pool_size) em segundo plano para executar mesclagens de partes simultaneamente:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![MESCLAGENS DE PARTES](/images/managing-data/core-concepts/merges_02.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="MESCLAGENS DE PARTES" />
 
 <br />
 
 Cada thread de mesclagem executa um loop:
 
-<Steps>
-  <Step title="Carregar partes na memória">
-    Decide quais partes mesclar em seguida e carrega essas partes na memória.
-  </Step>
+① Decide quais partes mesclar em seguida e carrega essas partes na memória.
 
-  <Step title="Mesclar partes">
-    Mescla as partes na memória em uma parte maior.
-  </Step>
+② Mescla as partes na memória em uma parte maior.
 
-  <Step title="Gravar no disco">
-    Grava a parte mesclada no disco e retorna ao passo 1.
-  </Step>
-</Steps>
+③ Grava a parte mesclada no disco.
+
+Volta para ①
 
 Observe que aumentar o número de núcleos de CPU e a quantidade de RAM permite aumentar a taxa de transferência das mesclagens em segundo plano.
 
@@ -143,41 +115,23 @@ O ClickHouse não necessariamente carrega na memória, de uma só vez, todas as 
 
 O diagrama abaixo ilustra como uma única [thread de mesclagem](/pt-BR/concepts/core-concepts/merges#concurrent-merges) em segundo plano no ClickHouse mescla partes (por padrão, sem [mesclagem vertical](/pt-BR/concepts/core-concepts/merges#memory-optimized-merges)):
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![mesclagem de partes](/images/managing-data/core-concepts/merges_03.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_03.webp" size="lg" alt="mesclagem de partes" />
 
 <br />
 
 A mesclagem de partes é realizada em várias etapas:
 
-<Steps>
-  <Step title="Descompressão e carregamento">
-    Os [arquivos binários comprimidos das colunas](/pt-BR/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) das partes a serem mescladas são descomprimidos e carregados na memória.
-  </Step>
+**① Descompressão e carregamento**: Os [arquivos binários comprimidos das colunas](/pt-BR/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) das partes a serem mescladas são descomprimidos e carregados na memória.
 
-  <Step title="Mesclagem">
-    Os dados são mesclados em arquivos de coluna maiores.
-  </Step>
+**② Mesclagem**: Os dados são mesclados em arquivos de coluna maiores.
 
-  <Step title="Indexação">
-    Um novo [índice primário esparso](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes) é gerado para os arquivos de coluna mesclados.
-  </Step>
+**③ Indexação**: Um novo [índice primário esparso](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes) é gerado para os arquivos de coluna mesclados.
 
-  <Step title="Compressão e armazenamento">
-    Os novos arquivos de coluna e o índice são [comprimidos](/pt-BR/reference/statements/create/table/codec) e salvos em um novo [diretório](/pt-BR/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) que representa a parte de dados mesclada.
-  </Step>
-</Steps>
+**④ Compressão e armazenamento**: Os novos arquivos de coluna e o índice são [comprimidos](/pt-BR/reference/statements/create/table/codec) e salvos em um novo [diretório](/pt-BR/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) que representa a parte de dados mesclada.
 
 Metadados adicionais nas [partes de dados](/pt-BR/concepts/core-concepts/parts), como índices secundários de data skipping, estatísticas de coluna, checksum e índices min-max, também são recriados com base nos arquivos de coluna mesclados. Omitimos esses detalhes para simplificar.
 
-A mecânica da etapa de mesclagem depende do [motor MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/index) específico usado, pois motores diferentes tratam a mesclagem de maneiras diferentes. Por exemplo, as linhas podem ser agregadas ou substituídas se estiverem desatualizadas. Como mencionado anteriormente, essa abordagem **transfere todo o processamento de dados para as mesclagens em segundo plano**, permitindo **inserções extremamente rápidas** ao manter as operações de gravação leves e eficientes.
+A mecânica da etapa ② depende do [motor MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/index) específico usado, pois motores diferentes tratam a mesclagem de maneiras diferentes. Por exemplo, as linhas podem ser agregadas ou substituídas se estiverem desatualizadas. Como mencionado anteriormente, essa abordagem **transfere todo o processamento de dados para as mesclagens em segundo plano**, permitindo **inserções extremamente rápidas** ao manter as operações de gravação leves e eficientes.
 
 Em seguida, apresentaremos brevemente a mecânica de mesclagem de motores específicos da família MergeTree.
 
@@ -187,15 +141,7 @@ Em seguida, apresentaremos brevemente a mecânica de mesclagem de motores espec�
 
 O diagrama abaixo ilustra como as partes em uma tabela [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) padrão são mescladas:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![MESCLAGEM DE PARTES](/images/managing-data/core-concepts/merges_04.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_04.webp" size="lg" alt="MESCLAGEM DE PARTES" />
 
 <br />
 
@@ -209,15 +155,7 @@ As colunas da tabela ① descomprimidas e pré-ordenadas são ② mescladas, pre
 
 As mesclagens de partes em uma tabela [ReplacingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replacingmergetree) funcionam de forma semelhante às [mesclagens padrão](/pt-BR/concepts/core-concepts/merges#standard-merges), mas apenas a versão mais recente de cada linha é mantida, enquanto as versões mais antigas são descartadas:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![mesclagem de partes](/images/managing-data/core-concepts/merges_05.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_05.webp" size="lg" alt="mesclagem de partes" />
 
 <br />
 
@@ -235,15 +173,7 @@ No entanto, a `ReplacingMergeTree` remove linhas duplicadas com a mesma chave de
 
 Os dados numéricos são agregados automaticamente durante as mesclagens de partes de uma tabela [SummingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/summingmergetree):
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![mesclagem de partes](/images/managing-data/core-concepts/merges_06.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_06.webp" size="lg" alt="mesclagem de partes" />
 
 <br />
 
@@ -257,15 +187,7 @@ Na etapa de mesclagem ②, o ClickHouse substitui todas as linhas com a mesma ch
 
 O exemplo de tabela `SummingMergeTree` acima é uma variante especializada da tabela [AggregatingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/aggregatingmergetree), permitindo a [transformação automática e incremental de dados](https://www.youtube.com/watch?v=QDAJTKZT8y4) ao aplicar qualquer uma das [mais de 90](/pt-BR/reference/functions/aggregate-functions/reference-index) funções de agregação durante as mesclagens de partes:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![MESCLAGENS DE PARTES](/images/managing-data/core-concepts/merges_07.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_07.webp" size="lg" alt="MESCLAGENS DE PARTES" />
 
 <br />
 

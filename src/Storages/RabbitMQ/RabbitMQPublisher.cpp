@@ -66,13 +66,11 @@ void RabbitMQPublisher::connect()
 void RabbitMQPublisher::setupChannel()
 {
     channel = connection.createChannel();
-    channel_error.clear();
     LOG_TRACE(log, "Created a producer channel");
 
     channel->onError([&](const char * message)
     {
         LOG_ERROR(log, "Producer's channel {} error: {}", channel_id, message);
-        channel_error = message;
 
         /// Channel is not usable anymore. (https://github.com/CopernicaMarketingSoftware/AMQP-CPP/issues/36#issuecomment-125112236)
         channel->close();
@@ -213,7 +211,7 @@ void RabbitMQPublisher::publish(Payloads & messages, bool republishing)
     iterateEventLoop();
 }
 
-String RabbitMQPublisher::publishStep(Payloads & payloads)
+void RabbitMQPublisher::publishStep(Payloads & payloads)
 {
     /// If onReady callback is not received, channel->usable() will anyway return true,
     /// but must publish only after onReady callback.
@@ -232,19 +230,9 @@ String RabbitMQPublisher::publishStep(Payloads & payloads)
 
     if (!channel->usable())
     {
-        /// The broker closes only the channel when it rejects a publish, e.g. NOT_FOUND for a missing exchange.
-        /// A new channel is rejected the same way.
-        if (!reconnect_failed && connection.isConnected())
-            return fmt::format(
-                "Cannot publish to RabbitMQ exchange '{}': {}",
-                exchange_name,
-                channel_error.empty() ? "the channel is closed" : channel_error);
-
-        reconnect_failed = !connection.reconnect();
-        if (!reconnect_failed)
+        if (connection.reconnect())
             setupChannel();
     }
-    return {};
 }
 
 bool RabbitMQPublisher::isReusable()

@@ -84,29 +84,23 @@ keeperclusters.clickhouse.com        2025-01-06T00:00:00Z
 إذا أردت تهيئة خيارات نشر المشغّل، فاتبع الخطوات التالية.
 
 <Steps>
-  <Step>
-    ### استنسخ المستودع
-
+  <Step title="استنسخ المستودع" id="clone-the-repository">
     ```bash
     git clone https://github.com/ClickHouse/clickhouse-operator.git
     cd clickhouse-operator
     ```
   </Step>
 
-  <Step>
-    ### تهيئة خيارات التثبيت
-
-    حرّر `config/default/kustomization.yaml` لتمكين الميزات أو تعطيلها حسب الحاجة.
+  <Step title="تهيئة خيارات التثبيت" id="configure-installation-options">
+    حرّر config/default/kustomization.yaml لتمكين الميزات أو تعطيلها حسب الحاجة.
 
     * لتعطيل webhooks، أضف تعليقًا إلى القسمين `[WEBHOOK]` و`[CERTMANAGER]`.
-    * لتمكين نقطة نهاية المقاييس الآمنة، أضف تعليقًا إلى أقسام `[METRICS]` وأزل التعليق عن القسمين `[METRICS SECURE]` و`[CERTMANAGER]`.
+    * لتمكين metrics endpoint آمنة، أضف تعليقًا إلى أقسام `[METRICS]` وأزل التعليق عن القسمين `[METRICS SECURE]` و`[CERTMANAGER]`.
     * لتمكين ServiceMonitor لـ Prometheus Operator، أزل التعليق عن قسم `[PROMETHEUS]`.
     * لتمكين سياسات شبكة المشغّل، أزل التعليق عن قسم `[NETWORK POLICY]`.
   </Step>
 
-  <Step>
-    ### ابنِ وانشر
-
+  <Step title="ابنِ وانشر" id="build-and-deploy">
     أنشئ ملفات البيان الخاصة بالمشغّل ثم طبّقها:
 
     ```bash

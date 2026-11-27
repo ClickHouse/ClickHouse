@@ -10,7 +10,6 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueExclusiveFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
 #include <Storages/StorageSnapshot.h>
@@ -96,11 +95,6 @@ namespace
         return mode == ObjectStorageQueueMode::UNORDERED;
     }
 
-    bool isExclusive(ObjectStorageQueueMode mode)
-    {
-        return mode == ObjectStorageQueueMode::EXCLUSIVE;
-    }
-
     UInt128 getMetadataCacheKey(const std::string & path)
     {
         SipHash hash;
@@ -118,7 +112,6 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     size_t cleanup_interval_max_ms_,
     bool use_persistent_processing_nodes_,
     size_t persistent_processing_nodes_ttl_seconds_,
-    size_t processing_state_cache_ttl_seconds_,
     size_t keeper_multiread_batch_size_,
     size_t metadata_cache_size_bytes_,
     size_t metadata_cache_size_elements_)
@@ -131,13 +124,12 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , zookeeper_path(zookeeper_path_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
     , cleanup_processed_files(isUnordered(mode) && table_metadata.hasTrackedFilesLimit())
-    , cleanup_failed_files(!isExclusive(mode) && table_metadata.hasTrackedFilesLimit())
-    , cleanup_processing_files(!isExclusive(mode) && use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
+    , cleanup_failed_files(table_metadata.hasTrackedFilesLimit())
+    , cleanup_processing_files(use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
     , use_persistent_processing_nodes(use_persistent_processing_nodes_)
     , persistent_processing_node_ttl_seconds(persistent_processing_nodes_ttl_seconds_)
-    , processing_state_cache_ttl_seconds(processing_state_cache_ttl_seconds_)
     , buckets_num(table_metadata_.getBucketsNum())
     , log(getLogger(fmt::format(
         "StorageObjectStorageQueue({}{})",
@@ -170,12 +162,11 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     }
 
     LOG_TRACE(
-        log, "Mode: {}, buckets: {}, processing threads: {}, metadata_cache_size_bytes: {},"
-        "metadata_cache_size_elements: {}, result buckets num: {}, use persistent processing nodes: {}, "
+        log, "Mode: {}, buckets: {}, processing threads: {}, "
+        "result buckets num: {}, use persistent processing nodes: {}, "
         "cleanup processing files: {}, cleanup processed files: {}, cleanup failed files: {}",
         table_metadata.mode, table_metadata.buckets.load(),
-        table_metadata.processing_threads_num.load(), metadata_cache_size_bytes_,
-        metadata_cache_size_elements_, buckets_num,
+        table_metadata.processing_threads_num.load(), buckets_num,
         use_persistent_processing_nodes.load(), cleanup_processing_files, cleanup_processed_files, cleanup_failed_files);
 }
 
@@ -231,8 +222,7 @@ void ObjectStorageQueueMetadata::startup()
             generateRescheduleInterval(
                 cleanup_interval_min_ms, cleanup_interval_max_ms));
     }
-    /// Only `unordered` mode uses the active-server hash ring.
-    if (mode == ObjectStorageQueueMode::UNORDERED && !update_registry_thread)
+    if (!update_registry_thread)
         update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
 }
 
@@ -267,7 +257,6 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
-                processing_state_cache_ttl_seconds,
                 zookeeper_name,
                 bucketing_mode,
                 partitioning_mode,
@@ -281,32 +270,9 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
-                processing_state_cache_ttl_seconds,
-                zookeeper_name,
-                log);
-        case ObjectStorageQueueMode::EXCLUSIVE:
-            return std::make_shared<ObjectStorageQueueExclusiveFileMetadata>(
-                path,
-                file_status,
-                table_metadata.loading_retries,
-                *metadata_ref_count,
-                *this,
-                processing_state_cache_ttl_seconds,
                 zookeeper_name,
                 log);
     }
-}
-
-bool ObjectStorageQueueMetadata::tryAcquireExclusiveProcessing(const std::string & path)
-{
-    std::lock_guard lock(exclusive_processing_paths_mutex);
-    return exclusive_processing_paths.insert(getMetadataCacheKey(path)).second;
-}
-
-void ObjectStorageQueueMetadata::releaseExclusiveProcessing(const std::string & path)
-{
-    std::lock_guard lock(exclusive_processing_paths_mutex);
-    exclusive_processing_paths.erase(getMetadataCacheKey(path));
 }
 
 bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
@@ -504,13 +470,12 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                 new_table_metadata.buckets = value;
                 continue;
             }
-            if (buckets_num > 1)
+            if (table_metadata.buckets > 1)
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
-                    "It is not allowed to modify `buckets` setting when the table already uses {} buckets "
-                    "(`buckets` is {}, `processing_threads_num` is {})",
-                    buckets_num, table_metadata.buckets.load(), table_metadata.processing_threads_num.load());
+                    "It is not allowed to modify `buckets` settings "
+                    "when it is already set to a non-zero value");
             }
             migrateToBucketsInKeeper(value);
             new_table_metadata.buckets = value;
@@ -542,13 +507,9 @@ void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
     chassert(table_metadata.buckets == 0 || table_metadata.buckets == 1);
     chassert(buckets_num == 1, "Buckets: " + toString(buckets_num));
     LOG_TRACE(log, "Changing buckets value from {} to {}", table_metadata.buckets.load(), value);
-
-    ObjectStorageQueueTableMetadata new_table_metadata(table_metadata);
-    new_table_metadata.buckets = value;
-
     ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
         zookeeper_path,
-        new_table_metadata.getBucketsNum(),
+        value,
         /* prev_value */table_metadata.buckets,
         zookeeper_name);
     table_metadata.buckets = value;
@@ -581,10 +542,6 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
         LOG_TRACE(log, "Local buckets num: {}", buckets_num);
 
         metadata_paths = ObjectStorageQueueOrderedFileMetadata::getMetadataPaths(buckets_num);
-    }
-    else if (settings[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::EXCLUSIVE)
-    {
-        metadata_paths = ObjectStorageQueueExclusiveFileMetadata::getMetadataPaths();
     }
     else
     {
@@ -647,18 +604,18 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 && table_metadata.getMode() == ObjectStorageQueueMode::ORDERED
                 && table_metadata.buckets <= 1 && table_metadata.processing_threads_num <= 1)
             {
-                const auto message = PreformattedMessage::create("Ordered mode in cloud without "
+                const std::string message = "Ordered mode in cloud without "
                     "either `buckets`>1 or `processing_threads_num`>1 (works as `buckets` if it's not specified) "
-                    "will not work properly. Please specify them in the CREATE query. See documentation for more details.");
+                    "will not work properly. Please specify them in the CREATE query. See documentation for more details.";
 
                 if (!strict)
                 {
-                    LOG_WARNING(log, message);
+                    LOG_WARNING(log, "{}", message);
                     warned = true;
                 }
                 else
                 {
-                    throw Exception(message, ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
                 }
             }
 
@@ -695,7 +652,6 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     table_metadata.loading_retries,
                     noop,
                     /* use_persistent_processing_nodes */false, /// Processing nodes will not be created.
-                    noop,
                     zookeeper_name,
                     table_metadata.getBucketingMode(),
                     table_metadata.getPartitioningMode(),
@@ -758,7 +714,7 @@ namespace
             return self;
         }
 
-        [[nodiscard]] UInt128 hash() const
+        UInt128 hash() const
         {
             SipHash hash;
             hash.update(hostname);
@@ -767,7 +723,7 @@ namespace
             return hash.get128();
         }
 
-        [[nodiscard]] std::string serialize() const
+        std::string serialize() const
         {
             WriteBufferFromOwnString buf;
             buf << version << "\n";
@@ -1185,7 +1141,7 @@ public:
         nodes_num = servers.size();
     }
 
-    [[nodiscard]] std::string chooseServer(const UInt128 & hash) const
+    std::string chooseServer(const UInt128 & hash) const
     {
         if (virtual_nodes.empty())
             return {};
@@ -1195,7 +1151,7 @@ public:
         return it->second;
     }
 
-    [[nodiscard]] size_t size() const { return nodes_num; }
+    size_t size() const { return nodes_num; }
 
     template<typename... Args>
     static UInt128 hash(Args... args)
@@ -1591,8 +1547,6 @@ void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
             use_persistent_processing_nodes = change.value.safeGet<bool>();
         if (change.name == "persistent_processing_node_ttl_seconds")
             persistent_processing_node_ttl_seconds = change.value.safeGet<UInt64>();
-        if (change.name == "processing_state_cache_ttl_seconds")
-            processing_state_cache_ttl_seconds = change.value.safeGet<UInt64>();
     }
 }
 

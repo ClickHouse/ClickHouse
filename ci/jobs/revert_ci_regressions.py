@@ -19,11 +19,7 @@ credential endpoints firewalled off (see `run_agent`). It answers one question:
 did a recently merged pull request introduce this failure, and which one. Its
 answer is a verdict with a confidence and an explanation.
 
-Only `regression` with `high` or `medium` confidence acts; `low` never does.
-Both require the agent to have pinned the failure to one merge commit, and the
-deterministic guards below stand between any verdict and a revert, so the job
-does not wait for certainty about the mechanism when `master` keeps failing on a
-named culprit. The offending pull request is
+Only `regression` with `high` confidence acts. The offending pull request is
 reverted, the revert is merged immediately with administrator privileges -- no
 checks are awaited, because `master` is already broken and the revert restores
 the state that was green -- and a draft pull request that reintroduces the
@@ -58,7 +54,6 @@ import tempfile
 import traceback
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from ci.defs.defs import BASE_BRANCH
@@ -70,7 +65,7 @@ from ci.praktika.git import Git
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
-from ci.praktika.utils import Shell, Utils
+from ci.praktika.utils import Shell
 
 # How far back the failures are taken from, and on how many distinct `master`
 # commits a failure has to appear in that window to be investigated ("failed
@@ -98,14 +93,11 @@ SYNTHETIC_TEST_NAMES = frozenset(
         "Check errors",
         "Server died",
         "Server liveness check failed",
-        "Test command killed by signal",
         "Unknown error",
         "Unknown job error",
         "Parse failure error",
         "Job error",
         "Timeout",
-        # Names a dmesg line the host wrote, not the test that was running.
-        "OOM in dmesg",
     }
 )
 
@@ -288,12 +280,6 @@ CONTEXT_LIMIT = 4000
 
 VERDICTS = ("regression", "not_a_regression", "inconclusive")
 CONFIDENCES = ("high", "medium", "low")
-# Which confidences of a `regression` verdict are acted on. `medium` acts too:
-# the attribution is still held to the merge commit by `culprit_guard`, and
-# `already_fixed`, `already_handled`, `MAX_CULPRIT_AGE_DAYS` and
-# `MAX_REVERTS_PER_RUN` do not depend on the agent at all. Waiting for `high`
-# left `master` broken for hours on verdicts that named the right pull request.
-ACTIONABLE_CONFIDENCES = ("high", "medium")
 
 
 class Action:
@@ -549,13 +535,13 @@ class Investigation:
         """Whether the verdict is certain enough to revert on.
 
         Both halves of the attribution are required: the pull request to revert
-        and the `master` commit it came in on. Both acting confidences mean the
-        first failing commit was identified, so a verdict without one does not
-        mean what it claims, and the commit is what `culprit_guard` checks the
-        pull request number against."""
+        and the `master` commit it came in on. `high` confidence means the first
+        failing commit was identified, so a verdict without one does not mean
+        what it claims, and the commit is what `culprit_guard` checks the pull
+        request number against."""
         return (
             self.verdict == "regression"
-            and self.confidence in ACTIONABLE_CONFIDENCES
+            and self.confidence == "high"
             and self.offending_pull_request_number > 0
             and bool(self.offending_commit_sha)
         )
@@ -1171,8 +1157,8 @@ def parse_verdict(text: str) -> dict:
 
     if name == "regression" and not pull_request:
         raise ValueError("the verdict is a regression but names no pull request")
-    # The commit is what makes the attribution checkable. Both confidences a
-    # revert is made on are defined as having identified the first failing commit, and `culprit_guard`
+    # The commit is what makes the attribution checkable. `high` confidence is
+    # defined as having identified the first failing commit, and `culprit_guard`
     # holds the named pull request to it: without a commit there is nothing to
     # hold it to, and a pull request number on its own is exactly the part of the
     # answer a mistaken agent can produce out of thin air. So a regression states
@@ -1334,7 +1320,9 @@ def culprit_guard(
     merged_at = pull_request.get("mergedAt") or ""
     if not merged_at:
         return f"pull request #{number} has no merge time recorded"
-    merged = Utils.to_datetime(merged_at, input_format="iso")
+    merged = datetime.strptime(merged_at, "%Y-%m-%dT%H:%M:%SZ").replace(
+        tzinfo=timezone.utc
+    )
     if now - merged > timedelta(days=MAX_CULPRIT_AGE_DAYS):
         return (
             f"pull request #{number} was merged {(now - merged).days} days ago, longer "
@@ -1708,23 +1696,18 @@ How to investigate:
    Query the newest `{BASE_BRANCH}` runs of this test in this check, and look at what was merged after
    the failure appeared: if it passes on the newest commits, or a pull request fixing it is already
    merged, the change is not what breaks `{BASE_BRANCH}` any more. Say which commit or pull request
-   fixed it, and answer with `low` confidence. The same holds when the pull request was already
-   reverted.
+   fixed it, and do not answer with `high` confidence.
 
-Be honest about how sure you are. A `regression` verdict with `high` or `medium` confidence makes CI
-revert the pull request and merge the revert immediately, without waiting for any checks.
-- `high`: all of this holds:
-  - the failure is new -- the test passed consistently before it appeared;
-  - the first failing commit is identified and the range narrows down to one pull request;
-  - you can state the causal mechanism from the diff;
-  - the failure is still happening, and nothing that looks like a fix for it is already merged.
-- `medium`: the first failing commit is identified and narrows down to one pull request, the failure
-  is still happening, and nothing that looks like a fix for it is already merged, but some doubt is
-  left -- for example the mechanism is inferred rather than read from the diff, the failure is
-  intermittent, or the test was added by that pull request and has no passing history.
-- `low`: anything less, including a failure that is already fixed or a pull request already reverted.
-Use the `inconclusive` verdict when you cannot tell. "I could not tell" is a useful answer that costs
-nothing; a wrong revert throws away somebody's work and breaks the branch a second time.
+Be honest about how sure you are. A `regression` verdict with `high` confidence makes CI revert the
+pull request and merge the revert immediately, without waiting for any checks. Use it only when all
+of this holds:
+- the failure is new -- the test passed consistently before it appeared;
+- the first failing commit is identified and the range narrows down to one pull request;
+- you can state the causal mechanism from the diff;
+- the failure is still happening, and nothing that looks like a fix for it is already merged.
+Otherwise answer with `medium` or `low` confidence, or with the `inconclusive` verdict. "I could not
+tell" is a useful answer that costs nothing; a wrong revert throws away somebody's work and breaks
+the branch a second time.
 
 Change nothing: no commits, no pushes, no pull requests, no comments, no labels, no reviews, no edits
 to tracked files. Investigate only. The one file you write is the verdict.
@@ -2077,7 +2060,7 @@ def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
                 f"CODEX_HOME={shlex.quote(codex_home)} "
                 f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
                 f"{shlex.quote(codex)} exec "
-                f"-m gpt-6.1-sol -c 'model_reasoning_effort=xhigh' "
+                f"-m gpt-5.4 -c 'model_reasoning_effort=xhigh' "
                 f"-s workspace-write "
                 f"-c sandbox_workspace_write.network_access=true "
                 f"-c approval_policy=never "
@@ -2510,21 +2493,6 @@ def prepare(info: Info) -> bool:
                 file=sys.stderr,
             )
             return False
-        # The unshallow turned the checkout into a partial clone, but the pack
-        # `actions/checkout` downloaded is still a regular, non-promisor pack.
-        # Once the base branch moves, the next fetch brings commits whose
-        # parent is in that pack, `index-pack` tries to repack these "local
-        # links" into a promisor pack, and `pack-objects` stops on
-        # `BUG: should_include_obj should only be called on existing objects`
-        # when the traversal reaches a tree the filter left out. All these
-        # objects came from `origin`, the promisor remote, so mark their pack
-        # as a promisor pack, as if the checkout had been a partial clone from
-        # the start.
-        pack_dir = Shell.get_output(
-            "git rev-parse --git-path objects/pack", strict=True
-        ).strip()
-        for pack in Path(pack_dir).glob("*.pack"):
-            pack.with_suffix(".promisor").touch()
     Shell.check(
         f"git fetch --no-tags --prune --no-recurse-submodules origin "
         f"+refs/heads/{BASE_BRANCH}:refs/remotes/origin/{BASE_BRANCH}",
@@ -2543,9 +2511,13 @@ def prepare(info: Info) -> bool:
 
 def connect() -> CIDB:
     info = Info()
-    return CIDB.from_connection_secret(
-        info.get_secret(Settings.SECRET_CI_DB_CONNECTION).get_value()
+    url, user, password = (
+        info.get_secret(Settings.SECRET_CI_DB_URL)
+        .join_with(info.get_secret(Settings.SECRET_CI_DB_USER))
+        .join_with(info.get_secret(Settings.SECRET_CI_DB_PASSWORD))
+        .get_value()
     )
+    return CIDB(url=url, user=user, passwd=password)
 
 
 def table_exists(cidb: CIDB, table: str) -> bool:

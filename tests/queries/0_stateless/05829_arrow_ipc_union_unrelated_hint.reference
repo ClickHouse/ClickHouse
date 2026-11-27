@@ -14,3 +14,7 @@ Tuple(s String)	282720015C72B85C305C305C305C305C305C305C305C305C305C305C30032729
 ((0))	(0)
 ((0))	(1)
 ((2))	(2)
+-- nullable struct in a union and unrelated column Nullable
+((0))	(0)
+((0))	(1)
+((2))	(2)

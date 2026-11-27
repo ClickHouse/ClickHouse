@@ -1,9 +1,7 @@
 #include <Interpreters/DeadLetterQueue.h>
 
-#include <base/getFQDNOrHostName.h>
 #include <Core/Settings.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/config_version.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -27,9 +25,6 @@ ColumnsDescription DeadLetterQueueElement::getColumnsDescription()
 
     return ColumnsDescription
     {
-        {"hostname", low_cardinality_string, "Hostname of the server that consumed the message."},
-        {"clickhouse_version", low_cardinality_string, "Version of the ClickHouse server that produced the row."},
-        {"system_processor", low_cardinality_string, "CPU architecture of the ClickHouse server that produced the row."},
         {"table_engine", table_engine, "Stream type. Possible values: 'Kafka', 'RabbitMQ'."},
         {"event_date", std::make_shared<DataTypeDate>(), "Message consuming date."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Message consuming date and time."},
@@ -105,9 +100,6 @@ void DeadLetterQueueElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(VERSION_STRING);
-    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(static_cast<Int8>(table_engine));
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);

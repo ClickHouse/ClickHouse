@@ -82,15 +82,9 @@ public:
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
     using Base = COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>;
-    static Ptr create(ColumnPtr variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
+    static Ptr create(const ColumnPtr & variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
     {
-        /// `ColumnDynamic` keeps raw mutable access to its variant column, so immutable input
-        /// must be deep-unshared here rather than borrowed. Taking the pointer by value and
-        /// moving it lets a uniquely owned temporary (e.g. the result of `decompress`) be reused
-        /// without a copy.
-        return ColumnDynamic::create(
-            IColumn::mutate(std::move(variant_column_)),
-            variant_info_, max_dynamic_types_, global_max_dynamic_types_, statistics_);
+        return ColumnDynamic::create(variant_column_->assumeMutable(), variant_info_, max_dynamic_types_, global_max_dynamic_types_, statistics_);
     }
 
     static MutablePtr create(MutableColumnPtr variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
@@ -105,11 +99,7 @@ public:
 
     static ColumnPtr create(ColumnPtr variant_column_, const DataTypePtr & variant_type, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
     {
-        /// `ColumnDynamic` keeps raw mutable access to its variant column, so immutable input
-        /// must be deep-unshared here rather than borrowed.
-        return create(
-            IColumn::mutate(std::move(variant_column_)),
-            variant_type, max_dynamic_types_, global_max_dynamic_types_, statistics_);
+        return create(variant_column_->assumeMutable(), variant_type, max_dynamic_types_, global_max_dynamic_types_, statistics_);
     }
 
     static MutablePtr create(size_t max_dynamic_types_ = MAX_DYNAMIC_TYPES_LIMIT)
@@ -168,11 +158,6 @@ public:
         return variant_column_ptr->getDataAt(n);
     }
 
-    bool supportsGetDataAt() const override
-    {
-        return variant_column_ptr->supportsGetDataAt();
-    }
-
     void insertData(const char * pos, size_t length) override
     {
         variant_column_ptr->insertData(pos, length);
@@ -209,12 +194,10 @@ public:
 
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
     std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-
-    /// Hashes the type name of a non-NULL value prefix-free and distinct from the `NULL_DISCRIMINATOR` hashed for NULL.
-    static void updateHashWithTypeName(SipHash & hash, std::string_view type_name);
 
     /// Used for deduplication: hashes the raw in-memory representation of the variant column.
     /// The hash is the same for the same INSERT data, but NOT necessarily the same for
@@ -222,21 +205,13 @@ public:
     /// variant vs the shared variant).
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
-    /// Unlike `updateHashWithValueRange`, this is split-invariant (a value hashes the same in a typed
-    /// or the shared variant), so it is safe to scatter join/aggregation keys by.
-    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
-
-    /// Leaf hashes of `count` values of `values`, a column of values in the Dynamic binary form
-    /// (`[binary encoded type][value]`), written to `hash_out[0 .. count)`. Value `i` of the batch is
-    /// `values[first + i]`, or `values[value_indices[i]]` for the scattered overload. Each hash is the
-    /// one the value would have when stored in a typed variant, which is what makes the shared variant
-    /// invisible to the scatter hash. Reused by `ColumnObject` for `shared_data`.
-    ///
-    /// The batch is grouped by type and deserialized one column per type rather than one per value:
-    /// this runs over whole blocks on the scatter path, so a per-value temporary column would put an
-    /// allocation on every row.
-    static void hashSharedValues(const ColumnString & values, size_t first, size_t count, UInt32 * hash_out);
-    static void hashSharedValues(const ColumnString & values, const UInt64 * value_indices, size_t count, UInt32 * hash_out);
+    /// Weak hash of the raw variant storage. Like `updateHashWithValueRange`, this is NOT guaranteed
+    /// to be equal for logically equal values stored with different variant layouts (typed variant
+    /// vs the shared variant); the in-memory scatter consumers only need fast per-query partitioning.
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override
+    {
+        variant_column_ptr->computeHashInto(row_begin, row_end, hash_out, initial);
+    }
 
     void updateHashFast(SipHash & hash) const override
     {
@@ -424,11 +399,6 @@ public:
     UInt64 getNumberOfDefaultRows() const override
     {
         return variant_column_ptr->getNumberOfDefaultRows();
-    }
-
-    bool hasOnlyTypeDefaults() const override
-    {
-        return variant_column_ptr->hasOnlyTypeDefaults();
     }
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override

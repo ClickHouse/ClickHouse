@@ -42,8 +42,8 @@ struct RequiredSourceColumnsData
     bool addArrayJoinAliasIfAny(const IAST & ast);
     void addArrayJoinIdentifier(const ASTIdentifier & node);
 
-    [[nodiscard]] NameSet requiredColumns() const;
-    [[nodiscard]] size_t nameInclusion(const String & name) const;
+    NameSet requiredColumns() const;
+    size_t nameInclusion(const String & name) const;
 };
 
 std::ostream & operator << (std::ostream & os, const RequiredSourceColumnsData & cols);
