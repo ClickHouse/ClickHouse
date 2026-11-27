@@ -1487,6 +1487,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
 
     auto node_type = alias_node->getNodeType();
 
+    /// The expression of an alias is shared by its references, so its scalar subqueries are evaluated now.
+    auto * deferred = std::exchange(deferred_scalar_subqueries, nullptr);
+    SCOPE_EXIT({ deferred_scalar_subqueries = deferred; });
+
     if (!identifier_lookup.isTableExpressionLookup())
     {
         alias_node = alias_node->clone();
@@ -5016,7 +5020,14 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
 
 NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
 {
+    DeferredScalarSubqueries deferred{.projection_scope = &scope, .nodes = {}};
+    auto * previous_deferred = std::exchange(deferred_scalar_subqueries, &deferred);
+    SCOPE_EXIT({ deferred_scalar_subqueries = previous_deferred; });
+
     ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, true /*allow_niladic_functions*/, true /*is_top_level_projection*/);
+
+    deferred_scalar_subqueries = nullptr;
+    evaluateDeferredScalarSubqueries(projection_node_list, deferred.nodes, scope);
 
     auto projection_nodes = projection_node_list->as<ListNode &>().getNodes();
     size_t projection_nodes_size = projection_nodes.size();

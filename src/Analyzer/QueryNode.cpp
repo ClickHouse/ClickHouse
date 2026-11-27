@@ -179,6 +179,14 @@ DataTypePtr QueryNode::getResultType() const
                 "A correlated subquery used as an expression must return exactly one column, but it returns {}",
                 projection_columns.size());
     }
+
+    /// A scalar subquery whose evaluation is deferred, see `QueryAnalyzer::evaluateDeferredScalarSubqueries`.
+    if (projection_columns.size() == 1)
+    {
+        const auto & type = projection_columns[0].type;
+        return type->canBeInsideNullable() ? makeNullable(type) : type;
+    }
+
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is supported only for correlated query node");
 }
 
