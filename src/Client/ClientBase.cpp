@@ -2703,9 +2703,8 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
                                                          : (parsed_create_query ? parsed_create_query->insert_data : nullptr);
 
     const bool has_infile = parsed_insert_query && parsed_insert_query->infile;
-    bool have_data_in_stdin = !has_infile && !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
-
-    if ((!inline_data_begin && !has_infile) && !have_data_in_stdin)
+    if (!inline_data_begin && !has_infile
+        && (is_interactive || stdin_is_a_tty || !isStdinNotEmptyAndValid(*std_in)))
     {
         const auto & settings = client_context->getSettingsRef();
         if (settings[Setting::throw_if_no_data_to_insert])
@@ -2824,10 +2823,10 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     /// Inline data is a complete payload of an INSERT, so an open inherited stdin must not prevent executing it:
     /// use a non-blocking check and append stdin only when it already has data. When there is no other data source,
     /// use the blocking check as before.
-    bool have_data_in_stdin = (!parsed_insert_query || !parsed_insert_query->infile) && !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+    bool have_data_in_stdin = false;
     if ((!parsed_insert_query || !parsed_insert_query->infile) && !is_interactive && !stdin_is_a_tty)
     {
-        if (parsed_insert_query && parsed_insert_query->data)
+        if ((parsed_insert_query && parsed_insert_query->data) || (parsed_create_query && parsed_create_query->insert_data))
         {
             const auto stdin_state = getStdinStateNonBlocking(*std_in, stdin_fd);
             have_data_in_stdin = stdin_state == StdinState::Data && isStdinNotEmptyAndValid(*std_in);
