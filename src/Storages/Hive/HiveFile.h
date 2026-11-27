@@ -9,7 +9,7 @@
 
 #include <boost/algorithm/string/join.hpp>
 #include <Processors/Formats/Impl/ORC/Reader.h>
-#include <parquet/arrow/reader.h>
+#include <Processors/Formats/Impl/Parquet/FooterMetadata.h>
 
 #include <Core/Field.h>
 #include <Common/CacheBase.h>
@@ -272,7 +272,7 @@ private:
     void prepareReader();
 
     std::unique_ptr<ReadBufferFromHDFS> in;
-    std::unique_ptr<parquet::arrow::FileReader> reader;
+    std::optional<Parquet::FooterMetadata> metadata;
     std::map<String, size_t> parquet_column_positions;
 };
 }

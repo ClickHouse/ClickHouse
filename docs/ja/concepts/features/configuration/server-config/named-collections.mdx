@@ -493,15 +493,19 @@ SELECT * FROM remote(remote1, database = default, table = test);
 └───┴───┘
 ```
 
-### ソースが ClickHouse の Dictionary での 名前付きコレクション の使用例 {#example-of-using-named-collections-with-a-dictionary-with-source-clickhouse}
+### ソースが ClickHouse の 辞書 での 名前付きコレクション の使用例 {#example-of-using-named-collections-with-a-dictionary-with-source-clickhouse}
+
+<Note title="ClickHouse Cloud">
+  ClickHouse テーブルから読み取る 辞書 を作成する場合は、`SOURCE` 句に専用ユーザーのユーザー名とパスワードを指定してください。このユーザーには、ソーステーブルに対する `SELECT` アクセス許可が必要です。詳しくは [ClickHouse 辞書 ソースの例](/ja/reference/statements/create/dictionary/sources/clickhouse)を参照してください。
+</Note>
 
 ```sql
 CREATE NAMED COLLECTION remote_dict AS
 host = 'localhost',
 port = 9000,
 database = 'default',
-user = 'default',
-password = '';
+user = 'dict_reader',
+password = 'dict_reader_password';
 
 CREATE DICTIONARY dict(a Int64, b String)
 PRIMARY KEY a
@@ -546,6 +550,22 @@ kafka_max_block_size = '1048576';
     </named_collections>
 </clickhouse>
 ```
+
+### TLS とクライアント証明書 {#kafka-mtls-named-collection}
+
+TLS 関連のパスおよび `ssl.key.password` は [librdkafka の拡張設定](/ja/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections) であり、Kafka テーブルエンジンの `kafka_*` 設定ではありません。名前付きコレクションでこれらを設定する場合、DDL では `kafka.` プレフィックスを付けて指定し (例: `kafka.ssl_ca_location`)、XML では `<kafka>` 配下に指定します (例: `<ssl_ca_location>`)。`ENGINE = Kafka(collection)` でこのコレクションを使用する場合、サーバー全体の `<kafka>` 設定はマージされません。
+
+```sql
+CREATE NAMED COLLECTION kafka_mtls AS
+    kafka.security_protocol = 'SASL_SSL',
+    kafka.sasl_mechanism = 'PLAIN',
+    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
+    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
+    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_key_password = 'secret';
+```
+
+これらの値をテーブルごとに変える必要がある場合は、`kafka_broker_list`、`kafka_topic_list`、`kafka_group_name`、`kafka_format`、`kafka_sasl_username`、`kafka_sasl_password` をテーブルの `SETTINGS` で指定します。`CREATE TABLE` の完全な例については、[名前付きコレクションを使用した TLS と SASL](/ja/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections) を参照してください。
 
 ### OAUTHBEARER/OIDC 認証 {#oauthbearer-oidc-authentication}
 

@@ -1,7 +1,6 @@
 -- Tags: no-parallel-replicas
 -- Variant with incompatible types now throws on comparison (strict behavior)
 
-set allow_experimental_variant_type=1;
 set allow_suspicious_variant_types=1;
 
 create table test (v Variant(String, UInt64)) engine=MergeTree ORDER BY tuple();

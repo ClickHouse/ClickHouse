@@ -372,10 +372,7 @@ private:
             return false;
 
         /// Compute segment_end = min(segment_begin + SEGMENT_SIZE, range_high_odd), overflow-safe.
-        UInt64 segment_end = segment_begin + SEGMENT_SIZE;
-        if (unlikely(segment_end < segment_begin))
-            segment_end = MAX_UINT64; /// clamp on overflow (MAX_UINT64 is odd)
-        segment_end = std::min(segment_end, range_high_odd);
+        UInt64 segment_end = segment_begin + std::min(SEGMENT_SIZE, range_high_odd - segment_begin);
 
         chassert((segment_begin & 1) == 1);
         chassert((segment_end & 1) == 1);
