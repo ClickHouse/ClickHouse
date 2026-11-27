@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Processors/IProcessor_fwd.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -210,6 +211,18 @@ public:
         IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
 
+    /// Join N pipelines sorted by their keys with one transform per stream, created by `create_transform`.
+    /// With `by_shards` the streams of all pipelines are shards with the same borders, otherwise every
+    /// pipeline is merged into one sorted stream.
+    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesMultiwayMerge(
+        VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines,
+        const VectorWithMemoryTracking<Names> & key_names,
+        bool by_shards,
+        std::function<ProcessorPtr(const SharedHeaders &)> create_transform,
+        size_t max_block_size,
+        IQueryPlanStep * join_step,
+        Processors * collected_processors = nullptr);
+
     /// Add other pipeline and execute it before current one.
     /// Pipeline must have empty header, it should not generate any chunk.
     /// This is used for CreatingSets.
@@ -311,6 +324,10 @@ private:
     void checkInitializedAndNotCompleted();
 
     void setCollectedProcessors(Processors * processors);
+
+    /// Merges the streams, sorted by the keys, into one sorted stream.
+    static void mergeToSingleSortedStream(
+        QueryPipelineBuilder & pipeline, const Names & key_names, size_t max_block_size, Processors * collected_processors);
 
     friend class QueryPipelineProcessorsCollector;
 };

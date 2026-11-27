@@ -97,10 +97,16 @@ def dind_containment_env(job_mem):
 
 integration_dind_env = dind_containment_env(LIMITED_MEM)
 
+# The command is part of every build job digest, and the digest is computed on the host
+# of the Config Workflow, not on the build host. Runners of the same instance type differ
+# by a few memory pages, so the exact value made the same build get different digests in
+# different runs (and missed the cache). Whole GiB is stable across such hosts.
+BINARY_DOCKER_MEM = Utils.physical_memory() // 1024**3 * 1024**3
+
 BINARY_DOCKER_COMMAND = (
     "clickhouse/binary-builder"
-    f"+--memory={Utils.physical_memory() * 95 // 100}"
-    f"+--memory-reservation={Utils.physical_memory() * 9 // 10}"
+    f"+--memory={BINARY_DOCKER_MEM * 95 // 100}"
+    f"+--memory-reservation={BINARY_DOCKER_MEM * 9 // 10}"
     f"+--volume=.:/ClickHouse"
 )
 
@@ -385,6 +391,11 @@ class JobConfigs:
         digest_config=fast_test_digest_config,
         result_name_for_cidb="Tests",
         needs_submodules=True,
+    )
+    # The merge queue writes the sccache bucket and needs the EC2 metadata endpoint for credentials
+    fast_test_mq = fast_test.copy()
+    fast_test_mq.run_in_docker = fast_test.run_in_docker.replace(
+        "fasttest+", "fasttest+--network=host+", 1
     )
     darwin_fast_test_jobs = Job.Config(
         name="Fast test",

@@ -364,6 +364,9 @@ public:
     /// Kafka, NATS or RabbitMQ: a broker that la Casa del Dolor feeds
     [[nodiscard]] bool isAnyStreamingEngine(bool as_alias = false) const;
 
+    /// File, S3, AzureBlobStorage or URL: one data file that la Casa del Dolor may write
+    [[nodiscard]] bool isDataFileEngine() const;
+
     /// The name la Casa del Dolor gives the engine of a table it handles
     [[nodiscard]] String getDolorEngineName() const;
 

@@ -631,9 +631,15 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
-        else if (!isReaderOnlyVirtualColumn(virtual_column.name))
+        else if (virtual_column.name == "_headers" && virtual_values.http_response_headers)
         {
-            /// Any other virtual column, except the reader-only ones the caller adds later, is a Hive partition column.
+            /// Added here, in its place among the requested virtual columns, and not by the caller after the other ones:
+            /// the columns of the chunk must go in the order of the header of the source, which is the requested order.
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.http_response_headers)->convertToFullColumnIfConst());
+        }
+        else
+        {
+            /// Any other virtual column is a Hive partition column.
             if (!hive_map)
             {
                 hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
