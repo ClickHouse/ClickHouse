@@ -85,3 +85,41 @@ DROP TABLE t_ttl;
 DROP TABLE t_constraint;
 DROP TABLE t_index;
 DROP TABLE t_independent;
+
+-- A rename that would make the reference resolve to another column is refused.
+CREATE TABLE t_rebind
+(
+    s Tuple(x UInt32),
+    `r.x` UInt32 ALIAS 100,
+    a UInt32 ALIAS s.x
+)
+ENGINE = MergeTree ORDER BY tuple();
+ALTER TABLE t_rebind RENAME COLUMN s TO r; -- { serverError BAD_ARGUMENTS }
+
+-- `s.x` is an alias column that owns the reference `s.x.y`.
+CREATE TABLE t_alias_owner
+(
+    s UInt32,
+    `s.x` Tuple(y UInt32) ALIAS CAST(tuple(20), 'Tuple(y UInt32)'),
+    d UInt32 ALIAS s.x.y
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS share_nested_offsets = 0;
+INSERT INTO t_alias_owner (s) VALUES (1);
+ALTER TABLE t_alias_owner RENAME COLUMN s TO r;
+SELECT r, d FROM t_alias_owner;
+
+-- The column name `n.x` spans two parts of the reference `n.x.z`.
+CREATE TABLE t_nested
+(
+    n Nested(x Tuple(z UInt32)),
+    d Array(UInt32) DEFAULT n.x.z
+)
+ENGINE = MergeTree ORDER BY tuple();
+ALTER TABLE t_nested RENAME COLUMN `n.x` TO `n.y`;
+SELECT default_expression FROM system.columns WHERE database = currentDatabase() AND table = 't_nested' AND name = 'd';
+INSERT INTO t_nested (`n.y`) VALUES ([tuple(7)]);
+SELECT d FROM t_nested;
+
+DROP TABLE t_rebind;
+DROP TABLE t_alias_owner;
+DROP TABLE t_nested;
