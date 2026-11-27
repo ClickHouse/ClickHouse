@@ -20,14 +20,18 @@ namespace DeltaLake
 class PartitionPruner
 {
 public:
+    /// `require_ready_sets` makes `IN` conditions whose sets are not built yet unknown instead of building them.
     PartitionPruner(
         const DB::ActionsDAG & filter_dag,
         const DB::NamesAndTypesList & table_schema_,
         const DB::Names & partition_columns_,
         const DB::NameToNameMap & physical_names_map_,
-        DB::ContextPtr context);
+        DB::ContextPtr context,
+        bool require_ready_sets = false);
 
     [[nodiscard]] bool canBePruned(const DB::ObjectInfo & object_info) const;
+    /// The same by the transform of a data file, which holds its partition values.
+    [[nodiscard]] bool canBePruned(const DB::ActionsDAG & schema_transform) const;
 
 private:
     std::optional<DB::KeyCondition> key_condition;
