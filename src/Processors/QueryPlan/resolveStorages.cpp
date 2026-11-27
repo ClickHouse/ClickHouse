@@ -214,7 +214,6 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     /// and re-analyzed below; the rest read the storage directly.
     const bool read_via_interpreter = storage->readRequiresAnalyzedQuery();
 
-    /// the initiator checked its own table of this name, the one here can be another engine that would skip the filter
     if (reading_from_table && reading_from_table->getRowLevelFilter())
     {
         const auto & row_level_filter = reading_from_table->getRowLevelFilter();
