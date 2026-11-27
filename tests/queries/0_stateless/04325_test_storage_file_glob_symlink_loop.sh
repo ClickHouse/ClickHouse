@@ -790,7 +790,7 @@ echo "shorter-alias-after-path-max-literal"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/longliteral/root/**/f.txt', 'TSV', 'val String')"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/longliteral/root/z/**/f.txt', 'TSV', 'val String')"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/longliteral_lone/root/**/f.txt', 'TSV', 'val String')" 2>&1 \
-    | grep -qF "Cannot expand the glob: File name too long" && echo "fails"
+    | grep -qE "Cannot expand the glob: (File name too long|Filename too long)" && echo "fails"
 
 echo "alias-resolving-a-later-skip"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/siblings/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
@@ -799,7 +799,7 @@ $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/siblings/root/b
 # A file only names over the symlink limit reach fails the glob, as any other unreadable path does.
 echo "skip-no-name-returns"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/unreachable/root/**/*.txt', 'TSV', 'val String')" 2>&1 \
-    | grep -qF "Cannot expand the glob: Too many levels of symbolic links" && echo "fails"
+    | grep -qE "Cannot expand the glob: (Too many levels of symbolic links|Symbolic link loop)" && echo "fails"
 
 echo "skip-below-finite-glob-returned-through-another-parent"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/*/*/**/*.txt', 'TSV', 'val String') ORDER BY val"
@@ -813,7 +813,7 @@ $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/**
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/**/*/f.txt', 'TSV', 'val String')"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents_swapped/root/**/child/*.txt', 'TSV', 'val String')"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents_lone/root/**/child/*.txt', 'TSV', 'val String')" 2>&1 \
-    | grep -qF "Cannot expand the glob: Too many levels of symbolic links" && echo "fails"
+    | grep -qE "Cannot expand the glob: (Too many levels of symbolic links|Symbolic link loop)" && echo "fails"
 
 echo "skip-into-incomplete-frame-returned-through-a-shorter-alias"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/incomplete/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
@@ -825,9 +825,9 @@ $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/dotdot/root/*/a
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/dotdotloop/root/**/{..}/f.txt', 'TSV', 'val String') ORDER BY val"
 echo "skip-folded-against-another-spelling-fails"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/dotdotskip/root/**/child/*/{..}/{..}/f.txt', 'TSV', 'val String')" 2>&1 \
-    | grep -qF "Cannot expand the glob: Too many levels of symbolic links" && echo "fails"
+    | grep -qE "Cannot expand the glob: (Too many levels of symbolic links|Symbolic link loop)" && echo "fails"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/dotdotmatch/root/*/alias/{..}/**/l', 'TSV', 'val String')" 2>&1 \
-    | grep -qF "Cannot expand the glob: Too many levels of symbolic links" && echo "fails"
+    | grep -qE "Cannot expand the glob: (Too many levels of symbolic links|Symbolic link loop)" && echo "fails"
 echo "skip-whose-fold-stays-below-the-directory-returned-through-another-parent"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/dotdotskip/root/**/child/*/{..}/f.txt', 'TSV', 'val String')"
 
