@@ -464,6 +464,7 @@ def get_fake_zk(
         connection_retry=kazoo_retry,
         command_retry=kazoo_retry,
     )
+    cluster.kazoo_clients.append(_fake)
     if start:
         _fake.start()
     return _fake
