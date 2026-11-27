@@ -21,7 +21,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event AggregationOptimizedEqualRangesOfKeys;
     extern const Event AdaptiveAggregationProbeBypasses;
 }
 
@@ -492,7 +491,6 @@ void NO_INLINE Aggregator::executeFrozenImpl(
                 for (size_t i = 0; i < aggregate_functions.size(); ++i)
                 {
                     AggregateFunctionInstruction * inst = aggregate_instructions + i;
-                    ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
                     addBatchSinglePlace(row_begin, row_end, inst, found_place + inst->state_offset, aggregates_pool);
                 }
             }
