@@ -6,9 +6,11 @@
 
 #include <base/StringViewHash.h>
 #include <base/memcmpSmall.h>
+#include <base/unaligned.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
@@ -41,6 +43,17 @@ struct TopKRejectedKeyCache
     UInt32 window_hits = 0;
     UInt64 bypass_rows = 0;
     UInt64 next_bypass_rows = min_bypass_rows;
+
+    /// `ColumnString` pads its chars, so the 8 bytes from the start of any of its keys are readable.
+    [[nodiscard]] static ALWAYS_INLINE UInt32 hashKey(std::string_view key)
+    {
+        if (key.size() > 8)
+            return static_cast<UInt32>(StringViewHash{}(key));
+        UInt64 word = unalignedLoadLittleEndian<UInt64>(key.data());
+        if (key.size() < 8)
+            word &= (1ULL << (key.size() * 8)) - 1;
+        return static_cast<UInt32>(intHashCRC32(word, key.size()));
+    }
 
     [[nodiscard]] ALWAYS_INLINE bool contains(std::string_view key, UInt32 hash) const
     {
@@ -76,10 +89,58 @@ struct TopKRejectedKeyCache
         }
     }
 
-    ALWAYS_INLINE void countLookup(bool hit)
+    /// Whether the boundary rejects the row; `above` compares it with the boundary when the cache cannot tell.
+    template <typename Above>
+    ALWAYS_INLINE bool rejects(std::string_view key, size_t row, UInt32 & hits, Above && above)
     {
-        window_hits += hit;
-        if (++window_lookups < window_size)
+        const UInt32 hash = hashKey(key);
+        if (contains(key, hash))
+        {
+            chassert(above(row));
+            ++hits;
+            return true;
+        }
+        const bool rejected = above(row);
+        if (rejected)
+            insert(key, hash);
+        return rejected;
+    }
+
+    /// Marks the rows of `[begin, end)` that the boundary rejects, a window of lookups at a time.
+    template <typename Above>
+    void fill(const ColumnString & column, UInt8 * bitmap, size_t begin, size_t end, Above && above)
+    {
+        const auto * offsets = column.getOffsets().data();
+        const char * chars = reinterpret_cast<const char *>(column.getChars().data());
+        size_t row = begin;
+        while (row < end && active)
+        {
+            const size_t chunk_end = std::min<size_t>(end, row + (window_size - window_lookups));
+            UInt32 lookups = 0;
+            UInt32 hits = 0;
+            for (; row < chunk_end; ++row)
+            {
+                const size_t offset = offsets[row - 1];
+                const std::string_view key(chars + offset, offsets[row] - offset);
+                if (key.size() > max_key_size)
+                {
+                    bitmap[row] = above(row);
+                    continue;
+                }
+                ++lookups;
+                bitmap[row] = rejects(key, row, hits, above);
+            }
+            countLookups(lookups, hits);
+        }
+        for (; row < end; ++row)
+            bitmap[row] = above(row);
+    }
+
+    ALWAYS_INLINE void countLookups(UInt32 lookups, UInt32 hits)
+    {
+        window_lookups += lookups;
+        window_hits += hits;
+        if (window_lookups < window_size)
             return;
         if (window_hits * 4 < window_lookups)
         {
@@ -330,10 +391,17 @@ void TopKAggregationHeapBase::fillSkipBitmap(size_t begin, size_t end)
         return;
 
     /// `compareColumn` has no collation.
+    if (rejected_keys)
+    {
+        rejected_keys->fill(
+            assert_cast<const ColumnString &>(*batch_columns[0]), bitmap, begin, end,
+            [this](size_t row) { return aboveBoundaryImpl<true>(row); });
+        return;
+    }
     if (has_collators)
     {
         for (size_t i = begin; i < end; ++i)
-            bitmap[i] = aboveBoundaryCollated(i);
+            bitmap[i] = aboveBoundaryImpl<true>(i);
         return;
     }
 
@@ -403,20 +471,10 @@ bool TopKAggregationHeapBase::aboveBoundaryCollated(size_t row) const
     if (key.size() > TopKRejectedKeyCache::max_key_size)
         return aboveBoundaryImpl<true>(row);
 
-    auto & cache = *rejected_keys;
-    const auto hash = static_cast<UInt32>(StringViewHash{}(key));
-    if (cache.contains(key, hash))
-    {
-        chassert(aboveBoundaryImpl<true>(row));
-        cache.countLookup(true);
-        return true;
-    }
-
-    const bool above = aboveBoundaryImpl<true>(row);
-    if (above)
-        cache.insert(key, hash);
-    cache.countLookup(false);
-    return above;
+    UInt32 hits = 0;
+    const bool rejected = rejected_keys->rejects(key, row, hits, [this](size_t r) { return aboveBoundaryImpl<true>(r); });
+    rejected_keys->countLookups(1, hits);
+    return rejected;
 }
 
 void TopKAggregationHeapBase::initBoundary()
