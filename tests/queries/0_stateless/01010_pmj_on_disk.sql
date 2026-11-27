@@ -30,8 +30,6 @@ ANY LEFT JOIN (
 USING n
 ORDER BY n;
 
-SET partial_merge_join_optimizations = 1;
-
 SELECT n, j FROM (SELECT number AS n FROM numbers(4)) nums
 ANY LEFT JOIN (
     SELECT number * 2 AS n, number + 10 AS j

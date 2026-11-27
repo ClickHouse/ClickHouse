@@ -195,13 +195,13 @@ SETTINGS iceberg_timestamp_ms = 1714636800000
 
 ### Delta Lake {#delta-lake-settings}
 
-バージョン 25.6 以降、ClickHouse は Delta Lake Rust カーネルを通じて、S3 および GCS 上の Delta Lake を読み取ります。この設定は、バージョン 26.8 以降では [`allow_delta_kernel_rs`](/ja/reference/settings/session-settings/allow#allow_delta_kernel_rs)、バージョン 25.5 から 26.7 では `allow_experimental_delta_kernel_rs` です。Azure Blob Storage ではカーネルが無効になっているため、従来の reader を使用して [deltaLakeAzure()](/ja/reference/functions/table-functions/deltalake) を利用してください。カーネルを使用しない場合、パーティションプルーニング、変更データフィード、スナップショットバージョン の読み取りは利用できません。
+ClickHouse は Delta Lake Rust カーネル (`delta-kernel-rs`) を使用して Delta Lake を読み取ります。バージョン 26.11 以降はこれが唯一の Delta Lake リーダーとなり、このリーダーを選択するための設定は廃止されました。
 
-#### Delta Kernel {#delta-kernel}
+#### Delta カーネル {#delta-kernel}
 
-Delta kernel 設定は、パーティションプルーニング、変更データフィード、スナップショット バージョンの読み取りを利用するには有効にする必要があります。25.5 以降では、S3 と GCS でデフォルトで有効です。明示的に有効化する場合は、ClickHouse のバージョンに対応する名前を使用してください。
+26.11 より前のバージョンでは、Delta カーネル 設定は、パーティションプルーニング、変更データフィード、スナップショット バージョンの読み取りを利用するには有効にする必要があります。25.5 以降では、S3 と GCS でデフォルトで有効です。カーネルを使用しない場合、ClickHouse はこれらの機能に対応していないレガシーリーダーを使用します。明示的に有効化する場合は、ClickHouse のバージョンに対応する名前を使用してください。
 
-バージョン 26.8 以降の場合：
+バージョン 26.8 ～ 26.10 の場合：
 
 ```sql
 SET allow_delta_kernel_rs = 1;

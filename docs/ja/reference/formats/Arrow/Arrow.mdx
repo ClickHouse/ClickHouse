@@ -25,35 +25,36 @@ ClickHouse はこれらのフォーマットの読み書きをサポートして
 
 以下の表は、サポートされているデータ型と、`INSERT` クエリおよび `SELECT` クエリでそれらが ClickHouse の [データ型](/ja/reference/data-types/index) にどのように対応するかを示しています。
 
-| Arrow データ型 (`INSERT`)                   | ClickHouse データ型                                                                                           | Arrow データ型 (`SELECT`) |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------- |
-| `BOOL`                                  | [Bool](/ja/reference/data-types/boolean)                                                                     | `BOOL`                |
-| `UINT8`, `BOOL`                         | [UInt8](/ja/reference/data-types/int-uint)                                                                   | `UINT8`               |
-| `INT8`                                  | [Int8](/ja/reference/data-types/int-uint)/[Enum8](/ja/reference/data-types/enum)                                | `INT8`                |
-| `UINT16`                                | [UInt16](/ja/reference/data-types/int-uint)                                                                  | `UINT16`              |
-| `INT16`                                 | [Int16](/ja/reference/data-types/int-uint)/[Enum16](/ja/reference/data-types/enum)                              | `INT16`               |
-| `UINT32`                                | [UInt32](/ja/reference/data-types/int-uint)                                                                  | `UINT32`              |
-| `INT32`                                 | [Int32](/ja/reference/data-types/int-uint)                                                                   | `INT32`               |
-| `UINT64`                                | [UInt64](/ja/reference/data-types/int-uint)                                                                  | `UINT64`              |
-| `INT64`                                 | [Int64](/ja/reference/data-types/int-uint)                                                                   | `INT64`               |
-| `FLOAT`, `HALF_FLOAT`                   | [Float32](/ja/reference/data-types/float)                                                                    | `FLOAT32`             |
-| `DOUBLE`                                | [Float64](/ja/reference/data-types/float)                                                                    | `FLOAT64`             |
-| `DATE32`                                | [Date32](/ja/reference/data-types/date32)                                                                    | `UINT16`              |
-| `DATE64`                                | [DateTime](/ja/reference/data-types/datetime)                                                                | `UINT32`              |
-| `TIMESTAMP`                             | [DateTime64](/ja/reference/data-types/datetime64)                                                            | `TIMESTAMP`           |
-| `TIME32`, `TIME64`                      | [Time64](/ja/reference/data-types/time64)                                                                    | `TIME32`, `TIME64`    |
-| `STRING`, `BINARY`                      | [String](/ja/reference/data-types/string)                                                                    | `BINARY`              |
-| `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/ja/reference/data-types/fixedstring)                                                          | `FIXED_SIZE_BINARY`   |
-| `DECIMAL`                               | [Decimal](/ja/reference/data-types/decimal)                                                                  | `DECIMAL`             |
-| `DECIMAL256`                            | [Decimal256](/ja/reference/data-types/decimal)                                                               | `DECIMAL256`          |
-| `LIST`, `LIST_VIEW`                     | [Array](/ja/reference/data-types/array)                                                                      | `LIST`                |
-| `STRUCT`                                | [Tuple](/ja/reference/data-types/tuple)                                                                      | `STRUCT`              |
-| `MAP`                                   | [Map](/ja/reference/data-types/map)                                                                          | `MAP`                 |
-| `UINT32`                                | [IPv4](/ja/reference/data-types/ipv4)                                                                        | `UINT32`              |
-| `FIXED_SIZE_BINARY`, `BINARY`           | [IPv6](/ja/reference/data-types/ipv6)                                                                        | `FIXED_SIZE_BINARY`   |
-| `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/ja/reference/data-types/int-uint)                                           | `FIXED_SIZE_BINARY`   |
-| `DURATION`                              | [Interval](/ja/reference/data-types/special-data-types/interval) (Nanosecond/Microsecond/Millisecond/Second) | `DURATION`            |
-| `INT64`                                 | [Interval](/ja/reference/data-types/special-data-types/interval) (Minute/Hour/Day/Week/Month/Quarter/Year)   | `INT64`               |
+| Arrow データ型 (`INSERT`)                   | ClickHouse データ型                                                                                                                                            | Arrow データ型 (`SELECT`) |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| `BOOL`                                  | [Bool](/ja/reference/data-types/boolean)                                                                                                                      | `BOOL`                |
+| `UINT8`, `BOOL`                         | [UInt8](/ja/reference/data-types/int-uint)                                                                                                                    | `UINT8`               |
+| `INT8`                                  | [Int8](/ja/reference/data-types/int-uint)/[Enum8](/ja/reference/data-types/enum)                                                                                 | `INT8`                |
+| `UINT16`                                | [UInt16](/ja/reference/data-types/int-uint)                                                                                                                   | `UINT16`              |
+| `INT16`                                 | [Int16](/ja/reference/data-types/int-uint)/[Enum16](/ja/reference/data-types/enum)                                                                               | `INT16`               |
+| `UINT32`                                | [UInt32](/ja/reference/data-types/int-uint)                                                                                                                   | `UINT32`              |
+| `INT32`                                 | [Int32](/ja/reference/data-types/int-uint)                                                                                                                    | `INT32`               |
+| `UINT64`                                | [UInt64](/ja/reference/data-types/int-uint)                                                                                                                   | `UINT64`              |
+| `INT64`                                 | [Int64](/ja/reference/data-types/int-uint)                                                                                                                    | `INT64`               |
+| `FLOAT`, `HALF_FLOAT`                   | [Float32](/ja/reference/data-types/float)                                                                                                                     | `FLOAT32`             |
+| `DOUBLE`                                | [Float64](/ja/reference/data-types/float)                                                                                                                     | `FLOAT64`             |
+| `DATE32`                                | [Date32](/ja/reference/data-types/date32)                                                                                                                     | `UINT16`              |
+| `DATE64`                                | [DateTime](/ja/reference/data-types/datetime)                                                                                                                 | `UINT32`              |
+| `TIMESTAMP`                             | [DateTime64](/ja/reference/data-types/datetime64)                                                                                                             | `TIMESTAMP`           |
+| `TIME32`, `TIME64`                      | [Time64](/ja/reference/data-types/time64)                                                                                                                     | `TIME32`, `TIME64`    |
+| `STRING`, `BINARY`                      | [String](/ja/reference/data-types/string)                                                                                                                     | `BINARY`              |
+| `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/ja/reference/data-types/fixedstring)                                                                                                           | `FIXED_SIZE_BINARY`   |
+| `DECIMAL`                               | [Decimal](/ja/reference/data-types/decimal)                                                                                                                   | `DECIMAL`             |
+| `DECIMAL256`                            | [Decimal256](/ja/reference/data-types/decimal)                                                                                                                | `DECIMAL256`          |
+| `LIST`, `LIST_VIEW`                     | [Array](/ja/reference/data-types/array)                                                                                                                       | `LIST`                |
+| `STRUCT`                                | [Tuple](/ja/reference/data-types/tuple)                                                                                                                       | `STRUCT`              |
+| `MAP`                                   | [Map](/ja/reference/data-types/map)                                                                                                                           | `MAP`                 |
+| `UINT32`                                | [IPv4](/ja/reference/data-types/ipv4)                                                                                                                         | `UINT32`              |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [IPv6](/ja/reference/data-types/ipv6)                                                                                                                         | `FIXED_SIZE_BINARY`   |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/ja/reference/data-types/int-uint)                                                                                            | `FIXED_SIZE_BINARY`   |
+| `DURATION`                              | [Interval](/ja/reference/data-types/special-data-types/interval) (Nanosecond/Microsecond/Millisecond/Second)                                                  | `DURATION`            |
+| `INT64`                                 | [Interval](/ja/reference/data-types/special-data-types/interval) (Minute/Hour/Day/Week/Month/Quarter/Year)                                                    | `INT64`               |
+| `INTERVAL`                              | [Interval](/ja/reference/data-types/special-data-types/interval) (Month)、または `DAY_TIME` および `MONTH_DAY_NANO` の場合はインターバルの [Tuple](/ja/reference/data-types/tuple) | `INT64`, `STRUCT`     |
 
 Array はネストでき、引数として `Nullable` 型の値を取ることもできます。`Tuple` 型と `Map` 型もネストできます。
 

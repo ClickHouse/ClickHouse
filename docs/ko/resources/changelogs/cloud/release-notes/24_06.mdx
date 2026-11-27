@@ -9,16 +9,12 @@ doc_type: 'changelog'
 
 v24.6 릴리스의 ClickHouse Cloud 서비스 관련 주요 변경 사항입니다.
 
-<div id="backward-incompatible-change">
-  ## 하위 호환되지 않는 변경 사항
-</div>
+## 하위 호환되지 않는 변경 사항 {#backward-incompatible-change}
 
 * 스토리지 `S3Queue`의 `Ordered` 모드에서 병렬 처리 방식을 개편했습니다. `s3queue_processing_threads_num` 또는 `s3queue_total_shards_num` 설정을 사용한 경우, 이 변경은 Ordered 모드에서 하위 호환되지 않습니다. `s3queue_total_shards_num` 설정은 삭제되었습니다. 이전에는 `s3queue_allow_experimental_sharded_mode`를 사용할 때만 허용되었으며, 이 설정은 이제 사용 중단 예정입니다. 새로운 설정 `s3queue_buckets`가 추가되었습니다. [#64349](https://github.com/ClickHouse/ClickHouse/pull/64349) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * 새로운 함수 `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID`, `dateTime64ToSnowflakeID`가 추가되었습니다. 기존 함수 `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake`, `dateTime64ToSnowflake`와 달리, 새 함수는 `generateSnowflakeID` 함수와 호환됩니다. 즉, `generateSnowflakeID`로 생성된 Snowflake ID를 입력으로 받아 `generateSnowflakeID`와 동일한 타입(즉, `UInt64`)의 Snowflake ID를 반환합니다. 또한 새 함수는 `generateSnowflakeID`와 마찬가지로 기본적으로 UNIX epoch(즉, 1970-01-01)를 사용합니다. 필요한 경우 다른 epoch를 전달할 수도 있습니다. 예를 들어 Twitter/X의 epoch인 2010-11-04, 즉 UNIX epoch로부터 1288834974657 msec를 사용할 수 있습니다. 기존 변환 함수는 사용 중단 예정이며 전환 기간 후 제거될 예정입니다. 계속 사용해야 하는 경우 `allow_deprecated_snowflake_conversion_functions` 설정을 활성화하십시오. [#64948](https://github.com/ClickHouse/ClickHouse/pull/64948) ([Robert Schulze](https://github.com/rschu1ze)).
 
-<div id="new-feature">
-  ## 새 기능
-</div>
+## 새 기능 {#new-feature}
 
 * 빈 튜플을 지원합니다. [#55061](https://github.com/ClickHouse/ClickHouse/pull/55061) ([Amos Bird](https://github.com/amosbird)).
 * Hilbert Curve 인코딩 및 디코딩 함수를 추가했습니다. [#60156](https://github.com/ClickHouse/ClickHouse/pull/60156) ([Artem Mustafin](https://github.com/Artemmm91)).
@@ -36,9 +32,7 @@ v24.6 릴리스의 ClickHouse Cloud 서비스 관련 주요 변경 사항입니�
 * `system.query_log`에 `used_privileges` 및 `missing_privileges`라는 두 개의 추가 컬럼을 도입했습니다. `used_privileges`에는 쿼리 실행 중 확인된 권한이 채워지며, `missing_privileges`에는 누락된 필수 권한이 포함됩니다. [#64597](https://github.com/ClickHouse/ClickHouse/pull/64597) ([Alexey Katsman](https://github.com/alexkats)).
 * 활성화하면 긴 테이블(기본값 50행)의 끝에 컬럼 이름을 표시하는 설정 `output_format_pretty_display_footer_column_names`를 추가했습니다. 최소 행 수 임계값은 `output_format_pretty_display_footer_column_names_min_rows`로 제어합니다. [#65144](https://github.com/ClickHouse/ClickHouse/pull/65144) ([Shaun Struwig](https://github.com/Blargian)).
 
-<div id="performance-improvement">
-  ## 성능 개선
-</div>
+## 성능 개선 {#performance-improvement}
 
 * #60459(24.5)로 도입된 cross join의 성능 회귀를 수정했습니다. #65243 (Nikita Taranov).
 * io&#95;uring 재제출에 대한 가시성을 개선했습니다. profile 이벤트 IOUringSQEsResubmits의 이름을 IOUringSQEsResubmitsAsync로 변경하고, 새 profile 이벤트 IOUringSQEsResubmitsSync를 추가했습니다. #63699 (Tomer Shafir).
@@ -68,9 +62,7 @@ v24.6 릴리스의 ClickHouse Cloud 서비스 관련 주요 변경 사항입니�
 * Azure blob storage로 백업할 때 서버 측 복사를 사용하도록 조건을 업데이트했습니다. [#64518](https://github.com/ClickHouse/ClickHouse/pull/64518) ([SmitaRKulkarni](https://github.com/SmitaRKulkarni)).
 * 스킵 인덱스가 많은 테이블의 수직 병합 메모리 사용량을 최적화했습니다. [#64580](https://github.com/ClickHouse/ClickHouse/pull/64580) ([Anton Popov](https://github.com/CurtizJ)).
 
-<div id="improvement">
-  ## 개선 사항
-</div>
+## 개선 사항 {#improvement}
 
 * ClickHouse가 CSV 형식에서 튜플을 처리하고 해석하던 기존 동작으로 되돌렸습니다. 이번 변경으로 ClickHouse/ClickHouse#60994가 사실상 되돌려졌으며, output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns, input&#95;format&#95;csv&#95;deserialize&#95;separate&#95;columns&#95;into&#95;tuple, input&#95;format&#95;csv&#95;try&#95;infer&#95;strings&#95;from&#95;quoted&#95;tuples의 일부 설정에서만 사용할 수 있습니다. #65170 (Nikita Mikhaylov).
 * 시스템 테이블(system tables)에 대해 실행한 `SHOW CREATE TABLE`은 이제 각 테이블에 고유한 매우 유용한 comment를 표시하며, 이를 통해 해당 테이블이 왜 필요한지 설명합니다. [#63788](https://github.com/ClickHouse/ClickHouse/pull/63788) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
@@ -96,9 +88,7 @@ v24.6 릴리스의 ClickHouse Cloud 서비스 관련 주요 변경 사항입니�
 * 지원되지 않는 스토리지에서는 materialized view에서도 트랜잭션을 비활성화합니다. [#64918](https://github.com/ClickHouse/ClickHouse/pull/64918) ([alesapin](https://github.com/alesapin)).
 * 기존 분석기에서는 `QUALIFY` 절 사용을 금지합니다. 기존 분석기는 `QUALIFY`를 무시했기 때문에, 뮤테이션에서 데이터가 예기치 않게 삭제될 수 있었습니다. [#65356](https://github.com/ClickHouse/ClickHouse/pull/65356) ([Dmitry Novik](https://github.com/novikd)).
 
-<div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release">
-  ## 버그 수정(공식 안정 릴리스에서 사용자에게 보이는 오작동)
-</div>
+## 버그 수정(공식 안정 릴리스에서 사용자에게 보이는 오작동) {#bug-fix-user-visible-misbehavior-in-an-official-stable-release}
 
 * &#39;set&#39; 스킵 인덱스가 IN 및 indexHint() 사용 시 동작하지 않던 문제를 수정했습니다. #62083 (Michael Kolupaev).
 * 적응형 세분화 수준을 사용하지 않는 테이블에서 FINAL이 포함된 쿼리가 잘못된 결과를 반환하던 문제를 수정했습니다. #62432 (Duc Canh Le).
@@ -122,9 +112,9 @@ v24.6 릴리스의 ClickHouse Cloud 서비스 관련 주요 변경 사항입니�
 * ORDER BY ... NULLS FIRST / LAST를 사용하는, 키가 널 허용인 테이블에서 optimize&#95;read&#95;in&#95;order 동작 문제를 수정했습니다. #64483 (Eduard Karacharov).
 * GLOBAL IN..에 별칭을 사용한 쿼리에서 발생하던 「Expression nodes list expected 1 projection names」 및 「Unknown expression or identifier」 오류를 수정했습니다. #64517 (Nikolai Kochetov).
 * GROUP BY 키에 상수 CTE를 포함한 분산 쿼리에서 발생하던 Cannot find column 오류를 수정했습니다. #64519 (Nikolai Kochetov).
-* 포매터가 홀수 개의 문자를 생성하고 마지막 문자가 0인 경우 `formatDateTimeInJodaSyntax` 함수의 출력이 올바르게 수정되었습니다. 예를 들어 `SELECT formatDateTimeInJodaSyntax(toDate(&#39;2012-05-29&#39;), &#39;D&#39;)`는 이전에는 15를 반환했지만, 이제는 올바르게 150을 반환합니다. #64614 (LiuNeng).
+* 포매터가 홀수 개의 문자를 생성하고 마지막 문자가 0인 경우 formatDateTimeInJodaSyntax 함수의 출력이 올바르게 수정되었습니다. 예를 들어 SELECT formatDateTimeInJodaSyntax(toDate(&#39;2012-05-29&#39;), &#39;D&#39;)는 이전에는 15를 반환했지만, 이제는 올바르게 150을 반환합니다. #64614 (LiuNeng).
 * -If combinator를 이미 사용하는 경우 집계를 재작성하지 않습니다. #64638 (Dmitry Novik).
-* 작은 버퍼(즉, --max&#95;read&#95;buffer&#95;size 1)에서 float 타입 추론 문제를 수정했습니다. #64641 (Azat Khuzhin).
+* 작은 버퍼(즉, `--max_read_buffer_size` 1)에서 float 타입 추론 문제를 수정했습니다. #64641 (Azat Khuzhin).
 * 표현식이 포함된 TTL이 작동하지 않을 수 있는 버그를 수정했습니다. #64694 (alesapin).
 * `true`로 항상 평가되는 WHERE 및 PREWHERE 표현식이 제거되도록 수정했습니다(새 분석기 기준). #64695 (Nikolai Kochetov).
 * startsWith, endsWith, match, multiSearchAny의 결과로 필터링할 때 토큰 기반 텍스트 인덱스(ngrambf , full&#95;text)에서 데이터 파트가 과도하게 제외되던 문제를 수정했습니다. #64720 (Eduard Karacharov).

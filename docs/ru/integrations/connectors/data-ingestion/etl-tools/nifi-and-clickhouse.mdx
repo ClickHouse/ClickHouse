@@ -37,49 +37,33 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
     1. Чтобы настроить службу контроллера в Apache NiFi, откройте страницу конфигурации потока NiFi, нажав кнопку с шестерёнкой
 
        <div className="ch-image-sm">
-
-       <Frame>
-
-       ![Страница конфигурации потока NiFi с выделенной кнопкой с шестерёнкой](/images/integrations/data-ingestion/etl-tools/nifi_01.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Страница конфигурации потока NiFi с выделенной кнопкой с шестерёнкой](/images/integrations/data-ingestion/etl-tools/nifi_01.webp)
+         </Frame>
        </div>
 
     2. Перейдите на вкладку Controller Services и добавьте новую службу контроллера, нажав кнопку `+` в правом верхнем углу
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Вкладка Controller Services с выделенной кнопкой добавления](/images/integrations/data-ingestion/etl-tools/nifi_02.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Вкладка Controller Services с выделенной кнопкой добавления](/images/integrations/data-ingestion/etl-tools/nifi_02.webp)
+         </Frame>
        </div>
 
     3. Найдите `DBCPConnectionPool` и нажмите кнопку &quot;Add&quot;
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Диалог выбора службы контроллера с выделенным DBCPConnectionPool](/images/integrations/data-ingestion/etl-tools/nifi_03.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Диалог выбора службы контроллера с выделенным DBCPConnectionPool](/images/integrations/data-ingestion/etl-tools/nifi_03.webp)
+         </Frame>
        </div>
 
     4. После добавления `DBCPConnectionPool` по умолчанию будет находиться в состоянии Invalid. Нажмите кнопку с шестерёнкой, чтобы перейти к настройке
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Список Controller Services с недопустимым DBCPConnectionPool и выделенной кнопкой с шестерёнкой](/images/integrations/data-ingestion/etl-tools/nifi_04.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Список Controller Services с недопустимым DBCPConnectionPool и выделенной кнопкой с шестерёнкой](/images/integrations/data-ingestion/etl-tools/nifi_04.webp)
+         </Frame>
        </div>
 
     5. В разделе &quot;Properties&quot; введите следующие значения
@@ -95,49 +79,33 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
     6. В разделе Settings измените имя службы контроллера на &quot;ClickHouse JDBC&quot; для удобства дальнейшей работы
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Диалог настройки DBCPConnectionPool с заполненными свойствами](/images/integrations/data-ingestion/etl-tools/nifi_05.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Диалог настройки DBCPConnectionPool с заполненными свойствами](/images/integrations/data-ingestion/etl-tools/nifi_05.webp)
+         </Frame>
        </div>
 
     7. Активируйте службу контроллера `DBCPConnectionPool`, нажав кнопку с молнией, а затем кнопку &quot;Enable&quot;
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Список Controller Services с выделенной кнопкой с молнией](/images/integrations/data-ingestion/etl-tools/nifi_06.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Список Controller Services с выделенной кнопкой с молнией](/images/integrations/data-ingestion/etl-tools/nifi_06.webp)
+         </Frame>
        </div>
 
        <br />
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Диалог подтверждения включения службы контроллера](/images/integrations/data-ingestion/etl-tools/nifi_07.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Диалог подтверждения включения службы контроллера](/images/integrations/data-ingestion/etl-tools/nifi_07.webp)
+         </Frame>
        </div>
 
     8. Проверьте вкладку Controller Services и убедитесь, что служба контроллера включена
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Список Controller Services с включенной службой ClickHouse JDBC](/images/integrations/data-ingestion/etl-tools/nifi_08.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Список Controller Services с включенной службой ClickHouse JDBC](/images/integrations/data-ingestion/etl-tools/nifi_08.webp)
+         </Frame>
        </div>
   </Step>
 
@@ -145,13 +113,9 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
     1. Добавьте процессор ​`​ExecuteSQL` вместе с соответствующими предшествующими и последующими процессорами
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Холст NiFi с процессором ExecuteSQL в потоке обработки](/images/integrations/data-ingestion/etl-tools/nifi_09.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Холст NiFi с процессором ExecuteSQL в потоке обработки](/images/integrations/data-ingestion/etl-tools/nifi_09.webp)
+         </Frame>
        </div>
 
     2. В разделе &quot;Properties&quot; процессора ​`​ExecuteSQL` введите следующие значения
@@ -164,37 +128,25 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
     3. Запустите процессор `​​ExecuteSQL`
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Конфигурация процессора ExecuteSQL с заполненными свойствами](/images/integrations/data-ingestion/etl-tools/nifi_10.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Конфигурация процессора ExecuteSQL с заполненными свойствами](/images/integrations/data-ingestion/etl-tools/nifi_10.webp)
+         </Frame>
        </div>
 
     4. Чтобы убедиться, что запрос был успешно обработан, проверьте один из `FlowFile` в выходной очереди
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Диалог со списком очереди, показывающий FlowFile, готовые к проверке](/images/integrations/data-ingestion/etl-tools/nifi_11.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Диалог со списком очереди, показывающий FlowFile, готовые к проверке](/images/integrations/data-ingestion/etl-tools/nifi_11.webp)
+         </Frame>
        </div>
 
     5. Переключитесь в режим &quot;formatted&quot;, чтобы просмотреть результат в выходном `FlowFile`
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Средство просмотра содержимого FlowFile с результатами запроса в режиме formatted](/images/integrations/data-ingestion/etl-tools/nifi_12.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Средство просмотра содержимого FlowFile с результатами запроса в режиме formatted](/images/integrations/data-ingestion/etl-tools/nifi_12.webp)
+         </Frame>
        </div>
   </Step>
 
@@ -215,25 +167,17 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
        Вход
 
        <div className="ch-image-sm">
-
-       <Frame>
-
-       ![Вход процессора MergeRecord, показывающий отдельные записи](/images/integrations/data-ingestion/etl-tools/nifi_13.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Вход процессора MergeRecord, показывающий отдельные записи](/images/integrations/data-ingestion/etl-tools/nifi_13.webp)
+         </Frame>
        </div>
 
        Выход
 
        <div className="ch-image-sm">
-
-       <Frame>
-
-       ![Выход процессора MergeRecord, показывающий объединённый массив записей](/images/integrations/data-ingestion/etl-tools/nifi_14.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Выход процессора MergeRecord, показывающий объединённый массив записей](/images/integrations/data-ingestion/etl-tools/nifi_14.webp)
+         </Frame>
        </div>
 
     4. В разделе &quot;Properties&quot; процессора `PutDatabaseRecord` введите следующие значения
@@ -251,13 +195,9 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
     5. Чтобы убедиться, что каждая вставка содержит несколько строк, проверьте, что число строк в таблице увеличивается как минимум на значение &quot;Minimum Number of Records&quot;, заданное в `MergeRecord`.
 
        <div className="ch-image-sm">
-
-       <Frame>
-
-       ![Результаты запроса, показывающие количество строк в целевой таблице](/images/integrations/data-ingestion/etl-tools/nifi_15.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Результаты запроса, показывающие количество строк в целевой таблице](/images/integrations/data-ingestion/etl-tools/nifi_15.webp)
+         </Frame>
        </div>
 
     6. Поздравляем — вы успешно загрузили данные в ClickHouse с помощью Apache NiFi!

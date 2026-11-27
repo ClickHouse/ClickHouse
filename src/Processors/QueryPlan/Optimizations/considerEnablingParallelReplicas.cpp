@@ -1648,7 +1648,9 @@ static bool decideAtBoundary(
         if (reads->lazy_to_instrument)
             reads->lazy_to_instrument->setRuntimeDataflowStatisticsCacheUpdater(updater);
 
-        auto duplicated_reads_updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(statistics_block, /*duplicated=*/ true);
+        /// An updater for each read: the blocks are counted once by the updater, and two reads of a table load them twice.
+        /// The two halves of a lazily materialized read are one read, found by the rows they share, like the coordinated one.
+        UnorderedMapWithMemoryTracking<const LazyMaterializingRows *, RuntimeDataflowStatisticsCacheUpdaterPtr> lazy_read_updaters;
         for (auto * read_step : collectReadSteps(*single_replica_plan_boundary))
         {
             /// The coordinated read and its own lazy half are set up above, and their bytes are `input_bytes`.
@@ -1657,7 +1659,19 @@ static bool decideAtBoundary(
                 continue;
             if (!read_step->supportsDataflowStatisticsCollection())
                 continue;
-            read_step->setRuntimeDataflowStatisticsCacheUpdater(duplicated_reads_updater);
+            const LazyMaterializingRows * lazy_rows = nullptr;
+            if (const auto * read = typeid_cast<const ReadFromMergeTree *>(read_step))
+                lazy_rows = read->getLazyReadRows().get();
+            else if (const auto * lazy_read = typeid_cast<const LazilyReadFromMergeTree *>(read_step))
+                lazy_rows = lazy_read->getLazyMaterializingRows().get();
+            RuntimeDataflowStatisticsCacheUpdaterPtr updater_of_read = lazy_rows ? lazy_read_updaters[lazy_rows] : nullptr;
+            if (!updater_of_read)
+            {
+                updater_of_read = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(statistics_block, /*duplicated=*/ true);
+                if (lazy_rows)
+                    lazy_read_updaters[lazy_rows] = updater_of_read;
+            }
+            read_step->setRuntimeDataflowStatisticsCacheUpdater(updater_of_read);
         }
     }
     return false;

@@ -9,9 +9,7 @@ doc_type: "reference"
 Les fonctions de fenêtre vous permettent d’effectuer des calculs sur un ensemble de lignes liées à la ligne en cours.
 Elles peuvent être utilisées pour effectuer des calculs similaires à ceux réalisés avec des fonctions d’agrégation, mais s’en distinguent par le fait qu’une fonction de fenêtre ne regroupe pas les lignes en une seule sortie ; au contraire, les lignes individuelles sont toujours renvoyées.
 
-<div id="standard-window-functions">
-  ## Fonctions de fenêtre standard
-</div>
+## Fonctions de fenêtre standard {#standard-window-functions}
 
 ClickHouse prend en charge la syntaxe SQL standard pour les fenêtres et les fonctions de fenêtre.
 Le tableau ci-dessous indique les fonctionnalités actuellement prises en charge :
@@ -32,9 +30,7 @@ Le tableau ci-dessous indique les fonctionnalités actuellement prises en charge
 | `lag/lead(value, offset)`                                                                 | ✅                | Vous pouvez également utiliser l’une des solutions de contournement suivantes :<br /> 1) `any(value) OVER (... ROWS BETWEEN <offset> PRECEDING AND <offset> PRECEDING)`, ou `FOLLOWING` à la place de `PRECEDING` pour `lead` <br /> 2) `lagInFrame/leadInFrame`, qui sont analogues mais respectent le cadre de la fenêtre. Pour obtenir un comportement identique à `lag/lead`, utilisez `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`. |
 | [`ntile(buckets)`](/fr/reference/functions/window-functions/ntile)                           | ✅                | Spécifiez la fenêtre, par exemple, ainsi : `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)`.                                                                                                                                                                                                                                                                                                                     |
 
-<div id="syntax">
-  ## Syntaxe
-</div>
+## Syntaxe {#syntax}
 
 ```text
 aggregate_function (column_name)
@@ -70,9 +66,7 @@ WINDOW window_name as ([
 └─────────────────┘  <--- UNBOUNDED FOLLOWING (END of the PARTITION)
 ```
 
-<div id="functions">
-  ## Fonctions utilisables uniquement comme fonctions de fenêtre
-</div>
+## Fonctions utilisables uniquement comme fonctions de fenêtre {#functions}
 
 Les fonctions suivantes ne peuvent être utilisées que comme fonctions de fenêtre. La plupart sont des fonctions SQL standard ; `lagInFrame`, `leadInFrame` et `nonNegativeDerivative` sont des extensions de ClickHouse.
 
@@ -93,15 +87,11 @@ Les fonctions suivantes ne peuvent être utilisées que comme fonctions de fenê
 | [`ntile(buckets)`](/fr/reference/functions/window-functions/ntile)                                                                             | Divise les lignes ordonnées d’une partition dans le nombre de groupes donné et renvoie le numéro du groupe de la ligne en cours. |
 | [`nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])`](/fr/reference/functions/window-functions/nonNegativeDerivative) | Calcule la dérivée non négative de `metric_column` par rapport à `timestamp_column`. Spécifique à ClickHouse.                    |
 
-<div id="examples">
-  ## Exemples
-</div>
+## Exemples {#examples}
 
 Voyons quelques exemples d’utilisation des fonctions de fenêtre.
 
-<div id="numbering-rows">
-  ### Numérotation des lignes
-</div>
+### Numérotation des lignes {#numbering-rows}
 
 ```sql
 CREATE TABLE salaries
@@ -159,9 +149,7 @@ FROM salaries;
 └─────────────────┴────────┴─────┴──────┴───────────┘
 ```
 
-<div id="aggregation-functions">
-  ### Fonctions d’agrégation
-</div>
+### Fonctions d’agrégation {#aggregation-functions}
 
 Comparez le salaire de chaque joueur à la moyenne de son équipe.
 
@@ -207,9 +195,7 @@ FROM salaries;
 └─────────────────┴────────┴───────────────────────────┴─────────┴────────┘
 ```
 
-<div id="partitioning-by-column">
-  ### Partitionnement par colonne
-</div>
+### Partitionnement par colonne {#partitioning-by-column}
 
 ```sql
 CREATE TABLE wf_partition
@@ -242,9 +228,7 @@ ORDER BY
 └──────────┴───────┴───────┴──────────────┘
 ```
 
-<div id="frame-bounding">
-  ### Délimitation de la fenêtre
-</div>
+### Délimitation du cadre {#frame-bounding}
 
 ```sql
 CREATE TABLE wf_frame
@@ -286,7 +270,7 @@ ORDER BY
 
 ```sql
 -- short form - no bound expression, no order by,
--- an equalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
+-- an equivalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
 SELECT
     part_key,
     value,
@@ -335,7 +319,7 @@ ORDER BY
 
 ```sql
 -- short form (frame is bounded by the beginning of a partition and the current row)
--- an equalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
+-- an equivalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
 SELECT
     part_key,
     value,
@@ -527,9 +511,7 @@ ORDER BY
 └────────────────┴──────────────┘
 ```
 
-<div id="groups-frame">
-  ### Frame GROUPS
-</div>
+### Frame GROUPS {#groups-frame}
 
 Une frame `GROUPS` compte des *groupes de pairs* entiers — des ensembles de lignes égales selon la clé `ORDER BY` — plutôt que des lignes physiques (`ROWS`) ou des valeurs `ORDER BY` (`RANGE`). `N PRECEDING` et `N FOLLOWING` comptent `N` groupes de pairs avant et après le groupe de pairs de la ligne en cours, et chaque groupe de pairs inclus apporte toujours l&#39;ensemble de ses lignes.
 
@@ -565,15 +547,11 @@ Chaque mode interprète les limites différemment :
 * `RANGE` compte les valeurs d’`order` ; `1 PRECEDING` et `1 FOLLOWING` couvrent donc les lignes dont l’`order` diffère d’au plus 1 de celui de la ligne en cours. Avec des écarts de 10, aucune ligne voisine n’est incluse ; la frame ne contient donc que les lignes ayant le même `order` que la ligne en cours.
 * `GROUPS` compte les groupes de pairs ; `1 PRECEDING` et `1 FOLLOWING` incluent donc toujours intégralement les groupes adjacents, quels que soient les écarts entre les valeurs d’`order`.
 
-<div id="real-world-examples">
-  ## Exemples concrets
-</div>
+## Exemples concrets {#real-world-examples}
 
 Les exemples suivants permettent de résoudre des problèmes courants rencontrés en situation réelle.
 
-<div id="maximumtotal-salary-per-department">
-  ### Salaire maximal/total par service
-</div>
+### Salaire maximal/total par service {#maximumtotal-salary-per-department}
 
 ```sql
 CREATE TABLE employees
@@ -629,9 +607,7 @@ FROM
 └────────────┴──────┴────────┴────────────────────┴──────────────────────┴──────────────────┘
 ```
 
-<div id="cumulative-sum">
-  ### Somme cumulée
-</div>
+### Somme cumulée {#cumulative-sum}
 
 ```sql
 CREATE TABLE warehouse
@@ -640,7 +616,7 @@ CREATE TABLE warehouse
     `ts` DateTime,
     `value` Float
 )
-ENGINE = Memory
+ENGINE = Memory;
 
 INSERT INTO warehouse VALUES
     ('sku38', '2020-01-01', 9),
@@ -672,9 +648,7 @@ ORDER BY
 └───────┴─────────────────────┴───────┴───────────────┘
 ```
 
-<div id="moving--sliding-average-per-3-rows">
-  ### Moyenne mobile / glissante (sur 3 lignes)
-</div>
+### Moyenne mobile / glissante (sur 3 lignes) {#moving--sliding-average-per-3-rows}
 
 ```sql
 CREATE TABLE sensors
@@ -722,9 +696,7 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴───────────────────┘
 ```
 
-<div id="moving--sliding-average-per-10-seconds">
-  ### Moyenne mobile / glissante (par tranches de 10 secondes)
-</div>
+### Moyenne mobile / glissante (par tranches de 10 secondes) {#moving--sliding-average-per-10-seconds}
 
 ```sql
 SELECT
@@ -750,9 +722,7 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴────────────────────────────┘
 ```
 
-<div id="moving--sliding-average-per-10-days">
-  ### Moyenne mobile / glissante (sur 10 jours)
-</div>
+### Moyenne mobile / glissante (sur 10 jours) {#moving--sliding-average-per-10-days}
 
 La température est stockée avec une précision à la seconde, mais en utilisant `Range` et `ORDER BY toDate(ts)`, nous formons un frame de 10 unités, et comme `toDate(ts)` est utilisé, l’unité est le jour.
 
@@ -807,21 +777,15 @@ ORDER BY
 └──────────────┴─────────────────────┴───────┴─────────────────────────┘
 ```
 
-<div id="references">
-  ## Références
-</div>
+## Références {#references}
 
-<div id="github-issues">
-  ### Issues GitHub
-</div>
+### Issues GitHub {#github-issues}
 
 La feuille de route concernant la prise en charge initiale des fonctions de fenêtre est décrite [dans cette issue](https://github.com/ClickHouse/ClickHouse/issues/18097).
 
 Toutes les issues GitHub liées aux fonctions de fenêtre portent le label [comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions).
 
-<div id="tests">
-  ### Tests
-</div>
+### Tests {#tests}
 
 Ces tests contiennent des exemples de la grammaire actuellement prise en charge :
 
@@ -829,9 +793,7 @@ https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window&#9
 
 https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0&#95;stateless/01591&#95;window&#95;functions.sql
 
-<div id="postgres-docs">
-  ### Documentation de Postgres
-</div>
+### Documentation de Postgres {#postgres-docs}
 
 https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW
 
@@ -841,9 +803,7 @@ https://www.postgresql.org/docs/devel/functions-window.html
 
 https://www.postgresql.org/docs/devel/tutorial-window.html
 
-<div id="mysql-docs">
-  ### Documentation de MySQL
-</div>
+### Documentation de MySQL {#mysql-docs}
 
 https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
 
@@ -851,9 +811,7 @@ https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html
 
 https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
 
-<div id="related-content">
-  ## Contenu connexe
-</div>
+## Contenu connexe {#related-content}
 
 * Blog : [Travailler avec des données de séries temporelles dans ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 * Blog : [Fonctions de fenêtre et fonctions Array pour les séquences de commits Git](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)

@@ -33,7 +33,7 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 
 **引擎参数**
 
-* `host:port` — MySQL 服务器地址。
+* `host:port` — MySQL 服务器地址。主机必须是普通的主机名或 IP 地址，并通过 TCP 连接到指定端口，即使是 `localhost` 也是如此：不支持 Unix 套接字。MySQL 客户端库支持的其他主机语法 (例如连接字符串或以逗号分隔的主机列表) 会被拒绝。
 * `database` — 远程数据库名称。
 * `user` — MySQL 用户名。
 * `password` — 用户密码。
@@ -64,15 +64,16 @@ SETTINGS enable_compression = 1;
 
 与 MySQL 建立加密连接所需的凭据可作为[命名集合](/zh/concepts/features/configuration/server-config/named-collections)的键 (或键值参数) 传递：
 
-| 参数             | 描述                         |
-| -------------- | -------------------------- |
-| `ssl_ca_pem`   | 用于验证 MySQL 服务器证书的 CA 证书内容。 |
-| `ssl_cert_pem` | 用于基于证书的身份验证的客户端证书内容。       |
-| `ssl_key_pem`  | 与 `ssl_cert_pem` 对应的私钥内容。  |
+| 参数                   | 描述                                       |
+| -------------------- | ---------------------------------------- |
+| `ssl_ca_pem`         | 用于验证 MySQL 服务器证书的 CA 证书内容。               |
+| `ssl_cert_pem`       | 用于基于证书的身份验证的客户端证书内容。                     |
+| `ssl_key_pem`        | 与 `ssl_cert_pem` 对应的私键内容。                |
+| `ssl_key_passphrase` | 已加密的 `ssl_key` / `ssl_key_pem` 的密码短语。可选。 |
 
-这些值是相应 PEM 文件的内容，可复制到命名集合或查询中。与密码一样，它们会在日志和 `SHOW` 查询中被隐藏。
+这些值是相应 PEM 文件的内容 (以及私键的密码短语)，可复制到命名集合或查询中。与密码一样，它们会在日志和 `SHOW` 查询中被隐藏。
 
-也可以通过 `ssl_ca`、`ssl_cert` 和 `ssl_key` 指定服务器上文件的路径来提供相同的凭据——但**只能在服务器配置文件中定义的命名集合中使用**，且此类值无法在查询中覆盖。服务器会使用自身的特权打开这些文件；因此，若允许从 SQL 中传入路径，任何能够定义 MySQL source 的用户都能探查本地文件系统，并使用其自身无权读取的证书和密钥进行身份验证。
+也可以通过 `ssl_ca`、`ssl_cert` 和 `ssl_key` 指定服务器上文件的路径来提供相同的凭据——但**只能在服务器配置文件中定义的命名集合中使用**，且此类值无法在查询中覆盖。服务器会使用自身的特权打开这些文件；因此，若允许从 SQL 中传入路径，任何能够定义 MySQL source 的用户都能探查本地文件系统，并使用其自身无权读取的证书和键进行身份验证。
 
 <a id="data_types-support" />
 

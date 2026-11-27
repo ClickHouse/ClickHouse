@@ -7,11 +7,7 @@ keywords: ['managed postgres', 'prometheus', 'grafana', 'datadog', 'метрик
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-
 import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
 
 ClickHouse Managed Postgres предоставляет две конечные точки метрик, совместимые с Prometheus,
 в [ClickHouse Cloud API][cloud-api]:
@@ -28,7 +24,7 @@ ClickHouse Managed Postgres предоставляет две конечные �
 </Note>
 
 <div id="authentication">
-  ## Аутентификация
+  ## Аутентификация {#authentication}
 </div>
 
 Эта конечная точка использует те же [ключи API], что и остальной OpenAPI; см.
@@ -43,7 +39,7 @@ PG_ID=mypgid
 ```
 
 <div id="scrape-org">
-  ## Сбор метрик со всех сервисов организации
+  ## Сбор метрик со всех сервисов организации {#scrape-org}
 </div>
 
 ```bash
@@ -52,7 +48,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 ```
 
 <div id="scrape-instance">
-  ## Сбор метрик с одного сервиса
+  ## Сбор метрик с одного сервиса {#scrape-instance}
 </div>
 
 ```bash
@@ -61,7 +57,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 ```
 
 <div id="sample-response">
-  ## Пример ответа
+  ## Пример ответа {#sample-response}
 </div>
 
 ```response
@@ -83,7 +79,7 @@ PostgresServer_CacheHitRatio{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6
 [справочнике по метрикам](/ru/products/managed-postgres/monitoring/metrics).
 
 <div id="configuring-prometheus">
-  ## Настройка Prometheus
+  ## Настройка Prometheus {#configuring-prometheus}
 </div>
 
 Эта конфигурация опрашивает конечную точку на уровне организации каждые 60 секунд:
@@ -112,9 +108,7 @@ scrape_configs:
 
 Чтобы собирать метрики только для одного сервиса, добавьте `/<PG_ID>` к `metrics_path`.
 
-<div id="grafana-dashboard">
-  ## Готовая панель мониторинга Grafana
-</div>
+## Готовая панель мониторинга Grafana {#grafana-dashboard}
 
 Готовая панель мониторинга Grafana визуализирует все метрики,
 доступные через конечную точку: сортируемую таблицу сервисов,
@@ -124,39 +118,33 @@ scrape_configs:
 данных и взаимные блокировки.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Панель мониторинга Grafana для сервисов ClickHouse Managed Postgres](/images/managed-postgres/monitoring/grafana-dashboard.webp)
-
-</Frame>
-
+  <Frame>
+    ![Панель мониторинга Grafana для сервисов ClickHouse Managed Postgres](/images/managed-postgres/monitoring/grafana-dashboard.webp)
+  </Frame>
 </div>
 
-<div id="import-dashboard">
-  ### Импорт панели мониторинга
-</div>
+### Импорт панели мониторинга {#import-dashboard}
 
 <Steps>
-  <Step title="Скачайте JSON панели мониторинга" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">Скачать JSON панели мониторинга</TrackedLink>.
+  <Step title="Скачайте JSON-файл панели мониторинга" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">Скачать JSON-файл панели мониторинга</TrackedLink>.
   </Step>
 
-  <Step title="Откройте импорт в Grafana" id="open-import">
+  <Step title="Откройте мастер импорта в Grafana" id="open-import">
     Перейдите в **Dashboards → New → Import**. Загрузите JSON‑файл или вставьте его содержимое.
   </Step>
 
   <Step title="Выберите источник данных Prometheus" id="pick-datasource">
-    Когда появится запрос для `DS_PROMETHEUS`, выберите источник данных Prometheus, который собирает метрики с конечной точки, настроенной в [предыдущем разделе](#configuring-prometheus).
+    Когда появится запрос значения `DS_PROMETHEUS`, выберите источник данных Prometheus, который собирает метрики с конечной точки, настроенной в [предыдущем разделе](#configuring-prometheus).
   </Step>
 </Steps>
 
-Для развертываний Grafana с provisioning поместите JSON в каталог
-provisioning для панелей мониторинга. Grafana сопоставит ссылку `${DS_PROMETHEUS}`
-с источником данных Prometheus, доступным в экземпляре.
+Если Grafana развернута с автоматической подготовкой (provisioning), поместите JSON‑файл в каталог,
+указанный для подготовки панелей мониторинга. Grafana сопоставит ссылку `${DS_PROMETHEUS}`
+с источником данных Prometheus, доступным в инстансе.
 
 <div id="template-variables">
-  ### Переменные шаблона
+  ### Переменные шаблона {#template-variables}
 </div>
 
 Панель мониторинга использует три переменные:
@@ -169,7 +157,7 @@ provisioning для панелей мониторинга. Grafana сопост�
   JSON, если у вас используется другой интервал опроса.
 
 <div id="drill-in">
-  ### Отфильтруйте данные по одному сервису для детального анализа
+  ### Отфильтруйте данные по одному сервису для детального анализа {#drill-in}
 </div>
 
 Несколько панелей предназначены для детального анализа после фильтрации по одному
@@ -179,7 +167,7 @@ provisioning для панелей мониторинга. Grafana сопост�
 ожиданием диска или конкуренцией за ресурсы гипервизора.
 
 <div id="third-party-integrations">
-  ## Интеграция с Grafana и Datadog
+  ## Интеграция с Grafana и Datadog {#third-party-integrations}
 </div>
 
 Эта конечная точка имеет ту же структуру, что и [конечная точка Prometheus для ClickHouse

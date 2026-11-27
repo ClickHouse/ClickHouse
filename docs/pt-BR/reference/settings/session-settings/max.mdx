@@ -84,13 +84,15 @@ Número máximo de snapshots do Paimon consumidos por leitura incremental. 0 sig
 
 ## max_estimated_execution_time {#max_estimated_execution_time}
 
-<SettingsInfoBlock type="Segundos" default_value="0" />
+<SettingsInfoBlock type="Seconds" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "0"},{"label": "Separados max_execution_time e max_estimated_execution_time"}]}]} />
 
 Tempo máximo estimado de execução da consulta, em segundos. É verificado em cada bloco de dados
 quando [`timeout_before_checking_execution_speed`](/pt-BR/reference/settings/session-settings/other#timeout_before_checking_execution_speed)
-expira.
+expira. Baseia-se em uma extrapolação a partir da velocidade atual de execução da consulta.
+Se você definir `timeout_before_checking_execution_speed` como 0, esta configuração
+não será verificada.
 
 ## max_expanded_ast_elements {#max_expanded_ast_elements}
 
@@ -156,6 +158,8 @@ Valores possíveis:
 **Informações adicionais**
 
 Esta opção pode produzir resultados diferentes, dependendo das configurações usadas.
+
+Com `parallel_replicas_mode` `sampling_key`, ou com o modo de chave personalizada em um cluster com mais de um shard, cada réplica retorna sua própria parte do resultado do shard. As réplicas de um shard só são usadas em conjunto quando o próprio iniciador agrega ou ordena completamente essas partes (por exemplo, em uma agregação sem chaves `GROUP BY`). Nos demais casos, como em `GROUP BY` com `distributed_aggregation_memory_efficient` ou em `ORDER BY`, o shard é lido a partir de uma única réplica.
 
 ### Processamento em paralelo usando a chave `SAMPLE` {#parallel-processing-using-sample-key}
 

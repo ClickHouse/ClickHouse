@@ -1,0 +1,73 @@
+---
+slug: /clickstack/observability/migration/elastic/migrating-sdks
+title: 'Elastic からの SDK の移行'
+sidebarTitle: 'SDK の移行'
+description: 'Elastic SDK によるインストルメンテーションを、完全マネージド型の ClickHouse オブザーバビリティへ移行する方法を説明します。セルフマネージドのデプロイメントでは、別途接続設定が必要です。'
+show_related_blogs: true
+keywords: ['ClickHouse Observability']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+Elastic Stack では、アプリケーションをインストルメントするための言語 SDKs として 2 種類が提供されています。
+
+1. **[Elastic 公式 APM エージェント](https://www.elastic.co/docs/reference/apm-agents/)** – Elastic Stack 専用に構築されたエージェントです。これらのエージェントを使用している場合は、アプリケーションで使用しているカスタムスパンや属性も含め、お使いの言語向けの [OpenTelemetry インストルメンテーション](https://opentelemetry.io/docs/languages/)への移行を計画してください。
+
+2. **[Elastic Distributions of OpenTelemetry (EDOT SDKs)](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/)** – 標準の OpenTelemetry SDKs を Elastic がディストリビューションとして提供しているもので、.NET、Java、Node.js、PHP、Python 向けに利用できます。アプリケーションですでに EDOT SDK を使用している場合、コードを再インストルメントする必要はありません。SDK を再設定し、テレメトリデータの送信先を ClickHouse オブザーバビリティの OTLP エンドポイントに変更するだけで済みます。詳細については、[「EDOT SDK の移行」](#migrating-edot-sdks-self-configured)を参照してください。
+
+## EDOT SDK の移行 {#migrating-edot-sdks-self-configured}
+
+Elastic Distributions of the OpenTelemetry SDKs (EDOT SDKs) は、公式の OpenTelemetry SDKs をカスタマイズしたバージョンです。たとえば、[EDOT Python SDK](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/python/) は、[OpenTelemetry Python SDK](https://opentelemetry.io/docs/languages/python/) をベンダー独自にカスタマイズしたディストリビューションで、Elastic Observability とシームレスに連携するよう設計されています。
+
+これらの SDK は標準の OpenTelemetry ライブラリをベースとしているため、ClickHouse オブザーバビリティへの移行は簡単で、インストルメンテーションをやり直す必要はありません。テレメトリデータが ClickHouse オブザーバビリティの OTLP エンドポイントに送信されるよう、設定を変更するだけです。
+
+設定には標準の OpenTelemetry の仕組みを使用します。Python の場合は、[OpenTelemetry Zero-Code Instrumentation のドキュメント](https://opentelemetry.io/docs/zero-code/python/configuration/)で説明されているとおり、通常は環境変数で設定します。
+
+一般的な EDOT SDK の設定例は次のとおりです。
+
+```shell
+export OTEL_RESOURCE_ATTRIBUTES='service.name=YOUR_APP_NAME'
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://my-deployment.ingest.us-west1.gcp.cloud.es.io
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=ApiKey P....l"
+```
+
+移行するには、アプリケーションの環境で OTLP の接続設定を更新し、アプリケーションを再起動します。以下の例では、protobuf エンコーディングによる OTLP HTTP を使用します。
+
+<Tabs>
+  <Tab title="完全マネージド型">
+    <BetaBadge label="ベータ版" />
+
+    **チーム設定 → Data → Managed Telemetry** から OTLP HTTP エンドポイントと APIキーをコピーします。
+
+    ```shell
+    export OTEL_RESOURCE_ATTRIBUTES='service.name=YOUR_APP_NAME'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_API_KEY'
+    ```
+
+    エンドポイントはポートを含めて表示どおりに使用し、`/v1/traces` のようなシグナル別の接尾辞は付けないでください。ヘッダー値では、`Bearer` の後のスペースを `%20` でエンコードしています。接続情報については、[OpenTelemetry データの送信](/ja/clickstack/observability/ingesting-data/opentelemetry)を参照してください。
+  </Tab>
+
+  <Tab title="セルフマネージド">
+    SDK の送信先として、受信側 collector の接続可能な OTLP HTTP エンドポイントを指定します。
+
+    ```shell
+    export OTEL_RESOURCE_ATTRIBUTES='service.name=YOUR_APP_NAME'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_COLLECTOR_TOKEN'
+    ```
+
+    受信側 collector を `OTLP_AUTH_TOKEN` で保護している場合は、そのトークンを authorization の値に指定します。`localhost` を使用できるのは、アプリケーションと collector が同じネットワーク名前空間を共有している場合のみです。TLS が有効な collector では、その HTTPS エンドポイントを使用し、SDK がその証明書を信頼するように設定してください。詳しくは [collector の保護](/ja/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)を参照してください。
+
+    collector の認証が無効になっている場合は、以前の Elastic 用ヘッダーを削除します。
+
+    ```shell
+    unset OTEL_EXPORTER_OTLP_HEADERS
+    ```
+  </Tab>
+</Tabs>
+
+アプリケーションでシグナル別の OTLP エンドポイント、プロトコル、ヘッダーの変数を設定している場合は、それらも更新してください。これらは上記の共通設定よりも優先されます。サービス名を設定する際は、既存のリソース属性を残したまま追加してください。
