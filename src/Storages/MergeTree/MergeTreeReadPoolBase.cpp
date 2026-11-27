@@ -509,6 +509,10 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
         auto all_read_columns = read_task_info.task_columns.getAllColumnNames();
         auto all_read_columns_list = storage_snapshot->getColumnsByNames(options, all_read_columns);
         read_task_info.patch_parts = read_task_info.alter_conversions->getPatchesForColumns(all_read_columns_list, reader_settings.apply_deleted_mask);
+        if (!read_task_info.patch_parts.empty())
+            read_task_info.ranges_for_patches = read_task_info.read_request_map
+                ? read_task_info.read_request_map
+                : std::make_shared<const MarkRanges>(part_with_ranges.ranges);
 
         addPatchPartsColumns(
             read_task_info.task_columns,

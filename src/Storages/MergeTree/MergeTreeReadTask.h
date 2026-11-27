@@ -151,6 +151,8 @@ struct MergeTreeReadTaskInfo
     MarkRangesPtr read_request_map;
     /// The same for each of `patch_parts`; empty = the whole patch parts.
     std::vector<MarkRangesPtr> patch_read_request_maps;
+    /// All mark ranges the query reads from this part, when it has patches: see `patchSplitsWithRead`.
+    MarkRangesPtr ranges_for_patches;
 
     /// Rows the reader drops from this part before PREWHERE; non-empty, or null to drop none.
     ConstDeleteBitmapPtr delete_bitmap;

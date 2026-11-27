@@ -304,18 +304,33 @@ std::vector<MarkRanges> getRangesInPatchParts(const DataPartPtr & original_part,
 
 }
 
-bool patchSplitsWithRead(const DataPartPtr & original_part, const PatchPartInfoForReader & patch)
+bool patchSplitsWithRead(const DataPartPtr & original_part, const PatchPartInfoForReader & patch, const MarkRanges & read_ranges)
 {
     constexpr size_t pieces = 4;
-    const size_t marks = original_part->index_granularity->getMarksCount();
+    const size_t marks = read_ranges.getNumberOfMarks();
     if (marks < pieces)
         return true;
 
     MarkRanges patch_ranges;
     size_t selected_marks = 0;
+    auto range_it = read_ranges.begin();
+    size_t taken_from_range = 0;
     for (size_t i = 0; i < pieces; ++i)
     {
-        const MarkRanges piece{MarkRange(marks * i / pieces, marks * (i + 1) / pieces)};
+        /// The next `marks / pieces` or so marks of `read_ranges`.
+        MarkRanges piece;
+        for (size_t left = marks * (i + 1) / pieces - marks * i / pieces; left > 0;)
+        {
+            const size_t take = std::min(left, range_it->getNumberOfMarks() - taken_from_range);
+            piece.emplace_back(range_it->begin + taken_from_range, range_it->begin + taken_from_range + take);
+            left -= take;
+            taken_from_range += take;
+            if (taken_from_range == range_it->getNumberOfMarks())
+            {
+                ++range_it;
+                taken_from_range = 0;
+            }
+        }
         for (const auto & range : getRangesInPatchPart(original_part, patch, piece))
         {
             selected_marks += range.getNumberOfMarks();
