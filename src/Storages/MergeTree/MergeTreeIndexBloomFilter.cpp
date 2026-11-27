@@ -796,8 +796,7 @@ bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(const RPNBuilderTre
     if (traverseFunction(node, out, nullptr /*parent*/))
         return true;
 
-    /// A function that returns only 0, 1 or NULL and is itself an index expression, e.g. `has(arr, 'x')` with
-    /// `INDEX i has(arr, 'x') TYPE bloom_filter`, selects the same rows as `f = 1`.
+    /// A 0/1 function used as the predicate selects the same rows as `f = 1`, e.g. `has(arr, 'x')` with `INDEX i has(arr, 'x')`.
     if (node.isFunction() && isBooleanFunction(node.toFunctionNode().getFunctionName(), /*with_index_functions=*/ true))
     {
         out = RPNElement();

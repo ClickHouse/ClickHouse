@@ -5486,7 +5486,6 @@ void KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const B
     {
         extractAtomsFromFunction(node, info, group);
 
-        /// For example, `ORDER BY has(arr, 'x')` and `WHERE has(arr, 'x')`, where the leaf is itself a key expression.
         if ((group.atoms.empty() || multiple_key_columns_per_condition)
             && !findKeySubexpressionName(node, info.key_subexpr_names).empty())
             extractBareColumnAtoms(node, info, group);
@@ -6485,10 +6484,9 @@ void KeyCondition::extractAtomsFromConstant(const RPNBuilderTreeNode & node, Ato
 
 void KeyCondition::extractBareColumnAtoms(const RPNBuilderTreeNode & node, const BuildInfo & info, AtomGroup & group)
 {
-    /// A bare numeric column, or a function that is itself a key expression, used directly as a boolean
-    /// condition, for example `WHERE flag`, or `WHERE has(arr, 'x')` with `ORDER BY has(arr, 'x')`. We
-    /// reach this point only for a leaf of the predicate tree, so this matches exactly the
-    /// boolean-predicate positions that `RPNBuilder::traverseTree` descends to
+    /// A bare numeric column, or a function that is itself a key expression, used directly as a boolean condition, for
+    /// example `WHERE flag`, or `WHERE has(arr, 'x')` with `ORDER BY has(arr, 'x')`. We reach this point only for a leaf of
+    /// the predicate tree, so this matches exactly the boolean-predicate positions that `RPNBuilder::traverseTree` descends to
     /// through `and` / `or` / `not` / `indexHint`. Treat the column as `key != 0` and hand it to the
     /// shared comparison machinery, so that every key column the column can constrain produces an
     /// atom, exactly as the explicit predicate `flag != 0` would (including multiple atoms per leaf).

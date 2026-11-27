@@ -53,7 +53,6 @@ using namespace std::literals;
 /// work budget for tryOptimizeAndCompareChain (forward-declared here to avoid touching the header).
 size_t & getTreeHashWorkCounter();
 
-/// A non-Nullable constant 0 or 1, e.g. `true`.
 static std::optional<UInt64> tryGetBooleanConstant(const QueryTreeNodePtr & node)
 {
     const auto * constant = node->as<ConstantNode>();
@@ -65,8 +64,7 @@ static std::optional<UInt64> tryGetBooleanConstant(const QueryTreeNodePtr & node
     return value;
 }
 
-/// For `f = c`, `f != c`, `f IS [NOT DISTINCT FROM] c`, `f [GLOBAL] [NULL] IN (c)` with a constant `c` 0 or 1 that
-/// return the same value as `f` or `NOT f`: `f` and whether it is negated.
+/// Matches a comparison of `f` with 0 or 1 that returns the same value as `f` or `NOT f`: returns `f` and whether it is negated.
 static std::optional<std::pair<QueryTreeNodePtr, bool>> matchRedundantBooleanComparison(const FunctionNode & function_node)
 {
     const auto & name = function_node.getFunctionName();
@@ -94,7 +92,6 @@ static std::optional<std::pair<QueryTreeNodePtr, bool>> matchRedundantBooleanCom
     if (name != "equals"
         && (child_name == "and" || child_name == "or" || child_name == "not" || isBool(removeLowCardinality(child->getResultType()))))
         return {};
-    /// A Nullable `f` keeps its wrapper, except `f = 0/1` around `boolean_functions`.
     if (isNullableOrLowCardinalityNullable(child->getResultType()))
     {
         if (name != "equals" || !isBooleanFunction(child->getFunctionName()))
@@ -3077,7 +3074,6 @@ private:
         auto function_node_type = node->getResultType();
         auto original_node = node;
 
-        // `f = 0`, `f != 1`, `f IS FALSE` and `f IN (0)` become `NOT f`
         if (negate)
         {
             auto not_resolver = FunctionFactory::instance().get("not", getContext());

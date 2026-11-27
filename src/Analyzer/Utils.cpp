@@ -200,14 +200,12 @@ bool isNameOfGlobalInFunction(const std::string & function_name)
 
 using namespace std::literals;
 
-/// Functions that return only 0, 1 or NULL.
 static constexpr std::array boolean_functions{
     "equals"sv,   "notEquals"sv,   "less"sv,   "greaterOrEquals"sv, "greater"sv,      "lessOrEquals"sv,    "in"sv,     "notIn"sv,
     "globalIn"sv, "globalNotIn"sv, "nullIn"sv, "notNullIn"sv,       "globalNullIn"sv, "globalNotNullIn"sv, "isNull"sv, "isNotNull"sv,
     "like"sv,     "notLike"sv,     "ilike"sv,  "notILike"sv,        "empty"sv,        "notEmpty"sv,        "not"sv,    "and"sv,
     "or"sv};
 
-/// Index predicates that return only 0, 1 or NULL; their wrapper is removed only when they are not Nullable.
 static constexpr std::array boolean_index_functions{
     "isNotDistinctFrom"sv, "isDistinctFrom"sv, "has"sv, "hasAny"sv, "hasAll"sv, "notHas"sv, "startsWith"sv, "startsWithUTF8"sv,
     "endsWith"sv, "endsWithUTF8"sv, "match"sv, "fullMatch"sv, "multiMatchAny"sv, "multiSearchAny"sv, "multiSearchAnyUTF8"sv,
