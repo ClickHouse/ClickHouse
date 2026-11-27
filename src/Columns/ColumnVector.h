@@ -64,7 +64,9 @@ public:
     void doInsertFrom(const IColumn & src, size_t n) override
 #endif
     {
-        data.push_back(assert_cast<const Self &>(src).getData()[n]);
+        /// Snapshot before growing: the source may be this column.
+        const T value = assert_cast<const Self &>(src).getData()[n];
+        data.push_back(value);
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
