@@ -220,7 +220,7 @@ void StorageDictionary::readImpl(
     const size_t num_streams)
 {
     auto dictionary = getDictionary(local_context);
-    auto header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
+    auto header = std::make_shared<const Block>(dictionary->getReadHeader(storage_snapshot->getSampleBlockForColumns(column_names)));
 
     query_plan.addStep(std::make_unique<ReadFromDictionaryStep>(
         std::move(header), shared_from_this(), std::move(dictionary), column_names, max_block_size, num_streams, query_info.storage_limits, local_context));

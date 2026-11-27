@@ -6,6 +6,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
+#include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/UUID.h>
@@ -330,6 +331,10 @@ public:
     }
 
     virtual Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const = 0;
+
+    /// The header that the step reading the dictionary declares. `read` returns at least its columns.
+    /// A layout whose `read` does not return the requested columns gives the header of its own rows.
+    virtual Block getReadHeader(Block requested_header) const { return requested_header; }
 
     /// False if the rows returned by `read` are not keys with their attributes, so `dictGetKeys` cannot scan them.
     virtual bool supportsReverseLookup() const { return true; }

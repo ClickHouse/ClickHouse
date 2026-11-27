@@ -47,5 +47,10 @@ name_999
 7	
 8	
 9	
+A layout that returns its own columns instead of the requested ones
+1
+1
+Linux/(\\d+)
+dict_regexp	1
 A dictionary that cannot be read fails when the pipeline is built
 1

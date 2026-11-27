@@ -856,6 +856,19 @@ UnorderedMapWithMemoryTracking<String, ColumnPtr> RegExpTreeDictionary::match(
     return result;
 }
 
+Block RegExpTreeDictionary::getReadHeader(Block) const
+{
+    auto string_array_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+    return Block
+    {
+        {std::make_shared<DataTypeUInt64>(), kId},
+        {std::make_shared<DataTypeUInt64>(), kParentId},
+        {std::make_shared<DataTypeString>(), kRegExp},
+        {string_array_type, kKeys},
+        {string_array_type, kValues},
+    };
+}
+
 Pipe RegExpTreeDictionary::read(const Names & , size_t max_block_size, size_t) const
 {
 

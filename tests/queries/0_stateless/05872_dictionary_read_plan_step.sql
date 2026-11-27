@@ -8,8 +8,10 @@ SET join_use_nulls = 0;
 DROP DICTIONARY IF EXISTS dict_hashed;
 DROP DICTIONARY IF EXISTS dict_direct;
 DROP DICTIONARY IF EXISTS dict_polygon;
+DROP DICTIONARY IF EXISTS dict_regexp;
 DROP TABLE IF EXISTS dim;
 DROP TABLE IF EXISTS fact;
+DROP TABLE IF EXISTS regexp_nodes;
 DROP TABLE IF EXISTS polygons;
 
 CREATE TABLE dim (id UInt64, name String, value UInt32) ENGINE = MergeTree ORDER BY id;
@@ -51,6 +53,19 @@ SELECT value, id FROM dict_direct WHERE id IN (3, 500, 999) ORDER BY id;
 SELECT count(), sum(value) FROM dict_direct;
 SELECT f.id, d.name FROM fact AS f LEFT JOIN dict_direct AS d ON f.key = d.id ORDER BY f.id SETTINGS join_algorithm = 'hash';
 
+SELECT 'A layout that returns its own columns instead of the requested ones';
+CREATE TABLE regexp_nodes (id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO regexp_nodes VALUES (1, 0, 'Linux/(\\d+)', ['name', 'num'], ['L', '7']);
+
+-- The cheapest column to read for `count` is `num`, and the tree nodes do not have it.
+CREATE DICTIONARY dict_regexp (regexp String, name String, num UInt8)
+PRIMARY KEY regexp SOURCE(CLICKHOUSE(DB currentDatabase() TABLE 'regexp_nodes')) LAYOUT(REGEXP_TREE) LIFETIME(0);
+
+SELECT count() FROM dict_regexp;
+SELECT 1 FROM dict_regexp LIMIT 1;
+SELECT regexp FROM dict_regexp;
+SELECT _table, count() FROM dict_regexp GROUP BY _table;
+
 SELECT 'A dictionary that cannot be read fails when the pipeline is built';
 CREATE TABLE polygons (key Array(Array(Array(Tuple(Float64, Float64)))), name String) ENGINE = MergeTree ORDER BY name;
 INSERT INTO polygons VALUES ([[[(3, 1), (0, 1), (0, -1), (3, -1)]]], 'Value');
@@ -63,8 +78,10 @@ EXPLAIN PIPELINE SELECT name FROM dict_polygon; -- { serverError UNSUPPORTED_MET
 SELECT name FROM dict_polygon; -- { serverError UNSUPPORTED_METHOD }
 
 DROP DICTIONARY dict_polygon;
+DROP DICTIONARY dict_regexp;
 DROP DICTIONARY dict_direct;
 DROP DICTIONARY dict_hashed;
 DROP TABLE polygons;
+DROP TABLE regexp_nodes;
 DROP TABLE fact;
 DROP TABLE dim;

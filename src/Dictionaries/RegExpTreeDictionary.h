@@ -96,6 +96,7 @@ public:
     Pipe read(const Names & columns, size_t max_block_size, size_t num_streams) const override;
 
     /// `read` returns the tree nodes.
+    Block getReadHeader(Block requested_header) const override;
     bool supportsReverseLookup() const override { return false; }
 
     ColumnPtr getColumn(

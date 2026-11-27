@@ -51,7 +51,7 @@ void ReadFromDictionaryStep::initializePipeline(QueryPipelineBuilder & pipeline,
     for (const auto & processor : pipe.getProcessors())
         processor->setStorageLimits(storage_limits);
 
-    /// Some layouts ignore `column_names` and return all the columns of the dictionary or of its source.
+    /// A layout can return more columns than the header has, for example all the columns of its source.
     if (!blocksHaveEqualStructure(pipe.getHeader(), *getOutputHeader()))
     {
         auto converting_dag = ActionsDAG::makeConvertingActions(
