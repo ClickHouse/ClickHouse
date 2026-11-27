@@ -572,7 +572,7 @@ void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t
 ColumnWithTypeAndName castNullableEnumToResultType(const ColumnWithTypeAndName & argument, const DataTypePtr & result_type)
 {
     const auto target_type = makeNullableSafe(removeLowCardinality(result_type));
-    if (!argument.type->isNullable() || !isEnum(removeNullable(argument.type)) || !target_type->isNullable())
+    if (!argument.type->isNullable() || !target_type->isNullable() || removeNullable(argument.type)->isDefaultInsertTrivial())
         return argument;
 
     return {castColumn(argument, target_type), target_type, argument.name};

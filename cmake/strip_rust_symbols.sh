@@ -14,7 +14,7 @@
 # 3. Localize the Rust symbols: legacy mangling (`_ZN...17h<hash>E`, the
 #    standard library) and v0 (`_R...`, our crates). C++ calls none of them.
 #    Also localize the strong globals of the objects built neither by rustc nor
-#    by `cxx`: the C libraries that `-sys` crates compile and bundle (zstd, LZ4,
+#    by `cxx`: the C libraries that `-sys` crates compile and bundle (`ring`,
 #    Oniguruma, ...), and those of `compiler_builtins`. ClickHouse links its own
 #    copies of many of them, and in the one object of the partial link each is a
 #    duplicate definition, not an archive member the linker leaves unpulled.

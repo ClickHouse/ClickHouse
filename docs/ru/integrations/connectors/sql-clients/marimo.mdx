@@ -17,13 +17,9 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 [marimo](https://marimo.io/) — это реактивный ноутбук с открытым исходным кодом для Python со встроенной поддержкой SQL. Когда вы запускаете ячейку или взаимодействуете с элементом интерфейса, marimo автоматически выполняет затронутые ячейки (или помечает их как устаревшие), сохраняя согласованность кода и результатов и предотвращая ошибки ещё до их возникновения. Каждый ноутбук marimo хранится как обычный Python-код, может выполняться как скрипт и разворачиваться как приложение.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Подключение к ClickHouse](/images/integrations/sql-clients/marimo/clickhouse-connect.webp)
-
-</Frame>
-
+  <Frame>
+    ![Подключение к ClickHouse](/images/integrations/sql-clients/marimo/clickhouse-connect.webp)
+  </Frame>
 </div>
 
 <Steps>
@@ -40,37 +36,25 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
     Перейдите на панель источников данных в левой части редактора marimo и нажмите &#39;Add database&#39;.
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Добавить новую базу данных](/images/integrations/sql-clients/marimo/panel-arrow.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Добавить новую базу данных](/images/integrations/sql-clients/marimo/panel-arrow.webp)
+      </Frame>
     </div>
 
     Затем вам будет предложено заполнить параметры подключения к базе данных.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Заполните данные базы данных](/images/integrations/sql-clients/marimo/add-db-details.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Заполните данные базы данных](/images/integrations/sql-clients/marimo/add-db-details.webp)
+      </Frame>
     </div>
 
     После этого появится ячейка, которую можно запустить для установления подключения.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Запустите ячейку для подключения к ClickHouse](/images/integrations/sql-clients/marimo/run-cell.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Запустите ячейку для подключения к ClickHouse](/images/integrations/sql-clients/marimo/run-cell.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -78,13 +62,9 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
     После настройки подключения вы можете создать новую SQL-ячейку и выбрать движок ClickHouse.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Выберите SQL-движок](/images/integrations/sql-clients/marimo/choose-sql-engine.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Выберите SQL-движок](/images/integrations/sql-clients/marimo/choose-sql-engine.webp)
+      </Frame>
     </div>
 
     В этом руководстве мы будем использовать датасет New York Taxi.
@@ -144,25 +124,17 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
     ```
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Результаты в датафрейме](/images/integrations/sql-clients/marimo/results.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Результаты в датафрейме](/images/integrations/sql-clients/marimo/results.webp)
+      </Frame>
     </div>
 
     Теперь вы можете просматривать результаты в датафрейме. Я хочу визуализировать самые дорогие поездки из заданной точки посадки. marimo предоставляет несколько компонентов интерфейса, которые помогут вам в этом. Я буду использовать выпадающий список для выбора места и Altair для построения диаграмм.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Сочетание выпадающего списка, таблицы и диаграммы](/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Сочетание выпадающего списка, таблицы и диаграммы](/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp)
+      </Frame>
     </div>
 
     Реактивная модель выполнения marimo распространяется и на SQL-запросы, поэтому изменения в SQL автоматически запускают последующие вычисления для зависимых ячеек (или, при желании, помечают ячейки как устаревшие, если вычисления слишком затратны). Поэтому при обновлении запроса меняются и диаграмма, и таблица.
@@ -170,13 +142,9 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
     Вы также можете переключиться в App View, чтобы получить более чистый интерфейс для изучения данных.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Режим App View](/images/integrations/sql-clients/marimo/run-app-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Режим App View](/images/integrations/sql-clients/marimo/run-app-view.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>

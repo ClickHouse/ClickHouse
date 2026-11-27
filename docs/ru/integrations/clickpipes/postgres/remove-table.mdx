@@ -13,7 +13,7 @@ integration:
 В некоторых случаях имеет смысл исключить определённые таблицы из ClickPipe для Postgres — например, если таблица не нужна для аналитики, её исключение поможет сократить затраты на хранение и репликацию в ClickHouse.
 
 <div id="remove-tables-steps">
-  ## Шаги по удалению определённых таблиц
+  ## Шаги по удалению определённых таблиц {#remove-tables-steps}
 </div>
 
 Сначала нужно удалить таблицу из пайпа. Для этого выполните следующие шаги:
@@ -26,13 +26,9 @@ integration:
 <br />
 
 <div className="ch-image-md">
-
-<Frame>
-
-![](/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp)
-
-</Frame>
-
+  <Frame>
+    ![](/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp)
+  </Frame>
 </div>
 
 5. Нажмите update.
