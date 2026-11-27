@@ -12,6 +12,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.transforms import IdentityTransform
 
 from helpers.catalog_manager import arrow_to_iceberg_schema
+from helpers.catalog_manager_iceberg_s3 import files_only_in_old_snapshots
 
 log = logging.getLogger(__name__)
 
@@ -259,6 +260,21 @@ class IcebergAzureCatalogManager:
         """Return {snapshot_id: timestamp_ms} for all snapshots of a table."""
         table = self._catalog.load_table(f"default.{table_name}")
         return {s.snapshot_id: s.timestamp_ms for s in table.metadata.snapshots}
+
+    def delete_rows(self, table_name: str, row_filter: str) -> None:
+        self._catalog.load_table(f"default.{table_name}").delete(row_filter)
+        self._upload_table(table_name)
+
+    def put_file(self, table_name: str, relative_path: str, data: bytes) -> None:
+        self._container.upload_blob(
+            name=f"{self.blob_path(table_name)}{relative_path}", data=data
+        )
+
+    def file_exists(self, table_name: str, relative_path: str) -> bool:
+        return self._container.get_blob_client(f"{self.blob_path(table_name)}{relative_path}").exists()
+
+    def files_only_in_old_snapshots(self, table_name: str) -> List[str]:
+        return files_only_in_old_snapshots(self._catalog.load_table(f"default.{table_name}"), table_name)
 
     def table_function_sql(self, table_name: str, fmt: str = "auto") -> str:
         cfg = self.config

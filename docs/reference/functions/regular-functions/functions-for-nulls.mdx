@@ -190,6 +190,16 @@ SELECT firstNonDefault(NULL, 0 :: Nullable(UInt8), 1 :: Nullable(UInt8))
 0
 ```
 
+**enum**
+
+```sql title=Query
+SELECT firstNonDefault('a' :: Enum8('a' = 1, 'b' = 2), 'b' :: Enum8('a' = 1, 'b' = 2))
+```
+
+```response title=Response
+b
+```
+
 ## ifNull {#ifNull}
 
 Introduced in: v1.1.0
@@ -440,7 +450,7 @@ nullIf(x, y)
 
 **Returned value**
 
-Returns `NULL` if both arguments are equal, otherwise returns the first argument. [`NULL`](/reference/syntax#null) or [`Nullable(x)`](/reference/data-types/nullable)
+Returns `NULL` if both arguments are equal, otherwise returns the first argument. For `Variant` and `Dynamic`, which store `NULL` internally, the result keeps the input type. [`NULL`](/reference/syntax#null) or [`Nullable(x)`](/reference/data-types/nullable) or [`Variant`](/reference/data-types/variant) or [`Dynamic`](/reference/data-types/dynamic)
 
 **Examples**
 

@@ -27,7 +27,7 @@ SELECT count() FROM lwd_count_wide SETTINGS force_optimize_projection_name = '_m
 SELECT min(id) FROM lwd_count_wide;
 SELECT min(id), max(id) FROM lwd_count_wide;
 SELECT min(id), max(id), count() FROM lwd_count_wide;
-SELECT count() FROM lwd_count_wide SETTINGS apply_deleted_mask = 0, force_optimize_projection_name = '_minmax_count_projection';
+SELECT count() FROM lwd_count_wide SETTINGS apply_deleted_mask = 0;
 
 -- Primary-key filters must not use physical granule counts.
 SELECT count() FROM lwd_count_wide WHERE id < 32;
@@ -60,7 +60,7 @@ INSERT INTO lwd_count_compact SELECT number, number FROM numbers(100);
 DELETE FROM lwd_count_compact WHERE id IN (0, 50, 99);
 SELECT count() FROM lwd_count_compact SETTINGS force_optimize_projection_name = '_minmax_count_projection';
 SELECT min(id), max(id) FROM lwd_count_compact;
-SELECT count() FROM lwd_count_compact SETTINGS apply_deleted_mask = 0, force_optimize_projection_name = '_minmax_count_projection';
+SELECT count() FROM lwd_count_compact SETTINGS apply_deleted_mask = 0;
 
 -- A new deletion without counting must invalidate the previously known count.
 ALTER TABLE lwd_count_compact MODIFY SETTING exclude_deleted_rows_for_part_size_in_merge = 0;
@@ -84,7 +84,7 @@ INSERT INTO lwd_count_old SELECT 0, number FROM numbers(100);
 DELETE FROM lwd_count_old WHERE id = 0;
 ALTER TABLE lwd_count_old MODIFY SETTING exclude_deleted_rows_for_part_size_in_merge = 1, load_existing_rows_count_for_old_parts = 1;
 SELECT count() FROM lwd_count_old;
-SELECT count() FROM lwd_count_old SETTINGS apply_deleted_mask = 0, force_optimize_projection_name = '_minmax_count_projection';
+SELECT count() FROM lwd_count_old SETTINGS apply_deleted_mask = 0;
 
 -- Loading without counting must also leave the count unknown after settings change.
 ALTER TABLE lwd_count_old MODIFY SETTING load_existing_rows_count_for_old_parts = 0;

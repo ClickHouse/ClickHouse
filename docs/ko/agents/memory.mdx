@@ -1,0 +1,98 @@
+---
+sidebarTitle: '메모리'
+slug: /agents/memory
+title: '메모리'
+description: 'ClickHouse Agents의 메모리 및 개인화'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'memory', 'personalization']
+doc_type: 'reference'
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+는 에이전트가 여러 대화에 걸쳐 기억해 활용할 수 있는 per-user 저장소입니다. 이 저장소는 여러 엔트리로 구성되며, 각 엔트리는 선호하는
+날짜 포맷, 주로 쿼리하는 데이터베이스, 원하는 응답의 간결함 정도와 같은 하나의 key-value 쌍입니다. 에이전트는 상황에 맞는 엔트리를 컨텍스트로 불러옵니다.
+
+## 메모리 작동 방식 {#how-it-works}
+
+메인 대화와 함께 소규모 메모리 에이전트가 실행됩니다. 이 에이전트는 최근 메시지를 읽고 기억할 만한 내용을 판단한 뒤, per-user 저장소에 엔트리를 기록합니다.
+다음 대화에서는 이 엔트리가 컨텍스트로 제공되므로, 같은 내용을 다시 설명하지 않아도 메인 에이전트가 이를 참조할 수 있습니다.
+
+사용자는 이를 대화의 연속성으로 체감하게 됩니다. 예를 들어 SQL 출력을 소문자로 받고 싶다는 점과 회계연도가 3월에 끝난다는 점을 에이전트에게 한 번만 알려 주면, 이후 대화에서도 이를 반영하여 동작합니다.
+
+## 메모리 항목 관리 {#manage-your-memories}
+
+왼쪽 탐색 메뉴에서 **메모리 항목**(뇌 모양) 아이콘을 클릭하면 메모리 패널이 열립니다. 패널에는 저장된 메모리 항목이 표시되며, 엔트리를 생성, 편집, 삭제, 필터링하는 컨트롤이 함께 제공됩니다.
+
+<div className="ch-image-sm">
+  <Frame>
+    ![왼쪽 탐색 메뉴에서 강조 표시된 뇌 모양 아이콘, 필터 입력란, 추가 버튼, 메모리 사용 체크박스, 편집 및 삭제 컨트롤이 있는 메모리 엔트리, 관리자 설정 버튼이 표시된 메모리 항목 패널](/images/cloud/agent-builder/memory/memories.webp)
+  </Frame>
+</div>
+
+메모리는 사용자별로 비공개입니다. 다른 사용자의 에이전트는 본인의 엔트리를 볼 수 없으며, 본인의 에이전트도 다른 사용자의 엔트리를 볼 수 없습니다.
+
+### 메모리 생성 {#create-memory}
+
+패널 상단의 **+** 버튼을 클릭하여 **Create Memory** 대화 상자를 엽니다. **키(Key)**(영문 소문자와 밑줄만 사용 가능)와 **값**을 입력한 다음 **Create**를 클릭하십시오.
+
+<div className="ch-image-sm">
+  <Frame>
+    ![Create Memory + 버튼이 강조 표시된 메모리 패널](/images/cloud/agent-builder/memory/create.webp)
+  </Frame>
+</div>
+
+### 메모리 항목 필터링 {#filter-memories}
+
+패널 상단의 **Filter 메모리 항목** 입력란에서 키(Key)로 엔트리를 검색할 수 있습니다.
+
+<div className="ch-image-sm">
+  <Frame>
+    ![Filter 메모리 항목 입력란이 강조 표시되어 있고 'demo'가 입력된 메모리 패널](/images/cloud/agent-builder/memory/filter.webp)
+  </Frame>
+</div>
+
+### 메모리 편집 {#edit-memory}
+
+메모리의 연필 아이콘을 클릭하면 **메모리 편집** 대화 상자가 열립니다. 키(Key) 또는 값을 수정한 후 **저장**을 클릭하십시오.
+
+<div className="ch-image-sm">
+  <Frame>
+    ![메모리 편집 연필 아이콘이 강조 표시된 메모리 엔트리](/images/cloud/agent-builder/memory/edit.webp)
+  </Frame>
+</div>
+
+### 메모리 삭제 {#delete-memory}
+
+메모리를 삭제하려면 해당 메모리의 휴지통 아이콘을 클릭하십시오.
+
+<div className="ch-image-sm">
+  <Frame>
+    ![Delete Memory 휴지통 아이콘이 강조 표시된 메모리 엔트리](/images/cloud/agent-builder/memory/delete.webp)
+  </Frame>
+</div>
+
+## 메모리 켜기/끄기 {#toggle-memory}
+
+메모리 패널 상단의 **메모리 사용** 체크박스로 메모리를 켜거나 끌 수 있습니다. 저장되지 않기를 원하는 민감한 주제를 다루거나, 개인화가 도움이 되지 않는 일회성 대화를 할 때는 이 기능을 비활성화하십시오.
+
+메모리가 꺼져 있으면 에이전트는 사용자의 메모리 저장소에서 데이터를 읽거나 저장소에 데이터를 쓰지 않습니다.
+
+<div className="ch-image-sm">
+  <Frame>
+    ![상단의 메모리 사용 체크박스가 강조 표시된 메모리 패널](/images/cloud/agent-builder/memory/toggle.webp)
+  </Frame>
+</div>
+
+## 메모리 권장 사항 {#memory-best-practices}
+
+메모리는 다음과 같은 경우에 유용합니다.
+
+* 반복되는 규칙: 선호하는 날짜 포맷, 비즈니스 정의, 명명 패턴
+* 프로젝트 맥락: 주로 쿼리하는 서비스나 데이터베이스, 주로 살펴보는 대시보드
+* 커뮤니케이션 스타일: 간결한 응답 또는 대화형 응답, 코드 중심 응답 또는 설명 중심 응답
+
+메모리는 데이터베이스처럼 사용하도록 설계된 기능이 아닙니다. 예를 들어 대용량 참고 자료를 한꺼번에 저장해 두는 용도로는 적합하지 않습니다.
+이러한 자료는 [스킬](/ko/agents/builder/skills)을 사용하거나 에이전트의 지침에 직접 포함하십시오.
+또한 메모리는 과거 채팅을 검색하기 위한 기능도 아닙니다. 그 역할은 대화 기록 자체가 담당합니다.

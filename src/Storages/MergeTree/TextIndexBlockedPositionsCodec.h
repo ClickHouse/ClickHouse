@@ -52,8 +52,8 @@ public:
         std::array<char, MAX_EMBEDDED_BYTES> embedded{};
         size_t embedded_size = 0;
 
-        size_t numBlocks() const { return block_offsets.empty() ? 0 : block_offsets.size() - 1; }
-        size_t docsInBlock(size_t block_idx) const
+        [[nodiscard]] size_t numBlocks() const { return block_offsets.empty() ? 0 : block_offsets.size() - 1; }
+        [[nodiscard]] size_t docsInBlock(size_t block_idx) const
         {
             const UInt64 begin = block_idx * BLOCK_DOCS;
             return static_cast<size_t>(std::min<UInt64>(BLOCK_DOCS, num_docs - begin));
@@ -79,7 +79,7 @@ public:
         /// `positions` must be non-empty and strictly increasing.
         void addDocument(std::span<const UInt32> positions);
         void finalize(WriteBuffer & out);
-        UInt64 numDocuments() const { return num_docs; }
+        [[nodiscard]] UInt64 numDocuments() const { return num_docs; }
 
     private:
         /// Appends the open block's payload to `out` and returns its size.
@@ -88,9 +88,8 @@ public:
         /// Deltas of the open block's finished documents, then the open document's raw positions.
         PaddedPODArray<UInt32, 64> values;
         size_t open_document_begin = 0;
-        /// One per document of the open block.
-        PODArray<UInt32, 64> frequencies_minus_one;
-        bool has_frequency_run = false;
+        /// (local rank, freq - 1) of the open block's documents with more than one position.
+        PODArray<UInt32, 16> frequency_exceptions;
         size_t docs_in_block = 0;
         /// Payloads of the sealed blocks.
         PaddedPODArray<UInt8> staged;
@@ -141,7 +140,6 @@ void validateTokenPositions(const TokenPostingsInfo & info, size_t file_size);
 class PositionListBuilder
 {
 public:
-    /// Positions may repeat or go backwards within a row: each element of a tokenized Array restarts them at 0.
     void add(UInt32 doc_id, UInt32 position)
     {
         if (has_document && doc_id != current_doc)

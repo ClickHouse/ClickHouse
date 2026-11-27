@@ -60,7 +60,26 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
      {"parallel_full_sorting_merge", JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE},
      {"grace_hash",           JoinAlgorithm::GRACE_HASH},
-     {"ie_join",              JoinAlgorithm::IE_JOIN}})
+     {"inequality",           JoinAlgorithm::INEQUALITY},
+     /// The former name of `inequality`, kept for compatibility. Listed after it, so `inequality` is the name it is shown with.
+     {"ie_join",              JoinAlgorithm::INEQUALITY}})
+
+/// Keep the names here in sync with `JoinAlgorithm` above. The difference is that `ie_join` goes before
+/// `inequality`, so it is the name written into a serialized query plan: a server released before the
+/// rename rejects `inequality`. Both names are read.
+IMPLEMENT_SETTING_MULTI_ENUM_WITH_RENAME(QueryPlanJoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
+    {{"default",              JoinAlgorithm::DEFAULT},
+     {"auto",                 JoinAlgorithm::AUTO},
+     {"hash",                 JoinAlgorithm::HASH},
+     {"partial_merge",        JoinAlgorithm::PARTIAL_MERGE},
+     {"prefer_partial_merge", JoinAlgorithm::PREFER_PARTIAL_MERGE},
+     {"parallel_hash",        JoinAlgorithm::HASH},
+     {"direct",               JoinAlgorithm::DIRECT},
+     {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
+     {"parallel_full_sorting_merge", JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE},
+     {"grace_hash",           JoinAlgorithm::GRACE_HASH},
+     {"ie_join",              JoinAlgorithm::INEQUALITY},
+     {"inequality",           JoinAlgorithm::INEQUALITY}})
 
 
 IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
@@ -392,6 +411,13 @@ IMPLEMENT_SETTING_ENUM(
      {"kill", SeccompMode::Kill}})
 
 IMPLEMENT_SETTING_ENUM(
+    FilesystemIsolationMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"disabled", FilesystemIsolationMode::Disabled},
+     {"best_effort", FilesystemIsolationMode::BestEffort},
+     {"enforce", FilesystemIsolationMode::Enforce}})
+
+IMPLEMENT_SETTING_ENUM(
     IdentifierQuotingStyle,
     ErrorCodes::BAD_ARGUMENTS,
     {{"Backticks", IdentifierQuotingStyle::Backticks},
@@ -426,6 +452,13 @@ IMPLEMENT_SETTING_ENUM(
      {"horizon", DatabaseDataLakeCatalogType::ICEBERG_HORIZON},
      {"s3tables", DatabaseDataLakeCatalogType::S3_TABLES},
      {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
+
+IMPLEMENT_SETTING_ENUM(
+    DatabaseDataLakeSnapshotLoadingMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", DatabaseDataLakeSnapshotLoadingMode::AUTO},
+     {"all", DatabaseDataLakeSnapshotLoadingMode::ALL},
+     {"refs", DatabaseDataLakeSnapshotLoadingMode::REFS}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
@@ -603,6 +636,10 @@ IMPLEMENT_SETTING_ENUM(S3UriStyle, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", S3UriStyle::AUTO},
      {"path", S3UriStyle::PATH},
      {"virtual_hosted", S3UriStyle::VIRTUAL_HOSTED}})
+
+IMPLEMENT_SETTING_ENUM(S3RequestPayer, ErrorCodes::BAD_ARGUMENTS,
+    {{"none", S3RequestPayer::NONE},
+     {"requester", S3RequestPayer::REQUESTER}})
 
 IMPLEMENT_SETTING_ENUM(ExplainQueryPlanDefault, ErrorCodes::BAD_ARGUMENTS,
     {{"legacy", ExplainQueryPlanDefault::LEGACY},

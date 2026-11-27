@@ -245,6 +245,73 @@ static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & a
     return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
 }
 
+#if ENABLE_CLICKHOUSE_KEEPER
+/// `clickhouse-keeper` used to be a separate binary with its own dispatcher (see `programs/keeper/keeper_main.cpp`).
+/// Now it is a symlink to `clickhouse`, so keep the subcommands that dispatcher supported working:
+/// `clickhouse-keeper client`, `clickhouse-keeper keeper-client`, `clickhouse-keeper converter`,
+/// `clickhouse-keeper keeper-converter` and `clickhouse-keeper keeper` (also with the `--` prefix).
+/// `clickhouse-keeper help` lists these subcommands, as the former dispatcher did.
+/// Any other invocation runs the Keeper server, as before.
+static const std::pair<std::string_view, MainFunc> keeper_applications[] =
+{
+    {"keeper", mainEntryClickHouseKeeper},
+#if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
+    {"converter", mainEntryClickHouseKeeperConverter},
+    {"keeper-converter", mainEntryClickHouseKeeperConverter},
+#endif
+#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
+    {"client", mainEntryClickHouseKeeperClient},
+    {"keeper-client", mainEntryClickHouseKeeperClient},
+#endif
+};
+
+static int mainEntryKeeperHelp(int, char **)
+{
+    std::cout << "Use one of the following commands:" << std::endl;
+    for (const auto & application : keeper_applications)
+        std::cout << "clickhouse-keeper " << application.first << " [args]" << std::endl;
+    std::cout << "Without a command, clickhouse-keeper runs the Keeper server." << std::endl;
+    return 0;
+}
+
+/// Returns `nullptr` if the binary is not invoked as `clickhouse-keeper`.
+static MainFunc getStandaloneKeeperApp(std::vector<char *> & argv)
+{
+    if (argv.empty())
+        return nullptr;
+
+    std::string_view program(argv[0]);
+    if (program != "clickhouse-keeper" && !program.ends_with("/clickhouse-keeper"))
+        return nullptr;
+
+    if (argv.size() >= 2)
+    {
+        std::string_view first_arg(argv[1]);
+        /// A bare `help` must not fall through to the Keeper server, which ignores positional arguments.
+        /// `--help` is passed to the Keeper server, which prints its own options.
+        if (first_arg == "help")
+        {
+            argv.erase(argv.begin() + 1);
+            return mainEntryKeeperHelp;
+        }
+
+        if (first_arg.starts_with("--"))
+            first_arg.remove_prefix(2);
+
+        for (const auto & [name, func] : keeper_applications)
+        {
+            if (first_arg == name)
+            {
+                argv.erase(argv.begin() + 1);
+                return func;
+            }
+        }
+    }
+
+    return mainEntryClickHouseKeeper;
+}
+#endif
+
 /// Don't allow dlopen in the main ClickHouse binary, because it is harmful and insecure.
 /// We don't use it. But it can be used by some libraries for implementation of "plugins".
 /// We absolutely discourage the ancient technique of loading
@@ -266,6 +333,8 @@ static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & a
 ///
 /// Keep this guard identical to the one in `programs/keeper/keeper_main.cpp`.
 #if !(defined(USE_MUSL) || USE_OPENSSL_FIPS || USE_GPU || defined(OS_WASM))
+/// Exported even under `-fvisibility=hidden`: otherwise libc would use its real `dlopen`.
+#pragma GCC visibility push(default)
 extern "C"
 {
     void * dlopen(const char *, int);
@@ -293,6 +362,7 @@ extern "C"
         return "ClickHouse does not allow dynamic library loading";
     }
 }
+#pragma GCC visibility pop
 #endif
 
 #if USE_JEMALLOC && defined(OS_LINUX) && !defined(USE_MUSL)
@@ -429,7 +499,7 @@ int main(int argc_, char ** argv_)
     updatePHDRCache();
 
 #if !defined(USE_MUSL)
-    checkHarmfulEnvironmentVariables(argv_);
+    checkHarmfulEnvironment(argv_);
 #endif
 
     /// This is used for testing. For example,
@@ -445,6 +515,11 @@ int main(int argc_, char ** argv_)
 
     /// Print a basic help if nothing was matched
     MainFunc main_func = printHelpOnError;
+
+#if ENABLE_CLICKHOUSE_KEEPER
+    if (MainFunc keeper_func = getStandaloneKeeperApp(argv))
+        return keeper_func(static_cast<int>(argv.size()), argv.data());
+#endif
 
     for (auto & application : clickhouse_applications)
     {

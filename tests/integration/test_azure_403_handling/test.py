@@ -15,6 +15,7 @@ import uuid
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 AZURITE_ACCOUNT = "devstoreaccount1"
 AZURITE_KEY = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
@@ -29,6 +30,13 @@ node = cluster.add_instance(
         os.path.join(SCRIPT_DIR, "configs", "blob_log.xml"),
         os.path.join(SCRIPT_DIR, "configs", "text_log.xml"),
     ],
+    with_azurite=True,
+    with_zookeeper=True,
+)
+# Second replica for the packed-fetch verification test (DataPartsExchange downloadPartToDisk).
+node2 = cluster.add_instance(
+    "node2",
+    main_configs=[os.path.join(SCRIPT_DIR, "configs", "azure_disk.xml")],
     with_azurite=True,
     with_zookeeper=True,
 )
@@ -59,7 +67,8 @@ ERROR_KINDS = {
 }
 
 ALL_FAILPOINTS = [fp for triple in ERROR_KINDS.values() for fp in triple[:2]] + [
-    "azure_inject_bad_request"
+    "azure_inject_bad_request",
+    "check_data_part_retryable_error",
 ]
 
 # The OSS-observable signal that reportBroken() was taken (part-check thread).
@@ -196,7 +205,7 @@ def test_permanent_error_read_fails_without_accusing_part(started_cluster, kind)
 
     node.query(f"SYSTEM ENABLE FAILPOINT {perm_fp}")
     try:
-        err = node.query_and_get_error(f"SELECT sum(k) FROM {table}")
+        err = node.query_and_get_error(f"SELECT sum(k) FROM {table} SETTINGS use_statistics_for_sum_avg_aggregation = 0")
     finally:
         node.query(f"SYSTEM DISABLE FAILPOINT {perm_fp}")
 
@@ -246,7 +255,7 @@ def test_non_retryable_error_still_marks_part_broken(started_cluster):
 
     node.query("SYSTEM ENABLE FAILPOINT azure_inject_bad_request")
     try:
-        node.query_and_get_error("SELECT sum(k) FROM t_negative")
+        node.query_and_get_error("SELECT sum(k) FROM t_negative SETTINGS use_statistics_for_sum_avg_aggregation = 0")
         node.wait_for_log_line(BROKEN_PART_LOG, timeout=60)
     finally:
         node.query("SYSTEM DISABLE FAILPOINT azure_inject_bad_request")
@@ -302,6 +311,94 @@ def test_transient_forbidden_on_write_succeeds(started_cluster):
     assert node.query("SELECT count() FROM t_write_transient").strip() == "400"
     assert retried, "the CH-level write retry loop was never exercised"
     assert not node.contains_in_log(BROKEN_PART_LOG)
+
+
+def test_check_table_surfaces_transient_not_verified(started_cluster):
+    # checkDataPart now rethrows a retryable error instead of returning empty checksums, so a
+    # verification caller surfaces the transient failure rather than masquerading it as verified.
+    # This pins the StorageMergeTree::checkDataNext caller (StorageMergeTree.cpp:3417/3438): plain
+    # MergeTree on purpose, because the rest of the suite is ReplicatedMergeTree, whose CHECK TABLE
+    # routes through the part-check thread instead. Before the fix checkDataPart returned empty on
+    # the retryable 403 and checkDataNext reported the part as a verified "OK" (is_passed=true) — a
+    # silent false pass; with the fix the 403 is rethrown and CHECK TABLE fails with the real error.
+    node.query("DROP TABLE IF EXISTS t_check_mt SYNC")
+    node.query(
+        """
+        CREATE TABLE t_check_mt (k UInt64, v String)
+        ENGINE = MergeTree() ORDER BY k
+        SETTINGS storage_policy = 'azure_policy', min_bytes_for_wide_part = 0
+        """
+    )
+    node.query("INSERT INTO t_check_mt SELECT number, toString(number) FROM numbers(100)")
+    assert node.query("SELECT count() FROM t_check_mt").strip() == "100"
+
+    # Force the check to read the part data from Azure (not a local cache) so the failpoint fires.
+    node.query("SYSTEM DROP FILESYSTEM CACHE")
+    node.query("SYSTEM DROP MARK CACHE")
+
+    node.query("SYSTEM ENABLE FAILPOINT azure_inject_forbidden_response")
+    try:
+        err = node.query_and_get_error("CHECK TABLE t_check_mt")
+        assert "403" in err or "Forbidden" in err, f"expected surfaced transient error, got:\n{err}"
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT azure_inject_forbidden_response")
+
+    node.query("DROP TABLE IF EXISTS t_check_mt SYNC")
+
+
+def test_packed_fetch_checkdatapart_retryable_not_published(started_cluster):
+    # Regression for DataPartsExchange.cpp:971: on a packed replica-fetch, checkDataPart must rethrow a
+    # retryable error (not return empty) so the receiver retries instead of publishing an unverified part.
+    # A code failpoint injects the error at checkDataPart itself, since a wire 403 can't isolate that read.
+    def create(n, replica):
+        n.query("DROP TABLE IF EXISTS t_cdp SYNC")
+        n.query(
+            f"""
+            CREATE TABLE t_cdp (k UInt64, v String)
+            ENGINE = ReplicatedMergeTree('/clickhouse/t_cdp', '{replica}')
+            ORDER BY k
+            SETTINGS storage_policy = 'azure_policy',
+                     min_bytes_for_wide_part = 0,
+                     min_bytes_for_full_part_storage = 1073741824,
+                     max_postpone_time_for_failed_replicated_fetches_ms = 1000
+            """
+        )
+
+    try:
+        create(node, "r1")
+        create(node2, "r2")
+
+        node2.query("SYSTEM STOP FETCHES t_cdp")
+        node.query("INSERT INTO t_cdp SELECT number, toString(number) FROM numbers(100)")
+        assert node.query("SELECT count() FROM t_cdp").strip() == "100"
+
+        node2.query("SYSTEM DROP FILESYSTEM CACHE")
+        node2.query("SYSTEM DROP MARK CACHE")
+        node2.query("SYSTEM ENABLE FAILPOINT check_data_part_retryable_error")
+        node2.query("SYSTEM START FETCHES t_cdp")
+
+        # Wait for the injected marker on node2's replication_queue: proves the fetch reached checkDataPart's retryable path (a stalled queue alone would also keep count()==0).
+        INJECTED = "Injected transient error into checkDataPart"
+        assert_eq_with_retry(
+            node2,
+            "SELECT count() > 0 FROM system.replication_queue "
+            "WHERE database = currentDatabase() AND table = 't_cdp' AND type = 'GET_PART' "
+            f"AND num_tries >= 1 AND last_exception LIKE '%{INJECTED}%'",
+            "1",
+            retry_count=120,
+        )
+        # Failpoint is persistent, so the unverified part cannot be published while it is enabled.
+        assert node2.query("SELECT count() FROM t_cdp").strip() == "0"
+        assert not node2.contains_in_log(BROKEN_PART_LOG)
+
+        # Clear the injected error: the fetch retries, checkDataPart passes, and the part is published.
+        node2.query("SYSTEM DISABLE FAILPOINT check_data_part_retryable_error")
+        node2.query("SYSTEM SYNC REPLICA t_cdp", timeout=90)
+        assert node2.query("SELECT count() FROM t_cdp").strip() == "100"
+    finally:
+        node2.query("SYSTEM DISABLE FAILPOINT check_data_part_retryable_error")
+        node.query("DROP TABLE IF EXISTS t_cdp SYNC")
+        node2.query("DROP TABLE IF EXISTS t_cdp SYNC")
 
 
 def test_batch_delete_failure_logs_every_object(started_cluster):

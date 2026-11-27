@@ -72,6 +72,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+#include <Common/ThreadStatus.h>
 #include <Common/TransactionID.h>
 #include <Common/UniqueLock.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -169,31 +170,20 @@ namespace FailPoints
 void MergeTreePartMinMaxIndex::load(const IMergeTreeDataPart & part)
 {
     const auto metadata_snapshot = part.getMetadataSnapshot();
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
     const auto data_settings = part.storage.getSettings();
 
     const auto & part_info = part.isProjectionPart() ? part.getParentPart()->info : part.info;
     const bool fill_virtuals = !part_info.isPatch() && part_info.getBlocksCount() == 1 && part_info.level == 0 && part_info.mutation == 0;
 
-    for (const auto & [column_name, column_type] : MergeTreeData::getMinMaxColumns(partition_key, data_settings))
+    for (const auto & [column_name, column_type] : MergeTreeData::getMinMaxColumns(*metadata_snapshot, data_settings))
     {
-        const bool synth_block_number = (fill_virtuals || part.isSystemColumnInvalidated(BlockNumberColumn::name)) && metadata_snapshot->isVirtualColumn(BlockNumberColumn::name) && column_name == BlockNumberColumn::name;
-        const bool synth_block_offset = (fill_virtuals || part.isSystemColumnInvalidated(BlockOffsetColumn::name)) && metadata_snapshot->isVirtualColumn(BlockOffsetColumn::name) && column_name == BlockOffsetColumn::name;
-
-        if (synth_block_number)
+        if (fill_virtuals || part.isSystemColumnInvalidated(column_name))
         {
-            const Field block_number = getFieldForConstVirtualColumn(BlockNumberColumn::name, part);
-            hyperrectangle.emplace_back(block_number, true, block_number, true);
-            continue;
-        }
-
-        if (synth_block_offset)
-        {
-            if (part.rows_count == 0)
-                hyperrectangle.emplace_back(Range::createWholeUniverse());
-            else
-                hyperrectangle.emplace_back(Field(UInt64(0)), true, Field(UInt64(part.rows_count - 1)), true);
-            continue;
+            if (auto range = getComputedBlockColumnRange(column_name, part, part.rows_count, *metadata_snapshot))
+            {
+                hyperrectangle.push_back(std::move(*range));
+                continue;
+            }
         }
 
         const String file_name = "minmax_" + getFileColumnName(column_name, part.checksums) + ".idx";
@@ -239,7 +229,7 @@ Range MergeTreePartMinMaxIndex::readRange(const IDataType & type, ReadBuffer & i
 MergeTreePartMinMaxIndex::WrittenFiles MergeTreePartMinMaxIndex::store(
     StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & out_checksums, const MergeTreeSettingsPtr & storage_settings) const
 {
-    return store(MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), storage_settings), part_storage, out_checksums, storage_settings);
+    return store(MergeTreeData::getMinMaxColumns(*metadata_snapshot, storage_settings), part_storage, out_checksums, storage_settings);
 }
 
 MergeTreePartMinMaxIndex::WrittenFiles MergeTreePartMinMaxIndex::store(
@@ -405,7 +395,7 @@ void MergeTreePartMinMaxIndex::repairInheritedBlockColumns(const IMergeTreeDataP
     if (!initialized || source_part.isProjectionPart() || source_info.isPatch())
         return;
 
-    const auto columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), source_part.storage.getSettings());
+    const auto columns = MergeTreeData::getMinMaxColumns(*metadata_snapshot, source_part.storage.getSettings());
 
     /// The inherited index may be narrower than the current set of minmax columns: the block columns are
     /// appended to the set when `part_minmax_index_columns` is widened, and changing the setting does not
@@ -435,19 +425,58 @@ void MergeTreePartMinMaxIndex::repairInheritedBlockColumns(const IMergeTreeDataP
     }
 }
 
+std::optional<Range> MergeTreePartMinMaxIndex::getComputedBlockColumnRange(
+    const String & column_name, const IMergeTreeDataPart & part, size_t rows_count, const StorageInMemoryMetadata & metadata)
+{
+    if (!metadata.isVirtualColumn(column_name))
+        return std::nullopt;
+
+    if (column_name == BlockNumberColumn::name)
+    {
+        const Field block_number = getFieldForConstVirtualColumn(BlockNumberColumn::name, part);
+        return Range(block_number, true, block_number, true);
+    }
+
+    if (column_name == BlockOffsetColumn::name)
+    {
+        if (rows_count == 0)
+            return Range::createWholeUniverse();
+        return Range(Field(UInt64(0)), true, Field(UInt64(rows_count - 1)), true);
+    }
+
+    return std::nullopt;
+}
+
+void MergeTreePartMinMaxIndex::setComputedBlockColumns(const IMergeTreeDataPart & part, size_t rows_count, const StorageMetadataPtr & metadata_snapshot)
+{
+    if (!initialized)
+        return;
+
+    size_t i = 0;
+    for (const auto & [column_name, _] : MergeTreeData::getMinMaxColumns(*metadata_snapshot, part.storage.getSettings()))
+    {
+        if (i >= hyperrectangle.size())
+            break;
+
+        if (auto range = getComputedBlockColumnRange(column_name, part, rows_count, *metadata_snapshot))
+            hyperrectangle[i] = std::move(*range);
+
+        ++i;
+    }
+}
+
 Names MergeTreePartMinMaxIndex::getProbablyWrittenFiles(const IMergeTreeDataPart & part) const
 {
     if (hyperrectangle.empty())
         return {};
 
     const auto metadata_snapshot = part.getMetadataSnapshot();
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
     const auto data_settings = part.storage.getSettings();
     const auto & data_part_storage = part.getDataPartStorage();
 
     /// The hyperrectangle may hold more columns than the current setting prescribes (a wider index that
     /// has not been re-materialized yet), so clamp to what `store` actually writes: its leading prefix.
-    auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings);
+    auto minmax_columns = MergeTreeData::getMinMaxColumns(*metadata_snapshot, data_settings);
     if (minmax_columns.size() > hyperrectangle.size())
         minmax_columns.resize(hyperrectangle.size());
 
@@ -653,7 +682,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     index_granularity = std::make_unique<MergeTreeIndexGranularityAdaptive>();
 
     /// By default set the order of common metadata files. Later on it can be changed by the part itself.
-    getDataPartStorage().setPreferredFileOrder(COMMON_METADATA_FILES);
+    getDataPartStorage().setPreferredFileOrder(getCommonMetadataFiles());
 }
 
 IMergeTreeDataPart::~IMergeTreeDataPart()
@@ -743,14 +772,14 @@ void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) c
 }
 
 /// Remove all vector similarity index cache entries for this part.
-/// The cache key must use `getRelativePathOfActivePart` (not `getFullPath`) to match
-/// the key used during insertion in `MergeTreeIndexReader::read`.
+/// The cache key must use `getPathForCacheKey` to match the
+/// key used during insertion in `MergeTreeIndexReader::read`.
 void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const
 {
     if (!vector_similarity_index_cache)
         return;
 
-    vector_similarity_index_cache->removeEntriesFromCache(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
+    vector_similarity_index_cache->removeEntriesFromCache(getPathForCacheKey());
 }
 
 void IMergeTreeDataPart::setIndex(Columns index_columns)
@@ -778,6 +807,16 @@ bool IMergeTreeDataPart::isIndexLoaded() const
 {
     std::scoped_lock lock(index_mutex);
     return index != nullptr;
+}
+
+bool IMergeTreeDataPart::isIndexInMemory() const
+{
+    if (isIndexLoaded())
+        return true;
+
+    auto index_cache = storage.getPrimaryIndexCache();
+    return index_cache
+        && index_cache->contains(PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart()));
 }
 
 void IMergeTreeDataPart::setName(const String & new_name)
@@ -1049,6 +1088,15 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
     /// Bypass QueryMetadataCache: this runs during part destruction, and caching a dying
     /// storage's pointer would poison lookups if a new storage is allocated at the same address.
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), true);
+
+    /// A projection part holds the indices of its projection, not those of the table.
+    if (isProjectionPart())
+    {
+        if (!metadata_snapshot->projections.has(name))
+            return;
+        metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
+    }
+
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
     if (secondary_indices.empty())
         return;
@@ -1091,10 +1139,10 @@ void IMergeTreeDataPart::clearCaches()
     /// Remove deserialized columns from cache
     if (mayStoreColumnsInColumnsCache())
     {
-        /// No reader can hold this part any more: clearCaches runs from the destructor of the
-        /// part and for outdated parts that are uniquely owned, while a reader owns the part
-        /// through its `data_part_info_for_read` as long as it may still write to the cache. So
-        /// there is no in-flight write to guard against, and removing the entries is enough.
+        /// From the destructor of the part and for outdated parts that are uniquely owned, no reader
+        /// can hold this part any more: a reader owns the part through its `data_part_info_for_read`
+        /// as long as it may still write to the cache, so removing the entries is enough. A part moved
+        /// to `detached` may still be held by a running read, which can write entries again after this.
         if (auto columns_cache = storage.getContext()->getColumnsCache())
         {
             columns_cache->removePart(storage.getStorageID().uuid, getColumnsCachePartName(name, parent_part_name));
@@ -1103,15 +1151,10 @@ void IMergeTreeDataPart::clearCaches()
 
     /// The projection parts go away with this part. Their entries are removed when they are destroyed, but a part
     /// whose caches are cleared early (an outdated part that nobody else holds) should not keep them until then.
-    /// A reader of a projection part holds its parent part, so no reader can still write them either.
-    if (auto columns_cache = storage.getContext()->getColumnsCache())
-    {
-        for (const auto & [_, projection_part] : projection_parts)
-        {
-            if (projection_part->mayStoreColumnsInColumnsCache())
-                columns_cache->removePart(storage.getStorageID().uuid, getColumnsCachePartName(projection_part->name, name));
-        }
-    }
+    /// Neither should a part about to be renamed to `detached`: the rename moves the paths their keys are built from.
+    /// A reader of a projection part holds its parent part, so only a reader of this part can still write them.
+    for (const auto & [_, projection_part] : projection_parts)
+        projection_part->clearCaches();
 }
 
 bool IMergeTreeDataPart::mayStoreColumnsInColumnsCache() const
@@ -1184,8 +1227,19 @@ void IMergeTreeDataPart::removeIfNeeded()
     if (!is_temp && state != MergeTreeDataPartState::DeleteOnDestroy)
         return;
 
+    /// Keep the retries of this cleanup when the query or merge is cancelled (`plain_rewritable` removes synchronously).
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
     try
     {
+        /// On object storage the directory of a temporary part and the blobs it has written exist only in its uncommitted transaction.
+        auto & part_storage = getDataPartStorage();
+        if (is_temp && part_storage.hasActiveTransaction() && !part_storage.hasSharedTransaction())
+        {
+            LOG_DEBUG(storage.log, "Rolling back the uncommitted transaction of temporary part {}", part_storage.getPartDirectory());
+            part_storage.undoTransaction();
+        }
+
         if (!getDataPartStorage().exists()) // path
             return;
 
@@ -1297,7 +1351,7 @@ UInt64 IMergeTreeDataPart::getExistingBytesOnDisk() const
 {
     if ((*storage.getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] && supportLightweightDeleteMutate() && hasLightweightDelete()
         && existing_rows_count.has_value() && existing_rows_count.value() < rows_count && rows_count > 0)
-        return bytes_on_disk * existing_rows_count.value() / rows_count;
+        return static_cast<UInt64>(UInt128(bytes_on_disk) * existing_rows_count.value() / rows_count);
     return bytes_on_disk;
 }
 
@@ -3822,6 +3876,53 @@ std::vector<ColumnSize> IMergeTreeDataPart::getSubcolumnSizes(const NamesAndType
     size_t i = 0;
     for (const auto & subcolumn : subcolumns)
         subcolumns_sizes_cache.add(subcolumn.name, sizes[i++]);
+    return sizes;
+}
+
+std::optional<std::vector<std::pair<String, ColumnSize>>> IMergeTreeDataPart::getColumnAndSubcolumnSizes(
+    const Names & column_names, bool with_columns, bool only_from_memory) const
+{
+    std::vector<std::pair<String, ColumnSize>> sizes;
+    sizes.reserve(column_names.size());
+    /// One reader per column: a reader reads the prefixes of all its columns as soon as one of them needs its prefix.
+    std::vector<NamesAndTypesList> subcolumns_to_calculate;
+    std::unordered_map<String, size_t> column_positions;
+    for (const auto & column_name : column_names)
+    {
+        /// Resolved before the cache lookup: a column may have the name of a subcolumn of another column.
+        auto column = tryGetColumn(column_name);
+        if (!column)
+            continue;
+
+        if (!column->isSubcolumn())
+        {
+            if (with_columns)
+                sizes.emplace_back(column_name, getColumnSize(column_name));
+            continue;
+        }
+
+        if (auto size = subcolumns_sizes_cache.get(column_name))
+        {
+            sizes.emplace_back(column_name, *size);
+            continue;
+        }
+
+        if (only_from_memory && !canCalculateSubcolumnSizeFromMemory(*column))
+            return std::nullopt;
+
+        auto [it, inserted] = column_positions.emplace(column->getNameInStorage(), subcolumns_to_calculate.size());
+        if (inserted)
+            subcolumns_to_calculate.emplace_back();
+        subcolumns_to_calculate[it->second].push_back(std::move(*column));
+    }
+
+    for (const auto & subcolumns : subcolumns_to_calculate)
+    {
+        auto calculated = getSubcolumnSizes(subcolumns);
+        size_t i = 0;
+        for (const auto & subcolumn : subcolumns)
+            sizes.emplace_back(subcolumn.name, calculated[i++]);
+    }
     return sizes;
 }
 
