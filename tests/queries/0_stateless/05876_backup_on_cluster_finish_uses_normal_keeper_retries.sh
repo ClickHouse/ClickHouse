@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # no-parallel: the failpoint is global, so a concurrent `BACKUP` or `RESTORE ON CLUSTER` could consume it instead.
+# no-fasttest: tests that must run alone are kept out of the fast test.
 
 # A successful `BACKUP/RESTORE ... ON CLUSTER` must create its 'finish' nodes with the normal [Zoo]Keeper retries,
 # not with `backup_restore_keeper_max_retries_while_handling_error`. The failpoint fails one [Zoo]Keeper request in `finish`,
