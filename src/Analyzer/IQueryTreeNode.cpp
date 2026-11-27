@@ -213,6 +213,16 @@ bool IQueryTreeNode::isEqualWithColumnSources(
         if (equals_pairs.contains(std::make_pair(lhs_node_to_compare, rhs_node_to_compare)))
             continue;
 
+        /** A table expression that is a part of the tree is paired with the table expression at the same position
+          * of the other tree. The columns that refer to it must agree with this pairing. Otherwise, the subqueries
+          * `SELECT l.x FROM t AS l JOIN t AS r` and `SELECT r.x FROM t AS l JOIN t AS r` are equal without
+          * the comparison of aliases: the column sources `l` of the first one and `r` of the second one
+          * have the same content.
+          */
+        if (lhs_node_to_compare->asTableExpression()
+            && column_sources.add(lhs_node_to_compare, rhs_node_to_compare) == ColumnSourcesBijection::AddResult::Conflict)
+            return false;
+
         if (lhs_node_to_compare == rhs_node_to_compare)
         {
             equals_pairs.emplace(lhs_node_to_compare, rhs_node_to_compare);

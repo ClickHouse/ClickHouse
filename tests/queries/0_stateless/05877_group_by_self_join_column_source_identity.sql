@@ -91,6 +91,19 @@ SELECT r.number IN (SELECT number FROM numbers(1))
 FROM numbers(2) AS l INNER JOIN numbers(2) AS r ON l.number = r.number
 GROUP BY l.number IN (SELECT number FROM numbers(1)); -- { serverError NOT_AN_AGGREGATE }
 
+-- The subqueries differ only in the side of the join that the column is from.
+SELECT number IN (SELECT l.number AS n FROM numbers(2) AS l LEFT JOIN numbers(2) AS r ON 0), count()
+FROM numbers(3)
+GROUP BY number IN (SELECT r.number AS n FROM numbers(2) AS l LEFT JOIN numbers(2) AS r ON 0)
+ORDER BY 1
+SETTINGS rewrite_in_to_join = 0; -- { serverError NOT_AN_AGGREGATE }
+
+SELECT number IN (SELECT r.number AS n FROM numbers(2) AS l LEFT JOIN numbers(2) AS r ON 0), count()
+FROM numbers(3)
+GROUP BY number IN (SELECT r.number AS n FROM numbers(2) AS l LEFT JOIN numbers(2) AS r ON 0)
+ORDER BY 1
+SETTINGS rewrite_in_to_join = 0;
+
 SELECT arrayMap(x -> x + l.number, [1])
 FROM numbers(2) AS l INNER JOIN numbers(2) AS r ON l.number = r.number
 GROUP BY arrayMap(x -> x + l.number, [1]) WITH ROLLUP

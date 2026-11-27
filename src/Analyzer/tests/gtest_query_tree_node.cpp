@@ -252,6 +252,25 @@ TEST(QueryTreeNode, LocalComparisonOfColumnSources)
         check_equal_local(tree, tree->clone());
     }
 
+    /// A column source inside of the tree is paired with the column source at the same position of the other tree:
+    /// `SELECT l.x FROM t AS l JOIN t AS r` is not equal to `SELECT r.x FROM t AS l JOIN t AS r`.
+    {
+        auto make_tree_with_column_from = [&](size_t source_index)
+        {
+            std::vector<std::shared_ptr<SourceNode>> sources = {std::make_shared<SourceNode>(), std::make_shared<SourceNode>()};
+            return make_list({sources[0], sources[1], make_column(sources[source_index])});
+        };
+
+        check_equal_local(make_tree_with_column_from(0), make_tree_with_column_from(0));
+        check_equal_local(make_tree_with_column_from(1), make_tree_with_column_from(1));
+        check_not_equal_local(make_tree_with_column_from(0), make_tree_with_column_from(1));
+
+        /// The same holds for the comparison by content.
+        ASSERT_TRUE(make_tree_with_column_from(0)->isEqual(*make_tree_with_column_from(0)));
+        ASSERT_FALSE(make_tree_with_column_from(0)->isEqual(*make_tree_with_column_from(1)));
+        ASSERT_FALSE(make_tree_with_column_from(1)->isEqual(*make_tree_with_column_from(0)));
+    }
+
     /// A column source inside of one tree is not equal to a column source outside of the other tree.
     {
         auto inner_source = std::make_shared<SourceNode>();
