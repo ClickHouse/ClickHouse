@@ -81,6 +81,8 @@
 #include <Common/re2.h>
 #include <Common/ErrnoException.h>
 #include <Common/saturatedDuration.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <base/defines.h>
@@ -295,23 +297,23 @@ struct VisitedFrame
     size_t skipped_begin = 0;
     size_t skipped_end = 0;
     /// `matches` at the start of each retry, in order.
-    std::vector<size_t> matches_before_retries;
+    VectorWithMemoryTracking<size_t> matches_before_retries;
     /// The fewest levels above `prefix` that the `..` of a match of the current walk reach. Another spelling
     /// of the directory returns the same path for such a match only if both spellings are equal that far up.
     size_t min_match_climb = std::numeric_limits<size_t>::max();
     /// `lexical_dir` and `min_match_climb` of each walk before the current one, in order.
-    std::vector<std::pair<std::string, size_t>> earlier_walks;
+    VectorWithMemoryTracking<std::pair<std::string, size_t>> earlier_walks;
 };
 
 /// State the traversal pruning carries across one expanded pattern.
 struct PruningState
 {
     /// Frames the walk has entered, keyed by (canonical directory, remaining pattern).
-    std::unordered_map<std::string, VisitedFrame> visited_frames;
+    UnorderedMapWithMemoryTracking<std::string, VisitedFrame> visited_frames;
     /// The frames currently on the walk's stack. A match belongs to all of them, because a frame
     /// pruned against any one of them would have re-walked that whole subtree. Pointers into
     /// `visited_frames` stay valid across its rehashing, which is what makes them safe to hold.
-    std::vector<VisitedFrame *> active_frames;
+    VectorWithMemoryTracking<VisitedFrame *> active_frames;
     /// Frames pruned because another frame reached the same place under a different lexical path.
     /// Whether that hid a real second name depends on how many matches the claiming frame ends up
     /// with, so the answer is deferred until the walk is over and every count is final. Deciding
@@ -328,7 +330,7 @@ struct PruningState
         /// The pruned spelling's `lexical_dir` when `..` are folded, else empty: every match is then another path.
         std::string pruned_dir;
     };
-    std::vector<Collision> pending_collisions;
+    VectorWithMemoryTracking<Collision> pending_collisions;
 
     /// What a path skipped on `ELOOP` or `ENAMETOOLONG` would have added to the result. The walk fails at the end
     /// unless another name found it, or a later walk of `frame` superseded the skip.
@@ -345,9 +347,9 @@ struct PruningState
         bool found = false;
         bool is_tail = false;
     };
-    std::vector<SkippedPath> skipped_paths;
+    VectorWithMemoryTracking<SkippedPath> skipped_paths;
     /// (canonical directory, remaining pattern) of every directory a bounded tail below a `**` has listed.
-    std::unordered_set<std::string> listed_tails;
+    UnorderedSetWithMemoryTracking<std::string> listed_tails;
     /// The pattern has a `..` segment and ends in a name without globs, which the exact-match branch returns with
     /// the `..` folded lexically.
     bool folds_dot_dot = false;
@@ -464,7 +466,9 @@ void notePathLimitSkip(
 }
 
 /// Whether a skip still counts and no other name has returned what it would have.
-bool isMissing(PruningState::SkippedPath & skipped, const PruningState & pruning, const std::unordered_map<std::string, size_t> & matched_paths)
+bool isMissing(
+    PruningState::SkippedPath & skipped, const PruningState & pruning,
+    const UnorderedMapWithMemoryTracking<std::string, size_t> & matched_paths)
 {
     if (skipped.walk != skipped.frame->matches_before_retries.size())
         return false;
@@ -481,7 +485,8 @@ bool isMissing(PruningState::SkippedPath & skipped, const PruningState & pruning
 /// Whether `prefix`, another name for the frame's directory, resolves what its last walk could not: the
 /// first path it left unresolved, or any skip below it that is still missing or leads into an incomplete frame.
 bool resolvesUnresolved(
-    const VisitedFrame & frame, const std::string & prefix, PruningState & pruning, const std::unordered_map<std::string, size_t> & matched_paths)
+    const VisitedFrame & frame, const std::string & prefix, PruningState & pruning,
+    const UnorderedMapWithMemoryTracking<std::string, size_t> & matched_paths)
 {
     if (!frame.unresolved)
         return false;
@@ -519,7 +524,7 @@ void listFilesWithRegexpMatchingImpl(
     const std::string & for_match,
     size_t & total_bytes_to_read,
     std::vector<std::string> & result,
-    std::unordered_map<std::string, size_t> & matched_paths,
+    UnorderedMapWithMemoryTracking<std::string, size_t> & matched_paths,
     bool recursive,
     size_t depth,
     PruningState & pruning,
@@ -826,7 +831,7 @@ void listFilesWithRegexpMatchingImpl(
     /// level rather than its number of files: a directory holding many files still streams them.
     /// File matches keep being emitted while listing, so they precede this level's descents in
     /// `result`; that only orders rows, which no caller relies on.
-    std::vector<Descent> descents;
+    VectorWithMemoryTracking<Descent> descents;
 
     const fs::directory_iterator end;
     std::error_code ec;
@@ -934,7 +939,7 @@ std::vector<std::string> listFilesWithRegexpMatching(
         /// (e.g. `{top,top}.tsv` or `{a*,*}`) keep their pre-existing behavior of reading the
         /// same concrete file once per alternative, rather than being silently collapsed.
         /// Each key maps to the index of the path returned for it in `result`.
-        std::unordered_map<std::string, size_t> matched_paths;
+        UnorderedMapWithMemoryTracking<std::string, size_t> matched_paths;
 
         /// Records the (canonical directory, remaining pattern) frames the walk has already
         /// entered, so a symlink cycle or an aliased directory is not walked twice. Scoped per
