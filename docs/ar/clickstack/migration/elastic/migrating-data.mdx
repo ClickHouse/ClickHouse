@@ -8,9 +8,7 @@ keywords: ['ClickStack']
 doc_type: 'guide'
 ---
 
-<div id="parallel-operation-strategy">
-  ## استراتيجية التشغيل المتوازي
-</div>
+## استراتيجية التشغيل المتوازي {#parallel-operation-strategy}
 
 عند الانتقال من Elastic إلى ClickStack في حالات استخدام رصد، نوصي باتباع نهج **التشغيل المتوازي** بدلًا من محاولة ترحيل البيانات التاريخية. توفّر هذه الاستراتيجية عدة مزايا:
 
@@ -26,9 +24,7 @@ doc_type: 'guide'
   نعرض نهجًا لترحيل البيانات الأساسية من Elasticsearch إلى ClickHouse في قسم [&quot;ترحيل البيانات&quot;](#migrating-data). لا ينبغي استخدام هذا النهج مع مجموعات البيانات الكبيرة، لأنه نادرًا ما يوفّر أداءً جيدًا، إذ تحدّه قدرة Elasticsearch على التصدير بكفاءة، مع دعم تنسيق JSON فقط.
 </Info>
 
-<div id="implementation-steps">
-  ### خطوات التنفيذ
-</div>
+### خطوات التنفيذ {#implementation-steps}
 
 <Steps>
   <Step title="تهيئة الإدخال المزدوج" id="configure-dual-ingestion">
@@ -54,9 +50,7 @@ doc_type: 'guide'
   </Step>
 </Steps>
 
-<div id="long-term-retention">
-  ### الاحتفاظ طويل الأمد
-</div>
+### الاحتفاظ طويل الأمد {#long-term-retention}
 
 بالنسبة إلى المؤسسات التي تحتاج إلى فترات احتفاظ أطول:
 
@@ -64,9 +58,7 @@ doc_type: 'guide'
 * يمكن أن تساعد إمكانات ClickStack الخاصة بـ[التخزين المتدرج](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes) في إدارة البيانات طويلة الأمد بكفاءة.
 * فكّر في استخدام [العروض المادية](/ar/concepts/features/materialized-views/incremental-materialized-view) للاحتفاظ بالبيانات التاريخية المجمّعة أو المُرشَّحة، مع السماح بانتهاء صلاحية البيانات الخام.
 
-<div id="migration-timeline">
-  ### الجدول الزمني للترحيل
-</div>
+### الجدول الزمني للترحيل {#migration-timeline}
 
 يعتمد الجدول الزمني للترحيل على متطلبات الاحتفاظ بالبيانات لديك:
 
@@ -74,15 +66,11 @@ doc_type: 'guide'
 * **الاحتفاظ لمدة أطول**: استمر في التشغيل المتوازي حتى تنقضي مدة الاحتفاظ بالبيانات في Elastic.
 * **البيانات التاريخية**: إذا كانت هناك ضرورة قصوى، ففكّر في استخدام [ترحيل البيانات](#migrating-data) لاستيراد بيانات تاريخية محددة.
 
-<div id="migration-settings">
-  ## ترحيل الإعدادات
-</div>
+## ترحيل الإعدادات {#migration-settings}
 
 عند الترحيل من Elastic إلى ClickStack، ستحتاج إلى تكييف إعدادات الفهرسة والتخزين لديك بما يلائم معمارية ClickHouse. فبينما يعتمد Elasticsearch على التوسّع الأفقي والتجزئة لتحقيق الأداء وتحمّل الأعطال، ولذلك يستخدم عدة shards افتراضيًا، فإن ClickHouse مُحسَّن للتوسّع الرأسي، وعادةً ما يحقق أفضل أداء مع عدد أقل من shards.
 
-<div id="recommended-settings">
-  ### الإعدادات الموصى بها
-</div>
+### الإعدادات الموصى بها {#recommended-settings}
 
 نوصي بالبدء بـ **shard واحد** والتوسّع رأسيًا. هذا الإعداد مناسب لمعظم أعباء عمل رصد، ويُبسّط الإدارة وضبط أداء الاستعلامات.
 
@@ -94,9 +82,7 @@ doc_type: 'guide'
   * استخدام [`ReplicatedMergeTree`](/ar/reference/engines/table-engines/mergetree-family/replication) إذا كان التوافر العالي مطلوبًا
   * لتحقيق تحمّل الأعطال، تكون [نسخة متماثلة واحدة من الـ shard](/ar/reference/engines/table-engines/mergetree-family/replication) كافية عادةً في أعباء عمل رصد.
 
-<div id="when-to-shard">
-  ### متى تحتاج إلى التجزئة
-</div>
+### متى تحتاج إلى التجزئة {#when-to-shard}
 
 قد تكون التجزئة ضرورية إذا:
 
@@ -106,9 +92,7 @@ doc_type: 'guide'
 
 إذا كنت بحاجة فعلًا إلى التجزئة، فارجع إلى [التوسّع الأفقي](/ar/guides/oss/deployment-and-scaling/examples/2-shards-1-replica) للحصول على إرشادات حول مفاتيح التجزئة وإعداد الجدول الموزّع.
 
-<div id="retention-and-ttl">
-  ### الاحتفاظ بالبيانات وTTL
-</div>
+### الاحتفاظ بالبيانات وTTL {#retention-and-ttl}
 
 يستخدم ClickHouse [عبارات TTL](/ar/clickstack/managing/production#configure-ttl) في جداول MergeTree لإدارة انتهاء صلاحية البيانات. ويمكن لسياسات TTL أن:
 
@@ -118,9 +102,7 @@ doc_type: 'guide'
 
 نوصي بمواءمة إعدادات TTL في ClickHouse مع سياسات الاحتفاظ الحالية في Elastic للحفاظ على دورة حياة متسقة للبيانات أثناء الترحيل. للاطلاع على أمثلة، راجع [إعداد TTL لبيئة الإنتاج في ClickStack](/ar/clickstack/managing/production#configure-ttl).
 
-<div id="migrating-data">
-  ## ترحيل البيانات
-</div>
+## ترحيل البيانات {#migrating-data}
 
 مع أننا نوصي بالتشغيل المتوازي لمعظم بيانات الرصد، فهناك حالات محددة قد تستلزم ترحيل البيانات مباشرةً من Elasticsearch إلى ClickHouse:
 
@@ -442,12 +424,14 @@ doc_type: 'guide'
       ```
     </Accordion>
 
+    <Note>
+      في الإصدارات من 24.8 إلى 25.2، فعّل النوعين `JSON` و`Variant` باستخدام `SET allow_experimental_json_type = 1, allow_experimental_variant_type = 1;` قبل إنشاء الجداول الواردة في هذه الصفحة.
+    </Note>
+
     مخطط جدول ClickHouse المقابل:
 
     <Accordion title="مخطط ClickHouse">
       ```sql
-      SET enable_json_type = 1;
-
       CREATE TABLE logs_system_syslog
       (
           `@timestamp` DateTime,
@@ -541,7 +525,7 @@ doc_type: 'guide'
     يتمتع هذا المخطط الصارم بعدد من المزايا:
 
     * **التحقق من صحة البيانات** – إن فرض مخطط صارم يتجنب خطر تضخم الأعمدة خارج البُنى المحددة.
-    * **تجنب خطر تضخم الأعمدة**: رغم أن نوع JSON يمكن أن يتوسع إلى آلاف الأعمدة المحتملة، حيث تُخزَّن الأعمدة الفرعية كأعمدة مخصصة، فقد يؤدي ذلك إلى تضخم ملفات الأعمدة، إذ يُنشأ عدد مفرط من ملفات الأعمدة بما يؤثر في الأداء. وللتخفيف من ذلك، يوفّر [نوع Dynamic](/ar/reference/data-types/dynamic) الأساسي الذي يستخدمه JSON معامِل [`max_dynamic_paths`](/ar/reference/data-types/newjson#reading-json-paths-as-sub-columns)، الذي يحدّ من عدد المسارات الفريدة المخزنة كملفات أعمدة منفصلة. وبمجرد بلوغ الحد، تُخزَّن المسارات الإضافية في ملف أعمدة مشترك باستخدام تنسيق مُرمَّز مضغوط، مما يحافظ على الأداء وكفاءة التخزين مع دعم مرونة استيعاب البيانات. ومع ذلك، فإن الوصول إلى ملف الأعمدة المشترك هذا لا يقدّم المستوى نفسه من الأداء. وتجدر الإشارة أيضًا إلى أنه يمكن استخدام عمود JSON مع [تلميحات الأنواع](/ar/guides/clickhouse/data-formats/json/schema#using-type-hints-and-skipping-paths). وستقدّم الأعمدة &quot;المُشار إليها&quot; الأداء نفسه الذي تقدمه الأعمدة المخصصة.
+    * **تجنب خطر تضخم الأعمدة**: رغم أن نوع JSON يمكن أن يتوسع إلى آلاف الأعمدة المحتملة، حيث تُخزَّن الأعمدة الفرعية كأعمدة مخصصة، فقد يؤدي ذلك إلى تضخم ملفات الأعمدة، إذ يُنشأ عدد مفرط من ملفات الأعمدة بما يؤثر في الأداء. وللتخفيف من ذلك، يوفّر [نوع Dynamic](/ar/reference/data-types/dynamic) الأساسي الذي يستخدمه JSON معامِل [`max_dynamic_paths`](/ar/reference/data-types/newjson#reading-json-paths-as-sub-columns)، الذي يحدّ من عدد المسارات الفريدة المخزنة كملفات أعمدة منفصلة. وبمجرد بلوغ الحد، تُخزَّن المسارات الإضافية في ملف أعمدة مشترك باستخدام تنسيق مُرمَّز مضغوط، مما يحافظ على الأداء وكفاءة التخزين مع دعم مرونة استيعاب البيانات. ومع ذلك، فإن الوصول إلى ملف الأعمدة المشترك هذا لا يقدّم المستوى نفسه من الأداء. وتجدر الإشارة أيضًا إلى أنه يمكن استخدام عمود JSON مع [تلميحات الأنواع](/ar/guides/clickhouse/data-formats/json/schema#using-type-hints-and-skipping-paths). وستقدّم الأعمدة &quot;المُشار إليها&quot; الأداء نفسه الذي تقدمه الأعمدة المخصصة.
     * **استبطان أبسط للمسارات والأنواع**: رغم أن نوع JSON يدعم [دوال الاستبطان](/ar/reference/data-types/newjson#introspection-functions) لتحديد الأنواع والمسارات التي جرى استنتاجها، فإن البُنى الثابتة قد تكون أسهل في الاستكشاف، على سبيل المثال باستخدام `DESCRIBE`.
 
     <br />
@@ -549,8 +533,6 @@ doc_type: 'guide'
     بدلاً من ذلك، يمكنك ببساطة إنشاء جدول يحتوي على عمود `JSON` واحد.
 
     ```sql
-    SET enable_json_type = 1;
-
     CREATE TABLE syslog_json
     (
      `json` JSON(`host.name` String, `@timestamp` DateTime)
@@ -569,7 +551,7 @@ doc_type: 'guide'
   </Step>
 
   <Step title={<>ثبّت <code>elasticdump</code></>} id="install-elasticdump">
-    نوصي باستخدام [`elasticdump`](https://github.com/elasticsearch-dump/elasticsearch-dump) لتصدير البيانات من Elasticsearch. تتطلب هذه الأداة `node`، ويجب تثبيتها على جهاز يتمتع بقرب شبكي من كلٍّ من Elasticsearch وClickHouse. نوصي باستخدام خادم مخصّص يحتوي على 4 أنوية على الأقل و16GB من RAM لمعظم عمليات التصدير.
+    نوصي باستخدام [`elasticdump`](https://github.com/elasticsearch-dump/elasticsearch-dump) لتصدير البيانات من Elasticsearch. تتطلب هذه الأداة `node`، ويجب تثبيتها على جهاز يتمتع بقرب شبكي من كلٍّ من Elasticsearch وClickHouse. نوصي باستخدام خادم مخصّص يحتوي على 4 أنوية على الأقل و16GB من RAM لمعظم عمليات التصدير.
 
     ```shell
     npm install elasticdump -g
@@ -589,7 +571,7 @@ doc_type: 'guide'
   </Step>
 
   <Step title="دفق البيانات" id="stream-data">
-    لدفق البيانات بين Elasticsearch وClickHouse، استخدم الأمر `elasticdump` مع توجيه المخرجات مباشرةً إلى `clickhouse client`. يقوم ما يلي بإدراج البيانات في جدولنا المنظَّم جيدًا `logs_system_syslog`.
+    لدفق البيانات بين Elasticsearch وClickHouse، استخدم الأمر `elasticdump` مع توجيه المخرجات مباشرةً إلى `clickhouse client`. يقوم ما يلي بإدراج البيانات في جدولنا المنظَّم جيدًا `logs_system_syslog`.
 
     ```shell
     # export url and credentials
@@ -670,5 +652,9 @@ doc_type: 'guide'
     ```
 
     لاحظ ضرورة استخدام حرف الهروب مع اسم الحقل `@timestamp` واستخدام صيغة الإدخال `JSONAsObject`.
+
+    <Note>
+      في الإصدارات من 24.8 إلى 25.2، أضف `--allow_experimental_json_type=1` إلى أمر `clickhouse-client` هذا، إذ يعمل هذا الأمر ضمن session خاصة به، ويتطلب `input('json JSON')` توفّر نوع `JSON` ضمنها.
+    </Note>
   </Step>
 </Steps>

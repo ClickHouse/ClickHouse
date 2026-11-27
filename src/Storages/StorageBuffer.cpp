@@ -20,6 +20,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -35,6 +37,7 @@
 #include <Processors/Transforms/ReverseTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/StorageAlias.h>
@@ -42,6 +45,7 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <base/getThreadId.h>
@@ -59,6 +63,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -99,6 +104,7 @@ namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int INFINITE_LOOP;
@@ -318,6 +324,10 @@ void StorageBuffer::read(
 {
     storage_snapshot->check(column_names);
 
+    /// The query can name a table that forwards the read here (a materialized view, an `Alias` or another `Buffer`).
+    const auto * query_table_node = query_info.table_expression ? query_info.table_expression->as<TableNode>() : nullptr;
+    const auto query_storage_id = query_table_node ? query_table_node->getStorageID() : getStorageID();
+
     if (processed_stage > QueryProcessingStage::FetchColumns)
     {
         /** For query processing stages after FetchColumns, we do not allow using the same table more than once in the query.
@@ -330,7 +340,8 @@ void StorageBuffer::read(
         for (const auto & node : table_nodes)
         {
             const auto & table_node = node->as<TableNode &>();
-            if (table_node.getStorageID().getFullNameNotQuoted() == current_storage_id.getFullNameNotQuoted())
+            const auto table_name = table_node.getStorageID().getFullNameNotQuoted();
+            if (table_name == current_storage_id.getFullNameNotQuoted() || table_name == query_storage_id.getFullNameNotQuoted())
             {
                 count_of_current_storage++;
                 if (count_of_current_storage > 1)
@@ -632,15 +643,23 @@ void StorageBuffer::read(
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
         auto buffers_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
         buffers_select_query_options.is_local_plan_for_distributed_query = true;
+        buffers_select_query_options.view_source_in_subqueries
+            = query_info.planner_context && query_info.planner_context->isViewSourceInSubqueries();
 
+        /// Column kinds must match this table, so the query below requests only the columns the buffers provide.
+        /// Name it as the query does, so the buffers' analyzer swaps it in and applies that table's filters.
         auto storage = std::make_shared<StorageValues>(
-                getStorageID(),
-                storage_snapshot->getAllColumnsDescription(),
+                query_storage_id,
+                storage_snapshot->metadata->getColumns(),
                 std::move(pipe_from_buffers),
                 storage_snapshot->metadata->virtuals);
 
+        /// The buffers' analyzer rebuilds the `grouping` specializations that do not resolve from the query text.
+        auto query_tree = query_info.query_tree->clone();
+        removeGroupingFunctionSpecializations(query_tree, /*keep_ordinary=*/ true);
+
         auto interpreter
-            = InterpreterSelectQueryAnalyzer(query_info.query, local_context, buffers_select_query_options, storage);
+            = InterpreterSelectQueryAnalyzer(queryNodeToSelectQuery(query_tree), local_context, buffers_select_query_options, storage);
         interpreter.addStorageLimits(*query_info.storage_limits);
         buffers_plan = std::move(interpreter).extractQueryPlan();
     }
@@ -745,7 +764,7 @@ void StorageBuffer::read(
     input_headers.emplace_back(query_plan.getCurrentHeader());
     input_headers.emplace_back(buffers_plan.getCurrentHeader());
 
-    std::vector<std::unique_ptr<QueryPlan>> plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(buffers_plan)));
     query_plan = QueryPlan();
@@ -913,7 +932,7 @@ public:
             if (destination)
             {
                 LOG_DEBUG(storage.log, "Writing block with {} rows, {} bytes directly.", rows, bytes);
-                storage.writeBlockToDestination(block, destination);
+                storage.writeBlockToDestination(block, destination, getContext().get());
             }
             return;
         }
@@ -990,7 +1009,12 @@ private:
         appendBlock(storage.log, sorted_block, buffer.data);
 
         storage.total_writes.rows += (buffer.data.rows() - old_rows);
-        storage.total_writes.bytes += (buffer.data.allocatedBytes() - old_bytes);
+        /// The allocation can shrink after sorting.
+        size_t new_bytes = buffer.data.allocatedBytes();
+        if (new_bytes >= old_bytes)
+            storage.total_writes.bytes += new_bytes - old_bytes;
+        else
+            storage.total_writes.bytes -= old_bytes - new_bytes;
     }
 };
 
@@ -1326,7 +1350,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 }
 
 
-void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table)
+void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table, const Context * query_context)
 {
     if (!destination_id || block.empty())
         return;
@@ -1373,6 +1397,8 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     auto insert_context = Context::createCopy(getContext());
     insert_context->makeQueryContext();
+    if (query_context)
+        insert_context->shareQueryMaxThreadsSnapshot(*query_context);
 
     InterpreterInsertQuery interpreter(
         insert,
@@ -1494,6 +1520,10 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
             && command.type != AlterCommand::Type::COMMENT_TABLE)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
                 command.type, getName());
+
+        if (!command.ignore && tryExtractQuantizedCodecParams(command.codec))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Engine {} doesn't support the Quantized codec of column {}",
+                getName(), backQuote(command.column_name));
 
         if (command.type == AlterCommand::Type::DROP_COLUMN && !command.clear)
         {
@@ -1674,6 +1704,9 @@ void registerStorageBuffer(StorageFactory & factory)
             columns.clearColumnTTLs();
         }
 
+        if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()))
+            checkNoQuantizedCodec(columns.getAll(), args.engine_name);
+
         return std::make_shared<StorageBuffer>(
             args.table_id,
             columns,
@@ -1773,10 +1806,6 @@ If the set of columns in the Buffer table does not match the set of columns in a
 
 If the types do not match for one of the columns in the Buffer table and a subordinate table, an error message is entered in the server log, and the buffer is cleared.
 The same happens if the subordinate table does not exist when the buffer is flushed.
-
-<Note>
-Running ALTER on the Buffer table in releases made before 26 Oct 2021 will cause a `Block structure mismatch` error (see [#15117](https://github.com/ClickHouse/ClickHouse/issues/15117) and [#30565](https://github.com/ClickHouse/ClickHouse/pull/30565)), so deleting the Buffer table and then recreating is the only option. Check that this error is fixed in your release before trying to run ALTER on the Buffer table.
-</Note>
 
 If the server is restarted abnormally, the data in the buffer is lost.
 

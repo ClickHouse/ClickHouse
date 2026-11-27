@@ -1,0 +1,68 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-05-15
+title: 'デモデイズ - 2026-05-15'
+sidebarTitle: '2026-05-15'
+description: '2026-05-15 開催の ClickStack デモデー'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+---
+
+## ノートブックからのアラート {#alerts-from-notebooks}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/HIxCMDmdZ8o" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ノートブックからアラートを作成できるようになりました。これまでダッシュボードを実行時に動的に構築していたノートブックのフローが、アラートの設定まで行うようになりました。これにより、ノートブックを離れることなく、「興味深いクエリが見つかった」段階から「これが発報したら通知してほしい」段階まで一気に進めます。
+
+1 点、注意事項があります。チームには事前定義された Webhook が多数ありますが、現時点ではノートブックが追加の質問を行わないため、ユーザーに選択を求めず、最も関連性が高そうな Webhook を自動的に選択します。コンテキストが不足している場合にノートブックが追加の質問を行えるようにする PR がすでに進行中のため、このギャップは近いうちに解消される見込みです。
+
+## materialized view による自動補完 {#autocomplete-from-materialized-views}
+
+*デモ担当者: [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/iQf5EwktBW4" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+以前、検索バーでの属性の自動補完を支えるために materialized view を導入しました。これにより、値を実行時に動的に計算する必要がなくなり、候補が即座に表示されるようになりました。今回、この同じ MV をサイドフィルタにも活用するようにしたため、負荷の高いインスタンスでもフィルタの読み込みが大幅に高速化されています。
+
+注意すべき挙動の変更が 1 点あります。MV を利用したフィルタは、現在のクエリに限定されるのではなく、現在の時間範囲内で取り得るすべてのフィルタ値を返します。検索結果に基づくフィルタに戻すためのトグルも用意されていますが、こちらは実際の検索結果に対して低速な集約を実行します。また、`filterValueExpandedKeyLimit` のデフォルト値も引き上げられました。MV なしの場合は 20 キー、MV ありの場合は 100 キーで、上限は任意の値に設定できます (1000 で検証済み)。
+
+MV の維持コストは比較的低く、当社のステージングインスタンスでも大量のデータに対して問題なく稼働しています。同じ MV が属性の自動補完と Map カラムの展開にも利用されているため、一度セットアップすれば複数の箇所で高速化の恩恵を受けられます。デモでは、検索結果に基づくフィルタと全フィルタを切り替えるトグルを、設定画面内ではなくフィルタパネル上部の専用ピル型スイッチとして配置すべきではないかという議論があり、今後の対応として検討しています。
+
+**関連 プルリクエスト:** [#2272](https://github.com/hyperdxio/hyperdx/pull/2272) feat: filters are not search aware by default; accelerated by MV
+
+## テーブルのカラム順序と系列ごとのフォーマット {#table-column-ordering-and-per-series-formatting}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/iEn8kzvERE8" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+テーブルに関するいくつかの改善がまとめてリリースされました。これまで group-by カラムは常にテーブルの右側に表示されていましたが、左側に固定できるようになりました。サービス名を上から順に追っていく RED スタイルのダッシュボードでは、通常こちらの表示のほうが適しています。この動作は、テーブルごとの表示設定で切り替えられます。
+
+系列ごとの数値フォーマットにも対応しました。従来はテーブル全体に単一の数値フォーマットが適用されていたため、ミリ秒でフォーマットされた系列がテーブル内に 1 つでもあると、Requests カラムまで `123ms` のように表示されていました。現在はカラムごと、または系列ごとにフォーマットを設定できるため、リクエスト数はプレーンな数値のまま、レイテンシのカラムは時間として表示できます。
+
+さらに、フォーマットの推論も系列ごとに行われるようになりました。Trace Duration フィールドを集約した場合、ミリ秒として推論されるのはその系列だけです。時間を表すカラムが 1 つあるというだけで、テーブルの他のカラムまでミリ秒フォーマットになってしまうことはなくなりました。
+
+**関連するプルリクエスト:** [#2149](https://github.com/hyperdxio/hyperdx/pull/2149) feat: Allow displaying group-by columns on LHS of table, [#2174](https://github.com/hyperdxio/hyperdx/pull/2174) feat: Add per-series number formats
+
+## カスタマイズ可能なダッシュボード間リンク {#customizable-dashboard-linking}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Stlz02xES40" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ダッシュボードのテーブルで、行をクリックしたときに他のダッシュボード (または検索) へリンクできるようになりました。リンク先と引き渡すフィルタの両方を、テンプレートで柔軟に設定できます。テーブルタイルの設定には、新たに「行クリック時のアクション」オプションが追加されています。「dashboard」を選択してリンク先のダッシュボードを選び、現在の行の値をリンク先ダッシュボードのフィルタにマッピングします。フィルタ値には Handlebars 形式のテンプレートを使用できるため、クリックした行の任意のカラム値をリンク先のフィルタや WHERE句 (SQL と Lucene のどちらでも可) に埋め込めます。デモの例では、サービス一覧のテーブルを設定し、行をクリックすると `service.name` で絞り込まれた状態でサービス詳細ダッシュボードに移動するようにしています。
+
+特定のリンク先ダッシュボードを選ぶ代わりに、ダッシュボード名そのものをテンプレート化することもできます。たとえば、サービスごとに `${service.name} dashboard` のような名前のダッシュボードがある場合、クリックした行に一致するダッシュボードへリンクが解決されます。テンプレートで指定したダッシュボードが存在しない場合のエラー処理も用意されており、壊れたページへ移動する代わりに通知が表示されます。
+
+複数の変数にも対応しており、クリックした行の任意のカラムを組み合わせて、フィルタセットやテンプレート化したダッシュボード名に渡せます。Handlebars には動的ヘルパーや条件付きブロックもありますが、機能範囲を小さく保ち、挙動を予測しやすくするため、現時点ではその大半を無効化しています。インポートフローも改善されました。ID で他のダッシュボードにリンクしているダッシュボードをインポートする際に、その参照をインポート先アカウントに存在するダッシュボードへ再マッピングできるようになりました。
+
+**関連 プルリクエスト:** [#2146](https://github.com/hyperdxio/hyperdx/pull/2146) feat: Add filter templating to custom dashboard on-click, [#2148](https://github.com/hyperdxio/hyperdx/pull/2148) feat: Support import/export for dashboard onClicks, [#2156](https://github.com/hyperdxio/hyperdx/pull/2156) feat: Add custom onClick field to external dashboards API, [#2273](https://github.com/hyperdxio/hyperdx/pull/2273) feat: Add dashboard table onClick to MCP schemas and prompts

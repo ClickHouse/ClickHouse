@@ -1,0 +1,107 @@
+before
+t_clear_block_compact	Compact	Full
+t_clear_block_packed	Wide	Packed
+t_clear_block_wide	Wide	Full
+wide	1	1	0
+wide	2	1	1
+wide	3	1	0
+wide	4	1	1
+compact	1	1	0
+compact	2	1	1
+compact	3	1	0
+compact	4	1	1
+packed	1	1	0
+packed	2	1	1
+packed	3	1	0
+packed	4	1	1
+after
+t_clear_block_compact	Compact	Full
+t_clear_block_packed	Wide	Packed
+t_clear_block_wide	Wide	Full
+wide	1	1	0
+wide	2	1	1
+wide	3	1	2
+wide	4	1	3
+compact	1	1	0
+compact	2	1	1
+compact	3	1	2
+compact	4	1	3
+packed	1	1	0
+packed	2	1	1
+packed	3	1	2
+packed	4	1	3
+after reload
+wide	1	1	0
+wide	2	1	1
+wide	3	1	2
+wide	4	1	3
+compact	1	1	0
+compact	2	1	1
+compact	3	1	2
+compact	4	1	3
+packed	1	1	0
+packed	2	1	1
+packed	3	1	2
+packed	4	1	3
+after merge
+_block_number
+_block_offset
+1	1	0
+2	1	1
+3	1	2
+4	1	3
+5	4	0
+deps before
+1	1	0
+2	1	1
+3	2	0
+4	2	1
+1
+1
+deps after
+1	1	0
+2	1	1
+3	1	2
+4	1	3
+0
+0
+4
+1
+2
+3
+4
+0
+4
+deps after reload
+4
+1
+2
+3
+4
+deps after merge
+1
+1
+4	1	3
+partition
+0	1	1	0
+0	2	1	1
+0	3	1	2
+0	4	1	3
+1	1	2	0
+1	2	2	1
+1	3	4	0
+1	4	4	1
+combined
+1		1	0
+2		1	1
+3		1	2
+4		1	3
+replicated
+r1	1	1	0
+r1	2	1	1
+r1	3	1	2
+r1	4	1	3
+r2	1	1	0
+r2	2	1	1
+r2	3	1	2
+r2	4	1	3

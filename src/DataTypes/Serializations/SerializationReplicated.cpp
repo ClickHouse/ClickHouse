@@ -83,9 +83,9 @@ ISerialization::KindStack SerializationReplicated::getKindStack() const
     return kind_stack;
 }
 
-MutableColumnPtr SerializationReplicated::wrapColumnForDeserialization(MutableColumnPtr column) const
+MutableColumnPtr SerializationReplicated::createColumnForDeserialization(const IDataType & type) const
 {
-    return ColumnReplicated::create(nested->wrapColumnForDeserialization(std::move(column)), ColumnUInt8::create());
+    return ColumnReplicated::create(nested->createColumnForDeserialization(type), ColumnUInt8::create());
 }
 
 SerializationPtr SerializationReplicated::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
@@ -93,7 +93,7 @@ SerializationPtr SerializationReplicated::SubcolumnCreator::create(const Seriali
     return SerializationReplicated::create(prev);
 }
 
-ColumnPtr SerializationReplicated::SubcolumnCreator::create(const ColumnPtr & prev) const
+ColumnPtr SerializationReplicated::SubcolumnCreator::create(const ColumnPtr & prev, const DataTypePtr &) const
 {
     return ColumnReplicated::create(prev, indexes);
 }

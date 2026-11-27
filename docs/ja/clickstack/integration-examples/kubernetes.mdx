@@ -19,17 +19,13 @@ ClickStack は OpenTelemetry (OTel) collector を使用して Kubernetes クラ�
 
 このガイドでは、[ゲートウェイとして ClickStack OTel collector をデプロイ](/ja/clickstack/ingesting-data/collector) し、インジェスト API key で保護していることを前提としています。
 
-<div id="creating-the-otel-helm-chart-config-files">
-  ## OTel Helm チャートの設定ファイルの作成
-</div>
+## OTel Helm チャートの設定ファイルの作成 {#creating-the-otel-helm-chart-config-files}
 
 各ノードとクラスター自体の両方からログとメトリクスを収集するには、2 つの別個の OpenTelemetry Collector をデプロイする必要があります。1 つは各ノードからログとメトリクスを収集するためにデーモンセットとしてデプロイし、もう 1 つはクラスター自体からログとメトリクスを収集するためにデプロイメントとしてデプロイします。
 
-<div id="create-api-key-secret">
-  ### API key 用の Secret の作成
-</div>
+### API key 用の Secret の作成 {#create-api-key-secret}
 
-HyperDX の [インジェスト API key](/ja/clickstack/ingesting-data/opentelemetry#sending-otel-data) を使って、新しい Kubernetes Secret を作成します。これは、以下でインストールするコンポーネントが ClickStack OTel collector へ安全にデータを取り込むために使用されます。
+ClickStack UI の [インジェスト API key](/ja/clickstack/ingesting-data/opentelemetry#sending-otel-data) を使って、新しい Kubernetes Secret を作成します。これは、以下でインストールするコンポーネントが ClickStack OTel collector へ安全にデータを取り込むために使用されます。
 
 ```shell
 kubectl create secret generic hyperdx-secret \
@@ -40,12 +36,10 @@ kubectl create secret generic hyperdx-secret \
 
 ```shell
 kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=<OTEL_COLLECTOR_ENDPOINT>
-# 例: kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
+# e.g. kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
 ```
 
-<div id="creating-the-daemonset-configuration">
-  ### デーモンセット設定の作成
-</div>
+### デーモンセット設定の作成 {#creating-the-daemonset-configuration}
 
 このデーモンセットは、クラスター内の各ノードからログとメトリクスを収集しますが、Kubernetes イベントやクラスター全体のメトリクスは収集しません。
 
@@ -255,9 +249,7 @@ curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/
   </Tab>
 </Tabs>
 
-<div id="creating-the-deployment-configuration">
-  ### デプロイメント構成の作成
-</div>
+### デプロイメント構成の作成 {#creating-the-deployment-configuration}
 
 Kubernetes イベントとクラスター全体のメトリクスを収集するには、別途 OpenTelemetry collector をデプロイメントとしてデプロイする必要があります。
 
@@ -391,16 +383,14 @@ curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/
   </Tab>
 </Tabs>
 
-<div id="deploying-the-otel-collector">
-  ## OpenTelemetry collector のデプロイ
-</div>
+## OpenTelemetry collector のデプロイ {#deploying-the-otel-collector}
 
 [OpenTelemetry Helm チャート](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector) を使用すると、Kubernetes クラスターに OpenTelemetry collector をデプロイできます。
 
 OpenTelemetry Helm リポジトリを追加します:
 
 ```shell
-helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts # OTel Helm リポジトリを追加
+helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts # Add OTel Helm repo
 ```
 
 上記の設定を使ってチャートをインストールします:
@@ -411,11 +401,9 @@ helm install my-opentelemetry-collector-daemonset open-telemetry/opentelemetry-c
 ```
 
 これで、Kubernetes クラスターのメトリクス、ログ、Kubernetes イベントが
-HyperDX に表示されるようになります。
+ClickStack UI に表示されるようになります。
 
-<div id="forwarding-resouce-tags-to-pods">
-  ## リソースタグをポッドに転送する (推奨)
-</div>
+## リソースタグをポッドに転送する (推奨) {#forwarding-resouce-tags-to-pods}
 
 アプリケーションレベルのログ、メトリクス、トレースを Kubernetes メタデータ
 (例: ポッド名、ネームスペースなど) と相関付けるには、`OTEL_RESOURCE_ATTRIBUTES`
