@@ -1592,10 +1592,10 @@ struct MultiwayMergeJoinAlgorithm::RangeState
     /// last input is advanced by the caller. Returns false after the last row.
     bool advance()
     {
-        for (size_t i = inputs.size(); i-- > 0;)
+        for (size_t i = inputs.size(); i > 0; --i)
         {
-            auto & input = inputs[i];
-            if (i + 1 != inputs.size())
+            auto & input = inputs[i - 1];
+            if (i != inputs.size())
                 ++input.row;
             if (input.row < input.ranges[input.range].length)
                 return true;
