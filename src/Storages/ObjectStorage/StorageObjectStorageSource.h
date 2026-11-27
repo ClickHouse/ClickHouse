@@ -3,6 +3,7 @@
 #include <future>
 #include <mutex>
 #include <optional>
+#include <Common/GlobMatcher.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -377,7 +378,7 @@ private:
     std::vector<String> expanded_keys;
     std::vector<String>::iterator expanded_keys_iter;
 
-    std::unique_ptr<re2::RE2> matcher;
+    std::optional<GlobMatcher> matcher;
 
     bool is_finished = false;
     bool first_iteration = true;

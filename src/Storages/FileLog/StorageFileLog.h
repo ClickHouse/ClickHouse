@@ -17,17 +17,14 @@
 #include <mutex>
 #include <optional>
 
-namespace re2
-{
-class RE2;
-}
-
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+class GlobMatcher;
 
 class FileLogDirectoryWatcher;
 struct FileLogSettings;
@@ -164,7 +161,7 @@ private:
     String metadata_base_path;
 
     /// Set when the file name of `path` has globs.
-    std::shared_ptr<const re2::RE2> file_name_matcher;
+    std::shared_ptr<const GlobMatcher> file_name_matcher;
 
     FileInfos file_infos;
 

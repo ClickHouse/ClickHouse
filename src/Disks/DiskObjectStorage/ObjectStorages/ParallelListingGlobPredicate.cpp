@@ -1,7 +1,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/ParallelListingGlobPredicate.h>
 
-#include <Common/parseGlobs.h>
-#include <Common/re2.h>
+#include <Common/GlobMatcher.h>
 
 #include <memory>
 #include <utility>
@@ -87,7 +86,7 @@ bool globPathHasRecursiveWildcard(const std::string & glob_path)
     return false;
 }
 
-std::function<bool(const std::string &)> makeShouldDescendPredicate(const std::string & glob_path)
+std::function<bool(const std::string &)> makeShouldDescendPredicate(const std::string & glob_path, GlobMatcher::Engine glob_engine)
 {
     auto glob_segments = splitPathComponents(glob_path);
 
@@ -100,15 +99,10 @@ std::function<bool(const std::string &)> makeShouldDescendPredicate(const std::s
     if (glob_segments.empty())
         return [](const std::string &) { return true; };
 
-    auto segment_matchers = std::make_shared<std::vector<std::shared_ptr<const re2::RE2>>>();
+    auto segment_matchers = std::make_shared<std::vector<GlobMatcher>>();
     segment_matchers->reserve(glob_segments.size());
     for (const auto & segment : glob_segments)
-    {
-        auto re = std::make_shared<const re2::RE2>(makeRegexpPatternFromGlobs(segment));
-        if (!re->ok())
-            return [](const std::string &) { return true; };
-        segment_matchers->push_back(std::move(re));
-    }
+        segment_matchers->emplace_back(segment, glob_engine);
 
     const size_t num_segments = glob_segments.size();
 
@@ -135,7 +129,7 @@ std::function<bool(const std::string &)> makeShouldDescendPredicate(const std::s
 
         for (size_t i = 0; i < depth; ++i)
         {
-            if (!re2::RE2::FullMatch(components[i], *(*segment_matchers)[i]))
+            if (!(*segment_matchers)[i].matches(components[i]))
                 return false;
         }
         return true;

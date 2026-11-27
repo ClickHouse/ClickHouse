@@ -78,7 +78,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
-#include <Common/re2.h>
+#include <Common/GlobMatcher.h>
 #include <Common/ErrnoException.h>
 #include <Common/saturatedDuration.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -173,7 +173,6 @@ namespace ErrorCodes
     extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int CANNOT_DETECT_FORMAT;
-    extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNSUPPORTED_METHOD;
     extern const int TOO_DEEP_RECURSION;
     extern const int TOO_MANY_ROWS;
@@ -529,7 +528,8 @@ void listFilesWithRegexpMatchingImpl(
     size_t depth,
     PruningState & pruning,
     bool deduplicate_by_canonical_path,
-    bool & collapsed_a_match)
+    bool & collapsed_a_match,
+    GlobMatcher::Engine glob_engine)
 {
     if (depth > MAX_LIST_FILES_RECURSION_DEPTH)
         throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
@@ -661,12 +661,7 @@ void listFilesWithRegexpMatchingImpl(
 
     const std::string current_glob = suffix_with_globs.substr(0, next_slash_after_glob_pos);
 
-    auto regexp = makeRegexpPatternFromGlobs(current_glob);
-
-    re2::RE2 matcher(regexp);
-    if (!matcher.ok())
-        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-            "Cannot compile regex from glob ({}): {}", for_match, matcher.error());
+    const GlobMatcher matcher(current_glob, glob_engine);
 
     bool skip_regex = current_glob == "/*";
     if (!recursive)
@@ -802,7 +797,7 @@ void listFilesWithRegexpMatchingImpl(
     if (current_glob == "/**" && looking_for_directory)
         listFilesWithRegexpMatchingImpl(prefix_without_globs + "/", suffix_with_globs.substr(next_slash_after_glob_pos),
                                         total_bytes_to_read, result, matched_paths, false, depth + 1,
-                                        pruning, deduplicate_by_canonical_path, collapsed_a_match);
+                                        pruning, deduplicate_by_canonical_path, collapsed_a_match, glob_engine);
 
     /// One subdirectory to descend into: where to list, the pattern left to match there, and
     /// whether that descent may recurse further.
@@ -860,7 +855,7 @@ void listFilesWithRegexpMatchingImpl(
         {
             skipUnresolvableOrThrow(is_dir_ec, full_path);
             /// Only an entry this level can select may hide a match.
-            if (recursive || skip_regex || re2::RE2::FullMatch(file_name, matcher))
+            if (recursive || skip_regex || matcher.matches(file_name))
             {
                 const std::string rest = looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : "";
                 const std::string * walk_suffix = recursive ? &suffix_with_globs : (looking_for_directory ? &rest : nullptr);
@@ -873,7 +868,7 @@ void listFilesWithRegexpMatchingImpl(
         /// Condition is_directory means what kind of path is it in current iteration of ls
         if (!is_directory && !looking_for_directory)
         {
-            if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
+            if (skip_regex || matcher.matches(file_name))
             {
                 const size_t file_size = it->file_size(ec);
                 if (ec)
@@ -899,7 +894,7 @@ void listFilesWithRegexpMatchingImpl(
                     : (looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob);
                 descents.push_back({(fs::path(full_path).append(it->path().string()) / "").string(), descent_pattern, recursive});
             }
-            else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
+            else if (looking_for_directory && matcher.matches(file_name))
                 descents.push_back({(fs::path(full_path) / "").string(), suffix_with_globs.substr(next_slash_after_glob_pos), false});
         }
     }
@@ -919,13 +914,14 @@ void listFilesWithRegexpMatchingImpl(
     for (const auto & descent : descents)
         listFilesWithRegexpMatchingImpl(descent.path_for_ls, descent.pattern,
                                         total_bytes_to_read, result, matched_paths, descent.recursive, depth + 1,
-                                        pruning, deduplicate_by_canonical_path, collapsed_a_match);
+                                        pruning, deduplicate_by_canonical_path, collapsed_a_match, glob_engine);
 }
 
 std::vector<std::string> listFilesWithRegexpMatching(
     const std::string & for_match,
     size_t & total_bytes_to_read,
-    bool & collapsed_a_match)
+    bool & collapsed_a_match,
+    GlobMatcher::Engine glob_engine)
 {
     std::vector<std::string> result;
 
@@ -961,7 +957,7 @@ std::vector<std::string> listFilesWithRegexpMatching(
         const bool deduplicate_by_canonical_path = patternHasGlobstarSegment(for_match_expanded);
 
         listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, matched_paths, false, 0,
-                                        pruning, deduplicate_by_canonical_path, collapsed_a_match);
+                                        pruning, deduplicate_by_canonical_path, collapsed_a_match, glob_engine);
 
         /// A path that failed only because of how it was spelled names files that may still be readable, so,
         /// like any other unreadable path, it fails the glob unless another name returned what it would have.
@@ -1092,6 +1088,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
         fs_pattern = user_files_absolute_path / fs_pattern;
 
     Strings paths;
+    const auto glob_engine = GlobMatcher::chooseEngine(context->getSettingsRef());
 
     /// Do not use fs::canonical or fs::weakly_canonical.
     /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
@@ -1118,14 +1115,14 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
         else
         {
             /// We list non-directory files under that directory.
-            paths = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read, collapsed_a_match);
+            paths = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read, collapsed_a_match, glob_engine);
             can_be_directory = false;
         }
     }
     else
     {
         /// We list only non-directory files.
-        paths = listFilesWithRegexpMatching(pattern, total_bytes_to_read, collapsed_a_match);
+        paths = listFilesWithRegexpMatching(pattern, total_bytes_to_read, collapsed_a_match, glob_engine);
         can_be_directory = false;
     }
 
@@ -1153,16 +1150,8 @@ StorageFile::ArchiveInfo getArchiveInfo(
 
     if (file_in_archive.find_first_of("*?{") != std::string::npos)
     {
-        auto matcher = std::make_shared<re2::RE2>(makeRegexpPatternFromGlobs(file_in_archive));
-        if (!matcher->ok())
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                "Cannot compile regex from glob ({}): {}", file_in_archive, matcher->error());
-
-        archive_info.filter = [matcher, matcher_mutex = std::make_shared<std::mutex>()](const std::string & p) mutable
-        {
-            std::lock_guard lock(*matcher_mutex);
-            return re2::RE2::FullMatch(p, *matcher);
-        };
+        auto matcher = std::make_shared<const GlobMatcher>(file_in_archive, context->getSettingsRef());
+        archive_info.filter = [matcher](const std::string & p) { return matcher->matches(p); };
     }
 
     bool archive_collapsed_a_match = false;

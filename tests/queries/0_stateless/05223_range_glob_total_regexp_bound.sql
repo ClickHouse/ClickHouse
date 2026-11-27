@@ -1,3 +1,6 @@
+-- This is about the regexp built from a path with globs, so ask for that regexp.
+SET use_regexp_free_glob_matcher = 0;
+
 -- A `{N..M}` range glob becomes a regexp alternation of every number of the range. Capping one
 -- range does not cap their sum: every range below is within the per-range limit, yet a path of a
 -- few hundred bytes asks for tens of megabytes of alternations.

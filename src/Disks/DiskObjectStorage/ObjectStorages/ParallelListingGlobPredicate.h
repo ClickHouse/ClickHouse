@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/GlobMatcher.h>
+
 #include <functional>
 #include <optional>
 #include <string>
@@ -43,7 +45,11 @@ bool globPathHasRecursiveWildcard(const std::string & glob_path);
 /// directory is irrelevant (e.g. a '{...}' selector that spans a '/'), because the per-file regexp
 /// `FullMatch` in `nextUnlocked` still guarantees that only truly matching keys are emitted.
 /// `glob_path` must not contain `**`.
-std::function<bool(const std::string & common_prefix)> makeShouldDescendPredicate(const std::string & glob_path);
+///
+/// `glob_engine` is what the glob segments are matched with. It has to be the engine the keys are matched
+/// with, so that a glob one of them refuses is refused here as well.
+std::function<bool(const std::string & common_prefix)> makeShouldDescendPredicate(
+    const std::string & glob_path, GlobMatcher::Engine glob_engine = GlobMatcher::Engine::Regexp);
 
 /// Builds the predicate telling whether a "directory" the walk descends into is *terminal*: the only key
 /// under it that `glob_path` can match is its own directory-marker object (the key equal to the prefix

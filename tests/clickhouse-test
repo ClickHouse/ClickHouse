@@ -2079,6 +2079,8 @@ class SettingsRandomizer:
         "parallel_replicas_local_plan": lambda: random.randint(0, 1),
         "query_plan_join_swap_table": lambda: random.choice(["auto", "false"]), # true forces swap, which is harmful for some tests
         "enable_vertical_final": lambda: random.randint(0, 1),
+        # Both ways to match a path with globs have to select the same files.
+        "use_regexp_free_glob_matcher": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
         "optimize_move_to_prewhere_if_final": lambda: random.randint(0, 1),
         # Default-false optimize_* settings: enable with 0.5 probability
