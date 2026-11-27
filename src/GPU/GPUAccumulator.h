@@ -91,9 +91,6 @@ public:
         size_t skipped_bytes,
         size_t kept_bytes);
 
-    std::span<char> reserveRawBytes(size_t column, GPUStream stream, size_t max_bytes, size_t expected_bytes);
-    void commitRawBytes(size_t column, GPUStream stream, size_t bytes);
-
     /// The part ends, of `num_rows` rows: seals the batch being staged, even an empty one.
     void finishPart(size_t num_rows);
 
