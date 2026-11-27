@@ -37,6 +37,8 @@ std::string readInvalidateQueryImpl(Pull && pull)
         throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Empty response");
 
     auto columns = block.columns();
+    if (columns == 0)
+        throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Expected single column in resultset, got 0");
     if (columns > 1)
         throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "Expected single column in resultset, got {}", std::to_string(columns));
 

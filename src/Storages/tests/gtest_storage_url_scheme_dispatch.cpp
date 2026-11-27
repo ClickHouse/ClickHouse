@@ -45,3 +45,24 @@ TEST(StorageURLSchemeDispatch, ParseAbfssURLKeepsSASOnAccountURL)
     EXPECT_EQ(parts.container, "container");
     EXPECT_EQ(parts.blob_path, "dir/blob.csv");
 }
+
+TEST(StorageURLSchemeDispatch, ParseAbfssURLKeepsFabricEndpoint)
+{
+    /// #134590: a Fabric OneLake `dfs` host must map to the Fabric Blob host, not to `blob.core.windows.net`.
+    const auto parts = parseAzureURL("abfss://workspace@onelake.dfs.fabric.microsoft.com/lake/file.csv?sv=aaaa&sig=bbbb");
+    EXPECT_EQ(parts.account_url, "https://onelake.blob.fabric.microsoft.com?sv=aaaa&sig=bbbb");
+    EXPECT_EQ(parts.container, "workspace");
+    EXPECT_EQ(parts.blob_path, "lake/file.csv");
+}
+
+TEST(StorageURLSchemeDispatch, ParseAbfssURLKeepsEndpointFamily)
+{
+    EXPECT_EQ(parseAzureURL("abfs://container@account.dfs.core.chinacloudapi.cn/dir/blob.csv").account_url,
+              "https://account.blob.core.chinacloudapi.cn");
+    EXPECT_EQ(parseAzureURL("abfss://workspace@onelake.blob.fabric.microsoft.com/lake/file.csv").account_url,
+              "https://onelake.blob.fabric.microsoft.com");
+    EXPECT_EQ(parseAzureURL("abfss://container@ACCOUNT.DFS.CORE.WINDOWS.NET/blob.csv").account_url,
+              "https://account.blob.core.windows.net");
+    EXPECT_EQ(parseAzureURL("abfss://container@account/blob.csv").account_url,
+              "https://account.blob.core.windows.net");
+}

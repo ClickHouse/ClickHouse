@@ -1,10 +1,13 @@
 import asyncio
 import csv
+import fnmatch
 import io
 import json
 import logging
+import os
 import random
 import subprocess
+import threading
 import time
 import uuid
 from datetime import date, datetime
@@ -21,7 +24,22 @@ from tests.integration.helpers.cluster import docker_exec, nats_connect_ssl
 import tests.integration.helpers.kafka.common as k
 
 from .datagenerator import LakeDataGenerator, _to_json_safe
-from .filetables import DATA_FILE_FORMATS
+from .filetables import (
+    DATA_FILE_FORMATS,
+    _compress_bytes,
+    delete_data,
+    host_data_path,
+    put_data,
+    resolve_compression,
+)
+
+
+def _encode(message) -> bytes:
+    return message if isinstance(message, bytes) else message.encode()
+
+
+def _random_headers() -> dict:
+    return {f"h{i}": str(random.randint(0, 9)) for i in range(random.randint(1, 3))}
 
 
 def _plain(value):
@@ -141,6 +159,8 @@ class StreamingHandler:
         # Back-reference for the data generator and the data files of the `File` tables
         self.spark = spark_handler
         self.tables: dict[str, StreamingTable] = {}
+        # The HTTP server is threaded, and the handlers keep clients and tables between requests
+        self.lock = threading.Lock()
         self.logger = logging.getLogger(__name__)
         # The settings of the client binary that allow the suspicious and experimental types BuzzHouse creates
         names = subprocess.run(
@@ -240,24 +260,30 @@ class StreamingHandler:
         columns: list,
     ) -> bool:
         table = StreamingTable(topic, group, fmt, columns)
-        self.tables[f"{database_name}.{table_name}"] = table
-        try:
-            self.on_create(table)
-        except Exception as e:
-            # The broker may be restarting, the table is created anyway
-            self.logger.exception(e)
+        with self.lock:
+            self.tables[f"{database_name}.{table_name}"] = table
+            try:
+                self.on_create(table)
+            except Exception as e:
+                # The broker may be restarting, the table is created anyway
+                self.logger.exception(e)
         return True
 
     def update_table(self, database_name: str, table_name: str) -> bool:
-        table = self.tables.get(f"{database_name}.{table_name}")
-        if table is None or random.randint(1, 10) > 8:
-            # Another topic, maybe of another table
-            table = StreamingTable(f"t{random.randint(0, 19)}", "", "CSV", [])
-        try:
-            self.on_update(table)
-        except Exception as e:
-            # If an error happens, ignore it, but log it
-            self.logger.exception(e)
+        with self.lock:
+            table = self.tables.get(f"{database_name}.{table_name}")
+            if table is None or random.randint(1, 10) > 8:
+                # The topic, path or queue of another table
+                table = (
+                    random.choice(list(self.tables.values()))
+                    if self.tables
+                    else StreamingTable(f"t{random.randint(0, 19)}", "", "CSV", [])
+                )
+            try:
+                self.on_update(table)
+            except Exception as e:
+                # If an error happens, ignore it, but log it
+                self.logger.exception(e)
         return True
 
     def on_create(self, table: StreamingTable):
@@ -326,7 +352,7 @@ class KafkaHandler(StreamingHandler):
                 key = f"k{random.randint(0, 9)}".encode() if random.randint(1, 2) == 1 else None
                 headers = None
                 if random.randint(1, 4) == 1:
-                    headers = [(f"h{i}", str(random.randint(0, 9)).encode()) for i in range(random.randint(1, 3))]
+                    headers = [(name, value.encode()) for name, value in _random_headers().items()]
                 timestamp_ms = random.choice([None, None, now_ms, 0, now_ms - 86400000])
                 # A tombstone: a message with a key and without a value
                 value = None if key is not None and random.randint(1, 15) == 1 else message
@@ -380,10 +406,6 @@ class KafkaHandler(StreamingHandler):
             super().on_update(table)
 
 
-def _encode(message) -> bytes:
-    return message if isinstance(message, bytes) else message.encode()
-
-
 class NATSHandler(StreamingHandler):
     """Core NATS subjects need no creation. A table with a group reads from the JetStream stream
     of that name through the durable consumer `c<group>`, both of which this handler creates."""
@@ -411,9 +433,7 @@ class NATSHandler(StreamingHandler):
     def produce(self, table: StreamingTable, messages: list):
         async def publish(nc, _):
             for message in messages:
-                headers = None
-                if random.randint(1, 4) == 1:
-                    headers = {f"h{i}": str(random.randint(0, 9)) for i in range(random.randint(1, 3))}
+                headers = _random_headers() if random.randint(1, 4) == 1 else None
                 await nc.publish(table.topic, _encode(message), headers=headers)
             await nc.flush()
 
@@ -502,14 +522,14 @@ class RabbitMQHandler(StreamingHandler):
                 properties = pika.BasicProperties(
                     message_id=str(uuid.uuid4()) if random.randint(1, 2) == 1 else None,
                     timestamp=int(time.time()) if random.randint(1, 2) == 1 else None,
-                    headers={"h": str(random.randint(0, 9))} if random.randint(1, 4) == 1 else None,
+                    headers=_random_headers() if random.randint(1, 4) == 1 else None,
                     delivery_mode=random.choice([1, 2]),
                 )
                 # Publishing to an exchange that does not exist closes the channel
                 channel.basic_publish(
                     exchange=table.topic,
                     routing_key=random.choice(["", "0", "1", "a"]),
-                    body=message,
+                    body=_encode(message),
                     properties=properties,
                 )
 
@@ -539,5 +559,175 @@ class RabbitMQHandler(StreamingHandler):
         elif next_operation <= 300:
             # Every consumer of every table loses its connection at once
             self._close_all_connections()
+        else:
+            super().on_update(table)
+
+
+# Name prefixes that sort before and after each other, so `ordered` mode also sees older names
+_NAME_PREFIXES = ("0", "5", "a", "m", "z", "~")
+
+
+def _random_name() -> str:
+    return f"{random.choice(_NAME_PREFIXES)}{uuid.uuid4().hex[:8]}"
+
+
+def _expand_path(path: str) -> str:
+    """A name that `path` matches: each `*` replaced, and a name added to a directory."""
+    while "*" in path:
+        path = path.replace("*", _random_name(), 1)
+    if not path or path.endswith("/"):
+        path += _random_name()
+    return path
+
+
+class ObjectQueueHandler(StreamingHandler):
+    """Writes objects, broken ones too, where an S3Queue or AzureQueue table reads. The `topic` of the
+    table is its path in the bucket or container, maybe a glob, and its `group` the compression."""
+
+    def __init__(self, cluster, spark_handler, is_azure: bool):
+        super().__init__(cluster, spark_handler)
+        self.is_azure = is_azure
+        # The objects written under each path, to overwrite or delete some of them later
+        self.written: dict[str, list[str]] = {}
+
+    @staticmethod
+    def _key(path: str) -> str:
+        return _expand_path(path.lstrip("/"))
+
+    def _outside_key(self, key: str) -> str:
+        # Usually not matched by the path: another extension, one directory deeper, or another prefix
+        head, _, name = key.rpartition("/")
+        deeper = f"{head}/{_random_name()}/{name}" if head else f"{_random_name()}/{name}"
+        return random.choice([f"{key}.x", deeper, f"x{key}"])
+
+    def _delete(self, key: str):
+        delete_data(self.cluster, "azure" if self.is_azure else "s3", key)
+
+    def produce(self, table: StreamingTable, messages: list):
+        written = self.written.setdefault(table.topic, [])
+        for message in messages:
+            # Sometimes overwrite an object that ClickHouse may have processed already
+            key = (
+                random.choice(written)
+                if written and random.randint(1, 10) == 1
+                else self._key(table.topic)
+            )
+            if random.randint(1, 20) == 1:
+                key = self._outside_key(key)
+            data = _encode(message)
+            try:
+                data = _compress_bytes(data, resolve_compression(key, table.group))
+            except ValueError:
+                # No Python codec (lz4, brotli): the object stays as is
+                pass
+            # The tags BuzzHouse sets for `after_processing = 'tag'`, so an object may look processed already
+            tags = (
+                {random.choice(["processed", "fuzz"]): str(random.randint(0, 9))}
+                if random.randint(1, 10) == 1
+                else None
+            )
+            put_data(self.cluster, "azure" if self.is_azure else "s3", key, data, tags)
+            if key not in written:
+                written.append(key)
+        del written[:-100]
+
+    def on_update(self, table: StreamingTable):
+        written = self.written.get(table.topic)
+        if written and random.randint(1, 10) == 1:
+            # Delete objects, maybe while ClickHouse processes or moves them
+            for key in random.sample(written, random.randint(1, len(written))):
+                written.remove(key)
+                self._delete(key)
+        elif random.randint(1, 100) == 1:
+            # More objects than a listing page of MinIO (1000), from one batch of messages to stay fast
+            messages = self.next_messages(table)
+            self.produce(table, [random.choice(messages) for _ in range(random.randint(1000, 1500))])
+        else:
+            super().on_update(table)
+
+
+class FileLogHandler(StreamingHandler):
+    """Writes the files a FileLog table reads, and appends to, truncates, renames, replaces or deletes
+    them while ClickHouse keeps its offset in each. The `topic` of the table is its path: a directory
+    when it ends with `/`, a glob when it has `*`, otherwise one file."""
+
+    def _location(self, table: StreamingTable) -> str:
+        return host_data_path(self.cluster, table.topic)
+
+    def _files(self, table: StreamingTable) -> list[str]:
+        directory, _, pattern = self._location(table).rpartition("/")
+        if not os.path.isdir(directory):
+            return []
+        return [
+            entry.path
+            for entry in os.scandir(directory)
+            if entry.is_file(follow_symlinks=False)
+            and (not pattern or fnmatch.fnmatchcase(entry.name, pattern))
+        ]
+
+    def _write(self, path: str, data: bytes, append: bool):
+        if append:
+            with open(path, "ab") as out:
+                out.write(data)
+        else:
+            # Another inode under the same name
+            with open(path + ".tmp", "wb") as out:
+                out.write(data)
+            os.replace(path + ".tmp", path)
+
+    def on_create(self, table: StreamingTable):
+        location = self._location(table)
+        os.makedirs(os.path.dirname(location), exist_ok=True)
+        if "*" not in location and not location.endswith("/"):
+            # The one file must exist at CREATE
+            open(location, "ab").close()
+        super().on_create(table)
+
+    def produce(self, table: StreamingTable, messages: list):
+        files = self._files(table)
+        # The rows of a text format go on in the same file, a binary format takes a whole data file
+        is_text = table.format.lower() not in DATA_FILE_FORMATS
+        for message in messages:
+            data = _encode(message)
+            if is_text and data and not data.endswith(b"\n") and random.randint(1, 10) > 1:
+                # Otherwise the last row goes on in the next write
+                data += b"\n"
+            if files and random.randint(1, 4) <= (3 if is_text else 1):
+                path = random.choice(files)
+            else:
+                path = _expand_path(self._location(table))
+            self._write(path, data, True)
+            if path not in files:
+                files.append(path)
+
+    def on_update(self, table: StreamingTable):
+        files = self._files(table)
+        location = self._location(table)
+        action = random.randint(1, 100)
+        if files and action <= 25:
+            path = random.choice(files)
+            if action <= 5:
+                # Maybe below the offset ClickHouse keeps for it
+                os.truncate(path, random.randint(0, os.path.getsize(path)))
+            elif action <= 10:
+                os.remove(path)
+            elif action <= 15:
+                # The same inode under another name, which the path may exclude
+                os.rename(path, random.choice([_expand_path(location), path + ".x"]))
+            elif action <= 20:
+                self._write(path, b"".join(_encode(m) + b"\n" for m in self.next_messages(table)), False)
+            else:
+                # A link to a file the table reads already
+                link = _expand_path(location)
+                if not os.path.lexists(link):
+                    os.symlink(path, link)
+        elif action <= 30:
+            # A file the path excludes, or in a subdirectory: ClickHouse does not read either
+            directory = os.path.dirname(location)
+            path = random.choice(
+                [_expand_path(location) + ".x", os.path.join(directory, _random_name(), "f")]
+            )
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            self._write(path, b"".join(_encode(m) + b"\n" for m in self.next_messages(table)), True)
         else:
             super().on_update(table)

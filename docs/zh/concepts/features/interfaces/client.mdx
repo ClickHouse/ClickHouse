@@ -6,7 +6,7 @@ title: 'ClickHouse 客户端'
 doc_type: 'reference'
 ---
 
-ClickHouse 提供原生命令行客户端，可直接向 ClickHouse 服务器执行 SQL 查询。
+ClickHouse 提供原生命令行客户端，可直接向 ClickHouse 服务端执行 SQL 查询。
 它同时支持交互模式 (用于实时执行查询) 和批次模式 (用于脚本编写和自动化) 。
 查询结果既可显示在终端中，也可导出到文件，并支持所有 ClickHouse 输出[格式](/zh/reference/formats/index)，例如 Pretty、CSV、JSON 等。
 
@@ -67,13 +67,9 @@ Connected to ClickHouse server version 24.12.2.
 你可以在 ClickHouse Cloud 控制台中查看 ClickHouse Cloud 服务的详细信息。选择要连接的服务，然后点击 **Connect**：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ClickHouse Cloud 服务连接按钮](/images/_snippets/cloud-connect-button.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Cloud 服务连接按钮](/images/_snippets/cloud-connect-button.webp)
+  </Frame>
 </div>
 
 <br />
@@ -83,18 +79,14 @@ Connected to ClickHouse server version 24.12.2.
 选择 **Native**，即可看到详细信息以及一个 `clickhouse-client` 命令示例：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ClickHouse Cloud Native TCP 连接详细信息](/images/_snippets/connection-details-native.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Cloud Native TCP 连接详情](/images/_snippets/connection-details-native.webp)
+  </Frame>
 </div>
 
-### 在配置文件中存储连接信息 {#connection-credentials}
+### 在配置文件中保存连接 {#connection-credentials}
 
-你可以在[配置文件](#configuration_files)中存储一个或多个 ClickHouse 服务器的连接信息。
+可以在[配置文件](#configuration_files)中保存一个或多个 ClickHouse 服务器的连接详情。
 
 格式如下：
 
@@ -117,10 +109,10 @@ Connected to ClickHouse server version 24.12.2.
 </config>
 ```
 
-更多信息，请参阅[配置文件](#configuration_files)一节。
+有关更多信息，请参阅[配置文件一节](#configuration_files)。
 
 <Note>
-  为了突出查询语法，其余示例省略了连接信息 (`--host`、`--port` 等) 。使用这些命令时，请记得补上。
+  为了突出查询语法，后续示例均省略了连接详情 (`--host`、`--port` 等) 。实际执行这些命令时，请记得添加这些参数。
 </Note>
 
 ## 交互模式 {#interactive-mode}
@@ -268,6 +260,14 @@ ClickHouse 客户端 允许在查询时传递外部数据 (外部临时表) 。
 
   iTerm2：依次进入 Preferences -&gt; Profile -&gt; Keys -&gt; Left Option key，然后点击 Esc+
 </Tip>
+
+### Vim 模式 {#vim-mode}
+
+使用 `--vim` 参数启动客户端，即可通过类似 `vim` 的按键编辑查询。
+输入初始处于插入模式；按 `Esc` 可切换到普通模式，此时可使用移动命令 (`h`、`j`、`k`、`l`、`w`、`b`、`e`、`0`、`$`、`f`、`t`、`%`、`gg`、`G` 等) 、可搭配计数和文本对象 (`iw`、`aw`、`i(`、`a(` 等) 使用的运算符 (`d`、`c`) ，以及 `x`、`r`、`s`、`o`、`A`、`I`、`D`、`C` 等命令。
+在 vim 模式下，`Enter` 在插入模式中用于插入新行，在普通模式中用于移动到下一行；按 `Ctrl + j` 可提交查询。
+在普通模式下，按 `v` 会在编辑器中打开当前查询 (嵌入式客户端不支持此功能) 。
+历史记录搜索快捷键 (`Ctrl + r`、`Ctrl + s`、`Ctrl + t`、`Alt + r`) 以及 `Alt + #` 在普通模式下同样可用。
 
 ## 批次模式 {#batch-mode}
 
@@ -881,8 +881,9 @@ ClickHouse 客户端 会使用以下列表中第一个存在的文件：
 | `--help`                                            | 打印用法摘要并退出。与 `--verbose` 一起使用时，可显示所有可用选项，包括查询设置。                | -                       |
 | `--history_file <path-to-file>`                     | 包含命令历史记录的文件路径。                                                 | -                       |
 | `--history_max_entries`                             | 历史记录文件中的最大条目数。                                                 | `1000000` (100 万)       |
-| `--prompt <prompt>`                                 | 指定自定义提示符。                                                      | server 的 `display_name` |
+| `--prompt <prompt>`                                 | 指定自定义提示符。                                                      | 服务端 的 `display_name` |
 | `--verbose`                                         | 提高输出的详细程度。                                                     | -                       |
+| `--vim`                                             | 在交互模式下模拟 `vim` 编辑模式。参见 [Vim 模式](#vim-mode)。                    | -                       |
 | `-V [ --version ]`                                  | 打印版本信息并退出。                                                     | -                       |
 
 ### 连接选项 {#command-line-options-connection}

@@ -132,7 +132,8 @@ public:
         const Poco::Util::AbstractConfiguration & config_,
         const std::string & config_path,
         const std::string & working_directory_,
-        const std::string & startup_directory_)
+        const std::string & startup_directory_,
+        bool with_supervisor_ = false)
         : config(config_)
         , working_directory(working_directory_)
         , startup_directory(startup_directory_)
@@ -141,6 +142,7 @@ public:
         , config_directory(config_file.parent_path())
         , data_path(getDataPath(config, working_directory))
         , runtime_directory(is_daemon ? coreDirectory() : working_directory)
+        , with_supervisor(with_supervisor_)
     {
     }
 
@@ -154,10 +156,10 @@ public:
         for (const auto * path : system_certificate_directories)
             addLinkTargetsInside(path, "the CA certificates of the system");
 
-        /// The socket of the service manager, which the server notifies when it is ready (`systemdNotify`). Only the
-        /// socket is visible, not its directory. A socket on a read-only mount can still be sent to. A name starting
-        /// with `@` is an abstract socket, which is not in the filesystem.
-        if (const char * notify_socket = std::getenv("NOTIFY_SOCKET"); notify_socket && *notify_socket == '/') // NOLINT(concurrency-mt-unsafe)
+        /// The socket of the service manager, which the server notifies when it is ready (`systemdNotify`), unless the
+        /// supervisor does. Only the socket is visible, not its directory. A socket on a read-only mount can still be
+        /// sent to. A name starting with `@` is an abstract socket, which is not in the filesystem.
+        if (const char * notify_socket = std::getenv("NOTIFY_SOCKET"); !with_supervisor && notify_socket && *notify_socket == '/') // NOLINT(concurrency-mt-unsafe)
             add(notify_socket, Access::ReadOnly, "the environment variable NOTIFY_SOCKET");
 
         /// If it is a link, as `/dev/log -> /run/systemd/journal/dev-log` with systemd, the directory of its target, so
@@ -185,6 +187,13 @@ public:
         return std::move(paths);
     }
 
+    /// The pid file, where `BaseDaemon::initialize` would create it, or empty if there is none.
+    [[nodiscard]] std::string pidFile() const
+    {
+        const std::string value = config.getString("pid", "");
+        return value.empty() ? std::string{} : absolute(value, logDirectory()).string();
+    }
+
 private:
     const Poco::Util::AbstractConfiguration & config;
     const fs::path working_directory;
@@ -199,6 +208,7 @@ private:
     /// with `--daemon`, the directory of the core dumps, where `BaseDaemon::initialize` changes to at its end. Only
     /// `path` is resolved against `working_directory`, the original working directory, in any case.
     const fs::path runtime_directory;
+    const bool with_supervisor;
     std::vector<FilesystemIsolationPath> paths;
 
     /// Without `.` and empty components, so that equal paths compare equal, but with `..`: after a symbolic link it
@@ -231,7 +241,16 @@ private:
     /// With `only_file_in_shared_directory`, a file directly in `/` or in `/tmp` is visible on its own instead of its
     /// directory: the root directory cannot be visible, and the directory `/tmp` of the host would cover the private
     /// writable `/tmp` and expose the temporary files of everything else on the host.
-    void addLocation(const fs::path & path, Access access, const std::string & source, bool only_file_in_shared_directory = false)
+    ///
+    /// With `skip_unreachable`, nothing more is added from the first location that the server cannot reach, as a
+    /// directory inside one that it cannot search, as `/root/.aws` for a server that does not run as root: it cannot
+    /// read anything there anyway, and the isolation could not resolve the location.
+    void addLocation(
+        const fs::path & path,
+        Access access,
+        const std::string & source,
+        bool only_file_in_shared_directory = false,
+        bool skip_unreachable = false)
     {
         std::error_code error;
         /// The same limit on the number of links as in the kernel, against a loop.
@@ -256,10 +275,11 @@ private:
                     add(current, access, source);
                 return;
             }
-            if (only_file_in_shared_directory && isSharedDirectory(current.parent_path()))
-                add(current, access, source);
-            else
-                add(current.parent_path(), access, source);
+            const fs::path location
+                = only_file_in_shared_directory && isSharedDirectory(current.parent_path()) ? current : current.parent_path();
+            if (skip_unreachable && isUnreachable(location))
+                return;
+            add(location, access, source);
 
             if (i == max_links || !FS::isSymlinkNoThrow(current))
                 return;
@@ -272,6 +292,15 @@ private:
             /// it means the parent of the target of that link, which `resolvePath` follows as the kernel does.
             current = absolute(target.string(), "/");
         }
+    }
+
+    /// Whether the server cannot know if the path exists, as for a path inside a directory that it cannot search
+    /// (`EACCES`). A path that does not exist is not unreachable: it is skipped by the isolation.
+    static bool isUnreachable(const fs::path & path)
+    {
+        /// For a path that does not exist, `fs::exists` clears the error.
+        std::error_code error;
+        return !fs::exists(path, error) && error;
     }
 
     /// The root directory or `/tmp`, also through links, as `/var/tmp -> /tmp`.
@@ -776,8 +805,11 @@ private:
     {
         for (const auto * key : {"logger.stderr", "logger.stdout"})
             addKeyLocation(key, Access::ReadWrite, startup_directory);
-        for (const auto * key : {"logger.log", "logger.errorlog", "pid"})
+        for (const auto * key : {"logger.log", "logger.errorlog"})
             addKeyLocation(key, Access::ReadWrite, logDirectory());
+        /// Unless the supervisor outside of the isolation owns it.
+        if (!with_supervisor)
+            addKeyLocation("pid", Access::ReadWrite, logDirectory());
         /// With `--daemon`, `stderr.log` and `stdout.log` are created in the directory of the log by default.
         if (is_daemon && !config.getString("logger.log", "").empty())
             add(logDirectory(), Access::ReadWrite, "the directory of `logger.log`");
@@ -793,13 +825,13 @@ private:
     }
 
     /// The working directory after `BaseDaemon::initialize` has created the directory of the log: with `--daemon`, it
-    /// changes to that directory, or to `/tmp` without a log.
+    /// changes to that directory, or to `/tmp` without a log or with a log without a directory, as `server.log`.
     [[nodiscard]] fs::path logDirectory() const
     {
         if (!is_daemon)
             return startup_directory;
         const std::string log = config.getString("logger.log", "");
-        return log.empty() ? fs::path("/tmp") : absolute(log, startup_directory).parent_path();
+        return fs::path(log).parent_path().empty() ? fs::path("/tmp") : absolute(log, startup_directory).parent_path();
     }
 
     /// The directory of the core dumps that `BaseDaemon::initialize` changes to at its end with `--daemon`: `core_path`
@@ -906,7 +938,7 @@ private:
             const char * value = std::getenv(name); // NOLINT(concurrency-mt-unsafe)
             if (value && *value)
                 addLocation(absolute(value, runtime_directory), Access::ReadOnly, fmt::format("the environment variable {}", name),
-                    /* only_file_in_shared_directory = */ true);
+                    /* only_file_in_shared_directory = */ true, /* skip_unreachable = */ true);
         }
 
         /// The default location of the configuration and the credentials of the AWS SDK, `~/.aws/config` and
@@ -926,7 +958,8 @@ private:
                 /// `~/.aws/credentials -> /mnt/cloud-credentials/credentials`.
                 for (const char * name : {"config", "credentials"})
                     if (const fs::path file = aws_directory / name; FS::isSymlinkNoThrow(file))
-                        addLocation(file, Access::ReadOnly, source, /* only_file_in_shared_directory = */ true);
+                        addLocation(
+                            file, Access::ReadOnly, source, /* only_file_in_shared_directory = */ true, /* skip_unreachable = */ true);
             }
         }
     }
@@ -1047,9 +1080,19 @@ std::vector<FilesystemIsolationPath> collectFilesystemIsolationPaths(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_path,
     const std::string & working_directory,
+    const std::string & startup_directory,
+    bool with_supervisor)
+{
+    return Collector(config, config_path, working_directory, startup_directory, with_supervisor).collect();
+}
+
+std::string getFilesystemIsolationPidFile(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_path,
+    const std::string & working_directory,
     const std::string & startup_directory)
 {
-    return Collector(config, config_path, working_directory, startup_directory).collect();
+    return Collector(config, config_path, working_directory, startup_directory).pidFile();
 }
 
 }
