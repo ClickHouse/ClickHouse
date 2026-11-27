@@ -1241,6 +1241,8 @@ static void splitAndModifyMutationCommands(
         NameSet extra_columns_for_indices;
         /// Renamed earlier in the batch: new name -> (name stored in the part, index of its RENAME_COLUMN in `for_file_renames`).
         UnorderedMapWithMemoryTracking<String, std::pair<String, size_t>> renamed_in_batch;
+        /// Missing-column markers renamed earlier in the batch: new name -> marker name in the part.
+        UnorderedMapWithMemoryTracking<String, String> renamed_markers_in_batch;
 
 
         for (const auto & command : commands)
@@ -1368,10 +1370,17 @@ static void splitAndModifyMutationCommands(
 
                 for_file_renames.push_back(command);
             }
+            else if (command.type == MutationCommand::Type::RENAME_COLUMN)
+            {
+                String marker_name = nameInPart(command.column_name);
+                if (part->getSerializationInfos().isMissingColumn(marker_name))
+                    renamed_markers_in_batch[command.rename_to] = std::move(marker_name);
+            }
             else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
                 /// Marker-only DROP/CLEAR has the same logical effect as physical data.
-                String marker_name = nameInPart(command.column_name);
+                auto renamed_marker = renamed_markers_in_batch.find(command.column_name);
+                String marker_name = renamed_marker != renamed_markers_in_batch.end() ? renamed_marker->second : nameInPart(command.column_name);
                 if (part->getSerializationInfos().isMissingColumn(marker_name))
                 {
                     if (command.clear)

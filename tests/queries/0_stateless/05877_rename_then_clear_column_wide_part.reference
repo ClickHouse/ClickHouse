@@ -51,4 +51,7 @@ s8-copy	540500	541500	1000
 s9-values	0	1000	1000
 1
 s9-stored	0	1000
+s10-values	99	100
+1
+s10-reload	99	100
 0

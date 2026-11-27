@@ -190,6 +190,21 @@ ALTER TABLE t_drop_rename_absent_into_recomputed MODIFY COLUMN a REMOVE MATERIAL
 SELECT 's9-stored', sum(b), sum(a) FROM t_drop_rename_absent_into_recomputed;
 DROP TABLE t_drop_rename_absent_into_recomputed;
 
+-- `q` is a missing-column marker: the INSERT writes no data for it.
+DROP TABLE IF EXISTS t_rename_clear_marker;
+CREATE TABLE t_rename_clear_marker (k UInt8, q UInt32, c UInt32 MATERIALIZED q + 1) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+    skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns';
+INSERT INTO t_rename_clear_marker (k, q) VALUES (1, 0);
+ALTER TABLE t_rename_clear_marker MODIFY COLUMN q UInt32 DEFAULT 99;
+ALTER TABLE t_rename_clear_marker RENAME COLUMN q TO r, CLEAR COLUMN r;
+SELECT 's10-values', r, c FROM t_rename_clear_marker;
+CHECK TABLE t_rename_clear_marker SETTINGS check_query_single_value_result = 1;
+DETACH TABLE t_rename_clear_marker;
+ATTACH TABLE t_rename_clear_marker;
+SELECT 's10-reload', r, c FROM t_rename_clear_marker;
+DROP TABLE t_rename_clear_marker;
+
 DROP TABLE IF EXISTS t_rename_clear_rmt;
 CREATE TABLE t_rename_clear_rmt (k UInt8, q UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/t_rename_clear_rmt', 'r1') ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
