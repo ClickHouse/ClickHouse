@@ -165,6 +165,9 @@ private:
         DeviceBuffer size_tail;
     };
 
+    class BatchUpload;
+    class ColumnOnDevice;
+
     std::optional<GPUDeviceBatch> expand(const GPUStagedBatch & staged);
 
     /// Declared first, so that the buffers below are freed in its order before it goes.
