@@ -220,7 +220,7 @@ SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_
     return SerializationNullable::create(prev_serialization);
 }
 
-ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
+ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev, const DataTypePtr &) const
 {
     if (canExtractedSubcolumnsBeInsideNullable(prev))
         return ColumnNullable::create(prev, null_map);

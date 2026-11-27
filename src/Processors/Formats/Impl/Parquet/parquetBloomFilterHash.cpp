@@ -5,6 +5,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/UUID.h>
 #include <base/unaligned.h>
 
 #include <fmt/format.h>
@@ -40,6 +41,17 @@ uint64_t hashValue(T value)
     char le_bytes[sizeof(T)];
     unalignedStoreLittleEndian<T>(le_bytes, value);
     return hashBytes(le_bytes, sizeof(T));
+}
+
+/// Parquet stores a `UUID` as its 16 bytes in the order they are written in text (big-endian), while
+/// ClickHouse stores it as two `UInt64` numbers (the first and the last 8 bytes), each in the byte order
+/// of the CPU. Hash the bytes as they are in the file, the same bytes `ConverterUUID` writes.
+uint64_t hashUUID(const UUID & uuid)
+{
+    char be_bytes[sizeof(UUID)];
+    unalignedStoreBigEndian<UInt64>(be_bytes, UUIDHelpers::getHighBytes(uuid));
+    unalignedStoreBigEndian<UInt64>(be_bytes + sizeof(UInt64), UUIDHelpers::getLowBytes(uuid));
+    return hashBytes(be_bytes, sizeof(be_bytes));
 }
 
 }
@@ -119,8 +131,25 @@ static std::optional<uint64_t> tryHashString(const Field & field, const SchemaEl
     return tryHashStringWithoutCompatibilityCheck(field);
 }
 
+/// A 16-byte fixed array annotated as `UUID`, or not annotated at all (read as `UUID` by a type hint).
+static bool isParquetUUIDTypeSupportedForBloomFilters(const SchemaElement & schema_element)
+{
+    if (schema_element.type != Parquet::parq::Type::FIXED_LEN_BYTE_ARRAY || schema_element.type_length != sizeof(UUID))
+        return false;
+    if (schema_element.__isset.logicalType)
+        return schema_element.logicalType.__isset.UUID;
+    return !schema_element.__isset.converted_type;
+}
+
 static std::optional<uint64_t> tryHashFLBA(const Field & field, const SchemaElement & schema_element)
 {
+    if (field.getType() == Field::Types::UUID)
+    {
+        if (!isParquetUUIDTypeSupportedForBloomFilters(schema_element))
+            return std::nullopt;
+        return hashUUID(field.safeGet<UUID>());
+    }
+
     /// `DECIMAL`-annotated fixed arrays are deliberately ineligible. `parquetTryHashColumn` sees
     /// ClickHouse's native little-endian wide integers, while the Parquet bloom filter hashes the
     /// canonical big-endian decimal bytes; hashing either representation here would mismatch the

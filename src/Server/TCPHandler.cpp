@@ -1458,6 +1458,16 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
             std::min(
                 poll_interval * 1000000,
                 static_cast<UInt64>(receive_timeout.totalMicroseconds())));
+    /// ... but wake up often enough to keep the client's live metrics fresh while it is slow to
+    /// send the next data packet. Sessions the flush cannot serve keep the blocking poll.
+    /// For `INSERT ... RETURNING` with client-fed input, the result is written to `out` concurrently
+    /// by another thread (without `callback_mutex`), so we must not write service packets here.
+    const bool can_flush_while_waiting = !state.skipping_data && !state.send_result_while_receiving_data_for_input;
+    if (can_flush_while_waiting
+        && client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT
+        && query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+        && state.query_context->getSettingsRef()[Setting::send_profile_events])
+        timeout_us = std::min(timeout_us, std::max(min_timeout_us, interactive_delay));
 
     Stopwatch watch;
 
@@ -1471,6 +1481,14 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                 throw NetException(ErrorCodes::SOCKET_TIMEOUT,
                                 "Timeout exceeded while receiving data from client. Waited for {} seconds, timeout is {} seconds.",
                                 elapsed, receive_timeout.totalSeconds());
+            }
+
+            if (can_flush_while_waiting && after_send_progress.elapsed() / 1000 >= interactive_delay)
+            {
+                after_send_progress.restart();
+                sendLogs(state);
+                sendInsertProfileEvents(state);
+                out->sync();
             }
         }
 
@@ -1839,7 +1857,23 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
                     // Block might be empty in case of timeout, i.e. there is no data to process
                     if (!block.empty() && !state.io.null_format && !discard_query_data)
+                    {
+                        /// An older initiator cannot receive the number of rows of a block with no columns, so the
+                        /// rows of this part of the result would be lost there. Fail rather than return a wrong result.
+                        /// No data was sent yet, so an initiator with `skip_unavailable_shards_mode` set to
+                        /// `unavailable_or_exception_before_processing` skips this shard, which is what that mode asks for.
+                        if (block.columns() == 0 && client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT)
+                            throw Exception(
+                                ErrorCodes::NOT_IMPLEMENTED,
+                                "Cannot send {} rows that carry no columns: the client speaks protocol revision {}, "
+                                "and sending the number of rows of a block with no columns requires revision {}. "
+                                "Upgrade the server that initiates the query",
+                                block.rows(),
+                                client_tcp_protocol_version,
+                                DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT);
+
                         sendData(state, block);
+                    }
 
                     out->sync();
                 }

@@ -160,6 +160,16 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 Имеет эффект только в ClickHouse Cloud. Минимальное количество байт, при котором выполняется seek в distributed cache.
 
+## distributed_cache_min_inflight_bytes_to_discard_connection {#distributed_cache_min_inflight_bytes_to_discard_connection}
+
+<CloudOnlyBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="4194304" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "4194304"},{"label": "Новая настройка, позволяющая сохранять соединение с distributed cache, если при отмене запроса на чтение в процессе передачи (in-flight) остаётся небольшой объём данных. Значение по умолчанию — 4 МиБ; 0 восстанавливает прежнее поведение (соединение разрывается всякий раз, когда ещё могут поступить данные)."}]}]} />
+
+Действует только в ClickHouse Cloud. Если запрос на чтение из distributed cache отменяется в момент, когда ещё могут поступить данные, соединение разрывается при условии, что оценочное количество байтов в процессе передачи (in-flight) превышает это значение; в противном случае соединение возвращается в пул, а их выгрузку выполняет следующий запрос по этому соединению. При значении 0 соединение разрывается всегда. При seek настройка `distributed_cache_min_inflight_bytes_to_discard_connection_on_seek` сначала определяет, нужно ли повторно отправить запрос по тому же соединению; если же запрос вместо этого отменяется, применяется и данная настройка. В отличие от той настройки, здесь 0 означает «всегда разрывать». Настройка ни на что не влияет, если `distributed_cache_discard_connection_if_unread_data` отключена, поскольку в этом случае соединение сохраняется всегда.
+
 ## distributed_cache_min_inflight_bytes_to_discard_connection_on_seek {#distributed_cache_min_inflight_bytes_to_discard_connection_on_seek}
 
 <CloudOnlyBadge />
@@ -258,9 +268,9 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 <SettingsInfoBlock type="UInt64" default_value="3000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "новая настройка"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "3000"},{"label": "новая настройка"}]}]} />
 
-Действует только в ClickHouse Cloud. Тайм-аут отправки данных на сервер распределённого кэша в миллисекундах. Если клиенту нужно отправить данные, но за этот интервал не удаётся отправить ни одного байта, генерируется исключение.
+Действует только в ClickHouse Cloud. Тайм-аут отправки данных на сервер distributed cache в миллисекундах. Если клиенту нужно отправить данные, но за этот интервал не удаётся отправить ни одного байта, генерируется исключение.
 
 ## distributed_cache_tcp_keep_alive_timeout_ms {#distributed_cache_tcp_keep_alive_timeout_ms}
 

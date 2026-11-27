@@ -834,15 +834,24 @@ public:
         const auto * col_const_str_in = checkAndGetColumnConst<ColumnFixedString>(column_ip.get());
         const auto * col_str_in = checkAndGetColumn<ColumnFixedString>(column_ip.get());
 
-        std::function<const char *(size_t)> get_ip_data;
+        /// Take the data pointers before the loop: a per-row call through `std::function` or to a member of the
+        /// column (checked by Clang CFI on every call) keeps the loop from being optimized.
+        const char * ip_data = nullptr;
+        size_t ip_step = 0;
         if (col_const_ip_in)
-            get_ip_data = [col_const_ip_in](size_t) { return col_const_ip_in->getDataAt(0).data(); };
+            ip_data = col_const_ip_in->getDataAt(0).data();
         else if (col_const_str_in)
-            get_ip_data = [col_const_str_in](size_t) { return col_const_str_in->getDataAt(0).data(); };
+            ip_data = col_const_str_in->getDataAt(0).data();
         else if (col_ip_in)
-            get_ip_data = [col_ip_in](size_t i) { return reinterpret_cast<const char *>(&col_ip_in->getData()[i]); };
+        {
+            ip_data = reinterpret_cast<const char *>(col_ip_in->getData().data());
+            ip_step = IPV6_BINARY_LENGTH;
+        }
         else if (col_str_in)
-            get_ip_data = [col_str_in](size_t i) { return reinterpret_cast<const char *>(&col_str_in->getChars().data()[i * IPV6_BINARY_LENGTH]); };
+        {
+            ip_data = reinterpret_cast<const char *>(col_str_in->getChars().data());
+            ip_step = IPV6_BINARY_LENGTH;
+        }
         else
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -861,15 +870,21 @@ public:
 
         static constexpr UInt8 max_cidr_mask = IPV6_BINARY_LENGTH * 8;
 
+        char * res_lower = reinterpret_cast<char *>(vec_res_lower_range.data());
+        char * res_upper = reinterpret_cast<char *>(vec_res_upper_range.data());
+        const UInt8 * cidr_data = col_const_cidr_in ? nullptr : col_cidr_in->getData().data();
+        const UInt8 const_cidr = col_const_cidr_in ? col_const_cidr_in->getValue<UInt8>() : 0;
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            UInt8 cidr = col_const_cidr_in
-                        ? col_const_cidr_in->getValue<UInt8>()
-                        : col_cidr_in->getData()[i];
-
+            UInt8 cidr = cidr_data ? cidr_data[i] : const_cidr;
             cidr = std::min(cidr, max_cidr_mask);
 
-            applyCIDRMask(get_ip_data(i), reinterpret_cast<char *>(&vec_res_lower_range[i]), reinterpret_cast<char *>(&vec_res_upper_range[i]), cidr);
+            applyCIDRMask(
+                ip_data + i * ip_step,
+                res_lower + i * IPV6_BINARY_LENGTH,
+                res_upper + i * IPV6_BINARY_LENGTH,
+                cidr);
         }
 
         return ColumnTuple::create(Columns{std::move(col_res_lower_range), std::move(col_res_upper_range)});
@@ -919,18 +934,41 @@ private:
         auto & vec_res_upper_range = col_res_upper_range->getData();
         vec_res_upper_range.resize(input_rows_count);
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        if ((!col_const_ip_in && !col_ip_in) || (!col_const_cidr_in && !col_cidr_in))
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal columns {}, {} of arguments of function {}",
+                column_ip->getName(), column_cidr->getName(), getName()
+            );
+
+        /// Take the data pointers and constants before the loop and specialize it for each combination of constant
+        /// arguments: a per-row call to a member of the column (checked by Clang CFI on every call) keeps the loop
+        /// from being vectorized.
+        const ArgType * ip_data = col_const_ip_in ? nullptr : col_ip_in->getData().data();
+        const ArgType const_ip = col_const_ip_in ? col_const_ip_in->template getValue<ArgType>() : ArgType{};
+        const UInt8 * cidr_data = col_const_cidr_in ? nullptr : col_cidr_in->getData().data();
+        const UInt8 const_cidr = col_const_cidr_in ? col_const_cidr_in->getValue<UInt8>() : 0;
+        IPv4 * __restrict res_lower = vec_res_lower_range.data();
+        IPv4 * __restrict res_upper = vec_res_upper_range.data();
+
+        auto execute = [&]<bool ip_is_const, bool cidr_is_const>()
         {
-            ArgType ip = col_const_ip_in
-                        ? col_const_ip_in->template getValue<ArgType>()
-                        : col_ip_in->getData()[i];
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const ArgType ip = ip_is_const ? const_ip : ip_data[i];
+                const UInt8 cidr = cidr_is_const ? const_cidr : cidr_data[i];
+                std::tie(res_lower[i], res_upper[i]) = applyCIDRMask(ip, cidr);
+            }
+        };
 
-            UInt8 cidr = col_const_cidr_in
-                         ? col_const_cidr_in->getValue<UInt8>()
-                         : col_cidr_in->getData()[i];
-
-            std::tie(vec_res_lower_range[i], vec_res_upper_range[i]) = applyCIDRMask(ip, cidr);
-        }
+        if (col_const_ip_in && col_const_cidr_in)
+            execute.template operator()<true, true>();
+        else if (col_const_ip_in)
+            execute.template operator()<true, false>();
+        else if (col_const_cidr_in)
+            execute.template operator()<false, true>();
+        else
+            execute.template operator()<false, false>();
 
         return ColumnTuple::create(Columns{std::move(col_res_lower_range), std::move(col_res_upper_range)});
     }

@@ -1,6 +1,7 @@
 #include <limits>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -165,11 +166,31 @@ public:
                 if (!elem_type->isNullable() && default_argument.type->isNullable())
                 {
                     auto materialized_default_column = default_argument.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+                    const auto nested_default_type = removeNullable(default_argument.type);
                     if (const auto * nullable_default_column = checkAndGetColumn<ColumnNullable>(materialized_default_column.get()))
-                        materialized_default_column = nullable_default_column->getNestedColumnWithDefaultOnNull();
+                    {
+                        const auto * null_map_data = nullable_default_column->tryGetNullMapData();
+                        if (!null_map_data || nested_default_type->isDefaultInsertTrivial() || memoryIsZero(null_map_data->data(), 0, null_map_data->size()))
+                            materialized_default_column = nullable_default_column->getNestedColumnWithDefaultOnNull();
+                        else
+                        {
+                            /// The default of an `Enum` is its first value, not the column zero.
+                            const auto & nested_default_column = nullable_default_column->getNestedColumn();
+                            auto filled_default_column = nested_default_column.cloneEmpty();
+                            filled_default_column->reserve(nested_default_column.size());
+                            for (size_t row = 0; row < nested_default_column.size(); ++row)
+                            {
+                                if ((*null_map_data)[row])
+                                    nested_default_type->insertDefaultInto(*filled_default_column);
+                                else
+                                    filled_default_column->insertFrom(nested_default_column, row);
+                            }
+                            materialized_default_column = std::move(filled_default_column);
+                        }
+                    }
 
                     default_argument.column = std::move(materialized_default_column);
-                    default_argument.type = removeNullable(default_argument.type);
+                    default_argument.type = nested_default_type;
                 }
 
                 default_column = castColumn(default_argument, elem_type);

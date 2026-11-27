@@ -1101,7 +1101,10 @@ const ColumnString & unwrapLeaf(const IColumn & column, const NullMap *& out_nul
         out_null_map = nullable->tryGetNullMapData();
         inner = &nullable->getNestedColumn();
     }
-    return assert_cast<const ColumnString &>(*inner);
+    const auto * string = typeid_cast<const ColumnString *>(inner);
+    if (!string)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed Parquet variant: metadata and value leaves must be binary strings");
+    return *string;
 }
 
 struct JSONNode
