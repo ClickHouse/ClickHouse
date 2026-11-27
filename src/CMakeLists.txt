@@ -1155,8 +1155,12 @@ if (ENABLE_TESTS)
     grep_wyrd_gtest_sources("${ClickHouse_SOURCE_DIR}/src" wyrd_gtest_sources)
     clickhouse_add_executable(unit_tests_wyrd ${wyrd_gtest_sources})
 
+    # `dbms` references symbols of `clickhouse_functions` and `clickhouse_storages_system`. Builds with
+    # `--gc-sections` drop that code, but the coverage build keeps it, so they must be linked too.
     target_link_libraries(unit_tests_wyrd PRIVATE
         clickhouse_wyrd_enabled
+        clickhouse_functions
+        clickhouse_storages_system
         dbms
     )
 endif ()
