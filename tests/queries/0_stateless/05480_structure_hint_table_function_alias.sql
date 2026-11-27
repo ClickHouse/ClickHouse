@@ -85,6 +85,12 @@ SELECT v FROM t_structure_hint_alias_cte ORDER BY v DESC;
 SET query_plan_join_swap_table = DEFAULT;
 DROP TABLE t_structure_hint_alias_cte;
 
+-- Each side of a self join gets its own hint, so the sides must not share one storage.
+TRUNCATE TABLE t_structure_hint_alias;
+INSERT INTO t_structure_hint_alias SELECT l.id, r.v FROM null() AS l CROSS JOIN null() AS r;
+INSERT INTO t_structure_hint_alias SELECT l.id, r.v FROM file(currentDatabase() || '_structure_hint_alias.jsonl') AS l CROSS JOIN file(currentDatabase() || '_structure_hint_alias.jsonl') AS r WHERE l.id = 1 AND r.v = 30 SETTINGS use_structure_from_insertion_table_in_table_functions = 1;
+SELECT * FROM t_structure_hint_alias ORDER BY ALL;
+
 -- Choosing the hint column names must not run the schema inference of the source.
 TRUNCATE TABLE t_structure_hint_alias;
 SET log_comment = '05480_structure_hint_alias_no_inference';

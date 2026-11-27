@@ -3840,7 +3840,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 StoragePtr Context::executeTableFunction(
     const ASTPtr & table_expression,
     const TableFunctionPtr & table_function_ptr,
-    const ContextPtr & execution_context)
+    const ContextPtr & execution_context,
+    const ColumnsDescription * structure_hint)
 {
     const auto hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
     const auto bare_key = toString(hash);
@@ -3859,6 +3860,10 @@ StoragePtr Context::executeTableFunction(
         }
         key += '/' + toString(settings_hash.get128());
     }
+
+    /// Two equal table functions with different structure hints must not share a storage.
+    if (structure_hint && !structure_hint->empty())
+        key += '/' + sipHash128String(structure_hint->toString(/*include_comments=*/ false));
 
     StoragePtr res;
     {

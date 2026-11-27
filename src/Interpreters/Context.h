@@ -1275,11 +1275,12 @@ public:
     /// The execution_context is used for the actual table function execution
     /// (to respect per-subquery SETTINGS), while `this` context is used for caching.
     /// The cache key incorporates a hash of the settings changes so that identical table functions
-    /// with the same settings are still reused from cache.
+    /// with the same settings are still reused from cache. A non-empty structure_hint is a part of the key too.
     StoragePtr executeTableFunction(
         const ASTPtr & table_expression,
         const TableFunctionPtr & table_function_ptr,
-        const ContextPtr & execution_context);
+        const ContextPtr & execution_context,
+        const ColumnsDescription * structure_hint = nullptr);
 
     StoragePtr buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values) const;
 

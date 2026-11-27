@@ -5738,6 +5738,8 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
     uint64_t use_structure_from_insertion_table_in_table_functions
         = scope_context->getSettingsRef()[Setting::use_structure_from_insertion_table_in_table_functions];
+    /// The hint is a part of the cache key: `null() AS l CROSS JOIN null() AS r` gets a different hint for each side.
+    ColumnsDescription applied_structure_hint;
     if (!nested_table_function && !scope.subquery_depth && use_structure_from_insertion_table_in_table_functions && scope_context->hasInsertionTableColumnsDescription()
         && table_function_ptr->needStructureHint()
         && scope.scope_node->getNodeType() == QueryTreeNodeType::QUERY)
@@ -5941,6 +5943,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 {
                     removeMisboundDefaultsFromStructureHint(structure_hint, insertion_columns_by_hint_column, insert_columns);
                     table_function_ptr->setStructureHint(structure_hint);
+                    applied_structure_hint = std::move(structure_hint);
                 }
             }
             else if (use_structure_from_insertion_table_in_table_functions == 1)
@@ -6002,7 +6005,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         overridden_context->setSetting("parallel_replicas_for_cluster_engines", false);
         execution_context = overridden_context;
     }
-    auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context);
+    auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context, &applied_structure_hint);
     table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
 }
 
