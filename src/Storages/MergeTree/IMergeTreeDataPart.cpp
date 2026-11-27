@@ -2926,10 +2926,9 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         current_row += rows_read;
         current_mark += (rows_to_read == rows_read);
 
-        auto column = row_exists_column->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
-        const ColumnUInt8 * row_exists_col = typeid_cast<const ColumnUInt8 *>(column.get());
+        const ColumnUInt8 * row_exists_col = typeid_cast<const ColumnUInt8 *>(row_exists_column);
         if (!row_exists_col)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} _row_exists column type is not UInt8", name);
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Part {} _row_exists column is not a plain ColumnUInt8", name);
 
         for (UInt8 row_exists : row_exists_col->getData())
             if (row_exists)

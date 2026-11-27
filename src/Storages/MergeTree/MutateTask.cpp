@@ -145,6 +145,7 @@ namespace FailPoints
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int SUPPORT_IS_DISABLED;
@@ -600,11 +601,11 @@ static bool mustRebuildProjection(
 
 static UInt64 getExistingRowsCount(const Block & block)
 {
-    auto column = block.getByName(RowExistsColumn::name).column->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
+    const auto & column = block.getByName(RowExistsColumn::name).column;
     const ColumnUInt8 * row_exists_col = typeid_cast<const ColumnUInt8 *>(column.get());
 
     if (!row_exists_col)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "_row_exists column type is not UInt8");
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "_row_exists column is not a plain ColumnUInt8");
 
     UInt64 existing_count = 0;
 
