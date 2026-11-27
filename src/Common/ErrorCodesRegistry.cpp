@@ -21,7 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
 
-extern const ErrorCode NO_SUCH_ERROR_CODE;
+extern const int NO_SUCH_ERROR_CODE;
 
 ErrorValues values;
 
@@ -141,7 +141,7 @@ ErrorCode getErrorCodeByName(std::string_view error_name)
     const auto names = List::names();
     const auto it = std::ranges::find(names, error_name);
     if (it == names.end())
-        throw Exception(NO_SUCH_ERROR_CODE, "No error code with name: '{}'", error_name);
+        throw Exception(ErrorCodes::NO_SUCH_ERROR_CODE, "No error code with name: '{}'", error_name);
     return List::codes()[static_cast<size_t>(std::distance(names.begin(), it))];
 }
 

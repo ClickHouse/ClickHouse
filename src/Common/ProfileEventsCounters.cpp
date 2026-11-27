@@ -179,8 +179,9 @@ void Counters::fetchAdd(Event event, Count amount, int32_t cpu)
     {
         /// `cpu` may be >= rows if a CPU above `MAX_CPUS` is online, and -1 on error. In both
         /// cases, fall back to row 0 — still atomic, still correct, just with less cache locality.
-        const size_t row = (cpu >= 0 && static_cast<uint32_t>(cpu) < rows) ? static_cast<size_t>(cpu) : 0;
-        cell(counters, row, event).fetch_add(amount, std::memory_order_relaxed);
+        /// `cpu * per_cpu_stride` is the same at every level, so the parent loops compute it once.
+        const size_t row_offset = (cpu >= 0 && static_cast<uint32_t>(cpu) < rows) ? static_cast<size_t>(cpu) * per_cpu_stride : 0;
+        std::atomic_ref<Count>(counters[row_offset + event]).fetch_add(amount, std::memory_order_relaxed);
     }
     else
         cell(counters, 0, event).fetch_add(amount, std::memory_order_relaxed);
