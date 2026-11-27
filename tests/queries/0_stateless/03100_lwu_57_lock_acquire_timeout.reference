@@ -1,9 +1,0 @@
-sync 1000 failed 1 waited 1
-sync single-chunk cancelled-in-wait 1
-auto 1000 failed 1 waited 1
-auto single-chunk cancelled-in-wait 1
-plain sync single-chunk cancelled-in-wait 1
-plain auto single-chunk cancelled-in-wait 1
-cancel between-chunks 1 promptly 1
-watch spanned true registered_once true
-cas retried_once 1

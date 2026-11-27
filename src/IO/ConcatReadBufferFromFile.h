@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <vector>
@@ -40,7 +39,6 @@ public:
 private:
     bool nextImpl() override;
     void appendBuffer(SeekableReadBuffer * buffer, bool own, size_t size);
-    void setWorkingBufferFromCurrent();
 
     struct BufferInfo
     {
@@ -53,7 +51,7 @@ private:
     };
 
     const std::string file_name;
-    VectorWithMemoryTracking<BufferInfo> buffers;
+    std::vector<BufferInfo> buffers;
     size_t total_size = 0;
     size_t current = 0;
     size_t current_start_pos = 0; /// Position of the current buffer's begin.

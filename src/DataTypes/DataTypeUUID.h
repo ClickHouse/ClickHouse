@@ -10,7 +10,7 @@ namespace DB
 
 constexpr size_t UUID_BINARY_LENGTH = 16;
 
-class DataTypeUUID final : public IDataType
+class DataTypeUUID : public IDataType
 {
 public:
     static constexpr bool is_parametric = false;

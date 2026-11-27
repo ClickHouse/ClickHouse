@@ -6,8 +6,6 @@
 -- it depends on) explicitly so CI random-settings cannot move the query
 -- off the target path.
 
-set explain_query_plan_default='legacy';
-
 DROP TABLE IF EXISTS items_arrjoin;
 DROP TABLE IF EXISTS tags_arrjoin;
 DROP TABLE IF EXISTS right_arrjoin;
@@ -26,22 +24,26 @@ FROM numbers(2);
 -- (1) Baseline. Bug = 18; fix = 6 (= 2 items * 3 tags).
 SELECT 'baseline_new=1', count() FROM items_arrjoin INNER JOIN tags_arrjoin
     ON arrayJoin(items_arrjoin.tag_ids) = tags_arrjoin.id
-    WHERE items_arrjoin.filter_key = 'target';
+    WHERE items_arrjoin.filter_key = 'target'
+    SETTINGS query_plan_use_new_logical_join_step = 1;
 
 -- (2) Control: old path.
 SELECT 'baseline_new=0', count() FROM items_arrjoin INNER JOIN tags_arrjoin
     ON arrayJoin(items_arrjoin.tag_ids) = tags_arrjoin.id
-    WHERE items_arrjoin.filter_key = 'target';
+    WHERE items_arrjoin.filter_key = 'target'
+    SETTINGS query_plan_use_new_logical_join_step = 0;
 
 -- (3) Reversed equality direction.
 SELECT 'reversed_new=1', count() FROM items_arrjoin INNER JOIN tags_arrjoin
     ON tags_arrjoin.id = arrayJoin(items_arrjoin.tag_ids)
-    WHERE items_arrjoin.filter_key = 'target';
+    WHERE items_arrjoin.filter_key = 'target'
+    SETTINGS query_plan_use_new_logical_join_step = 1;
 
 -- (4) Nested arrayJoin in JOIN ON.
 SELECT 'nested_arr_new=1', count() FROM items_arrjoin INNER JOIN tags_arrjoin
     ON toString(arrayJoin(items_arrjoin.tag_ids)) = tags_arrjoin.id
-    WHERE items_arrjoin.filter_key = 'target';
+    WHERE items_arrjoin.filter_key = 'target'
+    SETTINGS query_plan_use_new_logical_join_step = 1;
 
 -- (5) MECHANISM-LEVEL: count ARRAY JOIN actions in plan. The substring
 --     `'ARRAY JOIN '` (with trailing space) matches every `ARRAY_JOIN`
@@ -56,6 +58,7 @@ FROM (
     SELECT count() FROM items_arrjoin INNER JOIN tags_arrjoin
         ON arrayJoin(items_arrjoin.tag_ids) = tags_arrjoin.id
         WHERE items_arrjoin.filter_key = 'target'
+        SETTINGS query_plan_use_new_logical_join_step = 1
 );
 
 -- (6) AND-arrayJoin conjunct -- mechanism-level plan-shape check that
@@ -83,25 +86,27 @@ FROM (
         ON arrayJoin(items_arrjoin.tag_ids) = tags_arrjoin.id
         WHERE items_arrjoin.filter_key = 'target'
           AND arrayJoin(items_arrjoin.tag_ids) <> ''
+        SETTINGS query_plan_use_new_logical_join_step = 1
 );
 
 -- (7) Subquery (control: avoids buggy plan shape).
 SELECT 'control_subquery_new=1', count() FROM (
     SELECT id, arrayJoin(tag_ids) AS tag_id
     FROM items_arrjoin WHERE filter_key = 'target') AS sub
-INNER JOIN tags_arrjoin ON sub.tag_id = tags_arrjoin.id;
+INNER JOIN tags_arrjoin ON sub.tag_id = tags_arrjoin.id
+SETTINGS query_plan_use_new_logical_join_step = 1;
 
 -- (8) Runtime filters off.
 SELECT 'no_rt_filter_new=1', count() FROM items_arrjoin INNER JOIN tags_arrjoin
     ON arrayJoin(items_arrjoin.tag_ids) = tags_arrjoin.id
     WHERE items_arrjoin.filter_key = 'target'
-    SETTINGS enable_join_runtime_filters = 0;
+    SETTINGS query_plan_use_new_logical_join_step = 1, enable_join_runtime_filters = 0;
 
 -- (9) Disjunction push-down off.
 SELECT 'no_disj_pd_new=1', count() FROM items_arrjoin INNER JOIN tags_arrjoin
     ON arrayJoin(items_arrjoin.tag_ids) = tags_arrjoin.id
     WHERE items_arrjoin.filter_key = 'target'
-    SETTINGS use_join_disjunctions_push_down = 0;
+    SETTINGS query_plan_use_new_logical_join_step = 1, use_join_disjunctions_push_down = 0;
 
 -- (10)-(12) BILATERAL arrayJoin: both sides of JOIN ON use arrayJoin.
 --      Covers THREE WHERE shapes so both left- and right-side
@@ -121,11 +126,13 @@ FROM numbers(2);
 SELECT 'bilateral_left_where_count_new=1', count() FROM items_arrjoin AS L
     INNER JOIN right_arrjoin AS R
     ON arrayJoin(L.tag_ids) = arrayJoin(R.arr)
-    WHERE L.filter_key = 'target';
+    WHERE L.filter_key = 'target'
+    SETTINGS query_plan_use_new_logical_join_step = 1;
 SELECT 'bilateral_left_where_count_new=0', count() FROM items_arrjoin AS L
     INNER JOIN right_arrjoin AS R
     ON arrayJoin(L.tag_ids) = arrayJoin(R.arr)
-    WHERE L.filter_key = 'target';
+    WHERE L.filter_key = 'target'
+    SETTINGS query_plan_use_new_logical_join_step = 0;
 SELECT 'bilateral_left_where_arrjoin_count_in_plan_new=1',
     countSubstrings(arrayStringConcat(groupArray(explain), char(10)),
                     'ARRAY JOIN ')
@@ -135,6 +142,7 @@ FROM (
         INNER JOIN right_arrjoin AS R
         ON arrayJoin(L.tag_ids) = arrayJoin(R.arr)
         WHERE L.filter_key = 'target'
+        SETTINGS query_plan_use_new_logical_join_step = 1
 );
 
 -- (11) Bilateral, WHERE on RIGHT only -- right-side push-down triggers.
@@ -143,11 +151,13 @@ FROM (
 SELECT 'bilateral_right_where_count_new=1', count() FROM items_arrjoin AS L
     INNER JOIN right_arrjoin AS R
     ON arrayJoin(L.tag_ids) = arrayJoin(R.arr)
-    WHERE R.filter_key = 'rtarget';
+    WHERE R.filter_key = 'rtarget'
+    SETTINGS query_plan_use_new_logical_join_step = 1;
 SELECT 'bilateral_right_where_count_new=0', count() FROM items_arrjoin AS L
     INNER JOIN right_arrjoin AS R
     ON arrayJoin(L.tag_ids) = arrayJoin(R.arr)
-    WHERE R.filter_key = 'rtarget';
+    WHERE R.filter_key = 'rtarget'
+    SETTINGS query_plan_use_new_logical_join_step = 0;
 SELECT 'bilateral_right_where_arrjoin_count_in_plan_new=1',
     countSubstrings(arrayStringConcat(groupArray(explain), char(10)),
                     'ARRAY JOIN ')
@@ -157,6 +167,7 @@ FROM (
         INNER JOIN right_arrjoin AS R
         ON arrayJoin(L.tag_ids) = arrayJoin(R.arr)
         WHERE R.filter_key = 'rtarget'
+        SETTINGS query_plan_use_new_logical_join_step = 1
 );
 
 -- (12) Bilateral, WHERE on BOTH sides (separable conjuncts) -- both
@@ -164,11 +175,13 @@ FROM (
 SELECT 'bilateral_both_where_count_new=1', count() FROM items_arrjoin AS L
     INNER JOIN right_arrjoin AS R
     ON arrayJoin(L.tag_ids) = arrayJoin(R.arr)
-    WHERE L.filter_key = 'target' AND R.filter_key = 'rtarget';
+    WHERE L.filter_key = 'target' AND R.filter_key = 'rtarget'
+    SETTINGS query_plan_use_new_logical_join_step = 1;
 SELECT 'bilateral_both_where_count_new=0', count() FROM items_arrjoin AS L
     INNER JOIN right_arrjoin AS R
     ON arrayJoin(L.tag_ids) = arrayJoin(R.arr)
-    WHERE L.filter_key = 'target' AND R.filter_key = 'rtarget';
+    WHERE L.filter_key = 'target' AND R.filter_key = 'rtarget'
+    SETTINGS query_plan_use_new_logical_join_step = 0;
 SELECT 'bilateral_both_where_arrjoin_count_in_plan_new=1',
     countSubstrings(arrayStringConcat(groupArray(explain), char(10)),
                     'ARRAY JOIN ')
@@ -178,6 +191,7 @@ FROM (
         INNER JOIN right_arrjoin AS R
         ON arrayJoin(L.tag_ids) = arrayJoin(R.arr)
         WHERE L.filter_key = 'target' AND R.filter_key = 'rtarget'
+        SETTINGS query_plan_use_new_logical_join_step = 1
 );
 
 DROP TABLE items_arrjoin;

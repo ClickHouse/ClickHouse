@@ -34,7 +34,6 @@ function as_user()
 as_user "SELECT dictHas('${remote_db}.t', toUInt64(1))"
 as_user "SELECT dictGet('${remote_db}.t', 'value', toUInt64(1))"
 as_user "SELECT dictGet(${remote_db}.t, 'value', toUInt64(1))"
-as_user "SELECT naiveBayesClassifier('${remote_db}.t', 'good')"
 as_user "SELECT * FROM dictionary('${remote_db}.t')"
 
 ${CLICKHOUSE_CLIENT} -m --query "

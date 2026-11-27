@@ -14,7 +14,7 @@ protected:
     const char * end;
     bool allow_settings_after_format_in_insert;
 
-    [[nodiscard]] const char * getName() const override { return "Query with output"; }
+    const char * getName() const override { return "Query with output"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:
@@ -22,8 +22,6 @@ public:
         : end(end_)
         , allow_settings_after_format_in_insert(allow_settings_after_format_in_insert_)
     {}
-
-    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
 };
 
 }

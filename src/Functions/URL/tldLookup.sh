@@ -9,10 +9,10 @@ echo '%language=C++
 %includes
 %compare-strncmp
 %{
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-fallthrough"
-#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#pragma clang diagnostic ignored "-Wunused-macros"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
+#pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
+#pragma GCC diagnostic ignored "-Wunused-macros"
 // NOLINTBEGIN(modernize-macro-to-enum)
 %}
 # List generated using https://publicsuffix.org/list/public_suffix_list.dat

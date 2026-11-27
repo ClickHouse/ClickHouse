@@ -1,23 +1,34 @@
 #pragma once
 
 #include <cstring>
-#include <limits>
 #include <memory>
 #include <vector>
 #include <Core/Defines.h>
 #include <boost/noncopyable.hpp>
 #include <Common/Allocator.h>
+#include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/memcpySmall.h>
 #include <base/getPageSize.h>
-#include <base/arithmeticOverflow.h>
 
 #if __has_include(<sanitizer/asan_interface.h>) && defined(ADDRESS_SANITIZER)
 #   include <sanitizer/asan_interface.h>
 #endif
 
 
+namespace ProfileEvents
+{
+    extern const Event ArenaAllocChunks;
+    extern const Event ArenaAllocBytes;
+}
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_ALLOCATE_MEMORY;
+}
 
 
 /** Memory pool to append something. For example, short strings.
@@ -63,7 +74,17 @@ private:
             return *this;
         }
 
-        explicit MemoryChunk(size_t size_);
+        explicit MemoryChunk(size_t size_)
+        {
+            ProfileEvents::increment(ProfileEvents::ArenaAllocChunks);
+            ProfileEvents::increment(ProfileEvents::ArenaAllocBytes, size_);
+
+            begin = reinterpret_cast<char *>(Allocator<false>::alloc(size_));
+            pos = begin;
+            end = begin + size_ - pad_right;
+
+            ASAN_POISON_MEMORY_REGION(begin, size_);
+        }
 
         ~MemoryChunk()
         {
@@ -79,9 +100,9 @@ private:
             Allocator<false>::free(begin, size());
         }
 
-        [[nodiscard]] bool empty() const { return begin == end;}
-        [[nodiscard]] size_t size() const { return end + pad_right - begin; }
-        [[nodiscard]] size_t remaining() const { return end - pos; }
+        bool empty() const { return begin == end;}
+        size_t size() const { return end + pad_right - begin; }
+        size_t remaining() const { return end - pos; }
     };
 
     size_t initial_size;
@@ -94,43 +115,47 @@ private:
     size_t used_bytes = 0;
     size_t page_size;
 
-    template <typename Size>
-    static Size roundUpToPageSize(Size s, size_t page_size)
+    static size_t roundUpToPageSize(size_t s, size_t page_size)
     {
         return (s + page_size - 1) / page_size * page_size;
     }
 
-    /// Uses exponential buffer growth below `linear_growth_threshold` and linear growth above it
-    /// to limit unused capacity.
-    template <typename Size>
-    [[nodiscard]] Size nextSize(Size min_next_size) const
+    /// If MemoryChunks size is less than 'linear_growth_threshold', then use exponential growth, otherwise - linear growth
+    ///  (to not allocate too much excessive memory).
+    size_t nextSize(size_t min_next_size) const
     {
-        Size size_after_grow = 0;
+        size_t size_after_grow = 0;
 
         if (head.empty())
         {
-            size_after_grow = std::max<Size>(min_next_size, initial_size);
+            size_after_grow = std::max(min_next_size, initial_size);
         }
         else if (head.size() < linear_growth_threshold)
         {
-            size_after_grow = std::max(min_next_size, Size(head.size()) * growth_factor);
+            size_after_grow = std::max(min_next_size, head.size() * growth_factor);
         }
         else
         {
-            /// With `allocContinue`, appending small amounts can repeatedly copy the accumulated data
-            /// into a new `MemoryChunk`. Growing by similarly small amounts would make the number of
-            /// copies proportional to the serialized size, resulting in quadratic work. Rounding the
-            /// next size up to `linear_growth_threshold` makes these copies less frequent.
+            // allocContinue() combined with linear growth results in quadratic
+            // behavior: we append the data by small amounts, and when it
+            // doesn't fit, we create a new MemoryChunk and copy all the previous data
+            // into it. The number of times we do this is directly proportional
+            // to the total size of data that is going to be serialized. To make
+            // the copying happen less often, round the next size up to the
+            // linear_growth_threshold.
             size_after_grow = ((min_next_size + linear_growth_threshold - 1)
                     / linear_growth_threshold) * linear_growth_threshold;
         }
 
-        chassert(size_after_grow >= min_next_size);
+        assert(size_after_grow >= min_next_size);
         return roundUpToPageSize(size_after_grow, page_size);
     }
 
     /// The size of an allocation can come from the data, so it is rejected instead of wrapping around.
-    [[noreturn]] static void throwTooLargeAllocation(size_t size);
+    [[noreturn]] static void throwTooLargeAllocation(size_t size)
+    {
+        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Too large allocation of {} bytes in Arena", size);
+    }
 
     /// Add next contiguous MemoryChunk of memory with size not less than specified.
     void NO_INLINE addMemoryChunk(size_t min_size, size_t alignment = 0)
@@ -169,57 +194,14 @@ public:
     {
     }
 
-    /// Bounds additional memory for `num_allocations` calls to `alloc` requesting `total_bytes` in total.
-    /// Includes buffers and metadata without inspecting individual allocation sizes or changing the arena.
-    /// Saturates at the maximum of `size_t` when the bound is not representable.
-    [[nodiscard]] size_t estimateGrowthMemory(size_t num_allocations, size_t total_bytes) const noexcept
-    {
-        if (num_allocations == 0 || (!head.empty() && total_bytes <= head.remaining()))
-            return 0;
-
-        /// The total covers multiple allocations, so its hypothetical buffer can exceed the allocation
-        /// limit. Wider arithmetic preserves the sizing calculation until the estimate is saturated.
-        constexpr size_t max_size = std::numeric_limits<size_t>::max();
-        const UInt128 next_chunk_size = nextSize(UInt128(total_bytes) + pad_right);
-        if (next_chunk_size > max_size)
-            return max_size;
-
-        const size_t max_next_chunk_size = static_cast<size_t>(next_chunk_size);
-        /// If the smallest possible next buffer can hold the entire payload, no second buffer is needed.
-        if (num_allocations == 1 || total_bytes <= nextSize(UInt128(pad_right)) - pad_right)
-            return max_next_chunk_size + (head.empty() ? 0 : sizeof(MemoryChunk));
-
-        /// Each abandoned tail is smaller than the allocation that did not fit. Therefore the usable
-        /// capacity of all new buffers except the last is less than twice the requested bytes.
-        /// Each buffer has at least one page, which also bounds the padding and metadata overhead.
-        size_t twice_total_bytes = 0;
-        if (common::mulOverflow(total_bytes, size_t(2), twice_total_bytes))
-            return max_size;
-        const size_t max_chunks = std::min(num_allocations, twice_total_bytes / (page_size - pad_right) + 1);
-
-        /// A new buffer able to hold the entire payload must be the last. Its predecessor is therefore
-        /// smaller than `total_bytes + pad_right`. Geometric growth can multiply that by `growth_factor`;
-        /// linear rounding can at most double it. `max_next_chunk_size` also covers the first allocation.
-        size_t buffer_bytes = 0;
-        size_t overhead_bytes = 0;
-        if (common::mulOverflow(std::max(growth_factor, size_t(2)), max_next_chunk_size, buffer_bytes)
-            || common::mulOverflow(max_chunks, pad_right + sizeof(MemoryChunk), overhead_bytes)
-            || common::addOverflow(buffer_bytes, twice_total_bytes, buffer_bytes)
-            || common::addOverflow(buffer_bytes, overhead_bytes, buffer_bytes))
-            return max_size;
-        return buffer_bytes;
-    }
-
     /// Get piece of memory, without alignment.
     /// Note: we expect it will return a non-nullptr even if the size is zero.
     char * alloc(size_t size)
     {
-        /// Counted only once the memory is there: `addMemoryChunk` throws for a size it cannot
-        /// serve, and a count bumped before that would stay wrong for the life of the arena.
+        used_bytes += size;
         if (unlikely(head.empty() || size > head.remaining()))
             addMemoryChunk(size);
 
-        used_bytes += size;
         char * res = head.pos;
         head.pos += size;
         ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
@@ -229,6 +211,7 @@ public:
     /// Get piece of memory with alignment
     char * alignedAlloc(size_t size, size_t alignment)
     {
+        used_bytes += size;
         if (unlikely(head.empty() || size > head.remaining()))
             addMemoryChunk(size, alignment);
 
@@ -242,7 +225,6 @@ public:
             {
                 head.pos = static_cast<char *>(head_pos);
                 head.pos += size;
-                used_bytes += size;
                 ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
                 return res;
             }
@@ -289,7 +271,7 @@ public:
           * range might break the invariant that the range begins at least before
           * the current MemoryChunk end.
           */
-        chassert(additional_bytes > 0);
+        assert(additional_bytes > 0);
 
         if (!range_start)
         {
@@ -307,8 +289,8 @@ public:
         // This method only works for extending the last allocation. For lack of
         // original size, check a weaker condition: that 'begin' is at least in
         // the current MemoryChunk.
-        chassert(range_start >= head.begin);
-        chassert(range_start < head.end);
+        assert(range_start >= head.begin);
+        assert(range_start < head.end);
 
         if (head.pos + additional_bytes <= head.end)
         {
@@ -380,15 +362,15 @@ public:
     }
 
     /// Size of all MemoryChunks in bytes.
-    [[nodiscard]] size_t allocatedBytes() const { return allocated_bytes; }
+    size_t allocatedBytes() const { return allocated_bytes; }
 
     /// Total space actually used (not counting padding or space unused by caller allocations) in all MemoryChunks in bytes.
-    [[nodiscard]] size_t usedBytes() const { return used_bytes; }
+    size_t usedBytes() const { return used_bytes; }
 
     /// Bad method, don't use it -- the MemoryChunks are not your business, the entire
     /// purpose of the arena code is to manage them for you, so if you find
     /// yourself having to use this method, probably you're doing something wrong.
-    [[nodiscard]] size_t remainingSpaceInCurrentMemoryChunk() const
+    size_t remainingSpaceInCurrentMemoryChunk() const
     {
         return head.remaining();
     }

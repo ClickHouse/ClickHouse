@@ -18,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
-    extern const int CANNOT_RMDIR;
 }
 
 namespace
@@ -217,20 +216,17 @@ void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::str
 
 void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std::string & path)
 {
-    if (metadata_storage.iterateDirectory(path)->isValid())
-        throw Exception(ErrorCodes::CANNOT_RMDIR, "Cannot remove non-empty directory {} on {}", path, object_storage->getName());
-}
-
-void MetadataStorageFromPlainObjectStorageTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects)
-{
     for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
     {
-        const auto & child = it->path();
-        if (metadata_storage.existsFile(child))
-            unlinkFile(child, /*if_exists=*/true, /*should_remove_objects=*/true);
-        else
-            removeRecursive(child, should_remove_objects);
+        metadata_storage.object_storage->removeObjectIfExists(StoredObject(it->path()));
+        objects_to_remove.push_back(StoredObject(it->path()));
     }
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & /*should_remove_objects*/)
+{
+    /// TODO: Implement recursive listing.
+    removeDirectory(path);
 }
 
 ObjectStorageKey MetadataStorageFromPlainObjectStorageTransaction::generateObjectKeyForPath(const std::string & path)

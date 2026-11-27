@@ -1,8 +1,0 @@
-<clickhouse>
-    <profiles>
-        <!-- Background operations (merges, mutations) take their settings from this profile: `background_profile` defaults to `background`. -->
-        <background>
-            <custom_background_profile_marker>'background'</custom_background_profile_marker>
-        </background>
-    </profiles>
-</clickhouse>

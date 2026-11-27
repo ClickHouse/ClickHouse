@@ -1,13 +1,10 @@
 #pragma once
 
-#include <unordered_map>
-
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/RowsBeforeStepCounter.h>
-#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -33,7 +30,6 @@ private:
 
     bool with_ties;
     const SortDescription description;
-    bool is_shard_limit = false;
 
     Chunk previous_row_chunk;  /// for WITH TIES, contains only sort columns
     std::vector<size_t> sort_column_positions;
@@ -58,8 +54,6 @@ private:
     };
 
     std::vector<PortsData> ports_data;
-    std::unordered_map<const InputPort *, PortsData *> input_port_to_data;
-    std::unordered_map<const OutputPort *, PortsData *> output_port_to_data;
     size_t num_finished_port_pairs = 0;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
@@ -81,17 +75,13 @@ public:
 
     String getName() const override { return "Limit"; }
 
-    Status prepare(const UpdatedInputPorts & /*updated_input_ports*/, const UpdatedOutputPorts & /*updated_output_ports*/) override;
+    Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
     Status prepare() override; /// Compatibility for TreeExecutor.
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     Status preparePair(PortsData & data);
     void splitChunk(PortsData & data);
 
     InputPort & getInputPort() { return inputs.front(); }
     OutputPort & getOutputPort() { return outputs.front(); }
-
-    void markAsShardLimit() { is_shard_limit = true; }
-    bool isShardLimit() const { return is_shard_limit; }
 
     void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit_at_least.swap(counter); }
     void setInputPortHasCounter(size_t pos) { ports_data[pos].input_port_has_counter = true; }

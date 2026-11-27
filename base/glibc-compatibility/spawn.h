@@ -9,13 +9,10 @@ extern "C" {
 #include <sys/types.h>
 #include <bits/types/sigset_t.h>
 
-#define POSIX_SPAWN_RESETIDS		0x01
-#define POSIX_SPAWN_SETPGROUP		0x02
-#define POSIX_SPAWN_SETSIGDEF		0x04
 #define POSIX_SPAWN_SETSIGMASK		0x08
 
 typedef struct {
-	short int __flags;
+	int __flags;
 	pid_t __pgrp;
 	sigset_t __sd;
 	sigset_t __ss;

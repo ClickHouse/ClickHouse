@@ -80,22 +80,22 @@ public:
 
     TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }
 
-    Field getDefault() const final;
-    MutableColumnPtr createColumn() const final;
+    Field getDefault() const override;
+    MutableColumnPtr createColumn() const override;
 
-    bool isParametric() const final { return true; }
-    bool haveSubtypes() const final { return false; }
-    bool shouldAlignRightInPrettyFormats() const final { return true; }
-    bool textCanContainOnlyValidUTF8() const final { return true; }
-    bool isComparable() const final { return true; }
-    bool isValueRepresentedByNumber() const final { return true; }
-    bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const final { return true; }
-    bool haveMaximumSizeOfValue() const final { return true; }
-    size_t getSizeOfValueInMemory() const final { return sizeof(T); }
+    bool isParametric() const override { return true; }
+    bool haveSubtypes() const override { return false; }
+    bool shouldAlignRightInPrettyFormats() const override { return true; }
+    bool textCanContainOnlyValidUTF8() const override { return true; }
+    bool isComparable() const override { return true; }
+    bool isValueRepresentedByNumber() const override { return true; }
+    bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
+    bool haveMaximumSizeOfValue() const override { return true; }
+    size_t getSizeOfValueInMemory() const override { return sizeof(T); }
 
     bool isSummable() const override { return true; }
-    bool canBeUsedInBooleanContext() const final { return false; }
-    bool canBeInsideNullable() const final { return true; }
+    bool canBeUsedInBooleanContext() const override { return false; }
+    bool canBeInsideNullable() const override { return true; }
 
     /// Decimal specific
 

@@ -62,9 +62,11 @@ function status()
     query "SELECT status FROM system.dictionaries WHERE database = currentDatabase() AND name = 'd'"
 }
 
+# Reattaching the dictionary resets its state to not loaded. Tables that depend on it would block a permanent detach.
 function unload()
 {
-    query "SYSTEM UNLOAD DICTIONARY d"
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&check_table_dependencies=0" --data-binary "DETACH DICTIONARY ${1:-d}"
+    query "ATTACH DICTIONARY ${1:-d}"
 }
 
 # Runs a query as the user, with the given extra URL parameters.
@@ -82,9 +84,12 @@ function as_user()
 }
 
 echo "--- ON CLUSTER"
-unload
-as_user "CREATE TABLE ${cluster_db}.w_default ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary(${CLICKHOUSE_DATABASE}.d)"
-status
+for version in 1 2 ""
+do
+    unload
+    as_user "CREATE TABLE ${cluster_db}.w_${version:-default} ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary(${CLICKHOUSE_DATABASE}.d)" "${version:+&distributed_ddl_entry_format_version=${version}}"
+    status
+done
 
 echo "--- inner table of a materialized view"
 unload
@@ -97,12 +102,12 @@ as_user "CREATE TABLE w_function (id UInt64, value String) AS dictionary('${CLIC
 status
 query "EXISTS TABLE w_function"
 unload
-as_user "CREATE TABLE ${cluster_db}.w_function ON CLUSTER test_shard_localhost (id UInt64, value String) AS dictionary('${CLICKHOUSE_DATABASE}.d')"
+as_user "CREATE TABLE ${cluster_db}.w_function ON CLUSTER test_shard_localhost (id UInt64, value String) AS dictionary('${CLICKHOUSE_DATABASE}.d')" "&distributed_ddl_entry_format_version=2"
 status
 query "EXISTS TABLE ${cluster_db}.w_function"
 
 echo "--- unqualified name, resolved by ON CLUSTER in the default database of the server"
-query "SYSTEM UNLOAD DICTIONARY default.${unqualified}"
+unload "default.${unqualified}"
 as_user "CREATE TABLE ${cluster_db}.w_unqualified ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary('${unqualified}')"
 query "SELECT status FROM system.dictionaries WHERE database = 'default' AND name = '${unqualified}'"
 

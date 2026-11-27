@@ -1,7 +1,12 @@
 #include <Common/Scheduler/Workload/WorkloadEntityKeeperStorage.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTCreateWorkloadQuery.h>
+#include <Parsers/ASTCreateResourceQuery.h>
+#include <Parsers/ParserCreateWorkloadEntity.h>
+#include <Parsers/parseQuery.h>
 #include <base/sleep.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
@@ -9,13 +14,7 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-#include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
-
-namespace ProfileEvents
-{
-    extern const Event ZooKeeperWatchTriggeredWorkloadEntity;
-}
 
 namespace DB
 {
@@ -28,6 +27,7 @@ extern const SettingsUInt64 max_parser_depth;
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 WorkloadEntityKeeperStorage::WorkloadEntityKeeperStorage(
@@ -183,7 +183,7 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::storeEnt
     if (current_version != validated_version)
         return OperationResult::Retry; /// A new session has refreshed the entities, so the caller's validation is stale
 
-    String new_data = serializeOwnEntities(Event{entity_type, entity_name, create_entity_query});
+    String new_data = serializeLocalEntities(Event{entity_type, entity_name, create_entity_query});
 
     Coordination::Stat stat;
     auto code = zookeeper->trySet(zookeeper_path, new_data, current_version, &stat);
@@ -215,7 +215,7 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::removeEn
     if (current_version != validated_version)
         return OperationResult::Retry; /// A new session has refreshed the entities, so the caller's validation is stale
 
-    String new_data = serializeOwnEntities(Event{entity_type, entity_name, {}});
+    String new_data = serializeLocalEntities(Event{entity_type, entity_name, {}});
 
     Coordination::Stat stat;
     auto code = zookeeper->trySet(zookeeper_path, new_data, current_version, &stat);
@@ -236,12 +236,11 @@ std::pair<String, Int32> WorkloadEntityKeeperStorage::getDataAndSetWatch(const z
 {
     Coordination::Stat stat;
     String data;
-    Coordination::WatchCallbackPtrOrEventPtr labelled_watch{zookeeper_watch, ProfileEvents::ZooKeeperWatchTriggeredWorkloadEntity};
-    bool exists = zookeeper->tryGetWatch(zookeeper_path, data, &stat, labelled_watch);
+    bool exists = zookeeper->tryGetWatch(zookeeper_path, data, &stat, zookeeper_watch);
     if (!exists)
     {
         createRootNodes(zookeeper);
-        data = zookeeper->getWatch(zookeeper_path, &stat, labelled_watch);
+        data = zookeeper->getWatch(zookeeper_path, &stat, zookeeper_watch);
     }
     return {data, stat.version};
 }
@@ -253,7 +252,32 @@ void WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & z
         return;
 
     LOG_DEBUG(log, "Refreshing workload entities from keeper");
-    setOwnEntities(parseEntitiesFromString(data, log));
+    ASTs queries;
+    ParserCreateWorkloadEntity parser;
+    const char * begin = data.data(); /// begin of current query
+    const char * pos = begin; /// parser moves pos from begin to the end of current query
+    const char * end = begin + data.size();
+    while (pos < end)
+    {
+        queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
+        while (isWhitespaceASCII(*pos) || *pos == ';')
+            ++pos;
+    }
+
+    /// Read and parse all SQL entities from data we just read from ZooKeeper
+    std::vector<std::pair<String, ASTPtr>> new_entities;
+    for (const auto & query : queries)
+    {
+        LOG_TRACE(log, "Read keeper entity definition: {}", query->formatForLogging());
+        if (auto * create_workload_query = query->as<ASTCreateWorkloadQuery>())
+            new_entities.emplace_back(create_workload_query->getWorkloadName(), query);
+        else if (auto * create_resource_query = query->as<ASTCreateResourceQuery>())
+            new_entities.emplace_back(create_resource_query->getResourceName(), query);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid workload entity query in keeper storage: {}", query->getID());
+    }
+
+    setLocalEntities(new_entities);
     current_version = version;
 
     LOG_DEBUG(log, "Workload entities refreshing is done");

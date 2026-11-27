@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/ListNode.h>
 
@@ -16,14 +15,14 @@ namespace DB
 class InterpolateNode;
 using InterpolateNodePtr = std::shared_ptr<InterpolateNode>;
 
-class InterpolateNode final : public ITableExpressionNode
+class InterpolateNode final : public IQueryTreeNode
 {
 public:
     /// Initialize interpolate node with expression and interpolate expression
     explicit InterpolateNode(std::shared_ptr<IdentifierNode> expression_, QueryTreeNodePtr interpolate_expression_);
 
     /// Get expression to interpolate
-    [[nodiscard]] const QueryTreeNodePtr & getExpression() const
+    const QueryTreeNodePtr & getExpression() const
     {
         return children[expression_child_index];
     }
@@ -35,7 +34,7 @@ public:
     }
 
     /// Get interpolate expression
-    [[nodiscard]] const QueryTreeNodePtr & getInterpolateExpression() const
+    const QueryTreeNodePtr & getInterpolateExpression() const
     {
         return children[interpolate_expression_child_index];
     }
@@ -46,23 +45,23 @@ public:
         return children[interpolate_expression_child_index];
     }
 
-    [[nodiscard]] QueryTreeNodeType getNodeType() const override
+    QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::INTERPOLATE;
     }
 
-    [[nodiscard]] const std::string & getExpressionName() const { return expression_name; }
+    const std::string & getExpressionName() const { return expression_name; }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState & hash_state, CompareOptions) const override;
 
-    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
+    QueryTreeNodePtr cloneImpl() const override;
 
-    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
     /// Initial name from column identifier.
     std::string expression_name;

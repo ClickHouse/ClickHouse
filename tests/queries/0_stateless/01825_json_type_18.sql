@@ -1,5 +1,7 @@
 -- Tags: no-fasttest
 
+SET enable_json_type = 1;
+
 DROP TABLE IF EXISTS t_json_2;
 
 CREATE TABLE t_json_2(id UInt64, data JSON)

@@ -20,9 +20,4 @@ public:
     void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 };
 
-/// Whether `DisableParallelReplicasPass` would turn parallel replicas off in every query and union of the tree,
-/// which leaves the planner nothing to read with them. A storage other than `MergeTree` is opaque to the tree,
-/// so it counts as possibly reading with them. Does not change the tree.
-bool disablesParallelReplicasInWholeTree(const QueryTreeNodePtr & query_tree_node);
-
 }

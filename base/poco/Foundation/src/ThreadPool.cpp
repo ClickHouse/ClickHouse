@@ -20,9 +20,7 @@
 #include "Poco/ErrorHandler.h"
 #include <sstream>
 #include <ctime>
-
-#include <base/defines.h>
-#include <Common/ThreadStatus.h>
+#include <Common/ThreadPool.h>
 
 
 namespace Poco {
@@ -45,7 +43,7 @@ public:
 	int idleTime();
 	void join();
 	void activate();
-	bool release();
+	void release();
 	void run();
 
 private:
@@ -167,7 +165,7 @@ void PooledThread::activate()
 }
 
 
-bool PooledThread::release()
+void PooledThread::release()
 {
 	const long JOIN_TIMEOUT = 10000;
 
@@ -180,10 +178,10 @@ bool PooledThread::release()
 	if (_thread.isRunning())
 		_targetReady.set();
 
-	if (!_thread.tryJoin(JOIN_TIMEOUT))
-		return false;
-	delete this;
-	return true;
+	if (_thread.tryJoin(JOIN_TIMEOUT))
+	{
+		delete this;
+	}
 }
 
 
@@ -387,11 +385,6 @@ void ThreadPool::stopAll()
 		(*it)->release();
 	}
 	_threads.clear();
-	for (ThreadVec::iterator it = _retiredThreads.begin(); it != _retiredThreads.end(); ++it)
-	{
-		(*it)->release();
-	}
-	_retiredThreads.clear();
 }
 
 
@@ -441,7 +434,6 @@ void ThreadPool::housekeep()
 	int limit = (int) idleThreads.size() + n;
 	if (limit < _minCapacity) limit = _minCapacity;
 	idleThreads.insert(idleThreads.end(), expiredThreads.begin(), expiredThreads.end());
-	_retiredThreads.reserve(_retiredThreads.size() + expiredThreads.size());
 	_threads.clear();
 	for (ThreadVec::iterator it = idleThreads.begin(); it != idleThreads.end(); ++it)
 	{
@@ -450,8 +442,7 @@ void ThreadPool::housekeep()
 			_threads.push_back(*it);
 			++n;
 		}
-		else if (!(*it)->release())
-			_retiredThreads.push_back(*it);
+		else (*it)->release();
 	}
 	_threads.insert(_threads.end(), activeThreads.begin(), activeThreads.end());
 }

@@ -68,17 +68,3 @@ materialized_int_to_dec38_30:jit	1.5
 materialized_int_to_dec38_30:no_jit	1.5
 multirow_multiif:jit	['1','2','3','5.5','5.5']
 multirow_multiif:no_jit	['1','2','3','5.5','5.5']
-multiif_mixed_scales:jit	1.5
-multiif_mixed_scales:jit	2.5
-multiif_mixed_scales:jit	3.5
-multiif_mixed_scales:no_jit	1.5
-multiif_mixed_scales:no_jit	2.5
-multiif_mixed_scales:no_jit	3.5
-multiif_mixed_scales_dec128:jit	-1.5
-multiif_mixed_scales_dec128:jit	3.5
-multiif_mixed_scales_dec128:jit	2.5
-multiif_mixed_scales_dec128:no_jit	-1.5
-multiif_mixed_scales_dec128:no_jit	3.5
-multiif_mixed_scales_dec128:no_jit	2.5
-04205_mixed_scales	1
-04205_mixed_scales_dec128	1

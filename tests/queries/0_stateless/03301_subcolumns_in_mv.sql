@@ -1,3 +1,4 @@
+set enable_json_type = 1;
 drop table if exists src;
 drop table if exists dst;
 drop view if exists view;

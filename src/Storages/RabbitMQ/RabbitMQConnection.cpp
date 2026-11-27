@@ -1,6 +1,5 @@
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
 
-#include <amqpcpp.h>
 #include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 
@@ -21,11 +20,6 @@ RabbitMQConnection::RabbitMQConnection(const RabbitMQConfiguration & configurati
 
 String RabbitMQConnection::connectionInfoForLog() const
 {
-    if (!configuration.connection_string.empty())
-    {
-        AMQP::Address address(String(configuration.connection_string));
-        return address.hostname() + ":" + toString(address.port());
-    }
     return configuration.host + ':' + toString(configuration.port);
 }
 
@@ -94,13 +88,13 @@ void RabbitMQConnection::connectImpl()
     if (configuration.connection_string.empty())
     {
         LOG_DEBUG(log, "Connecting to: {}:{} (user: {})", configuration.host, configuration.port, configuration.username);
-        AMQP::Login login(configuration.username, String(configuration.password));
+        AMQP::Login login(configuration.username, configuration.password);
         AMQP::Address address(configuration.host, configuration.port, login, configuration.vhost, configuration.secure);
         connection = std::make_unique<AMQP::TcpConnection>(&event_handler, address);
     }
     else
     {
-        AMQP::Address address(String(configuration.connection_string));
+        AMQP::Address address(configuration.connection_string);
         connection = std::make_unique<AMQP::TcpConnection>(&event_handler, address);
     }
 

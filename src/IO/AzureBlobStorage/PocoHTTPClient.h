@@ -47,11 +47,6 @@ struct PocoAzureHTTPClientConfiguration
     UInt64 http_max_fields = 1000000;
     UInt64 http_max_field_name_size = 128 * 1024;
     UInt64 http_max_field_value_size = 128 * 1024;
-
-    /// Whether the requests sent by this client are the ones `system.blob_storage_log` logs, so they
-    /// may publish their connection to it. False for the transport that only carries the token
-    /// requests of the SDK's credentials, see `HTTPConnectionInfoHelperRequests`.
-    bool publish_connection_info = true;
 };
 
 /// ClickHouse "native" HTTP client for Azure Blob Storage, based on Poco HTTP client.
@@ -73,8 +68,8 @@ public:
     /// caller (buffer) to this low-level class
     static const Azure::Core::Context::Key & getSDKContextKeyForBufferRetry();
 
-    [[nodiscard]] ThrottlerPtr getThrottler() const { return request_throttler.get_throttler; }
-    [[nodiscard]] ThrottlerPtr putThrottler() const { return request_throttler.put_throttler; }
+    ThrottlerPtr getThrottler() const { return request_throttler.get_throttler; }
+    ThrottlerPtr putThrottler() const { return request_throttler.put_throttler; }
 
 private:
     enum class AzureMetricType : uint8_t
@@ -103,18 +98,18 @@ private:
         EnumSize,
     };
 
-    [[nodiscard]] AzureMetricKind getMetricKind(const std::string & method) const;
+    AzureMetricKind getMetricKind(const std::string & method) const;
 
     std::unique_ptr<Azure::Core::Http::RawResponse> makeRequestInternalImpl(
         Azure::Core::Http::Request & request,
         const Azure::Core::Context & context,
         size_t redirects_left);
 
-    [[nodiscard]] ConnectionTimeouts getTimeouts(const std::string & method, bool first_attempt, bool first_byte) const;
+    ConnectionTimeouts getTimeouts(const std::string & method, bool first_attempt, bool first_byte) const;
 
-    [[nodiscard]] AzureLatencyType getByteLatencyType(size_t sdk_attempt, size_t ch_attempt) const;
+    AzureLatencyType getByteLatencyType(size_t sdk_attempt, size_t ch_attempt) const;
     void addMetric(const std::string & method, AzureMetricType type, ProfileEvents::Count amount = 1) const;
-    void observeLatency(const std::string & method, AzureLatencyType type, HistogramMetrics::Value latency) const;
+    void observeLatency(const std::string & method, AzureLatencyType type, HistogramMetrics::Value latency = 1) const;
 
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
@@ -124,7 +119,6 @@ private:
     const UInt64 http_max_field_name_size;
     const UInt64 http_max_field_value_size;
     bool for_disk_azure = false;
-    bool publish_connection_info = true;
 
     HTTPRequestThrottler request_throttler;
 

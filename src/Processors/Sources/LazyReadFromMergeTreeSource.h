@@ -1,13 +1,9 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/ListWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <unordered_map>
 
 namespace DB
 {
@@ -38,8 +34,8 @@ public:
     ~LazyReadFromMergeTreeSource() override;
 
     String getName() const override { return "LazyReadFromMergeTreeSource"; }
-    Status prepare(const UpdatedInputPorts & updated_input_ports, const UpdatedOutputPorts & /*updated_output_ports*/) override;
-    PipelineUpdate updatePipeline() override;
+    Status prepare(const PortNumbers & updated_input_ports, const PortNumbers & /*updated_output_ports*/) override;
+    Processors expandPipeline() override;
 
 private:
     size_t max_block_size;
@@ -54,8 +50,7 @@ private:
     const std::string log_name;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
-    VectorWithMemoryTracking<ListWithMemoryTracking<Chunk>> chunks;
-    UnorderedMapWithMemoryTracking<const InputPort *, size_t> input_port_to_index;
+    std::vector<std::list<Chunk>> chunks;
     size_t next_chunk_to_process = 0;
     InputPorts::iterator next_input_to_process;
 

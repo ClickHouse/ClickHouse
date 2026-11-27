@@ -33,12 +33,12 @@ public:
         }
     }
 
-    [[nodiscard]] QueryProcessingStage::Enum getFromStage() const
+    QueryProcessingStage::Enum getFromStage() const
     {
         return from_stage;
     }
 
-    [[nodiscard]] QueryProcessingStage::Enum getToStage() const
+    QueryProcessingStage::Enum getToStage() const
     {
         return to_stage;
     }
@@ -50,7 +50,7 @@ public:
       * only one remote server, it is equal to local query in terms of query
       * stages (or when due to optimize_distributed_group_by_sharding_key the query was processed up to Complete stage).
       */
-    [[nodiscard]] bool isFirstStage() const
+    bool isFirstStage() const
     {
         return from_stage < QueryProcessingStage::WithMergeableState
             && to_stage >= QueryProcessingStage::WithMergeableState;
@@ -63,31 +63,23 @@ public:
       * the query on the remote server will be processed up to WithMergeableStateAfterAggregationAndLimit,
       * So it will do partial second stage (second_stage=true), and initiator will do the final part.
       */
-    [[nodiscard]] bool isSecondStage() const
+    bool isSecondStage() const
     {
         return from_stage <= QueryProcessingStage::WithMergeableState
             && to_stage > QueryProcessingStage::WithMergeableState;
     }
 
-    [[nodiscard]] bool isIntermediateStage() const
+    bool isIntermediateStage() const
     {
         return from_stage == QueryProcessingStage::WithMergeableState && to_stage == QueryProcessingStage::WithMergeableState;
     }
 
-    [[nodiscard]] bool isToAggregationState() const
+    bool isToAggregationState() const
     {
         return to_stage >= QueryProcessingStage::WithMergeableStateAfterAggregation;
     }
 
-    /** Whether this node produces the complete result (not a mergeable state to be merged further),
-      * so it may apply operators that must run once over the whole merged input, e.g. WITH FILL.
-      */
-    [[nodiscard]] bool isFinalizingStage() const
-    {
-        return to_stage == QueryProcessingStage::Complete;
-    }
-
-    [[nodiscard]] bool isFromAggregationState() const
+    bool isFromAggregationState() const
     {
         return from_stage >= QueryProcessingStage::WithMergeableStateAfterAggregation;
     }

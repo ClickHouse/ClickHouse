@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Processors/Formats/Impl/ORC/Stream.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <memory>
+#include <vector>
 
 /// Run-length encodings of ORC: https://orc.apache.org/specification/ORCv1/#run-length-encoding
 ///
@@ -82,7 +82,7 @@ public:
     explicit ByteRleEncoder(OutputByteStream & stream_) : stream(stream_) {}
 
     void write(char value);
-    void recordPosition(VectorWithMemoryTracking<UInt64> & positions) const;
+    void recordPosition(std::vector<UInt64> & positions) const;
     /// Writes out the buffered values.
     void flush();
 
@@ -106,7 +106,7 @@ public:
     explicit BooleanRleEncoder(OutputByteStream & stream_) : byte_encoder(stream_) {}
 
     void write(bool value);
-    void recordPosition(VectorWithMemoryTracking<UInt64> & positions) const;
+    void recordPosition(std::vector<UInt64> & positions) const;
     void flush();
 
 private:
@@ -128,7 +128,7 @@ public:
             flush();
     }
 
-    void recordPosition(VectorWithMemoryTracking<UInt64> & positions) const;
+    void recordPosition(std::vector<UInt64> & positions) const;
     /// Writes out the buffered values.
     void flush();
 

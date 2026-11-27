@@ -1,16 +1,10 @@
-#include "config.h"
-
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#if CLICKHOUSE_CLOUD
-#include <Storages/SharedMergeTree/MergeMutateIntention.h>
-#endif
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
@@ -120,7 +114,12 @@ UnpackedPartSegments unpackPartName(std::string_view data)
     return unpacked;
 }
 
-class FunctionMergeTreePartCoverage final : public IFunction
+bool isAnyStringType(const IDataType & data_type)
+{
+    return isStringOrFixedString(removeLowCardinality(data_type.getPtr()));
+}
+
+class FunctionMergeTreePartCoverage : public IFunction
 {
     static MergeTreePartInfo constructCoveringPart(const ColumnPtr & covering_column, size_t row_number)
     {
@@ -132,22 +131,26 @@ class FunctionMergeTreePartCoverage final : public IFunction
 
 public:
     static constexpr auto name = "isMergeTreePartCoveredBy";
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMergeTreePartCoverage>(); }
 
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForSparseColumns() const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForSparseColumns() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    size_t getNumberOfArguments() const override { return 2; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(StringOrFixedString | LowCardinality(StringOrFixedString), "
-               "StringOrFixedString | LowCardinality(StringOrFixedString)) -> UInt8";
+        validateFunctionArguments(*this, arguments, FunctionArgumentDescriptors{
+            {"nested_part", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isAnyStringType), nullptr, "String or FixedString or LowCardinality String"},
+            {"covering_part", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isAnyStringType), nullptr, "String or FixedString or LowCardinality String"}
+        });
+
+        return std::make_shared<DataTypeUInt8>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto result_column = ColumnUInt8::create();
         const ColumnPtr & input_column = arguments.front().column;
@@ -163,28 +166,49 @@ public:
     }
 };
 
-class FunctionMergeTreePartInfo final : public IFunction
+class FunctionMergeTreePartInfo : public IFunction
 {
 public:
     static constexpr auto name = "mergeTreePartInfo";
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMergeTreePartInfo>(); }
 
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForSparseColumns() const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForSparseColumns() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return
-            "(StringOrFixedString | LowCardinality(StringOrFixedString)) -> "
-            "Tuple(partition_id String, prefix String, suffix String, "
-            "min_block Int64, max_block Int64, level Int64, mutation Int64)";
+        validateFunctionArguments(*this, arguments, FunctionArgumentDescriptors{
+            {"part_name", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isAnyStringType), nullptr, "String or FixedString or LowCardinality String"}
+        });
+
+        DataTypes types = {
+            std::make_shared<DataTypeString>(),
+            std::make_shared<DataTypeString>(),
+            std::make_shared<DataTypeString>(),
+            std::make_shared<DataTypeInt64>(),
+            std::make_shared<DataTypeInt64>(),
+            std::make_shared<DataTypeInt64>(),
+            std::make_shared<DataTypeInt64>(),
+        };
+
+        Names names = {
+            "partition_id",
+            "prefix",
+            "suffix",
+            "min_block",
+            "max_block",
+            "level",
+            "mutation",
+        };
+
+        return std::make_shared<DataTypeTuple>(std::move(types), std::move(names));
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & input_column = arguments[0].column;
 

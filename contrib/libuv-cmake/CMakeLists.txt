@@ -69,10 +69,7 @@ endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   list(APPEND uv_defines _GNU_SOURCE _POSIX_C_SOURCE=200112)
-  # musl provides the rt functions in libc.
-  if(NOT USE_MUSL)
-    list(APPEND uv_libraries rt)
-  endif()
+  list(APPEND uv_libraries rt)
   list(APPEND uv_sources
        src/unix/linux.c
        src/unix/procfs-exepath.c
@@ -114,10 +111,7 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "SunOS")
   list(APPEND uv_defines __EXTENSIONS__ _XOPEN_SOURCE=500)
   list(APPEND uv_libraries kstat nsl sendfile socket)
-  list(APPEND uv_sources
-       src/unix/no-proctitle.c
-       src/unix/random-getrandom.c
-       src/unix/sunos.c)
+  list(APPEND uv_sources src/unix/no-proctitle.c src/unix/sunos.c)
 endif()
 
 set(uv_sources_tmp "")

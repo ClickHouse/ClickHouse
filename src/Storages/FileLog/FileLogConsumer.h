@@ -19,17 +19,17 @@ public:
         size_t stream_number_,
         size_t max_streams_number_);
 
-    [[nodiscard]] auto pollTimeout() const { return poll_timeout; }
+    auto pollTimeout() const { return poll_timeout; }
 
-    [[nodiscard]] bool hasMorePolledRecords() const { return current != records.end(); }
+    bool hasMorePolledRecords() const { return current != records.end(); }
 
     ReadBufferPtr consume();
 
     bool noRecords() { return buffer_status == BufferStatus::NO_RECORD_RETURNED; }
 
-    [[nodiscard]] auto getFileName() const { return current[-1].file_name; }
-    [[nodiscard]] auto getOffset() const { return current[-1].offset; }
-    [[nodiscard]] const auto & getCurrentRecord() const { return current[-1].data; }
+    auto getFileName() const { return current[-1].file_name; }
+    auto getOffset() const { return current[-1].offset; }
+    const auto & getCurrentRecord() const { return current[-1].data; }
 
 private:
     enum class BufferStatus : uint8_t
@@ -60,7 +60,7 @@ private:
         StringWithMemoryTracking data;
         std::string file_name;
         /// Offset is the start of a row, which is needed for virtual columns.
-        UInt64 offset{};
+        UInt64 offset;
     };
     using Records = std::vector<Record, AllocatorWithMemoryTracking<Record>>;
 

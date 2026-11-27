@@ -2,15 +2,10 @@
 
 #include <base/defines.h>
 #include <base/types.h>
-#include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
-#include <Common/ZooKeeper/ZooKeeperConstants.h>
 
-#include <chrono>
-#include <limits>
 #include <map>
 #include <mutex>
-#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -29,16 +24,6 @@
   * - ZooKeeper emulation layer on top of Etcd, FoundationDB, whatever.
   */
 
-namespace ProfileEvents
-{
-    extern const Event ZooKeeperWatchTriggeredOther;
-}
-
-namespace silk
-{
-class FiberEvent;
-}
-
 namespace Coordination
 {
 
@@ -54,7 +39,7 @@ struct ACL
     static constexpr int32_t Admin = 16;
     static constexpr int32_t All = 0x1F;
 
-    int32_t permissions{};
+    int32_t permissions;
     String scheme;
     String id;
 
@@ -153,9 +138,9 @@ struct Request
     Request(const Request &) = default;
     Request & operator=(const Request &) = default;
     virtual ~Request() = default;
-    [[nodiscard]] virtual String getPath() const = 0;
+    virtual String getPath() const = 0;
     virtual void addRootPath(const String & /* root_path */) {}
-    [[nodiscard]] virtual size_t bytesSize() const { return 0; }
+    virtual size_t bytesSize() const { return 0; }
 };
 
 struct Response;
@@ -173,7 +158,7 @@ struct Response
     Response & operator=(const Response &) = default;
     virtual ~Response() = default;
     virtual void removeRootPath(const String & /* root_path */) {}
-    [[nodiscard]] virtual size_t bytesSize() const { return 0; }
+    virtual size_t bytesSize() const { return 0; }
 };
 
 struct WatchResponse : virtual Response
@@ -184,14 +169,13 @@ struct WatchResponse : virtual Response
 
     void removeRootPath(const String & root_path) override;
 
-    [[nodiscard]] size_t bytesSize() const override { return path.size() + sizeof(type) + sizeof(state); }
+    size_t bytesSize() const override { return path.size() + sizeof(type) + sizeof(state); }
 };
 
 using WatchCallback = std::function<void(const WatchResponse &)>;
 using WatchCallbackPtr = std::shared_ptr<WatchCallback>;
 using EventPtr = std::shared_ptr<Poco::Event>;
 struct TestKeeperRequest;
-
 struct WatchCallbackPtrOrEventPtr
 {
 private:
@@ -202,8 +186,6 @@ private:
 
     WatchCallbackPtr callback;
     EventPtr event;
-    /// The ProfileEvent incremented when this watch is triggered, identifying the subsystem that owns the callback.
-    ProfileEvents::Event triggered_event = ProfileEvents::ZooKeeperWatchTriggeredOther;
 
     void operator()(WatchResponse response) const
     {
@@ -218,15 +200,6 @@ public:
 
     WatchCallbackPtrOrEventPtr(WatchCallbackPtr callback_) : callback(std::move(callback_)) {} // NOLINT(google-explicit-constructor)
     WatchCallbackPtrOrEventPtr(EventPtr event_) : event(std::move(event_)) {} // NOLINT(google-explicit-constructor)
-    WatchCallbackPtrOrEventPtr(WatchCallbackPtr callback_, ProfileEvents::Event triggered_event_)
-        : callback(std::move(callback_)), triggered_event(triggered_event_) {} // NOLINT(google-explicit-constructor)
-    WatchCallbackPtrOrEventPtr(EventPtr event_, ProfileEvents::Event triggered_event_)
-        : event(std::move(event_)), triggered_event(triggered_event_) {} // NOLINT(google-explicit-constructor)
-
-    [[nodiscard]] ProfileEvents::Event getTriggeredEvent() const { return triggered_event; }
-    void setTriggeredEvent(ProfileEvents::Event triggered_event_) { triggered_event = triggered_event_; }
-
-    void invoke(WatchResponse response) const { (*this)(std::move(response)); }
 
     WatchCallbackPtrOrEventPtr(WatchCallbackPtrOrEventPtr &&) = default;
     WatchCallbackPtrOrEventPtr(const WatchCallbackPtrOrEventPtr &) = default;
@@ -243,7 +216,7 @@ public:
         return std::tie(callback, event) == std::tie(rhs.callback, rhs.event);
     }
 
-    [[nodiscard]] size_t hash() const
+    size_t hash() const
     {
         if (callback)
         {
@@ -267,15 +240,15 @@ struct SetACLRequest : virtual Request
     int32_t version = -1;
 
     void addRootPath(const String & root_path) override;
-    [[nodiscard]] String getPath() const override { return path; }
-    [[nodiscard]] size_t bytesSize() const override { return path.size() + sizeof(version) + acls.size() * sizeof(ACL); }
+    String getPath() const override { return path; }
+    size_t bytesSize() const override { return path.size() + sizeof(version) + acls.size() * sizeof(ACL); }
 };
 
 struct SetACLResponse : virtual Response
 {
     Stat stat;
 
-    [[nodiscard]] size_t bytesSize() const override { return sizeof(Stat); }
+    size_t bytesSize() const override { return sizeof(Stat); }
 };
 
 struct GetACLRequest : virtual Request
@@ -283,15 +256,15 @@ struct GetACLRequest : virtual Request
     String path;
 
     void addRootPath(const String & root_path) override;
-    [[nodiscard]] String getPath() const override { return path; }
-    [[nodiscard]] size_t bytesSize() const override { return path.size(); }
+    String getPath() const override { return path; }
+    size_t bytesSize() const override { return path.size(); }
 };
 
 struct GetACLResponse : virtual Response
 {
     ACLs acl;
     Stat stat;
-    [[nodiscard]] size_t bytesSize() const override { return sizeof(Stat) + acl.size() * sizeof(ACL); }
+    size_t bytesSize() const override { return sizeof(Stat) + acl.size() * sizeof(ACL); }
 };
 
 struct CheckWatchRequest : virtual Request
@@ -306,12 +279,12 @@ struct CheckWatchRequest : virtual Request
     };
 
     String path;
-    CheckWatchType type{};
+    CheckWatchType type;
 
-    [[nodiscard]] String getPath() const override { return path; }
+    String getPath() const override { return path; }
     void addRootPath(const String & root_path) override { path = root_path; }
 
-    [[nodiscard]] size_t bytesSize() const override
+    size_t bytesSize() const override
     {
         return path.size() + sizeof(type);
     }
@@ -331,12 +304,12 @@ struct RemoveWatchRequest : virtual Request
         PERSISTENT = 4,
         PERSISTENTRECURSIVE = 5,
         ANY = 3
-    } type{};
+    } type;
 
-    [[nodiscard]] String getPath() const override { return path; }
+    String getPath() const override { return path; }
     void addRootPath(const String & root_path) override { path = root_path; }
 
-    [[nodiscard]] size_t bytesSize() const override
+    size_t bytesSize() const override
     {
         return path.size() + sizeof(type);
     }
@@ -355,12 +328,12 @@ struct AddWatchRequest : virtual Request
     };
 
     String path;
-    AddWatchMode mode{};
+    AddWatchMode mode;
 
-    [[nodiscard]] String getPath() const override { return path; }
+    String getPath() const override { return path; }
     void addRootPath(const String & root_path) override { path = root_path; }
 
-    [[nodiscard]] size_t bytesSize() const override
+    size_t bytesSize() const override
     {
         return path.size() + sizeof(mode);
     }
@@ -372,14 +345,14 @@ struct AddWatchResponse : virtual Response
 
 struct SetWatchesRequest : virtual Request
 {
-    int64_t zxid{};
+    int64_t zxid;
     std::vector<String> child_watches;
     std::vector<String> exist_watches;
     std::vector<String> data_watches;
 
-    [[nodiscard]] String getPath() const override { return data_watches.empty() ? String{} : data_watches[0]; }
+    String getPath() const override { return data_watches[0]; }
     void addRootPath(const String &) override {}
-    [[nodiscard]] size_t bytesSize() const override
+    size_t bytesSize() const override
     {
         size_t result = sizeof(zxid);
         result += pathesSize(data_watches);
@@ -409,9 +382,9 @@ struct SetWatches2Request : virtual SetWatchesRequest
     std::vector<String> persistent_watches;
     std::vector<String> persistent_recursive_watches;
 
-    [[nodiscard]] String getPath() const override { return data_watches.empty() ? String{} : data_watches[0]; }
+    String getPath() const override { return data_watches[0]; }
     void addRootPath(const String &) override {}
-    [[nodiscard]] size_t bytesSize() const override
+    size_t bytesSize() const override
     {
         size_t result = SetWatchesRequest::bytesSize();
         result += pathesSize(persistent_watches);
@@ -430,26 +403,17 @@ struct CreateRequest : virtual Request
     String data;
     bool is_ephemeral = false;
     bool is_sequential = false;
-    bool is_container = false;
     ACLs acls;
     bool include_stats = false;
-    bool include_ttl = false;
-    int64_t ttl = 0;
 
     /// should it succeed if node already exists
     bool not_exists = false;
 
     void addRootPath(const String & root_path) override;
-    [[nodiscard]] String getPath() const override { return path; }
+    String getPath() const override { return path; }
 
-    [[nodiscard]] size_t bytesSize() const override
-    {
-        auto base_size = path.size() + data.size()
-            + sizeof(is_ephemeral) + sizeof(is_sequential) + acls.size() * sizeof(ACL);
-        if (include_ttl)
-            base_size += sizeof(ttl);
-        return base_size;
-    }
+    size_t bytesSize() const override { return path.size() + data.size()
+            + sizeof(is_ephemeral) + sizeof(is_sequential) + acls.size() * sizeof(ACL); }
 };
 
 struct CreateResponse : virtual Response
@@ -458,7 +422,7 @@ struct CreateResponse : virtual Response
 
     void removeRootPath(const String & root_path) override;
 
-    [[nodiscard]] size_t bytesSize() const override { return path_created.size(); }
+    size_t bytesSize() const override { return path_created.size(); }
 };
 
 struct RemoveRequest : virtual Request
@@ -468,9 +432,9 @@ struct RemoveRequest : virtual Request
     bool try_remove = false;
 
     void addRootPath(const String & root_path) override;
-    [[nodiscard]] String getPath() const override { return path; }
+    String getPath() const override { return path; }
 
-    [[nodiscard]] size_t bytesSize() const override { return path.size() + sizeof(version); }
+    size_t bytesSize() const override { return path.size() + sizeof(version); }
 };
 
 struct RemoveResponse : virtual Response
@@ -485,29 +449,13 @@ struct RemoveRecursiveRequest : virtual Request
     uint32_t remove_nodes_limit = 1;
 
     void addRootPath(const String & root_path) override;
-    [[nodiscard]] String getPath() const override { return path; }
+    String getPath() const override { return path; }
 
-    [[nodiscard]] size_t bytesSize() const override { return path.size() + sizeof(remove_nodes_limit); }
+    size_t bytesSize() const override { return path.size() + sizeof(remove_nodes_limit); }
 };
 
 struct RemoveRecursiveResponse : virtual Response
 {
-};
-
-
-struct ListRecursiveResponse : virtual Response
-{
-    std::vector<String> children;
-
-    void removeRootPath(const String & root_path) override;
-
-    [[nodiscard]] size_t bytesSize() const override
-    {
-        size_t result = 0;
-        for (const auto & child : children)
-            result += child.size();
-        return result;
-    }
 };
 
 struct ExistsRequest : virtual Request
@@ -515,16 +463,16 @@ struct ExistsRequest : virtual Request
     String path;
 
     void addRootPath(const String & root_path) override;
-    [[nodiscard]] String getPath() const override { return path; }
+    String getPath() const override { return path; }
 
-    [[nodiscard]] size_t bytesSize() const override { return path.size(); }
+    size_t bytesSize() const override { return path.size(); }
 };
 
 struct ExistsResponse : virtual Response
 {
     Stat stat;
 
-    [[nodiscard]] size_t bytesSize() const override { return sizeof(Stat); }
+    size_t bytesSize() const override { return sizeof(Stat); }
 };
 
 struct GetRequest : virtual Request
@@ -532,9 +480,9 @@ struct GetRequest : virtual Request
     String path;
 
     void addRootPath(const String & root_path) override;
-    [[nodiscard]] String getPath() const override { return path; }
+    String getPath() const override { return path; }
 
-    [[nodiscard]] size_t bytesSize() const override { return path.size(); }
+    size_t bytesSize() const override { return path.size(); }
 };
 
 struct GetResponse : virtual Response
@@ -542,7 +490,7 @@ struct GetResponse : virtual Response
     String data;
     Stat stat;
 
-    [[nodiscard]] size_t bytesSize() const override { return data.size() + sizeof(stat); }
+    size_t bytesSize() const override { return data.size() + sizeof(stat); }
 };
 
 struct SetRequest : virtual Request
@@ -552,16 +500,16 @@ struct SetRequest : virtual Request
     int32_t version = -1;
 
     void addRootPath(const String & root_path) override;
-    [[nodiscard]] String getPath() const override { return path; }
+    String getPath() const override { return path; }
 
-    [[nodiscard]] size_t bytesSize() const override { return path.size() + data.size() + sizeof(version); }
+    size_t bytesSize() const override { return path.size() + data.size() + sizeof(version); }
 };
 
 struct SetResponse : virtual Response
 {
     Stat stat;
 
-    [[nodiscard]] size_t bytesSize() const override { return sizeof(stat); }
+    size_t bytesSize() const override { return sizeof(stat); }
 };
 
 enum class ListRequestType : uint8_t
@@ -571,40 +519,14 @@ enum class ListRequestType : uint8_t
     EPHEMERAL_ONLY
 };
 
-enum class ListOptionsVersion : int32_t
-{
-    V1 = 1,
-};
-
-struct ListOptions
-{
-    ListRequestType filter = ListRequestType::ALL;
-    bool with_stat = false;
-    bool with_data = false;
-    bool recursive = false;
-    uint32_t max_results = 0;
-    bool shuffle = false;
-
-    void validate() const;
-};
-
-ListOptionsVersion requiredListOptionsVersion(const ListOptions & options);
-
 struct ListRequest : virtual Request
 {
     String path;
 
-    /// FILTERED_LIST extension.
-    std::optional<ListRequestType> list_request_type;
-
-    /// LIST_WITH_STAT_AND_DATA extension.
-    std::optional<bool> with_stat;
-    std::optional<bool> with_data;
-
     void addRootPath(const String & root_path) override;
-    [[nodiscard]] String getPath() const override { return path; }
+    String getPath() const override { return path; }
 
-    [[nodiscard]] size_t bytesSize() const override { return path.size() + sizeof(list_request_type) + sizeof(with_stat) + sizeof(with_data); }
+    size_t bytesSize() const override { return path.size(); }
 };
 
 struct ListResponse : virtual Response
@@ -616,7 +538,7 @@ struct ListResponse : virtual Response
     std::vector<Stat> stats;  /// Per-child stats (if requested via with_stat)
     std::vector<String> data; /// Per-child data (if requested via with_data)
 
-    [[nodiscard]] size_t bytesSize() const override
+    size_t bytesSize() const override
     {
         size_t size = sizeof(stat);
         for (const auto & name : names)
@@ -626,45 +548,6 @@ struct ListResponse : virtual Response
             size += child_data.size();
         return size;
     }
-};
-
-struct ListWithOptionsRequest : virtual Request
-{
-    String path;
-    ListOptionsVersion options_version = ListOptionsVersion::V1;
-    ListOptions options;
-
-    void addRootPath(const String & root_path) override;
-    [[nodiscard]] String getPath() const override { return path; }
-    [[nodiscard]] size_t bytesSize() const override
-    {
-        return path.size() + sizeof(options_version) + sizeof(options);
-    }
-};
-
-struct ListWithOptionsResponse : virtual Response
-{
-    std::vector<String> names;
-    Stat stat;
-    std::vector<Stat> stats;
-    std::vector<String> data;
-    bool truncated = false;
-
-    /// Decoder context copied from the matching request. It is not serialized.
-    ListOptionsVersion expected_options_version = ListOptionsVersion::V1;
-    bool expected_with_stat = false;
-    bool expected_with_data = false;
-
-    void removeRootPath(const String &) override {}
-    [[nodiscard]] size_t bytesSize() const override;
-};
-
-struct ListRecursiveRequest : virtual ListRequest
-{
-    /// strict limit for number of listed nodes
-    uint32_t children_nodes_limit = std::numeric_limits<uint32_t>::max();
-
-    [[nodiscard]] size_t bytesSize() const override { return ListRequest::bytesSize() + sizeof(children_nodes_limit); }
 };
 
 struct CheckRequest : virtual Request
@@ -679,9 +562,9 @@ struct CheckRequest : virtual Request
     std::optional<Stat> stat_to_check;
 
     void addRootPath(const String & root_path) override;
-    [[nodiscard]] String getPath() const override { return path; }
+    String getPath() const override { return path; }
 
-    [[nodiscard]] size_t bytesSize() const override { return path.size() + sizeof(version) + sizeof(stat_to_check); }
+    size_t bytesSize() const override { return path.size() + sizeof(version) + sizeof(stat_to_check); }
 };
 
 struct CheckResponse : virtual Response
@@ -693,16 +576,16 @@ struct SyncRequest : virtual Request
     String path;
 
     void addRootPath(const String & root_path) override;
-    [[nodiscard]] String getPath() const override { return path; }
+    String getPath() const override { return path; }
 
-    [[nodiscard]] size_t bytesSize() const override { return path.size(); }
+    size_t bytesSize() const override { return path.size(); }
 };
 
 struct SyncResponse : virtual Response
 {
     String path;
 
-    [[nodiscard]] size_t bytesSize() const override { return path.size(); }
+    size_t bytesSize() const override { return path.size(); }
 };
 
 struct ReconfigRequest : virtual Request
@@ -710,11 +593,11 @@ struct ReconfigRequest : virtual Request
     String joining;
     String leaving;
     String new_members;
-    int32_t version{};
+    int32_t version;
 
-    [[nodiscard]] String getPath() const final { return String(keeper_config_path); }
+    String getPath() const final { return keeper_config_path; }
 
-    [[nodiscard]] size_t bytesSize() const final
+    size_t bytesSize() const final
     {
         return joining.size() + leaving.size() + new_members.size() + sizeof(version);
     }
@@ -725,7 +608,7 @@ struct ReconfigResponse : virtual Response
     String value;
     Stat stat;
 
-    [[nodiscard]] size_t bytesSize() const override { return value.size() + sizeof(stat); }
+    size_t bytesSize() const override { return value.size() + sizeof(stat); }
 };
 
 template <typename T>
@@ -739,9 +622,9 @@ struct MultiRequest : virtual Request
             request->addRootPath(root_path);
     }
 
-    [[nodiscard]] String getPath() const override { return {}; }
+    String getPath() const override { return {}; }
 
-    [[nodiscard]] size_t bytesSize() const override
+    size_t bytesSize() const override
     {
         size_t size = 0;
         for (const auto & request : requests)
@@ -756,7 +639,7 @@ struct MultiResponse : virtual Response
 
     void removeRootPath(const String & root_path) override;
 
-    [[nodiscard]] size_t bytesSize() const override
+    size_t bytesSize() const override
     {
         size_t size = 0;
         for (const auto & response : responses)
@@ -783,8 +666,6 @@ using SyncCallback = std::function<void(const SyncResponse &)>;
 using ReconfigCallback = std::function<void(const ReconfigResponse &)>;
 using MultiCallback = std::function<void(const MultiResponse &)>;
 using GetACLCallback = std::function<void(const GetACLResponse &)>;
-using ListRecursiveCallback = std::function<void(const ListRecursiveResponse &)>;
-using ListWithOptionsCallback = std::function<void(const ListWithOptionsResponse &)>;
 
 /// For watches.
 enum State
@@ -839,9 +720,6 @@ public:
     /// If expired, you can only destroy the object. All other methods will throw exception.
     virtual bool isExpired() const = 0;
 
-    /// The event set when the session expires, for waiters that must also watch something else.
-    virtual silk::FiberEvent & getExpiredEvent() = 0;
-
     /// Get the current connected node idx.
     virtual std::optional<int8_t> getConnectedNodeIdx() const = 0;
 
@@ -855,15 +733,6 @@ public:
     virtual int64_t getSessionID() const = 0;
 
     virtual int64_t getLastZXIDSeen() const = 0;
-
-    /// Returns the timestamp (in microseconds since `steady_clock` epoch) of the
-    /// last data received from the server (any kind: response, heartbeat, or
-    /// watch event). Used by progress-based timeout logic in sync wrappers.
-    /// Returns 0 (epoch) by default, meaning implementations without progress
-    /// tracking will fall back to plain timeout.
-    virtual Int64 getLastReceivedTimestamp() const { return 0; }
-
-    virtual UInt64 getLastReceivedCycles() const { return 0; }
 
     virtual String tryGetAvailabilityZone() { return ""; }
 
@@ -900,17 +769,6 @@ public:
         const String & path,
         uint32_t remove_nodes_limit,
         RemoveRecursiveCallback callback) = 0;
-
-    virtual void listRecursive(
-        const String & path,
-        uint32_t get_children_recursive_nodes_limit,
-        ListRecursiveCallback callback) = 0;
-
-    virtual void listWithOptions(
-        const String & path,
-        const ListOptions & options,
-        ListWithOptionsCallback callback,
-        WatchCallbackPtrOrEventPtr watch) = 0;
 
     virtual void exists(
         const String & path,
@@ -972,18 +830,9 @@ public:
     using WatchCallbacks = std::unordered_set<WatchCallbackPtrOrEventPtr>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
-    struct WatchCreateInfo
-    {
-        std::chrono::system_clock::time_point create_time{};
-        XID request_xid{0};
-        OpNum op_num{OpNum::Error};
-    };
-
-    using WatchesSnapshot = std::unordered_map<String, std::vector<WatchCreateInfo>>;
-
 protected:
     std::unordered_map<String, WatchCallbackPtrOrEventPtr> watches_by_id TSA_GUARDED_BY(watches_mutex);
-    mutable std::mutex watches_mutex;
+    std::mutex watches_mutex;
 };
 
 }

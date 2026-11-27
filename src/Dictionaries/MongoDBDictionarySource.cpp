@@ -2,7 +2,6 @@
 
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Common/Exception.h>
-#include <Common/maskURIPassword.h>
 
 #if USE_MONGODB
 #include <Dictionaries/MongoDBDictionarySource.h>
@@ -10,6 +9,7 @@
 
 #include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -37,17 +37,6 @@ namespace ErrorCodes
     #endif
 }
 
-/// A connection string or option list given as an SQL string literal in a dictionary `SOURCE`, keeping its quotes.
-static bool maskQuotedMongoDBConnectionString(String & literal)
-{
-    String value = literal.substr(1, literal.size() - 2);
-    if (!maskMongoDBConnectionString(value))
-        return false;
-    literal = "'" + value + "'";
-    return true;
-}
-
-void registerDictionarySourceMongoDB(DictionarySourceFactory & factory);
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {
     #if USE_MONGODB
@@ -76,16 +65,14 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
                 validateNamedCollection(*named_collection, {"host", "db", "collection"}, {"port", "user", "password", "options"});
                 String user = named_collection->get<String>("user");
                 String auth_string;
-                String escaped_user;
                 String escaped_password;
-                Poco::URI::encode(user, "!?#/'\",;:$&()[]*+=@", escaped_user);
                 Poco::URI::encode(named_collection->get<String>("password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
                 if (!user.empty())
-                    auth_string = fmt::format("{}:{}@", escaped_user, escaped_password);
+                    auth_string = fmt::format("{}:{}@", user, escaped_password);
                 configuration->uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
                                                                                  auth_string,
                                                                                  named_collection->get<String>("host"),
-                                                                                 named_collection->getOrDefault<UInt64>("port", 27017),
+                                                                                 named_collection->getOrDefault<String>("port", "27017"),
                                                                                  named_collection->get<String>("db"),
                                                                                  named_collection->getOrDefault<String>("options", "")));
             }
@@ -138,93 +125,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
     };
     #endif
 
-    factory.registerSource("mongodb", create_dictionary_source,
-        SecretArgumentsSpec{
-            .secret_keys = {"password"},
-            .partial = {{"uri", maskQuotedMongoDBConnectionString}, {"options", maskQuotedMongoDBConnectionString}}},
-        Documentation{
-        .description = R"DOCS_MD(
-# MongoDB dictionary source
-
-Example of settings:
-
-<Tabs>
-<Tab title="DDL">
-
-```sql
-SOURCE(MONGODB(
-    host 'localhost'
-    port 27017
-    user ''
-    password ''
-    db 'test'
-    collection 'dictionary_source'
-    options 'ssl=true'
-))
-```
-
-Or using a URI:
-
-```sql
-SOURCE(MONGODB(
-    uri 'mongodb://localhost:27017/clickhouse'
-    collection 'dictionary_source'
-))
-```
-
-</Tab>
-<Tab title="Configuration file">
-
-```xml
-<source>
-    <mongodb>
-        <host>localhost</host>
-        <port>27017</port>
-        <user></user>
-        <password></password>
-        <db>test</db>
-        <collection>dictionary_source</collection>
-        <options>ssl=true</options>
-    </mongodb>
-</source>
-```
-
-Or using a URI:
-
-```xml
-<source>
-    <mongodb>
-        <uri>mongodb://localhost:27017/test?ssl=true</uri>
-        <collection>dictionary_source</collection>
-    </mongodb>
-</source>
-```
-
-</Tab>
-</Tabs>
-<br/>
-
-Setting fields:
-
-| Setting | Description |
-|---------|-------------|
-| `host` | The MongoDB host. |
-| `port` | The port on the MongoDB server. |
-| `user` | Name of the MongoDB user. |
-| `password` | Password of the MongoDB user. |
-| `db` | Name of the database. |
-| `collection` | Name of the collection. |
-| `options` | MongoDB connection string options. Optional. |
-| `uri` | URI for establishing the connection (alternative to individual host/port/db fields). |
-
-[More information about the engine](/reference/engines/table-engines/integrations/mongodb)
-)DOCS_MD"
-#if !USE_MONGODB
-            "\n\nCurrently unavailable, because this ClickHouse build does not include MongoDB support."
-#endif
-        ,
-        .syntax = "SOURCE(MONGODB(host 'host' port 27017 user '' password '' db 'db' collection 'collection'))",
-        .related = {}});
+    factory.registerSource("mongodb", create_dictionary_source);
 }
 
 #if USE_MONGODB
@@ -312,7 +213,7 @@ std::string MongoDBDictionarySource::toString() const
 {
     /// Shown in `system.dictionaries` and in the logs.
     String uri = configuration->uri->to_string();
-    maskMongoDBConnectionString(uri);
+    maskURIPassword(&uri);
     return fmt::format("MongoDB: {}", uri);
 }
 #endif

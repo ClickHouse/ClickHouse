@@ -31,7 +31,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionFuzzQuery final : public IFunction
+class FunctionFuzzQuery : public IFunction
 {
 public:
     static constexpr auto name = "fuzzQuery";
@@ -50,19 +50,23 @@ public:
         implicit_select = settings[Setting::implicit_select];
     }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return false; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(String) -> String";
+        FunctionArgumentDescriptors args{
+            {"query", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
+        };
+        validateFunctionArguments(*this, arguments, args);
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr col_query = arguments[0].column;
 
@@ -152,7 +156,7 @@ REGISTER_FUNCTION(fuzzQuery)
                            "Non-deterministic: each call may produce a different result. "
                            "Requires `allow_fuzz_query_functions = 1`.",
             .syntax = "fuzzQuery(query)",
-            .arguments = {{"query", "The SQL query to be fuzzed. [String](/reference/data-types/string)"}},
+            .arguments = {{"query", "The SQL query to be fuzzed. [String](../../sql-reference/data-types/string.md)"}},
             .returned_value = {"The fuzzed query string", {"String"}},
             .examples{
                 {"basic",

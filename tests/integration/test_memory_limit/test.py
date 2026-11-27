@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import logging
 import time
 from multiprocessing.dummy import Pool
 
@@ -58,6 +59,5 @@ def test_multiple_queries():
         except Exception as ex:
             print("Exception", ex)
 
-    # test that we didn't kill the server; freed pages of a query that died at the
-    # limit stay resident until jemalloc purges them, refusing new connections
-    node.query_with_retry("SELECT 1")
+    # test that we didn't kill the server
+    node.query("SELECT 1")

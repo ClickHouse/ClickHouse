@@ -1,9 +1,0 @@
--- by value
-ORDER BY value DESC,
-    tags DESC
--- by labels
-ORDER BY naturalSortKey(ifNull(timeSeriesExtractTag(group, 'instance'), ''), 1) ASC,
-    naturalSortKey(ifNull(timeSeriesExtractTag(group, 'job'), ''), 1) ASC,
-    tags ASC
--- not the root
-ORDER BY tags ASC

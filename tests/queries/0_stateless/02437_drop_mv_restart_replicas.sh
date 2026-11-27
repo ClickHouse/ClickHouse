@@ -55,7 +55,7 @@ function thread_restart()
 
 TIMEOUT=15
 
-thread_ddl 2>&1| grep -Fa "Exception: " | grep -Fv -e "TABLE_IS_DROPPED" -e "UNKNOWN_TABLE" -e "DATABASE_NOT_EMPTY" -e "TABLE_IS_BEING_RESTARTED" -e "REPLICA_ALREADY_EXISTS" &
+thread_ddl 2>&1| grep -Fa "Exception: " | grep -Fv -e "TABLE_IS_DROPPED" -e "UNKNOWN_TABLE" -e "DATABASE_NOT_EMPTY" -e "TABLE_IS_BEING_RESTARTED" &
 thread_insert 2> /dev/null &
 thread_restart 2>&1| grep -Fa "Exception: " | grep -Fv -e "is currently dropped or renamed" -e "is being dropped or detached" &
 

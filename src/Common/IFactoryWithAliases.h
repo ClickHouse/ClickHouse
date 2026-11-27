@@ -25,13 +25,7 @@ class IFactoryWithAliases : public IHints<2>
 protected:
     using Value = ValueType;
 
-    std::unordered_map<String, String> case_insensitive_name_mapping{};
-
-public:
-    /// Resolve an alias to the name its target was registered under, or return `name`
-    /// unchanged when it is not an alias. Both alias maps are consulted, so a
-    /// case-insensitive alias resolves through any spelling of it.
-    [[nodiscard]] String getAliasToOrName(const String & name) const
+    String getAliasToOrName(const String & name) const
     {
         if (aliases.contains(name))
             return aliases.at(name);
@@ -40,6 +34,9 @@ public:
         return name;
     }
 
+    std::unordered_map<String, String> case_insensitive_name_mapping;
+
+public:
     /// For compatibility with SQL, it's possible to specify that certain function name is case insensitive.
     enum Case
     {
@@ -85,22 +82,22 @@ public:
     }
 
 
-    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    std::vector<String> getAllRegisteredNames() const override
     {
-        VectorWithMemoryTracking<String> result;
+        std::vector<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
         std::transform(getMap().begin(), getMap().end(), std::back_inserter(result), getter);
         std::transform(aliases.begin(), aliases.end(), std::back_inserter(result), getter);
         return result;
     }
 
-    [[nodiscard]] bool isCaseInsensitive(const String & name) const
+    bool isCaseInsensitive(const String & name) const
     {
         String name_lowercase = Poco::toLower(name);
         return getCaseInsensitiveMap().contains(name_lowercase) || case_insensitive_aliases.contains(name_lowercase);
     }
 
-    [[nodiscard]] const String & aliasTo(const String & name) const
+    const String & aliasTo(const String & name) const
     {
         if (auto it = aliases.find(name); it != aliases.end())
             return it->second;
@@ -110,15 +107,15 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: name '{}' is not alias", getFactoryName(), name);
     }
 
-    [[nodiscard]] bool isAlias(const String & name) const { return aliases.contains(name) || case_insensitive_aliases.contains(name); }
+    bool isAlias(const String & name) const { return aliases.contains(name) || case_insensitive_aliases.contains(name); }
 
-    [[nodiscard]] bool hasNameOrAlias(const String & name) const
+    bool hasNameOrAlias(const String & name) const
     {
         return getMap().contains(name) || getCaseInsensitiveMap().contains(name) || isAlias(name);
     }
 
     /// Return the canonical name (the name used in registration) if it's different from `name`.
-    [[nodiscard]] const String & getCanonicalNameIfAny(const String & name) const
+    const String & getCanonicalNameIfAny(const String & name) const
     {
         auto it = case_insensitive_name_mapping.find(Poco::toLower(name));
         if (it != case_insensitive_name_mapping.end())
@@ -132,15 +129,15 @@ private:
     using InnerMap = std::unordered_map<String, Value>; // name -> creator
     using AliasMap = std::unordered_map<String, String>; // alias -> original name
 
-    [[nodiscard]] virtual const InnerMap & getMap() const = 0;
-    [[nodiscard]] virtual const InnerMap & getCaseInsensitiveMap() const = 0;
-    [[nodiscard]] virtual String getFactoryName() const = 0;
+    virtual const InnerMap & getMap() const = 0;
+    virtual const InnerMap & getCaseInsensitiveMap() const = 0;
+    virtual String getFactoryName() const = 0;
 
     /// Alias map to data_types from previous two maps
-    AliasMap aliases{};
+    AliasMap aliases;
 
     /// Case insensitive aliases
-    AliasMap case_insensitive_aliases{};
+    AliasMap case_insensitive_aliases;
 };
 
 }

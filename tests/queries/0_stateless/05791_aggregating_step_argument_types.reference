@@ -1,7 +1,8 @@
 argument type differs from the input INCORRECT_DATA
 argument is not in the input INCORRECT_DATA
-merged column is not a state INCORRECT_DATA
+aggregate is duplicated INCORRECT_DATA
 well-formed accepted
+merged column is not a state INCORRECT_DATA
 merged states are reordered INCORRECT_DATA
 merged state is duplicated INCORRECT_DATA
 merged key is after the states INCORRECT_DATA
@@ -19,26 +20,6 @@ finalized column is not a state INCORRECT_DATA
 finalized state is not in the input INCORRECT_DATA
 finalized state is of another function INCORRECT_DATA
 well-formed totals accepted
-aggregate is duplicated INCORRECT_DATA
-merged input has another column INCORRECT_DATA
-Rollup input has another column INCORRECT_DATA
-Rollup state is finalized to another type INCORRECT_DATA
-Rollup without final INCORRECT_DATA
-well-formed Rollup accepted
-Cube input has another column INCORRECT_DATA
-Cube state is finalized to another type INCORRECT_DATA
-Cube without final INCORRECT_DATA
-well-formed Cube accepted
-in-order sort description for merging is longer INCORRECT_DATA
-in-order sort description for merging is not a prefix INCORRECT_DATA
-in-order sort description refers to an aggregate INCORRECT_DATA
-well-formed in-order accepted
-in-order merged state is finalized to another type INCORRECT_DATA
-well-formed in-order merge accepted
 TotalsHaving of a union with quantile states ILLEGAL_COLUMN
-Rollup of a union with quantile states ILLEGAL_COLUMN
-Cube of a union with quantile states ILLEGAL_COLUMN
 TotalsHaving of a union with quantiles states accepted
-Rollup of a union with quantiles states accepted
-Cube of a union with quantiles states accepted
 3

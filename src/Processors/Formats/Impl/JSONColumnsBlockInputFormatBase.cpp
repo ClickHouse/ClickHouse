@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/Impl/JSONColumnsBlockInputFormatBase.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Port.h>
@@ -50,7 +49,7 @@ void JSONColumnsReaderBase::skipColumn()
     /// We assume that we already read '[', so we should skip until matched ']'.
     size_t balance = 1;
     bool inside_quotes = false;
-    char * pos = nullptr;
+    char * pos;
     while (!in->eof() && balance)
     {
         if (inside_quotes)
@@ -85,12 +84,11 @@ JSONColumnsBlockInputFormatBase::JSONColumnsBlockInputFormatBase(
     : IInputFormat(header_, &in_)
     , format_settings(format_settings_)
     , fields(header_->getNamesAndTypes())
-    , name_to_index(format_settings_.input_format_column_matching_case_sensitivity)
     , serializations(header_->getSerializations())
     , reader(std::move(reader_))
     , block_missing_values(getPort().getHeader().columns())
 {
-    name_to_index.initFromBlock(getPort().getHeader());
+    name_to_index = getNamesToIndexesMap(getPort().getHeader());
 }
 
 size_t JSONColumnsBlockInputFormatBase::readColumn(
@@ -155,7 +153,7 @@ Chunk JSONColumnsBlockInputFormatBase::read()
         return getChunkForCount(num_rows);
     }
 
-    VectorWithMemoryTracking<UInt8> seen_columns(columns.size(), 0);
+    std::vector<UInt8> seen_columns(columns.size(), 0);
     Int64 rows = -1;
     size_t iteration = 0;
     do
@@ -166,8 +164,7 @@ Chunk JSONColumnsBlockInputFormatBase::read()
         {
             /// Check if this name appears in header. If no, skip this column or throw
             /// an exception according to setting input_format_skip_unknown_fields
-            auto idx = name_to_index.get(*column_name);
-            if (idx == CaseAwareBlockNameMap::NOT_FOUND)
+            if (name_to_index.find(*column_name) == name_to_index.end())
             {
                 if (!format_settings.skip_unknown_fields)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column found in input data: {}", *column_name);
@@ -175,14 +172,11 @@ Chunk JSONColumnsBlockInputFormatBase::read()
                 reader->skipColumn();
                 continue;
             }
-            column_index = idx;
+            column_index = name_to_index[*column_name];
         }
 
         if (column_index >= columns.size())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Input data has too many columns, expected {} columns", columns.size());
-
-        if (seen_columns[column_index])
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Repeated field (`{}`) when processing data.", column_name.value());
 
         seen_columns[column_index] = 1;
         size_t columns_size = readColumn(*columns[column_index], fields[column_index].type, serializations[column_index], fields[column_index].name);
@@ -206,10 +200,7 @@ Chunk JSONColumnsBlockInputFormatBase::read()
         {
             if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(fields[i].type))
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column `{}` of type '{}'", fields[i].name, fields[i].type->getName());
-            if (fields[i].type->isDefaultInsertTrivial())
-                columns[i]->insertManyDefaults(rows);
-            else
-                fields[i].type->insertManyDefaultsInto(*columns[i], rows);
+            columns[i]->insertManyDefaults(rows);
             if (format_settings.defaults_for_omitted_fields)
                 block_missing_values.setBits(i, rows);
         }
@@ -252,8 +243,8 @@ void JSONColumnsSchemaReaderBase::transformTypesFromDifferentFilesIfNeeded(DataT
 
 NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
 {
-    UnorderedMapWithMemoryTracking<String, DataTypePtr> names_to_types;
-    VectorWithMemoryTracking<String> names_order;
+    std::unordered_map<String, DataTypePtr> names_to_types;
+    std::vector<String> names_order;
     /// Read data block by block and determine the type for each column
     /// until max_rows_to_read/max_bytes_to_read is reached.
     /// Note that we can exceed max_bytes_to_read to compete block parsing.

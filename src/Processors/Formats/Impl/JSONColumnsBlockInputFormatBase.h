@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Core/CaseAwareBlockNameMap.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Core/BlockNameMap.h>
 #include <Core/BlockMissingValues.h>
 #include <Core/NamesAndTypes.h>
 #include <Formats/FormatSettings.h>
@@ -67,7 +66,7 @@ protected:
     const FormatSettings format_settings;
     const NamesAndTypes fields;
     /// Maps column names and their positions in header.
-    CaseAwareBlockNameMap name_to_index;
+    BlockNameMap name_to_index;
     Serializations serializations;
     std::unique_ptr<JSONColumnsReaderBase> reader;
     BlockMissingValues block_missing_values;
@@ -87,7 +86,7 @@ public:
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
     void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
-    [[nodiscard]] bool needContext() const override { return !hints_str.empty(); }
+    bool needContext() const override { return !hints_str.empty(); }
     void setContext(const ContextPtr & ctx) override;
 
     void setMaxRowsAndBytesToRead(size_t max_rows, size_t max_bytes) override
@@ -96,7 +95,7 @@ public:
         max_bytes_to_read = max_bytes;
     }
 
-    [[nodiscard]] size_t getNumRowsRead() const override { return total_rows_read; }
+    size_t getNumRowsRead() const override { return total_rows_read; }
 
 private:
     NamesAndTypesList readSchema() override;
@@ -106,7 +105,7 @@ private:
 
     const FormatSettings format_settings;
     String hints_str;
-    UnorderedMapWithMemoryTracking<String, DataTypePtr> hints;
+    std::unordered_map<String, DataTypePtr> hints;
     String hints_parsing_error;
     std::unique_ptr<JSONColumnsReaderBase> reader;
     Names column_names_from_settings;

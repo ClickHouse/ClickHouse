@@ -34,7 +34,7 @@ SELECT
     MID('123', 1, 1),
     MIN(1),
     MOD(1, 1),
-    not(1),
+    NOT 1,
     NOW(),
     NOW64(),
     NULLIF(1, 1),

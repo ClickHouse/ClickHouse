@@ -1,0 +1,6 @@
+<clickhouse>
+    <logger>
+        <library_bridge_log>/var/log/clickhouse-server/clickhouse-library-bridge.log</library_bridge_log>
+        <library_bridge_level>trace</library_bridge_level>
+    </logger>
+</clickhouse>

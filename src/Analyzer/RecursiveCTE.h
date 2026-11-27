@@ -4,6 +4,7 @@
 
 #include <Interpreters/DatabaseCatalog.h>
 
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/TableNode.h>
 
 namespace DB
@@ -40,7 +41,7 @@ public:
       StoragePtr storage_,
       NamesAndTypes columns_);
 
-    [[nodiscard]] StorageID getStorageID() const;
+    StorageID getStorageID() const;
 
     TemporaryTableHolderPtr holder;
     StoragePtr storage;

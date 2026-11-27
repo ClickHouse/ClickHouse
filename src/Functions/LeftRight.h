@@ -11,8 +11,8 @@
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Algorithms.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -23,6 +23,7 @@ using namespace GatherUtils;
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 enum class SubstringDirection : uint8_t
@@ -32,7 +33,7 @@ enum class SubstringDirection : uint8_t
 };
 
 template <bool is_utf8, SubstringDirection direction>
-class FunctionLeftRight final : public IFunction
+class FunctionLeftRight : public IFunction
 {
 public:
     static constexpr auto name = direction == SubstringDirection::Left
@@ -44,33 +45,30 @@ public:
         return std::make_shared<FunctionLeftRight>();
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] bool isVariadic() const override { return false; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    bool isVariadic() const override { return false; }
+    size_t getNumberOfArguments() const override { return 2; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    /// A row whose result is NULL, or an unused dictionary entry of a `LowCardinality` argument, may hold a UInt64 that
-    /// does not fit Int64, and `executeImpl` would throw for it
-    [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return !uint64ArgumentMayHoldUnusedValues(arguments);
+        if ((is_utf8 && !isString(arguments[0])) || !isStringOrFixedString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
+
+        if (!isNativeNumber(arguments[1]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
+                    arguments[1]->getName(), getName());
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] String getSignatureString() const override
-    {
-        if constexpr (is_utf8)
-            return "(String, NativeNumber) -> String";
-        else
-            return "(StringOrFixedString, NativeNumber) -> String";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
@@ -101,53 +99,20 @@ public:
                 // According to the docs, if length_value < 0, we need to take a suffix of the string starting from the position abs(length_value)
                 else
                 {
-                    /// Unsigned negation, so INT64_MIN gives 2^63 instead of overflowing; it skips the whole string.
-                    const UInt64 abs_length_value = common::negateIgnoreOverflow(static_cast<UInt64>(length_value));
-                    sliceFromLeftConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), abs_length_value);
+                    sliceFromLeftConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), -length_value);
                 }
             }
             else
-            {
-                /// Per-row handling so that negative lengths use the same code path as the
-                /// constant-length case: `getSliceFromLeft(|length|)` (unbounded). The
-                /// previous `sliceFromRightDynamicLength` reformulated `right(s, -k)` as
-                /// `getSliceFromRight(elemSize - k, elemSize - k)`, which on a UTF-8 source
-                /// trips an internal inconsistency for invalid UTF-8 input: `countCodePoints`
-                /// (used for `elemSize`) skips lone continuation bytes while
-                /// `skipCodePointsForward/Backward` treats them as 1-byte code points, so
-                /// the result silently lost trailing bytes.
-                StringSink sink(*col_res, input_rows_count);
-                while (!source.isEnd())
-                {
-                    const size_t row = source.rowNum();
-                    const Int64 length = column_length->getInt(row);
-                    typename std::decay_t<decltype(source)>::Slice slice;
-                    if (length > 0)
-                        slice = source.getSliceFromRight(static_cast<UInt64>(length), static_cast<UInt64>(length));
-                    else if (length < 0)
-                    {
-                        const UInt64 abs_length = common::negateIgnoreOverflow(static_cast<UInt64>(length));
-                        slice = source.getSliceFromLeft(abs_length);
-                    }
-                    if (length != 0)
-                        writeSlice(slice, sink);
-                    sink.next();
-                    source.next();
-                }
-            }
+                sliceFromRightDynamicLength(source, StringSink(*col_res, input_rows_count), *column_length);
         }
 
         return col_res;
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr column_string = arguments[0].column;
         ColumnPtr column_length = arguments[1].column;
-
-        /// The length is read with IColumn::getInt() below, so a UInt64 value that does not fit
-        /// Int64 must be rejected here rather than read as a negative length.
-        checkIntegerArgumentFitsInt64(*column_length, name, "length");
 
         const ColumnConst * column_length_const = checkAndGetColumn<ColumnConst>(column_length.get());
 

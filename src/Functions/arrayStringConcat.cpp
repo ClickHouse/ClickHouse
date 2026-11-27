@@ -30,7 +30,7 @@ namespace
 {
 
 /// Joins an array of type serializable to string into one string via a separator.
-class FunctionArrayStringConcat final : public IFunction
+class FunctionArrayStringConcat : public IFunction
 {
 private:
     static void executeInternal(
@@ -76,7 +76,7 @@ private:
                 }
                 first_non_null = false;
 
-                const auto current_src_string_offset = current_src_array_offset ? src_string_offsets[static_cast<ssize_t>(current_src_array_offset) - 1] : 0;
+                const auto current_src_string_offset = current_src_array_offset ? src_string_offsets[current_src_array_offset - 1] : 0;
                 size_t bytes_to_copy = src_string_offsets[current_src_array_offset] - current_src_string_offset;
 
                 memcpySmallAllowReadWriteOverflow15(
@@ -127,29 +127,41 @@ public:
     static constexpr auto name = "arrayStringConcat";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayStringConcat>(); }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(Array, [const String]) -> String";
+        FunctionArgumentDescriptors mandatory_args
+        {
+            {"arr", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+        };
+
+        FunctionArgumentDescriptors optional_args
+        {
+            {"separator", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"},
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
         String delimiter;
         if (arguments.size() == 2)
@@ -206,8 +218,6 @@ Concatenates string representations of values listed in the array with the provi
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayStringConcat>(documentation);
-    /// Synonym for compatibility with PostgreSQL/Snowflake.
-    factory.registerAlias("array_to_string", "arrayStringConcat", FunctionFactory::Case::Insensitive);
 }
 
 }

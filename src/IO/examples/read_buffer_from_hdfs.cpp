@@ -6,11 +6,10 @@
 #include <Common/Config/ConfigProcessor.h>
 
 #include <Poco/Util/MapConfiguration.h>
-#include <Examples/clickhouse_examples.h>
 
 using namespace DB;
 
-int mainEntryExampleReadBufferFromHdfs(int, char **)
+int main()
 {
     setenv("LIBHDFS3_CONF", "/path/to/hdfs-site.xml", true); /// NOLINT
     String hdfs_uri = "hdfs://cluster_name";

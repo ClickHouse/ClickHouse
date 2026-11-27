@@ -138,13 +138,13 @@ bool PlainRanges::compareByRightBound(const Range & lhs, const Range & rhs)
 };
 
 
-VectorWithMemoryTracking<Ranges> PlainRanges::invert(const Ranges & to_invert_ranges)
+std::vector<Ranges> PlainRanges::invert(const Ranges & to_invert_ranges)
 {
     /// invert a blank ranges
     if (to_invert_ranges.empty())
         return {makeUniverse().ranges};
 
-    VectorWithMemoryTracking<Ranges> reverted_ranges;
+    std::vector<Ranges> reverted_ranges;
     for (const auto & range : to_invert_ranges)
     {
         if (range.isInfinite())

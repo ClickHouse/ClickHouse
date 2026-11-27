@@ -1,7 +1,7 @@
 #pragma once
 
 #include <base/types.h>
-// Contains types declarations and wrappers for the compiler vector extension.
+// Contains types declarations and wrappers for GCC vector extension.
 
 namespace DB::VectorExtension
 {

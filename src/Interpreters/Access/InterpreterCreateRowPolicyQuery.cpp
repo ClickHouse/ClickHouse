@@ -57,35 +57,23 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     auto & query = updated_query_ptr->as<ASTCreateRowPolicyQuery &>();
     auto required_access = getRequiredAccess();
 
-    /// Reject invalid filters on user-facing CREATE/ALTER only. Deserialization of persisted
-    /// policies (ATTACH/replicated/restored) must not fail here; the query-time guard in
-    /// ContextAccess::getRowPolicyFilter rejects such policies when they are actually used.
-    for (const auto & [filter_type, filter] : query.filters)
-        checkRowPolicyFilterExpression(filter);
-
-    /// Must be done before replication: a DDL worker resolves a bare table name in its own current database.
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
-
     if (!query.cluster.empty())
     {
         query.replaceCurrentUserTag(getContext()->getUserName());
-        required_access.replaceEmptyDatabase(getContext()->getCurrentDatabase());
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
         return executeDDLQueryOnCluster(updated_query_ptr, getContext(), params);
     }
 
-    chassert(query.names->cluster.empty());
+    assert(query.names->cluster.empty());
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(required_access);
 
+    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)
-    {
         roles_from_query = RolesOrUsersSet{*query.roles, access_control, getContext()->getUserID()};
-        if (access_control.doesForbidSQLAccessEntitiesTargetingUsersConfig())
-            roles_from_query->throwIfTargetingUsersFromUsersConfig(access_control);
-    }
 
     IAccessStorage * storage = &access_control;
     MultipleAccessStorage::StoragePtr storage_ptr;
@@ -168,7 +156,6 @@ AccessRightsElements InterpreterCreateRowPolicyQuery::getRequiredAccess() const
     return res;
 }
 
-void registerInterpreterCreateRowPolicyQuery(InterpreterFactory & factory);
 void registerInterpreterCreateRowPolicyQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

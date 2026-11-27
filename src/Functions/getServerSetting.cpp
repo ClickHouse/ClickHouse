@@ -1,13 +1,9 @@
-#include <Access/Common/AccessFlags.h>
-#include <Access/Common/AccessType.h>
 #include <Functions/IFunction.h>
-#include <Functions/FunctionAccessCheck.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/FieldToDataType.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Core/Field.h>
 #include <Core/ServerSettings.h>
 
@@ -23,58 +19,37 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionGetServerSetting final : public IFunction
+class FunctionGetServerSetting : public IFunction
 {
 public:
     static constexpr auto name = "getServerSetting";
 
-    /// The function is `SELECT value FROM system.server_settings WHERE name = ...`, so it requires the
-    /// grant that query needs, down to the columns it reads.
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionGetServerSetting>(context);
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGetServerSetting>(); }
 
-    explicit FunctionGetServerSetting(const ContextPtr & context) : access_check(context) {}
+    String getName() const override { return name; }
 
-    [[nodiscard]] String getName() const override { return name; }
+    bool isDeterministic() const override { return false; }
 
-    void checkAccessOnBuild() const override
-    {
-        access_check.check(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "server_settings", Strings{"name", "value"});
-    }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] bool isDeterministic() const override { return false; }
+    size_t getNumberOfArguments() const override { return 1 ; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1 ; }
-
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
-
-    /// Documentation-only — the result type is the dynamic type of the
-    /// server-setting value resolved at query time from its const-string name.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(const String) -> Any";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto value = getValue(arguments);
         return applyVisitor(FieldToDataType{}, value);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto value = getValue(arguments);
         return result_type->createColumnConst(input_rows_count, convertFieldToType(value, *result_type));
     }
 
 private:
-    FunctionAccessCheck access_check;
-
-    [[nodiscard]] Field getValue(const ColumnsWithTypeAndName & arguments) const
+    Field getValue(const ColumnsWithTypeAndName & arguments) const
     {
         if (arguments.size() != 1)
             throw Exception(
@@ -95,21 +70,7 @@ private:
 
         std::string_view setting_name{column->getDataAt(0)};
 
-        auto global_context = Context::getGlobalContextInstance();
-
-        /// Take a consistent snapshot of the server settings under the shared context lock. A few settings
-        /// (e.g. `s3queue_disable_streaming`) are mutated at runtime on config reload, so copying the struct
-        /// without synchronization would race with those writers.
-        ServerSettings server_settings = global_context->getServerSettingsCopy();
-
-        /// Some server settings can be changed at runtime (e.g. memory limits, cache sizes, thread pool sizes).
-        /// In that case the live value held by the component diverges from the value stored in `ServerSettings`,
-        /// which only reflects what was last loaded from the config. `system.server_settings` already returns
-        /// the live value for such settings - mirror that behaviour here.
-        if (auto live = server_settings.tryGetLiveValueAsString(global_context, setting_name))
-            server_settings.set(setting_name, *live);
-
-        return server_settings.get(setting_name);
+        return Context::getGlobalContextInstance()->getServerSettings().get(setting_name);
     }
 };
 
@@ -119,8 +80,6 @@ REGISTER_FUNCTION(GetServerSetting)
 {
     FunctionDocumentation::Description description = R"(
 Returns the currently set value, given a server setting name.
-
-Requires the `SELECT` privilege on `system.server_settings`, just like reading that table.
     )";
     FunctionDocumentation::Syntax syntax = "getServerSetting(setting_name')";
     FunctionDocumentation::Arguments arguments = {

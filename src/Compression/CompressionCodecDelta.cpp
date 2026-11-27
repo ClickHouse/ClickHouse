@@ -1,15 +1,11 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
-#include <Compression/registerCompressionCodecs.h>
 #include <DataTypes/IDataType.h>
 #include <base/unaligned.h>
-#include <base/sanitizer_defs.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
-
-#include <cstring>
-#include <utility>
+#include <Parsers/ASTFunction.h>
 
 
 namespace DB
@@ -20,8 +16,7 @@ class CompressionCodecDelta : public ICompressionCodec
 public:
     explicit CompressionCodecDelta(UInt8 delta_bytes_size_);
 
-    [[nodiscard]] uint8_t getMethodByte() const override;
-    [[nodiscard]] ASTPtr getCodecDescription() const override;
+    uint8_t getMethodByte() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -29,13 +24,13 @@ protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
-    [[nodiscard]] UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override { return uncompressed_size + 2; }
+    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override { return uncompressed_size + 2; }
 
-    [[nodiscard]] bool isCompression() const override { return false; }
-    [[nodiscard]] bool isGenericCompression() const override { return false; }
-    [[nodiscard]] bool isDeltaCompression() const override { return true; }
+    bool isCompression() const override { return false; }
+    bool isGenericCompression() const override { return false; }
+    bool isDeltaCompression() const override { return true; }
 
-    [[nodiscard]] String getDescription() const override
+    String getDescription() const override
     {
         return "Preprocessor (should be followed by some compression codec). Stores difference between neighboring values; good for monotonically increasing or decreasing data.";
     }
@@ -59,11 +54,7 @@ namespace ErrorCodes
 CompressionCodecDelta::CompressionCodecDelta(UInt8 delta_bytes_size_)
     : delta_bytes_size(delta_bytes_size_)
 {
-}
-
-ASTPtr CompressionCodecDelta::getCodecDescription() const
-{
-    return makeCodecDescription("Delta", {make_intrusive<ASTLiteral>(static_cast<UInt64>(delta_bytes_size))});
+    setCodecDescription("Delta", {make_intrusive<ASTLiteral>(static_cast<UInt64>(delta_bytes_size))});
 }
 
 uint8_t CompressionCodecDelta::getMethodByte() const
@@ -73,16 +64,14 @@ uint8_t CompressionCodecDelta::getMethodByte() const
 
 void CompressionCodecDelta::updateHash(SipHash & hash) const
 {
-    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 namespace
 {
 
-/// Delta coding is modular arithmetic by definition: the difference of two values wraps around,
-/// and the decoder recovers the original value by wrapping back.
 template <typename T>
-void NO_SANITIZE_UNSIGNED_OVERFLOW compressDataForType(const char * source, UInt32 source_size, char * dest)
+void compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
     if (source_size % sizeof(T) != 0)
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with Delta codec, data size {} is not aligned to {}", source_size, sizeof(T));
@@ -100,97 +89,29 @@ void NO_SANITIZE_UNSIGNED_OVERFLOW compressDataForType(const char * source, UInt
     }
 }
 
-/** Delta decoding is an inclusive prefix sum of the deltas, and the scalar loop is limited by the
-  * loop-carried accumulator to at most one element per cycle. Instead, process the data in 16-byte
-  * registers: log2(lanes) shift-and-add steps compute the prefix sum within a register, then the
-  * running total of all previous registers is added to every lane, and the last lane becomes the
-  * running total for the next register.
-  *
-  * The kernel is written with generic clang vectors; the shuffles compile to single instructions
-  * on the SSE2 (x86_64) and NEON (AArch64) baselines, so no arch-specific code or runtime dispatch
-  * is needed. Lanes are loaded in native byte order, so the fast path also requires a little-endian
-  * build to match the little-endian on-disk format; others fall back to the scalar loop below.
-  */
-#if (((defined(__x86_64__) || defined(__i386__)) && defined(__SSE2__)) || (defined(__aarch64__) && defined(__ARM_NEON))) \
-    && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#define DELTA_CODEC_SIMD_DECOMPRESS
-
 template <typename T>
-using DeltaVec [[gnu::vector_size(16)]] = T;
-
-/// Shift the lanes up by `shift` positions, filling the low lanes with zeros.
-template <size_t shift, typename T, size_t... lane>
-DeltaVec<T> shiftLanesIn(DeltaVec<T> x, std::index_sequence<lane...>)
-{
-    return __builtin_shufflevector(DeltaVec<T>{}, x, (lane < shift ? 0 : sizeof...(lane) + lane - shift)...);
-}
-
-template <typename T, size_t... lane>
-DeltaVec<T> broadcastLastLane(DeltaVec<T> x, std::index_sequence<lane...>)
-{
-    return __builtin_shufflevector(x, x, (lane * 0 + sizeof...(lane) - 1)...);
-}
-
-template <typename T>
-T decompressBlocks(const char * source, char * dest, size_t blocks)
-{
-    constexpr size_t lanes = 16 / sizeof(T);
-    constexpr auto index = std::make_index_sequence<lanes>{};
-
-    DeltaVec<T> sum{};
-    for (size_t i = 0; i < blocks; ++i)
-    {
-        DeltaVec<T> x;
-        memcpy(&x, source + i * 16, 16);
-        if constexpr (lanes >= 2)
-            x += shiftLanesIn<1>(x, index);
-        if constexpr (lanes >= 4)
-            x += shiftLanesIn<2>(x, index);
-        if constexpr (lanes >= 8)
-            x += shiftLanesIn<4>(x, index);
-        if constexpr (lanes >= 16)
-            x += shiftLanesIn<8>(x, index);
-        /// Update the running total from the local prefix sum, so that the broadcast stays off
-        /// the loop-carried dependency chain (which is then a single addition).
-        const DeltaVec<T> carry = broadcastLastLane(x, index);
-        x += sum;
-        sum += carry;
-        memcpy(dest + i * 16, &x, 16);
-    }
-    return sum[0];
-}
-
-#endif
-
-template <typename T>
-NO_SANITIZE_UNSIGNED_OVERFLOW
 UInt32 decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
 {
+    const char * const original_dest = dest;
+    const char * const output_end = dest + output_size;
+
     if (source_size % sizeof(T) != 0)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Delta-encoded data, data size {} is not aligned to {}", source_size, sizeof(T));
 
-    if (source_size > output_size)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress delta-encoded data: {} bytes of data do not fit into the output of {} bytes", source_size, output_size);
-
     T accumulator{};
     const char * const source_end = source + source_size;
-
-#ifdef DELTA_CODEC_SIMD_DECOMPRESS
-    const size_t blocks = source_size / 16;
-    accumulator = decompressBlocks<T>(source, dest, blocks);
-    source += blocks * 16;
-    dest += blocks * 16;
-#endif
-
     while (source < source_end)
     {
         accumulator += unalignedLoadLittleEndian<T>(source);
+        if (dest + sizeof(accumulator) > output_end) [[unlikely]]
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress delta-encoded data");
         unalignedStoreLittleEndian<T>(dest, accumulator);
+
         source += sizeof(T);
         dest += sizeof(T);
     }
 
-    return source_size;
+    return static_cast<UInt32>(dest - original_dest);
 }
 
 }
@@ -262,26 +183,19 @@ UInt32 CompressionCodecDelta::doDecompressData(const char * source, UInt32 sourc
 namespace
 {
 
-/// Returns nullopt if the codec is not applicable to the type and `throw_if_not_applicable` is false.
-std::optional<UInt8> getDeltaBytesSize(const IDataType & column_type, bool throw_if_not_applicable)
+UInt8 getDeltaBytesSize(const IDataType * column_type)
 {
-    if (!column_type.isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-    {
-        if (!throw_if_not_applicable)
-            return {};
+    if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is not applicable for {} because the data type is not of fixed size",
-            column_type.getName());
-    }
+            column_type->getName());
 
-    size_t max_size = column_type.getSizeOfValueInMemory();
+    size_t max_size = column_type->getSizeOfValueInMemory();
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
         return static_cast<UInt8>(max_size);
-    if (!throw_if_not_applicable)
-        return {};
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Codec Delta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
-        column_type.getName());
+        column_type->getName());
 }
 
 }
@@ -311,13 +225,12 @@ void registerCodecDelta(CompressionCodecFactory & factory)
         }
         else if (column_type)
         {
-            delta_bytes_size = *getDeltaBytesSize(*column_type, /*throw_if_not_applicable=*/ true);
+            delta_bytes_size = getDeltaBytesSize(column_type);
         }
 
         return std::make_shared<CompressionCodecDelta>(delta_bytes_size);
     };
-    factory.registerCompressionCodecWithType("Delta", method_code, codec_builder,
-        {.is_applicable_to_type = [](const IDataType & type) { return getDeltaBytesSize(type, /*throw_if_not_applicable=*/ false).has_value(); }});
+    factory.registerCompressionCodecWithType("Delta", method_code, codec_builder);
 }
 
 CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size)

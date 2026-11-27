@@ -1,8 +1,0 @@
-output_format_arrow_date_as_uint16 = 1
-d	Date32					
-d32	Date32					
-2020-01-02	1950-01-02
-compatibility = '26.1'
-d	Date32					
-d32	Date32					
-2020-01-02	1950-01-02

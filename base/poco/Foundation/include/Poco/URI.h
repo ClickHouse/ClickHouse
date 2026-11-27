@@ -18,11 +18,9 @@
 #define Foundation_URI_INCLUDED
 
 
-#include <string_view>
 #include <utility>
 #include <vector>
 #include "Poco/Foundation.h"
-#include "Poco/NoDumpAllocator.h"
 
 
 namespace Poco
@@ -132,7 +130,7 @@ public:
     /// A list of registered URI schemes can be found
     /// at <http://www.iana.org/assignments/uri-schemes>.
 
-    std::string_view getUserInfo() const [[clang::lifetimebound]];
+    const std::string & getUserInfo() const;
     /// Returns the user-info part of the URI.
 
     void setUserInfo(const std::string & userInfo);
@@ -206,11 +204,11 @@ public:
     /// In addition to regular encoding, function also encodes '&' and '=',
     /// if found in param or val.
 
-    std::string_view getRawQuery() const [[clang::lifetimebound]];
+    const std::string & getRawQuery() const;
     /// Returns the query string in raw form, which usually
     /// means percent encoded.
 
-    void setRawQuery(std::string_view query);
+    void setRawQuery(const std::string & query);
     /// Sets the query part of the URI.
     ///
     /// The given query string must be properly percent-encoded.
@@ -286,11 +284,11 @@ public:
     /// Places the single path segments (delimited by slashes) into the
     /// given vector.
 
-    static void encode(std::string_view str, std::string_view reserved, std::string & encodedStr);
+    static void encode(const std::string & str, const std::string & reserved, std::string & encodedStr);
     /// URI-encodes the given string by escaping reserved and non-ASCII
     /// characters. The encoded string is appended to encodedStr.
 
-    static void decode(std::string_view str, std::string & decodedStr, bool plusAsSpace = false);
+    static void decode(const std::string & str, std::string & decodedStr, bool plusAsSpace = false);
     /// URI-decodes the given string by replacing percent-encoded
     /// characters with the actual character. The decoded string
     /// is appended to decodedStr.
@@ -357,11 +355,11 @@ private:
 
 
     std::string _scheme;
-    std::vector<char, NoDumpAllocator<char>> _userInfo;
+    std::string _userInfo;
     std::string _host;
     unsigned short _port;
     std::string _path;
-    std::vector<char, NoDumpAllocator<char>> _query;
+    std::string _query;
     std::string _fragment;
 
     bool _enable_url_encoding = true;
@@ -377,9 +375,9 @@ inline const std::string & URI::getScheme() const
 }
 
 
-inline std::string_view URI::getUserInfo() const
+inline const std::string & URI::getUserInfo() const
 {
-    return {_userInfo.data(), _userInfo.size()};
+    return _userInfo;
 }
 
 
@@ -395,9 +393,9 @@ inline const std::string & URI::getPath() const
 }
 
 
-inline std::string_view URI::getRawQuery() const
+inline const std::string & URI::getRawQuery() const
 {
-    return {_query.data(), _query.size()};
+    return _query;
 }
 
 

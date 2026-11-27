@@ -2,9 +2,10 @@
 
 #include <optional>
 #include <base/types.h>
-#include <base/sanitizer_defs.h> /// THREAD_SANITIZER, used by QUERY_PROFILER_SUPPORTED below
 #include <signal.h>
 #include <time.h>
+
+#include "config.h"
 
 #include <Common/Logger.h>
 
@@ -13,30 +14,6 @@ namespace Poco
 {
     class Logger;
 }
-
-/// Whether the sampling query profiler can run in this build.
-///
-/// It is disabled under TSan on macOS. The macOS profiler stops threads with `thread_suspend` and
-/// reads their stacks from a sampler thread (see ProfilerSampler in QueryProfiler.cpp), which has
-/// not been exercised under TSan: there is no macOS TSan CI.
-///
-/// It is disabled under MSan because it destroys every MSan report. Printing a report takes the
-/// sanitizer runtime seconds (it symbolizes each frame through an `llvm-symbolizer` subprocess),
-/// and it holds `ScopedErrorReportLock` for the whole time. A profiler signal delivered to that
-/// thread meanwhile runs instrumented code in the handler, which trips a second MSan check; the
-/// runtime treats a same-thread re-entry into the report lock as unrecoverable, writes
-/// `MemorySanitizer: nested bug in the same thread, aborting.` and calls `internal__exit`. The
-/// report is then truncated after its `WARNING: MemorySanitizer: use-of-uninitialized-value`
-/// header line, with no stack trace, no `SUMMARY` and no origin - so a real bug found under MSan
-/// carries no information at all about where it is. Other sanitizers are unaffected: their checks
-/// fire only on genuinely invalid accesses, which the handler does not perform.
-///
-/// Emscripten declares `SIGEV_THREAD_ID` but its `sigevent` has no `_sigev_un`, and a
-/// WebAssembly sandbox has no signals to deliver a timer expiry with in the first place.
-#if (defined(SIGEV_THREAD_ID) || defined(OS_DARWIN)) && !(defined(THREAD_SANITIZER) && defined(OS_DARWIN)) \
-    && !defined(MEMORY_SANITIZER) && defined(OS_HAS_SIGNAL_HANDLERS)
-#    define QUERY_PROFILER_SUPPORTED 1
-#endif
 
 namespace DB
 {
@@ -53,7 +30,7 @@ namespace DB
   * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCPU.
   */
 
-#if defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
+#if defined(SIGEV_THREAD_ID)
 class Timer
 {
 public:
@@ -71,7 +48,7 @@ private:
     LoggerPtr log;
     std::optional<timer_t> timer_id;
 };
-#endif // defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
+#endif // defined(SIGEV_THREAD_ID)
 
 template <typename ProfilerImpl>
 class QueryProfilerBase
@@ -89,7 +66,7 @@ private:
 
     LoggerPtr log;
 
-#if defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
+#if defined(SIGEV_THREAD_ID)
     inline static thread_local Timer timer = Timer();
 #endif
 
@@ -104,8 +81,6 @@ public:
     QueryProfilerReal(UInt64 thread_id, UInt64 period); /// NOLINT
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
-
-    static constexpr int PAUSE_SIGNAL = SIGUSR1;
 };
 
 /// Query profiler with timer based on CPU clock
@@ -115,8 +90,6 @@ public:
     QueryProfilerCPU(UInt64 thread_id, UInt64 period); /// NOLINT
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
-
-    static constexpr int PAUSE_SIGNAL = SIGUSR2;
 };
 
 }

@@ -8,7 +8,6 @@
 #include <Storages/YTsaurus/StorageYTsaurus.h>
 #include <Core/YTsaurus/YTsaurusClient.h>
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 
 namespace DB
@@ -18,6 +17,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+
 class YTsarususDictionarySource final : public IDictionarySource
 {
 public:
@@ -25,8 +25,7 @@ public:
         ContextPtr context_,
         const DictionaryStructure & dict_struct_,
         std::shared_ptr<YTsaurusStorageConfiguration> configuration_,
-        const Block & sample_block_,
-        const String & name);
+        const Block & sample_block_);
 
     YTsarususDictionarySource(const YTsarususDictionarySource & other);
 
@@ -39,20 +38,20 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for YTsarususDictionarySource");
     }
 
-    [[nodiscard]] bool supportsSelectiveLoad() const override;
+    bool supportsSelectiveLoad() const override;
 
     BlockIO loadIds(const VectorWithMemoryTracking<UInt64> & ids) override;
 
     BlockIO loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows) override;
 
-    [[nodiscard]] bool isModified() const override { return true; }
+    bool isModified() const override { return true; }
 
     /// Not yet supported
-    [[nodiscard]] bool hasUpdateField() const override { return false; }
+    bool hasUpdateField() const override { return false; }
 
-    [[nodiscard]] DictionarySourcePtr clone() const override { return std::make_shared<YTsarususDictionarySource>(*this); }
+    DictionarySourcePtr clone() const override { return std::make_shared<YTsarususDictionarySource>(*this); }
 
-    [[nodiscard]] std::string toString() const override;
+    std::string toString() const override;
 
 private:
     ContextPtr context;
@@ -60,8 +59,6 @@ private:
     const std::shared_ptr<YTsaurusStorageConfiguration> configuration;
     SharedHeader sample_block;
     YTsaurusClientPtr client;
-    const ThrottlerPtr lookup_throttler;
-    const String name;
 };
 
 }

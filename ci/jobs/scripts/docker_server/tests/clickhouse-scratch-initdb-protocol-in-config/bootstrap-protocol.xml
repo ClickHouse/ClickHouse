@@ -1,9 +1,0 @@
-<clickhouse>
-    <protocols>
-        <bootstrap>
-            <type>tcp</type>
-            <host>0.0.0.0</host>
-            <port>19003</port>
-        </bootstrap>
-    </protocols>
-</clickhouse>

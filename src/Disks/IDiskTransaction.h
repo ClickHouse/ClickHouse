@@ -127,6 +127,9 @@ public:
     /// Set last modified time to file or directory at `path`.
     virtual void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) = 0;
 
+    /// Just chmod.
+    virtual void chmod(const String & path, mode_t mode) = 0;
+
     /// Set file at `path` as read-only.
     virtual void setReadOnly(const std::string & path) = 0;
 
@@ -135,18 +138,6 @@ public:
 
     /// Truncate file to the target size.
     virtual void truncateFile(const std::string & src_path, size_t size) = 0;
-
-    /// Increment the reference count of a data blob shared between metadata files.
-    virtual void incrementBlobRefCount(const std::string & /* blob */)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Blob reference counting is not implemented for this disk transaction");
-    }
-
-    /// Decrement the reference count of a data blob; at zero the blob becomes eligible for removal.
-    virtual void decrementBlobRefCount(const std::string & /* blob */)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Blob reference counting is not implemented for this disk transaction");
-    }
 };
 
 using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;

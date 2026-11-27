@@ -1,7 +1,0 @@
-Type Int128 is not supported by the HiveText output format
-Type UInt128 is not supported by the HiveText output format
-Type Int256 is not supported by the HiveText output format
-Type UInt256 is not supported by the HiveText output format
-Decimal precision 76 is not supported by the HiveText output format
-Decimal precision 39 is not supported by the HiveText output format
-18446744073709551615-92233720368547758082550.5-0.251.23.45.699999999999999999999999999999999999999
