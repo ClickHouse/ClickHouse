@@ -1,0 +1,36 @@
+A Tuple element reuses the name of a column of a different type
+   ┏━━━━┳━━━━━━━━━━━━┓
+   ┃ id ┃ user       ┃
+   ┃    ┣━━━━┳━━━━━━━┫
+   ┃    ┃ id ┃ name  ┃
+   ┡━━━━╇━━━━╇━━━━━━━┩
+1. │  1 │ u1 │ alice │
+   └────┴────┴───────┘
+   ┌─id─┬─user───────┐
+   ├────┼─id─┬─name──┤
+1. │  1 │ u1 │ alice │
+   └────┴────┴───────┘
+    id   user      
+         id   name 
+
+1.   1   u1   alice 
+A nested Tuple element reuses the name of an outer element
+   ┌─t───────────┐
+   ├─id─┬─parent─┤
+   ├────┼─id─┬─n─┤
+1. │  1 │ x  │ 2 │
+   └────┴────┴───┘
+Two Tuples have elements with the same name and different types
+   ┌─t1─┬─t2─┐
+   ├──a─┼─a──┤
+1. │  1 │ x  │
+   └────┴────┘
+Nullable and LowCardinality differ from the plain type
+   ┌─id─┬─t──────┐
+   ├────┼─id─┬─s─┤
+1. │  1 │  1 │ x │
+   └────┴────┴───┘
+   ┌─s─┬─t─────┐
+   ├───┼─s─┬─n─┤
+1. │ a │ b │ 1 │
+   └───┴───┴───┘

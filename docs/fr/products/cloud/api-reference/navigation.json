@@ -1,9 +1,9 @@
 [
   {
-    "group": "Organisation",
+    "group": "Organization",
     "pages": [
       {
-        "group": "Organisation",
+        "group": "Organization",
         "pages": [
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
@@ -38,7 +38,7 @@
         ]
       },
       {
-        "group": "Facturation",
+        "group": "Billing",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
           "products/cloud/api-reference/billing/inference-usage-cost-get",
@@ -47,7 +47,7 @@
         ]
       },
       {
-        "group": "Gestion des utilisateurs",
+        "group": "User management",
         "pages": [
           "products/cloud/api-reference/user-management/whoami-get",
           "GET /v1/organizations/{organizationId}/members",
@@ -61,7 +61,7 @@
         ]
       },
       {
-        "group": "Gestion des rôles",
+        "group": "Role Management",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",
@@ -175,7 +175,7 @@
     ]
   },
   {
-    "group": "Clés API",
+    "group": "API keys",
     "pages": [
       "GET /v1/organizations/{organizationId}/keys",
       "POST /v1/organizations/{organizationId}/keys",

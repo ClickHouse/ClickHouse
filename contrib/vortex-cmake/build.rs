@@ -9,11 +9,27 @@
 
 use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use serde::Deserialize;
 
 const UPDATE_VAR: &str = "VORTEX_FFI_HEADER_UPDATE";
 
+#[derive(Deserialize)]
+struct Lock {
+    package: Vec<Package>,
+}
+
+#[derive(Deserialize)]
+struct Package {
+    name: String,
+    version: String,
+}
+
 fn main() {
+    emit_vortex_version();
+
     let crate_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR should be set");
     let crate_dir = Path::new(&crate_dir);
     let header_path = crate_dir.join("include/vortex_ffi.h");
@@ -55,4 +71,41 @@ fn main() {
         "cargo::error=include/vortex_ffi.h is not what src/lib.rs generates. \
          Run `{UPDATE_VAR}=1 cargo check -p _ch_rust_vortex` and commit the result."
     );
+}
+
+fn emit_vortex_version() {
+    let lock_path = workspace_dir().join("Cargo.lock");
+    println!("cargo::rerun-if-changed={}", lock_path.display());
+
+    let lock = fs::read_to_string(&lock_path)
+        .unwrap_or_else(|error| panic!("cannot read {}: {error}", lock_path.display()));
+    let lock: Lock = toml::from_str(&lock)
+        .unwrap_or_else(|error| panic!("cannot parse {}: {error}", lock_path.display()));
+
+    let versions: Vec<&str> = lock
+        .package
+        .iter()
+        .filter(|package| package.name == "vortex")
+        .map(|package| package.version.as_str())
+        .collect();
+    let [version] = versions[..] else {
+        panic!("expected one version of `vortex` in {}, found {versions:?}", lock_path.display());
+    };
+    println!("cargo::rustc-env=VORTEX_CRATE_VERSION={version}");
+}
+
+fn workspace_dir() -> PathBuf {
+    let cargo = env::var_os("CARGO").expect("CARGO should be set");
+    let output = Command::new(cargo)
+        .args(["locate-project", "--workspace", "--message-format", "plain"])
+        .output()
+        .expect("cannot run `cargo locate-project`");
+    assert!(
+        output.status.success(),
+        "`cargo locate-project` failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let manifest = String::from_utf8(output.stdout).expect("the path should be UTF-8");
+    Path::new(manifest.trim()).parent().expect("the path should have a parent").to_owned()
 }

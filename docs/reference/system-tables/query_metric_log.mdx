@@ -129,6 +129,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_UniqueKeyDedupProbes` ([UInt64](/reference/data-types/int-uint)) — Number of new-row keys probed against existing parts on the UNIQUE KEY INSERT write-path.
 - `ProfileEvent_UniqueKeyConflictOverwriteRows` ([UInt64](/reference/data-types/int-uint)) — Number of new-row keys that superseded a live row in an existing part on the UNIQUE KEY INSERT write-path.
 - `ProfileEvent_UniqueKeyConflictIgnoredRows` ([UInt64](/reference/data-types/int-uint)) — Number of incoming rows dropped by unique_key_conflict_action = ignore because the key was already live in the partition.
+- `ProfileEvent_UniqueKeyDeleteRows` ([UInt64](/reference/data-types/int-uint)) — Number of rows marked dead by synchronous DELETE on UNIQUE KEY tables.
 - `ProfileEvent_PrimaryIndexCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times an entry has been found in the primary index cache, so we didn't have to load an index file.
 - `ProfileEvent_StatisticsCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times the statistics of a column of a data part have been found in the statistics cache.
 - `ProfileEvent_StatisticsCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times the statistics of a column of a data part have not been found in the statistics cache, so they had to be loaded from the part.
@@ -144,10 +145,12 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_TimeSeriesMetricFamiliesDeduplicationCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of rows written to the metric families tables of TimeSeries tables after they were not found in the deduplication cache.
 - `ProfileEvent_TimeSeriesTagsDeduplicationCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of rows not written to the tags tables of TimeSeries tables because the deduplication cache already had them or the same insert had already written them.
 - `ProfileEvent_TimeSeriesTagsDeduplicationCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of rows written to the tags tables of TimeSeries tables after they were not found in the deduplication cache.
+- `ProfileEvent_PrometheusRemoteWriteDroppedExemplars` ([UInt64](/reference/data-types/int-uint)) — Number of exemplars received through the Prometheus remote-write protocol and dropped because the TimeSeries table does not store exemplars. They are counted only when the write is stored, for an async insert when its flush succeeds.
 - `ProfileEvent_IcebergMetadataReadWaitTimeMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time data readers spend waiting for iceberg metadata files to be read and parsed, summed across all reader threads.
 - `ProfileEvent_ParquetMetadataCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times parquet metadata has been found in the cache.
 - `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times parquet metadata has not been found in the cache and had to be read from disk.
 - `ProfileEvent_ParquetMetadataCacheOffsetIndexHits` ([UInt64](/reference/data-types/int-uint)) — Number of Parquet column chunks whose offset index was taken from the parquet metadata cache instead of being read from the file.
+- `ProfileEvent_ParquetMetadataCacheColumnIndexHits` ([UInt64](/reference/data-types/int-uint)) — Number of Parquet column chunks whose column index was taken from the parquet metadata cache instead of being read from the file.
 - `ProfileEvent_ParquetMetadataCacheWeightLost` ([UInt64](/reference/data-types/int-uint)) — Approximate number of bytes evicted from the parquet metadata cache.
 - `ProfileEvent_IcebergIteratorInitializationMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent on synchronous initialization of iceberg data iterators.
 - `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent updating iceberg storage metadata from state (buildStorageMetadataFromState).
@@ -226,6 +229,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_TextIndexFilledFromFoldedPostings` ([UInt64](/reference/data-types/int-uint)) — Number of times a text index virtual column was filled for all rows of a read directly from the posting lists folded during the index analysis, instead of from posting lists built for each granule.
 - `ProfileEvent_TextIndexDictionaryDFABuilds` ([UInt64](/reference/data-types/int-uint)) — Number of times a DFA was built from a LIKE pattern to skip dictionary blocks of a text index. Reusing an already built DFA is not counted.
 - `ProfileEvent_TextIndexDiscardPatternScan` ([UInt64](/reference/data-types/int-uint)) — Number of times pattern-based dictionary scan in a text index was discarded because the number of posting lists to read exceeded the threshold.
+- `ProfileEvent_TextIndexPatternScanSkippedByCost` ([UInt64](/reference/data-types/int-uint)) — Number of times a text index pattern dictionary scan of a part was skipped because the dictionary blocks to scan take more bytes than the rows still readable after the primary key and prior skip indexes take in the indexed columns.
 - `ProfileEvent_TextIndexPatternBypassCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times a text index pattern dictionary scan was skipped because an earlier scan of the same part exceeded the posting-list threshold.
 - `ProfileEvent_TextIndexGenericExclusionSearchAlgorithm` ([UInt64](/reference/data-types/int-uint)) — Number of times the generic exclusion search algorithm is used over the text index.
 - `ProfileEvent_TextIndexGenericExclusionSearchStepLimitReached` ([UInt64](/reference/data-types/int-uint)) — Number of times the generic exclusion search over the text index reached merge_tree_generic_exclusion_search_max_steps and accepted the remaining mark ranges without further splitting.
@@ -401,6 +405,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ReplicatedPartMutations` ([UInt64](/reference/data-types/int-uint)) — Number of times data parts of ReplicatedMergeTree tables were successfully mutated.
 - `ProfileEvent_ReplicatedPartChecks` ([UInt64](/reference/data-types/int-uint)) — Number of times we had to perform advanced search for a data part on replicas or to clarify the need of an existing data part.
 - `ProfileEvent_ReplicatedPartChecksFailed` ([UInt64](/reference/data-types/int-uint)) — Number of times the advanced search for a data part on replicas did not give result or when unexpected part has been found and moved away.
+- `ProfileEvent_PartCheckPassedAfterPageCacheReadError` ([UInt64](/reference/data-types/int-uint)) — Number of times a data part of a ReplicatedMergeTree table that failed to be read passed its check with direct I/O, bypassing the OS page cache. The read error was probably caused by wrong data in the page cache, not by the data on disk.
 - `ProfileEvent_ReplicatedDataLoss` ([UInt64](/reference/data-types/int-uint)) — Number of times a data part that we wanted doesn't exist on any replica (even on replicas that are offline right now). That data parts are definitely lost. This is normal due to asynchronous replication (if quorum inserts were not enabled), when the replica on which the data part was written was failed and when it became online after fail it doesn't contain that data part.
 - `ProfileEvent_ReplicatedCoveredPartsInZooKeeperOnStart` ([UInt64](/reference/data-types/int-uint)) — For debugging purposes. Number of parts in ZooKeeper that have a covering part, but doesn't exist on disk. Checked on server start.
 - `ProfileEvent_QuorumParts` ([UInt64](/reference/data-types/int-uint)) — Number of data parts written with quorum. It counts as one part for sync insert and maybe up to async inserts count for insert which flushes async inserts.
@@ -609,6 +614,9 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_DistributedIndexAnalysisReplicaUnavailable` ([UInt64](/reference/data-types/int-uint)) — Number of times distributed index analysis failed on one of replicas without fallback (failed during connect)
 - `ProfileEvent_DistributedIndexAnalysisReplicaFallback` ([UInt64](/reference/data-types/int-uint)) — Number of times distributed index analysis failed on one of replicas with fallback to local replica
 - `ProfileEvent_DistributedIndexAnalysisMissingParts` ([UInt64](/reference/data-types/int-uint)) — Number of missing parts during distributed index analysis that will be resolved locally
+- `ProfileEvent_DistributedIndexAnalysisOnWorkersTasks` ([UInt64](/reference/data-types/int-uint)) — Number of tasks sent to stateless workers for index analysis (on the coordinator)
+- `ProfileEvent_DistributedIndexAnalysisOnWorkersParts` ([UInt64](/reference/data-types/int-uint)) — Number of parts sent to stateless workers for index analysis (on the coordinator)
+- `ProfileEvent_DistributedIndexAnalysisOnWorkersAnalyzedParts` ([UInt64](/reference/data-types/int-uint)) — Number of parts a stateless worker analyzed for index analysis
 - `ProfileEvent_WaitMarksLoadMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent loading marks
 - `ProfileEvent_BackgroundLoadingMarksTasks` ([UInt64](/reference/data-types/int-uint)) — Number of background tasks for loading marks
 - `ProfileEvent_MarksTasksFromCache` ([UInt64](/reference/data-types/int-uint)) — Number of times marks were loaded synchronously because they were already present in the cache.
@@ -971,6 +979,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ReadBufferFromAzureInitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent initializing connection to Azure.
 - `ProfileEvent_ReadBufferFromAzureBytes` ([UInt64](/reference/data-types/int-uint)) — Bytes read from Azure.
 - `ProfileEvent_ReadBufferFromAzureRequestsErrors` ([UInt64](/reference/data-types/int-uint)) — Number of exceptions while reading from Azure
+- `ProfileEvent_WriteBufferFromAzureBytes` ([UInt64](/reference/data-types/int-uint)) — Bytes written to Azure.
 - `ProfileEvent_CachedReadBufferReadFromCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times the read from filesystem cache hit the cache.
 - `ProfileEvent_CachedReadBufferReadFromCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times the read from filesystem cache miss the cache.
 - `ProfileEvent_CachedReadBufferReadFromSourceMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time reading from filesystem cache source (from remote filesystem, etc)
@@ -1199,6 +1208,10 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_KeeperReadRequestQueueLockWaitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent waiting for acquiring Keeper read request queue lock
 - `ProfileEvent_KeeperProcessAndResponsesLockWaitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent waiting for acquiring Keeper process and responses lock
 - `ProfileEvent_KeeperCommitWaitElapsedMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent waiting for certain log to be committed
+- `ProfileEvent_KeeperLogStoreAppend` ([UInt64](/reference/data-types/int-uint)) — Number of entries appended to the Keeper log store
+- `ProfileEvent_KeeperLogStoreAppendMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent appending entries to the Keeper log store, including the changelog lock wait (the entry is written and fsynced by the background changelog writer, see KeeperChangelogFileSyncMicroseconds)
+- `ProfileEvent_KeeperSnapshotWriteMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent writing a Keeper snapshot file (serialization, compression and sync)
+- `ProfileEvent_KeeperSnapshotApplyMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent applying a Keeper snapshot to the Keeper state machine
 - `ProfileEvent_KeeperBatchMaxCount` ([UInt64](/reference/data-types/int-uint)) — Number of batches that hit max_requests_batch_size limit
 - `ProfileEvent_KeeperBatchMaxTotalSize` ([UInt64](/reference/data-types/int-uint)) — Number of batches that hit max_requests_batch_bytes_size limit
 - `ProfileEvent_KeeperBatchMaxReadCount` ([UInt64](/reference/data-types/int-uint)) — Number of batches that hit max_read_batch_size limit
@@ -1344,6 +1357,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_DistrCacheReadErrorsRetriable` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache client event. Number of retriable distributed cache errors during read requests (counted on each occurrence, including the ones recovered by a retry)
 - `ProfileEvent_DistrCacheReadErrorsNonRetriable` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache client event. Number of non-retriable distributed cache errors during read requests
 - `ProfileEvent_DistrCacheReadRequestRetriesExhausted` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. Number of times a retriable read error did not succeed within the read request retries limit
+- `ProfileEvent_DistrCacheReadsSkippedRegistryNotReady` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache client event. Number of read buffers of object storage disks that asked for the distributed cache but were created without it because the distributed cache registry was not ready (e.g. no cache server was registered)
 - `ProfileEvent_DistrCacheWriteErrors` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache client event. Total number of distributed cache errors during write requests (equals DistrCacheWriteErrorsRetriable + DistrCacheWriteErrorsNonRetriable). A server-initiated write-through cache `Stop` is flow control, not an error, and is not counted
 - `ProfileEvent_DistrCacheWriteErrorsRetriable` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache client event. Number of retriable distributed cache errors during write requests (counted on each occurrence, including the ones recovered by a retry)
 - `ProfileEvent_DistrCacheWriteErrorsNonRetriable` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache client event. Number of non-retriable distributed cache errors during write requests

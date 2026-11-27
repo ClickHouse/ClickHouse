@@ -82,6 +82,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/digits10.h>
+#include <Common/escapeString.h>
 #include <Common/quoteString.h>
 #include <base/wide_integer_to_string.h>
 
@@ -98,6 +99,7 @@ namespace Setting
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsBool input_format_ipv4_default_on_conversion_error;
     extern const SettingsBool input_format_ipv6_default_on_conversion_error;
+    extern const SettingsBool json_use_optimized_type_conversion;
     extern const SettingsBool check_conversion_from_numbers_to_enum;
     extern const SettingsBool precise_float_parsing;
     extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
@@ -140,14 +142,17 @@ struct FunctionConvertSettings
     const bool check_conversion_from_numbers_to_enum;
     const bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     const bool cast_keep_nullable;
+    const bool json_use_optimized_type_conversion;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
-    const FormatSettings format_settings;
+    FormatSettings format_settings;
     /// `format_settings` has too many members to hash one by one; this hashes the session settings it
     /// was derived from instead (see `getFormatSettingsHash`).
     const UInt64 format_settings_hash;
+    const TupleElementsMatching tuple_elements_matching;
 
     /// Note: context may be nullptr (i.e. via castColumn())
-    explicit FunctionConvertSettings(const ContextPtr & context, FormatSettings::DateTimeOverflowBehavior datetime_overflow_behavior_)
+    explicit FunctionConvertSettings(const ContextPtr & context, FormatSettings::DateTimeOverflowBehavior datetime_overflow_behavior_,
+        TupleElementsMatching tuple_elements_matching_ = TupleElementsMatching::Default)
         /// Only use context settings if the overflow behavior was not explicitly via createFromSettings
         : date_time_overflow_behavior(context && datetime_overflow_behavior_ == default_date_time_overflow_behavior ? context->getSettingsRef()[Setting::date_time_overflow_behavior].value : datetime_overflow_behavior_)
         , precise_float_parsing(context && context->getSettingsRef()[Setting::precise_float_parsing])
@@ -159,9 +164,52 @@ struct FunctionConvertSettings
         , check_conversion_from_numbers_to_enum(context && context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum])
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
         , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
+        , json_use_optimized_type_conversion(!context || context->getSettingsRef()[Setting::json_use_optimized_type_conversion])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
         , format_settings_hash(context ? getFormatSettingsHash(context->getSettingsRef()) : 0)
+        , tuple_elements_matching(tuple_elements_matching_)
+    {
+    }
+
+    /// A value a nested JSON CAST writes as text must not depend on the user's presentation settings
+    /// (they would change the stored value and diverge from the parser route), so normalize them to
+    /// shortest-lossless float text and canonical Boolean tokens.
+    static FormatSettings normalizeNestedConversionFormatSettings(FormatSettings fs)
+    {
+        fs.float_precision = 0;
+        fs.bool_true_representation = "true";
+        fs.bool_false_representation = "false";
+        return fs;
+    }
+
+    /// Copy of `base` for a CAST nested inside another conversion: the settings that describe the
+    /// user's own top-level CAST are replaced by what the enclosing conversion needs.
+    FunctionConvertSettings(
+        const FunctionConvertSettings & base,
+        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
+        FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode_,
+        bool cast_keep_nullable_)
+        : date_time_overflow_behavior(date_time_overflow_behavior_)
+        , precise_float_parsing(base.precise_float_parsing)
+        /// The JSON parser rejects a malformed address, and a string reaches the nested CAST only when
+        /// the parser would not infer a type for it (see needsFormatParseFallback). All these flags
+        /// describe the user's own CAST, so leaving them on would store a default address for invalid
+        /// input, or a number where the parser keeps a string.
+        , cast_ipv4_ipv6_default_on_conversion_error(false)
+        , cast_string_to_variant_use_inference(base.cast_string_to_variant_use_inference)
+        , cast_string_to_dynamic_use_inference(false)
+        , input_format_ipv4_default_on_conversion_error(false)
+        , input_format_ipv6_default_on_conversion_error(false)
+        , check_conversion_from_numbers_to_enum(base.check_conversion_from_numbers_to_enum)
+        , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(
+              base.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands)
+        , cast_keep_nullable(cast_keep_nullable_)
+        , json_use_optimized_type_conversion(base.json_use_optimized_type_conversion)
+        , cast_string_to_date_time_mode(cast_string_to_date_time_mode_)
+        , format_settings(normalizeNestedConversionFormatSettings(base.format_settings))
+        , format_settings_hash(base.format_settings_hash)
+        , tuple_elements_matching(base.tuple_elements_matching)
     {
     }
 
@@ -186,8 +234,10 @@ struct FunctionConvertSettings
         hash.update(check_conversion_from_numbers_to_enum);
         hash.update(date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands);
         hash.update(cast_keep_nullable);
+        hash.update(json_use_optimized_type_conversion);
         hash.update(cast_string_to_date_time_mode);
         hash.update(format_settings_hash);
+        hash.update(static_cast<UInt8>(tuple_elements_matching));
     }
 };
 
@@ -1183,7 +1233,8 @@ struct ConvertImplGenericToString
             auto serialization = type.getDefaultSerialization();
             for (size_t row = 0; row < size; ++row)
             {
-                serialization->serializeText(col_from, row, write_buffer, format_settings);
+                if (!null_map || !null_map->getData()[row])
+                    serialization->serializeText(col_from, row, write_buffer, format_settings);
                 write_helper.finishRow();
             }
 
@@ -1391,13 +1442,13 @@ inline bool tryParseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer &
 [[noreturn]] inline void throwExceptionForIncompletelyParsedValue(ReadBuffer & read_buffer, const IDataType & result_type)
 {
     WriteBufferFromOwnString message_buf;
-    message_buf << "Cannot parse string " << quote << String(read_buffer.buffer().begin(), read_buffer.buffer().size())
+    message_buf << "Cannot parse string " << escapeNonPrintableCharacters(quoteString({read_buffer.buffer().begin(), read_buffer.buffer().size()}))
                 << " as " << result_type.getName()
                 << ": syntax error";
 
     if (read_buffer.offset())
         message_buf << " at position " << read_buffer.offset()
-                    << " (parsed just " << quote << String(read_buffer.buffer().begin(), read_buffer.offset()) << ")";
+                    << " (parsed just " << escapeNonPrintableCharacters(quoteString({read_buffer.buffer().begin(), read_buffer.offset()})) << ")";
     else
         message_buf << " at begin of string";
 
@@ -1714,7 +1765,8 @@ struct ConvertThroughParsing
                             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
                             {
                                 if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, settings.precise_float_parsing, saturate_on_overflow))
-                                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse string to type {}", TypeName<typename ToDataType::FieldType>);
+                                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse string '{}' as type {}",
+                                        String(read_buffer.buffer().begin(), read_buffer.buffer().size()), TypeName<typename ToDataType::FieldType>);
                             }
                             else
                                 parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, settings.precise_float_parsing, saturate_on_overflow);
@@ -2280,8 +2332,8 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value in column {} cannot be safely converted into type {}",
-                        named_from.column->getName(), result_type->getName());
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value '{}' in column {} cannot be safely converted into type {}",
+                        toString(vec_from[i]), named_from.column->getName(), result_type->getName());
                 }
             }
         }
@@ -2984,6 +3036,18 @@ struct ConvertImpl
                 scale = additions.scale;
             else
                 scale = additions;
+
+            /// With the same scale only the time zone can differ, which keeps the ticks.
+            if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64> && std::is_same_v<ToDataType, DataTypeDateTime64>)
+            {
+                if (col_from->getScale() == scale)
+                {
+                    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                        return ColumnNullable::create(named_from.column, ColumnUInt8::create(input_rows_count, false));
+                    else
+                        return named_from.column;
+                }
+            }
 
             auto col_to = ColVecTo::create(0, scale);
             const auto & vec_from = col_from->getData();
@@ -6291,7 +6355,8 @@ private:
 /// `context` may be nullptr.
 FunctionConvertSettingsPtr createFunctionConvertSettings(
     const ContextPtr & context,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior,
+    TupleElementsMatching tuple_elements_matching = TupleElementsMatching::Default);
 
 FunctionBasePtr createFunctionBaseCast(
     const FunctionConvertSettingsPtr & settings,

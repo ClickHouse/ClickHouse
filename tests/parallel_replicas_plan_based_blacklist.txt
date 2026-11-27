@@ -1,21 +1,3 @@
-    A read from a UNIQUE KEY table is shipped, but cannot be serialized (SUPPORT_IS_DISABLED)
-    https://github.com/ClickHouse/ClickHouse/issues/128534
-03313_unique_key_mutation_guard
-04046_unique_key_ddl
-04105_unique_key_insert
-04107_unique_key_insert_concurrency
-04168_unique_key_conflict_action
-04174_unique_key_insert_dedup
-04196_unique_key_read_skips_an_uncommitted_part
-04198_unique_key_read_sees_a_lost_reply_commit
-
-    A `GLOBAL IN` set built from `input()` has no plan to ship, so plan-based keeps the read local
-05237_parallel_replicas_input_table_function
-
-    A read with Top-K dynamic filtering stays local (`__topKFilter` cannot be shipped), so the query does not use parallel replicas
-    https://github.com/ClickHouse/ClickHouse/issues/131858
-04717_parallel_replicas_min_rows_per_replica_right_join
-
     A read with direct read from a text index stays local (`__text_index_*` columns cannot be shipped), so the query does not use parallel replicas
 05410_time_series_tags_functions_parallel_replicas_expired_context
 
@@ -59,7 +41,6 @@
 01045_order_by_pk_special_storages
 01283_max_threads_simple_query_optimization
 02784_parallel_replicas_automatic_decision_join
-04836_merge_table_parallel_replicas_duplicate_announcement
 05399_autopr_plan_without_parallel_replicas
 
     Automatic parallel replicas collects no statistics: the shipped plan has no matching step in the single-node plan
@@ -83,7 +64,6 @@
 04908_group_by_top_k_max_k_cap
 05019_group_by_top_k_compatibility
 05175_autopr_keep_cluster_engines
-05768_parallel_replicas_projections_settings_in_subquery
 
     A plan-based parallel replica cannot find the tags collected by `timeSeriesStoreTags` (fix: https://github.com/ClickHouse/ClickHouse/pull/132565)
     https://github.com/ClickHouse/ClickHouse/issues/131138
@@ -91,6 +71,7 @@
 04891_timeseries_lowcardinality_id
 04910_promql_dialect_regex_matcher
 05059_promql_empty_by_group
+05076_promql_fused_aggregation_pair
 05076_promql_label_manipulation_label_names
 05211_promql_present_over_time_absent_over_time
 05215_promql_predict_linear

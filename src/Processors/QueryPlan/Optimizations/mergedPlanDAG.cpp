@@ -274,6 +274,7 @@ void uniteRightSide(Built & built, Built & right)
     built.dag.nearest_padded_side.merge(right.dag.nearest_padded_side);
     built.dag.origins.merge(right.dag.origins);
     built.dag.step_outputs.merge(right.dag.step_outputs);
+    built.dag.name_clash_outputs.insert(right.dag.name_clash_outputs.begin(), right.dag.name_clash_outputs.end());
     built.pre_join_nodes.append_range(right.pre_join_nodes);
 }
 
@@ -506,6 +507,16 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, VectorWithMemoryTr
     if (dag_outputs.size() < step_dag.getOutputs().size())
         return {};
     dag_outputs.resize(step_dag.getOutputs().size());
+
+    /// An output with a name clash is not touched: it becomes a value of its own that only this join computes.
+    for (size_t position : join_step->getOutputPositionsWithNameClash())
+    {
+        const auto * output = &dag.addAlias(*dag_outputs[position], dag_outputs[position]->result_name);
+        dag_outputs[position] = output;
+        built.dag.origins.emplace(output, MergedPlanDAG::Origin{&node, nullptr});
+        built.dag.name_clash_outputs.insert(output);
+        built.ungated_nodes.push_back(output);
+    }
 
     collectJoinConditions(built, join_operator, clone_mapping);
 

@@ -10,10 +10,7 @@
 #include <utility>
 #include <vector>
 
-namespace ffi
-{
 struct EngineBuilder;
-}
 
 #if USE_AZURE_BLOB_STORAGE
 namespace DB::AzureBlobStorage
@@ -50,7 +47,7 @@ public:
     /// Create "EngineBuilder" which allows to work with
     /// delta-kernel-rs ffi api and performs all interactions
     /// with object storage layer.
-    [[nodiscard]] virtual ffi::EngineBuilder * createBuilder() const = 0;
+    [[nodiscard]] virtual ::EngineBuilder * createBuilder() const = 0;
 
     /// Make the table location ready for a brand-new table; the local helper creates the root directory, object stores (S3/Azure) default to a no-op.
     virtual void prepareForTableCreation() const {}
@@ -69,7 +66,7 @@ using KernelHelperPtr = std::shared_ptr<IKernelHelper>;
 
 #if USE_AZURE_BLOB_STORAGE
 /// Computes the ordered list of delta-kernel-rs object_store builder options
-/// (the name/value pairs later passed to `ffi::set_builder_option`) for the given
+/// (the name/value pairs later passed to `::set_builder_option`) for the given
 /// Azure connection params. Extracted from `AzureKernelHelper::createBuilder` so that
 /// the option-selection logic - in particular, that `azure_storage_account_name` is
 /// always emitted, including on the vended-credentials / SAS path used by Unity catalog -

@@ -201,7 +201,7 @@ $ clickhouse-local --copy < data.json > data.csv
 
 ## 使い方 {#usage}
 
-デフォルトでは、`clickhouse-local` は同じホスト上の ClickHouseサーバーのデータにアクセスでき、サーバー設定には依存しません。また、`--config-file` 引数を使用してサーバー設定を読み込むこともできます。一時データ用には、デフォルトで一意の一時データディレクトリが作成されます。
+デフォルトでは、`clickhouse-local` は同じホスト上の ClickHouseサーバーのデータにアクセスでき、サーバー設定には依存しません。また、`--config-file` 引数を使用してサーバー設定を読み込むこともできます。データはホームディレクトリ内にあるアプリケーションデータ用の専用ディレクトリ (Linux では `$XDG_DATA_HOME/clickhouse-local` または `~/.local/share/clickhouse-local`、macOS では `~/Library/Application Support/clickhouse-local`) に保存されるため、実行を終えても保持されます。別の場所を使用するには `--path` を、終了時に削除される一意の一時ディレクトリで作業するには `--tmp` を指定してください。1 つのディレクトリを同時に使用できるインスタンスは 1 つだけです。
 
 `--config-file` が指定されていない場合、`clickhouse-local` は次の場所を順に検索し、最初に見つかった設定ファイルを使用します。
 
@@ -210,7 +210,7 @@ $ clickhouse-local --copy < data.json > data.csv
 3. `$HOME/.clickhouse-local/config.xml`, `$HOME/.clickhouse-local/config.yaml`, `$HOME/.clickhouse-local/config.yml`
 4. `/etc/clickhouse-local/config.xml`, `/etc/clickhouse-local/config.yaml`, `/etc/clickhouse-local/config.yml`
 
-設定ファイルは、ClickHouseサーバーと同じフォーマットで、XML または YAML のいずれかで記述できます。詳しくは[「設定ファイル」](/operations/configuration-files)を参照してください。
+設定ファイルは、ClickHouseサーバーと同じフォーマットで、XML または YAML のいずれかで記述できます。詳しくは[「設定ファイル」](/ja/operations/configuration-files)を参照してください。
 
 基本的な使い方 (Linux) :
 
@@ -252,6 +252,8 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 * `--logger.level` — ログレベル。
 * `--ignore-error` — クエリが失敗しても処理を停止しません。エラーは `stderr` に報告され、次のクエリが処理されます。エラーは無視されるため、一部のクエリが失敗しても、プロセスは成功を示す終了コードで終了します。
 * `-c`, `--config-file` — ClickHouseサーバー と同じ形式の設定ファイルへのパス。指定しない場合、`clickhouse-local` はメインの設定ファイルを自動的に検索します ([&quot;設定ファイル&quot;](#configuration-files) を参照)。設定が空になるのは、検索対象のファイルがいずれも存在しない場合のみです。
+* `--path` — データ用のディレクトリ。デフォルトでは、ホームディレクトリ内のアプリケーションデータ用の専用ディレクトリ (Linux では `$XDG_DATA_HOME/clickhouse-local` または `~/.local/share/clickhouse-local`、macOS では `~/Library/Application Support/clickhouse-local`) が使用され、データは実行間で保持されます。
+* `--tmp` — データ用に一意の一時ディレクトリを使用します。このディレクトリは終了時に削除されます (以前のバージョンではこれがデフォルトの動作でした)。`--path` が指定されている場合は効果がありません。
 * `--no-system-tables` — システムテーブルをアタッチしません。
 * `--help` — `clickhouse-local` の引数リファレンス。
 * `-V`, `--version` — バージョン情報を表示して終了します。

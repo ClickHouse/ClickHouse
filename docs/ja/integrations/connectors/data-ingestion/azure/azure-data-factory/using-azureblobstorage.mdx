@@ -12,46 +12,38 @@ integration:
 
 これは、Azure Blob Storage または Azure Data Lake Storage から ClickHouse にデータをコピーする、最も効率的でシンプルな方法の 1 つです。このテーブル関数を使うと、ClickHouse が Azure ストレージに直接接続し、必要なときにデータを読み取るようにできます。
 
-この関数は、元データに対して直接 select、insert、filter を実行できるテーブル形式インターフェイスを提供します。この関数は高度に最適化されており、`CSV`、`JSON`、`Parquet`、`Arrow`、`TSV`、`ORC`、`Avro` など、広く使われている多くのファイルフォーマットをサポートしています。完全な一覧については、[&quot;データフォーマット&quot;](/ja/reference/formats/index) を参照してください。
+この関数は、元データに対して直接 select、挿入、filter を実行できるテーブル形式インターフェイスを提供します。この関数は高度に最適化されており、`CSV`、`JSON`、`Parquet`、`Arrow`、`TSV`、`ORC`、`Avro` など、広く使われている多くのファイルフォーマットをサポートしています。完全な一覧については、[&quot;データフォーマット&quot;](/ja/reference/formats/index) を参照してください。
 
 このセクションでは、Azure Blob Storage から ClickHouse にデータを転送するための簡単な入門ガイドと、この関数を効果的に使うための重要な注意点を説明します。詳細および高度なオプションについては、公式ドキュメントを参照してください。
 [`azureBlobStorage` テーブル関数 documentation page](/ja/reference/functions/table-functions/azureBlobStorage)
 
-<div id="acquiring-azure-blob-storage-access-keys">
-  ## Azure Blob Storage のアクセスキーを取得する
-</div>
+## Azure Blob Storage のアクセスキーを取得する {#acquiring-azure-blob-storage-access-keys}
 
 ClickHouse が Azure Blob Storage にアクセスするには、アクセスキーを含む接続文字列が必要です。
 
-1. Azure Portal で **Storage Account** に移動します。
+1. Azure Portal で **ストレージアカウント** に移動します。
 
 2. 左側のメニューで、**Security +
-   networking** セクションの **Access keys** を選択します。
+   networking** セクションの **アクセスキー** を選択します。
+
    <div className="ch-image-lg">
-
-   <Frame>
-
-   ![Azure Data Store Settings](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp)
-
-   </Frame>
-
+     <Frame>
+       ![Azure Data Store Settings](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp)
+     </Frame>
    </div>
 
-3. **key1** または **key2** のいずれかを選択し、**Connection string** フィールドの横にある **Show** ボタンをクリックします。
+3. **key1** または **key2** のいずれかを選択し、**接続文字列** フィールドの横にある **Show** ボタンをクリックします。
+
    <div className="ch-image-lg">
-
-   <Frame>
-
-   ![Azure Data Store Access Keys](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp)
-
-   </Frame>
-
+     <Frame>
+       ![Azure Data Store Access Keys](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp)
+     </Frame>
    </div>
 
 4. 接続文字列をコピーします。これは azureBlobStorage テーブル関数のパラメータとして使用します。
 
 <div id="querying-the-data-from-azure-blob-storage">
-  ## Azure Blob Storage のデータをクエリする
+  ## Azure Blob Storage のデータをクエリする {#querying-the-data-from-azure-blob-storage}
 </div>
 
 使用する ClickHouse のクエリコンソールを開きます。ClickHouse Cloud の
@@ -83,9 +75,7 @@ SELECT * FROM azureBlobStorage(
 
 これにより、中間的なETL処理を挟まずに、外部データを効率的にClickHouseに取り込めます。
 
-<div id="simple-example-using-the-environmental-sensors-dataset">
-  ## Environmental Sensors データセットを使った簡単な例
-</div>
+## Environmental Sensors データセットを使った簡単な例 {#simple-example-using-the-environmental-sensors-dataset}
 
 例として、Environmental Sensors
 データセットから 1 つのファイルをダウンロードします。
@@ -112,14 +102,14 @@ SELECT * FROM azureBlobStorage(
 これで準備が整ったので、Azure Blob Storage から直接データをクエリできます。
 
 ```sql
-    SELECT *
-    FROM azureBlobStorage(
-        '<YOUR CONNECTION STRING>', 
-        'sensors',
-        '2019-06_bmp180.csv.zst', 
-        'CSVWithNames')
-    LIMIT 10
-    SETTINGS format_csv_delimiter = ';'
+SELECT *
+FROM azureBlobStorage(
+    '<YOUR CONNECTION STRING>', 
+    'sensors',
+    '2019-06_bmp180.csv.zst', 
+    'CSVWithNames')
+LIMIT 10
+SETTINGS format_csv_delimiter = ';'
 ```
 
 7. データをテーブルに読み込むには、元のデータセットで使用されている
@@ -138,8 +128,7 @@ SELECT * FROM azureBlobStorage(
    ```
 
 <Info>
-  Azure Blob Storage のような外部ソースに対してクエリを実行する際の設定オプションやスキーマ推論の詳細については、[入力データからの自動
-  スキーマ推論](/ja/concepts/features/interfaces/schema-inference)
+  Azure Blob Storage のような外部ソースに対してクエリを実行する際の設定オプションやスキーマ推論の詳細については、[入力データからのスキーマの自動推論](/ja/concepts/features/interfaces/schema-inference)
   を参照してください。
 </Info>
 
@@ -158,12 +147,12 @@ SELECT * FROM azureBlobStorage(
 これで、sensors テーブルに Azure Blob Storage に保存されている `2019-06_bmp180.csv.zst`
 ファイルのデータが取り込まれました。
 
-<div id="additional-resources">
-  ## 参考資料
-</div>
+## 追加リソース {#additional-resources}
 
-ここでは、azureBlobStorage 関数の基本的な使い方のみを紹介しました。より高度なオプションや設定の詳細については、公式ドキュメントを参照してください。
+ここで紹介したのは、azureBlobStorage 関数の基本的な使い方にすぎません。
+より高度なオプションや設定の詳細については、公式
+ドキュメントを参照してください。
 
 * [azureBlobStorage テーブル関数](/ja/reference/functions/table-functions/azureBlobStorage)
-* [入力データと出力データのフォーマット](/ja/reference/formats/index)
-* [入力データからの自動スキーマ推論](/ja/concepts/features/interfaces/schema-inference)
+* [入出力データの形式](/ja/reference/formats/index)
+* [入力データからのスキーマの自動推論](/ja/concepts/features/interfaces/schema-inference)
