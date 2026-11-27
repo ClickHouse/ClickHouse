@@ -1623,7 +1623,7 @@ For examples of column-level settings modifying, see [Column-level Settings](/re
 
 If the `IF EXISTS` clause is specified, the query won't return an error if the column does not exist.
 
-When changing the type, values are converted as if the [toType](/reference/functions/regular-functions/type-conversion-functions) functions were applied to them. If only the default expression is changed, the query changes metadata only. Turning a stored column into `ALIAS` or `EPHEMERAL` also removes its data from existing parts with a mutation, unless a key, skip index, projection or TTL reads it, or the table has a `UNIQUE KEY`.
+When changing the type, values are converted as if the [toType](/reference/functions/regular-functions/type-conversion-functions) functions were applied to them. If only the default expression is changed, the query changes metadata only. Turning a stored column into `ALIAS` or `EPHEMERAL` also removes its data from existing parts with a mutation, unless a key, skip index or projection reads it, or the table has a `UNIQUE KEY`.
 
 Example:
 

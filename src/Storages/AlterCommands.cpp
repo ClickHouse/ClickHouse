@@ -1806,9 +1806,11 @@ bool AlterCommand::stopsStoringUnreferencedColumn(const StorageInMemoryMetadata 
     for (const auto & subcolumn : metadata.columns.getSubcolumns(column_name))
         names.insert(subcolumn.name);
 
+    /// A TTL cannot read an `ALIAS` or `EPHEMERAL` column, so the `ALTER` is refused unless it also removes such a TTL.
     auto any_dependency = [](const String &, ColumnDependency::Kind) { return true; };
-    if (!metadata.getColumnDependencies(names, /*include_ttl_target=*/ false, any_dependency).empty())
-        return false;
+    for (const auto & dependency : metadata.getColumnDependencies(names, /*include_ttl_target=*/ false, any_dependency))
+        if (dependency.kind != ColumnDependency::TTL_EXPRESSION)
+            return false;
 
     for (const auto & key_columns : {metadata.getColumnsRequiredForSortingKey(), metadata.getColumnsRequiredForPrimaryKey(),
                                      metadata.getColumnsRequiredForPartitionKey(), metadata.getColumnsRequiredForSampling()})

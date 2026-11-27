@@ -24,3 +24,4 @@ only q add index	0	100
 only q index mutations	0
 only two	0	7	52
 only two mutations	0	0
+ttl	1	0	5

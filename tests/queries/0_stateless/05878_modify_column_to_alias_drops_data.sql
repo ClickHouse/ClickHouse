@@ -19,6 +19,7 @@ DROP TABLE IF EXISTS t_only_q;
 DROP TABLE IF EXISTS t_only_q_drop_index;
 DROP TABLE IF EXISTS t_only_q_add_index;
 DROP TABLE IF EXISTS t_only_two;
+DROP TABLE IF EXISTS t_ttl;
 
 CREATE TABLE t_compact (id UInt64, q UInt32) ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
@@ -155,6 +156,15 @@ SELECT 'only two', id, q, r FROM t_only_two;
 SELECT 'only two mutations', countIf(NOT is_done), countIf(latest_fail_reason != '') FROM system.mutations
 WHERE database = currentDatabase() AND table = 't_only_two';
 
+-- A TTL cannot read the converted column, so the ALTER that removes the TTL may convert it in the same statement.
+CREATE TABLE t_ttl (id UInt64, q DateTime, r UInt32 TTL q + INTERVAL 100 YEAR) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_ttl VALUES (1, toDateTime(1000000000), 5);
+ALTER TABLE t_ttl MODIFY COLUMN q DateTime ALIAS toDateTime(0); -- { serverError UNKNOWN_IDENTIFIER }
+ALTER TABLE t_ttl MODIFY COLUMN r REMOVE TTL, MODIFY COLUMN q DateTime ALIAS toDateTime(0);
+ALTER TABLE t_ttl DROP COLUMN q;
+ALTER TABLE t_ttl ADD COLUMN q DateTime;
+SELECT 'ttl', id, toUnixTimestamp(q), r FROM t_ttl;
+
 DROP TABLE t_compact;
 DROP TABLE t_wide;
 DROP TABLE t_ephemeral;
@@ -171,3 +181,4 @@ DROP TABLE t_only_q;
 DROP TABLE t_only_q_drop_index;
 DROP TABLE t_only_q_add_index;
 DROP TABLE t_only_two;
+DROP TABLE t_ttl;
