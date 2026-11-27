@@ -136,6 +136,8 @@ foreach (file parquet_types.h parquet_types.tcc parquet_types.cpp)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${source}")
     file(READ "${source}" content)
     string(REPLACE "  enum type {" "  enum type : int32_t {" content "${content}")
+    # The only Arrow header included by the generated code. It does nothing outside Windows.
+    string(REPLACE "#include \"parquet/windows_compatibility.h\"\n" "" content "${content}")
     set(output "${PARQUET_FORMAT_INCLUDE_DIR}/generated/${file}")
     set(previous_content "")
     if (EXISTS "${output}")
@@ -151,8 +153,6 @@ string(REGEX MATCHALL "enum type {" unfixed_enums "${content}")
 if (unfixed_enums)
     message(FATAL_ERROR "Not all enums of parquet_types.h got a fixed underlying type")
 endif()
-# The only Arrow header included by the generated code. It does nothing outside Windows.
-write_file_if_changed("${PARQUET_FORMAT_INCLUDE_DIR}/parquet/windows_compatibility.h" "#pragma once\n")
 
 add_library(_parquet_format "${PARQUET_FORMAT_INCLUDE_DIR}/generated/parquet_types.cpp")
 target_include_directories(_parquet_format SYSTEM PUBLIC "${PARQUET_FORMAT_INCLUDE_DIR}")
