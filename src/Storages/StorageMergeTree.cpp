@@ -2559,10 +2559,9 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             /// The size of the part is what a full rewrite of it needs. A mutation that only
             /// hardlinks the files it does not touch needs almost nothing, so do not postpone it for
             /// being large - otherwise dropping an index to free space is impossible exactly when the
-            /// space is needed. Necessary condition only (the commands are coalesced below, which can
-            /// only add commands and hence only make the mutation more expensive), so it is checked
-            /// again on the final command list. Evaluated here only, so a part within budget does not
-            /// pay for it.
+            /// space is needed. An admitted mutation only drops, and the coalescing below stops right after
+            /// one, so these commands are final. Evaluated here only, so a part within budget does not pay
+            /// for it.
             /// Nothing is renamed behind the commands' back here: this table selects every applicable
             /// mutation by version alone, so a pending rename is already among them.
             if (!MutationHelpers::isHardlinkOnlyMutation(
@@ -2743,9 +2742,9 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
         if (!commands->empty())
         {
-            /// Now that the commands are final, decide on the whole set: coalescing may have turned a
-            /// mutation that only drops secondary objects into one that rewrites the part. As above, no
-            /// rename can be outside this set. A part within budget keeps its usual reservation.
+            /// Same commands as at admission: the loop above stops right after a mutation that drops, so
+            /// coalescing cannot turn a mutation that only drops secondary objects into a rewrite. As above,
+            /// no rename can be outside this set. A part within budget keeps its usual reservation.
             const bool hardlink_only = exceeds_max_source_part_size
                 && MutationHelpers::isHardlinkOnlyMutation(*this, part, *commands, /*has_pending_rename=*/ false);
 
