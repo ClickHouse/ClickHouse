@@ -1,5 +1,9 @@
 #include <Storages/Distributed/parseRemoteFunctionArguments.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -31,8 +35,30 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_FUNCTION;
 }
 
+namespace
+{
+
+/// In the table function position a call to no function can only be a table function.
+void throwIfUnknownTableFunction(const ASTPtr & ast, const ContextPtr & context)
+{
+    const auto * function = ast->as<ASTFunction>();
+    if (!function)
+        return;
+    const String & name = function->name;
+    /// `untuple` and `grouping` are implemented by the analyzer and registered in no factory.
+    if (name == "untuple" || name == "grouping")
+        return;
+    if (TableFunctionFactory::instance().isTableFunctionName(name) || FunctionFactory::instance().has(name)
+        || AggregateFunctionFactory::instance().isAggregateFunctionName(name)
+        || UserDefinedSQLFunctionFactory::instance().has(name) || UserDefinedExecutableFunctionFactory::has(name, context))
+        return;
+    throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}{}", name, TableFunctionFactory::instance().getHintsMessage(name));
+}
+
+}
 
 ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     ASTs & all_args,
@@ -97,7 +123,25 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     const auto * second_arg_function = args.size() >= 2 ? args[1]->as<ASTFunction>() : nullptr;
     const bool throw_unknown_collection = second_arg_function && second_arg_function->name == "equals";
     if (!is_cluster_function)
+    {
+        /// Reading the named collection evaluates each override on its own, so check the table function slot first.
+        for (size_t i = 1; i < args.size(); ++i)
+        {
+            const auto * equals = args[i]->as<ASTFunction>();
+            if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() != 2)
+                continue;
+            const auto & key = equals->arguments->children[0];
+            String key_name;
+            if (const auto * literal = key->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+                key_name = literal->value.safeGet<String>();
+            /// Outside the named collection form the argument can be a sharding key such as `rand() % 2 = 0`, which is not a constant.
+            else if (!tryGetIdentifierNameInto(key, key_name) && throw_unknown_collection)
+                key_name = checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(key, context), "key");
+            if (key_name == "database" || key_name == "db")
+                throwIfUnknownTableFunction(equals->arguments->children[1], context);
+        }
         named_collection = tryGetNamedCollectionWithOverrides(args, context, throw_unknown_collection, &complex_args, dependent_table_id);
+    }
 
     if (named_collection)
     {
@@ -118,8 +162,11 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
                 if (function && TableFunctionFactory::instance().isTableFunctionName(function->name))
                     remote_table_function_ptr = arg_ast;
                 else
+                {
+                    throwIfUnknownTableFunction(arg_ast, context);
                     database = checkAndGetLiteralArgument<String>(
                         evaluateConstantExpressionForDatabaseName(arg_ast, context), "database");
+                }
             }
             else if (arg_name == "sharding_key")
                 sharding_key = arg_ast;
@@ -243,6 +290,7 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
             }
             else
             {
+                throwIfUnknownTableFunction(args[arg_num], context);
                 args[arg_num] = evaluateConstantExpressionForDatabaseName(args[arg_num], context);
                 database = checkAndGetLiteralArgument<String>(args[arg_num], "database");
 

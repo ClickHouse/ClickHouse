@@ -220,7 +220,7 @@ namespace Dynamic
                 throw InvalidAccessException("Can not extract empty value.");
             else
                 throw BadCastException(
-                    format("Can not convert %s to %s.", std::string(pHolder->type().name()), std::string(typeid(T).name())));
+                    Poco::format("Can not convert %s to %s.", std::string(pHolder->type().name()), std::string(typeid(T).name())));
         }
 
         template <typename T>
