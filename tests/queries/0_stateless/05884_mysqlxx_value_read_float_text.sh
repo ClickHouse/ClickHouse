@@ -1,6 +1,16 @@
--- Tags: no-fasttest
--- Tag no-fasttest: connects to the server's own MySQL protocol port, which the fast test does not open.
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# Tag no-fasttest: connects to the server's own MySQL protocol port, which the fast test does not open.
 
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+# The engine arguments are literals: a MySQL table stores them as written and evaluates them again when the server
+# attaches it at startup, before `getServerPort` knows any port, so a leftover table would stop the server from starting.
+MY_HOST="127.0.0.1:${CLICKHOUSE_PORT_MYSQL}"
+
+$CLICKHOUSE_CLIENT <<EOF
 -- The MySQL table engine decodes every value of the MySQL text protocol with the declared
 -- ClickHouse column type, so a column declared Float64 is parsed by
 -- mysqlxx::Value::getDouble -> mysqlxx::Value::readFloatText (src/Common/mysqlxx/Value.cpp).
@@ -26,7 +36,7 @@ CREATE TABLE float_text_source (k UInt8, t String) ENGINE = Memory;
 INSERT INTO float_text_source VALUES (1, '+1.5'), (2, '-2.5'), (3, '1e3'), (4, '1E2'), (5, '-2e1'), (6, 'inf'), (7, '-inf'), (8, 'Infinity'), (9, 'nan'), (10, 'NaN');
 
 CREATE TABLE float_text_over_mysql (k UInt8, t Float64)
-ENGINE = MySQL('127.0.0.1:' || getServerPort('mysql_port'), currentDatabase(), 'float_text_source', 'default', '')
+ENGINE = MySQL('${MY_HOST}', '${CLICKHOUSE_DATABASE}', 'float_text_source', 'default', '')
 SETTINGS connect_timeout = 100, connection_wait_timeout = 100;
 
 SELECT k, t FROM float_text_over_mysql ORDER BY k;
@@ -38,7 +48,7 @@ CREATE TABLE bad_float_source (t String) ENGINE = Memory;
 INSERT INTO bad_float_source VALUES ('abc');
 
 CREATE TABLE bad_float_over_mysql (t Float64)
-ENGINE = MySQL('127.0.0.1:' || getServerPort('mysql_port'), currentDatabase(), 'bad_float_source', 'default', '')
+ENGINE = MySQL('${MY_HOST}', '${CLICKHOUSE_DATABASE}', 'bad_float_source', 'default', '')
 SETTINGS connect_timeout = 100, connection_wait_timeout = 100;
 
 SELECT t FROM bad_float_over_mysql; -- { serverError POCO_EXCEPTION }
@@ -47,3 +57,4 @@ DROP TABLE float_text_over_mysql;
 DROP TABLE float_text_source;
 DROP TABLE bad_float_over_mysql;
 DROP TABLE bad_float_source;
+EOF
