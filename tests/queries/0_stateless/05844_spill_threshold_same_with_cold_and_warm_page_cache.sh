@@ -58,8 +58,10 @@ page_cache_history_window_ms: 0
 memory_worker_correct_memory_tracker: false
 "
 
+    # use_columns_cache = 0: the columns cache would keep the columns of the table read between the probes, and
+    # its memory, unlike that of the page cache, is used memory for the spill thresholds.
     $CLICKHOUSE_LOCAL --config-file "${CONFIG_FILE}" --use_page_cache_for_local_disks 1 --local_filesystem_read_method pread \
-        --multiquery "${queries}" -- "${server_opts[@]}" 2>"${LOG_FILE}"
+        --use_columns_cache 0 --multiquery "${queries}" -- "${server_opts[@]}" 2>"${LOG_FILE}"
 }
 
 # Prints 1 when the condition holds over the available memory of the probes with ratios r1 and r2 (in MiB), else 0.
