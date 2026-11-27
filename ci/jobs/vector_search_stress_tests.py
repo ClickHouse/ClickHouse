@@ -177,7 +177,9 @@ dataset_laion_5b_mini_for_quick_test = {
     DIMENSION: 768,
 }
 
-# 10 million LAION vectors, searched using the rabitq quantized codes instead of a vector similarity index
+# 10 million LAION vectors, searched using the rabitq quantized codes instead of a vector similarity index.
+# The column setting `uncompressed_fixed_array_size` stores every row of 768 elements as one uncompressed block, so that
+# rescoring reads only the shortlisted rows with `merge_tree_use_one_row_per_block_layout` (PR #131027).
 dataset_laion_5b_10m_quantized_rabitq = {
     TABLE: "laion_10m_rabitq",
     S3_URLS: [
@@ -185,7 +187,7 @@ dataset_laion_5b_10m_quantized_rabitq = {
     ],
     SCHEMA: """
         id Int32,
-        vector Array(BFloat16) CODEC(Quantized('rabitq', 768))
+        vector Array(BFloat16) CODEC(Quantized('rabitq', 768)) SETTINGS (uncompressed_fixed_array_size = 768)
      """,
     ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
@@ -202,7 +204,7 @@ dataset_laion_5b_10m_quantized_turboquant = {
     ],
     SCHEMA: """
         id Int32,
-        vector Array(BFloat16) CODEC(Quantized('turboquant', 768))
+        vector Array(BFloat16) CODEC(Quantized('turboquant', 768)) SETTINGS (uncompressed_fixed_array_size = 768)
      """,
     ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
@@ -333,7 +335,7 @@ test_params_laion_5b_10m_quantized_rabitq = {
     CONCURRENCY_TEST: False,
     USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
     SEARCH_METHOD: SEARCH_METHOD_QUANTIZED_CODEC,
-    SESSION_SETTINGS: "enable_quantized_codec = 1",
+    SESSION_SETTINGS: "enable_quantized_codec = 1, merge_tree_use_one_row_per_block_layout = 1",
     FETCH_MULTIPLIERS: [1, 5, 10],
 }
 
@@ -355,7 +357,7 @@ test_params_laion_5b_10m_quantized_turboquant = {
     CONCURRENCY_TEST: False,
     USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
     SEARCH_METHOD: SEARCH_METHOD_QUANTIZED_CODEC,
-    SESSION_SETTINGS: "enable_quantized_codec = 1",
+    SESSION_SETTINGS: "enable_quantized_codec = 1, merge_tree_use_one_row_per_block_layout = 1",
     FETCH_MULTIPLIERS: [1, 5, 10],
 }
 
