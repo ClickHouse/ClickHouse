@@ -196,8 +196,9 @@ def test_close_without_quorum_after_client_shutdown(started_cluster):
     try:
         req = int_long_int_long_struct.pack(0, 0, 10000, 0)
         req += write_buffer(b"\x00" * 16) + bytes([0])
-        client.send(int_struct.pack(45) + req)
-        client.recv(1_000)
+        client.sendall(int_struct.pack(45) + req)
+        session_id = int_int_long_struct.unpack_from(client.recv(1_000), 4)[2]
+        assert session_id > 0
 
         # Do not wait until node1 sees that the quorum is lost: that takes longer than the session timeout,
         # and the session would expire first. With the other Keepers killed, the Close cannot be committed anyway.
@@ -207,7 +208,7 @@ def test_close_without_quorum_after_client_shutdown(started_cluster):
         close_xid, close_op = 0x7FFFFFFF, -11
         # A heartbeat after the Close is not processed, and it must not keep the connection open either.
         heartbeat_xid, heartbeat_op = -2, 11
-        client.send(
+        client.sendall(
             int_struct.pack(8)
             + int_int_struct.pack(close_xid, close_op)
             + int_struct.pack(8)
@@ -219,11 +220,49 @@ def test_close_without_quorum_after_client_shutdown(started_cluster):
         assert client.recv(1_000) == b""
         # Without the fix, the connection stays open until the Close request times out.
         assert time.monotonic() - start < 3
+        assert node1.contains_in_log(
+            f"Client closed connection after close request, session id #{session_id}"
+        )
     finally:
         client.close()
         node2.start_clickhouse()
         node3.start_clickhouse()
         wait_nodes()
+
+
+def test_close_after_client_shutdown_answers_earlier_requests(started_cluster):
+    wait_nodes()
+    client = get_keeper_socket(node1.name)
+    try:
+        req = int_long_int_long_struct.pack(0, 0, 10000, 0)
+        req += write_buffer(b"\x00" * 16) + bytes([0])
+        client.sendall(int_struct.pack(45) + req)
+        assert int_int_long_struct.unpack_from(client.recv(1_000), 4)[2] > 0
+
+        create_xid, create_op = 1, 1
+        create = int_int_struct.pack(create_xid, create_op)
+        create += write_buffer(f"/test_close_{uuid.uuid4().hex}".encode())
+        create += write_buffer(b"")
+        # One ACL: all permissions for world:anyone. Flags 0 is a persistent node.
+        create += int_struct.pack(1) + int_struct.pack(31)
+        create += write_buffer(b"world") + write_buffer(b"anyone") + int_struct.pack(0)
+        close_xid, close_op = 0x7FFFFFFF, -11
+        client.sendall(
+            write_buffer(create)
+            + int_struct.pack(8)
+            + int_int_struct.pack(close_xid, close_op)
+        )
+        client.shutdown(socket.SHUT_WR)
+        client.settimeout(20)
+        data = b""
+        while chunk := client.recv(1_000):
+            data += chunk
+        # The Create was accepted before the Close, so its reply is sent even though the client stopped writing.
+        assert len(data) >= int_struct.size + reply_header_struct.size
+        xid, _, error = reply_header_struct.unpack_from(data, int_struct.size)
+        assert (xid, error) == (create_xid, 0)
+    finally:
+        client.close()
 
 
 def test_session_close_shutdown(started_cluster):

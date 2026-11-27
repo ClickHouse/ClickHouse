@@ -100,6 +100,7 @@ struct SocketInterruptablePollWrapper
     int sockfd;
     PipeFDs pipe;
     ReadBufferFromFileDescriptor response_in;
+    bool poll_socket = true;
 
 #if defined(POCO_HAVE_FD_EPOLL)
     int epollfd;
@@ -146,6 +147,15 @@ struct SocketInterruptablePollWrapper
         return pipe.fds_rw[1];
     }
 
+    void stopPollingSocket()
+    {
+#if defined(POCO_HAVE_FD_EPOLL)
+        if (epoll_ctl(epollfd, EPOLL_CTL_DEL, sockfd, nullptr) < 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot remove socket from epoll queue");
+#endif
+        poll_socket = false;
+    }
+
     PollResult poll(Poco::Timespan remaining_time, const ReadBufferFromPocoSocket & in)
     {
 
@@ -190,7 +200,7 @@ struct SocketInterruptablePollWrapper
             }
 #else
             pollfd poll_buf[2];
-            poll_buf[0].fd = sockfd;
+            poll_buf[0].fd = poll_socket ? sockfd : -1;
             poll_buf[0].events = POLLIN;
             poll_buf[1].fd = pipe.fds_rw[0];
             poll_buf[1].events = POLLIN;
@@ -654,7 +664,10 @@ void KeeperTCPHandler::runImpl()
                 else if (in->eof())
                 {
                     LOG_DEBUG(log, "Client closed connection after close request, session id #{}", session_id);
-                    break;
+                    if (operations.empty())
+                        break;
+                    /// Requests sent before `Close` still get their responses, so wait for them without polling the socket.
+                    poll_wrapper->stopPollingSocket();
                 }
             }
 
