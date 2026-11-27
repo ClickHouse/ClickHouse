@@ -509,6 +509,15 @@ Field QueryFuzzer::getRandomField(int type)
            255,
            256,
            257,
+           /// Int8 and Int16 boundaries
+           -129,
+           -128,
+           127,
+           128,
+           -32769,
+           -32768,
+           32767,
+           32768,
            1023,
            1024,
            1025,
@@ -570,39 +579,64 @@ Field QueryFuzzer::getRandomField(int type)
                    static_cast<double>(FLT_MIN),
                    static_cast<double>(FLT_MIN) + static_cast<double>(FLT_EPSILON),
                    static_cast<double>(FLT_MAX),
-                   static_cast<double>(FLT_MAX) + static_cast<double>(FLT_EPSILON)};
+                   static_cast<double>(FLT_MAX) + static_cast<double>(FLT_EPSILON),
+                   std::numeric_limits<double>::min(),
+                   static_cast<double>(std::numeric_limits<float>::denorm_min()),
+                   /// 2^63, 2^64, -2^63 and the double below it: float to Int64/UInt64 conversions out of range are UB
+                   9223372036854775808.,
+                   18446744073709551616.,
+                   -9223372036854775808.,
+                   -9223372036854777856.};
             return values[fuzz_rand() % std::size(values)];
         }
         case 2: {
             const Int64 mantissa = bad_int64_values[fuzz_rand() % std::size(bad_int64_values)];
+            /// Sometimes ±(10^P - 1) or ±10^P, the boundary the precision overflow checks compare with
+            const bool at_precision = fuzz_rand() % 4 == 0;
+            const bool past_precision = fuzz_rand() % 2 == 0;
+            const bool negative = fuzz_rand() % 2 == 0;
+            auto precision_boundary = [&](auto one, UInt32 precision)
+            {
+                decltype(one) res = one;
+                for (UInt32 i = 0; i < precision; ++i)
+                    res *= 10;
+                if (!past_precision)
+                    res -= one;
+                return negative ? -res : res;
+            };
             switch (fuzz_rand() % 4)
             {
                 case 0: {
                     static constexpr UInt32 scales[] = {0, 1, 9};
-                    return DecimalField<Decimal32>(static_cast<Int32>(mantissa), scales[fuzz_rand() % std::size(scales)]);
+                    return DecimalField<Decimal32>(
+                        at_precision ? precision_boundary(Int32(1), 9) : static_cast<Int32>(mantissa),
+                        scales[fuzz_rand() % std::size(scales)]);
                 }
                 case 1: {
                     static constexpr UInt32 scales[] = {0, 1, 2, 10, 18};
-                    return DecimalField<Decimal64>(mantissa, scales[fuzz_rand() % std::size(scales)]);
+                    return DecimalField<Decimal64>(
+                        at_precision ? precision_boundary(Int64(1), 18) : mantissa, scales[fuzz_rand() % std::size(scales)]);
                 }
                 case 2: {
                     static constexpr UInt32 scales[] = {0, 2, 19, 38};
                     /// Optionally push the mantissa beyond the Int64 range
-                    const Int128 wide_mantissa = fuzz_rand() % 2 == 0 ? Int128(mantissa) : Int128(mantissa) * 1000000000000000000LL;
+                    const Int128 wide_mantissa = at_precision ? precision_boundary(Int128(1), 38)
+                        : fuzz_rand() % 2 == 0                ? Int128(mantissa)
+                                                              : Int128(mantissa) * 1000000000000000000LL;
                     return DecimalField<Decimal128>(wide_mantissa, scales[fuzz_rand() % std::size(scales)]);
                 }
                 default: {
                     static constexpr UInt32 scales[] = {0, 2, 39, 76};
-                    const Int256 wide_mantissa = fuzz_rand() % 2 == 0
-                        ? Int256(mantissa)
-                        : Int256(mantissa) * Int256(1000000000000000000LL) * Int256(1000000000000000000LL);
+                    const Int256 wide_mantissa = at_precision ? precision_boundary(Int256(1), 76)
+                        : fuzz_rand() % 2 == 0                ? Int256(mantissa)
+                                                              : Int256(mantissa) * Int256(1000000000000000000LL) * Int256(1000000000000000000LL);
                     return DecimalField<Decimal256>(wide_mantissa, scales[fuzz_rand() % std::size(scales)]);
                 }
             }
         }
         case 3: {
             /// Date/Date32 boundary values as strings — stress date parsing and arithmetic.
-            /// Date range is [1970-01-01, 2149-06-06], Date32 range is [0000-01-01, 9999-12-31].
+            /// Date range is [1970-01-01, 2149-06-06], Date32 range is [1900-01-01, 2299-12-31].
             static constexpr const char * date_values[]
                 = {"0000-01-01",
                    "1899-12-31",
@@ -613,6 +647,8 @@ Field QueryFuzzer::getRandomField(int type)
                    "2020-02-29",
                    "2100-01-01",
                    "2149-06-06",
+                   "2149-06-07",
+                   "2100-02-29",
                    "2299-12-31",
                    "2300-01-01",
                    "9999-12-31",
@@ -658,6 +694,12 @@ Field QueryFuzzer::getRandomField(int type)
                    "2038-01-19 03:14:07",
                    "2038-01-19 03:14:08",
                    "2106-02-07 06:28:15",
+                   "2106-02-07 06:28:16",
+                   /// The DateTime64(9) range, and a leap second
+                   "1677-09-21 00:12:43.145224192",
+                   "2262-04-11 23:47:16.854775807",
+                   "2262-04-11 23:47:16.854775808",
+                   "2016-12-31 23:59:60",
                    "2299-12-31 23:59:59",
                    "2299-12-31 23:59:59.999999999",
                    "9999-12-31 23:59:59",
@@ -675,7 +717,7 @@ Field QueryFuzzer::getRandomField(int type)
         }
         case 7: {
             /// IPv4 boundary values — stress network address parsing and arithmetic
-            static constexpr const char * ipv4_values[] = {"0.0.0.0", "127.0.0.1", "192.168.0.1", "255.255.255.255", "10.0.0.1"};
+            static constexpr const char * ipv4_values[] = {"0.0.0.0", "127.0.0.1", "192.168.0.1", "255.255.255.255", "10.0.0.1", "256.0.0.0", "1.2.3"};
             return String(ipv4_values[fuzz_rand() % std::size(ipv4_values)]);
         }
         case 8: {
@@ -698,8 +740,8 @@ Field QueryFuzzer::getRandomField(int type)
             return String(json_values[fuzz_rand() % std::size(json_values)]);
         }
         case 10: {
-            /// Wide integer boundary values — magnitudes beyond the Int64/UInt64 range
-            switch (fuzz_rand() % 8)
+            /// Boundary values at the top of the UInt64 range and wide integer ones beyond the Int64/UInt64 range
+            switch (fuzz_rand() % 11)
             {
                 case 0: return Int128(std::numeric_limits<Int64>::min()) - 1;
                 case 1: return UInt128(std::numeric_limits<UInt64>::max()) + 1;
@@ -708,7 +750,10 @@ Field QueryFuzzer::getRandomField(int type)
                 case 4: return std::numeric_limits<UInt128>::max();
                 case 5: return std::numeric_limits<Int256>::min();
                 case 6: return std::numeric_limits<Int256>::max();
-                default: return std::numeric_limits<UInt256>::max();
+                case 7: return std::numeric_limits<UInt256>::max();
+                case 8: return UInt64(1) << 63;
+                case 9: return std::numeric_limits<UInt64>::max() - 1;
+                default: return std::numeric_limits<UInt64>::max();
             }
         }
         case 11: {
@@ -2152,7 +2197,7 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage, ASTColumns * columns_li
     if (fuzz_rand() % 20 == 0)
         fuzz_setting("remove_empty_parts", UInt64(0));
     if (fuzz_rand() % 20 == 0)
-        fuzz_setting("serialization_info_version", String(pickRandomly(fuzz_rand, Strings{"basic", "with_types", "with_subcolumns"})));
+        fuzz_setting("serialization_info_version", String(fuzz_rand() % 2 == 0 ? "basic" : "with_types"));
     if (fuzz_rand() % 20 == 0)
         fuzz_setting("string_serialization_version", String(fuzz_rand() % 2 == 0 ? "single_stream" : "with_size_stream"));
     if (fuzz_rand() % 20 == 0)
@@ -8527,7 +8572,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 else if (fuzz_rand() % 50 == 0)
                 {
                     /// Negative offsets exercise error-handling paths in the server.
-                    auto val = fuzz_rand() % 2 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
+                    auto val = fuzz_rand() % 2 == 0 ? Field(-static_cast<Int64>(fuzz_rand() % 1001))
                                                     : Field(static_cast<UInt64>(fuzz_rand() % 1001));
                     select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, makeLimitExpression(val));
                 }
@@ -8538,7 +8583,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             /// Add a LIMIT clause (negative values half the time, like LIMIT OFFSET above).
             /// The outer `oracle_mode ? 200 : 50` keeps this rare in oracle mode (LIMIT blocks most oracles).
             auto val
-                = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001))) : Field(static_cast<UInt64>(fuzz_rand() % 1001));
+                = fuzz_rand() % 10 == 0 ? Field(-static_cast<Int64>(fuzz_rand() % 1001)) : Field(static_cast<UInt64>(fuzz_rand() % 1001));
             select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, makeLimitExpression(val));
         }
 
@@ -8573,7 +8618,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
             else if (fuzz_rand() % 50 == 0)
             {
-                auto val = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
+                auto val = fuzz_rand() % 10 == 0 ? Field(-static_cast<Int64>(fuzz_rand() % 1001))
                                                  : Field(static_cast<UInt64>(fuzz_rand() % 1001));
                 select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, makeLimitExpression(val));
             }
@@ -8584,7 +8629,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
             else if (fuzz_rand() % 50 == 0)
             {
-                auto val = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
+                auto val = fuzz_rand() % 10 == 0 ? Field(-static_cast<Int64>(fuzz_rand() % 1001))
                                                  : Field(static_cast<UInt64>(fuzz_rand() % 1001));
                 select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, makeLimitExpression(val));
             }

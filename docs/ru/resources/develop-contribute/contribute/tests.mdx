@@ -250,11 +250,11 @@ SELECT 1
 | `no-ordinary-database`         | Отключает тест, если движок базы данных по умолчанию — `Ordinary`                   |                                                                                                                |
 | `no-parallel`                  | Запрещает параллельный запуск других тестов вместе с этим                           | Тест читает из таблиц `system`, и инварианты могут быть нарушены                                               |
 | `no-parallel-replicas`         | Отключает тест, если включены параллельные реплики                                  |                                                                                                                |
-| `no-debug`                     | Отключает тесты в Debug-сборках                                                     |                                                                                                                |
-| `no-release`                   | Отключает тесты в Release-сборках                                                   |                                                                                                                |
+| `no-debug`                     | Отключает тесты в отладочных сборках                                                     |                                                                                                                |
+| `no-release`                   | Отключает тесты в релизных сборках                                                   |                                                                                                                |
 | `no-darwin`                    | Отключает тест в macOS (Darwin)                                                     | Тест зависит от специфичных для Linux возможностей, таких как распределенные запросы, `procfs` или HTTP-сервер |
 
-Также поддерживаются следующие параметры: `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-backward-compatibility-check`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
+Также поддерживаются следующие параметры: `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
 
 Помимо перечисленных выше настроек, вы можете использовать флаги `USE_*` из `system.build_options`, чтобы указывать использование конкретных возможностей ClickHouse.
 Например, если ваш тест использует таблицу MySQL, следует добавить тег `use-mysql`.

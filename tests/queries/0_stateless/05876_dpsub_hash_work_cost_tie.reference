@@ -1,0 +1,10 @@
+└──Join (JOIN FillRightFirst)
+   ├──Join (JOIN FillRightFirst)
+   │  ├──Join (JOIN FillRightFirst)
+   │  │  ├──Join (JOIN FillRightFirst)
+   │  │  │  ├──ReadFromMergeTree (r0)
+   │  │  │  └──ReadFromMergeTree (ss)
+   │  │  └──ReadFromMergeTree (dd)
+   │  └──ReadFromMergeTree (ca)
+   └──ReadFromMergeTree (st)
+1

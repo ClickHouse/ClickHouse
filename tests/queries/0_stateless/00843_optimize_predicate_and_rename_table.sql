@@ -1,4 +1,3 @@
-SET enable_optimize_predicate_expression = 1;
 
 DROP TABLE IF EXISTS test1_00843;
 DROP TABLE IF EXISTS test2_00843;

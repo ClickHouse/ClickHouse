@@ -948,7 +948,7 @@ String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const St
 template <typename T>
 void StatementGenerator::randomEngineParams(RandomGenerator & rg, std::optional<SQLRelation> & rel, T * te)
 {
-    const uint32_t nparams = std::min(this->fc.max_width - this->width, rg.nextSmallNumber() - 1);
+    const uint32_t nparams = std::min(this->remainingWidth(), rg.nextSmallNumber() - 1);
 
     te->clear_params();
     for (uint32_t i = 0; i < nparams; i++)
@@ -1560,6 +1560,14 @@ bool StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && b.isFileLogEngine())
     {
+        if (b.integration == IntegrationCall::Dolor)
+        {
+            /// Ask dolor to create the directory or the file before ClickHouse creates the table over it
+            if (SQLTable * t = dynamic_cast<SQLTable *>(&b))
+            {
+                connections.createExternalDatabaseTable(rg, *t, entries, te);
+            }
+        }
         te->add_params()->set_svalue(b.getTablePath(rg, false));
         te->add_params()->set_svalue(b.file_format.value());
     }

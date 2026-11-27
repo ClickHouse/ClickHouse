@@ -20,7 +20,7 @@ Com suporte a ACME, o ClickHouse pode obter e renovar automaticamente certificad
 A criptografia TLS protege os dados em trânsito entre clientes e servidores ClickHouse, impedindo a interceptação de consultas e resultados sensíveis.
 
 <div id="overview">
-  ## Visão geral
+  ## Visão geral {#overview}
 </div>
 
 O protocolo ACME define um processo automático de atualização de certificados com serviços como [Let&#39;s Encrypt](https://letsencrypt.org/) ou [ZeroSSL](https://zerossl.com/). Em resumo, o ClickHouse, como solicitante do certificado, precisa comprovar o controle do domínio por meio de tipos de desafio predefinidos para obter um certificado.
@@ -48,7 +48,7 @@ No bloco `acme`, definimos `email` para a criação da conta e aceitamos os term
 Depois disso, a única coisa de que precisamos é uma lista de domínios.
 
 <div id="current-limitations">
-  ### Limitações atuais
+  ### Limitações atuais {#current-limitations}
 </div>
 
 * Somente o tipo de desafio `HTTP-01` é compatível.
@@ -56,7 +56,7 @@ Depois disso, a única coisa de que precisamos é uma lista de domínios.
 * O rate limiting não é tratado.
 
 <div id="configuration-parameters">
-  ## Parâmetros de configuração
+  ## Parâmetros de configuração {#configuration-parameters}
 </div>
 
 Opções de configuração disponíveis na seção `acme`:
@@ -74,11 +74,11 @@ Opções de configuração disponíveis na seção `acme`:
 Observe que, por padrão, a configuração usa o diretório de produção do Let&#39;s Encrypt. Para evitar atingir o limite de solicitações devido a uma provável configuração incorreta, recomenda-se primeiro testar o processo de emissão de certificados com o [diretório de staging](https://letsencrypt.org/docs/staging-environment/).
 
 <div id="administration">
-  # Administração
+  # Administração {#administration}
 </div>
 
 <div id="initial-deployment">
-  ## Implantação inicial
+  ## Implantação inicial {#initial-deployment}
 </div>
 
 Ao habilitar o cliente ACME em um cluster com várias réplicas, é necessário ter cuidado redobrado durante a emissão inicial do certificado.
@@ -92,7 +92,7 @@ Se não for viável rotear o tráfego para uma única réplica, uma abordagem al
 Depois que o certificado inicial tiver sido emitido ou importado, a renovação do certificado não exigirá tratamento especial, pois todas as réplicas já estarão executando o cliente ACME e compartilhando estado por meio do Keeper.
 
 <div id="keeper-data-structure">
-  ## Estrutura de dados do Keeper
+  ## Estrutura de dados do Keeper {#keeper-data-structure}
 </div>
 
 ```text
@@ -107,7 +107,7 @@ Depois que o certificado inicial tiver sido emitido ou importado, a renovação 
 ```
 
 <div id="migrating-from-other-acme-clients">
-  ## Migrando de outros clientes ACME
+  ## Migrando de outros clientes ACME {#migrating-from-other-acme-clients}
 </div>
 
 É possível migrar o certificado TLS e a chave atuais para o Keeper, facilitando a migração.
