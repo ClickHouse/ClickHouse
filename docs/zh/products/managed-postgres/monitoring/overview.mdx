@@ -7,10 +7,6 @@ keywords: ['Managed Postgres', '监控', '可观测性', '指标', '仪表板', 
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-overview-beta" />
-
 您可以通过以下方法监控 ClickHouse Managed Postgres 服务：
 
 | 部分                                                                     | 说明                                                                | 需要的设置           |
@@ -21,9 +17,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 | [指标参考](/zh/products/managed-postgres/monitoring/metrics)                  | 由 Prometheus 端点公开的完整指标列表，包括类型、标记及其含义                              | 不适用             |
 | [通知](/zh/products/managed-postgres/monitoring/notifications)              | 当服务需要关注时 (例如存储容量接近上限) ，通过 Console、电子邮件和 Slack 发出告警                | 无               |
 
-<div id="quick-start">
-  ## 快速入门
-</div>
+## 快速入门 {#quick-start}
 
 打开 Cloud Console，进入任意 ClickHouse Managed Postgres 实例的 **Monitoring** 选项卡，即可查看 CPU、内存、IOPS、连接数、事务数、缓存命中率和死锁的实时图表。无需配置。
 

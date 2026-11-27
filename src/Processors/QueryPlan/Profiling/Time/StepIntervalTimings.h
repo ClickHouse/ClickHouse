@@ -24,14 +24,14 @@ public:
     /// Takes the plan's shape from the snapshot, so it runs once the plan is gone.
     StepIntervalTimings(const WorkIntervalsPerThread & intervals_per_thread, const PlanAnalysisSnapshot & plan_snapshot);
 
-    [[nodiscard]] const StepTimeAndConcurrency * findTiming(const String & step_id) const;
+    [[nodiscard]] const StepTimeAndConcurrency * findTiming(UInt64 step_id) const;
 
     /// `execution_time_ns` is the wall-clock time of the whole pipeline execution, the denominator of every time share.
     [[nodiscard]] ExecutionTimeBreakdown executionTimeBreakdown(UInt64 execution_time_ns) const;
 
 private:
 
-    using TimeIntervalsByStep = UnorderedMapWithMemoryTracking<String, TimeIntervals>;
+    using TimeIntervalsByStep = UnorderedMapWithMemoryTracking<UInt64, TimeIntervals>;
 
     /// One sorted, non-overlapping sequence per step, merged from the per-thread runs.
     [[nodiscard]] TimeIntervalsByStep collectStepIntervals(const WorkIntervalsPerThread & intervals_per_thread) const;
@@ -41,10 +41,10 @@ private:
 
     [[nodiscard]] VectorWithMemoryTracking<TimeIntervals> collectLowerBranchIntervals(
         TimeIntervals && current_step_intervals,
-        const VectorWithMemoryTracking<String> & children,
+        const VectorWithMemoryTracking<UInt64> & children,
         TimeIntervalsByStep & branch_intervals_by_step) const;
 
-    UnorderedMapWithMemoryTracking<String, StepTimeAndConcurrency> timing_by_step;
+    UnorderedMapWithMemoryTracking<UInt64, StepTimeAndConcurrency> timing_by_step;
     ConcurrencyProfile concurrency_profile;
 
     /// Length of the union of the intervals of every step of the plan: the branch time of the root step.

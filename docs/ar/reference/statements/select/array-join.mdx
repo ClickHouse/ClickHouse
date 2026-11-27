@@ -378,6 +378,42 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
 ```
 
+## ترتيب الصفوف والتقسيم إلى صفحات {#row-order-and-paging}
+
+تحافظ `ARRAY JOIN` على ترتيب الصفوف التي تستقبلها. ولكل صف، تُنتج العناصر بالترتيب نفسه الذي تَرِد به في المصفوفة. وإذا تضمّن الاستعلام أكثر من عبارة `ARRAY JOIN`، فإن العبارة الأولى تمثّل الحلقة الخارجية:
+
+```sql
+SELECT x, y
+FROM (SELECT ['a', 'b'] AS xs, [1, 2] AS ys)
+ARRAY JOIN xs AS x
+ARRAY JOIN ys AS y;
+```
+
+```response
+┌─x─┬─y─┐
+│ a │ 1 │
+│ a │ 2 │
+│ b │ 1 │
+│ b │ 2 │
+└───┴───┘
+```
+
+إذا احتوت عبارة `ARRAY JOIN` واحدة على أكثر من مصفوفة، مثل `ARRAY JOIN xs AS x, ys AS y`، فإن العناصر التي تقع في الموضع نفسه توضع في الصف نفسه. في هذا المثال، تكون النتيجة صفين هما `('a', 1)` و`('b', 2)`.
+
+من دون `ORDER BY`، لا يكون ترتيب الصفوف التي تستقبلها `ARRAY JOIN` مضمونًا؛ إذ قد يقرأ الاستعلام الجدول مثلًا عبر تدفقات متوازية. وللحصول على ترتيب مستقر، أضف `ORDER BY` مع الأعمدة التي تحدد الصف المصدر وموضع العنصر. ويُعدّ ذلك ضروريًا لقراءة النتيجة على صفحات باستخدام `LIMIT` و`OFFSET`:
+
+```sql
+SELECT id, num, x
+FROM t
+ARRAY JOIN xs AS x, arrayEnumerate(xs) AS num
+ORDER BY id, num
+LIMIT 10 OFFSET 20;
+```
+
+إذا كان `ORDER BY` يبدأ بأعمدة مفتاح الفرز لجدول `MergeTree`، فإن الاستعلام يقرأ الجدول وفق ترتيب المفتاح. وفي هذا المثال، يتحقق ذلك عندما يحتوي الجدول على `ORDER BY id`. وعندئذٍ يتوقف الاستعلام بمجرد حصوله على الصفوف المطلوبة لـ `LIMIT`، ولا يوسّع مصفوفات بقية الصفوف. لمزيد من المعلومات، راجع [تحسين قراءة البيانات](/ar/reference/statements/select/order-by#optimization-of-data-reading) والإعداد [optimize&#95;read&#95;in&#95;order](/ar/reference/settings/session-settings/optimize#optimize_read_in_order). أما إذا كان `ORDER BY` يبدأ بعنصر من المصفوفة، مثل `ORDER BY num, id`، فإن الاستعلام يوسّع جميع الصفوف ثم يفرزها.
+
+كذلك تُنتج الدالة [arrayJoin](/ar/reference/functions/regular-functions/array-join) عناصر كل مصفوفة بالترتيب الذي وردت به في المصفوفة. لكن إذا تضمّن الاستعلام أكثر من استدعاء لـ `arrayJoin`، فليس الاستدعاء الأول بالضرورة هو الحلقة الخارجية. لمزيد من المعلومات، راجع [ترتيب الصفوف](/ar/reference/functions/regular-functions/array-join#row-order).
+
 ## تفاصيل التنفيذ {#implementation-details}
 
 يُحسَّن ترتيب تنفيذ الاستعلام عند تنفيذ `ARRAY JOIN`. وعلى الرغم من أنه يجب دائمًا تحديد `ARRAY JOIN` قبل عبارة [WHERE](/ar/reference/statements/select/where)/[PREWHERE](/ar/reference/statements/select/prewhere) في الاستعلام، فمن الناحية التقنية يمكن تنفيذهما بأي ترتيب، ما لم تُستخدَم نتيجة `ARRAY JOIN` في التصفية. ويتحكم مُحسِّن الاستعلامات في ترتيب التنفيذ.

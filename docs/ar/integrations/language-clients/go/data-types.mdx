@@ -631,9 +631,9 @@ fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v\n", col1, col2, col3, co
 
 ### Nullable {#nullable}
 
-تمثّل القيمة `Nil` في Go قيمة NULL في ClickHouse. ويمكن استخدام ذلك إذا كان أحد الحقول معرّفًا على أنه Nullable. وعند insert time، يمكن تمرير `Nil` لكلٍّ من الإصدار العادي والإصدار Nullable من العمود. في الحالة الأولى، ستُحفَظ default value الخاصة بالنوع، مثل سلسلة فارغة لـ string. أما في الإصدار Nullable، فستُخزَّن قيمة NULL في ClickHouse.
+تمثّل القيمة `Nil` في Go قيمة NULL في ClickHouse. ويمكن استخدام ذلك إذا كان أحد الحقول معرّفًا على أنه Nullable. وعند insert time، يمكن تمرير `Nil` لكلٍّ من الإصدار العادي والإصدار Nullable من العمود. في الحالة الأولى، ستُحفَظ القيمة الافتراضية الخاصة بالنوع، مثل سلسلة فارغة لـ string. أما في الإصدار Nullable، فستُخزَّن قيمة NULL في ClickHouse.
 
-وعند scan time، يجب على المستخدم تمرير مؤشر إلى نوع يدعم nil، مثل `*string`، لتمثيل قيمة nil لحقل Nullable. في المثال أدناه، يتلقّى `col1`، وهو من النوع `Nullable(String)`، قيمة من النوع `**string`. وهذا يتيح تمثيل nil.
+وعند scan time، يجب على المستخدم تمرير مؤشر إلى نوع يدعم nil، مثل `*string`، لتمثيل قيمة nil لحقل Nullable. في المثال أدناه، يتلقّى `col1`، وهو من النوع `Nullable(String)`، قيمة من النوع `**string`. وهذا يتيح تمثيل nil. ويؤدي فحص قيمة NULL إلى وجهة لا يمكنها تمثيل nil، مثل `*int64`، إلى إرجاع الخطأ &quot;converting NULL to *int64 is unsupported&quot;. أما الأنواع التي تنفّذ `sql.Scanner` فتتعامل مع NULL عبر دالة `Scan(nil)` الخاصة بها.
 
 ```go
 if err = conn.Exec(ctx, `

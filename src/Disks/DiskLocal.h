@@ -150,9 +150,6 @@ public:
     bool supportsStat() const override { return true; }
     struct stat stat(const String & path) const override;
 
-    bool supportsChmod() const override { return true; }
-    void chmod(const String & path, mode_t mode) override;
-
     ObjectStoragePtr getObjectStorage() override;
 
 protected:

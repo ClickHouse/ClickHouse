@@ -8,7 +8,7 @@ keywords: ['migration', 'ClickHouse Cloud', 'OSS', 'Migrer d’un ClickHouse aut
 ---
 
 <div id="overview-migration-approaches">
-  ## Vue d’ensemble
+  ## Vue d’ensemble {#overview-migration-approaches}
 </div>
 
 Il existe deux méthodes principales pour migrer des données d’un ClickHouse autogéré (OSS) vers ClickHouse Cloud :
@@ -36,7 +36,7 @@ pour un cluster ClickHouse avec deux shards et deux répliques.
 </Info>
 
 <div id="oss-setup">
-  ## Préparation OSS
+  ## Préparation OSS {#oss-setup}
 </div>
 
 Nous allons d’abord lancer un cluster ClickHouse à l’aide d’une configuration Docker Compose issue de notre repository d’exemples.
@@ -70,7 +70,7 @@ docker exec -it clickhouse-01 clickhouse-client
 ```
 
 <div id="mergetree-to-replicatedmergetree">
-  ### D’une table MergeTree à une table ReplicatedMergeTree
+  ### D’une table MergeTree à une table ReplicatedMergeTree {#mergetree-to-replicatedmergetree}
 </div>
 
 ClickHouse Cloud s’appuie sur [`SharedMergeTree`](/fr/products/cloud/features/infrastructure/shared-merge-tree).
@@ -173,7 +173,7 @@ Vous êtes désormais prêt à configurer votre service Cloud en vue de la
 restauration ultérieure d’une sauvegarde depuis votre bucket S3.
 
 <div id="distributed-tables">
-  ### Tables Distributed avec ReplicatedMergeTree
+  ### Tables Distributed avec ReplicatedMergeTree {#distributed-tables}
 </div>
 
 Si votre configuration utilise des tables Distributed sur plusieurs shards, vous aurez besoin d’une table locale `ReplicatedMergeTree` sur chaque nœud et d’une table `Distributed` comme point d’entrée pour les requêtes.
@@ -262,9 +262,7 @@ FROM s3(
 );
 ```
 
-<div id="cloud-setup">
-  ## Préparation de Cloud
-</div>
+## Préparation de Cloud {#cloud-setup}
 
 Vous allez restaurer vos données dans un nouveau service Cloud.
 Suivez les étapes ci-dessous pour créer un nouveau service Cloud.
@@ -276,13 +274,9 @@ Suivez les étapes ci-dessous pour créer un nouveau service Cloud.
 
   <Step title="Créer un nouveau service" id="create-new-service">
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![créer un nouveau service](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp)
-
-    </Frame>
-
+      <Frame>
+        ![créer un nouveau service](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -290,13 +284,9 @@ Suivez les étapes ci-dessous pour créer un nouveau service Cloud.
     Choisissez la région et la configuration souhaitées, puis cliquez sur `Create service`
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![configurer les préférences du service](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp)
-
-    </Frame>
-
+      <Frame>
+        ![configurer les préférences du service](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -304,24 +294,20 @@ Suivez les étapes ci-dessous pour créer un nouveau service Cloud.
     Ouvrez la SQL Console
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![configurer les préférences du service](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp)
-
-    </Frame>
-
+      <Frame>
+        ![configurer les préférences du service](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp)
+      </Frame>
     </div>
 
-    ### Configurer l’accès à S3
+### Configurer l’accès à S3 {#set-up-s3-access}
 
     Pour restaurer votre sauvegarde depuis S3, vous devez configurer un accès sécurisé entre ClickHouse Cloud et votre bucket S3.
 
-    1. Suivez les étapes de [&quot;Accessing S3 data securely&quot;](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour créer un rôle d’accès et obtenir l’ARN du rôle.
+    1. Suivez les étapes de [&quot;Accéder aux données S3 en toute sécurité&quot;](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour créer un rôle d’accès et obtenir l’ARN du rôle.
 
-    2. Mettez à jour la politique du bucket S3 que vous avez créée dans [&quot;How to create an S3 bucket and IAM role&quot;](/fr/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket) en y ajoutant l’ARN du rôle de l’étape précédente.
+    2. Mettez à jour la politique du bucket S3 que vous avez créée dans [&quot;Comment créer un compartiment S3 et un rôle IAM&quot;](/fr/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket) en y ajoutant l’ARN du rôle de l’étape précédente.
 
-    Votre politique de bucket S3 mise à jour ressemblera à ceci :
+    Votre politique de bucket S3 mise à jour ressemblera à ceci :
 
     ```json highlight={10-11}
     {
@@ -347,25 +333,23 @@ Suivez les étapes ci-dessous pour créer un nouveau service Cloud.
     }
     ```
 
-    La politique inclut les deux ARN :
+    La politique inclut les deux ARN :
 
-    * **IAM user** (`docs-s3-user`) : permet à votre cluster ClickHouse autogéré d’effectuer des sauvegardes vers S3
-    * **Rôle ClickHouse Cloud** (`ClickHouseAccess-001`) : permet à votre service Cloud de restaurer les données depuis S3
+    * **IAM user** (`docs-s3-user`) : permet à votre cluster ClickHouse autogéré d’effectuer des sauvegardes vers S3
+    * **Rôle ClickHouse Cloud** (`ClickHouseAccess-001`) : permet à votre service Cloud de restaurer les données depuis S3
   </Step>
 </Steps>
 
-<div id="taking-a-backup-on-oss">
-  ## Effectuer la sauvegarde (sur un déploiement autogéré)
-</div>
+## Effectuer la sauvegarde (sur un déploiement autogéré) {#taking-a-backup-on-oss}
 
 Chaque shard doit être sauvegardé indépendamment. Connectez-vous à un nœud de chaque shard et exécutez la
 commande de sauvegarde avec un chemin de destination distinct pour chaque shard.
 
 Remplacez `BUCKET_URL`, `KEY_ID` et `SECRET_KEY` par vos propres identifiants AWS.
-Le guide [&quot;Comment créer un bucket S3 et un rôle IAM&quot;](/fr/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket)
+Le guide [&quot;Comment créer un compartiment S3 et un rôle IAM&quot;](/fr/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket)
 vous explique comment les obtenir si vous ne les avez pas encore.
 
-**Shard 1 :**
+**Shard 1 :**
 
 ```sql
 BACKUP DATABASE nyc_taxi
@@ -376,7 +360,7 @@ TO S3(
 )
 ```
 
-**Shard 2 :**
+**Shard 2 :**
 
 ```sql
 BACKUP DATABASE nyc_taxi
@@ -401,7 +385,7 @@ Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
 <Info>
   **Déploiements mono-nœud**
 
-  Si vous n’utilisez pas de tables distribuées, vous pouvez sauvegarder l’intégralité de la base de données avec une seule commande :
+  Si vous n’utilisez pas de Tables Distributed, vous pouvez sauvegarder l’intégralité de la base de données avec une seule commande :
 
   ```sql
   BACKUP DATABASE nyc_taxi
@@ -413,19 +397,15 @@ Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
   ```
 </Info>
 
-Si vous examinez votre bucket S3, qui était auparavant vide, vous verrez maintenant que des dossiers sont apparus :
+Si vous examinez votre bucket S3, qui était auparavant vide, vous verrez maintenant que des dossiers sont apparus :
 
 <div className="ch-image-md">
-
-<Frame>
-
-![sauvegarde, données et métadonnées](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp)
-
-</Frame>
-
+  <Frame>
+    ![sauvegarde, données et métadonnées](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp)
+  </Frame>
 </div>
 
-Si vous effectuez une migration complète, vous pouvez exécuter la commande suivante pour sauvegarder l’intégralité du serveur :
+Si vous effectuez une migration complète, vous pouvez exécuter la commande suivante pour sauvegarder l’intégralité du serveur :
 
 ```sql
 BACKUP
@@ -446,7 +426,7 @@ SETTINGS
   compression_level=3;
 ```
 
-La commande ci-dessus sauvegarde :
+La commande ci-dessus sauvegarde :
 
 * Toutes les bases de données et tables utilisateur
 * Les comptes utilisateur et les mots de passe
@@ -458,7 +438,7 @@ La commande ci-dessus sauvegarde :
 
 Si vous utilisez un autre fournisseur de services Cloud (CSP), vous pouvez utiliser la syntaxe `TO S3()` (pour AWS comme pour GCP) et `TO AzureBlobStorage()`.
 
-Pour les très grandes bases de données, envisagez d’utiliser `ASYNC` pour exécuter la sauvegarde en arrière-plan :
+Pour les très grandes bases de données, envisagez d’utiliser `ASYNC` pour exécuter la sauvegarde en arrière-plan :
 
 ```sql
 BACKUP DATABASE my_database 
@@ -472,7 +452,7 @@ ASYNC;
 -- └─────────────────────────────────────┴───────────────────┘
 ```
 
-L’identifiant de sauvegarde peut ensuite être utilisé pour suivre l’avancement de la sauvegarde :
+L’identifiant de sauvegarde peut ensuite être utilisé pour suivre l’avancement de la sauvegarde :
 
 ```sql
 SELECT * 
@@ -484,7 +464,7 @@ Il est également possible d’effectuer des sauvegardes incrémentielles.
 Pour plus d’informations sur les sauvegardes en général, consultez la documentation sur la [sauvegarde et la restauration](/fr/concepts/features/backup-restore/overview).
 
 <div id="restore-to-clickhouse-cloud">
-  ## Restaurer dans ClickHouse Cloud
+  ## Restaurer dans ClickHouse Cloud {#restore-to-clickhouse-cloud}
 </div>
 
 Restaurez la sauvegarde de chaque shard, une à la fois, dans votre service Cloud. Définissez `ROLE_ARN` sur la

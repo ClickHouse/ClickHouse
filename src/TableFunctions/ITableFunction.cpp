@@ -122,7 +122,7 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
     auto context_to_use = use_global_context ? context->getGlobalContext() : context;
 
     StoragePtr storage;
-    if (cached_columns.empty())
+    if (!isTableDefinition(cached_columns))
     {
         storage = executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
     }

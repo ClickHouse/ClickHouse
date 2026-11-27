@@ -228,6 +228,10 @@ private:
     /// Do we need to additionally store all elements of the set in explicit form for subsequent use for index.
     bool fill_set_elements = false;
 
+    /// Whether `insertFromColumns` finds the keys a block adds with a filter of all its rows, which is cheaper when most of
+    /// them are new, or with the numbers of the rows that add a key. Decided by the previous block.
+    bool find_new_set_elements_by_filter = true;
+
     /// Check if set contains all the data.
     std::atomic<bool> is_created = false;
 
@@ -271,9 +275,10 @@ private:
         SetVariants & variants,
         ConstNullMapPtr null_map,
         ColumnUInt8::Container * out_filter,
+        ColumnUInt64::Container * out_new_rows,
         size_t max_keys);
 
-    template <typename Method, bool has_null_map, bool build_filter>
+    template <typename Method, bool has_null_map, bool build_filter, bool collect_new_rows>
     size_t insertFromBlockImplCase(
         Method & method,
         const ColumnRawPtrs & key_columns,
@@ -281,6 +286,7 @@ private:
         SetVariants & variants,
         ConstNullMapPtr null_map,
         ColumnUInt8::Container * out_filter,
+        ColumnUInt64::Container * out_new_rows,
         size_t max_keys);
 
     template <typename Method>

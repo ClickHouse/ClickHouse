@@ -1,0 +1,259 @@
+---
+slug: /clickstack/observability/example-datasets/telemetrygen
+title: '使用 telemetrygen 生成合成 OpenTelemetry 数据'
+sidebarTitle: '使用 telemetrygen 生成合成数据'
+description: '使用 telemetrygen 向全托管的 ClickHouse Observability 发送多种合成日志、链路追踪和指标'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'telemetrygen', '合成数据', 'OpenTelemetry', '测试', '日志', '链路追踪', '指标', '可观测性']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 版产品" />
+
+    [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen) 是 OpenTelemetry Collector Contrib 中的数据生成器。它可生成合成的 OTLP 日志、链路追踪和指标，并提供多个标志来控制数据形态：多个服务、不同的日志严重级别、span 状态与子 span，以及不同类型的指标。您可以用它向全托管的 ClickHouse Observability 发送测试数据，然后在“搜索”和 Chart Explorer 中查看结果。
+
+    <Steps>
+      <Step title="前置条件" id="prerequisites-managed">
+        您需要已有一个全托管 ClickHouse Observability 服务，并能通过网络访问其托管遥测数据端点。请参阅[全托管入门指南](/zh/clickstack/observability/getting-started)。
+      </Step>
+
+      <Step title="安装 telemetrygen" id="install-telemetrygen-managed">
+        确保已安装并启动 Docker，然后定义一个包装器，通过官方容器镜像运行 `telemetrygen`：
+
+        ```shell
+        telemetrygen() {
+          docker run --rm \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
+        }
+        ```
+
+        或者使用 Go 安装二进制文件：
+
+        ```shell
+        go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+        ```
+      </Step>
+
+      <Step title="设置环境变量" id="set-env-vars-managed">
+        打开您的 ClickHouse Observability 服务，进入 **团队设置 → Managed Telemetry**。复制 **OTLP HTTP 端点** 和 **API key**。
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![团队设置中的 Managed Telemetry 页面，显示已遮盖的 OTLP HTTP 端点和 API key](/images/clickstack/getting-started/observability-managed-telemetry.png)
+          </Frame>
+        </div>
+
+        将端点设置为“主机:端口”的形式，即去掉 `https://` 前缀。例如，`https://YOUR_OTEL_ENDPOINT:4318` 应改为 `YOUR_OTEL_ENDPOINT:4318`。请勿追加 `/v1/logs` 等信号路径。
+
+        ```shell
+        export OTEL_ENDPOINT='YOUR_OTEL_ENDPOINT:4318'
+        printf "API key: "
+        read -r -s OTEL_API_KEY
+        printf "\n"
+        export OTEL_API_KEY
+        ```
+
+        定义一个简单的 `tg` 辅助函数，这样每条命令只需指定会变化的部分 (服务、严重级别、状态、属性) ：
+
+        ```shell
+        tg() { local signal=$1; shift; telemetrygen "$signal" \
+          --otlp-endpoint "${OTEL_ENDPOINT}" --otlp-http \
+          --otlp-header "authorization=\"Bearer ${OTEL_API_KEY}\"" \
+          --rate 5 --duration 30s "$@"; }
+        ```
+
+        该辅助进程通过 TLS 使用 OTLP HTTP，并启用证书验证。请勿添加 `--otlp-insecure` 和 `--otlp-insecure-skip-verify` 参数。每条命令运行 30 秒，并使用您的托管遥测数据 API key 进行身份验证。
+      </Step>
+
+      <Step title="生成日志" id="generate-logs-managed">
+        从三个服务发送信息、警告和错误级别的日志：
+
+        ```shell
+        tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
+        tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="POST"'
+        tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.status_code="500"'
+        ```
+
+        最常用的日志标志：
+
+        * `--service` 用于设置 `service.name`，使事件能够归属到对应的服务。
+        * `--severity-text` 和 `--severity-number` 用于设置日志级别 (`severity-number` 的取值范围为 1 到 24) 。
+        * `--body` 用于设置日志消息内容。
+        * `--otlp-attributes` 用于设置资源级属性 (`key="value"`、`key=true` 或 `key=<integer>`) 。
+        * `--telemetry-attributes` 用于设置单条记录级别的属性。
+      </Step>
+
+      <Step title="生成链路追踪" id="generate-traces-managed">
+        从多个服务发送包含多个跨度、状态分别为成功和错误的链路追踪。每条命令都会生成相互独立的链路追踪；这些示例不会产生服务之间的调用：
+
+        ```shell
+        # Healthy services: the bulk of the traffic, all spans Ok
+        for svc in frontend checkout cart; do
+          tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
+            --otlp-attributes 'deployment.environment="production"' \
+            --telemetry-attributes "http.route=\"/$svc\""
+        done
+
+        # A service with slower spans and errors
+        tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.route="/charge"'
+        ```
+
+        最常用的 trace 标志：
+
+        * `--child-spans` 为每个 trace 生成指定数量的子 span，使每个 trace 具备真实的层级深度。
+        * `--span-duration` 设置每个 span 的耗时 (例如 `120ms`、`2s`) 。
+        * `--status-code` 取值为 `Unset`、`Error`、`Ok` (或 `0`、`1`、`2`) 之一。设为 `Error` 可用于测试错误相关的视图。
+        * `--span-links` 在 span 之间添加关联。
+        * `--workers` 并行运行多个生成器，以产生更大且更多样化的数据量。
+      </Step>
+
+      <Step title="生成指标" id="generate-metrics-managed">
+        分别发送一个 sum、一个 Gauge 和一个直方图指标。这些都是合成数据，并非对您系统的实际测量值。每条命令会在 30 秒后自动停止：
+
+        ```shell
+        tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
+        tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
+        tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
+        ```
+
+        `--metric-type` 可选值为 `Gauge`、`Sum`、`Histogram` 或 `ExponentialHistogram`。`--otlp-metric-name` 用于为该数据系列命名，便于在 UI 中查找；`--aggregation-temporality` 的取值为 `delta` 或 `cumulative`。
+      </Step>
+
+      <Step title="在 ClickHouse Observability 中验证" id="verify-managed">
+        打开您的 ClickHouse Observability 服务。在 `Search` 视图中，将时间范围设为 `Last 15 minutes`，并在 `Logs` 和 `Traces` 之间切换 source。按 `ServiceName` 过滤，可查看 `frontend`、`checkout`、`cart` 和 `payment` 服务；按 `SeverityText` 过滤，可找到警告和错误日志行。打开一条 `payment` trace，查看其子 span 及错误状态。打开 `Chart Explorer`，选择 `Metrics`，并为上文设置的任一指标名称 (例如 `http.server.requests`) 绘制图表，以验证指标摄取是否正常。
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="自管理" id="self-managed">
+    [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen) 是 OpenTelemetry Collector Contrib 中的数据生成器。它可以生成合成的 OTLP 日志、链路追踪和指标，并提供多种标志用于定制数据：多个服务、不同的日志严重级别、span 状态与子 span，以及不同类型的指标。可以用它来验证 ClickStack OpenTelemetry 采集器能否正常接收数据，以及多样且贴近真实的事件能否在可观测性 UI 中正确显示。
+
+    本指南假定采集器已在运行，且已在端口 `4317` (gRPC) 和 `4318` (HTTP) 上提供 OTLP 端点。
+
+    <Steps>
+      <Step title="前置条件" id="prerequisites-managed-self-configured">
+        本指南假定您已完成 [ClickHouse Observability — 自管理版入门指南](/zh/clickstack/self-configured/getting-started/managed)，并且已有一个正在运行的 OpenTelemetry 采集器，且可从运行 `telemetrygen` 的机器访问其 OTLP gRPC (`4317`) 和 HTTP (`4318`) 端点。如果您已使用 `OTLP_AUTH_TOKEN` [对采集器进行了安全加固](/zh/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)，请提前准备好该值。
+      </Step>
+
+      <Step title="安装 telemetrygen" id="install-telemetrygen-managed-self-configured">
+        直接通过 Docker 镜像运行 `telemetrygen` (无需安装) 。先定义一个简单的包装器，让下面的命令更简洁易读；`--add-host` 使容器能够访问在主机上监听的采集器：
+
+        ```shell
+        telemetrygen() {
+          docker run --rm --add-host=host.docker.internal:host-gateway \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
+        }
+        export OTEL_ENDPOINT=host.docker.internal:4317
+        ```
+
+        或者，使用 Go 安装二进制文件，并改为连接 `localhost`：
+
+        ```shell
+        go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+        export OTEL_ENDPOINT=localhost:4317
+        ```
+      </Step>
+
+      <Step title="设置环境变量" id="set-env-vars-managed-self-configured">
+        如果采集器启用了安全认证，请导出身份验证令牌：
+
+        ```shell
+        export OTLP_AUTH_TOKEN=<your_otlp_auth_token>
+        ```
+
+        <Info>
+          **未受保护的采集器**
+
+          ClickStack OpenTelemetry 采集器默认不进行身份验证。如果您尚未按照[保护采集器](/zh/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)中的说明设置 `OTLP_AUTH_TOKEN`，请从下面的辅助函数中删除 `--otlp-header` 这一行。
+        </Info>
+
+        定义一个简短的 `tg` 辅助函数，这样每条命令只需指定会变化的部分 (服务、严重级别、状态、属性) ：
+
+        ```shell
+        tg() { local signal=$1; shift; telemetrygen "$signal" \
+          --otlp-endpoint ${OTEL_ENDPOINT} --otlp-insecure \
+          --otlp-header "authorization=\"${OTLP_AUTH_TOKEN}\"" \
+          --rate 5 --duration 30s "$@"; }
+        ```
+      </Step>
+
+      <Step title="生成日志" id="generate-logs-managed-self-configured">
+        向多个服务发送严重级别分布贴近真实情况的日志：以信息级别为主，夹杂一条警告和一条错误，而非千篇一律的单一日志流：
+
+        ```shell
+        tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
+        tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="POST"'
+        tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.status_code="500"'
+        ```
+
+        最常用的日志标志：
+
+        * `--service` 用于设置 `service.name`，使事件能够归属到对应的服务。
+        * `--severity-text` 和 `--severity-number` 用于设置日志级别 (`severity-number` 的取值范围为 1 到 24) 。
+        * `--body` 用于设置日志消息。
+        * `--otlp-attributes` 用于设置资源级属性 (`key="value"`、`key=true` 或 `key=<integer>`) 。
+        * `--telemetry-attributes` 用于设置单条记录级别的属性。
+      </Step>
+
+      <Step title="生成链路追踪" id="generate-traces-managed-self-configured">
+        从多个健康的服务和一个出现故障的依赖项发送包含多个跨度的链路追踪。这样服务地图就会呈现出贴近真实的形态 (大部分服务运行正常，仅有一个服务报错) ，同时错误视图中也会填充相应数据：
+
+        ```shell
+        # Healthy services: the bulk of the traffic, all spans Ok
+        for svc in frontend checkout cart; do
+          tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
+            --otlp-attributes 'deployment.environment="production"' \
+            --telemetry-attributes "http.route=\"/$svc\""
+        done
+
+        # One slow dependency returning errors
+        tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.route="/charge"'
+        ```
+
+        最常用的 trace 标志：
+
+        * `--child-spans` 为每个 trace 生成指定数量的子 span，使每个 trace 具备真实的层级深度。
+        * `--span-duration` 设置每个 span 的持续时间 (例如 `120ms`、`2s`) 。
+        * `--status-code` 取值为 `Unset`、`Error`、`Ok` (或 `0`、`1`、`2`) 之一。使用 `Error` 可测试错误相关的视图。
+        * `--span-links` 在 span 之间添加关联。
+        * `--workers` 并行运行多个生成器，以产生更大且更多样化的数据量。
+      </Step>
+
+      <Step title="生成指标" id="generate-metrics-managed-self-configured">
+        发送三种常见的指标类型，让仪表盘中同时有计数器、Gauge 和分布 (distribution) 数据。与某些生成器不同，`telemetrygen` 在发送指标时会遵循 `--duration` 参数，因此无需手动停止：
+
+        ```shell
+        tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
+        tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
+        tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
+        ```
+
+        `--metric-type` 可取 `Gauge`、`Sum`、`Histogram` 或 `ExponentialHistogram`。`--otlp-metric-name` 用于为该数据系列命名，便于您在 UI 中找到它；`--aggregation-temporality` 的取值为 `delta` 或 `cumulative`。
+      </Step>
+
+      <Step title="在可观测性 UI 中验证" id="verify-managed-self-configured">
+        在 ClickHouse Cloud 控制台中打开可观测性 UI。在 `Search` 视图中，将时间范围设为 `Last 15 minutes`，并在 `Logs` 和 `Traces` 之间切换 source。按 `ServiceName` 过滤，即可查看 `frontend`、`checkout`、`cart` 和 `payment` 服务；按 `SeverityText` 过滤，即可找到警告和错误级别的日志行。打开一个 `payment` trace，查看其子 span 和错误状态。打开 `Chart Explorer`，选择 `Metrics`，并为上文设置的某个指标名称 (例如 `http.server.requests`) 绘制图表，以验证指标摄取是否正常。
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>

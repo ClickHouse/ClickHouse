@@ -116,7 +116,9 @@ void MergeSortingTransform::consume(Chunk chunk)
     chunks.push_back(std::move(chunk));
 
     /** If significant amount of data was accumulated, perform preliminary merging step.
+      * When a spill is due, the kept bytes count too, so that a useful re-merge runs before spilling.
       */
+    const size_t bytes_for_remerge = isSpillDue() ? sum_bytes_in_blocks : sum_bytes_in_blocks - bytes_kept_by_remerge;
     if ((chunks.size() > 1
         && limit
         /// Equivalent to `limit * 2 < sum_rows_in_blocks`, which wraps for the huge limits that
@@ -124,7 +126,7 @@ void MergeSortingTransform::consume(Chunk chunk)
         && limit < (sum_rows_in_blocks + 1) / 2
         && remerge_is_useful
         && max_bytes_before_remerge
-        && sum_bytes_in_blocks > max_bytes_before_remerge) || (threshold_tracker && (static_cast<double>(sum_rows_in_blocks) > static_cast<double>(limit) * 1.5)))
+        && bytes_for_remerge > max_bytes_before_remerge) || (threshold_tracker && (static_cast<double>(sum_rows_in_blocks) > static_cast<double>(limit) * 1.5)))
     {
         remerge();
     }
@@ -133,18 +135,21 @@ void MergeSortingTransform::consume(Chunk chunk)
       *  will merge blocks that we have in memory at this moment and write merged stream to temporary (compressed) file.
       * NOTE. It's possible to check free space in filesystem.
       */
-    if (max_bytes_in_block_before_external_sort && sum_bytes_in_blocks > max_bytes_in_block_before_external_sort)
+    if (isSpillDue())
     {
-        Int64 query_memory = getCurrentQueryMemoryUsage();
-        if (!max_bytes_in_query_before_external_sort || query_memory > static_cast<Int64>(max_bytes_in_query_before_external_sort))
-        {
-            auto sink = prepareSpill();
-            auto source = std::make_shared<BufferingFromFileSource>(sink->getPort().getSharedHeader(), sink->getHolder(), log);
-            processors.emplace_back(source);
-            processors.emplace_back(sink);
-            stage = Stage::Serialize;
-        }
+        auto sink = prepareSpill();
+        auto source = std::make_shared<BufferingFromFileSource>(sink->getPort().getSharedHeader(), sink->getHolder(), log);
+        processors.emplace_back(source);
+        processors.emplace_back(sink);
+        stage = Stage::Serialize;
     }
+}
+
+bool MergeSortingTransform::isSpillDue() const
+{
+    return max_bytes_in_block_before_external_sort && sum_bytes_in_blocks > max_bytes_in_block_before_external_sort
+        && (!max_bytes_in_query_before_external_sort
+            || getCurrentQueryMemoryUsage() > static_cast<Int64>(max_bytes_in_query_before_external_sort));
 }
 
 ProcessorMemoryStats MergeSortingTransform::getMemoryStats() const
@@ -232,7 +237,6 @@ std::shared_ptr<BufferingToFileSink> MergeSortingTransform::prepareSpill()
                 limit,
                 /*always_read_till_end_=*/ false,
                 /*out_row_sources_buf=*/ nullptr,
-                /*filter_column_name=*/ std::nullopt,
                 use_average_block_sizes,
                 apply_virtual_row,
                 /*virtual_row_prefetch_window=*/ 0,
@@ -249,6 +253,7 @@ std::shared_ptr<BufferingToFileSink> MergeSortingTransform::prepareSpill()
 
     sum_bytes_in_blocks = 0;
     sum_rows_in_blocks = 0;
+    bytes_kept_by_remerge = 0;
     return sink;
 }
 
@@ -363,6 +368,7 @@ void MergeSortingTransform::remerge()
     chunks = std::move(new_chunks);
     sum_rows_in_blocks = new_sum_rows_in_blocks;
     sum_bytes_in_blocks = new_sum_bytes_in_blocks;
+    bytes_kept_by_remerge = new_sum_bytes_in_blocks;
 
     /// Publish the updated TopK value if optimization is ON
     if (threshold_tracker && sum_rows_in_blocks == limit && chunks.size() == 1)

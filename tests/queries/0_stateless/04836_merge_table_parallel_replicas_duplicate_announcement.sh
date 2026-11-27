@@ -58,9 +58,9 @@ for local_plan in 0 1; do
     SET parallel_replicas_local_plan = ${local_plan};
     -- The regression guarded here is in the query-based dispatch: each replica re-plans the outer
     -- query, so a follower can build several read pools under one replica_num and announce twice.
-    -- The implementation is left at its default: the plan-based one used to keep this shape local,
-    -- because the GLOBAL IN subquery left a DelayedCreatingSetsStep that the split refused to cross,
-    -- and it now ships the subquery with the fragment instead.
+    -- Plan-based parallel replicas keeps this shape local: the plan of the set built from \`merge()\`
+    -- holds a \`ReadFromMerge\`, which cannot be shipped.
+    SET parallel_replicas_plan_based = 0;
 
     SELECT count() FROM default.${table}
     WHERE idx GLOBAL IN (i NOT IN (SELECT i FROM merge('^${table}\$') WHERE dt >= -2147483648));
