@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/SettingsChanges.h>
@@ -106,6 +107,12 @@ namespace ErrorCodes
     extern const int NO_DATA_TO_INSERT;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_REQUEST_PARAMETER;
+    extern const int CANNOT_SCHEDULE_TASK;
+}
+
+namespace FailPoints
+{
+    extern const char grpc_call_start_thread_fail[];
 }
 
 namespace
@@ -988,7 +995,20 @@ namespace
             }
             on_finish_call_callback();
         };
-        call_thread = ThreadFromGlobalPool(runner_function);
+        try
+        {
+            fiu_do_on(FailPoints::grpc_call_start_thread_fail,
+            {
+                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Cannot schedule a task: failpoint `grpc_call_start_thread_fail`");
+            });
+            call_thread = ThreadFromGlobalPool(runner_function);
+        }
+        catch (...)
+        {
+            /// Nothing else would finish the call for the client.
+            call_responder->cancel();
+            throw;
+        }
     }
 
     void Call::run()
@@ -2116,7 +2136,16 @@ private:
             auto new_call = std::make_unique<Call>(call_type, std::move(responder), owner.iserver, owner.log);
             auto * new_call_ptr = new_call.get();
             current_calls[new_call_ptr] = std::move(new_call);
-            new_call_ptr->start([this, new_call_ptr]() { onFinishCall(new_call_ptr); });
+            try
+            {
+                new_call_ptr->start([this, new_call_ptr]() { onFinishCall(new_call_ptr); });
+            }
+            catch (...)
+            {
+                /// An exception here would stop the queue thread, and with it every other call.
+                tryLogCurrentException(log, "Cannot start a call");
+                current_calls.erase(new_call_ptr);
+            }
         }
     }
 
