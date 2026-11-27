@@ -64,3 +64,10 @@ printf '${c1:CSV}\n' > "${DATA_FILE}_row_lf"
 printf '${c1:CSV}\r' > "${DATA_FILE}_row_cr"
 check input_format_csv_trim_whitespaces Template '1  \n' "format_template_row = '${DATA_FILE}_row_lf'"
 check input_format_csv_allow_cr_end_of_line Template '1\r2\r3\r' "format_template_row = '${DATA_FILE}_row_cr'"
+
+# The fields of the result set prefix are skipped with their own escaping rule, even when the rows use another one.
+printf '${x:Raw}\n' > "${DATA_FILE}_row_x_raw"
+printf '${c1:Raw}\n' > "${DATA_FILE}_row_c1_raw"
+printf '${:CSV}\n${data}' > "${DATA_FILE}_prefix_csv"
+check format_csv_allow_double_quotes Template '"a\nb"\n1\n' "format_template_row = '${DATA_FILE}_row_x_raw', format_template_resultset = '${DATA_FILE}_prefix_csv'"
+check format_csv_allow_double_quotes Template '"a\nb"\n1\n' "format_template_row = '${DATA_FILE}_row_c1_raw', format_template_resultset = '${DATA_FILE}_prefix_csv'"

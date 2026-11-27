@@ -68,3 +68,7 @@ CANNOT_EXTRACT_TABLE_STRUCTURE
 c1	Nullable(String)
 -- input_format_csv_allow_cr_end_of_line Template
 CANNOT_EXTRACT_TABLE_STRUCTURE
+-- format_csv_allow_double_quotes Template
+2
+-- format_csv_allow_double_quotes Template
+c1	Nullable(String)
