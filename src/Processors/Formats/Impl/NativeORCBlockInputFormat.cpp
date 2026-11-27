@@ -1593,9 +1593,6 @@ static std::optional<const ORC::Type *> resolveORCFieldByIcebergId(
     return level_type;
 }
 
-/// The names that the top-level fields of the file are read as under the data lake schema, by ORC column id, as Parquet reads
-/// them, if they all have an Iceberg field id: the name of the column with the field's id, the field's own name for a reserved
-/// id. Other fields are not read.
 static std::optional<UnorderedMapWithMemoryTracking<UInt64, String>>
 getORCTopLevelReadNames(const ORC::Type & file_schema, const ColumnMapper & column_mapper)
 {
@@ -2077,7 +2074,6 @@ void ORCColumnToCHColumn::orcTableToCHChunk(
         if (top_level_read_names)
         {
             auto it = top_level_read_names->find(schema->getSubtype(i)->getColumnId());
-            /// A field that the data lake schema lacks is not read.
             if (it == top_level_read_names->end())
                 continue;
             name = it->second;

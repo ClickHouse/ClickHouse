@@ -209,8 +209,7 @@ private:
     /// ORC column ids of the structs of the file a field of which has no Iceberg field id: their fields are matched by name,
     /// also when the fields read have one.
     const UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids;
-    /// Under the data lake schema, the names that the top-level fields of the file are read as, by ORC column id; a field
-    /// not in it is not read.
+    /// If set, the names the top-level fields are read as, by ORC column id; a field without an entry is not read.
     const std::optional<UnorderedMapWithMemoryTracking<UInt64, String>> top_level_read_names;
 };
 }
