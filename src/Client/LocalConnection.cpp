@@ -21,6 +21,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFile.h>
@@ -548,6 +549,8 @@ void LocalConnection::sendQuery(
             current_format = insert->format;
         else if (insert && insert->infile)
             current_format = FormatFactory::instance().getFormatFromFileName(insert->infile->as<ASTLiteral &>().value.safeGet<String>());
+        else if (const auto * create = parsed_query->as<ASTCreateQuery>(); create && !create->insert_format.empty())
+            current_format = create->insert_format;
 
         /// `input_format` / `format` settings override the FORMAT for input (mirrors
         /// `getSourceFromASTInsertQuery` on the server), so `--input-format` / an in-query

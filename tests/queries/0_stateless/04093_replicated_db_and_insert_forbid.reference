@@ -4,5 +4,12 @@
 6	21
 SETTINGS made_up_setting = 1
 4	10
+1	2
+3	4
+5	6
 10000
 2	3
+1	hello
+2	world
+2	world
+3	override

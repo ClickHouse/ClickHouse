@@ -166,3 +166,55 @@ CREATE TEMPORARY TABLE IF NOT EXISTS t_temporary_population (x UInt8) AND INSERT
 CREATE TEMPORARY TABLE IF NOT EXISTS t_temporary_population AND INSERT VALUES (2);
 SELECT count(), sum(x) FROM t_temporary_population;
 DROP TEMPORARY TABLE t_temporary_population;
+
+DROP TABLE IF EXISTS t_population_dedup_control;
+CREATE TABLE t_population_dedup_control (x UInt8) ENGINE = MergeTree ORDER BY x
+    SETTINGS non_replicated_deduplication_window = 100;
+INSERT INTO t_population_dedup_control SELECT toUInt8(1) AS x ORDER BY x
+    SETTINGS insert_deduplication_token = 'same_batch';
+INSERT INTO t_population_dedup_control SELECT toUInt8(2) AS x ORDER BY x
+    SETTINGS insert_deduplication_token = 'same_batch';
+SELECT count(), sum(x) FROM t_population_dedup_control;
+DROP TABLE t_population_dedup_control;
+
+DROP TABLE IF EXISTS t_population_dedup;
+CREATE TABLE t_population_dedup (x UInt8) ENGINE = MergeTree ORDER BY x
+    SETTINGS non_replicated_deduplication_window = 100
+    AS INSERT SELECT toUInt8(1) AS x FROM numbers(3) ORDER BY x
+    SETTINGS limit = 1, insert_deduplication_token = 'create_batch';
+CREATE TABLE IF NOT EXISTS t_population_dedup AND INSERT
+    SELECT toUInt8(9) AS x FROM numbers(3) ORDER BY x
+    SETTINGS limit = 1, insert_deduplication_token = 'create_batch';
+CREATE TABLE IF NOT EXISTS t_population_dedup AND INSERT
+    SELECT toUInt8(2) AS x FROM numbers(3) ORDER BY x
+    SETTINGS limit = 1, insert_deduplication_token = 'same_batch';
+CREATE TABLE IF NOT EXISTS t_population_dedup AND INSERT
+    SELECT toUInt8(3) AS x FROM numbers(3) ORDER BY x
+    SETTINGS limit = 1, insert_deduplication_token = 'same_batch';
+SELECT count(), sum(x) FROM t_population_dedup;
+DROP TABLE t_population_dedup;
+
+DROP TABLE IF EXISTS t_population_null;
+CREATE TABLE t_population_null (x UInt8) ENGINE = Memory;
+INSERT INTO t_population_null
+    SELECT CAST(NULL AS Nullable(UInt8)) SETTINGS insert_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+CREATE TABLE IF NOT EXISTS t_population_null AND INSERT
+    SELECT CAST(NULL AS Nullable(UInt8)) SETTINGS insert_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+SELECT count() FROM t_population_null;
+SET insert_null_as_default = 0;
+CREATE TABLE IF NOT EXISTS t_population_null AND INSERT
+    SELECT CAST(NULL AS Nullable(UInt8)) SETTINGS insert_null_as_default = DEFAULT;
+SET insert_null_as_default = DEFAULT;
+SELECT x FROM t_population_null;
+DROP TABLE t_population_null;
+
+DROP TABLE IF EXISTS t_04093_cluster_reject;
+CREATE TABLE IF NOT EXISTS t_04093_cluster_reject ON CLUSTER test_shard_localhost (x UInt8) ENGINE = Memory
+    AS INSERT VALUES (7); -- { serverError SUPPORT_IS_DISABLED }
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't_04093_cluster_reject';
+CREATE TABLE t_04093_cluster_reject (x UInt8) ENGINE = Memory;
+INSERT INTO t_04093_cluster_reject VALUES (1);
+CREATE TABLE IF NOT EXISTS t_04093_cluster_reject ON CLUSTER test_shard_localhost
+    AND INSERT VALUES (7); -- { serverError SUPPORT_IS_DISABLED }
+SELECT count(), sum(x) FROM t_04093_cluster_reject;
+DROP TABLE t_04093_cluster_reject;

@@ -18,6 +18,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/InsertQuerySettingsPushDownVisitor.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
@@ -252,7 +253,23 @@ std::optional<EngineSettingsSupport> getEngineSettingsSupport(const ASTCreateQue
 }
 
 
-void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMutablePtr context_)
+ASTPtr InterpreterSetQuery::getCreateInsertSettings(const ASTPtr & ast)
+{
+    if (const auto * explain = ast ? ast->as<ASTExplainQuery>() : nullptr)
+        return getCreateInsertSettings(explain->getExplainedQuery());
+
+    const auto * create = ast ? ast->as<ASTCreateQuery>() : nullptr;
+    if (!create || !create->insert_select)
+        return {};
+
+    ASTPtr settings;
+    ASTPtr select = create->insert_select->ptr();
+    InsertQuerySettingsPushDownVisitor::Data visitor_data{settings};
+    InsertQuerySettingsPushDownVisitor(visitor_data).visit(select);
+    return settings;
+}
+
+void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMutablePtr context_, const ASTPtr * create_insert_settings)
 {
     if (!ast)
         return;
@@ -329,6 +346,14 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                     && engine_settings->query_parameters.empty())
                     create_query->storage->reset(create_query->storage->settings);
             }
+
+            if (create_query->insert_select)
+            {
+                auto insert = make_intrusive<ASTInsertQuery>();
+                insert->format = create_query->insert_format;
+                insert->settings_ast = create_insert_settings ? *create_insert_settings : getCreateInsertSettings(ast);
+                applySettingsFromQuery(insert, context_);
+            }
         }
     }
 
@@ -346,7 +371,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
         if (explain_query->settings_ast)
             InterpreterSetQuery(explain_query->settings_ast, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
 
-        applySettingsFromQuery(explain_query->getExplainedQuery(), context_);
+        applySettingsFromQuery(explain_query->getExplainedQuery(), context_, create_insert_settings);
     }
     else if (auto * insert_query = ast->as<ASTInsertQuery>())
     {

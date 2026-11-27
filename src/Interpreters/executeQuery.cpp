@@ -3187,6 +3187,8 @@ static BlockIO executeQueryImpl(
 
             const bool run_query_in_background_before_settings_from_query = settings[Setting::run_query_in_background].value;
 
+            const ASTPtr create_insert_settings = InterpreterSetQuery::getCreateInsertSettings(out_ast);
+
             /// Construction settings in a non-last `UNION` arm's own `SETTINGS` clause are per-arm;
             /// wrap each such arm with its own `SELECT`/`WHERE`/`ORDER BY`/`LIMIT`/`OFFSET` and remove
             /// the settings from the AST. This runs before `applySettingsFromQuery` so the per-arm
@@ -3196,7 +3198,7 @@ static BlockIO executeQueryImpl(
 
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
-            InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+            InterpreterSetQuery::applySettingsFromQuery(out_ast, context, &create_insert_settings);
 
             /// The `database` setting is documented as equivalent to `USE`. To behave that way it must
             /// change the database that unqualified names resolve to, not just be stored as a string.

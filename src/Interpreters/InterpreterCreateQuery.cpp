@@ -3776,11 +3776,11 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
             insert->tryFindInputFunction(input_function);
             if (input_function)
             {
-                insert->table_id = getContext()->resolveStorageID(insert->table_id);
-                if (!getContext()->hasInsertionTableColumnsDescription())
+                insert->table_id = insert_context->resolveStorageID(insert->table_id);
+                if (!insert_context->hasInsertionTableColumnsDescription())
                 {
-                    auto table = DatabaseCatalog::instance().getTable(insert->table_id, getContext());
-                    InterpreterInsertQuery::setInsertContextValues(getContext(), *insert, table);
+                    auto table = DatabaseCatalog::instance().getTable(insert->table_id, insert_context);
+                    InterpreterInsertQuery::setInsertContextValues(insert_context, *insert, table);
                 }
 
                 const auto * select_query_hint = insert->select->as<ASTSelectQuery>();
@@ -3791,10 +3791,10 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
                         select_query_hint = union_query->list_of_selects->children.front()->as<ASTSelectQuery>();
                 }
 
-                StoragePtr input_table_storage = getContext()->executeTableFunction(input_function, select_query_hint);
+                StoragePtr input_table_storage = insert_context->executeTableFunction(input_function, select_query_hint);
                 auto & input_storage = typeid_cast<StorageInput &>(*input_table_storage);
-                auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr(getContext(), false);
-                auto pipe = getSourceFromASTInsertQuery(insert, true, input_metadata_snapshot->getSampleBlock(), getContext(), input_function);
+                auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr(insert_context, false);
+                auto pipe = getSourceFromASTInsertQuery(insert, true, input_metadata_snapshot->getSampleBlock(), insert_context, input_function);
                 input_storage.setPipe(std::move(pipe));
             }
         }
@@ -4275,6 +4275,19 @@ BlockIO InterpreterCreateQuery::execute()
     auto & create = query_ptr->as<ASTCreateQuery &>();
 
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
+
+    if (!create.cluster.empty() && (create.has_as_insert || create.has_and_insert))
+    {
+        ASTPtr input_function;
+        if (create.insert_select)
+            create.tryFindInputFunction(input_function);
+
+        if (!create.insert_select || input_function)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "CREATE TABLE with AS INSERT or AND INSERT and input data is not supported ON CLUSTER. "
+                "Use separate CREATE and INSERT queries.");
+    }
 
     bool is_create_database = create.database && !create.table;
 

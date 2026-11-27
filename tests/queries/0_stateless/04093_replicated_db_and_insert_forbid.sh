@@ -33,6 +33,7 @@ cleanup()
         DROP TABLE IF EXISTS t_04093_stream;
         DROP TABLE IF EXISTS t_04093_http;
         DROP TABLE IF EXISTS t_04093_http_input;
+        DROP TABLE IF EXISTS t_04093_delimiter;
         DROP TABLE IF EXISTS t_04093_large;
         DROP TABLE IF EXISTS t_04093_concurrent;
         DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_rmt_db;
@@ -43,6 +44,7 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     DROP TABLE IF EXISTS t_04093_stream;
     DROP TABLE IF EXISTS t_04093_http;
     DROP TABLE IF EXISTS t_04093_http_input;
+    DROP TABLE IF EXISTS t_04093_delimiter;
     DROP TABLE IF EXISTS t_04093_large;
     DROP TABLE IF EXISTS t_04093_concurrent;
 "
@@ -80,6 +82,16 @@ printf '%s\n' \
     ${CLICKHOUSE_CURL} -sS --fail-with-body "${CLICKHOUSE_URL}" --data-binary @-
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(x) FROM t_04093_http_input"
 
+printf '1;2\n' | ${CLICKHOUSE_CLIENT} --query \
+    "CREATE TABLE t_04093_delimiter (x UInt8, y UInt8) ENGINE = Memory AS INSERT SELECT * FROM input('x UInt8, y UInt8') SETTINGS format_csv_delimiter = ';' FORMAT CSV"
+printf '3;4\n' | ${CLICKHOUSE_CLIENT} --query \
+    "CREATE TABLE IF NOT EXISTS t_04093_delimiter AND INSERT SELECT * FROM input('x UInt8, y UInt8') SETTINGS format_csv_delimiter = ';' FORMAT CSV"
+printf '%s\n' \
+    "CREATE TABLE IF NOT EXISTS t_04093_delimiter AND INSERT SELECT * FROM input('x UInt8, y UInt8') SETTINGS format_csv_delimiter = ';' FORMAT CSV" \
+    '5;6' | \
+    ${CLICKHOUSE_CURL} -sS --fail-with-body "${CLICKHOUSE_URL}" --data-binary @-
+${CLICKHOUSE_CLIENT} --query "SELECT x, y FROM t_04093_delimiter ORDER BY x"
+
 {
     printf 'CREATE TABLE t_04093_large (x UInt8) ENGINE = Memory AS INSERT FORMAT RowBinary\n'
     head -c 10000 /dev/zero
@@ -99,3 +111,21 @@ if [ "$status" -ne 0 ]; then
     exit "$status"
 fi
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(x) FROM t_04093_concurrent"
+
+(
+    local_dir=$(mktemp -d "${CLICKHOUSE_TMP}/04093_local_XXXXXX")
+    trap 'rm -rf -- "$local_dir"' EXIT
+
+    printf '1,hello\n' | $CLICKHOUSE_LOCAL --path "$local_dir" --structure 'x UInt8, y String' \
+        --query "CREATE TABLE as_insert (x UInt8, y String) ENGINE = MergeTree ORDER BY x AS INSERT SELECT * FROM input('x UInt8, y String') FORMAT CSV"
+    $CLICKHOUSE_LOCAL --path "$local_dir" --query "SELECT x, y FROM as_insert"
+
+    $CLICKHOUSE_LOCAL --path "$local_dir" --query "CREATE TABLE and_insert (x UInt8, y String) ENGINE = MergeTree ORDER BY x"
+    printf '2,world\n' | $CLICKHOUSE_LOCAL --path "$local_dir" --structure 'x UInt8, y String' \
+        --query "CREATE TABLE IF NOT EXISTS and_insert AND INSERT SELECT * FROM input('x UInt8, y String') FORMAT CSV"
+    $CLICKHOUSE_LOCAL --path "$local_dir" --query "SELECT x, y FROM and_insert"
+
+    printf '3\toverride\n' | $CLICKHOUSE_LOCAL --path "$local_dir" --structure 'x UInt8, y String' --input-format TSV \
+        --query "CREATE TABLE IF NOT EXISTS and_insert AND INSERT SELECT * FROM input('x UInt8, y String') FORMAT CSV"
+    $CLICKHOUSE_LOCAL --path "$local_dir" --query "SELECT x, y FROM and_insert ORDER BY x"
+)
