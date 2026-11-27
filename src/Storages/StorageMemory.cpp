@@ -303,6 +303,7 @@ public:
         , resume_cursor(std::move(cursor_))
         , context(std::move(context_))
         , wakeup(storage->stream_subscribers->subscribe())
+        , pending_report(bounded ? context->getStreamingCursor() : nullptr)
     {
     }
 
@@ -319,6 +320,7 @@ public:
     {
         if (isCancelled())
         {
+            pending_report.finish();
             getPort().finish();
             return Status::Finished;
         }
@@ -336,13 +338,17 @@ public:
                 next_block_number = end_block_number;
                 reportFinalCursor();
             }
+            pending_report.finish();
             return Status::Finished;
         }
 
         if (is_async_state)
             return Status::Async;
 
-        return ISource::prepare();
+        const auto status = ISource::prepare();
+        if (status == Status::Finished)
+            pending_report.finish();
+        return status;
     }
 
     int schedule() override { return wakeup->fd(); }
@@ -357,6 +363,9 @@ public:
 
     void onCancel() noexcept override
     {
+        /// The query fails, so the cursor does not matter.
+        pending_report.finish();
+
         try
         {
             wakeup->notify();
@@ -468,6 +477,7 @@ private:
         cursor->setValue("generation", static_cast<Int64>(generation));
         cursor->setValue("block_number", static_cast<Int64>(next_block_number) - 1);
         streaming_cursor->merge(cursor);
+        pending_report.finish();
     }
 
     const NamesAndTypesList columns_to_read;
@@ -478,6 +488,9 @@ private:
     const CursorTreeNodePtr resume_cursor;
     const ContextPtr context;
     const MemoryTableWakeupPtr wakeup;
+    /// A bounded read for an incremental refresh is pending until it reports its cursor or finishes, so that a target
+    /// that commits the cursor with its data waits for it (see `WaitForStreamingCursorTransform`).
+    StreamingCursor::PendingReport pending_report;
     bool reported = false;
     bool initialized = false;
 
