@@ -125,6 +125,25 @@ static DataTypePtr convertVariantArgument(const DataTypePtr & type, const String
     return makeNullable(supertype);
 }
 
+bool AggregateFunctionFactory::hasOrderByCombinator(const String & name) const
+{
+    /// The same order of lookup as in `getImpl`: a function name takes precedence over a combinator suffix.
+    String nested_name = getAliasToOrName(name);
+    while (!aggregate_functions.contains(nested_name) && !case_insensitive_aggregate_functions.contains(Poco::toLower(nested_name)))
+    {
+        auto combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(nested_name);
+        if (!combinator)
+            return false;
+
+        const auto & combinator_name = combinator->getName();
+        if (combinator_name == "OrderBy")
+            return true;
+
+        nested_name = getAliasToOrName(nested_name.substr(0, nested_name.size() - combinator_name.size()));
+    }
+    return false;
+}
+
 /// Keep the state combinators outside the adapter, so `Aggregator` can unwrap them and call the
 /// adapter's batch methods instead of the per-row methods inherited by the state combinators.
 static AggregateFunctionPtr wrapInternalNulls(
@@ -178,15 +197,25 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     auto properties = tryGetProperties(name, action);
     bool is_window_function = properties.has_value() && properties->is_window_function;
 
+    /// The `OrderBy` combinator handles Nullable arguments itself: the `Null` wrapper is not applied on top of it,
+    /// because that would drop the rows where only a sort key is NULL (they must be ordered according to
+    /// NULLS FIRST/LAST instead). This also holds when `OrderBy` is not the outermost combinator,
+    /// e.g. `groupArrayOrderByIf('0 ASC NULLS FIRST')(v, k, cond)` or `groupArrayOrderByState('0 ASC')(v, k)`:
+    /// the outer combinators cannot tell the sort keys from the other arguments. Every nested function is created
+    /// by a recursive call with its own arguments only, and the call for the function under `OrderBy`
+    /// applies the `Null` wrapper to it. So the state under `-State` is the same as the state of the function without it.
+    bool is_order_by_combinator = hasOrderByCombinator(name);
+
+    /// The same applies to the adapter for `Variant` and `Dynamic` arguments, which store `NULL` as one of their values.
     auto wrap_internal_nulls = [&](AggregateFunctionPtr function, const DataTypes & types, const Array & params)
     {
-        if (function && !is_window_function && std::any_of(types.begin(), types.end(),
+        if (function && !is_window_function && !is_order_by_combinator && std::any_of(types.begin(), types.end(),
                 [](const auto & type) { return canContainNull(*type) && !type->isNullable(); }))
             function = wrapInternalNulls(function, types, params);
         return function;
     };
 
-    if (!is_window_function && std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
+    if (!is_window_function && !is_order_by_combinator && std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
         [](const auto & type) { return type->isNullable(); }))
     {
         AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Null");
@@ -436,7 +465,9 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         }
         else
         {
-            DataTypes nested_types = combinator->transformArguments(argument_types);
+            size_t nested_args_count = combinator->getNumberOfNestedArguments(argument_types, parameters);
+            DataTypes types_for_nested(argument_types.begin(), argument_types.begin() + nested_args_count);
+            DataTypes nested_types = combinator->transformArguments(types_for_nested);
 
             AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, nested_state_variant);
             /// The window layout only makes a window function faster, so use the ordinary layout where the
