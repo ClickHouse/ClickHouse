@@ -252,8 +252,8 @@ def create_spark_paimon_table(
 
     Defaults to append-only; callers may pass 'primary-key' via tblproperties
     (the strict-xfail PK test does), but reader tests must not rely on PK merge
-    semantics: ClickHouse reads Paimon tables as a raw union of data files
-    without merge-on-read (ClickHouse#113360).
+    semantics: ClickHouse has no merge-on-read and refuses the primary-key
+    buckets that need it (ClickHouse#128549).
     """
     properties = {"file.format": "parquet"}
     if tblproperties:

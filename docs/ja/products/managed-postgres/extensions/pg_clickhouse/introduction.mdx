@@ -2,7 +2,7 @@
 sidebarTitle: 'はじめに'
 description: 'SQLを一切書き換えずに、PostgreSQL から直接 ClickHouse で分析クエリを実行'
 slug: '/cloud/managed-postgres/extensions/pg_clickhouse'
-title: 'pg_clickhouse リファレンスドキュメント'
+title: 'pg_clickhouse ドキュメント'
 doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhouse', '拡張機能']
 ---
@@ -61,6 +61,8 @@ ClickHouseテーブルのインポートとクエリのプッシュダウンを�
 | [クエリ 20] |     473 ms |             28 ms |          |
 | [クエリ 21] |    1145 ms |           4470 ms |          |
 | [クエリ 22] |     270 ms |             45 ms |     ✼    |
+
+## インストール {#installation}
 
 ### ソースからコンパイル {#compile-from-source}
 
@@ -204,6 +206,42 @@ ERROR:  must be owner of database regression
 make installcheck PGUSER=postgres
 ```
 
+### CloudNativePG {#cloudnativepg}
+
+[ExtensionConfiguration] を使用して、[CloudNativePG] クラスターに pg&#95;clickhouse を追加します。
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cluster-example
+spec:
+  # ... <snip>
+  postgresql:
+    # ExtensionConfiguration
+    extensions:
+      - name: pg_clickhouse
+        image:
+        reference: ghcr.io/ClickHouse/cnpg-pg_clickhouse:{pg_major_version}-{pg_clickhouse_version}
+```
+
+データベースに読み込むには、[ExtensionSpec] を使用します:
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: pg_clickhouse-cluster
+spec:
+  name: app
+  owner: app
+  cluster:
+    name: pg_clickhouse-cluster
+  extensions:
+    - name: pg_clickhouse
+      version: {pg_clickhouse_version}
+```
+
 ### 読み込み {#loading}
 
 `pg_clickhouse` をインストールしたら、スーパーユーザーとして接続し、次を実行することで
@@ -239,8 +277,6 @@ make]、[CMake] が必要です。
 * CREATE SERVER
   および GUCs を通じて、サーバーレベルおよびセッションレベルの ClickHouse 設定を許可する
 * ClickHouse のすべてのデータ型をサポートする
-* 論理削除 と UPDATE をサポートする
-* COPY によるバッチ挿入をサポートする
 * 任意の ClickHouse クエリを実行し、その
   結果をテーブルとして返す関数を追加する
 * すべてがリモート
@@ -251,6 +287,7 @@ make]、[CMake] が必要です。
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 * [Josh Ventura](https://github.com/JoshDreamland)
+* [Kaushik Iska](https://github.com/iskakaushik)
 * [Ildus Kurbangaliev](https://github.com/ildus)
 * [Ibrar Ahmed](https://github.com/ibrarahmad)
 
@@ -296,6 +333,14 @@ make]、[CMake] が必要です。
 [TPC-H]: https://www.tpc.org/tpch/
 
 [re2]: https://github.com/ClickHouse/pg_re2 "pg_re2: RE2 を使用した ClickHouse 互換の正規表現関数"
+
+[CloudNativePG]: https://cloudnative-pg.io/ "Kubernetes ネイティブな方法で PostgreSQL を実行"
+
+[ExtensionConfiguration]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionconfiguration
+
+&quot;CloudNativePG ドキュメント: ExtensionConfiguration:
+[ExtensionSpec]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionspec
+&quot;CloudNativePG ドキュメント: ExtensionSpec:
 
 [クエリ 1] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/1.sql
 [クエリ 2] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/2.sql

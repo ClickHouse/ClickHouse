@@ -5,6 +5,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NullableUtils.h>
@@ -231,7 +232,7 @@ void buildDistinctFilter(
     SetVariants & variants,
     const IColumn::Filter * mask)
 {
-    typename Method::State state(key_columns, key_sizes, /*context=*/ nullptr);
+    typename Method::State state(key_columns, key_sizes, /*context=*/ nullptr, {.skips_rows = mask != nullptr});
 
     if (mask)
     {
@@ -393,7 +394,7 @@ public:
         return columns;
     }
 
-    size_t getTotalByteCount() const override
+    [[nodiscard]] size_t getTotalByteCount() const override
     {
         return data ? data->getTotalByteCount() : 0;
     }
@@ -434,6 +435,9 @@ DistinctSetFilter::HashedKeyColumns DistinctSetFilter::getHashedKeyColumns(const
     keys.columns.reserve(key_columns_pos.size());
     for (const auto pos : key_columns_pos)
         keys.columns.push_back(columns[pos].get());
+
+    /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+    replaceNegativeZeros(keys.columns, keys.holder);
 
     if (skip_null_keys)
         keys.null_map_holder = extractNestedColumnsAndNullMap(keys.columns, keys.null_map);

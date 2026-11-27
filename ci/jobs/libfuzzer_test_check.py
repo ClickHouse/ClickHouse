@@ -37,6 +37,9 @@ TIMEOUT_PR = 30 * 60  # 30 minutes for PR runs
 # fuzzing budget.
 TIMEOUT_MINIMIZATION = 60 * 60
 NO_CHANGES_MSG = "Nothing to run"
+# `format_fuzzer` instances fixed to one format by `FORMAT_NAME`, each with its own corpus,
+# so the inputs one reader accepts do not crowd out the others in a shared corpus.
+FORMAT_FUZZER_FORMATS = ("Parquet", "ORC", "Avro", "Arrow")
 RUNNER_OUTPUT = "/test_output"
 
 
@@ -48,6 +51,19 @@ def zipdir(path, ziph):
                 os.path.join(root, file),
                 file,
             )
+
+
+def add_format_fuzzer_instances(path: Path) -> None:
+    """Link `<format>_format_fuzzer` to `format_fuzzer`, with its options plus `FORMAT_NAME`."""
+    if not (path / "format_fuzzer").exists():
+        return
+    options_path = path / "format_fuzzer.options"
+    options = options_path.read_text() if options_path.exists() else ""
+    for format_name in FORMAT_FUZZER_FORMATS:
+        name = f"{format_name.lower()}_format_fuzzer"
+        (path / name).unlink(missing_ok=True)
+        (path / name).symlink_to("format_fuzzer")
+        (path / f"{name}.options").write_text(f"{options}\n[env]\nformat_name = {format_name}\n")
 
 
 def get_run_command(
@@ -502,6 +518,8 @@ def main():
     is_master = info.pr_number == 0 and info.git_branch == "master"
 
     fuzzers_path = temp_path
+    # Before the corpus download, which drops the corpora of targets that do not exist
+    add_format_fuzzer_instances(fuzzers_path)
     download_corpus(fuzzers_path)
 
     for file in os.listdir(fuzzers_path):
