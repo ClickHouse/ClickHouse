@@ -89,7 +89,7 @@ public:
     /// If not empty, the same for marks of different sizes: the i-th mark of `mark_ranges` has `rows_in_marks[i]` rows.
     VectorWithMemoryTracking<size_t> rows_in_marks;
 
-    bool hasRowPositions() const { return rows_per_mark || !rows_in_marks.empty(); }
+    [[nodiscard]] bool hasRowPositions() const { return rows_per_mark || !rows_in_marks.empty(); }
 
     void resetRowPositions()
     {

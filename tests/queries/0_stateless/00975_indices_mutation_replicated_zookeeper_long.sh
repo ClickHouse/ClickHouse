@@ -7,6 +7,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./mergetree_mutations.lib
 . "$CURDIR"/mergetree_mutations.lib
 
+# The query condition cache lets the second run of a query read fewer rows.
+CLICKHOUSE_CLIENT+=" --use_query_condition_cache=0"
+
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS indices_mutaions1;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS indices_mutaions2;"
 
