@@ -7,12 +7,14 @@ keywords: ['RBAC', 'Amazon S3', 'аутентификация']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 В этом руководстве показано, как клиенты ClickHouse Cloud могут использовать ролевой доступ для аутентификации в Amazon Simple Storage Service (S3) и безопасного доступа к своим данным.
-Прежде чем переходить к настройке безопасного доступа к S3, важно понять, как это работает. Ниже приведен обзор того, как сервисы ClickHouse могут получать доступ к приватным S3 бакетам, принимая на себя роль в аккаунте AWS клиента.
+Прежде чем переходить к настройке безопасного доступа к S3, важно понять, как это работает. Ниже приведен обзор того, как сервисы ClickHouse могут получать доступ к приватным S3 бакетам, принимая на себя роль в учетной записи AWS клиента.
 
-<Image img="/images/cloud/security/secures3.webp" size="lg" alt="Обзор безопасного доступа к S3 с ClickHouse" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Обзор безопасного доступа к S3 с ClickHouse](/images/cloud/security/secures3.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -29,12 +31,16 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 4. Прокрутите страницу вниз до раздела **Network security information** в нижней части страницы.
 
-5. Скопируйте значение **Service role ID (IAM)** для сервиса, как показано ниже.
+5. Скопируйте значение **идентификатора роли сервиса (IAM)** для сервиса, как показано ниже.
 
-<Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="Получение ARN роли IAM сервиса ClickHouse" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Получение ARN роли IAM сервиса ClickHouse](/images/cloud/security/secures3_arn.webp)
+  </Frame>
+</div>
 
 <div id="setting-up-iam-assume-role">
-  ## Настройка IAM Assume Role
+  ## Настройка IAM Assume Role {#setting-up-iam-assume-role}
 </div>
 
 IAM Assume Role можно настроить одним из двух способов:
@@ -42,16 +48,14 @@ IAM Assume Role можно настроить одним из двух спос�
 * [С помощью стека CloudFormation](#option-1-deploying-with-cloudformation-stack)
 * [Создав роль IAM вручную](#option-2-manually-create-iam-role)
 
-<div id="option-1-deploying-with-cloudformation-stack">
-  ### Развертывание с помощью стека CloudFormation
-</div>
+### Развертывание с помощью стека CloudFormation {#option-1-deploying-with-cloudformation-stack}
 
 1. Войдите в свою учетную запись AWS в браузере под пользователем IAM, у которого есть права на создание роли IAM и управление ею.
 
 2. Перейдите по следующему [URL CloudFormation](https://us-west-2.console.aws.amazon.com/cloudformation/home?region=us-west-2#/stacks/quickcreate?templateURL=https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/secure-s3.yaml\&stackName=ClickHouseSecureS3), чтобы заполнить параметры стека CloudFormation.
 
-3. Введите (или вставьте) **Service role ID (IAM)** для вашего сервиса, который вы получили ранее, в поле &quot;ClickHouse Instance Roles&quot;
-   ID сервисной роли можно вставить в точности так, как он отображается в консоли Cloud.
+3. Введите (или вставьте) **идентификатор роли сервиса (IAM)** для вашего сервиса, который вы получили ранее, в поле &quot;ClickHouse Instance Roles&quot;
+   Идентификатор роли сервиса можно вставить в точности так, как он отображается в консоли Cloud.
 
 4. Введите имя вашего бакета в поле &quot;Bucket Names&quot;. Если URL вашего бакета — `https://ch-docs-s3-bucket.s3.eu-central-1.amazonaws.com/clickhouseS3/`, то имя бакета — `ch-docs-s3-bucket`.
 
@@ -79,10 +83,14 @@ IAM Assume Role можно настроить одним из двух спос�
 
 10. Скопируйте значение **RoleArn** для этой интеграции — оно потребуется для доступа к вашему S3 бакету.
 
-<Image img="/images/cloud/security/secures3_output.webp" size="lg" alt="Вывод стека CloudFormation с IAM Role ARN" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Вывод стека CloudFormation с ARN роли IAM](/images/cloud/security/secures3_output.webp)
+  </Frame>
+</div>
 
 <div id="option-2-manually-create-iam-role">
-  ### Создайте роль IAM вручную
+  ### Создайте роль IAM вручную {#option-2-manually-create-iam-role}
 </div>
 
 1. Войдите в свой аккаунт AWS в браузере под пользователем IAM, у которого есть права на создание и управление ролью IAM.

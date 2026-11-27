@@ -175,14 +175,26 @@ contraseña de ClickHouse y, a continuación, seleccione la base de datos de Pos
 importarán las tablas de ClickHouse. Haga clic en **Conectar** para crear el servidor externo
 e importar el esquema.
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="Formulario de configuración de pg_clickhouse para la base de datos de taxis en la consola de ClickHouse Cloud" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Formulario de configuración de pg_clickhouse para la base de datos de taxis en la consola de ClickHouse Cloud](/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp)
+  </Frame>
+</div>
 
 Cuando finalice la configuración, la consola mostrará una confirmación y el servidor externo
 aparecerá en la lista de servidores.
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="Configuración de pg_clickhouse completada para la base de datos de taxis en la consola de ClickHouse Cloud" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Configuración de pg_clickhouse completada para la base de datos de taxis en la consola de ClickHouse Cloud](/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp)
+  </Frame>
+</div>
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="Lista de servidores externos que muestra la conexión pg_clickhouse de taxis" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Lista de servidores externos que muestra la conexión pg_clickhouse de taxis](/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp)
+  </Frame>
+</div>
 
 Ahora puede abrir la **consola SQL** de Postgres y consultar las tablas importadas:
 
@@ -328,11 +340,11 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
 Ahora, consulta la tabla:
 
 ```pgsql
- SELECT count(*) FROM taxi.trips;
-   count
- ---------
-  1999657
- (1 fila)
+SELECT count(*) FROM taxi.trips;
+  count
+---------
+ 1999657
+(1 row)
 ```
 
 Observa con qué rapidez se ejecutó la consulta. pg&#95;clickhouse delega toda la
@@ -340,12 +352,12 @@ consulta, incluida la agregación `COUNT()`, por lo que se ejecuta en ClickHouse
 devuelve una única fila a Postgres. Usa [EXPLAIN] para verlo:
 
 ```pgsql
- EXPLAIN select count(*) from taxi.trips;
-                    QUERY PLAN
- -------------------------------------------------
-  Foreign Scan  (cost=1.00..-0.90 rows=1 width=8)
-    Relations: Aggregate on (trips)
- (2 rows)
+EXPLAIN select count(*) from taxi.trips;
+                   QUERY PLAN
+-------------------------------------------------
+ Foreign Scan  (cost=1.00..-0.90 rows=1 width=8)
+   Relations: Aggregate on (trips)
+(2 rows)
 ```
 
 Ten en cuenta que &quot;Foreign Scan&quot; aparece en la raíz del plan, lo que significa que la
@@ -552,7 +564,7 @@ columna `LocationID` del archivo se corresponde con las columnas `pickup_nyct201
    <Note>
      Establecer `LIFETIME` en 0 desactiva las actualizaciones automáticas para evitar
      tráfico innecesario hacia nuestro bucket de S3. En otros casos, puede que quieras configurarlo
-     de otra forma. Para obtener más información, consulta [Actualización de datos de diccionario con
+     de otra forma. Para obtener más información, consulta [Actualización de los datos del diccionario mediante
      LIFETIME](/es/reference/statements/create/dictionary/lifetime).
    </Note>
 
@@ -701,4 +713,4 @@ Escribe algunas consultas que hagan un `JOIN` entre `taxi_zone_dictionary` y tu 
 
 [Postgres image]: https://hub.docker.com/_/postgres "Imagen OCI de Postgres en Docker Hub"
 
-[Refreshing dictionary data using LIFETIME]: /reference/statements/create/dictionary/lifetime "Documentación de ClickHouse: actualización de los datos del diccionario con LIFETIME"
+[Refreshing dictionary data using LIFETIME]: /reference/statements/create/dictionary/lifetime "Documentación de ClickHouse: actualización de los datos del diccionario mediante LIFETIME"

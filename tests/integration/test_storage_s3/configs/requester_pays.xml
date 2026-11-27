@@ -1,0 +1,17 @@
+<clickhouse>
+    <s3>
+        <requester_pays_endpoint>
+            <endpoint>http://resolver:8085/root/requester_pays_endpoint/</endpoint>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            <request_payer>requester</request_payer>
+            <header>Authorization: Bearer endpoint-header-token</header>
+        </requester_pays_endpoint>
+        <requester_pays_keyless>
+            <endpoint>http://resolver:8085/root/requester_pays_keyless/</endpoint>
+            <use_environment_credentials>0</use_environment_credentials>
+            <request_payer>requester</request_payer>
+            <header>Authorization: Bearer endpoint-header-token</header>
+        </requester_pays_keyless>
+    </s3>
+</clickhouse>

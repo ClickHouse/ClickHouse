@@ -8,19 +8,17 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <Info>
   **이 가이드에서 다룰 내용은 다음과 같습니다:**
 
   * 벡터 검색을 간략히 소개합니다
   * 근사 최근접 이웃(ANN)과 Hierarchical Navigable Small World(HNSW)에 대해 알아봅니다
-  * Quantised Bit(QBit)에 대해 알아봅니다
+  * 양자화된 비트(QBit)에 대해 알아봅니다
   * QBit를 사용해 DBPedia 데이터셋으로 벡터 검색을 수행합니다
 </Info>
 
 <div id="vector-search-primer">
-  ## 벡터 검색 입문
+  ## 벡터 검색 입문 {#vector-search-primer}
 </div>
 
 수학과 물리학에서 벡터는 크기와 방향을 모두 가진 객체로 엄밀하게 정의됩니다.
@@ -40,14 +38,16 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 전용 벡터 저장소의 장점에도 불구하고, 사용자는 완전히 특화된 벡터 저장소보다 필요할 때 바로 사용할 수 있는 벡터 기능을 갖춘 일반 데이터베이스를 더 선호하는 경우가 많습니다.
 ClickHouse는 [브루트포스 벡터 검색](/ko/reference/engines/table-engines/mergetree-family/annindexes#exact-nearest-neighbor-search)과 [근사 최근접 이웃(ANN) 검색 메서드](/ko/reference/engines/table-engines/mergetree-family/annindexes#approximate-nearest-neighbor-search)를 모두 지원하며, 여기에는 현재 고속 벡터 검색의 표준인 HNSW도 포함됩니다.
 
-<div id="understanding-embeddings">
-  ### 임베딩 이해하기
-</div>
+### 임베딩 이해하기 {#understanding-embeddings}
 
 벡터 검색이 어떻게 작동하는지 이해하기 위해 간단한 예시를 살펴보겠습니다.
 단어의 임베딩(벡터 표현)을 예로 들어 보겠습니다:
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_4.jpg" alt="과일과 동물 임베딩 시각화" />
+<div className="ch-image-md">
+  <Frame>
+    ![과일과 동물 임베딩 시각화](/images/use-cases/AI_ML/QBit/diagram_4.jpg)
+  </Frame>
+</div>
 
 몇 가지 예시 임베딩으로 아래 테이블(table)을 생성하십시오:
 
@@ -95,14 +95,14 @@ query embedding: [-0.88693672,1.31532824,-0.51182908,-0.99652702,0.5990777]
 ```
 
 <div id="approximate-nearest-neighbours">
-  ## 근사 최근접 이웃 (ANN)
+  ## 근사 최근접 이웃 (ANN) {#approximate-nearest-neighbours}
 </div>
 
 대규모 데이터셋에서는 브루트포스 검색이 너무 느립니다.
 이럴 때 근사 최근접 이웃 기법이 사용됩니다.
 
 <div id="quantisation">
-  ### 양자화
+  ### 양자화 {#quantisation}
 </div>
 
 양자화는 더 작은 수치 타입으로 다운캐스팅하는 것을 의미합니다.
@@ -114,11 +114,13 @@ ClickHouse의 벡터화된 쿼리 실행 엔진은 연산마다 프로세서 레
 1. **양자화된 복사본을 원본 컬럼과 함께 유지합니다** - 저장 공간은 두 배로 늘어나지만, 언제든 전체 정밀도로 되돌릴 수 있으므로 안전합니다
 2. **원래 값을 완전히 대체합니다** (삽입 시 다운캐스팅) - 공간과 I/O를 절약할 수 있지만, 되돌릴 수 없는 선택입니다
 
-<div id="hnsw">
-  ### 계층형 탐색 가능 소세계(HNSW)
-</div>
+### 계층형 탐색 가능 소세계(HNSW) {#hnsw}
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_1.jpg" alt="HNSW 계층 구조" />
+<div className="ch-image-md">
+  <Frame>
+    ![HNSW 계층 구조](/images/use-cases/AI_ML/QBit/diagram_1.jpg)
+  </Frame>
+</div>
 
 HNSW는 여러 계층의 노드(벡터)로 구성됩니다. 각 노드는 하나 이상의 계층에 무작위로 할당되며, 상위 계층에 포함될 확률은 지수적으로 감소합니다.
 
@@ -134,7 +136,7 @@ HNSW는 여러 계층의 노드(벡터)로 구성됩니다. 각 노드는 하나
 </Warning>
 
 <div id="comparison-approaches">
-  ### 접근 방식 비교
+  ### 접근 방식 비교 {#comparison-approaches}
 </div>
 
 | 범주      | 브루트포스                                  | HNSW                         | QBit            |
@@ -144,19 +146,21 @@ HNSW는 여러 계층의 노드(벡터)로 구성됩니다. 각 노드는 하나
 | **기타**  | 양자화 시: 더 많은 공간이 필요하거나 정밀도 손실을 되돌릴 수 없음 | 인덱스가 메모리에 들어가야 하며 사전에 구축해야 함 | 여전히 O(#records) |
 
 <div id="qbit-deepdive">
-  ## QBit 자세히 살펴보기
+  ## QBit 자세히 살펴보기 {#qbit-deepdive}
 </div>
 
-<div id="quantised-bit">
-  ### 양자화 비트(QBit)
-</div>
+### 양자화된 비트(QBit) {#quantised-bit}
 
 QBit는 부동소수점 수가 비트로 표현되는 방식을 활용해 `BFloat16`, `Float32`, `Float64` 값을 저장할 수 있는 새로운 데이터 구조입니다.
 각 숫자를 통째로 저장하는 대신, QBit는 값을 **비트 평면**으로 나눕니다. 즉, 각 값의 첫 번째 비트들, 두 번째 비트들, 세 번째 비트들처럼 분리합니다.
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_2.jpg" alt="QBit 비트 평면 개념" />
+<div className="ch-image-md">
+  <Frame>
+    ![QBit 비트 평면 개념](/images/use-cases/AI_ML/QBit/diagram_2.jpg)
+  </Frame>
+</div>
 
-이 접근 방식은 기존 양자화의 주요 한계를 해결합니다. 중복 데이터를 저장할 필요도 없고, 값이 무의미해질 위험도 없습니다. 또한 QBit는 메모리 내 인덱스를 유지하지 않고 저장된 데이터에 직접 작동하므로 HNSW의 RAM 병목도 피할 수 있습니다.
+이 접근 방식은 기존 양자화의 주요 한계를 해결합니다. 중복 데이터를 저장할 필요도 없고, 값이 무의미해질 위험도 없습니다. 또한 QBit는 인메모리 인덱스를 유지하지 않고 저장된 데이터에 직접 작동하므로 HNSW의 RAM 병목도 피할 수 있습니다.
 
 <Tip>
   **장점**
@@ -171,9 +175,7 @@ QBit는 부동소수점 수가 비트로 표현되는 방식을 활용해 `BFloa
   QBit는 벡터 검색 속도를 높여 주지만, 계산 복잡도는 여전히 O(n)입니다. 다시 말해, 데이터셋이 충분히 작아 HNSW 인덱스가 RAM에 무리 없이 올라간다면, 여전히 그 방식이 가장 빠른 선택입니다.
 </Info>
 
-<div id="the-data-type">
-  ### 데이터 타입
-</div>
+### 데이터 타입 {#the-data-type}
 
 QBit 컬럼을 생성하는 방법은 다음과 같습니다:
 
@@ -195,7 +197,11 @@ INSERT INTO fruit_animal VALUES
 ('horse',  [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
 ```
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_5.jpg" alt="QBit 데이터 구조 전치" />
+<div className="ch-image-md">
+  <Frame>
+    ![QBit 데이터 구조 전치](/images/use-cases/AI_ML/QBit/diagram_5.jpg)
+  </Frame>
+</div>
 
 데이터가 QBit 컬럼에 삽입되면 모든 첫 번째 비트끼리, 모든 두 번째 비트끼리 정렬되도록 전치됩니다. 이를 **그룹**이라고 합니다.
 
@@ -208,7 +214,7 @@ INSERT INTO fruit_animal VALUES
 </Tip>
 
 <div id="the-distance-calculation">
-  ### 거리 계산
+  ### 거리 계산 {#the-distance-calculation}
 </div>
 
 QBit을 사용해 쿼리하려면 precision 매개변수와 함께 [`L2DistanceTransposed`](/ko/reference/functions/regular-functions/distance-functions#L2DistanceTransposed) 함수를 사용하십시오:
@@ -233,38 +239,46 @@ ORDER BY distance;
 
 세 번째 매개변수(16)는 정밀도 수준을 비트 단위로 지정합니다.
 
-<div id="io-optimisation">
-  ### I/O 최적화
-</div>
+### I/O 최적화 {#io-optimisation}
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_3.jpg" alt="QBit I/O 최적화" />
+<div className="ch-image-md">
+  <Frame>
+    ![QBit I/O 최적화](/images/use-cases/AI_ML/QBit/diagram_3.jpg)
+  </Frame>
+</div>
 
 거리를 계산하려면 먼저 필요한 데이터를 디스크에서 읽은 다음 전치를 되돌려야 합니다(그룹화된 비트 표현을 다시 전체 벡터로 변환). QBit는 값을 정밀도 수준별로 비트 전치된 형태로 저장하므로, ClickHouse는 원하는 정밀도까지 숫자를 복원하는 데 필요한 상위 비트 평면만 읽을 수 있습니다.
 
 위 쿼리에서는 정밀도 수준 16을 사용합니다. Float64는 64비트이므로 처음 16개의 비트 평면만 읽어 **데이터의 75%를 스키핑합니다**.
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_6.jpg" alt="QBit 복원" />
+<div className="ch-image-md">
+  <Frame>
+    ![QBit 복원](/images/use-cases/AI_ML/QBit/diagram_6.jpg)
+  </Frame>
+</div>
 
 읽은 후에는 로드된 비트 평면에서 각 숫자의 상위 부분만 복원하고, 읽지 않은 비트는 0으로 둡니다.
 
-<div id="calculation-optimisation">
-  ### 계산 최적화
-</div>
+### 계산 최적화 {#calculation-optimisation}
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_7.jpg" alt="다운캐스팅 비교" />
+<div className="ch-image-md">
+  <Frame>
+    ![다운캐스팅 비교](/images/use-cases/AI_ML/QBit/diagram_7.jpg)
+  </Frame>
+</div>
 
 Float32나 BFloat16처럼 더 작은 타입으로 캐스팅하면 사용되지 않는 이 부분을 없앨 수 있지 않을까 생각할 수 있습니다. 실제로는 가능하지만, 모든 행에 명시적 CAST를 적용하면 비용이 큽니다.
 
 대신 참조 벡터에만 다운캐스팅을 적용하고, QBit 데이터는 더 좁은 값을 담고 있는 것처럼 취급할 수 있습니다(즉, 일부 컬럼의 존재를 &quot;무시&quot;하는 방식입니다). 이는 해당 레이아웃이 이러한 타입의 잘린 버전에 해당하는 경우가 많기 때문입니다.
 
 <div id="bfloat16-optimization">
-  #### BFloat16 최적화
+  #### BFloat16 최적화 {#bfloat16-optimization}
 </div>
 
 BFloat16은 Float32를 절반으로 줄여 잘라낸 형식입니다. 부호 비트와 8비트 지수는 그대로 유지하고, 23비트 가수의 상위 7비트만 남깁니다. 따라서 QBit 컬럼에서 처음 16개의 비트 평면을 읽으면 사실상 BFloat16 값의 레이아웃이 그대로 재현됩니다. 이런 경우 참조 벡터를 BFloat16으로 안전하게 변환할 수 있으며, 실제로도 그렇게 처리합니다.
 
 <div id="float64-complexity">
-  #### Float64의 복잡성
+  #### Float64의 복잡성 {#float64-complexity}
 </div>
 
 하지만 Float64는 사정이 다릅니다. 11비트 지수와 52비트 가수를 사용하므로, 단순히 비트 수가 2배인 Float32가 아닙니다. 구조와 지수 바이어스도 완전히 다릅니다. Float64를 Float32 같은 더 작은 포맷으로 다운캐스팅하려면 실제 IEEE-754 변환이 필요하며, 이 과정에서 각 값은 표현 가능한 가장 가까운 Float32 값으로 반올림됩니다. 이 반올림 단계는 계산 비용이 큽니다.
@@ -274,13 +288,13 @@ BFloat16은 Float32를 절반으로 줄여 잘라낸 형식입니다. 부호 비
 </Tip>
 
 <div id="example">
-  ## DBpedia를 활용한 예시
+  ## DBpedia를 활용한 예시 {#example}
 </div>
 
 Float32 임베딩으로 표현된 Wikipedia 기사 100만 개가 포함된 DBpedia 데이터셋을 사용해, 실제 사례에서 QBit이 어떻게 동작하는지 살펴보겠습니다.
 
 <div id="setup">
-  ### 설정
+  ### 설정 {#setup}
 </div>
 
 먼저 테이블을 생성합니다
@@ -343,7 +357,7 @@ ALTER TABLE dbpedia UPDATE qbit = vector WHERE 1;
 ```
 
 <div id="search-query">
-  ### 검색 쿼리
+  ### 검색 쿼리 {#search-query}
 </div>
 
 Moon, Apollo 11, Space Shuttle, Astronaut, Rocket 등 모든 우주 관련 검색어와 가장 밀접한 개념을 찾아보겠습니다:
@@ -647,7 +661,7 @@ Peak memory usage: 327.04 MiB.
 </Accordion>
 
 <div id="key-insight">
-  ### 핵심 인사이트
+  ### 핵심 인사이트 {#key-insight}
 </div>
 
 결과는 단지 좋은 수준이 아니었습니다. 놀라울 정도로 좋았습니다. 가수 전체와 지수의 절반을 제거한 부동소수점에서도 여전히 의미 있는 정보가 남아 있다는 점은 쉽게 예상하기 어렵습니다.
@@ -657,7 +671,7 @@ Peak memory usage: 327.04 MiB.
 뛰어난 시맨틱 검색 품질을 유지하면서 메모리 사용량이 **6.05 GB에서 740 MB로** 감소했습니다!
 
 <div id="result">
-  ## 결론
+  ## 결론 {#result}
 </div>
 
 QBit은 부동소수점 값을 비트 평면으로 저장하는 컬럼 유형입니다.

@@ -71,43 +71,43 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
         ++row_num;
     }
 
-    bool isEnd() const
+    [[nodiscard]] bool isEnd() const
     {
         return row_num == offsets.size();
     }
 
-    size_t rowNum() const
+    [[nodiscard]] size_t rowNum() const
     {
         return row_num;
     }
 
-    const typename ColumnArray::Offsets & getOffsets() const override
+    [[nodiscard]] const typename ColumnArray::Offsets & getOffsets() const override
     {
         return offsets;
     }
 
     /// Get size for corresponding call or Sink::reserve to reserve memory for elements.
-    size_t getSizeForReserve() const override
+    [[nodiscard]] size_t getSizeForReserve() const override
     {
         return elements.size();
     }
 
-    size_t getColumnSize() const override
+    [[nodiscard]] size_t getColumnSize() const override
     {
         return offsets.size();
     }
 
-    size_t getElementSize() const
+    [[nodiscard]] size_t getElementSize() const
     {
         return offsets[row_num] - prev_offset;
     }
 
-    Slice getWhole() const
+    [[nodiscard]] Slice getWhole() const
     {
         return {&elements[prev_offset], offsets[row_num] - prev_offset};
     }
 
-    Slice getSliceFromLeft(size_t offset) const
+    [[nodiscard]] Slice getSliceFromLeft(size_t offset) const
     {
         size_t elem_size = offsets[row_num] - prev_offset;
         if (offset >= elem_size)
@@ -115,7 +115,7 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
         return {&elements[prev_offset + offset], elem_size - offset};
     }
 
-    Slice getSliceFromLeft(size_t offset, size_t length) const
+    [[nodiscard]] Slice getSliceFromLeft(size_t offset, size_t length) const
     {
         size_t elem_size = offsets[row_num] - prev_offset;
         if (offset >= elem_size)
@@ -123,7 +123,7 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
         return {&elements[prev_offset + offset], std::min(length, elem_size - offset)};
     }
 
-    Slice getSliceFromRight(size_t offset) const
+    [[nodiscard]] Slice getSliceFromRight(size_t offset) const
     {
         size_t elem_size = offsets[row_num] - prev_offset;
         if (offset > elem_size)
@@ -131,7 +131,7 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
         return {&elements[offsets[row_num] - offset], offset};
     }
 
-    Slice getSliceFromRight(size_t offset, size_t length) const
+    [[nodiscard]] Slice getSliceFromRight(size_t offset, size_t length) const
     {
         size_t elem_size = offsets[row_num] - prev_offset;
         if (offset > elem_size)
@@ -209,27 +209,27 @@ struct ConstSource : public Base
         ++row_num;
     }
 
-    bool isEnd() const
+    [[nodiscard]] bool isEnd() const
     {
         return row_num == total_rows;
     }
 
-    size_t rowNum() const
+    [[nodiscard]] size_t rowNum() const
     {
         return row_num;
     }
 
-    size_t getSizeForReserve() const
+    [[nodiscard]] size_t getSizeForReserve() const
     {
         return total_rows * Base::getSizeForReserve();
     }
 
-    size_t getColumnSize() const
+    [[nodiscard]] size_t getColumnSize() const
     {
         return total_rows;
     }
 
-    bool isConst() const
+    [[nodiscard]] bool isConst() const
     {
         return true;
     }
@@ -292,29 +292,29 @@ struct ReplicatedSource : public Base
         positionAtCurrentRow();
     }
 
-    bool isEnd() const
+    [[nodiscard]] bool isEnd() const
     {
         return logical_row == total_rows;
     }
 
-    size_t rowNum() const
+    [[nodiscard]] size_t rowNum() const
     {
         return logical_row;
     }
 
-    size_t getSizeForReserve() const override
+    [[nodiscard]] size_t getSizeForReserve() const override
     {
         /// A proportional estimate: the exact size would need an extra pass over the indexes.
         size_t nested_rows = offsets.size();
         return nested_rows == 0 ? 0 : Base::getSizeForReserve() / nested_rows * total_rows;
     }
 
-    size_t getColumnSize() const override
+    [[nodiscard]] size_t getColumnSize() const override
     {
         return total_rows;
     }
 
-    bool isReplicated() const override
+    [[nodiscard]] bool isReplicated() const override
     {
         return true;
     }
@@ -357,37 +357,37 @@ struct StringSource
         ++row_num;
     }
 
-    bool isEnd() const
+    [[nodiscard]] bool isEnd() const
     {
         return row_num == offsets.size();
     }
 
-    size_t rowNum() const
+    [[nodiscard]] size_t rowNum() const
     {
         return row_num;
     }
 
-    size_t getSizeForReserve() const
+    [[nodiscard]] size_t getSizeForReserve() const
     {
         return elements.size();
     }
 
-    size_t getElementSize() const
+    [[nodiscard]] size_t getElementSize() const
     {
         return offsets[row_num] - prev_offset;
     }
 
-    size_t getColumnSize() const
+    [[nodiscard]] size_t getColumnSize() const
     {
         return offsets.size();
     }
 
-    Slice getWhole() const
+    [[nodiscard]] Slice getWhole() const
     {
         return {&elements[prev_offset], offsets[row_num] - prev_offset};
     }
 
-    Slice getSliceFromLeft(size_t offset) const
+    [[nodiscard]] Slice getSliceFromLeft(size_t offset) const
     {
         size_t elem_size = offsets[row_num] - prev_offset;
         if (offset >= elem_size)
@@ -395,7 +395,7 @@ struct StringSource
         return {&elements[prev_offset + offset], elem_size - offset};
     }
 
-    Slice getSliceFromLeft(size_t offset, size_t length) const
+    [[nodiscard]] Slice getSliceFromLeft(size_t offset, size_t length) const
     {
         size_t elem_size = offsets[row_num] - prev_offset;
         if (offset >= elem_size)
@@ -403,7 +403,7 @@ struct StringSource
         return {&elements[prev_offset + offset], std::min(length, elem_size - offset)};
     }
 
-    Slice getSliceFromRight(size_t offset) const
+    [[nodiscard]] Slice getSliceFromRight(size_t offset) const
     {
         size_t elem_size = offsets[row_num] - prev_offset;
         if (offset > elem_size)
@@ -411,7 +411,7 @@ struct StringSource
         return {&elements[prev_offset + elem_size - offset], offset};
     }
 
-    Slice getSliceFromRight(size_t offset, size_t length) const
+    [[nodiscard]] Slice getSliceFromRight(size_t offset, size_t length) const
     {
         size_t elem_size = offsets[row_num] - prev_offset;
         if (offset > elem_size)
@@ -419,7 +419,7 @@ struct StringSource
         return {&elements[prev_offset + elem_size - offset], std::min(length, offset)};
     }
 
-    const ColumnString::Chars & getElements() const { return elements; }
+    [[nodiscard]] const ColumnString::Chars & getElements() const { return elements; }
 };
 
 /// Treats Enum values as Strings, modeled after StringSource
@@ -447,39 +447,39 @@ struct EnumSource
         ++row_num;
     }
 
-    bool isEnd() const
+    [[nodiscard]] bool isEnd() const
     {
         return row_num == data.size();
     }
 
-    size_t rowNum() const
+    [[nodiscard]] size_t rowNum() const
     {
         return row_num;
     }
 
-    size_t getSizeForReserve() const
+    [[nodiscard]] size_t getSizeForReserve() const
     {
         return data.size();
     }
 
-    size_t getElementSize() const
+    [[nodiscard]] size_t getElementSize() const
     {
         std::string_view name = data_type.getNameForValue(data[row_num]);
         return name.size();
     }
 
-    size_t getColumnSize() const
+    [[nodiscard]] size_t getColumnSize() const
     {
         return data.size();
     }
 
-    Slice getWhole() const
+    [[nodiscard]] Slice getWhole() const
     {
         std::string_view name = data_type.getNameForValue(data[row_num]);
         return {reinterpret_cast<const UInt8 *>(name.data()), name.size()};
     }
 
-    Slice getSliceFromLeft(size_t offset) const
+    [[nodiscard]] Slice getSliceFromLeft(size_t offset) const
     {
         std::string_view name = data_type.getNameForValue(data[row_num]);
         if (offset >= name.size())
@@ -487,7 +487,7 @@ struct EnumSource
         return {reinterpret_cast<const UInt8 *>(name.data()) + offset, name.size() - offset};
     }
 
-    Slice getSliceFromLeft(size_t offset, size_t length) const
+    [[nodiscard]] Slice getSliceFromLeft(size_t offset, size_t length) const
     {
         std::string_view name = data_type.getNameForValue(data[row_num]);
         if (offset >= name.size())
@@ -495,7 +495,7 @@ struct EnumSource
         return {reinterpret_cast<const UInt8 *>(name.data()) + offset, std::min(length, name.size() - offset)};
     }
 
-    Slice getSliceFromRight(size_t offset) const
+    [[nodiscard]] Slice getSliceFromRight(size_t offset) const
     {
         std::string_view name = data_type.getNameForValue(data[row_num]);
         if (offset > name.size())
@@ -503,7 +503,7 @@ struct EnumSource
         return {reinterpret_cast<const UInt8 *>(name.data()) + name.size() - offset, offset};
     }
 
-    Slice getSliceFromRight(size_t offset, size_t length) const
+    [[nodiscard]] Slice getSliceFromRight(size_t offset, size_t length) const
     {
         std::string_view name = data_type.getNameForValue(data[row_num]);
         if (offset > name.size())
@@ -540,12 +540,12 @@ struct UTF8StringSource : public StringSource
         return pos;
     }
 
-    size_t getElementSize() const
+    [[nodiscard]] size_t getElementSize() const
     {
         return UTF8::countCodePoints(&elements[prev_offset], StringSource::getElementSize());
     }
 
-    Slice getSliceFromLeft(size_t offset) const
+    [[nodiscard]] Slice getSliceFromLeft(size_t offset) const
     {
         const auto * begin = &elements[prev_offset];
         const auto * end = elements.data() + offsets[row_num];
@@ -557,7 +557,7 @@ struct UTF8StringSource : public StringSource
         return {res_begin, size_t(end - res_begin)};
     }
 
-    Slice getSliceFromLeft(size_t offset, size_t length) const
+    [[nodiscard]] Slice getSliceFromLeft(size_t offset, size_t length) const
     {
         const auto * begin = &elements[prev_offset];
         const auto * end = elements.data() + offsets[row_num];
@@ -574,7 +574,7 @@ struct UTF8StringSource : public StringSource
         return {res_begin, size_t(res_end - res_begin)};
     }
 
-    Slice getSliceFromRight(size_t offset) const
+    [[nodiscard]] Slice getSliceFromRight(size_t offset) const
     {
         const auto * begin = &elements[prev_offset];
         const auto * end = elements.data() + offsets[row_num];
@@ -583,7 +583,7 @@ struct UTF8StringSource : public StringSource
         return {res_begin, size_t(end - res_begin)};
     }
 
-    Slice getSliceFromRight(size_t offset, size_t length) const
+    [[nodiscard]] Slice getSliceFromRight(size_t offset, size_t length) const
     {
         const auto * begin = &elements[prev_offset];
         const auto * end = elements.data() + offsets[row_num];
@@ -637,65 +637,65 @@ struct FixedStringSource
         ++row_num;
     }
 
-    bool isEnd() const
+    [[nodiscard]] bool isEnd() const
     {
         return pos == end;
     }
 
-    size_t rowNum() const
+    [[nodiscard]] size_t rowNum() const
     {
         return row_num;
     }
 
-    size_t getSizeForReserve() const
+    [[nodiscard]] size_t getSizeForReserve() const
     {
         return end - pos;
     }
 
-    size_t getElementSize() const
+    [[nodiscard]] size_t getElementSize() const
     {
         return string_size;
     }
 
-    size_t getColumnSize() const
+    [[nodiscard]] size_t getColumnSize() const
     {
         return column_size;
     }
 
-    Slice getWhole() const
+    [[nodiscard]] Slice getWhole() const
     {
         return {pos, string_size};
     }
 
-    Slice getSliceFromLeft(size_t offset) const
+    [[nodiscard]] Slice getSliceFromLeft(size_t offset) const
     {
         if (offset >= string_size)
             return {pos, 0};
         return {pos + offset, string_size - offset};
     }
 
-    Slice getSliceFromLeft(size_t offset, size_t length) const
+    [[nodiscard]] Slice getSliceFromLeft(size_t offset, size_t length) const
     {
         if (offset >= string_size)
             return {pos, 0};
         return {pos + offset, std::min(length, string_size - offset)};
     }
 
-    Slice getSliceFromRight(size_t offset) const
+    [[nodiscard]] Slice getSliceFromRight(size_t offset) const
     {
         if (offset > string_size)
             return {pos, string_size};
         return {pos + string_size - offset, offset};
     }
 
-    Slice getSliceFromRight(size_t offset, size_t length) const
+    [[nodiscard]] Slice getSliceFromRight(size_t offset, size_t length) const
     {
         if (offset > string_size)
             return {pos, length + string_size > offset ? std::min(string_size, length + string_size - offset) : 0};
         return {pos + string_size - offset, std::min(length, offset)};
     }
 
-    const ColumnString::Chars & getElements() const { return elements; }
+    [[nodiscard]] const ColumnString::Chars & getElements() const { return elements; }
 };
 
 
@@ -704,9 +704,9 @@ struct IStringSource
     using Slice = NumericArraySlice<UInt8>;
 
     virtual void next() = 0;
-    virtual bool isEnd() const = 0;
-    virtual size_t getSizeForReserve() const = 0;
-    virtual Slice getWhole() const = 0;
+    [[nodiscard]] virtual bool isEnd() const = 0;
+    [[nodiscard]] virtual size_t getSizeForReserve() const = 0;
+    [[nodiscard]] virtual Slice getWhole() const = 0;
     virtual ~IStringSource() = default;
 };
 
@@ -719,9 +719,9 @@ struct DynamicStringSource final : IStringSource
     explicit DynamicStringSource(const IColumn & col) : impl(static_cast<const typename Impl::Column &>(col)) {}
 
     void next() override { impl.next(); }
-    bool isEnd() const override { return impl.isEnd(); }
-    size_t getSizeForReserve() const override { return impl.getSizeForReserve(); }
-    Slice getWhole() const override { return impl.getWhole(); }
+    [[nodiscard]] bool isEnd() const override { return impl.isEnd(); }
+    [[nodiscard]] size_t getSizeForReserve() const override { return impl.getSizeForReserve(); }
+    [[nodiscard]] Slice getWhole() const override { return impl.getWhole(); }
 };
 
 inline std::unique_ptr<IStringSource> createDynamicStringSource(const IColumn & col)
@@ -770,42 +770,42 @@ struct GenericArraySource : public ArraySourceImpl<GenericArraySource>
         ++row_num;
     }
 
-    bool isEnd() const
+    [[nodiscard]] bool isEnd() const
     {
         return row_num == offsets.size();
     }
 
-    size_t rowNum() const
+    [[nodiscard]] size_t rowNum() const
     {
         return row_num;
     }
 
-    const typename ColumnArray::Offsets & getOffsets() const override
+    [[nodiscard]] const typename ColumnArray::Offsets & getOffsets() const override
     {
         return offsets;
     }
 
-    size_t getSizeForReserve() const override
+    [[nodiscard]] size_t getSizeForReserve() const override
     {
         return elements.size();
     }
 
-    size_t getColumnSize() const override
+    [[nodiscard]] size_t getColumnSize() const override
     {
         return offsets.size();
     }
 
-    size_t getElementSize() const
+    [[nodiscard]] size_t getElementSize() const
     {
         return offsets[row_num] - prev_offset;
     }
 
-    Slice getWhole() const
+    [[nodiscard]] Slice getWhole() const
     {
         return {&elements, prev_offset, offsets[row_num] - prev_offset};
     }
 
-    Slice getSliceFromLeft(size_t offset) const
+    [[nodiscard]] Slice getSliceFromLeft(size_t offset) const
     {
         size_t elem_size = offsets[row_num] - prev_offset;
         if (offset >= elem_size)
@@ -813,7 +813,7 @@ struct GenericArraySource : public ArraySourceImpl<GenericArraySource>
         return {&elements, prev_offset + offset, elem_size - offset};
     }
 
-    Slice getSliceFromLeft(size_t offset, size_t length) const
+    [[nodiscard]] Slice getSliceFromLeft(size_t offset, size_t length) const
     {
         size_t elem_size = offsets[row_num] - prev_offset;
         if (offset >= elem_size)
@@ -821,7 +821,7 @@ struct GenericArraySource : public ArraySourceImpl<GenericArraySource>
         return {&elements, prev_offset + offset, std::min(length, elem_size - offset)};
     }
 
-    Slice getSliceFromRight(size_t offset) const
+    [[nodiscard]] Slice getSliceFromRight(size_t offset) const
     {
         size_t elem_size = offsets[row_num] - prev_offset;
         if (offset > elem_size)
@@ -829,7 +829,7 @@ struct GenericArraySource : public ArraySourceImpl<GenericArraySource>
         return {&elements, offsets[row_num] - offset, offset};
     }
 
-    Slice getSliceFromRight(size_t offset, size_t length) const
+    [[nodiscard]] Slice getSliceFromRight(size_t offset, size_t length) const
     {
         size_t elem_size = offsets[row_num] - prev_offset;
         if (offset > elem_size)
@@ -863,14 +863,14 @@ struct NullableArraySource : public ArraySource
 
     void accept(ArraySourceVisitor & visitor) override { visitor.visit(*this); }
 
-    Slice getWhole() const
+    [[nodiscard]] Slice getWhole() const
     {
         Slice slice = ArraySource::getWhole();
         slice.null_map = &null_map[prev_offset];
         return slice;
     }
 
-    Slice getSliceFromLeft(size_t offset) const
+    [[nodiscard]] Slice getSliceFromLeft(size_t offset) const
     {
         Slice slice = ArraySource::getSliceFromLeft(offset);
         if (offsets[row_num] > prev_offset + offset)
@@ -880,7 +880,7 @@ struct NullableArraySource : public ArraySource
         return slice;
     }
 
-    Slice getSliceFromLeft(size_t offset, size_t length) const
+    [[nodiscard]] Slice getSliceFromLeft(size_t offset, size_t length) const
     {
         Slice slice = ArraySource::getSliceFromLeft(offset, length);
         if (offsets[row_num] > prev_offset + offset)
@@ -890,7 +890,7 @@ struct NullableArraySource : public ArraySource
         return slice;
     }
 
-    Slice getSliceFromRight(size_t offset) const
+    [[nodiscard]] Slice getSliceFromRight(size_t offset) const
     {
         Slice slice = ArraySource::getSliceFromRight(offset);
         if (offsets[row_num] > prev_offset + offset)
@@ -900,7 +900,7 @@ struct NullableArraySource : public ArraySource
         return slice;
     }
 
-    Slice getSliceFromRight(size_t offset, size_t length) const
+    [[nodiscard]] Slice getSliceFromRight(size_t offset, size_t length) const
     {
         Slice slice = ArraySource::getSliceFromRight(offset, length);
         if (offsets[row_num] > prev_offset + offset)
@@ -910,7 +910,7 @@ struct NullableArraySource : public ArraySource
         return slice;
     }
 
-    bool isNullable() const override
+    [[nodiscard]] bool isNullable() const override
     {
         return true;
     }
@@ -941,22 +941,22 @@ struct NumericValueSource : ValueSourceImpl<NumericValueSource<T>>
         ++row_num;
     }
 
-    bool isEnd() const
+    [[nodiscard]] bool isEnd() const
     {
         return row_num == total_rows;
     }
 
-    size_t rowNum() const
+    [[nodiscard]] size_t rowNum() const
     {
         return row_num;
     }
 
-    size_t getSizeForReserve() const
+    [[nodiscard]] size_t getSizeForReserve() const
     {
         return total_rows;
     }
 
-    Slice getWhole() const
+    [[nodiscard]] Slice getWhole() const
     {
         Slice slice;
         slice.value = begin[row_num];
@@ -985,22 +985,22 @@ struct GenericValueSource : public ValueSourceImpl<GenericValueSource>
         ++row_num;
     }
 
-    bool isEnd() const
+    [[nodiscard]] bool isEnd() const
     {
         return row_num == total_rows;
     }
 
-    size_t rowNum() const
+    [[nodiscard]] size_t rowNum() const
     {
         return row_num;
     }
 
-    size_t getSizeForReserve() const
+    [[nodiscard]] size_t getSizeForReserve() const
     {
         return total_rows;
     }
 
-    Slice getWhole() const
+    [[nodiscard]] Slice getWhole() const
     {
         Slice slice;
         slice.elements = column;
@@ -1027,7 +1027,7 @@ struct NullableValueSource : public ValueSource
 
     void accept(ValueSourceVisitor & visitor) override { visitor.visit(*this); }
 
-    Slice getWhole() const
+    [[nodiscard]] Slice getWhole() const
     {
         Slice slice = ValueSource::getWhole();
         slice.null_map = null_map.data() + row_num;

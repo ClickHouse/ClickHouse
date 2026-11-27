@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <fmt/ranges.h>
 #include <algorithm>
 #include <numeric>
@@ -16,14 +17,14 @@ void ExpressionProperties::setDisjointStreams(DistributionColumns columns)
     /// in a different set order would then compare and hash unequal. The sort permutes
     /// indexes over precomputed keys; sorting the sets directly would let the comparator
     /// read a set that `std::sort` has moved out.
-    std::vector<Names> sort_keys(columns.size());
+    VectorWithMemoryTracking<Names> sort_keys(columns.size());
     for (size_t i = 0; i < columns.size(); ++i)
     {
         chassert(!columns[i].empty());
         sort_keys[i].assign(columns[i].begin(), columns[i].end());
         std::sort(sort_keys[i].begin(), sort_keys[i].end());
     }
-    std::vector<size_t> order(columns.size());
+    VectorWithMemoryTracking<size_t> order(columns.size());
     std::iota(order.begin(), order.end(), 0);
     std::sort(order.begin(), order.end(),
         [&](size_t left, size_t right) { return sort_keys[left] < sort_keys[right]; });
@@ -91,6 +92,9 @@ bool ExpressionProperties::isDistributionSatisfiedBy(const DistributionDescripti
     if (required.is_replicated != existing.is_replicated)
         return false;
 
+    if (required.without_enforcer && !existing.without_enforcer)
+        return false;
+
     /// Empty required columns means "any distribution is fine" - just match node_count
     /// and replication. Data shuffled by specific columns still satisfies a requirement
     /// that doesn't care about column distribution.
@@ -138,6 +142,8 @@ void  ExpressionProperties::dump(WriteBuffer & out) const
     out << dumpSortDescription(sorting);
     out << "], {";
     out << fmt::format("{} nodes, {}, {}", distribution.node_count, distribution.is_replicated ? "replicated" : "not replicated", fmt::join(distribution.columns, ","));
+    if (distribution.without_enforcer)
+        out << ", without enforcer";
     if (stream_layout == StreamLayout::Single)
         out << ", single stream";
     else if (stream_layout == StreamLayout::Disjoint)

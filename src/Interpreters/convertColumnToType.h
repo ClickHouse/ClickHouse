@@ -7,6 +7,7 @@
 namespace DB
 {
 
+class ConstantValue;
 struct FormatSettings;
 
 /** Column-native counterpart of `convertFieldToType` (see `convertFieldToType.h` for the exact
@@ -72,5 +73,10 @@ ColumnPtr convertColumnToTypeOrThrow(
     const FormatSettings & format_settings,
     bool convert_inexact_floats = false);
 ColumnPtr convertColumnToTypeOrThrow(const IColumn & value, const DataTypePtr & from, const DataTypePtr & to);
+
+/// For a non-`NULL` `Variant` or `Dynamic` constant, returns the value of its active alternative with that alternative's
+/// type (`CAST(1000 AS Dynamic)` -> `1000` of type `UInt16`); any other constant, or `NULL`, is returned unchanged. Used by
+/// consumers that dispatch on the type of a constant, since the container type alone does not say what the value is.
+ConstantValue resolveActiveAlternative(const ConstantValue & value);
 
 }

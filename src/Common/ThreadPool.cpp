@@ -328,7 +328,8 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 {
     value = std::min(value, static_cast<size_t>(MAX_THEORETICAL_THREAD_COUNT));
     std::lock_guard lock(mutex);
-    remaining_pool_capacity.fetch_add(value - max_threads, std::memory_order_relaxed);
+    remaining_pool_capacity.fetch_add(
+        static_cast<Int64>(value) - static_cast<Int64>(max_threads), std::memory_order_relaxed);
 
     bool need_start_threads = (value > max_threads);
     bool need_finish_free_threads = (value < max_free_threads);
@@ -435,6 +436,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     ScopedDecrement available_threads_decrement(available_threads);
 
     std::unique_ptr<ThreadFromThreadPool> new_thread;
+    std::shared_ptr<std::condition_variable> idle_thread_cv;
     // Load the current capacity
     int64_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
     int64_t currently_available_threads = available_threads.load(std::memory_order_relaxed);
@@ -589,13 +591,18 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         /// avoids a thundering herd where every idle thread wakes, contends for the
         /// mutex, and goes back to sleep on every job schedule.
         ///
-        /// Notify while still holding `mutex`: once `idle_wakeup_flag` is set, a
-        /// spurious wakeup is enough for the worker to run and remove itself from
-        /// the pool, so the raw `ThreadFromThreadPool` pointer must not be used
-        /// after the lock is released.
+        /// Notify after releasing `mutex`, otherwise the woken thread blocks on it right away.
+        /// Once `idle_wakeup_flag` is set, a spurious wakeup is enough for the thread to run
+        /// and remove itself from the pool, so only its CV, not the thread, is used after unlock.
         if (ThreadFromThreadPool * thread_to_wake = popNewestIdleThreadNoLock())
-            wakeIdleThreadNoLock(thread_to_wake);
+        {
+            thread_to_wake->idle_wakeup_flag = true;
+            idle_thread_cv = thread_to_wake->cv;
+        }
     }
+
+    if (idle_thread_cv)
+        idle_thread_cv->notify_one();
 
     ProfileEvents::increment(std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
 
@@ -853,7 +860,7 @@ template <typename Thread>
 void ThreadPoolImpl<Thread>::wakeIdleThreadNoLock(ThreadFromThreadPool * thread)
 {
     thread->idle_wakeup_flag = true;
-    thread->cv.notify_one();
+    thread->cv->notify_one();
 }
 
 template <typename Thread>
@@ -1086,7 +1093,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             {
                 idle_wakeup_flag = false;
                 parent_pool.pushIdleThreadNoLock(this);
-                cv.wait(lock, [this]
+                cv->wait(lock, [this]
                 {
                     return idle_wakeup_flag
                         || !parent_pool.jobs.empty()

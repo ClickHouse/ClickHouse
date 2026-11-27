@@ -1,13 +1,11 @@
 ---
-sidebarTitle: 'سجل تدقيق Console'
+sidebarTitle: 'سجل تدقيق وحدة التحكم'
 slug: /cloud/security/audit-logging/console-audit-log
-title: 'سجل تدقيق Console'
+title: 'سجل تدقيق وحدة التحكم'
 description: 'توضح هذه الصفحة كيفية مراجعة سجل تدقيق السحابة'
 doc_type: 'guide'
 keywords: ['سجل التدقيق']
 ---
-
-import { Image } from "/snippets/ar/components/Image.jsx";
 
 تُسجَّل أنشطة Console في سجل التدقيق. يمكن للمستخدمين الذين لديهم صلاحية الوصول مراجعة السجل ودمجه مع أنظمة التسجيل لديهم. يخضع الوصول إلى سجل التدقيق لصلاحية **View audit logs** (`control-plane:organization:view-activities`):
 
@@ -20,16 +18,20 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 ## الوصول إلى سجل التدقيق عبر واجهة المستخدم {#console-audit-log-ui}
 
 <Steps>
-  <Step title="حدِّد المؤسسة" id="select-org">
+  <Step title="حدِّد المؤسسة" id="select-org">
     في ClickHouse Cloud، انتقل إلى تفاصيل مؤسستك.
 
-    <Image img="/images/cloud/security/activity_log1.webp" size="md" alt="علامة تبويب Activity في ClickHouse Cloud" border />
+    <div className="ch-image-md">
+      <Frame>
+        ![علامة تبويب Activity في ClickHouse Cloud](/images/cloud/security/activity_log1.webp)
+      </Frame>
+    </div>
 
     <br />
   </Step>
 
-  <Step title="حدِّد Audit" id="select-audit">
-    حدِّد علامة التبويب **Audit** من القائمة اليمنى لمعرفة التغييرات التي أُجريت على مؤسستك في ClickHouse Cloud، بما في ذلك من أجرى التغيير ووقت حدوثه.
+  <Step title="حدِّد Audit" id="select-audit">
+    حدِّد علامة التبويب **Audit** من القائمة اليمنى لمعرفة التغييرات التي أُجريت على مؤسستك في ClickHouse Cloud، بما في ذلك من أجرى التغيير ووقت حدوثه.
 
     تعرض صفحة **Activity** جدولًا يتضمن قائمة بالأحداث المسجّلة المتعلقة بمؤسستك. وتكون هذه القائمة افتراضيًا مرتبة ترتيبًا زمنيًا عكسيًا (أحدث حدث في الأعلى). ويمكنك تغيير ترتيب الجدول بالنقر على رؤوس الأعمدة. ويحتوي كل صف في الجدول على الحقول التالية:
 
@@ -38,7 +40,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     * **IP Address:** عند الاقتضاء، يعرض هذا الحقل عنوان IP للمستخدم الذي بدأ الحدث
     * **Time:** الطابع الزمني للحدث
 
-    <Image img="/images/cloud/security/activity_log2.webp" size="md" alt="جدول Activity في ClickHouse Cloud" border />
+    <div className="ch-image-md">
+      <Frame>
+        ![جدول Activity في ClickHouse Cloud](/images/cloud/security/activity_log2.webp)
+      </Frame>
+    </div>
 
     <br />
   </Step>
@@ -49,7 +55,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Steps>
 
 <div class="eighty-percent">
-  <Image img="/images/cloud/security/activity_log3.webp" size="lg" alt="تصدير Activity بتنسيق CSV في ClickHouse Cloud" border />
+  <div className="ch-image-lg">
+    <Frame>
+      ![تصدير Activity بتنسيق CSV في ClickHouse Cloud](/images/cloud/security/activity_log3.webp)
+    </Frame>
+  </div>
 </div>
 
 ## الوصول إلى سجل تدقيق Console عبر واجهة برمجة تطبيقات {#console-audit-log-api}
@@ -62,3 +72,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يمكنك استخدام واجهة برمجة تطبيقات للتكامل مع منصة تسجيل من اختيارك. وفيما يلي الموصلات الجاهزة المدعومة:
 
 * [إضافة ClickHouse Cloud Audit لـ Splunk](/ar/integrations/connectors/data-integrations/integrations/splunk)
+
+## الاحتفاظ بسجل التدقيق {#audit-log-retention}
+
+لا تطبّق ClickHouse Cloud مدة time-to-live (TTL) على سجلات سجل تدقيق وحدة التحكم، أي أن السجلات لا تُحذف تلقائيًا بحسب عمرها.

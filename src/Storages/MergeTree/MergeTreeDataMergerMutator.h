@@ -65,8 +65,8 @@ public:
         const std::optional<PartitionIdsHint> & partitions_hint);
 
     /** Select all the parts in the specified partition for merge, if possible.
-      * final - choose to merge even a single part - that is, allow to merge one part "with itself",
-      * but if setting optimize_skip_merged_partitions is true than single part with level > 0
+      * force_full_partition_merge - choose to merge even a single part - that is, allow to merge one part "with itself",
+      * but if skip_merged_partition is true than single part with level > 0
       * and without expired TTL won't be merged with itself.
       */
     std::expected<MergeSelectorChoices, SelectMergeFailure> selectAllPartsToMergeWithinPartition(
@@ -74,8 +74,8 @@ public:
         const PartsCollectorPtr & parts_collector,
         const MergePredicatePtr & merge_predicate,
         const String & partition_id,
-        bool final,
-        bool optimize_skip_merged_partitions);
+        bool force_full_partition_merge,
+        bool skip_merged_partition);
 
     /** Creates a task to merge parts.
       * If `reservation != nullptr`, now and then reduces the size of the reserved space

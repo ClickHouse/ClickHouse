@@ -192,9 +192,9 @@ static Int64 transformSigned(Int64 x, UInt64 seed)
     if (x == std::numeric_limits<Int64>::min())
         return x;
 
-    /// Negate using unsigned arithmetic to obtain the magnitude;
-    /// `-x` on the signed integer would be undefined behavior on the boundary value.
-    return -transform(-static_cast<UInt64>(x), seed);
+    /// `-x` is representable, because the minimum value is handled above. The permutation keeps
+    /// the highest bit of the magnitude, so the result is below 2^63 and can be negated as `Int64`.
+    return -static_cast<Int64>(transform(static_cast<UInt64>(-x), seed));
 }
 
 
@@ -700,9 +700,9 @@ public:
 
             /// Wrapping arithmetic: the values of arbitrary decimals may be far outside the range of the
             /// date lookup table, and the result is only required to be deterministic.
-            const Int64 src_diff = static_cast<Int64>(static_cast<UInt64>(src_whole) - static_cast<UInt64>(src_prev_value));
+            const Int64 src_diff = static_cast<Int64>(common::subIgnoreOverflow(static_cast<UInt64>(src_whole), static_cast<UInt64>(src_prev_value)));
             const Int64 res_diff = transformSigned(src_diff, seed);
-            const Int64 new_datetime = static_cast<Int64>(static_cast<UInt64>(res_prev_value) + static_cast<UInt64>(res_diff));
+            const Int64 new_datetime = static_cast<Int64>(common::addIgnoreOverflow(static_cast<UInt64>(res_prev_value), static_cast<UInt64>(res_diff)));
 
             Int64 res_whole = makeDateTimeOnDayOf(
                 date_lut,
@@ -750,7 +750,7 @@ private:
     UInt64 seed;
     std::optional<Integer> max_abs_value;
 
-    bool isInRange(Integer x) const
+    [[nodiscard]] bool isInRange(Integer x) const
     {
         if constexpr (is_unsigned_v<Integer>)
             return x <= *max_abs_value;
@@ -758,7 +758,7 @@ private:
             return x <= *max_abs_value && x >= -*max_abs_value;
     }
 
-    Integer transformValue(Integer x) const
+    [[nodiscard]] Integer transformValue(Integer x) const
     {
         Integer res = transformInteger(x, seed);
         if (max_abs_value && isInRange(x))
@@ -952,7 +952,7 @@ private:
             ++count_end;
         }
 
-        CodePoint sample(UInt64 random, double end_multiplier) const
+        [[nodiscard]] CodePoint sample(UInt64 random, double end_multiplier) const
         {
             UInt64 range = total + static_cast<UInt64>(static_cast<double>(count_end) * end_multiplier);
             if (range == 0)
@@ -1271,7 +1271,10 @@ public:
 
             /// If string is greater than desired_size, increase probability of end.
             double end_probability_multiplier = 0;
-            Int64 num_bytes_after_desired_size = (pos - data) - desired_size;
+            /// `pos - data` is signed but `desired_size` is not, so without the cast the whole
+            /// subtraction happens in `size_t` and only the assignment back to `Int64` recovers the
+            /// negative value for a string that is still shorter than desired.
+            Int64 num_bytes_after_desired_size = (pos - data) - static_cast<Int64>(desired_size);
 
             if (num_bytes_after_desired_size > 0)
                 end_probability_multiplier = std::pow(1.25, num_bytes_after_desired_size);
@@ -1630,7 +1633,7 @@ private:
     }
 
 public:
-    ModelPtr get(const IDataType & data_type, UInt64 seed, MarkovModelParameters markov_model_params) const
+    [[nodiscard]] ModelPtr get(const IDataType & data_type, UInt64 seed, MarkovModelParameters markov_model_params) const
     {
         WhichDataType which(data_type);
 

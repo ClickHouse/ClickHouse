@@ -67,7 +67,7 @@ Los siguientes ejemplos usan el dataset [hits](/es/get-started/sample-datasets/s
     Peak memory usage: 10.48 GiB.
     ```
 
-    ### Variante de clúster
+### Variante de clúster {#iceberg-cluster-variant}
 
     La función [`icebergS3Cluster`](/es/reference/functions/table-functions/icebergCluster) distribuye las lecturas entre múltiples nodos en un clúster de ClickHouse. El nodo iniciador establece conexiones con todos los nodos y distribuye los archivos de datos de forma dinámica. Cada nodo worker solicita y procesa tareas hasta que todos los archivos han sido leídos. `icebergCluster` es un alias de `icebergS3Cluster`. También existen variantes para Azure ([`icebergAzureCluster`](/es/reference/functions/table-functions/icebergCluster)) y HDFS ([`icebergHDFSCluster`](/es/reference/functions/table-functions/icebergCluster)).
 
@@ -95,7 +95,7 @@ Los siguientes ejemplos usan el dataset [hits](/es/get-started/sample-datasets/s
     LIMIT 5
     ```
 
-    ### Motor de tabla
+### Motor de tabla {#iceberg-table-engine}
 
     Como alternativa al uso de la función de tabla en cada consulta, puede crear una tabla persistente mediante el [motor de tabla `Iceberg`](/es/reference/engines/table-engines/integrations/iceberg). Los datos siguen residiendo en object storage y se leen bajo demanda; no se copia ningún dato en ClickHouse. La ventaja es que la definición de tabla se almacena en ClickHouse y puede compartirse entre usuarios y sesiones sin que cada usuario tenga que especificar la ruta de almacenamiento ni las credenciales. Existen variantes del motor para cada backend de almacenamiento: `IcebergS3` (o el alias `Iceberg`), `IcebergAzure`, `IcebergHDFS` e `IcebergLocal`.
 
@@ -197,7 +197,7 @@ Los siguientes ejemplos usan el dataset [hits](/es/get-started/sample-datasets/s
     Peak memory usage: 9.16 GiB.
     ```
 
-    ### Variante de clúster
+### Variante de clúster {#delta-cluster-variant}
 
     La función [`deltaLakeCluster`](/es/reference/functions/table-functions/deltalakeCluster) distribuye las lecturas entre múltiples nodos de un ClickHouse cluster. El nodo initiator envía data files dinámicamente a los nodos worker para su procesamiento en paralelo. `deltaLakeS3Cluster` es un alias de `deltaLakeCluster`. También está disponible una variante de Azure ([`deltaLakeAzureCluster`](/es/reference/functions/table-functions/deltalakeCluster)).
 
@@ -231,7 +231,7 @@ Los siguientes ejemplos usan el dataset [hits](/es/get-started/sample-datasets/s
     LIMIT 5
     ```
 
-    ### Motor de tabla
+### Motor de tabla {#delta-table-engine}
 
     Como alternativa al uso de la función de tabla en cada consulta, puede crear una tabla persistente mediante el [motor de tabla `DeltaLake`](/es/reference/engines/table-engines/integrations/deltalake) si utiliza almacenamiento compatible con S3. Los datos siguen residiendo en el almacenamiento de objetos y se leen bajo demanda; no se copia ningún dato en ClickHouse. La ventaja es que la definición de la tabla se almacena en ClickHouse y puede compartirse entre usuarios y sesiones sin necesidad de que cada usuario especifique la ruta de almacenamiento ni las credenciales.
 
@@ -290,7 +290,7 @@ Los siguientes ejemplos usan el dataset [hits](/es/get-started/sample-datasets/s
     hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
     ```
 
-    ### Variante para clúster
+### Variante para clúster {#hudi-cluster-variant}
 
     La función [`hudiCluster`](/es/reference/functions/table-functions/hudiCluster) distribuye las lecturas entre varios nodos de un clúster de ClickHouse. El nodo iniciador asigna dinámicamente los archivos de datos a los nodos de trabajo para su procesamiento en paralelo.
 
@@ -298,7 +298,7 @@ Los siguientes ejemplos usan el dataset [hits](/es/get-started/sample-datasets/s
     hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
     ```
 
-    ### Motor de tabla
+### Motor de tabla {#hudi-table-engine}
 
     Como alternativa a usar la función de tabla en cada consulta, puede crear una tabla persistente con el [motor de tabla `Hudi`](/es/reference/engines/table-engines/integrations/hudi). Los datos siguen residiendo en el almacenamiento de objetos y se leen bajo demanda; no se copia ningún dato en ClickHouse. La ventaja es que la definición de la tabla se almacena en ClickHouse y puede compartirse entre usuarios y sesiones sin que cada usuario tenga que especificar la ruta de almacenamiento y las credenciales.
 
@@ -330,7 +330,7 @@ Los siguientes ejemplos usan el dataset [hits](/es/get-started/sample-datasets/s
     paimonLocal(path_to_table, [,format] [,compression_method])
     ```
 
-    ### Variante de clúster
+### Variante de clúster {#paimon-cluster-variant}
 
     La función [`paimonS3Cluster`](/es/reference/functions/table-functions/paimonCluster) distribuye la lectura entre varios nodos de un clúster de ClickHouse. El nodo iniciador asigna dinámicamente los archivos de datos a los nodos de trabajo para su procesamiento en paralelo. `paimonCluster` es un alias de `paimonS3Cluster`. También existen variantes para Azure ([`paimonAzureCluster`](/es/reference/functions/table-functions/paimonCluster)) y HDFS ([`paimonHDFSCluster`](/es/reference/functions/table-functions/paimonCluster)).
 
@@ -343,9 +343,9 @@ Los siguientes ejemplos usan el dataset [hits](/es/get-started/sample-datasets/s
     paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
     ```
 
-    ### Motor de tabla
+### Motor de tabla {#paimon-table-engine}
 
-    ClickHouse proporciona [motores de tabla experimentales `PaimonS3`, `PaimonAzure`, `PaimonHDFS` y `PaimonLocal`](/es/reference/engines/table-engines/integrations/paimon). Habilítelos con `allow_experimental_paimon_storage_engine = 1`.
+    ClickHouse proporciona [motores de tabla experimentales `PaimonS3`, `PaimonAzure`, `PaimonHDFS` y `PaimonLocal`](/es/reference/engines/table-engines/integrations/paimon). Habilítelos con `enable_paimon_storage_engine = 1`.
 
     Para ver las funcionalidades compatibles, incluidos los backends de almacenamiento, consulte la [matriz de compatibilidad](/es/guides/use-cases/data-warehousing/support-matrix#format-support). Para obtener la referencia completa, consulte la documentación de la [función de tabla `paimon`](/es/reference/functions/table-functions/paimon).
   </Tab>

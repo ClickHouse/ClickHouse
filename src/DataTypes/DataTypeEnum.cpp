@@ -12,7 +12,6 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/SipHash.h>
 #include <Columns/ColumnSparse.h>
-#include <Poco/UTF8Encoding.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 
@@ -145,7 +144,7 @@ bool DataTypeEnum<Type>::textCanContainOnlyValidUTF8() const
             if (pos + length > end)
                 return false;
 
-            if (Poco::UTF8Encoding::isLegal(reinterpret_cast<const unsigned char *>(pos), static_cast<int>(length)))
+            if (UTF8::isLegalSequence(reinterpret_cast<const UInt8 *>(pos), length))
                 pos += length;
             else
                 return false;
@@ -167,7 +166,7 @@ Field DataTypeEnum<Type>::castToName(const Field & value_or_name) const
 {
     if (value_or_name.getType() == Field::Types::String)
     {
-        this->getValue(value_or_name.safeGet<String>()); /// Check correctness
+        (void)this->getValue(value_or_name.safeGet<String>()); /// Check correctness
         return value_or_name.safeGet<String>();
     }
     if (value_or_name.getType() == Field::Types::Int64)
@@ -190,7 +189,7 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
     {
         Int64 value = value_or_name.safeGet<Int64>();
         checkOverflow<Type>(value);
-        this->getNameForValue(static_cast<Type>(value)); /// Check correctness
+        (void)this->getNameForValue(static_cast<Type>(value)); /// Check correctness
         return value;
     }
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "DataTypeEnum: Unsupported type of field {}", value_or_name.getTypeName());

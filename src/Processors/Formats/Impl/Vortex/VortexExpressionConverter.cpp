@@ -14,7 +14,6 @@
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 
-#include <arrow/type.h>
 
 #include <cmath>
 
@@ -33,28 +32,93 @@ constexpr size_t MAX_PUSHED_DOWN_SET_SIZE = 64;
 /// The scale a `DateTime64` header must have for its ticks to be the file's ticks. A coarser or
 /// finer scale would make the decoder rescale the values, and a comparison on the raw ticks would
 /// then mean something else.
-std::optional<UInt32> timestampUnitScale(arrow::TimeUnit::type unit)
+std::optional<UInt32> timestampUnitScale(int unit)
 {
     switch (unit)
     {
-        case arrow::TimeUnit::SECOND: return 0;
-        case arrow::TimeUnit::MILLI: return 3;
-        case arrow::TimeUnit::MICRO: return 6;
-        case arrow::TimeUnit::NANO: return 9;
+        case ArrowIPC::flatbuf::TimeUnit_SECOND: return 0;
+        case ArrowIPC::flatbuf::TimeUnit_MILLISECOND: return 3;
+        case ArrowIPC::flatbuf::TimeUnit_MICROSECOND: return 6;
+        case ArrowIPC::flatbuf::TimeUnit_NANOSECOND: return 9;
+        default: return std::nullopt;
     }
-    return std::nullopt;
 }
 
-std::optional<FFI_VortexTimeUnit> timestampFFIUnit(arrow::TimeUnit::type unit)
+std::optional<FFI_VortexTimeUnit> timestampFFIUnit(int unit)
 {
     switch (unit)
     {
-        case arrow::TimeUnit::SECOND: return FFI_VortexTimeUnit::Seconds;
-        case arrow::TimeUnit::MILLI: return FFI_VortexTimeUnit::Milliseconds;
-        case arrow::TimeUnit::MICRO: return FFI_VortexTimeUnit::Microseconds;
-        case arrow::TimeUnit::NANO: return FFI_VortexTimeUnit::Nanoseconds;
+        case ArrowIPC::flatbuf::TimeUnit_SECOND: return FFI_VortexTimeUnit::Seconds;
+        case ArrowIPC::flatbuf::TimeUnit_MILLISECOND: return FFI_VortexTimeUnit::Milliseconds;
+        case ArrowIPC::flatbuf::TimeUnit_MICROSECOND: return FFI_VortexTimeUnit::Microseconds;
+        case ArrowIPC::flatbuf::TimeUnit_NANOSECOND: return FFI_VortexTimeUnit::Nanoseconds;
+        default: return std::nullopt;
     }
-    return std::nullopt;
+}
+
+/// The Arrow types of file columns that filters can be pushed down on.
+enum class FileType : UInt8
+{
+    Other,
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+    Float,
+    Double,
+    Bool,
+    Date32,
+    Timestamp,
+    String,
+    Binary,
+};
+
+FileType fileType(const ArrowIPC::ArrowType & type)
+{
+    using ArrowIPC::TypeKind;
+    switch (type.kind)
+    {
+        case TypeKind::Int:
+            switch (type.bit_width)
+            {
+                case 8: return type.is_signed ? FileType::Int8 : FileType::UInt8;
+                case 16: return type.is_signed ? FileType::Int16 : FileType::UInt16;
+                case 32: return type.is_signed ? FileType::Int32 : FileType::UInt32;
+                case 64: return type.is_signed ? FileType::Int64 : FileType::UInt64;
+                default: return FileType::Other;
+            }
+        case TypeKind::FloatingPoint:
+            if (type.float_precision == ArrowIPC::flatbuf::Precision_SINGLE)
+                return FileType::Float;
+            if (type.float_precision == ArrowIPC::flatbuf::Precision_DOUBLE)
+                return FileType::Double;
+            return FileType::Other;
+        case TypeKind::Bool: return FileType::Bool;
+        case TypeKind::Date: return type.unit == ArrowIPC::flatbuf::DateUnit_DAY ? FileType::Date32 : FileType::Other;
+        case TypeKind::Timestamp: return FileType::Timestamp;
+        case TypeKind::Utf8:
+        case TypeKind::LargeUtf8:
+        case TypeKind::Utf8View: return FileType::String;
+        case TypeKind::Binary:
+        case TypeKind::LargeBinary:
+        case TypeKind::BinaryView: return FileType::Binary;
+        default: return FileType::Other;
+    }
+}
+
+/// The field of a top-level column, or null. The names are unique, `ArrowIPC::parseSchema` makes them so.
+const ArrowIPC::ArrowField * findField(const ArrowIPC::ArrowSchema & schema, const String & name)
+{
+    for (const auto & field : schema.fields)
+    {
+        if (field.name == name)
+            return &field;
+    }
+    return nullptr;
 }
 
 std::optional<FFI_VortexComparisonOperator> comparisonOperatorFromFunctionName(std::string_view name)
@@ -92,7 +156,7 @@ FFI_VortexComparisonOperator mirrorComparisonOperator(FFI_VortexComparisonOperat
 
 VortexExpressionConverter::VortexExpressionConverter(
     const Block & header_,
-    const arrow::Schema & file_schema_,
+    const ArrowIPC::ArrowSchema & file_schema_,
     const FormatSettings & format_settings_,
     const FormatSettings & comparison_format_settings_,
     const ColumnNameMap * file_column_names_)
@@ -118,6 +182,9 @@ const UnorderedMapWithMemoryTracking<std::string_view, VortexExpressionConverter
         {"lessOrEquals", &VortexExpressionConverter::convertComparison},
         {"greater", &VortexExpressionConverter::convertComparison},
         {"greaterOrEquals", &VortexExpressionConverter::convertComparison},
+        /// `optimize_empty_string_comparisons` rewrites `s = ''` and `s != ''` into these.
+        {"empty", &VortexExpressionConverter::convertEmpty},
+        {"notEmpty", &VortexExpressionConverter::convertEmpty},
         {"isNull", &VortexExpressionConverter::convertIsNull},
         {"isNotNull", &VortexExpressionConverter::convertIsNotNull},
         {"in", &VortexExpressionConverter::convertIn},
@@ -182,77 +249,74 @@ VortexExpressionConverter::resolveColumn(const RPNBuilderTreeNode & node, TypeMa
             return std::nullopt;
         column_name = it->second;
     }
-    auto arrow_field = file_schema.GetFieldByName(column_name);
+    const auto * arrow_field = findField(file_schema, column_name);
     const auto * header_column = header.findByName(column_name);
-    if (!arrow_field || !header_column)
+    /// The values of a dictionary-encoded column are in another type than its indices, which is what the scan compares.
+    if (!arrow_field || !header_column || arrow_field->dictionary)
         return std::nullopt;
 
     DataTypePtr cmp_type = removeNullable(recursiveRemoveLowCardinality(header_column->type));
-    if (type_match == TypeMatch::Required && !typesMatchForFilterPushdown(cmp_type, *arrow_field->type()))
+    if (type_match == TypeMatch::Required && !typesMatchForFilterPushdown(cmp_type, arrow_field->type))
         return std::nullopt;
-    if (type_match == TypeMatch::NullPreserving && !conversionPreservesNulls(cmp_type, *arrow_field->type()))
+    if (type_match == TypeMatch::NullPreserving && !conversionPreservesNulls(cmp_type, arrow_field->type))
         return std::nullopt;
 
     /// When a nullable file column is read as non-nullable, its nulls become default values. The
     /// scan does not know about that substitution: it evaluates the atom on null and drops the row.
     const bool header_nullable = header_column->type->isNullable() || header_column->type->isLowCardinalityNullable();
-    if (arrow_field->nullable() && !header_nullable)
+    if (arrow_field->nullable && !header_nullable)
         return std::nullopt;
 
     VortexExpressionPtr column(vortex_ffi_expr_column(column_name.c_str()));
     if (!column)
         return std::nullopt;
 
-    return ResolvedColumn{std::move(column), std::move(arrow_field), std::move(cmp_type)};
+    return ResolvedColumn{std::move(column), arrow_field, std::move(cmp_type)};
 }
 
-bool VortexExpressionConverter::typesMatchForFilterPushdown(const DataTypePtr & cmp_type, const arrow::DataType & arrow_type) const
+bool VortexExpressionConverter::typesMatchForFilterPushdown(const DataTypePtr & cmp_type, const ArrowIPC::ArrowType & arrow_type) const
 {
     WhichDataType which(cmp_type);
-    switch (arrow_type.id())
+    switch (fileType(arrow_type))
     {
-        case arrow::Type::INT8: return which.isInt8();
-        case arrow::Type::INT16: return which.isInt16();
-        case arrow::Type::INT32: return which.isInt32();
-        case arrow::Type::INT64: return which.isInt64();
+        case FileType::Int8: return which.isInt8();
+        case FileType::Int16: return which.isInt16();
+        case FileType::Int32: return which.isInt32();
+        case FileType::Int64: return which.isInt64();
         /// A `Bool` header over a `U8` file column clamps every non-zero value to 1 when read, so a
         /// comparison on the raw bytes would mean something else.
-        case arrow::Type::UINT8: return which.isUInt8() && !isBool(cmp_type);
+        case FileType::UInt8: return which.isUInt8() && !isBool(cmp_type);
         /// `Date` is a day number in the same `UInt16` domain, copied 1:1 from a `U16` file column.
-        case arrow::Type::UINT16: return which.isUInt16() || which.isDate();
-        case arrow::Type::UINT32: return which.isUInt32();
-        case arrow::Type::UINT64: return which.isUInt64();
-        case arrow::Type::FLOAT: return which.isFloat32();
-        case arrow::Type::DOUBLE: return which.isFloat64();
+        case FileType::UInt16: return which.isUInt16() || which.isDate();
+        case FileType::UInt32: return which.isUInt32();
+        case FileType::UInt64: return which.isUInt64();
+        case FileType::Float: return which.isFloat32();
+        case FileType::Double: return which.isFloat64();
         /// A boolean file column always reads as {0, 1}, whatever UInt8 flavor the header uses.
-        case arrow::Type::BOOL: return which.isUInt8();
+        case FileType::Bool: return which.isUInt8();
         /// The day numbers are copied 1:1 into either header type - a `Date` header is the same
         /// day numbering, only narrower - except under `Saturate`, where out-of-range days are
         /// clamped onto the bounds and an equality on a bound would match rows it should not. In
         /// the other modes an out-of-range day throws, which `keepUndecodableRows` preserves.
-        case arrow::Type::DATE32:
+        case FileType::Date32:
             return (which.isDate32() || which.isDate())
                 && format_settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Saturate;
         /// The ticks are copied 1:1 when the scales agree; the header's time zone only affects
         /// rendering, not the stored ticks. Any other scale makes the decoder rescale the values.
-        case arrow::Type::TIMESTAMP: {
+        case FileType::Timestamp: {
             if (!which.isDateTime64())
                 return false;
-            auto scale = timestampUnitScale(static_cast<const arrow::TimestampType &>(arrow_type).unit());
+            auto scale = timestampUnitScale(arrow_type.unit);
             return scale && assert_cast<const DataTypeDateTime64 &>(*cmp_type).getScale() == *scale;
         }
         /// FixedString is excluded: its zero padding makes it order differently from Binary.
-        case arrow::Type::STRING:
-        case arrow::Type::LARGE_STRING:
-        case arrow::Type::STRING_VIEW:
-        case arrow::Type::BINARY:
-        case arrow::Type::LARGE_BINARY:
-        case arrow::Type::BINARY_VIEW: return which.isString();
+        case FileType::String:
+        case FileType::Binary: return which.isString();
         default: return false;
     }
 }
 
-bool VortexExpressionConverter::conversionPreservesNulls(const DataTypePtr & cmp_type, const arrow::DataType & arrow_type) const
+bool VortexExpressionConverter::conversionPreservesNulls(const DataTypePtr & cmp_type, const ArrowIPC::ArrowType & arrow_type) const
 {
     if (typesMatchForFilterPushdown(cmp_type, arrow_type))
         return true;
@@ -262,17 +326,17 @@ bool VortexExpressionConverter::conversionPreservesNulls(const DataTypePtr & cmp
         return true;
 
     /// An integer cast to another integer wraps around, it does not become NULL.
-    switch (arrow_type.id())
+    switch (fileType(arrow_type))
     {
-        case arrow::Type::BOOL:
-        case arrow::Type::INT8:
-        case arrow::Type::INT16:
-        case arrow::Type::INT32:
-        case arrow::Type::INT64:
-        case arrow::Type::UINT8:
-        case arrow::Type::UINT16:
-        case arrow::Type::UINT32:
-        case arrow::Type::UINT64:
+        case FileType::Bool:
+        case FileType::Int8:
+        case FileType::Int16:
+        case FileType::Int32:
+        case FileType::Int64:
+        case FileType::UInt8:
+        case FileType::UInt16:
+        case FileType::UInt32:
+        case FileType::UInt64:
             return isNativeInteger(cmp_type) && !isBool(cmp_type);
         default:
             return false;
@@ -280,7 +344,7 @@ bool VortexExpressionConverter::conversionPreservesNulls(const DataTypePtr & cmp
 }
 
 VortexExpressionPtr VortexExpressionConverter::makeLiteral(
-    const arrow::DataType & file_type,
+    const ArrowIPC::ArrowType & file_type,
     const DataTypePtr & cmp_type,
     const Field & value,
     const DataTypePtr & value_type,
@@ -397,38 +461,33 @@ VortexExpressionPtr VortexExpressionConverter::makeLiteral(
 
     auto make_timestamp = [&]() -> VortexExpressionPtr
     {
-        const auto & timestamp_type = static_cast<const arrow::TimestampType &>(file_type);
-        auto unit = timestampFFIUnit(timestamp_type.unit());
+        auto unit = timestampFFIUnit(file_type.unit);
         if (!unit || converted.getType() != Field::Types::Decimal64)
             return nullptr;
         /// The ticks are absolute; the literal only has to carry the file column's zone, because
         /// Vortex refuses to compare timestamps whose metadata differs.
         const Int64 ticks = converted.safeGet<DecimalField<DateTime64>>().getValue().value;
-        const std::string & timezone = timestamp_type.timezone();
+        const std::string & timezone = file_type.timezone;
         return VortexExpressionPtr(vortex_ffi_expr_literal_timestamp(*unit, timezone.empty() ? nullptr : timezone.c_str(), ticks));
     };
 
-    switch (file_type.id())
+    switch (fileType(file_type))
     {
-        case arrow::Type::INT8: return make_int(FFI_VortexPrimitiveType::I8);
-        case arrow::Type::INT16: return make_int(FFI_VortexPrimitiveType::I16);
-        case arrow::Type::INT32: return make_int(FFI_VortexPrimitiveType::I32);
-        case arrow::Type::INT64: return make_int(FFI_VortexPrimitiveType::I64);
-        case arrow::Type::UINT8: return make_uint(FFI_VortexPrimitiveType::U8);
-        case arrow::Type::UINT16: return make_uint(FFI_VortexPrimitiveType::U16);
-        case arrow::Type::UINT32: return make_uint(FFI_VortexPrimitiveType::U32);
-        case arrow::Type::UINT64: return make_uint(FFI_VortexPrimitiveType::U64);
-        case arrow::Type::FLOAT: return make_float(FFI_VortexPrimitiveType::F32);
-        case arrow::Type::DOUBLE: return make_float(FFI_VortexPrimitiveType::F64);
-        case arrow::Type::BOOL: return make_bool();
-        case arrow::Type::DATE32: return make_date();
-        case arrow::Type::TIMESTAMP: return make_timestamp();
-        case arrow::Type::STRING:
-        case arrow::Type::LARGE_STRING:
-        case arrow::Type::STRING_VIEW: return make_string(/* is_utf8 */ true);
-        case arrow::Type::BINARY:
-        case arrow::Type::LARGE_BINARY:
-        case arrow::Type::BINARY_VIEW: return make_string(/* is_utf8 */ false);
+        case FileType::Int8: return make_int(FFI_VortexPrimitiveType::I8);
+        case FileType::Int16: return make_int(FFI_VortexPrimitiveType::I16);
+        case FileType::Int32: return make_int(FFI_VortexPrimitiveType::I32);
+        case FileType::Int64: return make_int(FFI_VortexPrimitiveType::I64);
+        case FileType::UInt8: return make_uint(FFI_VortexPrimitiveType::U8);
+        case FileType::UInt16: return make_uint(FFI_VortexPrimitiveType::U16);
+        case FileType::UInt32: return make_uint(FFI_VortexPrimitiveType::U32);
+        case FileType::UInt64: return make_uint(FFI_VortexPrimitiveType::U64);
+        case FileType::Float: return make_float(FFI_VortexPrimitiveType::F32);
+        case FileType::Double: return make_float(FFI_VortexPrimitiveType::F64);
+        case FileType::Bool: return make_bool();
+        case FileType::Date32: return make_date();
+        case FileType::Timestamp: return make_timestamp();
+        case FileType::String: return make_string(/* is_utf8 */ true);
+        case FileType::Binary: return make_string(/* is_utf8 */ false);
         default: return nullptr;
     }
 }
@@ -447,7 +506,7 @@ VortexExpressionPtr VortexExpressionConverter::makeFloatComparison(
     if (!literal_is_zero)
         return VortexExpressionPtr(vortex_ffi_expr_compare(op, column.expr.get(), literal.get()));
 
-    const auto ptype = column.field->type()->id() == arrow::Type::FLOAT ? FFI_VortexPrimitiveType::F32 : FFI_VortexPrimitiveType::F64;
+    const auto ptype = fileType(column.field->type) == FileType::Float ? FFI_VortexPrimitiveType::F32 : FFI_VortexPrimitiveType::F64;
     VortexExpressionPtr negative_zero(vortex_ffi_expr_literal_float(ptype, -0.0));
     if (!negative_zero)
         return nullptr;
@@ -481,7 +540,7 @@ VortexExpressionPtr VortexExpressionConverter::makeFloatComparison(
 VortexExpressionPtr
 VortexExpressionConverter::keepUndecodableRows(const ResolvedColumn & column, VortexExpressionPtr atom, bool allow_widening) const
 {
-    if (!atom || column.field->type()->id() != arrow::Type::DATE32
+    if (!atom || fileType(column.field->type) != FileType::Date32
         || format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         return atom;
 
@@ -623,7 +682,7 @@ VortexExpressionPtr VortexExpressionConverter::convertComparison(const RPNBuilde
     }
 
     bool literal_is_float_zero = false;
-    auto literal = makeLiteral(*column->field->type(), column->cmp_type, value, value_type, &literal_is_float_zero);
+    auto literal = makeLiteral(column->field->type, column->cmp_type, value, value_type, &literal_is_float_zero);
     if (!literal)
         return nullptr;
 
@@ -631,6 +690,25 @@ VortexExpressionPtr VortexExpressionConverter::convertComparison(const RPNBuilde
         return makeFloatComparison(*column, *op, std::move(literal), literal_is_float_zero, allow_widening);
 
     return keepUndecodableRows(*column, VortexExpressionPtr(vortex_ffi_expr_compare(*op, column->expr.get(), literal.get())), allow_widening);
+}
+
+VortexExpressionPtr VortexExpressionConverter::convertEmpty(const RPNBuilderFunctionTreeNode & node, bool /* allow_widening */) const
+{
+    if (node.getArgumentsSize() != 1)
+        return nullptr;
+
+    /// `empty` and `notEmpty` also take arrays, maps and UUIDs; only for a `String` is the empty
+    /// value the empty string. A NULL string gives NULL either way, which the scan drops too.
+    auto column = resolveColumn(node.getArgumentAt(0), TypeMatch::Required);
+    if (!column || !isString(column->cmp_type))
+        return nullptr;
+
+    auto literal = makeLiteral(column->field->type, column->cmp_type, Field(String()), std::make_shared<DataTypeString>());
+    if (!literal)
+        return nullptr;
+
+    const auto op = node.getFunctionName() == "empty" ? FFI_VortexComparisonOperator::Eq : FFI_VortexComparisonOperator::NotEq;
+    return VortexExpressionPtr(vortex_ffi_expr_compare(op, column->expr.get(), literal.get()));
 }
 
 VortexExpressionPtr VortexExpressionConverter::convertIsNull(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const
@@ -720,7 +798,7 @@ VortexExpressionPtr VortexExpressionConverter::convertIn(const RPNBuilderFunctio
         if (element.isNull())
             continue;
         bool literal_is_float_zero = false;
-        auto literal = makeLiteral(*column->field->type(), column->cmp_type, element, set_types.front(), &literal_is_float_zero);
+        auto literal = makeLiteral(column->field->type, column->cmp_type, element, set_types.front(), &literal_is_float_zero);
         if (!literal)
             return nullptr;
         /// Whether `-0.0` finds the key `0` depends on how the set hashes and compares its keys.
@@ -747,7 +825,7 @@ VortexExpressionPtr VortexExpressionConverter::convertIn(const RPNBuilderFunctio
 VortexExpressionPtr
 VortexExpressionConverter::makePrefixRange(const ResolvedColumn & column, const String & prefix, bool allow_widening) const
 {
-    auto left_literal = makeLiteral(*column.field->type(), column.cmp_type, Field(prefix), std::make_shared<DataTypeString>());
+    auto left_literal = makeLiteral(column.field->type, column.cmp_type, Field(prefix), std::make_shared<DataTypeString>());
     if (!left_literal)
         return nullptr;
     VortexExpressionPtr left_bound(vortex_ffi_expr_compare(FFI_VortexComparisonOperator::Gte, column.expr.get(), left_literal.get()));
@@ -759,7 +837,7 @@ VortexExpressionConverter::makePrefixRange(const ResolvedColumn & column, const 
     if (right.empty())
         return left_bound;
 
-    auto right_literal = makeLiteral(*column.field->type(), column.cmp_type, Field(right), std::make_shared<DataTypeString>());
+    auto right_literal = makeLiteral(column.field->type, column.cmp_type, Field(right), std::make_shared<DataTypeString>());
     if (right_literal)
     {
         VortexExpressionPtr right_bound(vortex_ffi_expr_compare(FFI_VortexComparisonOperator::Lt, column.expr.get(), right_literal.get()));
@@ -794,7 +872,7 @@ VortexExpressionPtr VortexExpressionConverter::convertLike(const RPNBuilderFunct
     /// A pattern without wildcards is an equality.
     if (prefix.is_exact)
     {
-        auto literal = makeLiteral(*column->field->type(), column->cmp_type, Field(prefix.prefix), std::make_shared<DataTypeString>());
+        auto literal = makeLiteral(column->field->type, column->cmp_type, Field(prefix.prefix), std::make_shared<DataTypeString>());
         if (!literal)
             return nullptr;
         return VortexExpressionPtr(vortex_ffi_expr_compare(FFI_VortexComparisonOperator::Eq, column->expr.get(), literal.get()));
@@ -831,7 +909,7 @@ VortexExpressionPtr VortexExpressionConverter::convertNotLike(const RPNBuilderFu
 
     if (prefix.is_exact)
     {
-        auto literal = makeLiteral(*column->field->type(), column->cmp_type, Field(prefix.prefix), std::make_shared<DataTypeString>());
+        auto literal = makeLiteral(column->field->type, column->cmp_type, Field(prefix.prefix), std::make_shared<DataTypeString>());
         if (!literal)
             return nullptr;
         return VortexExpressionPtr(vortex_ffi_expr_compare(FFI_VortexComparisonOperator::NotEq, column->expr.get(), literal.get()));
@@ -872,7 +950,7 @@ VortexExpressionPtr VortexExpressionConverter::convertBareBooleanColumn(const RP
     auto column = resolveColumn(node, TypeMatch::Required);
     /// Only a boolean column may be a filter by itself; for any other type the engine tests
     /// truthiness, which a Vortex filter expression does not.
-    if (!column || column->field->type()->id() != arrow::Type::BOOL)
+    if (!column || fileType(column->field->type) != FileType::Bool)
         return nullptr;
     return std::move(column->expr);
 }

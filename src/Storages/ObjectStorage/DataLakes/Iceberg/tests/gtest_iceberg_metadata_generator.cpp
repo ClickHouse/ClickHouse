@@ -43,7 +43,7 @@ void appendSnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id =
 {
     FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
     generator.setVersion(1);
-    MetadataGenerator(metadata).generateNextMetadata(
+    MetadataGenerator(metadata, /* metadata_previous_versions_max */ std::nullopt).generateNextMetadata(
         generator,
         parent_snapshot_id,
         /*added_files=*/ 1,
@@ -63,7 +63,7 @@ String snapshotOperation(
 {
     FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
     generator.setVersion(1);
-    auto result = MetadataGenerator(metadata).generateNextMetadata(
+    auto result = MetadataGenerator(metadata, /* metadata_previous_versions_max */ std::nullopt).generateNextMetadata(
         generator,
         /*parent_snapshot_id=*/ -1,
         /*added_files=*/ 1,
@@ -82,7 +82,7 @@ void callManifestOnlySnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_sna
 {
     FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
     generator.setVersion(1);
-    MetadataGenerator(metadata).generateManifestOnlySnapshot(generator, parent_snapshot_id);
+    MetadataGenerator(metadata, /* metadata_previous_versions_max */ std::nullopt).generateManifestOnlySnapshot(generator, parent_snapshot_id);
 }
 
 }
@@ -214,16 +214,107 @@ TEST(IcebergMetadataGenerator, AddPreviousMetadataFileDoesNotRepeatLegacySelfEnt
     self_entry->set(Iceberg::f_timestamp_ms, Int64(1700000000000));
     metadata->getArray(Iceberg::f_metadata_log)->add(self_entry);
 
-    MetadataGenerator(metadata).addPreviousMetadataFile(
+    MetadataGenerator(metadata, /* metadata_previous_versions_max */ std::nullopt).addPreviousMetadataFile(
         Iceberg::IcebergPathFromMetadata::deserialize("s3://bucket/table/metadata/v3.metadata.json"));
     EXPECT_EQ(metadata->getArray(Iceberg::f_metadata_log)->size(), 1u);
 
-    MetadataGenerator(metadata).addPreviousMetadataFile(
+    MetadataGenerator(metadata, /* metadata_previous_versions_max */ std::nullopt).addPreviousMetadataFile(
         Iceberg::IcebergPathFromMetadata::deserialize("s3://bucket/table/metadata/v4.metadata.json"));
     auto metadata_log = metadata->getArray(Iceberg::f_metadata_log);
     ASSERT_EQ(metadata_log->size(), 2u);
     EXPECT_EQ(metadata_log->getObject(1)->getValue<String>(Iceberg::f_metadata_file), "s3://bucket/table/metadata/v4.metadata.json");
     EXPECT_EQ(metadata_log->getObject(1)->getValue<Int64>(Iceberg::f_timestamp_ms), 1700000000000);
+}
+
+static Poco::JSON::Object::Ptr makeMetadataWithLog(size_t entries)
+{
+    auto metadata = makeMinimalV2Metadata();
+    metadata->set(Iceberg::f_last_updated_ms, Int64(1700000000000));
+    auto metadata_log = metadata->getArray(Iceberg::f_metadata_log);
+    for (size_t i = 0; i < entries; ++i)
+    {
+        Poco::JSON::Object::Ptr entry = new Poco::JSON::Object;
+        entry->set(Iceberg::f_metadata_file, "old" + std::to_string(i));
+        entry->set(Iceberg::f_timestamp_ms, static_cast<Int64>(i));
+        metadata_log->add(entry);
+    }
+    return metadata;
+}
+
+static std::vector<String> metadataLogFiles(Poco::JSON::Object::Ptr metadata)
+{
+    std::vector<String> files;
+    auto metadata_log = metadata->getArray(Iceberg::f_metadata_log);
+    for (size_t i = 0; i < metadata_log->size(); ++i)
+        files.push_back(metadata_log->getObject(static_cast<UInt32>(i))->getValue<String>(Iceberg::f_metadata_file));
+    return files;
+}
+
+static void addPreviousFile(Poco::JSON::Object::Ptr metadata, std::optional<UInt64> metadata_previous_versions_max)
+{
+    MetadataGenerator(metadata, metadata_previous_versions_max).addPreviousMetadataFile(
+        Iceberg::IcebergPathFromMetadata::deserialize("s3://bucket/table/metadata/v1.metadata.json"));
+}
+
+TEST(IcebergMetadataGenerator, MetadataLogDropsOldestEntries)
+{
+    auto metadata = makeMetadataWithLog(5);
+    addPreviousFile(metadata, /*metadata_previous_versions_max=*/ 3);
+    auto files = metadataLogFiles(metadata);
+    ASSERT_EQ(files.size(), 3u);
+    EXPECT_EQ(files[0], "old3");
+    EXPECT_EQ(files[1], "old4");
+    EXPECT_NE(files[2].find("v1"), String::npos);
+}
+
+TEST(IcebergMetadataGenerator, MetadataLogDropsOneEntryAtLimit)
+{
+    auto metadata = makeMetadataWithLog(3);
+    addPreviousFile(metadata, /*metadata_previous_versions_max=*/ 3);
+    auto files = metadataLogFiles(metadata);
+    ASSERT_EQ(files.size(), 3u);
+    EXPECT_EQ(files[0], "old1");
+    EXPECT_EQ(files[1], "old2");
+    EXPECT_NE(files[2].find("v1"), String::npos);
+}
+
+TEST(IcebergMetadataGenerator, MetadataLogIsUnboundedWithoutLimit)
+{
+    auto metadata = makeMetadataWithLog(5);
+    addPreviousFile(metadata, /*metadata_previous_versions_max=*/ std::nullopt);
+    EXPECT_EQ(metadataLogFiles(metadata).size(), 6u);
+}
+
+TEST(IcebergMetadataGenerator, MetadataLogIsUnboundedWithMaxLimit)
+{
+    auto metadata = makeMetadataWithLog(5);
+    addPreviousFile(metadata, /*metadata_previous_versions_max=*/ std::numeric_limits<UInt64>::max());
+    EXPECT_EQ(metadataLogFiles(metadata).size(), 6u);
+}
+
+TEST(IcebergMetadataGenerator, MetadataLogTablePropertyTakesPrecedence)
+{
+    auto metadata = makeMetadataWithLog(5);
+    Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
+    properties->set(Iceberg::f_metadata_previous_versions_max, "2");
+    metadata->set(Iceberg::f_properties, properties);
+    addPreviousFile(metadata, /*metadata_previous_versions_max=*/ std::nullopt);
+    auto files = metadataLogFiles(metadata);
+    ASSERT_EQ(files.size(), 2u);
+    EXPECT_EQ(files[0], "old4");
+    EXPECT_NE(files[1].find("v1"), String::npos);
+}
+
+TEST(IcebergMetadataGenerator, MetadataLogTablePropertyKeepsAtLeastOneEntry)
+{
+    auto metadata = makeMetadataWithLog(5);
+    Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
+    properties->set(Iceberg::f_metadata_previous_versions_max, "0");
+    metadata->set(Iceberg::f_properties, properties);
+    addPreviousFile(metadata, /*metadata_previous_versions_max=*/ 100);
+    auto files = metadataLogFiles(metadata);
+    ASSERT_EQ(files.size(), 1u);
+    EXPECT_NE(files[0].find("v1"), String::npos);
 }
 
 #endif

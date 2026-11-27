@@ -75,6 +75,12 @@ class SparkHudiWriter(Writer):
         return options
 
     def _save(self, df, operation, mode="append"):
+        from pyspark.sql.functions import expr
+
+        # Hudi writes lists in the two-level Parquet structure of parquet-avro by default, which cannot store a NULL element.
+        for name, t in self.model.columns:
+            if t.kind == "list":
+                df = df.withColumn(name, expr(f"filter({q(name)}, x -> x IS NOT NULL)"))
         if self.model.partitioning:
             name = self.model.partitioning[0].column
             if self.model.column_type(name).kind == "string":

@@ -195,6 +195,7 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
     offset_is_whole_number_of_minutes_during_epoch = true;
     offset_is_whole_number_of_hours_in_lut_range = true;
     offset_is_whole_number_of_minutes_in_lut_range = true;
+    offset_change_is_whole_number_of_hours_during_epoch = true;
     offset_is_fixed = true;
     offset_is_fixed_during_epoch = true;
     offset_minute_of_hour_is_constant_during_epoch = true;
@@ -252,6 +253,9 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
                 /// Shift the point of time change later.
                 if (values.time_at_offset_change_value + values.amount_of_offset_change_value < 0)
                     values.time_at_offset_change_value = -values.amount_of_offset_change_value;
+
+                if (start_of_day + 86400 > 0 && values.amount_of_offset_change() % 3600 != 0)
+                    offset_change_is_whole_number_of_hours_during_epoch = false;
             }
 
             /// After the last transition (all the time for UTC) the offset never changes, so stop looking up every day.
@@ -455,6 +459,52 @@ DateLUTImpl::Time DateLUTImpl::timezoneOffsetOutOfRange(Time t) const
     /// The UTC offset of the time zone at the given time point.
     t = std::clamp(t, min_representable_time, max_representable_time);
     return cctz_time_zone->lookup(std::chrono::system_clock::from_time_t(t)).offset;
+}
+
+DateLUTImpl::Time DateLUTImpl::timezoneOffsetAtLocalTimeOutOfRange(Time t) const
+{
+    t = std::clamp(t, min_representable_time, max_representable_time);
+    const auto local = cctz::civil_second{1970, 1, 1} + t;
+    return t - std::chrono::system_clock::to_time_t(
+        cctz_time_zone->lookup(local).post);
+}
+
+DateLUTImpl::Time DateLUTImpl::toStartOfHourOutOfRange(Time t) const
+{
+    /// The same rounding as `roundDownToWallClockHour` does inside the lookup table, with the offset change
+    /// taken from the time zone rules: the last whole hour on the clock that `t` is read on, but not before
+    /// an offset change by a fraction of an hour. The clock itself is used instead of a grid counted from the
+    /// start of the day, because a day can start after such a change: on 1899-05-01 `Australia/Adelaide`
+    /// skipped the half hour after midnight, so that day starts at 00:30 on the clock.
+    ///
+    /// Only the chrono-safe bounds are applied to `t`, as in `toDateTimeComponentsOutOfRange`: a time whose
+    /// local calendar value is representable can be up to a day outside of the UTC calendar range
+    /// (`9999-12-31 23:00:00` in `America/Caracas`), and it must keep its own hour.
+    t = std::clamp(t, min_chrono_safe_time, max_chrono_safe_time);
+    const Time offset = timezoneOffsetOutOfRange(t);
+    const Time clock = t + offset;
+    Time clock_hour = clock / 3600 * 3600;
+    if (clock_hour > clock)
+        clock_hour -= 3600;
+    const Time start = clock_hour - offset;
+
+    /// If the offset changed by a whole number of hours since `start`, it is a whole hour on both clocks.
+    const Time amount = offset - timezoneOffsetOutOfRange(start);
+    if (amount % 3600 == 0)
+        return start;
+
+    /// Find the instant of the offset change between `start` and `t`: the first second with the offset of `t`.
+    Time before = start;
+    Time after = t;
+    while (after - before > 1)
+    {
+        const Time middle = before + (after - before) / 2;
+        if (timezoneOffsetOutOfRange(middle) == offset)
+            after = middle;
+        else
+            before = middle;
+    }
+    return after;
 }
 
 DateLUTImpl::Time DateLUTImpl::addDaysOutOfRange(Time t, Int64 delta) const

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Cloudflare', 'logs', 'ClickStack', 'ClickPipes', 'S3', 'HTTP', 'Logpush']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -20,7 +18,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="overview">
-  ## 概述
+  ## 概述 {#overview}
 </div>
 
 Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 请求日志导出到 Amazon S3 等目标端。将这些日志转发到 ClickStack 后，您可以：
@@ -46,13 +44,13 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
 </Info>
 
 <div id="existing-cloudflare">
-  ## 与现有 Cloudflare Logpush 集成
+  ## 与现有 Cloudflare Logpush 集成 {#existing-cloudflare}
 </div>
 
 本节假定你已将 Cloudflare Logpush 配置为将日志导出到 S3。否则，请先参考 [Cloudflare 的 AWS S3 设置指南](https://developers.cloudflare.com/logs/get-started/enable-destinations/aws-s3/)。
 
 <div id="prerequisites">
-  ### 前置条件
+  ### 前置条件 {#prerequisites}
 </div>
 
 * **ClickHouse Cloud 服务**已在运行 (ClickPipes 是 Cloud 独有功能，在 ClickStack OSS 中不可用)
@@ -70,7 +68,11 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
     1. ClickHouse Cloud 控制台 → **数据源** → **创建 ClickPipe**
     2. **源**：Amazon S3
 
-    <Image img="/images/clickstack/cloudflare/clickpipe-s3.webp" alt="Clickpipe s3" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Clickpipe s3](/images/clickstack/cloudflare/clickpipe-s3.webp)
+      </Frame>
+    </div>
 
     **连接：**
 
@@ -86,7 +88,11 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
     * 打开 **持续摄取**
     * **排序**：词典序
 
-    <Image img="/images/clickstack/cloudflare/continuous-ingestion.webp" alt="Continuous ingestion" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Continuous ingestion](/images/clickstack/cloudflare/continuous-ingestion.webp)
+      </Frame>
+    </div>
 
     Cloudflare Logpush 使用基于日期的命名方式写入文件 (例如 `20250127/...`) ，天然符合词典序。ClickPipes 每 30 秒轮询一次新文件，并摄取所有名称大于上一个已处理文件的文件。
 
@@ -94,7 +100,11 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
 
     点击 **解析信息**。ClickPipes 会对您的日志文件进行采样，并自动检测 schema。请检查映射后的列，并根据需要调整类型。为目标表定义一个 **排序键**——对于 Cloudflare 日志，一个不错的选择是 `(EdgeStartTimestamp, ClientCountry, EdgeResponseStatus)`。
 
-    <Image img="/images/clickstack/cloudflare/parse-information.webp" alt="Parse information" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Parse information](/images/clickstack/cloudflare/parse-information.webp)
+      </Frame>
+    </div>
 
     点击 **完成设置**。
 
@@ -103,16 +113,24 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
     </Note>
   </Step>
 
-  <Step title="配置 HyperDX 数据源" id="configure-source">
-    ClickPipes 会将 Cloudflare 日志摄取到一张扁平化表中，并使用 Cloudflare 的原生字段名。要在 HyperDX 中查看这些日志，请配置一个自定义数据源，将 Cloudflare 的列映射到 HyperDX 的日志视图。
+  <Step title="配置 ClickStack 用户界面数据源" id="configure-source">
+    ClickPipes 会将 Cloudflare 日志摄取到一张扁平化表中，并使用 Cloudflare 的原生字段名。要在 ClickStack 用户界面中查看这些日志，请配置一个自定义数据源，将 Cloudflare 的列映射到 ClickStack 用户界面的日志视图。
 
-    1. 打开 HyperDX → **Team Settings** → **Sources**
+    1. 打开 ClickStack 用户界面 → **Team Settings** → **Sources**
 
-    <Image img="/images/clickstack/cloudflare/add-source.webp" alt="添加数据源" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![添加数据源](/images/clickstack/cloudflare/add-source.webp)
+      </Frame>
+    </div>
 
     2. 点击 **Add source** 并按以下内容进行配置。点击 **Configure Optional Fields** 可查看所有字段：
 
-    <Image img="/images/clickstack/cloudflare/configure-optional-fields.webp" alt="配置可选项" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![配置可选项](/images/clickstack/cloudflare/configure-optional-fields.webp)
+      </Frame>
+    </div>
 
     | 设置           | 值                                                                                                                                                                                                                                                                                                                 |
     | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -131,27 +149,37 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
 
     3. 点击 **Save Source**
 
-    <Image img="/images/clickstack/cloudflare/save-source.webp" alt="保存数据源" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![保存数据源](/images/clickstack/cloudflare/save-source.webp)
+      </Frame>
+    </div>
 
-    这样就能将 Cloudflare 的原生列直接映射到 HyperDX 的日志查看器中，无需进行任何数据转换或重复存储。**Body** 会显示类似 `GET /api/v1/users 200` 的请求摘要，同时所有 Cloudflare 字段都可作为可搜索属性使用。
+    这样就能将 Cloudflare 的原生列直接映射到 ClickStack 用户界面的日志查看器中，无需进行任何数据转换或重复存储。**Body** 会显示类似 `GET /api/v1/users 200` 的请求摘要，同时所有 Cloudflare 字段都可作为可搜索属性使用。
   </Step>
 
-  <Step title="在 HyperDX 中验证数据" id="verify-hyperdx">
+  <Step title="在 ClickStack 用户界面中验证数据" id="verify-hyperdx">
     前往 **搜索视图**，然后选择 **Cloudflare 日志** 数据源。将时间范围设置为覆盖你的数据所在时间段。你应该会看到包含以下内容的日志条目：
 
     * Body 列中的请求摘要 (例如 `GET /api/v1/users 200`)
     * 按 HTTP 状态码以不同颜色显示的严重级别 (2xx 为 INFO，4xx 为 WARN，5xx 为 ERROR)
     * 可搜索的属性，例如 `http.status_code`、`client.country`、`cache.status` 和 `bot.score`
 
-    <Image img="/images/clickstack/cloudflare/search-view.webp" alt="搜索视图" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![搜索视图](/images/clickstack/cloudflare/search-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/cloudflare/log-view.webp" alt="日志视图" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![日志视图](/images/clickstack/cloudflare/log-view.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
-<div id="demo-dataset">
-  ## 演示数据集
-</div>
+## 演示数据集 {#demo-dataset}
 
 对于想要在配置生产环境 Cloudflare Logpush 之前先测试集成的用户，我们提供了一个包含逼真 HTTP 请求日志的演示数据集。
 
@@ -162,7 +190,7 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
     3. **身份验证**: Public
     4. **S3 file path**: `https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/cloudflare/cloudflare-http-logs.json`
     5. 点击 **Incoming data**
-    6. 选择 **JSON** 作为 format
+    6. 选择 **JSON** 作为 格式
     7. 点击 **Parse information** 并检查检测到的 schema
     8. 将 **Table name** 设置为 `cloudflare_http_logs`
     9. 点击 **Complete Setup**
@@ -170,8 +198,8 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
     该数据集包含 5,000 条跨越 24 小时的 HTTP 请求日志，模式贴近真实场景，包括来自多个国家/地区的流量、缓存命中与未命中、API 和静态资源请求、错误响应以及安全事件。
   </Step>
 
-  <Step title="配置 HyperDX 数据源" id="configure-demo-source">
-    按照[数据源配置步骤](#configure-source)创建一个指向 `cloudflare_http_logs` 表的 HyperDX 数据源。如果你已在生产集成部分配置过该数据源，则无需执行此步骤。
+  <Step title="配置 ClickStack 用户界面数据源" id="configure-demo-source">
+    按照[数据源配置步骤](#configure-source)创建一个指向 `cloudflare_http_logs` 表的 ClickStack 用户界面数据源。如果你已在生产集成部分配置过该数据源，则无需执行此步骤。
   </Step>
 
   <Step title="验证演示数据" id="verify-demo">
@@ -180,25 +208,31 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
     -- 应返回 5000
     ```
 
-    在 HyperDX 中进入 **Search** 视图，选择 **Cloudflare 日志** 数据源，并将时间范围设置为 **2026-02-23 00:00:00 - 2026-02-26 00:00:00**。
+    在 ClickStack 用户界面中进入 **搜索** 视图，选择 **Cloudflare 日志** 数据源，并将时间范围设置为 **2026-02-23 00:00:00 - 2026-02-26 00:00:00**。
 
     你应当能看到包含请求摘要、可搜索的 Cloudflare attribute，以及基于 HTTP 状态码的严重性级别的日志条目。
 
-    <Image img="/images/clickstack/cloudflare/search-view.webp" alt="搜索视图" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![搜索视图](/images/clickstack/cloudflare/search-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/cloudflare/log-view.webp" alt="日志视图" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![日志视图](/images/clickstack/cloudflare/log-view.webp)
+      </Frame>
+    </div>
 
     <Info>
       **时区显示**
 
-      HyperDX 会按浏览器的本地时区显示时间戳。演示数据覆盖 **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)**。较大的时间范围可确保无论你身处何地都能看到演示日志。看到日志后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
+      ClickStack 用户界面会按浏览器的本地时区显示时间戳。演示数据覆盖 **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)**。较大的时间范围可确保无论你身处何地都能看到演示日志。看到日志后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
     </Info>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## 仪表盘与可视化
-</div>
+## 仪表盘与可视化 {#dashboards}
 
 <Steps>
   <Step title="下载仪表盘配置" id="download">
@@ -206,17 +240,29 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
   </Step>
 
   <Step title="导入仪表盘" id="import-dashboard">
-    1. HyperDX → **仪表盘** → **导入仪表盘**
+    1. ClickStack 用户界面 → **仪表盘** → **导入仪表盘**
 
-    <Image img="/images/clickstack/cloudflare/import-dashboard.webp" alt="导入仪表盘" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![导入仪表盘](/images/clickstack/cloudflare/import-dashboard.webp)
+      </Frame>
+    </div>
 
     2. 上传 `cloudflare-logs-dashboard.json` → **完成导入**
 
-    <Image img="/images/clickstack/cloudflare/finish-import.webp" alt="导入仪表盘" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![导入仪表盘](/images/clickstack/cloudflare/finish-import.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="查看仪表盘" id="view-dashboard">
-    <Image img="/images/clickstack/cloudflare/example-dashboard.webp" alt="示例仪表盘" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![示例仪表盘](/images/clickstack/cloudflare/example-dashboard.webp)
+      </Frame>
+    </div>
 
     <Note>
       对于演示数据集，请将时间范围设置为 **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)** (请根据您的本地时区调整) 。导入后的仪表盘默认不会指定时间范围。
@@ -225,11 +271,11 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
 </Steps>
 
 <div id="troubleshooting">
-  ## 故障排查
+  ## 故障排查 {#troubleshooting}
 </div>
 
 <div id="no-data">
-  ### 数据未出现在 ClickHouse 中
+  ### 数据未出现在 ClickHouse 中 {#no-data}
 </div>
 
 请确认该表已创建且包含数据：
@@ -242,26 +288,24 @@ SELECT count() FROM cloudflare_http_logs;
 如果该表存在但为空，请前往 ClickPipes 检查是否有错误：ClickHouse Cloud 控制台 → **数据源** → 您的 ClickPipe → **日志**。如需排查私有存储桶的身份验证问题，请参阅 [S3 ClickPipes 访问控制文档](/zh/integrations/clickpipes/object-storage/amazon-s3/overview#access-control)。
 
 <div id="no-hyperdx">
-  ### HyperDX 中未显示日志
+  ### ClickStack 用户界面中未显示日志 {#no-hyperdx}
 </div>
 
-如果数据已写入 ClickHouse，但在 HyperDX 中看不到，请检查数据源配置：
+如果数据已写入 ClickHouse，但在 ClickStack 用户界面中看不到，请检查数据源配置：
 
-* 确认在 HyperDX → **团队设置** → **数据源** 中已存在 `cloudflare_http_logs` 对应的数据源
+* 确认在 ClickStack 用户界面 → **团队设置** → **数据源** 中已存在 `cloudflare_http_logs` 对应的数据源
 * 确保 **时间戳列** 设置为 `toDateTime(EdgeStartTimestamp / 1000000000)`——Cloudflare 的时间戳以纳秒为单位，需要先转换
-* 确认 HyperDX 中选择的时间范围覆盖了这些数据。对于演示数据集，请使用 **2026-02-23 00:00:00 - 2026-02-26 00:00:00**
+* 确认 ClickStack 用户界面中选择的时间范围覆盖了这些数据。对于演示数据集，请使用 **2026-02-23 00:00:00 - 2026-02-26 00:00:00**
 
 <div id="next-steps">
-  ## 后续步骤
+  ## 后续步骤 {#next-steps}
 </div>
 
 * 为安全事件设置[告警](/zh/clickstack/features/alerts) (WAF 拦截、机器人流量激增、错误率阈值)
 * 根据您的数据量优化[数据保留策略](/zh/clickstack/managing/ttl)
 * 为特定用例创建更多仪表盘 (API 性能、缓存优化、地域流量分析)
 
-<div id="going-to-production">
-  ## 生产环境部署
-</div>
+## 生产环境部署 {#going-to-production}
 
 本指南演示如何使用公开的演示数据集摄取 Cloudflare 日志。对于生产环境部署，请将 Cloudflare Logpush 配置为写入您自己的 S3 存储桶，并通过 [基于 IAM role 的身份验证](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely) 配置 ClickPipes 以确保安全访问。仅选择所需的 [Logpush 字段](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/)，以降低存储成本和摄取量。在 Logpush 中启用按日分组的子文件夹，以便更好地组织文件，并在 ClickPipes 路径模式中使用 `**/*` 以匹配各级子目录中的文件。
 

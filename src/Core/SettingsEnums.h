@@ -2,6 +2,7 @@
 
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
+#include <Common/FilesystemIsolation.h>
 #include <Common/SeccompFilter.h>
 #include <Core/FileCachePolicy.h>
 #include <Core/Joins.h>
@@ -124,7 +125,7 @@ constexpr auto getEnumValues();
 #define IMPLEMENT_SETTING_MULTI_ENUM_WITH_RENAME(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
     IMPLEMENT_SETTING_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, __VA_ARGS__)\
     size_t SettingField##NEW_NAME##Traits::getEnumSize() {\
-        return std::initializer_list<std::pair<const char*, NEW_NAME>> __VA_ARGS__ .size();\
+        return std::initializer_list<std::pair<const char*, EnumType>> __VA_ARGS__ .size();\
     }
 
 /// NOLINTNEXTLINE
@@ -138,6 +139,10 @@ DECLARE_SETTING_ENUM(LoadBalancing)
 
 DECLARE_SETTING_ENUM(JoinStrictness)
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
+/// The same `JoinAlgorithm` list, spelled for the query plan serialized for another server: `INEQUALITY`
+/// is written as `ie_join`, the name every server with the inequality join accepts, including those
+/// released before it was renamed to `inequality`.
+DECLARE_SETTING_MULTI_ENUM_WITH_RENAME(JoinAlgorithm, QueryPlanJoinAlgorithm)
 DECLARE_SETTING_MULTI_ENUM(JoinOrderAlgorithm)
 DECLARE_SETTING_ENUM(JoinOrderConflictDetector)
 DECLARE_SETTING_ENUM(HashJoinLayout)
@@ -487,6 +492,8 @@ DECLARE_SETTING_ENUM(AsynchronousMetricsKeyValuesMode)
 
 DECLARE_SETTING_ENUM(SeccompMode)
 
+DECLARE_SETTING_ENUM(FilesystemIsolationMode)
+
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
 enum class DatabaseDataLakeCatalogType : uint8_t
@@ -681,6 +688,14 @@ enum class S3UriStyle : uint8_t
 };
 
 DECLARE_SETTING_ENUM(S3UriStyle)
+
+enum class S3RequestPayer : uint8_t
+{
+    NONE,
+    REQUESTER,
+};
+
+DECLARE_SETTING_ENUM(S3RequestPayer)
 
 enum class ExplainQueryPlanDefault : uint8_t
 {

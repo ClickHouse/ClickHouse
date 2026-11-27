@@ -66,11 +66,12 @@ Chunk IRowInputFormat::read()
     if (got_connection_exception)
         return {};
 
-    if (total_rows == 0)
+    if (everySegmentHasPrefix() ? !prefix_read : total_rows == 0)
     {
         try
         {
             readPrefix();
+            prefix_read = true;
         }
         catch (Exception & e)
         {
@@ -309,6 +310,7 @@ void IRowInputFormat::resetParser()
     IInputFormat::resetParser();
     total_rows = 0;
     num_errors = 0;
+    prefix_read = false;
     got_connection_exception = false;
     block_missing_values.clear();
 }

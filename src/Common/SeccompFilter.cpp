@@ -9,6 +9,7 @@ namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SYSTEM_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB
@@ -458,15 +459,15 @@ void emitSearch(Program & program, std::span<const Range> ranges)
 /// Where each of the blocks at the end of the program begins.
 struct Blocks
 {
-    size_t argument_checks;
-    size_t ioctl_check;
-    size_t clone_check;
-    size_t enosys;
-    size_t mknodat_check;
+    size_t argument_checks = 0;
+    size_t ioctl_check = 0;
+    size_t clone_check = 0;
+    size_t enosys = 0;
+    size_t mknodat_check = 0;
     /// Only on x86-64, which has the legacy `mknod`; nothing jumps here elsewhere.
-    size_t mknod_check;
-    size_t allow;
-    size_t deny;
+    size_t mknod_check = 0;
+    size_t allow = 0;
+    size_t deny = 0;
 };
 
 /// Replaces the placeholder distances with real ones.
@@ -511,7 +512,8 @@ void link(Program & program, const Blocks & blocks)
     }
 }
 
-Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt32 enosys_action)
+/// The start of every program: the check of the architecture, and the search of the system call number in `ranges`.
+Program startProgram(std::span<const Range> ranges)
 {
     if (ranges.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The seccomp policy allows no system calls at all");
@@ -526,6 +528,12 @@ Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt3
 
     program.push_back(statement(BPF_LD | BPF_W | BPF_ABS, offset_nr));
     emitSearch(program, ranges);
+    return program;
+}
+
+Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt32 enosys_action)
+{
+    Program program = startProgram(ranges);
 
     /// The calls whose fate takes more than their number to decide are in none of the ranges, so
     /// the search sends them here. Keeping these checks after the search rather than ahead of it
@@ -859,7 +867,10 @@ String getActionUnavailableReason(SeccompMode mode)
         begin = end + 1;
     }
 
-    const std::string_view listed = std::string_view{available}.substr(0, available.find_last_not_of(" \t\n") + 1);
+    /// `find_last_not_of` answers `npos` if everything is a separator, and the `+ 1` would wrap.
+    const size_t last_listed = available.find_last_not_of(" \t\n");
+    const std::string_view listed
+        = std::string_view{available}.substr(0, last_listed == std::string::npos ? 0 : last_listed + 1);
     return fmt::format("the only seccomp actions the kernel implements are: {}", listed);
 }
 
@@ -1008,6 +1019,40 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
     return {.allowed_syscalls = allowed.size(), .not_installed_reason = {}};
 }
 
+/// The supervisor of the filesystem isolation: its loop of `poll`, reads of a `signalfd` and `wait4`, the signals and the
+/// notifications of systemd it relays, the removal of the pid file, and what the C library, the allocator and the
+/// sanitizers call meanwhile (`sigaltstack` before every call that does not return, with ASan). The two numbers are `pidfd_send_signal` and `pidfd_open` (see above).
+constexpr int supervisor_allowed_syscalls[] = {
+    __NR_read, __NR_write, __NR_close, __NR_ppoll, __NR_recvmsg, __NR_recvfrom, __NR_sendto, __NR_sendmsg, __NR_wait4,
+    __NR_waitid, __NR_kill, __NR_tgkill, __NR_getpid, __NR_gettid, __NR_unlinkat, __NR_newfstatat, __NR_statx, __NR_exit,
+    __NR_exit_group, __NR_rt_sigprocmask, __NR_rt_sigaction, __NR_rt_sigreturn, __NR_restart_syscall, __NR_prlimit64,
+    __NR_setrlimit, __NR_clock_gettime, __NR_gettimeofday, __NR_brk, __NR_mmap, __NR_munmap, __NR_mremap, __NR_madvise,
+    __NR_futex, __NR_sched_yield, __NR_sigaltstack, 424, 434,
+#if defined(__x86_64__)
+    __NR_poll,
+#endif
+};
+
+void installSupervisorSeccompFilter()
+{
+    std::vector<int> numbers(std::begin(supervisor_allowed_syscalls), std::end(supervisor_allowed_syscalls));
+    std::sort(numbers.begin(), numbers.end());
+    numbers.erase(std::unique(numbers.begin(), numbers.end()), numbers.end());
+
+    Program program = startProgram(toRanges(numbers));
+    const size_t allow_index = program.size();
+    program.push_back(statement(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+    const size_t deny_index = program.size();
+    program.push_back(statement(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS));
+    /// No argument is checked: every call outside the list is refused. The search jumps only to these two blocks.
+    link(program, {.argument_checks = deny_index, .allow = allow_index, .deny = deny_index});
+
+    setNoNewPrivs();
+    const struct sock_fprog prog{.len = static_cast<UInt16>(program.size()), .filter = program.data()};
+    if (syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, 0, &prog) != 0)
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot install the seccomp filter of the supervisor of the filesystem isolation");
+}
+
 }
 
 #elif defined(OS_LINUX)
@@ -1042,9 +1087,16 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
     return {.allowed_syscalls = 0, .not_installed_reason = "the seccomp policy is not implemented for this architecture"};
 }
 
+void installSupervisorSeccompFilter()
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The seccomp filter of the supervisor is implemented only for x86_64 and AArch64");
+}
+
 }
 
 #else
+
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -1059,6 +1111,11 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
         return {};
 
     return {.allowed_syscalls = 0, .not_installed_reason = "seccomp is available only on Linux"};
+}
+
+void installSupervisorSeccompFilter()
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The seccomp filter of the supervisor is implemented only for x86_64 and AArch64");
 }
 
 }

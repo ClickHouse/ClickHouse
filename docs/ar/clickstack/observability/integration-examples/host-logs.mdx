@@ -1,0 +1,367 @@
+---
+slug: /clickstack/observability/integration-examples/host-logs
+title: 'مراقبة سجلات المضيف باستخدام ClickHouse Observability'
+sidebarTitle: 'سجلات المضيف العامة'
+description: 'اجمع ملفات syslog من المضيف باستخدام مُجمِّع OpenTelemetry وأرسلها إلى ClickHouse Observability.'
+doc_type: 'guide'
+keywords: ['سجلات المضيف', 'systemd', 'syslog', 'OTEL', 'ClickHouse Observability', 'مراقبة النظام', 'سجلات الخادم']
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+اجمع ملفات syslog من المضيف باستخدام مُجمِّع OpenTelemetry وأرسلها إلى ClickHouse Observability. ويمكنك استخدام [مجموعة البيانات التجريبية](#demo-dataset) لتجربة التكامل دون الحاجة إلى جمع السجلات من مضيفك الخاص.
+
+## المتطلبات المسبقة {#prerequisites}
+
+* خدمة ClickHouse Observability
+* Docker لتشغيل أمثلة جامع البيانات، أو عملية نشر قائمة لـ OpenTelemetry Collector Contrib
+* لسجلاتك الخاصة: ملفات syslog وصلاحية تتيح لجامع البيانات قراءتها
+* للعرض التوضيحي: الأداة `curl` لتنزيل العينة
+
+### بيانات الاتصال {#connection-details}
+
+<Tabs>
+  <Tab title="مُدار بالكامل">
+    <BetaBadge label="خدمة في المرحلة التجريبية" />
+
+    افتح ClickHouse Observability وانتقل إلى **إعدادات الفريق ← البيانات ← بيانات القياس عن بُعد المُدارة**، ثم انسخ نقطة نهاية OTLP عبر HTTP ومفتاح API الخاصين بك. يمكنك استخدام **نسخ بيانات الاتصال** لنسخ الإعدادات، أو **إظهار المفتاح** لعرض المفتاح المخفي.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![بيانات الاتصال في صفحة بيانات القياس عن بُعد المُدارة](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    لاستخدام أمثلة مُصدِّر OTLP أدناه، عيّن المتغيرات التالية في الطرفية التي ستشغّل منها جامع البيانات:
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    استبدل العناصر النائبة بنقطة النهاية كما هي تمامًا، بما في ذلك المنفذ، وبمفتاح API الخاص بخدمتك. استخدم نقطة نهاية HTTP الأساسية دون اللاحقة `/v1/logs`؛ إذ يُلحق المُصدِّر مسار الإشارة تلقائيًا.
+  </Tab>
+
+  <Tab title="مُدار ذاتيًا" id="self-managed">
+    استخدم نقطة نهاية OTLP عبر HTTP الخاصة بجامع البيانات لديك، على أن يكون الوصول إليها ممكنًا (مثل `http://YOUR_COLLECTOR_HOST:4318`)، إلى جانب إعدادات المصادقة. إذا كان جامع البيانات لا يتطلب المصادقة، فاحذف كتلة `headers` الخاصة بالمُصدِّر من الإعدادات أدناه. للاطلاع على إرشادات الإعداد، راجع [دليل البدء للإصدار المُدار ذاتيًا](/ar/clickstack/self-configured/getting-started/managed).
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+يجب أن يكون الوصول إلى نقطة النهاية ممكنًا من حاوية جامع البيانات. إذا كان جامع البيانات الوجهة يعمل على هذا الحاسوب، فاستخدم `http://host.docker.internal:4318`. تتضمن أوامر Docker أدناه مطابقة المضيف.
+
+## التكامل مع المضيفات الموجودة {#existing-hosts}
+
+<Steps>
+  <Step title="حدّد موقع ملف syslog لديك" id="locate-syslog">
+    من المواقع الشائعة `/var/log/syslog` على Ubuntu/Debian، و`/var/log/messages` على الأنظمة المبنية على RHEL، و`/var/log/system.log` للسجلات النصية في macOS. افحص الملف الموجود على المضيف لديك:
+
+    ```bash
+    tail -20 /var/log/syslog
+    ```
+
+    عدّل المسار حسب الحاجة. إذا كان المضيف الذي يعمل بنظام Linux يكتب إلى systemd journal فقط، فاستخدم [دليل Systemd/Journald](/ar/clickstack/observability/integration-examples/systemd). يقرأ هذا الدليل الملفات النصية، ولكنه لا يجمع مخزن السجلات الموحّد (unified log) في macOS.
+  </Step>
+
+  <Step title="تهيئة جامع البيانات" id="configure-collector">
+    احفظ التهيئة المناسبة باسم `host-logs.yaml`، واخترها وفقًا لصيغة الطوابع الزمنية في ملفك. غيّر `include` إلى `/var/log/host/messages` أو `/var/log/host/system.log` عند الحاجة. ولا تُضِف ملفات أخرى إلا إذا كانت تستخدم الصيغة نفسها.
+
+    <Tabs>
+      <Tab title="طوابع زمنية بصيغة ISO">
+        للأسطر التي تبدأ بطابع زمني مثل `2026-10-15T12:34:56.123456+00:00`:
+
+        ```yaml
+        receivers:
+          filelog/host:
+            include: [/var/log/host/syslog]
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                timestamp:
+                  parse_from: attributes.timestamp
+                  layout_type: gotime
+                  layout: '2006-01-02T15:04:05.999999999Z07:00'
+                  location: UTC
+              - type: add
+                field: attributes.source
+                value: host-logs
+              - type: add
+                field: resource["service.name"]
+                value: host-service
+              - type: copy
+                from: attributes.hostname
+                to: resource["host.name"]
+
+        processors:
+          memory_limiter:
+            check_interval: 1s
+            limit_mib: 256
+            spike_limit_mib: 64
+          batch:
+            timeout: 5s
+            send_batch_size: 500
+            send_batch_max_size: 500
+
+        exporters:
+          otlp_http/observability:
+            endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+            headers:
+              authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+        service:
+          pipelines:
+            logs/host:
+              receivers: [filelog/host]
+              processors: [memory_limiter, batch]
+              exporters: [otlp_http/observability]
+        ```
+      </Tab>
+
+      <Tab title="syslog التقليدي">
+        للأسطر التي تبدأ بطابع زمني مثل `Oct 15 12:34:56`:
+
+        ```yaml
+        receivers:
+          filelog/host:
+            include: [/var/log/host/syslog]
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\w+\s+\d+ \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                timestamp:
+                  parse_from: attributes.timestamp
+                  layout_type: gotime
+                  layout: 'Jan _2 15:04:05'
+                  location: UTC
+              - type: add
+                field: attributes.source
+                value: host-logs
+              - type: add
+                field: resource["service.name"]
+                value: host-service
+              - type: copy
+                from: attributes.hostname
+                to: resource["host.name"]
+
+        processors:
+          memory_limiter:
+            check_interval: 1s
+            limit_mib: 256
+            spike_limit_mib: 64
+          batch:
+            timeout: 5s
+            send_batch_size: 500
+            send_batch_max_size: 500
+
+        exporters:
+          otlp_http/observability:
+            endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+            headers:
+              authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+        service:
+          pipelines:
+            logs/host:
+              receivers: [filelog/host]
+              processors: [memory_limiter, batch]
+              exporters: [otlp_http/observability]
+        ```
+
+        لا تتضمن الطوابع الزمنية التقليدية السنة ولا المنطقة الزمنية. يستنتج المحلل النحوي السنة تلقائيًا؛ أما إذا كان مضيفك لا يسجّل بتوقيت UTC، فاضبط `location` على المنطقة الزمنية الخاصة به وفق تسمية IANA، مثل `America/Chicago`.
+      </Tab>
+    </Tabs>
+
+    يستخرج المستقبِل `hostname` و`unit` و`pid` (إن وُجد) و`message`، مع الاحتفاظ بالسطر الأصلي في `Body`. كما يضبط `service.name` على `host-service` وينسخ اسم المضيف إلى `host.name`. ولأن تنسيقات النص هذه لا تتضمن حقلًا لمستوى الخطورة، فإن هذه التهيئة لا تستنتج مستوى الخطورة من نص الرسالة.
+  </Step>
+
+  <Step title="شغّل جامع البيانات" id="run-collector">
+    اضبط [متغيرات الاتصال](#connection-details)، ثم شغّل الأمر التالي من الدليل الذي يحتوي على `host-logs.yaml`:
+
+    ```bash
+    docker run --rm --name host-logs-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/host-logs.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v /var/log:/var/log/host:ro \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    على نظام macOS، استخدم `-v /private/var/log:/var/log/host:ro` واسمح لـ Docker Desktop بالوصول إلى ذلك الدليل. وتأكد من أن جامع البيانات يستطيع قراءة ملف السجل المحدد.
+
+    أبقِ هذه الطرفية مفتوحة. عند ضبط `start_at: end`، يجمع المستقبِل الأسطر الجديدة المكتوبة بعد بدء التشغيل فقط. ولّد نشاطًا اعتياديًا يكتب إلى ملف السجل المحدد.
+  </Step>
+
+  <Step title="تحقّق من السجلات" id="verify-logs">
+    افتح صفحة **بحث**، واختر مصدر **Logs**، ثم طبّق عامل تصفية على `ServiceName:host-service`، واختر **Last 15 minutes**. وسّع أحد السجلات لفحص اسم المضيف المُحلَّل والوحدة ومعرّف العملية (PID) والرسالة.
+  </Step>
+</Steps>
+
+## مجموعة البيانات التجريبية {#demo-dataset}
+
+تحتوي العينة على 11,658 سطرًا من سجلات syslog تغطي 24 ساعة، وتشمل رسائل الإقلاع ونشاط SSH وعمليات الحظر التي ينفذها جدار الحماية والمهام المجدولة وعمليات إعادة تشغيل الخدمات.
+
+<Steps>
+  <Step title="تنزيل العينة" id="download-sample">
+    ```bash
+    mkdir -p host-demo
+    cd host-demo
+    curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/host-logs/journal.log
+    ```
+  </Step>
+
+  <Step title="تهيئة جامع البيانات التوضيحي" id="configure-demo-collector">
+    احفظ ما يلي باسم `host-logs-demo.yaml` في دليل التنزيل:
+
+    ```yaml
+    receivers:
+      filelog/host:
+        include: [/var/log/host/journal.log]
+        start_at: beginning
+        operators:
+          - type: regex_parser
+            regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+            timestamp:
+              parse_from: attributes.timestamp
+              layout: '%Y-%m-%dT%H:%M:%S%z'
+              location: UTC
+          - type: add
+            field: attributes.source
+            value: host-demo
+          - type: add
+            field: resource["service.name"]
+            value: host-demo
+          - type: copy
+            from: attributes.hostname
+            to: resource["host.name"]
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+      transform/demo_timestamps:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(time, Now() - Duration("2m") - (Time("2025-11-11T23:59:01Z", "%Y-%m-%dT%H:%M:%SZ") - time))
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+    service:
+      pipelines:
+        logs/host:
+          receivers: [filelog/host]
+          processors: [memory_limiter, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    <Note>
+      يُزيح تحويل الطوابع الزمنية المخصص للعرض التوضيحي فقط العينةَ لتقع تقريبًا ضمن آخر 24 ساعة، بحيث تنتهي قبل دقيقتين من وقت الإدخال. لسجلاتك الخاصة، استخدم [إعدادات المضيفات الحالية](#existing-hosts) للحفاظ على طوابعها الزمنية الأصلية.
+    </Note>
+  </Step>
+
+  <Step title="تشغيل جامع البيانات التوضيحي" id="run-demo-collector">
+    اضبط [متغيرات الاتصال](#connection-details)، ثم شغّل الأمر التالي من دليل التنزيل:
+
+    ```bash
+    docker run --rm --name host-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/host-logs-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v "$(pwd):/var/log/host:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    أبقِ الطرفية مفتوحة ريثما ينتهي جامع البيانات من تصدير العينة، وراجع مخرجاته بحثًا عن أي أخطاء. لاحظ أن تشغيل حاوية جديدة مرة أخرى قد يؤدي إلى تكرار سجلات العينة.
+  </Step>
+
+  <Step title="التحقق من السجلات التوضيحية" id="verify-demo-logs">
+    افتح **Search**، واختر مصدر **Logs** الخاص بك، ثم صفِّ النتائج باستخدام `ServiceName:host-demo`، واختر **آخر يومين**. وسّع أحد السجلات لفحص السمات المستخرجة منه. بعد التحقق من البيانات، أوقف جامع البيانات بالضغط على **Ctrl+C**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![سجلات المضيف التوضيحية في صفحة Search ضمن ClickHouse Observability](/images/clickstack/observability-host-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## لوحات المعلومات والتصور المرئي {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json" download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">تنزيل إعدادات لوحة المعلومات</TrackedLink>} id="download-dashboard" />
+
+  <Step title="استيراد لوحة المعلومات" id="import-dashboard">
+    1. افتح **Dashboards** وانقر على **Import** في الزاوية العلوية اليمنى.
+    2. حمّل الملف `host-logs-dashboard.json`.
+    3. اربط المخططات بمصدر **Logs** لديك، ثم انقر على **Finish Import**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![زر استيراد لوحة المعلومات](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="عرض لوحة المعلومات" id="view-dashboard">
+    تعرض لوحة المعلومات المستوردة سجلاتك ضمن النطاق الزمني المحدد. ولعزل العينة عن الخدمات الأخرى، يمكنك اختياريًا التصفية حسب `ServiceName:host-demo`. اختر **آخر يومين** لعرض العينة كاملة.
+
+    تتضمن لوحة المعلومات حجم بيانات السجلات، ووحدات النظام، ونشاط SSH، والاتصالات التي حظرها جدار الحماية، وعمليات إعادة تشغيل الخدمات. ويبقى مستوى الخطورة غير محدد ما لم يوفّره مسار الإدخال لديك.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![لوحة معلومات سجلات المضيف تعرض حجم بيانات السجلات، ووحدات النظام، ونشاط SSH، والأحداث الأمنية، وعمليات إعادة تشغيل الخدمات، ونشاط جدار الحماية](/images/clickstack/observability-host-dashboard.png)
+      </Frame>
+    </div>
+
+    <Note>
+      عند استخدام سجلاتك الخاصة، أزل `ServiceName = 'host-demo' AND` من عوامل تصفية التجميع في مخططات نشاط SSH، وعمليات حظر جدار الحماية، والأحداث الأمنية إن وُجدت. ثم استخدم عامل تصفية اسم الخدمة في لوحة المعلومات لاختيار سجلات المضيف الخاصة بك.
+    </Note>
+  </Step>
+</Steps>
+
+## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+
+### تعذّر بدء تشغيل جامع البيانات {#collector-fails-to-start}
+
+راجع طرفية جامع البيانات بحثًا عن أخطاء في الإعدادات. وتأكد من وجود ملف YAML في المسار المربوط، ومن تعيين متغيرات الاتصال في الطرفية التي تشغّل منها Docker.
+
+### لا تظهر أي سجلات {#no-logs}
+
+* تأكد من وجود الملف على المضيف ومن أن مساره المربوط يطابق `include`.
+* تحقق من صلاحيات الملف، وعلى macOS تحقق كذلك من إعدادات مشاركة الملفات في Docker Desktop.
+* بالنسبة إلى السجلات الحية، أنشئ عناصر جديدة بعد بدء تشغيل جامع البيانات؛ إذ يتخطى الخيار `start_at: end` المحتوى الموجود مسبقًا.
+* راجع إخراج جامع البيانات بحثًا عن أخطاء المصادقة أو أخطاء التصدير.
+* تحقق من مصدر **Logs** وعامل تصفية اسم الخدمة والنطاق الزمني. وفي العرض التوضيحي، اختر **آخر يومين**.
+
+### تعذّر التحليل النحوي للسجلات بشكل صحيح {#logs-not-parsing}
+
+قارن سطرًا من ملفك بصيغة الطابع الزمني المحددة. استخدم الإعدادات المطابقة، واضبط المنطقة الزمنية الخاصة بـ syslog التقليدي عند الحاجة. وتجنّب استخدام نمط glob واسع للملفات حتى لا تُجمع تنسيقات سجلات تطبيقات لا صلة لها بالأمر.
+
+## الخطوات التالية {#next-steps}
+
+* أعدّ [التنبيهات](/ar/clickstack/observability/features/alerts) لرصد حالات فشل المصادقة أو أخطاء الخدمات.
+* صفِّ البيانات حسب `host.name` أو حسب الـ attribute المُحلَّل `unit` لفحص مضيف أو خدمة بعينها.
+* راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/observability/ingesting-data/opentelemetry) للاطلاع على إرشادات النشر.

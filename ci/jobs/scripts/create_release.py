@@ -40,7 +40,6 @@ import dataclasses
 import json
 import os
 import re
-import shlex
 import shutil
 import sys
 import tempfile
@@ -96,28 +95,12 @@ class Labels:
     RELEASE_LTS = "release-lts"
 
 
-def is_latest_release_branch(branch: str, repo: str = GITHUB_REPOSITORY) -> bool:
-    """Whether `branch` is the latest release branch — i.e. the head branch of
-    the most recently created `release`-labeled PR. Release-domain logic (knows
-    the `release` label / branch convention), so it lives here rather than in
-    the generic praktika GH helper.
-
-    The `gh pr list` read is retried and a persistent failure raises: mistaking
-    a transient GitHub error for "not the latest branch" would silently skip the
-    floating `latest` docker tag for an otherwise successful release. A
-    successful `--json` read always prints at least `[]`, so an empty result
-    means the command failed; genuinely no release PR is an empty JSON array."""
-    raw = GH.get_output_with_retries(
-        f'gh pr list --label release --repo {shlex.quote(repo)} --search "sort:created"'
-        f" -L1 --json headRefName"
-    )
-    if not raw:
-        raise RuntimeError(
-            f"gh pr list failed for release PRs in repo [{repo}] after retries; "
-            f"refusing to treat a failed lookup as 'not the latest release branch'"
-        )
-    prs = json.loads(raw)
-    latest_branch = prs[0]["headRefName"] if prs else ""
+def is_latest_release_branch(branch: str) -> bool:
+    """Whether `branch` has the highest major.minor among the release branches of `origin`."""
+    # A glob cannot say "digits only": one or two digits for each of major and minor
+    patterns = " ".join(f"'refs/remotes/origin/{major}.{minor}'" for major in ("[1-9]", "[1-9][0-9]") for minor in ("[1-9]", "[1-9][0-9]"))
+    latest_branch = Shell.get_output(f"git for-each-ref --sort=-version:refname --count=1 --format='%(refname:lstrip=3)' {patterns}", strict=True)
+    assert latest_branch, "no release branches among the origin branches"
     print(
         f"Latest release branch [{latest_branch}], checking [{branch}]:"
         f" is_latest={latest_branch == branch}"
@@ -263,14 +246,22 @@ class ReleaseInfo:
         self.is_bump_landed = False
 
         if release_type == "new":
-            if commit_ref != "master":
-                Shell.check(
-                    f"git merge-base --is-ancestor {commit_ref} origin/master",
-                    strict=True,
-                    verbose=True,
-                )
+            # The master bump must follow the cut directly, which only the master tip allows.
+            assert commit_ref == "master", f"a new release branch starts at the master tip, got ref [{commit_ref}]"
+            # The freshest tip leaves master the least time to move before the bump push.
+            Shell.check(
+                f"{GIT_PREFIX} fetch --quiet origin +refs/heads/master:refs/remotes/origin/master",
+                strict=True,
+                verbose=True,
+            )
+            # The local master is the cut, and the master bump step commits on it.
+            Shell.check(f"{GIT_PREFIX} checkout -B master origin/master", strict=True, verbose=True)
             with checkout(commit_ref):
                 commit_sha = Git.get_commit_sha(commit_ref)
+                # The private release branch starts at the private sync of this PR, which only a PR merge has.
+                assert Git.merge_pr_number(commit_sha), (
+                    f"the master tip {commit_sha} is not a pull request merge; run again after the next pull request merges"
+                )
                 git = Git()
                 version = CHVersion.get_current_version()
                 release_branch = f"{version.major}.{version.minor}"
@@ -279,6 +270,13 @@ class ReleaseInfo:
                 assert (
                     git.latest_tag == expected_prev_tag
                 ), f"BUG: latest tag [{git.latest_tag}], expected [{expected_prev_tag}]"
+                # The release PR is the last step of a cut, so without it the previous run failed past the master bump.
+                prev_version = CHVersion.get_version_at_commit(expected_prev_tag)
+                prev_branch = f"{prev_version.major}.{prev_version.minor}"
+                assert GH.get_pr_url_by_branch(branch=prev_branch, repo=GITHUB_REPOSITORY), (
+                    f"Refusing to cut [{release_branch}]: the previous cut [{prev_branch}] has no release PR."
+                    " Finish that cut by hand (its branch version bump and release PR): a rerun would cut the next release instead"
+                )
                 release_tag = version.describe
 
         if release_type == "patch":
@@ -300,7 +298,7 @@ class ReleaseInfo:
                 branch_version = CHVersion.get_current_version()
             self.is_bump_landed = version.is_older(branch_version)
 
-            if is_latest_release_branch(release_branch, repo=GITHUB_REPOSITORY):
+            if is_latest_release_branch(release_branch):
                 print("This is going to be the latest release!")
                 latest_release = True
 
@@ -438,6 +436,38 @@ class ReleaseInfo:
             f"v{new_release_branch}-affected", "c2bfff", dry_run=dry_run
         )
 
+    def push_master_bump(self, dry_run: bool) -> None:
+        # Before the tag and the branch, so a master that moved rejects it with nothing published; detached, so the local master stays the cut.
+        with checkout(self.commit_sha):
+            version = CHVersion.get_current_version()
+            version.bump_release()
+            version.with_description(VersionType.TESTING)
+            version.githash = self.commit_sha
+            version.write()
+            update_contributors(raise_error=True)
+            Shell.check(
+                f"{GIT_PREFIX} commit '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}' "
+                f"-m 'Update autogenerated version to {self.version} and contributors'",
+                strict=True,
+                dry_run=dry_run,
+                verbose=True,
+            )
+            Git.push(
+                GITHUB_REPOSITORY,
+                "HEAD:refs/heads/master",
+                dry_run=dry_run,
+                strict=True,
+                retries=3,
+                git_prefix=GIT_PREFIX,
+            )
+            if dry_run:
+                # Nothing was committed, so revert the working-tree edits after previewing them.
+                Shell.check(
+                    f"{GIT_PREFIX} diff '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'"
+                    f" && {GIT_PREFIX} checkout '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'",
+                    verbose=True,
+                )
+
     def update_version_and_contributors_list(self, dry_run: bool) -> None:
         # A superseded (late) recovery must not rewrite the branch version backwards.
         if self.release_type == "patch" and self.is_bump_landed:
@@ -522,51 +552,6 @@ class ReleaseInfo:
 
         if self.release_type == "new":
             release_type = version.get_stable_release_type()
-            print("Update version on master branch")
-            with checkout(self.commit_sha):
-                version = CHVersion.get_current_version()
-                version.bump_release()
-                version.with_description(VersionType.TESTING)
-            commit_version_upd = (
-                f"{GIT_PREFIX} commit '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}' "
-                f"-m 'Update autogenerated version to {self.version} and contributors'"
-            )
-            with checkout("master"):
-                Shell.check(
-                    f"{GIT_PREFIX} fetch --quiet origin master"
-                    f" && {GIT_PREFIX} reset --hard FETCH_HEAD",
-                    strict=True,
-                    verbose=True,
-                )
-                # Skip once master already describes the bump — compare the version, not the file, since VERSION_GITHASH tracks the moving tip.
-                master_bumped = not CHVersion.get_current_version().is_older(version)
-                if master_bumped:
-                    print(f"master already at version [{version.string}] — nothing to push")
-                else:
-                    # The post-release bump on master must point VERSION_GITHASH at master's head, not back at the release commit.
-                    version.githash = Shell.get_output_or_raise("git rev-parse HEAD")
-                    version.write()
-                    update_contributors(raise_error=True)
-                    Shell.check(
-                        commit_version_upd, strict=True, dry_run=dry_run, verbose=True
-                    )
-                    Git.push(
-                        GITHUB_REPOSITORY,
-                        "HEAD:refs/heads/master",
-                        dry_run=dry_run,
-                        strict=True,
-                        retries=3,
-                        rebase_retries=5,
-                        git_prefix=GIT_PREFIX,
-                    )
-                    if dry_run:
-                        # Nothing was committed, so revert the working-tree edits after previewing them.
-                        Shell.check(
-                            f"{GIT_PREFIX} diff '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'"
-                            f" && {GIT_PREFIX} checkout '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'",
-                            verbose=True,
-                        )
-
             print("Create Release PR")
             with checkout(self.release_branch):
                 pr_labels = f"--label {Labels.RELEASE}"
@@ -649,8 +634,8 @@ class PackageDownloader:
     # The package/build-job/filename contract lives in `release_packages`, the
     # single source of truth shared with the `AutoReleases` gate
     # (`tests/ci/auto_release.py`), so the producer here and the checker there
-    # cannot drift. Re-export the two constants callers read off the class.
-    PACKAGES = release_packages.PACKAGES
+    # cannot drift. The package set depends on the release commit, see
+    # `release_packages.commit_packages`.
     PACKAGE_ARCHS = release_packages.PACKAGE_ARCHS
     MACOS_PACKAGE_TO_BIN_SUFFIX = {
         "amd": "macos",
@@ -663,7 +648,7 @@ class PackageDownloader:
         with_signed_macos = release_packages.commit_has_macos_signing(commit_sha)
         with_illumos = release_packages.commit_has_illumos_build(commit_sha)
         self.with_signed_macos = with_signed_macos
-        self.package_names = list(self.PACKAGES)
+        self.package_names = list(release_packages.commit_packages(commit_sha))
         self.release = release
         self.s3_commit_prefix = release_packages.s3_commit_prefix(release, commit_sha)
         self.version = version
@@ -690,7 +675,7 @@ class PackageDownloader:
             "tgz": self.tgz_package_files,
         }
         for repo_type, package_file, job_name in release_packages.iter_package_objects(
-            version
+            version, self.package_names
         ):
             files_by_repo_type[repo_type].append(package_file)
             self.file_to_job_name[package_file] = job_name

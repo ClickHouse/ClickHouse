@@ -24,9 +24,9 @@ struct MergeTreeIndexGranuleBloomFilterText final : public IMergeTreeIndexGranul
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    bool empty() const override { return !has_elems; }
+    [[nodiscard]] bool empty() const override { return !has_elems; }
 
-    size_t memoryUsageBytes() const override;
+    [[nodiscard]] size_t memoryUsageBytes() const override;
 
     const String index_name;
     const BloomFilterParameters params;
@@ -47,7 +47,7 @@ struct MergeTreeIndexAggregatorBloomFilterText final : IMergeTreeIndexAggregator
 
     ~MergeTreeIndexAggregatorBloomFilterText() override = default;
 
-    bool empty() const override { return !granule || granule->empty(); }
+    [[nodiscard]] bool empty() const override { return !granule || granule->empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
 
     void update(const Block & block, size_t * pos, size_t limit) override;
@@ -77,9 +77,9 @@ public:
 
     ~MergeTreeConditionBloomFilterText() override = default;
 
-    bool alwaysUnknownOrTrue() const override;
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
-    std::string getDescription() const override { return ""; }
+    [[nodiscard]] bool alwaysUnknownOrTrue() const override;
+    [[nodiscard]] bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
+    [[nodiscard]] std::string getDescription() const override { return ""; }
 
 private:
     struct KeyTuplePositionMapping
@@ -176,8 +176,8 @@ public:
 
     ~MergeTreeIndexBloomFilterText() override = default;
 
-    MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    [[nodiscard]] MergeTreeIndexGranulePtr createIndexGranule() const override;
+    [[nodiscard]] MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
             const ActionsDAG::Node * predicate, ContextPtr context) const override;

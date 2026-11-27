@@ -62,6 +62,8 @@ private:
     {
         IcebergDataSnapshotPtr snapshot;
         TableStateSnapshot table_state;
+        /// The catalog pointer `table_state` was read from, empty without a catalog.
+        String catalog_metadata_location;
         Poco::JSON::Object::Ptr metadata_object;
         Poco::JSON::Object::Ptr partition_spec;
         Int64 partition_spec_id = 0;
@@ -80,7 +82,7 @@ private:
         std::vector<TargetManifest> fully_matched;
         std::vector<TargetManifest> partially_matched;
 
-        bool empty() const { return fully_matched.empty() && partially_matched.empty(); }
+        [[nodiscard]] bool empty() const { return fully_matched.empty() && partially_matched.empty(); }
     };
 
     struct DropPlan
@@ -93,8 +95,8 @@ private:
 
     std::optional<SnapshotState> fetchSnapshotState();
 
-    TargetFilePaths discoverTargetFilePaths(const SnapshotState & state, const Row & target_partition) const;
-    DropPlan buildDropPlan(const SnapshotState & state, const TargetFilePaths & targets, const Row & target_partition) const;
+    [[nodiscard]] TargetFilePaths discoverTargetFilePaths(const SnapshotState & state, const Row & target_partition) const;
+    [[nodiscard]] DropPlan buildDropPlan(const SnapshotState & state, const TargetFilePaths & targets, const Row & target_partition) const;
     bool tryCommit(SnapshotState & state, const DropPlan & plan);
 
     struct ManifestListWriteResult

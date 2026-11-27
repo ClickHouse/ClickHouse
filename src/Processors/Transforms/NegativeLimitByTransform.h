@@ -140,6 +140,7 @@ private:
     void rememberKey(const Columns & cols, UInt64 row);
     void dropExcessRows(GroupWindow & window) const;
     void dropOffsetRows(GroupWindow & window) const;
+    void appendToPending(const ChunkSlice::ColumnsPtr & columns, UInt64 start, UInt64 length);
     void finalizeWindow(GroupWindow & window);
 
     /// Positions of the non-constant grouping key columns in the chunk header, in physical sort order so
@@ -153,6 +154,7 @@ private:
 
     /// Slices staged for output. `generate()` coalesces consecutive slices
     /// sharing one source chunk into a single output chunk.
+    /// Adjacent rows of one chunk are kept as one slice.
     DequeWithMemoryTracking<ChunkSlice> pending;
 };
 

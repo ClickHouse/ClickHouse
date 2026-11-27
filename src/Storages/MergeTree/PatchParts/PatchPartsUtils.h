@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -13,7 +14,7 @@ namespace DB
 struct MergeTreePartition;
 class ColumnLowCardinality;
 
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+using PartitionIdToMaxBlock = UnorderedMapWithMemoryTracking<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
 /// Returns patches from patch_part required to be applied to source_part.

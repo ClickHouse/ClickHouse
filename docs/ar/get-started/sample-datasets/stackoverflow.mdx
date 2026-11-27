@@ -8,20 +8,22 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 تحتوي مجموعة البيانات هذه على جميع عناصر `Posts` و`Users` و`Votes` و`Comments` و`Badges` و`PostHistory` و`PostLinks` الموجودة على Stack Overflow.
 
 يمكنك إما تنزيل إصدارات Parquet المُعدّة مسبقًا من هذه البيانات، والتي تتضمن جميع المنشورات حتى أبريل 2024، أو تنزيل أحدث البيانات بتنسيق XML ثم تحميلها. يوفّر Stack Overflow تحديثات لهذه البيانات بشكل دوري - وكان ذلك تاريخيًا كل 3 أشهر.
 
 يوضح المخطط التالي بنية الجداول المتاحة بافتراض استخدام تنسيق Parquet.
 
-<Image img="/images/getting-started/example-datasets/stackoverflow.webp" alt="بنية Stack Overflow" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![بنية Stack Overflow](/images/getting-started/example-datasets/stackoverflow.webp)
+  </Frame>
+</div>
 
 يمكن العثور على وصف لبنية هذه البيانات [هنا](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede).
 
 <div id="pre-prepared-data">
-  ## بيانات مُعدّة مسبقًا
+  ## بيانات مُعدّة مسبقًا {#pre-prepared-data}
 </div>
 
 نوفّر نسخة من هذه البيانات بتنسيق Parquet، ومحدَّثة حتى أبريل 2024. وعلى الرغم من أن مجموعة البيانات هذه تُعد صغيرة بالنسبة إلى ClickHouse من حيث عدد الصفوف (60 مليون منشور)، فإنها تحتوي على كميات كبيرة من النصوص وأعمدة String كبيرة.
@@ -32,29 +34,27 @@ CREATE DATABASE stackoverflow
 
 المدد الزمنية التالية خاصة بعنقود ClickHouse Cloud بسعة 96 GiB و24 vCPU والموجود في `eu-west-2`. وتقع مجموعة البيانات في `eu-west-3`.
 
-<div id="posts">
-  ### Posts
-</div>
+### Posts {#posts}
 
 ```sql
 CREATE TABLE stackoverflow.posts
 (
-    `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+    `Id` Int32 CODEC(Delta, Default),
     `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
     `AcceptedAnswerId` UInt32,
     `CreationDate` DateTime64(3, 'UTC'),
     `Score` Int32,
-    `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+    `ViewCount` UInt32 CODEC(Delta, Default),
     `Body` String,
     `OwnerUserId` Int32,
     `OwnerDisplayName` String,
     `LastEditorUserId` Int32,
     `LastEditorDisplayName` String,
-    `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+    `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
     `LastActivityDate` DateTime64(3, 'UTC'),
     `Title` String,
     `Tags` String,
-    `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+    `AnswerCount` UInt16 CODEC(Delta, Default),
     `CommentCount` UInt8,
     `FavoriteCount` UInt8,
     `ContentLicense` LowCardinality(String),
@@ -64,7 +64,7 @@ CREATE TABLE stackoverflow.posts
 )
 ENGINE = MergeTree
 PARTITION BY toYear(CreationDate)
-ORDER BY (PostTypeId, toDate(CreationDate), CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate);
 
 INSERT INTO stackoverflow.posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
@@ -75,9 +75,7 @@ INSERT INTO stackoverflow.posts SELECT * FROM s3('https://datasets-documentation
 
 يتوفر جدول Posts أيضًا مقسمًا حسب السنة، مثل: [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2020.parquet)
 
-<div id="votes">
-  ### Votes
-</div>
+### Votes {#votes}
 
 ```sql
 CREATE TABLE stackoverflow.votes
@@ -90,7 +88,7 @@ CREATE TABLE stackoverflow.votes
     `BountyAmount` UInt8
 )
 ENGINE = MergeTree
-ORDER BY (VoteTypeId, CreationDate, PostId, UserId)
+ORDER BY (VoteTypeId, CreationDate, PostId, UserId);
 
 INSERT INTO stackoverflow.votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet', NOSIGN)
 ```
@@ -101,9 +99,7 @@ INSERT INTO stackoverflow.votes SELECT * FROM s3('https://datasets-documentation
 
 تتوفر بيانات Votes أيضًا حسب السنة، مثل [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/2020.parquet)
 
-<div id="comments">
-  ### Comments
-</div>
+### Comments {#comments}
 
 ```sql
 CREATE TABLE stackoverflow.comments
@@ -117,7 +113,7 @@ CREATE TABLE stackoverflow.comments
     `UserDisplayName` LowCardinality(String)
 )
 ENGINE = MergeTree
-ORDER BY CreationDate
+ORDER BY CreationDate;
 
 INSERT INTO stackoverflow.comments SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/*.parquet', NOSIGN)
 ```
@@ -128,16 +124,14 @@ INSERT INTO stackoverflow.comments SELECT * FROM s3('https://datasets-documentat
 
 تتوفر بيانات Comments أيضًا حسب السنة، على سبيل المثال [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/2020.parquet)
 
-<div id="users">
-  ### Users
-</div>
+### المستخدمون {#users}
 
 ```sql
 CREATE TABLE stackoverflow.users
 (
     `Id` Int32,
     `Reputation` LowCardinality(String),
-    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
     `DisplayName` String,
     `LastAccessDate` DateTime64(3, 'UTC'),
     `AboutMe` String,
@@ -149,7 +143,7 @@ CREATE TABLE stackoverflow.users
     `AccountId` Int32
 )
 ENGINE = MergeTree
-ORDER BY (Id, CreationDate)
+ORDER BY (Id, CreationDate);
 
 INSERT INTO stackoverflow.users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
 ```
@@ -158,9 +152,7 @@ INSERT INTO stackoverflow.users SELECT * FROM s3('https://datasets-documentation
 0 rows in set. Elapsed: 10.988 sec. Processed 22.48 million rows, 1.36 GB (2.05 million rows/s., 124.10 MB/s.)
 ```
 
-<div id="badges">
-  ### Badges
-</div>
+### الشارات {#badges}
 
 ```sql
 CREATE TABLE stackoverflow.badges
@@ -173,7 +165,7 @@ CREATE TABLE stackoverflow.badges
     `TagBased` Bool
 )
 ENGINE = MergeTree
-ORDER BY UserId
+ORDER BY UserId;
 
 INSERT INTO stackoverflow.badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet', NOSIGN)
 ```
@@ -182,9 +174,7 @@ INSERT INTO stackoverflow.badges SELECT * FROM s3('https://datasets-documentatio
 0 rows in set. Elapsed: 6.635 sec. Processed 51.29 million rows, 797.05 MB (7.73 million rows/s., 120.13 MB/s.)
 ```
 
-<div id="postlinks">
-  ### PostLinks
-</div>
+### PostLinks {#postlinks}
 
 ```sql
 CREATE TABLE stackoverflow.postlinks
@@ -196,7 +186,7 @@ CREATE TABLE stackoverflow.postlinks
     `LinkTypeId` Enum8('Linked' = 1, 'Duplicate' = 3)
 )
 ENGINE = MergeTree
-ORDER BY (PostId, RelatedPostId)
+ORDER BY (PostId, RelatedPostId);
 
 INSERT INTO stackoverflow.postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet', NOSIGN)
 ```
@@ -205,9 +195,7 @@ INSERT INTO stackoverflow.postlinks SELECT * FROM s3('https://datasets-documenta
 0 rows in set. Elapsed: 1.534 sec. Processed 6.55 million rows, 129.70 MB (4.27 million rows/s., 84.57 MB/s.)
 ```
 
-<div id="posthistory">
-  ### PostHistory
-</div>
+### PostHistory {#posthistory}
 
 ```sql
 CREATE TABLE stackoverflow.posthistory
@@ -224,7 +212,7 @@ CREATE TABLE stackoverflow.posthistory
     `UserDisplayName` String
 )
 ENGINE = MergeTree
-ORDER BY (CreationDate, PostId)
+ORDER BY (CreationDate, PostId);
 
 INSERT INTO stackoverflow.posthistory SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posthistory/*.parquet', NOSIGN)
 ```
@@ -234,13 +222,13 @@ INSERT INTO stackoverflow.posthistory SELECT * FROM s3('https://datasets-documen
 ```
 
 <div id="original-dataset">
-  ## مجموعة البيانات الأصلية
+  ## مجموعة البيانات الأصلية {#original-dataset}
 </div>
 
 تتوفّر مجموعة البيانات الأصلية بصيغة XML مضغوطة (7zip) على [https://archive.org/download/stackexchange](https://archive.org/download/stackexchange) - الملفات ذات البادئة `stackoverflow.com*`.
 
 <div id="download">
-  ### تنزيل
+  ### تنزيل {#download}
 </div>
 
 ```bash
@@ -256,7 +244,7 @@ wget https://archive.org/download/stackexchange/stackoverflow.com-Votes.7z
 تصل سعة هذه الملفات إلى 35 غيغابايت، وقد يستغرق تنزيلها حوالي 30 دقيقة تبعًا لاتصال الإنترنت، إذ يحدّ خادم التنزيل السرعة عند نحو 20 ميغابايت/ثانية.
 
 <div id="convert-to-json">
-  ### التحويل إلى JSON
+  ### التحويل إلى JSON {#convert-to-json}
 </div>
 
 حتى وقت كتابة هذا النص، لا يوفّر ClickHouse دعمًا أصليًا لـ XML كصيغة إدخال. ولتحميل البيانات إلى ClickHouse، نحوّلها أولًا إلى NDJSON.
@@ -304,13 +292,13 @@ clickhouse local --query "SELECT * FROM file('posts.json', JSONEachRow, 'Id Int3
 ```
 
 <div id="example-queries">
-  ## أمثلة على الاستعلامات
+  ## أمثلة على الاستعلامات {#example-queries}
 </div>
 
 بعض الأسئلة البسيطة لمساعدتك على البدء.
 
 <div id="most-popular-tags-on-stack-overflow">
-  ### أكثر الوسوم شيوعًا على Stack Overflow
+  ### أكثر الوسوم شيوعًا على Stack Overflow {#most-popular-tags-on-stack-overflow}
 </div>
 
 ```sql
@@ -342,7 +330,7 @@ Peak memory usage: 224.03 MiB.
 ```
 
 <div id="user-with-the-most-answers-active-accounts">
-  ### المستخدم صاحب أكبر عدد من الإجابات (الحسابات النشطة)
+  ### المستخدم صاحب أكبر عدد من الإجابات (الحسابات النشطة) {#user-with-the-most-answers-active-accounts}
 </div>
 
 يتطلب الحساب `UserId`.
@@ -372,7 +360,7 @@ Peak memory usage: 206.45 MiB.
 ```
 
 <div id="clickhouse-related-posts-with-the-most-views">
-  ### المنشورات المتعلقة بـ ClickHouse الأكثر مشاهدة
+  ### المنشورات المتعلقة بـ ClickHouse الأكثر مشاهدة {#clickhouse-related-posts-with-the-most-views}
 </div>
 
 ```sql
@@ -406,7 +394,7 @@ Peak memory usage: 240.01 MiB.
 ```
 
 <div id="most-controversial-posts">
-  ### أكثر المنشورات إثارةً للجدل
+  ### أكثر المنشورات إثارةً للجدل {#most-controversial-posts}
 </div>
 
 ```sql
@@ -444,7 +432,7 @@ Peak memory usage: 6.05 GiB.
 ```
 
 <div id="attribution">
-  ## الإسناد
+  ## الإسناد {#attribution}
 </div>
 
 نشكر Stack Overflow على إتاحة هذه البيانات بموجب ترخيص `cc-by-sa 4.0`، مع الإشارة إلى جهودهم وإلى المصدر الأصلي للبيانات على [https://archive.org/details/stackexchange](https://archive.org/details/stackexchange).

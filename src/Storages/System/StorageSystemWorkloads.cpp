@@ -27,11 +27,11 @@ void StorageSystemWorkloads::fillData(MutableColumns & res_columns, ContextPtr c
     /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
     auto storage = context->getWorkloadEntityStoragePtr();
     const auto & entities = storage->getAllEntities();
-    for (const auto & [name, ast] : entities)
+    for (const auto & [key, ast] : entities)
     {
         if (auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(ast.get()))
         {
-            res_columns[0]->insert(name);
+            res_columns[0]->insert(key.name);
             res_columns[1]->insert(workload->getWorkloadParent());
             res_columns[2]->insert(ast->formatForLogging());
         }
