@@ -13,13 +13,15 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="optimize_aggregation_in_order">
-  ## optimize_aggregation_in_order
-</div>
+## optimize_aggregation_in_order {#optimize_aggregation_in_order}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 يُمكّن تحسين [GROUP BY](/ar/reference/statements/select/group-by) في استعلامات [SELECT](/ar/reference/statements/select/index) لتجميع البيانات وفق الترتيب المناظر في جداول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
+
+وينطبق أيضًا على استدعاء مفرد للدالة `uniqExact` (أو `count(DISTINCT)`) دون `GROUP BY` على جدول مرتّب حسب وسيطتها: إذ تُحسب القيم المميزة فور وصولها بالترتيب، فلا حاجة إلى الاحتفاظ بها في الذاكرة. وعند استخدام عدة خيوط تنفيذ، تُقسَّم عملية القراءة إلى نطاقات من مفتاح الفرز تُحسب بالتوازي؛ وإذا تعذّر التقسيم (كأن تكون الوسيطة من نوع الفاصلة العائمة أو دالةً مطبّقة على مفتاح الفرز)، يُستخدم التجميع المعتاد.
+
+تُختار الإسقاطات قبل تحديد ترتيب التجميع. فإذا كان [الإسقاط](/ar/reference/engines/table-engines/mergetree-family/mergetree#projections) يقرأ حبيبات بيانات أقل مما يقرؤه الجدول، فإنه يُستخدم حتى لو لم يكن مرتّبًا حسب مفتاح `GROUP BY`، وعندئذٍ يحتفظ التجميع بجميع المجموعات في الذاكرة بدلًا من التجميع بالترتيب.
 
 القيم الممكنة:
 
@@ -30,9 +32,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 * [تحسين GROUP BY](/ar/reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 
-<div id="optimize_aggregation_in_order_limit">
-  ## optimize_aggregation_in_order_limit
-</div>
+## optimize_aggregation_in_order_limit {#optimize_aggregation_in_order_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

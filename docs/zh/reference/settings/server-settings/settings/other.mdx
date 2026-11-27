@@ -166,7 +166,7 @@ ClickHouse 每隔 x 秒重新加载一次内置字典。因此，无需重启服
 * 如果某个数据分区片段匹配多组条件，ClickHouse 会使用最后一个匹配到的条件集 (`<case>` 部分会按顺序检查，每个匹配项都会覆盖之前的选择) 。
 
 <Note>
-  如果某个数据分区片段不满足任何条件，ClickHouse 会使用与大小相关的内置默认值：小于 100 MB 时使用 `LZ4`，等于或大于该值时使用 `ZSTD(3)`。与上述 `min_part_size` 条件一样，这里的大小是在选择编解码器时 (即数据写入之前) 已知的大小：刚插入的 part 为 `0`，merge 或 mutation 则为源 parts 的大小。因此，会使输入变小的重写操作 (例如 `TTL DELETE` 或 collapsing merge) 是按输入大小来归类的，可能产生一个低于阈值却仍使用 `ZSTD(3)` 的 part。
+  如果某个数据分区片段不满足任何条件，ClickHouse 会使用与大小相关的内置默认值：小于 100 MB 时使用 `LZ4`，等于或大于该值时使用 `ZSTD(3)`。与上述 `min_part_size` 条件一样，这里的大小是在选择编解码器时 (即数据写入之前) 已知的大小：刚插入的 part 为插入块的未压缩大小，merge 或 mutation 则为源 parts 的大小。所以，小规模插入会以 `LZ4` 写入，而大规模插入则会直接以 `ZSTD(3)` 写入。因此，会使输入变小的重写操作 (例如 `TTL DELETE` 或 collapsing merge) 是按输入大小来归类的，可能产生一个低于阈值却仍使用 `ZSTD(3)` 的 part。
 </Note>
 
 **示例**
@@ -486,6 +486,63 @@ ClickHouse 重新加载配置并检查是否有新更改的频率
 <filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>
 ```
 
+## filesystem_isolation {#filesystem_isolation}
+
+<SettingsInfoBlock type="FilesystemIsolationMode" default_value="disabled" changeable_without_restart="No" />
+
+指定服务端在启动时是否像容器那样将自身与主机的文件系统隔离，仅保留其所需的路径可见。这样，即使攻击者设法在服务端进程内运行了代码，也找不到可运行的命令行环境或其他程序，并且无法读取或修改服务端目录之外的主机文件。
+
+服务端在启动时、启动任何线程之前，会将自身移入一个新的[挂载命名空间](https://man7.org/linux/man-pages/man7/mount_namespaces.7.html)，该命名空间的根是一个空的只读 `tmpfs`；随后仅将所需的路径以 bind mount 方式挂载到其中的常规位置，并通过 `pivot_root` 移除原有的根。保持可见的内容如下：
+
+* 配置中服务端会写入的路径：`path`、`tmp_path`、`user_files_path`、`format_schema_path`、`filesystem_caches_path`、`storage_configuration` 中本地磁盘的目录以及其他磁盘的元数据目录、日志文件、pid 文件和 `core_path` 所在的目录、内置 Keeper 的存储目录、`access_control_path`、`user_directories` 中所有 `local_directory` 条目的路径、`user_defined_path`、`workload_path`、`named_collections_storage.path`、`backups.allowed_path`。这些路径以读写方式挂载，但带有 `noexec`，因此写入其中的任何内容都无法执行。
+* 配置中服务端只读取的路径，以只读方式挂载：配置文件所在目录、被包含文件所在目录以及配置文件中符号链接目标所在目录、`users_config`、`user_scripts_path` (其中的程序可以执行) 、`top_level_domains_path`、`google_protos_path`、`openSSL`、`grpc`、`ldap_servers` 中 TLS 证书和私钥所在目录、Kerberos keytab，以及服务端可执行程序旁的 `clickhouse-odbc-bridge` 程序，连同其动态加载器，以及由动态加载器解析到的、该程序所依赖的共享库。bridge 的日志位置 (`logger.odbc_bridge_log`、`logger.odbc_bridge_errlog`、`logger.odbc_bridge_stdout`、`logger.odbc_bridge_stderr`) 可写。
+* 服务端的可执行程序及其链接的共享库，以及它们旁边指向这些库的符号链接 (例如 `libc.so.6`) ；如果设置了 jemalloc 的 `prof_prefix` 选项，还包括 jemalloc 堆内存剖析所在的目录。
+* Linux 程序运行所需的内容：`/proc` (其中 `/proc/sys`、`/proc/sysrq-trigger`、`/proc/bus`、`/proc/fs` 和 `/proc/irq` 及其内部的挂载均为只读，与 Docker 容器的做法一致) 、`/sys` (只读) 、`/dev/null`、`/dev/zero`、`/dev/full`、`/dev/random`、`/dev/urandom`、位于 `/dev/pts` 的私有 `devpts` 实例以及供 Web 终端和 SSH 服务端的伪终端使用的 `/dev/ptmx`、`/etc` 中的网络配置 (`hosts`、`resolv.conf`、`nsswitch.conf`、`host.conf`、`gai.conf`、`services`、`protocols`) 、`/etc/passwd`、`/etc/group`、`/etc/localtime`、时区数据库和 CA 证书 (`/etc/ssl`、`/etc/pki`、`/etc/ca-certificates`、`/usr/share/ca-certificates`、`/usr/local/share/ca-certificates`) 及其中链接的目标 (`caConfig` 中指定的 CA 目录同理) 、用于解析堆栈跟踪符号的 `/usr/lib/debug`、`NOTIFY_SOCKET` 环境变量所指定的服务管理器套接字，以及启用 `logger.use_syslog` 时的 `/dev/log`。如果 `/dev/log` 是符号链接 (例如 systemd 下的 `/dev/log -> /run/systemd/journal/dev-log`) ，则其目标所在目录可见，因此服务重启后在该处重新创建的套接字仍能被看到。而对于直接位于 `/dev` 中、由 syslog 守护进程在重启时重新创建的套接字，由于主机的 `/dev` 不可见，在服务端重启之前将无法再看到。
+* 一个私有的空 `/tmp`。
+* 配置中 `filesystem_isolation_paths` 部分通过 `<read_only>` 和 `<read_write>` 元素列出的路径。
+
+路径上经过的符号链接会在隔离环境内重新创建，其目标也同样可见。对于配置中作为文件所在位置的目录 (例如证书所在的目录) ，会整体挂载，这样文件续期后被新文件替换时，新文件同样可见。如果该文件是符号链接 (例如 Let&#39;s Encrypt 的证书) ，则链接目标所在的目录也会一并挂载。不存在的可写目录会在隔离之前创建，这与服务端本身的行为一致。
+
+除此之外的任何内容均不可见，尤其是没有命令行环境：[可执行用户自定义函数](/zh/sql-reference/functions/udf)、可执行字典、`executable` 表函数以及 `Executable` 表引擎只能运行不依赖可见路径之外任何内容的程序。如需运行脚本，需使其解释器及其链接的库可见，例如：
+
+```xml
+<filesystem_isolation_paths>
+<read_only>/bin</read_only>
+<read_only>/usr/bin</read_only>
+<read_only>/lib</read_only>
+<read_only>/lib64</read_only>
+<read_only>/usr/lib</read_only>
+</filesystem_isolation_paths>
+```
+
+或禁用隔离。表引擎、表函数或字典通过可见路径之外的绝对路径引用的文件同样如此。不支持可执行用户自定义函数的驱动程序 (`allow_experimental_executable_udf_drivers`) ：带有驱动程序的 `CREATE FUNCTION` 会被拒绝，因为驱动程序生成的程序位于 `dynamic_user_defined_executable_functions_path` 中，该路径可写，因而不可执行。`clickhouse-odbc-bridge` 同样在隔离环境内运行，因此要使用 `odbc` 表函数和字典，必须让 ODBC 驱动程序及其配置 (`/etc/odbc.ini`、`/etc/odbcinst.ini`) 在隔离环境内可见。
+
+如果进程拥有 `CAP_SYS_ADMIN`，它只会创建一个挂载命名空间，并保留自身所用的能力，例如 `CAP_NET_BIND_SERVICE`、`CAP_IPC_LOCK`、`CAP_SYS_NICE` 和 `CAP_NET_ADMIN`，同时丢弃可用于撤销隔离的能力 (`CAP_SYS_ADMIN`、`CAP_SYS_CHROOT`、`CAP_SYS_PTRACE`、`CAP_DAC_READ_SEARCH`、`CAP_SETUID`、`CAP_SETGID`、`CAP_MKNOD`、`CAP_SYS_MODULE`、`CAP_SYS_RAWIO` 等) 。否则，它还会额外创建一个用户命名空间，仅将自身的用户和组映射到其本身，并失去全部能力，因为这些能力在新的用户命名空间之外无效：此后它将无法监听 1024 以下的端口、无法将其可执行程序锁定在内存中、无法提升线程优先级，也无法收集 `taskstats` 的按线程指标。启动时会输出一条警告，列出丢失的能力。在这两种情况下，服务端都会设置 `PR_SET_NO_NEW_PRIVS`，且所有挂载均为 `nosuid`。
+
+以非特权方式创建用户命名空间并非总是可行：在某些系统上，`kernel.unprivileged_userns_clone` 和 `user.max_user_namespaces` 这两个 sysctl 会禁止此操作；而自 Ubuntu 24.04 起，仅允许 AppArmor 配置文件中明确许可的程序执行此操作 (参见 sysctl `kernel.apparmor_restrict_unprivileged_userns`) 。Docker 等容器运行时同样会拒绝此操作，除非容器拥有 `CAP_SYS_ADMIN`。服务端在执行隔离前，会先在子进程中检查能否完成隔离，因此即使失败，也不会滞留在已失去能力的命名空间中。
+
+主机的 `/proc` 在隔离环境内可见，因为创建新的 `/proc` 需要新的 PID 命名空间。看门狗进程 (`clickhouse-watchdog`) 在隔离之后才被 fork，因此同样运行在隔离环境内。但借助 `/proc/<pid>/root`、`/proc/<pid>/cwd` 和 `/proc/<pid>/fd`，服务端能够访问同一用户下任何运行在隔离之外的其他进程所看到的主机文件系统，因此切勿以服务端所用的用户身份运行其他任何程序：使用专用用户 (即软件包所创建的用户) 即可。
+
+隔离仅在启动时、服务端启动任何线程之前应用一次，之后无法更改：重新加载的配置中更改的值或 `filesystem_isolation_paths` 需重启后才会生效，而通过 `from_zk` 从 ZooKeeper 获取的路径不会被隔离识别。隔离先于 [`seccomp`](/zh/reference/settings/server-settings/settings/other#seccomp) 过滤器应用，该过滤器会拒绝可能撤销隔离的系统调用。
+
+可选值：
+
+* `disabled` - 服务端不隔离文件系统。
+* `best_effort` - 如果服务端有权创建命名空间并在其中挂载文件系统，则隔离文件系统；否则记录一条说明原因的警告日志，并在不隔离的情况下运行。
+* `enforce` - 服务端隔离文件系统，否则不启动。
+
+服务端进入新的命名空间后若发生故障 (例如某个路径无法挂载) ，则在 `best_effort` 和 `enforce` 模式下都会中止启动。
+
+`system.server_settings` 会显示当前生效的模式：如果服务端在不隔离的情况下运行，则显示为 `disabled`。
+
+隔离是 Linux 内核提供的功能。在其他操作系统上，`best_effort` 会记录一条警告日志，而 `enforce` 会导致服务端无法启动。
+
+**示例**
+
+```xml
+<filesystem_isolation>best_effort</filesystem_isolation>
+```
+
 ## google_protos_path {#google_protos_path}
 
 <SettingsInfoBlock type="String" default_value="/usr/share/clickhouse/protos/" changeable_without_restart="No" />
@@ -526,9 +583,7 @@ HSTS 的过期时间，单位为秒。
 
 ## iceberg_manifest_decode_thread_pool_queue_size {#iceberg_manifest_decode_thread_pool_queue_size}
 
-<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
-
-可在用于解码 Iceberg 数据 manifest 文件的线程池上调度的最大作业数。
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />可在用于解码 Iceberg 数据 manifest 文件的线程池上调度的最大作业数。该设置已弃用且不起作用：Iceberg 清单文件在 IO 线程池上读取。
 
 ## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
 
@@ -666,17 +721,17 @@ ClickHouse 在关闭连接前，针对 HTTP 协议等待传入请求的秒数。
 | `async_queue_max_size`       | 使用异步日志时，队列中等待写出的消息最大保留数量。超出的消息将被丢弃                                                                           |
 | `console`                    | 启用将日志输出到控制台。设置为 `1` 或 `true` 以启用。如果 ClickHouse 未以守护进程模式运行，默认值为 `1`；否则为 `0`。                                  |
 | `console_log_level`          | 控制台输出的日志级别。默认值为 `level`。                                                                                     |
-| `console_shutdown_log_level` | Shutdown level 用于在服务器关闭时设置控制台日志级别。                                                                           |
-| `console_startup_log_level`  | 启动级别用于在服务器启动时设置控制台日志级别。启动完成后，日志级别会恢复为 `console_log_level` 设置                                       |
+| `console_shutdown_log_level` | Shutdown level 用于在服务端关闭时设置控制台日志级别。                                                                           |
+| `console_startup_log_level`  | 启动级别用于在服务端启动时设置控制台日志级别。启动完成后，日志级别会恢复为 `console_log_level` 设置                                                 |
 | `count`                      | 轮转策略：ClickHouse 最多保留多少个历史日志文件。                                                                               |
 | `errorlog`                   | 错误日志文件的路径。                                                                                                   |
 | `formatting.type`            | 控制台输出的日志格式。目前仅支持 `json`                                                                                      |
 | `level`                      | 日志级别。可接受的值：`none` (关闭日志) 、`fatal`、`critical`、`error`、`warning`、`notice`、`information`、`debug`、`trace`、`test` |
 | `log`                        | 日志文件的路径。                                                                                                     |
 | `rotation`                   | 轮转策略：控制何时轮转日志文件。轮转可以基于大小、时间，或两者结合。示例：100M、daily、100M,daily。一旦日志文件超过指定大小，或达到指定时间间隔，就会将其重命名并归档，然后创建新的日志文件。     |
-| `shutdown_level`             | Shutdown level 用于在服务器关闭时设置根 logger 级别。                                                                       |
+| `shutdown_level`             | Shutdown level 用于在服务端关闭时设置根日志记录器级别。                                                                       |
 | `size`                       | 轮转策略：日志文件的最大大小 (以字节为单位) 。一旦日志文件大小超过此阈值，就会将其重命名并归档，然后创建新的日志文件。                                                |
-| `startup_level`              | 启动级别用于在服务器启动时设置根 logger 级别。启动完成后，日志级别会恢复为 `level` 设置                                               |
+| `startup_level`              | 启动级别用于在服务端启动时设置根日志记录器级别。启动完成后，日志级别会恢复为 `level` 设置                                                         |
 | `stream_compress`            | 使用 LZ4 压缩日志消息。设置为 `1` 或 `true` 以启用。                                                                          |
 | `syslog_level`               | 输出到 syslog 的日志级别。                                                                                            |
 | `use_syslog`                 | 同时将日志输出转发到 syslog。                                                                                           |
@@ -1526,6 +1581,27 @@ ClickHouse 会检查与请求协议对应的最高优先级解析器类型。如
 则会继续检查优先级次高的解析器类型，直到环境解析器为止。
 这也意味着可以混合使用多种解析器类型。
 
+## quick_startup {#quick_startup}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
+
+跳过服务端启动时执行的可选工作，以尽可能快地完成启动。跳过的工作包括：
+
+* 对可执行程序执行 `<mlock>`，等同于 `mlock_executable` = `false`；
+* 将可执行程序重新映射到大页，等同于 `remap_executable` = `false`；
+* 可执行程序的完整性检查，等同于 `skip_binary_checksum_checks` = `true`；
+* 环境检查 (例如时钟源、透明大页、内存 overcommit、内核限制、延迟统计和磁盘预读) ，这些检查仅会在 `system.warnings` 中生成警告。
+
+配置校验不会被跳过。
+
+可执行代码约为 500 MiB，`<mlock>` 和完整性检查都需要完整读取这些代码。在页缓存未预热且使用网络磁盘的情况下，这一过程需要数秒，占据了启动时间的大部分。该设置适用于服务端需要频繁重启的场景，例如测试、基准测试和短生命周期的实例。其代价是：在内存压力下，代码可能会被换出内存，并且启动时无法检测出已损坏的可执行程序。
+
+**示例**
+
+```xml
+<quick_startup>true</quick_startup>
+```
+
 ## remap_executable {#remap_executable}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
@@ -1658,6 +1734,10 @@ Host Key Configurations 默认未启用。
 </ssh_server>
 ```
 
+## stream_kafka_locks_refresh_polls {#stream_kafka_locks_refresh_polls}
+
+<SettingsInfoBlock type="UInt64" default_value="15" changeable_without_restart="Yes" />偏移量存储在 Keeper 中的 Kafka 消费者每执行多少次轮询后，重新检查自己所拥有的分区
+
 ## table_engines_require_grant {#table_engines_require_grant}
 
 <CloudNotSupportedBadge />
@@ -1694,9 +1774,9 @@ SSH 服务器使用的端口，允许用户通过 PTY 使用嵌入式客户端�
 
 此外：
 
-| 设置      | 描述                            | 默认值     |
-| ------- | ----------------------------- | ------- |
-| `level` | 将存储到表中的最高消息级别 (默认为 `Trace`) 。 | `Trace` |
+| 设置      | 描述                                                                                                                                                                                          | 默认值                      |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| `level` | 存储到表中的最高消息级别。显式设置时，根日志记录器级别至少会被提升到该值，因此 `text_log` 记录的内容可以比服务器日志文件 (`logger.level`) 更详细。未设置时，将存储不超过各已配置日志输出 (`logger.level`、`console_log_level`、`errorlog_level`、`syslog_level`) 中最详细级别的消息。 | `Trace` (未设置时受其他日志输出限制)  |
 
 **示例**
 

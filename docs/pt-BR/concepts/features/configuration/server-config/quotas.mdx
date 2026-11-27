@@ -115,14 +115,35 @@ Aqui estão as quantidades que podem ser restringidas:
 
 `failed_sequential_authentications` - O número total de falhas consecutivas de autenticação.
 
-`queries_per_normalized_hash` – O número máximo de execuções de uma mesma consulta normalizada. Consultas normalizadas são consultas com literais substituídos por placeholders, portanto `SELECT 1` e `SELECT 2` são consideradas a mesma consulta normalizada. Esse limite é acompanhado de forma independente para cada padrão distinto de consulta normalizada.
+`queries_per_normalized_hash` – O número máximo de execuções de uma mesma consulta normalizada. Consultas normalizadas são consultas em que os literais são substituídos por marcadores de posição, de modo que `SELECT 1` e `SELECT 2` são consideradas a mesma consulta normalizada. Esse limite é controlado de forma independente para cada padrão de consulta normalizado distinto.
 
-Se o limite for excedido em pelo menos um intervalo de tempo, uma exceção será lançada com um texto informando qual restrição foi excedida, para qual intervalo e quando o novo intervalo começa (ou seja, quando as consultas podem ser enviadas novamente).
+Além das quantidades predefinidas acima, é possível definir um limite para qualquer evento de criação de perfil (consulte a tabela [system.events](/pt-BR/reference/system-tables/events)) usando o nome do evento como rótulo, por exemplo:
+
+```xml
+<interval>
+    <duration>86400</duration>
+    <!-- At most 100000 S3 GET requests and 50 failed queries per day. -->
+    <S3GetObject>100000</S3GetObject>
+    <FailedQuery>50</FailedQuery>
+</interval>
+```
+
+O mesmo pode ser feito com a sintaxe DDL:
+
+```sql
+CREATE QUOTA s3_reads FOR INTERVAL 1 day MAX S3GetObject = 100000, FailedQuery = 50 TO my_user;
+```
+
+Diferentemente das quantidades predefinidas, os eventos de criação de perfil são contabilizados uma vez por consulta, no momento em que a consulta termina (com sucesso ou com erro): uma consulta que ultrapassa o limite ainda pode ser concluída, e as consultas subsequentes são rejeitadas até o fim do intervalo. O consumo é informado na coluna `profile_events` da tabela [system.quotas&#95;usage](/pt-BR/reference/system-tables/quotas_usage). Eventos de criação de perfil acumulados fora de consultas (por exemplo, por mesclagens em segundo plano) não são cobrados das cotas.
+
+Em uma consulta distribuída, os eventos de criação de perfil que os servidores remotos reportam ao iniciador são cobrados da cota do usuário iniciador, juntamente com os eventos locais. Os servidores remotos sempre enviam esses relatórios em uma consulta distribuída, independentemente da configuração `send_profile_events` na consulta, na sua cláusula `SETTINGS` ou nas restrições de configurações do usuário no servidor remoto; portanto, o usuário não pode desativá-los. Isso inclui um `INSERT` síncrono em uma tabela `Distributed` ou na função de tabela `remote`, caso em que o servidor remoto reporta seus eventos de criação de perfil assim que recebe todos os dados; os envios em segundo plano de tabelas `Distributed` com `distributed_foreground_insert = 0` não fazem parte de nenhuma consulta de usuário e não são cobrados. O flush adiado de [inserções assíncronas](/pt-BR/reference/settings/session-settings/async-insert#async_insert) é cobrado da cota do usuário que enviou os inserts, no mesmo bucket usado na verificação desses inserts (para uma cota indexada por `ip_address` ou `forwarded_ip_address`, o bucket do endereço do cliente; para uma cota indexada por `normalized_query_hash`, o bucket do `INSERT` enviado), e não da consulta que força o flush, como `SYSTEM FLUSH ASYNC INSERT QUEUE`. Se um servidor remoto que recebe um `INSERT` distribuído o enfileirar como uma inserção assíncrona, o flush adiado nesse servidor é cobrado nele próprio, da cota do usuário com o qual o iniciador se conecta, e não é reportado ao iniciador. Nada é contabilizado em dobro: as linhas que o iniciador de um `INSERT` distribuído envia a um servidor remoto são cobradas uma única vez em `InsertedRows` e `InsertedBytes`, enquanto o que o servidor remoto grava além delas, por exemplo nas tabelas de destino de visões materializadas, é cobrado adicionalmente.
+
+Se o limite for excedido em pelo menos um intervalo de tempo, uma exceção é lançada com uma mensagem informando qual restrição foi excedida, em qual intervalo e quando o novo intervalo começa (ou seja, quando as consultas poderão ser enviadas novamente).
 
 <Note>
-  **Consultas excluídas da contabilização de cota**
+  **Consultas excluídas da contabilização de cotas**
 
-  Para permitir que a configuração e o uso da cota sejam inspecionados mesmo quando uma cota estiver esgotada, consultas `SELECT` que leem exclusivamente de uma das seguintes tabelas de sistema não são contabilizadas nas cotas e não estão sujeitas a limites de complexidade de consulta:
+  Para que a configuração e o uso das cotas possam ser inspecionados mesmo quando uma cota estiver esgotada, as consultas `SELECT` que leem exclusivamente de uma das seguintes tabelas de sistema não são cobradas das cotas nem estão sujeitas aos limites de complexidade de consultas:
 
   * `system.quotas`
   * `system.quota_limits`
@@ -131,7 +152,7 @@ Se o limite for excedido em pelo menos um intervalo de tempo, uma exceção ser�
   * `system.one`
 </Note>
 
-As cotas podem usar o recurso &quot;cota key&quot; para contabilizar recursos de várias chaves de forma independente. Veja um exemplo:
+As cotas podem usar o recurso de &quot;chave de cota&quot; para reportar o uso de recursos de várias chaves de forma independente. Veja um exemplo:
 
 ```xml
 <!-- For the global reports designer. -->
@@ -187,7 +208,7 @@ No processamento de consultas distribuídas, os valores acumulados são armazena
 Quando o servidor é reiniciado, as cotas são redefinidas.
 
 <div id="related-content">
-  ## Conteúdo relacionado
+  ## Conteúdo relacionado {#related-content}
 </div>
 
 * Blog: [Criando aplicações de página única com ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)

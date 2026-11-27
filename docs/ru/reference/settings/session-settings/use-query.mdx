@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHistory.jsx";
+import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного файла](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -40,11 +41,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 ## use_query_condition_cache_for_time_conditions {#use_query_condition_cache_for_time_conditions}
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<ExperimentalBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Новая настройка, позволяющая кэшу условий запроса обслуживать условия с текущим временем (например, `WHERE time >= now() - INTERVAL 10 DAY`): из них выводится детерминированное условие, в котором временная константа округляется по сетке; включена по умолчанию. previous_value=false, поэтому при `compatibility` с более ранней версией такие условия, как и прежде, не кэшируются."}]}]} />
+<SettingsInfoBlock type="Bool" default_value="0" />
 
-Включает [кэш условий запроса](/ru/concepts/features/performance/caches/query-condition-cache) для условий с текущим временем, например `WHERE time >= now() - INTERVAL 10 DAY`, при чтении из таблиц `MergeTree`. При чтении из файлов и объектного хранилища (`file`, `s3` и т. п.) кэш условий запроса используется только для детерминированных условий, и эта настройка на них не влияет.
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Помечена как экспериментальная и отключена по умолчанию, как в релизе 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "Новая экспериментальная настройка, позволяющая кэшу условий запроса обслуживать условия с текущим временем (например, `WHERE time >= now() - INTERVAL 10 DAY`): из них выводится детерминированное условие, в котором временная константа округляется по сетке; отключена по умолчанию."}]}]} />
+
+Экспериментальная настройка. Включает [кэш условий запроса](/ru/concepts/features/performance/caches/query-condition-cache) для условий с текущим временем, например `WHERE time >= now() - INTERVAL 10 DAY`, при чтении из таблиц `MergeTree`. При чтении из файлов и объектного хранилища (`file`, `s3` и т. п.) кэш условий запроса используется только для детерминированных условий, и эта настройка на них не влияет.
 
 Такие условия недетерминированы (они меняются с течением времени), поэтому кэшировать их напрямую нельзя. Вместо этого из них выводится детерминированное условие: свёрнутая константа текущего времени округляется по временной сетке. Например, `WHERE time >= '2026-08-09 12:34:56'` превращается в `WHERE time >= '2026-08-09 00:00:00'` (при чтении из кэша округление выполняется вниз, при записи в кэш — вверх, что гарантирует корректность кэша). Шаг сетки пропорционален расстоянию между константой и текущим временем (см. [`query_condition_cache_time_condition_grid_factor`](/ru/reference/settings/session-settings/other#query_condition_cache_time_condition_grid_factor)) и ограничен диапазоном от одной секунды до одного дня.
 
@@ -63,9 +66,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Новая настройка, управляющая использованием кэша условий запроса при чтении с `ORDER BY ... LIMIT n` (TopK); по умолчанию включена. В версии 26.7 она отключена, поэтому `compatibility` с более ранней версией сохраняет её выключенной."}]}]} />
 
-Включает [кэш условий запроса](/ru/concepts/features/performance/caches/query-condition-cache) для запросов, использующих оптимизацию `ORDER BY <column> LIMIT n` (TopK) на основе динамической фильтрации или индекса пропуска. Если настройка отключена, такие операции чтения не обращаются к кэшу и не заполняют его.
+Включает [кэш условий запроса](/ru/concepts/features/performance/caches/query-condition-cache) для запросов, использующих оптимизацию `ORDER BY <column> LIMIT n` (TopK) на основе динамической фильтрации или индекса пропуска. Если настройка отключена, такие операции чтения не обращаются к кэшу и не заполняют его. При чтении файлов Parquet, когда порог используется только для пропуска групп строк по их статистике (столбец сортировки типа `String` при отключённой настройке `use_top_k_dynamic_filtering_for_variable_length_types`), кэш используется так же, как при чтении без TopK, независимо от значения этой настройки.
 
-Во время выполнения такие запросы могут отбрасывать гранулы в зависимости от текущего порога, поэтому записи кэша для них разделяются по параметрам плана TopK и набору прочитанных частей (для таблицы `File` — по набору прочитанных файлов и их версиям; для таблицы озера данных — по её снимку). Эта настройка не действует, если также не включена настройка `use_query_condition_cache`.
+Во время выполнения такие запросы могут отбрасывать гранулы в зависимости от текущего порога, поэтому записи кэша для них разделяются по параметрам плана TopK и набору прочитанных частей (для таблицы `File` — по набору прочитанных файлов и их версиям; для таблицы озера данных — по её снимку; для объектного хранилища — по набору прочитанных объектов и их ETag). Эта настройка не действует, если также не включена настройка `use_query_condition_cache`.
 
 Возможные значения:
 

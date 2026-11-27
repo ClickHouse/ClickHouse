@@ -1428,7 +1428,7 @@ SELECT now(), dateTrunc('hour', now(), 'Asia/Istanbul');
 | %H            | الساعة بتنسيق 24 ساعة (00-23)                            | 22         |
 | %i            | الدقيقة (00-59)                                          | 33         |
 | %I            | الساعة بتنسيق 12 ساعة (01-12)                            | 10         |
-| %j            | يوم السنة (001-366)                                      | 002        |
+| %j            | رقم اليوم في السنة (001-366)                                      | 002        |
 | %k            | الساعة بتنسيق 24 ساعة (00-23)                            | 14         |
 | %l            | الساعة بتنسيق 12 ساعة (01-12)                            | 09         |
 | %m            | الشهر كرقم صحيح (01-12)                                  | 01         |
@@ -1451,11 +1451,11 @@ SELECT now(), dateTrunc('hour', now(), 'Asia/Istanbul');
 | %z            | إزاحة الوقت عن UTC بصيغة +HHMM أو -HHMM                  | -0500      |
 | %%            | علامة %                                                  | %          |
 
-* في إصدارات ClickHouse الأقدم من v23.4، تطبع `%f` صفرًا واحدًا (0) إذا كانت القيمة المنسّقة من النوع Date أو Date32 أو DateTime (التي لا تحتوي على أجزاء كسرية من الثانية) أو من النوع DateTime64 بدقة تساوي 0.
-* في إصدارات ClickHouse الأقدم من v25.1، تطبع `%f` عددًا من الخانات يساوي precision الخاصة بـ DateTime64 بدلًا من 6 خانات ثابتة.
+* في إصدارات ClickHouse الأقدم من v23.4، تطبع `%f` صفرًا واحدًا (0) إذا كانت القيمة المنسّقة من النوع Date أو Date32 أو DateTime (التي لا تحتوي على أجزاء من الثانية) أو من النوع DateTime64 بدقة تساوي 0.
+* في إصدارات ClickHouse الأقدم من v25.1، تطبع `%f` عددًا من الخانات يساوي عدد المنازل العشرية الخاص بـ DateTime64 بدلًا من 6 خانات ثابتة.
 * في إصدارات ClickHouse الأقدم من v23.4، تطبع `%M` الدقيقة (00-59) بدلًا من الاسم الكامل للشهر (January-December).
 
-**البنية**
+**الصيغة**
 
 ```sql
 formatDateTime(datetime, format[, timezone])
@@ -1528,7 +1528,7 @@ LIMIT 10
 
 ## formatDateTimeInJodaSyntax {#formatDateTimeInJodaSyntax}
 
-أُضيفت في: v20.1.0
+أُضيفت في: v23.1.0
 
 تُشبه `formatDateTime`، إلا أنها تنسّق قيم التاريخ والوقت بأسلوب Joda بدلًا من أسلوب MySQL. راجع [توثيق Joda Time](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html).
 
@@ -1548,7 +1548,7 @@ LIMIT 10
 | e             | يوم الأسبوع                        | رقم        | 2                          |
 | E             | يوم الأسبوع                        | نص         | Tuesday; Tue               |
 | y             | السنة                              | سنة        | 1996                       |
-| D             | اليوم من السنة                     | رقم        | 189                        |
+| D             | رقم اليوم في السنة                     | رقم        | 189                        |
 | M             | شهر السنة                          | شهر        | July; Jul; 07              |
 | d             | يوم الشهر                          | رقم        | 10                         |
 | a             | نصف اليوم                          | نص         | PM                         |
@@ -4720,14 +4720,16 @@ SELECT toStartOfISOYear(toDateTime('2023-04-21 10:20:30'))
 
 أُضيفت في: v20.1.0
 
-تُعمِّم هذه الدالة دوال `toStartOf*()` الأخرى باستخدام البنية `toStartOfInterval(date_or_date_with_time, INTERVAL x unit [, time_zone])`.
+تُعمِّم هذه الدالة دوال `toStartOf*()` الأخرى باستخدام الصيغة `toStartOfInterval(date_or_date_with_time, INTERVAL x unit [, time_zone])`.
 
 على سبيل المثال،
 
-* تُرجع `toStartOfInterval(t, INTERVAL 1 YEAR)` النتيجة نفسها التي تُرجعها `toStartOfYear(t)`,
-* تُرجع `toStartOfInterval(t, INTERVAL 1 MONTH)` النتيجة نفسها التي تُرجعها `toStartOfMonth(t)`,
-* تُرجع `toStartOfInterval(t, INTERVAL 1 DAY)` النتيجة نفسها التي تُرجعها `toStartOfDay(t)`,
-* تُرجع `toStartOfInterval(t, INTERVAL 15 MINUTE)` النتيجة نفسها التي تُرجعها `toStartOfFifteenMinutes(t)`.
+* تُقرِّب `toStartOfInterval(t, INTERVAL 1 YEAR)` إلى الحدّ نفسه الذي تُقرِّب إليه `toStartOfYear(t)`,
+* تُقرِّب `toStartOfInterval(t, INTERVAL 1 MONTH)` إلى الحدّ نفسه الذي تُقرِّب إليه `toStartOfMonth(t)`,
+* تُقرِّب `toStartOfInterval(t, INTERVAL 1 DAY)` إلى الحدّ نفسه الذي تُقرِّب إليه `toStartOfDay(t)`,
+* تُقرِّب `toStartOfInterval(t, INTERVAL 15 MINUTE)` إلى الحدّ نفسه الذي تُقرِّب إليه `toStartOfFifteenMinutes(t)`.
+
+قد يختلف نوع النتيجة عن نوع نتيجة هذه الدوال (انظر أدناه).
 
 يُجرى الحساب بالاستناد إلى نقاط زمنية محددة:
 
@@ -4751,7 +4753,14 @@ SELECT toStartOfISOYear(toDateTime('2023-04-21 10:20:30'))
 
 تحاكي صيغة التحميل الزائد الثانية الدالة `time_bucket()` في TimescaleDB، وكذلك الدالة `date_bin()` في PostgreSQL.
 
-**البنية**
+تكون النتيجة من نوع الوسيطة `value` نفسه: ‏`Date` لـ `Date`، و`Date32` لـ `Date32`، و`DateTime` لـ `DateTime`، و`DateTime64` بعدد المنازل العشرية نفسه لـ `DateTime64`.
+والاستثناء الوحيد هو استخدام وحدة أصغر من الثانية أدق من عدد المنازل العشرية لوسيطة `DateTime64` (على سبيل المثال، `INTERVAL 1500 MILLISECOND` مع `DateTime64(0)`): ففي هذه الحالة يكون للنتيجة عدد المنازل العشرية الخاص بالوحدة، وهو ما يتيح تمثيل حدود الحاويات.
+أما النتيجة التي تقع دون نطاق `Date` أو `DateTime` (على سبيل المثال، تقريب `1970-01-01` نزولًا إلى أسبوع) فتُقيَّد بقيمتها الدنيا.
+عند تعطيل الإعداد [`to_start_of_interval_preserves_argument_type`](/ar/reference/settings/session-settings#to_start_of_interval_preserves_argument_type)، يعتمد نوع النتيجة بدلًا من ذلك على وحدة الفاصل الزمني،
+كما في الإصدارات السابقة لـ 26.11: ‏`Date` لـ `WEEK` والوحدات الأطول، و`DateTime` للوحدات من `DAY` وحتى `SECOND`، و`DateTime64` بعدد المنازل العشرية الخاص بالوحدة للوحدات الأصغر من الثانية.
+ينطبق هذا على صيغة التحميل الزائد التي لا تتضمن `origin`، أما صيغة التحميل الزائد التي تتضمن `origin` فتحافظ على نوع الوسيطة في هذه الحالة أيضًا، باستثناء أن النتيجة يكون لها عدد المنازل العشرية الخاص بالوحدة عند استخدام وسيطة `DateTime64` مع وحدة أصغر من الثانية.
+
+**الصيغة**
 
 ```sql
 toStartOfInterval(value, INTERVAL x unit[, time_zone])
@@ -4760,14 +4769,14 @@ toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 
 **الأسماء البديلة**: `date_bin`, `time_bucket`
 
-**الوسيط**
+**الوسيطات**
 
-* `value` — قيمة تاريخ أو تاريخ مع وقت تُقرَّب نزولًا. [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
-* `x` — رقم يمثّل طول الفاصل الزمني. - `unit` — وحدة الفاصل الزمني: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND. - `time_zone` — اختياري. اسم المنطقة الزمنية كسلسلة نصية. - `origin` — اختياري. نقطة بدء الحساب (في التوقيع الثاني فقط).
+* `value` — قيمة تاريخ أو تاريخ مع وقت تُقرَّب نزولًا. [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
+* `x` — رقم يمثّل طول الفاصل الزمني. - `unit` — وحدة الفاصل الزمني: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND. - `time_zone` — اختياري. اسم المنطقة الزمنية كسلسلة نصية. - `origin` — اختياري. نقطة الأصل للحساب (في التوقيع الثاني فقط).
 
 **القيمة المُعادة**
 
-تعيد بداية الفاصل الزمني الذي تقع ضمنه قيمة الإدخال. [`DateTime`](/ar/reference/data-types/datetime)
+تعيد بداية الفاصل الزمني الذي تقع ضمنه قيمة الإدخال، وبالنوع نفسه لقيمة الإدخال. [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 
 **أمثلة**
 
@@ -4779,7 +4788,7 @@ SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
 
 ```response title=Response
 ┌─toStartOfInterval(toDateTime('2023-01-15 14:30:00'), toIntervalMonth(1))─┐
-│                                                               2023-01-01 │
+│                                                      2023-01-01 00:00:00 │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -5372,7 +5381,8 @@ int32samoa: 1546300800
 
 أُضيفت في: v23.8.0
 
-تحوِّل قيمة تاريخ أو تاريخ ووقت من منطقة زمنية إلى طابع زمني بتوقيت UTC. تُضمَّن هذه الدالة أساسًا للتوافق مع Apache Spark وأطر العمل المشابهة.
+تحوِّل قيمة تاريخ أو تاريخ مع وقت من منطقة زمنية إلى طابع زمني بتوقيت UTC. تُضمَّن هذه الدالة أساسًا للتوافق مع Apache Spark وأطر العمل المشابهة.
+يُحوَّل الوقت المحلي الذي يتكرر أو لا وجود له بسبب تغيير التوقيت الصيفي بالطريقة نفسها التي تتبعها `toDateTime`.
 
 **الصيغة**
 
@@ -5382,14 +5392,14 @@ toUTCTimestamp(datetime, time_zone)
 
 **الأسماء البديلة**: `to_utc_timestamp`
 
-**المعاملات**
+**الوسيطات**
 
-* `datetime` — قيمة ثابتة من نوع تاريخ أو تاريخ ووقت، أو تعبير. [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
+* `datetime` — قيمة ثابتة من نوع تاريخ أو تاريخ مع وقت، أو تعبير. [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 * `time_zone` — قيمة ثابتة من نوع String أو تعبير يمثّل المنطقة الزمنية. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
-تعيد قيمة تاريخ أو تاريخ ووقت في المنطقة الزمنية UTC. [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
+تعيد قيمة تاريخ أو تاريخ مع وقت في المنطقة الزمنية UTC. [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 
 **أمثلة**
 

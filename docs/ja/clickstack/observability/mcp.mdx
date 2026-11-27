@@ -1,0 +1,147 @@
+---
+slug: /clickstack/observability/mcp
+title: 'ClickStack MCPサーバー'
+sidebarTitle: 'MCPサーバー'
+description: 'ClickStack Model Context Protocol (MCP) サーバーを使用して、AIアシスタントを ClickHouse Observability に接続します'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'MCP', 'Model Context Protocol', 'AI', 'observability', 'ClickStack UI', 'Claude', 'Cursor', 'ClickHouse Cloud', 'OAuth']
+---
+
+ClickStack MCPサーバーは [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) を利用して、AIアシスタントから ClickHouse Observability のデータを操作できるようにします。接続後は、ログ・トレース・メトリクスのクエリ、ダッシュボードやアラートの管理、データソースの探索、保存済み検索の操作を、すべて自然言語でAIアシスタントに任せられます。
+
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Cursor](https://www.cursor.com/)、その他の MCP 対応クライアントなどのツールを使えば、開発環境を離れることなく、インシデントの調査、ダッシュボードの構築、オブザーバビリティ環境の管理を行えます。
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/FaL5iOgNogg?si=dUbsRQe4wYuZ78zt" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+## ClickHouse Observability に接続する {#managed-clickstack}
+
+ClickHouse Observability は、`https://mcp.clickhouse.cloud/clickstack` のクラウドMCPエンドポイント経由で接続し、OAuth 2.0 で認証します。このエンドポイントでは、APIキーによる認証はサポートされていません。
+
+### 前提条件 {#managed-prerequisites}
+
+* [オブザーバビリティが有効](/ja/clickstack/observability/getting-started)になっている、稼働中の ClickHouse Cloud サービス
+* サービスで [MCP が有効](/ja/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server)になっていること。クラウドコンソールを開き、**Connect** をクリックして **Connect with MCP** を選択し、トグルをオンにしてください
+
+### エンドポイント {#managed-endpoint}
+
+```text
+https://mcp.clickhouse.cloud/clickstack
+```
+
+認証には OAuth 2.0 を使用します。MCPクライアントの初回接続時にブラウザウィンドウが開くので、ClickHouse Cloud の認証情報でサインインしてください。APIキーは不要です。
+
+### MCPクライアントの接続 {#managed-connecting-a-client}
+
+ClickHouse Observability サービスで **チーム設定 → API とエージェント** を開き、MCPクライアント用の設定をコピーします。生成される設定にはサービス ID が含まれているため、リクエストはそのサービスに送信されます。
+
+または、以下のいずれかの例を使用することもできます。接続時に、クライアントから OAuth 認証を完了するよう求められます。
+
+<Tabs>
+  <Tab title="Claude Code">
+    ```shell
+    claude mcp add --transport http clickstack https://mcp.clickhouse.cloud/clickstack
+    ```
+
+    Claude Code を起動して `/mcp` を実行し、`clickstack` を選択して OAuth フローを完了します。
+  </Tab>
+
+  <Tab title="Cursor">
+    `.cursor/mcp.json` に以下を追加します。
+
+    ```json
+    {
+      "mcpServers": {
+        "clickstack": {
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="VS Code">
+    `.vscode/mcp.json` に以下を追加します。
+
+    ```json
+    {
+      "servers": {
+        "clickstack": {
+          "type": "http",
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="OpenCode">
+    `opencode.json` に以下を追加します。
+
+    ```json
+    {
+      "mcp": {
+        "clickstack": {
+          "type": "remote",
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="LibreChat">
+    `librechat.yaml` に以下を追加します。
+
+    ```yaml
+    mcpServers:
+      clickstack:
+        type: streamable-http
+        url: https://mcp.clickhouse.cloud/clickstack
+    ```
+  </Tab>
+
+  <Tab title="その他">
+    OAuth による **Streamable HTTP** に対応した MCPクライアントであれば、どれでも接続できます。次のように設定してください。
+
+    * **URL:** `https://mcp.clickhouse.cloud/clickstack`
+  </Tab>
+</Tabs>
+
+### 特定のサービスを対象にする {#managed-service-override}
+
+`x-service-id` ヘッダーを指定しない場合、リクエストはアカウントで最初にプロビジョニングされ、使用されたオブザーバビリティサービスにデフォルトで送信されます。デフォルトのサービスを変更するには、ClickStack で **User Preferences** を開き、デフォルトのサービスを選択してください。
+
+ある MCPクライアントから特定のサービスを対象にするには、そのクライアントの設定で `x-service-id: <YOUR_SERVICE_ID>` をヘッダーとして指定します。このヘッダーはデフォルトのサービスをオーバーライドします。
+
+## MCPでできること {#capabilities}
+
+接続すると、AIアシスタントはサービスの主要な領域にわたるさまざまなツールを利用できるようになります。主なツールは次のとおりです。
+
+* **データのクエリ** — クエリビルダー、検索構文、または生のSQLを使用して、ログ、トレース、メトリクスを検索・集約します。
+* **データソース** — 利用可能なデータソース、データベース接続、カラムのスキーマ、属性キーを一覧表示します。
+* **ダッシュボード** — ダッシュボードとそのタイルを作成、更新、削除、確認します。
+* **アラート** — アラートを作成、更新、確認し、その評価履歴を参照します。
+* **保存済み検索** — 再利用可能な保存済み検索の定義を作成、更新、確認します。
+* **Webhook** — アラート通知に使用できるWebhookの宛先を一覧表示します。
+* **チーム** — 現在のユーザーが所属するチームを一覧表示し、アクティブなチームを特定します。
+
+提供されるツールは今後追加される可能性があります。MCPクライアントは、接続時に利用可能なツールを自動的に検出します。
+
+## トラブルシューティング {#troubleshooting}
+
+<Accordion title="OAuth フローが完了しない">
+  * お使いのMCPクライアントが OAuth 2.0 に対応していることを確認してください。Bearerトークンまたは stdio トランスポートにしか対応していないクライアントは、Cloud エンドポイントで認証できません。
+  * ブラウザが OAuth のポップアップやリダイレクトをブロックしていないことを確認してください。
+  * ClickHouse Cloud アカウントに、対象の組織およびサービスへのアクセス権があることを確認してください。
+</Accordion>
+
+<Accordion title="MCP は有効だがクライアントが接続できない">
+  * 汎用のクラウドMCPエンドポイント (`https://mcp.clickhouse.cloud/mcp`) ではなく、オブザーバビリティ用のエンドポイント (`https://mcp.clickhouse.cloud/clickstack`) を使用していることを確認してください。
+  * クラウドコンソールで、対象のサービスの [MCP が有効になっている](/ja/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server) ことを確認してください。
+</Accordion>
+
+<Accordion title="リクエストが意図しないサービスに送信される">
+  `x-service-id` ヘッダーを指定しない場合、リクエストはデフォルトで、お使いのアカウントで最初にプロビジョニングされ使用されたオブザーバビリティサービスに送信されます。ClickStack の **User Preferences** でデフォルトのサービスを変更するか、ヘッダーを指定して特定のサービスを対象にしてください。詳しくは [特定のサービスを対象にする](#managed-service-override) を参照してください。
+</Accordion>

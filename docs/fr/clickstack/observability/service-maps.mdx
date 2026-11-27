@@ -1,0 +1,46 @@
+---
+slug: /clickstack/observability/service-maps
+title: 'Cartes des services'
+sidebarTitle: 'Cartes des services'
+description: 'Visualisez les dépendances entre services et le flux des requêtes grâce aux cartes des services de ClickHouse Observability.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'cartes des services', 'topologie', 'traces', 'dépendances', 'traçage distribué', 'observability', 'graphe des requêtes']
+---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+Les cartes des services offrent une représentation visuelle des interactions entre vos services. ClickHouse Observability construit le graphe en associant les spans client (requêtes sortantes) aux spans serveur (requêtes entrantes) au sein d’une même trace, ce qui permet de reconstituer le chemin des requêtes entre les services.
+
+Cliquez sur **Cartographie des services** dans le panneau de navigation de gauche pour ouvrir le graphe complet. Les services s’affichent dès que vous [ingérez des données de traçage](/fr/clickstack/observability/ingesting-data/overview) avec OpenTelemetry.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Cartographie des services montrant les nœuds de service et le flux de requêtes entre eux](/images/clickstack/observability-service-map-overview.png)
+  </Frame>
+</div>
+
+## Explorer la cartographie des services {#exploring-the-service-map}
+
+Chaque nœud représente un service, identifié par l&#39;attribut de ressource `service.name`. Les arêtes (lignes en pointillés) relient deux services lorsqu&#39;un span client de l&#39;un correspond à un span serveur de l&#39;autre. La taille des nœuds reflète le volume de trafic relatif. En mode **Error rate**, les nœuds rouges signalent les services ayant rencontré des erreurs dans l&#39;intervalle de temps sélectionné. Utilisez la légende située dans le coin supérieur droit pour basculer entre **Latency**, **Error rate** et **Throughput**.
+
+La barre d&#39;outils située au-dessus de la carte permet de filtrer et d&#39;ajuster l&#39;affichage.
+
+**Sélecteur de sources** — choisissez la source de traces à partir de laquelle la carte est construite, par exemple **Traces**.
+
+**Curseur d&#39;échantillonnage** — ajustez le taux d&#39;échantillonnage pour trouver le bon compromis entre performance et précision. Avec des taux plus faibles, le chargement est plus rapide sur les clusters à fort volume.
+
+**Sélecteur de plage de dates** — définissez la fenêtre temporelle des données de traçage utilisées pour construire la carte.
+
+Utilisez les boutons **+/-** situés dans le coin inférieur gauche de la carte, ou faites défiler, pour zoomer et dézoomer.
+
+## Cartes des services au niveau des traces {#trace-level-service-maps}
+
+Lorsque vous examinez une trace, sélectionnez l&#39;onglet **Cartographie des services** pour voir comment cette requête précise a transité entre les services. Revenez à l&#39;onglet **Trace** pour retrouver la vue en cascade.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Passage de la vue en cascade des traces à la cartographie des services pour une trace donnée](/images/clickstack/observability-trace-service-map.gif)
+  </Frame>
+</div>

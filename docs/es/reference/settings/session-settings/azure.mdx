@@ -91,6 +91,19 @@ Valores posibles:
 * 0 — `SELECT` genera una excepción si el archivo vacío no es compatible con el formato solicitado.
 * 1 — `SELECT` devuelve un resultado vacío para un archivo vacío.
 
+## azure_skip_hidden_files {#azure_skip_hidden_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nueva configuración: omite los blobs con un segmento de ruta que empieza por `_` o `.` por debajo del prefijo sin glob al enumerar archivos mediante glob, como hacen otros lectores del ecosistema Hive. Las tablas con `partition_strategy = 'hive'` siempre omiten estas rutas."}]}]} />
+
+Activa o desactiva la omisión de rutas ocultas al enumerar archivos mediante glob en tablas del motor [AzureBlobStorage](/es/reference/engines/table-engines/integrations/azureBlobStorage), es decir, blobs con un segmento de ruta que empieza por `_` o `.` por debajo del prefijo sin glob de la ruta. Un segmento que contiene `=` es un directorio de partición (como `_p=1` para una columna de partición `_p`) y no se considera oculto. Los escritores del ecosistema Hive (Hive, Spark, Trino) depositan en staging la salida en curso y escriben objetos marcador en estas rutas (`_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), por lo que leerlos genera una condición de carrera con el commit del escritor. Los segmentos incluidos en el prefijo sin glob no se comprueban. Las tablas con `partition_strategy = 'hive'` siempre omiten las rutas ocultas, independientemente de este parámetro de configuración.
+
+Valores posibles:
+
+* 0 — se leen todos los blobs que coinciden con el glob.
+* 1 — se omiten los blobs con un segmento de ruta oculto por debajo del prefijo sin glob.
+
 ## azure_strict_upload_part_size {#azure_strict_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

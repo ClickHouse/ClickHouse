@@ -4,8 +4,6 @@
 -- because transform's hash-based lookup includes the type discriminator,
 -- causing values with different stored subtypes to never match.
 
-SET allow_experimental_dynamic_type = 1;
-
 -- Dynamic type: CASE should match values correctly
 DROP TABLE IF EXISTS t_case_dyn;
 CREATE TABLE t_case_dyn (c0 Dynamic) ENGINE = Memory;
