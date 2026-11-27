@@ -8,6 +8,8 @@
 namespace DB
 {
 
+class NestedColumnExtractHelper;
+
 struct RequestedTypeCastSettings
 {
     bool null_as_default = false;
@@ -37,8 +39,9 @@ void castColumnToRequestedType(ColumnWithTypeAndName & column, const DataTypePtr
     const PaddedPODArray<UInt8> & null_map, const RequestedTypeCastSettings & settings = {});
 
 /// Defaults of `header_column`'s type for a column the data lacks, marked as missing; THERE_IS_NO_COLUMN unless `allow_missing_columns`.
+/// A subcolumn of a column that `nested` extracts from gets, as its outer arrays, the arrays of the deepest column on its path that `nested` has.
 ColumnPtr createMissingColumn(const ColumnWithTypeAndName & header_column, size_t num_rows, bool allow_missing_columns, size_t column_i,
-    BlockMissingValues * block_missing_values);
+    BlockMissingValues * block_missing_values, NestedColumnExtractHelper * nested = nullptr);
 
 /// Gives the named tuple `column` the top-level elements of the named tuple `requested_type` (both possibly Nullable): those it has keep
 /// their type, missing ones are filled with defaults, and the others are dropped. Does nothing unless both are named tuples.
