@@ -17,9 +17,7 @@ import { CommunityMaintainedBadge } from "/snippets/fr/components/CommunityMaint
 
 <CommunityMaintainedBadge />
 
-<div id="start-or-download-datagrip">
-  ## Démarrer ou télécharger DataGrip
-</div>
+## Démarrer ou télécharger DataGrip {#start-or-download-datagrip}
 
 DataGrip est disponible à l’adresse suivante : https://www.jetbrains.com/datagrip/
 
@@ -29,16 +27,12 @@ DataGrip est disponible à l’adresse suivante : https://www.jetbrains.com/data
   </Step>
 
   <Step title="Charger le driver ClickHouse" id="2-load-the-clickhouse-driver">
-    1. Lancez DataGrip, puis, dans l’onglet **Data Sources** de la boîte de dialogue **Data Sources and Drivers**, cliquez sur l’icône **+**
+    1. Lancez DataGrip, puis, dans l’onglet **Sources de données** de la boîte de dialogue **Sources de données and Drivers**, cliquez sur l’icône **+**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Onglet Data Sources de DataGrip avec l’icône + mise en évidence](/images/integrations/sql-clients/datagrip-5.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Onglet Sources de données de DataGrip avec l’icône + mise en évidence](/images/integrations/sql-clients/datagrip-5.webp)
+      </Frame>
     </div>
 
     Sélectionnez **ClickHouse**
@@ -48,13 +42,9 @@ DataGrip est disponible à l’adresse suivante : https://www.jetbrains.com/data
     </Tip>
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![DataGrip sélectionnant ClickHouse dans la liste des sources de données](/images/integrations/sql-clients/datagrip-6.webp)
-
-    </Frame>
-
+      <Frame>
+        ![DataGrip sélectionnant ClickHouse dans la liste des sources de données](/images/integrations/sql-clients/datagrip-6.webp)
+      </Frame>
     </div>
 
     * Basculez vers l’onglet **Drivers** et chargez le driver ClickHouse
@@ -63,13 +53,9 @@ DataGrip est disponible à l’adresse suivante : https://www.jetbrains.com/data
       sélectionnez **ClickHouse** dans la liste **Complete Support**, puis développez le signe **+**. Choisissez le driver **Latest stable** dans l’option **Provided Driver** :
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Onglet Drivers de DataGrip montrant l’installation du driver ClickHouse](/images/integrations/sql-clients/datagrip-1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Onglet Drivers de DataGrip montrant l’installation du driver ClickHouse](/images/integrations/sql-clients/datagrip-1.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -78,7 +64,7 @@ DataGrip est disponible à l’adresse suivante : https://www.jetbrains.com/data
       À l’étape 1, vous avez récupéré vos informations de connexion : renseignez l’URL de l’hôte, le port, le nom d’utilisateur, le mot de passe et le nom de la base de données, puis testez la connexion.
 
     <Tip>
-      Saisissez uniquement le nom d’hôte dans le champ **Host** (par ex. `your-host.clickhouse.cloud`), sans préfixe de protocole tel que `https://`.
+      Saisissez uniquement le nom d’hôte dans le champ **Hôte** (par ex. `your-host.clickhouse.cloud`), sans préfixe de protocole tel que `https://`.
 
       Pour les connexions à ClickHouse Cloud, vous devez ajouter `?ssl=true` dans le champ **URL** sous l’hôte. L’URL JDBC complète doit ressembler à ceci :
 
@@ -90,19 +76,15 @@ DataGrip est disponible à l’adresse suivante : https://www.jetbrains.com/data
     </Tip>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Formulaire des informations de connexion DataGrip avec les paramètres ClickHouse](/images/integrations/sql-clients/datagrip-7.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Formulaire des informations de connexion DataGrip avec les paramètres ClickHouse](/images/integrations/sql-clients/datagrip-7.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="learn-more">
-  ## En savoir plus
+  ## En savoir plus {#learn-more}
 </div>
 
 Pour en savoir plus sur DataGrip, consultez la documentation de DataGrip.

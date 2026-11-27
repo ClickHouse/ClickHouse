@@ -2768,6 +2768,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         exact_ranges = nullptr;
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
+
+    /// Neither are there exact ranges when a nested `NULL` or `NaN` of a key value costs every range its
+    /// `can_be_false` claim. The search would otherwise trim the boundary marks of a continuous range and
+    /// then find the interior marks not exact either, which looks like an inconsistent `KeyCondition`.
+    if (exact_ranges && key_condition.mayClaimNestedNullOrNaN(primary_key.data_types))
+        exact_ranges = nullptr;
+
     /// The columns are unnamed, because `KeyCondition` names the function results it caches in this block.
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
 
@@ -3492,9 +3499,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     MarkRanges index_ranges;
     for (const auto & range : ranges)
     {
+        /// The end rounds up without forming the sum, which wraps when the granularity is close to the maximum of size_t.
         MarkRange index_range(
                 range.begin / skip_index_granularity,
-                (range.end + skip_index_granularity - 1) / skip_index_granularity);
+                range.end / skip_index_granularity + (range.end % skip_index_granularity != 0));
         index_ranges.push_back(index_range);
     }
 
@@ -3869,9 +3877,10 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
     MarkRanges index_ranges;
     for (const auto & range : ranges)
     {
+        /// The end rounds up without forming the sum, which wraps when the granularity is close to the maximum of size_t.
         MarkRange index_range(
             range.begin / skip_index_granularity,
-            (range.end + skip_index_granularity - 1) / skip_index_granularity);
+            range.end / skip_index_granularity + (range.end % skip_index_granularity != 0));
         index_ranges.push_back(index_range);
     }
 
@@ -3891,11 +3900,16 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
                                     index_ranges.getNumberOfMarks(), part_marks_count, access_by_mark);
     auto bulk_granules = std::dynamic_pointer_cast<IMergeTreeIndexBulkGranules>(min_max_granules);
 
+    /// Adjacent ranges can share an index granule, and each read appends all of its marks, so read every granule once.
+    std::optional<size_t> last_read_index_mark;
     for (auto index_range : index_ranges)
     {
         for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
         {
+            if (index_mark == last_read_index_mark)
+                continue;
             reader.read(index_mark, index_mark, bulk_granules);
+            last_read_index_mark = index_mark;
         }
     }
     return min_max_granules;

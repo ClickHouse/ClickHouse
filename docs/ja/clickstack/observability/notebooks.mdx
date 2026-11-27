@@ -1,0 +1,153 @@
+---
+slug: /clickstack/observability/notebooks
+title: 'ClickHouse オブザーバビリティの AIノートブック'
+sidebarTitle: 'AIノートブック'
+description: 'ClickHouse オブザーバビリティ向けの、AI を活用した調査用ノートブック'
+doc_type: 'guide'
+keywords: ['clickstack', 'AI notebooks', 'investigation', 'observability', 'ClickStack UI']
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+AIノートブックは、ClickHouse オブザーバビリティの対話型調査ツールで、AIエージェントによる分析と手動での分析を組み合わせて利用できます。発生している問題を自然な言葉で説明すると、AIエージェントがユーザーに代わってログ、トレース、メトリクスに対してクエリを実行し、関連するデータ、チャート、サマリーを一連のタイルとして提示します。AIが生成した出力と並べて独自のタイル (チャート、テーブル、検索、Markdown のメモ) を追加することもでき、調査の全体を記録として残せます。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![調査ステップとサマリーを含む、最近のエラーを分析中のAIノートブック](/images/clickstack/observability-notebook-hero.png)
+  </Frame>
+</div>
+
+## セットアップ {#setup}
+
+AIノートブックは現在、ClickHouse Cloudでベータ版として提供されています。AIモデルとプロバイダはプラットフォームによって自動的に管理されます。
+
+AIノートブックを使用する前に、次の要件を満たしていることを確認してください。
+
+1. **Generative AIが有効になっていること** — チーム管理者がGenerative AIの同意トグルを有効にする必要があります。詳しくは[Generative AIの有効化](#enabling-generative-ai)を参照してください。
+2. **ノートブックへのアクセス権** — ご自身のロールに、ノートブックの閲覧/書き込みアクセス許可が付与されている必要があります。
+
+有効化されると、適切なロールを持つすべてのユーザーの左サイドバーに **AIノートブック** エントリが表示されます。
+
+## Generative AIの有効化 {#enabling-generative-ai}
+
+ノートブック (およびその他のAI機能) を使用するには、事前にチーム管理者がGenerative AIの同意トグルを有効にしておく必要があります。
+
+1. **チーム設定** を開き、**Configure Generative AI** を探します。
+2. Generative AIのトグルをオンにします。
+3. 同意ダイアログの内容を確認し、承諾します。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Chart AI AssistantとAIノートブックが有効になっているConfigure Generative AIの設定画面](/images/clickstack/observability-notebook-ai-consent.png)
+  </Frame>
+</div>
+
+## AIノートブックの使い方 {#using-notebooks}
+
+### ノートブックの作成 {#creating-a-notebook}
+
+1. 左側のサイドバーから **AIノートブック** を選択します。
+2. **New Private Notebook** (自分だけが閲覧可能) または **New Shared Notebook** (チーム内で共有) をクリックします。
+
+ノートブック一覧ページには、アクセス権のあるすべてのノートブックが表示されます。名前やタグでフィルタしたり、**My Notebooks** と **All Notebooks** の表示を切り替えたりできます。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![ノートブック一覧ページ](/images/clickstack/observability-notebook-list.png)
+  </Frame>
+</div>
+
+### AI 調査の実行 {#running-investigation}
+
+ノートブック下部で、調査したい内容を説明するプロンプトを入力します。例: *「過去 1 時間で checkout サービスのエラー率が急上昇したのはなぜか？」*
+
+**Send** をクリックします (または Enter キーを押します)。AI エージェントは次の処理を行います。
+
+1. 利用可能なデータソースを確認します。
+2. ログ、トレース、メトリクスに対して検索クエリと集約クエリを実行します。
+3. 思考プロセス、実行したクエリ、中間チャート、そして結論をまとめた最終的な概要を、一連のタイルとして生成します。
+
+各ステップはノートブック内のタイルとして表示されます。**思考プロセス** タイルには各クエリの根拠となる推論が表示され、**出力** タイルにはエージェントの結論と、必要に応じてチャートが表示されます。通常の AI チャットとは異なり、ノートブックでは各ステップで AI がどのデータを扱っているかを正確に把握できます。そのため、推論の妥当性を検証したり、AI が見落としている可能性のある有力な手がかりを見つけたり、調査を[ブランチ](#branching)して別の方向へ進めたりできます。
+
+調査の実行中に **Stop** をクリックすると、調査をキャンセルできます。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![AI が生成したタイルを含むノートブック](/images/clickstack/observability-notebook-tiles.png)
+  </Frame>
+</div>
+
+### 調査のブランチ {#branching}
+
+AI による調査の途中で、あるステップで興味深い情報が見つかったにもかかわらず、エージェントが別の方向へ調査を進めてしまうことがあります。**ブランチ**を使用すると、元の調査パスを残したまま、その時点から別のプロンプトで調査をやり直せます。
+
+ブランチを作成するには、次の手順を実行します。
+
+1. ブランチ元にするタイルを展開し、**Restart from Here** をクリックします。
+2. ダイアログで、調査を新しい方向へ導くよう修正したプロンプトを入力します。
+3. **Create Branch** をクリックします。AI がその時点から新しい調査のブランチを開始します。
+
+<div className="ch-image-md">
+  <Frame>
+    ![Create New Branch ダイアログ](/images/clickstack/observability-notebook-branch-modal.png)
+  </Frame>
+</div>
+
+タイルに複数のブランチがあると、タイルのヘッダーに左右の矢印ボタンと、ブランチの数を示すバッジ (例: **1/2**) が表示されます。矢印をクリックしてブランチを切り替えます。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![タイル上のブランチナビゲーション矢印と 1/2 バッジ](/images/use-cases/observability/hyperdx-notebook-branching.webp)
+  </Frame>
+</div>
+
+### 手動タイルの追加 {#manual-tiles}
+
+AI が生成したタイルに加えて、ノートブック下部のボタンから独自の分析ブロックを追加できます。
+
+| ボタン          | ショートカット | 説明                                                                                              |
+| ------------ | ------- | ----------------------------------------------------------------------------------------------- |
+| **検索**       | `S`     | ログ/トレースの検索ビューです。検索ページと同等の機能を備えています。                                                             |
+| **チャート**     | `L`     | 時系列の折れ線グラフです。[ダッシュボード](/ja/clickstack/observability/features/dashboards/overview)と同じ可視化ビルダーを使用します。 |
+| **テーブル**     | `T`     | 表形式の集約ビューです。                                                                                    |
+| **Markdown** | `M`     | メモ、仮説、結論などを記述するための自由形式のテキストです。                                                                  |
+
+タイルを追加すると、インライン編集モードで開き、データソース、フィルタ、集計を設定できます。これは[ダッシュボードの可視化](/ja/clickstack/observability/features/dashboards/overview#creating-visualizations)を作成する際と同じインターフェイスです。**保存** をクリックすると、タイルが確定します。
+
+手動タイルは、現在のブランチで最後に表示されているタイルの下に追加されます。タイルの下端をドラッグすると、縦方向にサイズを変更できます。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![ノートブック下部の手動タイル用ボタン](/images/clickstack/observability-notebook-manual-tiles.png)
+  </Frame>
+</div>
+
+<Note>
+  AI による調査の実行中に手動タイルを追加または編集すると、調査はキャンセルされます。その前に確認ダイアログが表示されます。
+</Note>
+
+### 共有と整理 {#sharing-organizing}
+
+* **プライベートと共有** — ノートブックのヘッダーにある鍵アイコンをクリックすると、プライベート (自分のみ) と共有 (チームに公開) を切り替えられます。この設定を変更できるのはノートブックの作成者のみです。
+* **タグ** — ノートブックにタグを付けておくと、一覧ページで簡単にフィルタリングできます。
+* **名前の設定** — ノートブックのタイトルをクリックすると名前を変更できます。無題のノートブックで調査を開始すると、AI が自動的に名前を提案します。
+
+### Custom agent context {#custom-agent-context}
+
+チーム管理者は、チーム内のすべてのAIノートブック調査に含める追加のコンテキストを指定できます。システムアーキテクチャや命名規則、既知の問題といった背景情報をAIに伝えたい場合に便利です。
+
+設定手順は次のとおりです。
+
+1. 左側のサイドバーから **AIノートブック** に移動します。
+2. 右上の設定 (歯車) アイコンをクリックして **Custom Agent Context** を開きます (チーム管理者のみ利用可能) 。
+3. カスタムコンテキスト (最大 50,000 文字) を入力して保存します。
+
+このコンテキストは、チーム全体のすべてのノートブック調査で、AIのシステムプロンプトに追記されます。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![AIノートブックページの Custom Agent Context パネル](/images/clickstack/observability-notebook-agent-context.png)
+  </Frame>
+</div>

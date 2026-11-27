@@ -1,5 +1,6 @@
 #include "config.h"
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <unordered_set>
@@ -14,6 +15,8 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageParallelListingIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ParallelListingGlobPredicate.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -85,10 +88,9 @@
 #include <Common/ProfileEvents.h>
 #include <Core/SettingsEnums.h>
 #include <Core/Field.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Storages/MergeTree/MarkRange.h>
@@ -450,6 +452,21 @@ namespace Setting
     extern const SettingsBool azure_validate_etag_on_read;
 }
 
+/// Upper bound on the effective `s3_list_object_parallelism`. The setting comes straight from the user
+/// and becomes the size (and queue size) of the per-iterator `S3_LIST_POOL` thread pool, so an absurd
+/// value (e.g. set by mistake or a fuzzer) would otherwise try to grab the entire global thread pool for
+/// a single listing — starving the rest of the server — and overflow the buffered-keys bound derived from
+/// it. No real workload needs more than a few dozen parallel listing streams, so we clamp to a generous
+/// cap rather than reject the query, keeping the setting a pure performance knob.
+static constexpr size_t MAX_LIST_OBJECT_PARALLELISM = 1000;
+
+/// Upper bound on the page size of the parallel listing. `list_object_keys_size` is not validated, yet it
+/// feeds the buffered-key cap (`page_size * parallelism * 2`) and the a-priori page byte bound, so an absurd
+/// value (e.g. set by a fuzzer) would overflow them. Listing services never return pages this large
+/// (`ListObjectsV2` returns at most 1000 keys, and the request narrows `MaxKeys` to `int`), so clamping
+/// both the requested page size and the derived caps loses nothing.
+static constexpr size_t MAX_LIST_OBJECT_KEYS_SIZE = 10000;
+
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
 {
 #if USE_AVRO
@@ -483,8 +500,88 @@ static bool hasAttachedDeletes(const ObjectInfo & object_info)
             return true;
     }
 #endif
-    return object_info.data_lake_metadata && object_info.data_lake_metadata->excluded_rows
-        && object_info.data_lake_metadata->excluded_rows->size() > 0;
+    if (!object_info.data_lake_metadata)
+        return false;
+    const auto & metadata = *object_info.data_lake_metadata;
+    return (metadata.excluded_rows && metadata.excluded_rows->size() > 0) || metadata.selected_rows;
+}
+
+/// The schema transform of a data lake object outputs whole columns, but the query can request subcolumns
+/// (e.g. `struct_col.field`), which are extracted from the columns in storage that the transform outputs. A column
+/// in storage can be a subcolumn itself (e.g. `t.x` for `t.x.null`). Passes it through if the format reader reads it by
+/// itself (it is in `input_header`, the header of the input of the transform), otherwise extracts it from the column that
+/// the transform outputs: e.g. the format reads only `t` if the query needs both `t` and `t.x`.
+static void addRequestedSubcolumns(
+    ActionsDAG & dag, const NamesAndTypesList & requested_columns, const Block & input_header, const ContextPtr & context)
+{
+    /// Several requested subcolumns can be extracted from the same subcolumn the format reads, which can be requested too.
+    auto get_or_add_input = [&dag](const String & name, const DataTypePtr & type) -> const ActionsDAG::Node &
+    {
+        for (const auto * input : dag.getInputs())
+            if (input->result_name == name)
+                return *input;
+        return dag.addInput(name, type);
+    };
+
+    /// Finds the column with the longest name that is a prefix of `name` and has such a subcolumn.
+    auto find_longest_prefix = [](const String & name, size_t min_size, const auto & columns, auto get_name, auto get_type)
+    {
+        decltype(&*columns.begin()) result = nullptr;
+        size_t result_size = min_size;
+        for (const auto & column : columns)
+        {
+            const String & column_name = get_name(column);
+            if (column_name.size() < result_size || (result && column_name.size() == result_size)
+                || name.size() <= column_name.size() + 1 || !name.starts_with(column_name) || name[column_name.size()] != '.')
+                continue;
+            if (!get_type(column)->tryGetSubcolumnType(name.substr(column_name.size() + 1)))
+                continue;
+            result = &column;
+            result_size = column_name.size();
+        }
+        return result;
+    };
+
+    for (const auto & requested_column : requested_columns)
+    {
+        const String name = requested_column.getNameInStorage();
+        const DataTypePtr & type = requested_column.getTypeInStorage();
+        if (dag.tryFindInOutputs(name))
+            continue;
+
+        /// A subcolumn can come as an ordinary column named by its full name.
+        const auto * const * storage_column_ptr = find_longest_prefix(
+            name, 0, dag.getOutputs(),
+            [](const ActionsDAG::Node * node) -> const String & { return node->result_name; },
+            [](const ActionsDAG::Node * node) { return node->result_type; });
+        if (!storage_column_ptr)
+            continue;
+
+        const ActionsDAG::Node * source = *storage_column_ptr;
+        if (source->type == ActionsDAG::ActionType::INPUT)
+        {
+            if (input_header.has(name))
+            {
+                dag.getOutputs().push_back(&get_or_add_input(name, type));
+                continue;
+            }
+
+            /// The format can read a subcolumn of the column that the transform passes through instead of the
+            /// whole column, e.g. `t.x` for `t.x.null`: extract the subcolumn from the longest one it reads.
+            const auto * read_subcolumn = find_longest_prefix(
+                name, source->result_name.size() + 1, input_header,
+                [](const ColumnWithTypeAndName & column) -> const String & { return column.name; },
+                [](const ColumnWithTypeAndName & column) { return column.type; });
+            if (read_subcolumn)
+                source = &get_or_add_input(read_subcolumn->name, read_subcolumn->type);
+        }
+
+        const String subcolumn_name = name.substr(source->result_name.size() + 1);
+        auto string_type = std::make_shared<DataTypeString>();
+        const auto & subcolumn_name_node = dag.addColumn(string_type->createColumnConst(1, subcolumn_name), string_type, subcolumn_name);
+        dag.getOutputs().push_back(&dag.addFunction(
+            FunctionFactory::instance().get("getSubcolumn", context), {source, &subcolumn_name_node}, name));
+    }
 }
 
 static bool readsIdentityPartitionColumn(
@@ -1158,6 +1255,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 local_context,
                 is_archive ? nullptr : read_keys,
                 query_settings.list_object_keys_size,
+                query_settings.list_object_parallelism,
                 query_settings.throw_on_zero_files_match,
                 shouldSkipHiddenFiles(query_settings, *configuration),
                 with_tags,
@@ -1403,6 +1501,12 @@ Chunk StorageObjectStorageSource::generate()
 
             FailPointInjection::pauseFailPoint(FailPoints::object_storage_source_pause_before_virtual_columns);
 
+            /// `_headers` is added along with the other virtual columns, in the order they are requested in,
+            /// which is the order of the columns in the header of the source.
+            std::optional<Map> http_response_headers;
+            if (read_from_format_info.requested_virtual_columns.contains("_headers"))
+                http_response_headers = tryGetHeadersFromReadBuffer(reader.readBuffer()).value_or(objectAttributesToMap(object_metadata->attributes));
+
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
@@ -1424,22 +1528,10 @@ Chunk StorageObjectStorageSource::generate()
                     .first_row_id = first_row_id,
                     .materialized_row_ids = materialized_row_ids,
                     .materialized_last_updated_sequence_numbers = materialized_last_updated_sequence_numbers,
+                    .http_response_headers = http_response_headers ? &*http_response_headers : nullptr,
                 },
                 read_context,
                 format_settings);
-
-            if (read_from_format_info.requested_virtual_columns.contains("_headers"))
-            {
-                auto type = std::make_shared<DataTypeMap>(
-                    std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-                    std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
-
-                const Map headers = tryGetHeadersFromReadBuffer(reader.readBuffer()).value_or(objectAttributesToMap(object_metadata->attributes));
-
-                chunk.addColumn(type->createColumnConst(
-                    chunk.getNumRows(),
-                    headers)->convertToFullColumnIfConst());
-            }
 
             if (lazy_row_index_registry)
             {
@@ -2171,7 +2263,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                         result->top_k_filter = format_filter_info->top_k_filter;
                     /// With a schema transform the reader sees the names of the file's schema, which the filters do not use.
                     if (keep_in_reader)
+                    {
                         result->join_runtime_filter_predicate = format_filter_info->join_runtime_filter_predicate;
+                        result->join_runtime_filter_reads_uncached_column_index
+                            = format_filter_info->join_runtime_filter_reads_uncached_column_index;
+                    }
                     return result;
                 }
             }
@@ -2216,6 +2312,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 if (top_k_filter_allowed)
                     result->top_k_filter = format_filter_info->top_k_filter;
                 result->join_runtime_filter_predicate = format_filter_info->join_runtime_filter_predicate;
+                result->join_runtime_filter_reads_uncached_column_index
+                    = format_filter_info->join_runtime_filter_reads_uncached_column_index;
                 return result;
             }
 
@@ -2267,6 +2365,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 filter_info_with_row_numbers->rows_to_read = filter_info->rows_to_read;
                 filter_info_with_row_numbers->top_k_filter = filter_info->top_k_filter;
                 filter_info_with_row_numbers->join_runtime_filter_predicate = filter_info->join_runtime_filter_predicate;
+                filter_info_with_row_numbers->join_runtime_filter_reads_uncached_column_index
+                    = filter_info->join_runtime_filter_reads_uncached_column_index;
             }
             filter_info_with_row_numbers->need_row_numbers = true;
             filter_info = filter_info_with_row_numbers;
@@ -2302,6 +2402,69 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 add_filter_inputs(stripped_row_level_filter->actions);
             if (stripped_prewhere_info)
                 add_filter_inputs(stripped_prewhere_info->prewhere_actions);
+        }
+
+        /// Columns that only this object contains, e.g. `_change_type` of a CDC file of the Delta Lake change data feed.
+        /// Read them only if the query needs them: the schema transform of the object takes them from the file, but it
+        /// keeps only the needed columns (see below), and a column it does not consume would pass through it.
+        if (!schema_changed && object_info->data_lake_metadata && object_info->data_lake_metadata->additional_file_columns)
+        {
+            /// A requested subcolumn (e.g. `_change_type.size`) needs its column in storage: the schema transform
+            /// extracts the subcolumn from it.
+            auto is_column_or_subcolumn = [&](const String & required_name, const String & column_name)
+            {
+                return required_name == column_name || required_name.starts_with(column_name + ".");
+            };
+            auto is_needed_by_filter = [&](const ActionsDAG & dag, const String & column_name)
+            {
+                for (const auto & required : dag.getRequiredColumns())
+                {
+                    if (is_column_or_subcolumn(required.name, column_name))
+                        return true;
+                }
+                return false;
+            };
+            auto is_needed = [&](const String & column_name)
+            {
+                for (const auto & requested : read_from_format_info.requested_columns)
+                {
+                    if (requested.getNameInStorage() == column_name || is_column_or_subcolumn(requested.name, column_name))
+                        return true;
+                }
+                if (stripped_row_level_filter && is_needed_by_filter(stripped_row_level_filter->actions, column_name))
+                    return true;
+                return stripped_prewhere_info && is_needed_by_filter(stripped_prewhere_info->prewhere_actions, column_name);
+            };
+            bool header_extended = false;
+            for (const auto & column : *object_info->data_lake_metadata->additional_file_columns)
+            {
+                if (!initial_header.has(column.name) && is_needed(column.name))
+                {
+                    initial_header.insert({column.type->createColumn(), column.type, column.name});
+                    header_extended = true;
+                }
+            }
+
+            /// The key condition of a filter info refers to the columns by their positions in the header it is built for
+            /// (once), and the filter info of the query is shared by the objects, which have different headers now:
+            /// make a copy for this object, with its own key condition.
+            if (header_extended && filter_info)
+            {
+                auto filter_info_for_header = std::make_shared<FormatFilterInfo>(
+                    filter_info->filter_actions_dag,
+                    context_,
+                    filter_info->column_mapper,
+                    filter_info->row_level_filter,
+                    filter_info->prewhere_info);
+                filter_info_for_header->current_schema_column_mapper = filter_info->current_schema_column_mapper;
+                filter_info_for_header->condition_hash = filter_info->condition_hash;
+                filter_info_for_header->rows_to_read = filter_info->rows_to_read;
+                filter_info_for_header->need_row_numbers = filter_info->need_row_numbers;
+                filter_info_for_header->top_k_filter = filter_info->top_k_filter;
+                filter_info_for_header->min_max_from_statistics = filter_info->min_max_from_statistics;
+                filter_info_for_header->keep_filter_column_statistics = filter_info->keep_filter_column_statistics;
+                filter_info = filter_info_for_header;
+            }
         }
 
         chassert(object_info->getObjectMetadata().has_value());
@@ -2416,6 +2579,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             });
         }
 
+        if (object_info->data_lake_metadata && object_info->data_lake_metadata->selected_rows)
+        {
+            builder.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<DeletionVectorTransform>(
+                    header, object_info->data_lake_metadata->selected_rows, /* rows_are_selection */ true);
+            });
+        }
+
         std::optional<ActionsDAG> schema_transform;
         if (object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform)
         {
@@ -2431,7 +2603,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// FIXME: This is currently not done for the below case (configuration->getSchemaTransformer())
             /// because it is an iceberg case where transformer contains columns ids (just increasing numbers)
             /// which do not match requested_columns (while here requested_columns were adjusted to match physical columns).
-            Names needed_names = read_from_format_info.requested_columns.getNames();
+            /// The columns in storage: the requested subcolumns are extracted from them after the transform.
+            Names needed_names;
+            for (const auto & column : read_from_format_info.requested_columns)
+                needed_names.push_back(column.getNameInStorage());
             auto add_filter_required_names = [&needed_names](const ActionsDAG & dag)
             {
                 for (const auto & required : dag.getRequiredColumns())
@@ -2441,6 +2616,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 add_filter_required_names(stripped_row_level_filter->actions);
             if (stripped_prewhere_info)
                 add_filter_required_names(stripped_prewhere_info->prewhere_actions);
+            addRequestedSubcolumns(*schema_transform, read_from_format_info.requested_columns, builder.getHeader(), context_);
             /// A file read under its own schema has all its columns as inputs, as in the `getSchemaTransformer` case below.
             if (!schema_changed)
                 schema_transform->removeUnusedActions(needed_names);
@@ -2976,6 +3152,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     ContextPtr context_,
     ObjectInfos * read_keys_,
     size_t list_object_keys_size,
+    size_t list_object_parallelism,
     bool throw_on_zero_files_match_,
     bool skip_hidden_files_,
     bool with_tags,
@@ -3003,8 +3180,6 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
 
         hidden_check_prefix_size = getHiddenCheckOffset(key_with_globs.path);
 
-        object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size, with_tags, std::nullopt);
-
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs.path));
         if (!matcher->ok())
         {
@@ -3012,6 +3187,144 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         }
 
         recursive = key_with_globs.path == "/**";
+
+        /// Clamp the user-provided parallelism to a sane maximum before it sizes the listing thread pool
+        /// (and the buffered-keys bound below): a huge value must not be able to grab the whole global
+        /// thread pool for a single listing or overflow the bound.
+        const size_t parallelism = std::min(list_object_parallelism, MAX_LIST_OBJECT_PARALLELISM);
+
+        /// List the matching files in parallel by walking the "directory" tree (the common prefixes
+        /// formed by the '/' delimiter), unless disabled or the path cannot be pruned per directory
+        /// level and would degrade to one request per directory: legacy recursive wildcard `**` forms and
+        /// '{...}' selectors spanning '/' (e.g. `root/{a/b,c/d}/*.csv`) both match across '/'.
+        /// Endpoints that accept a delimited listing only from a '/'-aligned prefix (S3 Express /
+        /// directory buckets) keep the parallel walk by starting it one '/' boundary earlier; see
+        /// `chooseDelimitedListingStartPrefix`.
+        std::optional<std::string> listing_start_prefix;
+
+        /// The request path treats `list_object_keys_size = 0` as "use the storage-configured
+        /// default page size", so resolve the zero the same way before it sizes the buffered-key
+        /// cap below: deriving the cap from the raw zero would collapse it to a single key while
+        /// every listed page still carries a full default-sized batch, blocking the workers on the
+        /// count budget and serializing the parallel listing.
+        /// Clamp it as well (see `MAX_LIST_OBJECT_KEYS_SIZE`) so the caps derived from it cannot overflow.
+        const size_t page_size = std::min(
+            list_object_keys_size ? list_object_keys_size : object_storage->getListObjectsDefaultPageSize(),
+            MAX_LIST_OBJECT_KEYS_SIZE);
+
+        if (parallelism > 1
+            && !globPathHasRecursiveWildcard(key_with_globs.path)
+            && !globSelectorSpansPathComponents(key_with_globs.path))
+        {
+            listing_start_prefix = chooseDelimitedListingStartPrefix(
+                key_with_globs.path,
+                key_prefix,
+                [&](const std::string & prefix) { return object_storage->supportsDelimitedListingFromPrefix(prefix); },
+                /// Invoked (once) only when the walk would start from a prefix wider than `key_prefix`:
+                /// samples every entry on the first delimited page of the widened level. Entries outside
+                /// the fixed prefix's region would force the widened walk to fetch pages the serial
+                /// listing never needs. Tags-free — only the paths matter here. On a storage that lists keys
+                /// in no particular order the first page is an arbitrary one, so there the check is only a
+                /// cost heuristic; the walk returns the same keys either way.
+                [&](const std::string & widened_prefix)
+                {
+                    auto page = object_storage->listObjectsSingleLevel(
+                        widened_prefix, "/", page_size, /* with_tags */ false, /* start_after */ {}, /* continuation_token */ {});
+                    std::vector<std::string> keys;
+                    keys.reserve(page.objects.size() + page.common_prefixes.size());
+                    for (const auto & object : page.objects)
+                        keys.push_back(object->getPath());
+                    keys.insert(keys.end(), page.common_prefixes.begin(), page.common_prefixes.end());
+                    return keys;
+                });
+        }
+
+        if (listing_start_prefix.has_value())
+        {
+            LOG_DEBUG(
+                log,
+                "Listing {} in parallel with {} threads, starting from the prefix {}",
+                key_with_globs.path,
+                parallelism,
+                *listing_start_prefix);
+
+            /// A walk started from a prefix wider than the glob's fixed prefix (directory buckets, see
+            /// `chooseDelimitedListingStartPrefix`) is cut off at the end of the fixed prefix's key
+            /// region, so loose objects of the widened level sorting after every possibly-matching key —
+            /// which the sampled first page cannot rule out — are not paged through. The bound is the
+            /// least key already outside that region, and the iterator treats it as exclusive, so even a
+            /// loose object named exactly like it is neither emitted nor paginated towards.
+            /// A storage that lists keys in no particular order (S3 Express / directory buckets) cannot stop
+            /// at a bound — a later page may still hold matching keys — so its widened walk pages through the
+            /// whole widened level; the per-key match still filters the loose objects out.
+            const bool listing_is_ordered = object_storage->listsKeysInLexicographicOrder();
+            std::string root_range_end;
+            if (listing_is_ordered && *listing_start_prefix != key_prefix)
+                if (auto bound = leastKeyAfterPrefixRegion(key_prefix))
+                    root_range_end = std::move(*bound);
+
+            /// Capture the object storage by shared_ptr so it outlives the iterator's worker threads.
+            auto list_level = [storage = object_storage, page_size, with_tags]
+                (const std::string & prefix, const std::string & delimiter, const std::string & start_after, const std::string & continuation_token)
+            {
+                return storage->listObjectsSingleLevel(prefix, delimiter, page_size, with_tags, start_after, continuation_token);
+            };
+
+            /// The flat keyspace-split probe only checks whether any key exists past a boundary, so it lists a
+            /// single key and never fetches tags: without this, enabling `s3_list_object_parallelism` on a
+            /// `_tags` scan would eagerly `GetObjectTagging` for every object of a probe page it then discards.
+            auto probe_level = [storage = object_storage]
+                (const std::string & prefix, const std::string & delimiter, const std::string & start_after, const std::string & continuation_token)
+            {
+                return storage->listObjectsSingleLevel(prefix, delimiter, /* max_keys */ 1, /* with_tags */ false, start_after, continuation_token);
+            };
+
+            /// Make the parallel listing observe query cancellation: it waits on its own condition
+            /// variables, which a `KILL` or a timeout does not notify, so give it a way to throw the
+            /// proper exception instead of hanging (the parallel listing runs synchronously on the
+            /// query's main thread, e.g. inside `getPathSample`).
+            std::function<void()> check_cancellation;
+            if (auto query_status = local_context->getProcessListElementSafe())
+                check_cancellation = [query_status] { query_status->throwIfKilled(); };
+
+            /// The count cap below scales with the user-set parallelism and page size, so on its own it
+            /// would admit millions of buffered keys at extreme settings; the iterator's built-in
+            /// buffered-object byte budget (`DEFAULT_MAX_BUFFERED_OBJECT_BYTES`) bounds the buffered-key
+            /// memory independently of these settings. Every listing reserves an a-priori upper bound of a
+            /// page against that budget, so pages bigger than the ones listed before them (longer keys, or
+            /// more tags) cannot overshoot it once per concurrent listing.
+            const size_t max_page_bytes_bound = ObjectStorageParallelListingIterator::pageBytesUpperBound(
+                page_size, object_storage->getListedObjectPayloadBytesUpperBound(with_tags));
+            object_storage_iterator = std::make_shared<ObjectStorageParallelListingIterator>(
+                *listing_start_prefix,
+                parallelism,
+                /* max_buffered_keys */ page_size * parallelism * 2,
+                std::move(list_level),
+                std::move(probe_level),
+                makeShouldDescendPredicate(key_with_globs.path),
+                /* allow_keyspace_split */ object_storage->supportsListingKeyspaceSplit(),
+                std::move(check_cancellation),
+                ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES,
+                ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
+                /* allow_start_after */ object_storage->supportsStartAfterListing(),
+                std::move(root_range_end),
+                /// A trailing-slash glob (`root/*/`) matches directory markers, and the walk descends one
+                /// level into every matching directory only to surface its marker. Tell the iterator so
+                /// that such a range stops after its first page instead of paginating (and splitting) the
+                /// whole subtree to prove a marker is absent. On an unordered storage the marker need not be
+                /// on the first page, so every page of such a directory is listed (its sub-"directories" are still pruned).
+                listing_is_ordered ? makeIsMarkerOnlyPrefixPredicate(key_with_globs.path) : std::function<bool(const std::string &)>{},
+                max_page_bytes_bound,
+                listing_is_ordered,
+                /// A range of sparse, unpruned sub-"directories" is listed recursively rather than with one
+                /// request per sub-"directory". Not for a `_tags` scan: it fetches the tags of every listed
+                /// object, including those under sub-"directories" the glob does not match.
+                /* allow_recursive_listing */ !with_tags);
+        }
+        else
+        {
+            object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size, with_tags, std::nullopt);
+        }
         if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, getContext(), hive_columns))
         {
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());

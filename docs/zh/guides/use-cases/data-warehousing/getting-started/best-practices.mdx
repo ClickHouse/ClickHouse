@@ -195,13 +195,13 @@ SETTINGS iceberg_timestamp_ms = 1714636800000
 
 ### Delta Lake {#delta-lake-settings}
 
-从 25.6 版本开始，ClickHouse 通过 Delta Lake Rust kernel 在 S3 和 GCS 上读取 Delta Lake。在 26.8 及更高版本中，该设置名为 [`allow_delta_kernel_rs`](/zh/reference/settings/session-settings/allow#allow_delta_kernel_rs)，在 25.5 至 26.7 版本中名为 `allow_experimental_delta_kernel_rs`。在 Azure Blob 存储上，由于该内核已被禁用，请使用 [deltaLakeAzure()](/zh/reference/functions/table-functions/deltalake) 和 legacy reader。不使用该内核时，将无法使用分区裁剪、change data feed 以及按快照版本读取。
+ClickHouse 通过 Delta Lake Rust 内核 (`delta-kernel-rs`) 读取 Delta Lake。从 26.11 版本起，它是唯一的 Delta Lake 读取器，原先用于选择该读取器的设置已废弃。
 
-#### Delta Kernel {#delta-kernel}
+#### Delta 内核 {#delta-kernel}
 
-必须启用 Delta kernel 设置，才能使用分区裁剪、change data feed 和快照版本读取。从 25.5 起，该设置在 S3 和 GCS 上默认启用。显式启用时，请使用适用于您的 ClickHouse 版本的名称。
+在 26.11 之前的版本中，必须启用 Delta 内核 设置，才能使用分区裁剪、change data feed 和快照版本读取。从 25.5 起，该设置在 S3 和 GCS 上默认启用。如果不使用该 内核，ClickHouse 会改用旧版读取器，而该读取器不支持上述功能。显式启用时，请使用适用于您的 ClickHouse 版本的名称。
 
-对于 26.8 及更高版本：
+对于 26.8 至 26.10 版本：
 
 ```sql
 SET allow_delta_kernel_rs = 1;

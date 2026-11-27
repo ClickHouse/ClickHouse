@@ -229,6 +229,9 @@ struct AlterCommand
     /// Checks that command will drop something or rename column.
     [[nodiscard]] bool isDropOrRename() const;
 
+    /// `CLEAR COLUMN` of the virtual column `_block_number` or `_block_offset` stored in parts, see `DB::isClearOfBlockColumns`.
+    [[nodiscard]] bool isClearOfBlockColumns(const StorageInMemoryMetadata & metadata) const;
+
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
     /// metadata changes.

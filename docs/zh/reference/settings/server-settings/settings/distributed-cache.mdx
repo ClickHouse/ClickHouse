@@ -20,6 +20,50 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Float" default_value="0.1" changeable_without_restart="否" />分布式缓存会尽量保持的空闲活动连接数量的软限制。当空闲连接数低于 distributed&#95;cache&#95;keep&#95;up&#95;free&#95;connections&#95;ratio * max&#95;connections 时，将关闭活动时间最早的连接，直到该数量重新高于此限制。
 
+## distributed_cache_temporary_data_background_retry_delay_milliseconds {#distributed_cache_temporary_data_background_retry_delay_milliseconds}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="30000" changeable_without_restart="No" />在后台重试已提交的临时数据之前的延迟时间 (单位：毫秒) 。
+
+## distributed_cache_temporary_data_cleanup_period_milliseconds {#distributed_cache_temporary_data_cleanup_period_milliseconds}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1000" changeable_without_restart="No" />对已提交的临时数据执行过期清理的时间间隔，单位为毫秒。
+
+## distributed_cache_temporary_data_confirmation_retry_delay_milliseconds {#distributed_cache_temporary_data_confirmation_retry_delay_milliseconds}
+
+<SettingsInfoBlock type="UInt64" default_value="500" changeable_without_restart="No" />重试已提交临时数据的发布确认之前的延迟时间 (以毫秒为单位) 。
+
+## distributed_cache_temporary_data_control_hello_timeout_milliseconds {#distributed_cache_temporary_data_control_hello_timeout_milliseconds}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="2000" changeable_without_restart="No" />已提交的临时数据控制最多可将文件的生命周期延长至“控制连接 hello 的时间 + 此超时 + 生存时间 (TTL)”，单位为毫秒。客户端在发送 hello 后，等待响应的时长也与此相同。客户端使用自身的值，该值在创建已提交文件时读取 (对于后台续订，则在启动时读取) 。即使客户端与分布式缓存服务器上的取值不同，文件的生命周期也不会短于“hello + 生存时间 (TTL)”。
+
+## distributed_cache_temporary_data_max_bytes_per_server {#distributed_cache_temporary_data_max_bytes_per_server}
+
+<SettingsInfoBlock type="UInt64" default_value="1099511627776" changeable_without_restart="No" />单个分布式缓存服务器可保留的已提交临时 File的最大总大小 (以字节为单位) 。已提交的临时 File会被固定在文件缓存中，在释放或过期之前不会被淘汰，因此该限制用于约束它们最多可占用的缓存空间。默认值为 1 TiB。达到该限制后，服务器将拒绝发布新的已提交临时 File。`0` 表示不限制。
+
+## distributed_cache_temporary_data_max_connections_bypassing_pool {#distributed_cache_temporary_data_max_connections_bypassing_pool}
+
+<SettingsInfoBlock type="UInt64" default_value="5000" changeable_without_restart="Yes" />仅在 ClickHouse Cloud 中生效。对于每个分布式缓存服务器，临时 File 绕过连接池可打开的最大连接数。达到该上限后，临时数据会等待池化连接，等待时长为 `distributed_cache_wait_connection_from_pool_milliseconds` 毫秒，超时后则失败。`0` 表示不限制。针对已提交临时数据的简短控制交互 (确认、续订、释放) 始终会打开新连接，且不计入该上限。无需重启即可更改。
+
+## distributed_cache_temporary_data_max_control_batch_ids {#distributed_cache_temporary_data_max_control_batch_ids}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1024" changeable_without_restart="No" />客户端在单个控制请求中可发送的已提交临时数据 ID 的最大数量。超过 65536 的值会被限制为 65536 (即协议上限) 。
+
+## distributed_cache_temporary_data_max_files_per_server {#distributed_cache_temporary_data_max_files_per_server}
+
+<SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />单个分布式缓存服务器可保留的已提交临时 File 的最大数量。默认值设得较高，因为该限制仅作为兜底措施，用于限定跟踪这些文件所占用的内存；容量主要受 `distributed_cache_temporary_data_max_bytes_per_server` 限制。达到该上限后，服务器将拒绝发布新的已提交临时 File。`0` 表示不限制。
+
+## distributed_cache_temporary_data_pool_behaviour_on_limit {#distributed_cache_temporary_data_pool_behaviour_on_limit}
+
+<SettingsInfoBlock type="DistributedCachePoolBehaviourOnLimit" default_value="allocate_bypassing_pool" changeable_without_restart="Yes" />仅在 ClickHouse Cloud 中生效。指定达到连接池上限时，用于临时数据的分布式缓存连接的行为。临时数据没有可回退到的对象存储，因此默认情况下会打开一个绕过连接池的连接，而不是直接报错失败。该设置适用于查询以及后台操作 (合并、备份) 产生的临时 File。针对已提交临时数据的简短控制交换 (确认、续订、释放) 始终会打开新连接，不受此设置影响。设置为 `wait` 时，会在 `distributed_cache_wait_connection_from_pool_milliseconds` 指定的时间内等待池化连接，超时后失败。无需重启即可更改。
+
+## distributed_cache_temporary_data_renewal_period_seconds {#distributed_cache_temporary_data_renewal_period_seconds}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="900" changeable_without_restart="No" />两次已提交的临时数据所有权续订之间的间隔周期 (以秒为单位) 。
+
+## distributed_cache_temporary_data_ttl_seconds {#distributed_cache_temporary_data_ttl_seconds}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="3600" changeable_without_restart="No" />已提交的临时 File 的生命周期 (单位：秒) 。
+
 ## distributed_cache_warmer_max_bytes_in_queue {#distributed_cache_warmer_max_bytes_in_queue}
 
 <SettingsInfoBlock type="UInt64" default_value="107374182400" changeable_without_restart="No" />仅在 ClickHouse Cloud 中生效。对于未配置本地文件系统缓存的磁盘，缓存预热器在队列中保留的范围的最大总大小；超出该上限时，将丢弃最旧的范围 (若配置了本地缓存，预热器则使用其 `max_size`) 。值为 0 表示不限制。

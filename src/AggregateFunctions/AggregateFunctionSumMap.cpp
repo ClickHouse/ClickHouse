@@ -903,7 +903,8 @@ SELECT
     sumMappedArrays(statusMap.status, statusMap.requests),
     sumMappedArrays(statusMapTuple)
 FROM sum_map
-GROUP BY timeslot;
+GROUP BY timeslot
+ORDER BY timeslot;
         )",
         R"(
 ┌────────────timeslot─┬─sumMappedArrays(statusMap.status, statusMap.requests)─┬─sumMappedArrays(statusMapTuple)─┐
@@ -1093,7 +1094,8 @@ SELECT
     toTypeName(sumMap(statusMap.status, statusMap.requests)),
     toTypeName(sumMapWithOverflow(statusMap.status, statusMap.requests))
 FROM sum_map
-GROUP BY timeslot;
+GROUP BY timeslot
+ORDER BY timeslot;
         )",
         R"(
 ┌────────────timeslot─┬─toTypeName(sumMap(statusMap.status, statusMap.requests))─┬─toTypeName(sumMapWithOverflow(statusMap.status, statusMap.requests))─┐
@@ -1110,7 +1112,8 @@ SELECT
     toTypeName(sumMap(statusMapTuple)),
     toTypeName(sumMapWithOverflow(statusMapTuple))
 FROM sum_map
-GROUP BY timeslot;
+GROUP BY timeslot
+ORDER BY timeslot;
         )",
         R"(
 ┌────────────timeslot─┬─toTypeName(sumMap(statusMapTuple))─┬─toTypeName(sumMapWithOverflow(statusMapTuple))─┐

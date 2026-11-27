@@ -195,6 +195,11 @@ bool isNullableField(const ArrowField & field);
 DataTypePtr fieldToCHType(
     const ArrowField & field, const FormatSettings & settings, bool make_nullable, bool allow_null_type = false);
 
+/// The `Variant` element types of the non-`null` children of an Arrow union, in child order. Children that
+/// infer one type are told apart by name, as the ClickHouse writer names each child after its type family:
+/// it stores, for example, both `IPv6` and `Int128` as `fixed_size_binary(16)`.
+DataTypes unionElementTypes(const ArrowType & type, const FormatSettings & settings, bool allow_null_type);
+
 /// Builds the IPC `Schema` message FlatBuffer for a ClickHouse header into `builder` (left Finished),
 /// mirroring the type choices of the native writer's record-batch encoder.
 void buildSchemaMessage(

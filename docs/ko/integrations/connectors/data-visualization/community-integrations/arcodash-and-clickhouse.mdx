@@ -1,0 +1,62 @@
+---
+sidebarTitle: 'arcodash'
+slug: /integrations/arcodash
+keywords: ['clickhouse', 'arcodash', 'connect', 'integrate', 'visualization', 'dashboard', 'alerts']
+description: 'HTTP 인터페이스를 통해 arcodash를 ClickHouse에 연결하여 SQL 대시보드를 만들고 일정에 따라 실행되는 데이터 검사를 구성합니다.'
+title: 'arcodash를 ClickHouse에 연결하기'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[arcodash](https://www.arcodash.com/connectors/clickhouse/?utm_source=clickhouse-docs\&utm_medium=docs\&utm_campaign=growth-v2\&utm_content=clickhouse-docs-integration)는 데이터 검사 기능이 내장된 호스팅형 BI 도구입니다. SQL 대시보드, AI 쿼리 어시스턴트, 그리고 이메일, Slack, Teams, 웹훅, PagerDuty로 알림을 보내는 예약 검사 기능을 제공합니다. arcodash는 HTTP(S) 인터페이스를 통해 ClickHouse에 연결합니다.
+
+<Steps>
+  <Step title="연결 정보 확인" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+
+    arcodash에 연결하려면 호스트, HTTP 포트(`8123`, HTTPS를 사용하는 ClickHouse Cloud는 `8443`), 사용자, 비밀번호, 데이터베이스 정보가 필요합니다.
+  </Step>
+
+  <Step title="읽기 전용 사용자 생성" id="2-create-a-read-only-user">
+    ```sql
+    CREATE USER arcodash_ro IDENTIFIED BY 'change-me' SETTINGS readonly = 1;
+    GRANT SELECT ON analytics.* TO arcodash_ro;
+    GRANT SELECT ON system.columns TO arcodash_ro;
+    ```
+
+    스키마 브라우저(schema browser)는 `system.columns`를 조회합니다.
+  </Step>
+
+  <Step title="커넥터 추가" id="3-add-the-connector">
+    arcodash에서 **Connect** &gt; **ClickHouse**를 선택하고 호스트, 포트, 사용자, 비밀번호, 데이터베이스를 입력하십시오. ClickHouse Cloud를 사용한다면 HTTPS를 활성화한 다음 연결 테스트를 실행하십시오.
+
+    <Image size="lg" img="/images/integrations/data-visualization/arcodash_01.png" alt="arcodash ClickHouse 커넥터 입력 양식" border />
+  </Step>
+
+  <Step title="쿼리 및 검사 실행" id="4-run-a-query-and-a-check">
+    ```sql
+    SELECT dateDiff('second', max(loaded_at), now()) AS seconds_since_last_row
+    FROM analytics.events
+    ```
+
+    테이블에 데이터가 더 이상 들어오지 않을 때 알림을 받으려면 이 쿼리를 모니터로 저장하고 `seconds_since_last_row`에 `>` `3600` 조건을 설정하십시오.
+
+    <Image size="lg" img="/images/integrations/data-visualization/arcodash_02.png" alt="ClickHouse 쿼리에 대한 arcodash 모니터" border />
+  </Step>
+</Steps>
+
+## 제한 사항 {#limitations}
+
+* arcodash는 HTTP 인터페이스만 사용하며, 네이티브 포트 `9000`은 사용하지 않습니다.
+* arcodash가 `FORMAT` 절을 직접 추가하므로, 쿼리 끝에 별도의 `FORMAT`을 붙이면 안 됩니다.
+* 결과(result)는 쿼리당 최대 10,000개 행으로 제한됩니다.
+* arcodash는 고정 아웃바운드 IP 주소를 공개하지 않으므로, ClickHouse 서버는 인터넷에서 연결할 수 있어야 합니다.
