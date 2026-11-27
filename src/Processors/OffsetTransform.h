@@ -49,6 +49,7 @@ public:
 
     InputPort & getInputPort() { return inputs.front(); }
     OutputPort & getOutputPort() { return outputs.front(); }
+    InputPort & getPairedInputPort(const OutputPort & output) { return *output_port_to_data.at(&output)->input_port; }
 
     void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit_at_least.swap(counter); }
 };

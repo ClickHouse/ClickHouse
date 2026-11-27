@@ -10,6 +10,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Context.h>
+#include <Processors/DelayedPortsProcessor.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
@@ -17,6 +18,7 @@
 #include <Processors/LimitRangeTransform.h>
 #include <Processors/NegativeLimitTransform.h>
 #include <Processors/FractionalLimitTransform.h>
+#include <Processors/OffsetTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -158,6 +160,22 @@ static void checkCompleted(Processors & processors)
 
         for (const auto & out : processor->getOutputs())
             checkOutput(out, processor);
+    }
+}
+
+/// `Offset` and `DelayedPorts` move the rows of each input only to its paired output.
+static IProcessor * getRowsProducer(OutputPort & output)
+{
+    OutputPort * port = &output;
+    while (true)
+    {
+        auto & processor = port->getProcessor();
+        if (auto * offset = typeid_cast<OffsetTransform *>(&processor))
+            port = &offset->getPairedInputPort(*port).getOutputPort();
+        else if (auto * delayed = typeid_cast<DelayedPortsProcessor *>(&processor))
+            port = &delayed->getPairedInputPort(*port).getOutputPort();
+        else
+            return &processor;
     }
 }
 
@@ -307,7 +325,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         /// Skip totals and extremes port for output format.
         if (auto * format = dynamic_cast<IOutputFormat *>(processor))
         {
-            auto * child_processor = &format->getPort(IOutputFormat::PortKind::Main).getOutputPort().getProcessor();
+            auto * child_processor = getRowsProducer(format->getPort(IOutputFormat::PortKind::Main).getOutputPort());
             queue.push({ child_processor, limit_being_counted, limit_input_port });
 
             continue;
@@ -322,7 +340,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             ssize_t i = 0;
             for (auto & child_port : processor->getInputs())
             {
-                auto * child_processor = &child_port.getOutputPort().getProcessor();
+                auto * child_processor = getRowsProducer(child_port.getOutputPort());
                 queue.push({ child_processor, limit_being_counted, i });
                 ++i;
             }
@@ -331,7 +349,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         {
             for (auto & child_port : processor->getInputs())
             {
-                auto * child_processor = &child_port.getOutputPort().getProcessor();
+                auto * child_processor = getRowsProducer(child_port.getOutputPort());
                 queue.push({ child_processor, limit_being_counted, limit_input_port });
             }
         }

@@ -24,6 +24,8 @@ public:
 
     Status prepare(const UpdatedInputPorts &, const UpdatedOutputPorts &) override;
 
+    InputPort & getPairedInputPort(const OutputPort & output) { return *port_pairs[output_port_to_pair.at(&output)].input_port; }
+
 private:
 
     struct PortsPair
