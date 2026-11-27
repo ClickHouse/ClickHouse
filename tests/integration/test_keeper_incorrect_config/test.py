@@ -264,6 +264,39 @@ ALL_LEARNERS_CONFIG = """
 </clickhouse>
 """
 
+FOLLOWER_AND_LEARNER_CONFIG = """
+<clickhouse>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>
+
+        <coordination_settings>
+            <operation_timeout_ms>5000</operation_timeout_ms>
+            <session_timeout_ms>10000</session_timeout_ms>
+            <raft_logs_level>trace</raft_logs_level>
+        </coordination_settings>
+
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>node1</hostname>
+                <port>9234</port>
+                <start_as_follower>true</start_as_follower>
+            </server>
+            <server>
+                <id>2</id>
+                <hostname>node1</hostname>
+                <port>9235</port>
+                <can_become_leader>false</can_become_leader>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>
+"""
+
 
 def test_invalid_configs(started_cluster):
     node1.stop_clickhouse()
@@ -281,10 +314,11 @@ def test_invalid_configs(started_cluster):
     assert_config_fails(MULTIPLE_LOCAL_WITH_REMOTE)
     assert_config_fails(JUST_WRONG_CONFIG)
     assert_config_fails(INVALID_ROTATE_INTERVAL_CONFIG)
-    assert_config_fails(ALL_LEARNERS_CONFIG)
+    assert_config_fails(FOLLOWER_AND_LEARNER_CONFIG)
     assert node1.contains_in_log(
         "At least one of servers should be able to become leader", from_host=True
     )
+    assert_config_fails(ALL_LEARNERS_CONFIG)
 
     node1.replace_config(
         "/etc/clickhouse-server/config.d/enable_keeper1.xml", NORMAL_CONFIG
