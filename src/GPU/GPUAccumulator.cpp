@@ -249,8 +249,7 @@ void GPUBlockStager::addCompressedBlock(
     /// A batch has one run of bytes of each stream: it starts at a block that skips bytes, and ends at one cut short.
     {
         const CompressedHostColumn & column = streamOrThrow(column_index, stream);
-        const bool decompressed = !column.empty() && !column.isCompressed();
-        if (decompressed || column.isCut() || (!column.blocks.empty() && (skipped_bytes != 0 || column.codec != codec)))
+        if (column.isCut() || (!column.empty() && (skipped_bytes != 0 || column.codec != codec)))
             seal();
     }
 
@@ -266,34 +265,6 @@ void GPUBlockStager::addCompressedBlock(
     column.bytes.resize_fill(alignedUp(column.bytes.size()), 0);
     addCompressedBlocksOf(*codec, payload, column.bytes.size(), decompressed_bytes, column.blocks);
     appendHostBytes(column.bytes, payload);
-
-    if (isFull())
-        seal();
-}
-
-std::span<char> GPUBlockStager::reserveRawBytes(size_t column_index, GPUStream stream, size_t max_bytes, size_t expected_bytes)
-{
-    {
-        const CompressedHostColumn & column = streamOrThrow(column_index, stream);
-        if (column.isCompressed() || column.bytes.size() >= max_column_bytes)
-            seal();
-    }
-
-    CompressedHostColumn & column = streamOrThrow(column_index, stream);
-    column.bytes.reserve(std::min(max_column_bytes, column.bytes.size() + std::max<size_t>(expected_bytes, 1)));
-    return {
-        column.bytes.data() + column.bytes.size(),
-        std::min({max_bytes, max_column_bytes - column.bytes.size(), column.bytes.capacity() - column.bytes.size()})};
-}
-
-void GPUBlockStager::commitRawBytes(size_t column_index, GPUStream stream, size_t bytes)
-{
-    CompressedHostColumn & column = streamOrThrow(column_index, stream);
-    if (column.isCompressed() || column.bytes.size() + bytes > column.bytes.capacity())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} raw bytes of a column for the GPU committed beyond what was reserved", bytes);
-
-    growBy(column.bytes, bytes);
-    column.kept_bytes += bytes;
 
     if (isFull())
         seal();
@@ -408,8 +379,7 @@ std::optional<GPUDeviceBatch> GPUBatchUploader::expand(const GPUStagedBatch & st
     for (const auto & column : staged.columns)
     {
         for (const CompressedHostColumn * stream_of_column : {&column.values, &column.sizes})
-            if (stream_of_column->isCompressed())
-                compressed_total += alignedUp(stream_of_column->bytes.size());
+            compressed_total += alignedUp(stream_of_column->bytes.size());
     }
     DeviceBuffer uploaded(own);
     char * const uploaded_base = compressed_total ? uploaded.grow(compressed_total) : nullptr;
@@ -426,19 +396,12 @@ std::optional<GPUDeviceBatch> GPUBatchUploader::expand(const GPUStagedBatch & st
         return pieces.emplace_back(codec, std::vector<CompressedPiece>{}).second;
     };
 
-    /// Sends a stream to `destination`, as it is, or compressed to be expanded there.
+    /// Sends the compressed blocks of a stream, to be expanded to `destination`.
     const auto send = [&](const CompressedHostColumn & column, char * destination)
     {
         const size_t expanded_bytes = column.expandedBytes();
         if (expanded_bytes == 0)
             return;
-        if (!column.isCompressed())
-        {
-            checkCuda(
-                cudaMemcpyAsync(destination, column.bytes.data(), column.bytes.size(), cudaMemcpyHostToDevice, own.get()),
-                "Cannot send raw bytes to the device");
-            return;
-        }
         char * const at = uploaded_base + uploaded_at;
         checkCuda(
             cudaMemcpyAsync(at, column.bytes.data(), column.bytes.size(), cudaMemcpyHostToDevice, own.get()),
