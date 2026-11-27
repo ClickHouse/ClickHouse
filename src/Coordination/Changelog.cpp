@@ -473,7 +473,12 @@ public:
                 }
             }
             else
+            {
                 file_buffer->next();
+                /// The buffer of `DiskEncrypted` only encrypts into the buffer of the file it wraps.
+                if (auto * decorator = dynamic_cast<WriteBufferDecorator<WriteBufferFromFileBase> *>(file_buffer))
+                    decorator->getNestedBuffer()->next();
+            }
         }
         entry_storage.addLogLocations(std::move(unflushed_indices_with_log_location));
         unflushed_indices_with_log_location.clear();

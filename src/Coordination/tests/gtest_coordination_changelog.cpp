@@ -4,6 +4,7 @@
 #include <Coordination/tests/gtest_coordination_common.h>
 
 #include <Coordination/KeeperLogStore.h>
+#include <Disks/DiskEncrypted.h>
 #include <base/defines.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
@@ -453,6 +454,43 @@ TEST_P(CoordinationTestWithCompression, ChangelogReadWrite)
     EXPECT_EQ(entries_from_range_read->size(), entries_from_range->size());
     EXPECT_EQ(10, entries_from_range->size());
 }
+
+#if USE_SSL
+/// Without `force_sync`, a flush on `DiskEncrypted` must still pass the encrypted records to the file.
+TEST_P(CoordinationTestWithCompression, ChangelogTestFlushOnEncryptedDisk)
+{
+    ChangelogDirTest test("./logs");
+    auto disk_settings = std::make_unique<DB::DiskEncryptedSettings>();
+    disk_settings->wrapped_disk = std::make_shared<DB::DiskLocal>("LogDisk", "./logs");
+    disk_settings->current_algorithm = DB::FileEncryption::Algorithm::AES_128_CTR;
+    disk_settings->current_key = DB::SecretString(16, 'k');
+    disk_settings->current_key_fingerprint = DB::FileEncryption::calculateKeyFingerprint(disk_settings->current_key);
+    disk_settings->all_keys[disk_settings->current_key_fingerprint] = disk_settings->current_key;
+    this->keeper_context->setLogDisk(std::make_shared<DB::DiskEncrypted>("EncryptedLogDisk", std::move(disk_settings)));
+
+    DB::LogFileSettings settings{
+        .force_sync = false, .compress_logs = this->enable_compression, .latest_logs_cache_entry_count_threshold = 1};
+    DB::KeeperLogStore changelog(settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        auto entry = getLogEntry("hello world", i * 10);
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    /// The second call evicts the flushed entries from the cache, so an uncompressed entry is read from the file.
+    changelog.end_of_append_batch(0, 0);
+    EXPECT_EQ(changelog.entry_at(2)->get_term(), 10);
+
+    /// The writer is still open, so the reader gets only what a killed process would leave in the file.
+    DB::KeeperLogStore changelog_reader(settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    changelog_reader.init(0, 0);
+    EXPECT_EQ(changelog_reader.size(), 10);
+}
+#endif
 
 TEST_P(CoordinationTestWithCompression, ChangelogWriteAt)
 {
