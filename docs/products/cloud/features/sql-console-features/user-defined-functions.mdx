@@ -258,7 +258,7 @@ The following settings are exposed in the console and the API. The defaults are 
 
 The following open-source settings are managed by ClickHouse Cloud and cannot be changed per UDF: `command_termination_timeout`, `lifetime`, `stderr_reaction`, `check_exit_code`, and `execute_direct`. The open-source default for `pool_size` is 16, whereas the Cloud default is 3. The full open-source list is in [Executable user-defined functions](/reference/functions/regular-functions/udf#executable-user-defined-functions).
 
-Function names must match `^[A-Za-z][A-Za-z0-9_]*$`, are unique within the organization, and cannot reuse the name of a built-in ClickHouse function; the API rejects reserved names. Every argument must have a name that follows the same pattern; the API and Terraform require it for every format. Archives containing symlinks are rejected.
+Function names must match `^[A-Za-z][A-Za-z0-9_]*$`, are unique within the organization, and cannot reuse the name of a built-in ClickHouse function; the API rejects reserved names. Every argument must have a name that follows the same pattern; the API and Terraform require it for every format. Argument types and the return type can contain only the characters `[a-zA-Z0-9_-(), :]`. Archives containing symlinks are rejected.
 
 ### Formats and chunk headers {#formats-and-chunk-headers}
 
