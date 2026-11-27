@@ -931,6 +931,15 @@ static void splitAndModifyMutationCommands(
         return name;
     };
 
+    /// A CLEAR after a rename erases the rename-map entry, while the part still stores the column under the old name.
+    auto clearsColumnStoredUnderOldName = [&](const MutationCommand & command)
+    {
+        if (command.type != MutationCommand::Type::DROP_COLUMN || !command.clear)
+            return false;
+        auto old_name = alter_conversions->getClearedColumnOldName(command.column_name);
+        return old_name && (part_columns.has(*old_name) || part->getSerializationInfos().isMissingColumn(*old_name));
+    };
+
     /// `a.b.x` can be a subcolumn of `a.b` even when a column `a` exists, so resolve by type, not by prefix.
     auto getColumnNameInStorage = [&](const String & name) -> std::optional<String>
     {
@@ -1102,6 +1111,12 @@ static void splitAndModifyMutationCommands(
                             dropped_columns.emplace(command.column_name);
                     }
                 }
+            }
+            else if (clearsColumnStoredUnderOldName(command))
+            {
+                for_interpreter.push_back(command);
+                for_file_renames.push_back(command);
+                mutated_columns.emplace(command.column_name);
             }
             else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
@@ -1405,6 +1420,11 @@ static void splitAndModifyMutationCommands(
                 if (command.type == MutationCommand::Type::DROP_COLUMN && command.clear)
                     for_interpreter.push_back(command);
 
+                for_file_renames.push_back(command);
+            }
+            else if (clearsColumnStoredUnderOldName(command))
+            {
+                for_interpreter.push_back(command);
                 for_file_renames.push_back(command);
             }
             else if (command.type == MutationCommand::Type::DROP_COLUMN)

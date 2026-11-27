@@ -41,6 +41,9 @@ public:
     [[nodiscard]] bool isColumnRenamed(const std::string & new_name) const;
     /// Get column old name before rename (lookup by key in rename_map)
     [[nodiscard]] std::string getColumnOldName(const std::string & new_name) const;
+    /// Old name of a column that a pending CLEAR COLUMN cleared after a rename. The CLEAR erases the rename-map
+    /// entry, while the part still stores the column under the old name.
+    [[nodiscard]] std::optional<std::string> getClearedColumnOldName(const std::string & new_name) const;
 
     /// Column was dropped by a pending mutation (data in part is stale).
     /// `name` is the name the column has in the part, not in the current metadata.
@@ -128,6 +131,9 @@ private:
     /// Columns that were dropped by pending mutations.
     /// If a column with the same name is re-added, old data in parts should be ignored.
     NameSet dropped_columns;
+
+    /// New name -> old name of the columns cleared after a rename, whose entries were erased from `rename_map`.
+    NameToNameMap cleared_renamed_columns;
 
     /// Every name used by a pending `RENAME COLUMN` (both sides) or `DROP COLUMN` command, as written
     /// in the command, before the normalization done for `rename_map` and `dropped_columns`.
