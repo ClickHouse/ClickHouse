@@ -1,4 +1,4 @@
--- `planToASCII` renders the `query_plan` JSON of `system.query_log` as the text tree of
+-- `planToASCII` renders the `query_plan` JSON of the query log as the text tree of
 -- `EXPLAIN ANALYZE`. The plans below are written by hand, so the output does not depend on timings.
 
 -- Every kind of line: details, a detail that a statistics group replaces (`Cost:` and `Left:`),
@@ -88,7 +88,7 @@ SELECT planToASCII(NULL), planToASCII(''), planToASCII('{}'), planToASCII('{}'::
 SELECT planToASCII('{"Error": "The query plan is too large"}') FORMAT TSVRaw;
 
 -- A version this server does not read renders as an error of its own row, so the other rows of a
--- query over `system.query_log` still render.
+-- query over the query log still render.
 SELECT planToASCII(arrayJoin(['{"Version": 99, "Root": "A", "Nodes": []}', '{"Version": 1, "Root": "A", "Nodes": [{"NodeType": "T", "NodeId": "A"}]}'])) FORMAT TSVRaw;
 
 SELECT planToASCII('not json'); -- { serverError BAD_ARGUMENTS }
