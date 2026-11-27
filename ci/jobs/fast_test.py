@@ -269,9 +269,7 @@ def main():
     # builds (pr_number == 0) are allowed to write entries.
     if info.pr_number > 0:
         os.environ["SCCACHE_S3_RW_MODE"] = "READ_ONLY"
-        # Read-only builds in the main repo access the sccache S3 bucket
-        # anonymously (no credentials required). Cache writers keep using their
-        # credentials. Other repositories keep using their own credentials.
+        # Read-only builds in the main repo use the bucket anonymously; writers and other repos keep credentials.
         if info.repo_name == "ClickHouse/ClickHouse":
             os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
     if info.is_local_run:

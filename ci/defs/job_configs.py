@@ -105,11 +105,8 @@ integration_dind_env = dind_containment_env(LIMITED_MEM)
 # different runs (and missed the cache). Whole GiB is stable across such hosts.
 BINARY_DOCKER_MEM = Utils.physical_memory() // 1024**3 * 1024**3
 
-# A pull request against the default branch of the public repository runs untrusted
-# code and only reads the sccache bucket, so its containers must not reach the EC2
-# instance metadata endpoint. Every other context (master, release branches, backports,
-# the merge queue, and every build in the private repository) writes a bucket and
-# reaches the metadata endpoint for credentials through host networking.
+# Only a pull request against the default branch of the public repository runs
+# without host networking; every other context keeps it.
 _info = Info()
 HOST_NETWORK = (
     ""

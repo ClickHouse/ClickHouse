@@ -286,9 +286,7 @@ def setup_build_caches_env(info):
     )
     if info.pr_number > 0 and not backport_from_repo:
         os.environ["SCCACHE_S3_RW_MODE"] = "READ_ONLY"
-        # Read-only builds in the main repo access the sccache S3 bucket
-        # anonymously (no credentials required). Cache writers keep using their
-        # credentials. Other repositories keep using their own credentials.
+        # Read-only builds in the main repo use the bucket anonymously; writers and other repos keep credentials.
         if info.repo_name == "ClickHouse/ClickHouse":
             os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
     os.makedirs(build_dir, exist_ok=True)
@@ -313,6 +311,9 @@ def setup_build_caches_env(info):
         # master/release builds (pr_number == 0) are allowed to write entries.
         if info.pr_number > 0:
             os.environ["CTCACHE_S3_READ_ONLY"] = "true"
+            # Read-only builds in the main repo read anonymously; other repos keep credentials.
+            if info.repo_name == "ClickHouse/ClickHouse":
+                os.environ["CTCACHE_S3_NO_CREDENTIALS"] = "true"
 
 
 # Next to sccache: PR runners can only read the `ccache` prefix.
@@ -352,9 +353,7 @@ def records_access_time(directory):
 def restore_thinlto_cache(info, release_type):
     os.makedirs(THINLTO_CACHE_DIR, exist_ok=True)
     publishes = info.pr_number == 0
-    # A read-only PR build in the public repository runs without host networking, so it
-    # has no instance-metadata credentials: read the shared cache anonymously. Publishers
-    # (master and the performance-reference builds) keep their credentials.
+    # Read-only builds in the main repo read anonymously; publishers keep credentials.
     anonymous = not publishes and info.repo_name == "ClickHouse/ClickHouse"
     atime = records_access_time(THINLTO_CACHE_DIR)
     print(

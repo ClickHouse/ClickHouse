@@ -118,8 +118,7 @@ class S3:
         if not BOTO3_AVAILABLE:
             return None
         if anonymous:
-            # Unsigned requests for public read-only objects: a container with no
-            # route to the instance metadata endpoint has no credentials to sign with.
+            # Unsigned requests for public read-only objects.
             if cls._boto3_client_anon is None:
                 region = Settings.AWS_REGION or None
                 config = Config(
