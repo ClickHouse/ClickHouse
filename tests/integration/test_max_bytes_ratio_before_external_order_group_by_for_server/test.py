@@ -61,6 +61,8 @@ def test_max_bytes_ratio_before_external_group_by(node):
         "max_memory_usage": "0",
         "max_bytes_before_external_group_by": 0,
         "max_bytes_ratio_before_external_group_by": 0.3,
+        # One merge thread: on the coverage build a parallel merge of these states is slower than a serial one.
+        "aggregation_memory_efficient_merge_threads": 1,
     }
     node.query(query, settings=settings)
 
