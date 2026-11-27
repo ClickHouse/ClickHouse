@@ -78,9 +78,6 @@ private:
     Poco::Net::HTTPBasicCredentials credentials;
 
     std::unique_ptr<SeekableReadBuffer> impl;
-    /// If a cached footer answers the query without consuming `impl`, a bounded
-    /// header probe is reused across output chunks rather than repeated per chunk.
-    mutable std::optional<Map> metadata_response_headers;
 
     ReadSettings read_settings;
     HTTPHeaderEntries headers;

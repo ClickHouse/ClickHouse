@@ -15,6 +15,7 @@ trap 'kill "$http_pid" 2>/dev/null || true; wait "$http_pid" 2>/dev/null || true
 
 ${CLICKHOUSE_CLIENT} --query "SELECT number AS id FROM numbers(10) FORMAT ORC" > "${work_dir}/small.orc"
 ${CLICKHOUSE_CLIENT} --query "SELECT number AS id FROM numbers(20) FORMAT ORC" > "${work_dir}/large.orc"
+${CLICKHOUSE_CLIENT} --query "SELECT number + 100 AS id FROM numbers(10) FORMAT ORC" > "${work_dir}/changed.orc"
 cp "${work_dir}/small.orc" "${work_dir}/weak.orc"
 
 python3 -u - "${work_dir}" <<'PY' &
@@ -31,8 +32,13 @@ class Handler(BaseHTTPRequestHandler):
     def respond(self, include_body):
         if self.path == '/fail':
             self.server.failed = True
-            data = b'ok'
-            etag = None
+            data, etag = b'ok', None
+        elif self.path == '/arm' and self.server.origin == 0:
+            self.server.armed = True
+            data, etag = b'ok', None
+        elif self.path == '/deny' and self.server.origin == 0:
+            self.server.denied = True
+            data, etag = b'ok', None
         elif getattr(self.server, 'failed', False):
             self.send_response(503)
             self.send_header('Content-Length', '0')
@@ -41,10 +47,16 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == '/data/':
             data = b'<a href="f.orc">f.orc</a>'
             etag = None
+        elif self.path == '/data/f.orc' and self.server.origin == 0 and getattr(self.server, 'denied', False) and include_body:
+            self.send_error(403)
+            return
         elif self.path == '/data/f.orc':
             name = 'small.orc' if self.server.origin == 0 else 'large.orc'
             data = (work_dir / name).read_bytes()
             etag = '"same-etag"'
+            if self.server.origin == 0 and getattr(self.server, 'armed', False) and include_body:
+                data, etag = (work_dir / 'changed.orc').read_bytes(), '"changed"'
+                self.server.armed = False
         elif self.path == '/failover/':
             data = b'<a href="f.orc">f.orc</a>'
             etag = None
@@ -129,21 +141,41 @@ done
 [[ -s "${work_dir}/ports" ]]
 read -r first_port second_port < "${work_dir}/ports"
 
+settings="use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, use_page_cache_for_object_storage = 0, allow_url_wildcard_from_index_pages = 1, http_max_tries = 1"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ORC METADATA CACHE"
 for port in "$first_port" "$second_port"; do
-    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${port}/data/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, allow_url_wildcard_from_index_pages = 1"
+    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${port}/data/*.orc', 'ORC', 'id UInt64') SETTINGS ${settings}"
 done
 
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/weak/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, allow_url_wildcard_from_index_pages = 1"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/weak/*.orc', 'ORC', 'id UInt64') SETTINGS ${settings}"
 cp "${work_dir}/large.orc" "${work_dir}/weak.orc"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/weak/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, allow_url_wildcard_from_index_pages = 1"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/weak/*.orc', 'ORC', 'id UInt64') SETTINGS ${settings}"
 
-${CLICKHOUSE_CLIENT} --query "SELECT count(), any(_headers['X-Method']) FROM url('http://127.0.0.1:${first_port}/headers/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, allow_url_wildcard_from_index_pages = 1, remote_filesystem_read_prefetch = 0"
-${CLICKHOUSE_CLIENT} --query "SELECT count(), any(_headers['X-Method']) FROM url('http://127.0.0.1:${first_port}/headers/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, allow_url_wildcard_from_index_pages = 1, remote_filesystem_read_prefetch = 0"
+${CLICKHOUSE_CLIENT} --query "SELECT count(), any(_headers['X-Method']) FROM url('http://127.0.0.1:${first_port}/headers/*.orc', 'ORC', 'id UInt64') SETTINGS ${settings}, remote_filesystem_read_prefetch = 0"
+${CLICKHOUSE_CLIENT} --query "SELECT count(), any(_headers['X-Method']) FROM url('http://127.0.0.1:${first_port}/headers/*.orc', 'ORC', 'id UInt64') SETTINGS ${settings}, remote_filesystem_read_prefetch = 0"
 
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/redirect/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, use_page_cache_for_object_storage = 0, allow_url_wildcard_from_index_pages = 1, max_http_get_redirects = 1"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/redirect/*.orc', 'ORC', 'id UInt64') SETTINGS ${settings}, max_http_get_redirects = 1"
 
 failover_url="http://127.0.0.1:{${first_port}|${second_port}}/failover/*.orc"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('${failover_url}', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, use_page_cache_for_object_storage = 0, allow_url_wildcard_from_index_pages = 1, http_max_tries = 1"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('${failover_url}', 'ORC', 'id UInt64') SETTINGS ${settings}"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('http://127.0.0.1:${first_port}/fail', 'RawBLOB')"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('${failover_url}', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, use_page_cache_for_object_storage = 0, allow_url_wildcard_from_index_pages = 1, http_max_tries = 1"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('${failover_url}', 'ORC', 'id UInt64') SETTINGS ${settings}"
+
+# An object changed between metadata and data requests must not populate the old ETag key.
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('http://127.0.0.1:${first_port}/arm', 'RawBLOB')"
+if ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/data/*.orc', 'ORC', 'id UInt64') SETTINGS ${settings}" > /dev/null 2> "${work_dir}/changed.err"; then
+    echo "unexpectedly allowed"
+    exit 1
+fi
+grep -q 'FILE_CHANGED_DURING_READ' "${work_dir}/changed.err"
+echo "rejected"
+
+# A warm tail must not bypass the current reader's object-read authorization.
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/data/*.orc', 'ORC', 'id UInt64') SETTINGS ${settings}"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('http://127.0.0.1:${first_port}/deny', 'RawBLOB')"
+if ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/data/*.orc', 'ORC', 'id UInt64') SETTINGS ${settings}" > /dev/null 2> "${work_dir}/denied.err"; then
+    echo "unexpectedly allowed"
+    exit 1
+fi
+grep -qE '403|ACCESS_DENIED' "${work_dir}/denied.err"
+echo "denied"

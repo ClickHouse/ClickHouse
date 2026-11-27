@@ -2026,7 +2026,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             read_buf = createReadBuffer(
                 object_info->relative_path_with_metadata, object_storage, context_, log,
                 read_settings, !headers_requested,
-                /*prepare_orc_metadata_cache=*/ Poco::toLower(format_name) == "orc" && context_->getSettingsRef()[Setting::use_orc_metadata_cache]);
+                /*prepare_orc_metadata_cache=*/ Poco::toLower(format_name) == "orc"
+                    && context_->getSettingsRef()[Setting::use_orc_metadata_cache] && !headers_requested);
         }
 
         Block initial_header = read_from_format_info.format_header;

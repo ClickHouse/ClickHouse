@@ -1,11 +1,12 @@
 14950	300
 14950	300
 14950	300
+14950	300
 114950	400
 114950	400
-114950	400
-05557-cold	0	1
-05557-replaced-cold	0	1
-05557-replaced-warm	1	0
-05557-warm	1	0
-05557-warm-unseekable	1	0
+orc-cold	0	1
+orc-disabled	0	0
+orc-replaced-cold	0	1
+orc-replaced-warm	1	0
+orc-unseekable	1	0
+orc-warm	1	0
