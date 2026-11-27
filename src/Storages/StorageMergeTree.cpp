@@ -16,6 +16,7 @@
 #include <Core/UUID.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
+#include <Disks/SingleDiskVolume.h>
 #include <Disks/supportWritingWithAppend.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/copyData.h>
@@ -48,6 +49,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -4291,22 +4293,18 @@ void StorageMergeTree::checkNoNonAdaptivePartsForGranularityChange() const
             throw_non_adaptive_part(part->name);
     }
 
-    /// All marks of a part have the same type, so the first mark file of a detached part decides.
+    /// The mark type is probed the way `ATTACH` loads the part, which also looks inside a packed part.
+    const String detached_path = fs::path(relative_data_path) / DETACHED_DIR_NAME;
     for (const auto & detached_part : getDetachedParts())
     {
-        const String path = fs::path(relative_data_path) / DETACHED_DIR_NAME / detached_part.dir_name;
-        if (!detached_part.disk->existsDirectory(path))
+        if (!detached_part.disk->existsDirectory(fs::path(detached_path) / detached_part.dir_name))
             continue;
 
-        for (auto it = detached_part.disk->iterateDirectory(path); it->isValid(); it->next())
-        {
-            const std::string extension = fs::path(it->name()).extension();
-            if (!MarkType::isMarkFileExtension(extension))
-                continue;
-            if (!MarkType(extension).adaptive)
-                throw_non_adaptive_part(fs::path(DETACHED_DIR_NAME) / detached_part.dir_name);
-            break;
-        }
+        auto volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part.dir_name, detached_part.disk, 0);
+        const auto [storage, mark_type] = MergeTreeDataPartBuilder::getPartStorageAndMarkType(
+            volume, detached_path, detached_part.dir_name, getReadSettings());
+        if (mark_type && !mark_type->adaptive)
+            throw_non_adaptive_part(fs::path(DETACHED_DIR_NAME) / detached_part.dir_name);
     }
 }
 
