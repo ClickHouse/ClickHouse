@@ -159,6 +159,41 @@ SELECT groupUniqArray(assignCentroid([toFloat32(number * 0)], 'tie_dict')), coun
 DROP DICTIONARY tie_dict;
 DROP TABLE tie_src;
 
+SELECT '-- distance ties between leaves of different clusters go to the lower leaf cid, as in the exhaustive search';
+DROP DICTIONARY IF EXISTS cross_tie_dict;
+DROP TABLE IF EXISTS cross_tie_src;
+CREATE TABLE cross_tie_src (cid UInt64, vec Array(Float32), level UInt8, parent UInt64) ENGINE = MergeTree ORDER BY cid;
+-- Leaf 100 at -1 (under coarse centroid 10) and leaf 1 at 1 (under coarse centroid 20) are both at distance 1 from 0.
+INSERT INTO cross_tie_src VALUES (10, [-10], 1, 0), (20, [10], 1, 0), (100, [-1], 0, 10), (1, [1], 0, 20);
+CREATE DICTIONARY cross_tie_dict (cid UInt64, vec Array(Float32), level UInt8, parent UInt64)
+PRIMARY KEY cid SOURCE(CLICKHOUSE(TABLE 'cross_tie_src')) LAYOUT(HASHED()) LIFETIME(0);
+SELECT assignCentroid([0]::Array(Float32), 'cross_tie_dict');
+-- The same with 21 coarse centroids: coarse centroid 300 + i at i - 10 (i in [0, 21], i != 10), each with one leaf.
+-- Leaf 100 at -1 (under 309) and leaf 1 at 1 (under 311) tie at distance 1, every other leaf is 6 or more away.
+TRUNCATE TABLE cross_tie_src;
+INSERT INTO cross_tie_src SELECT 300 + number, [toFloat32(number) - 10], 1, 0 FROM numbers(22) WHERE number != 10;
+INSERT INTO cross_tie_src SELECT 1000 + number, [3 * (toFloat32(number) - 10)], 0, 300 + number FROM numbers(22) WHERE number NOT IN (9, 10, 11);
+INSERT INTO cross_tie_src VALUES (100, [-1], 0, 309), (1, [1], 0, 311);
+SYSTEM RELOAD DICTIONARY cross_tie_dict;
+SELECT assignCentroid([0]::Array(Float32), 'cross_tie_dict');
+DROP DICTIONARY cross_tie_dict;
+DROP TABLE cross_tie_src;
+
+SELECT '-- rows past the first chunk of coarse scores are assigned like the first ones';
+-- 1156 coarse centroids give 1795 rows per chunk, so the 6000-row block below is scored in 4 chunks.
+-- Coarse centroid 10000 + n sits at (n % 34, n / 34), its only leaf n at (n % 34 + 0.25, n / 34).
+DROP DICTIONARY IF EXISTS chunk_dict;
+DROP TABLE IF EXISTS chunk_src;
+CREATE TABLE chunk_src (cid UInt64, vec Array(Float32), level UInt8, parent UInt64) ENGINE = MergeTree ORDER BY cid;
+INSERT INTO chunk_src SELECT 10000 + number, [toFloat32(number % 34), toFloat32(intDiv(number, 34))], 1, 0 FROM numbers(1156);
+INSERT INTO chunk_src SELECT number, [toFloat32(number % 34 + 0.25), toFloat32(intDiv(number, 34))], 0, 10000 + number FROM numbers(1156);
+CREATE DICTIONARY chunk_dict (cid UInt64, vec Array(Float32), level UInt8, parent UInt64)
+PRIMARY KEY cid SOURCE(CLICKHOUSE(TABLE 'chunk_src')) LAYOUT(HASHED()) LIFETIME(0);
+SELECT countIf(assignCentroid([toFloat32(number % 1156 % 34 + 0.3), toFloat32(intDiv(number % 1156, 34) + 0.1)], 'chunk_dict') != number % 1156), count()
+FROM numbers(6000) SETTINGS max_block_size = 65536;
+DROP DICTIONARY chunk_dict;
+DROP TABLE chunk_src;
+
 SELECT '-- errors';
 DROP DICTIONARY IF EXISTS err_dict;
 DROP TABLE IF EXISTS err_src;

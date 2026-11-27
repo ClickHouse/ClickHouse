@@ -138,10 +138,11 @@ void scoreTile(
             for (size_t col = 0; col < COL_BLOCK; ++col)
             {
                 const Float32 score = tile_sq_norms[block_start + col] - 2.0f * dots[col];
-                if (score < best)
+                const UInt32 id = tile_ids[block_start + col];
+                if (score < best || (score == best && id < best_id))
                 {
                     best = score;
-                    best_id = tile_ids[block_start + col];
+                    best_id = id;
                 }
             }
             best_score[row] = best;
@@ -292,6 +293,7 @@ struct CentroidMatrix
             const size_t column = centroid_index - tile_start;
 
             const Float32 * centroid = row_major + centroid_index * dim;
+            const size_t centroid_id = id_values ? id_values[centroid_index] : centroid_index;
             double sq_norm = 0;
             for (size_t coord = 0; coord < dim; ++coord)
             {
@@ -299,11 +301,11 @@ struct CentroidMatrix
                 /// checks belong here. Free: this loop already reads every coordinate to build the norm.
                 if (!std::isfinite(centroid[coord]))
                     throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "assignCentroid: centroid {} must not contain non-finite values (NaN or Inf)", centroid_index);
+                        "assignCentroid: centroid {} must not contain non-finite values (NaN or Inf)", centroid_id);
                 if (std::abs(centroid[coord]) > limit)
                     throw Exception(ErrorCodes::INCORRECT_DATA,
                         "assignCentroid: centroid {} has coordinate {}, above the largest magnitude the "
-                        "Float32 scoring math can represent for dimension {} ({})", centroid_index, centroid[coord], dim, limit);
+                        "Float32 scoring math can represent for dimension {} ({})", centroid_id, centroid[coord], dim, limit);
                 tile[coord * padded + column] = centroid[coord];
                 sq_norm += static_cast<double>(centroid[coord]) * static_cast<double>(centroid[coord]);
             }
@@ -389,7 +391,7 @@ struct HierarchicalCentroids
     static constexpr size_t SCORE_BUFFER_BYTES = 8 * 1024 * 1024;
 
     size_t dim = 0;
-    CentroidMatrix coarse;                               /// ids are positions in `clusters`
+    CentroidMatrix coarse;                               /// scored by position (= index into clusters); ids are the coarse cids, used only in errors
     VectorWithMemoryTracking<CentroidMatrix> clusters;   /// the leaves of each coarse centroid, ids are leaf cids
 
     void assignBlock(const Float32 * vec_data, const ColumnArray::Offsets & offsets, size_t num_rows, PaddedPODArray<UInt32> & result_ids) const
@@ -731,8 +733,8 @@ private:
                     dict_name, centroid.cid);
         }
 
-        /// The centroids at `rows` (positions in `centroids`), with their cids as ids or, if not `with_ids`, 0..n-1.
-        auto build_matrix = [&](const VectorWithMemoryTracking<size_t> & rows, bool with_ids)
+        /// The centroids at `rows` (positions in `centroids`), with their cids as ids.
+        auto build_matrix = [&](const VectorWithMemoryTracking<size_t> & rows)
         {
             VectorWithMemoryTracking<Float32> row_major(rows.size() * dim);
             VectorWithMemoryTracking<UInt32> ids(rows.size());
@@ -743,7 +745,7 @@ private:
                 ids[i] = static_cast<UInt32>(centroid.cid);
             }
             CentroidMatrix matrix;
-            matrix.build(row_major.data(), rows.size(), dim, with_ids ? ids.data() : nullptr);
+            matrix.build(row_major.data(), rows.size(), dim, ids.data());
             return matrix;
         };
 
@@ -752,7 +754,7 @@ private:
         {
             VectorWithMemoryTracking<size_t> all_rows(centroids.size());
             std::iota(all_rows.begin(), all_rows.end(), 0);
-            result = std::make_shared<const CentroidMatrix>(build_matrix(all_rows, /*with_ids=*/true));
+            result = std::make_shared<const CentroidMatrix>(build_matrix(all_rows));
         }
         else
         {
@@ -802,9 +804,9 @@ private:
                 if (leaf_rows[c].empty())
                     continue;
                 non_empty_coarse_rows.push_back(coarse_rows[c]);
-                hierarchical->clusters.push_back(build_matrix(leaf_rows[c], /*with_ids=*/true));
+                hierarchical->clusters.push_back(build_matrix(leaf_rows[c]));
             }
-            hierarchical->coarse = build_matrix(non_empty_coarse_rows, /*with_ids=*/false);
+            hierarchical->coarse = build_matrix(non_empty_coarse_rows);
             result = std::move(hierarchical);
         }
 

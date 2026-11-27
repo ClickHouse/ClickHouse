@@ -21,5 +21,10 @@
 50	200
 -- coarse ties at the 16th place go to the lower coarse cids, for every row of a block
 [2000]	7
+-- distance ties between leaves of different clusters go to the lower leaf cid, as in the exhaustive search
+1
+1
+-- rows past the first chunk of coarse scores are assigned like the first ones
+0	6000
 -- errors
 2
