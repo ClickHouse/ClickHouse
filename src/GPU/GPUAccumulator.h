@@ -71,7 +71,7 @@ private:
     std::vector<std::unique_ptr<GPUStagedBatch>> free_batches;
 };
 
-/// Stages the blocks a reader reads of columns of `column_types` into batches. A batch is sealed when every column has
+/// Stages the blocks a reader reads of columns of `column_types` into batches. A batch is finished when every column has
 /// about `batch_bytes` of rows, a stream fills its pinned memory, a block cannot follow the staged ones, or a part ends.
 class GPUBlockStager
 {
@@ -91,21 +91,23 @@ public:
         size_t skipped_bytes,
         size_t kept_bytes);
 
-    /// The part ends, of `num_rows` rows: seals the batch being staged, even an empty one.
+    /// The part ends, of `num_rows` rows: finishes the batch being staged, even an empty one.
     void finishPart(size_t num_rows);
 
-    std::unique_ptr<GPUStagedBatch> takeSealed();
+    /// The next finished batch, the oldest first, if there is one.
+    std::unique_ptr<GPUStagedBatch> takeFinished();
 
 private:
     CompressedHostColumn & streamOrThrow(size_t column, GPUStream stream);
     bool isFull() const;
-    void seal(std::optional<size_t> part_rows = {});
+    /// Queues the batch being staged as finished, and starts a new one.
+    void finishBatch(std::optional<size_t> part_rows = {});
 
     const std::vector<GPUElementType> column_types;
     const size_t batch_rows;
     const std::shared_ptr<GPUStagedBatchPool> pool;
     std::unique_ptr<GPUStagedBatch> current;
-    std::deque<std::unique_ptr<GPUStagedBatch>> sealed;
+    std::deque<std::unique_ptr<GPUStagedBatch>> finished;
 };
 
 /// The columns of a batch on the device, as the reader reads them. Freed in the order of the uploader's stream, after
