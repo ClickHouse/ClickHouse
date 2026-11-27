@@ -194,6 +194,25 @@ refused "ALTER TABLE tal4 DROP COLUMN tenant" ALTER_OF_COLUMN_IS_FORBIDDEN
 refused "ALTER TABLE tal4 DROP COLUMN extra" ALTER_OF_COLUMN_IS_FORBIDDEN
 $CLICKHOUSE_CLIENT -q "SELECT 'nested subquery policy after drop', arraySort(groupArray(id)) FROM al4 SETTINGS enable_parallel_replicas = 0"
 
+echo "-- a derived table or a CTE that reads the target qualifies the names of the target with its own name"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tal5 (id UInt32, tenant UInt32, note String, extra UInt32, flag UInt32, misc UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tal5 VALUES (1, 1, 'a', 1, 1, 0), (2, 2, 'b', 1, 1, 0), (3, 1, 'c', 1, 1, 0);
+CREATE TABLE other5 (id UInt32, misc UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO other5 VALUES (1, 1), (2, 1), (3, 1);
+CREATE TABLE al5 ENGINE = Alias(tal5);
+CREATE ROW POLICY pal5 ON $DB.al5 FOR SELECT USING id IN (SELECT q.id FROM (SELECT * FROM $DB.tal5) AS q WHERE q.tenant = 1)
+    AND id IN (WITH c AS (SELECT * FROM $DB.tal5) SELECT c.id FROM c WHERE length(c.note) > 0)
+    AND id IN (WITH c AS (SELECT * FROM $DB.tal5) SELECT r.id FROM c AS r JOIN (SELECT * FROM $DB.other5) AS o ON r.id = o.id WHERE r.extra = 1 AND o.misc = 1)
+    AND id IN (WITH c AS (SELECT * FROM $DB.tal5) SELECT s.id FROM (SELECT * FROM c) AS s WHERE s.flag = 1) TO CURRENT_USER;
+"
+refused "ALTER TABLE tal5 DROP COLUMN tenant" ALTER_OF_COLUMN_IS_FORBIDDEN
+refused "ALTER TABLE tal5 RENAME COLUMN note TO comment" ALTER_OF_COLUMN_IS_FORBIDDEN
+refused "ALTER TABLE tal5 DROP COLUMN extra" ALTER_OF_COLUMN_IS_FORBIDDEN
+refused "ALTER TABLE tal5 DROP COLUMN flag" ALTER_OF_COLUMN_IS_FORBIDDEN
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tal5 DROP COLUMN misc"
+$CLICKHOUSE_CLIENT -q "SELECT 'derived table policy after drop', arraySort(groupArray(id)) FROM al5 SETTINGS enable_parallel_replicas = 0"
+
 echo "-- a table qualifier that is also a column name is removed when the subcolumn does not exist"
 $CLICKHOUSE_CLIENT --multiquery -q "
 CREATE TABLE tc (id UInt32, tc UInt8, tenant UInt32) ENGINE = MergeTree ORDER BY id;
@@ -277,6 +296,7 @@ DROP ROW POLICY pal ON $DB.al;
 DROP ROW POLICY pal2 ON $DB.al2;
 DROP ROW POLICY pal3 ON $DB.al3;
 DROP ROW POLICY pal4 ON $DB.al4;
+DROP ROW POLICY pal5 ON $DB.al5;
 DROP ROW POLICY pc ON $DB.tc;
 DROP ROW POLICY png ON $DB.tng;
 DROP ROW POLICY pm ON $DB.tm;
@@ -307,6 +327,9 @@ DROP TABLE tal3;
 DROP TABLE al4;
 DROP TABLE tal4;
 DROP TABLE other4;
+DROP TABLE al5;
+DROP TABLE tal5;
+DROP TABLE other5;
 DROP TABLE tc;
 DROP TABLE tng;
 DROP TABLE tm;
