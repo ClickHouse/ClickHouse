@@ -16,6 +16,7 @@
                 <endpoint>http://localhost:11111/test/data1</endpoint>
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
+                <persistent_removal_log>true</persistent_removal_log>
             </disk_03755_1>
         </disks>
         <policies>

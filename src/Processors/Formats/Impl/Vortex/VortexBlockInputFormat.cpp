@@ -7,7 +7,11 @@
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBuffer.h>
 #include <IO/SharedThreadPools.h>
-#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
+#include <Processors/Formats/Impl/ArrowIPC/ArrowCData.h>
+#include <Processors/Formats/Impl/ArrowIPC/ArrowIPCBlockInputFormat.h>
+#include <Processors/Formats/Impl/ArrowIPC/ArrowIPCSchemaReader.h>
+#include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
+#include <Columns/ColumnsNumber.h>
 #include <Processors/Formats/Impl/Vortex/VortexFFIHelpers.h>
 #include <Processors/Formats/Impl/Vortex/VortexScanPlanner.h>
 #include <Processors/Port.h>
@@ -21,9 +25,6 @@
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 
-#include <arrow/api.h>
-#include <arrow/c/bridge.h>
-#include <arrow/result.h>
 
 #include <algorithm>
 #include <chrono>
@@ -288,47 +289,44 @@ int32_t VortexBlockInputFormat::onChunk(::ArrowArray * array, UInt64 split_index
 
             /// The array is borrowed for the duration of this callback; importing it moves the
             /// data out and marks the struct released, which is how it is handed back.
-            auto batch = arrow::ImportRecordBatch(array, scan_schema);
-            throwFromArrowStatusIfFailed(batch.status());
+            const size_t num_rows = static_cast<size_t>(array->length);
+            auto decoded = ArrowIPC::importRecordBatchFromC(*array, *scan_schema, format_settings, &requested_types);
 
-            ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(**batch);
-
-            std::shared_ptr<arrow::Array> row_index;
-            auto data_batch = *batch;
+            ColumnPtr row_index;
             if (row_index_column)
             {
-                row_index = data_batch->column(0);
-                auto removed = data_batch->RemoveColumn(0);
-                throwFromArrowStatusIfFailed(removed.status());
-                data_batch = *removed;
+                row_index = decoded.front().column->convertToFullColumnIfConst();
+                decoded.erase(decoded.begin());
             }
 
-            /// Returned only on success: returning may throw, so it cannot be done from a scope guard.
-            auto converter = takeConverter();
-
             /// One piece unless the row numbers are too far apart to share a chunk.
-            const size_t num_rows = data_batch->num_rows();
             size_t begin = 0;
             do
             {
                 const size_t length = row_index
-                    ? rowNumbersPieceLength(assert_cast<const arrow::UInt64Array &>(*row_index).raw_values() + begin, num_rows - begin)
+                    ? rowNumbersPieceLength(assert_cast<const ColumnUInt64 &>(*row_index).getData().data() + begin, num_rows - begin)
                     : num_rows - begin;
 
-                auto table = arrow::Table::FromRecordBatches({data_batch->Slice(begin, length)});
-                throwFromArrowStatusIfFailed(table.status());
+                /// The decoder returns constants for `Null` fields and bufferless structs, while `buildChunk`
+                /// expects full columns, as the `Arrow` input format hands them over.
+                ArrowIPC::RecordBatchDecoder::DecodedColumns piece_columns = decoded;
+                for (auto & column : piece_columns)
+                {
+                    if (length != num_rows)
+                        column.column = column.column->cut(begin, length);
+                    column.column = column.column->convertToFullColumnIfConst();
+                }
 
                 DeliveredPiece & piece = delivered_chunk.pieces.emplace_back();
                 piece.missing_values = BlockMissingValues(getPort().getHeader().columns());
                 BlockMissingValues * missing_values_ptr = format_settings.defaults_for_omitted_fields ? &piece.missing_values : nullptr;
-                piece.chunk = converter->arrowTableToCHChunk(*table, (*table)->num_rows(), nullptr, missing_values_ptr);
+                piece.chunk = ArrowIPC::buildChunk(
+                    getPort().getHeader(), piece_columns, length, format_settings, /* allow_missing_columns */ true, geo_columns, missing_values_ptr);
                 if (row_index)
-                    piece.row_numbers = row_index->Slice(begin, length);
+                    piece.row_numbers = row_index->cut(begin, length);
 
                 begin += length;
             } while (begin < num_rows);
-
-            returnConverter(std::move(converter));
         }
 
         {
@@ -421,10 +419,6 @@ void VortexBlockInputFormat::closeReader()
         background_exception = nullptr;
     }
     pending_pieces.clear();
-    {
-        std::lock_guard lock(converters_mutex);
-        converters.clear();
-    }
     for (auto & running : running_drivers)
         running.store(0, std::memory_order_relaxed);
     /// `tasks_shutdown` is deliberately not reset: a notification running right now may be copying
@@ -441,43 +435,9 @@ void VortexBlockInputFormat::closeReader()
         runtime = nullptr;
     }
     file_schema.reset();
-    arrow_file.reset();
+    file.reset();
     read_context.reset();
     closing.store(false, std::memory_order_release);
-}
-
-std::unique_ptr<ArrowColumnToCHColumn> VortexBlockInputFormat::takeConverter()
-{
-    {
-        std::lock_guard lock(converters_mutex);
-        if (!converters.empty())
-        {
-            auto converter = std::move(converters.back());
-            converters.pop_back();
-            return converter;
-        }
-    }
-    return createConverter();
-}
-
-void VortexBlockInputFormat::returnConverter(std::unique_ptr<ArrowColumnToCHColumn> converter)
-{
-    std::lock_guard lock(converters_mutex);
-    converters.push_back(std::move(converter));
-}
-
-std::unique_ptr<ArrowColumnToCHColumn> VortexBlockInputFormat::createConverter() const
-{
-    return std::make_unique<ArrowColumnToCHColumn>(
-        getPort().getHeader(),
-        "Vortex",
-        format_settings,
-        std::nullopt,
-        std::nullopt,
-        /* allow_missing_columns */ true,
-        format_settings.null_as_default,
-        format_settings.date_time_overflow_behavior,
-        format_settings.parquet.allow_geoparquet_parser);
 }
 
 void VortexBlockInputFormat::prepareReader()
@@ -515,9 +475,17 @@ void VortexBlockInputFormat::prepareReader()
     const size_t io_threads = std::max<size_t>(maxDrivers(FFI_VortexTaskQueue::IO), 1);
 
     read_context = std::make_unique<VortexReadContext>();
-    reader = openVortexReader(runtime, *in, format_settings, is_stopped, arrow_file, *read_context, file_schema, io_threads, is_remote_fs);
+    reader = openVortexReader(runtime, *in, format_settings, is_stopped, file, *read_context, file_schema, io_threads, is_remote_fs);
     if (!reader)
         return;
+
+    if (format_settings.parquet.allow_geoparquet_parser)
+    {
+        auto geo_it = file_schema->custom_metadata.find("geo");
+        geo_columns = parseGeoMetadataEncoding(geo_it != file_schema->custom_metadata.end() ? &geo_it->second : nullptr);
+    }
+    const ArrowIPC::DictionaryRegistry no_dictionaries;
+    requested_types = ArrowIPC::RecordBatchDecoder(*file_schema, format_settings, no_dictionaries).bindRequestedTypes(getPort().getHeader());
 
     const VortexScanPlan plan = planVortexScan(getPort().getHeader(), *file_schema, format_filter_info.get(), format_settings, log);
 
@@ -572,19 +540,28 @@ void VortexBlockInputFormat::prepareReader()
     /// A chunk can reach `onChunk` before `vortex_ffi_scan_create` has returned, so the schema it
     /// will be imported with has to exist beforehand: the file schema projected to the requested
     /// columns, the same way the library projects it.
-    arrow::FieldVector scan_fields;
-    scan_fields.reserve(plan.column_names.size() + 1);
+    auto new_scan_schema = std::make_shared<ArrowIPC::ArrowSchema>();
+    new_scan_schema->fields.reserve(plan.column_names.size() + 1);
     if (row_index_column)
     {
         /// The library names it by this rule too, so that it cannot collide with a column of the file.
         String row_index_name = "_row_index";
         while (std::ranges::find(plan.column_names, row_index_name) != plan.column_names.end())
             row_index_name.insert(0, "_");
-        scan_fields.push_back(arrow::field(row_index_name, arrow::uint64(), /* nullable */ false));
+        ArrowIPC::ArrowField row_index_field;
+        row_index_field.name = row_index_name;
+        row_index_field.type.kind = ArrowIPC::TypeKind::Int;
+        row_index_field.type.bit_width = 64;
+        row_index_field.type.is_signed = false;
+        new_scan_schema->fields.push_back(std::move(row_index_field));
     }
     for (const auto & name : plan.column_names)
-        scan_fields.push_back(file_schema->GetFieldByName(name));
-    scan_schema = arrow::schema(std::move(scan_fields));
+    {
+        auto it = std::ranges::find_if(file_schema->fields, [&](const auto & field) { return field.name == name; });
+        chassert(it != file_schema->fields.end());
+        new_scan_schema->fields.push_back(*it);
+    }
+    scan_schema = std::move(new_scan_schema);
 
     char * error = nullptr;
     auto * new_scan = vortex_ffi_scan_create(reader, &options, &callbacks, &error);
@@ -601,20 +578,32 @@ void VortexBlockInputFormat::prepareReader()
         std::rethrow_exception(makeVortexException(message, read_context->getException()));
     }
 
-    /// Debug-only cross-check that the library projects the schema the same way.
-    ArrowSchema c_schema{};
+    /// The scan is owned from here on: what follows can throw (the import of the schema allocates),
+    /// and `closeReader` cancels and frees only the scan it finds in the member.
+    {
+        std::lock_guard scan_lock(scan_mutex);
+        scan = new_scan;
+    }
+
+    /// Cross-check that the library projects the schema the same way (the comparison itself is
+    /// done in debug and sanitizer builds only).
+    ::ArrowSchema c_schema{};
     if (vortex_ffi_scan_schema(new_scan, &c_schema, &error) == 0)
     {
-        auto library_schema = arrow::ImportSchema(&c_schema);
-        chassert(library_schema.ok() && (*library_schema)->Equals(*scan_schema, /* check_metadata */ false));
+        SCOPE_EXIT({
+            if (c_schema.release)
+                c_schema.release(&c_schema);
+        });
+        [[maybe_unused]] const auto library_schema = ArrowIPC::importSchemaFromC(c_schema);
+        chassert(library_schema.fields.size() == scan_schema->fields.size());
+        for ([[maybe_unused]] size_t i = 0; i < library_schema.fields.size(); ++i)
+            chassert(library_schema.fields[i].name == scan_schema->fields[i].name
+                && library_schema.fields[i].type.kind == scan_schema->fields[i].type.kind);
     }
     else if (error)
     {
         vortex_ffi_free_string(error);
     }
-
-    std::lock_guard scan_lock(scan_mutex);
-    scan = new_scan;
 }
 
 std::shared_ptr<ChunkInfoRowNumbers> VortexBlockInputFormat::rowNumbersWithoutColumns(UInt64 first_delivered, size_t num_rows) const
@@ -637,8 +626,8 @@ Chunk VortexBlockInputFormat::takePendingPiece()
     block_missing_values = std::move(piece.missing_values);
     if (piece.row_numbers)
     {
-        const auto & row_numbers = assert_cast<const arrow::UInt64Array &>(*piece.row_numbers);
-        piece.chunk.getChunkInfos().add(makeRowNumbers(row_numbers.raw_values(), row_numbers.length()));
+        const auto & row_numbers = assert_cast<const ColumnUInt64 &>(*piece.row_numbers).getData();
+        piece.chunk.getChunkInfos().add(makeRowNumbers(row_numbers.data(), row_numbers.size()));
     }
     return std::move(piece.chunk);
 }
@@ -656,16 +645,11 @@ Chunk VortexBlockInputFormat::readWithoutColumns()
     const UInt64 first_delivered = rows_without_columns_delivered;
     rows_without_columns_delivered += num_rows;
 
-    auto batch = arrow::RecordBatch::Make(arrow::schema(arrow::FieldVector{}), num_rows, arrow::ArrayVector{});
-    auto table = arrow::Table::FromRecordBatches({batch});
-    throwFromArrowStatusIfFailed(table.status());
-
-    /// Returned only on success: returning may throw, so it cannot be done from a scope guard.
-    auto converter = takeConverter();
-
+    /// No column is read from the file: every column of the header is filled with defaults.
     BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
-    auto chunk = converter->arrowTableToCHChunk(*table, num_rows, nullptr, block_missing_values_ptr);
-    returnConverter(std::move(converter));
+    ArrowIPC::RecordBatchDecoder::DecodedColumns no_columns;
+    auto chunk = ArrowIPC::buildChunk(
+        getPort().getHeader(), no_columns, num_rows, format_settings, /* allow_missing_columns */ true, geo_columns, block_missing_values_ptr);
 
     if (row_index_column)
         chunk.getChunkInfos().add(rowNumbersWithoutColumns(first_delivered, num_rows));
@@ -880,7 +864,7 @@ void VortexSchemaReader::initializeIfNeeded()
         in,
         format_settings,
         is_stopped,
-        arrow_file,
+        file,
         *read_context,
         file_schema,
         /* io_threads */ 1,
@@ -891,19 +875,23 @@ NamesAndTypesList VortexSchemaReader::readSchema()
 {
     initializeIfNeeded();
 
-    auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
-        *file_schema,
-        nullptr,
-        "Vortex",
-        format_settings,
-        /* skip_columns_with_unsupported_types */ false,
-        /* allow_arrow_null_type */ true,
-        format_settings.schema_inference_make_columns_nullable != 0,
-        /* case_insensitive_matching */ false,
-        format_settings.parquet.allow_geoparquet_parser);
-    if (format_settings.schema_inference_make_columns_nullable == 1)
-        return getNamesAndRecursivelyNullableTypes(header, format_settings);
-    return header.getNamesAndTypesList();
+    /// As the Apache Arrow library reader inferred the types of Vortex files: a field is nullable as in the file unless
+    /// `schema_inference_make_columns_nullable` is 0, which removes `Nullable` at every depth, and with 1 the types are
+    /// then made nullable recursively, which stops at a type that is nullable already (so the elements of a nullable
+    /// struct keep their nullability).
+    const UInt64 make_columns_nullable = format_settings.schema_inference_make_columns_nullable;
+    NamesAndTypesList result;
+    for (const auto & field : file_schema->fields)
+    {
+        auto type = ArrowIPC::fieldToCHType(
+            field, format_settings, make_columns_nullable != 0 && ArrowIPC::isNullableField(field), /* allow_null_type */ true);
+        if (make_columns_nullable == 0)
+            type = ArrowIPC::removeNullableForInference(type, format_settings);
+        else if (make_columns_nullable == 1)
+            type = makeNullableRecursively(type, format_settings);
+        result.emplace_back(field.name, std::move(type));
+    }
+    return result;
 }
 
 std::optional<size_t> VortexSchemaReader::readNumberOrRows()
@@ -932,7 +920,7 @@ void registerInputFormatVortex(FormatFactory & factory)
                 std::move(parser_shared_resources),
                 std::move(format_filter_info),
                 is_remote_fs);
-        });
+        }, /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("Vortex");
 
     factory.setDocumentation("Vortex", Documentation{.description = R"DOCS_MD(

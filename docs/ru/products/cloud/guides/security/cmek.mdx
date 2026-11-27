@@ -7,11 +7,10 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'шифрование', 'CMEK', 'опрос ключа KMS']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <div id="storage-encryption">
-  ## Шифрование на уровне хранилища
+  ## Шифрование на уровне хранилища {#storage-encryption}
 </div>
 
 В ClickHouse Cloud по умолчанию включено шифрование при хранении с использованием ключей AES-256 под управлением облачного провайдера. Подробнее см.:
@@ -21,7 +20,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePl
 * [Шифрование хранилища Azure для данных при хранении](https://learn.microsoft.com/en-us/azure/storage/common/storage-service-encryption)
 
 <div id="database-encryption">
-  ## Шифрование на уровне базы данных
+  ## Шифрование на уровне базы данных {#database-encryption}
 </div>
 
 <EnterprisePlanFeatureBadge feature="Enhanced Encryption" />
@@ -31,7 +30,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePl
 Усиленное шифрование в настоящее время доступно для сервисов в AWS и GCP. Поддержка Azure появится в ближайшее время.
 
 <div id="transparent-data-encryption-tde">
-  ### Прозрачное шифрование данных (TDE)
+  ### Прозрачное шифрование данных (TDE) {#transparent-data-encryption-tde}
 </div>
 
 TDE необходимо включить при создании сервиса. Для существующих сервисов включить шифрование после создания нельзя. После включения TDE его уже нельзя отключить. Все данные в сервисе останутся зашифрованными. Если вы захотите отключить TDE после его включения, потребуется создать новый сервис и перенести данные в него.
@@ -43,7 +42,7 @@ TDE необходимо включить при создании сервиса
 5. Нажмите Create service
 
 <div id="customer-managed-encryption-keys-cmek">
-  ### Ключи шифрования, управляемые клиентом (CMEK)
+  ### Ключи шифрования, управляемые клиентом (CMEK) {#customer-managed-encryption-keys-cmek}
 </div>
 
 <Warning>
@@ -138,27 +137,29 @@ TDE необходимо включить при создании сервиса
 </Accordion>
 
 <div id="key-rotation">
-  #### Ротация ключа
+  #### Ротация ключа {#key-rotation}
 </div>
 
 После настройки CMEK выполните ротацию ключа, следуя описанным выше инструкциям по созданию нового ключа KMS и предоставлению разрешений. Затем вернитесь к настройкам сервиса, вставьте новый ARN (AWS), Key Resource Path (GCP) или Key Name (Azure) и сохраните настройки. Чтобы применить новый ключ, сервис будет перезапущен.
 
 <div id="kms-key-poller">
-  #### Опрос ключа KMS
+  #### Опрос ключа KMS {#kms-key-poller}
 </div>
 
 При использовании CMEK действительность указанного ключа KMS проверяется каждые 10 минут. Если доступ к ключу KMS станет недоступен, сервис ClickHouse будет остановлен. Чтобы возобновить работу сервиса, восстановите доступ к ключу KMS, следуя инструкциям из этого руководства, а затем перезапустите сервис.
 
 <div id="backup-and-restore">
-  ### Резервное копирование и восстановление
+  ### Резервное копирование и восстановление {#backup-and-restore}
 </div>
 
 Резервные копии шифруются тем же ключом, что и соответствующий сервис. При восстановлении зашифрованной резервной копии создается зашифрованный экземпляр, использующий тот же ключ KMS, что и исходный экземпляр. При необходимости после восстановления можно выполнить ротацию ключа KMS; подробнее см. в разделе [Ротация ключа](#key-rotation).
 
-<div id="performance">
-  ## Производительность
-</div>
+## Производительность {#performance}
 
 Для шифрования на уровне базы данных и защиты данных используется встроенная в ClickHouse [возможность Virtual File System for Data Encryption](/ru/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system). В этой возможности используется алгоритм `AES_256_CTR`; ожидаемое снижение производительности составляет 5–15% в зависимости от рабочей нагрузки:
 
-<Image img="/images/_snippets/cmek-performance.webp" size="lg" alt="Снижение производительности CMEK" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Снижение производительности CMEK](/images/_snippets/cmek-performance.webp)
+  </Frame>
+</div>

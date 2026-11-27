@@ -1,6 +1,8 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Access/QueryPrivilegesInfo.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
@@ -71,6 +73,7 @@ namespace DB
 {
 
 struct FormatSettings;
+struct CollectedStatistics;
 class ASTSelectQuery;
 
 class SystemLogs;
@@ -125,6 +128,8 @@ class ColumnsCache;
 using ColumnsCachePtr = std::shared_ptr<ColumnsCache>;
 struct ColumnsCacheWriteBudget;
 using ColumnsCacheWriteBudgetPtr = std::shared_ptr<ColumnsCacheWriteBudget>;
+class QueryMaxThreadsSnapshot;
+using QueryMaxThreadsSnapshotPtr = std::shared_ptr<QueryMaxThreadsSnapshot>;
 class IcebergMetadataFilesCache;
 class PaimonMetadataFilesCache;
 class ParquetMetadataCache;
@@ -327,7 +332,7 @@ RuntimeFilterLookupPtr createRuntimeFilterLookup();
 
 class ContextTimeSeriesTagsCollector;
 
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+using PartitionIdToMaxBlock = UnorderedMapWithMemoryTracking<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
 class SessionTracker;
@@ -347,6 +352,9 @@ class QueryMetadataCache;
 class CursorTreeNode;
 using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
+/// The cursor that a bounded streaming read of a `MergeTree` table (`STREAM BOUNDED`) advanced to.
+/// It exists only for the incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`), which
+/// persists it to resume the next refresh. Other streaming queries must not rely on it.
 struct StreamingCursor
 {
     std::mutex mutex;
@@ -378,7 +386,7 @@ struct SharedContextHolder
 
     SharedContextHolder & operator=(SharedContextHolder &&) noexcept;
 
-    ContextSharedPart * get() const { return shared.get(); }
+    [[nodiscard]] ContextSharedPart * get() const { return shared.get(); }
     void reset();
 
 private:
@@ -511,6 +519,8 @@ protected:
     std::unordered_map<UUID, StorageSnapshotPtr> pinned_storage_snapshots;
 
 public:
+    struct SQLSecurityOverriddenBody;
+
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
     {
@@ -524,6 +534,7 @@ public:
             columns = rhs.columns;
             partitions = rhs.partitions;
             projections = rhs.projections;
+            data_skipping_indices = rhs.data_skipping_indices;
             views = rhs.views;
             row_policies = rhs.row_policies;
         }
@@ -545,8 +556,10 @@ public:
             std::swap(columns, rhs.columns);
             std::swap(partitions, rhs.partitions);
             std::swap(projections, rhs.projections);
+            std::swap(data_skipping_indices, rhs.data_skipping_indices);
             std::swap(views, rhs.views);
             std::swap(row_policies, rhs.row_policies);
+            std::swap(sql_security_overridden_bodies, rhs.sql_security_overridden_bodies);
         }
 
         /// To prevent a race between copy-constructor and other uses of this structure.
@@ -556,10 +569,23 @@ public:
         std::set<std::string> columns TSA_GUARDED_BY(mutex){};
         std::set<std::string> partitions TSA_GUARDED_BY(mutex){};
         std::set<std::string> projections TSA_GUARDED_BY(mutex){};
+        std::set<std::string> data_skipping_indices TSA_GUARDED_BY(mutex){};
         std::set<std::string> views TSA_GUARDED_BY(mutex){};
         std::set<std::string> row_policies TSA_GUARDED_BY(mutex){};
+        /// Child rows of the query, see `Context::addSQLSecurityOverriddenBody`. Not copied by the copy constructor.
+        std::vector<std::shared_ptr<const SQLSecurityOverriddenBody>> sql_security_overridden_bodies TSA_GUARDED_BY(mutex){};
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
+
+    struct SQLSecurityOverriddenBody
+    {
+        StorageID view = StorageID::createEmpty();
+        std::pair<UInt64, UInt64> query_hash;
+        String user;
+        String current_database;
+        ASTPtr query;
+        QueryAccessInfoPtr access_info;
+    };
 
 protected:
     /// In some situations, we want to be able to transfer the access info from children back to parents (e.g. definers context).
@@ -605,26 +631,8 @@ public:
         mutable std::mutex mutex;
     };
 
-    struct QueryPrivilegesInfo
-    {
-        QueryPrivilegesInfo() = default;
-
-        QueryPrivilegesInfo(const QueryPrivilegesInfo & rhs)
-        {
-            std::lock_guard<std::mutex> lock(rhs.mutex);
-            used_privileges = rhs.used_privileges;
-            missing_privileges = rhs.missing_privileges;
-        }
-
-        QueryPrivilegesInfo(QueryPrivilegesInfo && rhs) = delete;
-
-        std::unordered_set<std::string> used_privileges TSA_GUARDED_BY(mutex);
-        std::unordered_set<std::string> missing_privileges TSA_GUARDED_BY(mutex);
-
-        mutable std::mutex mutex;
-    };
-
-    using QueryPrivilegesInfoPtr = std::shared_ptr<QueryPrivilegesInfo>;
+    using QueryPrivilegesInfo = DB::QueryPrivilegesInfo;
+    using QueryPrivilegesInfoPtr = DB::QueryPrivilegesInfoPtr;
 
 protected:
     /// Needs to be changed while having const context in factories methods
@@ -750,6 +758,8 @@ protected:
     /// columns-cache write budgets apply per query rather than per pool.
     ColumnsCacheWriteBudgetPtr columns_cache_write_budget;
 
+    QueryMaxThreadsSnapshotPtr query_max_threads_snapshot;
+
 public:
     /// Some counters for current query execution.
     /// Most of them are workarounds and should be removed in the future.
@@ -790,6 +800,7 @@ protected:
     mutable std::mutex sample_block_cache_mutex;
 
     QueryMetadataCacheWeakPtr query_metadata_cache;
+    QueryPlanLogCapturePtr query_plan_log_capture;
 
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
@@ -964,6 +975,10 @@ public:
     void setUserFilesPath(const String & path);
     void setUserScriptsPath(const String & path);
     void setDynamicUserDefinedExecutableFunctionsPath(const String & path);
+
+    /// Captures the plan of this query for `system.query_log`, collecting what `collected` asks for.
+    void enablePlanLogCapture(const CollectedStatistics & collected);
+    QueryPlanLogCapturePtr getPlanLogCapture() const;
 
     void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
     void setTemporaryStoragePolicy(const String & policy_name, size_t max_size);
@@ -1226,7 +1241,11 @@ public:
     void removeQueryAccessInfoTable(const String & full_quoted_table_name);
 
     void addQueryAccessInfo(const Names & partition_names);
+    void addUsedDataSkippingIndex(const StorageID & storage_id, const String & index_name);
     void addViewAccessInfo(const String & view_name);
+    /// The body `body_query` of the view `view_id`, run in `body_context` under the view's identity, is logged as a child row of this query.
+    /// No-op unless `body_context` has a query context other than this one.
+    void addSQLSecurityOverriddenBody(const StorageID & view_id, const ContextPtr & body_context, const ASTPtr & body_query);
     void addUsedRowPolicy(const String & policy_name);
 
     struct QualifiedProjectionName
@@ -1816,7 +1835,7 @@ public:
     void setVectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
     void updateVectorSimilarityIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<VectorSimilarityIndexCache> getVectorSimilarityIndexCache() const;
-    void clearVectorSimilarityIndexCache() const;
+    void clearVectorSimilarityIndexCache(const StorageID & table_id = StorageID::createEmpty()) const;
 
     void setTextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
     void updateTextIndexTokensCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
@@ -2118,7 +2137,7 @@ public:
     bool isAutomaticParallelReplicasProbe() const { return is_automatic_parallel_replicas_probe; }
     void setIsAutomaticParallelReplicasProbe(bool value) { is_automatic_parallel_replicas_probe = value; }
 
-    bool totalsWithoutStorageAccess() const { return totals_without_storage_access; }
+    [[nodiscard]] bool totalsWithoutStorageAccess() const { return totals_without_storage_access; }
     void setTotalsWithoutStorageAccess(bool value) { totals_without_storage_access = value; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
@@ -2308,6 +2327,10 @@ public:
     /// Shared across all read pools of the query so the write budgets apply per query.
     ColumnsCacheWriteBudgetPtr getColumnsCacheWriteBudget() const;
 
+    const QueryMaxThreadsSnapshotPtr & getQueryMaxThreadsSnapshot() const;
+    /// For a query context made for a part of the query of `from`.
+    void shareQueryMaxThreadsSnapshot(const Context & from);
+
     void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;
 
@@ -2468,23 +2491,23 @@ struct HTTPContext : public IHTTPContext
         : context(Context::createCopy(context_))
     {}
 
-    uint64_t getMaxHstsAge() const override;
+    [[nodiscard]] uint64_t getMaxHstsAge() const override;
 
-    uint64_t getMaxUriSize() const override;
+    [[nodiscard]] uint64_t getMaxUriSize() const override;
 
-    uint64_t getMaxFields() const override;
+    [[nodiscard]] uint64_t getMaxFields() const override;
 
-    uint64_t getMaxFieldNameSize() const override;
+    [[nodiscard]] uint64_t getMaxFieldNameSize() const override;
 
-    uint64_t getMaxFieldValueSize() const override;
+    [[nodiscard]] uint64_t getMaxFieldValueSize() const override;
 
-    uint64_t getMaxRequestHeaderSize() const override;
+    [[nodiscard]] uint64_t getMaxRequestHeaderSize() const override;
 
-    Poco::Timespan getHeadersReadTimeout() const override;
+    [[nodiscard]] Poco::Timespan getHeadersReadTimeout() const override;
 
-    Poco::Timespan getReceiveTimeout() const override;
+    [[nodiscard]] Poco::Timespan getReceiveTimeout() const override;
 
-    Poco::Timespan getSendTimeout() const override;
+    [[nodiscard]] Poco::Timespan getSendTimeout() const override;
 
     ContextPtr context;
 };

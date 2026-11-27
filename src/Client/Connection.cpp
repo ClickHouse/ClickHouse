@@ -37,6 +37,7 @@
 #include <Common/randomSeed.h>
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
+#include <Core/QueryProcessingStage.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
@@ -92,6 +93,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
@@ -103,13 +105,13 @@ Connection::~Connection()
 
 Connection::Connection(const String & host_, UInt16 port_,
     const String & default_database_,
-    const String & user_, const String & password_,
+    const String & user_, std::string_view password_,
     const String & proto_send_chunked_, const String & proto_recv_chunked_,
     [[maybe_unused]] const SSHKey & ssh_private_key_,
     [[maybe_unused]] const String & jwt_,
     const String & quota_key_,
     const String & cluster_,
-    const String & cluster_secret_,
+    std::string_view cluster_secret_,
     const String & client_name_,
     Protocol::Compression compression_,
     Protocol::Secure secure_,
@@ -532,7 +534,7 @@ void Connection::sendHello()
       * Limiting number of possible characters in user-controlled part of handshake
       *  will mitigate this possibility but doesn't solve it completely.
       */
-    auto has_control_character = [](const std::string & s)
+    auto has_control_character = [](std::string_view s)
     {
         for (auto c : s)
             if (isControlASCII(c))
@@ -734,7 +736,8 @@ void Connection::receiveHello()
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_SETTINGS)
         {
             Settings settings;
-            settings.read(*in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+            /// A server of another version may send values that this version rejects.
+            settings.read(*in, /* skip_invalid_values= */ true);
             settings_from_server = settings.changes();
         }
 
@@ -1014,6 +1017,11 @@ void Connection::sendQuery(
     std::function<void(const Progress &)>)
 {
     OpenTelemetry::SpanHolder span("Connection::sendQuery()", OpenTelemetry::SpanKind::CLIENT);
+
+    /// Only an intermediate result can have rows that carry no columns: at `Complete` a result always has
+    /// columns. A block of this kind in answer to any other query is malformed data.
+    rows_without_columns_expected = stage != QueryProcessingStage::Complete;
+
     span.addAttribute("clickhouse.query_id", query_id_);
     span.addAttribute("clickhouse.query", query);
     span.addAttribute("target", [this] () { return this->getHost() + ":" + std::to_string(this->getPort()); });
@@ -1116,9 +1124,23 @@ void Connection::sendQuery(
             settings_to_send = &*modified_settings;
         }
 
-        auto settings_format = (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
-                                                                                                          : SettingsWriteFormat::BINARY;
-        settings_to_send->write(*out, settings_format);
+        if (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS)
+        {
+            settings_to_send->write(*out);
+        }
+        else
+        {
+            /// Older servers expect settings in a binary format, which is no longer supported.
+            /// Only an empty list of settings can be sent: it is the same in both formats.
+            if (!settings_to_send->changes().empty())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Server with protocol revision {} expects settings in the binary format, which is no longer supported "
+                    "(the minimum revision to pass settings is {})",
+                    server_revision,
+                    DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS);
+            Settings::writeEmpty(*out);
+        }
     }
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
@@ -1742,6 +1764,7 @@ void Connection::initBlockInput()
         /// The server may send marshalled result blocks; their consumers convert them back.
         block_in = std::make_unique<NativeReader>(
             *maybe_compressed_in, server_revision, optionalFormatSettings(), ISerialization::KindSet::all());
+        block_in->setAllowRowsWithoutColumns(rows_without_columns_expected);
     }
 }
 

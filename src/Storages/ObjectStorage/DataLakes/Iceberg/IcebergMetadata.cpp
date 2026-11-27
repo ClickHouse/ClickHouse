@@ -27,6 +27,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#include <Processors/Formats/Impl/Puffin/PuffinCommon.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
@@ -151,7 +152,7 @@ extern const SettingsBool use_iceberg_metadata_files_cache;
 extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool use_iceberg_manifest_list_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
-extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
+extern const SettingsBool input_format_parquet_preserve_order;
 extern const SettingsBool allow_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
 extern const SettingsBool allow_geo_types_in_iceberg;
@@ -166,7 +167,8 @@ extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
 extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
 extern const SettingsUInt64 iceberg_max_number_datafiles_to_compact;
 extern const SettingsUInt64 iceberg_data_file_size_lower_threshold_compaction;
-extern const SettingsUInt64 iceberg_data_file_size_upper_threshold_compaction;
+extern const SettingsUInt64 iceberg_compaction_max_bytes_to_merge;
+extern const SettingsUInt64 iceberg_compaction_max_rows_to_merge;
 extern const SettingsBool use_iceberg_table_statistics_ndv;
 }
 
@@ -240,7 +242,7 @@ std::pair<Iceberg::PersistentTableComponents, Iceberg::MetadataFileWithInfo> Ice
 {
     const auto latest_metadata
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, *configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, CompressionMethod::None, /* force_fetch_latest_metadata */ false);
-    const auto & [metadata_version, metadata_file_path, compression_method] = latest_metadata;
+    const auto & [metadata_version, metadata_file_path, compression_method, _] = latest_metadata;
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
     auto metadata_json_str = readMetadataJSONString(metadata_file_path, object_storage, cache_ptr != nullptr, context_, log, compression_method);
     auto metadata_object = parseMetadataJSONString(metadata_json_str, metadata_file_path);
@@ -338,21 +340,10 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
 }
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(
-    const ContextPtr & context, const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier) const
+    const ContextPtr & context, const Iceberg::MetadataFileWithInfo & metadata_file) const
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergGetTableStateMicroseconds);
-    const auto [metadata_version, metadata_file_path, _] = getLatestMetadataFileAndVersionWithCatalog(
-        object_storage,
-        catalog,
-        table_identifier,
-        persistent_components.table_path,
-        *data_lake_settings,
-        persistent_components.metadata_cache,
-        context,
-        log.get(),
-        persistent_components.table_uuid,
-        persistent_components.metadata_compression_method);
-    return getState(context, metadata_file_path, metadata_version);
+    return getState(context, metadata_file.path, metadata_file.version);
 }
 
 IcebergMetadata::IcebergMetadata(
@@ -883,11 +874,10 @@ void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
             "iceberg_snapshot_lease_seconds",
             "iceberg_outdated_snapshot_lifetime_seconds",
             "iceberg_compaction_commit_batch_size",
-            "iceberg_compaction_max_rows_in_data_file",
-            "iceberg_compaction_max_bytes_in_data_file",
             "iceberg_max_number_datafiles_to_compact",
             "iceberg_data_file_size_lower_threshold_compaction",
-            "iceberg_data_file_size_upper_threshold_compaction",
+            "iceberg_compaction_max_bytes_to_merge",
+            "iceberg_compaction_max_rows_to_merge",
         });
 
         auto check_setting = [](std::string_view setting_name)
@@ -1241,7 +1231,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
 IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context) const
 {
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, compression_method, _] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
         getMetadataLookupSettings(),
@@ -1358,7 +1348,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 
 IcebergMetadata::IcebergMetadataLogEntries IcebergMetadata::getMetadataLogEntries(ContextPtr local_context) const
 {
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, compression_method, _] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
         getMetadataLookupSettings(),
@@ -1633,33 +1623,23 @@ std::optional<UInt64> countDeletedRows(
     const std::vector<ProcessedManifestFileEntryPtr> & position_deletes,
     LoggerPtr log)
 {
-    /// Keyed by the data file both bounds name, so each data file needs one lookup instead of a pass over the deletes.
-    std::unordered_map<IcebergPathFromMetadata, std::vector<ProcessedManifestFileEntryPtr>> deletes_by_data_file;
-    size_t skipped_delete_files = 0;
-    for (const auto & position_delete : position_deletes)
-    {
-        const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
-        if (lower.has_value() && lower == position_delete->parsed_entry->upper_reference_data_file_path)
-            deletes_by_data_file[*lower].push_back(position_delete);
-        else
-            ++skipped_delete_files;
-    }
-    if (skipped_delete_files)
+    auto grouped = groupPositionDeletesByDataFile(position_deletes);
+    if (!grouped.other.empty())
         LOG_DEBUG(
-            log, "The row estimate does not subtract {} position delete files that cover several data files", skipped_delete_files);
+            log, "The row estimate does not subtract {} position delete files that cover several data files", grouped.other.size());
 
     UInt64 deleted_rows = 0;
-    if (deletes_by_data_file.empty())
+    if (grouped.single_data_file.empty())
         return deleted_rows;
 
     /// `defineDeletesSpan` needs them in the order of `operator<=>`.
-    for (auto & [_, deletes] : deletes_by_data_file)
+    for (auto & [_, deletes] : grouped.single_data_file)
         std::sort(deletes.begin(), deletes.end());
 
     for (const auto & data_file : data_files)
     {
-        const auto it = deletes_by_data_file.find(data_file->parsed_entry->file_path_key);
-        if (it == deletes_by_data_file.end())
+        const auto it = grouped.single_data_file.find(data_file->parsed_entry->file_path_key);
+        if (it == grouped.single_data_file.end())
             continue;
 
         UInt64 file_scoped_rows = 0;
@@ -1705,8 +1685,6 @@ std::optional<Int64> tryGetInt64(const Poco::Dynamic::Var & value)
 /// entries and the blobs that the file keeps from an earlier snapshot.
 std::unordered_map<Int32, UInt64> readTableStatisticsDistinctValues(const Poco::JSON::Array::Ptr & statistics, Int64 snapshot_id)
 {
-    static constexpr auto theta_sketch_blob_type = "apache-datasketches-theta-v1";
-
     std::unordered_map<Int32, UInt64> distinct_values;
     if (!statistics)
         return distinct_values;
@@ -1726,7 +1704,7 @@ std::unordered_map<Int32, UInt64> readTableStatisticsDistinctValues(const Poco::
 
             const auto type = blob->get(f_type);
             const auto fields = blob->getArray(f_fields);
-            if (!type.isString() || type.convert<String>() != theta_sketch_blob_type || !fields || fields->size() != 1
+            if (!type.isString() || type.convert<String>() != PUFFIN_DATASKETCHES_THETA_BLOB_TYPE || !fields || fields->size() != 1
                 || tryGetInt64(blob->get(f_metadata_snapshot_id)) != snapshot_id)
                 continue;
 
@@ -2058,12 +2036,10 @@ bool IcebergMetadata::shouldReloadSchemaForConsistency(ContextPtr) const
 
 void IcebergMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const
 {
-    /// `vortex.preserve_order` is not forced as well: position deletes are only supported for
-    /// Parquet data and delete files, so a Vortex data file never reaches the streaming transform.
-    if (!local_context.getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
-        /// IcebergStreamingPositionDeleteTransform requires increasing row numbers from both the
-        /// data reader and the deletes reader.
+    /// The format settings of an engine table are not taken from the query, so a query's request for order is applied here.
+    if (local_context.getSettingsRef()[Setting::input_format_parquet_preserve_order])
         format_settings.parquet.preserve_order = true;
+    Iceberg::useUTCForORCTimestamps(format_settings);
 }
 
 void IcebergMetadata::addDeleteTransformers(
@@ -2148,7 +2124,7 @@ void IcebergMetadata::addDeleteTransformers(
                 has_time_equality_column
                     ? std::make_shared<FormatFilterInfo>(nullptr, local_context, delete_mapper, nullptr, nullptr)
                     : nullptr,
-                true,
+                object_storage->isRemote(),
                 compression_method);
             /// only get the delete columns and construct a set by 'block_for_set'
             while (true)
@@ -2215,6 +2191,7 @@ void IcebergMetadata::addDeleteTransformers(
 
 SinkToStoragePtr IcebergMetadata::write(
     SharedHeader sample_block,
+    StorageMetadataPtr metadata_snapshot,
     const StorageID & table_id,
     ObjectStoragePtr /*object_storage*/,
     StorageObjectStorageConfigurationPtr configuration,
@@ -2225,7 +2202,12 @@ SinkToStoragePtr IcebergMetadata::write(
     if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
     {
         checkTableRootIsQueriedPath("INSERT");
-        return std::make_shared<IcebergStorageSink>(object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
+        /// The schema the query planned the inserted columns with, pinned in the metadata snapshot like for a read.
+        std::optional<Int32> planned_schema_id;
+        if (metadata_snapshot && metadata_snapshot->datalake_table_state)
+            planned_schema_id = std::get<Iceberg::TableStateSnapshot>(*metadata_snapshot->datalake_table_state).schema_id;
+        return std::make_shared<IcebergStorageSink>(
+            object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id, planned_schema_id);
     }
     else
     {
@@ -2266,12 +2248,19 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
         return nullptr;
     chassert(object_info->getFileFormat().has_value());
     /// Only these readers resolve columns through a mapper: `Parquet` and `Avro` for the columns they read
-    /// (and `Parquet` for its filters), `Vortex` for the filters it pushes into the scan.
+    /// (and `Parquet` for its filters), `Vortex` for the filters it pushes into the scan, `ORC` for the columns
+    /// absent from the file.
     const auto file_format = Poco::toLower(*object_info->getFileFormat());
-    if (file_format != "parquet" && file_format != "avro" && file_format != "vortex")
+    if (file_format != "parquet" && file_format != "avro" && file_format != "vortex" && file_format != "orc")
         return nullptr;
 
-    return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->info.underlying_format_read_schema_id);
+    auto column_mapper
+        = persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->info.underlying_format_read_schema_id);
+    /// An identity partition value of the file, even NULL, takes precedence over `initial-default`.
+    if (column_mapper)
+        for (const auto & [column_name, _] : iceberg_object_info->info.identity_partition_columns)
+            column_mapper->removeIcebergInitialDefault(column_name);
+    return column_mapper;
 }
 
 // (TODO): usage of this function is wrong and should be removed completely (it was done as a temporary workaround for a bug which occurred during supporting concurrent SELECTs).

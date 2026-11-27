@@ -9,13 +9,9 @@ doc_type: 'guide'
 
 chDB-rust は、chDB 向けの Experimental な FFI (Foreign Function Interface) バインディングを提供しており、外部依存関係なしで Rust アプリケーションから ClickHouse クエリを直接実行できます。
 
-<div id="installation">
-  ## インストール
-</div>
+## インストール {#installation}
 
-<div id="install-libchdb">
-  ### libchdb をインストールする
-</div>
+### libchdb をインストールする {#install-libchdb}
 
 chDB ライブラリをインストールします。
 
@@ -23,15 +19,11 @@ chDB ライブラリをインストールします。
 curl -sL https://lib.chdb.io | bash
 ```
 
-<div id="usage">
-  ## 使用方法
-</div>
+## 使用方法 {#usage}
 
 chDB Rust では、ステートレスとステートフルの両方のクエリ実行モードを利用できます。
 
-<div id="stateless-usage">
-  ### ステートレスな使用
-</div>
+### ステートレスな使用 {#stateless-usage}
 
 永続的な状態を伴わないシンプルなクエリの場合:
 
@@ -57,9 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-<div id="stateful-usage-sessions">
-  ### ステートフルな利用 (セッション)
-</div>
+### ステートフルな利用 (セッション) {#stateful-usage-sessions} 
 
 データベースやテーブルなどの永続的な状態を必要とするクエリの場合：
 
@@ -117,29 +107,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-<div id="building-testing">
-  ## ビルドとテスト
-</div>
+## ビルドとテスト {#building-testing}
 
-<div id="build-the-project">
-  ### プロジェクトをビルドする
-</div>
+### プロジェクトをビルドする {#build-the-project}
 
 ```bash
 cargo build
 ```
 
-<div id="run-tests">
-  ### テストの実行
-</div>
+### テストの実行 {#run-tests}
 
 ```bash
 cargo test
 ```
 
-<div id="development-dependencies">
-  ### 開発用依存関係
-</div>
+### 開発用依存関係 {#development-dependencies}
 
 このプロジェクトには、次の開発用依存関係が含まれています。
 
@@ -147,9 +129,7 @@ cargo test
 * `tempdir` (v0.3.7) - テストでの一時ディレクトリの処理
 * `thiserror` (v1) - エラー処理ユーティリティ
 
-<div id="error-handling">
-  ## エラー処理
-</div>
+## エラー処理 {#error-handling}
 
 chDB Rust は、`Error` 列挙型を通じて包括的なエラー処理を提供します。
 
@@ -175,8 +155,6 @@ match execute("SELECT 1", None) {
 }
 ```
 
-<div id="github-repository">
-  ## GitHub リポジトリ
-</div>
+## GitHub リポジトリ {#github-repository}
 
 このプロジェクトの GitHub リポジトリは [chdb-io/chdb-rust](https://github.com/chdb-io/chdb-rust) で公開されています。

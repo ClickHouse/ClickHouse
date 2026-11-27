@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Defines.h>
+#include <Interpreters/Context_fwd.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/PrometheusRequestHandlerConfig.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -38,11 +39,14 @@ private:
     /// Calls onException() in a try-catch block.
     void tryCallOnException();
 
-    /// Parses the client's trace context from the request and starts the server span of the current thread.
-    OpenTelemetry::TracingContextHolderPtr startTracing(const HTTPServerRequest & request);
+    /// Parses the client's trace context from the request.
+    void parseClientTraceContext(const HTTPServerRequest & request);
+
+    /// Starts the server span of the current thread, sampled by the given context's settings if there is no client trace.
+    OpenTelemetry::TracingContextHolderPtr startTracing(const HTTPServerRequest & request, const ContextPtr & settings_context);
 
     /// Returns the request URI with the values of sensitive parameters and PromQL expressions hidden.
-    String getURIForLogging(const HTTPServerRequest & request) const;
+    [[nodiscard]] String getURIForLogging(const HTTPServerRequest & request) const;
 
     IServer & server;
     const PrometheusRequestHandlerConfig config;
@@ -62,6 +66,7 @@ private:
     String http_method;
 
     OpenTelemetry::TracingContext client_trace_context;
+    OpenTelemetry::TracingContextHolderPtr thread_trace_context;
 
     std::unique_ptr<WriteBufferFromHTTPServerResponse> write_buffer_from_response;
     /// Compresses the response body into `write_buffer_from_response` when the client accepts it.

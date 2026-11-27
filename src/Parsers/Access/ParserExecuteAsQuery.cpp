@@ -21,7 +21,7 @@ bool ParserExecuteAsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
 
     ASTPtr target_user;
-    if (!ParserUserNameWithHost(/*allow_query_parameter=*/ false).parse(pos, target_user, expected))
+    if (!ParserUserNameWithHost(/*allow_query_parameter=*/ true).parse(pos, target_user, expected))
         return false;
 
     auto query = make_intrusive<ASTExecuteAsQuery>();
@@ -82,8 +82,6 @@ std::map<String, Documentation> ParserExecuteAsQuery::getDocumentation() const
     documentation["EXECUTE AS"] =
     {
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 <CloudNotSupportedBadge />
 
 Allows to execute queries on behalf of a different user.
@@ -116,6 +114,13 @@ and function [authenticatedUser()](/reference/functions/regular-functions/other-
 SELECT currentUser(), authenticatedUser(); -- outputs "default    default"
 CREATE USER james;
 EXECUTE AS james SELECT currentUser(), authenticatedUser(); -- outputs "james    default"
+```
+
+Use a query parameter to pass the target user:
+
+```sql
+SET param_user=james;
+EXECUTE AS {user:Identifier} SELECT currentUser(); -- outputs "james"
 ```
 )DOCS_MD",
         .syntax = R"(
