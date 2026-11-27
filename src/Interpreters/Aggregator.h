@@ -1068,11 +1068,12 @@ private:
         bool all_keys_are_const,
         AdaptiveDistinctKeyCounter * distinct_key_counter) const;
 
-    /// Advances an adaptive producer's phase between blocks, in place of the baseline's conversion: writes its staged
-    /// records to disk when the query is `over_external_threshold`, thaws a frozen table whose staged stream repeats,
-    /// and freezes a learning table at its bounds. A learning table counts the block's `rows` toward the end of its
-    /// slicing (see `adaptiveLearningSlices`). Returns false once the producer is on the baseline path, whose checks
-    /// then apply.
+    /// Advances an adaptive producer's phase between blocks, in place of the baseline's conversion: writes
+    /// its staged records to disk when the query is `over_external_threshold`, thaws a frozen table whose
+    /// staged stream repeats, drops the distinct key counter of a thawed producer whose table holds nearly
+    /// all of its keys, and freezes a learning table at its bounds. A learning table counts the block's
+    /// `rows` toward the end of its slicing (see `adaptiveLearningSlices`). Returns false once the producer
+    /// is on the baseline path, whose checks then apply.
     bool advanceAdaptiveProducer(
         AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t rows, bool over_external_threshold) const;
 
