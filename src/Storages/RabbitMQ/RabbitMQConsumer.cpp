@@ -5,7 +5,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
-#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
 
 
 namespace DB
@@ -56,7 +56,7 @@ void RabbitMQConsumer::updateChannel()
             LOG_TRACE(log, "Consumer {} is subscribed to queue {}", channel_id_base, queue_name);
         }
     }
-    catch (...)
+    catch (...) /// Ok: setError logs the exception
     {
         setError("subscribing to the queues");
         return;
@@ -86,7 +86,7 @@ bool RabbitMQConsumer::receive(UInt64 timeout_ms)
     {
         pending = connection.get().receiveDelivery(Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(timeout_ms) * 1000));
     }
-    catch (...)
+    catch (...) /// Ok: setError logs the exception
     {
         setError("receiving messages");
         return false;
@@ -127,7 +127,7 @@ void RabbitMQConsumer::heartbeat()
     {
         connection.get().sendHeartbeatIfNeeded();
     }
-    catch (...)
+    catch (...) /// Ok: setError logs the exception
     {
         setError("sending a heartbeat");
     }
@@ -188,7 +188,7 @@ bool RabbitMQConsumer::ackMessages(const CommitInfo & commit_info)
             return true;
         }
     }
-    catch (...)
+    catch (...) /// Ok: setError logs the exception
     {
         setError("acknowledging messages");
         return false;
@@ -240,7 +240,7 @@ bool RabbitMQConsumer::nackMessages(const CommitInfo & commit_info, bool requeue
 
         connection.get().nack(commit_info.delivery_tag, /* multiple */ true, requeue);
     }
-    catch (...)
+    catch (...) /// Ok: setError logs the exception
     {
         setError(fmt::format("trying to {} messages", verb));
         return false;

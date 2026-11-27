@@ -1,16 +1,17 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Common/Logger.h>
 #include <Common/SecretString.h>
+#include <Common/StringWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Timespan.h>
 
 #include <chrono>
-#include <deque>
 #include <memory>
 #include <optional>
-#include <vector>
 
 
 namespace DB
@@ -165,14 +166,14 @@ public:
     void publish(const String & exchange, const String & routing_key, std::string_view body, const MessageProperties & properties);
     void flush();
     /// Waits for publisher confirms at most `timeout` and returns all that arrived.
-    std::vector<Confirm> receiveConfirms(Poco::Timespan timeout);
+    VectorWithMemoryTracking<Confirm> receiveConfirms(Poco::Timespan timeout);
 
 private:
     struct Frame
     {
         UInt8 type = 0;
         UInt16 channel = 0;
-        String payload;
+        StringWithMemoryTracking payload;
     };
 
     struct Method
@@ -180,7 +181,7 @@ private:
         UInt16 class_id = 0;
         UInt16 method_id = 0;
         /// The arguments, without the class and method ids.
-        String arguments;
+        StringWithMemoryTracking arguments;
     };
 
     void handshake();
@@ -227,8 +228,8 @@ private:
     String error;
     String channel_close_reason;
 
-    std::deque<Delivery> deliveries;
-    std::vector<Confirm> confirms;
+    DequeWithMemoryTracking<Delivery> deliveries;
+    VectorWithMemoryTracking<Confirm> confirms;
 };
 
 }

@@ -605,7 +605,8 @@ std::optional<Connection::Method> Connection::processFrame(Frame frame)
     Method method;
     method.class_id = reader.readShort();
     method.method_id = reader.readShort();
-    method.arguments = frame.payload.substr(4);
+    frame.payload.erase(0, 4);
+    method.arguments = std::move(frame.payload);
     Reader args(method.arguments);
 
     if (frame.channel == 0)
@@ -1146,7 +1147,7 @@ void Connection::flush()
     }
 }
 
-std::vector<Confirm> Connection::receiveConfirms(Poco::Timespan timeout)
+VectorWithMemoryTracking<Confirm> Connection::receiveConfirms(Poco::Timespan timeout)
 {
     if (confirms.empty())
     {

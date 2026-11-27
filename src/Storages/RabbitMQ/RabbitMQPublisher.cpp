@@ -231,7 +231,7 @@ String RabbitMQPublisher::publishStep(Payloads & payloads)
         const bool published = delivery_record.size() != pending_before;
         processConfirms(!published && !delivery_record.empty() ? WAIT_MS : 0);
     }
-    catch (...)
+    catch (...) /// Ok: onChannelError logs the exception
     {
         /// The broker closes only the channel when it rejects a publish, e.g. NOT_FOUND for a missing exchange.
         /// A new channel is rejected the same way.

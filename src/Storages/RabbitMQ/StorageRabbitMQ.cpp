@@ -101,7 +101,6 @@ namespace ErrorCodes
     extern const int CANNOT_CONNECT_RABBITMQ;
     extern const int CANNOT_BIND_RABBITMQ_EXCHANGE;
     extern const int CANNOT_DECLARE_RABBITMQ_EXCHANGE;
-    extern const int CANNOT_REMOVE_RABBITMQ_EXCHANGE;
     extern const int CANNOT_CREATE_RABBITMQ_QUEUE_BINDING;
     extern const int QUERY_NOT_ALLOWED;
 }
