@@ -210,6 +210,16 @@ def shell_is_static(path):
     )
 
 
+def shell_has_thread_stack_size(path):
+    """A shell condition that is true if the `PT_GNU_STACK` header of :param path: sets at least
+    the thread stack size that musl falls back to under an unlimited `RLIMIT_STACK`."""
+    return (
+        f'size=$(llvm-readelf-{LLVM_VERSION} --program-headers "{path}"'
+        f" | awk '$1 == \"GNU_STACK\" {{print $6}}')"
+        f' && [ -n "$size" ] && [ $((size)) -ge {MUSL_THREAD_STACK_SIZE} ]'
+    )
+
+
 def download_and_extract(name, url, sha256):
     tarball = f"{TEMP}/{os.path.basename(url)}"
     return Result.from_commands_run(
@@ -1042,7 +1052,9 @@ def main():
                 print("BOLT profile merge failed. Continuing with PGO-only.")
 
         # Step 6: Apply BOLT optimization
-        # Flags match upstream perf-helper.py bolt_optimize
+        # Flags match upstream perf-helper.py bolt_optimize, except `-use-gnu-stack`: it reuses
+        # the `PT_GNU_STACK` header for the new segment, and musl takes the default thread
+        # stack size from that header when `RLIMIT_STACK` is unlimited.
         if bolt_ok:
             result = Result.from_commands_run(
                 name="BOLT optimize clang",
@@ -1056,7 +1068,6 @@ def main():
                     f" -split-all-cold"
                     f" -split-eh"
                     f" -dyno-stats"
-                    f" -use-gnu-stack"
                 ),
             )
             bolt_results.append(result)
@@ -1129,6 +1140,7 @@ def main():
                     f' [ -L "$f" ] && continue;'
                     f" {shell_is_elf('$f')} || continue;"
                     f" {shell_is_static('$f')} || {{ echo \"$f is not statically linked\"; exit 1; }};"
+                    f" {shell_has_thread_stack_size('$f')} || {{ echo \"$f has no {MUSL_THREAD_STACK_SIZE} byte PT_GNU_STACK\"; exit 1; }};"
                     f" done"
                 ),
             )
@@ -1150,6 +1162,29 @@ def main():
                         f" && find {STAGE2_INSTALL_DIR}/lib -name '*.so*' -type f"
                         f" -exec strip --strip-unneeded {{}} +"
                     ),
+                )
+            )
+            res = results[-1].is_ok()
+
+        # With an unlimited `RLIMIT_STACK`, musl sizes thread stacks from `PT_GNU_STACK` alone. A
+        # deeply nested expression scanned by the worker threads of `-fmodules-driver` overflows
+        # musl's 128 KiB default, so this checks the final (BOLTed, stripped) compiler.
+        if res:
+            stack_test_source = f"{TEMP}/toolchain-thread-stack-test.cpp"
+            with open(stack_test_source, "w") as f:
+                f.write("#if " + "(" * 1024 + "1" + ")" * 1024 + "\n#endif\n")
+            clangpp_final = f"{STAGE2_INSTALL_DIR}/bin/clang++"
+            stack_test = (
+                f"{clangpp_final} -std=c++20 -fmodules-driver -fsyntax-only"
+                f" {stack_test_source} {stack_test_source}"
+            )
+            results.append(
+                Result.from_commands_run(
+                    name="Test thread stack size of clang",
+                    command=[
+                        f"bash -c 'ulimit -s 8192 && {stack_test}'",
+                        f"bash -c 'ulimit -s unlimited && {stack_test}'",
+                    ],
                 )
             )
             res = results[-1].is_ok()
