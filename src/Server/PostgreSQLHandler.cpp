@@ -2856,16 +2856,20 @@ void PostgreSQLHandler::initializeSystemTables(ContextMutablePtr query_context)
     /// `pg_enum` (`enumtypid`), because the standard introspection path of a PostgreSQL client is a join
     /// against `pg_type.oid`, and a missing row silently drops the column or type from the result.
     /// An array type carries the OID of its element type in `typelem` (`typcategory` = 'A'), as in
-    /// PostgreSQL. `typreceive` is zero for every type because the server does not implement binary
+    /// PostgreSQL. `name` has a `typelem` too (`char`), as in PostgreSQL, although it is not an array type.
+    /// `typreceive` is zero for every type because the server does not implement binary
     /// input decoding for bound parameters or `COPY`; advertising a receiver would cause clients to
     /// select an unsupported input path.
+    /// The OIDs, `typtype`, `typelem` and `typcategory` of the built-in types are the ones of PostgreSQL's
+    /// `pg_type.dat`, with one exception: `char` has the `typcategory` 'S' that it had up to PostgreSQL 14
+    /// (PostgreSQL 15 moved it to the category 'Z' of internal-use types).
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_type SQL SECURITY INVOKER AS
 SELECT * FROM VALUES(
     'oid UInt32, typnamespace UInt32, typname String, typrelid UInt32, typnotnull Bool, typtype String, typreceive UInt32, typelem UInt32, typbasetype UInt32, typcategory String',
     (16,   11, 'bool',        0, 0, 'b', 0, 0, 0, 'B'),
     (17,   11, 'bytea',       0, 0, 'b', 0, 0, 0, 'U'),
     (18,   11, 'char',        0, 0, 'b', 0, 0, 0, 'S'),
-    (19,   11, 'name',        0, 0, 'b', 0, 0, 0, 'S'),
+    (19,   11, 'name',        0, 0, 'b', 0, 18, 0, 'S'),
     (20,   11, 'int8',        0, 0, 'b', 0, 0, 0, 'N'),
     (21,   11, 'int2',        0, 0, 'b', 0, 0, 0, 'N'),
     (23,   11, 'int4',        0, 0, 'b', 0, 0, 0, 'N'),
@@ -2978,13 +2982,17 @@ INNER JOIN pg_namespace_oids_data AS oids ON databases.identity = oids.identity)
     /// they cannot shadow user data; when a ClickHouse database carries one of these names (the built-in
     /// `information_schema` always does), the fixed row takes precedence over a generated one, so a
     /// schema name always denotes a single OID.
+    /// The OIDs of `pg_catalog` (11) and `pg_toast` (99) are the ones of PostgreSQL's `pg_namespace.dat`.
+    /// The other three schemas have no fixed OID in PostgreSQL: `information_schema` gets one at `initdb`
+    /// and the temporary schemas get one at run time. Their OIDs here only have to differ from each other,
+    /// from the two fixed ones and from the generated ones.
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace SQL SECURITY INVOKER AS
 SELECT oid, nspname FROM VALUES(
     'oid UInt32, nspname String',
     (11,    'pg_catalog'),
+    (99,    'pg_toast'),
     (132,   'information_schema'),
-    (11519, 'pg_toast'),
-    (99,    'pg_temp_1'),
+    (11519, 'pg_temp_1'),
     (100,   'pg_toast_temp_1')
 )
 UNION ALL
@@ -3068,60 +3076,58 @@ SELECT * FROM VALUES(
     (2, 'heap', 't')
 ))");
 
-    /// Besides the historic `*in` / `*out` rows, `pg_proc` must resolve every receive-function OID that
-    /// `pg_type.typreceive` advertises above: a client that probes for binary I/O support by joining
-    /// `pg_type.typreceive` to `pg_proc.oid` (rather than only comparing `typreceive` against zero) would
-    /// otherwise drop every emulated type. The names are the ones `pg_catalog` proper uses, and the OIDs are
-    /// the synthetic ones chosen for `typreceive`, so the join is closed in both directions - every
-    /// advertised receive function has a row here, and none of these rows is an orphan.
+    /// The input, output and binary receive functions of the emulated types. The names and the OIDs are the
+    /// ones of PostgreSQL's `pg_proc.dat`, so a client that looks a function up by its OID or by its name
+    /// gets the answer PostgreSQL gives. `pg_type.typreceive` is zero for every type (see above), so the
+    /// emulated `pg_type` refers to none of these rows.
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_proc SQL SECURITY INVOKER AS
 SELECT * FROM VALUES(
     'oid UInt32, proname String',
-    (241, 'int8recv'),
-    (242, 'int4recv'),
-    (243, 'int2recv'),
-    (244, 'namerecv'),
-    (245, 'charrecv'),
-    (246, 'boolrecv'),
-    (247, 'textrecv'),
-    (248, 'bytearecv'),
-    (249, 'varcharrecv'),
-    (250, 'float4recv'),
-    (251, 'float8recv'),
-    (252, 'date_recv'),
-    (253, 'timestamp_recv'),
-    (254, 'oidrecv'),
-    (255, 'timestamptz_recv'),
-    (256, 'numeric_recv'),
-    (257, 'uuid_recv'),
-    (260, 'array_recv'),
-    (261, 'range_recv'),
-    (262, 'multirange_recv'),
-    (263, 'enum_recv'),
-    (1247, 'boolin'),
-    (1248, 'boolout'),
-    (1249, 'byteain'),
-    (1250, 'byteaout'),
-    (1251, 'charin'),
-    (1252, 'charout'),
-    (1255, 'namein'),
-    (1256, 'nameout'),
-    (1259, 'int2in'),
-    (1260, 'int2out'),
-    (1261, 'int4in'),
-    (1262, 'int4out'),
-    (1265, 'textin'),
-    (1266, 'textout'),
-    (1286, 'float4in'),
-    (1287, 'float4out'),
-    (1288, 'float8in'),
-    (1289, 'float8out'),
-    (1344, 'date_in'),
-    (1345, 'date_out'),
-    (2022, 'varcharin'),
-    (2023, 'varcharout'),
-    (1115, 'timestamp_in'),
-    (1116, 'timestamp_out')
+    (31, 'byteaout'),
+    (33, 'charout'),
+    (34, 'namein'),
+    (35, 'nameout'),
+    (38, 'int2in'),
+    (39, 'int2out'),
+    (42, 'int4in'),
+    (43, 'int4out'),
+    (46, 'textin'),
+    (47, 'textout'),
+    (200, 'float4in'),
+    (201, 'float4out'),
+    (214, 'float8in'),
+    (215, 'float8out'),
+    (1046, 'varcharin'),
+    (1047, 'varcharout'),
+    (1084, 'date_in'),
+    (1085, 'date_out'),
+    (1242, 'boolin'),
+    (1243, 'boolout'),
+    (1244, 'byteain'),
+    (1245, 'charin'),
+    (1312, 'timestamp_in'),
+    (1313, 'timestamp_out'),
+    (2400, 'array_recv'),
+    (2404, 'int2recv'),
+    (2406, 'int4recv'),
+    (2408, 'int8recv'),
+    (2412, 'bytearecv'),
+    (2414, 'textrecv'),
+    (2418, 'oidrecv'),
+    (2422, 'namerecv'),
+    (2424, 'float4recv'),
+    (2426, 'float8recv'),
+    (2432, 'varcharrecv'),
+    (2434, 'charrecv'),
+    (2436, 'boolrecv'),
+    (2460, 'numeric_recv'),
+    (2468, 'date_recv'),
+    (2474, 'timestamp_recv'),
+    (2476, 'timestamptz_recv'),
+    (2961, 'uuid_recv'),
+    (3532, 'enum_recv'),
+    (3836, 'range_recv'),
+    (4233, 'multirange_recv')
 ))");
 
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_range SQL SECURITY INVOKER AS

@@ -24,6 +24,7 @@ import psycopg2.extras
 import pytest
 
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path
+from helpers.config_cluster import pg_db, pg_pass, pg_user
 
 psycopg2.extras.register_uuid()
 
@@ -3817,3 +3818,112 @@ def test_catalog_oids_do_not_depend_on_a_colliding_peer(started_cluster):
     for name in colliding:
         cur.execute(f"DROP DATABASE IF EXISTS {name}")
     ch.close()
+
+
+def test_catalog_constants_match_postgresql(started_cluster):
+    """The emulated catalog copies constants of PostgreSQL: the OIDs of the built-in
+    types, functions, schemas, catalog tables and access methods, and the type names
+    that `format_type` prints. A PostgreSQL client may resolve an object by such a
+    constant alone, so each of them has to be the value that PostgreSQL has. Compare
+    them with the PostgreSQL server of this cluster instead of a list written by hand:
+    every built-in row that ClickHouse shows must be a row of PostgreSQL."""
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    pg = psycopg.connect(
+        host=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        user=pg_user,
+        password=pg_pass,
+        dbname=pg_db,
+        autocommit=True,
+    )
+
+    def fetch(connection, query):
+        cur = connection.cursor()
+        cur.execute(query)
+        # The two servers describe the same value with different types (`oid` and
+        # `int8`, `name` and `varchar`), so compare the text of the values.
+        return {tuple(str(value) for value in row) for row in cur.fetchall()}
+
+    def check_rows_exist_in_postgresql(query, expected_rows=None):
+        clickhouse_rows = fetch(ch, query)
+        postgresql_rows = fetch(pg, query)
+        assert clickhouse_rows, query
+        if expected_rows is not None:
+            assert len(clickhouse_rows) == expected_rows, (query, sorted(clickhouse_rows))
+        assert clickhouse_rows <= postgresql_rows, (
+            query,
+            sorted(clickhouse_rows - postgresql_rows),
+        )
+
+    # OIDs from 16384 (`FirstNormalObjectId`) are not constants: PostgreSQL gives them
+    # to the objects that users create.
+    built_in = "oid < 16384"
+
+    check_rows_exist_in_postgresql(
+        f"SELECT oid, typname, typtype, typelem FROM pg_type WHERE {built_in}"
+    )
+    # `char` (18) has the category 'S' in ClickHouse, as up to PostgreSQL 14.
+    # PostgreSQL 15 moved it to the category 'Z'.
+    check_rows_exist_in_postgresql(
+        f"SELECT oid, typcategory FROM pg_type WHERE {built_in} AND oid != 18"
+    )
+
+    # The names of all types of `pg_type`, without a type modifier and with a `NULL` one.
+    check_rows_exist_in_postgresql(
+        f"SELECT oid, format_type(oid, -1), format_type(oid, NULL) FROM pg_type WHERE {built_in}"
+    )
+    # Types and type modifiers that `format_type` knows and `pg_type` does not list:
+    # the arrays of the range types, the array of `timestamp`, the blank-padded character
+    # type (the only one where a `NULL` modifier and -1 give different names), and
+    # the modifiers of `numeric` and `timestamp`.
+    for oid, type_modifier in [
+        (3905, "-1"),
+        (3907, "-1"),
+        (3909, "-1"),
+        (3911, "-1"),
+        (3913, "-1"),
+        (3927, "-1"),
+        (1115, "-1"),
+        (1115, "3"),
+        (1042, "NULL"),
+        (1042, "-1"),
+        (1042, "4"),
+        (1042, "5"),
+        (1042, "14"),
+        (1700, "655366"),
+        (1231, "655366"),
+        (1114, "3"),
+        (1184, "0"),
+    ]:
+        check_rows_exist_in_postgresql(f"SELECT format_type({oid}, {type_modifier})")
+
+    # PostgreSQL has exactly these six built-in range types.
+    check_rows_exist_in_postgresql(
+        "SELECT rngtypid, rngsubtype, rngmultitypid FROM pg_range", expected_rows=6
+    )
+
+    check_rows_exist_in_postgresql(f"SELECT oid, proname FROM pg_proc WHERE {built_in}")
+
+    # The other schemas of the emulated `pg_namespace` have no fixed OID in PostgreSQL.
+    check_rows_exist_in_postgresql(
+        "SELECT oid, nspname FROM pg_namespace WHERE nspname IN ('pg_catalog', 'pg_toast')",
+        expected_rows=2,
+    )
+
+    # The catalog tables. The rows without a name are samples of each `relkind`,
+    # which do not stand for a relation of PostgreSQL.
+    check_rows_exist_in_postgresql(
+        "SELECT oid, relname, relkind FROM pg_class WHERE relnamespace = 11 AND relname != ''"
+    )
+
+    check_rows_exist_in_postgresql("SELECT oid, amname, amtype FROM pg_am")
+
+    ch.close()
+    pg.close()
