@@ -83,13 +83,14 @@ SELECT DISTINCT s FROM dst WHERE c IN ('shadow', 'shadow_ident');
 SELECT 'loc';
 SELECT c, count(), countIf(s = currentDatabase()), sum(x) FROM loc GROUP BY c ORDER BY c;
 
--- The queries that are expected to be forwarded were forwarded.
+-- The queries that are expected to be forwarded were forwarded: the nodes ran the INSERT SELECT text itself.
 SYSTEM FLUSH LOGS query_log;
 SELECT 'forwarded';
 SELECT log_comment, count() > 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 0 AND query_kind = 'Insert'
     AND has(databases, currentDatabase()) AND log_comment LIKE '05951\_%'
+    AND query LIKE '%fileCluster(%'
 GROUP BY log_comment
 ORDER BY log_comment;
 
