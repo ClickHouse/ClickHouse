@@ -1,0 +1,29 @@
+<clickhouse>
+    <ldap_servers>
+        <failover>
+            <host>ldap-multi</host>
+            <port>1389</port>
+            <bind_dn>cn=janedoe,ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+            <operation_timeout>1</operation_timeout>
+            <network_timeout>1</network_timeout>
+        </failover>
+        <breaker>
+            <host>ldap-blackhole</host>
+            <port>1389</port>
+            <bind_dn>cn=janedoe,ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+            <operation_timeout>10</operation_timeout>
+            <network_timeout>10</network_timeout>
+            <unreachable_cooldown>30</unreachable_cooldown>
+        </breaker>
+        <cached>
+            <host>openldap</host>
+            <port>1389</port>
+            <bind_dn>cn=janedoe,ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+            <network_timeout>1</network_timeout>
+            <verification_cooldown>300</verification_cooldown>
+        </cached>
+    </ldap_servers>
+</clickhouse>
