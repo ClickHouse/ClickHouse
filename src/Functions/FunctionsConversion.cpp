@@ -451,6 +451,9 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
     /// `Time64(0)` must not change what `accurateCast` accepts.
     can_apply_accurate_cast |= (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
         && which.isTimeOrTime64() && (to.isTime() || to.isDateOrDate32() || to.isDateTimeOrDateTime64());
+    can_apply_accurate_cast |= (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
+        && ((to.isDateTime() && (which.isDateOrDate32() || which.isDateTime64()))
+            || (to.isDate() && (which.isDate32() || which.isDateTime() || which.isDateTime64())));
     can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
 
     if (requested_result_is_nullable && (which.isString() || (cast_type == CastType::accurateOrNull && which.isFixedString())))
@@ -583,6 +586,22 @@ case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
 
                     return true;
                 }
+            }
+            else if constexpr (is_any_of<LeftDataType, DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64>
+                && is_any_of<RightDataType, DataTypeDate, DataTypeDateTime> && !std::is_same_v<LeftDataType, RightDataType>)
+            {
+                /// The range is checked up front, and only `Ignore` converts every value in range exactly.
+                using Convert = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::Ignore>;
+                if (cast_type == CastType::accurate)
+                    result_column = Convert::execute(
+                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings,
+                        DateTimeAccurateConvertStrategyAdditions());
+                else
+                    result_column = Convert::execute(
+                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings,
+                        DateTimeAccurateOrNullConvertStrategyAdditions());
+
+                return true;
             }
             else if constexpr (IsDataTypeStringOrFixedString<LeftDataType>)
             {

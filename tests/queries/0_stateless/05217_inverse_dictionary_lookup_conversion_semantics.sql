@@ -1,7 +1,7 @@
 SET optimize_rewrite_like_perfect_affix = 0;
 SET short_circuit_function_evaluation = 'enable';
 
--- Dictionary key conversions saturate timestamps outside the range of `DateTime`.
+-- Dictionary key conversions reject timestamps outside the range of `DateTime`, with and without the rewrite.
 CREATE TABLE conversion_dates_source (k DateTime('UTC'), attr String) ENGINE = Memory;
 INSERT INTO conversion_dates_source VALUES
     ('1970-01-01 00:00:00', 'single'),
@@ -12,8 +12,25 @@ PRIMARY KEY k SOURCE(CLICKHOUSE(TABLE 'conversion_dates_source')) LAYOUT(COMPLEX
 CREATE TABLE conversion_dates_data (id UInt8, t DateTime64(0, 'UTC'), kt Tuple(DateTime64(0, 'UTC'))) ENGINE = Memory;
 INSERT INTO conversion_dates_data VALUES
     (1, '1969-12-31 23:59:59', ('1969-12-31 23:59:59',)),
-    (2, '1970-01-01 00:00:01', ('1970-01-01 00:00:01',)),
     (3, '2106-02-07 06:28:17', ('2106-02-07 06:28:17',));
+SELECT 'date conversion, out of range';
+
+SELECT dictGet('conversion_dates', 'attr', t) = 'single' FROM conversion_dates_data SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
+
+SELECT dictGet('conversion_dates', 'attr', t) = 'single' FROM conversion_dates_data SETTINGS optimize_inverse_dictionary_lookup = 1; -- { serverError CANNOT_CONVERT_TYPE }
+
+SELECT dictGet('conversion_dates', 'attr', tuple(t)) = 'many' FROM conversion_dates_data SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
+
+SELECT dictGet('conversion_dates', 'attr', tuple(t)) = 'many' FROM conversion_dates_data SETTINGS optimize_inverse_dictionary_lookup = 1; -- { serverError CANNOT_CONVERT_TYPE }
+
+SELECT dictGet('conversion_dates', 'attr', kt) LIKE 'ma%' FROM conversion_dates_data SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
+
+SELECT dictGet('conversion_dates', 'attr', kt) LIKE 'ma%' FROM conversion_dates_data SETTINGS optimize_inverse_dictionary_lookup = 1; -- { serverError CANNOT_CONVERT_TYPE }
+
+TRUNCATE TABLE conversion_dates_data;
+INSERT INTO conversion_dates_data VALUES
+    (1, '1970-01-01 00:00:00', ('1970-01-01 00:00:00',)),
+    (2, '1970-01-01 00:00:01', ('1970-01-01 00:00:01',));
 SELECT 'date conversion';
 
 SELECT id,

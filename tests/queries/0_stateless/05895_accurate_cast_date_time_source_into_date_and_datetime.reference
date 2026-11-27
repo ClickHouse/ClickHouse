@@ -1,0 +1,75 @@
+-- The accurate casts of a `Date`, `Date32`, `DateTime` or `DateTime64` value into `Date` or `DateTime` reject a value
+-- the target cannot represent, whatever `date_time_overflow_behavior` is.
+
+-- { echoOn }
+SELECT accurateCastOrNull(toDate32('2200-01-01'), 'DateTime(\'UTC\')');
+\N
+SELECT accurateCastOrNull(toDate32('2000-01-01'), 'DateTime(\'UTC\')');
+2000-01-01 00:00:00
+SELECT accurateCastOrNull(toDate32('1969-12-31'), 'DateTime(\'UTC\')');
+\N
+SELECT accurateCastOrNull(toDate('2106-02-07'), 'DateTime(\'UTC\')');
+2106-02-07 00:00:00
+SELECT accurateCastOrNull(toDate('2106-02-08'), 'DateTime(\'UTC\')');
+\N
+SELECT accurateCastOrNull(toDate('2106-02-07'), 'DateTime(\'America/Hermosillo\')');
+\N
+SELECT accurateCastOrNull(toDate('1970-01-01'), 'DateTime(\'Asia/Tokyo\')');
+\N
+SELECT accurateCastOrNull(toDate32('1970-01-01'), 'DateTime(\'Asia/Tokyo\')');
+\N
+SELECT accurateCastOrNull(toDate32('1970-01-02'), 'DateTime(\'Asia/Tokyo\')');
+1970-01-02 00:00:00
+SELECT accurateCastOrNull(toDateTime64('2106-02-07 06:28:15', 0, 'UTC'), 'DateTime(\'UTC\')');
+2106-02-07 06:28:15
+SELECT accurateCastOrNull(toDateTime64('2106-02-07 06:28:16', 0, 'UTC'), 'DateTime(\'UTC\')');
+\N
+SELECT accurateCastOrNull(toDateTime64('1969-12-31 23:59:59.9', 1, 'UTC'), 'DateTime(\'UTC\')');
+\N
+SELECT accurateCastOrNull(toDateTime64('2020-01-01 00:00:00.5', 1, 'UTC'), 'DateTime(\'UTC\')');
+2020-01-01 00:00:00
+SELECT accurateCastOrNull(toDate32('2149-06-06'), 'Date');
+2149-06-06
+SELECT accurateCastOrNull(toDate32('2149-06-07'), 'Date');
+\N
+SELECT accurateCastOrNull(toDate32('1969-12-31'), 'Date');
+\N
+SELECT accurateCastOrNull(toDateTime64('2200-01-01 00:00:00', 0, 'UTC'), 'Date');
+\N
+SELECT accurateCastOrNull(toDateTime64('1969-12-31 00:00:00', 0, 'UTC'), 'Date');
+\N
+SELECT accurateCastOrNull(toDateTime(0, 'America/New_York'), 'Date');
+\N
+SELECT accurateCastOrNull(toDateTime(86400, 'America/New_York'), 'Date');
+1970-01-01
+SELECT accurateCastOrNull(toDate32('1969-12-31'), 'DateTime(\'UTC\')') SETTINGS date_time_overflow_behavior = 'saturate';
+\N
+SELECT accurateCastOrNull(toDate32('2106-02-07'), 'DateTime(\'UTC\')') SETTINGS date_time_overflow_behavior = 'throw';
+2106-02-07 00:00:00
+SELECT accurateCastOrNull(toDate32('2106-02-07'), 'DateTime(\'UTC\')') SETTINGS date_time_overflow_behavior = 'saturate';
+2106-02-07 00:00:00
+SELECT accurateCastOrNull(toDateTime64('2200-01-01 00:00:00', 0, 'UTC'), 'DateTime(\'UTC\')') SETTINGS date_time_overflow_behavior = 'throw';
+\N
+SELECT accurateCast(toDate32('2200-01-01'), 'DateTime(\'UTC\')'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast(toDateTime64('2200-01-01 00:00:00', 0, 'UTC'), 'Date'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCastOrDefault(toDate32('2200-01-01'), 'DateTime(\'UTC\')');
+1970-01-01 00:00:00
+SELECT accurateCastOrDefault(toDate32('2200-01-01'), 'DateTime(\'UTC\')', toDateTime('2000-01-01 00:00:00', 'UTC'));
+2000-01-01 00:00:00
+SELECT accurateCastOrNull(d, 'DateTime(\'UTC\')') FROM values('d Nullable(Date32)', ('2000-01-01'), ('2200-01-01'), (NULL));
+2000-01-01 00:00:00
+\N
+\N
+SELECT accurateCastOrNull(toLowCardinality(toDate32('2200-01-01')), 'DateTime(\'UTC\')') SETTINGS allow_suspicious_low_cardinality_types = 1;
+\N
+SELECT accurateCastOrNull(materialize(toDate32(d)), 'Date'), accurateCastOrNull(materialize(toDateTime64(d, 0, 'UTC')), 'DateTime(\'UTC\')')
+FROM values('d String', ('2020-07-27'), ('2200-01-01'));
+2020-07-27	2020-07-27 00:00:00
+\N	\N
+SELECT accurateCast(toDate('2020-01-01'), 'DateTime(\'UTC\')'), accurateCast(toDateTime('2020-01-01 12:00:00', 'UTC'), 'Date'),
+    accurateCast(toDateTime64('2020-01-01 12:00:00.5', 1, 'UTC'), 'Date');
+2020-01-01 00:00:00	2020-01-01	2020-01-01
+-- { echoOn }
+SELECT dictGet('dict_05895', 'v', toUInt64(1), toDate32('2020-07-27'));
+in2020
+SELECT dictGet('dict_05895', 'v', toUInt64(1), toDate32('2200-01-01')); -- { serverError CANNOT_CONVERT_TYPE }
