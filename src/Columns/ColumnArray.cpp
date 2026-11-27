@@ -74,8 +74,10 @@ namespace
 
 /// Gathers `limit` rows of an array column, the row `i` of the result is the row `source_row(i)` of the column.
 /// `source_row` is called with non-decreasing `i` in each of the passes over the rows, and every pass starts from 0.
+/// With `copy_long_rows`, long rows of any elements are copied row by row instead of gathered.
 template <typename SourceRow>
-ColumnPtr gatherArrayRows(const IColumn & data, const ColumnArray::Offsets & offsets, size_t limit, SourceRow && source_row)
+ColumnPtr gatherArrayRows(
+    const IColumn & data, const ColumnArray::Offsets & offsets, size_t limit, bool copy_long_rows, SourceRow && source_row)
 {
     if (limit == 0)
         return ColumnArray::create(data.cloneEmpty());
@@ -108,6 +110,22 @@ ColumnPtr gatherArrayRows(const IColumn & data, const ColumnArray::Offsets & off
         }
     };
 
+    /// Long rows are copied row by row: their virtual calls are cheap compared with the copy. Fixed-size elements are
+    /// reserved exactly.
+    const bool fixed_size_elements = data.isFixedAndContiguous();
+    if (current_offset > limit * max_average_array_size_to_gather && (fixed_size_elements || copy_long_rows))
+    {
+        auto res_data = data.cloneEmpty();
+        if (fixed_size_elements)
+            res_data->reserve(current_offset);
+        for (size_t i = 0; i < limit; ++i)
+        {
+            const size_t row = source_row(i);
+            res_data->insertRangeFrom(data, offset_at(row), size_at(row));
+        }
+        return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
+    }
+
     /// An element that takes more memory than its index makes the index smaller than the result, and one `index`
     /// sizes the nested result exactly, while appending rows or chunks grows it.
     if (data.byteSize() > data.size() * sizeof(UInt64))
@@ -118,19 +136,6 @@ ColumnPtr gatherArrayRows(const IColumn & data, const ColumnArray::Offsets & off
         auto nested_indexes_column = ColumnUInt64::create(current_offset);
         fill_nested_indexes(0, limit, nested_indexes_column->getData().data());
         return ColumnArray::create(data.index(*nested_indexes_column, current_offset), std::move(res_offsets_column));
-    }
-
-    /// Long rows of fixed-size elements are copied row by row into the exactly reserved result.
-    if (current_offset > limit * max_average_array_size_to_gather && data.isFixedAndContiguous())
-    {
-        auto res_data = data.cloneEmpty();
-        res_data->reserve(current_offset);
-        for (size_t i = 0; i < limit; ++i)
-        {
-            const size_t row = source_row(i);
-            res_data->insertRangeFrom(data, offset_at(row), size_at(row));
-        }
-        return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
     }
 
     /// Build the nested result first: an empty clone of `data` copies its whole nested structure, which for
@@ -1690,7 +1695,7 @@ template <typename T>
 ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit) const
 {
     chassert(limit <= indexes.size());
-    return gatherArrayRows(*data, getOffsets(), limit, [&](size_t i) -> size_t { return indexes[i]; });
+    return gatherArrayRows(*data, getOffsets(), limit, /*copy_long_rows=*/ false, [&](size_t i) -> size_t { return indexes[i]; });
 }
 
 INSTANTIATE_INDEX_IMPL(ColumnArray)
@@ -2019,7 +2024,7 @@ ColumnPtr ColumnArray::replicateGeneric(const Offsets & replicate_offsets) const
         return row;
     };
 
-    return gatherArrayRows(*data, getOffsets(), replicate_offsets.back(), source_row);
+    return gatherArrayRows(*data, getOffsets(), replicate_offsets.back(), /*copy_long_rows=*/ true, source_row);
 }
 
 
