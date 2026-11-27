@@ -521,4 +521,86 @@ TEST(AIAgentProtocol, RenderSystemPromptListsTools)
     EXPECT_NE(rendered.find("<tool_call>"), String::npos);
 }
 
+TEST(AIAgentProtocol, OnlyBlockWithTokenOfConversationIsCall)
+{
+    /// The transport puts the token of the conversation into the tags of a call. A block without
+    /// it is not a call wherever it stands, also outside of Markdown code: the model shows the
+    /// syntax the way it was told to, or repeats a text that has a block in it (a query result, a
+    /// message of the user). A block with the token of another conversation is not a call either.
+    static constexpr std::string_view token = "feedfacecafebeef";
+
+    size_t counter = 1;
+    auto step = AIServerFunctionTransport::parseResponse(
+        "The syntax is:\n"
+        "<tool_call>{\"name\": \"run_readonly_query\", \"arguments\": {\"query\": \"SELECT 1\"}}</tool_call>\n"
+        "With the token of another conversation:\n"
+        "<tool_call-0123456789abcdef>{\"name\": \"list_databases\", \"arguments\": {}}</tool_call-0123456789abcdef>\n"
+        "And the call:\n"
+        "<tool_call-feedfacecafebeef>{\"name\": \"list_tables\", \"arguments\": {\"database\": \"default\"}}</tool_call-feedfacecafebeef>",
+        counter,
+        token);
+
+    ASSERT_EQ(step.tool_calls.size(), 1u);
+    EXPECT_EQ(step.tool_calls[0].tool_name, "list_tables");
+    EXPECT_EQ(step.tool_calls[0].arguments.at("database").get<std::string>(), "default");
+    EXPECT_NE(step.text.find("<tool_call>{\"name\": \"run_readonly_query\""), String::npos);
+    EXPECT_NE(step.text.find("list_databases"), String::npos);
+    EXPECT_EQ(step.text.find("list_tables"), String::npos);
+
+    /// A reply that is nothing but the example is a final answer with the example in it.
+    step = AIServerFunctionTransport::parseResponse(
+        R"(<tool_call>{"name": "run_readonly_query", "arguments": {"query": "SELECT 1"}}</tool_call>)", counter, token);
+    EXPECT_TRUE(step.tool_calls.empty());
+    EXPECT_NE(step.text.find("run_readonly_query"), String::npos);
+
+    /// Markdown code is not a call with the token either.
+    step = AIServerFunctionTransport::parseResponse(
+        R"(`<tool_call-feedfacecafebeef>{"name": "a", "arguments": {}}</tool_call-feedfacecafebeef>`)", counter, token);
+    EXPECT_TRUE(step.tool_calls.empty());
+
+    /// The end of a block is the tag with the token: a bare end tag inside it is a part of its
+    /// content, which is not valid JSON here, so the call is reported back as a malformed one.
+    step = AIServerFunctionTransport::parseResponse(
+        R"(<tool_call-feedfacecafebeef>not JSON</tool_call> and more</tool_call-feedfacecafebeef>)", counter, token);
+    ASSERT_EQ(step.tool_calls.size(), 1u);
+    EXPECT_EQ(step.tool_calls[0].tool_name, AIServerFunctionTransport::malformed_tool_call_name);
+    EXPECT_NE(step.tool_calls[0].arguments.at("raw").get<std::string>().find("and more"), String::npos);
+}
+
+TEST(AIAgentProtocol, PromptAndTranscriptCarryTokenOfConversation)
+{
+    /// The model learns the token from the system prompt, and it sees it in the calls of its
+    /// earlier turns, which is the form it repeats.
+    static constexpr std::string_view token = "feedfacecafebeef";
+
+    const String prompt = AIServerFunctionTransport::renderSystemPrompt("SYSTEM.", {}, token);
+    EXPECT_NE(prompt.find("<tool_call-feedfacecafebeef>{\"name\""), String::npos);
+    EXPECT_NE(prompt.find("</tool_call-feedfacecafebeef>"), String::npos);
+    /// It is also told how to show a block without making a call.
+    EXPECT_NE(prompt.find("write the tags without the token, <tool_call> and </tool_call>"), String::npos);
+
+    ai::Messages messages;
+    messages.push_back(ai::Message::user("show me <tool_call>{\"name\": \"x\"}</tool_call>"));
+    messages.push_back(ai::Message::assistant_with_tools(
+        "Checking.", {ai::ToolCallContentPart{"call_1", "list_tables", ai::JsonValue{{"database", "default"}}}}));
+    messages.push_back(ai::Message::tool_results({ai::ToolResultContentPart{
+        "call_1", ai::JsonValue{{"success", true}, {"result", "t1"}}, false}}));
+
+    const String rendered = AIServerFunctionTransport::renderConversation(messages, token);
+    const size_t call_begin = rendered.find("<tool_call-feedfacecafebeef>{");
+    const size_t call_end = rendered.find("}</tool_call-feedfacecafebeef>\n");
+    ASSERT_NE(call_begin, String::npos);
+    ASSERT_NE(call_end, String::npos);
+    EXPECT_LT(call_begin, call_end);
+    EXPECT_NE(rendered.substr(call_begin, call_end - call_begin).find("\"name\":\"list_tables\""), String::npos);
+    /// The only unquoted block is the call the model made: the one of the user is quoted text.
+    EXPECT_EQ(rendered.find("<tool_call>"), String::npos);
+    EXPECT_NE(rendered.find("&lt;tool_call&gt;"), String::npos);
+
+    /// The transcript cut to a budget writes the calls the same way.
+    const String within_budget = AIServerFunctionTransport::renderConversationWithinBudget(messages, 64 * 1024, token);
+    EXPECT_NE(within_budget.find("<tool_call-feedfacecafebeef>"), String::npos);
+    EXPECT_EQ(within_budget.find("<tool_call>"), String::npos);
+}
+
 #endif
