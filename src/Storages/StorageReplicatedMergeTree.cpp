@@ -4646,18 +4646,12 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 if (!expected)
                     continue;
 
-                /// Pin the patch parts to apply from the queue virtual-parts snapshot, not from this
-                /// replica's locally visible active patches (which may be an incomplete subset if the
-                /// replica lags on patch replication, issue #100493). Empty unless lightweight updates.
-                Strings patch_parts_to_pin = merge_predicate->getPatchPartNamesToPinForMutation(*part, expected->first);
-
                 create_result = createLogEntryToMutatePart(
                     *part,
                     future_merged_part->uuid,
                     expected->first,
                     expected->second,
-                    merge_predicate->getVersion(),
-                    patch_parts_to_pin);
+                    merge_predicate->getVersion());
 
                 if (create_result == CreateMergeEntryResult::Ok)
                     return AttemptStatus::EntryCreated;
@@ -4840,8 +4834,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
 
 
 StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::createLogEntryToMutatePart(
-    const IMergeTreeDataPart & part, const UUID & new_part_uuid, Int64 mutation_version, int32_t alter_version, int32_t log_version,
-    const Strings & patch_parts)
+    const IMergeTreeDataPart & part, const UUID & new_part_uuid, Int64 mutation_version, int32_t alter_version, int32_t log_version)
 {
     auto zookeeper = getZooKeeper();
 
@@ -4871,14 +4864,6 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.new_part_uuid = new_part_uuid;
     entry.create_time = time(nullptr);
     entry.alter_version = alter_version;
-
-    /// Pin the patch parts that apply to this mutation so that every replica materializes an identical
-    /// set. MUTATE_PART used to derive patches from each replica's local visible state, which could
-    /// differ between replicas (a patch committed on one replica but not yet on another), producing
-    /// byte-different mutated parts and CHECKSUM_DOESNT_MATCH (issue #100493). The set is computed by
-    /// the caller from the queue virtual-parts snapshot (mirroring MERGE_PARTS) so a lagging assigning
-    /// replica still pins the complete set instead of an incomplete subset.
-    entry.patch_parts = patch_parts;
 
     Coordination::Requests ops;
     Coordination::Responses responses;
