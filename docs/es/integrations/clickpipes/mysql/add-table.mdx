@@ -13,9 +13,7 @@ integration:
 
 Hay casos en los que resulta útil añadir tablas específicas a un pipe. Esto suele volverse necesario a medida que crece su carga de trabajo transaccional o analítica.
 
-<div id="add-tables-steps">
-  ## Pasos para agregar tablas específicas a un ClickPipe
-</div>
+## Pasos para agregar tablas específicas a un ClickPipe {#add-tables-steps}
 
 Esto se puede hacer siguiendo estos pasos:
 
@@ -27,17 +25,13 @@ Esto se puede hacer siguiendo estos pasos:
 <br />
 
 <div className="ch-image-md">
-
-<Frame>
-
-![](/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp)
-
-</Frame>
-
+  <Frame>
+    ![](/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp)
+  </Frame>
 </div>
 
 5. Haz clic en update.
-6. Tras una actualización correcta, la pipe tendrá los estados `Setup`, `Snapshot` y `Running` en ese orden. La carga inicial de la tabla se puede seguir en la pestaña **Tables**.
+6. Tras una actualización correcta, la pipe tendrá los estados `Setup`, `Snapshot` y `Running` en ese orden. La carga inicial de la tabla se puede seguir en la pestaña **Tablas**.
 
 <Info>
   El CDC de las tablas existentes se reanuda automáticamente después de que se complete el snapshot de la nueva tabla.

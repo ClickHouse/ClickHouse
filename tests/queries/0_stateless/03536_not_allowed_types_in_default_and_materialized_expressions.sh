@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_LOCAL -nm -q "
 create table test (s String) engine=MergeTree order by tuple();
 insert into test select '{\"a\" : 42}' from numbers(10);
-alter table test add column json JSON materialized s::JSON settings enable_json_type=1;
+alter table test add column json JSON materialized s::JSON;
 select s, json from test limit 10;
 drop table test;
 "

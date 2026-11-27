@@ -33,20 +33,23 @@ chdb&#95;hook 模块会挂接 PostgreSQL 的 [COPY](#copy-overloading) 命令，
 
 ## 加载 {#loading}
 
-以 super user 身份，通过以下任一方式加载 chdb&#95;hook。请选择最适合你的用例的方式：
+以 超级用户 身份，通过以下任一方式加载 chdb&#95;hook。请选择最适合你的用例的方式：
 
-* 通过 [LOAD] 命令显式加载；作用范围为当前 session：
+<Note>
+  在 ClickHouse Managed Postgres 上：
+
+  * ClickHouse Cloud 的 SQL 控制台尚不支持 `LOAD 'chdb_hook'` 命令，但可以通过 psql 或任何其他 database connection 运行该命令。
+  * 不允许使用 `ALTER SYSTEM`，也无法编辑 `postgresql.conf`，因此下文中依赖它们的示例不适用。请改用 `ALTER DATABASE` 或 `ALTER ROLE`。
+  * 你也可以联系[技术支持](https://clickhouse.com/support/program)，将 `chdb_hook` 添加到你的 Postgres service 配置中，添加后即可在 SQL 控制台中使用。
+</Note>
+
+* 通过 [LOAD] 命令显式加载；作用范围为当前 会话：
 
   ```sql
   LOAD 'chdb_hook';
   ```
 
-  <Note>
-    ClickHouse Cloud 的 SQL 控制台尚不支持 `LOAD 'chdb_hook'` 命令，但可以通过 psql 或任何其他 database connection 运行该命令。
-    你也可以联系支持代表将其添加到你的 Postgres service 配置中，添加后即可在 SQL 控制台中使用。
-  </Note>
-
-* 对所有 sessions 生效：在 `postgresql.conf` 中设置 [session&#95;preload&#95;libraries]：
+* 对所有 会话 生效：在 `postgresql.conf` 中设置 [session&#95;preload&#95;libraries]：
 
   ```ini
   session_preload_libraries = chdb_hook
@@ -70,14 +73,14 @@ chdb&#95;hook 模块会挂接 PostgreSQL 的 [COPY](#copy-overloading) 命令，
   ALTER ROLE name SET session_preload_libraries = 'chdb_hook';
   ```
 
-* 在 server 启动时通过 [shared&#95;preload&#95;libraries] 设置加载，使其始终对所有 sessions 和 databases 可用：
+* 在 服务端 启动时通过 [shared&#95;preload&#95;libraries] 设置加载，使其始终对所有 会话 和 databases 可用：
 
   ```ini
   shared_preload_libraries = chdb_hook
   ```
 
 <Warning>
-  请注意，加载 chdb&#95;hook 后，属于 `pg_read_server_files` 或 `pg_write_server_files` roles 的用户可以使用 `COPY` 读写 Postgres server 上的文件以及云存储中的数据。
+  请注意，加载 chdb&#95;hook 后，属于 `pg_read_server_files` 或 `pg_write_server_files` 角色 的用户可以使用 `COPY` 读写 Postgres 服务端 上的文件以及云存储中的数据。
 </Warning>
 
 ## COPY 重载 {#copy-overloading}
@@ -673,8 +676,8 @@ chdb&#95;hook 的公开发行版遵循 [Semantic Versioning]。
 * 次版本号在发生向后兼容的 SQL 变更时递增
 * 补丁版本号在仅涉及二进制文件的变更时递增
 
-安装完成后，可通过 Postgres 18 的
-[`pg_get_loaded_modules()`] 函数在 PostgreSQL 中查看版本。
+安装完成后，PostgreSQL 会通过 Postgres 18 的
+[`pg_get_loaded_modules()`] 函数报告版本。
 
 ```sql
 SELECT version FROM pg_get_loaded_modules() WHERE module_name = 'chdb_hook';
@@ -701,11 +704,11 @@ Copyright (c) 2026, ClickHouse
 
 [formats]: https://github.com/chdb-io/chdb/blob/main/refs/clickhouse-formats-settings.md#complete-format-names-table "chDB 文档：完整格式名称表"
 
-[访问密钥 ID 和访问密钥]: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html "AWS Identity and Access Management：管理 IAM 用户的访问密钥"
+[access key ID and access secret]: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html "AWS Identity and Access Management：管理 IAM 用户的访问密钥"
 
-[HMAC 密钥和密钥]: https://docs.cloud.google.com/storage/docs/authentication/hmackeys "Google Cloud Storage：HMAC 密钥"
+[HMAC key and secret]: https://docs.cloud.google.com/storage/docs/authentication/hmackeys "Google Cloud Storage：HMAC 密钥"
 
-[访问密钥]: https://learn.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage?tabs=azure-cli "Azure：管理存储账户访问密钥"
+[access key]: https://learn.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage?tabs=azure-cli "Azure：管理存储账户访问密钥"
 
 [row-level security]: https://www.postgresql.org/docs/current/ddl-rowsecurity.html "Postgres 文档：行安全策略"
 
@@ -735,7 +738,7 @@ Copyright (c) 2026, ClickHouse
 
 [`gcs()`]: https://clickhouse.com/docs/sql-reference/table-functions/gcs "ClickHouse 文档：gcs 表函数"
 
-[Azure Blob 存储]: https://azure.microsoft.com/en-us/products/storage/blobs/
+[Azure Blob Storage]: https://azure.microsoft.com/en-us/products/storage/blobs/
 
 [Azure ABFS]: https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-introduction-abfs-uri "使用 Azure Data Lake Storage URI (ABFS) - Azure Storage"
 

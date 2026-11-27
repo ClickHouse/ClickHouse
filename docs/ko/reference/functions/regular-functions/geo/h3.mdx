@@ -66,7 +66,7 @@ h3GetResolution(h3index)
 **반환 값**
 
 * 인덱스 해상도. 범위: `[0, 15]`. [UInt8](/ko/reference/data-types/int-uint).
-* 인덱스가 유효하지 않으면 함수는 임의의 값을 반환합니다. 인덱스를 검증하려면 [h3IsValid](#h3isvalid)를 사용하십시오. [UInt8](/ko/reference/data-types/int-uint).
+* 인덱스가 유효하지 않으면 함수는 기본적으로 예외를 발생시키며, [`functions_h3_default_if_invalid`](/ko/reference/settings/session-settings/other#functions_h3_default_if_invalid)가 활성화되어 있으면 `0`을 반환합니다. 인덱스를 검증하려면 [h3IsValid](#h3isvalid)를 사용하십시오. [UInt8](/ko/reference/data-types/int-uint).
 
 **예시**
 
@@ -651,6 +651,7 @@ h3GetResolution(index)
 **반환 값**
 
 * 인덱스의 해상도. 범위: `[0, 15]`. [UInt8](/ko/reference/data-types/int-uint).
+* 유효하지 않은 인덱스는 기본적으로 예외를 발생시키며, `functions_h3_default_if_invalid`가 활성화되어 있으면 `0`을 반환합니다.
 
 **예시**
 

@@ -137,7 +137,6 @@ struct ConditionGroup
 {
     ActionsDAG::NodeRawConstPtrs nodes;
     bool needs_filtered_input;
-    bool ends_cache_prefix = false;
 };
 
 using NodesInfo = std::unordered_map<const ActionsDAG::Node *, NodeInfo>;
@@ -147,8 +146,7 @@ using NodesInfo = std::unordered_map<const ActionsDAG::Node *, NodeInfo>;
 void appendGroups(
     std::vector<ConditionGroup> & groups,
     const ActionsDAG::NodeRawConstPtrs & nodes,
-    const NodesInfo & info,
-    size_t cache_prefix = 0)
+    const NodesInfo & info)
 {
     for (size_t i = 0; i < nodes.size(); ++i)
     {
@@ -163,12 +161,10 @@ void appendGroups(
 
         const bool may_throw = current.may_throw && !prewhereConditionCannotThrow(node);
 
-        if (same_columns && i != cache_prefix && !may_throw && !crosses_dynamic_filter_boundary)
+        if (same_columns && !may_throw && !crosses_dynamic_filter_boundary)
             groups.back().nodes.push_back(node);
         else
             groups.push_back({{node}, may_throw});
-        if (i + 1 == cache_prefix)
-            groups.back().ends_cache_prefix = true;
     }
 }
 
@@ -232,7 +228,7 @@ public:
             atoms.push_back(node);
     }
 
-    /// Refine the original schedule within its existing filter and cache boundaries.
+    /// Refine the original schedule within its existing filter boundaries.
     /// A group with an unguarded, possibly throwing expression may see rows from before
     /// the accumulated filter is applied. Keep all steps up to that group as they were.
     void splitAliases(std::vector<ConditionGroup> & groups, const NodesInfo & nodes_info)
@@ -274,7 +270,6 @@ public:
             const size_t first = refined.size();
             appendGroups(refined, atoms, nodes_info);
             refined[first].needs_filtered_input |= group.needs_filtered_input;
-            refined.back().ends_cache_prefix = group.ends_cache_prefix;
         }
         groups.swap(refined);
     }
@@ -565,32 +560,13 @@ bool tryBuildPrewhereSteps(
     if (!conjunction)
         return false;
 
-    /// The cache hashes identify the original direct children, before any nested AND is split.
-    /// A rewritten prefix no longer owns the cache entry. If it still matches, place the boundary
-    /// after the last atom of its last child, never inside an expanded conjunct.
-    size_t attributed_children = 0;
-    if (const auto & attribution = prewhere_info->query_condition_cache_attribution; attribution && conjunction == &condition_root)
-    {
-        const auto & hashes = attribution->conjunct_hashes;
-        bool matches = !hashes.empty() && hashes.size() < conjunction->children.size();
-        for (size_t i = 0; matches && i < hashes.size(); ++i)
-            matches = conjunction->children[i]->getHash() == hashes[i];
-        if (matches)
-            attributed_children = hashes.size();
-    }
-
     ActionsDAG::NodeRawConstPtrs condition_nodes;
-    size_t num_attributed_conditions = 0;
     if (conjunction != &condition_root)
         condition_nodes.push_back(&condition_root);
     else
     {
-        for (size_t i = 0; i < conjunction->children.size(); ++i)
-        {
-            splitter.flatten(conjunction->children[i], condition_nodes, false);
-            if (i + 1 == attributed_children)
-                num_attributed_conditions = condition_nodes.size();
-        }
+        for (const auto * child : conjunction->children)
+            splitter.flatten(child, condition_nodes, false);
     }
 
     /// 2. Collect the set of columns that are used in the condition
@@ -624,7 +600,7 @@ bool tryBuildPrewhereSteps(
     /// a throwing predicate over the same column adjacent, so the may_throw check below is what keeps
     /// the guard effective.
     std::vector<ConditionGroup> condition_groups;
-    appendGroups(condition_groups, condition_nodes, nodes_info, num_attributed_conditions);
+    appendGroups(condition_groups, condition_nodes, nodes_info);
     splitter.splitAliases(condition_groups, nodes_info);
 
     /// For every group, the index of the group whose step reads its columns. A group that was split
@@ -782,7 +758,6 @@ bool tryBuildPrewhereSteps(
                 .perform_alter_conversions = true,
                 .columns_overwritten_by_chain = {},
                 .mutation_version = std::nullopt,
-                .query_condition_cache_attribution_boundary = condition_groups[step_index].ends_cache_prefix,
                 .is_query_prewhere = step_is_query_prewhere,
                 /// A split step that is not entirely a user predicate carries a synthesized dynamic filter: the
                 /// only non-user conjuncts the splitter sees come from the query predicate's dynamic filters.

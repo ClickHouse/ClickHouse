@@ -1,0 +1,109 @@
+---
+slug: /clickstack/observability/overview
+title: 'ClickHouse Observability'
+sidebarTitle: 'Visão geral'
+description: 'Visão geral do ClickHouse Observability e de suas opções totalmente gerenciada e autogerenciada'
+doc_type: 'guide'
+keywords: ['clickstack', 'observability', 'logs', 'monitoring', 'platform']
+---
+
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+**ClickHouse Observability** é uma plataforma de observabilidade para SREs, desenvolvedores e seus agentes de IA, construída sobre o ClickStack de código aberto. Pesquise, consulte e correlacione logs, rastros e métricas do OpenTelemetry, além de reproduções de sessão, em uma única plataforma.
+
+Investigue pela Interface do ClickStack ou conecte seus próprios agentes por meio do [servidor MCP do ClickStack](/pt-BR/clickstack/observability/mcp). Use ferramentas de investigação para pesquisar logs e acompanhar rastros, e SQL para análises mais aprofundadas. Logs ricos e spans de rastreamento capturam detalhes de requisições, atributos personalizados e contexto de negócio que ajudam a explicar falhas.
+
+Escolha a oferta **totalmente gerenciada** para contar com um backend operado pela ClickHouse, ou a **autogerenciada** quando sua equipe precisar de controle sobre a ingestão e a configuração do banco de dados. Ambas são executadas no ClickHouse Cloud e oferecem a mesma experiência de investigação do ClickStack.
+
+## Como funciona {#how-it-works}
+
+Em ambas as ofertas, você instrumenta suas aplicações e coleta telemetria do seu ambiente. Explore esses dados na Interface do ClickStack ou conecte um agente compatível com MCP para pesquisar logs, acompanhar rastros e executar SQL. A diferença está em quem gerencia a ingestão e a configuração do banco de dados por trás dessa experiência.
+
+* **Totalmente gerenciado:** envie telemetria para um endpoint OpenTelemetry gerenciado ou use o endpoint gerenciado compatível com Datadog para os agentes Datadog que você já utiliza. A ClickHouse opera o backend de ingestão e gerencia esquemas, capacidade computacional, escalonamento e desempenho.
+
+  <img src="/images/clickstack/observability/clickstack-fully-managed-overview-dark.svg" alt="Totalmente gerenciado: os SDKs da sua aplicação, coletores e log shippers enviam telemetria para endpoints OTLP e Datadog gerenciados dentro do ClickHouse Observability, que fornece a Interface do ClickStack e cuida da otimização de esquemas, do isolamento de cargas de trabalho e do escalonamento automático." width="720" height="392" className="ch-transparent hidden dark:block" style={{ width: '100%', height: 'auto', margin: '12px 0 4px', background: 'transparent', borderRadius: 0 }} />
+
+  <img src="/images/clickstack/observability/clickstack-fully-managed-overview-light.svg" alt="Totalmente gerenciado: os SDKs da sua aplicação, coletores e log shippers enviam telemetria para endpoints OTLP e Datadog gerenciados dentro do ClickHouse Observability, que fornece a Interface do ClickStack e cuida da otimização de esquemas, do isolamento de cargas de trabalho e do escalonamento automático." width="720" height="392" className="ch-transparent block dark:hidden" style={{ width: '100%', height: 'auto', margin: '12px 0 4px', background: 'transparent', borderRadius: 0 }} />
+* **Autogerenciado:** envie telemetria para o seu Serviço do ClickHouse Cloud por meio de um coletor de ingestão operado por você. Você configura o pipeline de ingestão, os esquemas, a capacidade computacional, o escalonamento e o ajuste de desempenho. O ClickHouse Cloud hospeda e opera o banco de dados e a UI.
+
+  <img src="/images/clickstack/observability/clickstack-self-managed-overview-dark.svg" alt="Autogerenciado: os SDKs da sua aplicação, coletores e log shippers enviam telemetria para um coletor operado por você, que grava em Serviços ClickHouse no ClickHouse Cloud. O ClickHouse Cloud hospeda a Interface do ClickStack e gerencia a infraestrutura, os upgrades e os backups, enquanto você gerencia a ingestão, os esquemas, a capacidade computacional e o desempenho." width="720" height="392" className="ch-transparent hidden dark:block" style={{ width: '100%', height: 'auto', margin: '12px 0 4px', background: 'transparent', borderRadius: 0 }} />
+
+  <img src="/images/clickstack/observability/clickstack-self-managed-overview-light.svg" alt="Autogerenciado: os SDKs da sua aplicação, coletores e log shippers enviam telemetria para um coletor operado por você, que grava em Serviços ClickHouse no ClickHouse Cloud. O ClickHouse Cloud hospeda a Interface do ClickStack e gerencia a infraestrutura, os upgrades e os backups, enquanto você gerencia a ingestão, os esquemas, a capacidade computacional e o desempenho." width="720" height="392" className="ch-transparent block dark:hidden" style={{ width: '100%', height: 'auto', margin: '12px 0 4px', background: 'transparent', borderRadius: 0 }} />
+
+### Compare as ofertas {#compare-the-offerings}
+
+Em ambas as ofertas, você instrumenta suas aplicações e coleta a telemetria. A tabela mostra quais responsabilidades de backend o ClickHouse gerencia para você; um travessão (—) indica que essa parte fica sob sua responsabilidade.
+
+| Gerenciado pelo ClickHouse                                                                    | Totalmente gerenciado | Autogerenciado |
+| --------------------------------------------------------------------------------------------- | :-------------------: | :------------: |
+| Backend de ingestão                                                                           |           ✓           |        —       |
+| Esquemas, índices e compressão                                                                |           ✓           |        —       |
+| Dimensionamento da capacidade computacional, escalonamento e isolamento de cargas de trabalho |           ✓           |        —       |
+| Ajuste de desempenho do banco de dados                                                        |           ✓           |        —       |
+| Infraestrutura do banco de dados, upgrades e backups                                          |           ✓           |        ✓       |
+| Hospedagem da Interface do ClickStack e do servidor MCP                                       |           ✓           |        ✓       |
+
+<Tabs>
+  <Tab title="Totalmente gerenciado">
+    <BetaBadge label="Oferta Beta" />
+
+    <Tip>
+      **Recomendado para a maioria das equipes**
+
+      Escolha o ClickHouse Observability totalmente gerenciado para se concentrar na investigação dos seus sistemas enquanto o ClickHouse opera o backend de observabilidade.
+    </Tip>
+
+    Envie a telemetria para o seu endpoint gerenciado. Não é necessário implantar um gateway de ingestão nem ajustar tabelas e capacidade computacional do ClickHouse. Você pode continuar usando coletores e agentes no seu ambiente para coletar, processar e encaminhar a telemetria.
+
+    Siga o [guia de primeiros passos da opção totalmente gerenciada](/pt-BR/clickstack/observability/getting-started).
+  </Tab>
+
+  <Tab title="Autogerenciado">
+    <Info>
+      **Para equipes que precisam de controle sobre o backend**
+
+      Escolha o ClickHouse Observability autogerenciado quando precisar de pipelines de ingestão, esquemas ou configurações de banco de dados personalizados e tiver experiência para operá-los e ajustá-los.
+    </Info>
+
+    Você executa o coletor de ingestão e fica responsável pelo ajuste do banco de dados e pelo planejamento de capacidade. O ClickHouse Cloud gerencia a infraestrutura subjacente, os upgrades do banco de dados e os backups. A opção autogerenciada não exige que você mesmo hospede o ClickHouse ou a Interface do ClickStack.
+
+    Siga o [guia de primeiros passos da opção autogerenciada](/pt-BR/clickstack/self-configured/getting-started/managed) ou leia a [visão geral da opção autogerenciada](/pt-BR/clickstack/self-configured/overview) para mais detalhes.
+  </Tab>
+</Tabs>
+
+## Funcionalidades {#features}
+
+* Conecte seus próprios agentes por meio do [MCP](/pt-BR/clickstack/observability/mcp) para pesquisar telemetria, acompanhar rastros, analisar padrões e mudanças e executar SQL.
+* Pesquise e correlacione logs, rastros, métricas e reproduções de sessão em um só lugar.
+* Execute buscas e agregações rápidas em telemetria high-cardinality.
+* Use [busca de texto completo e filtros no estilo Lucene](/pt-BR/clickstack/observability/features/search), como `level:err`, ou SQL para análises mais aprofundadas.
+* Explore a telemetria com [AI Notebooks](/pt-BR/clickstack/observability/notebooks) e crie [gráficos a partir de perguntas em linguagem natural](/pt-BR/clickstack/observability/text-to-chart).
+* Crie [dashboards](/pt-BR/clickstack/observability/features/dashboards/overview) e configure [alertas](/pt-BR/clickstack/observability/features/alerts).
+* Consulte campos JSON e atributos personalizados em logs e spans de rastreamento.
+* Acompanhe requisições desde as interações no navegador até os serviços de backend e as consultas ao banco de dados.
+* Identifique falhas recorrentes com [padrões de eventos](/pt-BR/clickstack/observability/features/event-patterns) e investigue mudanças com [deltas de eventos](/pt-BR/clickstack/observability/features/event-deltas).
+* Acompanhe logs e rastros em tempo real (live tail) à medida que novos eventos chegam.
+* Faça a ingestão de dados OpenTelemetry por meio de um endpoint gerenciado ou do seu próprio coletor de ingestão, conforme a oferta contratada.
+* Compartilhe buscas e visualizações de investigação por meio de [deep links](/pt-BR/clickstack/observability/url-parameters).
+
+## Princípios {#clickstack-principles}
+
+### Traga seus próprios agentes {#bring-your-own-agents}
+
+Conecte, por meio do MCP, os agentes e as ferramentas de desenvolvimento que sua equipe já utiliza. Os agentes podem pesquisar logs, acompanhar rastros e identificar padrões e mudanças usando a mesma telemetria disponível na UI. Eles também podem executar SQL para correlacionar evidências e investigar questões que as ferramentas de investigação não cobrem diretamente.
+
+### Fácil de usar e projetado para uma finalidade específica {#user-friendly-purpose-built}
+
+A Interface do ClickStack reúne busca, exploração de traces, gráficos, dashboards e alertas. Use filtros no estilo Lucene e construtores visuais de consultas para as perguntas do dia a dia e recorra ao SQL quando precisar de mais controle sobre a análise.
+
+### Observabilidade de ponta a ponta {#end-to-end-observability}
+
+Conecte as reproduções de sessão do frontend a logs de aplicação, rastros distribuídos e métricas para acompanhar falhas em todo o seu sistema. Os eventos amplos mantêm detalhes das requisições, atributos personalizados e contexto de negócio reunidos em logs e spans de rastreamento, ajudando você a identificar quais requisições, serviços e clientes foram afetados.
+
+### Projetado para o ClickHouse {#built-for-clickhouse}
+
+O armazenamento colunar, a compressão e a execução de consultas em paralelo do ClickHouse viabilizam buscas e agregações rápidas em grandes volumes de telemetria high-cardinality. Com consultas concorrentes, engenheiros e agentes podem investigar os mesmos dados em paralelo.
+
+### Nativo em OpenTelemetry {#open-telemetry-native}
+
+Envie telemetria usando instrumentação, SDKs e coletores padrão do OpenTelemetry. Use o endpoint OTLP gerenciado ou seu próprio coletor de ingestão para enviar logs, rastros e métricas com a instrumentação que você já tem, sem precisar adotar um formato de coleta proprietário.

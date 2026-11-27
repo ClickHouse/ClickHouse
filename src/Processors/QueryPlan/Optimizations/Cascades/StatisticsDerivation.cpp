@@ -106,8 +106,9 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
         /// can emit each value once per node; its physical expression records that (see `CostEstimator`),
         /// and the exchange above it is priced on those rows. The final `DISTINCT` over it keeps those rows:
         /// its input is already distinct, and without that a key without an NDV would take the default
-        /// reduction twice.
-        if (isOverPreliminaryDistinct(*distinct_step, *memo.getGroup(expression->inputs.at(0).group_id)))
+        /// reduction twice. A `DISTINCT` that skips deduplication passes its input through as well.
+        if (distinct_step->isDeduplicationSkipped()
+            || isOverPreliminaryDistinct(*distinct_step, *memo.getGroup(expression->inputs.at(0).group_id)))
             group->statistics = input_statistics(0);
         else
             group->statistics = deriveDistinctStatistics(*distinct_step, input_statistics(0));

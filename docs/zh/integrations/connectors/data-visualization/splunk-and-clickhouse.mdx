@@ -24,22 +24,16 @@ Splunk 是一种流行的安全与可观测性技术，也是一款强大的搜�
 
 这种集成最适合以下场景：你使用 ClickHouse 存储大型数据源，例如 NetFlow、Avro 或 Protobuf 二进制数据、DNS、VPC 流日志以及其他 OTel 日志，并希望在 Splunk 中与团队共享这些数据，用于搜索和创建仪表盘。采用这种方式时，数据不会被摄取到 Splunk 的索引层，而是像 [Metabase](https://www.metabase.com/) 或 [Superset](https://superset.apache.org/) 这类其他可视化集成一样，直接从 ClickHouse 查询。
 
-<div id="goal">
-  ## 目标​
-</div>
+## 目标​ {#goal}
 
 在本指南中，我们将使用 ClickHouse JDBC 驱动将 ClickHouse 连接到 Splunk。我们会安装 Splunk Enterprise 的本地版本，但不会为任何数据建立索引；相反，我们将通过 DB Connect 查询引擎使用其搜索功能。
 
 通过本指南，您将能够创建一个连接到 ClickHouse 的仪表盘，效果类似于下图：
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![显示 NYC 出租车数据可视化的 Splunk 仪表盘](/images/integrations/splunk/splunk-1.webp)
-
-</Frame>
-
+  <Frame>
+    ![显示 NYC 出租车数据可视化的 Splunk 仪表盘](/images/integrations/splunk/splunk-1.webp)
+  </Frame>
 </div>
 
 <Note>
@@ -47,7 +41,7 @@ Splunk 是一种流行的安全与可观测性技术，也是一款强大的搜�
 </Note>
 
 <div id="prerequisites">
-  ## 前置条件
+  ## 前置条件 {#prerequisites}
 </div>
 
 开始之前，您需要准备：
@@ -58,9 +52,7 @@ Splunk 是一种流行的安全与可观测性技术，也是一款强大的搜�
 * 对您的 Splunk Enterprise 操作系统实例具有管理员权限或 SSH 访问权限
 * ClickHouse 连接信息 (如果您使用的是 ClickHouse Cloud，请参见[此处](/zh/integrations/connectors/data-visualization/metabase-and-clickhouse#1-gather-your-connection-details))
 
-<div id="install-and-configure-db-connect-on-splunk-enterprise">
-  ## 在 Splunk Enterprise 上安装并配置 DB Connect
-</div>
+## 在 Splunk Enterprise 上安装并配置 DB Connect {#install-and-configure-db-connect-on-splunk-enterprise}
 
 你必须先在 Splunk Enterprise 实例上安装 Java 运行时环境。如果你使用 Docker，可以使用命令 `microdnf install java-11-openjdk`。
 
@@ -75,21 +67,15 @@ Splunk 是一种流行的安全与可观测性技术，也是一款强大的搜�
 
 如果你在安装 DB Connect App 时遇到问题，请参阅[此链接](https://splunkbase.splunk.com/app/2686)了解更多说明。
 
-确认 DB Connect App 已安装后，在 Configuration -&gt; Settings 中将 `java_home` 路径添加到 DB Connect App，然后点击 save，再点击 reset。
+确认 DB Connect App 已安装后，在 Configuration -&gt; Settings 中将 java&#95;home 路径添加到 DB Connect App，然后点击 save，再点击 reset。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![显示 Java Home 配置的 Splunk DB Connect 设置页面](/images/integrations/splunk/splunk-2.webp)
-
-</Frame>
-
+  <Frame>
+    ![Splunk DB Connect 设置页面，显示 Java Home 配置](/images/integrations/splunk/splunk-2.webp)
+  </Frame>
 </div>
 
-<div id="configure-jdbc-for-clickhouse">
-  ## 为 ClickHouse 配置 JDBC
-</div>
+## 为 ClickHouse 配置 JDBC {#configure-jdbc-for-clickhouse}
 
 下载 [ClickHouse JDBC 驱动 JAR 文件](https://github.com/ClickHouse/clickhouse-java/releases/)，并将其复制到以下路径中的 DB Connect Drivers 文件夹：
 
@@ -121,31 +107,21 @@ ui_default_catalog = $database$
 返回 DB Connect App，然后依次进入 Configuration &gt; Settings &gt; Drivers。你应该会在 ClickHouse 旁边看到一个绿色对勾：
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Splunk DB Connect 驱动程序页面，显示 ClickHouse 驱动已成功安装](/images/integrations/splunk/splunk-3.webp)
-
-</Frame>
-
+  <Frame>
+    ![显示 ClickHouse 驱动已成功安装的 Splunk DB Connect 驱动页面](/images/integrations/splunk/splunk-3.webp)
+  </Frame>
 </div>
 
-<div id="connect-splunk-search-to-clickhouse">
-  ## 将 Splunk 搜索连接到 ClickHouse
-</div>
+## 将 Splunk 搜索连接到 ClickHouse {#connect-splunk-search-to-clickhouse}
 
 前往 DB Connect App Configuration -&gt; Databases -&gt; Identities：为 ClickHouse 创建一个 Identity。
 
 在 Configuration -&gt; Databases -&gt; Connections 中新建一个到 ClickHouse 的连接，并选择“New Connection”。
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Splunk DB Connect 新建连接按钮](/images/integrations/splunk/splunk-4.webp)
-
-</Frame>
-
+  <Frame>
+    ![Splunk DB Connect 新建连接按钮](/images/integrations/splunk/splunk-4.webp)
+  </Frame>
 </div>
 
 <br />
@@ -153,13 +129,9 @@ ui_default_catalog = $database$
 添加 ClickHouse 主机详细信息，并确保已勾选“Enable SSL”：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ClickHouse 的 Splunk 连接配置页面](/images/integrations/splunk/splunk-5.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse 的 Splunk 连接配置页面](/images/integrations/splunk/splunk-5.webp)
+  </Frame>
 </div>
 
 保存该连接后，即表示已成功将 Splunk 连接到 ClickHouse！
@@ -168,41 +140,29 @@ ui_default_catalog = $database$
   如果收到错误，请确保已将 Splunk 实例的 IP 地址添加到 ClickHouse Cloud IP Access List。更多信息请参阅[文档](/zh/products/cloud/guides/security/connectivity/setting-ip-filters)。
 </Note>
 
-<div id="run-a-sql-query">
-  ## 运行 SQL 查询
-</div>
+## 运行 SQL 查询 {#run-a-sql-query}
 
 现在我们将运行一条 SQL 查询，测试一切是否正常。
 
 在 DB Connect App 的 DataLab 部分中，在 SQL Explorer 里选择你的连接信息。这里我们使用 `trips` 表进行演示：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![在 Splunk SQL Explorer 中选择到 ClickHouse 的连接](/images/integrations/splunk/splunk-6.webp)
-
-</Frame>
-
+  <Frame>
+    ![在 Splunk SQL Explorer 中选择到 ClickHouse 的连接](/images/integrations/splunk/splunk-6.webp)
+  </Frame>
 </div>
 
 在 `trips` 表上执行一条 SQL 查询，返回该表中的记录总数：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Splunk SQL 查询执行，显示 trips 表中的记录总数](/images/integrations/splunk/splunk-7.webp)
-
-</Frame>
-
+  <Frame>
+    ![Splunk SQL 查询执行，显示 trips 表中的记录总数](/images/integrations/splunk/splunk-7.webp)
+  </Frame>
 </div>
 
 如果查询成功，你应该会看到结果。
 
-<div id="create-a-dashboard">
-  ## 创建仪表盘
-</div>
+## 创建仪表盘 {#create-a-dashboard}
 
 我们来创建一个仪表盘，结合使用 SQL 和强大的 Splunk Processing Language (SPL)。
 
@@ -219,13 +179,9 @@ ORDER BY count DESC LIMIT 10;" connection="chc"
 选择 visualization 选项卡，查看已创建的柱状图表：
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![显示前 10 个上车街区的 Splunk 柱状图表可视化](/images/integrations/splunk/splunk-8.webp)
-
-</Frame>
-
+  <Frame>
+    ![显示前 10 个上车街区的 Splunk 柱状图表可视化](/images/integrations/splunk/splunk-8.webp)
+  </Frame>
 </div>
 
 现在，点击 Save As &gt; Save to a Dashboard，将其保存到仪表盘中。
@@ -240,13 +196,9 @@ FROM default.trips GROUP BY passenger_count;" connection="chc"
 这次，我们来创建一个柱状图，并将其保存到前面的仪表盘中。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![显示按乘客数量统计平均车费的 Splunk 柱状图](/images/integrations/splunk/splunk-9.webp)
-
-</Frame>
-
+  <Frame>
+    ![显示按乘客数量统计平均车费的 Splunk 柱状图](/images/integrations/splunk/splunk-9.webp)
+  </Frame>
 </div>
 
 最后，我们再添加一个查询，用于展示乘客数量与行程距离之间的相关性：
@@ -261,17 +213,13 @@ ORDER BY year, count(*) DESC; " connection="chc"
 最终的仪表盘应如下所示：
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![最终的 Splunk 仪表盘，包含 NYC 出租车数据的多个可视化图表](/images/integrations/splunk/splunk-10.webp)
-
-</Frame>
-
+  <Frame>
+    ![包含多个纽约出租车数据可视化的最终 Splunk 仪表盘](/images/integrations/splunk/splunk-10.webp)
+  </Frame>
 </div>
 
 <div id="time-series-data">
-  ## 时序数据
+  ## 时序数据 {#time-series-data}
 </div>
 
 Splunk 内置了数百个函数，仪表盘可使用这些函数对时序数据进行可视化和呈现。本示例将结合 SQL + SPL，创建一个可用于处理 Splunk 中时序数据的查询
@@ -287,7 +235,7 @@ FROM "demo"."conn" WHERE time >= now() - interval 1 HOURS" connection="chc"
 ```
 
 <div id="learn-more">
-  ## 了解更多
+  ## 了解更多 {#learn-more}
 </div>
 
 如果您想进一步了解 Splunk DB Connect 以及如何构建仪表盘，请访问 [Splunk 文档](https://docs.splunk.com/Documentation)。

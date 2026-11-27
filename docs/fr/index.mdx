@@ -257,7 +257,7 @@ export const PageWrapper = ({ children }) => {
 
 <style>
   {`
-      /* Bannière Integrations : bordure de couleur d’accent dans les deux modes */
+      /* Bannière Intégrations : bordure de couleur d’accent dans les deux modes */
       html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
       html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
       .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
@@ -403,7 +403,7 @@ export const PageWrapper = ({ children }) => {
 
         <HeroCard title="Data warehousing" galaxyEvent="docs.home.data-warehousing" description="Analysez et explorez les données instantanément pour en tirer des insights et alimenter vos applications. Passez plus rapidement à l’échelle en déchargeant les workloads les plus lourds." href={localizeHref("/get-started/use-cases/data-warehousing")} showArrow />
 
-        <HeroCard title="Analytique agentique" galaxyEvent="docs.home.agentic-analytics" description="Permettez aux agents d’IA d’interroger directement vos données en temps réel pour fournir instantanément des insights conversationnels et des visualisations" href={localizeHref("/get-started/use-cases/agentic-analytics")} showArrow />
+        <HeroCard title="Agents" galaxyEvent="docs.home.agentic-analytics" description="Permettez aux agents d’IA d’interroger directement vos données en temps réel pour fournir instantanément des insights conversationnels et des visualisations" href={localizeHref("/agents")} showArrow />
       </div>
 
       <FullWidthDivider style={{ margin: '40px 0 40px' }} />
@@ -442,7 +442,7 @@ export const PageWrapper = ({ children }) => {
           </div>
 
           <div className="flex flex-col gap-4">
-            <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickHouse Observability" galaxyEvent="docs.home.clickstack" description="La stack d’observabilité tout-en-un propulsée par ClickHouse, qui vous offre des requêtes ultra-rapides et de puissantes agrégations sur les logs, metrics, traces, session replays et errors." href={localizeHref("/clickstack/overview")} extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickHouse Observability" galaxyEvent="docs.home.clickstack" description="La stack d’observabilité tout-en-un propulsée par ClickHouse, qui vous offre des requêtes ultra-rapides et de puissantes agrégations sur les logs, metrics, traces, session replays et errors." href={localizeHref("/clickstack/observability/overview")} extraClassName="flex-1" showArrow arrowBottom />
 
             <HeroCard filename="thumbnail-postgres-light.svg" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="Un service Postgres rapide, évolutif et de niveau entreprise, intégré nativement à ClickHouse. Combinez facilement Postgres pour les transactions et ClickHouse pour l’analytics." href={localizeHref("/products/managed-postgres/overview")} extraClassName="flex-1" showArrow arrowBottom />
           </div>
