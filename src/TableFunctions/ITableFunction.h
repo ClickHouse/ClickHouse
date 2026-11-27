@@ -111,6 +111,10 @@ public:
 
     virtual bool canBeUsedToCreateTable() const { return true; }
 
+    /// Like `canBeUsedToCreateTable`, for a table function that may be used to create a table only under some settings of
+    /// the query. Throws if it may not. Called with the arguments parsed, see `setReplayedDefinition`.
+    virtual void checkCanBeUsedToCreateTable(const ContextPtr & /* context */) const {}
+
     /// Whether the storage this table function returns is chosen by the current user's grants
     /// (e.g. `viewIfPermitted`). Such a function cannot appear anywhere in a persisted table
     /// definition, not even nested in an argument of another table function such as `remote`:

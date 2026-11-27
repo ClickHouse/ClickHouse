@@ -1781,6 +1781,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
     std::shared_ptr<NamesAndTypesList> initial_schema;
     bool reads_file_under_own_names = false;
+    bool object_read_authorized = false;
 
     while (true)
     {
@@ -1788,6 +1789,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (!object_info || object_info->getPath().empty())
             return {};
+        object_read_authorized = false;
         if (!object_info->getObjectMetadata())
         {
             bool with_tags = read_from_format_info.requested_virtual_columns.contains("_tags");
@@ -1813,16 +1815,29 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     return {};
 
                 object_info->setObjectMetadata(metadata.value());
+                object_read_authorized = true;
             }
             else
             {
                 object_info->setObjectMetadata(getObjectMetadataForRead(*object_storage, metadata_object, with_tags));
+                object_read_authorized = true;
             }
         }
 
         if (query_settings.skip_empty_files && object_info->getObjectMetadata()->size_bytes == 0
             && object_info->getObjectMetadata()->is_size_known)
             continue;
+
+        /// Before the shortcuts below that answer from a cache without reading the object (the query condition cache,
+        /// the row-count cache), see `authorizeObjectRead`.
+        if (!object_read_authorized && object_storage->getType() == ObjectStorageType::GCS)
+        {
+            auto metadata_object = object_info->relative_path_with_metadata;
+            metadata_object.relative_path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
+            if (!authorizeObjectRead(*object_storage, metadata_object, /* must_exist */ !query_settings.ignore_non_existent_file))
+                continue;
+            object_read_authorized = true;
+        }
 
         /// A file the iterator has split into buckets is read in parts, and an entry describes a whole file.
         /// The key is final once the iterator has returned an object (see `ObjectStorageTopKQueryConditionCacheKey`).
@@ -2035,7 +2050,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 = FormatFactory::instance().checkIfFormatIsRandomAccessInput(format_name, context_, format_settings);
             read_buf = createReadBuffer(
                 object_info->relative_path_with_metadata, object_storage, context_, log,
-                read_settings, !headers_requested);
+                read_settings, !headers_requested, object_read_authorized);
         }
 
         Block initial_header = read_from_format_info.format_header;
@@ -2651,13 +2666,26 @@ std::optional<ObjectMetadata> tryGetObjectMetadataForRead(
     return object_storage.tryGetObjectMetadata(object, with_tags);
 }
 
+bool authorizeObjectRead(const IObjectStorage & object_storage, const RelativePathWithMetadata & object, bool must_exist)
+{
+    if (object_storage.getType() != ObjectStorageType::GCS)
+        return true;
+    if (must_exist)
+    {
+        (void)getObjectMetadataForRead(object_storage, object, /*with_tags=*/ false);
+        return true;
+    }
+    return tryGetObjectMetadataForRead(object_storage, object, /*with_tags=*/ false).has_value();
+}
+
 std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     RelativePathWithMetadata & object_info,
     const ObjectStoragePtr & object_storage,
     const ContextPtr & context_,
     const LoggerPtr & log,
     const std::optional<ReadSettings> & read_settings,
-    bool allow_page_cache)
+    bool allow_page_cache,
+    bool read_is_authorized)
 {
     const auto & settings = context_->getSettingsRef();
     const auto & effective_read_settings = read_settings.has_value() ? read_settings.value() : context_->getReadSettings();
@@ -2689,11 +2717,14 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (!use_distributed_cache)
     {
         filesystem_cache_name = settings[Setting::filesystem_cache_name].value;
+        /// The cache key is `hash(path, etag)`, so any backend with a strong etag can be cached.
+        /// The native GCS one is the object generation, which changes on every overwrite.
         use_filesystem_cache = !reads_explicit_object_version
             && effective_read_settings.enable_filesystem_cache
             && !filesystem_cache_name.empty()
             && (object_storage->getType() == ObjectStorageType::Azure
-                || object_storage->getType() == ObjectStorageType::S3);
+                || object_storage->getType() == ObjectStorageType::S3
+                || object_storage->getType() == ObjectStorageType::GCS);
     }
 
     /// The page cache goes on top of the distributed cache as for `MergeTree` (with `use_page_cache_with_distributed_cache`),
@@ -2716,9 +2747,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// 4. object etag to detect a concurrent in-place overwrite during the read
     /// Whether the read is pinned to the generation of the object seen at listing time. Each backend
     /// that supports it has its own setting, because they are documented per backend and a user may
-    /// want to opt out of the check for one store but not the other.
+    /// want to opt out of the check for one store but not the other. The native GCS backend shares
+    /// `s3_validate_etag_on_read` with S3: its etag is the object generation, and `GCSObjectStorage`
+    /// pins every read request to it with `IfGenerationMatch`.
     bool validate_etag_on_read = false;
-    if (object_storage->getType() == ObjectStorageType::S3)
+    if (object_storage->getType() == ObjectStorageType::S3 || object_storage->getType() == ObjectStorageType::GCS)
         validate_etag_on_read = settings[Setting::s3_validate_etag_on_read];
     else if (object_storage->getType() == ObjectStorageType::Azure)
         validate_etag_on_read = settings[Setting::azure_validate_etag_on_read];
@@ -2760,15 +2793,19 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         {
             page_cache_credentials_identity = std::move(*credentials_identity);
         }
-        else if (!metadata_is_fetched_by_this_read)
+        else if (!metadata_is_fetched_by_this_read && !read_is_authorized)
         {
-            /// This `HEAD` only authorizes the read. Keep the tags of the previous metadata: they are read for the
-            /// `_tags` virtual column, and a `HEAD` without tags would replace them with an empty map.
-            ObjectAttributes tags = std::move(object_info.metadata->tags);
-            object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
-            object_info.metadata->tags = std::move(tags);
+            /// This `HEAD` only authorizes the read, so its result is discarded: the read stays pinned to the generation in
+            /// the metadata it already has (the deferred pass of lazy materialization must read the generation the main
+            /// pass has read), and the page cache key uses that generation too.
+            (void)getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
         }
     }
+
+    /// Whatever serves the data: the filesystem cache and the caches of the input formats (such as the Parquet footer and
+    /// columns caches) can answer without a request of this reader. See `authorizeObjectRead`.
+    if (!read_is_authorized && !metadata_is_fetched_by_this_read)
+        authorizeObjectRead(*object_storage, object_info, /* must_exist */ true);
 
     if (use_page_cache && !object_info.metadata->getContentCacheToken())
     {
@@ -2786,7 +2823,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         {
             pin_read_to_etag_for_page_cache = true;
         }
-        else if ((object_storage->getType() == ObjectStorageType::S3 || object_storage->getType() == ObjectStorageType::Azure)
+        else if ((object_storage->getType() == ObjectStorageType::S3
+                || object_storage->getType() == ObjectStorageType::Azure
+                || object_storage->getType() == ObjectStorageType::GCS)
             && !validate_etag_on_read)
         {
             LOG_DEBUG(log, "Cannot use page cache, the read is not validated against the etag "
@@ -2871,8 +2910,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     StoredObject stored_object(object_info.getPath(), object_info.getPath(), stored_object_size, object_info.read_source_index);
 
     /// Pin the read to the object generation seen here (etag from the LIST/HEAD): a GET with a
-    /// different ETag means an in-place overwrite, reported as S3_OBJECT_CHANGED_DURING_READ or
-    /// AZURE_OBJECT_CHANGED_DURING_READ instead of torn cross-generation data.
+    /// different ETag (or, for native GCS, a failed `IfGenerationMatch`) means an in-place overwrite,
+    /// reported as S3_OBJECT_CHANGED_DURING_READ or AZURE_OBJECT_CHANGED_DURING_READ instead of torn
+    /// cross-generation data.
     if ((validate_etag_on_read || pin_read_to_etag_for_page_cache) && object_info.metadata.has_value())
         stored_object.etag = object_info.metadata->etag;
     /// The distributed cache keys on the content cache token whether or not this read validates the etag. The cache

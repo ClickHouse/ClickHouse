@@ -215,6 +215,18 @@ Use the upstream `LZ4` library to decompress native ClickHouse blocks, including
 Disabled by default: ClickHouse's adaptive `LZ4` decoder is used. Both decoders read the same stored data; changing this setting does not require rewriting data parts.
 The setting applies to decompression performed in the query's context. Outside a query, the global context's setting is used, or ClickHouse's decoder if no context exists.
 
+## use_native_gcs {#use_native_gcs}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "New setting to use the native Google Cloud SDK (google-cloud-cpp) for the `gcs` table function and dynamic GCS disks instead of the S3-compatibility path. Default `false` keeps the existing S3-compatible behavior."}]}]}/>
+
+Experimental. Use the native Google Cloud Storage client (google-cloud-cpp, the GCS JSON API) for the `gcs` table function and dynamic disks with `object_storage_type = gcs`, instead of the default S3-compatibility path (the GCS XML API via the AWS SDK). The `GCS` table engine always uses the S3-compatibility path.
+
+For the `gcs` table function, the native client authenticates with Application Default Credentials, `google_adc_*` refresh-token credentials, `NOSIGN` or `use_environment_credentials = 0` rather than S3 HMAC access-key/secret pairs. Service-account keys are available for server-configured GCS disks. Enable it to talk to GCS natively; leave it disabled (the default) to keep the existing S3-compatible behavior, including positional HMAC credentials.
+
 ## use_parquet_metadata_cache {#use_parquet_metadata_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

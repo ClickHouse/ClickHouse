@@ -973,6 +973,7 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
 {
     if (!table_function.canBeUsedToCreateTable())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' cannot be used to create a table", table_function.getName());
+    table_function.checkCanBeUsedToCreateTable(context);
 
     throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
 }

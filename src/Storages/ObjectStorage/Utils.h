@@ -54,7 +54,18 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const ContextPtr & context_,
     const LoggerPtr & log,
     const std::optional<ReadSettings> & read_settings = std::nullopt,
-    bool allow_page_cache = true);
+    bool allow_page_cache = true,
+    bool read_is_authorized = false);
+
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+
+/// The disk that the `disk` setting of a data lake table function or engine names, after the checks that
+/// `DataLakeConfiguration::fromDisk` makes: the disk must be in `allowed_disks_for_table_engines`, and a custom disk must be
+/// usable by this session (`DiskFromAST::ensureDiskIsAllowed`, which a replayed stored definition is exempt from). They are
+/// made before the backend of the disk is inspected to choose the configuration, so that a caller who may not use a disk
+/// learns neither whether it exists nor what its backend is.
+DiskPtr getDiskForDataLake(const String & disk_name, const ContextPtr & context, bool is_replayed_definition);
 
 /// Fetches the metadata of an object to read (e.g. by an S3 `HEAD` request), when its size and ETag are not
 /// known from listing or table metadata. Every metadata request of the read path must go through these
@@ -63,6 +74,14 @@ ObjectMetadata getObjectMetadataForRead(const IObjectStorage & object_storage, c
 /// Same as `getObjectMetadataForRead`, but returns `std::nullopt` if the object does not exist.
 std::optional<ObjectMetadata> tryGetObjectMetadataForRead(
     const IObjectStorage & object_storage, const RelativePathWithMetadata & object, bool with_tags);
+
+/// Checks with a request made with the reader's own credentials that it may read the object, whose metadata may come
+/// from a listing: for native GCS a listing needs only `storage.objects.list`, while the caches that answer without
+/// reading the object (the query condition, schema and row-count caches, the filesystem cache, the caches of the input
+/// formats) have no identity of the credentials in their keys. The metadata the request returns is discarded: the read
+/// stays pinned to the generation it has already seen, and a concurrent overwrite is detected by that pin. Other
+/// backends need no such check. Returns false if the object does not exist, and throws then if `must_exist`.
+bool authorizeObjectRead(const IObjectStorage & object_storage, const RelativePathWithMetadata & object, bool must_exist);
 
 /// Joins an object's path under a storage prefix (a namespace, or a data source description).
 /// A leading separator is dropped only when there is a prefix to join under, since `fs::path`

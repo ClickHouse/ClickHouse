@@ -75,11 +75,23 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
     for (auto it = begin; it < end; ++it)
     {
         const auto & object_info = (*it);
+        /// A cached schema is served without reading the object, so a hit is authorized first (once per object, as the
+        /// callback runs only on a hit), see `authorizeObjectRead`.
+        bool needs_read_authorization = true;
         auto get_last_mod_time = [&] -> std::optional<time_t>
         {
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
-            if (!object_info->getObjectMetadata())
+            if (needs_read_authorization && object_info->getObjectMetadata())
             {
+                needs_read_authorization = false;
+                auto metadata_object = object_info->relative_path_with_metadata;
+                metadata_object.relative_path = path;
+                if (!authorizeObjectRead(*object_storage, metadata_object, /* must_exist */ false))
+                    return std::nullopt;
+            }
+            else if (!object_info->getObjectMetadata())
+            {
+                needs_read_authorization = false;
                 /// Probe through the `RelativePathWithMetadata` overload (mirroring `createReader`) so that
                 /// `read_source_index` is preserved. For web URL shards the same archive path can be served
                 /// from different URL options, and the schema-cache key includes that shard identity; the

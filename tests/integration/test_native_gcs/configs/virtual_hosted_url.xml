@@ -1,0 +1,19 @@
+<clickhouse>
+    <!-- The built-in mappers (a configured `url_scheme_mappers` replaces them all) and `gsvh`, which maps
+         to the virtual-hosted form of the default GCS host. -->
+    <url_scheme_mappers>
+        <s3><to>https://{bucket}.s3.amazonaws.com</to></s3>
+        <gs><to>https://storage.googleapis.com/{bucket}</to></gs>
+        <gcs><to>https://storage.googleapis.com/{bucket}</to></gcs>
+        <oss><to>https://{bucket}.oss.aliyuncs.com</to></oss>
+        <gsvh><to>https://{bucket}.storage.googleapis.com</to></gsvh>
+    </url_scheme_mappers>
+    <!-- An endpoint section for a virtual-hosted GCS host. `storage_class_name` is rejected by the native
+         backend when the configuration is built, which shows whether the section was selected. -->
+    <s3>
+        <native_gcs_virtual_hosted_endpoint>
+            <endpoint>https://endpoint-section-05.storage.googleapis.com/</endpoint>
+            <storage_class_name>STANDARD_IA</storage_class_name>
+        </native_gcs_virtual_hosted_endpoint>
+    </s3>
+</clickhouse>
