@@ -36,6 +36,13 @@ DROP TABLE IF EXISTS t_shared_prefix;
 DROP TABLE IF EXISTS t_lambda_text;
 DROP TABLE IF EXISTS t_plus_int;
 DROP TABLE IF EXISTS t_start_of_day;
+DROP TABLE IF EXISTS t_keep_nullable;
+DROP TABLE IF EXISTS t_json_all_values;
+DROP TABLE IF EXISTS t_from_unix;
+DROP TABLE IF EXISTS t_from_unix_joda;
+DROP TABLE IF EXISTS t_json_raw_time_format;
+DROP TABLE IF EXISTS t_date_trunc;
+DROP TABLE IF EXISTS t_array_element;
 DROP TABLE IF EXISTS t_two_lambdas;
 DROP TABLE IF EXISTS t_split_ranges;
 DROP TABLE IF EXISTS t_json_raw_quote;
@@ -138,6 +145,23 @@ CREATE TABLE t_plus_int (x UInt64) ENGINE = MergeTree ORDER BY x + 1 SETTINGS in
 INSERT INTO t_plus_int SELECT number FROM numbers(100);
 CREATE TABLE t_start_of_day (d Date) ENGINE = MergeTree ORDER BY toStartOfDay(d) SETTINGS index_granularity = 1;
 INSERT INTO t_start_of_day SELECT toDate('2024-01-01') + number FROM numbers(10);
+CREATE TABLE t_keep_nullable (d Dynamic) ENGINE = MergeTree ORDER BY toUInt64(d) SETTINGS index_granularity = 1;
+INSERT INTO t_keep_nullable SELECT CAST(number AS Dynamic) FROM numbers(10);
+INSERT INTO t_keep_nullable SELECT CAST(NULL AS Dynamic);
+CREATE TABLE t_json_all_values (j JSON(a DateTime)) ENGINE = MergeTree ORDER BY JSONAllValues(j) SETTINGS index_granularity = 1;
+INSERT INTO t_json_all_values SELECT CAST(concat('{"a":"', toString(toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600, 'UTC'), '"}') AS JSON(a DateTime))
+FROM numbers(24) SETTINGS session_timezone = 'UTC';
+CREATE TABLE t_from_unix (n UInt32) ENGINE = MergeTree ORDER BY fromUnixTimestamp(n, '%F %T') SETTINGS index_granularity = 1;
+INSERT INTO t_from_unix SELECT 1704067200 + number * 3600 FROM numbers(24) SETTINGS session_timezone = 'UTC';
+CREATE TABLE t_from_unix_joda (n UInt32) ENGINE = MergeTree ORDER BY fromUnixTimestampInJodaSyntax(n, 'yyyy-MM-dd HH:mm:ss') SETTINGS index_granularity = 1;
+INSERT INTO t_from_unix_joda SELECT 1704067200 + number * 3600 FROM numbers(24) SETTINGS session_timezone = 'UTC';
+CREATE TABLE t_json_raw_time_format (j JSON(a DateTime('UTC'))) ENGINE = MergeTree ORDER BY JSONExtractRaw(j, 'a') SETTINGS index_granularity = 1;
+INSERT INTO t_json_raw_time_format SELECT CAST(concat('{"a":"', toString(toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600), '"}') AS JSON(a DateTime('UTC')))
+FROM numbers(24);
+CREATE TABLE t_date_trunc (d Date) ENGINE = MergeTree ORDER BY dateTrunc('day', d) SETTINGS index_granularity = 1;
+INSERT INTO t_date_trunc SELECT toDate('2024-01-01') + number FROM numbers(10) SETTINGS session_timezone = 'UTC';
+CREATE TABLE t_array_element (x Array(UInt64)) ENGINE = MergeTree ORDER BY x[1] SETTINGS index_granularity = 1;
+INSERT INTO t_array_element VALUES ([1]), ([2]), ([3]);
 -- The two lambdas have the same text, but only the second one writes a time as text.
 CREATE TABLE t_two_lambdas (n UInt32, dt DateTime) ENGINE = MergeTree
     ORDER BY (arrayMap(x -> toString(x), [n])[1], arrayMap(x -> toString(x), [[dt]])[1]) SETTINGS index_granularity = 1;
@@ -228,6 +252,13 @@ SELECT 'json text quote expected', count() FROM t_json_text_quote WHERE toString
 SETTINGS output_format_json_quote_64bit_integers = 1, use_primary_key = 0;
 SELECT 'json text quote', count() FROM t_json_text_quote WHERE toString(j) = '{"a":"1"}'
 SETTINGS output_format_json_quote_64bit_integers = 1, type_json_skip_null_typed_paths = 0;
+SELECT 'keep nullable expected', count() FROM t_keep_nullable WHERE isNull(toUInt64(d)) SETTINGS cast_keep_nullable = 1, use_primary_key = 0;
+SELECT 'keep nullable', count() FROM t_keep_nullable WHERE isNull(toUInt64(d)) SETTINGS cast_keep_nullable = 1;
+SELECT 'json raw time format expected', count() FROM t_json_raw_time_format WHERE JSONExtractRaw(j, 'a') = '"1704067200"'
+SETTINGS date_time_output_format = 'unix_timestamp', type_json_skip_null_typed_paths = 0, use_primary_key = 0;
+SELECT 'json raw time format', count() FROM t_json_raw_time_format WHERE JSONExtractRaw(j, 'a') = '"1704067200"'
+SETTINGS date_time_output_format = 'unix_timestamp', type_json_skip_null_typed_paths = 0;
+SELECT 'json setting keeps array key', x FROM t_array_element WHERE x[1] = 2 SETTINGS json_type_escape_dots_in_keys = 1, force_primary_key = 1;
 SELECT 'json has expected', count() FROM t_json_has WHERE JSONHas(j, 'a') = 0 SETTINGS use_primary_key = 0;
 SELECT 'json has', count() FROM t_json_has WHERE JSONHas(j, 'a') = 0;
 SET session_timezone = 'Pacific/Kiritimati';
@@ -272,7 +303,19 @@ SELECT 'two lambdas expected', count() FROM t_two_lambdas
 WHERE arrayMap(x -> toString(x), [n])[1] = '0' AND arrayMap(x -> toString(x), [[dt]])[1] = '[''2024-01-01 19:00:00'']' SETTINGS use_primary_key = 0;
 SELECT 'two lambdas', count() FROM t_two_lambdas
 WHERE arrayMap(x -> toString(x), [n])[1] = '0' AND arrayMap(x -> toString(x), [[dt]])[1] = '[''2024-01-01 19:00:00'']';
+SELECT 'json all values expected', count() FROM t_json_all_values WHERE JSONAllValues(j) = ['2024-01-01 14:00:00']
+SETTINGS type_json_skip_null_typed_paths = 0, use_primary_key = 0;
+SELECT 'json all values', count() FROM t_json_all_values WHERE JSONAllValues(j) = ['2024-01-01 14:00:00'] SETTINGS type_json_skip_null_typed_paths = 0;
+SELECT 'from unix expected', count() FROM t_from_unix WHERE fromUnixTimestamp(n, '%F %T') = '2024-01-01 14:00:00' SETTINGS use_primary_key = 0;
+SELECT 'from unix', count() FROM t_from_unix WHERE fromUnixTimestamp(n, '%F %T') = '2024-01-01 14:00:00'
+SETTINGS formatdatetime_parsedatetime_m_is_month_name = 1;
+SELECT 'from unix joda expected', count() FROM t_from_unix_joda WHERE fromUnixTimestampInJodaSyntax(n, 'yyyy-MM-dd HH:mm:ss') = '2024-01-01 14:00:00'
+SETTINGS use_primary_key = 0;
+SELECT 'from unix joda', count() FROM t_from_unix_joda WHERE fromUnixTimestampInJodaSyntax(n, 'yyyy-MM-dd HH:mm:ss') = '2024-01-01 14:00:00';
 SET optimize_time_filter_with_preimage = 0;
+SELECT 'date trunc expected', count() FROM t_date_trunc WHERE dateTrunc('day', d) = toDateTime('2024-01-02 00:00:00', 'Pacific/Kiritimati')
+SETTINGS use_primary_key = 0;
+SELECT 'date trunc', count() FROM t_date_trunc WHERE dateTrunc('day', d) = toDateTime('2024-01-02 00:00:00', 'Pacific/Kiritimati');
 SELECT 'start of day expected', count() FROM t_start_of_day WHERE toStartOfDay(d) = toDateTime('2024-01-02 00:00:00', 'Pacific/Kiritimati')
 SETTINGS use_primary_key = 0;
 SELECT 'start of day', count() FROM t_start_of_day WHERE toStartOfDay(d) = toDateTime('2024-01-02 00:00:00', 'Pacific/Kiritimati');
@@ -314,6 +357,13 @@ DROP TABLE t_shared_prefix;
 DROP TABLE t_lambda_text;
 DROP TABLE t_plus_int;
 DROP TABLE t_start_of_day;
+DROP TABLE t_keep_nullable;
+DROP TABLE t_json_all_values;
+DROP TABLE t_from_unix;
+DROP TABLE t_from_unix_joda;
+DROP TABLE t_json_raw_time_format;
+DROP TABLE t_date_trunc;
+DROP TABLE t_array_element;
 DROP TABLE t_two_lambdas;
 DROP TABLE t_split_ranges;
 DROP TABLE t_json_raw_quote;
