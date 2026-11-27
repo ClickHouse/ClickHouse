@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: they cannot store the `UInt` and `LowCardinality(String)` map types this test measures. -->
     <settings>
         <max_threads>1</max_threads>
     </settings>
