@@ -95,6 +95,22 @@ static size_t countObjectsNotIn(const StoredObjects & objects, const StoredObjec
     return count;
 }
 
+/// Insert into `failed_object_paths` the paths of the `objects` which are not in `successful_objects`.
+static void insertObjectsNotIn(
+    const StoredObjects & objects,
+    const StoredObjects & successful_objects,
+    UnorderedSetWithMemoryTracking<String> & failed_object_paths)
+{
+    UnorderedSetWithMemoryTracking<std::string_view> successful_paths;
+    successful_paths.reserve(successful_objects.size());
+    for (const auto & object : successful_objects)
+        successful_paths.insert(object.remote_path);
+
+    for (const auto & object : objects)
+        if (!successful_paths.contains(object.remote_path))
+            failed_object_paths.insert(object.remote_path);
+}
+
 ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
     ContextPtr context_,
     ObjectStorageType type_,
@@ -119,17 +135,21 @@ void ObjectStorageQueuePostProcessor::process(
 {
     StoredObjects successful_objects;
 
-    SCOPE_EXIT({
-        UnorderedSetWithMemoryTracking<std::string_view> successful_paths;
-        successful_paths.reserve(successful_objects.size());
-        for (const auto & object : successful_objects)
-            successful_paths.insert(object.remote_path);
+    try
+    {
+        applyAfterProcessingAction(objects, successful_objects);
+    }
+    catch (...)
+    {
+        insertObjectsNotIn(objects, successful_objects, failed_object_paths);
+        throw;
+    }
 
-        for (const auto & object : objects)
-            if (!successful_paths.contains(object.remote_path))
-                failed_object_paths.insert(object.remote_path);
-    });
+    insertObjectsNotIn(objects, successful_objects, failed_object_paths);
+}
 
+void ObjectStorageQueuePostProcessor::applyAfterProcessingAction(const StoredObjects & objects, StoredObjects & successful_objects) const
+{
     const ObjectStorageQueueAction after_processing_action = table_metadata.after_processing.load();
     if (after_processing_action == ObjectStorageQueueAction::DELETE)
     {
@@ -225,7 +245,6 @@ void ObjectStorageQueuePostProcessor::process(
             "Unsupported after_processing action {}",
             ObjectStorageQueueTableMetadata::actionToString(after_processing_action));
     }
-
 }
 
 void ObjectStorageQueuePostProcessor::countFailedObjects(size_t count) const
