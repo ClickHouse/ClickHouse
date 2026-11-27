@@ -69,7 +69,9 @@ public:
 
     /// Throws an exception if not found.
     /// `is_replayed_definition` is passed on to `ITableFunction::setReplayedDefinition`.
-    [[nodiscard]] TableFunctionPtr get(const ASTPtr & ast_function, ContextPtr context, bool is_replayed_definition = false) const;
+    /// `creates_table` is passed on to `ITableFunction::setCreatesTable`.
+    [[nodiscard]] TableFunctionPtr get(
+        const ASTPtr & ast_function, ContextPtr context, bool is_replayed_definition = false, bool creates_table = false) const;
 
     /// Returns nullptr if not found.
     [[nodiscard]] TableFunctionPtr tryGet(const std::string & name, ContextPtr context) const;

@@ -3291,6 +3291,9 @@ def test_namespace_merge_and_distributed_read_children_as_written(started_cluste
     written too, while that of the `executable` table function is a part of the calling query.
     A `Buffer` table over a `Distributed` table analyzes the printed query again for the rows
     it holds, and the tables of that query are read as written too.
+    A stored table or view is read as written even in a database named `_table_function`, and so is
+    a table created by `CREATE TABLE ... AS f(...)`, while `executable` inside a stored view is a part
+    of the calling query.
     """
     node1 = started_cluster.instances["node1"]
     # the tables exist on `node1` only: its replica of the shard is read in the same server
@@ -3306,6 +3309,11 @@ def test_namespace_merge_and_distributed_read_children_as_written(started_cluste
     MV = f"mv_{test_ref}"
     V = f"view_{test_ref}"
     F = f"f_{test_ref}"
+    TF_E = f"tf_exec_{test_ref}"
+    TF_V = f"tf_view_{test_ref}"
+    EC = f"exec_copy_{test_ref}"
+    VC = f"view_copy_{test_ref}"
+    VX = f"view_exec_{test_ref}"
     user = f"u_dist_{test_ref}"
     script = f"{test_ref}.sh"
     scripts_path = node1.query(
@@ -3392,6 +3400,52 @@ def test_namespace_merge_and_distributed_read_children_as_written(started_cluste
         )
         assert "ACCESS_DENIED" in err, f"`Executable` table must read the database table: {err}"
 
+        # a user database named `_table_function` holds stored definitions, not table function queries
+        node1.query("CREATE DATABASE IF NOT EXISTS _table_function ENGINE = Memory")
+        node1.query(
+            f"CREATE TABLE _table_function.{TF_E} (symbol Nullable(String)) "
+            f"ENGINE = Executable('{script}', 'TSV', (SELECT symbol FROM default.{L}))"
+        )
+        result = int(
+            node1.query(f"USE {CATALOG_NAME}; SELECT count() FROM _table_function.{TF_E}", settings=executable_on)
+        )
+        assert result == 1, f"`Executable` table in `_table_function`: expected 1 row, got {result}"
+
+        node1.query(f"GRANT SELECT ON _table_function.{TF_E} TO {user}")
+        _, err = node1.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; SELECT count() FROM _table_function.{TF_E}", settings=executable_on, user=user
+        )
+        assert "ACCESS_DENIED" in err, f"`Executable` table in `_table_function` must read the database table: {err}"
+
+        node1.query(f"CREATE VIEW _table_function.{TF_V} AS SELECT symbol FROM default.{L}")
+        result = int(
+            node1.query(f"USE {CATALOG_NAME}; SELECT count() FROM _table_function.{TF_V}", settings=executable_on)
+        )
+        assert result == 1, f"view in `_table_function`: expected 1 row, got {result}"
+
+        # tables created from a table function are stored definitions
+        node1.query(
+            f"CREATE TABLE default.{EC} AS "
+            f"executable('{script}', 'TSV', 'symbol Nullable(String)', (SELECT symbol FROM default.{L}))"
+        )
+        result = int(node1.query(f"USE {CATALOG_NAME}; SELECT count() FROM default.{EC}", settings=executable_on))
+        assert result == 1, f"table created from `executable`: expected 1 row, got {result}"
+
+        # created in `default`: `view` infers its structure with the current database
+        node1.query(f"CREATE TABLE default.{VC} AS view(SELECT symbol FROM default.{L})")
+        result = int(node1.query(f"USE {CATALOG_NAME}; SELECT count() FROM default.{VC}", settings=executable_on))
+        assert result == 1, f"table created from `view`: expected 1 row, got {result}"
+
+        # the query of `executable` keeps the current-database reading inside a stored view
+        node1.query(
+            f"CREATE VIEW default.{VX} AS SELECT * FROM "
+            f"executable('{script}', 'TSV', 'symbol Nullable(String)', (SELECT symbol FROM default.{L}))"
+        )
+        _, err = node1.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; SELECT count() FROM default.{VX}", settings=executable_on
+        )
+        assert "AMBIGUOUS_IDENTIFIER" in err, f"view over `executable`: {err}"
+
         # a `Buffer` over the `Distributed` table analyzes the printed query once more for the rows in its buffers
         node1.query(
             f"CREATE TABLE default.{B} (symbol Nullable(String)) "
@@ -3418,7 +3472,8 @@ def test_namespace_merge_and_distributed_read_children_as_written(started_cluste
     finally:
         node1.query(f"DROP USER IF EXISTS {user}")
         node1.query(f"DROP FUNCTION IF EXISTS {F}")
-        for table in (V, MV, B, D, D2, E, L, L2):
+        node1.query("DROP DATABASE IF EXISTS _table_function")
+        for table in (V, MV, B, D, D2, E, VX, VC, EC, L, L2):
             node1.query(f"DROP TABLE IF EXISTS default.{table}")
         node1.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`default.{L}`")
         node1.exec_in_container(["rm", "-f", f"{scripts_path}/{script}"], user="root")

@@ -1338,14 +1338,15 @@ void pushOrderByIntoView(
     if (!storage->isView() || !select_query_info.has_order_by || !is_single_table_expression)
         return;
 
+    const auto * view = typeid_cast<const StorageView *>(storage.get());
+
     /// Skip inline view() table functions - they're handled by remote()/Distributed
-    if (storage->getStorageID().database_name == "_table_function")
+    if (view && view->isQueryTableFunctionArgument())
         return;
 
     /// A sealed view not read by its definer hides rows from the outer query. The pushed-down `ORDER BY ... LIMIT` would run
     /// below that boundary, so the amount of data read would depend on the rows the view hides.
-    if (const auto * view = typeid_cast<const StorageView *>(storage.get());
-        view && view->isSealed(*storage_snapshot->metadata, query_context)
+    if (view && view->isSealed(*storage_snapshot->metadata, query_context)
         && !view->isReadByDefiner(*storage_snapshot->metadata, query_context))
         return;
 
@@ -1594,8 +1595,7 @@ void pushOrderByIntoView(
     {
         auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
         /// As in `getViewContext`: only the query of a table function such as `view` is not a stored definition.
-        view_context->setAllowCompoundTableIdentifierQualification(
-            storage->getStorageID().database_name == ITableFunction::getDatabaseName());
+        view_context->setAllowCompoundTableIdentifierQualification(view && view->isQueryTableFunctionArgument());
 
         /// The injected inner `ORDER BY`/`LIMIT` is analyzed and executed under the
         /// view's effective context (`getSQLSecurityOverriddenContext`), not the outer
@@ -2513,7 +2513,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
                         /// A stored view body is read as written, the query of a table function such as `view` is not.
                         auto options = SelectQueryOptions(QueryProcessingStage::FetchColumns).subquery();
-                        options.allowCompoundTableIdentifierQualification(view->getStorageID().database_name == ITableFunction::getDatabaseName());
+                        options.allowCompoundTableIdentifierQualification(view->isQueryTableFunctionArgument());
                         InterpreterSelectQueryAnalyzer inner_interp(inner_query_ast, inner_context, options);
                         const auto & inner_query_tree = inner_interp.getQueryTree();
                         /// Mark as subquery so it serializes as (SELECT ...) in the FROM clause.

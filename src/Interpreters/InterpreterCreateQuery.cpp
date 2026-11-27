@@ -2980,7 +2980,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(
-            table_function_ast, getContext(), isReplayedTableDefinition(mode, create, getContext()));
+            table_function_ast, getContext(), isReplayedTableDefinition(mode, create, getContext()), /* creates_table = */ true);
 
         /// Already checked in `getTablePropertiesAndNormalizeCreateQuery` when the structure was inferred
         /// from the function; a definition with an explicit column list skips that inference and is

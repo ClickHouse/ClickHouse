@@ -2497,9 +2497,12 @@ You can also spell out every part with dots:
 - SQL stored in definitions (view and materialized view bodies, row policy
   conditions, mutations, column `DEFAULT` / `MATERIALIZED` / `ALIAS`
   expressions, `ClickHouse` dictionary source queries executed on the same
-  server) always reads `a.b` as database `a`, table `b`; the query argument of
-  table functions `view`, `viewIfPermitted`, `eval`, `obfuscate` and `explain`
-  keeps the two-part rule. In a stored definition, reference a catalog table as
+  server, SQL function bodies, the input queries of an `Executable` or
+  `ExecutablePool` table, the query argument of the table function when a table
+  created with `CREATE TABLE ... AS f(...)` is read) always reads `a.b` as
+  database `a`, table `b`; the query argument of table functions `view`,
+  `viewIfPermitted`, `eval`, `obfuscate`, `explain` and `executable` that such
+  SQL calls keeps the two-part rule. In a stored definition, reference a catalog table as
   ``catalog_name.`ns.t` ``. The path form `catalog_name.ns.t` needs
   `enable_table_namespaces` each time the definition is analysed, with the settings in
   effect there: those of the user who creates the view, reads it, or inserts into the source table

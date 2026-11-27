@@ -63,7 +63,9 @@ StoragePtr TableFunctionView::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
     auto columns = getActualTableStructure(context, is_insert_query);
-    auto res = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), create, columns, "");
+    auto res = std::make_shared<StorageView>(
+        StorageID(getDatabaseName(), table_name), create, columns, "", /* is_parameterized_view_ = */ false,
+        /* query_is_table_function_argument_ = */ !creates_table);
     res->startup();
     return res;
 }

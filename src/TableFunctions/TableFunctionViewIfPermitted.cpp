@@ -121,7 +121,9 @@ StoragePtr TableFunctionViewIfPermitted::executeImpl(
 
     if (isPermitted(context, columns))
     {
-        storage = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), create, columns, "");
+        storage = std::make_shared<StorageView>(
+            StorageID(getDatabaseName(), table_name), create, columns, "", /* is_parameterized_view_ = */ false,
+            /* query_is_table_function_argument_ = */ true);
     }
     else
     {
