@@ -6,6 +6,8 @@
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionResultSetting.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -37,49 +39,64 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+using NodesByName = UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *>;
+
+NodesByName getNodesByName(const ActionsDAG & dag)
+{
+    NodesByName nodes;
+    for (const auto & node : dag.getNodes())
+        nodes.emplace(node.result_name, &node);
+    return nodes;
+}
+
+/// The body of the lambda that `node`, an argument of a higher-order function, stands for: a `FunctionCapture`, or a
+/// `ColumnFunction` if constant folding turned it into one.
+const ActionsDAG * tryGetLambdaBody(const ActionsDAG::Node & node)
+{
+    const IFunctionBase * function = nullptr;
+    if (node.type == ActionsDAG::ActionType::FUNCTION)
+    {
+        function = node.function_base.get();
+    }
+    else if (node.type == ActionsDAG::ActionType::COLUMN && node.column)
+    {
+        const IColumn * column = node.column.get();
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+            column = &column_const->getDataColumn();
+        if (const auto * column_function = typeid_cast<const ColumnFunction *>(column))
+            function = column_function->getFunction().get();
+    }
+
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(function))
+        return &capture->getAcionsDAG();
+    if (const auto * expression = typeid_cast<const FunctionExpression *>(function))
+        return &expression->getAcionsDAG();
+    return nullptr;
+}
+
+}
+
 void collectResultSettings(
     const IAST & ast, const ActionsDAG & dag, const Settings & settings, std::vector<ResultSettingsOfExpression> & result_settings)
 {
-    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> nodes;
-    for (const auto & node : dag.getNodes())
-        nodes.emplace(node.result_name, &node);
-
-    /// A call inside a lambda has no node in `dag`, but one in the body of the lambda.
-    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> lambda_nodes;
-    auto add_lambda_nodes = [&](this auto & self, const ActionsDAG & from) -> void
-    {
-        for (const auto & node : from.getNodes())
-        {
-            allNodeFunctions(node, [&](const IFunctionBase & function)
-            {
-                const ActionsDAG * body = nullptr;
-                if (const auto * capture = typeid_cast<const FunctionCapture *>(&function))
-                    body = &capture->getAcionsDAG();
-                else if (const auto * expression = typeid_cast<const FunctionExpression *>(&function))
-                    body = &expression->getAcionsDAG();
-                if (body)
-                {
-                    for (const auto & inner : body->getNodes())
-                        lambda_nodes.emplace(inner.result_name, &inner);
-                    self(*body);
-                }
-                return true;
-            });
-        }
-    };
-    add_lambda_nodes(dag);
+    const NodesByName nodes = getNodesByName(dag);
 
     VectorWithMemoryTracking<const ActionsDAG::Node *> enclosing;
-    auto visit = [&](this auto & self, const IAST & ast_node) -> void
+    /// `lambda_body`: the nodes of the body of the lambda around `ast_node`, if any. A call there has no node in `dag`.
+    auto visit = [&](this auto & self, const IAST & ast_node, const NodesByName * lambda_body) -> void
     {
         const auto * function = ast_node.as<ASTFunction>();
-        const ActionsDAG::Node * node = nullptr;
+        const ActionsDAG::Node * call = nullptr;
         if (function)
         {
-            auto it = nodes.find(function->getColumnName());
-            if (it != nodes.end())
-                node = it->second;
+            const NodesByName & scope = lambda_body ? *lambda_body : nodes;
+            if (auto it = scope.find(function->getColumnName()); it != scope.end())
+                call = it->second;
         }
+        const ActionsDAG::Node * node = lambda_body ? nullptr : call;
         if (node)
             enclosing.push_back(node);
 
@@ -88,13 +105,6 @@ void collectResultSettings(
             if (const auto * registered = FunctionFactory::instance().tryGetResultSettings(function->name))
             {
                 /// A call folded into a constant has no node to ask, so all its declared settings count.
-                const ActionsDAG::Node * call = node;
-                if (!call)
-                {
-                    auto it = lambda_nodes.find(function->getColumnName());
-                    if (it != lambda_nodes.end())
-                        call = it->second;
-                }
                 const IFunctionBase * built = call && call->type == ActionsDAG::ActionType::FUNCTION ? call->function_base.get() : nullptr;
                 const String & expression = enclosing.back()->result_name;
                 auto entry = std::ranges::find(result_settings, expression, &ResultSettingsOfExpression::expression);
@@ -113,13 +123,39 @@ void collectResultSettings(
             }
         }
 
-        for (const auto & child : ast_node.children)
-            self(*child);
+        if (function && function->arguments)
+        {
+            const auto & arguments = function->arguments->children;
+            for (size_t i = 0; i < arguments.size(); ++i)
+            {
+                const auto * argument = arguments[i]->as<ASTFunction>();
+                if (argument && argument->name == "lambda")
+                {
+                    /// The body of each lambda is in the node of the higher-order function's argument, e.g. `x -> toString(x)` in
+                    /// two calls of `arrayMap` with arguments of other types are different functions. Without it all settings count.
+                    const ActionsDAG * body = call && call->type == ActionsDAG::ActionType::FUNCTION && i < call->children.size()
+                        ? tryGetLambdaBody(*call->children[i])
+                        : nullptr;
+                    const NodesByName body_nodes = body ? getNodesByName(*body) : NodesByName{};
+                    if (argument->arguments && argument->arguments->children.size() == 2)
+                        self(*argument->arguments->children[1], &body_nodes);
+                }
+                else
+                {
+                    self(*arguments[i], lambda_body);
+                }
+            }
+        }
+        else
+        {
+            for (const auto & child : ast_node.children)
+                self(*child, lambda_body);
+        }
 
         if (node)
             enclosing.pop_back();
     };
-    visit(ast);
+    visit(ast, nullptr);
 }
 
 void collectResultSettings(const IAST & ast, const ActionsDAG & dag, const Settings & settings, SettingsChanges & result_settings)

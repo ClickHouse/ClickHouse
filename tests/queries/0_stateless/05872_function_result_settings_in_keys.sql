@@ -36,6 +36,7 @@ DROP TABLE IF EXISTS t_shared_prefix;
 DROP TABLE IF EXISTS t_lambda_text;
 DROP TABLE IF EXISTS t_plus_int;
 DROP TABLE IF EXISTS t_start_of_day;
+DROP TABLE IF EXISTS t_two_lambdas;
 DROP TABLE IF EXISTS t_split_ranges;
 DROP TABLE IF EXISTS t_json_raw_quote;
 DROP TABLE IF EXISTS t_json_text_quote;
@@ -137,6 +138,10 @@ CREATE TABLE t_plus_int (x UInt64) ENGINE = MergeTree ORDER BY x + 1 SETTINGS in
 INSERT INTO t_plus_int SELECT number FROM numbers(100);
 CREATE TABLE t_start_of_day (d Date) ENGINE = MergeTree ORDER BY toStartOfDay(d) SETTINGS index_granularity = 1;
 INSERT INTO t_start_of_day SELECT toDate('2024-01-01') + number FROM numbers(10);
+-- The two lambdas have the same text, but only the second one writes a time as text.
+CREATE TABLE t_two_lambdas (n UInt32, dt DateTime) ENGINE = MergeTree
+    ORDER BY (arrayMap(x -> toString(x), [n])[1], arrayMap(x -> toString(x), [[dt]])[1]) SETTINGS index_granularity = 1;
+INSERT INTO t_two_lambdas SELECT 0, toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600 FROM numbers(24) SETTINGS session_timezone = 'UTC';
 CREATE TABLE t_split_ranges (dt DateTime) ENGINE = MergeTree ORDER BY toString([dt]) SETTINGS index_granularity = 1;
 SYSTEM STOP MERGES t_split_ranges;
 INSERT INTO t_split_ranges SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600 FROM numbers(24) SETTINGS session_timezone = 'UTC';
@@ -263,6 +268,10 @@ SELECT 'format row time expected', count() FROM t_format_row_time WHERE formatRo
 SETTINGS use_primary_key = 0;
 SELECT 'format row time', count() FROM t_format_row_time WHERE formatRowNoNewline('TSV', dt) = '2024-01-01 19:00:00'
 SETTINGS format_csv_delimiter = ',';
+SELECT 'two lambdas expected', count() FROM t_two_lambdas
+WHERE arrayMap(x -> toString(x), [n])[1] = '0' AND arrayMap(x -> toString(x), [[dt]])[1] = '[''2024-01-01 19:00:00'']' SETTINGS use_primary_key = 0;
+SELECT 'two lambdas', count() FROM t_two_lambdas
+WHERE arrayMap(x -> toString(x), [n])[1] = '0' AND arrayMap(x -> toString(x), [[dt]])[1] = '[''2024-01-01 19:00:00'']';
 SET optimize_time_filter_with_preimage = 0;
 SELECT 'start of day expected', count() FROM t_start_of_day WHERE toStartOfDay(d) = toDateTime('2024-01-02 00:00:00', 'Pacific/Kiritimati')
 SETTINGS use_primary_key = 0;
@@ -305,6 +314,7 @@ DROP TABLE t_shared_prefix;
 DROP TABLE t_lambda_text;
 DROP TABLE t_plus_int;
 DROP TABLE t_start_of_day;
+DROP TABLE t_two_lambdas;
 DROP TABLE t_split_ranges;
 DROP TABLE t_json_raw_quote;
 DROP TABLE t_json_text_quote;
