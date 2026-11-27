@@ -6,6 +6,11 @@ SET enable_analyzer = 1;
 -- the EXPLAIN assertions inspect.
 SET enable_parallel_replicas = 0;
 
+-- `INTERSECT DISTINCT` and `EXCEPT DISTINCT` run as a join by default, where the filter is pushed down by the
+-- rules of the join. This test covers the `IntersectOrExcept` step, which still runs the `ALL` variants, the
+-- set operations whose arms can produce totals, and the `DISTINCT` variants when the rewrite is disabled.
+SET rewrite_intersect_except_distinct_to_join = 0;
+
 DROP TABLE IF EXISTS t_intex_l;
 DROP TABLE IF EXISTS t_intex_r;
 
