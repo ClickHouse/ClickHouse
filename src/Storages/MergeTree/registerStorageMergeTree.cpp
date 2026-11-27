@@ -984,7 +984,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 const bool absent = std::ranges::none_of(changes, [&](const SettingChange & change) { return MergeTreeSettings::resolveName(change.name) == name; });
                 if (enabled && absent)
-                    changes.push_back(SettingChange{String(name), Field(UInt64(1))});
+                    changes.push_back(SettingChange{name, Field(UInt64(1))});
             };
 
             add_if_enabled_and_absent("enable_block_number_column", (*storage_settings)[MergeTreeSetting::enable_block_number_column]);
