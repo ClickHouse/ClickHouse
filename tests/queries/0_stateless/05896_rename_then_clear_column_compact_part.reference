@@ -1,0 +1,26 @@
+compact	Compact
+compact	1	0	1	2
+compact-stored	1	0	1	2
+packed	Wide	Packed
+packed	1	0	1
+dynamic	Wide	Full
+dynamic	1	\N	\N	None
+dynamic-columns	['a','k']
+1
+dynamic-reload	1	\N	\N	0
+marker	99	100
+swap	0	1
+1
+swap-stored	0	1
+swap-absent-stored	0	10	10
+index	2
+projection	1	2
+replicated	1	0	1
+delete	1	0	1
+index-cleared	2
+index-cleared	0
+nested	1	[0,0]	[3,4]
+marker-swap	0	42
+1
+marker-swap-reload	0	42	0
+absent	1	7	6
