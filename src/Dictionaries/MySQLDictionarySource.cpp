@@ -176,7 +176,6 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                 .update_lag = named_collection->getOrDefault<UInt64>("update_lag", 1),
                 .bg_reconnect = named_collection->getOrDefault<bool>("background_reconnect", false),
                 .check_queries_are_select = shouldCheckExternalDictionaryQueries(global_context, created_from_ddl),
-                .check_condition_placeholder = created_from_ddl,
             });
 
             const auto & settings = global_context->getSettingsRef();
@@ -208,7 +207,6 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                 .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
                 .bg_reconnect = config.getBool(settings_config_prefix + ".background_reconnect", false),
                 .check_queries_are_select = shouldCheckExternalDictionaryQueries(global_context, created_from_ddl),
-                .check_condition_placeholder = created_from_ddl,
             });
 
             if (created_from_ddl)
@@ -436,10 +434,11 @@ MySQLDictionarySource::MySQLDictionarySource(
     , load_all_query(query_builder.composeLoadAllQuery())
     , settings(settings_)
 {
-    if (configuration.check_condition_placeholder)
-        checkExternalDictionaryQueryConditionPlaceholder(configuration.query, "MySQL");
     if (configuration.check_queries_are_select)
+    {
+        checkExternalDictionaryQueryConditionPlaceholder(configuration.query, "MySQL");
         checkExternalDictionaryLoadQueryIsSelect(load_all_query, "MySQL");
+    }
 }
 
 /// copy-constructor is provided in order to support cloneability

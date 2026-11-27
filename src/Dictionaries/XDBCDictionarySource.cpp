@@ -89,10 +89,11 @@ XDBCDictionarySource::XDBCDictionarySource(
     , bridge_url(bridge_helper->getMainURI())
     , timeouts(ConnectionTimeouts::getHTTPTimeouts(context_->getSettingsRef(), context_->getServerSettings()))
 {
-    if (configuration.check_condition_placeholder)
-        checkExternalDictionaryQueryConditionPlaceholder(configuration.query, "ODBC");
     if (configuration.check_queries_are_select)
+    {
+        checkExternalDictionaryQueryConditionPlaceholder(configuration.query, "ODBC");
         checkExternalDictionaryLoadQueryIsSelect(load_all_query, "ODBC");
+    }
 }
 
 /// copy-constructor is provided in order to support cloneability
@@ -284,7 +285,6 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
             .check_queries_are_select = shouldCheckExternalDictionaryQueries(global_context, created_from_ddl),
-            .check_condition_placeholder = created_from_ddl,
         };
 
         return std::make_unique<XDBCDictionarySource>(dict_struct, configuration, sample_block, global_context, bridge);

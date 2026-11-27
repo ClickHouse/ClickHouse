@@ -52,8 +52,8 @@ void checkExternalDictionaryLoadQueryIsSelect(const String & load_all_query, con
 
 /// The condition on the requested keys replaces `{condition}` in `query`, so `{condition}` cannot be in a string literal or
 /// a quoted identifier: there, the quotes of the condition would end the quoted token of the definition, and the keys, which
-/// come from the caller of `dictGet`, would become a part of the query. This protects against the caller of `dictGet`, not
-/// against the author of the dictionary, so it does not depend on `dictionaries_external_source_queries_select_only`.
+/// come from the caller of `dictGet`, would become a part of the query. It is checked together with
+/// `checkExternalDictionaryLoadQueryIsSelect`, which rejects comments and heredocs, where `{condition}` would be quoted too.
 void checkExternalDictionaryQueryConditionPlaceholder(const String & query, const String & source_name);
 
 /** A stream, adds additional columns to each block that it will read from inner stream.

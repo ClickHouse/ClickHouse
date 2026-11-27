@@ -39,8 +39,6 @@ public:
         const UInt64 update_lag;
         /// See `shouldCheckExternalDictionaryQueries`.
         const bool check_queries_are_select;
-        /// The query comes from a `CREATE DICTIONARY`, see `checkExternalDictionaryQueryConditionPlaceholder`.
-        const bool check_condition_placeholder;
     };
 
     XDBCDictionarySource(
