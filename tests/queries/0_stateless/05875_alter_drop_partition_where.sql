@@ -128,18 +128,38 @@ DROP TABLE t_dpw_patches;
 SELECT formatQuery('ALTER TABLE t DROP PARTITION WHERE _partition_id LIKE \'2026%\' AND _partition_value.1 > 3, DETACH PARTITION WHERE (_partition_id = \'a\') OR 1');
 SELECT formatQuerySingleLine('ALTER TABLE t DETACH PARTITION WHERE _partition_value = (1, \'a\')');
 
+-- AST JSON round-trips, and parser-impossible shapes are rejected.
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t DROP PARTITION WHERE _partition_id = \'1\', DETACH PARTITION WHERE 1'));
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t DROP PARTITION WHERE 1'), '"command_type":"DROP_PARTITION"', '"command_type":"ATTACH_PARTITION"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t DROP PARTITION WHERE 1'), '"all":false', '"all":true')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t DROP PARTITION WHERE 1'), '"all":false', '"all":false,"fields_count":1')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t DROP PARTITION WHERE 1'), '"all":false', '"all":false,"id":{"type":"Literal","value":{"field_type":"String","value":"1"}}')); -- { serverError BAD_ARGUMENTS }
+
 -- Errors.
 DROP TABLE IF EXISTS t_dpw_errors;
 CREATE TABLE t_dpw_errors (p UInt32, x UInt32) ENGINE = MergeTree ORDER BY x PARTITION BY p;
-INSERT INTO t_dpw_errors VALUES (1, 1), (2, 2);
+INSERT INTO t_dpw_errors VALUES (1, 1), (2, 2), (3, 3);
 
 -- The predicate can refer only to `_partition_id` and `_partition_value`, not to the columns of a row.
 ALTER TABLE t_dpw_errors DROP PARTITION WHERE p = 1; -- { serverError UNKNOWN_IDENTIFIER }
 ALTER TABLE t_dpw_errors DROP PARTITION WHERE _part = 'all_1_1_0'; -- { serverError UNKNOWN_IDENTIFIER }
 -- It must be deterministic.
 ALTER TABLE t_dpw_errors DROP PARTITION WHERE rand() % 2 = 0; -- { serverError BAD_ARGUMENTS }
--- Subqueries are not supported.
+-- It cannot read other tables.
 ALTER TABLE t_dpw_errors DROP PARTITION WHERE _partition_id IN (SELECT '1'); -- { serverError BAD_ARGUMENTS }
+DROP TABLE IF EXISTS t_dpw_keys;
+CREATE TABLE t_dpw_keys (k UInt32) ENGINE = Memory;
+INSERT INTO t_dpw_keys VALUES (1);
+ALTER TABLE t_dpw_errors DROP PARTITION WHERE _partition_value.1 IN t_dpw_keys; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_dpw_errors DROP PARTITION WHERE _partition_value.1 NOT IN t_dpw_keys; -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_dpw_keys;
+-- It must keep a row for each partition: `arrayJoin` adds or removes rows.
+ALTER TABLE t_dpw_errors DROP PARTITION WHERE arrayJoin(if(_partition_value.1 = 1, [1, 1], [0])) = 1; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_dpw_errors DROP PARTITION WHERE arrayJoin(if(_partition_value.1 = 1, [], [1])) = 1; -- { serverError BAD_ARGUMENTS }
+DROP FUNCTION IF EXISTS udf_05875_dpw_array_join;
+CREATE FUNCTION udf_05875_dpw_array_join AS (x) -> arrayJoin(if(x = 1, [1, 1], [0]));
+ALTER TABLE t_dpw_errors DROP PARTITION WHERE udf_05875_dpw_array_join(_partition_value.1) = 1; -- { serverError BAD_ARGUMENTS }
+DROP FUNCTION udf_05875_dpw_array_join;
 -- It must be usable as a filter.
 ALTER TABLE t_dpw_errors DROP PARTITION WHERE _partition_id; -- { serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER }
 -- An alias is not allowed.
@@ -155,6 +175,19 @@ ALTER TABLE t_dpw_errors DROP PARTITION WHERE; -- { clientError SYNTAX_ERROR }
 SELECT 'errors', count() FROM t_dpw_errors;
 
 DROP TABLE t_dpw_errors;
+
+-- A materialized view forwards the command to its target table.
+DROP TABLE IF EXISTS t_dpw_mv_src;
+DROP TABLE IF EXISTS t_dpw_mv;
+CREATE TABLE t_dpw_mv_src (p UInt32, x UInt32) ENGINE = MergeTree ORDER BY x;
+CREATE MATERIALIZED VIEW t_dpw_mv ENGINE = MergeTree ORDER BY x PARTITION BY p AS SELECT p, x FROM t_dpw_mv_src;
+INSERT INTO t_dpw_mv_src VALUES (1, 1), (2, 2), (3, 3);
+
+ALTER TABLE t_dpw_mv DROP PARTITION WHERE _partition_value.1 >= 2;
+SELECT 'mv', p, x FROM t_dpw_mv ORDER BY x;
+
+DROP TABLE t_dpw_mv;
+DROP TABLE t_dpw_mv_src;
 
 -- A physical column shadowing the virtual one is not a partition-level value.
 DROP TABLE IF EXISTS t_dpw_shadow;

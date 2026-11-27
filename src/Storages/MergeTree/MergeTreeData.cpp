@@ -96,6 +96,7 @@
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Functions/FunctionFactory.h>
@@ -10303,14 +10304,24 @@ Block getHeaderForPartitionPredicate(const StorageMetadataPtr & metadata_snapsho
     return header;
 }
 
-bool hasSubquery(const IAST & ast)
+/// The predicate is evaluated over the partitions of this table only. Reading another table, by a subquery
+/// or by `IN table`, is rejected: it is not covered by the access check of `ALTER ... DROP PARTITION`.
+void checkPartitionPredicateDoesNotReadTables(const IAST & ast)
 {
     if (ast.as<ASTSubquery>() || ast.as<ASTSelectWithUnionQuery>())
-        return true;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Subqueries are not supported in the predicate of PARTITION WHERE");
+
+    if (const auto * function = ast.as<ASTFunction>(); function && functionIsInOrGlobalInOperator(function->name)
+        && function->arguments && function->arguments->children.size() == 2)
+    {
+        const auto & right_operand = function->arguments->children[1];
+        if (right_operand->as<ASTIdentifier>() || right_operand->as<ASTTableIdentifier>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "IN with a table is not supported in the predicate of PARTITION WHERE, got {}", ast.formatForErrorMessage());
+    }
+
     for (const auto & child : ast.children)
-        if (hasSubquery(*child))
-            return true;
-    return false;
+        checkPartitionPredicateDoesNotReadTables(*child);
 }
 
 /// Builds the actions that compute the `PARTITION WHERE` predicate from the columns of `header`,
@@ -10320,12 +10331,17 @@ ExpressionActionsPtr buildPartitionPredicateActions(
 {
     chassert(partition_ast.predicate);
 
-    if (hasSubquery(*partition_ast.predicate))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Subqueries are not supported in the predicate of PARTITION WHERE");
+    checkPartitionPredicateDoesNotReadTables(*partition_ast.predicate);
 
     ASTPtr predicate = partition_ast.predicate->clone();
     auto syntax_result = TreeRewriter(local_context).analyze(predicate, header.getNamesAndTypesList());
     auto dag = ExpressionAnalyzer(predicate, syntax_result, local_context).getActionsDAG(/* add_aliases = */ false);
+
+    /// The predicate is evaluated for a block with a row for each partition, and its result is matched
+    /// with the partitions by position, so it must keep the rows of the block.
+    if (dag.hasArrayJoin())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "arrayJoin is not supported in the predicate of PARTITION WHERE, got {}", partition_ast.predicate->formatForErrorMessage());
 
     predicate_column_name = predicate->getColumnName();
     if (!VirtualColumnUtils::isDeterministicInScopeOfQuery(&dag.findInOutputs(predicate_column_name)))
@@ -10338,7 +10354,7 @@ ExpressionActionsPtr buildPartitionPredicateActions(
     Block sample = header;
     size_t num_rows = 0;
     actions->execute(sample, num_rows, /* dry_run = */ true, /* allow_duplicates_in_input = */ true);
-    FilterDescription{*sample.getByName(predicate_column_name).column->convertToFullColumnIfConst()};
+    [[maybe_unused]] FilterDescription filter_type_check(*sample.getByName(predicate_column_name).column->convertToFullColumnIfConst());
 
     return actions;
 }
@@ -10746,14 +10762,17 @@ Pipe MergeTreeData::alterPartition(
 
     /// `DROP PARTITION WHERE` is a shorthand for a `DROP PARTITION ID` command for each partition the predicate
     /// is true for. All the predicates are evaluated, and all the matched partitions are checked, before the
-    /// first command is executed.
+    /// first command is executed. The size of a matched partition is not checked again when it is dropped:
+    /// a successful check consumes the `force_drop_table` flag file, which allows a single drop.
     PartitionCommands expanded_commands;
+    VectorWithMemoryTracking<UInt8> drop_size_checked;
     for (const PartitionCommand & command : commands)
     {
         const auto * partition_ast = command.partition ? command.partition->as<ASTPartition>() : nullptr;
         if (command.type != PartitionCommand::DROP_PARTITION || command.part || !partition_ast || !partition_ast->predicate)
         {
             expanded_commands.push_back(command);
+            drop_size_checked.push_back(false);
             continue;
         }
 
@@ -10766,12 +10785,14 @@ Pipe MergeTreeData::alterPartition(
             expanded_command.partition = std::move(partition_id_ast);
             checkPartitionCanBeDropped(expanded_command.partition, query_context);
             expanded_commands.push_back(std::move(expanded_command));
+            drop_size_checked.push_back(true);
         }
     }
 
     PartitionCommandsResultInfo result;
-    for (const PartitionCommand & command : expanded_commands)
+    for (size_t command_index = 0; command_index < expanded_commands.size(); ++command_index)
     {
+        const PartitionCommand & command = expanded_commands[command_index];
         PartitionCommandsResultInfo current_command_results;
         switch (command.type)
         {
@@ -10785,7 +10806,8 @@ Pipe MergeTreeData::alterPartition(
                 }
                 else
                 {
-                    checkPartitionCanBeDropped(command.partition, query_context);
+                    if (!drop_size_checked[command_index])
+                        checkPartitionCanBeDropped(command.partition, query_context);
                     dropPartition(command.partition, command.detach, query_context);
                 }
             }
@@ -11608,6 +11630,11 @@ Strings MergeTreeData::getPartitionIDsByPredicate(
     actions->execute(block, num_rows, /* dry_run = */ false, /* allow_duplicates_in_input = */ true);
 
     FilterDescription filter(*block.getByName(predicate_column_name).column->convertToFullColumnIfConst());
+    if (num_rows != partition_ids.size() || filter.data->size() != partition_ids.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "The predicate of PARTITION WHERE returned {} rows ({} filter values) for {} partitions",
+            num_rows, filter.data->size(), partition_ids.size());
+
     Strings result;
     for (size_t i = 0; i < partition_ids.size(); ++i)
         if ((*filter.data)[i])

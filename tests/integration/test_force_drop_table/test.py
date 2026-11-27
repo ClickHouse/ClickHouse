@@ -70,3 +70,25 @@ def test_drop_materialized_view(started_cluster, engine):
     create_force_drop_flag(node)
     node.query("DROP TABLE d.mv SYNC")
     node.query("DROP DATABASE d")
+
+
+def test_drop_partition_where(started_cluster):
+    # The matched partitions are checked before any of them is dropped. The check of the
+    # matched partition must not consume the flag file needed to drop it.
+    node.query(
+        "CREATE TABLE mt_where (n UInt64) ENGINE=MergeTree ORDER BY n PARTITION BY n % 2"
+    )
+    node.query("INSERT INTO mt_where VALUES (1), (2)")
+    assert "is greater than max" in node.query_and_get_error(
+        "ALTER TABLE mt_where DROP PARTITION WHERE _partition_value.1 = 0"
+    )
+    assert node.query("SELECT * FROM mt_where ORDER BY n") == "1\n2\n"
+
+    create_force_drop_flag(node)
+    node.query("ALTER TABLE mt_where DROP PARTITION WHERE _partition_value.1 = 0")
+    assert node.query("SELECT * FROM mt_where ORDER BY n") == "1\n"
+
+    create_force_drop_flag(node)
+    node.query("ALTER TABLE mt_where DETACH PARTITION WHERE _partition_value.1 = 1")
+    assert node.query("SELECT count() FROM mt_where") == "0\n"
+    node.query("DROP TABLE mt_where SYNC")

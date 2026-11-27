@@ -1955,7 +1955,7 @@ The predicate is evaluated once for each partition, and it can refer only to the
 - `_partition_id` — the partition ID, as in the `partition_id` column of the [system.parts](/reference/system-tables/parts) table.
 - `_partition_value` — the value of the partitioning key, a tuple even for a single-element key. It exists only in a table with a partitioning key. Use `_partition_value.1` for the first element of the key, `_partition_value.2` for the second one, and so on.
 
-A reference to any other column is an error, because a partition is not described by the values of a row. The predicate must be deterministic in the scope of the query (functions such as `now` and `today` are allowed, `rand` is not), and it cannot contain subqueries.
+A reference to any other column is an error, because a partition is not described by the values of a row. The predicate must be deterministic in the scope of the query (functions such as `now` and `today` are allowed, `rand` is not), and it cannot read other tables (subqueries and `IN table` are not supported) or use `arrayJoin`.
 
 Examples:
 
@@ -1977,7 +1977,7 @@ The same predicate can be used in a `SELECT` query to check which partitions are
 SELECT DISTINCT _partition_id, _partition_value FROM mt WHERE _partition_value.1 <= '2026-11-25';
 ```
 
-The partitions are determined by the parts that are visible on the server executing the query. In a replicated table, these are the parts of the local replica. With `ON CLUSTER`, the predicate is evaluated on each server for its local partitions. If no partition matches, the query does nothing.
+The partitions are determined by the parts that are visible on the server executing the query, before any command of the `ALTER` query is executed. For example, in `ALTER TABLE mt ATTACH PARTITION 3, DROP PARTITION WHERE _partition_value.1 = 3` the attached partition is not dropped. In a replicated table, these are the parts of the local replica. With `ON CLUSTER`, the predicate is evaluated on each server for its local partitions. If no partition matches, the query does nothing.
 
 All the matched partitions are checked against [max_partition_size_to_drop](/reference/settings/session-settings/max#max_partition_size_to_drop) before any of them is dropped. As with several `DROP PARTITION` commands in a single `ALTER` query, the partitions are dropped one by one, not atomically.
 
