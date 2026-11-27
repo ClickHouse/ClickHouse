@@ -85,3 +85,26 @@ def test_reconfig_validation(started_cluster):
     finally:
         zk.stop()
         zk.close()
+
+
+def test_reconfig_keeps_a_participant():
+    # Server 1 is the only participant; with priority 0 it is elected as NuRaft's temporary zero-priority leader
+    zero_cluster = ClickHouseCluster(__file__, name="zero_priority")
+    zero_nodes = [
+        zero_cluster.add_instance(
+            f"zero_node{i}", main_configs=[f"configs/zero_priority{i}.xml"]
+        )
+        for i in range(1, 3)
+    ]
+    try:
+        zero_cluster.start()
+        ku.wait_until_connected(zero_cluster, zero_nodes[0], timeout=60)
+        zk = ku.get_fake_zk(zero_cluster, zero_nodes[0].name)
+        try:
+            with pytest.raises(BadArgumentsError):
+                zk.reconfig(joining=None, leaving="1", new_members=None)
+        finally:
+            zk.stop()
+            zk.close()
+    finally:
+        zero_cluster.shutdown()

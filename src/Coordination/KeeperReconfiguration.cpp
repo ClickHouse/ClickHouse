@@ -1,6 +1,5 @@
 #include <Coordination/KeeperReconfiguration.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <algorithm>
 #include <IO/ReadHelpers.h>
 #include <unordered_set>
 #include <base/find_symbols.h>
@@ -75,22 +74,29 @@ ClusterUpdateActions leavingToClusterUpdates(const ClusterConfigPtr & cfg, std::
 
 bool isValidClusterUpdate(const ClusterConfigPtr & cfg, const ClusterUpdateActions & updates)
 {
-    UnorderedSetWithMemoryTracking<int32_t> removed_ids;
-    for (const auto & update : updates)
-        if (const auto * remove = std::get_if<RemoveRaftServer>(&update))
-            removed_ids.insert(remove->id);
+    auto is_removed = [&updates](int32_t id)
+    {
+        return std::ranges::any_of(
+            updates,
+            [id](const ClusterUpdateAction & update)
+            {
+                const auto * remove = std::get_if<RemoveRaftServer>(&update);
+                return remove && remove->id == id;
+            });
+    };
 
-    UnorderedMapWithMemoryTracking<int32_t, int32_t> new_priorities;
+    bool participant_left = false;
     bool leader_candidate_left = false;
     for (const auto & update : updates)
     {
         if (const auto * add = std::get_if<AddRaftServer>(&update))
-            leader_candidate_left |= !add->learner && add->priority > 0;
-        else if (const auto * priority = std::get_if<UpdateRaftServerPriority>(&update))
         {
-            if (removed_ids.contains(priority->id))
-                return false;
-            new_priorities[priority->id] = priority->priority;
+            participant_left |= !add->learner;
+            leader_candidate_left |= !add->learner && add->priority > 0;
+        }
+        else if (const auto * change = std::get_if<UpdateRaftServerPriority>(&update); change && is_removed(change->id))
+        {
+            return false;
         }
     }
 
@@ -99,15 +105,24 @@ bool isValidClusterUpdate(const ClusterConfigPtr & cfg, const ClusterUpdateActio
     {
         if (server->is_learner())
             continue;
-        const auto it = new_priorities.find(server->get_id());
-        const bool leader_candidate = (it == new_priorities.end() ? server->get_priority() : it->second) > 0;
-        if (removed_ids.contains(server->get_id()))
-            leader_candidate_removed |= leader_candidate;
+
+        int priority = server->get_priority();
+        for (const auto & update : updates)
+            if (const auto * change = std::get_if<UpdateRaftServerPriority>(&update); change && change->id == server->get_id())
+                priority = change->priority;
+
+        if (is_removed(server->get_id()))
+        {
+            leader_candidate_removed |= priority > 0;
+        }
         else
-            leader_candidate_left |= leader_candidate;
+        {
+            participant_left = true;
+            leader_candidate_left |= priority > 0;
+        }
     }
 
-    return leader_candidate_left || !leader_candidate_removed;
+    return participant_left && (leader_candidate_left || !leader_candidate_removed);
 }
 
 String serializeClusterConfig(const ClusterConfigPtr & cfg, const ClusterUpdateActions & updates)
