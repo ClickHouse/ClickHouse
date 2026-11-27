@@ -7,6 +7,7 @@
                 <endpoint>http://minio1:9001/root/data/disks/disk_s3_restricted_user/</endpoint>
                 <access_key_id>miniorestricted1</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <persistent_removal_log>true</persistent_removal_log>
             </disk_s3_restricted_user>
         </disks>
         <policies>

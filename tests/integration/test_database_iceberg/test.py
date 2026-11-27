@@ -979,6 +979,26 @@ def test_timestamps(started_cluster):
     assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-rest/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
 
+    berlin_catalog = f"{CATALOG_NAME}_berlin"
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        berlin_catalog,
+        {"iceberg_timezone_for_timestamptz": "Europe/Berlin"},
+    )
+    berlin_table = f"{berlin_catalog}.`{root_namespace}.{table_name}`"
+    assert node.query(
+        f"SELECT type FROM system.columns WHERE database = '{berlin_catalog}' AND table = '{root_namespace}.{table_name}' AND name = 'timestamptz'",
+        settings={"show_data_lake_catalogs_in_system_tables": 1},
+    ) == "Nullable(DateTime64(6, \\'Europe/Berlin\\'))\n"
+    assert node.query(
+        f"SELECT toTypeName(timestamptz), timestamptz, toUnixTimestamp(timestamptz) FROM {berlin_table}"
+    ) == "Nullable(DateTime64(6, \\'Europe/Berlin\\'))\t2024-01-01 13:00:00.000000\t1704110400\n"
+    assert node.query(
+        f"SELECT count() FROM {berlin_table} WHERE timestamptz = '2024-01-01 13:00:00'"
+    ) == "1\n"
+    node.query(f"DROP DATABASE {berlin_catalog}")
+
 
 def test_insert(started_cluster):
     node = started_cluster.instances["node1"]
@@ -1261,6 +1281,47 @@ def test_expire_snapshots_with_catalog(started_cluster):
     assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "1\n2\n3\n4\n"
 
 
+def test_expire_snapshots_with_catalog_requires_grant(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_expire_snapshots_grant_{uuid.uuid4().hex}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    user = f"{test_ref}_user"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int)")
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    node.query(
+        f"INSERT INTO {table_ref} VALUES (1);",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+
+    node.query(f"CREATE USER {user}")
+    node.query(f"GRANT SELECT ON {table_ref} TO {user}")
+    try:
+        assert node.query(f"SELECT x FROM {table_ref}", user=user) == "1\n"
+
+        expire_query = f"ALTER TABLE {table_ref} EXECUTE expire_snapshots(dry_run = 1);"
+        settings = {
+            "allow_insert_into_iceberg": 1,
+            "allow_experimental_expire_snapshots": 1,
+            "allow_iceberg_remove_orphan_files": 1,
+        }
+        orphan_query = f"ALTER TABLE {table_ref} EXECUTE remove_orphan_files(dry_run = 1)"
+        for query in (expire_query, orphan_query):
+            error = node.query_and_get_error(query, settings=settings, user=user)
+            assert "ACCESS_DENIED" in error, error
+
+        node.query(f"GRANT ALTER TABLE EXECUTE ON {CATALOG_NAME}.* TO {user}")
+        node.query(expire_query, settings=settings, user=user)
+        node.query(orphan_query, settings=settings, user=user)
+    finally:
+        node.query(f"DROP USER {user}")
+
+    assert node.query(f"SELECT x FROM {table_ref}") == "1\n"
+
+
 @pytest.mark.parametrize(
     "fields_to_remove",
     [
@@ -1523,6 +1584,45 @@ def test_create_without_engine_arguments(started_cluster, engine_clause):
         started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": "http://minio1:9001"}
     )
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+
+def test_create_without_engine_arguments_namespace_location_not_a_uri(started_cluster):
+    # Databricks reports `not_used` as the location of a schema with managed tables.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_namespace_location_not_a_uri_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace, properties={"location": "not_used"})
+    assert catalog.load_namespace_properties(root_namespace)["location"] == "not_used"
+
+    create_clickhouse_iceberg_database(
+        started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": "http://minio1:9001"}
+    )
+
+    # Without a table engine nothing tells the storage type.
+    error = node.query_and_get_error(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}_default` (x String)",
+        settings={"allow_experimental_database_iceberg": 1},
+    )
+    assert "cannot tell where table" in error, error
+
+    node.query(
+        f"CREATE TABLE {table_ref} (x String) ENGINE = IcebergS3",
+        settings={"allow_experimental_database_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    node.query(
+        f"INSERT INTO {table_ref} VALUES ('AAPL')",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT * FROM {table_ref}") == "AAPL\n"
+
+    # The catalog chose the location.
+    metadata_location = catalog.load_table(f"{root_namespace}.{table_name}").metadata_location
+    assert f"/{root_namespace}/{table_name}/metadata/" in metadata_location, metadata_location
 
 
 @pytest.mark.parametrize("namespace_exists", [False, True])
@@ -2644,6 +2744,57 @@ def test_writes_mutate_delete(started_cluster):
 
     node.query(f"ALTER TABLE {table_ref} DELETE WHERE x = '999';", settings=write_settings)
     assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "456\n890\n"
+
+
+def test_writes_table_statistics_ndv_rejected(started_cluster):
+    # A REST catalog commits the table metadata itself, so every commit with the setting on throws before it writes a file.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_table_statistics_ndv_rejected_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    # `create_clickhouse_iceberg_table` cannot express PARTITION BY, which sits between ENGINE and SETTINGS.
+    node.query(
+        f"""
+        CREATE TABLE {table_ref} (x String, y Int32)
+        ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
+        PARTITION BY y
+        """,
+        settings={"allow_experimental_database_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    node.query(f"INSERT INTO {table_ref} VALUES ('a', 1);", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('b', 1);", settings=write_settings)
+
+    def table_state():
+        table = catalog.load_table(f"{root_namespace}.{table_name}")
+        files = sorted(list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{table_name}/"))
+        return table.metadata_location, table.metadata.current_snapshot_id, files
+
+    state_before = table_state()
+    statistics_settings = {
+        **write_settings,
+        "iceberg_write_table_statistics_ndv": 1,
+        "allow_experimental_iceberg_compaction": 1,
+        "iceberg_manifest_min_count_to_compact": 1,
+    }
+    for query in [
+        f"INSERT INTO {table_ref} VALUES ('c', 2)",
+        f"ALTER TABLE {table_ref} DELETE WHERE x = 'a'",
+        f"OPTIMIZE TABLE {table_ref} MANIFEST",
+        f"ALTER TABLE {table_ref} DROP PARTITION 1",
+    ]:
+        with pytest.raises(QueryRuntimeException) as exc_info:
+            node.query(query, settings=statistics_settings)
+        assert "Setting `iceberg_write_table_statistics_ndv` is not supported" in str(exc_info.value), str(exc_info.value)
+
+    assert table_state() == state_before
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "a\t1\nb\t1\n"
 
 
 def test_iceberg_file_progress_callback(started_cluster):

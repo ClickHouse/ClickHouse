@@ -6,21 +6,17 @@ title: 'الدوال المعرّفة من قبل المستخدم (UDFs)'
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-
 import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 يدعم ClickHouse عدة أنواع من الدوال المعرّفة من قبل المستخدم (UDFs):
 
-* تبدأ [UDFs القابلة للتنفيذ](#executable-user-defined-functions) برنامجًا خارجيًا أو برنامجًا نصيًا (بايثون، Bash، إلخ)، وتُمرِّر إليه blocks من البيانات عبر STDIN / STDOUT. استخدمها لدمج التعليمات البرمجية أو الأدوات الحالية دون الحاجة إلى إعادة تجميع ClickHouse. وهي تفرض overhead أعلى لكل استدعاء مقارنةً بالخيارات التي تعمل داخل العملية، لذا فهي الأنسب للمنطق الأثقل أو عند الحاجة إلى runtime مختلف.
-* تُعرَّف [SQL UDFs](#sql-user-defined-functions) باستخدام `CREATE FUNCTION` بالكامل ضمن SQL. وتُضمَّن/تُوسَّع داخل query plan (من دون حدٍّ فاصل على مستوى العملية)، مما يجعلها lightweight ومثالية لإعادة استخدام منطق expression أو تبسيط columns المحسوبة المعقدة.
-* تُشغِّل [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) تعليمات برمجية مُجمَّعة إلى WebAssembly داخل sandbox ضمن server process. وهي توفّر overhead أقل لكل استدعاء مقارنةً بالبرامج التنفيذية الخارجية، مع عزل أفضل من الامتدادات native، مما يجعلها مناسبة للخوارزميات المخصّصة المكتوبة بلغات يمكنها الاستهداف إلى WASM (مثل C/C++/Rust).
-* تتيح [Experimental UDFs القابلة للتنفيذ المعتمدة على برامج التشغيل](#driver-based-executable-user-defined-functions) لـ برنامج التشغيل يوفّره المشغّل أن يحوّل مقطع شيفرة مُقدَّمًا في `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` إلى UDF قابلة للتنفيذ عند وقت إنشاء الدالة (على سبيل المثال، عن طريق تجميعه). وهي تستند إلى UDFs القابلة للتنفيذ وتتطلب إعداد برنامج التشغيل على جانب server.
+* تبدأ [UDFs القابلة للتنفيذ](#executable-user-defined-functions) برنامجًا خارجيًا أو برنامجًا نصيًا (بايثون، Bash، إلخ)، وتُمرِّر إليه كتلًا من البيانات عبر STDIN / STDOUT. استخدمها لدمج التعليمات البرمجية أو الأدوات الحالية دون الحاجة إلى إعادة تجميع ClickHouse. وهي تفرض overhead أعلى لكل استدعاء مقارنةً بالخيارات التي تعمل داخل العملية، لذا فهي الأنسب للمنطق الأثقل أو عند الحاجة إلى بيئة تشغيل مختلفة.
+* تُعرَّف [SQL UDFs](#sql-user-defined-functions) باستخدام `CREATE FUNCTION` بالكامل ضمن SQL. وتُضمَّن/تُوسَّع داخل query plan (من دون حدٍّ فاصل على مستوى العملية)، مما يجعلها lightweight ومثالية لإعادة استخدام منطق تعبير أو تبسيط columns المحسوبة المعقدة.
+* تُشغِّل [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) تعليمات برمجية مُصرَّفة إلى WebAssembly داخل بيئة معزولة ضمن عملية الخادم. وهي توفّر overhead أقل لكل استدعاء مقارنةً بالبرامج التنفيذية الخارجية، مع عزل أفضل من الامتدادات native، مما يجعلها مناسبة للخوارزميات المخصّصة المكتوبة بلغات يمكنها الاستهداف إلى WASM (مثل C/C++/Rust).
+* تتيح [Experimental UDFs القابلة للتنفيذ المعتمدة على المشغّلات](#driver-based-executable-user-defined-functions) لمشغّل يوفّره المشغّل أن يحوّل مقطع شيفرة مُقدَّمًا في `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` إلى UDF قابلة للتنفيذ عند وقت إنشاء الدالة (على سبيل المثال، عن طريق تجميعه). وهي تستند إلى UDFs القابلة للتنفيذ وتتطلب إعدادات المشغّل على جانب server.
 
 ## الدوال المعرّفة من قبل المستخدم القابلة للتنفيذ {#executable-user-defined-functions}
-
-<BetaBadge />
 
 <Note>
   في ClickHouse Cloud، تكون UDFs القابلة للتنفيذ متاحة عمومًا، ويتم إنشاؤها عبر وحدة تحكم ClickHouse Cloud أو Cloud API أو Terraform. راجع [الدوال المعرّفة من قبل المستخدم في Cloud](/ar/products/cloud/features/sql-console-features/user-defined-functions) للاطلاع على سير العمل الخاص بـ Cloud، بما في ذلك بيئة التشغيل Native للملفات الثنائية المُصرَّفة.
@@ -28,10 +24,10 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يمكن لـ ClickHouse استدعاء أي برنامج خارجي قابل للتنفيذ أو برنامج نصي لمعالجة البيانات.
 
-يمكن أن توجد تهيئة الدوال المعرّفة من قبل المستخدم القابلة للتنفيذ في ملف XML واحد أو أكثر.
-ويُحدَّد مسار هذه التهيئة في المَعلمة [`user_defined_executable_functions_config`](/ar/reference/settings/server-settings/settings/user-defined#user_defined_executable_functions_config).
+يمكن أن توجد إعدادات الدوال المعرّفة من قبل المستخدم القابلة للتنفيذ في ملف XML واحد أو أكثر.
+ويُحدَّد مسار هذه الإعدادات في المَعلمة [`user_defined_executable_functions_config`](/ar/reference/settings/server-settings/settings/user-defined#user_defined_executable_functions_config).
 
-تتضمن تهيئة الدالة الإعدادات التالية:
+تتضمن إعدادات الدالة الإعدادات التالية:
 
 | Parameter                     | الوصف                                                                                                                                                                                                                                                                                                                                                                                   | مطلوب   | القيمة الافتراضية         |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------------------- |
@@ -56,7 +52,14 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يجب أن يقرأ الأمر الوسائط من `STDIN` وأن يكتب النتيجة إلى `STDOUT`. ويجب أن يعالج الأمر الوسائط على نحو تكراري. أي إنه بعد معالجة دفعة من الوسائط، يجب أن ينتظر الدفعة التالية.
 
-## الدوال المعرّفة من قبل المستخدم القابلة للتنفيذ {#executable-user-defined-functions}
+<Note>
+  عند استخدام صيغة `TabSeparated`، يُفلت ClickHouse المحارف الخاصة في الوسيطات التي يرسلها، ويُلغي إفلات مخرجات الأمر، وفقًا لـ[قواعد الإفلات في TabSeparated](/ar/reference/formats/TabSeparated/TabSeparated#tabseparated-data-formatting). فعلى سبيل المثال، تصل الشرطة المائلة العكسية الموجودة في وسيطة إلى الأمر بالشكل `\\`، ويصل محرف الجدولة أو محرف line feed بالشكل `\t` أو `\n`. ويجب أن يُفلت الأمر مخرجاته بالطريقة نفسها، وإلا فستُقرأ الشرطة المائلة العكسية الموجودة في المخرجات، كما في نص JSON مثلًا، على أنها بداية متتالية إفلات، فتكون النتيجة خاطئة أو يتعذّر تحليلها.
+
+  إذا كان الأمر لا يُفلت مخرجاته، فاستخدم إحدى الصيغ التالية بدلًا من ذلك:
+
+  * [`TabSeparatedRaw`](/ar/reference/formats/TabSeparated/TabSeparatedRaw): لا تُفلت القيم، لذا يجب ألا تحتوي على محارف جدولة أو محارف line feed.
+  * [`JSONEachRow`](/ar/reference/formats/JSON/JSONEachRow): يمكن أن تحتوي السلاسل النصية على شرطات مائلة عكسية ومحارف جدولة ومحارف line feed. راجع [مثال JSON](#udf-stdin) أدناه.
+</Note>
 
 ## أمثلة {#examples}
 
@@ -612,6 +615,17 @@ DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
 * `UnsafeC` - يترجم الشيفرة ويشغّلها مباشرة على المضيف من دون sandbox. وكما يوحي الاسم، فهو لا يوفّر أي عزل، وهو مخصّص فقط للبيئات الموثوقة ولأغراض الاختبار.
 
 صُمِّمت برامج التشغيل التجريبية هذه كنقطة بداية؛ لذا راجع آليات العزل وعزّزها بما يناسب بيئتك قبل إتاحتها لمستخدمين غير موثوقين.
+
+### المشغّلات التابعة لجهات خارجية {#third-party-drivers}
+
+يمكن أيضًا الحصول على مشغّلات من مصادر خارج ClickHouse. ويتولى مؤلفوها صيانتها، لا ClickHouse؛ لذا راجعها كما تراجع المشغّلات النموذجية قبل إتاحتها لمستخدمين غير موثوقين:
+
+* [`HyperlightPython`](https://github.com/hyperlight-dev/hyperlight-unikraft/tree/main/integrations/clickhouse) - يشغّل متن دالة بايثون داخل جهاز افتراضي مصغّر من [Hyperlight](https://github.com/hyperlight-dev/hyperlight) بنواة مستقلة خاصة به. وHyperlight مشروع بيئة معزولة تابع لمؤسسة [Cloud Native Computing Foundation](https://www.cncf.io/projects/hyperlight/). تبدأ معالجة كل كتلة من الصفوف انطلاقًا من لقطة للضيف، ومن ثَمّ لا تملك الشيفرة أي وصول إلى الشبكة أو إلى ملفات الخادم، ولا تُحفظ أي حالة بين الاستعلامات. يتطلب نظام Linux مع توفر `/dev/kvm`.
+
+  ```sql
+  CREATE FUNCTION py_words ARGUMENTS (s String) RETURNS UInt64
+  ENGINE = HyperlightPython AS 'return len(s.split())';
+  ```
 
 ## محتوى ذو صلة {#related-content}
 

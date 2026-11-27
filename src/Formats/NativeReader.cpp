@@ -14,12 +14,9 @@
 
 #include <Formats/NativeReader.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/insertNullAsDefaultIfNeeded.h>
-#include <DataTypes/DataTypeLowCardinality.h>
+#include <Formats/castColumnToRequestedType.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-
-#include <Interpreters/castColumn.h>
 
 #include <Common/logger_useful.h>
 
@@ -65,13 +62,15 @@ NativeReader::NativeReader(
     UInt64 server_revision_,
     std::optional<FormatSettings> format_settings_,
     BlockMissingValues * block_missing_values_,
-    NativeReaderTypeCache * type_cache_)
+    NativeReaderTypeCache * type_cache_,
+    ISerialization::KindSet allowed_kinds_)
     : istr(istr_)
     , header(header_)
     , server_revision(server_revision_)
     , format_settings(format_settings_ ? std::make_shared<const FormatSettings>(std::move(*format_settings_)) : nullptr)
     , block_missing_values(block_missing_values_)
     , type_cache(type_cache_)
+    , allowed_kinds(allowed_kinds_)
 {
 }
 
@@ -208,7 +207,16 @@ Block NativeReader::read()
     }
 
     if (columns == 0 && header.empty() && rows != 0)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Zero columns but {} rows in Native format.", rows);
+    {
+        /// The rows of such a block carry no values at all - it is what a shard sends for a query whose
+        /// intermediate result needs nothing from it. Only a sender that speaks a new enough protocol
+        /// revision can mean it, and only the reader of an intermediate result expects it; for any other
+        /// reader (of a `Native` file, for one) this is malformed data.
+        if (!allow_rows_without_columns || server_revision < DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Zero columns but {} rows in Native format.", rows);
+
+        res.setRowsWithoutColumns(rows);
+    }
 
     /// `rows` comes from the block header, and the limit it is checked against is deliberately
     /// generous, so it must not be used to preallocate the columns: a header declaring a huge row
@@ -297,9 +305,6 @@ Block NativeReader::read()
             {
                 auto & header_column = header.getByName(column.name);
 
-                if (format_settings && format_settings->null_as_default)
-                    insertNullAsDefaultIfNeeded(column, header_column, header.getPositionByName(column.name), block_missing_values);
-
                 if (!header_column.type->equals(*column.type))
                 {
                     /// In the event of the same aggregate function but of a different variant (e.g. Window vs Aggregate),
@@ -311,29 +316,17 @@ Block NativeReader::read()
                     const auto * header_agg_type = typeid_cast<const DataTypeAggregateFunction *>(header_column.type.get());
                     bool convertible_agg_variant = header_agg_type && header_agg_type->equalsIgnoringVariant(*column.type);
 
-                    if ((format_settings && format_settings->native.allow_types_conversion) || convertible_agg_variant)
-                    {
-                        try
-                        {
-                            column.column = castColumn(column, header_column.type);
-                        }
-                        catch (Exception & e)
-                        {
-                            e.addMessage(fmt::format(
-                                "while converting column \"{}\" from type {} to type {}",
-                                column.name,
-                                column.type->getName(),
-                                header_column.type->getName()));
-                            throw;
-                        }
-                    }
-                    else
-                    {
-                        /// Support insert from old clients without low cardinality type.
-                        column.column = recursiveLowCardinalityTypeConversion(column.column, column.type, header_column.type);
-                    }
-
-                    column.type = header_column.type;
+                    /// Named tuples keep the pairing of `CAST`: this is also the receiving side of every Native INSERT.
+                    /// Without type conversion LowCardinality may still differ, to support inserts from old clients without it.
+                    castColumnToRequestedType(
+                        column,
+                        header_column.type,
+                        {.null_as_default = format_settings && format_settings->null_as_default,
+                         .tuple_elements_by_name = false,
+                         .allow_types_conversion
+                         = (format_settings && format_settings->native.allow_types_conversion) || convertible_agg_variant},
+                        header.getPositionByName(column.name),
+                        block_missing_values);
                 }
                 else if (!haveSameAggregateStateVersions(*header_column.type, *column.type))
                 {
@@ -383,9 +376,8 @@ Block NativeReader::read()
             }
             else
             {
-                tmp_res.insert({col.type->createColumn()->cloneResized(rows), col.type, col.name});
-                if (block_missing_values)
-                    block_missing_values->setBits(column_i, rows);
+                tmp_res.insert(
+                    {createMissingColumn(col, rows, /*allow_missing_columns=*/true, column_i, block_missing_values), col.type, col.name});
             }
         }
         tmp_res.info = res.info;

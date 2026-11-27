@@ -102,7 +102,7 @@ def _has_data(file):
 # compiled TU (an sccache hit does not run the compiler) plus one per linked
 # binary, so their presence is the ground truth for whether this build was
 # expected to produce time-trace rows.
-_RAW_TRACE_RE = re.compile(r"\.(c|cpp|cc|cxx)\.json$|\.time-trace$")
+_RAW_TRACE_RE = re.compile(r"\.(c|cpp|cc|cxx)\.json$|\.time-trace(\.json)?$")
 
 
 def _raw_traces_exist(directory):
@@ -148,8 +148,8 @@ _FINAL_BINARIES = ("programs/clickhouse", "programs/clickhouse-keeper")
 # size row is required.
 _SIZE_ONLY_BINARIES = ("programs/clickhouse-stripped",)
 
-# These builds link the server binary only as the reference of the PR performance
-# comparison, so its link trace and symbols are kept out of their upload.
+# These builds link only for the PR builds (the reference of the PR performance
+# comparison, the ThinLTO cache), so their link traces and symbols are kept out of their upload.
 _OBJECTS_ONLY_BUILDS = ("arm_release_performance_reference",)
 
 
@@ -257,15 +257,22 @@ def check():
     if not _should_profile(build_type, is_pr=is_pr):
         print(f"Build profile telemetry not collected for [{build_type}]")
         return
+    # Post hooks also run after a failed build, which leaves no complete profile.
+    job_result = Result.from_fs(Info().job_name)
+    if not job_result.is_success():
+        print(f"Build [{build_type}] did not succeed, build profile not collected")
+        return
     print("Prepare build profile data")
     profiles_dir = Path("./ci/tmp") / "profiles_source"
     profiles_dir.mkdir(parents=True, exist_ok=True)
     objects_only = build_type in _OBJECTS_ONLY_BUILDS
     try:
         if objects_only:
-            # lld writes the link trace next to its output.
-            for rel in _FINAL_BINARIES:
-                (Path(build_dir) / f"{rel}.time-trace").unlink(missing_ok=True)
+            # lld writes the link trace next to its output: <output>.time-trace
+            # up to LLVM 22, <output>.time-trace.json from LLVM 23 on.
+            for trace in Path(build_dir).rglob("*.time-trace*"):
+                if trace.name.endswith((".time-trace", ".time-trace.json")):
+                    trace.unlink()
         Shell.check(
             "./utils/prepare-time-trace/prepare-time-trace.sh "
             f"{build_dir} {profiles_dir.absolute()}",
@@ -285,9 +292,7 @@ def check():
                         profile_fd.write(ps_fd.read())
         _verify_trace_extraction(build_dir, profile_data_file)
         _verify_final_binary_coverage(build_dir, build_size_file, binary_symbol_file)
-        check_start_time = Utils.timestamp_to_str(
-            Result.from_fs(Info().job_name).start_time
-        )
+        check_start_time = Utils.timestamp_to_str(job_result.start_time)
         queries = LogClusterBuildProfileQueries(user=BUILD_PROFILE_USER)
 
         def insert_profile_data(build_name, start_time, file):

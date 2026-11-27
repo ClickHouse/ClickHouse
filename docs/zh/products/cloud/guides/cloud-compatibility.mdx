@@ -74,6 +74,8 @@ ClickHouse Cloud 支持 HTTPS、原生接口以及 [MySQL wire 协议](/zh/conce
 
 字典是在 ClickHouse 中加速查找操作的常用方式。ClickHouse Cloud 目前支持基于 PostgreSQL、MySQL、远程和本地 ClickHouse 服务器、Redis、MongoDB 以及 HTTP 源的字典。
 
+创建从 ClickHouse 表读取数据的字典时，请在 `SOURCE` 子句中提供专用用户的用户名和密码。该用户需要具有源表的 `SELECT` 权限。请参阅 [ClickHouse 字典源示例](/zh/reference/statements/create/dictionary/sources/clickhouse)。
+
 ### 联邦查询 {#federated-queries}
 
 我们支持在云环境中通过联邦 ClickHouse 查询实现跨集群通信，也支持与外部自管理 ClickHouse 集群进行通信。ClickHouse Cloud 目前支持使用以下集成引擎的联邦查询：

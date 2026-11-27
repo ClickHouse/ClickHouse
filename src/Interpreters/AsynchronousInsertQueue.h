@@ -15,6 +15,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/defines.h>
 
+#include <functional>
 #include <future>
 #include <optional>
 #include <variant>
@@ -73,12 +74,22 @@ public:
 
     static void validateSettings(const Settings & settings, LoggerPtr log);
 
+    /// Async inserts never take part in a transaction, explicit or `implicit_transaction`. Inside one, throws NOT_IMPLEMENTED,
+    /// or returns true (the caller must insert synchronously) if `throw_on_unsupported_query_inside_transaction` is disabled.
+    static bool checkInsideTransaction(const ContextPtr & query_context);
+
     /// Force flush the whole queue.
     void flushAll();
     void flush(const std::vector<StorageID> & tables);
 
     PushResult pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context);
-    PushResult pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker = nullptr);
+    /// `on_success` is called by the flush once the block is stored.
+    PushResult pushQueryWithBlock(
+        ASTPtr query,
+        Block && block,
+        ContextPtr query_context,
+        std::unique_ptr<MemoryTracker> queued_data_tracker = nullptr,
+        std::function<void()> on_success = {});
     size_t getPoolSize() const { return pool_size; }
 
     /// This method should be called manually because it's not flushed automatically in dtor
@@ -154,12 +165,12 @@ public:
         InsertQuery(const InsertQuery & other);
         InsertQuery & operator=(const InsertQuery & other);
         bool operator==(const InsertQuery & other) const;
-        StorageID getStorageID() const;
+        [[nodiscard]] StorageID getStorageID() const;
 
     private:
         /// `authentication_grants` is compared by content in `operator==` (a shared_ptr would compare
         /// identity, which is inconsistent with the content-based hash), so it is not part of this tuple.
-        auto toTupleCmp() const { return std::tie(data_kind, query_str_with_secrets, user_id, current_roles, authentication_valid_until, current_user, initial_user, authenticated_user, quota_key, quota_client_address, quota_forwarded_address, quota_normalized_query_hash, setting_changes); }
+        [[nodiscard]] auto toTupleCmp() const { return std::tie(data_kind, query_str_with_secrets, user_id, current_roles, authentication_valid_until, current_user, initial_user, authenticated_user, quota_key, quota_client_address, quota_forwarded_address, quota_normalized_query_hash, setting_changes); }
 
         std::vector<SettingChange> setting_changes;
     };
@@ -169,7 +180,7 @@ private:
     {
         using std::variant<StringWithMemoryTracking, Block>::variant;
 
-        size_t byteSize() const
+        [[nodiscard]] size_t byteSize() const
         {
             return std::visit([]<typename T>(const T & arg)
             {
@@ -180,14 +191,14 @@ private:
             }, *this);
         }
 
-        AsynchronousInsertQueueDataKind getDataKind() const
+        [[nodiscard]] AsynchronousInsertQueueDataKind getDataKind() const
         {
             if (std::holds_alternative<Block>(*this))
                 return AsynchronousInsertQueueDataKind::Preprocessed;
             return AsynchronousInsertQueueDataKind::Parsed;
         }
 
-        bool empty() const
+        [[nodiscard]] bool empty() const
         {
             return std::visit([]<typename T>(const T & arg)
             {
@@ -198,8 +209,8 @@ private:
             }, *this);
         }
 
-        const StringWithMemoryTracking * asString() const { return std::get_if<StringWithMemoryTracking>(this); }
-        const Block * asBlock() const { return std::get_if<Block>(this); }
+        [[nodiscard]] const StringWithMemoryTracking * asString() const { return std::get_if<StringWithMemoryTracking>(this); }
+        [[nodiscard]] const Block * asBlock() const { return std::get_if<Block>(this); }
     };
 
     struct InsertData
@@ -215,6 +226,8 @@ private:
             const std::unique_ptr<MemoryTracker> queued_data_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
             NameToNameMap query_parameters;
+            /// Called once by the flush after the entry's data is stored, before the flush is logged.
+            std::function<void()> on_success;
 
             Entry(
                 DataChunk && chunk_,
@@ -224,6 +237,7 @@ private:
                 std::unique_ptr<MemoryTracker> queued_data_tracker_);
 
             void resetChunk();
+            void runOnSuccess();
             void finish(ResultProgress result = {});
             void finish(std::exception_ptr exception_);
 
@@ -363,7 +377,12 @@ private:
 
     LoggerPtr log = getLogger("AsynchronousInsertQueue");
 
-    PushResult pushDataChunk(ASTPtr query, DataChunk && chunk, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker);
+    PushResult pushDataChunk(
+        ASTPtr query,
+        DataChunk && chunk,
+        ContextPtr query_context,
+        std::unique_ptr<MemoryTracker> queued_data_tracker,
+        std::function<void()> on_success = {});
 
     Milliseconds getBusyWaitTimeoutMs(
         const Settings & settings,
