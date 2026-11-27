@@ -28,13 +28,12 @@ Horizon está relacionado con Snowflake Open Catalog / Polaris autohospedado, pe
 
 <Note>
   Dado que esta función está en beta, actívela con:
-  `SET allow_experimental_database_iceberg = 1;`
-  (o `SET allow_database_iceberg = 1;`, según la versión de ClickHouse).
+  `SET allow_database_iceberg = 1;`
+
+  El tipo de catálogo `horizon` está disponible a partir de la versión 26.8.
 </Note>
 
-<div id="prerequisites">
-  ## Requisitos previos
-</div>
+## Requisitos previos {#prerequisites}
 
 * Una cuenta de Snowflake con tablas Iceberg administradas por Snowflake
 * Endpoint REST de Horizon Iceberg:
@@ -47,16 +46,12 @@ Horizon está relacionado con Snowflake Open Catalog / Polaris autohospedado, pe
 * Almacenamiento de objetos accesible desde ClickHouse (se recomiendan las credenciales proporcionadas)
 * ClickHouse con soporte para DataLakeCatalog Iceberg
 
-<div id="connecting">
-  ## Crear una conexión
-</div>
+## Crear una conexión {#connecting}
 
-<div id="option-a-programmatic-access-token-recommended">
-  ### Opción A: token de acceso programático (recomendada)
-</div>
+### Opción A: token de acceso programático (recomendada) {#option-a-programmatic-access-token-recommended}
 
 ```sql
-SET allow_experimental_database_iceberg = 1;
+SET allow_database_iceberg = 1;
 
 CREATE DATABASE horizon_catalog
 ENGINE = DataLakeCatalog('https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog')
@@ -72,9 +67,7 @@ SETTINGS
 `warehouse` debe ser el nombre de la **base de datos** de Snowflake (no de un warehouse virtual de Snowflake).
 Los identifiers de Snowflake sin comillas se escriben en mayúsculas.
 
-<div id="option-b-pre-exchanged-bearer-access-token">
-  ### Opción B: Token de acceso de bearer intercambiado previamente
-</div>
+### Opción B: Token de acceso de bearer intercambiado previamente {#option-b-pre-exchanged-bearer-access-token}
 
 ```sql
 CREATE DATABASE horizon_catalog
@@ -86,9 +79,7 @@ SETTINGS
     vended_credentials = 1;
 ```
 
-<div id="query">
-  ## Consultar tablas Iceberg
-</div>
+## Consultar tablas Iceberg {#query}
 
 ```sql
 USE horizon_catalog;
@@ -103,9 +94,7 @@ SHOW CREATE TABLE `PUBLIC.test_table`;
   estén habilitados los espacios de nombres de tabla experimentales.
 </Note>
 
-<div id="write">
-  ## Ruta de escritura
-</div>
+## Ruta de escritura {#write}
 
 Con un rol que tenga permisos INSERT/UPDATE/DELETE (y CREATE ICEBERG TABLE al crear tablas),
 ClickHouse puede escribir a través del mismo catálogo:
@@ -130,9 +119,7 @@ ENGINE = Iceberg;
 La sintaxis exacta de `CREATE TABLE` depende de la compatibilidad de escritura de ClickHouse Iceberg / DataLakeCatalog para catálogos REST
 en su versión; los errores de privilegios de Snowflake aparecen como errores HTTP del catálogo.
 
-<div id="loading">
-  ## Carga en MergeTree
-</div>
+## Carga en MergeTree {#loading}
 
 ```sql
 CREATE TABLE my_clickhouse_table

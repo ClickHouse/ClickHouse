@@ -1,0 +1,38 @@
+---
+sidebarTitle: 'Serveurs MCP'
+slug: /agents/builder/mcp-servers
+title: 'Serveurs MCP'
+description: 'Rattacher des serveurs MCP tiers à un ClickHouse Agent'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'MCP', 'Model Context Protocol']
+doc_type: 'reference'
+---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+Le Model Context Protocol (MCP) est le standard ouvert qui permet d&#39;exposer des outils et des sources de données à un modèle d&#39;IA. Rattacher un serveur MCP à un ClickHouse Agent permet à l&#39;agent d&#39;accéder à toutes les fonctionnalités exposées par ce serveur : outils de suivi de tickets, backends d&#39;observability, API internes, solutions SaaS tierces ou tout autre service disposant d&#39;un point de terminaison MCP.
+
+## Rattacher un serveur MCP {#attach-an-mcp-server}
+
+Dans le Créateur d’agents, ouvrez la section **Serveurs MCP** et cliquez sur **Ajouter un serveur**. Saisissez l’URL du serveur et ses paramètres d’authentification, puis sélectionnez, parmi les outils du serveur, ceux que cet agent doit utiliser. Enregistrez l’agent.
+
+Vous pouvez rattacher plusieurs serveurs à un même agent. Chaque appel d’outil effectué par l’agent est journalisé dans la conversation, ce qui permet aux utilisateurs de voir ce que l’agent a fait.
+
+## Transport {#transport}
+
+ClickHouse Agents utilise Streamable HTTP, le transport MCP production-grade. Le serveur que vous rattachez doit être joignable en HTTP(S) depuis ClickHouse Cloud.
+
+## Authentification {#authentication}
+
+Les serveurs MCP peuvent exiger des identifiants. Agents prend en charge :
+
+* **Jetons Bearer** et autres en-têtes statiques : valeurs fixes que vous fournissez lors de la configuration du serveur.
+* **OAuth 2.0** : flux interactif. La première fois que vous (ou tout autre utilisateur disposant d&#39;un accès) appelez un outil du serveur, le navigateur ouvre une fenêtre de connexion ; les jetons sont ensuite gérés et rafraîchis automatiquement.
+* **Identifiants par utilisateur** : variables de la configuration du serveur, renseignées à partir du profil de l&#39;utilisateur appelant, afin que chaque utilisateur s&#39;authentifie avec sa propre identité plutôt qu&#39;avec un compte de service partagé.
+
+Les identifiants fournis par les utilisateurs sont stockés sous forme chiffrée et restreints à l&#39;utilisateur qui les a saisis. Les identifiants d&#39;un utilisateur ne sont jamais visibles lors des exécutions d&#39;agent d&#39;un autre utilisateur.
+
+## Limites {#limits}
+
+Une même exécution d&#39;agent peut référencer au maximum 50 cibles de serveur MCP distinctes et 100 configurations d&#39;outils étendues par requête. Au-delà, il est recommandé de décomposer l&#39;agent à l&#39;aide de [sous-agents](/fr/agents/builder/subagents).

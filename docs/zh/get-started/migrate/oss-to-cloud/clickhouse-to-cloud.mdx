@@ -7,21 +7,26 @@ doc_type: 'guide'
 keywords: ['迁移', 'ClickHouse Cloud', 'OSS', '将自管理 ClickHouse 迁移到 Cloud']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import AddARemoteSystem from '/snippets/zh/_add_remote_ip_access_list_detail.mdx';
 
 import CompatibilityNote from '/snippets/zh/compatibility.mdx';
 
-<Image img="/images/integrations/migration/self-managed-01.webp" size="lg" alt="迁移自管理 ClickHouse" />
+<div className="ch-image-lg">
+  <Frame>
+    ![迁移自管理 ClickHouse](/images/integrations/migration/self-managed-01.webp)
+  </Frame>
+</div>
 
 本指南介绍如何将自管理 ClickHouse 服务器迁移到 ClickHouse Cloud，以及如何在 ClickHouse Cloud 服务之间进行迁移。
 [`remoteSecure`](/zh/reference/functions/table-functions/remote) 函数可在 `SELECT` 和 `INSERT` 查询中使用，以访问远程 ClickHouse 服务器，从而让表迁移变得像编写一条嵌入了 `SELECT` 的 `INSERT INTO` 查询一样简单。
 
-<div id="migrating-from-self-managed-clickhouse-to-clickhouse-cloud">
-  ## 从自管理 ClickHouse 迁移到 ClickHouse Cloud
-</div>
+## 从自管理 ClickHouse 迁移到 ClickHouse Cloud {#migrating-from-self-managed-clickhouse-to-clickhouse-cloud}
 
-<Image img="/images/integrations/migration/self-managed-02.webp" size="lg" alt="迁移自管理 ClickHouse" />
+<div className="ch-image-lg">
+  <Frame>
+    ![迁移自管理 ClickHouse](/images/integrations/migration/self-managed-02.webp)
+  </Frame>
+</div>
 
 无论您的源表是否进行了分片和/或复制，在 ClickHouse Cloud 中，您只需创建目标表 (可以省略该表的 Engine 参数，系统会自动选择 `SharedMergeTree` 作为表引擎) ，
 而 ClickHouse Cloud 会自动处理纵向和横向扩缩容。
@@ -30,7 +35,7 @@ import CompatibilityNote from '/snippets/zh/compatibility.mdx';
 在此示例中，自管理 ClickHouse 服务器是 *源端*，ClickHouse Cloud 服务是 *目标端*。
 
 <div id="overview">
-  ### 概述
+  ### 概述 {#overview}
 </div>
 
 流程如下：
@@ -42,7 +47,7 @@ import CompatibilityNote from '/snippets/zh/compatibility.mdx';
 5. 从源服务中移除该只读用户
 
 <div id="migration-of-tables-from-one-system-to-another">
-  ### 将表从一个系统迁移到另一个系统：
+  ### 将表从一个系统迁移到另一个系统： {#migration-of-tables-from-one-system-to-another}
 </div>
 
 本示例将一个表从自管理的 ClickHouse 服务器迁移到 ClickHouse Cloud。
@@ -50,7 +55,7 @@ import CompatibilityNote from '/snippets/zh/compatibility.mdx';
 <CompatibilityNote />
 
 <div id="on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data">
-  ### 在源 ClickHouse 系统上 (即当前承载数据的系统)
+  ### 在源 ClickHouse 系统上 (即当前承载数据的系统) {#on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data}
 </div>
 
 * 添加一个只读用户，使其能够读取源表 (本示例中为 `db.table`)
@@ -73,9 +78,7 @@ FROM system.tables
 WHERE database = 'db' AND table = 'table'
 ```
 
-<div id="on-the-destination-clickhouse-cloud-system">
-  ### 在目标端 ClickHouse Cloud 系统中：
-</div>
+### 在目标端 ClickHouse Cloud 系统中： {#on-the-destination-clickhouse-cloud-system}
 
 * 创建目标数据库：
 
@@ -95,7 +98,11 @@ CREATE TABLE db.table ...
 
 * 使用 `remoteSecure` 函数从自管理端拉取数据
 
-<Image img="/images/integrations/migration/self-managed-03.webp" size="lg" alt="迁移自管理 ClickHouse" />
+<div className="ch-image-lg">
+  <Frame>
+    ![迁移自管理 ClickHouse](/images/integrations/migration/self-managed-03.webp)
+  </Frame>
+</div>
 
 ```sql
 INSERT INTO db.table SELECT * FROM
@@ -108,7 +115,11 @@ remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
 
 * 使用 `remoteSecure` 函数将数据推送到 ClickHouse Cloud 服务
 
-<Image img="/images/integrations/migration/self-managed-04.webp" size="lg" alt="迁移自管理 ClickHouse" />
+<div className="ch-image-lg">
+  <Frame>
+    ![迁移自管理 ClickHouse](/images/integrations/migration/self-managed-04.webp)
+  </Frame>
+</div>
 
 <Tip>
   **将远程系统添加到你的 ClickHouse Cloud 服务 IP Access List**
@@ -124,33 +135,39 @@ remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
 'default', 'PASS') SELECT * FROM db.table
 ```
 
-<div id="migrating-between-clickhouse-cloud-services">
-  ## 在 ClickHouse Cloud 服务之间迁移
-</div>
+## 在 ClickHouse Cloud 服务之间迁移 {#migrating-between-clickhouse-cloud-services}
 
-<Image img="/images/integrations/migration/self-managed-05.webp" size="lg" alt="迁移自管理 ClickHouse" />
+<div className="ch-image-lg">
+  <Frame>
+    ![迁移自管理 ClickHouse](/images/integrations/migration/self-managed-05.webp)
+  </Frame>
+</div>
 
 下面是一些在 ClickHouse Cloud 服务之间迁移数据的常见场景：
 
 * 迁移从已恢复备份中得到的数据
 * 将数据从 Development 服务复制到暂存服务 (或从暂存服务复制到生产环境)
 
-在本示例中，有两个 ClickHouse Cloud 服务，分别称为 *source* (源端) 和 *destination* (目标端) 。数据将从 source 拉取到 destination。虽然你也可以选择推送方式，但这里演示的是拉取方式，因为它使用只读用户。
+在本示例中，有两个 ClickHouse Cloud 服务，分别称为 *source* (源端) 和 *目标端* (目标端) 。数据将从 source 拉取到目标端。虽然你也可以选择推送方式，但这里演示的是拉取方式，因为它使用只读用户。
 
-<Image img="/images/integrations/migration/self-managed-06.webp" size="lg" alt="迁移自管理 ClickHouse" />
+<div className="ch-image-lg">
+  <Frame>
+    ![迁移自管理 ClickHouse](/images/integrations/migration/self-managed-06.webp)
+  </Frame>
+</div>
 
 迁移分为以下几个步骤：
 
-1. 确定其中一个 ClickHouse Cloud 服务作为 *source*，另一个作为 *destination*
-2. 在 source 服务中添加一个只读用户
-3. 在 destination 服务上复制 source 表结构
-4. 临时放开对 source 服务的 IP 访问限制
-5. 将数据从 source 复制到 destination
-6. 在 destination 上重新设置 IP Access List
-7. 从 source 服务中删除只读用户
+1. 确定其中一个 ClickHouse Cloud 服务作为 *source*，另一个作为 *目标端*
+2. 在源服务中添加一个只读用户
+3. 在目标服务上复制源表结构
+4. 临时放开对源服务的 IP 访问限制
+5. 将数据从 source 复制到目标端
+6. 在目标端上重新设置 IP Access List
+7. 从源服务中删除只读用户
 
 <div id="add-a-read-only-user-to-the-source-service">
-  #### 向源服务添加只读用户
+  #### 向源服务添加只读用户 {#add-a-read-only-user-to-the-source-service}
 </div>
 
 * 添加一个对源表具有只读权限的用户 (本示例中为 `db.table`)
@@ -173,7 +190,7 @@ remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
   ```
 
 <div id="duplicate-the-table-structure-on-the-destination-service">
-  #### 在目标端服务上复制表结构
+  #### 在目标端服务上复制表结构 {#duplicate-the-table-structure-on-the-destination-service}
 </div>
 
 如果目标端上还没有该数据库，请先创建：
@@ -192,7 +209,7 @@ remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
   ```
 
 <div id="allow-remote-access-to-the-source-service">
-  #### 允许远程访问源服务
+  #### 允许远程访问源服务 {#allow-remote-access-to-the-source-service}
 </div>
 
 要将数据从源端拉取到目标端，源服务必须允许连接。请临时禁用源服务上的“IP Access List”功能。
@@ -204,7 +221,7 @@ remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
 修改允许列表，临时允许从 **Anywhere** 访问。详情请参阅 [IP Access List](/zh/products/cloud/guides/security/connectivity/setting-ip-filters) 文档。
 
 <div id="copy-the-data-from-source-to-destination">
-  #### 将数据从源端复制到目标端
+  #### 将数据从源端复制到目标端 {#copy-the-data-from-source-to-destination}
 </div>
 
 * 使用 `remoteSecure` 函数从源 ClickHouse Cloud 服务拉取数据
@@ -217,14 +234,12 @@ remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
 
 * 验证目标服务中的数据
 
-<div id="re-establish-the-ip-access-list-on-the-source">
-  #### 在源端重新设置 IP Access List
-</div>
+#### 在源端重新设置 IP 访问列表 {#re-establish-the-ip-access-list-on-the-source}
 
-如果你之前已导出该 IP Access List，则可以通过 **共享** 将其重新导入；否则，请将相应条目重新添加到 IP Access List 中。
+如果你之前已导出该 IP 访问列表，则可以通过 **共享** 将其重新导入；否则，请将相应条目重新添加到 IP 访问列表中。
 
 <div id="remove-the-read-only-exporter-user">
-  #### 删除只读的 `exporter` 用户
+  #### 删除只读的 `exporter` 用户 {#remove-the-read-only-exporter-user}
 </div>
 
 ```sql

@@ -35,9 +35,9 @@ private:
 
 public:
     ResultType & result() { return result_data; }
-    const ResultType & result() const { return result_data; }
+    [[nodiscard]] const ResultType & result() const { return result_data; }
     ValueType & value() { return value_data; }
-    const ValueType & value() const { return value_data; }
+    [[nodiscard]] const ValueType & value() const { return value_data; }
 
     AggregateFunctionArgMinMaxData() = default;
     explicit AggregateFunctionArgMinMaxData(const DataTypePtr &) {}
@@ -60,9 +60,9 @@ private:
 
 public:
     SingleValueDataBase & result() { return result_data.get(); }
-    const SingleValueDataBase & result() const { return result_data.get(); }
+    [[nodiscard]] const SingleValueDataBase & result() const { return result_data.get(); }
     ValueType & value() { return value_data; }
-    const ValueType & value() const { return value_data; }
+    [[nodiscard]] const ValueType & value() const { return value_data; }
 
     [[noreturn]] AggregateFunctionArgMinMaxDataGeneric() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     {
@@ -165,7 +165,7 @@ public:
 
     /// Parameters are non-semantic here and never reach the serialized state, so parameterized and
     /// parameterless states share one representation and stay Merge-/CAST-compatible.
-    DataTypePtr getNormalizedStateType() const override
+    [[nodiscard]] DataTypePtr getNormalizedStateType() const override
     {
         DataTypes normalized_argument_types;
         normalized_argument_types.reserve(this->argument_types.size());
@@ -179,7 +179,7 @@ public:
         new (place) Data(data_type_res);
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if (return_both)
         {
@@ -303,7 +303,7 @@ public:
             throwArgMinMaxInvalidDeserializedState(getName(), this->data(place).value().has(), this->data(place).result().has());
     }
 
-    bool allocatesMemoryInArena() const override
+    [[nodiscard]] bool allocatesMemoryInArena() const override
     {
         return Data::allocatesMemoryInArena(result_type_index);
     }
@@ -472,11 +472,11 @@ AggregateFunctionPtr createAggregateFunctionArgMinMax(
 void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
+    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::AllExceptFirst};
 
     FunctionDocumentation::Description description_argMin = R"(
 Calculates the `arg` value for a minimum `val` value. If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic.
-Both parts the `arg` and the `min` behave as [aggregate functions](/reference/functions/aggregate-functions), they both [skip `Null`](/reference/functions/aggregate-functions#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Both parts the `arg` and the `min` behave as [aggregate functions](/reference/functions/aggregate-functions/index), they both [skip `Null`](/reference/functions/aggregate-functions/index#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 **See also**
 
@@ -556,7 +556,7 @@ SELECT argMin(a, (b, a)), min(tuple(b, a)) FROM test;
 
     FunctionDocumentation::Description description_argMax = R"(
 Calculates the `arg` value for a maximum `val` value. If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic.
-Both parts the `arg` and the `max` behave as [aggregate functions](/reference/functions/aggregate-functions), they both [skip `Null`](/reference/functions/aggregate-functions#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Both parts the `arg` and the `max` behave as [aggregate functions](/reference/functions/aggregate-functions/index), they both [skip `Null`](/reference/functions/aggregate-functions/index#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 **See also**
 
@@ -640,7 +640,7 @@ SELECT argMax(a, (b,a)) FROM test;
     FunctionDocumentation::Description description_argAndMin = R"(
 Calculates the `arg` and `val` value for a minimum `val` value.
 If there are multiple rows with equal `val` being the minimum, which of the associated `arg` and `val` is returned is not deterministic.
-Both parts the `arg` and the `min` behave as [aggregate functions](/reference/functions/aggregate-functions), they both [skip `Null`](/reference/functions/aggregate-functions#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Both parts the `arg` and the `min` behave as [aggregate functions](/reference/functions/aggregate-functions/index), they both [skip `Null`](/reference/functions/aggregate-functions/index#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 <Note>
 The only difference with `argMin` is that `argAndMin` returns both argument and value.
@@ -726,7 +726,7 @@ SELECT argAndMin(a, (b, a)), min(tuple(b, a)) FROM test;
     FunctionDocumentation::Description description_argAndMax = R"(
 Calculates the `arg` and `val` value for a maximum `val` value.
 If there are multiple rows with equal `val` being the maximum, which of the associated `arg` and `val` is returned is not deterministic.
-Both parts the `arg` and the `max` behave as [aggregate functions](/reference/functions/aggregate-functions), they both [skip `Null`](/reference/functions/aggregate-functions#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Both parts the `arg` and the `max` behave as [aggregate functions](/reference/functions/aggregate-functions/index), they both [skip `Null`](/reference/functions/aggregate-functions/index#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 <Note>
 The only difference with `argMax` is that `argAndMax` returns both argument and value.

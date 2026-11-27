@@ -13,7 +13,7 @@ class SourceNode final : public ITableExpressionNode
 public:
     SourceNode() : ITableExpressionNode(0 /*children_size*/) {}
 
-    QueryTreeNodeType getNodeType() const override
+    [[nodiscard]] QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::TABLE;
     }
@@ -22,7 +22,7 @@ public:
     {
     }
 
-    bool isEqualImpl(const IQueryTreeNode &, CompareOptions) const override
+    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode &, CompareOptions) const override
     {
         return true;
     }
@@ -31,12 +31,12 @@ public:
     {
     }
 
-    QueryTreeNodePtr cloneImpl() const override
+    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override
     {
         return std::make_shared<SourceNode>();
     }
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & /* options */) const override
+    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & /* options */) const override
     {
         return nullptr;
     }
@@ -82,5 +82,97 @@ TEST(QueryTreeNode, Clone)
         ASSERT_NE(source_node.get(), cloned_source_node.get());
         ASSERT_EQ(column_node->getColumnSource().get(), source_node.get());
         ASSERT_EQ(cloned_column_node->getColumnSource().get(), cloned_source_node.get());
+    }
+}
+
+/// The correspondence between the column sources of two compared trees must be one-to-one,
+/// so that `isEqual` agrees with `getTreeHash`.
+TEST(QueryTreeNode, ColumnSourcesCorrespondenceInIsEqual)
+{
+    /// Two different column sources with the same content.
+    auto source_a = std::make_shared<SourceNode>();
+    auto source_b = std::make_shared<SourceNode>();
+
+    NameAndTypePair column_name_and_type("value", std::make_shared<DataTypeUInt64>());
+
+    auto make_column = [&](const std::shared_ptr<SourceNode> & source)
+    {
+        return std::make_shared<ColumnNode>(column_name_and_type, source);
+    };
+
+    auto make_list = [](QueryTreeNodes nodes)
+    {
+        auto list = std::make_shared<ListNode>();
+        list->getNodes() = std::move(nodes);
+        return list;
+    };
+
+    auto check_equal = [](const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+    {
+        ASSERT_TRUE(lhs->isEqual(*rhs));
+        ASSERT_TRUE(rhs->isEqual(*lhs));
+        ASSERT_EQ(lhs->getTreeHash(), rhs->getTreeHash());
+    };
+
+    auto check_not_equal = [](const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+    {
+        ASSERT_FALSE(lhs->isEqual(*rhs));
+        ASSERT_FALSE(rhs->isEqual(*lhs));
+        ASSERT_NE(lhs->getTreeHash(), rhs->getTreeHash());
+    };
+
+    /// A column of a different source with the same content is equal.
+    check_equal(make_column(source_a), make_column(source_b));
+    check_equal(
+        make_list({make_column(source_a), make_column(source_a)}),
+        make_list({make_column(source_b), make_column(source_b)}));
+    check_equal(
+        make_list({make_column(source_a), make_column(source_b)}),
+        make_list({make_column(source_b), make_column(source_a)}));
+
+    /// (a, a) and (a, b): no node is shared between the trees.
+    check_not_equal(
+        make_list({make_column(source_a), make_column(source_a)}),
+        make_list({make_column(source_a), make_column(source_b)}));
+    check_not_equal(
+        make_list({make_column(source_a), make_column(source_a)}),
+        make_list({make_column(source_b), make_column(source_a)}));
+
+    /// (a, a) and (a, b): the column node of `a` is shared between the trees.
+    {
+        auto shared_column = make_column(source_a);
+
+        check_not_equal(
+            make_list({shared_column, shared_column}),
+            make_list({shared_column, make_column(source_b)}));
+        check_not_equal(
+            make_list({shared_column, shared_column}),
+            make_list({make_column(source_b), shared_column}));
+        check_not_equal(
+            make_list({shared_column, make_column(source_a)}),
+            make_list({shared_column, make_column(source_b)}));
+        check_not_equal(
+            make_list({make_column(source_a), shared_column}),
+            make_list({make_column(source_b), shared_column}));
+
+        check_equal(
+            make_list({shared_column, make_column(source_a)}),
+            make_list({shared_column, make_column(source_a)}));
+    }
+
+    /// The same, but the shared node is a subtree that contains the column.
+    {
+        auto shared_subtree = make_list({make_column(source_a)});
+
+        check_not_equal(
+            make_list({shared_subtree, make_column(source_a)}),
+            make_list({shared_subtree, make_column(source_b)}));
+        check_not_equal(
+            make_list({make_column(source_a), shared_subtree}),
+            make_list({make_column(source_b), shared_subtree}));
+
+        check_equal(
+            make_list({shared_subtree, make_column(source_a)}),
+            make_list({shared_subtree, make_column(source_a)}));
     }
 }
