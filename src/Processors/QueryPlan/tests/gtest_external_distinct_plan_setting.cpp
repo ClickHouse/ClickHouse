@@ -38,6 +38,7 @@ using namespace DB;
 /// for order restoration after spilling.
 ///
 /// Step version 2 carries the limit hint. Older peers run the step without it, which only reads more.
+/// Step version 3 carries the flags of a `DISTINCT` after a set operation run as a join.
 namespace
 {
 
@@ -202,7 +203,7 @@ TEST(ExternalDistinctPlanSetting, InputOrderFlagRoundTripsAtTheCurrentVersion)
     {
         const auto step = makeStep(header, /*preserve_input_order=*/ true, preliminary);
         const auto step_version = registry.versionToWrite(step.getSerializationName(), current_version);
-        EXPECT_EQ(step_version, 2);
+        EXPECT_EQ(step_version, 3);
         EXPECT_TRUE(inputOrderFlagAfterRoundTrip(step, header, current_version, step_version));
     }
 }
@@ -238,7 +239,7 @@ TEST(ExternalDistinctPlanSetting, UnknownStepVersionIsRejected)
     QueryPlanStepRegistry registry;
     registerDistinctStep(registry);
     for (const String name : {"Distinct", "PreDistinct"})
-        EXPECT_THROW(registry.checkVersionReadable(name, 3), Exception);
+        EXPECT_THROW(registry.checkVersionReadable(name, 4), Exception);
 }
 
 TEST(ExternalDistinctPlanSetting, InputOrderFlagIsNotPartOfTheHashTableCacheKey)

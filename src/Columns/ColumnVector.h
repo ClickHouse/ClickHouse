@@ -257,6 +257,13 @@ public:
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #endif
 
+    void insertFromEither(
+        const IColumn & src_true,
+        bool src_true_is_const,
+        const IColumn & src_false,
+        bool src_false_is_const,
+        const IColumn::Filter & condition) override;
+
     [[nodiscard]] ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
     void filter(const IColumn::Filter & filt) override;

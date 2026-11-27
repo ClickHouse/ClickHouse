@@ -824,9 +824,9 @@ This setting can be modified at runtime and will take effect immediately.
 </Note>
 )", 0) \
     DECLARE(Double, query_condition_cache_size_ratio, DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the query condition cache relative to the cache's total size.", 0) \
-    DECLARE(String, encryption_header_cache_policy, DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, "Cache eviction policy for the encryption header cache used by the ReaderExecutor read path. Possible values: `LRU`, `SLRU`, `SIEVE`. See [`encryption_header_cache_size`](#encryption_header_cache_size) for cache capacity and [`encryption_header_cache_size_ratio`](#encryption_header_cache_size_ratio) for the protected queue size in SLRU policy.", 0) \
+    DECLARE(String, encryption_header_cache_policy, DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, "Cache eviction policy for the encryption header cache. Possible values: `LRU`, `SLRU`, `SIEVE`. See [`encryption_header_cache_size`](#encryption_header_cache_size) for cache capacity and [`encryption_header_cache_size_ratio`](#encryption_header_cache_size_ratio) for the protected queue size in SLRU policy.", 0) \
     DECLARE(UInt64, encryption_header_cache_size, DEFAULT_ENCRYPTION_HEADER_CACHE_MAX_SIZE, R"(
-Maximum size of the cache of encryption headers read from encrypted files. Used only by the experimental ReaderExecutor read path.
+Maximum size of the cache of encryption headers read from encrypted files on disks with random blob paths, such as `s3` disks. The cache avoids re-reading the header of a file from the object storage.
 <Note>
 This setting can be modified at runtime and will take effect immediately.
 </Note>

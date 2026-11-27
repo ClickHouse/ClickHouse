@@ -463,6 +463,10 @@ public:
         if (!is_uint_size(arguments[arguments.size() - 2]))
             return {};
 
+        /// The sizes are user-controllable constants: reject anything above the maximum QBit dimension up front, so impossible sizes
+        /// fall through to the user-facing path with a clear error and later arithmetic on them cannot overflow.
+        auto is_valid_dimension = [](size_t n) { return n != 0 && n <= DataTypeQBit::MAX_DIMENSION; };
+
         InternalArguments res{};
 
         /// Strided form has a second UInt size (the stride) right before the used_dims size.
@@ -473,7 +477,7 @@ public:
             res.used_dims = arguments[arguments.size() - 2].column->getUInt(0);
             res.num_planes = arguments.size() - 3;
 
-            if (res.stride == 0 || res.used_dims == 0 || res.used_dims % res.stride != 0)
+            if (!is_valid_dimension(res.stride) || !is_valid_dimension(res.used_dims) || res.used_dims % res.stride != 0)
                 return {};
             const size_t num_groups = res.used_dims / res.stride;
             if (res.num_planes == 0 || res.num_planes % num_groups != 0)
@@ -486,6 +490,9 @@ public:
             res.stride = res.used_dims;
             res.num_planes = arguments.size() - 2;
             res.precision = res.num_planes;
+
+            if (!is_valid_dimension(res.used_dims))
+                return {};
         }
 
         if (res.precision == 0 || res.precision > max_precision)

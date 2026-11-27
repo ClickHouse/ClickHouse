@@ -1043,6 +1043,23 @@ def test_system_users():
     assert node1.query("SHOW GRANTS FOR u1") == "GRANT SELECT ON default.tbl TO u1\n"
 
 
+def test_system_users_settings_constraints():
+    node1.query("CREATE USER u1 SETTINGS allow_introspection_functions = 1")
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE system.users ON CLUSTER 'cluster' TO {backup_name}")
+    node1.query("DROP USER u1")
+
+    # The hosts restore without the user, so the initiator checks the constraints for them.
+    node1.query("CREATE USER u2 SETTINGS allow_introspection_functions = 0 CONST")
+    node1.query("GRANT CLUSTER, CREATE USER ON *.* TO u2")
+    node1.query("GRANT READ ON DISK TO u2")
+    assert "SETTING_CONSTRAINT_VIOLATION" in node1.query_and_get_error(
+        f"RESTORE TABLE system.users ON CLUSTER 'cluster' FROM {backup_name}", user="u2"
+    )
+    for node in [node1, node2]:
+        assert node.query("SELECT count() FROM system.users WHERE name = 'u1'") == "0\n"
+
+
 def test_system_functions():
     node1.query("CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;")
     node1.query("CREATE FUNCTION parity_str AS (n) -> if(n % 2, 'odd', 'even');")
