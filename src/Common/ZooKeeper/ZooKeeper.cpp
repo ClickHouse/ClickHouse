@@ -528,7 +528,7 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
             throw KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "No hosts passed to ZooKeeper constructor.");
 
         chassert(args.availability_zones.size() == args.hosts.size());
-        const bool connect_to_all_nodes = args.connect_to_all_nodes && args.hosts.size() > 1;
+        const bool connect_to_all_nodes = args.connect_to_all_nodes;
         if (availability_zones.empty())
         {
             /// availability_zones is empty on server startup or after config reloading
@@ -596,6 +596,8 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
                     if (connect_to_all_nodes)
                     {
                         /// The next session connects to all nodes, checks them and chooses one by the policy.
+                        const ServerStats stats = getServerStats(optimal_host, args);
+                        getClusterConfig(*new_impl, optimal_host, stats.is_clickhouse_keeper);
                         impl->finalize("A more optimal node is available");
                         return;
                     }
