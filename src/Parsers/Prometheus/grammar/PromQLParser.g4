@@ -183,11 +183,11 @@ aggregation
     ;
 
 by
-    : BY labelNameList
+    : BY LEFT_PAREN labelNameList RIGHT_PAREN
     ;
 
 without
-    : WITHOUT labelNameList
+    : WITHOUT LEFT_PAREN labelNameList RIGHT_PAREN
     ;
 
 // Vector one-to-one/one-to-many joins
@@ -197,22 +197,24 @@ grouping
     ;
 
 on_
-    : ON labelNameList
+    : ON LEFT_PAREN labelNameList RIGHT_PAREN
     ;
 
 ignoring
-    : IGNORING labelNameList
+    : IGNORING LEFT_PAREN labelNameList RIGHT_PAREN
     ;
 
-// `(` after `group_left` or `group_right` can also start the right operand, so `labelNameList?` is ambiguous here.
-// As in Prometheus, `(` always starts the label list: `ParserATNSimulatorCheckingStackSize::adaptivePredict` chooses it
-// without looking ahead.
+// `(` after `group_left` or `group_right` could also start the right operand. As in Prometheus, it always starts
+// the label list: the lexer makes one token of the keyword and that `(`, so the alternatives start with different
+// tokens and the parser doesn't look ahead to choose between them.
 groupLeft
-    : GROUP_LEFT labelNameList?
+    : GROUP_LEFT_PAREN labelNameList RIGHT_PAREN
+    | GROUP_LEFT
     ;
 
 groupRight
-    : GROUP_RIGHT labelNameList?
+    : GROUP_RIGHT_PAREN labelNameList RIGHT_PAREN
+    | GROUP_RIGHT
     ;
 
 // Label names
@@ -225,7 +227,7 @@ labelName
     ;
 
 labelNameList
-    : LEFT_PAREN (labelName (COMMA labelName)* COMMA?)? RIGHT_PAREN
+    : (labelName (COMMA labelName)* COMMA?)?
     ;
 
 metricName

@@ -108,6 +108,11 @@ IGNORING    : 'ignoring';
 GROUP_LEFT  : 'group_left';
 GROUP_RIGHT : 'group_right';
 
+// `group_left` or `group_right` together with the `(` of its label list, see `groupLeft` in the parser grammar.
+// Whitespace and comments are allowed before that `(` as they are between any two tokens.
+GROUP_LEFT_PAREN  : GROUP_LEFT (WS_FRAGMENT | SL_COMMENT_FRAGMENT)* LEFT_PAREN;
+GROUP_RIGHT_PAREN : GROUP_RIGHT (WS_FRAGMENT | SL_COMMENT_FRAGMENT)* LEFT_PAREN;
+
 OFFSET: 'offset';
 
 BOOL: 'bool';
@@ -246,3 +251,8 @@ SL_COMMENT : '#' ~[\r\n]* [\r\n]? -> channel(COMMENTS);
 
 // Whitespace as a fragment (so it can be used as a part of another token).
 fragment WS_FRAGMENT: [\r\t\n ]+;
+
+// A line comment as a fragment (so it can be used as a part of another token). Unlike `SL_COMMENT`, it must end
+// with a line break: an optional one would let the comment end before a `(` inside it, and that `(` would continue
+// the token. `SL_COMMENT` can't be defined through this fragment: a comment at the end of the input has no line break.
+fragment SL_COMMENT_FRAGMENT: '#' ~[\r\n]* [\r\n];

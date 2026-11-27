@@ -156,19 +156,6 @@ namespace
     public:
         using antlr4::atn::ParserATNSimulator::ParserATNSimulator;
 
-        size_t adaptivePredict(antlr4::TokenStream * input, size_t decision, antlr4::ParserRuleContext * outer_context) override
-        {
-            /// `up * on(a) group_left (b) -x` has two parses: `(b)` is either the label list or the right operand.
-            /// To choose, the stock function would look ahead through the rest of the query, however deeply it is nested,
-            /// and the states it builds on the way stay in the cache of the grammar. Prometheus always takes `(`
-            /// as the start of the label list, which is alternative 1 of `labelNameList?`; alternative 2 skips the list.
-            const size_t rule_index = atn.getDecisionState(decision)->ruleIndex;
-            if (rule_index == antlr4_grammars::PromQLParser::RuleGroupLeft || rule_index == antlr4_grammars::PromQLParser::RuleGroupRight)
-                return input->LA(1) == antlr4_grammars::PromQLParser::LEFT_PAREN ? 1 : 2;
-
-            return antlr4::atn::ParserATNSimulator::adaptivePredict(input, decision, outer_context);
-        }
-
     protected:
         void closureCheckingStopState(
             const std::shared_ptr<antlr4::atn::ATNConfig> & config,

@@ -1806,6 +1806,29 @@ TEST(PromQLParser, ParenthesisAfterGroupModifier)
 }
 
 
+TEST(PromQLParser, CommentAfterGroupModifier)
+{
+    for (const std::string_view modifier : {"group_left", "group_right"})
+    {
+        /// The lexer makes one token of the modifier and the `(` of its label list, a comment between them included.
+        expectRoundTrip(fmt::format("a * on(x) {} # comment\n (b) c", modifier), fmt::format("a * on(x) {}(b) c", modifier));
+
+        /// `(` inside a comment is not the `(` of the label list, whether the list follows the comment or not.
+        expectRoundTrip(fmt::format("a * on(x) {} # (c)\n (b) c", modifier), fmt::format("a * on(x) {}(b) c", modifier));
+        expectRoundTrip(fmt::format("a * on(x) {} # (b)\n c", modifier), fmt::format("a * on(x) {}() c", modifier));
+
+        /// The comment runs to the end of the query, so the right operand is missing there.
+        const auto query = fmt::format("a * on(x) {} # (b) c", modifier);
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_pos, query.size()) << query << ": " << error_message;
+    }
+}
+
+
 TEST(PromQLParser, EmptyGroupLabelListRoundTrip)
 {
     for (const std::string_view modifier : {"group_left", "group_right"})
