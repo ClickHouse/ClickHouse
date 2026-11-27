@@ -1,5 +1,6 @@
 #include "config.h"
 
+#include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 
 #include <Common/Hex.h>
@@ -3539,7 +3540,7 @@ TEST_F(WallabyTest, FixedPayloads)
         Int32 position = 1000;
         for (Float32 & value : walk)
         {
-            state = state * 1103515245U + 12345U;
+            state = common::addIgnoreOverflow(common::mulIgnoreOverflow(state, 1103515245U), 12345U);
             position += static_cast<Int32>((state >> 16) % 7) - 3;
             value = static_cast<Float32>(position) / 10.0f;
         }
@@ -3556,7 +3557,7 @@ TEST_F(WallabyTest, FixedPayloads)
     check("noise",
         "32157c4a7fb979379e2af894fe72f36e3c3f74df7d2c6da6da54f029fde5e6dd78696c747c9f6015177ee8befb58da4cb593"
         "64097b12548453a8e053facbcdbbf1",
-        seriesBytes<Float64>(8, [](size_t i) { return std::bit_cast<Float64>(0x9E3779B97F4A7C15ULL * (i + 1)); }));
+        seriesBytes<Float64>(8, [](size_t i) { return std::bit_cast<Float64>(common::mulIgnoreOverflow(static_cast<UInt64>(0x9E3779B97F4A7C15ULL), static_cast<UInt64>(i + 1))); }));
 
     /// Three bytes that do not make a whole value after the values.
     check("tail",

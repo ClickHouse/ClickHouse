@@ -128,6 +128,13 @@ namespace Wallaby
 namespace
 {
 
+/// The values are transformed in arithmetic modulo 2^N: differences of the bit patterns and of the integer latents,
+/// offsets from a base that are added back by the decoder, multiplicative hashes, the state transitions of the
+/// entropy coder. The wraparound is intended everywhere and it is what makes these transformations reversible,
+/// so the check for unsigned integer overflow is switched off for the implementation, up to the end of this namespace.
+/// The entry points below it, which only deal with the sizes of the buffers, remain checked.
+#pragma clang attribute push (__attribute__((__no_sanitize__("unsigned-integer-overflow"))), apply_to = function)
+
 
 /// A copy of raw bytes; an empty range may come with a null pointer.
 void copyBytes(void * to, const void * from, size_t size)
@@ -4372,6 +4379,8 @@ struct Encoder
         return total;
     }
 };
+
+#pragma clang attribute pop
 
 }
 
