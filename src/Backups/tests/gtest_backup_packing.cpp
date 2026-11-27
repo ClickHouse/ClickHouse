@@ -7,6 +7,7 @@
 
 #include <Backups/BackupCoordinationFileInfos.h>
 #include <Backups/BackupFileInfo.h>
+#include <IO/PackedFilesWriter.h>
 
 using namespace DB;
 
@@ -71,6 +72,23 @@ TEST(BackupPackingAssignment, BinPacksAcrossMultiplePacks)
     EXPECT_EQ(r["f0"].pack_id, 0);
     EXPECT_EQ(r["f1"].pack_id, 1);
     EXPECT_EQ(r["f2"].pack_id, 2);
+}
+
+/// pack_size bounds the whole pack object, front index included: data files that fit by their bytes alone still spill.
+TEST(BackupPackingAssignment, IndexCountsTowardPackSize)
+{
+    const BackupFileInfos infos{makeInfo("f0", 30, 1), makeInfo("f1", 30, 2)};
+    auto names = resolve(packedConfig(/* pack_size= */ 1000, /* pack_min_size= */ 1000), infos);
+    const UInt64 pack_object_size = PackedFilesWriter::getSerializedIndexSize(
+        {names["f0"].data_file_name, names["f1"].data_file_name}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE) + 60;
+
+    auto fits = resolve(packedConfig(pack_object_size, /* pack_min_size= */ 1000), infos);
+    EXPECT_EQ(fits["f0"].pack_id, 0);
+    EXPECT_EQ(fits["f1"].pack_id, 0);
+
+    auto spills = resolve(packedConfig(pack_object_size - 1, /* pack_min_size= */ 1000), infos);
+    EXPECT_EQ(spills["f0"].pack_id, 0);
+    EXPECT_EQ(spills["f1"].pack_id, 1);
 }
 
 /// Same (size, checksum) with different base shares one index and one name; checksum naming would otherwise collide on hex(checksum).

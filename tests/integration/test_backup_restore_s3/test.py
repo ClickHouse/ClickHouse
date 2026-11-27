@@ -760,6 +760,46 @@ def test_backup_to_s3_packed_format(cluster):
     ), f"packing did not reduce backup object count: objects={objects} entries={num_entries} files={num_files}"
 
 
+def test_backup_to_s3_full_pack_is_single_put(cluster):
+    # backup_pack_size bounds the whole pack object, front index included, and its default is the single-part
+    # upload limit, so a full pack is one PutObject. Files of ~20 KB leave a full pack less slack than its index.
+    node = cluster.instances["node"]
+    name = f"full_pack_{uuid.uuid4().hex}"
+    columns = ", ".join(f"c{i} String" for i in range(100))
+    # The second argument keeps the 100 calls distinct, otherwise they collapse into one column of duplicates.
+    values = ", ".join(f"randomString(10, {i})" for i in range(100))
+    try:
+        node.query(
+            f"CREATE TABLE {name} ({columns}) ENGINE=MergeTree ORDER BY tuple() "
+            "SETTINGS min_bytes_for_wide_part=0, min_bytes_for_full_part_storage=0"
+        )
+        node.query(f"SYSTEM STOP MERGES {name}")
+        for _ in range(20):
+            node.query(f"INSERT INTO {name} SELECT {values} FROM numbers(2000)")
+
+        query_id = uuid.uuid4().hex
+        node.query(
+            f"BACKUP TABLE {name} TO S3('http://minio1:9001/root/data/backups/{name}', 'minio', '{minio_secret_key}') "
+            "SETTINGS backup_use_packed_format=1",
+            query_id=query_id,
+        )
+        events = get_events_for_query(node, query_id)
+        requests = {
+            event: events.get(event, 0)
+            for event in ("S3PutObject", "S3CreateMultipartUpload", "S3UploadPart", "S3CompleteMultipartUpload")
+        }
+        pack_sizes = sorted(
+            o.size for o in _list_backup_objects(cluster, name) if o.object_name.rsplit("/", 1)[-1].startswith("packs_")
+        )
+        # More than one pack: the first one filled up to backup_pack_size.
+        assert len(pack_sizes) > 1, pack_sizes
+        assert pack_sizes[-1] <= 32 * 1024 * 1024, pack_sizes
+        assert requests["S3PutObject"] >= len(pack_sizes), requests
+        assert requests["S3CreateMultipartUpload"] == 0, f"requests={requests} pack_sizes={pack_sizes}"
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+
+
 def _small_packed_table(node, table):
     # Wide, full-storage parts of a small table are several small files, which the packed format bundles into packs_0000.
     node.query(

@@ -30,7 +30,7 @@ public:
 
         /// See BackupSettings::backup_use_packed_format.
         bool use_packed_format = false;
-        UInt64 pack_size = 0;      /// Target size of one pack object.
+        UInt64 pack_size = 0;      /// Upper bound on the size of one pack object, its front index included.
         UInt64 pack_min_size = 0;  /// Data files with a physical size below this get packed; others stay their own object.
     };
 
@@ -58,7 +58,7 @@ public:
 private:
     void prepare() const;
 
-    /// Bin-packs representative data files smaller than config.pack_min_size into packs of about config.pack_size
+    /// Bin-packs representative data files smaller than config.pack_min_size into packs of at most config.pack_size
     /// and sets BackupFileInfo::pack_id of them and their duplicates. Runs after dedup and reference resolution.
     void assignPacks() const;
 

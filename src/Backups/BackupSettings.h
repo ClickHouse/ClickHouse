@@ -126,7 +126,7 @@ struct BackupSettings
     /// archives, ON CLUSTER, lightweight snapshots or deduplicate_files=0.
     bool backup_use_packed_format = false;
 
-    /// Target size of one pack object.
+    /// Upper bound on the size of one pack object, its index included.
     UInt64 backup_pack_size = 33554432; /// 32 MiB
 
     /// Files whose stored size is smaller than this get packed; files at or above it stay their own object.
