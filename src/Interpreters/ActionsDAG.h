@@ -590,46 +590,13 @@ public:
         const NodeRawConstPtrs & conjunctions_to_push,
         const ColumnsWithTypeAndName & all_inputs);
 
-    struct ActionsForJOINFilterPushDown;
+    /// The atoms of `predicate`, a node of this DAG, that another step can compute from `allowed_nodes`: they read
+    /// nothing else, and have no ARRAY JOIN and no function that is not deterministic in the scope of the query.
+    NodeRawConstPtrs getConjunctionsOver(const Node * predicate, const UnorderedSetWithMemoryTracking<const Node *> & allowed_nodes) const;
 
-    /** Split actions for JOIN filter push down.
-      *
-      * @param filter_name - name of filter node in current DAG.
-      * @param removes_filter - if filter is removed after it is applied.
-      * @param left_stream_available_columns_to_push_down - columns from left stream that are safe to use in push down conditions
-      * to left stream.
-      * @param left_stream_header - left stream header.
-      * @param right_stream_available_columns_to_push_down - columns from right stream that are safe to use in push down conditions
-      * to right stream.
-      * @param right_stream_header - right stream header.
-      * @param equivalent_columns_to_push_down - columns from left and right streams that are safe to use in push down conditions
-      * to left and right streams.
-      * @param equivalent_left_stream_column_to_right_stream_column - equivalent left stream column name to right stream column map.
-      * @param equivalent_right_stream_column_to_left_stream_column - equivalent right stream column name to left stream column map.
-      * @param cross_type_equivalent_columns - the equivalent columns whose replacement is a cast of the opposite side's
-      * key rather than a rename of an equal-typed column.
-      * @param equivalent_expression_nodes - a JOIN key can be an expression that this DAG computes again, so no input
-      * has its name. The map key is a node of this DAG that computes such a JOIN key. The map value is the name
-      * that the JOIN key has in the two maps above, which go by name.
-      * @param keep_runtime_filters_out_of_left_stream - the left stream is only matched against (RIGHT OUTER or ANTI join).
-      * @param keep_runtime_filters_out_of_right_stream - the right stream is only matched against (LEFT OUTER or ANTI join).
-      * @param filter_is_always_false - no row passes the filter, and a side whose emptiness empties the join output receives it.
-      */
-    ActionsForJOINFilterPushDown splitActionsForJOINFilterPushDown(
-        const std::string & filter_name,
-        bool removes_filter,
-        const Names & left_stream_available_columns_to_push_down,
-        const Block & left_stream_header,
-        const Names & right_stream_available_columns_to_push_down,
-        const Block & right_stream_header,
-        const Names & equivalent_columns_to_push_down,
-        const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
-        const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
-        const NameSet & cross_type_equivalent_columns,
-        const UnorderedMapWithMemoryTracking<const Node *, String> & equivalent_expression_nodes,
-        bool keep_runtime_filters_out_of_left_stream,
-        bool keep_runtime_filters_out_of_right_stream,
-        bool filter_is_always_false);
+    /// Leaves only `conjunctions_to_keep` in the filter column. Each of them is one of the atoms that
+    /// `extractConjunctionAtoms` finds in it. Returns whether the filter column became constant.
+    bool keepConjunctionsInFilter(const std::string & filter_name, bool removes_filter, NodeRawConstPtrs conjunctions_to_keep);
 
     /** Build filter dag from multiple filter dags.
       *
@@ -651,6 +618,10 @@ public:
         const NodeRawConstPtrs & filter_nodes,
         const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column = {},
         bool single_output_condition_node = true);
+
+    /// Builds the conjunction of `filter_nodes` like `buildFilterActionsDAG`. A node that is a key of `node_replacements`
+    /// is built as the node that it maps to, which has the same type. The names of the nodes above follow the replacement.
+    static ActionsDAG buildFilterActionsDAGWithReplacedNodes(const NodeRawConstPtrs & filter_nodes, const NodeMapping & node_replacements);
 
     /// Check if `predicate` is a combination of AND functions.
     /// Returns a list of nodes representing atomic predicates.
@@ -689,13 +660,8 @@ public:
      *   - dag: the new actions
      *   - filter_pos: position of filter column in outputs
      *   - remove_filter: whether the filter column should be removed from original DAG after evaluation
-     *
-     * If cloned_nodes_mapping is given, it is filled with a map from every node of the conjunction to its copy in the new actions.
      */
-    static std::optional<ActionsForFilterPushDown> createActionsForConjunction(
-        NodeRawConstPtrs conjunction,
-        const ColumnsWithTypeAndName & all_inputs,
-        UnorderedMapWithMemoryTracking<const Node *, const Node *> * cloned_nodes_mapping = nullptr);
+    static std::optional<ActionsForFilterPushDown> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
 
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
@@ -749,16 +715,6 @@ struct ActionsDAG::ActionsForFilterPushDown
     bool remove_filter;
     /// Whether the filter becomes const after pushing down expressions
     bool is_filter_const_after_push_down;
-};
-
-struct ActionsDAG::ActionsForJOINFilterPushDown
-{
-    std::optional<ActionsDAG> left_stream_filter_to_push_down;
-    bool left_stream_filter_removes_filter;
-    std::optional<ActionsDAG> right_stream_filter_to_push_down;
-    bool right_stream_filter_removes_filter;
-    /// Whether the filter becomes const after pushing down all expressions
-    bool is_filter_const_after_all_push_downs;
 };
 
 class FindOriginalNodeForOutputName

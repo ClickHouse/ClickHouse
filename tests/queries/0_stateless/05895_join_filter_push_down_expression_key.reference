@@ -15,6 +15,9 @@ The key replaces the whole expression, including when the column inside it is a 
 2
 2	11	11
 2
+Keys of different types: the other side gets a cast of its key to the common type
+4	38	42
+1	1
 A predicate that also reads a column that is not a key stays on its side
 3	20	20
 1
