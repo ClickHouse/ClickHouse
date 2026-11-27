@@ -219,6 +219,48 @@ String getFilesystemName([[maybe_unused]] const String & mount_point)
 #endif
 }
 
+String getDirectoryFilesystemType([[maybe_unused]] const std::string & directory, [[maybe_unused]] const std::string & mounts_file_path)
+{
+#if defined(OS_LINUX)
+    std::error_code ec;
+    const String canonical_directory = fs::canonical(directory, ec).string();
+    String filesystem_type_of_directory;
+    size_t longest_mount_point_match = 0;
+
+    FILE * mounts_file = setmntent(mounts_file_path.c_str(), "r");
+    if (!mounts_file)
+        return {};
+
+    /// `getmntent_r` decodes the escapes of the mount table (`\040` for a space and so on),
+    /// so that an ancestor mount does not win over a child mounted at a path that has them.
+    mntent fs_info{};
+    constexpr size_t buf_size = 4096;
+    std::vector<char> buf(buf_size);
+    while (getmntent_r(mounts_file, &fs_info, buf.data(), buf_size))
+    {
+        const String mount_point = fs_info.mnt_dir;
+        const bool contains_directory = canonical_directory == mount_point
+            || (canonical_directory.starts_with(mount_point)
+                && (mount_point == "/" || canonical_directory[mount_point.size()] == '/'));
+        if (contains_directory && mount_point.size() >= longest_mount_point_match)
+        {
+            longest_mount_point_match = mount_point.size();
+            filesystem_type_of_directory = fs_info.mnt_type;
+        }
+    }
+    endmntent(mounts_file);
+
+    return filesystem_type_of_directory;
+#else
+    return {};
+#endif
+}
+
+String getDirectoryFilesystemType(const std::string & directory)
+{
+    return getDirectoryFilesystemType(directory, "/proc/self/mounts");
+}
+
 /// A path with an embedded NUL is malformed, and, more importantly, it cannot be validated: the
 /// comparisons below see the whole value, while every syscall the path is later passed to (`open`,
 /// `mkdir`, `stat`) stops at the first NUL. A path shaped as `<target>\0/<traversal back into the
