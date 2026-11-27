@@ -77,7 +77,7 @@ private:
     VectorWithMemoryTracking<AggregateDataPtr> states;
 };
 
-/// The aggregate over a window of rows that only moves forward. A move costs the same for any window size.
+/// The aggregate over a window of rows that only moves forward. A move has the same amortized cost for any window size.
 /// It is the two-stack sliding window aggregation: https://orlp.net/blog/two-stack-sliding-window-aggregation/
 ///
 /// It holds the rows [`begin`, `end`), cut in two at `midpoint`:
