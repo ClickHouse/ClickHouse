@@ -64,45 +64,6 @@ private:
     std::vector<size_t> expected_bytes;
 };
 
-/// Both decompressors expand into a device buffer of the caller, which keeps it, and clears or frees it, as any other of
-/// its own. They differ only in when the bytes are there: `SyncDecompressor` blocks until they are, and
-/// `AsyncDecompressor` returns at once and they are there when its `wait` returns. Until then, the buffer must live
-/// and must not be read, written or grown.
-
-/// Uploads compressed bytes from the host and expands them into the caller's device buffer, blocking until done.
-class SyncDecompressor
-{
-public:
-    void decompress(GPUCodec codec, std::string_view host_compressed, std::span<const CompressedBlock> blocks, char * device_destination);
-
-private:
-    DecompressionBatch batch;
-    DeviceBuffer device_compressed{GPUResources::get().decompression};
-};
-
-/// Expands already uploaded pieces into the caller's device buffer without blocking: `launch` queues the work, and
-/// `wait` blocks until it is done. The destructor waits as well, but the caller must still keep the buffer until then.
-class AsyncDecompressor
-{
-public:
-    AsyncDecompressor() = default;
-    ~AsyncDecompressor();
-
-    AsyncDecompressor(AsyncDecompressor && other) noexcept;
-
-    AsyncDecompressor(const AsyncDecompressor &) = delete;
-    AsyncDecompressor & operator=(const AsyncDecompressor &) = delete;
-    AsyncDecompressor & operator=(AsyncDecompressor &&) = delete;
-
-    void launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * device_destination);
-
-    void wait();
-
-private:
-    DecompressionBatch batch;
-    bool in_flight = false;
-};
-
 }
 
 #endif
