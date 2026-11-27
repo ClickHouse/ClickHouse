@@ -10,6 +10,8 @@ DROP TABLE IF EXISTS dist;
 DROP TABLE IF EXISTS loc;
 DROP DICTIONARY IF EXISTS dct;
 DROP TABLE IF EXISTS dsrc;
+DROP DICTIONARY IF EXISTS centroids_dict;
+DROP TABLE IF EXISTS centroids;
 DROP TABLE IF EXISTS allow;
 
 INSERT INTO FUNCTION file(currentDatabase() || '_05951_0.tsv', 'TSV', 'x UInt64') SELECT number + 1 FROM numbers(100) SETTINGS engine_file_truncate_on_insert = 1;
@@ -22,6 +24,10 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05951_5.tsv', 'TSV', 'x UInt64'
 CREATE TABLE dsrc (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO dsrc SELECT number, number * 10 FROM numbers(1000);
 CREATE DICTIONARY dct (k UInt64, v UInt64) PRIMARY KEY k SOURCE(CLICKHOUSE(TABLE 'dsrc')) LAYOUT(FLAT()) LIFETIME(0);
+
+CREATE TABLE centroids (cid UInt64, vec Array(Float32)) ENGINE = MergeTree ORDER BY cid;
+INSERT INTO centroids VALUES (0, [0., 0.]), (7, [1001., 1001.]);
+CREATE DICTIONARY centroids_dict (cid UInt64, vec Array(Float32)) PRIMARY KEY cid SOURCE(CLICKHOUSE(TABLE 'centroids')) LAYOUT(FLAT(MAX_ARRAY_SIZE 1000)) LIFETIME(0);
 
 CREATE TABLE allow (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO allow SELECT number * 2 FROM numbers(300);
@@ -43,6 +49,10 @@ SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_2';
 INSERT INTO dst SELECT 'schema', current_schema(), x
 FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
 SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_2a';
+
+INSERT INTO dst SELECT 'centroid', '', assignCentroid([toFloat32(x), toFloat32(x)], 'centroids_dict')
+FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
+SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_2e';
 
 -- A lambda named like the function is called instead of it, in the path too: these queries are not forwarded.
 INSERT INTO dst WITH (() -> 'shadow') AS currentDatabase SELECT 'shadow', currentDatabase(), x
@@ -66,6 +76,10 @@ SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_3';
 INSERT INTO dist SELECT 'dict', '', dictGetUInt64('dct', 'v', x)
 FROM fileCluster('test_cluster_two_shards_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
 SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_4';
+
+INSERT INTO dist SELECT 'centroid', '', assignCentroid([toFloat32(x), toFloat32(x)], 'centroids_dict')
+FROM fileCluster('test_cluster_two_shards_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
+SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_4a';
 
 INSERT INTO dist SELECT 'in_subquery', '', x
 FROM fileCluster('test_cluster_two_shards_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
@@ -99,4 +113,6 @@ DROP TABLE loc;
 DROP TABLE dst;
 DROP DICTIONARY dct;
 DROP TABLE dsrc;
+DROP DICTIONARY centroids_dict;
+DROP TABLE centroids;
 DROP TABLE allow;

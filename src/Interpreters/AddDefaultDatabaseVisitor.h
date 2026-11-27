@@ -501,10 +501,23 @@ private:
         ast = qualified_identifier;
     }
 
+    void qualifyDictionaryName(ASTLiteral & literal) const
+    {
+        auto & literal_value = literal.value;
+
+        if (literal_value.getType() != Field::Types::String)
+            return;
+
+        auto dictionary_name = literal_value.safeGet<String>();
+        auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
+        literal_value = qualified_dictionary_name.getFullName();
+    }
+
     void visit(ASTFunction & function, ASTPtr &) const
     {
         bool is_operator_in = functionIsInOrGlobalInOperator(function.name);
         bool is_dict_get = functionIsDictGet(function.name);
+        const bool is_assign_centroid = function.name == "assignCentroid";
 
         for (auto & child : function.children)
         {
@@ -530,15 +543,13 @@ private:
                         }
                         else if (auto * literal = child->children[i]->as<ASTLiteral>())
                         {
-                            auto & literal_value = literal->value;
-
-                            if (literal_value.getType() != Field::Types::String)
-                                continue;
-
-                            auto dictionary_name = literal_value.safeGet<String>();
-                            auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
-                            literal_value = qualified_dictionary_name.getFullName();
+                            qualifyDictionaryName(*literal);
                         }
+                    }
+                    else if (is_assign_centroid && i == 1 && child->children[i]->as<ASTLiteral>())
+                    {
+                        /// The dictionary name of assignCentroid, as the analyzer binds it.
+                        qualifyDictionaryName(*child->children[i]->as<ASTLiteral>());
                     }
                     else if (is_operator_in && i == 1)
                     {
