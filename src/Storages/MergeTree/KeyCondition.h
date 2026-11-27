@@ -271,8 +271,18 @@ public:
     /// `-inf`/`+inf` stand-ins of a nullable key range, which are not NULLs.
     static bool fieldHasNullInside(const Field & field);
 
+    /// Filter columns named like a node `key_expr` computes (not like a column it reads).
+    static NameSet getColumnsNamedLikeKeyExpressions(const ActionsDAGWithInversionPushDown & filter_dag, const ExpressionActions & key_expr);
+
     /// Columns `key_expr` reads to compute `key_column_names` whose names contain a parenthesis, like a function's.
     static NameSet getStoredKeyColumnsNamedLikeExpressions(const ExpressionActions & key_expr, const Names & key_column_names);
+
+    /// Whether `root` reads one of the first columns or computes a name of the second ones (a lambda counts as any name).
+    static bool isNamedLikeOtherKeyNode(
+        const ActionsDAG::Node & root,
+        const NameSet & columns_named_like_key_expressions,
+        const NameSet & stored_key_columns_named_like_expressions,
+        const ContextPtr & context);
 
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,

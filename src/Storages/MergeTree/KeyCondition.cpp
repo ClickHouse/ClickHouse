@@ -18,6 +18,7 @@
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/Utils.h>
+#include <Interpreters/ActionsDAGTraversal.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -1744,24 +1745,29 @@ static NameSet getAllSubexpressionNames(const ExpressionActions & key_expr)
 
 /// A filter names a column by its raw name and a key node by its expression, so a column
 /// named `f(x)` and the key node computing `f(x)` look the same.
-static NameSet getColumnsNamedLikeKeyExpressions(const ActionsDAGWithInversionPushDown & filter_dag, const ExpressionActions & key_expr)
+NameSet KeyCondition::getColumnsNamedLikeKeyExpressions(const ActionsDAGWithInversionPushDown & filter_dag, const ExpressionActions & key_expr)
 {
     if (!filter_dag.dag)
         return {};
 
     NameSet computed_names;
     NameSet input_names;
+    bool computes_lambda = false;
     for (const auto & node : key_expr.getActionsDAG().getNodes())
     {
         if (node.type == ActionsDAG::ActionType::INPUT)
             input_names.insert(node.result_name);
         else if (node.type != ActionsDAG::ActionType::COLUMN)
             computed_names.insert(node.result_name);
+
+        computes_lambda |= WhichDataType(node.result_type).isFunction();
     }
 
+    /// The nodes in the body of a lambda are not in this DAG: any name like a function's can be one of them.
     NameSet result;
     for (const auto * input : filter_dag.dag->getInputs())
-        if (computed_names.contains(input->result_name) && !input_names.contains(input->result_name))
+        if ((computed_names.contains(input->result_name) || (computes_lambda && input->result_name.contains('(')))
+            && !input_names.contains(input->result_name))
             result.insert(input->result_name);
 
     return result;
@@ -1804,11 +1810,7 @@ NameSet KeyCondition::getStoredKeyColumnsNamedLikeExpressions(const ExpressionAc
     return result;
 }
 
-static bool readsNodeNamedLikeOtherKeyNode(
-    const ActionsDAG::Node & root,
-    const NameSet & columns_named_like_key_expressions,
-    const NameSet & stored_key_columns_named_like_expressions,
-    const ContextPtr & context)
+static bool readsInputNamedIn(const ActionsDAG::Node & root, const NameSet & names)
 {
     std::unordered_set<const ActionsDAG::Node *> visited;
     std::vector<const ActionsDAG::Node *> stack{&root};
@@ -1819,24 +1821,39 @@ static bool readsNodeNamedLikeOtherKeyNode(
         if (!visited.insert(node).second)
             continue;
 
-        if (node->type == ActionsDAG::ActionType::INPUT && columns_named_like_key_expressions.contains(node->result_name))
+        if (node->type == ActionsDAG::ActionType::INPUT && names.contains(node->result_name))
             return true;
-
-        if ((node->type == ActionsDAG::ActionType::FUNCTION || node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-            && !stored_key_columns_named_like_expressions.empty())
-        {
-            /// Key names are also looked up in the `moduloLegacy` spelling.
-            RPNBuilderTreeNode tree_node(node, context);
-            if (stored_key_columns_named_like_expressions.contains(tree_node.getColumnName())
-                || stored_key_columns_named_like_expressions.contains(tree_node.getColumnNameWithModuloLegacy()))
-                return true;
-        }
 
         for (const auto * child : node->children)
             stack.push_back(child);
     }
 
     return false;
+}
+
+bool KeyCondition::isNamedLikeOtherKeyNode(
+    const ActionsDAG::Node & root,
+    const NameSet & columns_named_like_key_expressions,
+    const NameSet & stored_key_columns_named_like_expressions,
+    const ContextPtr & context)
+{
+    if (!columns_named_like_key_expressions.empty() && readsInputNamedIn(root, columns_named_like_key_expressions))
+        return true;
+
+    return !stored_key_columns_named_like_expressions.empty() && anyReachableNode({&root}, [&](const ActionsDAG::Node * node)
+    {
+        /// The body of a lambda is not among its children.
+        if (WhichDataType(node->result_type).isFunction())
+            return true;
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION && node->type != ActionsDAG::ActionType::ARRAY_JOIN)
+            return false;
+
+        /// Key names are also looked up in the `moduloLegacy` spelling.
+        RPNBuilderTreeNode tree_node(node, context);
+        return stored_key_columns_named_like_expressions.contains(tree_node.getColumnName())
+            || stored_key_columns_named_like_expressions.contains(tree_node.getColumnNameWithModuloLegacy());
+    });
 }
 
 void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
@@ -5530,8 +5547,8 @@ void KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const B
         return;
     }
 
-    if (node_dag && (!info.columns_named_like_key_expressions.empty() || !info.stored_key_columns_named_like_expressions.empty())
-        && readsNodeNamedLikeOtherKeyNode(
+    if (node_dag
+        && isNamedLikeOtherKeyNode(
             *node_dag, info.columns_named_like_key_expressions, info.stored_key_columns_named_like_expressions, node.getContext()))
         return;
 

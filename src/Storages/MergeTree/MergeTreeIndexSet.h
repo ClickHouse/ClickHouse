@@ -135,7 +135,7 @@ private:
 
     bool checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, std::vector<FutureSetPtr> & sets_to_prepare, bool atomic = false) const;
 
-    [[nodiscard]] bool isExpressionNamedLikeStoredKeyColumn(const ActionsDAG::Node & node, const String & name) const;
+    bool isNamedLikeOtherKeyNode(const ActionsDAG::Node & node, const ContextPtr & context) const;
 
     String index_name;
     size_t max_rows;
@@ -150,6 +150,7 @@ private:
     /// `ExpressionActions::execute` later binds the granule column by name too. A name that
     /// matches under a different type would silently substitute a differently-typed column.
     std::unordered_map<String, DataTypePtr> key_columns;
+    NameSet columns_named_like_key_expressions;
     NameSet stored_key_columns_named_like_expressions;
     ExpressionActionsPtr actions;
     String actions_output_column_name;

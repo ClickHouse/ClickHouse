@@ -394,6 +394,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
 
     for (const auto & column : index_description.sample_block)
         key_columns.emplace(column.name, column.type);
+    columns_named_like_key_expressions = KeyCondition::getColumnsNamedLikeKeyExpressions(filter_dag, *index_description.expression);
     stored_key_columns_named_like_expressions
         = KeyCondition::getStoredKeyColumnsNamedLikeExpressions(*index_description.expression, index_description.column_names);
 
@@ -681,7 +682,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
     auto column_name = tree_node.getColumnName();
     if (auto key_column_it = key_columns.find(column_name);
         key_column_it != key_columns.end() && VirtualColumnUtils::isDeterministicInScopeOfQuery(node_to_check)
-        && !isExpressionNamedLikeStoredKeyColumn(*node_to_check, column_name))
+        && !isNamedLikeOtherKeyNode(*node_to_check, context))
     {
         /// A name match does not imply a type match: the query-side node can carry a `Nullable` the
         /// granule does not.
@@ -851,7 +852,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     {
         auto column_name = tree_node.getColumnName();
         if (key_columns.contains(column_name) && VirtualColumnUtils::isDeterministicInScopeOfQuery(node_to_check)
-            && !isExpressionNamedLikeStoredKeyColumn(node, column_name))
+            && !isNamedLikeOtherKeyNode(node, context))
             return false;
 
         auto function_name = node.function_base->getName();
@@ -884,12 +885,13 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     }
 
     auto column_name = tree_node.getColumnName();
-    return !key_columns.contains(column_name) || isExpressionNamedLikeStoredKeyColumn(*node_to_check, column_name);
+    return !key_columns.contains(column_name) || isNamedLikeOtherKeyNode(*node_to_check, context);
 }
 
-bool MergeTreeIndexConditionSet::isExpressionNamedLikeStoredKeyColumn(const ActionsDAG::Node & node, const String & name) const
+bool MergeTreeIndexConditionSet::isNamedLikeOtherKeyNode(const ActionsDAG::Node & node, const ContextPtr & context) const
 {
-    return node.type != ActionsDAG::ActionType::INPUT && stored_key_columns_named_like_expressions.contains(name);
+    return KeyCondition::isNamedLikeOtherKeyNode(
+        node, columns_named_like_key_expressions, stored_key_columns_named_like_expressions, context);
 }
 
 
