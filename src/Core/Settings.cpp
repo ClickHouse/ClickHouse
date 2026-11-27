@@ -7320,9 +7320,9 @@ Default value for Iceberg table property `history.expire.max-ref-age-ms` used by
 )", 0, \
         {"26.3", 9223372036854775807, 9223372036854775807, "New setting."}) \
     DECLARE(NonZeroUInt64, iceberg_metadata_previous_versions_max, 100, R"(
-The maximum number of entries in the `metadata-log` of an Iceberg table that a write keeps, including the entry of the metadata file it writes. When a write adds an entry over the limit, the oldest entries are removed. The metadata files themselves are not deleted.
+The maximum number of entries in the `metadata-log` of an Iceberg table that a write keeps. Each entry names a previous metadata file. When a write adds an entry over the limit, the oldest entries are removed. The metadata files themselves are not deleted.
 
-The Iceberg table property `write.metadata.previous-versions-max` takes precedence over this setting. As in the Java implementation, the property is the number of previous metadata files and is at least one, so the `metadata-log` keeps one entry more than its value.
+The Iceberg table property `write.metadata.previous-versions-max` takes precedence over this setting. As in the Java implementation, the property is at least one.
 
 The setting has no effect on tables in a catalog that writes the metadata files itself, such as a REST catalog: the catalog maintains the `metadata-log` according to its own configuration and the table property.
 )", 0, \

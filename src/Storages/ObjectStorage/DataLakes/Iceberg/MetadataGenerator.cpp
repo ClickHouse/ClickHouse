@@ -129,18 +129,22 @@ void appendToMetadataLog(Poco::JSON::Object::Ptr metadata_object, const String &
         metadata_object->set(Iceberg::f_metadata_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     auto metadata_log = metadata_object->getArray(Iceberg::f_metadata_log);
 
-    Poco::JSON::Object::Ptr new_metadata_item = new Poco::JSON::Object;
-    new_metadata_item->set(Iceberg::f_metadata_file, metadata_file);
-    new_metadata_item->set(Iceberg::f_timestamp_ms, timestamp);
-    metadata_log->add(new_metadata_item);
+    /// Files written by older versions already list themselves last.
+    if (metadata_log->size() == 0
+        || metadata_log->getObject(static_cast<UInt32>(metadata_log->size() - 1))->getValue<String>(Iceberg::f_metadata_file) != metadata_file)
+    {
+        Poco::JSON::Object::Ptr new_metadata_item = new Poco::JSON::Object;
+        new_metadata_item->set(Iceberg::f_metadata_file, metadata_file);
+        new_metadata_item->set(Iceberg::f_timestamp_ms, timestamp);
+        metadata_log->add(new_metadata_item);
+    }
 
     /// Like the Java implementation, the table property counts the previous versions and keeps at least one.
-    /// The log also holds the entry of the metadata file being written, so the property allows one entry more.
     if (metadata_object->has(Iceberg::f_properties))
     {
         auto properties = metadata_object->getObject(Iceberg::f_properties);
         if (properties && properties->has(Iceberg::f_metadata_previous_versions_max))
-            max_entries = static_cast<UInt64>(std::max<Int64>(1, parse<Int64>(properties->getValue<String>(Iceberg::f_metadata_previous_versions_max)))) + 1;
+            max_entries = static_cast<UInt64>(std::max<Int64>(1, parse<Int64>(properties->getValue<String>(Iceberg::f_metadata_previous_versions_max))));
     }
 
     if (!max_entries || metadata_log->size() <= *max_entries)
@@ -215,7 +219,6 @@ Int64 MetadataGenerator::generateSnapshotId()
 
 MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     FileNamesGenerator & generator,
-    const Iceberg::IcebergPathFromMetadata & metadata_file_path,
     Int64 parent_snapshot_id,
     Int64 added_files,
     Int64 added_records,
@@ -231,11 +234,10 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
 
-    /// These arrays are optional per the Iceberg spec, so external metadata may omit them.
+    /// `snapshot-log` is optional per the Iceberg spec, so external metadata may omit it.
     /// Seed an empty one (as Array::Ptr so getArray/extract see the right type tag) before use.
-    for (const auto * field : {Iceberg::f_metadata_log, Iceberg::f_snapshot_log})
-        if (!metadata_object->has(field))
-            metadata_object->set(field, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+    if (!metadata_object->has(Iceberg::f_snapshot_log))
+        metadata_object->set(Iceberg::f_snapshot_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
 
     /// `snapshots` may only be seeded when the table has no current snapshot: with a live
     /// parent snapshot the commit relies on finding its manifest list in `snapshots`, and an
@@ -261,7 +263,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 
     auto manifest_list_path = generator.generateManifestListName(snapshot_id, format_version);
     new_snapshot->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
-    new_snapshot->set(Iceberg::f_parent_snapshot_id, parent_snapshot_id);
+    if (parent_snapshot_id >= 0)
+        new_snapshot->set(Iceberg::f_parent_snapshot_id, parent_snapshot_id);
 
     auto now = std::chrono::system_clock::now();
     auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
@@ -344,7 +347,6 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     else
         metadata_object->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
 
-    appendToMetadataLog(metadata_object, metadata_file_path.serialize(), timestamp, metadata_previous_versions_max);
     {
         Poco::JSON::Object::Ptr new_snapshot_item = new Poco::JSON::Object;
         new_snapshot_item->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
@@ -371,17 +373,15 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 
 MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySnapshot(
     FileNamesGenerator & generator,
-    const Iceberg::IcebergPathFromMetadata & metadata_file_path,
     Int64 parent_snapshot_id)
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
 
-    /// These arrays are optional per the Iceberg spec, so external metadata may omit them.
+    /// `snapshot-log` is optional per the Iceberg spec, so external metadata may omit it.
     /// Seed an empty one (as Array::Ptr so getArray/extract see the right type tag) before use,
     /// mirroring `generateNextMetadata`; otherwise appending to a missing log dereferences a null array.
-    for (const auto * field : {Iceberg::f_metadata_log, Iceberg::f_snapshot_log})
-        if (!metadata_object->has(field))
-            metadata_object->set(field, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+    if (!metadata_object->has(Iceberg::f_snapshot_log))
+        metadata_object->set(Iceberg::f_snapshot_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
 
     /// A manifest-only rewrite always runs against a table with a current snapshot, so `snapshots`
     /// must already be present. Guard the same way as `generateNextMetadata` instead of dereferencing
@@ -403,7 +403,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
 
     auto manifest_list_path = generator.generateManifestListName(snapshot_id, format_version);
     new_snapshot->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
-    new_snapshot->set(Iceberg::f_parent_snapshot_id, parent_snapshot_id);
+    if (parent_snapshot_id >= 0)
+        new_snapshot->set(Iceberg::f_parent_snapshot_id, parent_snapshot_id);
 
     auto now = std::chrono::system_clock::now();
     auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
@@ -456,7 +457,6 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
         metadata_object->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
     }
 
-    appendToMetadataLog(metadata_object, metadata_file_path.serialize(), timestamp, metadata_previous_versions_max);
     {
         Poco::JSON::Object::Ptr new_snapshot_item = new Poco::JSON::Object;
         new_snapshot_item->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
@@ -465,6 +465,15 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
     }
 
     return {new_snapshot, manifest_list_path};
+}
+
+void MetadataGenerator::addPreviousMetadataFile(const Iceberg::IcebergPathFromMetadata & previous_metadata_file)
+{
+    appendToMetadataLog(
+        metadata_object,
+        previous_metadata_file.serialize(),
+        metadata_object->getValue<Int64>(Iceberg::f_last_updated_ms),
+        metadata_previous_versions_max);
 }
 
 void MetadataGenerator::generateDropColumnMetadata(const String & column_name)

@@ -293,6 +293,7 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
         log,
         compression_method,
         components.table_uuid));
+    MetadataGenerator(metadata_object, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]).addPreviousMetadataFile(components.path_resolver.reverseResolve(state.table_state.metadata_file_path));
 
     const auto format_version = metadata_object->getValue<Int32>(f_format_version);
     if (format_version != 2)
@@ -547,7 +548,6 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
     /// TODO: make generateNextMetadata to accept SnapshotSummaryUpdate
     auto [new_snapshot, manifest_list_path] = MetadataGenerator{state.metadata_object, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]}.generateNextMetadata(
         filename_generator,
-        metadata_info.path,
         parent_snapshot_id,
         /*added_files=*/0,
         /*added_records=*/0,

@@ -27,7 +27,7 @@ struct SnapshotRemovals
 
 Int32 getLastAssignedFieldId(const Poco::JSON::Object::Ptr & metadata_object);
 
-/// Appends `metadata_file` to `metadata-log` and drops the oldest entries so that at most `max_entries` remain.
+/// Appends `metadata_file` to `metadata-log` unless it is already the last entry, and drops the oldest entries so that at most `max_entries` remain.
 /// The table property `write.metadata.previous-versions-max` takes precedence over `max_entries`.
 void appendToMetadataLog(Poco::JSON::Object::Ptr metadata_object, const String & metadata_file, Int64 timestamp, std::optional<UInt64> max_entries);
 
@@ -52,7 +52,6 @@ public:
 
     NextMetadataResult generateNextMetadata(
         FileNamesGenerator & generator,
-        const Iceberg::IcebergPathFromMetadata & metadata_file_path,
         Int64 parent_snapshot_id,
         Int64 added_files,
         Int64 added_records,
@@ -70,8 +69,10 @@ public:
     /// Create a manifest-only rewrite snapshot (`replace` operation) carrying `total-*` counters forward so `OPTIMIZE ... MANIFEST` is idempotent.
     NextMetadataResult generateManifestOnlySnapshot(
         FileNamesGenerator & generator,
-        const Iceberg::IcebergPathFromMetadata & metadata_file_path,
         Int64 parent_snapshot_id);
+
+    /// Appends the file this object was read from to `metadata-log`; call it before `last-updated-ms` changes.
+    void addPreviousMetadataFile(const Iceberg::IcebergPathFromMetadata & previous_metadata_file);
 
     /// Callers that retry a commit generate the id once so their manifests stay valid across attempts.
     Int64 generateSnapshotId();

@@ -750,6 +750,7 @@ ExpireSnapshotsResult expireSnapshots(
             log,
             compression_method,
             persistent_table_components.table_uuid));
+        MetadataGenerator(metadata, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]).addPreviousMetadataFile(persistent_table_components.path_resolver.reverseResolve(metadata_path));
 
         if (metadata->getValue<Int32>(f_format_version) < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots is supported only for the second version of iceberg format");
@@ -852,11 +853,6 @@ ExpireSnapshotsResult expireSnapshots(
             updateMetadataForExpiration(metadata, expired_ref_names, partition.retained_snapshots, partition.expired_snapshot_ids);
 
             auto metadata_info = filename_generator.generateMetadataPathWithInfo();
-            appendToMetadataLog(
-                metadata,
-                metadata_info.path.serialize(),
-                metadata->getValue<Int64>(Iceberg::f_last_updated_ms),
-                context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]);
             std::string json_representation = stringifyJSON(metadata, 4);
             auto hint_path = filename_generator.generateVersionHint();
             if (!writeMetadataFileAndVersionHint(

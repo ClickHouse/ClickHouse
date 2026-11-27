@@ -1096,7 +1096,7 @@ void generateManifestList(
                 first_row_id);
         return first_row_id;
     };
-    if (use_previous_snapshots || !carry_forward_manifest_paths.empty())
+    if ((use_previous_snapshots || !carry_forward_manifest_paths.empty()) && new_snapshot->has(Iceberg::f_parent_snapshot_id))
     {
         auto parent_snapshot_id = new_snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id);
         auto snapshots = metadata->getArray(Iceberg::f_snapshots);
@@ -1462,6 +1462,7 @@ void IcebergStorageSink::readLatestMetadata()
         log,
         compression_method,
         persistent_table_components.table_uuid));
+    MetadataGenerator(metadata, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]).addPreviousMetadataFile(persistent_table_components.path_resolver.reverseResolve(metadata_path));
     metadata_compression_method = compression_method;
 
     if (!is_retry)
@@ -1824,7 +1825,6 @@ bool IcebergStorageSink::initializeMetadata()
 
     auto [new_snapshot, manifest_list_path] = MetadataGenerator(metadata, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]).generateNextMetadata(
         filename_generator,
-        metadata_info.path,
         parent_snapshot,
         total_data_files,
         total_rows,
