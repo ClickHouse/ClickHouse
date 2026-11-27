@@ -564,12 +564,16 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
         bool respect_az = args.prefer_local_availability_zone && !args.client_availability_zone.empty();
         bool connected_to_suboptimal_node = false;
         bool may_benefit_from_reconnecting = false;
+        ShuffleHosts optimal_hosts{shuffled_hosts[0]};
         if (connect_to_all_nodes && args.connect_to_all_nodes_policy != NodeSelectionPolicy::LOAD_BALANCING)
         {
             /// The policy has no fixed optimal node, only a node in a better availability zone is better.
             connected_to_suboptimal_node
                 = node_idx && getAvailabilityZoneInfo(args, availability_zones, static_cast<UInt8>(*node_idx)) != shuffled_hosts[0].az_info;
             may_benefit_from_reconnecting = respect_az;
+            for (const auto & host : shuffled_hosts | std::views::drop(1))
+                if (host.az_info == shuffled_hosts[0].az_info)
+                    optimal_hosts.push_back(host);
         }
         else
         {
@@ -584,15 +588,21 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
                            " To preserve balance in ZooKeeper usage, this ZooKeeper session will expire in {} seconds",
                       impl->getConnectedHostPort(), *node_idx, reconnect_timeout_sec);
 
-            auto reconnect_task_holder = DB::Context::getGlobalContextInstance()->getSchedulePool()->createTask(DB::StorageID::createEmpty(), "ZKReconnect", [this, optimal_host = shuffled_hosts[0], connect_to_all_nodes]()
+            auto reconnect_task_holder = DB::Context::getGlobalContextInstance()->getSchedulePool()->createTask(DB::StorageID::createEmpty(), "ZKReconnect", [this, optimal_hosts, connect_to_all_nodes]()
             {
                 auto component_guard = Coordination::setCurrentComponent("ZooKeeper::reconnect");
                 try
                 {
-                    LOG_DEBUG(log, "Trying to connect to a more optimal node {}", optimal_host.host);
-                    ShuffleHosts node{optimal_host};
+                    LOG_DEBUG(
+                        log,
+                        "Trying to connect to a more optimal node {}",
+                        fmt::join(optimal_hosts | std::views::transform([](const ShuffleHost & host) { return host.host; }), ", "));
                     auto new_impl = std::make_unique<Coordination::ZooKeeper>(
-                        node, args, zk_log, aggregated_zookeeper_log, /*notify_session_expiry_*/ false);
+                        optimal_hosts, args, zk_log, aggregated_zookeeper_log, /*notify_session_expiry_*/ false);
+                    auto new_node_idx = new_impl->getConnectedNodeIdx();
+                    chassert(new_node_idx.has_value());
+                    const ShuffleHost & optimal_host
+                        = *std::ranges::find(optimal_hosts, static_cast<UInt8>(*new_node_idx), &ShuffleHost::original_index);
                     if (connect_to_all_nodes)
                     {
                         /// The next session connects to all nodes, checks them and chooses one by the policy.
@@ -601,9 +611,6 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
                         impl->finalize("A more optimal node is available");
                         return;
                     }
-
-                    auto new_node_idx = new_impl->getConnectedNodeIdx();
-                    chassert(new_node_idx.has_value());
 
                     /// Maybe the node was unavailable when getting AZs first time, update just in case
                     if (args.availability_zone_autodetect && availability_zones[*new_node_idx].empty())

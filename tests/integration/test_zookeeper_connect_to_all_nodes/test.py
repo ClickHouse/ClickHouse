@@ -6,6 +6,7 @@ import pytest
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -35,13 +36,16 @@ def started_cluster():
 
 
 def set_zookeeper_config(
-    hosts, connect_to_all_nodes=True, load_balancing="in_order", **settings
+    hosts, connect_to_all_nodes=True, load_balancing="in_order", zones=None, **settings
 ):
     """Every config but one uses `in_order` with keeper1 first, so only a metric of the policy can choose another node.
     `connect_to_all_nodes=False` omits the key, so that only a non-default policy can turn the mode on.
     The default wait is long: with every node up, a round ends as soon as all of them answered."""
+    zones = zones or {}
     nodes = "".join(
-        f"<node><host>{host}</host><port>9181</port></node>" for host in hosts
+        f"<node><host>{host}</host><port>9181</port>"
+        f"<availability_zone>{zones.get(host, '')}</availability_zone></node>"
+        for host in hosts
     )
     settings = {"connect_to_all_nodes_wait_ms": 10000, **settings}
     if connect_to_all_nodes:
@@ -171,6 +175,29 @@ def test_move_to_optimal_node_checks_all_nodes():
         assert "report different cluster configurations" in error
 
 
+def test_move_to_any_node_of_the_local_zone():
+    with PartitionManager() as pm_keeper1, PartitionManager() as pm_keeper2:
+        pm_keeper1.partition_instances(node, keeper1)
+        pm_keeper2.partition_instances(node, keeper2)
+        # keeper1 and keeper2 are in the zone of `node`, keeper1 ranks first among them and stays unreachable.
+        set_zookeeper_config(
+            CLUSTER_A,
+            zones={"keeper1": "az-keeper2", "keeper2": "az-keeper2"},
+            connect_to_all_nodes_policy="fewest_connections",
+            prefer_local_availability_zone=1,
+            fallback_session_lifetime="<min>1</min><max>2</max>",
+        )
+        assert connected_host() == "keeper3"
+
+        pm_keeper2.heal_all()
+        assert_eq_with_retry(
+            node,
+            "SELECT host FROM system.zookeeper_connection WHERE name = 'default'",
+            "keeper2",
+            retry_count=60,
+        )
+
+
 def test_fewest_connections():
     clients = []
     try:
@@ -216,6 +243,9 @@ def test_wait_and_fastest_connect():
             connect_to_all_nodes_policy="fastest_connect",
         )
         assert connected_host() in ["keeper2", "keeper3"]
+
+    # The delayed heartbeats may have left keeper1 electing a leader, and then it accepts no session.
+    keeper_utils.wait_nodes(cluster, [keeper1])
 
 
 def test_lowest_latency():
