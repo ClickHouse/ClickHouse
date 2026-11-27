@@ -380,6 +380,8 @@ ORDER BY tuple();
 SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 ```
 
+With an index on `mapValues(map)`, `hasToken`, `hasAnyTokens`, `hasAllTokens` and `hasPhrase` on a map element `map['key']` with a `String` search term apply the preprocessor to the element and to the search term, as for a `String` column.
+
 <a id="postprocessor-argument-optional"></a>**Postprocessor argument (optional)**. The postprocessor refers to an expression which is applied to each output token after tokenization.
 
 Unlike the preprocessor, which transforms the entire input string before the tokenizer splits it into tokens, the postprocessor operates on the tokens themselves, one at a time.
