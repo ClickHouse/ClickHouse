@@ -253,14 +253,14 @@ private:
     /// so the runs are found and merged; a tail with too many runs for its size is sorted the usual way.
     static void sortTail(Sample * samples, size_t size, MergeBuffer & merge_buffer)
     {
-        /// Merging beats `::sort` while `num_runs <= sqrt(size) / 2`, which is checked as `4 * num_runs * num_runs <= size`.
+        /// Merging beats `::sort` while `num_runs <= sqrt(size)`, which is checked as `num_runs * num_runs <= size`.
         Sample * const end = samples + size;
         /// The beginnings of the runs, followed by the end of the last run.
         Sample * run_begins[MAX_RUNS_TO_MERGE + 1];
         size_t num_runs = 0;
         for (Sample * pos = samples; pos != end;)
         {
-            if (num_runs == MAX_RUNS_TO_MERGE || 4 * (num_runs + 1) * (num_runs + 1) > size)
+            if (num_runs == MAX_RUNS_TO_MERGE || (num_runs + 1) * (num_runs + 1) > size)
             {
                 ::sort(samples, end, lessByTimestamp);
                 return;
@@ -373,7 +373,7 @@ private:
     }
 
     /// The most runs of an unsorted tail that are merged, whatever its size.
-    static constexpr size_t MAX_RUNS_TO_MERGE = 64;
+    static constexpr size_t MAX_RUNS_TO_MERGE = 128;
 
     /// Buffers with a smaller capacity grow without sorting the unsorted tail first.
     static constexpr size_t MIN_CAPACITY_TO_COMPACT = 64;

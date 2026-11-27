@@ -42,5 +42,18 @@
     <!-- Parallel two-level aggregation: partial states with tails are merged. -->
     <query>SELECT id, timeSeriesRateToGrid(300000, 300000, 300000, 300000)(timestamp, value) FROM ts_unsorted_tail GROUP BY id FORMAT Null SETTINGS max_threads = 8, group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1</query>
 
+    <!--
+        The unsorted tail consists of many ascending runs, as when the samples of one series are read from many parts.
+        Such a tail is sorted by merging its runs if their number is not too big for the size of the tail, and by a usual sort otherwise.
+        Every query puts about 4M samples into one state. A bucket gets a sorted run of L samples and then R more runs of L samples,
+        so its unsorted tail has R runs. The rows of one bucket go one after another, so a bucket is added as a whole and its tail is sorted once.
+    -->
+    <!-- L = 128, R = 64: the number of runs is close to the square root of the size of the tail; the runs interleave and have no common timestamps. -->
+    <query>SELECT timeSeriesRateToGrid(8320, 3993600, 8320, 8320)(toDateTime64(intDiv(number, 8320) * 8320 + 1 + (number % 8320 % 128) * 65 + intDiv(number % 8320, 128), 3, 'UTC'), toFloat64(number % 1000)) FROM numbers(3993600) FORMAT Null SETTINGS max_threads = 1</query>
+    <!-- L = 256, R = 128: a big tail with the most runs which are merged. -->
+    <query>SELECT timeSeriesRateToGrid(33024, 3995904, 33024, 33024)(toDateTime64(intDiv(number, 33024) * 33024 + 1 + (number % 33024 % 256) * 129 + intDiv(number % 33024, 256), 3, 'UTC'), toFloat64(number % 1000)) FROM numbers(3995904) FORMAT Null SETTINGS max_threads = 1</query>
+    <!-- L = 256, R = 128, and all the runs of a bucket have the same timestamps. -->
+    <query>SELECT timeSeriesRateToGrid(33024, 3995904, 33024, 33024)(toDateTime64(intDiv(number, 33024) * 33024 + 1 + number % 33024 % 256, 3, 'UTC'), toFloat64(number % 1000)) FROM numbers(3995904) FORMAT Null SETTINGS max_threads = 1</query>
+
     <drop_query>DROP TABLE IF EXISTS ts_unsorted_tail</drop_query>
 </test>
