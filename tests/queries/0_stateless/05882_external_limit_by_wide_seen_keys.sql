@@ -17,7 +17,7 @@ SETTINGS log_comment = '05882_external_limit_by_wide_seen_keys';
 
 -- `system.query_log` also holds the queries of every other test running in parallel, so read it with the
 -- default settings.
-SET max_untracked_memory = DEFAULT;
+SET max_block_size = DEFAULT, max_untracked_memory = DEFAULT;
 
 -- The query spilled.
 SYSTEM FLUSH LOGS query_log;
