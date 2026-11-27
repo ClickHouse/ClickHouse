@@ -213,6 +213,31 @@ refused "ALTER TABLE tal5 DROP COLUMN flag" ALTER_OF_COLUMN_IS_FORBIDDEN
 $CLICKHOUSE_CLIENT -q "ALTER TABLE tal5 DROP COLUMN misc"
 $CLICKHOUSE_CLIENT -q "SELECT 'derived table policy after drop', arraySort(groupArray(id)) FROM al5 SETTINGS enable_parallel_replicas = 0"
 
+echo "-- so does a table function that reads the target"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tal6 (id UInt32, tenant UInt32, misc UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tal6 VALUES (1, 1, 0), (2, 2, 0), (3, 1, 0);
+CREATE TABLE al6 ENGINE = Alias(tal6);
+CREATE ROW POLICY pal6 ON $DB.al6 FOR SELECT USING id IN (SELECT q.id FROM view(SELECT * FROM $DB.tal6) AS q WHERE q.tenant = 1) TO CURRENT_USER;
+"
+refused "ALTER TABLE tal6 DROP COLUMN tenant" ALTER_OF_COLUMN_IS_FORBIDDEN
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tal6 DROP COLUMN misc"
+$CLICKHOUSE_CLIENT -q "SELECT 'table function policy after drop', arraySort(groupArray(id)) FROM al6 SETTINGS enable_parallel_replicas = 0"
+
+echo "-- a qualifier binds in its own subquery, an alias of another table there hides the policy table and the outer aliases"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tal7 (id UInt32, tenant UInt32, flag UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tal7 VALUES (1, 1, 1), (2, 2, 1), (3, 1, 1);
+CREATE TABLE other7 (id UInt32, tenant UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO other7 VALUES (1, 1), (2, 1), (3, 2);
+CREATE TABLE al7 ENGINE = Alias(tal7);
+CREATE ROW POLICY pal7 ON $DB.al7 FOR SELECT USING id IN (SELECT r.id FROM $DB.tal7 AS r INNER JOIN $DB.other7 AS al7 ON r.id = al7.id WHERE al7.tenant = 1 AND r.flag = 1)
+    AND id IN (SELECT q.id FROM $DB.tal7 AS q WHERE q.id IN (SELECT q.id FROM $DB.other7 AS q WHERE q.tenant = 1)) TO CURRENT_USER;
+"
+refused "ALTER TABLE tal7 DROP COLUMN flag" ALTER_OF_COLUMN_IS_FORBIDDEN
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tal7 RENAME COLUMN tenant TO tenant_id"
+$CLICKHOUSE_CLIENT -q "SELECT 'scoped alias policy after rename', arraySort(groupArray(id)) FROM al7 SETTINGS enable_parallel_replicas = 0"
+
 echo "-- a table qualifier that is also a column name is removed when the subcolumn does not exist"
 $CLICKHOUSE_CLIENT --multiquery -q "
 CREATE TABLE tc (id UInt32, tc UInt8, tenant UInt32) ENGINE = MergeTree ORDER BY id;
@@ -297,6 +322,8 @@ DROP ROW POLICY pal2 ON $DB.al2;
 DROP ROW POLICY pal3 ON $DB.al3;
 DROP ROW POLICY pal4 ON $DB.al4;
 DROP ROW POLICY pal5 ON $DB.al5;
+DROP ROW POLICY pal6 ON $DB.al6;
+DROP ROW POLICY pal7 ON $DB.al7;
 DROP ROW POLICY pc ON $DB.tc;
 DROP ROW POLICY png ON $DB.tng;
 DROP ROW POLICY pm ON $DB.tm;
@@ -330,6 +357,11 @@ DROP TABLE other4;
 DROP TABLE al5;
 DROP TABLE tal5;
 DROP TABLE other5;
+DROP TABLE al6;
+DROP TABLE tal6;
+DROP TABLE al7;
+DROP TABLE tal7;
+DROP TABLE other7;
 DROP TABLE tc;
 DROP TABLE tng;
 DROP TABLE tm;
