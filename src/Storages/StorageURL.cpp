@@ -204,6 +204,44 @@ namespace
         return body_context;
     }
 
+    /// The query and union nodes of a resolved body tree keep the contexts of the analysis that produced them, and
+    /// the planner plans each node (and reads the table functions in it, such as a nested `url` with its own body) with
+    /// the context of that node. In a materialized view, the body tree is cached with the storage, so these contexts
+    /// hold the view source of the first inserted block. Give every node that holds a view source a copy of its context
+    /// bound to `view_source`. The contexts are replaced rather than modified, because a cloned tree shares them with
+    /// the cached one. Everything else in them, such as the user of an inlined `SQL SECURITY DEFINER` view, is kept.
+    void rebindViewSourceInQueryTree(const QueryTreeNodePtr & root, const StoragePtr & view_source)
+    {
+        std::vector<IQueryTreeNode *> nodes_to_process{root.get()};
+        while (!nodes_to_process.empty())
+        {
+            auto * node = nodes_to_process.back();
+            nodes_to_process.pop_back();
+
+            ContextMutablePtr * node_context = nullptr;
+            if (auto * query_node = node->as<QueryNode>())
+                node_context = &query_node->getMutableContext();
+            else if (auto * union_node = node->as<UnionNode>())
+                node_context = &union_node->getMutableContext();
+
+            if (node_context && *node_context)
+            {
+                auto old_view_source = (*node_context)->getViewSource();
+                if (old_view_source && old_view_source != view_source)
+                {
+                    auto rebound_context = Context::createCopy(*node_context);
+                    rebound_context->clearViewSource();
+                    rebound_context->addViewSource(view_source);
+                    *node_context = std::move(rebound_context);
+                }
+            }
+
+            for (const auto & child : node->getChildren())
+                if (child)
+                    nodes_to_process.push_back(child.get());
+        }
+    }
+
     /// Interpret the `body(...)` subquery. Executes it as a subquery (as `interpretSubquery` does),
     /// in a context sanitized the same way `interpretSubquery` and `getSubqueryContext` do it:
     /// the settings that apply to the top-level query only (`max_result_rows`, `max_result_bytes`,
@@ -239,6 +277,10 @@ namespace
         if (body.query_tree)
         {
             auto query_tree = body.query_tree->clone();
+            /// Rebind the node contexts first: the substitution below only replaces the source table in this tree,
+            /// while a nested `url` inside it reads (and computes its own body) with the context of its query node.
+            if (auto view_source = body_context->getViewSource())
+                rebindViewSourceInQueryTree(query_tree, view_source);
             /// The analysis pass of the enclosing query gives unique aliases to its table expressions, but query tree
             /// visitors skip unresolved table function arguments, so the subquery inside the `body(...)` wrapper is left
             /// without them. The planner needs them: the branches of a `UNION` share the column identifiers, and two
