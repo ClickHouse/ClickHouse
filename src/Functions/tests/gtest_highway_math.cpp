@@ -10,7 +10,6 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
-#include <random>
 #include <vector>
 
 /// Checks the vectorized math functions on every instruction set that the CPU supports, not only on the one
@@ -59,21 +58,40 @@ T sigmoidLibm(T x)
     return (x < 0 ? e : T(1)) / (T(1) + e);
 }
 
-/// Maximum error over random arguments in [lo, hi] (log-uniform when the range spans many orders of magnitude).
+/// A pseudorandom generator that gives the same sequence on every platform.
+uint64_t splitmix64(uint64_t & state)
+{
+    uint64_t z = (state += 0x9E3779B97F4A7C15ULL);
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    return z ^ (z >> 31);
+}
+
+/// Uniform in [-1, 1), computed exactly, without any library function.
+double uniformMinusOneToOne(uint64_t & state)
+{
+    return static_cast<double>(splitmix64(state) >> 11) * 0x1.0p-52 - 1.0;
+}
+
+/// Maximum error over pseudorandom arguments in [lo, hi] (log-uniform when the range spans many orders of magnitude).
 /// The function is called in place, as `FunctionMathUnary` does, on an array that is not a multiple of the vector size.
 template <typename T>
 double maxUlpError(Kernel<T> kernel, long double (*reference)(long double), T lo, T hi)
 {
     const size_t size = 10007;
-    std::mt19937_64 rng(42);
-    const bool log_scale = lo > 0 && static_cast<double>(hi) / static_cast<double>(lo) > 1e6;
+    uint64_t state = 42;
+    const double lo64 = static_cast<double>(lo);
+    const double hi64 = static_cast<double>(hi);
+    const bool log_scale = lo64 > 0 && hi64 / lo64 > 1e6;
     std::vector<T> args(size);
     for (auto & x : args)
     {
+        /// Uniform in [0, 1).
+        const double u = (uniformMinusOneToOne(state) + 1.0) / 2.0;
         if (log_scale)
-            x = static_cast<T>(std::exp(std::uniform_real_distribution<double>(std::log(double(lo)), std::log(double(hi)))(rng)));
+            x = static_cast<T>(std::exp(std::log(lo64) + u * (std::log(hi64) - std::log(lo64))));
         else
-            x = static_cast<T>(std::uniform_real_distribution<double>(static_cast<double>(lo), static_cast<double>(hi))(rng));
+            x = static_cast<T>(lo64 + u * (hi64 - lo64));
     }
 
     std::vector<T> res = args;
@@ -111,20 +129,6 @@ void checkSpecialValues(const char * name, Kernel<T> kernel, T (*libm)(T))
         else
             EXPECT_LE(ulpError<T>(res[i], static_cast<long double>(expected)), 4) << name << "(" << args[i] << ") = " << res[i] << ", expected " << expected;
     }
-}
-
-uint64_t splitmix64(uint64_t & state)
-{
-    uint64_t z = (state += 0x9E3779B97F4A7C15ULL);
-    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-    return z ^ (z >> 31);
-}
-
-/// Uniform in [-1, 1), computed exactly, without any library function.
-double uniformMinusOneToOne(uint64_t & state)
-{
-    return static_cast<double>(splitmix64(state) >> 11) * 0x1.0p-52 - 1.0;
 }
 
 /// Arguments that cover the whole domain, generated identically on every platform: a third in [-750, 750]
@@ -180,7 +184,8 @@ void checkTails(const char * name, Kernel<T> kernel, T (*libm)(T))
 {
     for (size_t size = 0; size <= 40; ++size)
     {
-        std::vector<T> args(size), res(size + 1, T(12345));
+        std::vector<T> args(size);
+        std::vector<T> res(size + 1, T(12345));
         for (size_t i = 0; i < size; ++i)
             args[i] = T(0.25) * T(i) - T(2);
         kernel(args.data(), size, res.data());

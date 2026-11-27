@@ -79,22 +79,45 @@ HWY_INLINE void apply(const T * src, size_t size, T * dst, F && f)
         hn::StoreN(f(d, hn::LoadN(d, src + i, size - i)), d, dst + i, size - i);
 }
 
-#define DEFINE_KERNEL(NAME, TYPE, IMPL) \
-    static void NAME(const TYPE * src, size_t size, TYPE * dst) \
-    { \
-        apply(src, size, dst, [](auto d, auto x) HWY_ATTR { return IMPL(d, x); }); \
-    }
+static void expFloat32(const float * src, size_t size, float * dst)
+{
+    apply(src, size, dst, [](auto d, auto x) HWY_ATTR { return expImpl(d, x); });
+}
 
-DEFINE_KERNEL(expFloat32, float, expImpl)
-DEFINE_KERNEL(expFloat64, double, expImpl)
-DEFINE_KERNEL(logFloat32, float, logImpl)
-DEFINE_KERNEL(logFloat64, double, logImpl)
-DEFINE_KERNEL(tanhFloat32, float, tanhImpl)
-DEFINE_KERNEL(tanhFloat64, double, tanhImpl)
-DEFINE_KERNEL(sigmoidFloat32, float, sigmoidImpl)
-DEFINE_KERNEL(sigmoidFloat64, double, sigmoidImpl)
+static void expFloat64(const double * src, size_t size, double * dst)
+{
+    apply(src, size, dst, [](auto d, auto x) HWY_ATTR { return expImpl(d, x); });
+}
 
-#undef DEFINE_KERNEL
+static void logFloat32(const float * src, size_t size, float * dst)
+{
+    apply(src, size, dst, [](auto d, auto x) HWY_ATTR { return logImpl(d, x); });
+}
+
+static void logFloat64(const double * src, size_t size, double * dst)
+{
+    apply(src, size, dst, [](auto d, auto x) HWY_ATTR { return logImpl(d, x); });
+}
+
+static void tanhFloat32(const float * src, size_t size, float * dst)
+{
+    apply(src, size, dst, [](auto d, auto x) HWY_ATTR { return tanhImpl(d, x); });
+}
+
+static void tanhFloat64(const double * src, size_t size, double * dst)
+{
+    apply(src, size, dst, [](auto d, auto x) HWY_ATTR { return tanhImpl(d, x); });
+}
+
+static void sigmoidFloat32(const float * src, size_t size, float * dst)
+{
+    apply(src, size, dst, [](auto d, auto x) HWY_ATTR { return sigmoidImpl(d, x); });
+}
+
+static void sigmoidFloat64(const double * src, size_t size, double * dst)
+{
+    apply(src, size, dst, [](auto d, auto x) HWY_ATTR { return sigmoidImpl(d, x); });
+}
 
 }
 HWY_AFTER_NAMESPACE();
