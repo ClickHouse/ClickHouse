@@ -2409,8 +2409,12 @@ When enabled, the filter of a `SELECT` query is evaluated on the dictionaries of
 and the parts of `MergeTree` tables where no value of a dictionary can satisfy the filter are not read, like with a skip
 index of type `set`. Only `Wide` parts written with the MergeTree setting `write_low_cardinality_complete_dictionaries_marker`
 are filtered, and only if the dictionaries contain all values of the column in the part.
-The parts on remote disks are not filtered: the dictionaries are read before the query starts reading the data,
-and the latency of remote reads can cost more than the pruning saves.
+The dictionaries are read after the query condition cache, the primary key and skip indexes, so not for the parts they exclude.
+Like skip indexes with `use_skip_indexes_on_data_read`, a part is checked right before it is read, so the dictionaries
+are not read for the parts that a query does not reach, e.g. because of `LIMIT`. A part skipped this way is recorded in
+the query condition cache, so a repeated query does not read the dictionaries again.
+The parts on remote disks are not filtered: the dictionaries are read synchronously, and the latency of remote reads
+can cost more than the pruning saves.
 The size of the dictionaries to read is limited by `max_low_cardinality_dictionaries_bytes_for_part_pruning`.
 
 Possible values:
@@ -2429,7 +2433,7 @@ The minimum number of marks left to read after the primary key analysis, per dat
 
 Loading statistics costs a few reads per data part, and on a cold start it can take longer than reading the data itself when the primary key already narrows the read to a small number of granules. If fewer marks than this setting multiplied by the number of parts whose statistics would be loaded are left to read, statistics are not loaded for these optimizations: parts are not pruned by statistics, and `PREWHERE` conditions are ordered by the sizes of their columns, as for tables without statistics. Statistics that are already in memory are used regardless of the size of the read.
 
-The dictionaries of `LowCardinality` columns are read for pruning parts (see `use_low_cardinality_dictionaries_for_part_pruning`) under the same condition, with the number of `Wide` parts in place of the number of parts whose statistics would be loaded.
+The dictionaries of `LowCardinality` columns are read for pruning a part (see `use_low_cardinality_dictionaries_for_part_pruning`) only if at least this number of marks is left to read in the part after the skip indexes (on average over the `Wide` parts, if the dictionaries are not read right before reading the part, as with `use_skip_indexes_on_data_read = 0`).
 
 Answering `min`, `max` and `count` from statistics (see `use_statistics_for_min_max_aggregation`) replaces the read and is not affected by this setting.
 

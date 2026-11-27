@@ -184,6 +184,9 @@ public:
         /// Set only with parallel replicas: the ranges this replica's query condition cache narrowed. The coordinator
         /// assigns ranges from another replica's analysis, so the read pool drops the granules outside of them.
         QueryConditionCacheReadRangesPtr query_condition_cache_read_ranges;
+        /// The key in the query condition cache under which the ranges excluded by index analysis are recorded,
+        /// if they are. The read records the parts it skips by `LowCardinality` dictionaries under it as well.
+        std::optional<UInt64> query_condition_cache_index_exclusions_hash;
         /// The filter constrains the primary key of the analyzed parts (the same criterion the
         /// `force_primary_key` check uses). A projection whose own key is not used may not serve
         /// the read.
@@ -212,6 +215,7 @@ public:
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
             , query_condition_cache_read_ranges(other.query_condition_cache_read_ranges)
+            , query_condition_cache_index_exclusions_hash(other.query_condition_cache_index_exclusions_hash)
             , pk_condition_useful(other.pk_condition_useful)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
@@ -236,6 +240,7 @@ public:
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
             , query_condition_cache_read_ranges(std::move(other.query_condition_cache_read_ranges))
+            , query_condition_cache_index_exclusions_hash(other.query_condition_cache_index_exclusions_hash)
             , pk_condition_useful(other.pk_condition_useful)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
@@ -367,6 +372,7 @@ public:
         bool allow_query_condition_cache_,
         bool allow_top_k_prewhere_query_condition_cache_,
         bool supports_skip_indexes_on_data_read,
+        bool supports_low_cardinality_dictionaries_on_data_read,
         bool check_row_limits,
         bool skip_ranges_analysis,
         bool report_index_usage,
@@ -1018,6 +1024,10 @@ private:
     void updateSortDescription();
 
     bool supportsSkipIndexesOnDataRead() const;
+    /// The conditions of `supportsSkipIndexesOnDataRead` that do not depend on the skip indexes. If it is true, the read
+    /// prunes parts by `LowCardinality` dictionaries right before reading them, rather than in index analysis,
+    /// see `MergeTreeLowCardinalityDictionariesFilter`.
+    bool supportsFilteringOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
     mutable AnalysisResultPtr analyzed_result_for_estimation_ptr;

@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeLowCardinalityDictionariesFilter.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -74,6 +76,49 @@ MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     , context(std::move(context_))
     , log(std::move(log_))
 {
+}
+
+void MergeTreeSkipIndexReader::setLowCardinalityDictionariesFilter(
+    std::shared_ptr<const MergeTreeLowCardinalityDictionariesFilter> filter,
+    std::optional<UInt64> query_condition_cache_hash,
+    String condition)
+{
+    low_cardinality_dictionaries_filter = std::move(filter);
+    low_cardinality_dictionaries_query_condition_cache_hash = query_condition_cache_hash;
+    low_cardinality_dictionaries_condition = std::move(condition);
+}
+
+bool MergeTreeSkipIndexReader::isPrunedByLowCardinalityDictionaries(
+    const MergeTreeDataPartInfoForReaderPtr & part_info, const MarkRanges & ranges) const
+{
+    if (!low_cardinality_dictionaries_filter || ranges.empty()
+        || ranges.getNumberOfMarks() < low_cardinality_dictionaries_filter->getMinMarksPerPart())
+        return false;
+
+    /// A borrowed part on a stateless worker has no data part.
+    const auto data_part = part_info->getDataPart();
+    if (!data_part || low_cardinality_dictionaries_filter->canMatch(data_part))
+        return false;
+
+    /// The dictionaries contain every value of the part, so no row of the whole part matches the filter,
+    /// not only of the ranges that this query reads.
+    if (low_cardinality_dictionaries_query_condition_cache_hash)
+    {
+        const String part_name = data_part->isProjectionPart()
+            ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
+            : data_part->name;
+        const auto & index_granularity = *data_part->index_granularity;
+        Context::getGlobalContextInstance()->getQueryConditionCache()->write(
+            data_part->storage.getStorageID().uuid,
+            part_name,
+            *low_cardinality_dictionaries_query_condition_cache_hash,
+            low_cardinality_dictionaries_condition,
+            MarkRanges{MarkRange{0, index_granularity.getMarksCountWithoutFinal()}},
+            index_granularity.getMarksCount(),
+            index_granularity.hasFinalMark());
+    }
+
+    return true;
 }
 
 void MergeTreeSkipIndexReader::setTopKPrimaryKeyPruning(size_t primary_key_column_position, TopKThresholdTrackerPtr tracker)
@@ -201,6 +246,15 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
         LOG_DEBUG(log, "Final set of granules after AND/OR processing : {} out of {} in part {}",
                         ranges.getNumberOfMarks(), total_granules, part_info->getPartName());
         total_granules = ranges.getNumberOfMarks();
+    }
+
+    /// After the skip indexes, so the dictionaries are not read for a part they exclude.
+    if (isPrunedByLowCardinalityDictionaries(part_info, ranges))
+    {
+        LOG_DEBUG(log, "Dictionaries of LowCardinality columns have dropped {}/{} granules in part {}",
+            total_granules, total_granules, part_info->getPartName());
+        ranges = {};
+        total_granules = 0;
     }
 
     /// Prune with a predicate known only at read time (e.g. a JOIN's collected keys). The primary key and skip indexes
@@ -353,7 +407,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     }
 
     res->may_skip_granules_besides_top_k_primary_key
-        = !skip_indexes.useful_indices.empty() || use_for_disjunctions || hasRuntimeFilters() || res->min_max_index_for_top_k;
+        = !skip_indexes.useful_indices.empty() || use_for_disjunctions || hasRuntimeFilters() || res->min_max_index_for_top_k
+            || low_cardinality_dictionaries_filter;
 
     /// Projection parts have a primary key of their own, which the position was not computed for.
     if (top_k_primary_key_column_position && top_k_threshold_tracker && !part_info->isProjectionPart())
