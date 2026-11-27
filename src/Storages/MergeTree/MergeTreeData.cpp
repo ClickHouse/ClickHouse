@@ -7571,6 +7571,25 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
+    /// The parts of a projection stay sorted by its key, so an ALTER must not change the key of a projection it keeps.
+    if (!is_secondary_replay)
+    {
+        const NameSet added_projections = commands.getAddedProjectionNames(old_metadata.projections);
+        for (const auto & old_projection : old_metadata.projections)
+        {
+            if (added_projections.contains(old_projection.name) || !new_metadata.projections.has(old_projection.name))
+                continue;
+            const auto & old_key = old_projection.metadata->getSortingKey();
+            const auto & new_key = new_metadata.projections.get(old_projection.name).metadata->getSortingKey();
+            if (old_key.column_names != new_key.column_names)
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Cannot ALTER table {}: it changes the sorting key of projection {} from ({}) to ({}), "
+                    "while the existing parts of the projection are sorted by the old key. Drop the projection first",
+                    getStorageID().getNameForLogs(), backQuoteIfNeed(old_projection.name),
+                    old_key.expression_list_ast->formatForErrorMessage(), new_key.expression_list_ast->formatForErrorMessage());
+        }
+    }
+
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
     /// Not in `checkProperties`, which also runs when a replica applies an already committed ALTER.
     if (!is_secondary_replay)

@@ -272,6 +272,7 @@ public:
 
     /// Indices the commands actually add: `ADD INDEX IF NOT EXISTS` of an existing name adds nothing.
     [[nodiscard]] NameSet getAddedIndexNames(const IndicesDescription & existing) const;
+    [[nodiscard]] NameSet getAddedProjectionNames(const ProjectionsDescription & existing) const;
 
     /// At least one command modify settings or comments.
     [[nodiscard]] bool hasNonReplicatedAlterCommand() const;
