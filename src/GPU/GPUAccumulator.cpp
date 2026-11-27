@@ -4,7 +4,6 @@
 
 #include <GPU/GPUColumns.h>
 #include <GPU/GPUDevice.h>
-#include <GPU/OffsetsKernels.cuh>
 
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -23,9 +22,7 @@ namespace ProfileEvents
 
 namespace DB::ErrorCodes
 {
-    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::GPU
@@ -33,23 +30,6 @@ namespace DB::GPU
 
 namespace
 {
-
-/// What cuDF takes as the rows of a column.
-constexpr size_t max_batch_rows = (1UL << 31) - 1;
-
-/// Where each compressed block starts on the device, as nvcomp reads them, see `nvcompZstdRequiredDecompressionAlignment`.
-constexpr size_t compressed_alignment = 8;
-
-/// The alignment of the addresses that nvcomp expands blocks to: 8 bytes for ZSTD, 4 for LZ4.
-constexpr size_t expand_alignment = 8;
-
-/// The bytes the sizes of a `String` column may add up to, as `MAX_TOTAL_STRING_SIZE` of `SerializationString`.
-constexpr UInt64 max_total_string_bytes = 1ULL << 48;
-
-size_t alignedUp(size_t bytes)
-{
-    return (bytes + compressed_alignment - 1) / compressed_alignment * compressed_alignment;
-}
 
 GPUElementType resultTypeFor(GPUElementType element_type, GPUAggregationKind aggregation)
 {
@@ -59,15 +39,6 @@ GPUElementType resultTypeFor(GPUElementType element_type, GPUAggregationKind agg
 bool isVariable(GPUElementType type)
 {
     return columnKindOf(type) == GPUColumnKind::Variable;
-}
-
-/// A `String` counts as one byte per row.
-size_t rowBytesOf(const std::vector<GPUElementType> & column_types)
-{
-    size_t bytes = 0;
-    for (const GPUElementType type : column_types)
-        bytes += isVariable(type) ? 1 : sizeOf(type);
-    return bytes;
 }
 
 std::vector<GPUElementType> typesAt(const std::vector<GPUElementType> & column_types, const std::vector<size_t> & positions)
@@ -92,7 +63,7 @@ std::vector<DeviceColumnView> columnsAt(const GPUDeviceBatch & batch, const std:
     {
         if (position >= columns.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of a GPU batch of {} columns", position, columns.size());
-        result.push_back(columns[position]);
+        result.push_back(columns[position].view());
     }
     return result;
 }
@@ -138,487 +109,6 @@ std::vector<GPUComputedArgument> computedArgumentsOrThrow(const std::vector<GPUE
     return computed;
 }
 
-}
-
-void GPUStagedColumn::clear()
-{
-    values.clear();
-    sizes.clear();
-}
-
-void GPUStagedBatch::clear()
-{
-    for (auto & column : columns)
-        column.clear();
-    part_rows.reset();
-}
-
-std::unique_ptr<GPUStagedBatch> GPUStagedBatchPool::take(size_t num_columns)
-{
-    std::unique_ptr<GPUStagedBatch> batch;
-    {
-        std::lock_guard lock(mutex);
-        if (!free_batches.empty())
-        {
-            batch = std::move(free_batches.back());
-            free_batches.pop_back();
-        }
-    }
-    if (!batch)
-        batch = std::make_unique<GPUStagedBatch>();
-    batch->clear();
-    batch->columns.resize(num_columns);
-    return batch;
-}
-
-void GPUStagedBatchPool::give(std::unique_ptr<GPUStagedBatch> batch)
-{
-    std::lock_guard lock(mutex);
-    free_batches.push_back(std::move(batch));
-}
-
-GPUBlockStager::GPUBlockStager(std::vector<GPUElementType> column_types_, size_t batch_bytes, std::shared_ptr<GPUStagedBatchPool> pool_)
-    : column_types(std::move(column_types_))
-    , batch_rows(std::clamp(batch_bytes / std::max<size_t>(rowBytesOf(column_types), 1), size_t{1}, max_batch_rows))
-    , pool(std::move(pool_))
-{
-    if (column_types.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU read of no columns");
-    current = pool->take(column_types.size());
-}
-
-CompressedHostColumn & GPUBlockStager::streamOrThrow(size_t column, GPUStream stream)
-{
-    if (column >= column_types.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of a GPU read of {} columns", column, column_types.size());
-    if (stream == GPUStream::Values)
-        return current->columns[column].values;
-    if (!isVariable(column_types[column]))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The sizes of column {} of a GPU read, which is of a fixed width", column);
-    return current->columns[column].sizes;
-}
-
-bool GPUBlockStager::isFull() const
-{
-    size_t rows = std::numeric_limits<size_t>::max();
-    for (size_t c = 0; c < column_types.size(); ++c)
-    {
-        const GPUStagedColumn & column = current->columns[c];
-        if (column.values.bytes.size() >= max_column_bytes || column.sizes.bytes.size() >= max_column_bytes)
-            return true;
-        /// The bytes of a `String` make no rows of their own: its sizes do.
-        rows = std::min(rows, isVariable(column_types[c]) ? column.sizes.kept_bytes / sizeof(UInt64) : column.values.kept_bytes / sizeOf(column_types[c]));
-    }
-    return rows >= batch_rows;
-}
-
-void GPUBlockStager::finishBatch(std::optional<size_t> part_rows)
-{
-    current->part_rows = part_rows;
-    finished.push_back(std::move(current));
-    current = pool->take(column_types.size());
-}
-
-std::unique_ptr<GPUStagedBatch> GPUBlockStager::takeFinished()
-{
-    if (finished.empty())
-        return nullptr;
-    auto batch = std::move(finished.front());
-    finished.pop_front();
-    return batch;
-}
-
-void GPUBlockStager::addCompressedBlock(
-    size_t column_index,
-    GPUStream stream,
-    UInt8 method,
-    std::string_view payload,
-    size_t decompressed_bytes,
-    size_t expected_bytes,
-    size_t skipped_bytes,
-    size_t kept_bytes)
-{
-    const auto codec = codecOf(method);
-    /// The plan knows the codecs of the table, not those of the blocks of a part: a part written before an `ALTER` of a
-    /// codec, or by the adaptive codec, may hold blocks of others.
-    if (!codec)
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "A block of compression method {:#x} read for the GPU, which the device does not expand; such a part is aggregated "
-            "on the CPU with `allow_experimental_gpu_aggregation = 0`",
-            static_cast<UInt16>(method));
-
-    if (skipped_bytes + kept_bytes > decompressed_bytes)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "{} bytes kept after {} skipped of a block of {} for the GPU", kept_bytes, skipped_bytes, decompressed_bytes);
-
-    /// A batch has one run of bytes of each stream: it starts at a block that skips bytes, and ends at one cut short.
-    {
-        const CompressedHostColumn & column = streamOrThrow(column_index, stream);
-        if (column.isCut() || (!column.empty() && (skipped_bytes != 0 || column.codec != codec)))
-            finishBatch();
-    }
-
-    CompressedHostColumn & column = streamOrThrow(column_index, stream);
-    if (column.blocks.empty())
-    {
-        column.skipped_bytes = skipped_bytes;
-        column.bytes.reserve(std::min(max_column_bytes, std::max(expected_bytes, payload.size())));
-    }
-    column.kept_bytes += kept_bytes;
-    column.codec = codec;
-
-    column.bytes.resize_fill(alignedUp(column.bytes.size()), 0);
-    addCompressedBlocksOf(*codec, payload, column.bytes.size(), decompressed_bytes, column.blocks);
-    appendHostBytes(column.bytes, payload);
-
-    if (isFull())
-        finishBatch();
-}
-
-void GPUBlockStager::finishPart(size_t num_rows)
-{
-    finishBatch(num_rows);
-}
-
-GPUDeviceBatch::GPUDeviceBatch(std::shared_ptr<StreamPtr> upload_stream_)
-    : upload_stream(std::move(upload_stream_))
-{
-}
-
-GPUDeviceBatch::~GPUDeviceBatch()
-{
-    if (!consumed || !consumer || !upload_stream)
-        return;
-
-    /// The uploader's stream frees the memory, so it must wait for the consumer's stream.
-    try
-    {
-        checkCuda(cudaEventRecord(consumed.get(), consumer), "Cannot mark a point in the stream of a GPU batch's consumer");
-        checkCuda(cudaStreamWaitEvent(upload_stream->get(), consumed.get(), 0), "Cannot make an upload stream wait for a GPU batch's consumer");
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        cudaStreamSynchronize(consumer);
-    }
-}
-
-void GPUDeviceBatch::moveTo(cuda::stream_ref stream)
-{
-    if (consumer)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU batch handed to a stream twice");
-
-    checkCuda(cudaStreamWaitEvent(stream.get(), ready.get(), 0), "Cannot make a stream wait for a GPU batch");
-    consumed = createEvent();
-    consumer = stream.get();
-}
-
-GPUBatchUploader::GPUBatchUploader(std::vector<GPUElementType> column_types_)
-    : stream(std::make_shared<StreamPtr>(createStream()))
-    , column_types(std::move(column_types_))
-    , decompression(cuda::stream_ref{stream->get()})
-{
-    const cuda::stream_ref own{stream->get()};
-    carried.reserve(column_types.size());
-    for (size_t c = 0; c < column_types.size(); ++c)
-        carried.push_back({.values = DeviceBuffer(own), .offsets = DeviceBuffer(own), .size_tail = DeviceBuffer(own)});
-}
-
-std::optional<GPUDeviceBatch> GPUBatchUploader::upload(const GPUStagedBatch & staged)
-{
-    if (failed)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A batch for a GPU uploader that failed on one before");
-
-    /// What is carried does not follow the rows sent anymore if it throws.
-    failed = true;
-    std::optional<GPUDeviceBatch> batch;
-    waitOnFailure(cuda::stream_ref{stream->get()}, [&]
-    {
-        if (auto expanded = expand(staged))
-            batch.emplace(std::move(*expanded));
-    });
-    failed = false;
-    return batch;
-}
-
-std::optional<GPUDeviceBatch> GPUBatchUploader::expand(const GPUStagedBatch & staged)
-{
-    const cuda::stream_ref own{stream->get()};
-    const size_t num_columns = column_types.size();
-
-    if (staged.columns.size() != num_columns)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A staged batch of {} columns for a GPU read of {}", staged.columns.size(), num_columns);
-
-    GPUDeviceBatch batch(stream);
-    batch.buffers.reserve(2 * num_columns);
-
-    /// Of each column, on the device: where its values, or the bytes of a `String`, start, and how many bytes of them
-    /// there are; of a `String`, also the offsets of its rows, one more than the rows with a size.
-    struct Expanded
-    {
-        char * values = nullptr;
-        size_t values_bytes = 0;
-        uint64_t * offsets = nullptr;
-        size_t sized_rows = 0;
-        size_t carried_rows = 0;
-        /// The bytes of a size that the last block of sizes cut.
-        const char * size_tail = nullptr;
-        size_t size_tail_bytes = 0;
-        /// The rows the batch takes, and of a `String` the bytes of them.
-        size_t covered_rows = 0;
-        size_t taken_bytes = 0;
-    };
-    std::vector<Expanded> expanded(num_columns);
-
-    /// nvcomp takes only aligned destinations: blocks of others expand elsewhere and are copied in place.
-    std::vector<DeviceBuffer> expanded_elsewhere;
-    struct Move
-    {
-        const char * from;
-        char * to;
-        size_t bytes;
-    };
-    std::vector<Move> moves;
-
-    size_t compressed_total = 0;
-    for (const auto & column : staged.columns)
-    {
-        for (const CompressedHostColumn * stream_of_column : {&column.values, &column.sizes})
-            compressed_total += alignedUp(stream_of_column->bytes.size());
-    }
-    DeviceBuffer uploaded(own);
-    char * const uploaded_base = compressed_total ? uploaded.grow(compressed_total) : nullptr;
-    size_t uploaded_at = 0;
-
-    std::vector<std::pair<GPUCodec, std::vector<CompressedPiece>>> pieces;
-    const auto pieces_of = [&](GPUCodec codec) -> std::vector<CompressedPiece> &
-    {
-        for (auto & [of, list] : pieces)
-        {
-            if (of == codec)
-                return list;
-        }
-        return pieces.emplace_back(codec, std::vector<CompressedPiece>{}).second;
-    };
-
-    /// Sends the compressed blocks of a stream, to be expanded to `destination`.
-    const auto send = [&](const CompressedHostColumn & column, char * destination)
-    {
-        const size_t expanded_bytes = column.expandedBytes();
-        if (expanded_bytes == 0)
-            return;
-        char * const at = uploaded_base + uploaded_at;
-        checkCuda(
-            cudaMemcpyAsync(at, column.bytes.data(), column.bytes.size(), cudaMemcpyHostToDevice, own.get()),
-            "Cannot send compressed blocks to the device");
-        char * expand_to = destination;
-        if (reinterpret_cast<uintptr_t>(destination) % expand_alignment != 0)
-        {
-            expand_to = expanded_elsewhere.emplace_back(own).grow(expanded_bytes);
-            moves.push_back({expand_to, destination, expanded_bytes});
-        }
-        pieces_of(*column.codec).push_back({
-            .device_compressed = at,
-            .compressed_bytes = column.bytes.size(),
-            .blocks = column.blocks,
-            .destination = expand_to,
-        });
-        uploaded_at += alignedUp(column.bytes.size());
-    };
-
-    for (size_t c = 0; c < num_columns; ++c)
-    {
-        const GPUStagedColumn & column = staged.columns[c];
-        Expanded & out = expanded[c];
-
-        /// The carried bytes are copied over the skipped ones; the padding aligns the start of the column.
-        {
-            const CompressedHostColumn & values = column.values;
-            const size_t carried_bytes = carried[c].values.size();
-            const size_t lead = std::max(carried_bytes, values.skipped_bytes);
-            const size_t element = isVariable(column_types[c]) ? 1 : sizeOf(column_types[c]);
-            const size_t padding = (element - (lead - carried_bytes) % element) % element;
-            char * const base = batch.buffers.emplace_back(own).grow(padding + lead - values.skipped_bytes + values.expandedBytes());
-            out.values = base + padding + lead - carried_bytes;
-            out.values_bytes = carried_bytes + values.kept_bytes;
-            send(values, base + padding + lead - values.skipped_bytes);
-        }
-
-        if (!isVariable(column_types[c]))
-            continue;
-
-        /// The offsets carried, then the bytes of the size that the batch before ended within, then the sizes.
-        const CompressedHostColumn & sizes = column.sizes;
-        if (sizes.skipped_bytes != 0 || sizes.isCut())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The sizes of a column of varying width for the GPU read in ranges of marks");
-        const DeviceBuffer & carried_offsets = carried[c].offsets;
-        const DeviceBuffer & tail = carried[c].size_tail;
-        const size_t carried_entries = carried_offsets.empty() ? 1 : carried_offsets.size() / sizeof(UInt64);
-        char * const base = batch.buffers.emplace_back(own).grow(carried_entries * sizeof(UInt64) + tail.size() + sizes.expandedBytes());
-        if (carried_offsets.empty())
-            checkCuda(cudaMemsetAsync(base, 0, sizeof(UInt64), own.get()), "Cannot start the offsets of a column of varying width");
-        else
-            checkCuda(
-                cudaMemcpyAsync(base, carried_offsets.data(), carried_offsets.size(), cudaMemcpyDeviceToDevice, own.get()),
-                "Cannot carry offsets on the device");
-        char * const first_size = base + carried_entries * sizeof(UInt64);
-        if (!tail.empty())
-            checkCuda(
-                cudaMemcpyAsync(first_size, tail.data(), tail.size(), cudaMemcpyDeviceToDevice, own.get()),
-                "Cannot carry the bytes of a string size on the device");
-        out.offsets = reinterpret_cast<uint64_t *>(base);
-        out.carried_rows = carried_entries - 1;
-        const size_t size_bytes = tail.size() + sizes.kept_bytes;
-        out.sized_rows = out.carried_rows + size_bytes / sizeof(UInt64);
-        out.size_tail_bytes = size_bytes % sizeof(UInt64);
-        out.size_tail = first_size + size_bytes - out.size_tail_bytes;
-        send(sizes, first_size + tail.size());
-    }
-
-    /// The staged memory is free once the uploads are done; nvcomp waits for them as well.
-    checkCuda(cudaEventRecord(staged_sent.get(), own.get()), "Cannot mark a point in an uploader's stream");
-    for (auto & [codec, list] : pieces)
-    {
-        decompression.launch(codec, list, nullptr, staged_sent.get());
-        decompression.waitAndCheck();
-    }
-    checkCuda(cudaEventSynchronize(staged_sent.get()), "Cannot wait for the uploads of a batch");
-    for (const Move & move : moves)
-        checkCuda(cudaMemcpyAsync(move.to, move.from, move.bytes, cudaMemcpyDeviceToDevice, own.get()), "Cannot move expanded bytes on the device");
-
-    for (size_t c = 0; c < num_columns; ++c)
-    {
-        if (!carried[c].values.empty())
-            checkCuda(
-                cudaMemcpyAsync(expanded[c].values, carried[c].values.data(), carried[c].values.size(), cudaMemcpyDeviceToDevice, own.get()),
-                "Cannot carry bytes on the device");
-
-        Expanded & out = expanded[c];
-        const size_t fresh = out.sized_rows - out.carried_rows;
-        if (!isVariable(column_types[c]) || fresh == 0)
-            continue;
-        /// The sizes are untrusted: bounded as on the CPU, from the carried offset, before they become offsets.
-        uint64_t * const offsets = out.offsets + out.carried_rows;
-        if (endOfSizesUpTo(offsets, offsets + 1, fresh, max_total_string_bytes, own) > max_total_string_bytes)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "The sizes of a String column read on the GPU declare more than {} bytes, most likely the data is corrupted",
-                max_total_string_bytes);
-        offsetsFromSizes(offsets + 1, fresh, offsets, own);
-    }
-
-    /// The rows every column has: of a `String`, those whose bytes are all there.
-    size_t rows = std::numeric_limits<size_t>::max();
-    for (size_t c = 0; c < num_columns; ++c)
-    {
-        Expanded & out = expanded[c];
-        if (!isVariable(column_types[c]))
-        {
-            out.covered_rows = out.values_bytes / sizeOf(column_types[c]);
-        }
-        else
-        {
-            const CoveredRows covered = rowsCoveredBy(out.offsets, out.sized_rows, out.values_bytes, own);
-            out.covered_rows = covered.rows;
-            out.taken_bytes = covered.bytes;
-        }
-        rows = std::min(rows, out.covered_rows);
-    }
-
-    for (size_t c = 0; c < num_columns; ++c)
-    {
-        Expanded & out = expanded[c];
-        if (!isVariable(column_types[c]))
-            out.taken_bytes = rows * sizeOf(column_types[c]);
-        else if (out.covered_rows != rows)
-            out.taken_bytes = rowsCoveredBy(out.offsets, rows, out.values_bytes, own).bytes;
-    }
-
-    if (staged.part_rows)
-    {
-        const size_t part_rows = *staged.part_rows;
-        if (part_rows < part_rows_sent || rows != part_rows - part_rows_sent)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "A part of {} rows came to {} rows sent and {} on the device in every column of a GPU read",
-                part_rows,
-                part_rows_sent,
-                rows);
-        for (size_t c = 0; c < num_columns; ++c)
-        {
-            const Expanded & out = expanded[c];
-            if (!isVariable(column_types[c]))
-            {
-                if (out.values_bytes != out.taken_bytes)
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Column {} of a part came to {} bytes on the device, where the part has {} rows",
-                        c,
-                        out.values_bytes,
-                        part_rows);
-                continue;
-            }
-            if (out.size_tail_bytes != 0)
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA, "The sizes of a String column of a part read on the GPU end within a size, the data is corrupted");
-            if (out.sized_rows != rows || out.taken_bytes != out.values_bytes)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Column {} of varying width of a part came to {} sizes and {} bytes on the device, of which its {} rows take {}",
-                    c,
-                    out.sized_rows,
-                    out.values_bytes,
-                    rows,
-                    out.taken_bytes);
-        }
-    }
-
-    /// What the batch does not take is carried to the next one.
-    for (size_t c = 0; c < num_columns; ++c)
-    {
-        const Expanded & out = expanded[c];
-        DeviceBuffer next(own);
-        if (const size_t left = out.values_bytes - out.taken_bytes; left != 0)
-            checkCuda(
-                cudaMemcpyAsync(next.grow(left), out.values + out.taken_bytes, left, cudaMemcpyDeviceToDevice, own.get()),
-                "Cannot carry bytes on the device");
-        carried[c].values = std::move(next);
-
-        if (!isVariable(column_types[c]))
-            continue;
-
-        DeviceBuffer next_tail(own);
-        if (out.size_tail_bytes != 0)
-            checkCuda(
-                cudaMemcpyAsync(next_tail.grow(out.size_tail_bytes), out.size_tail, out.size_tail_bytes, cudaMemcpyDeviceToDevice, own.get()),
-                "Cannot carry the bytes of a string size on the device");
-        carried[c].size_tail = std::move(next_tail);
-
-        DeviceBuffer next_offsets(own);
-        if (const size_t sizes_left = out.sized_rows - rows; sizes_left != 0)
-            subtractFromOffsets(
-                out.offsets + rows, sizes_left + 1, out.taken_bytes, reinterpret_cast<uint64_t *>(next_offsets.grow((sizes_left + 1) * sizeof(UInt64))), own);
-        carried[c].offsets = std::move(next_offsets);
-    }
-
-    part_rows_sent = staged.part_rows ? 0 : part_rows_sent + rows;
-
-    if (rows == 0)
-        return std::nullopt;
-
-    batch.num_rows = rows;
-    batch.column_views.reserve(num_columns);
-    for (size_t c = 0; c < num_columns; ++c)
-    {
-        const Expanded & out = expanded[c];
-        if (isVariable(column_types[c]))
-            batch.column_views.emplace_back(DeviceVariableColumn{.offsets = out.offsets, .chars = out.values, .rows = rows, .chars_bytes = out.taken_bytes});
-        else
-            batch.column_views.emplace_back(DeviceFixedColumn{.element_type = column_types[c], .data = out.values, .rows = rows});
-    }
-    checkCuda(cudaEventRecord(batch.ready.get(), own.get()), "Cannot mark a point in an upload stream");
-    return batch;
 }
 
 GPUGroupingLane::GPUGroupingLane(
@@ -674,10 +164,10 @@ CudfGroupBy & GPUGroupingLane::groupByOrThrow() const
     return *group_by;
 }
 
-void GPUGroupingLane::add(GPUDeviceBatch batch)
+void GPUGroupingLane::add(GPUFuture<GPUDeviceBatch> future)
 {
     CudfGroupBy & groups = groupByOrThrow();
-    batch.moveTo(stream());
+    const GPUDeviceBatch batch = takeOn(std::move(future), stream());
     const std::vector<DeviceColumnView> key_columns = columnsAt(batch, batch_columns.keys);
     const std::vector<DeviceColumnView> value_columns = columnsAt(batch, batch_columns.values);
     const std::vector<DeviceFixedColumn> filter_columns = fixedColumnsAt(batch, batch_columns.where);
@@ -715,14 +205,14 @@ std::vector<DeviceColumnView> GPUGroupingLane::withComputedArguments(const std::
     return all_values;
 }
 
-MutableColumns GPUGroupingLane::filterRows(GPUDeviceBatch batch, const DataTypes & types)
+MutableColumns GPUGroupingLane::filterRows(GPUFuture<GPUDeviceBatch> future, const DataTypes & types)
 {
     if (!row_filter)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Rows filtered by a GPU lane that groups them");
     if (types.size() != values.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} types of {} columns filtered on the GPU", types.size(), values.size());
 
-    batch.moveTo(stream());
+    const GPUDeviceBatch batch = takeOn(std::move(future), stream());
     const std::vector<DeviceColumnView> value_columns = columnsAt(batch, batch_columns.values);
     const std::vector<DeviceFixedColumn> where_columns = fixedColumnsAt(batch, batch_columns.where);
 
@@ -850,17 +340,17 @@ GPUAccumulator::GPUAccumulator(
     }
 }
 
-void GPUAccumulator::add(GPUDeviceBatch batch)
+void GPUAccumulator::add(GPUFuture<GPUDeviceBatch> future)
 {
-    const std::vector<DeviceColumnView> & columns = batch.columns();
+    const GPUDeviceBatch batch = takeOn(std::move(future), cuda::stream_ref{reduce_stream.get()});
+    const std::vector<GPUDeviceColumn> & columns = batch.columns();
     if (columns.size() != reductions.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU batch of {} columns for {} reductions", columns.size(), reductions.size());
 
-    batch.moveTo(cuda::stream_ref{reduce_stream.get()});
 
     Stopwatch watch;
     for (size_t i = 0; i < columns.size(); ++i)
-        reductions[i]->addBatch(columns[i]);
+        reductions[i]->addBatch(columns[i].view());
 
     ProfileEvents::increment(ProfileEvents::GPUAggregationRows, batch.rows());
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
