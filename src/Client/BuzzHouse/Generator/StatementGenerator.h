@@ -1082,7 +1082,7 @@ public:
     const std::function<bool(const SQLTable &)> attached_tables_for_external_call = [](const SQLTable & t)
     {
         const auto is_valid_utf8
-            = [](const String & s) { return DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(s.data()), s.size()) != 0; };
+            = [](const String & s) { return DB::UTF8::isValidUTF8(reinterpret_cast<const ::UInt8 *>(s.data()), s.size()) != 0; };
         return t.isAttached() && t.integration == IntegrationCall::Dolor && is_valid_utf8(t.getBaseName(false))
             && is_valid_utf8(t.getDatabaseName());
     };
