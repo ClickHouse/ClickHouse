@@ -3792,41 +3792,47 @@ ColumnPtr convertObjectColumns(
 }
 
 /// The text of a `DateTime` has no time zone, so a cast between two JSON types writes and parses the `DateTime`s that pair up
-/// in UTC: returns `type` with them in UTC, which does not change its column. The pairs are the same seen from either type.
+/// in UTC: returns both types with them in UTC, which does not change their columns.
 /// A typed path overlapping another typed path is kept, because an object at either one can be written or read whole.
-DataTypePtr withPairedDateTimesInUTC(const DataTypeObject & object, const DataTypeObject & other)
+std::pair<DataTypePtr, DataTypePtr> withPairedDateTimesInUTC(const DataTypeObject & from, const DataTypeObject & to)
 {
-    auto to_utc = [](const DataTypePtr & leaf, const DataTypePtr & other_leaf) -> DataTypePtr
+    auto to_utc = [](DataTypes & leaves, TypeIndexesSet &)
     {
-        if (isObject(leaf) && isObject(other_leaf))
-            return withPairedDateTimesInUTC(assert_cast<const DataTypeObject &>(*leaf), assert_cast<const DataTypeObject &>(*other_leaf));
-        if (!isDateTimeOrDateTime64(other_leaf))
-            return leaf;
-        if (isDateTime(leaf))
-            return std::make_shared<DataTypeDateTime>("UTC");
-        if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(leaf.get()))
-            return std::make_shared<DataTypeDateTime64>(date_time64->getScale(), "UTC");
-        return leaf;
+        if (!isDateTimeOrDateTime64(leaves[0]) || !isDateTimeOrDateTime64(leaves[1]))
+            return;
+        for (auto & leaf : leaves)
+        {
+            if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(leaf.get()))
+                leaf = std::make_shared<DataTypeDateTime64>(date_time64->getScale(), "UTC");
+            else
+                leaf = std::make_shared<DataTypeDateTime>("UTC");
+        }
     };
-    const auto & other_paths = other.getTypedPaths();
+    auto from_paths = from.getTypedPaths();
+    auto to_paths = to.getTypedPaths();
     UnorderedSetWithMemoryTracking<std::string_view> overlapping;
-    for (const auto * paths : {&object.getTypedPaths(), &other_paths})
+    for (const auto * paths : {&from.getTypedPaths(), &to.getTypedPaths()})
         for (const auto & [path, _] : *paths)
             for (size_t dot = path.find('.'); dot != String::npos; dot = path.find('.', dot + 1))
-                if (std::string_view above(path.data(), dot); object.getTypedPaths().contains(above) || other_paths.contains(above))
+                if (std::string_view above(path.data(), dot); from_paths.contains(above) || to_paths.contains(above))
                     overlapping.insert({above, path});
-    auto typed_paths = object.getTypedPaths();
-    for (auto & [path, path_type] : typed_paths)
+    for (auto & [path, from_type] : from_paths)
     {
-        auto it = other_paths.find(path);
-        if (it == other_paths.end() || overlapping.contains(path))
+        auto it = to_paths.find(path);
+        if (it == to_paths.end() || overlapping.contains(path))
             continue;
-        auto relabeled = replaceNestedTypesInPair(path_type, it->second, to_utc, /*left_is_common_type=*/ false, /*as_json_text=*/ true);
-        if (relabeled)
-            path_type = std::move(relabeled);
+        /// Any alternative of a `Variant` can parse the text, also one that was written from another alternative.
+        DataTypes types{from_type, it->second};
+        transformTypesRecursively(types, to_utc, /*transform_complex_types=*/ nullptr, /*format_settings=*/ nullptr, {TypeIndex::Variant});
+        from_type = std::move(types[0]);
+        it->second = std::move(types[1]);
     }
-    return std::make_shared<DataTypeObject>(object.getSchemaFormat(), std::move(typed_paths), object.getPathsToSkip(),
-        object.getPathRegexpsToSkip(), object.getMaxDynamicPaths(), object.getMaxDynamicTypes(), object.getSharedTypedPaths());
+    auto make_object = [](const DataTypeObject & object, DataTypeObject::TypedPathsMap typed_paths) -> DataTypePtr
+    {
+        return std::make_shared<DataTypeObject>(object.getSchemaFormat(), std::move(typed_paths), object.getPathsToSkip(),
+            object.getPathRegexpsToSkip(), object.getMaxDynamicPaths(), object.getMaxDynamicTypes(), object.getSharedTypedPaths());
+    };
+    return {make_object(from, std::move(from_paths)), make_object(to, std::move(to_paths))};
 }
 
 /// Format+parse fallback for Object->Object conversion (existing approach).
@@ -3895,10 +3901,7 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
     DataTypePtr text_from_type;
     DataTypePtr text_to_type;
     if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get()))
-    {
-        text_from_type = withPairedDateTimesInUTC(*from_object, *to_object);
-        text_to_type = withPairedDateTimesInUTC(*to_object, *from_object);
-    }
+        std::tie(text_from_type, text_to_type) = withPairedDateTimesInUTC(*from_object, *to_object);
 
     /// Optimized Object(JSON) -> Object(JSON) conversion: avoid full serialize+parse when
     /// only a subset of paths are affected by parameter changes (typed paths, skip rules).

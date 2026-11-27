@@ -8,17 +8,20 @@ namespace DB
 
 struct FormatSettings;
 
-/// Function that applies custom transformation functions to provided types recursively.
-/// Implementation is similar to function getLeastSuperType:
-/// If all types are Array/Map/Tuple/Nullable, this function will be called to nested types.
-/// If not all types are the same complex type (Array/Map/Tuple), this function won't be called to nested types.
-/// Function transform_simple_types will be applied to resulting simple types after all recursive calls.
-/// Function transform_complex_types will be applied to complex types (Array/Map/Tuple) after recursive call to their nested types.
+/// Applies custom transformation functions to provided types recursively, walking them together.
+/// A Nullable or LowCardinality is unwrapped on the types that have it. Types of one complex kind are descended into when they line up:
+/// any Array or Map; a Tuple of the same size, element names and naming mode; a JSON with the same set of typed paths, paired by path;
+/// a Variant with the same set of alternatives, paired by `equals`, when no type holds two `equals`-equal alternatives.
+/// A type is rebuilt with `cloneWithChildren` only when one of its children changed.
+/// Function transform_simple_types is applied to types that are not complex.
+/// Function transform_complex_types is applied to complex types after the recursive call to their nested types, or without it
+/// when they do not line up or their kind is in types_to_not_descend.
 void transformTypesRecursively(
     DataTypes & types,
     std::function<void(DataTypes &, TypeIndexesSet &)> transform_simple_types,
     std::function<void(DataTypes &, TypeIndexesSet &)> transform_complex_types,
-    const FormatSettings * format_settings = nullptr);
+    const FormatSettings * format_settings = nullptr,
+    const TypeIndexesSet & types_to_not_descend = {});
 
 /// Answers with the type to put in place of `left`, which may be `left` itself, or nullptr to refuse the pair.
 using PairedLeafCallback = std::function<DataTypePtr(const DataTypePtr & left, const DataTypePtr & right)>;
@@ -37,14 +40,7 @@ using PairedLeafCallback = std::function<DataTypePtr(const DataTypePtr & left, c
 /// the common type was built: a named and an unnamed Tuple by position, through a custom name on `right` alone
 /// (`Nested`), and the typed paths of two JSON types by path. A `Nothing` on `right` (the element of an empty
 /// array) contributes nothing to the common type, so that part of `left` is kept as is.
-/// With as_json_text, the pairs are those of a JSON text written from `left` and parsed into `right`: named Tuples pair only
-/// when their names match, a Variant is not walked (any alternative of `right` can parse the text), custom names are ignored,
-/// and a part of `left` that does not line up with `right` is kept as is instead of refusing the whole walk.
 DataTypePtr replaceNestedTypesInPair(
-    const DataTypePtr & left,
-    const DataTypePtr & right,
-    const PairedLeafCallback & on_leaf,
-    bool left_is_common_type = false,
-    bool as_json_text = false);
+    const DataTypePtr & left, const DataTypePtr & right, const PairedLeafCallback & on_leaf, bool left_is_common_type = false);
 
 }

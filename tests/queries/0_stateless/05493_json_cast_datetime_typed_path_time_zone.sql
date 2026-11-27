@@ -33,5 +33,5 @@ DROP TABLE t_json_datetime_alter;
 DROP TABLE IF EXISTS t_json_datetime_variant;
 CREATE TABLE t_json_datetime_variant (j JSON(v Variant(DateTime('UTC'), String))) ENGINE = Memory;
 INSERT INTO t_json_datetime_variant SETTINGS date_time_input_format = 'basic' VALUES ('{"v":"2026-01-01 00:00"}');
-SELECT toUnixTimestamp(variantElement(CAST(j, 'JSON(v Variant(DateTime64(0, ''Asia/Tokyo''), String))').v, 'DateTime64(0, \'Asia/Tokyo\')')) FROM t_json_datetime_variant SETTINGS date_time_input_format = 'best_effort';
+SELECT toUnixTimestamp(variantElement(CAST(j, 'JSON(v Variant(DateTime(''Asia/Tokyo''), String))').v, 'DateTime(\'Asia/Tokyo\')')) FROM t_json_datetime_variant SETTINGS date_time_input_format = 'best_effort';
 DROP TABLE t_json_datetime_variant;
