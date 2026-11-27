@@ -3225,9 +3225,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
 
             if (nullable && always_null)
             {
-                /// Single-point range containing either the default value or NULL. NULL is
-                /// represented as positive infinity, matching the NULLS LAST convention of
-                /// `MergeTree` key ranges that `KeyCondition` and `MergeTreeSetIndex` rely on.
+                /// Same as for an all-NULL row group in `getHyperrectangleForRowGroup`.
                 if (null_as_default)
                     range.right = range.left = output_block_type.getDefault();
                 else
