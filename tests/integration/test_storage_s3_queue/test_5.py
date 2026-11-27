@@ -1552,37 +1552,37 @@ def test_select_after_failed_drop(started_cluster):
 
 def test_select_racing_drop(started_cluster):
     node = started_cluster.instances["instance"]
+    table_name = f"test_select_racing_drop_{generate_random_string()}"
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        f"{table_name}_data",
+        format="column1 UInt32, column2 String",
+        additional_settings={"keeper_path": f"/clickhouse/test_{table_name}"},
+    )
 
-    for i in range(10):
-        table_name = f"test_select_racing_drop_{generate_random_string()}"
-        create_table(
-            started_cluster,
-            node,
-            table_name,
-            "unordered",
-            f"{table_name}_data",
-            format="column1 UInt32, column2 String",
-            additional_settings={"keeper_path": f"/clickhouse/test_{table_name}"},
-        )
-
-        # DROP shuts the storage down without waiting for readers, so it can drop the
-        # metadata handle while this SELECT is still building its query plan. The
-        # subquery sleeps for 3 seconds, so the DROP lands while the plan is still open.
+    # DROP shuts the storage down without waiting for readers. Hold the SELECT in `read()`, after it
+    # opened the table and before it takes the metadata handle, until the DROP has returned.
+    failpoint = "object_storage_queue_pause_in_direct_select"
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    try:
         select = node.get_query_request(
-            f"SELECT count() FROM {table_name} "
-            f"WHERE column1 > (SELECT sum(sleepEachRow(0.2)) FROM numbers(15)) "
-            f"SETTINGS stream_like_engine_allow_direct_select=1"
+            f"SELECT count() FROM {table_name} SETTINGS stream_like_engine_allow_direct_select=1"
         )
-        time.sleep(1.2)
-        node.query(f"DROP TABLE {table_name} SYNC")
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+        # Not SYNC: that waits for the paused SELECT to release the table.
+        node.query(f"DROP TABLE {table_name}")
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
 
-        # Also accepting a clean result would make this arm pass against the unfixed
-        # server: a SELECT that finished first never reads the dropped metadata.
-        _, error = select.get_answer_and_error()
-        assert "TABLE_IS_DROPPED" in error, f"iteration {i}: {error}"
+    # A clean result would mean the SELECT read the metadata of a dropped table.
+    _, error = select.get_answer_and_error()
+    assert "TABLE_IS_DROPPED" in error, error
 
-        assert node.query("SELECT 1") == "1\n"
-        assert not node.contains_in_log(LOGICAL_ERROR_MARKER)
+    assert node.query("SELECT 1") == "1\n"
+    assert not node.contains_in_log(LOGICAL_ERROR_MARKER)
 
 
 def test_create_or_replace_table(started_cluster):

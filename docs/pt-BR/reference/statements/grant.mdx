@@ -167,6 +167,15 @@ A hierarquia de privilégios no ClickHouse é mostrada abaixo:
       * `SHOW ROW POLICIES`
       * `SHOW SETTINGS PROFILES`
       * `SHOW USERS`
+  * [`AI FUNCTIONS`](#ai-functions)
+    * `aiClassify`
+    * `aiEmbed`
+    * `aiExtract`
+    * `aiFilter`
+    * `aiGenerate`
+    * `aiRedact`
+    * `aiSimilarity`
+    * `aiTranslate`
   * [`ALTER`](#alter)
     * `ALTER DATABASE`
       * `ALTER DATABASE SETTINGS`
@@ -218,20 +227,25 @@ A hierarquia de privilégios no ClickHouse é mostrada abaixo:
     * `CREATE DATABASE`
     * `CREATE DICTIONARY`
     * `CREATE FUNCTION`
-    * `CREATE RESOURCE`
     * `CREATE TABLE`
     * `CREATE VIEW`
-    * `CREATE WORKLOAD`
+  * `CREATE RESOURCE`
+  * `CREATE WORKLOAD`
   * [`dictGet`](#dictget)
   * [`displaySecretsInShowAndSelect`](#displaysecretsinshowandselect)
   * [`DROP`](#drop)
     * `DROP DATABASE`
     * `DROP DICTIONARY`
     * `DROP FUNCTION`
-    * `DROP RESOURCE`
     * `DROP TABLE`
     * `DROP VIEW`
-    * `DROP WORKLOAD`
+  * `DROP RESOURCE`
+  * `DROP WORKLOAD`
+  * `HANDLER ADMIN`
+    * `ALTER HANDLER`
+    * `CREATE HANDLER`
+    * `DROP HANDLER`
+    * `SHOW HANDLERS`
   * [`INSERT`](#insert)
   * [`INTROSPECTION`](#introspection)
     * `addressToLine`
@@ -635,6 +649,25 @@ Permite o uso de funções de [introspecção](/pt-BR/concepts/features/performa
   * `addressToSymbol`. Nível: `GLOBAL`
   * `demangle`. Nível: `GLOBAL`
 
+### AI FUNCTIONS {#ai-functions}
+
+Permite usar [funções de IA](/pt-BR/reference/functions/regular-functions/ai-functions). Para chamar uma função de IA, também é necessário o privilégio `NAMED COLLECTION` sobre as credenciais selecionadas.
+
+* `AI FUNCTIONS`. Nível: `GROUP`
+  * `aiClassify`. Nível: `GLOBAL`
+  * `aiEmbed`. Nível: `GLOBAL`
+  * `aiExtract`. Nível: `GLOBAL`
+  * `aiFilter`. Nível: `GLOBAL`
+  * `aiGenerate`. Nível: `GLOBAL`
+  * `aiRedact`. Nível: `GLOBAL`
+  * `aiSimilarity`. Nível: `GLOBAL`
+  * `aiTranslate`. Nível: `GLOBAL`
+
+Exemplos:
+
+* `GRANT AI FUNCTIONS ON *.* TO john`
+* `GRANT aiGenerate, aiClassify ON *.* TO john`
+
 ### FONTES {#sources}
 
 Permite usar fontes de dados externas. Aplica-se a [motores de banco de dados](/pt-BR/reference/engines/database-engines/index), [motores de tabela](/pt-BR/reference/engines/table-engines/index) e [funções de tabela](/pt-BR/reference/functions/table-functions/index) baseados em fontes.
@@ -648,6 +681,7 @@ Parâmetros possíveis:
 * `AZURE`
 * `BIGQUERY`
 * `DISK`
+* `ELASTICSEARCH`
 * `FILE`
 * `HDFS`
 * `HIVE`
@@ -677,14 +711,14 @@ Exemplos:
 * Para criar uma tabela com o [motor de tabela MySQL](/pt-BR/reference/engines/table-engines/integrations/mysql), você precisa dos privilégios `CREATE TABLE (ON db.table_name)` e `MYSQL`.
 * Para usar a [função de tabela mysql](/pt-BR/reference/functions/table-functions/mysql), você precisa dos privilégios `CREATE TEMPORARY TABLE` e `MYSQL`.
 
-### Concessões de filtro por origem {#source-filter-grants}
+### Concessões de filtro por fonte de dados {#source-filter-grants}
 
 <Note>
   Este recurso está disponível a partir da versão 25.8 e apenas com a configuração de servidor
   `access_control_improvements.enable_read_write_grants`
 </Note>
 
-Você pode conceder acesso a URIs de origem específicas usando filtros de expressão regular. Isso permite um controle mais granular sobre quais fontes de dados externas os usuários podem acessar.
+Você pode conceder acesso a URIs de fonte de dados específicas usando filtros de expressão regular. Isso permite um controle mais granular sobre quais fontes de dados externas os usuários podem acessar.
 
 **Sintaxe:**
 
@@ -711,7 +745,7 @@ GRANT READ ON S3('s3://bar/.*') TO john
 ```
 
 <Warning>
-  O filtro de origem aceita **regexp** como parâmetro, portanto uma concessão
+  O filtro de fonte de dados aceita **expressão regular** como parâmetro, portanto uma concessão
   `GRANT READ ON URL('http://www.google.com') TO john;`
 
   permitirá consultas como
@@ -741,10 +775,21 @@ GRANT READ ON S3('s3://foo/.*') TO john WITH GRANT OPTION
 GRANT CURRENT GRANTS(READ ON S3) TO alice
 ```
 
+**Revogação:**
+
+```sql
+-- Revokes only this filter, other filters on S3 are kept
+REVOKE READ ON S3('s3://foo/.*') FROM john
+
+-- Revokes READ on S3, including all filters
+REVOKE READ ON S3 FROM john
+```
+
 **Limitações importantes:**
 
+* **Os filtros são comparados como strings:** `REVOKE` remove apenas o filtro que for exatamente igual ao concedido. Revogar `S3('s3://foo/bar/.*')` lança uma exceção em vez de restringir uma concessão em `S3('s3://foo/.*')`.
 * **Revogações parciais não são permitidas:** Não é possível revogar um subconjunto de um padrão de filtro concedido. É necessário revogar toda a concessão e concedê-la novamente com novos padrões, se necessário.
-* **Concessões com curinga não são permitidas:** Não é possível usar `GRANT READ ON *('regexp')` nem padrões semelhantes compostos apenas por curingas. É necessário especificar uma source.
+* **Concessões com curinga não são permitidas:** Não é possível usar `GRANT READ ON *('regexp')` nem padrões semelhantes compostos apenas por curingas. É necessário especificar uma fonte de dados.
 
 ### dictGet {#dictget}
 

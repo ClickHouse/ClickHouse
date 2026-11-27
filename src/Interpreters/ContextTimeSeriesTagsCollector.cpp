@@ -101,7 +101,7 @@ namespace
     {
         using IDType = decltype(toIDComponent(Type{}));
         const Type * data;
-        IDType get(size_t i) const { return toIDComponent(data[i]); }
+        [[nodiscard]] IDType get(size_t i) const { return toIDComponent(data[i]); }
     };
 
     /// Gets identifiers stored in a `FixedString(16)` column, which holds them as raw bytes
@@ -110,7 +110,7 @@ namespace
     {
         using IDType = UInt128;
         const UInt8 * data;
-        IDType get(size_t i) const { return unalignedLoad<UInt128>(data + sizeof(UInt128) * i); }
+        [[nodiscard]] IDType get(size_t i) const { return unalignedLoad<UInt128>(data + sizeof(UInt128) * i); }
     };
 
     /// Gets identifiers stored in a two-element tuple column by combining two component getters.
@@ -120,7 +120,7 @@ namespace
         using IDType = std::pair<typename FirstGetter::IDType, typename SecondGetter::IDType>;
         FirstGetter first;
         SecondGetter second;
-        IDType get(size_t i) const { return {first.get(i), second.get(i)}; }
+        [[nodiscard]] IDType get(size_t i) const { return {first.get(i), second.get(i)}; }
     };
 
     /// Gets identifier components stored in a LowCardinality column: the per-row dictionary index
@@ -132,7 +132,7 @@ namespace
         using IDType = typename DictionaryGetter::IDType;
         const IndexType * indexes;
         DictionaryGetter dictionary;
-        IDType get(size_t i) const { return dictionary.get(indexes[i]); }
+        [[nodiscard]] IDType get(size_t i) const { return dictionary.get(indexes[i]); }
     };
 
     /// Calls `func` with the raw data of a LowCardinality index column.

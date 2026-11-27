@@ -35,6 +35,7 @@
 #include <Common/Base64.h>
 
 #include <Common/ProfileEvents.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <algorithm>
 #include <memory>
@@ -77,7 +78,7 @@ IStorageCluster::IStorageCluster(
 namespace
 {
 
-bool isSerializableFilterNode(const ActionsDAG::Node & node, const std::unordered_map<String, ColumnWithTypeAndName> & replica_columns)
+bool isSerializableFilterNode(const ActionsDAG::Node & node, const UnorderedMapWithMemoryTracking<String, ColumnWithTypeAndName> & replica_columns)
 {
     /// A lambda's body is built, and JIT-compiled in place, while the initiator plans the query, so a replica cannot always rebuild it.
     if (WhichDataType(node.result_type).isFunction())
@@ -107,7 +108,7 @@ bool isSerializableFilterNode(const ActionsDAG::Node & node, const std::unordere
     return node.type == ActionsDAG::ActionType::FUNCTION || node.type == ActionsDAG::ActionType::ALIAS;
 }
 
-String serializeFilterForReplicas(const ActionsDAG::Node & predicate, const std::unordered_map<String, ColumnWithTypeAndName> & replica_columns)
+String serializeFilterForReplicas(const ActionsDAG::Node & predicate, const UnorderedMapWithMemoryTracking<String, ColumnWithTypeAndName> & replica_columns)
 {
     ActionsDAG::NodeRawConstPtrs serializable;
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(&predicate))
@@ -138,18 +139,23 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
 
     pushed_down_filter.clear();
     const auto * select = query_to_send->as<ASTSelectQuery>();
-    if (storage->isObjectStorage() && filter_actions_dag && !filter_actions_dag->getOutputs().empty() && select && select->select())
+    /// Only then is the header the select list: otherwise it holds the aggregation keys and states,
+    /// the arguments of the window functions, or the columns read.
+    const bool header_is_select_list = processed_stage == QueryProcessingStage::WithMergeableState
+        && !query_info.need_aggregate && !query_info.has_window;
+    if (storage->isObjectStorage() && header_is_select_list && filter_actions_dag && !filter_actions_dag->getOutputs().empty()
+        && select && select->select())
     {
         const auto & header_columns = getOutputHeader()->getColumnsWithTypeAndName();
         const auto & select_expressions = select->select()->children;
-        std::unordered_map<String, ColumnWithTypeAndName> replica_columns;
+        UnorderedMapWithMemoryTracking<String, ColumnWithTypeAndName> replica_columns;
         for (size_t i = 0; i < select_expressions.size() && select_expressions.size() == header_columns.size(); ++i)
         {
             if (const auto * identifier = select_expressions[i]->as<ASTIdentifier>())
             {
                 ColumnWithTypeAndName replica_column(nullptr, header_columns[i].type, identifier->shortName());
                 replica_columns.emplace(header_columns[i].name, replica_column);
-                replica_columns.emplace(select_expressions[i]->getAliasOrColumnName(), replica_column);
+                replica_columns.emplace(identifier->shortName(), replica_column);
             }
         }
 

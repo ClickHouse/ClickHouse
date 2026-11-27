@@ -31,6 +31,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Включает вычисление запросов LIKE/ILIKE путём сканирования словаря инвертированного текстового индекса.
 
 Ускоряются шаблоны `%value%`, `value%` и `%value`, а также вызовы `startsWith` и `endsWith`, которые `optimize_rewrite_like_perfect_affix` преобразует в `value%` и `%value`.
+Вызов `multiSearchAny`, `multiSearchAnyUTF8`, `multiSearchAnyCaseInsensitive` или `multiSearchAnyCaseInsensitiveUTF8` с одной искомой подстрокой обрабатывается так же, как шаблон `%value%`.
 
 ## use_text_index_negative_tokens_cache {#use_text_index_negative_tokens_cache}
 

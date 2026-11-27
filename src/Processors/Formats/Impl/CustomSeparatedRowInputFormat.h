@@ -83,7 +83,7 @@ public:
     bool checkForSuffixImpl(bool check_eof);
     void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf, true); }
 
-    EscapingRule getEscapingRule() const override { return format_settings.custom.escaping_rule; }
+    [[nodiscard]] EscapingRule getEscapingRule() const override { return format_settings.custom.escaping_rule; }
 
     void setReadBuffer(ReadBuffer & in_) override;
 
@@ -106,6 +106,7 @@ private:
     PeekableReadBuffer * buf;
     bool ignore_spaces;
     size_t columns = 0;
+    const char default_csv_delimiter;
 };
 
 class CustomSeparatedSchemaReader final : public FormatWithNamesAndTypesSchemaReader
@@ -114,7 +115,7 @@ public:
     CustomSeparatedSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_setting_);
 
 private:
-    bool allowVariableNumberOfColumns() const override { return format_settings.custom.allow_variable_number_of_columns; }
+    [[nodiscard]] bool allowVariableNumberOfColumns() const override { return format_settings.custom.allow_variable_number_of_columns; }
 
     std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
 

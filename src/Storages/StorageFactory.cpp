@@ -29,6 +29,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool cloud_mode;
     extern const SettingsBool database_replicated_allow_only_replicated_engine;
     extern const SettingsBool log_queries;
 }
@@ -117,16 +118,18 @@ ContextMutablePtr StorageFactory::Arguments::getLocalContext() const
 DiskPtr StorageFactory::Arguments::getDisk(const String & name) const
 {
     auto disk = getContext()->getDisk(name);
+    /// A short `ATTACH` uses the disk of its own stored definition, so its hosts are exempt like loading at start.
     if (!isLoadingFromExistingMetadata(mode))
-        DiskFromAST::ensureDiskIsAllowed(disk, getLocalContext());
+        DiskFromAST::ensureDiskIsAllowed(disk, getLocalContext(), /* check_remote_hosts */ !query.attach_short_syntax);
     return disk;
 }
 
 StoragePolicyPtr StorageFactory::Arguments::getStoragePolicy(const String & name) const
 {
     auto storage_policy = getContext()->getStoragePolicy(name);
+    /// A short `ATTACH` uses the policy of its own stored definition, so its hosts are exempt like loading at start.
     if (!isLoadingFromExistingMetadata(mode))
-        DiskFromAST::ensureStoragePolicyIsAllowed(name, getLocalContext());
+        DiskFromAST::ensureStoragePolicyIsAllowed(name, getLocalContext(), /* check_remote_hosts */ !query.attach_short_syntax);
     return storage_policy;
 }
 
@@ -389,6 +392,22 @@ const StorageFactory::StorageFeatures & StorageFactory::getStorageFeatures(const
     return it->second.features;
 }
 
+void StorageFactory::checkTemporaryTableEngine(const String & storage_name, const ContextPtr & context) const
+{
+    auto it = storages.find(storage_name);
+    if (it == storages.end())
+        return;
+
+    const auto & features = it->second.features;
+    if (!features.supports_temporary)
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Temporary tables cannot be created with the {} table engine", storage_name);
+
+    if (context->getSettingsRef()[Setting::cloud_mode] && features.stores_data_on_disk)
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Temporary tables cannot be created with the {} table engine, because it stores data on the local disk", storage_name);
+}
+
 AccessRightsElements StorageFactory::getExportAccess(const ASTCreateQuery & create) const
 {
     AccessRightsElements res;
@@ -398,7 +417,7 @@ AccessRightsElements StorageFactory::getExportAccess(const ASTCreateQuery & crea
             return;
         auto it = storages.find(storage.engine->name);
         if (it != storages.end() && it->second.features.get_export_access_fn)
-            res.append_range(it->second.features.get_export_access_fn(storage.settings->changes));
+            res.append_range(it->second.features.get_export_access_fn(storage.settings->changes, /* own_engine */ true));
     };
 
     if (create.storage)
@@ -411,13 +430,24 @@ AccessRightsElements StorageFactory::getExportAccess(const ASTCreateQuery & crea
     return res;
 }
 
+AccessRightsElements StorageFactory::getExportAccess(const SettingsChanges & changes, const String & engine) const
+{
+    AccessRightsElements res;
+    for (const auto & [name, creator] : storages)
+    {
+        if (creator.features.get_export_access_fn)
+            res.append_range(creator.features.get_export_access_fn(changes, name == engine));
+    }
+    return res;
+}
+
 AccessRightsElements StorageFactory::getExportAccessOfAnyEngine(const SettingsChanges & changes) const
 {
     AccessRightsElements res;
     for (const auto & [_, creator] : storages)
     {
         if (creator.features.get_export_access_fn)
-            res.append_range(creator.features.get_export_access_fn(changes));
+            res.append_range(creator.features.get_export_access_fn(changes, /* own_engine */ true));
     }
     return res;
 }

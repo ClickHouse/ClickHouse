@@ -95,11 +95,11 @@ public:
         AggregateFunctionStateVariant state_variant = AggregateFunctionStateVariant::Aggregation) const;
 
     /// Get properties if the aggregate function exists.
-    std::optional<AggregateFunctionProperties> tryGetProperties(String name, NullsAction action) const;
+    [[nodiscard]] std::optional<AggregateFunctionProperties> tryGetProperties(String name, NullsAction action) const;
 
-    bool isAggregateFunctionName(const String & name) const;
+    [[nodiscard]] bool isAggregateFunctionName(const String & name) const;
 
-    FunctionDocumentation getDocumentation(const String & name) const;
+    [[nodiscard]] FunctionDocumentation getDocumentation(const String & name) const;
 
 private:
     /// The argument types after the conversion of the `Variant` arguments that the function, or the outermost combinator,
@@ -108,7 +108,7 @@ private:
     /// also inside an argument of a combinator like -ForEach (`Array(Variant(...))`). Returns an empty vector if nothing is converted.
     /// If `including_nested` is true, the arguments that are converted by the nested function of a combinator
     /// with `VariantArgumentsOfNestedFunction::Forwarded` are included as well.
-    DataTypes getVariantArgumentsConversion(
+    [[nodiscard]] DataTypes getVariantArgumentsConversion(
         const String & name, NullsAction action, const DataTypes & argument_types, bool including_nested) const;
 
     AggregateFunctionPtr getImpl(
@@ -129,21 +129,21 @@ private:
     ActionMap respect_nulls;
     /// Same as above for `IGNORE NULLS` modifier
     ActionMap ignore_nulls;
-    const AggregateFunctionWithProperties * getAssociatedFunctionByNullsAction(const String & name, NullsAction action) const;
+    [[nodiscard]] const AggregateFunctionWithProperties * getAssociatedFunctionByNullsAction(const String & name, NullsAction action) const;
     /// Name-only variant: the registered name that `name` resolves to under `action` (see the definition).
-    String getAssociatedNameByNullsAction(const String & name, NullsAction action) const;
+    [[nodiscard]] String getAssociatedNameByNullsAction(const String & name, NullsAction action) const;
     /// Helper for the above: adjusts a name that still carries combinator suffixes (strip the suffix,
     /// adjust the nested name for `action`, re-append). Returns nothing for base function names.
-    std::optional<String> getAssociatedNameUnderCombinatorSuffix(const String & name, NullsAction action) const;
+    [[nodiscard]] std::optional<String> getAssociatedNameUnderCombinatorSuffix(const String & name, NullsAction action) const;
 
     /// Case insensitive aggregate functions will be additionally added here with lowercased name.
     AggregateFunctions case_insensitive_aggregate_functions;
 
-    const AggregateFunctions & getMap() const override { return aggregate_functions; }
+    [[nodiscard]] const AggregateFunctions & getMap() const override { return aggregate_functions; }
 
-    const AggregateFunctions & getCaseInsensitiveMap() const override { return case_insensitive_aggregate_functions; }
+    [[nodiscard]] const AggregateFunctions & getCaseInsensitiveMap() const override { return case_insensitive_aggregate_functions; }
 
-    String getFactoryName() const override { return "AggregateFunctionFactory"; }
+    [[nodiscard]] String getFactoryName() const override { return "AggregateFunctionFactory"; }
 
 };
 

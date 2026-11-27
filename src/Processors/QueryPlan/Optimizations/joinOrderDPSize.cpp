@@ -1,4 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderBitSet.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderDP.h>
 
@@ -57,7 +59,7 @@ DPJoinEntryPtr DPSizeJoinOrderOptimizer::solve()
     const size_t total_relations_count = query_graph.relation_stats.size();
 
     /// Components by size (index 0 is not used that why the size is N+1)
-    std::vector<std::unordered_map<BitSet, DPJoinEntryPtr>> components(total_relations_count + 1);
+    VectorWithMemoryTracking<UnorderedMapWithMemoryTracking<BitSet, DPJoinEntryPtr>> components(total_relations_count + 1);
 
     /// Populate DP table for components of size=1.
     /// Also reset the per-edge selectivity cache so an earlier algorithm in the
@@ -115,7 +117,7 @@ DPJoinEntryPtr DPSizeJoinOrderOptimizer::solve()
                     /// Keep the edges that connect left and right, plus non-connecting single-table filters
                     /// and constants, which DPsize attaches at the join that introduces their relation
                     /// (unlike DPhyp, which handles them separately via the hyperedge graph).
-                    std::vector<JoinActionRef *> edge;
+                    VectorWithMemoryTracking<JoinActionRef *> edge;
                     for (auto & edge_it : applicable_edge)
                     {
                         if (connects(edge_it, left->relations, right->relations))

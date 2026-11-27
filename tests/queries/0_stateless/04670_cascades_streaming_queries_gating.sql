@@ -9,7 +9,7 @@ INSERT INTO t_stream_gating SELECT number % 10, number FROM numbers(100);
 SELECT '-- A STREAM read is rejected (fail-close)';
 -- `distributed_plan_fallback_to_local_execution = 0` keeps the exception: this test pins the
 -- rejection, and on the fallback path the query would run as a real streaming read that never ends.
-SELECT count() FROM t_stream_gating STREAM
+SELECT x FROM t_stream_gating STREAM
 SETTINGS enable_streaming_queries = 1, enable_cascades_optimizer = 1, make_distributed_plan = 1,
     distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 

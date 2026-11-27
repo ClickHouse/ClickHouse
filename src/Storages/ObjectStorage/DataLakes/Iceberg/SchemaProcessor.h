@@ -29,6 +29,10 @@ ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields);
 
 ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object);
 
+/// The `initial-default` of the schema field `field` as a value of its ClickHouse type `type`, or nullopt if the field
+/// has none. Throws ICEBERG_SPECIFICATION_VIOLATION if the default is malformed.
+std::optional<Field> getIcebergInitialDefault(const Poco::JSON::Object::Ptr & field, const DataTypePtr & type);
+
 /**
  * Iceberg supports the following data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):
  * - Primitive types:
@@ -100,7 +104,11 @@ public:
         ManifestFile,
     };
 
-    explicit IcebergSchemaProcessor(bool allow_geo_parser_ = false) : allow_geo_parser(allow_geo_parser_) {}
+    explicit IcebergSchemaProcessor(bool allow_geo_parser_ = false, String timezone_for_timestamptz_ = "UTC")
+        : allow_geo_parser(allow_geo_parser_)
+        , timezone_for_timestamptz(std::move(timezone_for_timestamptz_))
+    {
+    }
 
     void addIcebergTableSchema(
         Poco::JSON::Object::Ptr schema_ptr,
@@ -116,7 +124,7 @@ public:
     bool hasClickHouseTableSchemaById(Int32 id) const;
     bool isSchemaRegisteredFromMetadata(Int32 id) const;
 
-    static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
+    static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true, const String & timezone_for_timestamptz = "UTC");
 
     /// The first Iceberg spec violation in `schema`, or nullopt: a field, list element, map key or value without the members
     /// its type needs, or invalid geo type parameters. With `is_table_schema`, also a non-`struct` schema or an
@@ -127,10 +135,14 @@ public:
     /// or the legacy `schema` when there is no `schemas`.
     static void checkTableSchemas(const Poco::JSON::Object & metadata);
 
-    static ColumnNameToFieldId traverseSchema(Poco::JSON::Array::Ptr schema);
+    /// With `struct_paths`, also the paths of `ColumnMapper::getIcebergStructPath`.
+    static ColumnNameToFieldId traverseSchema(Poco::JSON::Array::Ptr schema, std::unordered_map<String, String> * struct_paths = nullptr);
 
     /// The largest field id in `schema`, nested ids included.
     static Int64 getMaxFieldId(Poco::JSON::Array::Ptr schema);
+
+    /// Whether the Iceberg spec allows to promote the primitive type `old_type` to `new_type` (or they are the same).
+    static bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
 
     /// Paths whose Iceberg logical type is `string` (not `binary`); both read as DataTypeString.
     static std::unordered_set<String> collectIcebergStringPaths(Poco::JSON::Array::Ptr schema);
@@ -141,6 +153,12 @@ public:
 
     /// Field ids (including nested ones) whose Iceberg type is `time`.
     static std::unordered_set<Int64> collectIcebergTimeFieldIds(Poco::JSON::Array::Ptr schema);
+
+    /// Canonical Iceberg type names of the primitive fields (including nested ones), by field id.
+    static std::unordered_map<Int64, String> collectIcebergPrimitiveTypesById(Poco::JSON::Array::Ptr schema);
+
+    /// The effective `initial-default` of the fields (including nested ones) that have one, by the paths of `traverseSchema`.
+    static std::unordered_map<String, ColumnMapper::IcebergInitialDefault> collectIcebergInitialDefaults(Poco::JSON::Array::Ptr schema);
 
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;
@@ -176,7 +194,6 @@ private:
         String & current_full_name = default_link,
         bool is_subfield_of_root = false);
 
-    bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
     /// Returns `new_holder[key]` in which every nested primitive changed by a legal promotion is replaced by the
     /// type at the same place in `old_holder` (struct fields are matched by id). The arguments are not modified.
     Poco::Dynamic::Var getTypeWithOldPrimitives(
@@ -188,6 +205,7 @@ private:
 
     mutable SharedMutex mutex;
     bool allow_geo_parser = true;
+    String timezone_for_timestamptz = "UTC";
 };
 
 using IcebergSchemaProcessorPtr = std::shared_ptr<IcebergSchemaProcessor>;

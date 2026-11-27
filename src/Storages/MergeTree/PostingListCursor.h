@@ -30,7 +30,7 @@ struct PostingsApplyWindow
     size_t begin = 0;
     size_t end = 0;
 
-    bool empty() const { return begin >= end; }
+    [[nodiscard]] bool empty() const { return begin >= end; }
 
     /// Extend the window to cover [row_begin, row_end). The scans write in ascending order, so a new range
     /// starts past the current end: only `end` moves once the window is not empty.
@@ -112,21 +112,21 @@ public:
     void next();
 
     /// True if cursor points to a valid doc_id.
-    bool valid() const { return is_valid; }
+    [[nodiscard]] bool valid() const { return is_valid; }
 
     /// Current doc_id. Undefined when `valid` returns false.
-    uint32_t value() const { return decoded_values_ptr[index]; }
+    [[nodiscard]] uint32_t value() const { return decoded_values_ptr[index]; }
 
     /// Advance to the first doc_id >= target.
     void advance(uint32_t target);
 
     /// Posting list density: cardinality / (max_doc_id - min_doc_id + 1).
     /// Used to choose between leapfrog and brute-force algorithms.
-    double density() const { return density_val; }
+    [[nodiscard]] double density() const { return density_val; }
 
     /// Total number of doc_ids in the posting list.
     /// Used to sort cursors by selectivity for leapfrog intersection.
-    UInt32 cardinality() const;
+    [[nodiscard]] UInt32 cardinality() const;
 
     /// Where the current doc_id sits: its segment, its index within it, and the segment's document count.
     /// Blocks are full except the last of a segment, so the index is `block * BLOCK_SIZE + index in block`.
@@ -136,7 +136,7 @@ public:
         size_t index_in_segment = 0;
         size_t segment_doc_count = 0;
     };
-    Position position() const
+    [[nodiscard]] Position position() const
     {
         if (is_embedded)
             return {0, index, decoded_count};

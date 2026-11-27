@@ -103,6 +103,8 @@ public:
     /// - adjust, if needed and allowed, passed queue settings according to
     /// what is in keeper (for example, processing_threads_num is adjustable,
     /// because its default depends on the CPU cores on the server);
+    /// - if not `strict` or from a named collection, a table is loaded even if its source differs from keeper;
+    /// - if keeper has no `source` (metadata written by an older version), save the table's `source` there;
     static ObjectStorageQueueTableMetadata syncWithKeeper(
         const String & zookeeper_name,
         const fs::path & zookeeper_path,
@@ -110,7 +112,8 @@ public:
         const ColumnsDescription & columns,
         const std::string & format,
         const ContextPtr & context,
-        bool is_attach,
+        const ObjectStorageQueueTableMetadata::Source & source,
+        bool strict,
         LoggerPtr log);
     /// Alter settings in keeper metadata
     /// (rewrites what we write in syncWithKeeper()).
@@ -214,6 +217,9 @@ public:
     void updateNewestSeenTimestamp(time_t timestamp, const StorageID & storage_id);
     /// Update the "newest object committed" watermark, see updateNewestSeenTimestamp().
     void updateNewestCommittedTimestamp(time_t timestamp, const StorageID & storage_id);
+    /// Forget both watermarks of the table and remove their metrics, so that a table which was shut down
+    /// does not leave stale series. A later update starts again from an empty watermark.
+    void removePipelineLagMetrics(const StorageID & storage_id);
 
 private:
     void cleanupThreadFunc();

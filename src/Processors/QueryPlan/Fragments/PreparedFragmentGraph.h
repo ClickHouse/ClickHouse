@@ -6,6 +6,7 @@
 
 #include <string_view>
 #include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -31,7 +32,7 @@ struct PreparedFragmentGraph
 
     /// By descending id. The cutter numbers the stages in post-order, so a fragment comes before the fragments it reads,
     /// and the fragment that produces the result (`main`) comes first. Empty for a single node.
-    std::vector<const QueryFragment *> print_order;
+    VectorWithMemoryTracking<const QueryFragment *> print_order;
 
     /// With `pretty`, one registry for all fragments, so that a column, a runtime filter or a set has the same name in
     /// every fragment and in the `Exchanges` section. The names are built over the fragments joined at their exchanges,
@@ -41,11 +42,11 @@ struct PreparedFragmentGraph
 
     /// The names of the columns and runtime filters in `plan`, the plan of a fragment or a nested plan of a step, for
     /// `IQueryPlanStep::FormatSettings`. Without `pretty`, empty maps.
-    const PrettyNames & getPrettyNames(const QueryPlan & plan) const;
+    [[nodiscard]] const PrettyNames & getPrettyNames(const QueryPlan & plan) const;
 
     /// `hash(keys)`, `broadcast`, `gather`, `gather sorted by ...`, `any` or `set values`. With `pretty`, the keys and the
     /// sort columns are named as in the fragments.
-    String formatExchangeKind(const FragmentExchange & exchange) const;
+    [[nodiscard]] String formatExchangeKind(const FragmentExchange & exchange) const;
 
     /// `streaming` or `persisted`.
     static std::string_view formatExchangeMode(ExchangeDescription::Kind mode);
@@ -58,7 +59,7 @@ struct PreparedFragmentGraph
 
 private:
     /// Every receive step of a fragment with the plan of the fragment that sends to it.
-    FragmentInputs getFragmentInputs() const;
+    [[nodiscard]] FragmentInputs getFragmentInputs() const;
 };
 
 /// The plan of a single node as `EXPLAIN` without options prints it, followed by an empty line and

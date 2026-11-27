@@ -177,6 +177,13 @@ ALTER COLUMN [IF EXISTS] name
 
 有关修改列压缩编解码器的示例，请参见 [列压缩编解码器](/zh/reference/statements/create/table/codec)。
 
+启用实验性设置 `enable_subcolumn_codecs` 后，`name` 也可以是子列，例如 `payload.ts`。此时只能修改或移除 `CODEC`，参见[子列编解码器](/zh/reference/statements/create/table#subcolumn-codecs)：
+
+```sql
+ALTER TABLE visits MODIFY COLUMN payload.ts CODEC(DoubleDelta, ZSTD);
+ALTER TABLE visits MODIFY COLUMN payload.ts REMOVE CODEC;
+```
+
 有关修改列生存时间 (TTL) 的示例，请参见 [列 TTL](/zh/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl)。
 
 有关修改列级设置的示例，请参见 [列级设置](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-level-settings)。

@@ -32,17 +32,18 @@ https://api.clickhouse.cloud/v1
 
 모든 ClickPipes 엔드포인트는 ClickHouse Cloud 서비스 범위에 속합니다:
 
-| Method   | Path                                                                                     | Description            |
-| -------- | ---------------------------------------------------------------------------------------- | ---------------------- |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | 모든 ClickPipes 조회       |
-| `POST`   | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | ClickPipe 생성           |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe 조회           |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe 수정           |
-| `DELETE` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe 삭제           |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | ClickPipe 설정 조회        |
-| `PUT`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | ClickPipe 설정 수정        |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling`  | ClickPipe 스케일링 수정      |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state`    | ClickPipe 상태 수정(시작/중지) |
+| Method   | Path                                                                                     | Description                                  |
+| -------- | ---------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | 모든 ClickPipes 조회                             |
+| `POST`   | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | ClickPipe 생성                                 |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/context`                | 서비스 capability 및 GCP Workload Identity 주체 조회 |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe 조회                                 |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe 수정                                 |
+| `DELETE` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe 삭제                                 |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | ClickPipe 설정 조회                              |
+| `PUT`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | ClickPipe 설정 수정                              |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling`  | ClickPipe 스케일링 수정                            |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state`    | ClickPipe 상태 수정(시작/중지)                       |
 
 CDC ClickPipes(Postgres, MySQL, MongoDB)의 경우 공유 CDC infrastructure 스케일링을 위한 추가 조직 수준 엔드포인트가 있습니다:
 
@@ -97,13 +98,17 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID"
 ```
 
+## GCP Workload Identity (베타) {#gcp-workload-identity}
+
+아래의 Workload Identity 예시를 사용하기 전에 [GCP Workload Identity 가이드](/ko/integrations/clickpipes/security/gcp-workload-identity#openapi)를 참고하여 ClickPipes에서 관리하는 서비스 계정을 확인하고, 이 서비스 계정에 소스에 대한 액세스 권한을 부여하십시오.
+
 ## ClickPipes 생성 {#creating-clickpipes}
 
 `POST /clickpipes` 요청 본문은 소스 유형에 따라 달라집니다. 아래 예시에서는 지원되는 각 ClickPipe 타입의 구조를 보여줍니다. 권위 있는 JSON 스키마는 [API 참고](/ko/products/cloud/api-reference/clickpipes/list-clickpipes)를 참조하십시오.
 
 ### Kafka {#create-kafka}
 
-지원되는 Kafka 호환 소스: `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`.
+지원되는 Kafka 호환 소스: `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`, 비공개 프리뷰 단계인 `gcmk`.
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -140,6 +145,22 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   }' \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
+
+Google Managed Kafka를 사용하는 경우, 클러스터 프로젝트에서 Workload Identity 주체에 `roles/managedkafka.client` 역할을 부여하고 필요한 Kafka 접근 제어 목록(ACLs)을 구성하십시오. 그런 다음 `credentials` 필드 없이 다음과 같은 소스 객체를 사용하십시오:
+
+```json
+{
+  "kafka": {
+    "type": "gcmk",
+    "format": "JSONEachRow",
+    "brokers": "bootstrap.kafka.us-central1.managedkafka.example-project.cloud.goog:9092",
+    "topics": "events",
+    "authentication": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+  }
+}
+```
+
+Google Managed Kafka에서 Workload Identity를 사용하려면 TLS가 필요합니다.
 
 ### Amazon Kinesis {#create-kinesis}
 
@@ -236,6 +257,55 @@ curl -u "$KEY_ID:$KEY_SECRET" \
         "format": "JSONEachRow",
         "authentication": "SERVICE_ACCOUNT",
         "serviceAccountKey": "<base64_encoded_service_account_json>"
+      }
+    },
+    "destination": {
+      "table": "my_table",
+      "managedTable": true,
+      "tableDefinition": {
+        "engine": { "type": "MergeTree" }
+      },
+      "columns": [
+        { "name": "id", "type": "UInt64" },
+        { "name": "message", "type": "String" }
+      ]
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+서비스 계정 키 대신 Workload Identity를 사용하려면 소스 버킷에 대한 `roles/storage.objectViewer` 권한을 주체에 부여하고, 다음 소스 객체를 사용하십시오.
+
+```json
+{
+  "objectStorage": {
+    "type": "gcs",
+    "url": "gs://my-bucket/data/*.json",
+    "format": "JSONEachRow",
+    "authentication": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+  }
+}
+```
+
+unordered 모드로 수집하려면 알림 subscription에 대한 `roles/pubsub.subscriber` 및 `roles/pubsub.viewer` 역할도 주체에 부여해야 합니다. 또한 `isContinuous`를 `true`로 설정하고, `queueUrl`에는 `projects/<project-id>/subscriptions/<subscription-id>` 형식의 정규화된(fully-qualified) 값을 사용하십시오.
+
+### Google Cloud Pub/Sub {#create-pubsub}
+
+다음 예시에서는 Workload Identity를 사용합니다. ClickPipe를 생성하기 전에 주체에 [필수 Pub/Sub 권한](/ko/integrations/clickpipes/pubsub/auth#required-permissions)을 부여하십시오.
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Pub/Sub ClickPipe",
+    "source": {
+      "pubsub": {
+        "format": "JSONEachRow",
+        "projectId": "my-gcp-project",
+        "topic": "events",
+        "authentication": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY",
+        "seekType": "latest"
       }
     },
     "destination": {
@@ -425,4 +495,26 @@ curl -u "$KEY_ID:$KEY_SECRET" \
     }
   }' \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+서비스 계정 키 대신 Workload Identity를 사용하려면 주체에 [필요한 BigQuery 및 GCS 권한](/ko/integrations/clickpipes/bigquery/overview#permissions)을 부여하고 다음 소스 객체를 사용하십시오.
+
+```json
+{
+  "bigquery": {
+    "authentication": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY",
+    "projectId": "my-gcp-project",
+    "snapshotStagingPath": "gs://my-staging-bucket/staging/",
+    "settings": {
+      "replicationMode": "snapshot"
+    },
+    "tableMappings": [
+      {
+        "sourceDatasetName": "my_dataset",
+        "sourceTable": "my_table",
+        "targetTable": "my_bigquery_table"
+      }
+    ]
+  }
+}
 ```

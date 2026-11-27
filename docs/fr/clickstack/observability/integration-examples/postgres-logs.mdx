@@ -1,0 +1,373 @@
+---
+slug: /clickstack/observability/integration-examples/postgres-logs
+title: 'Supervision des logs PostgreSQL avec ClickHouse Observability'
+sidebarTitle: 'Logs PostgreSQL'
+description: 'Mise en place et configuration de la supervision des logs PostgreSQL avec ClickHouse Observability, pour ClickHouse Observability et les déploiements autogérés.'
+doc_type: 'guide'
+keywords: ['PostgreSQL', 'Postgres', 'logs', 'OTEL', 'ClickHouse Observability', 'supervision de base de données']
+---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+Collectez les logs CSV de PostgreSQL avec un collecteur OpenTelemetry et envoyez-les vers ClickHouse Observability. Utilisez le [jeu de données de démonstration](#demo-dataset) pour essayer l&#39;intégration sans installer PostgreSQL.
+
+## Prérequis {#prerequisites}
+
+* Un service ClickHouse Observability
+* Docker pour exécuter les exemples de collecteur
+* Pour vos propres logs, PostgreSQL 14 ou une version ultérieure, ainsi qu&#39;un accès à ses fichiers de configuration et à ses fichiers de log
+* Pour la démonstration, `curl` afin de télécharger l&#39;échantillon
+
+### Informations de connexion {#connection-details}
+
+<Tabs>
+  <Tab title="Entièrement géré">
+    <BetaBadge label="Offre en version bêta" />
+
+    Ouvrez ClickHouse Observability et accédez à **Paramètres de l’équipe → Data → Télémétrie gérée**. Copiez votre point de terminaison OTLP HTTP et votre API key. Vous pouvez cliquer sur **Copier les informations de connexion** pour copier la configuration, ou sur **Reveal key** pour afficher la clé masquée.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Informations de connexion de la télémétrie gérée](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Pour les exemples d’exportateur OTLP ci-dessous, définissez ces variables dans le terminal depuis lequel vous exécuterez le collecteur :
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    Remplacez les caractères de substitution par l’endpoint exact de votre service, port compris, ainsi que par son API key. Utilisez l’endpoint HTTP de base, sans le suffixe `/v1/logs` : l’exportateur ajoute lui-même le chemin du signal.
+  </Tab>
+
+  <Tab title="Autogéré">
+    Utilisez un point de terminaison OTLP HTTP joignable pour votre collecteur (par exemple, `http://YOUR_COLLECTOR_HOST:4318`) ainsi que ses paramètres d’authentification. Si votre collecteur ne requiert pas d’authentification, supprimez le bloc `headers` de l’exportateur dans les configurations ci-dessous. Pour la mise en place, consultez le [guide de démarrage autogéré](/fr/clickstack/self-configured/getting-started/managed).
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+L’endpoint doit être joignable depuis le conteneur du collecteur. Si le collecteur de destination s’exécute sur cette machine, utilisez `http://host.docker.internal:4318`. Les commandes Docker ci-dessous incluent la correspondance d’hôte nécessaire.
+
+## Intégration avec une instance PostgreSQL existante {#existing-postgres}
+
+<Steps>
+  <Step title="Configurer la journalisation de PostgreSQL" id="configure-postgres">
+    Pour localiser votre fichier de configuration, exécutez la requête SQL suivante en tant qu’administrateur de base de données :
+
+    ```sql
+    SHOW config_file;
+    ```
+
+    Ajoutez ou modifiez les paramètres suivants dans `postgresql.conf` :
+
+    ```conf
+    logging_collector = on
+    log_destination = 'csvlog'
+    log_directory = '/var/log/postgresql'
+    log_filename = 'postgresql-%Y-%m-%d_%H%M%S.log'
+    log_file_mode = 0640
+    log_timezone = 'UTC'
+    log_connections = on
+    log_disconnections = on
+    # Optional: log statements taking more than one second
+    # log_min_duration_statement = 1000
+    ```
+
+    Créez le répertoire des journaux en définissant un propriétaire et des autorisations qui permettent à PostgreSQL d&#39;y écrire et au collecteur de le lire. Si PostgreSQL s&#39;exécute dans un conteneur, montez ce répertoire afin que le collecteur puisse accéder aux mêmes fichiers. La sortie CSV porte l&#39;extension `.csv`, même si `log_filename` se termine par `.log`.
+
+    Redémarrez PostgreSQL selon votre processus de déploiement habituel, par exemple :
+
+    ```bash
+    sudo systemctl restart postgresql
+    # Or, for Docker:
+    docker restart <postgres-container>
+    ```
+
+    Vérifiez le fichier CSV actif :
+
+    ```sql
+    SELECT pg_current_logfile('csvlog');
+    ```
+
+    Le parseur ci-dessous s&#39;appuie sur le [format CSV de PostgreSQL à 26 colonnes](https://www.postgresql.org/docs/14/runtime-config-logging.html#RUNTIME-CONFIG-LOGGING-CSVLOG). Les versions antérieures de PostgreSQL et les autres formats des journaux nécessitent un parseur différent.
+  </Step>
+
+  <Step title="Configurer le collecteur" id="configure-collector">
+    Enregistrez ce fichier sous le nom `postgres-logs-monitoring.yaml` :
+
+    ```yaml
+    receivers:
+      filelog/postgres:
+        include:
+          - /var/log/postgresql/postgresql-*.csv
+        start_at: end
+        force_flush_period: 1s
+        multiline:
+          line_start_pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
+        operators:
+          - type: csv_parser
+            parse_from: body
+            parse_to: attributes
+            header: 'log_time,user_name,database_name,process_id,connection_from,session_id,session_line_num,command_tag,session_start_time,virtual_transaction_id,transaction_id,error_severity,sql_state_code,message,detail,hint,internal_query,internal_query_pos,context,query,query_pos,location,application_name,backend_type,leader_pid,query_id'
+            lazy_quotes: true
+
+          - type: time_parser
+            parse_from: attributes.log_time
+            layout: '%Y-%m-%d %H:%M:%S.%L %Z'
+            location: UTC
+
+          - type: add
+            field: attributes.source
+            value: "postgresql"
+
+          - type: add
+            field: resource["service.name"]
+            value: "postgresql-service"
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      transform/postgres:
+        error_mode: ignore
+        log_statements:
+          - context: log
+            statements:
+              - set(log.severity_text, "info")
+              - set(log.severity_number, SEVERITY_NUMBER_INFO)
+              - set(log.severity_text, "debug") where IsMatch(log.attributes["error_severity"], "^DEBUG")
+              - set(log.severity_number, SEVERITY_NUMBER_DEBUG) where log.severity_text == "debug"
+              - set(log.severity_text, "warn") where log.attributes["error_severity"] == "WARNING"
+              - set(log.severity_number, SEVERITY_NUMBER_WARN) where log.severity_text == "warn"
+              - set(log.severity_text, "error") where log.attributes["error_severity"] == "ERROR"
+              - set(log.severity_number, SEVERITY_NUMBER_ERROR) where log.severity_text == "error"
+              - set(log.severity_text, "fatal") where log.attributes["error_severity"] == "FATAL" or log.attributes["error_severity"] == "PANIC"
+              - set(log.severity_number, SEVERITY_NUMBER_FATAL) where log.severity_text == "fatal"
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+    service:
+      pipelines:
+        logs/postgres:
+          receivers: [filelog/postgres]
+          processors: [memory_limiter, transform/postgres, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    Le récepteur analyse les entrées CSV multilignes, conserve leurs timestamps et leurs corps, et ajoute `service.name` avec la valeur `postgresql-service`. Les champs tels que `database_name`, `error_severity`, `message` et `query` restent disponibles en tant qu&#39;attributs de journal.
+  </Step>
+
+  <Step title="Exécutez le collecteur" id="run-collector">
+    Depuis le répertoire contenant la configuration, exécutez la commande suivante. Adaptez si nécessaire le répertoire des journaux sur l&#39;hôte. Si les fichiers de log sont lisibles par le groupe, ajoutez `--group-add LOG_GROUP_ID` en indiquant l&#39;ID numérique du groupe renvoyé par `ls -ln /var/log/postgresql`.
+
+    ```bash
+    docker run --rm --name postgres-logs-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/postgres-logs-monitoring.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v /var/log/postgresql:/var/log/postgresql:ro \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    Laissez le terminal ouvert. Comme le récepteur utilise `start_at: end`, ouvrez une nouvelle connexion à la base de données ou exécutez une requête qui génère une erreur une fois le collecteur démarré :
+
+    ```sql
+    SELECT 1 / 0;
+    ```
+  </Step>
+
+  <Step title="Vérifier les logs" id="verify-logs">
+    Ouvrez **Recherche**, sélectionnez **Logs**, filtrez sur `ServiceName:postgresql-service`, puis choisissez **15 dernières minutes**. Développez un enregistrement pour examiner ses attributs PostgreSQL et sa sévérité.
+  </Step>
+</Steps>
+
+## Jeu de données de démonstration {#demo-dataset}
+
+L&#39;échantillon contient 21,325 enregistrements CSV PostgreSQL qui couvrent l&#39;activité des connexions, les requêtes et les erreurs du serveur.
+
+<Steps>
+  <Step title="Télécharger le jeu de données d’exemple" id="download-sample">
+    ```bash
+    curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/postgres/postgresql.log
+    ```
+  </Step>
+
+  <Step title="Configurer le collecteur de démonstration" id="configure-demo">
+    Enregistrez ce fichier sous le nom `postgres-logs-demo.yaml` :
+
+    ```yaml
+    receivers:
+      filelog/postgres:
+        include:
+          - /var/log/postgresql/postgresql.log
+        start_at: beginning
+        force_flush_period: 1s
+        multiline:
+          line_start_pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
+        operators:
+          - type: csv_parser
+            parse_from: body
+            parse_to: attributes
+            header: 'log_time,user_name,database_name,process_id,connection_from,session_id,session_line_num,command_tag,session_start_time,virtual_transaction_id,transaction_id,error_severity,sql_state_code,message,detail,hint,internal_query,internal_query_pos,context,query,query_pos,location,application_name,backend_type,leader_pid,query_id'
+            lazy_quotes: true
+
+          - type: time_parser
+            parse_from: attributes.log_time
+            layout: '%Y-%m-%d %H:%M:%S.%L %Z'
+            location: UTC
+
+          - type: add
+            field: attributes.source
+            value: "postgresql-demo"
+
+          - type: add
+            field: resource["service.name"]
+            value: "postgresql-demo"
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      transform/postgres:
+        error_mode: ignore
+        log_statements:
+          - context: log
+            statements:
+              - set(log.severity_text, "info")
+              - set(log.severity_number, SEVERITY_NUMBER_INFO)
+              - set(log.severity_text, "debug") where IsMatch(log.attributes["error_severity"], "^DEBUG")
+              - set(log.severity_number, SEVERITY_NUMBER_DEBUG) where log.severity_text == "debug"
+              - set(log.severity_text, "warn") where log.attributes["error_severity"] == "WARNING"
+              - set(log.severity_number, SEVERITY_NUMBER_WARN) where log.severity_text == "warn"
+              - set(log.severity_text, "error") where log.attributes["error_severity"] == "ERROR"
+              - set(log.severity_number, SEVERITY_NUMBER_ERROR) where log.severity_text == "error"
+              - set(log.severity_text, "fatal") where log.attributes["error_severity"] == "FATAL" or log.attributes["error_severity"] == "PANIC"
+              - set(log.severity_number, SEVERITY_NUMBER_FATAL) where log.severity_text == "fatal"
+      transform/demo_timestamps:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(log.time, Now() - Duration("2m") - (Time("2025-11-10T23:59:47Z", "%Y-%m-%dT%H:%M:%SZ") - log.time))
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+    service:
+      pipelines:
+        logs/postgres:
+          receivers: [filelog/postgres]
+          processors: [memory_limiter, transform/postgres, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    Le processeur de timestamp, réservé à la démonstration, décale l&#39;échantillon pour le faire tenir dans les dernières 24 heures, jusqu&#39;à deux minutes avant l&#39;ingestion. Les attributs de timestamp d&#39;origine et le corps des log restent inchangés. N&#39;utilisez pas ce processeur pour vos propres log PostgreSQL.
+  </Step>
+
+  <Step title="Exécutez le collecteur de démonstration" id="run-demo">
+    Depuis le répertoire contenant la configuration et le fichier journal téléchargé, exécutez :
+
+    ```bash
+    docker run --rm --name postgres-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/postgres-logs-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v "$(pwd)/postgresql.log:/var/log/postgresql/postgresql.log:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    Laissez le terminal ouvert pendant que vous vérifiez l’ingestion. Une fois terminé, arrêtez le collecteur avec **Ctrl+C**. Si vous relancez la démonstration, l’échantillon est réingéré avec des timestamps actualisés.
+  </Step>
+
+  <Step title="Vérifiez les logs de démonstration" id="verify-demo">
+    Ouvrez **Recherche**, sélectionnez **Logs**, filtrez sur `ServiceName:postgresql-demo`, puis sélectionnez **2 derniers jours**. Développez un enregistrement pour examiner des champs tels que `database_name`, `error_severity`, `message` et `query`.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Logs de démonstration PostgreSQL dans la page Recherche de ClickHouse Observability](/images/clickstack/observability-postgres-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Tableaux de bord et visualisation {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-logs-dashboard.json" download="postgresql-logs-dashboard.json" eventName="docs.postgres_logs_monitoring.dashboard_download">Télécharger la configuration du tableau de bord</TrackedLink>} id="download-dashboard" />
+
+  <Step title="Importer le tableau de bord" id="import-dashboard">
+    1. Ouvrez **Tableaux de bord** et cliquez sur **Import** dans le coin supérieur droit.
+    2. Téléversez `postgresql-logs-dashboard.json`.
+    3. Associez les graphiques à votre source **Logs**, puis cliquez sur **Finish Import**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Page Tableaux de bord avec le bouton Import mis en évidence](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Afficher le tableau de bord" id="view-dashboard">
+    Pour l’échantillon, sélectionnez **2 derniers jours** et, si vous le souhaitez, filtrez sur `ServiceName:postgresql-demo`. Pour vos propres logs, filtrez sur `ServiceName:postgresql-service` et choisissez un intervalle de temps qui couvre vos enregistrements.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Tableau de bord des logs PostgreSQL affichant le volume de journaux, les requêtes lentes, les bases de données, les erreurs, les échecs d’authentification et les types de requêtes](/images/clickstack/observability-postgres-logs-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Dépannage {#troubleshooting}
+
+### Le collecteur ne démarre pas {#collector-fails-to-start}
+
+Examinez la sortie du collecteur à la recherche d&#39;éventuelles erreurs de configuration. Vérifiez le montage de la configuration ainsi que les variables de connexion dans le terminal où Docker s&#39;exécute.
+
+### Aucun log n&#39;apparaît {#no-logs}
+
+Recherchez d&#39;éventuelles erreurs d&#39;authentification ou d&#39;exportation. Vérifiez le chemin du fichier CSV avec `pg_current_logfile`, assurez-vous que les fichiers correspondent au motif `include` du récepteur et que le collecteur dispose des droits de lecture sur ces fichiers. Avec `start_at: end`, seules les nouvelles entrées sont collectées. Pour la démonstration, ajoutez le processeur de timestamp et sélectionnez **2 derniers jours**.
+
+### Autorisation refusée {#permission-denied}
+
+Par défaut, PostgreSQL crée des fichiers de log accessibles uniquement à leur propriétaire. La configuration ci-dessus utilise `log_file_mode = 0640` pour autoriser les lectures par le groupe ; ajoutez le groupe du fichier au conteneur du collecteur avec `--group-add`. Les fichiers existants conservent leurs autorisations précédentes. Vérifiez également que le répertoire autorise l&#39;accès au groupe.
+
+### Erreurs d’analyse syntaxique CSV {#csv-parsing-errors}
+
+Le parseur attend les 26 colonnes produites par PostgreSQL 14 ou une version ultérieure. Vérifiez que `log_destination = 'csvlog'` et `log_timezone = 'UTC'`. Adaptez l’en-tête pour les versions antérieures ou les formats personnalisés ; les logs stderr et JSON ne sont pas compatibles avec ce parseur CSV.
+
+## Étapes suivantes {#next-steps}
+
+* Configurez des [alertes](/fr/clickstack/observability/features/alerts) pour les erreurs et les échecs de connexion.
+* Corrélez les logs avec les [métriques PostgreSQL](/fr/clickstack/observability/integration-examples/postgres-metrics).

@@ -1,14 +1,12 @@
 ---
-description: 'OSのページキャッシュではなく、 プロセス内メモリにデータをキャッシュできるキャッシュ機構。'
-sidebarTitle: 'ユーザー空間ページキャッシュ'
+description: 'OSのページキャッシュではなく、プロセス内メモリにデータをキャッシュできるキャッシュ機構。'
+sidebarTitle: 'ユーザー空間のページキャッシュ'
 slug: /operations/userspace-page-cache
-title: 'ユーザー空間ページキャッシュ'
+title: 'ユーザー空間のページキャッシュ'
 doc_type: 'reference'
 ---
 
-<div id="overview">
-  ## 概要
-</div>
+## 概要 {#overview}
 
 > ユーザー空間ページキャッシュは、OS のページキャッシュに依存せず、プロセス内メモリにデータをキャッシュできる新しいキャッシュ機構です。
 
@@ -25,13 +23,9 @@ ClickHouse ではすでに、Amazon S3、Google Cloud ストレージ (GCS) 、A
 | server の memory usage には現れない     | server の memory usage に現れる |
 | ディスク上とメモリ内 (OS ページキャッシュ) の両方に適する | **ディスクレス server に適している**   |
 
-<div id="configuration-settings-and-usage">
-  ## 設定項目と使用方法
-</div>
+## 設定項目と使用方法 {#configuration-settings-and-usage}
 
-<div id="usage">
-  ### 使用方法
-</div>
+### 使用方法 {#usage}
 
 ユーザー空間ページキャッシュを有効にするには、まずサーバー側で設定します。
 
@@ -52,9 +46,7 @@ page_cache_max_size: 100G
 SET use_page_cache_for_disks_without_file_cache=1;
 ```
 
-<div id="settings">
-  ### 設定
-</div>
+### 設定 {#settings}
 
 | Setting                                                 | Description                                                                                                                                                                                                    | Default     |
 | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
@@ -72,9 +64,7 @@ SET use_page_cache_for_disks_without_file_cache=1;
 | `page_cache_lookahead_blocks`                           | ユーザー空間ページキャッシュでミスした場合、それらも cache に存在しなければ、基盤ストレージから連続する最大この数の block を一度に読み取ります。各 block は page&#95;cache&#95;block&#95;size バイトです。                                                                              | `16`        |
 | `page_cache_shards`                                     | mutex の競合を減らすために、ユーザー空間ページキャッシュをこの数の分片にストライプ化します。Experimental であり、パフォーマンス改善につながる可能性は高くありません。                                                                                                                   | `4`         |
 
-<div id="related-content">
-  ## 関連コンテンツ
-</div>
+## 関連コンテンツ {#related-content}
 
 * [ファイルシステムキャッシュ](/ja/concepts/features/configuration/server-config/storing-data)
 * [ClickHouse v25.3 リリース ウェビナー](https://www.youtube.com/live/iCKEzp0_Z2Q?feature=shared\&t=1320)

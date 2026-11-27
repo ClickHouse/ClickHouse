@@ -30,8 +30,8 @@ struct ConstantFilterDescription
 
 struct IFilterDescription
 {
-    virtual ColumnPtr filter(const IColumn & column, ssize_t result_size_hint) const = 0;
-    virtual size_t countBytesInFilter() const = 0;
+    [[nodiscard]] virtual ColumnPtr filter(const IColumn & column, ssize_t result_size_hint) const = 0;
+    [[nodiscard]] virtual size_t countBytesInFilter() const = 0;
     virtual ~IFilterDescription() = default;
 };
 
@@ -42,8 +42,8 @@ struct FilterDescription final : public IFilterDescription
 
     explicit FilterDescription(const IColumn & column);
 
-    ColumnPtr filter(const IColumn & column, ssize_t result_size_hint) const override;
-    size_t countBytesInFilter() const override;
+    [[nodiscard]] ColumnPtr filter(const IColumn & column, ssize_t result_size_hint) const override;
+    [[nodiscard]] size_t countBytesInFilter() const override;
 
     /// Takes a filter column that may be sparse or const or low-cardinality or nullable or wider
     /// than 8 bits, etc. Returns a ColumnUInt8.
@@ -58,8 +58,8 @@ struct SparseFilterDescription final : public IFilterDescription
     ColumnPtr valid_offsets;
     explicit SparseFilterDescription(const IColumn & column);
 
-    ColumnPtr filter(const IColumn & column, ssize_t) const override;
-    size_t countBytesInFilter() const override;
+    [[nodiscard]] ColumnPtr filter(const IColumn & column, ssize_t) const override;
+    [[nodiscard]] size_t countBytesInFilter() const override;
 };
 
 struct ColumnWithTypeAndName;

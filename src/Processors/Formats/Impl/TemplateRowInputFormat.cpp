@@ -296,6 +296,8 @@ void TemplateRowInputFormat::resetParser()
     RowInputFormatWithDiagnosticInfo::resetParser();
     end_of_stream = false;
     row_between_delimiter_already_skipped = false;
+    settings.csv.delimiter = default_csv_delimiter;
+    settings.csv.custom_delimiter.clear();
 }
 
 void TemplateRowInputFormat::setReadBuffer(ReadBuffer & in_)
@@ -346,6 +348,8 @@ TemplateFormatReader::TemplateFormatReader(
                 format.throwInvalidFormat("XML deserialization is not supported", i);
         }
     }
+    if (!has_data)
+        format.throwInvalidFormat("${data} must occur in the format string for result set", format.columnsCount());
 
     /// Validate format string for rows
     for (size_t i = 0; i < row_format.columnsCount(); ++i)
@@ -611,7 +615,7 @@ void registerInputFormatTemplate(FormatFactory & factory)
                 fillResultSetFormat(settings),
                 fillRowFormat(settings, idx_getter, true),
                 settings.template_settings.row_between_delimiter);
-        });
+        }, /*supports_reset_parser=*/ true);
     }
 
     factory.setDocumentation("Template", Documentation{

@@ -17,6 +17,10 @@ DROP TABLE IF EXISTS t_autopr_set_source;
 CREATE TABLE t_autopr_set_source (key UInt64, non_key UInt64, pad String) ENGINE = MergeTree ORDER BY key;
 INSERT INTO t_autopr_set_source SELECT number, number % 5000, repeat('x', 20) FROM numbers(200000);
 
+-- Plan-based parallel replicas does not always match the plans of these queries, and then collects no statistics:
+-- https://github.com/ClickHouse/ClickHouse/issues/131450
+SET parallel_replicas_plan_based = 0;
+
 -- The table is far below `automatic_parallel_replicas_min_bytes_per_replica`, whose gate would skip
 -- building the parallel-replicas plan before the plan simplicity check under test is ever reached.
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1, parallel_replicas_local_plan = 1,

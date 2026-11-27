@@ -40,7 +40,7 @@ READ_SETTINGS_FAMILY = {
         "use_iceberg_partition_pruning": [0, 1],
         "use_iceberg_manifest_list_partition_pruning": [0, 1],
         "use_iceberg_metadata_files_cache": [0, 1],
-        "use_iceberg_manifest_statistics": [0, 1],
+        "use_datalake_metadata_statistics": [0, 1],
     },
     "delta": {
         "delta_lake_enable_engine_predicate": [0, 1],
@@ -62,7 +62,7 @@ SAFE_SETTINGS = {
     "use_iceberg_partition_pruning": 0,
     "use_iceberg_manifest_list_partition_pruning": 0,
     "use_iceberg_metadata_files_cache": 0,
-    "use_iceberg_manifest_statistics": 0,
+    "use_datalake_metadata_statistics": 0,
     "delta_lake_enable_engine_predicate": 0,
 }
 

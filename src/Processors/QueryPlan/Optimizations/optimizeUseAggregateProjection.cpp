@@ -1,4 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Storages/MergeTree/WhatIf/HypotheticalProjection.h>
@@ -35,12 +38,14 @@
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Planner/PlannerExpressionAnalysis.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Planner/PlannerProjection.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -74,7 +79,7 @@ namespace DB::QueryPlanOptimizations
 /// ---- BEGIN: Predicate-implication helpers (shared logic with optimizeUseNormalProjection.cpp) ----
 
 /// Extract AND-connected conjuncts from an AST expression tree.
-static void extractConjunctsFromAST(const ASTPtr & expr, std::vector<ASTPtr> & result)
+static void extractConjunctsFromAST(const ASTPtr & expr, VectorWithMemoryTracking<ASTPtr> & result)
 {
     if (const auto * func = expr->as<ASTFunction>(); func && func->name == "and" && func->arguments)
     {
@@ -210,7 +215,7 @@ static bool doesQueryFilterImplyProjectionWhere(
         }
     }
 
-    std::vector<ASTPtr> proj_conjuncts;
+    VectorWithMemoryTracking<ASTPtr> proj_conjuncts;
     extractConjunctsFromAST(projection_where, proj_conjuncts);
 
     const auto * filter_root = query_filter_node;
@@ -250,7 +255,7 @@ static const ActionsDAG::Node * buildResidualFilterNode(
     /// `extractConjunctionAtoms` yields the atoms right to left, while the rebuilt `and` is evaluated left to right.
     std::ranges::reverse(query_atoms);
 
-    std::vector<ASTPtr> proj_conjuncts;
+    VectorWithMemoryTracking<ASTPtr> proj_conjuncts;
     extractConjunctsFromAST(projection_where, proj_conjuncts);
 
     /// Keep only query atoms that do NOT match any projection-WHERE conjunct.
@@ -284,7 +289,7 @@ static const ActionsDAG::Node * buildResidualFilterNode(
 
 /// ---- END: Predicate-implication helpers ----
 
-using DAGIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
+using DAGIndex = UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *>;
 static DAGIndex buildDAGIndex(const ActionsDAG & dag)
 {
     DAGIndex index;
@@ -298,7 +303,8 @@ static DAGIndex buildDAGIndex(const ActionsDAG & dag)
 struct AggregateProjectionInfo
 {
     std::optional<ActionsDAG> before_aggregation;
-    Names keys;
+    /// the keys under the names of the columns of the projection part, they are not outputs of before_aggregation
+    ActionsDAG::NodeRawConstPtrs keys;
     AggregateDescriptions aggregates;
 
     /// A context copy from interpreter which was used for analysis.
@@ -314,32 +320,17 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     const StorageMetadataPtr & metadata_snapshot,
     const Block & key_virtual_columns)
 {
-    Block source_block;
-    for (const auto & column : metadata_snapshot->getColumns().getByNames(
-             GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), projection.required_columns))
-        source_block.insert({column.type->createColumn(), column.type, column.name});
-
-    /// This is a bad approach.
-    /// We'd better have a separate interpreter for projections.
-    /// Now it's not obvious we didn't miss anything here.
-    ///
-    /// Setting ignoreASTOptimizations is used because some of them are invalid for projections.
-    /// Example: 'SELECT min(c0), max(c0), count() GROUP BY -c0' for minmax_count projection can be rewritten to
-    /// 'SELECT min(c0), max(c0), count() GROUP BY c0' which is incorrect cause we store a column '-c0' in projection.
-    InterpreterSelectQuery interpreter(
-        projection.query_ast,
-        context,
-        Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(source_block)))),
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreASTOptimizations().ignoreSettingConstraints());
-
-    const auto & analysis_result = interpreter.getAnalysisResult();
-    const auto & query_analyzer = interpreter.getQueryAnalyzer();
+    auto source_columns = metadata_snapshot->getColumns().getByNames(
+        GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), projection.required_columns);
+    /// a projection that only counts rows can need no column, but the planner needs a table with a column
+    if (source_columns.empty())
+        source_columns = metadata_snapshot->getColumns().getAllPhysical();
+    ProjectionPlanner projection_planner(projection.query_ast, ColumnsDescription(std::move(source_columns)), context);
 
     AggregateProjectionInfo info;
-    info.context = interpreter.getContext();
-    info.before_aggregation = analysis_result.before_aggregation->dag.clone();
-    info.keys = query_analyzer->aggregationKeys().getNames();
-    info.aggregates = query_analyzer->aggregates();
+    info.context = projection_planner.getContext();
+    info.before_aggregation = projection_planner.buildBeforeAggregationActions(info.keys);
+    info.aggregates = projection_planner.getAggregates();
 
     /// Add part/partition virtual columns to projection aggregation keys.
     /// We can do it because projection is stored for every part separately.
@@ -347,7 +338,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     {
         const auto * input = &info.before_aggregation->addInput(virt_column.name, virt_column.type);
         info.before_aggregation->getOutputs().push_back(input);
-        info.keys.push_back(virt_column.name);
+        info.keys.push_back(input);
     }
 
     return info;
@@ -359,7 +350,7 @@ struct AggregateFunctionMatch
     DataTypes argument_types;
 };
 
-using AggregateFunctionMatches = std::vector<AggregateFunctionMatch>;
+using AggregateFunctionMatches = VectorWithMemoryTracking<AggregateFunctionMatch>;
 
 /// Here we try to match aggregate functions from the query to
 /// aggregate functions from projection.
@@ -373,7 +364,7 @@ static std::optional<AggregateFunctionMatches> matchAggregateFunctions(
     AggregateFunctionMatches res;
 
     /// Index (projection agg function name) -> pos
-    std::unordered_map<std::string, std::vector<size_t>> projection_aggregate_functions;
+    UnorderedMapWithMemoryTracking<std::string, VectorWithMemoryTracking<size_t>> projection_aggregate_functions;
     for (size_t i = 0; i < info.aggregates.size(); ++i)
         projection_aggregate_functions[info.aggregates[i].function->getName()].push_back(i);
 
@@ -438,7 +429,7 @@ static std::optional<AggregateFunctionMatches> matchAggregateFunctions(
                     break;
 
                 const auto * query_node = jt->second;
-                const auto * proj_node = kt->second;
+                const auto * proj_node = skipAliases(kt->second);
 
                 auto mt = matches.find(query_node);
                 if (mt == matches.end())
@@ -472,7 +463,7 @@ static void appendAggregateFunctions(
     const AggregateDescriptions & aggregates,
     const AggregateFunctionMatches & matched_aggregates)
 {
-    std::unordered_map<const AggregateDescription *, const ActionsDAG::Node *> inputs;
+    UnorderedMapWithMemoryTracking<const AggregateDescription *, const ActionsDAG::Node *> inputs;
 
     /// Just add all the aggregates to dag inputs.
     auto & proj_dag_outputs =  proj_dag.getOutputs();
@@ -518,19 +509,19 @@ static std::optional<ActionsDAG> analyzeAggregateProjection(
         return {};
 
     ActionsDAG::NodeRawConstPtrs query_key_nodes;
-    std::unordered_set<const ActionsDAG::Node *> proj_key_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> proj_key_nodes;
+    /// A key of the projection can be an alias of an expression. A query expression matches the expression,
+    /// and the name of the alias is the name of the column in the projection part.
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> proj_key_outputs;
 
     {
         /// Just, filling the set above.
 
-        for (const auto & key : info.keys)
+        for (const auto * key : info.keys)
         {
-            auto it = proj_index.find(key);
-            /// This should not happen ideally.
-            if (it == proj_index.end())
-                return {};
-
-            proj_key_nodes.insert(it->second);
+            const auto * key_node = skipAliases(key);
+            proj_key_nodes.insert(key_node);
+            proj_key_outputs.emplace(key_node, key);
         }
 
         query_key_nodes.reserve(keys.size() + 1);
@@ -552,11 +543,19 @@ static std::optional<ActionsDAG> analyzeAggregateProjection(
         }
     }
 
+    /// A projection row stands for a group of rows, so the keys and the filter are computed once per group.
+    for (const auto * node : query_key_nodes)
+        if (!VirtualColumnUtils::isDeterministicInScopeOfQuery(node))
+            return {};
+
     /// Here we want to match query keys with projection keys.
     /// Query key can be any expression depending on projection keys.
     auto new_inputs = resolveMatchedInputs(matches, proj_key_nodes, query_key_nodes);
     if (!new_inputs)
         return {};
+
+    for (auto & [_, proj_key_node] : *new_inputs)
+        proj_key_node = proj_key_outputs.at(proj_key_node);
 
     auto proj_dag = ActionsDAG::foldActionsByProjection(*new_inputs, query_key_nodes);
     appendAggregateFunctions(proj_dag, aggregates, *matched_aggregates);
@@ -609,12 +608,20 @@ struct StatisticsAggregate
 
     const AggregateDescription * aggregate = nullptr;
 
-    bool isSum() const { return kind == Kind::Sum || kind == Kind::SumAndCount; }
+    /// The aggregates skip NULLs, so over a `Nullable` column a part is answered from the values of
+    /// its non-NULL rows, and needs the NULL count that `basic` statistics record.
+    bool is_nullable = false;
+
+    /// The aggregate is `sum(not(column.null))`, the form `optimize_functions_to_subcolumns` gives `count(column)`
+    /// over a `Nullable` column: a `Count` whose state is that of `sum`, and takes the count as the sum.
+    bool counts_null_map = false;
+
+    [[nodiscard]] bool isSum() const { return kind == Kind::Sum || kind == Kind::SumAndCount; }
 };
 
 struct AggregateProjectionCandidates
 {
-    std::vector<AggregateProjectionCandidate> real;
+    VectorWithMemoryTracking<AggregateProjectionCandidate> real;
     std::optional<MinMaxProjectionCandidate> minmax_projection;
 
     /// This flag means that DAG for projection candidate should be used in FilterStep.
@@ -627,10 +634,10 @@ struct AggregateProjectionCandidates
     String only_count_column;
 
     /// If not empty, try to answer the aggregation from per-part column statistics.
-    std::vector<StatisticsAggregate> statistics_aggregates;
+    VectorWithMemoryTracking<StatisticsAggregate> statistics_aggregates;
 
     /// Why each projection that was not used could not be used.
-    std::unordered_map<String, String> reject_reasons;
+    UnorderedMapWithMemoryTracking<String, String> reject_reasons;
 };
 
 /// Check if the whole aggregation can be answered from per-part column statistics: there is no
@@ -643,7 +650,7 @@ struct AggregateProjectionCandidates
 /// policies.
 /// (Pending data mutations and patch parts are already rejected by canUseProjectionForReadingStep,
 /// and FINAL together with SAMPLE are rejected there as well.)
-static std::vector<StatisticsAggregate> getStatisticsAggregates(
+static VectorWithMemoryTracking<StatisticsAggregate> getStatisticsAggregates(
     const AggregatingStep & aggregating,
     ReadFromMergeTree & reading,
     const StorageMetadataPtr & metadata,
@@ -682,7 +689,7 @@ static std::vector<StatisticsAggregate> getStatisticsAggregates(
 
     const auto & columns = metadata->getColumns();
 
-    std::vector<StatisticsAggregate> result;
+    VectorWithMemoryTracking<StatisticsAggregate> result;
     result.reserve(aggregates.size());
 
     for (const auto & aggregate : aggregates)
@@ -707,7 +714,7 @@ static std::vector<StatisticsAggregate> getStatisticsAggregates(
             kind = StatisticsAggregate::Kind::Sum;
         else if (function_name == "avg" || function_name == "sumCount")
             kind = StatisticsAggregate::Kind::SumAndCount;
-        else if (!is_count)
+        else if (function_name != "count")
             return {};
 
         const bool is_min_max = kind == StatisticsAggregate::Kind::Min || kind == StatisticsAggregate::Kind::Max;
@@ -725,53 +732,85 @@ static std::vector<StatisticsAggregate> getStatisticsAggregates(
         while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
             node = node->children.front();
 
-        if (node->type != ActionsDAG::ActionType::INPUT)
-            return {};
-
-        const auto * column = columns.tryGet(node->result_name);
-        if (!column || !column->type->equals(*node->result_type)
-            || !column->type->equals(*aggregate.function->getArgumentTypes().front()))
-            return {};
-
-        /// Statistics don't record whether a part contains NULL values, while min/max over
-        /// a Nullable column must skip them, so only plain columns are supported.
-        if (column->type->isNullable() || column->type->lowCardinality())
-            return {};
-
-        /// Like the trivial count optimization, answer `count(column)` of a column that cannot be `NULL` with the number
-        /// of rows (`count(expr)` was declined above, because its argument has to be evaluated, and that can throw).
-        /// The column is kept to check that a part stores it: otherwise a read evaluates its `DEFAULT`, which can throw.
-        if (kind == StatisticsAggregate::Kind::Count)
+        /// `optimize_functions_to_subcolumns` rewrites `count(column)` over a `Nullable` column into
+        /// `sum(not(column.null))`, which reads the null map subcolumn: the count of the non-NULL rows.
+        const ColumnDescription * column = nullptr;
+        bool counts_null_map = false;
+        if (kind == StatisticsAggregate::Kind::Sum && node->type == ActionsDAG::ActionType::FUNCTION
+            && node->function_base && node->function_base->getName() == "not" && node->children.size() == 1)
         {
-            result.push_back({.kind = kind, .column_name = node->result_name, .aggregate = &aggregate});
-            continue;
+            const auto * null_map = node->children.front();
+            while (null_map->type == ActionsDAG::ActionType::ALIAS && !null_map->children.empty())
+                null_map = null_map->children.front();
+
+            static constexpr std::string_view null_map_suffix = ".null";
+            if (null_map->type == ActionsDAG::ActionType::INPUT && WhichDataType(null_map->result_type).isUInt8()
+                && null_map->result_name.ends_with(null_map_suffix) && !columns.has(null_map->result_name))
+            {
+                column = columns.tryGet(null_map->result_name.substr(0, null_map->result_name.size() - null_map_suffix.size()));
+                if (!column || !column->type->isNullable())
+                    return {};
+                /// The type reserves the name: a tuple element cannot be named `null` (see `DataTypeTuple`), and no
+                /// other type with named subcolumns can be inside `Nullable`.
+                chassert(column->type->tryGetSubcolumnInfo("null")
+                    && SerializationNullable::isNullMapSubcolumn(column->type->tryGetSubcolumnInfo("null")->substreams_path));
+                kind = StatisticsAggregate::Kind::Count;
+                counts_null_map = true;
+            }
         }
 
-        if (!is_min_max)
+        if (!counts_null_map)
+        {
+            if (node->type != ActionsDAG::ActionType::INPUT)
+                return {};
+
+            column = columns.tryGet(node->result_name);
+            if (!column || !column->type->equals(*node->result_type)
+                || !column->type->equals(*aggregate.function->getArgumentTypes().front()))
+                return {};
+        }
+
+        if (column->type->lowCardinality())
+            return {};
+
+        /// Only `basic` statistics record the NULL count that the aggregates over a `Nullable` column need.
+        const bool is_nullable = column->type->isNullable();
+        if (is_nullable && !column->statistics.types_to_desc.contains(StatisticsType::Basic))
+            return {};
+
+        /// Like the trivial count optimization, `count(column)` is the number of rows, minus the NULL count of a
+        /// `Nullable` column (`count(expr)` was declined above, because its argument has to be evaluated, and that can
+        /// throw). The column is kept to check that a part stores it: otherwise a read evaluates its `DEFAULT`, which
+        /// can throw.
+        Field::Types::Which expected_field_type = Field::Types::Null;
+        if (kind != StatisticsAggregate::Kind::Count && !is_min_max)
         {
             if (!column->statistics.types_to_desc.contains(StatisticsType::Basic) || !canStatisticsTrackSum(column->type))
                 return {};
-
-            result.push_back({.kind = kind, .column_name = node->result_name, .aggregate = &aggregate});
-            continue;
         }
+        else if (is_min_max)
+        {
+            if (!column->statistics.types_to_desc.contains(StatisticsType::MinMax)
+                && !column->statistics.types_to_desc.contains(StatisticsType::Basic))
+                return {};
 
-        if (!column->statistics.types_to_desc.contains(StatisticsType::MinMax)
-            && !column->statistics.types_to_desc.contains(StatisticsType::Basic))
-            return {};
+            /// `basic` is declared for every column type, but it records min/max only for numeric-like
+            /// columns, so a `String` column with the default `auto_statistics_types` passes the check
+            /// above while no part will ever provide min/max. Decline here instead of loading the
+            /// estimates of every part before falling back to a normal read.
+            if (!canStatisticsTrackMinMax(column->type))
+                return {};
 
-        /// `basic` is declared for every column type, but it records min/max only for numeric-like
-        /// columns, so a `String` column with the default `auto_statistics_types` passes the check
-        /// above while no part will ever provide min/max. Decline here instead of loading the
-        /// estimates of every part before falling back to a normal read.
-        if (!canStatisticsTrackMinMax(column->type))
-            return {};
+            expected_field_type = removeNullable(column->type)->getDefault().getType();
+        }
 
         result.push_back({
             .kind = kind,
-            .column_name = node->result_name,
-            .expected_field_type = column->type->getDefault().getType(),
-            .aggregate = &aggregate});
+            .column_name = column->name,
+            .expected_field_type = expected_field_type,
+            .aggregate = &aggregate,
+            .is_nullable = is_nullable,
+            .counts_null_map = counts_null_map});
     }
 
     return result;
@@ -798,7 +837,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     const PartitionIdToMaxBlockPtr & max_added_blocks,
     bool allow_implicit_projections,
     size_t max_set_size_for_match,
-    std::vector<const ProjectionDescription *> agg_projections)
+    VectorWithMemoryTracking<const ProjectionDescription *> agg_projections)
 {
     const auto & keys = aggregating.getParams().keys;
     const auto & aggregates = aggregating.getParams().aggregates;
@@ -932,7 +971,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     DistinctStep & distinct,
     ReadFromMergeTree & reading,
     size_t max_set_size_for_match,
-    std::vector<const ProjectionDescription *> agg_projections)
+    VectorWithMemoryTracking<const ProjectionDescription *> agg_projections)
 {
     const auto metadata = reading.getStorageMetadata();
     Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter(metadata);
@@ -1011,14 +1050,16 @@ static constexpr const char * STATISTICS_PROJECTION_NAME = "_statistics_projecti
 /// can answer them exactly, and remove such parts from `remaining_select_result`. Returns a block
 /// with one row of aggregate function states, or an empty block if no part could be covered.
 static Block makeBlockFromStatistics(
-    const std::vector<StatisticsAggregate> & stats_aggregates,
+    const VectorWithMemoryTracking<StatisticsAggregate> & stats_aggregates,
     ReadFromMergeTree::AnalysisResult & remaining_select_result,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const StorageMetadataPtr & metadata,
     const ContextPtr & context,
     const LoggerPtr & logger)
 {
-    std::vector<Field> folded_values(stats_aggregates.size());
+    VectorWithMemoryTracking<Field> folded_values(stats_aggregates.size());
+    /// The rows the aggregate is computed over: all the rows of the covered parts, less the NULLs of a `Nullable` column.
+    VectorWithMemoryTracking<UInt64> folded_non_null_rows(stats_aggregates.size());
     size_t covered_parts = 0;
     size_t covered_rows = 0;
     size_t covered_marks = 0;
@@ -1027,14 +1068,14 @@ static Block makeBlockFromStatistics(
     /// The columns whose estimates are needed, so that only their statistics are read.
     NameSet required_columns;
     for (const auto & stats_aggregate : stats_aggregates)
-        if (stats_aggregate.kind != StatisticsAggregate::Kind::Count)
+        if (stats_aggregate.kind != StatisticsAggregate::Kind::Count || stats_aggregate.is_nullable)
             required_columns.insert(stats_aggregate.column_name);
 
     auto & parts_with_ranges = remaining_select_result.parts_with_ranges;
 
     /// The estimates of the parts whose statistics may answer the query, loaded in parallel and released once
     /// consumed; `std::nullopt` for a part that is read instead.
-    std::vector<std::optional<Estimates>> parts_estimates(parts_with_ranges.size());
+    VectorWithMemoryTracking<std::optional<Estimates>> parts_estimates(parts_with_ranges.size());
     auto part_may_use_statistics = [&](size_t part_index)
     {
         const auto & part_with_ranges = parts_with_ranges[part_index];
@@ -1092,7 +1133,8 @@ static Block makeBlockFromStatistics(
     {
         const auto & part = part_with_ranges.data_part;
 
-        std::vector<const Field *> part_values(stats_aggregates.size(), nullptr);
+        VectorWithMemoryTracking<const Field *> part_values(stats_aggregates.size(), nullptr);
+        VectorWithMemoryTracking<UInt64> part_non_null_rows(stats_aggregates.size(), part->rows_count);
         for (size_t i = 0; i < stats_aggregates.size(); ++i)
         {
             const auto & stats_aggregate = stats_aggregates[i];
@@ -1111,7 +1153,7 @@ static Block makeBlockFromStatistics(
                 || !isRepresentationPreservingConversion(part_column->type.get(), metadata_column->type.get()))
                 return false;
 
-            if (stats_aggregate.kind == StatisticsAggregate::Kind::Count)
+            if (stats_aggregate.kind == StatisticsAggregate::Kind::Count && !stats_aggregate.is_nullable)
                 continue;
 
             auto it = estimates.find(stats_aggregate.column_name);
@@ -1123,6 +1165,19 @@ static Block makeBlockFromStatistics(
             /// Statistics that describe a different number of rows than the part cannot be trusted.
             if (estimate.rows_count != part->rows_count)
                 return false;
+
+            if (stats_aggregate.is_nullable)
+            {
+                /// Statistics written before the NULL count was recorded have none.
+                if (!estimate.estimated_null_count || *estimate.estimated_null_count > part->rows_count)
+                    return false;
+
+                part_non_null_rows[i] = part->rows_count - *estimate.estimated_null_count;
+            }
+
+            /// `count` needs no value, and a part of NULLs only has none: it records no min/max.
+            if (stats_aggregate.kind == StatisticsAggregate::Kind::Count || part_non_null_rows[i] == 0)
+                continue;
 
             const auto & value = stats_aggregate.isSum() ? estimate.estimated_sum
                 : stats_aggregate.kind == StatisticsAggregate::Kind::Min ? estimate.estimated_min
@@ -1155,6 +1210,9 @@ static Block makeBlockFromStatistics(
             else if (!isNaNField(value) && (is_min ? value < folded : folded < value))
                 folded = value;
         }
+
+        for (size_t i = 0; i < stats_aggregates.size(); ++i)
+            folded_non_null_rows[i] += part_non_null_rows[i];
 
         ++covered_parts;
         covered_rows += part->rows_count;
@@ -1213,30 +1271,33 @@ static Block makeBlockFromStatistics(
 
         auto column = ColumnAggregateFunction::create(function);
         Arena & arena = column->createOrGetArena();
-        auto * place = arena.alignedAlloc(function->sizeOfData(), function->alignOfData());
-        function->create(place);
+        column->insertDefault();
+        auto * place = column->getData().back();
 
-        if (stats_aggregate.kind == StatisticsAggregate::Kind::Count)
-        {
-            AggregateFunctionCount::set(place, covered_rows);
-        }
-        else if (stats_aggregate.isSum())
+        /// Over a `Nullable` column with no non-NULL rows, the state stays as created, and the result is NULL.
+        if (stats_aggregate.kind == StatisticsAggregate::Kind::Count || stats_aggregate.isSum())
         {
             /// Unlike for min/max, `add` cannot build the state from the value: the sum may not fit in the argument
             /// type (the sum of an `Int16` column is an `Int64`), and the state of `avg` and `sumCount` also holds the
-            /// number of rows.
-            function->setSumAndCount(place, folded_values[i], covered_rows);
+            /// number of rows. `count` takes only the rows, and as the sum when its state is that of `sum`.
+            if (folded_non_null_rows[i] != 0)
+                function->setSumAndCount(
+                    place,
+                    stats_aggregate.counts_null_map ? Field(folded_non_null_rows[i]) : folded_values[i],
+                    folded_non_null_rows[i]);
+        }
+        else if (folded_values[i].isNull())
+        {
+            chassert(stats_aggregate.is_nullable && folded_non_null_rows[i] == 0);
         }
         else
         {
-            chassert(!folded_values[i].isNull());
             auto value_column
                 = function->getArgumentTypes().front()->createColumnConst(1, folded_values[i])->convertToFullColumnIfConst();
             const auto * value_column_ptr = value_column.get();
             function->add(place, &value_column_ptr, 0, &arena);
         }
 
-        column->insertFrom(place);
         block.insert(ColumnWithTypeAndName(
             std::move(column),
             std::make_shared<DataTypeAggregateFunction>(function, function->getArgumentTypes(), stats_aggregate.aggregate->parameters),
@@ -1283,7 +1344,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
     if (!reading)
         return result;
 
-    std::vector<const ProjectionDescription *> agg_projections;
+    VectorWithMemoryTracking<const ProjectionDescription *> agg_projections;
     for (const auto & projection : reading->getStorageMetadata()->projections)
         if (projection.type == ProjectionDescription::Type::Aggregate)
             agg_projections.push_back(&projection);
@@ -1320,6 +1381,10 @@ UseProjectionsResult optimizeUseAggregateProjections(
 
     if (auto can_use = canUseProjectionForReadingStep(reading); !can_use)
         return reject_all(can_use.error());
+
+    /// The rows of an aggregate projection are not rows of the table, which a lazy read could read more columns of.
+    if (reading->hasLazilyReadColumns())
+        return reject_all("some columns of the read are read lazily by their part offsets");
 
     /// Test hook: make a parallel-replicas follower skip the aggregate-projection short-circuit so it
     /// plans a real read while the initiator still short-circuits. This deterministically manufactures the
@@ -1464,8 +1529,8 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 }
                 chassert(i == len);
 
-                ssize_t range_diff = new_ranges.size() - part_with_ranges.ranges.size();
-                inexact_ranges_select_result->selected_ranges += range_diff;
+                inexact_ranges_select_result->selected_ranges += new_ranges.size();
+                inexact_ranges_select_result->selected_ranges -= part_with_ranges.ranges.size();
                 part_with_ranges.ranges = std::move(new_ranges);
             }
 
@@ -1661,8 +1726,8 @@ UseProjectionsResult optimizeUseAggregateProjections(
     if (best_candidate)
         selected_projection_name = best_candidate->projection->name;
 
-    bool is_parallel_reading_on_remote_replicas = reading->isParallelReadingEnabled()
-        && !optimization_settings.is_parallel_replicas_initiator_with_projection_support;
+    const bool is_local_plan_for_initiator = reading->isParallelReplicasLocalPlanForInitiator();
+    bool is_parallel_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !is_local_plan_for_initiator;
     /// Add reading from projection step.
     if (candidates.minmax_projection)
     {
@@ -1779,7 +1844,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
             short_circuited_with_prepared_source = true;
         }
 
-        if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
+        if (has_parent_parts && is_local_plan_for_initiator)
             fallbackToLocalProjectionReading(projection_reading);
     }
 

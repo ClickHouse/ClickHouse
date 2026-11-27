@@ -22,24 +22,24 @@ public:
         return std::make_shared<FunctionHasThreadFuzzer>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "() -> UInt8";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeUInt8().createColumnConst(input_rows_count, ThreadFuzzer::instance().isEffective());
     }
