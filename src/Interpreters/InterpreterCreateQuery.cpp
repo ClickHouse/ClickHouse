@@ -1426,8 +1426,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             checkTextIndexPreAndPostProcessorPermissions(index, getContext());
     }
 
-    /// A column that is not stored has no values for a TTL to expire.
-    if (!isReplayedTableDefinition(mode, create, getContext()))
+    /// A column that is not stored has no values for a TTL to expire. An internal CREATE is not checked: it repeats a stored
+    /// definition or one the user's query gave, e.g. the target that a refreshable view re-creates on each refresh.
+    if (!internal && !isReplayedTableDefinition(mode, create, getContext()))
     {
         for (const auto & [name, _] : properties.columns.getColumnTTLs())
             if (!properties.columns.hasPhysical(name))

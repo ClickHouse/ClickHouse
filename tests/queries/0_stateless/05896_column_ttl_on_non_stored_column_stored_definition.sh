@@ -18,15 +18,41 @@ CREATE DATABASE db;
 CREATE TABLE db.t (id UInt64, dt Date, arr Array(UInt64), al Array(UInt64) ALIAS arr, e UInt64 EPHEMERAL 0, v UInt64 DEFAULT e)
 ENGINE = MergeTree ORDER BY id;
 INSERT INTO db.t (id, dt, arr, e) VALUES (1, '2100-01-01', [1, 2, 3], 5);
+CREATE TABLE db.r (id UInt64, al UInt64 ALIAS id, dt Date) ENGINE = MergeTree ORDER BY id;
+CREATE MATERIALIZED VIEW db.mv REFRESH EVERY 1 YEAR TO db.r AS SELECT 1 AS id, toDate('2100-01-01') AS dt;
+SYSTEM WAIT VIEW db.mv;
+CREATE TABLE db.a (id UInt64, dt Date, arr Array(UInt64), al Array(UInt64) ALIAS arr) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE db.e (id UInt64, dt Date, e UInt64 EPHEMERAL 0, v UInt64 DEFAULT e) ENGINE = MergeTree ORDER BY id;
 "
 
 metadata_file=$(grep -rl 'ENGINE = MergeTree' "${WORKING_DIR}" --include='t.sql')
 sed -i 's/ ALIAS arr,$/ ALIAS arr TTL dt + toIntervalMonth(1),/; s/ EPHEMERAL 0,$/ EPHEMERAL 0 TTL dt + toIntervalMonth(1),/' "${metadata_file}"
 # Without this the load below would run against an unmodified definition, i.e. assert nothing.
 grep -c -F -e 'ALIAS arr TTL dt + toIntervalMonth(1),' -e 'EPHEMERAL 0 TTL dt + toIntervalMonth(1),' "${metadata_file}"
+r_metadata_file=$(grep -rl 'ENGINE = MergeTree' "${WORKING_DIR}" --include='r.sql')
+sed -i 's/ ALIAS id,$/ ALIAS id TTL dt + toIntervalMonth(1),/' "${r_metadata_file}"
+grep -c -F 'ALIAS id TTL dt + toIntervalMonth(1),' "${r_metadata_file}"
+a_metadata_file=$(grep -rl 'ENGINE = MergeTree' "${WORKING_DIR}" --include='a.sql')
+sed -i 's/ ALIAS arr$/ ALIAS arr TTL dt + toIntervalMonth(1)/' "${a_metadata_file}"
+grep -c -F 'ALIAS arr TTL dt + toIntervalMonth(1)' "${a_metadata_file}"
+e_metadata_file=$(grep -rl 'ENGINE = MergeTree' "${WORKING_DIR}" --include='e.sql')
+sed -i 's/ EPHEMERAL 0,$/ EPHEMERAL 0 TTL dt + toIntervalMonth(1),/' "${e_metadata_file}"
+grep -c -F 'EPHEMERAL 0 TTL dt + toIntervalMonth(1),' "${e_metadata_file}"
 
 $CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "
 SELECT id, arr, al, v FROM db.t;
+-- The refresh re-creates the target from its stored definition.
+SYSTEM REFRESH VIEW db.mv;
+SYSTEM WAIT VIEW db.mv;
+SELECT id, al FROM db.r;
+SELECT countSubstrings(create_table_query, 'ALIAS id TTL dt + toIntervalMonth(1)') FROM system.tables WHERE database = 'db' AND name = 'r';
+-- Inserted after the TTLs are in the definition, so the parts carry TTL infos for the merge to apply.
+INSERT INTO db.a VALUES (1, '2000-01-01', [1, 2, 3]), (2, '2100-01-01', [4]);
+OPTIMIZE TABLE db.a FINAL;
+SELECT id, arr, al FROM db.a ORDER BY id;
+INSERT INTO db.e (id, dt, e) VALUES (1, '2000-01-01', 5);
+OPTIMIZE TABLE db.e FINAL;
+SELECT id, v FROM db.e;
 SELECT countSubstrings(create_table_query, ' TTL dt + toIntervalMonth(1)') FROM system.tables WHERE database = 'db' AND name = 't';
 DETACH TABLE db.t;
 ATTACH TABLE db.t;
@@ -55,6 +81,10 @@ for query in \
 do
     $CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "${query}" 2>&1 | grep -c "Cannot set TTL for ALIAS column \`al2\`: it is not stored"
 done
+
+# A CREATE AS that copies such a TTL is refused.
+$CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "CREATE TABLE db.copy AS db.t" 2>&1 | grep -c -E "Cannot set TTL for (ALIAS|EPHEMERAL) column \`(al2|e)\`: it is not stored"
+$CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "EXISTS TABLE db.copy"
 
 # The same definition is refused when it comes with the ATTACH query rather than from the stored metadata.
 $CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "
