@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-replicated-database, no-llvm-coverage, long
 # Tag no-fasttest: Kafka is not available in fast tests
-# Tag no-replicated-database: the test relies on a fixed set of replicas (a real one and two ghosts) competing for partition assignment
+# Tag no-replicated-database: the test relies on fixed replica identities (a real one, a reclaimed one and two ghosts) competing for partition assignment
 # Tag no-llvm-coverage: Kafka consumer is too slow under coverage instrumentation, consumer group rebalancing times out
 # Tag long: lock refresh rounds are wall-clock bound (~15 polls per round), so even the green path takes a minute on slow builders
 
@@ -26,6 +26,7 @@ cleanup()
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_mv" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_reclaimed" 2>/dev/null
     timeout 10 rpk topic delete $KAFKA_TOPIC --brokers $KAFKA_BROKER > /dev/null 2>&1
 
     exit $exit_code
@@ -63,7 +64,7 @@ $CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
              kafka_poll_timeout_ms = $POLL_TIMEOUT_MS,
              kafka_consumer_reschedule_ms = 100,
              kafka_keeper_path = '$KEEPER_PATH',
-             kafka_replica_name = '{replica}';
+             kafka_replica_name = 'real';
   "
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst (id UInt64, data String)
@@ -82,7 +83,7 @@ lock_count() {
 aware=0
 deadline=$((SECONDS + 30))
 while [ "$SECONDS" -lt "$deadline" ]; do
-    aware=$($CLICKHOUSE_CLIENT -q "SELECT countIf(name = 'is_active' AND endsWith(value, ':demand_aware')) FROM system.zookeeper WHERE path = '$KEEPER_PATH/replicas/{replica}'" 2>/dev/null || echo 0)
+    aware=$($CLICKHOUSE_CLIENT -q "SELECT countIf(name = 'is_active' AND endsWith(value, ':demand_aware')) FROM system.zookeeper WHERE path = '$KEEPER_PATH/replicas/real'" 2>/dev/null || echo 0)
     if [ "$aware" -ge 1 ]; then
         break
     fi
@@ -159,13 +160,58 @@ if [ "$locks" -ne $((PARTITIONS - 1)) ]; then
     echo "FAIL: expected $((PARTITIONS - 1)) locks with a lockless replica of the old code, got $locks" >&2
     exit 1
 fi
+# A refresh briefly releases the temporary locks, so only an excess of locks counts.
 hold_deadline=$((SECONDS + 20))
 while [ "$SECONDS" -lt "$hold_deadline" ]; do
     sleep 2
     locks=$(lock_count)
-    if [ "$locks" -ne $((PARTITIONS - 1)) ]; then
+    if [ "$locks" -gt $((PARTITIONS - 1)) ]; then
         echo "FAIL: the reservation of the old-code replica lapsed (got $locks locks)" >&2
         exit 1
     fi
 done
 echo "--- A lockless replica of the old code keeps its quota reserved ---"
+
+# The previous version wrote is_active with the bare server UUID. A node like that must be
+# reclaimed by the activation of the same replica: replaced by an ephemeral one with the suffix.
+server_uuid=$($CLICKHOUSE_CLIENT -q "SELECT substring(value, 1, length(value) - length(':demand_aware')) FROM system.zookeeper WHERE path = '$KEEPER_PATH/replicas/real' AND name = 'is_active'" 2>/dev/null)
+if [ -z "$server_uuid" ]; then
+    echo "FAIL: cannot read the server UUID from the is_active node" >&2
+    exit 1
+fi
+planted=0
+if $CLICKHOUSE_CLIENT -q "INSERT INTO system.zookeeper (path, name, value) VALUES ('$KEEPER_PATH/replicas', 'reclaimed', '')" 2>/dev/null \
+    && $CLICKHOUSE_CLIENT -q "INSERT INTO system.zookeeper (path, name, value) VALUES ('$KEEPER_PATH/replicas/reclaimed', 'is_active', '$server_uuid')" 2>/dev/null; then
+    planted=1
+fi
+if [ "$planted" -ne 1 ]; then
+    echo "FAIL: could not plant the is_active node of the previous version" >&2
+    exit 1
+fi
+$CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
+    CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_reclaimed (id UInt64, data String)
+    ENGINE = Kafka
+    SETTINGS kafka_broker_list = '$KAFKA_BROKER',
+             kafka_topic_list = '$KAFKA_TOPIC',
+             kafka_group_name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_reclaimed_group',
+             kafka_format = 'JSONEachRow',
+             kafka_max_block_size = 100,
+             kafka_poll_timeout_ms = $POLL_TIMEOUT_MS,
+             kafka_consumer_reschedule_ms = 100,
+             kafka_keeper_path = '$KEEPER_PATH',
+             kafka_replica_name = 'reclaimed';
+  "
+reclaimed=0
+deadline=$((SECONDS + 30))
+while [ "$SECONDS" -lt "$deadline" ]; do
+    reclaimed=$($CLICKHOUSE_CLIENT -q "SELECT countIf(ephemeralOwner != 0 AND endsWith(value, ':demand_aware')) FROM system.zookeeper WHERE path = '$KEEPER_PATH/replicas/reclaimed' AND name = 'is_active'" 2>/dev/null || echo 0)
+    if [ "$reclaimed" -ge 1 ]; then
+        break
+    fi
+    sleep 1
+done
+if [ "$reclaimed" -lt 1 ]; then
+    echo "FAIL: activation did not reclaim the is_active node left by the previous version" >&2
+    exit 1
+fi
+echo "--- Activation reclaims an is_active node of the previous version ---"
