@@ -1756,9 +1756,6 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
     size_t future_index = 0;
     for (const auto & table_name : iceberg_tables)
     {
-        if (filter_by_table_name && !filter_by_table_name(table_name))
-            continue;
-
         /// futures[future_index].get() rethrows for the general-purpose path when metadata
         /// access is required (see the per-table catch above), preserving the original
         /// abort-on-error contract for consumers that dereference the storage unconditionally.
