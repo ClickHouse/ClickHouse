@@ -95,5 +95,8 @@ $CHL -q "
     select 'element renamed:', id, x from icebergLocal('$iceberg_dir/', settings iceberg_metadata_file_path = 'metadata/v101.metadata.json') order by id settings $cache;
     select 'element added again:', id, x from icebergLocal('$iceberg_dir/', settings iceberg_metadata_file_path = 'metadata/v102.metadata.json') order by id settings $cache;
     select 'cache entries of x:', count() from system.columns_cache where database = '' and column = 'x'"
+$CHL -q "
+    select 'element renamed, subcolumn:', id, x.new from icebergLocal('$iceberg_dir/', settings iceberg_metadata_file_path = 'metadata/v101.metadata.json') order by id;
+    select 'element added again, subcolumn:', id, x.new from icebergLocal('$iceberg_dir/', settings iceberg_metadata_file_path = 'metadata/v102.metadata.json') order by id"
 
 rm -r $range_file $iceberg_dir

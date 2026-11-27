@@ -2856,6 +2856,30 @@ void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_inser
 }
 
 
+Strings ReplicatedMergeTreeQueue::getUnfinishedClearsOfBlockColumns(const PartitionIdToMaxBlock & partitions, const StorageInMemoryMetadata & metadata) const
+{
+    std::set<String> result;
+    std::shared_lock lock(state_mutex);
+
+    for (const auto & [partition_id, max_block] : partitions)
+    {
+        auto in_partition = mutations_by_partition.find(partition_id);
+        if (in_partition == mutations_by_partition.end())
+            continue;
+
+        for (const auto & [block_number, status] : in_partition->second)
+        {
+            if (block_number >= max_block)
+                break;
+
+            if (!status->is_done && std::ranges::any_of(status->entry->commands, [&](const MutationCommand & command) { return command.isClearOfBlockColumns(metadata); }))
+                result.insert(status->entry->znode_name);
+        }
+    }
+
+    return Strings(result.begin(), result.end());
+}
+
 std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMutationsStatus(const String & znode_name, std::set<String> * mutation_ids) const
 {
 

@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/BoolMask.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
@@ -5479,6 +5480,11 @@ void KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const B
 
     if (node_dag && !info.columns_named_like_key_expressions.empty()
         && readsInputNamedIn(*node_dag, info.columns_named_like_key_expressions))
+        return;
+
+    /// A key expression is never non-deterministic, so a predicate that calls `rand` or `blockSize` (also inside a
+    /// lambda body) is not computed by a key column with the same name.
+    if (node_dag && !VirtualColumnUtils::isDeterministicInScopeOfQuery(node_dag))
         return;
 
     /// For example, `ORDER BY a` and `WHERE a = 1`. Here, the function is "equals".

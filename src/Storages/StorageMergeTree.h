@@ -200,6 +200,10 @@ private:
     void removeCommittingBlock(CommittingBlock block);
     std::unique_ptr<PlainCommittingBlockHolder> allocateBlockNumber(CommittingBlock::Op op);
     void waitForCommittingInsertsAndMutations(Int64 max_block_number, size_t timeout_ms) const;
+
+    /// Throws if a mutation with a lower version than the lightweight update with `block_number` clears
+    /// `_block_number` / `_block_offset` (see `isClearOfBlockColumns`) and is not finished.
+    void assertNoUnfinishedClearOfBlockColumns(Int64 block_number, const StorageMetadataPtr & metadata_snapshot) const;
     CommittingBlocksSet getCommittingBlocks() const;
 
     std::atomic<bool> shutdown_called {false};

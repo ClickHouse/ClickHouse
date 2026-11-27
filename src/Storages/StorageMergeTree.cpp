@@ -1614,6 +1614,9 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
 
     size_t timeout_ms = saturatedMilliseconds(context_copy->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()).count();
     waitForCommittingInsertsAndMutations(block_number, timeout_ms);
+    auto metadata_snapshot_handle = getInMemoryMetadataPtr(context_copy, false);
+    StorageMetadataPtr metadata_snapshot = metadata_snapshot_handle;
+    assertNoUnfinishedClearOfBlockColumns(block_number, metadata_snapshot);
 
     /// Here the block number of the update is reserved in `committing_blocks`, but its patch part is not committed yet.
     FailPointInjection::pauseFailPoint(FailPoints::mt_lightweight_update_pause_after_block_allocation);
@@ -1667,6 +1670,27 @@ void StorageMergeTree::rememberUnfinishedRemovedMutation(UInt64 version)
     unfinished_removed_mutation_versions.insert(version);
     if (unfinished_removed_mutation_versions.size() > max_remembered_unfinished_removed_mutations)
         unfinished_removed_mutation_versions.erase(unfinished_removed_mutation_versions.begin());
+}
+
+void StorageMergeTree::assertNoUnfinishedClearOfBlockColumns(Int64 block_number, const StorageMetadataPtr & metadata_snapshot) const
+{
+    /// The patch of the update would store the values of `_block_number` and `_block_offset` of the parts the mutation has
+    /// not rewritten yet, and it would be applied to the rewritten parts, which have other values: to other rows or to none.
+    std::unique_lock lock(currently_processing_in_background_mutex);
+    for (const auto & [version, entry] : current_mutations_by_version)
+    {
+        if (static_cast<Int64>(version) >= block_number)
+            break;
+
+        if (!std::ranges::any_of(*entry.commands, [&](const MutationCommand & command) { return command.isClearOfBlockColumns(*metadata_snapshot); }))
+            continue;
+
+        auto status = getIncompleteMutationsStatusUnlocked(version, lock, nullptr, /*from_another_mutation=*/ true);
+        if (status && !status->is_done)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot execute a lightweight update, because mutation {} that clears columns `_block_number` and `_block_offset` "
+                "is not finished. Wait until it finishes, or kill it", entry.file_name);
+    }
 }
 
 std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsStatus(
