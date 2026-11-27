@@ -1,0 +1,203 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-11-20
+title: 'Demo days - 2026-11-20'
+sidebarTitle: '2026-11-20'
+description: 'ClickStack demo days del 2026-11-20'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+canonical: "https://clickhouse.com/docs/clickstack/demo-days/2026/2026-11-20"
+---
+
+## Controles de columnas y ordenación en la tabla de resultados de búsqueda {#columns-and-sort-controls-on-the-search-results-table}
+
+*Demostración a cargo de [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**Se trata de un trabajo exploratorio, sin compromiso de publicarlo.**
+
+Hasta ahora, `SELECT` y `ORDER BY` eran campos de texto del formulario de consulta. Para cambiar las columnas o el orden había que escribir SQL. En las entrevistas, cuando pedíamos a los usuarios que añadieran una columna, no encontraban dónde hacerlo. No había una relación clara entre esos campos y la tabla situada debajo. Además, los campos aparecen encima de Patrones de eventos, donde no tienen ningún efecto.
+
+La propuesta traslada estos campos a los controles **Columns** y **Sort** de la tabla de resultados. **Columns** permite arrastrar columnas para reordenarlas, eliminarlas, o bien elegir un campo sugerido o escribir una expresión como `upper(Body) as message` y hacer clic en **Add**. **Sort** muestra cada campo de `ORDER BY` y su dirección. Ambos incluyen una pestaña **SQL** donde puede editar la cláusula directamente. Los cambios en la vista de campos actualizan el SQL, por lo que puede usar cualquiera de las dos. Las acciones de la tabla (ajuste de líneas, SQL generado y CSV) pasan a la misma barra de herramientas. Antes se encontraban en el encabezado de la última columna, por lo que podían quedar fuera de la vista si esa columna era ancha.
+
+Si cierra cualquiera de las ventanas emergentes con cambios sin aplicar, se le pedirá confirmación antes de descartarlos. Al eliminar una columna, también se elimina de la ordenación si se utiliza en ella. Si el analizador no entiende una cláusula, como `Timestamp DESC NULLS LAST`, conserva el SQL tal como está escrito y abre la pestaña **SQL**. Estos controles no se muestran en Deltas de eventos ni en Patrones de eventos.
+
+Esto añade una fila más de barra de herramientas encima de la tabla. Los editores ya se han fusionado, pero todavía no están disponibles en la página de búsqueda. El PR para añadirlos sigue abierto. No lo incluimos en la beta de ClickHouse Observability porque se trata de un cambio importante. También podríamos recordar la última pestaña que usó y abrir directamente **SQL** si es lo que prefiere. Nos gustaría conocer su opinión sobre este funcionamiento.
+
+**PRs relacionados:** [#3431](https://github.com/ClickHouse/ClickStack/pull/3431) Añadir los editores de columnas y ordenación, [#3432](https://github.com/ClickHouse/ClickStack/pull/3432) Montar Columns y Sort en la página de búsqueda (abierto)
+
+## Variables de conexión y de origen de datos para paneles de control {#connection-and-data-source-variables-for-dashboards}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=276" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+El audio de este fragmento no es muy bueno; disculpe las molestias.
+
+Los paneles de control incluyen dos nuevos tipos de variable en **Edit filters and variables**. Una variable de conexión permite elegir entre las conexiones de ClickHouse del equipo. Una variable de origen de datos permite elegir entre sus fuentes. Puede restringir los tipos de fuente (por ejemplo, solo a log) y, opcionalmente, limitarlos a una conexión. Esta puede ser una conexión fija o una variable de conexión, de modo que, al cambiar la conexión, también cambian las fuentes disponibles.
+
+Los bloques pueden usar estas variables en lugar de una fuente o conexión concreta. Por ejemplo, un bloque del generador de consultas puede usar `$logSource` como origen de datos, y un bloque de SQL directo puede usar `$connection`. La configuración del gráfico almacena `$varName` en el campo de ID de la fuente o de la conexión. Al renderizar el panel de control, la variable se resuelve en un ID real, por lo que todo lo demás funciona como antes.
+
+Otros filtros también pueden depender de estas variables. En la demo, un filtro de valores mediante una expresión SQL obtiene los nombres de servicio de la fuente seleccionada. Al cambiar de la conexión de demostración a una local, se actualizan tanto los bloques como los nombres de servicio del filtro. Si falta una selección o no es válida, el bloque muestra un marcador de posición o un error en lugar de ejecutar una consulta que fallaría. Todavía no es posible usar `$source` directamente en SQL. Debe elegir la fuente en el bloque y, a continuación, usar `$__sourceTable` para hacer referencia a su tabla.
+
+Normalmente, las selecciones se incluyen en la URL como ID de fuente y de conexión, pero también puede usar nombres. Esto permite compartir enlaces entre entornos en los que las fuentes tienen los mismos nombres pero ID distintos. Se utiliza la misma búsqueda por nombre que en el parámetro `source=` de la página de búsqueda.
+
+Ambos tipos de variable también están disponibles a través de la API externa y de MCP. Los filtros de consulta SQL también pueden hacer referencia a variables de fuente y de conexión.
+
+**PR relacionados:** [#3651](https://github.com/ClickHouse/ClickStack/pull/3651) Add data source and connection variable types to paneles de control, [#3652](https://github.com/ClickHouse/ClickStack/pull/3652) Support data source and connection variables in the external API and MCP, [#3712](https://github.com/ClickHouse/ClickStack/pull/3712) Accept source and connection names for source and connection variables, [#3714](https://github.com/ClickHouse/ClickStack/pull/3714) Allow SQL filter to reference source var
+
+## Guardar un panel de control temporal {#saving-a-temporary-dashboard}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=423" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Hasta ahora, el banner de un panel de control temporal indicaba que no se podía guardar. Si querías conservar lo que habías creado, tenías que recrearlo como panel de control guardado, un problema con el que Vladimir se topó hace poco. El banner sigue indicando que el panel de control es temporal, pero ahora incluye un botón para guardarlo con todos sus bloques.
+
+**PRs relacionados:** [#3729](https://github.com/ClickHouse/ClickStack/pull/3729) Guardar un panel de control temporal con su contenido intacto
+
+## Documentación de los tipos de filtros de panel de control {#documentation-for-dashboard-filter-types}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=453" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+La documentación de paneles de control ahora abarca todos los tipos de filtros añadidos en los últimos meses: valores de expresión SQL, valores estáticos, valores de consulta SQL, valores de etiquetas de PromQL, claves y valores ad hoc, origen de datos y conexión. La tabla [Tipos de filtros](https://clickhouse.com/docs/clickstack/observability/features/dashboards/overview#filter-types) explica de dónde obtiene cada uno sus valores y si aplica filtros a los bloques, funciona como variable o ambas cosas. Cada tipo tiene su propia sección debajo de la tabla. La página también explica cómo usar parámetros de URL para enlazar directamente a un panel de control con los filtros ya configurados.
+
+**PRs relacionados:** ninguno, ya que se trata de un cambio en la documentación y no en el código; la página publicada está enlazada más arriba.
+
+## Constructor de apps con control de versiones {#version-aware-app-builder}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=477" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Las apps de ClickStack cuentan con historial de versiones desde hace tiempo. Cada vez que se le pide al agente que construya algo, este crea una nueva versión, y es posible restaurar una anterior. Sin embargo, el agente no podía ver esas versiones ni saber cuándo se había restaurado una. Seguía hablando de código que ya no estaba en la app, por lo que la conversación no se correspondía con el código fuente. Y si se revertía un cambio porque se prefería cómo funcionaba algo antes, tampoco podía consultar esa versión.
+
+Ahora el agente puede ver todas las versiones, sabe cuándo se ha restaurado una y dispone de una herramienta de diff para comparar dos versiones cualesquiera. En la demo, una traza de Langfuse muestra al agente invocando la herramienta y el diff que obtiene como resultado. Así, si se le explica por qué se ha revertido un cambio, el agente puede examinar las versiones y ver exactamente qué había modificado.
+
+## Compilaciones de aplicaciones más rápidas con menos tokens {#faster-app-builds-with-fewer-tokens}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=569" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+El audio de este clip tampoco es muy bueno; lo sentimos.
+
+Tres cambios en el constructor de aplicaciones para acelerar las compilaciones y reducir el uso de tokens.
+
+La herramienta que usa el agente para probar el SQL antes de añadirlo a la aplicación ahora puede ejecutar varias consultas en paralelo, en lugar de una consulta por llamada. Los agentes que utilizan el servidor MCP también pueden usar esta misma herramienta para comprobar SQL.
+
+También hemos cambiado el momento en que compactamos el contexto. Antes, el constructor conservaba solo los últimos ocho pasos, igual que los notebooks. Así el contexto se mantenía reducido, pero cada paso a partir del octavo reescribía el prompt e invalidaba la caché del prompt, lo que aumentaba el coste y la latencia. Ahora esperamos a que el contexto alcance 600,000 tokens, el 60% de la ventana de 1M de tokens que hemos configurado para los modelos Opus. Tras la compactación, el contexto tiene que volver a crecer hasta ese tamaño antes de que volvamos a compactar. Ninguna compilación de ninguno de nuestros entornos ha alcanzado todavía ese límite, así que aún no ha sido necesario compactar.
+
+Por último, el panel de información de la aplicación muestra las consultas que esta ejecuta. Antes, el agente escribía esta lista a mano, aunque las consultas ya estaban en el código. Si se equivocaba, le devolvíamos una advertencia y lo volvía a intentar. En nuestro historial de compilaciones, escribir y corregir esta lista suponía una parte considerable del uso de tokens y del tiempo de compilación. Ahora extraemos las consultas directamente del código fuente. El prompt indica al agente cómo darles formato para que podamos hacerlo de forma fiable, y seguimos devolviendo una advertencia si hay que corregir el formato. Además, cada consulta incluye un número de línea y un enlace al lugar del código donde se utiliza.
+
+## Pasar filtros e intervalo de tiempo a través de enlaces de panel de control {#passing-filters-and-time-range-through-dashboard-links}
+
+*Demostración a cargo de [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=769" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Los paneles de control ya admiten enlaces a otros paneles de control. Al hacer clic en una fila de un mosaico de tabla, se pueden pasar los valores de esa fila a otro panel de control, y los bloques de Markdown y de tabla pueden incluir enlaces simples. Sin embargo, los enlaces simples no conservaban los filtros. Podías filtrar un panel de control de descripción general para ver solo los errores de un servicio, seguir un enlace al panel de control de detalle del servicio y encontrarte de nuevo con todos los servicios.
+
+Ahora los enlaces pueden incluir el intervalo de tiempo y los filtros seleccionados actualmente mediante dos variables globales. `$__url_time_range` se expande a `from=…&to=…`, y `$__all_variables` se expande al parámetro `filters=`. Así, el panel de control de destino se abre con los mismos servicios, estados e intervalo de tiempo seleccionados. En la demostración, filtramos la descripción general para mostrar los errores del servicio de API y, a continuación, seguimos un enlace al panel de control de detalle del servicio, que ya muestra únicamente los spans fallidos de ese servicio. El PR sigue abierto.
+
+**PRs relacionados:** [#3726](https://github.com/ClickHouse/ClickStack/pull/3726) Más variables globales para enlaces de panel de control (abierto)
+
+## Filtros ad hoc de panel de control para todas las implementaciones {#ad-hoc-dashboard-filters-for-every-deployment}
+
+*Demostración a cargo de [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=875" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Los filtros ad hoc le permiten elegir una clave, un operador y un valor desde la barra de filtros mientras investiga, sin que el autor del panel de control tenga que configurar cada filtro de antemano. Los introdujimos en octubre detrás del flag `NEXT_PUBLIC_ENABLE_ADHOC_FILTERS`, y el [What&#39;s New de octubre](https://clickhouse.com/blog/whats-new-in-clickstack-october-2026#user-content-ad_hoc_dashboard_filters) explica los conceptos básicos. Ya hemos eliminado el flag, así que están habilitados en todas las implementaciones.
+
+Desde entonces hemos añadido algunas novedades. Puede acotar el alcance de un filtro ad hoc mediante un campo dependiente. Por ejemplo, un filtro restringido a `ServiceName = api` solo ofrece claves y valores de ese servicio. Un filtro también puede aplicarse a varias fuentes: al seleccionar un `SpanName` para una fuente de trazas, se filtran los gráficos y las tablas que usan esa fuente. La API externa de paneles de control v2 y las herramientas de panel de control de MCP ya pueden crear, leer y actualizar paneles de control con filtros ad hoc. Antes, MCP los ocultaba, y una actualización con `clickstack_save_dashboard` que incluyera `filters` eliminaba sin aviso cualquier filtro ad hoc existente.
+
+El nombre de un filtro ad hoc es solo su identificador, por lo que no puede referenciarlo como `$name` en un bloque. Aun así, debe ser único, ya que lo usamos para identificar las condiciones del filtro en el parámetro de URL `filters=`.
+
+**PR relacionados:** [#3585](https://github.com/ClickHouse/ClickStack/pull/3585) Añadir filtros ad hoc dependientes, [#3658](https://github.com/ClickHouse/ClickStack/pull/3658) Retoques finales de los filtros ad hoc, [#3659](https://github.com/ClickHouse/ClickStack/pull/3659) Compatibilidad con filtros ad hoc de panel de control en la API externa, [#3660](https://github.com/ClickHouse/ClickStack/pull/3660) Compatibilidad con filtros ad hoc de panel de control en las herramientas de panel de control de MCP, [#3727](https://github.com/ClickHouse/ClickStack/pull/3727) Eliminar el toggle de la funcionalidad de filtros ad hoc
+
+## Carga más rápida de filtros {#faster-filter-loading}
+
+*Demostración a cargo de [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=939" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+La barra lateral de búsqueda obtiene las claves y valores de los filtros a partir de un índice de texto sobre los mapas de atributos, si la fuente tiene uno (modo de todos los valores), o escaneando la tabla (modo exacto). Ahora ambos modos son más rápidos.
+
+Antes, las búsquedas en el índice de texto leían el diccionario de todas las partes dentro del intervalo de tiempo. En ClickHouse Observability, abrir el índice de cada parte implica un viaje de ida y vuelta al almacenamiento de objetos. Ahora leemos 20 partes de forma predeterminada, eligiendo las más cercanas a la mediana del número de filas. Dos nuevos ajustes de la fuente controlan este comportamiento: **Map key index parts** (`mapKeyIndexMaxParts`) establece cuántas partes se leen, y **Map key index part size** (`mapKeyIndexPartSelection`) permite elegir entre `median`, `smallest` y `largest`. Las partes más pequeñas suelen ser más recientes y no estar fusionadas, por lo que leerlas es barato y resultan útiles para encontrar claves nuevas. Las partes más grandes abarcan más claves, pero sus diccionarios también son más grandes.
+
+Es posible que se pierdan claves y valores que solo aparecen en partes fuera de esa selección. **Cargar más** en una clave lee todas las partes. Estos ajustes se encuentran en el formulario de la fuente, aunque son más avanzados que el resto de la sección avanzada. Aún no está claro cuál es la mejor manera de exponerlos.
+
+El índice de texto ahora devuelve los valores más frecuentes, ordenados con `topKWeighted`, en lugar de los primeros por orden alfabético. Las búsquedas se ejecutan en lotes paralelos de 10 claves. Una clave con un valor distinto en cada fila, como un ID de solicitud, solo retrasa su propio lote, y no todas las claves que van después de ella en el orden.
+
+La consulta también depende del tamaño de bloque de diccionario del índice. Con bloques de 8,192 tokens, cada clave tiene su propia lectura, que se detiene tras 20,000 filas del índice. La migración del recolector ahora establece `text_index_dictionary_block_size = 8192` en las tablas predeterminadas para ClickHouse 26.6 y versiones posteriores. Además, el valor predeterminado de ClickHouse pasa de 512 a 8,192 en la versión 26.11. La demo carga 2,000 claves y valores desde el índice, más de lo que se podía solicitar antes. La configuración del equipo ahora permite hasta 10,000 claves por columna.
+
+El modo exacto tenía un grave problema de rendimiento. Las búsquedas solicitaban valores para varias claves del mapa en una sola consulta. Como un `Map` se almacena como un array de pares clave-valor, ClickHouse recorría el array de cada fila una vez por cada clave solicitada. Ahora encontramos las claves solicitadas en una sola pasada por fila. Si se limita a un único servicio, el modo exacto es ahora lo bastante rápido como para que quizá sea la mejor opción predeterminada. Lee hasta 3 millones de filas de forma predeterminada, un valor que se puede ajustar en la configuración del equipo. Probablemente ese límite debería estar en la fuente, ya que ClickHouse Observability no lo expone en absoluto a los usuarios.
+
+Las solicitudes concurrentes para las mismas claves del mapa ahora comparten una única consulta de ClickHouse, en lugar de que cada una lance otra mientras la primera sigue en ejecución.
+
+**PR relacionados:** [#3611](https://github.com/ClickHouse/ClickStack/pull/3611) Compartir una única lectura de claves de Map entre llamadores concurrentes, [#3617](https://github.com/ClickHouse/ClickStack/pull/3617) Mostrar los valores más frecuentes del índice de texto, en lotes de 10 claves, [#3635](https://github.com/ClickHouse/ClickStack/pull/3635) Leer un conjunto configurable de partes para las búsquedas de claves y valores en el índice de texto, [#3657](https://github.com/ClickHouse/ClickStack/pull/3657) Permitir hasta 10,000 claves de filtro por columna en la configuración del equipo, [#3695](https://github.com/ClickHouse/ClickStack/pull/3695) Acelerar los filtros exactos, [ClickHouse/ClickHouse#132804](https://github.com/ClickHouse/ClickHouse/pull/132804) Cambiar el tamaño de bloque de diccionario predeterminado del índice de texto
+
+## Gráficos de Helm de ClickStack en Artifact Hub {#clickstack-helm-charts-on-artifact-hub}
+
+*Demostración a cargo de [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1121" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Hemos trabajado con el equipo de seguridad para crear una [organización `clickhouse` en Artifact Hub](https://artifacthub.io/packages/search?org=clickhouse) para nuestros gráficos de Helm oficiales. Los gráficos `clickstack` y `clickstack-operators` aparecen allí con una insignia de editor verificado. Su metadata ahora apunta al repositorio ClickStack-helm-charts en lugar del antiguo repositorio hyperdxio. Así resulta más fácil encontrar los gráficos y, además, Artifact Hub escanea gratuitamente cada versión en busca de vulnerabilidades.
+
+Esos escaneos ya han dado frutos. El informe del gráfico 3.6.0 permitió aplicar varias correcciones antes de la demo. Al actualizar la imagen base del recolector y gomplate, se eliminaron nueve CVE críticos en las imágenes de la aplicación y del recolector. También actualizamos el build personalizado del recolector de contrib v0.155.0 a v0.165.0 y redujimos de 50 a 2 los hallazgos de gravedad alta en las dependencias de Node de la imagen de la aplicación.
+
+Los gráficos también se publican en GHCR como artefactos OCI, y esos paquetes ahora son públicos. Puede ejecutar `helm install my-clickstack oci://ghcr.io/clickhouse/charts/clickstack` sin tener que añadir antes el repositorio de GitHub Pages. El método existente con `helm repo add` sigue funcionando. Además, hemos sustituido la página de inicio «WIP» por instrucciones de instalación para ambos gráficos y enlaces a la documentación y a la guía de actualización.
+
+Como siguiente paso, firmaremos los gráficos y solicitaremos a Artifact Hub que marque como oficiales los paquetes de la organización.
+
+**PR relacionados:** [ClickHouse/ClickStack-helm-charts#297](https://github.com/ClickHouse/ClickStack-helm-charts/pull/297) Publicar los gráficos lanzados en GHCR como artefactos OCI, [ClickHouse/ClickStack-helm-charts#319](https://github.com/ClickHouse/ClickStack-helm-charts/pull/319) Reemplazar la página de inicio vacía de Pages y configurar Artifact Hub, [ClickHouse/ClickStack-helm-charts#322](https://github.com/ClickHouse/ClickStack-helm-charts/pull/322) Documentar la instalación de los gráficos desde GHCR, [#3709](https://github.com/ClickHouse/ClickStack/pull/3709) Eliminar los CVE críticos de las imágenes de la aplicación y del recolector, [#3710](https://github.com/ClickHouse/ClickStack/pull/3710) Actualizar el recolector base a v0.165.0, [#3711](https://github.com/ClickHouse/ClickStack/pull/3711) Actualizar las dependencias de Node marcadas como vulnerables en la imagen de la aplicación
+
+## Filtrar por un patrón de eventos o excluirlo {#filtering-for-or-excluding-an-event-pattern}
+
+*Demostración a cargo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1216" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Esta mejora surgió a petición de un cliente al que le gustaba Patrones de eventos, pero que solo podía hacer clic para ver las muestras de un patrón. Ahora cada fila muestra dos acciones al pasar el cursor por encima. **Exclude this pattern** permanece en Patrones de eventos y vuelve a ejecutarlo excluyendo ese patrón. Puede excluir varios patrones para seguir eliminando ruido. **Filter for this pattern** abre la tabla de resultados solo con los eventos coincidentes.
+
+Ambas acciones añaden un filtro de búsqueda mediante una condición SQL construida a partir de la plantilla del patrón. Se trata de una versión abreviada de la condición que utiliza la herramienta MCP `clickstack_event_patterns` para los desgloses, lo bastante corta como para caber en la URL. ClickHouse la aplica a todo el intervalo de tiempo, más allá de las 10,000 filas muestreadas, de modo que la tabla de resultados, el histograma y los recuentos se actualizan. Estos filtros aparecen como píldoras **Pattern** junto a los demás filtros y se conservan en la URL y en las búsquedas guardadas.
+
+Solo puede incluir un patrón a la vez. Los filtros se combinan con `AND`, por lo que incluir dos patrones no devolvería ningún resultado. Al elegir otro patrón, se reemplaza el filtro de inclusión anterior. Las plantillas de más de 4,000 caracteres no muestran los botones, en consonancia con el límite de MCP.
+
+Existen algunas limitaciones. Las plantillas genéricas como `<*> <*>` pueden coincidir con más eventos de los que sugiere la fila. Si una plantilla conserva una marca de tiempo como texto literal, el patrón queda ligado a esa fecha y hora. Los filtros de exclusión duplican aproximadamente el tiempo de consulta, y los botones aún no están disponibles en los bloques de patrones de los paneles de control.
+
+**PR relacionados:** [#3662](https://github.com/ClickHouse/ClickStack/pull/3662) Compartir el predicado de desglose de Patrones de eventos, [#3663](https://github.com/ClickHouse/ClickStack/pull/3663) Usar el predicado de patrón compartido para los desgloses, [#3664](https://github.com/ClickHouse/ClickStack/pull/3664) Añadir una forma compacta del predicado de patrón, [#3665](https://github.com/ClickHouse/ClickStack/pull/3665) Filtrar por un patrón o excluirlo desde Patrones de eventos
+
+## Métricas RED en la búsqueda de trazas {#red-metrics-on-trace-search}
+
+*Demostración a cargo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1308" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Hasta ahora, la búsqueda mostraba un único histograma de recuento encima de los resultados para todas las fuentes. Las fuentes de trazas que tienen una columna de duración muestran ahora tres bloques: **Throughput** muestra el recuento de spans por estado, **Errors** alterna entre una línea de tasa de errores limitada al 100% y el volumen de errores, y **Duration** muestra las líneas Avg, P95 y P99 en las unidades definidas por la precisión de duración de la fuente.
+
+Puede mostrar un solo bloque o los tres. Al pasar el cursor sobre uno de ellos, aparece un cursor en el mismo instante en los tres. Al hacer clic en una serie de estado en Throughput o Errors, se filtran los resultados, igual que ocurría al hacer clic en el histograma. Throughput utiliza la consulta de recuento de resultados ya existente, por lo que no añade ningún escaneo adicional.
+
+El interruptor **RED** / **Mapa de calor** sustituye los tres bloques por un mapa de calor que muestra la distribución de la duración a lo largo del tiempo. Es el mismo mapa de calor que se usa en los paneles de control. La URL conserva su elección, de modo que los enlaces compartidos abren la misma vista. El seguimiento en tiempo real se desactiva en la vista de mapa de calor. Si se define una agrupación personalizada, como `ServiceName`, vuelve a mostrarse el histograma agrupado. Las fuentes de logs y las pantallas estrechas siguen mostrando el histograma de siempre.
+
+**PRs relacionados:** [#3183](https://github.com/ClickHouse/ClickStack/pull/3183) Mostrar métricas RED en la vista de resultados de búsqueda de trazas, [#3184](https://github.com/ClickHouse/ClickStack/pull/3184) Añadir una vista de mapa de calor de duración a la búsqueda de trazas
+
+## Configuración desde el menú Cmd+K y un modo CRT oculto {#settings-from-the-cmd-k-menu-and-a-hidden-crt-mode}
+
+*Demostración a cargo de [@MikeShi42](https://github.com/MikeShi42)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1381" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Antes, para encontrar los ajustes había que pasar por la configuración del equipo o por el menú de usuario. Ahora puede buscarlos desde `Cmd+K` (`Ctrl+K` en otros sistemas). El grupo Settings incluye la configuración del equipo, Fuentes, Conexiones, Miembros del equipo, Claves de API, Claves de API de la organización, Servidor MCP, Webhooks y Ajustes de consulta. Cada entrada abre la pestaña correspondiente y se desplaza hasta la sección. Este grupo no se muestra en modo local, ya que no existe la página del equipo.
+
+El grupo Preferences abre el modal de preferencias. Puede encontrarlo buscando términos como zona horaria, 12h/24h, fuente o clic en una fila. También puede cambiar el tema directamente desde el menú con **Use light mode**, **Use dark mode** y **Use system color mode**.
+
+Si ha llegado hasta aquí, le espera también un pequeño huevo de Pascua, cortesía de [@jordan-simonovski](https://github.com/jordan-simonovski). Abra **User preferences** e introduzca el código Konami: `Up, Up, Down, Down, Left, Right, Left, Right, B, A`. Se reproduce una breve animación de arranque y aparece un interruptor **CRT mode**. Actívelo para dar a la aplicación el aspecto de una antigua pantalla CRT, con líneas de barrido, esquinas curvadas y texto luminoso.
+
+El efecto es una capa superpuesta, por lo que puede seguir usando la aplicación con normalidad. El interruptor permanece en Preferences mientras el modo está activo, así que puede desactivarlo sin volver a introducir el código. Está desactivado de forma predeterminada, y el parpadeo y la animación de desbloqueo no se reproducen cuando `prefers-reduced-motion` está habilitado. En la demo hicieron falta varios intentos para introducir bien el código.
+
+**PR relacionados:** [#3707](https://github.com/ClickHouse/ClickStack/pull/3707) Buscar ajustes y preferencias desde el menú Cmd+K, [#3704](https://github.com/ClickHouse/ClickStack/pull/3704) Modo CRT oculto, desbloqueable con el código secreto en las preferencias

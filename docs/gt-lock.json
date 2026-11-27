@@ -7,44 +7,44 @@
       "versionId": "626f994624b93eb9edf478df58264b0784feb8e8423734cc7c78955f5ed4b4f7",
       "translations": {
         "zh": {
-          "updatedAt": "2026-11-27T19:53:59.655Z",
+          "updatedAt": "2026-11-27T19:57:52.873Z",
           "fileName": "docs.json",
-          "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
+          "postProcessHash": "a419426cd9155b32c454f2d1f30e492253adbf3a44a2f4d91c60a1ef64ed8eaf"
         },
         "es": {
-          "updatedAt": "2026-11-27T19:53:59.242Z",
+          "updatedAt": "2026-11-27T19:57:52.460Z",
           "fileName": "docs.json",
-          "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
+          "postProcessHash": "a419426cd9155b32c454f2d1f30e492253adbf3a44a2f4d91c60a1ef64ed8eaf"
         },
         "ja": {
-          "updatedAt": "2026-11-27T19:53:59.324Z",
+          "updatedAt": "2026-11-27T19:57:52.553Z",
           "fileName": "docs.json",
-          "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
+          "postProcessHash": "a419426cd9155b32c454f2d1f30e492253adbf3a44a2f4d91c60a1ef64ed8eaf"
         },
         "fr": {
-          "updatedAt": "2026-11-27T19:53:59.814Z",
+          "updatedAt": "2026-11-27T19:57:53.030Z",
           "fileName": "docs.json",
-          "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
+          "postProcessHash": "a419426cd9155b32c454f2d1f30e492253adbf3a44a2f4d91c60a1ef64ed8eaf"
         },
         "ru": {
-          "updatedAt": "2026-11-27T19:53:59.574Z",
+          "updatedAt": "2026-11-27T19:57:52.794Z",
           "fileName": "docs.json",
-          "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
+          "postProcessHash": "a419426cd9155b32c454f2d1f30e492253adbf3a44a2f4d91c60a1ef64ed8eaf"
         },
         "pt-BR": {
-          "updatedAt": "2026-11-27T19:53:59.491Z",
+          "updatedAt": "2026-11-27T19:57:52.714Z",
           "fileName": "docs.json",
-          "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
+          "postProcessHash": "a419426cd9155b32c454f2d1f30e492253adbf3a44a2f4d91c60a1ef64ed8eaf"
         },
         "ar": {
-          "updatedAt": "2026-11-27T19:53:59.735Z",
+          "updatedAt": "2026-11-27T19:57:52.953Z",
           "fileName": "docs.json",
-          "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
+          "postProcessHash": "a419426cd9155b32c454f2d1f30e492253adbf3a44a2f4d91c60a1ef64ed8eaf"
         },
         "ko": {
-          "updatedAt": "2026-11-27T19:53:59.411Z",
+          "updatedAt": "2026-11-27T19:57:52.633Z",
           "fileName": "docs.json",
-          "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
+          "postProcessHash": "a419426cd9155b32c454f2d1f30e492253adbf3a44a2f4d91c60a1ef64ed8eaf"
         }
       },
       "fileName": "docs.json"
@@ -153607,6 +153607,100 @@
         }
       },
       "fileName": "reference/statements/create/workload.mdx"
+    },
+    {
+      "fileId": "9c307ce02393a138ffecc9f5d14442f6614b25bab2af15c995de31aba8f46d8a",
+      "versionId": "7870cb578836a05b169e28adbc1419121e4483d9a70804ad921ecb35505e031a",
+      "translations": {
+        "ja": {
+          "updatedAt": "2026-11-27T19:57:55.156Z",
+          "fileName": "ja/clickstack/demo-days/2026/2026-11-20.mdx",
+          "postProcessHash": "96dda4d56376127f4960bcef3e0065bde5d9bdacd1d0ea9fb6cf38cc72c4aa7a"
+        },
+        "ko": {
+          "updatedAt": "2026-11-27T19:57:55.158Z",
+          "fileName": "ko/clickstack/demo-days/2026/2026-11-20.mdx",
+          "postProcessHash": "6795288dc6d98e0e03175b93a8a188953e7281fda51f138508c07c11c71e208a"
+        },
+        "fr": {
+          "updatedAt": "2026-11-27T19:57:55.159Z",
+          "fileName": "fr/clickstack/demo-days/2026/2026-11-20.mdx",
+          "postProcessHash": "d23a0eeda2d093f9125001984ec4aaec86bed523590cfe1ef0ac30e6ac3f8892"
+        },
+        "ru": {
+          "updatedAt": "2026-11-27T19:57:55.159Z",
+          "fileName": "ru/clickstack/demo-days/2026/2026-11-20.mdx",
+          "postProcessHash": "faedc0b83588b56e0669ef7ee37ed8e3823e8136650bd5e439aaf30333752a97"
+        },
+        "ar": {
+          "updatedAt": "2026-11-27T19:57:55.160Z",
+          "fileName": "ar/clickstack/demo-days/2026/2026-11-20.mdx",
+          "postProcessHash": "f3b01097bc4e0afe51ce26bb7b45f999b0f1b6e462e8195c4dd38e19a58a097a"
+        },
+        "zh": {
+          "updatedAt": "2026-11-27T19:57:55.161Z",
+          "fileName": "zh/clickstack/demo-days/2026/2026-11-20.mdx",
+          "postProcessHash": "607a629a0743341c32a6bfc5494ed391f358ea9dc6c1de8dcd99d1ca92ba034d"
+        },
+        "es": {
+          "updatedAt": "2026-11-27T19:57:55.162Z",
+          "fileName": "es/clickstack/demo-days/2026/2026-11-20.mdx",
+          "postProcessHash": "89d049b8f422577712ada2c89ed009b26292afe907767f707697c773be642b06"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-27T19:57:55.162Z",
+          "fileName": "pt-BR/clickstack/demo-days/2026/2026-11-20.mdx",
+          "postProcessHash": "e08d90252d8d23bc25d7ca59868445a3a76c10af1f101aa43e5bedf08ef4e29e"
+        }
+      },
+      "fileName": "clickstack/demo-days/2026/2026-11-20.mdx"
+    },
+    {
+      "fileId": "8740b3758564df76a2edc5c6c6f7124eae1ff066b3caa1c9b72b86be8d210d18",
+      "versionId": "0ccdd1b2aadf0512c7d18b2e8fb088fff5a9ccc2a43a190f3c342b2281173557",
+      "translations": {
+        "ko": {
+          "updatedAt": "2026-11-27T19:57:55.157Z",
+          "fileName": "ko/clickstack/observability/demo-days/2026/2026-11-20.mdx",
+          "postProcessHash": "db767810cb7666283474cdf838169215450bfc24c0375b85beb3b02dcd161ad4"
+        },
+        "ar": {
+          "updatedAt": "2026-11-27T19:57:55.158Z",
+          "fileName": "ar/clickstack/observability/demo-days/2026/2026-11-20.mdx",
+          "postProcessHash": "90b94fb9a5b256b91e37545938d62eed859c87c5360f7903125604301782b35c"
+        },
+        "ru": {
+          "updatedAt": "2026-11-27T19:57:55.159Z",
+          "fileName": "ru/clickstack/observability/demo-days/2026/2026-11-20.mdx",
+          "postProcessHash": "b17c97293264a97f5c3ce610171fa2ca64cb287a9f2f731b741d1ced8c1aabef"
+        },
+        "fr": {
+          "updatedAt": "2026-11-27T19:57:55.160Z",
+          "fileName": "fr/clickstack/observability/demo-days/2026/2026-11-20.mdx",
+          "postProcessHash": "f0147ff656a1173edca4cc95e5475c51a115ff3cc546545aa56481a85f691e48"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-27T19:57:55.160Z",
+          "fileName": "pt-BR/clickstack/observability/demo-days/2026/2026-11-20.mdx",
+          "postProcessHash": "6d41c28412a094458d31f0a8c060fb0bc87c5b38705e7009b58817763273685e"
+        },
+        "ja": {
+          "updatedAt": "2026-11-27T19:57:55.161Z",
+          "fileName": "ja/clickstack/observability/demo-days/2026/2026-11-20.mdx",
+          "postProcessHash": "bcf4c0384ad046f6baa131bc3469246b01ed707d684231d27089400a787c193c"
+        },
+        "es": {
+          "updatedAt": "2026-11-27T19:57:55.161Z",
+          "fileName": "es/clickstack/observability/demo-days/2026/2026-11-20.mdx",
+          "postProcessHash": "e7b49e5fd0289e44095c53e0282d06281004be0b5a09943fa5d2851f78ded173"
+        },
+        "zh": {
+          "updatedAt": "2026-11-27T19:57:55.162Z",
+          "fileName": "zh/clickstack/observability/demo-days/2026/2026-11-20.mdx",
+          "postProcessHash": "bcc99ab68fb7f0e6b63895e3758435aaf710d3b4604c4d998bb0edf9a23eef5d"
+        }
+      },
+      "fileName": "clickstack/observability/demo-days/2026/2026-11-20.mdx"
     }
   ]
 }

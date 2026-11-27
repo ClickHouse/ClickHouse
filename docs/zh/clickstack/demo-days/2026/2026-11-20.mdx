@@ -1,0 +1,202 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-11-20
+title: '演示日 - 2026-11-20'
+sidebarTitle: '2026-11-20'
+description: 'ClickStack 演示日 - 2026-11-20'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+## 搜索结果表中的列和排序控件 {#columns-and-sort-controls-on-the-search-results-table}
+
+*演示者 [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**这是一项探索性工作，不承诺一定会发布。**
+
+此前，`SELECT` 和 `ORDER BY` 是查询表单中的文本输入框。要更改列或排序顺序，就必须编写 SQL。在用户访谈中，当我们请参与者添加一列时，他们找不到在哪里操作。这些输入框与下方的表之间缺乏明确的关联。此外，这些输入框还会显示在事件模式上方，但在那里并不起作用。
+
+该提案将它们移到结果表上的 **Columns** 和 **Sort** 控件中。在 **Columns** 中，您可以拖动列来调整顺序、移除列，或者选择推荐的字段，也可以输入诸如 `upper(Body) as message` 之类的表达式并点击 **Add**。**Sort** 会显示每个 `ORDER BY` 字段及其排序方向。两者都提供 **SQL** 选项卡，您可以在其中直接编辑子句。在字段视图中所做的更改会同步到 SQL，因此两种方式可任选其一。表操作 (自动换行、生成的 SQL 和 CSV) 也移到了同一工具栏中。此前，它们位于最后一列的列标题中，如果该列较宽，这些操作可能会超出可视范围。
+
+如果在存在未应用更改的情况下关闭任一弹出菜单，系统会在丢弃更改前进行确认。移除某一列时，如果该列被用于排序，也会同时将其从排序中移除。如果解析器无法理解某个子句 (例如 `Timestamp DESC NULLS LAST`) ，则会按原样保留该 SQL 并打开 **SQL** 选项卡。事件差异和事件模式中不显示这些控件。
+
+此改动会在表上方增加一行工具栏。这些编辑器已合并，但尚未接入搜索页面，相关 PR 仍未合并。由于改动较大，我们没有将其纳入 ClickHouse Observability 测试版。我们还可以记住您上次使用的选项卡；如果您更习惯使用 **SQL**，则默认打开该选项卡。欢迎就此功能的使用体验提供反馈。
+
+**相关 PR：** [#3431](https://github.com/ClickHouse/ClickStack/pull/3431) 添加列和排序编辑器，[#3432](https://github.com/ClickHouse/ClickStack/pull/3432) 在搜索页面上挂载 Columns 和 Sort (尚未合并)
+
+## 仪表盘的连接变量与数据源变量 {#connection-and-data-source-variables-for-dashboards}
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=276" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+这段视频的音质不太理想，敬请谅解。
+
+仪表盘的 **Edit filters and variables** 中新增了两种变量类型。连接变量用于从团队的 ClickHouse 连接中选择；数据源变量用于从团队的数据源中选择。您可以限定数据源类型 (例如仅限日志) ，还可以选择将其限定到某个连接。该连接既可以是固定连接，也可以是连接变量，这样切换连接时，可选的数据源也会随之变化。
+
+卡片可以使用这些变量来代替特定的 source 或连接。例如，查询构建器卡片可以将 `$logSource` 用作数据源，原始 SQL 卡片则可以使用 `$connection`。图表 config 会在 source 或连接 ID 字段中存储 `$varName`。渲染仪表盘时，我们会将其解析为实际 ID，因此其余部分的行为保持不变。
+
+其他筛选条件同样可以依赖这些变量。在演示中，一个 SQL 表达式值过滤器会从所选 source 中获取服务名称。从演示连接切换到本地连接后，卡片和过滤器中的服务名称都会同步更新。如果选中项缺失或无效，卡片会显示占位符或错误信息，而不会去运行必然失败的查询。目前还不能在 SQL 中直接使用 `$source`，需要先在卡片上选择 source，再使用 `$__sourceTable` 引用其对应的表。
+
+选中项通常会以 source ID 和连接 ID 的形式写入 URL，但也可以改用名称。这样一来，只要各环境中的 source 名称相同，即使 ID 不同，也可以跨环境共享链接。该功能使用的名称查找机制与搜索页面的 `source=` 参数相同。
+
+这两种变量类型也可以通过外部 API 和 MCP 使用。SQL 查询筛选条件同样可以引用 source 变量和连接变量。
+
+**相关 PR：** [#3651](https://github.com/ClickHouse/ClickStack/pull/3651) 为仪表盘添加数据源和连接变量类型，[#3652](https://github.com/ClickHouse/ClickStack/pull/3652) 在外部 API 和 MCP 中支持数据源和连接变量，[#3712](https://github.com/ClickHouse/ClickStack/pull/3712) 允许 source 变量和连接变量接受 source 名称和连接名称，[#3714](https://github.com/ClickHouse/ClickStack/pull/3714) 允许 SQL 筛选器引用 source 变量
+
+## 保存临时仪表盘 {#saving-a-temporary-dashboard}
+
+*演示者 [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=423" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+此前，临时仪表盘上的横幅会提示该仪表盘无法保存。如果想保留已构建的内容，就只能将其重新创建为已保存的仪表盘，Vladimir 最近就遇到了这个问题。现在，横幅仍会提示这是临时仪表盘，但新增了一个按钮，可将其连同所有卡片一并保存。
+
+**相关 PRs：** [#3729](https://github.com/ClickHouse/ClickStack/pull/3729) 保存临时仪表盘时完整保留其内容
+
+## 仪表盘筛选条件类型文档 {#documentation-for-dashboard-filter-types}
+
+*演示者 [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=453" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+仪表盘文档现已涵盖过去几个月新增的全部筛选条件类型：SQL 表达式值、静态值、SQL 查询值、PromQL 标签值、即席键和值、数据源以及连接。[筛选条件类型](https://clickhouse.com/docs/clickstack/observability/features/dashboards/overview#filter-types)表说明了每种类型的值从何而来，以及它是将筛选条件应用于卡片、用作变量，还是两者兼有。表格下方为每种类型分别设有专门章节。该页面还介绍了 URL 参数，可用于直接链接到已预设筛选条件的仪表盘。
+
+**相关 PR：** 无。此次为文档变更而非代码变更，已发布的页面链接见上文。
+
+## 版本感知的应用构建器 {#version-aware-app-builder}
+
+*演示者 [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=477" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ClickStack 应用早已支持版本历史记录。每次让 agent 构建时，它都会生成一个新版本，你也可以恢复到之前的版本。但此前 agent 看不到这些版本，也无从得知你何时恢复过版本。它仍会提及应用中早已不存在的代码，导致对话内容与源代码对不上。如果你是因为更喜欢之前的实现方式而回退了更改，它也无法回头查看那个版本。
+
+现在，agent 可以看到所有版本，能够得知你何时恢复了某个版本，还新增了一个 diff 工具，可用于比较任意两个版本。在演示中，一条 Langfuse trace 展示了 agent 调用该工具的过程及其返回的 diff。因此，只要你说明回退某项更改的原因，agent 就能查看各个版本，准确了解自己当时改了什么。
+
+## 更快的应用构建，更少的标记消耗 {#faster-app-builds-with-fewer-tokens}
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=569" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+这段视频的音质同样不太理想，敬请谅解。
+
+我们对应用构建器做了三项改进，以加快构建速度并减少标记用量。
+
+agent 在将 SQL 添加到应用之前会用一个工具来测试 SQL。该工具现在可以并行运行多个查询，而不再是每次调用只能运行一个查询。使用 MCP 服务器的智能体也可以借助同一工具检查 SQL。
+
+我们还调整了上下文合并整理的时机。此前，构建器与笔记本一样，只保留最近八个步骤。这样虽然能让上下文保持精简，但从第九步起，每一步都会重写提示词，导致提示词缓存失效，从而增加成本和延迟。现在，我们会等到上下文达到 600,000 个标记时才进行合并整理，即我们为 Opus 模型配置的 1M 标记窗口的 60%。合并整理之后，上下文需要重新增长到该规模才会再次触发。截至目前，我们所有环境中还没有任何一次构建达到这一上限，因此尚未触发过合并整理。
+
+最后，应用信息面板会显示应用运行的查询。此前，这份列表由 agent 手动编写，尽管这些查询本就存在于代码中。如果列表有误，我们会返回警告，让它重试。从我们的构建历史记录来看，编写和修正这份列表占用了相当一部分标记用量和构建时间。现在，我们直接从源代码中提取查询。提示词会告诉 agent 如何格式化这些查询，以确保提取可靠；如果格式需要修正，我们仍会返回警告。每个查询还会附带行号，以及指向其在代码中使用位置的链接。
+
+## 通过仪表盘链接传递筛选条件和时间范围 {#passing-filters-and-time-range-through-dashboard-links}
+
+*演示者：[@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=769" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+仪表盘此前已支持链接到其他仪表盘。点击表格卡片中的某一行，即可将该行的值传递给另一个仪表盘；Markdown 卡片和表格卡片中也可以添加普通链接。但普通链接不会带上筛选条件。比如，您在概览仪表盘中筛选出某个服务的错误，再通过链接跳转到服务详情仪表盘，看到的却又是全部服务。
+
+现在，链接可以借助两个全局变量携带当前的时间范围和筛选条件：`$__url_time_range` 会展开为 `from=…&to=…`，`$__all_variables` 会展开为 `filters=` 参数。这样，目标仪表盘打开时就会选中相同的服务、状态和时间范围。在演示中，我们先在概览仪表盘中筛选出 API 服务的错误，再通过链接跳转到服务详情仪表盘，该仪表盘中已仅显示该服务失败的 span。该 PR 目前尚未合并。
+
+**相关 PRs：** [#3726](https://github.com/ClickHouse/ClickStack/pull/3726) 为仪表盘链接新增更多全局变量 (未合并)
+
+## 所有部署均支持即席仪表盘筛选条件 {#ad-hoc-dashboard-filters-for-every-deployment}
+
+*演示者 [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=875" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+借助即席筛选条件，您可以在排查问题时直接从筛选栏中选择键、运算符和值，无需仪表盘作者预先配置每个筛选条件。我们在 10 月通过 `NEXT_PUBLIC_ENABLE_ADHOC_FILTERS` 标志引入了该功能，[10 月新功能介绍](https://clickhouse.com/blog/whats-new-in-clickstack-october-2026#user-content-ad_hoc_dashboard_filters)中介绍了其基本用法。现在我们已移除该标志，所有部署均默认启用此功能。
+
+此后我们又做了几项改进。您可以通过依赖字段来限定即席筛选条件的作用域。例如，限定为 `ServiceName = api` 的筛选条件只会提供该服务的键和值。一个筛选条件还可以同时应用于多个数据源：为链路追踪数据源选择 `SpanName` 后，所有使用该数据源的图表和表都会随之筛选。外部 v2 仪表盘 API 和 MCP 仪表盘工具现在也支持创建、读取和更新包含即席筛选条件的仪表盘。此前，MCP 会隐藏这些筛选条件，而包含 `filters` 的 `clickstack_save_dashboard` 更新操作会静默删除已有的即席筛选条件。
+
+即席筛选条件的名称仅用作标识符，因此无法在卡片中以 `$name` 的形式引用。但名称仍须唯一，因为我们会在 `filters=` URL 参数中通过它来标识对应筛选条件的各项条件。
+
+**相关 PR：** [#3585](https://github.com/ClickHouse/ClickStack/pull/3585) 新增依赖型即席筛选条件，[#3658](https://github.com/ClickHouse/ClickStack/pull/3658) 即席筛选条件收尾完善，[#3659](https://github.com/ClickHouse/ClickStack/pull/3659) 在外部 API 中支持即席仪表盘筛选条件，[#3660](https://github.com/ClickHouse/ClickStack/pull/3660) 在 MCP 仪表盘工具中支持即席仪表盘筛选条件，[#3727](https://github.com/ClickHouse/ClickStack/pull/3727) 移除即席筛选条件功能开关
+
+## 更快的筛选条件加载 {#faster-filter-loading}
+
+*演示者：[@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=939" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+如果 source 在属性 Map 上定义了文本索引，搜索侧边栏会从该文本索引中获取筛选条件的键和值 (all values 模式) ；否则会通过扫描表来获取 (exact 模式) 。现在这两种方式都更快了。
+
+此前，文本索引查找会读取时间范围内每个 part 的字典。对于 ClickHouse Observability 而言，打开每个 part 的索引都意味着一次对象存储往返。现在默认读取 20 个 parts，并优先选择行数最接近中位数的那些。新增的两个 source 设置用于控制这一行为：**Map key index parts** (`mapKeyIndexMaxParts`) 设置要读取的 parts 数量，**Map key index part size** (`mapKeyIndexPartSelection`) 可在 `median`、`smallest` 和 `largest` 之间选择。最小的 parts 通常较新且尚未合并，读取开销低，便于发现新出现的键。最大的 parts 覆盖的键更多，但字典也更大。
+
+仅出现在所选 parts 之外的键和值可能会被遗漏。在某个键上点击 **Load more** 会读取所有 parts。这些设置位于 source 表单中，不过它们比高级部分中的其他设置更为进阶。如何更好地向用户开放这些设置，目前仍无定论。
+
+文本索引现在返回出现频率最高的值 (按 `topKWeighted` 排序) ，而不再是按字母顺序排在最前面的值。查找以每批 10 个键并行执行。对于每行取值都不同的键 (例如请求 ID) ，只会拖慢其所在的批次，而不会拖慢排在它之后的所有键。
+
+查询性能还取决于索引的字典块大小。使用 8,192 个 token 的块时，每个键都会单独读取，并在读取 20,000 个索引行后停止。对于 ClickHouse 26.6 及更高版本，采集器迁移现在会在默认表上设置 `text_index_dictionary_block_size = 8192`。ClickHouse 自身的默认值也将在 26.11 中从 512 改为 8,192。演示中从索引加载了 2,000 个键和值，超出了此前可请求的上限。团队设置现在允许每列最多 10,000 个键。
+
+exact 模式此前存在一个严重的性能缺陷：查找会在一个查询中请求多个 Map 键的值。由于 `Map` 以键值对数组的形式存储，ClickHouse 会针对每个请求的键，将每行的数组各扫描一遍。现在只需对每行遍历一次即可找到所有请求的键。限定在单个服务范围内时，exact 模式已经足够快，或许更适合作为默认模式。它默认最多读取 300 万行，可在团队设置中调整。这一限制或许更适合放在 source 上，因为 ClickHouse Observability 根本没有向用户开放该设置。
+
+针对相同 Map 键的并发请求现在会共享同一个 ClickHouse 查询，而不是在第一个查询尚未完成时各自再发起新查询。
+
+**相关 PR：** [#3611](https://github.com/ClickHouse/ClickStack/pull/3611) 在并发调用方之间共享同一次 Map 键读取，[#3617](https://github.com/ClickHouse/ClickStack/pull/3617) 以每批 10 个键显示出现频率最高的文本索引值，[#3635](https://github.com/ClickHouse/ClickStack/pull/3635) 文本索引键和值查找改为读取一组可配置的 parts，[#3657](https://github.com/ClickHouse/ClickStack/pull/3657) 在团队设置中允许每列最多 10,000 个筛选条件键，[#3695](https://github.com/ClickHouse/ClickStack/pull/3695) 加速 exact 筛选条件，[ClickHouse/ClickHouse#132804](https://github.com/ClickHouse/ClickHouse/pull/132804) 更改文本索引字典块大小的默认值
+
+## Artifact Hub 上的 ClickStack Helm 图表 {#clickstack-helm-charts-on-artifact-hub}
+
+*演示者 [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1121" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+我们与安全团队合作，在 Artifact Hub 上为官方 Helm 图表建立了 [`clickhouse` 组织](https://artifacthub.io/packages/search?org=clickhouse)。`clickstack` 和 `clickstack-operators` 图表已在其中上架，并带有“已验证发布者”徽章。它们的元数据现在指向 ClickStack-helm-charts 代码仓库，不再指向旧的 hyperdxio 代码仓库。这样一来，图表更容易被找到，而且 Artifact Hub 会免费对每个发行版进行漏洞扫描。
+
+这些扫描已初见成效。根据针对图表 3.6.0 的扫描报告，我们在演示前完成了多项修复。通过更新采集器基础镜像和 gomplate，我们消除了应用镜像和采集器镜像中共九个严重级别的 CVE。我们还将自定义采集器构建版本从 contrib v0.155.0 升级到 v0.165.0，并将应用镜像中高严重级别的 Node 依赖项问题从 50 个减少到 2 个。
+
+这些图表还会以 OCI 制品的形式发布到 GHCR，相关软件包现已公开。您无需先添加 GitHub Pages 仓库，即可直接运行 `helm install my-clickstack oci://ghcr.io/clickhouse/charts/clickstack`。原有的 `helm repo add` 方式依然可用。此外，我们已将原先的“WIP”落地页替换为两个图表的安装说明，并附上了文档和升级指南的链接。
+
+接下来，我们将为图表签名，并申请 Artifact Hub 将该组织下的软件包标记为官方软件包。
+
+**相关 PR：** [ClickHouse/ClickStack-helm-charts#297](https://github.com/ClickHouse/ClickStack-helm-charts/pull/297) 将已发布的图表以 OCI 制品形式发布到 GHCR，[ClickHouse/ClickStack-helm-charts#319](https://github.com/ClickHouse/ClickStack-helm-charts/pull/319) 替换空白的 Pages 落地页并配置 Artifact Hub，[ClickHouse/ClickStack-helm-charts#322](https://github.com/ClickHouse/ClickStack-helm-charts/pull/322) 补充从 GHCR 安装图表的文档，[#3709](https://github.com/ClickHouse/ClickStack/pull/3709) 清除应用镜像和采集器镜像中的严重 CVE，[#3710](https://github.com/ClickHouse/ClickStack/pull/3710) 将基础采集器升级到 v0.165.0，[#3711](https://github.com/ClickHouse/ClickStack/pull/3711) 更新应用镜像中被标记为存在漏洞的 Node 依赖项
+
+## 筛选或排除事件模式 {#filtering-for-or-excluding-an-event-pattern}
+
+*演示者 [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1216" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+这项功能源自一位客户的反馈：该客户很喜欢事件模式 (事件模式) ，但只能点击进入某个模式的样本。现在，鼠标悬停在每一行上时会显示两个操作。**Exclude this pattern** 会停留在事件模式页面，排除该模式后重新运行。您可以连续排除多个模式，逐步去除噪声。**Filter for this pattern** 会打开结果表，仅显示匹配的事件。
+
+这两个操作都会添加一个搜索过滤器，其 SQL 条件基于模式模板构建。该条件是 MCP `clickstack_event_patterns` 工具在下钻时所用条件的精简版，足够短，可以放入 URL 中。ClickHouse 会在整个时间范围内应用该条件，而不仅限于 10,000 条采样行，因此结果表、直方图和计数都会随之更新。这些筛选条件会以 **Pattern** 标签的形式与其他筛选条件并列显示，并保留在 URL 和已保存的搜索中。
+
+一次只能包含一个模式。各筛选条件之间以 `AND` 组合，因此同时包含两个模式将不会匹配到任何结果。选择另一个模式时，会替换之前的包含筛选条件。长度超过 4,000 个字符的模板不会显示这两个按钮，与 MCP 的限制保持一致。
+
+该功能目前存在一些限制。像 `<*> <*>` 这样的通用模板匹配到的事件可能比该行显示的更多。如果模板将时间戳保留为字面文本，该模式就会被限定在对应的日期和小时。排除筛选条件会使查询时间大约翻倍；此外，仪表盘中的模式卡片暂不支持这两个按钮。
+
+**相关 PR：** [#3662](https://github.com/ClickHouse/ClickStack/pull/3662) 共享事件模式下钻谓词，[#3663](https://github.com/ClickHouse/ClickStack/pull/3663) 在下钻中使用共享的模式谓词，[#3664](https://github.com/ClickHouse/ClickStack/pull/3664) 添加模式谓词的紧凑形式，[#3665](https://github.com/ClickHouse/ClickStack/pull/3665) 在事件模式中筛选或排除某个模式
+
+## trace 搜索中的 RED 指标 {#red-metrics-on-trace-search}
+
+*演示者：[@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1308" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+此前，无论是哪种 source，搜索页面都只会在结果上方显示一个计数直方图。现在，带有 duration 列的链路追踪数据源会显示三个卡片：**Throughput** 按状态显示跨度计数；**Errors** 可在上限为 100% 的错误率折线与错误数量之间切换；**Duration** 显示 Avg、P95 和 P99 折线，单位由该 source 的 duration precision 决定。
+
+您可以只显示其中一个卡片，也可以同时显示全部三个。鼠标悬停在任一卡片上时，三个卡片会在同一时间点同步显示光标。点击 Throughput 或 Errors 中的某个状态数据系列即可筛选结果，效果与以前点击直方图相同。Throughput 复用现有的结果计数查询，因此不会产生额外扫描。
+
+通过 **RED** / **Heatmap** 开关，可将这三个卡片替换为一个热力图，展示耗时随时间的分布情况。该热力图与仪表盘中使用的热力图相同。您的选择会保存在 URL 中，因此共享链接打开后会显示相同的视图。热力图视图下不支持实时追踪。设置自定义分组依据 (例如 `ServiceName`) 后，将恢复显示已分组的直方图。日志数据源和窄屏下仍沿用原有的直方图。
+
+**相关 PR：** [#3183](https://github.com/ClickHouse/ClickStack/pull/3183) 在 trace 搜索结果视图中显示 RED 指标，[#3184](https://github.com/ClickHouse/ClickStack/pull/3184) 为 trace 搜索添加耗时热力图视图
+
+## 从 Cmd+K 菜单访问设置，以及隐藏的 CRT 模式 {#settings-from-the-cmd-k-menu-and-a-hidden-crt-mode}
+
+*演示者：[@MikeShi42](https://github.com/MikeShi42)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1381" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+以前，您需要进入团队设置或用户菜单才能找到各项设置。现在，您可以直接在 `Cmd+K` (其他系统上为 `Ctrl+K`) 中搜索设置。设置分组包括团队设置、数据源、连接、团队成员、API 密钥、组织 API 密钥、MCP 服务器、Webhook 和查询设置。点击任一条目都会打开对应的选项卡，并滚动到相应部分。在本地模式下没有团队页面，因此该分组会被隐藏。
+
+偏好设置分组用于打开偏好设置弹窗。您可以搜索时区、12h/24h、字体或行点击等关键词来找到它。您还可以直接在菜单中通过 **Use light mode**、**Use dark mode** 和 **Use system color mode** 切换主题。
+
+如果您已经读到这里，我们还为您准备了一个小彩蛋，由 [@jordan-simonovski](https://github.com/jordan-simonovski) 提供。打开 **User preferences**，输入 Konami 秘籍：`Up, Up, Down, Down, Left, Right, Left, Right, B, A`。随后会播放一段简短的开机动画，并出现一个 **CRT mode** 开关。开启后，应用会呈现老式 CRT 显示器的外观，带有扫描线、弧形边角和发光文字。
+
+该效果只是一个叠加层，不影响您正常使用应用。模式开启期间，该开关会一直保留在偏好设置中，因此无需再次输入秘籍即可关闭。该模式默认关闭；启用 `prefers-reduced-motion` 时，闪烁效果和解锁动画不会播放。在演示中，我们试了好几次才输对秘籍。
+
+**相关 PR：** [#3707](https://github.com/ClickHouse/ClickStack/pull/3707) 从 Cmd+K 菜单查找设置和偏好设置，[#3704](https://github.com/ClickHouse/ClickStack/pull/3704) 隐藏的 CRT 模式，可在偏好设置中通过秘籍解锁
