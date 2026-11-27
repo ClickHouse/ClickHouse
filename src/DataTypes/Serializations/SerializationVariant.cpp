@@ -1237,7 +1237,8 @@ bool SerializationVariant::tryDeserializeTextEscaped(IColumn & column, ReadBuffe
 {
     auto read_field = [&](String & field, ReadBuffer & buf)
     {
-        settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(field, buf) : readEscapedString(field, buf);
+        /// Keep the escape sequences: the variant's escaped reader decodes them once.
+        settings.tsv.crlf_end_of_line_input ? readTSVFieldCRLF(field, buf) : readTSVField(field, buf);
     };
 
     auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
@@ -1253,7 +1254,8 @@ void SerializationVariant::deserializeTextEscaped(IColumn & column, ReadBuffer &
     String field;
     auto read_field = [&](String & f, ReadBuffer & buf)
     {
-        settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(f, buf) : readEscapedString(f, buf);
+        /// Keep the escape sequences: the variant's escaped reader decodes them once.
+        settings.tsv.crlf_end_of_line_input ? readTSVFieldCRLF(f, buf) : readTSVField(f, buf);
         /// Save field for better exception message in case of error during parsing.
         field = f;
     };
