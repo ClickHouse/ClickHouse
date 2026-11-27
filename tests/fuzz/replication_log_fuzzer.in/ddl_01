@@ -1,0 +1,10 @@
+version: 5
+query: ALTER TABLE default.d ON CLUSTER c (ADD COLUMN `z` String)
+hosts: ['127%2E0%2E0%2E1:19601']
+initiator: localhost:19601
+settings: distributed_ddl_task_timeout = 30
+tracing: 00000000-0000-0000-0000-000000000000
+0
+
+0
+initial_query_id: 9dc3d9ab-dd2c-4c87-80af-5f10eab2d04c

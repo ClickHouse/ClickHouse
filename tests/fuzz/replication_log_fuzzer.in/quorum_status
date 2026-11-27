@@ -1,0 +1,6 @@
+version: 1
+part_name: 202401_2_2_0
+required_number_of_replicas: 2
+actual_number_of_replicas: 1
+replicas:
+r1

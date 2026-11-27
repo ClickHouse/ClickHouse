@@ -1,0 +1,2 @@
+clickhouse_add_executable(keeper_snapshot_changelog_fuzzer keeper_snapshot_changelog_fuzzer.cpp)
+target_link_libraries(keeper_snapshot_changelog_fuzzer PRIVATE dbms)

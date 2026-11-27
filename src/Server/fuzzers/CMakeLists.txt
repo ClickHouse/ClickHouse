@@ -1,0 +1,2 @@
+clickhouse_add_executable(tcp_query_packet_fuzzer tcp_query_packet_fuzzer.cpp)
+target_link_libraries(tcp_query_packet_fuzzer PRIVATE clickhouse_aggregate_functions clickhouse_functions dbms)

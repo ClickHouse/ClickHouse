@@ -1,0 +1,8 @@
+format version: 1
+create time: 2026-11-27 15:55:14
+source replica: r1
+block numbers count: 2
+202401	2
+202402	1
+commands: (UPDATE s = \'u\' WHERE k > 5)
+alter version: -1

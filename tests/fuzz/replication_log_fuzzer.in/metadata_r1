@@ -1,0 +1,12 @@
+metadata format version: 1
+date column: 
+sampling expression: 
+index granularity: 8192
+mode: 0
+sign column: 
+primary key: k
+data format version: 1
+partition key: toYYYYMM(d)
+indices: i s TYPE bloom_filter GRANULARITY 1
+granularity bytes: 10485760
+merge parameters format version: 2

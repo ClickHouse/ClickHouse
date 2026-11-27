@@ -1,0 +1,8 @@
+version: 5
+query: CREATE TABLE t UUID \'b1768e87-d845-4cb4-98b8-234d243ada68\' (`k` UInt64) ENGINE = ReplicatedMergeTree ORDER BY k
+initiator: localhost:19601
+tracing: 00000000-0000-0000-0000-000000000000
+0
+
+0
+initial_query_id: d8aec9d6-84d7-4fec-97fc-97463a97bfa5

@@ -130,6 +130,21 @@ enum class FuzzerState
 std::atomic<FuzzerState> state{FuzzerState::NONE};
 String query;
 
+/// A fuzzer built from this file together with another source can override these: the queries an input
+/// runs, made while the runner waits, and the queries run once before the first input.
+String makeFuzzerQuery(const uint8_t * data, size_t size);
+String makeFuzzerSetupQuery();
+
+__attribute__((weak)) String makeFuzzerQuery(const uint8_t * data, size_t size)
+{
+    return {reinterpret_cast<const char *>(data), size};
+}
+
+__attribute__((weak)) String makeFuzzerSetupQuery()
+{
+    return {};
+}
+
 std::optional<std::thread> runner;
 pthread_t runner_thread_id{};
 struct sigaction original_sigalrm_action{};
@@ -401,7 +416,7 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     {
         std::unique_lock lock(mutex);
         cv.wait(lock, []{ return state == FuzzerState::WAITING_FOR_INPUT; });
-        query = {reinterpret_cast<const char *>(data), size};
+        query = makeFuzzerQuery(data, size);
         state = FuzzerState::DATA_READY;
         cv.notify_one();
 
@@ -431,6 +446,17 @@ void DB::ClientBase::runLibFuzzer()
         sigemptyset(&set);
         sigaddset(&set, SIGALRM);
         (void)pthread_sigmask(SIG_BLOCK, &set, nullptr);
+    }
+
+    /// Every input relies on the setup, so a failed one stops the fuzzer.
+    if (String setup = makeFuzzerSetupQuery(); !setup.empty())
+    {
+        processQueryText(setup);
+        if (have_error)
+        {
+            signalSafeWrite("[fuzzer] The setup queries failed\n");
+            abort();
+        }
     }
 
     {

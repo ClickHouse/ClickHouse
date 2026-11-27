@@ -1,0 +1,9 @@
+version: 5
+query: CREATE TABLE default.d UUID \'11f6c68d-063d-4488-9cf2-1e70ba751208\' ON CLUSTER c (`k` UInt64) ENGINE = MergeTree ORDER BY k
+hosts: ['127%2E0%2E0%2E1:19601']
+initiator: localhost:19601
+tracing: 00000000-0000-0000-0000-000000000000
+0
+
+0
+initial_query_id: b77598c8-5fb3-4c9f-8611-1cdc013843e6

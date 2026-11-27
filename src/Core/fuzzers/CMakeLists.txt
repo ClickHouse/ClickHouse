@@ -1,2 +1,8 @@
 clickhouse_add_executable (names_and_types_fuzzer names_and_types_fuzzer.cpp)
 target_link_libraries (names_and_types_fuzzer PRIVATE dbms)
+
+clickhouse_add_executable (mysql_protocol_fuzzer mysql_protocol_fuzzer.cpp)
+target_link_libraries (mysql_protocol_fuzzer PRIVATE dbms)
+
+clickhouse_add_executable (postgres_protocol_fuzzer postgres_protocol_fuzzer.cpp)
+target_link_libraries (postgres_protocol_fuzzer PRIVATE dbms)
