@@ -2182,6 +2182,7 @@ class SettingsRandomizer:
         "query_plan_optimize_join_order_limit": lambda: 0 if random.random() < 0.05 else random.choice([1, 5, 10, 20, 64]),
         "query_plan_direct_read_from_text_index": lambda: random.random() > 0.05,
         "query_plan_text_index_add_hint": lambda: random.random() > 0.05,
+        "query_plan_push_limit_by_into_sort": lambda: random.random() > 0.05,
         "optimize_truncate_order_by_after_group_by_keys": lambda: random.random() > 0.05,
         "enable_automatic_decision_for_merging_across_partitions_for_final": lambda: random.random() > 0.05,
         "parallel_non_joined_rows_processing": lambda: random.random() > 0.05,

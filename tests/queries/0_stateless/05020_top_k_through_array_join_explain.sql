@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: the rewrite is skipped with parallel replicas
--- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None)
+-- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None); query_plan_push_limit_by_into_sort=(1, None)
 
 DROP TABLE IF EXISTS t_aj_explain;
 
