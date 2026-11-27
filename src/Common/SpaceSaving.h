@@ -326,6 +326,7 @@ public:
                     TKey r_key = r.key;
                     transformEndianness<std::endian::little>(l_key);
                     transformEndianness<std::endian::little>(r_key);
+                    /// NOLINTNEXTLINE(bugprone-suspicious-memory-comparison,cert-exp42-c,cert-flp37-c)
                     return memcmp(&l_key, &r_key, sizeof(TKey)) < 0;
                 }
             });
