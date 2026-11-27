@@ -1341,6 +1341,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
     const auto normalized_path_to = normalizePath(path_to);
     uncommitted_state.useDirectory(normalized_path_from.parent_path());
     uncommitted_state.useDirectory(normalized_path_to.parent_path());
+    materializeVirtualDirectory(normalized_path_to.parent_path());
 
     /// A real hard link would make the metadata of the target directory unreadable by older servers, so it is opt-in.
     if (!metadata_storage.hard_links_enabled)
@@ -1383,12 +1384,25 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
         metadata_storage.metrics));
 }
 
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::materializeVirtualDirectory(const NormalizedPath & directory)
+{
+    /// A file can be put only into a directory with its own `prefix.path`, not into one that exists only as an ancestor
+    /// of other directories.
+    if (uncommitted_state.getDirectoryRemoteInfo(directory) || !uncommitted_state.getSnapshot().existsDirectory(directory))
+        return;
+
+    /// The same as for a new file in `generateObjectKeyForPath`.
+    uncommitted_state.useMissingDirectory(directory);
+    createDirectoryRecursive(directory);
+}
+
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::planFileMove(const NormalizedPath & path_from, const NormalizedPath & path_to)
 {
     markFallbackCopyMoved(path_from.string(), path_to.string());
 
     uncommitted_state.useDirectory(path_from.parent_path());
     uncommitted_state.useDirectory(path_to.parent_path());
+    materializeVirtualDirectory(path_to.parent_path());
 
     const auto & snapshot = uncommitted_state.getSnapshot();
     const auto directory_from = snapshot.getDirectoryRemoteInfo(path_from.parent_path());

@@ -34,6 +34,11 @@ static ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
         if (reading->isParallelReadingEnabled())
             return nullptr;
 
+        /// A bucketed read of a distributed plan reads only the marks pinned to its bucket. Splitting
+        /// into layers takes the ranges of the whole table, so every bucket would read all rows.
+        if (reading->getDistributedReadBucketCount() > 0)
+            return nullptr;
+
         /// A reading already claimed by the independent-partitions optimization (for DISTINCT,
         /// LIMIT BY or aggregation) outputs one port per partition, while reading by layers outputs
         /// one port per primary-key range. Both are contracts about which rows go to which output
@@ -462,8 +467,16 @@ void optimizeJoinByShards(QueryPlan::Node & root)
                 result->joins.joins_to_keep_in_order.splice(result->joins.joins_to_keep_in_order.end(), std::move(frame.results.back()->joins.joins_to_keep_in_order));
 
                 frame.results.back() = std::nullopt;
+
+                /// The rows a RIGHT or FULL join adds for non-joined right rows have default values in the left
+                /// columns, so they are not in the shard of the left key, and no join above can be sharded by it.
+                if (isRightOrFull(kind))
+                {
+                    apply(result->joins);
+                    result.reset();
+                }
             }
-            else if (can_split_left_table && join->pipelineType() != JoinPipelineType::YShaped)
+            else if (can_split_left_table && join->pipelineType() != JoinPipelineType::YShaped && !isRightOrFull(kind))
             {
                 /// A hash join probes each left stream independently, so the shards of the left table
                 /// survive it and a join above can still be sharded. A `full_sorting_merge` join that is

@@ -7834,6 +7834,16 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"26.5", false, true, "New setting to enable a query-plan-level optimization that pushes ORDER BY ... LIMIT n through a LEFT/RIGHT join when the sort key only references the preserved side."}) \
+    DECLARE(Bool, query_plan_top_k_through_array_join, false, R"(
+Toggles a query-plan-level optimization which moves `ORDER BY ... LIMIT n` below an `ARRAY JOIN` when the sort key does not read a joined column. For an inner `ARRAY JOIN`, the optimization also adds a filter below the moved sort. This filter removes the rows whose arrays are all empty, because these rows give no output.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0, \
+        {"26.10", false, false, "New setting to move bounded sorting below `ARRAY JOIN` when its keys do not depend on expanded columns; disabled by default."}) \
     DECLARE(Bool, query_plan_aggregation_bucket_top_k, true, R"(
 Toggles a query-plan-level optimization which, when a final aggregation feeds `ORDER BY` over the aggregation's outputs with `LIMIT n` and the plan proves the per-bucket selection exact, materializes only each two-level bucket's best n groups in that order during the aggregation's final conversion. The result is exact: a group outside its own bucket's best n has at least n groups ahead of it globally, so it cannot be in the global top n.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
@@ -10537,6 +10547,10 @@ Enable converting the hash table to a flat array for joins when the key is a sin
 Use hash tables that store the join keys alone, without a reference to a right row, for joins whose result can never contain a value taken from a right row: `LEFT ANTI`, and `LEFT SEMI` when no right column is selected. Such a table has a smaller cell and lets the right blocks be dropped instead of stored.
 )", 0, \
         {"26.9", false, true, "New setting to store the join keys alone, without a reference to a right row, in the hash tables of joins whose result can never contain a value taken from a right row (`LEFT ANTI`, and `LEFT SEMI` when no right column is selected)."}) \
+    DECLARE(Bool, enable_robin_hood_hash_for_joins, false, R"(
+Allow the hash tables of the `parallel_hash` join to switch to the Robin Hood mode when they become large, as the hash tables of aggregation do. A right table with more than about 8 million keys then takes up to two times less memory for its hash table, but the lookups of the join can be slower, depending on the keys.
+)", 0, \
+        {"26.10", true, false, "New setting. Earlier 26.10 releases used the Robin Hood mode for the hash tables of the `parallel_hash` join when they became large, which saves memory but can make large joins slower."}) \
     DECLARE(UInt64, query_plan_max_limit_for_join_lazy_indexing, 1000, R"(Control maximum limit value that allows to use query plan for lazy indexing optimization in JOIN. If zero, there is no limit.
 )", 0, \
         {"26.6", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"}) \

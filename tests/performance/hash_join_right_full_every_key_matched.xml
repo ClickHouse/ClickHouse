@@ -23,7 +23,7 @@
     </substitutions>
 
     <!-- Every right key matched, so there are no unmatched right rows to emit after the probe. -->
-    <query>SELECT count() FROM numbers_mt(50000000) AS l {kind} JOIN numbers_mt(10000000) AS r ON l.number % 10000000 = r.number SETTINGS join_algorithm = '{algorithm}' FORMAT Null</query>
+    <query>SELECT count() FROM numbers_mt(50000000) AS l {kind} JOIN numbers_mt(10000000) AS r ON l.number % 10000000 = r.number SETTINGS join_algorithm = '{algorithm}', enable_robin_hood_hash_for_joins = 1 FORMAT Null</query>
     <!-- One right key unmatched. -->
-    <query>SELECT count() FROM numbers_mt(50000000) AS l {kind} JOIN numbers_mt(10000001) AS r ON l.number % 10000000 = r.number SETTINGS join_algorithm = '{algorithm}' FORMAT Null</query>
+    <query>SELECT count() FROM numbers_mt(50000000) AS l {kind} JOIN numbers_mt(10000001) AS r ON l.number % 10000000 = r.number SETTINGS join_algorithm = '{algorithm}', enable_robin_hood_hash_for_joins = 1 FORMAT Null</query>
 </test>

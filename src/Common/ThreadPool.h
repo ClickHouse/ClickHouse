@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <functional>
 #include <list>
+#include <memory>
 #include <optional>
 #include <atomic>
 #include <stack>
@@ -92,7 +93,9 @@ public:
         /// Each idle thread waits on its own CV, so the scheduler can wake the
         /// LIFO-selected thread directly without disturbing other idle threads.
         /// This avoids the thundering herd that a shared CV with `notify_all` creates.
-        std::condition_variable cv;
+        /// Shared, so that `scheduleImpl` can notify it after releasing the pool mutex,
+        /// when the thread may already have left the pool.
+        std::shared_ptr<std::condition_variable> cv = std::make_shared<std::condition_variable>();
 
         /// LIFO idle thread scheduling flag.
         /// When a new job is scheduled, the most recently idle thread is popped
@@ -205,7 +208,9 @@ private:
     friend class GlobalThreadPool;
 
     mutable std::mutex mutex;
-    std::condition_variable job_finished;
+    /// A finished job frees one slot, so it wakes only one scheduler waiting for a slot.
+    std::condition_variable slot_freed;
+    std::condition_variable all_jobs_finished;
 
     Metric metric_threads;
     Metric metric_active_threads;

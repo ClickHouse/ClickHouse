@@ -72,6 +72,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
+#include <Storages/MergeTree/QueryConditionCacheReadRangesRefiner.h>
 #include <Storages/MergeTree/RuntimeFilterReadRangesRefiner.h>
 #include <Storages/MergeTree/SealGatedReadTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
@@ -687,6 +688,16 @@ static MergeTreeReadRangesRefinerPtr createIndexReadRangesRefiner(
     return std::make_shared<IndexReadRangesRefiner>(index_build_context, metadata_snapshot);
 }
 
+/// A parallel replicas read pool reads what the coordinator assigns: let this replica's query condition cache narrow it.
+static MergeTreeReadRangesRefinerPtr addQueryConditionCacheReadRangesRefiner(
+    const QueryConditionCacheReadRangesPtr & query_condition_cache_read_ranges, MergeTreeReadRangesRefinerPtr refiner)
+{
+    if (!query_condition_cache_read_ranges)
+        return refiner;
+
+    return std::make_shared<QueryConditionCacheReadRangesRefiner>(query_condition_cache_read_ranges, std::move(refiner));
+}
+
 /// A replica that skipped its own index analysis would evaluate skip indexes at read time over whole parts. Narrow them
 /// to the ranges analyzed on the initiator: the coordinator assigns only marks within them. A part missing from the
 /// analyzed set is never assigned to this replica.
@@ -751,7 +762,9 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         block_size,
         context);
 
-    pool->setReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
+    pool->setReadRangesRefiner(addQueryConditionCacheReadRangesRefiner(
+        query_condition_cache_read_ranges,
+        createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef())));
 
     /// Default mode needs the announcement response only for the analyzed ranges, so it is requested only by a follower
     /// whose read-time skip-index reader would otherwise evaluate over whole parts.
@@ -1134,8 +1147,9 @@ Pipe ReadFromMergeTree::readInOrder(
             block_size,
             context);
 
-        in_order_pool->setReadRangesRefiner(
-            createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
+        in_order_pool->setReadRangesRefiner(addQueryConditionCacheReadRangesRefiner(
+            query_condition_cache_read_ranges,
+            createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef())));
 
         /// The response tells us exactly which parts this stream owns: phantom parts are skipped
         /// during source construction below, so the pool never sees `getTask` for them.
@@ -3455,11 +3469,8 @@ bool ReadFromMergeTree::isPrewhereDeferredAfterFinal() const
 /// filter, and either may throw on the rows an earlier condition rejects. So read ahead only when no part
 /// needs that for a column PREWHERE reads, and no on-the-fly mutation or masking policy rewrites columns at
 /// read time. The decision is per query because the steps are built once for all parts.
-bool ReadFromMergeTree::canReadPrewhereColumnsAhead(const RangesInDataParts & parts) const
+bool ReadFromMergeTree::canReadColumnsAhead(const Names & column_names, const RangesInDataParts & parts) const
 {
-    if (!query_info.prewhere_info)
-        return false;
-
     if (mutations_snapshot
         && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasMetadataMutations()))
         return false;
@@ -3470,7 +3481,7 @@ bool ReadFromMergeTree::canReadPrewhereColumnsAhead(const RangesInDataParts & pa
     const auto & columns = storage_snapshot->metadata->getColumns();
     std::vector<NameAndTypePair> storage_columns;
     NameSet seen_storage_columns;
-    for (const auto & column_name : query_info.prewhere_info->prewhere_actions.getRequiredColumnsNames())
+    for (const auto & column_name : column_names)
     {
         auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
         if (!column || !seen_storage_columns.insert(column->getNameInStorage()).second)
@@ -3490,6 +3501,11 @@ bool ReadFromMergeTree::canReadPrewhereColumnsAhead(const RangesInDataParts & pa
     }
 
     return true;
+}
+
+bool ReadFromMergeTree::canReadPrewhereColumnsAhead(const RangesInDataParts & parts) const
+{
+    return query_info.prewhere_info && canReadColumnsAhead(query_info.prewhere_info->prewhere_actions.getRequiredColumnsNames(), parts);
 }
 
 void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
@@ -3919,22 +3935,18 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     /// the initiator's parts, which are not the parts this replica reads.
     /// The initiator must also run a local plan: without one nobody analyzes the indexes or checks the
     /// partition limit for the followers.
-    if (context_->canUseParallelReplicasOnFollower() && is_parallel_reading_from_replicas_
+    const bool skip_index_analysis = context_->canUseParallelReplicasOnFollower() && is_parallel_reading_from_replicas_
         && ClusterProxy::canUseLocalPlanForParallelReplicas(context_)
         && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator]
         /// If parallel replicas support projection optimization, selected_marks will be used to determine the optimal projection.
-        && !support_projection_optimization)
+        && !support_projection_optimization;
+
+    if (!table_has_unique_key && !filter_depends_on_non_deterministic_virtuals && allow_query_condition_cache_)
     {
-        // Skip index analysis and return parts with all marks
-        // The coordinator will choose ranges to read for workers based on index analysis on its side
-        result.parts_with_ranges = std::move(res_parts);
-        result.index_analysis_was_already_done_on_initiator = true;
-    }
-    else
-    {
-        if (!table_has_unique_key && !filter_depends_on_non_deterministic_virtuals && allow_query_condition_cache_)
+        auto filter_by_query_condition_cache = [&](RangesInDataParts & parts_to_filter)
+        {
             MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
-                res_parts,
+                parts_to_filter,
                 query_info_,
                 vector_search_parameters,
                 top_k_filter_info,
@@ -3944,7 +3956,39 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 *indexes,
                 context_,
                 log);
+        };
 
+        /// The coordinator assigns ranges from the analysis of one replica, so this replica's cache has to be
+        /// applied to them again at read time (see `QueryConditionCacheReadRangesRefiner`). A replica that skips
+        /// its own analysis keeps whole parts, and only the refiner applies the filtered ranges: the coordinator takes
+        /// only the part names from its announcement, and a part dropped from it would move its segments to other
+        /// replicas, whose caches know nothing of it.
+        /// A follower records them also for an analysis that is not of a parallel read itself: a projection candidate
+        /// is analyzed by `MergeTreeDataSelectExecutor::estimateNumMarksToRead`, and the executed parallel read reuses it.
+        if (is_parallel_reading_from_replicas_ || context_->canUseParallelReplicasOnFollower())
+        {
+            RangesInDataParts filtered_parts = res_parts;
+            filter_by_query_condition_cache(filtered_parts);
+            result.query_condition_cache_read_ranges
+                = QueryConditionCacheReadRanges::create(res_parts, filtered_parts);
+            if (!skip_index_analysis)
+                res_parts = std::move(filtered_parts);
+        }
+        else
+        {
+            filter_by_query_condition_cache(res_parts);
+        }
+    }
+
+    if (skip_index_analysis)
+    {
+        // Skip index analysis and return parts with all marks
+        // The coordinator will choose ranges to read for workers based on index analysis on its side
+        result.parts_with_ranges = std::move(res_parts);
+        result.index_analysis_was_already_done_on_initiator = true;
+    }
+    else
+    {
         auto get_indexes_size = [&]() -> size_t
         {
             size_t res = 0;
@@ -6064,6 +6108,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         index_build_context->needs_analyzed_ranges
             = result.index_analysis_was_already_done_on_initiator && index_build_context->index_reader_pool->hasSkipIndexReader();
     }
+
+    query_condition_cache_read_ranges = result.query_condition_cache_read_ranges;
 
     Pipe pipe;
     if (query_info.isStream())

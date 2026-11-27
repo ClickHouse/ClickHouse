@@ -51,6 +51,11 @@ DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawCo
     return types;
 }
 
+bool isTopKFilter(const ActionsDAG::Node * node)
+{
+    return node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "__topKFilter";
+}
+
 /// Fills the info of an input column. A virtual column of an index is resolved to the name of the index whose reader fills it.
 void resolveNodeInfo(NodeInfo & node_info, const String & column_name, const IndexReadTasks * index_read_tasks)
 {
@@ -360,8 +365,12 @@ bool tryBuildPrewhereSteps(
             num_attributed_steps = condition_groups.size();
 
         const bool same_columns = !condition_groups.empty() && nodes_info[condition_groups.back().front()].readsSameColumns(node_info);
+        /// `__topKFilter` is the first condition (see `buildTopKDynamicFilterPrewhere`). In its own step the condition runs only
+        /// on the rows the threshold passes once it is selective, because the `__topKFilter` step's filter stays optional.
+        const bool follows_top_k_filter = same_columns && read_ahead_columns && isTopKFilter(condition_groups.back().front())
+            && canBeMovedToTheFrontOfAndChain(node);
 
-        if (same_columns && !node_info.may_throw && !is_first_unattributed)
+        if (same_columns && !node_info.may_throw && !is_first_unattributed && !follows_top_k_filter)
         {
             condition_groups.back().push_back(node);
             continue;

@@ -15,6 +15,7 @@
 #include <Common/ErrnoException.h>
 #include <Common/MemoryWorker.h>
 #include <Common/formatReadable.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocCacheArena.h>
 #include <Common/JemallocJITArena.h>
@@ -156,6 +157,7 @@ AsynchronousMetrics::AsynchronousMetrics(
     /// CGroups v2
     openCgroupv2MetricFile("memory.max", cgroupmem_limit_in_bytes);
     openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
+    openCgroupv2MetricFile("cpuset.cpus.effective", cgroupcpuset);
     openCgroupv2MetricFile("cpu.stat", cgroupcpu_stat);
 
     /// CGroups v1
@@ -168,6 +170,8 @@ AsynchronousMetrics::AsynchronousMetrics(
     }
     if (!cgroupcpu_stat)
         openFileIfExists("/sys/fs/cgroup/cpuacct/cpuacct.stat", cgroupcpuacct_stat);
+    if (!cgroupcpuset)
+        openFileIfExists("/sys/fs/cgroup/cpuset/cpuset.effective_cpus", cgroupcpuset);
 
     try
     {
@@ -1690,9 +1694,37 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
+    /// With exclusive CPUs (e.g. the static CPU manager of Kubernetes) there is no CFS quota (`cpu.max` is `max`),
+    /// and the limit is only visible in the cpuset.
+    if (cgroupcpuset)
+    {
+        try
+        {
+            cgroupcpuset->rewind();
+
+            String cpu_list;
+            readString(cpu_list, *cgroupcpuset);
+            if (auto cpuset_cpus = countCPUsInList(cpu_list))
+            {
+                const auto cpuset_cores = static_cast<Float64>(*cpuset_cpus);
+                if (max_cpu_cgroups > 0)
+                    max_cpu_cgroups = std::min(max_cpu_cgroups, cpuset_cores);
+                /// Without a quota, a cpuset with all online CPUs is not a limit.
+                else if (*cpuset_cpus < getNumberOfLogicalCPUCores())
+                    max_cpu_cgroups = cpuset_cores;
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
     if (max_cpu_cgroups > 0)
     {
-        new_values["CGroupMaxCPU"] = { max_cpu_cgroups, "The maximum number of CPU cores according to CGroups."};
+        new_values["CGroupMaxCPU"] = { max_cpu_cgroups,
+            "The maximum number of CPU cores according to CGroups: the minimum of the CPU quota divided by its period "
+            "and the number of CPUs in the effective cpuset."};
     }
 
     if (cgroupcpu_stat || cgroupcpuacct_stat)

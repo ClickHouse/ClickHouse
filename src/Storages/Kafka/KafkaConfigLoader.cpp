@@ -19,9 +19,11 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/QueryProfiler.h>
 #include <Common/config_version.h>
+#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <IO/S3/getAvailabilityZone.h>
 #include <chrdkafka_conf_sensitive.h>
+#include <algorithm>
 #include <csignal>
 #include <unordered_set>
 
@@ -219,10 +221,157 @@ template struct KafkaInterceptors<StorageKafka2>;
 namespace
 {
 
-void setKafkaConfigValue(cppkafka::Configuration & kafka_config, const String & key, const String & value)
+/// librdkafka reads the name as a C string, so it must not contain a null character.
+void checkKafkaPropertyName(const String & key)
 {
-    /// "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
-    /// See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
+    if (key.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka property name {} contains a null character", backQuote(key));
+}
+
+String toKafkaPropertyName(const String & key)
+{
+    checkKafkaPropertyName(key);
+    const String name = (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
+    /// `test.mock.num.brokers` starts a mock cluster that uses memory addresses as member IDs.
+    if (name.starts_with("test."))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka property {} is not allowed", name);
+    return name;
+}
+
+/// Only properties reviewed for use without access to server-local resources may be set from SQL.
+/// Match the exact name passed to librdkafka, including any `topic.` prefix.
+void checkSQLKafkaProperty(const String & name, const String & value)
+{
+    static constexpr std::string_view allowed_properties[] = {
+        "acks",
+        "allow.auto.create.topics",
+        "api.version.request",
+        "auto.commit.interval.ms",
+        "auto.offset.reset",
+        "batch.num.messages",
+        "batch.size",
+        "bootstrap.servers",
+        "broker.address.family",
+        "broker.address.ttl",
+        "check.crcs",
+        "client.id",
+        "client.rack",
+        "compression.codec",
+        "compression.level",
+        "compression.type",
+        "connections.max.idle.ms",
+        "coordinator.query.interval.ms",
+        "debug",
+        "delivery.timeout.ms",
+        "enable.auto.commit",
+        "enable.auto.offset.store",
+        "enable.idempotence",
+        "enable.partition.eof",
+        "fetch.error.backoff.ms",
+        "fetch.max.bytes",
+        "fetch.message.max.bytes",
+        "fetch.min.bytes",
+        "fetch.queue.backoff.ms",
+        "fetch.wait.max.ms",
+        "group.id",
+        "group.instance.id",
+        "group.protocol",
+        "group.remote.assignor",
+        "heartbeat.interval.ms",
+        "https.ca.pem",
+        "isolation.level",
+        "linger.ms",
+        "log.connection.close",
+        "log_level",
+        "max.in.flight",
+        "max.in.flight.requests.per.connection",
+        "max.partition.fetch.bytes",
+        "max.poll.interval.ms",
+        "message.max.bytes",
+        "message.send.max.retries",
+        "message.timeout.ms",
+        "metadata.broker.list",
+        "metadata.max.age.ms",
+        "partition.assignment.strategy",
+        "partitioner",
+        "queue.buffering.backpressure.threshold",
+        "queue.buffering.max.kbytes",
+        "queue.buffering.max.messages",
+        "queue.buffering.max.ms",
+        "queued.max.messages.kbytes",
+        "queued.min.messages",
+        "receive.message.max.bytes",
+        "reconnect.backoff.max.ms",
+        "reconnect.backoff.ms",
+        "request.required.acks",
+        "request.timeout.ms",
+        "retries",
+        "retry.backoff.max.ms",
+        "retry.backoff.ms",
+        "sasl.mechanism",
+        "sasl.mechanisms",
+        "sasl.oauthbearer.assertion.private.key.pem",
+        "sasl.password",
+        "sasl.username",
+        "security.protocol",
+        "session.timeout.ms",
+        "socket.connection.setup.timeout.ms",
+        "socket.keepalive.enable",
+        "socket.receive.buffer.bytes",
+        "socket.send.buffer.bytes",
+        "socket.timeout.ms",
+        "ssl.ca.pem",
+        "ssl.certificate.pem",
+        "ssl.key.password",
+        "ssl.key.pem",
+        "statistics.interval.ms",
+        "topic.acks",
+        "topic.auto.offset.reset",
+        "topic.compression.codec",
+        "topic.compression.level",
+        "topic.compression.type",
+        "topic.delivery.timeout.ms",
+        "topic.message.timeout.ms",
+        "topic.metadata.refresh.interval.ms",
+        "topic.partitioner",
+        "topic.request.required.acks",
+        "topic.request.timeout.ms",
+    };
+    static_assert(std::ranges::is_sorted(allowed_properties));
+    if (std::ranges::binary_search(allowed_properties, std::string_view(name)))
+        return;
+
+    /// `probe` is not a path: librdkafka searches a fixed list of the standard locations of CA certificates.
+    if (value == "probe" && (name == "ssl.ca.location" || name == "https.ca.location"))
+        return;
+
+    static constexpr std::pair<std::string_view, std::string_view> pem_alternatives[] = {
+        {"ssl.key.location", "ssl.key.pem"},
+        {"ssl.certificate.location", "ssl.certificate.pem"},
+        {"ssl.ca.location", "ssl.ca.pem"},
+        {"https.ca.location", "https.ca.pem"},
+        {"sasl.oauthbearer.assertion.private.key.file", "sasl.oauthbearer.assertion.private.key.pem"},
+    };
+    for (const auto & [path_property, pem_property] : pem_alternatives)
+        if (name == path_property)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Kafka property `{}` can only be specified in a named collection defined in the server configuration file. "
+                "Pass the contents of the file in the property `{}` instead",
+                name,
+                pem_property);
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Kafka property `{}` can only be specified in a named collection defined in the server configuration file",
+        name);
+}
+
+void setKafkaConfigValue(cppkafka::Configuration & kafka_config, const String & key, const String & value, bool from_sql_collection)
+{
+    const String name = toKafkaPropertyName(key);
+    if (from_sql_collection)
+        checkSQLKafkaProperty(name, value);
 
     /// ClickHouse-specific keys that live under <kafka> in server config but are not librdkafka properties.
     /// Exclude them here so they are not forwarded to cppkafka.
@@ -231,11 +380,7 @@ void setKafkaConfigValue(cppkafka::Configuration & kafka_config, const String & 
     if (clickhouse_only_kafka_config_keys.contains(key))
         return;
 
-    const String setting_name_in_kafka_config = (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
-    /// librdkafka testing properties, e.g. `test.mock.num.brokers` starts a mock cluster that uses memory addresses as member ids.
-    if (setting_name_in_kafka_config.starts_with("test."))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka property {} is not allowed", setting_name_in_kafka_config);
-    kafka_config.set(setting_name_in_kafka_config, value);
+    kafka_config.set(name, value);
 }
 
 void loadConfigProperty(
@@ -247,17 +392,47 @@ void loadConfigProperty(
     const String property_path = config_prefix + "." + tag;
     const String property_value = config.getString(property_path);
 
-    setKafkaConfigValue(kafka_config, tag, property_value);
+    setKafkaConfigValue(kafka_config, tag, property_value, /*from_sql_collection=*/false);
 }
 
-void loadNamedCollectionConfig(cppkafka::Configuration & kafka_config, const String & collection_name, const String & config_prefix)
+bool isNamedTopicSection(std::string_view tag)
 {
-    const auto & collection = NamedCollectionFactory::instance().get(collection_name);
-    for (const auto & key : collection->getKeys(-1, config_prefix))
+    return tag == KafkaConfigLoader::CONFIG_KAFKA_TOPIC_TAG || tag.starts_with("kafka_topic[");
+}
+
+/// Return the key within its configuration section. Dots in the property itself are significant.
+std::string_view namedCollectionPropertyKey(std::string_view key)
+{
+    static constexpr std::string_view prefix = "kafka.";
+    if (!key.starts_with(prefix))
+        return {}; /// The collection has no properties below `kafka`.
+    key.remove_prefix(prefix.size());
+    if (key.starts_with("consumer.") || key.starts_with("producer."))
+        key.remove_prefix(key.find('.') + 1);
+
+    /// Both `kafka_<topic>` and `kafka_topic` (possibly indexed) are topic sections.
+    if (const auto dot = key.find('.'); dot != std::string_view::npos && key.starts_with("kafka_"))
     {
-        // Cut prefix with '.' before actual config tag.
-        const auto param_name = key.substr(config_prefix.size() + 1);
-        setKafkaConfigValue(kafka_config, param_name, collection->get<String>(key));
+        const auto section = key.substr(0, dot);
+        key.remove_prefix(dot + 1);
+        if (isNamedTopicSection(section) && key == KafkaConfigLoader::CONFIG_NAME_TAG)
+            return {}; /// Topic selector, not a librdkafka property.
+    }
+    return key;
+}
+
+void loadNamedCollectionConfig(cppkafka::Configuration & kafka_config, const NamedCollection & collection, const String & config_prefix)
+{
+    for (const auto & key : collection.getKeys(-1, config_prefix))
+    {
+        const auto property_key = namedCollectionPropertyKey(key);
+        if (property_key.empty() || key.size() != config_prefix.size() + 1 + property_key.size())
+            continue; /// Subsections are loaded separately.
+        const String param_name(property_key);
+        const auto value = collection.get<String>(key);
+        /// The check when the table is created or loaded is not sufficient: the collection is read again here,
+        /// and `ALTER NAMED COLLECTION` can add a property while the table exists.
+        setKafkaConfigValue(kafka_config, param_name, value, collection.getSourceId() != NamedCollection::SourceId::CONFIG);
     }
 }
 
@@ -269,7 +444,12 @@ void loadLegacyTopicConfig(
 {
     if (!collection_name.empty())
     {
-        loadNamedCollectionConfig(kafka_config, collection_name, config_prefix);
+        const auto collection = NamedCollectionFactory::instance().get(collection_name);
+        /// For a topic called `topic`, the legacy section is also called `kafka_topic`.
+        /// If it has a `name`, the topic selector must be matched by `loadFromConfig`.
+        if (config_prefix == "kafka.kafka_topic" && collection->has(config_prefix + ".name"))
+            return;
+        loadNamedCollectionConfig(kafka_config, *collection, config_prefix);
         return;
     }
 
@@ -282,43 +462,15 @@ void loadLegacyTopicConfig(
     }
 }
 
-/// Read server configuration into cppkafa configuration, used by new per-topic configuration
-void loadTopicConfig(
-    cppkafka::Configuration & kafka_config,
-    const Poco::Util::AbstractConfiguration & config,
-    const String & collection_name,
-    const String & config_prefix,
-    const String & topic)
+/// Read a matching per-topic section of the server configuration.
+void loadTopicConfig(cppkafka::Configuration & kafka_config, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    if (!collection_name.empty())
+    Poco::Util::AbstractConfiguration::Keys tags;
+    config.keys(config_prefix, tags);
+    for (const auto & tag : tags)
     {
-        const auto topic_prefix = fmt::format("{}.{}", config_prefix, KafkaConfigLoader::CONFIG_KAFKA_TOPIC_TAG);
-        const auto & collection = NamedCollectionFactory::instance().get(collection_name);
-        for (const auto & key : collection->getKeys(1, config_prefix))
-        {
-            /// Only consider key <kafka_topic>. Multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
-            if (!key.starts_with(topic_prefix))
-                continue;
-
-            const String kafka_topic_path = config_prefix + "." + key;
-            const String kafka_topic_name_path = kafka_topic_path + "." + KafkaConfigLoader::CONFIG_NAME_TAG;
-            if (topic == collection->get<String>(kafka_topic_name_path))
-                /// Found it! Now read the per-topic configuration into cppkafka.
-                loadNamedCollectionConfig(kafka_config, collection_name, kafka_topic_path);
-        }
-    }
-    else
-    {
-        /// Read all tags one level below <kafka>
-        Poco::Util::AbstractConfiguration::Keys tags;
-        config.keys(config_prefix, tags);
-
-        for (const auto & tag : tags)
-        {
-            if (tag == KafkaConfigLoader::CONFIG_NAME_TAG)
-                continue; // ignore <name>, it is used to match topic configurations
+        if (tag != KafkaConfigLoader::CONFIG_NAME_TAG)
             loadConfigProperty(kafka_config, config, config_prefix, tag);
-        }
     }
 }
 
@@ -328,7 +480,16 @@ void loadFromConfig(
 {
     if (!params.collection_name.empty())
     {
-        loadNamedCollectionConfig(kafka_config, params.collection_name, config_prefix);
+        const auto collection = NamedCollectionFactory::instance().get(params.collection_name);
+        loadNamedCollectionConfig(kafka_config, *collection, config_prefix);
+        for (const auto & key : collection->getKeys(0, config_prefix))
+        {
+            if (key.size() <= config_prefix.size() || !isNamedTopicSection(std::string_view(key).substr(config_prefix.size() + 1)))
+                continue;
+            const String name_key = key + "." + KafkaConfigLoader::CONFIG_NAME_TAG;
+            if (collection->has(name_key) && std::ranges::contains(params.topics, collection->get<String>(name_key)))
+                loadNamedCollectionConfig(kafka_config, *collection, key);
+        }
         return;
     }
 
@@ -369,7 +530,7 @@ void loadFromConfig(
 
                 if (topic_name != topic)
                     continue;
-                loadTopicConfig(kafka_config, params.config, params.collection_name, kafka_topic_path, topic);
+                loadTopicConfig(kafka_config, params.config, kafka_topic_path);
             }
             continue;
         }
@@ -693,5 +854,19 @@ template cppkafka::Configuration
 KafkaConfigLoader::getProducerConfiguration<StorageKafka>(StorageKafka & storage, const ProducerConfigParams & params);
 template cppkafka::Configuration
 KafkaConfigLoader::getProducerConfiguration<StorageKafka2>(StorageKafka2 & storage, const ProducerConfigParams & params);
+
+void KafkaConfigLoader::checkNamedCollection(const NamedCollection & collection)
+{
+    if (collection.getSourceId() == NamedCollection::SourceId::CONFIG)
+        return;
+
+    for (const auto & key : collection.getKeys(-1, CONFIG_KAFKA_TAG))
+    {
+        checkKafkaPropertyName(key);
+        const auto property_key = namedCollectionPropertyKey(key);
+        if (!property_key.empty())
+            checkSQLKafkaProperty(toKafkaPropertyName(String(property_key)), collection.get<String>(key));
+    }
+}
 
 }
