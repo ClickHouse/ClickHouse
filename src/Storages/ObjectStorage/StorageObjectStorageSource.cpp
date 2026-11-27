@@ -144,7 +144,9 @@ namespace
         Names result;
 #if USE_AVRO
         const auto format = Poco::toLower(format_name);
-        if ((format != "parquet" && format != "orc" && format != "avro") || !dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
+        const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(&object_info);
+        /// Without `first_row_id` the row lineage of every row is NULL, also where the data file stores it.
+        if ((format != "parquet" && format != "orc" && format != "avro") || !iceberg_info || !iceberg_info->info.first_row_id)
             return result;
 
         for (const auto * name : {"_row_id", "_last_updated_sequence_number"})
@@ -1138,12 +1140,6 @@ Chunk StorageObjectStorageSource::generate()
 #if USE_AVRO
             if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
             {
-                /// Without `first_row_id` the row lineage of every row is NULL, also where the data file stores it.
-                if (!iceberg_info->info.first_row_id.has_value())
-                {
-                    materialized_row_ids = nullptr;
-                    materialized_last_updated_sequence_numbers = nullptr;
-                }
                 iceberg_metadata_file_path = &iceberg_info->info.data_object_file_path_key.serialize();
                 first_row_id = iceberg_info->info.first_row_id;
                 if (first_row_id.has_value())
