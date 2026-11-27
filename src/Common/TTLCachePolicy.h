@@ -89,10 +89,6 @@ public:
 
 /// TTLCachePolicy evicts entries for which IsStaleFunction returns true.
 ///
-/// The entries are additionally indexed by their expiry time `Key::expires_at`, so that the stale entries can be found without looking at
-/// the other entries. This requires that IsStaleFunction is monotonic in `Key::expires_at`: if an entry is not stale, then no entry which
-/// expires later is stale. Without the index, every insert into a full cache without stale entries had to check all entries.
-///
 /// The cache size (in bytes and number of entries) can be changed at runtime. It is expected to set both sizes explicitly after construction.
 template <typename Key, typename Mapped, typename HashFunction, typename WeightFunction, typename IsStaleFunction>
 class TTLCachePolicy : public ICachePolicy<Key, Mapped, HashFunction, WeightFunction>
@@ -280,9 +276,9 @@ public:
     }
 
 private:
+    /// Additionally index the entries sorted by their expiry time (`Key::expires_at`).
+    /// This allows to find stale entries faster than iterating `cache`.
     using ExpiresAt = std::remove_const_t<decltype(Key::expires_at)>;
-
-    /// Expiry time --> key in `cache`, the entries which expire first come first.
     using ExpiryIndex = MultiMapWithMemoryTracking<ExpiresAt, const Key *>;
 
     struct Cell
@@ -293,7 +289,8 @@ private:
 
     using Cache = std::unordered_map<Key, Cell, HashFunction>;
     Cache cache;
-    ExpiryIndex expiry_index; /// has exactly one element per entry in `cache`
+
+    ExpiryIndex expiry_index;
 
     size_t size_in_bytes = 0;
     size_t max_size_in_bytes;
@@ -306,7 +303,8 @@ private:
     IsStaleFunction is_stale_function;
     /// TODO support OnRemoveEntryFunction callback
 
-    /// Removes an entry from the cache and from the expiry index, returns the iterator to the next entry in the cache.
+    /// Remove an entry from the cache + the expiry index.
+    /// Returns an iterator to the next cache entry.
     typename Cache::iterator eraseEntry(typename Cache::iterator it)
     {
         size_t sz = weight_function(*it->second.mapped);
@@ -317,15 +315,14 @@ private:
         return cache.erase(it);
     }
 
-    /// The stale entries are at the beginning of the expiry index, so this looks only at them and at the first entry which is not stale.
     void removeStaleEntries()
     {
         while (!expiry_index.empty())
         {
-            const Key & oldest_key = *expiry_index.begin()->second;
-            if (!is_stale_function(oldest_key))
+            const Key & oldest_entry = *expiry_index.begin()->second;
+            if (!is_stale_function(oldest_entry))
                 break;
-            auto it = cache.find(oldest_key);
+            auto it = cache.find(oldest_entry);
             chassert(it != cache.end());
             eraseEntry(it);
         }
