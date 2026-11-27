@@ -15,7 +15,10 @@
 #include <Core/ServerSettings.h>
 
 #include <atomic>
+#include <deque>
 #include <functional>
+#include <memory>
+#include <mutex>
 
 
 namespace DB
@@ -78,6 +81,13 @@ public:
     size_t refusedConnections() const { return refused_connections; }
 
 private:
+    /// Shared with the scheduled jobs, which can outlive the server and use it only for a connection taken from here.
+    struct WaitingConnections
+    {
+        std::mutex mutex;
+        std::deque<Poco::Net::StreamSocket> sockets;
+    };
+
     void run() override;
 
     void serveConnection(const Poco::Net::StreamSocket & connection_socket);
@@ -94,8 +104,8 @@ private:
     std::atomic<bool> is_open = true;
     std::atomic<size_t> current_connections = 0;
     std::atomic<size_t> current_threads = 0;
-    std::atomic<size_t> waiting_connections = 0;
     std::atomic<size_t> refused_connections = 0;
+    std::shared_ptr<WaitingConnections> waiting_connections = std::make_shared<WaitingConnections>();
     LoggerPtr log;
 };
 

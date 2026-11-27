@@ -9,6 +9,8 @@
 #include <Poco/Net/TCPServerConnection.h>
 #include <Poco/Timespan.h>
 
+#include <optional>
+
 
 namespace CurrentMetrics
 {
@@ -99,6 +101,15 @@ void TCPServer::stop()
         // This notifies already established connections that they should stop serving
         // queries and close their socket as soon as they can.
         is_open = false;
+
+        /// Dropped: the connections of other servers can hold every thread until a later phase of the shutdown.
+        std::deque<Poco::Net::StreamSocket> waiting_sockets;
+        {
+            std::lock_guard lock(waiting_connections->mutex);
+            waiting_sockets.swap(waiting_connections->sockets);
+        }
+        current_connections -= waiting_sockets.size();
+
         // Stopping the accept thread leaves the socket open.
         // To be able to hand over control of the listening port to a new server, and
         // to get fast connection refusal instead of timeouts, we also need to close
@@ -148,7 +159,32 @@ void TCPServer::run()
 #endif
                         connection_socket.setNoDelay(no_delay);
 
-                    if (waiting_connections >= max_queued)
+                    /// Created before the connection is queued, because creating it may throw.
+                    TCPServerThreadPool::Job job = [this, waiting = waiting_connections]
+                    {
+                        std::optional<Poco::Net::StreamSocket> waiting_socket;
+                        {
+                            std::lock_guard lock(waiting->mutex);
+                            if (waiting->sockets.empty())
+                                return;
+                            waiting_socket = std::move(waiting->sockets.front());
+                            waiting->sockets.pop_front();
+                        }
+                        serveConnection(*waiting_socket);
+                    };
+
+                    bool queued = false;
+                    {
+                        std::lock_guard lock(waiting_connections->mutex);
+                        if (waiting_connections->sockets.size() < max_queued)
+                        {
+                            waiting_connections->sockets.push_back(connection_socket);
+                            ++current_connections;
+                            queued = true;
+                        }
+                    }
+
+                    if (!queued)
                     {
                         ++refused_connections;
                         LOG_WARNING(log, "Refusing connection from {}, reached max queue size {}",
@@ -156,13 +192,13 @@ void TCPServer::run()
                         continue;
                     }
 
-                    /// Created before the counters are incremented, because creating it may throw.
-                    TCPServerThreadPool::Job job = [this, connection_socket] { serveConnection(connection_socket); };
-                    ++current_connections;
-                    ++waiting_connections;
                     if (!thread_pool.trySchedule(std::move(job)))
                     {
-                        --waiting_connections;
+                        /// The newest connection: the scheduled jobs take at most all the others.
+                        {
+                            std::lock_guard lock(waiting_connections->mutex);
+                            waiting_connections->sockets.pop_back();
+                        }
                         --current_connections;
                         ++refused_connections;
                         LOG_WARNING(log, "Refusing connection from {}: cannot start a thread for it",
@@ -192,8 +228,7 @@ void TCPServer::run()
 
 void TCPServer::serveConnection(const Poco::Net::StreamSocket & connection_socket)
 {
-    --waiting_connections;
-    /// A connection that was still waiting for a thread when the server stopped is dropped.
+    /// The server can have stopped since the connection was taken from the queue.
     if (is_open)
     {
         ++current_threads;

@@ -1,14 +1,16 @@
 import socket
+import struct
 import time
 
 import pytest
 
+import helpers.keeper_utils as keeper_utils
 from helpers.client import Client
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", main_configs=["configs/config.xml"])
+node = cluster.add_instance("node", main_configs=["configs/config.xml", "configs/keeper.xml"], stay_alive=True)
 
 INTROSPECTION_PORT = 9010
 
@@ -17,8 +19,8 @@ INTROSPECTION_PORT = 9010
 def started_cluster():
     try:
         cluster.start()
-        # `cluster.start` only waits until the port completes a TCP handshake; wait until a query goes through.
-        node.query("SELECT 1")
+        # `cluster.start` only waits for a TCP handshake: until that connection gets a thread, `listen_backlog` = 1 refuses the next one.
+        node.query_with_retry("SELECT 1")
         yield cluster
     finally:
         cluster.shutdown()
@@ -146,3 +148,47 @@ def test_connections_wait_for_a_thread(started_cluster):
     for _ in range(30):
         assert node.query("SELECT 1") == "1\n"
     assert read_async_metric("TCPRejectedConnections") == rejected_tcp + 1
+
+
+def open_keeper_session():
+    """A Keeper session keeps its thread until the Keeper connections are drained, late in the shutdown."""
+    sock = socket.create_connection((node.ip_address, 9181), timeout=10)
+    request = struct.pack("!iqiqi", 0, 0, 30000, 0, 16) + b"\0" * 17
+    sock.sendall(struct.pack("!i", len(request)) + request)
+    response = b""
+    while len(response) < 20:
+        chunk = sock.recv(20 - len(response))
+        assert chunk
+        response += chunk
+    assert struct.unpack_from("!q", response, 12)[0] != 0
+    return sock
+
+
+def test_waiting_connection_does_not_delay_shutdown(started_cluster):
+    keeper_utils.wait_nodes(cluster, [node])
+    sockets = []
+    try:
+        # Two Keeper sessions take both threads of the main pool, and an HTTP request waits for one.
+        sockets += [open_keeper_session(), open_keeper_session()]
+        h = raw_connection(8123)
+        sockets.append(h)
+        h.sendall(b"GET /?query=SELECT%201 HTTP/1.0\r\n\r\n")
+        wait_metric("TCPServerThreadsScheduled", 4)
+        wait_metric("TCPServerThreadsActive", 3)
+
+        node.exec_in_container(["bash", "-c", f"kill -TERM {node.get_process_pid('clickhouse server')}"], user="root")
+
+        # The waiting request is dropped unanswered with its listener, so the shutdown goes on to drain the Keeper sessions.
+        try:
+            assert read_until_eof(h) == b""
+        except ConnectionResetError:
+            pass
+        node.wait_start_failed(30)
+        assert node.contains_in_log("Closed Keeper TCP connections.")
+        assert not node.contains_in_log("Closed Keeper TCP connections. But")
+    finally:
+        for sock in sockets:
+            sock.close()
+        if node.get_process_pid("clickhouse server") is not None:
+            node.stop_clickhouse(kill=True)
+        node.start_clickhouse()
