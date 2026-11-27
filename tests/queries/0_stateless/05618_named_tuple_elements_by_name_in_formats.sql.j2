@@ -47,8 +47,12 @@ SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}'
 SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, Ab Int32') ORDER BY id SETTINGS {{ ci }}; -- { serverError AMBIGUOUS_COLUMN_NAME }
 SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, c3 Tuple(ab Int32, AB Int32), `c4.Ab` Int32, `c4.AB` Int32, `c1.a` Int32, `c1.A` DateTime(\'UTC\'), ab Int32, AB Int32') ORDER BY id SETTINGS {{ ci }}, date_time_overflow_behavior = 'saturate';
 SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, `c1.A` DateTime(\'UTC\'), `s.A` DateTime(\'UTC\'), s Tuple(A DateTime(\'UTC\')), `S.a` Int32, S Tuple(a Int32)') ORDER BY id SETTINGS {{ ci }};
-{% if format == 'Arrow' -%}
 SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, `S.A` DateTime(\'UTC\'), `s.a` Int32') ORDER BY id SETTINGS {{ ci }}; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, `C1.missing` UInt8, `c1.a` DateTime(\'UTC\')') ORDER BY id SETTINGS {{ ci }}; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, `c1.a` DateTime(\'UTC\'), `C1.missing` UInt8') ORDER BY id SETTINGS {{ ci }}; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, `c2.A` Int128, `c2.a` Int256') ORDER BY id;
+{% if format == 'ORC' -%}
+SELECT * FROM file(currentDatabase() || '_05618_ci.ORC', 'ORC', 'id UInt32, `S.a` Int32, `S.A` DateTime(\'UTC\')') ORDER BY id SETTINGS {{ ci }};
 {% endif -%}
 {% endif -%}
 {% if format == 'Vortex' -%}
@@ -86,6 +90,12 @@ FROM numbers(2) SETTINGS output_format_orc_dictionary_key_size_threshold = 1;
 SELECT * FROM file(currentDatabase() || '_05618_dict.ORC', 'ORC', 'id UInt64, e1 Int32') ORDER BY id SETTINGS input_format_orc_dictionary_as_low_cardinality = 1, input_format_null_as_default = 1;
 SELECT * FROM file(currentDatabase() || '_05618_dict.ORC', 'ORC', 'id UInt64, e1 String DEFAULT \'fallback\'') ORDER BY id SETTINGS input_format_orc_dictionary_as_low_cardinality = 1, input_format_null_as_default = 1;
 SELECT * FROM file(currentDatabase() || '_05618_dict.ORC', 'ORC', 'id UInt64, e1 String') SETTINGS input_format_orc_dictionary_as_low_cardinality = 1, input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+INSERT INTO FUNCTION file(currentDatabase() || '_05618_dot.ORC', 'ORC') SELECT number AS id,
+    [CAST((toDate32('2200-01-01'), tuple(1), 7), 'Tuple(`a.b` Date32, a Tuple(b Int32), `Null` UInt8)'), NULL][number + 1] AS d
+FROM numbers(2);
+SELECT * FROM file(currentDatabase() || '_05618_dot.ORC', 'ORC', 'id UInt64, `d.a.b` DateTime(\'UTC\')') ORDER BY id; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT * FROM file(currentDatabase() || '_05618_dot.ORC', 'ORC', 'id UInt64, `d.null` UInt8, `d.Null` UInt8') ORDER BY id;
+SELECT * FROM file(currentDatabase() || '_05618_dot.ORC', 'ORC', 'id UInt64, `d.null` UInt8, `d.a.b` Date32') ORDER BY id SETTINGS input_format_orc_case_insensitive_column_matching = 1;
 SELECT count() FROM file(currentDatabase() || '_05618_null.Parquet', 'Parquet', 'e2 Enum8(\'a\' = 1, \'b\' = 2)') WHERE e2 = 'a' SETTINGS input_format_parquet_dictionary_filter_push_down = 0;
 SELECT count() FROM file(currentDatabase() || '_05618_null.Parquet', 'Parquet', 'e2 Enum8(\'a\' = 1, \'b\' = 2)') WHERE e2 = 'a' SETTINGS input_format_parquet_dictionary_filter_push_down = 1048576;
 
