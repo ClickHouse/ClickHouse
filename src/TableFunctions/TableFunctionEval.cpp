@@ -6,6 +6,7 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -114,7 +115,8 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Table function `eval` requires exactly one argument: a constant expression returning a query string");
 
-    const auto & [value, type] = evaluateConstantExpression(function->arguments->children[0], context);
+    const auto argument = evaluateConstantExpressionAsColumn(function->arguments->children[0], context);
+    const auto & type = argument.getType();
 
     if (!isString(removeLowCardinalityAndNullable(type)))
         throw Exception(
@@ -122,10 +124,10 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
             "Table function `eval` requires the argument of type String (possibly Nullable or LowCardinality), got {}",
             type->getName());
 
-    if (value.isNull())
+    if (argument.isNull())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The query text passed to table function `eval` cannot be NULL");
 
-    const auto & query_text = value.safeGet<String>();
+    const std::string_view query_text = argument.getDataAt();
 
     ParserSelectWithUnionQuery parser;
     ASTPtr query = parseQuery(

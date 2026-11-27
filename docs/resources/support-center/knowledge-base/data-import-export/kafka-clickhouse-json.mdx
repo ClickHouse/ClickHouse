@@ -42,11 +42,10 @@ So far, so good.
 
 ## Ingest data into ClickHouse {#ingest-data-into-clickhouse}
 Next, we're going to ingest the data into ClickHouse.
-First, let's enable the JSON type (which is currently experimental), by setting the following property:
 
-```sql
-SET allow_experimental_json_type = 1;
-```
+<Note>
+In versions 24.8 to 25.2, enable the `JSON` type with `SET allow_experimental_json_type = 1;` before creating the tables below.
+</Note>
 
 Now, we'll create the `wiki_queue` table, which uses the [`Kafka` table engine](/integrations/connectors/data-ingestion/kafka/kafka-table-engine).
 

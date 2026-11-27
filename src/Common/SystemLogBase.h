@@ -71,7 +71,7 @@ class ISystemLog
 public:
     using Index = int64_t;
 
-    virtual String getName() const = 0;
+    [[nodiscard]] virtual String getName() const = 0;
 
     /// For implementations that buffer data in memory and flush it to the log periodically,
     /// this method forces an immediate write to the log.
@@ -105,7 +105,7 @@ public:
 
     virtual void savingThreadFunction() = 0;
 
-    virtual bool mustBePreparedAtStartup() const { return false; }
+    [[nodiscard]] virtual bool mustBePreparedAtStartup() const { return false; }
 
 protected:
     std::mutex thread_mutex;
@@ -113,6 +113,21 @@ protected:
 
     bool is_shutdown = false;
 };
+
+/// Updates of the dimensional metrics of the system logs.
+/// They are not templates, so that their code is compiled once and not for every system log.
+namespace SystemLogMetrics
+{
+    /// Create the counters with the value 0, so that a rate calculated from them does not miss the first event.
+    void createQueueCounters(const String & database, const String & table);
+    void createFlushCounters(const String & database, const String & table);
+
+    void onFlushSuccess(const String & database, const String & table, size_t rows);
+    /// The rows of a failed flush are lost.
+    void onFlushFailure(const String & database, const String & table, size_t rows);
+    /// Rows that were not accepted because the queue was full.
+    void onQueueFull(const String & database, const String & table, size_t rows);
+}
 
 struct SystemLogQueueSettings
 {
@@ -260,7 +275,7 @@ public:
     /// Handles crash, flushes log without blocking if notify_flush_on_crash is set
     void handleCrash() override;
 
-    String getName() const override { return LogElement::name(); }
+    [[nodiscard]] String getName() const override { return LogElement::name(); }
 
     static const char * getDefaultPartitionBy() { return "toYYYYMM(event_date)"; }
     static const char * getDefaultOrderBy() { return "event_date, event_time"; }

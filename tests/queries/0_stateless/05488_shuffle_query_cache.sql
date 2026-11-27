@@ -1,3 +1,7 @@
+-- The subquery query result cache is not used with plan-based parallel replicas:
+-- https://github.com/ClickHouse/ClickHouse/issues/131463
+SET parallel_replicas_plan_based = 0;
+
 SET allow_experimental_shuffle_query = 1;
 SET use_query_cache = 0, query_cache_for_subqueries = 0;
 SET enable_reads_from_query_cache = 0, enable_writes_to_query_cache = 1;

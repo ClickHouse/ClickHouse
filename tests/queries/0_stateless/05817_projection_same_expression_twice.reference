@@ -1,0 +1,7 @@
+p_aggregate	modulo(a, 10)
+p_aggregate	max(modulo(a, 10))
+p_aggregate	count()
+p_normal	c
+p_normal	plus(a, 1)
+1	1	1
+2	2	2

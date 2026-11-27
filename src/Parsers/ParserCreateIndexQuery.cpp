@@ -164,4 +164,67 @@ bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     return true;
 }
 
+std::map<String, Documentation> ParserCreateIndexQuery::getDocumentation() const
+{
+    std::map<String, Documentation> documentation;
+
+    documentation["CREATE INDEX"] =
+    {
+        .description = R"DOCS_MD(
+Introduced in: v22.7.0
+
+Adds a [data skipping index](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) to a table of the `MergeTree` family. It is a standalone form of [`ALTER TABLE ... ADD INDEX`](/reference/statements/alter/skipping-index#add-index) and requires the same `ALTER ADD INDEX` privilege.
+
+## Syntax {#syntax}
+
+```sql
+CREATE [UNIQUE] INDEX [IF NOT EXISTS] name ON [db.]table [ON CLUSTER cluster] expression TYPE type [GRANULARITY value]
+```
+
+- `expression` - the indexed expression, optionally in parentheses. A parenthesized list `(expr1, expr2, ...)` creates one index on all the expressions, as `INDEX name (expr1, expr2, ...)` does in `CREATE TABLE`.
+- `TYPE type [GRANULARITY value]` - as in the `INDEX` clause of `CREATE TABLE`, see [skip index types](/reference/engines/table-engines/mergetree-family/mergetree#skip-index-types).
+- `IF NOT EXISTS` - if the table already has an index named `name`, the query does nothing.
+
+Like `ADD INDEX`, the statement changes only the table metadata. To build the index for the data already in the table, run [`ALTER TABLE ... MATERIALIZE INDEX`](/reference/statements/alter/skipping-index#materialize-index).
+
+## SQL compatibility {#sql-compatibility}
+
+For compatibility with other database systems:
+
+- `ASC` and `DESC` after the expressions of a parenthesized list are ignored.
+- `CREATE UNIQUE INDEX` is rejected unless [`create_index_ignore_unique`](/reference/settings/session-settings/create#create_index_ignore_unique) is `1`. Then `UNIQUE` is ignored and an ordinary index is created.
+- `CREATE INDEX` without `TYPE` is rejected unless [`allow_create_index_without_type`](/reference/settings/session-settings/allow#allow_create_index_without_type) is `1`. Then the query does nothing.
+
+## Example {#example}
+
+```sql title="Query"
+CREATE TABLE t (id UInt64, s String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t SELECT number, toString(number) FROM numbers(1000);
+CREATE INDEX idx_s ON t (s) TYPE bloom_filter GRANULARITY 1;
+ALTER TABLE t MATERIALIZE INDEX idx_s SETTINGS mutations_sync = 1;
+SELECT name, type, expr, granularity FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't';
+```
+
+```text title="Response"
+┌─name──┬─type─────────┬─expr─┬─granularity─┐
+│ idx_s │ bloom_filter │ s    │           1 │
+└───────┴──────────────┴──────┴─────────────┘
+```
+
+## Related content {#related-content}
+
+- [`ALTER TABLE ... INDEX`](/reference/statements/alter/skipping-index)
+- [`DROP INDEX`](/reference/statements/drop#drop-index)
+- [`system.data_skipping_indices`](/reference/system-tables/data_skipping_indices)
+)DOCS_MD",
+        .syntax = R"(
+CREATE [UNIQUE] INDEX [IF NOT EXISTS] name ON [db.]table [ON CLUSTER cluster] expression TYPE type [GRANULARITY value]
+)",
+        .parent = "CREATE",
+        .related = {"ALTER TABLE ... INDEX", "CREATE TABLE", "DROP"},
+    };
+
+    return documentation;
+}
+
 }

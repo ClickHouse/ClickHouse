@@ -7,8 +7,6 @@ sidebarTitle: 'システムテーブル'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 すべての ClickHouse インスタンスには、`system` データベース内に [システムテーブル](/ja/reference/system-tables/overview) 一式が用意されており、次のような情報が含まれています。
 
 * サーバーの状態、プロセス、実行環境
@@ -18,7 +16,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 これらのテーブルを直接クエリすると、ClickHouse デプロイメントの監視、特に詳細な内部診断やデバッグに役立ちます。
 
 <div id="using-cloud-console">
-  ## ClickHouse Cloud Console を使用する
+  ## ClickHouse Cloud Console を使用する {#using-cloud-console}
 </div>
 
 ClickHouse Cloud Console には、システムテーブルのクエリに利用できる [SQL コンソール](/ja/products/cloud/features/sql-console-features/sql-console) と [ダッシュボード機能](/ja/products/cloud/features/sql-console-features/dashboards) があります。たとえば、以下のクエリでは、直近 2 時間に新しいパーツがいくつ、どのくらいの頻度で作成されたかを確認できます。
@@ -52,13 +50,15 @@ ORDER BY
   これらのクエリを使用して、Cloud Console で[カスタムダッシュボードを作成](https://clickhouse.com/blog/essential-monitoring-queries-creating-a-dashboard-in-clickHouse-cloud)することもできます。
 </Tip>
 
-<div id="built-in-advanced-observability-dashboard">
-  ## 組み込みの高度なオブザーバビリティダッシュボード
-</div>
+## 組み込みの高度なオブザーバビリティダッシュボード {#built-in-advanced-observability-dashboard}
 
 ClickHouse には組み込みの高度なオブザーバビリティダッシュボード機能があり、`system.dashboards` に含まれる Cloud Overview のメトリクスを表示できます。アクセス先は `$HOST:$PORT/dashboard` で、ユーザー名とパスワードが必要です。
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="ネイティブの高度なオブザーバビリティダッシュボード" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![ネイティブの高度なオブザーバビリティダッシュボード](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+  </Frame>
+</div>
 
 <Note>
   このダッシュボードでは ClickHouse インスタンスへの直接認証が必要です。追加の認証なしで Cloud Console UI からアクセスできる [Cloud Console 高度なダッシュボード](/ja/products/cloud/features/monitoring/cloud-console#advanced-dashboard) とは別のものです。
@@ -67,7 +67,7 @@ ClickHouse には組み込みの高度なオブザーバビリティダッシュ
 利用可能な可視化や、それらをトラブルシューティングに活用する方法の詳細については、[高度なダッシュボードのドキュメント](/ja/products/cloud/features/monitoring/advanced-dashboard)を参照してください。
 
 <div id="querying-across-nodes">
-  ## ノードやバージョンをまたいだクエリ
+  ## ノードやバージョンをまたいだクエリ {#querying-across-nodes}
 </div>
 
 クラスター全体を包括的に確認するには、`clusterAllReplicas` 関数を `merge` 関数と組み合わせて使用できます。`clusterAllReplicas` 関数を使うと、&quot;default&quot; クラスター内のすべてのレプリカにまたがってシステムテーブルをクエリでき、ノード固有のデータを 1 つの結果に集約できます。さらに `merge` 関数と組み合わせることで、クラスター内の特定のテーブルに関するすべてのシステムデータを対象にできます。
@@ -94,7 +94,7 @@ FORMAT VERTICAL
 詳細については、[ノードをまたいだクエリ](/ja/reference/system-tables/overview#querying-across-nodes) を参照してください。
 
 <div id="system-considerations">
-  ## システムに関する考慮事項
+  ## システムに関する考慮事項 {#system-considerations}
 </div>
 
 <Warning>
@@ -103,11 +103,9 @@ FORMAT VERTICAL
 
 運用面で分離を保ちながら本番環境をリアルタイムで監視するには、[Prometheus互換のメトリクスエンドポイント](/ja/products/cloud/features/monitoring/prometheus) または [Cloud Console ダッシュボード](/ja/products/cloud/features/monitoring/cloud-console) の利用を検討してください。いずれも事前にスクレイプされたメトリクスを使用し、基盤となるサービスに対してクエリを発行しません。
 
-<div id="related">
-  ## 関連ページ
-</div>
+## 関連ページ {#related}
 
-* [システムテーブルリファレンス](/ja/reference/system-tables/overview) — 利用可能なすべてのシステムテーブルの完全なリファレンス
-* [Cloud Console の監視](/ja/products/cloud/features/monitoring/cloud-console) — サービスのパフォーマンスに影響しない、セットアップ不要のダッシュボード
-* [Prometheus エンドポイント](/ja/products/cloud/features/monitoring/prometheus) — 外部の監視ツールへメトリクスをエクスポート
+* [システムテーブルのリファレンス](/ja/reference/system-tables/overview) — 利用可能なすべてのシステムテーブルの完全なリファレンス
+* [Cloud Console の監視](/ja/products/cloud/features/monitoring/cloud-console) — サービスのパフォーマンスに影響を与えない、設定不要のダッシュボード
+* [Prometheus エンドポイント](/ja/products/cloud/features/monitoring/prometheus) — メトリクスを外部の監視ツールにエクスポート
 * [高度なダッシュボード](/ja/products/cloud/features/monitoring/advanced-dashboard) — ダッシュボードの可視化に関する詳細なリファレンス

@@ -51,14 +51,22 @@ public:
         UInt64 server_revision_,
         std::optional<FormatSettings> format_settings_,
         BlockMissingValues * block_missing_values_ = nullptr,
-        NativeReaderTypeCache * type_cache_ = nullptr);
+        NativeReaderTypeCache * type_cache_ = nullptr,
+        ISerialization::KindSet allowed_kinds_ = default_allowed_kinds);
 
     /// For cases when we have an index. It allows to skip columns. Only columns specified in the index will be read.
     NativeReader(ReadBuffer & istr_, UInt64 server_revision_,
         IndexForNativeFormat::Blocks::const_iterator index_block_it_,
         IndexForNativeFormat::Blocks::const_iterator index_block_end_);
 
-    Block getHeader() const;
+    [[nodiscard]] Block getHeader() const;
+
+    /// Accept a block with no columns that declares rows, see `Block::setRowsWithoutColumns`. Such a block
+    /// is a part of an intermediate result of a query, so only the reader of such a result expects it, and
+    /// only from a peer at `DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT`. For every other reader it
+    /// is malformed data: the consumers of an ordinary result need not expect a block that has rows and
+    /// no columns.
+    void setAllowRowsWithoutColumns(bool allow) { allow_rows_without_columns = allow; }
 
     void resetParser();
 
@@ -84,6 +92,7 @@ private:
     BlockMissingValues * block_missing_values = nullptr;
     NativeReaderTypeCache * type_cache = nullptr;
     ISerialization::KindSet allowed_kinds = default_allowed_kinds;
+    bool allow_rows_without_columns = false;
 
     bool use_index = false;
     IndexForNativeFormat::Blocks::const_iterator index_block_it;

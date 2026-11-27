@@ -52,21 +52,24 @@ Configure um handler roteado por prefixo na porta HTTP principal do ClickHouse:
 </http_handlers>
 ```
 
-`<defaults/>` preserva os handlers integrados para endpoints como `/ping` e solicitações SQL. O prefixo acima expõe esses endpoints por meio de um único handler:
+`<defaults/>` preserva os handlers integrados para endpoints como `/ping` e requisições SQL. O prefixo acima expõe esses endpoints por meio de um único handler:
 
-| Endpoint                          | Finalidade                       |
-| --------------------------------- | -------------------------------- |
-| `/prometheus/api/v1/write`        | gravação remota do Prometheus    |
-| `/prometheus/api/v1/read`         | leitura remota do Prometheus     |
-| `/prometheus/api/v1/query`        | consultas PromQL instantâneas    |
-| `/prometheus/api/v1/query_range`  | consultas PromQL de intervalo    |
-| `/prometheus/api/v1/format_query` | formatação de expressões PromQL  |
-| `/prometheus/api/v1/series`       | Metadados de séries              |
-| `/prometheus/api/v1/metadata`     | Metadados da família de métricas |
+| Endpoint                                 | Finalidade                           |
+| ---------------------------------------- | ------------------------------------ |
+| `/prometheus/api/v1/write`               | gravação remota do Prometheus        |
+| `/prometheus/api/v1/read`                | leitura remota do Prometheus         |
+| `/prometheus/api/v1/query`               | consultas PromQL instantâneas        |
+| `/prometheus/api/v1/query_range`         | consultas PromQL de intervalo        |
+| `/prometheus/api/v1/format_query`        | formatação de expressões PromQL      |
+| `/prometheus/api/v1/series`              | Metadados de séries                  |
+| `/prometheus/api/v1/labels`              | Nomes de rótulos                      |
+| `/prometheus/api/v1/label/<name>/values` | Valores de rótulos                    |
+| `/prometheus/api/v1/metadata`            | Metadados da família de métricas     |
+| `/prometheus/api/v1/federate`            | Federação das amostras mais recentes |
 
-O exemplo omite `database` e `table` do handler. Cada solicitação deve fornecer o parâmetro de consulta `table` (exceto para `/format_query`, que apenas analisa a expressão PromQL fornecida e não precisa de uma tabela). Ela também pode fornecer `database`, usar um nome de tabela qualificado, como `prometheus.metrics`, ou omitir o banco de dados para usar `default`. Isso permite que um único handler atenda a várias tabelas `TimeSeries`.
+O exemplo omite `database` e `table` do handler. Cada requisição deve fornecer o parâmetro de consulta `table` (exceto para `/format_query`, que apenas analisa a expressão PromQL fornecida e não precisa de uma tabela). Ela também pode fornecer `database`, usar um nome de tabela qualificado, como `prometheus.metrics`, ou omitir o banco de dados para usar `default`. Isso permite que um único handler atenda a várias tabelas `TimeSeries`.
 
-Para usar uma tabela fixa em todas as solicitações, configure-a no handler:
+Para usar uma tabela fixa em todas as requisições, configure-a no handler:
 
 ```xml
 <handler>
@@ -76,15 +79,15 @@ Para usar uma tabela fixa em todas as solicitações, configure-a no handler:
 </handler>
 ```
 
-Uma tabela configurada no handler não pode ser substituída por parâmetros da solicitação.
+Uma tabela configurada no handler não pode ser substituída por parâmetros da requisição.
 
 Configurações de roteamento e do handler:
 
 | Nome         | Padrão | Descrição                                                                                                                                                                                                   |
 | ------------ | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `url_prefix` | nenhum | Filtro de regras que corresponde a todos os caminhos de solicitação que começam com o prefixo configurado.                                                                                                  |
-| `table`      | nenhum | O nome de uma tabela `TimeSeries`. Quando omitido, a solicitação deve fornecer o parâmetro de consulta `table`. O nome configurado pode incluir um banco de dados.                                          |
-| `database`   | nenhum | O banco de dados que contém a tabela. Uma solicitação pode fornecê-lo como parâmetro de consulta. Quando omitido, o ClickHouse usa o banco de dados de um valor `table` qualificado ou recorre a `default`. |
+| `url_prefix` | nenhum | Filtro de regras que corresponde a todos os caminhos de requisição que começam com o prefixo configurado.                                                                                                  |
+| `table`      | nenhum | O nome de uma tabela `TimeSeries`. Quando omitido, a requisição deve fornecer o parâmetro de consulta `table`. O nome configurado pode incluir um banco de dados.                                          |
+| `database`   | nenhum | O banco de dados que contém a tabela. Uma requisição pode fornecê-lo como parâmetro de consulta. Quando omitido, o ClickHouse usa o banco de dados de um valor `table` qualificado ou recorre a `default`. |
 
 ### Crie uma tabela TimeSeries {#create-a-timeseries-table}
 
@@ -189,12 +192,12 @@ datasources:
       basicAuthPassword: <password>
 ```
 
-O Grafana acrescenta `/api/v1/query` ou `/api/v1/query_range` a esta URL base e adiciona `customQueryParameters` a cada solicitação.
+O Grafana acrescenta `/api/v1/query` ou `/api/v1/query_range` a esta URL base e adiciona `customQueryParameters` a cada requisição.
 
-Com `httpMethod: POST`, o Grafana envia os parâmetros da consulta no corpo da requisição. O ClickHouse lê o corpo da requisição e a string de consulta da URL, portanto `customQueryParameters` continua se aplicando. Use `POST` para expressões PromQL longas, porque uma URL tem limite de comprimento.
+Com `httpMethod: POST`, o Grafana envia os parâmetros de consulta no corpo da requisição. O ClickHouse lê o corpo da requisição e a string de consulta da URL, portanto `customQueryParameters` continua se aplicando. Use `POST` para expressões PromQL longas, porque uma URL tem limite de comprimento.
 
 <Note>
-  Apenas os endpoints de consulta `/api/v1/query`, `/api/v1/query_range` e `/api/v1/format_query` e os endpoints de metadados `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values` e `/api/v1/metadata` estão implementados. `/api/v1/series` requer pelo menos um seletor de séries `match[]`, oferece suporte aos parâmetros opcionais `start`, `end` e `limit` e retorna a união das séries correspondentes a cada seletor. `/api/v1/labels` aceita os mesmos parâmetros, com `match[]` sendo opcional, e retorna os nomes de rótulos ordenados das séries correspondentes (ou de todas as séries quando nenhum seletor é informado). `/api/v1/label/<name>/values` aceita os mesmos parâmetros que `/api/v1/labels` e retorna os valores ordenados de um rótulo, sendo que `<name>` pode opcionalmente usar o escaping `U__...` do Prometheus para nomes de rótulos que contenham caracteres fora de `[a-zA-Z0-9_]`. Esses endpoints cobrem o que uma fonte de dados Prometheus no Grafana usa para navegar por rótulos, variáveis de Template e preenchimento automático no construtor de consultas.
+  Apenas os endpoints de consulta `/api/v1/query`, `/api/v1/query_range` e `/api/v1/format_query`, os endpoints de metadados `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values` e `/api/v1/metadata`, e o endpoint de [federação](#federation) `/api/v1/federate` estão implementados. `/api/v1/series` requer pelo menos um seletor de séries `match[]`, oferece suporte aos parâmetros opcionais `start`, `end` e `limit` e retorna a união das séries correspondentes a cada seletor. `/api/v1/labels` aceita os mesmos parâmetros, com `match[]` sendo opcional, e retorna os nomes de rótulos ordenados das séries correspondentes (ou de todas as séries quando nenhum seletor é informado). `/api/v1/label/<name>/values` aceita os mesmos parâmetros que `/api/v1/labels` e retorna os valores ordenados de um rótulo, sendo que `<name>` pode opcionalmente usar o escaping `U__...` do Prometheus para nomes de rótulos que contenham caracteres fora de `[a-zA-Z0-9_]`. Esses endpoints cobrem o que uma fonte de dados Prometheus no Grafana usa para navegar por rótulos, variáveis de Template e preenchimento automático no construtor de consultas.
 </Note>
 
 ### Pontos de entrada SQL {#sql-entry-points}
@@ -240,6 +243,23 @@ curl --user default:<password> --get \
   --data-urlencode "metric=http_requests_total" \
   --data-urlencode "database=prometheus" \
   --data-urlencode "table=metrics"
+```
+
+## Federar métricas {#federation}
+
+O ClickHouse oferece suporte ao endpoint de [federação do Prometheus](https://prometheus.io/docs/prometheus/latest/federation/) em `/prometheus/api/v1/federate` (ou em qualquer caminho terminado em `/federate` atendido por um handler do tipo `query`). Para cada série correspondente aos seletores `match[]`, ele retorna a amostra mais recente dos últimos 5 minutos no formato de texto do Prometheus, permitindo que um servidor Prometheus faça o scrape desses dados:
+
+```yaml
+scrape_configs:
+  - job_name: clickhouse-federate
+    honor_labels: true
+    scheme: https
+    metrics_path: /prometheus/api/v1/federate
+    params:
+      'match[]': ['{job="node"}']
+      table: ['prometheus.metrics']
+    static_configs:
+      - targets: ['clickhouse.example.com:8443']
 ```
 
 ## Leia métricas com leitura remota {#remote-read}

@@ -66,7 +66,9 @@ CREATE VIEW ${CLICKHOUSE_DATABASE}.${PARAM_VIEW} AS SELECT * FROM (SELECT 1 AS x
 RESTRICTED_CLIENT="${CLICKHOUSE_CLIENT_BINARY} --host=${CLICKHOUSE_HOST} --port=${CLICKHOUSE_PORT_TCP} --database=${CLICKHOUSE_DATABASE}"
 CONST="${RESTRICTED_CLIENT} --user=${CONST_USER}"
 RO="${RESTRICTED_CLIENT} --user=${RO_USER}"
-FREE="${RESTRICTED_CLIENT} --user=${FREE_USER}"
+# The subquery query result cache is not used with plan-based parallel replicas:
+# https://github.com/ClickHouse/ClickHouse/issues/131463
+FREE="${RESTRICTED_CLIENT} --user=${FREE_USER} --parallel_replicas_plan_based 0"
 DIST="${RESTRICTED_CLIENT} --user=${DIST_USER}"
 
 # Cache entries whose text carries the marker: subquery entries, then top-level entries.

@@ -3,16 +3,14 @@ sidebarTitle: 'FAQ'
 description: 'Preguntas frecuentes sobre ClickPipes for MongoDB.'
 slug: /integrations/clickpipes/mongodb/faq
 title: 'FAQ de ClickPipes for MongoDB'
-doc_type: 'referencia'
+doc_type: 'reference'
 keywords: ['clickpipes', 'mongodb', 'cdc', 'ingestión de datos', 'sincronización en tiempo real']
 integration:
   - support_level: 'core'
   - category: 'clickpipes'
 ---
 
-<div id="can-i-query-for-individual-fields-in-the-json-datatype">
-  ### ¿Puedo consultar campos individuales en el tipo de dato JSON?
-</div>
+### ¿Puedo consultar campos individuales en el tipo de dato JSON? {#can-i-query-for-individual-fields-in-the-json-datatype}
 
 Para acceder directamente a campos, como `{"user_id": 123}`, puede usar la **notación de punto**:
 
@@ -34,9 +32,7 @@ SELECT sum(doc.shipping.cost::Float32) AS total_shipping_cost FROM t1;
 
 Para obtener más información sobre cómo trabajar con JSON, consulta nuestra [guía sobre cómo trabajar con JSON](/es/integrations/clickpipes/mongodb/quickstart).
 
-<div id="how-do-i-flatten-the-nested-mongodb-documents-in-clickhouse">
-  ### ¿Cómo puedo aplanar los documentos anidados de MongoDB en ClickHouse?
-</div>
+### ¿Cómo puedo aplanar los documentos anidados de MongoDB en ClickHouse? {#how-do-i-flatten-the-nested-mongodb-documents-in-clickhouse}
 
 Los documentos de MongoDB se replican en ClickHouse como tipo JSON de forma predeterminada, lo que preserva la estructura anidada. Tiene varias opciones para aplanar estos datos. Si quiere aplanarlos en columnas, puede usar vistas normales, vistas materializadas o acceso en tiempo de consulta.
 
@@ -46,59 +42,53 @@ Los documentos de MongoDB se replican en ClickHouse como tipo JSON de forma pred
 
 Para ver ejemplos detallados, consulte nuestra [guía sobre cómo trabajar con JSON](/es/integrations/clickpipes/mongodb/quickstart).
 
-<div id="can-i-connect-mongodb-databases-that-dont-have-a-public-ip-or-are-in-private-networks">
-  ### ¿Puedo conectar bases de datos de MongoDB que no tienen una IP pública o están en redes privadas?
-</div>
+### ¿Puedo conectar bases de datos de MongoDB que no tienen una IP pública o están en redes privadas? {#can-i-connect-mongodb-databases-that-dont-have-a-public-ip-or-are-in-private-networks}
 
 Sí. Consulta [las opciones de red de ClickPipes](/es/integrations/clickpipes/networking) para conocer las formas en que ClickPipes puede acceder a una fuente de datos que no está expuesta a Internet público.
 
-<div id="what-happens-if-i-delete-a-database-table-from-my-mongodb-database">
-  ### ¿Qué ocurre si elimino una base de datos/tabla de mi base de datos de MongoDB?
-</div>
+### ¿Qué ocurre si elimino una base de datos/tabla de mi base de datos de MongoDB? {#what-happens-if-i-delete-a-database-table-from-my-mongodb-database}
 
 Cuando eliminas una base de datos/tabla de MongoDB, ClickPipes seguirá ejecutándose, pero la base de datos/tabla eliminada dejará de replicar cambios. Las tablas correspondientes en ClickHouse se conservan.
 
-<div id="how-does-mongodb-cdc-connector-handle-transactions">
-  ### ¿Cómo gestiona MongoDB CDC Connector las transacciones?
-</div>
+### ¿Cómo gestiona MongoDB CDC Connector las transacciones? {#how-does-mongodb-cdc-connector-handle-transactions}
 
 Cada cambio de documento dentro de una transacción se procesa de forma individual en ClickHouse. Los cambios se aplican en el orden en que aparecen en el oplog, y solo los cambios confirmados se replican en ClickHouse. Si una transacción de MongoDB se revierte, esos cambios no aparecerán en el change stream.
 
 Para ver más ejemplos, consulta nuestra [guía sobre cómo trabajar con JSON](/es/integrations/clickpipes/mongodb/quickstart).
 
-<div id="resume-point-may-no-longer-be-in-the-oplog-error">
-  ### ¿Cómo soluciono el error `resume of change stream was not possible, as the resume point may no longer be in the oplog.`?
-</div>
+### ¿Cómo soluciono el error `resume of change stream was not possible, as the resume point may no longer be in the oplog.`? {#resume-point-may-no-longer-be-in-the-oplog-error}
 
 Este error suele producirse cuando se trunca el oplog y ClickPipe no puede reanudar el change stream en el punto previsto. Para resolver este problema, [vuelva a sincronizar el ClickPipe](/es/integrations/clickpipes/mongodb/resync). Para evitar que este problema vuelva a producirse, recomendamos aumentar el período de retención del oplog. Consulte las instrucciones para [MongoDB Atlas](/es/integrations/clickpipes/mongodb/source/atlas#enable-oplog-retention), [MongoDB autogestionado](/es/integrations/clickpipes/mongodb/source/generic#enable-oplog-retention) o [Amazon DocumentDB](/es/integrations/clickpipes/mongodb/source/documentdb#configure-change-stream-log-retention).
 
-<div id="how-is-replication-managed">
-  ### ¿Cómo se gestiona la replicación?
-</div>
+### ¿Cómo soluciono el error `Cannot open a new cursor since too many cursors are already opened`? {#too-many-cursors-error}
+
+Algunos proveedores de MongoDB gestionados, como Amazon DocumentDB, limitan el número de cursores que pueden estar abiertos simultáneamente en cada instancia. En Amazon DocumentDB, el límite depende de la clase de instancia. Por ejemplo, las instancias `t3.medium` y `t4g.medium` solo permiten 30 cursores abiertos. Consulte los [límites de instancia](https://docs.aws.amazon.com/documentdb/latest/devguide/limits.html#limits.instance) para conocer el límite de cada clase de instancia.
+
+ClickPipe necesita un cursor para leer el flujo de cambios. Si otros workloads de la instancia consumen todos los cursores disponibles, ClickPipe no puede abrir el flujo de cambios. En ese caso, ClickPipe lo reintenta automáticamente y reanuda la replicación en cuanto vuelve a haber cursores disponibles.
+
+Para resolver este problema:
+
+1. Compruebe cuántos cursores hay abiertos en la instancia de la que lee ClickPipe. Conéctese a la instancia con `mongosh` y ejecute `db.serverStatus().metrics.cursor.open`. En Amazon DocumentDB, también puede comparar las métricas `DatabaseCursorsMax` y `DatabaseCursorsLimit` en Amazon CloudWatch.
+2. Reduzca el número de cursores que otros workloads mantienen abiertos. Por ejemplo, cierre los cursores cuando la aplicación ya no los necesite.
+3. Si su workload necesita más cursores, escale la instancia a una clase de instancia superior.
+
+### ¿Cómo se gestiona la replicación? {#how-is-replication-managed}
 
 Usamos la API nativa de Change Streams de MongoDB para seguir los cambios en la base de datos. La API de Change Streams proporciona un flujo reanudable de cambios en la base de datos mediante el oplog (registro de operaciones) de MongoDB. ClickPipe usa los tokens de reanudación de MongoDB para seguir la posición en el oplog y garantizar que cada cambio se replique en ClickHouse.
 
-<div id="which-read-preference-should-i-use">
-  ### ¿Qué preferencia de lectura debo usar?
-</div>
+### ¿Qué preferencia de lectura debo usar? {#which-read-preference-should-i-use}
 
 La preferencia de lectura que debe usar depende de su caso de uso específico. Si quiere minimizar la carga en su nodo primario, recomendamos usar la preferencia de lectura `secondaryPreferred`. Si quiere optimizar la latencia de ingestión, recomendamos usar la preferencia de lectura `primaryPreferred`. Para más detalles, consulte la [documentación de MongoDB](https://www.mongodb.com/docs/manual/core/read-preference/#read-preference-modes-1).
 
-<div id="does-the-mongodb-clickpipe-support-sharded-cluster">
-  ### ¿El ClickPipe de MongoDB es compatible con Sharded Cluster?
-</div>
+### ¿El ClickPipe de MongoDB es compatible con Sharded Cluster? {#does-the-mongodb-clickpipe-support-sharded-cluster}
 
 Sí, el ClickPipe de MongoDB es compatible tanto con Replica Set como con Sharded Cluster.
 
-<div id="documentdb-support">
-  ### ¿MongoDB ClickPipe es compatible con Amazon DocumentDB?
-</div>
+### ¿MongoDB ClickPipe es compatible con Amazon DocumentDB? {#documentdb-support}
 
 Sí, MongoDB ClickPipe es compatible con Amazon DocumentDB 5.0. Consulta la [guía de configuración del origen para Amazon DocumentDB](/es/integrations/clickpipes/mongodb/source/documentdb) para obtener más información.
 
-<div id="privatelink-support">
-  ### ¿ClickPipe de MongoDB admite PrivateLink?
-</div>
+### ¿ClickPipe de MongoDB admite PrivateLink? {#privatelink-support}
 
 PrivateLink es compatible con clústeres de MongoDB (y DocumentDB) solo en AWS.
 
@@ -109,3 +99,18 @@ Si prefieres conectarte a un solo nodo del clúster, puedes omitir el descubrimi
 Para la conexión al Replica Set, puedes configurar PrivateLink para MongoDB con VPC Resource o VPC Endpoint Service. Si optas por VPC Resource, tendrás que crear una configuración de recurso `GROUP`, además de una configuración de recurso `CHILD` para cada nodo del clúster. Si optas por VPC Endpoint Service, tendrás que crear un Endpoint Service independiente (y un NLB independiente) para cada nodo del clúster.
 
 Consulta la documentación de [AWS PrivateLink](/es/integrations/clickpipes/networking/aws-privatelink) para obtener más información. Ponte en contacto con el soporte de ClickHouse si necesitas ayuda.
+
+### ¿Por qué la tabla `_peerdb_raw_mirror_*` es tan grande y cómo puedo limitar su tamaño? {#raw-mirror-table-retention}
+
+Un ClickPipe de CDC escribe primero los eventos de cambio en una tabla sin procesar llamada `_peerdb_raw_mirror_<pipe id>` en la base de datos de destino y, a continuación, los normaliza en las tablas de destino. ClickPipes no trunca esta tabla. Según cuándo se haya creado la canalización, es posible que la tabla no tenga TTL y conserve todos los eventos. Compruébelo con `SHOW CREATE TABLE` y añada o modifique el TTL con:
+
+```sql
+ALTER TABLE <db>._peerdb_raw_mirror_<id>
+    MODIFY TTL toDateTime(fromUnixTimestamp64Nano(_peerdb_timestamp)) + INTERVAL 30 DAY;
+```
+
+Si la tabla sin procesar no tiene clave de partición, la primera pasada de TTL reescribe las partes existentes y puede generar una carga de E/S en segundo plano considerable en una tabla grande. Puede seguir su progreso en `system.mutations`.
+
+<Warning>
+  El TTL se evalúa según el tiempo de reloj y no tiene en cuenta el estado de la canalización. Si la canalización permanece pausada o bloqueada durante más tiempo que el TTL, los eventos que aún no se hayan normalizado se eliminan y nunca llegan a las tablas de destino. Elija un período de retención superior a cualquier pausa planificada.
+</Warning>

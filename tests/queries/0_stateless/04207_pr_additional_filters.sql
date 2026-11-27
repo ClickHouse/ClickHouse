@@ -2,6 +2,9 @@
 -- ^ failpoint
 
 SET explain_query_plan_default = 'legacy';
+-- The test describes the query-based parallel replicas: plan-based ships the filter inside the plan
+-- and does not reject the combination.
+SET parallel_replicas_plan_based = 0;
 
 DROP TABLE IF EXISTS atf_p;
 -- Pin index_granularity so EXPLAIN ... distributed=1 reports a stable granule count;

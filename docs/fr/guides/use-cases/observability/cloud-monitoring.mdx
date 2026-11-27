@@ -1,45 +1,51 @@
 ---
 slug: /use-cases/observability/cloud-monitoring
-title: 'Monitoring de ClickHouse Cloud'
-sidebarTitle: 'Monitoring de ClickHouse Cloud'
-description: 'Guide de monitoring de ClickHouse Cloud'
+title: 'Supervision de ClickHouse Cloud'
+sidebarTitle: 'Supervision de ClickHouse Cloud'
+description: 'Guide de supervision de ClickHouse Cloud'
 doc_type: 'guide'
-keywords: ['observabilité', 'monitoring', 'cloud', 'métriques', 'santé du système']
+keywords: ['observabilité', 'supervision', 'cloud', 'métriques', 'état de santé du système']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
 import ObservabilityIntegrations from '/snippets/fr/_observability_integration_options.mdx';
 import DirectIntegrations from '/snippets/fr/_direct_observability_integration_options.mdx';
+
 import CommunityMonitoring from '/snippets/fr/_community_monitoring.mdx';
 
-Ce guide fournit aux équipes d’entreprise qui évaluent ClickHouse Cloud des informations complètes sur les capacités de monitoring et d’observabilité pour les déploiements en production. Les clients Enterprise demandent fréquemment quelles sont les fonctionnalités de monitoring prêtes à l’emploi, comment s’intègre ClickHouse aux stacks d’observabilité existantes, notamment avec des outils comme Datadog et AWS CloudWatch, et en quoi le monitoring de ClickHouse diffère de celui des déploiements en auto-hébergement.
+Ce guide fournit aux équipes d’entreprise qui évaluent ClickHouse Cloud des informations complètes sur les capacités de supervision et d’observabilité pour les déploiements en production. Les clients Enterprise demandent fréquemment quelles sont les fonctionnalités de supervision prêtes à l’emploi, comment s’intègre ClickHouse aux stacks d’observabilité existantes, notamment avec des outils comme Datadog et AWS CloudWatch, et en quoi la supervision de ClickHouse diffère de celle des déploiements en auto-hébergement.
 
-<div id="advanced-observability">
-  ## Tableau de bord d’observabilité avancé
-</div>
+## Tableau de bord d’observabilité avancé {#advanced-observability}
 
-ClickHouse Cloud fournit un monitoring complet via des interfaces de tableau de bord intégrées, accessibles depuis la section Monitoring. Ces tableaux de bord visualisent en temps réel les métriques système et de performance sans configuration supplémentaire et constituent les principaux outils de monitoring de la production en temps réel dans ClickHouse Cloud.
+ClickHouse Cloud fournit une supervision complète via des interfaces de tableau de bord intégrées, accessibles depuis la section Supervision. Ces tableaux de bord visualisent en temps réel les métriques système et de performance sans configuration supplémentaire et constituent les principaux outils de supervision de la production en temps réel dans ClickHouse Cloud.
 
-* **Advanced Dashboard** : L’interface principale de tableau de bord, accessible via Monitoring → Advanced dashboard, offre une visibilité en temps réel sur le taux de requêtes, l’utilisation des ressources, l’état du système et les performances du stockage. Ce tableau de bord ne nécessite pas d’authentification distincte, n’empêche pas les instances de passer en idling et n’ajoute pas de charge de requête à votre système de production. Chaque visualization s’appuie sur des requêtes SQL personnalisables, avec des charts prêtes à l’emploi regroupées en métriques ClickHouse-specific, system health et Cloud-specific. Vous pouvez étendre le monitoring en créant des requêtes personnalisées directement dans la SQL Console.
+* **Advanced Tableau de bord** : L’interface principale de tableau de bord, accessible via Supervision → Advanced tableau de bord, offre une visibilité en temps réel sur le taux de requêtes, l’utilisation des ressources, l’état de santé du système et les performances du stockage. Ce tableau de bord ne nécessite pas d’authentification distincte, n’empêche pas les instances de passer en mise en veille et n’ajoute pas de charge de requête à votre système de production. Chaque visualization s’appuie sur des requêtes SQL personnalisables, avec des graphiques prêts à l’emploi regroupés en métriques ClickHouse-specific, état de santé du système et Cloud-specific. Vous pouvez étendre la supervision en créant des requêtes personnalisées directement dans la SQL Console.
 
 <Note>
   L’accès à ces métriques n’exécute pas de requête sur le service sous-jacent et ne réactive pas les services idle.
 </Note>
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="Advanced dashboard" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Advanced tableau de bord](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+  </Frame>
+</div>
 
-Les utilisateurs qui souhaitent étendre ces visualizations peuvent utiliser la fonctionnalité dashboards de ClickHouse Cloud en interrogeant directement les tables système.
+Les utilisateurs qui souhaitent étendre ces visualizations peuvent utiliser la fonctionnalité tableaux de bord de ClickHouse Cloud en interrogeant directement les tables système.
 
-* **Native advanced dashboard** : Une interface de tableau de bord alternative, accessible via « You can still access the native advanced dashboard » dans la section Monitoring. Elle s’ouvre dans un onglet séparé avec authentification et fournit une UI alternative pour le monitoring de l’état du système et du service. Ce tableau de bord permet des analyses avancées, dans lesquelles vous pouvez modifier les requêtes SQL sous-jacentes.
+* **Native advanced tableau de bord** : Une interface de tableau de bord alternative, accessible via « You can still access the native advanced tableau de bord » dans la section Supervision. Elle s’ouvre dans un onglet séparé avec authentification et fournit une UI alternative pour la supervision de l’état de santé du système et du service. Ce tableau de bord permet des analyses avancées, dans lesquelles vous pouvez modifier les requêtes SQL sous-jacentes.
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Advanced dashboard" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Advanced tableau de bord](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+  </Frame>
+</div>
 
 Les deux tableaux de bord offrent une visibilité immédiate sur l’état et les performances du service sans dépendances externes, ce qui les distingue d’outils externes axés sur le débogage comme ClickStack.
 
-Pour plus de détails sur les fonctionnalités du tableau de bord et les métriques disponibles, consultez la [documentation de l’advanced dashboard](/fr/products/cloud/features/monitoring/advanced-dashboard).
+Pour plus de détails sur les fonctionnalités du tableau de bord et les métriques disponibles, consultez la [documentation de l’advanced tableau de bord](/fr/products/cloud/features/monitoring/advanced-dashboard).
 
 <div id="query-insights">
-  ## Query insights et surveillance des ressources
+  ## Query insights et surveillance des ressources {#query-insights}
 </div>
 
 ClickHouse Cloud inclut des fonctionnalités de surveillance supplémentaires :
@@ -50,7 +56,7 @@ ClickHouse Cloud inclut des fonctionnalités de surveillance supplémentaires :
 Consultez la documentation [query insights](/fr/products/cloud/features/sql-console-features/query-insights) et [resource utilization](/fr/guides/oss/deployment-and-scaling/monitoring/monitoring#resource-utilization) pour obtenir des informations détaillées sur ces fonctionnalités.
 
 <div id="prometheus">
-  ## Point de terminaison de métriques compatible avec Prometheus
+  ## Point de terminaison de métriques compatible avec Prometheus {#prometheus}
 </div>
 
 ClickHouse Cloud fournit un point de terminaison Prometheus. Cela vous permet de conserver vos workflows actuels, de tirer parti de l’expertise existante de votre équipe et d’intégrer les métriques ClickHouse à des plateformes de monitoring d’entreprise, notamment Grafana, Datadog et d’autres outils compatibles Prometheus.
@@ -67,7 +73,7 @@ Le point de terminaison au niveau de l’organisation fédère les métriques de
 <ObservabilityIntegrations />
 
 <div id="clickstack-deployment">
-  ### Options de déploiement de ClickStack
+  ### Options de déploiement de ClickStack {#clickstack-deployment}
 </div>
 
 * **HyperDX dans ClickHouse Cloud**  (aperçu privé) : HyperDX peut être lancé sur n’importe quel service ClickHouse Cloud.
@@ -86,7 +92,7 @@ Pour connaître l’ensemble des options de déploiement et les détails de l’
 <CommunityMonitoring />
 
 <div id="system-impact">
-  ## Considérations relatives à l’impact sur le système
+  ## Considérations relatives à l’impact sur le système {#system-impact}
 </div>
 
 Toutes les approches ci-dessus reposent sur une combinaison de points de terminaison Prometheus, de la gestion par ClickHouse Cloud ou de l’interrogation directe des tables système.

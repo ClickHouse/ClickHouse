@@ -8,9 +8,7 @@ keywords: ['DROP PARTITION', 'パーティションの削除', 'パーティシ�
 doc_type: 'reference'
 ---
 
-<div id="background">
-  ## 背景
-</div>
+## 背景 {#background}
 
 パーティション化は、テーブルの初期定義時に `PARTITION BY` 句で指定します。この句には任意のカラムに対する SQL 式を含めることができ、その結果によって、行がどのパーティションに送られるかが決まります。
 
@@ -19,7 +17,7 @@ doc_type: 'reference'
 ```sql
  CREATE TABLE posts
 (
-        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `Id` Int32 CODEC(Delta, Default),
         `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
         `AcceptedAnswerId` UInt32,
         `CreationDate` DateTime64(3, 'UTC'),
@@ -35,9 +33,7 @@ PARTITION BY toYear(CreationDate)
 
 ClickHouse では、パーティション化は基本的にクエリ最適化の手法ではなく、データ管理機能として考えるべきです。キーに基づいてデータを論理的に分割することで、各パーティションを個別に操作できます。たとえば、削除できます。これにより、時間に応じてパーティション、ひいてはデータのサブセットを[ストレージティア](/ja/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#storage-tiers)間で効率的に移動したり、[データを期限切れにする／クラスターから効率的に削除する](/ja/reference/statements/alter/partition)ことができます。
 
-<div id="drop-partitions">
-  ## パーティションの削除
-</div>
+## パーティションの削除 {#drop-partitions}
 
 `ALTER TABLE ... DROP PARTITION` を使うと、パーティション全体を効率的なコストで削除できます。
 

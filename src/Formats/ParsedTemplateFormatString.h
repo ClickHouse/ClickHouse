@@ -36,9 +36,9 @@ struct ParsedTemplateFormatString
     void parse(const String & format_string, const ColumnIdxGetter & idx_by_name, bool allow_indexes = true);
 
     static const char * readMayBeQuotedColumnNameInto(const char * pos, size_t size, String & s);
-    size_t columnsCount() const;
+    [[nodiscard]] size_t columnsCount() const;
 
-    String dump() const;
+    [[nodiscard]] String dump() const;
     [[noreturn]] void throwInvalidFormat(const String & message, size_t column) const;
 };
 

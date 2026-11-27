@@ -71,6 +71,13 @@ ${CLICKHOUSE_CLIENT} --user="${admin}" -q "ALTER USER ${user} SETTINGS max_execu
 echo "Test 7"
 ${CLICKHOUSE_CLIENT} --user="${admin}" -q "ALTER USER ${user} SETTINGS max_execution_time = 8 CONST" 2>&1 | grep -q "SETTING_CONSTRAINT_VIOLATION" && echo "VIOLATED" || echo "NO ERROR"
 
+# Test 8: a negative value, or one whose microseconds overflow Int64, cannot escape the MAX constraint
+echo "Test 8"
+${CLICKHOUSE_CLIENT} --user="${admin}" -q "SET max_execution_time = -1" 2>&1 | grep -q "BAD_ARGUMENTS" && echo "REJECTED" || echo "ACCEPTED"
+${CLICKHOUSE_CLIENT} --user="${admin}" -q "SET max_execution_time = 9223372036854.775" 2>&1 | grep -q "BAD_ARGUMENTS" && echo "REJECTED" || echo "ACCEPTED"
+${CLICKHOUSE_CLIENT} --user="${admin}" -q "SET max_execution_time = 5" 2>&1 | grep -q "SETTING_CONSTRAINT_VIOLATION" && echo "VIOLATED" || echo "NO ERROR"
+${CLICKHOUSE_CLIENT} --user="${admin}" -q "SET max_execution_time = 3; SELECT getSetting('max_execution_time')"
+
 # Cleanup
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${admin}"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}"

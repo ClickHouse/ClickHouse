@@ -73,7 +73,7 @@ struct BackupFileInfo
 
     /// Note: this format doesn't allow to parse data back.
     /// Must be used only for debugging purposes.
-    String describe() const;
+    [[nodiscard]] String describe() const;
 };
 
 using BackupFileInfos = std::vector<BackupFileInfo>;

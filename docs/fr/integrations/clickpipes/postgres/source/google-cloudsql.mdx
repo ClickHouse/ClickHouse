@@ -10,7 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
 import { CloudSQLIAMAuthentication } from "/snippets/fr/clickpipes/_cloudsql_iam_authentication.mdx";
 
 <Info>
@@ -18,7 +17,7 @@ import { CloudSQLIAMAuthentication } from "/snippets/fr/clickpipes/_cloudsql_iam
 </Info>
 
 <div id="supported-postgres-versions">
-  ## Versions de Postgres prises en charge
+  ## Versions de Postgres prises en charge {#supported-postgres-versions}
 </div>
 
 Postgres 12 ou version ultérieure
@@ -29,13 +28,25 @@ Postgres 12 ou version ultérieure
 
 1. Cliquez sur le bouton **Edit** sur la page Overview.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp" alt="Bouton Edit dans Cloud SQL Postgres" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Bouton Edit dans Cloud SQL Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp)
+  </Frame>
+</div>
 
 2. Accédez à Flags et définissez `cloudsql.logical_decoding` sur on. Cette modification nécessitera le redémarrage de votre serveur Postgres.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp" alt="Définir cloudsql.logical_decoding sur on" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Définir cloudsql.logical_decoding sur on](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp)
+  </Frame>
+</div>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp" alt="Redémarrer le serveur" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Redémarrer le serveur](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp)
+  </Frame>
+</div>
 
 ## Création de l’utilisateur ClickPipes et attribution des permissions {#creating-clickpipes-user-and-granting-permissions}
 
@@ -92,25 +103,41 @@ La publication `clickpipes` définit l’ensemble des tables dont les événemen
 Veuillez suivre les étapes ci-dessous pour ajouter les ClickPipes IPs à votre réseau.
 
 <Note>
-  Si vous utilisez le tunneling SSH, vous devez ajouter les [ClickPipes IPs](/fr/integrations/clickpipes/networking/static-ips) aux règles du pare-feu du Jump Server/Bastion.
+  Si vous utilisez le tunnel SSH, vous devez ajouter les [ClickPipes IPs](/fr/integrations/clickpipes/networking/static-ips) aux règles du pare-feu du Jump Server/Bastion.
 </Note>
 
 1. Accédez à la section **Connections**
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp" alt="Section Connections dans Cloud SQL" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Section Connections dans Cloud SQL](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp)
+  </Frame>
+</div>
 
 2. Accédez à la sous-section Networking
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp" alt="Sous-section Networking dans Cloud SQL" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Sous-section Networking dans Cloud SQL](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp)
+  </Frame>
+</div>
 
 3. Ajoutez les [IP publiques de ClickPipes](/fr/integrations/clickpipes/networking/static-ips)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp" alt="Ajouter les réseaux ClickPipes au pare-feu" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Ajouter les réseaux ClickPipes au pare-feu](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp)
+  </Frame>
+</div>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp" alt="Réseaux ClickPipes ajoutés au pare-feu" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Réseaux ClickPipes ajoutés au pare-feu](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp)
+  </Frame>
+</div>
 
 <div id="whats-next">
-  ## Quelle est la suite ?
+  ## Quelle est la suite ? {#whats-next}
 </div>
 
 Vous pouvez maintenant [créer votre ClickPipe](/fr/integrations/clickpipes/postgres/index) et commencer à ingérer les données de votre instance Postgres dans ClickHouse Cloud.

@@ -6,10 +6,8 @@ description: 'Обзор ClickHouse Private'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="overview">
-  ## Обзор
+  ## Обзор {#overview}
 </div>
 
 ClickHouse Private — это самостоятельно разворачиваемый пакет, включающий ту же проприетарную версию ClickHouse, что используется в ClickHouse Cloud, а также наш ClickHouse Operator, настроенный для разделения вычислительных ресурсов и хранилища.
@@ -21,7 +19,7 @@ ClickHouse Private — это самостоятельно разворачив�
 </Info>
 
 <div id="benefits-over-os">
-  ## Преимущества по сравнению с решениями с открытым исходным кодом
+  ## Преимущества по сравнению с решениями с открытым исходным кодом {#benefits-over-os}
 </div>
 
 Следующие возможности отличают ClickHouse Private от самоуправляемых развертываний с открытым исходным кодом:
@@ -37,12 +35,16 @@ ClickHouse Private полностью автономен и работает в 
 
 <br />
 
-<Image img="/images/cloud/reference/private-gov-architecture.webp" size="md" alt="Архитектура ClickHouse Private" background="black" />
+<div className="ch-image-md ch-image-background-black">
+  <Frame>
+    ![Архитектура ClickHouse Private](/images/cloud/reference/private-gov-architecture.webp)
+  </Frame>
+</div>
 
 <br />
 
 <div id="supported-configurations">
-  ## Поддерживаемые конфигурации
+  ## Поддерживаемые конфигурации {#supported-configurations}
 </div>
 
 ClickHouse Private доступен в следующих конфигурациях; для каждой среды указан статус поддержки:
@@ -55,7 +57,7 @@ ClickHouse Private доступен в следующих конфигураци
 | Azure                      | Azure Kubernetes Service (AKS)   | Azure Blob Storage          | Предварительная версия |
 
 <div id="onboarding-process">
-  ## Процесс онбординга
+  ## Процесс онбординга {#onboarding-process}
 </div>
 
 Клиенты, заинтересованные в ClickHouse Private, могут [связаться с нами](https://clickhouse.com/company/contact), чтобы назначить созвон для обсуждения своего сценария использования. Запросы, соответствующие минимальным требованиям по масштабу и ориентированные на поддерживаемые конфигурации, будут рассмотрены — обратите внимание, что возможности онбординга ограничены. Настройка выполняется по руководству по установке для соответствующей среды с использованием образов и Helm-чартов из AWS ECR.

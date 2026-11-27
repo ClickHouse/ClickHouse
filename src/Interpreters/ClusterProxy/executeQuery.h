@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Client/ConnectionPool_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
@@ -127,6 +128,15 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context);
 /// one used by the Fast test job, must not disable the local plan for every query).
 bool leafTimeoutRequiresRemoteOnlyLeafReading(const Settings & settings);
 
+/// Returns per-replica liveness of `cluster` (resolved from `cluster_name`), in the cluster's replica order.
+/// It is the same `is_active` signal that `system.clusters` reports. Returns an empty vector when the
+/// liveness is unknown; the caller must then treat all replicas as usable.
+std::vector<bool> getReplicasLiveness(const String & cluster_name, const ClusterPtr & cluster);
+
+/// Number of replicas a parallel replicas query over `cluster` reads from, as the reading coordinator counts them:
+/// the active replicas (all of them when the liveness is unknown), at most `max_parallel_replicas`.
+size_t getReplicasCountForParallelReplicas(const ContextPtr & context, const ClusterPtr & cluster);
+
 /// Builds the `_shard_num` scalar shipped to a shard, recording which shard numbering the number belongs
 /// to: `Cluster::getShardScopeIdentity`, not the name, since a derived cluster keeps the name and may
 /// renumber the shards. Both live in one block so that overwriting `_shard_num` replaces number and
@@ -162,7 +172,7 @@ struct LocalPlanParallelReplicasInfo
 {
     ParallelReplicasReadingCoordinatorPtr coordinator;
     /// Sized to the coordinator's replica count, with the local replica at `local_replica_index`.
-    std::vector<ConnectionPoolPtr> connection_pools;
+    VectorWithMemoryTracking<ConnectionPoolPtr> connection_pools;
     /// The local replica's number; matches the coordinator's snapshot replica number.
     std::optional<size_t> local_replica_index;
 };
@@ -170,7 +180,8 @@ struct LocalPlanParallelReplicasInfo
 /// Predicate gating the local-plan branch of `executeQueryWithParallelReplicas`. Also evaluated
 /// on followers in `ReadFromMergeTree` so they take the same topology decision as the initiator.
 bool canUseLocalPlanForParallelReplicas(const ContextPtr & context);
-LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan);
+/// Returns nothing and leaves the plan intact unless the plan has both a local part and a remote reading step.
+std::optional<LocalPlanParallelReplicasInfo> dropReadFromRemoteInPlan(QueryPlan & query_plan);
 
 /// Execute a distributed query, creating a query plan, from which the query pipeline can be built.
 /// `stream_factory` object encapsulates the logic of creating plans for a different type of query
@@ -196,7 +207,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const ContextPtr & context,
     std::optional<QueryPipeline> pipeline = std::nullopt,
     std::optional<ParallelReplicasReadingCoordinatorPtr> coordinator = std::nullopt,
-    std::vector<ConnectionPoolPtr> reused_connection_pools = {},
+    VectorWithMemoryTracking<ConnectionPoolPtr> reused_connection_pools = {},
     std::optional<size_t> reused_local_replica_index = std::nullopt);
 
 void executeQueryWithParallelReplicas(

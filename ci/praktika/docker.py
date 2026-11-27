@@ -22,6 +22,11 @@ _IMAGE_PULL_RETRY_ERRORS = [
 ]
 _IMAGE_PULL_TIMEOUT_S = 300  # per attempt, matching prefetch-integration-test-images
 _IMAGE_PULL_RETRIES = 3
+# containerd's `unexpected status from <method> request to <url>: <status>`: Docker Hub's 429 for a burst,
+# and the 401 or 5xx of the token exchange during one. Permanent failures (`not found`,
+# `pull access denied`) are worded differently and are not retried.
+_IMAGE_MERGE_RETRY_ERRORS = ["unexpected status from ", *_IMAGE_PULL_RETRY_ERRORS]
+_IMAGE_MERGE_RETRIES = 6
 
 
 class Docker:
@@ -152,19 +157,15 @@ class Docker:
         # imagetools create works correctly with both plain manifests and indices,
         # preserving attestation manifests in the merged result.
         src_refs = " ".join(f"{config.name}:{t}" for t in tags[1:])
-        commands = [
-            f"docker buildx imagetools create --tag {config.name}:{digests[config.name]} {src_refs}"
-        ]
-
+        target_tags = f"--tag {config.name}:{digests[config.name]}"
         if add_latest:
-            commands.append(
-                f"docker buildx imagetools create --tag {config.name}:latest {src_refs}"
-            )
+            target_tags += f" --tag {config.name}:latest"
 
         return Result.from_commands_run(
             name=f"merge: {config.name}:{digests[config.name]} (latest={add_latest})",
-            command=commands,
-            fail_fast=True,
+            command=f"docker buildx imagetools create {target_tags} {src_refs}",
+            retries=_IMAGE_MERGE_RETRIES,
+            retry_errors=_IMAGE_MERGE_RETRY_ERRORS,
         )
 
     @classmethod

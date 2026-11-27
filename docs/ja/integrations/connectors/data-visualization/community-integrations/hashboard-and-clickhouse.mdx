@@ -12,28 +12,31 @@ integration:
 
 import ConnectionDetails from '/snippets/ja/_gather_your_details_native.mdx';
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
 [Hashboard](https://hashboard.com) は、組織内の誰もがメトリクスを追跡し、実用的なインサイトを見つけられるインタラクティブなデータ探索ツールです。Hashboard は ClickHouse データベースに対してリアルタイムに SQL クエリを実行できるため、特にセルフサービス型のアドホックなデータ探索に適しています。
 
-<Image size="md" img="/images/integrations/data-visualization/hashboard_01.webp" alt="インタラクティブなクエリビルダーと可視化を表示する Hashboard のデータエクスプローラー インターフェイス" border />
+<div className="ch-image-md">
+  <Frame>
+    ![インタラクティブなクエリビルダーと可視化を表示する Hashboard のデータエクスプローラー インターフェイス](/images/integrations/data-visualization/hashboard_01.webp)
+  </Frame>
+</div>
 
 <br />
 
 このガイドでは、Hashboard を ClickHouse インスタンスに接続する手順を説明します。この情報は、Hashboard の [ClickHouse 連携ドキュメント](https://hashboard.com/docs/database-connections/clickhouse) にも掲載されています。
 
 <div id="pre-requisites">
-  ## 前提条件
+  ## 前提条件 {#pre-requisites}
 </div>
 
 * 自社のインフラストラクチャまたは [ClickHouse Cloud](https://clickhouse.com/) でホストされている ClickHouse データベース。
 * [Hashboard のアカウント](https://hashboard.com/getAccess) とプロジェクト。
 
 <div id="steps-to-connect-hashboard-to-clickhouse">
-  ## Hashboard を ClickHouse に接続する手順
+  ## Hashboard を ClickHouse に接続する手順 {#steps-to-connect-hashboard-to-clickhouse}
 </div>
 
 <Steps>
@@ -55,7 +58,7 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
 </Steps>
 
 <div id="learn-more">
-  ## さらに詳しく
+  ## さらに詳しく {#learn-more}
 </div>
 
 より高度な機能やトラブルシューティングについては、[Hashboard のドキュメント](https://hashboard.com/docs)を参照してください。

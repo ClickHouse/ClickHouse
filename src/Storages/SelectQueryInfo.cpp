@@ -4,6 +4,8 @@
 #include <Planner/PlannerContext.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -57,9 +59,9 @@ std::optional<TableExpressionModifiers::Rational> SelectQueryInfo::getSampleOffs
     return {};
 }
 
-std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn() const
+UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn() const
 {
-    std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
+    UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
     if (planner_context)
     {
         auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
@@ -84,12 +86,10 @@ PrewhereInfo PrewhereInfo::clone() const
     prewhere_info.prewhere_column_name = prewhere_column_name;
     prewhere_info.remove_prewhere_column = remove_prewhere_column;
     prewhere_info.need_filter = need_filter;
-    prewhere_info.query_condition_cache_attribution = query_condition_cache_attribution;
 
     return prewhere_info;
 }
 
-/// `query_condition_cache_attribution` is not serialized: a deserialized plan does not attribute.
 void PrewhereInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
     prewhere_actions.serialize(ctx.out, ctx.registry);

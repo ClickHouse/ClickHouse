@@ -10,6 +10,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadGroupSwitcher.h>
 
+#include <Compression/CompressionInfo.h>
 #include <Compression/ParallelCompressedWriteBuffer.h>
 
 
@@ -28,8 +29,12 @@ ParallelCompressedWriteBuffer::ParallelCompressedWriteBuffer(
     size_t buf_size_,
     size_t num_threads_,
     ThreadPool & pool_)
-    : WriteBuffer(nullptr, 0), out(out_), codec(codec_), buf_size(buf_size_), num_threads(num_threads_), pool(pool_)
+    : WriteBuffer(nullptr, 0), out(out_), codec(codec_), buf_size(std::min<size_t>(buf_size_, DBMS_MAX_DECOMPRESSED_SIZE)), num_threads(num_threads_), pool(pool_)
 {
+    /// A reader rejects a block that compresses to more than DBMS_MAX_COMPRESSED_SIZE.
+    while (buf_size > 1 && codec->getCompressedReserveSize(static_cast<UInt32>(buf_size)) > DBMS_MAX_COMPRESSED_SIZE)
+        buf_size /= 2;
+
     buffers.emplace_back(buf_size);
     current_buffer = buffers.begin();
     BufferBase::set(current_buffer->uncompressed.data(), buf_size, 0);

@@ -25,7 +25,7 @@ MySQLHandlerFactory::MySQLHandlerFactory(
     : server(server_)
     , log(getLogger("MySQLHandlerFactory"))
 #if USE_SSL
-    , keypair(KeyPair::generateRSA())
+    , keypair(log)
 #endif
     , secure_required(secure_required_)
     , default_session_user(std::move(default_session_user_))
@@ -42,26 +42,29 @@ MySQLHandlerFactory::MySQLHandlerFactory(
         LOG_TRACE(log, "Failed to create SSL context. SSL will be disabled. Error: {}", getCurrentExceptionMessage(false));
         ssl_enabled = false;
     }
-
-    /// Reading RSA keys for SHA256 authentication plugin.
-    try
-    {
-        const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
-
-        String private_key_file_property = "openSSL.server.privateKeyFile";
-        String private_key_file = config.getString(private_key_file_property);
-
-        keypair = KeyPair::fromFile(private_key_file);
-    }
-    catch (...)
-    {
-        LOG_TRACE(log, "Failed to read RSA key pair from server certificate. Error: {}", getCurrentExceptionMessage(false));
-        LOG_TRACE(log, "Generating new RSA key pair.");
-
-        keypair = KeyPair::generateRSA();
-    }
 #endif
 }
+
+#if USE_SSL
+KeyPair & MySQLKeyPairHolder::get()
+{
+    std::call_once(initialized, [this]
+    {
+        try
+        {
+            const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
+            key_pair.emplace(KeyPair::fromFile(config.getString("openSSL.server.privateKeyFile")));
+        }
+        catch (...)
+        {
+            LOG_TRACE(log, "Failed to read RSA key pair from server certificate. Error: {}", getCurrentExceptionMessage(false));
+            LOG_TRACE(log, "Generating new RSA key pair.");
+            key_pair.emplace(KeyPair::generateRSA());
+        }
+    });
+    return *key_pair;
+}
+#endif
 
 Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server)
 {

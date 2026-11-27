@@ -54,7 +54,7 @@ Cloud でのデフォルト値: レプリカあたりのメモリ量の半分。
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "ハッシュ結合のディスクへの自動スピルを制御する新しい設定です。0 以外の値を指定するとスピルが有効になり、バイト単位のしきい値が設定されます。"}]}]} />
 
-0 以外の値に設定し、かつ `join_algorithm` が `hash`、`parallel_hash`、`default`、または `auto` の場合、右側のデータがこのバイト数を超えると、ディスクへのスピルを有効にするためにハッシュ結合は自動的に Grace Hash Join に変換されます。`max_bytes_ratio_before_external_join` と合わせて、これはハッシュベースのすべての `join_algorithm` に対するしきい値ベースのスピルのトリガーであり、`grace_hash` も含まれます。`grace_hash` では、この 2 つのいずれかが 0 以外である必要があります。0 以外のしきい値によって結合がスピル可能になると、`enable_adaptive_memory_spill_scheduler` により、しきい値に達する前でもメモリ逼迫時に強制的にスピルさせることができます。`0` (デフォルト) に設定すると、この絶対バイトしきい値は無効になりますが、`max_bytes_ratio_before_external_join` (デフォルトは `0.5`) によって自動スピルが引き続き発生する可能性があります。両方の設定が `0` の場合、結合はスピルしないため、スケジューラーがトリガーする対象がありません。例外は `legacy_join_size_limits_trigger_spilling` です。これを有効にすると、単独の `grace_hash` は両方の設定を無視し、代わりに `max_rows_in_join` / `max_bytes_in_join` に基づいてスピルします。これにより、JOIN 最適化による順序どおりの読み取りは行えなくなります。また、このしきい値は、`join_algorithm` の設定にかかわらず、[block nested loop join](/ja/reference/statements/select/join#join-with-an-arbitrary-on-condition) によってマテリアライズされる右側の上限も定めます。
+0 以外の値に設定し、かつ `join_algorithm` が `hash`、`parallel_hash`、`default`、または `auto` の場合、右側のデータがこのバイト数を超えると、ハッシュ結合はそのデータをディスクにスピルします。これは `GraceHashJoin` で結合を実行できる場合 (等値比較の選言が 1 つで、サポートされている種類と strictness である場合) に限られます。複数の選言を持つ `ON` 条件 (`OR`) は `hash` のままとなるため、スピルされずにメモリ制限に達する可能性があります。スピル後、結合は Grace Hash Join として継続されます。ただし、クエリプランが左側のストリームの行順序を必要とする場合 (JOIN を通過する順序に従った読み取り) は部分マージ結合として継続されるため、このしきい値によってその最適化が妨げられることはありません。このような結合を通過して順序に従った読み取りが適用されるのは、strictness が `ALL` または `ANY` の `INNER` 結合および `LEFT` 結合で、混在した `ON` 条件がなく、`ANY` の場合は `join_any_take_last_row` を使用しておらず、かつキーが floating-point、`JSON`、`Dynamic` のいずれでもない (ネストされている場合も含む) 場合に限られます。`max_bytes_ratio_before_external_join` と合わせて、これはハッシュベースのすべての `join_algorithm` に対するしきい値ベースのスピルのトリガーであり、`grace_hash` も含まれます。`grace_hash` では、この 2 つのいずれかが 0 以外である必要があります。0 以外のしきい値によって結合がスピル可能になると、`enable_adaptive_memory_spill_scheduler` により、しきい値に達する前でもメモリ逼迫時に強制的にスピルさせることができます。`0` (デフォルト) に設定すると、この絶対バイトしきい値は無効になりますが、`max_bytes_ratio_before_external_join` (デフォルトは `0.5`) によって自動スピルが引き続き発生する可能性があります。両方の設定が `0` の場合、結合はスピルしないため、スケジューラーがトリガーする対象がありません。例外は `legacy_join_size_limits_trigger_spilling` です。これを有効にすると、単独の `grace_hash` は両方の設定を無視し、代わりに `max_rows_in_join` / `max_bytes_in_join` に基づいてスピルします。また、このしきい値は、`join_algorithm` の設定にかかわらず、[block nested loop join](/ja/reference/statements/select/join#join-with-an-arbitrary-on-condition) によってマテリアライズされる右側の上限も定めます。
 
 ## max_bytes_before_external_set {#max_bytes_before_external_set}
 
@@ -232,7 +232,7 @@ DISTINCT の使用時にハッシュテーブルが使用する、メモリ内�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0.5"},{"label": "新しい設定: ハッシュ結合で、利用可能なメモリのうちディスクへのスピルを開始するしきい値として使用する比率です。既定では `0.5` で有効になっており、`max_bytes_ratio_before_external_group_by` および `max_bytes_ratio_before_external_sort` に対応しています。絶対値の `max_bytes_before_external_join` と組み合わせて使用され、2 つのうち小さい方が適用されます。"}]}]} />
 
-`JOIN` に使用できる利用可能メモリの比率です。この値に達すると、ハッシュ結合は Grace Hash Join に変換され、右側のデータがディスクにスピルされます。
+`JOIN` に使用できる利用可能メモリの比率です。この値に達すると、ハッシュ結合は右側のデータをディスクにスピルします。ただし、これは `GraceHashJoin` でその結合を実行できる場合 (等値比較の選言が 1 つだけで、種類と strictness がサポートされている場合) に限られます。複数の選言を含む `ON` 条件 (`OR`) は `hash` のまま実行されるため、スピルされずにメモリ制限に達する可能性があります。スピル後、結合は Grace Hash Join として継続されます。ただし、クエリプランで左側ストリームの行順序が必要な場合は、部分マージ結合として継続されます (`max_bytes_before_external_join` を参照)。
 
 たとえば `0.6` に設定すると、`JOIN` は実行開始時に、右側のハッシュテーブルに対して利用可能メモリ (server/user/merges 用) の `60%` まで使用できます。その後はディスクへのスピルが開始されます。
 

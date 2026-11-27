@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/resolveStorages.h>
@@ -62,7 +63,7 @@ QueryPlanAndSets::QueryPlanAndSets(QueryPlanAndSets &&) noexcept = default;
 struct QueryPlanAndSets::Set
 {
     CityHash_v1_0_2::uint128 hash;
-    std::list<ColumnSet *> columns;
+    ListWithMemoryTracking<ColumnSet *> columns;
 };
 struct QueryPlanAndSets::SetFromStorage : public QueryPlanAndSets::Set
 {
@@ -278,7 +279,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
     return res;
 }
 
-static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets, const ContextPtr & context)
+static void makeSetsFromStorage(ListWithMemoryTracking<QueryPlanAndSets::SetFromStorage> sets, const ContextPtr & context)
 {
     for (auto & set : sets)
     {
@@ -299,7 +300,7 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
     }
 }
 
-static void makeSetsFromTuple(std::list<QueryPlanAndSets::SetFromTuple> sets, const ContextPtr & context)
+static void makeSetsFromTuple(ListWithMemoryTracking<QueryPlanAndSets::SetFromTuple> sets, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
     const FutureSetSettings set_settings(settings);
@@ -312,7 +313,7 @@ static void makeSetsFromTuple(std::list<QueryPlanAndSets::SetFromTuple> sets, co
     }
 }
 
-static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets::SetFromSubquery> sets, const ContextPtr & context)
+static void makeSetsFromSubqueries(QueryPlan & plan, ListWithMemoryTracking<QueryPlanAndSets::SetFromSubquery> sets, const ContextPtr & context)
 {
     if (sets.empty())
         return;

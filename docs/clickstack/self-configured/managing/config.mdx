@@ -7,7 +7,6 @@ doc_type: 'reference'
 sidebarTitle: 'Configuration options'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 
 <Note>
 This page covers **self-managed ClickHouse Observability**. For the recommended fully managed experience, see the documentation [here](/clickstack/observability/managing/config).
@@ -28,7 +27,15 @@ The UI relies on the user defining a source for each of the Observability data t
 
 Open **Team Settings → Data → Sources** to configure a source. Select **Configure Optional Fields** to access additional settings, as highlighted below for logs:
 
-<Image img="/images/clickstack/source-settings-optional-fields.png" alt="Logs source settings with Configure Optional Fields highlighted" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Logs source settings with Configure Optional Fields highlighted](/images/clickstack/source-settings-optional-fields.png)
+
+</Frame>
+
+</div>
 
 Each source needs a table and column mappings that allow the UI to query its data. OTel metric sources use separate tables for each metric type; select the tables containing the metrics you collect.
 
@@ -197,15 +204,39 @@ Each attribute is configured with the following settings:
 
 For example, this trace source has been configured with a Highlighted Attribute and a Highlighted Trace Attribute:
 
-<Image img="/images/clickstack/highlighted-attributes-config.png" alt="Highlighted Attributes and Highlighted Trace Attributes configuration" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Highlighted Attributes and Highlighted Trace Attributes configuration](/images/clickstack/highlighted-attributes-config.png)
+
+</Frame>
+
+</div>
 
 These attributes are displayed in the side panel after clicking on a log or span:
 
-<Image img="/images/clickstack/highlighted-attributes-trace.png" alt="Trace view showing DB Latency on the selected span and the clickpy_link above the waterfall" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Trace view showing DB Latency on the selected span and the clickpy_link above the waterfall](/images/clickstack/highlighted-attributes-trace.png)
+
+</Frame>
+
+</div>
 
 Clicking on an attribute provides options for using the attribute as a search value. If the optional Lucene expression is provided in the attribute configuration, then the Lucene expression will be used for the search instead of the SQL expression.
 
-<Image img="/images/clickstack/highlighted-attributes-search.png" alt="DB Latency attribute menu showing Add to Search and Search This Value" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![DB Latency attribute menu showing Add to Search and Search This Value](/images/clickstack/highlighted-attributes-search.png)
+
+</Frame>
+
+</div>
 
 ### Correlated sources {#correlated-sources}
 
@@ -220,7 +251,15 @@ Setting these correlations enables several features. For example, the UI can ren
 
 For example, below is the Logs source configured with correlated sources:
 
-<Image img="/images/clickstack/correlated-sources.png" alt="Correlated metric and trace sources with TraceId and SpanId expressions" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Correlated metric and trace sources with TraceId and SpanId expressions](/images/clickstack/correlated-sources.png)
+
+</Frame>
+
+</div>
 
 ## OpenTelemetry collector {#otel-collector}
 
