@@ -1576,7 +1576,7 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
             }
             else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
             {
-                size_t j = array_size + index;
+                size_t j = array_size - common::negateIgnoreOverflow(static_cast<size_t>(index));
                 insert_value(j);
                 builder.update(j);
             }
