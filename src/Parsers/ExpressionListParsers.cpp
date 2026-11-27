@@ -3657,13 +3657,16 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
                     /// General form: lambda `_a -> argument OP _a` wrapped in
                     /// `arrayExists` (for `SOME`) or `arrayAll` (for `ALL`). Walk
                     /// `argument` to find a lambda variable name that does not
-                    /// collide with any identifier it references (otherwise the
-                    /// lambda parameter would shadow that identifier).
+                    /// collide with any identifier it references or alias it defines
+                    /// (otherwise the lambda parameter would shadow the identifier
+                    /// or conflict with the alias).
                     std::unordered_set<String> used_identifiers;
                     std::function<void(const IAST *)> collect_identifiers = [&](const IAST * node)
                     {
                         if (!node)
                             return;
+                        if (auto alias = node->tryGetAlias(); !alias.empty())
+                            used_identifiers.insert(alias);
                         if (const auto * ident = node->as<ASTIdentifier>())
                         {
                             /// Record the full name and every part. A compound identifier
