@@ -1434,6 +1434,25 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             if (!properties.columns.hasPhysical(name))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot set TTL for {} column {}: it is not stored",
                     toString(properties.columns.get(name).default_desc.kind), backQuote(name));
+
+        /// The inner tables of a `TimeSeries` table are created from these declarations by internal CREATEs.
+        if (create.targets)
+        {
+            for (const auto & target : create.targets->targets)
+            {
+                const auto * inner_columns = target.inner_columns ? target.inner_columns->as<ASTColumns>() : nullptr;
+                if (!inner_columns || !inner_columns->columns)
+                    continue;
+                for (const auto & child : inner_columns->columns->children)
+                {
+                    const auto & column = child->as<ASTColumnDeclaration &>();
+                    if (column.getTTL()
+                        && (column.default_specifier == ColumnDefaultSpecifier::Alias || column.default_specifier == ColumnDefaultSpecifier::Ephemeral))
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot set TTL for {} column {}: it is not stored",
+                            toString(column.default_specifier), backQuote(column.name));
+                }
+            }
+        }
     }
 
     ASTPtr new_columns = formatColumns(properties.columns);

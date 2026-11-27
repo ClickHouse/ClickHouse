@@ -13,6 +13,9 @@ ENGINE = MergeTree(dt, id, 8192); -- { serverError ILLEGAL_COLUMN }
 CREATE TABLE t_function (id UInt64, dt Date, al UInt64 ALIAS id TTL dt + INTERVAL 1 MONTH) AS null(); -- { serverError ILLEGAL_COLUMN }
 CREATE MATERIALIZED VIEW t_mv (id UInt64, dt Date, al UInt64 ALIAS id TTL dt + INTERVAL 1 MONTH) ENGINE = MergeTree ORDER BY id
 AS SELECT 1 AS id, toDate('2000-01-01') AS dt; -- { serverError ILLEGAL_COLUMN }
+SET enable_time_series_table = 1;
+CREATE TABLE t_time_series ENGINE = TimeSeries TAGS INNER COLUMNS (d Date, x UInt64, a UInt64 ALIAS x TTL d + INTERVAL 1 MONTH); -- { serverError ILLEGAL_COLUMN }
+CREATE TABLE t_time_series ENGINE = TimeSeries TAGS INNER COLUMNS (d Date, e UInt64 EPHEMERAL 0 TTL d + INTERVAL 1 MONTH); -- { serverError ILLEGAL_COLUMN }
 
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (id UInt64, dt Date, arr Array(UInt64) TTL dt + INTERVAL 1 MONTH, s String TTL dt + INTERVAL 1 MONTH,
