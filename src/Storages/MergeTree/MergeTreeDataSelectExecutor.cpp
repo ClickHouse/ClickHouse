@@ -1315,12 +1315,39 @@ private:
                 if (functions_with_pattern.contains(name))
                     result.safe = result.safe && isPatternValid(node);
                 else
-                    result.safe = result.safe && safe_functions.contains(name);
+                    result.safe = result.safe && safe_functions.contains(name) && !canThrowOnArguments(node);
             }
         }
 
         visited[&node] = result;
         return result;
+    }
+
+    static DataTypesWithConstInfo getArgumentTypes(const ActionsDAG::Node & node)
+    {
+        DataTypesWithConstInfo arguments;
+        arguments.reserve(node.children.size());
+        for (const auto * child : node.children)
+            arguments.push_back({child->result_type, child->column && isColumnConst(*child->column),
+                child->column ? typeid_cast<const ColumnConst *>(child->column.get()) : nullptr});
+        return arguments;
+    }
+
+    /// The name of a function is not enough: whether it can throw depends on the types of its arguments.
+    /// For example, a comparison of `UInt64` with `Decimal` converts the number and throws `DECIMAL_OVERFLOW`
+    /// if it does not fit, and a comparison of a date with a string parses the string.
+    /// The comparisons always describe it. The other functions of the list are trusted by name
+    /// unless they say that they can throw on these arguments.
+    static bool canThrowOnArguments(const ActionsDAG::Node & node)
+    {
+        const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get());
+        if (!adaptor)
+            return comparison_functions.contains(node.function_base->getName());
+
+        const auto can_throw = adaptor->getFunction()->canThrowIfKnown(getArgumentTypes(node));
+        if (comparison_functions.contains(node.function_base->getName()))
+            return can_throw.value_or(true);
+        return can_throw.value_or(false);
     }
 
     /// The pattern is compiled and can be invalid, so it must be a constant that is known to compile.
@@ -1339,10 +1366,7 @@ private:
         /// `like` and similar describe it themselves.
         if (node.function_base->getName() != "match")
         {
-            DataTypesWithConstInfo arguments;
-            arguments.reserve(node.children.size());
-            for (const auto * child : node.children)
-                arguments.push_back({child->result_type, child->column && isColumnConst(*child->column)});
+            auto arguments = getArgumentTypes(node);
             arguments[1].column = pattern;
             return !node.function_base->canThrow(arguments);
         }
@@ -1368,6 +1392,11 @@ private:
         "lower", "upper", "lowerUTF8", "upperUTF8",
         "isNull", "isNotNull", "coalesce", "ifNull", "assumeNotNull", "toLowCardinality", "materialize", "identity",
         "and", "or", "not", "xor", "indexHint",
+    };
+
+    /// Safe only for the argument types that are compared without a conversion, see `comparisonCanThrow`.
+    static inline const std::unordered_set<std::string_view> comparison_functions = {
+        "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
     };
 
     /// Safe if the pattern is a valid constant.
