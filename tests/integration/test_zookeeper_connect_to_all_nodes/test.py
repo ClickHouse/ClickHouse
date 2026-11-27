@@ -36,11 +36,17 @@ def started_cluster():
 
 
 def set_zookeeper_config(
-    hosts, connect_to_all_nodes=True, load_balancing="in_order", zones=None, **settings
+    hosts,
+    connect_to_all_nodes=True,
+    load_balancing="in_order",
+    zones=None,
+    reload=True,
+    **settings,
 ):
     """Every config but one uses `in_order` with keeper1 first, so only a metric of the policy can choose another node.
     `connect_to_all_nodes=False` omits the key, so that only a non-default policy can turn the mode on.
-    The default wait is long: with every node up, a round ends as soon as all of them answered."""
+    The default wait is long: with every node up, a round ends as soon as all of them answered.
+    `reload=False` only writes the config."""
     zones = zones or {}
     nodes = "".join(
         f"<node><host>{host}</host><port>9181</port>"
@@ -58,6 +64,8 @@ def set_zookeeper_config(
         f"{extra}"
         "</zookeeper></clickhouse>",
     )
+    if not reload:
+        return
     node.query("SYSTEM RELOAD CONFIG")
     # The next query starts a new session and chooses a node again, even if the config did not change.
     node.query("SYSTEM RECONNECT ZOOKEEPER")
@@ -134,6 +142,16 @@ def test_renewal_keeps_cluster():
         for keeper in [keeper1, keeper2, keeper3]:
             pm.partition_instances(node, keeper)
         node.query("SYSTEM RECONNECT ZOOKEEPER")
+        assert_error_with_retry(
+            node, CHECK_QUERY_ONCE, "shares no server with the cluster of the previous session"
+        )
+
+        # A reload that changes only a setting replaces the client, which keeps to the cluster: the nodes did not change.
+        # The reload itself fails on the refusal, unless it found a connection attempt in flight and deferred the new client.
+        set_zookeeper_config(
+            CLUSTER_A + ["node_b"], connect_to_all_nodes_wait_ms=1001, reload=False
+        )
+        node.query_and_get_answer_with_error("SYSTEM RELOAD CONFIG")
         assert_error_with_retry(
             node, CHECK_QUERY_ONCE, "shares no server with the cluster of the previous session"
         )

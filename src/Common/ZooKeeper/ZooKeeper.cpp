@@ -43,6 +43,7 @@
 #include <random>
 #include <ranges>
 #include <set>
+#include <unordered_map>
 #include <vector>
 
 #include <fmt/ranges.h>
@@ -204,13 +205,28 @@ namespace
                 fmt::join(rhs, ", "));
     }
 
-    /// The membership may change by reconfiguration between two sessions, so a later session has to share a server only.
-    void checkSharesServer(const ShuffleHost & node, const ClusterMembers & members, const String & accepted_cluster_config)
+    struct AcceptedCluster
     {
-        if (accepted_cluster_config.empty())
-            return;
+        Strings hosts;
+        ClusterMembers members;
+    };
 
-        const ClusterMembers accepted = getClusterMembers(accepted_cluster_config);
+    /// The cluster each client accepted, by `zookeeper_name`: it outlives the client, while the configured hosts stay the same.
+    std::mutex accepted_clusters_mutex;
+    std::unordered_map<String, AcceptedCluster> accepted_clusters TSA_GUARDED_BY(accepted_clusters_mutex);
+
+    /// The membership may change by reconfiguration between two sessions, so a later session has to share a server only.
+    void checkSharesServer(const ZooKeeperArgs & args, const ShuffleHost & node, const ClusterMembers & members)
+    {
+        ClusterMembers accepted;
+        {
+            std::lock_guard lock(accepted_clusters_mutex);
+            auto it = accepted_clusters.find(args.zookeeper_name);
+            if (it == accepted_clusters.end() || it->second.hosts != args.hosts)
+                return;
+            accepted = it->second.members;
+        }
+
         if (std::ranges::none_of(members, [&](const String & member) { return accepted.contains(member); }))
             throw KeeperException(
                 Coordination::Error::ZCONNECTIONLOSS,
@@ -440,7 +456,7 @@ std::unique_ptr<Coordination::IKeeper> ZooKeeper::connectToAllNodes(ShuffleHosts
         throw KeeperException(
             Coordination::Error::ZCONNECTIONLOSS, "All connection tries failed while connecting to ZooKeeper. nodes: {}", fail_reasons);
 
-    checkSharesServer(*first_node, candidates[first_node->original_index]->members, accepted_cluster_config);
+    checkSharesServer(args, *first_node, candidates[first_node->original_index]->members);
 
     bool availability_zones_detected = false;
     for (size_t i = 0; i < candidates.size(); ++i)
@@ -494,7 +510,10 @@ std::unique_ptr<Coordination::IKeeper> ZooKeeper::connectToAllNodes(ShuffleHosts
             candidate->session->finalize("Another ZooKeeper node was chosen");
 
     chosen.session->enableSessionExpiryNotification();
-    accepted_cluster_config = fmt::format("{}", fmt::join(chosen.members, "\n"));
+    {
+        std::lock_guard lock(accepted_clusters_mutex);
+        accepted_clusters[args.zookeeper_name] = AcceptedCluster{args.hosts, chosen.members};
+    }
 
     LOG_INFO(
         log,
@@ -696,10 +715,8 @@ ZooKeeper::ZooKeeper(
     std::shared_ptr<DB::ZooKeeperLog> zk_log_,
     std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_,
     Strings availability_zones_,
-    String accepted_cluster_config_,
     std::unique_ptr<Coordination::IKeeper> existing_impl)
     : availability_zones(std::move(availability_zones_))
-    , accepted_cluster_config(std::move(accepted_cluster_config_))
     , opentelemetry_start_keeper_trace_probability(calculateOpenTelemetryProbability())
     , zk_log(std::move(zk_log_))
     , aggregated_zookeeper_log(std::move(aggregated_zookeeper_log_))
@@ -1908,8 +1925,7 @@ ZooKeeperPtr ZooKeeper::startNewSession() const
     auto args_copy = args;
     args_copy.last_zxid_seen = impl->getLastZXIDSeen();
 
-    auto res = std::shared_ptr<ZooKeeper>(
-        new ZooKeeper(args_copy, zk_log, aggregated_zookeeper_log, availability_zones, accepted_cluster_config, std::move(optimal_impl)));
+    auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(args_copy, zk_log, aggregated_zookeeper_log, availability_zones, std::move(optimal_impl)));
     res->initSession();
     return res;
 }

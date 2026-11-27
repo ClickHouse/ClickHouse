@@ -237,13 +237,12 @@ class ZooKeeper
         std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
         std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_ = nullptr);
 
-    /// Allows to keep info about availability zones and the cluster when starting a new session
+    /// Allows to keep info about availability zones when starting a new session
     ZooKeeper(
         const ZooKeeperArgs & args_,
         std::shared_ptr<DB::ZooKeeperLog> zk_log_,
         std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_,
         Strings availability_zones_,
-        String accepted_cluster_config_,
         std::unique_ptr<Coordination::IKeeper> existing_impl);
 
     explicit ZooKeeper(std::unique_ptr<Coordination::IKeeper> existing_impl);
@@ -812,9 +811,6 @@ private:
     ZooKeeperArgs args;
 
     Strings availability_zones;
-
-    /// Servers of the cluster this client accepted (with `connect_to_all_nodes`), one per line; kept when starting a new session.
-    String accepted_cluster_config;
 
     /// Probability for starting OpenTelemetry traces for Keeper operations (0.0 = no tracing, 1.0 = trace all)
     const float opentelemetry_start_keeper_trace_probability;

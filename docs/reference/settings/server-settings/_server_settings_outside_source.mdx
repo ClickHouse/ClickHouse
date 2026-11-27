@@ -1952,6 +1952,7 @@ It waits for the first node, and then up to `connect_to_all_nodes_wait_ms` for t
 The nodes that answered must report the same cluster configuration.
 Otherwise ClickHouse refuses to use any of them, and the error names the two nodes.
 A new session must also share at least one server with the cluster of the previous session.
+This also holds after a config reload that keeps the same list of nodes.
 
 Each node must allow the `srvr` four-letter command and report its cluster configuration:
 
