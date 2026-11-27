@@ -545,6 +545,13 @@ public:
 
     struct ActionsForFilterPushDown;
 
+    /// The column of the part of a filter that stays after a push down, if that part has a column of its own.
+    struct RemainingFilterColumn
+    {
+        std::string name;
+        bool remove = true;
+    };
+
     enum class PushDownIndexHints : uint8_t
     {
         All,
@@ -716,7 +723,8 @@ private:
         std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag = nullptr);
 #endif
 
-    bool removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
+    bool removeUnusedConjunctions(
+        NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter, std::optional<RemainingFilterColumn> & remaining_filter_column);
 };
 
 struct ActionsDAG::SplitResult
@@ -740,6 +748,7 @@ struct ActionsDAG::ActionsForFilterPushDown
     bool remove_filter;
     /// Whether the filter becomes const after pushing down expressions
     bool is_filter_const_after_push_down;
+    std::optional<RemainingFilterColumn> remaining_filter_column = {};
 };
 
 struct ActionsDAG::ActionsForJOINFilterPushDown
@@ -750,6 +759,7 @@ struct ActionsDAG::ActionsForJOINFilterPushDown
     bool right_stream_filter_removes_filter;
     /// Whether the filter becomes const after pushing down all expressions
     bool is_filter_const_after_all_push_downs;
+    std::optional<RemainingFilterColumn> remaining_filter_column = {};
 };
 
 class FindOriginalNodeForOutputName

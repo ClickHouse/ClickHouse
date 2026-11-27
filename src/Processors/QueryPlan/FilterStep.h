@@ -49,6 +49,11 @@ public:
     ActionsDAG & getExpression() { return actions_dag; }
     [[nodiscard]] const String & getFilterColumnName() const { return filter_column_name; }
     [[nodiscard]] bool removesFilterColumn() const { return remove_filter_column; }
+    void setFilterColumn(const ActionsDAG::RemainingFilterColumn & column)
+    {
+        filter_column_name = column.name;
+        remove_filter_column = column.remove;
+    }
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
     [[nodiscard]] bool hasConditionForQueryConditionCache() const { return condition.has_value(); }

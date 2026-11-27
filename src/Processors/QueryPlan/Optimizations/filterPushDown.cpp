@@ -184,44 +184,17 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(
     const bool allow_deterministic_functions = !step_changes_the_number_of_rows;
     const bool is_filter_column_const_before = isFilterColumnConst(*filter);
 
-    /// Capture the original constant column value before push-down modifies the expression DAG.
-    ColumnPtr original_filter_const_column;
-    if (is_filter_column_const_before)
-        original_filter_const_column = filter->getOutputHeader()->getByName(filter_column_name).column;
-
     auto result = expression.splitActionsForFilterPushDown(
         filter_column_name, removes_filter, available_inputs, all_inputs, allow_deterministic_functions, index_hints);
-    if (result)
-    {
-        if (is_filter_column_const_before && !result->is_filter_const_after_push_down)
-        {
-            /// The filter column was const before push-down (e.g., AND short-circuits to constant false)
-            /// but became non-const after extracting the constant parts. Restore constness.
-            result->is_filter_const_after_push_down
-                = constifyFilterColumnAfterPushDown(expression, filter_column_name, original_filter_const_column);
-        }
-        else
-        {
-            bool is_filter_const_after = result->is_filter_const_after_push_down;
+    if (!result)
+        return result;
 
-            /// After push-down, the remaining expression may produce a Const filter column
-            /// even though `is_filter_const_after_push_down` is false (that flag is only set
-            /// when ALL conjunctions are pushed down). This happens when the remaining expression
-            /// contains a NULL constant argument — `defaultImplementationForNulls` short-circuits
-            /// to a ColumnConst, e.g. `plus(count(), NULL)` becomes Const(NULL).
-            /// If uncorrected, the Const output header propagates to parent steps (e.g. UnionStep)
-            /// causing a "Block structure mismatch" exception.
-            if (!is_filter_column_const_before && !is_filter_const_after && !removes_filter)
-            {
-                auto test_header = expression.updateHeader(*filter->getInputHeaders().front());
-                const auto * filter_col = test_header.findByName(filter_column_name);
-                if (filter_col && filter_col->column && isColumnConst(*filter_col->column))
-                    is_filter_const_after = true;
-            }
+    /// a kept filter column is not rewritten: the whole filter went down, or the part that stays has its own column
+    if (result->remaining_filter_column)
+        filter->setFilterColumn(*result->remaining_filter_column);
+    else
+        materializeFilterColumnIfNeededAfterPushDown(*filter, is_filter_column_const_before, result->is_filter_const_after_push_down);
 
-            materializeFilterColumnIfNeededAfterPushDown(*filter, is_filter_column_const_before, is_filter_const_after);
-        }
-    }
     return result;
 }
 
@@ -943,7 +916,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         right_stream_only_matched,
         filter_is_always_false);
 
-    if (is_filter_column_const_before && !join_filter_push_down_actions.is_filter_const_after_all_push_downs)
+    if (join_filter_push_down_actions.remaining_filter_column)
+    {
+        /// the column that the query reads did not change
+        filter->setFilterColumn(*join_filter_push_down_actions.remaining_filter_column);
+    }
+    else if (is_filter_column_const_before && !join_filter_push_down_actions.is_filter_const_after_all_push_downs)
     {
         join_filter_push_down_actions.is_filter_const_after_all_push_downs
             = constifyFilterColumnAfterPushDown(filter->getExpression(), filter->getFilterColumnName(), original_filter_const_column);
@@ -1646,6 +1624,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
                 parallel_replicas_local_plan->getOutputHeader()->getColumnsWithTypeAndName());
             if (!pushed)
                 return 0;
+
+            if (pushed->remaining_filter_column)
+                filter->setFilterColumn(*pushed->remaining_filter_column);
 
             String pushed_column = pushed->dag.getOutputs()[pushed->filter_pos]->result_name;
             parallel_replicas_local_plan->addFilter({std::move(pushed->dag), std::move(pushed_column), pushed->remove_filter});

@@ -3989,7 +3989,8 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
         return {};
 
     /// Now, when actions are created, update the current DAG.
-    actions->is_filter_const_after_push_down = removeUnusedConjunctions(std::move(conjunction.rejected), predicate, removes_filter);
+    actions->is_filter_const_after_push_down
+        = removeUnusedConjunctions(std::move(conjunction.rejected), predicate, removes_filter, actions->remaining_filter_column);
 
     return actions;
 }
@@ -4019,7 +4020,8 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
     if (!actions)
         return {};
 
-    actions->is_filter_const_after_push_down = removeUnusedConjunctions(std::move(rejected), predicate, removes_filter);
+    actions->is_filter_const_after_push_down
+        = removeUnusedConjunctions(std::move(rejected), predicate, removes_filter, actions->remaining_filter_column);
 
     return actions;
 }
@@ -4372,12 +4374,14 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         return result;
 
     /// Now, when actions are created, update the current DAG.
-    result.is_filter_const_after_all_push_downs = removeUnusedConjunctions(std::move(rejected_conjunctions), predicate, removes_filter);
+    result.is_filter_const_after_all_push_downs
+        = removeUnusedConjunctions(std::move(rejected_conjunctions), predicate, removes_filter, result.remaining_filter_column);
 
     return result;
 }
 
-bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter)
+bool ActionsDAG::removeUnusedConjunctions(
+    NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter, std::optional<RemainingFilterColumn> & remaining_filter_column)
 {
     bool is_filter_const = false;
     if (rejected_conjunctions.empty())
@@ -4417,56 +4421,33 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
             rejected_is_surviving_and = true;
         }
 
-        /// A surviving `and` already yields 0 or 1, so only a declared type it does not already
-        /// carry needs restoring; by name, because `Bool` equals `UInt8` but prints `true`.
-        const bool needs_type_restoration = !rejected_is_surviving_and
-            || rejected->result_type->getName() != predicate->result_type->getName();
-        DataTypePtr declared_type;
-        if (!removes_filter && needs_type_restoration)
+        if (!removes_filter)
         {
-            if (rejected_is_surviving_and && predicate->result_type->isNullable() && !rejected->result_type->isNullable())
-            {
-                /// A carrier is picked by name, because that makes the choice stable for unordered rejected conjuncts.
-                size_t carrier = 0;
-                for (size_t i = 1; i < new_children.size(); ++i)
-                    if (new_children[i]->result_name > new_children[carrier]->result_name)
-                        carrier = i;
-
-                NodeRawConstPtrs retyped_children = new_children;
-                retyped_children[carrier] = &addBooleanCondition(*retyped_children[carrier], predicate->result_type, nullptr);
-                rejected = &addFunction(func_builder_and, std::move(retyped_children), {});
-            }
-
-            /// `and` reports `Bool` only for an argument that is exactly `Bool`, not `Nullable(Bool)`,
-            /// but `Bool` equals `UInt8`, so the surviving `and` can declare that name itself.
-            if (rejected_is_surviving_and && rejected->result_type->equals(*predicate->result_type))
-                declared_type = predicate->result_type;
-            else
-            {
-                const auto * converted = &addBooleanCondition(*rejected, predicate->result_type, nullptr);
-                rejected_is_surviving_and &= converted == rejected;
-                rejected = converted;
-            }
-        }
-
-        Node node;
-        if (rejected_is_surviving_and)
-        {
-            /// `getConjunctionNodes` descends only through a node that is itself a function `and`, so an
-            /// alias here would hide the whole remainder from a later split of this filter.
-            node = *rejected;
-            node.result_name = predicate->result_name;
-            if (declared_type)
-                node.result_type = declared_type;
+            /// totals are not filtered and need the value of the whole filter, so the part that stays gets its own column
+            const bool is_output = tryFindInOutputs(rejected->result_name);
+            if (!is_output)
+                outputs.push_back(rejected);
+            remaining_filter_column = RemainingFilterColumn{rejected->result_name, !is_output};
         }
         else
         {
-            node.type = ActionType::ALIAS;
-            node.result_name = predicate->result_name;
-            node.result_type = rejected->result_type;
-            node.children = {rejected};
+            Node node;
+            if (rejected_is_surviving_and)
+            {
+                /// `getConjunctionNodes` descends only through a node that is itself a function `and`, so an
+                /// alias here would hide the whole remainder from a later split of this filter.
+                node = *rejected;
+                node.result_name = predicate->result_name;
+            }
+            else
+            {
+                node.type = ActionType::ALIAS;
+                node.result_name = predicate->result_name;
+                node.result_type = rejected->result_type;
+                node.children = {rejected};
+            }
+            *predicate = std::move(node);
         }
-        *predicate = std::move(node);
     }
 
     UnorderedSetWithMemoryTracking<const Node *> used_inputs;
