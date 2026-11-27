@@ -38,8 +38,8 @@ insert into test32 select toDate32('2000-01-01') + number * 400, number from num
 SELECT count() FROM test32 WHERE toDateTime32(d) > toDateTime('2050-01-01 00:00:00');
 SELECT count() FROM test32 WHERE toDateTime32(identity(d)) > toDateTime('2050-01-01 00:00:00');
 
--- A `Date32` range that reaches day 0 wraps at the bottom in a timezone ahead of UTC, in every
--- overflow behaviour, because the day number is inspected before the timezone is applied. There
+-- A `Date32` range that reaches day 0 wraps at the bottom in a timezone ahead of UTC under the
+-- default overflow behaviour (`saturate` gives the epoch, which leaves the window). There
 -- the false claim let an exactly continuous key range answer `count` without reading the rows,
 -- which needs the implicit projection this file disabled above.
 drop table if exists test32z;
