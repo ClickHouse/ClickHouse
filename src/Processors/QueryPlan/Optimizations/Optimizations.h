@@ -354,6 +354,7 @@ using Stack = VectorWithMemoryTracking<Frame>;
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
 /// Register the applied `__applyFilter` conjuncts on the reading step at the top of the stack.
 void collectAppliedJoinRuntimeFilters(const Stack & stack);
+void collectDeliveredJoinRuntimeFilters(QueryPlan::Node & root, const NameSet & delivered_filter_ids);
 void processAndOptimizeTextIndexFunctions(
     const Stack & stack,
     QueryPlan::Nodes & nodes,

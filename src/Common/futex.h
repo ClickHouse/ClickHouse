@@ -104,4 +104,31 @@ inline void futexWakeUpperAll(std::atomic<UInt64> & address)
 
 }
 
+#else
+
+#include <base/types.h>
+
+#include <atomic>
+
+namespace DB
+{
+
+inline void futexWaitFetch(std::atomic<UInt32> & address, UInt32 & value)
+{
+    address.wait(value);
+    value = address.load();
+}
+
+inline void futexWakeOne(std::atomic<UInt32> & address)
+{
+    address.notify_one();
+}
+
+inline void futexWakeAll(std::atomic<UInt32> & address)
+{
+    address.notify_all();
+}
+
+}
+
 #endif
