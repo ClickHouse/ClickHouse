@@ -485,16 +485,14 @@ tryParseDictFunctionCall(const QueryTreeNodePtr & node, const ContextPtr & conte
         /// The `dictGet` comes from the view definition, which may run under the definer's rights
         /// (`SQL SECURITY DEFINER`). After the rewrite the dictionary is read with the invoker's rights,
         /// so skip the optimization if the invoker is not allowed to use the dictionary directly.
-        /// The access is checked before the dictionary is loaded: loading may contact its source or fail,
-        /// and neither must be visible to an invoker without access.
-        /// A missing dictionary is not hidden from an invoker with access: the error propagates, the same as when the view is executed.
+        /// The access is checked without loading the dictionary: loading may contact its source or fail,
+        /// and neither must be visible to an invoker without access. The dictionary is loaded only to build
+        /// the rewrite (see `tryGetDictionaryLookup`), as for a `dictGet` written in the query.
         const String dict_name = info->dict_name_node->getValue().safeGet<String>();
-        const auto & dictionaries_loader = context->getExternalDictionariesLoader();
-        const auto resolved_dict = dictionaries_loader.resolveDictionary(dict_name, context);
+        const auto resolved_dict = context->getExternalDictionariesLoader().resolveDictionary(dict_name, context);
         if (!context->getAccess()->isGranted(
                 AccessType::dictGet, IDictionary::getDatabaseOrNoDatabaseTag(resolved_dict.id), resolved_dict.id.getTableName()))
             return std::nullopt;
-        (void)dictionaries_loader.getDictionary(resolved_dict, context);
 
         const auto & projection_columns = column_definition->source_query_node->getProjectionColumns();
         const auto & projection_nodes = column_definition->source_query_node->getProjection().getNodes();
@@ -946,7 +944,12 @@ class InverseDictionaryLookupVisitor : public InDepthQueryTreeVisitorWithContext
 {
 public:
     using Base = InDepthQueryTreeVisitorWithContext<InverseDictionaryLookupVisitor>;
-    using Base::Base;
+
+    InverseDictionaryLookupVisitor(ContextPtr context, bool only_analyze_)
+        : Base(std::move(context))
+        , only_analyze(only_analyze_)
+    {
+    }
 
     bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
@@ -1564,7 +1567,8 @@ private:
         if (!column_node)
             return true;
 
-        if (query_scopes.empty())
+        /// A query that is only analyzed does not read the source, see the constructor of `InverseDictionaryLookupPass`.
+        if (only_analyze || query_scopes.empty())
             return false;
 
         auto & scope = query_scopes.back();
@@ -1593,6 +1597,7 @@ private:
         return !*scope.current_section_is_shared;
     }
 
+    const bool only_analyze;
     std::vector<QueryScope> query_scopes;
 
     bool isCreateTemporaryTableGranted()
@@ -1613,7 +1618,7 @@ private:
 
 void InverseDictionaryLookupPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    InverseDictionaryLookupVisitor visitor(std::move(context));
+    InverseDictionaryLookupVisitor visitor(std::move(context), only_analyze);
     visitor.visit(query_tree_node);
 }
 

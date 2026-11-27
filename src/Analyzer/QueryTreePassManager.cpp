@@ -333,7 +333,7 @@ void addQueryTreePasses(
     /// and if `OptimizeDateOrDateTimeConverterWithPreimagePass` runs later it rewrites
     /// `toYear(d) = 2024` to a range on raw `d`. After aggregation only `toYear(d)` and
     /// `count()` remain, so the final projection would need `d` that is no longer present.
-    manager.addPass(std::make_unique<InverseDictionaryLookupPass>());
+    manager.addPass(std::make_unique<InverseDictionaryLookupPass>(only_analyze));
     manager.addPass(std::make_unique<OptimizeDateOrDateTimeConverterWithPreimagePass>());
     manager.addPass(std::make_unique<ComparisonTupleEliminationPass>());
 

@@ -27,6 +27,13 @@ namespace DB
 class InverseDictionaryLookupPass final : public IQueryTreePass
 {
 public:
+    /// With `only_analyze` the query is not executed: the columns of views and subqueries are not looked through, as that would
+    /// resolve the definitions of views and load their dictionaries for a query that reads neither (e.g. `CREATE VIEW ... AS SELECT`).
+    explicit InverseDictionaryLookupPass(bool only_analyze_ = false)
+        : only_analyze(only_analyze_)
+    {
+    }
+
     String getName() override { return "InverseDictionaryLookupPass"; }
 
     String getDescription() override
@@ -39,6 +46,8 @@ public:
 
 private:
     void rewriteDictGetEqual(QueryTreeNodePtr & query_tree_node) const;
+
+    const bool only_analyze;
 };
 
 }
