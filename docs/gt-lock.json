@@ -7,42 +7,42 @@
       "versionId": "626f994624b93eb9edf478df58264b0784feb8e8423734cc7c78955f5ed4b4f7",
       "translations": {
         "zh": {
-          "updatedAt": "2026-11-27T18:09:18.861Z",
+          "updatedAt": "2026-11-27T18:24:38.767Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "es": {
-          "updatedAt": "2026-11-27T18:09:18.364Z",
+          "updatedAt": "2026-11-27T18:24:38.347Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "ja": {
-          "updatedAt": "2026-11-27T18:09:18.467Z",
+          "updatedAt": "2026-11-27T18:24:38.433Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "fr": {
-          "updatedAt": "2026-11-27T18:09:19.055Z",
+          "updatedAt": "2026-11-27T18:24:38.932Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "ru": {
-          "updatedAt": "2026-11-27T18:09:18.763Z",
+          "updatedAt": "2026-11-27T18:24:38.683Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "pt-BR": {
-          "updatedAt": "2026-11-27T18:09:18.666Z",
+          "updatedAt": "2026-11-27T18:24:38.601Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "ar": {
-          "updatedAt": "2026-11-27T18:09:18.957Z",
+          "updatedAt": "2026-11-27T18:24:38.847Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "ko": {
-          "updatedAt": "2026-11-27T18:09:18.568Z",
+          "updatedAt": "2026-11-27T18:24:38.519Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         }
@@ -71268,47 +71268,47 @@
     },
     {
       "fileId": "2dec9f0273a6f96dab0638673281086f112fa201b99aebebda20d4f755a6206f",
-      "versionId": "9a81f48249513bc580668ada310e54decdad5c8768d4305bda1ee540a58f8283",
+      "versionId": "2fc673b729f6a0a35e8cfd67c288503fa01523bb136a16a2150bac3bec8ee547",
       "translations": {
-        "pt-BR": {
-          "updatedAt": "2026-11-26T19:40:07.576Z",
-          "fileName": "pt-BR/concepts/features/configuration/server-config/storing-data.mdx",
-          "postProcessHash": "2afd601e178d4432d9a9906726af626321f7a415b25806a5758f2d0f695df279"
-        },
-        "ru": {
-          "updatedAt": "2026-11-26T19:40:07.576Z",
-          "fileName": "ru/concepts/features/configuration/server-config/storing-data.mdx",
-          "postProcessHash": "596cf75a364b400d0ece9ca89b64e31a87dfe8be6f3b7427b11f57c7efb9437a"
-        },
-        "ko": {
-          "updatedAt": "2026-11-26T19:40:07.577Z",
-          "fileName": "ko/concepts/features/configuration/server-config/storing-data.mdx",
-          "postProcessHash": "f2acc90e06fbf1a7feaa62151d003e80cd24ba8afd0fba3f12b35a697992c4b6"
-        },
         "es": {
-          "updatedAt": "2026-11-26T19:40:07.578Z",
+          "updatedAt": "2026-11-27T18:24:40.947Z",
           "fileName": "es/concepts/features/configuration/server-config/storing-data.mdx",
-          "postProcessHash": "70fc1918e708f26f11882897cdc2b391d409e89d7463cd664221620df38ada42"
+          "postProcessHash": "db56b94a7460db864a2cf1afd913a8d16c55b8780b4982d895a67b72e5ea1490"
         },
-        "ar": {
-          "updatedAt": "2026-11-26T19:40:07.578Z",
-          "fileName": "ar/concepts/features/configuration/server-config/storing-data.mdx",
-          "postProcessHash": "394a2a60301860d7e3cd390449a85f54dbdaf66eeb3ab9dfd8e0dba11a91834f"
-        },
-        "ja": {
-          "updatedAt": "2026-11-26T19:40:07.578Z",
-          "fileName": "ja/concepts/features/configuration/server-config/storing-data.mdx",
-          "postProcessHash": "0fc0a051c0a850fee1e7f5d4f7c215bafc36f337a1ced52522044cb0a163a4e2"
+        "pt-BR": {
+          "updatedAt": "2026-11-27T18:24:40.948Z",
+          "fileName": "pt-BR/concepts/features/configuration/server-config/storing-data.mdx",
+          "postProcessHash": "1402b97924587635ae4ff5c45be28de7748c15ca50d9a1d3f7060bb0ccde4c56"
         },
         "zh": {
-          "updatedAt": "2026-11-26T19:40:07.579Z",
+          "updatedAt": "2026-11-27T18:24:40.949Z",
           "fileName": "zh/concepts/features/configuration/server-config/storing-data.mdx",
-          "postProcessHash": "6ae33acc772bc6ac3de2ed3af1962eb92b6a1d845706589d38afee6db60950fd"
+          "postProcessHash": "a5fd3293484a97ef03d96b1b1fbc7a38de8220d71cd10c07007154a9ba1bb5f7"
+        },
+        "ja": {
+          "updatedAt": "2026-11-27T18:24:40.950Z",
+          "fileName": "ja/concepts/features/configuration/server-config/storing-data.mdx",
+          "postProcessHash": "fa00dee9c5da2df17c551707f154f2a5ffd3346fc9e2ebe9a3ac70f65bd81b0e"
+        },
+        "ar": {
+          "updatedAt": "2026-11-27T18:24:40.950Z",
+          "fileName": "ar/concepts/features/configuration/server-config/storing-data.mdx",
+          "postProcessHash": "e4e81fbb41b9a7e5d66427207d1d38a6693f196121e8fd4bb6c09f176450fbc7"
         },
         "fr": {
-          "updatedAt": "2026-11-26T19:40:07.579Z",
+          "updatedAt": "2026-11-27T18:24:40.951Z",
           "fileName": "fr/concepts/features/configuration/server-config/storing-data.mdx",
-          "postProcessHash": "ac931a9aabb56e404ce7d9c25124a7d762329277e76b5216596d1f5da6153c7b"
+          "postProcessHash": "c7c2bcb282eb870a38b63399b61d6c6110931edd3331870af87d70003143f3d1"
+        },
+        "ru": {
+          "updatedAt": "2026-11-27T18:24:40.952Z",
+          "fileName": "ru/concepts/features/configuration/server-config/storing-data.mdx",
+          "postProcessHash": "0b8b60d489e2e8e987fe60802203688a9de8c96a152b474d5ab236a722caa894"
+        },
+        "ko": {
+          "updatedAt": "2026-11-27T18:24:40.953Z",
+          "fileName": "ko/concepts/features/configuration/server-config/storing-data.mdx",
+          "postProcessHash": "0094987d77543d8868e8832b90a63097d69c53b49b287e306340d790bdd8edb2"
         }
       },
       "fileName": "concepts/features/configuration/server-config/storing-data.mdx"
