@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Checks a `GROUP BY` by `String` keys on the device against the CPU over compressed blocks, with the strings' bytes expanded on the device and on the host.
+# Checks a `GROUP BY` by `String` keys on the device against the CPU over compressed blocks, with the strings' bytes expanded on the device.
 # The strings are empty, short and long, so that their bytes do not end where a compressed block
 # does, and there are several parts, so that the groups of the parts merge.
 #
@@ -99,16 +99,13 @@ compare_with_cpu "SELECT s, sum(v) FROM gpu_group_by_strings $WHERE GROUP BY s O
 echo "- compressed"
 
 device_step "SELECT s, sum(v) FROM gpu_group_by_strings GROUP BY s" compressed
-for mode in device host; do
-    SETTINGS="SETTINGS gpu_aggregation_decompression = '$mode'"
-    compare_with_cpu "SELECT s, sum(v), min(i), max(b) FROM gpu_group_by_strings GROUP BY s ORDER BY s $SETTINGS"
-    compare_with_cpu "SELECT s, k, sum(v), max(i) FROM gpu_group_by_strings GROUP BY s, k ORDER BY s, k $SETTINGS"
-    compare_with_cpu "SELECT t, s, min(v) FROM gpu_group_by_strings GROUP BY t, s ORDER BY t, s $SETTINGS"
-    compare_with_cpu "SELECT k, s, sum(i) FROM gpu_group_by_strings GROUP BY k, s ORDER BY k, s $SETTINGS, gpu_aggregation_readers = 3"
-    # Pieces of a part much smaller than the part: the rows of strings wait on the device until the
-    # part ends, and are grouped then.
-    compare_with_cpu "SELECT s, t, sum(v), min(b) FROM gpu_group_by_strings GROUP BY s, t ORDER BY s, t $SETTINGS, gpu_aggregation_batch_bytes = 65536"
-done
+compare_with_cpu "SELECT s, sum(v), min(i), max(b) FROM gpu_group_by_strings GROUP BY s ORDER BY s"
+compare_with_cpu "SELECT s, k, sum(v), max(i) FROM gpu_group_by_strings GROUP BY s, k ORDER BY s, k"
+compare_with_cpu "SELECT t, s, min(v) FROM gpu_group_by_strings GROUP BY t, s ORDER BY t, s"
+compare_with_cpu "SELECT k, s, sum(i) FROM gpu_group_by_strings GROUP BY k, s ORDER BY k, s SETTINGS gpu_aggregation_readers = 3"
+# Pieces of a part much smaller than the part: the rows of strings wait on the device until the
+# part ends, and are grouped then.
+compare_with_cpu "SELECT s, t, sum(v), min(b) FROM gpu_group_by_strings GROUP BY s, t ORDER BY s, t SETTINGS gpu_aggregation_batch_bytes = 65536"
 
 # A sum of a value computed from a column is grouped on the device from the compressed columns it is computed of,
 # and a filter on a column is applied on the device to the compressed columns it reads.
@@ -117,23 +114,17 @@ compare_with_cpu "SELECT s, sum(toFloat64(i)) FROM gpu_group_by_strings GROUP BY
 device_step "SELECT s, sum(v) FROM gpu_group_by_strings WHERE k = 3 GROUP BY s" compressed
 compare_with_cpu "SELECT s, sum(v), count() FROM gpu_group_by_strings WHERE k = 3 GROUP BY s ORDER BY s"
 
-# `device` expands the strings' bytes on the device and `host` does not, as `GPUDecompressionBytes`
-# counts what the device expanded.
-for mode in device host; do
-    query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_${mode}"
-    $CLICKHOUSE_CLIENT "${GPU_SETTINGS[@]}" --query_id "$query_id" --query "
-        SELECT s, sum(v) FROM gpu_group_by_strings GROUP BY s FORMAT Null SETTINGS gpu_aggregation_decompression = '$mode'"
-
-    if [ ${#GPU_SETTINGS[@]} -eq 0 ]; then
-        echo "$mode ok"
-        continue
-    fi
-
+# The strings' bytes are expanded on the device, as `GPUDecompressionBytes` counts what the device expanded.
+query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_device"
+$CLICKHOUSE_CLIENT "${GPU_SETTINGS[@]}" --query_id "$query_id" --query "SELECT s, sum(v) FROM gpu_group_by_strings GROUP BY s FORMAT Null"
+if [ ${#GPU_SETTINGS[@]} -eq 0 ]; then
+    echo "on the device"
+else
     $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
     $CLICKHOUSE_CLIENT --query "
-        SELECT '$mode', if(ProfileEvents['GPUDecompressionBytes'] > 0, 'device', 'host') = if('$mode' = 'device', 'device', 'host') ? 'ok' : 'wrong side'
+        SELECT if(ProfileEvents['GPUDecompressionBytes'] > 0, 'on the device', 'not on the device')
         FROM system.query_log
-        WHERE current_database = currentDatabase() AND query_id = '$query_id' AND type = 'QueryFinish'" | tr '\t' ' '
-done
+        WHERE current_database = currentDatabase() AND query_id = '$query_id' AND type = 'QueryFinish'"
+fi
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE gpu_group_by_strings"

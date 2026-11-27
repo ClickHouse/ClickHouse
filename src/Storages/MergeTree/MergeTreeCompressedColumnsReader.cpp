@@ -20,25 +20,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
-/// What a column of values decompressed on the host asks the consumer room for at a time.
-constexpr size_t piece_bytes = 4UL << 20;
-
-}
-
 struct MergeTreeCompressedColumnsReader::ColumnReader
 {
     ColumnReader(
         const IMergeTreeDataPart & data_part,
         const NameAndTypePair & column,
         const MergeTreeReaderSettings & settings,
-        bool compressed_,
         const MarkRanges & mark_ranges)
         : name(column.name)
         , is_variable(isString(*column.type))
-        , compressed(compressed_)
         , element_size(is_variable ? 1 : column.type->getSizeOfValueInMemory())
         , rows_of_part(data_part.rows_count)
     {
@@ -50,8 +40,7 @@ struct MergeTreeCompressedColumnsReader::ColumnReader
         }
 
         stream = openStream(data_part, column, settings, mark_ranges);
-        expected_bytes = compressed ? data_part.getColumnSize(column.name).data_compressed
-                                    : (is_variable ? data_part.getColumnSize(column.name).data_uncompressed : data_part.rows_count * element_size);
+        expected_bytes = data_part.getColumnSize(column.name).data_compressed;
 
         if (is_variable)
         {
@@ -63,13 +52,10 @@ struct MergeTreeCompressedColumnsReader::ColumnReader
 
     const String name;
     const bool is_variable;
-    /// Whether the stream is read as its compressed blocks, or through the buffer that decompresses them.
-    const bool compressed;
     std::unique_ptr<MergeTreeReaderStream> stream;
     const size_t element_size;
     size_t bytes_read = 0;
-    /// What the consumer is given of the column: its compressed file when it is read compressed, its values otherwise.
-    /// Only sizes what the consumer keeps.
+    /// What the consumer is given of the column, of its compressed file. Only sizes what the consumer keeps.
     size_t expected_bytes = 0;
     size_t given_bytes = 0;
     bool done = false;
@@ -90,8 +76,7 @@ struct MergeTreeCompressedColumnsReader::ColumnReader
     size_t compressed_bytes_of_part = 0;
     const size_t rows_of_part;
 
-    /// From the first block of the range, of its compressed blocks, or from its first row, of the values decompressed
-    /// on the host; the stream reads no further than the end of the range.
+    /// From the first block of the range; the stream reads no further than the end of the range.
     void startRange(const MarkRange & range, size_t num_rows)
     {
         bytes_read = 0;
@@ -100,15 +85,8 @@ struct MergeTreeCompressedColumnsReader::ColumnReader
         range_bytes = num_rows * element_size;
         stream->adjustRightMark(range.end);
         stream->seekToMark(range.begin);
-        if (compressed)
-        {
-            bytes_to_skip = stream->getMark(range.begin).offset_in_decompressed_block;
-            expected_bytes = rows_of_part == 0 ? 0 : compressed_bytes_of_part * num_rows / rows_of_part + 1;
-        }
-        else
-        {
-            expected_bytes = *range_bytes;
-        }
+        bytes_to_skip = stream->getMark(range.begin).offset_in_decompressed_block;
+        expected_bytes = rows_of_part == 0 ? 0 : compressed_bytes_of_part * num_rows / rows_of_part + 1;
     }
 
     /// Reads the next piece of its streams in the background, if it does not already: a read buffer of a remote disk then
@@ -160,7 +138,6 @@ MergeTreeCompressedColumnsReader::MergeTreeCompressedColumnsReader(
     const IMergeTreeDataPart & part_,
     const std::vector<NameAndTypePair> & columns,
     const MergeTreeReaderSettings & settings,
-    bool compressed,
     const MarkRanges & ranges_)
     : part(part_)
     , ranges(ranges_)
@@ -168,7 +145,7 @@ MergeTreeCompressedColumnsReader::MergeTreeCompressedColumnsReader(
 {
     readers.reserve(columns.size());
     for (const auto & column : columns)
-        readers.push_back(std::make_unique<ColumnReader>(part, column, settings, compressed, ranges));
+        readers.push_back(std::make_unique<ColumnReader>(part, column, settings, ranges));
 }
 
 MergeTreeCompressedColumnsReader::~MergeTreeCompressedColumnsReader() = default;
@@ -294,37 +271,6 @@ void MergeTreeCompressedColumnsReader::readSizes(Consumer & consumer, size_t col
 {
     ColumnReader & column = *readers[column_index];
 
-    if (!column.compressed)
-    {
-        const size_t left = column.remainingSizesBytes();
-        if (left == 0)
-        {
-            column.finishSizes();
-            return;
-        }
-        const std::span<char> room = consumer.reserveBytes(column_index, Stream::Sizes, piece_bytes, left);
-        const size_t wanted = std::min(room.size() / sizeof(UInt64) * sizeof(UInt64), left);
-        if (wanted == 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No room for a size of column {} of part {}", column.name, part.name);
-        size_t read = 0;
-        while (read < wanted)
-        {
-            const size_t got = column.sizes_stream->getDataBuffer()->readBig(room.data() + read, wanted - read);
-            if (got == 0)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "The sizes of column {} of part {} ended after {} bytes of {}",
-                    column.name,
-                    part.name,
-                    column.sizes_bytes_read + read,
-                    column.sizes_total);
-            read += got;
-        }
-        consumer.commitBytes(column_index, Stream::Sizes, read);
-        column.sizes_bytes_read += read;
-        return;
-    }
-
     const auto block = column.sizes_stream->readCompressedBlock();
     if (!block)
     {
@@ -352,35 +298,6 @@ bool MergeTreeCompressedColumnsReader::readPiece(Consumer & consumer)
         if (column.readsSizesNext())
         {
             readSizes(consumer, behind);
-        }
-        else if (!column.compressed)
-        {
-            if (column.remainingBytes() == 0)
-            {
-                /// A range ends where its rows do. Of a whole part, every value is given, and the consumer's room holds
-                /// exactly them. Asking for more only to learn that the file has ended would make it grow; a byte past
-                /// the end is counted instead, so the check below reports it.
-                if (!column.range_bytes)
-                {
-                    char past_end;
-                    column.bytes_read += column.stream->getDataBuffer()->readBig(&past_end, 1);
-                }
-                column.finishBytes();
-                return true;
-            }
-
-            const std::span<char> room = consumer.reserveBytes(behind, Stream::Values, piece_bytes, column.remainingBytes());
-            const size_t read = column.stream->getDataBuffer()->readBig(
-                room.data(), column.range_bytes ? std::min(room.size(), column.remainingBytes()) : room.size());
-            consumer.commitBytes(behind, Stream::Values, read);
-            if (read == 0)
-            {
-                column.finishBytes();
-                return true;
-            }
-
-            column.bytes_read += read;
-            column.given_bytes += read;
         }
         else
         {

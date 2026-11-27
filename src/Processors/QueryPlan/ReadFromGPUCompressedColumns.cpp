@@ -27,7 +27,6 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Common/JSONBuilder.h>
 #include <Common/ProfileEvents.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 
 #include <algorithm>
@@ -76,7 +75,6 @@ struct SharedState
     MergeTreeReaderSettings reader_settings = MergeTreeReaderSettings::createFromSettings();
     size_t batch_bytes;
     size_t num_readers = 1;
-    GPUDecompressionMode decompression = GPUDecompressionMode::DEVICE;
     bool collect = false;
     /// The columns read: the keys, the values, then the columns of the filter that are neither, with the element types
     /// the device takes them as, and the positions among them of what the lanes take.
@@ -90,14 +88,6 @@ struct SharedState
 };
 
 using SharedStatePtr = std::shared_ptr<SharedState>;
-
-/// Whether a column of a part is compressed well enough for the device to expand it. Expanding
-/// costs the device about as long per byte as the link takes to carry one, and keeps it from
-/// grouping meanwhile, so a column that compression barely shrinks is cheaper sent whole.
-bool expandsOnDevice(GPUDecompressionMode mode)
-{
-    return mode == GPUDecompressionMode::DEVICE;
-}
 
 GPU::GPUCodec codecOrThrow(UInt8 method, const String & column_name, const IMergeTreeDataPart & part)
 {
@@ -215,21 +205,16 @@ constexpr size_t remote_read_buffer_bytes = 4UL << 20;
 /// for the device leaves it to the others, and few, as each keeps groups of its own.
 constexpr size_t max_lanes = 8;
 
-/// Readers of parts on a local disk whose columns the device expands. A reader and its upload wait for the device at every
-/// batch, and the lanes are as many as the readers, so two leave the device idle: cold TPC-H Q1 over SF100 in ZSTD on an
+/// Readers of parts on a local disk. A reader and its upload wait for the device at every batch, and the lanes are as many as the readers, so two leave the device idle: cold TPC-H Q1 over SF100 in ZSTD on an
 /// A10G took 4.0 s with two readers and 3.1 s with four. Each reader holds a batch on the device, and eight with batches
 /// of 256 MiB ran out of its 24 GB, while more readers of smaller batches were no faster.
-constexpr size_t device_expanding_readers = 4;
+constexpr size_t local_disk_readers = 4;
 
-/// A reader that also expands the columns is bound by the CPU, and a quarter of the cores keep up with the link, where
-/// more of them hold more buffers on both sides of it than they gain.
 size_t automaticReaders(const SharedState & state)
 {
     if (std::ranges::any_of(state.parts, [](const PartToRead & part) { return part.part->isStoredOnRemoteDisk(); }))
         return remote_disk_readers;
-    if (expandsOnDevice(state.decompression))
-        return device_expanding_readers;
-    return std::max<size_t>(2, getNumberOfCPUCoresToUse() / 4);
+    return local_disk_readers;
 }
 
 DataTypes argumentTypesOf(const std::vector<ColumnToReduce> & columns)
@@ -407,17 +392,6 @@ private:
             bytes += kept;
         }
 
-        std::span<char> reserveBytes(size_t column, Stream stream, size_t max_bytes, size_t remaining_bytes) override
-        {
-            return source.stager.reserveRawBytes(column, streamOf(stream), max_bytes, remaining_bytes);
-        }
-
-        void commitBytes(size_t column, Stream stream, size_t committed) override
-        {
-            source.stager.commitRawBytes(column, streamOf(stream), committed);
-            bytes += committed;
-        }
-
         void checkCancelled() override
         {
             if (source.isCancelled())
@@ -455,7 +429,7 @@ private:
             feed->names.push_back(column.name);
 
         auto reader = std::make_unique<MergeTreeCompressedColumnsReader>(
-            part, state->read_columns, state->reader_settings, expandsOnDevice(state->decompression), part_to_read.ranges);
+            part, state->read_columns, state->reader_settings, part_to_read.ranges);
         return OpenPart{.feed = std::move(feed), .reader = std::move(reader)};
     }
 
@@ -736,7 +710,6 @@ ReadFromGPUCompressedColumns::ReadFromGPUCompressedColumns(
     ContextPtr context_,
     size_t batch_bytes_,
     size_t num_readers_,
-    GPUDecompressionMode decompression_,
     bool collect_)
     : ISourceStep(std::move(output_header_))
     , keys(std::move(keys_))
@@ -750,7 +723,6 @@ ReadFromGPUCompressedColumns::ReadFromGPUCompressedColumns(
     , context(std::move(context_))
     , batch_bytes(batch_bytes_)
     , num_readers(num_readers_)
-    , decompression(decompression_)
     , collect(collect_)
 {
     if (collect && (!keys.empty() || !aggregates.empty() || !derived.empty() || columns.empty()))
@@ -784,7 +756,6 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
     state->reader_settings = MergeTreeReaderSettings::createFromContext(context);
     auto & remote_buffer_size = state->reader_settings.read_settings.remote_fs_settings.buffer_size;
     remote_buffer_size = std::max(remote_buffer_size, remote_read_buffer_bytes);
-    state->decompression = decompression;
     state->batch_bytes = batch_bytes;
     state->num_readers = num_readers != 0 ? num_readers : automaticReaders(*state);
     state->collect = collect;

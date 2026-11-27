@@ -8,7 +8,6 @@
 
 #include <memory>
 #include <optional>
-#include <span>
 #include <vector>
 
 namespace DB
@@ -18,8 +17,7 @@ class IMergeTreeDataPart;
 class MergeTreeReaderStream;
 
 /** Reads columns of a wide part by their marks, as `MergeTreeReaderWide` reads them but without the uncompressed cache,
-  * for a consumer that decompresses them elsewhere, such as a GPU: as the compressed blocks they are stored in, or as
-  * the bytes of their values decompressed on the host, a piece at a time.
+  * for a consumer that decompresses them elsewhere, such as a GPU: as the compressed blocks they are stored in.
   *
   * The columns are read together, always the one that is furthest behind in rows, so that the consumer has them within
   * a block of each other and what waits there for the others is at most a block per column.
@@ -52,22 +50,16 @@ public:
             size_t column, Stream stream, const CompressedReadBufferBase::CompressedBlock & block, size_t skipped, size_t kept, size_t remaining_bytes)
             = 0;
 
-        /// Room for at most `max_bytes` decompressed bytes of a stream of column `column`, of `remaining_bytes` left of
-        /// it, of which `commitBytes` then tells how many were written.
-        virtual std::span<char> reserveBytes(size_t column, Stream stream, size_t max_bytes, size_t remaining_bytes) = 0;
-        virtual void commitBytes(size_t column, Stream stream, size_t bytes) = 0;
 
         /// Between pieces, for the consumer to stop the read by throwing.
         virtual void checkCancelled() = 0;
     };
 
-    /// Reads the `ranges` of `part`, every row where there are none, as the compressed blocks of its columns when
-    /// `compressed`, and as their decompressed bytes otherwise.
+    /// Reads the `ranges` of `part`, every row where there are none, as the compressed blocks of its columns.
     MergeTreeCompressedColumnsReader(
         const IMergeTreeDataPart & part,
         const std::vector<NameAndTypePair> & columns,
         const MergeTreeReaderSettings & settings,
-        bool compressed,
         const MarkRanges & ranges);
 
     ~MergeTreeCompressedColumnsReader();
@@ -75,7 +67,7 @@ public:
     /// Reads every column to `consumer`, range after range, and returns the number of rows read.
     size_t read(Consumer & consumer);
 
-    /// Reads the next piece to `consumer`: a compressed block or some bytes of the column furthest behind. Returns false
+    /// Reads the next piece to `consumer`: a compressed block of the column furthest behind. Returns false
     /// once every range is read; `rowsRead` is then the number of rows read.
     bool readNext(Consumer & consumer);
     size_t rowsRead() const { return rows_read; }

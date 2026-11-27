@@ -81,25 +81,23 @@ function check_plan()
 check_plan "SELECT x, sum(k) FROM gpu_ranges WHERE k < 50000 GROUP BY x"
 check_plan "SELECT x, sum(k) FROM gpu_ranges WHERE v < 50000 GROUP BY x"
 
-for mode in device host; do
-    for on_data_read in 0 1; do
-        settings="gpu_aggregation_decompression = '$mode', use_skip_indexes_on_data_read = $on_data_read"
-        echo "- $mode, use_skip_indexes_on_data_read = $on_data_read"
+for on_data_read in 0 1; do
+    settings="use_skip_indexes_on_data_read = $on_data_read"
+    echo "- use_skip_indexes_on_data_read = $on_data_read"
 
-        # By the primary key: one range per part, two, and one that starts and ends inside a block.
-        compare_with_cpu "SELECT x, sum(k), count(), max(f), min(b), max(d) FROM gpu_ranges WHERE k < 50000 GROUP BY x ORDER BY x" "$settings"
-        compare_with_cpu "SELECT x, sum(k), count() FROM gpu_ranges WHERE k < 30000 OR k > 470000 GROUP BY x ORDER BY x" "$settings"
-        compare_with_cpu "SELECT b, sum(f), count() FROM gpu_ranges WHERE k >= 123456 AND k < 234567 GROUP BY b ORDER BY b" "$settings"
+    # By the primary key: one range per part, two, and one that starts and ends inside a block.
+    compare_with_cpu "SELECT x, sum(k), count(), max(f), min(b), max(d) FROM gpu_ranges WHERE k < 50000 GROUP BY x ORDER BY x" "$settings"
+    compare_with_cpu "SELECT x, sum(k), count() FROM gpu_ranges WHERE k < 30000 OR k > 470000 GROUP BY x ORDER BY x" "$settings"
+    compare_with_cpu "SELECT b, sum(f), count() FROM gpu_ranges WHERE k >= 123456 AND k < 234567 GROUP BY b ORDER BY b" "$settings"
 
-        # By the skip index, alone and with the primary key, and with a filter left to the device.
-        compare_with_cpu "SELECT x, sum(k), count() FROM gpu_ranges WHERE v < 50000 GROUP BY x ORDER BY x" "$settings"
-        compare_with_cpu "SELECT b, sum(v), count() FROM gpu_ranges WHERE v >= 200000 AND v < 210000 AND k < 400000 GROUP BY b ORDER BY b" "$settings"
-        compare_with_cpu "SELECT x, sum(k), count() FROM gpu_ranges WHERE k < 300000 AND b = 3 GROUP BY x ORDER BY x" "$settings"
+    # By the skip index, alone and with the primary key, and with a filter left to the device.
+    compare_with_cpu "SELECT x, sum(k), count() FROM gpu_ranges WHERE v < 50000 GROUP BY x ORDER BY x" "$settings"
+    compare_with_cpu "SELECT b, sum(v), count() FROM gpu_ranges WHERE v >= 200000 AND v < 210000 AND k < 400000 GROUP BY b ORDER BY b" "$settings"
+    compare_with_cpu "SELECT x, sum(k), count() FROM gpu_ranges WHERE k < 300000 AND b = 3 GROUP BY x ORDER BY x" "$settings"
 
-        # Small batches from several readers.
-        compare_with_cpu "SELECT x, sum(k), count() FROM gpu_ranges WHERE k < 30000 OR k > 470000 GROUP BY x ORDER BY x" \
-            "$settings, gpu_aggregation_batch_bytes = 65536, gpu_aggregation_readers = 3"
-    done
+    # Small batches from several readers.
+    compare_with_cpu "SELECT x, sum(k), count() FROM gpu_ranges WHERE k < 30000 OR k > 470000 GROUP BY x ORDER BY x" \
+        "$settings, gpu_aggregation_batch_bytes = 65536, gpu_aggregation_readers = 3"
 done
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE gpu_ranges"

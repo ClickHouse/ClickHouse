@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Checks a `min` and a `max` of `String` columns on the device against the CPU, without keys and grouped, over
-# compressed blocks, with the strings expanded on the device and on the host.
+# compressed blocks, with the strings expanded on the device.
 # Expanded on the device, both streams of a column - its bytes and the sizes of its rows - go there compressed, and
 # the device turns the sizes into offsets; the blocks are small and of an odd size, so that the two streams end in
 # the middle of each other's rows and a block ends in the middle of a size. The strings are empty, short, longer
@@ -115,38 +115,29 @@ echo "- compressed"
 
 device_step "SELECT min(s), max(t) FROM gpu_min_max_strings" compressed
 device_step "SELECT k, min(s) FROM gpu_min_max_strings GROUP BY k" compressed
-for mode in device host; do
-    SETTINGS="SETTINGS gpu_aggregation_decompression = '$mode'"
-    compare_with_cpu "SELECT min(s), max(t) FROM gpu_min_max_strings $SETTINGS"
-    compare_with_cpu "SELECT max(s), min(t), sum(v), max(k) FROM gpu_min_max_strings $SETTINGS"
-    compare_with_cpu "SELECT k, min(s), max(t) FROM gpu_min_max_strings GROUP BY k ORDER BY k $SETTINGS"
-    compare_with_cpu "SELECT t, min(s), sum(v) FROM gpu_min_max_strings GROUP BY t ORDER BY t $SETTINGS, gpu_aggregation_readers = 3"
-    # Batches small enough that a batch ends between the sizes and the bytes of a row, which waits for the next.
-    compare_with_cpu "SELECT max(s), min(t) FROM gpu_min_max_strings $SETTINGS, gpu_aggregation_batch_bytes = 65536"
-    compare_with_cpu "SELECT k, max(s) FROM gpu_min_max_strings GROUP BY k ORDER BY k $SETTINGS, gpu_aggregation_batch_bytes = 65536"
-done
+compare_with_cpu "SELECT min(s), max(t) FROM gpu_min_max_strings"
+compare_with_cpu "SELECT max(s), min(t), sum(v), max(k) FROM gpu_min_max_strings"
+compare_with_cpu "SELECT k, min(s), max(t) FROM gpu_min_max_strings GROUP BY k ORDER BY k"
+compare_with_cpu "SELECT t, min(s), sum(v) FROM gpu_min_max_strings GROUP BY t ORDER BY t SETTINGS gpu_aggregation_readers = 3"
+# Batches small enough that a batch ends between the sizes and the bytes of a row, which waits for the next.
+compare_with_cpu "SELECT max(s), min(t) FROM gpu_min_max_strings SETTINGS gpu_aggregation_batch_bytes = 65536"
+compare_with_cpu "SELECT k, max(s) FROM gpu_min_max_strings GROUP BY k ORDER BY k SETTINGS gpu_aggregation_batch_bytes = 65536"
 
 # A read of strings with a `PREWHERE`, which the device evaluates, is aggregated from compressed blocks too.
 device_step "SELECT min(s) FROM gpu_min_max_strings WHERE k = 3" compressed
 compare_with_cpu "SELECT min(s), max(t) FROM gpu_min_max_strings WHERE k = 3"
 
-# Without keys and with `device`, the strings' bytes and sizes are both expanded on the device, and the host
-# decompresses no block at all; with `host`, it decompresses them all.
-for mode in device host; do
-    query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_${mode}"
-    $CLICKHOUSE_CLIENT "${GPU_SETTINGS[@]}" --query_id "$query_id" --query "
-        SELECT min(s), max(t) FROM gpu_min_max_strings FORMAT Null SETTINGS gpu_aggregation_decompression = '$mode'"
-
-    if [ ${#GPU_SETTINGS[@]} -eq 0 ]; then
-        echo "$mode ok"
-        continue
-    fi
-
+# Without keys, the strings' bytes and sizes are both expanded on the device, and the host decompresses no block at all.
+query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_device"
+$CLICKHOUSE_CLIENT "${GPU_SETTINGS[@]}" --query_id "$query_id" --query "SELECT min(s), max(t) FROM gpu_min_max_strings FORMAT Null"
+if [ ${#GPU_SETTINGS[@]} -eq 0 ]; then
+    echo "on the device"
+else
     $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
     $CLICKHOUSE_CLIENT --query "
-        SELECT '$mode', (ProfileEvents['CompressedReadBufferBlocks'] = 0) = ('$mode' = 'device') ? 'ok' : 'wrong side'
+        SELECT if(ProfileEvents['CompressedReadBufferBlocks'] = 0, 'on the device', 'on the host')
         FROM system.query_log
-        WHERE current_database = currentDatabase() AND query_id = '$query_id' AND type = 'QueryFinish'" | tr '\t' ' '
-done
+        WHERE current_database = currentDatabase() AND query_id = '$query_id' AND type = 'QueryFinish'"
+fi
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE gpu_min_max_strings"

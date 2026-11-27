@@ -11968,29 +11968,16 @@ are sent, expanded and grouped as it reads them, with as many grouping lanes on 
 are readers, up to eight. A reader waits for the device at every batch, so two readers leave it
 idle: cold TPC-H Q1 over SF100 in ZSTD on an A10G took 4.0 s with two readers and 3.1 s with four.
 Each reader holds a batch on the device, and eight readers of batches of 256 MiB ran out of its
-24 GB, while more readers of smaller batches were no faster. So with 0 the query gets four readers
-when the columns are expanded on the device.
+24 GB, while more readers of smaller batches were no faster. So with 0 the query gets four readers.
 
-With `gpu_aggregation_decompression = 'host'` the reading threads expand the columns as well, which
-is work per byte rather than per block, and the query gets a quarter of the CPU cores, at least
-two. Parts on a remote disk, such as S3, get 32 readers either way: a reader there waits for
+Parts on a remote disk, such as S3, get 32 readers: a reader there waits for
 responses most of the time, and over S3 TPC-H Q6 took 5.7 s with eight readers, 2.6 s with sixteen
 and 2.1 s with 32.
 
 Each reader holds a batch of compressed blocks in pinned memory and its expanded columns on the
 device while they are grouped, so more readers take more of both.
 )", EXPERIMENTAL, \
-        {"26.11", 0, 0, "New experimental setting, the number of threads that read parts for a GPU aggregation over compressed blocks; 0 chooses by whether the columns are expanded on the device or on the host."}) \
-    DECLARE(GPUDecompressionMode, gpu_aggregation_decompression, GPUDecompressionMode::DEVICE, R"(
-Who expands a column of a part - the device or the CPU - in an aggregation that
-`allow_experimental_gpu_aggregation` runs over compressed blocks (`ReadFromGPUCompressedColumns`).
-
-Possible values:
-
-- `device` - Every column is expanded on the device: the compressed blocks go over the link as they are stored.
-- `host` - Every column is expanded on the CPU by the reading threads and sent whole.
-)", EXPERIMENTAL, \
-        {"26.11", "device", "device", "New experimental setting, whether a GPU aggregation over compressed blocks expands the columns on the device or on the host."}) \
+        {"26.11", 0, 0, "New experimental setting, the number of threads that read parts for a GPU aggregation over compressed blocks; 0 chooses by whether the parts are on a remote disk."}) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

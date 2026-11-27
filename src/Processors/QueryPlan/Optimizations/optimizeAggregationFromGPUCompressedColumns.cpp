@@ -66,7 +66,6 @@ namespace Setting
     extern const SettingsFloat gpu_filtered_read_max_selectivity;
     extern const SettingsUInt64 gpu_aggregation_batch_bytes;
     extern const SettingsUInt64 gpu_aggregation_readers;
-    extern const SettingsGPUDecompressionMode gpu_aggregation_decompression;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsInt64 max_partitions_to_read;
     extern const SettingsUInt64 max_rows_to_read;
@@ -942,8 +941,7 @@ bool optimizeAggregationFromGPUCompressedColumns(
         reading->getStorageSnapshot(),
         context,
         context->getSettingsRef()[Setting::gpu_aggregation_batch_bytes],
-        context->getSettingsRef()[Setting::gpu_aggregation_readers],
-        context->getSettingsRef()[Setting::gpu_aggregation_decompression]);
+        context->getSettingsRef()[Setting::gpu_aggregation_readers]);
     step->setStepDescription("Compressed columns decompressed and grouped on the device, one row per group", settings.max_step_description_length);
 
     node.step = std::move(step);
@@ -1222,7 +1220,6 @@ bool optimizeReadFilteredOnGPU(QueryPlan::Node & node, QueryPlan::Nodes & nodes,
         context,
         context->getSettingsRef()[Setting::gpu_aggregation_batch_bytes],
         context->getSettingsRef()[Setting::gpu_aggregation_readers],
-        context->getSettingsRef()[Setting::gpu_aggregation_decompression],
         /*collect_=*/true);
     source_node.step->setStepDescription("Compressed columns decompressed and filtered on the device", settings.max_step_description_length);
 

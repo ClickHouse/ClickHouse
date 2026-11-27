@@ -7,7 +7,6 @@
 #include <GPU/GPUExpressionCompiler.h>
 #include <GPU/GPUTypes.cuh>
 
-#include <Core/SettingsEnums.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -100,7 +99,6 @@ public:
         ContextPtr context_,
         size_t batch_bytes_,
         size_t num_readers_,
-        GPUDecompressionMode decompression_,
         bool collect_ = false);
 
     String getName() const override { return "ReadFromGPUCompressedColumns"; }
@@ -133,8 +131,6 @@ private:
     size_t batch_bytes;
     /// Threads that read the parts, each a part at a time.
     size_t num_readers;
-    /// Who expands a column of a part: see `gpu_aggregation_decompression`.
-    GPUDecompressionMode decompression;
     /// The rows the filter keeps are sent back, of `columns`, rather than aggregated.
     bool collect;
 };
