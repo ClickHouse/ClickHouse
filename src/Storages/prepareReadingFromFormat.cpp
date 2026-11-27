@@ -183,6 +183,30 @@ ReadFromFormatInfo prepareReadingFromFormat(
         /// If format doesn't support reading subset of columns, read all columns.
         /// Requested columns/subcolumns will be extracted after reading.
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_in_data_file.getNames());
+
+        /// Unrequested columns are dropped after reading: keep only the defaults of requested columns and of the columns they read.
+        NameSet needed;
+        Names to_visit;
+        for (const auto & column : info.requested_columns)
+            if (needed.insert(column.getNameInStorage()).second)
+                to_visit.push_back(column.getNameInStorage());
+        while (!to_visit.empty())
+        {
+            auto column_default = info.columns_description.getDefault(to_visit.back());
+            to_visit.pop_back();
+            if (!column_default)
+                continue;
+            RequiredSourceColumnsVisitor::Data columns_context;
+            auto expression = column_default->expression->clone();
+            RequiredSourceColumnsVisitor(columns_context).visit(expression);
+            for (const auto & input : columns_context.requiredColumns())
+                if (auto column = storage_snapshot->metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, input))
+                    if (needed.insert(column->getNameInStorage()).second)
+                        to_visit.push_back(column->getNameInStorage());
+        }
+        for (const auto & column : columns_in_data_file)
+            if (!needed.contains(column.name) && info.columns_description.hasDefault(column.name))
+                info.columns_description.modify(column.name, [](ColumnDescription & description) { description.default_desc = {}; });
     }
 
     /// Create header for InputFormat with columns that will be read from the data.

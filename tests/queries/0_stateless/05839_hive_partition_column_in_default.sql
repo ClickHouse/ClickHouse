@@ -26,10 +26,12 @@ SELECT * FROM url('http://localhost:11111/test/' || currentDatabase() || '/k=abc
 -- The top-K filter of `ORDER BY ... LIMIT` over Parquet checks the defaults when the query is planned.
 SELECT c0, d FROM file(currentDatabase() || '/k=abc/f.parquet', Parquet, 'c0 Int32, k String, d String DEFAULT k') ORDER BY c0 LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 1;
 
--- `abc` does not fit `UInt32` and `nokey/` has no `k`: an error only when a row needs a default that reads `k`.
+-- `abc` does not fit `UInt32` and `nokey/` has no `k`: an error only when a row needs a default that reads `k` and the query reads it.
 SELECT d FROM file(currentDatabase() || '/k=abc/full.jsonl', JSONEachRow, 'c0 Int32, k UInt32, d String DEFAULT toString(k)');
 SELECT c0 FROM file(currentDatabase() || '/k=abc/full.csv', CSV, 'c0 Int32, k UInt32, d String DEFAULT toString(k)');
 SELECT count() FROM file(currentDatabase() || '/k=abc/full.csv', CSV, 'c0 Int32, k UInt32, d String DEFAULT toString(k)');
+SELECT c0 FROM file(currentDatabase() || '/k=abc/f.csv', CSV, 'c0 Int32, k UInt32, d String DEFAULT toString(k)') ORDER BY c0;
+SELECT count() FROM file(currentDatabase() || '/k=abc/f.csv', CSV, 'c0 Int32, k UInt32, d String DEFAULT toString(k)') SETTINGS optimize_count_from_files = 0;
 SELECT d, e FROM file(currentDatabase() || '/k=abc/full.jsonl', JSONEachRow, 'c0 Int32, k UInt32, d String DEFAULT toString(k), e UInt8 DEFAULT 1');
 SELECT d, e FROM file(currentDatabase() || '/{k=abc,nokey}/full.jsonl', JSONEachRow, 'c0 Int32, k String, d String DEFAULT k, e UInt8 DEFAULT 1') ORDER BY d;
 SELECT d FROM file(currentDatabase() || '/k=abc/f.jsonl', JSONEachRow, 'c0 Int32, k UInt32, d String DEFAULT toString(k)'); -- { serverError TYPE_MISMATCH }
