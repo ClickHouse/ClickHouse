@@ -4442,6 +4442,16 @@ bool StorageReplicatedMergeTree::partIsAssignedToBackgroundOperation(const DataP
     return queue.isVirtualPart(part);
 }
 
+static bool hasUncommittedUpdate(const CommittingBlocksSet & committing_blocks, Int64 min_block, Int64 max_block)
+{
+    for (auto it = committing_blocks.upper_bound(min_block); it != committing_blocks.end() && it->number < max_block; ++it)
+    {
+        if (it->op == CommittingBlock::Op::Update || it->op == CommittingBlock::Op::Unknown)
+            return true;
+    }
+    return false;
+}
+
 void StorageReplicatedMergeTree::mergeSelectingTask()
 {
     if (!is_leader)
@@ -4631,6 +4641,16 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             if (!merge_predicate)
                 merge_predicate = queue.getMergePredicate(zookeeper, PartitionIdsHint{});
 
+            const bool supports_lightweight_update = supportsLightweightUpdate().has_value();
+
+            /// Committing blocks of a partition, read after a mutation with version `valid_up_to` was loaded.
+            struct PartitionCommittingBlocks
+            {
+                Int64 valid_up_to = -1;
+                CommittingBlocksSet blocks;
+            };
+            std::unordered_map<String, PartitionCommittingBlocks> committing_blocks_by_partition;
+
             /// Choose a part to mutate.
             DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
             for (const auto & part : data_parts)
@@ -4645,6 +4665,28 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 auto expected = merge_predicate->getExpectedMutationVersion(part);
                 if (!expected)
                     continue;
+
+                if (supports_lightweight_update)
+                {
+                    const auto & partition_id = part->info.getPartitionId();
+                    auto & cached = committing_blocks_by_partition[partition_id];
+                    if (cached.valid_up_to < expected->first)
+                    {
+                        std::optional<PartitionIdsHint> partition_ids_hint = PartitionIdsHint{partition_id};
+                        auto committing_blocks = getCommittingBlocks(zookeeper, zookeeper_path, partition_ids_hint, /*with_data=*/ true);
+                        auto it = committing_blocks.find(partition_id);
+                        cached = {expected->first, it != committing_blocks.end() ? std::move(it->second) : CommittingBlocksSet{}};
+                    }
+
+                    /// The patch of an uncommitted update below the version is not in the log yet: a replica could mutate without it.
+                    if (hasUncommittedUpdate(cached.blocks, part->info.min_block, expected->first))
+                    {
+                        LOG_DEBUG(log, "Will not mutate part {} to version {} yet because a lightweight update with a lower block number "
+                            "is not committed yet", part->name, expected->first);
+                        queue.addPartsPostponeReasons(part->name, PostponeReasons::PENDING_LIGHTWEIGHT_UPDATE);
+                        continue;
+                    }
+                }
 
                 create_result = createLogEntryToMutatePart(
                     *part,
