@@ -10547,6 +10547,10 @@ Enable converting the hash table to a flat array for joins when the key is a sin
 Use hash tables that store the join keys alone, without a reference to a right row, for joins whose result can never contain a value taken from a right row: `LEFT ANTI`, and `LEFT SEMI` when no right column is selected. Such a table has a smaller cell and lets the right blocks be dropped instead of stored.
 )", 0, \
         {"26.9", false, true, "New setting to store the join keys alone, without a reference to a right row, in the hash tables of joins whose result can never contain a value taken from a right row (`LEFT ANTI`, and `LEFT SEMI` when no right column is selected)."}) \
+    DECLARE(Bool, enable_robin_hood_hash_for_joins, false, R"(
+Allow the hash tables of the `parallel_hash` join to switch to the Robin Hood mode when they become large, as the hash tables of aggregation do. A right table with more than about 8 million keys then takes up to two times less memory for its hash table, but the lookups of the join can be slower, depending on the keys.
+)", 0, \
+        {"26.10", true, false, "New setting. Earlier 26.10 releases used the Robin Hood mode for the hash tables of the `parallel_hash` join when they became large, which saves memory but can make large joins slower."}) \
     DECLARE(UInt64, query_plan_max_limit_for_join_lazy_indexing, 1000, R"(Control maximum limit value that allows to use query plan for lazy indexing optimization in JOIN. If zero, there is no limit.
 )", 0, \
         {"26.6", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"}) \
