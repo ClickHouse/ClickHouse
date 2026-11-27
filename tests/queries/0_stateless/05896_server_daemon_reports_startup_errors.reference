@@ -1,0 +1,8 @@
+empty config
+exit code is non-zero: 1, timed out: 0
+the error is shown
+the exit of the daemon is reported
+stderr log is not writable
+exit code is non-zero: 1, timed out: 0
+the error is shown
+the exit of the daemon is reported

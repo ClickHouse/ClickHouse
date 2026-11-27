@@ -15,6 +15,7 @@
 #include <base/scope_guard.h>
 
 #include <fmt/format.h>
+#include <Poco/Util/ServerApplication.h>
 
 #include <algorithm>
 #include <array>
@@ -334,9 +335,14 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender, i
     try
     {
         notify = openNotifySocket();
-        closeOtherDescriptors({STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO, server_socket, exit_status_fd, pid_file.directory_fd, pid_file.fd, signal_fd, notify.fd});
+        closeOtherDescriptors({STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO, server_socket, exit_status_fd, pid_file.directory_fd, pid_file.fd, signal_fd, notify.fd,
+            Poco::Util::ServerApplication::getDaemonLauncherDescriptor()});
         /// It has nothing to do that needs a capability.
         restrictCapabilities(0);
+        /// With `--daemon`, the server tells the process that was started when it has initialized, and the supervisor,
+        /// which stays in the background, must not hold the terminal of the user. Before the seccomp filter, which allows
+        /// only the system calls of the supervisor.
+        Poco::Util::ServerApplication::detachFromDaemonLauncher(false);
         installSupervisorSeccompFilter();
     }
     catch (...)
@@ -527,6 +533,9 @@ void runInit(int server_socket, int exit_status_fd, int signal_fd, const sigset_
 
         ::prctl(PR_SET_NAME, "clickhouse-init", 0, 0, 0);
         closeDescriptor(server_socket);
+        /// With `--daemon`, the server tells the process that was started when it has initialized, and the init, which
+        /// stays in the background, must not hold the terminal of the user.
+        Poco::Util::ServerApplication::detachFromDaemonLauncher(false);
         /// The init only waits and signals the processes of its own user. It is not dumpable, so the server cannot
         /// ptrace it or reach anything through its `/proc/1` entries.
         restrictCapabilities(0);
