@@ -1115,9 +1115,7 @@ static void getFileReader(
     file_reader = createORCReader(std::move(input_stream), options);
 }
 
-/// The field of the ORC struct `orc_type` that the path `target` names or starts with, and the rest of the path: the first
-/// one spelled exactly like it, else with `ignore_case` the only one that matches case-insensitively. With `ambiguous`,
-/// several fields that match only case-insensitively set it and resolve to nothing instead of throwing.
+/// The field of the ORC struct `orc_type` that the path `target` names or starts with, and the rest of the path.
 static std::pair<std::string, const ORC::Type *> findORCStructFieldByPath(
     const std::string & target, const ORC::Type * orc_type, bool ignore_case, bool * ambiguous)
 {
@@ -1571,8 +1569,7 @@ static DataTypePtr makeTypeHintFromSubcolumns(
     bool ignore_case,
     ORCFieldIdsCache & field_ids_cache);
 
-/// Whether one of the subcolumn paths is another one, or a path below it, compared case-insensitively with `ignore_case`:
-/// one decoding of their struct cannot have both of their types.
+/// Whether a subcolumn path equals another one or lies below it, compared case-insensitively with `ignore_case`.
 static bool subcolumnPathsOverlap(const VectorWithMemoryTracking<std::pair<String, DataTypePtr>> & subcolumns, bool ignore_case)
 {
     UnorderedSetWithMemoryTracking<String> paths;
@@ -1664,8 +1661,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
     /// columns of the filter by name, so it is disabled if that is not the field that the reader reads by field id.
     bool absent_column_has_namesake = false;
     /// Under the data lake schema, the top-level struct and list columns of the file whose elements are requested, selected
-    /// with the type hint that `orcColumnsToCHChunk` reads them with, so that their fields are matched by field id. For a plain
-    /// file, the structs read for their flattened subcolumns (unless two of them read one field).
+    /// with the type hint that `orcColumnsToCHChunk` reads them with, so that their fields are matched by field id.
+    /// For a plain file, the structs read for their flattened subcolumns.
     UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints;
     for (const auto & column : header)
     {
@@ -1736,8 +1733,6 @@ void NativeORCBlockInputFormat::prepareFileReader()
             updateIncludeTypeIds(adjusted_type, orc_type, ignore_case, include_typeids, requested_structs);
     }
 
-    /// A struct of the file read for its flattened subcolumns is decoded with their types, as when it is requested whole
-    /// (e.g. a `date` read as `DateTime` is range-checked), unless two of them read one field.
     if (!column_mapper)
     {
         /// By the field of the file: the spellings of the struct in the header, and its subcolumns below them.
@@ -3561,8 +3556,7 @@ static std::pair<String, String> splitStructElementName(
 
 /// The type of the column `path` (the file's `orc_type`, if it has one) whose requested subcolumns have the given paths below it
 /// and types, to read it under the data lake schema: a list is an array of its element, a struct has the requested elements, a
-/// whole one with its type. Without a `column_mapper` (a plain file) an element is the field that `traverseDownORCTypeByName`
-/// selects for the path, by the file's name.
+/// whole one with its type. Without a `column_mapper` (a plain file), an element is named by the file's field.
 static DataTypePtr makeTypeHintFromSubcolumns(
     const String & path,
     const ORC::Type * orc_type,
@@ -3680,8 +3674,7 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                     /// Under the data lake schema the fields of a struct are matched by field id and get their defaults, which
                     /// needs the type of the column itself, not of a requested element of it.
                     const auto orc_kind = orc_column_with_type.second->getKind();
-                    /// The read type of the file lacks the unselected fields, so the hint is the one the fields were selected with
-                    /// or, for a plain file, the one built from its flattened subcolumns.
+                    /// The read type of the file lacks the unselected fields, so the hint is the one `prepareFileReader` built.
                     if (auto it = nested_table_type_hints.find(nested_table_name); it != nested_table_type_hints.end())
                         nested_table_type = it->second;
                     else if (column_mapper && (orc_kind == ORC::STRUCT || orc_kind == ORC::LIST))
