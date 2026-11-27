@@ -567,6 +567,9 @@ bool ReadFromFormatInfo::canSkipDataByStatisticsOf(const ColumnWithTypeAndName &
     return which.isNativeInteger() || which.isDate() || which.isDate32() || which.isDecimal();
 }
 
+/// Written only for a non-empty set, so that every other read keeps its bytes.
+constexpr char COLUMNS_READ_UNDER_OTHER_NAMES_MARKER = '\1';
+
 void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
     source_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
@@ -583,6 +586,14 @@ void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
     writeBinary(prewhere_info != nullptr, ctx.out);
     if (prewhere_info != nullptr)
         prewhere_info->serialize(ctx);
+
+    if (!columns_read_under_other_names.empty())
+    {
+        Names names(columns_read_under_other_names.begin(), columns_read_under_other_names.end());
+        std::ranges::sort(names);
+        writeChar(COLUMNS_READ_UNDER_OTHER_NAMES_MARKER, ctx.out);
+        writeVectorBinary(names, ctx.out);
+    }
 
     ctx.out << "\n";
 }
@@ -623,6 +634,13 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     readBinary(has_prewhere_info, ctx.in);
     if (has_prewhere_info)
         result.prewhere_info = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));
+
+    if (checkChar(COLUMNS_READ_UNDER_OTHER_NAMES_MARKER, ctx.in))
+    {
+        Names names;
+        readVectorBinary(names, ctx.in);
+        result.columns_read_under_other_names.insert(names.begin(), names.end());
+    }
 
     ctx.in >> "\n";
 
