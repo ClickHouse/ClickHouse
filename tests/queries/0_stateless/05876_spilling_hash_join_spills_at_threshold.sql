@@ -1,5 +1,5 @@
 -- Tags: no-fasttest
--- no-fasttest: 1M-row joins, about 18 of them.
+-- no-fasttest: 1M-row joins, about 18 of them, and one of 4M rows.
 -- Random settings limits: max_block_size=(65409, 65409); grace_hash_join_initial_buckets=(1, 1); query_plan_optimize_join_order_randomize=(0, 0); query_plan_read_in_order_through_join=(0, 0); enable_join_runtime_filters=(0, 0)
 
 -- A hash join that fits in `max_bytes_before_external_join` stays in memory, and one that does not switches to
@@ -60,6 +60,12 @@ SELECT 'grace_hash spills', count(), sum(r.v)
 FROM (SELECT number AS k FROM numbers(1000000)) AS l
 INNER JOIN (SELECT number AS k, number * 3 AS v FROM numbers(1000000)) AS r ON l.k = r.k
 SETTINGS join_algorithm = 'grace_hash', max_threads = 4, max_bytes_before_external_join = 30000000, log_comment = 'spill_at_threshold_grace_spills';
+
+-- Four times the rows: the bucket splits several times, and each split leaves it a table sized for the rows it keeps.
+SELECT 'grace_hash splits several times', count(), sum(r.v)
+FROM (SELECT number AS k FROM numbers(4000000)) AS l
+INNER JOIN (SELECT number AS k, number * 3 AS v FROM numbers(4000000)) AS r ON l.k = r.k
+SETTINGS join_algorithm = 'grace_hash', max_threads = 2, max_bytes_before_external_join = 60000000, log_comment = 'spill_at_threshold_grace_splits';
 
 -- `RIGHT` and `FULL` joins keep the right rows that match nothing, and a condition on both sides keeps a used flag per row.
 SELECT 'right fits', count(), sum(r.v), sum(l.k)
@@ -142,3 +148,8 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comm
 SELECT replaceOne(log_comment, 'spill_at_threshold_', '') AS query, memory_usage < 80000000 AS split_early
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'spill_at_threshold_grace_spills';
+
+-- After several splits the peak stays near that of one bucket: a table twice the size of the one it needs takes it past 108 MB.
+SELECT replaceOne(log_comment, 'spill_at_threshold_', '') AS query, memory_usage < 108000000 AS sized_after_split
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'spill_at_threshold_grace_splits';

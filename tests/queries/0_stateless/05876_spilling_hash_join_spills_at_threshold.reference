@@ -7,6 +7,7 @@ parallel fits, 1 thread	1000000	1499998500000
 parallel spills, 1 thread	1000000	1499998500000
 grace_hash fits	1000000	1499998500000
 grace_hash spills	1000000	1499998500000
+grace_hash splits several times	4000000	23999994000000
 right fits	1000000	1499998500000	499999500000
 right spills	1000000	1499998500000	499999500000
 full, right condition, spills	1500000	1499998500000	499999500000
@@ -27,6 +28,7 @@ parallel1_fits	0	0
 parallel1_spills	1	1
 grace_fits	0	0
 grace_spills	0	1
+grace_splits	0	1
 right_fits	0	0
 right_spills	1	1
 full_right_cond_spills	1	1
@@ -37,3 +39,4 @@ one_key_then_nulls	0	1
 nulls_then_one_key	0	1
 serial_spills	1
 grace_spills	1
+grace_splits	1

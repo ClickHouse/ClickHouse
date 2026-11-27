@@ -152,7 +152,7 @@ private:
     void resetResidentRows();
 
     /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.
-    void repartitionCurrentBucket(size_t prev_keys_num, Block leftover, JoinBuildContext context);
+    void repartitionCurrentBucket(Block leftover, JoinBuildContext context);
     bool canForceRepartition() const;
 
     /// Check that join satisfies limits on rows/bytes in table_join. Caller holds `hash_join_mutex`.
