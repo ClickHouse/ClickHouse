@@ -146,10 +146,10 @@ def test_renewal_keeps_cluster():
             node, CHECK_QUERY_ONCE, "shares no server with the cluster of the previous session"
         )
 
-        # A reload that changes only a setting replaces the client, which keeps to the cluster: the nodes did not change.
-        # The reload itself fails on the refusal, unless it found a connection attempt in flight and deferred the new client.
+        # A reload that reorders the nodes and changes a setting replaces the client, which keeps to the cluster: the set of
+        # nodes did not change. The reload fails on the refusal, unless it found a connection attempt in flight and deferred it.
         set_zookeeper_config(
-            CLUSTER_A + ["node_b"], connect_to_all_nodes_wait_ms=1001, reload=False
+            ["node_b"] + CLUSTER_A, connect_to_all_nodes_wait_ms=1001, reload=False
         )
         node.query_and_get_answer_with_error("SYSTEM RELOAD CONFIG")
         assert_error_with_retry(

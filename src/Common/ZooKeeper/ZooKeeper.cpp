@@ -207,7 +207,7 @@ namespace
 
     struct AcceptedCluster
     {
-        Strings hosts;
+        std::set<String> hosts;
         ClusterMembers members;
     };
 
@@ -222,7 +222,7 @@ namespace
         {
             std::lock_guard lock(accepted_clusters_mutex);
             auto it = accepted_clusters.find(args.zookeeper_name);
-            if (it == accepted_clusters.end() || it->second.hosts != args.hosts)
+            if (it == accepted_clusters.end() || it->second.hosts != std::set<String>(args.hosts.begin(), args.hosts.end()))
                 return;
             accepted = it->second.members;
         }
@@ -512,7 +512,7 @@ std::unique_ptr<Coordination::IKeeper> ZooKeeper::connectToAllNodes(ShuffleHosts
     chosen.session->enableSessionExpiryNotification();
     {
         std::lock_guard lock(accepted_clusters_mutex);
-        accepted_clusters[args.zookeeper_name] = AcceptedCluster{args.hosts, chosen.members};
+        accepted_clusters[args.zookeeper_name] = AcceptedCluster{{args.hosts.begin(), args.hosts.end()}, chosen.members};
     }
 
     LOG_INFO(
