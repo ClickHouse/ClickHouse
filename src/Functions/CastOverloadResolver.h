@@ -24,6 +24,15 @@ enum class CastType : uint8_t
     accurateOrNull
 };
 
+/// Internal, for the input format readers: named tuples are matched by name even when they have no element name in common.
+enum class TupleElementsMatching : uint8_t
+{
+    Default,
+    ByName,
+    /// As `DataTypeTuple::matchElementsByName` with `case_insensitive`.
+    ByNameCaseInsensitive,
+};
+
 struct CastDiagnostic
 {
     std::string column_from;
@@ -38,7 +47,8 @@ FunctionBasePtr createInternalCast(
     CastType cast_type,
     std::optional<CastDiagnostic> diagnostic,
     ContextPtr context,
-    std::optional<bool> fixed_string_to_string_strip_trailing_zeros_override = {});
+    std::optional<bool> fixed_string_to_string_strip_trailing_zeros_override = {},
+    TupleElementsMatching tuple_elements_matching = TupleElementsMatching::Default);
 
 /// Whether the cast `function` removes the trailing zero bytes of a `FixedString` converted to `String`,
 /// or nullopt if `function` is not a cast.
@@ -64,13 +74,15 @@ bool canBeAccurateCastOrNullTarget(const DataTypePtr & type);
 /// named tuples with disjoint sets of element names, matching by name cannot be meant, because it would fill
 /// the whole result by default values and lose all the data, so elements are matched by position, as for
 /// unnamed tuples (e.g. the result of function `tuple` with `enable_named_columns_in_function_tuple` inserted
-/// into a column whose tuple elements are named differently).
-VectorWithMemoryTracking<std::optional<size_t>> getTupleCastElementPositions(const DataTypeTuple & from, const DataTypeTuple & to);
+/// into a column whose tuple elements are named differently). The input format readers request matching by
+/// name in this case too (`matching`), as a file is read by its schema.
+VectorWithMemoryTracking<std::optional<size_t>> getTupleCastElementPositions(
+    const DataTypeTuple & from, const DataTypeTuple & to, TupleElementsMatching matching = TupleElementsMatching::Default);
 
 /// The same mapping, or no mapping when the tuples are matched by position and have different numbers of
 /// elements, where `getTupleCastElementPositions` throws `TYPE_MISMATCH` because `CAST` cannot convert them.
 std::optional<VectorWithMemoryTracking<std::optional<size_t>>> tryGetTupleCastElementPositions(
-    const DataTypeTuple & from, const DataTypeTuple & to);
+    const DataTypeTuple & from, const DataTypeTuple & to, TupleElementsMatching matching = TupleElementsMatching::Default);
 
 FunctionOverloadResolverPtr createCastOverloadResolver(ContextPtr context, CastType cast_type, std::optional<CastDiagnostic> diagnostic);
 

@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/castColumn.h>
 #include <Processors/Port.h>
@@ -240,10 +241,10 @@ void ScatterByPartitionTransform::generateOutputChunks()
             /// zero bytes in the conversion of a `FixedString` key to `String` whatever the setting is,
             /// so the hash has to do the same for the matching keys to land in the same bucket.
             auto casted = castColumn({column, hash_input_types[i], ""}, cast_type, nullptr, /*fixed_string_to_string_strip_trailing_zeros=*/ true);
-            casted->computeHashInto(0, num_rows, hash.data(), false);
+            replaceNegativeZeros(casted)->computeHashInto(0, num_rows, hash.data(), false);
         }
         else
-            column->computeHashInto(0, num_rows, hash.data(), false);
+            replaceNegativeZeros(column)->computeHashInto(0, num_rows, hash.data(), false);
     }
 
     selector.resize(num_rows);

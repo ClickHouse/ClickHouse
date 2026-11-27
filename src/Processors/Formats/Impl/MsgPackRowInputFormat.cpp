@@ -23,6 +23,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -39,6 +40,7 @@
 
 #include <Formats/MsgPackExtensionTypes.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/checkEnumValue.h>
 
 namespace DB
 {
@@ -56,7 +58,7 @@ MsgPackRowInputFormat::MsgPackRowInputFormat(SharedHeader header_, ReadBuffer & 
     : MsgPackRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, settings) {}
 
 MsgPackRowInputFormat::MsgPackRowInputFormat(SharedHeader header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings)
-    : IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_)), visitor(settings.null_as_default), parser(visitor), data_types(header_->getDataTypes())  {}
+    : IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_)), visitor(settings.null_as_default, settings.check_conversion_from_numbers_to_enum), parser(visitor), data_types(header_->getDataTypes())  {}
 
 void MsgPackRowInputFormat::resetParser()
 {
@@ -121,11 +123,12 @@ static bool checkAndInsertLowCardinality(IColumn & column, DataTypePtr type, Ins
     return false;
 }
 
-static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
+template <typename T>
+static void insertInteger(IColumn & column, DataTypePtr type, T value, bool check_conversion_from_numbers_to_enum)
 {
     auto insert_func = [&](IColumn & column_, DataTypePtr type_)
     {
-        insertInteger(column_, type_, value);
+        insertInteger(column_, type_, value, check_conversion_from_numbers_to_enum);
     };
 
     if (checkAndInsertNullable(column, type, insert_func) || checkAndInsertLowCardinality(column, type, insert_func))
@@ -155,13 +158,25 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
             assert_cast<ColumnUInt64 &>(column).insertValue(value);
             break;
         }
-        case TypeIndex::Enum8: [[fallthrough]];
+        case TypeIndex::Enum8:
+        {
+            if (check_conversion_from_numbers_to_enum)
+                checkEnumValue<DataTypeEnum8>(*type, value);
+            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value));
+            break;
+        }
         case TypeIndex::Int8:
         {
             assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value));
             break;
         }
-        case TypeIndex::Enum16: [[fallthrough]];
+        case TypeIndex::Enum16:
+        {
+            if (check_conversion_from_numbers_to_enum)
+                checkEnumValue<DataTypeEnum16>(*type, value);
+            assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value));
+            break;
+        }
         case TypeIndex::Int16:
         {
             assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value));
@@ -353,13 +368,13 @@ static void insertUUID(IColumn & column, DataTypePtr type, const char * value, s
 
 bool MsgPackVisitor::visit_positive_integer(UInt64 value) // NOLINT
 {
-    insertInteger(info_stack.top().column, info_stack.top().type, value);
+    insertInteger(info_stack.top().column, info_stack.top().type, value, check_conversion_from_numbers_to_enum);
     return true;
 }
 
 bool MsgPackVisitor::visit_negative_integer(Int64 value) // NOLINT
 {
-    insertInteger(info_stack.top().column, info_stack.top().type, value);
+    insertInteger(info_stack.top().column, info_stack.top().type, value, check_conversion_from_numbers_to_enum);
     return true;
 }
 
@@ -389,7 +404,7 @@ bool MsgPackVisitor::visit_float64(Float64 value) // NOLINT
 
 bool MsgPackVisitor::visit_boolean(bool value)
 {
-    insertInteger(info_stack.top().column, info_stack.top().type, UInt64(value));
+    insertInteger(info_stack.top().column, info_stack.top().type, UInt64(value), check_conversion_from_numbers_to_enum);
     return true;
 }
 

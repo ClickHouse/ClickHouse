@@ -21,8 +21,9 @@ static ColumnPtr castColumn(
     CastType cast_type,
     const ColumnWithTypeAndName & arg,
     const DataTypePtr & type,
-    InternalCastFunctionCache * cache,
-    bool fixed_string_to_string_strip_trailing_zeros = false)
+    InternalCastFunctionCache * cache = nullptr,
+    bool fixed_string_to_string_strip_trailing_zeros = false,
+    TupleElementsMatching tuple_elements_matching = TupleElementsMatching::Default)
 {
     if (arg.type->equals(*type) && cast_type != CastType::accurateOrNull)
     {
@@ -46,9 +47,9 @@ static ColumnPtr castColumn(
             ""
         }
     };
-    auto get_cast_func = [from = arg, to = type, cast_type, fixed_string_to_string_strip_trailing_zeros]
+    auto get_cast_func = [from = arg, to = type, cast_type, fixed_string_to_string_strip_trailing_zeros, tuple_elements_matching]
     {
-        return createInternalCast(from, to, cast_type, {}, nullptr, fixed_string_to_string_strip_trailing_zeros);
+        return createInternalCast(from, to, cast_type, {}, nullptr, fixed_string_to_string_strip_trailing_zeros, tuple_elements_matching);
     };
 
     FunctionBasePtr func_cast = cache
@@ -64,6 +65,12 @@ ColumnPtr castColumn(
     const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache, bool fixed_string_to_string_strip_trailing_zeros)
 {
     return castColumn(CastType::nonAccurate, arg, type, cache, fixed_string_to_string_strip_trailing_zeros);
+}
+
+ColumnPtr castColumnMatchingTupleElementsByName(const ColumnWithTypeAndName & arg, const DataTypePtr & type, bool case_insensitive)
+{
+    const auto matching = case_insensitive ? TupleElementsMatching::ByNameCaseInsensitive : TupleElementsMatching::ByName;
+    return castColumn(CastType::nonAccurate, arg, type, nullptr, /*fixed_string_to_string_strip_trailing_zeros=*/ false, matching);
 }
 
 ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)

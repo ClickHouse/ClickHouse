@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void HTTPHeaderFilter::checkHeaders(HTTPHeaderEntries & entries) const
+void HTTPHeaderFilter::checkHeaders(const HTTPHeaderEntries & entries) const
 {
     std::lock_guard guard(mutex);
 
@@ -50,7 +50,7 @@ void HTTPHeaderFilter::checkHeaders(HTTPHeaderEntries & entries) const
     }
 }
 
-void HTTPHeaderFilter::checkHeaders(NormalizedHTTPHeaderEntries & entries) const
+void HTTPHeaderFilter::checkHeaders(const NormalizedHTTPHeaderEntries & entries) const
 {
     /// The check only validates the entries; it does not modify them, so the container's
     /// lower-case invariant is preserved.

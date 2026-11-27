@@ -114,6 +114,21 @@ protected:
     bool is_shutdown = false;
 };
 
+/// Updates of the dimensional metrics of the system logs.
+/// They are not templates, so that their code is compiled once and not for every system log.
+namespace SystemLogMetrics
+{
+    /// Create the counters with the value 0, so that a rate calculated from them does not miss the first event.
+    void createQueueCounters(const String & database, const String & table);
+    void createFlushCounters(const String & database, const String & table);
+
+    void onFlushSuccess(const String & database, const String & table, size_t rows);
+    /// The rows of a failed flush are lost.
+    void onFlushFailure(const String & database, const String & table, size_t rows);
+    /// Rows that were not accepted because the queue was full.
+    void onQueueFull(const String & database, const String & table, size_t rows);
+}
+
 struct SystemLogQueueSettings
 {
     String database;

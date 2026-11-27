@@ -39,6 +39,8 @@ ColumnPtr castColumn(
     const DataTypePtr & type,
     InternalCastFunctionCache * cache = nullptr,
     bool fixed_string_to_string_strip_trailing_zeros = false);
+/// Like `castColumn`, but named tuples are matched by name even when they have no element name in common.
+ColumnPtr castColumnMatchingTupleElementsByName(const ColumnWithTypeAndName & arg, const DataTypePtr & type, bool case_insensitive = false);
 ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr);
 ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr);
 

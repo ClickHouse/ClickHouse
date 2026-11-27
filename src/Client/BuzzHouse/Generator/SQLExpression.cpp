@@ -935,15 +935,24 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 3;
         if (agg.fname == "estimateCompressionRatio" && rg.nextSmallNumber() < 9)
         {
-            func_call->add_params()->mutable_lit_val()->set_no_quote_str("'" + generateNextCodecString(rg) + "'");
+            func_call->add_params()->mutable_lit_val()->set_no_quote_str("'" + generateNextCodecString(rg, true) + "'");
             if (rg.nextBool())
             {
-                func_call->add_params()->mutable_lit_val()->set_no_quote_str(rg.pickRandomly(blockSizes));
+                func_call->add_params()->mutable_lit_val()->set_no_quote_str(
+                    rg.nextSmallNumber() < 3 ? std::to_string(rg.nextRandomUInt64()) : rg.pickRandomly(blockSizes));
             }
         }
         else
         {
             generated_params += generateArgList(rg, min_params, max_params, [&]() { return func_call->add_params(); });
+            /// Parameters are mostly sizes, levels and counts, so sometimes make one a big integer, often a boundary one
+            if (func_call->params_size() > 0 && rg.nextSmallNumber() < 3)
+            {
+                Expr * param = func_call->mutable_params(rg.randomInt<int>(0, func_call->params_size() - 1));
+
+                param->Clear();
+                param->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt64());
+            }
         }
         generated_params += generateArgList(rg, min_args, max_args, [&]() { return func_call->add_args()->mutable_expr(); });
 
@@ -1266,7 +1275,17 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
 
     switch (static_cast<ExpOp>(expGen.nextOp())) /// drifts over time
     {
-        case ExpOp::Literal: generateLiteralValue(rg, true, expr); break;
+        case ExpOp::Literal:
+            if (rg.nextMediumNumber() < 16)
+            {
+                /// The same value as a full column instead of a const one, which the functions and transforms see per block
+                SQLFuncCall * fcall = expr->mutable_comp_expr()->mutable_func_call();
+
+                fcall->mutable_func()->set_catalog_func("materialize");
+                expr = fcall->add_args()->mutable_expr();
+            }
+            generateLiteralValue(rg, true, expr);
+            break;
         case ExpOp::ColumnRef: generateColRef(rg, expr); break;
         case ExpOp::Predicate: generatePredicate(rg, expr); break;
         case ExpOp::CastExpr: {

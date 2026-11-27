@@ -24,7 +24,7 @@ Para analizar los marcos de pila, use `addressToLine`, `addressToLineWithInlines
 * `thread_name` ([String](/es/reference/data-types/string)) — El nombre del hilo.
 * `thread_id` ([UInt64](/es/reference/data-types/int-uint)) — El identificador del hilo
 * `query_id` ([String](/es/reference/data-types/string)) — El ID de la consulta a la que pertenece este hilo.
-* `trace` ([Array(UInt64)](/es/reference/data-types/array)) — La traza de pila de este hilo. En plataformas ELF, excepto FreeBSD, las direcciones dentro del binary principal de ClickHouse se almacenan como desplazamientos físicos del archivo, y los marcos que quedan fuera de él (bibliotecas compartidas, código JIT) se almacenan como 0.
+* `trace` ([Array(UInt64)](/es/reference/data-types/array)) — La traza de pila de este hilo. Excepto en FreeBSD, las direcciones dentro del binary principal de ClickHouse se almacenan como desplazamientos físicos del archivo, y los marcos de pila que quedan fuera de él (bibliotecas compartidas, código JIT) se almacenan como 0.
 * `untracked_memory` ([Int64](/es/reference/data-types/int-uint)) — Contador por hilo de asignaciones de memoria que aún no se han propagado al MemoryTracker padre. Puede ser negativo si se ha liberado más memoria de la que se ha asignado desde el último flush.
 
 ## Ejemplo {#example}

@@ -12,11 +12,11 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
 </Note>
 
 <div id="AWS">
-  ## AWS
+  ## AWS {#AWS}
 </div>
 
 <div id="taking-backups-to-aws">
-  ### إنشاء نسخ احتياطية على AWS
+  ### إنشاء نسخ احتياطية على AWS {#taking-backups-to-aws}
 </div>
 
 #### 1. الخطوات التي يجب اتباعها في AWS {#aws-steps}
@@ -38,13 +38,9 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
     * a. احصل على ARN من صفحة إعدادات خدمة ClickHouse Cloud، ضمن Network security information، وسيبدو مشابهًا لما يلي:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![AWS S3 ARN](/images/cloud/manage/backups/arn.webp)
-
-    </Frame>
-
+      <Frame>
+        ![AWS S3 ARN](/images/cloud/manage/backups/arn.webp)
+      </Frame>
     </div>
 
     * b. لهذا الدور، أنشئ trust policy كما يلي:
@@ -119,13 +115,9 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
     في صفحة &quot;Settings&quot;، انقر على &quot;Set up external backup&quot;:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![تغيير النسخ الاحتياطي الخارجي](/images/cloud/manage/backups/change_external_backup.webp)
-
-    </Frame>
-
+      <Frame>
+        ![تغيير النسخ الاحتياطي الخارجي](/images/cloud/manage/backups/change_external_backup.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -133,26 +125,22 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
     في الشاشة التالية، أدخل AWS IAM Role ARN الذي أنشأته للتو وBucket URL لحاوية S3 بالتنسيق التالي:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![تهيئة AWS IAM Role ARN وتفاصيل حاوية S3](/images/cloud/manage/backups/configure_arn_s3_details.webp)
-
-    </Frame>
-
+      <Frame>
+        ![تهيئة AWS IAM Role ARN وتفاصيل حاوية S3](/images/cloud/manage/backups/configure_arn_s3_details.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="حفظ التغييرات" id="save-changes">
-    انقر على “Save External Bucket” لحفظ الإعدادات
+    انقر على “حفظ الحاوية الخارجية” لحفظ الإعدادات
   </Step>
 
-  <Step title="تغيير جدول النسخ الاحتياطي عن الجدول الافتراضي" id="changing-the-backup-schedule">
-    ستُحفَظ النسخ الاحتياطية الخارجية الآن في حاوية التخزين الخاصة بك وفقًا للجدول الافتراضي.
+  <Step title="تغيير جدول النسخ الاحتياطي عن الجدول الزمني الافتراضي" id="changing-the-backup-schedule">
+    ستُحفَظ النسخ الاحتياطية الخارجية الآن في حاوية التخزين الخاصة بك وفقًا للجدول الزمني الافتراضي.
     ويمكنك أيضًا تهيئة جدول النسخ الاحتياطي من صفحة “Settings”.
-    إذا تم تكوينه بشكل مختلف، فسيُطبَّق الجدول المخصص وإعداد الاحتفاظ على
+    إذا تم تكوينه بشكل مختلف، فسيُطبَّق الجدول الزمني المخصص وإعداد الاحتفاظ على
     النسخ الاحتياطية المكتوبة إلى حاوية التخزين الخاصة بك. أما النسخ الاحتياطية في الحاوية المُدارة من ClickHouse Cloud
-    فتستخدم الجدول الافتراضي (نسخة احتياطية كل 24 ساعة) وسياسة الاحتفاظ الافتراضية.
+    فتستخدم الجدول الزمني الافتراضي (نسخة احتياطية كل 24 ساعة) وسياسة الاحتفاظ الافتراضية.
   </Step>
 
   <Step title="عرض النسخ الاحتياطية المخزنة في حاوية التخزين الخاصة بك" id="view-backups-stored-in-your-bucket">
@@ -160,13 +148,9 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
     كما هو موضح أدناه:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![عرض النسخ الاحتياطية المخزنة في حاوية التخزين الخاصة بك](/images/cloud/manage/backups/view_backups.webp)
-
-    </Frame>
-
+      <Frame>
+        ![عرض النسخ الاحتياطية المخزنة في حاوية التخزين الخاصة بك](/images/cloud/manage/backups/view_backups.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
@@ -192,13 +176,9 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
     واجهة المستخدم للحصول على أمر SQL لاستعادة النسخة الاحتياطية. سيبدو الأمر كما يلي:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![احصل على أمر SQL المستخدم لاستعادة النسخة الاحتياطية](/images/cloud/manage/backups/backup_command.webp)
-
-    </Frame>
-
+      <Frame>
+        ![احصل على أمر SQL المستخدم لاستعادة النسخة الاحتياطية](/images/cloud/manage/backups/backup_command.webp)
+      </Frame>
     </div>
 
     <Warning>
@@ -225,11 +205,11 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
 </Steps>
 
 <div id="gcp">
-  ## GCP
+  ## GCP {#gcp}
 </div>
 
 <div id="taking-backups-to-gcp">
-  ### إنشاء نسخ احتياطية على GCP
+  ### إنشاء نسخ احتياطية على GCP {#taking-backups-to-gcp}
 </div>
 
 اتبع الخطوات أدناه لإنشاء نسخ احتياطية على GCP:
@@ -272,13 +252,9 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
     في صفحة `Settings`، انقر على `Change external backup`
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![تغيير النسخ الاحتياطي الخارجي](/images/cloud/manage/backups/change_external_backup.webp)
-
-    </Frame>
-
+      <Frame>
+        ![تغيير النسخ الاحتياطي الخارجي](/images/cloud/manage/backups/change_external_backup.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -286,13 +262,9 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
     في النافذة المنبثقة، أدخل مسار الـ حاوية التخزين في GCP، ومفتاح HMAC والسر اللذين أُنشئا في القسم السابق.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![تهيئة مفتاح HMAC والسر](/images/cloud/manage/backups/gcp_configure.webp)
-
-    </Frame>
-
+      <Frame>
+        ![تهيئة مفتاح HMAC والسر](/images/cloud/manage/backups/gcp_configure.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -300,25 +272,21 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
     انقر على `Save External Bucket` لحفظ الإعدادات.
   </Step>
 
-  <Step title="تغيير جدول النسخ الاحتياطي عن الجدولة الافتراضية" id="gcp-changing-the-backup-schedule">
-    ستُحفَظ النسخ الاحتياطية الخارجية الآن في الـ حاوية التخزين الخاص بك وفقًا للجدولة الافتراضية.
+  <Step title="تغيير جدول النسخ الاحتياطي عن الجدول الزمني الافتراضي" id="gcp-changing-the-backup-schedule">
+    ستُحفَظ النسخ الاحتياطية الخارجية الآن في الـ حاوية التخزين الخاص بك وفقًا للجدول الزمني الافتراضي.
     وبدلاً من ذلك، يمكنك تهيئة جدول النسخ الاحتياطي من صفحة `Settings`.
-    إذا جرى إعدادها بشكل مختلف، فستنطبق الجدولة المخصصة وإعداد الاحتفاظ على
+    إذا جرى إعدادها بشكل مختلف، فسينطبق الجدول الزمني المخصص وإعداد الاحتفاظ على
     النسخ الاحتياطية المكتوبة إلى الـ حاوية التخزين الخاص بك. أما النسخ الاحتياطية في الحاوية المُدارة من ClickHouse Cloud
-    فتستخدم الجدولة الافتراضية (نسخة احتياطية كل 24 ساعة) وسياسة الاحتفاظ الافتراضية.
+    فتستخدم الجدول الزمني الافتراضي (نسخة احتياطية كل 24 ساعة) وسياسة الاحتفاظ الافتراضية.
   </Step>
 
   <Step title="عرض النسخ الاحتياطية المخزنة في الـ حاوية التخزين الخاص بك" id="gcp-view-backups-stored-in-your-bucket">
     يجب أن تعرض صفحة Backups هذه النسخ الاحتياطية الموجودة في الـ حاوية التخزين الخاص بك في جدول منفصل كما هو موضح أدناه:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![عرض النسخ الاحتياطية المخزنة في الـ حاوية التخزين الخاص بك](/images/cloud/manage/backups/gcp_stored_backups.webp)
-
-    </Frame>
-
+      <Frame>
+        ![عرض النسخ الاحتياطية المخزنة في الـ حاوية التخزين الخاص بك](/images/cloud/manage/backups/gcp_stored_backups.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
@@ -340,13 +308,9 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
     إلى الأمر:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![الحصول على أمر SQL المستخدم لاستعادة النسخة الاحتياطية](/images/cloud/manage/backups/gcp_restore_command.webp)
-
-    </Frame>
-
+      <Frame>
+        ![الحصول على أمر SQL المستخدم لاستعادة النسخة الاحتياطية](/images/cloud/manage/backups/gcp_restore_command.webp)
+      </Frame>
     </div>
 
     <Warning>
@@ -373,11 +337,11 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
 </Steps>
 
 <div id="azure">
-  ## Azure
+  ## Azure {#azure}
 </div>
 
 <div id="taking-backups-to-azure">
-  ### إنشاء نسخ احتياطية على Azure
+  ### إنشاء نسخ احتياطية على Azure {#taking-backups-to-azure}
 </div>
 
 اتبع الخطوات أدناه لإنشاء نسخ احتياطية على Azure:
@@ -405,13 +369,9 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
     في صفحة `Settings`، انقر على `Change external backup`
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![تغيير النسخ الاحتياطي الخارجي](/images/cloud/manage/backups/change_external_backup.webp)
-
-    </Frame>
-
+      <Frame>
+        ![تغيير النسخ الاحتياطي الخارجي](/images/cloud/manage/backups/change_external_backup.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -420,13 +380,9 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
     الذي أنشأته في القسم السابق:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![أدخل سلسلة الاتصال واسم الحاوية لحساب Azure Storage الخاص بك](/images/cloud/manage/backups/azure_connection_details.webp)
-
-    </Frame>
-
+      <Frame>
+        ![أدخل سلسلة الاتصال واسم الحاوية لحساب Azure Storage الخاص بك](/images/cloud/manage/backups/azure_connection_details.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -434,11 +390,11 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
     انقر على `Save External Bucket` لحفظ الإعدادات
   </Step>
 
-  <Step title="تغيير جدول النسخ الاحتياطي من الجدول الافتراضي" id="azure-changing-the-backup-schedule">
-    ستُحفَظ النسخ الاحتياطية الخارجية الآن في حاوية التخزين الخاصة بك وفقًا للجدول الافتراضي. وبدلًا من ذلك،
+  <Step title="تغيير جدول النسخ الاحتياطي من الجدول الزمني الافتراضي" id="azure-changing-the-backup-schedule">
+    ستُحفَظ النسخ الاحتياطية الخارجية الآن في حاوية التخزين الخاصة بك وفقًا للجدول الزمني الافتراضي. وبدلًا من ذلك،
     يمكنك تهيئة جدول النسخ الاحتياطي من صفحة “Settings”. وإذا تمت تهيئته بشكل مختلف،
-    فسيُطبَّق الجدول المخصص وإعداد الاحتفاظ على النسخ الاحتياطية المكتوبة إلى حاوية التخزين الخاصة بك.
-    أما النسخ الاحتياطية في الحاوية المُدارة من ClickHouse Cloud فتستخدم الجدول الافتراضي (نسخة احتياطية كل
+    فسيُطبَّق الجدول الزمني المخصص وإعداد الاحتفاظ على النسخ الاحتياطية المكتوبة إلى حاوية التخزين الخاصة بك.
+    أما النسخ الاحتياطية في الحاوية المُدارة من ClickHouse Cloud فتستخدم الجدول الزمني الافتراضي (نسخة احتياطية كل
     24 ساعة) وسياسة الاحتفاظ الافتراضية.
   </Step>
 
@@ -447,13 +403,9 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
     كما هو موضح أدناه:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![عرض النسخ الاحتياطية المخزنة في حاوية التخزين الخاصة بك](/images/cloud/manage/backups/view_backups_azure.webp)
-
-    </Frame>
-
+      <Frame>
+        ![عرض النسخ الاحتياطية المخزنة في حاوية التخزين الخاصة بك](/images/cloud/manage/backups/view_backups_azure.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
@@ -476,13 +428,9 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
     في Azure إلى الأمر.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![استعادة النسخ الاحتياطية في Azure](/images/cloud/manage/backups/restore_backups_azure.webp)
-
-    </Frame>
-
+      <Frame>
+        ![استعادة النسخ الاحتياطية في Azure](/images/cloud/manage/backups/restore_backups_azure.webp)
+      </Frame>
     </div>
 
     <Warning>

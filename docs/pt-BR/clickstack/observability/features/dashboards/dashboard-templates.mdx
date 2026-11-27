@@ -1,0 +1,65 @@
+---
+slug: /clickstack/observability/features/dashboards/dashboard-templates
+title: 'Templates de dashboard'
+sidebarTitle: 'Templates de dashboard'
+description: 'Importação de Templates de dashboard pré-configurados no ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['clickstack', 'dashboards', 'templates', 'import', 'observability']
+---
+
+O ClickHouse Observability inclui uma biblioteca de Templates de dashboard pré-configurados que ajudam você a visualizar a telemetria mais comum de infraestrutura e de aplicações. Os gráficos passam a exibir dados assim que o seu serviço do ClickHouse recebe a telemetria exigida pelo Template.
+
+## Explorando os Templates disponíveis {#browsing-templates}
+
+Para explorar a biblioteca de Templates integrada, acesse **Dashboards** e clique em **Browse modelos de dashboard**.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Botão Browse modelos de dashboard](/images/clickstack/observability-browse-dashboard-templates.png)
+  </Frame>
+</div>
+
+Isso abre a galeria de Templates, organizados por categoria. Clique em **Import** no Template que você deseja usar.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Galeria de modelos de dashboard](/images/clickstack/observability-dashboard-template-gallery.png)
+  </Frame>
+</div>
+
+## Importar um Template {#importing-a-template}
+
+Em **Step 2: Map Data**, revise os campos **Dashboard Name** e **Tags** e, em seguida, confirme a fonte de dados na coluna **To** para cada bloco e filtro. As fontes de dados podem já vir selecionadas. No exemplo abaixo, o Template Node.js Runtime Metrics mapeia seus gráficos e o filtro de serviço para a fonte de dados **Metrics**. Clique em **Concluir Importação** para criar o dashboard.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Importação de Template do dashboard](/images/clickstack/observability-import-dashboard-template.png)
+  </Frame>
+</div>
+
+## Templates pré-configurados {#pre-built-templates}
+
+### Browser RUM {#browser-rum}
+
+O Template **Browser RUM** (monitoramento de usuários reais) oferece Core Web Vitals, percentis de carregamento de página, detalhamentos de tráfego e rastreamento de erros. Ele usa sessões do navegador instrumentadas com o SDK do navegador do HyperDX ou com instrumentação RUM do OpenTelemetry que emita `rum.sessionId`.
+
+### Métricas de Runtime do OTel {#otel-runtime-metrics}
+
+Os Templates integrados de Métricas de Runtime do OTel foram criados para aplicações instrumentadas com [métricas de tempo de execução do OpenTelemetry](https://opentelemetry.io/docs/specs/semconv/runtime/).
+
+| Template                    | Descrição                                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **.NET Runtime Metrics**    | Métricas de coleta de lixo, fragmentação do heap, exceções, uso do pool de threads e CPU para aplicações .NET |
+| **Go Runtime Metrics**      | Métricas de uso de memória, alocações, metas do GC, utilização de CPU e goroutines para aplicações Go         |
+| **JVM Runtime Metrics**     | Métricas de memória heap, utilização de CPU, threads e GC para aplicações baseadas na JVM                     |
+| **Node.js Runtime Metrics** | Atraso do event loop, uso do heap, utilização de CPU e memória do V8 para aplicações Node.js                  |
+| **Python Runtime Metrics**  | Utilização de CPU, uso de memória, coletas do GC e contagem de threads para aplicações Python                 |
+
+Notas:
+
+* Cada Template vem configurado com um [filtro personalizado](/pt-BR/clickstack/observability/features/dashboards/overview#custom-filters) para serviços cujo atributo de recurso [`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) corresponde ao tempo de execução do dashboard.
+* Os nomes das métricas podem variar entre versões do SDK do OpenTelemetry. Se o seu SDK emitir nomes de métricas diferentes, [edite as visualizações](/pt-BR/clickstack/observability/features/dashboards/overview#dashboards-editing-visualizations) para que correspondam aos seus dados.
+
+## Esquemas autogerenciados {#self-configured-schemas}
+
+Para implantações autogerenciadas com esquemas de tabela de métricas personalizados, ajuste o filtro de serviço do Template para consultar as colunas adequadas de nome do serviço e de atributos de recurso. Para cargas de trabalho de alto volume, considere [materializar os atributos consultados com frequência](/pt-BR/clickstack/self-configured/managing/performance-tuning#materialize-frequently-queried-attributes), como `ResourceAttributes['telemetry.sdk.language']`, para reduzir o tempo de carregamento dos filtros.

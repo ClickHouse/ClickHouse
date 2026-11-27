@@ -93,3 +93,7 @@ if (TARGET ch_contrib::icu)
     target_link_libraries(clickhouse_storages_system PRIVATE ch_contrib::icu)
     target_compile_definitions(clickhouse_storages_system PRIVATE U_HIDE_DEPRECATED_API)
 endif()
+
+if (TARGET ch_rust::vortex)
+    target_include_directories(clickhouse_storages_system PRIVATE $<TARGET_PROPERTY:ch_rust::vortex,INTERFACE_INCLUDE_DIRECTORIES>)
+endif()

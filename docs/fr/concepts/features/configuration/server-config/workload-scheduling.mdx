@@ -403,9 +403,11 @@ Le paramètre de workload `max_waiting_queries` limite le nombre de requêtes en
   Les requêtes bloquées attendent indéfiniment et n’apparaissent pas dans `SHOW PROCESSLIST` tant que toutes les contraintes ne sont pas satisfaites.
 </Note>
 
-## Stockage des workloads et des ressources {#workload_entity_storage}
+## Stockage des charges de travail et des ressources {#workload_entity_storage}
 
-Les définitions de tous les workloads et de toutes les ressources, sous la forme de requêtes `CREATE WORKLOAD` et `CREATE RESOURCE`, sont stockées de manière persistante soit sur le disque dans `workload_path`, soit dans ZooKeeper dans `workload_zookeeper_path`. Le stockage dans ZooKeeper est recommandé pour garantir la cohérence entre les nœuds. Sinon, la clause `ON CLUSTER` peut être utilisée avec le stockage sur disque.
+Les définitions de toutes les charges de travail et de toutes les ressources, sous la forme de requêtes `CREATE WORKLOAD` et `CREATE RESOURCE`, sont stockées de manière persistante soit sur le disque dans `workload_path`, soit dans ZooKeeper dans `workload_zookeeper_path`. Le stockage ZooKeeper est recommandé pour garantir la cohérence entre les nœuds. Sinon, la clause `ON CLUSTER` peut être utilisée avec le stockage sur disque.
+
+La création et la suppression de charges de travail et de ressources nécessitent les privilèges `CREATE WORKLOAD`, `CREATE RESOURCE`, `DROP WORKLOAD` et `DROP RESOURCE`. Ces privilèges ne font pas partie des groupes de privilèges `CREATE` et `DROP` : ils doivent donc être accordés explicitement ou via `GRANT ALL`.
 
 ## Charges de travail et ressources définies par configuration {#config_based_workloads}
 

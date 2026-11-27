@@ -1194,6 +1194,49 @@ bool isNullableField(const ArrowField & field)
     return field.nullable;
 }
 
+namespace
+{
+
+/// The parameterless type named `name` that the ClickHouse writer stores as the Arrow type inferred as
+/// `inferred`, or null. The writer names a union child after its type's family. A `date32` child is not
+/// re-declared as `Date`: narrowing it after decoding would bypass `date_time_overflow_behavior`.
+DataTypePtr writerTypeOfUnionChild(const DataTypePtr & inferred, const String & name)
+{
+    const WhichDataType which(inferred);
+    const size_t width = which.isFixedString() ? assert_cast<const DataTypeFixedString &>(*inferred).getN() : 0;
+    const bool stored_as = (width == 16 && (name == "UUID" || name == "IPv6" || name == "Int128" || name == "UInt128"))
+        || (width == 32 && (name == "Int256" || name == "UInt256"))
+        || (which.isUInt32() && (name == "IPv4" || name == "DateTime"))
+        || (which.isUInt16() && name == "Date");
+    return stored_as ? DataTypeFactory::instance().get(name) : nullptr;
+}
+
+}
+
+DataTypes unionElementTypes(const ArrowType & type, const FormatSettings & settings, bool allow_null_type)
+{
+    DataTypes inferred;
+    VectorWithMemoryTracking<const String *> names;
+    for (const ArrowField & child : type.children)
+    {
+        if (child.type.kind == TypeKind::Null)
+            continue;
+        inferred.push_back(removeNullable(fieldToCHType(child, settings, /*make_nullable=*/false, allow_null_type)));
+        names.push_back(&child.name);
+    }
+
+    DataTypes elements = inferred;
+    for (size_t i = 0; i < inferred.size(); ++i)
+    {
+        const String inferred_name = inferred[i]->getName();
+        if (std::ranges::count_if(inferred, [&](const DataTypePtr & t) { return t->getName() == inferred_name; }) < 2)
+            continue;
+        if (DataTypePtr named = writerTypeOfUnionChild(inferred[i], *names[i]))
+            elements[i] = std::move(named);
+    }
+    return elements;
+}
+
 DataTypePtr fieldToCHType(
     const ArrowField & field, const FormatSettings & settings, bool make_nullable, bool allow_null_type)
 {
@@ -1296,20 +1339,10 @@ DataTypePtr fieldToCHType(
             break;
         }
         case TypeKind::Union:
-        {
             /// Map an Arrow union to a ClickHouse Variant. Children of the Arrow `null` type are the
             /// placeholder used by the ClickHouse writer for NULL rows; they are not Variant elements.
-            DataTypes variants;
-            variants.reserve(type.children.size());
-            for (const ArrowField & child : type.children)
-            {
-                if (child.type.kind == TypeKind::Null)
-                    continue;
-                variants.push_back(removeNullable(fieldToCHType(child, settings, /*make_nullable=*/false, allow_null_type)));
-            }
-            result = std::make_shared<DataTypeVariant>(variants);
+            result = std::make_shared<DataTypeVariant>(unionElementTypes(type, settings, allow_null_type));
             break;
-        }
         case TypeKind::Null:
             /// An Arrow `null`-typed field is an all-null column. For the data reader map it to
             /// `Nullable(Nothing)` (the library reader wraps its `Nothing` column the same way because the
