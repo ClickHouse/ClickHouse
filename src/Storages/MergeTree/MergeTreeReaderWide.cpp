@@ -1123,10 +1123,12 @@ MergeTreeReaderStream & MergeTreeReaderWide::FileStreams::getOrCreate(const Stri
     auto stream = factory();
 
     std::lock_guard lock(mutex);
+    /// Before the stream, so that a stream is never left without its sink.
+    CompressedBlockRanges * sink = count_ranges ? &ranges_read[stream_name].ranges : nullptr;
     auto [it, inserted] = streams.try_emplace(stream_name, std::move(stream));
     chassert(inserted);
-    if (count_ranges)
-        it->second->setRangesReadSink(&ranges_read[stream_name].ranges);
+    if (sink)
+        it->second->setRangesReadSink(sink);
     return *it->second;
 }
 
