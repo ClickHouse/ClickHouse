@@ -3584,9 +3584,8 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                 = nested_table_name == header_column.name ? name_to_column_ptr.end() : find_orc_column(nested_table_name);
             if (orc_nested_column_it != name_to_column_ptr.end())
             {
-                /// Keyed by the file's spelling, so requests that differ only by case share one.
-                const String & resolved_nested_table_name = orc_nested_column_it->first;
-                if (!nested_tables.contains(resolved_nested_table_name))
+                /// Keyed by the requested spelling: the hint below is built from the subcolumns requested under it.
+                if (!nested_tables.contains(nested_table_name))
                 {
                     NamesAndTypesList nested_columns;
                     for (const auto & name_and_type : header.getNamesAndTypesList())
@@ -3626,12 +3625,12 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                         column_mapper ? nested_table_name : String{})};
                     BlockPtr block_ptr = std::make_shared<Block>(cols);
                     auto column_extractor = std::make_shared<NestedColumnExtractHelper>(*block_ptr, case_insensitive_matching);
-                    nested_tables[resolved_nested_table_name] = {block_ptr, column_extractor};
+                    nested_tables[nested_table_name] = {block_ptr, column_extractor};
                 }
 
                 /// The requested spelling, not the file's one: the helper matches names
                 /// case-insensitively itself, and an exact element name outranks a folded match.
-                auto nested_column = nested_tables[resolved_nested_table_name].second->extractColumn(header_column.name);
+                auto nested_column = nested_tables[nested_table_name].second->extractColumn(header_column.name);
                 if (nested_column)
                 {
                     column = *nested_column;
