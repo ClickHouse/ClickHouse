@@ -17,25 +17,62 @@
 namespace DB::GPU
 {
 
-/// A column of a batch on the device: the memory of its rows and the view of them, the bytes and the offsets of the rows
-/// of a `String`.
+/// A column on the device: of the rows of a batch, or of those carried to the next one. It holds the memory of its
+/// values, or of the bytes and the offsets of the rows of a `String`, and the view of its rows. The uploader makes it:
+/// the rows carried, then those of the staged blocks, which expand in its memory, of which it keeps those of the batch
+/// and carries the rest to the next.
 class GPUDeviceColumn
 {
 public:
-    GPUDeviceColumn(DeviceBuffer values_, DeviceBuffer offsets_, DeviceColumnView view_)
-        : values(std::move(values_))
-        , offsets(std::move(offsets_))
-        , column_view(view_)
-    {
-    }
-
-    const DeviceColumnView & view() const { return column_view; }
+    /// Of the rows of a batch.
+    const DeviceColumnView & view() const;
 
 private:
-    DeviceBuffer values;
-    /// Of a `String` only.
-    DeviceBuffer offsets;
-    DeviceColumnView column_view;
+    friend class GPUBatchUploader;
+
+    /// Of no rows: what is carried to the first batch.
+    GPUDeviceColumn(GPUElementType type_, cuda::stream_ref stream);
+
+    /// The rows of `carried`, then those of the blocks of `staged`, which it adds to `decompression` to expand in its
+    /// memory.
+    GPUDeviceColumn(const GPUDeviceColumn & carried, const GPUHostColumn & staged, DecompressionBatch & decompression, cuda::stream_ref stream);
+
+    /// Once its blocks are expanded: the carried bytes before them, and of a `String` the offsets of its sizes.
+    void finish(const GPUDeviceColumn & carried, cuda::stream_ref stream);
+
+    /// The rows whose values are all there: of a `String`, those whose bytes are.
+    size_t completeRows(cuda::stream_ref stream);
+
+    /// Keeps its first `rows` and returns the rest, the column carried to the next batch. Of the end of a part nothing
+    /// may be left; `index` names the column in what is thrown.
+    GPUDeviceColumn splitAt(size_t rows, bool part_ends, size_t index, cuda::stream_ref stream);
+
+    void checkPartEnds(size_t rows, size_t taken_bytes, size_t index) const;
+
+    bool isVariable() const;
+
+    GPUElementType type;
+    DeviceBuffer values_memory;
+    /// Of a `String`: the offsets of its rows, and the bytes of a size that the last block of sizes cut, fewer than 8.
+    DeviceBuffer offsets_memory;
+    DeviceBuffer tail_memory;
+
+    /// The values, or the bytes of a `String`, from its first row, in `values_memory`.
+    char * values = nullptr;
+    size_t values_bytes = 0;
+
+    /// Of a `String`: the offsets of the rows with a size, one more than them, of which the first `carried_rows` were
+    /// carried; the bytes of a size cut short after them; and the rows whose bytes are all there, and their bytes.
+    uint64_t * offsets = nullptr;
+    size_t carried_rows = 0;
+    size_t sized_rows = 0;
+    const char * tail = nullptr;
+    size_t tail_bytes = 0;
+    size_t covered_rows = 0;
+    size_t covered_bytes = 0;
+
+    /// Once `splitAt` has kept the rows of the batch.
+    std::optional<DeviceColumnView> column_view;
 };
 
 /// The columns of a batch on the device, as the reader reads them, as `GPUHostBatch` is on the host: the future of
@@ -86,23 +123,13 @@ public:
     std::optional<GPUFuture<GPUDeviceBatch>> sendHostToDevice(const GPUHostBatch & staged);
 
 private:
-    /// What the batches so far did not take of a column: its bytes, and of a `String` the offsets of its rows left,
-    /// from 0, and the bytes of a size that a block cut, fewer than 8.
-    struct Carried
-    {
-        DeviceBuffer values;
-        DeviceBuffer offsets;
-        DeviceBuffer size_tail;
-    };
-
-    class ExpandingColumn;
-
     std::optional<GPUFuture<GPUDeviceBatch>> expand(const GPUHostBatch & staged);
 
     /// Declared first, so that the buffers below are freed in its order before it goes.
     const std::shared_ptr<StreamPtr> stream;
     const std::vector<GPUElementType> column_types;
-    std::vector<Carried> carried;
+    /// Of each column, the rows the batches so far did not take.
+    std::vector<GPUDeviceColumn> carried;
     DecompressionBatch decompression;
     size_t part_rows_sent = 0;
     bool failed = false;
