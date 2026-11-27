@@ -2685,6 +2685,7 @@ message Kill {
     enum KillEnum {
         QUERY = 1;
         MUTATION = 2;
+        TRANSACTION = 3;
     }
     required KillEnum command = 1;
     optional Cluster cluster = 2;
