@@ -1430,7 +1430,8 @@ and the `system` database becomes a Shared database, so every replica sees the s
 Each flush of a log writes a `Native` file with the `s3` (or `azureBlobStorage`) table function into the folder of the
 log's generation, the hash of its columns and keys. Per generation the pipeline keeps the queue `system._<log>_s3queue_<hash>`
 reading that folder, the materialized view `system._<log>_mv_<hash>` and the `SharedMergeTree` table `system.<log>_<hash>`.
-`system.<log>` is a `Merge` table over the generations. A new schema creates a new generation; settings, TTL and indices
+`system.all_<log>` is a `Merge` table over the generations with the rows of all replicas, and `system.<log>` is a view of it
+with the rows of the replica that is queried. A new schema creates a new generation; settings, TTL and indices
 come from the `smt_settings`, `smt_ttl` and `smt_indices` keys of the log's configuration and are changed in place.
 The objects are created on the first flush of a log, or at startup with `prepare_system_log_tables_on_startup`.
 The sorting key of a table is the key of the log with `hostname` in front, so that the rows of a replica are read by the key.
