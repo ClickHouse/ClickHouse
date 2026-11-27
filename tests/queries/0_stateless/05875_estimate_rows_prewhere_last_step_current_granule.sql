@@ -23,7 +23,8 @@ SELECT 'multiple steps', sum(c), countIf(bs > 1000) FROM
 )
 SETTINGS enable_multiple_prewhere_read_steps = 1, max_threads = 1, max_block_size = 65409, preferred_block_size_bytes = 100000,
     preferred_max_column_in_block_size_bytes = 0, use_query_condition_cache = 0, use_columns_cache = 0, enable_parallel_replicas = 0,
-    allow_prefetched_read_pool_for_local_filesystem = 0, allow_prefetched_read_pool_for_remote_filesystem = 0;
+    allow_prefetched_read_pool_for_local_filesystem = 0, allow_prefetched_read_pool_for_remote_filesystem = 0,
+    merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 1000000, merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem = 1000000000;
 
 SELECT 'one step', sum(c), countIf(bs > 1000) FROM
 (
@@ -31,6 +32,7 @@ SELECT 'one step', sum(c), countIf(bs > 1000) FROM
 )
 SETTINGS enable_multiple_prewhere_read_steps = 0, max_threads = 1, max_block_size = 65409, preferred_block_size_bytes = 100000,
     preferred_max_column_in_block_size_bytes = 0, use_query_condition_cache = 0, use_columns_cache = 0, enable_parallel_replicas = 0,
-    allow_prefetched_read_pool_for_local_filesystem = 0, allow_prefetched_read_pool_for_remote_filesystem = 0;
+    allow_prefetched_read_pool_for_local_filesystem = 0, allow_prefetched_read_pool_for_remote_filesystem = 0,
+    merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 1000000, merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem = 1000000000;
 
 DROP TABLE t_estimate_rows_last_step;
