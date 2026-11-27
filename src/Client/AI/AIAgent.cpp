@@ -227,6 +227,11 @@ void AIAgent::chat(const String & user_text)
 
     for (size_t step_index = 0; step_index < config.max_steps; ++step_index)
     {
+        /// A tool of the previous step can have made the client connect again, e.g. after a query
+        /// that lost the connection. The conversation is not sent to the model again then.
+        if (stopTurnIfSessionWasReplaced())
+            return;
+
         /// Built for every step: a query confirmed in the previous step can have changed the
         /// session (`SET readonly = 1`), and the model must see the new restrictions right away.
         const String system_prompt = systemPrompt();
@@ -296,6 +301,11 @@ void AIAgent::chat(const String & user_text)
             }
             after_run_query = call.tool_name == "run_query";
 
+            /// The tools the model queued after the one that replaced the session are not run on
+            /// the new one either.
+            if (stopTurnIfSessionWasReplaced())
+                return;
+
             display.showToolCall(call.tool_name, summarizeArguments(call));
 
             ai::ToolResult result = executeToolCall(call);
@@ -321,6 +331,17 @@ void AIAgent::chat(const String & user_text)
         "Reached the limit of {} steps per turn (the `ai.max_steps` configuration parameter). "
         "Ask to continue if the task is not finished.",
         config.max_steps));
+}
+
+bool AIAgent::stopTurnIfSessionWasReplaced()
+{
+    if (!hooks.session_was_replaced || !hooks.session_was_replaced())
+        return false;
+
+    display.showNotice(
+        "The connection to the server was re-established during this turn, possibly to another server, "
+        "so the turn was stopped. Ask again to start a new conversation.");
+    return true;
 }
 
 ai::ToolResult AIAgent::executeToolCall(const ai::ToolCall & call)

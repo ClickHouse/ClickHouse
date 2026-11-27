@@ -54,6 +54,10 @@ private:
     /// the session state stops or starts allowing it.
     bool query_log_access_enabled = true;
 
+    /// Whether the session was replaced under the running turn (see `AIAgentHooks`), in which case
+    /// the user is told that the turn stops here.
+    bool stopTurnIfSessionWasReplaced();
+
     /// The history must not grow without a bound: old turns are dropped from the front, and the
     /// tool results of a turn that is over the budget on its own are elided. Both caps matter:
     /// the message count bounds the number of turns, and the byte budget bounds the prompt

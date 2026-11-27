@@ -426,6 +426,8 @@ The assistant is agentic: it can inspect the schema, consult the embedded docume
 
 The conversation keeps its context between questions in the same session, so you can refine and follow up. Type `? clear` to start a fresh conversation.
 
+A conversation belongs to one connection to the server. When the client connects again (after a network error, when the server closed an idle connection, or to use a renewed access token), the session is a new one, possibly on another server behind the same address, and what the assistant learned about the previous one does not apply to it. A reconnect that is due is made before the assistant starts answering a question. A reconnect while it is answering stops the answer: no more queries are run and the model is not called again, and no query of the assistant is sent on the new connection. The next question starts a new conversation.
+
 ### What the assistant can do {#ai-sql-generation-usage}
 
 To answer a question, the assistant uses a set of tools:

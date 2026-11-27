@@ -161,6 +161,26 @@ public:
       */
     virtual void disconnect() = 0;
 
+    /// How many times this object has established a connection to the server. Every connection is a
+    /// new session, and it can be on another server (several addresses, a load balancer). `sendQuery`
+    /// establishes the connection again by itself when it was closed, or when the access token is
+    /// about to expire and has to be renewed, so whoever needs the session to stay the same one
+    /// compares this number. A connection that is never established again (`LocalConnection`)
+    /// reports zero.
+    [[nodiscard]] virtual UInt64 getNumberOfEstablishedConnections() const { return 0; }
+
+    /// Whether `sendQuery` may establish the connection again by itself; it may by default. When it
+    /// may not, `sendQuery` throws instead of connecting, so that a query which was checked against
+    /// the current session is not sent to another one. The connection is left closed then, and its
+    /// owner connects again the way it does after any other loss of the connection.
+    virtual void setReconnectInSendQueryAllowed(bool /*allowed*/) {}
+
+    /// What `sendQuery` does before it sends a query: renew an access token that is about to expire
+    /// and connect if not connected. A caller uses it to get a possible reconnect over with, and to
+    /// notice it with `getNumberOfEstablishedConnections`, before the checks that depend on the
+    /// session.
+    virtual void reconnectIfNeeded(const ConnectionTimeouts & /*timeouts*/) {}
+
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     virtual void setThrottler(const ThrottlerPtr & throttler_) = 0;
 

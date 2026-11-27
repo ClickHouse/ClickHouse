@@ -247,6 +247,13 @@ protected:
     /// the query log stay there after a reconnect, so `read_query_log` must not come back.
     void resetServerSessionCaches();
 
+    /// The connection can be established again below the client, without `connect` being called:
+    /// `Connection::sendQuery` does it when the connection was closed, or to use a renewed access
+    /// token. That is a new session too, possibly on another server, and this is where the client
+    /// learns about it: when the connection has been established more times than the client knows
+    /// of, the session is reset like after a `connect`.
+    void noticeSessionReplacedByConnection();
+
     /// Whether the connected server knows a setting at all. The isolation the internal queries and
     /// the unconfirmed read-only tool install is only real when the server enforces it: a setting
     /// that is not `IMPORTANT` is silently ignored by a server that predates it, and one that is
@@ -299,6 +306,9 @@ protected:
     /// Execute a query internally for the AI agent and return the first cell of the result as
     /// unescaped text (empty when no rows). For free-form values with their own newlines.
     String executeScalarQueryForAI(const String & query, const NameToNameMap & params);
+    /// Whether the session the running turn of the agent started on is gone - see
+    /// `ai_turn_session_generation`.
+    bool aiTurnSessionWasReplaced();
     /// The first cell of the result as unescaped text, or an empty string for an empty result.
     static String firstCellAsTextForAI(const Block & result);
 
@@ -747,9 +757,13 @@ protected:
 
     /// Counts the sessions this client has established: incremented by `resetServerSessionCaches`
     /// on every successful connection, which can be to another server than the previous one (the
-    /// client fails over between the configured hosts). Whatever was checked on one session - see
-    /// `ai_unconfirmed_query_session_generation` - is not valid for the next one.
+    /// client fails over between the configured hosts). Whatever was learned on one session - see
+    /// `ai_turn_session_generation` - is not valid for the next one.
     UInt64 server_session_generation = 0;
+
+    /// How many times the connection had been established when the session was last reset - see
+    /// `noticeSessionReplacedByConnection`.
+    UInt64 connections_established_in_session = 0;
 
     /// The effective values of the settings of this session as the server reports them, asked one
     /// by one and cached - see `serverEffectiveSettingValue`. A `nullopt` value means the server
@@ -805,10 +819,14 @@ protected:
     bool ai_running_query = false;
     /// Set while that query is one of the read-only tool, which the user did not confirm.
     bool ai_running_unconfirmed_query = false;
-    /// The `server_session_generation` the checks of the running read-only query were done on. The
-    /// query must be sent on that same session: a reconnect in between can land on another server,
-    /// where the same table names can mean something else, so the query fails instead.
-    std::optional<UInt64> ai_unconfirmed_query_session_generation;
+    /// The `server_session_generation` the running turn of the agent started on, set for the time
+    /// of the turn. A turn is bound to it: the conversation holds what the agent learned on that
+    /// session, and the checks of the read-only tool were done on it, while a reconnect can land
+    /// on another server, where the same table names can mean something else. So while it is set,
+    /// every query the client sends is sent on that session or fails instead of being sent (see
+    /// `armResynchronizationAndSendQuery`), and the agent stops the turn when the session is gone
+    /// (see `AIAgentHooks::session_was_replaced`).
+    std::optional<UInt64> ai_turn_session_generation;
     /// Set when a confirmed agent query successfully changes `dialect`, so cleanup does not undo
     /// a real session setting change while removing the temporary ClickHouse-dialect pin.
     bool ai_running_query_changed_dialect = false;

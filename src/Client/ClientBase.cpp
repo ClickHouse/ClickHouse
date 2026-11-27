@@ -1112,6 +1112,31 @@ void ClientBase::resynchronizeConnectionAfterError()
 
 void ClientBase::armResynchronizationAndSendQuery(std::function<void()> send_query)
 {
+#if USE_CLIENT_AI
+    /// A turn of the AI agent is bound to the session it started on - see `ai_turn_session_generation`.
+    /// Every query of the client is sent from here, so this is the check that nothing can get past:
+    /// a query of the turn is either sent on that session or not sent at all.
+    const bool bound_to_session = ai_turn_session_generation.has_value();
+    if (bound_to_session)
+    {
+        noticeSessionReplacedByConnection();
+        if (*ai_turn_session_generation != server_session_generation)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The connection to the server was re-established during this turn of the AI agent, "
+                "possibly to another server, so the query was not sent to it");
+
+        /// The one reconnect left is the one `Connection::sendQuery` makes by itself right before it
+        /// writes the query - for a connection that was closed in the meantime, or to use a renewed
+        /// access token. It is forbidden for this query: `sendQuery` throws instead.
+        connection->setReconnectInSendQueryAllowed(false);
+    }
+    SCOPE_EXIT({
+        if (bound_to_session && connection)
+            connection->setReconnectInSendQueryAllowed(true);
+    });
+#endif
+
     /// The query exchange starts here. If it does not complete cleanly, the protocol may be
     /// desynchronized, and a session that continues after the error has to resynchronize the
     /// connection with a round trip. The flag is cleared on the clean completion of the exchange
@@ -1134,6 +1159,11 @@ void ClientBase::armResynchronizationAndSendQuery(std::function<void()> send_que
             connection_needs_resynchronization = false;
         throw;
     }
+
+    /// Outside of a turn of the AI agent `sendQuery` may have established the connection again for
+    /// this query, and then the query runs on a new session: what the client remembers about the
+    /// previous one is dropped before the query completes.
+    noticeSessionReplacedByConnection();
 }
 
 
@@ -3491,16 +3521,6 @@ void ClientBase::processParsedSingleQuery(
         connection->setFormatSettings(getNativeWireFormatSettings(client_context));
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
 
-#if USE_CLIENT_AI
-        /// The read-only query of the AI agent was checked on a session, and a reconnect above may
-        /// have replaced it with a session on another server - see `runQueryForAI`.
-        if (ai_unconfirmed_query_session_generation && *ai_unconfirmed_query_session_generation != server_session_generation)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The connection to the server was re-established after the read-only tool had checked the query, "
-                "possibly to another server, so the checks do not apply to it. Call the tool again");
-#endif
-
         /// With `use_client_time_zone`, DateTime string literals must be interpreted in the client time
         /// zone. The client parses synchronous INSERT literals itself, but literals interpreted server-side
         /// (asynchronous INSERT, SELECT) rely on `session_timezone`. Seed it with the client time zone unless
@@ -4760,6 +4780,7 @@ void ClientBase::initAIAgent()
     hooks.check_query = [this](const String & query) { return checkAIQuery(query); };
     hooks.session_restrictions = [this] { return aiSessionRestrictions(); };
     hooks.can_read_query_log = [this] { return aiQueryLogMarkerAllowed(); };
+    hooks.session_was_replaced = [this] { return aiTurnSessionWasReplaced(); };
 
     std::unique_ptr<IAIAgentTransport> transport;
 
@@ -4783,6 +4804,9 @@ void ClientBase::initAIAgent()
         /// No client-side AI provider: fall back to the `aiGenerate` function configured
         /// on the server we are connected to (or in clickhouse-local). This adds nothing
         /// the user could not do with a plain `SELECT aiGenerate(...)` query.
+        ///
+        /// The query of the transport carries the whole conversation. Like every query of a turn,
+        /// it is sent only on the session the turn started on - see `ai_turn_session_generation`.
         transport = std::make_unique<AIServerFunctionTransport>(hooks.execute_scalar, ai_config);
     }
 
@@ -4844,6 +4868,21 @@ bool ClientBase::processAIChat(const String & text_)
     /// run a query for the model, so they are not refused - `? clear` is the way out of a
     /// conversation, and it must work in exactly such a session too.
     const bool is_local_command = text.empty() || text == "clear" || text == "reset";
+
+    /// A turn of the agent is bound to the session it starts on (see `ai_turn_session_generation`),
+    /// so a reconnect that is already due is made before the turn rather than in the middle of it,
+    /// where it would end the turn: the client connects again when the connection was closed (e.g.
+    /// by the server, after the client was idle), and the connection renews an access token that is
+    /// about to expire.
+    if (!is_local_command && connection)
+    {
+        if (connection_needs_resynchronization)
+            resynchronizeConnectionAfterError();
+        else if (!connection->checkConnectedWithoutRoundTrip())
+            connect();
+        connection->reconnectIfNeeded(connection_parameters.timeouts);
+    }
+
     if (!is_local_command && aiSessionReadonly() == 1)
     {
         bool dialect_pin_required = true;
@@ -4868,12 +4907,22 @@ bool ClientBase::processAIChat(const String & text_)
         }
     }
 
+    /// The connection may have been established again below the client, without `connect` being
+    /// called - above, or for a query the user ran since the previous turn.
+    noticeSessionReplacedByConnection();
+
     if (ai_agent_reset_pending)
     {
         ai_agent_reset_pending = false;
         ai_agent = nullptr;
         output_stream << "The connection to the server was re-established, so the AI conversation was started over." << std::endl;
     }
+
+    /// From here on, whatever the client sends is sent on this session or not at all, until the
+    /// turn is over: the queries of the tools, the questions the client asks the server on behalf
+    /// of the agent, and the conversation itself when the model is called on the server.
+    ai_turn_session_generation = server_session_generation;
+    SCOPE_EXIT({ ai_turn_session_generation.reset(); });
 
     try
     {
@@ -5022,9 +5071,16 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
     /// about the capabilities and the settings of the server - are about the session they ran on. The
     /// client can reconnect at any point, including during those checks, and a reconnect can fail
     /// over to another configured host, where the same table can be a view or have an external
-    /// engine. So the generation of the session is taken before the checks, and the query is refused
-    /// if it is not the same one when the query is about to be sent.
-    const UInt64 checked_session_generation = server_session_generation;
+    /// engine. The checks and the query are parts of one turn of the agent, and a turn is bound to
+    /// the session it started on (see `ai_turn_session_generation`): after a reconnect neither the
+    /// remaining checks nor the query are sent. This is the early exit for a turn whose session is
+    /// already gone: its conversation holds what the agent learned there, and it must not go on
+    /// with queries on another server.
+    if (aiTurnSessionWasReplaced())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The connection to the server was re-established during this turn, possibly to another server, "
+            "so no more queries are run in it");
 
     if (readonly)
     {
@@ -5426,17 +5482,6 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         ai_line_reader->addQueryToHistory(query);
 
     const UInt64 seqno_before = ai_query_context->latestSeqno();
-
-    if (readonly)
-    {
-        if (server_session_generation != checked_session_generation)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The connection to the server was re-established while the read-only tool was checking the query, "
-                "possibly to another server, so the checks do not apply to it. Call the tool again");
-        ai_unconfirmed_query_session_generation = checked_session_generation;
-    }
-    SCOPE_EXIT({ ai_unconfirmed_query_session_generation.reset(); });
 
     ai_running_query_changed_dialect = false;
     ai_running_query = true;
@@ -6220,6 +6265,7 @@ void ClientBase::recordUnparsedErrorForAIContext(std::string_view input, const E
 void ClientBase::resetServerSessionCaches()
 {
     ++server_session_generation;
+    connections_established_in_session = connection ? connection->getNumberOfEstablishedConnections() : 0;
     server_effective_setting_values.clear();
 #if USE_CLIENT_AI
     ai_query_log_marker_writable.reset();
@@ -6231,6 +6277,20 @@ void ClientBase::resetServerSessionCaches()
         ai_agent_reset_pending = true;
 #endif
 }
+
+void ClientBase::noticeSessionReplacedByConnection()
+{
+    if (connection && connection->getNumberOfEstablishedConnections() != connections_established_in_session)
+        resetServerSessionCaches();
+}
+
+#if USE_CLIENT_AI
+bool ClientBase::aiTurnSessionWasReplaced()
+{
+    noticeSessionReplacedByConnection();
+    return ai_turn_session_generation && *ai_turn_session_generation != server_session_generation;
+}
+#endif
 
 /// The questions below are asked of the server rather than read from the client context, and
 /// are not guarded by `USE_CLIENT_AI`: `fetchInternalQueryResult` serves the `help` command as

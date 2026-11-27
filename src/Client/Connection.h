@@ -174,6 +174,10 @@ public:
 
     void forceConnected(const ConnectionTimeouts & timeouts) override;
 
+    UInt64 getNumberOfEstablishedConnections() const override { return number_of_established_connections; }
+    void setReconnectInSendQueryAllowed(bool allowed) override { reconnect_in_send_query_allowed = allowed; }
+    void reconnectIfNeeded(const ConnectionTimeouts & timeouts) override;
+
     bool isConnected() const override { return connected && in && out && !in->isCanceled() && !out->isCanceled(); }
 
     bool checkConnected(const ConnectionTimeouts & timeouts) override { return isConnected() && ping(timeouts); }
@@ -273,6 +277,10 @@ private:
 
     bool connected = false;
 
+    /// See `getNumberOfEstablishedConnections` and `setReconnectInSendQueryAllowed`.
+    UInt64 number_of_established_connections = 0;
+    bool reconnect_in_send_query_allowed = true;
+
     String server_name;
     UInt64 server_version_major = 0;
     UInt64 server_version_minor = 0;
@@ -356,6 +364,10 @@ private:
 
     std::optional<FormatSettings> optionalFormatSettings() const;
     void connect(const ConnectionTimeouts & timeouts);
+
+    /// Renews an access token that is about to expire and connects if not connected, like every
+    /// `sendQuery` does first. Throws instead of connecting when `reconnect_allowed` is false.
+    void reconnectIfNeededImpl(const ConnectionTimeouts & timeouts, bool reconnect_allowed);
 
     /// Establishes the transport for `connect`: either by connecting to one of the addresses the host
     /// resolves to, or by taking over a connection that has already been established (see setAdoptedSocket).

@@ -486,6 +486,74 @@ TEST(AIAgent, CallsAfterRunQueryInTheSameStepAreNotExecuted)
     EXPECT_NE(results[2].result.dump().find("Not executed"), String::npos);
 }
 
+TEST(AIAgent, TurnStopsWhenTheSessionWasReplaced)
+{
+    /// The client can connect to a server again in the middle of a turn, e.g. for a query the agent
+    /// runs. The session is a new one then, possibly on another server, and the conversation holds
+    /// what the agent learned on the previous one: the tools queued after the reconnect are not
+    /// run, and the conversation is not sent to the model again.
+    std::vector<String> ran;
+    bool replaced = false;
+    AIAgentHooks hooks;
+    hooks.run_visible = [&](const String & query, bool, bool)
+    {
+        ran.push_back(query);
+        /// The first query is the one that makes the client connect again.
+        replaced = true;
+        return String("ok");
+    };
+    hooks.session_was_replaced = [&] { return replaced; };
+
+    AIAgentStep step;
+    step.tool_calls.emplace_back("call_1", "run_readonly_query", ai::JsonValue{{"query", "SELECT 1"}});
+    step.tool_calls.emplace_back("call_2", "run_readonly_query", ai::JsonValue{{"query", "SELECT 2"}});
+
+    AgentWithMock harness({step, textStep("done")}, hooks);
+    harness.agent->chat("read twice");
+
+    ASSERT_EQ(ran.size(), 1u);
+    EXPECT_EQ(ran[0], "SELECT 1");
+    EXPECT_EQ(harness.transport->conversations.size(), 1u);
+    EXPECT_NE(harness.output.str().find("re-established"), String::npos);
+}
+
+TEST(AIAgent, ModelIsNotCalledAgainAfterTheSessionWasReplaced)
+{
+    /// The same when the reconnect happens in the last tool of a step: the results of the step,
+    /// and the conversation with them, do not go to the model.
+    bool replaced = false;
+    AIAgentHooks hooks;
+    hooks.run_visible = [&](const String &, bool, bool)
+    {
+        replaced = true;
+        return String("ok");
+    };
+    hooks.session_was_replaced = [&] { return replaced; };
+
+    AgentWithMock harness(
+        {toolCallStep("run_readonly_query", ai::JsonValue{{"query", "SELECT 1"}}), textStep("done")}, hooks);
+    harness.agent->chat("read once");
+
+    EXPECT_EQ(harness.transport->conversations.size(), 1u);
+    EXPECT_EQ(harness.output.str().find("done"), String::npos);
+    EXPECT_NE(harness.output.str().find("re-established"), String::npos);
+}
+
+TEST(AIAgent, TurnGoesOnWhileTheSessionIsTheSame)
+{
+    /// The control: with the hook answering "no", the turn runs to its end as without the hook.
+    AIAgentHooks hooks;
+    hooks.run_visible = [](const String &, bool, bool) { return String("ok"); };
+    hooks.session_was_replaced = [] { return false; };
+
+    AgentWithMock harness(
+        {toolCallStep("run_readonly_query", ai::JsonValue{{"query", "SELECT 1"}}), textStep("done")}, hooks);
+    harness.agent->chat("read once");
+
+    EXPECT_EQ(harness.transport->conversations.size(), 2u);
+    EXPECT_NE(harness.output.str().find("done"), String::npos);
+}
+
 TEST(AIAgent, HistoryIsTrimmedWhenOneStepReturnsManyLargeResults)
 {
     /// One step may return several tool calls at once, so the newest tool-results message alone

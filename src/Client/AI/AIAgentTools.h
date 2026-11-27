@@ -83,6 +83,13 @@ struct AIAgentHooks
     /// Whether internal agent queries can be reliably marked in `system.user_query_log` at this
     /// instant. A confirmed `SET readonly = 1` can change it after agent construction.
     std::function<bool()> can_read_query_log;
+
+    /// Whether the client has connected to a server again since the running turn started. The
+    /// session is a new one then, possibly on another server, and the conversation holds what the
+    /// agent learned on the previous one, so the turn stops: no more tools are run in it and the
+    /// conversation is not sent to the model again. The client starts a new conversation with the
+    /// next question.
+    std::function<bool()> session_was_replaced;
 };
 
 /// Builds the tool set of the client AI agent:
