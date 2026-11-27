@@ -28,9 +28,6 @@ namespace DB::GPU
 namespace
 {
 
-/// The alignment of the addresses that nvcomp expands blocks to: 8 bytes for ZSTD, 4 for LZ4.
-constexpr size_t expand_alignment = 8;
-
 void checkNvcomp(nvcompStatus_t status, const char * what)
 {
     if (status != nvcompSuccess)
@@ -145,14 +142,6 @@ struct CodecCall
     }
 };
 
-/// A copy on the device, of bytes expanded elsewhere to where they go.
-struct Move
-{
-    const char * from;
-    char * to;
-    size_t bytes;
-};
-
 }
 
 struct DecompressionBatch::State
@@ -182,9 +171,6 @@ struct DecompressionBatch::State
     /// The compressed bytes of each column on the device.
     std::vector<DeviceBuffer> uploaded;
     std::vector<CodecCall> calls;
-    /// nvcomp takes only aligned destinations: the chunks of others expand elsewhere and are moved in place.
-    std::vector<DeviceBuffer> expanded_elsewhere;
-    std::vector<Move> moves;
 
     PinnedBuffer host_arguments;
     PinnedBuffer host_results;
@@ -211,31 +197,12 @@ void DecompressionBatch::add(const CompressedHostColumn & column, char * destina
         cudaMemcpyAsync(uploaded, column.bytes.data(), column.bytes.size(), cudaMemcpyHostToDevice, stream.get()),
         "Cannot send compressed blocks to the device");
 
-    /// Each run of chunks of one codec expands after the run before.
-    const auto & chunks = column.chunks;
-    for (size_t first = 0; first < chunks.size();)
+    /// The chunks expand one after another: nvcomp takes destinations of any alignment, see
+    /// `nvcompBatchedZstdDecompressGetRequiredAlignments`.
+    for (const auto & chunk : column.chunks)
     {
-        size_t last = first + 1;
-        size_t run_bytes = chunks[first].decompressed_bytes;
-        while (last < chunks.size() && chunks[last].codec == chunks[first].codec)
-            run_bytes += chunks[last++].decompressed_bytes;
-
-        char * expand_to = destination;
-        if (reinterpret_cast<uintptr_t>(destination) % expand_alignment != 0)
-        {
-            expand_to = state->expanded_elsewhere.emplace_back(stream).grow(run_bytes);
-            state->moves.push_back({expand_to, destination, run_bytes});
-        }
-
-        CodecCall & call = state->callOf(chunks[first].codec);
-        for (size_t i = first; i < last; ++i)
-        {
-            call.add(uploaded + chunks[i].offset, chunks[i].compressed_bytes, expand_to, chunks[i].decompressed_bytes);
-            expand_to += chunks[i].decompressed_bytes;
-        }
-
-        destination += run_bytes;
-        first = last;
+        state->callOf(chunk.codec).add(uploaded + chunk.offset, chunk.compressed_bytes, destination, chunk.decompressed_bytes);
+        destination += chunk.decompressed_bytes;
     }
 }
 
@@ -245,8 +212,6 @@ GPUFuture<void> DecompressionBatch::expand()
     SCOPE_EXIT({
         state->calls.clear();
         state->uploaded.clear();
-        state->expanded_elsewhere.clear();
-        state->moves.clear();
     });
 
     const cuda::stream_ref stream = state->stream;
@@ -256,8 +221,6 @@ GPUFuture<void> DecompressionBatch::expand()
         GPUPromise<void>(stream).fulfill().get();
         state->check(call);
     }
-    for (const Move & move : state->moves)
-        checkCuda(cudaMemcpyAsync(move.to, move.from, move.bytes, cudaMemcpyDeviceToDevice, stream.get()), "Cannot move expanded bytes on the device");
     return GPUPromise<void>(stream).fulfill();
 }
 
