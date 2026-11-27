@@ -29,8 +29,8 @@ struct RabbitMQConfiguration
     /// `rabbitmq_address`: if set, it is used instead of the fields above.
     SecretString connection_string;
 
-    AMQP::ConnectionSettings getConnectionSettings() const;
-    String getAddressForLog() const;
+    [[nodiscard]] AMQP::ConnectionSettings getConnectionSettings() const;
+    [[nodiscard]] String getAddressForLog() const;
 };
 
 /// A connection to RabbitMQ with one channel, which `connect` establishes again once it is lost.
@@ -54,9 +54,9 @@ public:
     AMQP::Connection & get();
 
     /// The heartbeat interval in seconds negotiated with the server, 0 if heartbeats are disabled or there is no connection.
-    UInt16 getHeartbeatInterval() const { return connection ? connection->getHeartbeatInterval() : 0; }
+    [[nodiscard]] UInt16 getHeartbeatInterval() const { return connection ? connection->getHeartbeatInterval() : 0; }
 
-    String connectionInfoForLog() const { return configuration.getAddressForLog(); }
+    [[nodiscard]] String connectionInfoForLog() const { return configuration.getAddressForLog(); }
 
 private:
     const RabbitMQConfiguration configuration;

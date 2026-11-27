@@ -273,14 +273,14 @@ Address Address::parse(std::string_view uri)
         const auto colon = login.find(':');
         address.user = String(login.substr(0, colon));
         if (colon != std::string_view::npos)
-            address.password = SecretString(String(login.substr(colon + 1)));
+            address.password = SecretString(login.substr(colon + 1));
         uri.remove_prefix(at + 1);
     }
     else
     {
         /// The default account of RabbitMQ, as the library used before assumed.
         address.user = "guest";
-        address.password = SecretString(String("guest"));
+        address.password = SecretString("guest");
     }
 
     std::string_view host_port = uri;
@@ -833,7 +833,7 @@ void Connection::handshake()
             fail(fmt::format("unsupported protocol version {}.{}", static_cast<UInt32>(major), static_cast<UInt32>(minor)));
         reader.skipLongString(); /// server properties
         const String mechanisms = reader.readLongString();
-        if (mechanisms.find("PLAIN") == String::npos)
+        if (!mechanisms.contains("PLAIN"))
             fail(fmt::format("the broker does not support the PLAIN authentication, its mechanisms are: {}", mechanisms));
     }
 
