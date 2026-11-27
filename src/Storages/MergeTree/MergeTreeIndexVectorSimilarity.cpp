@@ -131,7 +131,12 @@ USearchIndexWithSerialization::USearchIndexWithSerialization(
     unum::usearch::index_dense_config_t config(usearch_hnsw_params.connectivity, usearch_hnsw_params.expansion_add, default_expansion_search);
     config.enable_key_lookups = false; /// we don't do row-to-vector lookups
 
-    auto result = USearchIndex::make(metric, config);
+    /// USearch never shrinks the thread limits it has reserved, and by default `make` reserves `hardware_concurrency`
+    /// threads. Start with one thread, so that the later reservations for building (`max_build_vector_similarity_index_thread_pool_size`)
+    /// and for loading (`2 * getNumberOfCPUCoresToUse`) decide the number. It must not be zero: `load_from_stream`
+    /// replaces zero thread limits with `hardware_concurrency`.
+    auto result = USearchIndex::make(
+        metric, config, unum::usearch::default_free_value<USearchIndex::vector_key_t>(), unum::usearch::index_limits_t(0, 1));
     if (!result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not create vector similarity index. Error: {}", result.error.release());
     swap(result.index);
