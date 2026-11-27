@@ -50,6 +50,13 @@ public:
     size_t getReserved() const { return reserved.load(std::memory_order_acquire); }
     size_t getLimit() const { return limit; }
 
+    /// The most `tryReserve` would admit now, with `held` bytes held. Another insert may take it first.
+    size_t headroom(size_t held) const
+    {
+        const size_t used = add(held, getReserved());
+        return used >= limit ? 0 : limit - used - 1;
+    }
+
     static size_t add(size_t a, size_t b)
     {
         size_t res = 0;

@@ -1156,7 +1156,6 @@ bool HashJoin::addBlockToJoin(const Block & source_block, JoinBuildContext conte
         auto * stored_columns = &new_block.back();
         size_t data_allocated_bytes = stored_columns->allocatedBytes();
         size_t reserved_nullmaps = 0;
-        size_t reserved_arena = 0;
         if (spill_budget)
         {
             const auto & clause = table_join->getOnlyClause();
@@ -1169,18 +1168,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, JoinBuildContext conte
                     reserved_nullmaps = JoinSpillBudget::add(reserved_nullmaps, JoinSpillBudget::paddedPodArrayBytes<UInt8>(block_rows));
             }
 
-            auto & table = *data->tables.front();
-            size_t arena_bytes = 0;
-            if (table.copiesKeysToArena())
-                for (const auto & name : clause.key_names_right)
-                    arena_bytes = JoinSpillBudget::add(arena_bytes, all_key_columns.at(name)->byteSize());
-            /// A row list allocates only for a key that already has a row.
-            if (table.holds<MapsAll>() && !all_values_unique.load(std::memory_order_relaxed))
-                arena_bytes = JoinSpillBudget::add(arena_bytes, JoinSpillBudget::mul(rows, sizeof(RowRefList::Batch)));
-            if (arena_bytes)
-                reserved_arena = table.arena(context.getStream()).estimateGrowthMemory(1, arena_bytes);
-
-            const size_t bytes = JoinSpillBudget::add(JoinSpillBudget::add(data_allocated_bytes, reserved_nullmaps), reserved_arena);
+            const size_t bytes = JoinSpillBudget::add(data_allocated_bytes, reserved_nullmaps);
             if (!checked)
                 reserved_bytes = spill_budget->reserveUnchecked(bytes);
             else if (spill_budget->tryReserve(bytes, [this] { return spillHeldBytes(); }))
@@ -1308,8 +1296,6 @@ bool HashJoin::addBlockToJoin(const Block & source_block, JoinBuildContext conte
                         per_row_flags_initialized = true;
                     }
                 });
-
-            release_reserved(reserved_arena);
 
             /// The rows that slots inserted before the refusal reference the block, but the caller frees the maps
             /// before anything reads them (only one disjunct has a budget).

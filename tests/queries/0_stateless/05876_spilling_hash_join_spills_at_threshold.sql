@@ -110,6 +110,12 @@ FROM (SELECT toString(number) AS k FROM numbers(1000)) AS l
 ANY LEFT JOIN (SELECT toString(number % 1000) AS k, intDiv(number, 1000000) AS v FROM numbers(1000000)) AS r USING (k)
 SETTINGS hash_join_layout = 'serial', max_threads = 1, max_bytes_before_external_join = 3000000, log_comment = 'spill_at_threshold_repeated_string_keys_fits';
 
+-- Only the first block copies its 200-byte keys to the arena, though every block has 13 MB of them.
+SELECT 'repeated FixedString keys fit', count(), sum(r.v)
+FROM (SELECT toFixedString(toString(number), 200) AS k FROM numbers(1000)) AS l
+ANY LEFT JOIN (SELECT toFixedString(toString(number % 1000), 200) AS k, intDiv(number, 1000000) AS v FROM numbers(1000000)) AS r USING (k)
+SETTINGS hash_join_layout = 'serial', max_threads = 1, max_bytes_before_external_join = 40000000, log_comment = 'spill_at_threshold_repeated_fixed_string_keys_fits';
+
 -- One key in every right row: a split cannot separate it, so the bucket goes over the threshold instead of
 -- splitting until it runs out of buckets. `v` is 0 in every row, so `sum` does not depend on the row that
 -- `ANY` and `SEMI` keep.
