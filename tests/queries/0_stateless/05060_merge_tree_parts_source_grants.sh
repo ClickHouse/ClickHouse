@@ -64,6 +64,19 @@ denied "CREATE TABLE mtp_grants_denied AS $(mtp "type = s3, metadata_type = plai
 # An `endpoint_subpath` moves the data below the endpoint, so the endpoint alone is not what the
 # filter is matched against; the query then needs the unfiltered grant.
 denied "SELECT count() FROM $(mtp "type = s3, metadata_type = plain, endpoint = '${S3_ROOT}allowed/', endpoint_subpath = 'sub/', ${S3_CREDENTIALS}")"
+# With `local` metadata the object keys come from the metadata files, which can name objects outside the
+# endpoint, so the endpoint is not what the filter is matched against either. It is the default metadata of
+# an `s3` disk, and of an `object_storage` disk even when its backend is `s3_plain`.
+METADATA_PATH="${DISK_ROOT}metadata/"
+function mtp_part()
+{
+    echo "mergeTreeParts(structure('id Int64'), parts(Wide(path = 'all_1_1_0/', marks_count = 2, ranges = [(0, 1)], has_lightweight_delete = 0)), disk($1), table_settings(index_granularity_bytes = 10485760))"
+}
+denied "SELECT count() FROM $(mtp_part "type = s3, metadata_type = local, metadata_path = '${METADATA_PATH}', endpoint = '${S3_ROOT}allowed/', ${S3_CREDENTIALS}")"
+denied "SELECT count() FROM $(mtp_part "type = s3, metadata_path = '${METADATA_PATH}', endpoint = '${S3_ROOT}allowed/', ${S3_CREDENTIALS}")"
+denied "SELECT count() FROM $(mtp_part "type = object_storage, object_storage_type = s3_plain, metadata_path = '${METADATA_PATH}', endpoint = '${S3_ROOT}allowed/', ${S3_CREDENTIALS}")"
+denied "DESCRIBE $(mtp "type = s3, metadata_type = local, metadata_path = '${METADATA_PATH}', endpoint = '${S3_ROOT}allowed/', ${S3_CREDENTIALS}")"
+test -d "${METADATA_PATH}" && echo "the metadata directory was created for a query without the grant" || echo "no metadata directory"
 denied "SELECT count() FROM $(mtp "type = local, path = '${DISK_ROOT}'")"
 
 echo "-- READ ON S3 without a filter"

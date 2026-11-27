@@ -470,8 +470,8 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
         /// Every key that decides the source or its location may be given only once: the first
         /// occurrence of a key in the configuration wins when the disk is created, so a repeated key
         /// would let the check look at one value while the disk uses another.
-        static constexpr std::array<std::string_view, 8> source_keys = {
-            "type", "object_storage_type", "endpoint", "endpoint_subpath",
+        static constexpr std::array<std::string_view, 9> source_keys = {
+            "type", "object_storage_type", "metadata_type", "endpoint", "endpoint_subpath",
             "storage_account_url", "connection_string", "container_name", "container"};
         /// The keys that were given, with their value if it is a plain literal.
         UnorderedMapWithMemoryTracking<std::string, std::optional<std::string>> source_args;
@@ -578,8 +578,34 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
         /// creators prefer it. A local disk has no URI, as `file` has none. An Azure disk has none either:
         /// a filtered `READ ON AZURE` grant is matched against a blob name, as `azureBlobStorage` does,
         /// while the disk reads any blob of its container, so it needs the unfiltered grant.
+        ///
+        /// The location says where the disk reads only when the metadata derives the object keys from
+        /// the paths of the files: `plain`, `plain_rewritable` and `web`. A metadata storage that keeps
+        /// the keys in metadata files (`local`, `keeper`) reads whatever key a metadata file names,
+        /// which need not be below the location, so such a disk needs the unfiltered grant as well.
+        /// Without a `metadata_type`, the disk picks it the same way `registerDiskObjectStorage` does:
+        /// from its `type`, and failing that from its backend. A `metadata_type` that is not a plain
+        /// literal is not trusted to confine anything.
+        auto metadata_type = get_source_arg("metadata_type");
+        if (!source_args.contains("metadata_type"))
+        {
+            if (type.contains("with_keeper"))
+                metadata_type = "keeper";
+            else if (type.contains("plain") && type.contains("rewritable"))
+                metadata_type = "plain_rewritable";
+            else if (type.contains("plain"))
+                metadata_type = "plain";
+            else if (backend == "web")
+                metadata_type = "web";
+            else
+                metadata_type = "local";
+        }
+        const bool keys_are_confined_to_location
+            = metadata_type == "plain" || metadata_type == "plain_rewritable" || metadata_type == "web";
+
         if (*source_access != AccessTypeObjects::Source::FILE
             && *source_access != AccessTypeObjects::Source::AZURE
+            && keys_are_confined_to_location
             && !source_args.contains("endpoint_subpath")
             && source_args.contains("endpoint"))
         {
@@ -669,9 +695,12 @@ value: it decides what kind of source the access of the query is checked for (`R
 `GRANT READ ON S3('https://mybucket.s3.amazonaws.com/data/.*')`, is matched against the `endpoint` of
 the disk description, which then has to be a literal value as well; a local disk needs the unfiltered
 `READ ON FILE` grant, as the `file` table function does, and an Azure disk needs the unfiltered
-`READ ON AZURE` grant, because it reads any blob of its container. The keys that decide the
-source and its location (`type`, `object_storage_type`, `endpoint`, `storage_account_url`, ...) can be
-given only once. The disk is local to the query and is not registered on the server.
+`READ ON AZURE` grant, because it reads any blob of its container. A disk with `local` metadata needs
+the unfiltered grant too: its metadata files name the objects to read, and those need not be under the
+`endpoint`. The keys that decide the source and its location (`type`, `object_storage_type`,
+`metadata_type`, `endpoint`, `storage_account_url`, ...) can be given only once. `persistent_removal_log`
+is not allowed: a query must not replay the queue of removed objects of the disk. The disk is local to
+the query and is not registered on the server.
 
 ## Usage example {#usage-example}
 
