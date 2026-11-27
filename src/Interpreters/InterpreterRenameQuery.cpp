@@ -187,6 +187,14 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 throw Exception(ErrorCodes::TABLE_UUID_MISMATCH, "Table {}.{} was not created on behalf of the table with UUID {}",
                     backQuoteIfNeed(elem.from_database_name), backQuoteIfNeed(elem.from_table_name), *parent_table);
         }
+        else if (!parent_table)
+        {
+            /// A table moved by anyone else stops being a table created on behalf of its parent, so it cannot be moved back in its place.
+            if (auto table = database->tryGetTable(elem.from_table_name, getContext()))
+                table->parent_table_uuid = UUIDHelpers::Nil;
+            if (auto table = database_catalog.getDatabase(elem.to_database_name)->tryGetTable(elem.to_table_name, getContext()))
+                table->parent_table_uuid = UUIDHelpers::Nil;
+        }
 
         StorageID from_table_id{elem.from_database_name, elem.from_table_name};
         StorageID to_table_id{elem.to_database_name, elem.to_table_name};

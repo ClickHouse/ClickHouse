@@ -10,16 +10,14 @@ CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none"
 FP="refresh_mv_pause_before_exchange"
 trap '$CLICKHOUSE_CLIENT -q "system disable failpoint $FP" 2>/dev/null' EXIT
 
-# Parks a refresh of the view $1 after it has filled its temporary table $2, replaces the table under the temporary
-# name ($3 runs additional queries), and lets the refresh continue to the exchange.
+# Parks a refresh of the view $1 after it has filled its temporary table, runs the queries $2 that put another table
+# under the temporary name, and lets the refresh continue to the exchange.
 refresh_with_replaced_temp_table() {
     $CLICKHOUSE_CLIENT -q "
         system enable failpoint $FP;
         system refresh view $1;"
     timeout 60 $CLICKHOUSE_CLIENT -q "system wait failpoint $FP pause" || echo "FAIL: the refresh did not reach $FP"
-    $CLICKHOUSE_CLIENT -q "
-        create or replace table $2 (x Int64) engine Memory;
-        $3"
+    $CLICKHOUSE_CLIENT -q "$2"
     $CLICKHOUSE_CLIENT -q "system disable failpoint $FP"
     $CLICKHOUSE_CLIENT -q "system wait view $1" 2>&1 | grep -o -m1 "TABLE_UUID_MISMATCH"
 }
@@ -39,7 +37,9 @@ do
             select x from $db.src;"
     temp_table="$db.\`.tmp.inner_id.$($CLICKHOUSE_CLIENT -q "select uuid from system.tables where database = '$db' and name = 'mv'")\`"
 
-    refresh_with_replaced_temp_table "$db.mv" "$temp_table"
+    replace="create or replace table $temp_table (x Int64) engine Memory"
+
+    refresh_with_replaced_temp_table "$db.mv" "$replace"
     $CLICKHOUSE_CLIENT -q "select engine = '$table_engine', total_rows from system.tables where database = '$db' and name = 'tgt'"
 
     # The next refresh publishes its own table, with the engine of the target.
@@ -48,8 +48,18 @@ do
         system wait view $db.mv;
         select engine = '$table_engine', total_rows from system.tables where database = '$db' and name = 'tgt';"
 
+    # A table created by an earlier refresh is not published either: neither the previous target, ...
+    $CLICKHOUSE_CLIENT -q "insert into $db.src values (2)"
+    refresh_with_replaced_temp_table "$db.mv" "exchange tables $temp_table and $db.tgt"
+    # ... nor a temporary table that was moved away (that refresh fails for the lack of the table) and is moved back later.
+    $CLICKHOUSE_CLIENT -q "insert into $db.src values (3)"
+    refresh_with_replaced_temp_table "$db.mv" "rename table $temp_table to $db.saved"
+    $CLICKHOUSE_CLIENT -q "insert into $db.src values (4)"
+    refresh_with_replaced_temp_table "$db.mv" "exchange tables $temp_table and $db.saved"
+    $CLICKHOUSE_CLIENT -q "select engine = '$table_engine', total_rows from system.tables where database = '$db' and name = 'tgt'"
+
     # Without the target the refresh renames instead of exchanging.
-    refresh_with_replaced_temp_table "$db.mv" "$temp_table" "drop table $db.tgt;"
+    refresh_with_replaced_temp_table "$db.mv" "$replace; drop table $db.tgt"
     $CLICKHOUSE_CLIENT -q "select count() from system.tables where database = '$db' and name = 'tgt'"
 
     $CLICKHOUSE_CLIENT -q "drop database $db sync"
@@ -63,7 +73,7 @@ $CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 --send_logs_level=fata
     create table $db.tgt (x Int64) engine MergeTree order by x;
     create materialized view $db.mv refresh every 1 year settings refresh_retries = 0 to $db.tgt empty as select 1 as x;
     rename table $db.mv to ${db}_ordinary.mv;"
-refresh_with_replaced_temp_table "${db}_ordinary.mv" "$db.\`.tmp.inner.mv\`"
+refresh_with_replaced_temp_table "${db}_ordinary.mv" "create or replace table $db.\`.tmp.inner.mv\` (x Int64) engine Memory"
 $CLICKHOUSE_CLIENT -q "
     select engine, total_rows from system.tables where database = '$db' and name = 'tgt';
     system refresh view ${db}_ordinary.mv;
