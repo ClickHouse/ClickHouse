@@ -192,8 +192,9 @@ void pushLimitByIntoSort(const Stack & stack, bool use_outer_limit)
     if (!expr_step || expr_node->children.size() != 1)
         return;
 
-    auto * sort = typeid_cast<SortingStep *>(expr_node->children.front()->step.get());
-    if (!sort)
+    QueryPlan::Node * sort_node = expr_node->children.front();
+    auto * sort = typeid_cast<SortingStep *>(sort_node->step.get());
+    if (!sort || sort_node->children.size() != 1)
         return;
 
     /// `arrayJoin` in the expression above sort changes row cardinality after the sort runs.
@@ -231,6 +232,14 @@ void pushLimitByIntoSort(const Stack & stack, bool use_outer_limit)
 
     const UInt64 max_groups = use_outer_limit ? getLimitByMaxGroups(stack, *limit_by) : 0;
     sort->updateLimitByHint(limit_by->getColumns(), length + offset, max_groups, limit_by->alwaysReadTillEnd());
+
+    /// The pre-filter runs per stream, so the pipeline below the sort must keep several streams:
+    /// `PrefetchingConcatProcessor` would otherwise collapse a single-part filtered read into one
+    /// stream and serialize the `LIMIT BY` reduction. The opt-out is decided here, together with
+    /// the hint, because `optimizeReadInOrder` runs before this pass (it converts the sort to
+    /// `FinishSorting`) and therefore cannot see the hint.
+    if (sort->willAddPerStreamLimitBy())
+        preferMultipleStreamsForReadingBelow(sort_node->children.front());
 }
 
 }

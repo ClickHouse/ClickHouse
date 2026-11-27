@@ -256,9 +256,9 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
         return result;
     }
 
-    /// The structure of the result is not known in advance, so the executor gets an empty header
+    /// The structure of the result is not known in advance, so the executor gets no header
     /// and is read directly, not through a `RemoteSource`.
-    RemoteQueryExecutor executor(pool, request, std::make_shared<const Block>(Block{}), context_copy);
+    RemoteQueryExecutor executor(pool, request, SharedHeader{}, context_copy);
     return readInvalidateQuery(executor);
 }
 

@@ -65,7 +65,17 @@ String settingCombinations(RandomGenerator & rg, DB::Strings && choices)
     return "'" + res + "'";
 }
 
-static String formatCodecChoices(RandomGenerator & rg, const DB::Strings & choices)
+/// A codec argument, with `bad_args` sometimes out of its range, e.g. `Delta(9)` or `ZSTD(-131073)`
+static String codecArgument(RandomGenerator & rg, const bool bad_args, const int64_t valid)
+{
+    if (bad_args && rg.nextSmallNumber() < 3)
+    {
+        return std::to_string(rg.nextBool() ? static_cast<int64_t>(rg.nextRandomInt16()) : rg.nextRandomInt64());
+    }
+    return std::to_string(valid);
+}
+
+static String formatCodecChoices(RandomGenerator & rg, const DB::Strings & choices, const bool bad_args = false)
 {
     String res;
     for (size_t i = 0; i < choices.size(); i++)
@@ -78,19 +88,19 @@ static String formatCodecChoices(RandomGenerator & rg, const DB::Strings & choic
         if (choices[i] == "LZ4HC" && rg.nextBool())
         {
             res += "(";
-            res += std::to_string(rg.randomInt<uint32_t>(0, 12));
+            res += codecArgument(rg, bad_args, rg.randomInt<uint32_t>(0, 12));
             res += ")";
         }
         else if (choices[i] == "ZSTD" && rg.nextBool())
         {
             res += "(";
-            res += std::to_string(rg.randomInt<uint32_t>(1, 22));
+            res += codecArgument(rg, bad_args, rg.randomInt<uint32_t>(1, 22));
             if (rg.nextBool())
             {
                 /// Optional second argument: zstd window log; 0 means the library default.
                 /// Interacts with the `zstd_window_log_max` setting on the read side.
                 res += ",";
-                res += std::to_string(rg.nextBool() ? 0 : rg.randomInt<uint32_t>(10, 31));
+                res += codecArgument(rg, bad_args, rg.nextBool() ? 0 : rg.randomInt<uint32_t>(10, 31));
             }
             res += ")";
         }
@@ -98,34 +108,34 @@ static String formatCodecChoices(RandomGenerator & rg, const DB::Strings & choic
         {
             /// Optional compression level, 0 to 12; default is 8.
             res += "(";
-            res += std::to_string(rg.randomInt<uint32_t>(0, 12));
+            res += codecArgument(rg, bad_args, rg.randomInt<uint32_t>(0, 12));
             res += ")";
         }
         else if (choices[i] == "ZXC" && rg.nextBool())
         {
             /// Optional compression level, 1 (fastest) to 7 (max density); default is 3.
             res += "(";
-            res += std::to_string(rg.randomInt<uint32_t>(1, 7));
+            res += codecArgument(rg, bad_args, rg.randomInt<uint32_t>(1, 7));
             res += ")";
         }
         else if ((choices[i] == "Delta" || choices[i] == "DoubleDelta") && rg.nextBool())
         {
             res += "(";
-            res += std::to_string(UINT32_C(1) << rg.randomInt<uint32_t>(0, 3));
+            res += codecArgument(rg, bad_args, UINT32_C(1) << rg.randomInt<uint32_t>(0, 3));
             res += ")";
         }
         else if (choices[i] == "Gorilla" && rg.nextBool())
         {
             res += "(";
-            res += std::to_string(rg.nextBool() ? 4 : 8);
+            res += codecArgument(rg, bad_args, rg.nextBool() ? 4 : 8);
             res += ")";
         }
         else if (choices[i] == "FPC" && rg.nextBool())
         {
             res += "(";
-            res += std::to_string(rg.randomInt<uint32_t>(1, 28));
+            res += codecArgument(rg, bad_args, rg.randomInt<uint32_t>(1, 28));
             res += ",";
-            res += std::to_string(rg.nextBool() ? 4 : 8);
+            res += codecArgument(rg, bad_args, rg.nextBool() ? 4 : 8);
             res += ")";
         }
         else if (choices[i] == "T64" && rg.nextBool())
@@ -221,7 +231,7 @@ static DB::Strings pickCodecSubset(RandomGenerator & rg, const DB::Strings & poo
 /// `FirstApplicable(a, b, ...)` uses the first alternative that applies to the data type, so its alternatives come from
 /// every codec, not only the ones of the type. An alternative can be a `Multiple(...)` chain. Without a general codec at
 /// the end no alternative may apply, which is an error, also when the type is unknown, as for a default codec.
-String formatFirstApplicable(RandomGenerator & rg)
+String formatFirstApplicable(RandomGenerator & rg, const bool bad_args)
 {
     String res = "FirstApplicable(";
     const uint32_t alternatives = rg.randomInt<uint32_t>(1, 3);
@@ -234,29 +244,29 @@ String formatFirstApplicable(RandomGenerator & rg)
         }
         if (rg.nextSmallNumber() < 3)
         {
-            res += "Multiple(" + formatCodecChoices(rg, pickCodecSubset(rg, codecs)) + ")";
+            res += "Multiple(" + formatCodecChoices(rg, pickCodecSubset(rg, codecs), bad_args) + ")";
         }
         else
         {
-            res += formatCodecChoices(rg, {rg.pickRandomly(codecs)});
+            res += formatCodecChoices(rg, {rg.pickRandomly(codecs)}, bad_args);
         }
     }
     if (rg.nextSmallNumber() < 10)
     {
         res += ", ";
-        res += formatCodecChoices(rg, {rg.nextBool() ? "ZSTD" : "LZ4"});
+        res += formatCodecChoices(rg, {rg.nextBool() ? "ZSTD" : "LZ4"}, bad_args);
     }
     res += ")";
     return res;
 }
 
-String generateNextCodecString(RandomGenerator & rg)
+String generateNextCodecString(RandomGenerator & rg, const bool bad_args)
 {
     if (rg.nextSmallNumber() < 3)
     {
-        return formatFirstApplicable(rg);
+        return formatFirstApplicable(rg, bad_args);
     }
-    return formatCodecChoices(rg, pickCodecSubset(rg, codecs));
+    return formatCodecChoices(rg, pickCodecSubset(rg, codecs), bad_args);
 }
 
 /// Unwraps `Nullable` and `LowCardinality` wrappers, returning the concrete leaf type.
@@ -515,23 +525,23 @@ std::unordered_map<String, CHSetting> performanceSettings
                      "full_sorting_merge",
                      "grace_hash",
                      "hash",
-                     "ie_join",
+                     "inequality",
                      "parallel_full_sorting_merge",
                      "parallel_hash",
                      "partial_merge",
                      "prefer_partial_merge"});
-                /// `ie_join` only handles an `ON` with two inequality comparisons, so on its own it
+                /// `inequality` only handles an `ON` with two inequality comparisons, so on its own it
                 /// makes every ordinary join fail to plan. Add a fallback when the combination has
                 /// none; `grace_hash` and `parallel_hash` serve just as well, hence the substring test
-                if (res.contains("ie_join") && !res.contains("hash"))
+                if (res.contains("inequality") && !res.contains("hash"))
                     res.insert(res.size() - 1, ",hash");
                 return res;
             },
             {"'default'",
              "'grace_hash'",
              "'direct, hash'",
-             /// `ie_join` only handles an `ON` with two inequality comparisons, so keep `hash` as a fallback
-             "'ie_join, hash'",
+             /// `inequality` only handles an `ON` with two inequality comparisons, so keep `hash` as a fallback
+             "'inequality, hash'",
              "'hash'",
              "'parallel_hash'",
              "'partial_merge'",
@@ -641,6 +651,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_filter_push_down_below_limit_by", trueOrFalseSetting},
        {"query_plan_fuse_filter_into_array_join", trueOrFalseSetting},
        {"query_plan_join_order_use_interesting_orders", trueOrFalseSetting},
+       {"query_plan_join_multiway_merge", trueOrFalseSetting},
        {"query_plan_join_shard_by_pk_ranges", trueOrFalseSetting},
        {"query_plan_join_swap_table",
         CHSetting(
@@ -1699,6 +1710,38 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"merge_tree_use_const_size_tasks_for_remote_reading", trueOrFalseSettingNoOracle},
     {"merge_tree_use_v1_object_and_dynamic_serialization", trueOrFalseSettingNoOracle},
     {"metrics_perf_events_enabled", trueOrFalseSettingNoOracle},
+    {"metrics_perf_events_list",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             /// Empty opens every event for each thread, and some events are unsupported on VMs, each logging a warning
+             return settingCombinations(
+                 rg,
+                 {"PerfCPUCycles",
+                  "PerfInstructions",
+                  "PerfCacheReferences",
+                  "PerfCacheMisses",
+                  "PerfBranchInstructions",
+                  "PerfBranchMisses",
+                  "PerfBusCycles",
+                  "PerfStalledCyclesFrontend",
+                  "PerfStalledCyclesBackend",
+                  "PerfRefCPUCycles",
+                  "PerfCPUClock",
+                  "PerfTaskClock",
+                  "PerfContextSwitches",
+                  "PerfCPUMigrations",
+                  "PerfAlignmentFaults",
+                  "PerfEmulationFaults",
+                  "PerfDataTLBReferences",
+                  "PerfDataTLBMisses",
+                  "PerfInstructionTLBReferences",
+                  "PerfInstructionTLBMisses",
+                  "PerfLocalMemoryReferences",
+                  "PerfLocalMemoryMisses"});
+         },
+         {},
+         false)},
     {"min_count_to_compile_aggregate_expression", CHSetting(zeroToThree, {"0", "1", "2", "3"}, false)},
     {"min_count_to_compile_expression", CHSetting(zeroToThree, {"0", "1", "2", "3"}, false)},
     {"min_count_to_compile_regular_expression", CHSetting(zeroToThree, {"0", "1", "2", "3"}, false)},
@@ -2339,7 +2382,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings choices = {"'async'", "'wait'", "'wait_unknown'"};
+             static const DB::Strings choices = {"'async'", "'wait'", "'wait_unknown'", "'wait_commit'", "'wait_visible'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -3119,6 +3162,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
          /// {"output_format_native_encode_types_in_binary_format", trueOrFalseSettingNoOracle}, may block the client
          {"output_format_orc_row_index_stride", CHSetting(rowsRange, {}, false)},
          {"output_format_parquet_use_alp_encoding", trueOrFalseSettingNoOracle},
+         {"output_format_parquet_use_data_page_v2", trueOrFalseSettingNoOracle},
          {"output_format_parquet_write_checksums", trueOrFalseSettingNoOracle},
          {"output_format_trim_fixed_string", trueOrFalseSettingNoOracle},
          {"output_format_tsv_crlf_end_of_line", trueOrFalseSettingNoOracle},

@@ -14,7 +14,7 @@ import NYCTaxiExampleDataset from '/snippets/ko/_nyc_taxi_example_dataset.mdx';
 한 번에 쿼리의 한 부분만 변경하고 결과를 안정적인 기준값과 비교하면 쿼리 최적화가 수월해집니다. 이 가이드에서는 쿼리를 점진적으로 단순화하고 실행 결과 간의 차이를 통해 어떤 작업이 실행 시간에 가장 큰 영향을 미치는지 파악하는 방법을 설명합니다. 그런 다음 최적화를 선택하기 전에 의심되는 병목 현상을 검증할 수 있습니다.
 
 <div id="before-you-begin">
-  ## 시작하기 전에
+  ## 시작하기 전에 {#before-you-begin}
 </div>
 
 분석하려는 반복적인 느린 쿼리 패턴을 준비하십시오. 아직 식별하지 못했다면 [느린 쿼리 진단](/ko/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries)에서 절차를 안내합니다.
@@ -28,7 +28,7 @@ import NYCTaxiExampleDataset from '/snippets/ko/_nyc_taxi_example_dataset.mdx';
 예시 테이블은 `ORDER BY ()`를 사용하므로 날짜 필터에서 읽는 동안 순서 지정 키를 사용해 데이터를 제외할 수 없습니다. 이 예시는 성능 목표가 아니라 비교 방법을 연습하는 용도로 사용하십시오.
 
 <div id="how-it-works">
-  ## 작동 방식
+  ## 작동 방식 {#how-it-works}
 </div>
 
 쿼리를 점진적으로 단순화하면 작업 단계를 제거하기 전후의 실행 시간을 비교할 수 있습니다. 이러한 차이를 통해 스캔 및 필터링, 그룹화, 집계 계산 또는 정렬과 출력 포맷 지정 같은 후속 작업 중 어느 부분을 조사해야 할지 판단할 수 있습니다.
@@ -43,16 +43,14 @@ import NYCTaxiExampleDataset from '/snippets/ko/_nyc_taxi_example_dataset.mdx';
   이러한 차이는 ClickHouse 실행 단계의 정확한 측정값이 아니라 진단을 위한 추정치입니다. 쿼리를 변경하면 실행 계획, 읽는 컬럼, 단계 간 전달되는 데이터가 달라질 수 있습니다. 결과를 바탕으로 가설을 세운 후 쿼리 로그와 [`EXPLAIN`](/ko/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement)으로 검증하십시오.
 </Note>
 
-<div id="establish-a-repeatable-baseline">
-  ## 재현 가능한 기준선 설정
-</div>
+## 재현 가능한 기준값 설정 {#establish-a-repeatable-baseline}
 
 측정 결과를 비교 가능하게 하려면 다음 사항을 따르십시오:
 
 * 모든 비교에 동일한 데이터와 시간 범위를 사용하도록 `FROM`, `JOIN`, `PREWHERE`, `WHERE` 절은 변경하지 마십시오.
 * 비슷한 시스템 부하 조건에서 각 버전의 쿼리를 여러 번 실행하십시오.
 * 캐시 조건을 일관되게 유지하십시오. 측정값을 기록하기 전에 각 버전의 쿼리를 실행하거나, 아래 나열된 캐시를 비활성화하십시오. 캐시된 실행과 캐시되지 않은 실행을 비교하지 마십시오.
-* 가장 빠르거나 가장 느린 결과에 의존하지 말고, 워밍업 실행 후 반복 실행 결과의 중앙값과 같은 대표적인 실행 시간을 기록하십시오.
+* 가장 빠르거나 가장 느린 결과에 의존하지 말고, 워밍업 실행 후 반복 실행 결과의 중앙값과 같은 대표 소요 시간을 기록하십시오.
 * 성능 차이를 특정 변경 사항과 연관 지을 수 있도록 한 번에 하나의 변수만 변경하십시오.
 
 캐시되지 않은 상태에서 진단 목적으로 비교하려면 원격 데이터용 ClickHouse 파일 시스템 캐시, 쿼리 캐시 및 쿼리 조건 캐시를 비활성화하십시오. 또한 실행 C의 `count`가 비교하려는 스캔을 건너뛰는 최적화된 실행 계획을 사용하지 않도록 암시적 프로젝션도 비활성화하십시오.
@@ -71,13 +69,9 @@ SET optimize_use_implicit_projections = 0;
 이 워크플로는 통제된 쿼리 실행과 쿼리 로그의 측정값을 결합합니다.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![쿼리 로그에서 후보 쿼리를 식별하고 격리된 환경에서 변경 사항을 테스트하는 워크플로](/images/guides/best-practices/query_optimization_diagram_1.webp)
-
-</Frame>
-
+  <Frame>
+    ![쿼리 로그에서 후보 쿼리를 식별하고 격리된 환경에서 변경 사항을 테스트하는 워크플로](/images/guides/best-practices/query_optimization_diagram_1.webp)
+  </Frame>
 </div>
 
 다음과 같이 각 실행의 측정값을 수집합니다.
@@ -94,7 +88,7 @@ SET optimize_use_implicit_projections = 0;
 
    `SYSTEM FLUSH LOGS`를 실행할 수 없다면 쿼리 로그가 자동으로 플러시될 때까지 기다린 후 다시 조회하십시오. 레코드가 계속 나타나지 않으면 쿼리 로깅이 활성화되어 있는지, `system.query_log`를 읽을 수 있는지, 쿼리를 실행한 노드를 조회하고 있는지 확인하십시오.
 
-4. 각 쿼리 ID에 해당하는 완료 레코드를 조회하십시오. `system.query_log`는 완료된 쿼리에 대해 `QueryStart`와 `QueryFinish` 이벤트를 모두 기록합니다. 최종 실행 시간, 읽은 행 및 바이트 수, 피크 메모리를 포함하는 `QueryFinish`로 필터링하십시오.
+4. 각 쿼리 ID에 해당하는 완료 레코드를 조회하십시오. `system.query_log`는 완료된 쿼리에 대해 `QueryStart`와 `QueryFinish` 이벤트를 모두 기록합니다. 최종 실행 시간, 읽은 행 및 바이트 수, 최대 메모리 사용량을 포함하는 `QueryFinish`로 필터링하십시오.
 
    ```sql
    SELECT
@@ -110,17 +104,17 @@ SET optimize_use_implicit_projections = 0;
    LIMIT 1;
    ```
 
-5. 각 쿼리 버전에는 측정 대상 실행의 중앙 실행 시간을 사용하십시오. 측정값이 실제 실행과 연결되도록, 중앙값에 가장 가까운 실행의 `read_rows`, `read_bytes`, 피크 메모리를 기록하십시오.
+5. 각 쿼리 버전에는 측정 대상 실행의 중앙 실행 시간을 사용하십시오. 측정값이 실제 실행과 연결되도록, 중앙값에 가장 가까운 실행의 `read_rows`, `read_bytes`, 최대 메모리 사용량을 기록하십시오.
 
 <Note>
-  분산 쿼리에서는 시작 쿼리의 `QueryFinish` 레코드에 있는 `memory_usage`가 클러스터 전체의 피크 메모리를 나타내지 않습니다. `initial_query_id`를 사용하여 참여 노드의 하위 `QueryFinish` 레코드를 확인하십시오.
+  분산 쿼리에서는 시작 쿼리의 `QueryFinish` 레코드에 있는 `memory_usage`가 클러스터 전체의 최대 메모리 사용량을 나타내지 않습니다. `initial_query_id`를 사용하여 참여 노드의 하위 `QueryFinish` 레코드를 확인하십시오.
 </Note>
 
 다음 표를 사용하여 대표 측정값을 정리하십시오. 필드와 구성에 관한 자세한 내용은 [`system.query_log`](/ko/reference/system-tables/query_log)를 참조하십시오.
 
 <Tabs>
   <Tab title="테이블">
-    | 실행 | 쿼리 버전            | 대표 실행 시간 | `read_rows` | `read_bytes` | 피크 메모리 |
+    | 실행 | 쿼리 버전            | 대표 소요 시간 | `read_rows` | `read_bytes` | 최대 메모리 사용량 |
     | -- | ---------------- | -------- | ----------- | ------------ | ------ |
     | A  | 원본 쿼리            |          |             |              |        |
     | B  | 그룹화된 `count`     |          |             |              |        |
@@ -138,7 +132,7 @@ SET optimize_use_implicit_projections = 0;
 </Tabs>
 
 <div id="run-progressively-simpler-queries">
-  ## 점차 단순화한 쿼리 실행
+  ## 점차 단순화한 쿼리 실행 {#run-progressively-simpler-queries}
 </div>
 
 3가지 비교를 모두 보여주기 위해 이 예시에서는 그룹화된 [날짜 범위 워크로드](/ko/guides/clickhouse/performance-and-monitoring/query-optimization-example#date-range-aggregation)를 사용합니다. 이 예시를 그대로 따르지 않고도 다른 쿼리에 이 방법을 적용할 수 있습니다. 쿼리에 `GROUP BY`가 없으면 아래 설명에 따라 실행 B를 건너뜁니다.
@@ -203,7 +197,7 @@ SET optimize_use_implicit_projections = 0;
 </Steps>
 
 <div id="interpret-the-differences">
-  ## 차이점 해석
+  ## 차이점 해석 {#interpret-the-differences}
 </div>
 
 개별 측정 시간 2개를 빼기보다 반복 실행에서 얻은 대표 소요 시간을 비교합니다. 크고 일관된 차이는 다음으로 조사할 지점을 보여 줍니다.
@@ -216,7 +210,7 @@ SET optimize_use_implicit_projections = 0;
 | 세 실행의 소요 시간이 비슷함   | 지연 시간의 원인이 세 버전 모두에 공통적이거나, 단순화로 인해 실행 계획이 변경되었을 수 있음 | 실행 간 `read_rows`, `read_bytes`, 피크 메모리 사용량을 비교합니다. 이 값들도 비슷하다면 실행 C에 남아 있는 작업을 조사합니다. 그렇지 않으면 실행 계획 간 차이를 비교합니다. |
 
 <div id="compare-rows-read-with-count-result">
-  ### 읽은 행 수와 count 결과 비교
+  ### 읽은 행 수와 count 결과 비교 {#compare-rows-read-with-count-result}
 </div>
 
 실행 C의 `read_rows`를 `count`가 반환한 값과 비교합니다. 예를 들어 `read_rows`가 1억이고 `count`가 100만을 반환하면, ClickHouse는 집계된 각 행마다 약 100개의 원본 행을 스캔한 것입니다. 이는 필터가 테이블에서 읽은 행 대부분을 제외했음을 보여 주지만, 그 이유는 알 수 없습니다. 이 비율은 단순한 단일 테이블 스캔에 적합합니다. 여러 데이터 소스 또는 프로젝션이 있는 쿼리에서는 실행 계획을 사용해 `read_rows`를 해석하십시오.
@@ -231,7 +225,7 @@ SET use_skip_indexes_on_data_read = 0;
 그런 다음 [`EXPLAIN indexes = 1`](/ko/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement)을 사용하여 ClickHouse가 사용한 인덱스와 각 인덱스가 제외한 파트 및 그래뉼 수를 확인합니다. ClickHouse가 예상보다 많은 그래뉼을 선택했다면 필터가 테이블의 순서 지정 키와 일치하는지, 파티션 프루닝 또는 데이터 스키핑 인덱스를 통해 더 많은 그래뉼을 제외할 수 있는지 확인합니다. 계획에 `Indexes` 섹션이 없으면 `EXPLAIN`이 해당 쿼리의 인덱스 프루닝 정보를 보고하지 않은 것입니다. 반면 전체 테이블을 대상으로 하는 분석 쿼리는 테이블 대부분을 읽는 것이 정상입니다.
 
 <div id="validate-the-suspected-bottleneck">
-  ## 의심되는 병목 현상 검증
+  ## 의심되는 병목 현상 검증 {#validate-the-suspected-bottleneck}
 </div>
 
 비교 결과 병목 현상이 의심되면 스키마나 쿼리를 변경하기 전에 이를 검증하십시오. 의심되는 지연 시간의 원인에 맞는 근거를 사용하십시오.
@@ -243,8 +237,6 @@ SET use_skip_indexes_on_data_read = 0;
 
 `EXPLAIN`이 반환하는 인덱스 정보에 관한 자세한 내용은 [느린 쿼리 진단 가이드](/ko/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement)를 참조하십시오. 대상 변경을 하나 적용한 후 동일한 조건에서 실행 A, B, C를 반복하십시오. 변경으로 의도한 작업량이 줄었고 병목 현상이 다른 곳으로 이동하지 않았는지 확인하십시오.
 
-<div id="next-steps">
-  ## 다음 단계
-</div>
+## 다음 단계 {#next-steps}
 
-[최적화 접근 방식](/ko/guides/clickhouse/performance-and-monitoring/optimization-approaches)을 계속해서 살펴보고, 의심되는 병목 지점에 맞는 하나 이상의 개선 방법을 찾아보십시오.
+이어서 [최적화 접근 방식](/ko/guides/clickhouse/performance-and-monitoring/optimization-approaches)을 참고하여 병목으로 의심되는 지점에 맞는 개선 방안을 하나 이상 찾아 적용하세요.
