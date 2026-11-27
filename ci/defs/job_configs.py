@@ -301,6 +301,7 @@ common_unit_test_job_config = Job.Config(
 )
 
 common_stress_job_config = Job.Config(
+    pre_hooks=[CI_LOGS_CREDENTIALS_HOOK],
     name=JobNames.STRESS,
     runs_on=[],  # from parametrize()
     command="python3 ./ci/jobs/stress_job.py",
@@ -1537,6 +1538,7 @@ class JobConfigs:
         ),
     )
     upgrade_test_jobs = Job.Config(
+        pre_hooks=[CI_LOGS_CREDENTIALS_HOOK],
         name=JobNames.UPGRADE,
         runs_on=["from param"],
         command="python3 ./ci/jobs/upgrade_job.py",
@@ -1867,6 +1869,7 @@ class JobConfigs:
         ),
     )
     ast_fuzzer_jobs = Job.Config(
+        pre_hooks=[CI_LOGS_CREDENTIALS_HOOK],
         name=JobNames.ASTFUZZER,
         runs_on=[],  # from parametrize()
         command='python3 ./ci/jobs/ast_fuzzer_job.py "{PARAMETER}"',
@@ -1931,6 +1934,7 @@ class JobConfigs:
         ),
     )
     ast_fuzzer_targeted_pr_jobs = Job.Config(
+        pre_hooks=[CI_LOGS_CREDENTIALS_HOOK],
         name=JobNames.ASTFUZZER,
         runs_on=[],  # from parametrize()
         command='python3 ./ci/jobs/ast_fuzzer_job.py "{PARAMETER}"',
