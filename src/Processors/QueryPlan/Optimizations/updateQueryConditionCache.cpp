@@ -175,7 +175,6 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     }
 
     FilterStep * filter_step_to_tag = nullptr;
-    /// Whether only expression steps that keep the rows lie between the read and the filter step to tag.
     bool rows_keep_positions = true;
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
@@ -240,7 +239,6 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
 
     String condition = derived ? derived->condition : filter_actions_dag->getNames()[0];
 
-    /// A TopK read records only the chunks without matches.
     rows_keep_positions = rows_keep_positions && !is_top_k_read && !filter_step_to_tag->getExpression().hasArrayJoin();
 
     filter_step_to_tag->setConditionForQueryConditionCache(condition_hash, condition, rows_keep_positions);

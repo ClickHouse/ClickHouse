@@ -827,7 +827,6 @@ void FilterTransform::writeMarksWithoutMatchesIntoQueryConditionCache(
             }
             else
             {
-                /// The rows before this mark are passed over already: find the first passing row after it.
                 const auto * next = std::lower_bound(passing_rows->begin() + next_passing_row, passing_rows->end(), end);
                 const size_t next_index = next - passing_rows->begin();
                 has_matches = next_index != next_passing_row;

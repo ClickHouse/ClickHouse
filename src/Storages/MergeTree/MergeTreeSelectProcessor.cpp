@@ -445,7 +445,6 @@ static void setRowPositionsIfChunkHoldsWholeMarks(MarkRangesInfo & info, const M
     if (!total_rows || total_rows != num_rows)
         return;
 
-    /// Only the last mark can have fewer rows.
     if (same_rows && last_mark_rows <= first_mark_rows)
     {
         info.rows_per_mark = first_mark_rows;
