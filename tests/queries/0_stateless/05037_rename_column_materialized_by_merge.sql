@@ -8,8 +8,6 @@
 -- no default expression to refill from.
 -- https://github.com/ClickHouse/ClickHouse/issues/111001
 
-set allow_experimental_dynamic_type = 1;
-
 drop table if exists t_rename_materialized_by_merge;
 
 -- Compact parts: there the rename mutation rewrites the whole part through the reader, so a rename

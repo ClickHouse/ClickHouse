@@ -91,6 +91,8 @@ In the ClickPipe creation wizard, enable **Schema registry** on the Kafka or Kin
 
 There is no registry URL to configure. Every record produced by the Glue SerDe carries the ID of its own schema version, which ClickPipes resolves with `glue:GetSchemaVersion` and caches, one API call per distinct schema version. Schema evolution is handled automatically: when records switch to a new schema version mid-stream, it is resolved on first sight. For Kinesis, configure the same fields through [OpenAPI](/integrations/clickpipes/programmatic-access/openapi) or [Terraform](/integrations/clickpipes/programmatic-access/terraform).
 
+For Protobuf, records must use the framing written by the AWS Glue serializer: the 18-byte Glue header, then an unsigned varint message index, then the serialized message. The index is the position of the message among all messages defined in the schema file (nested messages included), sorted by fully qualified name. Records that carry the Glue header without a message index are not supported.
+
 ### IAM setup {#glue-iam-setup}
 
 Use whichever of the two options fits your setup. Option A is the common case for Amazon MSK.
@@ -199,6 +201,7 @@ Paste the new role's ARN into the **IAM role ARN** field in the wizard.
 | `schema version … not found in Glue schema registry`                                                | The records reference a schema version that doesn't exist in the configured account or region. Confirm **AWS region** matches the registry's region.            |
 | `schema version … belongs to Glue registry "X", but the pipe is configured for registry "Y"`         | Your producers register schemas in a different registry than the pipe names. Correct **Registry name**, or point the producers at the right registry.            |
 | `the AWS Glue schema registry only supports the Avro and Protobuf formats`                           | The ClickPipe combines a Glue registry with an unsupported format, such as JSON. Select Avro or Protobuf.                                                      |
+| `message index … out of range: Glue schema version … defines N messages`                             | The record has a Glue header but no valid message index, typically because a custom serializer omitted it. ClickPipes then reads the first byte of the message as the index. Write the index in the producer, as the AWS Glue serializer does. |
 
 ### Limitations {#glue-limitations}
 

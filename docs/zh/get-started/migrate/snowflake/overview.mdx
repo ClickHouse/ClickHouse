@@ -13,14 +13,12 @@ doc_type: 'guide'
 Snowflake 是一个云数据仓库，主要面向将传统本地部署的数据仓库工作负载迁移到云端的场景。它经过了良好优化，适合大规模运行耗时较长的报表查询。随着数据集迁移到云端，数据所有者开始思考还能如何进一步挖掘这些数据的价值，包括利用这些数据集为内部和外部用例中的实时应用提供支持。到了这一步，他们往往会意识到，自己需要一个针对实时分析优化的数据库，例如 ClickHouse。
 
 <div id="comparison">
-  ## 对比
+  ## 对比 {#comparison}
 </div>
 
 本节将比较 ClickHouse 和 Snowflake 的主要特性。
 
-<div id="similarities">
-  ### 相似之处
-</div>
+### 相似之处 {#similarities}
 
 Snowflake 是一个基于云的数据仓库平台，为存储、处理和分析海量
 数据提供了一种高效且可扩展的解决方案。
@@ -29,8 +27,8 @@ Snowflake 是一个基于云的数据仓库平台，为存储、处理和分析�
 
 Snowflake 的架构通常被描述为共享存储 (shared-disk)
 架构与 shared-nothing 架构之间的一种混合体。共享存储架构
-是指所有计算节点都可以通过 S3 等对象
-存储访问数据的架构。shared-nothing 架构则是指每个计算节点
+是指所有计算资源节点都可以通过 S3 等对象
+存储访问数据的架构。shared-nothing 架构则是指每个计算资源节点
 在本地存储整个数据集的一部分来响应查询。从理论上讲，这
 兼具了两种模型的优势：共享磁盘架构的简洁性
 以及 shared-nothing 架构的可扩展性。
@@ -43,13 +41,9 @@ Snowflake 的架构通常被描述为共享存储 (shared-disk)
 的图片展示了这种架构：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Snowflake 架构](/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp)
-
-</Frame>
-
+  <Frame>
+    ![Snowflake 架构](/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp)
+  </Frame>
 </div>
 
 相比之下，作为一个开源且提供云托管的产品，ClickHouse 可以部署
@@ -70,17 +64,13 @@ S3 的可扩展性解决了共享磁盘
 受到影响。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ClickHouse Cloud 架构](/images/cloud/onboard/discover/use_cases/cloud_architecture.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Cloud 架构](/images/cloud/onboard/discover/use_cases/cloud_architecture.webp)
+  </Frame>
 </div>
 
 <div id="differences">
-  ### 差异
+  ### 差异 {#differences}
 </div>
 
 除了底层存储格式和查询引擎外，这些架构
@@ -135,7 +125,7 @@ S3 的可扩展性解决了共享磁盘
   一定优势。
 
 <div id="real-time-analytics">
-  ### 实时分析
+  ### 实时分析 {#real-time-analytics}
 </div>
 
 基于公开的[基准测试](https://benchmark.clickhouse.com/#system=+%E2%98%81w|%EF%B8%8Fr|C%20c|nfe\&type=-\&machine=-ca2|gl|6ax|6ale|3al\&cluster_size=-\&opensource=-\&tuned=+n\&metric=hot\&queries=-)数据，

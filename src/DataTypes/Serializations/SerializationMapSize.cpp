@@ -212,6 +212,7 @@ void SerializationMapSize::deserializeBinaryBulkWithMultipleStreams(
             settings.path.pop_back();
         }
 
+        SerializationMap::checkBucketsHaveSameNumberOfRows(size_buckets);
         collectMapSizeFromBuckets(size_buckets, column);
     }
 }

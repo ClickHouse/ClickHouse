@@ -3,7 +3,7 @@ title: 'output_format_* 포맷 설정'
 sidebarTitle: 'output_format_*'
 toc_max_heading_level: 2
 description: 'output_format_*로 생성된 그룹의 ClickHouse 포맷 설정입니다.'
-doc_type: '참고'
+doc_type: 'reference'
 ---
 
 {/*자동 생성 시작*/}
@@ -52,6 +52,18 @@ FixedString 컬럼에는 Binary 대신 Arrow FIXED&#95;SIZE&#95;BINARY 타입을
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 LowCardinality 유형을 딕셔너리 Arrow 유형으로 출력할 수 있게 합니다
+
+## output_format_arrow_max_record_batch_size_bytes {#output_format_arrow_max_record_batch_size_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="2147483646" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "2147483646"},{"label": "`Arrow` 및 `ArrowStream` 출력에서 레코드 배치 하나의 크기를 제한하는 새로운 설정입니다. 기본값은 Arrow 자체의 주소 지정 한도이므로 기존 동작은 변경되지 않습니다."}]}]} />
+
+`Arrow` 및 `ArrowStream` 출력 형식, 그리고 `Vortex` 출력 형식을 기록할 때 기반이 되는 Arrow 레코드 배치(Arrow record batches)에서 단일 레코드 배치의 `Utf8`, `Binary`, `List` 버퍼 크기 상한입니다. 문자열(strings), 바이너리 값 또는 리스트 원소가 이 값을 초과하는 블록은 여러 개의 레코드 배치로 나뉘어 기록됩니다.
+
+작은 블록을 합치기 위한 목표값인 [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size&#95;bytes](/ko/reference/settings/formats/output-format#output_format_arrow_record_batch_size_bytes)와 달리, 이 설정은 큰 블록을 분할하기 위한 제한값입니다. Arrow는 해당 버퍼의 오프셋을 32비트 정수(integer)로 표현하므로, 기본값은 Arrow가 주소를 지정할 수 있는 최대값이며 이보다 큰 값을 지정해도 효과가 없습니다.
+
+제한은 위에 명시된 버퍼에만 적용됩니다. 고정 폭 유형의 컬럼은 오버플로우가 발생할 오프셋이 없으므로 하나의 배치에 그대로 유지됩니다. 또한 단일 행은 분할되지 않으므로, 제한을 초과하는 행이 있으면 해당 배치는 제한을 초과하게 됩니다.
 
 ## output_format_arrow_record_batch_size {#output_format_arrow_record_batch_size}
 
@@ -141,9 +153,18 @@ Arrow 형식의 딕셔너리 인덱스에는 항상 64비트 정수를 사용합
 
 Arrow 형식에서 딕셔너리 인덱스에 부호 있는 정수를 사용합니다
 
+## output_format_arrow_uuid_as_fixed_byte_array {#output_format_arrow_uuid_as_fixed_byte_array}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "UUID를 `arrow.uuid` 확장 유형 없이 일반 FixedSizeBinary(16)로 기록하는 새로운 설정입니다."}]}]} />
+
+`UUID` 값을 필드 메타데이터에 `arrow.uuid` 확장 유형을 포함하지 않고 일반 Arrow `FixedSizeBinary(16)`로 기록합니다.
+`arrow.uuid` 확장 유형을 지원하지 않는 Arrow 리더를 사용할 때 이 설정을 활성화하십시오.
+
 ## output_format_avro_codec {#output_format_avro_codec}
 
-출력에 사용하는 압축 코덱입니다. 가능한 값은 &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;입니다.
+출력에 사용하는 압축 코덱입니다. 가능한 값은 &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;, &#39;bzip2&#39;, &#39;xz&#39;입니다.
 
 ## output_format_avro_confluent_subject {#output_format_avro_confluent_subject}
 
@@ -1202,6 +1223,14 @@ true로 설정하면 TSV 포맷에서 줄 끝이 \n 대신 \r\n이 됩니다.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "값이 true이면 '를 ''로 이스케이프하고, 그렇지 않으면 \\'로 인용합니다"}]}]} />
 
 값이 true이면 &#39;를 &#39;&#39;로 이스케이프하고, 그렇지 않으면 \&#39;로 인용합니다
+
+## output_format_vortex_string_as_string {#output_format_vortex_string_as_string}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "`Vortex` 포맷의 `String` 컬럼을 `Utf8`로 기록하는 새로운 설정입니다. Vortex는 `Binary`보다 `Utf8`을 더 효율적으로 압축합니다."}]}]} />
+
+`Vortex` 포맷의 `String` 컬럼을 `Binary` 대신 `Utf8`로 기록합니다. Vortex는 `Utf8`을 더 효율적으로 압축합니다. `Utf8` 값은 유효한 UTF-8이어야 하지만 Vortex writer는 이를 검사하지 않습니다. 따라서 ClickHouse가 모든 값을 검사하며, 유효한 UTF-8이 아닌 값이 있으면 예외를 발생시킵니다. 이러한 데이터를 `Binary`로 기록하려면 이 설정을 비활성화하십시오. `FixedString` 컬럼은 항상 `Binary`로 기록됩니다. 두 타입 모두 읽을 때는 `String`으로 반환됩니다.
 
 ## output_format_write_statistics {#output_format_write_statistics}
 

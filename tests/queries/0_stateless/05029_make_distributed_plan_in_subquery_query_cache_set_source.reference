@@ -1,0 +1,9 @@
+-- without a distributed plan the set source is built locally and caches
+50
+1
+-- the same set source is distributed with make_distributed_plan, so it caches nothing
+50
+0
+-- a set source that cannot be distributed still builds locally and caches
+50
+1

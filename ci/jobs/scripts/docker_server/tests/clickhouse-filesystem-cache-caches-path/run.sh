@@ -38,12 +38,11 @@ chCli() {
 cache_path="$(chCli "SELECT path FROM system.filesystem_cache_settings WHERE cache_name = 'docker_relative_cache'")"
 [ -n "$cache_path" ]
 
-server_uid="$(docker exec "$cid" sed -n 's/^Uid:[[:space:]]*\([0-9][0-9]*\).*/\1/p' /proc/1/status)"
+server_uid="$(serverUid "$cid")"
 [ -n "$server_uid" ]
 [ "$server_uid" != 0 ]
 
-# Inspected as the server's own uid, not as root: the server creates `<path>/caches` as
+# Inspected by the docker daemon, not by root inside the container: the server creates `<path>/caches` as
 # `drwxr-x---`, so with `CAP_DAC_OVERRIDE` dropped root cannot traverse into it and a directory
 # that exists would read as missing.
-docker exec -u "$server_uid" "$cid" test -d "$cache_path"
-[ "$(docker exec -u "$server_uid" "$cid" stat -c '%u' "$cache_path")" = "$server_uid" ]
+[ "$(directoryOwner "$cid" "$cache_path")" = "$server_uid" ]

@@ -75,6 +75,8 @@ public:
 
     void describeActions(FormatSettings & settings) const override;
 
+    [[nodiscard]] StepAnalyzer makeAnalyzer() const override;
+
     /// The step passes its input through and reads its key, which it finds by name, so the name has to be there once.
     [[nodiscard]] bool canRemoveUnusedColumns() const override;
     [[nodiscard]] UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const override;

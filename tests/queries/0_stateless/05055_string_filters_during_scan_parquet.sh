@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Random settings limits: input_format_parquet_memory_high_watermark=(67108864, None); output_format_parquet_data_page_size=(1048576, None); output_format_parquet_max_dictionary_size=(1048576, None); output_format_parquet_row_group_size=(1000000, None); output_format_parquet_row_group_size_bytes=(536870912, None)
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

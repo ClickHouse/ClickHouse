@@ -1,5 +1,8 @@
 #pragma once
 
+#include <array>
+#include <string_view>
+
 #include <Common/UniqueLock.h>
 
 #include <atomic>
@@ -174,6 +177,10 @@ public:
     ColumnSize getSubcolumnSize(const String & /*subcolumn_name*/) const;
     /// The same for several subcolumns at once, listed by one reader; the results go to the cache as well.
     std::vector<ColumnSize> getSubcolumnSizes(const NamesAndTypesList & subcolumns) const;
+    /// The sizes of the subcolumns, and, if `with_columns`, of the columns among `column_names` that the part has. The uncached
+    /// subcolumn sizes are calculated with one reader per column, or nullopt is returned if `only_from_memory` and that reads files.
+    std::optional<std::vector<std::pair<String, ColumnSize>>> getColumnAndSubcolumnSizes(
+        const Names & column_names, bool with_columns, bool only_from_memory) const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
@@ -193,6 +200,11 @@ public:
 
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const;
+
+    /// The size of the streams a read of all columns touches, so a second representation of the same data, such as
+    /// the copy of the shared data of Object, is not counted; the constant granularity of merges and mutations is
+    /// sized by it.
+    ColumnSize getTotalColumnsReadSize() const { return calculateTotalColumnsReadSize(); }
 
     /// Return information about secondary indexes size on disk for all indexes in part
     IndexSize getTotalSecondaryIndicesSize() const;
@@ -502,6 +514,11 @@ public:
     /// that is producing the part: nothing on disk records it, so it stays `false` for a loaded part.
     bool default_codec_is_explicit_recompression = false;
 
+    /// Shared data serialization version of the `JSON` columns written into this part, chosen by
+    /// `MergeTreeData::chooseObjectSharedDataSerializationVersion` by the code that creates the part.
+    /// In-memory state of the write: each written column stores its version in its serialization prefix.
+    std::optional<MergeTreeObjectSharedDataSerializationVersion> object_shared_data_serialization_version;
+
     /// Set by `loadChecksums` when `checksums.txt` was missing on disk and had to be regenerated
     /// during the current load. The regenerated file is compressed with the *current* built-in
     /// default codec (`CompressionCodecFactory::getDefaultCodec`), not the codec the part was written
@@ -607,7 +624,7 @@ public:
     /// Returns the list of part files in the order they should be written to disk. This list is used to optimize
     /// the layout of files in packed storage.
     /// The list can be incomplete, in that case the remaining files should be written in any order.
-    virtual Strings getPreferredFileOrder() const { return COMMON_METADATA_FILES; }
+    virtual Strings getPreferredFileOrder() const { return getCommonMetadataFiles(); }
 
     std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
 
@@ -832,7 +849,8 @@ public:
     void removeIfNeeded();
 
 protected:
-    inline static const Strings COMMON_METADATA_FILES =
+    /// `constexpr` so that including this header costs no static initializer; `getCommonMetadataFiles` materializes it.
+    static constexpr std::array<std::string_view, 10> COMMON_METADATA_FILES =
     {
         "uuid.txt",
         "checksums.txt",
@@ -845,6 +863,8 @@ protected:
         "partition.dat",
         "ttl.txt",
     };
+
+    static Strings getCommonMetadataFiles() { return Strings(COMMON_METADATA_FILES.begin(), COMMON_METADATA_FILES.end()); }
 
     /// Primary key (correspond to primary.idx file).
     /// Lazily loaded in RAM. Contains each index_granularity-th value of primary key tuple.
@@ -900,6 +920,11 @@ protected:
 
     /// Calculate the sizes of all files required to read the specified subcolumns, one size per subcolumn.
     virtual std::vector<ColumnSize> calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const { return std::vector<ColumnSize>(subcolumns.size()); }
+    virtual bool canCalculateSubcolumnSizeFromMemory(const NameAndTypePair & /*subcolumn*/) const { return true; }
+
+    /// Calculate the size of the streams a read of all columns touches; the size on disk where columns are not stored
+    /// in streams of their own.
+    virtual ColumnSize calculateTotalColumnsReadSize() const { return getTotalColumnsSize(); }
 
     std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 

@@ -1,4 +1,4 @@
-SET input_format_json_empty_as_default = 1, allow_experimental_variant_type = 1;
+SET input_format_json_empty_as_default = 1;
 
 -- Simple types
 -- { echoOn }

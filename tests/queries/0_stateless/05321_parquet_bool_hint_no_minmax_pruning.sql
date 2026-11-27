@@ -1,3 +1,4 @@
+-- Random settings limits: input_format_parquet_filter_push_down=(1, 1); input_format_parquet_page_filter_push_down=(1, 1); output_format_parquet_write_page_index=(1, 1)
 -- A Parquet integer column holding 2, read with a `LowCardinality(Bool)` hint: every nonzero value is
 -- read as `true`, but the row group and page min/max statistics still say [2, 2], so pruning by them
 -- dropped the rows equal to `true`. The same holds for a plain `Bool`.

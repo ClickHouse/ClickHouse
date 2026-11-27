@@ -1,7 +1,7 @@
--- `GROUP BY ... ORDER BY <count or uniqExact> LIMIT n` keeps only the best n groups of each two-level bucket for a
--- non-nullable `LowCardinality` key too, alone or next to other keys. Each pair prints the pruned top-5 (`top_k 1`) and
--- the full one (`top_k 0`); the five heaviest and lightest groups have unique counts, so both print the same rows.
--- `LowCardinality(Nullable)` keys keep the full conversion, and `LowCardinality` keys never take the threshold merge.
+-- `GROUP BY ... ORDER BY <count or uniqExact> LIMIT n` keeps only the best n groups of each two-level bucket
+-- for a `LowCardinality` key too, alone or next to other keys. Each pair prints the pruned top-5 (`top_k 1`)
+-- and the full one (`top_k 0`); the five heaviest and lightest groups have unique counts, so both print the
+-- same rows. `LowCardinality` keys never take the threshold merge.
 
 SET query_plan_enable_optimizations = 1, query_plan_push_down_limit = 1, query_plan_aggregation_bucket_top_k = 1;
 SET max_threads = 4, max_block_size = 8192, group_by_two_level_threshold = 100;
@@ -17,8 +17,7 @@ CREATE TABLE t_bucket_top_k_lc
     -- The empty string, the dictionary default, is the heaviest group.
     ls LowCardinality(String) DEFAULT if(k = 1000004, '', toString(k)),
     lu LowCardinality(UInt32) DEFAULT toUInt32(k),
-    lf LowCardinality(FixedString(7)) DEFAULT toFixedString(toString(k), 7),
-    lsn LowCardinality(Nullable(String)) DEFAULT toString(k)
+    lf LowCardinality(FixedString(7)) DEFAULT toFixedString(toString(k), 7)
 )
 ENGINE = Memory;
 
@@ -29,8 +28,6 @@ INSERT INTO t_bucket_top_k_lc (k, v) SELECT 2000000 + i, j FROM (SELECT number A
 
 SELECT count() FROM (EXPLAIN actions = 1 SELECT ls, count() AS c FROM t_bucket_top_k_lc GROUP BY ls ORDER BY c DESC LIMIT 5)
 WHERE explain LIKE '%Bucket top-K: 5 descending%';
-SELECT count() FROM (EXPLAIN actions = 1 SELECT lsn, count() AS c FROM t_bucket_top_k_lc GROUP BY lsn ORDER BY c DESC LIMIT 5)
-WHERE explain LIKE '%Bucket top-K%';
 
 {% set key_sets = [
     ('String', 'ls', 'ls'),

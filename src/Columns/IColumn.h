@@ -505,8 +505,12 @@ public:
       */
     virtual void expand(const Filter & /*mask*/, bool /*inverted*/) = 0;
 
-    /// Appends `filter.size()` rows: `src[i]` where `filter[i]` is non-zero (zero if `inverted`), a default value elsewhere.
-    virtual void insertFromOrDefaults(const IColumn & src, const Filter & filter, bool inverted);
+    /// Appends `condition.size()` rows: row `i` of `src_true` where `condition[i]` is non-zero and row `i` of
+    /// `src_false` otherwise. A source with `*_is_const` set has a single row, used for every row it provides
+    /// (e.g. the data column of a `ColumnConst`, or a default value). The sources must have the type of this
+    /// column and must not be this column. Is used in `if` and to fill the non-joined rows of a `JOIN`.
+    virtual void insertFromEither(
+        const IColumn & src_true, bool src_true_is_const, const IColumn & src_false, bool src_false_is_const, const Filter & condition);
 
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
@@ -649,7 +653,7 @@ public:
     virtual size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const;
 
     /** Copies each element according offsets parameter.
-      * (i-th element should be copied offsets[i] - offsets[i - 1] times.)
+      * (i-th element should be copied offsets[i] - offsets[static_cast<ssize_t>(i) - 1] times.)
       * It is necessary in ARRAY JOIN operation.
       */
     using Offset = UInt64;
@@ -855,12 +859,66 @@ public:
         return finalized;
     }
 
-    [[nodiscard]] static MutablePtr mutate(Ptr ptr)
+    /// Implementation detail of `mutate`: makes every sub-column of an already-mutable column
+    /// exclusively owned, and does it without ever leaving a sub-column slot empty.
+    /// A sub-column that is already exclusively owned is mutated in place - nothing is cloned,
+    /// so the walk stays free for the unshared case. A shared sub-column has to be copied
+    /// anyway, and the copy is built completely (including its own recursion) before it is
+    /// published into the slot, so an exception leaves the original sub-column tree untouched.
+    /// Nothing here holds an extra reference to a sub-column, so a shared sub-column is still
+    /// reported as shared and the ownership assertions still surface the sites we look for.
+    static void mutateSubcolumnsDeeply(IColumn & column)
     {
-        MutablePtr res = ptr->shallowMutate(); /// Now use_count is 2.
+        column.forEachMutableSubcolumn([](WrappedPtr & subcolumn)
+        {
+            if (std::as_const(subcolumn)->use_count() == 1)
+            {
+                mutateSubcolumnsDeeply(*subcolumn);
+            }
+            else
+            {
+                MutablePtr replacement = std::as_const(subcolumn)->shallowMutate();
+                mutateSubcolumnsDeeply(*replacement);
+                subcolumn = std::move(replacement);
+            }
+
+            chassert(std::as_const(subcolumn)->use_count() == 1);
+        });
+    }
+
+    /// The rvalue overload leaves the source intact if anything throws. This is important for
+    /// owning slots: callers can move a slot into `mutate` without publishing a null slot when
+    /// allocation fails. The caller's slot is released only after the whole deep-ownership walk
+    /// has succeeded, and the walk itself never takes a sub-column out of its slot, so no part of
+    /// the source tree is null or half-built while a cloning step can still throw.
+    [[nodiscard]] static MutablePtr mutate(Ptr && ptr)
+    {
+        MutablePtr res = ptr->shallowMutate(); /// Now use_count is 2 for an exclusively owned source.
+        mutateSubcolumnsDeeply(*res);
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        /// Verify that all sub-columns, at every depth, are exclusively owned. This is done once for
+        /// the whole tree here rather than at every level of `mutateSubcolumnsDeeply`: a check of the
+        /// whole subtree at every level costs O(depth * size) and makes deeply nested columns
+        /// (e.g. nested `Dynamic`) extremely slow in debug and sanitizer builds.
+        /// Use the recursive callback that takes `const IColumn &` directly: passing a `WrappedPtr`
+        /// to a callback for columns that store children as `ColumnPtr` (e.g.
+        /// `ColumnFunction::captured_columns`) would construct a temporary `WrappedPtr` that itself
+        /// holds a reference, making the `use_count() == 1` check over-count by one.
+        std::as_const(*res).forEachSubcolumnRecursively([](const IColumn & sub)
+        {
+            chassert(sub.use_count() == 1);
+        });
+#endif
+        /// Only now the source can be released: until this point an exception has to leave it valid.
+        /// Keeping it alive does not affect the sub-column counters, so it does not hide sharing.
         ptr.reset(); /// Reset use_count to 1.
-        res->forEachMutableSubcolumn([](WrappedPtr & subcolumn) { subcolumn = IColumn::mutate(std::move(subcolumn).detach()); });
         return res;
+    }
+
+    [[nodiscard]] static MutablePtr mutate(const Ptr & ptr)
+    {
+        Ptr copy = ptr;
+        return mutate(std::move(copy));
     }
 
     /// Checks if column has dynamic internal structure (like JSON or Dynamic).
@@ -1089,8 +1147,13 @@ private:
     /// Devirtualize insertFrom and insertRangeFrom.
     void gather(ColumnGathererStream & gatherer) override;
 
-    /// Devirtualize insertFrom, insertDefault, insertRangeFrom and insertManyDefaults.
-    void insertFromOrDefaults(const IColumn & src, const IColumn::Filter & filter, bool inverted) override;
+    /// Devirtualize insertFrom, insertRangeFrom and insertManyFrom.
+    void insertFromEither(
+        const IColumn & src_true,
+        bool src_true_is_const,
+        const IColumn & src_false,
+        bool src_false_is_const,
+        const IColumn::Filter & condition) override;
 
     /// Devirtualize compareAt.
     void compareColumn(

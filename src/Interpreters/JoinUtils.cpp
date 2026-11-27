@@ -7,6 +7,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/FilterDescription.h>
 
@@ -132,7 +133,7 @@ bool canBeExecutedByEnabledAlgorithm(const JoinSettings & join_settings, JoinKin
             case JoinAlgorithm::DIRECT:
                 /// Only over a key-value right table, and only for the strictness it already has.
                 break;
-            case JoinAlgorithm::IE_JOIN:
+            case JoinAlgorithm::INEQUALITY:
                 /// Only for an inequality `ON` condition, which no rewrite introduces.
                 break;
             case JoinAlgorithm::DEFAULT:
@@ -821,7 +822,8 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
     PaddedPODArray<UInt32> hash(num_rows, WEAK_HASH32_INITIAL_VALUE);
     for (const auto & key_name : key_columns_names)
     {
-        ColumnPtr key_col = materializeColumn(block, key_name);
+        /// `-0.` and `0.` are equal keys, so they have to land in the same bucket.
+        ColumnPtr key_col = replaceNegativeZeros(materializeColumn(block, key_name));
         key_col->computeHashInto(0, num_rows, hash.data(), false);
     }
     auto selector = hashToSelector(hash, sharder);
@@ -910,21 +912,23 @@ ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter,
     MutableColumnPtr mut_column = column->cloneEmpty();
     mut_column->reserve(column->size());
 
+    MutableColumnPtr default_row;
     if (default_type && !default_type->isDefaultInsertTrivial())
     {
         /// `mut_column` keeps the wrapper of `column` (e.g. `ColumnReplicated`), so the type default is built unwrapped.
-        auto default_row = default_type->createColumn();
+        default_row = default_type->createColumn();
         default_type->insertDefaultInto(*default_row);
-        for (size_t row = 0; row < filter.size(); ++row)
-        {
-            if (static_cast<bool>(filter[row]) != inverse_filter)
-                mut_column->insertFrom(*column, row);
-            else
-                mut_column->insertFrom(*default_row, 0);
-        }
     }
     else
-        mut_column->insertFromOrDefaults(*column, filter, inverse_filter);
+    {
+        default_row = column->cloneEmpty();
+        default_row->insertDefault();
+    }
+
+    if (inverse_filter)
+        mut_column->insertFromEither(*default_row, true, *column, false, filter);
+    else
+        mut_column->insertFromEither(*column, false, *default_row, true, filter);
 
     return mut_column;
 }

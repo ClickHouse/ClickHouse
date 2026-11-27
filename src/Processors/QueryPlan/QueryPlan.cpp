@@ -42,6 +42,7 @@
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/ReadFromDistributedPlanSource.h>
 
@@ -333,7 +334,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
             const PlanWalk walk = PlanWalk::of(*this, /*only_built_child_plans=*/ true);
 
             log_capture->capturePlanStructure(walk, pretty_names, optimization_settings.max_step_description_length);
-            last_pipeline->setStepProfiler(std::make_shared<StepProfiler>(walk, /*collect_work_intervals_=*/ false));
+            last_pipeline->setStepProfiler(std::make_shared<StepProfiler>(walk, log_capture->getCollected().work_intervals));
         }
         catch (...)
         {
@@ -422,7 +423,7 @@ JSONBuilder::ItemPtr QueryPlan::explainPlanSteps(const ExplainPlanOptions & opti
     auto steps = std::make_unique<JSONBuilder::JSONArray>();
 
     /// Pre-order: the inputs of a node and then its nested plans are pushed in reverse, so they are popped in order.
-    std::vector<const Node *> stack{root};
+    VectorWithMemoryTracking<const Node *> stack{root};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -959,6 +960,33 @@ static void disableProjectionsForDistributedPlan(QueryPlanOptimizationSettings &
 }
 
 
+/// Drop every `StreamInQueryResultCacheStep` from the plan. The step buffers the rows passing through
+/// it into a `QueryResultCacheWriter`, which is node-local state without a serialized representation,
+/// so a fragment carrying it cannot be shipped to a worker. It is a pass-through, so removing it only
+/// means the subquery result is not written to the cache - which is what a distributed query did
+/// before the step was allowed into the plan at all. The step is kept when the plan takes the local
+/// fallback in `applyDistributedPlanFallbackToLocal`: nothing is serialized there, and the cache works as usual.
+/// It is removed as soon as the plan is accepted for distributed execution, before `QueryPlan::optimize`:
+/// the Cascades optimizer clones every step of the plan, and this step cannot be cloned.
+static void removeQueryResultCacheWriteSteps(QueryPlan::Node *& root)
+{
+    while (typeid_cast<const StreamInQueryResultCacheStep *>(root->step.get()))
+        root = root->children.front();
+
+    VectorWithMemoryTracking<QueryPlan::Node *> stack = {root};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        for (auto *& child : node->children)
+        {
+            while (typeid_cast<const StreamInQueryResultCacheStep *>(child->step.get()))
+                child = child->children.front();
+            stack.push_back(child);
+        }
+    }
+}
+
 bool QueryPlan::applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSettings & settings)
 {
     if (!settings.make_distributed_plan)
@@ -986,6 +1014,8 @@ bool QueryPlan::applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSetting
     if (!reason.has_value())
     {
         distributed_plan_decision = DistributedPlanDecision::Distributed;
+        /// The plan will be split into fragments, so no cache write step may stay in it.
+        removeQueryResultCacheWriteSteps(root);
         return false;
     }
 
@@ -1065,6 +1095,10 @@ DistributedPlanCut QueryPlan::cutIntoDistributedPlan(const QueryPlanOptimization
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "make_distributed_plan error: the query resolved {} {} of the initiator after the plan was accepted for distributed execution.",
                 DistributedPlanLocalObject::kindName(entry->kind), entry->name);
+
+    /// The plan is really split into fragments, so no cache write step may survive into one. The steps
+    /// are normally removed already when the plan is accepted in `applyDistributedPlanFallbackToLocal`.
+    removeQueryResultCacheWriteSteps(root);
 
     DistributedPlanCut cut;
 

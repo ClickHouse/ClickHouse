@@ -1,4 +1,5 @@
 #include <iterator>
+#include <ranges>
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
@@ -104,6 +105,36 @@ void printMetricGroup(const MetricGroup & metric_group, WriteBuffer & out, const
             out << name << " " << formatStepMetricValue(metric);
     }
     out << "\n";
+}
+
+/// The group is built by `runtimeFilterAnalysisReport`: the type first, then the reason right after it if the filter
+/// is disabled, then the optional details. Printed as, e.g., `Runtime filter (exact set, 1000 unique keys, size 32.77 KB)`
+/// or `Runtime filter (disabled: bloom filter saturated, size 524.29 KB, set bits 0.07%)`.
+void printRuntimeFilterGroup(const MetricGroup & filter_group, WriteBuffer & out, const std::string & prefix)
+{
+    if (filter_group.metrics.empty())
+        return;
+
+    chassert(filter_group.metrics.front().key == MetricKey::FilterType, "unexpected layout of the Runtime filter group");
+
+    out << prefix << toString(filter_group.key) << " (" << formatStepMetricValue(filter_group.metrics.front());
+    for (const auto & metric : filter_group.metrics | std::views::drop(1))
+    {
+        switch (metric.key)
+        {
+            case MetricKey::Reason: out << ": " << formatStepMetricValue(metric); break;
+            case MetricKey::ReplacedFilterType: out << ", replaced " << formatStepMetricValue(metric); break;
+            case MetricKey::UniqueKeys:
+                /// Not rounded, to compare it with `join_runtime_filter_exact_values_limit`.
+                if (const auto * keys = std::get_if<UInt64>(&metric.value))
+                    out << ", " << *keys << " " << toString(metric.key);
+                else
+                    out << ", " << toString(metric.key) << " " << formatStepMetricValue(metric);
+                break;
+            default: out << ", " << toString(metric.key) << " " << formatStepMetricValue(metric); break;
+        }
+    }
+    out << ")\n";
 }
 
 /// The group is built by makeIOGroup, so a missing metric means the two went out of sync
@@ -238,7 +269,8 @@ AnalyzeStepsStats::AnalyzeStepsStats(
     computeDistribution(elapsed_per_step_group);
     computeJoinBranchCosts();
 
-    /// Work intervals are collected only when `EXPLAIN ANALYZE` requests the `time` setting.
+    /// Work intervals are collected only when asked for: the `time` setting of `EXPLAIN ANALYZE`, or
+    /// `log_query_plans_time` for a logged plan.
     if (const auto work_intervals = step_profiler.extractWorkIntervals(execution_start_ns); !work_intervals.empty())
         interval_timings.emplace(work_intervals, plan_snapshot);
 }
@@ -500,6 +532,12 @@ void AnalyzeStepsStats::renderStep(const AnalyzedStepData & step_data, WriteBuff
         if (group.key == MetricGroupKey::Concurrency)
         {
             printConcurrencyGroup(group, out, prefix);
+            continue;
+        }
+
+        if (group.key == MetricGroupKey::RuntimeFilter)
+        {
+            printRuntimeFilterGroup(group, out, prefix);
             continue;
         }
 

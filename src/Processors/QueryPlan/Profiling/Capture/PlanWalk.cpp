@@ -26,7 +26,7 @@ PlanWalk PlanWalk::of(const QueryPlan & plan, bool only_built_child_plans)
         QueryPlan::Node * node = nullptr;
     };
 
-    std::vector<Frame> to_visit{{&plan, root}};
+    VectorWithMemoryTracking<Frame> to_visit{{&plan, root}};
 
     while (!to_visit.empty())
     {

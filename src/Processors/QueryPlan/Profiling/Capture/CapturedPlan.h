@@ -10,7 +10,7 @@
 #include <memory>
 #include <optional>
 #include <string_view>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -25,11 +25,11 @@ struct CapturedStep
     String id;
     String type;
     String description;
-    std::vector<String> details;
+    VectorWithMemoryTracking<String> details;
 
     /// Ids of this step's children, and of the roots of any plans it has already built
     /// (`getBuiltChildPlans`).
-    std::vector<String> children;
+    VectorWithMemoryTracking<String> children;
 
     std::optional<AnalyzedStepData> statistics;
 
@@ -38,18 +38,33 @@ struct CapturedStep
     PlanProjectionStats projections;
 };
 
+/// Statistics a query collects only when asked to, because collecting them costs extra.
+struct CollectedStatistics
+{
+    /// Work intervals of the processors, which the per-step `Time` and `Concurrency` groups come from.
+    bool work_intervals = false;
+    /// The extra bookkeeping in joins behind the matched rows metrics that cannot be derived.
+    bool join_matches = false;
+};
+
 /// A whole query: its own steps and the totals.
 struct CapturedPlan
 {
     /// Id of the root node
     String root_id;
     /// Output columns
-    std::vector<String> output;
+    VectorWithMemoryTracking<String> output;
     /// Execution totals
     std::optional<UInt64> execution_time_ns;
     std::optional<UInt64> max_threads;
+    /// Execution time split by what the threads were doing. Only when the work intervals were collected.
+    std::optional<ExecutionTimeBreakdown> execution_time_breakdown;
 
-    std::vector<CapturedStep> nodes;
+    /// What the query collected beyond the default statistics, so a reader can tell a metric that
+    /// was not collected from one the step does not have.
+    CollectedStatistics collected;
+
+    VectorWithMemoryTracking<CapturedStep> nodes;
 
     /// Reads a walked plan into a `CapturedPlan`. The walk gives the shape; each step is read
     /// here for what it says about itself.

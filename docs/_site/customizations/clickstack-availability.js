@@ -2168,6 +2168,7 @@
     "observabilityOnly": [
       "rbac-for-predefined-dashboards"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2184,6 +2185,7 @@
       "waking-service-from-clickstack-cloud",
       "consistent-enabling-of-ai-features"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2197,6 +2199,7 @@
   },
   "/clickstack/demo-days/2026/2026-04-17": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2210,6 +2213,7 @@
   },
   "/clickstack/demo-days/2026/2026-05-08": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2225,6 +2229,7 @@
     "observabilityOnly": [
       "alerts-from-notebooks"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2238,6 +2243,7 @@
   },
   "/clickstack/demo-days/2026/2026-05-22": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2251,6 +2257,7 @@
   },
   "/clickstack/demo-days/2026/2026-05-29": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2267,6 +2274,7 @@
       "anomaly-alerts",
       "schema-migrations"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2284,6 +2292,7 @@
       "anomaly-alerts-with-group-by",
       "all-notebook-tools-now-use-the-mcp"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2297,6 +2306,7 @@
   },
   "/clickstack/demo-days/2026/2026-06-18": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2312,6 +2322,7 @@
     "observabilityOnly": [
       "anomaly-detection-for-alerting-continues-with-bar-charts"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2327,6 +2338,7 @@
     "observabilityOnly": [
       "notebook-citations"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2340,6 +2352,7 @@
   },
   "/clickstack/demo-days/2026/2026-07-10": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2353,6 +2366,7 @@
   },
   "/clickstack/demo-days/2026/2026-07-17": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2366,6 +2380,7 @@
   },
   "/clickstack/demo-days/2026/2026-07-24": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2379,6 +2394,7 @@
   },
   "/clickstack/demo-days/2026/2026-07-31": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2392,6 +2408,7 @@
   },
   "/clickstack/demo-days/2026/2026-08-07": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2405,6 +2422,7 @@
   },
   "/clickstack/demo-days/2026/2026-08-15": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2418,6 +2436,7 @@
   },
   "/clickstack/demo-days/2026/2026-08-21": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2431,6 +2450,7 @@
   },
   "/clickstack/demo-days/2026/2026-08-28": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2444,6 +2464,7 @@
   },
   "/clickstack/demo-days/2026/2026-09-04": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2457,6 +2478,7 @@
   },
   "/clickstack/demo-days/2026/2026-09-10": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2470,6 +2492,7 @@
   },
   "/clickstack/demo-days/2026/2026-09-17": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2483,6 +2506,7 @@
   },
   "/clickstack/demo-days/2026/2026-09-24": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2490,12 +2514,13 @@
       ],
       [
         "ClickHouse Observability",
-        "/clickstack/demo-days/2026/2026-09-24"
+        "/clickstack/observability/demo-days/2026/2026-09-24"
       ]
     ]
   },
   "/clickstack/demo-days/2026/2026-10-01": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2503,12 +2528,13 @@
       ],
       [
         "ClickHouse Observability",
-        "/clickstack/demo-days/2026/2026-10-01"
+        "/clickstack/observability/demo-days/2026/2026-10-01"
       ]
     ]
   },
   "/clickstack/demo-days/2026/2026-10-08": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2516,7 +2542,7 @@
       ],
       [
         "ClickHouse Observability",
-        "/clickstack/demo-days/2026/2026-10-08"
+        "/clickstack/observability/demo-days/2026/2026-10-08"
       ]
     ]
   },
@@ -2524,6 +2550,7 @@
     "observabilityOnly": [
       "source-level-access-control-for-promql-sources"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2531,12 +2558,13 @@
       ],
       [
         "ClickHouse Observability",
-        "/clickstack/demo-days/2026/2026-10-15"
+        "/clickstack/observability/demo-days/2026/2026-10-15"
       ]
     ]
   },
   "/clickstack/demo-days/2026/2026-10-22": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2544,7 +2572,26 @@
       ],
       [
         "ClickHouse Observability",
-        "/clickstack/demo-days/2026/2026-10-22"
+        "/clickstack/observability/demo-days/2026/2026-10-22"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-11-12": {
+    "observabilityOnly": [
+      "mcp-server-connections-without-custom-headers",
+      "datadog-agent-setup-in-getting-started"
+    ],
+    "openSourceOnly": [
+      "organization-api-keys"
+    ],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-11-12"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-11-12"
       ]
     ]
   },
@@ -2552,6 +2599,7 @@
     "observabilityOnly": [
       "rbac-for-predefined-dashboards"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2568,6 +2616,7 @@
       "waking-service-from-clickstack-cloud",
       "consistent-enabling-of-ai-features"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2581,6 +2630,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-04-17": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2594,6 +2644,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-05-08": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2609,6 +2660,7 @@
     "observabilityOnly": [
       "alerts-from-notebooks"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2622,6 +2674,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-05-22": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2635,6 +2688,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-05-29": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2651,6 +2705,7 @@
       "anomaly-alerts",
       "schema-migrations"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2668,6 +2723,7 @@
       "anomaly-alerts-with-group-by",
       "all-notebook-tools-now-use-the-mcp"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2681,6 +2737,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-06-18": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2696,6 +2753,7 @@
     "observabilityOnly": [
       "anomaly-detection-for-alerting-continues-with-bar-charts"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2711,6 +2769,7 @@
     "observabilityOnly": [
       "notebook-citations"
     ],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2724,6 +2783,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-07-10": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2737,6 +2797,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-07-17": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2750,6 +2811,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-07-24": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2763,6 +2825,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-07-31": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2776,6 +2839,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-08-07": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2789,6 +2853,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-08-15": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2802,6 +2867,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-08-21": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2815,6 +2881,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-08-28": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2828,6 +2895,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-09-04": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2841,6 +2909,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-09-10": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2854,6 +2923,7 @@
   },
   "/clickstack/observability/demo-days/2026/2026-09-17": {
     "observabilityOnly": [],
+    "openSourceOnly": [],
     "variants": [
       [
         "Open Source",
@@ -2862,6 +2932,97 @@
       [
         "ClickHouse Observability",
         "/clickstack/observability/demo-days/2026/2026-09-17"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-09-24": {
+    "observabilityOnly": [],
+    "openSourceOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-09-24"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-09-24"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-10-01": {
+    "observabilityOnly": [],
+    "openSourceOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-10-01"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-10-01"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-10-08": {
+    "observabilityOnly": [],
+    "openSourceOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-10-08"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-10-08"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-10-15": {
+    "observabilityOnly": [
+      "source-level-access-control-for-promql-sources"
+    ],
+    "openSourceOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-10-15"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-10-15"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-10-22": {
+    "observabilityOnly": [],
+    "openSourceOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-10-22"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-10-22"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-11-12": {
+    "observabilityOnly": [
+      "mcp-server-connections-without-custom-headers",
+      "datadog-agent-setup-in-getting-started"
+    ],
+    "openSourceOnly": [
+      "organization-api-keys"
+    ],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-11-12"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-11-12"
       ]
     ]
   }
@@ -2903,7 +3064,9 @@
       if (existing) existing.remove();
       document.querySelectorAll('#content h2[id]').forEach(function (heading) {
         var variants = features.variants.filter(function (variant) {
-          return variant[0] !== 'Open Source' || features.observabilityOnly.indexOf(heading.id) === -1;
+          // A feature in one product only drops the other product's pill.
+          var hidden = variant[0] === 'Open Source' ? features.observabilityOnly : features.openSourceOnly;
+          return hidden.indexOf(heading.id) === -1;
         }).map(function (variant) {
           return [variant[0], variant[1] + '#' + heading.id];
         });

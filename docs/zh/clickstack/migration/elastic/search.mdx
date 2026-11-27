@@ -7,42 +7,32 @@ doc_type: 'guide'
 keywords: ['ClickStack', '搜索', '日志', '可观测性', '全文搜索']
 ---
 
-<div id="search-in-clickstack-and-elastic">
-  ## 在 ClickStack 和 Elastic 中搜索
-</div>
+## 在 ClickStack 和 Elastic 中搜索 {#search-in-clickstack-and-elastic}
 
 ClickHouse 是原生支持 SQL 的引擎，从底层起就专为高性能分析型工作负载而设计。相比之下，Elasticsearch 提供的是类 SQL 接口，会将 SQL 转换到底层的 Elasticsearch 查询 DSL——这意味着 SQL 并非其原生能力，而且其[功能一致性](https://www.elastic.co/docs/explore-analyze/query-filter/languages/sql-limitations)也比较有限。
 
 ClickHouse 不仅支持完整的 SQL，还扩展了一系列面向可观测性的函数，例如 [`argMax`](/zh/reference/functions/aggregate-functions/argMax)、[`histogram`](/zh/reference/functions/aggregate-functions/parametric-functions#histogram) 和 [`quantileTiming`](/zh/reference/functions/aggregate-functions/quantileTiming)，从而简化了对结构化日志、指标和trace数据的查询。
 
-对于简单的日志和 trace 探索，ClickStack UI (HyperDX) 提供了[Lucene 风格语法](/zh/clickstack/features/search)，支持通过直观的文本过滤来执行字段-值查询、范围查询、通配符匹配等操作。这与 Elasticsearch 中的 [Lucene 语法](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax)以及 [Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql) 的部分元素相似。
+对于简单的日志和 trace 探索，ClickStack UI 提供了[Lucene 风格语法](/zh/clickstack/features/search)，支持通过直观的文本过滤来执行字段-值查询、范围查询、通配符匹配等操作。这与 Elasticsearch 中的 [Lucene 语法](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax)以及 [Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql) 的部分元素相似。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![搜索](/images/use-cases/observability/hyperdx-search.webp)
-
-</Frame>
-
+  <Frame>
+    ![搜索](/images/use-cases/observability/hyperdx-search.webp)
+  </Frame>
 </div>
 
 搜索界面支持这种熟悉的语法，但会在后台将其转换为高效的 SQL `WHERE` 子句，因此 Kibana 用户会觉得很熟悉，同时又能在需要时利用 SQL 的强大能力。这使你能够充分利用 ClickHouse 中丰富的[字符串搜索函数](/zh/reference/functions/regular-functions/string-search-functions)、[相似度函数](/zh/reference/functions/regular-functions/string-functions#stringJaccardIndex) 和 [date time functions](/zh/reference/functions/regular-functions/date-time-functions)。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![SQL](/images/use-cases/observability/hyperdx-sql.webp)
-
-</Frame>
-
+  <Frame>
+    ![SQL](/images/use-cases/observability/hyperdx-sql.webp)
+  </Frame>
 </div>
 
 下面，我们将比较 ClickStack 和 Elasticsearch 的 Lucene 查询语言。
 
 <div id="clickstack-vs-elasticsearch-query-string">
-  ## ClickStack 搜索语法 vs Elasticsearch 查询字符串
+  ## ClickStack 搜索语法 vs Elasticsearch 查询字符串 {#clickstack-vs-elasticsearch-query-string}
 </div>
 
 ClickStack 和 Elasticsearch 都提供灵活的查询语言，便于直观地过滤日志和 trace。Elasticsearch 的查询字符串与其 DSL 和索引引擎紧密集成，而 ClickStack 支持一种受 Lucene 启发的语法，底层会将其转换为 ClickHouse SQL。下表概述了两套系统中常见搜索模式的行为，重点说明了两者在语法上的相似之处以及后端执行方式上的差异。
@@ -70,7 +60,7 @@ ClickStack 和 Elasticsearch 都提供灵活的查询语言，便于直观地过
 | 转义特殊字符        | 使用 `\` 转义保留字符                       | 相同                                | 必须对保留符号进行转义。                                                                                                                                                                                  |
 
 <div id="empty-value-differences">
-  ## 存在/缺失差异
+  ## 存在/缺失差异 {#empty-value-differences}
 </div>
 
 与 Elasticsearch 不同，在 Elasticsearch 中，某个字段可以在事件中被完全省略，因此是真正的“不存在”；而 ClickHouse 要求表 schema 中的所有列都必须存在。如果插入事件时未提供某个字段：
