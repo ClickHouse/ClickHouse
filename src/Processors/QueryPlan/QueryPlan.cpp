@@ -39,7 +39,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Interpreters/DistributedPlanLocalObject.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/QueryPlan/QueryPlanShapeHash.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -271,11 +270,10 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     /// over the child plans the steps already hold, unlike `explainPlan`: asking a step to build one
     /// would make capturing the plan change the work the query does.
     PrettyNamesPerPlan pretty_names;
-    UInt64 shape_hash = 0;
     if (log_capture)
     {
         pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this, /*only_built_child_plans=*/ true);
-        shape_hash = hashQueryPlanShape(*this);
+        log_capture->captureShapeHash(*this);
     }
 
     struct Frame
@@ -338,7 +336,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         {
             const PlanWalk walk = PlanWalk::of(*this, /*only_built_child_plans=*/ true);
 
-            log_capture->capturePlanStructure(walk, pretty_names, shape_hash, optimization_settings.max_step_description_length);
+            log_capture->capturePlanStructure(walk, pretty_names, optimization_settings.max_step_description_length);
             last_pipeline->setStepProfiler(std::make_shared<StepProfiler>(walk, log_capture->getCollected().work_intervals));
         }
         catch (...)

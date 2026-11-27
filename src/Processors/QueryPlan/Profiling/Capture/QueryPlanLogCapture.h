@@ -31,17 +31,18 @@ public:
     /// Reports why a query that asked for its plan is not going to get one.
     static void declineCapture(const ContextPtr & context, const char * reason);
 
+    /// Records the hash of the shape of the plan (see `hashQueryPlanShape`), which the captured plan
+    /// carries. Called before the pipeline is built, like the pretty names are read: building it
+    /// moves the `ActionsDAG` out of every expression step, and the hash is derived from them.
+    void captureShapeHash(const QueryPlan & plan);
+
     /// Records the shape of the plan as values. Called once the pipeline has been built, which is
     /// both the first moment the index analysis and the lazily built child plans exist, and the
     /// last moment the plan does. Nothing after this touches the plan.
     ///
     /// May throw: the caller starting the capture is what keeps a diagnostic from failing a
     /// query that would otherwise have run.
-    ///
-    /// `shape_hash` must have been computed from the same plan, before its pipeline was built, like
-    /// `pretty_names` (see `hashQueryPlanShape`).
-    void capturePlanStructure(
-        const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names, UInt64 shape_hash, size_t max_description_length);
+    void capturePlanStructure(const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names, size_t max_description_length);
 
     /// Forgets the captured plan, so that a query whose profiling could not be set up logs no
     /// plan at all rather than one that can never be given its statistics.
@@ -65,5 +66,7 @@ private:
     /// plan itself is not kept: it belongs to the interpreter and dies whenever that does.
     std::optional<CapturedPlan> captured;
 
+    /// Taken before the pipeline is built, and put into `captured` once it exists.
+    std::optional<UInt64> shape_hash;
 };
 }
