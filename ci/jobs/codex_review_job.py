@@ -181,8 +181,8 @@ Procedure:
    or sharpen the rest. Verify by reading the current code, not by trusting the author's reply.
    Findings the author dismissed but you still consider real STAY in the summary's `Findings`
    section, after the other findings, with their thread link and location as usual. Their first
-   nested line is `- Dismissed by author.`, and the second says in one sentence why the issue is
-   still open in the current code. Nothing else. Do NOT migrate them back to the inline thread.
+   nested line is `- **Dismissed by author.**`, and the second is `- **Still open:**` followed by one
+   sentence on why the issue is still present in the current code. Nothing else. Do NOT migrate them back to the inline thread.
 6. On existing threads, post a new comment only in these two cases:
    (a) The author asked you a direct, answerable question (e.g. "what would the fix look like?",
        "do you have a repro?"). Answer it once and stop -- do not restate the original finding.

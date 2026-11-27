@@ -120,7 +120,7 @@ current code, not only the diff.
 ${BINARY_NOTE}
 Write the review to stdout using the REQUESTED OUTPUT FORMAT from .claude/skills/review/SKILL.md.
 Use gh only to read. Look for an existing issue about each pre-existing defect with \`gh search issues\`
-in ${REPO}, open and closed; the search API allows 30 requests per minute. Do not post anything."
+in ${REPO}, open and closed (for ClickHouse/ClickHouse-private, in ClickHouse/ClickHouse too); the search API allows 30 requests per minute. Do not post anything."
 
 MODEL_ARGS=(); [ "$MODEL" != default ] && MODEL_ARGS=(-m "$MODEL")
 codex exec "${MODEL_ARGS[@]}" -c "model_reasoning_effort=$EFFORT" \

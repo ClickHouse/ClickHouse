@@ -217,7 +217,7 @@ This does not cover data that the server reads back, such as part files, caches,
 
 Security outranks these conditions: a finding for which `references/hardening-flags.md`, `references/access-checks.md`, or `references/memory-addresses.md` require a Blocker is a Blocker even without an observed runtime impact.
 
-Findings about tests, documentation, performance evidence, CI scripts, or PR metadata are never Blockers.
+Findings about tests, documentation, performance evidence, or PR metadata are never Blockers.
 
 **Blockers** – must be fixed before merge
 - Incorrectness, data loss, or corruption.
