@@ -27,6 +27,8 @@
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheSettings.h>
 #include <Interpreters/FileCache/FileSegment.h>
+#include <Interpreters/FileCache/PendingPriorityIncreases.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
 #if CLICKHOUSE_CLOUD
@@ -130,6 +132,7 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_user;
     extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
     extern const FileCacheSettingsUInt64 bypass_cache_threshold;
+    extern const FileCacheSettingsBool lru_batch_priority_increase;
 }
 
 void printRanges(const auto & segments)
@@ -477,6 +480,9 @@ TEST_F(FileCacheTest, LRUPolicy)
     settings[FileCacheSetting::boundary_alignment] = 1;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
     settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    /// The test checks the exact eviction order right after hits. A buffered hit is applied only by the next insert, after
+    /// the eviction which it would have changed, so this order holds only when every hit moves its segment at once.
+    settings[FileCacheSetting::lru_batch_priority_increase] = false;
 
     const size_t file_size = INT_MAX; // the value doesn't really matter because boundary_alignment == 1.
 
@@ -4857,3 +4863,285 @@ TEST_F(FileCacheTest, DiskCacheProviderTemporaryModeDropsUnusedSegments)
     EXPECT_TRUE(cached(written_by_normal_writer));
 }
 
+
+TEST_F(FileCacheTest, LRUPendingPriorityIncreases)
+{
+    /// A hit is applied to the queue later, in a batch. Check that it still protects the segment
+    /// from eviction, and that a hit pending for an invalidated segment does no harm.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const std::string cache_path = caches_dir / "cache_pending_priority_increases" / "";
+    if (fs::exists(cache_path))
+        fs::remove_all(cache_path);
+    fs::create_directories(cache_path);
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_path;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 4;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+
+    auto cache = std::make_shared<DB::FileCache>("pending_priority_increases", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    const size_t file_size = -1;
+
+    std::vector<DB::FileCacheKey> keys;
+    for (size_t i = 0; i < 6; ++i)
+        keys.push_back(DB::FileCacheKey::fromPath("pending_key_" + std::to_string(i)));
+
+    auto add = [&](size_t i)
+    {
+        auto holder = cache->getOrSet(keys[i], 0, 1, file_size, {}, 0, user);
+        auto segment = holder->getSingleFileSegment();
+        ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+        std::string failure_reason;
+        ASSERT_TRUE(segment->reserve(1, 1000, failure_reason));
+        download(cache_path, *segment);
+        FileSegment::complete(std::move(segment), /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
+    };
+    auto hit = [&](size_t i)
+    {
+        auto holder = cache->getOrSet(keys[i], 0, 1, file_size, {}, 0, user);
+        ASSERT_EQ(holder->front().state(), State::DOWNLOADED);
+        holder->front().increasePriority();
+    };
+    auto cached = [&](size_t i)
+    {
+        const auto infos = cache->getFileSegmentInfos(user.user_id);
+        return std::ranges::any_of(infos, [&](const auto & info) { return info.key == keys[i]; });
+    };
+
+    for (size_t i = 0; i < 4; ++i)
+        add(i);
+
+    /// Fewer hits than make a buffer half full, so that only the insert of a new entry applies them.
+    hit(0);
+
+    hit(1);
+    cache->removeFileSegment(keys[1], 0, user.user_id);
+
+    add(4);
+    add(5);
+
+    ASSERT_TRUE(cached(0));
+    ASSERT_FALSE(cached(1));
+    ASSERT_FALSE(cached(2));
+    ASSERT_TRUE(cached(3));
+    ASSERT_TRUE(cached(4));
+    ASSERT_TRUE(cached(5));
+
+    cache.reset();
+    if (fs::exists(cache_path))
+        fs::remove_all(cache_path);
+}
+
+
+namespace ProfileEvents
+{
+    extern const Event FilesystemCachePriorityIncreaseBufferFull;
+    extern const Event FilesystemCacheAppliedPriorityIncreases;
+}
+
+TEST_F(FileCacheTest, LRUPendingPriorityIncreasesBuffer)
+{
+    /// A queue without a cache, so that no maintenance task applies the increases while the test checks them.
+    ServerUUID::setRandomForUnitTests();
+    LRUFileCachePriority priority(IFileCachePriority::QueueType::Main, /* max_size */100, /* max_elements */10);
+    priority.setBatchPriorityIncreaseSettings({.enabled = true, .buffer_size = 2, .max_batch_size = 64});
+    size_t notifications = 0;
+    priority.setApplyPriorityIncreasesNotifier([&] { ++notifications; });
+
+    std::string cache_path = std::filesystem::path(caches_dir) / "test_pending_priority_increases_buffer";
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
+    auto key = DB::FileCacheKey::fromPath("pending_buffer_key");
+    auto origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
+    CacheStateGuard state_guard;
+
+    std::vector<IFileCachePriority::IteratorPtr> iterators;
+    for (size_t i = 0; i < 4; ++i)
+    {
+        auto state_lock = state_guard.lock();
+        iterators.push_back(priority.add(key_metadata, i * 10, 10, &state_lock));
+    }
+
+    auto queue_offsets = [&]
+    {
+        auto lock = priority.getPriorityGuard().readLock();
+        std::vector<size_t> offsets;
+        for (const auto & entry : priority.queue)
+            offsets.push_back(entry->offset);
+        return offsets;
+    };
+    auto hit = [&](size_t i) { ASSERT_TRUE(priority.tryIncreasePriority(*iterators[i], true, state_guard)); };
+
+    auto & events = ProfileEvents::global_counters;
+    const auto buffer_full_before = events[ProfileEvents::FilesystemCachePriorityIncreaseBufferFull];
+    const auto applied_before = events[ProfileEvents::FilesystemCacheAppliedPriorityIncreases];
+
+    /// The first record fills the ring of two slots to half, and is the first since an apply: each wakes the task.
+    hit(0);
+    hit(1);
+    ASSERT_EQ(notifications, 2u);
+    ASSERT_EQ(priority.getPendingPriorityIncreasesApprox(), 2u);
+    ASSERT_EQ(queue_offsets(), (std::vector<size_t>{0, 10, 20, 30}));
+
+    /// The ring is full: the hit applies the ring and itself.
+    hit(2);
+    ASSERT_EQ(events[ProfileEvents::FilesystemCachePriorityIncreaseBufferFull], buffer_full_before + 1);
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheAppliedPriorityIncreases], applied_before + 3);
+    ASSERT_EQ(priority.getPendingPriorityIncreasesApprox(), 0u);
+    ASSERT_EQ(queue_offsets(), (std::vector<size_t>{30, 0, 10, 20}));
+
+    /// The emptied ring fills to half again.
+    hit(3);
+    ASSERT_EQ(notifications, 3u);
+    priority.applyAllPendingPriorityIncreases();
+    ASSERT_EQ(priority.getPendingPriorityIncreasesApprox(), 0u);
+    ASSERT_EQ(queue_offsets(), (std::vector<size_t>{0, 10, 20, 30}));
+
+    hit(0);
+    ASSERT_EQ(notifications, 5u);
+
+    /// A hit which finds its buffer full while the queue is locked loses its increase instead of waiting.
+    hit(1);
+    {
+        auto lock = priority.getPriorityGuard().readLock();
+        ASSERT_FALSE(priority.tryIncreasePriority(*iterators[2], true, state_guard));
+    }
+    ASSERT_EQ(events[ProfileEvents::FilesystemCachePriorityIncreaseBufferFull], buffer_full_before + 2);
+    ASSERT_EQ(priority.getPendingPriorityIncreasesApprox(), 2u);
+    ASSERT_EQ(queue_offsets(), (std::vector<size_t>{0, 10, 20, 30}));
+}
+
+namespace
+{
+
+using QueueNodes = std::list<IFileCachePriority::EntryPtr>;
+
+/// Iterators of distinct list nodes, which identify increases without entries.
+std::vector<QueueNodes::iterator> makeIterators(QueueNodes & nodes)
+{
+    std::vector<QueueNodes::iterator> iterators;
+    for (auto it = nodes.begin(); it != nodes.end(); ++it)
+        iterators.push_back(it);
+    return iterators;
+}
+
+}
+
+TEST_F(FileCacheTest, PendingPriorityIncreasesRing)
+{
+    /// The increases of one thread go to one buffer. Over many passes around the ring it fills, wakes once per
+    /// filling, reports full and is popped in order, whole or up to a limit.
+    constexpr size_t buffer_size = 4;
+    constexpr size_t passes = 100;
+    QueueNodes nodes(buffer_size * passes + 1);
+    const auto iterators = makeIterators(nodes);
+
+    PendingPriorityIncreases pending;
+    pending.allocateBuffers(buffer_size);
+    size_t notifications = 0;
+    const std::function<void()> notify = [&] { ++notifications; };
+    auto add = [&](size_t i)
+    {
+        PendingPriorityIncrease increase{{}, iterators[i]};
+        return pending.tryAdd(increase, notify);
+    };
+
+    for (size_t pass = 0; pass < passes; ++pass)
+    {
+        const size_t first = pass * buffer_size;
+        for (size_t i = 0; i < buffer_size; ++i)
+            ASSERT_TRUE(add(first + i));
+        ASSERT_FALSE(add(first + buffer_size));
+        ASSERT_EQ(notifications, pass + 1);
+        ASSERT_EQ(pending.getSizeApprox(), buffer_size);
+
+        PriorityIncreases increases;
+        if (pass % 2 == 0)
+        {
+            pending.popBufferOfCurrentThread(increases);
+        }
+        else
+        {
+            pending.pop(increases, 1);
+            ASSERT_EQ(increases.size(), 1u);
+            pending.pop(increases, buffer_size);
+        }
+        ASSERT_EQ(increases.size(), buffer_size);
+        for (size_t i = 0; i < buffer_size; ++i)
+            ASSERT_TRUE(increases[i].iterator == iterators[first + i]);
+        ASSERT_EQ(pending.getSizeApprox(), 0u);
+    }
+}
+
+TEST_F(FileCacheTest, PendingPriorityIncreasesConcurrent)
+{
+    /// More writers than buffers, so that writers share buffers, and one reader popping while they add.
+    /// Every increase is popped exactly once, and the increases of each writer in the order it added them.
+    constexpr size_t buffer_size = 8;
+    constexpr size_t increases_per_writer = 2000;
+    const size_t writers_count = 2 * static_cast<size_t>(getNumberOfCPUCoresToUse());
+    QueueNodes nodes(writers_count * increases_per_writer);
+    const auto iterators = makeIterators(nodes);
+    std::unordered_map<const IFileCachePriority::EntryPtr *, size_t> index_of_node;
+    for (size_t i = 0; i < iterators.size(); ++i)
+        index_of_node[&*iterators[i]] = i;
+
+    PendingPriorityIncreases pending;
+    pending.allocateBuffers(buffer_size);
+    std::atomic<size_t> notifications = 0;
+    const std::function<void()> notify = [&] { ++notifications; };
+    std::atomic<size_t> finished_writers = 0;
+
+    std::vector<std::thread> writers;
+    for (size_t writer = 0; writer < writers_count; ++writer)
+    {
+        writers.emplace_back([&, writer]
+        {
+            for (size_t i = 0; i < increases_per_writer; ++i)
+            {
+                PendingPriorityIncrease increase{{}, iterators[writer * increases_per_writer + i]};
+                while (!pending.tryAdd(increase, notify))
+                    std::this_thread::yield();
+            }
+            ++finished_writers;
+        });
+    }
+
+    std::vector<size_t> next_of_writer(writers_count, 0);
+    size_t popped = 0;
+    while (true)
+    {
+        const bool all_finished = finished_writers == writers_count;
+        PriorityIncreases increases;
+        pending.pop(increases, PriorityIncreases::capacity());
+        for (const auto & increase : increases)
+        {
+            const size_t index = index_of_node.at(&*increase.iterator);
+            const size_t writer = index / increases_per_writer;
+            EXPECT_EQ(index % increases_per_writer, next_of_writer[writer]);
+            next_of_writer[writer] = index % increases_per_writer + 1;
+        }
+        popped += increases.size();
+        if (increases.empty())
+        {
+            /// Writers which finished before the pop have published everything, so an empty pop means the end.
+            if (all_finished)
+                break;
+            std::this_thread::yield();
+        }
+    }
+
+    for (auto & writer : writers)
+        writer.join();
+    ASSERT_EQ(popped, writers_count * increases_per_writer);
+    ASSERT_EQ(pending.getSizeApprox(), 0u);
+    ASSERT_GT(notifications, 0u);
+}

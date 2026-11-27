@@ -222,6 +222,9 @@ public:
 
     size_t getFileSegmentsNum() const;
 
+    /// For `system.asynchronous_metrics`.
+    size_t getPendingPriorityIncreasesApprox() const;
+
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
     size_t getBackgroundDownloadMaxFileSegmentSize() const { return background_download_max_file_segment_size.load(); }
@@ -268,12 +271,15 @@ public:
 
     void freeSpaceRatioKeepingThreadFunc();
 
-    void backgroundCleanupTaskFunc();
+    void backgroundMaintenanceTaskFunc();
+
+    /// Wakes the maintenance task now. Called by hits, so it takes the lock of the task only once per run.
+    void wakeBackgroundMaintenanceTask();
 
     void evictIdleClients();
 
-    /// Cleanup-task reschedule interval; recomputed from current (reloadable) settings.
-    UInt64 backgroundCleanupIntervalMs() const;
+    /// Interval of idle-client eviction, or 0 if it is disabled; recomputed from current (reloadable) settings.
+    UInt64 idleClientCheckIntervalMs() const;
 
     const String & getName() const { return name; }
 
@@ -312,12 +318,19 @@ private:
     const size_t drop_cache_threads;
     std::unique_ptr<ThreadPool> drop_cache_pool;
 
-    /// Single background maintenance task: removes the priority's invalidated
-    /// queue entries and, on the same ticks, evicts idle clients.
-    BackgroundSchedulePoolTaskHolder background_cleanup_task;
+    /// Single background maintenance task with several jobs: it removes the priority's invalidated queue entries, applies
+    /// pending priority increases and evicts idle clients. Each run decides from the state of the priority and the time
+    /// since the last run of each job which jobs to do.
+    BackgroundSchedulePoolTaskHolder background_maintenance_task;
     const UInt64 invalidated_entries_cleanup_threshold;
     const UInt64 invalidated_entries_cleanup_interval_ms;
     const UInt64 invalidated_entries_cleanup_remove_batch;
+    const UInt64 priority_increase_max_delay_ms;
+    /// Whether the task was woken since it started its current run.
+    std::atomic<bool> maintenance_task_wake_requested = false;
+    /// Touched only from the maintenance task thread.
+    std::chrono::steady_clock::time_point last_invalidated_entries_removal;
+    std::chrono::steady_clock::time_point last_priority_increases_apply;
 
     /// Per-client last-access timestamps live in the overcommit priority's
     /// `CacheUsage` (reached via `main_priority`). The TTL and check interval are
@@ -325,7 +338,7 @@ private:
     std::atomic<UInt64> idle_client_ttl_sec{0};
     std::atomic<UInt64> idle_client_check_interval_sec{0};
     const UInt64 idle_client_eviction_threads;
-    /// Last idle sweep wall-clock; touched only from the cleanup task thread.
+    /// Last idle sweep wall-clock; touched only from the maintenance task thread.
     std::chrono::steady_clock::time_point last_idle_eviction;
     /// Decided in the constructor: only overcommit policies with per-user-id
     /// directories track per-client usage, so idle eviction is possible only then.
@@ -360,6 +373,8 @@ private:
     IFileCachePriority::SharedEvictionCursor reserve_cursor{IFileCachePriority::EvictionCursor::Reserve};
 
     std::mutex apply_settings_mutex;
+
+    static IFileCachePriority::BatchPriorityIncreaseSettings getBatchPriorityIncreaseSettings(const FileCacheSettings & settings);
 
     FileCachePriorityPtr main_priority;
 

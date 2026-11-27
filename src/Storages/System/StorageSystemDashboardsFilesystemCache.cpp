@@ -269,6 +269,7 @@ const std::vector<Chart> & getCharts()
                 {"Complete", "sum(ProfileEvent_FileSegmentCompleteMicroseconds) / 1000000"},
                 {"HolderComplete", "sum(ProfileEvent_FileSegmentHolderCompleteMicroseconds) / 1000000"},
                 {"IncreasePriority", "sum(ProfileEvent_FileSegmentIncreasePriorityMicroseconds) / 1000000"},
+                {"ApplyPriorityIncreases", "sum(ProfileEvent_FilesystemCacheApplyPriorityIncreasesMicroseconds) / 1000000"},
             },
         },
         {
@@ -279,11 +280,28 @@ const std::vector<Chart> & getCharts()
             },
         },
         {
-            "Priority updates skipped on lock contention (per second)",
+            "Priority updates skipped (per second)",
             {
                 {"FailToIncreasePriority", "sum(ProfileEvent_FileSegmentFailToIncreasePriority)"},
                 {"SkippedBusyPriorityLock", "sum(ProfileEvent_FilesystemCacheSkippedBusyPriorityLock)"},
+                {"SkippedOnCacheResize", "sum(ProfileEvent_FilesystemCacheFailToIncreasePriorityBecauseOfCacheResize)"},
             },
+        },
+        {
+            "Buffered priority increases (per second)",
+            {
+                {"Applied", "sum(ProfileEvent_FilesystemCacheAppliedPriorityIncreases)"},
+                {"BufferFull", "sum(ProfileEvent_FilesystemCachePriorityIncreaseBufferFull)"},
+                {"BufferHalfFull", "sum(ProfileEvent_FilesystemCachePriorityIncreaseBufferHalfFull)"},
+            },
+        },
+        {
+            "Pending priority increases",
+            {
+                {"Pending", "sumIf(value, metric = 'FilesystemCachePendingPriorityIncreases')"},
+            },
+            "asynchronous_metric_log",
+            "metric IN ('FilesystemCachePendingPriorityIncreases')",
         },
         {
             "Background jobs (per second)",
