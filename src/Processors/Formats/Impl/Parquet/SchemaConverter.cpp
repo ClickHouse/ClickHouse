@@ -2431,6 +2431,9 @@ void SchemaConverter::processPrimitiveColumn(
         /// (Parquet's sort order for `uuid` is unsigned big-endian byte comparison, while ClickHouse
         ///  sorts `UUID` by its second half, so the min/max pair is not an interval in the column's
         ///  own order. Leaving allow_stats == false.)
+        /// The bloom filter and the dictionary hold digests of the stored 16 bytes, which only a `UUID`
+        /// constant is converted back to (see `hashUUID`); a `String` hint would hash the text form instead.
+        out_decoder.allow_hash_filters = WhichDataType(get_output_type_index()).isUUID();
         return;
     }
     else if (logical.__isset.FLOAT16)
@@ -2551,6 +2554,8 @@ void SchemaConverter::processPrimitiveColumn(
                     out_inferred_type = type_hint;
                     out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
                     /// (Leaving allow_stats == false: see the `UUID` logical type branch above.)
+                    /// The same 16 bytes as an annotated `UUID`, so the same hashing applies.
+                    out_decoder.allow_hash_filters = true;
                     return;
                 }
 

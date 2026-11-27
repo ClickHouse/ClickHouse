@@ -286,6 +286,9 @@ def setup_build_caches_env(info):
     )
     if info.pr_number > 0 and not backport_from_repo:
         os.environ["SCCACHE_S3_RW_MODE"] = "READ_ONLY"
+        # Read-only builds in the main repo use the bucket anonymously; writers and other repos keep credentials.
+        if info.repo_name == "ClickHouse/ClickHouse":
+            os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
     os.makedirs(build_dir, exist_ok=True)
 
     if info.is_local_run:
@@ -293,6 +296,8 @@ def setup_build_caches_env(info):
             print(f"NOTE: Using custom sccache endpoint: {os.environ['SCCACHE_ENDPOINT']}")
         if os.environ.get("AWS_ACCESS_KEY_ID"):
             print("NOTE: Using custom AWS credentials for sccache")
+            # Explicit credentials and anonymous access are mutually exclusive.
+            os.environ.pop("SCCACHE_S3_NO_CREDENTIALS", None)
         else:
             os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
     else:
@@ -306,12 +311,17 @@ def setup_build_caches_env(info):
         # master/release builds (pr_number == 0) are allowed to write entries.
         if info.pr_number > 0:
             os.environ["CTCACHE_S3_READ_ONLY"] = "true"
+            # Read-only builds in the main repo read anonymously; other repos keep credentials.
+            if info.repo_name == "ClickHouse/ClickHouse":
+                os.environ["CTCACHE_S3_NO_CREDENTIALS"] = "true"
 
 
 # Next to sccache: PR runners can only read the `ccache` prefix.
 THINLTO_CACHE_S3_PATH = f"{Settings.S3_ARTIFACT_BUCKET}/ccache/thinlto_cache"
 THINLTO_CACHE_DIR = f"{temp_dir}/thinlto_cache"
 THINLTO_CACHE_MARKER = f"{temp_dir}/thinlto_cache.restored"
+# How many commits of the build's master history a restore tries before the newest archive.
+THINLTO_CACHE_ANCESTORS = 10
 
 
 def uses_thinlto_cache(info, cmake_cmd, release_type, official):
@@ -345,6 +355,8 @@ def records_access_time(directory):
 def restore_thinlto_cache(info, release_type):
     os.makedirs(THINLTO_CACHE_DIR, exist_ok=True)
     publishes = info.pr_number == 0
+    # Read-only builds in the main repo read anonymously; publishers keep credentials.
+    anonymous = not publishes and info.repo_name == "ClickHouse/ClickHouse"
     atime = records_access_time(THINLTO_CACHE_DIR)
     print(
         f"NOTE: the file system of the ThinLTO cache {'records' if atime else 'does not record'} access times"
@@ -353,11 +365,19 @@ def restore_thinlto_cache(info, release_type):
         # The build could not tell which restored entries it used, so it publishes only its own.
         return
     archive = f"{temp_dir}/thinlto_cache_{release_type}.tar.zst"
-    if not S3.copy_file_from_s3(
-        s3_path=f"{THINLTO_CACHE_S3_PATH}/{release_type}.tar.zst",
-        local_path=archive,
-        no_strict=True,
-    ):
+    # lld keys a module's entry on the modules it imports, so the archive of the
+    # nearest commit of this build's master history misses the fewest entries.
+    commits = (info.get_kv_data("master_track_commits_sha") or [])[:THINLTO_CACHE_ANCESTORS]
+    for name in [f"{release_type}/{sha}" for sha in commits] + [release_type]:
+        if S3.copy_file_from_s3(
+            s3_path=f"{THINLTO_CACHE_S3_PATH}/{name}.tar.zst",
+            local_path=archive,
+            no_strict=True,
+            anonymous=anonymous,
+        ):
+            print(f"ThinLTO cache: restoring [{name}]")
+            break
+    else:
         print(f"NOTE: no ThinLTO cache for [{release_type}], the links optimize every module")
         return
     if not Shell.check(
@@ -378,7 +398,7 @@ def restore_thinlto_cache(info, release_type):
                 os.utime(entry.path, ns=(restored, entry.stat().st_mtime_ns))
 
 
-def publish_thinlto_cache(release_type):
+def publish_thinlto_cache(info, release_type):
     if os.path.exists(THINLTO_CACHE_MARKER):
         # Keep the entries this build's links read or wrote.
         Shell.check(
@@ -391,12 +411,14 @@ def publish_thinlto_cache(release_type):
         f"set -o pipefail; tar -cf - -C {THINLTO_CACHE_DIR} . | zstd -T0 -1 -q -f -o {archive}",
         verbose=True,
     ):
-        S3.copy_file_to_s3(
-            s3_path=f"{THINLTO_CACHE_S3_PATH}/{release_type}.tar.zst",
-            local_path=archive,
-            no_strict=True,
-            tags={"retention": "default"},
-        )
+        for name in (f"{release_type}/{info.sha}", release_type):
+            S3.copy_file_to_s3(
+                s3_path=f"{THINLTO_CACHE_S3_PATH}/{name}.tar.zst",
+                local_path=archive,
+                with_rename=True,
+                no_strict=True,
+                tags={"retention": "default"},
+            )
     Shell.check(f"rm -f {archive}")
 
 
@@ -786,7 +808,7 @@ def main():
         Shell.check("pwd")
         res = results[-1].is_ok()
         if res and thinlto_cache and info.pr_number == 0:
-            publish_thinlto_cache(release_type)
+            publish_thinlto_cache(info, release_type)
 
         # Apply BOLT post-link optimization if profiles are available
         if res and use_bolt:

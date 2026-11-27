@@ -16,7 +16,7 @@ workflow = Workflow.Config(
     engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         JobConfigs.style_check,
-        JobConfigs.fast_test_mq,
+        JobConfigs.fast_test,
         *[job for job in JobConfigs.build_jobs if job.name == "Build (amd_binary)"],
         # Rerun the PR's targeted selection (its changed tests and the tests
         # covering its changed lines) against the merge group state, so a PR that
