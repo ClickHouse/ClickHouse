@@ -152,6 +152,19 @@ CREATE TABLE t_dpw_keys (k UInt32) ENGINE = Memory;
 INSERT INTO t_dpw_keys VALUES (1);
 ALTER TABLE t_dpw_errors DROP PARTITION WHERE _partition_value.1 IN t_dpw_keys; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_dpw_errors DROP PARTITION WHERE _partition_value.1 NOT IN t_dpw_keys; -- { serverError BAD_ARGUMENTS }
+-- Also not through a SQL UDF.
+DROP FUNCTION IF EXISTS udf_05875_dpw_in_subquery;
+DROP FUNCTION IF EXISTS udf_05875_dpw_in_table;
+DROP FUNCTION IF EXISTS udf_05875_dpw_scalar_subquery;
+CREATE FUNCTION udf_05875_dpw_in_subquery AS (x) -> (x IN (SELECT k FROM t_dpw_keys));
+CREATE FUNCTION udf_05875_dpw_in_table AS (x) -> (x IN t_dpw_keys);
+CREATE FUNCTION udf_05875_dpw_scalar_subquery AS (x) -> (x = (SELECT max(k) FROM t_dpw_keys));
+ALTER TABLE t_dpw_errors DROP PARTITION WHERE udf_05875_dpw_in_subquery(_partition_value.1); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_dpw_errors DROP PARTITION WHERE udf_05875_dpw_in_table(_partition_value.1); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_dpw_errors DROP PARTITION WHERE udf_05875_dpw_scalar_subquery(_partition_value.1); -- { serverError BAD_ARGUMENTS }
+DROP FUNCTION udf_05875_dpw_in_subquery;
+DROP FUNCTION udf_05875_dpw_in_table;
+DROP FUNCTION udf_05875_dpw_scalar_subquery;
 DROP TABLE t_dpw_keys;
 -- It must keep a row for each partition: `arrayJoin` adds or removes rows.
 ALTER TABLE t_dpw_errors DROP PARTITION WHERE arrayJoin(if(_partition_value.1 = 1, [1, 1], [0])) = 1; -- { serverError BAD_ARGUMENTS }

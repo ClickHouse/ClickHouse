@@ -100,6 +100,8 @@
 #include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Planner.h>
@@ -180,10 +182,10 @@
 #include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/StringUtils.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/ThreadStatus.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -10331,9 +10333,13 @@ ExpressionActionsPtr buildPartitionPredicateActions(
 {
     chassert(partition_ast.predicate);
 
-    checkPartitionPredicateDoesNotReadTables(*partition_ast.predicate);
-
+    /// SQL UDFs are expanded before the check, so that a UDF cannot hide a table read. `TreeRewriter` would
+    /// expand them too, but it executes the scalar subqueries in the same call, before the check could run.
     ASTPtr predicate = partition_ast.predicate->clone();
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(predicate, local_context);
+    checkPartitionPredicateDoesNotReadTables(*predicate);
+
     auto syntax_result = TreeRewriter(local_context).analyze(predicate, header.getNamesAndTypesList());
     auto dag = ExpressionAnalyzer(predicate, syntax_result, local_context).getActionsDAG(/* add_aliases = */ false);
 
