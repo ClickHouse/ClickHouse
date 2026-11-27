@@ -582,6 +582,11 @@ class ArtifactNames:
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
     UNITTEST_LLVM_COVERAGE = "UNITTEST_LLVM_COVERAGE"
 
+    WYRD_UNITTEST_ARM_DEBUG = "WYRD_UNITTEST_ARM_DEBUG"
+    WYRD_UNITTEST_ARM_ASAN_UBSAN = "WYRD_UNITTEST_ARM_ASAN_UBSAN"
+    WYRD_UNITTEST_ARM_TSAN = "WYRD_UNITTEST_ARM_TSAN"
+    WYRD_UNITTEST_AMD_MSAN = "WYRD_UNITTEST_AMD_MSAN"
+
     # Packages are built for the release builds only - they are what gets published, and
     # everything else in CI runs from the `CH_*` binary.
     DEB_AMD_RELEASE = "DEB_AMD_RELEASE"
@@ -848,20 +853,35 @@ class ArtifactConfigs:
             ArtifactNames.TGZ_ARM_RELEASE,
         ]
     )
-    unittests_binaries = Artifact.Config(
-        name="...",
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/src/unit_tests_dbms",
-        compress_zst=True,
-    ).parametrize(
-        names=[
-            ArtifactNames.UNITTEST_ARM_DEBUG,
-            ArtifactNames.UNITTEST_ARM_ASAN_UBSAN,
-            ArtifactNames.UNITTEST_ARM_TSAN,
-            ArtifactNames.UNITTEST_AMD_MSAN,
-            ArtifactNames.UNITTEST_LLVM_COVERAGE,
-        ]
-    )
+    unittests_binaries = [
+        *Artifact.Config(
+            name="...",
+            type=Artifact.Type.S3,
+            path=f"{TEMP_DIR}/build/src/unit_tests_dbms",
+            compress_zst=True,
+        ).parametrize(
+            names=[
+                ArtifactNames.UNITTEST_ARM_DEBUG,
+                ArtifactNames.UNITTEST_ARM_ASAN_UBSAN,
+                ArtifactNames.UNITTEST_ARM_TSAN,
+                ArtifactNames.UNITTEST_AMD_MSAN,
+                ArtifactNames.UNITTEST_LLVM_COVERAGE,
+            ]
+        ),
+        *Artifact.Config(
+            name="...",
+            type=Artifact.Type.S3,
+            path=f"{TEMP_DIR}/build/src/unit_tests_wyrd",
+            compress_zst=True,
+        ).parametrize(
+            names=[
+                ArtifactNames.WYRD_UNITTEST_ARM_DEBUG,
+                ArtifactNames.WYRD_UNITTEST_ARM_ASAN_UBSAN,
+                ArtifactNames.WYRD_UNITTEST_ARM_TSAN,
+                ArtifactNames.WYRD_UNITTEST_AMD_MSAN,
+            ]
+        ),
+    ]
     # `emcc` emits a pair: the WebAssembly module and the JavaScript that instantiates it
     # (memory setup, syscalls, the Web Workers backing pthreads).
     clickhouse_wasm = Artifact.Config(

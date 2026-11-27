@@ -493,6 +493,7 @@ class JobConfigs:
             provides=[
                 ArtifactNames.CH_AMD_MSAN,
                 ArtifactNames.UNITTEST_AMD_MSAN,
+                ArtifactNames.WYRD_UNITTEST_AMD_MSAN,
             ],
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
@@ -506,6 +507,7 @@ class JobConfigs:
             provides=[
                 ArtifactNames.CH_ARM_DEBUG,
                 ArtifactNames.UNITTEST_ARM_DEBUG,
+                ArtifactNames.WYRD_UNITTEST_ARM_DEBUG,
             ],
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
@@ -514,6 +516,7 @@ class JobConfigs:
             provides=[
                 ArtifactNames.CH_ARM_ASAN_UBSAN,
                 ArtifactNames.UNITTEST_ARM_ASAN_UBSAN,
+                ArtifactNames.WYRD_UNITTEST_ARM_ASAN_UBSAN,
             ],
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
@@ -522,6 +525,7 @@ class JobConfigs:
             provides=[
                 ArtifactNames.CH_ARM_TSAN,
                 ArtifactNames.UNITTEST_ARM_TSAN,
+                ArtifactNames.WYRD_UNITTEST_ARM_TSAN,
             ],
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
@@ -1404,6 +1408,7 @@ class JobConfigs:
     _fuzzer_command = (
         "python3 ./ci/jobs/unit_tests_job.py --gtest_filter=FunctionsStress.*"
     )
+    _wyrd_command = "python3 ./ci/jobs/unit_tests_job.py --binary=unit_tests_wyrd"
     # The sanitizer builds define `SANITIZER` and `DEBUG_OR_SANITIZER_BUILD`, so the suites
     # under `#if !defined(SANITIZER)` (`DateLUTImpl`, `AllocationInterceptors`) are compiled
     # only into a plain build. `Build (arm_debug)` already builds `unit_tests_dbms`
@@ -1450,6 +1455,30 @@ class JobConfigs:
             runs_on=RunnerLabels.AMD_LARGE,
             requires=[ArtifactNames.UNITTEST_AMD_MSAN],
             command=_fuzzer_command,
+        ),
+        Job.ParamSet(
+            parameter="arm_debug, wyrd",
+            runs_on=RunnerLabels.ARM_LARGE,
+            requires=[ArtifactNames.WYRD_UNITTEST_ARM_DEBUG],
+            command=_wyrd_command,
+        ),
+        Job.ParamSet(
+            parameter="asan_ubsan, wyrd",
+            runs_on=RunnerLabels.ARM_LARGE,
+            requires=[ArtifactNames.WYRD_UNITTEST_ARM_ASAN_UBSAN],
+            command=_wyrd_command,
+        ),
+        Job.ParamSet(
+            parameter="tsan, wyrd",
+            runs_on=RunnerLabels.ARM_LARGE,
+            requires=[ArtifactNames.WYRD_UNITTEST_ARM_TSAN],
+            command=_wyrd_command,
+        ),
+        Job.ParamSet(
+            parameter="msan, wyrd",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.WYRD_UNITTEST_AMD_MSAN],
+            command=_wyrd_command,
         ),
     )
     stress_test_jobs = common_stress_job_config.parametrize(
