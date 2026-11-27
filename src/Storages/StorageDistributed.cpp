@@ -88,6 +88,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionContainsArrayJoin.h>
+#include <Interpreters/ExtractExpressionInfoVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -1659,6 +1660,16 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     for (const auto & child : analyzed_select->getChildren())
         if (child && (hasSubqueryAfterAnalysis(child) || hasStatefulFunction(child)))
             return {};
+    /// Each shard would also evaluate the destination's defaults for its own rows only.
+    const auto destination_metadata = getInMemoryMetadataPtr(local_context, false);
+    for (const auto & [_, column_default] : destination_metadata->getColumns().getDefaults())
+    {
+        TablesWithColumns no_tables;
+        ExpressionInfoVisitor::Data expression_info{WithContext{local_context}, no_tables};
+        ExpressionInfoVisitor(expression_info).visit(column_default.expression);
+        if (expression_info.is_stateful_function)
+            return {};
+    }
 
     src_storage_cluster.updateExternalDynamicMetadataIfExists(local_context);
     const auto storage_metadata = src_storage_cluster.getInMemoryMetadataPtr(local_context, false);
