@@ -3,9 +3,18 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesHelpers.h>
 
+#include <Common/Exception.h>
+#include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeArray.h>
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
 void registerAggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid(AggregateFunctionFactory & factory)
@@ -15,7 +24,7 @@ Aggregate function that takes time series data as pairs of timestamps and values
 
 The first smoothed value is the first sample, and the first trend is the difference of the first two samples. For each following sample `x`, the trend becomes `trend_factor * (level - previous_level) + (1 - trend_factor) * trend` and the smoothed value becomes `smoothing_factor * x + (1 - smoothing_factor) * (level + trend)`, where `level` and `previous_level` are the last two smoothed values.
 
-Both factors must be greater than 0 and less than 1. Like in Prometheus, they are checked only for a window that contains samples.
+The smoothing factor and the trend factor follow the samples as the last two arguments: each is either one number used at every grid point, or an array with one number per grid point. Each must be the same in every row. Both factors must be greater than 0 and less than 1. Like in Prometheus, they are checked only for a window that contains samples, and a NaN factor is not an error and gives NaN.
 
 The samples can be passed in one of three forms:
 - as two arguments `timestamp` and `value`, where each row holds a single sample;
@@ -29,21 +38,21 @@ This function is in private preview, enable it by setting `enable_time_series_ag
 </Note>
     )";
     FunctionDocumentation::Syntax syntax = R"(
-timeSeriesDoubleExponentialSmoothingToGrid(start_timestamp, end_timestamp, grid_step, staleness, smoothing_factor, trend_factor)(timestamp, value)
-timeSeriesDoubleExponentialSmoothingToGrid(start_timestamp, end_timestamp, grid_step, staleness, smoothing_factor, trend_factor)(samples)
+timeSeriesDoubleExponentialSmoothingToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value, smoothing_factor, trend_factor)
+timeSeriesDoubleExponentialSmoothingToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples, smoothing_factor, trend_factor)
     )";
     FunctionDocumentation::Parameters parameters_documentation = {
         {"start_timestamp", "Specifies start of the grid. It can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
         {"end_timestamp", "Specifies end of the grid. It can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
         {"grid_step", "Specifies step of the grid in seconds. It can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
-        {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples. The staleness window is a left-open and right-closed interval. It can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
-        {"smoothing_factor", "Specifies how much a new sample changes the smoothed value: close to 0, the smoothed value follows the older samples; close to 1, the new sample.", {"Float*", "Decimal*", "String"}},
-        {"trend_factor", "Specifies how much the last change of the smoothed value changes the trend: close to 0, the trend follows the older trend; close to 1, the last change.", {"Float*", "Decimal*", "String"}}
+        {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples. The staleness window is a left-open and right-closed interval. It can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments = {
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
         {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}},
+        {"smoothing_factor", "Specifies how much a new sample changes the smoothed value: close to 0, the smoothed value follows the older samples; close to 1, the new sample. Either one number for the whole grid or an array with one number per grid point. Must be the same in every row.", {"Float*", "UInt8/16/32/64", "Int8/16/32/64", "Array(Float*)", "Array(UInt8/16/32/64)", "Array(Int8/16/32/64)"}},
+        {"trend_factor", "Specifies how much the last change of the smoothed value changes the trend: close to 0, the trend follows the older trend; close to 1, the last change. Either one number for the whole grid or an array with one number per grid point. Must be the same in every row.", {"Float*", "UInt8/16/32/64", "Int8/16/32/64", "Array(Float*)", "Array(UInt8/16/32/64)", "Array(Int8/16/32/64)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the last smoothed value for each point of the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are fewer than two samples within the window for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples = {
@@ -61,10 +70,10 @@ WITH
     45 AS window_seconds,    -- "staleness" window
     0.5 AS smoothing_factor,
     0.5 AS trend_factor
-SELECT timeSeriesDoubleExponentialSmoothingToGrid(start_ts, end_ts, step_seconds, window_seconds, smoothing_factor, trend_factor)(timestamps, values);
+SELECT timeSeriesDoubleExponentialSmoothingToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values, smoothing_factor, trend_factor);
         )",
         R"(
-┌─timeSeriesDoubleExponentialSmoothingToGrid(start_ts, end_ts, step_seconds, window_seconds, smoothing_factor, trend_factor)(timestamps, values)─┐
+┌─timeSeriesDoubleExponentialSmoothingToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values, smoothing_factor, trend_factor)─┐
 │ [NULL,NULL,1,2,3.25,4,NULL,NULL,6.5]                                                                                                           │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
@@ -77,16 +86,28 @@ SELECT timeSeriesDoubleExponentialSmoothingToGrid(start_ts, end_ts, step_seconds
     factory.registerFunction("timeSeriesDoubleExponentialSmoothingToGrid",
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
-            assertTimeseriesParametersCount(name, parameters, 6, "start_timestamp, end_timestamp, step, window, smoothing_factor, trend_factor");
+            assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+
             auto make_function = [&]<typename TimestampType, typename ValueType>(DateTime64 start, DateTime64 end, Decimal64 step, Decimal64 window, UInt32 grid_scale, UInt32 column_timestamp_scale) -> AggregateFunctionPtr
             {
-                /// The factors are kept as they are: their range is checked when a window with samples is calculated, like in PromQL.
-                const Float64 smoothing_factor = extractTimeseriesFloatParameter(name, "smoothing_factor", parameters[4]);
-                const Float64 trend_factor = extractTimeseriesFloatParameter(name, "trend_factor", parameters[5]);
+                /// The factors follow the samples: each is a number for the whole grid, or an array with a number for each grid point.
+                /// Their range is not checked here but when a window with samples is calculated, like in PromQL.
+                auto check_factor_type = [&](const DataTypePtr & factor_type, std::string_view factor_name)
+                {
+                    const auto * array_type = typeid_cast<const DataTypeArray *>(factor_type.get());
+                    if (!isNativeNumber(array_type ? array_type->getNestedType() : factor_type))
+                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of the argument `{}` for aggregate function {}, expected a number or an array of numbers",
+                            factor_type->getName(), factor_name, name);
+                };
+                check_factor_type(argument_types[argument_types.size() - 2], "smoothing_factor");
+                check_factor_type(argument_types.back(), "trend_factor");
+
                 return std::make_shared<AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid<TimestampType, ValueType>>(
-                    argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale, smoothing_factor, trend_factor);
+                    argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
             };
-            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
+            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function,
+                AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid<DateTime64, Float64>::num_extra_arguments);
         },
         documentation});
 }

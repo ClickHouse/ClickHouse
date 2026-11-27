@@ -6,6 +6,7 @@
 #include <absl/container/inlined_vector.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesScalarOrGridArgument.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/Exception.h>
@@ -44,11 +45,6 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
     /// one, because it starts from the first value of the window, so each grid point walks its whole window.
     struct Aggregator
     {
-        explicit Aggregator(Float64 smoothing_factor_, Float64 trend_factor_)
-            : smoothing_factor(smoothing_factor_), trend_factor(trend_factor_)
-        {
-        }
-
         /// Adds the bucket that entered the window. Buckets are added in time order.
         void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
         {
@@ -74,14 +70,14 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
         }
 
         /// Returns the last smoothed value of the window, or nothing if the window has fewer than two values.
-        [[nodiscard]] std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
+        [[nodiscard]] std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/, Float64 smoothing_factor, Float64 trend_factor) const
         {
             if (buckets_in_window.empty())
                 return std::nullopt;
 
-            /// The factors are not checked in the constructor: that would reject invalid factors even for an empty
-            /// window, which Prometheus does not do.
-            checkFactors();
+            /// The factors are checked only for a window with samples: like Prometheus, an empty window gives no result
+            /// even with invalid factors.
+            checkFactors(smoothing_factor, trend_factor);
 
             size_t count = 0;
             Float64 level = 0;
@@ -116,7 +112,7 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
 
     private:
         /// Throws if a factor is not between 0 and 1. Like in Prometheus, a NaN factor passes.
-        void checkFactors() const
+        static void checkFactors(Float64 smoothing_factor, Float64 trend_factor)
         {
             if (smoothing_factor <= 0 || smoothing_factor >= 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -136,11 +132,6 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
             absl::InlinedVector<ValueType, INLINE_VALUES_PER_BUCKET, AllocatorWithMemoryTracking<ValueType>> values;
         };
 
-        /// How much a new value moves the level: near 0 the level follows the old values, near 1 the new one.
-        const Float64 smoothing_factor;
-        /// How much the last change of the level moves the trend: near 0 the trend follows the old trend, near 1 the last change.
-        const Float64 trend_factor;
-
         /// The buckets of the current window, oldest first. The bucket end is kept once per bucket, not once per value.
         DequeWithMemoryTracking<BucketValues> buckets_in_window;
     };
@@ -149,7 +140,7 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
 };
 
 /// Aggregate function that calculates the PromQL `double_exponential_smoothing` of time series values on a regular time grid.
-/// The two factors are parameters, so they are constants of the query and are not stored in the state.
+/// The two factors are the two arguments after the samples, each a number or an array with one value per grid point.
 template <typename TimestampType_, typename ValueType_>
 class AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid final :
     public AggregateFunctionTimeseriesBase<
@@ -159,32 +150,77 @@ class AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid final :
 public:
     using Traits = AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits<TimestampType_, ValueType_>;
 
+    using ResultType = typename Traits::ResultType;
     using Aggregator = typename Traits::Aggregator;
 
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid, Traits>;
+    using Base::Base;
 
-    using GridScaleTimestampType = typename Base::GridScaleTimestampType;
-    using GridScaleIntervalType = typename Base::GridScaleIntervalType;
+    /// The smoothing factor and the trend factor are two more arguments after the samples, kept in the state.
+    static constexpr size_t num_extra_arguments = 2;
 
-    explicit AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid(const DataTypes & argument_types_, const Array & parameters_,
-        GridScaleTimestampType grid_start_, GridScaleTimestampType grid_end_, GridScaleIntervalType grid_step_, GridScaleIntervalType window_,
-        UInt32 grid_scale_, UInt32 column_timestamp_scale_, Float64 smoothing_factor_, Float64 trend_factor_)
-        : Base(argument_types_, parameters_, grid_start_, grid_end_, grid_step_, window_, grid_scale_, column_timestamp_scale_)
-        , smoothing_factor(smoothing_factor_)
-        , trend_factor(trend_factor_)
+    struct State : Base::State
     {
-    }
+        /// How much a new value moves the level: near 0 the level follows the old values, near 1 the new one.
+        AggregateFunctionTimeseriesScalarOrGridArgument smoothing_factor;
+
+        /// How much the last change of the level moves the trend: near 0 the trend follows the old trend, near 1 the last change.
+        AggregateFunctionTimeseriesScalarOrGridArgument trend_factor;
+    };
+
+    /// The names used in the error messages for the smoothing factor and the trend factor.
+    static constexpr TimeseriesScalarOrGridArgumentNames smoothing_factor_names{"timeSeriesDoubleExponentialSmoothingToGrid", "smoothing_factor"};
+    static constexpr TimeseriesScalarOrGridArgumentNames trend_factor_names{"timeSeriesDoubleExponentialSmoothingToGrid", "trend_factor"};
 
     Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
-        return Aggregator{smoothing_factor, trend_factor};
+        return Aggregator{};
+    }
+
+    void addExtraArguments(
+        size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** extra_columns,
+        const UInt8 * flags, bool flag_value_to_include) const
+    {
+        data(place)->smoothing_factor.captureOrCheck(smoothing_factor_names, Base::grid_size, row_begin, row_end, *extra_columns[0], flags, flag_value_to_include);
+        data(place)->trend_factor.captureOrCheck(trend_factor_names, Base::grid_size, row_begin, row_end, *extra_columns[1], flags, flag_value_to_include);
+    }
+
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    {
+        Base::mergeImpl(place, rhs, arena);
+        data(place)->smoothing_factor.merge(smoothing_factor_names, data(rhs)->smoothing_factor);
+        data(place)->trend_factor.merge(trend_factor_names, data(rhs)->trend_factor);
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
+    {
+        Base::serialize(place, buf, version);
+        data(place)->smoothing_factor.serialize(buf);
+        data(place)->trend_factor.serialize(buf);
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
+    {
+        Base::deserialize(place, buf, version, arena);
+        data(place)->smoothing_factor.deserialize(smoothing_factor_names, buf, Base::grid_size);
+        data(place)->trend_factor.deserialize(trend_factor_names, buf, Base::grid_size);
+    }
+
+    std::optional<ResultType> getGridPointResult(const Aggregator & aggregator, ConstAggregateDataPtr place, size_t grid_index) const
+    {
+        return aggregator.getResult(Base::getGridPoint(grid_index), data(place)->smoothing_factor.at(grid_index), data(place)->trend_factor.at(grid_index));
     }
 
 private:
-    /// How much a new value moves the level: near 0 the level follows the old values, near 1 the new one.
-    const Float64 smoothing_factor;
-    /// How much the last change of the level moves the trend: near 0 the trend follows the old trend, near 1 the last change.
-    const Float64 trend_factor;
+    static const State * data(ConstAggregateDataPtr __restrict place)
+    {
+        return reinterpret_cast<const State *>(place);
+    }
+
+    static State * data(AggregateDataPtr __restrict place)
+    {
+        return reinterpret_cast<State *>(place);
+    }
 };
 
 }

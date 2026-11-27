@@ -4,7 +4,8 @@
 -- Tests the PromQL function `double_exponential_smoothing(v, sf, tf)`: for each series it smooths the samples of the
 -- range `v` with the smoothing factor `sf` and the trend factor `tf`, and returns the last smoothed value.
 -- The data and the expected values of the first two scenarios are the ones of the Prometheus test file
--- `promqltest/testdata/functions.test`. The other scenarios check the cases without a result and the rejected arguments.
+-- `promqltest/testdata/functions.test`. The other scenarios check the cases without a result, factors that are
+-- calculated when the query runs, and the rejected arguments.
 
 SET session_timezone = 'UTC';
 SET enable_time_series_table = 1;
@@ -121,9 +122,24 @@ SELECT * FROM prometheusQuery('ts_positive', 'double_exponential_smoothing(http_
 SELECT '-- factor not checked without samples';
 SELECT * FROM prometheusQuery('ts_positive', 'double_exponential_smoothing(http_requests[1m], 2, 2)', 100000) ORDER BY ALL;
 
--- `scalar(count(http_requests))` is calculated when the query runs. Only constant factors are supported.
-SELECT '-- calculated factor';
-SELECT * FROM prometheusQuery('ts_positive', 'double_exponential_smoothing(http_requests[1m], scalar(count(http_requests)) / 8, 0.1)', 8000); -- { serverError NOT_IMPLEMENTED }
+-- `scalar(count(m))` is calculated when the query runs. `m` has one series, so the smoothing factor is 0.5 and the
+-- trend factor is 0.25. The window that ends at 150 seconds holds {1, 1, 3, 4}, which gives 3.125.
+SELECT '-- calculated factors';
+SELECT * FROM prometheusQuery('ts_range', 'double_exponential_smoothing(m[45s], scalar(count(m)) / 2, scalar(count(m)) / 4)', 150) ORDER BY ALL;
+
+-- `time() / 300` is another smoothing factor at every step: 0.4, 0.45, 0.5, 0.55 and 0.7 at 120, 135, 150, 165 and 210
+-- seconds, which give 1, 1.9, 3.25, 4 and 7.1.
+SELECT '-- factor per step';
+SELECT * FROM prometheusQueryRange('ts_range', 'double_exponential_smoothing(m[45s], time() / 300, 0.5)', 90, 210, 15) ORDER BY ALL;
+
+-- `time() / 100` is 1.2 at 120 seconds, the first step whose window holds samples.
+SELECT '-- factor per step out of range';
+SELECT * FROM prometheusQueryRange('ts_range', 'double_exponential_smoothing(m[45s], time() / 100, 0.5)', 90, 210, 15); -- { serverError BAD_ARGUMENTS }
+
+-- A fixed `@` keeps the window at 150 seconds while the factor still changes with the step.
+SELECT '-- factor per step with a fixed @ modifier';
+SELECT * FROM prometheusQueryRange('ts_range', 'double_exponential_smoothing(m[45s] @ 150, time() / 300, 0.5)', 90, 210, 15); -- { serverError NOT_IMPLEMENTED }
+SELECT * FROM prometheusQueryRange('ts_range', 'double_exponential_smoothing(m[45s] @ 150, 0.5, time() / 300)', 90, 210, 15); -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE ts_positive;
 DROP TABLE ts_negative;

@@ -23,6 +23,17 @@ struct ConverterContext;
 /// vector or has no fixed @ modifier. This relies on `applyOffset` keeping the `Offset` node as the node of a range-vector piece.
 const PrometheusQueryTree::Offset * getFixedAtModifier(const SQLQueryPiece & argument);
 
+/// Throws `NOT_IMPLEMENTED` if the range vector has a fixed @ modifier and a scalar argument of the function varies with
+/// the evaluation time (`is_constant` is false). A fixed @ freezes the samples but not such an argument, so PromQL still
+/// evaluates per step, while a `timeSeries*ToGrid` aggregate function derives its window from each grid point and cannot
+/// apply one frozen window with a value per grid point. `function_node` and `argument_description` are named in the message.
+void checkFixedAtModifier(
+    const PrometheusQueryTree::Node * function_node,
+    const SQLQueryPiece & range_argument,
+    bool is_constant,
+    std::string_view argument_description,
+    const ConverterContext & context);
+
 /// Returns the grid a range function is aggregated on: its own evaluation range, the single point at a fixed @ timestamp,
 /// or its own evaluation range shifted back by an offset, because an offset keeps the timestamps of the samples.
 NodeEvaluationRange getRangeAggregationRange(

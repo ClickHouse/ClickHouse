@@ -12,7 +12,7 @@ namespace DB::PrometheusQueryToSQL
 /// Examples: rate(), idelta(), last_over_time().
 bool isFunctionOverRange(std::string_view function_name);
 
-/// Applies a prometheus function taking a range vector and, for some functions, constant scalars after it.
+/// Applies a prometheus function taking a range vector.
 SQLQueryPiece applyFunctionOverRange(
     const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
