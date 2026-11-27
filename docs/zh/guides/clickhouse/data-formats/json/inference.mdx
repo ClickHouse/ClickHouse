@@ -8,14 +8,18 @@ doc_type: 'guide'
 
 ClickHouse 可以自动确定 JSON 数据的结构。这可用于直接查询 JSON 数据，例如通过磁盘上的 `clickhouse-local` 或 S3 bucket；也可在将数据加载到 ClickHouse 之前自动创建 schema。
 
-## 何时使用类型推断 {#when-to-use-type-inference}
+<div id="when-to-use-type-inference">
+  ## 何时使用类型推断
+</div>
 
 * **结构一致** - 用于推断类型的数据应包含你关注的所有键。类型推断基于对数据的采样，最多读取[最大行数](/zh/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference)或[最大字节数](/zh/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference)。样本之后如果出现包含额外列的数据，将被忽略，且无法查询。
 * **类型一致** - 特定键的数据类型需要相互兼容，即必须能够将一种类型自动强制转换为另一种类型。
 
 如果你的 JSON 更加动态，会不断加入新键，且同一路径可能出现多种类型，请参阅[“处理半结构化和动态数据”](/zh/guides/clickhouse/data-formats/json/inference#working-with-semi-structured-data)。
 
-## 检测类型 {#detecting-types}
+<div id="detecting-types">
+  ## 检测类型
+</div>
 
 以下内容假设 JSON 的结构始终一致，并且每个路径都只有一种类型。
 
@@ -107,7 +111,9 @@ SETTINGS describe_compact_output = 1
   日期和日期时间的自动检测分别可通过设置 [`input_format_try_infer_dates`](/zh/reference/settings/formats/input-format#input_format_try_infer_dates) 和 [`input_format_try_infer_datetimes`](/zh/reference/settings/formats/input-format#input_format_try_infer_datetimes) 进行控制 (两者默认均启用) 。将对象推断为 Tuple 的行为由设置 [`input_format_json_try_infer_named_tuples_from_objects`](/zh/reference/settings/formats/input-format#input_format_json_try_infer_named_tuples_from_objects) 控制。其他控制 JSON schema 推断 的设置 (例如数值的自动检测) 可在[此处](/zh/concepts/features/interfaces/schema-inference#text-formats)查看。
 </Info>
 
-## 查询 JSON {#querying-json}
+<div id="querying-json">
+  ## 查询 JSON
+</div>
 
 以下内容假设 JSON 的结构始终一致，并且每个路径都只有一种类型。
 
@@ -155,7 +161,9 @@ LIMIT 1 BY year
 
 schema 推断使我们无需预先指定 schema 即可查询 JSON 文件，从而加快临时性数据分析任务。
 
-## 创建表 {#creating-tables}
+<div id="creating-tables">
+  ## 创建表
+</div>
 
 我们可以借助 schema 推断 来为表生成 schema。下面的 `CREATE AS EMPTY` 命令会推断出该表的 DDL 并创建该表。此操作不会加载任何数据：
 
@@ -196,7 +204,9 @@ ORDER BY update_date
 
 上述内容是这份数据的正确 schema。schema 推断 基于对数据进行采样，并逐行读取数据。系统会根据 format 提取列值，并使用递归 parser 和启发式方法来确定每个值的类型。schema 推断 期间从数据中读取的最大行数和字节数由设置 [`input_format_max_rows_to_read_for_schema_inference`](/zh/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference) (默认为 25000) 和 [`input_format_max_bytes_to_read_for_schema_inference`](/zh/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference) (默认为 32MB) 控制。如果检测结果不正确，您可以按[此处](/zh/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable)所述提供提示。
 
-### 根据片段创建表 {#creating-tables-from-snippets}
+<div id="creating-tables-from-snippets">
+  ### 根据片段创建表
+</div>
 
 上述示例使用 S3 上的文件来创建表 schema。你也可以根据单行片段创建 schema。如下所示，可使用 [format](/zh/reference/functions/table-functions/format) 函数实现这一点：
 
@@ -229,7 +239,9 @@ ENGINE = MergeTree
 ORDER BY update_date
 ```
 
-## 加载 JSON 数据 {#loading-json-data}
+<div id="loading-json-data">
+  ## 加载 JSON 数据
+</div>
 
 以下内容假设 JSON 的结构始终一致，并且每个路径都只有一种类型。
 
@@ -287,11 +299,15 @@ FORMAT PrettyJSONEachRow
 1 row in set. Elapsed: 0.009 sec.
 ```
 
-## 处理错误 {#handling-errors}
+<div id="handling-errors">
+  ## 处理错误
+</div>
 
 有时，你可能会遇到有问题的数据。例如，某些列的类型不正确，或者 JSON 对象的格式不正确。对此，你可以使用设置 [`input_format_allow_errors_num`](/zh/reference/settings/formats/input-format#input_format_allow_errors_num) 和 [`input_format_allow_errors_ratio`](/zh/reference/settings/formats/input-format#input_format_allow_errors_ratio)，以便在数据触发插入错误时允许忽略一定数量的行。此外，还可以提供[提示](/zh/reference/settings/formats/schema-inference#schema_inference_hints)来辅助推断。
 
-## 处理半结构化和动态数据 {#working-with-semi-structured-data}
+<div id="working-with-semi-structured-data">
+  ## 处理半结构化和动态数据
+</div>
 
 我们前面的示例使用的是 JSON，其结构是静态的，键名和类型也都是已知的。但实际情况往往并非如此——键可能会新增，类型也可能发生变化。这在可观测性数据等场景中很常见。
 
@@ -335,10 +351,6 @@ DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi
 当存在成千上万个唯一列时，这种推断方式会很慢。作为替代，你可以使用 `JSONAsObject` 格式。
 
 `JSONAsObject` 会将整个输入视为单个 JSON 对象，并将其存储到一个类型为 [`JSON`](/zh/reference/data-types/newjson) 的列中，因此更适合高度动态或嵌套的 JSON 载荷。
-
-<Note>
-  在 24.8 至 25.2 版本中，请在本页 `JSONAsObject` 查询的 `SETTINGS` 子句中添加 `allow_experimental_json_type = 1`，以启用 `JSON` 类型。
-</Note>
 
 ```sql
 DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', NOSIGN, 'JSONAsObject')
@@ -408,7 +420,7 @@ Code: 53. DB::Exception: Automatically defined type Tuple(b Int64) for column 'a
 
 ```sql
 DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', NOSIGN, JSONAsObject)
-SETTINGS describe_compact_output = 1
+SETTINGS enable_json_type = 1, describe_compact_output = 1
 ```
 
 ```response
@@ -419,6 +431,8 @@ SETTINGS describe_compact_output = 1
 1 row in set. Elapsed: 0.010 sec.
 ```
 
-## 延伸阅读 {#further-reading}
+<div id="further-reading">
+  ## 延伸阅读
+</div>
 
 如需进一步了解数据类型推断，请参阅[此](/zh/concepts/features/interfaces/schema-inference)文档页面。

@@ -8,8 +8,9 @@ keywords: ['pci', 'コンプライアンス', '決済セキュリティ', 'デ�
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-
 import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { Image } from "/snippets/ja/components/Image.jsx";
 
 <EnterprisePlanFeatureBadge feature="PCI コンプライアンス" />
 
@@ -35,11 +36,7 @@ ClickHouse のコンプライアンスプログラムおよびサードパーテ
 
     <br />
 
-    <div className="ch-image-md ch-image-background-black">
-      <Frame>
-        ![PCI を有効化](/images/cloud/security/compliance/pci_1.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/security/compliance/pci_1.webp" size="md" alt="PCI を有効化" background="black" />
 
     <br />
 
@@ -47,11 +44,7 @@ ClickHouse のコンプライアンスプログラムおよびサードパーテ
 
     <br />
 
-    <div className="ch-image-md ch-image-background-black">
-      <Frame>
-        ![PCI が有効](/images/cloud/security/compliance/pci_2.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/security/compliance/pci_2.webp" size="md" alt="PCI が有効" background="black" />
 
     <br />
   </Step>
@@ -62,11 +55,7 @@ ClickHouse のコンプライアンスプログラムおよびサードパーテ
 
     <br />
 
-    <div className="ch-image-md ch-image-background-black">
-      <Frame>
-        ![PCI リージョンにデプロイ](/images/cloud/security/compliance/pci_3.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/security/compliance/pci_3.webp" size="md" alt="PCI リージョンにデプロイ" background="black" />
 
     <br />
 
@@ -77,7 +66,7 @@ ClickHouse のコンプライアンスプログラムおよびサードパーテ
 </Steps>
 
 <div id="migrate-to-hipaa">
-  ## 既存のサービスを移行する {#migrate-to-hipaa}
+  ## 既存のサービスを移行する
 </div>
 
 必要に応じて、準拠環境にサービスをデプロイすることを強く推奨します。サービスを標準リージョンから PCI 準拠リージョンに移行するには、バックアップからの復元が必要であり、一定のダウンタイムが発生する場合があります。
@@ -96,9 +85,3 @@ ClickHouse のコンプライアンスプログラムおよびサードパーテ
 
   サービスは、同じクラウドプロバイダーおよび同じ地理的リージョン内にとどめる必要があります。このプロセスでは、同じクラウドプロバイダーおよびリージョン内の準拠環境にサービスを移行します。
 </Info>
-
-## PCI準拠サービスのバックアップ {#backups}
-
-ClickHouseが管理するバックアップは、PCI準拠サービスでも他のサービスと同じように動作します。バックアップはサービスと同じクラウドプロバイダーおよびリージョンに保存され、Enterpriseプランのお客様はバックアップの頻度と保持期間を設定できます。バックアップは、同一リージョン内の新しいサービス (別のPCI準拠サービスを含む) に復元できます。
-
-PCI準拠サービスでは、お客様ご自身のクラウドアカウントへのバックアップのエクスポートはご利用いただけません。規制対象の環境では、環境外のストレージへの書き込みが許可されていないため、コンソールの **Set up external backup** オプションは無効化されており、これらのサービスでは `BACKUP` 権限も付与されません。

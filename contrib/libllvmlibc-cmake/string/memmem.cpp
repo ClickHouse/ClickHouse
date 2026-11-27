@@ -304,8 +304,7 @@ void *memmem_filter(const char *h, const char *n, size_t nlen, size_t end) {
 
 #endif
 
-// Exported even under `-fvisibility=hidden`, so that libc uses it too.
-extern "C" __attribute__((visibility("default"))) void *memmem(const void *haystack, size_t hlen, const void *needle,
+extern "C" void *memmem(const void *haystack, size_t hlen, const void *needle,
                         size_t nlen) noexcept {
   if (nlen == 0)
     return const_cast<void *>(haystack);

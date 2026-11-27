@@ -6,7 +6,9 @@ tags: ['Экспорт данных']
 keywords: ['Экспорт данных', 'INTO OUTFILE', 'движок таблицы File']
 ---
 
-## Использование предложения INTO OUTFILE {#using-into-outfile-clause}
+<div id="using-into-outfile-clause">
+  ## Использование предложения INTO OUTFILE
+</div>
 
 Добавьте [предложение INTO OUTFILE](/ru/reference/statements/select/into-outfile) к своему запросу.
 
@@ -43,7 +45,9 @@ INTO OUTFILE 'taxi_rides.txt'
 FORMAT CSV
 ```
 
-## Использование движка таблицы File {#using-a-file-engine-table}
+<div id="using-a-file-engine-table">
+  ## Использование движка таблицы File
+</div>
 
 Ещё один вариант — использовать движок таблицы [File](/ru/reference/engines/table-engines/special/file), в котором ClickHouse хранит данные в файле. Вы можете выполнять запросы и вставку данных напрямую в файл.
 
@@ -73,7 +77,9 @@ INSERT INTO my_table VALUES
   Движок таблицы `File` очень удобен для создания файлов в вашей файловой системе и выполнения запросов к ним, но имейте в виду, что таблицы `File` — это не таблицы `MergeTree`, поэтому они не дают всех преимуществ `MergeTree`. Используйте `File` для удобного экспорта данных из ClickHouse в различные форматы.
 </Note>
 
-## Использование перенаправления в командной строке {#using-command-line-redirection}
+<div id="using-command-line-redirection">
+  ## Использование перенаправления в командной строке
+</div>
 
 ```bash
 $ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt

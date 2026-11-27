@@ -69,7 +69,7 @@ public:
         count += weight;
     }
 
-    [[nodiscard]] Float64 get(Float64 quantile) const
+    Float64 get(Float64 quantile) const
     {
         if (quantile < 0 || quantile > 1 || count == 0)
         {
@@ -96,9 +96,9 @@ public:
         return quantile_value;
     }
 
-    [[nodiscard]] Float64 getGamma() const { return mapping->getGamma(); }
+    Float64 getGamma() const { return mapping->getGamma(); }
 
-    [[nodiscard]] Float64 getCount() const { return count; }
+    Float64 getCount() const { return count; }
 
     void copy(const DDSketchDenseLogarithmic & other)
     {
@@ -223,7 +223,7 @@ private:
     DDSketchEncoding enc;
 
 
-    [[nodiscard]] DDSketchDenseLogarithmic changeMapping(Float64 new_gamma) const
+    DDSketchDenseLogarithmic changeMapping(Float64 new_gamma) const
     {
         auto new_mapping = std::make_unique<DDSketchLogarithmicMapping>((new_gamma - 1) / (new_gamma + 1));
 

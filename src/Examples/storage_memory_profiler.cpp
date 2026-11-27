@@ -34,7 +34,6 @@
 #include <Access/AccessControl.h>
 #include <Access/MemoryAccessStorage.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
-#include <WindowFunctions/registerWindowFunctions.h>
 #include <Core/ServerSettings.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/registerDatabases.h>
@@ -374,7 +373,6 @@ void StorageMemoryProfiler::registerComponents()
     registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
-    registerWindowFunctions();
     registerTableFunctions();
     registerDatabases();
     registerStorages();

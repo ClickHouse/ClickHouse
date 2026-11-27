@@ -13,15 +13,19 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## allow_push_predicate_ast_for_distributed_subqueries {#allow_push_predicate_ast_for_distributed_subqueries}
+<div id="allow_push_predicate_ast_for_distributed_subqueries">
+  ## allow_push_predicate_ast_for_distributed_subqueries
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "新增设置"}]}]} />
 
-允许在启用 analyzer 时，在 AST 层面对分布式子查询进行谓词下推
+允许在启用 anlyzer 时，在 AST 层面对分布式子查询进行谓词下推
 
-## allow_push_predicate_when_subquery_contains_with {#allow_push_predicate_when_subquery_contains_with}
+<div id="allow_push_predicate_when_subquery_contains_with">
+  ## allow_push_predicate_when_subquery_contains_with
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

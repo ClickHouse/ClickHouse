@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## use_skip_indexes {#use_skip_indexes}
+<div id="use_skip_indexes">
+  ## use_skip_indexes
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,7 +26,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — Отключено.
 * 1 — Включено.
 
-## use_skip_indexes_for_disjunctions {#use_skip_indexes_for_disjunctions}
+<div id="use_skip_indexes_for_disjunctions">
+  ## use_skip_indexes_for_disjunctions
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -38,24 +42,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — Отключено.
 * 1 — Включено.
 
-## use_skip_indexes_for_disjunctions_max_rpn_elements {#use_skip_indexes_for_disjunctions_max_rpn_elements}
-
-<SettingsInfoBlock type="UInt64" default_value="128" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "128"},{"label": "Новая настройка, ранее лимит был жёстко задан в коде и равнялся 32"}]}]} />
-
-Максимальное количество элементов во внутреннем представлении (RPN) фильтра в предложении WHERE, при котором применяется `use_skip_indexes_for_disjunctions`.
-Грубо говоря, каждое условие и каждый оператор `AND`, `OR` и `NOT` считается одним элементом: например, `A = 5 OR B = 5 OR C = 5` содержит 5 элементов.
-Элементы подсчитываются после переписывания фильтра для анализа индексов: например, `A = 1 OR A = 2 OR A = 3` превращается в `A IN (1, 2, 3)`, то есть в один элемент (см. `optimize_min_equality_disjunction_chain_length`), а `coalesce(A, B) = 5` раскрывается в несколько условий (см. `allow_key_condition_coalesce_rewrite`).
-Для фильтров с бо́льшим количеством элементов каждый индекс пропуска данных вычисляется отдельно и не может пропускать гранулы для условий на разных столбцах, объединённых через `OR`.
-Во время анализа индексов промежуточные результаты занимают по одному биту на каждый элемент для каждой гранулы каждой части данных, а их объединение для каждой гранулы занимает время, пропорциональное количеству элементов. Учитывайте это, устанавливая значение 0 (без ограничения).
-
-Возможные значения:
-
-* 0 — без ограничения.
-* Положительное целое число — максимальное количество элементов.
-
-## use_skip_indexes_for_top_k {#use_skip_indexes_for_top_k}
+<div id="use_skip_indexes_for_top_k">
+  ## use_skip_indexes_for_top_k
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -70,7 +59,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — Отключено.
 * 1 — Включено.
 
-## use_skip_indexes_if_final {#use_skip_indexes_if_final}
+<div id="use_skip_indexes_if_final">
+  ## use_skip_indexes_if_final
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -85,7 +76,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — Отключено.
 * 1 — Включено.
 
-## use_skip_indexes_if_final_exact_mode {#use_skip_indexes_if_final_exact_mode}
+<div id="use_skip_indexes_if_final_exact_mode">
+  ## use_skip_indexes_if_final_exact_mode
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -100,11 +93,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — Отключено.
 * 1 — Включено.
 
-## use_skip_indexes_on_data_read {#use_skip_indexes_on_data_read}
+<div id="use_skip_indexes_on_data_read">
+  ## use_skip_indexes_on_data_read
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1"},{"label": "Включено по умолчанию"}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "Новая настройка"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "Текстовый индекс теперь имеет статус GA"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "Включено по умолчанию"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "Новая настройка"}]}]} />
 
 Включает использование индексов пропуска данных при чтении данных.
 

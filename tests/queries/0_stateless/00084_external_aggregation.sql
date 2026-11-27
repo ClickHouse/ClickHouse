@@ -1,4 +1,4 @@
--- Tags: stateful, no-flaky-check, no-msan
+-- Tags: stateful, no-flaky-check
 -- no-flaky-check: times out
 
 SET max_bytes_before_external_group_by = 200000000;

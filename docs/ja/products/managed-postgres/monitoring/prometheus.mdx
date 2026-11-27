@@ -7,12 +7,17 @@ keywords: ['managed postgres', 'prometheus', 'grafana', 'datadog', 'メトリク
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
 
 ClickHouse Managed Postgres は、[ClickHouse Cloud API][cloud-api] で
 Prometheus 互換のメトリクス用エンドポイントを 2 つ公開しています。
 
-| エンドポイント | パス                                                   | Returns                                         |
+| Endpoint | Path                                                   | Returns                                         |
 | -------- | ------------------------------------------------------ | ----------------------------------------------- |
 | Org      | `/v1/organizations/{orgId}/postgres/prometheus`        | 組織内のすべての ClickHouse Managed Postgres サービスのメトリクス |
 | Instance | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | 単一のサービスのメトリクス                                   |
@@ -23,7 +28,7 @@ Prometheus 互換のメトリクス用エンドポイントを 2 つ公開して
 </Note>
 
 <div id="authentication">
-  ## 認証 {#authentication}
+  ## 認証
 </div>
 
 このエンドポイントでは、OpenAPI の他の部分と同じ [APIキー] を使用します。作成方法や組織 ID、サービス ID の確認方法については、
@@ -37,7 +42,7 @@ PG_ID=mypgid
 ```
 
 <div id="scrape-org">
-  ## 組織内のすべてのサービスをスクレイプする {#scrape-org}
+  ## 組織内のすべてのサービスをスクレイプする
 </div>
 
 ```bash
@@ -46,7 +51,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 ```
 
 <div id="scrape-instance">
-  ## 単一サービスのスクレイピング {#scrape-instance}
+  ## 単一サービスのスクレイピング
 </div>
 
 ```bash
@@ -55,7 +60,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 ```
 
 <div id="sample-response">
-  ## レスポンス例 {#sample-response}
+  ## レスポンス例
 </div>
 
 ```response
@@ -77,7 +82,7 @@ PostgresServer_CacheHitRatio{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6
 [メトリクス リファレンス](/ja/products/managed-postgres/monitoring/metrics)を参照してください。
 
 <div id="configuring-prometheus">
-  ## Prometheus の設定 {#configuring-prometheus}
+  ## Prometheus の設定
 </div>
 
 この設定では、組織レベルのエンドポイントを 60 秒ごとにスクレイプします。
@@ -105,37 +110,38 @@ scrape_configs:
 
 単一のサービスをスクレイプするには、`metrics_path` に `/<PG_ID>` を追加します。
 
-## あらかじめ用意された Grafana ダッシュボード {#grafana-dashboard}
+<div id="grafana-dashboard">
+  ## あらかじめ用意された Grafana ダッシュボード
+</div>
 
 あらかじめ用意された Grafana ダッシュボードでは、エンドポイントが公開するあらゆるメトリクスを可視化できます。これには、ソート可能なサービス一覧テーブル、CPU とメモリの使用率、閾値アラート付きのディスク使用量、状態別の接続数、トランザクションとロールバック率、Tuple のアクティビティ、I/O、データベースごとのストレージ使用量、デッドロックが含まれます。
 
-<div className="ch-image-md">
-  <Frame>
-    ![ClickHouse Managed Postgres サービスの Grafana ダッシュボード](/images/managed-postgres/monitoring/grafana-dashboard.webp)
-  </Frame>
+<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="ClickHouse Managed Postgres Services の Grafana ダッシュボード" size="md" border />
+
+<div id="import-dashboard">
+  ### ダッシュボードのインポート
 </div>
 
-### ダッシュボードのインポート {#import-dashboard}
-
 <Steps>
-  <Step title="ダッシュボードの JSON をダウンロードする" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">ダッシュボードの JSON をダウンロード</TrackedLink>します。
+  <Step title="ダッシュボード JSON のダウンロード" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">ダッシュボード JSON をダウンロード</TrackedLink>。
   </Step>
 
   <Step title="Grafana でインポート画面を開く" id="open-import">
-    **Dashboards → New → Import** に移動し、JSONファイルをアップロードするか、その内容を貼り付けます。
+    **Dashboards → New → Import** に移動します。JSON ファイルをアップロードするか、その内容を貼り付けます。
   </Step>
 
   <Step title="Prometheus データソースを選択する" id="pick-datasource">
-    `DS_PROMETHEUS` 入力の指定を求められたら、[前のセクション](#configuring-prometheus)で設定したエンドポイントをスクレイピングしている Prometheus データソースを選択します。
+    `DS_PROMETHEUS` の入力を求められたら、[前のセクション](#configuring-prometheus)で設定したエンドポイントをスクレイプしている Prometheus データソースを選択します。
   </Step>
 </Steps>
 
-Grafana をプロビジョニングでデプロイしている場合は、JSON をダッシュボードのプロビジョニングパスに配置してください。Grafana は `${DS_PROMETHEUS}`
-参照を、インスタンス内で利用可能な Prometheus データソースに自動的に対応付けます。
+Grafana をプロビジョニングで運用している場合は、JSON を
+ダッシュボードのプロビジョニングパスに配置します。Grafana は `${DS_PROMETHEUS}`
+参照を、そのインスタンスで利用可能な Prometheus データソースに対応付けます。
 
 <div id="template-variables">
-  ### テンプレート変数 {#template-variables}
+  ### テンプレート変数
 </div>
 
 このダッシュボードでは、3 つの変数を使用します。
@@ -148,7 +154,7 @@ Grafana をプロビジョニングでデプロイしている場合は、JSON �
   JSON 内でこの値を変更してください。
 
 <div id="drill-in">
-  ### ドリルインするために単一のサービスに絞り込む {#drill-in}
+  ### ドリルインするために単一のサービスに絞り込む
 </div>
 
 いくつかのパネルは、**Service** 変数で単一の
@@ -158,7 +164,7 @@ Grafana をプロビジョニングでデプロイしている場合は、JSON �
 ディスク待ちなのか、あるいはハイパーバイザーの競合なのかを判断できます。
 
 <div id="third-party-integrations">
-  ## Grafana と Datadog とのインテグレーション {#third-party-integrations}
+  ## Grafana と Datadog とのインテグレーション
 </div>
 
 このエンドポイントは [ClickHouse Prometheus

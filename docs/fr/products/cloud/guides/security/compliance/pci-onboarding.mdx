@@ -2,14 +2,15 @@
 sidebarTitle: 'Onboarding PCI'
 slug: /cloud/security/compliance/pci-onboarding
 title: 'Onboarding PCI'
-description: 'En savoir plus sur l’onboarding vers des services conformes à la norme PCI'
+description: 'En savoir plus sur l’onboarding vers des services conformes PCI'
 doc_type: 'guide'
 keywords: ['pci', 'conformité', 'sécurité des paiements', 'protection des données', 'sécurité']
 ---
 
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
-
 import { EnterprisePlanFeatureBadge } from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { Image } from "/snippets/fr/components/Image.jsx";
 
 <EnterprisePlanFeatureBadge feature="conformité PCI" />
 
@@ -17,7 +18,7 @@ ClickHouse propose des services conformes à la norme Payment Card Industry Data
 
 Pour en savoir plus sur le programme de conformité de ClickHouse et la disponibilité des rapports d’audit tiers, consultez notre [aperçu de la conformité](/fr/products/cloud/reference/security/compliance-overview). Pour obtenir une copie de notre document PCI sur le partage des responsabilités, consultez notre [Trust Center](https://trust.clickhouse.com). En outre, les clients doivent consulter notre page [fonctionnalités de sécurité](/fr/products/cloud/features/security) afin de sélectionner et de mettre en œuvre les contrôles de sécurité adaptés à leurs workloads.
 
-Cette page décrit la procédure à suivre pour activer le déploiement de services conformes à la norme PCI dans ClickHouse Cloud.
+Cette page décrit la procédure à suivre pour activer le déploiement de services conformes PCI dans ClickHouse Cloud.
 
 <Steps>
   <Step title="Souscrire à des services Enterprise" id="sign-up-for-enterprise">
@@ -35,11 +36,7 @@ Cette page décrit la procédure à suivre pour activer le déploiement de servi
 
     <br />
 
-    <div className="ch-image-md ch-image-background-black">
-      <Frame>
-        ![Activer PCI](/images/cloud/security/compliance/pci_1.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/security/compliance/pci_1.webp" size="md" alt="Activer PCI" background="black" />
 
     <br />
 
@@ -47,37 +44,29 @@ Cette page décrit la procédure à suivre pour activer le déploiement de servi
 
     <br />
 
-    <div className="ch-image-md ch-image-background-black">
-      <Frame>
-        ![PCI activé](/images/cloud/security/compliance/pci_2.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/security/compliance/pci_2.webp" size="md" alt="PCI activé" background="black" />
 
     <br />
   </Step>
 
-  <Step title="Déployer des services dans des régions conformes à la norme PCI" id="deploy-pci-regions">
+  <Step title="Déployer des services dans des régions conformes PCI" id="deploy-pci-regions">
     1. Sélectionnez **Nouveau service** dans l’angle supérieur gauche de l’écran d’accueil de la console
     2. Remplacez le **Type de région** par **Conforme HIPAA**
 
     <br />
 
-    <div className="ch-image-md ch-image-background-black">
-      <Frame>
-        ![Déployer dans une région PCI](/images/cloud/security/compliance/pci_3.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/security/compliance/pci_3.webp" size="md" alt="Déployer dans une région PCI" background="black" />
 
     <br />
 
     3. Saisissez un nom pour le service et renseignez les autres informations
 
-    Pour obtenir la liste complète des fournisseurs de services cloud et des services conformes à la norme PCI, consultez notre page [Régions cloud prises en charge](/fr/products/cloud/reference/supported-regions).
+    Pour obtenir la liste complète des fournisseurs cloud et des services conformes PCI, consultez notre page [Régions cloud prises en charge](/fr/products/cloud/reference/supported-regions).
   </Step>
 </Steps>
 
 <div id="migrate-to-hipaa">
-  ## Migrer des services existants {#migrate-to-hipaa}
+  ## Migrer des services existants
 </div>
 
 Il est vivement recommandé aux clients de déployer leurs services dans des environnements conformes lorsque cela est nécessaire. Le processus de migration de services d&#39;une région standard vers une région conforme PCI implique une restauration à partir d&#39;une sauvegarde et peut entraîner une certaine indisisponibilité.
@@ -96,9 +85,3 @@ Si une migration d&#39;une région standard vers une région conforme PCI est n�
 
   Les services doivent rester chez le même fournisseur de cloud et dans la même région géographique. Ce processus migre le service vers un environnement conforme chez le même fournisseur de cloud et dans la même région.
 </Info>
-
-## Sauvegardes pour les services conformes à la norme PCI {#backups}
-
-Les sauvegardes gérées par ClickHouse fonctionnent de la même manière pour les services conformes à la norme PCI que pour les autres services. Elles sont stockées chez le même fournisseur de services cloud et dans la même région que le service, et les clients disposant de l&#39;offre Enterprise peuvent configurer la fréquence et la durée de rétention des sauvegardes. Une sauvegarde peut être restaurée dans un nouveau service de la même région, y compris dans un autre service conforme à la norme PCI.
-
-L&#39;exportation des sauvegardes vers votre propre compte cloud n&#39;est pas disponible pour les services conformes à la norme PCI. L&#39;environnement réglementé n&#39;autorise aucune écriture vers un stockage externe à son périmètre. L&#39;option **Set up external backup** est donc désactivée dans la console et le privilège `BACKUP` n&#39;est pas accordé sur ces services.

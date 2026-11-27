@@ -2,6 +2,7 @@ DROP TABLE IF EXISTS t0;
 DROP TABLE IF EXISTS t1;
 
 SET allow_suspicious_low_cardinality_types = 1;
+SET enable_analyzer = 1;
 CREATE TABLE t0 (c0 LowCardinality(Int)) ENGINE = MergeTree() ORDER BY (c0);
 CREATE TABLE t1 (c0 Nullable(Int)) ENGINE = MergeTree() ORDER BY tuple();
 

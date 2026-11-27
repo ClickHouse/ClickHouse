@@ -10,6 +10,8 @@ integration:
   - category: 'data_visualization'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -17,18 +19,14 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 في هذا الدليل، ستثبّت Rocket.BI وتنشئ لوحة معلومات بسيطة باستخدامه.
 هذه هي لوحة المعلومات:
 
-<div className="ch-image-md">
-  <Frame>
-    ![لوحة معلومات Rocket BI تعرض مقاييس المبيعات مع رسوم بيانية ومؤشرات أداء رئيسية](/images/integrations/data-visualization/rocketbi_01.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_01.webp" alt="لوحة معلومات Rocket BI تعرض مقاييس المبيعات مع مخططات ومؤشرات أداء رئيسية" border />
 
 <br />
 
 يمكنك الاطلاع على [لوحة المعلومات من خلال هذا الرابط.](https://demo.rocket.bi/dashboard/sales-dashboard-7?token=7eecf750-cbde-4c53-8fa8-8b905fec667e)
 
 <div id="install">
-  ## التثبيت {#install}
+  ## التثبيت
 </div>
 
 ابدأ تشغيل RocketBI باستخدام صور Docker الجاهزة.
@@ -48,192 +46,134 @@ wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.cli
 
 للبناء من الشيفرة المصدرية أو لإعدادات متقدمة، يمكنك الاطلاع على التفاصيل هنا [ملف README الخاص بـ Rocket.BI](https://github.com/datainsider-co/rocket-bi/blob/main/README.md)
 
-## لننشئ لوحة المعلومات {#lets-build-the-dashboard}
+<div id="lets-build-the-dashboard">
+  ## لننشئ لوحة المعلومات
+</div>
 
 في لوحة المعلومات، ستجد تقاريرك، ويمكنك بدء إنشاء تصوّر بالنقر على **+New**
 
-يمكنك إنشاء **عدد غير محدود من لوحات المعلومات** ورسم **عدد غير محدود من الرسوم البيانية** في لوحة معلومات واحدة.
+يمكنك إنشاء **عدد غير محدود من لوحات المعلومات** ورسم **عدد غير محدود من المخططات** في لوحة معلومات واحدة.
 
-<div className="ch-image-md">
-  <Frame>
-    ![رسم متحرك يوضح عملية إنشاء مخطط جديد في Rocket BI](/images/integrations/data-visualization/rocketbi_02.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_02.webp" alt="رسم متحرك يوضح عملية إنشاء مخطط جديد في Rocket BI" border />
 
 <br />
 
 شاهد الشرح عالي الدقة على YouTube: [https://www.youtube.com/watch?v=TMkdMHHfvqY](https://www.youtube.com/watch?v=TMkdMHHfvqY)
 
 <div id="build-the-chart-controls">
-  ### أنشئ عناصر التحكّم في المخطط {#build-the-chart-controls}
+  ### أنشئ عناصر التحكّم في المخطط
 </div>
 
-#### أنشئ عنصر التحكم في المقاييس {#create-a-metrics-control}
-
-في عامل تصفية Tab، حدِّد حقول المقاييس التي تريد استخدامها. تأكّد من إبقاء إعداد التجميع محددًا.
-
-<div className="ch-image-md">
-  <Frame>
-    ![لوحة إعداد عنصر التحكم في المقاييس في Rocket BI تعرض الحقول المحددة وإعدادات التجميع](/images/integrations/data-visualization/rocketbi_03.webp)
-  </Frame>
+<div id="create-a-metrics-control">
+  #### أنشئ عنصر تحكم للمقاييس
 </div>
+
+في عامل تصفية Tab، حدِّد حقول المقاييس التي تريد استخدامها. تأكّد من إبقاء إعداد التجميع محددًا.
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_03.webp" alt="لوحة إعداد عنصر تحكم المقاييس في Rocket BI تعرض الحقول المحددة وإعدادات التجميع" border />
 
 <br />
 
 أعِد تسمية عوامل التصفية واحفظ عنصر التحكم في لوحة المعلومات
 
-<div className="ch-image-md">
-  <Frame>
-    ![عنصر التحكم في المقاييس بعد إعادة تسمية عوامل التصفية، جاهز للحفظ في لوحة المعلومات](/images/integrations/data-visualization/rocketbi_04.webp)
-  </Frame>
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_04.webp" alt="عنصر تحكم المقاييس مع عوامل تصفية أُعيدت تسميتها وجاهز للحفظ في لوحة المعلومات" border />
+
+<div id="create-a-date-type-control">
+  #### أنشئ عنصر تحكم من نوع التاريخ
 </div>
 
-#### إنشاء عنصر تحكم من نوع التاريخ {#create-a-date-type-control}
+اختر حقلاً من نوع Date كعمود التاريخ الرئيسي:
 
-اختر حقلًا من النوع Date ليكون عمود التاريخ الرئيسي (Main Date column):
-
-<div className="ch-image-md">
-  <Frame>
-    ![واجهة اختيار حقل التاريخ في Rocket BI تعرض أعمدة التاريخ المتاحة](/images/integrations/data-visualization/rocketbi_05.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_05.webp" alt="واجهة اختيار حقل Date في Rocket BI تعرض أعمدة التاريخ المتاحة" border />
 
 <br />
 
-أضف نسخًا مكررة من عامل التصفية بنطاقات بحث مختلفة، مثل: السنة، أو الشهر، أو اليوم، أو يوم الأسبوع.
+أضف نُسخًا مكررة بنطاقات lookup مختلفة. على سبيل المثال: سنوي أو شهري أو يومي أو يوم من أيام الأسبوع.
 
-<div className="ch-image-md">
-  <Frame>
-    ![تهيئة نطاق التاريخ تعرض خيارات مختلفة للفترة الزمنية مثل السنة والشهر واليوم](/images/integrations/data-visualization/rocketbi_06.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_06.webp" alt="تهيئة نطاق التاريخ التي تعرض خيارات مختلفة لفترة زمنية مثل السنة والشهر واليوم" border />
 
 <br />
 
-أعد تسمية عوامل التصفية، ثم احفظ عنصر التحكم في لوحة المعلومات
+أعِد تسمية عوامل التصفية واحفظ عنصر التحكم في لوحة المعلومات
 
-<div className="ch-image-md">
-  <Frame>
-    ![عنصر تحكم نطاق التاريخ مع عوامل تصفية أُعيدت تسميتها وجاهزة للحفظ في لوحة المعلومات](/images/integrations/data-visualization/rocketbi_07.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_07.webp" alt="عنصر تحكم في نطاق التاريخ مع عوامل تصفية أُعيدت تسميتها وجاهز للحفظ في لوحة المعلومات" border />
 
 <div id="now-let-build-the-charts">
-  ### الآن، لننشئ الرسوم البيانية {#now-let-build-the-charts}
+  ### الآن، لننشئ الرسوم البيانية
 </div>
 
-#### مخطط دائري: مقاييس المبيعات حسب المناطق {#pie-chart-sales-metrics-by-regions}
-
-اختر Adding new chart، ثم اختر مخططًا دائريًا
-
-<div className="ch-image-md">
-  <Frame>
-    ![لوحة اختيار نوع المخطط مع تمييز خيار المخطط الدائري](/images/integrations/data-visualization/rocketbi_08.webp)
-  </Frame>
+<div id="pie-chart-sales-metrics-by-regions">
+  #### المخطط الدائري: مقاييس المبيعات حسب المناطق
 </div>
+
+اختر Adding new chart، ثم اختر Pie Chart
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_08.webp" alt="لوحة اختيار نوع المخطط مع تمييز خيار المخطط الدائري" border />
 
 <br />
 
-أولاً، اسحب العمود &quot;Region&quot; من مجموعة البيانات وأفلته في حقل وسيلة الإيضاح
+أولاً، اسحب العمود &quot;Region&quot; وأفلِته من Dataset إلى Legend Field
 
-<div className="ch-image-md">
-  <Frame>
-    ![واجهة السحب والإفلات تُظهر إضافة العمود Region إلى حقل وسيلة الإيضاح](/images/integrations/data-visualization/rocketbi_09.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_09.webp" alt="واجهة سحب وإفلات تُظهر إضافة عمود Region إلى حقل وسيلة الإيضاح" border />
 
 <br />
 
-بعد ذلك، انتقل إلى علامة التبويب التحكم في المخطط
+ثم انتقل إلى تبويب Chart Control
 
-<div className="ch-image-md">
-  <Frame>
-    ![علامة تبويب التحكم في المخطط تعرض خيارات تهيئة التصور](/images/integrations/data-visualization/rocketbi_10.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_10.webp" alt="واجهة تبويب Chart Control تعرض خيارات تهيئة التصور" border />
 
 <br />
 
-اسحب عنصر التحكم في المقاييس وأفلته في حقل القيمة
+اسحب Metrics Control وأفلِته في Value Field
 
-<div className="ch-image-md">
-  <Frame>
-    ![إضافة عنصر التحكم في المقاييس إلى حقل القيمة في المخطط الدائري](/images/integrations/data-visualization/rocketbi_11.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_11.webp" alt="إضافة Metrics Control إلى حقل القيمة في المخطط الدائري" border />
 
 <br />
 
-(يمكنك أيضاً استخدام عنصر التحكم في المقاييس للفرز)
+(يمكنك أيضًا استخدام Metrics Control للفرز)
 
 انتقل إلى Chart Setting لمزيد من التخصيص
 
-<div className="ch-image-md">
-  <Frame>
-    ![لوحة إعدادات المخطط تعرض خيارات تخصيص المخطط الدائري](/images/integrations/data-visualization/rocketbi_12.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_12.webp" alt="لوحة إعدادات المخطط تعرض خيارات تخصيص المخطط الدائري" border />
 
 <br />
 
 على سبيل المثال، غيّر Data label إلى Percentage
 
-<div className="ch-image-md">
-  <Frame>
-    ![تغيير إعدادات تسميات البيانات لعرض النسب المئوية على المخطط الدائري](/images/integrations/data-visualization/rocketbi_13.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_13.webp" alt="تغيير إعدادات تسمية البيانات لعرض النسب المئوية على المخطط الدائري" border />
 
 <br />
 
-احفظ المخطط وأضفه إلى لوحة المعلومات
+احفظ المخطط وأضِفه إلى لوحة معلومات
 
-<div className="ch-image-md">
-  <Frame>
-    ![لوحة المعلومات تعرض المخطط الدائري المُضاف حديثاً مع عناصر التحكم الأخرى](/images/integrations/data-visualization/rocketbi_14.webp)
-  </Frame>
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_14.webp" alt="عرض لوحة معلومات ويُظهر المخطط الدائري المُضاف حديثًا مع عناصر تحكم أخرى" border />
+
+<div id="use-date-control-in-a-time-series-chart">
+  #### استخدم عنصر التحكم بالتاريخ في مخطط زمني
 </div>
 
-#### استخدام عنصر التحكم في التاريخ في مخطط time-series {#use-date-control-in-a-time-series-chart}
+لنستخدم مخطط أعمدة متراصًا
 
-لنستخدم مخططًا عموديًا مكدّسًا
-
-<div className="ch-image-md">
-  <Frame>
-    ![واجهة إنشاء مخطط عمودي مكدّس باستخدام بيانات time-series](/images/integrations/data-visualization/rocketbi_15.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_15.webp" alt="واجهة إنشاء مخطط أعمدة متراص مع بيانات زمنية" border />
 
 <br />
 
-في التحكم في المخطط، استخدم عنصر التحكم في المقاييس للمحور Y ونطاق التاريخ للمحور X
+في Chart Control، استخدم عنصر تحكم بالمقاييس للمحور Y وDate Range للمحور X
 
-<div className="ch-image-md">
-  <Frame>
-    ![إعداد التحكم في المخطط مع عرض المقاييس على المحور Y ونطاق التاريخ على المحور X](/images/integrations/data-visualization/rocketbi_16.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_16.webp" alt="إعداد Chart Control يوضح المقاييس على المحور Y وDate Range على المحور X" border />
 
 <br />
 
-أضف العمود Region إلى Breakdown
+أضف عمود Region إلى Breakdown
 
-<div className="ch-image-md">
-  <Frame>
-    ![إضافة العمود Region كبُعد للتقسيم في المخطط العمودي المكدّس](/images/integrations/data-visualization/rocketbi_17.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_17.webp" alt="إضافة عمود Region كبُعد تفصيلي في مخطط الأعمدة المتراص" border />
 
 <br />
 
-أضف رسومًا بيانية رقمية لعرض مؤشرات الأداء الرئيسية (KPIs) وحسّن مظهر لوحة المعلومات
+أضف Number Chart كمؤشرات أداء رئيسية وأضف لمسة جمالية إلى لوحة المعلومات
 
-<div className="ch-image-md">
-  <Frame>
-    ![لوحة معلومات مكتملة تضم رسومًا بيانية رقمية لمؤشرات الأداء الرئيسية ومخططًا دائريًا وتصورًا لبيانات time-series](/images/integrations/data-visualization/rocketbi_18.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_18.webp" alt="لوحة معلومات مكتملة تتضمن مخططات أرقام لمؤشرات الأداء الرئيسية ومخططًا دائريًا وتمثيلًا مرئيًا زمنيًا" border />
 
 <br />
 
-تهانينا، لقد أنشأت بنجاح أول لوحة معلومات لك باستخدام rocket.BI
+الآن، تكون قد نجحت في إنشاء أول لوحة معلومات لك باستخدام rocket.BI

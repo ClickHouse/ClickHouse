@@ -83,6 +83,7 @@ size_t getFirstChunkSize(
         strategy,
         0,
         nullptr,
+        std::nullopt,
         use_average_block_size);
 
     IMergingAlgorithm::Inputs inputs(num_inputs);
@@ -129,6 +130,7 @@ size_t getFirstLowCardinalityChunkSize(SortingQueueStrategy strategy, size_t max
         strategy,
         0,
         nullptr,
+        std::nullopt,
         false);
 
     IMergingAlgorithm::Inputs inputs(2);
@@ -196,6 +198,7 @@ size_t getFirstAggregateFunctionChunkSize(SortingQueueStrategy strategy)
         strategy,
         0,
         nullptr,
+        std::nullopt,
         false);
 
     std::vector<UInt64> first_keys;
@@ -240,12 +243,9 @@ TEST(MergingSortedBatchLimits, AverageBlockSize)
 
 TEST(MergingSortedBatchLimits, MaxBlockSizeBytesWithRepeatedLowCardinalityValues)
 {
-    /// `byteSizeAt` only estimates the growth of a `LowCardinality` column, so the batch queue may
-    /// flush at a different row than the default queue, but it must still flush on the byte limit
-    /// before consuming all input rows.
-    const auto batch_chunk_size = getFirstLowCardinalityChunkSize(SortingQueueStrategy::Batch, 100);
-    EXPECT_GT(batch_chunk_size, 0uz);
-    EXPECT_LT(batch_chunk_size, 200uz);
+    EXPECT_EQ(
+        getFirstLowCardinalityChunkSize(SortingQueueStrategy::Default, 100),
+        getFirstLowCardinalityChunkSize(SortingQueueStrategy::Batch, 100));
 }
 
 TEST(MergingSortedBatchLimits, MaxBlockSizeBytesWithAggregateFunctionState)

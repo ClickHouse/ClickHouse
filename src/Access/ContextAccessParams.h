@@ -70,7 +70,7 @@ public:
     const std::optional<std::vector<String>> initial_user_current_roles;
 
     /// Outputs `ContextAccessParams` to string for logging.
-    [[nodiscard]] String toString() const;
+    String toString() const;
 
     friend bool operator <(const ContextAccessParams & left, const ContextAccessParams & right);
     friend bool operator ==(const ContextAccessParams & left, const ContextAccessParams & right);

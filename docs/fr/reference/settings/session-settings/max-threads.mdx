@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## max_threads {#max_threads}
+<div id="max_threads">
+  ## max_threads
+</div>
 
 <SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
@@ -34,13 +36,17 @@ Sans SMT (par ex. Intel HyperThreading), cela correspond au nombre de CPU cores.
 Pour les utilisateurs de ClickHouse Cloud, la valeur par défaut s&#39;affiche sous la forme `auto(N)`, où N correspond à la taille vCPU de votre service, par ex. 2vCPU/8GiB, 4vCPU/16GiB, etc.
 Consultez l&#39;onglet Settings dans la Cloud Console pour obtenir la liste de toutes les tailles de service.
 
-## max_threads_for_indexes {#max_threads_for_indexes}
+<div id="max_threads_for_indexes">
+  ## max_threads_for_indexes
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Le nombre maximal de threads pour traiter les indices.
 
-## max_threads_min_free_memory_per_thread {#max_threads_min_free_memory_per_thread}
+<div id="max_threads_min_free_memory_per_thread">
+  ## max_threads_min_free_memory_per_thread
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
@@ -48,7 +54,7 @@ Le nombre maximal de threads pour traiter les indices.
 
 Réduit `max_threads` lorsque le serveur subit une pression mémoire, afin d&#39;éviter de lancer des requêtes fortement parallélisées qui risquent d&#39;atteindre la limite de mémoire.
 
-La mémoire libre est calculée en soustrayant de `max_server_memory_usage` du serveur la mémoire actuellement suivie par le memory tracker global. Si cette mémoire libre est inférieure à `max_threads` multiplié par cette valeur, `max_threads` est réduit au plus grand N tel que `N * value <= free_memory`, avec un minimum de `1`. La mémoire libre est mesurée une seule fois par requête, lors de la construction de son plan, afin que toutes les parties de la requête soient planifiées avec le même nombre de threads.
+La mémoire libre est calculée en soustrayant de `max_server_memory_usage` du serveur la mémoire actuellement suivie par le memory tracker global. Si cette mémoire libre est inférieure à `max_threads` multiplié par cette valeur, `max_threads` est réduit au plus grand N tel que `N * value <= free_memory`, avec un minimum de `1`.
 
 Définissez cette valeur sur `0` pour désactiver cette limite.
 

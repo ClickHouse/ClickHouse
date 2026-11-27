@@ -6,7 +6,9 @@ tags: ['데이터 내보내기']
 keywords: ['데이터 내보내기', 'INTO OUTFILE', 'File 테이블 엔진']
 ---
 
-## INTO OUTFILE 절 사용하기 {#using-into-outfile-clause}
+<div id="using-into-outfile-clause">
+  ## INTO OUTFILE 절 사용하기
+</div>
 
 쿼리에 [INTO OUTFILE](/ko/reference/statements/select/into-outfile) 절을 추가하십시오.
 
@@ -43,7 +45,9 @@ INTO OUTFILE 'taxi_rides.txt'
 FORMAT CSV
 ```
 
-## File 테이블 엔진 사용하기 {#using-a-file-engine-table}
+<div id="using-a-file-engine-table">
+  ## File 테이블 엔진 사용하기
+</div>
 
 또 다른 방법으로는 [File](/ko/reference/engines/table-engines/special/file) 테이블 엔진을 사용할 수 있습니다. 이 경우 ClickHouse는 파일에 데이터를 저장합니다. 파일에 직접 쿼리를 실행하고 데이터를 삽입할 수 있습니다.
 
@@ -73,7 +77,9 @@ INSERT INTO my_table VALUES
   `File` 테이블 엔진은 파일 시스템에서 파일을 생성하고 쿼리할 때 매우 유용합니다. 다만 `File` 테이블은 `MergeTree` 테이블이 아니므로 `MergeTree`가 제공하는 모든 장점을 활용할 수는 없다는 점에 유의하십시오. ClickHouse에서 데이터를 편리한 포맷으로 내보낼 때는 편의를 위해 `File`을 사용하십시오.
 </Note>
 
-## 명령줄 리디렉션 사용 {#using-command-line-redirection}
+<div id="using-command-line-redirection">
+  ## 명령줄 리디렉션 사용
+</div>
 
 ```bash
 $ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt

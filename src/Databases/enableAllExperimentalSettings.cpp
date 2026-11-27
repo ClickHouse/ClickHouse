@@ -20,7 +20,6 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_nlp_functions", 1);
     context->setSetting("allow_fuzz_query_functions", 1);
     context->setSetting("allow_experimental_hash_functions", 1);
-    context->setSetting("enable_ipcrypt", 1);
     context->setSetting("allow_experimental_vector_similarity_index", 1);
     context->setSetting("allow_experimental_text_index_lazy_apply", 1);
     context->setSetting("allow_experimental_window_functions", 1);
@@ -31,12 +30,8 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_time_time64_type", 1);
     context->setSetting("allow_experimental_nullable_tuple_type", 1);
     context->setSetting("allow_experimental_correlated_subqueries", 1);
-    context->setSetting("allow_experimental_lateral_join", 1);
     context->setSetting("allow_experimental_unique_key", 1);
     context->setSetting("allow_deprecated_error_prone_window_functions", 1);
-
-    context->setSetting("enable_xgboost", 1);
-    context->setSetting("enable_elasticsearch", 1);
 
     context->setSetting("allow_suspicious_low_cardinality_types", 1);
     context->setSetting("allow_suspicious_fixed_string_types", 1);
@@ -49,7 +44,6 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_simdjson", 1);
     context->setSetting("allow_deprecated_syntax_for_merge_tree", 1);
     context->setSetting("allow_suspicious_primary_key", 1);
-    context->setSetting("allow_reserved_column_names", 1);
     context->setSetting("allow_suspicious_ttl_expressions", 1);
     context->setSetting("allow_suspicious_variant_types", 1);
     context->setSetting("allow_create_index_without_type", 1);
@@ -61,6 +55,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_database_unity_catalog", 1);
     context->setSetting("allow_database_glue_catalog", 1);
     context->setSetting("allow_database_iceberg", 1);
+    context->setSetting("allow_delta_kernel_rs", 1);
     context->setSetting("allow_experimental_ytsaurus_table_function", 1);
     context->setSetting("allow_experimental_eval_table_function", 1);
     context->setSetting("allow_experimental_ytsaurus_table_engine", 1);
@@ -78,7 +73,6 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_database_paimon_rest_catalog", 1);
     context->setSetting("allow_experimental_object_storage_queue_hive_partitioning", 1);
     context->setSetting("allow_experimental_json_lazy_type_hints", 1);
-    context->setSetting("allow_experimental_shuffle_query", 1);
     context->setSetting("allow_experimental_url_wildcard_from_index_pages", 1);
     context->setSetting("allow_experimental_full_text_index", 1);
 

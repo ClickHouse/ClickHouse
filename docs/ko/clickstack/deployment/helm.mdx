@@ -3,30 +3,28 @@ slug: /use-cases/observability/clickstack/deployment/helm
 title: 'Helm'
 description: 'Helm을 사용한 ClickStack 배포 - ClickHouse 관측성 스택'
 doc_type: 'guide'
-keywords: ['ClickStack Helm 차트', 'Helm ClickHouse 배포', 'ClickStack UI Helm 설치', 'Kubernetes 관측성 스택', 'ClickStack Kubernetes 배포']
+keywords: ['ClickStack Helm 차트', 'Helm ClickHouse 배포', 'HyperDX Helm 설치', 'Kubernetes 관측성 스택', 'ClickStack Kubernetes 배포']
 ---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
 
 import JSONSupport from '/snippets/ko/_json_support.mdx';
 
 <Warning>
   **차트 버전 2.x**
 
-  이 페이지는 **v2.x** 서브차트 기반 Helm 차트를 설명합니다. 아직 v1.x inline-template 차트를 사용 중이라면 [v1.x Helm 가이드](/ko/clickstack/deployment/helm-v1)를 참조하십시오. 마이그레이션 절차는 [업그레이드 가이드](/ko/clickstack/deployment/helm-upgrade)를 참조하십시오.
+  이 페이지는 **v2.x** 서브차트 기반 Helm 차트를 설명합니다. 아직 v1.x 인라인 템플릿 차트를 사용 중이라면 [v1.x Helm 가이드](/ko/clickstack/deployment/helm-v1)를 참조하십시오. 마이그레이션 절차는 [업그레이드 가이드](/ko/clickstack/deployment/helm-upgrade)를 참조하십시오.
 </Warning>
 
 ClickStack용 Helm 차트는 [여기](https://github.com/ClickHouse/ClickStack-helm-charts)에서 확인할 수 있으며, 프로덕션 배포에 **권장되는** 방법입니다.
 
-<Tip>
-  [ClickHouse Observability](/ko/clickstack/observability)를 사용하면 ClickStack 백엔드를 직접 운영하지 않고도 Kubernetes 워크로드를 모니터링할 수 있습니다. 지금 [ClickHouse Cloud에 가입](https://clickhouse.cloud/signUp?loc=docs-clickstack-helm-inline)하여 시작하십시오.
-</Tip>
-
-v2.x 차트는 **2단계 설치** 방식을 사용합니다. 먼저 `clickstack-operators` 차트를 통해 연산자(operators)와 CRD를 설치한 다음, 메인 `clickstack` 차트를 설치하여 ClickHouse, MongoDB, OpenTelemetry Collector에 대한 연산자(operators) 관리 사용자 지정 리소스를 생성합니다.
+v2.x 차트는 **2단계 설치** 방식을 사용합니다. 먼저 `clickstack-operators` 차트를 통해 오퍼레이터와 CRD를 설치한 다음, 메인 `clickstack` 차트를 설치하여 ClickHouse, MongoDB, OpenTelemetry Collector에 대한 오퍼레이터 관리 사용자 지정 리소스를 생성합니다.
 
 기본적으로 Helm 차트는 다음을 포함한 모든 핵심 구성 요소를 프로비저닝합니다.
 
 * **ClickHouse** — `ClickHouseCluster` 및 `KeeperCluster` 사용자 지정 리소스를 통해 [ClickHouse Operator](/ko/products/kubernetes-operator/overview)가 관리
-* **ClickStack UI** — 관측성 UI 및 API
-* **OpenTelemetry (OTel) collector** — [공식 OpenTelemetry Collector Helm 차트](https://github.com/open-telemetry/opentelemetry-helm-charts)를 서브차트로 사용해 배포
+* **HyperDX** — 관측성 UI 및 API
+* **OpenTelemetry (OTel) collector** — [공식 OpenTelemetry Collector Helm chart](https://github.com/open-telemetry/opentelemetry-helm-charts)를 서브차트로 사용해 배포
 * **MongoDB** — `MongoDBCommunity` 사용자 지정 리소스를 통해 [MongoDB Kubernetes Operator (MCK)](https://github.com/mongodb/mongodb-kubernetes)가 관리
 
 하지만 기존 ClickHouse 배포와 통합하도록 쉽게 사용자 지정할 수 있습니다. 예를 들어 **ClickHouse Cloud**에서 호스팅되는 배포를 연동할 수 있습니다.
@@ -37,17 +35,17 @@ v2.x 차트는 **2단계 설치** 방식을 사용합니다. 먼저 `clickstack-
 * 리소스 제한 및 파드 수준 스케일링
 * TLS 및 인그레스 구성
 * 시크릿 관리 및 인증 설정
-* 차트와 함께 임의의 Kubernetes 객체(NetworkPolicy, HPA, ALB 인그레스 등)를 배포하기 위한 [추가 매니페스트](/ko/clickstack/deployment/helm-additional-manifests)
+* 차트와 함께 임의의 Kubernetes 객체(NetworkPolicy, HPA, ALB Ingress 등)를 배포하기 위한 [추가 매니페스트](/ko/clickstack/deployment/helm-additional-manifests)
 
 <div id="suitable-for">
-  ### 적합한 용도 {#suitable-for}
+  ### 적합한 용도
 </div>
 
 * 개념 검증
 * 프로덕션 환경
 
 <div id="deployment-steps">
-  ## 배포 절차 {#deployment-steps}
+  ## 배포 절차
 </div>
 
 <br />
@@ -101,7 +99,7 @@ v2.x 차트는 **2단계 설치** 방식을 사용합니다. 먼저 `clickstack-
   </Step>
 
   <Step title="포트 포워딩" id="forward-ports">
-    포트 포워딩을 사용하면 ClickStack UI에 접근하고 설정할 수 있습니다. 프로덕션 환경에 배포할 때는 적절한 네트워크 액세스, TLS 종료, 확장성을 보장할 수 있도록 인그레스 또는 로드 밸런서를 통해 서비스를 노출해야 합니다. 포트 포워딩은 장기 운영이나 고가용성 환경용이 아니라 로컬 개발 또는 일회성 관리 작업에 가장 적합합니다.
+    포트 포워딩을 사용하면 HyperDX에 접근하고 설정할 수 있습니다. 프로덕션 환경에 배포할 때는 적절한 네트워크 액세스, TLS 종료, 확장성을 보장할 수 있도록 인그레스 또는 로드 밸런서를 통해 서비스를 노출해야 합니다. 포트 포워딩은 장기 운영이나 고가용성 환경용이 아니라 로컬 개발 또는 일회성 관리 작업에 가장 적합합니다.
 
     ```shell
     kubectl port-forward \
@@ -117,15 +115,11 @@ v2.x 차트는 **2단계 설치** 방식을 사용합니다. 먼저 `clickstack-
   </Step>
 
   <Step title="UI로 이동" id="navigate-to-the-ui">
-    ClickStack UI에 액세스하려면 [http://localhost:8080](http://localhost:8080)에 접속하세요.
+    HyperDX UI에 액세스하려면 [http://localhost:8080](http://localhost:8080)에 접속하세요.
 
     요구 사항을 충족하는 사용자 이름과 비밀번호를 입력해 사용자를 생성하세요.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![ClickStack UI](/images/use-cases/observability/hyperdx-login.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
 
     `Create`를 클릭하면 Helm 차트로 배포된 ClickHouse 인스턴스에 대한 데이터 소스가 생성됩니다.
 
@@ -179,7 +173,7 @@ v2.x 차트는 **2단계 설치** 방식을 사용합니다. 먼저 `clickstack-
   </Step>
 
   <Step title="시크릿 사용(선택 사항)" id="using-secrets">
-    v2.x chart는 values의 `hyperdx.secrets`를 바탕으로 채워지는 통합 시크릿(`clickstack-secret`)을 사용합니다. ClickHouse 비밀번호, MongoDB 비밀번호, ClickStack UI API Key를 포함한 모든 민감한 환경 변수는 이 단일 시크릿을 통해 관리됩니다.
+    v2.x chart는 values의 `hyperdx.secrets`를 바탕으로 채워지는 통합 시크릿(`clickstack-secret`)을 사용합니다. ClickHouse 비밀번호, MongoDB 비밀번호, HyperDX API Key를 포함한 모든 민감한 환경 변수는 이 단일 시크릿을 통해 관리됩니다.
 
     시크릿 값을 재정의하려면:
 
@@ -211,7 +205,7 @@ v2.x 차트는 **2단계 설치** 방식을 사용합니다. 먼저 `clickstack-
 </Steps>
 
 <div id="using-clickhouse-cloud">
-  ## ClickHouse Cloud 사용 {#using-clickhouse-cloud}
+  ## ClickHouse Cloud 사용
 </div>
 
 ClickHouse Cloud를 사용하는 경우 기본 제공 ClickHouse 인스턴스를 비활성화하고 Cloud 자격 증명을 입력하십시오:
@@ -264,7 +258,7 @@ helm install my-clickstack clickstack/clickstack -f values-clickhouse-cloud.yaml
 </Tip>
 
 <div id="production-notes">
-  ## 프로덕션 참고 사항 {#production-notes}
+  ## 프로덕션 참고 사항
 </div>
 
 기본적으로 이 차트는 ClickHouse, MongoDB 및 OTel collector를 설치합니다. 프로덕션 환경에서는 ClickHouse와 OTel collector를 별도로 관리하는 것이 좋습니다.
@@ -289,19 +283,19 @@ otel-collector:
 </Tip>
 
 <div id="task-configuration">
-  ## 작업 구성 {#task-configuration}
+  ## 작업 구성
 </div>
 
 기본적으로 차트 설정에는 알림을 트리거해야 하는지 확인하는 CronJob 작업이 1개 포함되어 있습니다. v2.x에서는 작업 구성이 `hyperdx.tasks` 아래로 이동했습니다.
 
-| 매개변수                                  | 설명                                                                                                                           | 기본값              |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| `hyperdx.tasks.enabled`               | 클러스터에서 cron 작업을 활성화 또는 비활성화합니다. 기본적으로는 ClickStack UI 이미지가 프로세스 내에서 cron 작업을 실행합니다. 클러스터에서 별도의 cron 작업을 사용하려면 `true`로 변경하십시오. | `false`          |
-| `hyperdx.tasks.checkAlerts.schedule`  | check-alerts 작업의 cron 스케줄                                                                                                    | `*/1 * * * *`    |
-| `hyperdx.tasks.checkAlerts.resources` | check-alerts 작업의 리소스 요청 및 제한                                                                                                 | `values.yaml` 참조 |
+| 매개변수                                  | 설명                                                                                                                     | 기본값              |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `hyperdx.tasks.enabled`               | 클러스터에서 cron 작업을 활성화 또는 비활성화합니다. 기본적으로는 HyperDX 이미지가 프로세스 내에서 cron 작업을 실행합니다. 클러스터에서 별도의 cron 작업을 사용하려면 `true`로 변경하십시오. | `false`          |
+| `hyperdx.tasks.checkAlerts.schedule`  | check-alerts 작업의 cron 스케줄                                                                                              | `*/1 * * * *`    |
+| `hyperdx.tasks.checkAlerts.resources` | check-alerts 작업의 리소스 요청 및 제한                                                                                           | `values.yaml` 참조 |
 
 <div id="upgrading-the-chart">
-  ## 차트 업그레이드 {#upgrading-the-chart}
+  ## 차트 업그레이드
 </div>
 
 더 최신 버전으로 업그레이드하려면:
@@ -323,7 +317,7 @@ helm search repo clickstack
 </Info>
 
 <div id="uninstalling-clickstack">
-  ## ClickStack 제거 {#uninstalling-clickstack}
+  ## ClickStack 제거
 </div>
 
 다음 역순으로 제거하십시오:
@@ -338,11 +332,11 @@ helm uninstall clickstack-operators     # 연산자 + CRD 제거
 * [MongoDB Kubernetes Operator 문서](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity)
 
 <div id="troubleshooting">
-  ## 문제 해결 {#troubleshooting}
+  ## 문제 해결
 </div>
 
 <div id="checking-logs">
-  ### 로그 확인하기 {#checking-logs}
+  ### 로그 확인하기
 </div>
 
 ```shell
@@ -350,7 +344,7 @@ kubectl logs -l app.kubernetes.io/name=clickstack
 ```
 
 <div id="debugging-a-failed-install">
-  ### 설치 실패 디버깅 {#debugging-a-failed-install}
+  ### 설치 실패 디버깅
 </div>
 
 ```shell
@@ -358,7 +352,7 @@ helm install my-clickstack clickstack/clickstack --debug --dry-run
 ```
 
 <div id="verifying-deployment">
-  ### 배포 확인 {#verifying-deployment}
+  ### 배포 확인
 </div>
 
 ```shell
@@ -377,11 +371,11 @@ kubectl get pods -l app.kubernetes.io/name=clickstack
 <JSONSupport />
 
 <div id="related-documentation">
-  ## 관련 문서 {#related-documentation}
+  ## 관련 문서
 </div>
 
 <div id="deployment-guides">
-  ### 배포 가이드 {#deployment-guides}
+  ### 배포 가이드
 </div>
 
 * [배포 옵션](/ko/clickstack/deployment/helm-deployment-options) - 외부 ClickHouse, OTel collector 및 최소 배포
@@ -391,7 +385,7 @@ kubectl get pods -l app.kubernetes.io/name=clickstack
 * [추가 매니페스트](/ko/clickstack/deployment/helm-additional-manifests) - 차트와 함께 사용자 지정 Kubernetes 객체 배포
 
 <div id="v1x-documentation">
-  ### v1.x 문서 {#v1x-documentation}
+  ### v1.x 문서
 </div>
 
 * [Helm (v1.x)](/ko/clickstack/deployment/helm-v1) - v1.x 배포 가이드
@@ -400,10 +394,10 @@ kubectl get pods -l app.kubernetes.io/name=clickstack
 * [Cloud 배포 (v1.x)](/ko/clickstack/deployment/helm-cloud-v1) - v1.x Cloud 구성
 
 <div id="additional-resources">
-  ### 추가 자료 {#additional-resources}
+  ### 추가 자료
 </div>
 
-* [ClickStack 시작하기 가이드](/ko/clickstack/getting-started/oss) - ClickStack 소개
+* [ClickStack 시작하기 가이드](/ko/clickstack/getting-started/index) - ClickStack 소개
 * [ClickStack Helm 차트 리포지토리](https://github.com/ClickHouse/ClickStack-helm-charts) - 차트 소스 코드 및 values 참고
 * [Kubernetes 문서](https://kubernetes.io/docs/) - Kubernetes 참고
 * [Helm 문서](https://helm.sh/docs/) - Helm 참고

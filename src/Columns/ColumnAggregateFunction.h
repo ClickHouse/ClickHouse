@@ -97,7 +97,7 @@ private:
 
     explicit ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_ = std::nullopt);
 
-    ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_, std::optional<size_t> version_ = std::nullopt);
+    ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_);
 
     ColumnAggregateFunction(const ColumnAggregateFunction & src_);
 
@@ -196,9 +196,6 @@ public:
     serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-
-    /// A state is serialized only by `serializeValueIntoArena`, as its size is known only once it is serialized.
-    std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 

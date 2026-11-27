@@ -13,25 +13,41 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## s3_max_get_burst {#s3_max_get_burst}
+<div id="s3_max_connections">
+  ## s3_max_connections
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1024" />
+
+Número máximo de conexões por servidor.
+
+<div id="s3_max_get_burst">
+  ## s3_max_get_burst
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Número máximo de requests que podem ser emitidas simultaneamente antes de atingir o limite de requests por segundo. Por padrão (0), equivale a `s3_max_get_rps`
 
-## s3_max_get_rps {#s3_max_get_rps}
+<div id="s3_max_get_rps">
+  ## s3_max_get_rps
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Limite da taxa de requests GET por segundo no S3 antes da aplicação de throttling. Zero significa ilimitado.
 
-## s3_max_inflight_parts_for_one_file {#s3_max_inflight_parts_for_one_file}
+<div id="s3_max_inflight_parts_for_one_file">
+  ## s3_max_inflight_parts_for_one_file
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
 O número máximo de partes carregadas simultaneamente em uma solicitação de upload multipart. 0 significa sem limite.
 
-## s3_max_part_number {#s3_max_part_number}
+<div id="s3_max_part_number">
+  ## s3_max_part_number
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -39,19 +55,25 @@ O número máximo de partes carregadas simultaneamente em uma solicitação de u
 
 Número máximo da parte no upload em partes para o S3.
 
-## s3_max_put_burst {#s3_max_put_burst}
+<div id="s3_max_put_burst">
+  ## s3_max_put_burst
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Número máximo de solicitações que podem ser enviadas simultaneamente antes de atingir o limite de solicitações por segundo. Por padrão (0), equivale a `s3_max_put_rps`
 
-## s3_max_put_rps {#s3_max_put_rps}
+<div id="s3_max_put_rps">
+  ## s3_max_put_rps
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Limite da taxa de requisições PUT no S3 por segundo antes do throttling. Zero significa sem limite.
 
-## s3_max_single_operation_copy_size {#s3_max_single_operation_copy_size}
+<div id="s3_max_single_operation_copy_size">
+  ## s3_max_single_operation_copy_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="33554432" />
 
@@ -59,25 +81,33 @@ Limite da taxa de requisições PUT no S3 por segundo antes do throttling. Zero 
 
 Tamanho máximo para uma operação de cópia única no S3. Essa configuração é usada apenas se s3&#95;allow&#95;multipart&#95;copy for true.
 
-## s3_max_single_part_upload_size {#s3_max_single_part_upload_size}
+<div id="s3_max_single_part_upload_size">
+  ## s3_max_single_part_upload_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="33554432" />
 
 O tamanho máximo do objeto a ser enviado ao S3 usando upload de parte única.
 
-## s3_max_single_read_retries {#s3_max_single_read_retries}
+<div id="s3_max_single_read_retries">
+  ## s3_max_single_read_retries
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
 O número máximo de tentativas de nova leitura durante uma única leitura do S3.
 
-## s3_max_unexpected_write_error_retries {#s3_max_unexpected_write_error_retries}
+<div id="s3_max_unexpected_write_error_retries">
+  ## s3_max_unexpected_write_error_retries
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
 O número máximo de tentativas em caso de erros inesperados durante a escrita no S3.
 
-## s3_max_upload_part_size {#s3_max_upload_part_size}
+<div id="s3_max_upload_part_size">
+  ## s3_max_upload_part_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" />
 

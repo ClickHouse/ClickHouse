@@ -44,11 +44,7 @@ struct BlockIO
     std::function<QueryPipelineFinalizedInfo(QueryPipeline &&)> finalize_query_pipeline;
     VectorWithMemoryTracking<std::function<void(const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point)>> finish_callbacks;
 
-    /// Called with `log_as_error` and the pipeline, which is not reset yet, so the callback can log its processors.
-    VectorWithMemoryTracking<std::function<void(bool, const QueryPipeline &)>> exception_callbacks;
-
-    /// Called by `onCancelOrConnectionLoss` after the pipeline has been stopped.
-    VectorWithMemoryTracking<std::function<void()>> cancel_callbacks;
+    VectorWithMemoryTracking<std::function<void(bool)>> exception_callbacks;
 
     /// When it is true, don't bother sending any non-empty blocks to the out stream
     bool null_format = false;

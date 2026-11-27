@@ -28,7 +28,7 @@ namespace Poco {
 namespace XML {
 
 
-[[clang::no_destroy]] const XMLString AbstractNode::NODE_NAME = toXMLString("#node");
+const XMLString AbstractNode::NODE_NAME = toXMLString("#node");
 const XMLString AbstractNode::EMPTY_STRING;
 
 

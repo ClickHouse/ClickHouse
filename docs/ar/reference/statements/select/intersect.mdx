@@ -27,9 +27,11 @@ FROM table2
 
 يمكن أن يكون الشرط أي تعبير وفقًا لمتطلباتك.
 
-## أمثلة {#examples}
+<div id="examples">
+  ## أمثلة
+</div>
 
-فيما يلي مثال بسيط على تقاطع الأرقام من 1 إلى 10 مع الأرقام من 3 إلى 10:
+فيما يلي مثال بسيط على تقاطع الأرقام من 1 إلى 10 مع الأرقام من 3 إلى 8:
 
 ```sql title="Query"
 SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
@@ -43,8 +45,6 @@ SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
 │      6 │
 │      7 │
 │      8 │
-│      9 │
-│     10 │
 └────────┘
 ```
 
@@ -67,7 +67,6 @@ INSERT INTO crypto_prices
    SELECT *
    FROM s3(
     'https://learn-clickhouse.s3.us-east-2.amazonaws.com/crypto_prices.csv',
-    NOSIGN,
     'CSVWithNames'
 );
 
@@ -108,7 +107,7 @@ INSERT INTO holdings VALUES
    ('Bitcoin', 200),
    ('Ethereum', 250),
    ('Ethereum', 5000),
-   ('DOGEFI', 10),
+   ('DOGEFI', 10);
    ('Bitcoin Diamond', 5000);
 ```
 
@@ -132,7 +131,9 @@ WHERE price > 100
 
 وهذا يعني أنه في وقتٍ ما، جرى تداول Bitcoin وEthereum فوق 100 دولار، بينما لم يُتداول DOGEFI وBitcoin Diamond فوق 100 دولار مطلقًا (على الأقل استنادًا إلى البيانات المتاحة لدينا هنا في هذا المثال).
 
-## INTERSECT DISTINCT {#intersect-distinct}
+<div id="intersect-distinct">
+  ## INTERSECT DISTINCT
+</div>
 
 لاحظ أنه في الاستعلام السابق كانت لدينا عدة حيازات من Bitcoin وEthereum جرى تداولها بأكثر من 100 دولار. وقد يكون من الأفضل إزالة الصفوف المكررة (لأنها لا تضيف إلا تكرارًا لما نعرفه بالفعل). يمكنك إضافة `DISTINCT` إلى `INTERSECT` لإزالة الصفوف المكررة من النتيجة:
 

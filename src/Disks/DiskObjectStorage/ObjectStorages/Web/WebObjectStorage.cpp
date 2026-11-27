@@ -4,7 +4,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/OriginComparisonUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentThread.h>
-#include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -50,7 +49,12 @@ namespace
 
     bool pathPartEndsWithSlash(const std::string & path)
     {
-        return stripQueryAndFragment(path).ends_with('/');
+        const auto path_end = path.find_first_of("?#");
+        if (path_end == std::string::npos)
+            return path.ends_with('/');
+        if (path_end == 0)
+            return false;
+        return path[path_end - 1] == '/';
     }
 }
 
@@ -239,10 +243,7 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
         read_settings,
         use_external_buffer,
         /* read_until_position */ 0,
-        headers,
-        /// Set by a read that has to be pinned to the generation of the object that it has seen (`HEAD`),
-        /// e.g. because the ETag keys the page cache.
-        object.etag);
+        headers);
 }
 
 void WebObjectStorage::throwNotAllowed()
@@ -272,7 +273,7 @@ void WebObjectStorage::removeObjectsIfExist( /// NOLINT
     throwNotAllowed();
 }
 
-void WebObjectStorage::copyObject(const StoredObject &, const StoredObject &, const ReadSettings &, const WriteSettings &, std::optional<ObjectAttributes>) // NOLINT
+String WebObjectStorage::copyObject(const StoredObject &, const StoredObject &, const ReadSettings &, const WriteSettings &, std::optional<ObjectAttributes>) // NOLINT
 {
     throwNotAllowed();
 }
@@ -288,11 +289,6 @@ void WebObjectStorage::startup()
 ObjectStorageKeyGeneratorPtr WebObjectStorage::createKeyGenerator() const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "createKeyGenerator is not supported for {}", getName());
-}
-
-ObjectStoragePtr WebObjectStorage::cloneImpl() const
-{
-    return std::make_shared<WebObjectStorage>(url_shards, getContext(), headers, max_directories_to_read);
 }
 
 ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & path, bool with_tags) const
@@ -419,18 +415,8 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
             const auto & header_value = tuple[1].safeGet<String>();
             metadata.attributes.emplace(header_name, header_value);
             if (header_name == "ETag")
-            {
                 metadata.etag = header_value;
-                /// A weak validator (`W/"..."`) allows different bytes of the same representation
-                /// (RFC 9110, section 8.8.1), so it must not identify the content in the caches.
-                metadata.etag_is_strong = !header_value.starts_with("W/");
-            }
         }
-        /// After a redirect, the `ETag` is of the resource that the redirect leads to, and the redirect can change
-        /// to another resource with the same `ETag` while the URL of the object stays the same. So it does not
-        /// identify the content of the object for the caches.
-        if (response_buf->wasRedirected())
-            metadata.etag_is_strong = false;
         return metadata;
     };
 

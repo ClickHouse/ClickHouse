@@ -29,7 +29,6 @@ DISK_CONFIG = f"""<clickhouse>
                 <max_tries>0</max_tries>
                 <retry_initial_backoff_ms>1</retry_initial_backoff_ms>
                 <retry_max_backoff_ms>1</retry_max_backoff_ms>
-                <persistent_removal_log>true</persistent_removal_log>
             </unreachable_azure_disk>
         </disks>
         <policies>

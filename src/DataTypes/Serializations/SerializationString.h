@@ -14,7 +14,7 @@ struct DeserializeBinaryBulkStateStringWithoutSizeStream : public ISerialization
     /// Whether full string data is required during deserialization
     bool need_string_data = false;
 
-    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext &) const override;
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override;
 };
 
 class SerializationString final : public ISerialization
@@ -37,7 +37,6 @@ public:
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-    void deserializeBinary(std::string_view & value, std::string_view & input, const FormatSettings & settings) const;
 
     void enumerateStreams(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const override;
 

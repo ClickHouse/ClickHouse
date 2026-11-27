@@ -110,7 +110,7 @@ private:
             : file_checker_tasks(std::move(file_checker_tasks_)), lock(std::move(lock_))
         {}
 
-        [[nodiscard]] size_t size() const override { return file_checker_tasks->size(); }
+        size_t size() const override { return file_checker_tasks->size(); }
 
         FileChecker::DataValidationTasksPtr file_checker_tasks;
 

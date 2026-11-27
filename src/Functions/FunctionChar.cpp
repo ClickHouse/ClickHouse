@@ -11,7 +11,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
 class FunctionChar final : public IFunction
@@ -20,29 +22,42 @@ public:
     static constexpr auto name = "char";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionChar>(); }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(Integer | Float, ...) -> String";
+        if (arguments.empty())
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                            "Number of arguments for function {} can't be {}, should be at least 1",
+                            getName(), arguments.size());
+
+        for (const auto & arg : arguments)
+        {
+            WhichDataType which(arg);
+            if (!(which.isInt() || which.isUInt() || which.isFloat()))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Illegal type {} of argument of function {}, must be Int, UInt or Float number",
+                                arg->getName(), getName());
+        }
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_str = ColumnString::create();
         ColumnString::Chars & out_vec = col_str->getChars();
@@ -53,7 +68,7 @@ public:
         out_offsets.resize(input_rows_count);
 
         for (size_t row = 0; row < input_rows_count; ++row)
-            out_offsets[row] = size_per_row + out_offsets[static_cast<ssize_t>(row) - 1];
+            out_offsets[row] = size_per_row + out_offsets[row - 1];
 
         Columns columns_holder(arguments.size());
         for (size_t idx = 0; idx < arguments.size(); ++idx)

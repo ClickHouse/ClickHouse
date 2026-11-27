@@ -7,6 +7,8 @@ keywords: ['ML', 'Marimo', 'chDB', 'pandas']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 في هذا الدليل، ستتعلّم كيف تستكشف مجموعة بيانات من ClickHouse Cloud في دفتر ملاحظات Marimo بمساعدة [chDB](/ar/chdb/index) — وهو محرك SQL OLAP سريع يعمل داخل العملية ومدعوم من ClickHouse.
 
 **المتطلبات الأساسية:**
@@ -17,7 +19,7 @@ doc_type: 'guide'
 
 <Tip>
   إذا لم يكن لديك حساب ClickHouse Cloud حتى الآن، فيمكنك [التسجيل](https://console.clickhouse.cloud/signUp?loc=docs-marimo-chdb) للحصول على
-  نسخة تجريبية ورصيد مجاني بقيمة $300 للبدء.
+  نسخة تجريبية ورصيد مجاني بقيمة 300 دولار للبدء.
 </Tip>
 
 **ما ستتعلّمه:**
@@ -31,36 +33,26 @@ doc_type: 'guide'
 وتتضمن بيانات عن أسعار بيع المنازل في المملكة المتحدة من عام 1995 إلى عام 2024.
 
 <div id="setup">
-  ## الإعداد {#setup}
+  ## الإعداد
 </div>
 
-### تحميل مجموعة البيانات {#loading-the-dataset}
+<div id="loading-the-dataset">
+  ### تحميل مجموعة البيانات
+</div>
 
 لإضافة مجموعة البيانات هذه إلى خدمة ClickHouse Cloud حالية، سجّل الدخول إلى [console.clickhouse.cloud](https://console.clickhouse.cloud/) باستخدام تفاصيل حسابك.
 
 في القائمة على اليسار، انقر على `Data sources`، ثم انقر على `Predefined sample data`:
 
-<div className="ch-image-md">
-  <Frame>
-    ![إضافة مجموعة بيانات تجريبية](/images/use-cases/AI_ML/jupyter/1.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="إضافة مجموعة بيانات تجريبية" />
 
-حدِّد `Get started` في بطاقة بيانات أسعار العقارات المباعة في المملكة المتحدة (4GB):
+حدِّد `Get started` في بطاقة بيانات أسعار العقارات المباعة في المملكة المتحدة (4GB):
 
-<div className="ch-image-md">
-  <Frame>
-    ![تحديد مجموعة بيانات أسعار العقارات المباعة في المملكة المتحدة](/images/use-cases/AI_ML/jupyter/2.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="تحديد مجموعة بيانات أسعار العقارات المباعة في المملكة المتحدة" />
 
 ثم انقر على `Import dataset`:
 
-<div className="ch-image-md">
-  <Frame>
-    ![استيراد مجموعة بيانات أسعار العقارات المباعة في المملكة المتحدة](/images/use-cases/AI_ML/jupyter/3.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="استيراد مجموعة بيانات أسعار العقارات المباعة في المملكة المتحدة" />
 
 سينشئ ClickHouse تلقائيًا الجدول `pp_complete` في قاعدة البيانات `default` ويملأ الجدول بـ 28.92 مليون صف من بيانات نقاط الأسعار.
 
@@ -68,7 +60,7 @@ doc_type: 'guide'
 ومن الطرفية، شغّل الأمر التالي لإضافة اسم المستخدم وكلمة المرور كمتغيرات بيئة:
 
 <div id="setting-up-credentials">
-  ### إعداد بيانات الاعتماد {#setting-up-credentials}
+  ### إعداد بيانات الاعتماد
 </div>
 
 ```bash
@@ -82,9 +74,11 @@ export CLICKHOUSE_CLOUD_PASSWORD=your_actual_password
   ولتعيينها بشكل دائم، أضِفها إلى ملف تهيئة الصدفة.
 </Note>
 
-### تثبيت Marimo {#installing-marimo}
+<div id="installing-marimo">
+  ### تثبيت Marimo
+</div>
 
-الآن فعِّل بيئتك الافتراضية.
+الآن فعِّل بيئتك الافتراضية.
 ومن داخلها، ثبّت الحزم التالية التي سنستخدمها في هذا الدليل:
 
 ```python
@@ -99,15 +93,13 @@ marimo edit clickhouse_exploration.py
 
 يجب أن تُفتح نافذة متصفح جديدة تظهر فيها واجهة Marimo على localhost:2718:
 
-<div className="ch-image-md">
-  <Frame>
-    ![واجهة Marimo](/images/use-cases/AI_ML/Marimo/4.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/Marimo/4.webp" alt="واجهة Marimo" />
 
 تُحفَظ دفاتر Marimo كملفات بايثون خالصة، مما يسهّل تتبّع إصداراتها ومشاركتها مع الآخرين.
 
-## تثبيت التبعيات {#installing-dependencies}
+<div id="installing-dependencies">
+  ## تثبيت التبعيات
+</div>
 
 في خلية جديدة، استورد الحزم المطلوبة:
 
@@ -132,14 +124,10 @@ result
 
 يُفترض أن ترى النتيجة كما هي مبيّنة أسفل الخلية التي شغّلتها للتو:
 
-<div className="ch-image-md">
-  <Frame>
-    ![Marimo hello world](/images/use-cases/AI_ML/Marimo/5.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/Marimo/5.webp" alt="مرحبًا بالعالم في Marimo" />
 
 <div id="exploring-the-data">
-  ## استكشاف البيانات {#exploring-the-data}
+  ## استكشاف البيانات
 </div>
 
 بعد إعداد مجموعة بيانات أسعار العقارات المدفوعة في المملكة المتحدة وتشغيل chDB في دفتر ملاحظات Marimo، يمكننا الآن البدء في استكشاف بياناتنا.
@@ -148,7 +136,7 @@ result
 يمكنك توجيه chDB لإرجاع هذه البيانات أثناء التنفيذ على هيئة إطار بيانات Pandas، وهي طريقة مريحة ومألوفة للعمل مع البيانات.
 
 <div id="querying-clickhouse-cloud-data">
-  ### الاستعلام عن بيانات ClickHouse Cloud {#querying-clickhouse-cloud-data}
+  ### الاستعلام عن بيانات ClickHouse Cloud
 </div>
 
 أنشئ خلية جديدة تتضمن الاستعلام التالي لجلب بيانات الأسعار المدفوعة في المملكة المتحدة من خدمة ClickHouse Cloud لديك وتحويلها إلى `pandas.DataFrame`:
@@ -193,7 +181,9 @@ df.head()
 في هذه الحالة، نعيد متوسط السعر لكل سنة، ونطبّق عامل التصفية `town='LONDON'`.
 ثم تُخزَّن النتيجة على شكل DataFrame في متغير يُسمى `df`.
 
-### تصوّر البيانات {#visualizing-the-data}
+<div id="visualizing-the-data">
+  ### تصوّر البيانات
+</div>
 
 بعد أن أصبحت البيانات متاحة لنا بصيغة مألوفة، لنرَ كيف تغيّرت أسعار العقارات في لندن مع مرور الوقت.
 
@@ -216,15 +206,13 @@ fig
 
 وربما ليس من المستغرب أن أسعار العقارات في لندن قد ارتفعت كثيرًا مع مرور الوقت.
 
-<div className="ch-image-md">
-  <Frame>
-    ![تصور بيانات Marimo](/images/use-cases/AI_ML/Marimo/6.webp)
-  </Frame>
+<Image size="md" img="/images/use-cases/AI_ML/Marimo/6.webp" alt="تصور بيانات Marimo" />
+
+تتمثل إحدى نقاط قوة Marimo في نموذج التنفيذ التفاعلي الخاص به. لنُنشئ أداة تفاعلية تتيح اختيار مدن مختلفة بصورة ديناميكية.
+
+<div id="interactive-town-selection">
+  ### اختيار البلدة تفاعليًا
 </div>
-
-تتمثل إحدى نقاط قوة Marimo في نموذج التنفيذ التفاعلي الخاص به. لنُنشئ عنصر واجهة المستخدم التفاعلي الذي يتيح اختيار مدن مختلفة بصورة ديناميكية.
-
-### اختيار البلدة تفاعليًا {#interactive-town-selection}
 
 في خلية جديدة، أنشئ قائمة منسدلة لاختيار بلدات مختلفة:
 
@@ -259,7 +247,7 @@ df_reactive = chdb.query(query_reactive, "DataFrame")
 df_reactive
 ```
 
-أنشئ الآن مخططًا يُحدَّث تلقائيًا عند تغيير المدينة.
+أنشئ الآن مخططًا يُحدَّث تلقائيًا عند تغيير المدينة.
 يمكنك نقل المخطط إلى أعلى DataFrame الديناميكي بحيث يظهر
 أسفل الخلية ذات القائمة المنسدلة.
 
@@ -279,13 +267,11 @@ fig_reactive
 
 الآن، عند اختيار بلدة من القائمة المنسدلة، سيتحدّث المخطط تلقائيًا:
 
-<div className="ch-image-md">
-  <Frame>
-    ![مخطط Marimo الديناميكي](/images/use-cases/AI_ML/Marimo/7.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/Marimo/7.webp" alt="مخطط Marimo الديناميكي" />
 
-### استكشاف توزيعات الأسعار باستخدام مخططات الصندوق والشوارب التفاعلية {#exploring-price-distributions}
+<div id="exploring-price-distributions">
+  ### استكشاف توزيعات الأسعار باستخدام مخططات الصندوق والشوارب التفاعلية
+</div>
 
 لنتعمق أكثر في البيانات من خلال فحص توزيع أسعار العقارات في لندن عبر سنوات مختلفة.
 سيُظهر لنا مخطط الصندوق والشوارب الوسيط والربيعات والقيم المتطرفة، مما يمنحنا فهمًا أفضل بكثير من الاكتفاء بمتوسط السعر.
@@ -355,16 +341,12 @@ fig_box
 
 إذا نقرت على زر الخيارات في أعلى يمين الخلية، يمكنك إخفاء
 الشيفرة.
-وعند تحريك المنزلق، سيتحدّث المخطط تلقائيًا بفضل التنفيذ التفاعلي في Marimo:
+وعند تحريك شريط التمرير، سيتحدّث المخطط تلقائيًا بفضل التنفيذ التفاعلي في Marimo:
 
-<div className="ch-image-md">
-  <Frame>
-    ![مخطط Marimo الديناميكي](/images/use-cases/AI_ML/Marimo/8.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/Marimo/8.webp" alt="مخطط Marimo الديناميكي" />
 
 <div id="summary">
-  ## الملخص {#summary}
+  ## الملخص
 </div>
 
 عرض هذا الدليل كيفية استخدام chDB لاستكشاف بياناتك في ClickHouse Cloud باستخدام دفاتر Marimo.

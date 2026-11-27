@@ -7,7 +7,9 @@ doc_type: 'guide'
 keywords: ['ClickStack', '데모 데이']
 ---
 
-## 스키마 마이그레이션 도구 {#schema-migration-tool}
+<div id="schema-migration-tool">
+  ## 스키마 마이그레이션 도구
+</div>
 
 *시연: [@wrn14897](https://github.com/wrn14897)*
 
@@ -19,7 +21,9 @@ keywords: ['ClickStack', '데모 데이']
 
 다음 단계로는 배포 전체에 걸친 스키마 변경 지원이 계획되어 있으며, 이를 통해 이 기능은 정식 출시 단계에 한층 더 가까워질 예정입니다. 
 
-## 알림 및 MCP를 위한 소스 수준 필터 {#source-level-filters-for-alerts-and-mcp}
+<div id="source-level-filters-for-alerts-and-mcp">
+  ## 알림 및 MCP를 위한 소스 수준 필터
+</div>
 
 *데모: [@pulpdrew](https://github.com/pulpdrew)*
 
@@ -35,7 +39,9 @@ MCP 역시 소스 필터를 인식하도록 개선되었습니다. agent는 필�
 
 **관련 PR:** [#2459](https://github.com/hyperdxio/hyperdx/pull/2459) feat: 제외된 source 범위 필터가 있는 타일에 아이콘 표시, [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) feat: 대시보드 필터에 source 범위 지정 추가
 
-## 소스 생성 시 후보 컬럼 {#candidate-columns-when-building-sources}
+<div id="candidate-columns-when-building-sources">
+  ## 소스 생성 시 후보 컬럼
+</div>
 
 *시연: [@karl-power](https://github.com/karl-power)*
 
@@ -49,9 +55,11 @@ MCP 역시 소스 필터를 인식하도록 개선되었습니다. agent는 필�
 
 **관련 PR:** [#2436](https://github.com/hyperdxio/hyperdx/pull/2436) feat: 소스 필드 제안 추가
 
-## group-by가 있는 이상 징후 알림 (WIP) {#anomaly-alerts-with-group-by}
+<div id="anomaly-alerts-with-group-by">
+  ## group-by가 있는 이상 징후 알림 (WIP)
+</div>
 
-*데모 진행자: [@fleon](https://github.com/fleon)*
+*시연: [@fleon](https://github.com/fleon)*
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/70UzCRUTK7M" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
@@ -61,21 +69,25 @@ MCP 역시 소스 필터를 인식하도록 개선되었습니다. agent는 필�
 
 이 기능은 현재도 활발히 개발 중이며, 릴리스 전에 추가 개선 사항이 반영될 예정입니다.
 
-## MCP 평가 다중 모델 셀렉터 {#mcp-eval-multi-model-selector}
+<div id="mcp-eval-multi-model-selector">
+  ## MCP 평가 다중 모델 셀렉터
+</div>
 
-*데모 진행자: [@brandon-pereira](https://github.com/brandon-pereira)*
+*[@brandon-pereira](https://github.com/brandon-pereira)의 데모*
 
 <Frame>
-  <iframe src="https://www.youtube.com/embed/1O47NXHDzUY" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  <iframe src="https://www.youtube.com/embed/1O47NXHDzUY" title="유튜브 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
 이제 MCP 평가 프레임워크는 단일 평가 스위트를 여러 모델에서 동시에 실행하는 기능을 지원합니다. 브랜던은 Fable 출시 이후, 한 번의 실행으로 Fable, Opus, Sonnet을 비교하며 이 기능을 시연합니다.
 
-ClickHouse와 ClickStack UI 평가 스위트 전반에 걸쳐 Fable은 ClickStack 관련 질문에서 훨씬 더 우수한 결과를 보였습니다. 그 모델을 쓸 수만 있다면 좋겠네요 :).
+ClickHouse와 HyperDX 평가 스위트 전반에 걸쳐 Fable은 ClickStack 관련 질문에서 훨씬 더 우수한 결과를 보였습니다. 그 모델을 쓸 수만 있다면 좋겠네요 :).
 
 **관련 PR:** [#2438](https://github.com/hyperdxio/hyperdx/pull/2438) feat(hdx-eval): eval 배치에서 다중 모델 비교 지원, [#2414](https://github.com/hyperdxio/hyperdx/pull/2414) feat: MCP 서버 벤치마크를 위한 AI 평가 프레임워크
 
-## 이제 모든 노트북 도구가 MCP를 사용합니다 {#all-notebook-tools-now-use-the-mcp}
+<div id="all-notebook-tools-now-use-the-mcp">
+  ## 이제 모든 노트북 도구가 MCP를 사용합니다
+</div>
 
 *시연: [@brandon-pereira](https://github.com/brandon-pereira)*
 
@@ -87,7 +99,9 @@ ClickHouse와 ClickStack UI 평가 스위트 전반에 걸쳐 Fable은 ClickStac
 
 다음으로는 Raw SQL 노트북 타일이 추가될 예정입니다.
 
-## Datadog 수신기 {#datadog-receiver}
+<div id="datadog-receiver">
+  ## Datadog 수신기
+</div>
 
 *[@SpencerTorres](https://github.com/SpencerTorres)의 시연*
 
@@ -101,7 +115,9 @@ Spencer가 Datadog 수신기의 개선 사항을 시연합니다.
 
 Datadog의 64비트 숫자형 트레이스 ID도 128비트 OpenTelemetry 포맷으로 확장되어 ClickStack 내에서 트레이스를 올바르게 연계할 수 있습니다. 이 수신기는 ClickStack collector 배포판에 포함될 예정이며, 엔드 투 엔드 트레이스 연계에 대한 추가 테스트도 계획되어 있습니다.
 
-## 이벤트 패턴: 모든 컬럼 {#event-patterns-any-column}
+<div id="event-patterns-any-column">
+  ## 이벤트 패턴: 모든 컬럼
+</div>
 
 *시연: [@knudtty](https://github.com/knudtty)*
 
@@ -115,7 +131,9 @@ Aaron은 또한 Drain 알고리즘이 이벤트를 패턴으로 그룹화하기 
 
 **관련 PR:** [#2460](https://github.com/hyperdxio/hyperdx/pull/2460) feat: 모든 컬럼에서 이벤트 패턴 일치를 위한 패턴 컬럼 셀렉터 추가
 
-## 스팬 링크 (WIP) {#span-links}
+<div id="span-links">
+  ## 스팬 링크 (WIP)
+</div>
 
 *시연: [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -129,7 +147,9 @@ Alex는 ClickStack 트레이스 뷰어의 스팬 링크 지원을 위한 초기 
 
 **관련 PR:** [#2463](https://github.com/hyperdxio/hyperdx/pull/2463) feat(traces): 트레이스 뷰어에 스팬 링크 표시
 
-## 호버 시 시계열 강조 표시 {#time-series-highlighting-on-hover}
+<div id="time-series-highlighting-on-hover">
+  ## 호버 시 시계열 강조 표시
+</div>
 
 *시연: [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -143,7 +163,9 @@ Alex는 ClickStack 트레이스 뷰어의 스팬 링크 지원을 위한 초기 
 
 **관련 PR:** [#2456](https://github.com/hyperdxio/hyperdx/pull/2456) feat: time chart tooltip에서 커서에 가장 가까운 시리즈 강조 표시
 
-## 시리즈 복제 {#duplicate-series}
+<div id="duplicate-series">
+  ## 시리즈 복제
+</div>
 
 *시연: [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -157,7 +179,9 @@ Alex는 P50과 P95 비교를 만드는 과정을 통해 이 작업 흐름을 보
 
 **관련 PR:** [#2453](https://github.com/hyperdxio/hyperdx/pull/2453) feat(chart-explorer): 차트 빌더에서 시리즈 복제
 
-## 편집 가능한 pill 필터 (WIP) {#editable-pill-filters}
+<div id="editable-pill-filters">
+  ## 편집 가능한 pill 필터 (WIP)
+</div>
 
 *시연: [@alex-fedotyev](https://github.com/alex-fedotyev)*
 

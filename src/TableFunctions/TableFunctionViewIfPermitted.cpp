@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -20,6 +21,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace ErrorCodes
@@ -27,7 +29,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int ACCESS_DENIED;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -42,17 +43,6 @@ public:
     static constexpr auto name = "viewIfPermitted";
 
     std::string getName() const override { return name; }
-
-    /// Both paths of this function resolve the `ELSE` function's structure and nothing else, so it
-    /// owes what resolving that structure owes no matter which seam asks. The `ELSE` function is
-    /// executed separately, where its own execution-mode checks run.
-    void checkSourceObjectAccess(const ContextPtr & context, bool /*for_structure*/) const override
-    {
-        else_table_function->checkSourceAccess(context, /*is_insert_query=*/ false);
-        else_table_function->checkEngineAccess(context);
-        else_table_function->checkSourceObjectAccess(context, /*for_structure=*/ true);
-        else_table_function->checkCreateTemporaryTableAccess(context, /*is_insert_query=*/ false);
-    }
 
     /// The branch this function chooses depends on the current user, and a persisted table has no
     /// user: under the global context it is created and attached with, the `ELSE` branch is unreachable.
@@ -110,6 +100,10 @@ void TableFunctionViewIfPermitted::parseArguments(const ASTPtr & ast_function, C
 
 ColumnsDescription TableFunctionViewIfPermitted::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
+    /// Both `DESCRIBE` and `SELECT` resolve the structure of the `ELSE` function here, which may access its
+    /// source (e.g. schema inference fetches a URL), so it owes the same `CREATE TEMPORARY TABLE` check as running it.
+    /// The `ELSE` function is executed separately, where its own execution-mode checks run.
+    else_table_function->checkCreateTemporaryTableAccess(context, /*is_insert_query=*/ false);
     return else_table_function->getActualTableStructure(context, is_insert_query);
 }
 
@@ -125,18 +119,7 @@ StoragePtr TableFunctionViewIfPermitted::executeImpl(
     }
     else
     {
-        /// The query names this function, so a `*Cluster` storage of the `ELSE` function could not rewrite it for the replicas.
-        if (!is_insert_query && else_table_function->isClusterFunction())
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Table function '{}' does not support reading from a cluster table function '{}' after 'ELSE'",
-                getName(),
-                else_table_function->getName());
-
-        ContextMutablePtr else_context = Context::createCopy(context);
-        else_context->setSetting("parallel_replicas_for_cluster_engines", false);
-        storage = else_table_function->execute(
-            else_ast, else_context, table_name, /*cached_columns_=*/ {}, /*use_global_context=*/ false, is_insert_query);
+        storage = else_table_function->execute(else_ast, context, table_name);
     }
 
     storage->startup();
@@ -149,8 +132,15 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
     try
     {
-        /// Will throw ACCESS_DENIED if the current user is not allowed to execute the SELECT query.
-        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        {
+            sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
+        }
+        else
+        {
+            /// Will throw ACCESS_DENIED if the current user is not allowed to execute the SELECT query.
+            sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
+        }
     }
     catch (Exception & e)
     {
@@ -159,7 +149,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
         throw;
     }
 
-    /// We check that columns match only if permitted (otherwise we could reveal the structure to a user who must not know it).
+    /// We check that columns match only if permitted (otherwise we could reveal the structure to an user who must not know it).
     ColumnsDescription columns{sample_block->getNamesAndTypesList()};
     if (columns != else_columns)
     {
@@ -179,7 +169,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
 void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionViewIfPermitted>({.description = R"DOC(Returns the result of a SELECT query as a view, but only if the current user has the permissions required to run it; otherwise it returns the result of the ELSE table function. The privileges needed to resolve the structure of the `ELSE` table function are required either way.)DOC", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionViewIfPermitted>({.description = R"DOC(Returns the result of a SELECT query as a view, but only if the current user has the permissions required to run it; otherwise it returns the result of the ELSE table function.)DOC", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
 }
 
 }

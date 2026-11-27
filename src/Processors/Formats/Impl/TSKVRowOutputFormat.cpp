@@ -11,7 +11,7 @@ namespace DB
 {
 
 TSKVRowOutputFormat::TSKVRowOutputFormat(WriteBuffer & out_, SharedHeader header, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header, out_), format_settings(format_settings_), fields(header->getNamesAndTypes())
+    : TabSeparatedRowOutputFormat(out_, header, false, false, false, format_settings_), fields(header->getNamesAndTypes())
 {
     for (auto & field : fields)
     {
@@ -28,12 +28,6 @@ void TSKVRowOutputFormat::writeField(const IColumn & column, const ISerializatio
     writeString(fields[field_number].name, out);
     serialization.serializeTextEscaped(column, row_num, out, format_settings);
     ++field_number;
-}
-
-
-void TSKVRowOutputFormat::writeFieldDelimiter()
-{
-    writeChar('\t', out);
 }
 
 

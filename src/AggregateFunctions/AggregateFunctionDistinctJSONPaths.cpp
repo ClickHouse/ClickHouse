@@ -275,9 +275,9 @@ public:
             typed_paths_type_names[path] = type->getName();
     }
 
-    [[nodiscard]] String getName() const override { return Data::name; }
+    String getName() const override { return Data::name; }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

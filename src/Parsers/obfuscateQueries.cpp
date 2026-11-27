@@ -113,7 +113,7 @@ const std::unordered_set<std::string> & getObfuscateKeywords()
 
 /// We want to keep some words inside quotes. For example we want to keep HOUR inside:
 /// Select now() + INTERVAL '1 HOUR'
-[[clang::no_destroy]] const std::unordered_set<std::string_view> keep_words
+const std::unordered_set<std::string_view> keep_words
 {
     "DAY",
     "HOUR",

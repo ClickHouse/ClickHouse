@@ -38,14 +38,6 @@ IProcessor::IProcessor(InputPorts inputs_, OutputPorts outputs_) : inputs(std::m
     processor_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPipelineProcessorIndex() : 0;
 }
 
-bool IProcessor::isAnyOutputNeeded() const
-{
-    for (const auto & output : outputs)
-        if (!output.isFinished() && output.isNeeded())
-            return true;
-    return false;
-}
-
 void IProcessor::setQueryPlanStep(const IQueryPlanStep * step, size_t group)
 {
     query_plan_step = step;
@@ -55,7 +47,7 @@ void IProcessor::setQueryPlanStep(const IQueryPlanStep * step, size_t group)
     {
         plan_step_name = step->getName();
         plan_step_description = step->getStepDescription();
-        query_plan_step_index = step->getStepIndex();
+        step_uniq_id = step->getUniqID();
     }
 }
 
@@ -72,7 +64,7 @@ void IProcessor::inheritQueryPlanStepFromParent(const IProcessor & parent, size_
     query_plan_step_wall_clock_ptr = nullptr;
     plan_step_name = parent.plan_step_name;
     plan_step_description = parent.plan_step_description;
-    query_plan_step_index = parent.query_plan_step_index;
+    step_uniq_id = parent.step_uniq_id;
 }
 
 IProcessor::Status IProcessor::prepare()
@@ -175,25 +167,24 @@ ProcessorsProfileLogInfo IProcessor::getProcessorsProfileLogInfo() const
 {
     ProcessorsProfileLogInfo info;
 
-    /// Indices unique within the query, not heap addresses, which must not be published.
-    info.id = processor_index;
+    auto get_proc_id = [](const IProcessor & proc) -> UInt64 { return reinterpret_cast<std::uintptr_t>(&proc); };
+
+    info.id = get_proc_id(*this);
 
     for (const auto & port : outputs)
     {
         if (!port.isConnected())
             continue;
         const IProcessor & next = port.getInputPort().getProcessor();
-        info.parent_ids.push_back(next.processor_index);
+        info.parent_ids.push_back(get_proc_id(next));
     }
 
-    /// One plus the step index, so that 0 means no step.
-    info.plan_step = query_plan_step_index == PlanStepIndex::NONE ? 0 : query_plan_step_index + 1;
+    info.plan_step = reinterpret_cast<std::uintptr_t>(query_plan_step);
     info.plan_step_name = plan_step_name;
     info.plan_step_description = plan_step_description;
     info.plan_group = query_plan_step_group;
     info.processor_uniq_id = getUniqID();
-    if (query_plan_step_index != PlanStepIndex::NONE)
-        info.step_uniq_id = fmt::format("{}_{}", plan_step_name, query_plan_step_index);
+    info.step_uniq_id = step_uniq_id;
 
     info.processor_name = getName();
 

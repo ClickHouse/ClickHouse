@@ -7,7 +7,9 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Демо-дни']
 ---
 
-## Переменные панели мониторинга {#dashboard-variables}
+<div id="dashboard-variables">
+  ## Переменные панели мониторинга
+</div>
 
 *Демо от [@pulpdrew](https://github.com/pulpdrew)*
 
@@ -33,7 +35,9 @@ keywords: ['ClickStack', 'Демо-дни']
 
 **Связанные PR:** [#2836](https://github.com/hyperdxio/hyperdx/pull/2836) добавление конфигурации переменных фильтра, [#2873](https://github.com/hyperdxio/hyperdx/pull/2873) подстановка переменных в диаграммах Raw SQL, [#2874](https://github.com/hyperdxio/hyperdx/pull/2874) автодополнение и проверка переменных панели мониторинга в SQL, [#2901](https://github.com/hyperdxio/hyperdx/pull/2901) поддержка переменных панели мониторинга в плитках конструктора диаграмм, [#2910](https://github.com/hyperdxio/hyperdx/pull/2910) разворачивание переменных в пустые значения в запросах оповещений, [#2923](https://github.com/hyperdxio/hyperdx/pull/2923) поддержка запросов значений зависимых переменных, [#2937](https://github.com/hyperdxio/hyperdx/pull/2937) поддержка вложенных макросов и ссылок на переменные в макросах, [#2944](https://github.com/hyperdxio/hyperdx/pull/2944) добавление переменных панели мониторинга во внешний API
 
-## Страница сведений об оповещении с историей проверок {#alert-detail-page-with-evaluation-history}
+<div id="alert-detail-page-with-evaluation-history">
+  ## Страница сведений об оповещении с историей проверок
+</div>
 
 *Демо от [@wrn14897](https://github.com/wrn14897)*
 
@@ -53,13 +57,15 @@ keywords: ['ClickStack', 'Демо-дни']
 
 **Связанные PR:** [#2833](https://github.com/hyperdxio/hyperdx/pull/2833) модель чтения проверок оповещения и `GET /alerts/:id/evaluations`, [#2834](https://github.com/hyperdxio/hyperdx/pull/2834) сохранение ошибок проверок оповещения и аналитики в AlertHistory, [#2835](https://github.com/hyperdxio/hyperdx/pull/2835) страница сведений об оповещении с историей проверок, [#2928](https://github.com/hyperdxio/hyperdx/pull/2928) выравнивание маркеров диаграммы оповещения по началу проверяемого бакета, [#2931](https://github.com/hyperdxio/hyperdx/pull/2931) редактирование и удаление оповещений со страницы сведений об оповещении
 
-## Расследование оповещений и аннотации инструментов MCP {#investigating-alerts-and-mcp-tool-annotations}
+<div id="investigating-alerts-and-mcp-tool-annotations">
+  ## Расследование оповещений и аннотации инструментов MCP
+</div>
 
 *Демо от [@brandon-pereira](https://github.com/brandon-pereira)*
 
 <iframe width="768" height="432" src="https://www.youtube.com/embed/942yeJitK4Q" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 
-**Только для ClickHouse Observability:** для сработавших оповещений теперь доступна кнопка Investigate. Нажатие на неё запускает расследование в notebook со страницы оповещений или со страницы сведений об оповещении.
+Для сработавших оповещений теперь доступна кнопка Investigate. Нажатие на неё запускает расследование в notebook со страницы оповещений или со страницы сведений об оповещении.
 
 Конечная цель — автоматически запускать такие расследования при срабатывании оповещения. Кнопка — полезный промежуточный шаг, а не конечный вариант.
 
@@ -75,7 +81,9 @@ keywords: ['ClickStack', 'Демо-дни']
 
 **Связанные PR:** [#2838](https://github.com/hyperdxio/hyperdx/pull/2838) добавляет аннотации инструментов MCP (`readOnlyHint` и т. д.) для всех инструментов, [#2840](https://github.com/hyperdxio/hyperdx/pull/2840) направляет агентов к инструментам построения запросов вместо Raw SQL, [#2870](https://github.com/hyperdxio/hyperdx/pull/2870) направляет агентов панели мониторинга к фильтрам плиток для каждой серии. У самой кнопки Investigate нет публичного PR, на который можно сослаться.
 
-## Диаграммы метрик с несколькими сериями в одном запросе {#multi-series-metric-charts-in-a-single-query}
+<div id="multi-series-metric-charts-in-a-single-query">
+  ## Диаграммы метрик с несколькими сериями в одном запросе
+</div>
 
 *Демо от [@wrn14897](https://github.com/wrn14897)*
 
@@ -93,7 +101,9 @@ keywords: ['ClickStack', 'Демо-дни']
 
 **Связанные PR:** [#2858](https://github.com/hyperdxio/hyperdx/pull/2858) расширение тестового покрытия целых чисел для объединения метрик с несколькими сериями, [#2859](https://github.com/hyperdxio/hyperdx/pull/2859) перенос вычисления объединения метрик с несколькими сериями в ClickHouse, [#2907](https://github.com/hyperdxio/hyperdx/pull/2907) покрытие alert-task для плиток метрик с несколькими сериями, [#2916](https://github.com/hyperdxio/hyperdx/pull/2916) исправление диаграмм метрик с несколькими сериями, смешивающих агрегации float и int, [#2872](https://github.com/hyperdxio/hyperdx/pull/2872) модель выражений формул, [#2908](https://github.com/hyperdxio/hyperdx/pull/2908) отображение формул в составном запросе метрик, [#2909](https://github.com/hyperdxio/hyperdx/pull/2909) интерфейс редактора диаграмм для формул метрик
 
-## Исправления автодополнения Lucene и требований к паролю {#lucene-autocomplete-and-password-requirement-fixes}
+<div id="lucene-autocomplete-and-password-requirement-fixes">
+  ## Исправления автодополнения Lucene и требований к паролю
+</div>
 
 *Демо от [@pulpdrew](https://github.com/pulpdrew)*
 

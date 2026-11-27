@@ -6,7 +6,11 @@ keywords: ['fusiones']
 doc_type: 'guide'
 ---
 
-## ¿Qué son las fusiones de partes en ClickHouse? {#what-are-part-merges-in-clickhouse}
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<div id="what-are-part-merges-in-clickhouse">
+  ## ¿Qué son las fusiones de partes en ClickHouse?
+</div>
 
 <br />
 
@@ -22,17 +26,15 @@ Para controlar el número de partes por tabla e implementar el punto ② anterio
 
 El siguiente diagrama ilustra este proceso de fusión en segundo plano:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![FUSIONES DE PARTES](/images/managing-data/core-concepts/merges_01.webp)
-  </Frame>
-</div>
+<Image img="/images/managing-data/core-concepts/merges_01.webp" size="lg" alt="FUSIONES DE PARTES" />
 
 <br />
 
-El `merge level` de una parte aumenta en uno con cada fusión adicional. Un nivel de `0` significa que la parte es nueva y aún no se ha fusionado. Las partes que se fusionaron en otras más grandes se marcan como [inactivas](/es/reference/system-tables/parts) y, por último, se eliminan tras un tiempo [configurable](/es/reference/settings/merge-tree-settings/other#old_parts_lifetime) (8 minutos de forma predeterminada). Con el tiempo, esto crea un **árbol** de partes fusionadas. De ahí el nombre de la tabla [merge tree](/es/reference/engines/table-engines/mergetree-family/index).
+El `nivel de fusión` de una parte aumenta en uno con cada fusión adicional. Un nivel de `0` significa que la parte es nueva y aún no se ha fusionado. Las partes que se fusionaron en otras más grandes se marcan como [inactivas](/es/reference/system-tables/parts) y, por último, se eliminan tras un tiempo [configurable](/es/reference/settings/merge-tree-settings/other#old_parts_lifetime) (8 minutos de forma predeterminada). Con el tiempo, esto crea un **árbol** de partes fusionadas. De ahí el nombre de la tabla [merge tree](/es/reference/engines/table-engines/mergetree-family/index).
 
-## Monitorización de las fusiones {#monitoring-merges}
+<div id="monitoring-merges">
+  ## Monitorización de las fusiones
+</div>
 
 En el ejemplo [qué son las partes de una tabla](/es/concepts/core-concepts/parts), [mostramos](/es/concepts/core-concepts/parts#monitoring-table-parts) que ClickHouse registra todas las partes de la tabla en la tabla del sistema [parts](/es/reference/system-tables/parts). Usamos la siguiente consulta para obtener el nivel de fusión y el número de filas almacenadas en cada parte activa de la tabla de ejemplo:
 
@@ -67,11 +69,7 @@ El resultado de la consulta [descrita anteriormente](/es/concepts/core-concepts/
 
 En ClickHouse 24.10, se añadió un nuevo [dashboard de fusiones](https://presentations.clickhouse.com/2024-release-24.10/index.html#17) a los [dashboards de monitorización](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards) integrados. Disponible tanto en OSS como en Cloud a través del `handler` HTTP `/merges`, podemos usarlo para visualizar todas las fusiones de partes de nuestra tabla de ejemplo:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![FUSIONES DE PARTES](/images/managing-data/core-concepts/merges-dashboard.webp)
-  </Frame>
-</div>
+<Image img="/images/managing-data/core-concepts/merges-dashboard.webp" size="lg" alt="FUSIONES DE PARTES" />
 
 <br />
 
@@ -83,15 +81,13 @@ La grabación del dashboard anterior muestra todo el proceso, desde las insercio
 
 ③ [Amplificación de escritura](https://en.wikipedia.org/wiki/Write_amplification).
 
-## Fusiones concurrentes {#concurrent-merges}
+<div id="concurrent-merges">
+  ## Fusiones concurrentes
+</div>
 
 Un servidor ClickHouse utiliza varios [hilos de fusión](/es/reference/settings/server-settings/settings/background#background_pool_size) en segundo plano para ejecutar fusiones concurrentes de partes:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![FUSIONES DE PARTES](/images/managing-data/core-concepts/merges_02.webp)
-  </Frame>
-</div>
+<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="FUSIONES DE PARTES" />
 
 <br />
 
@@ -114,20 +110,18 @@ Cada hilo de fusión ejecuta un bucle:
 Ten en cuenta que aumentar el número de núcleos de CPU y la cantidad de RAM permite incrementar el rendimiento de las fusiones en segundo plano.
 
 <div id="memory-optimized-merges">
-  ## Fusiones con uso de memoria optimizado {#memory-optimized-merges}
+  ## Fusiones con uso de memoria optimizado
 </div>
 
 ClickHouse no necesariamente carga en memoria todas las partes que se van a fusionar al mismo tiempo, como se muestra en el [ejemplo anterior](/es/concepts/core-concepts/merges#concurrent-merges). En función de varios [factores](https://github.com/ClickHouse/ClickHouse/blob/bf37120c925ed846ae5cd72cd51e6340bebd2918/src/Storages/MergeTree/MergeTreeSettings.cpp#L210), y para reducir el consumo de memoria (a costa de la velocidad de fusión), la llamada [fusión vertical](https://github.com/ClickHouse/ClickHouse/blob/bf37120c925ed846ae5cd72cd51e6340bebd2918/src/Storages/MergeTree/MergeTreeSettings.cpp#L209) carga y fusiona las partes en fragmentos de bloques en lugar de hacerlo de una sola vez.
 
-## Mecánica de las fusiones {#merge-mechanics}
+<div id="merge-mechanics">
+  ## Mecánica de las fusiones
+</div>
 
 El siguiente diagrama ilustra cómo un único [hilo de fusión en segundo plano](/es/concepts/core-concepts/merges#concurrent-merges) en ClickHouse fusiona partes (de forma predeterminada, sin [fusión vertical](/es/concepts/core-concepts/merges#memory-optimized-merges)):
 
-<div className="ch-image-lg">
-  <Frame>
-    ![FUSIONES DE PARTES](/images/managing-data/core-concepts/merges_03.webp)
-  </Frame>
-</div>
+<Image img="/images/managing-data/core-concepts/merges_03.webp" size="lg" alt="FUSIONES DE PARTES" />
 
 <br />
 
@@ -157,51 +151,45 @@ La mecánica del paso de fusión depende del [motor MergeTree](/es/reference/eng
 
 A continuación, describiremos brevemente la mecánica de fusión de motores específicos de la familia MergeTree.
 
-### Fusiones estándar {#standard-merges}
+<div id="standard-merges">
+  ### Fusiones estándar
+</div>
 
 El diagrama siguiente ilustra cómo se fusionan las partes en una tabla [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree) estándar:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![FUSIONES DE PARTES](/images/managing-data/core-concepts/merges_04.webp)
-  </Frame>
-</div>
+<Image img="/images/managing-data/core-concepts/merges_04.webp" size="lg" alt="FUSIONES DE PARTES" />
 
 <br />
 
 La sentencia DDL del diagrama anterior crea una tabla `MergeTree` con una clave de ordenación `(town, street)`, lo que [significa](/es/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) que los datos en disco se ordenan según estas columnas y que, en consecuencia, se genera un índice primario disperso.
 
-Las columnas de la tabla ① descomprimidas y preordenadas se ② fusionan manteniendo el orden global de la tabla definido por su clave de ordenación, ③ se genera un nuevo índice primario disperso y ④ los archivos de columna fusionados y el índice se comprimen y se almacenan como una nueva parte de datos en disco.
+Las columnas de la tabla ① descomprimidas y preordenadas se ② fusionan manteniendo el orden global de clasificación de la tabla definido por su clave de ordenación, ③ se genera un nuevo índice primario disperso y ④ los archivos de columna fusionados y el índice se comprimen y se almacenan como una nueva parte de datos en disco.
 
-### Fusiones con reemplazo {#replacing-merges}
+<div id="replacing-merges">
+  ### Fusiones con reemplazo
+</div>
 
 Las fusiones de partes en una tabla [ReplacingMergeTree](/es/reference/engines/table-engines/mergetree-family/replacingmergetree) funcionan de forma similar a las [fusiones estándar](/es/concepts/core-concepts/merges#standard-merges), pero solo se conserva la versión más reciente de cada fila y se descartan las versiones anteriores:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![FUSIONES DE PARTES](/images/managing-data/core-concepts/merges_05.webp)
-  </Frame>
-</div>
+<Image img="/images/managing-data/core-concepts/merges_05.webp" size="lg" alt="FUSIONES DE PARTES" />
 
 <br />
 
 La sentencia DDL del diagrama anterior crea una tabla `ReplacingMergeTree` con una clave de ordenación `(town, street, id)`, lo que significa que los datos en disco se ordenan según esas columnas y que, en consecuencia, se genera un índice primario disperso.
 
-La ② fusión funciona de forma similar a la de una tabla `MergeTree` estándar: combina columnas descomprimidas y preordenadas mientras mantiene el orden global.
+La ② fusión funciona de forma similar a la de una tabla `MergeTree` estándar: combina columnas descomprimidas y preordenadas mientras mantiene el orden global de ordenación.
 
 Sin embargo, `ReplacingMergeTree` elimina las filas duplicadas con la misma clave de ordenación y conserva solo la fila más reciente, según la marca temporal de creación de la parte que la contiene.
 
 <br />
 
-### Fusiones con suma {#summing-merges}
+<div id="summing-merges">
+  ### Fusiones con suma
+</div>
 
 Los datos numéricos se resumen automáticamente durante las fusiones de partes de una tabla [SummingMergeTree](/es/reference/engines/table-engines/mergetree-family/summingmergetree):
 
-<div className="ch-image-lg">
-  <Frame>
-    ![FUSIONES DE PARTES](/images/managing-data/core-concepts/merges_06.webp)
-  </Frame>
-</div>
+<Image img="/images/managing-data/core-concepts/merges_06.webp" size="lg" alt="FUSIONES DE PARTES" />
 
 <br />
 
@@ -209,15 +197,13 @@ La sentencia DDL del diagrama anterior define una tabla `SummingMergeTree` con `
 
 En el paso ② de fusión, ClickHouse reemplaza todas las filas con la misma clave de ordenación por una sola fila, sumando los valores de las columnas numéricas.
 
-### Fusiones con agregación {#aggregating-merges}
+<div id="aggregating-merges">
+  ### Fusiones con agregación
+</div>
 
 El ejemplo anterior de la tabla `SummingMergeTree` es una variante especializada de la tabla [AggregatingMergeTree](/es/reference/engines/table-engines/mergetree-family/aggregatingmergetree), que permite la [transformación automática e incremental de datos](https://www.youtube.com/watch?v=QDAJTKZT8y4) al aplicar cualquiera de las [90+](/es/reference/functions/aggregate-functions/reference-index) funciones de agregación durante las fusiones de partes:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![FUSIONES DE PARTES](/images/managing-data/core-concepts/merges_07.webp)
-  </Frame>
-</div>
+<Image img="/images/managing-data/core-concepts/merges_07.webp" size="lg" alt="FUSIONES DE PARTES" />
 
 <br />
 

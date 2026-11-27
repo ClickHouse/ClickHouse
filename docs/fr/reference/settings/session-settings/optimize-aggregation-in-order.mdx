@@ -13,17 +13,15 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## optimize_aggregation_in_order {#optimize_aggregation_in_order}
+<div id="optimize_aggregation_in_order">
+  ## optimize_aggregation_in_order
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Active l’optimisation de [GROUP BY](/fr/reference/statements/select/group-by) dans les requêtes [SELECT](/fr/reference/statements/select/index) afin d’agréger les données selon l’ordre correspondant dans les tables [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree).
 
-Elle s’applique également à un unique `uniqExact` (ou `count(DISTINCT)`) sans `GROUP BY` sur une table triée selon son argument : les valeurs distinctes sont comptées au fil de leur arrivée, dans l’ordre, et ne sont donc pas conservées en mémoire. Avec plusieurs fils d’exécution, la lecture est divisée en plages de la clé de tri, comptées en parallèle ; lorsque cette division est impossible (par exemple, pour un argument à virgule flottante ou une fonction de la clé de tri), l’agrégation habituelle est utilisée.
-
-Les projections sont choisies avant l’ordre d’agrégation. Si une [projection](/fr/reference/engines/table-engines/mergetree-family/mergetree#projections) lit moins de granules que la table, elle est utilisée même si elle n’est pas triée selon la clé `GROUP BY`, et l’agrégation conserve alors tous les groupes en mémoire au lieu d’agréger dans l’ordre.
-
-Valeurs possibles :
+Valeurs possibles :
 
 * 0 — l’optimisation de `GROUP BY` est désactivée.
 * 1 — l’optimisation de `GROUP BY` est activée.
@@ -32,7 +30,9 @@ Valeurs possibles :
 
 * [Optimisation de GROUP BY](/fr/reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 
-## optimize_aggregation_in_order_limit {#optimize_aggregation_in_order_limit}
+<div id="optimize_aggregation_in_order_limit">
+  ## optimize_aggregation_in_order_limit
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

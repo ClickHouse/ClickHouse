@@ -7,12 +7,17 @@ keywords: ['upgrades do Managed Postgres', 'versão do Postgres', 'atualização
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
+
 O ClickHouse Managed Postgres realiza upgrades de versão do PostgreSQL para manter suas instâncias seguras e atualizadas. Há suporte tanto para atualizações de versões menores quanto para upgrades entre versões principais, com interrupção mínima.
 
-## Atualizações de manutenção {#maintenance-updates}
+<div id="maintenance-updates">
+  ## Atualizações de manutenção
+</div>
 
 A manutenção regular das instâncias do PostgreSQL inclui o seguinte:
 
@@ -24,7 +29,9 @@ Essas operações são realizadas por meio de failover e normalmente resultam ap
 
 Para instâncias com [standbys](/pt-BR/products/managed-postgres/high-availability) habilitados, a atualização é aplicada primeiro ao standby, seguida de um failover para minimizar o tempo de inatividade.
 
-## Upgrades agendados {#scheduled-upgrades}
+<div id="scheduled-upgrades">
+  ## Upgrades agendados
+</div>
 
 <ScalePlanFeatureBadge feature="Upgrades agendados" linking_verb_are="true" />
 
@@ -37,7 +44,9 @@ No plano Enterprise, você também pode restringir os upgrades a
 [dias específicos da semana](#days-of-the-week). No plano Scale, você escolhe apenas o período,
 e os upgrades podem ser aplicados em qualquer dia dentro dele.
 
-### Configurar um agendamento {#configure-a-schedule}
+<div id="configure-a-schedule">
+  ### Configurar um agendamento
+</div>
 
 <Steps>
   <Step title="Abra as configurações da instância" id="open-settings">
@@ -71,7 +80,9 @@ Você precisa da permissão `control-plane:postgres-service:manage` na instânci
 o agendamento. Os controles também ficam desabilitados enquanto uma instância está parada ou ainda
 está sendo provisionada.
 
-### Períodos de tempo {#time-periods}
+<div id="time-periods">
+  ### Períodos de tempo
+</div>
 
 As janelas têm duração de duas horas e são sempre expressas em UTC — não é possível selecionar o fuso horário
 local. As janelas disponíveis são:
@@ -88,7 +99,9 @@ local. As janelas disponíveis são:
 Horários de início personalizados, durações de janela personalizadas e mais de uma janela por instância não são
 suportados.
 
-### Dias da semana {#days-of-the-week}
+<div id="days-of-the-week">
+  ### Dias da semana
+</div>
 
 <EnterprisePlanFeatureBadge feature="Restringir upgrades a dias específicos da semana" />
 
@@ -98,10 +111,12 @@ A restrição de dias é opcional:
 * **Um ou mais dias selecionados** — os upgrades são aplicados apenas nesses dias, dentro do
   período escolhido. Selecionar os sete dias equivale a não selecionar nenhum.
 
-### A que se aplica um agendamento {#schedule-scope}
+<div id="schedule-scope">
+  ### A que se aplica um agendamento
+</div>
 
-Um agendamento se aplica apenas à **manutenção da plataforma** — atualizações de versões
-menores, atualizações de recursos do serviço gerenciado e patches do sistema operacional descritos em
+Um agendamento se aplica apenas à **manutenção da plataforma** — upgrades de versões
+secundárias, atualizações de recursos do serviço gerenciado e patches do sistema operacional descritos em
 [Atualizações de manutenção](#maintenance-updates).
 
 As alterações que você inicia não são adiadas para a janela e são aplicadas assim
@@ -110,18 +125,22 @@ o redimensionamento do armazenamento e a alteração de [parâmetros de configur
 
 <Note>
   Os upgrades agendados são realizados conforme possível. A manutenção poderá ser aplicada fora da sua janela quando for
-  necessária para a saúde da sua instância, como quando o uso de disco atingir 95%, ou para
+  necessária para a saúde da sua instância — por exemplo, quando o uso de disco atingir 95% — ou para
   a aplicação de patches críticos de segurança e correções de vulnerabilidades. Você será notificado sobre essas exceções conforme
   necessário.
 </Note>
 
-### Réplicas de leitura {#read-replicas}
+<div id="read-replicas">
+  ### Réplicas de leitura
+</div>
 
 As [réplicas de leitura](/pt-BR/products/managed-postgres/read-replicas) seguem o agendamento da
 instância primária e não têm agendamento próprio; por isso, a seção **Upgrades agendados**
 não é exibida para elas.
 
-## Upgrades entre versões principais {#major-version-upgrades}
+<div id="major-version-upgrades">
+  ## Upgrades entre versões principais
+</div>
 
 Os upgrades entre versões principais (por exemplo, da 17.x para a 18.x) via UI e API estarão disponíveis em breve.
 Enquanto isso, entre em contato com o [suporte](https://clickhouse.com/support/program) para atualizar sua instância de ClickHouse Managed Postgres.

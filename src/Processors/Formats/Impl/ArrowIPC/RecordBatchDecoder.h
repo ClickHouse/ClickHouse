@@ -6,11 +6,9 @@
 
 #include <Processors/Formats/Impl/ArrowIPC/FlatBuffersCommon.h>
 #include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
-#include <Core/Block_fwd.h>
 #include <Common/PODArray.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -78,7 +76,7 @@ public:
         VectorWithMemoryTracking<Values> segments;
         VectorWithMemoryTracking<size_t> offsets;
 
-        [[nodiscard]] size_t size() const
+        size_t size() const
         {
             return offsets.back();
         }
@@ -88,7 +86,7 @@ public:
     /// batch is decoded for the same uses as its base and must decode to the same column layout there, so
     /// referenced values can be gathered into a common output column.
     void set(Int64 id, const DictionaryUse & use, Values values, bool is_delta);
-    [[nodiscard]] const Dictionary & get(Int64 id, const DictionaryUse & use) const;
+    const Dictionary & get(Int64 id, const DictionaryUse & use) const;
     /// Drops all dictionaries (used when an `IInputFormat` is reset to read another stream).
     void clear() { dictionaries.clear(); }
 
@@ -121,23 +119,6 @@ size_t rawByteWidth(const WhichDataType & which);
 /// then left as String for the subsequent cast (matching the library reader's text-parse fallback).
 MutableColumnPtr reinterpretStringLeaf(const ColumnString & str, const NullMap * null_map, const DataTypePtr & to_no_null);
 
-/// Reinterpret the raw bytes of a fixed_size_binary column (`ColumnFixedString`) as a UUID, IPv6, or big
-/// integer, matching the ClickHouse Arrow writer (which stores those types as fixed_size_binary) and the
-/// library reader. Returns nullptr when `to_no_null` is not one of those types. Throws on a width mismatch:
-/// a wrong-width value is corrupt for these fixed-width targets (the library reader rejects it too), and
-/// letting it fall through to `castColumn` would text-parse the bytes.
-MutableColumnPtr reinterpretFixedStringLeaf(const ColumnFixedString & fixed, const DataTypePtr & to_no_null);
-
-/// Decodes a column the writer had no Arrow mapping for and wrote with `serializeBinary`, back into the type
-/// its `clickhouse.opaque` tag names. Returns null when the field is not one, or names a type other than
-/// `to_no_null`, leaving the bytes to be read as `String`.
-MutableColumnPtr deserializeOpaqueBinaryLeaf(
-    const ColumnString & str,
-    const NullMap * null_map,
-    const DataTypePtr & to_no_null,
-    const ArrowField & field,
-    const FormatSettings & format_settings);
-
 /// Navigation helpers for requested-type hints, shared between the decoder's hint recursion and the
 /// post-decode raw-byte rewrite in `ArrowIPCBlockInputFormat` — both must resolve the target of a
 /// nested field by the same rules, or a leaf the decoder converted comes back to a rewrite that
@@ -151,9 +132,11 @@ DataTypePtr stripHint(const DataTypePtr & type);
 /// The requested type hint for the element of an Array-like field, or null when the hint is not an Array.
 DataTypePtr arrayElementHint(const DataTypePtr & hint);
 
-/// The requested type hints for the fields of a struct, null where there is none: matched by name as the later CAST matches them
-/// (`DataTypeTuple::matchElementsByName`), else by position: an unnamed Tuple hint (Map entries) or `by_position` (`positional_fields`).
-DataTypes tupleElementHints(const DataTypePtr & hint, const Strings & field_names, bool by_position, bool case_insensitive);
+/// The requested type hint for a struct child. For a named Tuple it is matched by element name — the same
+/// way the later named-tuple CAST maps the struct, including case-insensitively when requested — and there
+/// is no positional fallback (that could attach the hint to the wrong element). For an unnamed Tuple (the
+/// synthetic Map-entries hint) it is matched by position. Null when the hint is not a Tuple or has no match.
+DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name, size_t pos, bool case_insensitive);
 
 /// A synthetic Tuple(key, value) hint for a Map's entries struct, or null when the hint is not a Map.
 DataTypePtr mapEntriesHint(const DataTypePtr & hint);
@@ -189,9 +172,6 @@ public:
         String name;
         DataTypePtr type;
         ColumnPtr column;
-        /// The schema field this came from, so the post-decode rewrite can read its metadata. Points into
-        /// the decoder's schema, which outlives every batch.
-        const ArrowField * field = nullptr;
     };
 
     using DecodedColumns = VectorWithMemoryTracking<DecodedColumn>;
@@ -205,8 +185,8 @@ public:
 
     /// Decodes requested fields from a record batch, validating every root node's row count. When
     /// `keep_top_level_fields` is set, only the named fields have their values decoded; other fields are
-    /// skipped; their names are normalized according to the reader's case-insensitive matching setting.
-    /// `target_types` (see `bindRequestedTypes`) maps dotted field paths to requested types.
+    /// skipped. Names are normalized according to the reader's case-insensitive matching setting.
+    /// `target_types` maps normalized column names, including dotted subcolumn names, to requested types.
     /// These hints guide numeric `date32` decoding, raw-byte reinterpretation, and struct nullability at
     /// every nesting level, following the same rules as the Apache Arrow library reader.
     /// `reachable_buffers`, when set, is a 0/1 mask (see `reachableTopLevelBuffers`) marking the buffers the
@@ -216,23 +196,6 @@ public:
         const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields = nullptr,
         const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr,
         const VectorWithMemoryTracking<char> * reachable_buffers = nullptr);
-
-    /// A record batch whose layout is given directly rather than by a `RecordBatch` message: the pre-ordered field
-    /// nodes, the buffers each pointing to its own memory, and the variadic buffer counts of the view fields. This is
-    /// how a batch of the Arrow C data interface is decoded (see `ArrowCData`). Dictionary-encoded fields are not
-    /// supported here, as they have no record batch of their own.
-    struct ExternalBatch
-    {
-        Int64 length = 0;
-        VectorWithMemoryTracking<flatbuf::FieldNode> nodes;
-        VectorWithMemoryTracking<Slice> buffers;
-        VectorWithMemoryTracking<Int64> variadic_counts;
-    };
-
-    /// Decodes all fields of an external batch, as `decodeBatch` does with a message. The buffers must stay valid
-    /// for the duration of the call only: the decoded columns own their data.
-    DecodedColumns decodeExternalBatch(
-        const ExternalBatch & batch, const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr);
 
     /// Decodes a `DictionaryBatch` value column at the referencing field's position and requested type
     /// hint (`use`), following the same rules as inline values. `target_types_` supplies requested subcolumn
@@ -265,17 +228,13 @@ public:
         const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
         const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_) const;
 
-    /// The `target_types` of `header`: each column's type keyed by its name and, with case-insensitive matching, by the path
-    /// of the field it reads, resolved as the reader extracts the column. A field read by several case variants has none.
-    [[nodiscard]] UnorderedMapWithMemoryTracking<String, DataTypePtr> bindRequestedTypes(const Block & header) const;
-
 private:
     Slice nextBuffer();
     const flatbuf::FieldNode & nextNode();
     /// Returns the `FieldNode` at `offset` from the next node without consuming it.
-    [[nodiscard]] const flatbuf::FieldNode & peekNode(size_t offset) const;
+    const flatbuf::FieldNode & peekNode(size_t offset) const;
     /// Returns the next `FieldNode` length without consuming it.
-    [[nodiscard]] Int64 peekNextNodeLength() const;
+    Int64 peekNextNodeLength() const;
     /// Validates the next node's row count before decoding or skipping it. `what` identifies the field
     /// in the error message.
     void expectNextNodeLength(size_t expected, const String & what) const;
@@ -288,7 +247,7 @@ private:
     /// node is consumed). The child of a List/FixedSizeList/Map/Union field is the next node in the
     /// pre-order layout, and its row count is needed to size the child's invisible-rows mask before
     /// `decodeField` consumes the node.
-    [[nodiscard]] size_t peekNodeRows() const;
+    size_t peekNodeRows() const;
 
     /// Checks that a buffered subtree's declared row count fits the body's total bits before decoding.
     /// This also bounds allocations for bufferless fields declared ahead of their buffered siblings.
@@ -307,7 +266,7 @@ private:
     /// nulls, so every `null` leaf is all NULL and every struct row is valid. A buffer-less subtree that
     /// does declare nulls carries a validity bitmap, which bounds its length physically, and decodes on the
     /// ordinary path.
-    [[nodiscard]] bool isSizeDeterminedSubtree(const ArrowField & field) const;
+    bool isSizeDeterminedSubtree(const ArrowField & field) const;
     /// The recursive walk of `isSizeDeterminedSubtree` over the nodes of a buffer-less subtree. `node_offset`
     /// is the subtree's first node relative to the next node and is advanced past the subtree.
     bool bufferlessSubtreeDeclaresNulls(const ArrowField & field, size_t & node_offset) const;
@@ -344,10 +303,6 @@ private:
     /// lengths before decoding. Otherwise, skips unrequested values without reading their buffers.
     /// With `validate_lengths`, also collects the non-nullable fields with nulls into `undeclared_null_fields`.
     void advanceField(const ArrowField & field, bool validate_lengths = false);
-    /// Converts the buffers of `fields` in the current batch from big-endian to little-endian in place: walks
-    /// them in layout order with `advanceField`, which byte-swaps every buffer it passes, then rewinds the
-    /// cursors. `prepareBuffers` has already copied a big-endian batch's buffers into `decompressed_body`.
-    void convertBuffersFromBigEndian(const ArrowField * fields, size_t count);
     ColumnPtr decodeInner(
         const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path,
         size_t list_depth, const InvisibleRowsMask * invisible_rows);
@@ -370,29 +325,18 @@ private:
         const DictionaryUse & use);
     /// The use of the dictionary of a field at `path`, `list_depth` lists below the top level, with the hint
     /// `target_hint` from its parent: the use `collectDictionaryUses` records for the field.
-    [[nodiscard]] DictionaryUse dictionaryUse(const DataTypePtr & target_hint, const String & path, size_t list_depth) const;
-    [[nodiscard]] ColumnUInt8::Ptr buildNullMap(const Slice & validity, size_t rows, Int64 null_count) const;
+    DictionaryUse dictionaryUse(const DataTypePtr & target_hint, const String & path, size_t list_depth) const;
+    ColumnUInt8::Ptr buildNullMap(const Slice & validity, size_t rows, Int64 null_count) const;
     /// Nullable structs retain their null maps when tuples are nullable or a tuple conversion is
     /// requested. The reader applies the destination nullability after converting visible rows.
-    [[nodiscard]] bool wrapsInNullable(const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint) const;
-    /// Decodes a RunEndEncoded field (which has no buffers of its own) into a column of its values type, with each
-    /// run's value repeated for its rows. The nulls are those of the values.
-    ColumnPtr decodeRunEndEncoded(
-        const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path, size_t list_depth,
-        const InvisibleRowsMask * invisible_rows, ColumnUInt8::Ptr * decoded_null_map);
+    bool wrapsInNullable(const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint) const;
     ColumnPtr readOffsetsAndChild(
-        const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path,
-        size_t list_depth, const InvisibleRowsMask * invisible_rows);
-    /// Decodes a ListView/LargeListView field into an `Array`: each visible row copies the child range
-    /// [offset, offset + size), which may overlap other rows' ranges and come in any order. An invisible row
-    /// (whose offset and size are undefined) is an empty array, like an invisible List row.
-    ColumnPtr readListViewAndChild(
         const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path,
         size_t list_depth, const InvisibleRowsMask * invisible_rows);
     /// The requested ClickHouse type for a field: `resolveHint` over the requested types of the batch being
     /// decoded (`target_types`), preferring the hint derived from the parent and otherwise looking up `path`,
     /// the dotted column name, `list_depth` lists below the top level.
-    [[nodiscard]] DataTypePtr resolveTargetHint(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const;
+    DataTypePtr resolveTargetHint(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const;
 
     void prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body, const VectorWithMemoryTracking<char> * reachable);
 
@@ -415,29 +359,19 @@ private:
     void finishBatch();
 
     /// A field name as the reader matches it against the header: lower-cased when column matching is
-    /// case-insensitive. The keys of `keep_top_level_fields` use the same normalization.
-    [[nodiscard]] String normalizedName(const String & name) const;
+    /// case-insensitive. The keys of `keep_top_level_fields` and `target_types` use the same normalization.
+    String normalizedName(const String & name) const;
     /// The dotted name of a struct child for the requested-type lookups (`resolveTargetHint`): the child's
-    /// name appended to its parent's path.
-    [[nodiscard]] String childPath(const String & path, const String & child_name) const;
-    /// The requested type hints of the fields of a struct and the path of its `i`-th field: by name, or by position (the path
-    /// then uses the 1-based element number, as for an unnamed `Tuple`) when the struct has `positional_fields`.
-    /// Positional paths keep equally named fields apart in the dictionary uses, which are keyed by path.
-    [[nodiscard]] DataTypes structFieldHints(const DataTypePtr & hint, const ArrowType & type) const;
-    [[nodiscard]] String structFieldPath(const String & path, const ArrowType & type, size_t i) const;
+    /// normalized name appended to its parent's path.
+    String childPath(const String & path, const String & child_name) const;
 
     const ArrowSchema & schema;
     const FormatSettings & settings;
     const DictionaryRegistry & registry;
 
-    /// Points the node cursor at the nodes and length of `batch`, or clears them for null.
-    void setBatchNodes(const flatbuf::RecordBatch * batch);
-
-    /// State valid only during a single decode call: the field nodes and the row count of the current batch.
-    const flatbuf::FieldNode * current_nodes = nullptr;
-    size_t current_num_nodes = 0;
-    Int64 current_length = 0;
-    /// Requested column types by dotted field path, for the recursive `date32` numeric type hint;
+    /// State valid only during a single decode call.
+    const flatbuf::RecordBatch * current_batch = nullptr;
+    /// Requested column types by normalized (dotted) name, for the recursive `date32` numeric type hint;
     /// null when the caller did not provide them. Points at the caller's map for the call's duration.
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr;
     /// Set while decoding the children of a union (see `decodeUnion`), and the values of a dictionary used
@@ -454,8 +388,6 @@ private:
     /// For BinaryView/Utf8View columns: the per-field count of variadic data buffers.
     VectorWithMemoryTracking<Int64> variadic_counts;
     size_t variadic_index = 0;
-    /// Set during `convertBuffersFromBigEndian`: `advanceField` byte-swaps the buffers it passes.
-    bool swap_from_big_endian = false;
     UnorderedSetWithMemoryTracking<const ArrowField *> undeclared_null_fields;
 };
 

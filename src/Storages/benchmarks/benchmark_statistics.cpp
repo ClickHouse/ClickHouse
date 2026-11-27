@@ -161,7 +161,7 @@ size_t serializedSize(const ColumnStatisticsPtr & statistics)
 {
     String data;
     WriteBufferFromString buffer(data);
-    statistics->serialize(buffer, LATEST_STATISTICS_FILE_VERSION);
+    statistics->serialize(buffer);
     buffer.finalize();
     return data.size();
 }
@@ -178,7 +178,7 @@ void benchmarkSerialize(benchmark::State & state, const std::vector<StatisticsTy
     {
         data.clear();
         WriteBufferFromString buffer(data);
-        statistics->serialize(buffer, LATEST_STATISTICS_FILE_VERSION);
+        statistics->serialize(buffer);
         buffer.finalize();
         benchmark::DoNotOptimize(data.data());
         benchmark::ClobberMemory();

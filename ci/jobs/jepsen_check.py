@@ -8,25 +8,15 @@ from pathlib import Path
 from typing import Any, List
 
 import boto3
-from botocore.config import Config
+from tests.ci.ssh import SSHKey
 
 from ci.defs.defs import JobNames
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.secret import Secret
 from ci.praktika.utils import Shell, Utils
-from ci.tools.ssh import SSHKey
 
 JEPSEN_GROUP_NAME = "jepsen_group"
-
-# Auto Scaling throttles per account; standard mode caps a backoff at 20 s,
-# so 13 attempts keep retrying for up to about 3 minutes.
-AWS_CLIENT_CONFIG = Config(retries={"mode": "standard", "total_max_attempts": 13})
-
-
-def aws_client(service):
-    return boto3.client(service, region_name="us-east-1", config=AWS_CLIENT_CONFIG)
-
 
 KEEPER_DESIRED_INSTANCE_COUNT = 3
 SERVER_DESIRED_INSTANCE_COUNT = 4
@@ -97,7 +87,7 @@ def get_instances_addresses(ec2_client, instance_ids):
 
 
 def prepare_autoscaling_group_and_get_hostnames(count):
-    asg_client = aws_client("autoscaling")
+    asg_client = boto3.client("autoscaling", region_name="us-east-1")
     asg_client.set_desired_capacity(
         AutoScalingGroupName=JEPSEN_GROUP_NAME, DesiredCapacity=count
     )
@@ -111,12 +101,12 @@ def prepare_autoscaling_group_and_get_hostnames(count):
         if counter > 30:
             raise RuntimeError("Cannot wait autoscaling group")
 
-    ec2_client = aws_client("ec2")
+    ec2_client = boto3.client("ec2", region_name="us-east-1")
     return get_instances_addresses(ec2_client, instances)
 
 
 def clear_autoscaling_group():
-    asg_client = aws_client("autoscaling")
+    asg_client = boto3.client("autoscaling", region_name="us-east-1")
     asg_client.set_desired_capacity(
         AutoScalingGroupName=JEPSEN_GROUP_NAME, DesiredCapacity=0
     )

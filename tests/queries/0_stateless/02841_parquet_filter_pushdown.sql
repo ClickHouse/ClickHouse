@@ -1,5 +1,4 @@
--- Tags: no-parallel
--- Random settings limits: input_format_parquet_filter_push_down=(1, 1)
+-- Tags: no-fasttest, no-parallel
 
 set output_format_parquet_row_group_size = 100;
 

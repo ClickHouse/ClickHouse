@@ -1,0 +1,4 @@
+<clickhouse>
+    <storage_connections_rcvbuf>262144</storage_connections_rcvbuf>
+    <storage_connections_sndbuf>262144</storage_connections_sndbuf>
+</clickhouse>

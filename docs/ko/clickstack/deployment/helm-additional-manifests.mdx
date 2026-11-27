@@ -14,7 +14,9 @@ keywords: ['ClickStack 추가 매니페스트', 'Helm 사용자 지정 리소스
 
 `additionalManifests` 값을 사용하면 ClickStack 차트와 함께 임의의 Kubernetes 객체를 배포할 수 있습니다. 차트가 기본적으로 템플릿으로 제공하지 않는 `NetworkPolicy`, `HorizontalPodAutoscaler`, `ServiceAccount`, `PodMonitor`, 사용자 지정 `인그레스` 객체 등과 같은 리소스나 기타 Kubernetes API 객체를 배포할 때 사용하십시오.
 
-## 작동 방식 {#how-it-works}
+<div id="how-it-works">
+  ## 작동 방식
+</div>
 
 `additionalManifests`의 각 항목은 완전한 Kubernetes 리소스 정의입니다. 이 차트는 다음을 수행합니다.
 
@@ -38,7 +40,9 @@ additionalManifests:
       release: '{{ .Release.Name }}'
 ```
 
-## values 파일 제약사항 {#values-file-constraints}
+<div id="values-file-constraints">
+  ## values 파일 제약사항
+</div>
 
 `additionalManifests`는 values 파일에서 구성되며, values 파일은 `tpl`이 실행되기 전에 먼저 YAML로 파싱됩니다.
 
@@ -59,7 +63,9 @@ labels:
   {{- include "clickstack.labels" . | nindent 2 }}
 ```
 
-## 사용 가능한 차트 헬퍼 {#available-chart-helpers}
+<div id="available-chart-helpers">
+  ## 사용 가능한 차트 헬퍼
+</div>
 
 이 헬퍼는 `templates/_helpers.tpl`에 정의되어 있습니다:
 
@@ -74,9 +80,13 @@ labels:
 | `clickstack.clickhouse.fullname` | ClickHouse CR 이름  | 따옴표로 감싼 스칼라에서 안전하게 사용 가능 |
 | `clickstack.otel.fullname`       | OTel collector 이름 | 따옴표로 감싼 스칼라에서 안전하게 사용 가능 |
 
-## 예시 {#examples}
+<div id="examples">
+  ## 예시
+</div>
 
-### ServiceAccount {#serviceaccount}
+<div id="serviceaccount">
+  ### ServiceAccount
+</div>
 
 ```yaml
 additionalManifests:
@@ -92,9 +102,11 @@ additionalManifests:
         eks.amazonaws.com/role-arn: "arn:aws:iam::123456789:role/my-role"
 ```
 
-### NetworkPolicy {#networkpolicy}
+<div id="networkpolicy">
+  ### NetworkPolicy
+</div>
 
-ClickStack UI 파드에 대한 수신 트래픽을 제한합니다:
+HyperDX 파드에 대한 수신 트래픽을 제한합니다:
 
 ```yaml
 additionalManifests:
@@ -121,7 +133,9 @@ additionalManifests:
               port: 8000
 ```
 
-### HorizontalPodAutoscaler {#horizontalpodautoscaler}
+<div id="horizontalpodautoscaler">
+  ### HorizontalPodAutoscaler
+</div>
 
 ```yaml
 additionalManifests:
@@ -145,7 +159,9 @@ additionalManifests:
               averageUtilization: 75
 ```
 
-### PodMonitor (Prometheus Operator) {#podmonitor}
+<div id="podmonitor">
+  ### PodMonitor (Prometheus Operator)
+</div>
 
 ```yaml
 additionalManifests:
@@ -165,7 +181,9 @@ additionalManifests:
           interval: 30s
 ```
 
-### AWS ALB 인그레스 {#aws-alb-ingress}
+<div id="aws-alb-ingress">
+  ### AWS ALB 인그레스
+</div>
 
 [AWS Load Balancer Controller](https://kubernetes-sigs.github.io/aws-load-balancer-controller/)를 사용할 때는 차트에 기본으로 포함된 nginx 인그레스를 비활성화하고, 사용자 지정 ALB 인그레스를 정의합니다:
 
@@ -204,7 +222,9 @@ additionalManifests:
 
 내부 OTel collector 인그레스와 HPA를 포함한 전체 ALB 설정 예시는 [ALB values 예시](https://github.com/ClickHouse/ClickStack-helm-charts/tree/main/examples/alb-ingress)를 참조하십시오.
 
-### TargetGroupBinding {#targetgroupbinding}
+<div id="targetgroupbinding">
+  ### TargetGroupBinding
+</div>
 
 명시적으로 `TargetGroupBinding` 리소스가 필요한 ALB 시나리오의 경우:
 
@@ -222,7 +242,9 @@ additionalManifests:
       targetType: ip
 ```
 
-## 고급: 래퍼 차트 템플릿 {#advanced-wrapper-chart-templates}
+<div id="advanced-wrapper-chart-templates">
+  ## 고급: 래퍼 차트 템플릿
+</div>
 
 `include "clickstack.labels" . | nindent 4`와 같은 구조적 헬퍼가 필요하다면, 해당 블록을 values 파일에 직접 넣지 말고 래퍼 차트 템플릿(`templates/*.yaml`)에서 렌더링하십시오.
 
@@ -239,9 +261,13 @@ data:
   appPort: "{{ .Values.hyperdx.ports.app }}"
 ```
 
-## 팁 {#tips}
+<div id="tips">
+  ## 팁
+</div>
 
-### Helm hooks {#helm-hooks}
+<div id="helm-hooks">
+  ### Helm hooks
+</div>
 
 각 `additionalManifests` 항목은 별도의 YAML 문서로 렌더링됩니다. 설치/업그레이드 순서를 제어할 수 있도록 Helm hook 어노테이션을 추가할 수 있습니다:
 
@@ -264,15 +290,21 @@ additionalManifests:
               command: ["./migrate.sh"]
 ```
 
-### CRD 적용 순서 {#crd-ordering}
+<div id="crd-ordering">
+  ### CRD 적용 순서
+</div>
 
 추가 매니페스트에 사용자 지정 리소스(예: `PodMonitor`)가 포함된 경우, 설치하거나 업그레이드하기 전에 해당 CRD가 클러스터에 이미 있어야 합니다.
 
-### 여러 리소스 결합하기 {#combining-multiple-resources}
+<div id="combining-multiple-resources">
+  ### 여러 리소스 결합하기
+</div>
 
 `additionalManifests`는 목록입니다. 항목은 목록 순서대로 렌더링되며, 각 항목은 각각의 YAML 문서로 생성됩니다.
 
-## 다음 단계 {#next-steps}
+<div id="next-steps">
+  ## 다음 단계
+</div>
 
 * [메인 Helm 가이드](/ko/clickstack/deployment/helm) - 기본 설치
 * [구성 가이드](/ko/clickstack/deployment/helm-configuration) - API Keys, 시크릿, 인그레스

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/QueueWithMemoryTracking.h>
 #include <Columns/ColumnsNumber.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
@@ -59,9 +57,8 @@ public:
         bool enable_vertical_final_ = false,
         bool read_in_reverse_ = false);
 
-    [[nodiscard]] const char * getName() const override { return "ReplacingSortedAlgorithm"; }
+    const char * getName() const override { return "ReplacingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
-    void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
 private:
@@ -80,21 +77,7 @@ private:
     /// `can_skip_to_run_end` and the queue actually detects batches - the condition the merge
     /// loop tests. Decided in `initialize`.
     bool skip_runs_of_equal_keys = false;
-
-    /// Runs of the sorting key prefixes found in each source's chunk, valid for the batch end `end`.
-    struct SourceKeyRuns
-    {
-        SortedKeyRuns runs;
-        size_t end = 0;
-    };
-    VectorWithMemoryTracking<SourceKeyRuns> source_key_runs;
-
-    QueueWithMemoryTracking<detail::SharedChunkPtr> to_be_emitted;   /// To save chunks when using skipping final
-
-    /// Vertical FINAL: rows selected so far and the selections of chunks still being merged that waited too long.
-    size_t num_selected_rows = 0;
-    size_t next_waiting_selections_check = 0;
-    QueueWithMemoryTracking<Chunk> waiting_selections;
+    std::queue<detail::SharedChunkPtr> to_be_emitted;   /// To save chunks when using skipping final
 
     using RowRef = detail::RowRefWithOwnedChunk;
     static constexpr size_t max_row_refs = 2; /// last, current.
@@ -104,11 +87,8 @@ private:
     /// Sources of rows with the current primary key.
     PODArray<RowSourcePart> current_row_sources;
 
-    [[nodiscard]] bool isSelectedRowSkipped() const;
     void insertRow();
     void insertRowImpl();
-    void flushCurrentRowSources(bool keep_selected_row);
-    void insertChunk(size_t source_num, Chunk chunk);
 
     /// Method for using in skipping FINAL logic
     /// Skipping FINAL doesn't merge rows to new chunks but marks selected rows in input chunks and emit them
@@ -118,9 +98,6 @@ private:
     /// When changing current `selected_row`, if selected_row is the last owner of an input chunk and that chunk
     /// has selected rows, we also keep it
     void saveChunkForSkippingFinalFromSelectedRow();
-    /// Emit the rows selected so far from the chunks that waited longer than a merge of their input should take.
-    void emitLongWaitingSelections();
-    Status popWaitingSelection();
 };
 
 }

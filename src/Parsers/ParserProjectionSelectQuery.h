@@ -10,7 +10,7 @@ namespace DB
 class ParserProjectionSelectQuery : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "PROJECTION SELECT query"; }
+    const char * getName() const override { return "PROJECTION SELECT query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

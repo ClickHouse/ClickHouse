@@ -10,7 +10,6 @@ import uuid
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 NAMED_COLLECTIONS_CONFIG = os.path.join(
@@ -785,92 +784,6 @@ def test_sql_commands(cluster, with_keeper):
     check_dropped()
 
 
-@pytest.mark.parametrize("with_keeper", [False, True])
-def test_create_or_replace(cluster, with_keeper):
-    zk = None
-    if with_keeper:
-        node = cluster.instances["node_with_keeper"]
-        zk = cluster.get_kazoo_client("zoo1")
-    else:
-        node = cluster.instances["node"]
-
-    def get_create_query():
-        return node.query("select create_query from system.named_collections where name = 'col'").strip()
-
-    def get_zk_payload():
-        zk.sync(ZK_PATH)
-        return zk.get(ZK_PATH + "/col.sql")[0]
-
-    node.query("CREATE OR REPLACE NAMED COLLECTION col AS key1=1, key2='value2' OVERRIDABLE")
-
-    assert "CREATE NAMED COLLECTION col AS key1 = 1, key2 = \\'value2\\' OVERRIDABLE" == get_create_query()
-    if with_keeper:
-        assert b"CREATE NAMED COLLECTION col AS key1 = 1, key2 = 'value2' OVERRIDABLE" in get_zk_payload()
-
-    assert "already exists" in node.query_and_get_error("CREATE NAMED COLLECTION col AS key1=1")
-
-    node.query("CREATE OR REPLACE NAMED COLLECTION col AS key1=4, key3='value3' NOT OVERRIDABLE")
-
-    def check_replaced():
-        assert (
-            "['key1','key3']"
-            == node.query(
-                "select mapKeys(collection) from system.named_collections where name = 'col'"
-            ).strip()
-        )
-        assert (
-            "4"
-            == node.query(
-                "select collection['key1'] from system.named_collections where name = 'col'"
-            ).strip()
-        )
-        assert (
-            "CREATE NAMED COLLECTION col AS key1 = 4, key3 = \\'value3\\' NOT OVERRIDABLE"
-            == get_create_query()
-        )
-        if zk is not None:
-            assert (
-                b"CREATE NAMED COLLECTION col AS key1 = 4, key3 = 'value3' NOT OVERRIDABLE"
-                in get_zk_payload()
-            )
-
-    check_replaced()
-    node.restart_clickhouse()
-    check_replaced()
-
-    node.query("CREATE OR REPLACE NAMED COLLECTION col AS key3='value3'")
-    assert "CREATE NAMED COLLECTION col AS key3 = \\'value3\\'" == get_create_query()
-
-    assert "immutable" in node.query_and_get_error("CREATE OR REPLACE NAMED COLLECTION collection1 AS key1=1")
-    if zk is not None:
-        zk.sync(ZK_PATH)
-        assert "collection1.sql" not in zk.get_children(ZK_PATH)
-
-    if not with_keeper:
-        node.query("DROP USER IF EXISTS user_or_replace")
-        node.query("CREATE USER user_or_replace")
-        node.query("GRANT create named collection ON col TO user_or_replace")
-        assert (
-            "necessary to have the grant DROP NAMED COLLECTION"
-            in node.query_and_get_error(
-                "CREATE OR REPLACE NAMED COLLECTION col AS key1=1", user="user_or_replace"
-            )
-        )
-        node.query("GRANT drop named collection ON col TO user_or_replace")
-        node.query(
-            "CREATE OR REPLACE NAMED COLLECTION col AS key1=1", user="user_or_replace"
-        )
-        node.query("DROP USER user_or_replace")
-
-    node.query("DROP NAMED COLLECTION col")
-    assert "0" == node.query("select count() from system.named_collections where name = 'col'").strip()
-
-    if with_keeper:
-        node2 = cluster.instances["node_with_keeper_2"]
-        while node2.query("select count() from system.named_collections where name = 'col'").strip() != "0":
-            time.sleep(0.5)
-
-
 def test_keeper_storage(cluster):
     node1 = cluster.instances["node_with_keeper"]
     node2 = cluster.instances["node_with_keeper_2"]
@@ -1186,46 +1099,3 @@ def test_concurrent_create_drop_race_condition(cluster):
                         node.query(f"DROP NAMED COLLECTION IF EXISTS {coll}")
             except Exception:
                 pass
-
-
-def test_keeper_storage_lagging_replica(cluster):
-    # A replica loads the collections written through another replica when its Keeper watch is
-    # processed; until then they are in the shared storage but not in its memory.
-    node1 = cluster.instances["node_with_keeper"]
-    node2 = cluster.instances["node_with_keeper_2"]
-
-    node2.query("SYSTEM ENABLE FAILPOINT named_collections_replicated_update_pause")
-    try:
-        node1.query("CREATE NAMED COLLECTION lagging AS key1=1")
-        node1.query("CREATE NAMED COLLECTION lagging_dropped AS key1=1")
-        assert (
-            node2.query(
-                "SELECT count() FROM system.named_collections WHERE name LIKE 'lagging%'"
-            )
-            == "0\n"
-        )
-
-        # The queries of the lagging replica see the stored collections all the same.
-        assert "already exists" in node2.query_and_get_error(
-            "CREATE NAMED COLLECTION lagging AS key1=2"
-        )
-        node2.query("CREATE NAMED COLLECTION IF NOT EXISTS lagging AS key1=2")
-        node2.query("CREATE OR REPLACE NAMED COLLECTION lagging AS key1=3")
-        node2.query("DROP NAMED COLLECTION lagging_dropped")
-        assert (
-            node2.query(
-                "SELECT name, collection['key1'] FROM system.named_collections "
-                "WHERE name LIKE 'lagging%' ORDER BY name"
-            )
-            == "lagging\t3\n"
-        )
-    finally:
-        node2.query("SYSTEM DISABLE FAILPOINT named_collections_replicated_update_pause")
-
-    assert_eq_with_retry(
-        node1,
-        "SELECT name, collection['key1'] FROM system.named_collections "
-        "WHERE name LIKE 'lagging%' ORDER BY name",
-        "lagging\t3",
-    )
-    node1.query("DROP NAMED COLLECTION lagging")

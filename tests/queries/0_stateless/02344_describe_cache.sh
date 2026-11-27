@@ -18,6 +18,4 @@ $CLICKHOUSE_CLIENT -m --query """
 SELECT count() FROM system.disks WHERE name = '$disk_name'
 """
 
-$CLICKHOUSE_CLIENT --query "SYSTEM WAIT BLOBS CLEANUP '${disk_name}'"
-
 $CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"

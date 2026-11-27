@@ -9,13 +9,19 @@ doc_type: 'guide'
 import ExampleSetup from '/snippets/pt-BR/_example_setup.mdx';
 import Syntax from '/snippets/pt-BR/_syntax.mdx';
 
-## Sintaxe {#syntax}
+<div id="syntax">
+  ## Sintaxe
+</div>
 
 <Syntax />
 
-## Configurar destinos de backup em disco {#configure-backup-destinations-for-disk}
+<div id="configure-backup-destinations-for-disk">
+  ## Configurar destinos de backup em disco
+</div>
 
-### Configurar um destino de backup em disco local {#configure-a-backup-destination}
+<div id="configure-a-backup-destination">
+  ### Configurar um destino de backup em disco local
+</div>
 
 Nos exemplos abaixo, você verá o destino de backup especificado como `Disk('backups', '1.zip')`.
 Para usar o mecanismo de backup `Disk`, primeiro é necessário adicionar um arquivo que especifique
@@ -45,7 +51,9 @@ lista **allowed&#95;disk** de **backups**:
 </clickhouse>
 ```
 
-### Configure um destino de backup para disco S3 {#backuprestore-using-an-s3-disk}
+<div id="backuprestore-using-an-s3-disk">
+  ### Configure um destino de backup para disco S3
+</div>
 
 Também é possível fazer `BACKUP`/`RESTORE` no S3 configurando um disco S3 na
 configuração de armazenamento do ClickHouse. Configure o disco assim, adicionando um arquivo a
@@ -94,9 +102,13 @@ RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
     a sintaxe `BACKUP ... TO S3(<endpoint>)` para esse caso de uso.
 </Note>
 
-## Exemplos de uso de backup/restauração em disco local {#usage-examples}
+<div id="usage-examples">
+  ## Exemplos de uso de backup/restauração em disco local
+</div>
 
-### Fazer backup e restaurar uma tabela {#backup-and-restore-a-table}
+<div id="backup-and-restore-a-table">
+  ### Fazer backup e restaurar uma tabela
+</div>
 
 <ExampleSetup />
 
@@ -161,7 +173,9 @@ O arquivo desse backup tem a seguinte estrutura:
 É possível usar formatos diferentes de zip. Veja [&quot;Backups como arquivos tar&quot;](#backups-as-tar-archives)
 abaixo para mais detalhes.
 
-### Backups incrementais em disco {#incremental-backups}
+<div id="incremental-backups">
+  ### Backups incrementais em disco
+</div>
 
 Um backup de base no ClickHouse é o backup inicial e completo a partir do qual os
 backups incrementais subsequentes são criados. Os backups incrementais armazenam apenas as alterações
@@ -193,7 +207,9 @@ RESTORE TABLE test_db.test_table AS test_db.test_table2
 FROM Disk('backups', 'incremental-a.zip');
 ```
 
-### Protegendo um backup {#assign-a-password-to-the-backup}
+<div id="assign-a-password-to-the-backup">
+  ### Protegendo um backup
+</div>
 
 Backups gravados em disco podem ter uma senha aplicada ao arquivo.
 A senha pode ser especificada usando a configuração `password`.
@@ -219,7 +235,9 @@ FROM Disk('backups', 'password-protected.zip')
 SETTINGS password='qwerty'
 ```
 
-### Backups como arquivos tar {#backups-as-tar-archives}
+<div id="backups-as-tar-archives">
+  ### Backups como arquivos tar
+</div>
 
 Os backups podem ser armazenados não apenas como arquivos zip, mas também como arquivos tar.
 A funcionalidade é a mesma dos arquivos zip, exceto que a proteção por senha não é
@@ -255,7 +273,9 @@ Os sufixos de arquivos compactados compatíveis são:
 * `.tzst`
 * `.tar.xz`
 
-### Configurações de compressão {#compression-settings}
+<div id="compression-settings">
+  ### Configurações de compressão
+</div>
 
 O método e o nível de compressão podem ser especificados por meio das
 configurações `compression_method` e `compression_level`, respectivamente.
@@ -270,7 +290,9 @@ TO Disk('backups', 'filename.zip')
 SETTINGS compression_method='lzma', compression_level=3
 ```
 
-### Restaurar partições específicas {#restore-specific-partitions}
+<div id="restore-specific-partitions">
+  ### Restaurar partições específicas
+</div>
 
 Se for necessário restaurar partições específicas associadas a uma tabela, elas podem ser especificadas.
 

@@ -75,12 +75,10 @@
             "zh/integrations/connectors/data-visualization/tableau/tableau-analysis-tips"
           ]
         },
-        "zh/integrations/connectors/data-visualization/thoughtspot-and-clickhouse",
         {
           "expanded": false,
           "group": "Community integrations",
           "pages": [
-            "zh/integrations/connectors/data-visualization/community-integrations/arcodash-and-clickhouse",
             "zh/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse",
             "zh/integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse",
             "zh/integrations/connectors/data-visualization/community-integrations/databrain-and-clickhouse",
@@ -105,14 +103,7 @@
       "group": "Data ingestion",
       "pages": [
         "zh/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
-        {
-          "expanded": false,
-          "group": "Apache Airflow",
-          "pages": [
-            "zh/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
-            "zh/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin"
-          ]
-        },
+        "zh/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
         "zh/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
         {
           "expanded": false,
@@ -179,20 +170,11 @@
           ]
         },
         {
-          "group": "Striim",
-          "pages": [
-            "zh/integrations/connectors/data-ingestion/etl-tools/striim/index",
-            "zh/integrations/connectors/data-ingestion/etl-tools/striim/get-started",
-            "zh/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline"
-          ]
-        },
-        {
           "expanded": false,
           "group": "Community integrations",
           "pages": [
             "zh/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
             "zh/integrations/connectors/data-ingestion/community-integrations/erathos",
-            "zh/integrations/connectors/data-ingestion/community-integrations/sqlflow",
             {
               "group": "Estuary",
               "pages": [
@@ -228,7 +210,6 @@
         "zh/integrations/connectors/sql-clients/dbeaver",
         "zh/integrations/connectors/sql-clients/dbvisualizer",
         "zh/integrations/connectors/sql-clients/jupysql",
-        "zh/integrations/connectors/sql-clients/libredb-studio",
         "zh/integrations/connectors/sql-clients/probedeck",
         "zh/integrations/connectors/sql-clients/qstudio",
         "zh/integrations/connectors/sql-clients/tablum",
@@ -247,5 +228,6 @@
       ]
     }
   ],
+  "icon": "/images/icons/icon-connectors.svg",
   "item": "Connectors"
 }

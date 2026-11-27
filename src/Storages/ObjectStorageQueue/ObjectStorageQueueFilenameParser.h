@@ -22,13 +22,13 @@ public:
 
     /// Parse filename and extract partition key
     /// @returns partition key if successful, std::nullopt if parsing fails
-    [[nodiscard]] std::optional<std::string> parse(const std::string & file_name) const;
+    std::optional<std::string> parse(const std::string & file_name) const;
 
     /// Check if parser is valid (regex compiled successfully)
-    [[nodiscard]] bool isValid() const { return partition_pattern != nullptr; }
+    bool isValid() const { return partition_pattern != nullptr; }
 
     /// Get error message if parser is invalid
-    [[nodiscard]] std::string getError() const { return error_message; }
+    std::string getError() const { return error_message; }
 
 private:
     std::unique_ptr<re2::RE2> partition_pattern;

@@ -6,11 +6,13 @@ keywords: ['aws', 'Amazon', 'marketplace', 'الفوترة', 'الالتزام',
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 ابدأ استخدام ClickHouse Cloud على [AWS Marketplace](https://aws.amazon.com/marketplace) من خلال عقد التزام.
-يتيح عقد الالتزام، المعروف أيضًا باسم عرض خاص، للعملاء الالتزام بإنفاق مبلغ معين على ClickHouse Cloud خلال فترة زمنية محددة.
+يتيح عقد الالتزام، المعروف أيضًا باسم Private Offer، للعملاء الالتزام بإنفاق مبلغ معين على ClickHouse Cloud خلال فترة زمنية محددة.
 
 <div id="prerequisites">
-  ## المتطلبات الأساسية {#prerequisites}
+  ## المتطلبات الأساسية
 </div>
 
 * عرض خاص من ClickHouse يستند إلى شروط تعاقدية محددة.
@@ -24,86 +26,61 @@ doc_type: 'guide'
 * إذا لم تكن تستخدم السياسات المُدارة من AWS، فيلزم توفر الأذونات التالية:
   * إجراء IAM ‏`aws-marketplace:ListPrivateListings` و`aws-marketplace:ViewSubscriptions`
 
-## خطوات التسجيل {#steps-to-sign-up}
+<div id="steps-to-sign-up">
+  ## خطوات التسجيل
+</div>
 
 <Steps>
-  <Step title="اقبل العرض الخاص" id="private-offer-accept">
-    من المفترض أن تكون قد تلقيت رسالة بريد إلكتروني تتضمن رابطًا لمراجعة العرض الخاص بك وقبوله.
+  <Step title="اقبل عرضك الخاص" id="private-offer-accept">
+    يُفترض أنك تلقيت رسالة بريد إلكتروني تتضمن رابطًا لمراجعة عرضك الخاص وقبوله.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![رسالة البريد الإلكتروني الخاصة بالعرض الخاص على AWS Marketplace](/images/cloud/reference/mp_committed_spend_1.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/reference/mp_committed_spend_1.webp" size="md" alt="رسالة البريد الإلكتروني الخاصة بالعرض الخاص في AWS Marketplace" />
   </Step>
 
-  <Step title="رابط مراجعة العرض" id="review-offer-link">
-    انقر على رابط Review Offer في رسالة البريد الإلكتروني.
-    سينقلك ذلك إلى صفحتك على AWS Marketplace التي تعرض تفاصيل العرض الخاص.
+  <Step title="راجع رابط العرض" id="review-offer-link">
+    انقر على رابط Review Offer في البريد الإلكتروني.
+    يُفترض أن ينقلك هذا إلى صفحة AWS Marketplace الخاصة بك التي تحتوي على تفاصيل العرض الخاص.
   </Step>
 
-  <Step title="إعداد حسابك" id="setup-your-account">
-    أكمل خطوات الاشتراك على بوابة AWS، ثم انقر على **&quot;إعداد حسابك&quot;**.
-    من الضروري في هذه المرحلة الانتقال إلى ClickHouse Cloud، ثم إنشاء حساب جديد أو تسجيل الدخول بحساب موجود.
-    فما لم تُكمل هذه الخطوة، لن نتمكن من ربط عقد AWS Marketplace الخاص بك بـ ClickHouse Cloud.
+  <Step title="قم بإعداد حسابك" id="setup-your-account">
+    أكمل خطوات الاشتراك في بوابة AWS ثم انقر على **&quot;Set up your account&quot;**.
+    من الضروري في هذه المرحلة أن تتم إعادة توجيهك إلى ClickHouse Cloud، ثم إما تسجيل حساب جديد أو تسجيل الدخول باستخدام حساب حالي.
+    ومن دون إكمال هذه الخطوة، لن نتمكن من ربط عقد AWS Marketplace الخاص بك بـ ClickHouse Cloud.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![رسالة البريد الإلكتروني الخاصة بالعرض الخاص على AWS Marketplace](/images/cloud/reference/mp_committed_spend_2.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/reference/mp_committed_spend_2.webp" size="md" alt="رسالة البريد الإلكتروني الخاصة بالعرض الخاص في AWS Marketplace" />
   </Step>
 
-  <Step title="تسجيل الدخول إلى Cloud" id="login-cloud">
-    بعد إعادة توجيهك إلى ClickHouse Cloud، يمكنك تسجيل الدخول بحساب موجود أو إنشاء حساب جديد.
-    هذه الخطوة ضرورية لكي نتمكن من ربط مؤسستك في ClickHouse Cloud بالفوترة عبر AWS Marketplace.
+  <Step title="سجّل الدخول إلى ClickHouse Cloud" id="login-cloud">
+    بمجرد إعادة توجيهك إلى ClickHouse Cloud، يمكنك إما تسجيل الدخول باستخدام حساب حالي أو تسجيل حساب جديد.
+    هذه الخطوة ضرورية حتى نتمكن من ربط مؤسسة ClickHouse Cloud الخاصة بك بالفوترة عبر AWS Marketplace.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![رسالة البريد الإلكتروني الخاصة بالعرض الخاص على AWS Marketplace](/images/cloud/reference/mp_committed_spend_3.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/reference/mp_committed_spend_3.webp" size="md" alt="رسالة البريد الإلكتروني الخاصة بالعرض الخاص في AWS Marketplace" />
   </Step>
 
-  <Step title="التسجيل للمستخدمين الجدد" id="register">
-    إذا كنت مستخدمًا جديدًا لـ ClickHouse Cloud، فانقر على &quot;Register&quot; في أسفل الصفحة.
-    سيُطلب منك إنشاء مستخدم جديد وتأكيد بريدك الإلكتروني.
-    بعد تأكيد بريدك الإلكتروني، يمكنك مغادرة صفحة تسجيل الدخول إلى ClickHouse Cloud وتسجيل الدخول باسم المستخدم الجديد عبر [https://console.clickhouse.cloud](https://console.clickhouse.cloud).
+  <Step title="سجّل إذا كنت مستخدمًا جديدًا" id="register">
+    إذا كنت مستخدمًا جديدًا في ClickHouse Cloud، فانقر على &quot;Register&quot; أسفل الصفحة.
+    سيُطلب منك إنشاء مستخدم جديد والتحقق من بريدك الإلكتروني.
+    بعد التحقق من بريدك الإلكتروني، يمكنك مغادرة صفحة تسجيل الدخول إلى ClickHouse Cloud ثم تسجيل الدخول باستخدام اسم المستخدم الجديد على [https://console.clickhouse.cloud](https://console.clickhouse.cloud).
 
-    إذا كنت مستخدمًا جديدًا، فستحتاج أيضًا إلى تقديم بعض المعلومات الأساسية عن نشاطك التجاري، كما هو موضح في لقطات الشاشة أدناه.
+    لاحظ أنه إذا كنت مستخدمًا جديدًا، فستحتاج أيضًا إلى تقديم بعض المعلومات الأساسية عن نشاطك التجاري.
+    راجع لقطات الشاشة أدناه.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![تقديم معلومات النشاط التجاري](/images/cloud/reference/mp_committed_spend_4.png)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/reference/mp_committed_spend_4.png" size="md" alt="قدّم معلومات النشاط التجاري" />
 
-    <div className="ch-image-md">
-      <Frame>
-        ![تقديم معلومات النشاط التجاري](/images/cloud/reference/mp_committed_spend_5.png)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/reference/mp_committed_spend_5.png" size="md" alt="قدّم معلومات النشاط التجاري" />
 
-    أما إذا كنت مستخدمًا حاليًا لـ ClickHouse Cloud، فما عليك سوى تسجيل الدخول باستخدام بيانات اعتمادك.
+    أما إذا كنت مستخدمًا حاليًا في ClickHouse Cloud، فما عليك سوى تسجيل الدخول باستخدام بيانات الاعتماد الخاصة بك.
   </Step>
 
-  <Step title="إنشاء مؤسسة أو اختيارها للفوترة" id="create-select-org-to-bill">
-    بعد تسجيل الدخول بنجاح، يمكنك إنشاء مؤسسة جديدة تُفوتَر على عقد السوق هذا، أو اختيار مؤسسة موجودة لتُفوتَر على هذا العقد.
+  <Step title="أنشئ مؤسسة للفوترة أو اختر واحدة موجودة" id="create-select-org-to-bill">
+    بعد تسجيل الدخول بنجاح، يمكنك تحديد ما إذا كنت تريد إنشاء مؤسسة جديدة لتتم فوترتها بموجب عقد marketplace هذا، أو اختيار مؤسسة حالية لتتم فوترتها بموجب هذا العقد.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![إنشاء مؤسسة أو اختيارها لفوترتها على هذا الاشتراك](/images/cloud/reference/mp_committed_spend_6.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/reference/mp_committed_spend_6.webp" size="md" alt="أنشئ مؤسسة أو اخترها لتتم الفوترة على هذا الاشتراك" />
 
-    بعد إكمال هذه الخطوة، ستُربط مؤسستك بعقد الالتزام بالإنفاق في AWS، وستتم فوترة كامل الاستخدام عبر حساب AWS الخاص بك.
-    ويمكنك التحقق من صفحة الفوترة الخاصة بالمؤسسة في واجهة ClickHouse من أن الفوترة أصبحت مرتبطة فعلًا بـ AWS Marketplace.
+    بعد إكمال هذه الخطوة، سيتم ربط مؤسستك بعقد الالتزام بالإنفاق الخاص بك لدى AWS، وستتم فوترة كل الاستخدام عبر AWS account الخاص بك.
+    يمكنك التأكد من صفحة الفوترة الخاصة بالمؤسسة في واجهة ClickHouse من أن الفوترة أصبحت الآن مرتبطة بالفعل بـ AWS Marketplace.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![تأكيد اكتمال الإعداد](/images/cloud/reference/mp_committed_spend_7.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/reference/mp_committed_spend_7.webp" size="md" alt="أكّد اكتمال الإعداد" />
 
     إذا واجهت أي مشكلات، فلا تتردد في التواصل مع [فريق الدعم](https://clickhouse.com/support/program) لدينا.
   </Step>

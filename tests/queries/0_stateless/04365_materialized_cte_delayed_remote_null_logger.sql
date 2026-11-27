@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel
 -- Tag no-parallel: failpoint use_delayed_remote_source is global and can force
 -- DelayedSource on concurrent tests and break them (same pattern as 02863, 04303).
 
@@ -10,6 +10,7 @@
 -- (Poco::Logger::is -> SIGSEGV). The fix sets the logger on the lazy path and the log site is
 -- defensively guarded like its siblings in the same file.
 
+SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 
 -- Force the lazy remote source path (the one that built RemoteQueryExecutor without a logger).

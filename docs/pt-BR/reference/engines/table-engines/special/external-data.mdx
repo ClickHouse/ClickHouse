@@ -24,16 +24,16 @@ No cliente de linha de comando, você pode especificar uma seção de parâmetro
 
 Você pode ter várias seções como esta, de acordo com o número de tabelas que estão sendo transmitidas.
 
-`--external` – Marca o início de uma cláusula.
-`--file` – Caminho para o arquivo com o dump da tabela, ou -, que se refere à stdin.
+**–external** – Marca o início de uma cláusula.
+**–file** – Caminho para o arquivo com o dump da tabela, ou -, que se refere à stdin.
 Só é possível recuperar uma única tabela da stdin.
 
-Os parâmetros a seguir são opcionais: `--name` – Nome da tabela. Se omitido, &#95;data é usado.
-`--format` – Formato dos dados no arquivo. Se omitido, TabSeparated é usado.
-`--scalar` – Envia os dados como um escalar em vez de uma tabela temporária. Os dados devem conter exatamente uma linha; se contiverem várias colunas, elas serão empacotadas em uma única tupla. O valor fica acessível na consulta por meio de `__getScalar('name')`.
+Os parâmetros a seguir são opcionais: **–name**– Nome da tabela. Se omitido, &#95;data é usado.
+**–format** – Formato dos dados no arquivo. Se omitido, TabSeparated é usado.
+**–scalar** – Envia os dados como um escalar em vez de uma tabela temporária. Os dados devem conter exatamente uma linha; se contiverem várias colunas, elas serão empacotadas em uma única tupla. O valor fica acessível na consulta por meio de `__getScalar('name')`.
 
-Um dos parâmetros a seguir é obrigatório: `--types` – Uma lista de tipos de coluna separados por vírgula. Por exemplo: `UInt64,String`. As colunas serão nomeadas como &#95;1, &#95;2, ...
-`--structure` – A estrutura da tabela no formato`UserID UInt64`, `URL String`. Define os nomes e os tipos das colunas.
+Um dos parâmetros a seguir é obrigatório:**–types** – Uma lista de tipos de coluna separados por vírgula. Por exemplo: `UInt64,String`. As colunas serão nomeadas como &#95;1, &#95;2, ...
+**–structure**– A estrutura da tabela no formato`UserID UInt64`, `URL String`. Define os nomes e os tipos das colunas.
 
 Os arquivos especificados em &#39;file&#39; serão processados no formato especificado em &#39;format&#39;, usando os tipos de dados especificados em &#39;types&#39; ou &#39;structure&#39;. A tabela será enviada ao servidor e ficará acessível nele como uma tabela temporária com o nome definido em &#39;name&#39;.
 

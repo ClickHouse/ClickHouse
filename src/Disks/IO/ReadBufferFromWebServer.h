@@ -28,8 +28,7 @@ public:
         const ReadSettings & settings_ = {},
         bool use_external_buffer_ = false,
         size_t read_until_position = 0,
-        HTTPHeaderEntries headers_ = {},
-        String expected_etag_ = {});
+        HTTPHeaderEntries headers_ = {});
 
     explicit ReadBufferFromWebServer(
         std::vector<String> urls_,
@@ -38,8 +37,7 @@ public:
         const ReadSettings & settings_ = {},
         bool use_external_buffer_ = false,
         size_t read_until_position = 0,
-        HTTPHeaderEntries headers_ = {},
-        String expected_etag_ = {});
+        HTTPHeaderEntries headers_ = {});
 
     bool nextImpl() override;
 
@@ -81,8 +79,6 @@ private:
 
     ReadSettings read_settings;
     HTTPHeaderEntries headers;
-    /// If not empty, every response must carry this `ETag` (see `BuilderRWBufferFromHTTP::withExpectedETag`).
-    String expected_etag;
 
     bool use_external_buffer;
     bool has_pending_first_read_result = false;

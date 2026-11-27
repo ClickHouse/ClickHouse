@@ -10,11 +10,15 @@ integration:
   - category: 'sql_client'
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
-## Abra a página inicial do TABLUM.IO {#open-the-tablumio-startup-page}
+<div id="open-the-tablumio-startup-page">
+  ## Abra a página inicial do TABLUM.IO
+</div>
 
 <Note>
   Você pode instalar uma versão auto-hospedada do TABLUM.IO no seu servidor Linux no Docker.
@@ -24,15 +28,11 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
   <Step title="Cadastre-se ou entre no serviço" id="1-sign-up-or-sign-in-to-the-service">
     Primeiro, cadastre-se no TABLUM.IO usando seu e-mail ou use um login rápido por meio de contas do Google ou Facebook.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Página de login do TABLUM.IO](/images/integrations/sql-clients/tablum-ch-0.webp)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/sql-clients/tablum-ch-0.webp" size="md" border alt="Página de login do TABLUM.IO" />
   </Step>
 
   <Step title="Adicione um conector do ClickHouse" id="2-add-a-clickhouse-connector">
-    Reúna os dados de conexão do seu ClickHouse, vá até a aba **Connector** e preencha a URL do host, a porta, o nome de usuário, a senha, o nome do banco de dados e o nome do conector. Depois de preencher esses campos, clique no botão **Test connection** para validar os dados e, em seguida, clique em  **Save connector for me** para salvá-lo de forma permanente.
+    Reúna os dados de conexão do seu ClickHouse, vá até a aba **Connector** e preencha a URL do host, a porta, o nome de usuário, a senha, o nome do banco de dados e o nome do conector. Depois de preencher esses campos, clique no botão **Test connection** para validar os dados e, em seguida, clique em **Save connector for me** para salvá-lo de forma permanente.
 
     <Tip>
       Certifique-se de especificar a porta **HTTP** correta e de ativar o modo **SSL** de acordo com os dados da sua conexão.
@@ -42,21 +42,13 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
       Normalmente, a porta é 8443 ao usar TLS ou 8123 quando o TLS não é usado.
     </Tip>
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Adicionando um conector do ClickHouse no TABLUM.IO](/images/integrations/sql-clients/tablum-ch-1.webp)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/sql-clients/tablum-ch-1.webp" size="lg" border alt="Adicionando um conector do ClickHouse no TABLUM.IO" />
   </Step>
 
   <Step title="Selecione o conector" id="3-select-the-connector">
     Vá até a aba **Dataset**. Selecione na lista suspensa o conector do ClickHouse criado recentemente. No painel à direita, você verá a lista de tabelas e esquemas disponíveis.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Selecionando o conector do ClickHouse no TABLUM.IO](/images/integrations/sql-clients/tablum-ch-2.webp)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/sql-clients/tablum-ch-2.webp" size="lg" border alt="Selecionando o conector do ClickHouse no TABLUM.IO" />
   </Step>
 
   <Step title="Insira uma consulta SQL e execute-a" id="4-input-a-sql-query-and-run-it">
@@ -66,11 +58,7 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
       Clique com o botão direito no nome da coluna para abrir o menu suspenso com opções de classificação, filtro e outras ações.
     </Tip>
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Executando uma consulta SQL no TABLUM.IO](/images/integrations/sql-clients/tablum-ch-3.webp)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/sql-clients/tablum-ch-3.webp" size="lg" border alt="Executando uma consulta SQL no TABLUM.IO" />
 
     <Note>
       Com o TABLUM.IO, você pode
@@ -83,7 +71,7 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
 </Steps>
 
 <div id="learn-more">
-  ## Saiba mais {#learn-more}
+  ## Saiba mais
 </div>
 
 Encontre mais informações sobre a TABLUM.IO em https://tablum.io.

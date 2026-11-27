@@ -3,11 +3,13 @@ title: 'ClickHouse Government'
 slug: /cloud/infrastructure/clickhouse-government
 keywords: ['Government', 'fips', 'fedramp', 'السحابة الحكومية']
 description: 'نظرة عامة على خدمة ClickHouse Government'
-doc_type: 'reference'
+doc_type: 'مرجع'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 <div id="overview">
-  ## نظرة عامة {#overview}
+  ## نظرة عامة
 </div>
 
 ClickHouse Government هي حزمة ذاتية النشر تضم الإصدار الاحتكاري نفسه من ClickHouse المستخدم في ClickHouse Cloud، إلى جانب ClickHouse Operator الخاص بنا، وهي مُعدّة وفق بنية الفصل بين الحوسبة والتخزين ومُحصّنة لتلبية المتطلبات الصارمة للهيئات الحكومية ومؤسسات القطاع العام.
@@ -19,7 +21,7 @@ ClickHouse Government هي حزمة ذاتية النشر تضم الإصدار 
 </Info>
 
 <div id="benefits-over-os">
-  ## المزايا مقارنةً بالإصدار المفتوح المصدر {#benefits-over-os}
+  ## المزايا مقارنةً بالإصدار المفتوح المصدر
 </div>
 
 تُميّز الميزات التالية ClickHouse Government عن عمليات النشر المفتوحة المصدر المُدارة ذاتيًا:
@@ -30,22 +32,20 @@ ClickHouse Government هي حزمة ذاتية النشر تضم الإصدار 
 * وثائق [NIST Risk Management Framework (RMF)](https://csrc.nist.gov/projects/risk-management/about-rmf) لتسريع حصولك على Authorization to Operate (ATO)
 * واجهة برمجة تطبيقات للعمليات البرمجية، بما في ذلك النسخ الاحتياطية وعمليات التوسعة
 
-## معمارية {#architecture}
+<div id="architecture">
+  ## معمارية
+</div>
 
 يعمل ClickHouse Government بصورة مستقلة بالكامل داخل بيئة النشر لديك، مع اعتماد بنيتنا السحابية الأصلية التي توفر الفصل بين الحوسبة والتخزين.
 
 <br />
 
-<div className="ch-image-md ch-image-background-black">
-  <Frame>
-    ![معمارية ClickHouse Government](/images/cloud/reference/private-gov-architecture.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/reference/private-gov-architecture.webp" size="md" alt="معمارية ClickHouse Government" background="black" />
 
 <br />
 
 <div id="supported-configurations">
-  ## التهيئات المدعومة {#supported-configurations}
+  ## التهيئات المدعومة
 </div>
 
 يُدعَم ClickHouse Government حاليًا في التهيئات التالية:
@@ -56,7 +56,7 @@ ClickHouse Government هي حزمة ذاتية النشر تضم الإصدار 
 | GCP    | Google Kubernetes Service (GKS)  | Google Cloud Storage (GCS)  | معاينة |
 
 <div id="onboarding-process">
-  ## عملية الإعداد {#onboarding-process}
+  ## عملية الإعداد
 </div>
 
 يمكن للعملاء [التواصل معنا](https://clickhouse.com/company/contact?loc=nav) لطلب مكالمة لمراجعة ClickHouse Government بما يناسب حالة الاستخدام الخاصة بهم. ستُراجع حالات الاستخدام التي تستوفي الحد الأدنى من متطلبات الحجم وتُنشر ضمن التكوينات المدعومة. الإعداد متاح بشكل محدود. تتضمن عملية التثبيت اتباع دليل التثبيت الخاص بالبيئة المحددة التي سيُنشر فيها ClickHouse باستخدام الصور ومخططات Helm التي تم تنزيلها من AWS ECR.

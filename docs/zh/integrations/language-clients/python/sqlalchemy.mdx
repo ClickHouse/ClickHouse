@@ -7,7 +7,7 @@ title: 'SQLAlchemy 支持'
 doc_type: 'reference'
 ---
 
-ClickHouse Connect 内置了一个基于核心驱动构建的 `clickhousedb` SQLAlchemy 方言。同步方言支持 SQLAlchemy 1.4.40 及更高版本 (包括 SQLAlchemy 2.x) ，重点关注 Core 查询、ClickHouse DDL、反射以及简单的 ORM 插入。异步方言要求 SQLAlchemy 2.0.44 或更高版本。
+ClickHouse Connect 内置了一个基于核心驱动构建的 `clickhousedb` SQLAlchemy 方言。它支持 SQLAlchemy 1.4.40 及更高版本 (包括 SQLAlchemy 2.x) ，重点关注 Core 查询、ClickHouse DDL、反射以及简单的 ORM 插入。
 
 通过包扩展安装 SQLAlchemy 依赖项：
 
@@ -15,7 +15,9 @@ ClickHouse Connect 内置了一个基于核心驱动构建的 `clickhousedb` SQL
 pip install "clickhouse-connect[sqlalchemy]"
 ```
 
-## 使用 SQLAlchemy 进行连接 {#sqlalchemy-connect}
+<div id="sqlalchemy-connect">
+  ## 使用 SQLAlchemy 进行连接
+</div>
 
 使用 `clickhousedb://` 或 `clickhousedb+connect://` 这两种 URL 格式之一创建引擎：
 
@@ -31,85 +33,13 @@ with engine.connect() as conn:
     print(version)
 ```
 
-如果同时安装了 `clickhouse-sqlalchemy`，请使用这些显式 URL 格式。
-导入 `clickhouse_connect.cc_sqlalchemy` 时，该软件包对 `clickhouse://` 的
-注册会保持不变。如果其他已安装的提供商导致我们的别名无法
-注册，导入时会发出 `UserWarning`，建议改用显式的
-ClickHouse Connect URL。已有的运行时注册会保持不变，且不会
-发出警告。如果没有其他提供商占用 `clickhouse://`，此导入会将其
-注册为 ClickHouse Connect 的兼容性别名。
+URL 查询参数可以包含 ClickHouse 设置、ClickHouse Connect 客户端选项 (例如 `compression`、`query_limit` 和超时设置) ，或 HTTP/TLS 选项 (例如 `ca_cert`) 。如有需要，可为 ClickHouse 设置添加 `ch_` 前缀，以强制将其识别为服务器设置，例如 `ch_http_max_field_name_size=99999`。
 
-### ClickHouse 会话 ID {#sqlalchemy-session-ids}
+可用的客户端选项请参见[连接参数和设置](/zh/integrations/language-clients/python/driver-api#connection-arguments)。
 
-默认情况下，无论使用同步还是异步方言，每个池化连接都会生成一个独立的 ClickHouse 会话 ID。只要该连接的请求到达同一个 ClickHouse 服务器进程，通过 `SET` 修改的设置以及临时表就会在该连接上持续保留。命名会话状态和同一会话的重叠检查仅在进程内生效。在同一个服务器进程上，针对相同用户和会话 ID 的重叠请求会被立即拒绝并返回服务器错误码 373，而不会进入队列等待。如果您配置了固定的 `session_id`，请使用 `pool_size=1, max_overflow=0`，或在请求到达 ClickHouse 之前将访问串行化。在 ClickHouse Cloud 或其他采用负载均衡的部署中，具有相同会话 ID 的请求可能会被路由到不同的服务器，因此请勿将固定的 `session_id` 用作分布式状态或分布式互斥锁。
-
-### 异步连接 {#sqlalchemy-async-connections}
-
-异步方言要求 SQLAlchemy 2.0.44 或更高版本，并使用 ClickHouse Connect 原生的 `AsyncClient`。请先安装所需的依赖项，然后使用 `clickhousedb+async://` URL 创建异步引擎：
-
-```bash
-pip install "clickhouse-connect[sqlalchemy-async]"
-```
-
-```python
-import asyncio
-
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
-
-
-async def main():
-    engine = create_async_engine(
-        "clickhousedb+async://user:password@host:8123/mydb"
-    )
-    try:
-        async with engine.connect() as conn:
-            version = (await conn.execute(text("SELECT version()"))).scalar_one()
-            print(version)
-    finally:
-        await engine.dispose()
-
-
-asyncio.run(main())
-```
-
-结果会被缓冲。由于服务器端游标已禁用，`AsyncConnection.stream()` 会引发 `InvalidRequestError`。SQLAlchemy 虽然接受 `AsyncSession.stream()`，但该方言会先缓冲完整结果，然后再返回。对于大型结果集，请使用原生 `AsyncClient` 的流式方法。在对应的 SQLAlchemy 连接被签出期间，可通过 `driver_connection` 访问底层原生客户端：
-
-```python
-async def stream_events(engine):
-    async with engine.connect() as conn:
-        raw_connection = await conn.get_raw_connection()
-        client = raw_connection.driver_connection
-        async with await client.query_rows_stream("SELECT * FROM events") as rows:
-            async for row in rows:
-                print(row)
-```
-
-请勿在使用原始客户端的同时并发使用 SQLAlchemy 连接。在退出 SQLAlchemy 连接代码块之前，请先完成原始客户端的流式处理；连接归还到连接池后，也不要继续持有该原始客户端。所借出客户端的生命周期由 SQLAlchemy 管理，因此切勿调用 `client.close()` 或其任何私有生命周期方法。连接并发由 SQLAlchemy 的连接池负责管理。每个池化连接拥有一个原生异步客户端，其 aiohttp 连接器默认限制为总共一个连接、每个主机一个连接。可在 URL 或 `connect_args` 中设置 `connector_limit`、`connector_limit_per_host` 或 `keepalive_timeout` 来覆盖这些传输设置。启用 `pool_pre_ping=True` 后，SQLAlchemy 会在签出池化连接时使用 `SELECT 1` 检查被复用的连接。
-
-目前，异步 SQLAlchemy 的 executemany 插入会为每个参数集单独发送一个 HTTP 请求，而不会使用驱动程序的 Native 批量插入协议。此方式仅适用于小批量数据。对于大批量数据，请使用上文介绍的由连接池管理的 `driver_connection` 访问模式，并在将 SQLAlchemy 连接归还到连接池之前 await `client.insert()`。由于异步 executemany 使用查询参数绑定，不带时区的 `datetime` 值遵循 `naive_datetime_binding`，而非同步 Native executemany 所使用的 `naive_datetime_insert` 设置。带类型的 SQLAlchemy `DateTime64` 绑定无论使用客户端参数还是服务器端参数，均会保留小数秒。对于传递给 `exec_driver_sql()` 的无类型 `%s` 或 `%(name)s` 参数，不带时区的 `datetime` 值仍沿用默认的整秒格式。如需明确的时区行为，请使用带时区信息的值。如需 Native 批量语义，请使用 `client.insert()`。
-
-请在使用异步引擎的事件循环中创建并释放该引擎。在关闭时，以及在其他事件循环中使用该引擎之前，请先归还所有已签出的连接，然后 await `engine.dispose()`。如果引擎所属的事件循环已经关闭，请在复用前于当前循环中 await `engine.dispose()`。如果清理工作在所属循环关闭之后才开始，aiohttp 仍可能报告存在未关闭的传输，因此请尽可能在转移之前完成释放。在事件循环之间迁移池化异步引擎时，`pool_pre_ping=True` 不能替代释放操作。若要在多个事件循环之间共享同一个引擎，且不保留绑定到特定循环的连接，请配置 `poolclass=NullPool`。如果执行释放时仍有连接处于签出状态，方言会在该连接被归还或被垃圾回收时将其关闭。请勿在同步代码中调用 `engine.sync_engine.dispose()`，因为 SQLAlchemy 在此无法 await 异步连接的清理，可能只会记录错误日志，而不会关闭池化的传输。
-
-URL 查询参数可以包含 ClickHouse 设置、ClickHouse Connect 客户端选项 (例如 `compression`、`query_limit` 和各类超时) ，或 HTTP/TLS 选项 (例如 `ca_cert`) 。必要时，可为 ClickHouse 设置添加 `ch_` 前缀，强制将其视为服务器设置，例如 `ch_http_max_field_name_size=99999`。
-
-有关可用的客户端选项，请参阅[连接参数和设置](/zh/integrations/language-clients/python/driver-api#connection-arguments)。
-
-DDL、元数据检查等同步 SQLAlchemy 辅助操作需通过 `AsyncConnection.run_sync()` 运行：
-
-```python
-from sqlalchemy import inspect
-
-
-async def prepare_schema(engine, metadata):
-    async with engine.begin() as conn:
-        await conn.run_sync(metadata.create_all)
-        return await conn.run_sync(
-            lambda sync_conn: inspect(sync_conn).get_table_names()
-        )
-```
-
-### 每个查询的设置 {#sqlalchemy-per-query-settings}
+<div id="sqlalchemy-per-query-settings">
+  ### 每个查询的设置
+</div>
 
 通过 SQLAlchemy 的执行选项传递 ClickHouse 设置。可以在引擎、连接或语句上设置这些参数。对于相同的键，语句上的值优先于连接或引擎上的值。
 
@@ -124,7 +54,9 @@ with engine.connect() as conn:
     value = conn.execute(stmt).scalar_one()
 ```
 
-### 按查询设置读取格式 {#sqlalchemy-per-query-read-formats}
+<div id="sqlalchemy-per-query-read-formats">
+  ### 按查询设置读取格式
+</div>
 
 通过 SQLAlchemy 的执行选项 `query_formats`，可为引擎、连接或语句设置 ClickHouse 读取格式。语句级格式会优先应用，并覆盖匹配的连接级或引擎级键及通配符。
 
@@ -139,39 +71,9 @@ with engine.connect() as conn:
     rows = conn.execute(stmt).all()
 ```
 
-### 错误处理 {#sqlalchemy-error-handling}
-
-驱动程序通过 SQLAlchemy 连接引发的错误，使用的是从 `clickhouse_connect.dbapi` 导出的 DB-API 类。这些类与 `clickhouse_connect.driver.exceptions` 中的对应类是同一个类对象，因此 SQLAlchemy 会将其包装为相应的 `sqlalchemy.exc.DBAPIError` 子类。`StreamFailureError` 属于 `OperationalError`，会被包装为 `sqlalchemy.exc.OperationalError`。
-
-如果表不存在，列检查和表反射会引发 `sqlalchemy.exc.NoSuchTableError`。该异常同时继承自 `sqlalchemy.exc.NoResultFound`，因此现有的异常处理器仍能捕获它。其错误消息为 `Table <database>.<table_name> does not exist`。
-
-SQL 执行遵循驱动程序的 [HTTP 重试策略](/zh/integrations/language-clients/python/driver-api#http-retries)。Native 批量插入则遵循[插入重试策略](/zh/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication)。
-
-如果调用方的取消操作可能会中断显式调用的 `AsyncConnection.invalidate()`，请在自行管理的任务中执行失效操作，并等待该任务完成后再传播取消。这样 SQLAlchemy 便能完成连接记录的簿记工作：
-
-```python
-import asyncio
-
-
-async def invalidate_safely(connection):
-    invalidate_task = asyncio.create_task(connection.invalidate())
-    cancellation = None
-    while not invalidate_task.done():
-        try:
-            await asyncio.wait({invalidate_task})
-        except asyncio.CancelledError as ex:
-            cancellation = ex
-    if cancellation is not None:
-        try:
-            invalidate_task.result()
-        finally:
-            raise cancellation
-    invalidate_task.result()
-```
-
-在连接的失效处理任务仍在运行期间，请勿使用该连接。如果直接调用的 `await connection.invalidate()` 被取消，且 `connection.invalidated` 仍为 false，请再次 await `connection.invalidate()` 以完成清理，之后再使用或关闭该连接。
-
-### 服务器端参数 {#sqlalchemy-server-side-parameters}
+<div id="sqlalchemy-server-side-parameters">
+  ### 服务器端参数
+</div>
 
 SQLAlchemy 通常会在客户端渲染参数。创建引擎时，可选择启用 ClickHouse 服务器端参数：
 
@@ -182,13 +84,13 @@ engine = create_engine(
 )
 ```
 
-对于异步方言，请在 `create_async_engine()` 中使用相同的 `server_side_params=True` 参数。
-
 在此模式下，每个绑定值都必须具有与 ClickHouse 兼容的 SQLAlchemy 类型。受支持的 `IN` 列表会变为带类型的 ClickHouse `Array` 参数。如果编译器无法推导出兼容的类型，或无法安全地处理绑定值，就会引发 `CompileError`。
 
 绑定名称必须是 ClickHouse ASCII BareWord 名称。以 `$` 开头和结尾的名称会被拒绝，因为核心驱动程序将其保留用于原始二进制查询参数。
 
-## Core 查询 {#sqlalchemy-core-queries}
+<div id="sqlalchemy-core-queries">
+  ## Core 查询
+</div>
 
 该方言支持 SQLAlchemy Core `SELECT` 查询，可使用 JOIN、过滤器、排序、LIMIT 和 OFFSET 以及 `DISTINCT` 和复合 SELECT。
 
@@ -223,81 +125,15 @@ with engine.connect() as conn:
     conn.execute(stmt)
 ```
 
-### 字面量渲染 {#sqlalchemy-literal-rendering}
+<div id="sqlalchemy-literal-rendering">
+  ### 字面量渲染
+</div>
 
-当 SQLAlchemy 通过 `literal_binds` 或 `literal_execute` 内联绑定值时，方言会针对通用 String 类型和 ClickHouse 类型采用 ClickHouse 的引号引用规则。这同样适用于 `TypeDecorator` 包装器以及 `with_variant()` 选择。即使其他绑定参数保持不变，String 值中的百分号和反斜杠仍会保留。
+当 SQLAlchemy 通过 `literal_binds` 或 `literal_execute` 内联绑定值时，方言会针对通用 String 类型和 ClickHouse 类型采用 ClickHouse 的引用规则。这同样适用于 `TypeDecorator` 包装器以及 `with_variant()` 选择。即使其他绑定参数保持不变，String 值中的百分号和反斜杠仍会保留。
 
-对于使用 ClickHouse `DateTime64` SQLAlchemy 类型的 Python `datetime` 值，其微秒部分会在客户端参数和内联字面量中得到保留，包括 Nullable 值以及嵌套在数组和元组中的值。ClickHouse 会按所声明的精度进行处理。Python `datetime` 最多提供六位小数。普通 `DateTime` 值仍按整秒格式输出。对于 `text()` 语句，请通过 `bindparam("ts", type_=DateTime64(6))` 显式指定类型，以保留秒的小数部分。
-
-以 `DateTime64(9)` 绑定的 `pandas.Timestamp` 值会在参数和内联字面量中保留其纳秒部分。
-
-SQLAlchemy 列类型必须与服务器 schema 保持一致。若在服务器端类型为 `DateTime` 的列上声明 `DateTime64`，渲染结果会带有秒的小数部分，并可能在 insert 时以及 `IN` 比较中引发转换出错。
-
-在 SQLAlchemy 2.x 中，若通用 `sqlalchemy.ARRAY` 类型包含 ClickHouse `Tuple` 元素，其内联字面量需要设置 `dimensions=1` (嵌套数组则需设置相应更高的维数) ，以便 SQLAlchemy 将每个元组视为单个元素。SQLAlchemy 1.4 不支持通用 `ARRAY` 类型的内联字面量。
-
-显式指定类型的命名 `Tuple` 参数接受键与所声明字段完全一致的字典。对于绑定参数和内联字面量，客户端会按声明中的字段顺序进行处理，包括嵌套在数组和其他元组中的命名元组。这适用于同步插入和异步插入、谓词以及两种参数模式。在查询参数绑定中，若缺少字段或存在多余字段，会引发 `ProgrammingError`。Native 批量插入仍沿用现有的处理方式。传给未指定类型的 `exec_driver_sql()` 参数的字典仍采用所配置的 JSON 或 map 格式。
-
-对于 `Map` 值中的命名元组，请设置 `common.set_setting("dict_parameter_format", "map")`。该设置还会在绑定参数和内联字面量中，为 Map 内显式指定类型的 `DateTime64` 值保留秒的小数部分。
-
-如果重复使用某个命名的 datetime 参数，则该参数每次出现时都需要兼容的 `DateTime64` 绑定类型，才能保留小数部分。只要有一处未指定类型或类型冲突，就会保持整秒格式。请在每个 `bindparam` 上设置 `type_=DateTime64(6)`，或改用具有相应类型的不同参数名。
-
-如果重复使用的绑定名称在各处声明的命名 `Tuple` 字段名不同，情况同样如此。客户端会对该名称回退为按位置处理，因此字典值不会被重新排序，最终会被服务器拒绝。请使用不同的参数名，或传入按位置的元组。
-
-### 命名元组 {#sqlalchemy-named-tuples}
-
-使用 `elements` 映射声明命名元组的字段。键必须是非空字符串，值可以是 ClickHouse SQLAlchemy 类型类或已配置的类型实例。字段按该映射的迭代顺序排列，名称会自动用引号括起。
-
-```python
-from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import String, Tuple, UInt32
-
-details_type = Tuple(elements={"user_id": UInt32, "display name": String()})
-# Tuple(`user_id` UInt32, `display name` String)
-```
-
-对于未命名元组，请使用 `Tuple(UInt32, String)` 或 `Tuple(elements=[UInt32, String])`。按位置指定的元素与 `elements` 关键字不能混用。
-
-### JSON 类型提示 {#sqlalchemy-json-type-hints}
-
-使用 `typed_paths` 映射声明带类型的 JSON 路径。路径类型可以是 ClickHouse SQLAlchemy 类型类、已配置的类型实例，或 ClickHouse 类型名称字符串。类型名称字符串支持没有 SQLAlchemy 构造函数的类型 (例如 `Dynamic`) ，也同样适用于复杂的已配置类型表达式。
-
-类型名称字符串中可以包含已配置的嵌套 JSON 类型，例如 ``Array(JSON(`child` UInt32))``。在这些字符串中，可识别的 ClickHouse 类型名称不区分大小写，输出时会统一采用其规范大小写形式。字符串必须且只能包含一个完整的类型表达式，尾随文本以及格式错误的嵌套 JSON 参数都会被拒绝。
-
-空的 `Tuple()` 不能用作 JSON 类型化路径，因为 ClickHouse 无法通过 JSON 列的 Native 格式对其进行序列化。核心驱动支持在查询列和插入列的任意位置使用 `Tuple()`，包括嵌套在位置元组或命名元组中、位于 `Array` 内，以及在服务端启用的情况下以 `Nullable(Tuple())` 的形式使用。
-
-```python
-from sqlalchemy import Column, MetaData, Table
-
-from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import JSON, UInt32
-
-events = Table(
-    "events",
-    MetaData(),
-    Column(
-        "payload",
-        JSON(
-            typed_paths={
-                "event.id": UInt32,
-                "details": "Tuple(id UInt32, label Nullable(String))",
-                "attributes": "Variant(String, Array(String))",
-            },
-            max_dynamic_paths=256,
-            max_dynamic_types=16,
-            skip_paths=["internal.debug"],
-            skip_regexps=[r"^private\."],
-        ),
-    ),
-)
-```
-
-对于简单的 Python 标识符路径，关键字参数是 `typed_paths` 的简写形式，例如 `JSON(user_id=UInt32)`。若路径包含点号、空格、反引号、`%2E` 编码的点号，或名称与构造函数选项重名，请使用 `typed_paths`。名为 `SKIP` 的类型化路径可通过该映射来指定。`typed_paths` 中的键和 `skip_paths` 中的值均为解码后的名称。开头或尾随的反引号和双引号会被视为路径中的字面字符，而非预先应用的 SQL 引号引用。而在原始类型字符串内部，反引号和双引号属于 ClickHouse 的标识符语法。
-
-最多可配置 1000 个类型化路径。`max_dynamic_paths` 接受 0 至 10000，`max_dynamic_types` 接受 0 至 254。这些取值范围同样适用于原始嵌套 JSON 类型字符串内部。若显式指定的值与服务端默认值 1024 和 32 相同，则不会出现在生成的 DDL 中。普通的 skip 路径会被去重。由于 ClickHouse 使用 RE2 语法，Python 不会校验正则表达式字符串。重复的正则表达式会被保留。
-
-普通 skip 路径的名称不能正好是 `REGEXP`，因为 ClickHouse 将该标记保留给 `SKIP REGEXP` 使用。而 `REGEXP_foo` 这类名称仍然有效。在原始 JSON 类型字符串中，普通 `SKIP` 的操作数必须是一个 ClickHouse 标识符，或以点号分隔的复合标识符。未加引号的复合标识符不能以 `REGEXP` 开头；当第一个组成部分本身就是路径数据时，请为其加上引号。`SKIP REGEXP` 必须带有一个单引号字符串字面量。当标识符各部分包含空格或标点符号时，请使用反引号或双引号引用。原始 JSON 类型提示支持 `Variant(...)`；独立的 `Variant` 没有公开的 SQLAlchemy 构造函数。`Variant` 成员会按照 ClickHouse 所用的同一套规范名称进行排序和去重。
-
-构造函数对参数的排序与 ClickHouse 返回的规范形式一致。反射得到的类型、SQLAlchemy 类型副本以及 Alembic 自动生成均会保留该配置。
-
-### JSON 子列 {#sqlalchemy-json-subcolumns}
+<div id="sqlalchemy-json-subcolumns">
+  ### JSON 子列
+</div>
 
 对于声明为或映射为 ClickHouse `JSON` 的列，请使用方括号逐段选择由存储支持的子列路径：
 
@@ -343,7 +179,9 @@ request_id = json_subcolumn(request, "id", type_=UInt32)
 
 每个片段都会分别加引号，包括包含空格或反引号的名称。对于 ClickHouse JSON 路径处理，反引号不会使点号成为字面量。启用 `json_type_escape_dots_in_keys` 后，键名中的字面点号应使用 ClickHouse 的 `%2E` 编码。对于名为 `a.b` 的键，应通过 `payload["a%2Eb"]` 而非 `payload["a.b"]` 访问。
 
-### ClickHouse 查询扩展 {#sqlalchemy-query-extensions}
+<div id="sqlalchemy-query-extensions">
+  ### ClickHouse 查询扩展
+</div>
 
 从 `clickhouse_connect.cc_sqlalchemy` 导入 `select`，即可向静态类型检查器公开带类型的 ClickHouse 方法。标准的 `sqlalchemy.select` 在运行时也提供这些方法。
 
@@ -419,7 +257,9 @@ stmt = select(
 
 标准的 SQLAlchemy `values()` 构造会被编译为 ClickHouse 的 `VALUES` 表函数语法，包括在公共表表达式中使用时。CTE 形式需要 SQLAlchemy 2.0.42 或更高版本，其中新增了 `Values.cte()`。
 
-### Materialized CTE {#sqlalchemy-materialized-ctes}
+<div id="sqlalchemy-materialized-ctes">
+  ### Materialized CTE
+</div>
 
 默认情况下，ClickHouse 会内联公共表表达式，因此被多次引用的 CTE 的主体会针对每次引用执行一次。向 `.cte()` 传入 `materialized=True`，即可生成 `WITH <name> AS MATERIALIZED (...)`，使主体只计算一次：
 
@@ -461,15 +301,11 @@ ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
 
 ClickHouse 不支持递归 materialized CTE。若同时设置 `recursive=True` 和 `materialized=True`，SQLAlchemy helpers 将引发 `ValueError`。
 
-## DDL 与反射 {#sqlalchemy-ddl-reflection}
+<div id="sqlalchemy-ddl-reflection">
+  ## DDL 与反射
+</div>
 
 ClickHouse Connect 提供 ClickHouse 数据类型、表引擎、字典结构、数据库 DDL 和表反射功能。
-
-出于兼容性考虑，`Inspector.get_table_names()` 会返回所有种类的视图。`MetaData.reflect()` 默认也会包含这些视图，并可通过 `only` 按名称选择某个视图。如需获取非物化视图，请使用 `Inspector.get_view_names()`；如需获取物化视图，请使用 `Inspector.get_materialized_view_names()`。这两个方法均接受 `schema` 参数，适用于 SQLAlchemy 1.4.40 及更高版本 (包括 2.x)。`Inspector.get_view_definition()` 返回视图或物化视图中存储的 `SELECT` 语句；如果传入的是表或不存在的名称，则会引发 `NoSuchTableError`。反射出的视图没有引擎，其 `Table` 带有 `clickhousedb_table_type` 选项，取值为 `view`、`materialized_view`、`window_view` 或 `live_view`。
-
-`clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes` 中的 `Nullable()` 和 `LowCardinality()` 接受 ClickHouse SQLAlchemy 类型的类或实例，并为类型检查器保留其具体类型。例如，`Nullable(String)` 返回一个 `String` 实例，可直接传给 `Column`。类型检查器会将 `[Nullable(String)]` 推断为 `list[String]`。如果该列表中还包含其他 ClickHouse 类型，请将其注解为 `list[ChSqlaType]`，并从 `clickhouse_connect.cc_sqlalchemy.datatypes.base` 导入 `ChSqlaType`。
-
-独立的 `Variant` 列通过 SQLAlchemy 内部类型进行反射，Alembic 自动生成会保留其规范的原始类型名称，不会反复产生类型变更。`Geometry` 和 `MultiPoint` 列则反射为公开的 SQLAlchemy 类型。
 
 ```python
 import sqlalchemy as db
@@ -497,47 +333,17 @@ with engine.connect() as conn:
     assert reflected.engine is not None
 ```
 
-反射出的列会为 `DEFAULT` 表达式带上 `server_default`。反射出的
-SQLAlchemy 对象在存在相应设置时，会使用方言特有的选项，例如 `clickhousedb_codec`、
-`clickhousedb_ttl`、`clickhousedb_materialized` 和 `clickhousedb_alias`。
-`Inspector.get_columns()` 返回的公开字典仍保留
-对应的 `clickhouse_*` 键。在这些字典中，`server_default`、
-`clickhouse_materialized`、`clickhouse_alias` 和 `clickhouse_ttl` 均为 SQL 字符串。
-如需基于它们构建 `Column`，请用 `sqlalchemy.text()` 包装每个值。
-
-在新的表和列声明中，请使用 `clickhousedb_*`。驱动程序生成的
-元数据和 Alembic 修订版本均使用这些名称。ClickHouse Connect 也会读取
-显式指定的旧版 `clickhouse_*` 选项，但 SQLAlchemy 会依据拥有 `clickhouse` 前缀的
-方言对其进行校验。在混合安装环境中，ClickHouse Connect 的选项
-(如 `clickhouse_engine`、`clickhouse_ttl`、`clickhouse_settings`、
-`clickhouse_table_type` 和 `clickhouse_dictionary_*`) 可能会引发 `ArgumentError`。
-请将它们重命名为 `clickhousedb_*`。
-
-ClickHouse Connect 仅从 `clickhousedb` 读取默认值。请通过
-`Table.argument_for("clickhousedb", ...)` 或
-`Column.argument_for("clickhousedb", ...)` 注册默认值。Alembic 操作参数 (如
-`op.add_column(..., clickhouse_settings={...})`) 保持原有名称不变。
+反射出的列会为 `DEFAULT` 表达式带上 `server_default`，并在存在时包含方言特有的属性，例如 `clickhouse_codec`、`clickhouse_ttl`、`clickhouse_materialized` 和 `clickhouse_alias`。
 
 `DEFAULT`、`MATERIALIZED`、`ALIAS` 和 `TTL` 子句中的 String 值使用 ClickHouse 字符串转义。相同的转义规则也适用于表、字典和列注释，包括 Alembic 生成的注释。
 
 MergeTree 键参数 (如 `order_by`、`partition_by`、`primary_key`、`sample_by` 和 `ttl`) 既接受 SQLAlchemy 列和 SQL 表达式，也接受普通字符串。
 
-`Memory()`、`Log()`、`StripeLog()`、`TinyLog()`、`Null()` 和 `Set()` 支持无参数调用，且在经过 Alembic 自动生成后能够保持往返一致。原有的字典参数形式仍然受支持。如需提供引擎设置，请使用 `settings={...}`。
+<div id="sqlalchemy-inserts">
+  ## 插入和基本 ORM 用法
+</div>
 
-`SummingMergeTree` 和 `ReplicatedSummingMergeTree` 支持一个可选的 `columns` 参数，该参数只能以关键字形式传入。现有位置参数的含义保持不变，因此 `SummingMergeTree("id")` 仍会设置 `ORDER BY id`。
-
-```python
-from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import SummingMergeTree
-
-engine_clause = SummingMergeTree("id", columns=("delta", "n_tx"))
-# Sum delta and n_tx for rows with the same id.
-```
-
-可以传入字符串、SQLAlchemy 列、映射的列属性，或由上述值组成的非空列表或元组。列表和元组中的字符串项会作为标识符加引号。单个标量字符串则直接作为原始 SQL 使用，例如 `"delta"` 或 `"(delta, n_tx)"`。服务器要求这些列以标识符形式指定。省略 `columns` 时，由 ClickHouse 自行选择要求和的列。反射和 Alembic 自动生成会保留显式指定的列列表。
-
-## 插入和基本 ORM 用法 {#sqlalchemy-inserts}
-
-支持 Core 插入以及简单的 ORM 模型。对于同步方言，在兼容的批量数据路径中优先使用 Core executemany 插入。对于异步批量插入，请使用[异步连接](#sqlalchemy-async-connections)中介绍的原生 `AsyncClient.insert()` 路径。
+支持 Core 插入以及简单的 ORM 模型。对于批量数据路径，优先使用 Core 插入。
 
 ```python
 with engine.connect() as conn:
@@ -549,12 +355,6 @@ with engine.connect() as conn:
         ],
     )
 ```
-
-对于同步方言，由 SQLAlchemy 编译器生成的普通 Core `executemany` 插入会通过一次 Native 批量插入完成。异步 executemany 则会为每个参数集各发送一个请求，详见 [异步连接](#sqlalchemy-async-connections)。原始 SQL，以及包含表达式或其他无法安全路由的语义的插入，会保留原始 SQL，并针对每个参数集各执行一次。如果后续某个参数集执行失败，之前的参数集已写入的行仍会保持已提交状态。
-
-显式多行 `insert(events).values([...])` 语句支持字典形式的行、按表列顺序排列的元组，以及逐行指定的 SQL 表达式。Pandas `to_sql(method="multi")` 采用的就是这种形式。它能够插入这些行，但会返回 `0`，因为文本形式的 INSERT 语句通过 DB-API 游标报告的行数始终为 `0`。SQLAlchemy 根据第一行确定列列表。后续行中多出的字典键，以及超出所选列列表范围的元组值，都会被忽略。如果后续某行缺少所选列的值，编译将会失败。请确保每一行都包含相同的列。
-
-在 ClickHouse 26.4 及更高版本的默认 HTTP 表单限制下，`server_side_params=True` 仅适用于小型显式批次，即绑定值少于约 1000 个，同时还需为其他字段预留余量。可以通过服务器配置提高这一上限。对于同步方言下的大型普通批次，请将行作为 `execute()` 的第二个参数传入，以便驱动程序走其 Native 批量插入路径。对于异步批量数据，请 await 原生的 `AsyncClient.insert()` 方法。
 
 ```python
 import sqlalchemy as db
@@ -583,118 +383,9 @@ with Session(engine) as session:
     session.commit()
 ```
 
-## 视图与 SQL 函数 {#sqlalchemy-views-functions}
-
-Alembic 为普通视图和 SQL 用户自定义函数提供了显式的创建、替换和删除辅助函数：
-
-```python
-from alembic import op
-
-op.create_clickhouse_view("active_events", "SELECT id FROM analytics.events", schema="analytics")
-op.create_clickhouse_view("active_events", "SELECT id FROM analytics.events WHERE id > 13", schema="analytics", or_replace=True)
-op.drop_clickhouse_view("active_events", schema="analytics", if_exists=True)
-
-op.create_clickhouse_function("analytics_increment_v1", "(value) -> value + 13")
-op.create_clickhouse_function("analytics_increment_v1", "(value) -> value + 79", or_replace=True)
-op.drop_clickhouse_function("analytics_increment_v1", if_exists=True)
-```
-
-这两个 create 辅助函数都接受 `if_not_exists=False` 和 `or_replace=False`。若两者同时传入 `True`，将引发 `ValueError`。SQL 消息体是原样传递给 ClickHouse 的字符串。名称会作为标识符用引号括起，除非其本身已用引号括起；函数名称始终视为单个标识符，即使其中包含点号。SQL 函数在服务器范围内全局生效，因此函数辅助函数和检查方法均不提供 `schema` 参数。请在各数据库和迁移流中使用全局唯一或带版本号的函数名称。这些操作既支持在线执行，也支持离线渲染 SQL，包括通过 `run_sync` 使用异步 SQLAlchemy 连接。
-
-`or_replace=True` 表示显式请求替换。ClickHouse 可能会用同名的普通视图替换现有的表或 materialized view，并丢弃原对象的数据。`DROP VIEW` 不能删除基表，但可以删除物化视图。`IF NOT EXISTS` 会保留现有定义不变，且不会对其进行校验。替换操作和带条件的创建操作无法自动推断出安全的降级方式，请基于先前的定义显式编写降级逻辑。删除操作同样需要显式提供降级定义。恢复定义并不会恢复已丢弃的数据。替换 SQL 函数需要同时具备 `CREATE FUNCTION` 和 `DROP FUNCTION` 特权。
-
-ClickHouse 在存储视图定义时会展开 SQL UDF 调用。因此，替换 SQL UDF 不会更新已引用它的现有视图；如需使用新定义，请重新创建这些视图或显式修改它们。
-
-可使用现有的 `get_view_names(schema=...)` 和 `get_view_definition(name, schema=...)` 方法检查普通视图。SQL 函数检查功能为 ClickHouse 方言所特有：
-
-```python
-from sqlalchemy import inspect
-
-inspector = inspect(connection)
-names = inspector.get_clickhouse_function_names()
-create_sql = inspector.get_clickhouse_function_definition("analytics_increment_v1")
-```
-
-函数检查仅包含 `SQLUserDefined` 函数，不包括内置函数和可执行程序函数。返回的名称已排序。定义为完整存储的 `CREATE FUNCTION` 语句，而不仅仅是其 lambda 主体；若名称不存在，则会引发 `sqlalchemy.exc.NoResultFound`。目录访问错误会直接向上传播。即使用户查询的格式要求返回字节，元数据检查结果仍为文本。这些辅助函数不提供声明式视图或函数实体，也不支持自动生成比较或依赖排序。请按依赖顺序编写显式迁移操作，并在渲染时使用 `render_as_batch=False`。
-
-## 数据跳过索引 {#sqlalchemy-skip-indexes}
-
-可将 ClickHouse 数据跳过索引声明为表参数。此 API 依赖 SQLAlchemy，无需 Alembic 即可使用：
-
-```python
-from sqlalchemy import Column, MetaData, Table, inspect
-from clickhouse_connect.cc_sqlalchemy import ClickHouseIndex, engines, types
-
-metadata = MetaData()
-events = Table(
-    "events",
-    metadata,
-    Column("value", types.UInt32),
-    Column("label", types.String),
-    ClickHouseIndex("value_idx", "value", "minmax"),
-    ClickHouseIndex("label_idx", "label", "bloom_filter(0.01)", granularity=4),
-    engines.MergeTree(order_by="value"),
-)
-metadata.create_all(engine)
-
-indexes = inspect(engine).get_clickhouse_indexes("events")
-```
-
-索引表达式和类型均为原始 ClickHouse SQL。索引定义不可变，且名称在同一张表内必须唯一。声明存储在 `clickhousedb_indexes` 表选项中，该选项也接受由 `ClickHouseIndex` 定义组成的序列。`Table.to_metadata()` 会保留这些声明，`CREATE TABLE` 会以内联方式渲染它们。`if_not_exists`、`first` 和 `after_index` 仍可用于命令式 ALTER 辅助函数，但不会影响内联创建或 schema 比较。
-
-`Inspector.get_clickhouse_indexes()` 会为显式索引返回可重放的定义。反射得到的表达式使用 `tuple(...)` 包装器来保留 ClickHouse 的索引表达式列表，包括嵌套元组。服务器自动创建的隐式索引会根据目录中的 `creation` 字段予以排除。目录错误和无法识别的分类均会引发错误。目录必须提供 `creation` 字段。ClickHouse 发行说明在 26.1.1.912 以及 25.12.2.54 回移版本中记录了该字段。兼容性通过实际查询来检查，而非依据版本字符串。
-
-通用的 `Inspector.get_indexes()` 仍返回空列表。`Table(..., autoload_with=engine)` 不会读取 skip-index 目录。如需显式复制列和索引：
-
-```python
-inspector = inspect(engine)
-reflected = Table(
-    "events",
-    MetaData(),
-    autoload_with=engine,
-    clickhousedb_indexes=inspector.get_clickhouse_indexes("events"),
-)
-```
-
-## 投影 {#sqlalchemy-projections}
-
-将 SELECT 投影声明为表参数，无需借助 Alembic：
-
-```python
-from sqlalchemy import Column, MetaData, Table, inspect
-from clickhouse_connect.cc_sqlalchemy import ClickHouseProjection, engines, types
-
-metadata = MetaData()
-events = Table(
-    "events",
-    metadata,
-    Column("value", types.UInt32),
-    Column("label", types.String),
-    ClickHouseProjection("by_label", "SELECT value, label ORDER BY label, value"),
-    engines.MergeTree(order_by="value"),
-)
-metadata.create_all(engine)
-
-projections = inspect(engine).get_clickhouse_projections("events")
-```
-
-`select` 是投影括号内的原始 SQL。投影定义不可变，且同一张表内的投影名称必须唯一。`clickhousedb_projections` 表选项也接受由多个 `ClickHouseProjection` 定义组成的序列。`Table.to_metadata()` 会保留这些声明，`CREATE TABLE` 则会以内联方式渲染它们。字典不接受投影声明。`if_not_exists`、`first` 和 `after_projection` 仍可用于命令式 ALTER 辅助函数，但不会影响内联创建或比较。从 `clickhouse_connect.cc_sqlalchemy.alembic` 和 `.alembic.operations` 导入 (包括现有的按位置传递的构造函数参数) 仍受支持。
-
-`Inspector.get_clickhouse_projections()` 返回已存储的 SELECT 定义，并保留其中的通配符、别名、分组和排序。对于投影级别的 `WITH SETTINGS` 以及基于索引的投影形式，它会拒绝处理，因为仅支持 SELECT 的 API 无法完整保留这些定义。读取目录失败时同样会引发错误。普通的 `Table(..., autoload_with=engine)` 不会读取投影目录。如需显式复制列和投影，可执行以下操作：
-
-```python
-inspector = inspect(engine)
-reflected = Table(
-    "events",
-    MetaData(),
-    autoload_with=engine,
-    clickhousedb_projections=inspector.get_clickhouse_projections("events"),
-)
-```
-
-检查需要一个可见的 target table，并且需要能够访问 `system.projections` 中的 `database`、`table`、`name`、`type`、`query` 和 `settings` 字段。ClickHouse 自 24.9.1.3278 版本起新增了此目录。但仅凭该目录存在，并不能确定是否支持比较功能。驱动程序会通过该目录及规范化查询来检测相关能力。
-
-## Alembic 迁移 {#sqlalchemy-alembic}
+<div id="sqlalchemy-alembic">
+  ## Alembic 迁移
+</div>
 
 ClickHouse Connect 提供了适用于 ClickHouse schema 迁移的 Alembic 集成。使用以下命令安装：
 
@@ -702,230 +393,23 @@ ClickHouse Connect 提供了适用于 ClickHouse schema 迁移的 Alembic 集成
 pip install "clickhouse-connect[alembic]"
 ```
 
-如需通过异步方言执行迁移，请同时安装这两个 extras：
+在 Alembic 的 `env.py` 中导入 `clickhouse_connect.cc_sqlalchemy.alembic`，以注册方言集成。自动生成支持常见的表结构变更，包括创建和删除表、添加/修改/删除列、默认值以及注释。表和列的重命名请使用手动操作。在应用每个生成的迁移之前，都应先进行审查。
 
-```bash
-pip install "clickhouse-connect[alembic,sqlalchemy-async]"
-```
-
-创建一个异步 Alembic 项目，然后将其自动生成的环境替换为适配 ClickHouse 的示例：
-
-```bash
-alembic init -t async alembic
-```
-
-生成的 `alembic.ini` 使用 `script_location = %(here)s/alembic`。如果迁移目录名为 `alembic`，请保留该设置；否则，请将其改为传递给 `alembic init` 的目录。将 `alembic/env.py` 替换为仓库中提供的[异步 Alembic `env.py` 示例](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py)，然后在 `alembic.ini` 中设置 `sqlalchemy.url`。
-
-在 Alembic 的 `env.py` 中导入 `clickhouse_connect.cc_sqlalchemy.alembic`，以注册方言集成。自动生成支持常见的表结构变更，包括创建和删除表、添加/修改/删除列、默认值、注释以及 MergeTree 表设置。表和列的重命名请使用手动操作。在应用每个生成的迁移之前，都应先进行审查。
-
-在 ClickHouse Cloud 上，请在迁移引擎 URL 中添加 `alter_sync=2`，以便后续反射能够看到已在各副本上完成的 schema 变更。当连接被替换，或在升级后立即运行自动生成时，这一点尤为重要。`select_sequential_consistency=1` 仅作用于数据读取，不涵盖 schema 变更。
-
-版本表的插入操作会绕过插入去重，以便降级时能够恢复先前记录的修订版本。生成的离线 SQL 使用 `SETTINGS deduplicate_insert = 'disable'`，这要求目标服务器支持该设置。如果服务器不支持这一较新的设置，在线迁移会改用旧版的 `insert_deduplicate = 0` 设置。普通表的插入操作仍保持其已配置的去重行为。
-
-对于同时存在于元数据和服务器中的表，自动生成会将声明的表引擎与服务器上的进行比较。引擎家族、位置引擎参数、`ORDER BY`、`PRIMARY KEY`、`PARTITION BY`、`SAMPLE BY` 以及表 `TTL` 的变更不支持自动迁移，因此一旦存在差异，就会引发 `UnsupportedTableChangeError`，而不会写出空的或具有误导性的修订版本。请在评估服务器的 ALTER 支持情况及受影响的数据后，编写显式迁移。该异常带有一个由 `TableOptionDrift` 记录组成的 `drifts` 元组，其中包含表、选项以及两种写法。构造该异常时至少需要一个漂移，否则会引发 `ValueError`。表达式会在规范化后进行比较；如果文本仍有差异，则由服务器的 `formatQuerySingleLine` 判定诸如 `INTERVAL 30 DAY` 与 `toIntervalDay(30)` 之类的写法是否等价。带引号的引擎参数会按解码后的字符串内容进行精确比较，包括空白和标点符号。TTL 子句会格式化为 `ALTER TABLE t MODIFY TTL ...`，并保留 `DELETE WHERE`、`TO VOLUME` 和 `RECOMPRESS` 等操作。`MergeTree` 以及 Cloud 中的 `Shared*` 和 `Replicated*` 变体视为同一家族，复制路径参数不参与比较。
-
-声明的引擎 `settings` 如果与服务器不同，会生成 `op.modify_clickhouse_table_settings(...)`，其降级操作会恢复或重置每项设置。`system.merge_tree_settings` 中的值和类型用于解析默认值以及等价的布尔和数值写法；字符串设置保留其字符串含义。模型中未声明的设置会被保留，包括在先前迁移后从模型中移除的设置。由于反射无法将这些设置与服务器注入的设置区分开来，自动生成永远不会自动重置它们。如确需重置，请显式使用 `op.reset_clickhouse_table_settings(...)`。`index_granularity` 和 `index_granularity_bytes` 等只读设置会像键一样参与比较并被拒绝更改。向 `context.configure()` 传入 `clickhousedb_compare_table_options=False` 可跳过该比较。
-
-反射得到的视图和 materialized view 不是表。`include_object` 会将其排除，因此对于元数据中缺失的视图，自动生成永远不会提议 `drop_table`。请使用普通视图或 materialized view 的辅助函数来管理它们。
-
-`op.alter_column(..., server_default=None)` 会生成 `MODIFY COLUMN ... REMOVE DEFAULT`，这是服务器唯一支持的形式。如果该列没有 `DEFAULT`，或者使用的是 `MATERIALIZED` 或 `ALIAS`，服务器会拒绝该语句，因此仅应在存在默认值时请求移除。仅更改类型时，现有默认值会保留。方言的列选项遵循相同规则：传入 `clickhousedb_codec=None`、`clickhousedb_ttl=None`、`clickhousedb_alias=None` 或 `clickhousedb_materialized=None` 可移除相应属性，传入具体值则可设置该属性。仅设置或移除这些属性时无需提供 `existing_type`。对于 TTL、alias 和 materialized 的 SQL 表达式，请使用 `text(...)`，例如 `clickhousedb_ttl=text("ts + INTERVAL 7 DAY")`。未传入的选项保持不变。`clickhousedb_` 和旧版 `clickhouse_` 名称均可使用；当两种名称同时传给 `alter_column` 时，以显式指定的 `clickhousedb_` 值为准，包括 `None`。
-
-如果元数据中未指定 `AggregateFunction` 的状态版本，自动生成会沿用反射得到的现有版本。例如，`AggregateFunction(uniq, UInt32)` 会与反射得到的 `AggregateFunction(1, uniq, UInt32)` 匹配。该规则同样适用于嵌套类型。如果更改了聚合函数本身、其参数或参数类型，仍会产生类型变更。
-
-元数据中显式指定的版本必须与反射得到的版本一致。不带版本的旧版反射类型会与显式版本 `0` 匹配。服务器升级后，省略版本并不意味着要求升级现有的状态格式。如需更改状态格式，请显式声明版本。
-
-Alembic 的迁移函数仍然是同步的。异步环境会创建 `AsyncEngine`，打开 `AsyncConnection`，并将同步迁移函数传给 `await connection.run_sync(...)`。离线迁移则直接调用 `context.configure(url=..., literal_binds=True, dialect_opts={"paramstyle": "named"})`，不会创建引擎。仓库中提供的[异步 Alembic `env.py` 示例](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py)同时涵盖这两种路径，并通过 Alembic 标准的 `sqlalchemy.url` 配置读取连接 URL。该示例保留了完整示例中的 ClickHouse Alembic 钩子和选项，包括 `include_object`、`make_include_name(...)`、`clickhouse_writer` 和 `version_table`。请勿使用 `engine.sync_engine` 来运行异步迁移或释放其资源。
-
-ClickHouse 特有的 `op.*` 辅助函数涵盖：
+ClickHouse 特有的 `op.*` 辅助方法涵盖：
 
 * 数据跳过索引，包括添加、物化和删除操作。
 * 投影，包括添加、物化和删除操作。
 * MergeTree 表设置的修改与重置。
-* 普通视图和 SQL 函数的创建、替换与删除。
 * materialized view 的创建与删除。
 * 字典的创建、删除和重新加载。
 
-**升级说明：** Alembic 默认会比较显式定义的跳过索引和 SELECT 投影。仅由早期命令式迁移创建的对象，如果未出现在受管理的表元数据中，可能会被生成删除操作。升级前，请使用 `ClickHouseIndex` 或 `ClickHouseProjection` 声明这些对象，使用 `include_name` 或 `include_object` 排除不受管理的对象，或在 `context.configure()` 中禁用相应的比较：
+ClickHouse 数据跳过索引不是 SQLAlchemy 索引。`Index`、`Column(index=True)`、`op.create_index` 和 `op.drop_index` 都会被拒绝，以避免生成不完整或不正确的 DDL。请使用 `op.add_clickhouse_index` 和 `op.drop_clickhouse_index`。
 
-```python
-context.configure(
-    connection=connection,
-    target_metadata=metadata,
-    clickhousedb_compare_indexes=False,
-    clickhousedb_compare_projections=False,
-)
-```
+请参阅完整的 [Alembic 示例](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/alembic/WORKED_EXAMPLE.md)。从 `clickhouse-sqlalchemy` 迁移的用户还应阅读[迁移指南](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/MIGRATING_FROM_CLICKHOUSE_SQLALCHEMY.md)。
 
-每个选项都会跳过相应的目录读取，以及删除表时为降级保存的快照。修改会生成独立的删除和添加操作。降级会恢复定义，但无论升级还是降级都不会恢复先前的物化状态。替换投影会丢弃其现有的投影数据分片。请评估由此带来的重建开销；如果现有 parts 需要立即应用替换后的投影，请显式运行 `MATERIALIZE PROJECTION`。索引的物化同样需要显式执行。
-
-使用 `ClickHouseIndex` 声明跳过索引以获得自动生成支持，或者在手动编写的修订版本中使用现有的 `op.add_clickhouse_index` 和 `op.drop_clickhouse_index` 辅助函数。从 `clickhouse_connect.cc_sqlalchemy.alembic` 和 `.alembic.operations` 导入的方式仍受支持。标准 SQLAlchemy 的 `Index`、`Column(index=True)`、`op.create_index` 和 `op.drop_index` 仍会被拒绝。
-
-对于受管表，默认由声明决定当前实际存在的显式索引集合。未声明的显式索引会产生删除操作，包括此前仅通过命令式迁移创建的索引。如果表达式、索引类型、参数或实际粒度发生变化，会先生成一个独立的删除操作，再生成一个添加操作。降级会恢复先前的定义。在渲染之前，这些操作对 `process_revision_directives` 仍然可见。策略钩子应按 schema、表和对象名称来配对索引和投影的修改，而不要依赖操作的相邻顺序。无论升级还是降级都不会恢复先前的物化状态，也不会生成 `MATERIALIZE INDEX`。如果现有 parts 需要立即使用该索引，请显式执行物化。
-
-请使用 `render_as_batch=False` 生成索引的新增、移除和编辑操作。这些操作的辅助函数不支持 Alembic 的延迟批次队列，因此若使用 `render_as_batch=True`，生成时会引发错误。建表语句中的内联索引以及删表降级快照中的内联索引仍受支持。
-
-同样的限制也适用于批次块中的其他自定义 ClickHouse 操作，包括表设置、投影和物化。请在批次模式之外生成这些操作。
-
-如需通过 `op.batch_alter_table()` 进行物理批次重建，请传入一个完整的 `copy_from` Table，其中须包含列、引擎和 `clickhousedb_indexes`。可使用上文的显式反射示例同时加载列和索引，离线迁移则需提供完整的元数据。自动在线重建会在执行时读取索引目录，并在创建或删除表之前拒绝处理带有显式索引的表。即使选择不参与 自动生成 比较，也无法绕过此保护机制。
-
-标准的 `include_name` 和 `include_object` 钩子会接收 `type_="index"`。名称过滤器同时作用于反射得到的候选项和声明的候选项，因此被排除的名称始终不受管理。对象过滤器会接收常规的 `reflected` 和 `compare_to` 值，其中的索引对象会公开定义字段和 `.table`。例如，Alembic 处理非托管对象的标准写法 `reflected and compare_to is None` 可以保护仅以命令式方式管理的索引。表过滤器会在读取索引目录之前生效。新建表上的内联索引也会在策略钩子执行之前完成过滤。
-
-比较时会借助服务器的格式化和分析功能，以兼容 ClickHouse 的不同写法和默认值。表达式分析依赖当前表、服务器函数和设置，并且要求启用分析器、能够输出预期的 `EXPLAIN` 结果。上述能力已在 ClickHouse 26.8 上验证，并基于 26.6 进行了源码审查。仅凭目录字段存在，并不能说明较旧版本的服务器支持比较。如果修改了影响索引的 `ALIAS` 定义，则需要在索引比较之前先执行显式的列迁移。
-
-索引编辑可以引用同一修订版本中新增的物理列。如果分析将这类待新增的列报告为未知标识符，自动生成 会在新增列可用的前提下验证完整表达式，然后先生成新增列的操作，再删除并重新添加索引。其他未知标识符 (包括拼写错误以及被过滤器排除的列) 仍会引发 `IndexComparisonError`。
-
-空的类型括号和大小写差异 (例如 `minmax()`、`MinMax()` 和 `minmax`) 在比较时视为相同。省略的类型参数在比较时不会展开：在 `bloom_filter` 与 `bloom_filter(0.025)` 之间切换可能会触发一次删除并重新添加，即使服务器实际使用的就是该默认值。
-
-比较过程无法判定任意 SQL 表达式是否等价。当规范化成功但结果形式不同时，即使表达式返回相同的值，自动生成 也会生成替换操作。请审查此类变更，或通过显式迁移和过滤器来管理这些索引。
-
-如果无法访问目录、无法解析表达式或无法获得预期的规范化输出，自动生成 会引发 `IndexComparisonError`，并附带表、索引、声明的定义、反射得到的定义以及失败原因。请仔细审查编辑操作。删除和添加是两条独立的非事务性语句，一旦添加失败，旧索引可能已不复存在。
-
-### 投影自动生成 {#projection-autogenerate}
-
-默认情况下，Alembic 会比较受管表上的 SELECT 投影。实际存在的投影集合以声明为准：未声明的投影会生成删除操作，定义发生变化时则会分别生成删除和添加操作。在每张表上，自动生成 按以下顺序排列操作：投影删除、列的添加和修改、索引操作、投影添加，最后是列删除。Alembic 会在表比较器完成后追加列删除操作。在策略钩子中，请按 schema、表和投影名称对相关编辑进行配对。删除与添加之间可能会穿插其他操作。降级会恢复之前的定义，包括重新创建的已删除表上的投影。在渲染之前，这些操作会向 `process_revision_directives` 提供完整定义。系统不会生成 `MATERIALIZE PROJECTION`，升级和降级也都不会恢复数据分区先前的物化状态。如果现有数据分区需要立即使用该投影，请显式执行物化。
-
-对于 `AggregatingMergeTree` 以及其他具有非标准合并行为的引擎，当 `deduplicate_merge_projection_mode='throw'` 时，ClickHouse 会拒绝 `ADD PROJECTION`。在应用投影添加或替换 (包括替换最初以内联方式声明的投影) 之前，请将其显式设置为 `drop` 或 `rebuild`。
-
-`include_name` 和 `include_object` 会接收 `type_="projection"`。名称过滤器同时作用于反射名称和声明名称。对象过滤器接收的定义包含 `.table`、`reflected` 和 `compare_to`。常用的 `reflected and compare_to is None` 写法可以保护仅以命令式方式管理的投影。表过滤器在读取目录之前运行，新建表上的内联定义会在策略钩子之前被过滤。被过滤的投影或无关表上存在不支持的定义时，不会妨碍比较。
-
-比较时使用服务器完整的投影语法格式化器，以及 `system.functions` 中不区分大小写的函数名称和别名，与 ClickHouse 的 CREATE 规范化方式保持一致。比较会保留 SELECT 结构 (包括通配符和聚合表达式) ，而不是将其作为普通 SELECT 针对实际表进行分析。格式、标识符引用方式以及已注册的不区分大小写的函数拼写上的差异均视为相等。区分大小写的名称 (例如 `sumIf` 和 `SumIf`) 仍视为不同。当格式化后的定义不同时，比较还会检查解析后的语法树，该语法树会忽略分组括号。冗余括号以及运算符与函数的不同写法 (例如 `value + 13` 和 `plus(value, 13)`) 视为相等，因为不同 ClickHouse 版本和 ClickHouse Cloud 存储冗余括号的方式并不一致。其他结构差异会生成删除和添加操作。比较并不能证明任意 SQL 的等价性，也不会校验列依赖项。替换后的投影可以引用同一修订版本中先前添加的物理列。应用之前，请检查依赖项，包括已更改的 ALIAS 列。无效依赖项会在执行 DDL 时报错；由于删除和添加是两条独立的非事务性语句，一旦添加失败，旧投影可能已被删除。
-
-缺少目录字段、目录访问错误、格式化或函数元数据不可用、投影级 `WITH SETTINGS` 以及基于索引的形式，都会引发 `ProjectionComparisonError`，其中包含表、投影、声明定义与反射定义以及原因。规范化失败时会引发此诊断错误，而不会生成替换操作。请过滤不支持的投影，或通过显式迁移来管理它们。如果 `query_masking_rules` 更改了目录返回的 SELECT 文本，比较和重放结果可能不可靠。对于受影响的投影，请使用显式迁移、过滤器或比较退出选项。函数规范化需要 `system.functions` 中的 `name`、`is_aggregate`、`case_insensitive` 和 `alias_to` 字段。是否支持取决于对目录和格式化器的实际查询结果，而非版本字符串。
-
-请使用 `render_as_batch=False` 生成投影的添加、删除和编辑。内联 CREATE 定义和删除表的降级快照仍受支持。对于物理批次重建，请提供完整的 `copy_from` 元数据，其中包含列、引擎和 `clickhousedb_projections`。自动在线重建会读取投影目录，并在执行 DDL 之前拒绝处理带有投影的表。比较退出选项无法绕过这一执行保护。
-
-请参阅完整的 [Alembic 实践示例](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/alembic/WORKED_EXAMPLE.md)。从 `clickhouse-sqlalchemy` 迁移的用户还应阅读[迁移指南](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/MIGRATING_FROM_CLICKHOUSE_SQLALCHEMY.md)。
-
-### 在渲染前对生成的操作进行分类 {#classify-generated-operations-before-rendering}
-
-全部 21 个 ClickHouse 迁移操作类均可从
-`clickhouse_connect.cc_sqlalchemy.alembic` 及其 `operations` 模块公开访问。可在
-`process_revision_directives` 中使用 `isinstance` 检查这些类，或通过
-Alembic 的 `Rewriter.rewrites` 注册它们。旧的下划线名称仍作为
-同一类的别名保留，因此现有的注册和导入代码可继续正常工作。
-
-可供检查的公开字段与构造函数参数一致。表操作公开
-`table_name`、`schema` 和 `clickhouse_settings`。单个索引操作公开
-`name`。添加操作还公开 `expression`、`type_`、`granularity`、`if_not_exists`、
-`first` 和 `after_index`。投影添加操作公开的是 `select` 和
-`after_projection`，而非索引的表达式、类型和粒度字段。删除操作
-公开 `if_exists`；对于单个索引或投影，若存在先前定义，还会公开 `existing_index` 或
-`existing_projection`。物化操作
-公开 `if_exists` 和 `partition`。分组添加操作将 `indexes` 或
-`projections` 存储为由 `ClickHouseIndex` 或 `ClickHouseProjection` 组成的元组。分组
-删除操作将 `names` 存储为元组。请逐一检查分组操作中的每个成员。
-
-`ModifyClickHouseTableSettingsOp` 公开 `settings` 和可选的
-`existing_settings`。`ResetClickHouseTableSettingsOp` 公开由 `names` 组成的元组。
-这些表设置不同于查询级别的 `clickhouse_settings` 映射。
-创建视图和函数的操作公开 `name`、`select` 或 `expression`、
-`if_not_exists` 以及 `or_replace`。视图还公开 `schema`。创建 materialized-view
-的操作公开 `name`、`schema`、`to_table`、`to_schema`、`select` 和
-`if_not_exists`。创建字典的操作公开 `name`、`schema`、`columns` 元组、
-`primary_key`、`source`、`layout`、`lifetime`、`comment`、`if_not_exists` 和
-`clickhouse_settings`。视图、函数、materialized-view 和字典的删除操作公开
-`name` 和 `if_exists`；若构造函数接受，还会公开 `schema` 和 `clickhouse_settings`。字典重新加载操作公开 `name` 和 `schema`。SQL 片段
-仍保持为字符串。映射保留传入时的原值。反向操作可能
-需要先前定义，也可能抛出 `NotImplementedError`。即使定义可逆，
-也不会恢复物化数据。
-
-此示例仅为应用层面的策略，并非驱动程序提供的安全保证。它
-只允许明确选定的索引形式或表设置，将替换操作和
-未知操作转交审查，并拒绝独立的索引删除、独立的
-投影删除以及具有破坏性的内置操作。请根据您的部署情况调整这些规则。即便是
-创建操作也需要检查字段：在视图上设置 `or_replace=True` 可能会丢弃
-同名冲突表中的数据，原始 SQL 主体和字典源也需要审查。
-
-```python
-import logging
-
-from alembic.operations import ops
-from clickhouse_connect.cc_sqlalchemy import alembic as ch_alembic
-
-
-def leaves(operation):
-    if isinstance(operation, ops.OpContainer):
-        for child in operation.ops:
-            yield from leaves(child)
-    else:
-        yield operation
-
-
-def object_key(operation):
-    if isinstance(operation, (ch_alembic.AddClickHouseIndexOp,
-                              ch_alembic.DropClickHouseIndexOp)):
-        kind = "index"
-    elif isinstance(operation, (ch_alembic.AddClickHouseProjectionOp,
-                                ch_alembic.DropClickHouseProjectionOp)):
-        kind = "projection"
-    else:
-        return None
-    return kind, operation.schema, operation.table_name, operation.name
-
-
-def classify_tree(tree, direction):
-    operations = list(leaves(tree))
-    adds = {object_key(op) for op in operations if isinstance(
-        op, (ch_alembic.AddClickHouseIndexOp, ch_alembic.AddClickHouseProjectionOp))}
-    drops = {object_key(op) for op in operations if isinstance(
-        op, (ch_alembic.DropClickHouseIndexOp, ch_alembic.DropClickHouseProjectionOp))}
-    replacements = adds & drops
-    for operation in operations:
-        verdict, reason = "review", "operation needs explicit review"
-        if isinstance(operation, (ops.DropTableOp, ops.DropColumnOp, ops.ExecuteSQLOp)):
-            verdict, reason = "rejected", "destructive change or opaque SQL"
-        elif object_key(operation) in replacements:
-            reason = "replacement can discard existing materialization"
-        elif isinstance(operation, (ch_alembic.DropClickHouseIndexOp,
-                                    ch_alembic.DropClickHouseProjectionOp,
-                                    ch_alembic.DropClickHouseIndexesOp,
-                                    ch_alembic.DropClickHouseProjectionsOp)):
-            verdict, reason = "rejected", "removal requires a separate migration"
-        elif direction == "upgrade":
-            if isinstance(operation, ch_alembic.AddClickHouseIndexOp):
-                if (operation.type_ == "minmax" and operation.expression == "value"
-                        and operation.granularity == 1 and not operation.first
-                        and operation.after_index is None and not operation.clickhouse_settings):
-                    verdict, reason = "allowed", "approved index definition"
-            elif isinstance(operation, ch_alembic.ModifyClickHouseTableSettingsOp):
-                if (dict(operation.settings) == {"max_bytes_to_merge_at_max_space_in_pool": 107374182400}
-                        and not operation.clickhouse_settings):
-                    verdict, reason = "allowed", "approved table setting value"
-        yield direction, operation, verdict, reason
-
-
-def review_revision(context, revision, directives):
-    # Scope: a single-engine env.py. clickhouse_writer uses singular roots.
-    for script in directives:
-        if len(script.upgrade_ops_list) != 1 or len(script.downgrade_ops_list) != 1:
-            raise ValueError("This policy hook supports one operation stream only")
-        findings = [
-            *classify_tree(script.upgrade_ops_list[0], "upgrade"),
-            *classify_tree(script.downgrade_ops_list[0], "downgrade"),
-        ]
-        for direction, op, verdict, reason in findings:
-            logging.getLogger("alembic.policy").info(
-                "%s: %s: %s: %s", direction, type(op).__name__, verdict, reason)
-        blocked = [f"{direction}: {type(op).__name__}: {verdict}: {reason}"
-                   for direction, op, verdict, reason in findings
-                   if direction == "upgrade" and verdict != "allowed"]
-        if blocked:
-            raise ValueError("Migration requires review:\n" + "\n".join(blocked))
-    ch_alembic.clickhouse_writer(context, revision, directives)
-```
-
-在 `context.configure()` 中传入 `process_revision_directives=review_revision`，以替代
-`clickhouse_writer`。该钩子会记录升级和降级两个方向的检查结果，并以
-升级检查结果作为是否生成修订版本的依据。降级检查结果需要在执行
-降级之前单独审查，但不会阻止写入已批准的升级。该钩子会遍历嵌套容器，并按
-类型、schema、表和名称对替换操作进行配对，无论这些操作是否相邻。已分组的新增操作以及所有
-无法识别的操作默认都需要审查。此方案每个方向仅支持一个引擎和
-一个操作流。即使在分类器中使用列表形式的根节点，也不会
-使 `clickhouse_writer` 成为支持多引擎的钩子。生成的树为空，仅能说明
-已启用且受支持的比较未发现任何变更。视图、函数、
-字典以及其他不受支持的比较仍需编写显式迁移。
-
-## 范围和限制 {#scope-and-limitations}
+<div id="scope-and-limitations">
+  ## 范围和限制
+</div>
 
 * ClickHouse 不通过此 HTTP 方言提供传统事务。`engine.begin()` 和 `Session.commit()` 用于组织 Python 端的工作，但 commit 和 rollback 在服务器端都是空操作。
 * 该方言未实现 `UPDATE`、两阶段事务、序列、`RETURNING` 以及高级隔离级别。需要执行服务器端变更时，请显式使用 ClickHouse SQL。

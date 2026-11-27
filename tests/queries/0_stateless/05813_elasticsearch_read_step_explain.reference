@@ -1,7 +1,0 @@
-ReadFromElasticsearch
-Index: idx
-Query: {"match_all":{}}
-ReadFromElasticsearch
-Index: logs-*
-Query: {"term":{"level":"error"}}
-1	1

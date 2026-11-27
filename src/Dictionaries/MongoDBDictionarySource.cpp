@@ -2,7 +2,6 @@
 
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Common/Exception.h>
-#include <Common/maskURIPassword.h>
 
 #if USE_MONGODB
 #include <Dictionaries/MongoDBDictionarySource.h>
@@ -10,6 +9,7 @@
 
 #include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -35,16 +35,6 @@ namespace ErrorCodes
     #else
     extern const int SUPPORT_IS_DISABLED;
     #endif
-}
-
-/// A connection string or option list given as an SQL string literal in a dictionary `SOURCE`, keeping its quotes.
-static bool maskQuotedMongoDBConnectionString(String & literal)
-{
-    String value = literal.substr(1, literal.size() - 2);
-    if (!maskMongoDBConnectionString(value))
-        return false;
-    literal = "'" + value + "'";
-    return true;
 }
 
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory);
@@ -76,16 +66,14 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
                 validateNamedCollection(*named_collection, {"host", "db", "collection"}, {"port", "user", "password", "options"});
                 String user = named_collection->get<String>("user");
                 String auth_string;
-                String escaped_user;
                 String escaped_password;
-                Poco::URI::encode(user, "!?#/'\",;:$&()[]*+=@", escaped_user);
                 Poco::URI::encode(named_collection->get<String>("password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
                 if (!user.empty())
-                    auth_string = fmt::format("{}:{}@", escaped_user, escaped_password);
+                    auth_string = fmt::format("{}:{}@", user, escaped_password);
                 configuration->uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
                                                                                  auth_string,
                                                                                  named_collection->get<String>("host"),
-                                                                                 named_collection->getOrDefault<UInt64>("port", 27017),
+                                                                                 named_collection->getOrDefault<String>("port", "27017"),
                                                                                  named_collection->get<String>("db"),
                                                                                  named_collection->getOrDefault<String>("options", "")));
             }
@@ -138,11 +126,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
     };
     #endif
 
-    factory.registerSource("mongodb", create_dictionary_source,
-        SecretArgumentsSpec{
-            .secret_keys = {"password"},
-            .partial = {{"uri", maskQuotedMongoDBConnectionString}, {"options", maskQuotedMongoDBConnectionString}}},
-        Documentation{
+    factory.registerSource("mongodb", create_dictionary_source, Documentation{
         .description = R"DOCS_MD(
 # MongoDB dictionary source
 
@@ -312,7 +296,7 @@ std::string MongoDBDictionarySource::toString() const
 {
     /// Shown in `system.dictionaries` and in the logs.
     String uri = configuration->uri->to_string();
-    maskMongoDBConnectionString(uri);
+    maskURIPassword(&uri);
     return fmt::format("MongoDB: {}", uri);
 }
 #endif

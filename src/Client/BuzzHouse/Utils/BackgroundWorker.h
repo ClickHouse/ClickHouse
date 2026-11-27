@@ -3,6 +3,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <functional>
+#include <iostream>
 #include <mutex>
 #include <queue>
 #include <thread>
@@ -31,11 +32,15 @@ public:
 
     void stop();
 
+    bool is_empty() const;
+
+    size_t queue_size() const;
+
 private:
     void worker_loop();
 
     std::queue<BackgroundWorkerTask> task_queue_;
-    std::mutex queue_mutex_;
+    mutable std::mutex queue_mutex_;
     std::condition_variable cv_;
     std::atomic<bool> stop_;
     LoggerPtr log;

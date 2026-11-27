@@ -1,5 +1,4 @@
 import os
-import uuid
 
 import pytest
 import requests
@@ -11,7 +10,7 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/config.xml", "configs/enable_span_log.xml"],
+    main_configs=["configs/config.xml"],
 )
 
 cluster_node1 = cluster.add_instance(
@@ -68,32 +67,6 @@ def test_prometheus_keeper_metrics_only(start_cluster):
     assert "ClickHouseAsyncMetrics_KeeperLastLeaderElectionTime" in prometheus_handler_response.text
     assert "ClickHouseAsyncMetrics_KeeperLastLeaderUnavailableTime" in prometheus_handler_response.text
     assert "PolygonDictionaryThreads" not in prometheus_handler_response.text
-
-
-def test_prometheus_keeper_metrics_only_traced_scrape(start_cluster):
-    # The Keeper metrics writer is also used by a regular server with `prometheus.keeper_metrics_only`,
-    # which has a span log, so a traced scrape must record a server span.
-    trace_id = uuid.uuid4().hex
-    response = requests.get(
-        f"http://{node.ip_address}:8001/metrics",
-        headers={"traceparent": f"00-{trace_id}-5150000000000515-01"},
-        timeout=5,
-    )
-    assert response.status_code == 200
-    assert "ClickHouseAsyncMetrics_KeeperIsStandalone" in response.text
-
-    # The span is written when the handler finishes, which happens after the response has been sent.
-    assert_eq_with_retry(
-        node,
-        f"""
-        SYSTEM FLUSH LOGS opentelemetry_span_log;
-        SELECT count(), any(kind), any(hex(parent_span_id))
-        FROM system.opentelemetry_span_log
-        WHERE trace_id = UUIDNumToString(toFixedString(unhex('{trace_id}'), 16))
-            AND operation_name = 'PrometheusRequestHandler'
-        """,
-        "1\tSERVER\t5150000000000515",
-    )
 
 
 def test_prometheus_keeper_accepts_server_only_constant_label():

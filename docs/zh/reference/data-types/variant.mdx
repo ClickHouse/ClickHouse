@@ -19,7 +19,9 @@ doc_type: 'reference'
     因为处理这类类型的值时可能会产生歧义。默认情况下，创建这样的 `Variant`类型会导致异常，但可以通过 setting`allow&#95;suspicious&#95;variant&#95;types&#96; 启用。
 </Note>
 
-## 创建 Variant {#creating-variant}
+<div id="creating-variant">
+  ## 创建 Variant
+</div>
 
 在表的列定义中使用 `Variant` 类型：
 
@@ -109,7 +111,9 @@ SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as 
 └───────────────────────────────┘
 ```
 
-## 将 Variant 嵌套类型读取为子列 {#reading-variant-nested-types-as-subcolumns}
+<div id="reading-variant-nested-types-as-subcolumns">
+  ## 将 Variant 嵌套类型读取为子列
+</div>
 
 Variant 类型支持将类型名称用作子列，从 Variant 列中读取单个嵌套类型。
 因此，如果你有列 `variant Variant(T1, T2, T3)`，就可以使用语法 `variant.T2` 读取类型为 `T2` 的子列。
@@ -186,11 +190,15 @@ SELECT toTypeName(variantType(v)) FROM test LIMIT 1;
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Variant 列与其他列之间的转换 {#conversion-between-a-variant-column-and-other-columns}
+<div id="conversion-between-a-variant-column-and-other-columns">
+  ## Variant 列与其他列之间的转换
+</div>
 
 `Variant` 类型的列可进行 4 种转换。
 
-### 将 String 列转换为 Variant 列 {#converting-a-string-column-to-a-variant-column}
+<div id="converting-a-string-column-to-a-variant-column">
+  ### 将 String 列转换为 Variant 列
+</div>
 
 从 `String` 转换为 `Variant`，是通过从字符串值中解析出 `Variant` 类型的值来实现的：
 
@@ -237,7 +245,9 @@ SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(varia
 └───────────┴──────────────┘
 ```
 
-### 将普通列转换为 Variant 列 {#converting-an-ordinary-column-to-a-variant-column}
+<div id="converting-an-ordinary-column-to-a-variant-column">
+  ### 将普通列转换为 Variant 列
+</div>
 
 可以将类型为 `T` 的普通列转换成包含该类型的 `Variant` 列：
 
@@ -263,7 +273,9 @@ SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as v
 └───────────┴──────────────┘
 ```
 
-### 将 Variant 列转换为普通列 {#converting-a-variant-column-to-an-ordinary-column}
+<div id="converting-a-variant-column-to-an-ordinary-column">
+  ### 将 Variant 列转换为普通列
+</div>
 
 可以将 `Variant` 列转换为普通列。在这种情况下，所有嵌套的 Variant 都会被转换为目标类型：
 
@@ -281,9 +293,9 @@ SELECT v::Nullable(Float64) FROM test;
 └──────────────────────────────┘
 ```
 
-对于无法转换为目标类型的候选类型，仅当列中包含该候选类型的值时才会报错。
-
-### 将一个 Variant 转换为另一个 Variant {#converting-a-variant-to-another-variant}
+<div id="converting-a-variant-to-another-variant">
+  ### 将一个 Variant 转换为另一个 Variant
+</div>
 
 可以将 `Variant` 列转换为另一个 `Variant` 列，但前提是目标 `Variant` 列包含原始 `Variant` 中的所有嵌套类型：
 
@@ -301,7 +313,9 @@ SELECT v::Variant(UInt64, String, Array(UInt64)) FROM test;
 └───────────────────────────────────────────────────┘
 ```
 
-## 从数据中读取 Variant 类型 {#reading-variant-type-from-the-data}
+<div id="reading-variant-type-from-the-data">
+  ## 从数据中读取 Variant 类型
+</div>
 
 所有文本格式 (TSV、CSV、CustomSeparated、Values、JSONEachRow 等) 都支持读取 `Variant` 类型。解析数据时，ClickHouse 会尝试将值写入最合适的 Variant 类型。
 
@@ -334,7 +348,9 @@ $$)
 └─────────────────────┴───────────────┴──────┴───────┴─────────────────────┴─────────┘
 ```
 
-## 比较 Variant 类型的值 {#comparing-values-of-variant-data}
+<div id="comparing-values-of-variant-data">
+  ## 比较 Variant 类型的值
+</div>
 
 `Variant` 类型的值只能与相同 `Variant` 类型的值比较。
 
@@ -466,7 +482,9 @@ SELECT v, variantType(v) FROM test ORDER by v;
 
 **注意** 默认情况下，`Variant` 类型不能用于 `GROUP BY`/`ORDER BY` 键；如果要使用它，请注意其特殊的比较规则，并启用 `allow_suspicious_types_in_group_by`/`allow_suspicious_types_in_order_by` 设置。
 
-## 支持 Variant 的 JSONExtract 函数 {#jsonextract-functions-with-variant}
+<div id="jsonextract-functions-with-variant">
+  ## 支持 Variant 的 JSONExtract 函数
+</div>
 
 所有 `JSONExtract*` 函数都支持 `Variant` 类型：
 
@@ -500,7 +518,9 @@ SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Var
 └────────────────────────────────────────┴───────────────────────────────────────────────────────┘
 ```
 
-## 带 Variant 参数的函数 {#functions-with-variant-arguments}
+<div id="functions-with-variant-arguments">
+  ## 带 Variant 参数的函数
+</div>
 
 ClickHouse 中的大多数函数都会通过 **Variant 的默认实现** 自动支持 `Variant` 类型参数。
 从 `26.1` 版本开始，如果某个未显式处理 Variant 类型的函数接收到一个 Variant 列，ClickHouse 会：
@@ -570,7 +590,9 @@ SELECT v + 10 AS result, toTypeName(result) FROM test3;
   除以零或内存不足) 仍会正常抛出，以避免掩盖真实问题。
 </Note>
 
-### 类型不匹配时的行为 {#variant-type-mismatch-behavior}
+<div id="variant-type-mismatch-behavior">
+  ### 类型不匹配时的行为
+</div>
 
 设置 `variant_throw_on_type_mismatch` 用于控制当函数应用于 `Variant` 列，而某一行实际存储的类型与该函数不兼容时的处理方式：
 
@@ -583,10 +605,10 @@ SELECT v + 10 AS result, toTypeName(result) FROM test3;
 CREATE TABLE test (v Variant(String, UInt64)) ENGINE = Memory;
 INSERT INTO test VALUES ('hello'), (42), ('foo');
 
--- 默认行为（类型不匹配时抛出异常）：length() 不接受 UInt64，因此查询会抛出异常。
-SELECT length(v) FROM test;  -- 抛出 ILLEGAL_TYPE_OF_ARGUMENT
+-- Default (throw on mismatch): length() does not accept UInt64, so the query throws.
+SELECT length(v) FROM test;  -- throws ILLEGAL_TYPE_OF_ARGUMENT
 
--- 禁用异常抛出后：不兼容的行返回 NULL。
+-- With throw disabled: incompatible rows return NULL.
 SET variant_throw_on_type_mismatch = false;
 SELECT v, length(v) FROM test ORDER BY v::String NULLS LAST;
 ```
@@ -597,31 +619,6 @@ SELECT v, length(v) FROM test ORDER BY v::String NULLS LAST;
 │ hello │         5 │
 │ 42    │      ᴺᵁᴸᴸ │
 └───────┴───────────┘
-```
-
-## 使用 Variant 参数的聚合函数 {#aggregate-functions-with-variant-arguments}
-
-部分聚合函数 (例如 `count`、`any`、`groupArray` 以及 `uniq` 家族) 原生支持 `Variant` 参数。
-仅适用于特定类型值的聚合函数 (例如 `sum`、`avg`、`min`、`max`、`quantile`、各类统计函数，以及 `argMin` 和 `argMax` 的 `val` 参数) 会作用于各候选类型的最小共同超类型，并包装为 `Nullable`：
-
-```text
-f(variant) == f(CAST(variant AS Nullable(supertype(T1, ..., TN))))
-```
-
-`Variant` 中的 `NULL` 值照常会被跳过。如果各候选类型之间不存在共同超类型，或者该共同超类型无法包装在 `Nullable` 中，则会抛出 `ILLEGAL_TYPE_OF_ARGUMENT` 异常。
-
-**示例：**
-
-```sql
-SET allow_suspicious_variant_types = 1;
-SELECT sum(v), max(v), toTypeName(sum(v))
-FROM values('v Variant(UInt32, Float64)', 1::UInt32, 2.5::Float64, NULL);
-```
-
-```text
-┌─sum(v)─┬─max(v)─┬─toTypeName(sum(v))─┐
-│    3.5 │    2.5 │ Nullable(Float64)  │
-└────────┴────────┴────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

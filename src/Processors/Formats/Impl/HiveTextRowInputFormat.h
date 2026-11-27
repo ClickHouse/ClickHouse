@@ -3,7 +3,6 @@
 #include "config.h"
 
 #if USE_HIVE
-#include <Common/VectorWithMemoryTracking.h>
 #include <IO/PeekableReadBuffer.h>
 #include <Processors/Formats/Impl/CSVRowInputFormat.h>
 
@@ -29,11 +28,11 @@ class HiveTextFormatReader final : public CSVFormatReader
 public:
     HiveTextFormatReader(PeekableReadBuffer & buf_, const FormatSettings & format_settings_);
 
-    VectorWithMemoryTracking<String> readNames() override;
-    VectorWithMemoryTracking<String> readTypes() override;
+    std::vector<String> readNames() override;
+    std::vector<String> readTypes() override;
 
 private:
-    VectorWithMemoryTracking<String> input_field_names;
+    std::vector<String> input_field_names;
 };
 
 }

@@ -99,7 +99,7 @@ the partition or sorting key.
 ## allow_suspicious_indices {#allow_suspicious_indices}
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Reject primary/secondary indexes and sorting keys with identical expressions, and sorting, primary or sampling key, secondary index or projection sorting key expressions with the name of a stored column
+Reject primary/secondary indexes and sorting keys with identical expressions
 
 ## allow_tuple_element_aggregation {#allow_tuple_element_aggregation}
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -110,14 +110,6 @@ aggregation during merge in SummingMergeTree, AggregatingMergeTree, and
 CoalescingMergeTree. Nested Tuples are expanded recursively so that all
 leaf elements are aggregated independently. This setting is immutable
 and must be specified at table creation time.
-
-## allow_vector_similarity_index_in_specialized_merge_tree {#allow_vector_similarity_index_in_specialized_merge_tree}
-<SettingsInfoBlock type="Bool" default_value="0" />
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting. Vector similarity indexes are no longer allowed on specialized MergeTree engines by default"}]}]}/>
-
-Whether a `vector_similarity` index may be created on a `MergeTree`-family engine other than `MergeTree` / `ReplicatedMergeTree`,
-e.g. `ReplacingMergeTree` or `CollapsingMergeTree`. With such engines, `SELECT ... FINAL` that uses the index may return wrong results.
-The setting is checked only when an index is created, so existing tables and `ATTACH` are not affected.
 
 ## allow_vertical_merges_from_compact_to_wide_parts {#allow_vertical_merges_from_compact_to_wide_parts}
 <SettingsInfoBlock type="Bool" default_value="1" />

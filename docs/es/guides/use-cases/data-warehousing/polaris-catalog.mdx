@@ -1,9 +1,9 @@
 ---
 slug: /use-cases/data-lake/polaris-catalog
-sidebarTitle: 'Catálogo de Polaris'
-title: 'Catálogo de Polaris'
+sidebarTitle: 'Catálogo Polaris'
+title: 'Catálogo Polaris'
 description: 'En esta guía, le mostraremos los pasos para consultar
- sus datos con ClickHouse y el catálogo de Polaris de Snowflake.'
+ sus datos con ClickHouse y el catálogo Polaris de Snowflake.'
 keywords: ['Polaris', 'Snowflake', 'Lago de datos']
 show_related_blogs: true
 doc_type: 'guide'
@@ -15,17 +15,17 @@ import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 ClickHouse admite la integración con varios catálogos (Unity, Glue, Polaris,
 etc.). En esta guía, le mostraremos cómo consultar sus datos
-con ClickHouse y el [catálogo de Apache Polaris](https://polaris.apache.org/releases/1.1.0/getting-started/using-polaris/#setup).
+con ClickHouse y el [catálogo Apache Polaris](https://polaris.apache.org/releases/1.1.0/getting-started/using-polaris/#setup).
 Apache Polaris admite tablas Iceberg y tablas Delta (mediante Generic Tables). Por el momento, esta integración solo admite tablas Iceberg.
 
 <Note>
-  Esta funcionalidad está en fase Beta. Actívela con:
-  `SET allow_database_iceberg = 1;`
-
-  En versiones anteriores a la 25.8, en las que la funcionalidad es experimental, use `SET allow_experimental_database_iceberg = 1;` en su lugar.
+  Como esta funcionalidad es experimental, deberá habilitarla con:
+  `SET allow_experimental_database_unity_catalog = 1;`
 </Note>
 
-## Requisitos previos {#prerequisites}
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
 
 Para conectarse al catálogo Polaris, necesitará lo siguiente:
 

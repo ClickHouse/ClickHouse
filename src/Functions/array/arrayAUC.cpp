@@ -15,7 +15,6 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int NOT_IMPLEMENTED;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -136,43 +135,12 @@ public:
         return std::make_shared<FunctionArrayAUC>(name, is_pr);
     }
 
-    [[nodiscard]] String getName() const override { return function_name; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    String getName() const override { return function_name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    /// `arrayROCAUC(scores, labels[, scale[, offsets]])`           — 2..4 args
-    /// `arrayAUCPR(scores, labels[, offsets])`                     — 2..3 args
-    /// `scores` and `labels` must be Array of numeric (labels can also be Enum).
-    /// Optional `scale` is a const Bool (only for ROC); optional `offsets` is
-    /// an Array of integers. Result is `Float64`.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        if (is_pr)
-            return "(Array, Array, [Array]) -> Float64";
-        /// `[const Bool, [Array]]` cannot be expressed as a nested Optional group (the
-        /// signature grammar does not allow groups inside `[...]`), so spell the legal
-        /// arities as explicit alternatives instead. `offsets` is only valid together
-        /// with `scale`, matching `getReturnTypeImpl` below.
-        return "(Array, Array) -> Float64"
-               " OR (Array, Array, const Bool) -> Float64"
-               " OR (Array, Array, const Bool, Array) -> Float64";
-    }
-
-    /// The signature above does not spell the element types of the arrays, and the `scale`
-    /// argument must be a constant, which cannot be checked from the types alone. Decline this
-    /// entry point (as it behaved before the signature was added) instead of letting it accept
-    /// shapes the authoritative resolver below rejects.
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "getReturnType is not implemented for {}: the constness of the arguments can only be validated "
-            "when the columns are known",
-            getName());
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         size_t argument_count = arguments.size();
 
@@ -243,9 +211,9 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeFloat64>(); }
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeFloat64>(); }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t argument_count = arguments.size();
 
@@ -305,7 +273,7 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 auto current = offsets[i];
-                auto previous = i == 0 ? 0 : offsets[static_cast<ssize_t>(i) - 1];
+                auto previous = i == 0 ? 0 : offsets[i - 1];
                 if (current - previous != array_partial_offsets_size)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -357,7 +325,7 @@ private:
         return true;
     }
 
-    [[nodiscard]] Float64 increase_unscaled_area(size_t prev_fp, size_t prev_tp, size_t curr_fp, size_t curr_tp) const
+    Float64 increase_unscaled_area(size_t prev_fp, size_t prev_tp, size_t curr_fp, size_t curr_tp) const
     {
         if (is_pr)
             /// PR curve plots Precision x Recall
@@ -377,7 +345,7 @@ private:
             /// Later we can divide it by (TP + FN) to obtain the correct AUC.
             ///
             /// This can be done because (TP + FN) is constant and equal to total positive labels.
-            return static_cast<Float64>(curr_tp) / (static_cast<Float64>(curr_tp) + static_cast<Float64>(curr_fp)) * static_cast<Float64>(curr_tp - prev_tp);
+            return static_cast<Float64>(curr_tp) / static_cast<Float64>(curr_tp + curr_fp) * static_cast<Float64>(curr_tp - prev_tp);
         else
             /// ROC curve plots TPR x FPR
             ///
@@ -397,10 +365,10 @@ private:
             ///
             /// This can be done because both (TP + FN) and (FP + TN) are constant and
             ///   equal to total positive labels and total negative labels, respectively.
-            return static_cast<Float64>(curr_fp - prev_fp) * (static_cast<Float64>(curr_tp) + static_cast<Float64>(prev_tp)) / 2.0;
+            return static_cast<Float64>(curr_fp - prev_fp) * static_cast<Float64>(curr_tp + prev_tp) / 2.0;
     }
 
-    [[nodiscard]] Float64 scale_back_area(Float64 area, size_t total_positive_labels, size_t total_negative_labels) const
+    Float64 scale_back_area(Float64 area, size_t total_positive_labels, size_t total_negative_labels) const
     {
         if (is_pr)
             /// To simplify the calculations, previously we calculated the AUC for the Precision x TP curve.
@@ -412,7 +380,7 @@ private:
             return area / static_cast<Float64>(total_positive_labels) / static_cast<Float64>(total_negative_labels);
     }
 
-    [[nodiscard]] Float64 apply(
+    Float64 apply(
         const IColumn & scores,
         const IColumn & labels,
         ColumnArray::Offset current_offset,

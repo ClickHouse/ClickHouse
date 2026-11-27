@@ -1,10 +1,11 @@
 {
+  "icon": "/images/icons/icon-kubernetes-operator.svg",
   "item": "Kubernetes Operator",
   "pages": [
     "ar/products/kubernetes-operator/overview",
     {
-      "group": "Install",
       "expanded": true,
+      "group": "Install",
       "pages": [
         "ar/products/kubernetes-operator/install/kubectl",
         "ar/products/kubernetes-operator/install/helm",
@@ -12,8 +13,8 @@
       ]
     },
     {
-      "group": "Guides",
       "expanded": true,
+      "group": "Guides",
       "pages": [
         "ar/products/kubernetes-operator/guides/introduction",
         "ar/products/kubernetes-operator/guides/configuration",
@@ -26,8 +27,8 @@
       ]
     },
     {
-      "group": "Reference",
       "expanded": true,
+      "group": "Reference",
       "pages": [
         "ar/products/kubernetes-operator/reference/api-reference"
       ]

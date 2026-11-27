@@ -20,14 +20,18 @@ ClickHouse se puede compilar en las siguientes plataformas:
 * s390/x (experimental)
 * RISC-V 64 (experimental)
 
-## Suposiciones {#assumptions}
+<div id="assumptions">
+  ## Suposiciones
+</div>
 
 El siguiente tutorial se basa en Ubuntu Linux, pero también debería funcionar en cualquier otra distribución de Linux con los ajustes adecuados.
 La versión mínima recomendada de Ubuntu para desarrollo es la 24.04 LTS.
 
 En este tutorial se da por hecho que tienes una copia local del repositorio de ClickHouse con todos los submódulos descargados.
 
-## Instalar los requisitos previos {#install-prerequisites}
+<div id="install-prerequisites">
+  ## Instalar los requisitos previos
+</div>
 
 Primero, consulte la [documentación general sobre requisitos previos](/es/resources/develop-contribute/introduction/developer-instruction).
 
@@ -40,32 +44,26 @@ sudo apt-get update
 sudo apt-get install build-essential git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
 ```
 
-## Instalar el compilador Clang {#install-the-clang-compiler}
+<div id="install-the-clang-compiler">
+  ## Instalar el compilador Clang
+</div>
 
 Para instalar Clang en Ubuntu/Debian, utiliza el script de instalación automática de LLVM disponible [aquí](https://apt.llvm.org/).
 
 ```bash
 wget https://apt.llvm.org/llvm.sh
 chmod +x llvm.sh
-sudo ./llvm.sh 23
+sudo ./llvm.sh 22
 ```
-
-<Note>
-  `apt.llvm.org` proporciona paquetes de Clang 23 para Ubuntu 24.04 (Noble) y versiones posteriores, y para Debian 12 (Bookworm) y versiones posteriores.
-  No existe un repositorio de Clang 23 para Ubuntu 22.04 (Jammy); en Jammy, instala Clang 21 en su lugar con `sudo ./llvm.sh 21`.
-</Note>
 
 Para otras distribuciones de Linux, comprueba si puedes instalar alguno de los [paquetes precompilados](https://releases.llvm.org/download.html) de LLVM.
 
 Desde febrero de 2026, se requiere Clang 21 o una versión superior.
 GCC y otros compiladores no son compatibles.
 
-<Tip>
-  El CI de ClickHouse compila con un build de la misma versión de Clang, optimizado con PGO y BOLT, que compila ClickHouse más rápido.
-  En Linux con glibc 2.38 o posterior, `eval "$(utils/download-ci-toolchain.sh)"` descarga ese compilador mediante `curl` y `zstd` y configura `CC` y `CXX` para que apunten a él al configurar un nuevo directorio de build.
-</Tip>
-
-## Instalar el compilador de Rust (opcional) {#install-the-rust-compiler-optional}
+<div id="install-the-rust-compiler-optional">
+  ## Instalar el compilador de Rust (opcional)
+</div>
 
 <Note>
   Rust es una dependencia opcional de ClickHouse.
@@ -79,36 +77,33 @@ Al igual que con las dependencias de C++, ClickHouse usa vendoring para controla
 Aunque en modo release debería funcionar cualquier versión moderna del toolchain de rustup con estas dependencias, si planeas habilitar sanitizers debes usar una versión que coincida exactamente con la misma `std` que se usa en CI (para la que vendoramos los crates):
 
 ```bash
-rustup toolchain install nightly-2026-11-02
-rustup default nightly-2026-11-02
+rustup toolchain install nightly-2026-03-22
+rustup default nightly-2026-03-22
 rustup component add rust-src
 ```
 
-<Tip>
-  ccache no almacena en caché el código de Rust, por lo que un nuevo directorio de build vuelve a compilar todos los crates de Rust.
-  Con `-DRUST_BUILD_CACHE_DIR=<path>`, Cargo conserva los crates compilados en ese directorio y los nuevos directorios de build del mismo checkout y configuración los reutilizan (excepto delta-kernel-rs). Ocupa aproximadamente 7 GB por checkout y configuración, no tiene límite de tamaño y puede eliminarse en cualquier momento.
-</Tip>
+<div id="build-clickhouse">
+  ## Compilar ClickHouse
+</div>
 
-## Hacer build de ClickHouse {#build-clickhouse}
-
-Recomendamos crear un directorio `build` separado dentro de `ClickHouse` que contenga todos los artefactos de build:
+Recomendamos crear un directorio `build` separado dentro de `ClickHouse` que contenga todos los artefactos de compilación:
 
 ```sh
 mkdir build
 cd build
 ```
 
-Puede tener varios directorios diferentes (p. ej., `build_release`, `build_debug`, etc.) para distintos tipos de build.
+Puede tener varios directorios diferentes (p. ej., `build_release`, `build_debug`, etc.) para distintos tipos de compilación.
 
 Opcional: Si tiene instaladas varias versiones del compilador, puede indicar el compilador exacto que desea usar.
 
 ```sh
-export CC=clang-23
-export CXX=clang++-23
+export CC=clang-22
+export CXX=clang++-22
 ```
 
-Para fines de desarrollo, se recomiendan los builds de depuración.
-En comparación con los builds de release, tienen un nivel más bajo de optimización del compilador (`-O`), lo que ofrece una mejor experiencia de depuración.
+Para fines de desarrollo, se recomiendan las compilaciones de depuración.
+En comparación con las compilaciones de release, tienen un nivel más bajo de optimización del compilador (`-O`), lo que ofrece una mejor experiencia de depuración.
 Además, las excepciones internas de tipo `LOGICAL_ERROR` provocan un cierre inmediato en lugar de fallar de forma controlada.
 
 ```sh
@@ -119,26 +114,26 @@ cmake -D CMAKE_BUILD_TYPE=Debug ..
   Si desea usar un depurador como gdb, añada `-D DEBUG_O_LEVEL="0"` al comando anterior para eliminar todas las optimizaciones del compilador, ya que pueden interferir con la capacidad de gdb para ver o acceder a las variables.
 </Note>
 
-Ejecute ninja para hacer build:
+Ejecute ninja para compilar:
 
 ```sh
 ninja clickhouse
 ```
 
-Si desea hacer build de todos los binarios (utilidades y pruebas), ejecute ninja sin parámetros:
+Si desea compilar todos los binarios (utilidades y pruebas), ejecute ninja sin parámetros:
 
 ```sh
 ninja
 ```
 
-Puede controlar la cantidad de procesos de build en paralelo con el parámetro `-j`:
+Puede controlar la cantidad de procesos de compilación en paralelo con el parámetro `-j`:
 
 ```sh
 ninja -j 1 clickhouse
 ```
 
 <Note>
-  `clickhouse-server`, `clickhouse-client` y otros binarios similares son enlaces simbólicos en el directorio `programs/` que apuntan al ejecutable `clickhouse` una vez finalizado el build.
+  `clickhouse-server`, `clickhouse-client` y otros binarios similares son enlaces simbólicos en el directorio `programs/` que apuntan al ejecutable `clickhouse` una vez finalizada la compilación.
 </Note>
 
 <Tip>
@@ -150,7 +145,9 @@ ninja -j 1 clickhouse
   ```
 </Tip>
 
-## Ejecutar el ejecutable de ClickHouse {#running-the-clickhouse-executable}
+<div id="running-the-clickhouse-executable">
+  ## Ejecutar el ejecutable de ClickHouse
+</div>
 
 Una vez finalizada correctamente la compilación, encontrará el ejecutable en `ClickHouse/<build_dir>/programs/`:
 
@@ -165,9 +162,13 @@ Si recibe el mensaje `Connection refused` en macOS o FreeBSD, pruebe a especific
 clickhouse client --host 127.0.0.1
 ```
 
-## Opciones avanzadas {#advanced-options}
+<div id="advanced-options">
+  ## Opciones avanzadas
+</div>
 
-### Compilación mínima {#minimal-build}
+<div id="minimal-build">
+  ### Compilación mínima
+</div>
 
 Si no necesitas la funcionalidad que proporcionan bibliotecas de terceros, puedes acelerar aún más la compilación:
 
@@ -183,7 +184,9 @@ Rust requiere una conexión a internet. Para desactivar la compatibilidad con Ru
 cmake -DENABLE_RUST=OFF
 ```
 
-### Ejecutar el ejecutable de ClickHouse {#running-the-clickhouse-executable-1}
+<div id="running-the-clickhouse-executable-1">
+  ### Ejecutar el ejecutable de ClickHouse
+</div>
 
 Puede sustituir el binario de producción de ClickHouse instalado en su sistema por el binario compilado de ClickHouse.
 Para ello, instale ClickHouse en su equipo siguiendo las instrucciones del sitio web oficial.
@@ -204,7 +207,9 @@ sudo service clickhouse-server stop
 sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
-### Compilar en cualquier sistema Linux {#building-on-any-linux}
+<div id="building-on-any-linux">
+  ### Compilar en cualquier sistema Linux
+</div>
 
 Instale los requisitos previos en OpenSUSE Tumbleweed:
 
@@ -227,7 +232,9 @@ cmake -S . -B build
 cmake --build build
 ```
 
-### Compilación en Docker {#building-in-docker}
+<div id="building-in-docker">
+  ### Compilación en Docker
+</div>
 
 Puedes ejecutar cualquier compilación en local en un entorno similar al de CI con:
 

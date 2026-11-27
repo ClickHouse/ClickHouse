@@ -17,9 +17,6 @@
 namespace DB
 {
 
-/// The same alias as in DataTypes/Serializations/ISerialization.h, which this header does not otherwise need.
-using SerializationByName = std::unordered_map<String, SerializationPtr>;
-
 using IColumnPermutation = PaddedPODArray<size_t>;
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
@@ -69,22 +66,27 @@ public:
     virtual void finish(bool sync) = 0;
     virtual void cancel() noexcept = 0;
 
-    [[nodiscard]] virtual size_t getNumberOfOpenStreams() const = 0;
+    virtual size_t getNumberOfOpenStreams() const = 0;
 
     std::optional<Columns> releaseIndexColumns();
 
     PlainMarksByName releaseCachedMarks();
     PlainMarksByName releaseCachedIndexMarks();
 
-    [[nodiscard]] MergeTreeIndexGranularityPtr getIndexGranularity() const { return index_granularity; }
-    [[nodiscard]] MergeTreeWriterSettings getWriterSettings() const { return settings; }
+    MergeTreeIndexGranularityPtr getIndexGranularity() const { return index_granularity; }
+    MergeTreeWriterSettings getWriterSettings() const { return settings; }
 
-    [[nodiscard]] virtual const Block & getColumnsSample() const = 0;
+    virtual const Block & getColumnsSample() const = 0;
 
-    [[nodiscard]] virtual const ColumnsSubstreams & getColumnsSubstreams() const = 0;
+    virtual const ColumnsSubstreams & getColumnsSubstreams() const = 0;
 
 protected:
-    [[nodiscard]] SerializationPtr getSerialization(const String & column_name) const;
+    SerializationPtr getSerialization(const String & column_name) const;
+
+    ASTPtr getCodecDescriptionOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
+
+    /// True if `column_name` uses the default codec (no `CODEC` clause, or an explicit lone `CODEC(Default)`).
+    bool columnUsesDefaultCodec(const String & column_name) const;
 
     IDataPartStorage & getDataPartStorage() { return *data_part_storage; }
 

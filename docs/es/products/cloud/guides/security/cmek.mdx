@@ -7,10 +7,11 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'cifrado', 'CMEK', 'Verificación periódica de la clave de KMS']
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <div id="storage-encryption">
-  ## Cifrado a nivel de almacenamiento {#storage-encryption}
+  ## Cifrado a nivel de almacenamiento
 </div>
 
 ClickHouse Cloud está configurado con cifrado en reposo de forma predeterminada, mediante claves AES-256 administradas por el proveedor de servicios en la nube. Para obtener más información, consulte:
@@ -20,7 +21,7 @@ ClickHouse Cloud está configurado con cifrado en reposo de forma predeterminada
 * [Cifrado de Azure Storage para datos en reposo](https://learn.microsoft.com/en-us/azure/storage/common/storage-service-encryption)
 
 <div id="database-encryption">
-  ## Cifrado a nivel de base de datos {#database-encryption}
+  ## Cifrado a nivel de base de datos
 </div>
 
 <EnterprisePlanFeatureBadge feature="Cifrado mejorado" />
@@ -30,7 +31,7 @@ Los datos en reposo se cifran de forma predeterminada mediante claves AES-256 ad
 El cifrado mejorado está disponible actualmente en servicios de AWS y GCP. Azure estará disponible próximamente.
 
 <div id="transparent-data-encryption-tde">
-  ### Cifrado transparente de datos (TDE) {#transparent-data-encryption-tde}
+  ### Cifrado transparente de datos (TDE)
 </div>
 
 TDE debe habilitarse al crear el servicio. Los servicios existentes no pueden cifrarse después de su creación. Una vez habilitado TDE, no puede deshabilitarse. Todos los datos del servicio permanecerán cifrados. Si desea deshabilitar TDE después de haberlo habilitado, debe crear un nuevo servicio y migrar sus datos allí.
@@ -42,7 +43,7 @@ TDE debe habilitarse al crear el servicio. Los servicios existentes no pueden ci
 5. Haga clic en Create service
 
 <div id="customer-managed-encryption-keys-cmek">
-  ### Claves de cifrado gestionadas por el cliente (CMEK) {#customer-managed-encryption-keys-cmek}
+  ### Claves de cifrado gestionadas por el cliente (CMEK)
 </div>
 
 <Warning>
@@ -137,29 +138,27 @@ Una vez que un servicio está cifrado con TDE, los clientes pueden actualizar la
 </Accordion>
 
 <div id="key-rotation">
-  #### Rotación de claves {#key-rotation}
+  #### Rotación de claves
 </div>
 
 Una vez configurado CMEK, rote la clave siguiendo los procedimientos anteriores para crear una nueva clave de KMS y conceder permisos. Vuelva a la configuración del servicio para pegar el nuevo ARN (AWS), la ruta del recurso de la clave (GCP) o el nombre de la clave (Azure), y guarde la configuración. El servicio se reiniciará para aplicar la nueva clave.
 
 <div id="kms-key-poller">
-  #### Verificación periódica de la clave de KMS {#kms-key-poller}
+  #### Verificación periódica de la clave de KMS
 </div>
 
 Al usar CMEK, la validez de la clave de KMS proporcionada se comprueba cada 10 minutos. Si el acceso a la clave de KMS deja de ser válido, el servicio de ClickHouse se detendrá. Para reanudar el servicio, restaure el acceso a la clave de KMS siguiendo los pasos de esta guía y, a continuación, reinicie el servicio.
 
 <div id="backup-and-restore">
-  ### Copia de seguridad y restauración {#backup-and-restore}
+  ### Copia de seguridad y restauración
 </div>
 
 Las copias de seguridad se cifran con la misma clave que el servicio asociado. Cuando se restaura una copia de seguridad cifrada, se crea una instancia cifrada que utiliza la misma clave de KMS que la instancia original. Si es necesario, puede realizar la rotación de la clave de KMS después de la restauración; consulte [Rotación de claves](#key-rotation) para obtener más información.
 
-## Rendimiento {#performance}
+<div id="performance">
+  ## Rendimiento
+</div>
 
 El cifrado de la base de datos aprovecha la [funcionalidad integrada de sistema de archivos virtual para el cifrado de datos de ClickHouse](/es/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system) para cifrar y proteger sus datos. El algoritmo utilizado en esta funcionalidad es `AES_256_CTR` y se prevé que tenga una penalización de rendimiento del 5-15 % según la carga de trabajo:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Penalización de rendimiento de CMEK](/images/_snippets/cmek-performance.webp)
-  </Frame>
-</div>
+<Image img="/images/_snippets/cmek-performance.webp" size="lg" alt="Penalización de rendimiento de CMEK" />

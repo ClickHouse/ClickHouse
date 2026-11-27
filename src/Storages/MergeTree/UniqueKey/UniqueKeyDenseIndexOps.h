@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <base/types.h>
 #include <Core/Block.h>
 #include <Core/Names.h>
@@ -27,15 +29,6 @@ class UniqueKeyDenseIndexOps
 public:
     explicit UniqueKeyDenseIndexOps(MergeTreeData & data_) : data(data_) {}
 
-    /// Read `uk_names` for every physical row of `part` in part-offset order
-    /// (`apply_deleted_mask=false`, sequential source), so block row `i` == part
-    /// offset `i`. Used by the load-time rebuild.
-    static Block readUniqueKeyColumns(
-        const MergeTreeData & data,
-        const std::shared_ptr<const IMergeTreeDataPart> & part,
-        const StorageMetadataPtr & metadata_snapshot,
-        const Names & uk_names);
-
     /// ===== Per-storage load lifecycle (instance) =====
 
     /// Materializes `unique_key_index.sst` when it is missing OR present but
@@ -62,13 +55,17 @@ public:
     /// Per-part ATTACH hook: `ensureValidDenseIndex`.
     void onPartAttach(MutableDataPartPtr & part) const;
 
-    /// MERGE-path entry point: writes the finalized merged part's `unique_key_index.sst`
-    /// from `unique_key_columns`, the UK columns the merge retained from its own output
-    /// (row i == part offset i). No-op on an empty part, fails closed otherwise.
-    void writeDenseIndexOnMerge(
-        MutableDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const Block & unique_key_columns) const;
-
 private:
+    /// Gated on USE_ROCKSDB: its only caller branch (the rebuild body in
+    /// `ensureValidDenseIndex`) is gated too, so without RocksDB this would be an
+    /// unused private member function.
+#if USE_ROCKSDB
+    Block readUniqueKeyColumns(
+        const MutableDataPartPtr & part,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Names & uk_names) const;
+#endif
+
     MergeTreeData & data;
 };
 

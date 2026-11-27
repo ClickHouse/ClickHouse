@@ -13,15 +13,19 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## allow_push_predicate_ast_for_distributed_subqueries {#allow_push_predicate_ast_for_distributed_subqueries}
+<div id="allow_push_predicate_ast_for_distributed_subqueries">
+  ## allow_push_predicate_ast_for_distributed_subqueries
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "新しい設定"}]}]} />
 
-アナライザが有効な場合に、Distributed Subqueries に対する AST レベルの述語プッシュダウンを許可します
+analyzer が有効な場合に、Distributed Subqueries に対する AST レベルの述語プッシュダウンを許可します
 
-## allow_push_predicate_when_subquery_contains_with {#allow_push_predicate_when_subquery_contains_with}
+<div id="allow_push_predicate_when_subquery_contains_with">
+  ## allow_push_predicate_when_subquery_contains_with
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

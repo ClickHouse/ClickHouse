@@ -17,13 +17,17 @@ import RowBinaryFormatSettings from '/snippets/ar/common-row-binary-format-setti
 | ------- | ------- | ------------ |
 | ✔       | ✗       |              |
 
-## الوصف {#description}
+<div id="description">
+  ## الوصف
+</div>
 
 يشبه تنسيق [`RowBinaryWithNamesAndTypes`](/ar/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)، ولكن مع بايت إضافي قبل كل خلية يحدّد ما إذا كان ينبغي استخدام القيمة `DEFAULT` الخاصة بالعمود — تمامًا كما في تنسيق [`RowBinaryWithDefaults`](/ar/reference/formats/RowBinary/RowBinaryWithDefaults). يدعم هذا الدمج عمليات `INSERT` القابلة للتكيّف مع تغيّر المخطط: إذ يمكن للكاتب حذف أعمدة من الترويسة (فتأخذ القيمة `DEFAULT` الخاصة بالعمود الهدف)، وبالنسبة إلى أي عمود يرسله، يمكنه تعليم خلايا منفردة على أنها &quot;استخدم القيمة `DEFAULT` الخاصة بالعمود&quot; من دون الخلط بين ذلك وبين `NULL`.
 
 هذا التنسيق مخصّص للإدخال فقط.
 
-## التنسيق السلكي {#wire-format}
+<div id="wire-format">
+  ## التنسيق السلكي
+</div>
 
 الترويسة مطابقة لـ [`RowBinaryWithNamesAndTypes`](/ar/reference/formats/RowBinary/RowBinaryWithNamesAndTypes):
 
@@ -37,7 +41,9 @@ import RowBinaryFormatSettings from '/snippets/ar/common-row-binary-format-setti
   * `0x01` — استخدم التعبير `DEFAULT` الخاص بالعمود الهدف. ولا تتبعه أي بايتات للقيمة.
   * `0x00` — تتبعه قيمة، وتُسلسَل باستخدام مُسلسِل `RowBinary` الخاص بنوع العمود. بالنسبة إلى `Nullable(T)`، تبدأ بايتات القيمة ببايت NULL الخاص بـ `Nullable` (`0` للقيم غير NULL، و`1` لـ NULL)، ثم القيمة الداخلية إذا لم تكن NULL.
 
-## القيم الافتراضية مقابل NULL {#defaults-vs-null}
+<div id="defaults-vs-null">
+  ## القيم الافتراضية مقابل NULL
+</div>
 
 مؤشر القيمة الافتراضية لكل خلية وبايت null المضمّن في `Nullable` مستقلان عن بعضهما. ويمكن إرسال عمود `Nullable(UInt32) DEFAULT 42` بثلاث طرق مختلفة لكل صف:
 
@@ -47,16 +53,20 @@ import RowBinaryFormatSettings from '/snippets/ar/common-row-binary-format-setti
 | `00 01`   | مسار القيمة، ثم `NULL` من خلال النوع `Nullable`. |
 | `00 00 …` | مسار القيمة، ثم قيمة داخلية غير `NULL`.          |
 
-## تطور المخطط {#schema-evolution}
+<div id="schema-evolution">
+  ## تطور المخطط
+</div>
 
 | الحالة                                            | السلوك                                                                                                                                                                                 |
 | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | عمود مفقود بالكامل من ترويسة الملف                | تُملأ قيمته في الجدول الهدف عبر `insertDefaultsForNotSeenColumns`؛ ويتحكم فيه `defaults_for_omitted_fields`.                                                                           |
-| عمود موجود في الترويسة، مع وسم الخلية `0x01`      | يُستخدم تعبير `DEFAULT` الخاص بالعمود في الجدول الهدف، ويتحكم في ذلك `defaults_for_omitted_fields`؛ وإلا فتُستخدم القيمة الافتراضية لنوع العمود.                                       |
-| عمود موجود في الترويسة، مع وسم الخلية `0x00`      | تُحلَّل القيمة بشكل طبيعي.                                                                                                                                                             |
-| عمود إضافي في الترويسة، غير موجود في الجدول الهدف | يُتجاهَل بصمت عندما تكون `input_format_skip_unknown_fields = 1` (يُستهلك الوسم أولًا؛ إذا كان `0x01`، فلا شيء إضافي؛ وإذا كان `0x00`، فتُحلَّل القيمة المقيَّدة بالنوع ثم تُهمَل). |
+| عمود موجود في الترويسة، مع وسم الخلية `0x01`    | `insertDefault` لكل صف.                                                                                                                                                                |
+| عمود موجود في الترويسة، مع وسم الخلية `0x00`    | تُحلَّل القيمة بشكل طبيعي.                                                                                                                                                             |
+| عمود إضافي في الترويسة، غير موجود في الجدول الهدف | يُتجاهَل بصمت عندما تكون `input_format_skip_unknown_fields = 1` (تُستهلك العلامة أولًا؛ إذا كانت `0x01`، فلا شيء إضافي؛ وإذا كانت `0x00`، فتُحلَّل القيمة المقيَّدة بالنوع ثم تُهمَل). |
 
-## مثال للاستخدام {#example-usage}
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
 
 ```sql title="Query"
 SELECT * FROM format(
@@ -75,7 +85,9 @@ SELECT * FROM format(
 * تحتوي الترويسة على عمود واحد باسم `x` من النوع `Nullable(UInt32)`.
 * تستخدم الخلية الوحيدة الوسم `0x01`، ما يعني &quot;استخدام `DEFAULT 42`&quot;.
 
-## إعدادات التنسيق {#format-settings}
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>
 
 <RowBinaryFormatSettings />
 

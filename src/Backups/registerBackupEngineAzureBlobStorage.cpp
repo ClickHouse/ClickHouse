@@ -3,7 +3,6 @@
 #include <Backups/BackupFactory.h>
 #include <Core/Settings.h>
 #include <Common/Exception.h>
-#include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -54,11 +53,8 @@ namespace
         Poco::URI url2{url};
         String path = url2.getPath();
         size_t slash_pos = path.find_last_of('/');
-        /// A path with no separator is all file name and leaves an empty directory part. That is
-        /// what `npos + 1 == 0` used to produce by wrapping around; spell it out instead.
-        const size_t file_name_pos = slash_pos == String::npos ? 0 : slash_pos + 1;
-        String file_name = path.substr(file_name_pos);
-        path.resize(file_name_pos);
+        String file_name = path.substr(slash_pos + 1);
+        path.resize(slash_pos + 1);
         url2.setPath(path);
         url = url2.toString();
         return file_name;
@@ -197,7 +193,7 @@ namespace
         /// Resolving it is still required: that is where `NAMED_COLLECTION` is enforced.
         if (!backup_info.id_arg.empty())
         {
-            (void)backup_info.getNamedCollection(context);
+            backup_info.getNamedCollection(context);
             return target;
         }
 
@@ -362,7 +358,7 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
 #endif
     };
 
-    factory.registerBackupEngine("AzureBlobStorage", creator_fn, destination_identity_fn, source_access_fn, azureBackupSecretArguments());
+    factory.registerBackupEngine("AzureBlobStorage", creator_fn, destination_identity_fn, source_access_fn);
 }
 
 }

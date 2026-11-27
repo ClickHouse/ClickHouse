@@ -8,8 +8,10 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
+
 <div id="inserting-into-clickhouse-vs-oltp-databases">
-  ## Insertion dans ClickHouse vs. les bases de données OLTP {#inserting-into-clickhouse-vs-oltp-databases}
+  ## Insertion dans ClickHouse vs. les bases de données OLTP
 </div>
 
 En tant que base de données OLAP (Online Analytical Processing), ClickHouse est optimisée pour offrir des performances élevées et une bonne capacité de passage à l’échelle, au point de pouvoir insérer potentiellement des millions de lignes par seconde.
@@ -24,11 +26,11 @@ Pour obtenir des performances d’insertion élevées tout en conservant de fort
 Le respect de ces règles vous aidera à éviter les problèmes que les utilisateurs rencontrent souvent lorsqu’ils découvrent ClickHouse et tentent d’y reproduire une stratégie d’insertion adaptée aux bases de données OLTP.
 
 <div id="best-practices-for-inserts">
-  ## Bonnes pratiques pour les insertions {#best-practices-for-inserts}
+  ## Bonnes pratiques pour les insertions
 </div>
 
 <div id="insert-in-large-batch-sizes">
-  ### Effectuez des insertions par lots de grande taille {#insert-in-large-batch-sizes}
+  ### Effectuez des insertions par lots de grande taille
 </div>
 
 Par défaut, chaque insert envoyé à ClickHouse entraîne la création immédiate par ClickHouse d’une part de stockage contenant les données de l’insert ainsi que d’autres métadonnées à stocker.
@@ -39,7 +41,7 @@ En règle générale, nous recommandons d’insérer les données par lots assez
 Si de grands lots ne sont pas possibles, utilisez les insertions asynchrones décrites ci-dessous.
 
 <div id="ensure-consistent-batches-for-idempotent-retries">
-  ### Assurer des lots cohérents pour des reprises idempotentes {#ensure-consistent-batches-for-idempotent-retries}
+  ### Assurer des lots cohérents pour des reprises idempotentes
 </div>
 
 Par défaut, les insertions dans ClickHouse sont synchrones et idempotentes (c.-à-d. qu&#39;effectuer plusieurs fois la même opération d&#39;insertion a le même effet que de l&#39;effectuer une seule fois).
@@ -54,7 +56,7 @@ Du point de vue du client, il peut être difficile de distinguer (i) de (ii). Ce
 Tant que la requête d&#39;insertion relancée contient les mêmes données dans le même ordre, ClickHouse ignorera automatiquement cette nouvelle tentative si l&#39;insertion initiale (restée sans accusé de réception) a réussi.
 
 <div id="insert-to-a-mergetree-table-or-a-distributed-table">
-  ### Insérer dans une table MergeTree ou une table distribuée {#insert-to-a-mergetree-table-or-a-distributed-table}
+  ### Insérer dans une table MergeTree ou une table distribuée
 </div>
 
 Nous recommandons d’insérer directement dans une table MergeTree (ou Replicated), en répartissant les requêtes entre un ensemble de nœuds si les données sont réparties entre plusieurs shards, et en définissant `internal_replication=true`.
@@ -63,22 +65,20 @@ ClickHouse se chargera ainsi de répliquer les données vers toute réplique dis
 Si cet équilibrage de charge côté client n’est pas pratique, vous pouvez insérer via une [table distribuée](/fr/reference/engines/table-engines/special/distributed), qui répartira alors les écritures entre les nœuds. Là encore, il est conseillé de définir `internal_replication=true`.
 Il convient toutefois de noter que cette approche est légèrement moins performante, car les écritures doivent d’abord être effectuées localement sur le nœud qui héberge la table distribuée, puis envoyées aux shards.
 
-### Utilisez les insertions asynchrones pour les petits lots {#use-asynchronous-inserts-for-small-batches}
+<div id="use-asynchronous-inserts-for-small-batches">
+  ### Utilisez les insertions asynchrones pour les petits lots
+</div>
 
 Dans certains cas, le regroupement côté client n&#39;est pas envisageable, par exemple pour un cas d&#39;usage d&#39;observability avec des centaines ou des milliers d&#39;agents dédiés envoyant des logs, des métriques, des traces, etc.
 Dans ce scénario, l&#39;acheminement en temps réel de ces données est essentiel pour détecter les problèmes et les anomalies le plus rapidement possible.
 De plus, il existe un risque de pics d&#39;événements dans les systèmes observés, ce qui peut entraîner d&#39;importants pics de mémoire et les problèmes associés lorsqu&#39;on essaie de mettre en tampon les données d&#39;observability côté client.
 Si vous ne pouvez pas insérer de gros lots, vous pouvez déléguer ce regroupement à ClickHouse à l&#39;aide des [insertions asynchrones](/fr/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts).
 
-Avec les insertions asynchrones, les données sont d&#39;abord insérées dans un buffer, puis écrites ultérieurement dans le stockage de la base de données en 3 étapes, comme l&#39;illustre le schéma ci-dessous :
+Avec les insertions asynchrones, les données sont d&#39;abord insérées dans un buffer, puis écrites ultérieurement dans le stockage de la base de données en 3 étapes, comme l&#39;illustre le schéma ci-dessous :
 
-<div className="ch-image-md">
-  <Frame>
-    ![insertions Postgres](/images/guides/postgres-inserts.webp)
-  </Frame>
-</div>
+<Image img="/images/guides/postgres-inserts.webp" size="md" alt="insertions Postgres" />
 
-Avec les insertions asynchrones activées, ClickHouse :
+Avec les insertions asynchrones activées, ClickHouse :
 
 (1) reçoit une requête d&#39;insertion de manière asynchrone.
 (2) écrit d&#39;abord les données de la requête dans un buffer en mémoire.
@@ -95,7 +95,7 @@ De manière générale, ce mécanisme déplace le regroupement des données du c
 </Note>
 
 <div id="use-official-clickhouse-clients">
-  ### Utiliser les clients ClickHouse officiels {#use-official-clickhouse-clients}
+  ### Utiliser les clients ClickHouse officiels
 </div>
 
 ClickHouse dispose de clients pour les langages de programmation les plus populaires.
@@ -104,7 +104,7 @@ Ils sont optimisés pour garantir le bon déroulement des insertions et prennent
 Consultez [Clients natifs et interfaces](/fr/concepts/features/interfaces/native-clients-interfaces-index) pour obtenir la liste complète des clients et pilotes ClickHouse disponibles.
 
 <div id="prefer-the-native-format">
-  ### Préférez le format natif {#prefer-the-native-format}
+  ### Préférez le format natif
 </div>
 
 ClickHouse prend en charge de nombreux [formats d&#39;entrée](/fr/reference/formats/index) lors des insertions (et des requêtes).
@@ -120,7 +120,7 @@ Il est plus efficace, en termes de compression, de surcharge réseau et de trait
 Le format [JSONEachRow](/fr/reference/formats/JSON/JSONEachRow) peut être envisagé si votre débit d&#39;écriture est plus faible et que vous cherchez à vous intégrer rapidement. Gardez à l&#39;esprit que ce format entraîne une surcharge CPU dans ClickHouse pour l&#39;analyse syntaxique.
 
 <div id="use-the-http-interface">
-  ### Utiliser l’interface HTTP {#use-the-http-interface}
+  ### Utiliser l’interface HTTP
 </div>
 
 Contrairement à de nombreuses bases de données traditionnelles, ClickHouse prend en charge une interface HTTP.
@@ -133,7 +133,7 @@ Le protocole natif permet également de suivre facilement la progression des req
 Voir [Interface HTTP](/fr/concepts/features/interfaces/http) pour plus de détails.
 
 <div id="basic-example">
-  ## Exemple de base {#basic-example}
+  ## Exemple de base
 </div>
 
 Vous pouvez utiliser la commande `INSERT INTO TABLE`, bien connue, avec ClickHouse. Insérons quelques données dans la table que nous avons créée dans le guide de démarrage [« Création de tables dans ClickHouse »](/fr/get-started/quickstarts/creating-tables).
@@ -163,7 +163,7 @@ user_id message                                             timestamp           
 ```
 
 <div id="loading-data-from-postgres">
-  ## Chargement de données depuis Postgres {#loading-data-from-postgres}
+  ## Chargement de données depuis Postgres
 </div>
 
 Pour charger des données depuis Postgres, vous pouvez utiliser :
@@ -181,7 +181,7 @@ Pour charger des données depuis Postgres, vous pouvez utiliser :
 </Info>
 
 <div id="inserting-data-from-command-line">
-  ## Insertion de données depuis la ligne de commande {#inserting-data-from-command-line}
+  ## Insertion de données depuis la ligne de commande
 </div>
 
 **Prérequis**

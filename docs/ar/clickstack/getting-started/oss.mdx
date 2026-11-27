@@ -1,24 +1,26 @@
 ---
 slug: /use-cases/observability/clickstack/getting-started/oss
-title: 'البدء مع ClickStack Open Source'
-sidebarTitle: 'البدء'
+title: 'بدء استخدام ClickStack Open Source'
+sidebarTitle: 'مفتوح المصدر'
 description: 'شغّل ClickStack Open Source محليًا، وأرسل بيانات اختبار، وتأكد من نجاح الاستيعاب'
 doc_type: 'guide'
-keywords: ['ClickStack Open Source', 'البدء', 'نشر Docker', 'OpenTelemetry', 'نشر محلي']
+keywords: ['ClickStack Open Source', 'بدء الاستخدام', 'نشر Docker', 'OpenTelemetry', 'نشر محلي']
 ---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
 
 شغّل ClickStack Open Source محليًا، وأرسل حدثًا اختباريًا عبر OpenTelemetry Collector الخاص به، ثم تأكد من ظهور الحدث في ClickStack UI.
 
 باستخدام ClickStack Open Source، تتولى تشغيل وإدارة الواجهة الخلفية لـ ClickHouse وClickStack UI وخط أنابيب الاستيعاب. تجمع صورة الكل في واحد هذه المكونات مع MongoDB في حاوية Docker واحدة للتقييم والاختبار محليًا.
 
 <Tip>
-  استكشف السجلات والمقاييس والتتبّعات دون الحاجة إلى إدارة البنية التحتية باستخدام [ClickHouse Observability](/ar/clickstack/observability). [سجّل في ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-clickstack-oss-inline) للبدء.
+  تتوفر أيضًا نسخة مُدارة من ClickStack — راجع [Managed ClickStack](/ar/clickstack/getting-started/managed).
 </Tip>
 
 تستخدم الخطوات أدناه صورة الكل في واحد التي تتطلب مصادقة. إذا أردت واجهة مستخدم محلية دون إنشاء حساب، فاتبع [دليل الوضع المحلي باستخدام Docker](/ar/clickstack/deployment/local-mode-only) بدلًا من ذلك.
 
 <div id="before-you-begin">
-  ## قبل البدء {#before-you-begin}
+  ## قبل البدء
 </div>
 
 ثبّت [Docker](https://docs.docker.com/get-docker/) وتأكد من إتاحة المنافذ التالية:
@@ -30,7 +32,9 @@ keywords: ['ClickStack Open Source', 'البدء', 'نشر Docker', 'OpenTelemet
 
 لأحمال العمل المستمرة أو أحمال عمل الإنتاج، راجع [خيارات النشر مفتوحة المصدر](/ar/clickstack/deployment/oss) و[الانتقال إلى بيئة الإنتاج](/ar/clickstack/managing/production).
 
-## إعداد ClickStack Open Source باستخدام صورة الكل في واحد {#set-up-clickstack-open-source}
+<div id="set-up-clickstack-open-source">
+  ## إعداد ClickStack Open Source باستخدام صورة الكل في واحد
+</div>
 
 <Steps titleSize="h3">
   <Step title="بدء ClickStack" id="deploy-stack-with-docker">
@@ -73,7 +77,7 @@ keywords: ['ClickStack Open Source', 'البدء', 'نشر Docker', 'OpenTelemet
 
     يتصل ClickStack تلقائيًا بمثيل ClickHouse المضمّن وينشئ مصادر بيانات للسجلات والتتبعات والمقاييس والجلسات.
 
-#### نسخ مفتاح API للاستيعاب {#copy-ingestion-api-key}
+    #### نسخ مفتاح API للاستيعاب
 
     في قسم **بدء الاستخدام** ضمن القائمة اليسرى، اختر **إضافة بيانات**، ثم انسخ **مفتاح API للاستيعاب**. يجب أن تتضمن بيانات القياس عن بُعد المُرسلة إلى OpenTelemetry Collector المضمّن هذا المفتاح في ترويسة `authorization`.
   </Step>
@@ -123,22 +127,18 @@ keywords: ['ClickStack Open Source', 'البدء', 'نشر Docker', 'OpenTelemet
 
     يجب أن تتضمن النتيجة حدث الاختبار باسم الخدمة `clickstack-docs-test`.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![عرض سجلات ClickStack Open Source يُظهر حدث اختبار استيعاب ClickStack](/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp" size="lg" alt="عرض سجلات ClickStack Open Source يُظهر حدث اختبار استيعاب ClickStack" border />
   </Step>
 </Steps>
 
 لديك الآن مثيل ClickStack محلي ونقطة نهاية استيعاب عاملة وحدث اختبار يمكنك فحصه في ClickStack.
 
 <div id="next-steps">
-  ## الخطوات التالية {#next-steps}
+  ## الخطوات التالية
 </div>
 
 <div id="send-application-and-infrastructure-data">
-  ### إرسال بيانات التطبيق والبنية التحتية {#send-application-and-infrastructure-data}
+  ### إرسال بيانات التطبيق والبنية التحتية
 </div>
 
 اختر الدليل المناسب للبيانات التي تريد إرسالها إلى ClickStack:
@@ -162,7 +162,7 @@ keywords: ['ClickStack Open Source', 'البدء', 'نشر Docker', 'OpenTelemet
 </CardGroup>
 
 <div id="explore-sample-data">
-  ### استكشاف بيانات نموذجية {#explore-sample-data}
+  ### استكشاف بيانات نموذجية
 </div>
 
 استخدم مجموعة بيانات نموذجية لاستكشاف ClickStack ببيانات قياس عن بُعد أغنى:
@@ -184,7 +184,7 @@ keywords: ['ClickStack Open Source', 'البدء', 'نشر Docker', 'OpenTelemet
 لاستكشاف البيانات المحمّلة مسبقًا دون تثبيت Docker، استخدم [العرض التوضيحي المستضاف لـ ClickStack](/ar/clickstack/example-datasets/remote-demo-data).
 
 <div id="generate-synthetic-data">
-  ### إنشاء بيانات اصطناعية {#generate-synthetic-data}
+  ### إنشاء بيانات اصطناعية
 </div>
 
 استخدم مولِّدًا لاختبار استيعاب البيانات دون الحاجة إلى تطبيق أو مجموعة بيانات موجودة:
@@ -202,7 +202,7 @@ keywords: ['ClickStack Open Source', 'البدء', 'نشر Docker', 'OpenTelemet
 اطّلع على [جميع البيانات النموذجية والعروض التوضيحية لـ ClickStack](/ar/clickstack/example-datasets/index).
 
 <div id="prepare-for-production">
-  ### الاستعداد للإنتاج {#prepare-for-production}
+  ### الاستعداد للإنتاج
 </div>
 
 راجع إرشادات النشر والإنتاج قبل استخدام ClickStack لأحمال عمل مستمرة:

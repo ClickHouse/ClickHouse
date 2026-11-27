@@ -4,12 +4,16 @@ sidebarTitle: 'Python API'
 slug: /chdb/api/python
 description: 'chDB Python API 전체 참조'
 keywords: ['chdb', '내장', 'clickhouse-lite', 'python', 'api', '참고']
-doc_type: 'reference'
+doc_type: '참고'
 ---
 
-## 핵심 쿼리 함수 {#core-query-functions}
+<div id="core-query-functions">
+  ## 핵심 쿼리 함수
+</div>
 
-### `chdb.query` {#chdb-query}
+<div id="chdb-query">
+  ### `chdb.query`
+</div>
 
 chDB 엔진을 사용해 SQL 쿼리를 실행합니다.
 
@@ -72,7 +76,9 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 
 ***
 
-### `chdb.sql` {#chdb_sql}
+<div id="chdb_sql">
+  ### `chdb.sql`
+</div>
 
 chDB 엔진을 사용해 SQL 쿼리를 실행합니다.
 
@@ -136,7 +142,9 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 
 ***
 
-### `chdb.to_arrowTable` {#chdb-state-sqlitelike-to_arrowtable}
+<div id="chdb-state-sqlitelike-to_arrowtable">
+  ### `chdb.to_arrowTable`
+</div>
 
 쿼리 결과를 PyArrow Table로 변환합니다.
 
@@ -179,7 +187,9 @@ chdb.to_arrowTable(res)
 
 ***
 
-### `chdb.to_df` {#chdb_to_df}
+<div id="chdb_to_df">
+  ### `chdb.to_df`
+</div>
 
 쿼리 결과를 pandas DataFrame으로 변환합니다.
 
@@ -219,11 +229,15 @@ chdb.to_df(r)
 0   1  hello
 ```
 
-## 연결 및 세션 관리 {#connection-session-management}
+<div id="connection-session-management">
+  ## 연결 및 세션 관리
+</div>
 
 다음 세션 함수(Session Function)를 사용할 수 있습니다:
 
-### `chdb.connect` {#chdb-connect}
+<div id="chdb-connect">
+  ### `chdb.connect`
+</div>
 
 chDB 백그라운드 서버에 대한 연결을 생성합니다.
 
@@ -314,9 +328,13 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 * [`Connection`](#chdb-state-sqlitelike-connection) - 데이터베이스 연결 클래스
 * [`Cursor`](#chdb-state-sqlitelike-cursor) - DB-API 2.0 작업용 데이터베이스 커서
 
-## 예외 처리 {#chdb-exceptions}
+<div id="chdb-exceptions">
+  ## 예외 처리
+</div>
 
-### **class** `chdb.ChdbError` {#chdb_chdbError}
+<div id="chdb_chdbError">
+  ### **class** `chdb.ChdbError`
+</div>
 
 기반 클래스: `Exception`
 
@@ -328,7 +346,9 @@ chDB 관련 오류를 위한 기본 예외 클래스입니다.
 
 ***
 
-### **class** `chdb.session.Session` {#chdb_session_session}
+<div id="chdb_session_session">
+  ### **class** `chdb.session.Session`
+</div>
 
 기반 클래스: `object`
 
@@ -344,7 +364,7 @@ class chdb.session.Session(path=None)
 
 **예시**
 
-| 연결 문자열                                             | 설명                    |
+| 연결 문자열                                             | 설명           |
 | -------------------------------------------------- | --------------------- |
 | `":memory:"`                                       | 임시 데이터베이스             |
 | `"test.db"`                                        | 상대 경로                 |
@@ -361,11 +381,11 @@ class chdb.session.Session(path=None)
   “[file:test.db?param1=value1&amp;param2=value2](file:test.db?param1=value1\&param2=value2)”와 같이 쿼리 매개변수를 포함하는 연결 문자열의 경우,
   “param1=value1”은 시작 인자로 ClickHouse 엔진에 전달됩니다.
 
-  자세한 내용은 `clickhouse local --help --verbose`를 참조하십시오.
+  자세한 내용은 `clickhouse local –help –verbose`를 참조하십시오.
 
   몇 가지 특수 인자 처리:
 
-  * “mode=ro”는 clickhouse에서 `--readonly=1`로 처리됩니다 (읽기 전용 모드)
+  * “mode=ro”는 clickhouse에서 “–readonly=1”로 처리됩니다 (읽기 전용 모드)
 </Info>
 
 <Note>
@@ -377,7 +397,9 @@ class chdb.session.Session(path=None)
 
 ***
 
-#### `cleanup` {#cleanup}
+<div id="cleanup">
+  #### `cleanup`
+</div>
 
 예외를 처리하며 세션 리소스를 정리합니다.
 
@@ -412,7 +434,9 @@ cleanup()
 
 ***
 
-#### `close` {#close}
+<div id="close">
+  #### `close`
+</div>
 
 세션을 종료하고 리소스를 정리합니다.
 
@@ -447,7 +471,9 @@ close()
 
 ***
 
-#### `query` {#chdb-session-session-query}
+<div id="chdb-session-session-query">
+  #### `query`
+</div>
 
 SQL 쿼리를 실행하고 결과를 반환합니다.
 
@@ -535,7 +561,9 @@ id,name
 
 ***
 
-#### `send_query` {#chdb-session-session-send_query}
+<div id="chdb-session-session-send_query">
+  #### `send_query`
+</div>
 
 SQL 쿼리를 실행하고 스트리밍 결과 이터레이터를 반환합니다.
 
@@ -608,7 +636,9 @@ send_query(sql, fmt='CSV') → StreamingResult
 
 ***
 
-#### `sql` {#chdb-session-session-sql}
+<div id="chdb-session-session-sql">
+  #### `sql`
+</div>
 
 SQL 쿼리를 실행하고 결과를 반환합니다.
 
@@ -693,9 +723,13 @@ id,name
 * [`send_query()`](#chdb-session-session-send_query) - 스트리밍 쿼리 실행에 사용
 * [`sql`](#chdb-session-session-sql) - 이 메서드의 별칭
 
-## 상태 관리 {#chdb-state-management}
+<div id="chdb-state-management">
+  ## 상태 관리
+</div>
 
-### `chdb.state.connect` {#chdb_state_connect}
+<div id="chdb_state_connect">
+  ### `chdb.state.connect`
+</div>
 
 chDB 백그라운드 서버와의 [연결](#chdb-state-sqlitelike-connection)을 생성합니다.
 
@@ -790,7 +824,9 @@ chdb.state.connect(connection_string: str = ':memory:') → Connection
 * `Connection` - 데이터베이스 연결 클래스
 * `Cursor` - DB-API 2.0 작업을 위한 데이터베이스 커서&quot;
 
-### **class** `chdb.state.sqlitelike.Connection` {#chdb-state-sqlitelike-connection}
+<div id="chdb-state-sqlitelike-connection">
+  ### **class** `chdb.state.sqlitelike.Connection`
+</div>
 
 상속: `object`
 
@@ -802,7 +838,9 @@ class chdb.state.sqlitelike.Connection(connection_string: str)
 
 ***
 
-#### `close` {#chdb-session-session-close}
+<div id="close">
+  #### `close`
+</div>
 
 연결을 닫고 리소스를 정리합니다.
 
@@ -846,7 +884,9 @@ close() → None
 
 ***
 
-#### `cursor` {#chdb-state-sqlitelike-connection-cursor}
+<div id="chdb-state-sqlitelike-connection-cursor">
+  #### `cursor`
+</div>
 
 쿼리를 실행하기 위한 [Cursor](#chdb-state-sqlitelike-cursor) 객체를 생성합니다.
 
@@ -891,7 +931,9 @@ cursor() → Cursor
 
 ***
 
-#### `query` {#chdb-state-sqlitelike-connection-query}
+<div id="chdb-session-session-query">
+  #### `query`
+</div>
 
 SQL 쿼리를 실행하고 전체 결과를 반환합니다.
 
@@ -965,7 +1007,9 @@ num,text
 
 ***
 
-#### `send_query` {#chdb-state-sqlitelike-connection-send_query}
+<div id="chdb-session-session-send_query">
+  #### `send_query`
+</div>
 
 SQL 쿼리를 실행하고 스트리밍 결과 이터레이터를 반환합니다.
 
@@ -1038,7 +1082,9 @@ send_query(query: str, format: str = 'CSV') → StreamingResult
 
 ***
 
-### **class** `chdb.state.sqlitelike.StreamingResult` {#chdb-state-sqlitelike-streamingresult}
+<div id="chdb-state-sqlitelike-streamingresult">
+  ### **class** `chdb.state.sqlitelike.StreamingResult`
+</div>
 
 기반 클래스: `object`
 
@@ -1054,7 +1100,9 @@ class chdb.state.sqlitelike.StreamingResult
 
 ***
 
-#### `fetch` {#streamingresult-fetch}
+<div id="streamingresult-fetch">
+  #### `fetch`
+</div>
 
 스트리밍 결과의 다음 청크를 가져옵니다.
 
@@ -1088,7 +1136,9 @@ fetch() → Any
 
 ***
 
-#### `cancel` {#streamingresult-cancel}
+<div id="streamingresult-cancel">
+  #### `cancel`
+</div>
 
 스트리밍 쿼리를 취소하고 리소스를 정리합니다.
 
@@ -1115,7 +1165,9 @@ cancel() → None
 
 ***
 
-#### `close` {#streamingresult-close}
+<div id="close">
+  #### `close`
+</div>
 
 스트리밍 결과를 닫고 리소스를 정리합니다.
 
@@ -1130,7 +1182,9 @@ close() → None
 
 ***
 
-#### `record_batch` {#streamingresult-record_batch}
+<div id="streamingresult-record_batch">
+  #### `record_batch`
+</div>
 
 효율적인 배치 처리를 위해 PyArrow RecordBatchReader를 생성합니다.
 
@@ -1174,7 +1228,9 @@ record_batch(rows_per_batch: int = 1000000) → pa.RecordBatchReader
 
 ***
 
-#### 반복자 프로토콜 {#streamingresult-iterator}
+<div id="streamingresult-iterator">
+  #### 반복자 프로토콜
+</div>
 
 StreamingResult는 Python의 반복자 프로토콜을 지원하므로
 for 루프에서 직접 사용할 수 있습니다:
@@ -1187,7 +1243,9 @@ for 루프에서 직접 사용할 수 있습니다:
 
 ***
 
-#### 컨텍스트 매니저 프로토콜 {#streamingresult-context-manager}
+<div id="streamingresult-context-manager">
+  #### 컨텍스트 매니저 프로토콜
+</div>
 
 StreamingResult는 자동
 리소스 정리를 위해 컨텍스트 매니저 프로토콜을 지원합니다:
@@ -1201,7 +1259,9 @@ StreamingResult는 자동
 
 ***
 
-### **class** `chdb.state.sqlitelike.Cursor` {#chdb-state-sqlitelike-cursor}
+<div id="chdb-state-sqlitelike-cursor">
+  ### **class** `chdb.state.sqlitelike.Cursor`
+</div>
 
 상속: `object`
 
@@ -1211,7 +1271,9 @@ class chdb.state.sqlitelike.Cursor(connection)
 
 ***
 
-#### `close` {#cursor-close-none}
+<div id="close">
+  #### `close`
+</div>
 
 커서를 닫고 리소스를 정리합니다.
 
@@ -1241,7 +1303,9 @@ close() → None
 
 ***
 
-#### `column_names` {#chdb-state-sqlitelike-cursor-column_names}
+<div id="chdb-state-sqlitelike-cursor-column_names">
+  #### `column_names`
+</div>
 
 마지막으로 실행된 쿼리의 컬럼 이름 목록을 반환합니다.
 
@@ -1276,7 +1340,9 @@ column_names() → list
 
 ***
 
-#### `column_types` {#chdb-state-sqlitelike-cursor-column_types}
+<div id="chdb-state-sqlitelike-cursor-column_types">
+  #### `column_types`
+</div>
 
 마지막으로 실행된 쿼리의 컬럼 타입 목록을 반환합니다.
 
@@ -1310,7 +1376,9 @@ column_types() → list
 
 ***
 
-#### `commit` {#commit}
+<div id="commit">
+  #### `commit`
+</div>
 
 보류 중인 트랜잭션을 커밋합니다.
 
@@ -1340,7 +1408,9 @@ commit() → None
 
 ***
 
-#### `property description : list` {#chdb-state-sqlitelike-cursor-description}
+<div id="chdb-state-sqlitelike-cursor-description">
+  #### `property description : list`
+</div>
 
 DB-API 2.0 사양에 따라 컬럼 설명을 반환합니다.
 
@@ -1380,7 +1450,9 @@ Column: name, Type: String
 
 ***
 
-#### `execute` {#execute}
+<div id="execute">
+  #### `execute`
+</div>
 
 SQL 쿼리를 실행하고 결과를 가져올 수 있도록 준비합니다.
 
@@ -1450,7 +1522,9 @@ execute(query: str) → None
 
 ***
 
-#### `fetchall` {#chdb-state-sqlitelike-cursor-fetchall}
+<div id="chdb-state-sqlitelike-cursor-fetchall">
+  #### `fetchall`
+</div>
 
 쿼리 결과에 남아 있는 모든 행을 가져옵니다.
 
@@ -1493,7 +1567,9 @@ fetchall() → tuple
 
 ***
 
-#### `fetchmany` {#chdb-state-sqlitelike-cursor-fetchmany}
+<div id="chdb-state-sqlitelike-cursor-fetchmany">
+  #### `fetchmany`
+</div>
 
 쿼리 결과에서 여러 행을 가져옵니다.
 
@@ -1543,7 +1619,9 @@ fetchmany(size: int = 1) → tuple
 
 ***
 
-#### `fetchone` {#chdb-state-sqlitelike-cursor-fetchone}
+<div id="chdb-state-sqlitelike-cursor-fetchone">
+  #### `fetchone`
+</div>
 
 쿼리 결과에서 다음 행을 가져옵니다.
 
@@ -1588,7 +1666,9 @@ fetchone() → tuple | None
 
 ***
 
-### `chdb.state.sqlitelike` {#state-sqlitelike-to_arrowtable}
+<div id="state-sqlitelike-to_arrowtable">
+  ### `chdb.state.sqlitelike`
+</div>
 
 쿼리 결과를 PyArrow Table로 변환합니다.
 
@@ -1647,7 +1727,9 @@ text: string
 
 ***
 
-### `chdb.state.sqlitelike.to_df` {#state-sqlitelike-to_df}
+<div id="state-sqlitelike-to_df">
+  ### `chdb.state.sqlitelike.to_df`
+</div>
 
 쿼리 결과를 Pandas DataFrame으로 변환합니다.
 
@@ -1702,9 +1784,13 @@ text    object
 dtype: object
 ```
 
-## DataFrame 통합 {#dataframe-integration}
+<div id="dataframe-integration">
+  ## DataFrame 통합
+</div>
 
-### **class** `chdb.dataframe.Table` {#chdb-dataframe-table}
+<div id="chdb-dataframe-table">
+  ### **class** `chdb.dataframe.Table`
+</div>
 
 기반 클래스:
 
@@ -1712,7 +1798,9 @@ dtype: object
 class chdb.dataframe.Table(*args: Any, **kwargs: Any)
 ```
 
-## 데이터베이스 API (DBAPI) 2.0 인터페이스 {#database-api-interface}
+<div id="database-api-interface">
+  ## 데이터베이스 API (DBAPI) 2.0 인터페이스
+</div>
 
 chDB는 데이터베이스 연결을 위한 Python DB-API 2.0 호환 인터페이스를 제공하므로, 표준 데이터베이스 인터페이스를 사용하는 도구 및 프레임워크와 함께 chDB를 사용할 수 있습니다.
 
@@ -1726,11 +1814,15 @@ chDB DB-API 2.0 인터페이스에는 다음이 포함됩니다.
 
 ***
 
-### 핵심 함수 {#core-functions}
+<div id="core-functions">
+  ### 핵심 함수
+</div>
 
 Database API (DBAPI) 2.0 인터페이스는 다음과 같은 핵심 함수를 구현합니다:
 
-#### `chdb.dbapi.connect` {#dbapi-connect}
+<div id="dbapi-connect">
+  #### `chdb.dbapi.connect`
+</div>
 
 새 데이터베이스 연결을 초기화합니다.
 
@@ -1754,7 +1846,9 @@ chdb.dbapi.connect(*args, **kwargs)
 
 ***
 
-#### `chdb.dbapi.get_client_info()` {#dbapi-get-client-info}
+<div id="dbapi-get-client-info">
+  #### `chdb.dbapi.get_client_info()`
+</div>
 
 클라이언트 버전 정보를 반환합니다.
 
@@ -1774,9 +1868,13 @@ chdb.dbapi.get_client_info()
 
 ***
 
-### 유형 생성자 {#type-constructors}
+<div id="type-constructors">
+  ### 유형 생성자
+</div>
 
-#### `chdb.dbapi.Binary(x)` {#dbapi-binary}
+<div id="dbapi-binary">
+  #### `chdb.dbapi.Binary(x)`
+</div>
 
 x를 바이너리 형식으로 반환합니다.
 
@@ -1802,9 +1900,13 @@ chdb.dbapi.Binary(x)
 
 ***
 
-### 연결 클래스 {#connection-class}
+<div id="connection-class">
+  ### 연결 클래스
+</div>
 
-#### **class** `chdb.dbapi.connections.Connection(path=None)` {#chdb-dbapi-connections-connection}
+<div id="chdb-dbapi-connections-connection">
+  #### **class** `chdb.dbapi.connections.Connection(path=None)`
+</div>
 
 기반 클래스: `object`
 
@@ -1865,7 +1967,9 @@ class chdb.dbapi.connections.Connection(path=None)
 
 ***
 
-#### `close` {#dbapi-connection-close}
+<div id="close">
+  #### `close`
+</div>
 
 데이터베이스 연결을 닫습니다.
 
@@ -1886,7 +1990,9 @@ close()
 
 ***
 
-#### `commit` {#dbapi-commit}
+<div id="commit">
+  #### `commit`
+</div>
 
 현재 트랜잭션을 커밋합니다.
 
@@ -1903,7 +2009,9 @@ commit()
 
 ***
 
-#### `cursor` {#dbapi-cursor}
+<div id="chdb-state-sqlitelike-connection-cursor">
+  #### `cursor`
+</div>
 
 쿼리 실행에 사용할 새 커서를 생성합니다.
 
@@ -1942,7 +2050,9 @@ cursor(cursor=None)
 
 ***
 
-#### `escape` {#escape}
+<div id="escape">
+  #### `escape`
+</div>
 
 값을 SQL 쿼리에 안전하게 포함할 수 있도록 이스케이프 처리합니다.
 
@@ -1975,7 +2085,9 @@ escape(obj, mapping=None)
 
 ***
 
-#### `escape_string` {#escape-string}
+<div id="escape-string">
+  #### `escape_string`
+</div>
 
 SQL 쿼리에서 사용할 문자열 값을 이스케이프합니다.
 
@@ -1999,7 +2111,9 @@ escape_string(s)
 
 ***
 
-#### `property open` {#property-open}
+<div id="property-open">
+  #### `property open`
+</div>
 
 연결(connection)이 열려 있는지 확인합니다.
 
@@ -2011,7 +2125,9 @@ escape_string(s)
 
 ***
 
-#### `query` {#dbapi-query}
+<div id="chdb-session-session-query">
+  #### `query`
+</div>
 
 SQL 쿼리를 직접 실행하고 원시 결과를 반환합니다.
 
@@ -2054,7 +2170,9 @@ query(sql, fmt='CSV')
 
 ***
 
-#### `property resp` {#property-resp}
+<div id="property-resp">
+  #### `property resp`
+</div>
 
 마지막 쿼리 응답을 반환합니다.
 
@@ -2071,7 +2189,9 @@ query(sql, fmt='CSV')
 
 ***
 
-#### `rollback` {#rollback}
+<div id="rollback">
+  #### `rollback`
+</div>
 
 현재 트랜잭션을 롤백합니다.
 
@@ -2087,9 +2207,13 @@ rollback()
 
 ***
 
-### Cursor 클래스 {#cursor-class}
+<div id="cursor-class">
+  ### Cursor 클래스
+</div>
 
-#### **class** `chdb.dbapi.cursors.Cursor` {#chdb-dbapi-cursors-cursor}
+<div id="chdb-dbapi-cursors-cursor">
+  #### **class** `chdb.dbapi.cursors.Cursor`
+</div>
 
 기반: `object`
 
@@ -2131,7 +2255,9 @@ class chdb.dbapi.cursors.Cursor(connection)
 
 ***
 
-#### `callproc` {#callproc}
+<div id="callproc">
+  #### `callproc`
+</div>
 
 저장 프로시저를 실행합니다(임시로 제공되는 구현).
 
@@ -2169,7 +2295,9 @@ callproc(procname, args=())
 
 ***
 
-#### `close` {#dbapi-cursor-close}
+<div id="close">
+  #### `close`
+</div>
 
 커서를 닫고 관련 리소스를 해제합니다.
 
@@ -2184,7 +2312,9 @@ close()
 
 ***
 
-#### `execute` {#dbapi-execute}
+<div id="execute">
+  #### `execute`
+</div>
 
 선택적으로 매개변수를 바인딩하여 SQL 쿼리를 실행합니다.
 
@@ -2240,7 +2370,9 @@ execute(query, args=None)
 
 ***
 
-#### `executemany(query, args)` {#chdb-dbapi-cursors-cursor-executemany}
+<div id="chdb-dbapi-cursors-cursor-executemany">
+  #### `executemany(query, args)`
+</div>
 
 서로 다른 매개변수 집합으로 쿼리를 여러 번 실행합니다.
 
@@ -2290,7 +2422,9 @@ executemany(query, args)
 
 ***
 
-#### `fetchall()` {#dbapi-fetchall}
+<div id="dbapi-fetchall">
+  #### `fetchall()`
+</div>
 
 쿼리 결과에 남아 있는 모든 행을 가져옵니다.
 
@@ -2329,7 +2463,9 @@ fetchall()
 
 ***
 
-#### `fetchmany` {#dbapi-fetchmany}
+<div id="chdb-state-sqlitelike-cursor-fetchmany">
+  #### `fetchmany`
+</div>
 
 쿼리 결과에서 여러 행을 가져옵니다.
 
@@ -2367,7 +2503,9 @@ fetchmany(size=1)
 
 ***
 
-#### `fetchone` {#dbapi-fetchone}
+<div id="chdb-state-sqlitelike-cursor-fetchone">
+  #### `fetchone`
+</div>
 
 쿼리 결과에서 다음 행을 반환합니다.
 
@@ -2401,7 +2539,9 @@ fetchone()
 
 ***
 
-#### `max_stmt_length = 1024000` {#max-stmt-length}
+<div id="max-stmt-length">
+  #### `max_stmt_length = 1024000`
+</div>
 
 [`executemany()`](#chdb-dbapi-cursors-cursor-executemany)이 생성하는 최대 문 길이입니다.
 
@@ -2409,7 +2549,9 @@ fetchone()
 
 ***
 
-#### `mogrify` {#mogrify}
+<div id="mogrify">
+  #### `mogrify`
+</div>
 
 데이터베이스로 전송될 정확한 쿼리 문자열을 반환합니다.
 
@@ -2448,7 +2590,9 @@ mogrify(query, args=None)
 
 ***
 
-#### `nextset` {#nextset}
+<div id="nextset">
+  #### `nextset`
+</div>
 
 다음 결과 세트로 이동합니다(지원되지 않음).
 
@@ -2471,7 +2615,9 @@ nextset()
 
 ***
 
-#### `setinputsizes` {#setinputsizes}
+<div id="setinputsizes">
+  #### `setinputsizes`
+</div>
 
 매개변수 입력 크기를 설정합니다(no-op 구현).
 
@@ -2494,7 +2640,9 @@ setinputsizes(*args)
 
 ***
 
-#### `setoutputsizes` {#setoutputsizes}
+<div id="setoutputsizes">
+  #### `setoutputsizes`
+</div>
 
 출력 컬럼 크기를 설정합니다(아무 동작도 하지 않는 구현).
 
@@ -2517,7 +2665,9 @@ setoutputsizes(*args)
 
 ***
 
-### 오류 클래스 {#error-classes}
+<div id="error-classes">
+  ### 오류 클래스
+</div>
 
 chdb 데이터베이스 작업에서 사용하는 예외 클래스입니다.
 
@@ -2586,7 +2736,9 @@ Constraint violation: Duplicate entry '1' for key 'PRIMARY'
 
 ***
 
-#### **예외** `chdb.dbapi.err.DataError` {#chdb-dbapi-err-dataerror}
+<div id="chdb-dbapi-err-dataerror">
+  #### **예외** `chdb.dbapi.err.DataError`
+</div>
 
 기반 클래스: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2623,7 +2775,9 @@ DataError: Invalid date format
 
 ***
 
-#### **예외** `chdb.dbapi.err.DatabaseError` {#chdb-dbapi-err-databaseerror}
+<div id="chdb-dbapi-err-databaseerror">
+  #### **예외** `chdb.dbapi.err.DatabaseError`
+</div>
 
 기반 클래스: [`Error`](#chdb-dbapi-err-error)
 
@@ -2644,7 +2798,9 @@ DataError: Invalid date format
 
 ***
 
-#### **예외** `chdb.dbapi.err.Error` {#chdb-dbapi-err-error}
+<div id="chdb-dbapi-err-error">
+  #### **예외** `chdb.dbapi.err.Error`
+</div>
 
 기반 클래스: [`StandardError`](#chdb-dbapi-err-standarderror)
 
@@ -2662,7 +2818,9 @@ Warning을 제외한 모든 오류 예외의 기본 클래스입니다.
 
 * [`Warning`](#chdb-dbapi-err-warning) - 작업 완료를 방해하지 않는 비치명적 경고는 이를 참조하십시오.
 
-#### **예외** `chdb.dbapi.err.IntegrityError` {#chdb-dbapi-err-integrityerror}
+<div id="chdb-dbapi-err-integrityerror">
+  #### **예외** `chdb.dbapi.err.IntegrityError`
+</div>
 
 기반 클래스: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2700,7 +2858,9 @@ IntegrityError: Cannot add or update a child row: foreign key constraint fails
 
 ***
 
-#### **exception** `chdb.dbapi.err.InterfaceError` {#chdb-dbapi-err-interfaceerror}
+<div id="chdb-dbapi-err-interfaceerror">
+  #### **exception** `chdb.dbapi.err.InterfaceError`
+</div>
 
 기반 클래스: [`Error`](#chdb-dbapi-err-error)
 
@@ -2726,7 +2886,9 @@ IntegrityError: Cannot add or update a child row: foreign key constraint fails
 
 ***
 
-#### **예외** `chdb.dbapi.err.InternalError` {#chdb-dbapi-err-internalerror}
+<div id="chdb-dbapi-err-internalerror">
+  #### **예외** `chdb.dbapi.err.InternalError`
+</div>
 
 기반 클래스: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2762,7 +2924,9 @@ IntegrityError: Cannot add or update a child row: foreign key constraint fails
 
 ***
 
-#### **예외** `chdb.dbapi.err.NotSupportedError` {#chdb-dbapi-err-notsupportederror}
+<div id="chdb-dbapi-err-notsupportederror">
+  #### **예외** `chdb.dbapi.err.NotSupportedError`
+</div>
 
 기반 클래스: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2803,7 +2967,9 @@ NotSupportedError: WITH clause not supported in this database version
 
 ***
 
-#### **예외** `chdb.dbapi.err.OperationalError` {#chdb-dbapi-err-operationalerror}
+<div id="chdb-dbapi-err-operationalerror">
+  #### **예외** `chdb.dbapi.err.OperationalError`
+</div>
 
 기반: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2839,7 +3005,9 @@ NotSupportedError: WITH clause not supported in this database version
 
 ***
 
-#### **예외** `chdb.dbapi.err.ProgrammingError` {#chdb-dbapi-err-programmingerror}
+<div id="chdb-dbapi-err-programmingerror">
+  #### **예외** `chdb.dbapi.err.ProgrammingError`
+</div>
 
 기반: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2882,7 +3050,9 @@ ProgrammingError: Column count doesn't match value count
 
 ***
 
-#### **예외** `chdb.dbapi.err.StandardError` {#chdb-dbapi-err-standarderror}
+<div id="chdb-dbapi-err-standarderror">
+  #### **예외** `chdb.dbapi.err.StandardError`
+</div>
 
 기반 클래스: `Exception`
 
@@ -2896,7 +3066,9 @@ chdb 작업과 관련된 예외입니다.
 
 ***
 
-#### **예외** `chdb.dbapi.err.Warning` {#chdb-dbapi-err-warning}
+<div id="chdb-dbapi-err-warning">
+  #### **예외** `chdb.dbapi.err.Warning`
+</div>
 
 기반: [`StandardError`](#chdb-dbapi-err-standarderror)
 
@@ -2916,9 +3088,13 @@ chdb 작업과 관련된 예외입니다.
 
 ***
 
-### 모듈 상수 {#module-constants}
+<div id="module-constants">
+  ### 모듈 상수
+</div>
 
-#### `chdb.dbapi.apilevel = '2.0'` {#apilevel}
+<div id="apilevel">
+  #### `chdb.dbapi.apilevel = '2.0'`
+</div>
 
 ```python
 str(object=’’) -> str
@@ -2936,7 +3112,9 @@ str(bytes_or_buffer[, encoding[, errors]]) -> str
 
 ***
 
-#### `chdb.dbapi.threadsafety = 1` {#threadsafety}
+<div id="threadsafety">
+  #### `chdb.dbapi.threadsafety = 1`
+</div>
 
 ```python
 int([x]) -> integer
@@ -2960,7 +3138,9 @@ x가 숫자가 아니거나 base가 주어진 경우, x는 지정된 진법의 �
 
 ***
 
-#### `chdb.dbapi.paramstyle = 'format'` {#paramstyle}
+<div id="paramstyle">
+  #### `chdb.dbapi.paramstyle = 'format'`
+</div>
 
 ```python
 str(object=’’) -> str
@@ -2977,9 +3157,13 @@ errors의 기본값은 ‘strict’입니다.
 
 ***
 
-### 유형 상수 {#type-constants}
+<div id="type-constants">
+  ### 유형 상수
+</div>
 
-#### `chdb.dbapi.STRING = frozenset({247, 253, 254})` {#string-type}
+<div id="string-type">
+  #### `chdb.dbapi.STRING = frozenset({247, 253, 254})`
+</div>
 
 DB-API 2.0 유형 비교를 위한 확장 frozenset입니다.
 
@@ -3001,7 +3185,9 @@ DB-API 2.0 유형 비교를 위한 확장 frozenset입니다.
 
 ***
 
-#### `chdb.dbapi.BINARY = frozenset({249, 250, 251, 252})` {#binary-type}
+<div id="binary-type">
+  #### `chdb.dbapi.BINARY = frozenset({249, 250, 251, 252})`
+</div>
 
 DB-API 2.0 유형 비교를 위한 확장된 frozenset입니다.
 
@@ -3023,7 +3209,9 @@ field&#95;type이 단일 유형 값일 때 &quot;field&#95;type == STRING&quot;�
 
 ***
 
-#### `chdb.dbapi.NUMBER = frozenset({0, 1, 3, 4, 5, 8, 9, 13})` {#number-type}
+<div id="number-type">
+  #### `chdb.dbapi.NUMBER = frozenset({0, 1, 3, 4, 5, 8, 9, 13})`
+</div>
 
 DB-API 2.0 유형 비교를 위한 확장 frozenset입니다.
 
@@ -3045,7 +3233,9 @@ DB-API 2.0 유형 비교를 위한 확장 frozenset입니다.
 
 ***
 
-#### `chdb.dbapi.DATE = frozenset({10, 14})` {#date-type}
+<div id="date-type">
+  #### `chdb.dbapi.DATE = frozenset({10, 14})`
+</div>
 
 DB-API 2.0 유형 비교를 위한 확장 frozenset입니다.
 
@@ -3067,7 +3257,9 @@ field&#95;type이 단일 유형 값일 때 &quot;field&#95;type == STRING&quot;�
 
 ***
 
-#### `chdb.dbapi.TIME = frozenset({11})` {#time-type}
+<div id="time-type">
+  #### `chdb.dbapi.TIME = frozenset({11})`
+</div>
 
 DB-API 2.0 유형 비교를 위한 확장된 frozenset입니다.
 
@@ -3090,7 +3282,9 @@ field&#95;type이 단일 유형 값일 때 “field&#95;type == STRING”과 같
 
 ***
 
-#### `chdb.dbapi.TIMESTAMP = frozenset({7, 12})` {#timestamp-type}
+<div id="timestamp-type">
+  #### `chdb.dbapi.TIMESTAMP = frozenset({7, 12})`
+</div>
 
 DB-API 2.0 유형 비교를 위해 확장된 frozenset입니다.
 
@@ -3110,7 +3304,9 @@ DB-API 2.0 유형 비교를 위해 확장된 frozenset입니다.
 >>> FIELD_TYPE.BLOB in string_types    # False 반환
 ```
 
-#### `chdb.dbapi.DATETIME = frozenset({7, 12})` {#datetime-type}
+<div id="datetime-type">
+  #### `chdb.dbapi.DATETIME = frozenset({7, 12})`
+</div>
 
 DB-API 2.0 유형 비교를 위해 확장된 frozenset입니다.
 
@@ -3132,7 +3328,9 @@ field&#95;type이 단일 유형 값일 때 “field&#95;type == STRING”과 같
 
 ***
 
-#### `chdb.dbapi.ROWID = frozenset({})` {#rowid-type}
+<div id="rowid-type">
+  #### `chdb.dbapi.ROWID = frozenset({})`
+</div>
 
 DB-API 2.0의 유형 비교를 위해 확장된 frozenset입니다.
 
@@ -3262,13 +3460,17 @@ with dbapi.connect("test.chdb") as conn:
   * 매개변수 바인딩 구문은 포맷 스타일 `%s`를 따릅니다
 </Warning>
 
-## Python 사용자 정의 함수(UDF) {#user-defined-functions}
+<div id="user-defined-functions">
+  ## Python 사용자 정의 함수(UDF)
+</div>
 
 chDB는 타입이 지정된 인수, 자동 유형 추론, 구성 가능한 NULL/예외 처리를 지원하는 네이티브 Python UDF를 프로세스 내에서 실행합니다. UDF로 등록된 Python 함수는 SQL 쿼리에서 직접 호출할 수 있습니다.
 
 아래 예시에서는 기본 CSV 출력 형식을 사용합니다. 인라인 주석은 논리적 결과 값을 보여주며, 원시 출력에서는 `NULL`이 `\N`으로 표시되고 문자열 및 날짜 값에는 CSV 따옴표 처리가 적용됩니다.
 
-### `chdb.create_function` {#create-function}
+<div id="create-function">
+  ### `chdb.create_function`
+</div>
 
 Python 함수를 chDB SQL 함수로 등록합니다.
 
@@ -3311,7 +3513,9 @@ drop_function("strlen")
 
 ***
 
-### `chdb.drop_function` {#drop-function}
+<div id="drop-function">
+  ### `chdb.drop_function`
+</div>
 
 이전에 등록된 Python UDF를 제거합니다. 함수가 등록되어 있지 않으면 아무 작업도 수행하지 않으므로, 조건과 관계없이 안전하게 호출할 수 있습니다.
 
@@ -3329,7 +3533,9 @@ chdb.drop_function(name)
 
 ***
 
-### `@func` 데코레이터 {#func-decorator}
+<div id="func-decorator">
+  ### `@func` 데코레이터
+</div>
 
 Python 함수를 chDB SQL 함수로 등록하는 데 사용되는 데코레이터입니다. 등록한 함수는 일반 Python 함수처럼 계속 호출할 수 있으며, 동시에 `__name__`을 통해 SQL 쿼리에서도 사용할 수 있습니다.
 
@@ -3375,9 +3581,13 @@ print(query("SELECT greet('world')"))    # Hello, world!
 
 ***
 
-### 유형 시스템 {#udf-type-system}
+<div id="udf-type-system">
+  ### 유형 시스템
+</div>
 
-#### 사용 가능한 타입 {#udf-available-types}
+<div id="udf-available-types">
+  #### 사용 가능한 타입
+</div>
 
 `chdb.sqltypes`에서 타입을 import합니다:
 
@@ -3392,7 +3602,9 @@ from chdb.sqltypes import (
 )
 ```
 
-#### 자동 타입 매핑 {#udf-automatic-type-mapping}
+<div id="udf-automatic-type-mapping">
+  #### 자동 타입 매핑
+</div>
 
 Python 어노테이션을 기반으로 타입을 추론할 때는 다음 매핑이 사용됩니다:
 
@@ -3407,7 +3619,9 @@ Python 어노테이션을 기반으로 타입을 추론할 때는 다음 매핑�
 | `datetime.date`     | `Date`          |
 | `datetime.datetime` | `DateTime64(6)` |
 
-#### 타입 지정 방법 {#udf-type-specification-methods}
+<div id="udf-type-specification-methods">
+  #### 타입 지정 방법
+</div>
 
 타입은 여러 방법으로 지정할 수 있습니다:
 
@@ -3434,7 +3648,9 @@ def f5(x: int) -> int:
 
 ***
 
-### NULL 처리 {#udf-null-handling}
+<div id="udf-null-handling">
+  ### NULL 처리
+</div>
 
 `on_null` 매개변수로 NULL 값을 처리하는 방식을 지정합니다.
 
@@ -3463,7 +3679,9 @@ print(query("SELECT null_safe(NULL)"))  # 0
 
 ***
 
-### 예외 처리 {#udf-exception-handling}
+<div id="udf-exception-handling">
+  ### 예외 처리
+</div>
 
 `on_error` 매개변수로 예외 처리 방식을 제어합니다.
 
@@ -3493,7 +3711,9 @@ print(query("SELECT safe_divide(10, 2)"))  # 5
 
 ***
 
-### DateTime 및 시간대 지원 {#udf-datetime}
+<div id="udf-datetime">
+  ### DateTime 및 시간대 지원
+</div>
 
 UDF는 시간대를 인식하는 `Date`, `Date32`, `DateTime`, `DateTime64` 타입을 완벽하게 지원합니다.
 
@@ -3519,13 +3739,17 @@ print(query("SELECT get_year(toDate('2024-06-15'))"))  # 2024
 
 ***
 
-### 레거시 API {#legacy-udf}
+<div id="legacy-udf">
+  ### 레거시 API
+</div>
 
 <Warning>
   **더 이상 사용되지 않음:** `@chdb_udf` 데코레이터는 레거시 하위 프로세스 기반 UDF 메커니즘으로, 별도의 Python 프로세스에서 함수를 실행하고 모든 인수를 문자열로 전달합니다. 계속 사용할 수는 있지만, 네이티브 Python UDF API([`@func`](#func-decorator) / [`create_function`](#create-function))를 사용하는 것이 좋습니다. 네이티브 UDF는 형식이 지정된 인수, NULL 처리 및 예외 제어를 지원하며 프로세스 내에서 실행됩니다. 전체 사용 방법은 [Python UDF 가이드](/ko/chdb/guides/python-udf)를 참조하십시오.
 </Warning>
 
-#### `chdb.udf.chdb_udf` {#chdb-udf}
+<div id="chdb-udf">
+  #### `chdb.udf.chdb_udf`
+</div>
 
 chDB Python UDF(사용자 정의 함수)용 데코레이터입니다.
 
@@ -3565,7 +3789,9 @@ def func_use_json(arg):
 
 ***
 
-#### `chdb.udf.generate_udf` {#generate-udf}
+<div id="generate-udf">
+  #### `chdb.udf.generate_udf`
+</div>
 
 UDF 구성과 실행형 스크립트 파일을 생성합니다.
 
@@ -3596,7 +3822,9 @@ chdb.udf.generate_udf(func_name, args, return_type, udf_body)
 
 ***
 
-## 유틸리티 {#utilities}
+<div id="utilities">
+  ## 유틸리티
+</div>
 
 chDB용 유틸리티 함수와 도우미입니다.
 
@@ -3605,7 +3833,9 @@ chDB용 유틸리티 함수와 도우미입니다.
 
 ***
 
-### `chdb.utils.convert_to_columnar` {#convert-to-columnar}
+<div id="convert-to-columnar">
+  ### `chdb.utils.convert_to_columnar`
+</div>
 
 딕셔너리 목록을 컬럼형 포맷으로 변환합니다.
 
@@ -3649,7 +3879,9 @@ chdb.utils.convert_to_columnar(items: List[Dict[str, Any]]) → Dict[str, List[A
 
 ***
 
-### `chdb.utils.flatten_dict` {#flatten-dict}
+<div id="flatten-dict">
+  ### `chdb.utils.flatten_dict`
+</div>
 
 중첩된 딕셔너리를 평탄화합니다.
 
@@ -3704,7 +3936,9 @@ chdb.utils.flatten_dict(d: Dict[str, Any], parent_key: str = '', sep: str = '_')
 
 ***
 
-### `chdb.utils.infer_data_type` {#infer-data-type}
+<div id="infer-data-type">
+  ### `chdb.utils.infer_data_type`
+</div>
 
 값 목록에 가장 적합한 데이터 타입을 추론합니다.
 
@@ -3739,7 +3973,9 @@ chdb.utils.infer_data_type(values: List[Any]) → str
 
 ***
 
-### `chdb.utils.infer_data_types` {#infer-data-types}
+<div id="infer-data-types">
+  ### `chdb.utils.infer_data_types`
+</div>
 
 열 지향 데이터 구조에서 각 컬럼의 데이터 타입을 추론합니다.
 
@@ -3765,9 +4001,13 @@ chdb.utils.infer_data_types`(column_data: Dict[str, List[Any]], n_rows: int = 10
 | ------------- | ------------------------------------- |
 | `List[tuple]` | 각 튜플에 컬럼 이름과 추론된 데이터 타입이 포함된 튜플 목록입니다 |
 
-## 추상 기본 클래스 {#abstract-base-classes}
+<div id="abstract-base-classes">
+  ## 추상 기본 클래스
+</div>
 
-### **클래스** `chdb.rwabc.PyReader`(data: Any)&#96; {#pyreader}
+<div id="pyreader">
+  ### **클래스** `chdb.rwabc.PyReader`(data: Any)&#96;
+</div>
 
 기반 클래스: `ABC`
 
@@ -3777,7 +4017,9 @@ class chdb.rwabc.PyReader(data: Any)
 
 ***
 
-#### **abstractmethod** `read` {#read}
+<div id="read">
+  #### **abstractmethod** `read`
+</div>
 
 주어진 컬럼에서 지정된 수의 행을 읽고 객체 목록을 반환합니다.
 각 객체는 하나의 컬럼에 대한 값 시퀀스입니다.
@@ -3799,7 +4041,9 @@ abstractmethod (col_names: List[str], count: int) → List[Any]
 | ----------- | ----------------- |
 | `List[Any]` | 각 컬럼에 해당하는 시퀀스 목록 |
 
-### **클래스** `chdb.rwabc.PyWriter` {#pywriter}
+<div id="pywriter">
+  ### **클래스** `chdb.rwabc.PyWriter`
+</div>
 
 기반 클래스: `ABC`
 
@@ -3809,7 +4053,9 @@ class chdb.rwabc.PyWriter(col_names: List[str], types: List[type], data: Any)
 
 ***
 
-#### **abstractmethod** finalize {#finalize}
+<div id="finalize">
+  #### **abstractmethod** finalize
+</div>
 
 블록에서 최종 데이터를 조합해 반환합니다. 하위 클래스에서 반드시 구현해야 합니다.
 
@@ -3825,7 +4071,9 @@ abstractmethod finalize() → bytes
 
 ***
 
-#### **abstractmethod** `write` {#write}
+<div id="write">
+  #### **abstractmethod** `write`
+</div>
 
 데이터 컬럼들을 블록에 저장합니다. 하위 클래스에서 반드시 구현해야 합니다.
 
@@ -3840,9 +4088,13 @@ abstractmethod write(col_names: List[str], columns: List[List[Any]]) → None
 | `col_names` | `List[str]`       | 기록할 컬럼 이름 목록                      |
 | `columns`   | `List[List[Any]]` | 컬럼 데이터 목록으로, 각 컬럼은 하나의 목록으로 표현됩니다 |
 
-## 예외 처리 {#exception-handling}
+<div id="chdb-exceptions">
+  ## 예외 처리
+</div>
 
-### **클래스** `chdb.ChdbError` {#chdberror}
+<div id="chdberror">
+  ### **클래스** `chdb.ChdbError`
+</div>
 
 기반 클래스: `Exception`
 
@@ -3887,9 +4139,13 @@ Syntax error: Syntax error near 'FROM'
   쿼리를 처리할 때는 이 예외를 포착해야 합니다.
 </Note>
 
-## 버전 정보 {#version-information}
+<div id="version-information">
+  ## 버전 정보
+</div>
 
-### `chdb.chdb_version = ('3', '6', '0')` {#chdb-version}
+<div id="chdb-version">
+  ### `chdb.chdb_version = ('3', '6', '0')`
+</div>
 
 내장된 불변 시퀀스입니다.
 
@@ -3900,7 +4156,9 @@ iterable이 지정되면 iterable의 항목으로 튜플을 초기화합니다.
 
 ***
 
-### `chdb.engine_version = '25.5.2.1'` {#engine-version}
+<div id="engine-version">
+  ### `chdb.engine_version = '25.5.2.1'`
+</div>
 
 ```python
 str(object=’’) -> str
@@ -3918,7 +4176,9 @@ errors가 지정되면, 객체는 지정된 인코딩과 오류 처리기(error 
 
 ***
 
-### `chdb.__version__ = '3.6.0'` {#version}
+<div id="version">
+  ### `chdb.__version__ = '3.6.0'`
+</div>
 
 ```python
 str(object=’’) -> str

@@ -231,14 +231,13 @@ bool SplitFileCachePriority::canFit( /// NOLINT
         size, elements, lock, reservee, origin_info, is_initial_load);
 }
 
-EvictionInfoPtr SplitFileCachePriority::collectEvictionInfo( /// NOLINT
+EvictionInfoPtr SplitFileCachePriority::collectEvictionInfo(
     size_t size,
     size_t elements,
     IFileCachePriority::Iterator * reservee,
     bool is_total_space_cleanup,
     const IFileCachePriority::OriginInfo & origin_info,
-    const CacheStateGuard::Lock & lock,
-    QueueEntryType reservee_queue_type)
+    const CacheStateGuard::Lock & lock)
 {
     if (is_total_space_cleanup)
     {
@@ -268,11 +267,10 @@ EvictionInfoPtr SplitFileCachePriority::collectEvictionInfo( /// NOLINT
     }
 
     const auto type = getPriorityType(origin_info.segment_type);
-    return getPriority(type).collectEvictionInfo(
-        size, elements, reservee, is_total_space_cleanup, origin_info, lock, reservee_queue_type);
+    return getPriority(type).collectEvictionInfo(size, elements, reservee, is_total_space_cleanup, origin_info, lock);
 }
 
-bool SplitFileCachePriority::collectCandidatesForEviction( /// NOLINT
+bool SplitFileCachePriority::collectCandidatesForEviction(
     EvictionInfo & eviction_info,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
@@ -281,8 +279,7 @@ bool SplitFileCachePriority::collectCandidatesForEviction( /// NOLINT
     size_t max_candidates_size,
     bool is_total_space_cleanup,
     const OriginInfo & origin_info,
-    CacheStateGuard & state_guard,
-    QueueEntryType reservee_queue_type)
+    CacheStateGuard & state_guard)
 {
     if (!eviction_info.requiresEviction())
         return true;
@@ -312,7 +309,7 @@ bool SplitFileCachePriority::collectCandidatesForEviction( /// NOLINT
     return getPriority(type).collectCandidatesForEviction(
         eviction_info, stat, res, reservee,
         eviction_cursor, max_candidates_size,
-        is_total_space_cleanup, origin_info, state_guard, reservee_queue_type);
+        is_total_space_cleanup, origin_info, state_guard);
 }
 
 bool SplitFileCachePriority::tryIncreasePriority(

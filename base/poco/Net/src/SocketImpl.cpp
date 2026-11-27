@@ -84,26 +84,13 @@ SocketImpl* SocketImpl::acceptConnection(SocketAddress& clientAddr)
 	struct sockaddr* pSA = reinterpret_cast<struct sockaddr*>(&buffer);
 	poco_socklen_t saLen = sizeof(buffer);
 	poco_socket_t sd;
-	// Accepted sockets must not be inherited by processes the server starts.
 	do
 	{
-#ifdef SOCK_CLOEXEC
-		sd = ::accept4(_sockfd, pSA, &saLen, SOCK_CLOEXEC);
-#else
 		sd = ::accept(_sockfd, pSA, &saLen);
-#endif
 	}
 	while (sd == POCO_INVALID_SOCKET && lastError() == POCO_EINTR);
 	if (sd != POCO_INVALID_SOCKET)
 	{
-#ifndef SOCK_CLOEXEC
-		if (::fcntl(sd, F_SETFD, FD_CLOEXEC) == -1)
-		{
-			int err = lastError();
-			poco_closesocket(sd);
-			error(err); // will throw
-		}
-#endif
 		clientAddr = SocketAddress(pSA, saLen);
 		return new StreamSocketImpl(sd);
 	}
@@ -150,7 +137,7 @@ void SocketImpl::connect(const SocketAddress& address, const Poco::Timespan& tim
 			if (!poll(timeout, SELECT_READ | SELECT_WRITE | SELECT_ERROR))
 				throw Poco::TimeoutException("connect timed out", address.toString());
 			err = socketError();
-			if (err != 0) error(err, address.toString());
+			if (err != 0) error(err);
 		}
 	}
 	catch (Poco::Exception&)
@@ -510,12 +497,6 @@ bool SocketImpl::secure() const
 
 
 bool SocketImpl::supportsExternalPolling() const
-{
-	return true;
-}
-
-
-bool SocketImpl::supportsNonBlocking() const
 {
 	return true;
 }
@@ -1120,9 +1101,9 @@ void SocketImpl::error(int code, const std::string& arg)
 	case POCO_ENETRESET:
 		throw NetException("Network dropped connection on reset", arg, code);
 	case POCO_ECONNABORTED:
-		throw ConnectionAbortedException(arg, code);
+		throw ConnectionAbortedException(code);
 	case POCO_ECONNRESET:
-		throw ConnectionResetException(arg, code);
+		throw ConnectionResetException(code);
 	case POCO_ENOBUFS:
 		throw IOException("No buffer space available", code);
 	case POCO_EISCONN:
@@ -1132,7 +1113,7 @@ void SocketImpl::error(int code, const std::string& arg)
 	case POCO_ESHUTDOWN:
 		throw NetException("Cannot send after socket shutdown", code);
 	case POCO_ETIMEDOUT:
-		throw TimeoutException(arg, code);
+		throw TimeoutException(code);
 	case POCO_ECONNREFUSED:
 		throw ConnectionRefusedException(arg, code);
 	case POCO_EHOSTDOWN:

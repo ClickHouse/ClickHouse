@@ -138,7 +138,7 @@ public:
             return;
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isAggregationCall())
+        if (!function_node || !function_node->isAggregateFunction())
             return;
 
         auto lower_name = Poco::toLower(function_node->getFunctionName());

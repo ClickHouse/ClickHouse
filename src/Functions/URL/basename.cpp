@@ -1,7 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <Functions/StringHelpers.h>
-#include <base/find_symbols.h>
 
 
 namespace DB
@@ -20,9 +19,10 @@ struct ExtractBasename
         res_data = data;
         res_size = size;
 
-        Pos end = data + size;
+        Pos pos = data;
+        Pos end = pos + size;
 
-        if (Pos pos = find_last_symbols_or_null<'/', '\\'>(data, end))
+        if ((pos = find_last_symbols_or_null<'/', '\\'>(pos, end)))
         {
             ++pos;
             res_data = pos;

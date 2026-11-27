@@ -7,6 +7,8 @@ sidebarTitle: 'Системные таблицы'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 Во всех экземплярах ClickHouse есть набор [системных таблиц](/ru/reference/system-tables/overview) в базе данных `system`, которые содержат информацию о:
 
 * Состоянии сервера, процессах и окружении.
@@ -16,7 +18,7 @@ doc_type: 'guide'
 Запросы к этим таблицам полезны для мониторинга развертываний ClickHouse, особенно для углублённой интроспекции и отладки.
 
 <div id="using-cloud-console">
-  ## Использование консоли ClickHouse Cloud {#using-cloud-console}
+  ## Использование консоли ClickHouse Cloud
 </div>
 
 Консоль ClickHouse Cloud включает [SQL-консоль](/ru/products/cloud/features/sql-console-features/sql-console) и [инструменты для создания панелей мониторинга](/ru/products/cloud/features/sql-console-features/dashboards), которые можно использовать для выполнения запросов к системным таблицам. Например, приведённый ниже запрос показывает, сколько новых частей создаётся за последние два часа и как часто это происходит:
@@ -50,15 +52,13 @@ ORDER BY
   Эти запросы также можно использовать, чтобы [создать собственную панель мониторинга](https://clickhouse.com/blog/essential-monitoring-queries-creating-a-dashboard-in-clickHouse-cloud) в консоли ClickHouse Cloud.
 </Tip>
 
-## Встроенная расширенная панель обсервабилити {#built-in-advanced-observability-dashboard}
+<div id="built-in-advanced-observability-dashboard">
+  ## Встроенная расширенная панель обсервабилити
+</div>
 
 В ClickHouse есть встроенная расширенная панель обсервабилити, доступная по адресу `$HOST:$PORT/dashboard` (требуются имя пользователя и пароль), которая показывает метрики Cloud Overview из `system.dashboards`.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Встроенная расширенная панель обсервабилити](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Встроенная расширенная панель обсервабилити" border />
 
 <Note>
   Для этой панели мониторинга требуется прямая аутентификация в экземпляре ClickHouse; она не связана с [консолью ClickHouse Cloud Advanced Dashboard](/ru/products/cloud/features/monitoring/cloud-console#advanced-dashboard), которая доступна через интерфейс консоли ClickHouse Cloud без дополнительной аутентификации.
@@ -67,7 +67,7 @@ ORDER BY
 Дополнительные сведения о доступных визуализациях и их использовании для устранения неполадок см. в [документации по Advanced Dashboard](/ru/products/cloud/features/monitoring/advanced-dashboard).
 
 <div id="querying-across-nodes">
-  ## Выполнение запросов на разных узлах и в разных версиях {#querying-across-nodes}
+  ## Выполнение запросов на разных узлах и в разных версиях
 </div>
 
 Чтобы получить полное представление обо всём кластере, пользователи могут использовать функцию `clusterAllReplicas` в сочетании с функцией `merge`. Функция `clusterAllReplicas` позволяет выполнять запросы к системным таблицам на всех репликах в кластере &quot;default&quot;, объединяя данные отдельных узлов в единый результат. В сочетании с функцией `merge` это позволяет обращаться ко всем системным данным для конкретной таблицы в кластере.
@@ -94,7 +94,7 @@ FORMAT VERTICAL
 Подробнее см. в разделе [выполнение запросов на всех узлах](/ru/reference/system-tables/overview#querying-across-nodes).
 
 <div id="system-considerations">
-  ## Что следует учитывать {#system-considerations}
+  ## Что следует учитывать
 </div>
 
 <Warning>
@@ -103,9 +103,11 @@ FORMAT VERTICAL
 
 Для мониторинга продуктивной среды в реальном времени с операционным разделением рассмотрите [Prometheus-совместимую конечную точку метрик](/ru/products/cloud/features/monitoring/prometheus) или [панели мониторинга консоли ClickHouse Cloud](/ru/products/cloud/features/monitoring/cloud-console): оба варианта используют уже собранные метрики и не выполняют запросы к базовому сервису.
 
-## Связанные страницы {#related}
+<div id="related">
+  ## Связанные страницы
+</div>
 
 * [Справочник по системным таблицам](/ru/reference/system-tables/overview) — Полный справочник по всем доступным системным таблицам
-* [Мониторинг в консоли ClickHouse Cloud](/ru/products/cloud/features/monitoring/cloud-console) — Панели мониторинга, не требующие настройки и не влияющие на производительность сервиса
+* [Мониторинг в консоли ClickHouse Cloud](/ru/products/cloud/features/monitoring/cloud-console) — Панели мониторинга без настройки, не влияющие на производительность сервиса
 * [Конечная точка Prometheus](/ru/products/cloud/features/monitoring/prometheus) — Экспорт метрик во внешние инструменты мониторинга
-* [Advanced dashboard](/ru/products/cloud/features/monitoring/advanced-dashboard) — Подробное описание визуализаций панели мониторинга
+* [Advanced dashboard](/ru/products/cloud/features/monitoring/advanced-dashboard) — Подробный справочник по визуализациям панели мониторинга

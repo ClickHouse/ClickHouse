@@ -1,7 +1,5 @@
 #include <Functions/AI/AnthropicProvider.h>
 #include <IO/HTTPCommon.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
 
 #include <Poco/Net/HTTPRequest.h>
@@ -21,7 +19,7 @@ namespace ErrorCodes
 
 static constexpr auto DEFAULT_ANTHROPIC_API_VERSION = "2023-06-01";
 
-AnthropicProvider::AnthropicProvider(const String & endpoint_, std::string_view api_key_, const String & api_version_)
+AnthropicProvider::AnthropicProvider(const String & endpoint_, const String & api_key_, const String & api_version_)
     : endpoint(endpoint_)
     , api_key(api_key_)
     , api_version(api_version_.empty() ? DEFAULT_ANTHROPIC_API_VERSION : api_version_)
@@ -94,18 +92,21 @@ void AnthropicProvider::call(const AIChatRequest & ai_request, const ConnectionT
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
     for (const auto & header : getHeaders())
-        http_request.set(header.name, String(header.value));
+        http_request.set(header.name, header.value);
     http_request.setContentLength(body.size());
 
-    auto request_body = sendHTTPRequest(*session, http_request);
-    writeString(body, *request_body);
-    request_body->finalize();
+    auto & out_stream = session->sendRequest(http_request);
+    out_stream << body;
 
     Poco::Net::HTTPResponse http_response;
-    auto response_stream = receiveHTTPResponse(*session, http_response);
+    auto & in_stream = session->receiveResponse(http_response);
 
     String response_body;
-    readStringUntilEOF(response_body, *response_stream);
+    {
+        std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        ss << in_stream.rdbuf();
+        response_body = std::move(ss).str();
+    }
 
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)

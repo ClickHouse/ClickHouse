@@ -9,7 +9,9 @@ doc_type: 'reference'
 تتيح لك دوال النافذة إجراء عمليات حسابية عبر مجموعة من الصفوف المرتبطة بالصف الحالي.
 ويمكن استخدامها لإجراء عمليات حسابية مشابهة لتلك التي تُنفَّذ باستخدام الدوال التجميعية، لكنها تختلف في أن دالة النافذة لا تؤدي إلى تجميع الصفوف في ناتج واحد، بل تظل الصفوف الفردية مُعادة.
 
-## دوال النافذة القياسية {#standard-window-functions}
+<div id="standard-window-functions">
+  ## دوال النافذة القياسية
+</div>
 
 يدعم ClickHouse بنية SQL القياسية للنوافذ ودوال النافذة.
 يوضح الجدول أدناه الميزات المدعومة حاليًا:
@@ -30,7 +32,9 @@ doc_type: 'reference'
 | `lag/lead(value, offset)`                                               | ✅       | يمكنك أيضًا استخدام أحد الحلول البديلة التالية:<br /> 1) `any(value) OVER (... ROWS BETWEEN <offset> PRECEDING AND <offset> PRECEDING)`، أو `FOLLOWING` بدلًا من `PRECEDING` في حالة `lead` <br /> 2) `lagInFrame/leadInFrame`، وهما متشابهان لكنهما يراعيان إطار النافذة. للحصول على سلوك مطابق تمامًا لـ `lag/lead`، استخدم `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`. |
 | [`ntile(buckets)`](/ar/reference/functions/window-functions/ntile)         | ✅       | حدِّد النافذة، على سبيل المثال، على النحو التالي: `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)`.                                                                                                                                                                                                                                                 |
 
-## الصيغة {#syntax}
+<div id="syntax">
+  ## الصيغة
+</div>
 
 ```text
 aggregate_function (column_name)
@@ -66,7 +70,9 @@ WINDOW window_name as ([
 └─────────────────┘  <--- UNBOUNDED FOLLOWING (END of the PARTITION)
 ```
 
-## الدوال التي لا يمكن استخدامها إلا كدوال النافذة {#functions}
+<div id="functions">
+  ## الدوال التي لا يمكن استخدامها إلا كدوال النافذة
+</div>
 
 لا يمكن استخدام الدوال التالية إلا كدوال النافذة. معظمها دوال SQL قياسية، بينما تُعد `lagInFrame` و`leadInFrame` و`nonNegativeDerivative` امتدادات خاصة بـ ClickHouse.
 
@@ -87,11 +93,15 @@ WINDOW window_name as ([
 | [`ntile(buckets)`](/ar/reference/functions/window-functions/ntile)                                                                             | قسِّم الصفوف المرتَّبة داخل القسم إلى العدد المحدد من المجموعات، وأرجِع رقم المجموعة الخاصة بالصف الحالي.  |
 | [`nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])`](/ar/reference/functions/window-functions/nonNegativeDerivative) | احسب المشتقة غير السالبة لـ `metric_column` بالنسبة إلى `timestamp_column`. هذه الدالة خاصة بـ ClickHouse. |
 
-## أمثلة {#examples}
+<div id="examples">
+  ## أمثلة
+</div>
 
 لنلقِ نظرة على بعض الأمثلة لكيفية استخدام دوال النافذة.
 
-### ترقيم الصفوف {#numbering-rows}
+<div id="numbering-rows">
+  ### ترقيم الصفوف
+</div>
 
 ```sql
 CREATE TABLE salaries
@@ -149,7 +159,9 @@ FROM salaries;
 └─────────────────┴────────┴─────┴──────┴───────────┘
 ```
 
-### دوال التجميع {#aggregation-functions}
+<div id="aggregation-functions">
+  ### دوال التجميع
+</div>
 
 قارن راتب كل لاعب بمتوسط راتب فريقه.
 
@@ -195,7 +207,9 @@ FROM salaries;
 └─────────────────┴────────┴───────────────────────────┴─────────┴────────┘
 ```
 
-### التقسيم حسب العمود {#partitioning-by-column}
+<div id="partitioning-by-column">
+  ### التقسيم حسب العمود
+</div>
 
 ```sql
 CREATE TABLE wf_partition
@@ -228,7 +242,9 @@ ORDER BY
 └──────────┴───────┴───────┴──────────────┘
 ```
 
-### تعيين حدود الإطار {#frame-bounding}
+<div id="frame-bounding">
+  ### تعيين حدود الإطار
+</div>
 
 ```sql
 CREATE TABLE wf_frame
@@ -270,7 +286,7 @@ ORDER BY
 
 ```sql
 -- short form - no bound expression, no order by,
--- an equivalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
+-- an equalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
 SELECT
     part_key,
     value,
@@ -319,7 +335,7 @@ ORDER BY
 
 ```sql
 -- short form (frame is bounded by the beginning of a partition and the current row)
--- an equivalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
+-- an equalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
 SELECT
     part_key,
     value,
@@ -511,7 +527,9 @@ ORDER BY
 └────────────────┴──────────────┘
 ```
 
-### إطار GROUPS {#groups-frame}
+<div id="groups-frame">
+  ### إطار GROUPS
+</div>
 
 يحسب إطار `GROUPS` *مجموعات الأقران* كاملةً — وهي مجموعات من الصفوف المتساوية في مفتاح `ORDER BY` — بدلًا من الصفوف الفعلية (`ROWS`) أو قيم `ORDER BY` (`RANGE`). يحسب `N PRECEDING` و`N FOLLOWING` عدد `N` من مجموعات الأقران قبل مجموعة أقران الصف الحالي وبعدها، وتُحتسب جميع صفوف أي مجموعة أقران مُضمَّنة دائمًا.
 
@@ -547,11 +565,15 @@ ORDER BY order, value;
 * يحسب `RANGE` قيم `order`، لذا يشمل `1 PRECEDING` و`1 FOLLOWING` الصفوف التي تقع قيمة `order` فيها ضمن مسافة 1 من قيمة الصف الحالي. وعند وجود فجوات بمقدار 10، لا يستوفي أي صف مجاور الشرط، لذلك لا يضم الإطار إلا الصفوف التي تشترك في قيمة `order` للصف الحالي.
 * يحسب `GROUPS` مجموعات النظائر، لذا يشمل `1 PRECEDING` و`1 FOLLOWING` دائمًا المجموعات المتجاورة كاملةً، بغض النظر عن الفجوات بين قيم `order`.
 
-## أمثلة واقعية {#real-world-examples}
+<div id="real-world-examples">
+  ## أمثلة واقعية
+</div>
 
 تتناول الأمثلة التالية مشكلات واقعية شائعة.
 
-### الحد الأقصى/إجمالي الرواتب لكل قسم {#maximumtotal-salary-per-department}
+<div id="maximumtotal-salary-per-department">
+  ### الحد الأقصى/إجمالي الرواتب لكل قسم
+</div>
 
 ```sql
 CREATE TABLE employees
@@ -607,7 +629,9 @@ FROM
 └────────────┴──────┴────────┴────────────────────┴──────────────────────┴──────────────────┘
 ```
 
-### المجموع التراكمي {#cumulative-sum}
+<div id="cumulative-sum">
+  ### المجموع التراكمي
+</div>
 
 ```sql
 CREATE TABLE warehouse
@@ -616,7 +640,7 @@ CREATE TABLE warehouse
     `ts` DateTime,
     `value` Float
 )
-ENGINE = Memory;
+ENGINE = Memory
 
 INSERT INTO warehouse VALUES
     ('sku38', '2020-01-01', 9),
@@ -648,7 +672,9 @@ ORDER BY
 └───────┴─────────────────────┴───────┴───────────────┘
 ```
 
-### المتوسط المتحرك / المتوسط الانزلاقي (لكل 3 صفوف) {#moving--sliding-average-per-3-rows}
+<div id="moving--sliding-average-per-3-rows">
+  ### المتوسط المتحرك / المتوسط الانزلاقي (لكل 3 صفوف)
+</div>
 
 ```sql
 CREATE TABLE sensors
@@ -696,7 +722,9 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴───────────────────┘
 ```
 
-### المتوسط المتحرك / المتوسط الانزلاقي (كل 10 ثوانٍ) {#moving--sliding-average-per-10-seconds}
+<div id="moving--sliding-average-per-10-seconds">
+  ### المتوسط المتحرك / المتوسط الانزلاقي (كل 10 ثوانٍ)
+</div>
 
 ```sql
 SELECT
@@ -722,7 +750,9 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴────────────────────────────┘
 ```
 
-### المتوسط المتحرك / المتوسط الانزلاقي (لكل 10 أيام) {#moving--sliding-average-per-10-days}
+<div id="moving--sliding-average-per-10-days">
+  ### المتوسط المتحرك / المتوسط الانزلاقي (لكل 10 أيام)
+</div>
 
 تُخزَّن درجة الحرارة بدقة الثانية، ولكن باستخدام `Range` و `ORDER BY toDate(ts)` نُكوِّن إطارًا بحجم 10 وحدات، وبما أن `toDate(ts)` مستخدَمة هنا، فالوحدة هي اليوم.
 
@@ -777,15 +807,21 @@ ORDER BY
 └──────────────┴─────────────────────┴───────┴─────────────────────────┘
 ```
 
-## المراجع {#references}
+<div id="references">
+  ## المراجع
+</div>
 
-### مشكلات GitHub {#github-issues}
+<div id="github-issues">
+  ### مشكلات GitHub
+</div>
 
 خطة الطريق للدعم الأولي لدوال النوافذ موجودة [في هذه المشكلة](https://github.com/ClickHouse/ClickHouse/issues/18097).
 
 جميع مشكلات GitHub المتعلقة بدوال النوافذ تحمل الوسم [comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions).
 
-### الاختبارات {#tests}
+<div id="tests">
+  ### الاختبارات
+</div>
 
 تتضمن هذه الاختبارات أمثلة على البنية النحوية المدعومة حاليًا:
 
@@ -793,7 +829,9 @@ https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window&#9
 
 https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0&#95;stateless/01591&#95;window&#95;functions.sql
 
-### وثائق Postgres {#postgres-docs}
+<div id="postgres-docs">
+  ### وثائق Postgres
+</div>
 
 https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW
 
@@ -803,7 +841,9 @@ https://www.postgresql.org/docs/devel/functions-window.html
 
 https://www.postgresql.org/docs/devel/tutorial-window.html
 
-### وثائق MySQL {#mysql-docs}
+<div id="mysql-docs">
+  ### وثائق MySQL
+</div>
 
 https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
 
@@ -811,7 +851,9 @@ https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html
 
 https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
 
-## محتوى ذو صلة {#related-content}
+<div id="related-content">
+  ## محتوى ذو صلة
+</div>
 
 * المدونة: [العمل مع بيانات السلاسل الزمنية في ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 * المدونة: [دوال النافذة ودوال المصفوفات لتسلسلات commit في Git](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)

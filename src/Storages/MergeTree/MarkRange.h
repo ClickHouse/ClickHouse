@@ -1,8 +1,9 @@
 #pragma once
 
 #include <cstddef>
-#include <Common/DevectorWithMemoryTracking.h>
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Processors/Chunk.h>
+#include <boost/container/devector.hpp>
 #include <fmt/format.h>
 #include <base/types.h>
 
@@ -24,13 +25,13 @@ struct MarkRange
     MarkRange() = default;
     MarkRange(size_t begin_, size_t end_);
 
-    [[nodiscard]] size_t getNumberOfMarks() const;
+    size_t getNumberOfMarks() const;
 
     bool operator==(const MarkRange & rhs) const;
     bool operator<(const MarkRange & rhs) const;
 };
 
-struct MarkRanges : public DevectorWithMemoryTracking<MarkRange>
+struct MarkRanges : public boost::container::devector<MarkRange, AllocatorWithMemoryTracking<MarkRange>>
 {
     enum class SearchAlgorithm : uint8_t
     {
@@ -39,19 +40,17 @@ struct MarkRanges : public DevectorWithMemoryTracking<MarkRange>
         GenericExclusionSearch,
     };
 
-    using DevectorWithMemoryTracking<MarkRange>::devector;
+    using boost::container::devector<MarkRange, AllocatorWithMemoryTracking<MarkRange>>::devector; /// NOLINT(modernize-type-traits)
 
-    [[nodiscard]] size_t getNumberOfMarks() const;
-    [[nodiscard]] bool isOneRangeForWholePart(size_t num_marks_in_part) const;
+    size_t getNumberOfMarks() const;
+    bool isOneRangeForWholePart(size_t num_marks_in_part) const;
 
     void serialize(WriteBuffer & out) const;
-    [[nodiscard]] String describe() const;
+    String describe() const;
     void deserialize(ReadBuffer & in);
 
     SearchAlgorithm search_algorithm = {SearchAlgorithm::Unknown};
 };
-
-using MarkRangesPtr = std::shared_ptr<const MarkRanges>;
 
 /** Get max range.end from ranges.
  */
@@ -79,11 +78,6 @@ public:
     /// from the chunk (e.g. `FilterSortedStreamByRange` which drops the other layers' rows when
     /// a read is split into layers for FINAL or for join-by-PK-ranges).
     bool has_dropped_rows = false;
-
-    /// If not zero, the chunk holds all rows of `mark_ranges` in order, and every mark has this number
-    /// of rows (except the last mark of the part, which can have fewer). Then the query condition cache
-    /// can record the marks without matches of a chunk that is filtered only partially (`FilterTransform`).
-    size_t rows_per_mark = 0;
 };
 
 using MarkRangesInfoPtr = std::shared_ptr<MarkRangesInfo>;

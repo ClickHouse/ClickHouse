@@ -9,15 +9,17 @@ doc_type: 'changelog'
 
 以下是基于 v24.8 发布的 ClickHouse Cloud 服务相关变更。
 
-## 向后不兼容的变更 {#backward-incompatible-change}
+<div id="backward-incompatible-change">
+  ## 向后不兼容的变更
+</div>
 
-* 更改 Variant 数据类型的二进制序列化：添加紧凑模式，避免在仅包含单一 Variant 或仅包含 NULL 值的粒度中多次写入相同的判别器。新增 MergeTree 设置 use&#95;compact&#95;variant&#95;discriminators&#95;serialization，默认启用。请注意，Variant 类型仍处于 Experimental 阶段，因此除非你此前在支持团队协助下提前启用了该功能，否则这项序列化层面的向后不兼容变更通常不会对你造成影响。[#62774](https://github.com/ClickHouse/ClickHouse/pull/62774) (Kruglov Pavel)。
+* 更改 Variant 数据类型的二进制序列化：添加紧凑模式，避免在仅包含单一 Variant 或仅包含 NULL 值的粒度中多次写入相同的判别器。新增 MergeTree 设置 `use_compact_variant_discriminators_serialization`，默认启用。请注意，Variant 类型仍处于 Experimental 阶段，因此除非你此前在支持团队协助下提前启用了该功能，否则这项序列化层面的向后不兼容变更通常不会对你造成影响。[#62774](https://github.com/ClickHouse/ClickHouse/pull/62774) (Kruglov Pavel)。
 
-* 禁止在 Replicated 数据库中使用 CREATE MATERIALIZED VIEW ... ENGINE Replicated*MergeTree POPULATE AS SELECT ...。该 PR 只适用于仍在使用 ReplicatedMergeTree 的用户。[#63963](https://github.com/ClickHouse/ClickHouse/pull/63963) (vdimir)。
+* 禁止在 Replicated 数据库中使用 `CREATE MATERIALIZED VIEW ... ENGINE Replicated*MergeTree POPULATE AS SELECT ...`。该 PR 只适用于仍在使用 ReplicatedMergeTree 的用户。[#63963](https://github.com/ClickHouse/ClickHouse/pull/63963) (vdimir)。
 
 * 指标 KeeperOutstandingRequets 已重命名为 KeeperOutstandingRequests。此更改修复了 [#66179](https://github.com/ClickHouse/ClickHouse/issues/66179) 中报告的拼写错误。[#66206](https://github.com/ClickHouse/ClickHouse/pull/66206) (Robert Schulze)。
 
-* clickhouse-client 和 clickhouse-local 现在默认启用多查询模式 (而非单查询模式) 。例如，clickhouse-client -q &quot;SELECT 1; SELECT 2&quot; 现在可以直接运行，而此前用户必须添加 `--multiquery` (或 -n) 。`--multiquery`/-n 开关现已废弃。多查询语句中的 INSERT 查询会根据其 FORMAT 子句进行特殊处理：如果 FORMAT 为 VALUES (最常见的情况) ，则 INSERT 语句以查询末尾的分号 ; 作为结束标志；对于所有其他 FORMAT (例如 CSV 或 JSONEachRow) ，则以查询末尾的两个换行符 \n\n 作为结束标志。[#63898](https://github.com/ClickHouse/ClickHouse/pull/63898) (wxybear)。
+* clickhouse-client 和 clickhouse-local 现在默认启用多查询模式 (而非单查询模式) 。例如，`clickhouse-client -q "SELECT 1; SELECT 2"` 现在可以直接运行，而此前用户必须添加 `--multiquery` (或 `-n`) 。`--multiquery`/`-n` 开关现已废弃。多查询语句中的 INSERT 查询会根据其 FORMAT 子句进行特殊处理：如果 FORMAT 为 VALUES (最常见的情况) ，则 INSERT 语句以查询末尾的分号 `;` 作为结束标志；对于所有其他 FORMAT (例如 CSV 或 JSONEachRow) ，则以查询末尾的两个换行符 `\n\n` 作为结束标志。[#63898](https://github.com/ClickHouse/ClickHouse/pull/63898) (wxybear)。
 
 * 在之前的版本中，可以通过在数据类型名称后附加 WithDictionary，使用 LowCardinality 数据类型的一种替代语法。这只是最初的一个可用实现，从未写入文档，也未向公众公开。现在，该语法已被弃用。如果你使用过这种语法，则必须 ALTER 你的表，并将该数据类型重命名为 LowCardinality。[#66842](https://github.com/ClickHouse/ClickHouse/pull/66842)(Alexey Milovidov)。
 
@@ -29,7 +31,9 @@ doc_type: 'changelog'
 
 * 修复了 REPLACE modifier 的格式问题 (禁止省略括号) 。[#67774](https://github.com/ClickHouse/ClickHouse/pull/67774) (Azat Khuzhin)。
 
-## 新特性 {#new-feature}
+<div id="new-feature">
+  ## 新特性
+</div>
 
 * 扩展函数 tuple，使其能够在查询中构造命名元组。引入函数 tupleNames，用于从元组中提取名称。[#54881](https://github.com/ClickHouse/ClickHouse/pull/54881) (Amos Bird).
 
@@ -53,7 +57,7 @@ doc_type: 'changelog'
 
 * 在使用表函数 file 时，会自动在目录路径末尾追加通配符 *。[#66019](https://github.com/ClickHouse/ClickHouse/pull/66019) (Zhidong (David) Guo).
 
-* 在非交互模式下，为客户端新增 `--memory-usage` 选项。[#66393](https://github.com/ClickHouse/ClickHouse/pull/66393) (vdimir).
+* 在非交互模式下，为客户端新增 --memory-usage 选项。[#66393](https://github.com/ClickHouse/ClickHouse/pull/66393) (vdimir).
 
 * 为 S3 table engine 新增 &#95;etag virtual columns。修复 [#65312](https://github.com/ClickHouse/ClickHouse/issues/65312)。[#65386](https://github.com/ClickHouse/ClickHouse/pull/65386) (skyoct)
 

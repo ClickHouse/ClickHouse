@@ -31,23 +31,10 @@ struct StoredObject
     uint64_t bytes_size = UnknownSize;
 
     /// ETag from when the object was listed/headed; the read path rejects a GET whose ETag differs,
-    /// catching an in-place overwrite mid-read. Empty means no validation.
+    /// catching an in-place overwrite mid-read, and the Azure delete path deletes only that
+    /// generation (`If-Match`), so a move never deletes a generation it did not copy. Empty means
+    /// no validation.
     String etag;
-
-    /// What `cache_token_hash` is computed from.
-    enum class CacheTokenKind : UInt8
-    {
-        /// The ETag of the object. A `GET` response can be checked against it.
-        ETag = 0,
-        /// `ObjectMetadata::immutable_content_id` of an object known from the records of its table without an ETag
-        /// (a data file of Iceberg or Delta Lake). It is not an ETag, so it cannot be checked against a `GET` response.
-        ImmutableContentId = 1,
-    };
-
-    /// `getCacheTokenHash` of `ObjectMetadata::getContentCacheToken`, 0 if not computed. Used only where a read asks
-    /// for it (the key of the distributed cache).
-    UInt64 cache_token_hash = 0;
-    CacheTokenKind cache_token_kind = CacheTokenKind::ETag;
 
     explicit StoredObject(
         const String & remote_path_ = "",
@@ -69,8 +56,6 @@ using StoredObjectsSpan = std::span<const StoredObject>;
 
 size_t getTotalSize(const StoredObjects & objects);
 Strings collectRemotePaths(const StoredObjects & objects);
-
-UInt64 getCacheTokenHash(const String & token);
 
 }
 

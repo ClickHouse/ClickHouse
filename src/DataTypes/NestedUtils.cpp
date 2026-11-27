@@ -1,4 +1,3 @@
-#include <Common/VectorWithMemoryTracking.h>
 #include <algorithm>
 #include <cstring>
 #include <memory>
@@ -345,7 +344,7 @@ static void flattenTupleRecursiveImpl(
     }
 }
 
-Block flattenTupleRecursive(const Block & block, VectorWithMemoryTracking<Strings> * flattened_ancestors)
+Block flattenTupleRecursive(const Block & block, std::vector<Strings> * flattened_ancestors)
 {
     Block result;
     if (flattened_ancestors)
@@ -697,8 +696,9 @@ const NestedColumnExtractHelper::Subcolumns & NestedColumnExtractHelper::subcolu
                     auto path = substream_path;
                     path.resize(prefix_len);
                     /// The first spelling wins, as it does in `IDataType::getSubcolumnData`.
-                    if (subcolumns.path_by_name.try_emplace(name, std::move(path)).second && case_insentive)
-                        subcolumns.names_by_lowercase[boost::to_lower_copy(name)].push_back(name);
+                    subcolumns.path_by_name.try_emplace(name, std::move(path));
+                    if (case_insentive)
+                        subcolumns.name_by_lowercase.try_emplace(boost::to_lower_copy(name), name);
                 }
                 substream_path[i].visited = true;
             }
@@ -718,21 +718,16 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::resolveSubcolumn
         /// Match the listed spellings before resolving the request itself, since a root that accepts
         /// any path answers every spelling: a JSON path absent from the listing is a `Dynamic` of
         /// NULLs, which would shadow a declared path differing only by case. A declared spelling is
-        /// its own match; anything else matches the only declared one that differs from it only by case.
+        /// its own match; anything else folds onto one in listing order.
         const auto declared_names = root.type->getSubcolumnNames();
         if (std::find(declared_names.begin(), declared_names.end(), subcolumn_name) == declared_names.end())
         {
-            std::optional<String> match;
-            for (const auto & candidate : declared_names)
-            {
-                if (!boost::iequals(candidate, subcolumn_name) || candidate == match)
-                    continue;
-                if (match)
-                    DataTypeTuple::throwAmbiguousCaseInsensitiveName(subcolumn_name, *match, candidate);
-                match = candidate;
-            }
-            if (match)
-                declared_name = *match;
+            const auto declared_it = std::find_if(
+                declared_names.begin(),
+                declared_names.end(),
+                [&](const auto & candidate) { return boost::iequals(candidate, subcolumn_name); });
+            if (declared_it != declared_names.end())
+                declared_name = *declared_it;
         }
     }
 
@@ -762,13 +757,9 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(co
     auto it = subcolumns.path_by_name.find(nested_names.second);
     if (it == subcolumns.path_by_name.end() && case_insentive)
     {
-        const auto folded = subcolumns.names_by_lowercase.find(boost::to_lower_copy(nested_names.second));
-        if (folded != subcolumns.names_by_lowercase.end())
-        {
-            if (folded->second.size() > 1)
-                DataTypeTuple::throwAmbiguousCaseInsensitiveName(nested_names.second, folded->second[0], folded->second[1]);
-            it = subcolumns.path_by_name.find(folded->second.front());
-        }
+        const auto folded = subcolumns.name_by_lowercase.find(boost::to_lower_copy(nested_names.second));
+        if (folded != subcolumns.name_by_lowercase.end())
+            it = subcolumns.path_by_name.find(folded->second);
     }
     if (it == subcolumns.path_by_name.end())
         return {};

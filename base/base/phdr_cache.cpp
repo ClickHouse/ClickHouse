@@ -23,29 +23,30 @@
 #    endif
 #endif
 
-#include <base/glibc_symver.h>
-
 #include <link.h>
+#include <dlfcn.h>
 #include <vector>
 #include <atomic>
 #include <cstddef>
+#include <stdexcept>
 
 
 namespace
 {
 
 // This is adapted from
-// https://github.com/scylladb/seastar/blob/master/include/seastar/core/exception_hacks.hh
-// https://github.com/scylladb/seastar/blob/master/src/core/exception_hacks.cc
+// https://github.com/scylladb/seastar/blob/master/core/exception_hacks.hh
+// https://github.com/scylladb/seastar/blob/master/core/exception_hacks.cc
 
-/// libc's own `dl_iterate_phdr`: a direct call that CFI can check, unlike a pointer from `dlsym`.
-extern "C" int libc_dl_iterate_phdr(int (*callback) (dl_phdr_info * info, size_t size, void * data), void * data);
-#if defined(__s390x__)
-/// Added to s390x glibc after its oldest symbol version.
-__asm__(".symver libc_dl_iterate_phdr, dl_iterate_phdr@GLIBC_2.2.4");
-#else
-__asm__(".symver libc_dl_iterate_phdr, dl_iterate_phdr@" GLIBC_SYMVER);
-#endif
+using DLIterateFunction = int (*) (int (*callback) (dl_phdr_info * info, size_t size, void * data), void * data);
+
+DLIterateFunction getOriginalDLIteratePHDR()
+{
+    void * func = dlsym(RTLD_NEXT, "dl_iterate_phdr");
+    if (!func)
+        throw std::runtime_error("Cannot find dl_iterate_phdr function with dlsym");
+    return reinterpret_cast<DLIterateFunction>(func);
+}
 
 
 using PHDRCache = std::vector<dl_phdr_info>;
@@ -54,16 +55,14 @@ std::atomic<PHDRCache *> phdr_cache {};
 }
 
 
-/// Not exported: an exported unversioned definition would satisfy the `dl_iterate_phdr@GLIBC` reference above too,
-/// so the call to libc would come back here.
-extern "C" __attribute__((visibility("hidden")))
+extern "C"
 int dl_iterate_phdr(int (*callback) (dl_phdr_info * info, size_t size, void * data), void * data)
 {
     auto * current_phdr_cache = phdr_cache.load();
     if (!current_phdr_cache)
     {
         // Cache is not yet populated, pass through to the original function.
-        return libc_dl_iterate_phdr(callback, data);
+        return getOriginalDLIteratePHDR()(callback, data);
     }
 
     int result = 0;
@@ -93,7 +92,7 @@ void updatePHDRCache()
     // This assumes no dynamic object loading/unloading after this point
 
     PHDRCache * new_phdr_cache = new PHDRCache;
-    libc_dl_iterate_phdr([] (dl_phdr_info * info, size_t /*size*/, void * data)
+    getOriginalDLIteratePHDR()([] (dl_phdr_info * info, size_t /*size*/, void * data)
     {
         // `info` is created by dl_iterate_phdr, which is a non-instrumented
         // libc function, so we have to unpoison it manually.

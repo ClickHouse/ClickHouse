@@ -34,20 +34,25 @@ namespace
         static constexpr auto name = "JSONArrayLength";
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionJSONArrayLength>(); }
 
-        [[nodiscard]] String getName() const override { return name; }
+        String getName() const override { return name; }
 
-        [[nodiscard]] bool isVariadic() const override { return false; }
-        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        bool isVariadic() const override { return false; }
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
-        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+        size_t getNumberOfArguments() const override { return 1; }
+        bool useDefaultImplementationForConstants() const override { return true; }
 
-        [[nodiscard]] String getSignatureString() const override
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            return "(String) -> Nullable(UInt64)";
+            auto args = FunctionArgumentDescriptors{
+                {"json", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            };
+
+            validateFunctionArguments(*this, arguments, args);
+            return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>());
         }
 
-        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             const ColumnPtr column = arguments[0].column;
             const ColumnString * col = typeid_cast<const ColumnString *>(column.get());

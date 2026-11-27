@@ -16,7 +16,9 @@ doc_type: 'reference'
 * Várias cláusulas `EXCEPT` são executadas da esquerda para a direita quando os parênteses não são especificados.
 * O operador `EXCEPT` tem a mesma prioridade que a cláusula `UNION` e prioridade menor que a cláusula `INTERSECT`.
 
-## Sintaxe {#syntax}
+<div id="syntax">
+  ## Sintaxe
+</div>
 
 ```sql
 SELECT column1 [, column2 ]
@@ -40,11 +42,15 @@ FROM table1
 [WHERE condition]
 ```
 
-## Exemplos {#examples}
+<div id="examples">
+  ## Exemplos
+</div>
 
 Os exemplos desta seção demonstram o uso da cláusula `EXCEPT`.
 
-### Filtrando números usando a cláusula `EXCEPT` {#filtering-numbers-using-the-except-clause}
+<div id="filtering-numbers-using-the-except-clause">
+  ### Filtrando números usando a cláusula `EXCEPT`
+</div>
 
 Aqui está um exemplo simples que retorna os números de 1 a 10 que *não* estão entre 3 e 8:
 
@@ -65,16 +71,18 @@ FROM numbers(3, 6)
 └────────┘
 ```
 
-### Excluindo colunas específicas com `EXCEPT()` {#excluding-specific-columns-using-except}
+<div id="excluding-specific-columns-using-except">
+  ### Excluindo colunas específicas com `EXCEPT()`
+</div>
 
 `EXCEPT()` pode ser usado para excluir rapidamente colunas de um resultado. Por exemplo, se quisermos selecionar todas as colunas de uma tabela, exceto algumas colunas específicas, como mostrado no exemplo abaixo:
 
 ```sql title="Query"
-SHOW COLUMNS IN system.settings;
+SHOW COLUMNS IN system.settings
 
 SELECT * EXCEPT (default, alias_for, readonly, description)
 FROM system.settings
-LIMIT 5;
+LIMIT 5
 ```
 
 ```response title="Response"
@@ -102,7 +110,9 @@ LIMIT 5;
    └─────────────────────────┴────────────┴─────────┴──────┴──────┴─────────┴─────────────┴────────────┘
 ```
 
-### Usando `EXCEPT` e `INTERSECT` com dados de criptomoedas {#using-except-and-intersect-with-cryptocurrency-data}
+<div id="using-except-and-intersect-with-cryptocurrency-data">
+  ### Usando `EXCEPT` e `INTERSECT` com dados de criptomoedas
+</div>
 
 `EXCEPT` e `INTERSECT` muitas vezes podem ser usados de forma intercambiável, com lógicas booleanas diferentes, e ambos são úteis quando você tem duas tabelas que compartilham uma coluna (ou colunas).
 Por exemplo, suponha que tenhamos alguns milhões de linhas de dados históricos de criptomoedas contendo preços de negociação e volume:
@@ -124,7 +134,6 @@ INSERT INTO crypto_prices
    SELECT *
    FROM s3(
     'https://learn-clickhouse.s3.us-east-2.amazonaws.com/crypto_prices.csv',
-    NOSIGN,
     'CSVWithNames'
 );
 
@@ -187,7 +196,9 @@ WHERE price < 10;
 
 Isso significa que, das quatro criptomoedas que possuímos, apenas Bitcoin nunca caiu abaixo de $10 (com base nos dados limitados que temos aqui neste exemplo).
 
-### Usando `EXCEPT DISTINCT` {#using-except-distinct}
+<div id="using-except-distinct">
+  ### Usando `EXCEPT DISTINCT`
+</div>
 
 Observe que, na consulta anterior, havia várias posições em Bitcoin no resultado. Você pode adicionar `DISTINCT` a `EXCEPT` para eliminar linhas duplicadas do resultado:
 

@@ -3,23 +3,21 @@ slug: /use-cases/observability/clickstack/deployment/docker-compose
 title: 'Docker Compose'
 description: 'Развертывание ClickStack с открытым исходным кодом через Docker Compose — стек обсервабилити ClickHouse'
 doc_type: 'guide'
-keywords: ['ClickStack Docker Compose', 'Docker Compose ClickHouse', 'Развертывание интерфейса ClickStack в Docker', 'Руководство по развертыванию ClickStack', 'OpenTelemetry Docker Compose']
+keywords: ['ClickStack Docker Compose', 'Docker Compose ClickHouse', 'Развертывание HyperDX в Docker', 'Руководство по развертыванию ClickStack', 'OpenTelemetry Docker Compose']
 ---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
 
 import JSONSupport from '/snippets/ru/_json_support.mdx';
 
 Все компоненты ClickStack с открытым исходным кодом поставляются по отдельности в виде отдельных Docker-образов:
 
 * **ClickHouse**
-* **Интерфейс ClickStack**
+* **HyperDX**
 * **OpenTelemetry (OTel) Collector**
 * **MongoDB**
 
 Эти образы можно объединить и развернуть локально с помощью Docker Compose.
-
-<Tip>
-  С [ClickHouse Observability](/ru/clickstack/observability) обсервабилити выходит за рамки локального развертывания, а управлять инфраструктурой не нужно. [Зарегистрируйтесь в ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-clickstack-docker-compose-inline), чтобы начать работу.
-</Tip>
 
 Docker Compose открывает дополнительные порты для обсервабилити и ингестии на основе стандартной конфигурации `otel-collector`:
 
@@ -32,7 +30,7 @@ Docker Compose открывает дополнительные порты для
 Эти порты позволяют интегрироваться с различными источниками телеметрии и делают OpenTelemetry Collector готовым к использованию в продакшн для самых разных сценариев ингестии.
 
 <div id="suitable-for">
-  ### Подходит для {#suitable-for}
+  ### Подходит для
 </div>
 
 * Локального тестирования
@@ -40,7 +38,9 @@ Docker Compose открывает дополнительные порты для
 * Развертываний в продакшне, где отказоустойчивость не нужна и одного сервера достаточно для хранения всех данных ClickHouse
 * Развертывания ClickStack, если ClickHouse размещается отдельно, например в ClickHouse Cloud.
 
-## Шаги развертывания {#deployment-steps}
+<div id="deployment-steps">
+  ## Шаги развертывания
+</div>
 
 <br />
 
@@ -54,8 +54,8 @@ Docker Compose открывает дополнительные порты для
     ```
   </Step>
 
-  <Step title="Перейдите в интерфейс ClickStack" id="navigate-to-hyperdx-ui">
-    Перейдите по адресу [http://localhost:8080](http://localhost:8080), чтобы открыть интерфейс ClickStack.
+  <Step title="Перейдите в интерфейс HyperDX" id="navigate-to-hyperdx-ui">
+    Перейдите по адресу [http://localhost:8080](http://localhost:8080), чтобы открыть интерфейс HyperDX.
 
     Создайте пользователя, указав имя пользователя и пароль, соответствующие требованиям.
 
@@ -64,16 +64,12 @@ Docker Compose открывает дополнительные порты для
     <Info>
       **Переопределение подключения по умолчанию**
 
-      Вы можете переопределить подключение по умолчанию к встроенному экземпляру ClickHouse. Подробнее см. в разделе [&quot;Использование ClickHouse Cloud&quot;](#using-clickhouse-cloud).
+      Вы можете переопределить подключение по умолчанию к встроенному экземпляру ClickHouse. Подробнее см. в разделе [&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud).
     </Info>
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Интерфейс ClickStack](/images/use-cases/observability/hyperdx-login.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="Интерфейс HyperDX" size="lg" />
 
-    Пример использования другого экземпляра ClickHouse см. в разделе [&quot;Использование ClickHouse Cloud&quot;](#using-clickhouse-cloud).
+    Пример использования другого экземпляра ClickHouse см. в разделе [&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud).
   </Step>
 
   <Step title="Заполните сведения о подключении" id="complete-connection-details">
@@ -83,16 +79,12 @@ Docker Compose открывает дополнительные порты для
 
     Если будет предложено создать источник, оставьте все значения по умолчанию и укажите в поле `Table` значение `otel_logs`. Все остальные настройки должны определиться автоматически, после чего можно нажать `Save New Source`.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Создание источника логов](/images/use-cases/observability/hyperdx-logs.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="Создание источника логов" size="md" />
   </Step>
 </Steps>
 
 <div id="modifying-settings">
-  ## Изменение настроек Compose {#modifying-settings}
+  ## Изменение настроек Compose
 </div>
 
 Вы можете изменить настройки стека, например используемую версию, в файле переменных окружения:
@@ -123,16 +115,16 @@ HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=default
 ```
 
 <div id="configuring-collector">
-  ### Настройка OpenTelemetry collector {#configuring-collector}
+  ### Настройка OpenTelemetry collector
 </div>
 
 При необходимости конфигурацию OTel collector можно изменить — см. [«Изменение конфигурации»](/ru/clickstack/ingesting-data/collector#modifying-otel-collector-configuration).
 
 <div id="using-clickhouse-cloud">
-  ## Использование ClickHouse Cloud {#using-clickhouse-cloud}
+  ## Использование ClickHouse Cloud
 </div>
 
-Этот дистрибутив можно использовать с ClickHouse Cloud, но это отличается от варианта [Самостоятельно управляемый ClickHouse Observability](/ru/clickstack/self-configured/deployment/managed). В этой конфигурации вы самостоятельно управляете интерфейсом ClickStack, а ClickHouse Cloud используете только для вычислений и хранилища. Если у вас нет веской причины запускать интерфейс отдельно, мы рекомендуем использовать Самостоятельно управляемый ClickHouse Observability: он включает встроенную аутентификацию и дополнительные возможности уровня Enterprise, а также избавляет от необходимости самостоятельно управлять интерфейсом ClickStack.
+Этот дистрибутив можно использовать с ClickHouse Cloud, но это отличается от варианта [Управляемый ClickStack](/ru/clickstack/deployment/managed). В этой конфигурации вы самостоятельно управляете интерфейсом ClickStack, а ClickHouse Cloud используете только для вычислений и хранилища. Если у вас нет веской причины запускать интерфейс отдельно, мы рекомендуем использовать Управляемый ClickStack: он включает встроенную аутентификацию и дополнительные возможности уровня Enterprise, а также избавляет от необходимости самостоятельно управлять интерфейсом ClickStack.
 
 Вам следует:
 
@@ -163,6 +155,6 @@ HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=default
 
   `CLICKHOUSE_ENDPOINT` должен быть HTTPS-конечной точкой ClickHouse Cloud, включая порт `8443`, например: `https://mxl4k3ul6a.us-east-2.aws.clickhouse.com:8443`
 
-* При подключении к интерфейсу ClickStack и создании подключения к ClickHouse используйте свои учётные данные Cloud.
+* При подключении к интерфейсу HyperDX и создании подключения к ClickHouse используйте свои учётные данные Cloud.
 
 <JSONSupport />

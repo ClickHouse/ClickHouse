@@ -8,11 +8,13 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-> このページでは、「ソートキー」という用語を「主キー」とほぼ同義で使用しています。厳密には、[ClickHouse では両者は異なります](/ja/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key)が、このドキュメントでは同じものとして捉えて差し支えありません。ここでいう ソートキー は、テーブルの `ORDER BY` で指定するカラムを指します。
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+> このページでは、「ソートキー」という用語を「primary key」とほぼ同義で使用しています。厳密には、[ClickHouse では両者は異なります](/ja/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key)が、このドキュメントでは同じものとして捉えて差し支えありません。ここでいう ソートキー は、テーブルの `ORDER BY` で指定するカラムを指します。
 
 ClickHouse の主キーは、Postgres などの OLTP データベースにおける同様の用語に慣れている方の想像とは[大きく異なる](/ja/get-started/migrate/postgres/migration-guide/migration-guide-part3#primary-ordering-keys-in-clickhouse)点に注意してください。
 
-ClickHouse で効果的な主キーを選ぶことは、クエリパフォーマンスとストレージ効率の両方にとって非常に重要です。ClickHouse はデータを複数のパーツに分割して管理し、各パーツはそれぞれ独自のスパースプライマリインデックスを持ちます。この索引により、スキャンするデータ量を減らせるため、クエリを大幅に高速化できます。さらに、主キーはデータがディスク上で物理的にどの順序で配置されるかを決めるため、圧縮効率にも直接影響します。最適な順序で配置されたデータはより効率よく圧縮され、I/O が減ることでパフォーマンスがさらに向上します。
+ClickHouse で効果的な主キーを選ぶことは、クエリパフォーマンスとストレージ効率の両方にとって非常に重要です。ClickHouse はデータを複数のパーツに分割して管理し、各パーツはそれぞれ独自のスパースプライマリ索引を持ちます。この索引により、スキャンするデータ量を減らせるため、クエリを大幅に高速化できます。さらに、主キーはデータがディスク上で物理的にどの順序で配置されるかを決めるため、圧縮効率にも直接影響します。最適な順序で配置されたデータはより効率よく圧縮され、I/O が減ることでパフォーマンスがさらに向上します。
 
 1. ソートキー を選ぶ際は、クエリのフィルタ (つまり `WHERE` 句) で頻繁に使用されるカラム、特に大量の行を除外できるカラムを優先してください。
 2. テーブル内の他のデータとの相関が高いカラムも有効です。連続した形で格納されることで、`GROUP BY` や `ORDER BY` の処理時に圧縮率とメモリ効率が向上するためです。
@@ -27,7 +29,9 @@ ClickHouse で効果的な主キーを選ぶことは、クエリパフォーマ
   ソートキー はテーブル作成時に定義する必要があり、後から追加することはできません。一方で、プロジェクションと呼ばれる機能を使えば、データ挿入後 (または前) に追加の並び順をテーブルに加えることができます。ただし、その場合はデータが重複する点に注意してください。詳細は[こちら](/ja/reference/statements/alter/projection)を参照してください。
 </Info>
 
-## 例 {#example}
+<div id="example">
+  ## 例
+</div>
 
 次の `posts_unordered` テーブルについて見てみましょう。このテーブルには、Stack Overflow の各投稿に対応する行が 1 つずつ含まれます。
 
@@ -114,15 +118,11 @@ ENGINE = MergeTree
 ORDER BY (PostTypeId, toDate(CreationDate))
 ```
 
-`PostTypeId` のカーディナリティは 8 で、ソートキーの最初のエントリとして理にかなった選択です。日付粒度でのフィルタリングで十分である可能性が高く (datetime フィルタにも引き続き効果があります) 、キーの 2 番目の部分には `toDate(CreationDate)` を使用します。これにより、日付は 16 bits で表現できるため、より小さな索引を作成でき、フィルタリングも高速化されます。
+`PostTypeId` のカーディナリティは 8 で、ソートキーの最初のエントリとして理にかなった選択です。日付粒度でのフィルタリングで十分である可能性が高く (datetime フィルターにも引き続き効果があります) 、キーの 2 番目の部分には `toDate(CreationDate)` を使用します。これにより、日付は 16 bits で表現できるため、より小さな索引を作成でき、フィルタリングも高速化されます。
 
 次のアニメーションは、Stack Overflow の Posts テーブルに対して最適化されたスパースプライマリインデックスがどのように作成されるかを示しています。個々の行に索引を作成するのではなく、この索引は行のブロックを対象とします。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![主キー](/images/bestpractices/create_primary_key.webp)
-  </Frame>
-</div>
+<Image img="/images/bestpractices/create_primary_key.webp" size="lg" alt="主キー" />
 
 同じクエリを、このソートキーを持つテーブルに対して繰り返すと、次のようになります。
 
@@ -170,11 +170,7 @@ WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
 
 さらに、スパースインデックスが、サンプルクエリに一致する可能性のないすべての行ブロックをどのように枝刈りするかを可視化します。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![主キー](/images/bestpractices/primary_key.webp)
-  </Frame>
-</div>
+<Image img="/images/bestpractices/primary_key.webp" size="lg" alt="主キー" />
 
 <Note>
   テーブル内のすべてのカラムは、キー自体に含まれているかどうかにかかわらず、指定されたソートキーの値に基づいてソートされます。たとえば、`CreationDate` をキーとして使用した場合、他のすべてのカラムの値の並び順は `CreationDate` カラムの値の並び順に対応します。複数のソートキーを指定することもでき、その場合は `SELECT` クエリの `ORDER BY` 句と同じ意味で並べ替えられます。

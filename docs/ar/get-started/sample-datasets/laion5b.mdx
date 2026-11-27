@@ -7,8 +7,10 @@ keywords: ['البحث الدلالي', 'تشابه المتجهات', 'أقرب
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 <div id="introduction">
-  ## المقدمة {#introduction}
+  ## المقدمة
 </div>
 
 تحتوي [مجموعة بيانات LAION 5b](https://laion.ai/blog/laion-5b/) على 5.85 مليار تضمين للصور والنصوص،
@@ -20,7 +22,7 @@ doc_type: 'guide'
 والبحث من صورة إلى صورة.
 
 <div id="dataset-details">
-  ## تفاصيل مجموعة البيانات {#dataset-details}
+  ## تفاصيل مجموعة البيانات
 </div>
 
 يمكن تنزيل مجموعة البيانات الكاملة باستخدام [opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader).
@@ -31,7 +33,7 @@ doc_type: 'guide'
 نوصي المستخدمين أولاً بإجراء تقدير للحجم لتحديد متطلبات التخزين والذاكرة لهذه مجموعة بيانات، بالرجوع إلى [الوثائق](/ar/reference/engines/table-engines/mergetree-family/annindexes).
 
 <div id="steps">
-  ## الخطوات {#steps}
+  ## الخطوات
 </div>
 
 <Steps>
@@ -126,9 +128,7 @@ doc_type: 'guide'
   <Step title="إنشاء تضمينات لاستعلام البحث" id="generating-embeddings-for-search-query">
     تم إنشاء متجهات التضمين لمجموعة بيانات `LAION 5b` باستخدام نموذج `OpenAI CLIP` ‏`ViT-L/14`.
 
-    يُقدَّم أدناه برنامج نصي مثالي بلغة بايثون يوضّح كيفية إنشاء
-    متجهات التضمين برمجيًا باستخدام واجهات برمجة تطبيقات `CLIP`. ثم يُمرَّر متجه تضمين البحث
-    كوسيطة إلى الدالة [`cosineDistance()`](/ar/reference/functions/regular-functions/distance-functions#cosineDistance) في استعلام `SELECT`.
+    يُقدَّم أدناه برنامج نصي مثالي بلغة بايثون يوضّح كيفية إنشاء متجهات التضمين برمجيًا باستخدام واجهات برمجة تطبيقات `CLIP`. ثم يُمرَّر متجه تضمين البحث كوسيطة إلى الدالة [`cosineDistance()`](/ar/reference/functions/regular-functions/distance-functions#cosineDistance) في استعلام `SELECT`.
 
     لتثبيت حزمة `clip`، يُرجى الرجوع إلى [مستودع OpenAI على GitHub](https://github.com/openai/clip).
 
@@ -165,10 +165,6 @@ doc_type: 'guide'
 
     تظهر نتائج البحث أعلاه أدناه:
 
-    <div className="ch-image-md">
-      <Frame>
-        ![نتائج البحث عن تشابه المتجهات](/images/getting-started/example-datasets/laion5b_visualization_1.webp)
-      </Frame>
-    </div>
+    <Image img="/images/getting-started/example-datasets/laion5b_visualization_1.webp" alt="نتائج البحث عن تشابه المتجهات" size="md" />
   </Step>
 </Steps>

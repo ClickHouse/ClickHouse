@@ -6,26 +6,26 @@ keywords: ['データの非正規化', '非正規化', 'クエリ最適化']
 doc_type: 'guide'
 ---
 
-データの非正規化は、結合を回避してクエリのレイテンシを最小限に抑えるために、ClickHouseでフラットなテーブルを使用する手法です。
+import { Image } from "/snippets/ja/components/Image.jsx";
 
-## 正規化スキーマと非正規化スキーマの比較 {#comparing-normalized-vs-denormalized-schemas}
+データの非正規化は、JOINを回避してクエリのレイテンシを最小限に抑えるために、ClickHouseでフラットなテーブルを使用する手法です。
 
-データの非正規化とは、特定のクエリパターンに対するデータベース性能を最適化するために、正規化のプロセスを意図的に逆転させることです。正規化されたデータベースでは、冗長性を最小限に抑え、データの整合性を確保するために、データは複数の関連テーブルに分割されます。非正規化では、テーブルを結合し、データを複製し、計算済みフィールドを単一のテーブルまたはより少ない数のテーブルに取り込むことで、冗長性を再び持たせます。つまり、結合 をクエリ時ではなく挿入時に行う形へと実質的に移すことになります。
-
-このプロセスにより、クエリ時の複雑な 結合 が不要になり、読み取り処理を大幅に高速化できるため、読み取り負荷が高く複雑なクエリを伴うアプリケーションに適しています。一方で、書き込み処理や保守の複雑さは増す可能性があります。整合性を維持するには、複製されたデータへの変更をすべてのインスタンスに反映させる必要があるためです。
-
-<div className="ch-image-lg">
-  <Frame>
-    ![ClickHouse における非正規化](/images/data-modeling/denormalization-diagram.webp)
-  </Frame>
+<div id="comparing-normalized-vs-denormalized-schemas">
+  ## 正規化スキーマと非正規化スキーマの比較
 </div>
+
+データの非正規化とは、特定のクエリパターンに対するデータベース性能を最適化するために、正規化のプロセスを意図的に逆転させることです。正規化されたデータベースでは、冗長性を最小限に抑え、データの整合性を確保するために、データは複数の関連テーブルに分割されます。非正規化では、テーブルを結合し、データを複製し、計算済みフィールドを単一のテーブルまたはより少ない数のテーブルに取り込むことで、冗長性を再び持たせます。つまり、JOIN をクエリ時ではなく挿入時に行う形へと実質的に移すことになります。
+
+このプロセスにより、クエリ時の複雑な JOIN が不要になり、読み取り処理を大幅に高速化できるため、読み取り負荷が高く複雑なクエリを伴うアプリケーションに適しています。一方で、書き込み処理や保守の複雑さは増す可能性があります。整合性を維持するには、複製されたデータへの変更をすべてのインスタンスに反映させる必要があるためです。
+
+<Image img="/images/data-modeling/denormalization-diagram.webp" size="lg" alt="ClickHouse における非正規化" />
 
 <br />
 
-NoSQL ソリューションによって広まった一般的な手法の 1 つに、`JOIN` をサポートしない環境でデータを非正規化し、すべての統計情報や関連する行を、カラムやネストされたオブジェクトとして親行に格納する方法があります。たとえば、ブログのスキーマ例では、各投稿に属するすべての `Comments` を、オブジェクトの `Array` としてそれぞれの投稿に格納できます。
+NoSQL ソリューションによって広まった一般的な手法の 1 つに、`JOIN` をサポートしない環境でデータを非正規化し、すべての統計情報や関連する行を、カラムやネストされたオブジェクトとして親の行に格納する方法があります。たとえば、ブログのスキーマ例では、各投稿に属するすべての `Comments` を、オブジェクトの `Array` としてそれぞれの投稿に格納できます。
 
 <div id="when-to-use-denormalization">
-  ## 非正規化を使用するタイミング {#when-to-use-denormalization}
+  ## 非正規化を使用するタイミング
 </div>
 
 一般に、次のような場合に非正規化を推奨します。
@@ -40,7 +40,7 @@ NoSQL ソリューションによって広まった一般的な手法の 1 つ�
 非正規化の処理は、ClickHouse 側でも上流側でも行えます。たとえば、[Apache Flink](/ja/integrations/connectors/data-ingestion/apache-flink) を使用できます。
 
 <div id="avoid-denormalization-on-frequently-updated-data">
-  ## 頻繁に更新されるデータでは非正規化を避ける {#avoid-denormalization-on-frequently-updated-data}
+  ## 頻繁に更新されるデータでは非正規化を避ける
 </div>
 
 ClickHouse では、非正規化はクエリ性能を最適化するための選択肢の 1 つですが、慎重に使用する必要があります。データが頻繁に更新され、ほぼリアルタイムで反映する必要がある場合は、このアプローチは避けるべきです。これは、メインテーブルがほぼ追記専用である場合や、たとえば日次のように定期的にバッチで再読み込みできる場合に適しています。
@@ -57,7 +57,7 @@ ClickHouse では、非正規化はクエリ性能を最適化するための選
 そのため、一般的には、非正規化されたデータを定期的にまとめて再読み込みするバッチ更新プロセスが採用されます。
 
 <div id="practical-cases-for-denormalization">
-  ## 非正規化の実践例 {#practical-cases-for-denormalization}
+  ## 非正規化の実践例
 </div>
 
 非正規化が適している実践的な例と、代わりに別のアプローチのほうが望ましい例をいくつか見ていきます。
@@ -68,9 +68,11 @@ ClickHouse では、非正規化はクエリ性能を最適化するための選
 
 *以下の各例では、両方のテーブルを JOIN で使用する必要があるクエリが存在すると仮定してください。*
 
-### 投稿 and Votes {#posts-and-votes}
+<div id="posts-and-votes">
+  ### Posts and Votes
+</div>
 
-投稿への投票は、別個のテーブルとして表されます。これに最適化されたスキーマと、データを読み込むための 挿入 コマンドを以下に示します。
+投稿への投票は、別個のテーブルとして表されます。これに最適化されたスキーマと、データを読み込むための insert コマンドを以下に示します。
 
 ```sql
 CREATE TABLE votes
@@ -83,7 +85,7 @@ CREATE TABLE votes
         `BountyAmount` UInt8
 )
 ENGINE = MergeTree
-ORDER BY (VoteTypeId, CreationDate, PostId);
+ORDER BY (VoteTypeId, CreationDate, PostId)
 
 INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet', NOSIGN)
 ```
@@ -92,9 +94,9 @@ INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.
 0 rows in set. Elapsed: 26.272 sec. Processed 238.98 million rows, 2.13 GB (9.10 million rows/s., 80.97 MB/s.)
 ```
 
-一見すると、これらは 投稿 テーブルで非正規化する候補に思えるかもしれません。ただし、このアプローチにはいくつかの課題があります。
+一見すると、これらは posts テーブルで非正規化する候補に思えるかもしれません。ただし、このアプローチにはいくつかの課題があります。
 
-投稿 には Votes が頻繁に追加されます。これは時間の経過とともに 1 投稿 あたりでは減っていく可能性がありますが、次のクエリが示すように、30k 投稿 に対して 1 時間あたり約 40k votes あります。
+posts には Votes が頻繁に追加されます。これは時間の経過とともに 1 post あたりでは減っていく可能性がありますが、次のクエリが示すように、30k posts に対して 1 時間あたり約 40k votes あります。
 
 ```sql
 SELECT round(avg(c)) AS avg_votes_per_hr, round(avg(posts)) AS avg_posts_per_hr
@@ -139,15 +141,13 @@ LIMIT 5
 
 ここでのポイントは、ほとんどの分析では各投稿について集計された投票統計があれば十分で、すべての投票情報を非正規化する必要はないということです。たとえば、現在の `Score` カラムはそのような統計の 1 つで、つまり賛成票の合計から反対票の合計を引いた値を表しています。理想的には、クエリ時に単純なルックアップでこうした統計を取得できるのが望ましいでしょう ([辞書](/ja/concepts/features/dictionaries/index)を参照) 。
 
-### Users と Badges {#users-and-badges}
+<div id="users-and-badges">
+  ### Users と Badges
+</div>
 
 次に、`Users` と `Badges` を見ていきましょう。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Users と Badges のスキーマ](/images/data-modeling/denormalization-schema.webp)
-  </Frame>
-</div>
+<Image img="/images/data-modeling/denormalization-schema.webp" size="lg" alt="Users と Badges のスキーマ" />
 
 <p />
 
@@ -160,7 +160,7 @@ CREATE TABLE users
 (
     `Id` Int32,
     `Reputation` LowCardinality(String),
-    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
+    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
     `DisplayName` String,
     `LastAccessDate` DateTime64(3, 'UTC'),
     `AboutMe` String,
@@ -186,7 +186,7 @@ CREATE TABLE badges
     `TagBased` Bool
 )
 ENGINE = MergeTree
-ORDER BY UserId;
+ORDER BY UserId
 
 INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
 ```
@@ -221,9 +221,11 @@ SELECT UserId, count() AS c FROM badges GROUP BY UserId ORDER BY c DESC LIMIT 5
 
 19k個のオブジェクトを1つの行に非正規化するのは、おそらく現実的ではありません。この関係は、別々のテーブルのままにしておくか、統計情報を追加するのがよいでしょう。
 
-> バッジに関する統計情報をUsersに非正規化したい場合もあります。たとえば、バッジの数などです。このデータセットに対して挿入時に辞書を使用する際に、そのような例を取り上げます。
+> バッジに関する統計情報をUsersに非正規化したい場合もあります。たとえば、バッジの数などです。このデータセットに対して書き込み時に辞書を使用する際に、そのような例を取り上げます。
 
-### Posts と PostLinks {#posts-and-postlinks}
+<div id="posts-and-postlinks">
+  ### Posts と PostLinks
+</div>
 
 `PostLinks` は、ユーザーが関連または重複していると見なす `Posts` 同士を結び付けます。次のクエリは、スキーマとロードコマンドを示しています。
 
@@ -237,7 +239,7 @@ CREATE TABLE postlinks
   `LinkTypeId` Enum('Linked' = 1, 'Duplicate' = 3)
 )
 ENGINE = MergeTree
-ORDER BY (PostId, RelatedPostId);
+ORDER BY (PostId, RelatedPostId)
 
 INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet', NOSIGN)
 ```
@@ -290,21 +292,23 @@ FROM
 
 以下では、これを非正規化の例として用います。
 
-### 単純な統計の例 {#simple-statistic-example}
+<div id="simple-statistic-example">
+  ### 単純な統計の例
+</div>
 
-ほとんどの場合、非正規化では、親行に 1 つのカラムや統計値を追加するだけで済みます。たとえば、投稿 に重複投稿数を追加したいだけであれば、必要なのはカラムを 1 つ追加することだけです。
+ほとんどの場合、非正規化では、親行に 1 つのカラムや統計値を追加するだけで済みます。たとえば、Posts に重複投稿数を追加したいだけであれば、必要なのはカラムを 1 つ追加することだけです。
 
 ```sql
 CREATE TABLE posts_with_duplicate_count
 (
-  `Id` Int32 CODEC(Delta, Default),
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
    ... -other columns
    `DuplicatePosts` UInt16
 ) ENGINE = MergeTree
 ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
 ```
 
-このテーブルにデータを投入するには、重複統計を投稿と結合する `INSERT INTO SELECT` を使用します。
+このテーブルにデータを投入するには、重複統計をpostsと結合する `INSERT INTO SELECT` を使用します。
 
 ```sql
 INSERT INTO posts_with_duplicate_count SELECT
@@ -319,7 +323,9 @@ LEFT JOIN
 ) AS postlinks ON posts.Id = postlinks.PostId
 ```
 
-### 一対多の関係で複合型を活用する {#exploiting-complex-types-for-one-to-many-relationships}
+<div id="exploiting-complex-types-for-one-to-many-relationships">
+  ### 一対多の関係で複合型を活用する
+</div>
 
 非正規化を行うには、多くの場合、複合型を活用する必要があります。一対一の関係を非正規化する場合、カラム数が少なければ、上で示したように、それらを元の型のままカラムとして追加するだけで済みます。ただし、オブジェクトが大きい場合はこの方法が適さないことが多く、一対多の関係では使用できません。
 
@@ -336,7 +342,7 @@ LEFT JOIN
 SET flatten_nested=0
 CREATE TABLE posts_with_links
 (
-  `Id` Int32 CODEC(Delta, Default),
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
    ... -other columns
    `LinkedPosts` Nested(CreationDate DateTime64(3, 'UTC'), PostId Int32),
    `DuplicatePosts` Nested(CreationDate DateTime64(3, 'UTC'), PostId Int32),
@@ -371,7 +377,7 @@ Peak memory usage: 6.98 GiB.
 
 > ここで処理時間に注目してください。約2分で6,600万行を非正規化できています。後ほど示すように、この処理はスケジュールできます。
 
-結合 の前に `groupArray` 関数を使って、`PostLinks` を各 `PostId` ごとの配列にまとめている点にも注目してください。次に、この配列を 2 つのサブリスト `LinkedPosts` と `DuplicatePosts` に絞り込み、外部 結合 による空の結果も除外しています。
+JOIN の前に `groupArray` 関数を使って、`PostLinks` を各 `PostId` ごとの配列にまとめている点にも注目してください。次に、この配列を 2 つのサブリスト `LinkedPosts` と `DuplicatePosts` に絞り込み、外部 JOIN による空の結果も除外しています。
 
 いくつかの行を選択して、新しい非正規化後の構造を確認できます。
 
@@ -391,11 +397,11 @@ DuplicatePosts: [('2017-04-11 12:18:37.260',3922739),('2017-04-11 12:18:37.260',
 ```
 
 <div id="orchestrating-and-scheduling-denormalization">
-  ## 非正規化のオーケストレーションとスケジュール設定 {#orchestrating-and-scheduling-denormalization}
+  ## 非正規化のオーケストレーションとスケジュール設定
 </div>
 
 <div id="batch">
-  ### バッチ {#batch}
+  ### バッチ
 </div>
 
 非正規化を活用するには、それを実行・オーケストレーションできる変換プロセスが必要です。
@@ -407,6 +413,8 @@ DuplicatePosts: [('2017-04-11 12:18:37.260',3922739),('2017-04-11 12:18:37.260',
 * **[リフレッシュ可能なマテリアライズドビュー](/ja/concepts/features/materialized-views/refreshable-materialized-view)** - リフレッシュ可能なマテリアライズドビューを使用すると、結果をターゲットテーブルに書き出すクエリを定期的にスケジュールできます。クエリの実行時には、このビューによってターゲットテーブルがアトミックに更新されます。これにより、この処理をスケジュールするための ClickHouse ネイティブな手段が得られます。
 * **外部ツール** - [dbt](https://www.getdbt.com/) や [Airflow](https://airflow.apache.org/) などのツールを使って、変換を定期的にスケジュールすることもできます。[dbt 向け ClickHouse 連携](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/index) を使うと、ターゲットテーブルの新しいバージョンを作成し、その後、クエリを受け付けているバージョンとアトミックに入れ替える ([EXCHANGE](/ja/reference/statements/exchange) コマンドを使用) ことで、これをアトミックに実行できます。
 
-### ストリーミング {#streaming}
+<div id="streaming">
+  ### ストリーミング
+</div>
 
 別の方法として、[Apache Flink](/ja/integrations/connectors/data-ingestion/apache-flink) などのストリーミング技術を使用し、ClickHouse の外部でデータを挿入する前にこの処理を実行することもできます。あるいは、インクリメンタルな [materialized view](/ja/concepts/features/materialized-views/cascading-materialized-views) を使用して、データの挿入時にこの処理を実行することもできます。

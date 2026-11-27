@@ -9,9 +9,9 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<BetaBadge />
+<ExperimentalBadge />
 
 <Note>
   Интеграция с каталогом Lakekeeper работает только с таблицами Iceberg.
@@ -23,26 +23,30 @@ ClickHouse поддерживает интеграцию с нескольким
 Lakekeeper — это реализация REST-каталога для Apache Iceberg с открытым исходным кодом, которая предоставляет:
 
 * **Нативную реализацию на Rust** для высокой производительности и надёжности
-* **Соответствие REST API** спецификации REST-каталога Iceberg
+* **Соответствие REST API** спецификации Iceberg REST Catalog
 * **Интеграцию с облачными хранилищами**, совместимыми с S3
 
 <Note>
-  Эта возможность находится в стадии бета-версии. Включите её командой:
-  `SET allow_database_iceberg = 1;`
-
-  В версиях до 25.8, где эта возможность является экспериментальной, используйте вместо неё `SET allow_experimental_database_iceberg = 1;`.
+  Поскольку эта возможность является экспериментальной, её нужно включить с помощью:
+  `SET allow_experimental_database_iceberg = 1;`
 </Note>
 
-## Локальная среда разработки {#local-development-setup}
+<div id="local-development-setup">
+  ## Локальная среда разработки
+</div>
 
 Для локальной разработки и тестирования можно использовать Lakekeeper в контейнерах. Этот подход хорошо подходит для обучения, создания прототипов и работы в средах разработки.
 
-### Предварительные требования {#local-prerequisites}
+<div id="local-prerequisites">
+  ### Предварительные требования
+</div>
 
 1. **Docker and Docker Compose**: Убедитесь, что Docker установлен и запущен
 2. **Пример конфигурации**: Вы можете использовать конфигурацию Lakekeeper для docker-compose
 
-### Настройка локального каталога Lakekeeper {#setting-up-local-lakekeeper-catalog}
+<div id="setting-up-local-lakekeeper-catalog">
+  ### Настройка локального каталога Lakekeeper
+</div>
 
 Вы можете использовать официальную [сборку Lakekeeper для docker-compose](https://github.com/lakekeeper/lakekeeper/tree/main/examples/minimal), которая предоставляет полное окружение с Lakekeeper, серверной частью метаданных PostgreSQL и MinIO для объектного хранилища.
 
@@ -230,7 +234,9 @@ docker-compose logs -f
   Для настройки Lakekeeper необходимо сначала загрузить тестовые данные в таблицы Iceberg. Прежде чем выполнять запросы к ним через ClickHouse, убедитесь, что в окружении таблицы созданы и заполнены данными. Доступность таблиц зависит от конкретной конфигурации docker-compose и скриптов загрузки тестовых данных.
 </Note>
 
-### Подключение к локальному каталогу Lakekeeper {#connecting-to-local-lakekeeper-catalog}
+<div id="connecting-to-local-lakekeeper-catalog">
+  ### Подключение к локальному каталогу Lakekeeper
+</div>
 
 Подключитесь к контейнеру ClickHouse:
 
@@ -241,14 +247,16 @@ docker exec -it lakekeeper-clickhouse clickhouse-client
 Затем создайте подключение к каталогу Lakekeeper:
 
 ```sql
-SET allow_database_iceberg = 1;
+SET allow_experimental_database_iceberg = 1;
 
 CREATE DATABASE demo
 ENGINE = DataLakeCatalog('http://lakekeeper:8181/catalog', 'minio', 'ClickHouse_Minio_P@ssw0rd')
 SETTINGS catalog_type = 'rest', storage_endpoint = 'http://minio:9002/warehouse-rest', warehouse = 'demo'
 ```
 
-## Запросы к таблицам каталога Lakekeeper в ClickHouse {#querying-lakekeeper-catalog-tables-using-clickhouse}
+<div id="querying-lakekeeper-catalog-tables-using-clickhouse">
+  ## Запросы к таблицам каталога Lakekeeper в ClickHouse
+</div>
 
 Теперь, когда соединение установлено, можно начинать выполнять запросы через каталог Lakekeeper. Например:
 
@@ -332,7 +340,9 @@ SHOW CREATE TABLE `default.taxis`;
 └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Загрузка данных из озера данных в ClickHouse {#loading-data-from-your-data-lake-into-clickhouse}
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## Загрузка данных из озера данных в ClickHouse
+</div>
 
 Если вам нужно загрузить данные из каталога Lakekeeper в ClickHouse, начните с создания локальной таблицы в ClickHouse:
 

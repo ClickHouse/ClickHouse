@@ -159,10 +159,10 @@ public:
     virtual void call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response) = 0;
 
     /// Provider-specific headers (credentials, API version) sent with every request.
-    [[nodiscard]] virtual HTTPHeaderEntries getHeaders() const = 0;
+    virtual HTTPHeaderEntries getHeaders() const = 0;
 
     /// Whether this provider exposes an embeddings endpoint.
-    [[nodiscard]] virtual bool supportsEmbeddings() const { return false; }
+    virtual bool supportsEmbeddings() const { return false; }
 
     /// Send an embedding request. Only valid when `supportsEmbeddings()` is true. Replaces the contents of
     /// `response`, filling `input_tokens` before the payload is validated: so a failed request can still update token counts
@@ -175,7 +175,7 @@ using AIProviderPtr = std::unique_ptr<IAIProvider>;
 /// Also validates the provider's headers with `HTTPHeaderFilter`.
 AIProviderPtr createAIProvider(
     const ContextPtr & context,
-    const String & provider_name, const String & endpoint, std::string_view api_key, const String & api_version);
+    const String & provider_name, const String & endpoint, const String & api_key, const String & api_version);
 
 /// Build an error message from a provider's non-200 HTTP response, for use in an exception that is logged.
 String formatProviderError(int status_code, const String & response_body);

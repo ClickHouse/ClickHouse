@@ -53,22 +53,11 @@ private:
     /// Encodes a Variant column as an Arrow dense union (no validity buffer; a types and an offsets
     /// buffer, the variant children in global order, and a trailing single-element null child).
     void encodeVariant(const IColumn & column, const DataTypePtr & type, size_t begin, size_t end);
-    /// Encodes a Variant column as a `Utf8` column holding the JSON text of each value
-    /// (`output_format_arrow_variant_as_json_string`). A NULL value is an Arrow null if `nullable`, and the text `null`
-    /// otherwise (for a map key, which Arrow does not allow to be nullable).
-    void encodeVariantAsJSONText(const IColumn & column, const DataTypePtr & type, size_t begin, size_t end, bool nullable);
-    /// Writes a column with no first-class Arrow mapping as a variable-width Arrow column (an int32
-    /// offsets buffer and the concatenated per-row serialized values). `arrowOpaqueValueIsText` chooses
-    /// between `serializeText` and `serializeBinary`, and thereby between the `Utf8` and `Binary` Arrow
-    /// types; `SchemaConverter::buildField` asks it the same question for the schema. Both Arrow types read
-    /// back as `String`. `null_map_column` (when set) marks rows to emit as zero-length, so a NULL row's
-    /// nested bytes are not written.
-    void encodeAsOpaque(
-        const IColumn & column,
-        const DataTypePtr & type,
-        size_t begin,
-        size_t end,
-        const IColumn * null_map_column = nullptr);
+    /// Writes a column with no first-class Arrow mapping as an Arrow `Binary` column (an int32 offsets
+    /// buffer and the concatenated per-row `getDataAt` bytes), matching the Apache Arrow library writer's
+    /// `output_format_arrow_unsupported_types_as_binary` fallback. Read back as `String`. `null_map_column`
+    /// (when set) marks rows to emit as zero-length, so a NULL row's nested bytes are not written.
+    void encodeAsBinary(const IColumn & column, size_t begin, size_t end, const IColumn * null_map_column = nullptr);
 
     void appendEmptyBuffer();
     /// Emits the validity buffer: a packed LSB-first bitmap (1 = valid) for nullable columns, or an

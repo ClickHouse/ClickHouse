@@ -7,7 +7,9 @@ doc_type: 'guide'
 keywords: ['ClickStack', '데모 데이']
 ---
 
-## 평가 이력이 포함된 알림 세부 정보 페이지 {#alert-detail-page-with-evaluation-history}
+<div id="alert-detail-page-with-evaluation-history">
+  ## 평가 이력이 포함된 알림 세부 정보 페이지
+</div>
 
 *[@wrn14897](https://github.com/wrn14897)의 데모*
 
@@ -27,7 +29,9 @@ keywords: ['ClickStack', '데모 데이']
 
 **관련 PR:** [#2833](https://github.com/hyperdxio/hyperdx/pull/2833) 알림 평가 읽기 모델 및 GET /alerts/:id/evaluations, [#2834](https://github.com/hyperdxio/hyperdx/pull/2834) AlertHistory에 알림 평가 오류 및 analytics 저장, [#2835](https://github.com/hyperdxio/hyperdx/pull/2835) 평가 이력이 포함된 알림 세부 정보 페이지
 
-## eval을 활용한 MCP의 메트릭 도구 사용 측정 {#measuring-metric-tool-adoption-in-the-mcp-with-evals}
+<div id="measuring-metric-tool-adoption-in-the-mcp-with-evals">
+  ## eval을 활용한 MCP의 메트릭 도구 사용 측정
+</div>
 
 *[@karl-power](https://github.com/karl-power)의 데모*
 
@@ -53,7 +57,9 @@ keywords: ['ClickStack', '데모 데이']
 
 **관련 PR:** [#2730](https://github.com/hyperdxio/hyperdx/pull/2730) deploy-regression 시나리오 추가(자발적인 메트릭 도구 사용 측정), [#2717](https://github.com/hyperdxio/hyperdx/pull/2717) metric-saturation 시나리오 강화, [#2694](https://github.com/hyperdxio/hyperdx/pull/2694) 메트릭 도구 사용 평가 및 보고, [#2855](https://github.com/hyperdxio/hyperdx/pull/2855) MCP를 통해 요약 메트릭 노출
 
-## 분산 테이블, 히스토그램 및 더 빠른 트레이스 조회(lookup) {#distributed-tables-histograms-and-faster-trace-lookups}
+<div id="distributed-tables-histograms-and-faster-trace-lookups">
+  ## 분산 테이블, 히스토그램 및 더 빠른 트레이스 조회
+</div>
 
 *[@pulpdrew](https://github.com/pulpdrew)의 데모*
 
@@ -61,25 +67,27 @@ keywords: ['ClickStack', '데모 데이']
 
 이번에는 작은 수정 사항을 여러 개 적용했으며, 그중 상당수는 ClickHouse 팀의 피드백에서 비롯되었습니다. 가장 간단한 수정은 다른 모든 섹션에는 있는 지우기 버튼이 한 필터 섹션에만 없던 문제였습니다. 최상위 수준의 “모두 지우기”는 여전히 희망 목록에 있습니다.
 
-분산 테이블 관련 문제는 더 복잡했습니다. 일부 기본 대상 테이블은 분산 테이블에서 노출하는 모든 컬럼을 선언하지 않습니다. ClickStack은 전체 행 세부 정보를 로드할 때 `SELECT *`를 실행하는데, 이러한 구성에서는 즉시 실패합니다. 행 사이드 패널에는 이미 오류가 표시되었지만 확장된 행에는 표시되지 않았고, 어느 쪽도 ClickStack이 왜 `SELECT *`를 실행하는지 설명하지 않았습니다. 이제 두 보기 모두 유용한 안내를 제공할 수 있을 만큼 충분한 맥락과 함께 오류를 표시합니다.
+분산 테이블 관련 문제는 더 복잡했습니다. 일부 기본 대상 테이블은 분산 테이블에서 노출하는 모든 컬럼을 선언하지 않습니다. ClickStack은 전체 행 세부 정보를 로드할 때 `SELECT *`를 실행하는데, 이러한 구성에서는 즉시 실패합니다. 행 측면 패널에는 이미 오류가 표시되었지만 확장된 행에는 표시되지 않았고, 어느 쪽도 ClickStack이 왜 `SELECT *`를 실행하는지 설명하지 않았습니다. 이제 두 보기 모두 유용한 안내를 제공할 수 있을 만큼 충분한 맥락과 함께 오류를 표시합니다.
 
-메트릭에는 별개의 문제가 2가지 있었습니다. 첫째, 지수 히스토그램 테이블이 메트릭 소스에 전혀 영구 저장되지 않았습니다. 최근 지수 히스토그램 지원이 추가되기 전까지는 문제가 되지 않았습니다. 기존의 불완전한 소스를 연 사용자는 스키마 추론으로 채워진 필드를 보고 변경할 사항이 없다고 판단해 저장하지 않았을 것입니다.
+메트릭에는 별개의 문제가 2가지 있었습니다. 첫째, 지수 히스토그램 테이블이 메트릭 소스에 전혀 저장되지 않았습니다. 최근 지수 히스토그램 지원이 추가되기 전까지는 문제가 되지 않았습니다. 기존의 불완전한 소스를 연 사용자는 스키마 추론으로 채워진 필드를 보고 변경할 사항이 없다고 판단해 저장하지 않았을 것입니다.
 
 이제 기존 소스를 열기만 해도 스키마 추론이 실행되지는 않습니다. 메트릭 소스를 생성하거나 데이터베이스를 변경할 때 실행되므로, 추론된 테이블도 저장해야 한다는 점이 명확해집니다.
 
-집계 드롭다운은 히스토그램에서 지원하지 않는 평균, 최소, 최대 및 기타 함수를 히스토그램 메트릭에 제공했습니다. 하나를 선택하면 쿼리 실행 시 또는 타일 저장 시 실패했습니다. 이제 이러한 옵션은 히스토그램 및 지수 히스토그램 메트릭에서 숨겨집니다. MCP의 `query_tile` 경로도 영구 저장된 타일에서 이를 거부하므로, UI와 일관되게 동작하며 다른 방식으로 실패하지 않습니다.
+집계 드롭다운은 히스토그램에서 지원하지 않는 평균, 최소, 최대 및 기타 함수를 히스토그램 메트릭에 제공했습니다. 하나를 선택하면 쿼리 실행 시 또는 타일 저장 시 실패했습니다. 이제 이러한 옵션은 히스토그램 및 지수 히스토그램 메트릭에서 숨겨집니다. MCP의 `query_tile` 경로도 저장된 타일에서 이를 거부하므로, UI와 일관되게 동작하며 다른 방식으로 실패하지 않습니다.
 
-시계열 제한 수정은 더 미묘합니다. `GROUP BY`가 여러 시계열을 생성하는 경우 최대값 기준 상위 N개를 유지하도록 제한을 설정할 수 있습니다. 비율 모드에서는 순위 지정에 분자만 사용되었습니다. 이로 인해 실제 비율이 높은 시계열보다 분자가 큰 시계열이 우선되어, 분자와 분모가 모두 큰 시계열이 실제로 더 높은 시계열을 밀어낼 수 있었습니다. 이제 순위 지정에는 표시되는 비율을 사용합니다.
+시리즈 제한 수정은 더 미묘합니다. `GROUP BY`가 여러 시리즈를 생성하는 경우 최대값 기준 상위 N개를 유지하도록 제한을 설정할 수 있습니다. 비율 모드에서는 순위 지정에 분자만 사용되었습니다. 이로 인해 실제 비율이 높은 시리즈보다 분자가 큰 시리즈가 우선되어, 분자와 분모가 모두 큰 시리즈가 실제로 더 높은 시리즈를 밀어낼 수 있었습니다. 이제 순위 지정에는 표시되는 비율을 사용합니다.
 
 검색 페이지의 기본 소스 선택도 변경되었습니다. 이전에는 메트릭이나 세션을 포함한 소스라도 구성된 첫 번째 소스를 선택했습니다. 사용자는 직접 선택하지 않은 소스 때문에 호환되지 않는 소스 오류를 볼 수 있었습니다. 이제 검색은 실제로 사용할 수 있는 첫 번째 활성화된 소스를 기본값으로 선택합니다.
 
-로그 사이드 패널에서 트레이스를 선택할 때도 비용이 큰 조회(lookup)가 숨겨져 있었습니다. ClickStack UI는 타임스탬프 파티션과 기본 키를 무시하고 스팬 및 트레이스 ID만으로 검색했습니다. 이는 대용량 배포에서 느려집니다. 이제 조회(lookup)는 소스에서 추론한 날짜 범위로 제한되며, 해당 기간에 결과가 없으면 의도적으로 제한 없는 쿼리로 폴백합니다. 몇 시간 전에 시작된 스팬에 연결된 로그는 이 폴백이 중요한 예입니다.
+로그 측면 패널에서 트레이스를 선택할 때도 비용이 큰 조회가 숨겨져 있었습니다. HyperDX는 타임스탬프 파티션과 기본 키를 무시하고 스팬 및 트레이스 ID만으로 검색했습니다. 이는 대용량 배포에서 느려집니다. 이제 조회는 소스에서 추론한 날짜 범위로 제한되며, 해당 기간에 결과가 없으면 의도적으로 제한 없는 쿼리로 폴백합니다. 몇 시간 전에 시작된 스팬에 연결된 로그는 이 폴백이 중요한 예입니다.
 
 소스 이름 딥 링크는 전주에 추가되었고, 이어서 사용자가 이를 어떻게 찾아야 하는지라는 지극히 타당한 질문이 제기되었습니다. 각 페이지에서 허용하는 URL 매개변수는 이미 계약으로 취급되고 있었으므로, 이제 이를 계약으로 문서화합니다. 소스 필터는 현재 ClickHouse 전용이므로 유일하게 제외되었습니다. 별도의 문서화 작업에서 스팬 링크와 같은 소스 구성 필드를 추가하여 최근 추가된 기능과 단순히 누락되었던 몇 가지 항목을 모두 다루었습니다.
 
 **관련 PR:** [#2771](https://github.com/hyperdxio/hyperdx/pull/2771) 분산 테이블 SELECT * 오류 상태를 개선하고 확장된 행에도 적용, [#2817](https://github.com/hyperdxio/hyperdx/pull/2817) 데이터베이스 선택이 변경될 때만 메트릭 테이블을 자동 감지, [#2794](https://github.com/hyperdxio/hyperdx/pull/2794) 이미 테이블이 있는 소스의 메트릭 테이블을 자동 추론하지 않음(진행 중), [#2793](https://github.com/hyperdxio/hyperdx/pull/2793) 히스토그램 메트릭에서 지원되지 않는 집계 함수를 숨김, [#2796](https://github.com/hyperdxio/hyperdx/pull/2796) query&#95;tile에서 지원되지 않는 aggFns를 사용하는 저장된 히스토그램 타일을 거부(진행 중), [#2759](https://github.com/hyperdxio/hyperdx/pull/2759) ratio 모드에서 series-limit 순위에 ratio 값을 사용, [#2769](https://github.com/hyperdxio/hyperdx/pull/2769) 검색 페이지에서 호환되지 않는 소스 Kind가 기본값으로 선택되지 않도록 방지, [#2816](https://github.com/hyperdxio/hyperdx/pull/2816) View Trace 후 사이드 패널의 행 조회를 시간 윈도우로 제한, [#2836](https://github.com/hyperdxio/hyperdx/pull/2836) filter Variable 구성 추가
 
-## 기여자가 추가한 히트맵 백분위수 및 Lucene 검색 {#heatmap-percentiles-and-lucene-search-from-contributors}
+<div id="heatmap-percentiles-and-lucene-search-from-contributors">
+  ## 기여자가 추가한 히트맵 백분위수 및 Lucene 검색
+</div>
 
 *[@pulpdrew](https://github.com/pulpdrew)의 데모*
 
@@ -101,7 +109,9 @@ Lucene 언어 전환기의 앱 내 예시도 새 범위 형식을 포함하도�
 
 **관련 PR:** [#2789](https://github.com/hyperdxio/hyperdx/pull/2789) 히트맵 호버 툴팁에 백분위수 정보 표시, [#2779](https://github.com/hyperdxio/hyperdx/pull/2779) 제한되지 않은 범위, 배타적 범위 및 비숫자 범위 경계 처리, [#2774](https://github.com/hyperdxio/hyperdx/pull/2774) 검색어의 LIKE 메타문자 이스케이프, [#2841](https://github.com/hyperdxio/hyperdx/pull/2841) 숫자 및 Bool 검색에서 Map 첨자를 한 번만 이스케이프, [#2837](https://github.com/hyperdxio/hyperdx/pull/2837) 새 Lucene 구문 예시 추가
 
-## 트레이스 검색의 RED 메트릭 {#red-metrics-on-trace-search}
+<div id="red-metrics-on-trace-search">
+  ## 트레이스 검색의 RED 메트릭
+</div>
 
 *[@alex-fedotyev](https://github.com/alex-fedotyev)의 데모*
 
@@ -121,7 +131,9 @@ Lucene 언어 전환기의 앱 내 예시도 새 범위 형식을 포함하도�
 
 **관련 PR:** [#2826](https://github.com/hyperdxio/hyperdx/pull/2826) 트레이스 검색 결과 뷰에 RED 메트릭 표시(공개, 탐색적)
 
-## ClickHouse Grafana 플러그인의 사용자 정의 로그 컬럼 {#custom-log-columns-in-the-clickhouse-grafana-plugin}
+<div id="custom-log-columns-in-the-clickhouse-grafana-plugin">
+  ## ClickHouse Grafana 플러그인의 사용자 정의 로그 컬럼
+</div>
 
 *[@alex-fedotyev](https://github.com/alex-fedotyev)의 데모*
 
@@ -141,7 +153,9 @@ Lucene 언어 전환기의 앱 내 예시도 새 범위 형식을 포함하도�
 
 **관련 PR:** [grafana/clickhouse-datasource#2108](https://github.com/grafana/clickhouse-datasource/pull/2108) 모든 로그 테이블 컬럼을 기준으로 탐색 및 필터링(데모 당시 열려 있음)
 
-## 원본에서 고카디널리티 시리즈 제한하기 {#capping-high-cardinality-series-at-the-source}
+<div id="capping-high-cardinality-series-at-the-source">
+  ## 원본에서 고카디널리티 시리즈 제한하기
+</div>
 
 *[@brandon-pereira](https://github.com/brandon-pereira)의 데모*
 
@@ -159,7 +173,9 @@ Lucene 언어 전환기의 앱 내 예시도 새 범위 형식을 포함하도�
 
 **관련 PR:** [#2802](https://github.com/hyperdxio/hyperdx/pull/2802) 모두 로드 우회 수단을 포함한 고카디널리티 시간 차트 시리즈 제한, [#2856](https://github.com/hyperdxio/hyperdx/pull/2856) 서버 측 행/카디널리티 제한으로 원본에서 raw-SQL tile 비용 제한 (open)
 
-## 예시(Exemplars): 메트릭 차트에서 트레이스로 {#exemplars-from-a-metric-chart-to-the-trace}
+<div id="exemplars-from-a-metric-chart-to-the-trace">
+  ## 예시(Exemplars): 메트릭 차트에서 트레이스로
+</div>
 
 *[@jordan-simonovski](https://github.com/jordan-simonovski)의 데모*
 
@@ -181,7 +197,9 @@ Lucene 언어 전환기의 앱 내 예시도 새 범위 형식을 포함하도�
 
 **관련 PR:** [#2805](https://github.com/hyperdxio/hyperdx/pull/2805) 스팬에서 트레이스 예시가 포함된 요청 메트릭 도출(열림), [#2806](https://github.com/hyperdxio/hyperdx/pull/2806) /v1/prometheus/query&#95;exemplars 추가 및 프록시 강화, [#2807](https://github.com/hyperdxio/hyperdx/pull/2807) 가장 큰 차트 파일 2개를 디렉터리로 분할, [#2808](https://github.com/hyperdxio/hyperdx/pull/2808) 메트릭 및 PromQL 시간 차트용 예시 오버레이(열림), [#2809](https://github.com/hyperdxio/hyperdx/pull/2809) API 및 agent가 작성한 타일에서 예시 설정 허용(열림)
 
-## Terraform 가져오기 도우미 및 일괄 내보내기 {#terraform-import-helpers-and-batch-export}
+<div id="terraform-import-helpers-and-batch-export">
+  ## Terraform 가져오기 도우미 및 일괄 내보내기
+</div>
 
 *[@jordan-simonovski](https://github.com/jordan-simonovski)의 데모*
 
@@ -199,7 +217,9 @@ Team Settings에는 지원되는 모든 리소스를 하나의 파일로 다운�
 
 **관련 PR:** [#2741](https://github.com/hyperdxio/hyperdx/pull/2741) ClickStack 리소스용 Terraform 가져오기 도우미 추가
 
-## 공유 차트 component, 시각적 완성도 개선 및 drafts 제안 {#shared-chart-components-visual-polish-and-a-drafts-proposal}
+<div id="shared-chart-components-visual-polish-and-a-drafts-proposal">
+  ## 공유 차트 component, 시각적 완성도 개선 및 drafts 제안
+</div>
 
 *[@elizabetdev](https://github.com/elizabetdev)의 데모*
 

@@ -41,13 +41,12 @@ const std::string SSLManager::CFG_ENABLE_DEFAULT_CA("loadDefaultCAFile");
 const bool        SSLManager::VAL_ENABLE_DEFAULT_CA(true);
 const std::string SSLManager::CFG_CIPHER_LIST("cipherList");
 const std::string SSLManager::CFG_CYPHER_LIST("cypherList");
-[[clang::no_destroy]] const std::string SSLManager::VAL_CIPHER_LIST("ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH");
-const std::string SSLManager::CFG_CIPHER_SUITES("cipherSuites");
+const std::string SSLManager::VAL_CIPHER_LIST("ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH");
 const std::string SSLManager::CFG_PREFER_SERVER_CIPHERS("preferServerCiphers");
-[[clang::no_destroy]] const std::string SSLManager::CFG_DELEGATE_HANDLER("privateKeyPassphraseHandler.name");
+const std::string SSLManager::CFG_DELEGATE_HANDLER("privateKeyPassphraseHandler.name");
 const std::string SSLManager::VAL_DELEGATE_HANDLER("KeyConsoleHandler");
-[[clang::no_destroy]] const std::string SSLManager::CFG_CERTIFICATE_HANDLER("invalidCertificateHandler.name");
-[[clang::no_destroy]] const std::string SSLManager::VAL_CERTIFICATE_HANDLER("RejectCertificateHandler");
+const std::string SSLManager::CFG_CERTIFICATE_HANDLER("invalidCertificateHandler.name");
+const std::string SSLManager::VAL_CERTIFICATE_HANDLER("RejectCertificateHandler");
 const std::string SSLManager::CFG_SERVER_PREFIX("openSSL.server.");
 const std::string SSLManager::CFG_CLIENT_PREFIX("openSSL.client.");
 const std::string SSLManager::CFG_CACHE_SESSIONS("cacheSessions");
@@ -281,7 +280,6 @@ void SSLManager::initDefaultContext(bool server)
 	params.loadDefaultCAs = config.getBool(prefix + CFG_ENABLE_DEFAULT_CA, VAL_ENABLE_DEFAULT_CA);
 	params.cipherList = config.getString(prefix + CFG_CIPHER_LIST, VAL_CIPHER_LIST);
 	params.cipherList = config.getString(prefix + CFG_CYPHER_LIST, params.cipherList); // for backwards compatibility
-	params.cipherSuites = config.getString(prefix + CFG_CIPHER_SUITES, "");
 	bool requireTLSv1 = config.getBool(prefix + CFG_REQUIRE_TLSV1, false);
 	bool requireTLSv1_1 = config.getBool(prefix + CFG_REQUIRE_TLSV1_1, false);
 	bool requireTLSv1_2 = config.getBool(prefix + CFG_REQUIRE_TLSV1_2, false);

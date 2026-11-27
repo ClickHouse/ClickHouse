@@ -29,10 +29,6 @@ void checkMetadataDoesNotExceedMaxQuerySize(const StorageID & table_id, const St
 ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary,
     uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error, ContextPtr context);
 
-/// Database engines keep their engine definition as text in a `SecretString` instead of an AST, so that credentials
-/// in the engine arguments do not rest in core-dumpable memory. The AST is needed rarely (SHOW CREATE, ALTER), so it is reparsed.
-ASTPtr parseDatabaseEngineDefinition(std::string_view definition);
-
 /// Cleans a CREATE QUERY from temporary flags like "IF NOT EXISTS", "OR REPLACE", "AS SELECT" (for non-views), etc.
 void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query);
 
@@ -83,9 +79,7 @@ public:
 protected:
     bool mayShadowDeferredTable(const String & table_name) const;
 
-    /// Mutable because a lazily loaded table replaces itself with the storage it stands for as soon
-    /// as the load is noticed, which happens on the (const) lookup paths.
-    mutable Tables tables TSA_GUARDED_BY(mutex);
+    Tables tables TSA_GUARDED_BY(mutex);
     SnapshotDetachedTables snapshot_detached_tables TSA_GUARDED_BY(mutex);
     LoggerPtr log;
 
@@ -95,17 +89,6 @@ protected:
     virtual StoragePtr detachTableUnlocked(const String & table_name) TSA_REQUIRES(mutex);
     StoragePtr getTableUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
     StoragePtr tryGetTableNoWait(const String & table_name) const;
-
-    /// If `it` holds a lazily loaded table (see the `lazy_load_tables` database setting) that has
-    /// already been loaded and is not held by anybody else, put the storage it stands for in its
-    /// place and return that storage; otherwise return what is already there.
-    ///
-    /// Doing this makes everything that resolves the table from now on - including everything that
-    /// only recognizes a table by its concrete type, such as `system.parts` or mutations - see the
-    /// real storage instead of the proxy. It has to happen here rather than in the proxy itself,
-    /// because the proxy loads the table from under this mutex (`DatabaseAtomic::renameTable` does,
-    /// through `tryCreateSymlink`), so it cannot take it.
-    StoragePtr replaceLoadedLazyTableUnlocked(Tables::iterator it) const TSA_REQUIRES(mutex);
 
 private:
     mutable std::atomic<bool> has_deferred_population{false};

@@ -12,6 +12,7 @@ integration:
 
 import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
 
+import { Image } from "/snippets/ko/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -20,7 +21,7 @@ ProbeDeck은 ClickHouse 서버의 상태를 확인하고 `system` 테이블을 �
 네트워크 또는 SSH 배스천을 통해 ClickHouse HTTP 인터페이스에 연결하며, 릴레이 서버는 필요하지 않습니다.
 
 <div id="before-you-begin">
-  ## 시작하기 전에 {#before-you-begin}
+  ## 시작하기 전에
 </div>
 
 * [App Store에서 ProbeDeck을 설치하십시오](https://apps.apple.com/app/id6791261174).
@@ -39,7 +40,7 @@ ProbeDeck이 구성된 메모리 제한을 확인하는 데 사용하는 `system
 23.3 이상에서 사용할 수 있습니다. 소스를 사용할 수 없으면 ProbeDeck은 해당 섹션을 제한됨으로 표시합니다.
 
 <div id="how-it-works">
-  ## 작동 방식 {#how-it-works}
+  ## 작동 방식
 </div>
 
 1. ProbeDeck은 ClickHouse HTTP(S) 엔드포인트로 SQL 요청을 전송합니다.
@@ -47,7 +48,9 @@ ProbeDeck이 구성된 메모리 제한을 확인하는 데 사용하는 `system
 3. 앱은 기기에 쿼리 결과와 모니터링 화면을 표시합니다. 엔드포인트에 기기에서 직접 연결할 경로가 없으면 SSH 배스천을 통해
    동일한 HTTP(S) 연결을 사용할 수 있습니다.
 
-## ClickHouse Cloud에 연결 {#connect-to-clickhouse-cloud}
+<div id="connect-to-clickhouse-cloud">
+  ## ClickHouse Cloud에 연결
+</div>
 
 <Steps>
   <Step title="서비스 연결 정보 확인" id="gather-cloud-details">
@@ -57,7 +60,7 @@ ProbeDeck이 구성된 메모리 제한을 확인하는 데 사용하는 `system
   </Step>
 
   <Step title="ProbeDeck에 연결 추가" id="add-cloud-connection">
-    1. **Connections** 화면에서 **+**&#xB97C; 탭하십시오.
+    1. **Connections** 화면에서 **+**를 탭하십시오.
     2. 연결 이름과 `https://`를 제외한 호스트를 입력하십시오.
     3. **Port**를 `8443`으로 설정하고 **TLS**를 활성화하십시오.
     4. **Connect** 대화 상자에 표시된 데이터베이스 사용자 이름과 비밀번호를 입력하십시오. 데이터베이스 이름은
@@ -70,16 +73,12 @@ ProbeDeck이 구성된 메모리 제한을 확인하는 데 사용하는 `system
     ClickHouse Cloud는 Cloud API 및 Query API 엔드포인트에 **API Keys** 페이지의 조직 수준 키를 사용합니다.
     ProbeDeck의 SQL 연결 과정에서는 이러한 키를 사용하지 않습니다.
 
-    <div className="ch-image-sm">
-      <Frame>
-        ![ClickHouse 사용자 이름을 사용해 포트 8443에서 HTTPS용으로 구성된 ProbeDeck 연결 양식](/images/integrations/sql-clients/probedeck-add-connection.png)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/sql-clients/probedeck-add-connection.png" size="sm" border alt="ClickHouse 사용자 이름을 사용해 포트 8443에서 HTTPS용으로 구성된 ProbeDeck 연결 양식" />
   </Step>
 </Steps>
 
 <div id="connect-to-self-hosted-clickhouse">
-  ## 자체 호스팅 ClickHouse에 연결하기 {#connect-to-self-hosted-clickhouse}
+  ## 자체 호스팅 ClickHouse에 연결하기
 </div>
 
 <Steps>
@@ -105,7 +104,7 @@ ProbeDeck이 구성된 메모리 제한을 확인하는 데 사용하는 `system
 </Steps>
 
 <div id="connect-through-an-ssh-bastion">
-  ## SSH 배스천을 통한 연결 {#connect-through-an-ssh-bastion}
+  ## SSH 배스천을 통한 연결
 </div>
 
 연결 양식에서 **SSH Tunnel**을 활성화하고 다음을 입력하십시오.
@@ -119,7 +118,7 @@ ProbeDeck은 배스천에서 **Server** 섹션에 지정된 ClickHouse 호스트
 지문을 서버 관리자에게 확인한 값과 비교하십시오.
 
 <div id="configure-authentication-and-tls">
-  ## 인증 및 TLS 구성 {#configure-authentication-and-tls}
+  ## 인증 및 TLS 구성
 </div>
 
 ProbeDeck은 데이터베이스 사용자 이름과 비밀번호를 `X-ClickHouse-User` 및
@@ -134,7 +133,9 @@ CA에서 발급한 인증서를 제시하면 ProbeDeck은 SHA-256 지문, 발급
 
 ProbeDeck은 연결 시크릿과 가져온 키 자료를 기기의 iOS Keychain에 저장합니다.
 
-## ClickHouse 모니터링 {#monitor-clickhouse}
+<div id="monitor-clickhouse">
+  ## ClickHouse 모니터링
+</div>
 
 저장된 연결을 열고 **모니터링**을 선택하십시오. 대시보드에서 다음 소스를 요약해 볼 수 있습니다.
 
@@ -147,21 +148,15 @@ ProbeDeck은 연결 시크릿과 가져온 키 자료를 기기의 iOS Keychain�
 | 메모리 및 서버 메트릭                  | `system.metrics`, `system.asynchronous_metrics`, `system.server_settings` |
 | 쿼리 및 디스크 처리율 이력               | `system.metric_log`, `system.asynchronous_metric_log`                     |
 
-<div className="ch-image-sm">
-  <Frame>
-    ![실행 중인 쿼리, 복제, 디스크, 파트, 뮤테이션, 머지, 쿼리 처리율 및 메모리를 표시하는 ProbeDeck 모니터링 대시보드](/images/integrations/sql-clients/probedeck-dashboard.png)
-  </Frame>
-</div>
+<Image img="/images/integrations/sql-clients/probedeck-dashboard.png" size="sm" border alt="실행 중인 쿼리, 복제, 디스크, 파트, 뮤테이션, 머지, 쿼리 처리율 및 메모리를 표시하는 ProbeDeck 모니터링 대시보드" />
 
 **실행 중인 쿼리**를 선택하여 활성 쿼리를 경과 시간순으로 정렬하고 메모리 사용량과 읽은 행 수를 확인하십시오.
 
-<div className="ch-image-sm">
-  <Frame>
-    ![경과 시간순으로 정렬된 ProbeDeck 실행 중인 쿼리 목록](/images/integrations/sql-clients/probedeck-running-queries.png)
-  </Frame>
-</div>
+<Image img="/images/integrations/sql-clients/probedeck-running-queries.png" size="sm" border alt="경과 시간순으로 정렬된 ProbeDeck 실행 중인 쿼리 목록" />
 
-## UK Property Price 데이터셋 쿼리 {#query-the-uk-property-price-dataset}
+<div id="query-the-uk-property-price-dataset">
+  ## UK Property Price 데이터셋 쿼리
+</div>
 
 이 예시에서는 [UK Property Price 데이터셋](/ko/get-started/sample-datasets/uk-price-paid)을 사용합니다.
 데이터셋을 `uk_price_paid`에 로드한 후 다음을 수행하십시오.
@@ -184,7 +179,7 @@ LIMIT 10
 결과에는 거래 건수와 평균 가격이 포함된 10개 도시가 표시됩니다.
 
 <div id="known-limits">
-  ## 알려진 제한 사항 {#known-limits}
+  ## 알려진 제한 사항
 </div>
 
 * ProbeDeck는 iOS 및 iPadOS 17.0 이상에서 실행됩니다.
@@ -199,7 +194,7 @@ LIMIT 10
   쓰기 및 DDL SQL 문, 기타 운영 작업에는 ProbeDeck Pro가 필요합니다.
 
 <div id="troubleshooting">
-  ## 문제 해결 {#troubleshooting}
+  ## 문제 해결
 </div>
 
 <Accordion title="인증에 실패했습니다">
@@ -223,7 +218,9 @@ LIMIT 10
   예기치 않은 변경은 다른 엔드포인트나 TLS 가로채기 경로를 의미할 수 있습니다.
 </Accordion>
 
-## 다음 단계 {#next-steps}
+<div id="next-steps">
+  ## 다음 단계
+</div>
 
-* 제품 관련 세부 정보는 [ProbeDeck 웹사이트](https://probedeck.app)를 참조하십시오.
-* 서버 구성 방법은 [ClickHouse HTTP 인터페이스 문서](/ko/concepts/features/interfaces/http)를 참조하십시오.
+* 제품별 세부 정보는 [ProbeDeck 웹사이트](https://probedeck.app)를 참조하십시오.
+ * 서버 구성에 대해서는 [ClickHouse HTTP 인터페이스 문서](/ko/concepts/features/interfaces/http)를 참조하십시오.

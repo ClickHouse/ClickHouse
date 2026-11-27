@@ -42,9 +42,9 @@ class ExecutableFunctionLocalTime final : public IExecutableFunction
 public:
     explicit ExecutableFunctionLocalTime(Int32 time_) : time_value(time_) {}
 
-    [[nodiscard]] String getName() const override { return "localtime"; }
+    String getName() const override { return "localtime"; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeTime().createColumnConst(input_rows_count, static_cast<Int64>(time_value));
     }

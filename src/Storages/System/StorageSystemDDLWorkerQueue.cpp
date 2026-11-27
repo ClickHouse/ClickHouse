@@ -191,7 +191,7 @@ static void fillCommonColumns(
     /// settings
     res_columns[col++]->insert(settings_map);
 
-    res_columns[col++]->insert(query_create_time_ms / 1000);
+    res_columns[col++]->insert(static_cast<UInt64>(query_create_time_ms / 1000));
 }
 
 static void repeatValuesInCommonColumns(MutableColumns & res_columns, size_t num_filled_columns)
@@ -229,20 +229,6 @@ static void fillStatusColumnsWithNulls(MutableColumns & res_columns, size_t & co
     res_columns[col++]->insert(Field{});
     /// exception_text
     res_columns[col++]->insert(Field{});
-    /// query_finish_time
-    res_columns[col++]->insert(Field{});
-    /// query_duration_ms
-    res_columns[col++]->insert(Field{});
-}
-
-static void fillStatusColumnsWithError(MutableColumns & res_columns, size_t & col, const ExecutionStatus & error)
-{
-    /// status
-    res_columns[col++]->insert(static_cast<Int8>(Status::UNKNOWN));
-    /// exception_code
-    res_columns[col++]->insert(error.code);
-    /// exception_text
-    res_columns[col++]->insert(error.message);
     /// query_finish_time
     res_columns[col++]->insert(Field{});
     /// query_duration_ms
@@ -316,16 +302,14 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
         }
 
         DDLTask task{ddl_task_paths[i], ddl_zookeeper_path / ddl_task_paths[i]};
-        std::optional<ExecutionStatus> parse_error;
         try
         {
             task.entry.parse(task_info.data);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
-            /// Show an unreadable entry, e.g. of an unsupported format version, with what was parsed and its error.
-            LOG_WARNING(getLogger("StorageSystemDDLWorkerQueue"), "Cannot parse DDL entry {}: {}", task.entry_path, e.message());
-            parse_error.emplace(e.code(), e.message());
+            e.addMessage("On parsing DDL entry {}: {}", task.entry_path, task_info.data);
+            throw;
         }
 
         ASTPtr query = tryParseDDLQuery(context, task);
@@ -435,10 +419,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
             res_columns[col++]->insert(Field{});
             /// port
             res_columns[col++]->insert(Field{});
-            if (parse_error)
-                fillStatusColumnsWithError(res_columns, col, *parse_error);
-            else
-                fillStatusColumnsWithNulls(res_columns, col, Status::UNKNOWN);
+            fillStatusColumnsWithNulls(res_columns, col, Status::UNKNOWN);
         }
     }
 }

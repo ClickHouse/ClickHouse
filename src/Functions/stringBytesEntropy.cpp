@@ -1,7 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/stringBytes.h>
 
-#include <algorithm>
 #include <cmath>
 
 namespace DB
@@ -11,35 +10,24 @@ struct StringBytesEntropyImpl
 {
     using ResultType = Float64;
 
-    /// Zero between rows: `process` resets every counter it increments (they all lie in [min_byte, max_byte]).
-    std::array<UInt32, 256> counters{};
-
-    ResultType process(const UInt8 * data, size_t size)
+    static ResultType process(const UInt8 * data, size_t size)
     {
         if (size == 0)
             return 0;
 
+        std::array<UInt32, 256> counters{};
         const UInt8 * end = data + size;
-
-        UInt8 min_byte = 255;
-        UInt8 max_byte = 0;
-        for (const UInt8 * pos = data; pos < end; ++pos)
-        {
-            min_byte = std::min(min_byte, *pos);
-            max_byte = std::max(max_byte, *pos);
-        }
 
         for (; data < end; ++data)
             counters[*data]++;
 
         Float64 entropy = 0.0;
 
-        for (size_t byte = min_byte; byte <= max_byte; ++byte)
+        for (size_t byte = 0; byte < 256; ++byte)
         {
             UInt32 count = counters[byte];
             if (count > 0)
             {
-                counters[byte] = 0;
                 Float64 p = static_cast<Float64>(count) / static_cast<Float64>(size);
                 entropy -= p * std::log2(p);
             }

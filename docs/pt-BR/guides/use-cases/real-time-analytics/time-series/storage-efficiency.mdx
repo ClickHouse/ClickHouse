@@ -11,7 +11,9 @@ doc_type: 'guide'
 Depois de explorar como consultar nosso conjunto de dados de estatísticas da Wikipedia, vamos nos concentrar em otimizar sua eficiência de armazenamento no ClickHouse.
 Esta seção demonstra técnicas práticas para reduzir as necessidades de armazenamento, mantendo o desempenho das consultas.
 
-## Otimização de tipos {#time-series-type-optimization}
+<div id="time-series-type-optimization">
+  ## Otimização de tipos
+</div>
 
 A abordagem geral para otimizar a eficiência de armazenamento é usar os tipos de dados mais adequados.
 Vamos considerar as colunas `project` e `subproject`. Essas colunas são do tipo String, mas têm uma quantidade relativamente pequena de valores distintos:
@@ -59,7 +61,9 @@ MODIFY COLUMN `hits` UInt32;
 
 Isso reduzirá o tamanho desta coluna na memória em pelo menos duas vezes. Observe que o tamanho em disco permanecerá inalterado devido à compressão. Mas cuidado: escolha tipos de dados que não sejam pequenos demais!
 
-## Codecs especializados {#time-series-specialized-codecs}
+<div id="time-series-specialized-codecs">
+  ## Codecs especializados
+</div>
 
 Quando lidamos com dados sequenciais, como séries temporais, podemos aumentar ainda mais a eficiência de armazenamento usando codecs especiais.
 A ideia geral é armazenar as variações entre os valores, em vez dos próprios valores absolutos, o que reduz bastante o espaço necessário ao lidar com dados que mudam lentamente:
@@ -93,7 +97,7 @@ ORDER BY (time);
 ```sql
 CREATE TABLE optimized_wikistat
 (
-    `time` DateTime CODEC(Delta, Default),
+    `time` DateTime CODEC(Delta(4), ZSTD(1)),
     `project` LowCardinality(String),
     `subproject` LowCardinality(String),
     `path` String,

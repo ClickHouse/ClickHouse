@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <Core/Names.h>
@@ -76,7 +75,7 @@ namespace Nested
     ///   -> t.a Int32, t.b.c Int64, t.b.d String
     /// If `flattened_ancestors` is not null, it is filled (aligned by position with the result)
     /// with each leaf's tuple ancestor paths.
-    Block flattenTupleRecursive(const Block & block, VectorWithMemoryTracking<Strings> * flattened_ancestors = nullptr);
+    Block flattenTupleRecursive(const Block & block, std::vector<Strings> * flattened_ancestors = nullptr);
 
     /// All tuples are flattened recursively, regardless of whether they have explicit names.
     /// For example, [Int32, Tuple(field1 Int64, field2 String)] will be flattened to [Int32, Int64, String].
@@ -134,14 +133,14 @@ private:
     {
         /// Keyed by the declared spelling, the way `IDataType::getSubcolumnData` matches a name.
         std::unordered_map<String, ISerialization::SubstreamPath> path_by_name;
-        /// Lower-cased spelling to the declared ones, filled only when matching is case-insensitive.
-        std::unordered_map<String, Strings> names_by_lowercase;
+        /// Lower-cased spelling to the declared one, filled only when matching is case-insensitive.
+        std::unordered_map<String, String> name_by_lowercase;
         /// When false the set could not be listed up front and `path_by_name` says nothing about a miss.
         bool complete = false;
     };
 
     const Subcolumns & subcolumnsOf(const ColumnWithTypeAndName & root);
-    [[nodiscard]] std::optional<ColumnWithTypeAndName>
+    std::optional<ColumnWithTypeAndName>
     resolveSubcolumn(const ColumnWithTypeAndName & root, const String & subcolumn_name, const String & result_name) const;
 
     const Block & block;

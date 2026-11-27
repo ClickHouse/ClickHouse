@@ -11,6 +11,7 @@
 --
 -- Tags: distributed
 
+SET enable_analyzer = 1;
 -- Pin the legacy EXPLAIN plan format: the checks below grep for the
 -- "Convert VIEW subquery result to VIEW table structure" step, which the default
 -- 'pretty' EXPLAIN format (explain_query_plan_default) does not print.

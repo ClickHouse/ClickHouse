@@ -8,6 +8,8 @@ show_related_blogs: false
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 > يوضّح هذا الدليل كيفية ترحيل البيانات من Snowflake إلى ClickHouse.
 
 يتطلّب ترحيل البيانات بين Snowflake وClickHouse استخدام خدمة تخزين كائنات،
@@ -17,11 +19,7 @@ doc_type: 'guide'
 
 <Steps>
   <Step title="تصدير البيانات من Snowflake" id="1-exporting-data-from-snowflake">
-    <div className="ch-image-md">
-      <Frame>
-        ![الترحيل من Snowflake إلى ClickHouse](/images/migrations/migrate_snowflake_clickhouse.webp)
-      </Frame>
-    </div>
+    <Image img="/images/migrations/migrate_snowflake_clickhouse.webp" size="md" alt="الترحيل من Snowflake إلى ClickHouse" />
 
     يتطلب تصدير البيانات من Snowflake استخدام مرحلة خارجية، كما هو موضح في المخطط أعلاه.
 
@@ -58,9 +56,9 @@ doc_type: 'guide'
   </Step>
 
   <Step title="الاستيراد إلى ClickHouse" id="2-importing-to-clickhouse">
-    بمجرد تجهيز البيانات في تخزين كائنات وسيط، يمكن استخدام دوال ClickHouse مثل [دالة الجدول s3](/ar/reference/functions/table-functions/s3) لإدراج البيانات في جدول، كما هو موضح أدناه.
+    بمجرد تجهيز البيانات في تخزين كائنات وسيط، يمكن استخدام وظائف ClickHouse مثل [s3 table function](/ar/reference/functions/table-functions/s3) لإدراج البيانات في جدول، كما هو موضح أدناه.
 
-    يستخدم هذا المثال [دالة الجدول s3](/ar/reference/functions/table-functions/s3) مع AWS S3، لكن يمكن استخدام [دالة الجدول gcs](/ar/reference/functions/table-functions/gcs) مع Google Cloud Storage، ويمكن استخدام [دالة الجدول azureBlobStorage](/ar/reference/functions/table-functions/azureBlobStorage) مع Azure Blob Storage.
+    يستخدم هذا المثال [s3 table function](/ar/reference/functions/table-functions/s3) مع AWS S3، لكن يمكن استخدام [gcs table function](/ar/reference/functions/table-functions/gcs) مع Google Cloud Storage، ويمكن استخدام [azureBlobStorage table function](/ar/reference/functions/table-functions/azureBlobStorage) مع Azure Blob Storage.
 
     بافتراض مخطط الجدول الهدف التالي:
 
@@ -101,7 +99,7 @@ doc_type: 'guide'
 
       سيتم إخراج العمودين `VARIANT` و`OBJECT` في مخطط جدول Snowflake الأصلي كسلاسل JSON افتراضيًا، ما يفرض علينا تحويل نوعهما عند إدراجهما في ClickHouse.
 
-      تُحوَّل البُنى المتداخلة مثل `some_file` إلى سلاسل JSON عند النسخ بواسطة Snowflake. ويتطلب استيراد هذه البيانات منا تحويل هذه البُنى إلى Tuple وقت الإدراج في ClickHouse، باستخدام [دالة JSONExtract](/ar/reference/functions/regular-functions/json-functions#JSONExtract) كما هو موضح أعلاه.
+      تُحوَّل البُنى المتداخلة مثل `some_file` إلى سلاسل JSON عند النسخ بواسطة Snowflake. ويتطلب استيراد هذه البيانات منا تحويل هذه البُنى إلى Tuple وقت الإدراج في ClickHouse، باستخدام [JSONExtract function](/ar/reference/functions/regular-functions/json-functions#JSONExtract) كما هو موضح أعلاه.
     </Info>
   </Step>
 

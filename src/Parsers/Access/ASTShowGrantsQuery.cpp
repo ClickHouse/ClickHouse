@@ -14,12 +14,10 @@ String ASTShowGrantsQuery::getID(char) const
 ASTPtr ASTShowGrantsQuery::clone() const
 {
     auto res = make_intrusive<ASTShowGrantsQuery>(*this);
-    res->children.clear();
 
     if (for_roles)
         res->for_roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(for_roles->clone());
 
-    cloneOutputOptions(*res);
     return res;
 }
 
@@ -29,8 +27,8 @@ void ASTShowGrantsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSetting
     ostr << "SHOW GRANTS"
                  ;
 
-    if (for_roles->current_user && !for_roles->all && (!for_roles->names || for_roles->names->children.empty())
-        && (!for_roles->except_names || for_roles->except_names->children.empty()) && !for_roles->except_current_user)
+    if (for_roles->current_user && !for_roles->all && for_roles->names.empty() && for_roles->except_names.empty()
+        && !for_roles->except_current_user)
     {
     }
     else

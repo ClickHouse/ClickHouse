@@ -6,6 +6,8 @@ description: 'S3 ClickPipes에서 지속적인 수집용 비순차 모드를 구
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 기본적으로 S3 ClickPipe는 파일이 버킷에 [사전순](/ko/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-lexicographical-order)으로 추가된다고 가정합니다. [Amazon SQS](https://aws.amazon.com/sqs/) 큐를 버킷에 연결하고, 필요에 따라 [Amazon EventBridge](https://aws.amazon.com/eventbridge/)를 이벤트 라우터로 사용하도록 설정하면 파일명만으로는 순서를 알 수 없는 파일도 수집하도록 S3 ClickPipe를 구성할 수 있습니다. 이렇게 하면 ClickPipes가 `ObjectCreated:*` 이벤트를 수신하여 파일 이름 규칙과 관계없이 새 파일을 모두 수집할 수 있습니다.
 
 <Note>
@@ -13,7 +15,7 @@ doc_type: 'guide'
 </Note>
 
 <div id="how-it-works">
-  ## 작동 방식 {#how-it-works}
+  ## 작동 방식
 </div>
 
 이 모드에서는 S3 ClickPipe가 먼저 선택한 경로의 **모든 파일**을 초기 적재한 다음, 지정된 경로와 일치하는 큐의 `ObjectCreated:*` 이벤트를 수신합니다. 이전에 이미 확인한 파일에 대한 메시지이거나, 경로와 일치하지 않는 파일이거나, 다른 유형의 이벤트는 **무시됩니다**. 파일은 `max insert bytes` 또는 `max file count`에 설정된 임계값에 도달하거나, 설정 가능한 인터벌이 지난 후(기본값 30초) 수집됩니다.
@@ -42,19 +44,11 @@ doc_type: 'guide'
       <Tab title="EventBridge 사용">
         **a.** S3 버킷 속성에서 **Event notifications &gt; Amazon EventBridge**로 이동한 다음, EventBridge로 알림을 전송하도록 활성화합니다. **Save changes**를 클릭합니다.
 
-        <div className="ch-image-lg">
-          <Frame>
-            ![S3 버킷 속성에서 Amazon EventBridge 알림 활성화](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp)
-          </Frame>
-        </div>
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp" alt="S3 버킷 속성에서 Amazon EventBridge 알림 활성화" size="lg" border />
 
         **b.** AWS Console에서 **Amazon EventBridge &gt; Rules &gt; Create rule**로 이동합니다. 규칙 이름(예: `S3ObjectCreated`)을 지정하고 **default** 이벤트 버스를 선택한 다음 **다음**을 클릭합니다. **Build event pattern** 단계에서 이벤트 소스로 **AWS events or EventBridge partner events**를 선택한 후, 아래 이벤트 패턴을 수동으로 입력합니다. 이때 `<bucket-name>`은 버킷 이름으로 바꾸십시오.
 
-        <div className="ch-image-lg">
-          <Frame>
-            ![EventBridge 규칙 이름 및 이벤트 버스 정의](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp)
-          </Frame>
-        </div>
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp" alt="EventBridge 규칙 이름 및 이벤트 버스 정의" size="lg" border />
 
         ```json
         {
@@ -70,19 +64,11 @@ doc_type: 'guide'
 
         필요하면 접두사 또는 접미사 기준으로 필터링할 수 있도록 패턴에 `object.key` 조건을 추가할 수 있습니다. 추가하는 경우 ClickPipe에 설정한 경로와 일치해야 합니다.
 
-        **c.** **Select target(s)** 단계에서 대상 유형으로 **AWS service**를 선택하고 **SQS queue**를 선택합니다. 이전 단계에서 생성한 큐를 선택합니다. EventBridge가 필요한 IAM role을 자동 생성할 수 있도록 **Use execution role (recommended)**&#xC740; 체크된 상태로 그대로 둔 다음, **다음**을 클릭하고 마법사를 완료합니다.
+        **c.** **Select target(s)** 단계에서 대상 유형으로 **AWS service**를 선택하고 **SQS queue**를 선택합니다. 이전 단계에서 생성한 큐를 선택합니다. EventBridge가 필요한 IAM role을 자동 생성할 수 있도록 &#42;&#42;Use execution role (recommended)&#42;&#42;은 체크된 상태로 그대로 둔 다음, **다음**을 클릭하고 마법사를 완료합니다.
 
-        <div className="ch-image-lg">
-          <Frame>
-            ![EventBridge 규칙 대상으로 SQS 큐 설정](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp)
-          </Frame>
-        </div>
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp" alt="EventBridge 규칙 대상으로 SQS 큐 설정" size="lg" border />
 
-        <div className="ch-image-lg">
-          <Frame>
-            ![EventBridge 규칙이 성공적으로 생성됨](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp)
-          </Frame>
-        </div>
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp" alt="EventBridge 규칙이 성공적으로 생성됨" size="lg" border />
 
         **d.** EventBridge가 이 큐로 메시지를 전송할 수 있도록 SQS 큐 액세스 정책을 편집합니다. `<sqs-queue-arn>` 및 `<eventbridge-rule-arn>`을 적절한 값으로 바꾸십시오:
 
@@ -214,7 +200,7 @@ doc_type: 'guide'
 
     **2.** **Incoming data**에서 **Continuous ingestion**을 켭니다. 수집 모드로 **Any order**를 선택하고, 버킷에 연결된 큐의 **SQS queue URL**을 입력합니다. 큐의 파일만 처리하고 선택한 경로에 있는 기존 파일을 처음 스캔하지 않으려면 **Skip initial load**를 활성화합니다. 이 큐는 이 ClickPipe에서만 전용으로 사용해야 합니다. [Amazon SQS 큐 생성](#create-sqs-queue)을 참조하십시오.
 
-    **3.** **Parse information**에서 대상 테이블의 **정렬 키(Sorting key)**&#xB97C; 정의합니다. 매핑된 스키마를 필요에 맞게 조정한 다음, ClickPipes 데이터베이스 사용자에 대한 역할을 구성합니다.
+    **3.** **Parse information**에서 대상 테이블의 &#42;&#42;정렬 키(Sorting key)&#42;&#42;를 정의합니다. 매핑된 스키마를 필요에 맞게 조정한 다음, ClickPipes 데이터베이스 사용자에 대한 역할을 구성합니다.
 
     **4.** 구성을 검토한 후 **Create ClickPipe**를 클릭합니다. **Skip initial load**가 활성화되지 않은 경우, ClickPipes는 먼저 버킷을 초기 스캔하여 지정된 경로와 일치하는 기존 파일을 모두 로드한 다음, 일치하는 `ObjectCreated:*` 이벤트가 큐에서 전달되면 파일 처리를 시작합니다.
   </Step>

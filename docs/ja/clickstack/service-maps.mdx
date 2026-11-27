@@ -8,7 +8,7 @@ keywords: ['clickstack', 'サービスマップ', 'トポロジー', 'トレー�
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-
+import { Image } from "/snippets/ja/components/Image.jsx";
 import { Video } from "/snippets/ja/components/Video/Video.jsx";
 
 <BetaBadge />
@@ -17,13 +17,11 @@ import { Video } from "/snippets/ja/components/Video/Video.jsx";
 
 左側のナビゲーションパネルで **サービスマップ** をクリックすると、グラフ全体を表示できます。サービスは、OpenTelemetry で[トレースデータを取り込み](/ja/clickstack/ingesting-data/overview)始めると表示されます。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![サービスノードとそれらの間のリクエストフローを示すサービスマップ](/images/clickstack/service-maps/service-map-overview.webp)
-  </Frame>
-</div>
+<Image img="/images/clickstack/service-maps/service-map-overview.webp" alt="サービスノードとそれらの間のリクエストフローを示すサービスマップ" size="lg" />
 
-## サービスマップの確認 {#exploring-the-service-map}
+<div id="exploring-the-service-map">
+  ## サービスマップの確認
+</div>
 
 各ノードはサービスを表し、`service.name` リソース属性で識別されます。エッジ (破線) は、あるサービスのクライアントスパンが別のサービスのサーバースパンに対応している場合に、それらのサービスを結びます。ノードの大きさは相対的なトラフィック量を示し、赤いノードは選択した時間範囲内にエラーがあるサービスを表します。
 
@@ -31,32 +29,20 @@ import { Video } from "/snippets/ja/components/Video/Video.jsx";
 
 **ソースセレクター** — マップを特定のトレースソース (例: &quot;ClickPy Traces&quot;) に絞り込みます。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![サービスマップのツールバーでソースセレクターが強調表示されている](/images/clickstack/service-maps/source-selector.webp)
-  </Frame>
-</div>
+<Image img="/images/clickstack/service-maps/source-selector.webp" alt="サービスマップのツールバーでソースセレクターが強調表示されている" size="lg" />
 
 **サンプリングスライダー** — パフォーマンスと精度のバランスを取るために、サンプリング率を調整します。高トラフィックのクラスターでは、低い値のほうがより速く読み込まれます。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![サービスマップのツールバーでサンプリングスライダーが強調表示されている](/images/clickstack/service-maps/sampling.webp)
-  </Frame>
-</div>
+<Image img="/images/clickstack/service-maps/sampling.webp" alt="サービスマップのツールバーでサンプリングスライダーが強調表示されている" size="lg" />
 
 **日付範囲ピッカー** — マップの作成に使用するトレースデータの時間範囲を設定します。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![サービスマップのツールバーで日付範囲ピッカーが強調表示されている](/images/clickstack/service-maps/date-selector.webp)
-  </Frame>
-</div>
+<Image img="/images/clickstack/service-maps/date-selector.webp" alt="サービスマップのツールバーで日付範囲ピッカーが強調表示されている" size="lg" />
 
 マップ左下の **+/-** ボタン、またはスクロール操作で拡大・縮小できます。
 
 <div id="trace-level-service-maps">
-  ## トレースレベルのサービスマップ {#trace-level-service-maps}
+  ## トレースレベルのサービスマップ
 </div>
 
 個々のトレースを確認すると、そのリクエストがサービス間をどのように経由したかを示す、対象を絞ったサービスマップが表示されます。これにより、トレースのウォーターフォールを離れることなく、単一のリクエストのトポロジーを確認できます。

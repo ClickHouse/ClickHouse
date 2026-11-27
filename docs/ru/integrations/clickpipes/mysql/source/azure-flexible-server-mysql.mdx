@@ -7,6 +7,8 @@ keywords: ['azure', 'flexible server', 'mysql', 'clickpipes', 'binlog']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 В этом пошаговом руководстве показано, как настроить Azure Flexible Server for MySQL для репликации данных в ClickHouse Cloud с помощью [MySQL ClickPipe](/ru/integrations/clickpipes/mysql/index). Для этого сервиса поддерживается только **одноразовая ингестия**. Ответы на распространённые вопросы о MySQL CDC см. на [странице с часто задаваемыми вопросами по MySQL](/ru/integrations/clickpipes/mysql/faq).
 
 <Warning>
@@ -16,7 +18,7 @@ doc_type: 'guide'
 </Warning>
 
 <div id="configure-database-user">
-  ## Настройте пользователя базы данных {#configure-database-user}
+  ## Настройте пользователя базы данных
 </div>
 
 Подключитесь к своему экземпляру Azure Flexible Server for MySQL с правами администратора и выполните следующие команды:
@@ -39,7 +41,9 @@ doc_type: 'guide'
    FLUSH PRIVILEGES;
    ```
 
-## Настройка сетевого доступа {#configure-network-access}
+<div id="configure-network-access">
+  ## Настройка сетевого доступа
+</div>
 
 <Note>
   ClickPipes пока не поддерживает Azure Private Link. Чтобы подключиться к экземпляру, для которого не открыт публичный доступ, используйте SSH-туннель. Подробнее см. [Сеть ClickPipes](/ru/integrations/clickpipes/networking).
@@ -53,13 +57,9 @@ doc_type: 'guide'
 
     2. В разделе **Settings** выберите **Networking**. Убедитесь, что **Public access** включен.
 
-    3. В разделе **Правила межсетевого экрана** укажите [список статических IP-адресов ClickPipes](/ru/integrations/clickpipes/networking/static-ips) для региона, в котором развернут ваш сервис.
+    3. В разделе **Firewall rules** укажите [список статических IP-адресов ClickPipes](/ru/integrations/clickpipes/networking/static-ips) для региона, в котором развернут ваш сервис.
 
-       <div className="ch-image-lg">
-         <Frame>
-           ![Настройка сети для публичного доступа со списком разрешенных IP-адресов](/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp)
-         </Frame>
-       </div>
+       <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp" alt="Настройка сети для публичного доступа со списком разрешенных IP-адресов" size="lg" border />
 
     4. Нажмите **Save**, чтобы сохранить изменения в конфигурации сетевой безопасности.
   </Tab>
@@ -77,6 +77,8 @@ doc_type: 'guide'
   </Tab>
 </Tabs>
 
-## Что дальше? {#whats-next}
+<div id="whats-next">
+  ## Что дальше?
+</div>
 
 Теперь вы можете [создать свой ClickPipe](/ru/integrations/clickpipes/mysql/index) и начать приём данных из вашего экземпляра Azure Flexible Server for MySQL в ClickHouse Cloud. Обязательно сохраните сведения о подключении, которые вы использовали при настройке экземпляра, так как они понадобятся вам при создании ClickPipe.

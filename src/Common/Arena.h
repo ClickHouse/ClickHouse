@@ -79,9 +79,9 @@ private:
             Allocator<false>::free(begin, size());
         }
 
-        [[nodiscard]] bool empty() const { return begin == end;}
-        [[nodiscard]] size_t size() const { return end + pad_right - begin; }
-        [[nodiscard]] size_t remaining() const { return end - pos; }
+        bool empty() const { return begin == end;}
+        size_t size() const { return end + pad_right - begin; }
+        size_t remaining() const { return end - pos; }
     };
 
     size_t initial_size;
@@ -103,7 +103,7 @@ private:
     /// Uses exponential buffer growth below `linear_growth_threshold` and linear growth above it
     /// to limit unused capacity.
     template <typename Size>
-    [[nodiscard]] Size nextSize(Size min_next_size) const
+    Size nextSize(Size min_next_size) const
     {
         Size size_after_grow = 0;
 
@@ -172,7 +172,7 @@ public:
     /// Bounds additional memory for `num_allocations` calls to `alloc` requesting `total_bytes` in total.
     /// Includes buffers and metadata without inspecting individual allocation sizes or changing the arena.
     /// Saturates at the maximum of `size_t` when the bound is not representable.
-    [[nodiscard]] size_t estimateGrowthMemory(size_t num_allocations, size_t total_bytes) const noexcept
+    size_t estimateGrowthMemory(size_t num_allocations, size_t total_bytes) const noexcept
     {
         if (num_allocations == 0 || (!head.empty() && total_bytes <= head.remaining()))
             return 0;
@@ -214,12 +214,10 @@ public:
     /// Note: we expect it will return a non-nullptr even if the size is zero.
     char * alloc(size_t size)
     {
-        /// Counted only once the memory is there: `addMemoryChunk` throws for a size it cannot
-        /// serve, and a count bumped before that would stay wrong for the life of the arena.
+        used_bytes += size;
         if (unlikely(head.empty() || size > head.remaining()))
             addMemoryChunk(size);
 
-        used_bytes += size;
         char * res = head.pos;
         head.pos += size;
         ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
@@ -229,6 +227,7 @@ public:
     /// Get piece of memory with alignment
     char * alignedAlloc(size_t size, size_t alignment)
     {
+        used_bytes += size;
         if (unlikely(head.empty() || size > head.remaining()))
             addMemoryChunk(size, alignment);
 
@@ -242,7 +241,6 @@ public:
             {
                 head.pos = static_cast<char *>(head_pos);
                 head.pos += size;
-                used_bytes += size;
                 ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
                 return res;
             }
@@ -380,15 +378,15 @@ public:
     }
 
     /// Size of all MemoryChunks in bytes.
-    [[nodiscard]] size_t allocatedBytes() const { return allocated_bytes; }
+    size_t allocatedBytes() const { return allocated_bytes; }
 
     /// Total space actually used (not counting padding or space unused by caller allocations) in all MemoryChunks in bytes.
-    [[nodiscard]] size_t usedBytes() const { return used_bytes; }
+    size_t usedBytes() const { return used_bytes; }
 
     /// Bad method, don't use it -- the MemoryChunks are not your business, the entire
     /// purpose of the arena code is to manage them for you, so if you find
     /// yourself having to use this method, probably you're doing something wrong.
-    [[nodiscard]] size_t remainingSpaceInCurrentMemoryChunk() const
+    size_t remainingSpaceInCurrentMemoryChunk() const
     {
         return head.remaining();
     }

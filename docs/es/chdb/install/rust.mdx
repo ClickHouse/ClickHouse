@@ -9,9 +9,13 @@ doc_type: 'guide'
 
 chDB-rust proporciona enlaces FFI (Foreign Function Interface) experimentales para chDB, lo que permite ejecutar consultas de ClickHouse directamente en aplicaciones Rust sin dependencias externas.
 
-## Instalación {#installation}
+<div id="installation">
+  ## Instalación
+</div>
 
-### Instalar libchdb {#install-libchdb}
+<div id="install-libchdb">
+  ### Instalar libchdb
+</div>
 
 Instala la biblioteca chDB:
 
@@ -19,11 +23,15 @@ Instala la biblioteca chDB:
 curl -sL https://lib.chdb.io | bash
 ```
 
-## Uso {#usage}
+<div id="usage">
+  ## Uso
+</div>
 
 chDB Rust ofrece modos de ejecución de consultas con y sin estado.
 
-### Uso sin estado {#stateless-usage}
+<div id="stateless-usage">
+  ### Uso sin estado
+</div>
 
 Para consultas simples que no requieren estado persistente:
 
@@ -49,7 +57,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### Uso con estado (Sesiones) {#stateful-usage-sessions}
+<div id="stateful-usage-sessions">
+  ### Uso con estado (Sesiones)
+</div>
 
 Para consultas que necesitan conservar estado, como bases de datos y tablas:
 
@@ -107,21 +117,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## Compilación y pruebas {#building-testing}
+<div id="building-testing">
+  ## Compilación y pruebas
+</div>
 
-### Compilar el proyecto {#build-the-project}
+<div id="build-the-project">
+  ### Compilar el proyecto
+</div>
 
 ```bash
 cargo build
 ```
 
-### Ejecutar las pruebas {#run-tests}
+<div id="run-tests">
+  ### Ejecutar las pruebas
+</div>
 
 ```bash
 cargo test
 ```
 
-### Dependencias de desarrollo {#development-dependencies}
+<div id="development-dependencies">
+  ### Dependencias de desarrollo
+</div>
 
 El proyecto incluye estas dependencias de desarrollo:
 
@@ -129,7 +147,9 @@ El proyecto incluye estas dependencias de desarrollo:
 * `tempdir` (v0.3.7) - Manejo de directorios temporales en pruebas
 * `thiserror` (v1) - Utilidades para el manejo de errores
 
-## Gestión de errores {#error-handling}
+<div id="error-handling">
+  ## Gestión de errores
+</div>
 
 chDB Rust ofrece una gestión completa de errores mediante el `enum` `Error`:
 
@@ -155,6 +175,8 @@ match execute("SELECT 1", None) {
 }
 ```
 
-## Repositorio de GitHub {#github-repository}
+<div id="github-repository">
+  ## Repositorio de GitHub
+</div>
 
 Puede encontrar el repositorio de GitHub del proyecto en [chdb-io/chdb-rust](https://github.com/chdb-io/chdb-rust).

@@ -14,7 +14,8 @@ CREATE TABLE test
     key String,
     val Map(String, Variant(String, Int32, DateTime64(3, 'UTC')))
 )
-ENGINE = MergeTree ORDER BY key;
+ENGINE = MergeTree ORDER BY key
+SETTINGS allow_experimental_variant_type = 1;
 
 -- Keep one part per insert so read-in-order spreads ranges among streams.
 SYSTEM STOP MERGES test;

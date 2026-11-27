@@ -7,12 +7,17 @@ keywords: ['managed postgres', 'prometheus', 'grafana', 'datadog', '메트릭', 
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
 
 ClickHouse Managed Postgres는 [ClickHouse Cloud API][cloud-api]를 통해
 Prometheus와 호환되는 메트릭 엔드포인트 2개를 제공합니다.
 
-| 엔드포인트 | 경로                                                   | Returns                                      |
+| Endpoint | Path                                                   | Returns                                      |
 | -------- | ------------------------------------------------------ | -------------------------------------------- |
 | 조직       | `/v1/organizations/{orgId}/postgres/prometheus`        | 조직 내 모든 ClickHouse Managed Postgres 서비스의 메트릭 |
 | 인스턴스     | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | 단일 서비스의 메트릭                                  |
@@ -24,7 +29,7 @@ Prometheus와 호환되는 메트릭 엔드포인트 2개를 제공합니다.
 </Note>
 
 <div id="authentication">
-  ## 인증 {#authentication}
+  ## 인증
 </div>
 
 이 엔드포인트는 OpenAPI의 다른 부분과 동일한 [API Key]를 사용합니다. 생성 방법과
@@ -39,7 +44,7 @@ PG_ID=mypgid
 ```
 
 <div id="scrape-org">
-  ## 조직 내 모든 서비스 스크레이핑 {#scrape-org}
+  ## 조직 내 모든 서비스 스크레이핑
 </div>
 
 ```bash
@@ -48,7 +53,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 ```
 
 <div id="scrape-instance">
-  ## 단일 서비스 스크레이핑 {#scrape-instance}
+  ## 단일 서비스 스크레이핑
 </div>
 
 ```bash
@@ -57,7 +62,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 ```
 
 <div id="sample-response">
-  ## 응답 예시 {#sample-response}
+  ## 응답 예시
 </div>
 
 ```response
@@ -79,7 +84,7 @@ PostgresServer_CacheHitRatio{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6
 [메트릭 참고](/ko/products/managed-postgres/monitoring/metrics)를 확인하십시오.
 
 <div id="configuring-prometheus">
-  ## Prometheus 구성 {#configuring-prometheus}
+  ## Prometheus 구성
 </div>
 
 이 구성은 조직 수준 엔드포인트를 60초마다 스크레이프합니다:
@@ -108,20 +113,20 @@ scrape_configs:
 
 단일 서비스를 스크레이프하려면 `metrics_path`에 `/<PG_ID>`를 추가하십시오.
 
-## 사전 구축된 Grafana 대시보드 {#grafana-dashboard}
+<div id="grafana-dashboard">
+  ## 사전 구축된 Grafana 대시보드
+</div>
 
 사전 구축된 Grafana 대시보드는 엔드포인트에서 노출하는 모든 메트릭을 시각화합니다
 — 정렬 가능한 서비스 테이블, CPU 및 메모리 사용률, 임계값 알림이 포함된 디스크
 사용량, 상태별 연결, 트랜잭션 및 롤백 비율, Tuple 활동, I/O, 데이터베이스별 스토리지,
 그리고 교착 상태를 표시합니다.
 
-<div className="ch-image-md">
-  <Frame>
-    ![ClickHouse Managed Postgres 서비스의 Grafana 대시보드](/images/managed-postgres/monitoring/grafana-dashboard.webp)
-  </Frame>
-</div>
+<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="ClickHouse Managed Postgres 서비스의 Grafana 대시보드" size="md" border />
 
-### 대시보드 가져오기 {#import-dashboard}
+<div id="import-dashboard">
+  ### 대시보드 가져오기
+</div>
 
 <Steps>
   <Step title="대시보드 JSON 다운로드" id="download">
@@ -129,20 +134,20 @@ scrape_configs:
   </Step>
 
   <Step title="Grafana에서 가져오기 화면 열기" id="open-import">
-    **Dashboards → New → Import**로 이동합니다. JSON 파일을 업로드하거나 파일 내용을 붙여 넣습니다.
+    **Dashboards → New → Import**로 이동하세요. JSON 파일을 업로드하거나 내용을 붙여넣으세요.
   </Step>
 
   <Step title="Prometheus 데이터 소스 선택" id="pick-datasource">
-    `DS_PROMETHEUS` 입력 항목이 표시되면 [이전 섹션](#configuring-prometheus)에서 구성한 엔드포인트를 스크레이핑하는 Prometheus 데이터 소스를 선택합니다.
+    `DS_PROMETHEUS` 입력 항목이 표시되면 [이전 섹션](#configuring-prometheus)에서 구성한 엔드포인트를 스크레이프하는 Prometheus 데이터 소스를 선택하세요.
   </Step>
 </Steps>
 
-프로비저닝 방식으로 배포한 Grafana에서는 JSON 파일을
-대시보드 프로비저닝 경로에 넣으십시오. Grafana는 `${DS_PROMETHEUS}`
-참조를 해당 인스턴스에서 사용 가능한 Prometheus 데이터 소스와 자동으로 연결합니다.
+프로비저닝된 Grafana 배포에서는 JSON을
+대시보드 프로비저닝 경로에 넣으세요. Grafana는 `${DS_PROMETHEUS}`
+참조를 해당 인스턴스에서 사용할 수 있는 Prometheus 데이터 소스와 일치시킵니다.
 
 <div id="template-variables">
-  ### 템플릿 변수 {#template-variables}
+  ### 템플릿 변수
 </div>
 
 대시보드에는 3개의 변수가 있습니다:
@@ -155,7 +160,7 @@ scrape_configs:
   JSON에서 이 값을 변경하십시오.
 
 <div id="drill-in">
-  ### 단일 서비스로 필터링하여 드릴인하기 {#drill-in}
+  ### 단일 서비스로 필터링하여 드릴인하기
 </div>
 
 여러 패널은 **Service** 변수를 통해 단일
@@ -165,7 +170,7 @@ scrape_configs:
 작업, 디스크 대기 또는 하이퍼바이저 경합 때문인지 파악할 수 있습니다.
 
 <div id="third-party-integrations">
-  ## Grafana 및 Datadog와 통합하기 {#third-party-integrations}
+  ## Grafana 및 Datadog와 통합하기
 </div>
 
 이 엔드포인트는 [ClickHouse Prometheus

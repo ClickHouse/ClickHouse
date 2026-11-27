@@ -7,6 +7,8 @@ title: 'ClickHouse と Databricks の統合'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -14,7 +16,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupp
 ClickHouse Spark コネクタは Databricks とシームレスに連携します。このガイドでは、Databricks 向けのプラットフォーム固有のセットアップ、インストール、利用パターンについて説明します。
 
 <div id="api-selection">
-  ## Databricks での API の選択 {#api-selection}
+  ## Databricks での API の選択
 </div>
 
 デフォルトでは、Databricks は Unity Catalog を使用しており、Spark のカタログ登録はブロックされます。この場合は、**TableProvider API** (フォーマットベースのアクセス) を**必ず**使用する必要があります。
@@ -27,10 +29,12 @@ ClickHouse Spark コネクタは Databricks とシームレスに連携します
 | **無効** (No isolation shared)  | Catalog API                    | &quot;No isolation shared&quot; アクセスモードのクラスターが必要です |
 
 <div id="installation">
-  ## Databricks へのインストール {#installation}
+  ## Databricks へのインストール
 </div>
 
-### オプション 1: Databricks UI から JAR をアップロードする {#installation-ui}
+<div id="installation-ui">
+  ### オプション 1: Databricks UI から JAR をアップロードする
+</div>
 
 1. ランタイム JAR をビルドするか、[ダウンロード](https://repo1.maven.org/maven2/com/clickhouse/spark/)します。
    ```bash
@@ -49,22 +53,14 @@ ClickHouse Spark コネクタは Databricks とシームレスに連携します
    * **DBFS** または **Workspace** を選択し、アップロードした JAR ファイルを指定します
    * **Install** をクリックします
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Databricks の Libraries タブ](/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp" alt="Databricks の Libraries タブ" />
 
-<div className="ch-image-lg">
-  <Frame>
-    ![ワークスペース volume からライブラリをインストールする](/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp" alt="ワークスペース volume からライブラリをインストールする" />
 
 4. ライブラリを読み込むため、クラスターを再起動します
 
 <div id="installation-cli">
-  ### オプション 2: Databricks CLI でインストール {#installation-cli}
+  ### オプション 2: Databricks CLI でインストール
 </div>
 
 ```bash
@@ -78,7 +74,9 @@ databricks libraries install \
   --jar dbfs:/FileStore/jars/clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}-{{ stable_version }}.jar
 ```
 
-### オプション 3: Maven Coordinates (推奨) {#installation-maven}
+<div id="installation-maven">
+  ### オプション 3: Maven Coordinates (推奨)
+</div>
 
 1. Databricksワークスペースに移動します:
    * **Compute** → クラスターを選択します
@@ -92,22 +90,18 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Databricks Maven ライブラリの設定](/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp" alt="Databricks Maven ライブラリの設定" />
 
 3. **Install** をクリックし、ライブラリを読み込むためにクラスターを再起動します
 
 <div id="tableprovider-api">
-  ## TableProvider API を使用する {#tableprovider-api}
+  ## TableProvider API を使用する
 </div>
 
 Unity Catalog が有効 (デフォルト) な場合、Unity Catalog によって Spark のカタログ登録がブロックされるため、**必ず** TableProvider API (フォーマットベースのアクセス) を使用する必要があります。&quot;No isolation shared&quot; アクセスモードのクラスターを使用して Unity Catalog を無効にしている場合は、代わりに [Catalog API](/ja/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required) を使用できます。
 
 <div id="reading-data-table-provider">
-  ### データの読み込み {#reading-data-table-provider}
+  ### データの読み込み
 </div>
 
 <Tabs>
@@ -151,7 +145,7 @@ Unity Catalog が有効 (デフォルト) な場合、Unity Catalog によって
 </Tabs>
 
 <div id="writing-data-unity">
-  ### データの書き込み {#writing-data-unity}
+  ### データの書き込み
 </div>
 
 <Tabs>
@@ -200,11 +194,11 @@ Unity Catalog が有効 (デフォルト) な場合、Unity Catalog によって
 </Note>
 
 <div id="considerations">
-  ## Databricks 固有の考慮事項 {#considerations}
+  ## Databricks 固有の考慮事項
 </div>
 
 <div id="access-mode">
-  ### アクセスモードの要件 {#access-mode}
+  ### アクセスモードの要件
 </div>
 
 ClickHouse Spark コネクタでは、**Dedicated** (旧称 Single User) アクセスモードが必要です。Unity Catalog が有効な構成では、Databricks が外部 DataSource V2 コネクタをブロックするため、**Standard** (旧称 Shared) アクセスモードはサポートされません。
@@ -217,7 +211,7 @@ ClickHouse Spark コネクタでは、**Dedicated** (旧称 Single User) アク�
 | Standard (Shared)       | 無効            | ✅ はい      |
 
 <div id="secret-management">
-  ### シークレット管理 {#secret-management}
+  ### シークレット管理
 </div>
 
 ClickHouse の認証情報を安全に保存するには、Databricks のシークレットスコープを使用します。
@@ -232,7 +226,7 @@ password = dbutils.secrets.get(scope="clickhouse", key="password")
 {/* TODO: Databricks secret scopes の設定画面のスクリーンショットを追加 */}
 
 <div id="clickhouse-cloud">
-  ### ClickHouse Cloud への接続 {#clickhouse-cloud}
+  ### ClickHouse Cloud への接続
 </div>
 
 Databricks から ClickHouse Cloud に接続する場合は、次の設定を行います。
@@ -241,11 +235,11 @@ Databricks から ClickHouse Cloud に接続する場合は、次の設定を行
 2. **SSL**を有効にします (`ssl: true`)
 
 <div id="examples">
-  ## 例 {#examples}
+  ## 例
 </div>
 
 <div id="workflow-example">
-  ### 完全なワークフローの例 {#workflow-example}
+  ### 完全なワークフローの例
 </div>
 
 <Tabs>
@@ -336,7 +330,9 @@ Databricks から ClickHouse Cloud に接続する場合は、次の設定を行
   </Tab>
 </Tabs>
 
-## 関連ドキュメント {#related}
+<div id="related">
+  ## 関連ドキュメント
+</div>
 
 * [Spark Native Connector ガイド](/ja/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - コネクタの包括的なドキュメント
 * [TableProvider API ドキュメント](/ja/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#using-the-tableprovider-api) - フォーマットベースのアクセスの詳細

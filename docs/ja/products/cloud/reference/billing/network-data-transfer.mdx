@@ -24,20 +24,12 @@ ClickHouse Cloud で課金対象となるもの:
 Service Connect の利用およびデータ転送には料金はかかりません。ただし、ユーザーへの適切な課金に支障をきたす
 利用パターンが見られる場合は、データ転送に関する追加の料金体系を導入する権利を留保します。
 
-注: Private Link/Private Service Connect の利用には、クラウドサービスプロバイダー (CSP) の料金が適用されます。最新の情報については、CSP の料金ページを参照してください。
+注: Private Link/Private Service Connect の利用には、Cloud Service Provider (CSP) の料金が適用されます。最新の情報については、CSP の料金ページを参照してください。
 
-データ転送料金は、クラウドサービスプロバイダー (CSP) とリージョンによって異なります。
+データ転送料金は、Cloud Service Provider (CSP) とリージョンによって異なります。
 パブリックインターネットへの送信料金は、始点リージョンのみに基づいて決まります。
 リージョン間 (またはクロスリージョン) の料金は、始点と宛先の
 両方のリージョンに依存します。
-
-## Managed Postgres {#managed-postgres}
-
-ClickHouse Managed Postgres のパブリックインターネット向けおよびリージョン間のデータ送信には、このページに記載の料金が適用されます。データ転送は、宛先 IP をクラウドプロバイダーが公開している IP アドレス範囲と照合して分類されます。宛先の IP がお使いのリージョンの公開範囲に含まれない場合、その宛先が同じクラウドプロバイダー上でホストされていても (例: 独自の IP ブロックを使用するピア (BYOIP))、そのトラフィックはパブリックインターネットへの送信として計測されます。このようなピアに接続する場合は、分類を確認できるよう [サポート](https://clickhouse.com/support/program) までお問い合わせください。
-
-Managed Postgres から ClickHouse Cloud へデータを複製する場合、[ClickPipes](/ja/products/managed-postgres/clickpipes) のコンピュートは無料です。Managed Postgres から ClickPipes へのデータ送信は、他のデータ転送と同様に計測されます。両者が同一リージョンにある場合は料金はかかりません。リージョン間のレプリケーションには該当するリージョン間ティアの料金が、別のクラウドプロバイダー上の ClickHouse Cloud サービスへのレプリケーションにはパブリックインターネット料金が適用されます。
-
-データ転送コストを削減するため、可能な限りアプリケーションと Managed Postgres を同じクラウドプロバイダーの同一リージョンに配置してください。
 
 **データ転送コストを最小限に抑えるためのベストプラクティス**
 
@@ -59,10 +51,10 @@ Managed Postgres から ClickHouse Cloud へデータを複製する場合、[Cl
 
 <Note>
   ClickHouse Cloud では、リージョン間の使用量を、始点リージョンと
-  宛先リージョンに応じて ティア 1 から
-  ティア 4 までの ティア で計測します。以下の表は、リージョン間データ転送の各組み合わせに対応する
-  ティア を示しています。ClickHouse Cloud の Billing usage
-  画面では、データ転送使用量が ティア ごとに分類されて表示されます。
+  宛先リージョンに応じて Tier 1 から
+  Tier 4 までの tiers で計測します。以下の表は、リージョン間データ転送の各組み合わせに対応する
+  tier を示しています。ClickHouse Cloud の Billing usage
+  画面では、データ転送使用量が tiers ごとに分類されて表示されます。
 </Note>
 
 <NetworkPricing />

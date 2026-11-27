@@ -62,6 +62,13 @@ AggregateFunctionMerge::AggregateFunctionMerge(const AggregateFunctionPtr & nest
         argument_func->getStateType()->getName());
 }
 
+bool AggregateFunctionMerge::canMergeStatesOf(const IAggregateFunction & nested, const IAggregateFunction & argument_func)
+{
+    if (nested.haveSameStateRepresentation(argument_func))
+        return true;
+    return argument_func.getName() == nested.getName() && nested.canMergeStateFromDifferentVariant(argument_func);
+}
+
 void AggregateFunctionMerge::add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const
 {
     const auto & column = assert_cast<const ColumnAggregateFunction &>(*columns[0]);
@@ -82,17 +89,17 @@ namespace
 class AggregateFunctionCombinatorMerge final : public IAggregateFunctionCombinator
 {
 public:
-    [[nodiscard]] String getName() const override { return "Merge"; }
+    String getName() const override { return "Merge"; }
 
-    [[nodiscard]] bool transformsArgumentTypes() const override { return true; }
+    bool transformsArgumentTypes() const override { return true; }
 
-    [[nodiscard]] bool acceptsNestedFunction(const IAggregateFunction & nested_function, const DataTypes & arguments) const override
+    bool acceptsNestedFunction(const IAggregateFunction & nested_function, const DataTypes & arguments) const override
     {
         const auto * argument = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         return argument && AggregateFunctionMerge::canMergeStatesOf(nested_function, *argument->getFunction());
     }
 
-    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
+    DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.size() != 1)
             throw Exception(
@@ -113,7 +120,7 @@ public:
         return function->getArgumentsDataTypes();
     }
 
-    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
+    AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,

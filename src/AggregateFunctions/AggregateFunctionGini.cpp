@@ -177,14 +177,14 @@ private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
 
 public:
-    [[nodiscard]] String getName() const override { return "gini"; }
+    String getName() const override { return "gini"; }
 
     explicit AggregateFunctionGini(const DataTypePtr & argument_type)
         : IAggregateFunctionDataHelper<AggregateFunctionGiniData<Value>, AggregateFunctionGini<Value>>(
             {argument_type}, {}, std::make_shared<DataTypeFloat64>())
     {}
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
@@ -283,7 +283,7 @@ SELECT gini(x) FROM (SELECT number AS x FROM numbers(10));
     FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    factory.registerFunction("gini", {createAggregateFunctionGini, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("gini", {createAggregateFunctionGini, documentation});
 }
 
 }

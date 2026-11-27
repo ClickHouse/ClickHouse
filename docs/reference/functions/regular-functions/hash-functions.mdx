@@ -1297,7 +1297,7 @@ SELECT murmurHash3_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 Introduced in: v21.1.0
 
-Splits an ASCII string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram and returns a tuple with these hashes.
+Splits a ASCII string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram and returns a tuple with these hashes.
 Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash.
 It is case sensitive.
 
@@ -1338,7 +1338,7 @@ SELECT ngramMinHash('ClickHouse') AS Tuple;
 
 Introduced in: v21.1.0
 
-Splits an ASCII string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [`ngramMinHash`](#ngramMinHash) function with the same input.
+Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [`ngramMinHash`](#ngramMinHash) function with the same input.
 It is case sensitive.
 
 **Syntax**
@@ -1375,7 +1375,7 @@ SELECT ngramMinHashArg('ClickHouse') AS Tuple;
 
 Introduced in: v21.1.0
 
-Splits an ASCII string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [`ngramMinHashCaseInsensitive`](#ngramMinHashCaseInsensitive) function with the same input.
+Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [`ngramMinHashCaseInsensitive`](#ngramMinHashCaseInsensitive) function with the same input.
 It is case insensitive.
 
 **Syntax**
@@ -1486,7 +1486,7 @@ SELECT ngramMinHashArgUTF8('ClickHouse') AS Tuple;
 
 Introduced in: v21.1.0
 
-Splits an ASCII string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram and returns a tuple with these hashes
+Splits a ASCII string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram and returns a tuple with these hashes
 Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash.
 It is case insensitive.
 
@@ -1607,7 +1607,7 @@ SELECT ngramMinHashUTF8('ClickHouse') AS Tuple;
 
 Introduced in: v21.1.0
 
-Splits an ASCII string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`.
+Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`.
 
 Can be used for detection of semi-duplicate strings with [`bitHammingDistance`](/reference/functions/regular-functions/bit-functions#bitHammingDistance).
 The smaller the [Hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
@@ -1645,7 +1645,7 @@ SELECT ngramSimHash('ClickHouse') AS Hash;
 
 Introduced in: v21.1.0
 
-Splits an ASCII string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`.
+Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`.
 It is case insensitive.
 
 Can be used for detection of semi-duplicate strings with [`bitHammingDistance`](/reference/functions/regular-functions/bit-functions#bitHammingDistance).
@@ -1996,7 +1996,7 @@ SELECT sipHash64Keyed((506097522914230528, 1084818905618843912), array('e','x','
 
 Introduced in: v21.1.0
 
-Splits an ASCII string into parts (shingles) of `shinglesize` words, calculates hash values for each word shingle and returns a tuple with these hashes.
+Splits a ASCII string into parts (shingles) of `shinglesize` words, calculates hash values for each word shingle and returns a tuple with these hashes.
 Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash.
 It is case sensitive.
 
@@ -2037,7 +2037,7 @@ SELECT wordShingleMinHash('ClickHouse® is a column-oriented database management
 
 Introduced in: v1.1.0
 
-Splits an ASCII string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the wordShingleMinHash function with the same input.
+Splits a ASCII string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the wordShingleMinHash function with the same input.
 It is case sensitive.
 
 **Syntax**
@@ -2074,7 +2074,7 @@ SELECT wordShingleMinHashArg('ClickHouse® is a column-oriented database managem
 
 Introduced in: v21.1.0
 
-Splits an ASCII string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [`wordShingleMinHashCaseInsensitive`](#wordShingleMinHashCaseInsensitive) function with the same input.
+Splits a ASCII string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [`wordShingleMinHashCaseInsensitive`](#wordShingleMinHashCaseInsensitive) function with the same input.
 It is case insensitive.
 
 **Syntax**
@@ -2185,7 +2185,7 @@ SELECT wordShingleMinHashArgUTF8('ClickHouse® is a column-oriented database man
 
 Introduced in: v21.1.0
 
-Splits an ASCII string into parts (shingles) of `shinglesize` words, calculates hash values for each word shingle and returns a tuple with these hashes.
+Splits a ASCII string into parts (shingles) of `shinglesize` words, calculates hash values for each word shingle and returns a tuple with these hashes.
 Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash.
 It is case insensitive.
 
@@ -2308,7 +2308,7 @@ SELECT wordShingleMinHashUTF8('ClickHouse® is a column-oriented database manage
 
 Introduced in: v21.1.0
 
-Splits an ASCII string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`.
+Splits a ASCII string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`.
 Is is case sensitive.
 
 Can be used for detection of semi-duplicate strings with [`bitHammingDistance`](/reference/functions/regular-functions/bit-functions#bitHammingDistance).
@@ -2347,7 +2347,7 @@ SELECT wordShingleSimHash('ClickHouse® is a column-oriented database management
 
 Introduced in: v21.1.0
 
-Splits an ASCII string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`.
+Splits a ASCII string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`.
 It is case insensitive.
 
 Can be used for detection of semi-duplicate strings with [`bitHammingDistance`](/reference/functions/regular-functions/bit-functions#bitHammingDistance).

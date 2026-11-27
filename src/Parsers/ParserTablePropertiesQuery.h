@@ -11,11 +11,8 @@ namespace DB
   */
 class ParserTablePropertiesQuery : public IParserBase
 {
-public:
-    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
-
 protected:
-    [[nodiscard]] const char * getName() const override { return "EXISTS or SHOW CREATE query"; }
+    const char * getName() const override { return "EXISTS or SHOW CREATE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

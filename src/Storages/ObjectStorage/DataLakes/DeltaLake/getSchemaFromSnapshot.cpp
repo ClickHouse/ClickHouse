@@ -92,34 +92,25 @@ class SchemaVisitorData
     friend class SchemaVisitor;
 
 public:
-    /// `engine` is required by FFI helpers such as `::get_from_string_map`. Pass `nullptr` only
+    /// `engine` is required by FFI helpers such as `ffi::get_from_string_map`. Pass `nullptr` only
     /// for visit paths that make no engine-bound FFI calls (e.g. partition column extraction).
-    explicit SchemaVisitorData(::SharedExternEngine * engine_) : engine(engine_) {}
+    explicit SchemaVisitorData(ffi::SharedExternEngine * engine_) : engine(engine_) {}
 
     struct SchemaResult
     {
         DB::NamesAndTypesList names_and_types;
         DB::NameToNameMap physical_names_map;
-        std::unordered_set<String> timestamp_ntz_paths;
-        /// A Delta field name may contain a dot, so two leaves can flatten to one writer path: a path
-        /// that a Delta `timestamp` leaf also takes is ambiguous and keeps the default annotation.
-        std::unordered_set<String> timestamp_writer_paths;
     };
     SchemaResult getSchemaResult();
-    [[nodiscard]] const DB::Names & getPartitionColumns() const { return partition_columns; }
+    const DB::Names & getPartitionColumns() const { return partition_columns; }
 
 private:
     struct Field;
-    /// `element`/`key`/`value` are the Parquet writer's words for array and map children; the kernel's differ.
-    enum class ParentKind { Struct, Array, Map };
-
     DB::NamesAndTypesList getNamesAndTypesFromList(
         size_t list_idx,
         const std::string & parent_logical_path,
         const std::string & parent_physical_path,
-        const std::string & parent_writer_path,
-        ParentKind parent_kind,
-        SchemaResult & result);
+        DB::NameToNameMap & physical_names_map);
 
     struct Field
     {
@@ -152,8 +143,6 @@ private:
         /// There is no TypeIndex::Bool, so we need to tell
         /// when it is int8 and when it is bool.
         bool is_bool = false;
-
-        bool is_timestamp_ntz = false;
     };
     using Fields = std::vector<Field>;
 
@@ -166,14 +155,14 @@ private:
     /// because they are not stored in the actual data,
     /// but instead in data paths directories.
     DB::Names partition_columns;
-    /// Engine handle required by v0.23.0 FFI helpers such as `::get_from_string_map`.
-    ::SharedExternEngine * engine;
+    /// Engine handle required by v0.23.0 FFI helpers such as `ffi::get_from_string_map`.
+    ffi::SharedExternEngine * engine;
 
     std::exception_ptr visitor_exception;
 
     const LoggerPtr log = getLogger("SchemaVisitor");
 
-    using KernelScan = KernelPointerWrapper<::SharedScan, ::free_scan>;
+    using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
 };
 
 /**
@@ -184,55 +173,55 @@ private:
  */
 class SchemaVisitor
 {
-    using KernelSharedSchema = KernelPointerWrapper<::SharedSchema, ::free_schema>;
-    using KernelStringSliceIterator = KernelPointerWrapper<::StringSliceIterator, ::free_string_slice_data>;
+    using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_schema>;
+    using KernelStringSliceIterator = KernelPointerWrapper<ffi::StringSliceIterator, ffi::free_string_slice_data>;
 public:
-    static void visitTableSchema(::SharedSnapshot * snapshot, SchemaVisitorData & data)
+    static void visitTableSchema(ffi::SharedSnapshot * snapshot, SchemaVisitorData & data)
     {
-        KernelSharedSchema schema(::logical_schema(snapshot));
+        KernelSharedSchema schema(ffi::logical_schema(snapshot));
         auto visitor = createVisitor(data);
-        [[maybe_unused]] size_t result = ::visit_schema(schema.get(), &visitor);
+        [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
 
         if (data.visitor_exception)
             std::rethrow_exception(data.visitor_exception);
     }
 
-    static void visitReadSchema(::SharedScan * scan, SchemaVisitorData & data)
+    static void visitReadSchema(ffi::SharedScan * scan, SchemaVisitorData & data)
     {
-        KernelSharedSchema schema(::scan_physical_schema(scan));
+        KernelSharedSchema schema(ffi::scan_physical_schema(scan));
         auto visitor = createVisitor(data);
-        [[maybe_unused]] size_t result = ::visit_schema(schema.get(), &visitor);
+        [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
 
         if (data.visitor_exception)
             std::rethrow_exception(data.visitor_exception);
     }
 
-    static void visitWriteSchema(::SharedWriteContext * write_context, SchemaVisitorData & data)
+    static void visitWriteSchema(ffi::SharedWriteContext * write_context, SchemaVisitorData & data)
     {
-        KernelSharedSchema schema(::get_write_schema(write_context));
+        KernelSharedSchema schema(ffi::get_write_schema(write_context));
         auto visitor = createVisitor(data);
-        [[maybe_unused]] size_t result = ::visit_schema(schema.get(), &visitor);
+        [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
 
         if (data.visitor_exception)
             std::rethrow_exception(data.visitor_exception);
     }
 
-    static void visitPartitionColumns(::SharedSnapshot * snapshot, SchemaVisitorData & data)
+    static void visitPartitionColumns(ffi::SharedSnapshot * snapshot, SchemaVisitorData & data)
     {
-        KernelStringSliceIterator partition_columns_iter(::get_partition_columns(snapshot));
-        while (::string_slice_next(partition_columns_iter.get(), &data, &visitorWrapper<visitPartitionColumn>)) {}
+        KernelStringSliceIterator partition_columns_iter(ffi::get_partition_columns(snapshot));
+        while (ffi::string_slice_next(partition_columns_iter.get(), &data, &visitorWrapper<visitPartitionColumn>)) {}
 
         if (data.visitor_exception)
             std::rethrow_exception(data.visitor_exception);
     }
 
-    static void visitSchema(::SharedSchema * schema, SchemaVisitorData & data)
+    static void visitSchema(ffi::SharedSchema * schema, SchemaVisitorData & data)
     {
         auto visitor = createVisitor(data);
-        [[maybe_unused]] size_t result = ::visit_schema(schema, &visitor);
+        [[maybe_unused]] size_t result = ffi::visit_schema(schema, &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
 
         if (data.visitor_exception)
@@ -268,15 +257,15 @@ private:
             return {};
     }
 
-    static void visitPartitionColumn(void * data, ::KernelStringSlice slice)
+    static void visitPartitionColumn(void * data, ffi::KernelStringSlice slice)
     {
         SchemaVisitorData * state = static_cast<SchemaVisitorData *>(data);
         state->partition_columns.push_back(KernelUtils::fromDeltaString(slice));
     }
 
-    static ::EngineSchemaVisitor createVisitor(SchemaVisitorData & data)
+    static ffi::EngineSchemaVisitor createVisitor(SchemaVisitorData & data)
     {
-        return ::EngineSchemaVisitor{
+        return ffi::EngineSchemaVisitor{
             .data = &data,
             .make_field_list = &visitorWrapper<makeFieldList>,
             .visit_struct = &visitorWrapper<tupleTypeVisitor>,
@@ -294,7 +283,7 @@ private:
             .visit_binary = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::String>>,
             .visit_date = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Date32>>,
             .visit_timestamp = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::DateTime64>>,
-            .visit_timestamp_ntz = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::DateTime64, false, true>>,
+            .visit_timestamp_ntz = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::DateTime64>>,
             .visit_variant = &visitorWrapper<visitVariant>,
         };
     }
@@ -313,11 +302,11 @@ private:
     }
 
     static std::unique_ptr<std::string> extractPhysicalName(
-        const ::CStringMap * metadata,
+        const ffi::CStringMap * metadata,
         SchemaVisitorData * state)
     {
         std::string * physical_name = static_cast<std::string *>(KernelUtils::unwrapResult(
-            ::get_from_string_map(
+            ffi::get_from_string_map(
                 metadata,
                 KernelUtils::toDeltaString("delta.columnMapping.physicalName"),
                 KernelUtils::allocateString,
@@ -326,13 +315,13 @@ private:
         return physical_name ? std::unique_ptr<std::string>(physical_name) : nullptr;
     }
 
-    template <DB::TypeIndex type, bool is_bool = false, bool is_timestamp_ntz = false>
+    template <DB::TypeIndex type, bool is_bool = false>
     static void simpleTypeVisitor(
         void * data,
         uintptr_t sibling_list_id,
-        ::KernelStringSlice name,
+        ffi::KernelStringSlice name,
         bool nullable,
-        const ::CStringMap * metadata)
+        const ffi::CStringMap * metadata)
     {
         SchemaVisitorData * state = static_cast<SchemaVisitorData *>(data);
         auto it = state->type_lists.find(sibling_list_id);
@@ -354,16 +343,15 @@ private:
 
         SchemaVisitorData::Field field(column_name, std::move(type), nullable, physical_name);
         field.is_bool = is_bool;
-        field.is_timestamp_ntz = is_timestamp_ntz;
         it->second->push_back(std::move(field));
     }
 
     static void decimalTypeVisitor(
         void * data,
         uintptr_t sibling_list_id,
-        ::KernelStringSlice name,
+        ffi::KernelStringSlice name,
         bool nullable,
-        const ::CStringMap * metadata,
+        const ffi::CStringMap * metadata,
         uint8_t precision,
         uint8_t scale)
     {
@@ -395,9 +383,9 @@ private:
     static void arrayTypeVisitor(
         void * data,
         uintptr_t sibling_list_id,
-        ::KernelStringSlice name,
+        ffi::KernelStringSlice name,
         bool nullable,
-        const ::CStringMap * metadata,
+        const ffi::CStringMap * metadata,
         uintptr_t child_list_id)
     {
         listBasedTypeVisitor<DB::TypeIndex::Array>(data, sibling_list_id, name, nullable, metadata, child_list_id);
@@ -406,9 +394,9 @@ private:
     static void tupleTypeVisitor(
         void * data,
         uintptr_t sibling_list_id,
-        ::KernelStringSlice name,
+        ffi::KernelStringSlice name,
         bool nullable,
-        const ::CStringMap * metadata,
+        const ffi::CStringMap * metadata,
         uintptr_t child_list_id)
     {
         listBasedTypeVisitor<DB::TypeIndex::Tuple>(data, sibling_list_id, name, nullable, metadata, child_list_id);
@@ -417,9 +405,9 @@ private:
     static void mapTypeVisitor(
         void *data,
         uintptr_t sibling_list_id,
-        ::KernelStringSlice name,
+        ffi::KernelStringSlice name,
         bool nullable,
-        const ::CStringMap * metadata,
+        const ffi::CStringMap * metadata,
         uintptr_t child_list_id)
     {
         listBasedTypeVisitor<DB::TypeIndex::Map>(data, sibling_list_id, name, nullable, metadata, child_list_id);
@@ -428,9 +416,9 @@ private:
     static void visitVariant(
         [[maybe_unused]] void * data,
         [[maybe_unused]] uintptr_t sibling_list_id,
-        [[maybe_unused]] ::KernelStringSlice name,
+        [[maybe_unused]] ffi::KernelStringSlice name,
         [[maybe_unused]] bool nullable,
-        [[maybe_unused]] const ::CStringMap * metadata)
+        [[maybe_unused]] const ffi::CStringMap * metadata)
     {
         /// Not simple to support,
         /// delta lake has its own Variant serialization.
@@ -444,9 +432,9 @@ private:
     static void listBasedTypeVisitor(
         void * data,
         uintptr_t sibling_list_id,
-        ::KernelStringSlice name,
+        ffi::KernelStringSlice name,
         bool nullable,
-        const ::CStringMap * metadata,
+        const ffi::CStringMap * metadata,
         uintptr_t child_list_id)
     {
         SchemaVisitorData * state = static_cast<SchemaVisitorData *>(data);
@@ -477,10 +465,8 @@ private:
 SchemaVisitorData::SchemaResult SchemaVisitorData::getSchemaResult()
 {
     SchemaResult result;
-    result.names_and_types = getNamesAndTypesFromList(0, "", "", "", ParentKind::Struct, result);
+    result.names_and_types = getNamesAndTypesFromList(0, "", "", result.physical_names_map);
     chassert(result.names_and_types.size() == type_lists[0]->size());
-    for (const auto & path : result.timestamp_writer_paths)
-        result.timestamp_ntz_paths.erase(path);
     return result;
 }
 
@@ -488,23 +474,11 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
     size_t list_idx,
     const std::string & parent_logical_path,
     const std::string & parent_physical_path,
-    const std::string & parent_writer_path,
-    ParentKind parent_kind,
-    SchemaResult & result)
+    DB::NameToNameMap & physical_names_map)
 {
     DB::NamesAndTypesList names_and_types;
-    size_t child_index = 0;
     for (const auto & field : *type_lists[list_idx])
     {
-        std::string writer_component = field.name;
-        if (parent_kind == ParentKind::Array)
-            writer_component = "element";
-        else if (parent_kind == ParentKind::Map)
-            writer_component = child_index == 0 ? "key" : "value";
-        ++child_index;
-        const std::string field_writer_path
-            = parent_writer_path.empty() ? writer_component : parent_writer_path + "." + writer_component;
-
         DB::DataTypePtr type;
         if (field.is_bool)
         {
@@ -542,21 +516,21 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             DB::WhichDataType which(field.type);
             /// Compute full ancestor paths for this field so children at any
             /// depth use the complete logical/physical path as the map key/value.
-            const std::string field_logical_path = appendToLogicalPath(parent_logical_path, field.name);
+            const std::string field_logical_path = parent_logical_path.empty()
+                ? field.name
+                : parent_logical_path + "." + field.name;
             const std::string field_physical_path = (!field.physical_name.empty() && !parent_physical_path.empty())
                 ? parent_physical_path + "." + field.physical_name
                 : field.physical_name;
 
             if (which.isTuple())
             {
-                auto child_names_and_types = getNamesAndTypesFromList(
-                    field.child_list_id, field_logical_path, field_physical_path, field_writer_path, ParentKind::Struct, result);
+                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id, field_logical_path, field_physical_path, physical_names_map);
                 type = std::make_shared<DB::DataTypeTuple>(child_names_and_types.getTypes(), child_names_and_types.getNames());
             }
             else if (which.isArray())
             {
-                auto child_types = getNamesAndTypesFromList(
-                    field.child_list_id, field_logical_path, field_physical_path, field_writer_path, ParentKind::Array, result);
+                auto child_types = getNamesAndTypesFromList(field.child_list_id, field_logical_path, field_physical_path, physical_names_map);
                 if (child_types.size() != 1)
                 {
                     throw DB::Exception(
@@ -569,8 +543,7 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             }
             else if (which.isMap())
             {
-                auto child_names_and_types = getNamesAndTypesFromList(
-                    field.child_list_id, field_logical_path, field_physical_path, field_writer_path, ParentKind::Map, result);
+                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id, field_logical_path, field_physical_path, physical_names_map);
                 auto child_types = child_names_and_types.getTypes();
                 if (child_types.size() != 2)
                 {
@@ -589,57 +562,49 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             }
         }
         chassert(type);
-        /// A partition column is top-level and never written to a data file, so it takes no writer path.
-        const bool in_data_file = !parent_writer_path.empty()
-            || std::find(partition_columns.begin(), partition_columns.end(), field.name) == partition_columns.end();
-        if (in_data_file && field.is_timestamp_ntz)
-            result.timestamp_ntz_paths.insert(field_writer_path);
-        else if (in_data_file && field.type == DB::TypeIndex::DateTime64)
-            result.timestamp_writer_paths.insert(field_writer_path);
-
         if (!field.physical_name.empty())
         {
             /// Use the full ancestor path as the map key so that lookups in
             /// replaceTypeNamesToPhysicalRecursively work at any nesting depth.
             /// key:   "grandparent.parent.field"  (full logical path)
             /// value: "grandparent_phys.parent_phys.field_phys" (full physical path)
-            const std::string logical_path = appendToLogicalPath(parent_logical_path, field.name);
+            const std::string logical_path = parent_logical_path.empty()
+                ? field.name
+                : parent_logical_path + "." + field.name;
             const std::string physical_path = parent_physical_path.empty()
                 ? field.physical_name
                 : parent_physical_path + "." + field.physical_name;
-            result.physical_names_map.emplace(logical_path, physical_path);
+            physical_names_map.emplace(logical_path, physical_path);
         }
         names_and_types.emplace_back(field.name, type);
     }
     return names_and_types;
 }
 
-TableSchemaResult getTableSchemaFromSnapshot(
-    ::SharedSnapshot * snapshot, ::SharedExternEngine * engine)
+std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(
+    ffi::SharedSnapshot * snapshot, ffi::SharedExternEngine * engine)
 {
     SchemaVisitorData data(engine);
     SchemaVisitor::visitTableSchema(snapshot, data);
-    SchemaVisitor::visitPartitionColumns(snapshot, data);
     auto result = data.getSchemaResult();
-    return {std::move(result.names_and_types), std::move(result.physical_names_map), std::move(result.timestamp_ntz_paths)};
+    return {result.names_and_types, result.physical_names_map};
 }
 
-DB::NamesAndTypesList getReadSchemaFromSnapshot(::SharedScan * scan, ::SharedExternEngine * engine)
+DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan, ffi::SharedExternEngine * engine)
 {
     SchemaVisitorData data(engine);
     SchemaVisitor::visitReadSchema(scan, data);
     return data.getSchemaResult().names_and_types;
 }
 
-WriteSchemaResult getWriteSchema(::SharedWriteContext * write_context, ::SharedExternEngine * engine)
+DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context, ffi::SharedExternEngine * engine)
 {
     SchemaVisitorData data(engine);
     SchemaVisitor::visitWriteSchema(write_context, data);
-    auto result = data.getSchemaResult();
-    return {std::move(result.names_and_types), std::move(result.timestamp_ntz_paths)};
+    return data.getSchemaResult().names_and_types;
 }
 
-DB::Names getPartitionColumnsFromSnapshot(::SharedSnapshot * snapshot)
+DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot)
 {
     /// Partition column extraction makes no engine-bound FFI calls, so no engine is needed.
     SchemaVisitorData data(nullptr);
@@ -647,7 +612,7 @@ DB::Names getPartitionColumnsFromSnapshot(::SharedSnapshot * snapshot)
     return data.getPartitionColumns();
 }
 
-DB::NamesAndTypesList convertToClickHouseSchema(::SharedSchema * schema, ::SharedExternEngine * engine)
+DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema, ffi::SharedExternEngine * engine)
 {
     SchemaVisitorData data(engine);
     SchemaVisitor::visitSchema(schema, data);
@@ -680,7 +645,7 @@ struct DeltaJSONSchemaVisitor
     std::exception_ptr exception;
     bool has_char_varchar = false;
 
-    [[nodiscard]] const std::vector<Node> & listAt(size_t id) const
+    const std::vector<Node> & listAt(size_t id) const
     {
         auto it = lists.find(id);
         if (it == lists.end())
@@ -696,7 +661,7 @@ struct DeltaJSONSchemaVisitor
         return it->second;
     }
 
-    [[nodiscard]] Poco::Dynamic::Var buildType(const Node & node) const
+    Poco::Dynamic::Var buildType(const Node & node) const
     {
         checkStackSize();
         switch (node.kind)
@@ -733,7 +698,7 @@ struct DeltaJSONSchemaVisitor
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unhandled Delta schema node kind");
     }
 
-    [[nodiscard]] Poco::JSON::Array::Ptr buildFields(size_t list_id) const
+    Poco::JSON::Array::Ptr buildFields(size_t list_id) const
     {
         Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
         for (const auto & node : listAt(list_id))
@@ -788,14 +753,14 @@ uintptr_t deltaMakeFieldList(void * data, uintptr_t reserve)
 
 /// True if the field metadata carries the Spark `__CHAR_VARCHAR_TYPE_STRING` annotation (a CHAR(n)/VARCHAR(n)
 /// column stored physically as `string`).
-bool fieldIsCharVarchar(const ::CStringMap * metadata)
+bool fieldIsCharVarchar(const ffi::CStringMap * metadata)
 {
     if (!metadata)
         return false;
     bool found = false;
-    ::visit_string_map(
+    ffi::visit_string_map(
         metadata, &found,
-        [](::NullableCvoid ctx, ::KernelStringSlice key, ::KernelStringSlice)
+        [](ffi::NullableCvoid ctx, ffi::KernelStringSlice key, ffi::KernelStringSlice)
         {
             if (std::string_view(key.ptr, key.len) == "__CHAR_VARCHAR_TYPE_STRING")
                 *static_cast<bool *>(ctx) = true;
@@ -803,7 +768,7 @@ bool fieldIsCharVarchar(const ::CStringMap * metadata)
     return found;
 }
 
-void deltaPushPrimitive(void * data, uintptr_t sibling, ::KernelStringSlice name, bool nullable, std::string type)
+void deltaPushPrimitive(void * data, uintptr_t sibling, ffi::KernelStringSlice name, bool nullable, std::string type)
 {
     deltaVisitGuarded(data, [&](DeltaJSONSchemaVisitor & v)
     {
@@ -816,7 +781,7 @@ void deltaPushPrimitive(void * data, uintptr_t sibling, ::KernelStringSlice name
     });
 }
 
-void deltaPushComplex(void * data, uintptr_t sibling, ::KernelStringSlice name, bool nullable, uintptr_t child_list_id, DeltaJSONSchemaVisitor::Node::Kind kind)
+void deltaPushComplex(void * data, uintptr_t sibling, ffi::KernelStringSlice name, bool nullable, uintptr_t child_list_id, DeltaJSONSchemaVisitor::Node::Kind kind)
 {
     deltaVisitGuarded(data, [&](DeltaJSONSchemaVisitor & v)
     {
@@ -829,14 +794,14 @@ void deltaPushComplex(void * data, uintptr_t sibling, ::KernelStringSlice name, 
     });
 }
 
-void deltaVisitBoolean(void * d, uintptr_t s, ::KernelStringSlice n, bool nu, const ::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "boolean"); }
-void deltaVisitByte(void * d, uintptr_t s, ::KernelStringSlice n, bool nu, const ::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "byte"); }
-void deltaVisitShort(void * d, uintptr_t s, ::KernelStringSlice n, bool nu, const ::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "short"); }
-void deltaVisitInteger(void * d, uintptr_t s, ::KernelStringSlice n, bool nu, const ::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "integer"); }
-void deltaVisitLong(void * d, uintptr_t s, ::KernelStringSlice n, bool nu, const ::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "long"); }
-void deltaVisitFloat(void * d, uintptr_t s, ::KernelStringSlice n, bool nu, const ::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "float"); }
-void deltaVisitDouble(void * d, uintptr_t s, ::KernelStringSlice n, bool nu, const ::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "double"); }
-void deltaVisitString(void * d, uintptr_t s, ::KernelStringSlice n, bool nu, const ::CStringMap * metadata)
+void deltaVisitBoolean(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "boolean"); }
+void deltaVisitByte(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "byte"); }
+void deltaVisitShort(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "short"); }
+void deltaVisitInteger(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "integer"); }
+void deltaVisitLong(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "long"); }
+void deltaVisitFloat(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "float"); }
+void deltaVisitDouble(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "double"); }
+void deltaVisitString(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap * metadata)
 {
     deltaVisitGuarded(d, [&](DeltaJSONSchemaVisitor & v)
     {
@@ -845,17 +810,17 @@ void deltaVisitString(void * d, uintptr_t s, ::KernelStringSlice n, bool nu, con
     });
     deltaPushPrimitive(d, s, n, nu, "string");
 }
-void deltaVisitBinary(void * d, uintptr_t s, ::KernelStringSlice n, bool nu, const ::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "binary"); }
-void deltaVisitDate(void * d, uintptr_t s, ::KernelStringSlice n, bool nu, const ::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "date"); }
-void deltaVisitTimestamp(void * d, uintptr_t s, ::KernelStringSlice n, bool nu, const ::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "timestamp"); }
-void deltaVisitTimestampNtz(void * d, uintptr_t s, ::KernelStringSlice n, bool nu, const ::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "timestamp_ntz"); }
+void deltaVisitBinary(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "binary"); }
+void deltaVisitDate(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "date"); }
+void deltaVisitTimestamp(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "timestamp"); }
+void deltaVisitTimestampNtz(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "timestamp_ntz"); }
 
-void deltaVisitDecimal(void * d, uintptr_t s, ::KernelStringSlice n, bool nu, const ::CStringMap *, uint8_t precision, uint8_t scale)
+void deltaVisitDecimal(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *, uint8_t precision, uint8_t scale)
 {
     deltaPushPrimitive(d, s, n, nu, fmt::format("decimal({},{})", precision, scale));
 }
 
-void deltaVisitVariant(void * d, uintptr_t, ::KernelStringSlice n, bool, const ::CStringMap *)
+void deltaVisitVariant(void * d, uintptr_t, ffi::KernelStringSlice n, bool, const ffi::CStringMap *)
 {
     deltaVisitGuarded(d, [&](DeltaJSONSchemaVisitor &)
     {
@@ -863,19 +828,19 @@ void deltaVisitVariant(void * d, uintptr_t, ::KernelStringSlice n, bool, const :
     });
 }
 
-void deltaVisitStruct(void * d, uintptr_t s, ::KernelStringSlice n, bool nu, const ::CStringMap *, uintptr_t c) { deltaPushComplex(d, s, n, nu, c, DeltaJSONSchemaVisitor::Node::Kind::Struct); }
-void deltaVisitArray(void * d, uintptr_t s, ::KernelStringSlice n, bool nu, const ::CStringMap *, uintptr_t c) { deltaPushComplex(d, s, n, nu, c, DeltaJSONSchemaVisitor::Node::Kind::Array); }
-void deltaVisitMap(void * d, uintptr_t s, ::KernelStringSlice n, bool nu, const ::CStringMap *, uintptr_t c) { deltaPushComplex(d, s, n, nu, c, DeltaJSONSchemaVisitor::Node::Kind::Map); }
+void deltaVisitStruct(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *, uintptr_t c) { deltaPushComplex(d, s, n, nu, c, DeltaJSONSchemaVisitor::Node::Kind::Struct); }
+void deltaVisitArray(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *, uintptr_t c) { deltaPushComplex(d, s, n, nu, c, DeltaJSONSchemaVisitor::Node::Kind::Array); }
+void deltaVisitMap(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *, uintptr_t c) { deltaPushComplex(d, s, n, nu, c, DeltaJSONSchemaVisitor::Node::Kind::Map); }
 
 }
 
-Poco::JSON::Array::Ptr getDeltaSchemaFieldsFromSnapshot(::SharedSnapshot * snapshot)
+Poco::JSON::Array::Ptr getDeltaSchemaFieldsFromSnapshot(ffi::SharedSnapshot * snapshot)
 {
-    using KernelSharedSchema = KernelPointerWrapper<::SharedSchema, ::free_schema>;
-    KernelSharedSchema schema(::logical_schema(snapshot));
+    using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_schema>;
+    KernelSharedSchema schema(ffi::logical_schema(snapshot));
 
     DeltaJSONSchemaVisitor visitor;
-    ::EngineSchemaVisitor ffi_visitor{
+    ffi::EngineSchemaVisitor ffi_visitor{
         .data = &visitor,
         .make_field_list = &deltaMakeFieldList,
         .visit_struct = &deltaVisitStruct,
@@ -897,7 +862,7 @@ Poco::JSON::Array::Ptr getDeltaSchemaFieldsFromSnapshot(::SharedSnapshot * snaps
         .visit_variant = &deltaVisitVariant,
     };
 
-    uintptr_t top_level_list_id = ::visit_schema(schema.get(), &ffi_visitor);
+    uintptr_t top_level_list_id = ffi::visit_schema(schema.get(), &ffi_visitor);
     if (visitor.exception)
         std::rethrow_exception(visitor.exception);
 
@@ -913,7 +878,7 @@ Poco::JSON::Array::Ptr getDeltaSchemaFieldsFromSnapshot(::SharedSnapshot * snaps
     return visitor.buildFields(top_level_list_id);
 }
 
-/// CH -> kernel schema visitor for `::get_create_table_builder`: registers each leaf via `::visit_field_*`, then the top-level struct.
+/// CH -> kernel schema visitor for `ffi::get_create_table_builder`: registers each leaf via `ffi::visit_field_*`, then the top-level struct.
 
 namespace
 {
@@ -921,7 +886,7 @@ namespace
 /// Register one ClickHouse column as a Delta field; nested types recurse (array elements and map
 /// keys/values are registered as anonymous fields with an empty name).
 uintptr_t visitFieldFromClickHouseType(
-    ::KernelSchemaVisitorState * state,
+    ffi::KernelSchemaVisitorState * state,
     const std::string & name,
     const DB::DataTypePtr & full_type)
 {
@@ -942,7 +907,7 @@ uintptr_t visitFieldFromClickHouseType(
             const auto & array_type = assert_cast<const DB::DataTypeArray &>(*type);
             auto element_id = visitFieldFromClickHouseType(state, /* name */ "", array_type.getNestedType());
             return unwrap(
-                ::visit_field_array(state, name_slice, element_id, nullable, &KernelUtils::allocateError),
+                ffi::visit_field_array(state, name_slice, element_id, nullable, &KernelUtils::allocateError),
                 "visit_field_array");
         }
         case DB::TypeIndex::Map:
@@ -951,7 +916,7 @@ uintptr_t visitFieldFromClickHouseType(
             auto key_id = visitFieldFromClickHouseType(state, /* name */ "", map_type.getKeyType());
             auto value_id = visitFieldFromClickHouseType(state, /* name */ "", map_type.getValueType());
             return unwrap(
-                ::visit_field_map(state, name_slice, key_id, value_id, nullable, &KernelUtils::allocateError),
+                ffi::visit_field_map(state, name_slice, key_id, value_id, nullable, &KernelUtils::allocateError),
                 "visit_field_map");
         }
         case DB::TypeIndex::Tuple:
@@ -964,7 +929,7 @@ uintptr_t visitFieldFromClickHouseType(
             for (size_t i = 0; i < element_types.size(); ++i)
                 child_ids.push_back(visitFieldFromClickHouseType(state, element_names[i], element_types[i]));
             return unwrap(
-                ::visit_field_struct(state, name_slice, child_ids.data(), child_ids.size(), nullable, &KernelUtils::allocateError),
+                ffi::visit_field_struct(state, name_slice, child_ids.data(), child_ids.size(), nullable, &KernelUtils::allocateError),
                 "visit_field_struct");
         }
         default:
@@ -974,28 +939,28 @@ uintptr_t visitFieldFromClickHouseType(
     switch (DB::classifyDeltaPrimitive(type))
     {
         case DB::DeltaPrimitiveType::Boolean:
-            return unwrap(::visit_field_boolean(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_boolean");
+            return unwrap(ffi::visit_field_boolean(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_boolean");
         case DB::DeltaPrimitiveType::Byte:
-            return unwrap(::visit_field_byte(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_byte");
+            return unwrap(ffi::visit_field_byte(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_byte");
         case DB::DeltaPrimitiveType::Short:
-            return unwrap(::visit_field_short(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_short");
+            return unwrap(ffi::visit_field_short(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_short");
         case DB::DeltaPrimitiveType::Integer:
-            return unwrap(::visit_field_integer(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_integer");
+            return unwrap(ffi::visit_field_integer(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_integer");
         case DB::DeltaPrimitiveType::Long:
-            return unwrap(::visit_field_long(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_long");
+            return unwrap(ffi::visit_field_long(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_long");
         case DB::DeltaPrimitiveType::Float:
-            return unwrap(::visit_field_float(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_float");
+            return unwrap(ffi::visit_field_float(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_float");
         case DB::DeltaPrimitiveType::Double:
-            return unwrap(::visit_field_double(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_double");
+            return unwrap(ffi::visit_field_double(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_double");
         case DB::DeltaPrimitiveType::String:
-            return unwrap(::visit_field_string(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_string");
+            return unwrap(ffi::visit_field_string(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_string");
         case DB::DeltaPrimitiveType::Date:
-            return unwrap(::visit_field_date(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_date");
+            return unwrap(ffi::visit_field_date(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_date");
         case DB::DeltaPrimitiveType::Timestamp:
-            return unwrap(::visit_field_timestamp(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_timestamp");
+            return unwrap(ffi::visit_field_timestamp(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_timestamp");
         case DB::DeltaPrimitiveType::Decimal:
             return unwrap(
-                ::visit_field_decimal(
+                ffi::visit_field_decimal(
                     state, name_slice,
                     static_cast<uint8_t>(DB::getDecimalPrecision(*type)),
                     static_cast<uint8_t>(DB::getDecimalScale(*type)),
@@ -1007,7 +972,7 @@ uintptr_t visitFieldFromClickHouseType(
 }
 
 /// Stored in `EngineSchema::visitor` and called once by the kernel; the anonymous namespace gives it internal linkage.
-uintptr_t visitClickHouseSchema(void * schema_void, ::KernelSchemaVisitorState * state)
+uintptr_t visitClickHouseSchema(void * schema_void, ffi::KernelSchemaVisitorState * state)
 {
     auto * ctx = static_cast<KernelCreateSchemaState *>(schema_void);
     try
@@ -1021,7 +986,7 @@ uintptr_t visitClickHouseSchema(void * schema_void, ::KernelSchemaVisitorState *
         /// string alive so the `KernelStringSlice` does not dangle (it points into the string's buffer).
         static const std::string empty_name;
         return KernelUtils::unwrapResult(
-            ::visit_field_struct(
+            ffi::visit_field_struct(
                 state, KernelUtils::toDeltaString(empty_name), field_ids.data(), field_ids.size(),
                 /* nullable */ false,
                 &KernelUtils::allocateError),
@@ -1085,10 +1050,10 @@ void validateSchemaForDeltaCreate(const DB::NamesAndTypesList & schema)
         validateClickHouseTypeForDeltaCreate(column.type);
 }
 
-::EngineSchema buildKernelEngineSchema(KernelCreateSchemaState & state)
+ffi::EngineSchema buildKernelEngineSchema(KernelCreateSchemaState & state)
 {
     /// `schema` is an opaque `void *` the kernel never mutates; the visitor reads `state.schema_list` and stores any error in `state.exception`.
-    return ::EngineSchema{
+    return ffi::EngineSchema{
         /* schema */  &state,
         /* visitor */ &visitClickHouseSchema,
     };

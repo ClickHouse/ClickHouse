@@ -3,9 +3,11 @@ slug: /use-cases/AI/jupyter-notebook
 sidebarTitle: 'Jupyter ノートブックと chDB を使ったデータ探索'
 title: 'Jupyter ノートブックと chDB を使ったデータ探索'
 description: 'このガイドでは、Jupyter ノートブックで ClickHouse Cloud またはローカルファイルのデータを探索するために、chDB を設定して使用する方法を説明します'
-keywords: ['ML', 'Jupyter', 'chDB', 'pandas']
+keywords: ['ML', 'Jupyer', 'chDB', 'pandas']
 doc_type: 'guide'
 ---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
 
 このガイドでは、ClickHouse を基盤とする高速なインプロセス SQL OLAP エンジン [chDB](/ja/chdb/index) を使って、Jupyter ノートブックで ClickHouse Cloud 上のデータセットを探索する方法を学びます。
 
@@ -22,40 +24,30 @@ doc_type: 'guide'
 **学習内容:**
 
 * chDB を使用して Jupyter ノートブックから ClickHouse Cloud に接続する
-* リモートのデータセットにクエリを実行し、結果を PandasのDataFrame に変換する
+* リモートのデータセットにクエリを実行し、結果を Pandas DataFrame に変換する
 * 分析のために Cloud のデータとローカルの CSV ファイルを組み合わせる
 * matplotlib を使用してデータを可視化する
 
 このガイドでは、ClickHouse Cloud でスターターデータセットの 1 つとして利用できる UK Property Price データセットを使用します。
 このデータセットには、1995 年から 2024 年までにイギリスで住宅が売却された価格に関するデータが含まれています。
 
-## セットアップ {#setup}
+<div id="setup">
+  ## セットアップ
+</div>
 
 このデータセットを既存の ClickHouse Cloud サービスに追加するには、アカウント情報を使って [console.clickhouse.cloud](https://console.clickhouse.cloud/) にログインします。
 
 左側のメニューで `Data sources` をクリックし、次に `Predefined sample data` をクリックします。
 
-<div className="ch-image-md">
-  <Frame>
-    ![サンプルデータセットを追加](/images/use-cases/AI_ML/jupyter/1.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="サンプルデータセットを追加" />
 
 UK property price paid data (4GB) のカードで `Get started` を選択します。
 
-<div className="ch-image-md">
-  <Frame>
-    ![英国の不動産価格データセットを選択](/images/use-cases/AI_ML/jupyter/2.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="英国の不動産価格データセットを選択" />
 
 次に `Import dataset` をクリックします。
 
-<div className="ch-image-md">
-  <Frame>
-    ![英国の不動産価格データセットをインポート](/images/use-cases/AI_ML/jupyter/3.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="英国の不動産価格データセットをインポート" />
 
 ClickHouse は `default` データベースに `pp_complete` テーブルを自動的に作成し、そのテーブルに 2,892 万行の価格データを取り込みます。
 
@@ -88,20 +80,12 @@ jupyter notebook
 新しいブラウザーウィンドウが開き、`localhost:8888` に Jupyter インターフェイスが表示されます。
 新しいノートブックを作成するには、`File` &gt; `New` &gt; `Notebook` をクリックします。
 
-<div className="ch-image-md">
-  <Frame>
-    ![新しいノートブックを作成](/images/use-cases/AI_ML/jupyter/4.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/4.webp" alt="新しいノートブックを作成" />
 
 カーネルの選択を求められます。
 使用可能な Python カーネルをどれでも選択できます。この例では `ipykernel` を選択します。
 
-<div className="ch-image-md">
-  <Frame>
-    ![カーネルを選択](/images/use-cases/AI_ML/jupyter/5.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/5.webp" alt="カーネルを選択" />
 
 空のセルに、リモートの ClickHouse Cloud インスタンスへの接続に使用する chDB をインストールするため、次のコマンドを入力します。
 
@@ -118,13 +102,15 @@ result = chdb.query("SELECT 'Hello, ClickHouse!' as message")
 print(result)
 ```
 
-## データの探索 {#exploring-the-data}
+<div id="exploring-the-data">
+  ## データの探索
+</div>
 
 UK price paid データのセットアップが完了し、Jupyter ノートブックで chDB も動作しているので、さっそくデータを探索していきましょう。
 
 ここでは、英国の特定の地域、たとえば首都ロンドンで、価格が時系列でどのように変化したかを調べたいとします。
 ClickHouse の [`remoteSecure`](/ja/reference/functions/table-functions/remote) 関数を使うと、ClickHouse Cloud から簡単にデータを取得できます。
-また、chDB にこのデータをプロセス内で PandasのDataFrame として返させることもできます。これは、データを扱ううえで便利でなじみのある方法です。
+また、chDB にこのデータをプロセス内で Pandas の DataFrame として返させることもできます。これは、データを扱ううえで便利でなじみのある方法です。
 
 次のクエリを記述して、ClickHouse Cloud サービスから UK price paid データを取得し、それを `pandas.DataFrame` に変換してください。
 
@@ -161,7 +147,7 @@ df = chdb.query(query, "DataFrame")
 df.head()
 ```
 
-上のスニペットでは、`chdb.query(query, "DataFrame")` は指定したクエリを実行し、その結果を PandasのDataFrame としてターミナルに出力します。
+上のスニペットでは、`chdb.query(query, "DataFrame")` は指定したクエリを実行し、その結果を Pandas の DataFrame としてターミナルに出力します。
 このクエリでは、ClickHouse Cloud に接続するために `remoteSecure` 関数を使用しています。
 `remoteSecure` 関数は、次のパラメータを受け取ります。
 
@@ -179,11 +165,7 @@ df.head()
 
 `df.head` は、返されたデータの先頭数行のみを表示します。
 
-<div className="ch-image-md">
-  <Frame>
-    ![データフレームのプレビュー](/images/use-cases/AI_ML/jupyter/6.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/6.webp" alt="DataFrame のプレビュー" />
 
 新しいセルで次のコマンドを実行し、カラムの型を確認します。
 
@@ -220,11 +202,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-<div className="ch-image-md">
-  <Frame>
-    ![データフレームのプレビュー](/images/use-cases/AI_ML/jupyter/7.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/7.webp" alt="DataFrame のプレビュー" />
 
 当然といえば当然ですが、ロンドンの不動産価格は時間の経過とともに大幅に上昇しています。
 
@@ -279,11 +257,7 @@ df_2.head()
   ```
 </Accordion>
 
-<div className="ch-image-md">
-  <Frame>
-    ![データフレームのプレビュー](/images/use-cases/AI_ML/jupyter/8.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/8.webp" alt="データフレームのプレビュー" />
 
 2020 年以降のデータはありませんが、1995 年から 2019 年までの 2 つのデータセットを対比してプロットできます。
 新しいセルで、次のコマンドを実行します。
@@ -329,11 +303,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-<div className="ch-image-md">
-  <Frame>
-    ![リモートデータセットとローカルデータセットのプロット](/images/use-cases/AI_ML/jupyter/9.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/9.webp" alt="リモートデータセットとローカルデータセットのプロット" />
 
 プロットしたデータを見ると、販売件数は1995年の約160,000件から始まり、急速に増加して1999年には約540,000件でピークに達したことがわかります。
 その後、件数は2000年代半ばにかけて大きく減少し、2007～2008年の金融危機ではさらに大幅に落ち込み、約140,000件まで低下しました。
@@ -342,7 +312,7 @@ plt.show()
 販売件数とは対照的に、価格は2008年の危機の影響をほとんど受けず、上昇基調を維持しました。驚きですね！
 
 <div id="summary">
-  ## まとめ {#summary}
+  ## まとめ
 </div>
 
 このガイドでは、chDB を使って ClickHouse Cloud とローカルのデータソースを接続し、Jupyter ノートブックでシームレスにデータを探索する方法を紹介しました。

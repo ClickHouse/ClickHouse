@@ -7,12 +7,17 @@ keywords: ['mises à niveau de ClickHouse Managed Postgres', 'version de Postgre
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/fr/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
+
 ClickHouse Managed Postgres gère les mises à niveau de version de PostgreSQL pour que vos instances restent sécurisées et à jour. Les mises à niveau de version mineures comme les mises à niveau de version majeure sont prises en charge avec une interruption minimale.
 
-## Mises à jour de maintenance {#maintenance-updates}
+<div id="maintenance-updates">
+  ## Mises à jour de maintenance
+</div>
 
 La maintenance régulière des instances PostgreSQL comprend les éléments suivants :
 
@@ -24,7 +29,9 @@ Ces opérations sont effectuées par basculement et n’entraînent généraleme
 
 Pour les instances avec des [standbys](/fr/products/managed-postgres/high-availability) activés, la mise à niveau est d’abord appliquée au standby, puis un basculement est effectué afin de minimiser l’indisponibilité.
 
-## Mises à niveau planifiées {#scheduled-upgrades}
+<div id="scheduled-upgrades">
+  ## Mises à niveau planifiées
+</div>
 
 <ScalePlanFeatureBadge feature="Mises à niveau planifiées" linking_verb_are="true" />
 
@@ -37,7 +44,9 @@ Avec le plan Enterprise, vous pouvez également limiter les mises à niveau à c
 [jours de la semaine](#days-of-the-week). Avec le plan Scale, vous choisissez uniquement la période,
 et les mises à niveau peuvent être appliquées n&#39;importe quel jour au cours de celle-ci.
 
-### Configurer une planification {#configure-a-schedule}
+<div id="configure-a-schedule">
+  ### Configurer une planification
+</div>
 
 <Steps>
   <Step title="Ouvrir les paramètres de l’instance" id="open-settings">
@@ -71,7 +80,9 @@ Vous devez disposer de l’autorisation `control-plane:postgres-service:manage` 
 sa planification. Les commandes sont également désactivées lorsqu’une instance est arrêtée ou est encore
 en cours de provisionnement.
 
-### Périodes horaires {#time-periods}
+<div id="time-periods">
+  ### Périodes horaires
+</div>
 
 Les créneaux durent deux heures et sont toujours exprimés en UTC ; il n&#39;est pas possible de sélectionner un fuseau horaire local. Les créneaux disponibles sont :
 
@@ -86,7 +97,9 @@ Les créneaux durent deux heures et sont toujours exprimés en UTC ; il n&#39;e
 
 Les heures de début personnalisées, les durées de créneau personnalisées et plusieurs créneaux par instance ne sont pas pris en charge.
 
-### Jours de la semaine {#days-of-the-week}
+<div id="days-of-the-week">
+  ### Jours de la semaine
+</div>
 
 <EnterprisePlanFeatureBadge feature="Limiter les mises à niveau à certains jours de la semaine" />
 
@@ -96,10 +109,12 @@ La sélection des jours est facultative :
 * **Un ou plusieurs jours sélectionnés** — les mises à niveau ne sont appliquées que ces jours-là, au cours de la
   période choisie. Sélectionner les sept jours revient à n’en sélectionner aucun.
 
-### Champ d’application d’une planification {#schedule-scope}
+<div id="schedule-scope">
+  ### Champ d’application d’une planification
+</div>
 
 Une planification régit uniquement la **maintenance de la plateforme** : les mises à niveau de versions mineures, les
-mises à jour de fonctionnalités du service managé et les correctifs du système d’exploitation décrits dans
+mises à jour de fonctionnalités du service géré et les correctifs du système d’exploitation décrits dans
 [Mises à jour de maintenance](#maintenance-updates).
 
 Les modifications que vous initiez vous-même ne sont pas reportées à ce créneau et sont appliquées dès
@@ -108,18 +123,22 @@ le redimensionnement du stockage et la modification des [paramètres de configur
 
 <Note>
   Les mises à niveau planifiées sont effectuées dans la mesure du possible. La maintenance peut être appliquée en dehors de votre créneau lorsqu’elle est
-  nécessaire au bon fonctionnement de votre instance, par exemple lorsque l’utilisation du disque atteint 95 %, ou pour des
+  nécessaire au bon fonctionnement de votre instance — par exemple lorsque l’utilisation du disque atteint 95 % — ou pour des
   correctifs de sécurité critiques et des corrections de vulnérabilités. Vous serez informé de ces exceptions si
   nécessaire.
 </Note>
 
-### Répliques de lecture {#read-replicas}
+<div id="read-replicas">
+  ### Répliques de lecture
+</div>
 
 Les [répliques de lecture](/fr/products/managed-postgres/read-replicas) suivent la planification de leur
 instance principale et ne disposent pas de leur propre planification. La section **Mises à niveau planifiées**
 ne s&#39;affiche donc pas pour elles.
 
-## Mises à niveau de version majeure {#major-version-upgrades}
+<div id="major-version-upgrades">
+  ## Mises à niveau de version majeure
+</div>
 
 Les mises à niveau de version majeure (par ex. de 17.x à 18.x) via l’UI et l’API arriveront prochainement.
 En attendant, contactez le [support](https://clickhouse.com/support/program) pour mettre à niveau votre instance ClickHouse Managed Postgres.

@@ -1,8 +1,6 @@
--- Tags: no-fasttest, no-parallel-replicas
+-- Tags: no-fasttest
 -- ^^ ANTLR4 support is disabled in the fast-test build, and the PromQL
 -- grammar requires it.
--- Tag no-parallel-replicas: every parallel replica reads all rows of the table behind `timeSeriesTags`, so each row
--- is returned once per replica, see https://github.com/ClickHouse/ClickHouse/issues/118130.
 
 -- The `tags` column of the tags target table contains all the tags, including the metric name
 -- (the `__name__` tag) and the tags with dedicated columns from the `tags_to_columns` setting.
@@ -36,5 +34,20 @@ SELECT countIf(id = tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(t
 
 SELECT 'prometheusQuery:';
 SELECT tags, value FROM prometheusQuery(ts, 'http_requests', 1080) ORDER BY tags;
+
+-- For compatibility an id-generator expression can reference `all_tags` - there is no such column,
+-- but on insertion it's resolved as the same data as the `tags` column.
+ALTER TABLE ts MODIFY SETTING id_generator = 'tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags)))';
+
+INSERT INTO ts (metric_name, tags, samples) VALUES
+    ('http_requests', {'job': 'miner', 'instance': 'host3:8080'}, [(toDateTime64(1120, 3), 3.5)]);
+
+SELECT 'id is calculated by the altered id_generator:';
+SELECT countIf(id = tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, tags)))), count()
+FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts') WHERE tags['job'] = 'miner';
+
+-- The time series inserted before the ALTER are still readable together with the new one.
+SELECT 'prometheusQuery after ALTER:';
+SELECT tags, value FROM prometheusQuery(ts, 'http_requests', 1140) ORDER BY tags;
 
 DROP TABLE ts;

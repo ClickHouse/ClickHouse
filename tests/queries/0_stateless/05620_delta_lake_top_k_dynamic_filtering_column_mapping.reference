@@ -1,9 +1,0 @@
---- column stored under the name of another column
-99999	4
-99998	3
-99997	2
-99999	4
-99998	3
-99997	2
---- column stored under its own name
-[[0], [1], [2]] read fewer rows: True

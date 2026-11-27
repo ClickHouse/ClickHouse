@@ -126,9 +126,6 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             if (cleanup)
                 out << "\ncleanup: " << cleanup;
 
-            if (bypass_min_unreserved_space)
-                out << "\nbypass_min_unreserved_space: " << bypass_min_unreserved_space;
-
             if (!patch_parts.empty())
             {
                 out << "\napply_patches: " << patch_parts.size();
@@ -317,10 +314,6 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
                 else if (checkString("cleanup: ", in))
                 {
                     in >> cleanup;
-                }
-                else if (checkString("bypass_min_unreserved_space: ", in))
-                {
-                    in >> bypass_min_unreserved_space;
                 }
                 else if (checkString("apply_patches:", in))
                 {

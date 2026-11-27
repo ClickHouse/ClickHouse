@@ -10,10 +10,12 @@ integration:
   - category: 'clickpipes'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 В этой статье показано, как клиенты ClickPipes могут использовать доступ на основе ролей для аутентификации в Amazon Kinesis и безопасного доступа к своим потокам данных.
 
 <div id="prerequisite">
-  ## Предварительные требования {#prerequisite}
+  ## Предварительные требования
 </div>
 
 Чтобы воспользоваться этим руководством, вам потребуется:
@@ -21,23 +23,23 @@ integration:
 * Активный сервис ClickHouse Cloud
 * Учетная запись AWS
 
-## Введение {#introduction}
-
-Прежде чем переходить к настройке безопасного доступа к Kinesis, важно понять сам механизм. Ниже кратко описано, как ClickPipes могут получать доступ к потокам Amazon Kinesis, принимая на себя роль в учетных записях AWS клиентов.
-
-<div className="ch-image-lg">
-  <Frame>
-    ![Безопасный доступ к Kinesis](/images/integrations/data-ingestion/clickpipes/securekinesis.jpg)
-  </Frame>
+<div id="introduction">
+  ## Введение
 </div>
+
+Прежде чем переходить к настройке безопасного доступа к Kinesis, важно понять сам механизм. Ниже кратко описано, как ClickPipes могут получать доступ к потокам Amazon Kinesis, принимая на себя роль в AWS-аккаунтах клиентов.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/securekinesis.jpg" alt="Безопасный доступ к Kinesis" size="lg" border />
 
 При таком подходе клиенты могут управлять всем доступом к своим потокам данных Kinesis из одного места (через IAM-политику принимаемой на себя роли), не изменяя политику доступа для каждого потока по отдельности.
 
 <div id="setup">
-  ## Настройка {#setup}
+  ## Настройка
 </div>
 
-### Получение ARN роли IAM для сервиса ClickHouse {#obtaining-the-clickhouse-service-iam-role-arn}
+<div id="obtaining-the-clickhouse-service-iam-role-arn">
+  ### Получение ARN роли IAM для сервиса ClickHouse
+</div>
 
 * 1. Войдите в свою учетную запись ClickHouse Cloud.
 * 2. Выберите сервис ClickHouse, для которого хотите создать интеграцию
@@ -45,18 +47,14 @@ integration:
 * 4. Прокрутите страницу вниз до раздела **Network security information** в нижней части страницы
 * 5. Скопируйте значение **Service role ID (IAM)** для сервиса, как показано ниже.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Secure S3 ARN](/images/cloud/security/secures3_arn.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/security/secures3_arn.webp" alt="Безопасный S3 ARN" size="lg" border />
 
 <div id="setting-up-iam-assume-role">
-  ### Настройка AssumeRole в IAM {#setting-up-iam-assume-role}
+  ### Настройка AssumeRole в IAM
 </div>
 
 <div id="manually-create-iam-role">
-  #### Создайте роль IAM вручную. {#manually-create-iam-role}
+  #### Создайте роль IAM вручную.
 </div>
 
 * 1. Войдите в свою учетную запись AWS в веб-браузере под пользователем IAM, у которого есть разрешение на создание ролей IAM и управление ими.

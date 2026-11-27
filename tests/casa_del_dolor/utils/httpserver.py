@@ -165,9 +165,7 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
 class DolorHTTPServer:
     def __init__(
         self,
-        # An IPv4 literal: the server listens on IPv4 only, while BuzzHouse resolves `localhost`
-        # through `DNSResolver`, which picks `::1` or `127.0.0.1` at random per request
-        host="127.0.0.1",
+        host="localhost",
         port=8080,
         attachment=None,
         handler_kwargs={},

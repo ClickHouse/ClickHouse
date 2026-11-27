@@ -21,10 +21,10 @@ struct MarkInCompressedFile
 
     auto operator<=>(const MarkInCompressedFile &) const = default;
 
-    [[nodiscard]] auto asTuple() const { return std::make_tuple(offset_in_compressed_file, offset_in_decompressed_block); }
+    auto asTuple() const { return std::make_tuple(offset_in_compressed_file, offset_in_decompressed_block); }
 
-    [[nodiscard]] String toString() const;
-    [[nodiscard]] String toStringWithRows(size_t rows_num) const;
+    String toString() const;
+    String toStringWithRows(size_t rows_num) const;
 };
 
 /**
@@ -92,11 +92,11 @@ public:
     /// Create from a complete plain marks array.
     static std::shared_ptr<MarksInCompressedFile> create(const PlainArray & marks);
 
-    [[nodiscard]] MarkInCompressedFile get(size_t idx) const;
+    MarkInCompressedFile get(size_t idx) const;
 
-    [[nodiscard]] size_t approximateMemoryUsage() const;
+    size_t approximateMemoryUsage() const;
 
-    [[nodiscard]] size_t getNumberOfMarks() const { return num_marks; }
+    size_t getNumberOfMarks() const { return num_marks; }
 
     static constexpr size_t MARKS_PER_BLOCK = 256;
 
@@ -148,7 +148,7 @@ private:
     PODArray<UInt64, 4096, JemallocCacheAllocator> packed;
 
     // Mark idx -> {block info, bit offset in `packed`}.
-    [[nodiscard]] std::tuple<const BlockInfo *, size_t> lookUpMark(size_t idx) const;
+    std::tuple<const BlockInfo *, size_t> lookUpMark(size_t idx) const;
 };
 
 using PlainMarksByName = std::unordered_map<String, std::unique_ptr<MarksInCompressedFile::PlainArray>>;

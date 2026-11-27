@@ -88,16 +88,6 @@ SQLQueryPiece applyBinaryOperatorOr(
     ///
     String step2;
     {
-        bool right_metric_name_dropped = right_argument.metric_name_dropped;
-        ASTPtr right_join_key = makeJoinKeyColumn(
-            right,
-            transformGroupASTForBinaryOperator(
-                operator_node,
-                make_intrusive<ASTIdentifier>(ColumnNames::Group),
-                /*drop_metric_name=*/ true,
-                right_metric_name_dropped),
-            context);
-
         SelectQueryBuilder builder;
 
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
@@ -126,10 +116,15 @@ SQLQueryPiece applyBinaryOperatorOr(
         builder.join_strictness = JoinStrictness::Any;
         builder.join_table = right;
 
+        bool right_metric_name_dropped = right_argument.metric_name_dropped;
         builder.join_on = makeASTFunction(
             "equals",
-            make_intrusive<ASTIdentifier>(Strings{step1, ColumnNames::JoinGroup}),
-            std::move(right_join_key));
+            make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup),
+            transformGroupASTForBinaryOperator(
+                operator_node,
+                make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                /*drop_metric_name=*/ true,
+                right_metric_name_dropped));
 
         ASTPtr step2_ast = builder.getSelectQuery();
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step2_ast), SQLSubqueryType::TABLE});

@@ -4,8 +4,6 @@
       "group": "ClickHouse guides",
       "pages": [
         "ko/guides/clickhouse/index",
-        "ko/guides/clickhouse/kusto-query-language",
-        "ko/guides/clickhouse/logsql",
         {
           "group": "Data formats",
           "pages": [
@@ -233,7 +231,6 @@
             "ko/guides/use-cases/ai-ml/index",
             "ko/guides/use-cases/ai-ml/vector-search",
             "ko/guides/use-cases/ai-ml/ai-powered-sql-generation",
-            "ko/guides/use-cases/ai-ml/import-langfuse-trace-data",
             {
               "group": "Data exploration",
               "pages": [
@@ -279,5 +276,6 @@
       ]
     }
   ],
+  "icon": "/images/icons/icon-guides.svg",
   "item": "Guides"
 }

@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel
 -- Tag no-parallel: uses the server-global failpoint mt_select_parts_to_mutate_no_free_threads
 
 -- A merge writes its result with the column names of the current metadata, so it materializes a
@@ -7,6 +7,8 @@
 -- replaced, reads the column as missing and fills defaults - losing every value of a column that has
 -- no default expression to refill from.
 -- https://github.com/ClickHouse/ClickHouse/issues/111001
+
+set allow_experimental_dynamic_type = 1;
 
 drop table if exists t_rename_materialized_by_merge;
 

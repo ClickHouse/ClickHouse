@@ -19,10 +19,10 @@ using ContextPtr = std::shared_ptr<const Context>;
 namespace DeltaLake
 {
 
-/// EnginePredicate used in ::scan.
+/// EnginePredicate used in ffi::scan.
 /// A predicate which allows to implement internal delta-kernel-rs filtering
 /// based on statistics and partitions pruning.
-class EnginePredicate : public ::EnginePredicate
+class EnginePredicate : public ffi::EnginePredicate
 {
     friend struct EngineIteratorData;
 public:
@@ -39,7 +39,7 @@ public:
         visitor = &visitPredicate;
     }
 
-    [[nodiscard]] bool hasException() const { return exception != nullptr; }
+    bool hasException() const { return exception != nullptr; }
 
     void setException(std::exception_ptr exception_)
     {
@@ -48,9 +48,9 @@ public:
             exception = exception_;
     }
 
-    [[nodiscard]] const DB::ActionsDAG & getFilterDAG() const { return filter; }
-    [[nodiscard]] DB::ContextPtr getContext() const { return context; }
-    [[nodiscard]] const DB::FormatSettings & getFormatSettings() const { return format_settings; }
+    const DB::ActionsDAG & getFilterDAG() const { return filter; }
+    DB::ContextPtr getContext() const { return context; }
+    const DB::FormatSettings & getFormatSettings() const { return format_settings; }
 
 private:
     const LoggerPtr log = getLogger("EnginePredicate");
@@ -65,7 +65,7 @@ private:
     DB::ContextPtr context;
     const DB::FormatSettings format_settings;
 
-    static uintptr_t visitPredicate(void * data, ::KernelExpressionVisitorState * state);
+    static uintptr_t visitPredicate(void * data, ffi::KernelExpressionVisitorState * state);
 };
 
 std::shared_ptr<EnginePredicate> getEnginePredicate(

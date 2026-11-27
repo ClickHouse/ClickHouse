@@ -19,7 +19,9 @@ doc_type: 'reference'
   모범 사례와 성능 최적화 방법을 포함한 ReplacingMergeTree의 자세한 가이드는 [여기](/ko/concepts/features/operations/update/replacing-merge-tree)에서 확인할 수 있습니다.
 </Note>
 
-## 테이블 생성 {#creating-a-table}
+<div id="creating-a-table">
+  ## 테이블 생성
+</div>
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -41,11 +43,15 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
   행의 고유성은 `PRIMARY KEY`가 아니라 테이블의 `ORDER BY` 테이블 절에 따라 결정됩니다.
 </Note>
 
-## ReplacingMergeTree 매개변수 {#replacingmergetree-parameters}
+<div id="replacingmergetree-parameters">
+  ## ReplacingMergeTree 매개변수
+</div>
 
-### `ver` {#ver}
+<div id="ver">
+  ### `ver`
+</div>
 
-`ver` — 버전 번호를 담는 컬럼입니다. 유형은 `UInt*`, `Date`, `DateTime` 또는 `DateTime64`입니다. 선택적 매개변수입니다. 다른 컬럼의 서브컬럼을 지정할 수도 있습니다. 예를 들어 `Tuple`의 원소나 `JSON`의 타입이 지정된 경로를 사용할 수 있습니다: `ReplacingMergeTree(meta.ver)`.
+`ver` — 버전 번호를 담는 컬럼입니다. 유형은 `UInt*`, `Date`, `DateTime` 또는 `DateTime64`입니다. 선택적 매개변수입니다.
 
 머지 시 `ReplacingMergeTree`는 동일한 정렬 키를 가진 모든 행 중 하나만 남깁니다.
 
@@ -55,7 +61,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 예시:
 
 ```sql
--- without ver - the last inserted 'wins'
+-- ver 없음 - 마지막으로 삽입된 행이 '우선'
 CREATE TABLE myFirstReplacingMT
 (
     `key` Int64,
@@ -74,7 +80,7 @@ SELECT * FROM myFirstReplacingMT FINAL;
 │   1 │ second  │ 2020-01-01 00:00:00 │
 └─────┴─────────┴─────────────────────┘
 
--- with ver - the row with the biggest ver 'wins'
+-- ver 있음 - ver 값이 가장 큰 행이 '우선'
 CREATE TABLE mySecondReplacingMT
 (
     `key` Int64,
@@ -94,11 +100,13 @@ SELECT * FROM mySecondReplacingMT FINAL;
 └─────┴─────────┴─────────────────────┘
 ```
 
-### `is_deleted` {#is_deleted}
+<div id="is_deleted">
+  ### `is_deleted`
+</div>
 
 `is_deleted` — 머지 중 이 행의 데이터가 현재 state를 나타내는지, 또는 삭제 대상인지를 판단하는 데 사용하는 컬럼 이름입니다. `1`은 &quot;deleted&quot; 행이고, `0`은 &quot;state&quot; 행입니다.
 
-컬럼의 데이터 타입 — `UInt8`. `ver`와 마찬가지로 다른 컬럼의 서브컬럼일 수 있습니다.
+컬럼의 데이터 타입 — `UInt8`.
 
 <Note>
   `is_deleted`는 `ver`를 사용할 때만 활성화할 수 있습니다.
@@ -119,7 +127,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
 예시:
 
 ```sql
--- with ver and is_deleted
+-- ver 및 is_deleted 사용
 CREATE OR REPLACE TABLE myThirdReplacingMT
 (
     `key` Int64,
@@ -138,7 +146,7 @@ select * from myThirdReplacingMT final;
 
 0 rows in set. Elapsed: 0.003 sec.
 
--- delete rows with is_deleted
+-- is_deleted로 행 삭제
 OPTIMIZE TABLE myThirdReplacingMT FINAL CLEANUP;
 
 INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 00:00:00', 0);
@@ -150,7 +158,9 @@ select * from myThirdReplacingMT final;
 └─────┴─────────┴─────────────────────┴────────────┘
 ```
 
-## 쿼리 절 {#query-clauses}
+<div id="query-clauses">
+  ## 쿼리 절
+</div>
 
 `ReplacingMergeTree` 테이블을 생성할 때는 `MergeTree` 테이블을 생성할 때와 동일한 [절](/ko/reference/engines/table-engines/mergetree-family/mergetree)이 필요합니다.
 
@@ -175,7 +185,9 @@ select * from myThirdReplacingMT final;
   * `ver` - 버전 정보를 담는 컬럼입니다. 선택적 매개변수입니다. 자세한 설명은 위 내용을 참조하십시오.
 </details>
 
-## 쿼리 시점 중복 제거 &amp; FINAL {#query-time-de-duplication--final}
+<div id="query-time-de-duplication--final">
+  ## 쿼리 시점 중복 제거 &amp; FINAL
+</div>
 
 머지 시점에 ReplacingMergeTree는 `ORDER BY` 컬럼 값(테이블 생성 시 사용됨)을 고유 식별자로 사용해 중복 행을 식별하고, 가장 높은 버전만 유지합니다. 그러나 이 방식은 결국 정확한 상태에 수렴할 뿐, 행이 중복 제거된다고 보장하지 않으므로 이에 의존해서는 안 됩니다. 따라서 쿼리에서는 업데이트 행과 삭제 행도 함께 고려될 수 있어, 올바르지 않은 결과가 반환될 수 있습니다.
 

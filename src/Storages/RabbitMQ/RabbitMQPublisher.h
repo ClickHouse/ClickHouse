@@ -43,8 +43,7 @@ public:
 
     /// Publishes a portion of messages (republished ones first), runs the event loop
     /// and restores the connection and the channel if they are lost.
-    /// Returns the error if the broker rejected a publish by closing the channel, otherwise an empty string.
-    String publishStep(Payloads & payloads);
+    void publishStep(Payloads & payloads);
 
     /// Whether some messages are not confirmed by the server yet or have to be republished.
     bool hasPendingDeliveries() const { return !returned.empty() || !delivery_record.empty(); }
@@ -83,9 +82,6 @@ private:
 
     std::unique_ptr<AMQP::TcpChannel> channel;
     bool channel_ready = false;
-    String channel_error;
-    /// `channel` belongs to a connection that `reconnect` replaced but did not finish connecting.
-    bool reconnect_failed = false;
 
     /// Channel errors lead to channel closure, need to count number of recreated channels to update channel id
     UInt64 channel_id_counter = 0;

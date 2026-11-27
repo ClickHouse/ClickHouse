@@ -10,8 +10,6 @@
 #include <Storages/System/StorageSystemStackTrace.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
-#include <Common/HiddenSecret.h>
-#include <Common/StringUtils.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -24,9 +22,7 @@
 #include <IO/S3/getAvailabilityZone.h>
 #include <chrdkafka_conf_sensitive.h>
 #include <algorithm>
-#include <charconv>
 #include <csignal>
-#include <limits>
 #include <unordered_set>
 
 namespace CurrentMetrics
@@ -47,7 +43,7 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_security_protocol;
     extern const KafkaSettingsString kafka_sasl_mechanism;
     extern const KafkaSettingsString kafka_sasl_username;
-    extern const KafkaSettingsSecretString kafka_sasl_password;
+    extern const KafkaSettingsString kafka_sasl_password;
     extern const KafkaSettingsString kafka_compression_codec;
     extern const KafkaSettingsInt64 kafka_compression_level;
     extern const KafkaSettingsString kafka_autodetect_client_rack;
@@ -59,33 +55,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
-}
-
-namespace
-{
-
-/// librdkafka prints pointers with `%p`, e.g. `log_cb = 0x55d1c0a3e2f0` with `debug=conf`.
-/// Its messages reach clients through `send_logs_level`, so every hexadecimal number is hidden.
-std::string hideHexNumbers(std::string_view message)
-{
-    std::string res;
-    res.reserve(message.size());
-    for (size_t i = 0; i < message.size();)
-    {
-        if (message[i] == '0' && i + 2 < message.size() && message[i + 1] == 'x' && isHexDigit(message[i + 2]))
-        {
-            res += "0x";
-            res += HIDDEN_SECRET;
-            i += 2;
-            while (i < message.size() && isHexDigit(message[i]))
-                ++i;
-        }
-        else
-            res += message[i++];
-    }
-    return res;
-}
-
 }
 
 template <typename TKafkaStorage>
@@ -233,29 +202,9 @@ void checkKafkaPropertyName(const String & key)
 String toKafkaPropertyName(const String & key)
 {
     checkKafkaPropertyName(key);
-    const String name = (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
-    /// `test.mock.num.brokers` starts a mock cluster that uses memory addresses as member IDs.
-    if (name.starts_with("test."))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka property {} is not allowed", name);
-    return name;
-}
-
-/// Rejects the values of the allowed properties that librdkafka accepts but cannot use.
-void checkSQLKafkaPropertyValue(const String & name, const String & value)
-{
-    if (name != "topic.metadata.propagation.max.ms")
-        return;
-
-    /// librdkafka accepts up to 3600000 but converts the value to microseconds in a 32-bit `int`: larger values overflow.
-    /// The format is stricter than the one of librdkafka (which reads a prefix of the value with `strtol`),
-    /// so the number that librdkafka reads is never greater than the number checked here.
-    static constexpr UInt64 max_value = std::numeric_limits<int>::max() / 1000;
-    UInt64 parsed = 0;
-    const char * end = value.data() + value.size();
-    const auto [pos, error] = std::from_chars(value.data(), end, parsed);
-    if (error != std::errc() || pos != end || parsed > max_value)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Kafka property `{}` must be an integer between 0 and {}, got `{}`", name, max_value, value);
+    /// "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
+    /// See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
+    return (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
 }
 
 /// Only properties reviewed for use without access to server-local resources may be set from SQL.
@@ -352,7 +301,6 @@ void checkSQLKafkaProperty(const String & name, const String & value)
         "topic.compression.type",
         "topic.delivery.timeout.ms",
         "topic.message.timeout.ms",
-        "topic.metadata.propagation.max.ms",
         "topic.metadata.refresh.interval.ms",
         "topic.partitioner",
         "topic.request.required.acks",
@@ -360,10 +308,7 @@ void checkSQLKafkaProperty(const String & name, const String & value)
     };
     static_assert(std::ranges::is_sorted(allowed_properties));
     if (std::ranges::binary_search(allowed_properties, std::string_view(name)))
-    {
-        checkSQLKafkaPropertyValue(name, value);
         return;
-    }
 
     /// `probe` is not a path: librdkafka searches a fixed list of the standard locations of CA certificates.
     if (value == "probe" && (name == "ssl.ca.location" || name == "https.ca.location"))
@@ -626,7 +571,7 @@ void updateConfigurationFromConfig(
     if (!kafka_settings[KafkaSetting::kafka_sasl_username].value.empty())
         kafka_config.set("sasl.username", kafka_settings[KafkaSetting::kafka_sasl_username]);
     if (!kafka_settings[KafkaSetting::kafka_sasl_password].value.empty())
-        kafka_config.set("sasl.password", String(kafka_settings[KafkaSetting::kafka_sasl_password].value));
+        kafka_config.set("sasl.password", kafka_settings[KafkaSetting::kafka_sasl_password]);
     if (!kafka_settings[KafkaSetting::kafka_compression_codec].value.empty())
         kafka_config.set("compression.codec", kafka_settings[KafkaSetting::kafka_compression_codec]);
 
@@ -716,7 +661,6 @@ void updateConfigurationFromConfig(
             cppkafka::KafkaHandleBase & handle, int level, const std::string & facility, const std::string & message)
         {
             auto [poco_level, client_logs_level] = parseSyslogLevel(level);
-            const std::string safe_message = hideHexNumbers(message);
             const auto & kafka_object_config = handle.get_configuration();
             const std::string client_id_key{"client.id"};
             chassert(kafka_object_config.has_property(client_id_key) && "Kafka configuration doesn't have expected client.id set");
@@ -727,7 +671,7 @@ void updateConfigurationFromConfig(
                 "[client.id:{}] [rdk:{}] {}",
                 kafka_object_config.get(client_id_key),
                 facility,
-                safe_message);
+                message);
             if (client_logs_level <= DB::LogsLevel::error)
             {
                 if (auto sink_shared_ptr = sink.lock())
@@ -736,7 +680,7 @@ void updateConfigurationFromConfig(
                     // librdkafka-originated errors (auth failures, broker disconnects) have no
                     // useful ClickHouse stack trace - the trace only shows poll->log_callback.
                     // Skip stack trace to reduce noise in system.kafka_consumers.exceptions.
-                    sink_shared_ptr->setExceptionInfo(safe_message, /* with_stacktrace = */ false);
+                    sink_shared_ptr->setExceptionInfo(message, /* with_stacktrace = */ false);
                 }
             }
         });
@@ -780,8 +724,8 @@ namespace
 /// server log, but also clients that set `send_logs_level`.
 bool isSensitiveProperty(std::string_view name)
 {
-    /// The properties librdkafka marks with the _RK_SENSITIVE flag or stores as pointers, plus a
-    /// substring safety net for properties unknown to the vendored librdkafka version.
+    /// The properties librdkafka marks with the _RK_SENSITIVE flag, plus a substring safety net
+    /// for properties unknown to the vendored librdkafka version.
     static const std::unordered_set<std::string_view> sensitive_properties = []
     {
         std::unordered_set<std::string_view> res;
@@ -798,7 +742,7 @@ void logConfigProperties(const cppkafka::Configuration & conf, const LoggerPtr &
 {
     for (const auto & property : conf.get_all())
         LOG_TRACE(log, "{} set property {}:{}", client_type, property.first,
-            isSensitiveProperty(property.first) ? HIDDEN_SECRET : std::string_view(property.second));
+            isSensitiveProperty(property.first) ? "[HIDDEN]" : property.second);
 }
 
 }

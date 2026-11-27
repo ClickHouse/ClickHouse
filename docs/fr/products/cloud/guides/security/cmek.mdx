@@ -7,10 +7,11 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'chiffrement', 'CMEK', 'vérification périodique de la clé KMS']
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <div id="storage-encryption">
-  ## Chiffrement au niveau du stockage {#storage-encryption}
+  ## Chiffrement au niveau du stockage
 </div>
 
 ClickHouse Cloud est configuré par défaut avec le chiffrement des données au repos, à l’aide de clés AES 256 gérées par le fournisseur cloud. Pour plus d’informations, consultez :
@@ -20,7 +21,7 @@ ClickHouse Cloud est configuré par défaut avec le chiffrement des données au 
 * [Chiffrement du stockage Azure pour les données au repos](https://learn.microsoft.com/en-us/azure/storage/common/storage-service-encryption)
 
 <div id="database-encryption">
-  ## Chiffrement au niveau de la base de données {#database-encryption}
+  ## Chiffrement au niveau de la base de données
 </div>
 
 <EnterprisePlanFeatureBadge feature="Chiffrement renforcé" />
@@ -30,7 +31,7 @@ Les données au repos sont chiffrées par défaut à l’aide de clés AES 256 g
 Le chiffrement renforcé est actuellement disponible pour les services AWS et GCP. La prise en charge d’Azure sera bientôt disponible.
 
 <div id="transparent-data-encryption-tde">
-  ### Transparent Data Encryption (TDE) {#transparent-data-encryption-tde}
+  ### Transparent Data Encryption (TDE)
 </div>
 
 TDE doit être activé lors de la création du service. Il n’est pas possible de chiffrer des services existants après leur création. Une fois TDE activé, il ne peut plus être désactivé. Toutes les données du service resteront chiffrées. Si vous souhaitez désactiver TDE après l’avoir activé, vous devez créer un nouveau service et y migrer vos données.
@@ -42,7 +43,7 @@ TDE doit être activé lors de la création du service. Il n’est pas possible 
 5. Cliquez sur Create service
 
 <div id="customer-managed-encryption-keys-cmek">
-  ### Clés de chiffrement gérées par le client (CMEK) {#customer-managed-encryption-keys-cmek}
+  ### Clés de chiffrement gérées par le client (CMEK)
 </div>
 
 <Warning>
@@ -137,29 +138,27 @@ Une fois qu’un service est chiffré avec TDE, les clients peuvent mettre à jo
 </Accordion>
 
 <div id="key-rotation">
-  #### Rotation de la clé {#key-rotation}
+  #### Rotation de la clé
 </div>
 
 Une fois CMEK configuré, effectuez la rotation de la clé en suivant les procédures ci-dessus pour créer une nouvelle clé KMS et accorder les autorisations nécessaires. Revenez aux paramètres du service pour y coller le nouvel ARN (AWS), le Key Resource Path (GCP) ou le Key Name (Azure), puis enregistrez les paramètres. Le service redémarrera pour appliquer la nouvelle clé.
 
 <div id="kms-key-poller">
-  #### Vérification périodique de la clé KMS {#kms-key-poller}
+  #### Vérification périodique de la clé KMS
 </div>
 
 Lors de l&#39;utilisation de CMEK, la validité de la clé KMS fournie est vérifiée toutes les 10 minutes. Si l&#39;accès à la clé KMS n&#39;est plus valide, le service ClickHouse s&#39;arrête. Pour remettre le service en route, rétablissez l&#39;accès à la clé KMS en suivant les étapes de ce guide, puis redémarrez le service.
 
 <div id="backup-and-restore">
-  ### Sauvegarde et restauration {#backup-and-restore}
+  ### Sauvegarde et restauration
 </div>
 
 Les sauvegardes sont chiffrées à l’aide de la même clé que le service associé. Lorsque vous restaurez une sauvegarde chiffrée, vous obtenez une instance chiffrée qui utilise la même clé KMS que l’instance d’origine. Si nécessaire, vous pouvez effectuer une rotation de la clé KMS après la restauration ; consultez [rotation de la clé](#key-rotation) pour plus de détails.
 
-## Performance {#performance}
-
-Le chiffrement au niveau de la base de données s&#39;appuie sur la [fonctionnalité de système de fichiers virtuel pour le chiffrement des données intégrée à ClickHouse](/fr/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system) pour chiffrer et protéger vos données. L&#39;algorithme utilisé pour cette fonctionnalité est `AES_256_CTR`, ce qui devrait entraîner une baisse de performance de 5 à 15 % selon la charge de travail :
-
-<div className="ch-image-lg">
-  <Frame>
-    ![Baisse de performance du CMEK](/images/_snippets/cmek-performance.webp)
-  </Frame>
+<div id="performance">
+  ## Performance
 </div>
+
+Le chiffrement au niveau de la base de données s&#39;appuie sur la [fonctionnalité de système de fichiers virtuel pour le chiffrement des données intégrée à ClickHouse](/fr/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system) pour chiffrer et protéger vos données. L&#39;algorithme utilisé pour cette fonctionnalité est `AES_256_CTR`, ce qui devrait entraîner une baisse de performance de 5 à 15 % selon la charge de travail :
+
+<Image img="/images/_snippets/cmek-performance.webp" size="lg" alt="Baisse de performance du CMEK" />

@@ -23,8 +23,6 @@
             {
               "group": "2026",
               "pages": [
-                "ru/resources/changelogs/cloud/release-notes/26_8",
-                "ru/resources/changelogs/cloud/release-notes/26_6",
                 "ru/resources/changelogs/cloud/release-notes/26_4",
                 "ru/resources/changelogs/cloud/release-notes/26_02"
               ]
@@ -60,8 +58,8 @@
       "pages": [
         "ru/resources/changelogs/oss/2026",
         {
-          "group": "Archive",
           "expanded": false,
+          "group": "Archive",
           "pages": [
             "ru/resources/changelogs/oss/2025",
             "ru/resources/changelogs/oss/2024",
@@ -78,5 +76,6 @@
       ]
     }
   ],
+  "icon": "/images/icons/icon-changelogs.svg",
   "item": "Changelogs"
 }

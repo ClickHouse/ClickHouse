@@ -56,10 +56,6 @@ The `clickhouse_clickpipe` resource has the following top-level arguments:
 
 The `id` and `state` attributes are read-only and populated by ClickHouse Cloud after creation.
 
-## GCP workload identity (Beta) {#gcp-workload-identity}
-
-Follow the [GCP workload identity guide](/integrations/clickpipes/security/gcp-workload-identity#terraform) to retrieve the ClickPipes-managed service account and grant it access to your source before using the workload identity examples below.
-
 ## Destination {#destination}
 
 The `destination` block is shared across all source types:
@@ -96,7 +92,7 @@ For CDC sources (Postgres, MySQL, MongoDB, BigQuery), destination tables are cre
 
 ### Kafka {#kafka}
 
-Supported `type` values: `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`, and Private Preview `gcmk`.
+Supported `type` values: `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`.
 
 ```hcl
 resource "clickhouse_clickpipe" "kafka_clickpipe" {
@@ -154,58 +150,6 @@ resource "clickhouse_clickpipe" "kafka_clickpipe" {
       type = "DateTime"
     }
   }
-}
-```
-
-#### Google Managed Kafka with GCP workload identity {#gcmk-workload-identity}
-
-Grant the ClickPipes service account `roles/managedkafka.client` before creating the ClickPipe. Google Managed Kafka requires TLS. Kafka ACLs must allow the service account (`User:<service-account-email>`) `READ` and `DESCRIBE` access to the selected topics and consumer groups.
-
-```hcl
-resource "google_project_iam_member" "gcmk_client" {
-  project = var.gcp_project_id
-  role    = "roles/managedkafka.client"
-  member  = "serviceAccount:${data.clickhouse_clickpipes_service_context.service.gcp_workload_identity.principal}"
-}
-
-resource "clickhouse_clickpipe" "gcmk_clickpipe" {
-  name       = "My Google Managed Kafka ClickPipe"
-  service_id = var.service_id
-
-  source = {
-    kafka = {
-      type           = "gcmk"
-      format         = "JSONEachRow"
-      brokers        = "bootstrap.kafka.us-central1.managedkafka.example-project.cloud.goog:9092"
-      topics         = "events"
-      authentication = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
-    }
-  }
-
-  destination = {
-    table         = "events"
-    managed_table = true
-    table_definition = {
-      engine = {
-        type = "MergeTree"
-      }
-    }
-    columns = [
-      {
-        name = "id"
-        type = "String"
-      }
-    ]
-  }
-
-  field_mappings = [
-    {
-      source_field      = "id"
-      destination_field = "id"
-    }
-  ]
-
-  depends_on = [google_project_iam_member.gcmk_client]
 }
 ```
 
@@ -272,17 +216,11 @@ resource "clickhouse_clickpipe" "kinesis_clickpipe" {
 
   source {
     kinesis {
-      format         = "AvroConfluent"
+      format         = "JSONEachRow"
       stream_name    = "my-stream"
       region         = "us-east-1"
       iterator_type  = "TRIM_HORIZON"
       authentication = "IAM_USER"
-
-      schema_registry {
-        type               = "glue"
-        glue_region        = "us-east-1"
-        glue_registry_name = "my-registry"
-      }
 
       access_key {
         access_key_id = var.aws_access_key_id
@@ -309,49 +247,6 @@ resource "clickhouse_clickpipe" "kinesis_clickpipe" {
     columns {
       name = "message"
       type = "String"
-    }
-  }
-}
-```
-
-#### Kinesis with an uploaded Protobuf schema {#kinesis-protobuf-schema}
-
-Set `format` to `Protobuf` and use `protobuf_schema` for a base64-encoded `.proto` file or serialized `FileDescriptorSet`. Do not configure `schema_registry` when uploading a schema.
-
-```hcl
-resource "clickhouse_clickpipe" "kinesis_protobuf_clickpipe" {
-  name       = "My Kinesis Protobuf ClickPipe"
-  service_id = var.service_id
-
-  source {
-    kinesis {
-      format          = "Protobuf"
-      stream_name     = "my-stream"
-      region          = "us-east-1"
-      iterator_type   = "TRIM_HORIZON"
-      authentication  = "IAM_USER"
-      protobuf_schema = filebase64("${path.module}/event.proto")
-
-      access_key {
-        access_key_id = var.aws_access_key_id
-        secret_key    = var.aws_secret_key
-      }
-    }
-  }
-
-  destination {
-    table         = "my_table"
-    managed_table = true
-
-    table_definition {
-      engine {
-        type = "MergeTree"
-      }
-    }
-
-    columns {
-      name = "id"
-      type = "UInt64"
     }
   }
 }
@@ -531,75 +426,6 @@ resource "clickhouse_clickpipe" "gcs_clickpipe" {
       type = "String"
     }
   }
-}
-```
-
-#### GCS with GCP workload identity {#gcs-workload-identity}
-
-After granting the ClickPipes service account the [required GCS permissions](/integrations/clickpipes/object-storage/gcs/overview#permissions), replace the `source` block above with:
-
-```hcl
-source = {
-  object_storage = {
-    type           = "gcs"
-    url            = "gs://my-bucket/data/*.json"
-    format         = "JSONEachRow"
-    authentication = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
-  }
-}
-```
-
-For unordered ingestion, also set `is_continuous = true` and use a fully-qualified `queue_url` in the form `projects/<project-id>/subscriptions/<subscription-id>`.
-
-### Google Cloud Pub/Sub {#pubsub}
-
-The following example uses workload identity. Grant the ClickPipes service account the [required Pub/Sub permissions](/integrations/clickpipes/pubsub/auth#required-permissions) before creating the ClickPipe.
-
-```hcl
-resource "google_project_iam_member" "pubsub_access" {
-  project = var.gcp_project_id
-  role    = "roles/pubsub.editor"
-  member  = "serviceAccount:${data.clickhouse_clickpipes_service_context.service.gcp_workload_identity.principal}"
-}
-
-resource "clickhouse_clickpipe" "pubsub_clickpipe" {
-  name       = "My Pub/Sub ClickPipe"
-  service_id = var.service_id
-
-  source = {
-    pubsub = {
-      format         = "JSONEachRow"
-      project_id     = var.gcp_project_id
-      topic          = "events"
-      authentication = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
-      seek_type      = "latest"
-    }
-  }
-
-  destination = {
-    table         = "events"
-    managed_table = true
-    table_definition = {
-      engine = {
-        type = "MergeTree"
-      }
-    }
-    columns = [
-      {
-        name = "id"
-        type = "String"
-      }
-    ]
-  }
-
-  field_mappings = [
-    {
-      source_field      = "id"
-      destination_field = "id"
-    }
-  ]
-
-  depends_on = [google_project_iam_member.pubsub_access]
 }
 ```
 
@@ -891,30 +717,6 @@ resource "clickhouse_clickpipe" "bigquery_snapshot_clickpipe" {
 
   destination {
     database = "default"
-  }
-}
-```
-
-#### BigQuery with GCP workload identity {#bigquery-workload-identity}
-
-After granting the ClickPipes service account the [required BigQuery and GCS permissions](/integrations/clickpipes/bigquery/overview#permissions), replace the `source` block above with:
-
-```hcl
-source = {
-  bigquery = {
-    authentication        = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
-    project_id            = var.gcp_project_id
-    snapshot_staging_path = "gs://my-staging-bucket/staging/"
-
-    settings = {
-      replication_mode = "snapshot"
-    }
-
-    table_mappings = [{
-      source_dataset_name = "my_dataset"
-      source_table        = "my_table"
-      target_table        = "my_bigquery_table"
-    }]
   }
 }
 ```

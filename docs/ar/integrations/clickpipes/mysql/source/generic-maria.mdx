@@ -14,7 +14,9 @@ integration:
   إذا كنت تستخدم أحد المزوّدين المدعومين (في الشريط الجانبي)، فالرجاء الرجوع إلى الدليل الخاص بذلك المزوّد.
 </Info>
 
-## تمكين الاحتفاظ بالسجلات الثنائية {#enable-binlog-retention}
+<div id="enable-binlog-retention">
+  ## تمكين الاحتفاظ بالسجلات الثنائية
+</div>
 
 تحتوي السجلات الثنائية على معلومات حول تعديلات البيانات التي أُجريت على مثيل خادم MariaDB، وهي مطلوبة لعملية النسخ المتماثل.
 
@@ -26,7 +28,7 @@ log_bin = ON
 binlog_format = ROW
 binlog_row_image = FULL
 binlog_row_metadata = FULL  -- introduced in 10.5.0
-expire_logs_days = 3        -- or higher; 0 would mean logs are preserved forever
+expire_logs_days = 1        -- or higher; 0 would mean logs are preserved forever
 ```
 
 للتحقق من هذه الإعدادات، شغّل أوامر SQL التالية:
@@ -49,7 +51,7 @@ log_bin = ON
 binlog_format = ROW
 binlog_row_image = FULL
 binlog_row_metadata = FULL  ; only in 10.5.0 and newer
-expire_logs_days = 3
+expire_logs_days = 1
 ```
 
 إذا كانت قاعدة البيانات المصدر نسخة متماثلة، فتأكد أيضًا من تفعيل `log_slave_updates`.
@@ -60,7 +62,9 @@ expire_logs_days = 3
   لا يدعم MariaDB &lt;= 10.4 استبعاد الأعمدة لأن إعداد `binlog_row_metadata` لم يكن متاحًا بعد.
 </Note>
 
-## تهيئة مستخدم قاعدة بيانات {#configure-database-user}
+<div id="configure-database-user">
+  ## تهيئة مستخدم قاعدة بيانات
+</div>
 
 اتصل بمثيل MariaDB الخاص بك بصفتك المستخدم root، ثم نفّذ الأوامر التالية:
 
@@ -76,19 +80,20 @@ expire_logs_days = 3
    GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
    ```
 
-3. امنح المستخدم أذونات النسخ المتماثل. ويتطلب الإصدار MariaDB 10.5.9 والإصدارات الأحدث أيضًا الصلاحية `SLAVE MONITOR`:
+3. امنح المستخدم أذونات النسخ المتماثل:
 
    ```sql
    GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
-   GRANT SLAVE MONITOR ON *.* TO 'clickpipes_user'@'%';
    ```
 
 <Note>
   تأكد من استبدال `clickpipes_user` و`some_secure_password` باسم المستخدم وكلمة المرور اللذين تريد استخدامهما.
 </Note>
 
-## إعداد SSL/TLS (موصى به) {#ssl-tls-configuration}
+<div id="ssl-tls-configuration">
+  ## إعداد SSL/TLS (موصى به)
+</div>
 
 تضمن شهادات SSL اتصالات آمنة بقاعدة بيانات MariaDB الخاصة بك. ويعتمد الإعداد على نوع الشهادة لديك:
 
@@ -102,7 +107,9 @@ expire_logs_days = 3
 
 لمزيد من المعلومات حول خيارات SSL/TLS، اطّلع على [FAQ](/ar/integrations/clickpipes/mysql/faq#tls-certificate-validation-error).
 
-## ما الخطوة التالية؟ {#whats-next}
+<div id="whats-next">
+  ## ما الخطوة التالية؟
+</div>
 
 يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/mysql/index) وبدء إدخال البيانات من مثيل MariaDB لديك إلى ClickHouse Cloud.
 احرص على تدوين تفاصيل الاتصال التي استخدمتها أثناء إعداد مثيل MariaDB، إذ ستحتاج إليها خلال عملية إنشاء ClickPipe.

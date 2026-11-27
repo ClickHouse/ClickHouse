@@ -21,8 +21,6 @@
             "zh/products/cloud/reference/supported-regions",
             "zh/products/cloud/features/infrastructure/deployment-options",
             "zh/products/cloud/guides/cloud-compatibility",
-            "zh/products/cloud/features/public-preview-features",
-            "zh/products/cloud/features/self-service-previews",
             "zh/products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
             "zh/products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
           ]
@@ -39,15 +37,13 @@
             "zh/products/cloud/features/autoscaling/make-before-break",
             "zh/products/cloud/features/autoscaling/idling",
             "zh/products/cloud/features/autoscaling/scaling-recommendations",
-            "zh/products/cloud/features/autoscaling/scheduled-scaling",
-            "zh/products/cloud/features/scaling/preparing-for-traffic-spikes"
+            "zh/products/cloud/features/autoscaling/scheduled-scaling"
           ]
         },
         {
           "expanded": false,
           "group": "Compute and storage",
           "pages": [
-            "zh/products/cloud/features/infrastructure/on-demand-compute",
             "zh/products/cloud/features/large-single-replica-services",
             "zh/products/cloud/features/infrastructure/parallel-replicas",
             "zh/products/cloud/features/infrastructure/replica-aware-routing",
@@ -62,7 +58,6 @@
           "pages": [
             "zh/products/cloud/reference/service-uptime",
             "zh/products/cloud/reference/data-resiliency",
-            "zh/products/cloud/guides/deletion-protection",
             "zh/products/cloud/features/admin-features/upgrades"
           ]
         },
@@ -71,7 +66,6 @@
           "group": "Production planning",
           "pages": [
             "zh/products/cloud/guides/best-practices/index",
-            "zh/products/cloud/guides/best-practices/performance-optimization-playbook",
             "zh/products/cloud/guides/production-readiness",
             "zh/products/cloud/guides/best-practices/multitenancy",
             "zh/products/cloud/guides/best-practices/usagelimits"
@@ -131,7 +125,6 @@
           "pages": [
             "zh/products/cloud/guides/security/cloud-access-management/manage-my-account",
             "zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
-            "zh/products/cloud/guides/security/cloud-access-management/approved-domains",
             "zh/products/cloud/reference/security/console-roles",
             "zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles"
           ]
@@ -153,8 +146,7 @@
             "zh/products/cloud/guides/security/saml-sso-removal",
             "zh/products/cloud/guides/security/cloud-access-management/scim-setup",
             "zh/products/cloud/guides/security/cloud-access-management/scim-setup-entra",
-            "zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup",
-            "zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id"
+            "zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup"
           ]
         }
       ]
@@ -177,8 +169,7 @@
                 "zh/products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect",
                 "zh/products/cloud/guides/security/connectivity/private-networking/azure-privatelink"
               ]
-            },
-            "zh/products/cloud/guides/security/connectivity/org-network-connectivity"
+            }
           ]
         },
         {
@@ -260,6 +251,8 @@
       "group": "AI tools and agents",
       "pages": [
         "zh/products/cloud/features/ai-ml/index",
+        "zh/products/cloud/features/ai-ml/aichat/using-ai-chat",
+        "zh/products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
         "zh/products/cloud/features/ai-ml/langfuse",
         {
           "expanded": false,
@@ -269,7 +262,32 @@
             "zh/products/cloud/features/ai-ml/mcp/remote-mcp"
           ]
         },
-        "zh/products/cloud/features/ai-ml/linked-billing-claude-platform",
+        {
+          "group": "ClickHouse Agents",
+          "pages": [
+            "zh/products/cloud/features/ai-ml/agents/index",
+            "zh/products/cloud/features/ai-ml/agents/quickstart",
+            "zh/products/cloud/features/ai-ml/agents/chat",
+            {
+              "group": "Agent Builder",
+              "pages": [
+                "zh/products/cloud/features/ai-ml/agents/builder/index",
+                "zh/products/cloud/features/ai-ml/agents/builder/model-parameters",
+                "zh/products/cloud/features/ai-ml/agents/builder/code-interpreter",
+                "zh/products/cloud/features/ai-ml/agents/builder/web-search",
+                "zh/products/cloud/features/ai-ml/agents/builder/image-generation",
+                "zh/products/cloud/features/ai-ml/agents/builder/vision",
+                "zh/products/cloud/features/ai-ml/agents/builder/mcp-servers",
+                "zh/products/cloud/features/ai-ml/agents/builder/skills",
+                "zh/products/cloud/features/ai-ml/agents/builder/subagents"
+              ]
+            },
+            "zh/products/cloud/features/ai-ml/agents/prompts",
+            "zh/products/cloud/features/ai-ml/agents/memory",
+            "zh/products/cloud/features/ai-ml/agents/marketplace",
+            "zh/products/cloud/features/ai-ml/agents/sharing-and-access"
+          ]
+        },
         "zh/products/cloud/features/ai-ml/model-developer-terms"
       ]
     },
@@ -282,8 +300,8 @@
         {
           "group": "API reference",
           "openapi": {
-            "source": "_specs/cloud-openapi.json",
-            "directory": "zh/products/cloud/api-reference"
+            "directory": "zh/products/cloud/api-reference",
+            "source": "_specs/cloud-openapi.json"
           },
           "pages": {
             "$ref": "./api-reference/navigation.json"
@@ -322,7 +340,6 @@
         "zh/products/cloud/reference/billing/payment-thresholds",
         "zh/products/cloud/reference/billing/spend-alerts",
         "zh/products/cloud/reference/billing/managing-payment-methods",
-        "zh/products/cloud/reference/billing/self-service-prepaid-credit-management",
         "zh/products/cloud/reference/billing/billing-compliance"
       ]
     },
@@ -337,5 +354,6 @@
       "sourceRef": "ClickHouse/airgap-docs"
     }
   ],
+  "icon": "/images/icons/icon-clickhouse-cloud.svg",
   "item": "ClickHouse Cloud"
 }

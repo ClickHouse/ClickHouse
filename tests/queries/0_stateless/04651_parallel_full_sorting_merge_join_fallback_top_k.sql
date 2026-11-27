@@ -14,6 +14,7 @@
 -- `hash,full_sorting_merge` (both inject the extra `Sort + Limit`), so adding the new algorithm
 -- as a fallback introduces no divergence relative to master, while plain `hash` still defers.
 
+SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
 
 DROP TABLE IF EXISTS pfsmj_topk_left;
@@ -27,8 +28,8 @@ CREATE TABLE pfsmj_topk_right (k Int64, value String) ENGINE = MergeTree ORDER B
 INSERT INTO pfsmj_topk_left SELECT number, repeat('a', 8) FROM numbers(1000);
 INSERT INTO pfsmj_topk_right SELECT number, repeat('b', 8) FROM numbers(1000);
 
--- `optimize_read_in_order` and `enable_parallel_replicas` are randomized by the test runner
--- and both change the deferral outcome, so pin them.
+-- `optimize_read_in_order`, `query_plan_read_in_order` and `enable_parallel_replicas` are
+-- randomized by the test runner and all three change the deferral outcome, so pin them.
 -- `max_bytes_*_before_external_join = 0` keeps automatic spilling off: `SpillingHashJoin`
 -- reports delayed blocks, which blocks the deferral for every algorithm and would mask the
 -- effect under test.
@@ -40,7 +41,7 @@ FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM pfsmj_topk_left AS l LEFT JOIN pfsmj_topk_right AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
     SETTINGS optimize_read_in_order = 1,
-             query_plan_read_in_order_through_join = 1,
+             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
              query_plan_optimize_lazy_materialization = 0,
@@ -56,7 +57,7 @@ FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM pfsmj_topk_left AS l LEFT JOIN pfsmj_topk_right AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
     SETTINGS optimize_read_in_order = 1,
-             query_plan_read_in_order_through_join = 1,
+             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
              query_plan_optimize_lazy_materialization = 0,
@@ -71,7 +72,7 @@ FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM pfsmj_topk_left AS l LEFT JOIN pfsmj_topk_right AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
     SETTINGS optimize_read_in_order = 1,
-             query_plan_read_in_order_through_join = 1,
+             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
              query_plan_optimize_lazy_materialization = 0,
@@ -88,7 +89,7 @@ FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM pfsmj_topk_left AS l LEFT JOIN pfsmj_topk_right AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
     SETTINGS optimize_read_in_order = 1,
-             query_plan_read_in_order_through_join = 1,
+             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
              query_plan_optimize_lazy_materialization = 0,

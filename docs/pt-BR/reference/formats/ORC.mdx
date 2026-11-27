@@ -15,11 +15,15 @@ doc_type: 'reference'
 | ------- | ----- | ----- |
 | ✔       | ✔     |       |
 
-## Descrição {#description}
+<div id="description">
+  ## Descrição
+</div>
 
 [Apache ORC](https://orc.apache.org/) é um formato de armazenamento colunar amplamente utilizado no ecossistema [Hadoop](https://hadoop.apache.org/).
 
-## Correspondência de tipos de dados {#data-types-matching-orc}
+<div id="data-types-matching-orc">
+  ## Correspondência de tipos de dados
+</div>
 
 A tabela abaixo compara os tipos de dados ORC suportados e os correspondentes [tipos de dados](/pt-BR/reference/data-types/index) do ClickHouse em consultas `INSERT` e `SELECT`.
 
@@ -53,12 +57,13 @@ A tabela abaixo compara os tipos de dados ORC suportados e os correspondentes [t
 * Arrays podem ser aninhados e podem ter um valor do tipo `Nullable` como argumento. Os tipos `Tuple` e `Map` também podem ser aninhados.
 * Os tipos de dados das colunas da tabela do ClickHouse não precisam corresponder aos campos de dados ORC correspondentes. Ao inserir dados, o ClickHouse interpreta os tipos de dados de acordo com a tabela acima e então [converte](/pt-BR/reference/functions/regular-functions/type-conversion-functions#CAST) os dados para o tipo de dado definido para a coluna da tabela do ClickHouse.
 
-- Valores `DateTime64` entre `1969-12-31 23:59:59.001` e `1969-12-31 23:59:59.999999999` (UTC) são gravados como `1970-01-01 00:00:00`. Trata-se de uma lacuna na [especificação ORC](https://orc.apache.org/specification/ORCv1/#timestamp-columns), que armazena os segundos e os nanossegundos de um timestamp, sendo que os nanossegundos não podem ser negativos. As implementações de referência somam um segundo a um timestamp negativo com mais de 999999 nanossegundos, e os leitores o subtraem; no entanto, um timestamp entre -1 e 0 segundo seria então armazenado como 0 segundo e, na leitura, ficaria depois do epoch. Cada implementação grava esse timestamp de uma forma: os gravadores Java e C++ do Apache ORC o gravam de modo que ele seja lido com um segundo a mais, e o adaptador ORC do Arrow (PyArrow) grava nanossegundos negativos, o que a especificação não permite e o leitor Java rejeita. Já o ClickHouse grava o próprio epoch, que todos os leitores leem da mesma forma.
-- Quando os fusos horários do gravador e do leitor de um timestamp são diferentes, o leitor Java do Apache ORC e o ClickHouse subtraem esse segundo antes da conversão entre os fusos horários, já que os gravadores o somam, enquanto o leitor C++ do Apache ORC (também usado pelo PyArrow) o subtrai após a conversão. Com isso, o leitor C++ pode ler com um segundo de diferença timestamps anteriores a 1970 que estejam dentro do deslocamento de fuso horário em relação ao epoch, em arquivos de qualquer gravador.
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
 
-## Exemplo de uso {#example-usage}
-
-### Inserção de dados {#inserting-data}
+<div id="inserting-data">
+  ### Inserção de dados
+</div>
 
 Use um arquivo ORC com os dados a seguir, chamado `football.orc`:
 
@@ -90,7 +95,9 @@ Insira os dados:
 INSERT INTO football FROM INFILE 'football.orc' FORMAT ORC;
 ```
 
-### Leitura de dados {#reading-data}
+<div id="reading-data">
+  ### Leitura de dados
+</div>
 
 Leia os dados usando o formato `ORC`:
 
@@ -105,7 +112,9 @@ FORMAT ORC
   ORC é um formato binário que não é exibido de forma legível para humanos no terminal. Use `INTO OUTFILE` para gerar arquivos ORC.
 </Tip>
 
-## Configurações de formato {#format-settings}
+<div id="format-settings">
+  ## Configurações de formato
+</div>
 
 | Configuração                                                                                                                                                                                    | Descrição                                                                                     | Padrão  |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------- |

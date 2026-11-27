@@ -33,13 +33,17 @@ Le vecteur de référence est un tableau constant, défini comme une expression 
 N’importe laquelle des [fonctions de distance](/fr/reference/functions/regular-functions/distance-functions) disponibles peut être utilisée à cette fin.
 `<N>` indique le nombre de voisins à renvoyer.
 
-## Recherche vectorielle exacte {#exact-nearest-neighbor-search}
+<div id="exact-nearest-neighbor-search">
+  ## Recherche vectorielle exacte
+</div>
 
 Une recherche vectorielle exacte peut être effectuée en utilisant telle quelle la requête SELECT ci-dessus.
 Le temps d’exécution de ces requêtes est généralement proportionnel au nombre de vecteurs stockés, au nombre d’éléments vectoriels (= la dimension) et à la largeur en bits des éléments vectoriels.
 Par ailleurs, comme ClickHouse effectue un balayage exhaustif de tous les vecteurs, le temps d’exécution dépend également du nombre de threads utilisés par la requête (voir le paramètre [max&#95;threads](/fr/reference/settings/session-settings/max-threads#max_threads)).
 
-### Exemple {#exact-nearest-neighbor-search-example}
+<div id="exact-nearest-neighbor-search-example">
+  ### Exemple
+</div>
 
 ```sql
 CREATE TABLE tab
@@ -69,9 +73,13 @@ renvoie
    └────┴─────────┘
 ```
 
-## recherche vectorielle approximative {#approximate-nearest-neighbor-search}
+<div id="approximate-nearest-neighbor-search">
+  ## recherche vectorielle approximative
+</div>
 
-### Index de similarité vectorielle {#vector-similarity-index}
+<div id="vector-similarity-index">
+  ### Index de similarité vectorielle
+</div>
 
 ClickHouse fournit un index spécial de « similarité vectorielle » permettant d’effectuer une recherche vectorielle approximative.
 
@@ -80,7 +88,9 @@ ClickHouse fournit un index spécial de « similarité vectorielle » permetta
   Si vous rencontrez des problèmes, veuillez ouvrir une issue dans le [dépôt ClickHouse](https://github.com/clickhouse/clickhouse/issues).
 </Note>
 
-#### Création d’un index de similarité vectorielle {#creating-a-vector-similarity-index}
+<div id="creating-a-vector-similarity-index">
+  #### Création d’un index de similarité vectorielle
+</div>
 
 Un index de similarité vectorielle peut être créé sur une nouvelle table comme suit :
 
@@ -148,29 +158,28 @@ ORDER BY [...]
 
 Les paramètres spécifiques à HNSW suivants sont disponibles :
 
-* `<quantization>` contrôle la quantification des vecteurs dans le graphe de proximité. Les valeurs possibles sont `f64`, `f32`, `f16`, `bf16`, `i8` ou `b1`. La valeur par défaut est `bf16`. Notez que ce paramètre n’affecte pas la représentation des vecteurs dans la colonne sous-jacente.
-* `<hnsw_max_connections_per_layer>` contrôle le nombre de voisins par nœud du graphe, également appelé hyperparamètre HNSW `M`. La valeur par défaut est `32`. La valeur `0` signifie que la valeur par défaut est utilisée. La valeur maximale est `512`.
-* `<hnsw_candidate_list_size_for_construction>` contrôle la taille de la liste dynamique de candidats lors de la construction du graphe HNSW, également appelée hyperparamètre HNSW `ef_construction`. La valeur par défaut est `128`. La valeur `0` signifie que la valeur par défaut est utilisée. La valeur maximale est `3200`.
+* `<quantization>` contrôle la quantification des vecteurs dans le graphe de proximité. Les valeurs possibles sont `f64`, `f32`, `f16`, `bf16`, `i8` ou `b1`. La valeur par défaut est `bf16`. Notez que ce paramètre n’affecte pas la représentation des vecteurs dans la colonne source.
+* `<hnsw_max_connections_per_layer>` contrôle le nombre de voisins par nœud du graphe, également appelé hyperparamètre HNSW `M`. La valeur par défaut est `32`. La valeur `0` signifie que la valeur par défaut est utilisée.
+* `<hnsw_candidate_list_size_for_construction>` contrôle la taille de la liste dynamique de candidats lors de la construction du graphe HNSW, également appelée hyperparamètre HNSW `ef_construction`. La valeur par défaut est `128`. La valeur `0` signifie que la valeur par défaut est utilisée.
 
 Les valeurs par défaut de tous les paramètres spécifiques à HNSW fonctionnent correctement dans la grande majorité des cas d’usage.
 Nous ne recommandons donc pas de personnaliser les paramètres spécifiques à HNSW.
 
-D’autres restrictions s’appliquent :
+D’autres restrictions s’appliquent :
 
-* Les index de similarité vectorielle ne peuvent être construits que sur des colonnes de type [Array(Float32)](/fr/reference/data-types/array), [Array(Float64)](/fr/reference/data-types/array) ou [Array(BFloat16)](/fr/reference/data-types/array). Les tableaux de nombres à virgule flottante nullable ou à faible cardinalité, tels que `Array(Nullable(Float32))` et `Array(LowCardinality(Float32))`, ne sont pas autorisés.
+* Les index de similarité vectorielle ne peuvent être construits que sur des colonnes de type [Array(Float32)](/fr/reference/data-types/array), [Array(Float64)](/fr/reference/data-types/array) ou [Array(BFloat16)](/fr/reference/data-types/array). Les tableaux de flottants nullable ou à faible cardinalité, tels que `Array(Nullable(Float32))` et `Array(LowCardinality(Float32))`, ne sont pas autorisés.
 * Les index de similarité vectorielle doivent être construits sur une seule colonne.
 * Les index de similarité vectorielle peuvent être construits sur des expressions calculées (par exemple, `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`), mais ces index ne pourront pas être utilisés ensuite pour la recherche approximative de voisins.
-* Les index de similarité vectorielle exigent que tous les tableaux de la colonne sous-jacente contiennent `<dimension>` éléments ; cela est vérifié lors de la création de l’index. Pour détecter les violations de cette exigence le plus tôt possible, les utilisateurs peuvent ajouter une [contrainte](/fr/reference/statements/create/table#constraints) sur la colonne vectorielle, par exemple `CONSTRAINT same_length CHECK length(vectors) = 256`.
-* De même, les valeurs de tableau dans la colonne sous-jacente ne doivent pas être vides (`[]`) ni avoir la valeur par défaut (également `[]`).
-* Les index de similarité vectorielle ne peuvent être créés que sur des tables utilisant le moteur `MergeTree` ou `ReplicatedMergeTree`. Les autres moteurs de la famille, par exemple `ReplacingMergeTree` ou `CollapsingMergeTree`, sont refusés, car `SELECT ... FINAL` peut renvoyer des résultats incorrects avec l’index. Le paramètre MergeTree `allow_vector_similarity_index_in_specialized_merge_tree` permet de passer outre cette restriction.
+* Les index de similarité vectorielle exigent que tous les tableaux de la colonne source contiennent `<dimension>` éléments ; cela est vérifié lors de la création de l’index. Pour détecter les violations de cette exigence le plus tôt possible, les utilisateurs peuvent ajouter une [contrainte](/fr/reference/statements/create/table#constraints) sur la colonne vectorielle, par exemple `CONSTRAINT same_length CHECK length(vectors) = 256`.
+* De même, les valeurs de tableau dans la colonne source ne doivent pas être vides (`[]`) ni avoir la valeur par défaut (également `[]`).
 
 **Estimation de la consommation de stockage et de mémoire**
 
 Un vecteur généré pour être utilisé avec un modèle d’IA classique (par exemple un Large Language Model, [LLM](https://en.wikipedia.org/wiki/Large_language_model)) se compose de centaines, voire de milliers, de valeurs en virgule flottante.
 Ainsi, une seule valeur vectorielle peut consommer plusieurs kilo-octets de mémoire.
-Les utilisateurs qui souhaitent estimer l’espace de stockage requis pour la colonne vectorielle sous-jacente dans la table, ainsi que la mémoire principale nécessaire pour l’index de similarité vectorielle, peuvent utiliser les deux formules ci-dessous :
+Les utilisateurs qui souhaitent estimer l’espace de stockage requis pour la colonne vectorielle source dans la table, ainsi que la mémoire vive nécessaire pour l’index de similarité vectorielle, peuvent utiliser les deux formules ci-dessous :
 
-Consommation de stockage de la colonne vectorielle dans la table (non compressée) :
+Consommation de stockage de la colonne vectorielle dans la table (non compressée) :
 
 ```text
 Storage consumption = Number of vectors * Dimension * Size of column data type
@@ -185,7 +194,7 @@ Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
 L’index de similarité vectorielle doit être entièrement chargé du disque vers la mémoire principale pour exécuter les recherches.
 De même, l’index vectoriel est lui aussi entièrement construit en mémoire, puis enregistré sur disque.
 
-Consommation mémoire requise pour charger un index vectoriel :
+Consommation mémoire requise pour charger un index vectoriel :
 
 ```text
 Memory for vectors in the index (mv) = Number of vectors * Dimension * Size of quantized data type
@@ -194,7 +203,7 @@ Memory for in-memory graph (mg) = Number of vectors * hnsw_max_connections_per_l
 Memory consumption: mv + mg
 ```
 
-Exemple avec le [jeu de données dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M) :
+Exemple avec le [jeu de données dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M) :
 
 ```text
 Memory for vectors in the index (mv) = 1 million * 1536 * 2 (for BFloat16) = 3072 MB
@@ -205,7 +214,9 @@ Memory consumption = 3072 + 512 = 3584 MB
 
 La formule ci-dessus ne prend pas en compte la mémoire supplémentaire dont les indexes de similarité vectorielle ont besoin pour allouer des structures de données d’exécution, comme des tampons préalloués et des caches.
 
-#### Utilisation d&#39;un index de similarité vectorielle {#using-a-vector-similarity-index}
+<div id="using-a-vector-similarity-index">
+  #### Utilisation d&#39;un index de similarité vectorielle
+</div>
 
 <Note>
   Pour utiliser les index de similarité vectorielle, le paramètre [compatibility](/fr/reference/settings/session-settings/compatibility#compatibility) doit être défini sur `''` (la valeur par défaut), `'25.1'` ou une version ultérieure.
@@ -268,7 +279,7 @@ peut renvoyer
     └─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Dans cet exemple, 1 million de vecteurs issus du [jeu de données dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M), chacun de dimension 1536, sont stockés dans 575 granules, soit 1,7k lignes par granule.
+Dans cet exemple, 1 million de vecteurs issus du [dbpedia dataset](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M), chacun de dimension 1536, sont stockés dans 575 granules, soit 1,7k lignes par granule.
 La requête demande 10 voisins et l’index de similarité vectorielle les identifie dans 10 granules distincts.
 Ces 10 granules seront lus lors de l&#39;exécution de la requête.
 
@@ -277,13 +288,13 @@ Dans ce cas, l&#39;index de similarité vectorielle a éliminé deux des quatre 
 Plus le nombre de granules pouvant être éliminés est important, plus l&#39;utilisation de l&#39;index est efficace.
 
 <Tip>
-  Pour forcer l’utilisation de l’index, vous pouvez exécuter la requête SELECT avec le paramètre [force&#95;data&#95;skipping&#95;indices](/fr/reference/settings/session-settings/force#force_data_skipping_indexes) (indiquez le nom de l’index comme valeur du paramètre).
+  Pour forcer l’utilisation de l’index, vous pouvez exécuter la requête SELECT avec le paramètre [force&#95;data&#95;skipping&#95;indices](/fr/reference/settings/session-settings/force#force_data_skipping_indices) (indiquez le nom de l’index comme valeur du paramètre).
 </Tip>
 
 **Post-filtrage et pré-filtrage**
 
-Les utilisateurs peuvent éventuellement spécifier une clause `WHERE` avec des conditions de filtrage supplémentaires pour la requête SELECT.
-ClickHouse évaluera ces conditions de filtrage selon une stratégie de post-filtrage ou de pré-filtrage.
+Les utilisateurs peuvent éventuellement spécifier une clause `WHERE` avec des conditions de filtre supplémentaires pour la requête SELECT.
+ClickHouse évaluera ces conditions de filtre selon une stratégie de post-filtrage ou de pré-filtrage.
 En résumé, les deux stratégies déterminent l&#39;ordre dans lequel les filtres sont évalués :
 
 * Le post-filtrage signifie que l’index de similarité vectorielle est évalué en premier, puis ClickHouse évalue le ou les filtres supplémentaires spécifiés dans la clause `WHERE`.
@@ -414,7 +425,9 @@ Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
   Une requête exécutée sans rescoring (`vector_search_with_rescoring = 0`) et avec les réplicas parallèles activés peut revenir au rescoring.
 </Note>
 
-#### Optimisation des performances {#performance-tuning}
+<div id="performance-tuning">
+  #### Optimisation des performances
+</div>
 
 **Réglage de la compression**
 
@@ -565,7 +578,9 @@ result = chclient.query(
 Dans l’exemple, le vecteur de référence est envoyé tel quel sous forme binaire, puis réinterprété en tableau de nombres à virgule flottante sur le serveur.
 Cela réduit le temps CPU côté serveur et évite de surcharger les logs du serveur ainsi que `system.query_log`.
 
-#### Administration et surveillance {#administration}
+<div id="administration">
+  #### Administration et surveillance
+</div>
 
 La taille sur disque des index de similarité vectorielle peut être obtenue à partir de [system.data&#95;skipping&#95;indices](/fr/reference/system-tables/data_skipping_indices) :
 
@@ -583,15 +598,9 @@ Exemple de sortie :
 └──────────┴───────┴──────┴──────────────────────────┘
 ```
 
-#### Lignes supprimées {#deleted-rows}
-
-Un index de similarité vectorielle est construit lorsqu&#39;une partie de données est écrite, fusionnée ou modifiée par une mutation, et il n&#39;a pas connaissance des lignes supprimées ultérieurement par un [`DELETE` léger](/fr/reference/statements/delete) ou par une mutation `ALTER TABLE ... DELETE` encore en attente.
-Ces lignes seraient malgré tout renvoyées comme candidats par l&#39;index, puis écartées après la lecture : la requête pourrait alors renvoyer moins de `LIMIT N` lignes, voire manquer les plus proches voisins restants.
-Pour garantir l&#39;exactitude des résultats, ClickHouse n&#39;utilise pas l&#39;index de similarité vectorielle pour les parties de données contenant des lignes supprimées et lit à la place ces parties de données dans leur intégralité (recherche exacte).
-L&#39;index est de nouveau utilisé pour une partie de données dès qu&#39;une fusion ou une mutation l&#39;a réécrite, par exemple après `OPTIMIZE TABLE ... FINAL`.
-Avec le paramètre `apply_deleted_mask = 0`, les lignes supprimées par un `DELETE` léger sont renvoyées par la requête ; l&#39;index reste donc utilisé, sauf si la requête filtre explicitement sur `_row_exists`.
-
-#### Différences par rapport aux index de saut de données classiques {#differences-to-regular-skipping-indexes}
+<div id="differences-to-regular-skipping-indexes">
+  #### Différences par rapport aux index de saut de données classiques
+</div>
 
 Comme tous les [index de saut de données](/fr/concepts/features/performance/skip-indexes/skipping-indexes) classiques, les index de similarité vectorielle sont construits sur des granules, et chaque bloc indexé se compose de `GRANULARITY = [N]` granules (`[N]` = 1 par défaut pour les index de saut de données classiques).
 Par exemple, si la granularité de l&#39;index primaire de la table est de 8192 (paramètre `index_granularity = 8192`) et que `GRANULARITY = 2`, alors chaque bloc indexé contiendra 16384 lignes.
@@ -617,7 +626,9 @@ Notez que, dans les deux cas, la précision de la recherche est équivalente ; 
 Il est généralement recommandé d&#39;utiliser une valeur élevée de `GRANULARITY` pour les index de similarité vectorielle et de revenir à des valeurs plus faibles uniquement en cas de problèmes, comme une consommation mémoire excessive des structures de similarité vectorielle.
 Si aucune valeur de `GRANULARITY` n&#39;a été spécifiée pour les index de similarité vectorielle, la valeur par défaut est de 100 millions.
 
-#### Exemple {#approximate-nearest-neighbor-search-example}
+<div id="approximate-nearest-neighbor-search-example">
+  #### Exemple
+</div>
 
 Requêtes :
 
@@ -655,14 +666,18 @@ Autres jeux de données d’exemple pour la recherche vectorielle approximative�
 * [dbpedia](/fr/get-started/sample-datasets/dbpedia)
 * [hackernews](/fr/get-started/sample-datasets/hacker-news-vector-search)
 
-### Recherche vectorielle avec des codecs quantifiés {#vector-search-with-quantized-codecs}
+<div id="vector-search-with-quantized-codecs">
+  ### Recherche vectorielle avec des codecs quantifiés
+</div>
 
 <ExperimentalBadge />
 
 Pour activer le codec `Quantized`, exécutez d&#39;abord `SET enable_quantized_codec = 1`.
 Si vous rencontrez des problèmes, veuillez ouvrir une issue sur le [dépôt ClickHouse](https://github.com/clickhouse/clickhouse/issues).
 
-#### Introduction {#quantized-codecs-introduction}
+<div id="quantized-codecs-introduction">
+  #### Introduction
+</div>
 
 Un [index de similarité vectorielle](#vector-similarity-index) répond à une requête de plus proches voisins en parcourant un graphe et est très performant lorsque le graphe peut être conservé en mémoire.
 Deux facteurs limitent toutefois son applicabilité :
@@ -687,7 +702,9 @@ Ce codec convient bien à ClickHouse, car la partie coûteuse — le parcours �
 * **Distribué.** Sur un cluster partitionné, le travail est réparti entre les machines : chaque segment parcourt sa propre tranche en parallèle et le coordinateur fusionne les listes restreintes.
 * **Aucun coût de construction supplémentaire.** Les codes quantifiés sont produits lors de l’écriture des vecteurs. Aucun index supplémentaire n’est à construire, à régler ou à reconstruire ; une table est donc prête à être interrogée dès l’arrivée de ses données.
 
-#### Appliquer le codec {#quantized-codecs-declaring}
+<div id="quantized-codecs-declaring">
+  #### Appliquer le codec
+</div>
 
 Spécifiez le codec `Quantized(...)` pour la colonne `Array(Float32)` (ou `Array(Float64)` / `Array(BFloat16)`).
 
@@ -705,7 +722,9 @@ ORDER BY ...;
 
 Le codec ne peut pas être ajouté ni modifié ultérieurement avec `ALTER TABLE`.
 
-#### Méthodes de quantification {#quantized-codecs-methods}
+<div id="quantized-codecs-methods">
+  #### Méthodes de quantification
+</div>
 
 Chaque méthode de quantification présente différents compromis entre taille et précision.
 L&#39;argument `dimensions` correspond à la longueur du vecteur.
@@ -718,7 +737,9 @@ L&#39;argument `dimensions` correspond à la longueur du vecteur.
 
 `rabitq` et `turboquant` nécessitent que `dimensions` soit un multiple de 8.
 
-#### Utiliser le codec {#quantized-codecs-searching}
+<div id="quantized-codecs-searching">
+  #### Utiliser le codec
+</div>
 
 Le codec est automatiquement utilisé par le format de requête top-`k` habituel (voir la [recherche exacte](#exact-nearest-neighbor-search)) :
 
@@ -740,7 +761,9 @@ Le réglage `vector_search_index_fetch_multiplier` indique le nombre de candidat
 Des multiplicateurs plus élevés améliorent le rappel, au prix d’un rescoring plus important.
 La valeur par défaut est `1` (sans suréchantillonnage) ; il est généralement nécessaire de l’augmenter (par exemple à `10`) pour obtenir un bon rappel.
 
-### Quantized Bit (QBit) {#approximate-nearest-neighbor-search-qbit}
+<div id="approximate-nearest-neighbor-search-qbit">
+  ### Quantized Bit (QBit)
+</div>
 
 Une approche courante pour accélérer la recherche vectorielle exacte consiste à utiliser un [type de données flottant](/fr/reference/data-types/float) de plus faible précision.
 Par exemple, si les vecteurs sont stockés sous la forme `Array(BFloat16)` au lieu de `Array(Float32)`, la taille des données est réduite de moitié, et le temps d’exécution des requêtes devrait diminuer dans les mêmes proportions.
@@ -767,7 +790,9 @@ Où :
 * `dimension` – le nombre d’éléments de chaque vecteur
 * `stride` – facultatif. Un diviseur de `dimension` qui partitionne les dimensions en `dimension / stride` groupes contigus stockés dans des flux distincts, de sorte qu’une recherche portant uniquement sur les premières dimensions lise moins de flux (utile pour les embeddings Matryoshka). La valeur par défaut est `dimension`, auquel cas le type est identique, octet pour octet, à un `QBit` sans stride. Voir la [page du type de données `QBit`](/fr/reference/data-types/qbit) pour plus de détails.
 
-#### Création d’une table `QBit` et ajout de données {#qbit-create}
+<div id="qbit-create">
+  #### Création d’une table `QBit` et ajout de données
+</div>
 
 ```sql
 CREATE TABLE fruit_animal (
@@ -785,7 +810,9 @@ INSERT INTO fruit_animal VALUES
     ('horse', [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
 ```
 
-#### Recherche vectorielle avec `QBit` {#qbit-search}
+<div id="qbit-search">
+  #### Recherche vectorielle avec `QBit`
+</div>
 
 Cherchons les plus proches voisins d’un vecteur représentant le mot &#39;lemon&#39; à l’aide de la distance L2. Le troisième paramètre de la fonction de distance indique la précision en bits : des valeurs plus élevées offrent une meilleure précision, mais nécessitent davantage de calculs.
 
@@ -835,14 +862,18 @@ ORDER BY distance;
 
 Notez qu’avec une quantification sur 12 bits, on obtient une bonne approximation des distances et une exécution plus rapide des requêtes. L’ordre relatif reste globalement le même, &#39;apple&#39; demeurant toujours la correspondance la plus proche.
 
-#### Considérations relatives aux performances {#qbit-performance}
+<div id="qbit-performance">
+  #### Considérations relatives aux performances
+</div>
 
 Le gain de performances apporté par `QBit` vient de la réduction des opérations d’E/S, car moins de données doivent être lues depuis le stockage lorsqu’on utilise une précision plus faible. De plus, lorsque `QBit` contient des données `Float32`, si le paramètre de précision est inférieur ou égal à 16, la réduction des calculs apporte aussi des gains supplémentaires. Le paramètre de précision contrôle directement le compromis entre précision et vitesse :
 
 * **Précision plus élevée** (plus proche de la largeur des données d’origine) : résultats plus précis, requêtes plus lentes
 * **Précision plus faible** : requêtes plus rapides avec des résultats approximatifs, utilisation de la mémoire réduite
 
-### Références {#references}
+<div id="references">
+  ### Références
+</div>
 
 Articles de blog :
 

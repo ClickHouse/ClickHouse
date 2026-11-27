@@ -92,10 +92,8 @@ def _read_file(ref, path):
 
 
 def _generated_blocks(content):
-    # Only complete marker pairs define a protected region. Empty regions hold
-    # no generated content, so adding one (the scaffold of a new page, which the
-    # generator fills later) or removing one is not an edit of generated docs.
-    return [block for block in BLOCK_RE.findall(content) if block.strip()]
+    # Only complete marker pairs define a protected region.
+    return BLOCK_RE.findall(content)
 
 
 def find_violations(base_ref, head_ref="HEAD"):

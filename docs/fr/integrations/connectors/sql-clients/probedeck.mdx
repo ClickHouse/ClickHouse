@@ -12,16 +12,17 @@ integration:
 
 import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
 
+import { Image } from "/snippets/fr/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/fr/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
 ProbeDeck est un client iOS et iPadOS qui permet de vérifier l’état d’un serveur ClickHouse, d’inspecter
 les tables `system` et d’exécuter du SQL. Il se connecte à l’interface HTTP de ClickHouse via le réseau de l’appareil
-ou par l’intermédiaire d’un bastion SSH ; aucun serveur relais n’est nécessaire.
+ou par l’intermédiaire d’un bastion SSH ; aucun serveur relais n’est nécessaire.
 
 <div id="before-you-begin">
-  ## Avant de commencer {#before-you-begin}
+  ## Avant de commencer
 </div>
 
 * Installez [ProbeDeck depuis l’App Store](https://apps.apple.com/app/id6791261174).
@@ -40,7 +41,7 @@ Certaines sections de supervision dépendent de tables de logs facultatives ou d
 23.3 ou une version ultérieure. ProbeDeck indique qu’une section concernée est limitée lorsque sa source n’est pas disponible.
 
 <div id="how-it-works">
-  ## Fonctionnement {#how-it-works}
+  ## Fonctionnement
 </div>
 
 1. ProbeDeck envoie des requêtes SQL au point de terminaison HTTP(S) de ClickHouse.
@@ -48,7 +49,9 @@ Certaines sections de supervision dépendent de tables de logs facultatives ou d
 3. L’application affiche les résultats des requêtes et les vues de monitoring sur l’appareil. Un bastion SSH peut acheminer la
    même connexion HTTP(S) lorsque le point de terminaison n’est pas directement accessible depuis l’appareil.
 
-## Se connecter à ClickHouse Cloud {#connect-to-clickhouse-cloud}
+<div id="connect-to-clickhouse-cloud">
+  ## Se connecter à ClickHouse Cloud
+</div>
 
 <Steps>
   <Step title="Récupérer les informations de connexion au service" id="gather-cloud-details">
@@ -69,16 +72,12 @@ Certaines sections de supervision dépendent de tables de logs facultatives ou d
     ProbeDeck authentifie les requêtes SQL envoyées au point de terminaison de service à l’aide de ces identifiants de base de données.
     ClickHouse Cloud utilise les clés au niveau de l’organisation de la page **API Keys** pour les points de terminaison de Cloud API et de Query API. Le processus de connexion SQL de ProbeDeck n’utilise pas ces clés.
 
-    <div className="ch-image-sm">
-      <Frame>
-        ![Formulaire de connexion ProbeDeck configuré pour HTTPS sur le port 8443 avec un nom d’utilisateur ClickHouse](/images/integrations/sql-clients/probedeck-add-connection.png)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/sql-clients/probedeck-add-connection.png" size="sm" border alt="Formulaire de connexion ProbeDeck configuré pour HTTPS sur le port 8443 avec un nom d’utilisateur ClickHouse" />
   </Step>
 </Steps>
 
 <div id="connect-to-self-hosted-clickhouse">
-  ## Se connecter à une instance ClickHouse auto-hébergée {#connect-to-self-hosted-clickhouse}
+  ## Se connecter à une instance ClickHouse auto-hébergée
 </div>
 
 <Steps>
@@ -105,7 +104,7 @@ Certaines sections de supervision dépendent de tables de logs facultatives ou d
 </Steps>
 
 <div id="connect-through-an-ssh-bastion">
-  ## Se connecter via un bastion SSH {#connect-through-an-ssh-bastion}
+  ## Se connecter via un bastion SSH
 </div>
 
 Activez **SSH Tunnel** dans le formulaire de connexion et renseignez :
@@ -119,7 +118,7 @@ HTTP(S) indiqués dans la section **Server**. Lors de la première connexion, co
 SHA-256 de la clé d’hôte du bastion avec la valeur fournie par l’administrateur du serveur avant de l’accepter.
 
 <div id="configure-authentication-and-tls">
-  ## Configurer l’authentification et TLS {#configure-authentication-and-tls}
+  ## Configurer l’authentification et TLS
 </div>
 
 ProbeDeck envoie le nom d’utilisateur et le mot de passe de la base de données dans les en-têtes de requête
@@ -135,34 +134,30 @@ décision à la connexion ; tout changement de certificat interrompt la connexi
 
 ProbeDeck stocke les secrets de connexion et les clés importées dans le trousseau iOS de l’appareil.
 
-## Surveiller ClickHouse {#monitor-clickhouse}
+<div id="monitor-clickhouse">
+  ## Surveiller ClickHouse
+</div>
 
-Ouvrez la connexion enregistrée et sélectionnez **Monitor**. Le tableau de bord récapitule les sources suivantes :
+Ouvrez la connexion enregistrée et sélectionnez **Monitor**. Le tableau de bord récapitule les sources suivantes :
 
 | Domaine                                                 | Source ClickHouse                                                         |
 | ------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Requêtes en cours d’exécution, temps écoulé, mémoire et lignes lues | `system.processes`                                                        |
+| Requêtes en cours, temps écoulé, mémoire et lignes lues | `system.processes`                                                        |
 | État de la réplication et file d’attente                | `system.replicas`, `system.replication_queue`                             |
 | Disques, parts et merges                                | `system.disks`, `system.parts`, `system.merges`                           |
 | Mutations                                               | `system.mutations`                                                        |
 | Métriques de la mémoire et du serveur                   | `system.metrics`, `system.asynchronous_metrics`, `system.server_settings` |
 | Débits historiques des requêtes et des disques          | `system.metric_log`, `system.asynchronous_metric_log`                     |
 
-<div className="ch-image-sm">
-  <Frame>
-    ![Tableau de bord de supervision ProbeDeck affichant les requêtes en cours d’exécution, la réplication, les disques, les parts, les mutations, les merges, le débit de requêtes et la mémoire](/images/integrations/sql-clients/probedeck-dashboard.png)
-  </Frame>
+<Image img="/images/integrations/sql-clients/probedeck-dashboard.png" size="sm" border alt="Tableau de bord de surveillance ProbeDeck affichant les requêtes en cours, la réplication, les disques, les parts, les mutations, les merges, le débit de requêtes et la mémoire" />
+
+Cliquez sur **Running queries** pour trier les requêtes actives par temps écoulé et examiner la mémoire et les lignes lues.
+
+<Image img="/images/integrations/sql-clients/probedeck-running-queries.png" size="sm" border alt="Liste des requêtes en cours de ProbeDeck triée par temps écoulé" />
+
+<div id="query-the-uk-property-price-dataset">
+  ## Interroger le jeu de données UK Property Price
 </div>
-
-Cliquez sur **Requêtes en cours d’exécution** pour trier les requêtes actives par temps écoulé et examiner la mémoire et les lignes lues.
-
-<div className="ch-image-sm">
-  <Frame>
-    ![Liste des requêtes en cours d’exécution dans ProbeDeck, triée par temps écoulé](/images/integrations/sql-clients/probedeck-running-queries.png)
-  </Frame>
-</div>
-
-## Interroger le jeu de données UK Property Price {#query-the-uk-property-price-dataset}
 
 Cet exemple utilise le [jeu de données UK Property Price](/fr/get-started/sample-datasets/uk-price-paid).
 Chargez le jeu de données dans `uk_price_paid`, puis :
@@ -185,7 +180,7 @@ LIMIT 10
 Le résultat doit contenir dix villes, avec leur nombre de transactions et leur prix moyen.
 
 <div id="known-limits">
-  ## Limites connues {#known-limits}
+  ## Limites connues
 </div>
 
 * ProbeDeck fonctionne sous iOS et iPadOS 17.0 ou version ultérieure.
@@ -200,7 +195,7 @@ Le résultat doit contenir dix villes, avec leur nombre de transactions et leur 
   les instructions d’écriture et DDL, ainsi que d’autres actions opérationnelles, nécessitent ProbeDeck Pro.
 
 <div id="troubleshooting">
-  ## Résolution des problèmes {#troubleshooting}
+  ## Résolution des problèmes
 </div>
 
 <Accordion title="Échec de l'authentification">
@@ -224,7 +219,9 @@ Le résultat doit contenir dix villes, avec leur nombre de transactions et leur 
   empreinte. Une modification inattendue peut indiquer un point de terminaison différent ou un chemin d&#39;interception TLS.
 </Accordion>
 
-## Étapes suivantes {#next-steps}
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
 
-* Consultez le [site web de ProbeDeck](https://probedeck.app) pour en savoir plus sur le produit.
-* Consultez la [documentation de l&#39;interface HTTP ClickHouse](/fr/concepts/features/interfaces/http) pour la configuration du serveur.
+* Consultez le [site web de ProbeDeck](https://probedeck.app) pour plus d’informations sur le produit.
+ * Consultez la [documentation de l’interface HTTP de ClickHouse](/fr/concepts/features/interfaces/http) pour configurer le serveur.

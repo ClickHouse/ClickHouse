@@ -121,15 +121,10 @@ def report_s3_base():
 
 
 def master_coverage_url(sha):
-    """Link to the `llvm_coverage.info` published for master commit `sha`.
-
-    Since 2026-10-09 the scheduled `CoverageReport` workflow measures master (one run
-    every 3 hours, on the commit current at that time); `MasterCI` no longer runs the
-    coverage jobs. The diff step probes the master-track commits in order and uses the
-    newest one with a published tracefile, so the gaps between the scheduled runs are
-    fine, but a wrong workflow prefix finds nothing at all."""
+    """Link to the `llvm_coverage.info` published by `MasterCI` at master
+    commit `sha`."""
     prefix = _Environment.get_s3_prefix_static(
-        pr_number=0, branch="master", sha=sha, workflow_name="CoverageReport"
+        pr_number=0, branch="master", sha=sha, workflow_name="MasterCI"
     )
     return f"https://{S3_BUCKET_HTTP_ENDPOINT}/{prefix}/llvm_coverage/llvm_coverage.info"
 

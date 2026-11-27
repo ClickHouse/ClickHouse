@@ -7,19 +7,19 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualización', 'sql', 'observabilidad']
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 ClickStack admite visualizaciones basadas en consultas SQL directas. Esto te da un control total sobre la lógica de la consulta, sin dejar de integrarse con los intervalos de tiempo, los filtros y la representación de gráficos a nivel de dashboard.
 
 Las visualizaciones basadas en SQL son útiles cuando necesitas ir más allá del Chart Explorer integrado; por ejemplo, para hacer join entre tablas o crear agregaciones complejas que el chart builder no admite.
 
-## Creación de una visualización basada en SQL {#creating-a-raw-sql-chart}
+<div id="creating-a-raw-sql-chart">
+  ## Creación de una visualización basada en SQL
+</div>
 
 Para crear una visualización basada en SQL, abra el editor de tile de un dashboard y seleccione la pestaña **SQL**.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Botón de Editor SQL](/images/use-cases/observability/sql-editor-button.webp)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/sql-editor-button.webp" alt="Botón de SQL Editor" size="lg" />
 
 Desde allí:
 
@@ -29,13 +29,13 @@ Desde allí:
 4. Haga clic en el botón **play** para obtener una vista previa de los resultados y, a continuación, en **Save**.
 
 <div id="query-parameters">
-  ## Parámetros de consulta {#query-parameters}
+  ## Parámetros de consulta
 </div>
 
 Los [parámetros de consulta](/es/reference/syntax#defining-and-using-query-parameters) permiten que su SQL haga referencia al intervalo de tiempo y a la granularidad actuales del dashboard. Utilizan la sintaxis de consultas parametrizadas de ClickHouse: `{paramName:Type}`.
 
 <div id="available-parameters">
-  ### Parámetros disponibles {#available-parameters}
+  ### Parámetros disponibles
 </div>
 
 Los parámetros disponibles dependen del tipo de gráfico:
@@ -57,13 +57,13 @@ Los parámetros disponibles dependen del tipo de gráfico:
 | `{endDateMilliseconds:Int64}`   | Int64 | Fin del rango de fechas del dashboard (milisegundos desde la época Unix)    |
 
 <div id="macros">
-  ## Macros {#macros}
+  ## Macros
 </div>
 
 Las macros son atajos que se expanden en expresiones habituales de ClickHouse SQL. Llevan el prefijo `$__` y se sustituyen antes de enviar la consulta a ClickHouse.
 
 <div id="time-boundary-macros">
-  ### Macros de límites temporales {#time-boundary-macros}
+  ### Macros de límites temporales
 </div>
 
 Estas macros devuelven una expresión de ClickHouse que representa la hora de inicio o de fin del dashboard. No aceptan argumentos.
@@ -77,7 +77,7 @@ Estas macros devuelven una expresión de ClickHouse que representa la hora de in
 | `$__interval_s`  | `{intervalSeconds:Int64}`                                             | Int64           |
 
 <div id="time-filter-macros">
-  ### Macros de filtro de tiempo {#time-filter-macros}
+  ### Macros de filtro de tiempo
 </div>
 
 Estas macros generan un fragmento de cláusula `WHERE` que filtra una columna según el intervalo de tiempo del dashboard.
@@ -98,7 +98,7 @@ AND TimestampTime <= toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:In
 ```
 
 <div id="time-interval-macros">
-  ### Macros de intervalos de tiempo {#time-interval-macros}
+  ### Macros de intervalos de tiempo
 </div>
 
 Estas macros agrupan una columna de marca de tiempo en intervalos que coinciden con la granularidad del dashboard. Normalmente se usan en las cláusulas `SELECT` y `GROUP BY` para gráficos de series temporales. Solo están disponibles para las visualizaciones Line y Stacked-bar.
@@ -115,7 +115,7 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
 ```
 
 <div id="dashboard-filter-macro">
-  ### Macro de filtro del dashboard {#dashboard-filter-macro}
+  ### Macro de filtro del dashboard
 </div>
 
 | Macro        | Descripción                                                                                                 |
@@ -127,7 +127,7 @@ Cuando se selecciona una **Source** en el gráfico y los filtros del dashboard e
 `$__filters` solo aplica los filtros que tienen habilitada la **condición de filtro de difusión**. Los filtros expuestos como variables se referencian explícitamente, como se describe a continuación.
 
 <div id="dashboard-variables">
-  ### Macros de variables de dashboard {#dashboard-variables}
+  ### Macros de variables de dashboard
 </div>
 
 Cuando un filtro de dashboard está [disponible como variable](/es/clickstack/features/dashboards/overview#dashboard-variables), se puede hacer referencia a los valores seleccionados en cualquier parte de la consulta. Estas macros solo están disponibles en los tiles que pertenecen a un dashboard que declara al menos una variable.
@@ -141,13 +141,13 @@ Cuando un filtro de dashboard está [disponible como variable](/es/clickstack/fe
 Los valores de una variable también se pueden interpolar directamente como `$name` o `${name}`, con un formato opcional: `${name:sqlstring}` (el predeterminado), `${name:csv}` o `${name:regex}`. En el formato predeterminado, una referencia directa se muestra como `NULL` antes de seleccionar cualquier valor, por lo que se recomienda usar las macros anteriores donde se espere un predicado.
 
 <div id="how-results-are-plotted">
-  ## Cómo se representan los resultados de la consulta {#how-results-are-plotted}
+  ## Cómo se representan los resultados de la consulta
 </div>
 
 ClickStack asigna automáticamente las columnas del resultado a los elementos del gráfico en función de los tipos de columna. Las reglas de asignación varían según el tipo de gráfico.
 
 <div id="line-and-stacked-bar-charts">
-  ### Gráficos de líneas y de barras apiladas {#line-and-stacked-bar-charts}
+  ### Gráficos de líneas y de barras apiladas
 </div>
 
 | Rol                   | Tipo de columna                     | Descripción                                                                                     |
@@ -157,7 +157,7 @@ ClickStack asigna automáticamente las columnas del resultado a los elementos de
 | **Nombres de grupo**  | Columnas String, Map o Array        | Opcional. Las filas con distintos valores de grupo se representan como series independientes.   |
 
 <div id="pie-chart">
-  ### Gráfico circular {#pie-chart}
+  ### Gráfico circular
 </div>
 
 | Función                 | Tipo de columna              | Descripción                                                   |
@@ -166,7 +166,7 @@ ClickStack asigna automáticamente las columnas del resultado a los elementos de
 | **Etiqueta del sector** | Columnas String, Map o Array | Opcional. Cada valor único pasa a ser una etiqueta de sector. |
 
 <div id="number-chart">
-  ### Gráfico numérico {#number-chart}
+  ### Gráfico numérico
 </div>
 
 | Función    | Tipo de columna          | Descripción                                                            |
@@ -174,13 +174,13 @@ ClickStack asigna automáticamente las columnas del resultado a los elementos de
 | **Número** | Primera columna numérica | Se muestra el valor de la primera fila de la primera columna numérica. |
 
 <div id="table-chart">
-  ### Gráfico de tabla {#table-chart}
+  ### Gráfico de tabla
 </div>
 
 Todas las columnas del resultado se muestran directamente como columnas de la tabla.
 
 <div id="examples">
-  ## Ejemplos {#examples}
+  ## Ejemplos
 </div>
 
 <Info>
@@ -190,7 +190,7 @@ Todas las columnas del resultado se muestran directamente como columnas de la ta
 </Info>
 
 <div id="example-line-chart">
-  ### Gráfico de líneas — recuento de logs a lo largo del tiempo por servicio {#example-line-chart}
+  ### Gráfico de líneas — recuento de logs a lo largo del tiempo por servicio
 </div>
 
 Esta consulta cuenta los eventos de log por servicio, agrupándolos en intervalos de tiempo que se ajustan a la granularidad del dashboard.
@@ -213,7 +213,7 @@ ORDER BY ts ASC
 * `ServiceName` (cadena) crea una línea independiente para cada servicio.
 
 <div id="example-line-chart-macros">
-  ### Gráfico de líneas — uso de macros {#example-line-chart-macros}
+  ### Gráfico de líneas — uso de macros
 </div>
 
 La misma consulta, escrita con macros para mayor brevedad:
@@ -231,7 +231,7 @@ ORDER BY ts ASC
 ```
 
 <div id="example-line-chart-variables">
-  ### Gráfico de líneas — uso de variables del dashboard {#example-line-chart-variables}
+  ### Gráfico de líneas — uso de variables del dashboard
 </div>
 
 Dado un dashboard con una variable `service` para `ServiceName` y una variable `severity` para `SeverityText`, esta consulta limita el gráfico a la selección actual del servicio y excluye las severidades seleccionadas. Ambas macros se expanden a `1=1` cuando su variable no tiene ninguna selección, por lo que el gráfico se muestra sin filtrar hasta que el Viewer selecciona un valor.
@@ -249,7 +249,7 @@ ORDER BY ts ASC
 ```
 
 <div id="example-stacked-bar">
-  ### Gráfico de barras apiladas — recuento de errores por severidad {#example-stacked-bar}
+  ### Gráfico de barras apiladas — recuento de errores por severidad
 </div>
 
 ```sql
@@ -266,7 +266,7 @@ ORDER BY ts ASC
 ```
 
 <div id="example-table">
-  ### Gráfico de tabla — los 10 endpoints más lentos {#example-table}
+  ### Gráfico de tabla — los 10 endpoints más lentos
 </div>
 
 ```sql
@@ -283,7 +283,7 @@ LIMIT 10
 ```
 
 <div id="example-pie">
-  ### Gráfico circular — distribución de solicitudes por servicio {#example-pie}
+  ### Gráfico circular — distribución de solicitudes por servicio
 </div>
 
 ```sql
@@ -300,7 +300,7 @@ GROUP BY ServiceName
 * `ServiceName` (cadena) identifica cada segmento.
 
 <div id="example-number">
-  ### Gráfico numérico — recuento total de errores {#example-number}
+  ### Gráfico numérico — recuento total de errores
 </div>
 
 ```sql
@@ -315,7 +315,7 @@ WHERE $__timeFilter(TimestampTime)
 Se muestra el valor numérico único `total_errors` de la primera fila.
 
 <div id="notes">
-  ## Notas {#notes}
+  ## Notas
 </div>
 
 * Las visualizaciones basadas en SQL se ejecutan con el modo `readonly` activado; solo se permiten consultas `SELECT`.

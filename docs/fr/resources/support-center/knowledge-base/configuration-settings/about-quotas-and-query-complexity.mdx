@@ -6,7 +6,9 @@ keywords: ['Quotas', 'Complexité des requêtes']
 description: 'Les quotas et la complexité des requêtes sont deux moyens efficaces de limiter et de restreindre ce que les utilisateurs peuvent faire dans ClickHouse. Cet article de la base de connaissances présente des exemples d''application de ces deux approches.'
 ---
 
-## À propos des quotas et de la complexité des requêtes {#about-quotas-and-query-complexity}
+<div id="about-quotas-and-query-complexity">
+  ## À propos des quotas et de la complexité des requêtes
+</div>
 
 Les [quotas](/fr/concepts/features/configuration/server-config/quotas) et la [complexité des requêtes](/fr/concepts/features/configuration/settings/query-complexity) sont des moyens efficaces de limiter et d&#39;encadrer ce que les utilisateurs peuvent faire dans ClickHouse.
 
@@ -14,7 +16,9 @@ Les quotas imposent des restrictions dans le cadre d&#39;un intervalle de temps,
 
 Cet article de la base de connaissances présente des exemples montrant comment mettre en œuvre ces deux approches.
 
-## Les données d’exemple {#the-sample-data}
+<div id="the-sample-data">
+  ## Les données d’exemple
+</div>
 
 Nous utiliserons cette simple table d’exemple pour les exemples suivants :
 
@@ -66,7 +70,9 @@ clickhouse-cloud :) SELECT * FROM default.test_table_00006488 LIMIT 5
 -- 5 rows in set. Elapsed: 0.003 sec.
 ```
 
-## Utilisation des quotas {#using-quotas}
+<div id="using-quotas">
+  ## Utilisation des quotas
+</div>
 
 Dans cet exemple, nous créons un rôle auquel nous appliquerons un quota permettant de récupérer au plus 10 lignes de résultat par intervalle de 10 secondes :
 
@@ -156,7 +162,7 @@ clickhouse-cloud :) SHOW GRANTS
 
 -- 1 row in set. Elapsed: 0.001 sec.
 
--- check the time
+-- check the timem
 clickhouse-cloud :) select now()
 
 -- SELECT now()
@@ -222,9 +228,11 @@ clickhouse-cloud :) select now()
 -- 1 row in set. Elapsed: 0.001 sec.
 ```
 
-Notez que l&#39;utilisateur devra attendre encore 5 secondes avant de pouvoir obtenir une nouvelle « allowance » de jeu de résultats de 10 lignes.
+Notez que l&#39;utilisateur devra attendre encore 5 secondes avant de pouvoir obtenir une nouvelle « allowance » de jeu de résultats de 10 lignes.
 
-## Utilisation de la complexité des requêtes {#using-query-complexity}
+<div id="using-query-complexity">
+  ## Utilisation de la complexité des requêtes
+</div>
 
 Dans cet exemple, nous créons un rôle auquel nous appliquerons un `SETTING` de complexité des requêtes qui n’autorise le renvoi que d’une seule ligne par requête.
 

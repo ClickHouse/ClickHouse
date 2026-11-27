@@ -145,13 +145,6 @@ struct IdentifierResolveScope
     /// Argument can be expression like constant, column, function or table expression
     std::unordered_map<std::string, QueryTreeNodePtr> expression_argument_name_to_node;
 
-    /** Names from `expression_argument_name_to_node` that are temporarily invisible.
-      * Set while an expression bound to an alias of an outer scope is resolved through this
-      * lambda scope, so that a lambda argument does not capture an identifier of an expression
-      * that is written outside of the lambda. See `tryResolveIdentifierFromAliases`.
-      */
-    std::unordered_set<std::string> hidden_expression_arguments;
-
     ScopeAliases aliases;
 
     /// Store current scope aliases defined in WITH clause if `enable_scopes_for_with_statement` setting is disabled.
@@ -220,10 +213,6 @@ struct IdentifierResolveScope
     /// Join retutns NULLs instead of default values
     bool join_use_nulls = false;
     bool allow_resolve_from_using = true;
-    /// Points to the JOIN node whose ON expression is currently being resolved (where both sides should be accessible),
-    /// or to the ARRAY JOIN node whose expressions are being resolved (where its input should be accessible).
-    /// nullptr when not resolving any JOIN ON or ARRAY JOIN expression
-    const IQueryTreeNode * resolving_join_on_expression = nullptr;
 
     /** True while the `PREWHERE` expression of this query is being resolved.
       * `PREWHERE` is evaluated by the reading step and cannot contain a correlated subquery,
@@ -238,6 +227,9 @@ struct IdentifierResolveScope
     /// JOIN USING count (joins whose keys can retype a matched column)
     size_t using_joins_count = 0;
 
+    /// True while resolving a JOIN ON expression.
+    bool resolving_join_on_expression = false;
+
     /// Subquery depth
     size_t subquery_depth = 0;
 
@@ -249,13 +241,13 @@ struct IdentifierResolveScope
     /// Node hash to mask id map
     std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
 
-    [[nodiscard]] [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const;
+    [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const;
 
     IdentifierResolveScope * getNearestQueryScope();
 
     AnalysisTableExpressionData & getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node);
 
-    [[nodiscard]] const AnalysisTableExpressionData & getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node) const;
+    const AnalysisTableExpressionData & getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node) const;
 
     void pushExpressionNode(const QueryTreeNodePtr & node);
 
@@ -280,10 +272,10 @@ struct IdentifierResolveScope
     /// Dump identifier resolve scope
     [[maybe_unused]] void dump(WriteBuffer & buffer) const;
 
-    [[nodiscard]] [[maybe_unused]] String dump() const;
+    [[maybe_unused]] String dump() const;
 
 private:
-    [[nodiscard]] bool canCacheIdentifier(
+    bool canCacheIdentifier(
         const IdentifierLookup & lookup,
         const IdentifierResolveContext & resolve_context) const;
 

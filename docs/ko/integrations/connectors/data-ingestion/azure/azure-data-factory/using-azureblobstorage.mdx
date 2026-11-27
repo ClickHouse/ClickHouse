@@ -10,6 +10,8 @@ integration:
    - category: 'data_ingestion'
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 이는 Azure Blob Storage 또는 Azure Data Lake Storage에서 ClickHouse로 데이터를
 복사하는 가장 효율적이고 간단한 방법 중 하나입니다. 이 테이블
 함수를 사용하면 ClickHouse가 Azure 스토리지에 직접 연결해
@@ -26,34 +28,26 @@ integration:
 공식 문서를 참조하십시오:
 [`azureBlobStorage` 테이블 함수 문서 페이지](/ko/reference/functions/table-functions/azureBlobStorage)
 
-## Azure Blob Storage 액세스 키 획득 {#acquiring-azure-blob-storage-access-keys}
+<div id="acquiring-azure-blob-storage-access-keys">
+  ## Azure Blob Storage 액세스 키 획득
+</div>
 
-ClickHouse에서 Azure Blob Storage에 액세스하려면 액세스 키가 포함된 연결 문자열(Connection String)이 필요합니다.
+ClickHouse에서 Azure Blob Storage에 액세스하려면 액세스 키가 포함된 연결 문자열이 필요합니다.
 
 1. Azure Portal에서 **스토리지 계정**으로 이동합니다.
 
 2. 왼쪽 메뉴에서 **Security +
-   networking** 섹션 아래의 **액세스 키**를 선택합니다.
-
-   <div className="ch-image-lg">
-     <Frame>
-       ![Azure 데이터 저장소 설정](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp)
-     </Frame>
-   </div>
+   networking** 섹션 아래의 **Access keys**를 선택합니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp" size="lg" alt="Azure 데이터 저장소 설정" border />
 
 3. **key1** 또는 **key2** 중 하나를 선택한 다음,
-   **연결 문자열(Connection String)** 필드 옆의 **Show** 버튼을 클릭합니다.
+   **Connection string** 필드 옆의 **Show** 버튼을 클릭합니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp" size="lg" alt="Azure 데이터 저장소 액세스 키" border />
 
-   <div className="ch-image-lg">
-     <Frame>
-       ![Azure 데이터 저장소 액세스 키](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp)
-     </Frame>
-   </div>
-
-4. 연결 문자열(Connection String)을 복사합니다. 이 값은 azureBlobStorage 테이블 함수의 매개변수로 사용합니다.
+4. 연결 문자열을 복사합니다. 이 값은 `azureBlobStorage` 테이블 함수의 매개변수로 사용합니다.
 
 <div id="querying-the-data-from-azure-blob-storage">
-  ## Azure Blob Storage의 데이터 쿼리하기 {#querying-the-data-from-azure-blob-storage}
+  ## Azure Blob Storage의 데이터 쿼리하기
 </div>
 
 사용하는 ClickHouse 쿼리 콘솔을 여십시오 — ClickHouse Cloud
@@ -87,7 +81,9 @@ SELECT * FROM azureBlobStorage(
 이를 통해 별도의 ETL 단계 없이도 외부 데이터를 ClickHouse로
 효율적으로 가져올 수 있습니다.
 
-## Environmental Sensors 데이터셋을 사용하는 간단한 예시 {#simple-example-using-the-environmental-sensors-dataset}
+<div id="simple-example-using-the-environmental-sensors-dataset">
+  ## Environmental Sensors 데이터셋을 사용하는 간단한 예시
+</div>
 
 예시로 Environmental Sensors
 데이터셋에서 파일 하나를 다운로드하겠습니다.
@@ -110,19 +106,19 @@ SELECT * FROM azureBlobStorage(
    컨테이너에 업로드합니다.
 
 5. 앞서 설명한 단계에 따라 Azure Blob Storage
-   연결 문자열(Connection String)을 가져오십시오.
+   연결 문자열(connection string)을 가져오십시오.
 
 이제 모든 설정이 완료되었으므로 Azure Blob Storage에서 직접 데이터를 쿼리할 수 있습니다:
 
 ```sql
-SELECT *
-FROM azureBlobStorage(
-    '<YOUR CONNECTION STRING>', 
-    'sensors',
-    '2019-06_bmp180.csv.zst', 
-    'CSVWithNames')
-LIMIT 10
-SETTINGS format_csv_delimiter = ';'
+    SELECT *
+    FROM azureBlobStorage(
+        '<YOUR CONNECTION STRING>', 
+        'sensors',
+        '2019-06_bmp180.csv.zst', 
+        'CSVWithNames')
+    LIMIT 10
+    SETTINGS format_csv_delimiter = ';'
 ```
 
 7. 데이터를 테이블에 로드하려면 원본 데이터셋에 사용된
@@ -161,12 +157,14 @@ SETTINGS format_csv_delimiter = ';'
 이제 sensors 테이블이 Azure Blob Storage에 저장된 `2019-06_bmp180.csv.zst`
 파일의 데이터로 채워집니다.
 
-## 추가 자료 {#additional-resources}
+<div id="additional-resources">
+  ## 추가 자료
+</div>
 
-이 문서는 azureBlobStorage 함수 사용법을 간단히 소개하는 데 그칩니다.
-고급 옵션과 구성에 대한 자세한 내용은 공식
+이 문서는 azureBlobStorage 함수 사용에 대한 기본적인 소개일 뿐입니다. 더
+고급 옵션과 구성에 관한 자세한 내용은 공식
 문서를 참조하십시오:
 
 * [azureBlobStorage 테이블 함수](/ko/reference/functions/table-functions/azureBlobStorage)
-* [입출력 데이터 형식](/ko/reference/formats/index)
-* [입력 데이터에서 자동 스키마 추론](/ko/concepts/features/interfaces/schema-inference)
+* [입력 및 출력 데이터 포맷](/ko/reference/formats/index)
+* [입력 데이터의 자동 스키마 추론](/ko/concepts/features/interfaces/schema-inference)

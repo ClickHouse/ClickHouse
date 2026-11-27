@@ -14,7 +14,9 @@ import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## parallel_distributed_insert_select {#parallel_distributed_insert_select}
+<div id="parallel_distributed_insert_select">
+  ## parallel_distributed_insert_select
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -35,37 +37,32 @@ Desde la v25.4, `INSERT ... SELECT` desde un origen `ReplicatedMergeTree` o `Sha
 * `parallel_distributed_insert_select = 2`
 * `enable_parallel_replicas = 1`
 
-<Note>
-  La consulta reescrita, incluida cada expresión del `SELECT` (subconsultas, UDFs, etc.), se ejecuta en los segmentos con las credenciales de la configuración del clúster: el mismo modelo de confianza que el resto del procesamiento en los segmentos, como las subconsultas de un `IN` que no es `GLOBAL`. Configure un secreto entre servidores (el elemento `secret` de la configuración del clúster) si las lecturas en los segmentos deben autorizarse con la identidad del usuario que realiza la llamada.
-</Note>
-
-## parallel_hash_join_threshold {#parallel_hash_join_threshold}
+<div id="parallel_hash_join_threshold">
+  ## parallel_hash_join_threshold
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "100000"},{"label": "Nueva configuración"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "Nueva configuración"}]}, {"id": "row-3","items": [{"label": "25.3"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
 
-En un join hash `INNER`, `LEFT`, `RIGHT` o `FULL`, este umbral determina cómo se construye la tabla hash.
-Si el número estimado de filas de la tabla derecha está por debajo del umbral, el join construye la tabla hash como una sola parte, en un único thread.
-Si se alcanza o se supera el umbral, y también cuando no hay estimación, el join divide la tabla hash en partes que rellenan simultáneamente hasta `max_threads` threads (un solo thread con `max_threads = 1`).
-Con `0`, la tabla hash siempre se divide.
-Si `hash_join_layout` se establece en `serial` o `parallel`, este umbral no se utiliza: el join construye una sola parte o divide la tabla hash, independientemente de la estimación.
-La estimación procede del plan de consulta o de las estadísticas de ejecuciones anteriores del mismo join (consulte `collect_hash_table_stats_during_joins`).
-El plan de consulta estima 0 filas para una tabla derecha que se sabe vacía, como una tabla `MergeTree` sin partes de datos.
-Los joins `ASOF` nunca obtienen una estimación y, con `query_plan_optimize_join_order_limit = 0`, ningún join la obtiene.
+Cuando se aplica un algoritmo de join basado en hash, este umbral ayuda a decidir si usar `hash` o `parallel_hash` (solo si se dispone de una estimación del tamaño de la tabla derecha).
+El primero se usa cuando se sabe que el tamaño de la tabla derecha está por debajo del umbral.
 
-## parallel_non_joined_rows_processing {#parallel_non_joined_rows_processing}
+<div id="parallel_non_joined_rows_processing">
+  ## parallel_non_joined_rows_processing
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "Nueva configuración para habilitar el procesamiento en paralelo de filas no unidas en joins RIGHT\/FULL con parallel_hash."}]}]} />
 
-Permite que varios threads procesen en paralelo las filas no unidas de la tabla derecha durante los JOIN RIGHT y FULL.
-Esto puede acelerar la fase de filas no unidas de los joins hash con tablas derechas grandes que construyen la tabla hash en varios threads (véase `parallel_hash_join_threshold`).
-Cuando está deshabilitado, o cuando la tabla hash se construye en un solo thread, las filas no unidas se procesan con un solo thread.
-En todos los casos, las filas no unidas se devuelven sin un orden fijo. Use `ORDER BY` cuando la consulta necesite un orden estable.
+Permite que varios hilos procesen en paralelo las filas no unidas de la tabla derecha durante los JOIN RIGHT y FULL.
+Esto puede acelerar la fase de filas no unidas al usar el algoritmo de JOIN `parallel_hash` con tablas grandes.
+Cuando está deshabilitado, las filas no unidas se procesan con un solo hilo.
 
-## parallel_replica_offset {#parallel_replica_offset}
+<div id="parallel_replica_offset">
+  ## parallel_replica_offset
+</div>
 
 <BetaBadge />
 
@@ -73,7 +70,9 @@ En todos los casos, las filas no unidas se devuelven sin un orden fijo. Use `ORD
 
 Esta es una configuración interna que no debe usarse directamente y representa un detalle de implementación del modo de «réplicas paralelas». El servidor iniciador la establecerá automáticamente en las consultas distribuidas con el índice de la réplica que participa en el procesamiento de consultas entre las réplicas paralelas.
 
-## parallel_view_processing {#parallel_view_processing}
+<div id="parallel_view_processing">
+  ## parallel_view_processing
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

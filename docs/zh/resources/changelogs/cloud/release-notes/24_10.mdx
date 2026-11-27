@@ -9,7 +9,9 @@ doc_type: 'changelog'
 
 与 ClickHouse Cloud 服务相关的 v24.10 版本变更。
 
-## 向后不兼容变更 {#backward-incompatible-change}
+<div id="backward-incompatible-change">
+  ## 向后不兼容变更
+</div>
 
 * 现在，当子查询位于括号内时，在包含 `UNION` 的查询链中允许将 `SETTINGS` 写在 `FORMAT` 之前。此更改关闭了 [#39712](https://github.com/ClickHouse/ClickHouse/issues/39712)。同时，这也改变了在同一查询序列中两次指定 SETTINGS 子句时的行为：离对应子查询最近的 SETTINGS 子句将优先生效。在此前的版本中，最外层的 SETTINGS 子句可能会优先于内层子句。[#60197](https://github.com/ClickHouse/ClickHouse/pull/60197)[#68614](https://github.com/ClickHouse/ClickHouse/pull/68614) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * 重新实现了 Dynamic 类型。现在，当动态数据类型数量达到上限时，新类型不再被转换为 String，而是以二进制格式存储在一种特殊的数据结构中，并附带二进制编码的类型信息。现在，任何曾插入到 Dynamic 列中的类型都可以作为子列读取出来。[#68132](https://github.com/ClickHouse/ClickHouse/pull/68132) ([Pavel Kruglov](https://github.com/Avogar)).
@@ -18,7 +20,9 @@ doc_type: 'changelog'
 * 现在默认允许对 `[PRE]WHERE` 子句中的过滤条件进行重排序。可通过将 `allow_reorder_prewhere_conditions` 设置为 `false` 来禁用。[#70657](https://github.com/ClickHouse/ClickHouse/pull/70657) ([Nikita Taranov](https://github.com/nickitat)).
 * 修复了 `optimize_functions_to_subcolumns` 优化的问题 (此前可能导致 `Invalid column type for ColumnUnique::insertRangeFrom. Expected String, got LowCardinality(String)` 错误) ，修复方式是在 `mapKeys`/`mapValues` 中保留 `LowCardinality` 类型。[#70716](https://github.com/ClickHouse/ClickHouse/pull/70716) ([Azat Khuzhin](https://github.com/azat)).
 
-## 新特性 {#new-feature}
+<div id="new-feature">
+  ## 新特性
+</div>
 
 * 可刷新materialized view 现已可用于生产环境。[#70550](https://github.com/ClickHouse/ClickHouse/pull/70550) ([Michael Kolupaev](https://github.com/al13n321)) 。Replicated 数据库现已支持可刷新materialized view。[#60669](https://github.com/ClickHouse/ClickHouse/pull/60669) ([Michael Kolupaev](https://github.com/al13n321)) 。
 * 函数 `toStartOfInterval()` 现已新增一个重载形式，可分别模拟 TimescaleDB 的 `time_bucket()` 函数和 PostgreSQL 的 `date_bin()` 函数。([#55619](https://github.com/ClickHouse/ClickHouse/issues/55619))。它允许以*任意*原点为起点，将日期或时间戳值对齐到给定时间间隔的整数倍上 (而不是使用 0000-01-01 00:00:00.000 这一*固定*原点) 。例如，`SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, toDateTime('2023-01-01 14:35:30'));` 返回 `2023-01-01 14:44:30`，这是以原点 `2023-01-01 14:35:30` 为起点按 1 分钟时间间隔对齐后的结果。[#56738](https://github.com/ClickHouse/ClickHouse/pull/56738) ([Yarik Briukhovetskyi](https://github.com/yariks5s)) 。
@@ -36,7 +40,7 @@ doc_type: 'changelog'
 * 新增聚合函数 distinctDynamicTypes/distinctJSONPaths/distinctJSONPathsAndTypes，以便更好地查看 JSON 列类型内容的内部信息。[#68463](https://github.com/ClickHouse/ClickHouse/pull/68463) ([Pavel Kruglov](https://github.com/Avogar)) 。
 * 现在支持按标签删除查询缓存条目。例如，由 `SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'abc'` 创建的查询缓存条目，现在可以通过 `SYSTEM DROP QUERY CACHE TAG 'abc'` 删除 (当然，也可以直接使用：`SYSTEM DROP QUERY CACHE`，这会清空整个查询缓存) 。[#68477](https://github.com/ClickHouse/ClickHouse/pull/68477) ([Michał Tabaszewski](https://github.com/pinsvin00)) 。
 * 可以使用隐式 SELECT 编写简单的 SELECT 查询，从而支持计算器风格的表达式，例如 `ch "1 + 2"`。这由新设置 `implicit_select` 控制。[#68502](https://github.com/ClickHouse/ClickHouse/pull/68502) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
-* 为 clickhouse local 增加 `--copy` 模式支持，作为格式转换的快捷方式 [#68503](https://github.com/ClickHouse/ClickHouse/issues/68503)。[#68583](https://github.com/ClickHouse/ClickHouse/pull/68583) ([Denis Hananein](https://github.com/denis-hananein)) 。
+* 为 `clickhouse local` 增加 `--copy` 模式支持，作为格式转换的快捷方式 [#68503](https://github.com/ClickHouse/ClickHouse/issues/68503)。[#68583](https://github.com/ClickHouse/ClickHouse/pull/68583) ([Denis Hananein](https://github.com/denis-hananein)) 。
 * 新增了 `ripeMD160` 函数，用于计算字符串的 RIPEMD-160 加密哈希值。示例：`SELECT hex(ripeMD160('The quick brown fox jumps over the lazy dog'))` 返回 `37F332F68DB77BD9D7EDD4969571AD671CF9DD3B`。[#68639](https://github.com/ClickHouse/ClickHouse/pull/68639) ([Dergousov Maxim](https://github.com/m7kss1)) 。
 * 为 URL 表引擎添加虚拟列 &#95;headers。关闭 [#65026](https://github.com/ClickHouse/ClickHouse/issues/65026)。[#68867](https://github.com/ClickHouse/ClickHouse/pull/68867) ([flynn](https://github.com/ucasfl)).
 * 新增 `system.projections` 表，用于跟踪可用投影。[#68901](https://github.com/ClickHouse/ClickHouse/pull/68901) ([Jordi Villar](https://github.com/jrdi)) 。

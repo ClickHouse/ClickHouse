@@ -75,21 +75,6 @@ JoinLocality deserializeJoinLocality(ReadBuffer & in);
 
 const char * toString(JoinLocality locality);
 
-/// The set operation that a join executes.
-enum class JoinSetOperation : uint8_t
-{
-    None = 0,
-    IntersectDistinct,
-    ExceptDistinct,
-};
-
-constexpr uint8_t JoinSetOperationMax = static_cast<uint8_t>(JoinSetOperation::ExceptDistinct);
-
-void serializeJoinSetOperation(JoinSetOperation set_operation, WriteBuffer & out);
-JoinSetOperation deserializeJoinSetOperation(ReadBuffer & in);
-
-const char * toString(JoinSetOperation set_operation);
-
 /// ASOF JOIN inequality type
 enum class ASOFJoinInequality : uint8_t
 {
@@ -139,10 +124,11 @@ enum class JoinAlgorithm : uint8_t
     HASH,
     PARTIAL_MERGE,
     PREFER_PARTIAL_MERGE,
+    PARALLEL_HASH,
     GRACE_HASH,
     DIRECT,
     FULL_SORTING_MERGE,
-    INEQUALITY,
+    IE_JOIN,
     PARALLEL_FULL_SORTING_MERGE,
 };
 
@@ -177,14 +163,6 @@ enum class JoinOrderConflictDetector : uint8_t
 };
 
 const char * toString(JoinOrderConflictDetector join_order_conflict_detector);
-
-/// How a hash join builds its hash table, see the `hash_join_layout` setting.
-enum class HashJoinLayout : uint8_t
-{
-    AUTO = 0,
-    SERIAL,
-    PARALLEL,
-};
 
 enum class JoinAnalyzeMode : uint8_t
 {

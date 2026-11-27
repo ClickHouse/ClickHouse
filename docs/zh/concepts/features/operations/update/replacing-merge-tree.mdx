@@ -2,17 +2,21 @@
 slug: /guides/replacing-merge-tree
 title: '使用 ReplacingMergeTree 引擎'
 description: '在 ClickHouse 中使用 ReplacingMergeTree 引擎的指南'
-keywords: ['replacingmergetree', '插入操作', '去重']
+keywords: ['replacingmergetree', '插入', '去重']
 doc_type: 'guide'
 sidebarTitle: '使用 ReplacingMergeTree 引擎'
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 虽然事务型数据库针对事务性更新和删除工作负载进行了优化，但 OLAP 数据库对此类操作提供的保证较弱。相反，它们针对以批次插入的不可变数据进行了优化，以显著提升分析查询的速度。虽然 ClickHouse 通过 mutations 提供更新操作，也提供了轻量级的行删除方式，但其面向列的结构意味着这些操作应按上文所述谨慎安排。这些操作以异步方式处理，由单个线程执行，并且 (对于更新而言) 需要在磁盘上重写数据。因此，不应将它们用于大量零散的小规模变更。
 为了在避免上述使用模式的同时处理更新行和删除行的 stream，我们可以使用 ClickHouse 表引擎 ReplacingMergeTree。
 
-## 已插入行的自动 upsert {#automatic-upserts-of-inserted-rows}
+<div id="automatic-upserts-of-inserted-rows">
+  ## 已插入行的自动 upsert
+</div>
 
-[ReplacingMergeTree 表引擎](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree) 支持将更新操作应用于行，而无需使用低效的 `ALTER` 或 `DELETE` 语句。它的实现方式是允许你插入同一行的多个副本，并将其中一个标记为最新版本。随后，后台进程会异步移除同一行的旧版本，从而通过不可变插入操作高效地模拟更新操作。
+[ReplacingMergeTree 表引擎](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree) 支持将更新操作应用于行，而无需使用低效的 `ALTER` 或 `DELETE` 语句。它的实现方式是允许你插入同一行的多个副本，并将其中一个标记为最新版本。随后，后台进程会异步移除同一行的旧版本，从而通过不可变插入高效地模拟更新操作。
 这依赖于表引擎识别重复行的能力。具体来说，它通过 `ORDER BY` 子句来判断唯一性：如果两行在 `ORDER BY` 指定列上的值相同，就会被视为重复行。在定义表时指定的 `version` 列，则用于在两行被识别为重复时保留该行的最新版本，也就是保留 `version` 值最高的那一行。
 我们将在下面的示例中说明这一过程。这里，行通过 A 列 (即该表的 `ORDER BY`) 唯一标识。我们假设这些行分两个批次插入，因此在磁盘上形成了两个 parts。随后，在异步后台处理过程中，这些 parts 会被合并。
 
@@ -28,11 +32,7 @@ ReplacingMergeTree 还允许指定一个 `deleted` 列。该列的值只能是 0
 
 <br />
 
-<div className="ch-image-md">
-  <Frame>
-    ![ReplacingMergeTree 过程](/images/migrations/postgres-replacingmergetree.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/postgres-replacingmergetree.webp" size="md" alt="ReplacingMergeTree 过程" />
 
 <br />
 
@@ -47,13 +47,15 @@ ReplacingMergeTree 还允许指定一个 `deleted` 列。该列的值只能是 0
 SYSTEM SYNC REPLICA table
 ```
 
-我们建议在确保满足 (1) 后暂停插入操作，并一直保持暂停，直到此命令及后续清理完成。
+我们建议在确保满足 (1) 后暂停 insert，并一直保持暂停，直到此命令及后续清理完成。
 
 > 只有在删除量较低到中等 (少于 10%) 的表上，才建议使用 ReplacingMergeTree 处理删除，除非能够按上述条件安排清理窗口。
 
 > 提示：你也可以针对不再发生变更的特定分区执行 `OPTIMIZE FINAL CLEANUP`。
 
-## 选择主键/去重键 {#choosing-a-primarydeduplication-key}
+<div id="choosing-a-primarydeduplication-key">
+  ## 选择主键/去重键
+</div>
 
 上文中，我们强调了一个同样必须满足的重要附加约束：对于 ReplacingMergeTree，`ORDER BY` 中各列的值必须能够在发生变更时唯一标识一行。因此，如果是从 Postgres 这类事务型数据库迁移，原始的 Postgres 主键也应包含在 ClickHouse 的 `ORDER BY` 子句中。
 
@@ -67,22 +69,22 @@ CREATE TABLE stackoverflow.posts_updateable
 (
        `Version` UInt32,
        `Deleted` UInt8,
-        `Id` Int32 CODEC(Delta, Default),
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
         `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
         `AcceptedAnswerId` UInt32,
         `CreationDate` DateTime64(3, 'UTC'),
         `Score` Int32,
-        `ViewCount` UInt32 CODEC(Delta, Default),
+        `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
         `Body` String,
         `OwnerUserId` Int32,
         `OwnerDisplayName` String,
         `LastEditorUserId` Int32,
         `LastEditorDisplayName` String,
-        `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
+        `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
         `LastActivityDate` DateTime64(3, 'UTC'),
         `Title` String,
         `Tags` String,
-        `AnswerCount` UInt16 CODEC(Delta, Default),
+        `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
         `CommentCount` UInt8,
         `FavoriteCount` UInt8,
         `ContentLicense` LowCardinality(String),
@@ -97,7 +99,9 @@ ORDER BY (PostTypeId, toDate(CreationDate), CreationDate, Id)
 
 我们使用 `(PostTypeId, toDate(CreationDate), CreationDate, Id)` 作为 `ORDER BY` 键。每篇帖子唯一的 `Id` 列可确保行能够去重。还会按要求在 schema 中添加 `Version` 和 `Deleted` 列。
 
-## 查询 ReplacingMergeTree {#querying-replacingmergetree}
+<div id="querying-replacingmergetree">
+  ## 查询 ReplacingMergeTree
+</div>
 
 在合并时，ReplacingMergeTree 会识别重复行，将 `ORDER BY` 列的值用作唯一标识符，并且要么只保留最高版本，要么在最新版本表示删除时移除所有重复项。然而，这只能提供最终一致的正确性——并不能保证行一定会被去重，因此不应依赖它。
 
@@ -132,7 +136,7 @@ SELECT count() FROM stackoverflow.posts_updateable
 1 row in set. Elapsed: 0.002 sec.
 ```
 
-我们现在更新回答后的帖子统计信息。我们不直接更新这些值，而是插入 5000 行的新副本，并将它们的版本号加一 (这意味着表中将有 15000 行) 。我们可以用一个简单的 `INSERT INTO SELECT` 来模拟这一过程：
+我们现在更新回答后的帖子统计信息。我们不直接更新这些值，而是插入 5000 行的新副本，并将它们的版本号加一 (这意味着表中将有 150 行) 。我们可以用一个简单的 `INSERT INTO SELECT` 来模拟这一过程：
 
 ```sql
 INSERT INTO posts_updateable SELECT
@@ -238,7 +242,7 @@ Peak memory usage: 8.14 MiB.
 ```
 
 <div id="final-performance">
-  ## `FINAL` 性能 {#final-performance}
+  ## `FINAL` 性能
 </div>
 
 `FINAL` 运算符确实会给查询带来少量性能开销。
@@ -249,7 +253,9 @@ Peak memory usage: 8.14 MiB.
 
 如果 `WHERE` 条件没有使用键列，ClickHouse 目前在使用 `FINAL` 时不会利用 `PREWHERE` 优化。这种优化旨在减少对未参与过滤的列所读取的行数。有关如何模拟这种 `PREWHERE` 从而可能提升性能的示例，可在[此处](https://clickhouse.com/blog/clickhouse-postgresql-change-data-capture-cdc-part-1#final-performance)找到。
 
-## 利用 ReplacingMergeTree 中的分区 {#exploiting-partitions-with-replacingmergetree}
+<div id="exploiting-partitions-with-replacingmergetree">
+  ## 利用 ReplacingMergeTree 中的分区
+</div>
 
 ClickHouse 中的数据合并是在分区级别进行的。使用 ReplacingMergeTree 时，我们建议用户遵循最佳实践对表进行分区，前提是你能确保**某一行的分区键不会发生变化**。这样可以确保与同一行相关的更新会发送到同一个 ClickHouse 分区。你也可以沿用与 Postgres 相同的分区键，只要符合此处列出的最佳实践即可。
 
@@ -262,7 +268,7 @@ CREATE TABLE stackoverflow.posts_no_part
 (
         `Version` UInt32,
         `Deleted` UInt8,
-        `Id` Int32 CODEC(Delta, Default),
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
         ...
 )
 ENGINE = ReplacingMergeTree
@@ -312,7 +318,7 @@ CREATE TABLE stackoverflow.posts_with_part
 (
         `Version` UInt32,
         `Deleted` UInt8,
-        `Id` Int32 CODEC(Delta, Default),
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
         ...
 )
 ENGINE = ReplacingMergeTree
@@ -344,19 +350,19 @@ ORDER BY year ASC
 如图所示，在这种情况下，分区使去重过程能够在分区级别并行执行，因此显著提升了查询性能。
 
 <div id="merge-behavior-considerations">
-  ## 合并行为注意事项 {#merge-behavior-considerations}
+  ## 合并行为注意事项
 </div>
 
 ClickHouse 的合并选择机制并不仅仅是简单地合并 parts。下面我们将结合 ReplacingMergeTree 说明这种行为，包括可用于对较旧数据执行更激进合并的配置选项，以及针对较大 parts 的相关注意事项。
 
 <div id="merge-selection-logic">
-  ### 合并选择逻辑 {#merge-selection-logic}
+  ### 合并选择逻辑
 </div>
 
 虽然合并的目标是尽量减少 parts 的数量，但也需要在这一目标与写入放大带来的成本之间取得平衡。因此，根据内部计算结果，如果某些 parts 范围会导致过高的写入放大，就会被排除在合并之外。这种机制有助于避免不必要的资源消耗，并延长存储组件的使用寿命。
 
 <div id="merging-behavior-on-large-parts">
-  ### 大型 parts 上的合并行为 {#merging-behavior-on-large-parts}
+  ### 大型 parts 上的合并行为
 </div>
 
 ClickHouse 中的 ReplacingMergeTree 引擎经过优化，可通过合并 parts 来管理重复行，并仅保留基于指定唯一键的每一行最新版本。不过，当某个已合并 parts 达到 `max_bytes_to_merge_at_max_space_in_pool` 阈值时，即使设置了 `min_age_to_force_merge_seconds`，它也不会再被选中进行后续合并。因此，随着数据持续插入而不断累积的重复项，将无法再依赖自动合并来清除。
@@ -366,13 +372,13 @@ ClickHouse 中的 ReplacingMergeTree 引擎经过优化，可通过合并 parts 
 如果希望采用一种更可持续且兼顾性能的解决方案，建议对表进行分区。这有助于避免 parts 达到最大合并大小，并减少持续手动优化的需要。
 
 <div id="partitioning-and-merging-across-partitions">
-  ### 分区以及跨分区合并 {#partitioning-and-merging-across-partitions}
+  ### 分区以及跨分区合并
 </div>
 
 如 Exploiting Partitions with ReplacingMergeTree 一节所述，我们建议将表分区，作为一种最佳实践。分区可以隔离数据，使合并更高效，并避免发生跨分区合并，尤其是在查询执行时。从 23.12 版本起，这一行为进一步增强：如果分区键是排序键的前缀，则不会在查询时执行跨分区合并，从而提升查询性能。
 
 <div id="tuning-merges-for-better-query-performance">
-  ### 调优合并以提升查询性能 {#tuning-merges-for-better-query-performance}
+  ### 调优合并以提升查询性能
 </div>
 
 默认情况下，`min_age_to_force_merge_seconds` 和 `min_age_to_force_merge_on_partition_only` 分别设置为 0 和 false，因此这些功能默认处于禁用状态。在这种配置下，ClickHouse 会采用标准的合并行为，不会根据分区的时间强制执行合并。
@@ -382,7 +388,7 @@ ClickHouse 中的 ReplacingMergeTree 引擎经过优化，可通过合并 parts 
 还可以通过设置 `min_age_to_force_merge_on_partition_only=true` 进一步调优这一行为。这样一来，只有当分区中的所有 parts 都早于 `min_age_to_force_merge_seconds` 时，才会执行更激进的合并。这种配置可使较旧的分区随着时间推移逐步合并为单个 part，从而整合数据并维持查询性能。
 
 <div id="recommended-settings">
-  ### 推荐设置 {#recommended-settings}
+  ### 推荐设置
 </div>
 
 <Warning>

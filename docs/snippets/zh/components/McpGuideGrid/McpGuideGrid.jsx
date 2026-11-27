@@ -1,14 +1,11 @@
+const localizeHref = (href) => {
+  if (/^\/(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/.test(href)) return href;
+  if (typeof window === 'undefined') return href;
+  const match = window.location.pathname.match(/^\/(?:docs\/)?(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/);
+  return match ? `/${match[1]}${href}` : href;
+};
+
 export const McpGuideGrid = ({ variant = "guides" }) => {
-  const localizeHref = (href) => {
-    if (/^\/(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/.test(href)) return href
-    if (typeof window === "undefined") return href
-    const match = window.location.pathname.match(/^\/(?:docs\/)?(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/)
-    return match ? `/${match[1]}${href}` : href
-  }
-
-  // Images rendered from JavaScript do not receive Mintlify's asset URL rewriting.
-  const assetBase = typeof window !== "undefined" && /^\/docs(?:\/|$)/.test(window.location.pathname) ? "/docs" : ""
-
   const clients = [
     { name: "Claude Code", logo: "/images/logo-claudecode-color.svg" },
     { name: "Claude Desktop", logo: "/images/logo-claude.svg" },
@@ -60,7 +57,7 @@ export const McpGuideGrid = ({ variant = "guides" }) => {
 
             <div className="flex flex-wrap items-center justify-center gap-2">
               {clients.map((client) => (
-                <img key={client.name} src={assetBase + client.logo} alt={`${client.name} 徽标`} title={client.name} className="h-8 w-8 object-contain" style={{ pointerEvents: "none" }} />
+                <img key={client.name} src={client.logo} alt={`${client.name} 徽标`} title={client.name} className="h-8 w-8 object-contain" style={{ pointerEvents: "none" }} />
               ))}
             </div>
           </div>
@@ -76,9 +73,9 @@ export const McpGuideGrid = ({ variant = "guides" }) => {
           <a href={guide.href} className="block no-underline focus:no-underline focus-visible:no-underline" style={{ textDecoration: "none", outline: "none" }}>
             <div className="flex aspect-square min-h-[120px] flex-col items-center justify-center rounded-xl border border-gray-200 bg-white p-4 text-center shadow-sm dark:border-white/10 dark:bg-[#282828]">
               {guide.lightInvert ? (
-                <img src={assetBase + guide.logo} alt={`${guide.name} logo`} className="ch-logo-invert h-16 w-16 object-contain" style={{ pointerEvents: "none" }} />
+                <img src={guide.logo} alt={`${guide.name} logo`} className="ch-logo-invert h-16 w-16 object-contain" style={{ pointerEvents: "none" }} />
               ) : (
-                <img src={assetBase + guide.logo} alt={`${guide.name} logo`} className="h-16 w-16 object-contain" style={{ pointerEvents: "none" }} />
+                <img src={guide.logo} alt={`${guide.name} logo`} className="h-16 w-16 object-contain" style={{ pointerEvents: "none" }} />
               )}
               <div className="mt-3 text-sm font-semibold text-black dark:text-white">{guide.name}</div>
             </div>

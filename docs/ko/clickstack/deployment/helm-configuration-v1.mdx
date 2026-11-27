@@ -14,15 +14,19 @@ keywords: ['ClickStack 구성', 'Helm 시크릿', 'API Key 설정', '인그레�
 
 이 가이드에서는 ClickStack Helm 배포에 사용할 수 있는 구성 옵션을 설명합니다. 기본 설치 방법은 [기본 Helm 배포 가이드](/ko/clickstack/deployment/helm-v1)를 참조하십시오.
 
-## API Key 설정 {#api-key-setup}
+<div id="api-key-setup">
+  ## API Key 설정
+</div>
 
 ClickStack을 성공적으로 배포한 후 텔레메트리 데이터 수집을 활성화하려면 API Key를 구성하십시오:
 
-1. 구성된 인그레스 또는 서비스 엔드포인트를 통해 **ClickStack UI 인스턴스에 접속합니다**
-2. **ClickStack UI 대시보드에 로그인**한 다음 Team settings로 이동하여 API Key를 생성하거나 확인합니다
+1. 구성된 인그레스 또는 서비스 엔드포인트를 통해 **HyperDX 인스턴스에 접속합니다**
+2. **HyperDX 대시보드에 로그인**한 다음 Team settings로 이동하여 API Key를 생성하거나 확인합니다
 3. 다음 방법 중 하나를 사용하여 **API Key로 배포를 업데이트합니다**:
 
-### 방법 1: values 파일을 사용해 Helm upgrade로 업데이트 {#api-key-values-file}
+<div id="api-key-values-file">
+  ### 방법 1: values 파일을 사용해 Helm upgrade로 업데이트
+</div>
 
 `values.yaml`에 API Key를 추가하세요:
 
@@ -37,13 +41,17 @@ hyperdx:
 helm upgrade my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-### 방법 2: `--set` 플래그를 사용해 Helm upgrade로 업데이트 {#api-key-set-flag}
+<div id="api-key-set-flag">
+  ### 방법 2: --set 플래그를 사용해 Helm upgrade로 업데이트
+</div>
 
 ```shell
 helm upgrade my-clickstack clickstack/clickstack --set hyperdx.apiKey="your-api-key-here"
 ```
 
-### 변경 사항을 적용하려면 파드를 다시 시작하세요 {#restart-pods}
+<div id="restart-pods">
+  ### 변경 사항을 적용하려면 파드를 다시 시작하세요
+</div>
 
 API Key를 업데이트한 후 새 구성이 반영되도록 파드를 다시 시작하세요:
 
@@ -55,11 +63,15 @@ kubectl rollout restart deployment my-clickstack-clickstack-app my-clickstack-cl
   이 차트는 API Key가 포함된 Kubernetes 시크릿(`<release-name>-app-secrets`)을 자동으로 생성합니다. 외부 시크릿을 사용하려는 경우가 아니라면 추가 시크릿 구성은 필요하지 않습니다.
 </Note>
 
-## 시크릿 관리 {#secret-management}
+<div id="secret-management">
+  ## 시크릿 관리
+</div>
 
 API Key 또는 데이터베이스 자격 증명과 같은 민감한 데이터를 안전하게 관리하려면 Kubernetes 시크릿을 사용하십시오.
 
-### 사전 구성된 시크릿 사용 {#using-pre-configured-secrets}
+<div id="using-pre-configured-secrets">
+  ### 사전 구성된 시크릿 사용
+</div>
 
 Helm 차트에는 [`charts/clickstack/templates/secrets.yaml`](https://github.com/hyperdxio/helm-charts/blob/main/charts/clickstack/templates/secrets.yaml)에 있는 기본 시크릿 템플릿이 포함되어 있습니다. 이 파일은 시크릿 관리를 위한 기본 구조를 제공합니다.
 
@@ -83,7 +95,9 @@ data:
 kubectl apply -f secrets.yaml
 ```
 
-### 사용자 지정 시크릿 만들기 {#creating-a-custom-secret}
+<div id="creating-a-custom-secret">
+  ### 사용자 지정 시크릿 만들기
+</div>
 
 사용자 지정 Kubernetes 시크릿을 수동으로 만드십시오:
 
@@ -92,7 +106,9 @@ kubectl create secret generic hyperdx-secret \
   --from-literal=API_KEY=my-secret-api-key
 ```
 
-### values.yaml에서 시크릿을 참조하기 {#referencing-a-secret}
+<div id="referencing-a-secret">
+  ### values.yaml에서 시크릿을 참조하기
+</div>
 
 ```yaml
 hyperdx:
@@ -103,11 +119,15 @@ hyperdx:
         key: API_KEY
 ```
 
-## 인그레스 설정 {#ingress-setup}
+<div id="ingress-setup">
+  ## 인그레스 설정
+</div>
 
-도메인 이름으로 ClickStack UI와 API를 노출하려면 `values.yaml`에서 인그레스를 활성화하세요.
+도메인 이름으로 HyperDX UI와 API를 노출하려면 `values.yaml`에서 인그레스를 활성화하세요.
 
-### 일반적인 인그레스 구성 {#general-ingress-configuration}
+<div id="general-ingress-configuration">
+  ### 일반적인 인그레스 구성
+</div>
 
 ```yaml
 hyperdx:
@@ -123,7 +143,9 @@ hyperdx:
   `hyperdx.frontendUrl`은 인그레스 호스트와 일치해야 하며 프로토콜(예: `https://hyperdx.yourdomain.com`)도 포함해야 합니다. 이렇게 해야 생성되는 모든 링크, 쿠키, 리디렉션이 올바르게 작동합니다.
 </Info>
 
-### TLS (HTTPS) 활성화 {#enabling-tls}
+<div id="enabling-tls">
+  ### TLS (HTTPS) 활성화
+</div>
 
 배포를 HTTPS로 안전하게 보호하려면:
 
@@ -147,7 +169,9 @@ hyperdx:
       tlsSecretName: "hyperdx-tls"
 ```
 
-### 예시 인그레스 구성 {#example-ingress-configuration}
+<div id="example-ingress-configuration">
+  ### 예시 인그레스 구성
+</div>
 
 참고로, 생성된 인그레스 리소스는 다음과 같습니다:
 
@@ -178,7 +202,9 @@ spec:
       secretName: hyperdx-tls
 ```
 
-### 인그레스 구성 시 자주 발생하는 문제 {#common-ingress-pitfalls}
+<div id="common-ingress-pitfalls">
+  ### 인그레스 구성 시 자주 발생하는 문제
+</div>
 
 **경로 및 재작성 구성:**
 
@@ -203,7 +229,9 @@ spec:
 kubectl -n ingress-nginx get pods -l app.kubernetes.io/name=ingress-nginx -o jsonpath="{.items[0].spec.containers[0].image}"
 ```
 
-## OTel collector 인그레스 {#otel-collector-ingress}
+<div id="otel-collector-ingress">
+  ## OTel collector 인그레스
+</div>
 
 인그레스를 통해 OTel collector 엔드포인트(트레이스, 메트릭, 로그)를 노출해야 한다면 `additionalIngresses` 구성을 사용하십시오. 이 구성은 클러스터 외부에서 텔레메트리 데이터를 전송하거나 collector에 사용자 지정 도메인을 연결할 때 유용합니다.
 
@@ -239,7 +267,9 @@ hyperdx:
   OTel collector를 외부에 노출할 필요가 없다면 이 구성은 건너뛰어도 됩니다. 대부분의 경우 일반적인 인그레스 설정으로 충분합니다.
 </Note>
 
-## 인그레스 문제 해결 {#troubleshooting-ingress}
+<div id="troubleshooting-ingress">
+  ## 인그레스 문제 해결
+</div>
 
 **인그레스 리소스 확인:**
 
@@ -276,7 +306,9 @@ curl -I https://hyperdx.yourdomain.com/_next/static/chunks/main-xxxx.js
 
 * 변경 후에는 오래된 정적 파일이 남지 않도록 브라우저 캐시와 CDN/프록시 캐시를 지우세요
 
-## 값 사용자 지정하기 {#customizing-values}
+<div id="customizing-values">
+  ## 값 사용자 지정하기
+</div>
 
 `--set` 플래그를 사용하여 설정을 사용자 지정할 수 있습니다:
 
@@ -315,7 +347,9 @@ hyperdx:
 helm install my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-## 다음 단계 {#next-steps}
+<div id="next-steps">
+  ## 다음 단계
+</div>
 
 * [배포 옵션 (v1.x)](/ko/clickstack/deployment/helm-deployment-options-v1) - 외부 시스템 및 최소 배포
 * [Cloud 배포 (v1.x)](/ko/clickstack/deployment/helm-cloud-v1) - GKE, EKS 및 AKS 구성

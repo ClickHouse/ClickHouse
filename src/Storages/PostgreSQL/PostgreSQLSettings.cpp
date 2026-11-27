@@ -9,11 +9,18 @@
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
-#include <algorithm>
-
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 postgresql_connection_pool_size;
+    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
+    extern const SettingsUInt64 postgresql_connection_pool_retries;
+    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
+    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+}
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
@@ -69,40 +76,15 @@ void PostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
     }
 }
 
-void PostgreSQLSettings::loadFromQueryContext(const Context & context, const ASTSetQuery * settings, ASTStorage * store_into)
+void PostgreSQLSettings::loadFromQueryContext(const Context & context)
 {
-    const Settings & query_settings = context.getSettingsRef();
-    /// The values a table takes when it is attached again in the global context, e.g. on server startup.
-    const Settings * server_settings = store_into ? &context.getGlobalContext()->getSettingsRef() : nullptr;
+    const Settings & settings = context.getSettingsRef();
 
-    for (const auto & setting : impl->all())
-    {
-        const auto & name = setting.getName();
-        if (setting.isValueChanged() || (settings && std::ranges::contains(settings->default_settings, name)))
-            continue;
-
-        /// A setting of the engine only, with no query-level counterpart to take the value from.
-        if (!query_settings.has(name))
-            continue;
-
-        Field value = query_settings.get(name);
-        impl->set(name, value);
-
-        /// A value equal to the server's is not stored: the table takes it again when it is attached. This depends only on the
-        /// value and the server's settings, not on whether the session changes it: in a `Replicated` database another replica
-        /// drops a forwarded setting equal to its own value, which keeps the value but loses that the session changed it. So
-        /// replicas with the same configuration store the same definition, and none stores a value the query does not set.
-        if (!store_into || value == server_settings->get(name))
-            continue;
-
-        if (!store_into->settings)
-        {
-            auto settings_ast = make_intrusive<ASTSetQuery>();
-            settings_ast->is_standalone = false;
-            store_into->set(store_into->settings, settings_ast);
-        }
-        store_into->settings->changes.emplace_back(name, std::move(value));
-    }
+    (*impl)[PostgreSQLSetting::postgresql_connection_pool_size] = settings[Setting::postgresql_connection_pool_size];
+    (*impl)[PostgreSQLSetting::postgresql_connection_pool_wait_timeout] = settings[Setting::postgresql_connection_pool_wait_timeout];
+    (*impl)[PostgreSQLSetting::postgresql_connection_pool_retries] = settings[Setting::postgresql_connection_pool_retries];
+    (*impl)[PostgreSQLSetting::postgresql_connection_pool_auto_close_connection] = settings[Setting::postgresql_connection_pool_auto_close_connection];
+    (*impl)[PostgreSQLSetting::postgresql_connection_attempt_timeout] = settings[Setting::postgresql_connection_attempt_timeout];
 }
 
 void PostgreSQLSettings::loadFromNamedCollection(const NamedCollection & named_collection)

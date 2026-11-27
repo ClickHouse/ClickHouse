@@ -7,7 +7,9 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Demo Days']
 ---
 
-## Ferramenta de migração de esquema {#schema-migration-tool}
+<div id="schema-migration-tool">
+  ## Ferramenta de migração de esquema
+</div>
 
 *Demonstração por [@wrn14897](https://github.com/wrn14897)*
 
@@ -19,7 +21,9 @@ A ferramenta de migração de esquema é um novo recurso do ClickStack em desenv
 
 O suporte a alterações de esquema em toda a implantação está planejado para a próxima etapa, aproximando o recurso da disponibilidade geral. 
 
-## Filtros no nível da fonte de dados para alertas e MCP {#source-level-filters-for-alerts-and-mcp}
+<div id="source-level-filters-for-alerts-and-mcp">
+  ## Filtros no nível da fonte de dados para alertas e MCP
+</div>
 
 *Demonstração por [@pulpdrew](https://github.com/pulpdrew)*
 
@@ -35,7 +39,9 @@ O MCP também passou a reconhecer filtros de fonte de dados. Os agentes podem de
 
 **PRs relacionadas:** [#2459](https://github.com/hyperdxio/hyperdx/pull/2459) feat: mostrar ícone em tiles com filtros de fonte de dados com escopo excluído, [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) feat: adicionar escopo de fonte de dados aos filtros de dashboard
 
-## Colunas candidatas ao criar fontes {#candidate-columns-when-building-sources}
+<div id="candidate-columns-when-building-sources">
+  ## Colunas candidatas ao criar fontes
+</div>
 
 *Demonstração de [@karl-power](https://github.com/karl-power)*
 
@@ -49,7 +55,9 @@ Um novo aviso também destaca casos em que uma expressão do body foi configurad
 
 **PRs relacionadas:** [#2436](https://github.com/hyperdxio/hyperdx/pull/2436) feat: adicionar sugestões de campos da fonte
 
-## Alertas de anomalia com group-by (WIP) {#anomaly-alerts-with-group-by}
+<div id="anomaly-alerts-with-group-by">
+  ## Alertas de anomalia com group-by (WIP)
+</div>
 
 *Demonstração por [@fleon](https://github.com/fleon)*
 
@@ -61,9 +69,11 @@ Este trabalho aborda um desafio de usabilidade na detecção de anomalias em sé
 
 Esse recurso ainda está em desenvolvimento ativo e depende de melhorias adicionais antes do lançamento.
 
-## Seletor de múltiplos modelos para avaliação do MCP {#mcp-eval-multi-model-selector}
+<div id="mcp-eval-multi-model-selector">
+  ## Seletor de múltiplos modelos para avaliação do MCP
+</div>
 
-*Demonstração por [@brandon-pereira](https://github.com/brandon-pereira)*
+*Demo de [@brandon-pereira](https://github.com/brandon-pereira)*
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/1O47NXHDzUY" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
@@ -71,11 +81,13 @@ Esse recurso ainda está em desenvolvimento ativo e depende de melhorias adicion
 
 O framework de avaliação do MCP agora permite executar uma única suíte de avaliação em vários modelos simultaneamente. Brandon demonstra o recurso comparando Fable, Opus e Sonnet em uma única execução após o lançamento do Fable.
 
-Nas suítes de avaliação do ClickHouse e da Interface do ClickStack, o Fable alcançou resultados consideravelmente melhores em perguntas específicas do ClickStack. Se ao menos pudéssemos usar o modelo :).
+Nas suítes de avaliação do ClickHouse e do HyperDX, o Fable alcançou resultados consideravelmente melhores em perguntas específicas do ClickStack. Se ao menos pudéssemos usar o modelo :).
 
 **PRs relacionadas:** [#2438](https://github.com/hyperdxio/hyperdx/pull/2438) feat(hdx-eval): support multi-model comparison in eval batches, [#2414](https://github.com/hyperdxio/hyperdx/pull/2414) feat: AI eval framework for benchmarking MCP servers
 
-## Todas as ferramentas do notebook agora usam o MCP {#all-notebook-tools-now-use-the-mcp}
+<div id="all-notebook-tools-now-use-the-mcp">
+  ## Todas as ferramentas do notebook agora usam o MCP
+</div>
 
 *Demo de [@brandon-pereira](https://github.com/brandon-pereira)*
 
@@ -87,7 +99,9 @@ Todas as ferramentas de investigação do notebook agora são executadas por mei
 
 Os blocos de notebook de Raw SQL são a próxima etapa planejada.
 
-## receiver do Datadog {#datadog-receiver}
+<div id="datadog-receiver">
+  ## receiver do Datadog
+</div>
 
 *Demo de [@SpencerTorres](https://github.com/SpencerTorres)*
 
@@ -101,7 +115,9 @@ Antes, os payloads de log do Datadog eram ingeridos principalmente como JSON nã
 
 Os IDs de trace numéricos de 64 bits do Datadog também são expandidos para o formato de 128 bits do OpenTelemetry, permitindo a correlação correta de traces no ClickStack. A expectativa é que o receiver seja incluído na distribuição do ClickStack collector, com mais testes planejados para a correlação de traces de ponta a ponta.
 
-## Padrões de eventos: qualquer coluna {#event-patterns-any-column}
+<div id="event-patterns-any-column">
+  ## Padrões de eventos: qualquer coluna
+</div>
 
 *Demonstração por [@knudtty](https://github.com/knudtty)*
 
@@ -115,7 +131,9 @@ Aaron também explica a lógica de mascaramento usada para normalizar conteúdo 
 
 **PRs relacionadas:** [#2460](https://github.com/hyperdxio/hyperdx/pull/2460) feat: adicionar seletor da coluna de padrão para correspondência de padrões de eventos em qualquer coluna
 
-## Links de spans (WIP) {#span-links}
+<div id="span-links">
+  ## Links de spans (WIP)
+</div>
 
 *Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -129,7 +147,9 @@ A implementação atual exibe os spans vinculados e seus atributos associados di
 
 **PRs relacionadas:** [#2463](https://github.com/hyperdxio/hyperdx/pull/2463) feat(traces): exibir links de spans no visualizador de traces
 
-## Destaque de séries temporais ao passar o cursor {#time-series-highlighting-on-hover}
+<div id="time-series-highlighting-on-hover">
+  ## Destaque de séries temporais ao passar o cursor
+</div>
 
 *Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -143,7 +163,9 @@ O recurso surgiu a partir do feedback de equipes que estavam migrando do Grafana
 
 **PRs relacionadas:** [#2456](https://github.com/hyperdxio/hyperdx/pull/2456) feat: destacar a série mais próxima do cursor nos tooltips de gráficos de séries temporais
 
-## Duplicação de série {#duplicate-series}
+<div id="duplicate-series">
+  ## Duplicação de série
+</div>
 
 *Demonstração por [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -157,7 +179,9 @@ Alex demonstra o fluxo criando uma comparação entre P50 e P95.
 
 **PRs relacionadas:** [#2453](https://github.com/hyperdxio/hyperdx/pull/2453) feat(chart-explorer): duplicar uma série no construtor de gráficos
 
-## Filtros tipo pílula editáveis (WIP) {#editable-pill-filters}
+<div id="editable-pill-filters">
+  ## Filtros tipo pílula editáveis (WIP)
+</div>
 
 *Demonstração por [@alex-fedotyev](https://github.com/alex-fedotyev)*
 

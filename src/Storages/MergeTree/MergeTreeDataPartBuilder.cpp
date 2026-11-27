@@ -204,22 +204,6 @@ MergeTreeDataPartBuilder::getPartStorageAndMarkType(
     return {};
 }
 
-MutableDataPartStoragePtr MergeTreeDataPartBuilder::getPartStorageForRemoval(
-    const VolumePtr & volume_,
-    const String & root_path_,
-    const String & part_dir_,
-    const ReadSettings & read_settings)
-{
-    using Type = MergeTreeDataPartStorageType;
-    for (auto it = volume_->getDisk()->iterateDirectory(fs::path(root_path_) / part_dir_); it->isValid(); it->next())
-    {
-        if (it->name() == DataPartStorageOnDiskPacked::DATA_FILE_NAME)
-            return getPartStorageByType(Type::Packed, volume_, root_path_, part_dir_, /*initialize=*/false, read_settings);
-    }
-
-    return getPartStorageByType(Type::Full, volume_, root_path_, part_dir_, /*initialize=*/false, read_settings);
-}
-
 MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromDisk()
 {
     /// Probing the directory for the part format only makes sense when opening existing contents.

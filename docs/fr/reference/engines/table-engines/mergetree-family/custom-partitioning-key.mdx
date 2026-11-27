@@ -14,7 +14,7 @@ doc_type: 'guide'
 
 Le partitionnement est disponible pour les [tables de la famille MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree), y compris les [tables répliquées](/fr/reference/engines/table-engines/mergetree-family/replication) et les [vues matérialisées](/fr/reference/statements/create/view#materialized-view).
 
-Une partition est un regroupement logique d’enregistrements dans une table selon un critère donné. Vous pouvez définir une partition selon un critère arbitraire, par exemple par mois, par jour ou par type d’événement. Chaque partition est stockée séparément afin de simplifier la manipulation de ces données. Lors de l’accès aux données, ClickHouse utilise le plus petit sous-ensemble possible de partitions. Le partitionnement est avant tout une technique de gestion des données. Lorsqu’une requête filtre sur la clé de partitionnement, ClickHouse peut écarter les autres partitions avant de sélectionner les parties et les granules, ce qui peut s’avérer utile lorsque la colonne filtrée ne fait pas partie de la clé primaire. Les requêtes portant sur de nombreuses partitions peuvent être plus lentes, car elles lisent davantage de parties. Consultez [Choisir une clé de partitionnement](/fr/best-practices/choosing-a-partitioning-key) pour en savoir plus.
+Une partition est un regroupement logique d’enregistrements dans une table selon un critère donné. Vous pouvez définir une partition selon un critère arbitraire, par exemple par mois, par jour ou par type d’événement. Chaque partition est stockée séparément afin de simplifier la manipulation de ces données. Lors de l’accès aux données, ClickHouse utilise le plus petit sous-ensemble possible de partitions. Les partitions améliorent les performances des requêtes contenant une clé de partitionnement, car ClickHouse filtre d’abord sur cette partition avant de sélectionner les parties et les granules qu’elle contient.
 
 La partition est spécifiée dans la clause `PARTITION BY expr` lors de la [création d’une table](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table). La clé de partitionnement peut être n’importe quelle expression basée sur les colonnes de la table. Par exemple, pour spécifier un partitionnement par mois, utilisez l’expression `toYYYYMM(date_column)`:
 
@@ -30,7 +30,7 @@ PARTITION BY toYYYYMM(VisitDate)
 ORDER BY Hour;
 ```
 
-La clé de partitionnement peut également être un tuple d’expressions (similaire à la [clé primaire](/fr/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries)). Par exemple :
+La clé de partitionnement peut également être un tuple d’expressions (similaire à la [clé primaire](/fr/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries)). Par exemple :
 
 ```sql
 ENGINE = ReplicatedCollapsingMergeTree('/clickhouse/tables/name', 'replica1', Sign)
@@ -48,7 +48,7 @@ Lors de l’insertion de nouvelles données dans une table, celles-ci sont stock
   Une fusion ne fonctionne que pour les parties de données ayant la même valeur pour l’expression de partitionnement. Cela signifie **qu’il ne faut pas créer des partitions trop granulaires** (plus d’environ mille partitions). Sinon, la requête `SELECT` offre de mauvaises performances en raison d’un nombre excessif de fichiers dans le système de fichiers et de descripteurs de fichier ouverts.
 </Info>
 
-Utilisez la table [system.parts](/fr/reference/system-tables/parts) pour afficher les parties de table et les partitions. Par exemple, supposons que nous ayons une table `visits` avec un partitionnement par mois. Exécutons la requête `SELECT` sur la table `system.parts` :
+Utilisez la table [system.parts](/fr/reference/system-tables/parts) pour afficher les parties de table et les partitions. Par exemple, supposons que nous ayons une table `visits` avec un partitionnement par mois. Exécutons la requête `SELECT` sur la table `system.parts` :
 
 ```sql
 SELECT
@@ -71,11 +71,11 @@ WHERE table = 'visits'
 └───────────┴───────────────────┴────────┘
 ```
 
-La colonne `partition` contient les noms des partitions. Il y a deux partitions dans cet exemple : `201901` et `201902`. Vous pouvez utiliser la valeur de cette colonne pour indiquer le nom de la partition dans les requêtes [ALTER ... PARTITION](/fr/reference/statements/alter/partition).
+La colonne `partition` contient les noms des partitions. Il y a deux partitions dans cet exemple : `201901` et `201902`. Vous pouvez utiliser la valeur de cette colonne pour indiquer le nom de la partition dans les requêtes [ALTER ... PARTITION](/fr/reference/statements/alter/partition).
 
 La colonne `name` contient les noms des parties de données de la partition. Vous pouvez utiliser cette colonne pour indiquer le nom de la partie dans la requête [ALTER ATTACH PART](/fr/reference/statements/alter/partition#attach-partitionpart).
 
-Décomposons le nom de la partie : `201901_1_9_2_11` :
+Décomposons le nom de la partie : `201901_1_9_2_11` :
 
 * `201901` est le nom de la partition.
 * `1` est le numéro minimal du bloc de données.
@@ -84,12 +84,12 @@ Décomposons le nom de la partie : `201901_1_9_2_11` :
 * `11` est la version de la mutation (si une partie a subi une mutation)
 
 <Info>
-  Les parties des tables de l’ancien type portent le nom suivant : `20190117_20190123_2_2_0` (date minimale - date maximale - numéro minimal de bloc - numéro maximal de bloc - niveau).
+  Les parties des tables de l’ancien type portent le nom suivant : `20190117_20190123_2_2_0` (date minimale - date maximale - numéro minimal de bloc - numéro maximal de bloc - niveau).
 </Info>
 
-La colonne `active` indique l’état de la partie. `1` signifie active ; `0`, inactive. Les parties inactives sont, par exemple, des parties source restantes après leur fusion dans une partie plus grande. Les parties de données corrompues sont également indiquées comme inactives.
+La colonne `active` indique l’état de la partie. `1` signifie active ; `0`, inactive. Les parties inactives sont, par exemple, des parties source restantes après leur fusion dans une partie plus grande. Les parties de données corrompues sont également indiquées comme inactives.
 
-Comme vous pouvez le voir dans l’exemple, il existe plusieurs parties distinctes pour une même partition (par exemple, `201901_1_3_1` et `201901_1_9_2`). Cela signifie que ces parties n’ont pas encore été fusionnées. ClickHouse fusionne périodiquement les parties de données insérées, environ 15 minutes après l’insertion. En outre, vous pouvez effectuer une fusion non planifiée à l’aide de la requête [OPTIMIZE](/fr/reference/statements/optimize). Exemple :
+Comme vous pouvez le voir dans l’exemple, il existe plusieurs parties distinctes pour une même partition (par exemple, `201901_1_3_1` et `201901_1_9_2`). Cela signifie que ces parties n’ont pas encore été fusionnées. ClickHouse fusionne périodiquement les parties de données insérées, environ 15 minutes après l’insertion. En outre, vous pouvez effectuer une fusion non planifiée à l’aide de la requête [OPTIMIZE](/fr/reference/statements/optimize). Exemple :
 
 ```sql
 OPTIMIZE TABLE visits PARTITION 201902;
@@ -110,7 +110,7 @@ OPTIMIZE TABLE visits PARTITION 201902;
 
 Les parties inactives seront supprimées environ 10 minutes après la fusion.
 
-Une autre façon de voir un ensemble de parties et de partitions consiste à accéder au répertoire de la table : `/var/lib/clickhouse/data/<database>/<table>/`. Par exemple :
+Une autre façon de voir un ensemble de parties et de partitions consiste à accéder au répertoire de la table : `/var/lib/clickhouse/data/<database>/<table>/`. Par exemple :
 
 ```bash
 /var/lib/clickhouse/data/default/visits$ ls -l
@@ -128,13 +128,15 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 
 Les dossiers &#39;201901&#95;1&#95;1&#95;0&#39;, &#39;201901&#95;1&#95;7&#95;1&#39;, etc. sont les répertoires des parties. Chaque partie correspond à une partition et ne contient des données que pour un mois donné (dans cet exemple, la table utilise un partitionnement par mois).
 
-Le répertoire `detached` contient les parties qui ont été détachées de la table à l’aide de la requête [DETACH](/fr/reference/statements/detach). Les parties corrompues sont également déplacées dans ce répertoire au lieu d’être supprimées. Le serveur n’utilise pas les parties du répertoire `detached`. Vous pouvez ajouter, supprimer ou modifier les données de ce répertoire à tout moment : le serveur n’en aura pas connaissance tant que vous n’aurez pas exécuté la requête [ATTACH](/fr/reference/statements/alter/partition#attach-partitionpart).
+Le répertoire `detached` contient les parties qui ont été détachées de la table à l’aide de la requête [DETACH](/fr/reference/statements/detach). Les parties corrompues sont également déplacées dans ce répertoire au lieu d’être supprimées. Le serveur n’utilise pas les parties du répertoire `detached`. Vous pouvez ajouter, supprimer ou modifier les données de ce répertoire à tout moment : le serveur n’en aura pas connaissance tant que vous n’aurez pas exécuté la requête [ATTACH](/fr/reference/statements/alter/partition#attach-partitionpart).
 
 Notez que, sur un serveur en fonctionnement, vous ne pouvez pas modifier manuellement le jeu de parties ni leurs données dans le système de fichiers, car le serveur n’en aura pas connaissance. Pour les tables non répliquées, vous pouvez le faire lorsque le serveur est arrêté, mais ce n’est pas recommandé. Pour les tables répliquées, le jeu de parties ne peut en aucun cas être modifié.
 
-ClickHouse vous permet d’effectuer des opérations sur les partitions : les supprimer, les copier d’une table à une autre ou créer une sauvegarde. Consultez la liste complète des opérations dans la section [Manipulations avec les partitions et les parties](/fr/reference/statements/alter/partition).
+ClickHouse vous permet d’effectuer des opérations sur les partitions : les supprimer, les copier d’une table à une autre ou créer une sauvegarde. Consultez la liste complète des opérations dans la section [Manipulations avec les partitions et les parties](/fr/reference/statements/alter/partition).
 
-## Optimisation de Group By à l’aide de la clé de partitionnement {#group-by-optimisation-using-partition-key}
+<div id="group-by-optimisation-using-partition-key">
+  ## Optimisation de Group By à l’aide de la clé de partitionnement
+</div>
 
 Pour certaines combinaisons entre la clé de partitionnement de la table et la clé de Group By de la requête, il peut être possible d’exécuter l’agrégation indépendamment pour chaque partition.
 Nous n’aurons alors pas à fusionner à la fin les données partiellement agrégées provenant de tous les threads d’exécution,

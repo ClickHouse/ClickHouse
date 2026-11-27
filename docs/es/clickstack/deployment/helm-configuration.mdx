@@ -14,52 +14,58 @@ keywords: ['configuración de ClickStack', 'secretos de Helm', 'configuración d
 
 Esta guía describe las opciones de configuración para implementaciones de ClickStack con Helm. Para la instalación básica, consulta la [guía principal de implementación con Helm](/es/clickstack/deployment/helm).
 
-## Organización de los valores {#values-organization}
+<div id="values-organization">
+  ## Organización de los valores
+</div>
 
 El gráfico v2.x organiza los valores por tipo de recurso de Kubernetes dentro del bloque `hyperdx:`:
 
 ```yaml
 hyperdx:
-  ports:          # Shared port numbers (Deployment, Service, ConfigMap, Ingress)
+  ports:          # Números de puerto compartidos (Implementación, Service, ConfigMap, Ingreso)
     api: 8000
     app: 3000
     opamp: 4320
 
   frontendUrl: "http://localhost:3000"
 
-  config:         # → clickstack-config ConfigMap (non-sensitive env vars)
+  config:         # → clickstack-config ConfigMap (variables de entorno no sensibles)
     APP_PORT: "3000"
     HYPERDX_LOG_LEVEL: "info"
 
-  secrets:        # → clickstack-secret Secret (sensitive env vars)
+  secrets:        # → clickstack-secret Secret (variables de entorno sensibles)
     HYPERDX_API_KEY: "..."
     CLICKHOUSE_PASSWORD: "otelcollectorpass"
     CLICKHOUSE_APP_PASSWORD: "hyperdx"
     MONGODB_PASSWORD: "hyperdx"
 
-  deployment:     # K8s Deployment spec (image, replicas, probes, etc.)
-  service:        # K8s Service spec (type, annotations)
-  ingress:        # K8s Ingress spec (host, tls, annotations)
-  podDisruptionBudget:  # K8s PDB spec
-  tasks:          # K8s CronJob specs
+  deployment:     # Especificación de Implementación de K8s (imagen, réplicas, sondas, etc.)
+  service:        # Especificación de Service de K8s (tipo, anotaciones)
+  ingress:        # Especificación de Ingreso de K8s (host, tls, anotaciones)
+  podDisruptionBudget:  # Especificación de PDB de K8s
+  tasks:          # Especificaciones de CronJob de K8s
 ```
 
-Todas las variables de entorno se canalizan a través de dos recursos con nombres estáticos compartidos por la Implementación de la UI de ClickStack **y** el OTel collector mediante `envFrom`:
+Todas las variables de entorno se canalizan a través de dos recursos con nombres estáticos compartidos por la Implementación de HyperDX **y** el OTel collector mediante `envFrom`:
 
 * **`clickstack-config`** ConfigMap — se rellena a partir de `hyperdx.config`
 * **`clickstack-secret`** secreto — se rellena a partir de `hyperdx.secrets`
 
 Ya no existe un ConfigMap independiente específico para OTel. Ambas cargas de trabajo leen de las mismas fuentes.
 
-## Configuración de la clave de API {#api-key-setup}
+<div id="api-key-setup">
+  ## Configuración de la clave de API
+</div>
 
 Después de implementar ClickStack correctamente, configura la clave de API para habilitar la recopilación de datos de telemetría:
 
-1. **Accede a tu instancia de la UI de ClickStack** a través del Ingreso configurado o del endpoint del servicio
-2. **Inicia sesión en el panel de la UI de ClickStack** y ve a la configuración del equipo para generar o recuperar tu clave de API
+1. **Accede a tu instancia de HyperDX** a través del Ingreso configurado o del endpoint del servicio
+2. **Inicia sesión en el panel de HyperDX** y ve a la configuración del equipo para generar o recuperar tu clave de API
 3. **Actualiza tu Implementación** con la clave de API usando uno de los siguientes métodos:
 
-### Método 1: Actualizar con Helm upgrade mediante un archivo de valores {#api-key-values-file}
+<div id="api-key-values-file">
+  ### Método 1: Actualizar con Helm upgrade mediante un archivo de valores
+</div>
 
 Añade la API key a tu `values.yaml`:
 
@@ -75,14 +81,18 @@ A continuación, actualiza tu Implementación:
 helm upgrade my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-### Método 2: Actualizar con `helm upgrade` usando la opción `--set` {#api-key-set-flag}
+<div id="api-key-set-flag">
+  ### Método 2: Actualizar con `helm upgrade` usando la opción `--set`
+</div>
 
 ```shell
 helm upgrade my-clickstack clickstack/clickstack \
   --set hyperdx.secrets.HYPERDX_API_KEY="your-api-key-here"
 ```
 
-### Reinicie los pods para aplicar los cambios {#restart-pods}
+<div id="restart-pods">
+  ### Reinicie los pods para aplicar los cambios
+</div>
 
 Después de actualizar la clave de API, reinicie los pods para que carguen la nueva configuración:
 
@@ -94,11 +104,15 @@ kubectl rollout restart deployment my-clickstack-clickstack-app
   El gráfico crea automáticamente un secreto de Kubernetes (`clickstack-secret`) con los valores de su configuración. No se necesita ninguna configuración adicional del secreto, a menos que quiera usar un secreto externo.
 </Note>
 
-## Gestión de secretos {#secret-management}
+<div id="secret-management">
+  ## Gestión de secretos
+</div>
 
 Para gestionar datos sensibles, como claves de API o credenciales de la base de datos, el gráfico v2.x proporciona un recurso unificado `clickstack-secret` cuyos valores se rellenan a partir de `hyperdx.secrets`.
 
-### Valores predeterminados de los secretos {#default-secret-values}
+<div id="default-secret-values">
+  ### Valores predeterminados de los secretos
+</div>
 
 El gráfico incluye valores predeterminados para todos los secretos. Sobrescríbalos en su `values.yaml`:
 
@@ -111,7 +125,9 @@ hyperdx:
     MONGODB_PASSWORD: "your-mongodb-password"
 ```
 
-### Uso de un secreto externo {#using-external-secret}
+<div id="using-external-secret">
+  ### Uso de un secreto externo
+</div>
 
 Para implementaciones de producción en las que desee mantener las credenciales separadas de los valores de Helm, utilice un secreto externo de Kubernetes:
 
@@ -132,11 +148,15 @@ hyperdx:
   existingConfigSecret: "my-clickstack-secrets"
 ```
 
-## Configuración del ingreso {#ingress-setup}
+<div id="ingress-setup">
+  ## Configuración del ingreso
+</div>
 
-Para exponer la UI y la API de ClickStack mediante un nombre de dominio, habilita el ingreso en tu `values.yaml`.
+Para exponer la UI y la API de HyperDX mediante un nombre de dominio, habilita el ingreso en tu `values.yaml`.
 
-### Configuración general de Ingreso {#general-ingress-configuration}
+<div id="general-ingress-configuration">
+  ### Configuración general de Ingreso
+</div>
 
 ```yaml
 hyperdx:
@@ -153,7 +173,9 @@ hyperdx:
   `hyperdx.frontendUrl` debe coincidir con el host configurado en el Ingreso e incluir el protocolo (por ejemplo, `https://hyperdx.yourdomain.com`). Esto garantiza que todos los enlaces, cookies y redirecciones generados funcionen correctamente.
 </Info>
 
-### Habilitar TLS (HTTPS) {#enabling-tls}
+<div id="enabling-tls">
+  ### Habilitar TLS (HTTPS)
+</div>
 
 Para proteger su Implementación con HTTPS:
 
@@ -177,7 +199,9 @@ hyperdx:
       tlsSecretName: "hyperdx-tls"
 ```
 
-### Ejemplo de configuración de ingreso {#example-ingress-configuration}
+<div id="example-ingress-configuration">
+  ### Ejemplo de configuración de ingreso
+</div>
 
 A modo de referencia, así se ve el recurso de ingreso generado:
 
@@ -208,7 +232,9 @@ spec:
       secretName: hyperdx-tls
 ```
 
-### Errores comunes del Ingreso {#common-ingress-pitfalls}
+<div id="common-ingress-pitfalls">
+  ### Errores comunes del Ingreso
+</div>
 
 **Configuración de rutas y reescritura:**
 
@@ -233,7 +259,9 @@ spec:
 kubectl -n ingress-nginx get pods -l app.kubernetes.io/name=ingress-nginx -o jsonpath="{.items[0].spec.containers[0].image}"
 ```
 
-## Ingreso del OTel collector {#otel-collector-ingress}
+<div id="otel-collector-ingress">
+  ## Ingreso del OTel collector
+</div>
 
 Si necesita exponer los endpoints de su OTel collector (para trazas, métricas y logs) a través de Ingreso, use la configuración `additionalIngresses`. Esto es útil para enviar datos de telemetría desde fuera del clúster o para usar un dominio personalizado para el collector.
 
@@ -271,7 +299,9 @@ hyperdx:
 
 Como alternativa, puede usar [`additionalManifests`](/es/clickstack/deployment/helm-additional-manifests) para definir recursos de Ingreso totalmente personalizados, como un Ingreso de AWS ALB.
 
-## Configuración del OTel collector {#otel-collector-configuration}
+<div id="otel-collector-configuration">
+  ## Configuración del OTel collector
+</div>
 
 El OTel Collector se despliega mediante el gráfico de Helm oficial de OpenTelemetry Collector como subgráfico `otel-collector:`. Configúralo directamente en `otel-collector:` dentro de tus valores:
 
@@ -300,7 +330,9 @@ Las variables de entorno (endpoint de ClickHouse, URL de OpAMP, etc.) se compart
 
 Consulta el [gráfico de Helm de OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector) para ver todos los valores disponibles del subgráfico.
 
-## Configuración de MongoDB {#mongodb-configuration}
+<div id="mongodb-configuration">
+  ## Configuración de MongoDB
+</div>
 
 MongoDB es gestionado por el operador MCK mediante un recurso personalizado `MongoDBCommunity`. La especificación del CR se genera literalmente a partir de `mongodb.spec`:
 
@@ -329,7 +361,9 @@ mongodb:
 
 La contraseña de MongoDB se configura en `hyperdx.secrets.MONGODB_PASSWORD`. Consulta la [documentación de MCK](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity) para ver todos los campos CRD disponibles.
 
-## Configuración de ClickHouse {#clickhouse-configuration}
+<div id="clickhouse-configuration">
+  ## Configuración de ClickHouse
+</div>
 
 ClickHouse se gestiona mediante el ClickHouse Operator a través de los recursos personalizados `ClickHouseCluster` y `KeeperCluster`. Las especificaciones de ambos CR se renderizan literalmente a partir de los valores:
 
@@ -362,7 +396,9 @@ clickhouse:
 
 Las credenciales de usuario de ClickHouse provienen de `hyperdx.secrets` (no de `clickhouse.config.users`, como en la versión v1.x). Consulta la [guía de configuración de ClickHouse Operator](/es/products/kubernetes-operator/guides/configuration) para conocer todos los campos disponibles de la CRD.
 
-## Solución de problemas del Ingreso {#troubleshooting-ingress}
+<div id="troubleshooting-ingress">
+  ## Solución de problemas del Ingreso
+</div>
 
 **Revise el recurso de Ingreso:**
 
@@ -399,7 +435,9 @@ curl -I https://hyperdx.yourdomain.com/_next/static/chunks/main-xxxx.js
 
 * Después de hacer cambios, borra la caché del navegador y cualquier caché de CDN/proxy para evitar recursos desactualizados
 
-## Personalización de valores {#customizing-values}
+<div id="customizing-values">
+  ## Personalización de valores
+</div>
 
 Puede personalizar la configuración mediante las opciones `--set`:
 
@@ -419,7 +457,9 @@ Aplica valores personalizados:
 helm install my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-## Próximos pasos {#next-steps}
+<div id="next-steps">
+  ## Próximos pasos
+</div>
 
 * [Opciones de implementación](/es/clickstack/deployment/helm-deployment-options) - Sistemas externos e implementaciones mínimas
 * [Implementaciones en Cloud](/es/clickstack/deployment/helm-cloud) - Configuraciones de GKE, EKS y AKS

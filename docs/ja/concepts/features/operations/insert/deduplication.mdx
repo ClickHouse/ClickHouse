@@ -7,6 +7,8 @@ keywords: ['重複排除戦略', 'データ重複排除', 'upsert', '更新と�
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 **重複排除**とは、***データセットから重複した行を取り除くこと***&#x3092;指します。OLTP データベースでは、各行が一意の主キーを持つため、これは簡単に行えますが、その代償として insert は遅くなります。挿入するすべての行について、まず既存の行を検索し、見つかった場合は置き換える必要があるためです。
 
 ClickHouse は、高速なデータ挿入を重視して設計されています。ストレージファイルは不変であり、ClickHouse は行を挿入する前に既存の主キーを確認しないため、重複排除にはもう少し手間がかかります。つまり、重複排除は即時には行われず、**最終的に**行われるということです。そのため、いくつかの副作用があります。
@@ -16,13 +18,13 @@ ClickHouse は、高速なデータ挿入を重視して設計されています
 * クエリでは、重複が存在する可能性を考慮する必要があります
 
 <div class="transparent-table">
-  |                                                                                                              |                                                                                                                                                                                                |
-  | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | <span className="ch-image-sm"><Frame>![重複排除のロゴ](/images/guides/developer/de_duplication.webp)</Frame></span> | ClickHouse では、重複排除をはじめとするさまざまなトピックについて、無料のトレーニングを提供しています。[Deleting and Updating Data training module](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461) は、その出発点として最適です。 |
+  |                                                                                      |                                                                                                                                                                                                                                |
+  | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+  | <Image img="/images/guides/developer/de_duplication.webp" alt="重複排除のロゴ" size="sm" /> | ClickHouse では、重複排除をはじめとするさまざまなトピックについて、無料のトレーニングを提供しています。[Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) は、その出発点として最適です。 |
 </div>
 
 <div id="options-for-deduplication">
-  ## 重複排除のオプション {#options-for-deduplication}
+  ## 重複排除のオプション
 </div>
 
 ClickHouse では、重複排除は次のテーブルエンジンを使って実現できます。
@@ -31,10 +33,10 @@ ClickHouse では、重複排除は次のテーブルエンジンを使って実
 
 2. 行の折りたたみ: `CollapsingMergeTree` および `VersionedCollapsingMergeTree` テーブルエンジンでは、既存の行を「キャンセル」し、新しい行を挿入するというロジックを使用します。これらは `ReplacingMergeTree` より実装が複雑ですが、データがまだマージ済みかどうかを気にせず、クエリや集計をよりシンプルに記述できます。これら 2 つのテーブルエンジンは、データを頻繁に更新する必要がある場合に役立ちます。
 
-以下では、これら 2 つの手法を順に説明します。詳細については、無料のオンデマンド [Deleting and Updating Data training module](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461) をご覧ください。
+以下では、これら 2 つの手法を順に説明します。詳細については、無料のオンデマンド [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) をご覧ください。
 
 <div id="using-replacingmergetree-for-upserts">
-  ## upsert に ReplacingMergeTree を使う {#using-replacingmergetree-for-upserts}
+  ## upsert に ReplacingMergeTree を使う
 </div>
 
 views カラムがコメントの閲覧回数を表す Hacker News のコメントを格納したテーブルの簡単な例を見てみましょう。記事の公開時に新しい行を insert し、その後、値が増えた場合は 1 日に 1 回、総閲覧数を含む新しい行を upsert するとします。
@@ -107,7 +109,9 @@ FINAL
   取得する、よりよい方法を見ていきましょう。
 </Note>
 
-### FINAL の使用を避ける {#avoiding-final}
+<div id="avoiding-final">
+  ### FINAL の使用を避ける
+</div>
 
 両方の一意な行の `views` カラムを、もう一度更新してみましょう。
 
@@ -160,10 +164,10 @@ GROUP BY (id, author, comment)
 
 上記のクエリで示したようにグループ化すると、`FINAL` キーワードを使用するよりも、実際には (クエリ性能の観点で) 効率的な場合があります。
 
-この例については、[Deleting and Updating Data training module](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461) でさらに詳しく解説しており、`ReplacingMergeTree` で `version` カラムを使用する方法も含まれています。
+この例については、[Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) でさらに詳しく解説しており、`ReplacingMergeTree` で `version` カラムを使用する方法も含まれています。
 
 <div id="using-collapsingmergetree-for-updating-columns-frequently">
-  ## カラムを頻繁に更新するための CollapsingMergeTree の使用 {#using-collapsingmergetree-for-updating-columns-frequently}
+  ## カラムを頻繁に更新するための CollapsingMergeTree の使用
 </div>
 
 カラムの更新では、既存の行を削除して新しい値に置き換えます。すでに見てきたように、ClickHouse ではこの種の mutation は *最終的に*、つまり マージ の際に実行されます。更新対象の行が多い場合は、`ALTER TABLE..UPDATE` を使うよりも、既存のデータに新しいデータを追加で insert するほうが、かえって効率的なことがあります。データが古いか新しいかを示すカラムを追加することもできますが、実はこの動作をうまく実現できる テーブルエンジン がすでにあります。しかも、古いデータは自動的に削除してくれます。では、どのように動作するのか見ていきましょう。
@@ -249,7 +253,7 @@ FINAL
 </Note>
 
 <div id="real-time-updates-from-multiple-threads">
-  ## 複数スレッドからのリアルタイム更新 {#real-time-updates-from-multiple-threads}
+  ## 複数スレッドからのリアルタイム更新
 </div>
 
 `CollapsingMergeTree` テーブルでは、sign カラムを使って行どうしが互いに打ち消し合い、行の状態は最後に挿入された行によって決まります。しかし、複数のスレッドから行を挿入していて、しかも行が順不同で挿入される可能性がある場合、これは問題になることがあります。このようなケースでは、「最後の」行を使う方法は機能しません。
@@ -340,8 +344,10 @@ FROM hackernews_views_vcmt
 
 複数のクライアントやスレッドから行を挿入する際に重複排除を実装したい場合、`VersionedCollapsingMergeTree` テーブルは非常に便利です。
 
-## 行が重複排除されないのはなぜですか？ {#why-arent-my-rows-being-deduplicated}
+<div id="why-arent-my-rows-being-deduplicated">
+  ## なぜ行が重複排除されないのですか？
+</div>
 
-挿入した行が重複排除されない理由の1つとして、`INSERT` ステートメント内で非冪等な関数や式を使用していることが考えられます。例えば、`createdAt DateTime64(3) DEFAULT now()` というカラムを含む行を挿入している場合、各行の `createdAt` カラムにはそれぞれ異なるデフォルト値が設定されるため、行は必ず一意になります。挿入された各行がそれぞれ異なるチェックサムを生成するため、MergeTree / ReplicatedMergeTree テーブルエンジンはそれらの行を重複とみなさず、重複排除の対象になりません。
+挿入された行が重複排除されない理由の 1 つとして、`INSERT` ステートメント内で非冪等な関数や式を使用していることが挙げられます。たとえば、`createdAt DateTime64(3) DEFAULT now()` というカラム定義を含む行を挿入している場合、各行の `createdAt` カラムには一意のデフォルト値が入るため、行は必ず一意になります。MergeTree / ReplicatedMergeTree テーブルエンジンは、挿入される各行ごとに一意のチェックサムが生成されるため、それらを重複行として判別できません。
 
-このような場合は、行のバッチごとに独自の `insert_deduplication_token` を指定してください。これにより、同じバッチを複数回挿入しても、同じ行が再挿入されることはありません。この設定の使用方法の詳細については、[`insert_deduplication_token` に関するドキュメント](/ja/reference/settings/session-settings/insert#insert_deduplication_token)を参照してください。
+この場合は、同じバッチを複数回 insert しても同じ行が再度挿入されないように、各バッチに対して独自の `insert_deduplication_token` を指定できます。この設定の使い方の詳細については、[`insert_deduplication_token` のドキュメント](/ja/reference/settings/session-settings/insert#insert_deduplication_token)を参照してください。

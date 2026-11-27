@@ -16,7 +16,6 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Common/CurrentThread.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Interpreters/Context.h>
 
 
@@ -382,9 +381,6 @@ const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String &
 
 DataTypeFactory::DataTypeFactory()
 {
-    /// Lives as long as the process, not the query that first needs a data type.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
-
     registerDataTypeNumbers(*this);
     registerDataTypeDecimal(*this);
     registerDataTypeDate(*this);

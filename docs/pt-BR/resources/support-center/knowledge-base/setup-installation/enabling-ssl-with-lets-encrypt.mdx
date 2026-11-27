@@ -2,11 +2,15 @@
 title: Como habilitar SSL com o Let's Encrypt em um único servidor ClickHouse
 description: Saiba como configurar SSL para um único servidor ClickHouse com o Let's Encrypt, incluindo a emissão do certificado, a configuração e a validação.
 date: 2024-12-11
-tags: ['Security and Authentication']
+tags: ['Segurança e autenticação']
 keywords: ['SSL', 'Let/`s Encrypt']
 ---
 
-## Etapas a seguir {#steps-to-follow}
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<div id="steps-to-follow">
+  ## Etapas a seguir
+</div>
 
 As etapas a seguir podem ser usadas para habilitar SSL em um único servidor ClickHouse com o [Let&#39;s Encrypt](https://letsencrypt.org/), uma Autoridade Certificadora (CA) gratuita, automatizada e aberta, criada para facilitar a proteção de sites com HTTPS. Ao automatizar o processo de emissão e renovação de certificados, o Let&#39;s Encrypt garante que os sites permaneçam seguros sem exigir intervenção manual.
 
@@ -53,11 +57,7 @@ product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
 
 <br />
 
-<div className="ch-image-md">
-  <Frame>
-    ![Configuração do grupo de segurança da AWS mostrando a porta 80 aberta](/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp)
-  </Frame>
-</div>
+<Image img="/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp" size="md" alt="Configuração do grupo de segurança da AWS mostrando a porta 80 aberta" border />
 
 3. Instale o [`certbot`](https://certbot.eff.org/instructions), por exemplo, usando o `apt`
 

@@ -21,18 +21,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ObjectMetadata ObjectMetadata::fromTableRecords(std::optional<UInt64> size, String immutable_content_id)
-{
-    ObjectMetadata metadata;
-    metadata.size_bytes = size.value_or(0);
-    metadata.is_size_known = size.has_value();
-    metadata.is_fetched = false;
-    metadata.is_from_table_records = true;
-    metadata.is_last_modified_known = false;
-    metadata.immutable_content_id = std::move(immutable_content_id);
-    return metadata;
-}
-
 bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
 {
     RelativePathsWithMetadata files;
@@ -43,17 +31,6 @@ bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
 void IObjectStorage::listObjects(const std::string &, RelativePathsWithMetadata &, size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjects() is not supported");
-}
-
-ObjectStorageListResult IObjectStorage::listObjectsSingleLevel(
-    const std::string &, const std::string &, size_t, bool, const std::string &, const std::string &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjectsSingleLevel() is not supported");
-}
-
-size_t IObjectStorage::getListedObjectPayloadBytesUpperBound(bool) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getListedObjectPayloadBytesUpperBound() is not supported");
 }
 
 /// Read single object
@@ -122,22 +99,15 @@ const std::string & IObjectStorage::getCacheName() const
 
 void IObjectStorage::setIOSchedulingResourceNames(const String & read_resource_name_, const String & write_resource_name_)
 {
-    std::lock_guard lock(io_scheduling_resource_names->mutex);
-    io_scheduling_resource_names->read_resource_name = read_resource_name_;
-    io_scheduling_resource_names->write_resource_name = write_resource_name_;
+    std::lock_guard lock(io_scheduling_mutex);
+    read_resource_name = read_resource_name_;
+    write_resource_name = write_resource_name_;
 }
 
 std::pair<String, String> IObjectStorage::getIOSchedulingResourceNames() const
 {
-    std::lock_guard guard(io_scheduling_resource_names->mutex);
-    return {io_scheduling_resource_names->read_resource_name, io_scheduling_resource_names->write_resource_name};
-}
-
-ObjectStoragePtr IObjectStorage::clone() const
-{
-    auto copy = cloneImpl();
-    copy->io_scheduling_resource_names = io_scheduling_resource_names;
-    return copy;
+    std::lock_guard guard(io_scheduling_mutex);
+    return {read_resource_name, write_resource_name};
 }
 
 ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) const

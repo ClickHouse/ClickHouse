@@ -15,13 +15,6 @@ function run_native()
         ${user:+--user "$user"} ${query_id:+--query_id "$query_id"} -q "$query" 2>&1
 }
 
-# Runs the query $1 with query_id $2 in the background; `--time` writes how long the client waited for the answer.
-function run_native_timed()
-{
-    local query=$1 query_id=$2
-    $CLICKHOUSE_CLIENT --async_insert 0 --run_query_in_background 1 --query_id "$query_id" --time -q "$query" 2>"$CLICKHOUSE_TMP/$query_id.time"
-}
-
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (n UInt64) ENGINE = MergeTree ORDER BY n"
 
 shared_native_and_http_tests run_native

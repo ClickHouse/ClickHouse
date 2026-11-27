@@ -25,9 +25,9 @@ private:
         std::string final_url;
     };
 
-    [[nodiscard]] std::vector<std::string> makeListingURLs(const std::string & path, size_t shard_index) const;
-    [[nodiscard]] IndexPage readIndexPage(const Poco::URI & uri, const Poco::Net::HTTPBasicCredentials & credentials) const;
-    [[nodiscard]] std::vector<std::string> extractURLs(
+    std::vector<std::string> makeListingURLs(const std::string & path, size_t shard_index) const;
+    IndexPage readIndexPage(const Poco::URI & uri, const Poco::Net::HTTPBasicCredentials & credentials) const;
+    std::vector<std::string> extractURLs(
         const std::string & page_body,
         const std::string & listing_url,
         const std::string & listing_prefix_url,
@@ -46,47 +46,45 @@ public:
 
     MetadataTransactionPtr createTransaction() override;
 
-    [[nodiscard]] const std::string & getPath() const override;
+    const std::string & getPath() const override;
 
-    [[nodiscard]] MetadataStorageType getType() const override { return MetadataStorageType::WebIndex; }
+    MetadataStorageType getType() const override { return MetadataStorageType::WebIndex; }
 
-    [[nodiscard]] bool existsFile(const std::string & path) const override;
-    [[nodiscard]] bool existsDirectory(const std::string & path) const override;
-    [[nodiscard]] bool existsFileOrDirectory(const std::string & path) const override;
+    bool existsFile(const std::string & path) const override;
+    bool existsDirectory(const std::string & path) const override;
+    bool existsFileOrDirectory(const std::string & path) const override;
 
-    [[nodiscard]] uint64_t getFileSize(const String & path) const override;
-    [[nodiscard]] std::optional<uint64_t> getFileSizeIfExists(const String & path) const override;
+    uint64_t getFileSize(const String & path) const override;
+    std::optional<uint64_t> getFileSizeIfExists(const String & path) const override;
 
-    [[nodiscard]] std::vector<std::string> listDirectory(const std::string & path) const override;
-    [[nodiscard]] RelativePathsWithMetadata listDirectoryWithMetadata(
+    std::vector<std::string> listDirectory(const std::string & path) const override;
+    RelativePathsWithMetadata listDirectoryWithMetadata(
         const std::string & path,
         std::optional<size_t> shard_index = std::nullopt,
         const std::optional<String> & path_for_glob_matching = std::nullopt) const;
 
-    [[nodiscard]] DirectoryIteratorPtr iterateDirectory(const std::string & path) const override;
+    DirectoryIteratorPtr iterateDirectory(const std::string & path) const override;
 
-    [[nodiscard]] StoredObjects getStorageObjects(const std::string & path) const override;
-    [[nodiscard]] std::optional<StoredObjects> getStorageObjectsIfExist(const std::string & path) const override;
+    StoredObjects getStorageObjects(const std::string & path) const override;
+    std::optional<StoredObjects> getStorageObjectsIfExist(const std::string & path) const override;
 
-    [[nodiscard]] struct stat stat(const String & /* path */) const override { return {}; }
+    struct stat stat(const String & /* path */) const override { return {}; }
 
-    [[nodiscard]] Poco::Timestamp getLastModified(const std::string & /* path */) const override
+    Poco::Timestamp getLastModified(const std::string & /* path */) const override
     {
         /// Required by MergeTree
         return {};
     }
-    [[nodiscard]] uint32_t getHardlinkCount(const std::string & /* path */) const override
+    uint32_t getHardlinkCount(const std::string & /* path */) const override
     {
         return 1;
     }
 
-    [[nodiscard]] bool supportsStat() const override { return false; }
-    [[nodiscard]] bool isReadOnly() const override { return true; }
-    [[nodiscard]] bool isRemote() const override { return true; }
-    [[nodiscard]] bool areBlobPathsRandom() const override { return false; }
-    /// Nothing is ever written, hence nothing is ever removed or replicated.
-    [[nodiscard]] bool hasDeadBlobsQueue() const override { return false; }
-    [[nodiscard]] bool hasMissingBlobsQueue() const override { return false; }
+    bool supportsChmod() const override { return false; }
+    bool supportsStat() const override { return false; }
+    bool isReadOnly() const override { return true; }
+    bool isRemote() const override { return true; }
+    bool areBlobPathsRandom() const override { return false; }
 };
 
 }

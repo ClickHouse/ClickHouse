@@ -39,7 +39,9 @@ SELECT toTypeName(INTERVAL 4 DAY)
 └──────────────────────────────┘
 ```
 
-## Observaciones sobre el uso {#usage-remarks}
+<div id="usage-remarks">
+  ## Observaciones sobre el uso
+</div>
 
 Puede usar valores de tipo `Interval` en operaciones aritméticas con valores de tipo [Date](/es/reference/data-types/date) y [DateTime](/es/reference/data-types/datetime). Por ejemplo, puede sumar 4 días a la hora actual:
 
@@ -87,33 +89,9 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## Agregación {#aggregation}
-
-`sum`, `avg`, `min`, `max` y `any` aplicadas a una columna `Interval` devuelven un intervalo del mismo tipo.
-`sum` suma el número de unidades, mientras que `avg` calcula su promedio y redondea el resultado a un número entero
-de unidades:
-
-```sql
-SELECT
-    sum(duration) AS total_duration,
-    avg(duration) AS avg_duration,
-    toTypeName(total_duration)
-FROM VALUES('duration IntervalMillisecond',
-    toIntervalMillisecond(100), toIntervalMillisecond(200), toIntervalMillisecond(300))
-```
-
-```text
-┌─total_duration─┬─avg_duration─┬─toTypeName(total_duration)─┐
-│            600 │          200 │ IntervalMillisecond        │
-└────────────────┴──────────────┴────────────────────────────┘
-```
-
-Los valores de distintas unidades se convierten a su unidad común antes de agregarse, por lo que
-sumar un minuto y un segundo da 61 segundos. `Month`, `Quarter` y `Year` no comparten ninguna unidad común
-con las unidades más pequeñas (un mes no tiene un número fijo de días), por lo que no pueden combinarse con
-ellas de ninguna manera.
-
-## Intervalos de tipo mixto {#mixed-type-intervals}
+<div id="mixed-type-intervals">
+  ## Intervalos de tipo mixto
+</div>
 
 Los intervalos de tipo mixto, por ejemplo, varias horas y varios minutos, se pueden crear con la sintaxis `INTERVAL 'value' <from_kind> TO <to_kind>`.
 El resultado es una tupla de dos o más intervalos.
@@ -156,9 +134,9 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 └────────────────────────────────────────────┘
 ```
 
-## Véase también {#see-also}
+<div id="see-also">
+  ## Véase también
+</div>
 
 * [INTERVAL](/es/reference/operators/index#interval), operador
 * [toInterval](/es/reference/functions/regular-functions/type-conversion-functions#toIntervalYear), funciones de conversión de tipos
-* [avg](/es/reference/functions/aggregate-functions/avg), función de agregación
-* [sum](/es/reference/functions/aggregate-functions/sum), función de agregación

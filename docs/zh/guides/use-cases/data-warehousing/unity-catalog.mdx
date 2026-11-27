@@ -21,15 +21,13 @@ Databricks 的湖仓支持多种数据格式。借助 ClickHouse，您可以查�
 </Note>
 
 <Note>
-  此功能目前处于 Beta 阶段，请使用以下命令启用：
-  `SET allow_database_unity_catalog = 1;`
-
-  [读取 Iceberg](#read-iceberg) 示例使用的是 `catalog_type = 'rest'`，因此需要改用 `SET allow_database_iceberg = 1;`。
-
-  在 25.8 之前的版本中，这些功能仍处于实验性阶段，对应的设置为 `allow_experimental_database_unity_catalog` 和 `allow_experimental_database_iceberg`。
+  由于此功能仍处于 Experimental 阶段，您需要使用以下命令启用它：
+  `SET allow_experimental_database_unity_catalog = 1;`
 </Note>
 
-## 在 Databricks 中配置 Unity {#configuring-unity-in-databricks}
+<div id="configuring-unity-in-databricks">
+  ## 在 Databricks 中配置 Unity
+</div>
 
 要让 ClickHouse 与 Unity Catalog 交互，您需要确保 Unity Catalog 已配置为允许外部读取方访问。为此，可按照[“启用对 Unity Catalog 的外部数据访问”](https://docs.databricks.com/aws/en/external-access/admin)指南进行配置。
 
@@ -39,15 +37,21 @@ Databricks 的湖仓支持多种数据格式。借助 ClickHouse，您可以查�
 
 * 对于 Delta 客户端，使用个人访问令牌 ([PAT](https://docs.databricks.com/aws/en/dev-tools/auth/pat)) 。
 
-### 所需的 PAT 令牌权限 {#required-pat-token-permissions}
+<div id="required-pat-token-permissions">
+  ### 所需的 PAT 令牌权限
+</div>
 
 使用 PAT 进行读访问时，该令牌必须具备允许 ClickHouse 列出并读取 Unity Catalog 元数据的权限。请确保该 PAT 至少具有 `EXTERNAL USE SCHEMA` [权限](https://docs.databricks.com/aws/en/external-access/admin#grant-a-principal-unity-catalog-privileges)，以及该表上的 `SELECT` 权限、其父 目录 上的 `USE CATALOG` 权限和其父 schema 上的 `USE SCHEMA` 权限。
 
-## 创建 Unity Catalog 与 ClickHouse 之间的连接 {#creating-a-connection-between-unity-catalog-and-clickhouse}
+<div id="creating-a-connection-between-unity-catalog-and-clickhouse">
+  ## 创建 Unity Catalog 与 ClickHouse 之间的连接
+</div>
 
 在完成 Unity Catalog 配置并启用身份验证后，建立 ClickHouse 与 Unity Catalog 之间的连接。
 
-### 读取 Delta {#read-delta}
+<div id="read-delta">
+  ### 读取 Delta
+</div>
 
 ```sql
 CREATE DATABASE unity
@@ -55,7 +59,9 @@ ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/un
 SETTINGS warehouse = 'CATALOG_NAME', catalog_credential = '<PAT>', catalog_type = 'unity'
 ```
 
-### 读取 Iceberg 表 {#read-iceberg}
+<div id="read-iceberg">
+  ### 读取 Iceberg 表
+</div>
 
 要访问外部 Iceberg 表：
 
@@ -66,7 +72,9 @@ SETTINGS catalog_type = 'rest', catalog_credential = '<client-id>:<client-secret
 oauth_server_uri = 'https://<workspace-id>.cloud.databricks.com/oidc/v1/token', auth_scope = 'all-apis,sql'
 ```
 
-## 使用 ClickHouse 查询 Unity Catalog 中的表 {#querying-unity-catalog-tables-using-clickhouse}
+<div id="querying-unity-catalog-tables-using-clickhouse">
+  ## 使用 ClickHouse 查询 Unity Catalog 中的表
+</div>
 
 完成连接配置后，你就可以开始通过 Unity Catalog 进行查询了。例如：
 
@@ -160,7 +168,9 @@ ENGINE = Iceberg('s3://<path>);
 
 ```
 
-## 将数据从数据湖导入 ClickHouse {#loading-data-from-your-data-lake-into-clickhouse}
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## 将数据从数据湖导入 ClickHouse
+</div>
 
 如果需要将 Databricks 中的数据导入 ClickHouse，请先创建一个本地 ClickHouse 表：
 

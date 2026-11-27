@@ -1,0 +1,4 @@
+-- FIXME: Logical error: 'Inconsistent AST formatting: the query
+-- Tags: xfail
+-- FIXME: minimize query
+SELECT hex(toString(last_valueState(x) IGNORE NULLS)) FROM (SELECT DISTINCT assumeNotNull(assumeNotNull(toUInt128(1))) AS x FROM numbers(1) WHERE equals(globalNotIn(isNull(((notIn(toNullable(1), 128) AS alias1971) GLOBAL IN (assumeNotNull(128), 1)) GLOBAL IN (toUInt256(1), 128), *), 1 GLOBAL NOT IN (isNotNull((isNotNull(assumeNotNull(128)), toUInt256(1) GLOBAL NOT IN (notIn(toNullable(1), 128) AS alias1971)) NOT IN (1, 128), 128))), notIn(128, 1) NOT IN (in(1, 128) IN (1, toLowCardinality(isZeroOrNull(128))))) GROUP BY * WITH TOTALS HAVING isNull(materialize(1)) QUALIFY in(1, isNotNull(128))) WHERE equals(globalNotIn(notIn(in(128, toUInt128(1)))), globalIn(isNull(*), 1 GLOBAL NOT IN (isNullable(128)))) WITH TOTALS HAVING globalNotIn(1, 128) ORDER BY ALL ASC NULLS FIRST

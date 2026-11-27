@@ -1,6 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <WindowFunctions/WindowFunctionFactory.h>
-#include <Analyzer/FunctionNode.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -43,103 +41,84 @@ namespace
     void fillRow(
         MutableColumns & res_columns,
         const String & name,
-        FunctionKind function_kind,
+        UInt64 is_aggregate,
         const String & create_query,
         FunctionOrigin function_origin,
         const Factory & factory,
         ContextPtr context)
     {
-        size_t i = 0;
-
-        res_columns[i++]->insert(name);
-        res_columns[i++]->insert(function_kind == FunctionKind::AGGREGATE);
-        res_columns[i++]->insert(function_kind == FunctionKind::WINDOW);
+        res_columns[0]->insert(name);
+        res_columns[1]->insert(is_aggregate);
 
         if constexpr (std::is_same_v<Factory, UserDefinedSQLFunctionFactory> || std::is_same_v<Factory, UserDefinedExecutableFunctionFactory>)
         {
-            res_columns[i++]->insert(false);
-            res_columns[i++]->insertDefault();
+            res_columns[2]->insert(false);
+            res_columns[3]->insertDefault();
         }
         else
         {
-            res_columns[i++]->insert(factory.isCaseInsensitive(name));
+            res_columns[2]->insert(factory.isCaseInsensitive(name));
             if (factory.isAlias(name))
-                res_columns[i++]->insert(factory.aliasTo(name));
+                res_columns[3]->insert(factory.aliasTo(name));
             else
-                res_columns[i++]->insertDefault();
+                res_columns[3]->insertDefault();
         }
 
-        res_columns[i++]->insert(create_query);
-        res_columns[i++]->insert(static_cast<Int8>(function_origin));
+        res_columns[4]->insert(create_query);
+        res_columns[5]->insert(static_cast<Int8>(function_origin));
 
-        if constexpr (std::is_same_v<Factory, FunctionFactory> || std::is_same_v<Factory, AggregateFunctionFactory> || std::is_same_v<Factory, WindowFunctionFactory>)
+        if constexpr (std::is_same_v<Factory, FunctionFactory> || std::is_same_v<Factory, AggregateFunctionFactory>)
         {
             if (factory.isAlias(name))
             {
-                res_columns[i++]->insertDefault();
-                res_columns[i++]->insertDefault();
-                res_columns[i++]->insertDefault();
-                res_columns[i++]->insertDefault();
-                res_columns[i++]->insertDefault();
-                res_columns[i++]->insertDefault();
-                res_columns[i++]->insertDefault();
-                res_columns[i++]->insertDefault();
+                res_columns[6]->insertDefault();
+                res_columns[7]->insertDefault();
+                res_columns[8]->insertDefault();
+                res_columns[9]->insertDefault();
+                res_columns[10]->insertDefault();
+                res_columns[11]->insertDefault();
+                res_columns[12]->insertDefault();
+                res_columns[13]->insertDefault();
             }
             else
             {
                 auto documentation = factory.getDocumentation(name);
-                res_columns[i++]->insert(documentation.description);
-                res_columns[i++]->insert(documentation.syntaxAsString());
-                res_columns[i++]->insert(documentation.argumentsAsString());
-                res_columns[i++]->insert(documentation.parametersAsString());
-                res_columns[i++]->insert(documentation.returnedValueAsString());
-                res_columns[i++]->insert(documentation.examplesAsString());
-                res_columns[i++]->insert(documentation.introducedInAsString());
-                res_columns[i++]->insert(documentation.categoryAsString());
+                res_columns[6]->insert(documentation.description);
+                res_columns[7]->insert(documentation.syntaxAsString());
+                res_columns[8]->insert(documentation.argumentsAsString());
+                res_columns[9]->insert(documentation.parametersAsString());
+                res_columns[10]->insert(documentation.returnedValueAsString());
+                res_columns[11]->insert(documentation.examplesAsString());
+                res_columns[12]->insert(documentation.introducedInAsString());
+                res_columns[13]->insert(documentation.categoryAsString());
             }
         }
         else
         {
-            res_columns[i++]->insertDefault();
-            res_columns[i++]->insertDefault();
-            res_columns[i++]->insertDefault();
-            res_columns[i++]->insertDefault();
-            res_columns[i++]->insertDefault();
-            res_columns[i++]->insertDefault();
-            res_columns[i++]->insertDefault();
-            res_columns[i++]->insertDefault();
+            res_columns[6]->insertDefault();
+            res_columns[7]->insertDefault();
+            res_columns[8]->insertDefault();
+            res_columns[9]->insertDefault();
+            res_columns[10]->insertDefault();
+            res_columns[11]->insertDefault();
+            res_columns[12]->insertDefault();
+            res_columns[13]->insertDefault();
         }
 
-        /// Declarative signature (see IFunction::getSignatureString) and the
-        /// deterministic / higher-order flags. Only regular functions in the
-        /// system FunctionFactory carry these; for everything else (aggregates,
-        /// user-defined, WASM) leave the cells empty. Aliases resolve to their
-        /// canonical function below and inherit its metadata.
-        String signature;
-        UInt8 is_deterministic = 0;
-        UInt8 is_higher_order = 0;
-        bool has_function_flags = false;
         if constexpr (std::is_same_v<Factory, FunctionFactory>)
         {
             try
             {
-                /// `fillData` runs under `SuppressQueryFactoriesInfoScope`, so the normal
-                /// resolution path does not register names in `query_log.used_functions`.
-                /// `tryGet` resolves aliases to the canonical function (so aliases inherit
-                /// its metadata) and honors `use_legacy_to_time`, unlike a duplicated lookup.
-                if (auto resolver = factory.tryGet(name, context))
+                auto resolver = factory.tryGet(name, context);
+                if (resolver)
                 {
-                    signature = resolver->getSignatureString();
-                    is_deterministic = resolver->isDeterministic();
-                    is_higher_order = resolver->isHigherOrderFunction();
-                    has_function_flags = true;
+                    res_columns[14]->insert(resolver->isDeterministic() ? UInt8{1} : UInt8{0});
+                    res_columns[15]->insert(resolver->isHigherOrderFunction() ? UInt8{1} : UInt8{0});
+                    return;
                 }
             }
             catch (...)
             {
-                /// Some functions throw on construction unless certain settings are set
-                /// (e.g. deprecated/error-prone functions). Treat them as having no
-                /// signature and unknown determinism / higher-order flags.
                 LOG_DEBUG(
                     getLogger("system.functions"),
                     "Cannot resolve function {} for introspection: {}",
@@ -147,17 +126,8 @@ namespace
                     getCurrentExceptionMessage(/* with_stacktrace */ false));
             }
         }
-        if (has_function_flags)
-        {
-            res_columns[i++]->insert(is_deterministic);
-            res_columns[i++]->insert(is_higher_order);
-        }
-        else
-        {
-            res_columns[i++]->insertDefault();
-            res_columns[i++]->insertDefault();
-        }
-        res_columns[i++]->insert(signature);
+        res_columns[14]->insertDefault();
+        res_columns[15]->insertDefault();
     }
 
 }
@@ -179,7 +149,6 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
     {
         {"name", std::make_shared<DataTypeString>(), "The name of the function."},
         {"is_aggregate", std::make_shared<DataTypeUInt8>(), "Whether the function is an aggregate function."},
-        {"is_window", std::make_shared<DataTypeUInt8>(), "Whether the function is a window function that can only be used with an `OVER` clause."},
         {"case_insensitive", std::make_shared<DataTypeUInt8>(), "Whether the function name can be used case-insensitively."},
         {"alias_to", std::make_shared<DataTypeString>(), "The original function name, if the function name is an alias."},
         {"create_query", std::make_shared<DataTypeString>(), "Obsolete."},
@@ -195,8 +164,7 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
         {"deterministic", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
             "Whether the function returns the same result for the same arguments. NULL when unknown (e.g. aggregate or user-defined functions)."},
         {"higher_order", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
-            "Whether the function is higher-order — i.e. accepts at least one lambda expression as an argument (e.g. arrayMap, arrayFilter, mapApply). NULL when unknown."},
-        {"signature", std::make_shared<DataTypeString>(), "Declarative signature of the function, when available."}
+            "Whether the function is higher-order — i.e. accepts at least one lambda expression as an argument (e.g. arrayMap, arrayFilter, mapApply). NULL when unknown."}
     };
 }
 
@@ -211,23 +179,12 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & functions_factory = FunctionFactory::instance();
     const auto & function_names = functions_factory.getAllRegisteredNames();
     for (const auto & function_name : function_names)
-    {
-        fillRow(res_columns, function_name, FunctionKind::ORDINARY, "", FunctionOrigin::SYSTEM, functions_factory, context);
-    }
+        fillRow(res_columns, function_name, 0, "", FunctionOrigin::SYSTEM, functions_factory, context);
 
     const auto & aggregate_functions_factory = AggregateFunctionFactory::instance();
     const auto & aggregate_function_names = aggregate_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : aggregate_function_names)
-    {
-        fillRow(res_columns, function_name, FunctionKind::AGGREGATE, "", FunctionOrigin::SYSTEM, aggregate_functions_factory, context);
-    }
-
-    const auto & window_functions_factory = WindowFunctionFactory::instance();
-    const auto & window_function_names = window_functions_factory.getAllRegisteredNames();
-    for (const auto & function_name : window_function_names)
-    {
-        fillRow(res_columns, function_name, FunctionKind::WINDOW, "", FunctionOrigin::SYSTEM, window_functions_factory, context);
-    }
+        fillRow(res_columns, function_name, 1, "", FunctionOrigin::SYSTEM, aggregate_functions_factory, context);
 
     const auto & user_defined_sql_functions_factory = UserDefinedSQLFunctionFactory::instance();
     const auto & user_defined_sql_functions_names = user_defined_sql_functions_factory.getAllRegisteredNames();
@@ -256,25 +213,22 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
             if (UserDefinedWebAssemblyFunctionFactory::instance().has(function_name))
                 continue;
 
-            size_t i = 0;
-            res_columns[i++]->insert(function_name);
-            res_columns[i++]->insert(UInt64(0)); // is_aggregate
-            res_columns[i++]->insert(UInt8{0}); // is_window
-            res_columns[i++]->insert(false); // case_insensitive
-            res_columns[i++]->insertDefault(); // alias_to
-            res_columns[i++]->insert(format({context, *ast}));
-            res_columns[i++]->insert(static_cast<Int8>(FunctionOrigin::WASM_USER_DEFINED));
-            res_columns[i++]->insertDefault(); // description
-            res_columns[i++]->insertDefault(); // syntax
-            res_columns[i++]->insertDefault(); // arguments
-            res_columns[i++]->insertDefault(); // parameters
-            res_columns[i++]->insertDefault(); // returned_value
-            res_columns[i++]->insertDefault(); // examples
-            res_columns[i++]->insertDefault(); // introduced_in
-            res_columns[i++]->insertDefault(); // categories
-            res_columns[i++]->insertDefault(); // is_deterministic
-            res_columns[i++]->insert(UInt8{0}); // higher_order
-            res_columns[i++]->insertDefault(); // signature
+            res_columns[0]->insert(function_name);
+            res_columns[1]->insert(UInt64(0)); // is_aggregate
+            res_columns[2]->insert(false); // case_insensitive
+            res_columns[3]->insertDefault(); // alias_to
+            res_columns[4]->insert(format({context, *ast}));
+            res_columns[5]->insert(static_cast<Int8>(FunctionOrigin::WASM_USER_DEFINED));
+            res_columns[6]->insertDefault(); // description
+            res_columns[7]->insertDefault(); // syntax
+            res_columns[8]->insertDefault(); // arguments
+            res_columns[9]->insertDefault(); // parameters
+            res_columns[10]->insertDefault(); // returned_value
+            res_columns[11]->insertDefault(); // examples
+            res_columns[12]->insertDefault(); // introduced_in
+            res_columns[13]->insertDefault(); // categories
+            res_columns[14]->insertDefault(); // is_deterministic
+            res_columns[15]->insert(UInt8{0}); // higher_order
             continue;
         }
 
@@ -286,14 +240,14 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         String create_query;
         if (ast)
             create_query = format({context, *ast});
-        fillRow(res_columns, function_name, FunctionKind::ORDINARY, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory, context);
+        fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory, context);
     }
 
     const auto & user_defined_executable_functions_factory = UserDefinedExecutableFunctionFactory::instance();
     const auto & user_defined_executable_functions_names = user_defined_executable_functions_factory.getRegisteredNames(context); /// NOLINT(readability-static-accessed-through-instance)
     for (const auto & function_name : user_defined_executable_functions_names)
     {
-        fillRow(res_columns, function_name, FunctionKind::ORDINARY, "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory, context);
+        fillRow(res_columns, function_name, 0, "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory, context);
     }
 
     const auto & wasm_functions_factory = UserDefinedWebAssemblyFunctionFactory::instance();
@@ -328,25 +282,22 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
             returned_value_str = result_type->getName();
         }
 
-        size_t i = 0;
-        res_columns[i++]->insert(registered.sql_name);
-        res_columns[i++]->insert(UInt64(0)); // is_aggregate
-        res_columns[i++]->insert(UInt8{0}); // is_window
-        res_columns[i++]->insert(false); // case_insensitive
-        res_columns[i++]->insertDefault(); // alias_to
-        res_columns[i++]->insert(create_query);
-        res_columns[i++]->insert(static_cast<Int8>(FunctionOrigin::WASM_USER_DEFINED));
-        res_columns[i++]->insertDefault(); // description
-        res_columns[i++]->insert(syntax);
-        res_columns[i++]->insert(arguments_str);
-        res_columns[i++]->insertDefault(); // parameters
-        res_columns[i++]->insert(returned_value_str);
-        res_columns[i++]->insertDefault(); // examples
-        res_columns[i++]->insertDefault(); // introduced_in
-        res_columns[i++]->insertDefault(); // categories
-        res_columns[i++]->insertDefault(); // is_deterministic
-        res_columns[i++]->insert(UInt8{0}); // higher_order
-        res_columns[i++]->insertDefault(); // signature
+        res_columns[0]->insert(registered.sql_name);
+        res_columns[1]->insert(UInt64(0)); // is_aggregate
+        res_columns[2]->insert(false); // case_insensitive
+        res_columns[3]->insertDefault(); // alias_to
+        res_columns[4]->insert(create_query);
+        res_columns[5]->insert(static_cast<Int8>(FunctionOrigin::WASM_USER_DEFINED));
+        res_columns[6]->insertDefault(); // description
+        res_columns[7]->insert(syntax);
+        res_columns[8]->insert(arguments_str);
+        res_columns[9]->insertDefault(); // parameters
+        res_columns[10]->insert(returned_value_str);
+        res_columns[11]->insertDefault(); // examples
+        res_columns[12]->insertDefault(); // introduced_in
+        res_columns[13]->insertDefault(); // categories
+        res_columns[14]->insertDefault(); // is_deterministic
+        res_columns[15]->insert(UInt8{0}); // higher_order
     }
 }
 

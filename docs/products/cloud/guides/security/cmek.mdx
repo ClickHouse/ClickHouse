@@ -7,6 +7,7 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'encryption', 'CMEK', 'KMS key poller']
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 ## Storage level encryption {#storage-encryption}
@@ -37,7 +38,7 @@ TDE must be enabled on service creation. Existing services can't be encrypted af
 ### Customer Managed Encryption Keys (CMEK) {#customer-managed-encryption-keys-cmek}
 
 <Warning>
-Permanently deleting a KMS key used to encrypt a ClickHouse Cloud service makes the service data and its existing backups unretrievable. Deleting a key first stops the service, and most KMS providers keep a deleted key recoverable for a waiting period before destroying it (see [KMS key poller](#kms-key-poller)). To prevent accidental data loss when rotating keys, keep old KMS keys for a period of time before deleting them.
+Deleting a KMS key used to encrypt a ClickHouse Cloud service will cause your ClickHouse service to be stopped and its data will be unretrievable, along with existing backups. To prevent accidental data loss when rotating keys you may wish to maintain old KMS keys for a period of time prior to deletion. 
 </Warning>
 
 Once a service is encrypted with TDE, customers may update the key to enable CMEK. The service will automatically restart after updating the TDE setting. During this process, the old KMS key decrypts the data encrypting key (DEK), and the new KMS key re-encrypts the DEK. This ensures that the service on restart will use the new KMS key for encryption operations moving forward. This process may take several minutes.
@@ -129,16 +130,6 @@ Once you set up CMEK, rotate the key by following the procedures above for creat
 
 When using CMEK, the validity of the provided KMS key is checked every 10 minutes. If access to the KMS key is invalid, the ClickHouse service will stop. To resume service, restore access to the KMS key by following the steps in this guide, and then restart the service.
 
-A service stopped by the key poller is not deleted, and there is no time limit for recovering it. If the key was revoked or disabled, restore access to the key and restart the service, and it comes back with its data.
-
-Deleting the key is different. Once a key is permanently deleted, the service data and its backups can no longer be decrypted (see the warning in [Customer Managed Encryption Keys](#customer-managed-encryption-keys-cmek)). Each KMS provider keeps a deleted key recoverable for a waiting period before destroying it:
-
-- AWS KMS: 7 to 30 days (30 by default). [Cancel the key deletion](https://docs.aws.amazon.com/kms/latest/developerguide/deleting-keys-cancelling-key-deletion.html), then enable the key.
-- GCP Cloud KMS: 24 hours to 120 days (30 days by default). The period is set when the key is created and cannot be changed afterwards, so a key created with a short period can be destroyed as soon as 24 hours after its destruction is scheduled. Check the scheduled destruction time of the key version rather than relying on the default. [Restore the key version](https://docs.cloud.google.com/kms/docs/destroy-restore), then enable it.
-- Azure Key Vault: 7 to 90 days, if soft-delete is enabled on the vault and the key has not been purged. Without purge protection, a deleted key can be permanently purged before this period expires. Enable purge protection to prevent early permanent deletion. [Recover the deleted key](https://learn.microsoft.com/en-us/azure/key-vault/general/key-vault-recovery).
-
-Once the key is usable again, restart the service.
-
 ### Backup and restore {#backup-and-restore}
 
 Backups are encrypted using the same key as the associated service. When you restore an encrypted backup, it creates an encrypted instance that uses the same KMS key as the original instance. If needed, you can rotate the KMS key after restoration; see [Key Rotation](#key-rotation) for more details.
@@ -147,12 +138,4 @@ Backups are encrypted using the same key as the associated service. When you res
 
 Database encryption leverages ClickHouse's built-in [Virtual File System for Data Encryption feature](/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system) to encrypt and protect your data. The algorithm in use for this feature is `AES_256_CTR`, which is expected to have a performance penalty of 5-15% depending on the workload:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![CMEK Performance Penalty](/images/_snippets/cmek-performance.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/_snippets/cmek-performance.webp" size="lg" alt="CMEK Performance Penalty" />

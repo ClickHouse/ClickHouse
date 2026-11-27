@@ -1,4 +1,3 @@
-import uuid
 from time import sleep
 
 import pytest
@@ -21,9 +20,9 @@ node = cluster.add_instance("node", stay_alive=True)
 # The busy timeout defers the flush well past the expired token's `VALID UNTIL`, so the flush happens
 # under an already-expired credential. Kept comfortably larger than the token lifetime below.
 BUSY_TIMEOUT_MS = 12000
-# Lifetime of the expiring token. It is started by a separate `ALTER USER ... VALID FOR` immediately
-# before the push, and resolved on the server as that statement runs, so no setup statement falls inside
-# it: the push is always made under a valid credential, while the deferred execution lands well after.
+# Lifetime of the expiring token, measured from user creation. The insert is pushed within a fraction of
+# a second of creation (so the push itself is always under a valid credential), but the deferred flush at
+# push + BUSY_TIMEOUT_MS lands well after this.
 EXPIRING_LIFETIME_S = 5
 
 
@@ -56,26 +55,22 @@ def test_expired_token_does_not_flush_deferred_insert(start_cluster):
     node.query("CREATE TABLE default.t_deferred_expired (x UInt64) ENGINE = MergeTree ORDER BY x")
     node.query("CREATE TABLE default.t_deferred_valid (x UInt64) ENGINE = MergeTree ORDER BY x")
 
-    # A token limited to its target table, created without a deadline; its lifetime is started below.
-    node.query("CREATE USER u_deferred_expired IDENTIFIED WITH sha256_password BY 'pw' GRANTS (INSERT ON default.t_deferred_expired)")
+    # A token whose authentication method expires shortly after creation, limited to its target table.
+    expiry = node.query(f"SELECT toString(now() + INTERVAL {EXPIRING_LIFETIME_S} SECOND)").strip()
+    node.query(f"CREATE USER u_deferred_expired IDENTIFIED WITH sha256_password BY 'pw' VALID UNTIL '{expiry}' GRANTS (INSERT ON default.t_deferred_expired)")
     node.query("GRANT INSERT ON default.t_deferred_expired TO u_deferred_expired")
 
     # A control token that never expires (far-future `VALID UNTIL`), limited to its own target table.
     node.query("CREATE USER u_deferred_valid IDENTIFIED WITH sha256_password BY 'pw' VALID UNTIL '2999-01-01 00:00:00' GRANTS (INSERT ON default.t_deferred_valid)")
     node.query("GRANT INSERT ON default.t_deferred_valid TO u_deferred_valid")
 
-    # Start the expiring token's lifetime here, so that only the push below falls inside it.
-    node.query(f"ALTER USER u_deferred_expired VALID FOR INTERVAL {EXPIRING_LIFETIME_S} SECOND")
-
     # Both pushes happen while the credentials are valid, so neither is rejected at push time. The rows
     # sit in the async insert queue until the deferred flush at push + BUSY_TIMEOUT_MS.
-    expired_query_id = f"deferred_expired_{uuid.uuid4().hex}"
     node.query(
         "INSERT INTO default.t_deferred_expired VALUES (1)",
         user="u_deferred_expired",
         password="pw",
         settings=async_insert_settings(),
-        query_id=expired_query_id,
     )
     node.query(
         "INSERT INTO default.t_deferred_valid VALUES (1)",
@@ -95,71 +90,10 @@ def test_expired_token_does_not_flush_deferred_insert(start_cluster):
     # The control token never expired, so its deferred flush executed normally.
     assert node.query("SELECT count() FROM default.t_deferred_valid").strip() == "1"
 
-    # The failed flush is logged like any other failed flush. The queue is flushed first in case the deferred
-    # flush has not run yet; either way it runs after the expiry.
-    node.query("SYSTEM FLUSH ASYNC INSERT QUEUE default.t_deferred_expired")
-    node.query("SYSTEM FLUSH LOGS query_log, asynchronous_insert_log")
-    assert (
-        node.query(
-            f"SELECT status, exception LIKE '%USER_EXPIRED%' FROM system.asynchronous_insert_log WHERE query_id = '{expired_query_id}'"
-        )
-        == "FlushError\t1\n"
-    )
-    assert (
-        node.query(
-            f"SELECT type, exception_code FROM system.query_log WHERE query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE query_id = '{expired_query_id}')"
-        )
-        == "ExceptionBeforeStart\t720\n"
-    )
-
     node.query("DROP USER u_deferred_expired")
     node.query("DROP USER u_deferred_valid")
     node.query("DROP TABLE default.t_deferred_expired")
     node.query("DROP TABLE default.t_deferred_valid")
-
-
-def test_user_dropped_during_identity_restore_is_logged(start_cluster):
-    # The user is dropped after the flush has read it in `setUser`, before `setCurrentRoles` builds its access.
-    # The rows must not land, and the failed flush is logged like any other.
-    node.query("DROP USER IF EXISTS u_deferred_dropped")
-    node.query("DROP TABLE IF EXISTS default.t_deferred_dropped")
-    node.query("CREATE TABLE default.t_deferred_dropped (x UInt64) ENGINE = MergeTree ORDER BY x")
-    node.query("CREATE USER u_deferred_dropped IDENTIFIED WITH sha256_password BY 'pw'")
-    node.query("GRANT INSERT ON default.t_deferred_dropped TO u_deferred_dropped")
-
-    query_id = f"deferred_dropped_{uuid.uuid4().hex}"
-    node.query(
-        "INSERT INTO default.t_deferred_dropped VALUES (1)",
-        user="u_deferred_dropped",
-        password="pw",
-        settings=async_insert_settings(),
-        query_id=query_id,
-    )
-
-    failpoint = "async_insert_flush_pause_after_set_user"
-    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
-    flush = node.get_query_request("SYSTEM FLUSH ASYNC INSERT QUEUE default.t_deferred_dropped")
-    node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=30)
-    node.query("DROP USER u_deferred_dropped")
-    node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-    flush.get_answer()
-
-    assert node.query("SELECT count() FROM default.t_deferred_dropped").strip() == "0"
-    node.query("SYSTEM FLUSH LOGS query_log, asynchronous_insert_log")
-    assert (
-        node.query(
-            f"SELECT status, exception LIKE '%ACCESS_ENTITY_NOT_FOUND%' FROM system.asynchronous_insert_log WHERE query_id = '{query_id}'"
-        )
-        == "FlushError\t1\n"
-    )
-    assert (
-        node.query(
-            f"SELECT type, exception_code FROM system.query_log WHERE query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE query_id = '{query_id}')"
-        )
-        == "ExceptionBeforeStart\t492\n"
-    )
-
-    node.query("DROP TABLE default.t_deferred_dropped")
 
 
 def test_expired_token_does_not_run_deferred_query_runner_job(start_cluster):
@@ -173,13 +107,6 @@ def test_expired_token_does_not_run_deferred_query_runner_job(start_cluster):
         "ENGINE = QueryRunner SETTINGS mode = 'asynchronous', threads = 1 SQL SECURITY INVOKER"
     )
 
-    node.query(
-        "CREATE USER u_deferred_query_runner IDENTIFIED WITH sha256_password BY 'pw' "
-        "GRANTS (INSERT ON default.runner_deferred_expiry, INSERT ON default.t_deferred_query_runner)"
-    )
-    node.query("GRANT INSERT ON default.runner_deferred_expiry TO u_deferred_query_runner")
-    node.query("GRANT INSERT ON default.t_deferred_query_runner TO u_deferred_query_runner")
-
     # Occupy the runner's only worker while the limited credential expires. Its queued job must then
     # be rejected by `StorageQueryRunner::makeJobContext` before the query is executed.
     node.query(
@@ -188,9 +115,14 @@ def test_expired_token_does_not_run_deferred_query_runner_job(start_cluster):
         "{'log_comment': 'deferred_query_runner_blocker'})"
     )
 
-    # Start the lifetime here: only the push below falls inside it, and the blocker above still holds the
-    # runner's worker when it lapses.
-    node.query(f"ALTER USER u_deferred_query_runner VALID FOR INTERVAL {EXPIRING_LIFETIME_S} SECOND")
+    expiry = node.query(f"SELECT toString(now() + INTERVAL {EXPIRING_LIFETIME_S} SECOND)").strip()
+    node.query(
+        "CREATE USER u_deferred_query_runner IDENTIFIED WITH sha256_password BY 'pw' "
+        f"VALID UNTIL '{expiry}' "
+        "GRANTS (INSERT ON default.runner_deferred_expiry, INSERT ON default.t_deferred_query_runner)"
+    )
+    node.query("GRANT INSERT ON default.runner_deferred_expiry TO u_deferred_query_runner")
+    node.query("GRANT INSERT ON default.t_deferred_query_runner TO u_deferred_query_runner")
 
     node.query(
         "INSERT INTO default.runner_deferred_expiry VALUES "

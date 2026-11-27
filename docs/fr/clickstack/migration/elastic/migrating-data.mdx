@@ -8,7 +8,9 @@ keywords: ['ClickStack']
 doc_type: 'guide'
 ---
 
-## Stratégie de fonctionnement en parallèle {#parallel-operation-strategy}
+<div id="parallel-operation-strategy">
+  ## Stratégie de fonctionnement en parallèle
+</div>
 
 Lors d&#39;une migration d&#39;Elastic vers ClickStack pour des cas d&#39;usage d&#39;observabilité, nous recommandons une approche de **fonctionnement en parallèle** plutôt que de tenter de migrer les données historiques. Cette stratégie présente plusieurs avantages :
 
@@ -24,7 +26,9 @@ Lors d&#39;une migration d&#39;Elastic vers ClickStack pour des cas d&#39;usage 
   Nous présentons, dans la section [&quot;Migration des données&quot;](#migrating-data), une approche pour migrer les données essentielles d&#39;Elasticsearch vers ClickHouse. Cette approche ne doit pas être utilisée pour des jeux de données plus volumineux, car elle est rarement performante : elle est limitée par la capacité d&#39;Elasticsearch à exporter efficacement, et seul le format JSON est pris en charge.
 </Info>
 
-### Étapes de mise en œuvre {#implementation-steps}
+<div id="implementation-steps">
+  ### Étapes de mise en œuvre
+</div>
 
 <Steps>
   <Step title="Configurer la double ingestion" id="configure-dual-ingestion">
@@ -50,7 +54,9 @@ Lors d&#39;une migration d&#39;Elastic vers ClickStack pour des cas d&#39;usage 
   </Step>
 </Steps>
 
-### Rétention à long terme {#long-term-retention}
+<div id="long-term-retention">
+  ### Rétention à long terme
+</div>
 
 Pour les organisations ayant besoin de durées de rétention plus longues :
 
@@ -58,7 +64,9 @@ Pour les organisations ayant besoin de durées de rétention plus longues :
 * Les fonctionnalités de [stockage hiérarchisé](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes) de ClickStack peuvent vous aider à gérer efficacement les données sur le long terme.
 * Envisagez d’utiliser des [vues matérialisées](/fr/concepts/features/materialized-views/incremental-materialized-view) pour conserver des données historiques agrégées ou filtrées, tout en laissant expirer les données brutes.
 
-### Calendrier de la migration {#migration-timeline}
+<div id="migration-timeline">
+  ### Calendrier de la migration
+</div>
 
 Le calendrier de la migration dépendra de vos exigences en matière de rétention des données :
 
@@ -66,11 +74,15 @@ Le calendrier de la migration dépendra de vos exigences en matière de rétenti
 * **Rétention plus longue** : continuez à faire fonctionner les deux systèmes en parallèle jusqu’à ce que les données expirent dans Elastic.
 * **Données historiques** : si cela est absolument nécessaire, envisagez d’utiliser [Migration des données](#migrating-data) pour importer des données historiques ciblées.
 
-## Migration des paramètres {#migration-settings}
+<div id="migration-settings">
+  ## Migration des paramètres
+</div>
 
 Lors d’une migration d’Elastic vers ClickStack, vos paramètres d’indexation et de stockage devront être adaptés à l’architecture de ClickHouse. Alors qu’Elasticsearch s’appuie sur la mise à l’échelle horizontale et le sharding pour garantir les performances et la tolérance aux pannes, et comporte donc plusieurs segments par défaut, ClickHouse est optimisé pour la mise à l’échelle verticale et offre généralement de meilleures performances avec un nombre plus réduit de segments.
 
-### Paramètres recommandés {#recommended-settings}
+<div id="recommended-settings">
+  ### Paramètres recommandés
+</div>
 
 Nous recommandons de commencer avec un **seul shard** et de privilégier une mise à l’échelle verticale. Cette configuration convient à la plupart des charges de travail d’observabilité et simplifie à la fois l’administration et l’optimisation des performances des requêtes.
 
@@ -82,7 +94,9 @@ Nous recommandons de commencer avec un **seul shard** et de privilégier une mis
   * d’utiliser [`ReplicatedMergeTree`](/fr/reference/engines/table-engines/mergetree-family/replication) si une haute disponibilité est requise
   * pour la tolérance aux pannes, [1 réplique de votre shard](/fr/reference/engines/table-engines/mergetree-family/replication) est généralement suffisante pour les charges de travail d’observabilité.
 
-### Quand recourir au sharding {#when-to-shard}
+<div id="when-to-shard">
+  ### Quand recourir au sharding
+</div>
 
 Le sharding peut être nécessaire si :
 
@@ -92,7 +106,9 @@ Le sharding peut être nécessaire si :
 
 Si vous devez effectivement mettre en place du sharding, consultez [Mise à l’échelle horizontale](/fr/guides/oss/deployment-and-scaling/examples/2-shards-1-replica) pour obtenir des conseils sur les clés de sharding et la configuration des tables distribuées.
 
-### Rétention et TTL {#retention-and-ttl}
+<div id="retention-and-ttl">
+  ### Rétention et TTL
+</div>
 
 ClickHouse utilise des [clauses TTL](/fr/clickstack/managing/production#configure-ttl) sur les tables MergeTree pour gérer l’expiration des données. Les règles TTL peuvent :
 
@@ -102,7 +118,9 @@ ClickHouse utilise des [clauses TTL](/fr/clickstack/managing/production#configur
 
 Nous recommandons d’aligner votre configuration TTL de ClickHouse sur vos politiques de rétention Elastic existantes afin de maintenir un cycle de vie des données cohérent pendant la migration. Pour des exemples, consultez la [configuration TTL de production de ClickStack](/fr/clickstack/managing/production#configure-ttl).
 
-## Migration des données {#migrating-data}
+<div id="migrating-data">
+  ## Migration des données
+</div>
 
 Bien que nous recommandions, pour la plupart des données d’observabilité, un fonctionnement en parallèle, il existe certains cas où une migration directe des données d’Elasticsearch vers ClickHouse peut s’avérer nécessaire :
 
@@ -424,14 +442,12 @@ Les étapes suivantes permettent de migrer un seul index Elasticsearch à partir
       ```
     </Accordion>
 
-    <Note>
-      Dans les versions 24.8 à 25.2, activez les types `JSON` et `Variant` avec `SET allow_experimental_json_type = 1, allow_experimental_variant_type = 1;` avant de créer les tables présentées sur cette page.
-    </Note>
-
     Le schéma de table ClickHouse équivalent :
 
     <Accordion title="Schéma ClickHouse">
       ```sql
+      SET enable_json_type = 1;
+
       CREATE TABLE logs_system_syslog
       (
           `@timestamp` DateTime,
@@ -509,7 +525,7 @@ Les étapes suivantes permettent de migrer un seul index Elasticsearch à partir
     Notez que :
 
     * Les tuples sont utilisés pour représenter des structures imbriquées plutôt que par notation pointée
-    * Utilisez les types ClickHouse appropriés selon le mapping :
+    * Utilisez les types ClickHouse appropriés selon le mapping :
       * `keyword` → `String`
       * `date` → `DateTime`
       * `boolean` → `UInt8`
@@ -525,14 +541,16 @@ Les étapes suivantes permettent de migrer un seul index Elasticsearch à partir
     Ce schéma strict présente plusieurs avantages :
 
     * **Validation des données** – l’application d’un schéma strict évite le risque d’explosion du nombre de colonnes, en dehors de structures spécifiques.
-    * **Évite le risque d&#39;explosion du nombre de colonnes** : bien que le type JSON puisse évoluer jusqu’à potentiellement des milliers de colonnes, les sous-colonnes étant stockées comme des colonnes dédiées, cela peut entraîner une explosion du nombre de fichiers de colonnes, avec la création d’un nombre excessif de fichiers, ce qui affecte les performances. Pour atténuer ce problème, le [type Dynamic](/fr/reference/data-types/dynamic) sous-jacent utilisé par JSON propose un paramètre [`max_dynamic_paths`](/fr/reference/data-types/newjson#reading-json-paths-as-sub-columns), qui limite le nombre de chemins uniques stockés dans des fichiers de colonnes distincts. Une fois ce seuil atteint, les chemins supplémentaires sont stockés dans un fichier de colonnes partagé à l’aide d’un format compact encodé, ce qui préserve les performances et l’efficacité du stockage tout en prenant en charge une ingestion flexible des données. L’accès à ce fichier de colonnes partagé est toutefois moins performant. Notez cependant que la colonne JSON peut être utilisée avec des [indices de type](/fr/guides/clickhouse/data-formats/json/schema#using-type-hints-and-skipping-paths). Les colonnes « annotées » offriront les mêmes performances que les colonnes dédiées.
-    * **Introspection plus simple des chemins et des types** : bien que le type JSON prenne en charge des [fonctions d&#39;introspection](/fr/reference/data-types/newjson#introspection-functions) pour déterminer les types et les chemins qui ont été inférés, les structures statiques peuvent être plus simples à explorer, par exemple avec `DESCRIBE`.
+    * **Évite le risque d&#39;explosion du nombre de colonnes** : bien que le type JSON puisse évoluer jusqu’à potentiellement des milliers de colonnes, les sous-colonnes étant stockées comme des colonnes dédiées, cela peut entraîner une explosion du nombre de fichiers de colonnes, avec la création d’un nombre excessif de fichiers, ce qui affecte les performances. Pour atténuer ce problème, le [type Dynamic](/fr/reference/data-types/dynamic) sous-jacent utilisé par JSON propose un paramètre [`max_dynamic_paths`](/fr/reference/data-types/newjson#reading-json-paths-as-sub-columns), qui limite le nombre de chemins uniques stockés dans des fichiers de colonnes distincts. Une fois ce seuil atteint, les chemins supplémentaires sont stockés dans un fichier de colonnes partagé à l’aide d’un format compact encodé, ce qui préserve les performances et l’efficacité du stockage tout en prenant en charge une ingestion flexible des données. L’accès à ce fichier de colonnes partagé est toutefois moins performant. Notez cependant que la colonne JSON peut être utilisée avec des [indices de type](/fr/guides/clickhouse/data-formats/json/schema#using-type-hints-and-skipping-paths). Les colonnes « annotées » offriront les mêmes performances que les colonnes dédiées.
+    * **Introspection plus simple des chemins et des types** : bien que le type JSON prenne en charge des [fonctions d&#39;introspection](/fr/reference/data-types/newjson#introspection-functions) pour déterminer les types et les chemins qui ont été inférés, les structures statiques peuvent être plus simples à explorer, par exemple avec `DESCRIBE`.
 
     <br />
 
     Vous pouvez également créer simplement une table avec une seule colonne `JSON`.
 
     ```sql
+    SET enable_json_type = 1;
+
     CREATE TABLE syslog_json
     (
      `json` JSON(`host.name` String, `@timestamp` DateTime)
@@ -551,13 +569,13 @@ Les étapes suivantes permettent de migrer un seul index Elasticsearch à partir
   </Step>
 
   <Step title={<>Installer <code>elasticdump</code></>} id="install-elasticdump">
-    Nous recommandons [`elasticdump`](https://github.com/elasticsearch-dump/elasticsearch-dump) pour exporter des données depuis Elasticsearch. Cet outil nécessite `node` et doit être installé sur une machine bénéficiant d&#39;une bonne connectivité réseau avec Elasticsearch et ClickHouse. Nous recommandons un serveur dédié avec au moins 4 cœurs et 16 Go de RAM pour la plupart des exportations.
+    Nous recommandons [`elasticdump`](https://github.com/elasticsearch-dump/elasticsearch-dump) pour exporter des données depuis Elasticsearch. Cet outil nécessite `node` et doit être installé sur une machine bénéficiant d&#39;une bonne connectivité réseau avec Elasticsearch et ClickHouse. Nous recommandons un serveur dédié avec au moins 4 cœurs et 16 Go de RAM pour la plupart des exportations.
 
     ```shell
     npm install elasticdump -g
     ```
 
-    `elasticdump` présente plusieurs avantages pour la migration des données :
+    `elasticdump` présente plusieurs avantages pour la migration des données :
 
     * Il interagit directement avec l&#39;API REST d&#39;Elasticsearch, ce qui garantit une exportation correcte des données.
     * Il préserve la cohérence des données pendant le processus d&#39;exportation grâce à l&#39;API Point-in-Time (PIT) ; cela crée un instantané cohérent des données à un moment précis.
@@ -589,7 +607,7 @@ Les étapes suivantes permettent de migrer un seul index Elasticsearch à partir
     --min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO test.logs_system_syslog FORMAT JSONEachRow"
     ```
 
-    Notez l’utilisation des options suivantes avec `elasticdump` :
+    Notez l’utilisation des options suivantes avec `elasticdump` :
 
     * `type=data` - limite la réponse au seul contenu du document dans Elasticsearch.
     * `input-index` - notre index d’entrée Elasticsearch.
@@ -600,7 +618,7 @@ Les étapes suivantes permettent de migrer un seul index Elasticsearch à partir
 
     <br />
 
-    Voici les paramètres du client ClickHouse utilisés ici (hormis les informations d’authentification) :
+    Voici les paramètres du client ClickHouse utilisés ici (hormis les informations d’authentification) :
 
     * `max_insert_block_size=1000` - le client ClickHouse enverra les données dès que ce nombre de lignes sera atteint. L’augmenter améliore le débit, au prix d’un temps de constitution du bloc plus long, ce qui allonge donc le délai avant que les données n’apparaissent dans ClickHouse.
     * `min_insert_block_size_bytes=0` - désactive le squashing des blocks côté server en fonction du nombre d’octets.
@@ -631,7 +649,7 @@ Les étapes suivantes permettent de migrer un seul index Elasticsearch à partir
 
     Pour cela, on peut utiliser la fonction de table [`input`](/fr/reference/functions/table-functions/input), qui permet d’exécuter n’importe quelle requête `SELECT` sur stdout.
 
-    Supposons que nous souhaitions stocker uniquement les champs `timestamp` et `hostname` de nos données précédentes. Le schéma ClickHouse :
+    Supposons que nous souhaitions stocker uniquement les champs `timestamp` et `hostname` de nos données précédentes. Le schéma ClickHouse :
 
     ```sql
     CREATE TABLE logs_system_syslog_v2
@@ -652,9 +670,5 @@ Les étapes suivantes permettent de migrer un seul index Elasticsearch à partir
     ```
 
     Notez qu’il faut échapper le nom du champ `@timestamp` et utiliser le format d’entrée `JSONAsObject`.
-
-    <Note>
-      Dans les versions 24.8 à 25.2, ajoutez `--allow_experimental_json_type=1` à cette commande `clickhouse-client`. Elle s’exécute dans sa propre session, dans laquelle `input('json JSON')` nécessite le type `JSON`.
-    </Note>
   </Step>
 </Steps>

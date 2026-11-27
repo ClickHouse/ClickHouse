@@ -54,8 +54,6 @@ def test_nullable_struct_schema_inference(source_kind, nullable_tuple_setting):
         ) == TSV([[record_type, "Tuple(x Int64)", nested_type]])
 
         # Nullable tuples distinguish an absent record from a present record with a `NULL` child.
-        # Without them an absent record is a tuple of `NULL` and default elements: the values of the
-        # children of a `NULL` struct row are undefined in Arrow, so a nullable child is `NULL`.
         assert node.query(
             f"SELECT id, isNull(record), tupleElement(record, 'x'), "
             f"tupleElement(required_record, 'x'), isNull(tupleElement(nested_record, 'child')), "
@@ -67,7 +65,7 @@ def test_nullable_struct_schema_inference(source_kind, nullable_tuple_setting):
                 [
                     0,
                     int(nullable_tuple_enabled),
-                    "\\N",
+                    "\\N" if nullable_tuple_enabled else 0,
                     10,
                     int(nullable_tuple_enabled),
                     "\\N" if nullable_tuple_enabled else 0,

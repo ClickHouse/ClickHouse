@@ -15,7 +15,7 @@ public:
         return std::make_shared<ProjectionIndexBasic>();
     }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
     void fillProjectionDescription(
         ProjectionDescription & result,

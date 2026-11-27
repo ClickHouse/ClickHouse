@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <string_view>
 #include <vector>
 #include <Common/MultiVersion.h>
 
@@ -57,10 +56,6 @@ public:
     size_t wipeSensitiveData(std::string & data) const;
     size_t wipeSensitiveDataThrow(std::string & data) const;
 
-    /// Whether `wipeSensitiveData` would mask anything in `data`. Leaves `data` and the
-    /// `QueryMaskingRulesMatch` profile event alone, since nothing is masked.
-    [[nodiscard]] bool hasSensitiveData(std::string_view data) const;
-
     /// setInstance is not thread-safe and should be called once in single-thread mode.
     /// https://github.com/ClickHouse/ClickHouse/pull/6810#discussion_r321183367
     static void setInstance(std::unique_ptr<SensitiveDataMasker>&& sensitive_data_masker_);
@@ -78,7 +73,7 @@ public:
     void printStats();
 #endif
 
-    [[nodiscard]] size_t rulesCount() const;
+    size_t rulesCount() const;
 };
 
 /// Wipes sensitive data and cuts to a specified maximum length in one function call.

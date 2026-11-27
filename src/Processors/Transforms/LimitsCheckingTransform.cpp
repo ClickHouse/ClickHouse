@@ -1,8 +1,6 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Access/EnabledQuota.h>
 
-#include <algorithm>
-
 namespace DB
 {
 
@@ -64,9 +62,7 @@ void LimitsCheckingTransform::checkQuota(Chunk & chunk)
 
         case LimitsMode::LIMITS_CURRENT:
         {
-            /// The stopwatch only keeps the time from stepping back before its start: two readings of the coarse
-            /// clock (on different CPUs) can still go back a little, then no time is accounted.
-            UInt64 total_elapsed = std::max(info.total_stopwatch.elapsedNanoseconds(), prev_elapsed);
+            UInt64 total_elapsed = info.total_stopwatch.elapsedNanoseconds();
             quota->usedForQuery(
                 normalized_query_hash,
                 {{QuotaType::RESULT_ROWS, chunk.getNumRows()},

@@ -10,7 +10,6 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/StorageSystemGraphite.h>
-#include <Databases/IDatabase.h>
 
 
 namespace DB

@@ -7,7 +7,9 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Demo days']
 ---
 
-## Página de detalles de alertas con historial de evaluaciones {#alert-detail-page-with-evaluation-history}
+<div id="alert-detail-page-with-evaluation-history">
+  ## Página de detalles de alertas con historial de evaluaciones
+</div>
 
 *Demo de [@wrn14897](https://github.com/wrn14897)*
 
@@ -27,7 +29,9 @@ Los buckets omitidos hacen visible la acumulación resultante. Un valor de siete
 
 **PR relacionados:** [#2833](https://github.com/hyperdxio/hyperdx/pull/2833) modelo de lectura de evaluaciones de alertas y GET /alerts/:id/evaluations, [#2834](https://github.com/hyperdxio/hyperdx/pull/2834) persistir errores de evaluación de alertas y analítica en AlertHistory, [#2835](https://github.com/hyperdxio/hyperdx/pull/2835) página de detalles de alertas con historial de evaluaciones
 
-## Medición de la adopción de herramientas de métricas en el MCP con evals {#measuring-metric-tool-adoption-in-the-mcp-with-evals}
+<div id="measuring-metric-tool-adoption-in-the-mcp-with-evals">
+  ## Medición de la adopción de herramientas de métricas en el MCP con evals
+</div>
 
 *Demo de [@karl-power](https://github.com/karl-power)*
 
@@ -53,7 +57,9 @@ Lo siguiente será realizar suficientes ejecuciones para comprender el resultado
 
 **PR relacionados:** [#2730](https://github.com/hyperdxio/hyperdx/pull/2730) añade el escenario deploy-regression (mide la adopción orgánica de herramientas de métricas), [#2717](https://github.com/hyperdxio/hyperdx/pull/2717) refuerza el escenario metric-saturation, [#2694](https://github.com/hyperdxio/hyperdx/pull/2694) califica e informa sobre la adopción de herramientas de métricas, [#2855](https://github.com/hyperdxio/hyperdx/pull/2855) expone métricas de resumen a través del MCP
 
-## Tablas distribuidas, histogramas y búsquedas de trazas más rápidas {#distributed-tables-histograms-and-faster-trace-lookups}
+<div id="distributed-tables-histograms-and-faster-trace-lookups">
+  ## Tablas distribuidas, histogramas y búsquedas de trazas más rápidas
+</div>
 
 *Demo de [@pulpdrew](https://github.com/pulpdrew)*
 
@@ -67,19 +73,21 @@ Las métricas tenían dos problemas distintos. Primero, la tabla de histogramas 
 
 La inferencia de esquema ya no se ejecuta simplemente al abrir una fuente existente. Ahora se ejecuta al crear una fuente de métricas o cambiar su base de datos, dejando claro que la tabla inferida aún debe guardarse.
 
-El menú desplegable de agregación también ofrecía promedio, mínimo, máximo y otras funciones para las métricas de histogramas, aunque los histogramas no admiten ninguna de ellas. Elegir una provocaba un error al ejecutar la consulta o guardar el bloque. Estas opciones ahora están ocultas para las métricas de histogramas y de histogramas exponenciales. La ruta `query_tile` del MCP también las rechaza para los bloques persistidos, igual que la interfaz de usuario, en lugar de encontrar su propia forma creativa de fallar.
+El menú desplegable de agregación también ofrecía promedio, mínimo, máximo y otras funciones para las métricas de histogramas, aunque los histogramas no admiten ninguna de ellas. Elegir una provocaba un error al ejecutar la consulta o guardar el mosaico. Estas opciones ahora están ocultas para las métricas de histogramas y de histogramas exponenciales. La ruta `query_tile` del MCP también las rechaza para los mosaicos persistidos, igual que la UI, en lugar de encontrar su propia forma creativa de fallar.
 
 La corrección del límite de series es más sutil. Cuando un `GROUP BY` produce varias series, puede establecer un límite destinado a conservar las N principales según el valor máximo. En el modo de proporción, la clasificación usaba solo el numerador. Esto favorecía numeradores grandes en lugar de proporciones realmente altas, lo que permitía que una serie con un numerador grande y un denominador igualmente grande desplazara a otra que en realidad tenía una proporción mayor. La clasificación ahora usa la proporción representada.
 
 También ha cambiado la selección predeterminada de fuentes en la página de Búsqueda. Antes seleccionaba la primera fuente configurada, incluso si contenía métricas o sesiones. Los usuarios podían encontrarse con un error de fuente incompatible debido a una elección que no habían hecho. Ahora Búsqueda usa de forma predeterminada la primera fuente habilitada que realmente puede utilizar.
 
-Seleccionar una traza desde un panel lateral de logs también ocultaba una búsqueda costosa. La interfaz de usuario de ClickStack buscaba solo por span e ID de traza, ignorando la partición por marca de tiempo y las claves principales. Esto se vuelve lento en implementaciones de gran volumen. Ahora la búsqueda está delimitada por un intervalo de fechas inferido de la fuente, con un fallback deliberado a una consulta sin límites cuando la ventana no arroja resultados. Un log vinculado a un span que comenzó varias horas antes es un ejemplo en el que ese fallback es importante.
+Seleccionar una traza desde un panel lateral de registros también ocultaba una búsqueda costosa. HyperDX buscaba solo por span e ID de traza, ignorando la partición por marca de tiempo y las claves principales. Esto se vuelve lento en implementaciones de gran volumen. Ahora la búsqueda está delimitada por un intervalo de fechas inferido de la fuente, con un fallback deliberado a una consulta sin límites cuando la ventana no arroja resultados. Un registro vinculado a un span que comenzó varias horas antes es un ejemplo en el que ese fallback es importante.
 
 Los enlaces profundos con nombres de fuentes llegaron la semana anterior, seguidos de la pregunta, totalmente justa, de cómo se suponía que los usuarios debían descubrirlos. Los parámetros de URL aceptados por cada página ya se trataban como un contrato, por lo que ahora se documentan como tal. Los filtros de fuentes son la única omisión porque, por ahora, siguen siendo exclusivos de ClickHouse. Una revisión independiente de la documentación añadió campos de configuración de fuentes, como enlaces de spans, que cubren tanto las incorporaciones recientes como algunas cosas que simplemente se habían pasado por alto.
 
 **PR relacionados:** [#2771](https://github.com/hyperdxio/hyperdx/pull/2771) mejora el estado de error de SELECT * en tablas distribuidas y lo extiende a las filas expandidas, [#2817](https://github.com/hyperdxio/hyperdx/pull/2817) detecta automáticamente tablas de métricas solo cuando cambia la selección de la base de datos, [#2794](https://github.com/hyperdxio/hyperdx/pull/2794) no infiere tablas de métricas para fuentes que ya tienen tablas (abierto), [#2793](https://github.com/hyperdxio/hyperdx/pull/2793) oculta funciones de agregación no compatibles para métricas de histogramas, [#2796](https://github.com/hyperdxio/hyperdx/pull/2796) rechaza bloques de histogramas persistidos con aggFns no compatibles en query&#95;tile (abierto), [#2759](https://github.com/hyperdxio/hyperdx/pull/2759) usa el valor de ratio para la clasificación por límite de series en modo ratio, [#2769](https://github.com/hyperdxio/hyperdx/pull/2769) evita que la página de Búsqueda seleccione de forma predeterminada un tipo de fuente incompatible, [#2816](https://github.com/hyperdxio/hyperdx/pull/2816) limita la búsqueda de filas en el panel lateral tras seleccionar Ver traza a una ventana de tiempo, [#2836](https://github.com/hyperdxio/hyperdx/pull/2836) añade configuración de variables de filtro
 
-## Percentiles del mapa de calor y búsqueda Lucene aportados por colaboradores {#heatmap-percentiles-and-lucene-search-from-contributors}
+<div id="heatmap-percentiles-and-lucene-search-from-contributors">
+  ## Percentiles del mapa de calor y búsqueda Lucene aportados por colaboradores
+</div>
 
 *Demo de [@pulpdrew](https://github.com/pulpdrew)*
 
@@ -101,7 +109,9 @@ Los ejemplos integrados en la aplicación disponibles tras el selector de idioma
 
 **PR relacionados:** [#2789](https://github.com/hyperdxio/hyperdx/pull/2789) muestra el contexto de percentiles en la información emergente del mapa de calor, [#2779](https://github.com/hyperdxio/hyperdx/pull/2779) admite límites de rango abiertos, exclusivos y no numéricos, [#2774](https://github.com/hyperdxio/hyperdx/pull/2774) escapa metacaracteres de LIKE en términos de búsqueda, [#2841](https://github.com/hyperdxio/hyperdx/pull/2841) escapa una sola vez los subíndices de Map en búsquedas numéricas y Bool, [#2837](https://github.com/hyperdxio/hyperdx/pull/2837) añade ejemplos para la nueva sintaxis de Lucene
 
-## Métricas RED en la búsqueda de trazas {#red-metrics-on-trace-search}
+<div id="red-metrics-on-trace-search">
+  ## Métricas RED en la búsqueda de trazas
+</div>
 
 *Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -121,7 +131,9 @@ Nos encantaría recibir comentarios sobre este comportamiento.
 
 **PR relacionados:** [#2826](https://github.com/hyperdxio/hyperdx/pull/2826) muestra métricas RED en la vista de resultados de la búsqueda de trazas (abierto, exploratorio)
 
-## Columnas de logs personalizadas en el plugin de ClickHouse para Grafana {#custom-log-columns-in-the-clickhouse-grafana-plugin}
+<div id="custom-log-columns-in-the-clickhouse-grafana-plugin">
+  ## Columnas de logs personalizadas en el plugin de ClickHouse para Grafana
+</div>
 
 *Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -141,7 +153,9 @@ El cambio seguía en revisión cuando se mostró esta demo, con la esperanza de 
 
 **PR relacionados:** [grafana/clickhouse-datasource#2108](https://github.com/grafana/clickhouse-datasource/pull/2108) explorar y filtrar por cualquier columna de la tabla de logs (abierto en el momento de la demo)
 
-## Limitar las series de alta cardinalidad en el origen {#capping-high-cardinality-series-at-the-source}
+<div id="capping-high-cardinality-series-at-the-source">
+  ## Limitar las series de alta cardinalidad en el origen
+</div>
 
 *Demo de [@brandon-pereira](https://github.com/brandon-pereira)*
 
@@ -159,7 +173,9 @@ La solución adecuada para un gráfico que alcanza repetidamente cualquiera de l
 
 **PR relacionados:** [#2802](https://github.com/hyperdxio/hyperdx/pull/2802) limita las series de gráficos temporales de alta cardinalidad con opciones para cargar todo, [#2856](https://github.com/hyperdxio/hyperdx/pull/2856) limita en el origen el coste de los tiles de SQL sin procesar con un límite de filas/cardinalidad en el servidor (abierto)
 
-## Ejemplares: de un gráfico de métricas a la traza {#exemplars-from-a-metric-chart-to-the-trace}
+<div id="exemplars-from-a-metric-chart-to-the-trace">
+  ## Ejemplares: de un gráfico de métricas a la traza
+</div>
 
 *Demo de [@jordan-simonovski](https://github.com/jordan-simonovski)*
 
@@ -181,7 +197,9 @@ Las pruebas revelaron algunos pequeños errores, algunos de los cuales otras per
 
 **PR relacionados:** [#2805](https://github.com/hyperdxio/hyperdx/pull/2805) derivar métricas de solicitudes con ejemplares de traza a partir de spans (abierto), [#2806](https://github.com/hyperdxio/hyperdx/pull/2806) añadir /v1/prometheus/query&#95;exemplars y reforzar el proxy, [#2807](https://github.com/hyperdxio/hyperdx/pull/2807) dividir los dos archivos de gráficos más grandes en directorios, [#2808](https://github.com/hyperdxio/hyperdx/pull/2808) superposición de ejemplares para gráficos temporales de métricas y PromQL (abierto), [#2809](https://github.com/hyperdxio/hyperdx/pull/2809) aceptar configuraciones de ejemplares en tiles creados por la API y por agentes (abierto)
 
-## Funciones auxiliares de importación de Terraform y exportación por lotes {#terraform-import-helpers-and-batch-export}
+<div id="terraform-import-helpers-and-batch-export">
+  ## Funciones auxiliares de importación de Terraform y exportación por lotes
+</div>
 
 *Demo de [@jordan-simonovski](https://github.com/jordan-simonovski)*
 
@@ -199,7 +217,9 @@ Los secretos se excluyen deliberadamente de la API V2. Una solicitud `GET` devue
 
 **PR relacionados:** [#2741](https://github.com/hyperdxio/hyperdx/pull/2741) añade funciones auxiliares de importación de Terraform para recursos de ClickStack
 
-## Componentes de gráficos compartidos, pulido visual y una propuesta de borradores {#shared-chart-components-visual-polish-and-a-drafts-proposal}
+<div id="shared-chart-components-visual-polish-and-a-drafts-proposal">
+  ## Componentes de gráficos compartidos, pulido visual y una propuesta de borradores
+</div>
 
 *Demo de [@elizabetdev](https://github.com/elizabetdev)*
 

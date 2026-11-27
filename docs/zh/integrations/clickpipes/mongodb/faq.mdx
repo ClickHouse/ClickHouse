@@ -10,7 +10,9 @@ integration:
   - category: 'clickpipes'
 ---
 
-### 我可以查询 JSON 数据类型中的单个字段吗？ {#can-i-query-for-individual-fields-in-the-json-datatype}
+<div id="can-i-query-for-individual-fields-in-the-json-datatype">
+  ### 我可以查询 JSON 数据类型中的单个字段吗？
+</div>
 
 对于直接访问字段 (例如 `{"user_id": 123}`) ，你可以使用**点表示法**：
 
@@ -32,7 +34,9 @@ SELECT sum(doc.shipping.cost::Float32) AS total_shipping_cost FROM t1;
 
 要进一步了解如何处理 JSON，请参阅我们的 [JSON 使用指南](/zh/integrations/clickpipes/mongodb/quickstart)。
 
-### 如何在 ClickHouse 中展平嵌套的 MongoDB 文档？ {#how-do-i-flatten-the-nested-mongodb-documents-in-clickhouse}
+<div id="how-do-i-flatten-the-nested-mongodb-documents-in-clickhouse">
+  ### 如何在 ClickHouse 中展平嵌套的 MongoDB 文档？
+</div>
 
 默认情况下，MongoDB 文档会以 ClickHouse 中的 JSON type 进行复制，并保留其嵌套结构。你可以通过多种方式展平这些数据。如果想将数据展平成列，可以使用普通视图、materialized view，或在查询时直接访问。
 
@@ -42,53 +46,59 @@ SELECT sum(doc.shipping.cost::Float32) AS total_shipping_cost FROM t1;
 
 有关详细示例，请参阅我们的 [JSON 使用指南](/zh/integrations/clickpipes/mongodb/quickstart)。
 
-### 可以连接没有公网 IP 或位于私有网络中的 MongoDB 数据库吗？ {#can-i-connect-mongodb-databases-that-dont-have-a-public-ip-or-are-in-private-networks}
+<div id="can-i-connect-mongodb-databases-that-dont-have-a-public-ip-or-are-in-private-networks">
+  ### 可以连接没有公网 IP 或位于私有网络中的 MongoDB 数据库吗？
+</div>
 
 可以。有关 ClickPipes 如何访问未暴露在公网的数据源，请参阅 [ClickPipes 网络连接](/zh/integrations/clickpipes/networking)。
 
-### 如果我从 MongoDB 数据库中删除某个数据库/表，会发生什么？ {#what-happens-if-i-delete-a-database-table-from-my-mongodb-database}
+<div id="what-happens-if-i-delete-a-database-table-from-my-mongodb-database">
+  ### 如果我从 MongoDB 数据库中删除某个数据库/表，会发生什么？
+</div>
 
 当你从 MongoDB 中删除某个数据库/表时，ClickPipes 会继续运行，但被删除的数据库/表将不再复制变更。ClickHouse 中对应的表会被保留。
 
-### MongoDB CDC (变更数据捕获) Connector 如何处理事务？ {#how-does-mongodb-cdc-connector-handle-transactions}
+<div id="how-does-mongodb-cdc-connector-handle-transactions">
+  ### MongoDB CDC (变更数据捕获) Connector 如何处理事务？
+</div>
 
 事务中的每个文档变更都会单独处理并写入 ClickHouse。变更会按照它们在 oplog 中出现的顺序应用，并且只有已提交的变更才会复制到 ClickHouse。如果 MongoDB 事务发生回滚，这些变更就不会出现在 change stream 中。
 
 更多示例，请参阅我们的 [JSON 使用指南](/zh/integrations/clickpipes/mongodb/quickstart)。
 
-### 如何处理 `resume of change stream was not possible, as the resume point may no longer be in the oplog.` 错误？ {#resume-point-may-no-longer-be-in-the-oplog-error}
+<div id="resume-point-may-no-longer-be-in-the-oplog-error">
+  ### 如何处理 `resume of change stream was not possible, as the resume point may no longer be in the oplog.` 错误？
+</div>
 
 此错误通常发生在 oplog 已被截断，而 ClickPipe 无法从预期位置恢复 change stream 时。要解决此问题，请[重新同步 ClickPipe](/zh/integrations/clickpipes/mongodb/resync)。为避免此问题再次发生，建议延长 oplog retention 时间。请参阅 [MongoDB Atlas](/zh/integrations/clickpipes/mongodb/source/atlas#enable-oplog-retention)、[自管理 MongoDB](/zh/integrations/clickpipes/mongodb/source/generic#enable-oplog-retention) 或 [Amazon DocumentDB](/zh/integrations/clickpipes/mongodb/source/documentdb#configure-change-stream-log-retention) 的相关说明。
 
-### 如何处理 `Cannot open a new cursor since too many cursors are already opened` 错误？ {#too-many-cursors-error}
-
-部分托管 MongoDB 提供商 (例如亚马逊 DocumentDB) 会限制每个实例上可同时打开的游标数量。在亚马逊 DocumentDB 中，该上限取决于实例类型。例如，`t3.medium` 和 `t4g.medium` 实例最多只允许打开 30 个游标。各实例类型的具体上限，请参见[实例限制](https://docs.aws.amazon.com/documentdb/latest/devguide/limits.html#limits.instance)。
-
-ClickPipe 需要使用一个游标来读取变更流。如果实例上的其他工作负载占满了所有可用游标，ClickPipe 将无法打开变更流。ClickPipe 会自动重试，并在有游标可用后恢复复制。
-
-解决方法如下：
-
-1. 检查 ClickPipe 所读取的实例上已打开的游标数量。使用 `mongosh` 连接到该实例，然后运行 `db.serverStatus().metrics.cursor.open`。对于亚马逊 DocumentDB，您还可以在 亚马逊 CloudWatch 中对比 `DatabaseCursorsMax` 和 `DatabaseCursorsLimit` 指标。
-2. 减少其他工作负载持续打开的游标数量。例如，在应用程序不再需要游标时及时将其关闭。
-3. 如果您的工作负载确实需要更多游标，请将实例升级到更大的实例类型。
-
-### 如何管理复制？ {#how-is-replication-managed}
+<div id="how-is-replication-managed">
+  ### 如何管理复制？
+</div>
 
 我们使用 MongoDB 原生的 Change Streams API 来跟踪数据库中的更改。Change Streams API 利用 MongoDB 的 oplog (操作日志) 提供可恢复的数据变更流。ClickPipe 使用 MongoDB 的恢复令牌来跟踪 oplog 中的位置，并确保每一项更改都被复制到 ClickHouse。
 
-### 应该使用哪种读取偏好？ {#which-read-preference-should-i-use}
+<div id="which-read-preference-should-i-use">
+  ### 应该使用哪种读取偏好？
+</div>
 
 该使用哪种读取偏好，取决于您的具体使用场景。如果您希望尽量降低主节点的负载，建议使用 `secondaryPreferred` 读取偏好。如果您希望优化摄取延迟，建议使用 `primaryPreferred` 读取偏好。更多详细信息，请参阅 [MongoDB 文档](https://www.mongodb.com/docs/manual/core/read-preference/#read-preference-modes-1)。
 
-### MongoDB ClickPipe 是否支持分片集群？ {#does-the-mongodb-clickpipe-support-sharded-cluster}
+<div id="does-the-mongodb-clickpipe-support-sharded-cluster">
+  ### MongoDB ClickPipe 是否支持分片集群？
+</div>
 
 是的，MongoDB ClickPipe 同时支持副本集和分片集群。
 
-### MongoDB ClickPipe 支持 Amazon DocumentDB 吗？ {#documentdb-support}
+<div id="documentdb-support">
+  ### MongoDB ClickPipe 支持 Amazon DocumentDB 吗？
+</div>
 
 是的，MongoDB ClickPipe 支持 Amazon DocumentDB 5.0。详情请参阅 [Amazon DocumentDB 源端设置指南](/zh/integrations/clickpipes/mongodb/source/documentdb)。
 
-### MongoDB ClickPipe 支持 PrivateLink 吗？ {#privatelink-support}
+<div id="privatelink-support">
+  ### MongoDB ClickPipe 支持 PrivateLink 吗？
+</div>
 
 我们目前仅支持在 AWS 中为 MongoDB (以及 DocumentDB) 集群提供 PrivateLink。
 
@@ -99,18 +109,3 @@ ClickPipe 需要使用一个游标来读取变更流。如果实例上的其他�
 对于副本集连接，你可以通过 VPC 资源或 VPC endpoint service 为 MongoDB 设置 PrivateLink。如果你选择 VPC 资源，则需要创建一个 `GROUP` 资源配置，以及为集群中的每个节点分别创建一个 `CHILD` 资源配置。如果你选择 VPC endpoint service，则需要为集群中的每个节点创建单独的 Endpoint Service (以及单独的 NLB) 。
 
 更多详细信息，请参阅 [AWS PrivateLink](/zh/integrations/clickpipes/networking/aws-privatelink) 文档。如需帮助，请联系 ClickHouse 支持团队。
-
-### 为什么 `_peerdb_raw_mirror_*` 表如此之大？如何限制其大小？ {#raw-mirror-table-retention}
-
-CDC (变更数据捕获) ClickPipe 会先将变更事件写入目标数据库中名为 `_peerdb_raw_mirror_<pipe id>` 的原始表，再将这些事件 normalize 到目标端表中。ClickPipes 不会截断此表。视管道创建时间而定，该表可能未设置生存时间 (TTL)，因而会保留所有事件。可使用 `SHOW CREATE TABLE` 进行检查，并通过以下语句添加或修改 TTL：
-
-```sql
-ALTER TABLE <db>._peerdb_raw_mirror_<id>
-    MODIFY TTL toDateTime(fromUnixTimestamp64Nano(_peerdb_timestamp)) + INTERVAL 30 DAY;
-```
-
-如果原始表没有分区键，首次生存时间 (TTL) 处理会重写现有的 parts，在大表上可能产生明显的后台 I/O。可在 `system.mutations` 中跟踪其进度。
-
-<Warning>
-  TTL 基于挂钟时间计算，无法感知管道状态。如果管道暂停或停顿的时长超过 TTL，尚未完成 normalize 的事件将被删除，永远无法到达目标端表。请将保留期限设置为长于任何计划内的暂停时长。
-</Warning>

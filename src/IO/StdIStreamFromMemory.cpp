@@ -3,11 +3,11 @@
 namespace DB
 {
 
-StdIStreamFromMemory::MemoryBuf::MemoryBuf(const char * begin_, size_t size_)
+StdIStreamFromMemory::MemoryBuf::MemoryBuf(char * begin_, size_t size_)
     : begin(begin_)
     , size(size_)
 {
-    this->setg(const_cast<char *>(begin), const_cast<char *>(begin), const_cast<char *>(begin + size));
+    this->setg(begin, begin, begin + size);
 }
 
 StdIStreamFromMemory::MemoryBuf::int_type StdIStreamFromMemory::MemoryBuf::underflow()
@@ -41,7 +41,7 @@ StdIStreamFromMemory::MemoryBuf::seekoff(off_type off, std::ios_base::seekdir wa
     if (!(ret >= 0 && size_t(ret) <= size))
         return off_type(-1);
 
-    this->setg(const_cast<char *>(begin), const_cast<char *>(begin + ret), const_cast<char *>(begin + size));
+    this->setg(begin, begin + ret, begin + size);
 
     return pos_type(ret);
 }
@@ -52,7 +52,7 @@ StdIStreamFromMemory::MemoryBuf::pos_type StdIStreamFromMemory::MemoryBuf::seekp
     return seekoff(off_type(sp), std::ios_base::beg, mode);
 }
 
-StdIStreamFromMemory::StdIStreamFromMemory(const char * begin_, size_t size_)
+StdIStreamFromMemory::StdIStreamFromMemory(char * begin_, size_t size_)
     : std::iostream(nullptr)
     , mem_buf(begin_, size_)
 {

@@ -15,9 +15,9 @@ doc_type: 'guide'
 QUOTA を使用すると、一定期間にわたるリソース使用量を制限したり、リソースの使用状況を追跡したりできます。
 QUOTA はユーザー設定で構成し、通常は &#39;users.xml&#39; に設定します。
 
-システムには、単一のクエリ複雑性を制限する機能もあります。[クエリ複雑性に関する制限](/ja/concepts/features/configuration/settings/query-complexity) のセクションを参照してください。
+システムには、単一のクエリの複雑さを制限する機能もあります。[クエリの複雑さに関する制限](/ja/concepts/features/configuration/settings/query-complexity) のセクションを参照してください。
 
-クエリ複雑性に関する制限とは異なり、QUOTA には次の特徴があります。
+クエリの複雑さに関する制限とは異なり、QUOTA には次の特徴があります。
 
 * 単一のクエリを制限するのではなく、一定期間内に実行される一連のクエリに制限を課します。
 * 分散クエリ処理において、すべてのリモートサーバーで消費されたリソースを計上します。
@@ -25,16 +25,16 @@ QUOTA はユーザー設定で構成し、通常は &#39;users.xml&#39; に設�
 それでは、QUOTA を定義する &#39;users.xml&#39; ファイル内のセクションを見ていきましょう。
 
 ```xml
-<!-- Quotas -->
+<!-- QUOTA -->
 <quotas>
-    <!-- Quota name. -->
+    <!-- QUOTA名 -->
     <default>
-        <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
+        <!-- 期間に対する制限。異なる制限を持つ複数のインターバルを設定できます。 -->
         <interval>
-            <!-- Length of the interval. -->
+            <!-- インターバルの長さ -->
             <duration>3600</duration>
 
-            <!-- Unlimited. Just collect data for the specified time interval. -->
+            <!-- 無制限。指定したインターバルのデータを収集するのみ。 -->
             <queries>0</queries>
             <query_selects>0</query_selects>
             <query_inserts>0</query_inserts>
@@ -52,16 +52,15 @@ QUOTA はユーザー設定で構成し、通常は &#39;users.xml&#39; に設�
 
 ```xml
 <statbox>
-    <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
+    <!-- 期間に対する制限。異なる制限を持つ複数のインターバルを設定できます。 -->
     <interval>
-        <!-- Length of the interval. -->
+        <!-- インターバルの長さ。 -->
         <duration>3600</duration>
 
         <queries>1000</queries>
         <query_selects>100</query_selects>
         <query_inserts>100</query_inserts>
         <written_bytes>5000000</written_bytes>
-        <written_rows>100000</written_rows>
         <errors>100</errors>
         <result_rows>1000000000</result_rows>
         <read_rows>100000000000</read_rows>
@@ -109,41 +108,18 @@ QUOTA はユーザー設定で構成し、通常は &#39;users.xml&#39; に設�
 
 `written_bytes` - 書き込み操作の合計サイズ。
 
-`written_rows` - `INSERT` クエリによって書き込まれた行の総数。
-
 `execution_time` – 秒単位のクエリの総実行時間 (実時間) 。
 
 `failed_sequential_authentications` - 連続した認証エラーの総数。
 
-`queries_per_normalized_hash` – 任意の単一の正規化クエリにおける実行回数の最大値。正規化クエリとは、リテラルをプレースホルダーに置換したクエリのことで、たとえば `SELECT 1` と `SELECT 2` は同一の正規化クエリとみなされます。この上限は、異なる正規化されたクエリパターンごとに個別に追跡されます。
+`queries_per_normalized_hash` – 単一の正規化クエリの最大実行回数です。正規化クエリとは、リテラルをプレースホルダーに置き換えたクエリのことで、たとえば `SELECT 1` と `SELECT 2` は同じ正規化クエリと見なされます。この制限は、それぞれの異なる正規化クエリパターンごとに独立して追跡されます。
 
-上記の定義済みの量に加えて、イベント名をタグとして指定することで、任意のプロファイルイベント ([system.events](/ja/reference/system-tables/events) テーブルを参照) に上限を設定できます。例:
-
-```xml
-<interval>
-    <duration>86400</duration>
-    <!-- At most 100000 S3 GET requests and 50 failed queries per day. -->
-    <S3GetObject>100000</S3GetObject>
-    <FailedQuery>50</FailedQuery>
-</interval>
-```
-
-同じ内容は、DDL構文を使って次のように記述することもできます。
-
-```sql
-CREATE QUOTA s3_reads FOR INTERVAL 1 day MAX S3GetObject = 100000, FailedQuery = 50 TO my_user;
-```
-
-事前定義された量とは異なり、プロファイルイベントはクエリごとに 1 回、クエリが終了した時点 (成功・エラーを問わず) で計上されます。上限を超えたクエリも最後まで実行でき、以降のクエリはインターバルが終了するまで拒否されます。消費量は [system.quotas&#95;usage](/ja/reference/system-tables/quotas_usage) テーブルの `profile_events` 列で確認できます。クエリ外で蓄積されたプロファイルイベント (たとえばバックグラウンドマージによるもの) はクォータに計上されません。
-
-分散クエリの場合、リモートサーバーがイニシエーターに報告するプロファイルイベントは、ローカルのものとあわせてクエリを開始したユーザーのクォータに計上されます。リモートサーバーは、クエリ内の設定、その `SETTINGS` 句、またはリモートサーバー上のユーザーの設定制約で `send_profile_events` がどのように指定されていても、分散クエリでは常にこれらの報告を送信するため、ユーザーがこれを無効にすることはできません。これには `Distributed` テーブルまたは `remote` テーブル関数への同期 `INSERT` も含まれ、この場合リモートサーバーはすべてのデータを受信した時点でプロファイルイベントを報告します。一方、`distributed_foreground_insert = 0` の `Distributed` テーブルによるバックグラウンド送信は、どのユーザークエリにも属さないため計上されません。[非同期挿入](/ja/reference/settings/session-settings/async-insert#async_insert)の遅延 flush は、`SYSTEM FLUSH ASYNC INSERT QUEUE` のように flush を強制したクエリではなく、挿入を送信したユーザーのクォータに、挿入時のチェックと同じバケットで計上されます (`ip_address` または `forwarded_ip_address` をキーとするクォータではクライアントアドレスのバケット、`normalized_query_hash` をキーとするクォータでは送信された `INSERT` のバケット)。分散 `INSERT` を受信したリモートサーバーがそれを非同期挿入としてキューに入れた場合、そのサーバーでの遅延 flush はそのサーバー上で、イニシエーターが接続に使用するユーザーのクォータに計上され、イニシエーターには報告されません。なお、二重に計上されることはありません。分散 `INSERT` のイニシエーターがリモートサーバーに送信する行は `InsertedRows` と `InsertedBytes` に 1 回だけ計上され、リモートサーバーがそれ以外に書き込む分 (たとえば materialized view の宛先テーブルへの書き込み) は追加で計上されます。
-
-いずれか 1 つ以上の時間間隔で上限を超えた場合、どの制限をどのインターバルで超過したか、および新しいインターバルがいつ始まるか (クエリを再び送信できるようになる時刻) を示すメッセージとともに例外がスローされます。
+少なくとも1つのインターバルでこの制限を超えると、どの制限に違反したのか、どのインターバルに対するものか、また新しいインターバルがいつ始まるか (再びクエリを送信できるようになる時点) を示すテキスト付きで例外がスローされます。
 
 <Note>
-  **クォータの計上から除外されるクエリ**
+  **QUOTA集計の対象外となるクエリ**
 
-  クォータを使い切った状態でもクォータの設定と使用量を確認できるよう、以下のいずれかのシステムテーブルのみを読み取る `SELECT` クエリはクォータに計上されず、クエリの複雑さに関する制限も適用されません。
+  QUOTAを使い切った場合でもQUOTAの設定と使用状況を確認できるように、以下のいずれかのシステムテーブルのみを読み取る `SELECT` クエリはQUOTAに計上されず、クエリ複雑性の制限も適用されません:
 
   * `system.quotas`
   * `system.quota_limits`
@@ -152,7 +128,7 @@ CREATE QUOTA s3_reads FOR INTERVAL 1 day MAX S3GetObject = 100000, FailedQuery =
   * `system.one`
 </Note>
 
-クォータでは「クォータキー」機能を使用して、複数のキーごとにリソース使用量を個別に集計できます。以下にその例を示します。
+QUOTA では、複数のキーのリソース使用状況をそれぞれ独立して報告するために &quot;quota key&quot; 機能を使用できます。以下に例を示します。
 
 ```xml
 <!-- For the global reports designer. -->
@@ -181,7 +157,7 @@ CREATE QUOTA s3_reads FOR INTERVAL 1 day MAX S3GetObject = 100000, FailedQuery =
 </web_global>
 ```
 
-正規化クエリハッシュをキーとしてクォータを設定することもできます。これにより、異なる各クエリパターンごとに独立したクォータバケットが割り当てられます。XML設定では、`<keyed_by_normalized_query_hash />` と記述します:
+正規化クエリハッシュをキーとしてQUOTAを設定することもできます。これにより、異なる各クエリパターンごとに独立したQUOTAバケットが割り当てられます。XML設定では、`<keyed_by_normalized_query_hash />` と記述します:
 
 ```xml
 <my_quota>
@@ -201,14 +177,14 @@ CREATE QUOTA my_quota KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX que
 
 この例では、ユーザーは1時間あたり、個々の正規化クエリごとに最大100回まで実行できます。`SELECT number FROM numbers(1)` と `SELECT number FROM numbers(2)` は同じバケットを共有します (正規化形式が同じであるため) が、`SELECT number, number FROM numbers(1)` は別のバケットを使用します。
 
-クォータ は、設定 の &#39;users&#39; セクションでユーザーに割り当てられます。&quot;アクセス権&quot; のセクションを参照してください。
+QUOTA は、config の &#39;users&#39; セクションでユーザーに割り当てられます。&quot;アクセス権&quot; のセクションを参照してください。
 
-分散クエリ処理では、累積値はリクエスト元のサーバーに保存されます。そのため、ユーザーが別のサーバーに移ると、そのサーバーのクォータは &quot;最初から&quot; になります。
+分散クエリ処理では、累積値はリクエスト元のサーバーに保存されます。そのため、ユーザーが別のサーバーに移ると、そのサーバーのQUOTAは &quot;最初から&quot; になります。
 
-サーバーを再起動すると、クォータ はリセットされます。
+サーバーを再起動すると、QUOTA はリセットされます。
 
 <div id="related-content">
-  ## 関連コンテンツ {#related-content}
+  ## 関連コンテンツ
 </div>
 
 * ブログ: [ClickHouse を使用したシングルページアプリケーションの構築](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)

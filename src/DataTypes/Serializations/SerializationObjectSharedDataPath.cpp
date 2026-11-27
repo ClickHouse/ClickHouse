@@ -71,11 +71,11 @@ struct DeserializeBinaryBulkStateObjectSharedDataPath : public ISerialization::D
 
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
 
-    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateObjectSharedDataPath>(*this);
-        new_state->map_state = map_state ? map_state->clone(context) : nullptr;
-        new_state->structure_state = structure_state ? structure_state->clone(context) : nullptr;
+        new_state->map_state = map_state ? map_state->clone() : nullptr;
+        new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
         return new_state;
     }
 };
@@ -317,18 +317,7 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
             /// Skip chunk if it doesn't have requested path.
             if (!paths_info_chunk.path_to_info.contains(path))
             {
-                if (path_subcolumn.empty())
-                {
-                    column.insertManyDefaults(chunk_structure.limit);
-                }
-                /// A subcolumn of a NULL path value is not always the column default (a null map reads 1).
-                else
-                {
-                    auto null_dynamic_column = dynamic_type->createColumn();
-                    null_dynamic_column->insertManyDefaults(chunk_structure.limit);
-                    auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, std::move(null_dynamic_column));
-                    column.insertRangeFrom(*subcolumn, 0, subcolumn->size());
-                }
+                column.insertManyDefaults(chunk_structure.limit);
                 continue;
             }
 

@@ -16,18 +16,14 @@ public:
     {
         /// TODO: is there a scenario where we broadcast partitioned source and thus have multiple source shards?
         chassert(source_shards.size() == 1);
-        /// The exchange name in `EXPLAIN`, to join the step with the exchanges of the query fragments.
-        setStepDescription(exchange_id, exchange_id.size());
     }
 
-    [[nodiscard]] String getName() const override { return "BroadcastReceive"; }
-
-    [[nodiscard]] const String & getExchangeId() const { return exchange_id; }
+    String getName() const override { return "BroadcastReceive"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void serialize(Serialization & ctx) const override;
-    [[nodiscard]] bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return true; }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 

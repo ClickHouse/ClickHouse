@@ -24,7 +24,7 @@ It's designed to be read alongside the rest of the [documentation](/integrations
 
 ## Before you start {#before-you-start}
 
-Follow the README of [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) first. It explains how to set the project up with dbt Core 1.x, dbt OSS, dbt v2 or the dbt platform, how to point it at a local ClickHouse (docker) or ClickHouse Cloud, how to load the sample data with `dbt seed`, and how to run the first `dbt build`. Once `dbt build` completes successfully, come back here for the ClickHouse-specific examples and configurations.
+Follow the README of [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) first. It explains how to set the project up with dbt Core 1.x, dbt Core v2 or the dbt platform, how to point it at a local ClickHouse (docker) or ClickHouse Cloud, how to load the sample data with `dbt seed`, and how to run the first `dbt build`. Once `dbt build` completes successfully, come back here for the ClickHouse-specific examples and configurations.
 
 After the README steps you should have two databases in ClickHouse:
 
@@ -34,7 +34,7 @@ After the README steps you should have two databases in ClickHouse:
 If your profile uses a different `schema`, replace `jaffle_shop` in the queries below with your value.
 
 <Note>
-**dbt Core 1.x, dbt OSS, dbt v2 and the dbt platform.** Every command and model in this guide is the same on all of them. The examples were tested with dbt Core 1.12 with `dbt-clickhouse` 1.10 and with dbt OSS 2.0 against ClickHouse 26.8; dbt v2 runs the same adapter, and the dbt platform runs dbt v2. The console output shown is from dbt Core 1.x, and the few places where the engines behave differently are called out. See the [dbt OSS, dbt v2 and dbt platform page](/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform) for the current status of the v2 adapter, and [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) in the dbt documentation to get started on the dbt platform.
+**dbt Core 1.x, dbt Core v2 and the dbt platform.** Every command and model in this guide is the same on all three. The examples were tested with dbt Core 1.12 with `dbt-clickhouse` 1.10 and with dbt Core v2 2.0 against ClickHouse 26.8; the dbt platform runs the dbt Core v2 engine. The console output shown is from dbt Core 1.x, and the few places where the engines behave differently are called out. See the [dbt Core v2 page](/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform) for the current status of the v2 adapter, and [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) in the dbt documentation to get started on the dbt platform.
 </Note>
 
 All SQL statements that aren't dbt commands are meant to be run directly against ClickHouse, for example with `clickhouse client`, the ClickHouse Cloud SQL console or the SQL client of your choice.
@@ -114,8 +114,8 @@ The Jaffle Shop uses dbt [seeds](https://docs.getdbt.com/docs/build/seeds) to lo
 
 Seeds are still a good place to learn how dbt creates ClickHouse tables. dbt infers a column type for each CSV column, and the inferred types differ between engines:
 
-| CSV value | dbt v1 | v2 engine |
-|-----------|--------|-----------|
+| CSV value | dbt Core 1.x | dbt Core v2 |
+|-----------|--------------|-------------|
 | `700` | `Int32` | `Int64` |
 | `0.06` | `Float32` | `Float64` |
 | `2024-09-01T15:01:00` | `DateTime` | `DateTime64(6)` |
@@ -145,7 +145,7 @@ seeds:
 ```
 
 <Note>
-Use a properties file for these ClickHouse seed configurations rather than `+order_by` or `+engine` keys under `seeds:` in `dbt_project.yml`. dbt Core 1.x accepts both forms, but dbt v2 only recognizes them in a properties file and rejects the `dbt_project.yml` keys with `Unrecognized key ... Custom keys must go under +meta`.
+Use a properties file for these ClickHouse seed configurations rather than `+order_by` or `+engine` keys under `seeds:` in `dbt_project.yml`. dbt Core 1.x accepts both forms, but dbt Core v2 only recognizes them in a properties file and rejects the `dbt_project.yml` keys with `Unrecognized key ... Custom keys must go under +meta`.
 </Note>
 
 Re-load that seed and check the table it produced:
@@ -555,7 +555,7 @@ The `insert_overwrite` strategy replaces whole partitions, so it needs a `partit
 
 1. Create a staging table (`orders__dbt_new_data_<run_id>`) with the same structure as `orders`.
 2. Insert only the rows selected by the model into the staging table.
-3. List the partitions present in the staging table (`SELECT _partition_id FROM <staging> GROUP BY _partition_id`).
+3. List the partitions present in the staging table from `system.parts`.
 4. Replace exactly those partitions in `orders` with `ALTER TABLE ... REPLACE PARTITION ... FROM` the staging table.
 5. Drop the staging table.
 
@@ -571,16 +571,17 @@ flowchart TB
     items[("order_items")]
     orders[("orders<br/>PARTITION BY toYYYYMM(ordered_at)")]
     staging[("orders__dbt_new_data_#lt;run_id#gt;")]
+    parts[("system.parts")]
     q1["1. CREATE TABLE orders__dbt_new_data_#lt;run_id#gt; AS orders"]
     q2["2. INSERT INTO orders__dbt_new_data_#lt;run_id#gt;<br/>SELECT ... model SQL ...<br/>WHERE ordered_at >= (SELECT max(ordered_at) FROM orders)"]
-    q3["3. SELECT _partition_id<br/>FROM orders__dbt_new_data_#lt;run_id#gt;<br/>GROUP BY _partition_id"]
+    q3["3. SELECT DISTINCT partition_id FROM system.parts<br/>WHERE table = 'orders__dbt_new_data_#lt;run_id#gt;' AND active"]
     q4["4. ALTER TABLE orders<br/>REPLACE PARTITION ID '202509' FROM orders__dbt_new_data_#lt;run_id#gt;,<br/>REPLACE PARTITION ID ... (one per partition found in step 3)"]
     q5["5. DROP TABLE orders__dbt_new_data_#lt;run_id#gt;"]
     q1 -->|creates empty, same structure as orders| staging
     stg -->|reads| q2
     items -->|reads| q2
     q2 -->|inserts the changed rows| staging
-    staging -->|reads its partitions| q3
+    parts -->|reads the partitions of the staging table| q3
     q3 -->|partition ids| q4
     staging -->|reads| q4
     q4 -->|replaces those partitions| orders
@@ -591,7 +592,7 @@ flowchart TB
     classDef query fill:#f3f4f6,stroke:#6b7280;
     class staging temp;
     class orders target;
-    class stg,items source;
+    class stg,items,parts source;
     class q1,q2,q3,q4,q5 query;
 ```
 
@@ -795,4 +796,4 @@ Later runs of `dbt run` keep the target table and its data and only update the v
 
 ## Further information {#further-information}
 
-This guide only touches the surface of dbt. The [dbt documentation](https://docs.getdbt.com/docs/introduction) is the reference for everything that isn't ClickHouse-specific. For the adapter, see the [features and configurations](/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) page for profile settings and global features, the [materializations page](/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) for every configuration used above, and the [dbt OSS, dbt v2 and dbt platform page](/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform) if you run dbt OSS, dbt v2 or the dbt platform. Contributions of new examples to the [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) are welcome.
+This guide only touches the surface of dbt. The [dbt documentation](https://docs.getdbt.com/docs/introduction) is the reference for everything that isn't ClickHouse-specific. For the adapter, see the [features and configurations](/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) page for profile settings and global features, the [materializations page](/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) for every configuration used above, and the [dbt Core v2 page](/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform) if you run the new engine or the dbt platform. Contributions of new examples to the [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) are welcome.

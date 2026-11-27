@@ -17,12 +17,12 @@ doc_type: 'reference'
 ```sql
 percent_rank ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        | [window_name])
+        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column])
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 ```
 
-تقرأ الدالة دائمًا التقسيم بأكمله، ويُتجاهَل إطار النافذة إن حُدِّد.
+التعريف الافتراضي والإلزامي لإطار النافذة هو `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
 
 لمزيد من التفاصيل حول صياغة دوال النافذة، راجع: [دوال النافذة - الصياغة](/ar/reference/functions/window-functions/index#syntax).
 

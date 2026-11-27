@@ -134,11 +134,11 @@ public:
         this->data(place).denominator += local_denominator;
     }
 
-    [[nodiscard]] String getName() const override { return "avgWeighted"; }
+    String getName() const override { return "avgWeighted"; }
 
 #if USE_EMBEDDED_COMPILER
 
-    [[nodiscard]] bool isCompilable() const override
+    bool isCompilable() const override
     {
         if constexpr (!canBeNativeType<Weight>() || !canBeNativeType<Numerator>() || !canBeNativeType<Denominator>())
             return false;
@@ -331,7 +331,7 @@ SELECT avgWeighted(t, t) FROM test
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    factory.registerFunction("avgWeighted", {createAggregateFunctionAvgWeighted, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("avgWeighted", {createAggregateFunctionAvgWeighted, documentation });
 }
 
 }

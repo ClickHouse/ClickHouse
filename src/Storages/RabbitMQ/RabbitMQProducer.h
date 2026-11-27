@@ -9,9 +9,6 @@
 namespace DB
 {
 
-class QueryStatus;
-using QueryStatusPtr = std::shared_ptr<QueryStatus>;
-
 class RabbitMQProducer : public AsynchronousMessageProducer
 {
 public:
@@ -20,7 +17,6 @@ public:
         std::atomic<bool> & shutdown_called_,
         LoggerPtr log_);
 
-    void start(const ContextPtr & context) override;
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
     void cancel() noexcept override;
 
@@ -41,12 +37,6 @@ private:
     RabbitMQPublisherPtr publisher;
 
     bool can_reuse_publisher = false;
-
-    /// Written by the producing task, read in `finishImpl` after `deactivate` waited for the task.
-    String publish_error;
-    bool stopped_by_shutdown = false;
-
-    QueryStatusPtr query_status;
 
     /* false: when shutdown is called; needed because table might be dropped before all acks are received
      * true: in all other cases

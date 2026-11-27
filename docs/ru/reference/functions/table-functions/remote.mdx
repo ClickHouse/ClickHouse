@@ -14,7 +14,9 @@ doc_type: 'reference'
 
 Обе функции можно использовать в запросах `SELECT` и `INSERT`, когда целевой объект — обычная `db`/`table`. Если целевой объект сам является табличной функцией (например, `remote('127.0.0.1', numbers(10))`), таблица доступна только для чтения: удалённой таблицы для вставки не существует, поэтому `INSERT` отклоняется с исключением `NOT_IMPLEMENTED`.
 
-## Синтаксис {#syntax}
+<div id="syntax">
+  ## Синтаксис
+</div>
 
 ```sql
 remote(addresses_expr, [db, table, user [, password], sharding_key][, SETTINGS name = value, ...])
@@ -25,7 +27,9 @@ remoteSecure(addresses_expr, [db.table, user [, password], sharding_key][, SETTI
 remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...])
 ```
 
-## Параметры {#parameters}
+<div id="parameters">
+  ## Параметры
+</div>
 
 | Аргумент                     | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -39,11 +43,15 @@ remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...
 
 Аргументы также можно передавать с помощью [именованных коллекций](/ru/concepts/features/configuration/server-config/named-collections).
 
-## Возвращаемое значение {#returned-value}
+<div id="returned-value">
+  ## Возвращаемое значение
+</div>
 
 Таблица, расположенная на удалённом сервере.
 
-## Использование {#usage}
+<div id="usage">
+  ## Использование
+</div>
 
 Поскольку табличные функции `remote` и `remoteSecure` заново устанавливают соединение для каждого запроса, вместо них рекомендуется использовать таблицу `Distributed`. Кроме того, если указаны имена хостов, выполняется разрешение имён, а ошибки при работе с различными репликами не учитываются. При обработке большого количества запросов всегда заранее создавайте таблицу `Distributed` и не используйте табличную функцию `remote`.
 
@@ -57,7 +65,9 @@ remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...
 
 Те же параметры можно использовать с движками таблиц `Remote` и `RemoteSecure`, чтобы создать постоянную таблицу вместо разовой; см. [движки Remote и RemoteSecure](/ru/reference/engines/table-engines/special/distributed#distributed-remote-engines). Единственное различие — предложение `SETTINGS`: движки принимают его после определения движка, `ENGINE = Remote(...) SETTINGS skip_unavailable_shards = 1`, а не среди аргументов.
 
-### Адреса {#addresses}
+<div id="addresses">
+  ### Адреса
+</div>
 
 ```text
 example01-01-1
@@ -76,9 +86,13 @@ localhost
 example01-01-1,example01-02-1
 ```
 
-## Примеры {#examples}
+<div id="examples">
+  ## Примеры
+</div>
 
-### Выборка данных с удалённого сервера: {#selecting-data-from-a-remote-server}
+<div id="selecting-data-from-a-remote-server">
+  ### Выборка данных с удалённого сервера:
+</div>
 
 ```sql
 SELECT * FROM remote('127.0.0.1', db.remote_engine_table) LIMIT 3;
@@ -93,7 +107,9 @@ CREATE NAMED COLLECTION creds AS
 SELECT * FROM remote(creds, table='remote_engine_table') LIMIT 3;
 ```
 
-### Вставка данных в таблицу на удалённом сервере: {#inserting-data-into-a-table-on-a-remote-server}
+<div id="inserting-data-into-a-table-on-a-remote-server">
+  ### Вставка данных в таблицу на удалённом сервере:
+</div>
 
 ```sql
 CREATE TABLE remote_table (name String, value UInt32) ENGINE=Memory;
@@ -101,11 +117,15 @@ INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALU
 SELECT * FROM remote_table;
 ```
 
-### Миграция таблиц из одной системы в другую: {#migration-of-tables-from-one-system-to-another}
+<div id="migration-of-tables-from-one-system-to-another">
+  ### Миграция таблиц из одной системы в другую:
+</div>
 
 В этом примере используется одна таблица из набора демонстрационных данных. База данных — `imdb`, а таблица — `actors`.
 
-#### В исходной системе ClickHouse (системе, где сейчас хранятся данные) {#on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data}
+<div id="on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data">
+  #### В исходной системе ClickHouse (системе, где сейчас хранятся данные)
+</div>
 
 * Проверьте исходную базу данных и имя таблицы (`imdb.actors`)
 
@@ -128,15 +148,17 @@ SELECT * FROM remote_table;
 Ответ
 
 ```sql
-CREATE TABLE imdb.actors (`id` UInt32,
-                          `first_name` String,
-                          `last_name` String,
-                          `gender` FixedString(1))
-                ENGINE = MergeTree
-                ORDER BY (id, first_name, last_name, gender);
+  CREATE TABLE imdb.actors (`id` UInt32,
+                            `first_name` String,
+                            `last_name` String,
+                            `gender` FixedString(1))
+                  ENGINE = MergeTree
+                  ORDER BY (id, first_name, last_name, gender);
 ```
 
-#### В целевой системе ClickHouse {#on-the-destination-clickhouse-system}
+<div id="on-the-destination-clickhouse-system">
+  #### В целевой системе ClickHouse
+</div>
 
 * Создайте целевую базу данных:
 
@@ -155,7 +177,9 @@ CREATE TABLE imdb.actors (`id` UInt32,
                   ORDER BY (id, first_name, last_name, gender);
   ```
 
-#### Возвращаемся к исходному развертыванию {#back-on-the-source-deployment}
+<div id="back-on-the-source-deployment">
+  #### Возвращаемся к исходному развертыванию
+</div>
 
 Выполните вставку данных в новую базу данных и таблицу, созданные в удаленной системе. Вам понадобятся host, port, имя пользователя, пароль, база данных пункта назначения и целевая таблица.
 
@@ -165,7 +189,9 @@ remoteSecure('remote.clickhouse.cloud:9440', 'imdb.actors', 'USER', 'PASSWORD')
 SELECT * from imdb.actors
 ```
 
-## Глоббинг {#globs-in-addresses}
+<div id="globs-in-addresses">
+  ## Глоббинг
+</div>
 
 Шаблоны в `{ }` используются для генерации набора сегментов и указания реплик. Если есть несколько пар `{ }`, генерируется декартово произведение соответствующих наборов.
 

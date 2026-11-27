@@ -7,11 +7,13 @@ doc_type: 'guide'
 keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'стриминг', 'dead-letter']
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 Шаблон Pub/Sub to ClickHouse — это стриминговый конвейер, который читает сообщения в формате JSON из подписки Pub/Sub и записывает их в таблицу ClickHouse.
-Сообщения, которые не удалось разобрать или сопоставить с целевой схемой, направляются в пункт назначения dead-letter: таблицу ClickHouse, топик Pub/Sub или в оба сразу.
+Сообщения, которые не удалось разобрать или сопоставить с целевой схемой, направляются в пункт назначения dead-letter: таблицу ClickHouse, тему Pub/Sub или в оба сразу.
 
 <div id="pipeline-requirements">
-  ## Требования к конвейеру {#pipeline-requirements}
+  ## Требования к конвейеру
 </div>
 
 * Исходная подписка Pub/Sub должна существовать.
@@ -23,7 +25,7 @@ keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'стриминг', 'dead-letter']
 * Если задан `deadLetterTopic`, топик Pub/Sub уже должен существовать.
 
 <div id="template-parameters">
-  ## Параметры шаблона {#template-parameters}
+  ## Параметры шаблона
 </div>
 
 <br />
@@ -53,7 +55,7 @@ keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'стриминг', 'dead-letter']
 </Note>
 
 <div id="message-format-and-schema-mapping">
-  ## Формат сообщения и сопоставление со схемой {#message-format-and-schema-mapping}
+  ## Формат сообщения и сопоставление со схемой
 </div>
 
 Сообщения Pub/Sub должны быть объектами JSON, в которых имена полей верхнего уровня в точности совпадают с именами столбцов целевой таблицы ClickHouse.
@@ -71,7 +73,7 @@ keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'стриминг', 'dead-letter']
 </Warning>
 
 <div id="type-conversion">
-  ### Преобразование типов {#type-conversion}
+  ### Преобразование типов
 </div>
 
 Значения JSON приводятся к соответствующему типу столбца ClickHouse:
@@ -87,7 +89,7 @@ keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'стриминг', 'dead-letter']
 | [`String`](/ru/reference/data-types/string)                                           | Для текстовых полей используется как есть; нетекстовые узлы JSON сериализуются в строковое представление JSON.                   |
 
 <div id="batching-and-windowing">
-  ## Батчинг и оконная обработка {#batching-and-windowing}
+  ## Батчинг и оконная обработка
 </div>
 
 Поскольку конвейер работает в режиме стриминга, входящие строки накапливаются в окнах перед записью в ClickHouse. Стратегия оконной обработки выбирается на основе указанных вами параметров:
@@ -102,13 +104,13 @@ keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'стриминг', 'dead-letter']
 Подбирая эти значения, вы находите баланс между задержкой и эффективностью вставки. Меньшие окна снижают сквозную задержку; большие окна дают меньшее число более крупных батчей `INSERT`.
 
 <div id="dead-letter-handling">
-  ## Обработка dead-letter {#dead-letter-handling}
+  ## Обработка dead-letter
 </div>
 
 Сообщения, для которых не удалось выполнить парсинг JSON, сопоставление со схемой или приведение типов, направляются в настроенные пункты назначения dead-letter. Необходимо указать как минимум один из параметров: `clickHouseDeadLetterTable` или `deadLetterTopic`; если заданы оба, сообщения с ошибками будут отправлены в оба.
 
 <div id="clickhouse-dead-letter-table">
-  ### Таблица ClickHouse dead-letter {#clickhouse-dead-letter-table}
+  ### Таблица ClickHouse dead-letter
 </div>
 
 Если задан параметр `clickHouseDeadLetterTable`, таблица dead-letter уже должна существовать со следующей фиксированной схемой:
@@ -137,7 +139,7 @@ ORDER BY failed_at;
 </Note>
 
 <div id="pubsub-dead-letter-topic">
-  ### dead-letter-топик Pub/Sub {#pubsub-dead-letter-topic}
+  ### dead-letter-топик Pub/Sub
 </div>
 
 Если задан `deadLetterTopic`, каждое сообщение, обработка которого завершилась ошибкой, повторно публикуется в топик со следующим содержимым:
@@ -148,7 +150,9 @@ ORDER BY failed_at;
 
 Это позволяет удобно повторно обработать сообщения с ошибками после устранения проблемы в схеме или у продьюсера.
 
-## Запуск шаблона {#running-the-template}
+<div id="running-the-template">
+  ## Запуск шаблона
+</div>
 
 Шаблон `Pub/Sub to ClickHouse` доступен в Google Cloud Console.
 
@@ -159,12 +163,7 @@ ORDER BY failed_at;
 Войдите в Google Cloud Console и найдите Dataflow.
 
 1. Нажмите кнопку `CREATE JOB FROM TEMPLATE`.
-
-   <div className="ch-image-lg">
-     <Frame>
-       ![Консоль Dataflow](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
-     </Frame>
-   </div>
+   <Image img="/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp" border alt="Консоль Dataflow" />
 
 2. Когда откроется форма шаблона, введите имя задачи и выберите нужный регион.
 
@@ -185,19 +184,17 @@ ORDER BY failed_at;
 
 5. При необходимости настройте батчинг (`windowSeconds`, `batchRowCount`) и параметры тонкой настройки `ClickHouseIO`, как подробно описано в разделе [Параметры шаблона](#template-parameters).
 
-### Отслеживание задачи {#monitor-the-job}
+<div id="monitor-the-job">
+  ### Отслеживание задачи
+</div>
 
 Перейдите на [вкладку задач Dataflow](https://console.cloud.google.com/dataflow/jobs) в Google Cloud Console, чтобы отслеживать состояние задачи. Там вы найдете сведения о задаче, включая ход выполнения и возможные ошибки:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Консоль Dataflow с выполняющейся задачей Pub/Sub to ClickHouse](/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp" size="lg" border alt="Консоль Dataflow с выполняющейся задачей Pub/Sub to ClickHouse" />
 
 Шаблон также отправляет следующие пользовательские метрики в пространстве имен `PubSubToClickHouse`; их можно просмотреть на странице задачи Dataflow:
 
-| Метрика                 | Тип         | Описание                                                                                                                |
+| Метрика                 | Type         | Описание                                                                                                                |
 | ----------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
 | `messages-received`     | Counter      | Общее количество сообщений Pub/Sub, полученных на этапе разбора.                                                        |
 | `rows-parsed-ok`        | Counter      | Сообщения, успешно преобразованные в строку и направленные в основной выход.                                            |
@@ -205,11 +202,11 @@ ORDER BY failed_at;
 | `message-payload-bytes` | Distribution | Распределение размеров полезной нагрузки входящих сообщений Pub/Sub в байтах.                                           |
 
 <div id="troubleshooting">
-  ## Устранение неполадок {#troubleshooting}
+  ## Устранение неполадок
 </div>
 
 <div id="code-241-dbexception-memory-limit-total-exceeded">
-  ### Ошибка превышения общего лимита памяти (код 241) {#code-241-dbexception-memory-limit-total-exceeded}
+  ### Ошибка превышения общего лимита памяти (код 241)
 </div>
 
 Эта ошибка возникает, когда ClickHouse не хватает памяти при обработке больших батчей данных. Чтобы устранить проблему:
@@ -218,7 +215,7 @@ ORDER BY failed_at;
 * Уменьшите размер батча: сократите `batchRowCount` (и/или `maxInsertBlockSize`) в конфигурации задачи Dataflow, чтобы отправлять в ClickHouse меньшие фрагменты данных и снизить потребление памяти на батч.
 
 <div id="all-messages-going-to-dlq">
-  ### Все сообщения отправляются в пункт назначения dead-letter {#all-messages-going-to-dlq}
+  ### Все сообщения отправляются в пункт назначения dead-letter
 </div>
 
 Наиболее распространённые причины:
@@ -230,7 +227,7 @@ ORDER BY failed_at;
 Проверьте столбцы `error_message` и `stack_trace` в таблице dead-letter ClickHouse (или атрибут `errorMessage` в сообщениях Pub/Sub dead-letter), чтобы определить первопричину.
 
 <div id="no-rows-arriving">
-  ### Конвейер запускается, но строки не поступают в ClickHouse {#no-rows-arriving}
+  ### Конвейер запускается, но строки не поступают в ClickHouse
 </div>
 
 * Убедитесь, что подписка получает сообщения — проверьте метрику `messages-received` на странице задачи Dataflow.
@@ -238,7 +235,7 @@ ORDER BY failed_at;
 * Проверьте сетевую доступность между воркерами Dataflow и конечной точкой ClickHouse (брандмауэр, пиринг VPC или Private Service Connect).
 
 <div id="template-source-code">
-  ## Исходный код шаблона {#template-source-code}
+  ## Исходный код шаблона
 </div>
 
 Исходный код шаблона доступен в следующих репозиториях:

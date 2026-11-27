@@ -8,11 +8,12 @@ keywords: ['ClickStack', '관측성', 'materialized views', '성능', '최적화
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge />
 
 <div id="introduction">
-  ## 소개 {#introduction}
+  ## 소개
 </div>
 
 ClickStack는 시간 경과에 따른 분당 평균 요청 소요 시간 계산처럼 집계가 많은 쿼리에 의존하는 시각화를 가속하기 위해 [증분형 materialized view (IMV)](/ko/concepts/features/materialized-views/incremental-materialized-view)를 활용할 수 있습니다. 이 기능은 쿼리 성능을 크게 향상시킬 수 있으며, 일반적으로 하루 약 10 TB 이상을 처리하는 대규모 배포에서 가장 큰 효과를 발휘합니다. 또한 하루 페타바이트 규모까지 스케일링할 수 있습니다. 증분형 materialized view는 베타 상태이므로 주의해서 사용해야 합니다.
@@ -23,43 +24,41 @@ ClickStack는 시간 경과에 따른 분당 평균 요청 소요 시간 계산�
   실행 시간을 줄이면 응답성과 리소스 활용 측면 모두에서 도움이 될 수 있습니다.
 </Note>
 
-## 증분형 materialized 뷰(view)란 무엇입니까 {#what-are-incremental-materialized-views}
-
-증분형 materialized 뷰(view)를 사용하면 계산 비용을 쿼리 시점에서 삽입 시점으로 옮길 수 있으므로 `SELECT` 쿼리를 훨씬 더 빠르게 실행할 수 있습니다.
-
-Postgres와 같은 트랜잭션 데이터베이스와 달리 ClickHouse의 materialized 뷰(view)는 저장된 스냅샷이 아닙니다. 대신 원본 테이블에 데이터가 삽입될 때마다 데이터 블록에 대해 쿼리를 실행하는 트리거처럼 동작합니다. 이 쿼리의 결과는 별도의 대상 테이블에 기록됩니다. 데이터가 계속 삽입되면 새로운 부분 결과가 대상 테이블에 추가되고 머지됩니다. 이렇게 머지된 결과는 전체 원본 데이터셋에 대해 집계를 수행한 결과와 동일합니다.
-
-materialized 뷰(view)를 사용하는 주된 이유는 대상 테이블에 기록되는 데이터가 집계, 필터링 또는 변환 결과이기 때문입니다. ClickStack에서는 이를 집계에만 사용합니다. 이러한 결과는 일반적으로 원시 입력 데이터보다 훨씬 작고, 대개 부분 집계 상태로 표현됩니다. 또한 사전 집계된 대상 테이블은 쿼리하기도 단순하므로, 쿼리 시점에 원시 데이터에 대해 동일한 계산을 수행하는 경우보다 쿼리 지연 시간이 크게 줄어듭니다.
-
-ClickHouse의 materialized 뷰(view)는 데이터가 원본 테이블로 들어오는 동안 지속적으로 업데이트되며, 항상 최신 상태를 유지하는 인덱스처럼 동작합니다. 이는 많은 다른 데이터베이스의 materialized 뷰(view)와 다릅니다. 다른 데이터베이스에서는 materialized 뷰(view)가 정적인 스냅샷이며, ClickHouse의 [갱신 가능 구체화 뷰(view)](/ko/concepts/features/materialized-views/refreshable-materialized-view)처럼 주기적으로 갱신해야 합니다.
-
-<div className="ch-image-md">
-  <Frame>
-    ![materialized 뷰(view) 다이어그램](/images/materialized-view/materialized-view-diagram.webp)
-  </Frame>
+<div id="what-are-incremental-materialized-views">
+  ## 증분형 materialized view란 무엇입니까
 </div>
 
-증분형 materialized 뷰(view)는 새 데이터가 들어올 때 뷰(view)의 변경분만 계산하므로 계산을 삽입 시점으로 넘깁니다. ClickHouse는 수집에 매우 최적화되어 있으므로, 삽입되는 각 블록에 대해 뷰(view)를 유지하는 데 드는 추가 비용은 쿼리 실행 시 얻는 절감 효과에 비해 작습니다. 집계 계산 비용은 매번 읽을 때마다 반복해서 지불하는 대신 여러 삽입 작업에 걸쳐 분산됩니다. 따라서 사전 집계된 결과를 쿼리하는 것은 이를 다시 계산하는 것보다 훨씬 비용 효율적이며, 그 결과 운영 비용을 낮추고 페타바이트 규모에서도 다운스트림 시각화에 거의 실시간 성능을 제공합니다.
+증분형 materialized view를 사용하면 계산 비용을 쿼리 시점에서 삽입 시점으로 옮길 수 있으므로 `SELECT` 쿼리를 훨씬 더 빠르게 실행할 수 있습니다.
 
-이 모델은 업데이트가 있을 때마다 전체 뷰(view)를 다시 계산하거나 예약된 갱신에 의존하는 시스템과는 근본적으로 다릅니다. materialized 뷰(view)의 동작 방식과 생성 방법에 관한 자세한 설명은 위에서 연결한 가이드를 참조하십시오.
+Postgres와 같은 트랜잭션 데이터베이스와 달리 ClickHouse의 materialized view는 저장된 스냅샷이 아닙니다. 대신 원본 테이블에 데이터가 삽입될 때마다 데이터 블록에 대해 쿼리를 실행하는 트리거처럼 동작합니다. 이 쿼리의 결과는 별도의 대상 테이블에 기록됩니다. 데이터가 계속 삽입되면 새로운 부분 결과가 대상 테이블에 추가되고 머지됩니다. 이렇게 머지된 결과는 전체 원본 데이터셋에 대해 집계를 수행한 결과와 동일합니다.
 
-각 materialized 뷰(view)는 삽입 시점에 추가 오버헤드를 발생시키므로, 신중하게 선택해 사용해야 합니다.
+materialized view를 사용하는 주된 이유는 대상 테이블에 기록되는 데이터가 집계, 필터링 또는 변환 결과이기 때문입니다. ClickStack에서는 이를 집계에만 사용합니다. 이러한 결과는 일반적으로 원시 입력 데이터보다 훨씬 작고, 대개 부분 집계 상태로 표현됩니다. 또한 사전 집계된 대상 테이블은 쿼리하기도 단순하므로, 쿼리 시점에 원시 데이터에 대해 동일한 계산을 수행하는 경우보다 쿼리 지연 시간이 크게 줄어듭니다.
+
+ClickHouse의 materialized view는 데이터가 원본 테이블로 들어오는 동안 지속적으로 업데이트되며, 항상 최신 상태를 유지하는 인덱스처럼 동작합니다. 이는 많은 다른 데이터베이스의 materialized view와 다릅니다. 다른 데이터베이스에서는 materialized view가 정적인 스냅샷이며, ClickHouse의 [갱신 가능 구체화 뷰](/ko/concepts/features/materialized-views/refreshable-materialized-view)처럼 주기적으로 갱신해야 합니다.
+
+<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="materialized view 다이어그램" />
+
+증분형 materialized view는 새 데이터가 들어올 때 뷰의 변경분만 계산하므로 계산을 삽입 시점으로 넘깁니다. ClickHouse는 수집에 매우 최적화되어 있으므로, 삽입되는 각 블록에 대해 뷰를 유지하는 데 드는 추가 비용은 쿼리 실행 시 얻는 절감 효과에 비해 작습니다. 집계 계산 비용은 매번 읽을 때마다 반복해서 지불하는 대신 여러 삽입 작업에 걸쳐 분산됩니다. 따라서 사전 집계된 결과를 쿼리하는 것은 이를 다시 계산하는 것보다 훨씬 비용 효율적이며, 그 결과 운영 비용을 낮추고 페타바이트 규모에서도 다운스트림 시각화에 거의 실시간 성능을 제공합니다.
+
+이 모델은 업데이트가 있을 때마다 전체 뷰를 다시 계산하거나 예약된 갱신에 의존하는 시스템과는 근본적으로 다릅니다. materialized view의 동작 방식과 생성 방법에 관한 자세한 설명은 위에서 연결한 가이드를 참조하십시오.
+
+각 materialized view는 삽입 시점에 추가 오버헤드를 발생시키므로, 신중하게 선택해 사용해야 합니다.
 
 <Tip>
-  가장 자주 사용하는 대시보드와 시각화에 대해서만 뷰(view)를 생성하십시오.
-  기능이 베타 상태인 동안에는 20개 미만의 뷰(view)만 사용하십시오.
+  가장 자주 사용하는 대시보드와 시각화에 대해서만 뷰를 생성하십시오.
+  기능이 베타 상태인 동안에는 20개 미만의 뷰만 사용하십시오.
   이 임계값은 향후 릴리스에서 더 높아질 것으로 예상됩니다.
 </Tip>
 
 <Note>
-  단일 materialized 뷰(view)로 서로 다른 그룹화에 대한 여러 메트릭을 계산할 수 있습니다. 예를 들어 1분 버킷 단위로 서비스 이름별 최소값, 최대값, p95 소요 시간을 계산할 수 있습니다. 이렇게 하면 하나의 뷰(view)로 하나의 시각화만이 아니라 여러 시각화를 지원할 수 있습니다. 따라서 각 뷰(view)의 가치를 극대화하고 대시보드와 워크플로 전반에서 재사용되도록 하려면 메트릭을 공유 뷰(view)로 통합하는 것이 중요합니다.
+  단일 materialized view로 서로 다른 그룹화에 대한 여러 메트릭을 계산할 수 있습니다. 예를 들어 1분 버킷 단위로 서비스 이름별 최소값, 최대값, p95 duration을 계산할 수 있습니다. 이렇게 하면 하나의 뷰로 하나의 시각화만이 아니라 여러 시각화를 지원할 수 있습니다. 따라서 각 뷰의 가치를 극대화하고 대시보드와 워크플로 전반에서 재사용되도록 하려면 메트릭을 공유 뷰로 통합하는 것이 중요합니다.
 </Note>
 
-계속 진행하기 전에 ClickHouse의 materialized 뷰(view)를 더 깊이 이해해 두는 것이 좋습니다.
-자세한 내용은 [증분형 materialized 뷰(view)](/ko/concepts/features/materialized-views/incremental-materialized-view) 가이드를 참조하십시오.
+계속 진행하기 전에 ClickHouse의 materialized view를 더 깊이 이해해 두는 것이 좋습니다.
+자세한 내용은 [증분형 materialized view](/ko/concepts/features/materialized-views/incremental-materialized-view) 가이드를 참조하십시오.
 
 <div id="selecting-visualizatons-for-acceleration">
-  ## 가속할 시각화 선택 {#selecting-visualizatons-for-acceleration}
+  ## 가속할 시각화 선택
 </div>
 
 materialized view를 만들기 전에, 어떤 시각화를 가속할지와 어떤 워크플로가 사용자에게 가장 중요한지 파악하는 것이 중요합니다.
@@ -69,21 +68,21 @@ ClickStack에서 materialized view는 **집계 비중이 높은 시각화를 가
 일반적으로 다음을 권장합니다:
 
 <div id="identify-high-impact-visualizations">
-  ### 높은 효과가 기대되는 시각화 식별 {#identify-high-impact-visualizations}
+  ### 높은 효과가 기대되는 시각화 식별
 </div>
 
 가속화 효과가 큰 후보는 일반적으로 다음 범주 중 하나에 속합니다.
 
-* 자주 갱신되고 계속 표시되는 대시보드 시각화로, 예를 들어 벽면 디스플레이에 상시 표시되는 상위 수준의 모니터링 대시보드가 여기에 해당합니다.
-* 런북에서 사용하는 진단 워크플로로, 장애 대응 중 특정 차트를 반복적으로 확인해야 하며 결과도 신속하게 반환되어야 합니다.
-* 다음을 포함한 ClickStack UI의 핵심 사용 경험:
+* 자주 갱신되고 계속 표시되는 dashboard 시각화로, 예를 들어 벽면 디스플레이에 상시 표시되는 상위 수준의 모니터링 dashboard가 여기에 해당합니다.
+* 런북에서 사용하는 진단 워크플로로, 장애 대응 중 특정 chart를 반복적으로 확인해야 하며 결과도 신속하게 반환되어야 합니다.
+* 다음을 포함한 HyperDX의 핵심 사용 경험:
   * 검색 페이지의 히스토그램 보기
-  * APM, Services 또는 Kubernetes 보기와 같은 사전 설정 대시보드에서 사용하는 시각화
+  * APM, Services 또는 Kubernetes 보기와 같은 사전 설정 dashboard에서 사용하는 시각화
 
 이러한 시각화는 여러 사용자와 다양한 시간 범위에 걸쳐 반복적으로 실행되는 경우가 많으므로, 계산을 쿼리 시점에서 삽입 시점으로 옮기기에 적합합니다.
 
 <div id="balance-benefit-against-insert-time-cost">
-  ### 이점과 삽입 시점 비용의 균형 맞추기 {#balance-benefit-against-insert-time-cost}
+  ### 이점과 삽입 시점 비용의 균형 맞추기
 </div>
 
 materialized view는 삽입 시점에 추가 작업을 유발하므로, 꼭 필요한 경우에만 신중하게 생성해야 합니다. 모든 시각화가 사전 집계의 이점을 얻는 것은 아니며, 거의 사용되지 않는 차트를 빠르게 만들기 위해 오버헤드를 감수하는 것은 대개 가치가 없습니다. materialized view의 총 개수는 20개를 넘지 않도록 유지해야 합니다.
@@ -95,7 +94,7 @@ materialized view는 삽입 시점에 추가 작업을 유발하므로, 꼭 필�
 가장 중요한 시각화를 식별했다면, 다음 단계는 통합입니다.
 
 <div id="consolidate-visualizations-into-shared-views">
-  ### 시각화를 공유 뷰로 통합하기 {#consolidate-visualizations-into-shared-views}
+  ### 시각화를 공유 뷰로 통합하기
 </div>
 
 ClickStack의 모든 materialized view는 [`toStartOfMinute`](/ko/reference/functions/regular-functions/date-time-functions#toStartOfMinute)와 같은 함수를 사용해 시간 인터벌별로 데이터를 그룹화해야 합니다. 하지만 많은 시각화는 서비스 이름, 스팬 이름, 상태 코드와 같은 추가 그룹화 키도 공통으로 사용합니다. 여러 시각화가 동일한 그룹화 차원을 사용하는 경우, 대개 하나의 materialized view로 처리할 수 있습니다.
@@ -119,18 +118,16 @@ GROUP BY time, ServiceName, StatusCode
 
 이 단계에서는 **가속하려는 시각화에서 사용할 쿼리**에 집중하십시오. 다음 섹션에서는 여러 집계 쿼리를 단일 materialized view로 결합하는 방법을 보여주는 예시를 확인할 수 있습니다.
 
-## materialized view 만들기 {#creating-a-materialized-view}
+<div id="creating-a-materialized-view">
+  ## materialized view 만들기
+</div>
 
 속도를 높이려는 시각화 또는 시각화 집합을 파악했다면, 다음 단계는 그 기반이 되는 쿼리를 파악하는 것입니다. 실제로는 시각화 구성을 살펴보고 생성된 SQL을 검토하면서, 사용된 집계 메트릭과 적용된 함수에 특히 주의를 기울여야 합니다.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![생성된 SQL](/images/clickstack/materialized_views/generated_sql.webp)
-  </Frame>
-</div>
+<Image img="/images/clickstack/materialized_views/generated_sql.webp" size="lg" alt="생성된 SQL" />
 
 <Note>
-  ClickStack UI에서 특정 구성 요소에 디버그 패널이 없는 경우, 브라우저 콘솔을 확인하면 됩니다. 모든 쿼리는 그곳에 기록됩니다.
+  HyperDX에서 특정 구성 요소에 디버그 패널이 없는 경우, 브라우저 콘솔을 확인하면 됩니다. 모든 쿼리는 그곳에 기록됩니다.
 </Note>
 
 필요한 쿼리를 정리한 후에는 ClickHouse의 [**집계 상태 함수**](/ko/reference/data-types/aggregatefunction)에 익숙해져야 합니다. materialized view는 이러한 함수를 사용해 계산 작업을 쿼리 시점에서 삽입 시점으로 옮깁니다. 최종 집계 값을 저장하는 대신, materialized view는 **중간 집계 상태**를 계산해 저장하며, 이 상태는 이후 쿼리 시점에 머지되고 최종 결과로 계산됩니다. 이러한 상태는 일반적으로 원본 테이블보다 훨씬 작습니다. 또한 이러한 상태에는 전용 데이터 타입이 있으므로, 대상 테이블의 스키마에 이를 명시적으로 표현해야 합니다.
@@ -151,7 +148,7 @@ GROUP BY time, ServiceName, StatusCode
 계속 진행하기 전에 이러한 개념을 충분히 익혀 두는 것을 **강력히 권장합니다**.
 
 <div id="example-materialized-view">
-  ### 예시 materialized view {#example-materialized-view}
+  ### 예시 materialized view
 </div>
 
 다음 원본 쿼리는 서비스 이름과 상태 코드별로 그룹화한 뒤, 분당 평균 duration, 최대 duration, 이벤트 수, 백분위수를 계산합니다:
@@ -217,34 +214,28 @@ GROUP BY
 그 결과 각 서비스 이름과 상태 코드별 분당 집계 상태를 저장하는 간결한 테이블이 생성됩니다. 이 테이블의 크기는 시간과 카디널리티에 따라 예측 가능하게 증가하며, 백그라운드 머지 후에는 원시 데이터에 대해 원래 집계를 실행한 것과 동일한 결과를 나타냅니다. 이 테이블을 쿼리하는 비용은 소스 traces 테이블에서 직접 집계하는 것보다 훨씬 적으므로, 대규모 환경에서도 빠르고 일관된 시각화 성능을 제공합니다.
 
 <div id="materialized-view-usage-in-clickstack">
-  ## ClickStack에서 materialized view 사용하기 {#materialized-view-usage-in-clickstack}
+  ## ClickStack에서 materialized view 사용하기
 </div>
 
 ClickHouse에서 materialized view를 생성한 후에는 시각화, 대시보드, 알림에서 자동으로 사용할 수 있도록 ClickStack에 등록해야 합니다.
 
-### 사용을 위해 materialized 뷰(view) 등록하기 {#registering-a-view}
+<div id="registering-a-view">
+  ### 사용을 위해 materialized VIEW 등록하기
+</div>
 
-materialized 뷰(view)는 ClickStack UI에서 해당 뷰(view)가 파생된 **원본 테이블**에 해당하는 **소스**에 등록해야 합니다.
+materialized VIEW는 HyperDX에서 해당 뷰가 파생된 **원본 테이블**에 해당하는 **소스**에 등록해야 합니다.
 
 <Steps>
   <Step title="소스 편집" id="edit-the-source">
-    ClickStack UI에서 해당 **소스**로 이동한 다음 **구성 편집** 대화상자를 여십시오. materialized 뷰(view) 섹션까지 스크롤하십시오.
+    HyperDX에서 해당 **소스**로 이동한 다음 **구성 편집** 대화상자를 여십시오. materialized VIEW 섹션까지 스크롤하십시오.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![소스 편집](/images/clickstack/materialized_views/edit_source.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/materialized_views/edit_source.webp" size="lg" alt="소스 편집" />
   </Step>
 
   <Step title="materialized VIEW 추가" id="add-the-materialized-view">
-    **Add materialized 뷰(view)**를 선택한 다음, materialized 뷰(view)를 구성하는 데이터베이스와 대상 테이블을 선택하십시오.
+    **Add materialized view**를 선택한 다음, materialized VIEW를 구성하는 데이터베이스와 대상 테이블을 선택하십시오.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![소스 편집](/images/clickstack/materialized_views/add_view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/materialized_views/add_view.webp" size="lg" alt="소스 편집" />
   </Step>
 
   <Step title="메트릭 선택" id="select-metrics">
@@ -253,40 +244,28 @@ materialized 뷰(view)는 ClickStack UI에서 해당 뷰(view)가 파생된 **�
     메트릭의 경우 다음을 매핑해야 합니다:
 
     * 원래 컬럼 이름(예: `Duration`)
-    * materialized 뷰(view)의 해당 집계 컬럼(예: `avg__Duration`)
+    * materialized VIEW의 해당 집계 컬럼(예: `avg__Duration`)
 
-    차원의 경우 타임스탬프를 제외하고, 뷰(view)에서 그룹화하는 모든 컬럼을 지정하십시오.
+    차원의 경우 타임스탬프를 제외하고, 뷰에서 그룹화하는 모든 컬럼을 지정하십시오.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![메트릭 선택](/images/clickstack/materialized_views/select_metrics.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/materialized_views/select_metrics.webp" size="lg" alt="메트릭 선택" />
   </Step>
 
   <Step title="시간 세분화 수준 선택" id="select-time-granularity">
-    materialized 뷰(view)의 **시간 세분화 수준**을 선택하십시오(예: 1분).
+    materialized VIEW의 **시간 세분화 수준**을 선택하십시오(예: 1분).
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![시간 세분화 수준 선택](/images/clickstack/materialized_views/select_time_granularity.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/materialized_views/select_time_granularity.webp" size="lg" alt="시간 세분화 수준 선택" />
   </Step>
 
   <Step title="최소 날짜 선택" id="specify-the-minimum-date">
-    materialized 뷰(view)에 데이터가 포함된 최소 날짜를 지정하십시오. 이는 뷰(view)에서 사용할 수 있는 가장 이른 타임스탬프를 의미하며, 수집이 계속 이루어졌다면 일반적으로 뷰(view)가 생성된 시점입니다.
+    materialized VIEW에 데이터가 포함된 최소 날짜를 지정하십시오. 이는 뷰에서 사용할 수 있는 가장 이른 타임스탬프를 의미하며, 수집이 계속 이루어졌다면 일반적으로 뷰가 생성된 시점입니다.
 
     <Note>
-      materialized 뷰(view)는 생성 시 **자동으로 백필되지 않으므로**, 생성 후에 삽입된 데이터에서 생성된 행만 포함합니다.
-      materialized 뷰(view) 백필에 대한 전체 가이드는 [&quot;데이터 백필&quot;](/ko/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables)에서 확인할 수 있습니다.
+      materialized VIEW는 생성 시 **자동으로 백필되지 않으므로**, 생성 후에 삽입된 데이터에서 생성된 행만 포함합니다.
+      materialized VIEW 백필에 대한 전체 가이드는 [&quot;데이터 백필&quot;](/ko/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables)에서 확인할 수 있습니다.
     </Note>
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![최소 시간 선택](/images/clickstack/materialized_views/select_min_time.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/materialized_views/select_min_time.webp" size="lg" alt="최소 시간 선택" />
 
     정확한 시작 시간이 불분명한 경우에는 예를 들어 대상 테이블의 최소 타임스탬프를 쿼리하여 확인할 수 있습니다:
 
@@ -298,54 +277,48 @@ materialized 뷰(view)는 ClickStack UI에서 해당 뷰(view)가 파생된 **�
   <Step title="소스 저장" id="save-the-source">
     소스 구성을 저장하십시오.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![소스 저장](/images/clickstack/materialized_views/save_source.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/materialized_views/save_source.webp" size="lg" alt="소스 저장" />
   </Step>
 </Steps>
 
-materialized 뷰(view)가 등록되면 대시보드, 시각화 또는 알림을 변경하지 않아도, 해당되는 쿼리에 대해 ClickStack이 자동으로 이를 사용합니다. ClickStack은 실행 시점에 각 쿼리를 평가하여 materialized 뷰(view)를 적용할 수 있는지 판단합니다.
+materialized VIEW가 등록되면 대시보드, 시각화 또는 알림을 변경하지 않아도, 해당되는 쿼리에 대해 ClickStack이 자동으로 이를 사용합니다. ClickStack은 실행 시점에 각 쿼리를 평가하여 materialized VIEW를 적용할 수 있는지 판단합니다.
 
-### 대시보드 및 시각화에서 가속 적용 여부 확인하기 {#verifying-acceleration-in-dashboards-and-visualizations}
+<div id="verifying-acceleration-in-dashboards-and-visualizations">
+  ### 대시보드 및 시각화에서 가속 적용 여부 확인하기
+</div>
 
-증분형 materialized 뷰(view)에는 **뷰(view)가 생성된 후에 삽입된** 데이터만 포함된다는 점을 기억해야 합니다. 이 뷰(view)는 자동으로 백필되지 않으므로, 가볍고 유지 비용도 낮습니다. 따라서 사용자는 뷰(view)를 등록할 때 유효한 시간 범위를 명시적으로 지정해야 합니다.
+증분형 materialized view에는 **view가 생성된 후에 삽입된** 데이터만 포함된다는 점을 기억해야 합니다. 이 view는 자동으로 백필되지 않으므로, 가볍고 유지 비용도 낮습니다. 따라서 사용자는 view를 등록할 때 유효한 시간 범위를 명시적으로 지정해야 합니다.
 
 <Note>
-  ClickStack는 materialized 뷰(view)의 최소 타임스탬프가 쿼리 시간 범위 시작 시점보다 작거나 같을 때만 해당 materialized 뷰(view)를 사용합니다. 이렇게 해야 뷰(view)에 필요한 데이터가 모두 포함된다고 보장할 수 있습니다. 쿼리는 내부적으로 시간 기반 서브쿼리로 분할되지만, materialized 뷰(view)는 전체 쿼리에 적용되거나 아예 적용되지 않습니다. 향후 개선을 통해 적용 가능한 서브쿼리에만 뷰(view)를 선택적으로 사용할 수 있게 될 수 있습니다.
+  ClickStack는 materialized view의 최소 타임스탬프가 쿼리 시간 범위 시작 시점보다 작거나 같을 때만 해당 materialized view를 사용합니다. 이렇게 해야 view에 필요한 데이터가 모두 포함된다고 보장할 수 있습니다. 쿼리는 내부적으로 시간 기반 서브쿼리로 분할되지만, materialized view는 전체 쿼리에 적용되거나 아예 적용되지 않습니다. 향후 개선을 통해 적용 가능한 서브쿼리에만 view를 선택적으로 사용할 수 있게 될 수 있습니다.
 </Note>
 
-ClickStack는 materialized 뷰(view) 사용 여부를 확인할 수 있도록 명확한 시각적 표시를 제공합니다.
+ClickStack는 materialized view 사용 여부를 확인할 수 있도록 명확한 시각적 표시를 제공합니다.
 
 1. **최적화 상태 확인** 대시보드 또는 시각화를 볼 때 번개 모양 또는 `Accelerated` 아이콘을 찾으십시오:
 
-* **초록색 번개**는 쿼리가 materialized 뷰(view)로 가속되고 있음을 나타냅니다.
+* **초록색 번개**는 쿼리가 materialized view로 가속되고 있음을 나타냅니다.
 * **주황색 번개**는 쿼리가 원본 테이블에서 실행되고 있음을 나타냅니다.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![가속된 시각화](/images/clickstack/materialized_views/accelerated_visual.webp)
-  </Frame>
-</div>
+<Image img="/images/clickstack/materialized_views/accelerated_visual.webp" size="lg" alt="가속된 시각화" />
 
 2. **최적화 세부 정보 확인**  번개 아이콘을 클릭하면 다음 정보가 표시되는 세부 정보 패널이 열립니다:
 
-* **활성 materialized 뷰(view)**: 쿼리에 선택된 뷰(view)와 해당 뷰(view)의 예상 행 수
-* **건너뛴 materialized 뷰(view)**: 호환되지만 선택되지 않은 뷰(view)와 해당 뷰(view)의 예상 스캔 크기
-* **호환되지 않는 materialized 뷰(view)**: 사용할 수 없었던 뷰(view)와 그 구체적인 이유
+* **활성 materialized view**: 쿼리에 선택된 view와 해당 view의 예상 행 수
+* **건너뛴 materialized view**: 호환되지만 선택되지 않은 view와 해당 view의 예상 스캔 크기
+* **호환되지 않는 materialized view**: 사용할 수 없었던 view와 그 구체적인 이유
 
-3. **일반적인 비호환 사유 이해** 다음과 같은 경우 materialized 뷰(view)가 사용되지 않을 수 있습니다:
+3. **일반적인 비호환 사유 이해** 다음과 같은 경우 materialized view가 사용되지 않을 수 있습니다:
 
-* **쿼리 시간 범위**의 시작 시점이 뷰(view)의 최소 타임스탬프보다 이전인 경우
-* **시각화 세분화 수준**이 뷰(view)의 세분화 수준의 배수가 아닌 경우
-* 쿼리에서 요청한 **집계 함수**가 뷰(view)에 없는 경우
-* 쿼리가 `count(if(...))`와 같은 **사용자 정의 count 표현식**을 사용해 뷰(view)의 집계 상태에서 이를 도출할 수 없는 경우
+* **쿼리 시간 범위**의 시작 시점이 view의 최소 타임스탬프보다 이전인 경우
+* **시각화 세분화 수준**이 view의 세분화 수준의 배수가 아닌 경우
+* 쿼리에서 요청한 **집계 함수**가 view에 없는 경우
+* 쿼리가 `count(if(...))`와 같은 **사용자 지정 count 표현식**을 사용해 view의 집계 상태에서 이를 도출할 수 없는 경우
 
-이러한 표시를 통해 시각화가 가속되었는지 쉽게 확인하고, 특정 뷰(view)가 선택된 이유를 이해하며, 뷰(view)가 적용 대상이 아니었던 이유를 진단할 수 있습니다.
+이러한 표시를 통해 시각화가 가속되었는지 쉽게 확인하고, 특정 view가 선택된 이유를 이해하며, view가 적용 대상이 아니었던 이유를 진단할 수 있습니다.
 
 <div id="how-views-are-selected">
-  ### 시각화에 사용할 materialized view를 선택하는 방법 {#how-views-are-selected}
+  ### 시각화에 사용할 materialized view를 선택하는 방법
 </div>
 
 시각화가 실행되면 ClickStack은 원본 테이블과 여러 materialized view를 포함한 여러 후보를 사용할 수 있습니다. 최적의 성능을 보장하기 위해 ClickStack은 ClickHouse의 [`EXPLAIN ESTIMATE`](/ko/reference/statements/explain#explain-estimate) 메커니즘을 사용해 가장 효율적인 옵션을 자동으로 평가하고 선택합니다.
@@ -375,7 +348,7 @@ ClickStack는 materialized 뷰(view) 사용 여부를 확인할 수 있도록 �
 시각화에 필터, 검색 제약 조건 또는 시간 버킷팅이 포함되어 있더라도, 필요한 모든 차원이 view에 있으면 materialized view는 계속 사용할 수 있습니다. 따라서 시각화 정의를 변경하지 않고도 view를 사용해 대시보드, 히스토그램, 필터링된 차트를 가속할 수 있습니다.
 
 <div id="example-of-choosing-materialized-view">
-  #### materialized view 선택 예시 {#example-of-choosing-materialized-view}
+  #### materialized view 선택 예시
 </div>
 
 동일한 trace source에 생성된 두 개의 materialized view를 살펴보겠습니다:
@@ -434,13 +407,13 @@ ORDER BY hour DESC
 두 materialized view 모두 기본 테이블(base table)을 직접 쿼리하는 것보다 여전히 성능이 뛰어나지만, 필요한 조건을 충족하는 가장 작은 뷰를 선택할 때 최상의 성능을 얻을 수 있습니다.
 
 <div id="alerts">
-  ### 알림 {#alerts}
+  ### 알림
 </div>
 
 알림 쿼리는 호환되는 경우 materialized view를 자동으로 사용합니다. 동일한 최적화가 적용되므로 알림 평가가 더 빨라집니다.
 
 <div id="backfilling-a-materialized-view">
-  ## materialized view 백필 {#backfilling-a-materialized-view}
+  ## materialized view 백필
 </div>
 
 앞서 설명했듯이, 증분형 materialized view에는 **뷰가 생성된 이후에 삽입된** 데이터만 포함되며 자동으로 백필되지는 않습니다. 이러한 설계는 뷰를 가볍고 유지 비용이 적게 들도록 해주지만, 동시에 뷰의 최소 타임스탬프(timestamp)보다 이전 데이터가 필요한 쿼리에는 사용할 수 없다는 의미이기도 합니다.
@@ -460,7 +433,7 @@ ORDER BY hour DESC
 요약하면, 백필은 비용과 운영 위험을 고려할 때 대체로 그만한 가치가 없습니다. 과거 데이터에 대한 가속이 반드시 필요한 예외적인 경우에만 고려해야 합니다. 진행하기로 결정했다면, 성능, 비용, 프로덕션 영향 사이의 균형을 맞추기 위해 아래에 설명된 통제된 접근 방식을 따르는 것이 좋습니다.
 
 <div id="backfilling-approaches">
-  ### 백필 접근 방식 {#backfilling-approaches}
+  ### 백필 접근 방식
 </div>
 
 <Info>
@@ -490,7 +463,7 @@ GROUP BY
 앞서 설명했듯이 증분형 materialized views는 자동으로 백필되지 않습니다. 다음 절차를 따르면 새 데이터에 대한 증분 동작을 유지하면서 과거 데이터를 안전하게 백필할 수 있습니다.
 
 <div id="direct-backfill">
-  #### `INSERT INTO SELECT`를 사용한 직접 백필 {#direct-backfill}
+  #### `INSERT INTO SELECT`를 사용한 직접 백필
 </div>
 
 이 접근 방식은 **더 작은 데이터셋**이나 **비교적 가벼운 집계 쿼리**에 가장 적합합니다. 즉, 클러스터 리소스를 소진하지 않고 전체 백필을 합리적인 시간 안에 완료할 수 있을 때 적절합니다. 일반적으로 백필 쿼리를 몇 분, 길어도 몇 시간 이내에 실행할 수 있고, CPU 및 I/O 사용량이 일시적으로 증가해도 괜찮은 경우에 적합합니다. 더 큰 데이터셋이나 비용이 더 큰 집계의 경우에는 아래의 증분 방식 또는 블록 기반 백필 방식을 대신 고려하십시오.
@@ -551,7 +524,7 @@ GROUP BY
 </Steps>
 
 <div id="incremental-backfill-null-table">
-  #### Null 테이블을 사용한 증분 백필 {#incremental-backfill-null-table}
+  #### Null 테이블을 사용한 증분 백필
 </div>
 
 더 큰 데이터셋이나 리소스를 많이 사용하는 집계 쿼리에서는 단일 `INSERT INTO SELECT`를 사용한 직접 백필이 비현실적이거나 안전하지 않을 수 있습니다. 이런 경우에는 **증분 백필** 방식을 권장합니다. 이 방법은 증분형 materialized view가 일반적으로 동작하는 방식에 더 가깝습니다. 즉, 전체 과거 데이터셋을 한 번에 집계하는 대신, 관리 가능한 블록 단위로 데이터를 처리합니다.
@@ -633,34 +606,34 @@ GROUP BY
 </Steps>
 
 <div id="recommendations">
-  ## 권장 사항 {#recommendations}
+  ## 권장 사항
 </div>
 
 다음 권장 사항은 ClickStack에서 materialized view를 설계하고 운영할 때 따라야 할 모범 사례를 요약한 것입니다. 이러한 지침을 따르면 materialized view를 더욱 효과적이고 예측 가능하며 비용 효율적으로 운영하는 데 도움이 됩니다.
 
 <div id="granularity-selection-and-alignment">
-  ### 세분화 수준 선택 및 정렬 {#granularity-selection-and-alignment}
+  ### 세분화 수준 선택 및 정렬
 </div>
 
-시각화 또는 알림의 세분화 수준이 뷰(view)의 세분화 수준의 **정확한 배수**일 때만 materialized 뷰(view)가 사용됩니다. 이 세분화 수준이 어떻게 결정되는지는 차트 유형에 따라 다릅니다.
+시각화 또는 알림의 세분화 수준이 뷰의 세분화 수준의 **정확한 배수**일 때만 materialized view가 사용됩니다. 이 세분화 수준이 어떻게 결정되는지는 차트 유형에 따라 다릅니다.
 
 * **시간 차트**(x축에 시간이 있는 선 또는 막대 차트):
-  차트에 명시된 세분화 수준은 materialized 뷰(view) 세분화 수준의 배수여야 합니다.
-  예를 들어, 10분 차트에서는 세분화 수준이 10분, 5분, 2분 또는 1분인 materialized 뷰(view)를 사용할 수 있지만, 20분 또는 3분 세분화 수준의 뷰(view)는 사용할 수 없습니다.
+  차트에 명시된 세분화 수준은 materialized view 세분화 수준의 배수여야 합니다.
+  예를 들어, 10분 차트에서는 세분화 수준이 10분, 5분, 2분 또는 1분인 materialized view를 사용할 수 있지만, 20분 또는 3분 세분화 수준의 뷰는 사용할 수 없습니다.
 
 * **비시간 차트**(숫자, 테이블 또는 요약 차트):
-  유효 세분화 수준은 `(time range / 80)`으로 계산한 뒤, ClickStack UI가 지원하는 가장 가까운 세분화 수준으로 올림해 결정됩니다. 이렇게 계산된 세분화 수준 역시 materialized 뷰(view) 세분화 수준의 배수여야 합니다.
+  실제 세분화 수준은 `(time range / 80)`으로 계산한 뒤, HyperDX가 지원하는 가장 가까운 세분화 수준으로 올림해 결정됩니다. 이렇게 계산된 세분화 수준 역시 materialized view 세분화 수준의 배수여야 합니다.
 
 이러한 규칙 때문에 다음을 권장합니다.
 
-* **세분화 수준이 10분인 materialized 뷰(view)는 만들지 마십시오**.
-  ClickStack은 차트와 알림에 대해 15분 세분화 수준은 지원하지만 10분은 지원하지 않습니다. 따라서 10분 materialized 뷰(view)는 일반적으로 사용되는 15분 시각화 및 알림과 호환되지 않습니다.
+* **세분화 수준이 10분인 materialized view는 만들지 마십시오**.
+  ClickStack은 차트와 알림에 대해 15분 세분화 수준은 지원하지만 10분은 지원하지 않습니다. 따라서 10분 materialized view는 일반적으로 사용되는 15분 시각화 및 알림과 호환되지 않습니다.
 * 대부분의 차트 및 알림 구성과 잘 맞는 **1분** 또는 **1시간** 세분화 수준을 우선적으로 사용하십시오.
 
-더 높은 세분화 수준(예: 1시간)은 더 작은 뷰(view)를 생성하고 저장소 오버헤드를 줄여 주는 반면, 더 낮은 세분화 수준(예: 1분)은 더 세밀한 분석을 위한 유연성을 제공합니다. 중요한 워크플로를 지원할 수 있는 가장 작은 세분화 수준을 선택하십시오.
+더 높은 세분화 수준(예: 1시간)은 더 작은 뷰를 생성하고 저장소 오버헤드를 줄여 주는 반면, 더 낮은 세분화 수준(예: 1분)은 더 세밀한 분석을 위한 유연성을 제공합니다. 중요한 워크플로를 지원할 수 있는 가장 작은 세분화 수준을 선택하십시오.
 
 <div id="limit-and-consolidate-materialized-views">
-  ### materialized view 수 제한 및 통합 {#limit-and-consolidate-materialized-views}
+  ### materialized view 수 제한 및 통합
 </div>
 
 각 materialized view는 삽입 시점의 추가 오버헤드를 유발하며, part 및 머지 부담도 가중시킵니다.
@@ -673,7 +646,7 @@ GROUP BY
 가능한 경우 동일한 materialized view에서 여러 메트릭을 계산하고 여러 차트를 지원하십시오.
 
 <div id="choose-dimensions-carefully">
-  ### 차원을 신중하게 선택하십시오 {#choose-dimensions-carefully}
+  ### 차원을 신중하게 선택하십시오
 </div>
 
 그룹화나 필터링에 자주 사용되는 차원만 포함하십시오:
@@ -689,7 +662,7 @@ GROUP BY
 </Info>
 
 <div id="naming-conventions-for-aggregation-columns">
-  ### 집계 컬럼 명명 규칙 {#naming-conventions-for-aggregation-columns}
+  ### 집계 컬럼 명명 규칙
 </div>
 
 자동 추론이 가능하도록 하려면 materialized view 집계 컬럼은 엄격한 명명 규칙을 따라야 합니다.
@@ -703,7 +676,7 @@ GROUP BY
 ClickStack은 쿼리를 materialized view 컬럼에 올바르게 매핑하기 위해 이 규칙을 사용합니다.
 
 <div id="quantiles-and-sketch-selection">
-  ### 분위수 및 스케치 선택 {#quantiles-and-sketch-selection}
+  ### 분위수 및 스케치 선택
 </div>
 
 분위수 함수마다 성능 및 저장 특성이 서로 다릅니다.
@@ -714,7 +687,7 @@ ClickStack은 쿼리를 materialized view 컬럼에 올바르게 매핑하기 �
 두 함수 모두에서 삽입 시점에 스케치 크기(예: `quantile(0.5)`)를 지정할 수 있습니다. 이렇게 생성된 스케치는 나중에 다른 분위수 값으로도 쿼리할 수 있습니다. 예를 들어 `quantile(0.95)`를 사용할 수 있습니다. 워크로드에 가장 적합한 균형을 찾으려면 직접 실험해 보는 것이 좋습니다.
 
 <div id="validate-effectiveness-continously">
-  ### 효과를 지속적으로 검증하십시오 {#validate-effectiveness-continously}
+  ### 효과를 지속적으로 검증하십시오
 </div>
 
 항상 materialized view가 실제로 효과를 내는지 확인하십시오:
@@ -726,7 +699,7 @@ ClickStack은 쿼리를 materialized view 컬럼에 올바르게 매핑하기 �
 materialized view는 성능 최적화를 위한 수단으로 보고, 쿼리 패턴이 변화함에 따라 주기적으로 검토하고 조정해야 합니다.
 
 <div id="advanced-configurations">
-  ### 고급 구성 {#advanced-configurations}
+  ### 고급 구성
 </div>
 
 더 복잡한 워크로드에서는 서로 다른 액세스 패턴을 지원하기 위해 여러 개의 materialized view를 사용할 수 있습니다. 예시는 다음과 같습니다.
@@ -739,32 +712,32 @@ materialized view는 성능 최적화를 위한 수단으로 보고, 쿼리 패�
 이 권장 사항을 따르면 materialized view를 효과적이고 유지 관리하기 쉬운 상태로 유지하고, ClickStack의 실행 모델과도 일관되게 맞출 수 있습니다.
 
 <div id="limitations">
-  ## 제한 사항 {#limitations}
+  ## 제한 사항
 </div>
 
 <div id="common-incompatibility-reasons">
-  ### 일반적인 비호환성 사유 {#common-incompatibility-reasons}
+  ### 일반적인 비호환성 사유
 </div>
 
-다음 조건 중 하나라도 해당하면 materialized 뷰(view)는 **사용되지 않습니다**:
+다음 조건 중 하나라도 해당하면 materialized view는 **사용되지 않습니다**:
 
 * **쿼리 시간 범위**
-  쿼리 시간 범위의 시작 시점이 materialized 뷰(view)의 최소 타임스탬프(timestamp)보다 이전이면 사용할 수 없습니다. 뷰(view)는 자동으로 백필되지 않으므로, 전체 시간 범위를 완전히 커버하는 쿼리에만 사용할 수 있습니다.
+  쿼리 시간 범위의 시작 시점이 materialized view의 최소 타임스탬프(timestamp)보다 이전이면 사용할 수 없습니다. 뷰는 자동으로 백필되지 않으므로, 전체 시간 범위를 완전히 커버하는 쿼리에만 사용할 수 있습니다.
 
 * **세분화 수준 불일치**
-  시각화의 유효 세분화 수준은 materialized 뷰(view)의 세분화 수준의 정확한 배수여야 합니다. 구체적으로는 다음과 같습니다.
+  시각화의 유효 세분화 수준은 materialized view의 세분화 수준의 정확한 배수여야 합니다. 구체적으로는 다음과 같습니다.
 
-  * **시간 차트**(x축에 시간이 있는 선 또는 막대 차트)의 경우, 차트에서 선택한 세분화 수준은 뷰(view)의 세분화 수준의 배수여야 합니다. 예를 들어 10분 차트는 10분, 5분, 2분 또는 1분 materialized 뷰(view)를 사용할 수 있지만, 20분 또는 3분 뷰(view)는 사용할 수 없습니다.
-  * **비시간 차트**(숫자 또는 테이블 차트)의 경우, 유효 세분화 수준은 `(time range / 80)`으로 계산한 뒤 ClickStack UI가 지원하는 가장 가까운 세분화 수준으로 올림되며, 이 역시 뷰(view)의 세분화 수준의 배수여야 합니다.
+  * **시간 차트**(x축에 시간이 있는 선 또는 막대 차트)의 경우, 차트에서 선택한 세분화 수준은 뷰의 세분화 수준의 배수여야 합니다. 예를 들어 10분 차트는 10분, 5분, 2분 또는 1분 materialized view를 사용할 수 있지만, 20분 또는 3분 뷰는 사용할 수 없습니다.
+  * **비시간 차트**(숫자 또는 테이블 차트)의 경우, 유효 세분화 수준은 `(time range / 80)`으로 계산한 뒤 HyperDX가 지원하는 가장 가까운 세분화 수준으로 올림되며, 이 역시 뷰의 세분화 수준의 배수여야 합니다.
 
 * **지원되지 않는 집계 함수**
-  쿼리가 materialized 뷰(view)에 없는 집계를 요청하는 경우입니다. 뷰(view)에서 명시적으로 계산되어 저장된 집계만 사용할 수 있습니다.
+  쿼리가 materialized view에 없는 집계를 요청하는 경우입니다. 뷰에서 명시적으로 계산되어 저장된 집계만 사용할 수 있습니다.
 
 * **사용자 정의 count 표현식**
-  `count(if(...))`와 같은 표현식이나 기타 조건부 count를 사용하는 쿼리는 표준 집계 상태로부터 계산할 수 없으므로 materialized 뷰(view)를 사용할 수 없습니다.
+  `count(if(...))`와 같은 표현식이나 기타 조건부 count를 사용하는 쿼리는 표준 집계 상태로부터 계산할 수 없으므로 materialized view를 사용할 수 없습니다.
 
 <div id="design-and-operational-constraints">
-  ### 설계 및 운영상 제약 사항 {#design-and-operational-constraints}
+  ### 설계 및 운영상 제약 사항
 </div>
 
 * **자동 백필 없음**
@@ -782,11 +755,11 @@ materialized view는 성능 최적화를 위한 수단으로 보고, 쿼리 패�
 이러한 제한 사항을 이해하면 materialized view를 실제로 이점이 있는 경우에만 적용하고, 더 느린 소스 테이블 쿼리로 의도치 않게 폴백되는 구성을 피하는 데 도움이 됩니다.
 
 <div id="troubleshooting">
-  ## 문제 해결 {#troubleshooting}
+  ## 문제 해결
 </div>
 
 <div id="materialied-view-not-being-used">
-  ### materialized view가 사용되지 않는 경우 {#materialied-view-not-being-used}
+  ### materialized view가 사용되지 않는 경우
 </div>
 
 **확인 1: 날짜 범위**
@@ -811,7 +784,7 @@ materialized view는 성능 최적화를 위한 수단으로 보고, 쿼리 패�
 * 최적화 모달에서 &quot;Available group/filter columns&quot;를 확인합니다.
 
 <div id="slow-mv-queries">
-  ### 느린 materialized view 쿼리 {#slow-mv-queries}
+  ### 느린 materialized view 쿼리
 </div>
 
 **문제 1: materialized view의 세분화 수준이 너무 세밀함**
@@ -830,7 +803,7 @@ materialized view는 성능 최적화를 위한 수단으로 보고, 쿼리 패�
 * 해결 방법: 거의 사용하지 않거나 항상 건너뛰는 MV를 제거하세요.
 
 <div id="config-errors">
-  ### 구성 오류 {#config-errors}
+  ### 구성 오류
 </div>
 
 **오류: &quot;집계 컬럼이 하나 이상 필요합니다&quot;**

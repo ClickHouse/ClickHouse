@@ -1,3 +1,0 @@
-hive: inference is parallelism-invariant
-hive cluster: inference is parallelism-invariant
-schema: inference is parallelism-invariant

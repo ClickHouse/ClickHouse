@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 SET optimize_extract_common_expressions = 1;
 SET query_plan_read_in_order_through_join = 0;
 

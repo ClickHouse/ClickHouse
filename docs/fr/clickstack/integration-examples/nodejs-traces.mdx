@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['Node.js', 'traces', 'OTEL', 'ClickStack', 'traçage distribué']
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -16,42 +18,40 @@ import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="existing-nodejs">
-  ## Intégration à une application Node.js existante {#existing-nodejs}
+  ## Intégration à une application Node.js existante
 </div>
 
 Cette section explique comment ajouter le traçage distribué à votre application Node.js existante à l’aide de l’instrumentation automatique d’OpenTelemetry.
 
 Si vous souhaitez tester l’intégration avant de configurer votre propre environnement, vous pouvez l’essayer avec notre configuration préconfigurée et des données d’exemple dans la [section du jeu de données de démonstration](#demo-dataset).
 
-##### Prérequis {#prerequisites}
+<div id="prerequisites">
+  ##### Prérequis
+</div>
 
-* Instance ClickStack en cours d’exécution avec des points de terminaison OTLP accessibles (ports 4317/4318)
+* Instance ClickStack en cours d’exécution avec des endpoints OTLP accessibles (ports 4317/4318)
 * Application Node.js existante (Node.js 14 ou version ultérieure)
 * Gestionnaire de paquets npm ou yarn
 * Nom d’hôte ou adresse IP de ClickStack
 
 <Steps>
   <Step title="Installer et configurer OpenTelemetry" id="install-configure">
-    Installez le paquet `@hyperdx/node-opentelemetry` et initialisez-le au démarrage de votre application. Consultez le [guide du SDK Node.js](/fr/clickstack/ingesting-data/sdks/nodejs#install) pour obtenir les étapes d’installation détaillées.
+    Installez le paquet `@hyperdx/node-opentelemetry` et initialisez-le au démarrage de votre application. Consultez le [guide du SDK Node.js](/fr/clickstack/ingesting-data/sdks/nodejs#getting-started) pour obtenir les étapes d’installation détaillées.
   </Step>
 
   <Step title="Obtenir une clé API ClickStack" id="get-api-key">
     Une clé API est nécessaire pour envoyer des traces vers le point de terminaison OTLP de ClickStack.
 
-    1. Ouvrez l’interface utilisateur de ClickStack à l’URL de votre instance ClickStack (par exemple, http://localhost:8080)
+    1. Ouvrez HyperDX à l’URL de votre instance ClickStack (par exemple, http://localhost:8080)
     2. Créez un compte ou connectez-vous si nécessaire
     3. Accédez à **Team Settings → API Keys**
     4. Copiez votre **clé API d’ingestion**
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Clé API ClickStack](/images/clickstack/api-key.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/api-key.webp" alt="Clé API ClickStack" />
   </Step>
 
   <Step title="Exécuter votre application" id="run-application">
-    Démarrez votre application Node.js avec les variables d’environnement définies :
+    Démarrez votre application Node.js avec les variables d’environnement définies :
 
     ```bash
     export CLICKSTACK_API_KEY=your-api-key-here
@@ -60,7 +60,7 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre envir
   </Step>
 
   <Step title="Générer du trafic" id="generate-traffic">
-    Envoyez des requêtes à votre application pour générer des traces :
+    Envoyez des requêtes à votre application pour générer des traces :
 
     ```bash
     # Requêtes simples
@@ -73,32 +73,26 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre envir
     ```
   </Step>
 
-  <Step title="Vérifier les traces dans l’interface utilisateur de ClickStack" id="verify-traces">
-    Une fois la configuration terminée, connectez-vous à l’interface utilisateur de ClickStack et vérifiez que les traces remontent correctement. Vous devriez voir quelque chose comme ceci. Si vous ne voyez pas de traces, essayez d’ajuster votre intervalle de temps :
+  <Step title="Vérifier les traces dans HyperDX" id="verify-traces">
+    Une fois la configuration terminée, connectez-vous à HyperDX et vérifiez que les traces remontent correctement. Vous devriez voir quelque chose comme ceci. Si vous ne voyez pas de traces, essayez d’ajuster votre intervalle de temps :
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Vue de recherche des traces](/images/clickstack/nodejs/traces-search-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="Vue de recherche des traces" />
 
-    Cliquez sur une trace pour afficher la vue détaillée avec les spans, les durées et les attributs :
+    Cliquez sur une trace pour afficher la vue détaillée avec les spans, les durées et les attributs :
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Vue d’une trace individuelle](/images/clickstack/nodejs/trace-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/nodejs/trace-view.webp" alt="Vue d’une trace individuelle" />
   </Step>
 </Steps>
 
-## Jeu de données de démonstration {#demo-dataset}
+<div id="demo-dataset">
+  ## Jeu de données de démonstration
+</div>
 
-Pour les utilisateurs qui souhaitent tester le traçage Node.js avec ClickStack avant d’instrumenter leurs applications de production, nous fournissons un jeu de données d’exemple contenant des traces d’applications Node.js pré-générées avec des schémas de trafic réalistes.
+Pour les utilisateurs qui souhaitent tester le tracing Node.js avec ClickStack avant d’instrumenter leurs applications de production, nous fournissons un jeu de données d’exemple contenant des traces d’applications Node.js pré-générées avec des schémas de trafic réalistes.
 
 <Steps>
   <Step title="Télécharger le jeu de données d’exemple" id="download-sample">
-    Téléchargez le fichier de traces d’exemple :
+    Téléchargez le fichier de traces d’exemple :
 
     ```bash
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/nodejs/nodejs-traces-sample.json
@@ -106,7 +100,7 @@ Pour les utilisateurs qui souhaitent tester le traçage Node.js avec ClickStack 
   </Step>
 
   <Step title="Démarrer ClickStack" id="start-clickstack">
-    Si ClickStack n’est pas encore démarré, lancez-le avec :
+    Si ClickStack n’est pas encore démarré, lancez-le avec :
 
     ```bash
     docker run -d --name clickstack-demo \
@@ -120,18 +114,14 @@ Pour les utilisateurs qui souhaitent tester le traçage Node.js avec ClickStack 
   <Step title="Obtenir une clé API ClickStack" id="get-api-key-demo">
     Vous avez besoin d’une clé API pour envoyer des traces vers le point de terminaison OTLP de ClickStack.
 
-    1. Ouvrez l’interface utilisateur de ClickStack à l’URL de votre instance ClickStack (par ex. http://localhost:8080)
+    1. Ouvrez HyperDX à l’URL de votre instance ClickStack (par ex. http://localhost:8080)
     2. Créez un compte ou connectez-vous si nécessaire
     3. Accédez à **Team Settings → API Keys**
     4. Copiez votre **clé API d’ingestion**
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Clé API ClickStack](/images/clickstack/api-key.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/api-key.webp" alt="Clé API ClickStack" />
 
-    Définissez votre clé API comme variable d’environnement :
+    Définissez votre clé API comme variable d’environnement :
 
     ```bash
     export CLICKSTACK_API_KEY=your-api-key-here
@@ -149,32 +139,26 @@ Pour les utilisateurs qui souhaitent tester le traçage Node.js avec ClickStack 
     Vous devriez voir une réponse comme `{"partialSuccess":{}}`, indiquant que les traces ont bien été envoyées.
   </Step>
 
-  <Step title="Vérifier les traces dans l’interface utilisateur de ClickStack" id="verify-demo-traces">
-    1. Ouvrez l’[interface utilisateur de ClickStack](http://localhost:8080/) et connectez-vous à votre compte (vous devrez peut-être d’abord en créer un)
+  <Step title="Vérifier les traces dans HyperDX" id="verify-demo-traces">
+    1. Ouvrez [HyperDX](http://localhost:8080/) et connectez-vous à votre compte (vous devrez peut-être d’abord en créer un)
     2. Accédez à la vue **Search** et définissez la source sur **Traces**
     3. Définissez l’intervalle de temps sur **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Vue de recherche des traces](/images/clickstack/nodejs/traces-search-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="Vue de recherche des traces" />
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Vue d’une trace individuelle](/images/clickstack/nodejs/trace-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/nodejs/trace-view.webp" alt="Vue d’une trace individuelle" />
 
     <Info>
       **Affichage du fuseau horaire**
 
-      L’interface utilisateur de ClickStack affiche les horodatages dans le fuseau horaire local de votre navigateur. Les données de démonstration couvrent **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**. Ce large intervalle de temps garantit que vous verrez les traces de démonstration où que vous soyez. Une fois les traces visibles, vous pouvez réduire l’intervalle à une période de 24 heures pour obtenir des visualisations plus claires.
+      HyperDX affiche les horodatages dans le fuseau horaire local de votre navigateur. Les données de démonstration couvrent **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**. Ce large intervalle de temps garantit que vous verrez les traces de démonstration où que vous soyez. Une fois les traces visibles, vous pouvez réduire l’intervalle à une période de 24 heures pour obtenir des visualisations plus claires.
     </Info>
   </Step>
 </Steps>
 
-## Tableaux de bord et visualisation {#dashboards}
+<div id="dashboards">
+  ## Tableaux de bord et visualisation
+</div>
 
 Pour vous aider à commencer à surveiller les performances de l’application Node.js, nous fournissons un tableau de bord préconfiguré avec les visualisations de traces essentielles.
 
@@ -184,30 +168,18 @@ Pour vous aider à commencer à surveiller les performances de l’application N
   </Step>
 
   <Step title="Importer le tableau de bord préconfiguré" id="import-dashboard">
-    1. Ouvrez l’interface utilisateur de ClickStack et accédez à la section **Tableaux de bord**
-    2. Cliquez sur **Importer un tableau de bord** dans l’angle supérieur droit (sous les points de suspension)
+    1. Ouvrez HyperDX et accédez à la section **Dashboards**
+    2. Cliquez sur **Import Dashboard** dans l’angle supérieur droit (sous les points de suspension)
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Importer un tableau de bord](/images/clickstack/import-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/import-dashboard.webp" alt="Importer un tableau de bord" />
 
-    3. Téléversez le fichier `nodejs-traces-dashboard.json`, puis cliquez sur **Terminer l’Import**
+    3. Téléversez le fichier `nodejs-traces-dashboard.json`, puis cliquez sur **Finish Import**
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Terminer l’Import](/images/clickstack/nodejs/finish-import.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/nodejs/finish-import.webp" alt="Terminer l’import" />
   </Step>
 
   <Step title="Le tableau de bord sera créé avec toutes les visualisations préconfigurées" id="created-dashboard">
-    <div className="ch-image-lg">
-      <Frame>
-        ![Exemple de tableau de bord](/images/clickstack/nodejs/example-traces-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/nodejs/example-traces-dashboard.webp" alt="Exemple de tableau de bord" />
 
     <Note>
       Pour le jeu de données de démonstration, définissez l’intervalle de temps sur **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (à ajuster selon votre fuseau horaire local). Par défaut, aucun intervalle de temps ne sera défini pour le tableau de bord importé.
@@ -216,12 +188,14 @@ Pour vous aider à commencer à surveiller les performances de l’application N
 </Steps>
 
 <div id="troubleshooting">
-  ## Dépannage {#troubleshooting}
+  ## Dépannage
 </div>
 
-### Les traces de démo n’apparaissent pas après envoi via curl {#demo-traces-not-appearing}
+<div id="demo-traces-not-appearing">
+  ### Les traces de démo n’apparaissent pas après envoi via curl
+</div>
 
-Si vous avez envoyé des traces via curl mais qu’elles n’apparaissent pas dans l’interface utilisateur de ClickStack, essayez de les renvoyer une seconde fois :
+Si vous avez envoyé des traces via curl mais qu’elles n’apparaissent pas dans HyperDX, essayez de les renvoyer une seconde fois :
 
 ```bash
 curl -X POST http://localhost:4318/v1/traces \
@@ -232,9 +206,11 @@ curl -X POST http://localhost:4318/v1/traces \
 
 Il s’agit d’un problème connu qui se produit avec la méthode de démonstration via curl et n’affecte pas les applications de production instrumentées.
 
-### Aucune trace n’apparaît dans l’interface utilisateur de ClickStack {#no-traces}
+<div id="no-traces">
+  ### Aucune trace n’apparaît dans HyperDX
+</div>
 
-**Vérifiez que les variables d’environnement sont bien définies :**
+**Vérifiez que les variables d’environnement sont bien définies :**
 
 ```bash
 echo $CLICKSTACK_API_KEY
@@ -244,25 +220,27 @@ echo $OTEL_EXPORTER_OTLP_ENDPOINT
 # Should output http://localhost:4318 or your ClickStack host
 ```
 
-**Vérifiez la connectivité réseau :**
+**Vérifiez la connectivité réseau :**
 
 ```bash
 curl -v http://localhost:4318/v1/traces
 ```
 
-L’application devrait se connecter correctement au point de terminaison OTLP.
+L’application devrait se connecter correctement à l’endpoint OTLP.
 
-**Vérifiez les logs de l’application :**
+**Vérifiez les logs de l’application :**
 Recherchez des messages d’initialisation d’OpenTelemetry au démarrage de votre application. Le SDK HyperDX devrait afficher une confirmation de son initialisation.
 
 <div id="next-steps">
-  ## Étapes suivantes {#next-steps}
+  ## Étapes suivantes
 </div>
 
 * Configurez des [alertes](/fr/clickstack/features/alerts) pour les métriques critiques (taux d’erreur, seuils de latence)
 * Créez des tableaux de bord supplémentaires pour des cas d’usage spécifiques (supervision des API, événements de sécurité)
 
-## Mise en production {#going-to-production}
+<div id="going-to-production">
+  ## Mise en production
+</div>
 
 Ce guide utilise le SDK HyperDX, qui envoie les traces directement vers le point de terminaison OTLP de ClickStack. Cette approche convient bien au développement, aux tests et aux déploiements en production de petite à moyenne taille.
 Pour des environnements de production plus importants, ou si vous avez besoin d&#39;un contrôle plus fin sur les données de télémétrie, envisagez de déployer votre propre OpenTelemetry Collector en tant qu’agent.

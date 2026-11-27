@@ -1,5 +1,10 @@
 #pragma once
 
+
+#include <memory>
+#include <optional>
+
+#include <Client/Connection.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/IStorageCluster.h>
 #include <Storages/StorageURL.h>
@@ -37,7 +42,6 @@ private:
         ASTPtr & query,
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
-        const String & target_cluster_name,
         bool add_structure_and_format) override;
 
     String uri;

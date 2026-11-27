@@ -23,7 +23,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 
-#include <Common/CacheLine.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
@@ -82,9 +81,9 @@ struct SmallLock
     }
 };
 
-struct alignas(DB::CH_CACHE_LINE_SIZE) AlignedSmallLock : public SmallLock
+struct __attribute__((__aligned__(64))) AlignedSmallLock : public SmallLock
 {
-    char dummy[DB::CH_CACHE_LINE_SIZE - sizeof(SmallLock)];
+    char dummy[64 - sizeof(SmallLock)];
 };
 
 /// A hash map cell that includes an embedded spinlock for concurrent access
@@ -354,7 +353,7 @@ public:
 
         Cell() : probe_distance(EMPTY_MARKER) {}
 
-        [[nodiscard]] bool isEmpty() const { return probe_distance == EMPTY_MARKER; }
+        bool isEmpty() const { return probe_distance == EMPTY_MARKER; }
         void setEmpty() { probe_distance = EMPTY_MARKER; }
     };
 
@@ -364,9 +363,9 @@ private:
     size_t m_size = 0;
     Hash hash_func;
 
-    [[nodiscard]] size_t mask() const { return (1ULL << size_degree) - 1; }
-    [[nodiscard]] size_t capacity() const { return 1ULL << size_degree; }
-    [[nodiscard]] size_t idealPosition(size_t hash_value) const { return hash_value & mask(); }
+    size_t mask() const { return (1ULL << size_degree) - 1; }
+    size_t capacity() const { return 1ULL << size_degree; }
+    size_t idealPosition(size_t hash_value) const { return hash_value & mask(); }
 
     void resize()
     {
@@ -467,7 +466,7 @@ public:
         buf.resize(1ULL << size_degree);
     }
 
-    [[nodiscard]] size_t size() const { return m_size; }
+    size_t size() const { return m_size; }
 
     /// Prefetch for a key
     void prefetch(const Key & key) const
@@ -599,7 +598,7 @@ public:
         Cell & operator*() const { return *ptr; }
         Cell * operator->() const { return ptr; }
 
-        [[nodiscard]] const Key & getKey() const { return ptr->key; }
+        const Key & getKey() const { return ptr->key; }
         Mapped & getMapped() { return ptr->value; }
     };
 
@@ -640,7 +639,7 @@ private:
     static size_t H1(size_t hash) { return hash >> 7; }
     static int8_t H2(size_t hash) { return hash & 0x7F; }  /// 7 bits, always positive
 
-    [[nodiscard]] size_t mask() const { return capacity - 1; }
+    size_t mask() const { return capacity - 1; }
 
 #if defined(__x86_64__)
     /// Find matching positions in a group using SSE
@@ -727,7 +726,7 @@ public:
         slots.resize(capacity);
     }
 
-    [[nodiscard]] size_t size() const { return m_size; }
+    size_t size() const { return m_size; }
 
     void prefetch(const Key & key) const
     {
@@ -888,7 +887,7 @@ public:
         Slot & operator*() const { return slot_base[idx]; }
         Slot * operator->() const { return &slot_base[idx]; }
 
-        [[nodiscard]] const Key & getKey() const { return slot_base[idx].key; }
+        const Key & getKey() const { return slot_base[idx].key; }
         Mapped & getMapped() { return slot_base[idx].value; }
     };
 
@@ -934,9 +933,9 @@ public:
         return (hash_value >> (64 - 8)) & 0xFF;  /// Top 8 bits
     }
 
-    [[nodiscard]] size_t hash(const Key & key) const { return hash_func(key); }
+    size_t hash(const Key & key) const { return hash_func(key); }
 
-    [[nodiscard]] size_t size() const
+    size_t size() const
     {
         size_t result = 0;
         for (size_t i = 0; i < NUM_BUCKETS; ++i)
@@ -1005,9 +1004,9 @@ public:
         return (hash_value >> (64 - 8)) & 0xFF;  /// Top 8 bits
     }
 
-    [[nodiscard]] size_t hash(const Key & key) const { return hash_func(key); }
+    size_t hash(const Key & key) const { return hash_func(key); }
 
-    [[nodiscard]] size_t size() const
+    size_t size() const
     {
         size_t result = 0;
         for (size_t i = 0; i < NUM_BUCKETS; ++i)

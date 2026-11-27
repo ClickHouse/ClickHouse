@@ -6,16 +6,11 @@
 
 #include <Interpreters/Session.h>
 #include <Server/IServer.h>
-#include <Server/ArrowFlight/FlightStatus.h>
-#include <Common/SecretString.h>
-#include <Common/StringHashForHeterogeneousLookup.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
 
-#include <grpcpp/server_context.h>
-
-#include <map>
-#include <unordered_map>
+#include <arrow/flight/server_middleware.h>
+#include <arrow/flight/server.h>
 
 namespace DB::ArrowFlight
 {
@@ -26,10 +21,9 @@ namespace DB
 {
 
 inline const std::string AUTHORIZATION_HEADER = "authorization";
+inline const std::string AUTHORIZATION_MIDDLEWARE_NAME = "authorization_middleware";
 
-/// The authentication of one Arrow Flight call: made by `AuthMiddlewareFactory::startCall` before the call is
-/// handled, from its `authorization` and `x-clickhouse-session-*` headers. It holds the session the call runs in.
-class AuthMiddleware
+class AuthMiddleware : public arrow::flight::ServerMiddleware
 {
 public:
     explicit AuthMiddleware(std::shared_ptr<Session> session_, const std::string & token_, const std::string & username_,
@@ -46,16 +40,20 @@ public:
     {
     }
 
-    [[nodiscard]] const std::string & getUsername() const { return username; }
-    [[nodiscard]] const std::shared_ptr<Session> & getSession() const { return session; }
-    [[nodiscard]] const std::string & getSessionId() const { return session_id; }
-    [[nodiscard]] std::chrono::steady_clock::duration getSessionTimeout() const { return session_timeout; }
+    static AuthMiddleware & get(const arrow::flight::ServerCallContext & context)
+    {
+        return *static_cast<AuthMiddleware *>(context.GetMiddleware(AUTHORIZATION_MIDDLEWARE_NAME));
+    }
 
-    /// Adds the headers of the response: the token a client authenticated with a password uses afterwards.
-    void sendingHeaders(grpc::ServerContext & context) const;
+    const std::string & getUsername() const { return username; }
+    const std::shared_ptr<Session> & getSession() const { return session; }
+    const std::string & getSessionId() const { return session_id; }
+    std::chrono::steady_clock::duration getSessionTimeout() const { return session_timeout; }
 
-    /// Called once the call is handled, whatever its outcome.
-    void callCompleted();
+    void SendingHeaders(arrow::flight::AddCallHeaders * outgoing_headers) override;
+    void CallCompleted(const arrow::Status & /*status*/) override;
+
+    std::string name() const override { return AUTHORIZATION_MIDDLEWARE_NAME; }
 
 private:
     std::shared_ptr<Session> session;
@@ -67,7 +65,7 @@ private:
     const std::chrono::steady_clock::duration session_timeout;
 };
 
-class AuthMiddlewareFactory
+class AuthMiddlewareFactory : public arrow::flight::ServerMiddlewareFactory
 {
     /// TokenStorage keeps track of issued tokens, check for expiration and expires them on any access,
     /// updates expiration time of not expired token on request for credentials (getCredentials)
@@ -86,12 +84,12 @@ class AuthMiddlewareFactory
     private:
         void cleanupExpiredTokens() TSA_REQUIRES(token_mutex);
 
-        using TokenExpirationList = std::multimap<std::chrono::steady_clock::time_point, SecretString>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        using TokenExpirationList = std::multimap<std::chrono::steady_clock::time_point, std::string>;
 
         std::mutex token_mutex;
         TokenExpirationList token_expiration_list TSA_GUARDED_BY(token_mutex);
-        std::unordered_map<SecretString, TokenExpirationList::iterator, StringHashForHeterogeneousLookup, std::equal_to<>> token_expiration_list_index TSA_GUARDED_BY(token_mutex); // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        std::unordered_map<SecretString, std::pair<std::string, SecretString>, StringHashForHeterogeneousLookup, std::equal_to<>> token_to_credentials TSA_GUARDED_BY(token_mutex); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::unordered_map<std::string, TokenExpirationList::iterator> token_expiration_list_index TSA_GUARDED_BY(token_mutex);
+        std::unordered_map<std::string, std::pair<std::string, std::string>> token_to_credentials TSA_GUARDED_BY(token_mutex);
 
         const Poco::Util::AbstractConfiguration & config;
     };
@@ -103,13 +101,15 @@ public:
         , calls_data(calls_data_)
     {}
 
-    /// Authenticates a call. On success, `middleware` is set and has sent its headers.
-    ArrowFlight::Status startCall(grpc::ServerContext & context, std::unique_ptr<AuthMiddleware> & middleware);
+    arrow::Status StartCall(
+        const arrow::flight::CallInfo & /*info*/,
+        const arrow::flight::ServerCallContext & context,
+        std::shared_ptr<arrow::flight::ServerMiddleware> * middleware) override;
 
-private:
-    IServer & server;
-    TokenStorage token_storage;
-    ArrowFlight::CallsData & calls_data;
+    private:
+        IServer & server;
+        TokenStorage token_storage;
+        ArrowFlight::CallsData & calls_data;
 };
 
 }

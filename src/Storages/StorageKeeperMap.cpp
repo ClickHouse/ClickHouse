@@ -114,7 +114,6 @@ namespace ErrorCodes
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int CANNOT_ALLOCATE_MEMORY;
-    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -687,7 +686,7 @@ StorageKeeperMap::StorageKeeperMap(
 class ReadFromKeeperMap : public SourceStepWithFilter
 {
 public:
-    [[nodiscard]] std::string getName() const override { return "ReadFromKeeperMap"; }
+    std::string getName() const override { return "ReadFromKeeperMap"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void describeActions(FormatSettings & format_settings) const override;
@@ -724,7 +723,7 @@ private:
     template<typename KeyContainerPtr>
     void initializePipelineImpl(QueryPipelineBuilder & pipeline, KeyContainerPtr key_container);
 
-    [[nodiscard]] Strings getAllKeys() const;
+    Strings getAllKeys() const;
 };
 
 VirtualColumnsDescription StorageKeeperMap::createVirtuals()
@@ -1083,37 +1082,19 @@ bool StorageKeeperMap::dropTableData(
     {
         throw zkutil::KeeperException(Coordination::Error::ZOPERATIONTIMEOUT, "Manually triggered operation timeout");
     });
-    bool remove_data_recursively = zookeeper->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE);
-    if (!remove_data_recursively)
-        zookeeper->tryRemoveChildrenRecursive(zk_data_path_, /*probably_flat=*/ true);
+    zookeeper->removeChildrenRecursive(zk_data_path_);
 
     bool completely_removed = false;
     Coordination::Requests ops;
-    Coordination::Responses responses;
-    auto remove_metadata = [&]
-    {
-        ops.clear();
-        responses.clear();
-        ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
-        ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_path_, -1));
-        if (remove_data_recursively)
-            ops.emplace_back(zkutil::makeRemoveRecursiveRequest(*zookeeper, zk_data_path_, /*remove_nodes_limit=*/ 1000));
-        else
-            ops.emplace_back(zkutil::makeRemoveRequest(zk_data_path_, -1));
-        ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_lock_version_path_, -1));
-        ops.emplace_back(zkutil::makeRemoveRequest(zk_metadata_path_, -1));
-        ops.emplace_back(zkutil::makeRemoveRequest(zk_root_path_, -1));
-        return zookeeper->tryMulti(ops, responses);
-    };
+    ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_path_, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_data_path_, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_lock_version_path_, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_metadata_path_, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_root_path_, -1));
 
-    auto code = remove_metadata();
-    /// RemoveRecursive returns ZNOTEMPTY above its node limit.
-    if (code == Coordination::Error::ZNOTEMPTY && remove_data_recursively)
-    {
-        remove_data_recursively = false;
-        zookeeper->tryRemoveChildrenRecursive(zk_data_path_, /*probably_flat=*/ true);
-        code = remove_metadata();
-    }
+    Coordination::Responses responses;
+    auto code = zookeeper->tryMulti(ops, responses);
     using enum Coordination::Error;
     switch (code)
     {
@@ -1942,11 +1923,6 @@ StoragePtr create(const StorageFactory::Arguments & args)
     if (engine_args.size() > 1)
         keys_limit = checkAndGetLiteralArgument<UInt64>(engine_args[1], "keys_limit");
 
-    if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()) && args.columns.hasNotAlias(String(version_column_name)))
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Cannot create table with column '{}' for KeeperMap engine because it is reserved for a virtual column. Use another name",
-            version_column_name);
-
     StorageInMemoryMetadata metadata;
     metadata.setColumns(args.columns);
     metadata.setConstraints(args.constraints);
@@ -1980,9 +1956,9 @@ void registerStorageKeeperMap(StorageFactory & factory)
     factory.registerStorage(
         "KeeperMap",
         create,
-        SecretArgumentsSpec{},
         {
             .supports_sort_order = true,
+            .supports_parallel_insert = true,
         },
         Documentation{
             .description = R"DOCS_MD(

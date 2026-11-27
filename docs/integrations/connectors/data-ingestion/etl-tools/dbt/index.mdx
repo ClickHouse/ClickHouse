@@ -22,7 +22,7 @@ Within dbt, these models can be cross-referenced and layered to allow the constr
 dbt is compatible with ClickHouse through a [ClickHouse-supported adapter](https://github.com/ClickHouse/dbt-clickhouse).
 
 <Note>
-**dbt OSS, dbt v2 and the dbt platform.** ClickHouse now works with dbt OSS (Beta), dbt v2 (Beta) and the dbt platform (Private Beta; see [how to request access](/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform#request-access)). The integration is not production-ready yet. See the [dbt OSS, dbt v2 and dbt platform page](/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform) for the current status and known limitations. The rest of this documentation also applies to all of them, subject to the limitations listed in that page's parity table.
+**dbt Core v2, dbt Fusion and the dbt platform.** The ClickHouse adapter is available in dbt Core v2 (Beta), dbt Fusion (Beta) and the dbt platform (Private Beta; see [how to request access](/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform#request-access)). It is not production-ready yet. See the [dbt Core v2 page](/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform) for the current status and known limitations. The rest of this documentation also applies to dbt Core v2, subject to the limitations listed in that page's parity table.
 </Note>
 
 ## Related pages {#related-pages}
@@ -44,7 +44,6 @@ List of supported features:
 - [x] Incremental materialization
 - [x] Microbatch incremental materialization
 - [x] Materialized View materializations (uses the `TO` form of MATERIALIZED VIEW, experimental)
-- [x] User-defined functions (SQL)
 - [x] Seeds
 - [x] Sources
 - [x] Docs generate
@@ -87,7 +86,7 @@ The following are [experimental features](/reference/settings/beta-and-experimen
 ## Setup of dbt and the ClickHouse adapter {#setup-of-dbt-and-the-clickhouse-adapter}
 
 <Tip>
-If you'd rather start from a working project, our [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) fork of dbt's sample project ships with profiles for a local ClickHouse and for ClickHouse Cloud, sample data, and a README that covers dbt Core 1.x, dbt OSS, dbt v2 and the dbt platform. The [guides page](/integrations/connectors/data-ingestion/etl-tools/dbt/guides) builds on it.
+If you'd rather start from a working project, our [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) fork of dbt's sample project ships with profiles for a local ClickHouse and for ClickHouse Cloud, sample data, and a README that covers dbt Core 1.x, dbt Core v2 and the dbt platform. The [guides page](/integrations/connectors/data-ingestion/etl-tools/dbt/guides) builds on it.
 </Tip>
 
 ### Install dbt-core and dbt-clickhouse {#install-dbt-core-and-dbt-clickhouse}
@@ -163,11 +162,7 @@ For deployment (i.e., the CD step), we recommend using the artifacts from your p
 
 #### Cloning models with `dbt clone` {#dbt-clone}
 
-Starting with dbt-clickhouse 1.10.1, the [`dbt clone`](https://docs.getdbt.com/reference/commands/clone) command uses ClickHouse's zero-copy `CREATE OR REPLACE TABLE ... CLONE AS ...` statement to clone models materialized as tables that use a MergeTree-family engine. This creates a copy of the table without duplicating the underlying data parts, making it a fast and cheap way to sync environments - for example, when setting up a development or [Slim CI](https://docs.getdbt.com/best-practices/best-practice-workflows#run-only-modified-models-to-test-changes-slim-ci) environment from production state.
-
-`CLONE AS` can't run `ON CLUSTER` or in a `Replicated` database.
-Such tables are created with `CREATE OR REPLACE TABLE ... AS ...` and filled with `ALTER TABLE ... ATTACH PARTITION ALL FROM ...` instead, which also shares the data parts but isn't atomic.
-In a `Replicated` database, the data only reaches the other replicas for `Replicated*MergeTree` tables.
+Starting with dbt-clickhouse 1.10.1, the [`dbt clone`](https://docs.getdbt.com/reference/commands/clone) command uses ClickHouse's zero-copy `CREATE OR REPLACE TABLE ... CLONE AS ...` statement to clone models materialized as tables that use a MergeTree-family engine. This creates a copy of the table without duplicating the underlying data parts, making it a fast and cheap way to sync environments — for example, when setting up a development or [Slim CI](https://docs.getdbt.com/best-practices/best-practice-workflows#run-only-modified-models-to-test-changes-slim-ci) environment from production state.
 
 Models that can't be cloned this way fall back to dbt's default behavior of creating a view pointing to the source relation:
 
@@ -210,10 +205,10 @@ The query ID also enables observability tools that consume dbt artifacts (for ex
 
 The current ClickHouse adapter for dbt has several limitations you should be aware of:
 
-- The plugin is tested against the ClickHouse versions with [active security support](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md), currently 26.3 or newer. Older versions aren't tested and may not work. We also don't currently test Replicated tables.
+- The plugin uses syntax that requires ClickHouse version 25.3 or newer. We don't test older versions of ClickHouse. We also don't currently test Replicated tables.
 - Different runs of the `dbt-adapter` may collide if they're run at the same time as internally they can use the same table names for the same operations. For more information, check the issue [#420](https://github.com/ClickHouse/dbt-clickhouse/issues/420).
 - The adapter currently materializes models as tables using an [INSERT INTO SELECT](/reference/statements/insert-into#inserting-the-results-of-select). This effectively means data duplication if the run is executed again. Very large datasets (PB) can result in extremely long run times, making some models unviable. To improve performance, use ClickHouse Materialized Views by implementing the view as `materialized: materialization_view`. Additionally, aim to minimize the number of rows returned by any query by utilizing `GROUP BY` where possible. Prefer models that summarize data over those that simply transform while maintaining row counts of the source.
-- The adapter doesn't manage cluster creation. The cluster used by distributed materializations must already be defined on the server.
+- To use Distributed tables to represent a model, you must create the underlying replicated tables on each node manually. The Distributed table can, in turn, be created on top of these. The adapter doesn't manage cluster creation.
 - When dbt creates a relation (table/view) in a database, it usually creates it as: `{{ database }}.{{ schema }}.{{ table/view id }}`. ClickHouse has no notion of schemas. The adapter therefore uses `{{schema}}.{{ table/view id }}`, where `schema` is the ClickHouse database.
 
 ## Fivetran {#fivetran}

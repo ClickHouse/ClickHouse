@@ -12,6 +12,7 @@ struct IsFiniteImpl
 {
     /// Better implementation, because isinf, isfinite, isnan are not inlined for unknown reason.
     /// Assuming IEEE 754.
+    /// NOTE gcc 7 doesn't vectorize this loop.
 
     static constexpr auto name = "isFinite";
     template <typename T>
@@ -57,7 +58,6 @@ otherwise this function returns `0`.
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIsFinite>(documentation);
-    factory.registerAlias("is_finite", "isFinite", FunctionFactory::Case::Insensitive);
 }
 
 }

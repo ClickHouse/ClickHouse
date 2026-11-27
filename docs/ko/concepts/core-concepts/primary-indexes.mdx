@@ -6,6 +6,8 @@ keywords: ['희소 프라이머리 인덱스', '프라이머리 인덱스', '인
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 <Tip>
   **고급 인덱싱에 관한 자세한 내용을 찾고 계신가요?**
 
@@ -15,24 +17,22 @@ doc_type: 'guide'
 </Tip>
 
 <div id="how-does-the-sparse-primary-index-work-in-clickHouse">
-  ## ClickHouse에서 희소 프라이머리 인덱스는 어떻게 작동하나요? {#how-does-the-sparse-primary-index-work-in-clickHouse}
+  ## ClickHouse에서 희소 프라이머리 인덱스는 어떻게 작동하나요?
 </div>
 
 <br />
 
 ClickHouse의 희소 프라이머리 인덱스는 테이블의 프라이머리 키(primary key) 컬럼에 대한 쿼리 조건과 일치하는 데이터를 포함할 수 있는 [그래뉼](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing)—즉, 행 블록—을 효율적으로 식별하는 데 사용됩니다. 다음 섹션에서는 이 인덱스가 해당 컬럼의 값을 바탕으로 어떻게 구성되는지 설명합니다.
 
-### 희소 프라이머리 인덱스 생성 {#sparse-primary-index-creation}
+<div id="sparse-primary-index-creation">
+  ### 희소 프라이머리 인덱스 생성
+</div>
 
 희소 프라이머리 인덱스가 어떻게 생성되는지 설명하기 위해 [uk&#95;price&#95;paid&#95;simple](/ko/concepts/core-concepts/parts) 테이블과 몇 가지 애니메이션을 사용하겠습니다.
 
 [앞서 살펴본 것처럼](/ko/concepts/core-concepts/parts), 프라이머리 키가 (town, street)인 ① 예시 테이블에서는 ② 삽입된 데이터가 ③ 프라이머리 키 컬럼 값을 기준으로 정렬된 상태로 디스크에 저장되며, 각 컬럼은 별도의 파일에 압축되어 저장됩니다:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![](/images/managing-data/core-concepts/primary-index-light_01.webp)
-  </Frame>
-</div>
+<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
 
 <br />
 
@@ -40,13 +40,9 @@ ClickHouse의 희소 프라이머리 인덱스는 테이블의 프라이머리 �
 
 처리를 위해 각 컬럼의 데이터는 ④ 논리적으로 그래뉼로 나뉘며, 각 그래뉼은 8,192개의 행을 포함합니다. 그래뉼은 ClickHouse의 데이터 처리 메커니즘이 다루는 가장 작은 단위입니다.
 
-이 그래뉼 구조 때문에 프라이머리 인덱스는 **희소**해집니다. ClickHouse는 모든 행을 인덱싱하는 대신, 각 그래뉼에서 단 하나의 행, 즉 첫 번째 행의 ⑤ 프라이머리 키 값만 저장합니다. 그 결과 그래뉼마다 하나의 인덱스 항목이 생성됩니다:
+이 그래뉼 구조 때문에 프라이머리 인덱스는 **희소**해집니다. ClickHouse는 모든 행을 인덱싱하는 대신, 각 그래뉼에서 단 하나의 행, 즉 첫 번째 행의 ⑤ 프라이머리 키 값만 저장합니다. 그 결과 그래뉼마다 하나의 인덱스 엔트리가 생성됩니다:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![](/images/managing-data/core-concepts/primary-index-light_02.webp)
-  </Frame>
-</div>
+<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg" />
 
 <br />
 
@@ -54,15 +50,13 @@ ClickHouse의 희소 프라이머리 인덱스는 테이블의 프라이머리 �
 
 이처럼 희소하기 때문에 프라이머리 인덱스는 전체가 메모리에 들어갈 만큼 충분히 작으며, 프라이머리 키 컬럼에 대한 프레디케이트가 있는 쿼리를 빠르게 필터링할 수 있습니다. 다음 섹션에서는 이것이 이러한 쿼리의 속도를 어떻게 높이는지 살펴보겠습니다.
 
-### 프라이머리 인덱스 사용 방식 {#primary-index-usage}
+<div id="primary-index-usage">
+  ### 프라이머리 인덱스 사용 방식
+</div>
 
 다음 애니메이션을 통해 희소 프라이머리 인덱스가 쿼리 가속에 어떻게 사용되는지 간단히 살펴보겠습니다:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![](/images/managing-data/core-concepts/primary-index-light_03.webp)
-  </Frame>
-</div>
+<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
 
 <br />
 
@@ -87,7 +81,7 @@ ClickHouse의 희소 프라이머리 인덱스는 테이블의 프라이머리 �
 </Steps>
 
 <div id="monitoring-primary-indexes">
-  ## 프라이머리 인덱스 모니터링 {#monitoring-primary-indexes}
+  ## 프라이머리 인덱스 모니터링
 </div>
 
 테이블의 각 [데이터 파트](/ko/concepts/core-concepts/parts)에는 고유한 프라이머리 인덱스가 있습니다. [mergeTreeIndex](/ko/reference/functions/table-functions/mergeTreeIndex) 테이블 함수를 사용해 이러한 인덱스의 내용을 확인할 수 있습니다.
@@ -200,7 +194,7 @@ SELECT count() FROM uk.uk_price_paid_simple;
 ```
 
 <div id="key-takeaways">
-  ## 핵심 요약 {#key-takeaways}
+  ## 핵심 요약
 </div>
 
 * **희소 프라이머리 인덱스(Sparse primary indexes)**는 프라이머리 키 컬럼에 대한 쿼리 조건과 일치하는 행이 들어 있을 수 있는 그래뉼을 식별해, ClickHouse가 불필요한 데이터를 건너뛸 수 있도록 합니다.
@@ -213,7 +207,9 @@ SELECT count() FROM uk.uk_price_paid_simple;
 
 * `mergeTreeIndex` 테이블 함수를 사용해 **인덱스 내용을 확인**하고, `EXPLAIN` 절을 사용해 인덱스 사용 현황을 모니터링할 수 있습니다.
 
-## 추가 정보 {#where-to-find-more-information}
+<div id="where-to-find-more-information">
+  ## 추가 정보
+</div>
 
 ClickHouse에서 희소 프라이머리 인덱스가 어떻게 작동하는지, 기존 데이터베이스 인덱스와 어떤 차이가 있는지, 그리고 효과적으로 활용하기 위한 모범 사례까지 자세히 알아보려면 인덱싱에 대한 [심층 분석](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 확인하세요.
 

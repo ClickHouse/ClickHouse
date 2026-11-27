@@ -39,7 +39,9 @@ SELECT 1;
 clickhouse-benchmark [keys] < queries_file;
 ```
 
-## 명령줄 옵션 {#clickhouse-benchmark-command-line-options}
+<div id="clickhouse-benchmark-command-line-options">
+  ## 명령줄 옵션
+</div>
 
 * `--query=QUERY` — 실행할 쿼리입니다. 이 매개변수를 지정하지 않으면 `clickhouse-benchmark`가 표준 입력에서 쿼리를 읽습니다.
 * `--query_id=ID` — 쿼리 ID입니다.
@@ -52,10 +54,6 @@ clickhouse-benchmark [keys] < queries_file;
 * `-h HOST`, `--host=HOST` — 서버 호스트입니다. 기본값: `localhost`입니다. [비교 모드](#clickhouse-benchmark-comparison-mode)에서는 `-h` 키를 여러 개 사용할 수 있습니다.
 * `-i N`, `--iterations=N` — 전체 쿼리 수입니다. 기본값: 0(무한 반복).
 * `-r`, `--randomize` — 입력 쿼리가 둘 이상인 경우 쿼리 실행 순서를 무작위로 지정합니다.
-* `--arrival-rate=R` — [개방 루프 모드](#clickhouse-benchmark-open-loop-mode)를 활성화합니다. 쿼리는 초당 평균 `R`개의 비율로 무작위 시점에 도착합니다. `--arrival-rate=5,10,20`과 같이 쉼표로 구분된 비율 목록을 지정하면 각 비율에 대해 벤치마크를 차례로 실행하고 비율별로 보고서를 하나씩 생성합니다. 이때 `--iterations` 또는 `--timelimit`를 함께 지정해야 합니다.
-* `--max-in-flight=N` — 개방 루프 모드에서 동시에 실행할 수 있는 최대 쿼리 수입니다. 기본값: 256.
-* `--seed=N` — 도착 시점, `--randomize` 사용 시 쿼리 순서, 개방 루프 모드에서의 서버 선택에 사용되는 난수 생성기의 seed입니다. 동일한 seed와 옵션을 사용하면 동일한 실행이 재현됩니다. 도착 시점은 쿼리나 서버와 무관하게 seed와 비율에 의해서만 결정되므로, 동일한 도착 일정에서 서로 다른 쿼리 구성이나 서버를 비교할 수 있습니다. 기본값: 랜덤 시드이며, 개방 루프 모드에서는 시작 시 출력됩니다.
-* `--per-query` — 종료 시 쿼리별 통계를 출력합니다. 쿼리 및 오류 수, QPS, 지연 시간 백분위수, 최대 지연 시간, 서버에서의 쿼리당 평균 CPU 시간이 포함됩니다.
 * `-s`, `--secure` — `TLS` 연결을 사용합니다.
 * `-t N`, `--timelimit=N` — 시간 제한(초)입니다. 지정한 시간 제한에 도달하면 `clickhouse-benchmark`가 쿼리 전송을 중지합니다. 기본값: 0(시간 제한 비활성화).
 * `--port=N` — 서버 포트입니다. 기본값: 9000입니다. [비교 모드](#clickhouse-benchmark-comparison-mode)에서는 `--port` 키를 여러 개 사용할 수 있습니다.
@@ -77,12 +75,16 @@ clickhouse-benchmark [keys] < queries_file;
 
 쿼리에 일부 [설정](/ko/concepts/features/configuration/settings/overview)을 적용하려면 `--<session setting name>= SETTING_VALUE` 키로 전달하십시오. 예: `--max_memory_usage=1048576`.
 
-## 환경 변수 옵션 {#clickhouse-benchmark-environment-variable-options}
+<div id="clickhouse-benchmark-environment-variable-options">
+  ## 환경 변수 옵션
+</div>
 
 사용자 이름, 비밀번호, 호스트는 환경 변수 `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_HOST`를 통해 설정할 수 있습니다.
 명령줄 인수 `--user`, `--password`, `--host`는 환경 변수 설정보다 우선 적용됩니다.
 
-## 출력 {#clickhouse-benchmark-output}
+<div id="clickhouse-benchmark-output">
+  ## 출력
+</div>
 
 기본적으로 `clickhouse-benchmark`는 각 `--delay` 인터벌마다 보고서를 출력합니다.
 
@@ -125,58 +127,17 @@ localhost:9000, queries 10, QPS: 6.772, RPS: 67904487.440, MiB/s: 518.070, resul
 
 * 쿼리 실행 시간의 백분위수.
 
-## 개방 루프(open-loop) 모드 {#clickhouse-benchmark-open-loop-mode}
-
-기본적으로 `clickhouse-benchmark`는 폐쇄 루프(closed loop) 방식으로 동작합니다. 즉, `--concurrency`개의 클라이언트가 각각 이전 쿼리의 결과를 받으면 다음 쿼리를 전송합니다. 서버가 느려지면 서버가 받는 쿼리 수도 줄어들므로 부하가 서버 상태에 맞춰 조정됩니다.
-
-`--arrival-rate`를 사용하면 부하가 서버 상태와 무관하게 발생합니다. 쿼리는 서로 독립적인 여러 사용자의 요청처럼 고정된 평균 비율에 따라 무작위 시점에 도착합니다. 연속된 두 도착 사이의 간격은 평균이 `1 / R`인 지수 분포를 따르는 무작위 값입니다(포아송 과정). 각 쿼리는 이전 쿼리가 아직 실행 중이더라도 도착 시점에 바로 전송됩니다.
-
-동시에 실행되는 쿼리는 최대 `--max-in-flight`개입니다. 쿼리가 도착했을 때 실행 슬롯이 모두 사용 중이면 그중 하나가 완료될 때까지 client-side 큐에서 대기합니다. 쿼리의 지연 시간은 폐쇄 루프와 동일한 방식으로 측정되므로(`--client-side-time` 참조) 큐에서 대기한 시간은 포함되지 않습니다. 큐에서 대기한 도착 수는 별도로 보고됩니다.
-
-`--iterations` 옵션은 도착 수를 지정하며, `clickhouse-benchmark`는 모든 쿼리가 완료될 때까지 기다립니다. `--timelimit` 옵션을 사용하면 제한 시간이 지난 후 더 이상 도착이 발생하지 않습니다. 이때 처리 중인 쿼리는 끝까지 실행되며, 큐에 남아 있는 도착은 전송되지 않은 것으로 보고됩니다.
-
-보고서에는 다음 예시와 같이 2개의 줄이 추가로 표시됩니다.
-
-```text
-Arrivals: 1061, target rate: 100.000/s, achieved rate: 106.100/s, queued: 0 (max queue size 0).
-In flight: mean 0.223, max 4 of 256.
-```
-
-* `Arrivals`: 도착 건수입니다.
-* `target rate`: `--arrival-rate`로 지정한 도착률입니다.
-* `achieved rate`: 도착 건수를 도착 프로세스의 소요 시간으로 나눈 값입니다. 목표 도착률과는 무작위 오차만큼 차이가 나며, 실행 시간이 길수록 오차가 작아집니다.
-* `queued`: 모든 `--max-in-flight` 슬롯이 사용 중이어서 client-side 큐에서 대기한 도착 건수와 이 큐의 최대 길이입니다.
-* `not sent`: 실행이 중지된 시점에 아직 큐에 남아 있던 도착 건수입니다. 0이 아닌 경우에만 표시됩니다.
-* `In flight`: 동시에 실행 중인 쿼리 수의 시간 가중 평균과 최댓값입니다.
-
-개방 루프(open-loop) 도착 방식에서는 QPS가 도착률을 그대로 따르므로, QPS만으로는 부하의 비용을 거의 파악할 수 없습니다. 개방 루프 모드에서는 각 서버의 상태 문자열에 다음 항목도 포함됩니다.
-
-* `CPU`: 서버에서 쿼리가 초당 사용한 CPU 시간으로, 단위는 코어입니다.
-* `CPU per query`: 서버에서 쿼리 1개가 사용한 평균 CPU 시간으로, 단위는 초입니다.
-
-두 값 모두 실행 중 실패한 쿼리(`--ignore-error` 사용 시)도 포함합니다. 이러한 쿼리도 서버에 부하를 주기 때문입니다.
-
-CPU 시간은 서버가 쿼리마다 전송하는 `UserTimeMicroseconds` 및 `SystemTimeMicroseconds` 프로파일 이벤트(profile events)의 합계입니다. 따라서 쿼리를 실행하는 스레드를 모두 포괄하며, 쿼리의 전체 CPU 비용에 대한 근삿값이 됩니다. 분산 쿼리(Distributed Query)는 initiator가 원격 서버의 프로파일 이벤트를 전달하므로, 쿼리가 실행되는 모든 서버의 값이 합산됩니다. 서버가 프로파일 이벤트를 전송하지 않으면(예: `--send_profile_events=0` 사용 시) 상태 문자열에 `CPU: not reported by the server`가 표시됩니다.
-
-혼합 워크로드를 실행하려면 쿼리 클래스마다 하나씩, 여러 `clickhouse-benchmark` 프로세스를 동시에 실행하십시오. 각 프로세스는 해당 클래스의 통계를 보고합니다. 프로세스마다 서로 다른 `--seed`를 지정하거나 아예 지정하지 마십시오. 동일한 seed를 사용하는 프로세스는 같은 난수 시퀀스를 생성하므로 도착 시점이 서로 일치하게 됩니다(도착률이 다르면 서로를 일정 배율로 늘이거나 줄인 형태가 됩니다). 독립적인 seed를 사용하면 모든 프로세스의 통합된 도착 역시 포아송 과정(Poisson process)을 따릅니다.
-
-예시:
-
-```bash
-# 100 queries per second for 10 seconds; the lines above are from this run.
-$ clickhouse-benchmark --arrival-rate=100 --seed=42 --timelimit=10 --query "SELECT sum(number) FROM numbers(1000000)"
-
-# A sweep over four rates, 60 seconds each, with per-query statistics.
-$ clickhouse-benchmark --arrival-rate=5,10,20,40 --timelimit=60 --randomize --per-query < queries.tsv
-```
-
-## 비교 모드 {#clickhouse-benchmark-comparison-mode}
+<div id="clickhouse-benchmark-comparison-mode">
+  ## 비교 모드
+</div>
 
 `clickhouse-benchmark`는 실행 중인 두 ClickHouse 서버의 성능을 비교할 수 있습니다.
 
 비교 모드를 사용하려면 `--host`, `--port` 옵션 두 쌍으로 두 서버의 엔드포인트를 지정하십시오. 인수 목록에서는 각 옵션이 위치에 따라 짝지어지며, 첫 번째 `--host`는 첫 번째 `--port`와 대응되고 그다음도 같은 방식으로 대응됩니다. `clickhouse-benchmark`는 두 서버에 연결한 다음 쿼리를 전송합니다. 각 쿼리는 무작위로 선택된 서버 중 하나로 전송됩니다. 결과는 표에 표시됩니다.
 
-## 예시 {#clickhouse-benchmark-example}
+<div id="clickhouse-benchmark-example">
+  ## 예시
+</div>
 
 ```bash
 $ echo "SELECT * FROM system.numbers LIMIT 10000000 OFFSET 10000000" | clickhouse-benchmark --host=localhost --port=9001 --host=localhost --port=9000 -i 10

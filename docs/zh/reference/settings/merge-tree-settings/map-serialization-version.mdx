@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.merge&#95;tree&#95;settings](/zh/reference/system-tables/merge_tree_settings) 中查看，且由 ClickHouse 源代码自动生成。
 
-## map_serialization_version {#map_serialization_version}
+<div id="map_serialization_version">
+  ## map_serialization_version
+</div>
 
 <SettingsInfoBlock type="MergeTreeMapSerializationVersion" default_value="basic" />
 
@@ -27,9 +29,10 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * with&#95;buckets — 在序列化过程中将键拆分到桶中。使用桶可提升从 Map 中读取单个键的效率。
 
 `with_buckets` 序列化中的桶数量由 [max&#95;buckets&#95;in&#95;map](/zh/reference/settings/merge-tree-settings/max#max_buckets_in_map) 和 [map&#95;buckets&#95;strategy](/zh/reference/settings/merge-tree-settings/map-buckets#map_buckets_strategy) 决定。
-键类型包含 `JSON` 或 `Dynamic` 的 `Map` 始终写入单个桶中，不受其他桶设置的影响。
 
-## map_serialization_version_for_zero_level_parts {#map_serialization_version_for_zero_level_parts}
+<div id="map_serialization_version_for_zero_level_parts">
+  ## map_serialization_version_for_zero_level_parts
+</div>
 
 <SettingsInfoBlock type="MergeTreeMapSerializationVersion" default_value="basic" />
 

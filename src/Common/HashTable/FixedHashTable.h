@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <Common/HashTable/HashTable.h>
 
 namespace DB
@@ -24,9 +23,9 @@ struct FixedHashTableCell
     FixedHashTableCell(const Key &, const State &) : full(true) {}
 
     const VoidKey getKey() const { return {}; } /// NOLINT
-    [[nodiscard]] VoidMapped getMapped() const { return {}; }
+    VoidMapped getMapped() const { return {}; }
 
-    [[nodiscard]] bool isZero(const State &) const { return !full; }
+    bool isZero(const State &) const { return !full; }
     void setZero() { full = false; }
     static constexpr bool need_zero_value_storage = false;
 
@@ -41,8 +40,8 @@ struct FixedHashTableCell
         Key key;
 
         const VoidKey getKey() const { return {}; } /// NOLINT
-        [[nodiscard]] VoidMapped getMapped() const { return {}; }
-        [[nodiscard]] const value_type & getValue() const { return key; }
+        VoidMapped getMapped() const { return {}; }
+        const value_type & getValue() const { return key; }
         /// The cell pointer is unused (the key is the cell index); const so that const iteration works.
         void update(Key && key_, const FixedHashTableCell *) { key = key_; }
     };
@@ -118,8 +117,8 @@ class FixedHashTable : private boost::noncopyable, protected Allocator, protecte
     static constexpr size_t NUM_CELLS = 1ULL << size_bits;
 
     /// We maintain min and max values inserted into the hash table to then limit the amount of cells to traverse to the [min; max] range.
-    /// False after a path other than `emplace` or `restoreMinMaxOptimization` wrote cells, so the bounds may be stale.
-    bool can_trust_min_max_values = true;
+    /// Both values could be efficiently calculated only within `emplace` calls (and not when we populate the hash table in `read` method for example), so we update them only within `emplace` and track if any other method was called.
+    bool only_emplace_was_used_to_insert_data = true;
     bool disable_min_max_optimization = false;
     size_t min = NUM_CELLS - 1;
     size_t max = 0;
@@ -135,7 +134,7 @@ protected:
 
     void alloc() { buf = reinterpret_cast<Cell *>(Allocator::alloc(NUM_CELLS * sizeof(Cell))); }
 
-    [[nodiscard]] std::pair<UInt32, UInt32> getMinMaxIndex() const
+    std::pair<UInt32, UInt32> getMinMaxIndex() const
     {
         return {min, max};
     }
@@ -205,9 +204,9 @@ protected:
             return &cell;
         }
 
-        [[nodiscard]] auto getPtr() const { return ptr; }
-        [[nodiscard]] size_t getHash() const { return ptr - container->buf; }
-        [[nodiscard]] size_t getCollisionChainLength() const { return 0; }
+        auto getPtr() const { return ptr; }
+        size_t getHash() const { return ptr - container->buf; }
+        size_t getCollisionChainLength() const { return 0; }
         typename cell_type::CellExt cell;
     };
 
@@ -222,7 +221,7 @@ public:
     using ConstLookupResult = const Cell *;
 
 
-    [[nodiscard]] size_t hash(const Key & x) const { return x; }
+    size_t hash(const Key & x) const { return x; }
 
     FixedHashTable() { alloc(); }
 
@@ -308,7 +307,7 @@ public:
     };
 
 
-    [[nodiscard]] const_iterator begin() const
+    const_iterator begin() const
     {
         if (!buf)
             return end();
@@ -316,7 +315,7 @@ public:
         return const_iterator(this, firstPopulatedCell());
     }
 
-    [[nodiscard]] const_iterator cbegin() const { return begin(); }
+    const_iterator cbegin() const { return begin(); }
 
     iterator begin()
     {
@@ -326,13 +325,13 @@ public:
         return iterator(this, const_cast<Cell *>(firstPopulatedCell()));
     }
 
-    [[nodiscard]] const_iterator end() const
+    const_iterator end() const
     {
         /// Avoid UBSan warning about adding zero to nullptr. It is valid in C++20 (and earlier) but not valid in C.
         return const_iterator(this, buf ? lastPopulatedCell() : buf);
     }
 
-    [[nodiscard]] const_iterator cend() const
+    const_iterator cend() const
     {
         return end();
     }
@@ -378,51 +377,31 @@ public:
 
     LookupResult ALWAYS_INLINE find(const Key & x) { return !buf[x].isZero(*this) ? &buf[x] : nullptr; }
 
-    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const Key & x) const { return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x); }
+    ConstLookupResult ALWAYS_INLINE find(const Key & x) const { return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x); }
 
     LookupResult ALWAYS_INLINE find(const Key &, size_t hash_value) { return !buf[hash_value].isZero(*this) ? &buf[hash_value] : nullptr; }
 
-    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const Key & key, size_t hash_value) const
+    ConstLookupResult ALWAYS_INLINE find(const Key & key, size_t hash_value) const
     {
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(key, hash_value);
     }
 
-    [[nodiscard]] bool ALWAYS_INLINE has(const Key & x) const { return !buf[x].isZero(*this); }
-    [[nodiscard]] bool ALWAYS_INLINE has(const Key &, size_t hash_value) const { return !buf[hash_value].isZero(*this); }
+    bool ALWAYS_INLINE has(const Key & x) const { return !buf[x].isZero(*this); }
+    bool ALWAYS_INLINE has(const Key &, size_t hash_value) const { return !buf[hash_value].isZero(*this); }
 
-    /// `max < min` means the table is empty. `can_trust_min_max_values` is false when the bounds were not maintained.
-    /// `disable_min_max_optimization` keeps the bounds off until `restoreMinMaxOptimization`.
-    [[nodiscard]] bool ALWAYS_INLINE canUseMinMaxOptimization() const
+    /// Decide if we use the min/max optimization. `max < min` means the FixedHashtable is empty. The flag `only_emplace_was_used_to_insert_data`
+    /// will check if the FixedHashTable will only use `emplace()` to insert the raw data.
+    /// `disable_min_max_optimization` means that the min/max optimization is disabled.
+    bool ALWAYS_INLINE canUseMinMaxOptimization() const
     {
-        return (max >= min) && can_trust_min_max_values && !disable_min_max_optimization;
+        return (max >= min) &&  only_emplace_was_used_to_insert_data && !disable_min_max_optimization;
     }
 
     /// min/max optimization has to be disabled when FixedHashTable is used concurrently in certain scenarios.
     /// For example, when aggregator merges single level aggregation state in parallel.
     void ALWAYS_INLINE disableMinMaxOptimization() { disable_min_max_optimization = true; }
 
-    /// Derive the bounds from the cells and enable the optimization again, once no concurrent writer
-    /// is left. An empty table keeps `max < min`, which is how iteration finds nothing.
-    void restoreMinMaxOptimization()
-    {
-        min = NUM_CELLS - 1;
-        max = 0;
-        if (buf)
-        {
-            for (size_t i = 0; i < NUM_CELLS; ++i)
-            {
-                if (!buf[i].isZero(*this))
-                {
-                    min = std::min(i, min);
-                    max = std::max(i, max);
-                }
-            }
-        }
-        disable_min_max_optimization = false;
-        can_trust_min_max_values = true;
-    }
-
-    [[nodiscard]] const Cell * ALWAYS_INLINE firstPopulatedCell() const
+    const Cell * ALWAYS_INLINE firstPopulatedCell() const
     {
         const Cell * ptr = buf;
         if (!canUseMinMaxOptimization())
@@ -436,7 +415,7 @@ public:
         return ptr;
     }
 
-    [[nodiscard]] Cell * ALWAYS_INLINE lastPopulatedCell() const { return canUseMinMaxOptimization() ? buf + max + 1 : buf + NUM_CELLS; }
+    Cell * ALWAYS_INLINE lastPopulatedCell() const { return canUseMinMaxOptimization() ? buf + max + 1 : buf + NUM_CELLS; }
 
     void write(DB::WriteBuffer & wb) const
     {
@@ -494,7 +473,7 @@ public:
             x.read(rb);
             new (&buf[place_value]) Cell(x, *this);
         }
-        can_trust_min_max_values = false;
+        only_emplace_was_used_to_insert_data = false;
     }
 
     void readText(DB::ReadBuffer & rb)
@@ -517,11 +496,11 @@ public:
             x.readText(rb);
             new (&buf[place_value]) Cell(x, *this);
         }
-        can_trust_min_max_values = false;
+        only_emplace_was_used_to_insert_data = false;
     }
 
-    [[nodiscard]] size_t size() const { return this->getSize(buf, *this, NUM_CELLS); }
-    [[nodiscard]] bool empty() const { return this->isEmpty(buf, *this, NUM_CELLS); }
+    size_t size() const { return this->getSize(buf, *this, NUM_CELLS); }
+    bool empty() const { return this->isEmpty(buf, *this, NUM_CELLS); }
 
     void clear()
     {
@@ -540,9 +519,9 @@ public:
         free();
     }
 
-    [[nodiscard]] size_t getBufferSizeInBytes() const { return NUM_CELLS * sizeof(Cell); }
+    size_t getBufferSizeInBytes() const { return NUM_CELLS * sizeof(Cell); }
 
-    [[nodiscard]] size_t getBufferSizeInCells() const { return NUM_CELLS; }
+    size_t getBufferSizeInCells() const { return NUM_CELLS; }
 
     /// Return offset for result in internal buffer.
     /// Result can have value up to `getBufferSizeInCells() + 1`
@@ -555,14 +534,14 @@ public:
         return ptr - buf + 1;
     }
 
-    [[nodiscard]] const Cell * data() const { return buf; }
+    const Cell * data() const { return buf; }
     Cell * data()
     {
-        can_trust_min_max_values = false;
+        only_emplace_was_used_to_insert_data = false;
         return buf;
     }
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
-    [[nodiscard]] size_t getCollisions() const { return 0; }
+    size_t getCollisions() const { return 0; }
 #endif
 };

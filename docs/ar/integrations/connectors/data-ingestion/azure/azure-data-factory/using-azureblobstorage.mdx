@@ -1,17 +1,19 @@
 ---
-sidebarTitle: 'استخدام دالة الجدول azureBlobStorage'
+sidebarTitle: 'استخدام الدالة الجدولية azureBlobStorage'
 slug: /integrations/azure-data-factory/table-function
-description: 'استخدام دالة الجدول azureBlobStorage في ClickHouse'
+description: 'استخدام الدالة الجدولية azureBlobStorage في ClickHouse'
 keywords: ['azure data factory', 'azure', 'microsoft', 'data', 'azureBlobStorage']
-title: 'استخدام دالة الجدول azureBlobStorage في ClickHouse'
+title: 'استخدام الدالة الجدولية azureBlobStorage في ClickHouse'
 doc_type: 'guide'
 integration:
    - support_level: 'core'
    - category: 'data_ingestion'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 تُعد هذه واحدة من أكثر الطرق كفاءةً وبساطةً لنسخ البيانات من
-Azure Blob Storage أو Azure Data Lake Storage إلى ClickHouse. وباستخدام دالة الجدول هذه،
+Azure Blob Storage أو Azure Data Lake Storage إلى ClickHouse. وباستخدام هذه الدالة الجدولية،
 يمكنك توجيه ClickHouse للاتصال مباشرةً بتخزين Azure وقراءة
 البيانات عند الحاجة.
 
@@ -24,38 +26,28 @@ Azure Blob Storage أو Azure Data Lake Storage إلى ClickHouse. وباستخ�
 البيانات من Azure Blob Storage إلى ClickHouse، إلى جانب اعتبارات مهمة
 لاستخدام هذه الدالة بفعالية. ولمزيد من التفاصيل والخيارات المتقدمة،
 راجع الوثائق الرسمية:
-[صفحة توثيق دالة الجدول `azureBlobStorage`](/ar/reference/functions/table-functions/azureBlobStorage)
+[صفحة توثيق الدالة الجدولية `azureBlobStorage`](/ar/reference/functions/table-functions/azureBlobStorage)
 
 <div id="acquiring-azure-blob-storage-access-keys">
-  ## الحصول على مفاتيح الوصول إلى Azure Blob Storage {#acquiring-azure-blob-storage-access-keys}
+  ## الحصول على مفاتيح الوصول إلى Azure Blob Storage
 </div>
 
 لتمكين ClickHouse من الوصول إلى Azure Blob Storage، ستحتاج إلى سلسلة اتصال تحتوي على مفتاح وصول.
 
 1. في Azure Portal، انتقل إلى **حساب التخزين** الخاص بك.
 
-2. من القائمة الموجودة على الجانب الأيسر، حدِّد **مفاتيح الوصول** ضمن قسم **الأمان +
+2. من القائمة الموجودة على الجانب الأيسر، حدِّد **مفاتيح الوصول** ضمن قسم **الأمان +
    الشبكات**.
-
-   <div className="ch-image-lg">
-     <Frame>
-       ![إعدادات مخزن بيانات Azure](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp)
-     </Frame>
-   </div>
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp" size="lg" alt="إعدادات مخزن بيانات Azure" border />
 
 3. اختر **key1** أو **key2**، ثم انقر فوق الزر **إظهار** بجوار
    حقل **سلسلة الاتصال**.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp" size="lg" alt="مفاتيح الوصول إلى مخزن بيانات Azure" border />
 
-   <div className="ch-image-lg">
-     <Frame>
-       ![مفاتيح الوصول إلى مخزن بيانات Azure](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp)
-     </Frame>
-   </div>
-
-4. انسخ سلسلة الاتصال — ستستخدمها كمعلمة في دالة الجدول azureBlobStorage.
+4. انسخ سلسلة الاتصال — ستستخدمها كمعلمة في الدالة الجدولية azureBlobStorage.
 
 <div id="querying-the-data-from-azure-blob-storage">
-  ## الاستعلام عن البيانات من Azure Blob Storage {#querying-the-data-from-azure-blob-storage}
+  ## الاستعلام عن البيانات من Azure Blob Storage
 </div>
 
 افتح وحدة تحكم استعلامات ClickHouse التي تفضّلها — سواء كانت واجهة الويب الخاصة بـ ClickHouse Cloud،
@@ -89,7 +81,9 @@ SELECT * FROM azureBlobStorage(
 يتيح لك ذلك جلب البيانات الخارجية إلى ClickHouse بكفاءة دون
 الحاجة إلى خطوات ETL وسيطة.
 
-## مثال بسيط باستخدام مجموعة بيانات المستشعرات البيئية {#simple-example-using-the-environmental-sensors-dataset}
+<div id="simple-example-using-the-environmental-sensors-dataset">
+  ## مثال بسيط باستخدام مجموعة بيانات المستشعرات البيئية
+</div>
 
 كمثال، سننزّل ملفًا واحدًا من مجموعة بيانات المستشعرات البيئية.
 
@@ -115,14 +109,14 @@ SELECT * FROM azureBlobStorage(
 الآن، بعد أن أصبح كل شيء جاهزًا، يمكنك الاستعلام عن البيانات مباشرةً من Azure Blob Storage:
 
 ```sql
-SELECT *
-FROM azureBlobStorage(
-    '<YOUR CONNECTION STRING>', 
-    'sensors',
-    '2019-06_bmp180.csv.zst', 
-    'CSVWithNames')
-LIMIT 10
-SETTINGS format_csv_delimiter = ';'
+    SELECT *
+    FROM azureBlobStorage(
+        '<YOUR CONNECTION STRING>', 
+        'sensors',
+        '2019-06_bmp180.csv.zst', 
+        'CSVWithNames')
+    LIMIT 10
+    SETTINGS format_csv_delimiter = ';'
 ```
 
 7. لتحميل البيانات إلى جدول، أنشئ نسخة مبسطة من
@@ -143,7 +137,7 @@ SETTINGS format_csv_delimiter = ';'
 <Info>
   لمزيد من المعلومات حول خيارات الإعداد والاستدلال التلقائي للمخطط عند
   الاستعلام عن مصادر خارجية مثل Azure Blob Storage، راجع [الاستدلال التلقائي
-  على المخطط من بيانات الإدخال](/ar/concepts/features/interfaces/schema-inference)
+  للمخطط من بيانات الإدخال](/ar/concepts/features/interfaces/schema-inference)
 </Info>
 
 8. الآن أدخِل البيانات من Azure Blob Storage إلى جدول sensors:
@@ -159,14 +153,16 @@ SETTINGS format_csv_delimiter = ';'
    ```
 
 تمت الآن تعبئة جدول sensors بالبيانات من الملف `2019-06_bmp180.csv.zst`
-المخزَّن في Azure Blob Storage.
+المخزَّن في Azure Blob Storage.
 
-## موارد إضافية {#additional-resources}
+<div id="additional-resources">
+  ## موارد إضافية
+</div>
 
-هذه مجرد مقدمة أساسية لاستخدام الدالة azureBlobStorage. للاطلاع على
-خيارات أكثر تقدمًا وتفاصيل الإعداد، يُرجى الرجوع إلى الوثائق
+هذه مجرد مقدمة أساسية لاستخدام الدالة `azureBlobStorage`. ولمزيد من
+الخيارات المتقدمة وتفاصيل الإعداد، يُرجى الرجوع إلى الوثائق
 الرسمية:
 
-* [دالة الجدول azureBlobStorage](/ar/reference/functions/table-functions/azureBlobStorage)
+* [الدالة الجدولية azureBlobStorage](/ar/reference/functions/table-functions/azureBlobStorage)
 * [تنسيقات بيانات الإدخال والإخراج](/ar/reference/formats/index)
-* [الاستدلال التلقائي على المخطط من بيانات الإدخال](/ar/concepts/features/interfaces/schema-inference)
+* [الاستدلال التلقائي للمخطط من بيانات الإدخال](/ar/concepts/features/interfaces/schema-inference)

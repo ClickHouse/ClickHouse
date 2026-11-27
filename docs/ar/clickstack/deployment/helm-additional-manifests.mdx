@@ -14,7 +14,9 @@ keywords: ['ملفات البيان الإضافية في ClickStack', 'المو
 
 تتيح لك القيمة `additionalManifests` نشر أي كائنات Kubernetes إلى جانب مخطط ClickStack. استخدمها مع الموارد التي لا يوفّر لها المخطط قوالب بشكل مضمّن، مثل `NetworkPolicy` و`HorizontalPodAutoscaler` و`ServiceAccount` و`PodMonitor` وكائنات `Ingress` المخصصة أو أي كائن آخر من كائنات واجهة برمجة تطبيقات Kubernetes.
 
-## كيف يعمل {#how-it-works}
+<div id="how-it-works">
+  ## كيف يعمل
+</div>
 
 كل عنصر في `additionalManifests` هو تعريف كامل لمورد في Kubernetes. ويقوم المخطط بما يلي:
 
@@ -38,7 +40,9 @@ additionalManifests:
       release: '{{ .Release.Name }}'
 ```
 
-## قيود ملف values {#values-file-constraints}
+<div id="values-file-constraints">
+  ## قيود ملف values
+</div>
 
 يُضبط `additionalManifests` في ملف values، وتُحلَّل ملفات values بصيغة YAML قبل تشغيل `tpl`.
 
@@ -59,7 +63,9 @@ labels:
   {{- include "clickstack.labels" . | nindent 2 }}
 ```
 
-## دوال المساعدة المتاحة لـ المخطط {#available-chart-helpers}
+<div id="available-chart-helpers">
+  ## دوال المساعدة المتاحة لـ المخطط
+</div>
 
 تُعرَّف دوال المساعدة هذه في `templates/_helpers.tpl`:
 
@@ -74,9 +80,13 @@ labels:
 | `clickstack.clickhouse.fullname` | اسم ClickHouse CR                | آمن في القيم scalar الموضوعة بين علامتي اقتباس |
 | `clickstack.otel.fullname`       | اسم OTel collector               | آمن في القيم scalar الموضوعة بين علامتي اقتباس |
 
-## أمثلة {#examples}
+<div id="examples">
+  ## أمثلة
+</div>
 
-### ServiceAccount {#serviceaccount}
+<div id="serviceaccount">
+  ### ServiceAccount
+</div>
 
 ```yaml
 additionalManifests:
@@ -92,9 +102,11 @@ additionalManifests:
         eks.amazonaws.com/role-arn: "arn:aws:iam::123456789:role/my-role"
 ```
 
-### NetworkPolicy {#networkpolicy}
+<div id="networkpolicy">
+  ### NetworkPolicy
+</div>
 
-قيّد حركة المرور الواردة إلى جرابات واجهة مستخدم ClickStack:
+قيّد حركة المرور الواردة إلى جرابات HyperDX:
 
 ```yaml
 additionalManifests:
@@ -121,7 +133,9 @@ additionalManifests:
               port: 8000
 ```
 
-### HorizontalPodAutoscaler {#horizontalpodautoscaler}
+<div id="horizontalpodautoscaler">
+  ### HorizontalPodAutoscaler
+</div>
 
 ```yaml
 additionalManifests:
@@ -145,7 +159,9 @@ additionalManifests:
               averageUtilization: 75
 ```
 
-### PodMonitor (Prometheus Operator) {#podmonitor}
+<div id="podmonitor">
+  ### PodMonitor (Prometheus Operator)
+</div>
 
 ```yaml
 additionalManifests:
@@ -165,7 +181,9 @@ additionalManifests:
           interval: 30s
 ```
 
-### AWS ALB Ingress {#aws-alb-ingress}
+<div id="aws-alb-ingress">
+  ### AWS ALB Ingress
+</div>
 
 عند استخدام [AWS Load Balancer Controller](https://kubernetes-sigs.github.io/aws-load-balancer-controller/)، عطِّل Ingress المدمج لـ nginx في المخطط وعرِّف Ingress مخصصًا لـ ALB:
 
@@ -204,7 +222,9 @@ additionalManifests:
 
 للاطلاع على مثال كامل لإعداد ALB، بما في ذلك Ingress الداخلي لـ OTel collector وHPA، راجع [قيم المثال الخاصة بـ ALB](https://github.com/ClickHouse/ClickStack-helm-charts/tree/main/examples/alb-ingress).
 
-### TargetGroupBinding {#targetgroupbinding}
+<div id="targetgroupbinding">
+  ### TargetGroupBinding
+</div>
 
 في سيناريوهات ALB التي تتطلب موارد `TargetGroupBinding` مُعرَّفة صراحةً:
 
@@ -222,7 +242,9 @@ additionalManifests:
       targetType: ip
 ```
 
-## متقدم: قوالب wrapper مخطط {#advanced-wrapper-chart-templates}
+<div id="advanced-wrapper-chart-templates">
+  ## متقدم: قوالب wrapper مخطط
+</div>
 
 إذا كنت بحاجة إلى دوال مساعدة هيكلية مثل `include "clickstack.labels" . | nindent 4`، فقم بتصييرها من قالب wrapper مخطط (`templates/*.yaml`) بدلًا من وضع هذه الكتل مباشرةً في ملفات values.
 
@@ -239,9 +261,13 @@ data:
   appPort: "{{ .Values.hyperdx.ports.app }}"
 ```
 
-## نصائح {#tips}
+<div id="tips">
+  ## نصائح
+</div>
 
-### خطافات Helm {#helm-hooks}
+<div id="helm-hooks">
+  ### خطافات Helm
+</div>
 
 يُعرَض كل إدخال في `additionalManifests` كمستند YAML منفصل. يمكنك إضافة التعليقات التوضيحية لخطافات Helm للتحكم في ترتيب التثبيت/الترقية:
 
@@ -264,15 +290,21 @@ additionalManifests:
               command: ["./migrate.sh"]
 ```
 
-### ترتيب CRD {#crd-ordering}
+<div id="crd-ordering">
+  ### ترتيب CRD
+</div>
 
 إذا كانت ملفات البيان الإضافية لديك تتضمن موارد مخصصة (مثل `PodMonitor`)، فيجب أن تكون تعريفات الموارد المخصصة (CRDs) موجودة بالفعل في العنقود قبل التثبيت/الترقية.
 
-### دمج موارد متعددة {#combining-multiple-resources}
+<div id="combining-multiple-resources">
+  ### دمج موارد متعددة
+</div>
 
 `additionalManifests` عبارة عن قائمة. تُعرَض العناصر وفق ترتيبها في القائمة، ويصبح كل عنصر مستند YAML مستقلًا.
 
-## الخطوات التالية {#next-steps}
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
 
 * [دليل Helm الرئيسي](/ar/clickstack/deployment/helm) - التثبيت الأساسي
 * [دليل التهيئة](/ar/clickstack/deployment/helm-configuration) - مفاتيح API والأسرار وIngress

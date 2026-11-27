@@ -6,12 +6,42 @@
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
+
+
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
+}
 
 
 namespace DB::PrometheusQueryToSQL
 {
+
+namespace
+{
+    void checkArgumentTypes(
+        const PrometheusQueryTree::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    {
+        const auto & function_name = function_node->function_name;
+        if (arguments.size() != 1)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects {} arguments, but was called with {} arguments",
+                            function_name, 1, arguments.size());
+        }
+
+        const auto & argument = arguments[0];
+        if (argument.type != ResultType::INSTANT_VECTOR)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects an argument of type {}, but expression {} has type {}",
+                            function_name, ResultType::INSTANT_VECTOR,
+                            getPromQLText(argument, context), argument.type);
+        }
+    }
+}
+
 
 SQLQueryPiece applyFunctionScalar(
     const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
@@ -19,8 +49,7 @@ SQLQueryPiece applyFunctionScalar(
     const auto & function_name = function_node->function_name;
     chassert(isFunctionScalar(function_name));
 
-    checkNumberOfArguments(function_node, arguments, 1);
-    checkArgumentType(function_node, arguments, 0, ResultType::INSTANT_VECTOR, context);
+    checkArgumentTypes(function_node, arguments, context);
     auto & argument = arguments[0];
 
     auto res = argument;
@@ -78,7 +107,7 @@ SQLQueryPiece applyFunctionScalar(
                             "any",
                             makeASTFunction(
                                 "arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)))),
-                    timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN())));
+                    timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type)));
 
                 builder.select_list.back()->setAlias(ColumnNames::Value);
                 res.store_method = StoreMethod::SINGLE_SCALAR;
@@ -102,11 +131,11 @@ SQLQueryPiece applyFunctionScalar(
                                 "if",
                                 makeASTFunction("equals", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(1)),
                                 makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>("y")),
-                                timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN()))),
+                                timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type))),
                         makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
                         makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values))),
                     make_intrusive<ASTLiteral>(stepsInTimeSeriesRange(argument.start_time, argument.end_time, argument.step)),
-                    timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN())));
+                    timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type)));
 
                 builder.select_list.back()->setAlias(ColumnNames::Values);
                 res.store_method = StoreMethod::SCALAR_GRID;
@@ -120,11 +149,10 @@ SQLQueryPiece applyFunctionScalar(
         }
 
         case StoreMethod::CONST_STRING:
-        case StoreMethod::SAMPLES:
-        case StoreMethod::TIMESTAMP_AND_VALUE:
+        case StoreMethod::RAW_DATA:
         {
             /// Can't get in here because these store methods are incompatible with the allowed argument types
-            /// (see the checks at the beginning of `applyFunctionScalar`).
+            /// (see checkArgumentTypes()).
             throwUnexpectedStoreMethod(argument, context);
         }
     }

@@ -179,7 +179,7 @@ private:
     }
 
 public:
-    [[nodiscard]] String getName() const override { return "intervalLengthSum"; }
+    String getName() const override { return "intervalLengthSum"; }
 
     explicit AggregateFunctionIntervalLengthSum(const DataTypes & arguments, const Array & parameters_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>(arguments, parameters_, createResultType())
@@ -195,7 +195,7 @@ public:
 
     /// Parameters are non-semantic here and never reach the serialized state, so parameterized and
     /// parameterless states share one representation and stay Merge-/CAST-compatible.
-    [[nodiscard]] DataTypePtr getNormalizedStateType() const override
+    DataTypePtr getNormalizedStateType() const override
     {
         DataTypes normalized_argument_types;
         normalized_argument_types.reserve(this->argument_types.size());
@@ -204,9 +204,9 @@ public:
         return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), normalized_argument_types, Array{});
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
-    [[nodiscard]] AggregateFunctionPtr getOwnNullAdapter(
+    AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function,
         const DataTypes & arguments,
         const Array & params,
@@ -278,7 +278,7 @@ createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTyp
 
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument of aggregate function {}, must "
-                    "be native integral type, Date/DateTime or Float", arguments.front()->getName(), name);
+                    "be native integral type, Date/DateTime or Float", arguments.front().get()->getName(), name);
 }
 
 }
@@ -350,7 +350,7 @@ SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, en
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("intervalLengthSum", {createAggregateFunctionIntervalLengthSum<AggregateFunctionIntervalLengthSumData>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("intervalLengthSum", {createAggregateFunctionIntervalLengthSum<AggregateFunctionIntervalLengthSumData>, documentation});
 }
 
 }

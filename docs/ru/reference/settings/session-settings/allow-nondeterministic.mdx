@@ -12,11 +12,13 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного файла](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
+<div id="allow_nondeterministic_mutations">
+  ## allow_nondeterministic_mutations
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Настройка уровня пользователя, которая позволяет мутациям в реплицируемых таблицах использовать недетерминированные функции, такие как `dictGet`, а также виртуальные столбцы, значения которых могут различаться между репликами, например `_table`, `_database` и `_disk_name`.
+Настройка уровня пользователя, которая позволяет мутациям в реплицируемых таблицах использовать недетерминированные функции, такие как `dictGet`.
 
 Поскольку, например, словари могут быть рассинхронизированы между узлами, мутации, которые получают из них значения, по умолчанию запрещены для реплицируемых таблиц. При включении этой настройки такое поведение разрешается, и ответственность за то, чтобы используемые данные были синхронизированы на всех узлах, ложится на пользователя.
 
@@ -35,7 +37,9 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 </profiles>
 ```
 
-## allow_nondeterministic_optimize_skip_unused_shards {#allow_nondeterministic_optimize_skip_unused_shards}
+<div id="allow_nondeterministic_optimize_skip_unused_shards">
+  ## allow_nondeterministic_optimize_skip_unused_shards
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

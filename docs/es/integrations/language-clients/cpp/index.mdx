@@ -23,7 +23,9 @@ repositorio de GitHub del proyecto: [https://github.com/ClickHouse/clickhouse-cp
   [https://github.com/ClickHouse/clickhouse-cpp/issues](https://github.com/ClickHouse/clickhouse-cpp/issues)
 </Note>
 
-## Incluir la biblioteca en tu proyecto {#including-library-into-project}
+<div id="including-library-into-project">
+  ## Incluir la biblioteca en tu proyecto
+</div>
 
 La forma más sencilla de incorporar la biblioteca a tu proyecto es usar el módulo
 `FetchContent` de CMake. Este enfoque te permite fijar una versión exacta de la biblioteca y compilarla como parte de tu flujo de trabajo habitual
@@ -36,7 +38,7 @@ set(WITH_OPENSSL YES CACHE BOOL "Enable OpenSSL in clickhouse-cpp" FORCE)
 FetchContent_Declare(
     clickhouse-cpp
     GIT_REPOSITORY https://github.com/ClickHouse/clickhouse-cpp.git
-    GIT_TAG v2.6.0   # can also be `master` or other branch
+    GIT_TAG v2.6.0   # can also be `master` or other banch
 )
 FetchContent_MakeAvailable(clickhouse-cpp)
 ```
@@ -55,9 +57,13 @@ Una vez que la dependencia esté disponible, enlace su objetivo con el objetivo 
 target_link_libraries(your-target PRIVATE clickhouse-cpp-lib)
 ```
 
-## Ejemplos {#examples}
+<div id="examples">
+  ## Ejemplos
+</div>
 
-### Configuración del objeto Client {#example-setup-client}
+<div id="example-setup-client">
+  ### Configuración del objeto Client
+</div>
 
 Cree una instancia de `Client` para establecer una conexión con ClickHouse. El siguiente ejemplo
 muestra cómo conectarse a una instancia local de ClickHouse, donde no se requiere contraseña y SSL no está
@@ -85,7 +91,9 @@ clickhouse::Client client{
     };
 ```
 
-### Crear tablas y ejecutar consultas sin datos {#example-create-table}
+<div id="example-create-table">
+  ### Crear tablas y ejecutar consultas sin datos
+</div>
 
 Para ejecutar una consulta que no devuelve ningún dato, como al crear tablas, utiliza el método `Execute`.
 El mismo enfoque se aplica a otras sentencias como `ALTER TABLE`, `DROP`, etc.
@@ -99,7 +107,9 @@ client.Execute(R"(
     ENGINE = MergeTree ORDER BY id)");
 ```
 
-### Insertar datos {#example-insert-data}
+<div id="example-insert-data">
+  ### Insertar datos
+</div>
 
 Para insertar datos en una tabla, construya un `Block` y póblelo con objetos de columna que coincidan con el
 esquema de la tabla. Los datos se agregan columna por columna y luego se insertan en una sola operación mediante el
@@ -130,7 +140,9 @@ block.AppendColumn("language", language);
 client.Insert("greetings", block);
 ```
 
-### Seleccionar los datos {#example-select}
+<div id="example-select">
+  ### Seleccionar los datos
+</div>
 
 Para ejecutar una consulta que devuelva datos, use el método `Select` y proporcione una función de devolución de llamada para procesar el
 resultado. Los resultados de la consulta se entregan como objetos `Block`, lo que refleja la representación de datos nativa
@@ -149,7 +161,9 @@ client.Select(
     });
 ```
 
-## Tipos de datos compatibles {#supported-data-types}
+<div id="supported-data-types">
+  ## Tipos de datos compatibles
+</div>
 
 * `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`
 * `UInt128`, `Int128`

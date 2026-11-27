@@ -40,7 +40,7 @@ private:
         bool is_literal{}; /// format is literal string without any argument
         ColumnWithTypeAndName input; /// Only used when is_literal is false
 
-        [[nodiscard]] ColumnWithTypeAndName execute() const
+        ColumnWithTypeAndName execute() const
         {
             if (is_literal)
                 return executeLiteral(format);
@@ -50,7 +50,7 @@ private:
         }
 
     private:
-        [[nodiscard]] ColumnWithTypeAndName executeLiteral(std::string_view literal) const
+        ColumnWithTypeAndName executeLiteral(std::string_view literal) const
         {
             ColumnWithTypeAndName res;
             auto str_col = ColumnString::create();
@@ -60,7 +60,7 @@ private:
             return res;
         }
 
-        [[nodiscard]] ColumnWithTypeAndName executeConstant(const ColumnWithTypeAndName & arg) const
+        ColumnWithTypeAndName executeConstant(const ColumnWithTypeAndName & arg) const
         {
             ColumnWithTypeAndName tmp_arg = arg;
             const auto & const_col = static_cast<const ColumnConst &>(*arg.column);
@@ -115,7 +115,7 @@ private:
             return true;
         }
 
-        [[nodiscard]] ColumnWithTypeAndName executeNonconstant(const ColumnWithTypeAndName & arg) const
+        ColumnWithTypeAndName executeNonconstant(const ColumnWithTypeAndName & arg) const
         {
             size_t size = arg.column->size();
             auto res_col = ColumnString::create();
@@ -161,28 +161,32 @@ public:
         : function_concat(FunctionFactory::instance().get("concat", context))
     {}
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
+    bool isVariadic() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return false; }
 
-    /// An empty format consumes no argument.
-    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
-
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// format string + 0+ substitution args (numbers or strings).
-        return
-            "(format String) -> String"
-            " OR (format String, sub NativeNumber | StringOrFixedString, ...) -> String";
+        auto is_native_number_or_string = [](const IDataType & type)
+        {
+            return isNativeNumber(type) || isStringOrFixedString(type);
+        };
+
+        FunctionArgumentDescriptors mandatory_args{{"format", &isString, nullptr, "String"}};
+        FunctionArgumentDescriptor variadic_args{"sub", is_native_number_or_string, nullptr, "Native number or String"};
+
+        validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, variadic_args);
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & c0 = arguments[0].column;
         const ColumnConst * c0_const_string = typeid_cast<const ColumnConst *>(&*c0);
@@ -196,7 +200,7 @@ public:
     }
 
 private:
-    [[nodiscard]] ColumnPtr executeConstFormat(const String & format, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeConstFormat(const String & format, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         auto instructions = buildInstructions(format, arguments, input_rows_count);
 
@@ -287,7 +291,7 @@ private:
 
     /// Per-row format string execution: invoke fmt::sprintf directly per segment,
     /// avoiding the buildInstructions/concat pipeline overhead.
-    [[nodiscard]] ColumnPtr executeDynamicFormat(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeDynamicFormat(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const auto * format_col = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         if (!format_col)
@@ -398,7 +402,7 @@ private:
         return result_col;
     }
 
-    [[nodiscard]] VectorWithMemoryTracking<Instruction>
+    VectorWithMemoryTracking<Instruction>
     buildInstructions(std::string_view format, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         VectorWithMemoryTracking<Instruction> instructions;

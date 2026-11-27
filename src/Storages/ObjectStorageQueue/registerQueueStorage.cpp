@@ -7,19 +7,17 @@
 #include <Common/Macros.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 #include <Parsers/ASTCreateQuery.h>
 #include <Formats/FormatFactory.h>
-#include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
-#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
-#include <Storages/ObjectStorageQueue/AzureQueue_fwd.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
-#include <Storages/ObjectStorageQueue/S3Queue_fwd.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseReplicatedHelpers.h>
-#include <Databases/IDatabase.h>
 #include <Poco/URI.h>
 
 #if USE_AWS_S3
@@ -43,7 +41,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsString s3queue_default_zookeeper_path;
-    extern const SettingsBool enable_object_storage_queue_hive_partitioning;
+    extern const SettingsBool allow_experimental_object_storage_queue_hive_partitioning;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
     extern const SettingsS3UriStyle s3_uri_style;
 }
@@ -169,11 +167,11 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     if ((*queue_settings)[ObjectStorageQueueSetting::use_hive_partitioning])
     {
         if (!is_attach &&
-            !args.getLocalContext()->getSettingsRef()[Setting::enable_object_storage_queue_hive_partitioning])
+            !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_object_storage_queue_hive_partitioning])
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Experimental 'use_hive_partitioning' setting is not enabled "
-                            "(the setting 'enable_object_storage_queue_hive_partitioning')");
+                            "(the setting 'allow_experimental_object_storage_queue_hive_partitioning')");
         }
     }
 
@@ -215,8 +213,16 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     /// weakly by `WithContext` and used by background tasks, so a transient settings copy would expire.
     const bool allow_server_credentials_in_user_queries
         = args.getLocalContext()->getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
-    const bool strict_metadata_check = (args.is_restore_from_backup && !isSecondaryDDLReplay(args.getLocalContext()))
-        || !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext());
+    /// Another replica of a `Replicated` database replays the definition that its initiator has checked.
+    const auto metadata_txn = args.getLocalContext()->getZooKeeperMetadataTransaction();
+    bool is_secondary_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+    is_secondary_ddl_replay |= args.getLocalContext()->getClientInfo().is_shared_catalog_internal
+        && !SharedDatabaseCatalog::isInitialQuery(args.getLocalContext());
+#endif
+    const bool is_replayed_definition = !isFreshTableDefinition(args.mode, args.query.attach_short_syntax)
+        || is_secondary_ddl_replay || args.getLocalContext()->isRecoveryFromStoredMetadata();
+    const bool strict_metadata_check = (args.is_restore_from_backup && !is_secondary_ddl_replay) || !is_replayed_definition;
 
     return std::make_shared<StorageObjectStorageQueue>(
         std::move(queue_settings),
@@ -239,15 +245,12 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
 void registerStorageS3Queue(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory)
 {
-    auto secret_arguments = s3TableEngineSecretArguments();
-    secret_arguments.secret_settings = S3Queue::settingsToHide();
     factory.registerStorage(
         "S3Queue",
         [](const StorageFactory::Arguments & args)
         {
             return createQueueStorage<StorageS3Configuration>(args);
         },
-        std::move(secret_arguments),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -257,6 +260,8 @@ void registerStorageS3Queue(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
+import ScalePlanFeatureBadge from '@theme/badges/ScalePlanFeatureBadge'
+
 # S3Queue table engine
 
 This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ecosystem and allows streaming import. This engine is similar to the [Kafka](/reference/engines/table-engines/integrations/kafka), [RabbitMQ](/reference/engines/table-engines/integrations/rabbitmq) engines, but provides S3-specific features.
@@ -693,7 +698,7 @@ For more information about virtual columns see [here](/reference/engines/table-e
 - `*` — Substitutes any number of any characters except `/` including empty string.
 - `**` — Substitutes any number of any characters include `/` including empty string.
 - `?` — Substitutes any single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. Each string can itself contain the `*` and `?` wildcards, so `{csv,csv.*}` matches both `.csv` and `.csv.gz`.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders. N and M can have leading zeroes e.g. `000..078`.
 
 Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) table function.
@@ -756,7 +761,7 @@ rows_processed:        5068534
 status:                Processed
 processing_start_time: 2023-10-13 13:09:48
 processing_end_time:   2023-10-13 13:10:31
-ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5068534,'SelectedBytes':198132283,'ContextLock':1,'S3QueuePullMicroseconds':273776,'LogTest':17}
+ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5068534,'SelectedBytes':198132283,'ContextLock':1,'S3QueueSetFileProcessingMicroseconds':2480,'S3QueueSetFileProcessedMicroseconds':9985,'S3QueuePullMicroseconds':273776,'LogTest':17}
 exception:
 ```
 
@@ -832,7 +837,7 @@ rows_processed:        5112621
 status:                Processed
 processing_start_time: 2023-10-13 13:09:48
 processing_end_time:   2023-10-13 13:10:12
-ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5112621,'SelectedBytes':198577687,'ContextLock':1,'S3QueuePullMicroseconds':5841972,'LogTest':17}
+ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5112621,'SelectedBytes':198577687,'ContextLock':1,'S3QueueSetFileProcessingMicroseconds':1934,'S3QueueSetFileProcessedMicroseconds':17063,'S3QueuePullMicroseconds':5841972,'LogTest':17}
 exception:
 ```
 )DOCS_MD",
@@ -845,15 +850,12 @@ exception:
 void registerStorageAzureQueue(StorageFactory & factory);
 void registerStorageAzureQueue(StorageFactory & factory)
 {
-    auto secret_arguments = azureTableEngineSecretArguments();
-    secret_arguments.secret_settings = AzureQueue::settingsToHide();
     factory.registerStorage(
         "AzureQueue",
         [](const StorageFactory::Arguments & args)
         {
             return createQueueStorage<StorageAzureConfiguration>(args);
         },
-        std::move(secret_arguments),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -897,7 +899,7 @@ SETTINGS mode = 'unordered'
 
 ## Settings {#settings}
 
-The set of supported settings is mostly the same as for `S3Queue` table engine, but without `s3queue_` prefix. See [full list of settings](/reference/engines/table-engines/integrations/s3queue#settings).
+The set of supported settings is mostly the same as for `S3Queue` table engine, but without `s3queue_` prefix. See [full list of settings settings](/reference/engines/table-engines/integrations/s3queue#settings).
 To get a list of settings, configured for the table, use `system.azure_queue_settings` table. Available from `24.10`.
 
 Below are the settings only compatible with AzureQueue and not applicable for S3Queue.

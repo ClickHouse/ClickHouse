@@ -173,15 +173,13 @@ void Chunk::append(const Chunk & chunk)
 
 void Chunk::append(const Chunk & chunk, size_t from, size_t length)
 {
-    /// A chunk can have rows and no columns, so the number of rows is not taken from the first column.
-    const size_t rows = num_rows + length;
-
     MutableColumns mutable_columns = mutateColumns();
     for (size_t position = 0; position < mutable_columns.size(); ++position)
     {
         auto column = chunk.getColumns()[position];
         mutable_columns[position]->insertRangeFrom(*column, from, length);
     }
+    size_t rows = mutable_columns[0]->size();
     setColumns(std::move(mutable_columns), rows);
 }
 
@@ -218,15 +216,6 @@ void materializeChunk(Chunk & chunk)
     auto columns = chunk.detachColumns();
     for (auto & column : columns)
         column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
-    chunk.setColumns(std::move(columns), num_rows);
-}
-
-void materializeChunk(Chunk & chunk, const ColumnNumbers & column_positions)
-{
-    const size_t num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-    for (const auto pos : column_positions)
-        columns[pos] = removeSpecialRepresentations(columns[pos]->convertToFullColumnIfConst());
     chunk.setColumns(std::move(columns), num_rows);
 }
 

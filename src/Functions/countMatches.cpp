@@ -7,7 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <Interpreters/CancellationBudget.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
 
@@ -44,23 +44,28 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return name; }
-    /// The setting decides the count for the same arguments, see `IFunctionBase::updateHash`.
-    void updateHash(SipHash & hash) const override { hash.update(count_matches_stop_at_empty_match); }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(String | FixedString, const String) -> UInt64";
+        FunctionArgumentDescriptors args
+        {
+            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
+            {"pattern", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "constant String"}
+        };
+        validateFunctionArguments(*this, arguments, args);
+
+        return std::make_shared<DataTypeUInt64>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         std::function<void()> check_cancellation = makeCancellationCheck(name);
 
@@ -73,7 +78,7 @@ public:
         if (col_pattern_const == nullptr)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Pattern argument is not const");
 
-        const OptimizedRegularExpression re = Regexps::createRegexp</*is_like*/ false, /*is_similar_to*/ false, /*no_capture*/ true, CountMatchesBase::case_insensitive>(col_pattern_const->getValue<String>());
+        const OptimizedRegularExpression re = Regexps::createRegexp</*is_like*/ false, /*no_capture*/ true, CountMatchesBase::case_insensitive>(col_pattern_const->getValue<String>());
 
         const IColumn * col_haystack = arguments[0].column.get();
         OptimizedRegularExpression::MatchVec matches;

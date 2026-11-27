@@ -8,8 +8,10 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 <div id="inserting-into-clickhouse-vs-oltp-databases">
-  ## Inserciones en ClickHouse frente a las bases de datos OLTP {#inserting-into-clickhouse-vs-oltp-databases}
+  ## Inserciones en ClickHouse frente a las bases de datos OLTP
 </div>
 
 Como base de datos OLAP (Online Analytical Processing), ClickHouse está optimizado para ofrecer alto rendimiento y escalabilidad, lo que permite insertar potencialmente millones de filas por segundo.
@@ -24,11 +26,11 @@ Para lograr un alto rendimiento de inserción manteniendo sólidas garantías de
 Seguir estas reglas te ayudará a evitar problemas con los que los usuarios suelen encontrarse la primera vez que usan ClickHouse e intentan replicar una estrategia de inserción que funciona en bases de datos OLTP.
 
 <div id="best-practices-for-inserts">
-  ## Buenas prácticas para las inserciones {#best-practices-for-inserts}
+  ## Buenas prácticas para las inserciones
 </div>
 
 <div id="insert-in-large-batch-sizes">
-  ### Insertar en lotes grandes {#insert-in-large-batch-sizes}
+  ### Insertar en lotes grandes
 </div>
 
 De forma predeterminada, cada inserción enviada a ClickHouse hace que ClickHouse cree inmediatamente una parte de almacenamiento que contiene los datos de la inserción, junto con otros metadatos que también deben almacenarse.
@@ -39,7 +41,7 @@ En general, recomendamos insertar datos en lotes bastante grandes, de al menos 1
 Si no es posible usar lotes grandes, utilice inserciones asíncronas como se describe a continuación.
 
 <div id="ensure-consistent-batches-for-idempotent-retries">
-  ### Garantiza lotes coherentes para reintentos idempotentes {#ensure-consistent-batches-for-idempotent-retries}
+  ### Garantiza lotes coherentes para reintentos idempotentes
 </div>
 
 De forma predeterminada, las inserciones en ClickHouse son sincrónicas e idempotentes (es decir, realizar la misma operación de inserción varias veces tiene el mismo efecto que realizarla una sola vez).
@@ -54,7 +56,7 @@ Desde la perspectiva del cliente, puede ser difícil distinguir entre (i) y (ii)
 Siempre que la consulta de inserción reintentada contenga los mismos datos en el mismo orden, ClickHouse ignorará automáticamente la inserción reintentada si la inserción original (sin confirmar) se completó correctamente.
 
 <div id="insert-to-a-mergetree-table-or-a-distributed-table">
-  ### Insertar en una tabla MergeTree o en una tabla distribuida {#insert-to-a-mergetree-table-or-a-distributed-table}
+  ### Insertar en una tabla MergeTree o en una tabla distribuida
 </div>
 
 Recomendamos insertar directamente en una tabla MergeTree (o Replicated), equilibrando las peticiones entre un conjunto de nodos si los datos están segmentados, y establecer `internal_replication=true`.
@@ -63,7 +65,9 @@ Esto permitirá que ClickHouse replique los datos en cualquier réplica disponib
 Si este balanceo de carga del lado del cliente resulta inconveniente, puede insertar mediante una [tabla distribuida](/es/reference/engines/table-engines/special/distributed), que luego distribuirá las escrituras entre los nodos. De nuevo, se recomienda establecer `internal_replication=true`.
 Sin embargo, debe tenerse en cuenta que este enfoque es algo menos eficiente, ya que las escrituras deben realizarse localmente en el nodo con la tabla distribuida y luego enviarse a los segmentos.
 
-### Utilice inserciones asíncronas para lotes pequeños {#use-asynchronous-inserts-for-small-batches}
+<div id="use-asynchronous-inserts-for-small-batches">
+  ### Utilice inserciones asíncronas para lotes pequeños
+</div>
 
 Hay escenarios en los que la agrupación por lotes del lado del cliente no es viable; por ejemplo, un caso de uso de observabilidad con cientos o miles de agentes de propósito único que envían logs, métricas, trazas, etc.
 En este escenario, el transporte en tiempo real de esos datos es clave para detectar problemas y anomalías lo antes posible.
@@ -72,11 +76,7 @@ Si no es posible insertar lotes grandes, puede delegar la agrupación por lotes 
 
 Con las inserciones asíncronas, los datos se insertan primero en un búfer y luego se escriben en el almacenamiento de la base de datos en 3 pasos, como se muestra en el siguiente diagrama:
 
-<div className="ch-image-md">
-  <Frame>
-    ![Inserciones de Postgres](/images/guides/postgres-inserts.webp)
-  </Frame>
-</div>
+<Image img="/images/guides/postgres-inserts.webp" size="md" alt="Inserciones de Postgres" />
 
 Con las inserciones asíncronas habilitadas, ClickHouse:
 
@@ -95,7 +95,7 @@ En general, este mecanismo traslada la agrupación por lotes de datos del lado d
 </Note>
 
 <div id="use-official-clickhouse-clients">
-  ### Usa clientes oficiales de ClickHouse {#use-official-clickhouse-clients}
+  ### Usa clientes oficiales de ClickHouse
 </div>
 
 ClickHouse dispone de clientes para los lenguajes de programación más populares.
@@ -104,7 +104,7 @@ Están optimizados para garantizar que las inserciones se realicen correctamente
 Consulta [Clientes e interfaces nativas](/es/concepts/features/interfaces/native-clients-interfaces-index) para ver la lista completa de clientes y drivers de ClickHouse disponibles.
 
 <div id="prefer-the-native-format">
-  ### Prefiera el formato nativo {#prefer-the-native-format}
+  ### Prefiera el formato nativo
 </div>
 
 ClickHouse admite muchos [formatos de entrada](/es/reference/formats/index) al insertar datos (y al realizar consultas).
@@ -120,7 +120,7 @@ Es más eficiente, en términos de compresión, sobrecarga de red y procesamient
 El formato [JSONEachRow](/es/reference/formats/JSON/JSONEachRow) puede ser una opción si tiene un menor rendimiento de escritura y busca integrarse rápidamente. Debe tener en cuenta que este formato añadirá una sobrecarga de CPU en ClickHouse durante el análisis.
 
 <div id="use-the-http-interface">
-  ### Usa la interfaz HTTP {#use-the-http-interface}
+  ### Usa la interfaz HTTP
 </div>
 
 A diferencia de muchas bases de datos tradicionales, ClickHouse admite una interfaz HTTP.
@@ -133,7 +133,7 @@ El protocolo nativo sí permite seguir fácilmente el progreso de la consulta.
 Consulta [Interfaz HTTP](/es/concepts/features/interfaces/http) para obtener más información.
 
 <div id="basic-example">
-  ## Ejemplo básico {#basic-example}
+  ## Ejemplo básico
 </div>
 
 Puede usar el conocido comando `INSERT INTO TABLE` con ClickHouse. Vamos a insertar algunos datos en la tabla que creamos en la guía de inicio [&quot;Creación de tablas en ClickHouse&quot;](/es/get-started/quickstarts/creating-tables).
@@ -163,7 +163,7 @@ user_id message                                             timestamp           
 ```
 
 <div id="loading-data-from-postgres">
-  ## Cargar datos desde Postgres {#loading-data-from-postgres}
+  ## Cargar datos desde Postgres
 </div>
 
 Para cargar datos desde Postgres, puede usar:
@@ -181,7 +181,7 @@ Para cargar datos desde Postgres, puede usar:
 </Info>
 
 <div id="inserting-data-from-command-line">
-  ## Insertar datos desde la línea de comandos {#inserting-data-from-command-line}
+  ## Insertar datos desde la línea de comandos
 </div>
 
 **Requisitos previos**

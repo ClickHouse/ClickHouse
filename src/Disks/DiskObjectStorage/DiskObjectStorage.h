@@ -1,7 +1,5 @@
 #pragma once
 
-#include <set>
-
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
@@ -10,7 +8,6 @@
 #include <Disks/DiskObjectStorage/Replication/BlobCopierThread.h>
 #include <Disks/IDisk.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/FileCache/FileCache_fwd.h>
 
 #include <base/scope_guard.h>
 
@@ -204,8 +201,6 @@ public:
 
     ObjectStoragePtr getObjectStorage() override;
 
-    std::unordered_map<Location, ObjectStoragePtr> getObjectStorages() const { return object_storages->getRegistry(); }
-
     bool supportsCache() const override;
 
     /// Is object storage read only?
@@ -223,8 +218,6 @@ public:
 
     bool prefersRecursiveRemoval() const override;
 
-    bool supportsAtomicFileCreation() const override;
-
     /// Return true if the disk is "shared-compatible", i.e. does not uses local disks
     bool isSharedCompatible() const;
 
@@ -240,14 +233,7 @@ public:
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// There can be any number of cache layers:
     /// DiskObjectStorage(CachedObjectStorage(...CacheObjectStorage(S3ObjectStorage)...))
-    /// The configuration of the cache layer is the section the cache disk is defined in, and it has
-    /// to be passed here: a disk defined in a query is not present in the server configuration at all.
-    DiskObjectStoragePtr wrapWithCache(
-        FileCachePtr cache,
-        const FileCacheSettings & cache_settings,
-        const String & layer_name,
-        const Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix) const;
+    DiskObjectStoragePtr wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name) const;
 
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
     NameSet getCacheLayersNames() const override;
@@ -255,6 +241,9 @@ public:
 
     bool supportsStat() const override { return metadata_storage->supportsStat(); }
     struct stat stat(const String & path) const override;
+
+    bool supportsChmod() const override { return metadata_storage->supportsChmod(); }
+    void chmod(const String & path, mode_t mode) override;
 
 #if USE_AWS_S3
     std::shared_ptr<const S3::Client> getS3StorageClient() const override;
@@ -302,10 +291,6 @@ private:
     String write_resource_name_from_sql; // described by CREATE RESOURCE query with WRITE DISK clause
     String read_resource_name_from_sql_any; // described by CREATE RESOURCE query with READ ANY DISK clause
     String write_resource_name_from_sql_any; // described by CREATE RESOURCE query with WRITE ANY DISK clause
-    std::set<String> read_resource_candidates; /// All resources with READ DISK for this disk, the first one is selected
-    std::set<String> write_resource_candidates;
-    std::set<String> read_resource_any_candidates;
-    std::set<String> write_resource_any_candidates;
     scope_guard resource_changes_subscription;
     std::atomic_bool enable_distributed_cache;
 
@@ -324,13 +309,13 @@ public:
         , metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
     {}
 
-    [[nodiscard]] UInt64 getSize() const override { return size; }
+    UInt64 getSize() const override { return size; }
 
-    [[nodiscard]] std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
+    std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
 
-    [[nodiscard]] DiskPtr getDisk(size_t i) const override;
+    DiskPtr getDisk(size_t i) const override;
 
-    [[nodiscard]] Disks getDisks() const override { return {disk}; }
+    Disks getDisks() const override { return {disk}; }
 
     void update(UInt64 new_size) override;
 

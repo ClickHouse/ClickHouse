@@ -1,3 +1,4 @@
+set enable_json_type=1;
 
 select '{}'::JSON as j1, '{}'::JSON as j2, j1 < j2, j1 = j2, j1 > j2;
 select '{"a" : 1}'::JSON as j1, '{}'::JSON as j2, j1 < j2, j1 = j2, j1 > j2;

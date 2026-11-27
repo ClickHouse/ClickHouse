@@ -6,19 +6,19 @@ keywords: ['schema', 'schema 设计', '查询优化']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 理解高效的 schema 设计是优化 ClickHouse 性能的关键。这涉及一系列往往需要权衡取舍的选择，而最佳方案取决于所处理的查询，以及数据更新频率、延迟要求和数据量等因素。本指南概述了优化 ClickHouse 性能时在 schema 设计和数据建模方面的最佳实践。
 
-## Stack Overflow 数据集 {#stack-overflow-dataset}
+<div id="stack-overflow-dataset">
+  ## Stack Overflow 数据集
+</div>
 
 在本指南的示例中，我们使用 Stack Overflow 数据集的一个子集。它包含 2008 年至 2024 年 4 月期间 Stack Overflow 上产生的所有帖子、投票、用户、注释和徽章。这些数据以 Parquet 格式存储在 S3 bucket `s3://datasets-documentation/stackoverflow/parquet/` 中，其 schema 如下所示：
 
 > 图中标出的主键和关系并未通过约束强制实施 (Parquet 是文件格式，不是表格式) ，仅用于说明数据之间的关联方式以及各自具备的唯一键。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Stack Overflow Schema](/images/data-modeling/stackoverflow-schema.webp)
-  </Frame>
-</div>
+<Image img="/images/data-modeling/stackoverflow-schema.webp" size="lg" alt="Stack Overflow Schema" />
 
 <br />
 
@@ -27,7 +27,7 @@ Stack Overflow 数据集包含多个相互关联的表。在任何数据建模�
 出于本指南的目的，上述 schema 是特意设计为非最优的。
 
 <div id="establish-initial-schema">
-  ## 建立初始 schema {#establish-initial-schema}
+  ## 建立初始 schema
 </div>
 
 由于 `posts` 表将是大多数分析查询的目标，因此我们重点为该表建立 schema。这些数据位于公共 S3 bucket `s3://datasets-documentation/stackoverflow/parquet/posts/*.parquet` 中，其中每个年份对应一个文件。
@@ -133,7 +133,7 @@ INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.
 > 上述查询会加载 6000 万行。虽然对于 ClickHouse 来说这不算大，但网速较慢的用户可能只想加载部分数据。只需通过通配符模式指定要加载的年份即可，例如 `https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2008.parquet` 或 `https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/{2008, 2009}.parquet`。有关如何使用通配符模式定位部分文件，请参见[此处](/zh/reference/functions/table-functions/file#globs-in-path)。
 
 <div id="optimizing-types">
-  ## 优化类型 {#optimizing-types}
+  ## 优化类型
 </div>
 
 ClickHouse 查询性能的关键之一在于压缩。
@@ -231,15 +231,13 @@ INSERT INTO posts_v2 SELECT * FROM posts
 ClickHouse 中的主键 (排序键)
 从 OLTP 数据库迁移过来的用户，往往会在 ClickHouse 中寻找与之对应的概念。
 
-## 选择排序键 {#choosing-an-ordering-key}
+<div id="choosing-an-ordering-key">
+  ## 选择排序键
+</div>
 
 在 ClickHouse 常见的使用规模下，内存和磁盘效率至关重要。数据会以称为 parts 的块写入 ClickHouse 表，并按照既定规则在后台对这些 parts 进行合并。在 ClickHouse 中，每个 part 都有自己的主索引。当 parts 合并时，合并后 part 的主索引也会一并合并。对于一个 part，主索引中每组行对应一条索引项——这种技术称为稀疏索引。
 
-<div className="ch-image-md">
-  <Frame>
-    ![ClickHouse 中的稀疏索引](/images/data-modeling/schema-design-indices.webp)
-  </Frame>
-</div>
+<Image img="/images/data-modeling/schema-design-indices.webp" size="md" alt="ClickHouse 中的稀疏索引" />
 
 在 ClickHouse 中，所选的键不仅决定索引，还决定数据在磁盘上的写入顺序。因此，它会显著影响压缩效果，进而影响查询性能。如果某个排序键能让大多数列的值按连续方式存储，就能让所选的压缩算法 (以及编解码器) 更高效地压缩数据。
 
@@ -255,7 +253,7 @@ ClickHouse 中的主键 (排序键)
 在确定排序键的列子集时，还需要按特定顺序声明这些列。这个顺序会显著影响查询中过滤次级键列的效率，以及表数据文件的压缩率。一般来说，最好按照基数升序排列这些键。但这也需要权衡这样一个事实：对排序键中靠后的列进行过滤，其效率低于对靠前列进行过滤。请在这些因素之间做好平衡，并结合你的访问模式进行考虑 (最重要的是测试不同变体) 。
 
 <div id="example">
-  ### 示例 {#example}
+  ### 示例
 </div>
 
 将上述准则应用到我们的 `posts` 表时，假设用户希望进行按日期和帖子类型过滤的分析，例如：
@@ -352,7 +350,7 @@ LIMIT 3
 对于想了解通过使用特定数据类型和合适排序键所带来的压缩提升的用户，请参阅[ClickHouse 中的压缩](/zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)。如果您还需要进一步提升压缩效果，我们也建议阅读[选择合适的列压缩编解码器](/zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec)一节。
 
 <div id="next-data-modeling-techniques">
-  ## 下一步：数据建模技术 {#next-data-modeling-techniques}
+  ## 下一步：数据建模技术
 </div>
 
 到目前为止，我们只迁移了一个表。虽然这样便于我们介绍 ClickHouse 的一些核心概念，但遗憾的是，大多数 schema 并没有这么简单。

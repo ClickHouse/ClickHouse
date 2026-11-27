@@ -9,29 +9,19 @@
 namespace DB
 {
 
-class ColumnString;
-
 /// Drives text-index analysis during a granule's dictionary scan: folds per-query
 /// token postings and row ranges, then bypasses queries that have failed or are no
 /// longer worth evaluating (low-selectivity hints, pattern bypass).
 class TextIndexAnalyzer
 {
 public:
-    /// Half-open range of dictionary token keys. An empty `end` reaches the end of the dictionary.
-    /// Equal bounds are the single key `begin`, not an empty range.
-    struct TokenKeyRange
-    {
-        String begin;
-        String end;
-    };
-
     struct ReadableRows
     {
     public:
         explicit ReadableRows(std::vector<RowsRange> ranges_);
-        [[nodiscard]] std::optional<RowsRange> clipRowsRange(const RowsRange & rows_range) const;
+        std::optional<RowsRange> clipRowsRange(const RowsRange & rows_range) const;
         PostingList clipPostings(const PostingList & postings);
-        [[nodiscard]] size_t getSizeInBytes() const;
+        size_t getSizeInBytes() const;
 
     private:
         std::vector<RowsRange> ranges;
@@ -65,32 +55,31 @@ public:
         void markFailed();
         void markBypassed();
         void addMissingToken(std::string_view token);
-        /// `embedded_postings` are the clipped embedded postings, or nullptr if there are none.
-        void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range, const PostingList * embedded_postings);
+        void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range);
         void addRowsRange(RowsRange token_rows_range);
         void addPostings(const PostingList & token_postings);
         bool needReadPostings() const { return num_read_postings < tokens.size(); }
 
         /// Sorted array of `postings`, built once and shared by all readers of the granule.
         /// It is clipped to this query's readable rows, so it must never go to the server-wide postings cache.
-        PaddedPODArrayPtr getFlatPostings() const;
+        FlatPostingsPtr getFlatPostings() const;
 
     private:
         mutable std::once_flag flat_postings_once;
-        mutable PaddedPODArrayPtr flat_postings;
+        mutable FlatPostingsPtr flat_postings;
     };
 
     explicit TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text);
 
-    [[nodiscard]] bool alwaysFalse() const { return always_false; }
-    [[nodiscard]] const TokenToPostingsInfosMap & getAllTokenInfos() const { return all_token_infos; }
-    [[nodiscard]] const absl::flat_hash_set<String> & getMissingTokens() const { return missing_tokens; }
-    [[nodiscard]] const QueryBuilder & getQueryBuilder(const TextSearchQuery & query) const;
+    bool alwaysFalse() const { return always_false; }
+    const TokenToPostingsInfosMap & getAllTokenInfos() const { return all_token_infos; }
+    const absl::flat_hash_set<String> & getMissingTokens() const { return missing_tokens; }
+    const QueryBuilder & getQueryBuilder(const TextSearchQuery & query) const;
 
     /// True if at least one active query still depends on this token.
-    [[nodiscard]] bool isTokenNeeded(std::string_view token) const;
+    bool isTokenNeeded(std::string_view token) const;
     /// True if this token's posting list has already been added (embdded or read from disk).
-    [[nodiscard]] bool hasReadPostings(std::string_view token) const;
+    bool hasReadPostings(std::string_view token) const;
 
     void addMissingToken(std::string_view token);
     void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
@@ -101,15 +90,6 @@ public:
     /// Attaches a scan-discovered `token` to every pattern query whose regex matches it.
     /// Returns true if any pattern matched.
     bool addTokenToPatterns(std::string_view token);
-    /// One key range per pattern, or nothing when some pattern can match tokens anywhere in the dictionary.
-    [[nodiscard]] std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
-    [[nodiscard]] bool canFilterTokensByLiterals() const;
-    [[nodiscard]] bool canIntersectDictionary() const { return !pattern_cursors.empty(); }
-    /// Like `TextIndexDictionaryDFA::Cursor::next`, but for the union of all pattern DFAs: `token` matches if any
-    /// DFA accepts it, and `lower_bound` is the smallest lower bound of all DFAs.
-    TextIndexDictionaryDFA::Cursor::Result nextPatternToken(std::string_view token, String & lower_bound);
-    /// Appends, ascending, the tokens `addTokenToPatterns` accepts, running it only on those holding a pattern's literal.
-    void matchTokensByLiterals(const ColumnString & tokens, PaddedPODArray<UInt8> & candidate_marks, std::vector<size_t> & matched_indices);
     /// Marks all pattern queries as bypassed (e.g. dictionary scan budget exhausted).
     void bypassPatternQueries();
 
@@ -125,9 +105,6 @@ private:
     template <typename Operation>
     void processTokenOperation(std::string_view token, Operation && operation);
 
-    static void markPatternCandidateTokens(
-        const OptimizedRegularExpression & pattern, const ColumnString & tokens, PaddedPODArray<UInt8> & candidate_marks);
-
     /// Removes the query from `queries_by_token` for all affected tokens, so they stop passing `isTokenNeeded`.
     void detachQueryFromTokens(const UInt128 & query_hash, const QueryBuilder & query_builder);
 
@@ -135,7 +112,7 @@ private:
     void markAllQueriesFailed();
 
     /// Estimates the cardinality of a query from already-read postings and `cardinality` hints for unread tokens.
-    [[nodiscard]] double estimateQueryCardinality(const QueryBuilder & query_builder, size_t total_rows) const;
+    double estimateQueryCardinality(const QueryBuilder & query_builder, size_t total_rows) const;
 
     /* Fields built in the constructor from MergeTreeIndexConditionText. */
 
@@ -146,7 +123,6 @@ private:
     absl::flat_hash_map<String, QueryHashes> queries_by_token;
     /// Pattern queries grouped by their compiled regex; static for the analyzer's lifetime.
     absl::flat_hash_map<const OptimizedRegularExpression *, QueryHashes> queries_by_pattern;
-    std::vector<TextIndexDictionaryDFA::Cursor> pattern_cursors;
 
     /* Fields updated dynamically during text index analysis. */
 

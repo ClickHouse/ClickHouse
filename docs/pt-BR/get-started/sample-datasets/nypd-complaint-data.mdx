@@ -22,12 +22,16 @@ O conjunto de dados usado neste guia vem da equipe do NYC Open Data e contém da
 **Origem**: [data.cityofnewyork.us](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)
 **Termos de uso**: https://www1.nyc.gov/home/terms-of-use.page
 
-## Pré-requisitos {#prerequisites}
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
 
 * Baixe o conjunto de dados acessando a página [NYPD Complaint Data Current (Year To Date)](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243), clicando no botão **Export** e selecionando **TSV for Excel**.
 * Instale o [servidor e o cliente do ClickHouse](/pt-BR/get-started/setup/install)
 
-### Uma observação sobre os comandos descritos neste guia {#a-note-about-the-commands-described-in-this-guide}
+<div id="a-note-about-the-commands-described-in-this-guide">
+  ### Uma observação sobre os comandos descritos neste guia
+</div>
 
 Há dois tipos de comandos neste guia:
 
@@ -38,11 +42,15 @@ Há dois tipos de comandos neste guia:
   Os exemplos neste guia pressupõem que você salvou o arquivo TSV em `${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv`; ajuste os comandos, se necessário.
 </Note>
 
-## Conheça o arquivo TSV {#familiarize-yourself-with-the-tsv-file}
+<div id="familiarize-yourself-with-the-tsv-file">
+  ## Conheça o arquivo TSV
+</div>
 
 Antes de começar a trabalhar com o banco de dados ClickHouse, conheça os dados.
 
-### Veja os campos do arquivo TSV de origem {#look-at-the-fields-in-the-source-tsv-file}
+<div id="look-at-the-fields-in-the-source-tsv-file">
+  ### Veja os campos do arquivo TSV de origem
+</div>
 
 Este é um exemplo de comando para consultar um arquivo TSV, mas não o execute ainda.
 
@@ -117,7 +125,9 @@ New Georeferenced Column Nullable(String)
 
 Neste ponto, você deve verificar se as colunas do arquivo TSV correspondem aos nomes e tipos especificados na seção **Columns in this Dataset** da [página do conjunto de dados](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243).  Os tipos de dados não são muito específicos: todos os campos numéricos estão definidos como `Nullable(Float64)`, e todos os demais campos como `Nullable(String)`.  Ao criar uma tabela no ClickHouse para armazenar os dados, você pode especificar tipos mais adequados e com melhor desempenho.
 
-### Determine o esquema adequado {#determine-the-proper-schema}
+<div id="determine-the-proper-schema">
+  ### Determine o esquema adequado
+</div>
 
 Para determinar quais tipos devem ser usados nos campos, é necessário saber como os dados se apresentam. Por exemplo, o campo `JURISDICTION_CODE` é numérico: ele deve ser `UInt8` ou `Enum`, ou `Float64` seria apropriado?
 
@@ -201,7 +211,9 @@ clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
 
 O conjunto de dados em uso no momento da redação tem apenas algumas centenas de parques e playgrounds distintos na coluna `PARK_NM`.  Esse é um número baixo, com base na recomendação de [LowCardinality](/pt-BR/reference/data-types/lowcardinality#description) de manter menos de 10.000 strings distintas em um campo `LowCardinality(String)`.
 
-### Campos DateTime {#datetime-fields}
+<div id="datetime-fields">
+  ### Campos DateTime
+</div>
 
 Com base na seção **Columns in this Dataset** da [página do conjunto de dados](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243), há campos de data e hora para o início e o fim do evento relatado. Observar os valores mínimo e máximo de `CMPLNT_FR_DT` e `CMPLT_TO_DT` ajuda a entender se esses campos são sempre preenchidos ou não:
 
@@ -261,7 +273,9 @@ FORMAT PrettyCompact"
 └───────────────────┴───────────────────┘
 ```
 
-## Elabore um plano {#make-a-plan}
+<div id="make-a-plan">
+  ## Elabore um plano
+</div>
 
 Com base na investigação acima:
 
@@ -279,7 +293,9 @@ Com base na investigação acima:
   Há muitas outras alterações a serem feitas nos tipos, e todas elas podem ser determinadas seguindo as mesmas etapas de investigação. Observe o número de strings distintas em um campo, os valores mínimo e máximo dos números e tome suas decisões. O esquema da tabela apresentado mais adiante no guia tem muitas strings de baixa cardinalidade e campos inteiros sem sinal, além de pouquíssimos números de ponto flutuante.
 </Note>
 
-## Concatene os campos de data e hora {#concatenate-the-date-and-time-fields}
+<div id="concatenate-the-date-and-time-fields">
+  ## Concatene os campos de data e hora
+</div>
 
 Para concatenar os campos de data e hora `CMPLNT_FR_DT` e `CMPLNT_FR_TM` em uma única `String` que possa ser convertida para `DateTime`, selecione os dois campos unidos pelo operador de concatenação: `CMPLNT_FR_DT || ' ' || CMPLNT_FR_TM`. Os campos `CMPLNT_TO_DT` e `CMPLNT_TO_TM` são tratados da mesma forma.
 
@@ -307,7 +323,9 @@ FORMAT PrettyCompact"
 └─────────────────────┘
 ```
 
-## Converta a String de data e hora em um tipo DateTime64 {#convert-the-date-and-time-string-to-a-datetime64-type}
+<div id="convert-the-date-and-time-string-to-a-datetime64-type">
+  ## Converta a String de data e hora em um tipo DateTime64
+</div>
 
 Anteriormente, neste guia, vimos que há datas no arquivo TSV anteriores a 1º de janeiro de 1970, o que significa que precisamos de um tipo DateTime de 64 bits para essas datas. As datas também precisam ser convertidas do formato `MM/DD/YYYY` para `YYYY/MM/DD`. Ambas as tarefas podem ser feitas com [`parseDateTime64BestEffort()`](/pt-BR/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort).
 
@@ -360,7 +378,9 @@ As linhas 2 e 3 acima contêm a concatenação da etapa anterior, e as linhas 4 
   As datas exibidas acima como `1925` se devem a erros nos dados.  Há vários registros nos dados originais com datas nos anos `1019` - `1022` que deveriam ser `2019` - `2022`.  Essas datas estão sendo armazenadas como 1º de janeiro de 1925, pois essa é a data mais antiga compatível com um DateTime de 64 bits.
 </Note>
 
-## Criar uma tabela {#create-a-table}
+<div id="create-a-table">
+  ## Criar uma tabela
+</div>
 
 As decisões tomadas acima sobre os tipos de dados usados nas colunas estão refletidas no esquema da tabela
 abaixo. Também precisamos definir o `ORDER BY` e a `PRIMARY KEY` da tabela. Pelo menos um
@@ -368,7 +388,9 @@ entre `ORDER BY` e `PRIMARY KEY` deve ser especificado. Aqui estão algumas dire
 colunas incluir em `ORDER BY`; mais informações estão na seção *Próximos passos* no final
 deste documento.
 
-### Cláusulas `ORDER BY` e `PRIMARY KEY` {#order-by-and-primary-key-clauses}
+<div id="order-by-and-primary-key-clauses">
+  ### Cláusulas `ORDER BY` e `PRIMARY KEY`
+</div>
 
 * A tupla `ORDER BY` deve incluir campos usados nos filtros da consulta
 * Para maximizar a compressão em disco, a tupla `ORDER BY` deve ser ordenada por cardinalidade crescente
@@ -460,7 +482,9 @@ CREATE TABLE NYPD_Complaint (
   ORDER BY ( borough, offense_description, date_reported )
 ```
 
-### Encontrando a chave primária de uma tabela {#finding-the-primary-key-of-a-table}
+<div id="finding-the-primary-key-of-a-table">
+  ### Encontrando a chave primária de uma tabela
+</div>
 
 O banco de dados `system` do ClickHouse, mais especificamente `system.table`, contém todas as informações sobre a tabela que você
 acabou de criar. Esta consulta mostra o `ORDER BY` (chave de ordenação) e a `PRIMARY KEY`:
@@ -491,11 +515,15 @@ table:         NYPD_Complaint
 1 row in set. Elapsed: 0.001 sec.
 ```
 
-## Pré-processar e importar dados {#preprocess-import-data}
+<div id="preprocess-import-data">
+  ## Pré-processar e importar dados
+</div>
 
 Usaremos a ferramenta `clickhouse-local` para pré-processar os dados e o `clickhouse-client` para enviá-los.
 
-### Argumentos usados no `clickhouse-local` {#clickhouse-local-arguments-used}
+<div id="clickhouse-local-arguments-used">
+  ### Argumentos usados no `clickhouse-local`
+</div>
 
 <Tip>
   `table='input'` aparece nos argumentos do clickhouse-local abaixo. O clickhouse-local recebe a entrada fornecida (`cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv`) e insere esses dados em uma tabela. Por padrão, a tabela se chama `table`. Neste guia, o nome da tabela é definido como `input` para deixar o fluxo de dados mais claro. O argumento final do clickhouse-local é uma consulta que seleciona dados da tabela (`FROM input`), que então é enviada por pipe para o `clickhouse-client` para preencher a tabela `NYPD_Complaint`.
@@ -545,7 +573,9 @@ cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv \
   | clickhouse-client --query='INSERT INTO NYPD_Complaint FORMAT TSV'
 ```
 
-## Valide os dados {#validate-data}
+<div id="validate-data">
+  ## Valide os dados
+</div>
 
 <Note>
   O conjunto de dados muda uma ou mais vezes por ano, então suas contagens podem não corresponder às deste documento.
@@ -578,9 +608,13 @@ WHERE name = 'NYPD_Complaint'
 └─────────────────────────────────┘
 ```
 
-## Execute algumas consultas {#run-queries}
+<div id="run-queries">
+  ## Execute algumas consultas
+</div>
 
-### Consulta 1. Compare o número de reclamações por mês {#query-1-compare-the-number-of-complaints-by-month}
+<div id="query-1-compare-the-number-of-complaints-by-month">
+  ### Consulta 1. Compare o número de reclamações por mês
+</div>
 
 ```sql title="Query"
 SELECT
@@ -613,7 +647,9 @@ Query id: 7fbd4244-b32a-4acf-b1f3-c3aa198e74d9
 12 rows in set. Elapsed: 0.006 sec. Processed 208.99 thousand rows, 417.99 KB (37.48 million rows/s., 74.96 MB/s.)
 ```
 
-### Consulta 2. Compare o número total de reclamações por distrito {#query-2-compare-total-number-of-complaints-by-borough}
+<div id="query-2-compare-total-number-of-complaints-by-borough">
+  ### Consulta 2. Compare o número total de reclamações por distrito
+</div>
 
 ```sql title="Query"
 SELECT
@@ -640,6 +676,8 @@ Query id: 8cdcdfd4-908f-4be0-99e3-265722a2ab8d
 6 rows in set. Elapsed: 0.008 sec. Processed 208.99 thousand rows, 209.43 KB (27.14 million rows/s., 27.20 MB/s.)
 ```
 
-## Próximos passos {#next-steps}
+<div id="next-steps">
+  ## Próximos passos
+</div>
 
 [Uma introdução prática aos índices primários esparsos no ClickHouse](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes) discute as diferenças de indexação no ClickHouse em comparação com bancos de dados relacionais tradicionais, como o ClickHouse cria e usa um índice primário esparso e as práticas recomendadas de indexação.

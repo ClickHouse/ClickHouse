@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['Kafka', '메트릭', 'OTel', 'ClickStack', 'JMX']
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -16,7 +18,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="existing-kafka">
-  ## 기존 Kafka 배포와 통합 {#existing-kafka}
+  ## 기존 Kafka 배포와 통합
 </div>
 
 기존 Kafka 배포를 모니터링하려면 OpenTelemetry JMX Metric Gatherer 컨테이너를 실행하여 메트릭을 수집하고 OTLP를 통해 ClickStack으로 전송하십시오.
@@ -24,7 +26,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 기존 설정을 수정하지 않고 먼저 이 통합을 테스트하려면 [데모 데이터셋 섹션](#demo-dataset)으로 건너뛰십시오.
 
 <div id="prerequisites">
-  ##### 사전 요구 사항 {#prerequisites}
+  ##### 사전 요구 사항
 </div>
 
 * 실행 중인 ClickStack 인스턴스
@@ -36,16 +38,12 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
   <Step title="ClickStack API Key 가져오기" id="get-api-key">
     JMX Metric Gatherer는 데이터를 ClickStack의 OTLP 엔드포인트로 전송하며, 이 엔드포인트에는 인증이 필요합니다.
 
-    1. ClickStack URL에서 ClickStack UI를 여세요(예: http://localhost:8080)
+    1. ClickStack URL에서 HyperDX를 여세요(예: http://localhost:8080)
     2. 필요한 경우 계정을 만들거나 로그인하세요
     3. **Team Settings → API Keys**로 이동하세요
     4. **수집 API Key**를 복사하세요
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![ClickStack API Key](/images/clickstack/api-key.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key" />
 
     5. 환경 변수로 설정하세요:
 
@@ -170,8 +168,8 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     * `10000` - 밀리초 단위 수집 인터벌(10초)
   </Step>
 
-  <Step title="ClickStack UI에서 메트릭 확인" id="verify-metrics">
-    ClickStack UI에 로그인하고 메트릭이 수집되고 있는지 확인합니다:
+  <Step title="HyperDX에서 메트릭 확인" id="verify-metrics">
+    HyperDX에 로그인하고 메트릭이 수집되고 있는지 확인합니다:
 
     1. Chart Explorer로 이동합니다
     2. `kafka.message.count` 또는 `kafka.partition.count`를 검색합니다
@@ -202,7 +200,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="demo-dataset">
-  ## 데모 데이터셋 {#demo-dataset}
+  ## 데모 데이터셋
 </div>
 
 프로덕션 시스템을 구성하기 전에 Kafka 메트릭 통합을 테스트하려는 사용자를 위해, 실제와 유사한 Kafka 메트릭 패턴이 반영된 사전 생성 데이터셋을 제공합니다.
@@ -223,7 +221,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 
     * **06:00-08:00: 아침 시간대 급증** - 야간 기준치에서 트래픽이 급격히 증가
     * **10:00-10:15: 플래시 세일** - 평소 트래픽의 3.5배까지 급증
-    * **11:30: 배포 이벤트** - 복제본이 부족한 파티션(under-replicated partitions)과 함께 consumer lag가 12배 급증
+    * **11:30: 배포 이벤트** - 복제가 부족한 파티션과 함께 consumer lag가 12배 급증
     * **14:00-15:30: 쇼핑 피크 시간대** - 기준치의 2.8배 수준의 높은 트래픽이 지속
     * **17:00-17:30: 퇴근 후 급증** - 두 번째 트래픽 피크
     * **18:45: consumer 리밸런싱** - 리밸런싱 중 lag가 6배 급증
@@ -254,7 +252,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="ClickStack UI에서 메트릭 확인" id="verify-demo-metrics">
+  <Step title="HyperDX에서 메트릭 확인" id="verify-demo-metrics">
     로드가 완료되면 메트릭을 가장 빠르게 확인하는 방법은 사전 구축된 대시보드를 사용하는 것입니다.
 
     [대시보드 및 시각화](#dashboards) 섹션으로 이동하여 대시보드를 가져오고 모든 Kafka 메트릭을 한 번에 확인하세요.
@@ -262,12 +260,14 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     <Info>
       **시간대 표시**
 
-      ClickStack UI는 브라우저의 로컬 시간대로 timestamp를 표시합니다. 데모 데이터는 **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)** 기간에 걸쳐 있습니다. 위치와 관계없이 데모 메트릭이 표시되도록 시간 범위를 **2025-11-04 16:00:00 - 2025-11-07 16:00:00**로 설정하세요. 메트릭이 표시되면 더 명확하게 시각화할 수 있도록 범위를 24시간으로 좁힐 수 있습니다.
+      HyperDX는 브라우저의 로컬 시간대로 timestamp를 표시합니다. 데모 데이터는 **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)** 기간에 걸쳐 있습니다. 위치와 관계없이 데모 메트릭이 표시되도록 시간 범위를 **2025-11-04 16:00:00 - 2025-11-07 16:00:00**로 설정하세요. 메트릭이 표시되면 더 명확하게 시각화할 수 있도록 범위를 24시간으로 좁힐 수 있습니다.
     </Info>
   </Step>
 </Steps>
 
-## 대시보드 및 시각화 {#dashboards}
+<div id="dashboards">
+  ## 대시보드 및 시각화
+</div>
 
 ClickStack을 사용해 Kafka 모니터링을 빠르게 시작할 수 있도록 Kafka 메트릭에 대한 핵심 시각화를 제공합니다.
 
@@ -277,52 +277,42 @@ ClickStack을 사용해 Kafka 모니터링을 빠르게 시작할 수 있도록 
   </Step>
 
   <Step title="사전 구축된 대시보드 가져오기" id="import-dashboard">
-    1. ClickStack UI를 열고 대시보드 섹션으로 이동합니다
-    2. 오른쪽 상단의 점 3개 메뉴에서 **대시보드 가져오기**를 클릭합니다
+    1. HyperDX를 열고 Dashboards 섹션으로 이동합니다
+    2. 오른쪽 상단의 점 3개 메뉴에서 **Import Dashboard**를 클릭합니다
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![대시보드 가져오기 버튼](/images/clickstack/import-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/import-dashboard.webp" alt="대시보드 가져오기 버튼" />
 
-    3. `kafka-metrics-dashboard.json` 파일을 업로드한 다음 **가져오기 완료**를 클릭합니다
+    3. `kafka-metrics-dashboard.json` 파일을 업로드한 다음 **Finish Import**를 클릭합니다
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![가져오기 완료 대화상자](/images/clickstack/kafka/import-kafka-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/kafka/import-kafka-dashboard.webp" alt="가져오기 완료 대화상자" />
   </Step>
 
   <Step title="대시보드 보기" id="created-dashboard">
     모든 시각화가 미리 구성된 상태로 대시보드가 생성됩니다.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Kafka 메트릭 대시보드](/images/clickstack/kafka/kafka-metrics-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/kafka/kafka-metrics-dashboard.webp" alt="Kafka 메트릭 대시보드" />
 
     <Note>
-      데모 데이터셋의 경우 시간 범위를 **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)**&#xB85C; 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되어 있지 않습니다.
+      데모 데이터셋의 경우 시간 범위를 **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)**로 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되어 있지 않습니다.
     </Note>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## 문제 해결 {#troubleshooting}
+  ## 문제 해결
 </div>
 
-### ClickStack UI에 메트릭이 표시되지 않는 경우 {#no-metrics}
+<div id="no-metrics">
+  ### HyperDX에 메트릭이 표시되지 않는 경우
+</div>
 
 **API Key가 설정되어 컨테이너에 전달되는지 확인하세요:**
 
 ```bash
-# Check environment variable
+# 환경 변수 확인
 echo $CLICKSTACK_API_KEY
 
-# Verify it's in the container
+# 컨테이너 내 환경 변수 확인
 docker exec <jmx-exporter-container> env | grep CLICKSTACK_API_KEY
 ```
 
@@ -353,18 +343,20 @@ docker compose logs kafka-jmx-exporter | grep -i "error\|connection" | tail -10
 **메트릭을 채우기 위해 Kafka 트래픽을 발생시킵니다:**
 
 ```bash
-# Create a test topic
+# 테스트 토픽 생성
 docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-topic --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1"
 
-# Send test messages
+# 테스트 메시지 전송
 echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
 ```
 
-### 인증 오류 {#auth-errors}
+<div id="auth-errors">
+  ### 인증 오류
+</div>
 
 `Authorization failed` 또는 `401 Unauthorized`가 표시되면:
 
-1. ClickStack UI에서 API Key를 확인하세요 (설정 → API Keys → 수집 API key)
+1. HyperDX UI에서 API Key를 확인하세요 (설정 → API Keys → 수집 API key)
 2. 다시 export하고 재시작하세요:
 
 ```bash
@@ -374,7 +366,7 @@ docker compose up -d
 ```
 
 <div id="port-conflicts">
-  ### Kafka 클라이언트 명령 실행 시 포트 충돌 {#port-conflicts}
+  ### Kafka 클라이언트 명령 실행 시 포트 충돌
 </div>
 
 Kafka 컨테이너 내부에서 Kafka 명령을 실행할 때 다음과 같은 메시지가 표시될 수 있습니다:
@@ -390,7 +382,7 @@ docker exec kafka bash -c "unset JMX_PORT && kafka-topics --list --bootstrap-ser
 ```
 
 <div id="network-issues">
-  ### 네트워크 연결 문제 {#network-issues}
+  ### 네트워크 연결 문제
 </div>
 
 JMX exporter 로그에 `Connection refused`가 표시되면 다음 사항을 확인하십시오.
@@ -410,14 +402,16 @@ docker exec <jmx-exporter-container> sh -c "timeout 2 bash -c 'cat < /dev/null >
 ```
 
 <div id="next-steps">
-  ## 다음 단계 {#next-steps}
+  ## 다음 단계
 </div>
 
 * 중요한 메트릭(과소 복제된 파티션, consumer lag 증가, 요청 지연 시간 급증)에 대한 [알림](/ko/clickstack/features/alerts)을 설정하세요
 * 특정 사용 사례에 맞는 추가 대시보드(토픽별 처리량, consumer group 모니터링)를 만드세요
 * 고유한 `kafka.broker.id` resource 속성을 사용해 추가 JMX Metric Gatherer 인스턴스를 배포하여 여러 Kafka broker를 모니터링하세요
 
-## 프로덕션 환경에서 사용하기 {#going-to-production}
+<div id="going-to-production">
+  ## 프로덕션 환경에서 사용하기
+</div>
 
 이 가이드에서는 메트릭을 JMX Metric Gatherer에서 ClickStack의 OTLP endpoint로 직접 전송하며, 이 방식은 테스트와 소규모 배포에 적합합니다.
 

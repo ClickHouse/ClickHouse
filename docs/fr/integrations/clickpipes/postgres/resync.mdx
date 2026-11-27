@@ -10,8 +10,10 @@ integration:
   - category: 'clickpipes'
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
+
 <div id="what-postgres-resync-do">
-  ### Que fait Resync ? {#what-postgres-resync-do}
+  ### Que fait Resync ?
 </div>
 
 Une resynchronisation comprend les opérations suivantes, dans l&#39;ordre :
@@ -24,7 +26,7 @@ Une resynchronisation comprend les opérations suivantes, dans l&#39;ordre :
 Tous les paramètres du ClickPipe d&#39;origine sont conservés dans le ClickPipe de resynchronisation. Les statistiques du ClickPipe d&#39;origine sont réinitialisées dans l&#39;UI.
 
 <div id="use-cases-postgres-resync">
-  ### Cas d’usage de la resynchronisation d’un ClickPipe {#use-cases-postgres-resync}
+  ### Cas d’usage de la resynchronisation d’un ClickPipe
 </div>
 
 Voici quelques scénarios :
@@ -38,21 +40,19 @@ Voici quelques scénarios :
   car un chargement initial avec des threads parallèles est effectué à chaque fois.
 </Note>
 
-### Guide de resynchronisation de ClickPipe {#guide-postgres-resync}
+<div id="guide-postgres-resync">
+  ### Guide de resynchronisation de ClickPipe
+</div>
 
 1. Dans l’onglet Sources de données, cliquez sur le Postgres ClickPipe que vous souhaitez resynchroniser.
 2. Accédez à l’onglet **Paramètres**.
 3. Cliquez sur le bouton **Resync**.
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
 
 4. Une boîte de dialogue de confirmation devrait s’afficher. Cliquez à nouveau sur Resync.
 5. Accédez à l’onglet **Métriques**.
-6. Après environ 5 secondes (ou après actualisation de la page), le statut du pipe devrait être **Setup** ou **Snapshot**.
+6. Après environ 5 secondes (ou après actualisation de la page), le statut du pipe devrait être **Setup** ou **Snapshot**.
 7. Le chargement initial de la resynchronisation peut être suivi dans l’onglet **Tables**, dans la section **Initial Load Stats**.
 8. Une fois le chargement initial terminé, le pipe échangera de façon atomique les tables `_resync` avec les tables d’origine. Pendant cet échange, le statut sera **Resync**.
 9. Une fois l’échange terminé, le pipe passera à l’état **Running** et effectuera le CDC s’il est activé.

@@ -299,12 +299,11 @@ def test_backup_restore_on_cluster():
         f"BACKUP TABLE system.workloads, TABLE system.resources ON CLUSTER 'workloads_cluster' TO {backup_name}"
     )
 
-    # Drop every entity across the cluster; the drop replicates to node2 as well. Only the root workload
-    # (empty name) is left, it is always present.
+    # Drop every entity across the cluster; the drop replicates to node2 as well.
     node1.query("DROP WORKLOAD sql_wl")
     node1.query("DROP WORKLOAD all")
     node1.query("DROP RESOURCE sql_res")
-    assert_eq_with_retry(node2, "SELECT count() FROM system.workloads", "1\n")
+    assert_eq_with_retry(node2, "SELECT count() FROM system.workloads", "0\n")
     assert_eq_with_retry(node2, "SELECT count() FROM system.resources", "0\n")
 
     node1.query(

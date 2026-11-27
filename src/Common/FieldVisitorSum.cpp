@@ -1,5 +1,4 @@
 #include <Common/FieldVisitorSum.h>
-#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -14,7 +13,7 @@ FieldVisitorSum::FieldVisitorSum(const Field & rhs_) : rhs(rhs_) {}
 
 // We can add all ints as unsigned regardless of their actual signedness.
 bool FieldVisitorSum::operator() (Int64 & x) const { return this->operator()(reinterpret_cast<UInt64 &>(x)); }
-bool NO_SANITIZE_UNSIGNED_OVERFLOW FieldVisitorSum::operator() (UInt64 & x) const
+bool FieldVisitorSum::operator() (UInt64 & x) const
 {
     x += applyVisitor(FieldVisitorConvertToNumber<UInt64>(), rhs);
     return x != 0;
@@ -37,7 +36,6 @@ bool FieldVisitorSum::operator() (UUID &) const { throw Exception(ErrorCodes::LO
 bool FieldVisitorSum::operator() (IPv4 &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sum IPv4s"); }
 bool FieldVisitorSum::operator() (IPv6 &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sum IPv6s"); }
 bool FieldVisitorSum::operator() (CustomType & x) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sum custom type {}", x.getTypeName()); }
-bool FieldVisitorSum::operator() (NumberLiteral &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sum NumberLiterals"); }
 
 bool FieldVisitorSum::operator() (AggregateFunctionStateData &) const
 {

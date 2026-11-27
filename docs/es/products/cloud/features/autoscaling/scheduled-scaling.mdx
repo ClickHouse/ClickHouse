@@ -7,27 +7,28 @@ title: 'escalado programado'
 doc_type: 'guide'
 ---
 
-Los servicios de ClickHouse Cloud escalan automáticamente en función de la utilización de CPU y memoria, pero muchas cargas de trabajo siguen patrones predecibles: picos diarios de ingestión, trabajos por lotes que se ejecutan por la noche o tráfico que disminuye drásticamente los fines de semana. Para estos casos de uso, escalado programado le permite definir exactamente cuándo debe aumentar la capacidad de su servicio o escalarlo hacia abajo, independientemente de las métricas en tiempo real.
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<BetaBadge />
+
+Los servicios de ClickHouse Cloud escalan automáticamente en función del uso de CPU y memoria, pero muchas cargas de trabajo siguen patrones predecibles: picos diarios de ingestión, trabajos por lotes que se ejecutan por la noche o tráfico que disminuye drásticamente los fines de semana. Para estos casos de uso, escalado programado le permite definir exactamente cuándo debe escalar su servicio, ya sea hacia arriba o hacia abajo, independientemente de las métricas en tiempo real.
 
 Con escalado programado, configura un conjunto de reglas basadas en el tiempo directamente en la consola de ClickHouse Cloud. Cada regla especifica los días en que está activa, una hora de inicio y otra de finalización en UTC, y la configuración que se aplicará durante esa ventana: el número de réplicas (horizontal), la memoria mínima y máxima por réplica (vertical) y si se permite que el servicio permanezca inactivo. Mientras la ventana está activa, ClickHouse Cloud aplica esa configuración y, cuando termina, vuelve a su configuración de escalado predeterminada, de modo que su servicio tenga el tamaño adecuado antes de que llegue la demanda, en lugar de reaccionar a ella después.
 
 Esto es distinto del escalado automático basado en métricas, que responde dinámicamente a la presión sobre la CPU y la memoria. El escalado programado es determinista: sabe exactamente cuándo se producirá el escalado y a qué tamaño. Ambos enfoques son complementarios: un servicio puede tener una programación de escalado base y seguir beneficiándose del escalado automático dentro de esa ventana si las cargas de trabajo fluctúan de forma inesperada.
 
-## Configurar una programación de escalado {#setting-up-a-scaling-schedule}
+Actualmente, el escalado programado está disponible en **Beta**.
+
+<div id="setting-up-a-scaling-schedule">
+  ## Configurar una programación de escalado
+</div>
 
 Para configurar una programación, ve a tu servicio en la consola de ClickHouse Cloud y entra en la configuración. Desde allí, selecciona **Schedule Override** y añade una regla nueva.
 
-<div className="ch-image-md">
-  <Frame>
-    ![La interfaz de Scaling Schedules en la consola de ClickHouse Cloud, que muestra reglas de escalado basadas en el tiempo](/images/cloud/features/autoscaling/scheduled-scaling-1.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/features/autoscaling/scheduled-scaling-1.webp" size="md" alt="La interfaz de Scaling Schedules en la consola de ClickHouse Cloud, que muestra reglas de escalado basadas en el tiempo" border />
 
-<div className="ch-image-md">
-  <Frame>
-    ![Configuración de una regla de escalado programado en la consola de ClickHouse Cloud](/images/cloud/features/autoscaling/scheduled-scaling-2.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/features/autoscaling/scheduled-scaling-2.webp" size="md" alt="Configuración de una regla de escalado programado en la consola de ClickHouse Cloud" border />
 
 Cada regla requiere:
 
@@ -38,7 +39,7 @@ Cada regla requiere:
 Se pueden combinar varias reglas para crear una programación semanal completa, siempre que sus ventanas no se solapen. Por ejemplo, una única regla que abarque de lunes a viernes de 06:00 a 20:00 UTC puede mantener tu servicio en un tamaño mayor durante la jornada laboral, y tu configuración predeterminada se aplicará fuera de esa ventana.
 
 <div id="use-cases">
-  ## Casos de uso {#use-cases}
+  ## Casos de uso
 </div>
 
 **Cargas de trabajo por lotes y ETL:** Aumente la capacidad antes de que se ejecute un trabajo nocturno de ingesta y redúzcala de nuevo cuando finalice, para evitar el sobreaprovisionamiento durante las horas diurnas de baja actividad.
@@ -53,18 +54,8 @@ Se pueden combinar varias reglas para crear una programación semanal completa, 
   Una acción de escalado programado y una recomendación simultánea de escalado automático pueden interactuar; la programación tiene prioridad en el momento en que se activa.
 </Note>
 
-## Cambiar la memoria y las réplicas en la misma regla {#changing-memory-and-replicas-in-the-same-rule}
-
-<Warning>
-  Una regla que cambia la memoria por réplica mientras el rango de réplicas permanece abierto (mínimo inferior al máximo) puede hacer que el [escalado automático horizontal](/es/products/cloud/features/autoscaling/horizontal-autoscaling) escale horizontalmente hasta el máximo. Del mismo modo, una regla que cambia el número de réplicas mientras el rango de memoria permanece abierto puede provocar un [escalado automático vertical](/es/products/cloud/features/autoscaling/vertical) innecesario.
-</Warning>
-
-El escalado automático horizontal compara el uso por réplica de las últimas 3 y 30 horas con el tamaño de la réplica actual. Cuando una regla reduce cada réplica, el uso registrado con las réplicas más grandes se interpreta como una utilización alta. Por ejemplo, unas réplicas que alcanzaron un pico de 13 vCPU de 41 (32%) pasan a interpretarse como un 130% cuando la regla las reduce a 10 vCPU, por lo que el escalador automático añade réplicas. Cuando la siguiente regla vuelve a aumentar las réplicas, ese mismo historial se interpreta como una utilización baja y se eliminan réplicas, de modo que el servicio oscila al ritmo de la programación.
-
-Para evitarlo, haga que la programación modifique solo uno de los dos ajustes. Si el escalado automático horizontal está habilitado (mínimo de réplicas inferior al máximo), mantenga la misma memoria por réplica en la configuración predeterminada y en todas las reglas. Si el escalado automático vertical está habilitado (memoria mínima inferior a la máxima), mantenga el mismo número de réplicas en la configuración predeterminada y en todas las reglas.
-
 <div id="handling-bursty-workloads">
-  ## Cómo gestionar picos en la carga de trabajo {#handling-bursty-workloads}
+  ## Cómo gestionar picos en la carga de trabajo
 </div>
 
 Si prevés un pico en tu carga de trabajo, puedes usar la

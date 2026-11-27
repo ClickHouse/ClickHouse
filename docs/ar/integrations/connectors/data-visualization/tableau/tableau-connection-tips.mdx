@@ -10,12 +10,13 @@ integration:
   - category: 'data_visualization'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
 import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
 <div id="initial-sql-tab">
-  ## علامة تبويب Initial SQL {#initial-sql-tab}
+  ## علامة تبويب Initial SQL
 </div>
 
 إذا كان مربع الاختيار *Set Session ID* مفعّلًا في علامة التبويب Advanced (افتراضيًا)، فلا تتردد في ضبط [الإعدادات](/ar/reference/settings/session-settings) على مستوى الجلسة باستخدام
@@ -25,7 +26,7 @@ SET my_setting=value;
 ```
 
 <div id="advanced-tab">
-  ## علامة تبويب Advanced {#advanced-tab}
+  ## علامة تبويب Advanced
 </div>
 
 في 99% من الحالات، لن تحتاج إلى علامة تبويب Advanced. أما في 1% المتبقية، فيمكنك استخدام الإعدادات التالية:
@@ -45,7 +46,7 @@ SET my_setting=value;
 * **مربع الاختيار Set Session ID**. يلزم هذا الخيار لضبط الإعدادات على مستوى الجلسة في علامة تبويب Initial SQL، ويُنشئ `session_id` مع طابع زمني ورقم شبه عشوائي بالتنسيق `"tableau-jdbc-connector-*{timestamp}*-*{number}*"`
 
 <div id="limited-support-for-uint64-int128-uint256-data-types">
-  ## دعم محدود لأنواع البيانات UInt64 وInt128 و(U)Int256 {#limited-support-for-uint64-int128-uint256-data-types}
+  ## دعم محدود لأنواع البيانات UInt64 وInt128 و(U)Int256
 </div>
 
 بشكل افتراضي، يعرض المشغّل الحقول من الأنواع *UInt64 وInt128 و(U)Int256* كسلاسل نصية، **لكنه يعرضها فقط ولا يحولها**. وهذا يعني أنك عند محاولة كتابة الحقل المحسوب التالي، ستحصل على خطأ

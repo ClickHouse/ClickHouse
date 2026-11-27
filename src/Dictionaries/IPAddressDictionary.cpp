@@ -1,4 +1,3 @@
-#include <Common/StackWithMemoryTracking.h>
 #include <Dictionaries/IPAddressDictionary.h>
 #include <Columns/ColumnFixedString.h>
 
@@ -77,7 +76,7 @@ namespace
             return buf;
         }
 
-        [[nodiscard]] UInt8 prefixIPv6() const
+        UInt8 prefixIPv6() const
         {
             return isv6 ? prefix : prefix + 96;
         }
@@ -262,12 +261,26 @@ ColumnPtr IPAddressDictionary::getColumn(
         {
             IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
 
-            if constexpr (is_column_attribute_value<ValueType>)
+            if constexpr (std::is_same_v<ValueType, Array>)
             {
                 auto * out = column.get();
 
                 getItemsShortCircuitImpl<ValueType>(
-                    attribute, key_columns, [&](const size_t, const ColumnAttributeValue<ValueType> & value) { value.insertInto(*out); }, default_mask);
+                    attribute, key_columns, [&](const size_t, const Array & value) { out->insert(value); }, default_mask);
+            }
+            else if constexpr (std::is_same_v<ValueType, Map>)
+            {
+                auto * out = column.get();
+
+                getItemsShortCircuitImpl<ValueType>(
+                    attribute, key_columns, [&](const size_t, const Map & value) { out->insert(value); }, default_mask);
+            }
+            else if constexpr (std::is_same_v<ValueType, Object>)
+            {
+                auto * out = column.get();
+
+                getItemsShortCircuitImpl<ValueType>(
+                    attribute, key_columns, [&](const size_t, const Object & value) { out->insert(value); }, default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
@@ -294,14 +307,34 @@ ColumnPtr IPAddressDictionary::getColumn(
             const auto & null_value = std::get<AttributeType>(attribute.null_values);
             DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
 
-            if constexpr (is_column_attribute_value<ValueType>)
+            if constexpr (std::is_same_v<ValueType, Array>)
             {
                 auto * out = column.get();
 
                 getItemsImpl<ValueType>(
                     attribute,
                     key_columns,
-                    [&](const size_t, const ColumnAttributeValue<ValueType> & value) { value.insertInto(*out); },
+                    [&](const size_t, const Array & value) { out->insert(value); },
+                    default_value_extractor);
+            }
+            else if constexpr (std::is_same_v<ValueType, Map>)
+            {
+                auto * out = column.get();
+
+                getItemsImpl<ValueType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t, const Map & value) { out->insert(value); },
+                    default_value_extractor);
+            }
+            else if constexpr (std::is_same_v<ValueType, Object>)
+            {
+                auto * out = column.get();
+
+                getItemsImpl<ValueType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t, const Object & value) { out->insert(value); },
                     default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
@@ -395,7 +428,7 @@ void IPAddressDictionary::createAttributes()
                     getTypeName());
 
             attribute_index_by_name.emplace(attribute.name, attributes.size());
-            attributes.push_back(createAttributeWithType(attribute));
+            attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
             if (attribute.hierarchical)
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
@@ -540,7 +573,7 @@ void IPAddressDictionary::loadData()
     }
 
     parent_subnet.resize(ip_records.size());
-    StackWithMemoryTracking<size_t> subnets_stack;
+    std::stack<size_t> subnets_stack;
     for (const auto i : collections::range(0, ip_records.size()))
     {
         parent_subnet[i] = i;
@@ -588,10 +621,7 @@ template <typename T>
 void IPAddressDictionary::addAttributeSize(const Attribute & attribute)
 {
     const auto & vec = std::get<ContainerType<T>>(attribute.maps);
-    if constexpr (is_column_attribute_value<T>)
-        bytes_allocated += sizeof(ContainerType<T>) + vec.allocatedBytes();
-    else
-        bytes_allocated += sizeof(ContainerType<T>) + (vec.capacity() * sizeof(T));
+    bytes_allocated += sizeof(ContainerType<T>) + (vec.capacity() * sizeof(T));
     bucket_count = vec.size();
 }
 
@@ -632,38 +662,33 @@ void IPAddressDictionary::calculateBytesAllocated()
 }
 
 template <typename T>
-void IPAddressDictionary::createAttributeImpl(Attribute & attribute, const DictionaryAttribute & dictionary_attribute)
+void IPAddressDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    const auto & null_value = dictionary_attribute.null_value;
     attribute.null_values = null_value.isNull() ? T{} : T(null_value.safeGet<T>());
-    if constexpr (is_column_attribute_value<T>)
-        attribute.maps.emplace<ContainerType<T>>(dictionary_attribute);
-    else
-        attribute.maps.emplace<ContainerType<T>>();
+    attribute.maps.emplace<ContainerType<T>>();
 }
 
 template <>
-void IPAddressDictionary::createAttributeImpl<String>(Attribute & attribute, const DictionaryAttribute & dictionary_attribute)
+void IPAddressDictionary::createAttributeImpl<String>(Attribute & attribute, const Field & null_value)
 {
-    const auto & null_value = dictionary_attribute.null_value;
     attribute.null_values = null_value.isNull() ? String() : null_value.safeGet<String>();
     attribute.maps.emplace<ContainerType<std::string_view>>();
     attribute.string_arena = std::make_unique<Arena>();
 }
 
-IPAddressDictionary::Attribute IPAddressDictionary::createAttributeWithType(const DictionaryAttribute & dictionary_attribute)
+IPAddressDictionary::Attribute IPAddressDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
-    Attribute attr{.null_values = {}, .maps = {}, .string_arena = {}, .type = dictionary_attribute.underlying_type};
+    Attribute attr{.null_values = {}, .maps = {}, .string_arena = {}, .type = type};
 
     auto type_call = [&](const auto & dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
 
-        createAttributeImpl<AttributeType>(attr, dictionary_attribute);
+        createAttributeImpl<AttributeType>(attr, null_value);
     };
 
-    callOnDictionaryAttributeType(dictionary_attribute.underlying_type, type_call);
+    callOnDictionaryAttributeType(type, type_call);
 
     return attr;
 }
@@ -1000,11 +1025,7 @@ void IPAddressDictionary::setAttributeValue(Attribute & attribute, const Field &
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
 
-        if constexpr (is_column_attribute_value<AttributeType>)
-        {
-            std::get<ContainerType<AttributeType>>(attribute.maps).insert(value);
-        }
-        else if constexpr (std::is_same_v<AttributeType, String>)
+        if constexpr (std::is_same_v<AttributeType, String>)
         {
             const auto & string = value.safeGet<String>();
             const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());

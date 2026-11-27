@@ -1,6 +1,4 @@
 #include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
-#include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
-#include <Common/quoteString.h>
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/AccessControl.h>
@@ -9,7 +7,6 @@
 #include <Access/DefinerDependencies.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Databases/IDatabase.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <IO/WriteHelpers.h>
@@ -59,27 +56,15 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
         }
 
         if (query.if_exists)
-            access_control.tryRemove(storage->find(query.type, names));
+            storage->tryRemove(storage->find(query.type, names));
         else
-            access_control.remove(storage->getIDs(query.type, names));
+            storage->remove(storage->getIDs(query.type, names));
     };
 
     if (query.type == AccessEntityType::USER)
     {
-        /// Definer dependencies are registered when a table is constructed, which happens in its load job
-        /// with the asynchronous loading of databases. Wait for all tables to be loaded, otherwise
-        /// a view that is still loading would not be found as a dependent. The startup of a database
-        /// ignores the failures of its tables, so a broken table does not prevent the drop.
-        for (const auto & [_, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{}))
-            database->waitDatabaseStarted();
-
-        /// The definers of SQL-defined HTTP handlers are registered when the handlers are loaded, which happens lazily.
-        /// With replicated storage, a handler stored on another replica is registered only by the background reload,
-        /// so re-read the handlers to see it.
-        SQLDefinedHandlersFactory::instance().loadLatest();
-
         auto & definer_dependencies = DefinerDependencies::instance();
-        for (const auto & name : query.names->toStrings())
+        for (const auto & name : query.names)
         {
             std::vector<String> objects;
             for (const auto & uuid : definer_dependencies.getObjectsForDefiner(name))
@@ -92,8 +77,6 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
                     objects.push_back(toString(uuid));
                 /// Otherwise the object is gone and the dependency is stale.
             }
-            for (const auto & handler : definer_dependencies.getHandlersForDefiner(name))
-                objects.push_back("handler " + backQuoteIfNeed(handler));
             if (!objects.empty())
                 throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "User `{}` is used as a definer of {}.", name, toString(objects));
         }
@@ -104,7 +87,7 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
     else if (query.type == AccessEntityType::MASKING_POLICY)
         do_drop(Strings{query.masking_policy_name->toString()}, query.storage_name);
     else
-        do_drop(query.names->toStrings(), query.storage_name);
+        do_drop(query.names, query.storage_name);
 
     return {};
 }
@@ -118,13 +101,13 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
     {
         case AccessEntityType::USER:
         {
-            for (const auto & name : query.names->toStrings())
+            for (const auto & name : query.names)
                 res.emplace_back(AccessType::DROP_USER, name);
             return res;
         }
         case AccessEntityType::ROLE:
         {
-            for (const auto & name : query.names->toStrings())
+            for (const auto & name : query.names)
                 res.emplace_back(AccessType::DROP_ROLE, name);
             return res;
         }

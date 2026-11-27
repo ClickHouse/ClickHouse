@@ -31,7 +31,6 @@ public:
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }
     bool isRemote() const override;
-    bool readRequiresAnalyzedQuery() const override;
 
     bool hasInnerTable() const { return has_inner_table; }
 
@@ -46,9 +45,7 @@ public:
     bool canMoveConditionsToPrewhere() const override { return getTargetTable()->canMoveConditionsToPrewhere(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
-    bool isInsertOrderSensitive() const override { return getTargetTable()->isInsertOrderSensitive(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
-    bool supportsSubcolumnCodecs() const override { return has_inner_table && getTargetTable()->supportsSubcolumnCodecs(); }
     /// readImpl forwards the already-analyzed query tree straight to the target table, so the
     /// initiator must not rewrite functions to subcolumns when the target opts out (e.g. Distributed).
     bool supportsOptimizationToSubcolumns() const override { return getTargetTable()->supportsOptimizationToSubcolumns(); }

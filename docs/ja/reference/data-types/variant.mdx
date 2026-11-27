@@ -19,7 +19,9 @@ doc_type: 'reference'
   そのような型の値を扱うと曖昧さが生じる可能性があるためです。デフォルトでは、このような `Variant` 型を作成すると例外が発生しますが、設定 `allow_suspicious_variant_types` を使用すると有効にできます。
 </Note>
 
-## Variant の作成 {#creating-variant}
+<div id="creating-variant">
+  ## Variant の作成
+</div>
 
 テーブルのカラム定義で `Variant` 型を使用するには:
 
@@ -109,7 +111,9 @@ SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as 
 └───────────────────────────────┘
 ```
 
-## サブカラムとして Variant のネストされた型を読み取る {#reading-variant-nested-types-as-subcolumns}
+<div id="reading-variant-nested-types-as-subcolumns">
+  ## サブカラムとして Variant のネストされた型を読み取る
+</div>
 
 Variant 型では、型名をサブカラムとして使うことで、Variant カラムから特定のネストされた型だけを読み取れます。
 たとえば、`variant Variant(T1, T2, T3)` というカラムがある場合、型 `T2` のサブカラムは `variant.T2` という構文で読み取れます。
@@ -188,11 +192,15 @@ SELECT toTypeName(variantType(v)) FROM test LIMIT 1;
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Variant カラムと他のカラム間の変換 {#conversion-between-a-variant-column-and-other-columns}
+<div id="conversion-between-a-variant-column-and-other-columns">
+  ## Variant カラムと他のカラム間の変換
+</div>
 
 `Variant` 型のカラムに対しては、4 種類の変換を実行できます。
 
-### String カラムを Variant カラムに変換する {#converting-a-string-column-to-a-variant-column}
+<div id="converting-a-string-column-to-a-variant-column">
+  ### String カラムを Variant カラムに変換する
+</div>
 
 `String` から `Variant` への変換は、文字列値をパースして `Variant` 型の値に変換することで行われます。
 
@@ -239,7 +247,9 @@ SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(varia
 └───────────┴──────────────┘
 ```
 
-### 通常のカラムを Variant カラムに変換する {#converting-an-ordinary-column-to-a-variant-column}
+<div id="converting-an-ordinary-column-to-a-variant-column">
+  ### 通常のカラムを Variant カラムに変換する
+</div>
 
 型 `T` の通常のカラムは、この型を持つ `Variant` カラムに変換できます。
 
@@ -265,9 +275,11 @@ SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as v
 └───────────┴──────────────┘
 ```
 
-### Variant カラムを通常のカラムに変換する {#converting-a-variant-column-to-an-ordinary-column}
+<div id="converting-a-variant-column-to-an-ordinary-column">
+  ### Variant カラムを通常のカラムに変換する
+</div>
 
-`Variant` カラムは通常のカラムに変換できます。この場合、ネストされたすべての `Variant` の値は変換先の型に変換されます:
+`Variant` カラムは通常のカラムに変換できます。この場合、ネストされたすべての `Variant` の値は宛先の型に変換されます:
 
 ```sql
 CREATE TABLE test (v Variant(UInt64, String)) ENGINE = Memory;
@@ -283,9 +295,9 @@ SELECT v::Nullable(Float64) FROM test;
 └──────────────────────────────┘
 ```
 
-変換先の型に変換できない選択肢があっても、エラーが発生するのはカラムにその選択肢の値が含まれている場合のみです。
-
-### Variant を別の Variant に変換する {#converting-a-variant-to-another-variant}
+<div id="converting-a-variant-to-another-variant">
+  ### Variant を別の Variant に変換する
+</div>
 
 `Variant` カラムは別の `Variant` カラムに変換できますが、変換先の `Variant` カラムに元の `Variant` のすべてのネストされた型が含まれている場合に限ります。
 
@@ -303,7 +315,9 @@ SELECT v::Variant(UInt64, String, Array(UInt64)) FROM test;
 └───────────────────────────────────────────────────┘
 ```
 
-## データから Variant 型を読み取る {#reading-variant-type-from-the-data}
+<div id="reading-variant-type-from-the-data">
+  ## データから Variant 型を読み取る
+</div>
 
 すべてのテキストフォーマット (TSV、CSV、CustomSeparated、Values、JSONEachRow など) は、`Variant` 型の読み取りをサポートしています。データのパース時に、ClickHouse は値を最も適切な Variant 型として挿入しようとします。
 
@@ -336,7 +350,9 @@ $$)
 └─────────────────────┴───────────────┴──────┴───────┴─────────────────────┴─────────┘
 ```
 
-## Variant 型の値の比較 {#comparing-values-of-variant-data}
+<div id="comparing-values-of-variant-data">
+  ## Variant 型の値の比較
+</div>
 
 `Variant` 型の値は、同じ `Variant` 型の値とのみ比較できます。
 
@@ -468,7 +484,9 @@ SELECT v, variantType(v) FROM test ORDER by v;
 
 **注記** デフォルトでは、`Variant` 型は `GROUP BY`/`ORDER BY` キーでは使用できません。使用する場合は、その特殊な比較ルールを考慮したうえで、`allow_suspicious_types_in_group_by`/`allow_suspicious_types_in_order_by` 設定を有効にしてください。
 
-## Variant を引数に取る JSONExtract 関数 {#jsonextract-functions-with-variant}
+<div id="jsonextract-functions-with-variant">
+  ## Variant を引数に取る JSONExtract 関数
+</div>
 
 すべての `JSONExtract*` 関数で `Variant` 型がサポートされています。
 
@@ -502,7 +520,9 @@ SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Var
 └────────────────────────────────────────┴───────────────────────────────────────────────────────┘
 ```
 
-## Variant 引数を持つ関数 {#functions-with-variant-arguments}
+<div id="functions-with-variant-arguments">
+  ## Variant 引数を持つ関数
+</div>
 
 ClickHouse のほとんどの関数は、**Variant 用のデフォルト実装**によって `Variant` 型の引数を自動的にサポートします。
 バージョン `26.1` 以降では、Variant 型を明示的に処理しない関数に Variant カラムが渡されると、ClickHouse は次のように動作します。
@@ -572,7 +592,9 @@ SELECT v + 10 AS result, toTypeName(result) FROM test3;
   実際の問題が見えなくならないよう、通常どおり送出されます。
 </Note>
 
-### 型不一致時の動作 {#variant-type-mismatch-behavior}
+<div id="variant-type-mismatch-behavior">
+  ### 型不一致時の動作
+</div>
 
 設定 `variant_throw_on_type_mismatch` は、`Variant` カラムに関数を適用した際、その行に実際に格納されている型が関数と互換性がない場合の動作を制御します。
 
@@ -585,10 +607,10 @@ SELECT v + 10 AS result, toTypeName(result) FROM test3;
 CREATE TABLE test (v Variant(String, UInt64)) ENGINE = Memory;
 INSERT INTO test VALUES ('hello'), (42), ('foo');
 
--- デフォルト（不一致時にスロー）: length() は UInt64 を受け付けないため、クエリは例外をスローする。
-SELECT length(v) FROM test;  -- ILLEGAL_TYPE_OF_ARGUMENT をスロー
+-- Default (throw on mismatch): length() does not accept UInt64, so the query throws.
+SELECT length(v) FROM test;  -- throws ILLEGAL_TYPE_OF_ARGUMENT
 
--- スローを無効にした場合: 互換性のない行は NULL を返す。
+-- With throw disabled: incompatible rows return NULL.
 SET variant_throw_on_type_mismatch = false;
 SELECT v, length(v) FROM test ORDER BY v::String NULLS LAST;
 ```
@@ -599,31 +621,6 @@ SELECT v, length(v) FROM test ORDER BY v::String NULLS LAST;
 │ hello │         5 │
 │ 42    │      ᴺᵁᴸᴸ │
 └───────┴───────────┘
-```
-
-## Variant 引数を取る集約関数 {#aggregate-functions-with-variant-arguments}
-
-`count`、`any`、`groupArray`、`uniq` ファミリーなど一部の集約関数は、`Variant` 引数をネイティブに処理します。
-一方、`sum`、`avg`、`min`、`max`、`quantile`、統計関数、`argMin` および `argMax` の `val` 引数など、特定の型の値に対してのみ動作する集約関数は、各選択肢の最小共通スーパータイプを `Nullable` でラップした型に対して適用されます：
-
-```text
-f(variant) == f(CAST(variant AS Nullable(supertype(T1, ..., TN))))
-```
-
-`Variant` の `NULL` 値は通常どおりスキップされます。選択肢に共通のスーパータイプが存在しない場合、またはその型を `Nullable` 内に格納できない場合は、例外 `ILLEGAL_TYPE_OF_ARGUMENT` がスローされます。
-
-**例:**
-
-```sql
-SET allow_suspicious_variant_types = 1;
-SELECT sum(v), max(v), toTypeName(sum(v))
-FROM values('v Variant(UInt32, Float64)', 1::UInt32, 2.5::Float64, NULL);
-```
-
-```text
-┌─sum(v)─┬─max(v)─┬─toTypeName(sum(v))─┐
-│    3.5 │    2.5 │ Nullable(Float64)  │
-└────────┴────────┴────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

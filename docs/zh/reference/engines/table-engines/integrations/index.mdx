@@ -3,7 +3,7 @@ description: 'Table Engines for Integrations 文档'
 sidebarTitle: '概览'
 slug: /engines/table-engines/integrations/
 title: '用于集成的表引擎'
-doc_type: 'reference'
+doc_type: '参考'
 ---
 
 ClickHouse 提供了多种与外部系统集成的方式，其中包括表引擎。与其他所有表引擎一样，它通过 `CREATE TABLE` 或 `ALTER TABLE` 查询进行配置。配置完成后，从用户的角度看，这类集成就像一张普通表，但对其发出的查询实际上会被代理到外部系统。这种透明查询能力是该方案相较于其他集成方式 (如字典或表函数) 的一项关键优势，因为后者每次使用时都需要使用专门的查询方法。

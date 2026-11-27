@@ -7,9 +7,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 config="$CUR_DIR/03566_write_disks_with_append_mode.xml"
 
-# The local disk of the config has a relative path, which `clickhouse-disks` resolves against the working directory.
-cd "${CLICKHOUSE_TMP}" || exit 1
-
 function test_append()
 {
     disk_name="$1"
@@ -31,5 +28,3 @@ test_append "test_local_disk_metadata_local_object_storage"
 test_append "test_local_disk_metadata_s3_object_storage"
 test_append "test_plain_metadata_s3_object_storage"
 test_append "test_plain_rewriteable_metadata_s3_object_storage"
-
-rm -rf disks/03566

@@ -57,7 +57,7 @@ MINT = "NODE_OPTIONS=--max-old-space-size=8192 mint"
 # the docs (see that script). The external-links check is a non-blocking
 # warning because it depends on third-party sites being reachable.
 LYCHEE = "python3 ../ci/jobs/scripts/docs/lychee_check.py"
-VALIDATE_CHECK = ("Validate docs.json", "python3 ../ci/jobs/scripts/docs/mint_validate.py .")
+VALIDATE_CHECK = ("Validate docs.json", f"{MINT} validate")
 INTERNAL_LINKS_CHECK = ("Check internal links and anchors", f"{LYCHEE} --mode links .")
 REDIRECTS_CHECK = ("Check redirects", f"{LYCHEE} --mode redirects .")
 EXTERNAL_LINKS_CHECK = ("Check external links (warnings)", f"{LYCHEE} --mode external .")

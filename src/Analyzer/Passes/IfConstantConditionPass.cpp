@@ -3,7 +3,6 @@
 #include <Functions/FunctionFactory.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -99,13 +98,11 @@ public:
         else
             return;
 
-        const auto & arguments = function_node->getArguments().getNodes();
-        QueryTreeNodePtr argument_node = arguments[condition_boolean_value ? 1 : 2];
-        const auto & dropped_node = arguments[condition_boolean_value ? 2 : 1];
-
-        /// Aggregate functions and `arrayJoin` decide the number of rows, so a branch with them must not be dropped.
-        if (!isQueryOrUnionNode(dropped_node) && (hasAggregateFunctionNodes(dropped_node) || hasFunctionNode(dropped_node, "arrayJoin")))
-            return;
+        QueryTreeNodePtr argument_node;
+        if (condition_boolean_value)
+            argument_node = function_node->getArguments().getNodes()[1];
+        else
+            argument_node = function_node->getArguments().getNodes()[2];
 
         if (node->getResultType()->equals(*argument_node->getResultType()))
         {
@@ -116,7 +113,7 @@ public:
         /// A `group_by_use_nulls` copy of a GROUP BY key is the key made Nullable: fold it like the key and keep it Nullable.
         const auto argument_node_type = argument_node->getNodeType();
         const bool argument_can_be_nullable = argument_node_type == QueryTreeNodeType::COLUMN
-            || (argument_node_type == QueryTreeNodeType::FUNCTION && argument_node->as<FunctionNode &>().isOrdinaryCall());
+            || (argument_node_type == QueryTreeNodeType::FUNCTION && argument_node->as<FunctionNode &>().isOrdinaryFunction());
         if (argument_can_be_nullable && function_node->getFunctionOrThrow()->getResultType()->equals(*argument_node->getResultType()))
         {
             auto nullable_argument_node = argument_node->clone();

@@ -9,9 +9,8 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 
-#include <Server/ArrowFlight/FlightStatus.h>
-#include <Processors/Formats/Impl/ArrowIPC/ArrowIPCMessages.h>
-#include <arrow/flight/Flight.pb.h>
+#include <arrow/flight/types.h>
+#include <arrow/table.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/hashed_index.hpp>
@@ -83,7 +82,7 @@ struct PollDescriptorWithExpirationTime
 
 struct TicketInfo : public TicketWithExpirationTime
 {
-    std::shared_ptr<const ArrowIPC::EncodedStream> table;
+    std::shared_ptr<arrow::Table> arrow_table;
 };
 
 /// Information about a poll descriptor.
@@ -91,19 +90,18 @@ struct TicketInfo : public TicketWithExpirationTime
 /// the previous object is stored as `previous_info`, and the next object is referenced by `next_poll_descriptor`.
 struct PollDescriptorInfo : public PollDescriptorWithExpirationTime
 {
-    /// The schema of the query, serialized as Arrow Flight does.
-    String schema;
+    std::shared_ptr<arrow::Schema> schema;
     std::shared_ptr<const PollDescriptorInfo> previous_info;
     bool evaluating = false;
     bool evaluated = false;
 
-    arrow::flight::protocol::FlightDescriptor original_flight_descriptor;
+    arrow::flight::FlightDescriptor original_flight_descriptor;
     std::string query_id;
 
     /// The following fields can be set only if `evaluated == true`:
 
     /// A success or error error.
-    std::optional<Status> status;
+    std::optional<arrow::Status> status;
 
     /// A new ticket. Along with tickets from previous infos (previous_info, previous_info->previous_info, etc.)
     /// represents all tickets associated with this poll descriptor.
@@ -135,16 +133,14 @@ struct PreparedStatementInfo
     /// The user who created this prepared statement.
     String username;
     /// Schema of the result set (may be nullptr for non-SELECT queries).
-    /// The schema of the result, serialized as Arrow Flight does, when it is known.
-    std::optional<String> dataset_schema;
+    std::shared_ptr<arrow::Schema> dataset_schema;
     /// Bound parameter values (set via DoPut with CommandPreparedStatementQuery).
     /// Contains one row with one column per '?' placeholder.
-    /// The values bound to the parameters, as SQL literals; none when nothing is bound.
-    std::optional<Strings> bound_parameters;
+    std::shared_ptr<arrow::RecordBatch> bound_parameters;
     /// When this prepared statement expires (std::nullopt means no expiration).
     std::optional<Timestamp> expiration_time;
 
-    [[nodiscard]] size_t numParams() const { return query_parts.empty() ? 0 : query_parts.size() - 1; }
+    size_t numParams() const { return query_parts.empty() ? 0 : query_parts.size() - 1; }
 };
 
 /// Keeps information about calls - e.g. blocks extracted from query pipelines, flight tickets, poll descriptors.
@@ -154,9 +150,9 @@ public:
     CallsData(std::optional<Duration> tickets_lifetime_, std::optional<Duration> poll_descriptors_lifetime_, std::optional<Duration> prepared_statements_lifetime_, bool use_session_timeout_for_ps_lifetime_, size_t max_prepared_statements_per_user_, LoggerPtr log_);
 
     /// Creates a flight ticket which allows to download a specified block.
-    std::shared_ptr<const TicketInfo> createTicket(std::shared_ptr<const ArrowIPC::EncodedStream> table);
+    std::shared_ptr<const TicketInfo> createTicket(std::shared_ptr<arrow::Table> arrow_table);
 
-    [[nodiscard]] Result<std::shared_ptr<const TicketInfo>> getTicketInfo(const String & ticket) const;
+    [[nodiscard]] arrow::Result<std::shared_ptr<const TicketInfo>> getTicketInfo(const String & ticket) const;
 
     /// Finds the expiration time for a specified ticket.
     /// If the ticket is not found it means it was expired and removed from the map.
@@ -174,9 +170,9 @@ public:
     createPollDescriptor(std::unique_ptr<PollSession> poll_session, std::shared_ptr<const PollDescriptorInfo> previous_info);
 
     std::shared_ptr<const PollDescriptorInfo>
-    createPollDescriptor(std::unique_ptr<PollSession> poll_session, const arrow::flight::protocol::FlightDescriptor & flight_descriptor, const String & query_id);
+    createPollDescriptor(std::unique_ptr<PollSession> poll_session, const arrow::flight::FlightDescriptor & flight_descriptor, const String & query_id);
 
-    [[nodiscard]] Result<std::shared_ptr<const PollDescriptorInfo>> getPollDescriptorInfo(const String & poll_descriptor) const;
+    [[nodiscard]] arrow::Result<std::shared_ptr<const PollDescriptorInfo>> getPollDescriptorInfo(const String & poll_descriptor) const;
 
     /// Finds query id for a specified flight descriptor.
     std::optional<String> getQueryIdByFlightDescriptor(const String & flight_descriptor) const;
@@ -185,16 +181,16 @@ public:
     PollDescriptorWithExpirationTime getPollDescriptorWithExpirationTime(const String & poll_descriptor) const;
 
     /// Extends the expiration time of a poll descriptor.
-    [[nodiscard]] Status extendPollDescriptorExpirationTime(const String & poll_descriptor);
+    [[nodiscard]] arrow::Status extendPollDescriptorExpirationTime(const String & poll_descriptor);
 
     /// Starts evaluation (i.e. getting a block of data) for a specified poll descriptor.
-    [[nodiscard]] Result<std::unique_ptr<PollSession>> startEvaluation(const String & poll_descriptor);
+    [[nodiscard]] arrow::Result<std::unique_ptr<PollSession>> startEvaluation(const String & poll_descriptor);
 
     /// Ends evaluation for a specified poll descriptor.
     void endEvaluation(const String & poll_descriptor, const std::optional<String> & ticket, UInt64 rows, UInt64 bytes, bool last);
 
     /// Ends evaluation for a specified poll descriptor with an error.
-    void endEvaluationWithError(const String & poll_descriptor, const Status & error_status);
+    void endEvaluationWithError(const String & poll_descriptor, const arrow::Status & error_status);
 
     /// Cancels a poll descriptor to free memory.
     void cancelPollDescriptor(const String & poll_descriptor);
@@ -215,15 +211,15 @@ public:
     /// that session and will be cleaned up when the session closes.
     /// If session_timeout is provided and use_session_timeout_for_ps_lifetime is true,
     /// it overrides prepared_statements_lifetime for expiration.
-    [[nodiscard]] Result<String> createPreparedStatement(PreparedStatementInfo info, const String & session_id = {}, std::optional<Duration> session_timeout = {});
+    [[nodiscard]] arrow::Result<String> createPreparedStatement(PreparedStatementInfo info, const String & session_id = {}, std::optional<Duration> session_timeout = {});
 
     /// Returns a snapshot copy of a prepared statement's info by handle.
     /// Checks that the caller's username matches the owner.
-    [[nodiscard]] Result<PreparedStatementInfo> getPreparedStatement(const String & handle, const String & username) const;
+    [[nodiscard]] arrow::Result<PreparedStatementInfo> getPreparedStatement(const String & handle, const String & username) const;
 
     /// Binds parameter values to a prepared statement.
     /// Checks that the caller's username matches the owner.
-    [[nodiscard]] Status bindParameters(const String & handle, const String & username, std::optional<Strings> params);
+    [[nodiscard]] arrow::Status bindParameters(const String & handle, const String & username, std::shared_ptr<arrow::RecordBatch> params);
 
     /// Closes (removes) a prepared statement by handle.
     /// Checks that the caller's username matches the owner.
@@ -263,7 +259,7 @@ private:
     std::optional<String> getQueryIdByFlightDescriptorLocked(const String & flight_descriptor) const TSA_REQUIRES(mutex);
 
     std::shared_ptr<const PollDescriptorInfo>
-    createPollDescriptorImpl(std::unique_ptr<PollSession> poll_session, std::shared_ptr<const PollDescriptorInfo> previous_info, std::optional<arrow::flight::protocol::FlightDescriptor> flight_descriptor = std::nullopt, std::optional<String> query_id = std::nullopt);
+    createPollDescriptorImpl(std::unique_ptr<PollSession> poll_session, std::shared_ptr<const PollDescriptorInfo> previous_info, std::optional<arrow::flight::FlightDescriptor> flight_descriptor = std::nullopt, std::optional<String> query_id = std::nullopt);
 
     static Timestamp now();
 

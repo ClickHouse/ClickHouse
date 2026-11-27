@@ -7,13 +7,11 @@ description: 'Guía sobre cómo migrar a ClickHouse con clickhouse-local'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 import AddARemoteSystem from '/snippets/es/_add_remote_ip_access_list_detail.mdx';
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Migración de ClickHouse autogestionado](/images/integrations/migration/ch-local-01.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/migration/ch-local-01.webp" size="lg" alt="Migración de ClickHouse autogestionado" />
 
 Puede usar ClickHouse o, más concretamente, [`clickhouse-local`](/es/concepts/features/tools-and-utilities/clickhouse-local)
 como herramienta ETL para migrar datos desde su sistema de base de datos actual a ClickHouse Cloud, siempre que para dicho sistema exista un
@@ -25,13 +23,11 @@ A veces nos referimos a este método de migración como un método de &quot;pivo
 ClickHouse proporciona motores de integración y funciones de tabla (que crean motores de integración sobre la marcha) para [MySQL](/es/reference/engines/table-engines/integrations/mysql), [PostgreSQL](/es/reference/engines/table-engines/integrations/postgresql), [MongoDB](/es/reference/engines/table-engines/integrations/mongodb) y [SQLite](/es/reference/engines/table-engines/integrations/sqlite).
 Para todos los demás sistemas de bases de datos populares, el proveedor del sistema ofrece un JDBC driver o un ODBC driver.
 
-## ¿Qué es clickhouse-local? {#what-is-clickhouse-local}
-
-<div className="ch-image-lg">
-  <Frame>
-    ![Migración de ClickHouse autogestionado](/images/integrations/migration/ch-local-02.webp)
-  </Frame>
+<div id="what-is-clickhouse-local">
+  ## ¿Qué es clickhouse-local?
 </div>
+
+<Image img="/images/integrations/migration/ch-local-02.webp" size="lg" alt="Migración de ClickHouse autogestionado" />
 
 Normalmente, ClickHouse se ejecuta como un clúster, en el que varias instancias del motor de base de datos ClickHouse se ejecutan de forma distribuida en distintos servidores.
 
@@ -40,12 +36,12 @@ En un único servidor, el motor de base de datos ClickHouse se ejecuta como part
 La herramienta `clickhouse-local` le permite usar el motor de base de datos ClickHouse de forma aislada, como una utilidad de línea de comandos, para procesar datos SQL a gran velocidad sobre un amplio volumen de entradas y salidas, sin tener que configurar ni iniciar un servidor ClickHouse.
 
 <div id="installing-clickhouse-local">
-  ## Instalación de clickhouse-local {#installing-clickhouse-local}
+  ## Instalación de clickhouse-local
 </div>
 
-Necesita una máquina host para `clickhouse-local` que tenga acceso de red tanto a su sistema actual de base de datos de origen como a su servicio de destino de ClickHouse Cloud.
+Necesita un host para `clickhouse-local` que tenga acceso de red tanto a su sistema actual de base de datos de origen como a su servicio de destino de ClickHouse Cloud.
 
-En esa máquina host, descargue la compilación adecuada de `clickhouse-local` según el sistema operativo de su equipo:
+En ese host, descargue la compilación adecuada de `clickhouse-local` según el sistema operativo de su equipo:
 
 <Tabs>
   <Tab title="Linux">
@@ -92,31 +88,33 @@ En esa máquina host, descargue la compilación adecuada de `clickhouse-local` s
 
 <AddARemoteSystem />
 
-## Ejemplo: Migración de MySQL a ClickHouse Cloud con un motor de integración {#example-1-migrating-from-mysql-to-clickhouse-cloud-with-an-integration-engine}
+<div id="example-1-migrating-from-mysql-to-clickhouse-cloud-with-an-integration-engine">
+  ## Ejemplo: Migración de MySQL a ClickHouse Cloud con un motor de integración
+</div>
 
 Usaremos el [motor de tabla de integración](/es/reference/engines/table-engines/integrations/mysql) (creado sobre la marcha por la [función de tabla mysql](/es/reference/functions/table-functions/mysql)) para leer datos de la base de datos MySQL de origen y usaremos la [función de tabla remoteSecure](/es/reference/functions/table-functions/remote)
 para escribir los datos en una tabla de destino de su servicio de ClickHouse Cloud.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Migración de ClickHouse autogestionado](/images/integrations/migration/ch-local-03.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/migration/ch-local-03.webp" size="lg" alt="Migración de ClickHouse autogestionado" />
 
 <div id="on-the-destination-clickhouse-cloud-service">
-  ### En el servicio de destino de ClickHouse Cloud: {#on-the-destination-clickhouse-cloud-service}
+  ### En el servicio de destino de ClickHouse Cloud:
 </div>
 
-#### Cree la base de datos de destino: {#create-the-destination-database}
+<div id="create-the-destination-database">
+  #### Cree la base de datos de destino:
+</div>
 
 ```sql
-CREATE DATABASE db
+  CREATE DATABASE db
 ```
 
-#### Cree una tabla de destino con un esquema equivalente al de la tabla de MySQL: {#create-a-destination-table-that-has-a-schema-equivalent-to-the-mysql-table}
+<div id="create-a-destination-table-that-has-a-schema-equivalent-to-the-mysql-table">
+  #### Cree una tabla de destino con un esquema equivalente al de la tabla de MySQL:
+</div>
 
 ```sql
-CREATE TABLE db.table ...
+  CREATE TABLE db.table ...
 ```
 
 <Note>
@@ -124,19 +122,21 @@ CREATE TABLE db.table ...
 </Note>
 
 <div id="on-the-clickhouse-local-host-machine">
-  ### En la máquina anfitriona de clickhouse-local: {#on-the-clickhouse-local-host-machine}
+  ### En la máquina anfitriona de clickhouse-local:
 </div>
 
-#### Ejecuta clickhouse-local con la consulta de migración: {#run-clickhouse-local-with-the-migration-query}
+<div id="run-clickhouse-local-with-the-migration-query">
+  #### Ejecuta clickhouse-local con la consulta de migración:
+</div>
 
 ```sql
-./clickhouse-local --query "
+  ./clickhouse-local --query "
 INSERT INTO FUNCTION
 remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table', 'default', 'PASS')
 SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password');"
 ```
 
 <Note>
-  No se almacenan datos localmente en la máquina host de `clickhouse-local`. En su lugar, los datos se leen de la tabla de origen de MySQL
+  No se almacenan datos localmente en la máquina anfitriona de `clickhouse-local`. En su lugar, los datos se leen de la tabla de origen de MySQL
   y se escriben de inmediato en la tabla de destino del servicio ClickHouse Cloud.
 </Note>

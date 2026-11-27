@@ -14,7 +14,7 @@ doc_type: 'guide'
 
 파티셔닝은 [MergeTree 엔진 계열 테이블](/ko/reference/engines/table-engines/mergetree-family/mergetree)에서 사용할 수 있으며, 여기에는 [복제된 테이블](/ko/reference/engines/table-engines/mergetree-family/replication)과 [구체화된 뷰(Materialized View)](/ko/reference/statements/create/view#materialized-view)가 포함됩니다.
 
-파티션은 지정된 기준에 따라 테이블의 레코드를 논리적으로 묶은 단위입니다. 월, 일 또는 이벤트 유형과 같은 임의의 기준으로 파티션을 설정할 수 있습니다. 각 파티션은 이 데이터를 더 쉽게 관리할 수 있도록 별도로 저장됩니다. 데이터에 접근할 때 ClickHouse는 가능한 한 가장 적은 수의 파티션을 사용합니다. 파티셔닝은 기본적으로 데이터 관리 기법입니다. 쿼리가 파티셔닝 키로 필터링하면 ClickHouse는 파트와 그래뉼을 선택하기 전에 다른 파티션을 건너뛸 수 있으므로, 필터 컬럼이 프라이머리 키에 포함되지 않은 경우에 도움이 될 수 있습니다. 여러 파티션에 걸친 쿼리는 더 많은 파트를 읽어야 하므로 느려질 수 있습니다. 자세한 내용은 [파티셔닝 키 선택](/ko/best-practices/choosing-a-partitioning-key)을 참조하십시오.
+파티션은 지정된 기준에 따라 테이블의 레코드를 논리적으로 묶은 단위입니다. 월, 일 또는 이벤트 유형과 같은 임의의 기준으로 파티션을 설정할 수 있습니다. 각 파티션은 이 데이터를 더 쉽게 관리할 수 있도록 별도로 저장됩니다. 데이터에 접근할 때 ClickHouse는 가능한 한 가장 적은 수의 파티션을 사용합니다. 파티셔닝 키를 포함한 쿼리에서는 ClickHouse가 파티션 내부의 파트와 그래뉼을 선택하기 전에 해당 파티션을 먼저 필터링하므로, 파티션은 성능 향상에 도움이 됩니다.
 
 파티션은 [테이블 생성](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) 시 `PARTITION BY expr` 절에서 지정합니다. 파티션 키는 테이블 컬럼을 기반으로 하는 임의의 표현식이 될 수 있습니다. 예를 들어 월별 파티셔닝을 지정하려면 `toYYYYMM(date_column)` 표현식을 사용합니다:
 
@@ -42,7 +42,7 @@ ORDER BY (CounterID, StartDate, intHash32(UserID));
 
 기본적으로 부동소수점 파티션 키는 지원되지 않습니다. 이를 사용하려면 [allow&#95;floating&#95;point&#95;partition&#95;key](/ko/reference/settings/merge-tree-settings/allow#allow_floating_point_partition_key) 설정을 활성화하십시오.
 
-테이블에 새 데이터를 삽입하면 해당 데이터는 프라이머리 키(primary key)로 정렬된 별도의 파트(청크)로 저장됩니다. 삽입 후 10~15분이 지나면 동일한 파티션에 속한 파트들이 하나의 파트로 머지됩니다.
+테이블에 새 데이터를 삽입하면 해당 데이터는 기본 키(primary key)로 정렬된 별도의 파트(청크)로 저장됩니다. 삽입 후 10~15분이 지나면 동일한 파티션에 속한 파트들이 하나의 파트로 머지됩니다.
 
 <Info>
   머지 작업은 파티셔닝 표현식의 값이 같은 데이터 파트에서만 수행됩니다. 즉, **파티션을 지나치게 세분화하지 말아야 합니다**(약 1,000개를 초과하는 파티션). 그렇지 않으면 파일 시스템의 파일 수와 열린 파일 디스크립터 수가 지나치게 많아져 `SELECT` 쿼리 성능이 저하됩니다.
@@ -108,7 +108,7 @@ OPTIMIZE TABLE visits PARTITION 201902;
 └───────────┴──────────────────┴────────┘
 ```
 
-비활성 파트는 머지된 후 약 10분 뒤에 삭제됩니다.
+비활성 파트는 병합된 후 약 10분 뒤에 삭제됩니다.
 
 파트와 파티션 집합을 확인하는 또 다른 방법은 테이블 디렉터리(`/var/lib/clickhouse/data/<database>/<table>/`)로 이동하는 것입니다. 예시:
 
@@ -134,7 +134,9 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 
 ClickHouse에서는 파티션에 대해 삭제하거나, 한 테이블에서 다른 테이블로 복사하거나, 백업을 생성하는 등의 작업을 수행할 수 있습니다. 모든 작업 목록은 [Manipulations With Partitions and Parts](/ko/reference/statements/alter/partition) 섹션을 참조하십시오.
 
-## 파티션 키를 사용한 Group By 최적화 {#group-by-optimisation-using-partition-key}
+<div id="group-by-optimisation-using-partition-key">
+  ## 파티션 키를 사용한 Group By 최적화
+</div>
 
 테이블의 파티션 키와 쿼리의 Group By 키가 특정하게 조합되면 각 파티션별로 집계를 독립적으로 수행할 수 있습니다.
 그러면 마지막에 모든 실행 스레드의 부분 집계 데이터를 머지할 필요가 없습니다.

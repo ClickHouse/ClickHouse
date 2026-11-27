@@ -2,17 +2,13 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfiledLocks.h>
-#include <Common/Stopwatch.h>
 #include <IO/CompressionMethod.h>
 #include <Disks/DiskLocal.h>
-#include <base/scope_guard.h>
 #include <Common/logger_useful.h>
 
 namespace ProfileEvents
 {
     extern const Event KeeperChangelogLockWaitMicroseconds;
-    extern const Event KeeperLogStoreAppend;
-    extern const Event KeeperLogStoreAppendMicroseconds;
     extern const Event KeeperLogsReadAheadPlanEpochMismatches;
 }
 
@@ -63,12 +59,6 @@ nuraft::ptr<nuraft::log_entry> KeeperLogStore::last_entry() const
 
 uint64_t KeeperLogStore::append(nuraft::ptr<nuraft::log_entry> & entry)
 {
-    Stopwatch watch;
-    SCOPE_EXIT({
-        ProfileEvents::increment(ProfileEvents::KeeperLogStoreAppend);
-        ProfileEvents::increment(ProfileEvents::KeeperLogStoreAppendMicroseconds, watch.elapsedMicroseconds());
-    });
-
     ProfiledExclusiveLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     uint64_t idx = changelog.getNextEntryIndex();
     changelog.appendEntry(idx, entry);

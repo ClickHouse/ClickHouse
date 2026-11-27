@@ -4,7 +4,7 @@ title: 'Links diretos'
 sidebarTitle: 'Links diretos'
 description: 'Acesse diretamente páginas do ClickStack usando parâmetros de consulta de URL'
 doc_type: 'reference'
-keywords: ['ClickStack', 'parâmetros de URL', 'parâmetros de consulta', 'links diretos', 'link permanente', 'Interface do ClickStack']
+keywords: ['ClickStack', 'parâmetros de URL', 'parâmetros de consulta', 'links diretos', 'link permanente', 'HyperDX']
 ---
 
 As páginas do ClickStack podem ser abertas por meio de links diretos com parâmetros de consulta de URL, permitindo acessar diretamente uma busca, um dashboard ou um painel específico a partir de um sistema externo, como uma notificação de alerta, um runbook, um job de CI ou uma mensagem de chat.
@@ -20,14 +20,16 @@ Os exemplos nesta página usam `<YOUR_CLICKSTACK_URL>`. Substitua-o pela URL do 
 
   Ao usar o Managed ClickStack no ClickHouse Cloud, os links devem incluir o parâmetro `?chcServiceId=` para identificar qual serviço do ClickHouse Cloud deve ser carregado caso o usuário autenticado que acessar o link esteja autorizado a usar mais de um serviço do ClickHouse Cloud.
 
-  Exemplo: abrir a Busca em um Serviço Cloud específico
+  Exemplo: abrir a Busca em um serviço Cloud específico
 
   ```text
   https://hyperdx.clickhouse.cloud/search?chcServiceId=abc123
   ```
 </Info>
 
-## Busca — `/search` {#search}
+<div id="search">
+  ## Busca — `/search`
+</div>
 
 A principal visualização de busca de logs/traces. Consulte [Busca](/pt-BR/clickstack/features/search) para obter detalhes sobre a sintaxe de busca.
 
@@ -46,19 +48,25 @@ A principal visualização de busca de logs/traces. Consulte [Busca](/pt-BR/clic
 
 Uma busca salva também pode ser aberta diretamente em `/search/<savedSearchId>`.
 
-### Exemplo: Pesquise na fonte `Logs` por erros no serviço `checkout` em um intervalo de tempo {#example-search-errors}
+<div id="example-search-errors">
+  ### Exemplo: Pesquise na fonte `Logs` por erros no serviço `checkout` em um intervalo de tempo
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/search?source=Logs&from=1735689600000&to=1735693200000&where=level:error&filters=[{"type":"sql","condition":"ServiceName IN ('checkout')"}]
 ```
 
-### Exemplo: acesse diretamente a visualização em cascata de um trace {#example-search-trace}
+<div id="example-search-trace">
+  ### Exemplo: acesse diretamente a visualização em cascata de um trace
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/search?source=Traces&traceId=ba7217967eb90d040b7eb39f97ecc5c4
 ```
 
-## Buscas salvas — `/search/list` {#saved-searches}
+<div id="saved-searches">
+  ## Buscas salvas — `/search/list`
+</div>
 
 Lista de buscas salvas.
 
@@ -66,13 +74,17 @@ Lista de buscas salvas.
 | --------- | ------- | ----------------------------------------------- |
 | `tag`     | string  | Filtra a lista para buscas salvas com esta tag. |
 
-### Exemplo: Liste as buscas salvas com a tag `production` {#example-saved-searches-tag}
+<div id="example-saved-searches-tag">
+  ### Exemplo: Liste as buscas salvas com a tag `production`
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/search/list?tag=production
 ```
 
-## Dashboards — `/dashboards/<dashboardId>` {#dashboards}
+<div id="dashboards">
+  ## Dashboards — `/dashboards/<dashboardId>`
+</div>
 
 Um dashboard salvo. Omita `<dashboardId>` (`/dashboards`) para abrir um dashboard temporário, não salvo. Consulte [Dashboards](/pt-BR/clickstack/features/dashboards/overview) para saber como criar dashboards.
 
@@ -85,7 +97,9 @@ Um dashboard salvo. Omita `<dashboardId>` (`/dashboards`) para abrir um dashboar
 | `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | Tamanho do bucket para tiles de séries temporais. `auto` seleciona um tamanho de bucket com base no intervalo de tempo escolhido. |
 | `highlightedTileId` | string                                                                                                                              | Rola até um tile específico e o destaca — útil ao vincular a partir de um alert.                                                  |
 
-### Exemplo: Abrir um dashboard em um intervalo de tempo com um tile destacado {#example-dashboard-highlight}
+<div id="example-dashboard-highlight">
+  ### Exemplo: Abrir um dashboard em um intervalo de tempo com um tile destacado
+</div>
 
 Útil para vincular uma notificação de alerta diretamente ao tile que a disparou.
 
@@ -93,19 +107,25 @@ Um dashboard salvo. Omita `<dashboardId>` (`/dashboards`) para abrir um dashboar
 <YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
 ```
 
-## Lista de dashboards — `/dashboards/list` {#dashboards-list}
+<div id="dashboards-list">
+  ## Lista de dashboards — `/dashboards/list`
+</div>
 
 | Parâmetro | Formato | Descrição                             |
 | --------- | ------- | ------------------------------------- |
 | `tag`     | string  | Filtra a lista de dashboards por tag. |
 
-### Exemplo: Listar dashboards com a tag `infra` {#example-dashboards-list-tag}
+<div id="example-dashboards-list-tag">
+  ### Exemplo: Listar dashboards com a tag `infra`
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/dashboards/list?tag=infra
 ```
 
-## Chart Explorer — `/chart` {#chart-explorer}
+<div id="chart-explorer">
+  ## Chart Explorer — `/chart`
+</div>
 
 Um criador de gráficos ad hoc compartilháveis.
 
@@ -114,13 +134,17 @@ Um criador de gráficos ad hoc compartilháveis.
 | `config`     | JSON                        | A configuração completa do gráfico (source, select, where, tipo de gráfico etc.). Normalmente gerada por links de &quot;Share&quot; no aplicativo, em vez de ser escrita manualmente. |
 | `from`, `to` | milissegundos desde a epoch | Intervalo de tempo. Se omitido, o padrão são os últimos 15 minutos.                                                                                                                   |
 
-### Exemplo: abrir a configuração de um gráfico de latência p99 para um intervalo de tempo {#example-chart-config}
+<div id="example-chart-config">
+  ### Exemplo: abrir a configuração de um gráfico de latência p99 para um intervalo de tempo
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/chart?granularity=auto&from=1785759381784&to=1785762981785&config={"name":"","select":[{"aggFn":"quantile","aggCondition":"","aggConditionLanguage":"lucene","valueExpression":"Duration","level":0.99,"alias":"p99"}],"where":"","whereLanguage":"lucene","displayType":"line","alignDateRangeToGranularity":true,"source":"68814eb5d40a9d0449afc1f2","connection":"68814b6fd40a9d0449afbe78","groupBy":"ServiceName"}
 ```
 
-## Alertas — `/alerts` {#alerts}
+<div id="alerts">
+  ## Alertas — `/alerts`
+</div>
 
 Consulte [Alertas](/pt-BR/clickstack/features/alerts) para saber como criar e gerenciar alertas.
 
@@ -130,13 +154,17 @@ Consulte [Alertas](/pt-BR/clickstack/features/alerts) para saber como criar e ge
 | `tag`     | string  | Filtra por tag.                                         |
 | `creator` | string  | Filtra pelo nome do criador do alerta.                  |
 
-### Exemplo: Listar alertas com a tag `on-call` {#example-alerts-filter}
+<div id="example-alerts-filter">
+  ### Exemplo: Listar alertas com a tag `on-call`
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/alerts?tag=on-call
 ```
 
-## Reprodução de sessão — `/sessions` {#session-replay}
+<div id="session-replay">
+  ## Reprodução de sessão — `/sessions`
+</div>
 
 Navegação e reprodução de sessões. Consulte [Reprodução de sessão](/pt-BR/clickstack/features/session-replay) para obter detalhes do recurso.
 
@@ -149,19 +177,25 @@ Navegação e reprodução de sessões. Consulte [Reprodução de sessão](/pt-B
 | `sid`           | string                      | Abre uma sessão específica pelo ID.                                                     |
 | `sfrom`, `sto`  | milissegundos desde a epoch | Janela de tempo da sessão aberta (usada com `sid`).                                     |
 
-### Exemplo: Navegue pelas reproduções de sessão em um intervalo de tempo {#example-sessions-time-range}
+<div id="example-sessions-time-range">
+  ### Exemplo: Navegue pelas reproduções de sessão em um intervalo de tempo
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/sessions?from=1735689600000&to=1735693200000
 ```
 
-### Exemplo: Abra uma reprodução de sessão específica no intervalo de tempo registrado {#example-sessions-open}
+<div id="example-sessions-open">
+  ### Exemplo: Abra uma reprodução de sessão específica no intervalo de tempo registrado
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/sessions?sid=6712abf0e4b0f2a1c3d4e5f6&sfrom=1735689600000&sto=1735690200000
 ```
 
-## Mapa de serviços — `/service-map` {#service-map}
+<div id="service-map">
+  ## Mapa de serviços — `/service-map`
+</div>
 
 Consulte [Mapa de serviços](/pt-BR/clickstack/service-maps) para obter detalhes do recurso.
 
@@ -171,13 +205,17 @@ Consulte [Mapa de serviços](/pt-BR/clickstack/service-maps) para obter detalhes
 | `samplingFactor` | inteiro                     | Divisor de sampling de traces (`1` = 100% dos traces, `2` = 50%, `4` = 25% etc.). |
 | `from`, `to`     | milissegundos desde a epoch | Intervalo de tempo. Se omitido, o padrão é os últimos 15 minutos.                 |
 
-### Exemplo: Visualize o mapa de serviços em um intervalo de tempo {#example-service-map}
+<div id="example-service-map">
+  ### Exemplo: Visualize o mapa de serviços em um intervalo de tempo
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/service-map?from=1735689600000&to=1735693200000
 ```
 
-## Serviços — `/services` {#services}
+<div id="services">
+  ## Serviços — `/services`
+</div>
 
 Dashboards por serviço de HTTP, banco de dados e erros.
 
@@ -191,19 +229,25 @@ Dashboards por serviço de HTTP, banco de dados e erros.
 | `filters`       | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]` | Valores da barra de filtros do dashboard.                                       |
 | `from`, `to`    | milissegundos desde a epoch                                                | Intervalo de tempo. Se omitido, o padrão é os últimos 15 minutos.               |
 
-### Exemplo: Visualize o dashboard do banco de dados de um serviço em um período {#example-services-database}
+<div id="example-services-database">
+  ### Exemplo: Visualize o dashboard do banco de dados de um serviço em um período
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/services?tab=database&service=checkout&from=1735689600000&to=1735693200000
 ```
 
-### Exemplo: Visualize o dashboard de erros de um serviço {#example-services-errors}
+<div id="example-services-errors">
+  ### Exemplo: Visualize o dashboard de erros de um serviço
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/services?tab=errors&service=payments
 ```
 
-## Kubernetes — `/kubernetes` {#kubernetes}
+<div id="kubernetes">
+  ## Kubernetes — `/kubernetes`
+</div>
 
 | Parâmetro                              | Formato                            | Descrição                                                                                                          |
 | -------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -213,13 +257,17 @@ Dashboards por serviço de HTTP, banco de dados e erros.
 | `podName`, `nodeName`, `namespaceName` | string                             | Abre o painel de detalhes de um pod do Kubernetes, nó ou espaço de nomes específico.                                             |
 | `from`, `to`                           | milissegundos desde o epoch        | Intervalo de tempo. Se omitido, o padrão são os últimos 15 minutos.                                                |
 
-### Exemplo: abra o painel de detalhes de um pod do Kubernetes específico {#example-kubernetes-pod}
+<div id="example-kubernetes-pod">
+  ### Exemplo: abra o painel de detalhes de um pod do Kubernetes específico
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/kubernetes?tab=pods&podName=checkout-7d9f8b5c-2xk9p
 ```
 
-## Notebooks — `/notebook/<notebookId>` {#notebooks}
+<div id="notebooks">
+  ## Notebooks — `/notebook/<notebookId>`
+</div>
 
 <Info>
   **Disponível apenas no Managed ClickStack**
@@ -227,7 +275,9 @@ Dashboards por serviço de HTTP, banco de dados e erros.
   Os Notebooks estão disponíveis apenas em implantações do Managed ClickStack. Consulte [AI Notebooks](/pt-BR/clickstack/notebooks) para obter detalhes sobre o recurso.
 </Info>
 
-### Exemplo: Abra um notebook específico em um serviço do Cloud {#example-notebook-open}
+<div id="example-notebook-open">
+  ### Exemplo: Abra um notebook específico em um serviço do Cloud
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/notebook/64f1c2a1e8b9f3a1b0d2e5c7?chcServiceId=abc123

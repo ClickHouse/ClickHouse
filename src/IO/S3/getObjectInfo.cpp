@@ -1,6 +1,7 @@
 #include <optional>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/Expect404ResponseScope.h>
+#include <Common/FailPoint.h>
 
 #if USE_AWS_S3
 
@@ -12,6 +13,14 @@ namespace ProfileEvents
     extern const Event DiskS3HeadObject;
 }
 
+
+namespace DB
+{
+namespace FailPoints
+{
+    extern const char s3_head_omit_etag[];
+}
+}
 
 namespace DB::S3
 {
@@ -40,8 +49,8 @@ namespace
 
     Aws::S3::Model::GetObjectTaggingOutcome getObjectTagging(
         const S3::Client & client,
-        std::string_view bucket,
-        std::string_view key,
+        const String & bucket,
+        const String & key,
         const String & version_id)
     {
         ProfileEvents::increment(ProfileEvents::S3GetObjectTagging);
@@ -76,9 +85,11 @@ namespace
         object_info.is_size_known = result.ContentLengthHasBeenSet();
         object_info.last_modification_time = result.GetLastModified().Seconds();
         object_info.etag = result.GetETag();
+        /// An S3-compatible endpoint that reports no `ETag` in the response to a `HeadObject`.
+        fiu_do_on(FailPoints::s3_head_omit_etag, { object_info.etag.clear(); });
 
         if (with_metadata)
-            object_info.metadata = objectAttributesFromAwsMap(result.GetMetadata());
+            object_info.metadata = result.GetMetadata();
 
         if (with_tags && result.GetTagCount() > 0)
             object_info.tags = getObjectTags(client, bucket, key, version_id);
@@ -109,8 +120,8 @@ static String getAuthenticationErrorHint(Aws::S3::S3Errors error)
 
 ObjectAttributes getObjectTags(
     const S3::Client & client,
-    std::string_view bucket,
-    std::string_view key,
+    const String & bucket,
+    const String & key,
     const String & version_id)
 {
     ObjectAttributes tags;
@@ -120,17 +131,14 @@ ObjectAttributes getObjectTags(
         const auto & error = tag_outcome.GetError();
         throw S3Exception(
             error.GetErrorType(),
-            "Failed to get object tags of key {} in bucket {}: {}. HTTP response code: {}, error type: {}.{}",
-            key,
-            bucket,
+            "Failed to get object tags: {}. HTTP response code: {}.{}",
             error.GetMessage(),
-            error.GetResponseCode(),
-            error.GetErrorType(),
+            static_cast<size_t>(error.GetResponseCode()),
             getAuthenticationErrorHint(error.GetErrorType()));
     }
 
     for (const auto & tag : tag_outcome.GetResult().GetTagSet())
-        tags[String(tag.GetKey())] = tag.GetValue();
+        tags[tag.GetKey()] = tag.GetValue();
 
     return tags;
 }
@@ -154,12 +162,9 @@ ObjectInfo getObjectInfoIfExists(
 
     throw S3Exception(
         error.GetErrorType(),
-        "Failed to get object info for key {} in bucket {}: {}. HTTP response code: {}, error type: {}.{}",
-        key,
-        bucket,
+        "Failed to get object info: {}. HTTP response code: {}.{}",
         error.GetMessage(),
-        error.GetResponseCode(),
-        error.GetErrorType(),
+        static_cast<size_t>(error.GetResponseCode()),
         getAuthenticationErrorHint(error.GetErrorType()));
 }
 
@@ -180,12 +185,9 @@ ObjectInfo getObjectInfo(
 
     throw S3Exception(
         error.GetErrorType(),
-        "Failed to get object info for key {} in bucket {}: {}. HTTP response code: {}, error type: {}.{}",
-        key,
-        bucket,
+        "Failed to get object info: {}. HTTP response code: {}.{}",
         error.GetMessage(),
-        error.GetResponseCode(),
-        error.GetErrorType(),
+        static_cast<size_t>(error.GetResponseCode()),
         getAuthenticationErrorHint(error.GetErrorType()));
 }
 
@@ -216,7 +218,7 @@ bool objectExists(
 
     throw S3Exception(error.GetErrorType(),
         "Failed to check existence of key {} in bucket {}: {}. HTTP response code: {}, error type: {}.{}",
-        key, bucket, error.GetMessage(), error.GetResponseCode(),
+        key, bucket, error.GetMessage(), static_cast<size_t>(error.GetResponseCode()),
         error.GetErrorType(), getAuthenticationErrorHint(error.GetErrorType()));
 }
 

@@ -64,8 +64,7 @@ SELECT
     toTypeName(sumMap(statusMap.status, statusMap.requests)),
     toTypeName(sumMapWithOverflow(statusMap.status, statusMap.requests))
 FROM sum_map
-GROUP BY timeslot
-ORDER BY timeslot;
+GROUP BY timeslot;
 ```
 
 ```response title=Response
@@ -83,8 +82,7 @@ SELECT
     toTypeName(sumMap(statusMapTuple)),
     toTypeName(sumMapWithOverflow(statusMapTuple))
 FROM sum_map
-GROUP BY timeslot
-ORDER BY timeslot;
+GROUP BY timeslot;
 ```
 
 ```response title=Response

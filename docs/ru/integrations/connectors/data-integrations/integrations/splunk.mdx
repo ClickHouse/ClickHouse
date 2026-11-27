@@ -7,6 +7,8 @@ title: 'Сохранение журналов аудита ClickHouse Cloud в S
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -18,39 +20,29 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
 Это дополнение содержит только модульный ввод и не включает никаких дополнительных элементов интерфейса.
 
 <div id="installation">
-  # Установка {#installation}
+  # Установка
 </div>
 
-## Для Splunk Enterprise {#for-splunk-enterprise}
+<div id="for-splunk-enterprise">
+  ## Для Splunk Enterprise
+</div>
 
 Скачайте ClickHouse Cloud Audit Add-on for Splunk с [Splunkbase](https://splunkbase.splunk.com/app/7709).
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Сайт Splunkbase со страницей загрузки ClickHouse Cloud Audit Add-on for Splunk](/images/integrations/tools/data-integration/splunk/splunk_001.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_001.webp" size="lg" alt="Сайт Splunkbase со страницей загрузки ClickHouse Cloud Audit Add-on for Splunk" border />
 
-В Splunk Enterprise перейдите в Apps -&gt; Manage, затем нажмите Install app from file.
+В Splunk Enterprise перейдите в Apps -&gt; Manage. Затем нажмите Install app from file.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Интерфейс Splunk Enterprise: страница управления приложениями с пунктом Install app from file](/images/integrations/tools/data-integration/splunk/splunk_002.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_002.webp" size="lg" alt="Интерфейс Splunk Enterprise со страницей управления Apps и опцией Install app from file" border />
 
-Выберите архив, скачанный с Splunkbase, и нажмите Upload.
+Выберите скачанный с Splunkbase архивный файл и нажмите Upload.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Диалоговое окно установки приложения Splunk для загрузки дополнения ClickHouse](/images/integrations/tools/data-integration/splunk/splunk_003.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_003.webp" size="lg" alt="Диалог установки приложения Splunk для загрузки дополнения ClickHouse" border />
 
-Если всё прошло успешно, в списке появится установленное приложение ClickHouse Audit logs. В противном случае проверьте журналы Splunkd на наличие ошибок.
+Если всё прошло успешно, вы увидите установленное приложение ClickHouse журнала аудита. Если нет, проверьте журналы Splunkd на наличие ошибок.
 
 <div id="modular-input-configuration">
-  # Настройка модульного ввода {#modular-input-configuration}
+  # Настройка модульного ввода
 </div>
 
 Чтобы настроить модульный ввод, сначала вам понадобятся данные из вашего развертывания ClickHouse Cloud:
@@ -58,84 +50,54 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
 * идентификатор организации
 * административный [API-ключ](/ru/products/cloud/features/admin-features/api/openapi)
 
-## Получение информации из ClickHouse Cloud {#getting-information-from-clickhouse-cloud}
+<div id="getting-information-from-clickhouse-cloud">
+  ## Получение информации из ClickHouse Cloud
+</div>
 
 Войдите в [консоль ClickHouse Cloud](https://console.clickhouse.cloud/).
 
 Перейдите в Organization -&gt; Organization details. Там вы сможете скопировать идентификатор организации.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Консоль ClickHouse Cloud со страницей Organization details, на которой показан идентификатор организации](/images/integrations/tools/data-integration/splunk/splunk_004.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_004.webp" size="lg" alt="Консоль ClickHouse Cloud со страницей Organization details, на которой показан идентификатор организации" border />
 
-Затем в левом меню перейдите в раздел ключей API.
+Затем в левом меню перейдите в раздел API Keys.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Консоль ClickHouse Cloud с разделом ключей API в левом навигационном меню](/images/integrations/tools/data-integration/splunk/splunk_005.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_005.webp" size="lg" alt="Консоль ClickHouse Cloud с разделом API Keys в левом навигационном меню" border />
 
-Создайте ключ API, задайте ему понятное имя и выберите привилегии `Admin`. Нажмите Generate ключ API.
+Создайте ключ API, задайте ему понятное имя и выберите привилегии `Admin`. Нажмите Generate API Key.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Консоль ClickHouse Cloud с интерфейсом создания ключа API и выбранными привилегиями Admin](/images/integrations/tools/data-integration/splunk/splunk_006.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_006.webp" size="lg" alt="Консоль ClickHouse Cloud с интерфейсом создания ключа API и выбранными привилегиями Admin" border />
 
 Сохраните ключ API и секрет в надежном месте.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Консоль ClickHouse Cloud со сгенерированными ключом API и секретом, которые необходимо сохранить](/images/integrations/tools/data-integration/splunk/splunk_007.webp)
-  </Frame>
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_007.webp" size="lg" alt="Консоль ClickHouse Cloud с созданными ключом API и секретом, которые нужно сохранить" border />
+
+<div id="configure-data-input-in-splunk">
+  ## Настройка ввода данных в Splunk
 </div>
 
-## Настройка источника данных в Splunk {#configure-data-input-in-splunk}
+Снова перейдите в Splunk и откройте Settings -&gt; Data inputs.
 
-Вернитесь в Splunk и перейдите в Settings -&gt; Data inputs.
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_008.webp" size="lg" alt="Интерфейс Splunk с меню Settings и пунктом Data inputs" border />
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Интерфейс Splunk с меню Settings и пунктом Data inputs](/images/integrations/tools/data-integration/splunk/splunk_008.webp)
-  </Frame>
+Выберите ввод данных ClickHouse Cloud Audit Logs.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_009.webp" size="lg" alt="Страница Splunk Data inputs с опцией ClickHouse Cloud Audit Logs" border />
+
+Нажмите &quot;New&quot;, чтобы настроить новый экземпляр ввода данных.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_010.webp" size="lg" alt="Интерфейс Splunk для настройки нового ввода данных ClickHouse Cloud Audit Logs" border />
+
+После ввода всей информации нажмите Next.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_011.webp" size="lg" alt="Страница настройки Splunk с заполненными параметрами ввода данных ClickHouse" border />
+
+Ввод данных настроен, теперь можно просматривать журналы аудита.
+
+<div id="usage">
+  # Использование
 </div>
-
-Выберите источник данных ClickHouse Cloud Audit Logs.
-
-<div className="ch-image-lg">
-  <Frame>
-    ![Страница Data inputs в Splunk с пунктом ClickHouse Cloud Audit Logs](/images/integrations/tools/data-integration/splunk/splunk_009.webp)
-  </Frame>
-</div>
-
-Нажмите «New», чтобы настроить новый экземпляр источника данных.
-
-<div className="ch-image-lg">
-  <Frame>
-    ![Интерфейс Splunk для настройки нового источника данных ClickHouse Cloud Audit Logs](/images/integrations/tools/data-integration/splunk/splunk_010.webp)
-  </Frame>
-</div>
-
-Заполнив все поля, нажмите «Next».
-
-<div className="ch-image-lg">
-  <Frame>
-    ![Страница настройки Splunk с заполненными параметрами источника данных ClickHouse](/images/integrations/tools/data-integration/splunk/splunk_011.webp)
-  </Frame>
-</div>
-
-Источник данных настроен — теперь можно перейти к просмотру журналов аудита.
-
-# Использование {#usage}
 
 Модульный ввод сохраняет данные в Splunk. Чтобы просмотреть данные, вы можете использовать стандартное представление поиска в Splunk.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Интерфейс поиска Splunk с данными журналов аудита ClickHouse](/images/integrations/tools/data-integration/splunk/splunk_012.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_012.webp" size="lg" alt="Интерфейс поиска Splunk с данными журналов аудита ClickHouse" border />

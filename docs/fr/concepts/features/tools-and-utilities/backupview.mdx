@@ -2,7 +2,7 @@
 description: 'Documentation de clickhouse_backupview'
 slug: /operations/utilities/backupview
 title: 'clickhouse_backupview'
-doc_type: 'reference'
+doc_type: 'référence'
 ---
 
 Module Python permettant d’analyser les sauvegardes effectuées par la commande [BACKUP](/fr/concepts/features/backup-restore/overview).
@@ -15,7 +15,9 @@ Ce module fournit des fonctions pour
 * obtenir, sous une forme lisible, des informations utiles sur les bases de données, les tables et les parts contenues dans une sauvegarde
 * vérifier l’intégrité d’une sauvegarde
 
-## Exemple : {#example}
+<div id="example">
+  ## Exemple :
+</div>
 
 ```python
 from clickhouse_backupview import open_backup, S3, FileInfo
@@ -24,7 +26,7 @@ from clickhouse_backupview import open_backup, S3, FileInfo
 # backup = open_backup("/backups/my_backup_1/")
 backup = open_backup(S3("uri", "access_key_id", "secret_access_key"))
 
-# Get a list of databases inside the backup.
+# Get a list of databasess inside the backup.
 print(backup.get_databases()))
 
 # Get a list of tables inside the backup,
@@ -48,4 +50,4 @@ backup.extract_table_data(table="mydb.mytable", partition="202201", out='/tmp/my
 backup.extract_table_data(table="mydb.mytable", part="202201_100_200_3", out='/tmp/my_backup_1/202201_100_200_3/')
 ```
 
-Pour d&#39;autres exemples, consultez le [test](https://github.com/ClickHouse/ClickHouse/blob/master/utils/backupview/test/test_backupview.py).
+Pour d&#39;autres exemples, consultez le [test](https://github.com/ClickHouse/ClickHouse/blob/master/utils/backupview/test/test.py).

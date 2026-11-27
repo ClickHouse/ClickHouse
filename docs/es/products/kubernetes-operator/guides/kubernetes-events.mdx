@@ -26,7 +26,9 @@ clúster en sí.
   no un registro de auditoría duradero.
 </Note>
 
-## Ver eventos {#viewing-events}
+<div id="viewing-events">
+  ## Ver eventos
+</div>
 
 La forma más rápida de verlos es con `kubectl describe` en el recurso personalizado, que muestra los
 eventos más recientes al final:
@@ -58,13 +60,17 @@ El controlador que lo reporta aparece en el origen del evento, por lo que puedes
 evento de `ClickHouseCluster` (`clickhouse-controller`) de un evento de `KeeperCluster`
 (`keeper-controller`).
 
-## Referencia de razones de eventos {#event-reasons}
+<div id="event-reasons">
+  ## Referencia de razones de eventos
+</div>
 
 El operador emite un conjunto fijo de razones, agrupadas según lo que describen. Los eventos `Normal`
 indican el progreso esperado; los eventos `Warning` indican un fallo o un estado sobre el que
 el usuario debe actuar.
 
-### Ciclo de vida del recurso {#resource-lifecycle}
+<div id="resource-lifecycle">
+  ### Ciclo de vida del recurso
+</div>
 
 Se emite tanto en `ClickHouseCluster` como en `KeeperCluster` cuando el operador no puede
 aplicar un recurso gestionado por él durante la reconciliación.
@@ -75,7 +81,9 @@ aplicar un recurso gestionado por él durante la reconciliación.
 | `FailedUpdate` | Warning | El operador no pudo actualizar un recurso.                                                                                           |
 | `FailedDelete` | Warning | El operador no pudo eliminar un recurso gestionado por él durante la reconciliación o la reducción de escala.                        |
 
-### Disponibilidad del clúster {#cluster-readiness}
+<div id="cluster-readiness">
+  ### Disponibilidad del clúster
+</div>
 
 Se emite en ambos tipos cuando el clúster cambia de estado de disponibilidad.
 
@@ -84,7 +92,9 @@ Se emite en ambos tipos cuando el clúster cambia de estado de disponibilidad.
 | `ClusterReady`    | Normal      | El clúster pasó a estar listo: cada segmento de ClickHouse tiene al menos una réplica lista, o el cuórum de Keeper tiene un líder y suficientes seguidores (o su única réplica independiente está en funcionamiento). |
 | `ClusterNotReady` | Warning | El clúster dejó de estar listo: un segmento de ClickHouse se quedó sin réplicas listas, o el cuórum de Keeper perdió a su líder o a demasiados seguidores.                                                            |
 
-### Escalado {#scaling}
+<div id="scaling">
+  ### Escalado
+</div>
 
 Se emite en `KeeperCluster` cuando el operador cambia la cantidad de réplicas.
 
@@ -103,7 +113,9 @@ Se emite en `KeeperCluster` cuando el operador cambia la cantidad de réplicas.
   bloqueó el cambio.
 </Note>
 
-### External Secret {#external-secret}
+<div id="external-secret">
+  ### External Secret
+</div>
 
 Se emite en `ClickHouseCluster` cuando el clúster hace referencia a un Secret externo que
 el operador no puede usar. Consulta la función External Secret en la
@@ -114,7 +126,9 @@ el operador no puede usar. Consulta la función External Secret en la
 | `ExternalSecretNotFound` | Warning | El Secret referenciado no existe en el espacio de nombres del clúster.                              |
 | `ExternalSecretInvalid`  | Warning | El Secret existe, pero no contiene las claves requeridas (solo se informa con la policy `Observe`). |
 
-### Comprobaciones de versión {#version-checks}
+<div id="version-checks">
+  ### Comprobaciones de versión
+</div>
 
 Emitidas por las comprobaciones de versión de `ClickHouseCluster` y `KeeperCluster`.
 `VersionProbeFailed` es específico del Job de sondeo de versión de ClickHouse, `version-probe`.
@@ -125,14 +139,16 @@ Emitidas por las comprobaciones de versión de `ClickHouseCluster` y `KeeperClus
 | `VersionDiverge`          | Warning | La versión detectada de una réplica difiere de la versión que el operador detectó para el clúster. Se suprime durante las actualizaciones progresivas.                                                                              |
 | `VersionUpgradeAvailable` | Warning | Hay una versión más reciente disponible en el canal de actualización configurado, la versión en ejecución no está en ese canal o ha quedado fuera de soporte. El operador nunca se actualiza por sí solo; este evento solo informa. |
 
-### Advertencias del servidor ClickHouse {#clickhouse-warnings}
+<div id="clickhouse-warnings">
+  ### Advertencias del servidor ClickHouse
+</div>
 
 | Motivo              | Tipo    | Significado                                                                                       |
 | ------------------- | ------- | ------------------------------------------------------------------------------------------------- |
 | `ClickHouseWarning` | Warning | Una advertencia reportada por el propio servidor ClickHouse, republicada desde `system.warnings`. |
 
-Este último motivo es distinto: no describe las acciones del propio operador. En
-cada réplica accesible, el operador consulta periódicamente la
+Esta última razón es distinta: no describe las acciones del propio operador. En
+cada réplica lista, el operador consulta periódicamente la
 tabla [`system.warnings`](https://clickhouse.com/docs/operations/system-tables/system_warnings) del servidor y
 republica cada fila como un evento `Warning` en el clúster, con el prefijo de la
 réplica de la que procede. Esto convierte las propias advertencias de configuración y de ejecución de ClickHouse
@@ -144,7 +160,9 @@ kubectl -n $NS get events \
   --field-selector reason=ClickHouseWarning,involvedObject.name=<name>
 ```
 
-## Eventos, métricas y condiciones {#events-vs-metrics}
+<div id="events-vs-metrics">
+  ## Eventos, métricas y condiciones
+</div>
 
 El operador expone tres superficies de observabilidad; usa cada una para lo que mejor sabe hacer:
 
@@ -163,7 +181,9 @@ Un evento `Warning` y una condición `False` a menudo describen el mismo problem
 ángulos: el evento captura el momento y el mensaje; la condición refleja el
 estado hasta que se despeja.
 
-## Solución de problemas con eventos {#troubleshooting}
+<div id="troubleshooting">
+  ## Solución de problemas con eventos
+</div>
 
 Algunas señales habituales y lo que suelen indicar:
 
@@ -182,7 +202,9 @@ Algunas señales habituales y lo que suelen indicar:
 * **`ClickHouseWarning`** — el problema está dentro de ClickHouse, no en el operador.
   Trate el mensaje como trataría una fila de `system.warnings`.
 
-## Guías relacionadas {#related-guides}
+<div id="related-guides">
+  ## Guías relacionadas
+</div>
 
 * [Monitoreo del operador](/es/products/kubernetes-operator/guides/monitoring) — métricas y sondas de estado, la contraparte persistente de los eventos.
 * [Escalado](/es/products/kubernetes-operator/guides/scaling) — qué protege `HorizontalScaleBlocked` y cómo el quórum de Keeper limita el escalado.

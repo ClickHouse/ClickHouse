@@ -13,11 +13,8 @@ ASTPtr ASTCreateWorkloadQuery::clone() const
     auto res = make_intrusive<ASTCreateWorkloadQuery>(*this);
     res->children.clear();
 
-    if (workload_name)
-    {
-        res->workload_name = workload_name->clone();
-        res->children.push_back(res->workload_name);
-    }
+    res->workload_name = workload_name->clone();
+    res->children.push_back(res->workload_name);
 
     if (workload_parent)
     {
@@ -64,8 +61,7 @@ void ASTCreateWorkloadQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSe
                 ostr << ", ";
             else
                 first = false;
-            /// The parser reads the name of a workload setting as one identifier.
-            ostr << backQuoteIfNeed(change.name) << " = " << applyVisitor(FieldVisitorToString(), change.value);
+            ostr << change.name << " = " << applyVisitor(FieldVisitorToString(), change.value);
             if (!change.resource.empty())
             {
                 ostr << ' ' << "FOR" << ' ';

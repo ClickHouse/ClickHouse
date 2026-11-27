@@ -11,7 +11,7 @@ import NetworkPricing from '/snippets/es/_network_transfer_rates.mdx';
 
 ClickHouse Cloud mide los datos transferidos de entrada y salida.
 Esto incluye cualquier dato que entra y sale de ClickHouse Cloud, así como cualquier transferencia de datos dentro de la misma región
-y cross-region. Este uso se rastrea a nivel de servicio. En función
+y entre regiones. Este uso se rastrea a nivel de servicio. En función
 de este uso, a los clientes se les cobran cargos por transferencia de datos que luego se agregan a su
 factura mensual.
 
@@ -30,15 +30,7 @@ Nota: Se aplican cargos del proveedor de servicios en la nube (CSP) por el uso d
 
 Los cargos por transferencia de datos varían según el proveedor de servicios en la nube (CSP) y la región.
 El precio de la salida a la Internet pública se basa únicamente en la región de origen.
-El precio entre regiones (o cross-region) depende tanto de la región de origen como de la de destino.
-
-## Managed Postgres {#managed-postgres}
-
-La salida de datos a la Internet pública y cross-region de ClickHouse Managed Postgres se factura según las tarifas descritas en esta página. La transferencia de datos se clasifica según la IP de destino, comparándola con los rangos de IP publicados por el proveedor de nube. El tráfico hacia un destino cuya IP no se encuentra en los rangos publicados de tu región se contabiliza como salida a la Internet pública, incluso cuando ese destino está alojado en el mismo proveedor de nube; por ejemplo, una red emparejada que usa su propio bloque de IP (BYOIP). Si te conectas a una red emparejada de este tipo, ponte en contacto con [soporte](https://clickhouse.com/support/program) para que podamos revisar la clasificación.
-
-La capacidad de cómputo de [ClickPipes](/es/products/managed-postgres/clickpipes) es gratuita cuando se utiliza para replicar datos desde Managed Postgres a ClickHouse Cloud. La salida desde Managed Postgres hacia ClickPipes se contabiliza como cualquier otra transferencia de datos: no hay cargo cuando ambos están en la misma región; la replicación cross-region se factura según el nivel entre regiones aplicable, y la replicación hacia un servicio de ClickHouse Cloud en un proveedor de nube diferente, según la tarifa de Internet pública.
-
-Para reducir los costos de transferencia de datos, ubica tu aplicación y Managed Postgres en la misma región del mismo proveedor de nube siempre que sea posible.
+El precio entre regiones (o entre distintas regiones) depende tanto de la región de origen como de la de destino.
 
 **Prácticas recomendadas para minimizar los costos de transferencia de datos**
 
@@ -56,7 +48,7 @@ minimizar los costos de transferencia de datos.
    incluir los datos en línea con la sintaxis `VALUES` o usar el protocolo HTTP.
 
 Las tablas siguientes muestran cómo los cargos por transferencia de datos de salida varían a través de Internet
-pública o cross-region según el proveedor de nube y la región.
+pública o entre regiones según el proveedor de nube y la región.
 
 <Note>
   ClickHouse Cloud mide el uso entre regiones en términos de niveles, del nivel 1 al

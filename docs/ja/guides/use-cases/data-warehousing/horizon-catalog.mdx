@@ -1,11 +1,11 @@
 ---
 slug: /use-cases/data-lake/horizon-catalog
 sidebarTitle: 'Horizon カタログ'
-title: 'Snowflake Horizon Catalog'
+title: 'Snowflake Horizon カタログ'
 description: 'ClickHouse DataLakeCatalog を使用して、Snowflake Horizon Catalog 経由で Snowflake 管理の Iceberg テーブルにクエリを実行し、書き込みます。'
 keywords: ['Horizon', 'Snowflake', 'Iceberg', 'データレイク', 'Polaris']
 show_related_blogs: true
-doc_type: 'guide'
+doc_type: 'ガイド'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
@@ -26,12 +26,13 @@ Horizon は Snowflake Open Catalog / セルフホスト型 Polaris と関連し�
 
 <Note>
   この機能はベータ版のため、次のコマンドで有効にしてください。
-  `SET allow_database_iceberg = 1;`
-
-  `horizon` カタログタイプはバージョン 26.8 以降で利用できます。
+  `SET allow_experimental_database_iceberg = 1;`
+   (ClickHouse のバージョンによっては `SET allow_database_iceberg = 1;`) 。
 </Note>
 
-## 前提条件 {#prerequisites}
+<div id="prerequisites">
+  ## 前提条件
+</div>
 
 * Snowflake 管理の Iceberg テーブルがある Snowflake アカウント
 * Horizon Iceberg REST エンドポイント:
@@ -44,12 +45,16 @@ Horizon は Snowflake Open Catalog / セルフホスト型 Polaris と関連し�
 * ClickHouse からアクセス可能なオブジェクトストレージ (Snowflake から提供される認証情報を推奨) 
 * DataLakeCatalog の Iceberg サポートを備えた ClickHouse
 
-## 接続を作成する {#connecting}
+<div id="connecting">
+  ## 接続を作成する
+</div>
 
-### オプション A: プログラムによるアクセストークン (推奨) {#option-a-programmatic-access-token-recommended}
+<div id="option-a-programmatic-access-token-recommended">
+  ### オプション A: プログラムによるアクセストークン (推奨)
+</div>
 
 ```sql
-SET allow_database_iceberg = 1;
+SET allow_experimental_database_iceberg = 1;
 
 CREATE DATABASE horizon_catalog
 ENGINE = DataLakeCatalog('https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog')
@@ -65,7 +70,9 @@ SETTINGS
 `warehouse` には、Snowflake 仮想ウェアハウスではなく、Snowflake **データベース**名を指定する必要があります。
 引用符で囲まれていない Snowflake 識別子は大文字で扱われます。
 
-### オプション B: 事前に交換した Bearer アクセストークン {#option-b-pre-exchanged-bearer-access-token}
+<div id="option-b-pre-exchanged-bearer-access-token">
+  ### オプション B: 事前に交換した Bearer アクセストークン
+</div>
 
 ```sql
 CREATE DATABASE horizon_catalog
@@ -77,7 +84,9 @@ SETTINGS
     vended_credentials = 1;
 ```
 
-## Icebergテーブルのクエリ {#query}
+<div id="query">
+  ## Icebergテーブルのクエリ
+</div>
 
 ```sql
 USE horizon_catalog;
@@ -91,7 +100,9 @@ SHOW CREATE TABLE `PUBLIC.test_table`;
   実験的なテーブルネームスペースが有効になっていない限り、ネームスペース (スキーマ) とテーブルは通常、`` `SCHEMA.table` `` の形式で指定します。
 </Note>
 
-## 書き込みパス {#write}
+<div id="write">
+  ## 書き込みパス
+</div>
 
 INSERT/UPDATE/DELETE (テーブル作成時は CREATE ICEBERG TABLE) の権限を持つロールを使用すると、
 ClickHouse は同じカタログを介して書き込めます。
@@ -115,7 +126,9 @@ ENGINE = Iceberg;
 
 `CREATE TABLE` の正確な構文は、ご使用のバージョンでの REST カタログに対する ClickHouse Iceberg / DataLakeCatalog の書き込みサポートに従います。Snowflake の権限不足は、カタログの HTTP エラーとして報告されます。
 
-## MergeTree へのロード {#loading}
+<div id="loading">
+  ## MergeTree へのロード
+</div>
 
 ```sql
 CREATE TABLE my_clickhouse_table

@@ -6,8 +6,10 @@ tags: ['Ошибки и исключения']
 keywords: ['OOM', 'превышен лимит памяти']
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 <div id="troubleshooting-out-of-memory-issues">
-  ## Превышен лимит памяти при выполнении запроса {#troubleshooting-out-of-memory-issues}
+  ## Превышен лимит памяти при выполнении запроса
 </div>
 
 Новичку ClickHouse часто кажется почти магией: любой запрос выполняется очень быстро,
@@ -22,7 +24,7 @@ ClickHouse Cloud делает автоматически и без лишних 
 В этом случае у пользователей есть несколько вариантов.
 
 <div id="aggregations">
-  ### Агрегации {#aggregations}
+  ### Агрегации
 </div>
 
 Для ресурсоемких агрегаций или сортировок пользователи могут использовать настройки
@@ -41,7 +43,9 @@ ClickHouse Cloud делает автоматически и без лишних 
 случаях, когда пользователь использует `ORDER BY` после `GROUP BY` с `LIMIT`,
 особенно если запрос распределенный.
 
-### JOIN {#joins}
+<div id="joins">
+  ### JOIN
+</div>
 
 Для JOIN пользователи могут выбирать разные алгоритмы `JOIN`, что позволяет
 снизить требуемый объем памяти. По умолчанию используется hash join, который
@@ -63,11 +67,7 @@ ClickHouse Cloud делает автоматически и без лишних 
 сортируются на диске, если они не помещаются в памяти, что позволяет выполнять JOIN
 для больших таблиц.
 
-<div className="ch-image-md">
-  <Frame>
-    ![Алгоритмы JOIN](/images/knowledgebase/memory-limit-exceeded-for-query.webp)
-  </Frame>
-</div>
+<Image img="/images/knowledgebase/memory-limit-exceeded-for-query.webp" size="md" alt="Алгоритмы JOIN" />
 
 Начиная с версии 20.3, ClickHouse поддерживает значение auto для настройки `join_algorithm`.
 Оно указывает ClickHouse использовать адаптивный подход к JOIN: предпочтение

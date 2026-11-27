@@ -14,19 +14,21 @@ integration:
   Se você usa um dos provedores compatíveis (na barra lateral), consulte o guia específico desse provedor.
 </Info>
 
-## Habilitar a retenção do log binário {#enable-binlog-retention}
+<div id="enable-binlog-retention">
+  ## Habilitar a retenção do log binário
+</div>
 
 Os logs binários contêm informações sobre modificações de dados feitas em uma instância do servidor MariaDB e são necessários para a replicação.
 
 Para habilitar o log binário na sua instância do MariaDB, verifique se as seguintes configurações estão definidas:
 
 ```sql
-server_id = 1               -- or greater; anything but 0
+server_id = 1               -- ou maior; qualquer valor exceto 0
 log_bin = ON
 binlog_format = ROW
 binlog_row_image = FULL
-binlog_row_metadata = FULL  -- introduced in 10.5.0
-expire_logs_days = 3        -- or higher; 0 would mean logs are preserved forever
+binlog_row_metadata = FULL  -- introduzido na versão 10.5.0
+expire_logs_days = 1        -- ou maior; 0 significa que os logs serão preservados indefinidamente
 ```
 
 Para verificar essas configurações, execute os seguintes comandos SQL:
@@ -48,8 +50,8 @@ server_id = 1
 log_bin = ON
 binlog_format = ROW
 binlog_row_image = FULL
-binlog_row_metadata = FULL  ; only in 10.5.0 and newer
-expire_logs_days = 3
+binlog_row_metadata = FULL  ; somente na versão 10.5.0 e posteriores
+expire_logs_days = 1
 ```
 
 Se o banco de dados de origem for uma réplica, certifique-se de também ativar `log_slave_updates`.
@@ -60,7 +62,9 @@ Você PRECISA REINICIAR a instância do MariaDB para que as alterações entrem 
   A exclusão de colunas não é compatível com o MariaDB &lt;= 10.4 porque a configuração `binlog_row_metadata` ainda não havia sido introduzida.
 </Note>
 
-## Configure um usuário do banco de dados {#configure-database-user}
+<div id="configure-database-user">
+  ## Configure um usuário do banco de dados
+</div>
 
 Conecte-se à sua instância do MariaDB como usuário root e execute os seguintes comandos:
 
@@ -76,19 +80,20 @@ Conecte-se à sua instância do MariaDB como usuário root e execute os seguinte
    GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
    ```
 
-3. Conceda permissões de replicação ao usuário. O MariaDB 10.5.9 e versões mais recentes também exigem `SLAVE MONITOR`:
+3. Conceda permissões de replicação ao usuário:
 
    ```sql
    GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
-   GRANT SLAVE MONITOR ON *.* TO 'clickpipes_user'@'%';
    ```
 
 <Note>
   Substitua `clickpipes_user` e `some_secure_password` pelo nome de usuário e pela senha que desejar.
 </Note>
 
-## Configuração de SSL/TLS (recomendada) {#ssl-tls-configuration}
+<div id="ssl-tls-configuration">
+  ## Configuração de SSL/TLS (recomendada)
+</div>
 
 Os certificados SSL garantem conexões seguras com seu banco de dados MariaDB. A configuração depende do tipo de certificado:
 
@@ -102,7 +107,9 @@ Os certificados SSL garantem conexões seguras com seu banco de dados MariaDB. A
 
 Para mais informações sobre as opções de SSL/TLS, consulte nosso [FAQ](/pt-BR/integrations/clickpipes/mysql/faq#tls-certificate-validation-error).
 
-## O que vem a seguir? {#whats-next}
+<div id="whats-next">
+  ## O que vem a seguir?
+</div>
 
 Agora você pode [criar seu ClickPipe](/pt-BR/integrations/clickpipes/mysql/index) e começar a fazer a ingestão de dados da sua instância do MariaDB para o ClickHouse Cloud.
 Certifique-se de anotar os detalhes da conexão usados ao configurar sua instância do MariaDB, pois você precisará deles durante o processo de criação do ClickPipe.

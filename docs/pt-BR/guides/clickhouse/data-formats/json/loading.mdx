@@ -10,7 +10,9 @@ doc_type: 'guide'
 
 Os exemplos a seguir mostram, de forma bem simples, como carregar dados JSON estruturados e semiestruturados. Para JSONs mais complexos, incluindo estruturas aninhadas, consulte o guia [**Projetando o schema JSON**](/pt-BR/guides/clickhouse/data-formats/json/schema).
 
-## Carregando JSON estruturado {#loading-structured-json}
+<div id="loading-structured-json">
+  ## Carregando JSON estruturado
+</div>
 
 Nesta seção, assumimos que os dados JSON estão no formato [`NDJSON`](https://github.com/ndjson/ndjson-spec) (JSON delimitado por nova linha), conhecido como [`JSONEachRow`](/pt-BR/reference/formats/JSON/JSONEachRow) no ClickHouse, e bem estruturados, ou seja, os nomes e tipos das colunas são fixos. O `NDJSON` é o formato preferido para carregamento de JSON devido à sua concisão e uso eficiente de espaço, mas outros formatos são suportados tanto para [entrada quanto para saída](/pt-BR/reference/formats/JSON/JSON).
 
@@ -129,7 +131,9 @@ FORMAT JSONEachRow
 
 Estes exemplos pressupõem o uso do formato `JSONEachRow`. Também há suporte a outros formatos JSON comuns, com exemplos de carregamento disponíveis [aqui](/pt-BR/guides/clickhouse/data-formats/json/formats).
 
-## Carregando JSON semiestruturado {#loading-semi-structured-json}
+<div id="loading-semi-structured-json">
+  ## Carregando JSON semiestruturado
+</div>
 
 No exemplo anterior, carregamos um JSON estático, com nomes de chaves e tipos bem conhecidos. Muitas vezes, não é assim: chaves podem ser adicionadas ou seus tipos podem mudar. Isso é comum em casos de uso como dados de observabilidade.
 
@@ -158,6 +162,8 @@ Considere o exemplo a seguir de uma versão estendida do [Python PyPI dataset](h
 A coluna `tags` aqui é imprevisível e, portanto, impossível de modelar. Para carregar esses dados, podemos usar nosso schema anterior, mas incluir uma coluna adicional `tags` do tipo [`JSON`](/pt-BR/reference/data-types/newjson):
 
 ```sql
+SET enable_json_type = 1;
+
 CREATE TABLE pypi_with_tags
 (
     `date` Date,
@@ -173,10 +179,6 @@ CREATE TABLE pypi_with_tags
 ENGINE = MergeTree
 ORDER BY (project, date);
 ```
-
-<Note>
-  Nas versões 24.8 a 25.2, habilite o tipo `JSON` com `SET allow_experimental_json_type = 1;` antes de criar a tabela.
-</Note>
 
 Preenchemos a tabela usando a mesma abordagem adotada para o conjunto de dados original:
 
@@ -213,7 +215,9 @@ LIMIT 2
 
 Note a diferença de desempenho aqui no carregamento de dados. A coluna JSON exige inferência de tipos no momento da inserção, além de armazenamento adicional se houver colunas com mais de um tipo. Embora o tipo JSON possa ser configurado (consulte [Projetando o schema JSON](/pt-BR/guides/clickhouse/data-formats/json/schema)) para oferecer desempenho equivalente ao da declaração explícita de colunas, ele é intencionalmente flexível por padrão. Essa flexibilidade, no entanto, tem um custo.
 
-### Quando usar o tipo JSON {#when-to-use-the-json-type}
+<div id="when-to-use-the-json-type">
+  ### Quando usar o tipo JSON
+</div>
 
 Use o tipo JSON quando seus dados:
 

@@ -12,18 +12,22 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки доступны в [system.merge&#95;tree&#95;settings](/ru/reference/system-tables/merge_tree_settings) и автоматически генерируются на основе исходного кода ClickHouse.
 
-## check_delay_period {#check_delay_period}
+<div id="check_delay_period">
+  ## check_delay_period
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="60" />
 
 Устаревшая настройка, не имеет эффекта.
 
-## check_sample_column_is_correct {#check_sample_column_is_correct}
+<div id="check_sample_column_is_correct">
+  ## check_sample_column_is_correct
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Включает проверку при создании таблицы, что тип данных столбца для
-сэмплирования или выражения для семплирования указан корректно. Тип данных должен быть одним из беззнаковых
+Включает проверку при создании таблицы, что тип данных столбца для с
+эмплирования или выражения для семплирования указан корректно. Тип данных должен быть одним из беззнаковых
 [целочисленных типов](/ru/reference/data-types/int-uint): `UInt8`, `UInt16`,
 `UInt32`, `UInt64`.
 

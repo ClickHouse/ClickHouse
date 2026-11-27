@@ -37,13 +37,13 @@ struct DeduplicationHash
     DeduplicationHash & operator =(DeduplicationHash && other) = default;
 
     /// It returns string representation of the hash
-    [[nodiscard]] std::string getBlockId() const;
+    std::string getBlockId() const;
     /// It returns full path to the hash file on keeper
-    [[nodiscard]] std::string getPath(const std::string & storage_path) const;
+    std::string getPath(const std::string & storage_path) const;
 
     void setConflictPartName(const std::string & part_name);
-    [[nodiscard]] bool hasConflictPartName() const;
-    [[nodiscard]] std::string getConflictPartName() const;
+    bool hasConflictPartName() const;
+    std::string getConflictPartName() const;
 
     UInt128 hash = 0;
     std::string partition_id;
@@ -225,21 +225,21 @@ private:
             static Extra asSourceNumber(uint64_t number);
             static Extra asViewID(const StorageIDMaybeEmpty & id);
             static Extra asViewNumber(uint64_t number);
-            [[nodiscard]] std::string debug() const;
-            [[nodiscard]] std::string toString() const;
+            std::string debug() const;
+            std::string toString() const;
             // when debug=false it takes the right boundary for Range types
             // that supports backward compatibility with previous squasing/mergind logic
             // when the right token was used
-            [[nodiscard]] std::string toStringImpl(bool debug = false) const;
+            std::string toStringImpl(bool debug = false) const;
         };
 
         std::vector<Extra> extra_tokens;
 
         static TokenDefinition asUserToken(std::string token);
 
-        [[nodiscard]] std::string debug() const;
-        [[nodiscard]] bool empty() const;
-        [[nodiscard]] bool canBeExtended(const TokenDefinition & right) const;
+        std::string debug() const;
+        bool empty() const;
+        bool canBeExtended(const TokenDefinition & right) const;
         void doExtend(const TokenDefinition & right);
         bool operator==(const TokenDefinition & other) const;
     };

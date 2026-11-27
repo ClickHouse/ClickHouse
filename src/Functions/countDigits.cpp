@@ -7,7 +7,6 @@
 #include <Core/callOnTypeIndex.h>
 #include <base/extended_types.h>
 #include <base/itoa.h>
-#include <base/sanitizer_defs.h>
 #include <Common/digits10.h>
 
 namespace DB
@@ -36,22 +35,28 @@ public:
         return std::make_shared<FunctionCountDigits>();
     }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    String getName() const override { return name; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(Integer | Decimal) -> UInt8";
+        FunctionArgumentDescriptors mandatory_arguments{
+            {"x", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isIntegerOrDecimal), nullptr, "(U)Int* or Decimal"}, // Adds float
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_arguments);
+
+        return std::make_shared<DataTypeUInt8>(); /// Up to 255 decimal digits.
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & src_column = arguments[0];
         if (!src_column.column)
@@ -83,7 +88,6 @@ public:
 
 private:
     template <typename T, typename ColVecType>
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     static void execute(const ColVecType & col, ColumnUInt8 & result_column, size_t rows_count)
     {
         using NativeT = make_unsigned_t<NativeType<T>>;

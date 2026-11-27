@@ -19,7 +19,9 @@ doc_type: 'reference'
   لأن التعامل مع قيم من هذه الأنواع قد يؤدي إلى التباس. افتراضيًا، سيؤدي إنشاء نوع `Variant` من هذا النوع إلى حدوث استثناء، لكن يمكن تمكينه باستخدام الإعداد `allow_suspicious_variant_types`
 </Note>
 
-## إنشاء نوع Variant {#creating-variant}
+<div id="creating-variant">
+  ## إنشاء نوع Variant
+</div>
 
 استخدام النوع `Variant` في تعريف عمود الجدول:
 
@@ -109,7 +111,9 @@ SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as 
 └───────────────────────────────┘
 ```
 
-## قراءة أنواع Variant المتداخلة كأعمدة فرعية {#reading-variant-nested-types-as-subcolumns}
+<div id="reading-variant-nested-types-as-subcolumns">
+  ## قراءة أنواع Variant المتداخلة كأعمدة فرعية
+</div>
 
 يدعم النوع Variant قراءة نوع متداخل واحد من عمود Variant باستخدام اسم النوع كعمود فرعي.
 لذلك، إذا كان لديك العمود `variant Variant(T1, T2, T3)`، فيمكنك قراءة عمود فرعي من النوع `T2` باستخدام الصياغة `variant.T2`.
@@ -188,11 +192,15 @@ SELECT toTypeName(variantType(v)) FROM test LIMIT 1;
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## التحويل بين عمود من نوع Variant والأعمدة الأخرى {#conversion-between-a-variant-column-and-other-columns}
+<div id="conversion-between-a-variant-column-and-other-columns">
+  ## التحويل بين عمود من نوع Variant والأعمدة الأخرى
+</div>
 
 هناك 4 عمليات تحويل ممكنة يمكن إجراؤها لعمود من النوع `Variant`.
 
-### تحويل عمود String إلى عمود Variant {#converting-a-string-column-to-a-variant-column}
+<div id="converting-a-string-column-to-a-variant-column">
+  ### تحويل عمود String إلى عمود Variant
+</div>
 
 يتم التحويل من `String` إلى `Variant` عبر تحليل قيمة من النوع `Variant` انطلاقًا من القيمة النصية:
 
@@ -239,7 +247,9 @@ SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(varia
 └───────────┴──────────────┘
 ```
 
-### تحويل عمود عادي إلى عمود Variant {#converting-an-ordinary-column-to-a-variant-column}
+<div id="converting-an-ordinary-column-to-a-variant-column">
+  ### تحويل عمود عادي إلى عمود Variant
+</div>
 
 يمكن تحويل عمود عادي من النوع `T` إلى عمود `Variant` يحتوي على هذا النوع:
 
@@ -265,9 +275,11 @@ SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as v
 └───────────┴──────────────┘
 ```
 
-### تحويل عمود `Variant` إلى عمود عادي {#converting-a-variant-column-to-an-ordinary-column}
+<div id="converting-a-variant-column-to-an-ordinary-column">
+  ### تحويل عمود `Variant` إلى عمود عادي
+</div>
 
-يمكن تحويل عمود `Variant` إلى عمود عادي. في هذه الحالة، ستُحوَّل جميع قيم `Variant` المتداخلة إلى نوع الوجهة:
+يمكن تحويل عمود `Variant` إلى عمود عادي. في هذه الحالة، ستُحوَّل جميع قيم `Variant` المتداخلة إلى النوع الهدف:
 
 ```sql
 CREATE TABLE test (v Variant(UInt64, String)) ENGINE = Memory;
@@ -283,9 +295,9 @@ SELECT v::Nullable(Float64) FROM test;
 └──────────────────────────────┘
 ```
 
-لا يتسبب البديل الذي يتعذّر تحويله إلى نوع الوجهة في حدوث error إلا إذا كان العمود يحتوي على قيم من هذا البديل.
-
-### تحويل Variant إلى Variant آخر {#converting-a-variant-to-another-variant}
+<div id="converting-a-variant-to-another-variant">
+  ### تحويل Variant إلى Variant آخر
+</div>
 
 يمكن تحويل عمود `Variant` إلى عمود `Variant` آخر، ولكن فقط إذا كان عمود `Variant` الوجهة يتضمن جميع الأنواع المتداخلة الموجودة في `Variant` الأصلي:
 
@@ -303,7 +315,9 @@ SELECT v::Variant(UInt64, String, Array(UInt64)) FROM test;
 └───────────────────────────────────────────────────┘
 ```
 
-## قراءة النوع `Variant` من البيانات {#reading-variant-type-from-the-data}
+<div id="reading-variant-type-from-the-data">
+  ## قراءة النوع `Variant` من البيانات
+</div>
 
 تدعم جميع التنسيقات النصية (TSV وCSV وCustomSeparated وValues وJSONEachRow وغيرها) قراءة النوع `Variant`. وأثناء تحليل البيانات، يحاول ClickHouse إدراج القيمة في النوع الفرعي الأنسب ضمن `Variant`.
 
@@ -336,7 +350,9 @@ $$)
 └─────────────────────┴───────────────┴──────┴───────┴─────────────────────┴─────────┘
 ```
 
-## مقارنة قيم النوع Variant {#comparing-values-of-variant-data}
+<div id="comparing-values-of-variant-data">
+  ## مقارنة قيم النوع Variant
+</div>
 
 لا يمكن مقارنة القيم من النوع `Variant` إلا بقيم من النوع `Variant` نفسه.
 
@@ -468,7 +484,9 @@ SELECT v, variantType(v) FROM test ORDER by v;
 
 **ملاحظة**: افتراضيًا، لا يُسمح باستخدام النوع `Variant` في مفاتيح `GROUP BY`/`ORDER BY`. وإذا أردت استخدامه، فضع في اعتبارك قاعدة المقارنة الخاصة به وفعّل الإعدادين `allow_suspicious_types_in_group_by`/`allow_suspicious_types_in_order_by`.
 
-## دوال JSONExtract مع النوع Variant {#jsonextract-functions-with-variant}
+<div id="jsonextract-functions-with-variant">
+  ## دوال JSONExtract مع النوع Variant
+</div>
 
 تدعم جميع دوال `JSONExtract*` النوع `Variant`:
 
@@ -502,7 +520,9 @@ SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Var
 └────────────────────────────────────────┴───────────────────────────────────────────────────────┘
 ```
 
-## الدوال ذات الوسائط من نوع Variant {#functions-with-variant-arguments}
+<div id="functions-with-variant-arguments">
+  ## الدوال ذات الوسائط من نوع Variant
+</div>
 
 تدعم معظم الدوال في ClickHouse تلقائيًا الوسائط من النوع `Variant` من خلال **التنفيذ الافتراضي لـ Variant**.
 بدءًا من الإصدار `26.1`، عندما تستقبل دالة لا تتعامل صراحةً مع أنواع Variant عمودًا من نوع Variant، فإن ClickHouse:
@@ -572,7 +592,9 @@ SELECT v + 10 AS result, toTypeName(result) FROM test3;
   القسمة على صفر أو نفاد الذاكرة، فتُثار كالمعتاد لتجنّب إخفاء المشكلات الحقيقية بصمت.
 </Note>
 
-### سلوك عدم تطابق النوع {#variant-type-mismatch-behavior}
+<div id="variant-type-mismatch-behavior">
+  ### سلوك عدم تطابق النوع
+</div>
 
 يتحكم الإعداد `variant_throw_on_type_mismatch` بما يحدث عند تطبيق دالة على عمود `Variant` وكان النوع الفعلي المخزَّن في أحد الصفوف غير متوافق مع الدالة:
 
@@ -599,31 +621,6 @@ SELECT v, length(v) FROM test ORDER BY v::String NULLS LAST;
 │ hello │         5 │
 │ 42    │      ᴺᵁᴸᴸ │
 └───────┴───────────┘
-```
-
-## الدوال التجميعية ذات الوسيطات من النوع Variant {#aggregate-functions-with-variant-arguments}
-
-تتعامل بعض الدوال التجميعية، مثل `count` و`any` و`groupArray` وعائلة `uniq`، مع وسيطات `Variant` بشكل أصلي.
-أما الدوال التجميعية التي لا تعمل إلا مع قيم من أنواع محددة، مثل `sum` و`avg` و`min` و`max` و`quantile` والدوال الإحصائية، وكذلك الوسيطة `val` في `argMin` و`argMax`، فتُطبَّق على النوع الفوقي المشترك الأدنى للبدائل، مغلَّفًا في `Nullable`:
-
-```text
-f(variant) == f(CAST(variant AS Nullable(supertype(T1, ..., TN))))
-```
-
-تُتجاهَل قيم `NULL` في `Variant` كالمعتاد. وإذا لم يكن للبدائل نوع أعلى مشترك، أو تعذّر وضع هذا النوع داخل `Nullable`، يُرفع الاستثناء `ILLEGAL_TYPE_OF_ARGUMENT`.
-
-**مثال:**
-
-```sql
-SET allow_suspicious_variant_types = 1;
-SELECT sum(v), max(v), toTypeName(sum(v))
-FROM values('v Variant(UInt32, Float64)', 1::UInt32, 2.5::Float64, NULL);
-```
-
-```text
-┌─sum(v)─┬─max(v)─┬─toTypeName(sum(v))─┐
-│    3.5 │    2.5 │ Nullable(Float64)  │
-└────────┴────────┴────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

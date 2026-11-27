@@ -6,7 +6,9 @@ tags: ['データインジェスト']
 keywords: ['Kafka']
 ---
 
-## 概要 {#overview}
+<div id="overview">
+  ## 概要
+</div>
 
 この記事では、Kafka トピックから ClickHouse テーブルへデータを送信する手順を説明します。使用するのは Wiki の recent changes フィードで、これはさまざまな Wikimedia プロパティに加えられた変更を表す[イベントストリーム](https://stream.wikimedia.org/v2/stream/recentchange)を提供します。手順は次のとおりです。
 
@@ -14,7 +16,9 @@ keywords: ['Kafka']
 2. データストリームを Kafka トピックに取り込む
 3. トピックを購読する ClickHouse テーブルを作成する
 
-# 1. Ubuntu で Kafka をセットアップ {#1-setup-kafka-on-ubuntu}
+<div id="1-setup-kafka-on-ubuntu">
+  # 1. Ubuntu で Kafka をセットアップ
+</div>
 
 1. Ubuntu **ec2** インスタンスを作成し、SSH で接続します:
 
@@ -66,7 +70,9 @@ bin/kafka-topics.sh --create --topic wikimedia --bootstrap-server localhost:9092
 bin/kafka-topics.sh --list --bootstrap-server localhost:9092
 ```
 
-# 2. Wikimedia Stream を Kafka に取り込む {#2-ingest-the-wikimedia-stream-into-kafka}
+<div id="2-ingest-the-wikimedia-stream-into-kafka">
+  # 2. Wikimedia Stream を Kafka に取り込む
+</div>
 
 1. まず、いくつかのユーティリティが必要です。
 
@@ -95,7 +101,9 @@ bin/kafka-console-consumer.sh --topic wikimedia --from-beginning --bootstrap-ser
 
 5. 前のコマンドを停止するには、**Ctrl+c** を押します。
 
-# 3. データを ClickHouse に取り込む {#3-ingest-the-data-into-clickhouse}
+<div id="3-ingest-the-data-into-clickhouse">
+  # 3. データを ClickHouse に取り込む
+</div>
 
 1. 取り込まれるデータは以下のようになります。
 

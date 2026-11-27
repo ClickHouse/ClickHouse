@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/ColumnWithTypeAndName.h>
+#include <Core/Block.h>
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ActionsDAG.h>
@@ -8,47 +8,108 @@
 namespace DB
 {
 
+class IAST;
 class Field;
 class FutureSet;
 using FutureSetPtr = std::shared_ptr<FutureSet>;
+class PreparedSets;
+using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
+struct Settings;
+
+/** Context of RPNBuilderTree.
+  *
+  * For AST tree context, precalculated block with constants and prepared sets are required for index analysis.
+  * For DAG tree precalculated block with constants and prepared sets are not required, because constants and sets already
+  * calculated inside COLUMN actions dag node.
+  */
+class RPNBuilderTreeContext
+{
+public:
+    /// Construct RPNBuilderTreeContext for ActionsDAG tree
+    explicit RPNBuilderTreeContext(ContextPtr query_context_);
+
+    /// Construct RPNBuilderTreeContext for AST tree
+    explicit RPNBuilderTreeContext(ContextPtr query_context_, Block block_with_constants_, PreparedSetsPtr prepared_sets_);
+
+    /// Get query context
+    const ContextPtr & getQueryContext() const
+    {
+        return query_context;
+    }
+
+    /// Get query context settings
+    const Settings & getSettings() const;
+
+    /** Get block with constants.
+      * Valid only for AST tree.
+      */
+    const Block & getBlockWithConstants() const
+    {
+        return block_with_constants;
+    }
+
+    /** Get prepared sets.
+      * Valid only for AST tree.
+      */
+    const PreparedSetsPtr & getPreparedSets() const
+    {
+        return prepared_sets;
+    }
+
+private:
+    /// Valid for both AST and ActionDAG tree
+    ContextPtr query_context;
+
+    /// Valid only for AST tree
+    Block block_with_constants;
+
+    /// Valid only for AST tree
+    PreparedSetsPtr prepared_sets;
+};
 
 class RPNBuilderFunctionTreeNode;
 
-/** RPNBuilderTreeNode is wrapper around an ActionsDAG node.
+/** RPNBuilderTreeNode is wrapper around DAG or AST node.
   * It defines unified interface for index analysis.
   */
-class RPNBuilderTreeNode : public WithContext
+class RPNBuilderTreeNode
 {
 public:
-    /// Construct RPNBuilderTreeNode with non null dag node and the query context shared by all nodes of one tree
-    explicit RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, const ContextPtr & query_context_);
+    /// Construct RPNBuilderTreeNode with non null dag node and tree context
+    explicit RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, const RPNBuilderTreeContext & tree_context_);
+
+    /// Construct RPNBuilderTreeNode with non null ast node and tree context
+    explicit RPNBuilderTreeNode(const IAST * ast_node_, const RPNBuilderTreeContext & tree_context_);
+
+    /// Get AST node
+    const IAST * getASTNode() const { return ast_node; }
 
     /// Get DAG node
-    [[nodiscard]] const ActionsDAG::Node * getDAGNode() const { return dag_node; }
+    const ActionsDAG::Node * getDAGNode() const { return dag_node; }
 
     /// Get column name
-    [[nodiscard]] std::string getColumnName() const;
+    std::string getColumnName() const;
 
     /** Get column name.
       * Function `modulo` is replaced with `moduloLegacy`.
       */
-    [[nodiscard]] std::string getColumnNameWithModuloLegacy() const;
+    std::string getColumnNameWithModuloLegacy() const;
 
     /// Is node function
-    [[nodiscard]] bool isFunction() const;
+    bool isFunction() const;
 
     /// Is node constant
-    [[nodiscard]] bool isConstant() const;
+    bool isConstant() const;
 
     /// Whether the node's result type is Nullable
-    [[nodiscard]] bool isNullable() const;
+    bool isNullable() const;
 
-    [[nodiscard]] bool isSubqueryOrSet() const;
+    bool isSubqueryOrSet() const;
 
     /** Get constant as constant column.
       * Node must be constant before calling these method, otherwise logical exception is thrown.
       */
-    [[nodiscard]] ColumnWithTypeAndName getConstantColumn() const;
+    ColumnWithTypeAndName getConstantColumn() const;
 
     /** Try get constant from node. If node is constant returns true, and constant value and constant type output parameters are set.
       * Otherwise false is returned.
@@ -57,21 +118,34 @@ public:
     bool tryGetConstant(Field & output_value, DataTypePtr & output_type) const;
 
     /// Try get prepared set from node
-    [[nodiscard]] FutureSetPtr tryGetPreparedSet() const;
+    FutureSetPtr tryGetPreparedSet() const;
+
+    /// Try get prepared set from node that match data types
+    FutureSetPtr tryGetPreparedSet(const DataTypes & data_types) const;
 
     /** Convert node to function node.
       * Node must be function before calling these method, otherwise exception is thrown.
       */
-    [[nodiscard]] RPNBuilderFunctionTreeNode toFunctionNode() const;
+    RPNBuilderFunctionTreeNode toFunctionNode() const;
 
     /// Convert node to function node or null optional
-    [[nodiscard]] std::optional<RPNBuilderFunctionTreeNode> toFunctionNodeOrNull() const;
+    std::optional<RPNBuilderFunctionTreeNode> toFunctionNodeOrNull() const;
 
-    /// If this node is the `ARRAY_JOIN` action `arrayJoin(x)`, return its argument node `x`; otherwise std::nullopt.
-    [[nodiscard]] std::optional<RPNBuilderTreeNode> getArrayJoinArgument() const;
+    /** If this node is `arrayJoin(x)`, return its argument node `x`; otherwise std::nullopt.
+      * Handles both the DAG `ARRAY_JOIN` action node and the AST `ASTFunction` named `arrayJoin`.
+      */
+    std::optional<RPNBuilderTreeNode> getArrayJoinArgument() const;
+
+    /// Get tree context
+    const RPNBuilderTreeContext & getTreeContext() const
+    {
+        return tree_context;
+    }
 
 protected:
+    const IAST * ast_node = nullptr;
     const ActionsDAG::Node * dag_node = nullptr;
+    const RPNBuilderTreeContext & tree_context;
 };
 
 /** RPNBuilderFunctionTreeNode is wrapper around RPNBuilderTreeNode with function type.
@@ -83,15 +157,15 @@ public:
     using RPNBuilderTreeNode::RPNBuilderTreeNode;
 
     /// Get function name
-    [[nodiscard]] std::string getFunctionName() const;
+    std::string getFunctionName() const;
 
-    [[nodiscard]] FunctionBasePtr getFunctionBase() const;
+    FunctionBasePtr getFunctionBase() const;
 
     /// Get function arguments size
-    [[nodiscard]] size_t getArgumentsSize() const;
+    size_t getArgumentsSize() const;
 
     /// Get function argument at index
-    [[nodiscard]] RPNBuilderTreeNode getArgumentAt(size_t index) const;
+    RPNBuilderTreeNode getArgumentAt(size_t index) const;
 };
 
 /// Whether the node is `CAST`, `_CAST`, `toNullable` or `toLowCardinality` whose conversion never changes
@@ -101,8 +175,7 @@ public:
 bool isLosslessConversionFunction(const ActionsDAG::Node & node, bool allow_drop_nullable = true);
 
 /// Strips lossless conversions (see above) from the node. Indexes are analyzed on the expression under them.
-/// Also strips `CAST(CAST(x, 'Dynamic'), T)` when `x` converts to `T` without dropping `Nullable` and is not
-/// a top-level `String` or `FixedString`, which `Dynamic` may parse into another type.
+/// The AST form carries no types and is returned as is.
 RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node, bool allow_drop_nullable = true);
 const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node, bool allow_drop_nullable = true);
 

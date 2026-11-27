@@ -87,7 +87,8 @@ String calculateConstantActionNodeName(const Field & constant_literal);
   * Window node action name can only be part of window function action name.
   * For column node column node identifier from planner context is used, if use_column_identifier_as_action_node_name = true.
   */
-String calculateWindowNodeActionName(const QueryTreeNodePtr & window_node,
+String calculateWindowNodeActionName(const QueryTreeNodePtr & function_node,
+    const QueryTreeNodePtr & window_node,
     const PlannerContext & planner_context,
     bool use_column_identifier_as_action_node_name = true);
 

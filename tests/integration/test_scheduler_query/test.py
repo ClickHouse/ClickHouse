@@ -72,20 +72,20 @@ def test_create() -> None:
     def do_checks() -> None:
         common_select_part = "select count() from system.scheduler where path ilike"
 
-        assert node.query(f"{common_select_part} '%/admin/%' and type='request_queue'") == "1\n"
+        assert node.query(f"{common_select_part} '%/admin/%' and type='fifo'") == "1\n"
 
         assert (
             node.query(f"{common_select_part} '%/admin' and type='workload' and priority=0") == "1\n"
         )
 
-        assert node.query(f"{common_select_part} '%/production/%' and type='request_queue'") == "1\n"
+        assert node.query(f"{common_select_part} '%/production/%' and type='fifo'") == "1\n"
 
         assert (
             node.query(f"{common_select_part} '%/production' and type='workload' and weight=9")
             == "1\n"
         )
 
-        assert node.query(f"{common_select_part} '%/development/%' and type='request_queue'") == "1\n"
+        assert node.query(f"{common_select_part} '%/development/%' and type='fifo'") == "1\n"
 
         assert (
             node.query(
@@ -169,15 +169,6 @@ def ensure_workload_concurrency(workload, limit: int) -> None:
         time.sleep(0.1)
 
 
-def queued_queries(workload) -> int:
-    return int(
-        node.query(
-            f"select queue_length from system.scheduler where "
-            f"path like '%/{workload}/%' and type='request_queue' and resource='query'"
-        ).strip()
-    )
-
-
 def test_max_concurrent_queries() -> None:
     node.query(
         """
@@ -232,72 +223,6 @@ def test_max_waiting_queries_reached() -> None:
     assert "Workload limit `max_waiting_queries` has been reached: 1 of 1" in pool_all.last_error
 
 
-def test_max_waiting_queries_updated() -> None:
-    # Regression for #101901: CREATE OR REPLACE WORKLOAD must propagate a max_waiting_queries change
-    # to the queue's limit. Before query-aware scheduling the queue kept its initial limit, so a
-    # raised limit was silently ignored and queries were still rejected against the old value.
-    node.query(
-        """
-        create resource query (query);
-        create workload all settings max_concurrent_queries=1, max_waiting_queries=1;
-        create or replace workload all settings max_concurrent_queries=1, max_waiting_queries=3;
-        """
-    )
-
-    holder_error: list[str] = []
-    waiter_errors: list[str] = []
-
-    def hold_the_slot() -> None:
-        try:
-            node.query(
-                "select sleepEachRow(1) from numbers(300) "
-                "settings max_block_size=1, workload='all'",
-                query_id="max_waiting_updated_holder",
-            )
-        except QueryRuntimeException as e:
-            holder_error.append(str(e))  # expected: killed at teardown
-
-    def wait_for_the_slot() -> None:
-        try:
-            node.query("select 1 settings workload='all'")
-        except Exception as e:
-            waiter_errors.append(str(e))
-
-    holder = threading.Thread(target=hold_the_slot)
-    holder.start()
-    waiters: list[threading.Thread] = []
-    try:
-        while (
-            node.query(
-                "select count() from system.processes where query_id = 'max_waiting_updated_holder'"
-            ).strip()
-            == "0"
-        ):
-            assert not holder_error, holder_error
-            time.sleep(0.1)
-
-        # The holder keeps the only slot, so these queries wait in the queue; the old limit 1 rejects the second one.
-        waiters = [threading.Thread(target=wait_for_the_slot) for _ in range(3)]
-        for waiter in waiters:
-            waiter.start()
-        deadline = time.time() + 60
-        while queued_queries("all") < 3:
-            assert not waiter_errors, waiter_errors
-            assert time.time() < deadline, f"queued queries: {queued_queries('all')}"
-            time.sleep(0.1)
-
-        error = node.query_and_get_error(
-            "select 1 settings workload='all', workload_admission_timeout_ms=10000"
-        )
-        assert "Workload limit `max_waiting_queries` has been reached: 3 of 3" in error, error
-    finally:
-        node.query("kill query where query_id = 'max_waiting_updated_holder' sync")
-        holder.join()
-        for waiter in waiters:
-            waiter.join()
-    assert not waiter_errors, waiter_errors
-
-
 def test_admission_timeout_query_slot() -> None:
     # One query slot, unlimited waiting queue: a second query must WAIT for the slot (not be
     # rejected). With workload_admission_timeout_ms set it must fail after ~the timeout instead of
@@ -349,72 +274,3 @@ def test_admission_timeout_query_slot() -> None:
         holder.join()
 
 
-
-
-def test_metadata_statements_are_exempt() -> None:
-    # `production` admits a single query at a time, and its only slot is taken by a long-running query.
-    node.query(
-        """
-        create resource query (query);
-        create workload all;
-        create workload production in all settings max_concurrent_queries=1;
-        create table t (x UInt64) engine=MergeTree order by x;
-        """
-    )
-
-    def hold_the_slot():
-        try:
-            node.query(
-                "select sleepEachRow(1) from numbers(120) settings max_block_size=1, workload='production'",
-                query_id="metadata_slot_holder",
-            )
-        except QueryRuntimeException:
-            pass  # killed at exit
-
-    def run(sql: str) -> None:
-        node.query(sql, settings={"workload": "production", "workload_admission_timeout_ms": 1000})
-
-    def run_times_out(sql: str) -> None:
-        error = node.query_and_get_error(sql, settings={"workload": "production", "workload_admission_timeout_ms": 1000})
-        assert "QUERY_SLOT_ACQUISITION_TIMEOUT" in error, error
-
-    holder = threading.Thread(target=hold_the_slot)
-    holder.start()
-    try:
-        # Presence in system.processes implies the slot was admitted: ProcessList::insert admits before publishing.
-        while node.query("select count() from system.processes where query_id = 'metadata_slot_holder'").strip() == "0":
-            time.sleep(0.1)
-        run_times_out("select 1")
-
-        # Metadata statements are exempt from workload scheduling.
-        run("create table t2 (x UInt64) engine=MergeTree order by x")
-        run("alter table t2 add column y UInt64")
-        run("alter table t2 update y = 1 where 1")
-        run("rename table t2 to t3")
-        run("truncate table t3")
-        run("detach table t3 sync")
-        run("attach table t3")
-        run("drop table t3 sync")
-        run("alter table t drop partition tuple()")
-        run("create database db2 engine=Atomic")
-        run("drop database db2 sync")
-        run("create function f as (x) -> x + 1")
-        run("drop function f")
-        run("system reload config")
-
-        # Statements that may move a lot of data stay under `workload`.
-        run_times_out("create table t2 engine=MergeTree order by x as select 1 as x")
-        run_times_out("create table t2 as numbers(10)")
-        run_times_out("create view v as select x from t")
-        run_times_out("optimize table t final")
-        run_times_out("alter table t freeze")
-        run_times_out("alter table t attach partition tuple()")
-    finally:
-        node.query("kill query where query_id = 'metadata_slot_holder' sync")
-        holder.join()
-        node.query("drop table if exists t sync")
-        node.query("drop table if exists t2 sync")
-        node.query("drop view if exists v sync")
-        node.query("drop function if exists f")
-        node.query("drop database if exists db2 sync")
-        node.query("drop table if exists t3 sync")

@@ -3,7 +3,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Silk/FiberMutex.h>
 #include <Common/logger_useful.h>
 
 #include <base/defines.h>
@@ -85,8 +84,7 @@ public:
         const String & operator*() const & { return resolved_host; }
 
         /// Mark the address as failed in the pool. Also suppresses the destructor's success callback.
-        /// With `refresh`, the host is resolved again right away.
-        void setFail(bool refresh = true);
+        void setFail();
         /// Suppress the destructor's success callback without reporting a failure to the pool.
         /// Use when the address was selected via `resolve` but never actually attempted
         void setUnused();
@@ -130,7 +128,7 @@ protected:
     WeakPtr getWeakFromThis();
 
     void setSuccess(const Poco::Net::IPAddress & address);
-    void setFail(const Poco::Net::IPAddress & address, bool refresh);
+    void setFail(const Poco::Net::IPAddress & address);
 
     struct Record
     {
@@ -164,7 +162,7 @@ protected:
             return address == r.address;
         }
 
-        [[nodiscard]] size_t getWeight() const
+        size_t getWeight() const
         {
             if (failed)
                 return 0;
@@ -263,10 +261,8 @@ public:
     /// deterministically.
     void injectResolverForTest(const String & host, HostResolver::Ptr resolver);
 private:
-    Silk::FiberMutex mutex;
+    std::mutex mutex;
     std::unordered_map<String, HostResolver::Ptr> host_pools TSA_GUARDED_BY(mutex);
-    /// Incremented by `dropCache`, so that the resolutions which started before the drop are not cached.
-    UInt64 generation TSA_GUARDED_BY(mutex) = 0;
 };
 
 }

@@ -1,6 +1,5 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 
-#include <Common/checkStackSize.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperator.h>
@@ -15,7 +14,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromSelector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultColumns.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultType.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/pushDownLabelMatchers.h>
 
 
 namespace DB::PrometheusQueryToSQL
@@ -25,10 +23,6 @@ namespace
 {
     SQLQueryPiece visitNode(const Node * node, ConverterContext & context)
     {
-        /// The checks in the parser don't make a tree safe to convert:
-        /// a chain of unary operators takes more stack per operator here than in the parser.
-        checkStackSize();
-
         switch (node->node_type)
         {
             case NodeType::Scalar:
@@ -137,9 +131,8 @@ ColumnsDescription Converter::getResultColumns() const
 
 ASTPtr Converter::getSQL() const
 {
-    auto promql_tree_to_convert = settings.push_down_label_matchers ? pushDownLabelMatchers(promql_tree) : promql_tree;
-    ConverterContext context{promql_tree_to_convert, settings};
-    auto query_piece = visitNode(promql_tree_to_convert->getRoot(), context);
+    ConverterContext context{promql_tree, settings};
+    auto query_piece = visitNode(promql_tree->getRoot(), context);
     query_piece.type = result_type;
     return finalizeSQL(std::move(query_piece), context);
 }

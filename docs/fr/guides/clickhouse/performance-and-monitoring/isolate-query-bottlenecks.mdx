@@ -9,12 +9,13 @@ doc_type: 'guide'
 keywords: ['optimisation des requêtes', 'goulots d’étranglement des requêtes', 'performance', 'tests de performance']
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
 import NYCTaxiExampleDataset from '/snippets/fr/_nyc_taxi_example_dataset.mdx';
 
 L’optimisation des requêtes est plus facile lorsque vous modifiez un seul élément d’une requête à la fois et comparez les résultats à une référence stable. Ce guide explique comment simplifier progressivement une requête et utiliser les différences entre les exécutions pour identifier les opérations qui contribuent le plus à sa durée. Vous pouvez ensuite confirmer le goulot d’étranglement suspecté avant de choisir une optimisation.
 
 <div id="before-you-begin">
-  ## Avant de commencer {#before-you-begin}
+  ## Avant de commencer
 </div>
 
 Commencez par un schéma récurrent de requêtes lentes que vous souhaitez analyser. Si vous n&#39;en avez pas encore identifié, [Diagnostiquer les requêtes lentes](/fr/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) vous guide tout au long du processus.
@@ -28,7 +29,7 @@ Pour exécuter les exemples de ce guide tels quels, créez et chargez la table `
 La table d&#39;exemple utilise `ORDER BY ()` ; son filtre de date ne peut donc pas s&#39;appuyer sur une clé de tri pour éliminer des données lors de la lecture. Utilisez cet exemple pour vous exercer à la méthode de comparaison, et non comme référence de performance.
 
 <div id="how-it-works">
-  ## Fonctionnement {#how-it-works}
+  ## Fonctionnement
 </div>
 
 Simplifier progressivement une requête permet de comparer sa durée avant et après la suppression d&#39;une étape de traitement. Les différences permettent de déterminer s&#39;il convient d&#39;examiner le parcours et le filtrage, le regroupement, les calculs d&#39;agrégation ou les opérations ultérieures, telles que le tri et le formatage de sortie :
@@ -43,9 +44,11 @@ Ces étapes s&#39;appliquent directement aux requêtes d&#39;agrégation classiq
   Ces différences constituent des estimations à des fins de diagnostic, et non des mesures exactes des étapes d&#39;exécution de ClickHouse. La modification de la requête peut altérer son plan d&#39;exécution, les colonnes lues et les données transmises entre les étapes. Utilisez les résultats pour formuler une hypothèse, puis validez-la à l&#39;aide des journaux de requêtes et de [`EXPLAIN`](/fr/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement).
 </Note>
 
-## Établissez une référence reproductible {#establish-a-repeatable-baseline}
+<div id="establish-a-repeatable-baseline">
+  ## Établissez une référence reproductible
+</div>
 
-Appliquez les pratiques suivantes pour rendre les mesures comparables :
+Appliquez les pratiques suivantes pour rendre les mesures comparables :
 
 * Conservez les clauses `FROM`, `JOIN`, `PREWHERE` et `WHERE` inchangées afin que chaque comparaison porte sur les mêmes données et le même intervalle de temps.
 * Exécutez chaque version de la requête plusieurs fois dans des conditions de charge système similaires.
@@ -66,21 +69,17 @@ SET optimize_use_implicit_projections = 0;
   Ces instructions `SET` s’appliquent uniquement à la session en cours. Exécutez toutes les requêtes de comparaison dans cette session ou appliquez les mêmes paramètres à chaque exécution. Le paramètre du cache du système de fichiers ne désactive ni le cache de pages du système d’exploitation ni l’ensemble des [caches ClickHouse](/fr/concepts/features/performance/caches/caches). Lorsque vous avez terminé, fermez la session dédiée ou restaurez chaque paramètre à sa valeur précédente.
 </Note>
 
-Le workflow combine des exécutions de requêtes contrôlées et des mesures issues du journal des requêtes :
+Le workflow combine des exécutions de requêtes contrôlées et des mesures issues du journal des requêtes :
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Workflow permettant d’identifier les requêtes candidates dans les journaux de requêtes et de tester les modifications de manière isolée](/images/guides/best-practices/query_optimization_diagram_1.webp)
-  </Frame>
-</div>
+<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="Workflow permettant d’identifier les requêtes candidates dans les journaux de requêtes et de tester les modifications de manière isolée" />
 
-Collectez les mesures pour chaque exécution comme suit :
+Collectez les mesures pour chaque exécution comme suit :
 
 1. Affectez un ID de requête unique à chaque exécution ou enregistrez l’ID généré par votre interface de requêtes. Par exemple, identifiez les exécutions répétées par `bottleneck-a-1`, `bottleneck-a-2` et `bottleneck-a-3`. Avec `clickhouse-client`, transmettez `--query_id your-query-id` lors de l’exécution d’une requête.
 
 2. Exécutez chaque requête de comparaison plusieurs fois dans les mêmes conditions. Distinguez les exécutions de préchauffage des exécutions mesurées.
 
-3. Videz le journal des requêtes avant de rechercher les requêtes récemment terminées :
+3. Videz le journal des requêtes avant de rechercher les requêtes récemment terminées :
 
    ```sql
    SYSTEM FLUSH LOGS;
@@ -88,7 +87,7 @@ Collectez les mesures pour chaque exécution comme suit :
 
    Si vous ne pouvez pas exécuter `SYSTEM FLUSH LOGS`, attendez que le journal des requêtes soit vidé automatiquement, puis relancez la recherche. Si l’enregistrement n’apparaît jamais, vérifiez que la journalisation des requêtes est activée, que vous pouvez lire `system.query_log` et que vous interrogez le nœud ayant exécuté la requête.
 
-4. Recherchez l’enregistrement terminé pour chaque ID de requête. `system.query_log` enregistre les événements `QueryStart` et `QueryFinish` d’une requête terminée. Filtrez sur `QueryFinish`, qui contient la durée finale, le nombre de lignes et d’octets lus, ainsi que le pic d’utilisation de la mémoire :
+4. Recherchez l’enregistrement terminé pour chaque ID de requête. `system.query_log` enregistre les événements `QueryStart` et `QueryFinish` d’une requête terminée. Filtrez sur `QueryFinish`, qui contient la durée finale, le nombre de lignes et d’octets lus, ainsi que le pic de mémoire :
 
    ```sql
    SELECT
@@ -104,7 +103,7 @@ Collectez les mesures pour chaque exécution comme suit :
    LIMIT 1;
    ```
 
-5. Pour chaque version de la requête, utilisez la durée médiane des exécutions mesurées. Relevez `read_rows`, `read_bytes` et le pic d’utilisation de la mémoire de l’exécution la plus proche de cette médiane afin que les mesures correspondent à une exécution réelle.
+5. Pour chaque version de la requête, utilisez la durée médiane des exécutions mesurées. Relevez `read_rows`, `read_bytes` et le pic de mémoire de l’exécution la plus proche de cette médiane afin que les mesures correspondent à une exécution réelle.
 
 <Note>
   Pour les requêtes distribuées, `memory_usage` dans l’enregistrement `QueryFinish` de la requête initiatrice ne représente pas le pic à l’échelle du cluster. Utilisez `initial_query_id` pour examiner les enregistrements `QueryFinish` enfants sur les nœuds participants.
@@ -114,11 +113,11 @@ Utilisez un tableau comme celui-ci pour organiser les mesures représentatives. 
 
 <Tabs>
   <Tab title="Tableau">
-    | Exécution | Version de la requête | Durée représentative | `read_rows` | `read_bytes` | Pic d’utilisation de la mémoire |
+    | Exécution | Version de la requête | Durée représentative | `read_rows` | `read_bytes` | Pic de mémoire |
     | --------- | --------------------- | -------------------- | ----------- | ------------ | -------------- |
     | A         | Requête d’origine     |                      |             |              |                |
-    | B         | `count` regroupé        |                      |             |              |                |
-    | C         | `count` non regroupé    |                      |             |              |                |
+    | B         | `count` groupé        |                      |             |              |                |
+    | C         | `count` non groupé    |                      |             |              |                |
   </Tab>
 
   <Tab title="CSV">
@@ -132,7 +131,7 @@ Utilisez un tableau comme celui-ci pour organiser les mesures représentatives. 
 </Tabs>
 
 <div id="run-progressively-simpler-queries">
-  ## Exécuter des requêtes de plus en plus simples {#run-progressively-simpler-queries}
+  ## Exécuter des requêtes de plus en plus simples
 </div>
 
 Pour illustrer les trois comparaisons, l&#39;exemple utilise la [charge de travail agrégée par plage de dates](/fr/guides/clickhouse/performance-and-monitoring/query-optimization-example#date-range-aggregation). Vous pouvez appliquer cette méthode à une autre requête sans suivre l&#39;exemple pas à pas. Si la requête ne contient pas de `GROUP BY`, ignorez l&#39;exécution B comme décrit ci-dessous.
@@ -197,7 +196,7 @@ Pour illustrer les trois comparaisons, l&#39;exemple utilise la [charge de trava
 </Steps>
 
 <div id="interpret-the-differences">
-  ## Interpréter les différences {#interpret-the-differences}
+  ## Interpréter les différences
 </div>
 
 Comparez des durées représentatives issues d&#39;exécutions répétées plutôt que de soustraire deux mesures individuelles. Des écarts importants et constants indiquent la suite de l&#39;investigation :
@@ -210,7 +209,7 @@ Comparez des durées représentatives issues d&#39;exécutions répétées plut�
 | Les trois exécutions ont des durées similaires                  | La source de latence peut être commune aux trois versions, ou la simplification peut avoir modifié le plan d&#39;exécution | Comparez `read_rows`, `read_bytes` et le pic de mémoire entre les exécutions. S&#39;ils sont également similaires, examinez les opérations conservées dans l&#39;exécution C. Sinon, comparez les plans d&#39;exécution pour identifier les différences |
 
 <div id="compare-rows-read-with-count-result">
-  ### Comparer les lignes lues au résultat de count {#compare-rows-read-with-count-result}
+  ### Comparer les lignes lues au résultat de count
 </div>
 
 Comparez `read_rows` pour l’exécution C à la valeur renvoyée par son `count`. Par exemple, si `read_rows` est de 100 millions et que `count` renvoie 1 million, ClickHouse a parcouru environ 100 lignes sources pour chaque ligne comptée. Cela montre que le filtre a écarté la plupart des lignes lues dans la table, mais n’indique pas pourquoi. Ce ratio est destiné aux parcours simples sur une seule table. Pour les requêtes comportant plusieurs sources de données ou projections, interprétez plutôt `read_rows` à l’aide du plan d’exécution.
@@ -225,7 +224,7 @@ SET use_skip_indexes_on_data_read = 0;
 Utilisez ensuite [`EXPLAIN indexes = 1`](/fr/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement) pour voir quels index ClickHouse a utilisés et combien de parties et de granules chaque index a éliminés. Si ClickHouse a sélectionné plus de granules que prévu, vérifiez si les filtres sont alignés sur la clé de tri de la table et si l’élagage des partitions ou un index de saut de données pourrait éliminer davantage de granules. Si le plan ne comporte pas de section `Indexes`, `EXPLAIN` n’a pas signalé d’élagage d’index pour cette requête. À l’inverse, une requête analytique portant sur l’ensemble de la table lira vraisemblablement la majeure partie de celle-ci.
 
 <div id="validate-the-suspected-bottleneck">
-  ## Valider le goulot d’étranglement suspecté {#validate-the-suspected-bottleneck}
+  ## Valider le goulot d’étranglement suspecté
 </div>
 
 Une fois qu’un goulot d’étranglement probable a été identifié par la comparaison, validez-le avant de modifier le schéma ou la requête. Utilisez des éléments probants adaptés à la source de latence suspectée :
@@ -237,6 +236,8 @@ Une fois qu’un goulot d’étranglement probable a été identifié par la com
 
 Consultez le [guide de diagnostic des requêtes lentes](/fr/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement) pour en savoir plus sur les informations d’index renvoyées par `EXPLAIN`. Appliquez une modification ciblée, puis répétez les exécutions A, B et C dans les mêmes conditions. Vérifiez que la modification a réduit le travail visé et n’a pas déplacé le goulot d’étranglement ailleurs.
 
-## Étapes suivantes {#next-steps}
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
 
-Consultez ensuite [Approches d’optimisation](/fr/guides/clickhouse/performance-and-monitoring/optimization-approaches) pour faire correspondre le goulot d’étranglement présumé à une ou plusieurs modifications ciblées.
+Consultez les [Approches d’optimisation](/fr/guides/clickhouse/performance-and-monitoring/optimization-approaches) pour faire correspondre le goulot d’étranglement suspecté à une ou plusieurs modifications ciblées.

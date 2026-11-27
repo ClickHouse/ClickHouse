@@ -1,15 +1,14 @@
 """Pruning by the Iceberg v3 row lineage columns (`_row_id`, `_last_updated_sequence_number`).
 
-Both columns are derived from file-level metadata: a data file inherits the row ids
-`[first_row_id, first_row_id + record_count)` and a single `_last_updated_sequence_number` (its data
-sequence number). That makes the incremental "give me everything changed after sequence number N"
-read - the way row lineage is meant to be consumed - a metadata-only file skip.
+Both columns are derived from file-level metadata, so a filter on them is answerable from the
+manifest alone: a data file holds the row ids `[first_row_id, first_row_id + record_count)` and a
+single `_last_updated_sequence_number` (its data sequence number). That makes the incremental "give
+me everything changed after sequence number N" read - the way row lineage is meant to be consumed -
+a metadata-only file skip, and a `_row_id` point lookup a single-file read.
 
 The trap these tests guard is the copy-on-write rewrite: a file whose rows carry materialized row
 ids does NOT hold the contiguous range its manifest entry advertises, so pruning it by that range
-drops live rows. A file is pruned by a lineage column only when its manifest declares bounds for
-that column, widened by the inherited values when some rows may store NULL; a file without such
-statistics is not pruned by it. See `test_row_lineage.py` for how the values themselves are derived.
+drops live rows. See `test_row_lineage.py` for how the values themselves are derived.
 
 NOTE: row lineage is written only by `iceberg-spark-runtime` 1.10.0 and later, see the version
 pinned in `ci/docker/integration/runner/Dockerfile`.
@@ -17,6 +16,7 @@ pinned in `ci/docker/integration/runner/Dockerfile`.
 
 import json
 import os
+import uuid
 
 import avro.datafile
 import avro.io
@@ -30,10 +30,8 @@ from helpers.iceberg_utils import (
     get_uuid_str,
 )
 
-# The reserved field ids of `_row_id` and `_last_updated_sequence_number`, which a manifest uses to
-# key statistics about them.
+# The reserved field id of `_row_id`, which a manifest uses to key statistics about it.
 ROW_ID_FIELD_ID = 2147483540
-LAST_UPDATED_SEQUENCE_NUMBER_FIELD_ID = 2147483539
 
 # Both runs must read the same data, so only the metadata-level skip differs between them.
 PRUNING_DISABLED = {
@@ -75,6 +73,17 @@ def _pruned_files(instance, table_name, select_expression):
     )
 
 
+def _read_rows(instance, select_expression, settings=None):
+    query_id = f"row-lineage-pruning-{uuid.uuid4()}"
+    instance.query(select_expression, query_id=query_id, settings=settings)
+    instance.query("SYSTEM FLUSH LOGS")
+    return int(
+        instance.query(
+            f"SELECT read_rows FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+
+
 def _create_table_with_five_appends(spark, table_name, file_format="parquet"):
     """Five appends of ten rows: file k holds row ids [10k, 10k + 10) and sequence number k + 1."""
     spark.sql(
@@ -88,9 +97,7 @@ def _create_table_with_five_appends(spark, table_name, file_format="parquet"):
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])
-def test_row_id_filter_keeps_files_without_lineage_bounds(
-    started_cluster_iceberg_with_spark, storage_type
-):
+def test_row_id_filter_prunes_files(started_cluster_iceberg_with_spark, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_row_id_pruning_" + storage_type + "_" + get_uuid_str()
@@ -106,24 +113,24 @@ def test_row_id_filter_keeps_files_without_lineage_bounds(
         == 0
     )
 
-    # Spark writes no lineage statistics for new rows, so nothing bounds the row ids a file may store
-    # and no file is skipped.
+    # A point lookup touches the one file whose row id range contains the value.
     assert (
         _pruned_files(
             instance,
             TABLE_NAME,
             f"SELECT id FROM {table_expression} WHERE _row_id = 25 ORDER BY ALL",
         )
-        == 0
+        == 4
     )
 
+    # A half-open range keeps the two files above it.
     assert (
         _pruned_files(
             instance,
             TABLE_NAME,
             f"SELECT id FROM {table_expression} WHERE _row_id >= 35 ORDER BY ALL",
         )
-        == 0
+        == 3
     )
 
     assert (
@@ -132,7 +139,7 @@ def test_row_id_filter_keeps_files_without_lineage_bounds(
             TABLE_NAME,
             f"SELECT id FROM {table_expression} WHERE _row_id < 10 ORDER BY ALL",
         )
-        == 0
+        == 4
     )
 
     # A range spanning everything prunes nothing.
@@ -147,7 +154,7 @@ def test_row_id_filter_keeps_files_without_lineage_bounds(
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])
-def test_incremental_read_by_sequence_number_keeps_files_without_lineage_bounds(
+def test_incremental_read_by_sequence_number_prunes_files(
     started_cluster_iceberg_with_spark, storage_type
 ):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
@@ -160,15 +167,15 @@ def test_incremental_read_by_sequence_number_keeps_files_without_lineage_bounds(
         started_cluster_iceberg_with_spark, storage_type, TABLE_NAME
     )
 
-    # "Everything that changed after the sequence number I consumed last time": a file without
-    # lineage statistics may store any sequence number, so it is read.
+    # "Everything that changed after the sequence number I consumed last time" - the whole point of
+    # the column - must not open the files it is going to discard.
     assert (
         _pruned_files(
             instance,
             TABLE_NAME,
             f"SELECT id FROM {table_expression} WHERE _last_updated_sequence_number > 3 ORDER BY ALL",
         )
-        == 0
+        == 3
     )
 
     assert (
@@ -177,7 +184,7 @@ def test_incremental_read_by_sequence_number_keeps_files_without_lineage_bounds(
             TABLE_NAME,
             f"SELECT id FROM {table_expression} WHERE _last_updated_sequence_number = 2 ORDER BY ALL",
         )
-        == 0
+        == 4
     )
 
     assert (
@@ -187,6 +194,16 @@ def test_incremental_read_by_sequence_number_keeps_files_without_lineage_bounds(
             f"SELECT id FROM {table_expression} WHERE _last_updated_sequence_number > 0 ORDER BY ALL",
         )
         == 0
+    )
+
+    # An incremental consumer reads exactly the rows of the two newest files, not the whole table.
+    assert (
+        _read_rows(
+            instance,
+            f"SELECT id FROM {table_expression} WHERE _last_updated_sequence_number > 3 FORMAT Null",
+            PRUNING_ENABLED,
+        )
+        == 20
     )
 
 
@@ -199,40 +216,46 @@ def test_pruning_without_column_statistics(
     TABLE_NAME = "test_row_lineage_pruning_no_stats_" + storage_type + "_" + get_uuid_str()
 
     # Avro data files carry no per-column statistics, so the manifest cannot tell whether a file
-    # materializes row lineage, nor which values: no file is pruned by a lineage column.
+    # materializes row lineage - and materialized values are always carried over from an earlier
+    # write, so only the upper bound of the inherited range is known to hold.
     _create_table_with_five_appends(spark, TABLE_NAME, file_format="avro")
     _publish(started_cluster_iceberg_with_spark, storage_type, TABLE_NAME)
     table_expression = _table_function(
         started_cluster_iceberg_with_spark, storage_type, TABLE_NAME
     )
 
+    # An incremental read still skips everything written before the consumed sequence number.
     assert (
         _pruned_files(
             instance,
             TABLE_NAME,
             f"SELECT id FROM {table_expression} WHERE _last_updated_sequence_number > 3 ORDER BY ALL",
         )
-        == 0
+        == 3
     )
 
+    # A point lookup keeps every file that could hold an older materialized value, so only the one
+    # file whose whole range is below the requested value is skipped.
     assert (
         _pruned_files(
             instance,
             TABLE_NAME,
             f"SELECT id FROM {table_expression} WHERE _last_updated_sequence_number = 2 ORDER BY ALL",
         )
-        == 0
+        == 1
     )
 
+    # The same for row ids: everything above the inherited block is still skipped ...
     assert (
         _pruned_files(
             instance,
             TABLE_NAME,
             f"SELECT id FROM {table_expression} WHERE _row_id >= 35 ORDER BY ALL",
         )
-        == 0
+        == 3
     )
 
+    # ... while nothing below it is, because an older materialized id could be there.
     assert (
         _pruned_files(
             instance,
@@ -248,7 +271,7 @@ def test_pruning_without_column_statistics(
             TABLE_NAME,
             f"SELECT id FROM {table_expression} WHERE _row_id = 25 ORDER BY ALL",
         )
-        == 0
+        == 2
     )
 
 
@@ -266,32 +289,24 @@ def test_row_id_pruning_is_skipped_for_orc(
         started_cluster_iceberg_with_spark, storage_type, TABLE_NAME
     )
 
-    # Rows of ORC data files inherit their row ids, but ORC files are not skipped by `_row_id` bounds.
+    # The ORC reader reports no physical row numbers, so `_row_id` is NULL for every row and the
+    # inherited range describes nothing: pruning by it would drop the rows this query asks for.
     assert (
         instance.query(
-            f"SELECT id, _row_id FROM {table_expression} WHERE _row_id IN (0, 25, 49) ORDER BY id",
+            f"SELECT count() FROM {table_expression} WHERE _row_id IS NULL",
             settings=PRUNING_ENABLED,
-        )
-        == "0\t0\n25\t25\n49\t49\n"
-    )
-    assert (
-        _pruned_files(
-            instance,
-            TABLE_NAME,
-            f"SELECT id FROM {table_expression} WHERE _row_id = 25 ORDER BY ALL",
-        )
-        == 0
+        ).strip()
+        == "50"
     )
 
-    # The sequence number does not depend on row numbers, but without lineage statistics it does not
-    # prune either.
+    # The sequence number does not depend on row numbers, so it prunes as usual.
     assert (
         _pruned_files(
             instance,
             TABLE_NAME,
             f"SELECT id FROM {table_expression} WHERE _last_updated_sequence_number > 3 ORDER BY ALL",
         )
-        == 0
+        == 3
     )
 
 
@@ -335,9 +350,10 @@ def test_materialized_row_ids_are_not_pruned_away(
         == ""
     )
 
-    # The manifest declares the materialized ids 0..3 for this file with no nulls, so the filter above
-    # skips it rather than reading it and finding nothing: this count is what pins the declared
-    # bounds as being used at all.
+    # The manifest does declare the materialized ids 0..3 for this file and vouches for them, so the
+    # filter above skips it rather than reading it and finding nothing. Declining to use a well
+    # formed declared pair would leave the fallback range 0..7 instead, which overlaps the filter and
+    # keeps the file, so this count is what pins the declared bounds as being used at all.
     assert (
         _pruned_files(
             instance,
@@ -355,31 +371,6 @@ def test_materialized_row_ids_are_not_pruned_away(
         ).strip()
         == "0\n2\n3"
     )
-
-    # The file stores the sequence number 1 for its untouched rows and NULL for the updated one, which
-    # inherits 2: the declared bounds [1, 1] widened by the inherited value still skip the file here.
-    assert (
-        _pruned_files(
-            instance,
-            TABLE_NAME,
-            f"SELECT id FROM {table_expression} WHERE _last_updated_sequence_number > 2 ORDER BY ALL",
-        )
-        == 1
-    )
-
-    # The statistics of the stored column in the Parquet file do not cover the inherited value either,
-    # so the format must not skip row groups by them.
-    for condition in ("= 2", "> 1"):
-        assert (
-            instance.query(
-                f"SELECT id FROM {table_expression} WHERE _last_updated_sequence_number {condition}",
-                settings={
-                    "use_iceberg_partition_pruning": 1,
-                    "input_format_parquet_filter_push_down": 1,
-                },
-            ).strip()
-            == "1"
-        )
 
 
 def _current_manifest_list(table_name):
@@ -459,7 +450,7 @@ def test_inverted_declared_row_id_bounds_do_not_prune(
         data_file["upper_bounds"].append(
             {"key": ROW_ID_FIELD_ID, "value": (50).to_bytes(8, "little")}
         )
-        # With no nulls, the declared pair alone would bound the column.
+        # A declared bound is only read for a column the manifest says holds no nulls.
         data_file["null_value_counts"].append({"key": ROW_ID_FIELD_ID, "value": 0})
         return True
 
@@ -475,16 +466,16 @@ def test_inverted_declared_row_id_bounds_do_not_prune(
         started_cluster_iceberg_with_spark, storage_type, TABLE_NAME
     )
 
-    # No file declares usable lineage bounds, so none is skipped. Swapping the pair instead would
-    # exclude 25 and skip the file holding it, and pruning on the pair as declared would skip it too,
-    # both losing the row the filter asks for.
+    # The file is read, so the four whose blocks cannot hold row id 25 are the only ones skipped.
+    # Swapping the pair instead would exclude 25 and skip the file holding it, and pruning on the
+    # pair as declared would skip it too, both losing the row the filter asks for.
     assert (
         _pruned_files(
             instance,
             TABLE_NAME,
             f"SELECT id FROM {table_expression} WHERE _row_id = 25 ORDER BY ALL",
         )
-        == 0
+        == 4
     )
 
     assert (
@@ -513,26 +504,6 @@ def test_unrepresentable_row_id_block_does_not_prune(
             f"INSERT INTO {TABLE_NAME} select id, 'a' from range({lo}, {lo + 10})"
         )
 
-    def declare_row_id_bounds_with_nulls(record):
-        # Declared bounds with nulls are widened by the inherited block, so they make the block
-        # matter for this file.
-        data_file = record["data_file"]
-        data_file["lower_bounds"].append(
-            {"key": ROW_ID_FIELD_ID, "value": (0).to_bytes(8, "little")}
-        )
-        data_file["upper_bounds"].append(
-            {"key": ROW_ID_FIELD_ID, "value": (0).to_bytes(8, "little")}
-        )
-        data_file["null_value_counts"].append({"key": ROW_ID_FIELD_ID, "value": 1})
-        return True
-
-    assert (
-        _rewrite_avro(
-            _manifest_holding_row_id(TABLE_NAME, 0), declare_row_id_bounds_with_nulls
-        )
-        == 1
-    )
-
     def declare_negative_first_row_id(record):
         # `first_row_id` is a signed long on the wire but a row id is unsigned, so a negative value
         # names a block starting just below the top of the range whose end no longer fits in it.
@@ -552,16 +523,15 @@ def test_unrepresentable_row_id_block_does_not_prune(
         started_cluster_iceberg_with_spark, storage_type, TABLE_NAME
     )
 
-    # The file whose block does not fit is read whatever its declared bounds say: widened by the
-    # wrapped block they would become [0, 8] and skip it, while its first row has row id 2^64 - 1.
-    # The second file declares no lineage bounds and is read too.
+    # The file whose block does not fit is read whatever the filter says, while the second file,
+    # whose block is well formed, still prunes.
     assert (
         _pruned_files(
             instance,
             TABLE_NAME,
-            f"SELECT id FROM {table_expression} WHERE _row_id >= 20 ORDER BY ALL",
+            f"SELECT id FROM {table_expression} WHERE _row_id = 5 ORDER BY ALL",
         )
-        == 0
+        == 1
     )
 
     # A row id is assigned as `first_row_id` plus the row's position, so the block starting one
@@ -576,118 +546,9 @@ def test_unrepresentable_row_id_block_does_not_prune(
     )
 
 
-@pytest.mark.parametrize("storage_type", ["s3"])
-def test_materialized_row_lineage_without_statistics_is_not_pruned_away(
-    started_cluster_iceberg_with_spark, storage_type
-):
-    instance = started_cluster_iceberg_with_spark.instances["node1"]
-    spark = started_cluster_iceberg_with_spark.spark_session
-    TABLE_NAME = "test_row_lineage_no_lineage_stats_" + storage_type + "_" + get_uuid_str()
-
-    # The rewritten file of `test_materialized_row_ids_are_not_pruned_away`: it keeps the row ids 0..3
-    # and the sequence number 1 of its untouched rows, below its inherited block 4..7 and number 2.
-    spark.sql(
-        f"CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg "
-        f"TBLPROPERTIES ('format-version' = '3', 'write.update.mode' = 'copy-on-write')"
-    )
-    spark.sql(f"INSERT INTO {TABLE_NAME} select id, 'a' from range(0, 4)")
-    spark.sql(f"UPDATE {TABLE_NAME} SET data = 'z' WHERE id = 1")
-
-    lineage_field_ids = (ROW_ID_FIELD_ID, LAST_UPDATED_SEQUENCE_NUMBER_FIELD_ID)
-    sizes_left_for_table_columns = []
-
-    def drop_row_lineage_statistics(record):
-        # Every metric map is optional and a missing id means "unknown", so a writer may keep the
-        # statistics of the table columns and leave out those of the reserved lineage columns.
-        data_file = record["data_file"]
-        dropped = False
-        for name in (
-            "column_sizes",
-            "value_counts",
-            "null_value_counts",
-            "nan_value_counts",
-            "lower_bounds",
-            "upper_bounds",
-        ):
-            stats = data_file.get(name)
-            if stats is None:
-                continue
-            kept = [item for item in stats if item["key"] not in lineage_field_ids]
-            dropped = dropped or len(kept) != len(stats)
-            data_file[name] = kept
-        if dropped:
-            sizes_left_for_table_columns.append(len(data_file["column_sizes"] or []))
-        return dropped
-
-    with open(_current_manifest_list(TABLE_NAME), "rb") as f:
-        reader = avro.datafile.DataFileReader(f, avro.io.DatumReader())
-        data_manifests = [
-            entry["manifest_path"] for entry in reader if entry["content"] == 0
-        ]
-        reader.close()
-
-    # Only the rewritten file has lineage statistics to drop, and it must keep sizes for its table
-    # columns: the manifest then knows about some columns of the file, but nothing about lineage.
-    assert (
-        sum(_rewrite_avro(path, drop_row_lineage_statistics) for path in data_manifests)
-        == 1
-    )
-    assert sizes_left_for_table_columns[0] > 0
-
-    _publish(started_cluster_iceberg_with_spark, storage_type, TABLE_NAME)
-    table_expression = _table_function(
-        started_cluster_iceberg_with_spark, storage_type, TABLE_NAME
-    )
-
-    for row_key in range(4):
-        assert (
-            instance.query(
-                f"SELECT id FROM {table_expression} WHERE _row_id = {row_key}",
-                settings=PRUNING_ENABLED,
-            ).strip()
-            == str(row_key)
-        )
-
-    assert (
-        instance.query(
-            f"SELECT id FROM {table_expression} WHERE _last_updated_sequence_number = 1 ORDER BY ALL",
-            settings=PRUNING_ENABLED,
-        ).strip()
-        == "0\n2\n3"
-    )
-
-    assert (
-        _pruned_files(
-            instance,
-            TABLE_NAME,
-            f"SELECT id FROM {table_expression} WHERE _row_id = 1 ORDER BY ALL",
-        )
-        == 0
-    )
-
-    # Without lineage statistics nothing bounds the stored values, so a filter above the inherited
-    # block does not prune the file either.
-    assert (
-        _pruned_files(
-            instance,
-            TABLE_NAME,
-            f"SELECT id FROM {table_expression} WHERE _row_id >= 8 ORDER BY ALL",
-        )
-        == 0
-    )
-
-    assert (
-        _pruned_files(
-            instance,
-            TABLE_NAME,
-            f"SELECT id FROM {table_expression} WHERE _last_updated_sequence_number > 2 ORDER BY ALL",
-        )
-        == 0
-    )
-
-
-# The tests above read what Spark wrote. The ones below replay the same filters over metadata
-# ClickHouse wrote itself, which declares no lineage statistics either, so no file is skipped.
+# The tests above read what Spark wrote. The ones below prune over metadata ClickHouse wrote itself:
+# the inherited row id range of a manifest entry is only as good as the `first_row_id` the writer put
+# into the manifest list, so the same filters are replayed against a table of its own making.
 INSERT_SETTINGS = {"allow_insert_into_iceberg": 1}
 
 
@@ -712,9 +573,7 @@ def _clickhouse_table_with_five_appends(
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])
-def test_row_id_filter_keeps_files_without_lineage_bounds_clickhouse(
-    started_cluster_iceberg_with_spark, storage_type
-):
+def test_row_id_filter_prunes_files_clickhouse(started_cluster_iceberg_with_spark, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     TABLE_NAME = "test_row_id_pruning_clickhouse_" + storage_type + "_" + get_uuid_str()
 
@@ -724,26 +583,27 @@ def test_row_id_filter_keeps_files_without_lineage_bounds_clickhouse(
 
     assert _pruned_files(instance, TABLE_NAME, f"SELECT id FROM {TABLE_NAME} ORDER BY ALL") == 0
 
-    # No lineage statistics are written for new rows, so no file is skipped.
+    # A point lookup touches the one file whose row id range contains the value.
     assert (
         _pruned_files(
             instance, TABLE_NAME, f"SELECT id FROM {TABLE_NAME} WHERE _row_id = 25 ORDER BY ALL"
         )
-        == 0
+        == 4
     )
 
+    # A half-open range keeps the two files above it.
     assert (
         _pruned_files(
             instance, TABLE_NAME, f"SELECT id FROM {TABLE_NAME} WHERE _row_id >= 35 ORDER BY ALL"
         )
-        == 0
+        == 3
     )
 
     assert (
         _pruned_files(
             instance, TABLE_NAME, f"SELECT id FROM {TABLE_NAME} WHERE _row_id < 10 ORDER BY ALL"
         )
-        == 0
+        == 4
     )
 
     # A range spanning everything prunes nothing.
@@ -756,7 +616,7 @@ def test_row_id_filter_keeps_files_without_lineage_bounds_clickhouse(
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])
-def test_incremental_read_by_sequence_number_keeps_files_without_lineage_bounds_clickhouse(
+def test_incremental_read_by_sequence_number_prunes_files_clickhouse(
     started_cluster_iceberg_with_spark, storage_type
 ):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
@@ -772,7 +632,7 @@ def test_incremental_read_by_sequence_number_keeps_files_without_lineage_bounds_
             TABLE_NAME,
             f"SELECT id FROM {TABLE_NAME} WHERE _last_updated_sequence_number > 3 ORDER BY ALL",
         )
-        == 0
+        == 3
     )
 
     assert (
@@ -781,7 +641,7 @@ def test_incremental_read_by_sequence_number_keeps_files_without_lineage_bounds_
             TABLE_NAME,
             f"SELECT id FROM {TABLE_NAME} WHERE _last_updated_sequence_number = 2 ORDER BY ALL",
         )
-        == 0
+        == 4
     )
 
     assert (
@@ -791,6 +651,16 @@ def test_incremental_read_by_sequence_number_keeps_files_without_lineage_bounds_
             f"SELECT id FROM {TABLE_NAME} WHERE _last_updated_sequence_number > 0 ORDER BY ALL",
         )
         == 0
+    )
+
+    # An incremental consumer reads exactly the rows of the two newest files, not the whole table.
+    assert (
+        _read_rows(
+            instance,
+            f"SELECT id FROM {TABLE_NAME} WHERE _last_updated_sequence_number > 3 FORMAT Null",
+            PRUNING_ENABLED,
+        )
+        == 20
     )
 
 
@@ -816,30 +686,21 @@ def test_row_id_pruning_is_skipped_for_orc_clickhouse(
             settings=INSERT_SETTINGS,
         )
 
-    # Rows of ORC data files inherit their row ids, but ORC files are not skipped by `_row_id` bounds.
+    # The ORC reader reports no physical row numbers, so `_row_id` is NULL for every row and the
+    # inherited range describes nothing: pruning by it would drop the rows this query asks for.
     assert (
         instance.query(
-            f"SELECT id, _row_id FROM {TABLE_NAME} WHERE _row_id IN (0, 25, 49) ORDER BY id",
-            settings=PRUNING_ENABLED,
-        )
-        == "0\t0\n25\t25\n49\t49\n"
-    )
-    assert (
-        _pruned_files(
-            instance,
-            TABLE_NAME,
-            f"SELECT id FROM {TABLE_NAME} WHERE _row_id = 25 ORDER BY ALL",
-        )
-        == 0
+            f"SELECT count() FROM {TABLE_NAME} WHERE _row_id IS NULL", settings=PRUNING_ENABLED
+        ).strip()
+        == "50"
     )
 
-    # The sequence number does not depend on row numbers, but without lineage statistics it does not
-    # prune either.
+    # The sequence number does not depend on row numbers, so it prunes as usual.
     assert (
         _pruned_files(
             instance,
             TABLE_NAME,
             f"SELECT id FROM {TABLE_NAME} WHERE _last_updated_sequence_number > 3 ORDER BY ALL",
         )
-        == 0
+        == 3
     )

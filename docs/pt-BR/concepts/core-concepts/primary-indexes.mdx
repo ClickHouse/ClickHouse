@@ -6,33 +6,33 @@ keywords: ['índice primário esparso', 'índice primário', 'índice']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 <Tip>
   **Procurando detalhes avançados sobre indexação?**
 
   Esta página apresenta o índice primário esparso do ClickHouse, como ele é construído, como funciona e como ajuda a acelerar as consultas.
 
-  Para estratégias avançadas de indexação e detalhes técnicos mais aprofundados, consulte a [análise aprofundada sobre índices primários](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes).
+  Para estratégias avançadas de indexação e detalhes técnicos mais aprofundados, consulte o [guia aprofundado sobre índices primários](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes).
 </Tip>
 
 <div id="how-does-the-sparse-primary-index-work-in-clickHouse">
-  ## Como funciona o índice primário esparso no ClickHouse? {#how-does-the-sparse-primary-index-work-in-clickHouse}
+  ## Como funciona o índice primário esparso no ClickHouse?
 </div>
 
 <br />
 
 O índice primário esparso no ClickHouse ajuda a identificar com eficiência [grânulos](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) — blocos de linhas — que podem conter dados que correspondam à condição de uma consulta nas colunas de chave primária da tabela. Na próxima seção, explicamos como esse índice é construído com base nos valores dessas colunas.
 
-### Criação do índice primário esparso {#sparse-primary-index-creation}
+<div id="sparse-primary-index-creation">
+  ### Criação do índice primário esparso
+</div>
 
 Para ilustrar como o índice primário esparso é construído, usamos a tabela [uk&#95;price&#95;paid&#95;simple](/pt-BR/concepts/core-concepts/parts) junto com algumas animações.
 
 Como [lembrete](/pt-BR/concepts/core-concepts/parts), na nossa tabela de exemplo ① com a chave primária (town, street), os dados ② inseridos são ③ armazenados em disco, ordenados pelos valores das colunas da chave primária e comprimidos, em arquivos separados para cada coluna:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![](/images/managing-data/core-concepts/primary-index-light_01.webp)
-  </Frame>
-</div>
+<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
 
 <br />
 
@@ -42,11 +42,7 @@ Para processamento, os dados de cada coluna são ④ divididos logicamente em gr
 
 Essa estrutura em grânulos também é o que torna o índice primário **esparso**: em vez de indexar cada linha, o ClickHouse armazena ⑤ os valores da chave primária de apenas uma linha por grânulo — especificamente, a primeira linha. Isso resulta em uma entrada de índice por grânulo:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![](/images/managing-data/core-concepts/primary-index-light_02.webp)
-  </Frame>
-</div>
+<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg" />
 
 <br />
 
@@ -54,15 +50,13 @@ Essa estrutura em grânulos também é o que torna o índice primário **esparso
 
 Graças à sua esparsidade, o índice primário é pequeno o suficiente para caber inteiramente na memória, permitindo filtragem rápida para consultas com predicados nas colunas da chave primária. Na próxima seção, mostramos como ele ajuda a acelerar essas consultas.
 
-### Uso do índice primário {#primary-index-usage}
+<div id="primary-index-usage">
+  ### Uso do índice primário
+</div>
 
 Mostramos como o índice primário esparso é usado para acelerar consultas com outra animação:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![](/images/managing-data/core-concepts/primary-index-light_03.webp)
-  </Frame>
-</div>
+<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
 
 <br />
 
@@ -87,7 +81,7 @@ Mostramos como o índice primário esparso é usado para acelerar consultas com 
 </Steps>
 
 <div id="monitoring-primary-indexes">
-  ## Monitoramento de índices primários {#monitoring-primary-indexes}
+  ## Monitoramento de índices primários
 </div>
 
 Cada [parte de dados](/pt-BR/concepts/core-concepts/parts) da tabela tem seu próprio índice primário. Podemos inspecionar o conteúdo desses índices usando a [função de tabela](/pt-BR/reference/functions/table-functions/mergeTreeIndex) [mergeTreeIndex](/pt-BR/reference/functions/table-functions/mergeTreeIndex).
@@ -200,7 +194,7 @@ SELECT count() FROM uk.uk_price_paid_simple;
 ```
 
 <div id="key-takeaways">
-  ## Principais pontos {#key-takeaways}
+  ## Principais pontos
 </div>
 
 * **Índices primários esparsos** ajudam o ClickHouse a ignorar dados desnecessários ao identificar quais grânulos podem conter linhas que correspondam às condições da consulta nas colunas da chave primária.
@@ -213,7 +207,9 @@ SELECT count() FROM uk.uk_price_paid_simple;
 
 * Você pode **inspecionar o conteúdo do índice** usando a função de tabela `mergeTreeIndex` e monitorar o uso do índice com a cláusula `EXPLAIN`.
 
-## Onde encontrar mais informações {#where-to-find-more-information}
+<div id="where-to-find-more-information">
+  ## Onde encontrar mais informações
+</div>
 
 Para entender melhor como os índices primários esparsos funcionam no ClickHouse, incluindo como eles diferem dos índices tradicionais de banco de dados e as boas práticas de uso, confira nosso [guia detalhado](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes) sobre indexação.
 

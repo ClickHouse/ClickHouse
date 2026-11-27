@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -116,7 +115,7 @@ struct Retention
 
 bool operator==(const Retention & a, const Retention & b);
 
-using Retentions = VectorWithMemoryTracking<Retention>;
+using Retentions = std::vector<Retention>;
 
 std::ostream &operator<<(std::ostream & stream, const Retentions & a);
 
@@ -134,7 +133,7 @@ struct Pattern
 bool operator==(const Pattern & a, const Pattern & b);
 std::ostream &operator<<(std::ostream & stream, const Pattern & a);
 
-using Patterns = VectorWithMemoryTracking<Pattern>;
+using Patterns = std::vector<Pattern>;
 using RetentionPattern = Pattern;
 using AggregationPattern = Pattern;
 

@@ -4,11 +4,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
-#include <Common/SecretString.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/FieldVisitorToString.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/parseQuery.h>
 
 #include <fmt/ranges.h>
 
@@ -48,17 +45,17 @@ public:
         return std::unique_ptr<Impl>(new Impl(collection_config, keys));
     }
 
-    [[nodiscard]] bool has(const Key & key) const
+    bool has(const Key & key) const
     {
         return Configuration::hasConfigValue(*config, key);
     }
 
-    template <typename T> [[nodiscard]] T get(const Key & key) const
+    template <typename T> T get(const Key & key) const
     {
         return Configuration::getConfigValue<T>(*config, key);
     }
 
-    template <typename T> [[nodiscard]] T getOrDefault(const Key & key, const T & default_value) const
+    template <typename T> T getOrDefault(const Key & key, const T & default_value) const
     {
         return Configuration::getConfigValueOrDefault<T>(*config, key, &default_value);
     }
@@ -79,7 +76,7 @@ public:
         return default_value;
     }
 
-    [[nodiscard]] ImplPtr createCopy(const std::string & collection_name_) const
+    ImplPtr createCopy(const std::string & collection_name_) const
     {
         return create(*config, collection_name_, "", keys);
     }
@@ -91,7 +88,7 @@ public:
         chassert(removed);
     }
 
-    [[nodiscard]] Keys getKeys(ssize_t depth, const std::string & prefix) const
+    Keys getKeys(ssize_t depth, const std::string & prefix) const
     {
         std::queue<std::string> enumerate_input;
 
@@ -116,17 +113,17 @@ public:
         return result;
     }
 
-    [[nodiscard]] Keys::const_iterator begin() const
+    Keys::const_iterator begin() const
     {
         return keys.begin();
     }
 
-    [[nodiscard]] Keys::const_iterator end() const
+    Keys::const_iterator end() const
     {
         return keys.end();
     }
 
-    [[nodiscard]] std::string dumpStructure() const
+    std::string dumpStructure() const
     {
         /// Convert a collection config like
         /// <collection>
@@ -382,21 +379,14 @@ MutableNamedCollectionPtr NamedCollectionFromSQL::create(const ASTCreateNamedCol
     return std::unique_ptr<NamedCollection>(new NamedCollectionFromSQL(query));
 }
 
-static ASTCreateNamedCollectionQuery parseCreateQuery(std::string_view create_query)
-{
-    ParserCreateNamedCollectionQuery parser;
-    auto ast = parseQueryFromText(parser, create_query);
-    return ast->as<ASTCreateNamedCollectionQuery &>();
-}
-
 NamedCollectionFromSQL::NamedCollectionFromSQL(const ASTCreateNamedCollectionQuery & query_)
     : NamedCollection(nullptr, query_.collection_name, true, SourceId::SQL)
-    , create_query(query_.formatWithSecretsOneLine<SecretString>())
+    , create_query_ptr(query_.clone()->as<ASTCreateNamedCollectionQuery &>())
 {
-    const auto config = NamedCollectionConfiguration::createConfiguration(collection_name, query_.changes, query_.overridability);
+    const auto config = NamedCollectionConfiguration::createConfiguration(collection_name, create_query_ptr.changes, create_query_ptr.overridability);
 
     std::set<std::string, std::less<>> keys;
-    for (const auto & change : query_.changes)
+    for (const auto & change : create_query_ptr.changes)
         keys.insert(change.name);
 
     pimpl = Impl::create(*config, collection_name, "", keys);
@@ -404,13 +394,12 @@ NamedCollectionFromSQL::NamedCollectionFromSQL(const ASTCreateNamedCollectionQue
 
 String NamedCollectionFromSQL::getCreateStatement(bool show_secrects)
 {
-    auto create_query_ast = parseCreateQuery(create_query);
-    auto & changes = create_query_ast.changes;
+    auto & changes = create_query_ptr.changes;
     std::sort(
         changes.begin(), changes.end(),
         [](const SettingChange & lhs, const SettingChange & rhs) { return lhs.name < rhs.name; });
 
-    return create_query_ast.formatWithPossiblyHidingSensitiveData(
+    return create_query_ptr.formatWithPossiblyHidingSensitiveData(
         /*max_length=*/0,
         /*one_line=*/true,
         /*show_secrets=*/show_secrects,
@@ -423,7 +412,6 @@ void NamedCollectionFromSQL::update(const ASTAlterNamedCollectionQuery & alter_q
 {
     std::lock_guard lock(mutex);
 
-    auto create_query_ast = parseCreateQuery(create_query);
     std::unordered_map<std::string, Field> result_changes_map;
     for (const auto & [name, value, _] : alter_query.changes)
     {
@@ -437,13 +425,13 @@ void NamedCollectionFromSQL::update(const ASTAlterNamedCollectionQuery & alter_q
         }
     }
 
-    for (const auto & [name, value, _] : create_query_ast.changes)
+    for (const auto & [name, value, _] : create_query_ptr.changes)
         result_changes_map.emplace(name, value);
 
     std::unordered_map<std::string, bool> result_overridability_map;
     for (const auto & [name, value] : alter_query.overridability)
         result_overridability_map.emplace(name, value);
-    for (const auto & [name, value] : create_query_ast.overridability)
+    for (const auto & [name, value] : create_query_ptr.overridability)
         result_overridability_map.emplace(name, value);
 
     for (const auto & delete_key : alter_query.delete_keys)
@@ -463,19 +451,18 @@ void NamedCollectionFromSQL::update(const ASTAlterNamedCollectionQuery & alter_q
             result_overridability_map.erase(it_override);
     }
 
-    create_query_ast.changes.clear();
+    create_query_ptr.changes.clear();
     for (const auto & [name, value] : result_changes_map)
-        create_query_ast.changes.emplace_back(name, value);
-    create_query_ast.overridability = std::move(result_overridability_map);
+        create_query_ptr.changes.emplace_back(name, value);
+    create_query_ptr.overridability = std::move(result_overridability_map);
 
-    if (create_query_ast.changes.empty())
+    if (create_query_ptr.changes.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Named collection cannot be empty (collection name: {})",
             collection_name);
 
-    chassert(create_query_ast.collection_name == alter_query.collection_name);
-    create_query = create_query_ast.formatWithSecretsOneLine<SecretString>();
+    chassert(create_query_ptr.collection_name == alter_query.collection_name);
     for (const auto & [name, value, _] : alter_query.changes)
     {
         auto it_override = alter_query.overridability.find(name);
@@ -490,14 +477,12 @@ void NamedCollectionFromSQL::update(const ASTAlterNamedCollectionQuery & alter_q
 }
 
 template String NamedCollection::get<String>(const NamedCollection::Key & key) const;
-template SecretString NamedCollection::get<SecretString>(const NamedCollection::Key & key) const;
 template UInt64 NamedCollection::get<UInt64>(const NamedCollection::Key & key) const;
 template Int64 NamedCollection::get<Int64>(const NamedCollection::Key & key) const;
 template Float64 NamedCollection::get<Float64>(const NamedCollection::Key & key) const;
 template bool NamedCollection::get<bool>(const NamedCollection::Key & key) const;
 
 template String NamedCollection::getOrDefault<String>(const NamedCollection::Key & key, const String & default_value) const;
-template SecretString NamedCollection::getOrDefault<SecretString>(const NamedCollection::Key & key, const SecretString & default_value) const;
 template UInt64 NamedCollection::getOrDefault<UInt64>(const NamedCollection::Key & key, const UInt64 & default_value) const;
 template Int64 NamedCollection::getOrDefault<Int64>(const NamedCollection::Key & key, const Int64 & default_value) const;
 template Float64 NamedCollection::getOrDefault<Float64>(const NamedCollection::Key & key, const Float64 & default_value) const;
@@ -514,7 +499,6 @@ template UInt64 NamedCollection::getAnyOrDefault<UInt64>(const std::initializer_
 template Int64 NamedCollection::getAnyOrDefault<Int64>(const std::initializer_list<NamedCollection::Key> & key, const Int64 & default_value) const;
 template Float64 NamedCollection::getAnyOrDefault<Float64>(const std::initializer_list<NamedCollection::Key> & key, const Float64 & default_value) const;
 template bool NamedCollection::getAnyOrDefault<bool>(const std::initializer_list<NamedCollection::Key> & key, const bool & default_value) const;
-template SecretString NamedCollection::getAnyOrDefault<SecretString>(const std::initializer_list<NamedCollection::Key> & key, const SecretString & default_value) const;
 
 template void
 NamedCollection::set<String, true>(const NamedCollection::Key & key, const String & value, const std::optional<bool> is_overridable);

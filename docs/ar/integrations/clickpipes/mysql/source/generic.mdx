@@ -14,11 +14,15 @@ integration:
   إذا كنت تستخدم أحد المزوّدين المدعومين (في الشريط الجانبي)، فيُرجى الرجوع إلى الدليل المخصّص لذلك المزوّد.
 </Info>
 
-## تفعيل الاحتفاظ بسجل binary log {#enable-binlog-retention}
+<div id="enable-binlog-retention">
+  ## تفعيل الاحتفاظ بسجل binary log
+</div>
 
 تحتوي سجلات binary log على معلومات عن التغييرات التي تُجرى على البيانات في مثيل خادم MySQL، وهي مطلوبة لعملية النسخ المتماثل.
 
-### ‏MySQL 8.x والإصدارات الأحدث {#binlog-v8-x}
+<div id="binlog-v8-x">
+  ### ‏MySQL 8.x والإصدارات الأحدث
+</div>
 
 لتمكين التسجيل الثنائي على مثيل MySQL لديك، تأكد من ضبط الإعدادات التالية:
 
@@ -27,10 +31,10 @@ log_bin = ON                        -- default value
 binlog_format = ROW                 -- default value
 binlog_row_image = FULL             -- default value
 binlog_row_metadata = FULL
-binlog_expire_logs_seconds = 259200  -- 3 days or higher; default is 30 days
+binlog_expire_logs_seconds = 86400  -- 1 day or higher; default is 30 days
 ```
 
-للتحقق من هذه الإعدادات، نفِّذ أوامر SQL التالية:
+للتحقق من هذه الإعدادات، نفِّذ أوامر SQL التالية:
 
 ```sql
 SHOW VARIABLES LIKE 'log_bin';
@@ -47,14 +51,16 @@ SET PERSIST log_bin = ON;
 SET PERSIST binlog_format = ROW;
 SET PERSIST binlog_row_image = FULL;
 SET PERSIST binlog_row_metadata = FULL;
-SET PERSIST binlog_expire_logs_seconds = 259200;
+SET PERSIST binlog_expire_logs_seconds = 86400;
 ```
 
 إذا غيّرت إعداد `log_bin`، فيجب عليك إعادة تشغيل مثيل MySQL حتى تصبح التغييرات نافذة.
 
 بعد تغيير الإعدادات، تابع إلى [تهيئة مستخدم لقاعدة البيانات](#configure-database-user).
 
-### MySQL 5.7 {#binlog-v5-x}
+<div id="binlog-v5-x">
+  ### MySQL 5.7
+</div>
 
 لتمكين التسجيل الثنائي على مثيل MySQL 5.7 لديك، تأكد من ضبط الإعدادات التالية:
 
@@ -63,7 +69,7 @@ server_id = 1            -- or greater; anything but 0
 log_bin = ON
 binlog_format = ROW      -- default value
 binlog_row_image = FULL  -- default value
-expire_logs_days = 3     -- or higher; 0 would mean logs are preserved forever
+expire_logs_days = 1     -- or higher; 0 would mean logs are preserved forever
 ```
 
 للتحقق من هذه الإعدادات، نفّذ أوامر SQL التالية:
@@ -84,7 +90,7 @@ server_id = 1
 log_bin = ON
 binlog_format = ROW
 binlog_row_image = FULL
-expire_logs_days = 3
+expire_logs_days = 1
 ```
 
 يجب إعادة تشغيل مثيل MySQL لكي تسري التغييرات.
@@ -93,7 +99,9 @@ expire_logs_days = 3
   لا يُدعَم استبعاد الأعمدة وتغييرات المخطط في MySQL 5.7 والإصدارات الأقدم. تعتمد هذه الميزات على البيانات الوصفية للجدول، وهي غير متوفرة في binlog قبل [MySQL 8.0.1](https://dev.mysql.com/blog-archive/more-metadata-is-written-into-binary-log/).
 </Note>
 
-## إعداد مستخدم قاعدة بيانات {#configure-database-user}
+<div id="configure-database-user">
+  ## إعداد مستخدم قاعدة بيانات
+</div>
 
 اتصل بمثيل MySQL الخاص بك بصفته المستخدم root، ثم نفّذ الأوامر التالية:
 
@@ -120,7 +128,9 @@ expire_logs_days = 3
   تأكّد من استبدال `clickpipes_user` و`some_secure_password` باسم المستخدم وكلمة المرور اللذين تريد استخدامهما.
 </Note>
 
-## إعداد SSL/TLS (موصى به) {#ssl-tls-configuration}
+<div id="ssl-tls-configuration">
+  ## إعداد SSL/TLS (موصى به)
+</div>
 
 تضمن شهادات SSL اتصالات آمنة بقاعدة بيانات MySQL الخاصة بك. ويعتمد الإعداد على نوع الشهادة:
 
@@ -134,7 +144,9 @@ expire_logs_days = 3
 
 لمزيد من المعلومات حول خيارات SSL/TLS، راجع [الأسئلة الشائعة](/ar/integrations/clickpipes/mysql/faq#tls-certificate-validation-error).
 
-## ما الخطوة التالية؟ {#whats-next}
+<div id="whats-next">
+  ## ما الخطوة التالية؟
+</div>
 
 يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/mysql/index) والبدء في إدخال البيانات من مثيل MySQL الخاص بك إلى ClickHouse Cloud.
 احرص على تدوين بيانات الاتصال التي استخدمتها أثناء إعداد مثيل MySQL الخاص بك، إذ ستحتاج إليها خلال عملية إنشاء ClickPipe.

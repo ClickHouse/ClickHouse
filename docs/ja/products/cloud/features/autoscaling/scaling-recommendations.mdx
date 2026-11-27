@@ -7,8 +7,10 @@ title: 'スケーリングの推奨事項'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 <div id="introduction">
-  ## はじめに {#introduction}
+  ## はじめに
 </div>
 
 データベースリソースのオートスケーリングでは、慎重なバランスが求められます。スケールアップが遅すぎるとパフォーマンス低下のリスクがある一方、スケールダウンを積極的に行いすぎると、スケーリングが絶えず揺れ動く状態を引き起こしかねません。
@@ -16,7 +18,7 @@ doc_type: 'guide'
 ClickHouse Cloud は、2 つのウィンドウを用いた推奨フレームワークと、CPU のターゲット追跡型推奨システムを組み合わせることで、本番データベースに必要な安定性を維持しながら、より高速なスケールダウン、スケーリングの揺れの最小化、そして変動するワークロードにおけるインフラストラクチャコストの大幅な削減を実現します。
 
 <div id="cpu-based-scaling">
-  ## CPU ベースのスケーリング {#cpu-based-scaling}
+  ## CPU ベースのスケーリング
 </div>
 
 CPU スケーリングはターゲットトラッキングに基づいており、使用率を目標レベルに維持するために必要な CPU 割り当てを正確に算出します。スケーリング アクションがトリガーされるのは、現在の CPU 使用率が定義された範囲を外れた場合のみです。
@@ -36,14 +38,14 @@ recommended_cpu = max_cpu_usage / target_utilization
 CPU 使用率が割り当て容量の 37.5%～75% の範囲内であれば、スケーリングは行われません。この範囲を外れた場合、レコメンダーが使用率を 53% に戻すのに必要な正確なサイズを算出し、それに応じてサービスがスケーリングされます。
 
 <div id="cpu-scaling-example">
-  ### 例 {#cpu-scaling-example}
+  ### 例
 </div>
 
 4 vCPU が割り当てられたサービスで、使用量が 3.8 vCPU (使用率約 95%) まで急増し、75% の高水位を超えたとします。
 レコメンダーは `3.8 / 0.53 ≈ 7.2 vCPU` と計算し、次に大きい利用可能なサイズ (8 vCPU) に切り上げます。負荷が落ち着き、使用量が 37.5% (1.5 vCPU) を下回ると、レコメンダーはそれに応じて比例してスケールダウンします。
 
 <div id="memory-based-recommendations">
-  ## メモリ使用量に基づく推奨事項 {#memory-based-recommendations}
+  ## メモリ使用量に基づく推奨事項
 </div>
 
 ClickHouse Cloud は、サービスの実際の使用パターンに基づいて、適切なメモリサイズを自動的に推奨します。
@@ -56,7 +58,7 @@ ClickHouse Cloud は、サービスの実際の使用パターンに基づいて
 * **OOM イベント**: クエリまたはレプリカで最近メモリ不足が発生したかどうか
 
 <div id="how-headroom-is-calculated">
-  ### ヘッドルームの計算方法 {#how-headroom-is-calculated}
+  ### ヘッドルームの計算方法
 </div>
 
 クエリメモリと常駐メモリでは、追加されるヘッドルームの量は使用状況の予測しやすさに応じて決まります。
@@ -67,7 +69,7 @@ ClickHouse Cloud は、サービスの実際の使用パターンに基づいて
 OOM イベントが検出された場合、サービスが回復に必要なメモリを十分に確保できるよう、レコメンダーはより強めの **1.5 倍** の乗数を適用します。
 
 <div id="final-recommendation">
-  ### 最終的な推奨事項 {#final-recommendation}
+  ### 最終的な推奨事項
 </div>
 
 システムは、すべてのシグナルのうち最も高い値を採用します。
@@ -81,7 +83,9 @@ desired_memory = max(
 )
 ```
 
-## Two-window レコメンダー {#two-window-recommender}
+<div id="two-window-recommender">
+  ## Two-window レコメンダー
+</div>
 
 ClickHouse Cloud では、単一のウィンドウではなく、時間範囲の異なる 2 つのルックバックウィンドウを使用します。
 
@@ -91,11 +95,7 @@ ClickHouse Cloud では、単一のウィンドウではなく、時間範囲の
 各ウィンドウは、メモリと CPU の両方を分析し、それぞれ独立して推奨値を生成します。
 その後、以下の図に示すように、各ウィンドウが示すスケーリングの方向に基づいて、システムがこれらの推奨値を統合します。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![2 ウィンドウレコメンダーの統合ロジック](/images/cloud/features/autoscaling/two-window-recommender.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/features/autoscaling/two-window-recommender.webp" size="lg" alt="2 ウィンドウレコメンダーの統合ロジック" />
 
 レコメンダーの設計上の判断について詳しくは、[&quot;Smarter Auto-Scaling for ClickHouse: The Two-Window Approach
 &quot;](https://clickhouse.com/blog/smarter-auto-scaling#the-two-window-solution) を参照してください。

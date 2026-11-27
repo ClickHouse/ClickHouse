@@ -1,4 +1,4 @@
--- Tags: no-random-settings
+-- Tags: no-fasttest, no-random-settings
 
 set max_insert_threads=1;
 set schema_inference_make_columns_nullable=0;

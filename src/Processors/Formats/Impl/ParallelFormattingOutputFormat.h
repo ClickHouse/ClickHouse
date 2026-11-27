@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/Formats/IOutputFormat.h>
-#include <Common/DequeWithMemoryTracking.h>
 
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
@@ -14,6 +13,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
 
+#include <deque>
 #include <atomic>
 
 
@@ -96,8 +96,8 @@ public:
         buf.finalize();
 
         /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
-        /// and n threads for formatting. Cap before adding, because the number of threads comes from a setting.
-        processing_units.resize(std::min(params.max_threads_for_parallel_formatting, size_t{1022}) + 2);
+        /// and n threads for formatting.
+        processing_units.resize(std::min(params.max_threads_for_parallel_formatting + 2, size_t{1024}));
 
         /// Do not put any code that could throw an exception under this line.
         /// Because otherwise the destructor of this class won't be called and this thread won't be joined.
@@ -237,7 +237,7 @@ private:
     std::exception_ptr background_exception = nullptr;
 
     /// We use deque, because ProcessingUnit doesn't have move or copy constructor.
-    DequeWithMemoryTracking<ProcessingUnit> processing_units;
+    std::deque<ProcessingUnit> processing_units;
 
     std::mutex mutex;
     std::atomic_bool emergency_stop{false};
