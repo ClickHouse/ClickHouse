@@ -110,7 +110,6 @@ struct SerializationSubstream
 
         NullableElements,
         NullMap,
-        NullMapHidden,
         SparseNullMap,
 
         TupleElement,

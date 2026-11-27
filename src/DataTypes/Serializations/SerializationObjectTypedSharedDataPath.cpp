@@ -17,12 +17,14 @@ SerializationObjectTypedSharedDataPath::SerializationObjectTypedSharedDataPath(
     const SerializationObjectTypedSharedData::SharedTypedPath & path_,
     size_t path_index_,
     size_t num_paths_,
-    const String & subcolumn_name_)
+    const String & subcolumn_name_,
+    size_t subcolumn_array_level_)
     : SerializationWrapper(nested_)
     , path(path_)
     , path_index(path_index_)
     , num_paths(num_paths_)
     , subcolumn_name(subcolumn_name_)
+    , subcolumn_array_level(subcolumn_array_level_)
 {
 }
 
@@ -31,7 +33,8 @@ UInt128 SerializationObjectTypedSharedDataPath::getHash(
     const SerializationObjectTypedSharedData::SharedTypedPath & path_,
     size_t path_index_,
     size_t num_paths_,
-    const String & subcolumn_name_)
+    const String & subcolumn_name_,
+    size_t subcolumn_array_level_)
 {
     SipHash hash;
     hash.update("ObjectTypedSharedDataPath");
@@ -46,6 +49,7 @@ UInt128 SerializationObjectTypedSharedDataPath::getHash(
     hash.update(num_paths_);
     hash.update(subcolumn_name_.size());
     hash.update(subcolumn_name_);
+    hash.update(subcolumn_array_level_);
     return hash.get128();
 }
 
@@ -54,14 +58,15 @@ SerializationPtr SerializationObjectTypedSharedDataPath::create(
     const SerializationObjectTypedSharedData::SharedTypedPath & path_,
     size_t path_index_,
     size_t num_paths_,
-    const String & subcolumn_name_)
+    const String & subcolumn_name_,
+    size_t subcolumn_array_level_)
 {
     if (!nested_->supportsPooling() || !path_.serialization->supportsPooling())
         return std::shared_ptr<ISerialization>(
-            new SerializationObjectTypedSharedDataPath(nested_, path_, path_index_, num_paths_, subcolumn_name_));
+            new SerializationObjectTypedSharedDataPath(nested_, path_, path_index_, num_paths_, subcolumn_name_, subcolumn_array_level_));
     return ISerialization::pooled(
-        getHash(nested_, path_, path_index_, num_paths_, subcolumn_name_),
-        [&] { return new SerializationObjectTypedSharedDataPath(nested_, path_, path_index_, num_paths_, subcolumn_name_); });
+        getHash(nested_, path_, path_index_, num_paths_, subcolumn_name_, subcolumn_array_level_),
+        [&] { return new SerializationObjectTypedSharedDataPath(nested_, path_, path_index_, num_paths_, subcolumn_name_, subcolumn_array_level_); });
 }
 
 size_t SerializationObjectTypedSharedDataPath::allocatedBytes() const
@@ -178,7 +183,7 @@ void SerializationObjectTypedSharedDataPath::deserializeBinaryBulkWithMultipleSt
     }
 
     const auto & [path_column, num_read_rows] = *cached;
-    auto subcolumn = path.type->getSubcolumn(subcolumn_name, path_column);
+    auto subcolumn = path.type->getSubcolumn(subcolumn_name, path_column, subcolumn_array_level);
     column.insertRangeFrom(*subcolumn, subcolumn->size() - num_read_rows, num_read_rows);
 }
 

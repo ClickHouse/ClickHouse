@@ -19,12 +19,14 @@ SerializationObjectDynamicPath::SerializationObjectDynamicPath(
     const DB::SerializationPtr & nested_,
     const String & path_,
     const String & path_subcolumn_,
+    size_t path_subcolumn_array_level_,
     const DataTypePtr & dynamic_type_,
     const SerializationPtr & dynamic_serialization_,
     const DataTypePtr & subcolumn_type_)
     : SerializationWrapper(nested_)
     , path(path_)
     , path_subcolumn(path_subcolumn_)
+    , path_subcolumn_array_level(path_subcolumn_array_level_)
     , dynamic_serialization(dynamic_serialization_)
     , dynamic_type(dynamic_type_)
     , subcolumn_type(subcolumn_type_)
@@ -48,7 +50,7 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
 };
 
 
-UInt128 SerializationObjectDynamicPath::getHash(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_)
+UInt128 SerializationObjectDynamicPath::getHash(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, size_t path_subcolumn_array_level_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_)
 {
     SipHash hash;
     hash.update("ObjectDynamicPath");
@@ -57,6 +59,7 @@ UInt128 SerializationObjectDynamicPath::getHash(const SerializationPtr & nested_
     hash.update(path_);
     hash.update(path_subcolumn_.size());
     hash.update(path_subcolumn_);
+    hash.update(path_subcolumn_array_level_);
     hash.update(dynamic_serialization_->getHash());
     auto dynamic_type_name = dynamic_type_->getName();
     hash.update(dynamic_type_name.size());
@@ -67,11 +70,13 @@ UInt128 SerializationObjectDynamicPath::getHash(const SerializationPtr & nested_
     return hash.get128();
 }
 
-SerializationPtr SerializationObjectDynamicPath::create(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_)
+SerializationPtr SerializationObjectDynamicPath::create(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, size_t path_subcolumn_array_level_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_)
 {
     if (!nested_->supportsPooling() || !dynamic_serialization_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationObjectDynamicPath(nested_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_));
-    return ISerialization::pooled(getHash(nested_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_), [&] { return new SerializationObjectDynamicPath(nested_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_); });
+        return std::shared_ptr<ISerialization>(new SerializationObjectDynamicPath(nested_, path_, path_subcolumn_, path_subcolumn_array_level_, dynamic_type_, dynamic_serialization_, subcolumn_type_));
+    return ISerialization::pooled(
+        getHash(nested_, path_, path_subcolumn_, path_subcolumn_array_level_, dynamic_type_, dynamic_serialization_, subcolumn_type_),
+        [&] { return new SerializationObjectDynamicPath(nested_, path_, path_subcolumn_, path_subcolumn_array_level_, dynamic_type_, dynamic_serialization_, subcolumn_type_); });
 }
 
 void SerializationObjectDynamicPath::enumerateStreams(
@@ -151,12 +156,13 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkStatePrefix(
         /// from that root, while `nested_serialization` was resolved inside the enclosing types.
         auto shared_data_subcolumn_serialization = path_subcolumn.empty()
             ? nested_serialization
-            : dynamic_type->getSubcolumnSerialization(path_subcolumn, dynamic_serialization);
+            : dynamic_type->getSubcolumnSerialization(path_subcolumn, dynamic_serialization, path_subcolumn_array_level);
         dynamic_path_state->shared_data_path_serialization = SerializationObjectSharedDataPath::create(
             shared_data_subcolumn_serialization,
             object_structure_state->shared_data_serialization_version,
             path,
             path_subcolumn,
+            path_subcolumn_array_level,
             dynamic_type,
             dynamic_serialization,
             subcolumn_type,

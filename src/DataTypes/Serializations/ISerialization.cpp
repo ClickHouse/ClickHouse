@@ -325,7 +325,7 @@ String getNameForSubstreamPath(
     size_t array_level = initial_array_level;
     for (auto it = begin; it != end; ++it)
     {
-        if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap || it->type == Substream::NullMapHidden)
+        if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap)
             stream_name += ".null";
         else if (it->type == Substream::ArraySizes)
         {
@@ -334,6 +334,13 @@ String getNameForSubstreamPath(
         }
         else if (it->type == Substream::ArrayElements)
             ++array_level;
+        /// The array sizes read alone are named like the `ArraySizes` they are written as: by the level of the
+        /// array in the path, which holds wherever the serialization is read from.
+        else if (it->type == Substream::NamedOffsets)
+        {
+            stream_name += ".size";
+            stream_name += toString(array_level);
+        }
         else if (it->type == Substream::StringSizes || it->type == Substream::InlinedStringSizes)
             stream_name += ".size";
         else if (it->type == Substream::DictionaryKeys)
@@ -468,11 +475,10 @@ static bool isPossibleOffsetsOfNested(const ISerialization::SubstreamPath & path
         && path[0].type == ISerialization::Substream::ArraySizes)
         return true;
 
-    /// Array offsets as a separate subcolumn.
+    /// Array offsets as a separate subcolumn: with no array before them they are at level 0.
     if (path.size() == 2
         && path[0].type == ISerialization::Substream::NamedOffsets
-        && path[1].type == ISerialization::Substream::Regular
-        && path[0].name_of_substream == "size0")
+        && path[1].type == ISerialization::Substream::Regular)
         return true;
 
     return false;
@@ -628,7 +634,6 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
         /// (compact parts). They hold only the serialization version or mode, have no data type, and are structural,
         /// like the other streams here.
         if (elem.type == Substream::NullMap
-            || elem.type == Substream::NullMapHidden
             || elem.type == Substream::ArraySizes
             || elem.type == Substream::StringSizes
             || elem.type == Substream::DictionaryIndexes
@@ -775,6 +780,17 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
             || path[last_elem].type == Substream::VariantElementNullMap
             || path[last_elem].type == Substream::QuantizedCodes
             || path[last_elem].type == Substream::ProductQuantizationCodebook;
+}
+
+bool ISerialization::isDeclaredSubstream(const SubstreamPath & path, size_t prefix_len)
+{
+    if (prefix_len == 0 || prefix_len > path.size())
+        return false;
+
+    auto type = path[prefix_len - 1].type;
+    /// A shared typed path is declared like any other, only its data lives elsewhere.
+    return type == Substream::TupleElement || type == Substream::VariantElement || type == Substream::ObjectTypedPath
+        || type == Substream::ObjectTypedSharedDataPath;
 }
 
 bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)

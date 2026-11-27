@@ -21,7 +21,8 @@ for structure in 't Nullable(Tuple(x Int64))' 't Nullable(Tuple(x Nullable(Int64
         FORMAT JSON" | jq -c '{result: .data, rows_read: .statistics.rows_read}'
 done
 
-# A dotted name can identify either a virtual subcolumn or a tuple field, according to field order.
+# A dotted name can identify either a virtual subcolumn or a tuple field; the field wins, whichever
+# order the two are declared in, so pushing the predicate down must not change the count either way.
 for structure in 'v Tuple(s String, `s.size` UInt64)' 'v Tuple(`s.size` UInt64, s String)'; do
     if [[ "$structure" == 'v Tuple(s String, `s.size` UInt64)' ]]; then
         value="tuple('abc', 99::UInt64)"

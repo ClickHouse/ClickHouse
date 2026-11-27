@@ -12,11 +12,11 @@ namespace DB
 class SerializationObjectDynamicPath final : public SerializationWrapper
 {
 private:
-    SerializationObjectDynamicPath(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_);
+    SerializationObjectDynamicPath(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, size_t path_subcolumn_array_level_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_);
 
 public:
-    static UInt128 getHash(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_);
-    static SerializationPtr create(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_);
+    static UInt128 getHash(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, size_t path_subcolumn_array_level_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_);
+    static SerializationPtr create(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, size_t path_subcolumn_array_level_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_);
     size_t allocatedBytes() const override;
     bool supportsPooling() const override { return SerializationWrapper::supportsPooling() && dynamic_serialization->supportsPooling(); }
 
@@ -56,6 +56,8 @@ public:
 private:
     String path;
     String path_subcolumn;
+    /// The array level the subcolumn name was resolved at, which `sizeN` in it counts from.
+    size_t path_subcolumn_array_level;
     SerializationPtr dynamic_serialization;
     DataTypePtr dynamic_type;
     DataTypePtr subcolumn_type;

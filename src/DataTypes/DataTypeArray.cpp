@@ -83,20 +83,25 @@ DataTypePtr DataTypeArray::doCloneWithChildren(const DataTypes & new_children) c
     return std::make_shared<DataTypeArray>(new_children[0]);
 }
 
-std::unique_ptr<IDataType::SubcolumnInfo> DataTypeArray::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
+/// The data of the array elements, which a subcolumn of the array is resolved against.
+static IDataType::SubstreamData getArrayElementsData(const IDataType::SubstreamData & data)
 {
-    auto nested_type = assert_cast<const DataTypeArray &>(*data.type).nested;
     const auto & array_serialization = assert_cast<const SerializationArray &>(*removeNamedSerialization(data.serialization));
-    auto nested_data = std::make_unique<ISerialization::SubstreamData>(array_serialization.getNestedSerialization());
-    nested_data->type = nested_type;
-    nested_data->column = data.column ? assert_cast<const ColumnArray &>(*data.column).getDataPtr() : nullptr;
+    IDataType::SubstreamData nested_data(array_serialization.getNestedSerialization());
+    nested_data.type = assert_cast<const DataTypeArray &>(*data.type).getNestedType();
+    nested_data.column = data.column ? assert_cast<const ColumnArray &>(*data.column).getDataPtr() : nullptr;
+    return nested_data;
+}
 
-    auto nested_subcolumn_info = getSubcolumnInfo(subcolumn_name, *nested_data, initial_array_level + 1, throw_if_null);
+/// Completes a subcolumn of the array elements to a subcolumn of the array.
+static std::unique_ptr<IDataType::SubcolumnInfo> wrapArrayElementsSubcolumn(
+    const IDataType::SubstreamData & data, std::unique_ptr<IDataType::SubcolumnInfo> nested_subcolumn_info)
+{
     if (!nested_subcolumn_info)
         return nullptr;
 
     auto creator = SerializationArray::SubcolumnCreator(data.column ? assert_cast<const ColumnArray &>(*data.column).getOffsetsPtr() : nullptr);
-    auto res = std::make_unique<SubcolumnInfo>();
+    auto res = std::make_unique<IDataType::SubcolumnInfo>();
     res->data.serialization = creator.create(nested_subcolumn_info->data.serialization, nested_subcolumn_info->data.type);
     res->data.type = creator.create(nested_subcolumn_info->data.type);
     if (data.column)
@@ -107,6 +112,18 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeArray::getDynamicSubcolumnInfo
     res->substreams_path.insert(res->substreams_path.end(), nested_subcolumn_info->substreams_path.begin(), nested_subcolumn_info->substreams_path.end());
 
     return res;
+}
+
+std::unique_ptr<IDataType::SubcolumnInfo> DataTypeArray::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
+{
+    auto nested_data = getArrayElementsData(data);
+    return wrapArrayElementsSubcolumn(data, getSubcolumnInfo(subcolumn_name, nested_data, initial_array_level + 1, throw_if_null));
+}
+
+std::unique_ptr<IDataType::SubcolumnInfo> DataTypeArray::getKnownDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level) const
+{
+    auto nested_data = getArrayElementsData(data);
+    return wrapArrayElementsSubcolumn(data, nested_data.type->getKnownDynamicSubcolumnInfo(subcolumn_name, nested_data, initial_array_level + 1));
 }
 
 static DataTypePtr create(const ASTPtr & arguments)
