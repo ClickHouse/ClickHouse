@@ -87,6 +87,37 @@ SELECT count(), sum(a1 + a3 + lo + hi + b3) FROM t_sel_l AS l, t_sel_band AS r
 WHERE r.lo < l.a1 AND l.a1 < r.hi AND l.a3 < r.b3
 SETTINGS join_algorithm = 'hash';
 
+-- `identity` returns its argument unchanged, so the ranges of `b1`, `b2` and `b3` describe its results.
+SELECT '-- identity keeps the ranges: keys chosen by selectivity';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_l AS l JOIN
+    (
+        SELECT identity(b1) AS b1, identity(b2) AS b2, identity(b3) AS b3
+        FROM t_sel_r
+    ) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+) WHERE explain LIKE '%Conditions:%';
+
+-- `b3 + 0` is a function that may change the values of `b3`, so the range of `b3` does not describe it.
+SELECT '-- b3 + 0 has no range: the first two in syntax order';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_l AS l JOIN
+    (
+        SELECT b1, b2, b3 + 0 AS b3
+        FROM t_sel_r
+    ) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+) WHERE explain LIKE '%Conditions:%';
+
+SELECT count(), sum(a1 + a2 + a3 + b1 + b2 + b3) FROM t_sel_l AS l JOIN
+(
+    SELECT identity(b1) AS b1, identity(b2) AS b2, identity(b3) AS b3
+    FROM t_sel_r
+) AS r
+ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3;
+
 SELECT '-- plain group by: propagated ranges still choose by selectivity';
 SELECT extract(explain, 'Conditions: .*') FROM (
     EXPLAIN actions = 1
