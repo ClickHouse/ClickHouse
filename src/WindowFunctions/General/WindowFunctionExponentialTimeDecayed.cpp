@@ -1,5 +1,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/CancellationBudget.h>
 #include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
@@ -41,6 +42,18 @@ struct DecayedAvgState
     Float64 previous_sum = 0;
     Float64 previous_count = 0;
     Float64 previous_time = 0;
+};
+
+struct DecayedMaxState
+{
+    explicit DecayedMaxState(std::function<void()> check_cancellation_)
+        : check_cancellation(std::move(check_cancellation_))
+        , budget(check_cancellation)
+    {
+    }
+
+    std::function<void()> check_cancellation;
+    CancellationBudget budget;
 };
 
 Float64 getDecayLength(const Array & parameters, const String & name)
@@ -152,8 +165,14 @@ public:
         return WindowFunctionRequirements{.frame_start = true, .frame_end = true};
     }
 
-    Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    [[nodiscard]] size_t sizeOfState() const override { return sizeof(DecayedMaxState); }
+    [[nodiscard]] size_t alignOfState() const override { return alignof(DecayedMaxState); }
+    void createState(char * place) const override { new (place) DecayedMaxState(makeCancellationCheck(getName())); }
+    void destroyState(char * place) const noexcept override { reinterpret_cast<DecayedMaxState *>(place)->~DecayedMaxState(); }
+
+    Int64 evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
+        DecayedMaxState & state = *reinterpret_cast<DecayedMaxState *>(place);
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
         for (Int64 i = 0; i < bounds.rows; ++i)
         {
@@ -162,6 +181,7 @@ public:
             Float64 max = std::numeric_limits<Float64>::quiet_NaN();
             if (start < end)
             {
+                state.budget.chargeUnits(static_cast<size_t>(end - start));
                 max = std::numeric_limits<Float64>::lowest();
                 const Float64 back_time = argumentAt(arguments, ARGUMENT_TIME, end - 1);
                 for (Int64 row = start; row < end; ++row)

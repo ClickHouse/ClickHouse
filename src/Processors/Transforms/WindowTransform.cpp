@@ -171,7 +171,7 @@ void WindowTransform::addInputBlock(Chunk chunk)
 
 void WindowTransform::computeReadyRows()
 {
-    /// Cancellation is checked per row here; window functions evaluate each batch without cancellation checks
+    /// Cancellation is checked per row here; a window function whose batch can run long checks it itself
     while (!isCancelled())
     {
         if (bounds.rows != 0 && peers.current().location.block != batch_start.block)
