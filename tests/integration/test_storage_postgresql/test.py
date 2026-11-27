@@ -2299,6 +2299,39 @@ def test_postgres_delete_on_cluster_rejected(started_cluster):
     cursor.execute("DROP TABLE test_delete_cluster")
 
 
+def test_postgres_delete_experimental_flag(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_flag")
+    cursor.execute("CREATE TABLE test_delete_flag (id integer)")
+    cursor.execute("INSERT INTO test_delete_flag SELECT i FROM generate_series(0, 9) AS i")
+
+    node1.query(
+        f"CREATE TABLE test.pg_delete_flag (id Int32) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_flag', 'postgres', '{pg_pass}')"
+    )
+
+    # Mutations on the PostgreSQL engine are gated behind an experimental opt-in. With it off, both the
+    # lightweight DELETE and the ALTER ... DELETE form are rejected before anything reaches the remote.
+    for query in (
+        "DELETE FROM test.pg_delete_flag WHERE id = 1 SETTINGS allow_experimental_postgresql_mutations = 0",
+        "ALTER TABLE test.pg_delete_flag DELETE WHERE id = 1 SETTINGS allow_experimental_postgresql_mutations = 0",
+    ):
+        error = node1.query_and_get_error(query)
+        assert "allow_experimental_postgresql_mutations" in error
+    cursor.execute("SELECT count(*) FROM test_delete_flag")
+    assert cursor.fetchall() == [(10,)]
+
+    # With the setting enabled the delete is pushed down and applied on the remote.
+    node1.query(
+        "DELETE FROM test.pg_delete_flag WHERE id = 1 SETTINGS allow_experimental_postgresql_mutations = 1"
+    )
+    cursor.execute("SELECT count(*) FROM test_delete_flag")
+    assert cursor.fetchall() == [(9,)]
+
+    node1.query("DROP TABLE test.pg_delete_flag")
+    cursor.execute("DROP TABLE test_delete_flag")
+
+
 def test_postgres_delete_replicated_database_runs_once(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
     cursor.execute("DROP TABLE IF EXISTS test_delete_repl")

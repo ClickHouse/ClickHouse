@@ -1,4 +1,11 @@
 <clickhouse>
+    <profiles>
+        <default>
+            <!-- The PostgreSQL engine DELETE/UPDATE pushdown is gated behind this experimental
+                 opt-in; enable it so the delete tests exercise the feature. -->
+            <allow_experimental_postgresql_mutations>1</allow_experimental_postgresql_mutations>
+        </default>
+    </profiles>
     <users>
         <default>
             <password></password>

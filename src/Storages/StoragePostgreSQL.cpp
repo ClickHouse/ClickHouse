@@ -77,6 +77,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_postgresql_mutations;
     extern const SettingsBool external_table_functions_use_nulls;
     extern const SettingsUInt64 glob_expansion_max_elements;
 }
@@ -99,6 +100,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int POSTGRESQL_CONNECTION_FAILURE;
     extern const int POSTGRESQL_QUERY_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -763,10 +765,20 @@ SinkToStoragePtr StoragePostgreSQL::write(
     return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_or_query.getTableName(), remote_table_schema, on_conflict);
 }
 
-void StoragePostgreSQL::checkMutationIsPossible(const MutationCommands & commands, const Settings & /*settings*/) const
+void StoragePostgreSQL::checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const
 {
     if (commands.empty())
         return;
+
+    /// A mutation on a PostgreSQL table is pushed down and committed on the remote server, a new and
+    /// destructive path (see `allow_experimental_postgresql_mutations`). It is opt-in while it
+    /// stabilises; reads and inserts do not go through here and stay available. Checked first, and here
+    /// rather than only in `mutate`, so both `DELETE FROM` and `ALTER TABLE ... DELETE` are gated at
+    /// validation time (both interpreters call `checkMutationIsPossible` before executing).
+    if (!settings[Setting::allow_experimental_postgresql_mutations])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Mutations (DELETE/UPDATE) on the PostgreSQL table engine are experimental and disabled by "
+            "default. Set `allow_experimental_postgresql_mutations = 1` to enable them.");
 
     if (remote_table_or_query.isQuery())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot mutate a PostgreSQL table representing the result of a query");
