@@ -198,7 +198,7 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
     if (serialize_filter)
     {
         if (ctx.for_cache_key)
-            writeIntBinary(element_filter->getOutputIdentity(element_filter_column_name, ctx.input_header, ctx.registry.folded_constants), ctx.out);
+            writeIntBinary(element_filter->getOutputIdentity(element_filter_column_name, ctx.input_header, ctx.registry), ctx.out);
         else
             writeStringBinary(element_filter_column_name, ctx.out);
         element_filter->serialize(ctx.out, ctx.registry, ctx.input_header);

@@ -22,6 +22,9 @@ SELECT number, number = 50000,
               hex(sipHash128(number, 5)), hex(sipHash128(number, 6)), hex(sipHash128(number, 7)), hex(sipHash128(number, 8)))
 FROM numbers(100000);
 
+-- The replicas plan takes over the index analysis of the local plan only when both read the same state of the table,
+-- which a merge between two snapshots of their own would change.
+SET enable_shared_storage_snapshot_in_query = 1;
 SET enable_analyzer = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1,
     parallel_replicas_local_plan = 1, parallel_replicas_for_non_replicated_merge_tree = 1,
     max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

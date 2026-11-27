@@ -31,20 +31,28 @@ UInt128 hashValue(const IColumn & data)
 
 void QueryFoldedConstantsCache::recordSource(const IColumn & value, const IAST & source)
 {
+    SipHash source_hash;
+    source.updateTreeHash(source_hash, /*ignore_aliases=*/true);
+    recordSource(value, source_hash.get64());
+}
+
+void QueryFoldedConstantsCache::recordSource(const IColumn & value, UInt64 source_hash)
+{
     const auto * data = getValueColumn(value);
     if (!data || !data->valuesHaveFixedSize())
         return;
     const auto value_hash = hashValue(*data);
-    SipHash source_hash;
-    source.updateTreeHash(source_hash, /*ignore_aliases=*/true);
     std::lock_guard lock(mutex);
-    sources.emplace(value_hash, source_hash.get64());
+    sources.emplace(value_hash, source_hash);
+    has_sources = true;
 }
 
 UInt64 QueryFoldedConstantsCache::tryGetSource(const IColumn & value) const
 {
+    if (!has_sources)
+        return 0;
     const auto * data = getValueColumn(value);
-    if (!data)
+    if (!data || !data->valuesHaveFixedSize())
         return 0;
     const auto value_hash = hashValue(*data);
     std::lock_guard lock(mutex);

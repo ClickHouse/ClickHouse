@@ -39,12 +39,36 @@ SELECT k % 10, count() FROM (SELECT k, ts, now64(3) - INTERVAL 5 DAY AS cutoff F
 FORMAT Null SETTINGS log_comment = 'now_subquery_1';
 SELECT k % 10, count() FROM (SELECT k, ts, now64(3) - INTERVAL 5 DAY AS cutoff FROM t_autopr_now) WHERE ts >= cutoff GROUP BY k % 10
 FORMAT Null SETTINGS log_comment = 'now_subquery_2';
+-- Or when the arithmetic is outside: on the result of a scalar subquery, which is deterministic within the query, or
+-- on a column a subquery projects as `now64()`, which is folded in the plan rather than in the analyzer.
+SELECT k % 10, count() FROM t_autopr_now WHERE ts >= (SELECT now64(9)) - INTERVAL 6 DAY GROUP BY k % 10
+FORMAT Null SETTINGS log_comment = 'now_scalar_outer_1';
+SELECT k % 10, count() FROM t_autopr_now WHERE ts >= (SELECT now64(9)) - INTERVAL 6 DAY GROUP BY k % 10
+FORMAT Null SETTINGS log_comment = 'now_scalar_outer_2';
+SELECT k % 10, count() FROM (SELECT k, ts, now64(9) AS clock FROM t_autopr_now) WHERE ts >= clock - INTERVAL 7 DAY GROUP BY k % 10
+FORMAT Null SETTINGS log_comment = 'now_derived_1';
+SELECT k % 10, count() FROM (SELECT k, ts, now64(9) AS clock FROM t_autopr_now) WHERE ts >= clock - INTERVAL 7 DAY GROUP BY k % 10
+FORMAT Null SETTINGS log_comment = 'now_derived_2';
+
+-- A plan with parallel replicas is built with another `automatic_parallel_replicas_mode`, so it filters on another
+-- cutoff here. Statistics leave out values of no fixed size, but the plans are matched on every value, so they do not
+-- match and the query reads what it filters on.
+DROP TABLE IF EXISTS t_autopr_string;
+CREATE TABLE t_autopr_string (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 1024;
+INSERT INTO t_autopr_string SELECT leftPad(toString(number), 7, '0') FROM numbers(1000000);
+SELECT count() FROM t_autopr_string
+WHERE s < leftPad(toString(900000 - 100000 * getSetting('automatic_parallel_replicas_mode')), 7, '0')
+SETTINGS log_comment = 'now_string_1';
+SELECT count() FROM t_autopr_string
+WHERE s < leftPad(toString(900000 - 100000 * getSetting('automatic_parallel_replicas_mode')), 7, '0')
+SETTINGS log_comment = 'now_string_2';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- The first run collects, the second reuses what it collected, and the shorter window collects its own.
+-- The first run collects, the second reuses what it collected, and the shorter window collects its own. The
+-- plans of the `String` cutoff never match.
 SELECT log_comment,
        ProfileEvents['AutoParallelReplicasPlansNotComparable'] AS not_comparable,
        ProfileEvents['AutoParallelReplicasNoStatistics'] AS no_statistics,
@@ -59,3 +83,4 @@ WHERE event_date >= yesterday() AND event_time >= now() - toIntervalMinute(15)
 ORDER BY log_comment;
 
 DROP TABLE t_autopr_now;
+DROP TABLE t_autopr_string;

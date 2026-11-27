@@ -40,6 +40,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <base/sort.h>
+#include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
@@ -122,6 +123,39 @@ std::pair<ColumnsWithTypeAndName, bool> getFunctionArguments(const ActionsDAG::N
     return { std::move(arguments), all_const };
 }
 
+/// A constant folded from one the query folded from a non-deterministic expression differs in the next execution as
+/// well, so it gets a source too (see `QueryFoldedConstantsCache::recordSource`): `clock - INTERVAL 1 DAY` over a
+/// column `clock` that a subquery projects as `now()` folds here and not in the analyzer, and `removeUnusedActions`
+/// then drops the arguments that would have said where it came from.
+void recordFoldedFromSource(const ActionsDAG::Node & node, const ColumnsWithTypeAndName & arguments)
+{
+    const auto query_context = CurrentThread::tryGetQueryContext();
+    auto * folded_constants = query_context ? query_context->getQueryFoldedConstantsCache().get() : nullptr;
+    if (!folded_constants)
+        return;
+
+    bool from_source = false;
+    for (const auto & argument : arguments)
+        from_source |= argument.column && isColumnConst(*argument.column) && folded_constants->tryGetSource(*argument.column);
+    if (!from_source)
+        return;
+
+    SipHash source;
+    source.update(node.function_base->getName());
+    source.update(node.result_type->getName());
+    for (const auto & argument : arguments)
+    {
+        source.update(argument.type->getName());
+        if (!argument.column || !isColumnConst(*argument.column))
+            continue;
+        if (auto argument_source = folded_constants->tryGetSource(*argument.column))
+            source.update(argument_source);
+        else
+            argument.column->updateHashWithValue(0, source);
+    }
+    folded_constants->recordSource(*node.column, source.get64());
+}
+
 void tryFoldFunctionToConstant(
     ActionsDAG::Node & node,
     const ColumnsWithTypeAndName & arguments,
@@ -184,6 +218,7 @@ void tryFoldFunctionToConstant(
             node.column = ColumnConst::create(column_const->getDataColumnPtr(), 0);
         else
             node.column = column_const->getPtr();
+        recordFoldedFromSource(node, arguments);
     }
 }
 
@@ -487,8 +522,7 @@ void ActionsDAG::Node::updateHash(
         child->updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values, folded_constants);
 }
 
-UInt64 ActionsDAG::getOutputIdentity(
-    const std::string & name, const Block * input_header, const QueryFoldedConstantsCache * folded_constants) const
+UInt64 ActionsDAG::getOutputIdentity(const std::string & name, const Block * input_header, const SerializedSetsRegistry & registry) const
 {
     const auto * node = tryFindInOutputs(name);
     /// Every caller names an output of its own DAG - a filter column, an array-joined column - so a
@@ -498,7 +532,8 @@ UInt64 ActionsDAG::getOutputIdentity(
     SipHash hash;
     if (node)
     {
-        node->updateHash(hash, /*build_independent=*/true, input_header, /*with_variable_size_constant_values=*/false, folded_constants);
+        node->updateHash(
+            hash, /*build_independent=*/true, input_header, registry.with_variable_size_constant_values, registry.folded_constants);
     }
     else
     {
@@ -5489,13 +5524,15 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
         writeIntBinary(column_flags, out);
 
         /// A cache key (`registry.for_cache_key`) leaves out a constant's value when it has no fixed
-        /// size, with the same contract as `updateHash` with `with_variable_size_constant_values = false`:
+        /// size, unless `registry.with_variable_size_constant_values`, with the same contract as `updateHash`:
         /// such a value can be arbitrarily large (a folded scalar subquery), and hashing it on every
         /// execution costs more than the rest of planning. It also leaves out the value of the
         /// runtime-filter id carrier, a volatile per-plan-build rendezvous key whose `result_name` is its
         /// stable identity. This output is hash-only and never deserialized; the transmission path
         /// (`for_cache_key == false`) always writes the value.
-        if (has_column && !(registry.for_cache_key && (node.is_runtime_filter_id || !node.column->valuesHaveFixedSize())))
+        if (has_column
+            && !(registry.for_cache_key
+                 && (node.is_runtime_filter_id || (!registry.with_variable_size_constant_values && !node.column->valuesHaveFixedSize()))))
             serializeConstant(*node.result_type, *node.column, out, registry, input_header);
 
         if (node.type == ActionType::INPUT)

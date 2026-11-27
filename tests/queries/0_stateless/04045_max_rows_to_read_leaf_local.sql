@@ -49,6 +49,9 @@ DROP TABLE IF EXISTS t_leaf_skip;
 CREATE TABLE t_leaf_skip (id UInt64, val UInt64, INDEX idx_val val TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi';
 INSERT INTO t_leaf_skip SELECT number, intDiv(number, 1000) FROM numbers(500000);
+-- The replicas plan takes over the index analysis of the local plan only when both read the same state of the table,
+-- which a merge between two snapshots of their own would change.
+SET enable_shared_storage_snapshot_in_query = 1;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3, automatic_parallel_replicas_mode = 1,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1,

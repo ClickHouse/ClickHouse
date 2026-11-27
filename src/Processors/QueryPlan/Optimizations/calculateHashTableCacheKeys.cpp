@@ -28,6 +28,7 @@
 #include <Common/logger_useful.h>
 
 using namespace DB;
+using DB::QueryPlanOptimizations::PlanKeyConstants;
 
 namespace
 {
@@ -40,7 +41,7 @@ UInt64 calculateHashFromStep(const ReadFromParallelRemoteReplicasStep & source)
     return hash.get64();
 }
 
-UInt64 calculateHashFromStep(const SourceStepWithFilter & read, const QueryFoldedConstantsCache * folded_constants)
+UInt64 calculateHashFromStep(const SourceStepWithFilter & read, const PlanKeyConstants & constants)
 {
     SipHash hash;
     /// `SipHash::update` of a string mixes in its bytes and nothing else, so a sequence of strings
@@ -109,10 +110,10 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read, const QueryFolde
     /// entry.
     if (const auto & row_level_filter = read.getRowLevelFilter())
         row_level_filter->actions.updateHash(
-            hash, /*build_independent=*/false, /*input_header=*/nullptr, /*with_variable_size_constant_values=*/false, folded_constants);
+            hash, /*build_independent=*/false, /*input_header=*/nullptr, constants.all_values, constants.folded_constants);
     if (const auto & dag = read.getPrewhereInfo())
         dag->prewhere_actions.updateHash(
-            hash, /*build_independent=*/true, /*input_header=*/nullptr, /*with_variable_size_constant_values=*/false, folded_constants);
+            hash, /*build_independent=*/true, /*input_header=*/nullptr, constants.all_values, constants.folded_constants);
     return hash.get64();
 }
 
@@ -174,7 +175,7 @@ std::optional<std::vector<size_t>> pureColumnPermutation(const ActionsDAG & dag)
     return result;
 }
 
-UInt64 calculateHashFromStep(const ITransformingStep & transform, const QueryFoldedConstantsCache * folded_constants)
+UInt64 calculateHashFromStep(const ITransformingStep & transform, const PlanKeyConstants & constants)
 {
     /// A row-preserving step is transparent for the cache key (contributes nothing) ONLY if it also
     /// leaves the output byte layout unchanged - see `isByteTransparentTransform`. The cache stores
@@ -220,7 +221,8 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform, const QueryFol
     SipHashingWriteBuffer wbuf(hash);
     SerializedSetsRegistry registry;
     registry.for_cache_key = true;
-    registry.folded_constants = folded_constants;
+    registry.folded_constants = constants.folded_constants;
+    registry.with_variable_size_constant_values = constants.all_values;
     /// The bytes are hashed in-process by the same binary that wrote them and never reach another
     /// node, so the version to write with is simply the one this binary speaks. Leaving it at the
     /// default 0 would make every step that gates on a minimum version (e.g. `WindowStep`) either
@@ -339,7 +341,7 @@ static bool forwardsInputsInOrder(const IQueryPlanStep & step)
     return true;
 }
 
-UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side, const QueryFoldedConstantsCache * folded_constants)
+UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side, const PlanKeyConstants & constants)
 {
     SipHash hash;
 
@@ -359,13 +361,13 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
             /// other one's sample and picking the wrong build table. Making this build-independent for
             /// Auto-PR needs the two consumers separated first.
             if (side == JoinTableSide::Left && lhs.fromLeft())
-                lhs.getNode()->updateHash(hash, /*build_independent=*/false, /*input_header=*/nullptr, /*with_variable_size_constant_values=*/false, folded_constants);
+                lhs.getNode()->updateHash(hash, /*build_independent=*/false, /*input_header=*/nullptr, constants.all_values, constants.folded_constants);
             if (side == JoinTableSide::Left && rhs.fromLeft())
-                rhs.getNode()->updateHash(hash, /*build_independent=*/false, /*input_header=*/nullptr, /*with_variable_size_constant_values=*/false, folded_constants);
+                rhs.getNode()->updateHash(hash, /*build_independent=*/false, /*input_header=*/nullptr, constants.all_values, constants.folded_constants);
             if (side == JoinTableSide::Right && lhs.fromRight())
-                lhs.getNode()->updateHash(hash, /*build_independent=*/false, /*input_header=*/nullptr, /*with_variable_size_constant_values=*/false, folded_constants);
+                lhs.getNode()->updateHash(hash, /*build_independent=*/false, /*input_header=*/nullptr, constants.all_values, constants.folded_constants);
             if (side == JoinTableSide::Right && rhs.fromRight())
-                rhs.getNode()->updateHash(hash, /*build_independent=*/false, /*input_header=*/nullptr, /*with_variable_size_constant_values=*/false, folded_constants);
+                rhs.getNode()->updateHash(hash, /*build_independent=*/false, /*input_header=*/nullptr, constants.all_values, constants.folded_constants);
         }
     }
 
@@ -380,12 +382,15 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
 /// variable-size constants, see `ActionsDAG::updateHash`). A resulting key
 /// collision can only make Auto-PR reuse a slightly-off estimate and so enable/disable parallel
 /// replicas sub-optimally - it never changes query results. We trade that small estimation
-/// imprecision for a simpler, cheaper key.
+/// imprecision for a simpler, cheaper key. Auto-PR also pairs two plans of one query on these keys and
+/// hands one the index analysis of the other, so that key takes every constant value
+/// (`PlanKeyConstants::all_values`); what it still leaves out are names and the columns a read
+/// returns, which do not change what an analysis selects.
 void calculateHashTableCacheKeys(
     const QueryPlan::Node & root,
     std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys,
     std::unordered_map<const QueryPlan::Node *, UInt64> & raw_hashes,
-    const QueryFoldedConstantsCache * folded_constants)
+    const PlanKeyConstants & constants)
 {
     struct Frame
     {
@@ -431,8 +436,8 @@ void calculateHashTableCacheKeys(
                     /// (set when the child's frame was popped). Apply this join's per-side
                     /// contribution to produce the child's final cache key, then SipHash-combine
                     /// the two final-keyed children to derive this join's own raw hash.
-                    cache_keys[node.children.at(0)] ^= calculateJoinStepCacheKeyContribution(*join_step, JoinTableSide::Left, folded_constants);
-                    cache_keys[node.children.at(1)] ^= calculateJoinStepCacheKeyContribution(*join_step, JoinTableSide::Right, folded_constants);
+                    cache_keys[node.children.at(0)] ^= calculateJoinStepCacheKeyContribution(*join_step, JoinTableSide::Left, constants);
+                    cache_keys[node.children.at(1)] ^= calculateJoinStepCacheKeyContribution(*join_step, JoinTableSide::Right, constants);
                     frame.hash.update(cache_keys[node.children.at(0)]);
                     frame.hash.update(cache_keys[node.children.at(1)]);
                     const auto raw = frame.hash.get64();
@@ -548,7 +553,7 @@ void calculateHashTableCacheKeys(
                 for (const auto & column : *node.children.at(1)->step->getOutputHeader())
                     joined_header.insert(column);
                 mixed->getActionsDAG().updateHash(
-                    frame.hash, /*build_independent=*/true, &joined_header, /*with_variable_size_constant_values=*/false, folded_constants);
+                    frame.hash, /*build_independent=*/true, &joined_header, constants.all_values, constants.folded_constants);
             }
             /// Mix in the join's output column TYPES. The join produces its `required_output` columns
             /// directly, so two joins over the same inputs/keys that project a different number/types of
@@ -622,11 +627,11 @@ void calculateHashTableCacheKeys(
         if (const auto * source = dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(node.step.get()))
             frame.hash.update(calculateHashFromStep(*source));
         else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
-            frame.hash.update(calculateHashFromStep(*read, folded_constants));
+            frame.hash.update(calculateHashFromStep(*read, constants));
         else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
         {
             // Completely ignore the ignored steps (i.e. the ones for which we return 0)
-            if (auto hash = calculateHashFromStep(*transform, folded_constants))
+            if (auto hash = calculateHashFromStep(*transform, constants))
                 frame.hash.update(hash);
         }
 
@@ -667,16 +672,16 @@ void calculateHashTableCacheKeys(
 }
 
 static void calculateHashTableCacheKeys(
-    const QueryPlan::Node & root, std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys, const QueryFoldedConstantsCache * folded_constants)
+    const QueryPlan::Node & root, std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys, const PlanKeyConstants & constants)
 {
     std::unordered_map<const QueryPlan::Node *, UInt64> raw_hashes;
-    calculateHashTableCacheKeys(root, cache_keys, raw_hashes, folded_constants);
+    calculateHashTableCacheKeys(root, cache_keys, raw_hashes, constants);
 }
 
-std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root, const QueryFoldedConstantsCache * folded_constants)
+std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root, const PlanKeyConstants & constants)
 {
     std::unordered_map<const QueryPlan::Node *, UInt64> cache_keys;
-    calculateHashTableCacheKeys(root, cache_keys, folded_constants);
+    calculateHashTableCacheKeys(root, cache_keys, constants);
     return cache_keys;
 }
 

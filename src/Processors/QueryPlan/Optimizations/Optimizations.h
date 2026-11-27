@@ -359,10 +359,22 @@ void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes &, const 
 
 // Should be called once the query plan tree structure is finalized, i.e. no nodes addition, deletion or pushing down should happen after that call.
 // Since those hashes are used for join optimization, the calculation performed before join optimization.
-/// With `folded_constants` a constant the query folded from a non-deterministic expression is hashed as that expression
-/// (see `ActionsDAG::updateHash`), so the keys stay the same in the next execution of a query filtering on `now()`.
+/// How the keys of `calculateHashTableCacheKeys` take the constants of the plan.
+struct PlanKeyConstants
+{
+    /// Hash the value of every constant. Only then do two plans whose keys agree filter on the same values, which a
+    /// key that pairs two plans to hand one the index analysis of the other needs. Without it a value of no fixed
+    /// size is left out (see `ActionsDAG::updateHash`): it can be arbitrarily large, and a key for statistics is
+    /// computed on every execution and only costs an estimate when it collides.
+    bool all_values = false;
+    /// A constant the query folded from a non-deterministic expression is hashed as that expression (see
+    /// `ActionsDAG::updateHash`), so a key for statistics stays the same in the next execution of a query filtering
+    /// on `now()`. Never with `all_values`.
+    const QueryFoldedConstantsCache * folded_constants = nullptr;
+};
+
 std::unordered_map<const QueryPlan::Node *, UInt64>
-calculateHashTableCacheKeys(const QueryPlan::Node & root, const QueryFoldedConstantsCache * folded_constants = nullptr);
+calculateHashTableCacheKeys(const QueryPlan::Node & root, const PlanKeyConstants & constants = {});
 
 /// Stamp every AggregatingStep in the plan with a hash-table preallocation cache key derived from
 /// the query plan (the node's bottom-up hash from calculateHashTableCacheKeys), instead of from the
@@ -378,10 +390,10 @@ void calculateHashTableCacheKeys(
     const QueryPlan::Node & root,
     std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys,
     std::unordered_map<const QueryPlan::Node *, UInt64> & raw_hashes,
-    const QueryFoldedConstantsCache * folded_constants = nullptr);
+    const PlanKeyConstants & constants = {});
 
 /// Per-side join-step hash used to derive HashTablesStatistics cache keys after join reorder.
-UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side, const QueryFoldedConstantsCache * folded_constants = nullptr);
+UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side, const PlanKeyConstants & constants = {});
 
 bool convertLogicalJoinToPhysical(
     QueryPlan::Node & node,

@@ -171,9 +171,8 @@ public:
     /// serializing for a cache key: the name reads `greater(__table1.x, 5_UInt8)` in a shipped fragment
     /// and `greater(__table2.x, 5_UInt8)` in the plan enclosing it, while this is equal in both. Output
     /// position is not usable here - the same expression can sit at a different index in the two builds.
-    /// `folded_constants` is `SerializedSetsRegistry::folded_constants` of that serialization.
-    UInt64 getOutputIdentity(
-        const std::string & name, const Block * input_header = nullptr, const QueryFoldedConstantsCache * folded_constants = nullptr) const;
+    /// `registry` is that serialization's: it says how the constants are taken.
+    UInt64 getOutputIdentity(const std::string & name, const Block * input_header, const SerializedSetsRegistry & registry) const;
     /// Output nodes can contain any column returned from DAG. You may manually change it if needed.
     NodeRawConstPtrs & getOutputs() { return outputs; }
 

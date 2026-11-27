@@ -1546,6 +1546,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             QueryAnalyzer type_inference_analyzer(/*only_analyze_=*/ false);
             type_inference_analyzer.early_short_circuit_type_inference_in_process = true;
             type_inference_analyzer.subquery_counter = subquery_counter;
+            /// It resolves without `resolve`, which would set it, and the query's calls fold to the query's values.
+            type_inference_analyzer.folded_constants_cache = folded_constants_cache;
 
             bool type_inference_succeeded = false;
             bool post_resolution_is_safe = false;
@@ -2989,6 +2991,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     DataTypes argument_types;
     bool all_arguments_constants = true;
     bool all_arguments_are_deterministic = true;
+    bool any_argument_has_source = false;
     std::vector<size_t> function_lambda_arguments_indexes;
 
     auto & function_arguments = function_node.getArguments().getNodes();
@@ -3046,6 +3049,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         all_arguments_constants &= argument_is_constant;
         all_arguments_are_deterministic &= argument_is_deterministic;
+        /// A scalar subquery is deterministic within the query, but it can be `(SELECT now())`.
+        any_argument_has_source |= argument_is_constant && folded_constants_cache->tryGetSource(*argument_column.column);
 
         argument_types.push_back(argument_column.type);
         argument_columns.emplace_back(std::move(argument_column));
@@ -3658,7 +3663,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
                 /// See `QueryFoldedConstantsCache::recordSource`. The call itself is the expression: the plan has only
                 /// the outermost constant of `now() - INTERVAL 1 DAY`, and its arguments are resolved to values by now.
-                if (!is_deterministic && node->hasOriginalAST())
+                if ((!is_deterministic || any_argument_has_source) && node->hasOriginalAST())
                     folded_constants_cache->recordSource(*value, *node->getOriginalAST());
 
                 /// Replace function node with result constant node

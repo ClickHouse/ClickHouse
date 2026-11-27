@@ -1,11 +1,19 @@
+800000
+800000
 now_1_day_1	0	1	0
 now_1_day_2	0	0	1
 now_1_hour	0	1	0
 now_alias_1	0	1	0
 now_alias_2	0	0	1
+now_derived_1	0	1	0
+now_derived_2	0	0	1
 now_lambda_1	0	1	0
 now_lambda_2	0	0	1
 now_scalar_1	0	1	0
 now_scalar_2	0	0	1
+now_scalar_outer_1	0	1	0
+now_scalar_outer_2	0	0	1
+now_string_1	1	0	0
+now_string_2	1	0	0
 now_subquery_1	0	1	0
 now_subquery_2	0	0	1

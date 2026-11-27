@@ -22,6 +22,8 @@ struct SerializedSetsRegistry
     /// `ActionsDAG::serialize` (skips variable-size constant values), that one drives the step's own
     /// `serialize`. Set both or neither.
     bool for_cache_key = false;
+    /// With `for_cache_key`: write the values of constants of no fixed size too (see `PlanKeyConstants::all_values`).
+    bool with_variable_size_constant_values = false;
     /// With `for_cache_key`: identify a constant the query folded from a non-deterministic expression by that
     /// expression (see the `folded_constants` of `ActionsDAG::updateHash`).
     const QueryFoldedConstantsCache * folded_constants = nullptr;

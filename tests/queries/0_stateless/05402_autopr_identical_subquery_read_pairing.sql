@@ -22,6 +22,9 @@ SET merge_tree_min_bytes_per_task_for_remote_reading = 1024;
 
 -- The identical subqueries have the same boundary hash. The first match is the left
 -- `Aggregating` step, but a `RIGHT JOIN` coordinates the read in the right subquery.
+-- The replicas plan takes over the index analysis of the local plan only when both read the same state of the table,
+-- which a merge between two snapshots of their own would change.
+SET enable_shared_storage_snapshot_in_query = 1;
 SET automatic_parallel_replicas_mode = 2;
 SELECT sum(a.x + b.x)
 FROM (SELECT sum(v) AS x FROM t_autopr_identical_subqueries) AS a

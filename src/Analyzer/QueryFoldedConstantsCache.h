@@ -4,6 +4,7 @@
 #include <Columns/IColumn_fwd.h>
 #include <base/extended_types.h>
 
+#include <atomic>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -48,6 +49,9 @@ public:
     /// `source` is the expression as it is written, whose hash is the same in every execution. Only values of a fixed
     /// size are recorded: the keys leave out the others.
     void recordSource(const IColumn & value, const IAST & source);
+    /// A constant computed from one with a source has a source too, which is not an expression the query spells when
+    /// `ActionsDAG` folds it, so it is given as a hash of what it was computed from.
+    void recordSource(const IColumn & value, UInt64 source_hash);
 
     /// The `source` recorded for a constant equal to `value`, or zero. Two expressions folded to the same value share
     /// the source recorded first, which costs only an estimate.
@@ -57,6 +61,8 @@ private:
     mutable std::mutex mutex;
     std::map<IQueryTreeNode::Hash, ColumnConstPtr> values;
     std::unordered_map<UInt128, UInt64> sources;
+    /// Most queries fold nothing non-deterministic, and every constant `ActionsDAG` folds asks for its arguments.
+    std::atomic<bool> has_sources = false;
 };
 
 using QueryFoldedConstantsCachePtr = std::shared_ptr<QueryFoldedConstantsCache>;

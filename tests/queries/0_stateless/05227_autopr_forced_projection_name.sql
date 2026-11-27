@@ -11,6 +11,9 @@ ENGINE = MergeTree ORDER BY key;
 
 INSERT INTO t_autopr_forced_projection SELECT number, number FROM numbers(100000);
 
+-- The replicas plan takes over the index analysis of the local plan only when both read the same state of the table,
+-- which a merge between two snapshots of their own would change.
+SET enable_shared_storage_snapshot_in_query = 1;
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1, parallel_replicas_local_plan = 1,
     parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3,
     automatic_parallel_replicas_min_bytes_per_replica = 0,

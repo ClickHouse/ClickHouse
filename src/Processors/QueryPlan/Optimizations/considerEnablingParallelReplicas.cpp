@@ -610,6 +610,58 @@ struct ReadIdentity
     }
 };
 
+/// Whether two reads see the same state of their table. An analysis selects ranges of the parts of one snapshot and the
+/// read applies to them the mutations of its own, so handing an analysis to a read of another snapshot reads wrong rows:
+/// with `enable_shared_storage_snapshot_in_query` off each plan takes a snapshot of its own, and a mutation submitted
+/// in between is applied on the fly by one of them only. The plans of one query share their snapshots unless they are
+/// told not to; two snapshots taken apart are compared by what they hold, and what does not compare (the delete
+/// bitmaps of a unique key) has to be the same object.
+bool readSameSnapshot(const ReadFromMergeTree & lhs, const ReadFromMergeTree & rhs)
+{
+    const auto & lhs_snapshot = *lhs.getStorageSnapshot();
+    const auto & rhs_snapshot = *rhs.getStorageSnapshot();
+    if (lhs_snapshot.metadata != rhs_snapshot.metadata)
+        return false;
+    const auto * lhs_data = typeid_cast<const MergeTreeData::SnapshotData *>(lhs_snapshot.data.get());
+    const auto * rhs_data = typeid_cast<const MergeTreeData::SnapshotData *>(rhs_snapshot.data.get());
+    if (!lhs_data || !rhs_data || !lhs_data->parts || !rhs_data->parts || lhs_data->uk_read_snapshot != rhs_data->uk_read_snapshot)
+        return false;
+
+    const auto & lhs_mutations = lhs.getMutationsSnapshot();
+    const auto & rhs_mutations = rhs.getMutationsSnapshot();
+    if (lhs_data->parts == rhs_data->parts && lhs_mutations == rhs_mutations)
+        return true;
+    if (!lhs_mutations || !rhs_mutations || lhs_mutations->hasLightweightDeletedMask() != rhs_mutations->hasLightweightDeletedMask()
+        || lhs_mutations->hasMetadataMutations() != rhs_mutations->hasMetadataMutations()
+        || lhs_mutations->getColumnsChangedOnFly() != rhs_mutations->getColumnsChangedOnFly())
+        return false;
+
+    const auto & lhs_parts = *lhs_data->parts;
+    const auto & rhs_parts = *rhs_data->parts;
+    if (lhs_parts.size() != rhs_parts.size())
+        return false;
+    for (size_t i = 0; i < lhs_parts.size(); ++i)
+    {
+        const auto & part = lhs_parts[i];
+        if (part.data_part != rhs_parts[i].data_part || part.parent_part != rhs_parts[i].parent_part
+            || part.ranges != rhs_parts[i].ranges)
+            return false;
+        if (lhs_mutations == rhs_mutations)
+            continue;
+        if (lhs_mutations->getOnFlyMutationCommandsForPart(part.data_part).toString(/*with_pure_metadata_commands=*/true)
+            != rhs_mutations->getOnFlyMutationCommandsForPart(part.data_part).toString(/*with_pure_metadata_commands=*/true))
+            return false;
+        const auto lhs_patches = lhs_mutations->getPatchesForPart(part.data_part);
+        const auto rhs_patches = rhs_mutations->getPatchesForPart(part.data_part);
+        if (lhs_patches.size() != rhs_patches.size())
+            return false;
+        for (size_t j = 0; j < lhs_patches.size(); ++j)
+            if (lhs_patches[j].part != rhs_patches[j].part || lhs_patches[j].source_data_version != rhs_patches[j].source_data_version)
+                return false;
+    }
+    return true;
+}
+
 /// Hand every read in the parallel replicas plan the analysis the single-node plan already produced for
 /// the same read. Without this only the matched read gets an analysis and the rest scan everything - on
 /// TPC-H q03, 1045 marks against 614.
@@ -695,6 +747,15 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
             return false;
         }
         paired_single_node_reads[i] = it->second;
+        if (!readSameSnapshot(*it->second, *replicas_reads[i]))
+        {
+            LOG_TRACE(
+                getLogger("AutoParallelReplicas"),
+                "Reads of {} in the two plans see different snapshots of the table; not transplanting index analysis. "
+                "Skipping optimization",
+                replicas_reads[i]->getStorageID().getNameForLogs());
+            return false;
+        }
     }
 
     for (size_t i = 0; i < replicas_reads.size(); ++i)
@@ -1014,14 +1075,12 @@ void considerEnablingParallelReplicas(
     /// built to find it again. Mode 2 recollects, so it always matches against a fresh replicas plan, and with
     /// `automatic_parallel_replicas_remember_boundary` off every query does.
     ///
-    /// The two plans are matched on keys that hash constants by value. The replicas plan takes over this plan's index
-    /// analysis, so they match only where they filter on the same values. The analyses of a query share what they fold
-    /// `now()` and the like to (see `QueryFoldedConstantsCache`), so where the values differ, the query reads a setting
-    /// that the replicas plan is built with another value of. The statistics and the remembered boundary are for the
-    /// next execution, which folds `now() - INTERVAL 1 DAY` to another value, so their keys take such a constant as
-    /// the expression it was folded from.
-    const auto nopr_node_hashes = calculateHashTableCacheKeys(root);
-    const auto statistics_keys = calculateHashTableCacheKeys(root, optimization_settings.query_folded_constants.get());
+    /// The statistics and the remembered boundary are for the next execution, which folds `now() - INTERVAL 1 DAY` to
+    /// another value, so their keys take such a constant as the expression it was folded from, and they leave out the
+    /// values of no fixed size. That is fine for an estimate, and the remembered boundary can only decline: a plan
+    /// that goes parallel is matched again below, on keys that hash every value (see `matching_keys`).
+    const auto statistics_keys
+        = calculateHashTableCacheKeys(root, {.folded_constants = optimization_settings.query_folded_constants.get()});
     auto & stats_cache = getRuntimeDataflowStatisticsCache();
     /// Where the replicas' half ends also depends on settings that leave the single-replica plan as it is, so the
     /// key carries them beside the root's hash.
@@ -1108,7 +1167,13 @@ void considerEnablingParallelReplicas(
     }
     LOG_TRACE(getLogger("AutoParallelReplicas"), "Top node of replicas plan: {}", replicas_plan_boundary->step->getName());
 
-    const auto pr_node_hashes = calculateHashTableCacheKeys(*plan_with_parallel_replicas->getRootNode());
+    /// The replicas plan takes over this plan's index analysis, so the two plans are to match only where they filter on
+    /// the same values: the keys hash every constant by its value. The analyses of a query share what they fold `now()`
+    /// and the like to (see `QueryFoldedConstantsCache`), so where the values differ, the query reads a setting that
+    /// the replicas plan is built with another value of.
+    constexpr PlanKeyConstants matching_keys{.all_values = true};
+    const auto nopr_node_hashes = calculateHashTableCacheKeys(root, matching_keys);
+    const auto pr_node_hashes = calculateHashTableCacheKeys(*plan_with_parallel_replicas->getRootNode(), matching_keys);
     single_replica_plan_boundary
         = findCorrespondingNodeInSingleNodePlan(pr_node_hashes.at(replicas_plan_boundary), root, nopr_node_hashes).first;
     if (!single_replica_plan_boundary)
