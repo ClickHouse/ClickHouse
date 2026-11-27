@@ -693,6 +693,8 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
         set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS} -fvisibility=default")
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS} -fvisibility=hidden")
         set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS} -fvisibility=hidden")
+        # NO_LTO_COMPILE_OPTIONS is only for sources that define data and no functions or classes: CFI has nothing to
+        # check in them, and they have no vtable that whole-program devirtualization would miss.
         list (APPEND NO_LTO_COMPILE_OPTIONS -fno-sanitize=cfi)
         if (GLIBC_COMPATIBILITY)
             # Rust std finds `__pthread_get_minstack` with `dlsym` (see base/glibc-compatibility/pthread_get_minstack.c).
