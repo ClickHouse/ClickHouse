@@ -452,6 +452,21 @@ void removeFileDurably(const DiskPtr & disk, const String & path)
         dir_sync_guard->sync();
 }
 
+/// Makes an already written file durable: on local disks its data and its directory entry are synced.
+/// Other disks persist a file when the write is finalized, so there is nothing to sync for them.
+void syncFileDurably(const DiskPtr & disk, const String & path)
+{
+    auto dir_sync_guard = disk->getDirectorySyncGuard(fs::path(path).parent_path().string());
+    if (!dir_sync_guard)
+        return;
+
+    /// Opening the file for append does not change it, it only gives a descriptor to sync.
+    auto out = disk->writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+    out->sync();
+    out->finalize();
+    dir_sync_guard->sync();
+}
+
 }
 
 void KeeperStateManager::save_state(const nuraft::srv_state & state)
@@ -512,8 +527,8 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
     struct CorruptedFile
     {
         String path;
-        uint64_t got;
-        uint64_t expected;
+        uint64_t computed_checksum;
+        uint64_t stored_checksum;
     };
     std::optional<CorruptedFile> corrupted_file;
 
@@ -568,7 +583,14 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 
         if (state)
         {
-            disk->removeFileIfExists(old_path);
+            if (disk->existsFile(old_path))
+            {
+                /// A leftover backup means save_state was interrupted, so the state file may have
+                /// been written but not synced: a valid checksum does not prove that. Make the
+                /// state file durable before the backup is removed.
+                syncFileDurably(disk, server_state_file_name);
+                disk->removeFileIfExists(old_path);
+            }
             return state;
         }
     }
@@ -595,7 +617,11 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
     /// No usable backup exists, so a checksum mismatch is fatal in debug builds to catch bugs early.
     if (corrupted_file)
         throw Exception(
-            ErrorCodes::CORRUPTED_DATA, invalid_checksum_error_format, corrupted_file->path, corrupted_file->got, corrupted_file->expected);
+            ErrorCodes::CORRUPTED_DATA,
+            invalid_checksum_error_format,
+            corrupted_file->path,
+            corrupted_file->computed_checksum,
+            corrupted_file->stored_checksum);
 #endif
 
     disk->removeFileIfExists(server_state_file_name);
