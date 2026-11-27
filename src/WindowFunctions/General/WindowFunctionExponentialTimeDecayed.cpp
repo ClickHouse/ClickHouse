@@ -1,10 +1,9 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
-#include <WindowFunctions/WindowFunction.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/assert_cast.h>
@@ -89,21 +88,21 @@ public:
         checkValueAndTimeArguments(name_, argument_types);
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.frame = true};
+        return WindowFunctionRequirements{.frame_start = true, .frame_end = true};
     }
 
-    size_t sizeOfState() const override { return sizeof(DecayedSumState); }
-    size_t alignOfState() const override { return alignof(DecayedSumState); }
+    [[nodiscard]] size_t sizeOfState() const override { return sizeof(DecayedSumState); }
+    [[nodiscard]] size_t alignOfState() const override { return alignof(DecayedSumState); }
     void createState(char * place) const override { new (place) DecayedSumState(); }
     void resetPartition(char * place) const override { new (place) DecayedSumState(); }
 
-    void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    Int64 evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
         DecayedSumState & state = *reinterpret_cast<DecayedSumState *>(place);
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
-        for (size_t i = 0; i < bounds.rows; ++i)
+        for (Int64 i = 0; i < bounds.rows; ++i)
         {
             const Int64 start = bounds.frame_start[i];
             const Int64 end = bounds.frame_end[i];
@@ -131,6 +130,7 @@ public:
             state.covered_end = end;
             data.push_back(sum);
         }
+        return state.covered_start;
     }
 
 private:
@@ -147,15 +147,15 @@ public:
         checkValueAndTimeArguments(name_, argument_types);
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.frame = true};
+        return WindowFunctionRequirements{.frame_start = true, .frame_end = true};
     }
 
-    void evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
-        for (size_t i = 0; i < bounds.rows; ++i)
+        for (Int64 i = 0; i < bounds.rows; ++i)
         {
             const Int64 start = bounds.frame_start[i];
             const Int64 end = bounds.frame_end[i];
@@ -174,6 +174,7 @@ public:
             }
             data.push_back(max);
         }
+        return bounds.frame_start.back();
     }
 
 private:
@@ -193,21 +194,21 @@ public:
         checkTimeArgument(argument_types, 0);
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.frame = true};
+        return WindowFunctionRequirements{.frame_start = true, .frame_end = true};
     }
 
-    size_t sizeOfState() const override { return sizeof(DecayedSumState); }
-    size_t alignOfState() const override { return alignof(DecayedSumState); }
+    [[nodiscard]] size_t sizeOfState() const override { return sizeof(DecayedSumState); }
+    [[nodiscard]] size_t alignOfState() const override { return alignof(DecayedSumState); }
     void createState(char * place) const override { new (place) DecayedSumState(); }
     void resetPartition(char * place) const override { new (place) DecayedSumState(); }
 
-    void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    Int64 evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
         DecayedSumState & state = *reinterpret_cast<DecayedSumState *>(place);
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
-        for (size_t i = 0; i < bounds.rows; ++i)
+        for (Int64 i = 0; i < bounds.rows; ++i)
         {
             const Int64 start = bounds.frame_start[i];
             const Int64 end = bounds.frame_end[i];
@@ -235,6 +236,7 @@ public:
             state.covered_end = end;
             data.push_back(count);
         }
+        return state.covered_start;
     }
 
 private:
@@ -251,21 +253,21 @@ public:
         checkValueAndTimeArguments(name_, argument_types);
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.frame = true};
+        return WindowFunctionRequirements{.frame_start = true, .frame_end = true};
     }
 
-    size_t sizeOfState() const override { return sizeof(DecayedAvgState); }
-    size_t alignOfState() const override { return alignof(DecayedAvgState); }
+    [[nodiscard]] size_t sizeOfState() const override { return sizeof(DecayedAvgState); }
+    [[nodiscard]] size_t alignOfState() const override { return alignof(DecayedAvgState); }
     void createState(char * place) const override { new (place) DecayedAvgState(); }
     void resetPartition(char * place) const override { new (place) DecayedAvgState(); }
 
-    void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    Int64 evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
         DecayedAvgState & state = *reinterpret_cast<DecayedAvgState *>(place);
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
-        for (size_t i = 0; i < bounds.rows; ++i)
+        for (Int64 i = 0; i < bounds.rows; ++i)
         {
             const Int64 start = bounds.frame_start[i];
             const Int64 end = bounds.frame_end[i];
@@ -311,6 +313,7 @@ public:
             state.covered_end = end;
             data.push_back(avg);
         }
+        return state.covered_start;
     }
 
 private:
@@ -319,8 +322,8 @@ private:
 
 }
 
-void registerWindowFunctionsExponentialTimeDecayed(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
-void registerWindowFunctionsExponentialTimeDecayed(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
+void registerWindowFunctionsExponentialTimeDecayed(WindowFunctionFactory & factory);
+void registerWindowFunctionsExponentialTimeDecayed(WindowFunctionFactory & factory)
 {
     FunctionDocumentation::Description exponentialTimeDecayedSum_description = R"(
 Returns the sum of exponentially smoothed moving average values of a time series at the index `t` in time.
@@ -408,14 +411,14 @@ FROM
         )"
     }
     };
-    FunctionDocumentation::Category exponentialTimeDecayedSum_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::Category exponentialTimeDecayedSum_category = FunctionDocumentation::Category::WindowFunction;
     FunctionDocumentation::IntroducedIn exponentialTimeDecayedSum_introduced_in = {21, 12};
     FunctionDocumentation exponentialTimeDecayedSum_documentation = {exponentialTimeDecayedSum_description, exponentialTimeDecayedSum_syntax, exponentialTimeDecayedSum_arguments, exponentialTimeDecayedSum_parameters, exponentialTimeDecayedSum_returned_value, exponentialTimeDecayedSum_examples, exponentialTimeDecayedSum_introduced_in, exponentialTimeDecayedSum_category};
     factory.registerFunction("exponentialTimeDecayedSum", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionExponentialTimeDecayedSum>(name, argument_types, parameters));
-        }, exponentialTimeDecayedSum_documentation, properties});
+            return std::make_shared<WindowFunctionExponentialTimeDecayedSum>(name, argument_types, parameters);
+        }, exponentialTimeDecayedSum_documentation});
 
     FunctionDocumentation::Description exponentialTimeDecayedMax_description = R"(
 Returns the maximum of the computed exponentially smoothed moving average at index `t` in time with that at `t-1`.
@@ -503,14 +506,14 @@ FROM
         )"
     }
     };
-    FunctionDocumentation::Category exponentialTimeDecayedMax_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::Category exponentialTimeDecayedMax_category = FunctionDocumentation::Category::WindowFunction;
     FunctionDocumentation::IntroducedIn exponentialTimeDecayedMax_introduced_in = {21, 12};
     FunctionDocumentation exponentialTimeDecayedMax_documentation = {exponentialTimeDecayedMax_description, exponentialTimeDecayedMax_syntax, exponentialTimeDecayedMax_arguments, exponentialTimeDecayedMax_parameters, exponentialTimeDecayedMax_returned_value, exponentialTimeDecayedMax_examples, exponentialTimeDecayedMax_introduced_in, exponentialTimeDecayedMax_category};
     factory.registerFunction("exponentialTimeDecayedMax", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionExponentialTimeDecayedMax>(name, argument_types, parameters));
-        }, exponentialTimeDecayedMax_documentation, properties});
+            return std::make_shared<WindowFunctionExponentialTimeDecayedMax>(name, argument_types, parameters);
+        }, exponentialTimeDecayedMax_documentation});
 
     FunctionDocumentation::Description exponentialTimeDecayedCount_description = R"(
 Returns the cumulative exponential decay over a time series at the index `t` in time.
@@ -597,14 +600,14 @@ FROM
         )"
     }
     };
-    FunctionDocumentation::Category exponentialTimeDecayedCount_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::Category exponentialTimeDecayedCount_category = FunctionDocumentation::Category::WindowFunction;
     FunctionDocumentation::IntroducedIn exponentialTimeDecayedCount_introduced_in = {21, 12};
     FunctionDocumentation exponentialTimeDecayedCount_documentation = {exponentialTimeDecayedCount_description, exponentialTimeDecayedCount_syntax, exponentialTimeDecayedCount_arguments, exponentialTimeDecayedCount_parameters, exponentialTimeDecayedCount_returned_value, exponentialTimeDecayedCount_examples, exponentialTimeDecayedCount_introduced_in, exponentialTimeDecayedCount_category};
     factory.registerFunction("exponentialTimeDecayedCount", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionExponentialTimeDecayedCount>(name, argument_types, parameters));
-        }, exponentialTimeDecayedCount_documentation, properties});
+            return std::make_shared<WindowFunctionExponentialTimeDecayedCount>(name, argument_types, parameters);
+        }, exponentialTimeDecayedCount_documentation});
 
     FunctionDocumentation::Description exponentialTimeDecayedAvg_description = R"(
 Returns the exponentially smoothed weighted moving average of values of a time series at point `t` in time.
@@ -692,14 +695,14 @@ FROM
         )"
     }
     };
-    FunctionDocumentation::Category exponentialTimeDecayedAvg_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::Category exponentialTimeDecayedAvg_category = FunctionDocumentation::Category::WindowFunction;
     FunctionDocumentation::IntroducedIn exponentialTimeDecayedAvg_introduced_in = {21, 12};
     FunctionDocumentation exponentialTimeDecayedAvg_documentation = {exponentialTimeDecayedAvg_description, exponentialTimeDecayedAvg_syntax, exponentialTimeDecayedAvg_arguments, exponentialTimeDecayedAvg_parameters, exponentialTimeDecayedAvg_returned_value, exponentialTimeDecayedAvg_examples, exponentialTimeDecayedAvg_introduced_in, exponentialTimeDecayedAvg_category};
     factory.registerFunction("exponentialTimeDecayedAvg", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionExponentialTimeDecayedAvg>(name, argument_types, parameters));
-        }, exponentialTimeDecayedAvg_documentation, properties});
+            return std::make_shared<WindowFunctionExponentialTimeDecayedAvg>(name, argument_types, parameters);
+        }, exponentialTimeDecayedAvg_documentation});
 }
 
 }

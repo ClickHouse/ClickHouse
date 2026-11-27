@@ -1,9 +1,8 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
-#include <WindowFunctions/WindowFunction.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -20,28 +19,30 @@ public:
     {
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
         return WindowFunctionRequirements{};
     }
 
-    void evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
+    Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
     {
         auto & data = assert_cast<ColumnUInt64 &>(result).getData();
-        for (size_t i = 0; i < bounds.rows; ++i)
+        for (Int64 i = 0; i < bounds.rows; ++i)
             data.push_back(bounds.row[i] + 1);
+
+        return bounds.row.back() + 1;
     }
 };
 
 }
 
-void registerWindowFunctionRowNumber(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
-void registerWindowFunctionRowNumber(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
+void registerWindowFunctionRowNumber(WindowFunctionFactory & factory);
+void registerWindowFunctionRowNumber(WindowFunctionFactory & factory)
 {
     factory.registerFunction("row_number", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionRowNumber>(name, argument_types, parameters));
+            return std::make_shared<WindowFunctionRowNumber>(name, argument_types, parameters);
         }, {.description = R"DOCS_MD(
 Numbers the current row within its partition starting from 1.
 
@@ -98,7 +99,7 @@ FROM salaries;
 5. │ Michael Stanley │ 150000 │          5 │
    └─────────────────┴────────┴────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}}, WindowFunctionFactory::Case::Insensitive);
 }
 
 }

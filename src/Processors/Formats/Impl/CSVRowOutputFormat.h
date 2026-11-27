@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Formats/FormatSettings.h>
 
@@ -27,6 +28,7 @@ public:
     bool supportsSpecialSerializationKinds() const override { return format_settings.allow_special_serialization_kinds; }
 
 private:
+    void write(const Columns & columns, size_t row_num) override;
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() override;
     void writeRowEndDelimiter() override;
@@ -38,7 +40,7 @@ private:
     void writeBeforeExtremes() override;
 
     void writePrefix() override;
-    void writeLine(const std::vector<String> & values);
+    void writeLine(std::span<const String> values);
 
     bool with_names;
     bool with_types;

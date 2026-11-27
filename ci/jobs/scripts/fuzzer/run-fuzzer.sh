@@ -40,7 +40,9 @@ unset _san _var
 # itself from prof_prefix and does not create the directory.
 JEMALLOC_PROFILES_DIR="/workspace/jemalloc_profiles"
 mkdir -p "$JEMALLOC_PROFILES_DIR"
-export MALLOC_CONF="${MALLOC_CONF:+${MALLOC_CONF},}prof_prefix:${JEMALLOC_PROFILES_DIR}/clickhouse.jemalloc"
+# junk:true fills memory on allocation and free, so a use-after-free or uninitialized read
+# fails close to the bug instead of silently corrupting the heap.
+export MALLOC_CONF="${MALLOC_CONF:+${MALLOC_CONF},}junk:true,prof_prefix:${JEMALLOC_PROFILES_DIR}/clickhouse.jemalloc"
 
 function collect_sanitizer_reports
 {
@@ -94,6 +96,8 @@ function configure
     cp -av --dereference "$repo_dir"/tests/config/config.d/macros.xml $CONFIG_DIR/config.d
     cp -av --dereference "$repo_dir"/tests/config/config.d/jemalloc_enable_global_profiler.yaml $CONFIG_DIR/config.d
     cp -av --dereference "$repo_dir"/tests/config/config.d/jemalloc_flush_profile.yaml $CONFIG_DIR/config.d
+    # 128MB caches, so evictions happen under the fuzzer's load.
+    cp -av --dereference "$repo_dir"/tests/config/config.d/small_caches.xml $CONFIG_DIR/config.d
     cp -av --dereference "$repo_dir"/tests/config/server.crt "$repo_dir"/tests/config/server.key $CONFIG_DIR
     cp -av --dereference "$repo_dir"/tests/config/users.d/ci_logs_sender.yaml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
@@ -110,8 +114,31 @@ function configure
 </clickhouse>
 EOL
 
+    # Half of the runs read through a small userspace page cache that drops pages at random, local disks
+    # too, which needs the `pread` read method. The server has no page cache by default.
+    if (( RANDOM % 4 )); then
+        echo "Using the userspace page cache with page_cache_inject_eviction"
+        cat > $CONFIG_DIR/config.d/page_cache.xml <<EOL
+<clickhouse>
+    <page_cache_min_size>67108864</page_cache_min_size>
+    <page_cache_max_size>134217728</page_cache_max_size>
+</clickhouse>
+EOL
+        cat > $CONFIG_DIR/users.d/page_cache.xml <<EOL
+<clickhouse>
+    <profiles>
+        <default>
+            <page_cache_inject_eviction>1</page_cache_inject_eviction>
+            <use_page_cache_for_local_disks>1</use_page_cache_for_local_disks>
+            <local_filesystem_read_method>pread</local_filesystem_read_method>
+        </default>
+    </profiles>
+</clickhouse>
+EOL
+    fi
 
-    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config) || echo "Failed to create log export config"
+
+    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config)
 }
 
 function collect_jemalloc_profiles
@@ -236,6 +263,15 @@ function fuzz
         sleep 1
     done
     server_pid=$(cat /var/run/clickhouse-server/clickhouse-server.pid)
+    # With the filesystem isolation and `CAP_SYS_ADMIN`, the pid file has the PID of its supervisor, whose child is the
+    # init of the PID namespace, whose child is the watchdog or the server.
+    if [[ "$(cat "/proc/$server_pid/comm" 2>/dev/null)" == clickhouse-isol ]]; then
+        server_pid=$(cut -d' ' -f1 "/proc/$server_pid/task/$server_pid/children")
+        server_pid=$(cut -d' ' -f1 "/proc/$server_pid/task/$server_pid/children")
+        if [[ "$(cat "/proc/$server_pid/comm" 2>/dev/null)" == ClickHouseWatch ]]; then
+            server_pid=$(cut -d' ' -f1 "/proc/$server_pid/task/$server_pid/children")
+        fi
+    fi
 
     kill -0 $server_pid
 
@@ -248,8 +284,9 @@ function fuzz
         # and clickhouse-server can do fork-exec, for example, to run some bridge.
         # Do not set nostop noprint for all signals, because some it may cause gdb to hang,
         # explicitly ignore non-fatal signals that are used by server.
-        # Number of SIGRTMIN can be determined only in runtime.
-        RTMIN=$(kill -l SIGRTMIN)
+        # The server uses SIGRTMIN for system.stack_trace. Its number is a property of the libc
+        # the server is linked with, not of this shell: 34 with glibc, 35 with musl (which
+        # reserves 34 for itself), so handle both.
         echo "
     set follow-fork-mode parent
     handle SIGHUP nostop noprint pass
@@ -259,7 +296,8 @@ function fuzz
     handle SIGTERM nostop noprint pass
     handle SIGUSR1 nostop noprint pass
     handle SIGUSR2 nostop noprint pass
-    handle SIG$RTMIN nostop noprint pass
+    handle SIG34 nostop noprint pass
+    handle SIG35 nostop noprint pass
     info signals
     continue
     backtrace full
@@ -365,11 +403,17 @@ function fuzz
         echo "Fuzzer pid is $fuzzer_pid"
 
         # We need to give timeout some time to execute the underlying command with that many arguments
+        # The fuzzer_pid belongs to the timeout process.
+        actual_fuzzer_pid=''
         elapsed=0
         maximum=50
         while [[ $elapsed -lt $maximum ]]; do
-            if ps -o pid= --ppid "$fuzzer_pid"; then
-                echo "Found underlying PID!"
+            if actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid"); then
+                echo "Found underlying PID $actual_fuzzer_pid"
+                break;
+            # bash reaps an exited timeout at once (keeping its status for wait), so kill -0 fails.
+            elif ! kill -0 "$fuzzer_pid" 2>/dev/null; then
+                echo "The timeout process has exited, not waiting for the fuzzer PID"
                 break;
             else
                 echo "Not found. Trying again..."
@@ -378,12 +422,12 @@ function fuzz
             elapsed=$((elapsed+1))
         done
 
-        # The fuzzer_pid belongs to the timeout process.
-        actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid")
-
         if [[ "$IS_ASAN" = "1" ]];
         then
             echo "ASAN build detected. Not using gdb since it disables LeakSanitizer detections"
+        elif [[ -z "$actual_fuzzer_pid" ]];
+        then
+            echo "The fuzzer exited before its PID was found, not attaching gdb"
         else
             echo "Attaching gdb to the fuzzer itself"
             gdb -batch -command script.gdb -p $actual_fuzzer_pid &

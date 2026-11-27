@@ -3,15 +3,11 @@ sidebarTitle: '支払いしきい値'
 slug: /cloud/billing/payment-thresholds
 title: '支払いしきい値'
 description: 'ClickHouse Cloud の支払いしきい値と自動請求。'
-keywords: ['課金', '支払いしきい値', '自動請求', '請求書']
+keywords: ['請求', '支払いしきい値', '自動請求', '請求書']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
-<div id="threshholds">
-  ## 支払いしきい値
-</div>
+## 支払いしきい値 {#threshholds}
 
 従量課金制をご利用のお客様で、ClickHouse Cloud の請求期間中の請求額が 1,000 米ドルまたはその相当額に達した場合、組織に設定されている支払い方法に自動で請求されます。
 
@@ -25,16 +21,24 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 自動支払いで請求が失敗した場合、設定されているクレジットカードに問題があるか、クレジットカードで e-mandate を設定していないか、またはそのクレジットカードが継続的なオンライン取引における e-mandate の処理に関するインド準備銀行 (RBI) の枠組みに準拠していない可能性があります。
 お使いのクレジットカードが RBI に準拠していない場合は、RBI に準拠した新しい支払い方法を追加するか、カードで e-mandate を設定できるようになるまで手動での支払いを続ける必要があります。
 
-以下の例では、Cloud Console の Billing UI を示しています。
+以下の例では、Cloud Console の 請求 UI を示しています。
 
-<Image img="/images/cloud/reference/billing_payment_threshhold.webp" size="sm" alt="UI で Billing を確認する場所" />
+<div className="ch-image-sm">
+  <Frame>
+    ![UI で 請求 を確認する場所](/images/cloud/reference/billing_payment_threshhold.webp)
+  </Frame>
+</div>
 
-<Image img="/images/cloud/reference/billing_payment_threshhold_2.webp" size="lg" alt="請求書" />
+<div className="ch-image-lg">
+  <Frame>
+    ![請求書](/images/cloud/reference/billing_payment_threshhold_2.webp)
+  </Frame>
+</div>
 
 上の例からわかるように、2 月 28 日から 3 月 31 日までの請求期間中にしきい値請求書が送信され、その後、同じ請求期間中に 1,000 米ドルを超えた残りの利用額に対して別の請求書が送信されています。
 
 <div id="threshholds-notifications">
-  ## 支払いしきい値に関する通知
+  ## 支払いしきい値に関する通知 {#threshholds-notifications}
 </div>
 
 組織の支払いしきい値の 90% に達し、請求期間の途中でそのしきい値を超える見込みがある場合は、その組織に関連付けられた請求担当者のメールアドレス宛てに通知メールが送信されます。

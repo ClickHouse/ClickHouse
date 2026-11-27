@@ -7,10 +7,8 @@ doc_type: 'guide'
 keywords: ['migración', 'ClickHouse Cloud', 'OSS', 'Migrar de autogestionado a Cloud', 'BACKUP', 'RESTORE']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="overview-migration-approaches">
-  ## Descripción general
+  ## Descripción general {#overview-migration-approaches}
 </div>
 
 Hay dos métodos principales para migrar datos desde ClickHouse autogestionado (OSS) a ClickHouse Cloud:
@@ -38,7 +36,7 @@ para un clúster de ClickHouse con dos segmentos y dos réplicas.
 </Info>
 
 <div id="oss-setup">
-  ## Preparación de OSS
+  ## Preparación de OSS {#oss-setup}
 </div>
 
 Primero iniciaremos un clúster de ClickHouse con una configuración de Docker Compose de nuestro repositorio de ejemplos.
@@ -72,7 +70,7 @@ docker exec -it clickhouse-01 clickhouse-client
 ```
 
 <div id="mergetree-to-replicatedmergetree">
-  ### De una tabla MergeTree a una tabla ReplicatedMergeTree
+  ### De una tabla MergeTree a una tabla ReplicatedMergeTree {#mergetree-to-replicatedmergetree}
 </div>
 
 ClickHouse Cloud funciona con [`SharedMergeTree`](/es/products/cloud/features/infrastructure/shared-merge-tree).
@@ -175,7 +173,7 @@ Ahora ya está listo para continuar con la configuración de su servicio de Clou
 restaurar más adelante una copia de seguridad desde su bucket de S3.
 
 <div id="distributed-tables">
-  ### Tablas distribuidas con ReplicatedMergeTree
+  ### Tablas distribuidas con ReplicatedMergeTree {#distributed-tables}
 </div>
 
 Si su configuración usa tablas distribuidas a través de varios segmentos, necesitará una tabla `ReplicatedMergeTree` local en cada nodo y una tabla `Distributed` como punto de entrada para las consultas.
@@ -264,9 +262,7 @@ FROM s3(
 );
 ```
 
-<div id="cloud-setup">
-  ## Preparación para Cloud
-</div>
+## Preparación para Cloud {#cloud-setup}
 
 Restaurarás tus datos en un nuevo servicio de Cloud.
 Sigue estos pasos para crear un nuevo servicio de Cloud.
@@ -277,21 +273,33 @@ Sigue estos pasos para crear un nuevo servicio de Cloud.
   </Step>
 
   <Step title="Crea un nuevo servicio" id="create-new-service">
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="crear un nuevo servicio" />
+    <div className="ch-image-md">
+      <Frame>
+        ![crear un nuevo servicio](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Configura y crea un servicio" id="configure-and-create">
     Elige la región y la configuración que prefieras y, a continuación, haz clic en `Create service`
 
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="configurar las preferencias del servicio" />
+    <div className="ch-image-md">
+      <Frame>
+        ![configurar las preferencias del servicio](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Crea un rol de acceso" id="create-an-access-role">
     Abre SQL Console
 
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="configurar las preferencias del servicio" />
+    <div className="ch-image-md">
+      <Frame>
+        ![configurar las preferencias del servicio](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp)
+      </Frame>
+    </div>
 
-    ### Configura el acceso a S3
+### Configura el acceso a S3 {#set-up-s3-access}
 
     Para restaurar tu copia de seguridad desde S3, tendrás que configurar un acceso seguro entre ClickHouse Cloud y tu bucket de S3.
 
@@ -332,9 +340,7 @@ Sigue estos pasos para crear un nuevo servicio de Cloud.
   </Step>
 </Steps>
 
-<div id="taking-a-backup-on-oss">
-  ## Realización de la copia de seguridad (en una implementación autogestionada)
-</div>
+## Realización de la copia de seguridad (en una implementación autogestionada) {#taking-a-backup-on-oss}
 
 Se debe hacer una copia de seguridad de cada segmento por separado. Conéctese a un nodo de cada segmento y ejecute el
 comando de copia de seguridad con una ruta de destino única para cada segmento.
@@ -377,7 +383,7 @@ Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
 ```
 
 <Info>
-  **Despliegues de un solo nodo**
+  **Deployments de un solo nodo**
 
   Si no utiliza tablas distribuidas, puede hacer una copia de seguridad de toda la base de datos con un solo comando:
 
@@ -393,7 +399,11 @@ Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
 
 Si revisa su bucket de S3, que antes estaba vacío, ahora verá que han aparecido algunas carpetas:
 
-<Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp" size="md" alt="copia de seguridad, datos y metadatos" />
+<div className="ch-image-md">
+  <Frame>
+    ![copia de seguridad, datos y metadatos](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp)
+  </Frame>
+</div>
 
 Si está realizando una migración completa, puede ejecutar el siguiente comando para hacer una copia de seguridad de todo el servidor:
 
@@ -454,7 +464,7 @@ También es posible realizar copias de seguridad incrementales.
 Para obtener más información general sobre las copias de seguridad, consulte la documentación sobre [copias de seguridad y restauración](/es/concepts/features/backup-restore/overview).
 
 <div id="restore-to-clickhouse-cloud">
-  ## Restaurar en ClickHouse Cloud
+  ## Restaurar en ClickHouse Cloud {#restore-to-clickhouse-cloud}
 </div>
 
 Restaura la copia de seguridad de cada segmento de uno en uno en tu servicio de Cloud. Asigna a `ROLE_ARN` el
