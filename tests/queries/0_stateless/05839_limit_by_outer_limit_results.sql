@@ -4,29 +4,34 @@
 -- `LIMIT BY` offset, buffered read in order, `FINAL`, parallel replicas and a distributed read. Issue https://github.com/ClickHouse/ClickHouse/issues/113110.
 
 DROP TABLE IF EXISTS t_lbol;
+DROP TABLE IF EXISTS t_lbol_ref;
 DROP TABLE IF EXISTS t_lbol_final;
 DROP TABLE IF EXISTS t_lbol_rows;
 
 CREATE TABLE t_lbol (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY (k, v) SETTINGS index_granularity = 64;
 SYSTEM STOP MERGES t_lbol;
 -- Four parts with overlapping keys, so every key has rows in several streams.
-INSERT INTO t_lbol SELECT number % 5000, number FROM numbers(20000);
-INSERT INTO t_lbol SELECT number % 5000, number + 100000 FROM numbers(20000);
-INSERT INTO t_lbol SELECT (number * 7) % 5000, number + 200000 FROM numbers(20000);
-INSERT INTO t_lbol SELECT number % 300, number + 300000 FROM numbers(3000);
+INSERT INTO t_lbol SELECT number % 250, number FROM numbers(1000);
+INSERT INTO t_lbol SELECT number % 250, number + 100000 FROM numbers(1000);
+INSERT INTO t_lbol SELECT (number * 7) % 250, number + 200000 FROM numbers(1000);
+INSERT INTO t_lbol SELECT number % 30, number + 300000 FROM numbers(300);
+
+-- The expected results are read from this copy, which is not read in order.
+CREATE TABLE t_lbol_ref (k UInt32, v UInt32) ENGINE = Memory;
+INSERT INTO t_lbol_ref SELECT k, v FROM t_lbol;
 
 CREATE TABLE t_lbol_final (k UInt32, v UInt32, ver UInt32) ENGINE = ReplacingMergeTree(ver) ORDER BY k SETTINGS index_granularity = 64;
 SYSTEM STOP MERGES t_lbol_final;
-INSERT INTO t_lbol_final SELECT number, number, 1 FROM numbers(5000);
-INSERT INTO t_lbol_final SELECT number, number + 1000000, 2 FROM numbers(5000);
+INSERT INTO t_lbol_final SELECT number, number, 1 FROM numbers(500);
+INSERT INTO t_lbol_final SELECT number, number + 1000000, 2 FROM numbers(500);
 
--- Every key has 100 rows in each of four parts.
+-- Every key has 50 rows in each of four parts.
 CREATE TABLE t_lbol_rows (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY (k, v) SETTINGS index_granularity = 64;
 SYSTEM STOP MERGES t_lbol_rows;
-INSERT INTO t_lbol_rows SELECT intDiv(number, 100), number FROM numbers(50000);
-INSERT INTO t_lbol_rows SELECT intDiv(number, 100), number + 1000000 FROM numbers(50000);
-INSERT INTO t_lbol_rows SELECT intDiv(number, 100), number + 2000000 FROM numbers(50000);
-INSERT INTO t_lbol_rows SELECT intDiv(number, 100), number + 3000000 FROM numbers(50000);
+INSERT INTO t_lbol_rows SELECT intDiv(number, 50), number FROM numbers(5000);
+INSERT INTO t_lbol_rows SELECT intDiv(number, 50), number + 1000000 FROM numbers(5000);
+INSERT INTO t_lbol_rows SELECT intDiv(number, 50), number + 2000000 FROM numbers(5000);
+INSERT INTO t_lbol_rows SELECT intDiv(number, 50), number + 3000000 FROM numbers(5000);
 
 -- Small blocks, so that the streams stop inside a part. With a large `prefer_external_sort_block_bytes` the buffered read
 -- in order reads whole parts ahead in these blocks, hence the limit on it above.
@@ -52,7 +57,7 @@ SELECT k, v FROM remote('127.0.0.{1,2}', currentDatabase(), t_lbol) ORDER BY k D
 SELECT 'same rows as without the outer limit';
 SELECT
     (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 2 BY k LIMIT 50 OFFSET 30))
-    = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 2 BY k LIMIT 50 OFFSET 30 WITH TIES));
+    = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k DESC, v DESC LIMIT 2 BY k LIMIT 50 OFFSET 30 WITH TIES));
 
 SELECT 'limit by offset';
 SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 2 OFFSET 1 BY k LIMIT 6 OFFSET 3;
@@ -66,42 +71,42 @@ SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_pa
 SELECT 'limit by offset, distributed';
 SELECT k, v FROM remote('127.0.0.{1,2}', currentDatabase(), t_lbol) ORDER BY k DESC, v DESC LIMIT 2 OFFSET 1 BY k LIMIT 7 OFFSET 4;
 
--- `LIMIT n OFFSET m BY k LIMIT 7 OFFSET o` for every combination, against `WITH TIES`, which does not push the outer limit down
--- and returns the same rows because `(k, v)` is unique. A `SETTINGS` clause of a subquery does not change its plan.
-SELECT 'desc, n = 1, m = 0, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 0 WITH TIES));
-SELECT 'desc, n = 1, m = 0, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 5 WITH TIES));
-SELECT 'desc, n = 1, m = 2, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 0 WITH TIES));
-SELECT 'desc, n = 1, m = 2, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 5 WITH TIES));
-SELECT 'desc, n = 1, m = 6, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 0 WITH TIES));
-SELECT 'desc, n = 1, m = 6, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 5 WITH TIES));
-SELECT 'desc, n = 3, m = 0, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 0 WITH TIES));
-SELECT 'desc, n = 3, m = 0, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 5 WITH TIES));
-SELECT 'desc, n = 3, m = 2, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 0 WITH TIES));
-SELECT 'desc, n = 3, m = 2, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 5 WITH TIES));
-SELECT 'desc, n = 3, m = 6, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 0 WITH TIES));
-SELECT 'desc, n = 3, m = 6, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 5 WITH TIES));
-SELECT 'asc, n = 1, m = 0, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 0 WITH TIES));
-SELECT 'asc, n = 1, m = 0, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 5 WITH TIES));
-SELECT 'asc, n = 1, m = 2, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 0 WITH TIES));
-SELECT 'asc, n = 1, m = 2, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 5 WITH TIES));
-SELECT 'asc, n = 1, m = 6, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 0 WITH TIES));
-SELECT 'asc, n = 1, m = 6, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 5 WITH TIES));
-SELECT 'asc, n = 3, m = 0, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 0 WITH TIES));
-SELECT 'asc, n = 3, m = 0, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 5 WITH TIES));
-SELECT 'asc, n = 3, m = 2, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 0 WITH TIES));
-SELECT 'asc, n = 3, m = 2, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 5 WITH TIES));
-SELECT 'asc, n = 3, m = 6, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 0 WITH TIES));
-SELECT 'asc, n = 3, m = 6, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 5 WITH TIES));
+-- `LIMIT n OFFSET m BY k LIMIT 7 OFFSET o` for every combination, against `WITH TIES` on `t_lbol_ref`, which does not push the
+-- outer limit down and returns the same rows because `(k, v)` is unique. A `SETTINGS` clause of a subquery does not change its plan.
+SELECT 'desc, n = 1, m = 0, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k DESC, v DESC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 0 WITH TIES));
+SELECT 'desc, n = 1, m = 0, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k DESC, v DESC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 5 WITH TIES));
+SELECT 'desc, n = 1, m = 2, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k DESC, v DESC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 0 WITH TIES));
+SELECT 'desc, n = 1, m = 2, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k DESC, v DESC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 5 WITH TIES));
+SELECT 'desc, n = 1, m = 6, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k DESC, v DESC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 0 WITH TIES));
+SELECT 'desc, n = 1, m = 6, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k DESC, v DESC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 5 WITH TIES));
+SELECT 'desc, n = 3, m = 0, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k DESC, v DESC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 0 WITH TIES));
+SELECT 'desc, n = 3, m = 0, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k DESC, v DESC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 5 WITH TIES));
+SELECT 'desc, n = 3, m = 2, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k DESC, v DESC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 0 WITH TIES));
+SELECT 'desc, n = 3, m = 2, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k DESC, v DESC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 5 WITH TIES));
+SELECT 'desc, n = 3, m = 6, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k DESC, v DESC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 0 WITH TIES));
+SELECT 'desc, n = 3, m = 6, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k DESC, v DESC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k DESC, v DESC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 5 WITH TIES));
+SELECT 'asc, n = 1, m = 0, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k ASC, v ASC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 0 WITH TIES));
+SELECT 'asc, n = 1, m = 0, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k ASC, v ASC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 5 WITH TIES));
+SELECT 'asc, n = 1, m = 2, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k ASC, v ASC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 0 WITH TIES));
+SELECT 'asc, n = 1, m = 2, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k ASC, v ASC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 5 WITH TIES));
+SELECT 'asc, n = 1, m = 6, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k ASC, v ASC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 0 WITH TIES));
+SELECT 'asc, n = 1, m = 6, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k ASC, v ASC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 5 WITH TIES));
+SELECT 'asc, n = 3, m = 0, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k ASC, v ASC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 0 WITH TIES));
+SELECT 'asc, n = 3, m = 0, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k ASC, v ASC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 5 WITH TIES));
+SELECT 'asc, n = 3, m = 2, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k ASC, v ASC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 0 WITH TIES));
+SELECT 'asc, n = 3, m = 2, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k ASC, v ASC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 5 WITH TIES));
+SELECT 'asc, n = 3, m = 6, offset = 0', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 0)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k ASC, v ASC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 0 WITH TIES));
+SELECT 'asc, n = 3, m = 6, offset = 5', (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol ORDER BY k ASC, v ASC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 5)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM t_lbol_ref ORDER BY k ASC, v ASC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 5 WITH TIES));
 
 -- `FINAL`: the replaced row of every key must not come back.
 SELECT 'final';
 SELECT k, v FROM t_lbol_final FINAL ORDER BY k DESC LIMIT 1 BY k LIMIT 4 OFFSET 2;
 
 -- Rows read. For `LIMIT n OFFSET m BY k LIMIT l OFFSET o` the stream of a part of `t_lbol_rows` needs `ceil((l + o) / n)`
--- groups and stops within a granule after them. One thread, so that every part is read by one stream: with more threads a
--- part can be split into several streams. Parallel replicas are disabled: with them the rows are read on the replicas and
--- `read_rows` varies from run to run.
-SET max_threads = 1;
+-- groups and stops within two granules after them: the read in order can read one chunk ahead. As many threads as parts of
+-- the same size, so that every part is read by one stream: with more threads a part can be split into several streams.
+-- Parallel replicas are disabled: with them the rows are read on the replicas and `read_rows` varies from run to run.
+SET max_threads = 4;
 SELECT k, v FROM t_lbol_rows ORDER BY k DESC, v DESC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 0 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|desc, n = 1, m = 0, offset = 0|1|7|0|4' FORMAT Null;
 SELECT k, v FROM t_lbol_rows ORDER BY k DESC, v DESC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 5 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|desc, n = 1, m = 0, offset = 5|1|7|5|4' FORMAT Null;
 SELECT k, v FROM t_lbol_rows ORDER BY k DESC, v DESC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 0 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|desc, n = 1, m = 2, offset = 0|1|7|0|4' FORMAT Null;
@@ -132,14 +137,14 @@ SELECT k, v FROM remote('127.0.0.{1,2}', currentDatabase(), t_lbol_rows) ORDER B
 
 SYSTEM FLUSH LOGS query_log;
 SELECT 'rows read';
--- At most the groups that each stream needs and one more granule.
+-- At most the groups that each stream needs and two more granules.
 SELECT p[2], if(read_rows <= bound, 'ok', format('read {} rows, more than {}', read_rows, bound))
 FROM
 (
     SELECT
         splitByChar('|', log_comment) AS p,
         read_rows,
-        toUInt64(p[6]) * (100 * intDiv(toUInt64(p[4]) + toUInt64(p[5]) + toUInt64(p[3]) - 1, toUInt64(p[3])) + 64) AS bound,
+        toUInt64(p[6]) * (50 * intDiv(toUInt64(p[4]) + toUInt64(p[5]) + toUInt64(p[3]) - 1, toUInt64(p[3])) + 128) AS bound,
         query_start_time_microseconds
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query AND log_comment LIKE '05839\\_rows|%'
@@ -148,5 +153,6 @@ ORDER BY query_start_time_microseconds
 SETTINGS max_block_size = 65536;
 
 DROP TABLE t_lbol;
+DROP TABLE t_lbol_ref;
 DROP TABLE t_lbol_final;
 DROP TABLE t_lbol_rows;
