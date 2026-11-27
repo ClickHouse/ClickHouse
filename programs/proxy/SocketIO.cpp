@@ -153,6 +153,21 @@ FiberSocket FiberSocket::adoptTLS(int fd, Poco::Net::Context::Ptr context)
 }
 #endif
 
+#if USE_SSL
+void FiberSocket::startServerTLS(Poco::Net::Context::Ptr context)
+{
+    chassert(is_plaintext && adopted_fd >= 0);
+    auto * plain = dynamic_cast<Silk::FiberStreamSocketImpl *>(socket.impl());
+    chassert(plain);
+    /// The TLS socket shares the plaintext one, which keeps owning the descriptor: it stays the same,
+    /// so the handshake deadline and the registration of the connection remain valid.
+    Poco::AutoPtr<Poco::Net::StreamSocketImpl> shared(plain, /*shared=*/ true);
+    socket = Poco::Net::StreamSocket(new Silk::SecureFiberStreamSocketImpl(shared, context));
+    is_plaintext = false;
+    completeTLSHandshake();
+}
+#endif
+
 void FiberSocket::completeTLSHandshake()
 {
 #if USE_SSL

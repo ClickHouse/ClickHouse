@@ -1,0 +1,17 @@
+client with TLS:
+  the greeting offers TLS: True
+  TLS is established: True
+  auth-switch request: True
+  logged in: True
+  login on the backend leg: user user_05896, asks for TLS: False
+  answer: True
+  answer: True
+client without TLS:
+  the greeting offers TLS: True
+  auth-switch request: True
+  logged in: True
+  login on the backend leg: user user_05896, asks for TLS: False
+  answer: True
+  answer: True
+connection IDs are unique: True
+connection IDs are apart from the IDs of a server: True

@@ -187,6 +187,15 @@ SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(int accepted_fd, Poco::
     acceptSSL();
 }
 
+SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(
+    Poco::AutoPtr<Poco::Net::StreamSocketImpl> accepted_socket, Poco::Net::Context::Ptr context)
+    : Poco::Net::SecureStreamSocketImpl(accepted_socket, context)
+{
+    setBioMethod(silkBioMethod());
+    setMutex(std::make_unique<SilkRecursiveMutex>());
+    acceptSSL();
+}
+
 bool SecureFiberStreamSocketImpl::pollImpl(Poco::Timespan & timeout, int mode)
 {
     uint32_t events = 0;

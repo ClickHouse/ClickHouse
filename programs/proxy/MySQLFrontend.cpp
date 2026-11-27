@@ -19,6 +19,7 @@
 
 #include <base/scope_guard.h>
 
+#include <atomic>
 #include <random>
 
 
@@ -26,7 +27,9 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int LIMIT_EXCEEDED;
+    extern const int UNEXPECTED_PACKET_FROM_CLIENT;
 }
 }
 
@@ -74,6 +77,58 @@ String drainBuffered(ReadBuffer & in)
     return rest;
 }
 
+/// The connection ID of the greeting. The greeting is sent before the client names the user that selects the backend,
+/// so it cannot carry the ID of the backend's session, and the command phase is not mediated to translate it.
+/// The IDs are at least unique among the sessions of the proxy and are taken from the upper half of the range,
+/// while a server counts its connections from zero: a client that kills "its" connection by this ID (`KILL QUERY <id>`,
+/// `COM_PROCESS_KILL`) names a session that does not exist on the backend instead of the session of someone else.
+uint32_t nextConnectionID()
+{
+    static std::atomic<uint32_t> counter {0};
+    return 0x80000000U | counter.fetch_add(1, std::memory_order_relaxed);
+}
+
+constexpr size_t packet_header_size = 4;
+constexpr size_t max_payload_size = 64 * 1024;
+/// The payload of an `SSLRequest` has a fixed size, and a `HandshakeResponse` is always longer (it continues with the user name).
+constexpr size_t ssl_request_payload_size = 32;
+
+size_t payloadSize(const String & header, const char * description)
+{
+    const size_t payload_size = static_cast<UInt8>(header[0])
+        | (static_cast<size_t>(static_cast<UInt8>(header[1])) << 8)
+        | (static_cast<size_t>(static_cast<UInt8>(header[2])) << 16);
+    if (payload_size > max_payload_size)
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "The MySQL {} declares a payload of {} bytes, while it must be at most {} bytes",
+            description, payload_size, max_payload_size);
+    return payload_size;
+}
+
+/// Reads the first packet of the client, with its header, straight from the socket and not a byte more.
+/// The packet may be an `SSLRequest`, which the client follows with the TLS handshake without waiting for an answer:
+/// a buffered read could take the beginning of the handshake away from the TLS layer.
+String receiveFirstPacket(FiberSocket & client, const char * description)
+{
+    const auto read_exactly = [&](char * to, size_t size)
+    {
+        size_t pos = 0;
+        while (pos < size)
+        {
+            const int received = client.receive(to + pos, static_cast<int>(size - pos));
+            if (received <= 0)
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "The client closed the connection in the middle of the MySQL {}", description);
+            pos += received;
+        }
+    };
+
+    String data(packet_header_size, '\0');
+    read_exactly(data.data(), packet_header_size);
+    const size_t payload_size = payloadSize(data, description);
+    data.resize(packet_header_size + payload_size);
+    read_exactly(data.data() + packet_header_size, payload_size);
+    return data;
+}
+
 /// Reads one packet of the authentication phase. Neither peer is trusted at this point: the client is not authenticated,
 /// and the backend may be faulty or chosen by the client (a dynamic backend). The packet readers of `PacketEndpoint`
 /// join continuation packets and grow the strings of a packet without a total bound, so the payload size is checked
@@ -81,17 +136,11 @@ String drainBuffered(ReadBuffer & in)
 /// which only follow a payload of `0xffffff` bytes.
 void receiveBoundedPacket(ReadBuffer & in, uint8_t & sequence_id, IMySQLReadPacket & packet, const char * description)
 {
-    constexpr size_t max_payload_size = 64 * 1024;
-    String data(4, '\0');
-    in.readStrict(data.data(), 4);
-    const size_t payload_size = static_cast<UInt8>(data[0])
-        | (static_cast<size_t>(static_cast<UInt8>(data[1])) << 8)
-        | (static_cast<size_t>(static_cast<UInt8>(data[2])) << 16);
-    if (payload_size > max_payload_size)
-        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "The MySQL {} declares a payload of {} bytes, while it must be at most {} bytes",
-            description, payload_size, max_payload_size);
-    data.resize(4 + payload_size);
-    in.readStrict(data.data() + 4, payload_size);
+    String data(packet_header_size, '\0');
+    in.readStrict(data.data(), packet_header_size);
+    const size_t payload_size = payloadSize(data, description);
+    data.resize(packet_header_size + payload_size);
+    in.readStrict(data.data() + packet_header_size, payload_size);
 
     ReadBufferFromString data_in(data);
     packet.readPayload(data_in, sequence_id);
@@ -106,23 +155,59 @@ void terminateAndRoute(FiberSocket & client, const FrontendContext & ctx)
 {
     client.setTimeouts(ctx.config.handshake_timeout_ms, ctx.config.send_timeout_ms);
 
+    /// The capabilities of the session, as negotiated with the client and then with the backend.
+    const uint32_t session_capabilities = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH
+        | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF;
+
+    /// TLS is negotiated in-band: the client answers the greeting with an `SSLRequest` and switches to TLS
+    /// before it sends the `HandshakeResponse` with the user and the database. The proxy terminates it,
+    /// so it offers TLS when it has a server certificate. The backend leg stays in plaintext.
+#if USE_SSL
+    const bool offer_tls = !ctx.server_tls_context.isNull();
+#else
+    const bool offer_tls = false;
+#endif
+
+    uint8_t client_seq = 0;
+    {
+        AutoCanceledWriteBuffer<WriteBufferFromPocoSocket> greeting_out(client.raw());
+        PacketEndpoint greeting_endpoint(greeting_out, client_seq);
+        /// The server version must begin with a MySQL-style numeric version; clients parse it and reject
+        /// a greeting whose version does not start with digits.
+        Handshake greeting(session_capabilities | (offer_tls ? CLIENT_SSL : 0), nextConnectionID(), "8.0.0-ClickHouse-proxy",
+            "mysql_native_password", makeScramble(), /*charset=*/ 33);
+        greeting_endpoint.sendPacket(greeting, true);
+        greeting_out.finalize();
+    }
+
+    const String first_packet = receiveFirstPacket(client, "handshake response of the client");
+    const bool tls_requested = first_packet.size() == packet_header_size + ssl_request_payload_size;
+    if (tls_requested)
+    {
+        if (!offer_tls || static_cast<UInt8>(first_packet[3]) != client_seq)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected MySQL `SSLRequest` of the client");
+        ++client_seq;
+#if USE_SSL
+        client.startServerTLS(ctx.server_tls_context);
+        client.setTimeouts(ctx.config.handshake_timeout_ms, ctx.config.send_timeout_ms);
+#endif
+    }
+
+    /// Created only now: the buffers read and write through the TLS session, if the client asked for one.
     ReadBufferFromPocoSocket client_in(client.raw());
     AutoCanceledWriteBuffer<WriteBufferFromPocoSocket> client_out(client.raw());
-    uint8_t client_seq = 0;
     PacketEndpoint client_ep(client_in, client_out, client_seq);
 
-    /// Greet the client. TLS is deliberately not offered so the handshake stays readable.
-    const uint32_t server_capabilities = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH
-        | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF;
-    const String proxy_scramble = makeScramble();
-    /// The server version must begin with a MySQL-style numeric version; clients parse it and reject
-    /// a greeting whose version does not start with digits.
-    Handshake greeting(server_capabilities, /*connection_id=*/ 1, "8.0.0-ClickHouse-proxy",
-        "mysql_native_password", proxy_scramble, /*charset=*/ 33);
-    client_ep.sendPacket(greeting, true);
-
     HandshakeResponse response;
-    receiveBoundedPacket(client_in, client_seq, response, "handshake response of the client");
+    if (tls_requested)
+    {
+        receiveBoundedPacket(client_in, client_seq, response, "handshake response of the client");
+    }
+    else
+    {
+        ReadBufferFromString first_packet_in(first_packet);
+        response.readPayload(first_packet_in, client_seq);
+    }
 
     RouteAttributes attributes;
     attributes.protocol = ListenerProtocol::MySQL;
@@ -181,7 +266,7 @@ void terminateAndRoute(FiberSocket & client, const FrontendContext & ctx)
     /// with what the backend advertises. The bits governing the login itself are always set,
     /// because this packet is composed by the proxy, not spliced.
     uint32_t backend_request_capabilities
-        = response.capability_flags & server_capabilities & backend_greeting.capability_flags;
+        = response.capability_flags & session_capabilities & backend_greeting.capability_flags;
     backend_request_capabilities |= CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH
         | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA;
     if (!response.database.empty())
@@ -231,7 +316,8 @@ void terminateAndRoute(FiberSocket & client, const FrontendContext & ctx)
 }
 
 /// MySQL is server-speaks-first and negotiates TLS in-band. When a routing rule or a first-seen hook needs
-/// the user or the database the proxy terminates the handshake to read them; otherwise it forwards transparently and
+/// the user or the database the proxy terminates the handshake (and TLS, if the client asks for it) to read them;
+/// otherwise it forwards transparently, with whatever TLS the client and the backend negotiate, and
 /// routes by peer address or the default pool.
 void handleMySQL(FiberSocket & client, const FrontendContext & ctx)
 {

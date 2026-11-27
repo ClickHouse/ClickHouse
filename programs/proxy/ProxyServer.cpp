@@ -314,7 +314,13 @@ void ProxyServer::start(const Poco::Util::AbstractConfiguration & abstract_confi
             "and provide the certificates in the 'openSSL.server' section");
 
 #if USE_SSL
-    if (anySecureListener())
+    /// A `mysql` listener switches to TLS in-band when the proxy terminates the handshake,
+    /// and offers it to the clients if a server certificate is configured.
+    bool in_band_tls = false;
+    for (const auto & listener : config.listeners)
+        if (listener.protocol == ListenerProtocol::MySQL)
+            in_band_tls = abstract_config.has("openSSL.server.certificateFile") || abstract_config.has("openSSL.server.privateKeyFile");
+    if (anySecureListener() || in_band_tls)
         server_tls_context = makeServerTLSContext(abstract_config);
     if (anyBackendSecure())
         client_tls_context = makeClientTLSContext(abstract_config);

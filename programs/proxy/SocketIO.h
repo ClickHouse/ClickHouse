@@ -79,6 +79,11 @@ public:
     /// Adopt an accepted connection and terminate TLS on it (server-side handshake, silk fiber BIO).
     static FiberSocket adoptTLS(int fd, Poco::Net::Context::Ptr context);
 
+    /// Switch an accepted plaintext connection to TLS in-band and run the server-side handshake, for a protocol
+    /// that negotiates TLS after a plaintext exchange (MySQL). Nothing of the TLS handshake may have been read
+    /// from the socket before. Throws if the handshake fails. The timeouts have to be set again afterwards.
+    void startServerTLS(Poco::Net::Context::Ptr context);
+
     /// The server name (SNI) the client sent in the TLS handshake of a TLS-terminated socket,
     /// or an empty string. Only meaningful after the handshake, i.e. after the first read.
     String tlsServerName();

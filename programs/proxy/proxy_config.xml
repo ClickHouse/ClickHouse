@@ -186,7 +186,8 @@
         </http>
     </proxy>
 
-    <!-- TLS material for terminating listeners (<secure>1</secure>) and secure backends.
+    <!-- TLS material for terminating listeners (<secure>1</secure>), for `mysql` listeners when the proxy
+         terminates the handshake (it then offers TLS in-band), and for secure backends.
     <openSSL>
         <server>
             <certificateFile>/etc/clickhouse-proxy/server.crt</certificateFile>
