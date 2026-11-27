@@ -645,6 +645,12 @@
       "/clickstack/observability/integration-examples/kubernetes"
     ]
   ],
+  "/clickstack/integration-examples/loom": [
+    [
+      "Open Source",
+      "/clickstack/integration-examples/loom"
+    ]
+  ],
   "/clickstack/integration-examples/mongodb-logs": [
     [
       "Open Source",
@@ -2595,6 +2601,23 @@
       ]
     ]
   },
+  "/clickstack/demo-days/2026/2026-11-20": {
+    "observabilityOnly": [
+      "version-aware-app-builder",
+      "faster-app-builds-with-fewer-tokens"
+    ],
+    "openSourceOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-11-20"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-11-20"
+      ]
+    ]
+  },
   "/clickstack/observability/demo-days/2026/2026-04-03": {
     "observabilityOnly": [
       "rbac-for-predefined-dashboards"
@@ -3023,6 +3046,23 @@
       [
         "ClickHouse Observability",
         "/clickstack/observability/demo-days/2026/2026-11-12"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-11-20": {
+    "observabilityOnly": [
+      "version-aware-app-builder",
+      "faster-app-builds-with-fewer-tokens"
+    ],
+    "openSourceOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-11-20"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-11-20"
       ]
     ]
   }
