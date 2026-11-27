@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database, long
+# Tags: no-fasttest, no-replicated-database, no-llvm-coverage, long
 # Tag no-fasttest: Kafka and the Keeper client are not available in fast tests
 # Tag no-replicated-database: the test drives activation of a single fixed replica identity
+# Tag no-llvm-coverage: like 03931/03932, Kafka is too slow under coverage instrumentation
 # Tag long: activation retries and session teardown are wall-clock bound
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -78,15 +79,14 @@ $CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
              kafka_replica_name = 'anchor';
  "
 
-# Plant the migrated identity and its capability marker on a foreign live session, as if
-# the identity had been active elsewhere and unregistered without releasing the marker
-# (the marker must belong to the registration, not to whichever session planted it).
-# The fifo keeps the client's stdin open for as long as that session has to stay alive.
-# The fifo descriptor is allocated by the shell: fd 3 belongs to the harness (BASH_XTRACEFD).
+# Plant the identity and a stale marker on a foreign live session: the marker must belong
+# to the registration, not to the session that planted it.
 FOREIGN_FIFO=$(mktemp -u /tmp/clickhouse_foreign_session.XXXXXX)
 mkfifo "$FOREIGN_FIFO"
 $CLICKHOUSE_KEEPER_CLIENT --tests-mode < "$FOREIGN_FIFO" > /dev/null 2>&1 &
 FOREIGN_SESSION_PID=$!
+# The fifo keeps the client's stdin open; the descriptor is shell-allocated because
+# fd 3 belongs to the harness (BASH_XTRACEFD).
 exec {FOREIGN_FD}<>"$FOREIGN_FIFO"
 printf '%s\n' "touch '$REPLICA_DIR'" "create '$REPLICA_DIR/demand_aware' 'stale' EPHEMERAL" >&"$FOREIGN_FD"
 
@@ -176,10 +176,8 @@ if [ "$(marker_count "$REPLICA_DIR")" -lt 1 ]; then
 fi
 echo "--- Marker survived the expiry of the foreign session ---"
 
-# A handover that passes through a failed activation: while another registration holds
-# `is_active`, activation attempts fail and back off; once that registration releases its
-# nodes (the marker first, like the fixed cleanup order), a retry must end up owning both
-# nodes on this server's session.
+# A handover through a failed activation: once the foreign holder releases its nodes
+# (marker first, like the fixed cleanup order), a retry must own both on our session.
 REPLICA2_DIR="$KEEPER_PATH/replicas/migrated2"
 FOREIGN2_FIFO=$(mktemp -u /tmp/clickhouse_foreign_session.XXXXXX)
 mkfifo "$FOREIGN2_FIFO"
@@ -215,9 +213,8 @@ $CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
              kafka_keeper_path = '$KEEPER_PATH',
              kafka_replica_name = 'migrated2';
  "
-# Let an activation attempt fail against the foreign is_active, then release the foreign
-# nodes in the cleanup order: the marker while is_active is still owned. The final touch
-# marks that the client has processed both removals, so it is only killed afterwards.
+# Let an activation attempt fail, then release the foreign nodes in the cleanup order
+# (marker first). The final touch marks both removals done; only then is the client killed.
 sleep 2
 printf '%s\n' "rm '$REPLICA2_DIR/demand_aware'" "rm '$REPLICA2_DIR/is_active'" "touch '$REPLICA2_DIR/rms_done'" >&"$FOREIGN2_FD"
 released=0

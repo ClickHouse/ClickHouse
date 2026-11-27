@@ -126,15 +126,13 @@ if [ "$locks" -lt "$PARTITIONS" ]; then
 fi
 echo "--- Full coverage reached ---"
 
-# Freeze the healthy replica with its locks held: SYSTEM PAUSE blocks further streaming
-# cycles without touching the consumers, so no refresh releases temporary locks while the
-# one-shot read below runs, and the read cannot catch a rotation window.
+# Freeze the healthy replica with its locks held: SYSTEM PAUSE stops refreshes, so no
+# temporary lock is released while the one-shot read below runs.
 $CLICKHOUSE_CLIENT -q "SYSTEM PAUSE ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka"
 sleep 5
 
-# A single direct SELECT on the viewless replica: its consumer tries to take partitions,
-# finds none and publishes demand; the query finishes and nothing retries, while the
-# replica's session and is_active stay alive.
+# A single direct SELECT on the viewless replica finds nothing free and publishes demand;
+# the query ends, nothing retries, the session and is_active stay alive.
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_idle SETTINGS stream_like_engine_allow_direct_select = 1, max_execution_time = 30" > /dev/null
 
 demand_seen=0
@@ -157,11 +155,8 @@ echo "--- Demand published by a replica that stopped trying ---"
 # demanding (but not retrying) replica, and lift the reservation once the demand retires.
 $CLICKHOUSE_CLIENT -q "SYSTEM START ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka"
 
-# The fresh demand must hold the reservation: the healthy replica leaves one free
-# partition for the demanding (but not retrying) replica. Verify the deficit is
-# sustained for most of the declared retention — a transient dip from temporary-lock
-# rotation recovers within one refresh round, and a too-short retention recovers
-# well before the declared interval elapses.
+# The fresh demand must hold the reservation for most of its declared retention: a
+# rotation dip recovers within one refresh round, a too-short retention much earlier.
 locks3=999
 deadline=$((SECONDS + 30))
 while [ "$SECONDS" -lt "$deadline" ]; do
@@ -203,9 +198,8 @@ if [ "$locks4" -lt "$PARTITIONS" ]; then
 fi
 echo "--- Stale demand stopped holding the reservation: full coverage returned ---"
 
-# A second isolated read after an idle gap must declare the configured interval again:
-# the gap between separate queries is not a retry cadence, so the declared interval (and
-# the holder's reservation derived from it) must not grow to the idle gap.
+# A read after an idle gap must declare the configured interval again: the gap between
+# queries is not a retry cadence, so the reservation must not grow to it.
 $CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
     CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_idle2 (id UInt64, data String)
     ENGINE = Kafka

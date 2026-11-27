@@ -48,9 +48,8 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# End offset (high-watermark) of one partition. Prints the offset on success,
-# fails closed (non-zero) when it cannot be read so the caller retries instead
-# of re-producing committed messages.
+# End offset (high-watermark) of one partition; fails closed so the caller retries
+# instead of re-producing committed messages.
 partition_end_offset() {
     local partition=$1 out v
     out=$(timeout 10 rpk topic describe "$KAFKA_TOPIC" -p --brokers "$KAFKA_BROKER" 2>&1)
@@ -63,9 +62,8 @@ partition_end_offset() {
     return 1
 }
 
-# Produce messages into one partition, idempotently, until it holds $3 records:
-# message k (0-based) of partition p carries id p+1+4*k. The deadline is shared by all
-# partitions so the whole produce phase stays bounded well below the per-test timeout.
+# Produce into one partition until it holds $3 records; message k (0-based) of partition
+# p carries id p+1+4*k. The deadline is shared, so the whole produce phase stays bounded.
 produce_into_partition() {
     local partition=$1 deadline=$2 target=$3
     local ids=()
@@ -125,12 +123,8 @@ $CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
              kafka_replica_name = '{replica}';
  "
 
-# Register a ghost replica: present under replicas/ and "active" (is_active
-# exists), but it never takes any partition lock -- e.g. a replica stuck in a
-# metadata-retry loop. While such a replica exists, the temporary-lock quota
-# logic used to cap this real replica's coverage at permanent quota + 1
-# (4 / 2 = 2 permanent locks plus at most one rotating temporary lock), so the
-# topic was never fully covered.
+# Register a ghost replica: "active" (is_active exists) but never locking anything.
+# The old quota logic capped the real replica at permanent quota + 1 while it existed.
 ghost_registered=0
 deadline=$((SECONDS + 15))
 while [ "$SECONDS" -lt "$deadline" ]; do
@@ -147,9 +141,8 @@ if [ "$ghost_registered" -ne 1 ]; then
     exit 1
 fi
 
-# A fourth replica is created now but starts consuming only in the last act: its
-# is_active exists (the activating task creates it without a view), so by then it
-# is the same long-lockless identity recovering, not a fresh replica.
+# A fourth replica, consuming only in the last act: its is_active exists from the start
+# (the activating task creates it without a view), so by then it is long-lockless.
 $CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
     CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_r4 (id UInt64, data String)
     ENGINE = Kafka
@@ -183,12 +176,8 @@ lock_count() {
     $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$KEEPER_PATH/topic_partition_locks'" 2>/dev/null || echo 0
 }
 
-# The single real replica must be able to cover the whole topic: 2 permanent locks plus
-# temporary locks for the remaining partitions. The ghost is lockless forever, so after
-# MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA rounds the real replica stops yielding to it
-# and the coverage must reach $PARTITIONS. All wait budgets together stay well below the
-# runner's per-test timeout, so failures are always explicit messages, never a silent
-# timeout.
+# The real replica must cover the whole topic: the ghost is lockless forever, so after
+# MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA rounds it stops yielding. Failures are explicit.
 locks=0
 deadline=$((SECONDS + 300))
 while [ "$SECONDS" -lt "$deadline" ]; do
@@ -227,9 +216,8 @@ fi
 
 echo "--- Act 1 done: full coverage with a permanently lockless replica ---"
 
-# Act 2: a replica that is active but cannot reach Kafka (metadata retry loop) holds no
-# locks for a long time; it must not stop a fresh replica from taking its share. The
-# fresh replica plays the role of one recovering after a restart.
+# Act 2: a replica active but unable to reach Kafka holds no locks for a long time; it
+# must not stop a fresh replica (one recovering after a restart) from taking its share.
 $CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
     CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_broken (id UInt64, data String)
     ENGINE = Kafka
@@ -314,9 +302,8 @@ fi
 
 echo "--- Act 2 done: the fresh replica acquired partitions and consumes despite a stuck lockless replica ---"
 
-# Act 3: the same long-lockless replica r4 finally starts consuming (view attached).
-# Nothing is free, so its first attempts fail and publish demand; the others must then
-# reserve free partitions for it until it acquires them.
+# Act 3: the long-lockless r4 starts consuming; nothing is free, so it publishes demand
+# and the others must reserve free partitions until it acquires them.
 $CLICKHOUSE_CLIENT -q "
     CREATE MATERIALIZED VIEW ${CLICKHOUSE_TEST_UNIQUE_NAME}_mv_r4 TO ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst_r4 AS
     SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_r4;
