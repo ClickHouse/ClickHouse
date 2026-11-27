@@ -63,7 +63,7 @@ std::vector<DeviceColumnView> columnsAt(const GPUDeviceBatch & batch, const std:
     {
         if (position >= columns.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of a GPU batch of {} columns", position, columns.size());
-        result.push_back(columns[position]);
+        result.push_back(columns[position].view());
     }
     return result;
 }
@@ -343,14 +343,14 @@ GPUAccumulator::GPUAccumulator(
 void GPUAccumulator::add(GPUFuture<GPUDeviceBatch> future)
 {
     const GPUDeviceBatch batch = takeOn(std::move(future), cuda::stream_ref{reduce_stream.get()});
-    const std::vector<DeviceColumnView> & columns = batch.columns();
+    const std::vector<GPUDeviceColumn> & columns = batch.columns();
     if (columns.size() != reductions.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU batch of {} columns for {} reductions", columns.size(), reductions.size());
 
 
     Stopwatch watch;
     for (size_t i = 0; i < columns.size(); ++i)
-        reductions[i]->addBatch(columns[i]);
+        reductions[i]->addBatch(columns[i].view());
 
     ProfileEvents::increment(ProfileEvents::GPUAggregationRows, batch.rows());
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);

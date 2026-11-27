@@ -17,9 +17,30 @@
 namespace DB::GPU
 {
 
-/// The columns of a batch on the device, as the reader reads them, which `GPUBatchUploader::sendHostToDevice` makes ready
-/// on its stream, see `takeOn`. Freed in the order of the uploader's stream, after the stream they were taken on is done
-/// with them.
+/// A column of a batch on the device: the memory of its rows and the view of them, the bytes and the offsets of the rows
+/// of a `String`.
+class GPUDeviceColumn
+{
+public:
+    GPUDeviceColumn(DeviceBuffer values_, DeviceBuffer offsets_, DeviceColumnView view_)
+        : values(std::move(values_))
+        , offsets(std::move(offsets_))
+        , column_view(view_)
+    {
+    }
+
+    const DeviceColumnView & view() const { return column_view; }
+
+private:
+    DeviceBuffer values;
+    /// Of a `String` only.
+    DeviceBuffer offsets;
+    DeviceColumnView column_view;
+};
+
+/// The columns of a batch on the device, as the reader reads them, as `GPUHostBatch` is on the host: the future of
+/// `GPUBatchUploader::sendHostToDevice`, see `takeOn`. Freed in the order of the uploader's stream, after the stream it was
+/// taken on is done with it.
 class GPUDeviceBatch
 {
 public:
@@ -30,7 +51,7 @@ public:
     ~GPUDeviceBatch();
 
     size_t rows() const { return num_rows; }
-    const std::vector<DeviceColumnView> & columns() const { return column_views; }
+    const std::vector<GPUDeviceColumn> & columns() const { return device_columns; }
 
 private:
     friend class GPUBatchUploader;
@@ -43,8 +64,7 @@ private:
 
     /// Shared, so the memory is freed in the uploader's stream order even after the uploader is gone.
     std::shared_ptr<StreamPtr> upload_stream;
-    std::vector<DeviceBuffer> buffers;
-    std::vector<DeviceColumnView> column_views;
+    std::vector<GPUDeviceColumn> device_columns;
     size_t num_rows = 0;
     EventPtr consumed;
     cudaStream_t consumer = nullptr;
@@ -76,7 +96,7 @@ private:
     };
 
     class BatchUpload;
-    class ColumnOnDevice;
+    class ExpandingColumn;
 
     std::optional<GPUFuture<GPUDeviceBatch>> expand(const GPUHostBatch & staged);
 

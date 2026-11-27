@@ -53,6 +53,32 @@ private:
     EventPtr ready;
 };
 
+/// The producer side of `GPUFuture`: a value that work queued on `stream` makes. The producer fills it while it queues
+/// that work, and `fulfill` hands it over as a future, ready once the device has done the work queued until then.
+template <typename T>
+class GPUPromise
+{
+public:
+    GPUPromise(T value_, cuda::stream_ref stream_)
+        : promised(std::move(value_))
+        , stream(stream_)
+    {
+    }
+
+    T & value() { return promised; }
+
+    GPUFuture<T> fulfill() &&
+    {
+        EventPtr ready = createEvent();
+        checkCuda(cudaEventRecord(ready.get(), stream.get()), "Cannot mark a point in a stream of the device");
+        return GPUFuture<T>(std::move(promised), std::move(ready));
+    }
+
+private:
+    T promised;
+    const cuda::stream_ref stream;
+};
+
 }
 
 #endif
