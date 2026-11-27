@@ -1,4 +1,4 @@
-#include <Interpreters/DiskSetBlockCache.h>
+#include <Interpreters/DiskSet/BlockCache.h>
 
 #include <Common/CacheBase.h>
 

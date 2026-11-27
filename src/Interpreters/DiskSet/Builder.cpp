@@ -1,9 +1,9 @@
-#include <Interpreters/DiskSetBuilder.h>
-#include <Interpreters/DiskSetImpl.h>
+#include <Interpreters/DiskSet/Builder.h>
+#include <Interpreters/DiskSet/Impl.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Core/Defines.h>
-#include <Interpreters/DiskSetKeySorter.h>
+#include <Interpreters/DiskSet/KeySorter.h>
 #include <Interpreters/ProcessList.h>
 #include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
