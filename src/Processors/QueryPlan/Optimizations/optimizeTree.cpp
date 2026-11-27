@@ -575,7 +575,11 @@ void optimizeTreeSecondPass(
     /// when nothing was distributed).
     traverseQueryPlan(stack, root,
         [&](auto &) {},
-        [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings); });
+        [&](auto & frame_node)
+        {
+            convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
+            skipDeduplicationAfterSetOperationJoin(frame_node);
+        });
 
     /// the conversion makes the pre-join expressions, also without plan optimizations
     lowerArrayJoinFunctions(root, nodes, extra_settings);
@@ -1036,6 +1040,10 @@ void optimizeTreeSecondPass(
 
     /// Propagate stream disjointness so that DISTINCT / LIMIT BY / GROUP BY can skip merging streams.
     applyStreamDisjointness(optimization_settings, root);
+
+    /// Before the sharding, which splits all inputs of the multiway join by the same ranges.
+    if (optimization_settings.query_plan_join_multiway_merge && !optimization_settings.make_distributed_plan)
+        optimizeMultiwayMergeJoin(root);
 
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);

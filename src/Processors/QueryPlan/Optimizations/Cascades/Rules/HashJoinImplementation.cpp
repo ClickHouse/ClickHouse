@@ -58,9 +58,11 @@ public:
 
     [[nodiscard]] bool hasEquiKeys() const { return !equi_keys.empty(); }
     [[nodiscard]] bool hasMultipleEquiKeys() const { return equi_keys.size() >= 2; }
+    /// A set-operation join removes duplicates only among the rows it sees, so its left side must not be split.
     [[nodiscard]] bool isBroadcastSafe() const
     {
-        return JoinCommon::canSplitLeftInput(join_step.getJoinOperator().kind, join_step.getJoinOperator().strictness);
+        return JoinCommon::canSplitLeftInput(join_step.getJoinOperator().kind, join_step.getJoinOperator().strictness)
+            && join_step.getJoinOperator().set_operation == JoinSetOperation::None;
     }
 
 private:

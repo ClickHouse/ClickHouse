@@ -80,6 +80,13 @@ public:
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) final;
 #endif
 
+    void insertFromEither(
+        const IColumn & src_true,
+        bool src_true_is_const,
+        const IColumn & src_false,
+        bool src_false_is_const,
+        const IColumn::Filter & condition) final;
+
     void popBack(size_t n) final
     {
         if (n > size())
