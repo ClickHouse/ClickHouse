@@ -7,6 +7,7 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                <s3_allow_native_copy>true</s3_allow_native_copy>
+               <persistent_removal_log>true</persistent_removal_log>
            </s3_native_copy>
            <s3_no_native_copy>
                <type>s3</type>
@@ -14,6 +15,7 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                <s3_allow_native_copy>false</s3_allow_native_copy>
+               <persistent_removal_log>true</persistent_removal_log>
            </s3_no_native_copy>
        </disks>
         <policies>
