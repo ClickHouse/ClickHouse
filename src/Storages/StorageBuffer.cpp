@@ -674,7 +674,7 @@ void StorageBuffer::read(
         /// Column kinds must match this table, so the query below requests only the columns the buffers provide.
         /// Name it as the query does, so the buffers' analyzer swaps it in and applies that table's filters.
         auto buffers_columns = storage_snapshot->metadata->getColumns();
-        /// The buffers' planner picks the column a `count()` reads among these, so declare only those the pipe provides.
+        /// The buffers' planner picks the column a `count()` reads among the physical ones, so declare only those the pipe provides.
         if (query_storage_id.getFullNameNotQuoted() != getStorageID().getFullNameNotQuoted())
         {
             NameSet pipe_column_names;
@@ -685,6 +685,11 @@ void StorageBuffer::read(
             ColumnsDescription pipe_columns;
             for (const auto & column : buffers_columns)
                 if (pipe_column_names.contains(column.name))
+                    pipe_columns.add(column);
+            /// The buffers' analyzer resolves the named table's filters, so it gets that table's ALIAS and EPHEMERAL columns.
+            const auto & query_columns = query_table_node->getStorageSnapshot()->metadata->getColumns();
+            for (const auto & column : query_columns)
+                if (!query_columns.hasPhysical(column.name) && !pipe_columns.has(column.name))
                     pipe_columns.add(column);
             /// The planner picks no column for a read of only virtual columns, and a table must declare one.
             if (!pipe_columns.getAllPhysical().empty())
