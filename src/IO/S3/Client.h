@@ -257,6 +257,9 @@ public:
     /// For testing purposes only
     ClientCache * getRawCache() const { return cache.get(); }
 
+    /// For testing purposes only
+    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProviderForTesting() const { return credentials_provider; }
+
 protected:
     // visible for testing
     Client(size_t max_redirects_,

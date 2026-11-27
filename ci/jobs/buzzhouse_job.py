@@ -249,8 +249,8 @@ def generate_buzz_config(
         "enable_sync_settings": random.randint(1, 4) == 1,
         "enable_backups": random.randint(1, 4) == 1,
         "enable_renames": random.randint(1, 4) == 1,
-        # Some fail points abort or hang the server by design
-        "enable_failpoints": False,
+        # BuzzHouse arms only an allowlist of fail points that throw (`FuzzConfig::loadServerConfigurations`)
+        "enable_failpoints": random.randint(1, 3) == 1,
         "allow_hardcoded_inserts": allow_hardcoded_inserts,
         "client_file_path": "/var/lib/clickhouse/user_files",
         "server_file_path": "/var/lib/clickhouse/user_files",

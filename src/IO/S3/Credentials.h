@@ -149,22 +149,37 @@ public:
     /// Used to decide whether to add web identity to the credentials chain so partial misconfiguration still surfaces `create` warnings.
     static bool isWebIdentityConfigured(std::string_view role_arn_ = {});
 
+    /// The region of the STS endpoint: the region from `AWS_DEFAULT_REGION` or from the AWS profile if it is set,
+    /// otherwise the region of the S3 client if it has the form of a region name, otherwise `us-east-1`.
+    /// `client_region` is empty if the credentials are not for an S3 client, see `CredentialsConfiguration::s3_client_region`.
+    static Aws::String resolveStsRegion(std::string_view configured_region, std::string_view client_region);
+
     explicit AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider(
         DB::S3::PocoHTTPClientConfiguration & aws_client_configuration,
         uint64_t expiration_window_seconds_,
         Aws::String role_arn_,
         Aws::String token_file_,
         Aws::String session_name_,
-        Aws::String tmp_region);
+        Aws::String tmp_region,
+        bool sts_region_is_from_s3_client);
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override;
     void SetNeedRefresh() override;
+
+    /// The STS endpoint which the next request for credentials is sent to.
+    Aws::String getStsEndpoint() const;
 
     struct CacheKey
     {
         Aws::String role_arn;
         Aws::String token_file;
         Aws::String session_name;
+        Aws::String region;
+        /// A provider keeps the filter of the S3 client which it was created for: it checks the STS endpoint against it,
+        /// and so does its HTTP client with redirects. S3 clients with different filters do not share a provider,
+        /// otherwise the one with a restricted list of hosts could get a provider which checks an unrestricted one,
+        /// such as the filter of the S3 client for Keeper snapshots. Only the address is used, as the identity of the filter.
+        const RemoteHostFilter * remote_host_filter = nullptr;
 
         bool operator==(const CacheKey & rhs) const = default;
 
@@ -177,7 +192,16 @@ protected:
     void Reload() override;
 
 private:
+    /// The client to send the next request for credentials with.
+    Aws::Internal::STSCredentialsClient & getClient() const;
+
     std::unique_ptr<Aws::Internal::STSCredentialsClient> client;
+
+    /// Set if the region of the STS endpoint is taken from the S3 client. Then `client` is used only while
+    /// `remote_url_allow_hosts` allows its endpoint, and this client, which calls STS in `us-east-1`, is used otherwise.
+    std::unique_ptr<Aws::Internal::STSCredentialsClient> client_for_default_region;
+    const RemoteHostFilter * remote_host_filter = nullptr;
+
     Aws::Auth::AWSCredentials credentials;
     Aws::String role_arn;
     Aws::String token_file;
@@ -251,6 +275,15 @@ struct CredentialsConfiguration
     /// be refused. Set only when loading a persistent table from existing metadata (so it becomes inaccessible
     /// rather than aborting startup); never for user-issued queries, which must still be rejected.
     bool anonymous_fallback_for_server_credentials = false;
+
+    /// The region of the S3 client: its `region` setting, or the region from its endpoint. Only `ClientFactory::create`
+    /// sets it. If neither `AWS_DEFAULT_REGION` nor the AWS profile sets a region, the web identity credentials
+    /// provider calls STS in this region instead of `us-east-1`.
+    ///
+    /// The other users of the credentials providers (the Glue and S3 Tables catalogs, `AWS_MSK_IAM` for Kafka) leave it
+    /// empty, so STS is called in `us-east-1` for them. The `region` of their client configuration cannot be used
+    /// instead: they do not set it, and it is what the AWS SDK picks, such as `AWS_REGION` or the region of the EC2 instance.
+    std::string s3_client_region{};
 };
 
 class GeneralHTTPCredentialsProvider : public Aws::Auth::GeneralHTTPCredentialsProvider

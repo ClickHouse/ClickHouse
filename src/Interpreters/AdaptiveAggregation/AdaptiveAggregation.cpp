@@ -69,7 +69,7 @@ bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adap
     const auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
     const size_t distinct = frozen.getEstimatedStagedKeyCount();
     if (frozen.staged_records < adaptive_thaw_min_staged_records
-        || frozen.staged_records * adaptive_thaw_staged_share_inverse < frozen.rows
+        || (!adaptive.session->hasLoneProducer() && frozen.staged_records * adaptive_thaw_staged_share_inverse < frozen.rows)
         || frozen.staged_records <= distinct)
         return false;
 

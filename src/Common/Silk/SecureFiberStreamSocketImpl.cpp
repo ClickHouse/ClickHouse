@@ -176,7 +176,7 @@ bool SecureFiberStreamSocketImpl::pollImpl(Poco::Timespan & timeout, int mode)
     timeout = (elapsed < timeout) ? (timeout - elapsed) : Poco::Timespan(0);
 
     if (r)
-        error(r, "poll");
+        throwIoError(r, "poll");
 
     return triggered != 0;
 }
