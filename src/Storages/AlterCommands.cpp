@@ -2891,7 +2891,6 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     MutationCommands result;
     for (const auto & alter_cmd : *this)
     {
-        /// Otherwise the parts keep the column's data, and a column of the same name stored again later reads it.
         const bool drop_stored_data = alter_cmd.stopsStoringUnreferencedColumn(metadata);
 
         if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context, share_nested_offsets); mutation_cmd)
