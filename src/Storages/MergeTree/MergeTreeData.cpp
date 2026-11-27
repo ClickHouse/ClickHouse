@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Disks/DiskFromAST.h>
+#include <Disks/DiskRoot.h>
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
@@ -179,6 +180,7 @@
 #include <Common/StringUtils.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/ThreadStatus.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -420,7 +422,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version;
     extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
-    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
+    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_small_parts;
+    extern const MergeTreeSettingsUInt64 min_bytes_for_object_shared_data_main_serialization_version;
+    extern const MergeTreeSettingsBool use_object_shared_data_serialization_version_for_small_parts_on_insert;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
 
@@ -649,9 +653,7 @@ namespace
 
 struct TableDiskRoot
 {
-    String storage_description;
-    String storage_namespace;
-    fs::path path;
+    DiskRoot disk_root;
     String disk_name;
     const MergeTreeData * owner;
 };
@@ -676,12 +678,8 @@ void MergeTreeData::acquireTableDiskRoots()
         if (disk->isReadOnly() || disk->isWriteOnce())
             continue;
 
-        auto path = fs::path(disk->getPath()).lexically_normal();
-        if (!path.has_filename() && path.has_relative_path())
-            path = path.parent_path();
-
-        auto object_storage = disk->getObjectStorage();
-        roots.push_back({object_storage->getDescription(), object_storage->getObjectsNamespace(), std::move(path), disk->getName(), this});
+        if (auto disk_root = getDiskRoot(disk))
+            roots.push_back({std::move(*disk_root), disk->getName(), this});
     }
 
     std::lock_guard lock(table_disk_roots_mutex);
@@ -689,8 +687,7 @@ void MergeTreeData::acquireTableDiskRoots()
     {
         for (const auto & owned : table_disk_roots)
         {
-            if (owned.storage_description != root.storage_description || owned.storage_namespace != root.storage_namespace
-                || !pathsOverlap(owned.path, root.path))
+            if (owned.disk_root.filesystem != root.disk_root.filesystem || !pathsOverlap(owned.disk_root.path, root.disk_root.path))
                 continue;
 
             String remedy;
@@ -703,8 +700,8 @@ void MergeTreeData::acquireTableDiskRoots()
 
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Table {} cannot store its data at '{}' on disk {}: table {} already stores its data at '{}' on disk {} on the same storage. {}",
-                getStorageID().getNameForLogs(), root.path.string(), backQuote(root.disk_name),
-                owned.owner->getStorageID().getNameForLogs(), owned.path.string(), backQuote(owned.disk_name), remedy);
+                getStorageID().getNameForLogs(), root.disk_root.path, backQuote(root.disk_name),
+                owned.owner->getStorageID().getNameForLogs(), owned.disk_root.path, backQuote(owned.disk_name), remedy);
         }
     }
     table_disk_roots.insert(table_disk_roots.end(), roots.begin(), roots.end());
@@ -3752,32 +3749,15 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         /// Check extra (AKA orpahned) parts on different disks, in order to not allow to miss data parts at undefined disks.
         std::unordered_set<String> defined_disk_names;
 
+        /// A `cache` or `encrypted` disk and the disk it wraps can be put into different storage policies,
+        /// but they list the same files, so a disk in the place of a disk of the policy is defined too.
+        VectorWithMemoryTracking<DiskRoot> defined_disk_roots;
+
         for (const auto & disk_ptr : disks)
         {
             defined_disk_names.insert(disk_ptr->getName());
-        }
-
-        /// In case of delegate disks it is not enough to traverse `disks`,
-        /// because for example cache or encrypted disk which wrap s3 disk and s3 disk itself can be put into different storage policies.
-        /// But disk->exists returns the same thing for both disks.
-        for (const auto & [disk_name, disk] : getContext()->getDisksMap())
-        {
-            /// As encrypted disk can use the same path of its nested disk,
-            /// we need to take it into account here.
-            const auto & delegate = disk->getDelegateDiskIfExists();
-            if (delegate && disk->getPath() == delegate->getPath())
-                defined_disk_names.insert(delegate->getName());
-
-            if (disk->supportsCache())
-            {
-                /// As cache is implemented on object storage layer, not on disk level, e.g.
-                /// we have such structure:
-                /// DiskObjectStorage(CachedObjectStorage(...(CachedObjectStored(ObjectStorage)...)))
-                /// and disk_ptr->getName() here is the name of last delegate - ObjectStorage.
-                /// So now we need to add cache layers to defined disk names.
-                auto caches = disk->getCacheLayersNames();
-                defined_disk_names.insert(caches.begin(), caches.end());
-            }
+            if (auto disk_root = getDiskRoot(disk_ptr))
+                defined_disk_roots.push_back(std::move(*disk_root));
         }
 
         std::unordered_set<String> skip_check_disks;
@@ -3790,12 +3770,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             }
 
             bool is_disk_defined = defined_disk_names.contains(disk_name);
-            if (!is_disk_defined && disk->existsDirectory(relative_data_path))
+            if (!is_disk_defined)
             {
-                /// There still a chance that underlying disk is defined in storage policy
-                const auto & delegate = disk->getDelegateDiskIfExists();
-                is_disk_defined = delegate && !delegate->isBroken() && !delegate->isCustomDisk() && delegate->getPath() == disk->getPath()
-                    && defined_disk_names.contains(delegate->getName());
+                const auto disk_root = getDiskRoot(disk);
+                is_disk_defined = disk_root && std::ranges::find(defined_disk_roots, *disk_root) != defined_disk_roots.end();
             }
 
             if (!is_disk_defined && disk->existsDirectory(relative_data_path))
@@ -7453,7 +7431,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                         "a metadata-only ALTER cannot recompute the TTL. Drop the TTL to run this change",
                         backQuoteIfNeed(command.column_name), offending_expr->formatForErrorMessage());
 
-                /// GROUP BY ... SET assignments are stored as prebuilt ExpressionActions, not as an AST above.
+                /// GROUP BY ... SET assignments are checked through their prebuilt ExpressionActions, which require every column they read.
                 for (const auto & set_part : ttl.set_parts)
                     if (expression_uses_changed_subcolumn(set_part.expression))
                         throw Exception(
@@ -7930,6 +7908,18 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     }
 
     return {part_type, storage_type};
+}
+
+MergeTreeObjectSharedDataSerializationVersion MergeTreeData::chooseObjectSharedDataSerializationVersion(
+    size_t bytes_uncompressed, bool is_insert, ProjectionDescriptionRawPtr projection) const
+{
+    const auto settings = getSettings(projection ? &projection->settings_changes : nullptr);
+    bool is_small_part = (is_insert && (*settings)[MergeTreeSetting::use_object_shared_data_serialization_version_for_small_parts_on_insert])
+        || bytes_uncompressed < (*settings)[MergeTreeSetting::min_bytes_for_object_shared_data_main_serialization_version];
+
+    if (is_small_part)
+        return (*settings)[MergeTreeSetting::object_shared_data_serialization_version_for_small_parts];
+    return (*settings)[MergeTreeSetting::object_shared_data_serialization_version];
 }
 
 MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
@@ -14120,18 +14110,29 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
                 columns_list.push_back(column);
     }
 
-    MergeTreeMapSerializationVersion map_version = settings[MergeTreeSetting::map_serialization_version];
-    MergeTreeObjectSharedDataSerializationVersion shared_data_version = settings[MergeTreeSetting::object_shared_data_serialization_version];
-    MergeTreeMapSerializationVersion zero_level_map_version = settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts];
-    MergeTreeObjectSharedDataSerializationVersion zero_level_shared_data_version = settings[MergeTreeSetting::object_shared_data_serialization_version_for_zero_level_parts];
+    /// A part may be written with any combination of these versions: the `Map` version depends on whether the part is
+    /// inserted or merged, the JSON shared data version on the size of the part. A collision under any
+    /// combination corrupts the parts written with it. Checked separately, as parts of different configurations never
+    /// share a file.
+    std::set<MergeTreeMapSerializationVersion> map_versions{
+        settings[MergeTreeSetting::map_serialization_version],
+        settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts]};
+    std::set<MergeTreeObjectSharedDataSerializationVersion> shared_data_versions{
+        settings[MergeTreeSetting::object_shared_data_serialization_version],
+        settings[MergeTreeSetting::object_shared_data_serialization_version_for_small_parts]};
 
-    auto collision = findStreamFileNameCollision(columns_list, settings, map_version, shared_data_version);
-
-    /// Zero-level parts (written by `INSERT`) may use different serialization versions than merged parts, and a
-    /// collision under either corrupts the parts written with it. Checked separately, as parts of different
-    /// configurations never share a file.
-    if (!collision && (zero_level_map_version != map_version || zero_level_shared_data_version != shared_data_version))
-        collision = findStreamFileNameCollision(columns_list, settings, zero_level_map_version, zero_level_shared_data_version);
+    std::optional<StreamFileNameCollision> collision;
+    for (auto map_version : map_versions)
+    {
+        for (auto shared_data_version : shared_data_versions)
+        {
+            collision = findStreamFileNameCollision(columns_list, settings, map_version, shared_data_version);
+            if (collision)
+                break;
+        }
+        if (collision)
+            break;
+    }
 
     if (!collision)
         return;
@@ -16155,6 +16156,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         .withBytesAndRows(0, 0, 0)
         .withPartInfo(new_part_info)
         .build();
+    new_data_part->object_shared_data_serialization_version = chooseObjectSharedDataSerializationVersion(0, /*is_insert =*/false, /*projection =*/nullptr);
 
     /// Keep the format version and sort-key columns of the patch partition.
     if (new_part_info.isPatch())

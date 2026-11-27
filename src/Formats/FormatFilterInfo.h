@@ -238,6 +238,8 @@ struct FormatFilterInfo
     /// Once all its filters are built, the format may skip the row groups whose statistics cannot contain
     /// a key of them. Only the Parquet format uses it.
     std::shared_ptr<const RuntimeFilterPruningPredicate> join_runtime_filter_predicate;
+    /// Whether checking it on pages may read a column index that the Parquet metadata cache cannot keep.
+    bool join_runtime_filter_reads_uncached_column_index = false;
 
     /// Output columns are consumed only by `min` / `max`: the format may return any rows with the same per-column min and max.
     bool min_max_from_statistics = false;

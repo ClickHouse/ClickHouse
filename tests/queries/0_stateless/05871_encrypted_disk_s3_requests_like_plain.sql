@@ -30,11 +30,11 @@ OPTIMIZE TABLE t_encrypted FINAL;
 SELECT sum(length(s)) FROM t_plain WHERE k BETWEEN 10000 AND 60000
 SETTINGS max_threads = 1, remote_filesystem_read_method = 'threadpool', remote_filesystem_read_prefetch = 1, use_uncompressed_cache = 0,
     use_page_cache_for_object_storage = 0, use_page_cache_for_disks_without_file_cache = 0, use_columns_cache = 0,
-    enable_parallel_replicas = 0, log_comment = '05871_plain';
+    enable_parallel_replicas = 0, allow_prefetched_read_pool_for_remote_filesystem = 0, log_comment = '05871_plain';
 SELECT sum(length(s)) FROM t_encrypted WHERE k BETWEEN 10000 AND 60000
 SETTINGS max_threads = 1, remote_filesystem_read_method = 'threadpool', remote_filesystem_read_prefetch = 1, use_uncompressed_cache = 0,
     use_page_cache_for_object_storage = 0, use_page_cache_for_disks_without_file_cache = 0, use_columns_cache = 0,
-    enable_parallel_replicas = 0, log_comment = '05871_encrypted';
+    enable_parallel_replicas = 0, allow_prefetched_read_pool_for_remote_filesystem = 0, log_comment = '05871_encrypted';
 
 SYSTEM FLUSH LOGS part_log, query_log;
 

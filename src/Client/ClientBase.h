@@ -123,6 +123,8 @@ public:
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements, const char * raw_query_begin = nullptr);
     /// Returns true if query succeeded
     bool processTextAsSingleQuery(const String & full_query);
+    /// The session settings: command-line options and the `SET` queries that succeeded
+    const Settings & getClientSettings() const { return client_context->getSettingsRef(); }
 
     virtual bool tryToReconnect(const uint32_t, const uint32_t)
     {

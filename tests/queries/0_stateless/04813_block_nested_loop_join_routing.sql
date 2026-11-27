@@ -5,6 +5,7 @@
 -- `ALL` strictness keep their cross-join-with-a-filter plan, so nothing that worked before moves
 -- to the new operator.
 
+SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
 SET join_algorithm = 'direct,parallel_hash,hash';
 SET cross_to_inner_join_rewrite = 0;
 -- A swapped join exchanges the sides, so the kind the plan below prints is the mirrored one. The

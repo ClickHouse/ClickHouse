@@ -1,0 +1,42 @@
+---
+slug: /clickstack/self-configured/managing/overview
+title: 'Administración de Self-managed ClickHouse Observability'
+sidebarTitle: 'Descripción general'
+description: 'Administración de Self-managed ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['administración de Self-managed ClickHouse Observability', 'rendimiento', 'vistas materializadas', 'comandos de administración']
+---
+
+<Note>
+  Esta página trata sobre **Self-managed ClickHouse Observability**. Si prefiere la experiencia totalmente gestionada, que es la opción recomendada, consulte la documentación [aquí](/es/clickstack/observability/managing/overview).
+</Note>
+
+En esta sección se describe cómo administrar Self-managed ClickHouse Observability.
+
+## Guías de administración {#admin-guides}
+
+| Sección                                                                                         | Descripción                                                                                                                                      |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [Opciones de configuración](/es/clickstack/self-configured/managing/config)                        | Opciones de configuración disponibles para cada componente.                                                                                      |
+| [Estimación de recursos](/es/clickstack/self-configured/managing/estimating-resources)             | Orientación sobre el dimensionamiento de los recursos de cómputo para Self-managed ClickHouse Observability en función del volumen de ingestión. |
+| [Paso a producción](/es/clickstack/self-configured/managing/production)                            | Pasos recomendados y buenas prácticas antes de ejecutar el servicio en producción.                                                               |
+| [Aislamiento de lectura y escritura](/es/clickstack/self-configured/managing/isolating-read-write) | Separación de los workloads de ingestión y de consulta en capacidad de cómputo dedicada mediante almacenes de ClickHouse Cloud.                  |
+| [Vistas materializadas](/es/clickstack/self-configured/managing/materialized-views)                | Guía detallada sobre el uso de vistas materializadas para mejorar el rendimiento de las consultas.                                               |
+| [Optimización del rendimiento](/es/clickstack/self-configured/managing/performance-tuning)         | Guía completa para optimizar el servicio en workloads a gran escala.                                                                             |
+| [RBAC](/es/clickstack/observability/managing/rbac)                                                 | Configure el control de acceso basado en roles para gestionar los permisos de los equipos sobre dashboards, búsquedas guardadas y fuentes.       |
+| [Gestión de TTL](/es/clickstack/self-configured/managing/ttl)                                      | Gestión de la retención de datos con TTL (tiempo de vida) en el servicio.                                                                        |
+
+## Conceptos fundamentales de ClickHouse {#core-concepts}
+
+La mayoría de las tareas de administración requieren conocer la base de datos de ClickHouse subyacente. Recomendamos revisar los conceptos fundamentales de ClickHouse que se describen a continuación antes de realizar operaciones administrativas o relacionadas con el rendimiento.
+
+| Concepto                             | Descripción                                                                                                                                                                                                               |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Tablas**                           | Cómo se corresponden las fuentes de datos con las tablas de ClickHouse subyacentes. Las tablas de ClickHouse utilizan principalmente el motor [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree). |
+| **Partes**                           | Cómo se escriben los datos en forma de partes inmutables que se fusionan con el tiempo.                                                                                                                                   |
+| **Particiones**                      | Agrupaciones lógicas de partes de tabla que simplifican la administración de datos, las consultas y la optimización.                                                                                                      |
+| **Fusiones**                         | El proceso en segundo plano que combina partes para reducir el número de partes consultadas y mantener el rendimiento.                                                                                                    |
+| **Gránulos**                         | La unidad de datos más pequeña que se lee o se descarta durante la ejecución de consultas.                                                                                                                                |
+| **Claves primarias (de ordenación)** | Cómo la clave `ORDER BY` determina la organización de datos en disco, la compresión y la poda en las consultas.                                                                                                           |
+
+Estos conceptos son esenciales para el rendimiento de ClickHouse y le ayudarán a tomar decisiones administrativas con criterio al gestionar Self-managed ClickHouse Observability.

@@ -28,6 +28,10 @@ Parts in packed storage (see `min_bytes_for_full_part_storage`) and the part wri
 are still read through the page cache.
 If the filesystem does not support direct I/O, the files are read through the page cache.
 
+Disable this setting where direct reads are slower than reads through the page cache.
+Direct reads always go to the storage device, even if the data is already cached.
+For example, on an Amazon EBS volume, checking a table that fits in the page cache can be several times slower.
+
 ## check_sample_column_is_correct {#check_sample_column_is_correct}
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -519,6 +519,10 @@ static const QueryNode * findQueryForParallelReplicas(
                 if (!join && !join_logical)
                     return res;
 
+                /// Don't distribute a join that executes `INTERSECT` or `EXCEPT`: it removes duplicates only among the rows it sees.
+                if (join_logical && join_logical->getJoinOperator().set_operation != JoinSetOperation::None)
+                    return res;
+
                 for (const auto & child : children)
                     nodes_to_check.push({.node = child, .inside_join = true});
             }
