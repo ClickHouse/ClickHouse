@@ -1175,8 +1175,8 @@ static const ORC::Type * traverseDownORCTypeByName(
 
     if (ORC::STRUCT == orc_type->getKind())
     {
-        /// The fields of the root are columns, and a column named like the whole request wins over a subcolumn of another one.
-        if (orc_type->getColumnId() == 0)
+        /// The fields of the root are columns, and one named like a dotted request wins over a subcolumn of another one.
+        if (orc_type->getColumnId() == 0 && target.contains('.'))
         {
             if (auto column = matchORCStructFieldsByName(orc_type, {target}, ignore_case, ambiguous).front())
                 return orc_type->getSubtype(*column);

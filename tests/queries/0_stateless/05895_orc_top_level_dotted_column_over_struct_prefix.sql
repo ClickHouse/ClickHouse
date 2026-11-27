@@ -13,6 +13,7 @@ INSERT INTO FUNCTION file(currentDatabase() || '_folded.orc', ORC) SELECT CAST(t
 SELECT * FROM file(currentDatabase() || '_struct_first.orc', ORC, '`a.x` Int32');
 SELECT * FROM file(currentDatabase() || '_struct_first.orc', ORC, 'a Tuple(x Int32), `a.x` Int32');
 SELECT * FROM file(currentDatabase() || '_struct_first.orc', ORC, '`a.x` Int32') WHERE `a.x` = 22 SETTINGS input_format_orc_filter_push_down = 1;
+SELECT count() FROM file(currentDatabase() || '_struct_first.orc', ORC, '`a.x` Int32') WHERE indexHint(`a.x` = 23) SETTINGS input_format_orc_filter_push_down = 1;
 SELECT * FROM file(currentDatabase() || '_column_first.orc', ORC, '`a.x` Int32');
 SELECT * FROM file(currentDatabase() || '_column_first.orc', ORC, 'a Tuple(x Int32), `a.x` Int32');
 SELECT * FROM file(currentDatabase() || '_no_x.orc', ORC, '`a.x` Int32');
