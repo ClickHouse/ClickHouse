@@ -16,6 +16,7 @@
 #endif
 
 #include <algorithm>
+#include <cstring>
 
 
 namespace DB
@@ -267,12 +268,19 @@ Address Address::parse(std::string_view uri)
 
     if (auto at = uri.find('@'); at != std::string_view::npos)
     {
+        /// `user@host` means an empty password.
         const std::string_view login = uri.substr(0, at);
         const auto colon = login.find(':');
         address.user = String(login.substr(0, colon));
         if (colon != std::string_view::npos)
             address.password = SecretString(String(login.substr(colon + 1)));
         uri.remove_prefix(at + 1);
+    }
+    else
+    {
+        /// The default account of RabbitMQ, as the library used before assumed.
+        address.user = "guest";
+        address.password = SecretString(String("guest"));
     }
 
     std::string_view host_port = uri;
@@ -365,22 +373,22 @@ Connection::Connection(const ConnectionSettings & settings_, LoggerPtr log_)
 {
     try
     {
-        if (settings.address.secure)
+        auto make_socket = [&]() -> std::unique_ptr<Poco::Net::StreamSocket>
         {
+            if (settings.address.secure)
+            {
 #if USE_SSL
-            auto secure_socket = std::make_unique<Poco::Net::SecureStreamSocket>(getTLSContext());
-            secure_socket->setPeerHostName(settings.address.host);
-            /// The handshake is postponed until the first read or write, which are bounded by the request timeout.
-            secure_socket->setLazyHandshake(true);
-            socket = std::move(secure_socket);
+                auto secure_socket = std::make_unique<Poco::Net::SecureStreamSocket>(getTLSContext());
+                secure_socket->setPeerHostName(settings.address.host);
+                /// The handshake is postponed until the first read or write, which are bounded by the request timeout.
+                secure_socket->setLazyHandshake(true);
+                return secure_socket;
 #else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "TLS connections to RabbitMQ are disabled, because ClickHouse was built without SSL support");
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "TLS connections to RabbitMQ are disabled, because ClickHouse was built without SSL support");
 #endif
-        }
-        else
-        {
-            socket = std::make_unique<Poco::Net::StreamSocket>();
-        }
+            }
+            return std::make_unique<Poco::Net::StreamSocket>();
+        };
 
         const auto addresses = DNSResolver::instance().resolveAddressList(settings.address.host, settings.address.port);
         if (addresses.empty())
@@ -389,6 +397,8 @@ Connection::Connection(const ConnectionSettings & settings_, LoggerPtr log_)
         {
             try
             {
+                /// A new socket for every address: a socket that failed to connect keeps the address family of that attempt.
+                socket = make_socket();
                 socket->connect(addresses[i], settings.connect_timeout);
                 break;
             }
@@ -508,10 +518,39 @@ std::optional<Connection::Frame> Connection::receiveFrame(Poco::Timespan timeout
     return receiveFrameOrThrow();
 }
 
+void Connection::readExact(char * to, size_t size, Clock::time_point deadline)
+{
+    while (size)
+    {
+        if (!in->hasPendingData())
+        {
+            const auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(deadline - Clock::now()).count();
+            if (remaining <= 0 || !in->poll(static_cast<size_t>(remaining)))
+            {
+                if (error.empty())
+                    error = "timeout while reading a frame";
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while reading a frame from RabbitMQ {}", address_for_log);
+            }
+            if (!in->next())
+                fail("the broker closed the connection");
+        }
+        const size_t bytes = std::min(size, in->available());
+        memcpy(to, in->position(), bytes);
+        in->position() += bytes;
+        to += bytes;
+        size -= bytes;
+    }
+}
+
 Connection::Frame Connection::receiveFrameOrThrow()
 {
+    return receiveFrameOrThrow(Clock::now() + std::chrono::microseconds(settings.request_timeout.totalMicroseconds()));
+}
+
+Connection::Frame Connection::receiveFrameOrThrow(Clock::time_point deadline)
+{
     char header[FRAME_HEADER_SIZE];
-    in->readStrict(header, FRAME_HEADER_SIZE);
+    readExact(header, FRAME_HEADER_SIZE, deadline);
 
     Frame frame;
     frame.type = static_cast<UInt8>(header[0]);
@@ -522,10 +561,10 @@ Connection::Frame Connection::receiveFrameOrThrow()
         fail(fmt::format("frame size exceeded: the frame has a payload of {} bytes, the maximum frame size is {}", size, frame_max));
 
     frame.payload.resize(size);
-    in->readStrict(frame.payload.data(), size);
+    readExact(frame.payload.data(), size, deadline);
 
     char end = 0;
-    in->readStrict(&end, 1);
+    readExact(&end, 1, deadline);
     if (static_cast<UInt8>(end) != FRAME_END)
         fail(fmt::format("invalid frame end octet 0x{:02x}", static_cast<UInt32>(static_cast<UInt8>(end))));
 
@@ -535,10 +574,14 @@ Connection::Frame Connection::receiveFrameOrThrow()
 
 void Connection::readDeliveryContent(Delivery & delivery)
 {
-    /// The content header and the body frames follow the method. Heartbeats may come in between.
+    /// The content header and the body frames follow the method. Heartbeats may come in between, but do not
+    /// extend the time for the next part of the content: a broker that sends only heartbeats can not stall the reading.
+    const auto content_timeout = std::chrono::microseconds(settings.request_timeout.totalMicroseconds());
+    auto deadline = Clock::now() + content_timeout;
+
     Frame header;
     do
-        header = receiveFrameOrThrow();
+        header = receiveFrameOrThrow(deadline);
     while (header.type == FRAME_HEARTBEAT);
 
     if (header.type != FRAME_HEADER || header.channel != CHANNEL)
@@ -582,11 +625,15 @@ void Connection::readDeliveryContent(Delivery & delivery)
     delivery.body.reserve(std::min<UInt64>(body_size, frame_max));
     while (delivery.body.size() < body_size)
     {
-        Frame body = receiveFrameOrThrow();
-        if (body.type == FRAME_HEARTBEAT)
-            continue;
+        deadline = Clock::now() + content_timeout;
+        Frame body = receiveFrameOrThrow(deadline);
+        while (body.type == FRAME_HEARTBEAT)
+            body = receiveFrameOrThrow(deadline);
         if (body.type != FRAME_BODY || body.channel != CHANNEL)
             fail(fmt::format("expected a content body, got a frame of type {} on channel {}", static_cast<UInt32>(body.type), body.channel));
+        /// An empty body frame would extend the deadline without any progress.
+        if (body.payload.empty())
+            fail("an empty content body frame");
         if (body.payload.size() > body_size - delivery.body.size())
             fail("the content body is larger than declared in the content header");
         delivery.body.append(body.payload);
@@ -1077,6 +1124,25 @@ std::optional<Delivery> Connection::receiveDelivery(Poco::Timespan timeout)
     auto delivery = std::move(deliveries.front());
     deliveries.pop_front();
     return delivery;
+}
+
+void Connection::receiveAvailable(size_t max_deliveries)
+{
+    checkUsable();
+    try
+    {
+        while (deliveries.size() < max_deliveries && in->poll(0))
+        {
+            if (auto method = processFrame(receiveFrameOrThrow()))
+                fail(fmt::format("unexpected method {}.{}", method->class_id, method->method_id));
+        }
+    }
+    catch (...)
+    {
+        if (error.empty())
+            error = getCurrentExceptionMessage(false);
+        throw;
+    }
 }
 
 void Connection::confirmSelect()

@@ -41,8 +41,8 @@ struct Address
     String vhost = "/";
     bool secure = false;
 
-    /// The login is everything up to the first '@' after the scheme, the vhost is everything after the first '/'
-    /// following the host, up to an optional '?'.
+    /// The login is everything up to the first '@' after the scheme (`guest:guest` if there is no '@'),
+    /// the vhost is everything after the first '/' following the host, up to an optional '?'.
     static Address parse(std::string_view uri);
 };
 
@@ -160,6 +160,10 @@ public:
     /// Waits for the next delivery at most `timeout`. Returns `std::nullopt` if there is none.
     std::optional<Delivery> receiveDelivery(Poco::Timespan timeout);
 
+    /// Reads, without waiting, everything that is already there, so that the closing of the connection or the channel
+    /// by the broker is noticed even if it comes after many deliveries. Deliveries are buffered, at most `max_deliveries`.
+    void receiveAvailable(size_t max_deliveries);
+
     /// Puts the channel into the confirm mode.
     void confirmSelect();
     /// Buffers the message. It is sent by `flush`, or once the buffer is full.
@@ -190,9 +194,14 @@ private:
     void sendFrame(UInt8 type, UInt16 channel, std::string_view payload);
     void sendMethod(UInt16 channel, UInt16 class_id, UInt16 method_id, std::string_view arguments);
 
-    /// Reads a frame if one starts arriving within `timeout`.
+    using Clock = std::chrono::steady_clock;
+
+    /// Reads a frame if one starts arriving within `timeout`. Reading the rest of it is bounded by the request timeout.
     std::optional<Frame> receiveFrame(Poco::Timespan timeout);
+    /// Reads a frame, which must be read completely before `deadline`. A broker can not stall the reading by sending slowly.
+    Frame receiveFrameOrThrow(Clock::time_point deadline);
     Frame receiveFrameOrThrow();
+    void readExact(char * to, size_t size, Clock::time_point deadline);
 
     /// Processes a frame that is not a reply to a request: deliveries, confirms, heartbeats,
     /// the closing of the channel or of the connection by the broker (throws then).
