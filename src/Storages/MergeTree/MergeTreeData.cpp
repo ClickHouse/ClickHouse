@@ -7546,15 +7546,53 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// so enabling `enable_block_number_column` on such a table is refused, unless the table is empty.
     /// Writing the setting to the definition of a table that has it only from the server configuration is refused
     /// as well: the configuration could have been different when the existing parts were written.
+    ///
+    /// The existing parts keep the columns they were written with, whatever the settings become later. So neither
+    /// of the two settings can be disabled or removed from the definition while the table contains data: otherwise
+    /// the check above is bypassed by disabling `enable_block_offset_column`, enabling `enable_block_number_column`
+    /// and enabling `enable_block_offset_column` back, and the parts with duplicates are still there.
+    if (!is_secondary_replay)
     {
-        const bool was_enabled = (*settings_from_storage)[MergeTreeSetting::enable_block_number_column];
-        const bool is_enabled = (*alter_effective_settings)[MergeTreeSetting::enable_block_number_column];
-        const bool was_in_definition = isSettingEnabledInDefinition(old_metadata, "enable_block_number_column");
-        const bool is_in_definition = isSettingEnabledInDefinition(new_metadata, "enable_block_number_column");
+        struct BlockColumnSettingChange
+        {
+            std::string_view name;
+            bool was_enabled;
+            bool is_enabled;
+            bool was_in_definition;
+            bool is_in_definition;
+        };
 
-        if (!is_secondary_replay
-            && (*settings_from_storage)[MergeTreeSetting::enable_block_offset_column]
-            && ((!was_enabled && is_enabled) || (!was_in_definition && is_in_definition))
+        auto get_change = [&](std::string_view name, const MergeTreeSettingsBool & setting)
+        {
+            return BlockColumnSettingChange{
+                .name = name,
+                .was_enabled = (*settings_from_storage)[setting],
+                .is_enabled = (*alter_effective_settings)[setting],
+                .was_in_definition = isSettingEnabledInDefinition(old_metadata, name),
+                .is_in_definition = isSettingEnabledInDefinition(new_metadata, name)};
+        };
+
+        const auto block_number = get_change("enable_block_number_column", MergeTreeSetting::enable_block_number_column);
+        const auto block_offset = get_change("enable_block_offset_column", MergeTreeSetting::enable_block_offset_column);
+
+        for (const auto & change : {block_number, block_offset})
+        {
+            if (((change.was_enabled && !change.is_enabled) || (change.was_in_definition && !change.is_in_definition))
+                && getTotalActiveSizeInRows() != 0)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot disable `{}` for table {}: the table contains data. "
+                    "Existing parts keep the `_block_number` and `_block_offset` columns they were written with, "
+                    "so if the setting is enabled again later, rows may share the same (`_block_number`, `_block_offset`), "
+                    "and lightweight updates and deletes would affect more rows than intended. This leads to data loss. "
+                    "Create a new table with the required settings and copy the data into it",
+                    change.name, getStorageID().getNameForLogs());
+            }
+        }
+
+        if (block_offset.was_enabled
+            && ((!block_number.was_enabled && block_number.is_enabled) || (!block_number.was_in_definition && block_number.is_in_definition))
             && getTotalActiveSizeInRows() != 0)
         {
             throw Exception(

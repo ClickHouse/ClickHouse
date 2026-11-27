@@ -871,6 +871,9 @@ disabled. Parts merged in that state store `_block_offset` without
 unique, and lightweight updates would modify or delete more rows than needed.
 For such a table, create a new table with both settings enabled and copy the
 data into it with `INSERT ... SELECT`.
+
+For the same reason, neither of the two settings can be disabled while the
+table contains data: existing parts keep the columns they were written with.
 </Warning>
 
 ## Optimization 5. Exploiting materialized views {#exploiting-materialized-views}
