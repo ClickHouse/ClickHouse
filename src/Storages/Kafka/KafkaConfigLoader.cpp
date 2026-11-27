@@ -642,6 +642,33 @@ NamedCollectionPtr getCurrentCollection(const NamedCollectionPtr & table_collect
     return collection;
 }
 
+/// The properties of the client that the table definition overrides with nested keys, e.g. `kafka.consumer.sasl_username`.
+/// They take priority over the flat `kafka_*` settings of the collection.
+std::unordered_set<String> getNestedOverrides(const NamedCollectionPtr & table_collection, std::string_view client_section)
+{
+    std::unordered_set<String> res;
+    if (!table_collection)
+        return res;
+    const String client_prefix = "kafka." + String(client_section) + ".";
+    for (const auto & key : table_collection->getKeys())
+    {
+        if (!table_collection->isQueryOverridden(key))
+            continue;
+        if (key.starts_with("kafka.consumer.") || key.starts_with("kafka.producer."))
+        {
+            if (!key.starts_with(client_prefix))
+                continue;
+        }
+        else if (!key.starts_with("kafka."))
+            continue;
+        const auto property_key = namedCollectionPropertyKey(key);
+        if (property_key.empty() || !(key.size() == 6 + property_key.size() || key.size() == client_prefix.size() + property_key.size()))
+            continue; /// A topic section.
+        res.insert(toKafkaPropertyName(String(property_key)));
+    }
+    return res;
+}
+
 template <typename TKafkaStorage>
 using SpecificConfigUpdaterFunc = void (*)(
     cppkafka::Configuration & kafka_config,
@@ -662,23 +689,25 @@ void updateConfigurationFromConfig(
     specific_config_updater(kafka_config, current_params);
 
     auto kafka_settings = storage.getKafkaSettings();
-    if (!kafka_settings[KafkaSetting::kafka_security_protocol].value.empty())
+    const auto nested_overrides = getNestedOverrides(params.collection, specific_config_updater == loadConsumerConfig ? "consumer" : "producer");
+    const auto is_overridden = [&](const char * name) { return nested_overrides.contains(name); };
+    if (!kafka_settings[KafkaSetting::kafka_security_protocol].value.empty() && !is_overridden("security.protocol"))
         kafka_config.set("security.protocol", kafka_settings[KafkaSetting::kafka_security_protocol]);
-    if (!kafka_settings[KafkaSetting::kafka_sasl_mechanism].value.empty()
+    if (!kafka_settings[KafkaSetting::kafka_sasl_mechanism].value.empty() && !is_overridden("sasl.mechanism")
         && !boost::iequals(kafka_settings[KafkaSetting::kafka_sasl_mechanism].value, "AWS_MSK_IAM"))
         kafka_config.set("sasl.mechanism", kafka_settings[KafkaSetting::kafka_sasl_mechanism]);
-    if (!kafka_settings[KafkaSetting::kafka_sasl_username].value.empty())
+    if (!kafka_settings[KafkaSetting::kafka_sasl_username].value.empty() && !is_overridden("sasl.username"))
         kafka_config.set("sasl.username", kafka_settings[KafkaSetting::kafka_sasl_username]);
-    if (!kafka_settings[KafkaSetting::kafka_sasl_password].value.empty())
+    if (!kafka_settings[KafkaSetting::kafka_sasl_password].value.empty() && !is_overridden("sasl.password"))
         kafka_config.set("sasl.password", String(kafka_settings[KafkaSetting::kafka_sasl_password].value));
-    if (!kafka_settings[KafkaSetting::kafka_compression_codec].value.empty())
+    if (!kafka_settings[KafkaSetting::kafka_compression_codec].value.empty() && !is_overridden("compression.codec"))
         kafka_config.set("compression.codec", kafka_settings[KafkaSetting::kafka_compression_codec]);
 
-    if (kafka_settings[KafkaSetting::kafka_compression_level].changed)
+    if (kafka_settings[KafkaSetting::kafka_compression_level].changed && !is_overridden("compression.level"))
         kafka_config.set("compression.level", kafka_settings[KafkaSetting::kafka_compression_level].toString());
 
     auto autodetect_rack = kafka_settings[KafkaSetting::kafka_autodetect_client_rack].value;
-    if (!autodetect_rack.empty())
+    if (!autodetect_rack.empty() && !is_overridden("client.rack"))
     {
         if (magic_enum::enum_contains<S3::AZFacilities>(autodetect_rack))
         {
@@ -698,7 +727,7 @@ void updateConfigurationFromConfig(
 
     /// Derive effective SASL mechanism from both table settings and server/named-collection config.
     /// Table settings take priority; fall back to whatever loadFromConfig already wrote to kafka_config.
-    String sasl_mechanism = kafka_settings[KafkaSetting::kafka_sasl_mechanism].value;
+    String sasl_mechanism = is_overridden("sasl.mechanism") ? String() : kafka_settings[KafkaSetting::kafka_sasl_mechanism].value;
     if (sasl_mechanism.empty() && kafka_config.has_property("sasl.mechanism"))
         sasl_mechanism = kafka_config.get("sasl.mechanism");
 

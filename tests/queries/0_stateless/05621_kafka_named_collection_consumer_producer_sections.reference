@@ -12,3 +12,5 @@ changed overridden property set: 0
 secret shown: 0
 file path override rejected: 1
 override of config collection set: 1
+nested override of flat setting set: 1
+flat setting set: 0

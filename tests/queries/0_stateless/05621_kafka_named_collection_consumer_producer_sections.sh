@@ -89,10 +89,29 @@ logs=$($CLICKHOUSE_CLIENT --send_logs_level=trace -q "
 " 2>&1 >/dev/null)
 echo "override of config collection set: $(grep -c 'Consumer set property fetch.min.bytes:555' <<< "$logs")"
 
+# A nested key given in the table definition takes priority over the flat `kafka_*` setting of the collection for the same property.
+$CLICKHOUSE_CLIENT -q "
+    CREATE NAMED COLLECTION ${collection}_flat AS
+        kafka_broker_list = '127.0.0.1:1',
+        kafka_topic_list = 'topic',
+        kafka_group_name = 'group',
+        kafka_format = 'JSONEachRow',
+        kafka_sasl_username = 'stored_05621';
+    CREATE TABLE kafka_flat (x UInt64) ENGINE = Kafka(${collection}_flat, \`kafka.consumer.sasl_username\` = 'override_05621')
+        SETTINGS kafka_poll_timeout_ms = 100, kafka_flush_interval_ms = 100;
+"
+logs=$($CLICKHOUSE_CLIENT --send_logs_level=trace -q "
+    SELECT * FROM kafka_flat LIMIT 1 SETTINGS stream_like_engine_allow_direct_select = 1
+" 2>&1 >/dev/null)
+echo "nested override of flat setting set: $(grep -c 'Consumer set property sasl.username:override_05621' <<< "$logs")"
+echo "flat setting set: $(grep -c 'Consumer set property sasl.username:stored_05621' <<< "$logs")"
+
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE kafka_secret;
     DROP TABLE kafka_config;
     DROP TABLE IF EXISTS kafka_paths;
     DROP TABLE kafka_probe;
+    DROP TABLE kafka_flat;
+    DROP NAMED COLLECTION ${collection}_flat;
     DROP NAMED COLLECTION $collection;
 "
