@@ -22,8 +22,7 @@ struct TimeseriesScalarOrGridArgumentNames
     std::string_view argument_name;
 };
 
-/// Throws `ILLEGAL_TYPE_OF_ARGUMENT` unless `type` is a native number or an array of native numbers, the types
-/// `AggregateFunctionTimeseriesScalarOrGridArgument` accepts.
+/// Throws `ILLEGAL_TYPE_OF_ARGUMENT` unless `type` is a native number or an array of native numbers.
 void checkTimeseriesScalarOrGridArgumentType(TimeseriesScalarOrGridArgumentNames names, const DataTypePtr & type);
 
 /// An extra argument of a time series aggregate function: a number for the whole grid or an array with one number per

@@ -41,6 +41,7 @@ ScalarAST scalarToAST(SQLQueryPiece && scalar, ConverterContext & context)
 
         case StoreMethod::EMPTY:
         {
+            /// `ast` stays nullptr: the result of the function that takes this scalar is empty too.
             break;
         }
 
