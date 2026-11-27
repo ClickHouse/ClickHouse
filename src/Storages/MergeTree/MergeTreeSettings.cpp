@@ -1492,7 +1492,8 @@ reduce memory usage
     DECLARE(Bool, use_adaptive_write_buffer_for_skip_indexes, true, R"(
 Allow to use adaptive write buffers when writing skip index streams to
 reduce memory usage
-)", 0) \
+)", 0, \
+        {"26.12", false, true, "New setting. Adaptive write buffers for skip index streams"}) \
     DECLARE(Bool, optimize_row_order_if_no_order_by, false, R"(
 Controls whether row order optimization (see `optimize_row_order`) is applied
 automatically on insert for tables with an empty sorting key, i.e. tables

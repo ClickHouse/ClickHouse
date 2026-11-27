@@ -37,7 +37,7 @@ SELECT count(), countIf(has(s1, 'token1')), countIf(has(s4, 'fourth1')) FROM ski
 CHECK TABLE skip_indexes_adaptive_wb_{{ v }} SETTINGS check_query_single_value_result = 1;
 {% endfor %}
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 -- Compare allocations relatively to stay independent of the environment.
 WITH per_table AS

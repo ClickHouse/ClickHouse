@@ -58,7 +58,7 @@ SELECT count(), countIf(c2 != c1) FROM packed_skip_indexes_adaptive_wb_{{ v }};
 CHECK TABLE packed_skip_indexes_adaptive_wb_{{ v }} SETTINGS check_query_single_value_result = 1;
 {% endfor %}
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 -- Compare allocations relatively to stay independent of the environment.
 WITH per_table AS
