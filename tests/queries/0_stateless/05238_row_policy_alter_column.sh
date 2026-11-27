@@ -197,6 +197,19 @@ refused "ALTER TABLE tng DROP COLUMN n.y" ALTER_OF_COLUMN_IS_FORBIDDEN
 refused "ALTER TABLE tng RENAME COLUMN n.x TO n.z" ALTER_OF_COLUMN_IS_FORBIDDEN
 $CLICKHOUSE_CLIENT -q "ALTER TABLE tng DROP COLUMN other"
 
+echo "-- a new type of a column cannot lose a subcolumn that the policy reads"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tm (id UInt32, tp Tuple(a UInt8, b UInt8), n Nullable(UInt8)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tm VALUES (1, (1, 1), 1), (2, (1, 2), 2);
+CREATE ROW POLICY pm ON $DB.tm FOR SELECT USING tm.tp.b = 1 AND NOT n.null TO CURRENT_USER;
+"
+refused "ALTER TABLE tm MODIFY COLUMN tp Tuple(a UInt8)" ALTER_OF_COLUMN_IS_FORBIDDEN
+refused "ALTER TABLE tm MODIFY COLUMN tp Tuple(a UInt8, c UInt8)" ALTER_OF_COLUMN_IS_FORBIDDEN
+refused "ALTER TABLE tm MODIFY COLUMN n UInt8 DEFAULT 0" ALTER_OF_COLUMN_IS_FORBIDDEN
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tm MODIFY COLUMN tp Tuple(a UInt8, b UInt8, c UInt8)"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tm MODIFY COLUMN n COMMENT 'kept'"
+$CLICKHOUSE_CLIENT -q "SELECT 'modified columns policy', arraySort(groupArray(id)) FROM tm"
+
 echo "-- the policy pins an ALIAS column, the alias pins its base column"
 $CLICKHOUSE_CLIENT --multiquery -q "
 CREATE TABLE ta (id UInt32, tenant UInt32, tenant_alias UInt32 ALIAS tenant) ENGINE = MergeTree ORDER BY id;
@@ -234,6 +247,7 @@ DROP ROW POLICY pal2 ON $DB.al2;
 DROP ROW POLICY pal3 ON $DB.al3;
 DROP ROW POLICY pc ON $DB.tc;
 DROP ROW POLICY png ON $DB.tng;
+DROP ROW POLICY pm ON $DB.tm;
 DROP FUNCTION $UDF;
 DROP TABLE t;
 DROP TABLE t2;
@@ -259,4 +273,5 @@ DROP TABLE al3;
 DROP TABLE tal3;
 DROP TABLE tc;
 DROP TABLE tng;
+DROP TABLE tm;
 "

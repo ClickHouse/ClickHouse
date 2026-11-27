@@ -56,6 +56,11 @@ qualifier column policy after drop	[1]
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
+-- a new type of a column cannot lose a subcolumn that the policy reads
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+modified columns policy	[1]
 -- the policy pins an ALIAS column, the alias pins its base column
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ILLEGAL_COLUMN
