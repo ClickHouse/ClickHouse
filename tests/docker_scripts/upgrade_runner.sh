@@ -1105,6 +1105,10 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 # `StorageFileLog::StorageFileLog` + `neither a regular file, nor a directory` (a file path) or
 #       `The directory ... of the path ... does not exist` (a glob path) is a `FileLog` table left behind without its
 #       files by an interrupted test. Scoped to the tests that do this, so a missing path of any other table still fails.
+# `PartMovesBetweenShardsOrchestrator` + `NO_SUCH_DATA_PART` on the shard of `05565_part_move_to_shard_source_part_removed`
+#       is that test's move, whose part it removes on purpose: the stress phase can stop the file before its
+#       `KILL PART_MOVE_TO_SHARD`, and the upgraded server retries the move every 3 seconds. Requires the orchestrator, the
+#       fixture's destination shard and the code together, so a failed move of any other table still fails this job.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -1202,6 +1206,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "StorageFileLog (.*): The absolute data path should be inside" \
     | grep -av -e "StorageFileLog::StorageFileLog(.*): Code: 36\. DB::Exception: The path .*/user_files/\(05316_file_log_copytruncate\|05316_file_log_error_does_not_lock_table\|05317_file_log_partial_last_line\|05318_file_log_one_bad_file\|05394_filelog_engine_file_source_grant\|05395_filelog_drop_idle_while_other_busy\)_.* neither a regular file, nor a directory" \
     | grep -av -e "StorageFileLog::StorageFileLog(.*): Code: 36\. DB::Exception: The directory .*/user_files/05316_file_log_globs_.* of the path .* does not exist" \
+    | grep -av -e "(PartMovesBetweenShardsOrchestrator): .*Code: 232\. DB::Exception: Part [^ ]* is not active on replica [^ ]*, it cannot be attached on shard /clickhouse/05565_part_move_to_shard_source_part_removed_[^/]*/dst\. (NO_SUCH_DATA_PART)" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
