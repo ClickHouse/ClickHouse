@@ -1528,8 +1528,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             }
 
             /// Start from the cursor of the previous refresh: a part of the source that is not read this time (e.g. a table
-            /// of a `Merge` table that does not match its regexp for a while, or a partition without new data that the read
-            /// does not report) keeps its position instead of being read again from the beginning.
+            /// of a `Merge` table that does not match its regexp for a while) keeps its position instead of being read
+            /// again from the beginning. A part that is read replaces its previous cursor, see `StreamingCursor::merge`.
             auto cursor = std::make_shared<StreamingCursor>();
             cursor->tree = stream_cursor ? buildCursorTree(cursorTreeToMap(stream_cursor)) : std::make_shared<CursorTreeNode>();
             refresh_context->setStreamingCursor(std::move(cursor));
@@ -1635,17 +1635,6 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 ///    (specifically, the assert in ~WriteBuffer()).
                 if (execution.interrupt_execution.load())
                     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
-
-                /// The query can stop reading the source before the end of its bounded read (a `LIMIT`, a constant
-                /// `DISTINCT`, `result_overflow_mode = 'break'`, etc.). Such a read does not report the cursor it
-                /// advanced to, so a successful refresh would keep the previous cursor and the next one would append
-                /// the same rows again. The definitions known to do it are rejected in advance; this covers the rest.
-                if (incremental)
-                    if (auto cursor = refresh_context->getStreamingCursor(); cursor && cursor->hasUnfinishedReads())
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                            "The query of the incremental refresh of view {} stopped reading the source table before the end "
-                            "of its snapshot, so the position to continue from is unknown",
-                            view_storage_id.getFullTableName());
 
                 /// `executor` must be destroyed before `pipeline`!
             }
