@@ -224,6 +224,9 @@ SELECT c0 FROM file(currentDatabase() || '_04065_opt_ancestor.parquet', 'Parquet
 ((0))
 \N
 ((0))
+SELECT `c0.inner` FROM file(currentDatabase() || '_04065_opt_ancestor.parquet', 'Parquet', '`c0.inner` Tuple(z UInt32)') SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+SELECT `c0.inner` FROM file(currentDatabase() || '_04065_opt_ancestor.parquet', 'Parquet', '`c0.inner` Tuple(a Nullable(UInt32))') SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+SELECT c0 FROM file(currentDatabase() || '_04065_opt_ancestor.parquet', 'Parquet', 'c0 Tuple(inner Tuple(a Nullable(UInt32)))') SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 DROP TABLE test_nullable_tuple_opt_ancestor;
 -- Physically nullable struct read as Nullable(Tuple) where every requested element is missing: the group null map is read
 -- from the definition levels of one of its leaves.
@@ -239,6 +242,11 @@ SELECT count() FROM file(currentDatabase() || '_04065_all_missing.parquet', 'Par
 1
 SELECT c0 FROM file(currentDatabase() || '_04065_all_missing.parquet', 'Parquet', 'c0 Tuple(z String)') SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 SELECT c0 FROM file(currentDatabase() || '_04065_all_missing.parquet', 'Parquet', 'c0 Tuple(a Nullable(UInt32))') SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_no_null.parquet', 'Parquet') SELECT CAST(tuple(toUInt32(1)), 'Nullable(Tuple(a UInt32))') AS c0;
+SELECT c0 FROM file(currentDatabase() || '_04065_no_null.parquet', 'Parquet', 'c0 Tuple(a Nullable(UInt32))') SETTINGS input_format_null_as_default = 0;
+(1)
+SELECT c0 FROM file(currentDatabase() || '_04065_no_null.parquet', 'Parquet', 'c0 Tuple(z UInt32)') SETTINGS input_format_null_as_default = 0;
+(0)
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_all_missing_arr.parquet', 'Parquet') SELECT [CAST((1, 10), 'Nullable(Tuple(a UInt32, b UInt64))'), NULL] AS c0;
 SELECT c0 FROM file(currentDatabase() || '_04065_all_missing_arr.parquet', 'Parquet', 'c0 Array(Nullable(Tuple(z String)))');
 [(''),NULL]

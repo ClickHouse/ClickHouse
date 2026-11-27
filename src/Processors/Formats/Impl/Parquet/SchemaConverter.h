@@ -53,7 +53,7 @@ struct SchemaConverter
     /// PrimitiveColumnInfo::group_nullable set: their definition-level null map equals the group
     /// null map, so we keep it and later wrap the assembled ColumnTuple in ColumnNullable.
     size_t nullable_tuple_group_depth = 0;
-    /// >0 while recursing a requested OPTIONAL group whose null map may have to be read from one of its leaves.
+    /// >0 while recursing a requested group whose null map may have to be read from one of its leaves.
     size_t group_null_map_leaves_depth = 0;
 
     /// The key is the parquet column name, without ColumnMapper.

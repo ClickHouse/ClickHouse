@@ -1177,9 +1177,12 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     nullable_tuple_group_depth += nullable_group ? 1 : 0;
     SCOPE_EXIT({ nullable_tuple_group_depth -= nullable_group ? 1 : 0; });
 
-    /// The definition levels of each leaf of an OPTIONAL group with an all-REQUIRED subtree are the group null map.
-    const bool group_null_map_from_leaf = sample_block && node.requested && group_is_optional
-        && (nullable_group || (!options.format.null_as_default && tupleSubtreeIsAllRequired(file_metadata.schema, tuple_schema_idx)));
+    /// In an all-REQUIRED subtree each leaf's definition levels are the null map of its root group, a parent's NULL included.
+    /// A Tuple read with input_format_null_as_default = 0 needs it where it can be NULL, unless an enclosing group reads it.
+    const bool group_null_map_from_leaf = sample_block && node.requested
+        && (nullable_group
+            || (!options.format.null_as_default && group_null_map_leaves_depth == 0 && levels.size() > 1 && !levels.back().is_array
+                && tupleSubtreeIsAllRequired(file_metadata.schema, tuple_schema_idx)));
     group_null_map_leaves_depth += group_null_map_from_leaf ? 1 : 0;
     SCOPE_EXIT({ group_null_map_leaves_depth -= group_null_map_from_leaf ? 1 : 0; });
 
