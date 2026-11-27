@@ -225,6 +225,16 @@ a0	33
 a1	533
 a2	33
 a3	33
+a0	175
+a1	175
+a2	176
+a3	175
+a4	175
+a0	175
+a1	175
+a2	176
+a3	175
+a4	175
 a0	a0	10
 á0	á0	10
 a1	a1	11
@@ -365,6 +375,7 @@ engaged
 05407_forced_repeats	0	1	1
 05407_keys	1	1	1
 05407_plain	1	1	1
+05407_rejected_keys	1	1	1
 05407_remote_plan	1	1	1
 05407_remote_plan_nullable	1	1	1
 05407_remote_prefix	0	1	1

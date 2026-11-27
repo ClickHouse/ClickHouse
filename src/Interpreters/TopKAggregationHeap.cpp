@@ -1,9 +1,13 @@
 #include <Interpreters/TopKAggregationHeap.h>
 
 #include <algorithm>
+#include <array>
 #include <utility>
 
+#include <base/StringViewHash.h>
+#include <base/memcmpSmall.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
@@ -11,6 +15,103 @@
 
 namespace DB
 {
+
+/// Exact keys the collated boundary rejected. The effective boundary only tightens while the heap is active, so a
+/// rejected key stays rejected and its repeats need no locale comparison. Holds at most `slot_count` keys and
+/// `pool_capacity` bytes. A window of lookups with few hits empties the cache and bypasses it for a while.
+struct TopKRejectedKeyCache
+{
+    static constexpr size_t slot_count = 2048;
+    static constexpr size_t max_probes = 8;
+    static constexpr size_t pool_capacity = 8192;
+    static constexpr size_t max_key_size = 255;
+    static constexpr UInt32 window_size = 4096;
+    static constexpr UInt64 min_bypass_rows = 1 << 16;
+    static constexpr UInt64 max_bypass_rows = 1 << 24;
+
+    /// A used slot holds the upper half of the key hash and 1 + the offset of the key in `pool`; 0 marks a free one.
+    std::array<UInt32, slot_count> slots{};
+    /// Per key: its size byte, then its bytes. Padded for `memequalSmallAllowOverflow15`.
+    std::array<char, pool_capacity + 15> pool{};
+    size_t pool_used = 0;
+
+    bool active = true;
+    UInt32 window_lookups = 0;
+    UInt32 window_hits = 0;
+    UInt64 bypass_rows = 0;
+    UInt64 next_bypass_rows = min_bypass_rows;
+
+    [[nodiscard]] ALWAYS_INLINE bool contains(std::string_view key, UInt32 hash) const
+    {
+        const UInt32 tag = hash & 0xFFFF0000;
+        for (size_t i = 0; i < max_probes; ++i)
+        {
+            const UInt32 slot = slots[(hash + i) % slot_count];
+            if (slot == 0)
+                return false;
+            if ((slot & 0xFFFF0000) != tag)
+                continue;
+            const char * entry = pool.data() + (slot & 0xFFFF) - 1;
+            if (memequalSmallAllowOverflow15(entry + 1, static_cast<UInt8>(entry[0]), key.data(), key.size()))
+                return true;
+        }
+        return false;
+    }
+
+    void insert(std::string_view key, UInt32 hash)
+    {
+        if (pool_used + 1 + key.size() > pool_capacity)
+            return;
+        for (size_t i = 0; i < max_probes; ++i)
+        {
+            UInt32 & slot = slots[(hash + i) % slot_count];
+            if (slot != 0)
+                continue;
+            slot = (hash & 0xFFFF0000) | static_cast<UInt32>(pool_used + 1);
+            pool[pool_used] = static_cast<char>(key.size());
+            memcpy(pool.data() + pool_used + 1, key.data(), key.size());
+            pool_used += 1 + key.size();
+            return;
+        }
+    }
+
+    ALWAYS_INLINE void countLookup(bool hit)
+    {
+        window_hits += hit;
+        if (++window_lookups < window_size)
+            return;
+        if (window_hits * 4 < window_lookups)
+        {
+            slots = {};
+            pool_used = 0;
+            active = false;
+            bypass_rows = next_bypass_rows;
+            next_bypass_rows = std::min(next_bypass_rows * 2, max_bypass_rows);
+        }
+        else
+            next_bypass_rows = min_bypass_rows;
+        window_lookups = 0;
+        window_hits = 0;
+    }
+
+    void advance(UInt64 rows)
+    {
+        if (active)
+            return;
+        if (rows < bypass_rows)
+        {
+            bypass_rows -= rows;
+            return;
+        }
+        bypass_rows = 0;
+        active = true;
+    }
+};
+
+TopKAggregationHeapBase::TopKAggregationHeapBase() = default;
+TopKAggregationHeapBase::~TopKAggregationHeapBase() = default;
+TopKAggregationHeapBase::TopKAggregationHeapBase(TopKAggregationHeapBase &&) noexcept = default;
+TopKAggregationHeapBase & TopKAggregationHeapBase::operator=(TopKAggregationHeapBase &&) noexcept = default;
 
 size_t TopKAggregationHeapBase::initBase(
     const ColumnRawPtrs & key_columns,
@@ -80,6 +181,11 @@ void TopKAggregationHeapBase::init(
 
     const TypeIndex type = heap_column->getDataType();
     typed_key_type = !has_collators && dispatchNumericKeyType(type, []<typename>() {}) ? type : TypeIndex::Nothing;
+
+    if (has_collators && typeid_cast<const ColumnString *>(heap_column.get()))
+        rejected_keys = std::make_unique<TopKRejectedKeyCache>();
+    else
+        rejected_keys.reset();
 }
 
 void TopKAggregationHeapBase::init(
@@ -121,6 +227,7 @@ void TopKAggregationHeapBase::init(
     key_arena.reset();
     findLowCardinalityColumns();
     typed_key_type = TypeIndex::Nothing;
+    rejected_keys.reset();
 }
 
 bool TopKAggregationHeapBase::shouldFreeze() const
@@ -148,6 +255,7 @@ void TopKAggregationHeapBase::freezeBase()
     shared_cache_column = nullptr;
     publish_pending = false;
     key_arena.reset();
+    rejected_keys.reset();
     skip_bitmap = {};
     evicted_rows = {};
     trim_filter = {};
@@ -199,8 +307,38 @@ void TopKAggregationHeapBase::initBoundary()
 
 bool TopKAggregationHeapBase::shouldSkipCollated(const ColumnRawPtrs & source_columns, size_t source_row) const
 {
-    return is_composite ? sourceAboveBoundaryComposite<true>(source_columns, source_row)
-                        : sourceAboveBoundary<true>(*source_columns[0], source_row);
+    if (is_composite)
+        return sourceAboveBoundaryComposite<true>(source_columns, source_row);
+    if (rejected_keys && rejected_keys->active)
+        return shouldSkipCachedKey(*source_columns[0], source_row);
+    return sourceAboveBoundary<true>(*source_columns[0], source_row);
+}
+
+bool TopKAggregationHeapBase::shouldSkipCachedKey(const IColumn & source_column, size_t source_row) const
+{
+    const std::string_view key = assert_cast<const ColumnString &>(source_column).getDataAt(source_row);
+    if (key.size() > TopKRejectedKeyCache::max_key_size)
+        return sourceAboveBoundary<true>(source_column, source_row);
+
+    auto & cache = *rejected_keys;
+    const auto hash = static_cast<UInt32>(StringViewHash{}(key));
+    if (cache.contains(key, hash))
+    {
+        chassert(sourceAboveBoundary<true>(source_column, source_row));
+        cache.countLookup(true);
+        return true;
+    }
+
+    const bool skip = sourceAboveBoundary<true>(source_column, source_row);
+    if (skip)
+        cache.insert(key, hash);
+    cache.countLookup(false);
+    return skip;
+}
+
+void TopKAggregationHeapBase::advanceRejectedKeys(UInt64 rows)
+{
+    rejected_keys->advance(rows);
 }
 
 int TopKAggregationHeapBase::compareRanked(const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row) const

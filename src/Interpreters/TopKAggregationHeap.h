@@ -28,6 +28,7 @@ namespace DB
 
 class ITopKThresholdTracker;
 using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
+struct TopKRejectedKeyCache;
 
 /** The tightest skip boundary any aggregation thread has published, shared by all
   * per-thread top-K sets of one `Aggregator`. A set at capacity K with boundary B proves
@@ -71,11 +72,12 @@ struct TopKAggregationHeapBase
     bool frozen = false;                    /// abandoned at runtime; aggregation proceeds as if the optimization were off
     std::vector<AggregateDataPtr> free_states;  /// state slots of pruned groups, reused by later inserts (arena memory is never returned)
 
-    TopKAggregationHeapBase() = default;
+    TopKAggregationHeapBase();
+    ~TopKAggregationHeapBase();
     TopKAggregationHeapBase(const TopKAggregationHeapBase &) = delete;
     TopKAggregationHeapBase & operator=(const TopKAggregationHeapBase &) = delete;
-    TopKAggregationHeapBase(TopKAggregationHeapBase &&) noexcept = default;
-    TopKAggregationHeapBase & operator=(TopKAggregationHeapBase &&) noexcept = default;
+    TopKAggregationHeapBase(TopKAggregationHeapBase &&) noexcept;
+    TopKAggregationHeapBase & operator=(TopKAggregationHeapBase &&) noexcept;
 
     [[nodiscard]] size_t size() const { return heap_indices.size(); }
 
@@ -87,6 +89,8 @@ struct TopKAggregationHeapBase
         skipped_rows += skipped;
         if (boundary_changed)
             publishBoundary();
+        if (rejected_keys) [[unlikely]]
+            advanceRejectedKeys(observed);
     }
 
     [[nodiscard]] bool everRejected() const { return skipped_rows > 0 || evicted_keys > 0; }
@@ -176,6 +180,7 @@ protected:
     std::vector<int> directions;            /// per ranked column: +1/-1 for ASC/DESC
     std::vector<int> nulls_directions;      /// per ranked column: NULLs/NaNs placement for `compareAt`/`CompareHelper`
     std::vector<std::shared_ptr<Collator>> collators;  /// per ranked column, null without `COLLATE`
+    mutable std::unique_ptr<TopKRejectedKeyCache> rejected_keys;   /// only for a single collated `String` key
     TypeIndex typed_key_type = TypeIndex::Nothing;  /// single numeric key type for the inlined fast paths; `Nothing` means the virtual `compareAt` path
 
     std::vector<size_t> low_cardinality_columns;    /// positions of `ColumnLowCardinality` heap columns, for dictionary compaction after a trim
@@ -402,6 +407,8 @@ private:
 
     /// `NO_INLINE` keeps the locale comparison out of the aggregation loops, which inline `shouldSkip`.
     [[nodiscard]] NO_INLINE bool shouldSkipCollated(const ColumnRawPtrs & source_columns, size_t source_row) const;
+    [[nodiscard]] NO_INLINE bool shouldSkipCachedKey(const IColumn & source_column, size_t source_row) const;
+    void advanceRejectedKeys(UInt64 rows);
 
     template <bool with_collation>
     [[nodiscard]] bool sourceAboveBoundary(const IColumn & source_column, size_t source_row) const

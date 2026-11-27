@@ -233,6 +233,16 @@ SELECT s, count() FROM (SELECT multiIf(number < 131072 AND number % 1000 = 7, ['
     ['a1', 'á0', 'a4', 'zz'][number % 4 + 1]) AS s FROM numbers(165840))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_repeats_then_unique';
+-- Keys k0..k49 in cycles, of which the heap rejects all but five, with a0..a4 from row 5000 on that tighten the boundary
+-- past them; then 70000 unique u... keys; then the cycles again.
+SELECT s, count() FROM (SELECT multiIf(number >= 5000 AND number % 97 = 0, concat('a', toString(intDiv(number, 97) % 5)),
+    number < 10000 OR number >= 80000, concat('k', toString(number % 50)), concat('u', toString(number))) AS s FROM numbers(90000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (SELECT multiIf(number >= 5000 AND number % 97 = 0, concat('a', toString(intDiv(number, 97) % 5)),
+    number < 10000 OR number >= 80000, concat('k', toString(number % 50)), concat('u', toString(number))) AS s FROM numbers(90000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_rejected_keys';
 -- A composite key aggregated with the serialized method.
 SELECT lcs, s, count() FROM t_05407 GROUP BY lcs, s ORDER BY lcs ASC COLLATE 'en', s ASC LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 65536, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
@@ -414,7 +424,7 @@ INNER JOIN
     SELECT query_id, log_comment FROM system.query_log
     WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish' AND event_date >= yesterday()
         AND log_comment IN ('05407_adaptive_repeats', '05407_composite_later', '05407_dynamic_filter',
-            '05407_forced_repeats', '05407_keys', '05407_plain', '05407_remote_plan', '05407_remote_plan_nullable',
+            '05407_forced_repeats', '05407_keys', '05407_plain', '05407_rejected_keys', '05407_remote_plan', '05407_remote_plan_nullable',
             '05407_remote_prefix', '05407_remote_text', '05407_repeats', '05407_repeats_then_unique', '05407_run_adaptive',
             '05407_run_adaptive_new_best', '05407_run_adaptive_new_keys', '05407_run_never_fills',
             '05407_run_new_best', '05407_run_new_keys', '05407_run_one_key', '05407_run_repeats', '05407_serialized',
