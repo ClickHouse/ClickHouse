@@ -317,7 +317,7 @@ public:
         }
         else if (const auto * function_node = node->as<FunctionNode>())
         {
-            if (function_node->isOrdinaryFunction())
+            if (function_node->isOrdinaryCall())
                 function_names.insert(function_node->getFunctionName());
         }
     }
@@ -340,10 +340,11 @@ std::optional<Names> collectFunctionsForQueryPlanCacheEntry(const QueryTreeNodeP
 
 void checkFunctionsForQueryPlanCacheHit(const ContextPtr & context, const Names & functions)
 {
-    /// Creating a function checks the access rights it needs (e.g. `demangle` or `addressToSymbol`).
+    /// The access rights that a function needs (e.g. `demangle` or `addressToSymbol`) are checked when it is built
+    /// by the analysis, which is skipped on a hit.
     const auto & function_factory = FunctionFactory::instance();
     for (const auto & name : functions)
-        std::ignore = function_factory.get(name, context);
+        function_factory.get(name, context)->checkAccessOnBuild();
 }
 
 bool astContainsInTableExpressionForQueryPlanCache(ASTPtr ast)
