@@ -67,7 +67,7 @@ ClickHouse는 객체 스토리지에 직접 저장된 오픈 테이블 포맷의
     Peak memory usage: 10.48 GiB.
     ```
 
-    ### 클러스터 Variant
+### 클러스터 변형 {#iceberg-cluster-variant}
 
     [`icebergS3Cluster`](/ko/reference/functions/table-functions/icebergCluster) 함수는 ClickHouse 클러스터의 여러 노드에 읽기를 분산합니다. 이니시에이터(initiator) 노드는 모든 노드에 연결을 설정하고 데이터 파일을 동적으로 배분합니다. 각 워커(worker) 노드는 모든 파일을 읽을 때까지 작업을 요청하고 처리합니다. `icebergCluster`는 `icebergS3Cluster`의 별칭(alias)입니다. Azure([`icebergAzureCluster`](/ko/reference/functions/table-functions/icebergCluster)) 및 HDFS([`icebergHDFSCluster`](/ko/reference/functions/table-functions/icebergCluster))용 변형도 제공됩니다.
 
@@ -95,7 +95,7 @@ ClickHouse는 객체 스토리지에 직접 저장된 오픈 테이블 포맷의
     LIMIT 5
     ```
 
-    ### 테이블 엔진
+### 테이블 엔진 {#iceberg-table-engine}
 
     매 쿼리마다 테이블 함수를 사용하는 대신, [`Iceberg` 테이블 엔진](/ko/reference/engines/table-engines/integrations/iceberg)을 사용하여 영구 테이블을 생성할 수 있습니다. 데이터는 여전히 객체 스토리지에 저장되며 필요 시 읽어오므로 ClickHouse로 데이터가 복사되지 않습니다. 이 방식의 장점은 테이블 정의가 ClickHouse에 저장되어, 사용자마다 스토리지 경로와 자격 증명을 별도로 지정하지 않아도 여러 사용자와 세션에서 공유할 수 있다는 점입니다. 각 스토리지 백엔드에 대응하는 엔진 변형은 다음과 같습니다: `IcebergS3`(또는 `Iceberg` 별칭), `IcebergAzure`, `IcebergHDFS`, `IcebergLocal`.
 
@@ -197,7 +197,7 @@ ClickHouse는 객체 스토리지에 직접 저장된 오픈 테이블 포맷의
     Peak memory usage: 9.16 GiB.
     ```
 
-    ### 클러스터 Variant
+### 클러스터 변형 {#delta-cluster-variant}
 
     [`deltaLakeCluster`](/ko/reference/functions/table-functions/deltalakeCluster) 함수는 ClickHouse 클러스터의 여러 노드에 읽기를 분산합니다. 이니시에이터(initiator) 노드가 데이터 파일을 워커(worker) 노드에 동적으로 배분하여 병렬 처리를 수행합니다. `deltaLakeS3Cluster`는 `deltaLakeCluster`의 별칭(alias)입니다. Azure 변형인 ([`deltaLakeAzureCluster`](/ko/reference/functions/table-functions/deltalakeCluster))도 사용할 수 있습니다.
 
@@ -231,7 +231,7 @@ ClickHouse는 객체 스토리지에 직접 저장된 오픈 테이블 포맷의
     LIMIT 5
     ```
 
-    ### 테이블 엔진
+### 테이블 엔진 {#delta-table-engine}
 
     모든 쿼리에서 테이블 함수를 사용하는 대신, S3 호환 스토리지를 사용하는 경우 [`DeltaLake` 테이블 엔진](/ko/reference/engines/table-engines/integrations/deltalake)을 사용해 영구 테이블을 생성할 수 있습니다. 데이터는 계속 객체 스토리지에 저장되며 필요할 때만 읽히므로 ClickHouse로 복사되지 않습니다. 이 방식의 장점은 테이블 정의가 ClickHouse에 저장되어 각 사용자가 스토리지 경로와 자격 증명을 따로 지정하지 않고도 사용자와 세션 간에 공유할 수 있다는 점입니다.
 
@@ -290,7 +290,7 @@ ClickHouse는 객체 스토리지에 직접 저장된 오픈 테이블 포맷의
     hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
     ```
 
-    ### 클러스터용 변형
+### 클러스터용 변형 {#hudi-cluster-variant}
 
     [`hudiCluster`](/ko/reference/functions/table-functions/hudiCluster) 함수는 ClickHouse 클러스터의 여러 노드에 읽기 작업을 분산 처리합니다. initiator 노드는 병렬 처리를 위해 데이터 파일을 worker 노드로 동적으로 분배합니다.
 
@@ -298,7 +298,7 @@ ClickHouse는 객체 스토리지에 직접 저장된 오픈 테이블 포맷의
     hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
     ```
 
-    ### 테이블 엔진
+### 테이블 엔진 {#hudi-table-engine}
 
     모든 쿼리에서 매번 테이블 함수를 사용하는 대신, [`Hudi` 테이블 엔진](/ko/reference/engines/table-engines/integrations/hudi)을 사용해 영구 테이블을 생성할 수 있습니다. 데이터는 계속 객체 스토리지에 저장되며 필요할 때 읽어 옵니다. 즉, 데이터가 ClickHouse로 복사되지는 않습니다. 장점은 테이블 정의가 ClickHouse에 저장되므로, 각 사용자가 스토리지 경로와 자격 증명을 일일이 지정하지 않아도 사용자와 세션 간에 공유할 수 있다는 점입니다.
 
@@ -330,7 +330,7 @@ ClickHouse는 객체 스토리지에 직접 저장된 오픈 테이블 포맷의
     paimonLocal(path_to_table, [,format] [,compression_method])
     ```
 
-    ### 클러스터 변형
+### 클러스터 변형 {#paimon-cluster-variant}
 
     [`paimonS3Cluster`](/ko/reference/functions/table-functions/paimonCluster) 함수는 ClickHouse 클러스터의 여러 노드에 읽기 작업을 분산합니다. initiator 노드는 병렬 처리를 위해 데이터 파일을 worker 노드로 동적으로 전달합니다. `paimonCluster`는 `paimonS3Cluster`의 별칭입니다. Azure([`paimonAzureCluster`](/ko/reference/functions/table-functions/paimonCluster)) 및 HDFS([`paimonHDFSCluster`](/ko/reference/functions/table-functions/paimonCluster))용 변형도 있습니다.
 
@@ -343,9 +343,9 @@ ClickHouse는 객체 스토리지에 직접 저장된 오픈 테이블 포맷의
     paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
     ```
 
-    ### 테이블 엔진
+### 테이블 엔진 {#paimon-table-engine}
 
-    ClickHouse는 실험적으로 [`PaimonS3`, `PaimonAzure`, `PaimonHDFS`, `PaimonLocal` 테이블 엔진](/ko/reference/engines/table-engines/integrations/paimon)을 제공합니다. `allow_experimental_paimon_storage_engine = 1`로 활성화하십시오.
+    ClickHouse는 실험적으로 [`PaimonS3`, `PaimonAzure`, `PaimonHDFS`, `PaimonLocal` 테이블 엔진](/ko/reference/engines/table-engines/integrations/paimon)을 제공합니다. `enable_paimon_storage_engine = 1`로 활성화하십시오.
 
     스토리지 백엔드를 비롯한 지원 기능은 [지원 매트릭스](/ko/guides/use-cases/data-warehousing/support-matrix#format-support)를 참조하십시오. 전체 참고 내용은 [`paimon` 테이블 함수](/ko/reference/functions/table-functions/paimon) 문서를 참조하십시오.
   </Tab>

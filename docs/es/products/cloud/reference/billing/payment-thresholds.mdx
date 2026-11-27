@@ -7,11 +7,7 @@ keywords: ['facturación', 'umbrales de pago', 'facturación automática', 'fact
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
-<div id="threshholds">
-  ## Umbrales de pago
-</div>
+## Umbrales de pago {#threshholds}
 
 Si es cliente de pago por uso y el importe adeudado en un período de facturación de ClickHouse Cloud alcanza los $1,000 USD o su valor equivalente, se realizará automáticamente un cargo al método de pago configurado para su organización.
 
@@ -27,14 +23,22 @@ Si sus tarjetas de crédito no cumplen con los requisitos del RBI, deberá añad
 
 En el ejemplo siguiente se muestra la UI de facturación en la Cloud Console:
 
-<Image img="/images/cloud/reference/billing_payment_threshhold.webp" size="sm" alt="Dónde encontrar la facturación en la UI" />
+<div className="ch-image-sm">
+  <Frame>
+    ![Dónde encontrar la facturación en la UI](/images/cloud/reference/billing_payment_threshhold.webp)
+  </Frame>
+</div>
 
-<Image img="/images/cloud/reference/billing_payment_threshhold_2.webp" size="lg" alt="Factura" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Factura](/images/cloud/reference/billing_payment_threshhold_2.webp)
+  </Frame>
+</div>
 
 Como puede ver en el ejemplo anterior, se envió una factura de umbral durante el período de facturación del 28 de febrero al 31 de marzo y, después, se envió otra factura durante ese mismo período por el uso restante por encima de $1,000 USD.
 
 <div id="threshholds-notifications">
-  ## Notificaciones del umbral de pago
+  ## Notificaciones del umbral de pago {#threshholds-notifications}
 </div>
 
 Si su organización alcanza el 90 % del umbral de pago y va camino de superarlo a mitad del período, la dirección de correo electrónico del contacto de facturación asociado a la organización recibirá una notificación por correo electrónico.

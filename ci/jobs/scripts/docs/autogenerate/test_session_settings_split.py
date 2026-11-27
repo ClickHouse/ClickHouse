@@ -19,15 +19,6 @@ def load_module():
     return mod
 
 
-def load_migrate_module():
-    spec = importlib.util.spec_from_file_location(
-        "docs_migrate", HERE.parents[4] / "docs/_migration/migrate.py")
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
 def load_lychee_module():
     path = HERE.parent / "lychee_check.py"
     spec = importlib.util.spec_from_file_location("lychee_check", path)
@@ -46,6 +37,90 @@ def expect_exception(exception_type, message, callback):
         raise AssertionError(
             f"expected {exception_type.__name__} containing {message!r}"
         )
+
+
+def assert_index_aliases():
+    with tempfile.TemporaryDirectory() as temp:
+        docs = Path(temp)
+        go_page = docs / "integrations/language-clients/go/index.mdx"
+        trailing_page = docs / "development/index.mdx"
+        go_page.parent.mkdir(parents=True)
+        trailing_page.parent.mkdir(parents=True)
+        go_page.write_text(
+            "---\nslug: /integrations/go\n---\n"
+            "\n## Connection details {#connection-details}\n",
+            encoding="utf-8",
+        )
+        trailing_page.write_text(
+            "---\nslug: /development/\n---\n"
+            "\n## Development {#development}\n",
+            encoding="utf-8",
+        )
+        lychee = load_lychee_module()
+        lychee.dump_inputs = lambda docs_root: []
+        mirror = docs / "lychee-mirror"
+        lychee.build_tree(str(docs), str(mirror))
+        assert (mirror / "integrations/language-clients/go.mdx").read_text(
+            encoding="utf-8"
+        ) == '<a id="connection-details"></a>\n'
+        assert (mirror / "development.mdx").read_text(
+            encoding="utf-8"
+        ) == '<a id="development"></a>\n'
+        assert not (mirror / "integrations/go.mdx").exists()
+
+
+def assert_merge_tree_setting_aliases(mod):
+    alias = "object_shared_data_serialization_version_for_zero_level_parts"
+    canonical = "object_shared_data_serialization_version_for_small_parts"
+    source = '''
+DECLARE_WITH_ALIAS(MergeTreeObjectSharedDataSerializationVersion,
+    object_shared_data_serialization_version_for_small_parts,
+    "map_with_buckets", R"(
+Serialization version for shared data in small parts.
+)", 0, object_shared_data_serialization_version_for_zero_level_parts, \\
+    {"26.12", "map", "map_with_buckets", "Renamed setting"})
+'''
+    content = (
+        "## object_shared_data_serialization_version_for_small_parts "
+        "{#object_shared_data_serialization_version_for_small_parts}\n\n"
+        "Serialization version for shared data in small parts.\n"
+    )
+    content = mod.add_merge_tree_setting_aliases(content, source)
+    _, _, sections = mod.parse_settings_page(content)
+    assert sections[0].aliases == (alias,)
+
+    repo_root = HERE.parents[4]
+    actual_source = (
+        repo_root / "src/Storages/MergeTree/MergeTreeSettings.cpp").read_text(
+            encoding="utf-8")
+    registered_aliases = mod.merge_tree_setting_aliases(actual_source)
+    assert registered_aliases[canonical] == (alias,)
+    assert registered_aliases["enable_block_number_column"] == (
+        "allow_experimental_block_number_column",)
+    assert len(registered_aliases) == actual_source.count("DECLARE_WITH_ALIAS(")
+    generator = next(
+        gen for gen in mod.SETTINGS_GENERATORS if gen["name"] == "mergetree-settings")
+    assert generator["deps"]["MergeTreeSettings.cpp"] == \
+        "src/Storages/MergeTree/MergeTreeSettings.cpp"
+
+    family = mod.SETTINGS_SPLIT_FAMILIES["mergetree-settings"]
+    routing = mod._settings_routing_from_disk(
+        repo_root / "docs", repo_root, "mergetree-settings")
+    pages = mod.group_session_settings(
+        sections,
+        base_route=family["base_route"],
+        previous_routing=routing,
+    )
+    routes_script = mod._settings_legacy_routes_script(
+        mod._settings_anchor_routes(pages),
+        family,
+        mod._settings_alias_routes(pages),
+        mod._settings_alias_anchors(pages),
+    )
+    assert f'"{alias}":"{family["base_route"]}/object-shared"' in routes_script
+    assert f'"{alias}":"{canonical}"' in routes_script
+    explorer = mod._settings_explorer_component(pages, family)
+    assert f'"{canonical}":["{alias}"]' in explorer
 
 
 def generated_page(names, body_h1=None):
@@ -110,10 +185,22 @@ def setting_names(mod, content):
 
 def main():
     mod = load_module()
-    migrate = load_migrate_module()
     mod.SESSION_SETTINGS_PREFIX_GROUP_MIN = 2
+    assert_index_aliases()
+    assert_merge_tree_setting_aliases(mod)
 
     repo_root = HERE.parents[4]
+    redirects = json.loads((repo_root / "docs/_site/redirects.json").read_text(
+        encoding="utf-8"
+    ))
+    redirects_by_source = {
+        redirect["source"]: redirect["destination"]
+        for redirect in redirects
+    }
+    assert redirects_by_source["/integrations/go"] == \
+        "/integrations/language-clients/go/index"
+    assert "/integrations/language-clients/go/index" not in redirects_by_source
+
     for family_name in mod.SETTINGS_SPLIT_FAMILIES:
         routing = mod._settings_routing_from_disk(
             repo_root / "docs", repo_root, family_name
@@ -137,58 +224,6 @@ def main():
         "session-settings",
         "beta-and-experimental",
     ]
-
-    for badge in (
-        "CloudNotSupportedBadge",
-        "CloudSupportedBadge",
-        "VersionBadge",
-    ):
-        migrated, _ = migrate.transform_imports(
-            f"import {badge} from '@theme/badges/{badge}';\n\n"
-            f"<{badge} />\n\n"
-            "Content after the badge.\n",
-            migrate.Lookups(),
-            [],
-        )
-        assert migrated == (
-            f'import {{ {badge} }} from '
-            f'"/snippets/components/{badge}/{badge}.jsx";\n\n'
-            f"<{badge} />\n\n"
-            "Content after the badge.\n"
-        )
-
-        migrated_snippet, _ = migrate.transform_imports(
-            f'import {badge} from '
-            f'"/snippets/components/{badge}/{badge}.jsx";\n\n'
-            f"<{badge} />\n\n"
-            "Content after the badge.\n",
-            migrate.Lookups(),
-            [],
-        )
-        assert migrated_snippet == (
-            f'import {{ {badge} }} from '
-            f'"/snippets/components/{badge}/{badge}.jsx";\n\n'
-            f"<{badge} />\n\n"
-            "Content after the badge.\n"
-        )
-        remigrated_snippet, _ = migrate.transform_imports(
-            migrated_snippet,
-            migrate.Lookups(),
-            [],
-        )
-        assert remigrated_snippet == migrated_snippet
-
-    migrated_namespace, _ = migrate.transform_imports(
-        "import * as BadgeNS from '@theme/badges/CloudNotSupportedBadge';\n\n"
-        "<BadgeNS.CloudNotSupportedBadge />\n",
-        migrate.Lookups(),
-        [],
-    )
-    assert migrated_namespace == (
-        "import * as BadgeNS from "
-        '"/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";\n\n'
-        "<BadgeNS.CloudNotSupportedBadge />\n"
-    )
 
     for badge in ("ExperimentalBadge", "BetaBadge", "CloudOnlyBadge"):
         import_line = (
@@ -1340,9 +1375,8 @@ def main():
         observed_beta_rewrite = []
 
         def fake_generate_artifacts(
-                gen, binary, docs_dir, repo_root, migrate, lk, file_map,
-                generated_routes=None):
-            del binary, migrate, lk, file_map
+                gen, binary, docs_dir, repo_root, generated_routes=None):
+            del binary
             if gen["name"] in mod.SETTINGS_SPLIT_FAMILIES:
                 family = mod.SETTINGS_SPLIT_FAMILIES[gen["name"]]
                 return [mod.GeneratedArtifact(
@@ -1370,14 +1404,12 @@ def main():
 
         mod.ALL_GENERATORS = mod.SETTINGS_GENERATORS
         mod.aggregate_generators = lambda docs_dir: []
-        mod.table_engine_generators = lambda docs_dir, file_map: []
-        mod.database_engine_generators = lambda docs_dir, file_map: []
-        mod.data_type_generators = lambda docs_dir, file_map: []
-        mod.format_generators = lambda docs_dir, file_map: []
-        mod.table_function_generators = lambda docs_dir, file_map: []
-        mod.window_function_generators = lambda docs_dir, file_map: []
-        mod.import_migrate = lambda docs_dir: object()
-        mod.build_file_map = lambda migrate, slug_map: (object(), {})
+        mod.table_engine_generators = lambda docs_dir: []
+        mod.database_engine_generators = lambda docs_dir: []
+        mod.data_type_generators = lambda docs_dir: []
+        mod.format_generators = lambda docs_dir: []
+        mod.table_function_generators = lambda docs_dir: []
+        mod.window_function_generators = lambda docs_dir: []
         mod.generate_artifacts = fake_generate_artifacts
         mod.stale_settings_page_paths = (
             lambda family_name, artifacts, docs_dir: []
