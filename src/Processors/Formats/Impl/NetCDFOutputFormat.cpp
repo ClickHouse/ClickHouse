@@ -229,16 +229,20 @@ struct FillValueKeys
     static constexpr Bits toKey(T value)
     {
         Bits bits = std::bit_cast<Bits>(value);
+        /// The negation of the bits of a negative value is written as `~bits + 1`, which does not
+        /// wrap around, because the sign bit is set and so the bits are not zero.
         if constexpr (std::is_floating_point_v<T>)
-            return (bits & sign_bit) ? static_cast<Bits>(Bits(0) - bits) : static_cast<Bits>(bits | sign_bit);
+            return (bits & sign_bit) ? static_cast<Bits>(~bits + 1) : static_cast<Bits>(bits | sign_bit);
         else
             return bits;
     }
 
     static constexpr T fromKey(Bits key)
     {
+        /// A key below the sign bit is the key of a negative value, which is at least `min_key` and
+        /// so is not zero, and its negation as `~key + 1` does not wrap around.
         if constexpr (std::is_floating_point_v<T>)
-            return std::bit_cast<T>(key >= sign_bit ? static_cast<Bits>(key & ~sign_bit) : static_cast<Bits>(Bits(0) - key));
+            return std::bit_cast<T>(key >= sign_bit ? static_cast<Bits>(key & ~sign_bit) : static_cast<Bits>(~key + 1));
         else
             return std::bit_cast<T>(key);
     }
@@ -248,7 +252,8 @@ struct FillValueKeys
 
     /// The number of distinct keys. Zero means that it does not fit in the counter, and then it is
     /// larger than the number of values that any column can hold, so it never runs out.
-    static constexpr UInt64 num_keys = UInt64(max_key) - UInt64(min_key) + 1;
+    static constexpr UInt64 last_key_offset = UInt64(max_key) - UInt64(min_key);
+    static constexpr UInt64 num_keys = last_key_offset == std::numeric_limits<UInt64>::max() ? 0 : last_key_offset + 1;
 };
 
 /// The value that marks a NULL has to be a value that the data itself does not contain, or reading
@@ -297,10 +302,11 @@ String chooseFillValue(const Source * data, size_t size, const UInt8 * null_map,
             if (std::isnan(value))
                 continue;
 
-        /// The distance going down from the first candidate, modulo the number of keys. The result
-        /// is less than the number of keys, so the arithmetic modulo 2^64 gives it exactly.
+        /// The distance going down from the first candidate, modulo the number of keys. A key
+        /// above the first candidate is reached after wrapping around from the smallest key to
+        /// the largest one, and the distance is written so that no step of it overflows.
         UInt64 key = Keys::toKey(value);
-        UInt64 offset = key <= first_key ? first_key - key : first_key - key + Keys::num_keys;
+        UInt64 offset = key <= first_key ? first_key - key : Keys::last_key_offset - (key - first_key - 1);
         if (offset < num_candidates)
             taken[offset / bits_in_word] |= UInt64(1) << (offset % bits_in_word);
     }
@@ -317,7 +323,8 @@ String chooseFillValue(const Source * data, size_t size, const UInt8 * null_map,
             return {};
         if (offset < num_candidates)
         {
-            UInt64 key = offset <= first_key - Keys::min_key ? first_key - offset : first_key - offset + Keys::num_keys;
+            UInt64 distance_to_min_key = first_key - Keys::min_key;
+            UInt64 key = offset <= distance_to_min_key ? first_key - offset : Keys::max_key - (offset - distance_to_min_key - 1);
             return makeFillValue<T>(Keys::fromKey(static_cast<Bits>(key)));
         }
     }
