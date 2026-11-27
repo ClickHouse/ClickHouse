@@ -26,6 +26,11 @@
                 <can_become_leader>false</can_become_leader>
                 <start_as_follower>true</start_as_follower>
             </server>
+            <server>
+                <id>3</id>
+                <hostname>node3</hostname>
+                <port>9234</port>
+            </server>
         </raft_configuration>
     </keeper_server>
 </clickhouse>

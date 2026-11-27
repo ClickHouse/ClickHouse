@@ -9,7 +9,7 @@ ClusterUpdateActions joiningToClusterUpdates(const ClusterConfigPtr & cfg, std::
 
 ClusterUpdateActions leavingToClusterUpdates(const ClusterConfigPtr & cfg, std::string_view leaving);
 
-/// False if `updates` both change and remove a server, or leave the cluster without a participant.
+/// False if `updates` both change and remove a server, or remove the last participant with a non-zero priority.
 bool isValidClusterUpdate(const ClusterConfigPtr & cfg, const ClusterUpdateActions & updates);
 
 String serializeClusterConfig(const ClusterConfigPtr & cfg, const ClusterUpdateActions & updates = {});
