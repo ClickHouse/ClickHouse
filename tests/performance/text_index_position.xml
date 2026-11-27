@@ -41,7 +41,8 @@
   <query>SELECT count() FROM tab WHERE position(message, 'clickhouse is') = 1</query>
 
   <!-- `tab_large_dictionary` is the worst case for the dictionary scan: every row carries its own token, so
-       the dictionary is as large as the column, and the selective needle is found in 50 rows only. -->
+       the dictionary is as large as the column, and the selective needle is found in 50 rows only. Matching
+       the tokens costs more than filtering the rows, so the cost check skips the scan for the part. -->
   <create_query>
     CREATE TABLE tab_large_dictionary
     (
