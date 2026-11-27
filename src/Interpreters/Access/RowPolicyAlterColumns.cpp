@@ -2,6 +2,7 @@
 
 #include <Access/AccessControl.h>
 #include <Access/RowPolicy.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
 #include <Core/Names.h>
@@ -14,6 +15,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWithElement.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/AlterCommands.h>
@@ -67,7 +70,8 @@ struct FilterNames
     const std::vector<StorageID> & tables;
     const ColumnsDescription & columns;
     NameSet names;
-    NameSet visited_udfs;
+    /// a body is opened once in a subquery that reads a checked table and once elsewhere
+    SetWithMemoryTracking<std::pair<String, bool>> visited_udfs;
     /// `t.`, `db.t.` and `q.` of the checked tables that a subquery reads as `db.t AS q`
     Strings qualifiers;
 
@@ -78,19 +82,22 @@ struct FilterNames
         return checked.table_name == id.table_name && (id.database_name.empty() || checked.database_name == id.database_name);
     }
 
-    [[nodiscard]] bool readsCheckedTable(const ASTPtr & ast) const
+    /// the tables of one subquery level are in its `FROM`, joins and `FROM` or `WITH` subqueries, a subquery
+    /// in its expressions is a level of its own
+    [[nodiscard]] bool readsCheckedTable(const IAST & ast) const
     {
-        if (const auto * table = ast->as<ASTTableIdentifier>())
+        if (const auto * table = ast.as<ASTTableIdentifier>())
             return std::ranges::any_of(tables, [&](const auto & checked) { return binds(*table, checked); });
-        return std::ranges::any_of(ast->children, [&](const auto & child) { return readsCheckedTable(child); });
+        const bool from = ast.as<ASTTableExpression>() || ast.as<ASTWithElement>();
+        return std::ranges::any_of(ast.children, [&](const ASTPtr & child) { return (from || !child->as<ASTSubquery>()) && readsCheckedTable(*child); });
     }
 
-    void collect(const ASTPtr & ast, NameSet bound = {})
+    /// a filter cannot be correlated and cannot read its own table (see `buildFilterInfo`), so the names of a subquery
+    /// level count only when the level or a level around it, to which it can be correlated, reads a checked table
+    void collect(const ASTPtr & ast, NameSet bound = {}, bool record = true, bool in_reader = false)
     {
-        /// a filter cannot be correlated and cannot read its own table (see `buildFilterInfo`), so the names
-        /// of a subquery belong to other tables unless the subquery reads one of the checked tables
-        if (ast->as<ASTSubquery>() && !readsCheckedTable(ast))
-            return;
+        if (ast->as<ASTSubquery>())
+            record = in_reader = in_reader || readsCheckedTable(*ast);
 
         String name;
         if (const auto * table = ast->as<ASTTableIdentifier>())
@@ -109,7 +116,7 @@ struct FilterNames
         if (const auto * identifier = ast->as<ASTIdentifier>())
         {
             name = identifier->name();
-            if (std::ranges::any_of(bound, [&](const auto & parameter) { return name == parameter || name.starts_with(parameter + "."); }))
+            if (!record || std::ranges::any_of(bound, [&](const auto & parameter) { return name == parameter || name.starts_with(parameter + "."); }))
                 return;
             names.insert(name);
             /// a column takes priority over a SQL UDF of the same name, which a bare name calls only as a lambda, `arrayExists(udf, arr)`
@@ -124,15 +131,15 @@ struct FilterNames
             {
                 for (const auto & parameter : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
                     bound.insert(parameter);
-                collect(function->arguments->children[1], bound);
+                collect(function->arguments->children[1], bound, record, in_reader);
                 return;
             }
         }
-        if (auto body = UserDefinedSQLFunctionFactory::instance().tryGet(name); body && visited_udfs.insert(name).second)
-            collect(body);
+        if (auto body = UserDefinedSQLFunctionFactory::instance().tryGet(name); record && body && visited_udfs.emplace(name, in_reader).second)
+            collect(body, {}, record, in_reader);
 
         for (const auto & child : ast->children)
-            collect(child, bound);
+            collect(child, bound, record, in_reader);
     }
 };
 
