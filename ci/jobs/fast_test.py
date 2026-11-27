@@ -280,6 +280,8 @@ def main():
             print(f"NOTE: Using custom sccache endpoint: {os.environ['SCCACHE_ENDPOINT']}")
         if os.environ.get("AWS_ACCESS_KEY_ID"):
             print("NOTE: Using custom AWS credentials for sccache")
+            # Explicit credentials and anonymous access are mutually exclusive.
+            os.environ.pop("SCCACHE_S3_NO_CREDENTIALS", None)
         else:
             os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
 

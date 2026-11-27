@@ -105,14 +105,19 @@ integration_dind_env = dind_containment_env(LIMITED_MEM)
 # different runs (and missed the cache). Whole GiB is stable across such hosts.
 BINARY_DOCKER_MEM = Utils.physical_memory() // 1024**3 * 1024**3
 
-# A pull request against the default branch runs untrusted code and only reads the
-# sccache bucket, so its containers must not reach the EC2 instance metadata endpoint.
-# Every other context (master, release branches, backports, the merge queue) writes the
-# bucket and reaches the metadata endpoint for credentials through host networking.
+# A pull request against the default branch of the public repository runs untrusted
+# code and only reads the sccache bucket, so its containers must not reach the EC2
+# instance metadata endpoint. Every other context (master, release branches, backports,
+# the merge queue, and every build in the private repository) writes a bucket and
+# reaches the metadata endpoint for credentials through host networking.
 _info = Info()
 HOST_NETWORK = (
     ""
-    if _info.pr_number > 0 and _info.base_branch == Settings.MAIN_BRANCH
+    if (
+        _info.repo_name == "ClickHouse/ClickHouse"
+        and _info.pr_number > 0
+        and _info.base_branch == Settings.MAIN_BRANCH
+    )
     else "+--network=host"
 )
 

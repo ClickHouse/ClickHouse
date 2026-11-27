@@ -298,6 +298,8 @@ def setup_build_caches_env(info):
             print(f"NOTE: Using custom sccache endpoint: {os.environ['SCCACHE_ENDPOINT']}")
         if os.environ.get("AWS_ACCESS_KEY_ID"):
             print("NOTE: Using custom AWS credentials for sccache")
+            # Explicit credentials and anonymous access are mutually exclusive.
+            os.environ.pop("SCCACHE_S3_NO_CREDENTIALS", None)
         else:
             os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
     else:
@@ -350,6 +352,10 @@ def records_access_time(directory):
 def restore_thinlto_cache(info, release_type):
     os.makedirs(THINLTO_CACHE_DIR, exist_ok=True)
     publishes = info.pr_number == 0
+    # A read-only PR build in the public repository runs without host networking, so it
+    # has no instance-metadata credentials: read the shared cache anonymously. Publishers
+    # (master and the performance-reference builds) keep their credentials.
+    anonymous = not publishes and info.repo_name == "ClickHouse/ClickHouse"
     atime = records_access_time(THINLTO_CACHE_DIR)
     print(
         f"NOTE: the file system of the ThinLTO cache {'records' if atime else 'does not record'} access times"
@@ -362,6 +368,7 @@ def restore_thinlto_cache(info, release_type):
         s3_path=f"{THINLTO_CACHE_S3_PATH}/{release_type}.tar.zst",
         local_path=archive,
         no_strict=True,
+        anonymous=anonymous,
     ):
         print(f"NOTE: no ThinLTO cache for [{release_type}], the links optimize every module")
         return
