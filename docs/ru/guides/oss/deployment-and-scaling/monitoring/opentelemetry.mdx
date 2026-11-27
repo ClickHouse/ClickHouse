@@ -9,11 +9,11 @@ doc_type: 'guide'
 
 [OpenTelemetry](https://opentelemetry.io/) — это открытый стандарт для сбора трейсов и метрик в распределённых приложениях. ClickHouse в некоторой степени поддерживает OpenTelemetry.
 
-## Передача контекста трассировки в ClickHouse {#supplying-trace-context-to-clickhouse}
+## Передача контекста трассы в ClickHouse {#supplying-trace-context-to-clickhouse}
 
-ClickHouse принимает HTTP-заголовки контекста трассировки, как описано в [рекомендации W3C](https://www.w3.org/TR/trace-context/). Он также принимает контекст трассировки через собственный протокол, который используется для обмена данными между серверами ClickHouse или между клиентом и сервером. Для ручного тестирования заголовки контекста трассировки, соответствующие рекомендации Trace Context, можно передать в `clickhouse-client` с помощью флагов `--opentelemetry-traceparent` и `--opentelemetry-tracestate`.
+ClickHouse принимает HTTP-заголовки контекста трассы, как описано в [рекомендации W3C](https://www.w3.org/TR/trace-context/). Он также принимает контекст трассы через собственный протокол, который используется для обмена данными между серверами ClickHouse или между клиентом и сервером. HTTP-обработчики протоколов Prometheus (предоставление метрик, удалённая запись, удалённое чтение и API запросов) также принимают HTTP-заголовки контекста трассы. Для ручного тестирования заголовки контекста трассы, соответствующие рекомендации Trace Context, можно передать в `clickhouse-client` с помощью флагов `--opentelemetry-traceparent` и `--opentelemetry-tracestate`.
 
-Если родительский контекст трассировки не передан или переданный контекст трассировки не соответствует указанному выше стандарту W3C, ClickHouse может начать новую трассировку с вероятностью, задаваемой настройкой [opentelemetry&#95;start&#95;trace&#95;probability](/ru/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability).
+Если родительский контекст трассы не передан или переданный контекст трассы не соответствует указанному выше стандарту W3C, ClickHouse может начать новую трассу с вероятностью, задаваемой настройкой [opentelemetry&#95;start&#95;trace&#95;probability](/ru/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability).
 
 ## Передача контекста трассировки {#propagating-the-trace-context}
 

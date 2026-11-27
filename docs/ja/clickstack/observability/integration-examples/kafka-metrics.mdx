@@ -1,0 +1,280 @@
+---
+slug: /clickstack/observability/integration-examples/kafka-metrics
+title: 'ClickHouse オブザーバビリティで Kafka メトリクスを監視する'
+sidebarTitle: 'Kafka メトリクス'
+description: 'OpenTelemetry JMX Metric Gatherer を使用して Kafka ブローカーのメトリクスを収集し、ClickHouse オブザーバビリティに送信します。'
+doc_type: 'guide'
+keywords: ['Kafka', 'メトリクス', 'OTEL', 'ClickHouse オブザーバビリティ', 'JMX']
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+OpenTelemetry JMX Metric Gatherer を使用して Kafka ブローカーのメトリクスを収集し、ClickHouse オブザーバビリティに送信します。[デモデータセット](#demo-dataset)を使用すると、Kafka をデプロイしなくてもこのインテグレーションを試せます。
+
+## 前提条件 {#prerequisites}
+
+* ClickHouse オブザーバビリティのサービス
+* Docker (Docker Compose を含む) と `curl`
+* 独自のメトリクスを使用する場合は、リモート JMX が有効化され、収集コンポーネントから接続可能な Kafka ブローカー
+
+### 接続情報 {#connection-details}
+
+<Tabs>
+  <Tab title="完全マネージド型">
+    <BetaBadge label="ベータ版サービス" />
+
+    ClickHouse オブザーバビリティを開き、**チーム設定 → Data → マネージドテレメトリー** に移動して、OTLP HTTPエンドポイントとAPIキーをコピーします。**Copy connection details** で設定をまとめてコピーできるほか、**Reveal key** でマスクされたキーを表示できます。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![マネージドテレメトリーの接続情報](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    JMX 収集コンポーネントまたはデモ用 collector を実行する端末で、次の変数を設定します。
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    プレースホルダーは、サービスの正確なエンドポイント (ポートを含む) とAPIキーに置き換えてください。エンドポイントには `/v1/metrics` 接尾辞を付けず、ベースの HTTP エンドポイントを指定します。シグナルのパスはエクスポーターによって追記されます。
+  </Tab>
+
+  <Tab title="セルフマネージド">
+    collector の接続可能な OTLP HTTPエンドポイント (例: `http://YOUR_COLLECTOR_HOST:4318`) と認証設定を使用します。collector で認証が不要な場合は、JMX 収集コンポーネントの `-Dotel.exporter.otlp.headers` 引数と、デモ用 collector の `headers` ブロックを省略してください。セットアップ手順については、[セルフマネージド版スタートガイド](/ja/clickstack/self-configured/getting-started/managed) を参照してください。
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+エンドポイントには、収集コンポーネントまたは collector のコンテナから接続可能である必要があります。宛先の collector をこのコンピューター上で実行している場合は、`http://host.docker.internal:4318` を使用してください。以下の Docker コマンドには、このホストのマッピングがあらかじめ含まれています。
+
+## 既存の Kafka デプロイメントとの連携 {#existing-kafka}
+
+<Steps>
+  <Step title="ブローカーの JMX エンドポイントを確認する" id="verify-jmx">
+    ブローカーに設定されているリモート JMX エンドポイントを使用します。ポート `9999` で JMX を公開しているブローカーの場合は次のとおりです。
+
+    ```bash
+    export KAFKA_JMX_URL='service:jmx:rmi:///jndi/rmi://YOUR_KAFKA_HOST:9999/jmxrmi'
+    export KAFKA_BROKER_ID='broker-0'
+    ```
+
+    ホスト名とブローカー ID は実際の値に置き換えてください。ブローカーがアドバタイズする RMI ホスト名にも、収集コンポーネントから接続可能である必要があります。ブローカーがレジストリと RMI で別々のポートを使用している場合は、ネットワーク上で両方のポートを許可してください。収集コンポーネントは JMX を読み取るだけなので、Kafka のクライアントポート `9092` は必要ありません。
+
+    共有 Docker ネットワーク上のコンテナから接続する場合は、ブローカーのコンテナホスト名を使用します。ブローカーが Docker ホスト上で動作している場合は `host.docker.internal` を使用し、コンテナから到達可能なホスト名をアドバタイズするようにブローカーを設定してください。JMX へのアクセスは監視用ネットワークからに限定し、ブローカーの認証および TLS 設定はそのまま維持してください。
+  </Step>
+
+  <Step title="JMX Metric Gatherer をダウンロードする" id="download-jmx">
+    ```bash
+    curl -fL -o opentelemetry-jmx-metrics.jar \
+      https://github.com/open-telemetry/opentelemetry-java-contrib/releases/download/v1.32.0/opentelemetry-jmx-metrics.jar
+    ```
+  </Step>
+
+  <Step title="収集コンポーネントを設定する" id="configure-gatherer">
+    ダウンロードした JAR と同じディレクトリに、次の内容を `compose.yaml` として保存します。
+
+    ```yaml
+    services:
+      kafka-jmx-gatherer:
+        image: eclipse-temurin:11-jre
+        extra_hosts:
+          - "host.docker.internal:host-gateway"
+        environment:
+          - KAFKA_JMX_URL
+          - KAFKA_BROKER_ID
+          - OTEL_EXPORTER_OTLP_ENDPOINT
+          - OTEL_EXPORTER_OTLP_AUTHORIZATION
+        volumes:
+          - ./opentelemetry-jmx-metrics.jar:/app/opentelemetry-jmx-metrics.jar:ro
+        command:
+          - sh
+          - -c
+          - >-
+            exec java
+            -Dotel.jmx.service.url="$${KAFKA_JMX_URL}"
+            -Dotel.jmx.target.system=kafka
+            -Dotel.jmx.interval.milliseconds=10000
+            -Dotel.metrics.exporter=otlp
+            -Dotel.exporter.otlp.protocol=http/protobuf
+            -Dotel.exporter.otlp.endpoint="$${OTEL_EXPORTER_OTLP_ENDPOINT}"
+            -Dotel.exporter.otlp.headers="authorization=$${OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+            -Dotel.resource.attributes="service.name=kafka-service,kafka.broker.id=$${KAFKA_BROKER_ID}"
+            -jar /app/opentelemetry-jmx-metrics.jar
+    ```
+
+    ブローカーが既存の Docker ネットワーク上にある場合は、Compose 設定で `kafka-jmx-gatherer` をそのネットワークに接続してください。JMX で認証を使用する場合は `otel.jmx.username` および `otel.jmx.password` プロパティを追加し、TLS を使用する場合は適切なトラストストアを設定してください。詳しくは[収集コンポーネントの認証および TLS 設定](https://github.com/open-telemetry/opentelemetry-java-contrib/tree/v1.32.0/jmx-metrics#configuration)を参照してください。
+  </Step>
+
+  <Step title="収集を開始する" id="run-gatherer">
+    この端末で[接続変数](#connection-details)とブローカー用の変数を設定し、`compose.yaml` があるディレクトリで次のコマンドを実行します。
+
+    ```bash
+    docker compose up kafka-jmx-gatherer
+    ```
+
+    端末は開いたままにし、JMX の接続エラーや OTLP のエクスポートエラーが出ていないか確認してください。収集コンポーネントは 10 秒ごとにメトリクスを収集します。サービスを確認する前に、少なくとも収集インターバル 2 回分待ってください。テストが終わったら **Ctrl+C** で停止します。
+
+    ブローカーが複数ある場合は、ブローカーごとにそれぞれの JMX URL と `kafka.broker.id` を指定して、収集コンポーネントを 1 つずつ実行してください。
+  </Step>
+
+  <Step title="メトリクスを確認する" id="verify-metrics">
+    **Chart Explorer** を開き、**Metrics** ログソースを選択して `ServiceName:kafka-service` でフィルタリングし、**Last 15 minutes** を選択します。`kafka.partition.count`、`kafka.partition.under_replicated`、`kafka.message.count` などが表示されていることを確認してください。トラフィック関連のメトリクスに意味のある値が出るのは、ブローカーにアクティビティがある場合のみです。
+  </Step>
+</Steps>
+
+## デモデータセット {#demo-dataset}
+
+このサンプルには、約 29 時間にわたって 5 分間隔でサンプリングされた、Gauge 型および合計型のデータポイント 6,282 個が含まれています。元のデータセットに見られるトラフィックの急増、リクエスト低減、コンシューマーラグ、パーティションの稼働状態のパターンはそのまま保持されています。Kafka のデプロイやデータベースへの直接アクセスは必要ありません。
+
+開始する前に、[接続変数](#connection-details)を設定してください。
+
+<Steps>
+  <Step title="サンプルメトリクスをダウンロードする" id="download-sample">
+    [サンプルバンドルをダウンロード](/ja/assets/kafka-metrics-demo.zip) (約 53 KB) し、`kafka-metrics-demo.json` を作業ディレクトリに展開します。
+  </Step>
+
+  <Step title="デモ用 collector を設定する" id="configure-demo-collector">
+    以下の内容を `kafka-metrics-demo.yaml` として保存します。
+
+    ```yaml
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      resource/demo:
+        attributes:
+          - key: service.name
+            value: kafka-demo
+            action: upsert
+      transform/demo_timestamps:
+        error_mode: propagate
+        metric_statements:
+          - context: datapoint
+            statements:
+              - set(cache["interval_ns"], time_unix_nano - start_time_unix_nano)
+              - set(time, Now() - Duration("2m") - (Time("2025-11-06T22:14:00Z", "%Y-%m-%dT%H:%M:%SZ") - time))
+              - set(start_time_unix_nano, time_unix_nano - cache["interval_ns"])
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+    exporters:
+      otlp_http/managed:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+    service:
+      pipelines:
+        metrics:
+          receivers: [otlp]
+          processors: [resource/demo, transform/demo_timestamps, batch]
+          exporters: [otlp_http/managed]
+    ```
+
+    <Note>
+      このデモ専用の変換は、メトリクス値と、各データポイントの開始タイムスタンプと終了タイムスタンプの時間間隔を保持したまま、タイムスタンプを現在時刻に合わせて更新します。実際の Kafka メトリクスを扱う場合は不要です。バッチサイズの上限は、宛先の collector が受け付けられるサイズにアップロードを抑えるためのものです。
+    </Note>
+  </Step>
+
+  <Step title="デモ用 collector を実行する" id="run-demo-collector">
+    設定ファイルを置いたディレクトリで collector を実行します。この端末は開いたままにしておいてください。
+
+    ```bash
+    docker run --rm --name kafka-metrics-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -p 127.0.0.1:14318:4318 \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/kafka-metrics-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+  </Step>
+
+  <Step title="サンプルを送信する" id="load-metrics">
+    別の端末を開き、ダウンロード先のディレクトリで次のコマンドを実行します。
+
+    ```bash
+    curl --fail-with-body -sS http://localhost:14318/v1/metrics \
+      -H 'Content-Type: application/json' \
+      --data-binary @kafka-metrics-demo.json
+    ```
+
+    `{}` や `{"partialSuccess":{}}` などのレスポンスが返ってくれば、ローカルの collector がリクエストを受け付けています。collector の端末でエクスポートエラーが出ていないか確認し、転送が終わるまで数秒待ちます。データを確認したら、**Ctrl+C** で collector を停止します。サンプルを再送信すると、データポイントが重複する場合があります。
+  </Step>
+
+  <Step title="メトリクスを確認する" id="verify-demo-metrics">
+    [次のセクション](#dashboards)のダッシュボードをインポートし、`ServiceName:kafka-demo` でフィルタリングしたうえで **過去2日間** を選択します。このサンプルには Gauge 型と合計型の両方のメトリクスが含まれており、データベースへの直接アクセスは必要ありません。
+  </Step>
+</Steps>
+
+## ダッシュボードと可視化 {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-metrics-dashboard.json" download="kafka-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">ダッシュボード設定をダウンロードする</TrackedLink>} id="download-dashboard" />
+
+  <Step title="ダッシュボードをインポートする" id="import-dashboard">
+    1. **ダッシュボード** を開き、右上の **Import** をクリックします。
+    2. `kafka-metrics-dashboard.json` をアップロードします。
+    3. 各チャートを **Metrics** ログソースに割り当て、**Finish Import** をクリックします。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ダッシュボードのインポートボタン](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="ダッシュボードを表示する" id="view-dashboard">
+    サンプルデータを使用する場合は、`ServiceName:kafka-demo` でフィルタし、**過去2日間** を選択します。ダッシュボードには、スループット、コンシューマーラグ、リクエスト低減、キューの深さ、オフラインのパーティションが表示されます。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse オブザーバビリティの Kafka メトリクスデモダッシュボード。スループット、コンシューマーラグ、リクエスト低減、キューの深さ、オフラインのパーティションを表示](/images/clickstack/observability-kafka-metrics-dashboard.png)
+      </Frame>
+    </div>
+
+    <Note>
+      このダッシュボードは、事前計算済みのレートやコンシューマーラグを含め、デモ用のメトリクス名を使用しています。ブローカーの JMX 収集コンポーネントが公開するメトリクスはこれとは異なるため、実際のデータに合わせてチャートを調整してください。なお、ブローカーの JMX だけではコンシューマーグループの遅延を取得できません。
+    </Note>
+  </Step>
+</Steps>
+
+## トラブルシューティング {#troubleshooting}
+
+### JMX 接続に失敗する {#jmx-connection-fails}
+
+`docker compose logs kafka-jmx-gatherer` で収集コンポーネントの出力を確認してください。JMX が有効になっていること、レジストリとアドバタイズされた RMI エンドポイントの両方に接続可能であること、設定済みの JMX 認証情報とトラストストアがブローカー側と一致していることを確認してください。コンテナのホスト名を使用する場合は、各コンテナが想定どおりのネットワークを共有している必要があります。
+
+### メトリクスが表示されない {#no-metrics}
+
+* 収集コンポーネントまたはデモ用 collector の出力に、接続、認証、またはエクスポートのエラーが出ていないか確認してください。
+* OTLP HTTPエンドポイントと認証設定が、サービスの接続情報と一致していることを確認してください。
+* **Metrics** ログソース、サービス名フィルター、および時間範囲を確認してください。デモの場合は **過去2日間** を選択してください。
+* 既存の collector を使用している場合は、そのメトリクスパイプラインに OTLP レシーバーとメトリクスエクスポーターが含まれていることを確認してください。
+* デモ用ダッシュボードを使用する前に、**Chart Explorer** で実際に受信しているメトリクス名を確認してください。
+
+### Kafka クライアントコマンドにおける JMX ポートの競合 {#port-conflicts}
+
+ブローカーのコンテナ内で Kafka クライアントコマンドを実行する場合は、クライアントが同じポートにバインドしようとしないよう、ブローカーから継承された JMX 設定をそのコマンドに対して解除してください。
+
+```bash
+env -u JMX_PORT -u KAFKA_JMX_OPTS kafka-topics --list --bootstrap-server YOUR_KAFKA_HOST:9092
+```
+
+## 次のステップ {#next-steps}
+
+* パーティションの稼働状態やリクエストの低減を監視する[アラート](/ja/clickstack/observability/features/alerts)を設定します。
+* ブローカーのメトリクス向けに[ダッシュボード](/ja/clickstack/observability/features/dashboards/overview)を追加で作成します。
+* collector のデプロイ方法については、[OpenTelemetry データの送信](/ja/clickstack/observability/ingesting-data/opentelemetry)を参照してください。

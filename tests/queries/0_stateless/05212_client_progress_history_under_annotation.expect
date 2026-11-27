@@ -26,9 +26,9 @@ log_user 0
 set timeout 60
 match_max 100000
 # The annotation is shown only when the progress bar is wider than twice the annotation, and it
-# covers the first cells of the bar: the terminal is just wide enough for it to be shown, so that
-# the annotation spans more than a third of the bar and covers the green-to-yellow transition.
-set stty_init "rows 25 cols 180"
+# covers the first cells of the bar, including the green-to-yellow transition. The terminal is wide
+# enough for an `IO` term too, which the annotation gets in the LLVM coverage build.
+set stty_init "rows 25 cols 220"
 
 expect_after {
     -i $any_spawn_id eof { exp_continue }

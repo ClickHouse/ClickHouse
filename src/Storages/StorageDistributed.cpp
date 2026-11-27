@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Utils.h>
+#include <DataTypes/hasNullable.h>
 
 #include <Disks/IVolume.h>
 
@@ -892,6 +893,14 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     for (const auto & col : sharding_key_dag.getRequiredColumnsNames())
     {
         if (std::ranges::find(expr_key_required_columns, col) == expr_key_required_columns.end())
+            return false;
+    }
+
+    /// `-0.` and `0.` are the same key of `GROUP BY`, `DISTINCT` and `LIMIT BY`, but a sharding key can send them
+    /// to different shards (e.g. `cityHash64(f)` hashes the binary representation), so a group can span shards.
+    for (const auto * input : sharding_key_dag.getInputs())
+    {
+        if (hasTypeThatCanContainFloat(input->result_type))
             return false;
     }
 
@@ -2522,6 +2531,12 @@ void findRemoteFunctionSecretArguments(FunctionSecretArgumentsFinder & finder)
     /// remote('addresses_expr', db.table, 'user' [, 'password'] [, sharding_key])
     /// remote('addresses_expr', 'db', 'table', 'user' [, 'password'] [, sharding_key])
     /// remote('addresses_expr', table_function(), 'user' [, 'password'] [, sharding_key])
+
+    /// remote('addresses_expr', table_function(...)), remote(named_collection, database = table_function(...))
+    finder.maskUnknownTableFunction(1);
+    for (std::string_view key : {"database", "db"})
+        for (ssize_t i = finder.findNamedArgument(nullptr, key, 1); i >= 0; i = finder.findNamedArgument(nullptr, key, static_cast<size_t>(i) + 1))
+            finder.maskUnknownTableFunction(static_cast<size_t>(i), /*argument_is_named=*/ true);
 
     /// But we should check the number of arguments first because we don't need to do any replacements in case of
     /// remote('addresses_expr', db.table)

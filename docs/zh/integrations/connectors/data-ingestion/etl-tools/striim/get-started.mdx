@@ -1,0 +1,218 @@
+---
+title: "Striim for ClickHouse 入门"
+sidebarTitle: "入门"
+slug: /integrations/connectors/data-ingestion/etl-tools/striim/get-started
+description: "注册 Striim for ClickHouse，配置源端和 ClickHouse 目标端，并启动复制管道。"
+doc_type: guide
+keywords: ['striim', 'clickhouse', 'cdc', 'data ingestion', 'real-time replication']
+---
+
+按照本指南完成注册，即可开始将数据从源数据库复制到您的 ClickHouse 实例。完整示例请参阅 [SQL Server 示例管道](/zh/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline)。
+
+## 前置条件 {#prerequisites}
+
+| **所需条件**   | **详情**                                                                                                                                                                                                                                                          |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ClickHouse | 一个正在运行的 ClickHouse Cloud 服务或自管理部署，并具备创建数据库和用户所需的管理员权限。`CoalescingMergeTree` 要求 ClickHouse 服务器版本为 25.6 或更高。                                                                                                                                                      |
+| 源          | 具备源数据系统的管理员访问权限，以便配置 CDC (变更数据捕获) 并授予所需的读取器权限。                                                                                                                                                                                                                  |
+| 网络路径       | 从 AWS 上的 Striim 到源系统及 ClickHouse 之间已获批准的网络路径。如有需要，Striim for ClickHouse 支持通过 IP 白名单限制、AWS PrivateLink 或 SSH 隧道建立私有连接。更多详情请参阅 Striim 文档中的 [Security and Networking](https://www.striim.com/docs/striimforclickhouse/en/security-and-networking-for-striim.html)。 |
+
+## 创建 Striim 账户 {#create-your-striim-account}
+
+您可以直接在 Striim 注册，也可以通过 AWS Marketplace 注册。账户激活后，14 天免费试用即开始计算。试用无需绑定信用卡。
+
+1. 打开 [Striim for ClickHouse 注册表单](https://go2.striim.com/trial-clickhouse)，填写必填信息，然后点击 **Sign up**。
+2. 打开账户激活邮件，激活账户并登录 Striim 云控制台。
+
+如果您的组织通过 AWS Marketplace 购买，请先在 AWS Marketplace 上订阅 Striim for ClickHouse，然后按照 [Subscribe and sign up](https://www.striim.com/docs/striimforclickhouse/en/subscribe-and-sign-up.html#id211623) 中的说明完成 Striim 账户设置。
+
+## 创建服务 {#create-your-service}
+
+服务是运行在 AWS 上的托管 Striim 环境，您可以在其中构建、运行和监控写入 ClickHouse 的管道。每个账户同一时间只能有一个活跃的 Striim for ClickHouse 服务。
+
+1. 首次登录 Striim for ClickHouse 时，选择 **Get Started**。也可以在侧边栏中选择 **Marketplace**，然后在 **Striim for ClickHouse** 下选择 **Create**。
+2. 配置以下内容：
+   * **Service Name：** 用于标识工作负载或环境的名称。
+   * **AWS Region：** 服务运行所在的区域。如条件允许，请选择与您的 ClickHouse 相同的区域，以降低延迟并减少 cross-region 传输费用；否则，请选择距离最近的可用区域。
+3. 名称和区域创建后无法更改。如需更改其中任一项，必须删除该服务并重新创建。
+4. 选择 **Create a service**。预配可能需要几分钟。新服务默认使用 **Premium** 计划，您可以在 **Billing** 页面更改计划。
+5. 服务就绪后，选择启动方式：
+   * **Start building with Striim Clara AI：** 使用 Striim 托管的 Clara AI 启动，无需 API key。
+   * **Review your service settings before launch：** 在启动前配置您自己的 AI 服务提供商、管理用户，或设置 SSH 或 AWS PrivateLink。
+
+之后登录时，从 **Services** 列表中打开该服务，即可构建管道或管理服务设置。
+
+![创建 Striim for ClickHouse 服务](/images/integrations/striim/create-service.png)
+
+## 准备 ClickHouse 目标 {#prepare-your-clickhouse-target}
+
+<Steps>
+  <Step title="获取连接详情" id="get-connection-details">
+    在 ClickHouse Cloud 中，选择您的服务，点击 **Connect**，然后选择 **HTTPS**，即可查看主机和端口 (8443) 。如果使用自管理 ClickHouse，请向管理员获取主机和端口。
+  </Step>
+
+  <Step title="选择或创建目标数据库" id="create-target-database">
+    Striim 不会自动创建目标数据库；如果目标数据库不存在，应用程序会在启动时中止。请使用现有数据库，或新建一个数据库：
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS <your_database>;
+    ```
+  </Step>
+
+  <Step title="为 Striim 创建专用用户" id="create-target-user">
+    请使用专用用户，而不是默认的管理员用户：
+
+    ```sql
+    CREATE USER <user> IDENTIFIED BY '<password>';
+    ```
+
+    如果使用自管理 ClickHouse，还可以配置 SSL X.509 身份验证。
+  </Step>
+
+  <Step title="授予所需特权" id="grant-target-privileges">
+    按照 [Striim 文档](https://www.striim.com/docs/striimforclickhouse/en/initial-setup-to-write-to-clickhouse.html)中的要求，为该用户授予以下特权：
+
+    ```sql
+    GRANT CREATE TABLE ON <your_database>.* TO <user>;
+    GRANT ALTER TABLE ON <your_database>.* TO <user>;
+    GRANT DROP TABLE ON <your_database>.* TO <user>;
+    GRANT TRUNCATE ON <your_database>.* TO <user>;
+    GRANT CREATE DATABASE ON *.* TO <user>;
+    GRANT SHOW TABLES ON *.* TO <user>;
+    GRANT SHOW DATABASES ON *.* TO <user>;
+    GRANT SELECT ON information_schema.* TO <user>;
+    GRANT SELECT ON system.tables TO <user>;
+    GRANT SELECT ON system.columns TO <user>;
+    GRANT SELECT ON system.parts TO <user>;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON <your_database>.* TO <user>;
+    ```
+  </Step>
+</Steps>
+
+### 推荐的 ClickHouse 配置 {#recommended-clickhouse-configuration}
+
+| 设置项   | **ClickHouse Cloud**                                         | **自管理**                                                  |
+| ----- | ------------------------------------------------------------ | -------------------------------------------------------- |
+| 端口    | 8443 (默认开放，由 ClickHouse Cloud 管理)                            | 按需开放：8123 (HTTP) 、9000 (原生协议) 、8443 (HTTPS) 、9440 (TLS)  |
+| 加密    | 始终使用 TLS                                                     | 需自行配置 TLS，并在连接配置中通过 `EnableSSL` 属性启用                     |
+| 数据库引擎 | `Shared`                                                     | `Atomic` (默认)                                            |
+| 身份验证  | 用户名和密码                                                       | 用户名和密码，或 SSL X.509 (双向 TLS)                              |
+| 私有连接  | AWS PrivateLink (仅限 ClickHouse Cloud Scale 和 Enterprise 计划)  | SSH 隧道或 IP 白名单限制                                         |
+
+## 创建连接配置 {#create-a-connection-profile}
+
+创建一个 ClickHouse 连接配置，供管道按名称引用。在连接配置向导中，配置以下各项：
+
+| **属性**                      | **值**                                                                        |
+| --------------------------- | ---------------------------------------------------------------------------- |
+| 连接 URL                      | `jdbc:clickhouse://<host>:<port>`，其中主机和端口取自上一节 (ClickHouse Cloud 使用端口 8443)  |
+| 身份验证类型                      | 密码 (默认) 或 SSL X.509                                                          |
+| 用户名 / 密码                    | 您在上一步准备 ClickHouse 目标时创建的 Striim for ClickHouse 专用用户的凭证信息。                   |
+| 客户端 SSL 证书、客户端 SSL 私钥、CA 证书 | 仅在使用 SSL X.509 时必填。私钥必须为 PKCS#8 PEM 格式。                                      |
+
+如需轮换凭证或证书，请打开 **连接配置**，编辑该配置并保存更改。
+
+如果使用 AWS PrivateLink，请保留 ClickHouse Cloud 提供的连接 URL，并配置 Route 53 私有托管区域，使您的 Striim 服务能够将该主机名解析到专用终结点。请参阅 [Initial setup to write to ClickHouse](https://www.striim.com/docs/striimforclickhouse/en/initial-setup-to-write-to-clickhouse.html)。
+
+## 准备数据源 {#prepare-your-source}
+
+每种来源类型的设置方式各不相同。请在 Striim for ClickHouse 文档的[数据源](https://www.striim.com/docs/striimforclickhouse/en/sources.html)部分找到您的数据源，并按照相应的配置说明进行操作。对于支持 CDC (变更数据捕获) 的数据源，您可能需要在数据源上启用变更捕获，并为 Striim 创建一个专用用户，同时授予该数据源文档中列出的特权。继续之前，请先确认并记下以下信息：
+
+* Striim 用户的主机、端口和凭证。
+* 要复制的 schema 和表。请尽量选择具体的表，而不是整个 schema。
+* 确认 Striim 能够从 AWS 访问该数据源 (防火墙、VPC、PrivateLink、SSH 或 IP 允许列表) 。
+* 您的订阅套餐：Oracle、SQL Server、Snowflake 和 Salesforce 的 CDC 需要 Premium 套餐。
+
+## 构建并启动管道 {#build-and-start-a-pipeline}
+
+您可以通过以下任一方法创建管道：
+
+* **Striim Clara AI：** 选择 **Ask Clara** 并描述所需的管道。例如：“Build a pipeline from &lt;source&gt; to ClickHouse for &lt;schema.table&gt;.” Clara 会提示您指定读取策略并提供连接详情，然后生成 TQL 执行计划。审阅该执行计划后，选择 **Accept TQL**，再选择 **Deploy and Start this App**。请参阅 [Build your first application](https://www.striim.com/docs/striimforclickhouse/en/build-your-first-application.html)。
+* **自动化管道向导：** 创建两个相互关联的应用：一个用于初始加载，另一个用于 CDC (变更数据捕获) 。初始加载完成后，Striim 会自动启动 CDC 应用。[请参阅下方步骤](#using-the-automated-pipeline-wizard)。
+* **Flow Designer：** 以可视化方式创建和编辑应用，并可在数据写入 ClickHouse 之前添加转换。您还可以导出应用的 TQL，编辑后再导入更新后的配置。
+
+### 使用自动化管道向导 {#using-the-automated-pipeline-wizard}
+
+1. 选择 **Apps &gt; Create an App**，然后搜索并选择你的数据源。
+2. 选择 **Get Started**，如果你的数据源支持，请选择自动化管道 (初始加载 + CDC (变更数据捕获) ) 。
+3. 输入管道名称，选择一个命名空间，然后选择 **Next**。
+4. 输入数据源连接属性，每个设置项旁边都会显示内联帮助。Striim 会验证该连接；如有失败，必须先解决，才能继续。
+5. 选择要复制的 schema (系统 schema 除外) ，然后选择 **Next**。
+6. 选择每个 schema 中的表，然后选择 **Next**。
+7. 选择你的 ClickHouse 连接配置和一个 **表引擎**。有关引擎行为，请参阅[数据如何写入 ClickHouse](#how-data-lands-in-clickhouse)。
+8. 检查表映射，如有需要可进行编辑，然后选择 **Save &amp; Start**。
+
+Striim 会先运行初始加载。初始加载完成后，Striim 会将初始加载应用程序置于静默状态，并自动启动与之关联的 CDC 应用程序。
+
+在初始加载期间，请勿在源表上运行 DDL 语句。从初始加载开始到 CDC 应用程序追平进度为止，请保留源端的变更日志或流。如果管道停止运行，请先查看错误信息及建议的纠正操作，然后再恢复。
+
+## 在 ClickHouse 中验证数据 {#verify-data-in-clickhouse}
+
+1. 在 Striim 监控视图中，确认事件正在被读取和写入。您也可以向 Clara 询问当前的延迟。
+
+2. 在 ClickHouse 中，检查 Striim 创建的表：
+
+   ```sql
+   SHOW CREATE TABLE <your_database>.<your_table>;
+   ```
+
+3. 将行数与源端进行比较。对于 `ReplacingMergeTree` 表，请使用下一节所示的查询。
+
+4. 在源端做一个小改动 (对一条测试行执行插入、更新和删除) ，并确认这些变更已同步到 ClickHouse。
+
+## 数据如何写入 ClickHouse {#how-data-lands-in-clickhouse}
+
+配置 ClickHouse 目标时，请选择 **表引擎**。ClickHouse 写入器默认使用 **`MergeTree`**。表引擎决定了变更的应用方式，以及 Striim 能否创建目标表。
+
+| **表引擎**                                           | **行为**                                                    | **最适用场景**                                    |
+| ------------------------------------------------- | --------------------------------------------------------- | -------------------------------------------- |
+| `ReplacingMergeTree`                              | 更新和删除以新行形式写入，并附带版本号和软删除标记；通过后台合并或 `FINAL` 去重。             | 更新时发送完整行镜像的 CDC 数据源。最简单、吞吐量最高的 CDC 模式；可安全重放。 |
+| `MergeTree`                                       | 默认仅追加。当 Mode = `MERGE` 时，更新和删除会直接应用到表中 (轻量级删除或变更删除) 。     | 初始加载、日志和事件，或需要物理删除行且不希望增加额外列的 CDC 场景。        |
+| `CollapsingMergeTree`                             | 写入符号列：+1 表示当前状态，-1 表示抵消。                                  | 同时发送变更前镜像和变更后镜像的 CDC 数据源。恢复后重放不安全。           |
+| `CoalescingMergeTree`                             | 部分行更新；`NULL` 表示“保持不变”。要求服务器版本为 25.6 或更高，且非键列为 `Nullable`。 | 发送部分行的 CDC 数据源。                              |
+| `SummingMergeTree`                                | 仅支持插入。遇到 `UPDATE` 或 `DELETE` 时应用程序会停止运行。                  | 仅追加的数值聚合，例如计数器。                              |
+| `AggregatingMergeTree`、`Replicated`、`Distributed` | 仅写入数据。您需要在部署前自行创建目标端表。                                    | 物化视图的底层表；集群化和分片的自管理部署。                       |
+
+如需自动创建 schema 并支持模式演进，请使用 `MergeTree`、`ReplacingMergeTree`、`CollapsingMergeTree`、`CoalescingMergeTree` 或 `SummingMergeTree`。对于 `ReplacingMergeTree`，Striim 会添加 `__STRIIM_VERSION` 和 `__STRIIM_ISDELETED` 列；对于 `CollapsingMergeTree`，则添加 `__STRIIM_SIGN` 列。查询 `ReplacingMergeTree` 表时，请使用 `FINAL` 并排除已软删除的行：
+
+```sql
+SELECT * FROM <your_database>.<your_table> FINAL WHERE __STRIIM_ISDELETED = 0;
+```
+
+源数据类型会自动映射为 ClickHouse 类型。详见[支持的数据类型](https://www.striim.com/docs/striimforclickhouse/en/clickhouse-writer-programmer-s-reference.html#supported-data-types-787538)。
+
+## 监控您的管道 {#monitor-your-pipeline}
+
+Striim 会在网页用户界面中展示 ClickHouse 写入器的各项指标，包括已接收的事件数、ClickHouse 已确认的事件数、目标端的数据新鲜度、最近一次写入活动、批次计数以及每张表的合并耗时。系统告警默认自动启用；您还可以添加通过电子邮件、Slack 或 Microsoft Teams 发送的自定义告警。此外，您也可以向 Clara 提问，例如“我的应用程序当前的延迟是多少？”
+
+## 故障排查 {#troubleshooting}
+
+<Accordion title="应用程序启动时停止运行，并提示缺少数据库">
+  Striim 不会自动创建目标数据库。请先在 ClickHouse 中创建该数据库，然后重启应用程序。
+</Accordion>
+
+<Accordion title="找不到表或列，但相同的 schema 在其他环境中可以正常使用">
+  列名始终区分大小写；数据库名和表名是否区分大小写取决于服务器的文件系统 (在常见的 Linux 系统上区分大小写) 。请使用与 ClickHouse 中定义完全一致的大小写。
+</Accordion>
+
+<Accordion title="重启后 CollapsingMergeTree 出现重复数据或负数求和结果">
+  数据投递语义为至少一次，而该引擎不具备去重能力。如果启用了恢复功能，请优先使用 `ReplacingMergeTree`，或使用 Mode 设置为 `MERGE` 的 `MergeTree`。
+</Accordion>
+
+<Accordion title="PrivateLink：连接超时">
+  请检查 VPC 端点的安全组是否允许端口 443、8443、9440 和 3306 的入站流量，并确认出站规则允许该连接。
+</Accordion>
+
+<Accordion title="PrivateLink：连接被对端重置">
+  请在 ClickHouse Cloud 中将 AWS endpoint ID 添加到该服务的允许列表中。
+</Accordion>
+
+<Accordion title="应用程序因无法识别的异常而失败">
+  可以让 Clara 解释该错误并给出修复建议。在对生产环境进行更改之前，请先仔细审查其建议。
+</Accordion>
+
+## 后续步骤 {#next-steps}
+
+* 示例管道：[从 SQL Server 到 ClickHouse](/zh/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline)
+* 有关数据源、转换和模式演进的详细信息，请参阅 [Striim for ClickHouse 文档](https://www.striim.com/docs/striimforclickhouse/en/index-en.html)
+* 除 ClickHouse 外，还需要将数据复制到其他更多目标？请参阅 [Striim Platform](https://www.striim.com/striim-platform/) 或 [Striim Cloud](https://www.striim.com/striim-cloud/)。

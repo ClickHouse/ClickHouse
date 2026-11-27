@@ -1,0 +1,91 @@
+---
+title: "Striim for ClickHouse"
+sidebarTitle: "Vue d’ensemble"
+slug: /integrations/connectors/data-ingestion/etl-tools/striim
+description: "Répliquez vers ClickHouse des données issues de bases de données, d’entrepôts de données, de lacs de données et d’applications SaaS avec Striim for ClickHouse."
+doc_type: guide
+keywords: ['striim', 'clickhouse', 'cdc', 'ingestion de données', 'réplication en temps réel']
+---
+
+[Striim for ClickHouse](https://www.striim.com/docs/striimforclickhouse/en/introducing-striim-for-clickhouse.html) est une solution SaaS entièrement gérée qui achemine vers ClickHouse des données issues de bases de données, d’entrepôts de données, de lacs de données et d’applications SaaS, y compris de sources d’entreprise telles qu’Oracle, Microsoft SQL Server et Snowflake. Chargez les enregistrements existants, puis utilisez la capture des modifications de données (CDC) pour diffuser en continu les insertions, mises à jour et suppressions, et maintenir ainsi les données ClickHouse à jour pour vos charges de travail d’IA, vos tableaux de bord et vos applications de données.
+
+Striim for ClickHouse est hébergé sur Striim Cloud dans AWS et propose une inscription en libre-service, une facturation mensuelle à l’usage et aucun engagement annuel. Inscrivez-vous sur striim.com ou via AWS Marketplace, démarrez un essai gratuit de 14 jours et créez un pipeline à l’aide d’un prompt en langage naturel, d’un assistant ou du concepteur de flux.
+
+## Principales fonctionnalités {#key-features}
+
+* **Capture des modifications de données et chargement initial :** chargez les données existantes, puis passez à une réplication continue en temps réel des insertions, mises à jour et suppressions. Des assistants automatisés de création de pipelines permettent de créer et de lier les deux phases, puis assurent automatiquement la transition du chargement initial vers la réplication CDC.
+* **Writer ClickHouse :** choisissez le table engine de chaque pipeline (`MergeTree`, `ReplacingMergeTree`, `CollapsingMergeTree`, `CoalescingMergeTree`, entre autres). Striim crée les target tables, gère les mises à jour et les suppressions selon le moteur choisi et définit les clés de tri.
+* **Gestion des schémas :** création automatique du schéma cible à partir de la source pour les sources prises en charge, et propagation de certaines modifications DDL (`CREATE TABLE`, `ADD COLUMN`, `ALTER TABLE ... MODIFY COLUMN`, `DROP COLUMN`, `DROP TABLE` et `TRUNCATE TABLE`) pour les sources CDC prises en charge.
+* **Traitement en transit :** filtrez, enrichissez et transformez les données entre la source et ClickHouse.
+* **Opérations assistées par l’IA :** Striim Clara AI, un agent IA conversationnel, crée des pipelines à partir d’une description en langage naturel, indique la latence et le débit, et explique les échecs. Vérifiez le résultat généré avant tout déploiement en production.
+* **Connectivité privée :** AWS PrivateLink, tunnels SSH et liste d’autorisation d’adresses IP vers les sources et ClickHouse.
+* **Supervision et alertes :** supervision intégrée des pipelines et alertes envoyées par e-mail, Slack, Microsoft Teams et via l’interface utilisateur web de Striim.
+
+## Cas d’utilisation {#use-cases}
+
+| **Cas d’utilisation**                                | **Apport de Striim for ClickHouse**                                                                                                                                                                                            |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Analyse en temps réel                                | Les lecteurs CDC maintiennent les tables ClickHouse à jour : les tableaux de bord interactifs reflètent ainsi l’activité d’il y a quelques secondes, et non celle du dernier cycle de traitement par batch.                     |
+| Agents d’IA et RAG                                   | Maintient à jour les tables ClickHouse, y compris celles utilisées pour la recherche vectorielle ou par un serveur MCP, afin que les agents accèdent à des données opérationnelles récentes.                                   |
+| Magasins de caractéristiques et inférence de modèles | Maintient à jour les caractéristiques au niveau de chaque entité pour les modèles qui effectuent des prédictions en quasi temps réel, par exemple pour la détection de fraude ou la personnalisation.                          |
+| Entreposage de données                               | Acheminement direct depuis des sources telles qu’Oracle, SQL Server, Snowflake et Salesforce vers ClickHouse, sans couche de stockage intermédiaire ni de diffusion en continu.                                                |
+| Observability                                        | Diffuse en continu les journaux de bases de données et d’applications dans la même instance ClickHouse que la télémétrie, ce qui permet de les interroger conjointement. Complète l’ingestion via ClickStack et OpenTelemetry. |
+
+## Sources prises en charge {#supported-sources}
+
+Le tableau ci-dessous répertorie les sources par catégorie. La capture des modifications de données (CDC) réplique en continu les insertions, mises à jour et suppressions provenant des sources prises en charge. Le chargement initial copie les enregistrements existants. L&#39;ingestion hors CDC comprend la lecture de fichiers, la lecture via les API d&#39;applications et les flux de messages.
+
+Consultez le [résumé du produit](https://www.striim.com/docs/striimforclickhouse/en/product-summary.html) pour connaître la disponibilité selon les offres, ainsi que la [documentation de Striim for ClickHouse](https://www.striim.com/docs/striimforclickhouse/en/pipelines.html#supported-sources-and-targets-for-striim-for-clickhouse) pour les capacités propres à chaque source et les prérequis de configuration.
+
+| **Catégorie**               | **Sources**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sources CDC                 | Azure CosmosDB<br />MariaDB (y compris Galera Cluster, XPand, SkySQL, Amazon RDS)<br />MongoDB (y compris les déploiements autogérés et MongoDB Atlas sur AWS, Azure, Google Cloud)<br />MySQL (y compris les déploiements autogérés, Amazon Aurora, Amazon RDS, Azure Database, Google Cloud SQL)<br />Oracle (y compris les déploiements autogérés, Amazon RDS)<br />PostgreSQL (y compris les déploiements autogérés, Amazon Aurora, Amazon RDS, Azure Database, Crunchy Postgres, Google AlloyDB, Google Cloud SQL, Neon)<br />SQL Server (y compris les déploiements autogérés, Amazon RDS, Azure SQL Database)<br />Salesforce<br />Snowflake<br />Yugabyte |
+| Autres bases de données     | Teradata                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Entrepôts de données        | BigQuery, Snowflake                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Lacs de données et fichiers | Amazon S3, Azure Data Lake Service, Google Cloud Storage<br />HDFS, système de fichiers MapR, fichiers locaux<br />Formats de fichiers : Avro, Parquet, JSON, XML, texte délimité, texte libre, binaire, journaux d&#39;accès Apache, Cobol copybook, CollectD, HL7v2, Netflow, paires nom-valeur                                                                                                                                                                                                                                                                                                                                                                 |
+| Applications SaaS           | Atlassian Jira<br />Google Ads<br />HubSpot<br />Intercom<br />Microsoft Dynamics 365, Microsoft Dynamics 365 Business Central<br />Salesforce, Salesforce Pardot, Salesforce Platform Event et PushTopic<br />ServiceNow<br />Stripe<br />Zendesk                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Messagerie, IoT et réseau   | Apache Kafka<br />JMS, MQTT, OPC UA, HTTP, TCP, UDP, JMX, Windows Event Log                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+
+## Offres, essai et facturation {#plans-trial-and-billing}
+
+| Paramètre          | **Standard**                                                               | **Premium**                                                                                           |
+| ------------------ | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Capacité de calcul | 4 vCPU                                                                     | 8 vCPU                                                                                                |
+| Sources            | Sources non CDC ; CDC pour PostgreSQL, MySQL, MariaDB, MongoDB, YugabyteDB | Tout le contenu de l&#39;offre Standard, plus le CDC pour Oracle, SQL Server, Snowflake et Salesforce |
+| Cibles             | ClickHouse et File Writer                                                  | ClickHouse et File Writer                                                                             |
+| Régions            | AWS us-east-1, us-east-2, us-west-2                                        | AWS us-east-1, us-east-2, us-west-2                                                                   |
+
+La facturation est mensuelle et à l&#39;usage, sans engagement annuel : elle couvre l&#39;infrastructure de calcul ainsi que les événements traités. Vous pouvez payer par carte de crédit sur striim.com ou via AWS Marketplace. Pour en savoir plus, consultez le [détail de la tarification](https://www.striim.com/docs/striimforclickhouse/en/product-summary.html).
+
+## Considérations opérationnelles {#operational-considerations}
+
+* La livraison suit une sémantique « au moins une fois » (at-least-once). Après un redémarrage ou une récupération, des événements déjà écrits peuvent être réécrits. Les enregistrements résultants dépendent du table engine (voir [Comment les données arrivent dans ClickHouse](/fr/integrations/connectors/data-ingestion/etl-tools/striim/get-started#how-data-lands-in-clickhouse)).
+* L&#39;évolution du schéma ne prend en charge ni le renommage de colonnes ni les modifications de nullabilité, et ne s&#39;applique pas aux cibles `AggregatingMergeTree`, `Replicated` ou `Distributed`. `VersionedCollapsingMergeTree` et `GraphiteMergeTree` ne sont pas pris en charge.
+* Certains types de sources n&#39;ont pas d&#39;équivalent dans ClickHouse et sont ignorés lors de la création automatique du schéma, par exemple `SQL Server GEOGRAPHY`, `GEOMETRY`, `HIERARCHYID` et `SQL_VARIANT` ; `Oracle BFILE`, `LONG`, `LONG RAW`, `SDO_GEOMETRY` et `UROWID` ; `MySQL GEOMETRY` et `SET`.
+
+## Contact et assistance {#contact-and-support}
+
+Striim assure l&#39;assistance de Striim for ClickHouse selon la même [politique d&#39;assistance Striim](https://www.striim.com/msa/) que pour ses autres services. Les clients existants peuvent ouvrir un ticket via le [portail d&#39;assistance Striim](https://support.striim.com/hc/en-us) ou en sélectionnant **Create ticket** dans le menu d&#39;aide de la console cloud de Striim.
+
+| **Canal**                   | **Disponibilité**                                                                                               |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Portail d&#39;assistance    | 24 h/24, 7 j/7, 365 j/an                                                                                        |
+| E-mail (support@striim.com) | 24 h/24, 7 j/7, 365 j/an                                                                                        |
+| Téléphone (+1 650 241-0680) | De 8 h du matin à 7 h du soir (heure du Pacifique), du lundi au vendredi, hors jours fériés observés par Striim |
+
+### Répartition de l’assistance {#support-ownership}
+
+| **Domaine**                                 | **Responsable**          | **Exemples**                                                                                                                                                                                             |
+| ------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Service Striim for ClickHouse               | Striim                   | Inscription, facturation, essai, création de service, régions, changements d’offre, Clara AI                                                                                                             |
+| Connectivité aux sources et CDC             | Striim                   | Lecteurs de sources et leur configuration, chargement initial, latence, évolution du schéma                                                                                                              |
+| ClickHouse Writer                           | Striim                   | Comportement du table engine, colonnes de métadonnées Striim, correspondance des types, paramètres de batch et de téléversement, comportement de rejeu « at-least-once »                              |
+| Réseau côté Striim                          | Striim                   | AWS PrivateLink, SSH et liste d’autorisation d’adresses IP côté Striim                                                                                                                                   |
+| Base de données ClickHouse ou Service Cloud | ClickHouse               | Disponibilité du service, performances des requêtes, paramètres du serveur, privilèges accordés, fusions, ainsi que la partie côté ClickHouse de PrivateLink et des listes d’autorisation                |
+| Problèmes communs                           | Contacter d’abord Striim | Erreurs d’écriture ou insertions lentes dont la cause n’est pas clairement identifiée. Striim analyse le problème et sollicite ClickHouse si la cause profonde se situe au niveau de la base de données. |
+
+## Pages associées {#related-pages}
+
+* [Premiers pas avec Striim for ClickHouse](/fr/integrations/connectors/data-ingestion/etl-tools/striim/get-started) : inscription, configuration de ClickHouse et choix des moteurs de table.
+* [Exemple de pipeline : de SQL Server vers ClickHouse](/fr/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline) : chargement initial et CDC avec l’assistant de pipeline automatisé.
+* [Documentation de Striim for ClickHouse](https://www.striim.com/docs/striimforclickhouse/en/index-en.html)

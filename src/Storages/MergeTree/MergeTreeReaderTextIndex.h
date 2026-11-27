@@ -46,6 +46,21 @@ public:
     /// The virtual columns are resolved from per-mark posting lists addressed
     /// by absolute row number, so a read may start or stop inside a mark.
     [[nodiscard]] bool canReadIncompleteGranules() const override { return can_read_incomplete_granules; }
+
+    /// Only the columns `fallback_reader` reads: the posting lists are not counted.
+    void registerReadRanges() override
+    {
+        if (fallback_reader)
+            fallback_reader->registerReadRanges();
+    }
+
+    void setReadRangesRegistry(ReadRangesRegistryPtr registry) override
+    {
+        if (fallback_reader)
+            fallback_reader->setReadRangesRegistry(registry);
+        IMergeTreeReader::setReadRangesRegistry(std::move(registry));
+    }
+
     void updateAllMarkRanges(const MarkRanges & ranges) override;
     void updateReadRequestMap(MarkRangesPtr request_map) override;
 

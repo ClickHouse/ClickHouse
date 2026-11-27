@@ -1,0 +1,218 @@
+---
+title: "Striim for ClickHouse 시작하기"
+sidebarTitle: "시작하기"
+slug: /integrations/connectors/data-ingestion/etl-tools/striim/get-started
+description: "Striim for ClickHouse에 가입하고 소스와 ClickHouse 대상을 구성한 다음 복제 파이프라인을 시작합니다."
+doc_type: guide
+keywords: ['striim', 'clickhouse', 'cdc', 'data ingestion', 'real-time replication']
+---
+
+이 가이드에서는 Striim for ClickHouse에 가입하고 원본 데이터베이스의 데이터를 ClickHouse 인스턴스로 복제하기 시작하는 방법을 설명합니다. 전체 예시는 [SQL Server 샘플 파이프라인](/ko/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline)을 참조하십시오.
+
+## 사전 요구 사항 {#prerequisites}
+
+| **필요 항목**  | **세부 정보**                                                                                                                                                                                                                                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ClickHouse | 실행 중인 ClickHouse Cloud 서비스 또는 자가 관리형 배포가 필요하며, 데이터베이스와 사용자를 생성할 수 있는 관리자 액세스 권한이 있어야 합니다. `CoalescingMergeTree`를 사용하려면 ClickHouse 서버 25.6 이상이 필요합니다.                                                                                                                                                   |
+| 소스         | CDC와 필요한 리더 권한을 구성하려면 소스 데이터 시스템에 대한 관리자 액세스 권한이 필요합니다.                                                                                                                                                                                                                                                |
+| 네트워크 경로    | AWS의 Striim에서 소스 및 ClickHouse로 연결되는 승인된 네트워크 경로가 필요합니다. 필요한 경우 Striim for ClickHouse에서 IP 허용 목록, AWS PrivateLink 또는 SSH 터널링을 통한 프라이빗 연결을 사용할 수 있습니다. 자세한 내용은 Striim 문서의 [Security and Networking](https://www.striim.com/docs/striimforclickhouse/en/security-and-networking-for-striim.html)을 참조하십시오. |
+
+## Striim 계정 만들기 {#create-your-striim-account}
+
+Striim에서 직접 가입하거나 AWS Marketplace를 통해 가입할 수 있습니다. 14일 무료 체험판은 계정을 활성화하는 시점부터 시작됩니다. 체험판을 이용할 때는 신용카드가 필요하지 않습니다.
+
+1. [Striim for ClickHouse 가입 양식](https://go2.striim.com/trial-clickhouse)을 열고 필수 정보를 입력한 후 **Sign up**을 선택하십시오.
+2. 계정 활성화 이메일을 열어 계정을 활성화한 다음 Striim 클라우드 콘솔에 로그인하십시오.
+
+조직에서 AWS Marketplace를 통해 구매하는 경우 [Subscribe and sign up](https://www.striim.com/docs/striimforclickhouse/en/subscribe-and-sign-up.html#id211623) 안내에 따라 AWS Marketplace에서 Striim for ClickHouse를 구독한 후 Striim 계정 설정을 완료하십시오.
+
+## 서비스 생성 {#create-your-service}
+
+서비스는 AWS에서 실행되는 관리형 Striim 환경으로, 이 환경에서 ClickHouse에 데이터를 기록하는 파이프라인을 구축, 실행 및 모니터링합니다. 하나의 계정에서는 한 번에 하나의 활성 Striim for ClickHouse 서비스만 사용할 수 있습니다.
+
+1. Striim for ClickHouse에 처음 로그인하면 **Get Started**를 선택하십시오. 또는 사이드바에서 **Marketplace**를 선택한 다음 **Striim for ClickHouse** 아래에서 **Create**를 선택하십시오.
+2. 다음 항목을 구성하십시오.
+   * **Service Name:** 워크로드 또는 환경을 식별하는 이름입니다.
+   * **AWS Region:** 서비스가 실행되는 리전입니다. 지연 시간과 cross-region 전송 요금을 줄이려면 가능한 경우 ClickHouse와 같은 리전을 선택하십시오. 해당 리전을 사용할 수 없으면 가장 가까운 리전을 선택하십시오.
+3. 이름과 리전은 생성 후 변경할 수 없습니다. 둘 중 하나라도 변경하려면 서비스를 삭제한 후 새로 생성해야 합니다.
+4. **Create a service**를 선택하십시오. 프로비저닝에는 몇 분 정도 걸릴 수 있습니다. 새 서비스에는 기본적으로 **Premium** 플랜이 적용되며, 플랜은 **Billing** 페이지에서 변경할 수 있습니다.
+5. 서비스가 준비되면 시작 방법을 선택하십시오.
+   * **Start building with Striim Clara AI:** Striim에서 관리하는 Clara AI로 시작합니다. API Key는 필요하지 않습니다.
+   * **Review your service settings before launch:** 시작하기 전에 자체 AI 프로바이더를 구성하거나, 사용자를 관리하거나, SSH 또는 AWS PrivateLink를 설정합니다.
+
+이후에 로그인할 때는 **Services** 목록에서 서비스를 열어 파이프라인을 구축하거나 서비스 설정을 관리하십시오.
+
+![Striim for ClickHouse 서비스 생성](/images/integrations/striim/create-service.png)
+
+## ClickHouse 대상 준비 {#prepare-your-clickhouse-target}
+
+<Steps>
+  <Step title="연결 정보 확인" id="get-connection-details">
+    ClickHouse Cloud에서 서비스를 선택하고 **연결**을 클릭한 다음 **HTTPS**를 선택하면 호스트와 포트(8443)를 확인할 수 있습니다. 자체 관리형 ClickHouse를 사용하는 경우 관리자에게 호스트와 포트를 문의하십시오.
+  </Step>
+
+  <Step title="대상 데이터베이스 선택 또는 생성" id="create-target-database">
+    Striim은 대상 데이터베이스(target database)를 생성하지 않으며, 대상 데이터베이스가 없으면 애플리케이션이 시작 시 중단됩니다. 기존 데이터베이스를 사용하거나 새로 생성하십시오.
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS <your_database>;
+    ```
+  </Step>
+
+  <Step title="Striim 전용 사용자 생성" id="create-target-user">
+    기본 관리자 사용자 대신 전용 사용자를 사용하십시오.
+
+    ```sql
+    CREATE USER <user> IDENTIFIED BY '<password>';
+    ```
+
+    자체 관리형 ClickHouse에서는 SSL X.509 인증을 구성할 수도 있습니다.
+  </Step>
+
+  <Step title="필요한 권한 부여" id="grant-target-privileges">
+    [Striim 문서](https://www.striim.com/docs/striimforclickhouse/en/initial-setup-to-write-to-clickhouse.html)에 안내된 대로 사용자에게 다음 권한(privilege)을 부여하십시오.
+
+    ```sql
+    GRANT CREATE TABLE ON <your_database>.* TO <user>;
+    GRANT ALTER TABLE ON <your_database>.* TO <user>;
+    GRANT DROP TABLE ON <your_database>.* TO <user>;
+    GRANT TRUNCATE ON <your_database>.* TO <user>;
+    GRANT CREATE DATABASE ON *.* TO <user>;
+    GRANT SHOW TABLES ON *.* TO <user>;
+    GRANT SHOW DATABASES ON *.* TO <user>;
+    GRANT SELECT ON information_schema.* TO <user>;
+    GRANT SELECT ON system.tables TO <user>;
+    GRANT SELECT ON system.columns TO <user>;
+    GRANT SELECT ON system.parts TO <user>;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON <your_database>.* TO <user>;
+    ```
+  </Step>
+</Steps>
+
+### 권장 ClickHouse 구성 {#recommended-clickhouse-configuration}
+
+| 설정        | **ClickHouse Cloud**                                            | **자가 관리형**                                                    |
+| --------- | --------------------------------------------------------------- | ------------------------------------------------------------- |
+| 포트        | 8443 (기본적으로 열려 있으며 ClickHouse Cloud에서 관리)                       | 필요에 따라 개방: 8123 (HTTP), 9000 (네이티브), 8443 (HTTPS), 9440 (TLS) |
+| 암호화       | 항상 TLS 사용                                                       | TLS를 직접 구성한 후 연결 프로필에서 `EnableSSL` 속성으로 활성화                   |
+| 데이터베이스 엔진 | `Shared`                                                        | `Atomic` (기본값)                                                |
+| 인증        | 사용자 이름 및 비밀번호                                                   | 사용자 이름 및 비밀번호 또는 SSL X.509 (상호 TLS)                           |
+| 프라이빗 연결   | AWS PrivateLink (ClickHouse Cloud Scale 및 Enterprise 요금제에서만 지원) | SSH 터널 또는 IP 허용 목록                                            |
+
+## 연결 프로필 생성 {#create-a-connection-profile}
+
+파이프라인에서 이름으로 참조할 수 있도록 ClickHouse 연결 프로필을 생성하십시오. 연결 프로필 마법사에서 다음 항목을 구성하십시오.
+
+| **속성**                                | **값**                                                                                  |
+| ------------------------------------- | -------------------------------------------------------------------------------------- |
+| 연결 URL                                | 이전 섹션에서 확인한 호스트와 포트를 사용한 `jdbc:clickhouse://<host>:<port>` (ClickHouse Cloud는 포트 8443) |
+| 인증 유형                                 | Password(기본값) 또는 SSL X.509                                                             |
+| 사용자 이름 / 비밀번호                         | 이전 단계에서 ClickHouse 대상을 준비하면서 생성한 Striim for ClickHouse 전용 사용자 정보입니다.                   |
+| 클라이언트 SSL 인증서, 클라이언트 SSL 개인 키, CA 인증서 | SSL X.509 사용 시에만 필요합니다. 개인 키는 PKCS#8 PEM 형식이어야 합니다.                                    |
+
+자격 증명 또는 인증서를 교체하려면 **Connection Profiles**를 열어 프로필을 편집한 후 변경 사항을 저장하십시오.
+
+AWS PrivateLink를 사용할 때는 ClickHouse Cloud에서 제공한 연결 URL을 그대로 사용하십시오. Striim 서비스에서 호스트명이 프라이빗 엔드포인트로 확인되도록 Route 53 프라이빗 호스팅 영역을 구성하십시오. 자세한 내용은 [Initial setup to write to ClickHouse](https://www.striim.com/docs/striimforclickhouse/en/initial-setup-to-write-to-clickhouse.html)를 참고하십시오.
+
+## 소스 준비 {#prepare-your-source}
+
+소스 유형마다 설정 방법이 다릅니다. Striim for ClickHouse 문서의 [Sources](https://www.striim.com/docs/striimforclickhouse/en/sources.html)에서 해당 소스를 찾아 구성 항목의 안내를 따르십시오. CDC(Change Data Capture, 변경 데이터 캡처)를 지원하는 소스라면 소스에서 변경 캡처를 활성화하고, 해당 소스에 명시된 권한을 부여한 Striim 전용 사용자를 생성해야 할 수 있습니다. 계속 진행하기 전에 다음 사항을 기록해 두십시오.
+
+* Striim 사용자의 호스트, 포트 및 자격 증명
+* 복제할 스키마(schemas)와 테이블(tables). 가능하면 스키마 전체보다는 특정 테이블을 선택하십시오.
+* Striim이 AWS에서 소스에 접근할 수 있는지 여부(방화벽, VPC, PrivateLink, SSH 또는 IP 허용 목록)
+* 요금제: Oracle, SQL Server, Snowflake, Salesforce에서 CDC를 사용하려면 Premium 요금제가 필요합니다.
+
+## 파이프라인 빌드 및 시작 {#build-and-start-a-pipeline}
+
+파이프라인은 다음 방법 중 하나로 생성할 수 있습니다.
+
+* **Striim Clara AI:** **Ask Clara**를 선택하고 원하는 파이프라인을 설명하십시오. 예시: “Build a pipeline from &lt;source&gt; to ClickHouse for &lt;schema.table&gt;.” Clara가 읽기 전략과 연결 정보를 입력하도록 요청한 다음 TQL 계획을 생성합니다. 계획을 검토한 후 **Accept TQL**을 선택하고 **Deploy and Start this App**을 선택하십시오. 자세한 내용은 [Build your first application](https://www.striim.com/docs/striimforclickhouse/en/build-your-first-application.html)을 참조하십시오.
+* **자동화된 파이프라인 마법사:** 서로 연결된 애플리케이션 2개를 생성합니다. 하나는 초기 적재(initial load)용이고 다른 하나는 CDC(Change Data Capture)용입니다. 초기 적재가 완료되면 Striim이 CDC 애플리케이션을 자동으로 시작합니다. [아래 절차를 참조하십시오](#using-the-automated-pipeline-wizard).
+* **Flow Designer:** 애플리케이션을 시각적으로 생성 및 편집하고, 데이터가 ClickHouse에 도달하기 전에 변환을 추가할 수 있습니다. 또한 애플리케이션의 TQL을 내보내 편집한 다음 업데이트된 구성을 가져올 수도 있습니다.
+
+### 자동화된 파이프라인 마법사 사용 {#using-the-automated-pipeline-wizard}
+
+1. **Apps &gt; Create an App**을 선택한 다음, 소스를 검색하여 선택하십시오.
+2. **Get Started**를 선택하고, 해당 소스에서 지원하는 경우 자동 파이프라인(초기 적재(initial load) + CDC)을 선택하십시오.
+3. 파이프라인 이름을 입력하고 네임스페이스를 선택한 후 **Next**를 선택하십시오.
+4. 원본 연결 속성을 입력하십시오. 각 설정 옆에 인라인 도움말이 표시됩니다. Striim이 연결을 검사하며, 실패한 항목을 모두 해결해야 다음 단계로 진행할 수 있습니다.
+5. 시스템 스키마(schemas)를 제외하고 복제할 스키마를 선택한 다음 **Next**를 선택하십시오.
+6. 각 스키마에서 테이블을 선택한 다음 **Next**를 선택하십시오.
+7. ClickHouse 연결 프로필과 **Table Engine**을 선택하십시오. 엔진별 동작은 [ClickHouse에 데이터가 적재되는 방식](#how-data-lands-in-clickhouse)을 참조하십시오.
+8. 테이블 매핑을 검토하고, 필요하면 편집한 다음 **Save &amp; Start**를 선택하십시오.
+
+Striim은 먼저 초기 적재를 실행합니다. 초기 적재가 완료되면 Striim은 초기 적재 애플리케이션을 정지 상태로 전환하고, 연결된 CDC 애플리케이션을 자동으로 시작합니다.
+
+초기 적재 중에는 소스 테이블(source tables)에서 DDL 문을 실행하지 마십시오. 초기 적재를 시작한 시점부터 CDC 애플리케이션이 변경 사항을 모두 따라잡을 때까지 소스의 변경 로그 또는 스트림을 보존하십시오. 파이프라인이 중단되면 재개하기 전에 오류 내용과 권장 조치 사항을 확인하십시오.
+
+## ClickHouse에서 데이터 확인 {#verify-data-in-clickhouse}
+
+1. Striim 모니터링 뷰에서 이벤트가 읽히고 기록되고 있는지 확인하십시오. Clara에게 현재 지연을 물어볼 수도 있습니다.
+
+2. ClickHouse에서 Striim이 생성한 테이블을 살펴보십시오.
+
+   ```sql
+   SHOW CREATE TABLE <your_database>.<your_table>;
+   ```
+
+3. 소스와 행 수(row count)를 비교하십시오. `ReplacingMergeTree` 테이블은 다음 섹션의 쿼리를 사용하십시오.
+
+4. 소스에서 작은 변경(테스트 행에 대한 삽입, UPDATE, 삭제)을 수행한 후 해당 변경 사항이 ClickHouse에 반영되는지 확인하십시오.
+
+## ClickHouse에 데이터가 적재되는 방식 {#how-data-lands-in-clickhouse}
+
+ClickHouse 대상을 구성할 때 **Table Engine**을 선택하십시오. ClickHouse Writer의 기본값은 **`MergeTree`**&#xC785;니다. 엔진에 따라 변경 사항이 적용되는 방식과 Striim이 대상 테이블을 생성할 수 있는지 여부가 결정됩니다.
+
+| **테이블 엔진**                                          | **동작**                                                                                        | **적합한 용도**                                                            |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `ReplacingMergeTree`                                | 갱신(updates)과 삭제(deletes)가 버전 및 소프트 삭제 플래그가 포함된 새 행으로 기록되며, 백그라운드 머지 또는 `FINAL`을 통해 중복이 제거됩니다. | 갱신 시 전체 행 이미지를 전송하는 CDC 소스. 가장 단순하고 처리량이 가장 높은 CDC 패턴이며, 재적용해도 안전합니다. |
+| `MergeTree`                                         | 기본적으로 추가 전용입니다. Mode = `MERGE`로 설정하면 갱신과 삭제가 테이블에 적용됩니다(경량 삭제 또는 뮤테이션 삭제).                    | 초기 적재, 로그 및 이벤트, 또는 행을 물리적으로 제거하고 추가 컬럼을 두지 않으려는 CDC.                 |
+| `CollapsingMergeTree`                               | 부호 열(sign column)을 기록합니다. 현재 상태는 +1, 취소는 -1입니다.                                               | 변경 전 이미지와 변경 후 이미지를 모두 전송하는 CDC 소스. 복구 후 재적용하면 안전하지 않습니다.             |
+| `CoalescingMergeTree`                               | 부분 행 갱신을 지원하며, `NULL`은 &quot;변경하지 않음&quot;을 의미합니다. 서버 25.6 이상과 `Nullable` 비키 컬럼이 필요합니다.       | 부분 행을 전송하는 CDC 소스.                                                    |
+| `SummingMergeTree`                                  | 삽입만 지원합니다. `UPDATE` 또는 `DELETE`가 발생하면 애플리케이션이 중단됩니다.                                          | 카운터와 같은 추가 전용 숫자 집계 데이터.                                              |
+| `AggregatingMergeTree`, `Replicated`, `Distributed` | 데이터 쓰기만 지원합니다. 배포 전에 대상 테이블을 직접 생성해야 합니다.                                                     | 구체화된 뷰(Materialized View)의 기반 테이블, 클러스터 및 샤딩 구성의 자가 관리형 배포.           |
+
+자동 스키마 생성과 스키마 진화(Schema Evolution)를 사용하려면 `MergeTree`, `ReplacingMergeTree`, `CollapsingMergeTree`, `CoalescingMergeTree` 또는 `SummingMergeTree`를 사용하십시오. Striim은 `ReplacingMergeTree`에는 `__STRIIM_VERSION` 및 `__STRIIM_ISDELETED` 컬럼을, `CollapsingMergeTree`에는 `__STRIIM_SIGN` 컬럼을 추가합니다. `ReplacingMergeTree` 테이블은 `FINAL`을 사용하여 쿼리하고, 소프트 삭제된 행은 제외하십시오.
+
+```sql
+SELECT * FROM <your_database>.<your_table> FINAL WHERE __STRIIM_ISDELETED = 0;
+```
+
+소스 데이터 타입은 ClickHouse 타입으로 자동 매핑됩니다. 자세한 내용은 [지원되는 데이터 타입(Supported data types)](https://www.striim.com/docs/striimforclickhouse/en/clickhouse-writer-programmer-s-reference.html#supported-data-types-787538)을 참조하십시오.
+
+## 파이프라인 모니터링 {#monitor-your-pipeline}
+
+Striim은 웹 UI에서 ClickHouse Writer 메트릭을 제공합니다. 수신된 이벤트, ClickHouse가 확인 응답한 이벤트, 대상 최신성, 마지막 쓰기 활동, 배치 수, 테이블별 머지 시간 등을 확인할 수 있습니다. 시스템 알림은 자동으로 활성화되며, 이메일, Slack 또는 Microsoft Teams로 받을 사용자 정의 알림을 추가할 수도 있습니다. 또한 Clara에게 &quot;내 애플리케이션의 현재 지연은 얼마인가요?&quot;와 같이 질문할 수도 있습니다.
+
+## 문제 해결 {#troubleshooting}
+
+<Accordion title="시작 시 누락된 데이터베이스 이름이 표시되며 애플리케이션이 중단되는 경우">
+  Striim은 대상 데이터베이스(target database)를 생성하지 않습니다. ClickHouse에서 데이터베이스를 생성한 후 애플리케이션을 다시 시작하십시오.
+</Accordion>
+
+<Accordion title="동일한 스키마가 다른 환경에서는 작동하지만 테이블 또는 컬럼을 찾을 수 없는 경우">
+  컬럼 이름(Column Names)은 항상 대소문자를 구분합니다. 데이터베이스 이름과 테이블 이름(Table Names)은 서버 파일 시스템의 규칙을 따릅니다(일반적인 Linux 환경에서는 대소문자를 구분합니다). ClickHouse에 정의된 대소문자를 그대로 사용하십시오.
+</Accordion>
+
+<Accordion title="재시작 후 CollapsingMergeTree에 중복 행이나 음수 합계가 표시되는 경우">
+  데이터 전달은 at-least-once 방식이며, 이 엔진은 중복 제거를 지원하지 않습니다. 복구 기능을 사용한다면 `ReplacingMergeTree` 또는 Mode = `MERGE`로 설정한 `MergeTree`를 사용하는 것이 좋습니다.
+</Accordion>
+
+<Accordion title="PrivateLink: Connection timed out">
+  VPC 엔드포인트 보안 그룹에서 443, 8443, 9440, 3306 포트의 인바운드 트래픽이 허용되어 있는지, 그리고 아웃바운드 규칙에서 해당 연결이 허용되어 있는지 확인하십시오.
+</Accordion>
+
+<Accordion title="PrivateLink: Connection reset by peer">
+  ClickHouse Cloud의 서비스 허용 목록에 AWS 엔드포인트 ID를 추가하십시오.
+</Accordion>
+
+<Accordion title="원인을 알 수 없는 예외로 애플리케이션이 실패하는 경우">
+  Clara에게 오류 설명과 해결 방법을 요청하십시오. 운영 환경을 변경하기 전에 제안된 권장 사항을 반드시 검토하십시오.
+</Accordion>
+
+## 다음 단계 {#next-steps}
+
+* 샘플 파이프라인: [SQL Server에서 ClickHouse로](/ko/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline)
+* 소스, 변환 및 스키마 진화(Schema Evolution)에 대한 자세한 내용은 [Striim for ClickHouse 문서](https://www.striim.com/docs/striimforclickhouse/en/index-en.html)를 참조하십시오.
+* ClickHouse 외에 다른 대상으로도 데이터를 복제해야 한다면 [Striim Platform](https://www.striim.com/striim-platform/) 또는 [Striim Cloud](https://www.striim.com/striim-cloud/)를 참조하십시오.

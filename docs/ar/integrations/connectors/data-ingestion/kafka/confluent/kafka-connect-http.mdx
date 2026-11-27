@@ -9,7 +9,7 @@ keywords: ['Confluent HTTP Sink Connector', 'HTTP Sink ClickHouse', 'موصل Ka
 
 import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 
-إن موصل HTTP Sink لا يعتمد على نوع بيانات محدد، لذا لا يحتاج إلى مخطط Kafka، كما يدعم أنواع بيانات خاصة بـ ClickHouse مثل Maps وArrays. وتأتي هذه المرونة الإضافية مقابل زيادة طفيفة في تعقيد الإعداد.
+إن موصل HTTP Sink لا يعتمد على نوع بيانات محدد، لذا لا يحتاج إلى مخطط Kafka، كما يدعم أنواع بيانات خاصة بـ ClickHouse مثل Maps وArrays. وتأتي هذه المرونة الإضافية مقابل زيادة طفيفة في تعقيد الإعدادات.
 
 فيما يلي نشرح عملية تثبيت بسيطة، مع سحب الرسائل من topic واحد في Kafka وإدراج صفوف في جدول ClickHouse.
 
@@ -28,7 +28,7 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
     لديك خياران:
 
     * **Self-managed:** نزّل حزمة Confluent وثبّتها محليًا. اتبع تعليمات التثبيت الخاصة بتثبيت الموصل كما هو موثق [هنا](https://docs.confluent.io/kafka-connect-http/current/overview.html).
-      إذا استخدمت طريقة التثبيت `confluent-hub`، فسيتم تحديث ملفات التكوين المحلية لديك.
+      إذا استخدمت طريقة التثبيت confluent-hub، فسيتم تحديث ملفات الإعدادات المحلية لديك.
 
     * **Confluent Cloud:** يتوفر إصدار مُدار بالكامل من HTTP Sink لمن يستخدمون Confluent Cloud لاستضافة Kafka لديهم. ويتطلب ذلك أن تكون بيئة ClickHouse الخاصة بك قابلة للوصول من Confluent Cloud.
 
@@ -58,13 +58,9 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
     أنشئ Kafka topic ومثيلاً من موصل HTTP Sink:
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![واجهة Confluent Cloud تعرض كيفية إنشاء موصل HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp)
-
-    </Frame>
-
+      <Frame>
+        ![واجهة Confluent Cloud تعرض كيفية إنشاء موصل HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp)
+      </Frame>
     </div>
 
     <br />
@@ -83,13 +79,9 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![واجهة Confluent Cloud تعرض إعدادات المصادقة لموصل HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/http_auth.webp)
-
-    </Frame>
-
+      <Frame>
+        ![واجهة Confluent Cloud تعرض إعدادات المصادقة لموصل HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/http_auth.webp)
+      </Frame>
     </div>
 
     <br />
@@ -105,13 +97,9 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
         * `Maximum Reties` - القيمة الافتراضية (10) مناسبة، لكن لا تتردد في تعديلها للحصول على retries أكثر موثوقية.
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![واجهة Confluent Cloud تعرض خيارات التكوين المتقدمة لموصل HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp)
-
-    </Frame>
-
+      <Frame>
+        ![واجهة Confluent Cloud تعرض خيارات الإعدادات المتقدمة لموصل HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -119,13 +107,9 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
     أنشئ رسالة في topic الذي أعددته لـ HTTP Sink
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![واجهة Confluent Cloud تعرض كيفية إنشاء رسالة اختبار في Kafka topic](/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp)
-
-    </Frame>
-
+      <Frame>
+        ![واجهة Confluent Cloud تعرض كيفية إنشاء رسالة اختبار في Kafka topic](/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp)
+      </Frame>
     </div>
 
     <br />
@@ -135,11 +119,11 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 </Steps>
 
 <div id="troubleshooting">
-  ### استكشاف الأخطاء وإصلاحها
+  ### استكشاف الأخطاء وإصلاحها {#troubleshooting}
 </div>
 
 <div id="http-sink-doesnt-batch-messages">
-  #### لا يُجري HTTP Sink تجميعًا للرسائل على دفعات
+  #### لا يُجري HTTP Sink تجميعًا للرسائل على دفعات {#http-sink-doesnt-batch-messages}
 </div>
 
 وفقًا لـ [وثائق Sink](https://docs.confluent.io/kafka-connectors/http/current/overview.html#http-sink-connector-for-cp):
@@ -150,11 +134,11 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 2. عند إضافة معلمات إلى عنوان URL الخاص بواجهة برمجة تطبيقات HTTP، قد ينتج عن كل سجل عنوان URL فريد. ولهذا السبب، يُعطَّل التجميع على دفعات عند استخدام معلمات URL إضافية.
 
 <div id="400-bad-request">
-  #### 400 طلب غير صالح
+  #### 400 طلب غير صالح {#400-bad-request}
 </div>
 
 <div id="cannot_parse_quoted_string">
-  ##### CANNOT_PARSE_QUOTED_STRING
+  ##### CANNOT_PARSE_QUOTED_STRING {#cannot_parse_quoted_string}
 </div>
 
 إذا تعذّر HTTP Sink وظهرت الرسالة التالية عند إدراج كائن JSON في عمود `String`:
@@ -166,7 +150,7 @@ Code: 26. DB::ParsingException: Cannot parse JSON string: expected opening quote
 اضبط الإعداد `input_format_json_read_objects_as_strings=1` في عنوان URL كسلسلة مُرمَّزة `SETTINGS%20input_format_json_read_objects_as_strings%3D1`
 
 <div id="load-the-github-dataset-optional">
-  ### تحميل مجموعة بيانات GitHub (اختياري)
+  ### تحميل مجموعة بيانات GitHub (اختياري) {#load-the-github-dataset-optional}
 </div>
 
 لاحظ أن هذا المثال يحافظ على الحقول من النوع Array في مجموعة بيانات GitHub. نفترض أن لديك topic فارغًا باسم `github` في الأمثلة، ونستخدم [kcat](https://github.com/edenhill/kcat) لإدراج الرسائل في Kafka.
