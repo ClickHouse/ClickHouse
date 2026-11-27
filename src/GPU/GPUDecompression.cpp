@@ -166,7 +166,9 @@ struct DecompressionBatch::State
             if (call.codec == codec)
                 return call;
         }
-        return calls.emplace_back(CodecCall{.codec = codec});
+        CodecCall & call = calls.emplace_back();
+        call.codec = codec;
+        return call;
     }
 
     /// Queues the call of nvcomp and the copy of its statuses back to `host_results`.
