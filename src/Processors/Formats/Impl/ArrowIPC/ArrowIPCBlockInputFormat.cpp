@@ -143,9 +143,7 @@ void ArrowIPCBlockInputFormat::collectDictionaryFields(const ArrowIPC::ArrowFiel
 
 void ArrowIPCBlockInputFormat::collectRequestedTopLevelFields()
 {
-    /// The top-level fields the header needs, so the reader skips the rest: the field a header column names and the one it
-    /// is a `Nested`/struct subcolumn of, as `buildChunk` finds them. Lower-cased with case-insensitive matching, as
-    /// `decodeBatch` looks them up.
+    /// The top-level fields the header is read from, as `buildChunk` finds them, lower-cased as `decodeBatch` looks them up.
     const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
     auto normalize = [&](String s) -> String { if (case_insensitive) boost::to_lower(s); return s; };
     UnorderedSetWithMemoryTracking<String> field_names;
@@ -975,8 +973,7 @@ Chunk ArrowIPC::buildChunk(
         {
             bool read_from_nested = false;
 
-            /// A subcolumn of a `Nested`/struct field: `table.a` is extracted from the Arrow field `table`, the shortest dotted
-            /// prefix of the name that is a decoded field.
+            /// A subcolumn of a `Nested`/struct field: `table.a` is extracted from the Arrow field `table`.
             std::optional<size_t> nested_index;
             const auto nested_names = Nested::tryGetColumnAndSubcolumnPair(header_column.name, [&](std::string_view name)
             {

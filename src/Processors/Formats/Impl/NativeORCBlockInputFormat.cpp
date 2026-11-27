@@ -3603,7 +3603,6 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
         }
         return it;
     };
-    /// Whether `find_orc_column` would find `name` if every field of the file were read.
     auto is_file_column = [&](std::string_view name)
     {
         return file_column_names.contains(String(name))
@@ -3624,8 +3623,7 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
         {
             bool read_from_nested = false;
 
-            /// Check if it's a column from nested table: the shortest dotted prefix that is a field of the file, unless the
-            /// whole name is one, as the selection may then have taken another field for it.
+            /// Check if it's a column from nested table.
             String nested_table_name = Nested::extractTableName(header_column.name);
             if (!is_file_column(header_column.name))
                 if (const auto pair = Nested::tryGetColumnAndSubcolumnPair(header_column.name, is_file_column))

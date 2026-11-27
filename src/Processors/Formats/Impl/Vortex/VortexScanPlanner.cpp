@@ -133,8 +133,7 @@ VortexScanPlan planVortexScan(
     /// values, and if none is left there is no scan at all, only a row count.
     ///
     /// A header entry can also name a subcolumn, `name.sub`, which `ArrowIPC::buildChunk` can only
-    /// extract once the whole field `name` has been read - hence the second name per column, and, when no
-    /// field has the whole name, the shortest dotted prefix that is a field (`d.e` of `d.e.a`).
+    /// extract once the whole field `name` has been read - hence the second name per column, and a third when `name` has a dot.
     UnorderedSetWithMemoryTracking<std::string> added_column_names;
     UnorderedSetWithMemoryTracking<std::string> file_field_names;
     for (const auto & field : file_schema.fields)

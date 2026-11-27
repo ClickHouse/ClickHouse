@@ -40,8 +40,7 @@ namespace Nested
     /// Columns: "a.x", "b", "c". Name: "a.x.y.z". Result: ("a.x", "y.z").
     std::pair<std::string_view, std::string_view> getColumnAndSubcolumnPair(std::string_view name, const NameSet & storage_columns);
 
-    /// The first of `getAllColumnAndSubcolumnPairs(name)` whose column `is_column` accepts: ("a.b", "c") of "a.b.c"
-    /// when "a.b" is a column and "a" is not. nullopt if there is none.
+    /// The first of `getAllColumnAndSubcolumnPairs(name)` whose column `is_column` accepts, nullopt if there is none.
     std::optional<std::pair<std::string_view, std::string_view>> tryGetColumnAndSubcolumnPair(
         std::string_view name, const std::function<bool(std::string_view)> & is_column);
 

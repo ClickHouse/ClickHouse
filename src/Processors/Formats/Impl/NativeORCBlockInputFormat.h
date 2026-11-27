@@ -210,7 +210,6 @@ private:
     /// ORC column ids of the structs of the file a field of which has no Iceberg field id: their fields are matched by name,
     /// also when the fields read have one.
     const UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids;
-    /// The top-level field names of the file, and lower-cased only with case-insensitive matching.
     const NameSet file_column_names;
     const NameSet lowercase_file_column_names;
 };
