@@ -1,0 +1,252 @@
+---
+slug: /clickstack/observability/integration-examples/nodejs-traces
+title: 'ClickHouse Observability로 Node.js trace 모니터링'
+sidebarTitle: 'Node.js trace'
+description: 'ClickHouse Observability 및 자가 관리형 배포 환경에서 ClickHouse Observability로 Node.js trace를 모니터링하기 위한 설정 및 구성 방법을 설명합니다.'
+doc_type: 'guide'
+keywords: ['Node.js', 'traces', 'OTEL', 'ClickHouse Observability', 'distributed tracing']
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+OpenTelemetry 자동 계측으로 Node.js 애플리케이션의 trace를 수집하여 ClickHouse Observability로 전송합니다. 애플리케이션을 직접 계측하지 않고 통합 기능을 체험해 보려면 [데모 데이터셋](#demo-dataset)을 사용하십시오.
+
+## 사전 요구 사항 {#prerequisites}
+
+* ClickHouse Observability 서비스
+* 애플리케이션: Node.js 22 이상 및 npm
+* 데모: Docker 및 `curl`
+
+### 연결 정보 {#connection-details}
+
+<Tabs>
+  <Tab title="완전 관리형">
+    <BetaBadge label="베타 제공" />
+
+    ClickHouse Observability를 열고 **Team Settings → Data → Managed Telemetry**로 이동하십시오. OTLP HTTP 엔드포인트와 API Key를 복사하십시오. **Copy connection details**를 사용하면 구성을 복사할 수 있고, **Reveal key**를 사용하면 마스킹된 키를 확인할 수 있습니다.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Managed Telemetry 연결 정보](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    애플리케이션 또는 데모 collector를 실행할 터미널에서 다음 연결 변수를 설정하십시오.
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    자리표시자를 서비스의 정확한 엔드포인트(포트 포함)와 API Key로 대체하십시오. 엔드포인트는 `/v1/traces` 접미사를 붙이지 않은 기본 HTTP 엔드포인트를 사용하십시오. 신호 경로는 익스포터가 자동으로 추가합니다.
+  </Tab>
+
+  <Tab title="자가 관리형">
+    연결 가능한 collector의 OTLP HTTP 엔드포인트(예: `http://YOUR_COLLECTOR_HOST:4318`)와 인증 설정을 사용하십시오. collector에 인증이 필요하지 않다면 아래 구성에서 익스포터의 `headers` 블록을 생략하십시오. 설정 방법은 [자가 관리형 시작 가이드](/ko/clickstack/self-configured/getting-started/managed)를 참조하십시오.
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+## 기존 Node.js 애플리케이션과의 통합 {#existing-nodejs}
+
+<Steps>
+  <Step title="OpenTelemetry 설치" id="install-instrumentation">
+    애플리케이션 디렉터리에서 instrumentation 패키지를 설치하십시오.
+
+    ```bash
+    npm install @opentelemetry/api @opentelemetry/auto-instrumentations-node@0.81.0
+    ```
+
+    이 단계에서는 CommonJS 애플리케이션용 [OpenTelemetry 자동 계측](https://opentelemetry.io/docs/zero-code/js/)을 사용합니다. 네이티브 ES 모듈을 사용하는 경우 [ESM 설정](https://github.com/open-telemetry/opentelemetry-js/blob/main/doc/esm-support.md)이 필요합니다. 스팬이 중복되지 않도록 애플리케이션마다 instrumentation 설정은 하나만 사용하십시오.
+  </Step>
+
+  <Step title="추적 구성 및 애플리케이션 시작" id="run-application">
+    연결 변수를 설정한 터미널에서 다음 명령을 실행하십시오.
+
+    ```bash
+    export OTEL_SERVICE_NAME='nodejs-service'
+    export OTEL_TRACES_EXPORTER='otlp'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    export OTEL_EXPORTER_OTLP_HEADERS="Authorization=${OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+    export OTEL_METRICS_EXPORTER='none'
+    export OTEL_LOGS_EXPORTER='none'
+
+    node --require @opentelemetry/auto-instrumentations-node/register app.js
+    ```
+
+    `app.js`를 애플리케이션 진입점으로 바꾸십시오. 프리로드 방식을 사용하면 애플리케이션이 라이브러리를 가져오기 전에 instrumentation이 먼저 초기화됩니다. 인증이 없는 자가 관리형 엔드포인트를 사용하는 경우 header export를 생략하고 `unset OTEL_EXPORTER_OTLP_HEADERS`를 실행하십시오.
+
+    애플리케이션에서 엔드포인트에 연결할 수 있어야 합니다. 애플리케이션이 컨테이너에서 실행되는 경우 `localhost`는 해당 컨테이너 자신을 가리킵니다.
+  </Step>
+
+  <Step title="트래픽 생성" id="generate-traffic">
+    애플리케이션이 제공하는 엔드포인트로 요청을 보내십시오. 예를 들어 애플리케이션이 포트 `3000`에서 수신 대기하는 경우 다음과 같습니다.
+
+    ```bash
+    curl http://localhost:3000/
+    ```
+
+    익스포터가 스팬을 전송할 때까지 몇 초 정도 기다리십시오.
+  </Step>
+
+  <Step title="trace 확인" id="verify-traces">
+    **검색**을 열고 **trace**를 선택한 다음, `ServiceName:nodejs-service`로 필터링하고 **Last 15 minutes**를 선택하십시오. trace를 열어 스팬, 소요 시간 및 속성을 확인하십시오.
+  </Step>
+</Steps>
+
+## 데모 데이터셋 {#demo-dataset}
+
+이 샘플에는 `nodejs-demo-api`에서 생성된 스팬 822개가 포함되어 있습니다. 실행 중인 Node.js 애플리케이션이 없어도 됩니다.
+
+<Steps>
+  <Step title="샘플 데이터셋 다운로드" id="download-sample">
+    ```bash
+    curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/nodejs/nodejs-traces-sample.json
+    ```
+  </Step>
+
+  <Step title="데모 collector 구성" id="configure-demo-collector">
+    다음 내용을 다운로드 디렉터리에 `nodejs-traces-demo.yaml`로 저장하십시오.
+
+    ```yaml
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+      transform/demo_timestamps:
+        error_mode: propagate
+        trace_statements:
+          - context: span
+            statements:
+              - set(cache["duration_ns"], end_time_unix_nano - start_time_unix_nano)
+              - >-
+                set(start_time,
+                  Now() - Duration("2m") -
+                  (Time("2025-10-27T17:59:15Z", "%Y-%m-%dT%H:%M:%SZ") - start_time)
+                )
+              - set(end_time_unix_nano, start_time_unix_nano + cache["duration_ns"])
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: "${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+
+    service:
+      pipelines:
+        traces/nodejs-demo:
+          receivers: [otlp]
+          processors: [memory_limiter, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    <Note>
+      데모 전용 `transform/demo_timestamps` 프로세서는 스팬 소요 시간과 트래픽 패턴을 그대로 유지한 채, 이 샘플을 수집 시점 2분 전에 끝나는 대략 최근 24시간 범위로 이동합니다. 직접 수집하는 Node.js trace에는 원래 타임스탬프가 유지되도록 이 프로세서를 제외하십시오. 샘플을 다시 전송하면 스팬이 중복될 수 있습니다.
+    </Note>
+  </Step>
+
+  <Step title="데모 collector 실행" id="run-demo-collector">
+    <Note>
+      대상 collector가 이 컴퓨터에서 실행 중이라면 `OTEL_EXPORTER_OTLP_ENDPOINT`를 `http://host.docker.internal:4318`로 설정하십시오. 아래 명령에는 Docker 호스트 매핑이 포함되어 있습니다.
+    </Note>
+
+    연결 변수를 설정한 터미널에서 구성 파일이 있는 디렉터리로 이동한 후 OpenTelemetry Collector Contrib `0.161.0`을 실행하십시오. 이 터미널은 계속 열어 두십시오.
+
+    ```bash
+    docker run --rm --name nodejs-traces-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -p 127.0.0.1:14318:4318 \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/nodejs-traces-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    로컬 수신기는 포트 `4318`을 사용하는 기존 collector와 충돌하지 않도록 포트 `14318`을 사용합니다. collector는 위의 인증 설정을 사용해 trace를 구성된 엔드포인트로 전달합니다.
+  </Step>
+
+  <Step title="trace 전송" id="send-traces">
+    다른 터미널을 열고 다운로드 디렉터리에서 원본 샘플을 로컬 collector로 전송하십시오.
+
+    ```bash
+    curl --fail-with-body -sS http://localhost:14318/v1/traces \
+      -H "Content-Type: application/json" \
+      --data-binary @nodejs-traces-sample.json
+    ```
+
+    `{}` 또는 `{"partialSuccess":{}}`와 같은 빈 성공 응답이 반환되면 로컬 collector가 요청을 수락한 것입니다. collector 출력에 내보내기 오류가 없는지 확인하고, 배치가 서비스에 도달할 때까지 몇 초 정도 기다리십시오. 작업이 끝나면 **Ctrl+C**를 눌러 데모 collector를 중지하십시오.
+  </Step>
+
+  <Step title="데모 trace 확인" id="verify-demo-traces">
+    **검색**을 열고 **trace**를 선택한 다음 `ServiceName:nodejs-demo-api`로 필터링하고, 이동된 데이터셋 전체가 표시되도록 **Last 2 days**를 선택하십시오. trace를 열어 HTTP 속성을 확인하십시오.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse Observability 검색 화면의 Node.js 데모 trace](/images/clickstack/observability-nodejs-demo-traces.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 대시보드 및 시각화 {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nodejs-traces-dashboard.json" download="nodejs-traces-dashboard.json" eventName="docs.node_traces_monitoring.dashboard_download">대시보드 구성 다운로드</TrackedLink>} id="download-dashboard" />
+
+  <Step title="대시보드 가져오기" id="import-dashboard">
+    1. **대시보드**를 열고 오른쪽 상단의 **Import**를 클릭하십시오.
+    2. `nodejs-traces-dashboard.json`을 업로드하십시오.
+    3. 차트를 **trace** 소스에 매핑한 다음 **Finish Import**를 클릭하십시오.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Import 버튼이 강조 표시된 대시보드 페이지](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="대시보드 보기" id="view-dashboard">
+    샘플 데이터를 사용하는 경우 **Last 2 days**를 선택하고, 필요하면 `ServiceName:nodejs-demo-api`로 필터링하십시오. 자체 애플리케이션을 사용하는 경우 해당 서비스 이름을 선택하고 요청이 발생한 기간을 포함하는 시간 범위를 지정하십시오.
+
+    이 대시보드는 샘플의 HTTP 스팬 속성을 기준으로 구성되어 있습니다. instrumentation 버전에 따라 속성 이름이 다를 수 있으므로, 애플리케이션의 스팬 속성이 다르면 차트 필드를 그에 맞게 조정하십시오.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![요청, 지연 시간, 엔드포인트, HTTP 상태 코드, 메서드, 데이터베이스 쿼리를 보여주는 Node.js trace 대시보드](/images/clickstack/observability-nodejs-traces-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 문제 해결 {#troubleshooting}
+
+### 애플리케이션 trace가 표시되지 않는 경우 {#no-application-traces}
+
+애플리케이션 출력에 내보내기(export) 오류가 있는지 확인하십시오. 엔드포인트, 프로토콜, 인증 설정이 올바른지 확인하십시오. instrumentation은 애플리케이션 라이브러리보다 먼저 로드해야 합니다. 요청을 발생시킨 다음 서비스 이름 필터(filter)와 시간 범위를 확인하십시오. 네이티브 ES 모듈을 사용한다면 링크된 ESM 설정 안내를 따르십시오.
+
+### 데모 trace가 표시되지 않음 {#no-demo-traces}
+
+데모 collector 출력에 인증 오류나 내보내기 오류가 있는지 확인하십시오. `curl` 응답이 성공했다면 로컬에서 데이터가 정상적으로 수신된 것입니다. 서비스로 전달되기까지 몇 초 정도 기다리십시오. 파이프라인에 `transform/demo_timestamps`를 포함하고 **Last 2 days**를 선택하십시오. 샘플 데이터를 다시 전송하면 데이터가 중복될 수 있습니다.
+
+## 다음 단계 {#next-steps}
+
+* 오류 및 지연 시간에 대한 [알림](/ko/clickstack/observability/features/alerts)을 설정하세요.
+* [대시보드](/ko/clickstack/observability/features/dashboards/overview)를 추가로 생성하세요.

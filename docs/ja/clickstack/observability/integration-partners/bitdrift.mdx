@@ -1,0 +1,105 @@
+---
+slug: /clickstack/observability/integration-partners/bitdrift
+title: 'bitdrift のモバイルsessionを ClickStack のトレースと相関付ける'
+sidebarTitle: 'bitdrift'
+description: 'OpenTelemetryトレースコンテキストを使用し、モバイルテレメトリーをエクスポートせずに bitdrift のモバイルsessionを ClickStack のバックエンドのトレースと相関付けます'
+doc_type: 'guide'
+keywords: ['bitdrift', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'モバイルオブザーバビリティ', 'トレーシング']
+---
+
+import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **TL;DR**
+
+  このガイドでは、OpenTelemetryトレースコンテキストを使用して、bitdrift のモバイルsessionを、ClickStack にすでに保存されているバックエンドのトレースと相関付ける方法を説明します。モバイルテレメトリー自体は bitdrift 側に保持され、ClickStack には何もエクスポートされません。このガイドで学ぶ内容は次のとおりです。
+
+  * モバイルアプリで bitdrift のネットワーキングおよびトレーシングの連携を有効化する
+  * bitdrift の tenant でトレーシングを有効化し、ディープリンクの参照先を ClickStack インスタンスに設定する
+  * bitdrift のモバイルsessionからトレースIDをたどって ClickStack UI に移動する
+
+  bitdrift はモバイルデバイス上でサンプリングされていない豊富なテレメトリーを収集します。リクエストが OpenTelemetry で計装済みのサービスに到達した後は、ClickStack がバックエンドトレースを保存し、クエリを実行します。
+
+  所要時間: 10〜15分
+</Info>
+
+## bitdrift とは {#what-is-bitdrift}
+
+[bitdrift](https://bitdrift.io/) は、モバイルアプリケーションに特化して構築された動的なオブザーバビリティプラットフォームです。次の 3 つの中核コンポーネントで構成されています。
+
+* **[Capture SDK](https://bitdrift.io/feature/performance-centric)**: Rust で構築され、プラットフォーム固有の薄いラッパーを備えた軽量なクロスプラットフォームライブラリです。テレメトリーを即座に外部へストリーミング送信するのではなく、デバイス上の固定サイズのリングバッファに書き込みます。
+* **コントロールプレーン**: すべてのクライアントとの永続的な双方向接続を維持し、新しい設定をリアルタイムでプッシュして、何を収集し、何をアップロードするかを決定します。
+* **bitdrift プラットフォーム**: ワークフロー、session タイムライン、チャート、イシュー、アラートを通じて、モバイルテレメトリーから具体的な答えを導き出します。ウェブUI、CLI、AIエージェント、パブリック API からアクセスできます。
+
+bitdrift はモバイルテレメトリーを要求されるまでエッジに保持します。そのため、チームはあらかじめ固定的にサンプリングされたシグナルに頼ることなく、クラッシュやパフォーマンス問題に至るまでの、サンプリングされていない完全な session を取得できます。bitdrift Capture プラットフォームは、bitdrift がホストする SaaS として、またはお使いの AWS アカウント内に独自のクラウド (またはバケット) を持ち込む BYOC 型のデプロイメントとして利用できます。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![ANR に至るパスを示す bitdrift User Journey ダッシュボード](/images/clickstack/bitdrift/bitdrift-user-journey-dashboard.png)
+  </Frame>
+</div>
+
+*ユーザーが ANR に至るまでのパスを示す bitdrift User Journey ダッシュボード。*
+
+## なぜ bitdrift + ClickStack なのか {#why-bitdrift-clickstack}
+
+ClickStack は、ClickHouse 上に構築されたオブザーバビリティソリューションです。エンジニアリングチームは、バックエンドサービス、Web フロントエンド、インフラストラクチャ全体にわたるデータを収集、保存、クエリできます。bitdrift はこの基盤をモバイルデバイスにまで拡張します。本番環境で最も厄介な問題の多くは、モバイルデバイスを起点として発生しています。
+
+* **bitdrift はデバイス上で何が起きたかを示します**: ユーザーアクション、アプリのステート、ネットワークリクエスト、ログ、エラー、クラッシュ、パフォーマンスシグナル、およびそれらを取り巻くsessionコンテキスト。
+* **ClickStack はリクエストがバックエンドに到達した後に何が起きたかを示します**: 分散トレース、サービスの依存関係、ログ、メトリクス、データベース操作、インフラストラクチャの挙動。
+* **OpenTelemetryトレースコンテキストが両者を結び付けます。**
+
+調査の起点は、bitdrift で検出されたチェックアウトの失敗、画面読み込みの遅延、認証エラー、クラッシュなどです。エンジニアはネットワークリクエストからトレースIDをたどって ClickStack UI に移動し、リクエストがバックエンドサービス間を流れていく様子を確認できます。散在するタイムスタンプをもとに手作業で状況を再構成する必要はありません。
+
+<Tip>
+  **重要なポイント**
+
+  * **bitdrift** は、モバイルアプリ全体にわたってサンプリングされていないモバイルネイティブのテレメトリーを収集し、取得したトレースIDを対応するバックエンドトレースに関連付けます。
+  * **ClickStack** は、その結果得られる分散トレースを ClickHouse に保存・クエリし、ClickStack UI に表示します。
+</Tip>
+
+## 前提条件 {#prerequisites}
+
+* バックエンドのトレースを受信している **ClickHouse オブザーバビリティ** サービス。[完全マネージド型 ClickHouse オブザーバビリティのはじめに](/ja/clickstack/observability/getting-started)を参照してください。独自のインジェスト collector を運用している場合は、[セルフマネージドの入門ガイド](/ja/clickstack/self-configured/getting-started/managed)に従ってください。
+* **OpenTelemetry** で計装済みで、ClickStack にトレースを送信しているバックエンドサービス。[OpenTelemetry を使用したデータ取り込み](/ja/clickstack/observability/ingesting-data/opentelemetry)を参照してください。
+* モバイルアプリに組み込まれた **bitdrift Capture SDK**。インストール手順については、[bitdrift SDK ドキュメント](https://docs.bitdrift.io/)を参照してください。
+* **bitdrift アカウント**。tenant でトレーシングを有効にするため、[サポート](https://bitdrift.io/contact-us)に依頼できる状態である必要があります(トレーシングは実験的機能であり、bitdrift が tenant ごとに有効化します)。
+
+## トレーシングの設定 {#configure-tracing}
+
+設定はすべて bitdrift 側で行います。手順は次の3つです。
+
+1. [bitdrift サポート](https://bitdrift.io/contact-us)に連絡し、**ご利用の tenant でのトレーシングの有効化と、ClickStack UI インスタンスへのトレースのディープリンクの設定を依頼します**。**トレースを表示** リンクの遷移先を ClickStack UI に設定するのが、このディープリンクの設定です。これを設定しないと、トレーシングのデータは収集されますが、**トレースを表示** リンクは表示されません。
+2. 使用するプラットフォームで **bitdrift のネットワーク連携を有効化** し、送信リクエストでトレーシングヘッダーが伝播されるようにします。
+3. **Start Tracing ワークフローアクションを追加** し、対象とするsessionでトレーシングを有効にします。
+
+各ステップのプラットフォーム固有の詳細については、bitdrift ドキュメントの [How bitdrift and ClickStack work together](https://docs.bitdrift.io/product/integration-partners/clickhouse#how-bitdrift-and-clickstack-work-together) を参照してください。
+
+設定が完了すると、bitdrift のタイムラインのログ行とスパンビューに **トレースを表示** リンクが表示されます。このリンクから、収集されたトレースIDが ClickStack UI に引き渡されます。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![ClickStack UI の分散トレースにリンクする bitdrift のトレース](/images/clickstack/bitdrift/bitdrift-view-trace.jpg)
+  </Frame>
+</div>
+
+*bitdrift のsessionから「トレースを表示」リンクをたどり、ClickStack UI の分散トレースを開いた様子。*
+
+## デプロイの柔軟性 {#deployment-flexibility}
+
+この連携は、データが ClickStack に届く経路を変更しないため、ClickStack をセルフマネージドで運用している場合でも、ClickHouse Cloud 上のマネージドサービスとして利用している場合でも動作します。bitdrift はモバイルテレメトリーを ClickStack にエクスポートするわけではありません。デバイス上でリクエストの OpenTelemetryトレースコンテキストを収集し、OpenTelemetry で計装済みの自社サービスがすでに ClickStack に送信しているバックエンドトレースに関連付けます。bitdrift が **トレースを表示** リンクを生成するのに必要なのは ClickStack UI のアドレスだけです。そのため、ClickStack のデプロイメントやインジェストパイプラインに変更を加える必要はありません。
+
+## 次のステップ {#next-steps}
+
+* bitdrift で検出したモバイルアプリのクラッシュや遅いリクエストを起点に、ClickStack のバックエンドトレースまで**実際の調査の流れをたどってみましょう**
+* モバイルアプリが依存するバックエンドサービスを対象に、ClickStack UI で**ダッシュボードを作成しましょう**
+* **[bitdrift サンドボックス](https://bitdrift.io/sandbox)をチェック**して、Capture の使用感を体験してみましょう
+* **[無料試用](https://bitdrift.io/signup)を開始**して、モバイルアプリに bitdrift を導入しましょう
+
+## 関連情報 {#read-more}
+
+* [bitdrift ドキュメント: ClickHouse 連携](https://docs.bitdrift.io/product/integration-partners/clickhouse)
+* [ClickHouse オブザーバビリティをはじめる](/ja/clickstack/observability/getting-started)
+* [OpenTelemetry を使用したデータ取り込み](/ja/clickstack/observability/ingesting-data/opentelemetry)

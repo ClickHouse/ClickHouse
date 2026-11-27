@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <base/sanitizer_defs.h>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
@@ -33,6 +35,13 @@ using namespace DB;
 
 namespace
 {
+/// The hash of an object folds its non-typed (path, value) pairs with a wrapping `UInt32` sum -
+/// commutativity is the contract the assertions state, so the addition is expected to overflow.
+NO_SANITIZE_UNSIGNED_OVERFLOW UInt32 wrappingHashFold(UInt32 accumulated, UInt32 value)
+{
+    return accumulated + value;
+}
+
 /// Fixed seed: the distributional tests assert a p=0.001 chi-square cutoff, which a correct
 /// hash exceeds with non-zero probability. A deterministic seed keeps those checks (and every
 /// other randomized case here) reproducible so they cannot flake in CI.
@@ -1224,9 +1233,9 @@ TEST(ComputeHashInto, ReprIndependenceObjectSplit)
 
         auto value_p = ColumnUInt8::create();
         value_p->insert(Field(static_cast<UInt64>(7)));
-        expected += combineWeakHash32(leafHashOfSingleRow(*value_p), leafHashOfString("p"));
+        expected = wrappingHashFold(expected, combineWeakHash32(leafHashOfSingleRow(*value_p), leafHashOfString("p")));
 
-        expected += combineWeakHash32(leafHashOfString("s"), leafHashOfString("q"));
+        expected = wrappingHashFold(expected, combineWeakHash32(leafHashOfString("s"), leafHashOfString("q")));
     }
     EXPECT_EQ(finalizedRow(obj_a, 1), expected)
         << "The object hash must chain typed paths and commutatively fold (path, value) over the non-typed paths";

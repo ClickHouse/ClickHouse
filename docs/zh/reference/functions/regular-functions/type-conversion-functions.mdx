@@ -19,31 +19,41 @@ ClickHouse 通常采用[与 C++ 程序相同的行为](https://en.cppreference.c
 
 示例：
 
-```sql
+```sql title="Query"
 SELECT
     toTypeName(toLowCardinality('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
+```
 
+```text title="Response"
 ┌─source_type────────────┬─to_type_result_type────┬─cast_result_type─┐
 │ LowCardinality(String) │ LowCardinality(String) │ String           │
 └────────────────────────┴────────────────────────┴──────────────────┘
+```
 
+```sql title="Query"
 SELECT
     toTypeName(toNullable('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
+```
 
+```text title="Response"
 ┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
 │ Nullable(String) │ Nullable(String)    │ String           │
 └──────────────────┴─────────────────────┴──────────────────┘
+```
 
+```sql title="Query"
 SELECT
     toTypeName(toNullable('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
 SETTINGS cast_keep_nullable = 1
+```
 
+```text title="Response"
 ┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
 │ Nullable(String) │ Nullable(String)    │ Nullable(String) │
 └──────────────────┴─────────────────────┴──────────────────┘
@@ -120,6 +130,51 @@ LIMIT 10
 与 `reinterpret` 函数不同，CAST 会尝试在目标类型中得到相同的值。
 如果无法实现，则会引发异常。
 
+`CAST` 会移除 `LowCardinality` 包装器。相比之下，`to<Type>` 函数会保留它。
+`to<Type>` 函数同样会保留 `Nullable` 包装器。`CAST` 默认会移除 `Nullable`，但
+在启用 [`cast_keep_nullable`](/zh/reference/settings/session-settings/cast#cast_keep_nullable)
+设置时会保留它。
+
+```sql title="Query"
+SELECT
+    toTypeName(toLowCardinality('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type────────────┬─to_type_result_type────┬─cast_result_type─┐
+│ LowCardinality(String) │ LowCardinality(String) │ String           │
+└────────────────────────┴────────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ String           │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+SETTINGS cast_keep_nullable = 1
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ Nullable(String) │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
+
 当 `x` 直接写为数值，且 `T` 为 `Decimal` 或宽度超过 64 位的整数类型时，会直接按 `T`
 读取该数值的数字，因此不会在转换过程中丢失精度。否则，
 `CAST(0.1 AS Decimal256(76))` 会先将 `0.1` 读取为 `Float64`，然后返回
@@ -144,7 +199,7 @@ or x::T
 
 **返回值**
 
-返回转换为目标数据类型后的值。[`Any`](/zh/reference/data-types/index)
+返回转换为目标数据类型后的值。 [`Any`](/zh/reference/data-types/index)
 
 **示例**
 
@@ -2724,7 +2779,7 @@ toBFloat16('42.7'):            42.5
 
 ## toBFloat16OrNull {#toBFloat16OrNull}
 
-引入于：v1.1.0
+引入版本：v1.1.0
 
 将 String 输入值转换为 BFloat16 类型的值。
 如果字符串不表示浮点值，则该函数返回 NULL。
@@ -2755,7 +2810,7 @@ toBFloat16OrNull(x)
 
 **参数**
 
-* `x` — 数字的 `String` 字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 数值的字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -2763,7 +2818,7 @@ toBFloat16OrNull(x)
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments

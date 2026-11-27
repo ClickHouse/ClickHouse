@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
@@ -53,7 +54,7 @@ inline std::optional<size_t> adjustedIndexFromField(const Field & index, size_t 
     else if (index.getType() == Field::Types::Int64)
     {
         /// Cast to UInt64 before negation allows to avoid undefined behaviour for negation of the most negative number.
-        UInt64 index_from_end = -static_cast<UInt64>(index.safeGet<Int64>());
+        UInt64 index_from_end = common::negateIgnoreOverflow(static_cast<UInt64>(index.safeGet<Int64>()));
         if (index_from_end <= array_size)
             return array_size - index_from_end;
     }

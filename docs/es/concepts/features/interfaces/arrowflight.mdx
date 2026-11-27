@@ -17,11 +17,15 @@ Capacidades clave:
 * Ejecutar consultas SQL y recuperar resultados en formato Apache Arrow.
 * Insertar datos en tablas con el formato Arrow.
 * Consultar metadatos (catálogos, esquemas, tablas y claves primarias) mediante comandos de Flight SQL.
-* Crear, vincular, ejecutar y cerrar sentencias preparadas en el servidor mediante Flight SQL.
+* Crear, vincular, ejecutar y cerrar sentencias preparadas del lado del servidor mediante Flight SQL.
 * Administrar sesiones y ajustes mediante acciones de Flight SQL.
 * Cifrado TLS y autenticación mediante nombre de usuario y contraseña.
 * Recuperación incremental de resultados mediante `PollFlightInfo`.
 * Cancelación de consultas mediante `CancelFlightInfo`.
+
+<Note>
+  En ClickHouse Cloud, la interfaz Arrow Flight está deshabilitada de forma predeterminada y, para usarla, es necesario habilitar una marca de funcionalidad de Cloud en su servicio. Los ejemplos de configuración del servidor que se muestran a continuación corresponden a ClickHouse autogestionado.
+</Note>
 
 ## Habilitar el servidor Arrow Flight {#enabling-server}
 

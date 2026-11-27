@@ -105,11 +105,6 @@ time_t MetadataStorageFromCacheObjectStorage::getLastChanged(const std::string &
     return underlying->getLastChanged(path);
 }
 
-bool MetadataStorageFromCacheObjectStorage::supportsChmod() const
-{
-    return underlying->supportsChmod();
-}
-
 bool MetadataStorageFromCacheObjectStorage::supportsStat() const
 {
     return underlying->supportsStat();
@@ -238,6 +233,11 @@ bool MetadataStorageFromCacheObjectStorage::hasPendingRemovalBlobs(const StoredO
 
     std::lock_guard guard(removed_objects_mutex);
     return objects_to_remove.containsAny(blobs);
+}
+
+bool MetadataStorageFromCacheObjectStorage::hasPendingRemovalBatches(const BatchIds & batch_ids) const
+{
+    return underlying->hasPendingRemovalBatches(batch_ids);
 }
 
 int64_t MetadataStorageFromCacheObjectStorage::getDeadBlobsQueueEstimate()
@@ -383,16 +383,6 @@ void MetadataStorageFromCacheObjectStorageTransaction::setLastModified(const std
     underlying->setLastModified(path, timestamp);
 }
 
-bool MetadataStorageFromCacheObjectStorageTransaction::supportsChmod() const
-{
-    return underlying->supportsChmod();
-}
-
-void MetadataStorageFromCacheObjectStorageTransaction::chmod(const String & path, mode_t mode)
-{
-    underlying->chmod(path, mode);
-}
-
 void MetadataStorageFromCacheObjectStorageTransaction::setReadOnly(const std::string & path)
 {
     underlying->setReadOnly(path);
@@ -456,6 +446,11 @@ void MetadataStorageFromCacheObjectStorageTransaction::recordBlobsReplication(co
 StoredObjects MetadataStorageFromCacheObjectStorageTransaction::getSubmittedForRemovalBlobs()
 {
     return underlying->getSubmittedForRemovalBlobs();
+}
+
+BatchIds MetadataStorageFromCacheObjectStorageTransaction::getSubmittedForRemovalBatches()
+{
+    return underlying->getSubmittedForRemovalBatches();
 }
 
 void MetadataStorageFromCacheObjectStorageTransaction::createMetadataFile(const std::string & path, const StoredObjects & objects)

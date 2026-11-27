@@ -27,6 +27,7 @@
 #include <Interpreters/convertFieldToType.h>
 
 #include <algorithm>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -276,7 +277,7 @@ static bool hasNonDeterministicFunction(const QueryTreeNodePtr & node)
         {
             /// Only ordinary functions can be non-deterministic here (e.g. `rand`); aggregate and
             /// window functions are deterministic within the scope of the query.
-            if (function_node->isOrdinaryFunction() && !function_node->getFunctionOrThrow()->isDeterministicInScopeOfQuery())
+            if (function_node->isOrdinaryCall() && !function_node->getFunctionOrThrow()->isDeterministicInScopeOfQuery())
                 return true;
         }
 
@@ -897,6 +898,7 @@ static const QueryTreeNodePtr & getComparisonFilterExpressionNode(const QueryTre
 /// for the column type or is implied by existing filters, or ADDED otherwise.
 /// `expression` is a precomputed key, or a node that is hashed only when `filter_map` is accessed.
 template <typename Expression>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 static AddComparisonFilterResult addComparisonFilter(
     ComparisonFilterMap & filter_map,
     const Expression & expression,

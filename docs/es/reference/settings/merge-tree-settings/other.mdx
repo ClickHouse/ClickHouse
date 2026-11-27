@@ -15,6 +15,22 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se autogeneran a partir del código fuente de ClickHouse.
 
+## adaptive_codec_selection_period {#adaptive_codec_selection_period}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "nueva configuración"}]}]} />
+
+Evaluar un bloque significa comprimirlo con cada códec candidato y quedarse con la salida más pequeña. Con `enable_adaptive_codec_selection`, el stream de una columna se divide en ventanas de este número de bloques. En cada ventana, un bloque actúa como muestra: se evalúa, y los demás bloques reutilizan el códec ganador.
+Un bloque que reutiliza el ganador se vuelve a evaluar cuando el ganador escribe más por byte de origen que el segundo mejor en el bloque evaluado. Si ningún códec logró reducir el tamaño del bloque evaluado, no hay ganador y se evalúa el bloque siguiente.
+Un bloque evaluado nunca ocupa más de lo que ocuparía con el códec predeterminado; un bloque que reutiliza el ganador sí puede ocupar más.
+Con `1` se evalúan todos los bloques. En las partes compactas siempre se evalúan todos los bloques.
+Los eventos de perfilado `AdaptiveCodecBlocksPriced`, `AdaptiveCodecBlocksRepriced` y `AdaptiveCodecBlocksReused` cuentan los bloques de cada tipo por fusión o mutación en `system.part_log`.
+`AdaptiveCodecBytesDefault` y `AdaptiveCodecBytesWritten` suman, respectivamente, el tamaño con el códec predeterminado y el tamaño escrito de los bloques de muestra, por lo que su proporción representa el ahorro obtenido con la selección adaptativa, que es exacto con un período de `1`.
+No se contabilizan los streams cuyos únicos candidatos son el códec predeterminado y `NONE`.
+
 ## adaptive_write_buffer_initial_size {#adaptive_write_buffer_initial_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
@@ -84,6 +100,16 @@ El tipo de estadísticas `minmax` está obsoleto: es un subconjunto de `basic`, 
 
 Tiempo objetivo para ejecutar un paso de fusión o mutation. Puede superarse si
 un paso tarda más
+
+## cache_temporarily_for_merges {#cache_temporarily_for_merges}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nuevo ajuste experimental."}]}]} />
+
+Las lecturas de las fusiones en segundo plano y de las mutaciones usan la caché del sistema de archivos como búfer temporal: cuando se produce un fallo de caché, los datos se leen en la caché y se sirven desde ella, y la caché los elimina cuando ya nadie los retiene, salvo que los haya usado un lector o escritor ajeno a este modo. Solo el `ReaderExecutor` experimental admite este comportamiento; los demás lectores omiten la caché. `force_read_through_cache_for_merges` tiene precedencia.
 
 ## clean_deleted_rows {#clean_deleted_rows}
 
@@ -165,7 +191,11 @@ Orden de selección del códec de compresión para una columna:
 1. Códec de compresión definido para la columna en la declaración de la tabla
 2. Códec de compresión definido en `default_compression_codec` (esta configuración)
 3. Códec de compresión predeterminado definido en la configuración `compression`
-   Valor predeterminado: una cadena vacía (no definido).
+
+El combinador de códecs `FirstApplicable` selecciona un códec para el tipo de datos de cada columna (y de cada uno de sus streams);
+por ejemplo, `FirstApplicable(PCO, ZSTD(3))` comprime los números con `PCO` y el resto de los datos con `ZSTD(3)`. Al menos una de sus
+alternativas debe ser aplicable a cualquier tipo de datos, y no se permiten códecs con pérdida entre ellas.
+Valor predeterminado: una cadena vacía (no definido).
 
 ## disco {#disk}
 
@@ -184,6 +214,16 @@ Valores posibles:
 * `v1`
 * `v2`
 * `v3`
+
+## empty_parts_lifetime {#empty_parts_lifetime}
+
+<SettingsInfoBlock type="Seconds" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
+
+Antigüedad mínima, en segundos, que debe tener una parte vacía antes de que `remove_empty_parts` la elimine. La antigüedad se calcula a partir del `modification_time` de la parte, por lo que una fusión o una mutación que genere una nueva parte vacía reinicia el contador. No retrasa
+otras formas de reemplazar la parte: una fusión que la incluya, o un `TRUNCATE` o `DROP` que la abarque, la marca como obsoleta
+igual que a cualquier otra parte. Con 0, las partes vacías se eliminan sin esperar.
 
 ## enforce_index_structure_match_on_partition_manipulation {#enforce_index_structure_match_on_partition_manipulation}
 
@@ -224,6 +264,26 @@ todos.
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Controla cómo gestionan los fallos de caché las lecturas que realizan las fusiones en segundo plano y las mutaciones. Cuando está deshabilitado, se utilizan los rangos que ya están almacenados en caché, pero los rangos que faltan se leen directamente del almacenamiento subyacente sin rellenar la caché. Cuando está habilitado, los rangos que faltan se leen a través de la caché y se almacenan en la caché del sistema de archivos y, si está habilitada, también en la Distributed Cache. Esto permite precalentar los datos para lecturas posteriores, aunque también consume capacidad de la caché.
+
+## group_fsync_before_insert_finish {#group_fsync_before_insert_finish}
+
+<SettingsInfoBlock type="BoolAuto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "auto"},{"label": "nueva configuración"}]}]} />
+
+Surte efecto junto con `fsync_after_insert`, si la tabla está almacenada en discos locales.
+Un `INSERT` que escribe muchas partes no espera al fsync después de cada parte: las partes
+se confirman (commit) justo después de escribirse, y los archivos de todas las partes se sincronizan con fsync
+de forma conjunta antes de que finalice el `INSERT` (las partes confirmadas hace más de 30 segundos
+se sincronizan antes). Mientras tanto, el SO vuelca los datos a disco en segundo plano.
+Las partes pueden ser visibles para las consultas antes de ser persistentes, pero el `INSERT`
+solo se confirma después de que lo sean.
+
+Si está deshabilitado, cada parte se sincroniza con fsync justo después de escribirse, antes de confirmarse.
+
+El valor predeterminado `auto` lo habilita solo para tablas no replicadas. En las tablas replicadas,
+otra réplica puede eliminar duplicados de un `INSERT` con respecto a una parte que está confirmada pero que aún no
+se ha sincronizado con fsync en esta réplica, y confirmarlo antes de que los datos sean persistentes.
 
 ## initialization_retry_period {#initialization_retry_period}
 
@@ -351,6 +411,18 @@ Valores posibles:
 * `v3`
 
 Solo la versión `v3` permite cambiar la versión de serialización de los datos compartidos.
+
+## object_typed_shared_data_serialization_version {#object_typed_shared_data_serialization_version}
+
+<SettingsInfoBlock type="MergeTreeObjectTypedSharedDataSerializationVersion" default_value="v1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "v1"},{"label": "Nueva configuración"}]}]} />
+
+Versión de serialización de los datos compartidos tipados dentro del tipo de datos JSON: la estructura que almacena de forma conjunta las rutas tipadas declaradas como `SHARED` en una parte, en un número constante de archivos, en lugar de usar un conjunto de archivos independiente para cada ruta.
+
+Valores posibles:
+
+* `v1` - para cada gránulo, los datos de todas las rutas `SHARED` ordenados por ruta, con el inicio de los datos de cada ruta registrado en un stream de marcas, de modo que al leer solo algunas rutas se decodifiquen únicamente esas.
 
 ## old_parts_lifetime {#old_parts_lifetime}
 

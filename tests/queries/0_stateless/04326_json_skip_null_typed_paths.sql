@@ -1,5 +1,3 @@
-SET enable_json_type = 1;
-SET allow_experimental_json_type = 1;
 
 DROP TABLE IF EXISTS test_json_skip_null;
 CREATE TABLE test_json_skip_null (json JSON(a Nullable(Int64), b Nullable(String))) ENGINE = Memory;

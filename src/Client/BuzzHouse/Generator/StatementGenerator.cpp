@@ -491,7 +491,7 @@ void StatementGenerator::generateNextCreateFunction(RandomGenerator & rg, Create
     /// REPLACE FUNCTION syntax is not yet supported
     cf->set_create_opt(replace ? CreateReplaceOption::CreateOrReplace : CreateReplaceOption::Create);
     next.name = replace ? rg.pickRandomly(this->functions) : rg.nextIdentifier("f", this->function_counter++, fc.allow_nasty_identifiers);
-    next.nargs = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, fc.max_columns));
+    next.nargs = std::min(this->remainingWidth(), rg.randomInt<uint32_t>(1, fc.max_columns));
     next.is_deterministic = rg.nextBool();
     /// If this function is later called by an oracle, then don't call it
     this->allow_not_deterministic = !next.is_deterministic;
@@ -1699,9 +1699,10 @@ void StatementGenerator::generateUptDelWhere(RandomGenerator & rg, const SQLTabl
 }
 
 void StatementGenerator::generateUpdateSets(
-    RandomGenerator & rg, const SQLTable & t, UpdateSet * first, std::function<UpdateSet *()> add_next)
+    RandomGenerator & rg, const SQLTable & t, UpdateSet * first, std::function<UpdateSet *()> add_next, const bool keep_count)
 {
-    flatTableColumnPath(flat_tuple | flat_nested, t.cols, [](const SQLColumn &) { return true; });
+    flatTableColumnPath(
+        flat_tuple | flat_nested, t.cols, [&](const SQLColumn & c) { return !keep_count || c.special == ColumnSpecial::NONE; });
     if (this->entries.empty())
     {
         first->mutable_col()->mutable_col()->set_column("c0");
@@ -1779,10 +1780,10 @@ void StatementGenerator::maybeSinglePartition(RandomGenerator & rg, const SQLTab
     }
 }
 
-void StatementGenerator::generateNextUpdate(RandomGenerator & rg, const SQLTable & t, Update * upt)
+void StatementGenerator::generateNextUpdate(RandomGenerator & rg, const SQLTable & t, Update * upt, const bool keep_count)
 {
     maybeSinglePartition(rg, t, upt);
-    generateUpdateSets(rg, t, upt->mutable_update(), [&]() { return upt->add_other_updates(); });
+    generateUpdateSets(rg, t, upt->mutable_update(), [&]() { return upt->add_other_updates(); }, keep_count);
     generateUptDelWhere(rg, t, upt->mutable_where()->mutable_expr()->mutable_expr());
 }
 
@@ -1793,7 +1794,7 @@ void StatementGenerator::generateNextDelete(RandomGenerator & rg, const SQLTable
 }
 
 template <typename T>
-void StatementGenerator::generateNextUpdateOrDeleteOnTable(RandomGenerator & rg, const SQLTable & t, T * st)
+void StatementGenerator::generateNextUpdateOrDeleteOnTable(RandomGenerator & rg, const SQLTable & t, T * st, const bool keep_count)
 {
     t.setName(st->mutable_est(), false);
     setClusterClause(rg, t.getCluster(), st->mutable_cluster());
@@ -1803,7 +1804,7 @@ void StatementGenerator::generateNextUpdateOrDeleteOnTable(RandomGenerator & rg,
     }
     else
     {
-        generateNextUpdate(rg, t, st->mutable_upt());
+        generateNextUpdate(rg, t, st->mutable_upt(), keep_count);
     }
     if (rg.nextSmallNumber() < 3)
     {
@@ -3597,10 +3598,30 @@ void StatementGenerator::generateNextKill(RandomGenerator & rg, Kill * kil)
     BinaryExpr * bexpr = kil->mutable_where()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
 
     bexpr->set_op(BinaryOperator::BINOP_EQ);
-    bexpr->mutable_lhs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column("mutation_id");
-    bexpr->mutable_rhs()->mutable_lit_val()->set_string_lit(fc.getRandomMutation(rg.nextInFullRange()));
+    if (rg.nextSmallNumber() < 4)
+    {
+        /// Roll back every running transaction, the session's own too, or look up an unknown one
+        const bool running = rg.nextBool();
 
-    kil->set_command(Kill_KillEnum_MUTATION);
+        bexpr->mutable_lhs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(
+            running ? "state" : "tid_hash");
+        if (running)
+        {
+            bexpr->mutable_rhs()->mutable_lit_val()->set_string_lit("RUNNING");
+        }
+        else
+        {
+            bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt64());
+        }
+        kil->set_command(Kill_KillEnum_TRANSACTION);
+    }
+    else
+    {
+        bexpr->mutable_lhs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(
+            "mutation_id");
+        bexpr->mutable_rhs()->mutable_lit_val()->set_string_lit(fc.getRandomMutation(rg.nextInFullRange()));
+        kil->set_command(Kill_KillEnum_MUTATION);
+    }
     if (rg.nextSmallNumber() < 3)
     {
         std::uniform_int_distribution<uint32_t> opt_range(1, static_cast<uint32_t>(Kill::KillOption_MAX));

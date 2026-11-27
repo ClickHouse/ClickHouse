@@ -121,8 +121,9 @@ struct AggregateFunctionSumData
 
     /// A row counts when `bool(condition)` differs from `add_if_zero`, as in the generic loop. Null maps may hold any
     /// nonzero byte for a NULL, so the byte must be converted to `bool` before the comparison.
+    /// The unsigned partial sums and the total wrap around on purpose.
     template <typename Value, bool conditional, bool add_if_zero>
-    static ALWAYS_INLINE NativeType<T> sumNarrowDecimals(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t count)
+    static ALWAYS_INLINE_NO_SANITIZE_UNSIGNED_OVERFLOW NativeType<T> sumNarrowDecimals(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t count)
     {
         using Native = NativeType<Value>;
         /// Unsigned arithmetic wraps modulo 2^N without undefined behaviour.

@@ -1,4 +1,4 @@
-export const AgentPrompt = ({ prompt, title = "에이전트 지원 설정", description, outline, outlineLabel = "에이전트가 수행할 작업", repositoryUrl, repositoryLabel = "ClickHouse/agent-skills" }) => {
+const AgentPrompt = ({ prompt, title = "에이전트 지원 설정", description, outline, outlineLabel = "에이전트가 수행할 작업", repositoryUrl, repositoryLabel = "ClickHouse/agent-skills" }) => {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = async () => {
@@ -102,3 +102,5 @@ export const AgentPrompt = ({ prompt, title = "에이전트 지원 설정", desc
     </div>
   )
 }
+
+export { AgentPrompt };
