@@ -183,13 +183,15 @@ namespace
     {
         const std::string_view path = is_clickhouse_keeper ? DB::keeper_config_path : zookeeper_config_path;
 
-        ClusterMembers members;
-        if (auto config = session.tryGetClusterConfig(path))
-            members = getClusterMembers(*config);
-
-        if (members.empty())
+        auto config = session.tryGetClusterConfig(path);
+        if (!config)
             throw KeeperException(
                 Coordination::Error::ZBADARGUMENTS, "ZooKeeper node {} does not report its cluster configuration at `{}`", node.host, path);
+
+        ClusterMembers members = getClusterMembers(*config);
+        /// A standalone ZooKeeper server leaves its configuration empty: it is a cluster of one.
+        if (members.empty())
+            members.emplace(node.host);
         return members;
     }
 

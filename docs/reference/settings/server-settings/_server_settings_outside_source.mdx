@@ -1929,9 +1929,9 @@ The following settings can be configured by sub-tags:
 | `use_compression` (optional)               | Enables compression in Keeper protocol if set to true.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `use_xid_64` (optional)                    | Enables 64-bit transaction IDs. Set to `true` to enable extended transaction ID format. Default: `false`.                                                                                                                                                                                                                                                                                                                                                |
 | `pass_opentelemetry_tracing_context` (optional) | Enables propagation of OpenTelemetry tracing context to Keeper requests. When enabled, tracing spans will be created for Keeper operations, allowing distributed tracing across ClickHouse and Keeper. See [Tracing ClickHouse Keeper Requests](/guides/oss/deployment-and-scaling/monitoring/opentelemetry#tracing-clickhouse-keeper-requests) for more details. Default: `false`.                                                                                                                                      |
-| `connect_to_all_nodes` (optional)          | Connects to all nodes in parallel, refuses to work if they belong to different clusters, and chooses a node by `connect_to_all_nodes_policy`. Default: `false`. |
+| `connect_to_all_nodes` (optional)          | Connects to all nodes in parallel, refuses to work if they belong to different clusters, and chooses a node by `connect_to_all_nodes_policy`. Default: `true`. |
 | `connect_to_all_nodes_wait_ms` (optional)  | How long to wait for the other nodes after the first one connected, in milliseconds. Default: `1000`. |
-| `connect_to_all_nodes_policy` (optional)   | How a node is chosen: `load_balancing`, `fewest_connections`, `fastest_connect` or `lowest_latency`. A value other than `load_balancing` enables `connect_to_all_nodes`. Default: `load_balancing`. |
+| `connect_to_all_nodes_policy` (optional)   | How a node is chosen: `load_balancing`, `fewest_connections`, `fastest_connect` or `lowest_latency`. Default: `load_balancing`. |
 
 There is also the `zookeeper_load_balancing` setting (optional) which lets you select the algorithm for ZooKeeper node selection:
 
@@ -1946,7 +1946,7 @@ There is also the `zookeeper_load_balancing` setting (optional) which lets you s
 
 **Connecting to all nodes**
 
-With `connect_to_all_nodes`, every new session connects to all nodes in parallel.
+By default, every new session connects to all nodes in parallel.
 It waits for the first node, and then up to `connect_to_all_nodes_wait_ms` for the others.
 
 The nodes that answered must report the same cluster configuration.
@@ -1956,8 +1956,12 @@ This also holds after a config reload that keeps the same set of nodes.
 
 Each node must allow the `srvr` four-letter command and report its cluster configuration:
 
-- ClickHouse Keeper at `/keeper/config`.
-- ZooKeeper 3.5 or newer at `/zookeeper/config`.
+- ClickHouse Keeper 23.7 or newer at `/keeper/config`.
+- ZooKeeper 3.5 or newer at `/zookeeper/config`. A standalone ZooKeeper server is a cluster of its own.
+
+If a node does not, set `connect_to_all_nodes` to `0`.
+Then the client connects to one node at a time, as in older versions.
+A server without a `zookeeper` section uses the nodes of its own `keeper_server` and connects to one node at a time.
 
 A node in the client's availability zone is chosen first, if the availability zone preference is configured.
 Then `connect_to_all_nodes_policy` chooses among the remaining nodes, and ties follow `zookeeper_load_balancing`:

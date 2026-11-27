@@ -33,7 +33,6 @@
             <port>9181</port>
         </node>
         <zookeeper_load_balancing>in_order</zookeeper_load_balancing>
-        <connect_to_all_nodes>1</connect_to_all_nodes>
         <connect_to_all_nodes_wait_ms>10000</connect_to_all_nodes_wait_ms>
     </zookeeper>
 </clickhouse>

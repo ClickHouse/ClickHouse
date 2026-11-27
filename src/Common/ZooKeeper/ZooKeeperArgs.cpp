@@ -172,6 +172,8 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
 void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
 {
     zookeeper_name = config_name;
+    /// On by default only for nodes listed by hand: `keeper_server` lists the nodes of its own cluster.
+    connect_to_all_nodes = true;
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_name, keys);
@@ -362,9 +364,6 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
 
     if (load_balancing)
         get_priority_load_balancing = DB::GetPriorityForLoadBalancing(*load_balancing, thread_local_rng() % hosts.size());
-
-    if (connect_to_all_nodes_policy != NodeSelectionPolicy::LOAD_BALANCING)
-        connect_to_all_nodes = true;
 
     if (prefer_local_availability_zone)
         client_availability_zone = DB::PlacementInfo::PlacementInfo::instance().getAvailabilityZone();

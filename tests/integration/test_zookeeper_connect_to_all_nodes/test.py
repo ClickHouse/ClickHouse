@@ -37,14 +37,13 @@ def started_cluster():
 
 def set_zookeeper_config(
     hosts,
-    connect_to_all_nodes=True,
     load_balancing="in_order",
     zones=None,
     reload=True,
     **settings,
 ):
     """Every config but one uses `in_order` with keeper1 first, so only a metric of the policy can choose another node.
-    `connect_to_all_nodes=False` omits the key, so that only a non-default policy can turn the mode on.
+    `connect_to_all_nodes` is on by default, so it is written only when a test passes it.
     The default wait is long: with every node up, a round ends as soon as all of them answered.
     `reload=False` only writes the config."""
     zones = zones or {}
@@ -54,8 +53,6 @@ def set_zookeeper_config(
         for host in hosts
     )
     settings = {"connect_to_all_nodes_wait_ms": 10000, **settings}
-    if connect_to_all_nodes:
-        settings = {"connect_to_all_nodes": 1, **settings}
     extra = "".join(f"<{key}>{value}</{key}>" for key, value in settings.items())
     node.replace_config(
         "/etc/clickhouse-server/config.d/zookeeper.xml",
@@ -282,9 +279,7 @@ def test_lowest_latency():
         client.stop()
         client.close()
 
-    set_zookeeper_config(
-        CLUSTER_A, connect_to_all_nodes=False, connect_to_all_nodes_policy="lowest_latency"
-    )
+    set_zookeeper_config(CLUSTER_A, connect_to_all_nodes_policy="lowest_latency")
     assert connected_host() != "keeper1"
 
 
@@ -293,3 +288,19 @@ def test_single_node():
     set_zookeeper_config(["keeper2"])
     assert connected_host() == "keeper2"
     assert node.contains_in_log("1 of 1 ZooKeeper nodes answered, chose keeper2:9181")
+
+
+def test_connect_to_all_nodes_off():
+    # By default the client sees cluster B and refuses: in the reload, or in the next session if the reload deferred it.
+    create_znodes("node_b", cluster_a_zxid() + 1000)
+    set_zookeeper_config(CLUSTER_A + ["node_b"], reload=False)
+    error = node.query_and_get_answer_with_error("SYSTEM RELOAD CONFIG")[1]
+    if "report different cluster configurations" not in error:
+        node.query("SYSTEM RECONNECT ZOOKEEPER")
+        assert_error_with_retry(
+            node, CHECK_QUERY_ONCE, "report different cluster configurations"
+        )
+
+    # Off, it connects to one node at a time, as before.
+    set_zookeeper_config(CLUSTER_A + ["node_b"], connect_to_all_nodes=0)
+    assert connected_host() == "keeper1"

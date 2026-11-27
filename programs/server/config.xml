@@ -1156,6 +1156,10 @@
 
          See https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/
 
+         The server connects to all listed nodes and refuses to work if they belong to different clusters.
+         Every node must allow the `srvr` four-letter command and be ClickHouse Keeper 23.7+ or ZooKeeper 3.5+.
+         Otherwise add <connect_to_all_nodes>0</connect_to_all_nodes> to connect to one node at a time.
+
          Note: ClickHouse Cloud https://clickhouse.com/cloud has ClickHouse Keeper automatically configured for every service.
       -->
 
