@@ -39,6 +39,10 @@ SELECT sum(a) FROM t_05894_same SETTINGS prefer_localhost_replica = 0;
 SELECT _table FROM t_05894_same ORDER BY _table SETTINGS prefer_localhost_replica = 0;
 SELECT _table, count() FROM t_05894_outer GROUP BY _table ORDER BY _table SETTINGS prefer_localhost_replica = 1;
 SELECT _table FROM t_05894_mv ORDER BY _table SETTINGS prefer_localhost_replica = 0;
+SELECT count() FROM t_05894_outer SETTINGS prefer_localhost_replica = 0;
+SELECT count() FROM t_05894_mv SETTINGS prefer_localhost_replica = 1;
+SELECT sum(1) FROM t_05894_rmv SETTINGS prefer_localhost_replica = 0;
+SELECT count() FROM t_05894_outer SETTINGS additional_table_filters = {'t_05894_outer': 'a IS NOT NULL'}, prefer_localhost_replica = 0; -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE t_05894_same;
 DROP TABLE t_05894_outer;

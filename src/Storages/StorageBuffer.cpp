@@ -353,8 +353,18 @@ void StorageBuffer::read(
         /// The buffers' plan below is typed by the table the query names, so it must declare our column types.
         if (query_table_node)
         {
+            /// The column the planner reads only to count rows carries no value of that type, unless a table filter reads it.
+            const String * row_count_only_column = nullptr;
+            const auto * table_expression_data
+                = query_info.planner_context ? query_info.planner_context->getTableExpressionDataOrNull(query_info.table_expression) : nullptr;
+            if (table_expression_data && table_expression_data->getRowCountOnlyColumnIdentifier()
+                && !table_expression_data->getRowLevelFilterActions() && !query_info.additional_filter_ast)
+                row_count_only_column = table_expression_data->getColumnNameOrNull(*table_expression_data->getRowCountOnlyColumnIdentifier());
+
             for (const auto & name : column_names)
             {
+                if (row_count_only_column && name == *row_count_only_column)
+                    continue;
                 auto query_column = query_table_node->getStorageSnapshot()->tryGetColumn(get_columns_options, name);
                 auto our_column = storage_snapshot->tryGetColumn(get_columns_options, name);
                 if (query_column && our_column && !query_column->type->equals(*our_column->type))
