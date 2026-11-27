@@ -75,7 +75,6 @@ namespace Setting
     extern const SettingsUInt64 max_hyperscan_regexp_total_length;
     extern const SettingsBool reject_expensive_hyperscan_regexps;
     extern const SettingsBool use_index_for_in_with_subqueries;
-    extern const SettingsBool use_text_index_for_substring_search;
 }
 
 TextSearchQuery::TextSearchQuery(
@@ -497,7 +496,8 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         || function_name == "mapContainsKeyLike"
         || function_name == "mapContainsValueLike"
         || function_name == "position"
-        || function_name == "positionUTF8")
+        || function_name == "positionUTF8"
+        || function_name == "countSubstrings")
     {
         return getHintOrNoneMode();
     }
@@ -831,10 +831,10 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         if (traverseMapElementKeyNode(function, out))
             return true;
 
-        if (traverseJSONSubcolumnKeyNode(function, out) || traverseSubstringOccurrenceNode(function, out))
+        if (traverseJSONSubcolumnKeyNode(function, out))
             return true;
 
-        if (traversePositionNode(function, out))
+        if (traverseSubstringSearchNode(function, out))
             return true;
 
         /// `LIKE pattern ESCAPE 'c'` and `ILIKE pattern ESCAPE 'c'` arrive here as a 3-argument
@@ -868,7 +868,7 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
                 String rewritten = likePatternWithCustomEscapeToLikePattern(
                     pattern_field.safeGet<String>(), escape_str[0]);
                 Field rewritten_field(std::move(rewritten));
-                if (traverseFunctionNode(function, function_name, lhs_argument, pattern_type, rewritten_field, out))
+                if (traverseFunctionNode(function, lhs_argument, pattern_type, rewritten_field, out))
                     return true;
             }
             return false;
@@ -907,12 +907,12 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
 
             if (rhs_argument.tryGetConstant(const_value, const_type))
             {
-                if (traverseFunctionNode(function, function_name, lhs_argument, const_type, const_value, out))
+                if (traverseFunctionNode(function, lhs_argument, const_type, const_value, out))
                     return true;
             }
             else if (lhs_argument.tryGetConstant(const_value, const_type) && function_name == "equals")
             {
-                if (traverseFunctionNode(function, function_name, rhs_argument, const_type, const_value, out))
+                if (traverseFunctionNode(function, rhs_argument, const_type, const_value, out))
                     return true;
             }
         }
@@ -1057,28 +1057,6 @@ String escapeForLikePattern(std::string_view needle)
     }
 
     return pattern;
-}
-
-/// Whether comparing a search result with `bound` means "found": `> 0`, `!= 0` or `>= 1`.
-/// `search_is_left` is false for the swapped form, e.g. `0 < position(s, 'x')`.
-inline bool isOccurrenceComparison(std::string_view comparison_name, UInt64 bound, bool search_is_left)
-{
-    if (bound == 0)
-        return comparison_name == "notEquals" || comparison_name == (search_is_left ? "greater" : "less");
-    return bound == 1 && comparison_name == (search_is_left ? "greaterOrEquals" : "lessOrEquals");
-}
-
-/// Substring search functions that the index serves as `LIKE '%needle%'`.
-inline bool isCaseSensitiveSubstringSearch(std::string_view function_name)
-{
-    return function_name == "position" || function_name == "positionUTF8" || function_name == "countSubstrings";
-}
-
-/// Substring search functions that the index serves as `ILIKE '%needle%'`.
-inline bool isCaseInsensitiveSubstringSearch(std::string_view function_name)
-{
-    return function_name == "positionCaseInsensitive" || function_name == "positionCaseInsensitiveUTF8"
-        || function_name == "countSubstringsCaseInsensitive" || function_name == "countSubstringsCaseInsensitiveUTF8";
 }
 
 }
@@ -1315,19 +1293,24 @@ static bool isDefaultValue(std::string_view value, const Block & header)
     return value.empty() || (isFixedString(value_type) && value.find_first_not_of('\0') == std::string_view::npos);
 }
 
-static bool isPositionFunction(std::string_view function_name)
+/// The functions that return 0 if a non-empty needle is not found and a positive number otherwise: the position of its
+/// first occurrence or the number of occurrences.
+static bool isSubstringSearchFunction(std::string_view function_name)
 {
     return function_name == "position"
         || function_name == "positionUTF8"
         || function_name == "positionCaseInsensitive"
-        || function_name == "positionCaseInsensitiveUTF8";
+        || function_name == "positionCaseInsensitiveUTF8"
+        || function_name == "countSubstrings"
+        || function_name == "countSubstringsCaseInsensitive"
+        || function_name == "countSubstringsCaseInsensitiveUTF8";
 }
 
-bool MergeTreeIndexConditionText::traversePositionNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
+bool MergeTreeIndexConditionText::traverseSubstringSearchNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
 {
     /// Whether the condition is equivalent to the needle being contained in the haystack, so that the index can
     /// replace it. Otherwise the condition only implies it, e.g. `position(s, 'a') = 3`, and the index only skips granules.
-    auto traverse_position = [&](const RPNBuilderFunctionTreeNode & position_node, bool equivalent)
+    auto traverse_position = [&](const RPNBuilderFunctionTreeNode & position_node, bool equivalent, const RPNBuilderFunctionTreeNode * condition_node)
     {
         /// The form with a start position is not supported.
         if (position_node.getArgumentsSize() != 2)
@@ -1346,16 +1329,15 @@ bool MergeTreeIndexConditionText::traversePositionNode(const RPNBuilderFunctionT
         if (unwrapLosslessConversion(haystack, /*allow_drop_nullable=*/ false).getDAGNode() != unwrapLosslessConversion(haystack).getDAGNode())
             equivalent = false;
 
-        return traverseFunctionNode(
-            position_node, position_node.getFunctionName(), haystack, needle_type, needle, out, /*allow_direct_read=*/ equivalent);
+        return traverseFunctionNode(position_node, haystack, needle_type, needle, out, /*allow_direct_read=*/ equivalent, condition_node);
     };
 
     const String function_name = function_node.getFunctionName();
 
-    /// The result of `position` used directly as a condition means it must be non-zero. The index still cannot replace
-    /// the function: the result is a position, not 0 or 1, if it is used in an expression or the SELECT list.
-    if (isPositionFunction(function_name))
-        return traverse_position(function_node, /*equivalent=*/ false);
+    /// The result used directly as a condition means it must be non-zero. The index still cannot replace the function:
+    /// the result is a position or a count, not 0 or 1, if it is used in an expression or the SELECT list.
+    if (isSubstringSearchFunction(function_name))
+        return traverse_position(function_node, /*equivalent=*/ false, /*condition_node=*/ nullptr);
 
     if (function_node.getArgumentsSize() != 2)
         return false;
@@ -1367,7 +1349,7 @@ bool MergeTreeIndexConditionText::traversePositionNode(const RPNBuilderFunctionT
             continue;
 
         auto position_node = argument.toFunctionNode();
-        if (!isPositionFunction(position_node.getFunctionName()))
+        if (!isSubstringSearchFunction(position_node.getFunctionName()))
             continue;
 
         Field constant;
@@ -1377,17 +1359,17 @@ bool MergeTreeIndexConditionText::traversePositionNode(const RPNBuilderFunctionT
 
         const bool position_is_left_argument = position_argument == 0;
 
-        /// The condition must reject the zero result, which `position` returns when the needle is not found.
+        /// The condition must reject the zero result, which the function returns when the needle is not found.
         auto result_at_zero = evaluatePositionComparison(function_name, constant, position_is_left_argument, 0);
         if (!result_at_zero || *result_at_zero)
             return false;
 
-        /// It is equivalent to the needle being found if it also accepts every position from 1 on. Each comparison except
+        /// It is equivalent to the needle being found if it also accepts every value from 1 on. Each comparison except
         /// `equals` that rejects 0 and accepts 1 does, e.g. `> 0`, `!= 0`, `>= 1`, `> 0.5`, `0 < position(...)`.
         auto result_at_one = evaluatePositionComparison(function_name, constant, position_is_left_argument, 1);
         const bool equivalent = result_at_one && *result_at_one && function_name != "equals";
 
-        return traverse_position(position_node, equivalent);
+        return traverse_position(position_node, equivalent, &function_node);
     }
 
     return false;
@@ -1395,14 +1377,14 @@ bool MergeTreeIndexConditionText::traversePositionNode(const RPNBuilderFunctionT
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
-    const String & function_name,
     const RPNBuilderTreeNode & argument_node,
     DataTypePtr value_type,
     Field value_field,
     RPNElement & out,
     bool allow_direct_read,
-    bool ascii_case_folding) const
+    const RPNBuilderFunctionTreeNode * condition_node) const
 {
+    const String function_name = function_node.getFunctionName();
     auto direct_read_mode = getDirectReadMode(function_name);
 
     /// The index knows the expression under the conversion, e.g. `m.key_<key>` in `equals(_CAST(m.key_<key>, 'String'), 'value')`.
@@ -1427,7 +1409,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     bool has_map_values_column = hasIndexForColumn(fmt::format("mapValues({})", index_column_name));
 
     bool candidate_for_exact_mode = true;
-    if (traverseMapElementValueNode(function_node, index_column_node, value_field))
+    if (traverseMapElementValueNode(condition_node ? *condition_node : function_node, index_column_node, value_field))
     {
         has_index_column = true;
 
@@ -1500,7 +1482,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         = tokenizer->supportsStringLike() || like_optimization_supported_tokenizers.contains(tokenizer->getType());
 
     /// Exact: a needle occurs in a value iff its `%needle%` pattern matches one of the value's tokens.
-    auto try_search_needle_by_infix_pattern = [&](std::string_view needle, bool case_insensitive)
+    /// `ascii_case_folding`: the function folds the case of ASCII letters only, see `stringLikeToPatterns`.
+    /// `allow_hint`: for a map element or a JSON path, which the index cannot answer exactly, search the dictionary
+    /// as a hint, as `like` does.
+    auto try_search_needle_by_infix_pattern = [&](std::string_view needle, bool case_insensitive, bool ascii_case_folding, bool allow_hint)
     {
         /// The dictionary scan pays off only when the index replaces the predicate. For granule skipping alone,
         /// scanning the whole dictionary can be slower than a full scan of the column.
@@ -1513,19 +1498,19 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             = !has_postprocessor && (!has_preprocessor || (case_insensitive && preprocessor->isASCIILowerOrUpper()));
         const bool needle_supported = UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(needle.data()), needle.size());
 
-        if (!tokenizer_supported || !scan_enabled || !processors_supported || !candidate_for_exact_mode
+        if (!tokenizer_supported || !scan_enabled || !processors_supported || (!candidate_for_exact_mode && !allow_hint)
             || !affix_patterns_allowed || !needle_supported)
             return false;
 
         auto patterns = stringLikeToPatterns(
-            "%" + escapeForLikePattern(needle) + "%", case_insensitive, /*allow_arbitrary_patterns=*/ true);
+            "%" + escapeForLikePattern(needle) + "%", case_insensitive, /*allow_arbitrary_patterns=*/ true, ascii_case_folding);
         if (patterns.size() != 1)
             return false;
 
         out.function = RPNElement::FUNCTION_LIKE;
         out.text_search_queries.emplace_back(
             std::make_shared<TextSearchQuery>(
-                function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact,
+                function_name, TextSearchMode::Any, candidate_for_exact_mode ? TextIndexDirectReadMode::Exact : direct_read_mode,
                 VectorWithMemoryTracking<String>(), std::move(patterns), VectorWithMemoryTracking<String>(), automaton_budget.get()));
         return true;
     };
@@ -1927,7 +1912,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return false;
 
         const auto & like_pattern = value_field.safeGet<String>();
-        auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ true, /*allow_arbitrary_patterns=*/ affix_patterns_allowed, ascii_case_folding);
+        auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ true, /*allow_arbitrary_patterns=*/ affix_patterns_allowed);
         const bool is_infix = isInfixPattern(like_pattern);
         if (patterns.size() == 1 && (is_infix || affix_patterns_allowed))
         {
@@ -1989,7 +1974,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         /// One needle only: the dictionary scan searches every block once per needle.
         if (needles.size() == 1 && needles.front().getType() == Field::Types::String
-            && try_search_needle_by_infix_pattern(needles.front().safeGet<String>(), is_case_insensitive))
+            && try_search_needle_by_infix_pattern(
+                needles.front().safeGet<String>(), is_case_insensitive, /*ascii_case_folding=*/ false, /*allow_hint=*/ false))
             return true;
 
         /// The tokens below are matched case-sensitively.
@@ -2019,19 +2005,25 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         }
         return true;
     }
-    if (isPositionFunction(function_name) && can_search_substrings)
+    if (isSubstringSearchFunction(function_name) && can_search_substrings)
     {
-        /// A needle that `position` finds at some position, i.e. `multiSearchAny` with this one needle.
+        /// A needle that the function finds, i.e. `multiSearchAny` with this one needle.
         if (value_field.getType() != Field::Types::String)
             return false;
 
-        /// The empty needle is found in every value, also in one without tokens.
+        /// `position` finds the empty needle in every value, also in one without tokens, and `countSubstrings` counts it 0 times.
         const auto & needle = value_field.safeGet<String>();
         if (needle.empty())
             return false;
 
-        const bool is_case_insensitive = function_name.starts_with("positionCaseInsensitive");
-        if (try_search_needle_by_infix_pattern(needle, is_case_insensitive))
+        const bool is_case_insensitive
+            = function_name.starts_with("positionCaseInsensitive") || function_name.starts_with("countSubstringsCaseInsensitive");
+
+        /// The variants without `UTF8` fold the case of ASCII letters only, as the dictionary scan does. So unlike `ILIKE`,
+        /// they also take a needle with `k` or `s`, to which non-ASCII letters fold, and a non-ASCII one with `array`.
+        const bool ascii_case_folding = function_name == "positionCaseInsensitive" || function_name == "countSubstringsCaseInsensitive";
+
+        if (try_search_needle_by_infix_pattern(needle, is_case_insensitive, ascii_case_folding, /*allow_hint=*/ true))
             return true;
 
         /// The tokens below are matched case-sensitively.
@@ -2044,7 +2036,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (has_preprocessor && !preprocessor->isASCIILowerOrUpper())
             return false;
 
-        /// `position` searches bytes, and neither the column nor the index validates the value as UTF-8. Every tokenizer
+        /// These functions search bytes, and neither the column nor the index validates the value as UTF-8. Every tokenizer
         /// here except `splitByNonAlpha`, which splits by ASCII bytes, advances by the length that the first byte of
         /// a code point declares. So a malformed leading byte right before the occurrence of the needle swallows up to
         /// three bytes of it, e.g. `\xC2needle` is indexed with the 3-grams `\xC2nee`, `eed`, `edl`, `dle`, without `nee`.
@@ -2138,91 +2130,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
 
     return false;
-}
-
-/// If `function_node` is `position(s, 'x') > 0` or another comparison that is true exactly when a substring search
-/// function finds a constant needle, builds `out` as for `s LIKE '%x%'` (`s ILIKE '%x%'` for the case-insensitive
-/// functions). Returns false if it is not such a comparison, or if the index cannot serve that `LIKE`.
-bool MergeTreeIndexConditionText::traverseSubstringOccurrenceNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
-{
-    /// Opt-in: with about one distinct token per row, the dictionary scan is slower than searching the column.
-    if (!getContext()->getSettingsRef()[Setting::use_text_index_for_substring_search])
-        return false;
-
-    const auto comparison_name = function_node.getFunctionName();
-    if (function_node.getArgumentsSize() != 2
-        || (comparison_name != "notEquals" && comparison_name != "greater" && comparison_name != "less"
-            && comparison_name != "greaterOrEquals" && comparison_name != "lessOrEquals"))
-        return false;
-
-    Field bound;
-    DataTypePtr bound_type;
-    size_t search_argument = 0;
-    if (function_node.getArgumentAt(0).tryGetConstant(bound, bound_type))
-        search_argument = 1;
-    else if (!function_node.getArgumentAt(1).tryGetConstant(bound, bound_type))
-        return false;
-
-    if (bound.getType() != Field::Types::UInt64)
-        return false;
-
-    if (!isOccurrenceComparison(comparison_name, bound.safeGet<UInt64>(), search_argument == 0))
-        return false;
-
-    const auto search_node = function_node.getArgumentAt(search_argument);
-    if (!search_node.isFunction())
-        return false;
-
-    const auto search_function = search_node.toFunctionNode();
-    const auto search_function_name = search_function.getFunctionName();
-
-    /// Case-insensitive functions give the same result as `ILIKE` for every needle `ILIKE` accepts.
-    /// The ASCII-only ones match like the dictionary scan does, so they also take needles `ILIKE` rejects.
-    String like_function_name;
-    if (isCaseSensitiveSubstringSearch(search_function_name))
-        like_function_name = "like";
-    else if (isCaseInsensitiveSubstringSearch(search_function_name))
-        like_function_name = "ilike";
-    else
-        return false;
-
-    const bool ascii_case_folding = search_function_name == "positionCaseInsensitive" || search_function_name == "countSubstringsCaseInsensitive";
-
-    /// `LIKE` has no start position argument.
-    if (search_function.getArgumentsSize() != 2)
-        return false;
-
-    Field needle;
-    DataTypePtr needle_type;
-    if (!search_function.getArgumentAt(1).tryGetConstant(needle, needle_type) || needle.getType() != Field::Types::String)
-        return false;
-
-    /// Not checked by the `like` branch of `traverseFunctionNode`: `stringLikeToTokens` runs the preprocessor over the
-    /// escaped pattern, which only `lower`/`upper` keep intact, and splits a needle cut inside a UTF-8 character wrongly.
-    const auto & needle_string = needle.safeGet<String>();
-    if ((has_preprocessor && !preprocessor->isASCIILowerOrUpper())
-        || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(needle_string.data()), needle_string.size()))
-        return false;
-
-    /// These functions search bytes, while `ngrams`, `sparseGrams` and `asciiCJK` decode UTF-8 and skip the bytes after
-    /// a broken leading byte, so an index on them could drop a row that a byte search finds.
-    if (tokenizer->getType() != ITokenizer::Type::SplitByNonAlpha && tokenizer->getType() != ITokenizer::Type::Array)
-        return false;
-
-    /// `countSubstrings` of an empty needle is 0, unlike `LIKE '%%'`.
-    if (needle_string.empty() && search_function_name.starts_with("countSubstrings"))
-        return false;
-
-    /// A UInt8 virtual column cannot carry the NULL of a Nullable haystack, nor the exception of a `CAST` that drops it.
-    const auto * haystack_node = search_function.getArgumentAt(0).getDAGNode();
-    if (!haystack_node || isNullableOrLowCardinalityNullable(haystack_node->result_type)
-        || isNullableOrLowCardinalityNullable(unwrapLosslessConversion(haystack_node)->result_type))
-        return false;
-
-    Field pattern("%" + escapeForLikePattern(needle_string) + "%");
-    return traverseFunctionNode(
-        function_node, like_function_name, search_function.getArgumentAt(0), std::make_shared<DataTypeString>(), std::move(pattern), out,
-        /*allow_direct_read=*/ true, ascii_case_folding);
 }
 
 /// Whether the sub-DAG may be evaluated on a default value to decide if a missing map key or JSON path

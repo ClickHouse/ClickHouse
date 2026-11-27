@@ -1,0 +1,42 @@
+-- comparisons equivalent to the needle being found
+> 0	[1]
+>= 1	[1]
+0 !=	[1]
+no index	[1]
+-- conditions that only imply the needle being found
+bare	[1,2,5]
+bare, no index	[1,2,5]
+= 1	[1,2]
+= 1, no index	[1,2]
+>= 2	[5]
+>= 2, no index	[5]
+-- conditions that accept 0 cannot use the index
+= 0	[3,4,6,7]
+= 0, no index	[3,4,6,7]
+start position	[1,2,5]
+start position, no index	[1,2,5]
+-- the result of countSubstrings is kept where it is not a condition
+1	1	1
+2	1	1
+5	2	1
+1	1
+-- direct read replaces the equivalent comparison only
+> 0	1	0
+= 1	0	1
+bare	0	1
+-- case-insensitive variants
+countSubstringsCaseInsensitive	[2]
+countSubstringsCaseInsensitiveUTF8	[2]
+countSubstringsCaseInsensitive, no index	[2]
+-- the variants without UTF8 take a non-ASCII needle with the array tokenizer
+countSubstringsCaseInsensitive	[2,3]
+countSubstringsCaseInsensitive, no index	[2,3]
+instr	[2,3]
+countSubstringsCaseInsensitiveUTF8	[1,2,3]
+countSubstringsCaseInsensitiveUTF8, no index	[1,2,3]
+countSubstringsCaseInsensitive	1	0
+countSubstringsCaseInsensitiveUTF8	0	1
+-- a map element: the index only skips granules, and with query_plan_text_index_add_hint adds a hint
+map	[2]
+map, no index	[2]
+map	1	1

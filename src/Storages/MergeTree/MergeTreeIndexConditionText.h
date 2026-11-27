@@ -230,26 +230,22 @@ private:
     /// is a constant one that denotes the index tokenizer.
     [[nodiscard]] bool tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const;
 
-    /// `function_node` is the whole predicate, `function_name` is how it is analyzed, e.g. `like` for `position(s, 'x') > 0`.
     /// `allow_direct_read = false` keeps the index from replacing the predicate: the search query then
     /// only skips granules, for a predicate that implies the query but is not equivalent to it.
-    /// `ascii_case_folding`: `ilike` stands for a function that folds the case of ASCII letters only.
+    /// `condition_node` is the whole condition if `function_node` is a part of it, e.g. `position` in `position(m['k'], 'x') > 0`.
+    /// It is checked to be false for a key the map does not hold.
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,
-        const String & function_name,
         const RPNBuilderTreeNode & argument_node,
         DataTypePtr value_type,
         Field value_field,
         RPNElement & out,
         bool allow_direct_read = true,
-        bool ascii_case_folding = false) const;
+        const RPNBuilderFunctionTreeNode * condition_node = nullptr) const;
 
-    /// `position(haystack, 'needle')` and its `UTF8` and `CaseInsensitive` variants, used directly as a
-    /// condition or compared with a constant so that the comparison rejects the zero result.
-    bool traversePositionNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
-
-    /// `position(s, 'x') > 0` and similar checks, handled as `s LIKE '%x%'`.
-    bool traverseSubstringOccurrenceNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
+    /// `position(haystack, 'needle')`, `countSubstrings(haystack, 'needle')` and their `UTF8` and `CaseInsensitive` variants,
+    /// used directly as a condition or compared with a constant so that the comparison rejects the zero result.
+    bool traverseSubstringSearchNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
     [[nodiscard]] TextIndexDirectReadMode getHintOrNoneMode() const;
 
@@ -298,6 +294,7 @@ private:
     [[nodiscard]] std::vector<VectorWithMemoryTracking<String>> regexpToTokensForQueries(const String & regexp_string) const;
     /// Supports '%needle%', 'needle%' and '%needle'. See isInfixPattern for which of them is exact.
     /// `allow_arbitrary_patterns` needs a non-nullable value: an exact read of a NULL raises in the fallback (#113332).
+    /// `ascii_case_folding`: the case-insensitive search folds ASCII letters only, as `positionCaseInsensitive` does, not `ilike`.
     [[nodiscard]] std::vector<OptimizedRegularExpression>
     stringLikeToPatterns(const Field & field, bool case_insensitive, bool allow_arbitrary_patterns, bool ascii_case_folding = false) const;
 
