@@ -444,6 +444,12 @@ void IDataType::insertDefaultInto(IColumn & column) const
 
 void IDataType::insertManyDefaultsInto(IColumn & column, size_t n) const
 {
+    if (isDefaultInsertTrivial())
+    {
+        column.insertManyDefaults(n);
+        return;
+    }
+
     column.reserve(column.size() + n);
     for (size_t i = 0; i < n; ++i)
         insertDefaultInto(column);
