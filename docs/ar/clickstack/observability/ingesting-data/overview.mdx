@@ -1,0 +1,89 @@
+---
+slug: /clickstack/observability/ingesting-data/overview
+title: 'استيعاب البيانات'
+sidebarTitle: 'نظرة عامة'
+description: 'أرسل بيانات القياس عن بُعد الخاصة بالتطبيقات والبنية التحتية إلى جامع بيانات OpenTelemetry المُدار في ClickHouse Observability.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'إدخال', 'OpenTelemetry', 'OTLP', 'سجلات', 'مقاييس', 'تتبّعات']
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<Tabs>
+  <Tab title="مُدار بالكامل">
+    <BetaBadge label="عرض تجريبي" />
+
+    يتضمن ClickHouse Observability **مُجمِّع OpenTelemetry (OTel) مُدارًا** يستقبل السجلات والمقاييس والتتبّعات وبيانات إعادة تشغيل الجلسة ويكتبها إلى ClickHouse Cloud. يتولى ClickHouse Cloud تشغيل جامع بيانات الإدخال وقاعدة البيانات وواجهة مستخدم ClickStack، بينما تتولى أنت تزويد تطبيقاتك بأدوات جمع بيانات الرصد، ثم تهيئتها أو تهيئة وكلاء جمع البيانات لديك لإرسال بيانات القياس عن بُعد إلى الخدمة المُدارة.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![معمارية مُدارة بالكامل يتولى فيها ClickHouse Cloud تشغيل مُجمِّع OpenTelemetry وClickHouse وواجهة مستخدم ClickStack](/images/use-cases/observability/clickstack-managed-architecture.svg)
+      </Frame>
+    </div>
+
+    لمزيد من التفاصيل حول هذه المكونات، راجع [المعمارية](/ar/clickstack/observability/architecture).
+
+## العثور على بيانات الاتصال {#connection-details}
+
+    في خدمتك، افتح **Team Settings → Data** وانتقل إلى قسم **Managed Telemetry**. يوفر هذا القسم نقطة نهاية OTLP ومفتاح API اللازمين لإرسال بيانات القياس عن بُعد إلى خدمتك.
+
+    اختر **URL** أو **Collector config** أو **Env vars** لعرض بيانات الاتصال بالتنسيق الذي تحتاجه، ثم انقر على **Copy connection details**. بعد ذلك، هيّئ حزمة SDK أو جامع البيانات لديك باستخدام نقطة النهاية وإعدادات المصادقة المقدَّمة.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![قسم Managed Telemetry يعرض نقطة نهاية OTLP عبر HTTP ومفتاح API بشكل مُقنَّع](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    راجع [بيانات القياس عن بُعد المُدارة](/ar/clickstack/observability/managing/config#managed-telemetry) للاطلاع على التفاصيل. ويمكنك استخدام **Send a Test Log** لإرسال سجل تجريبي إلى الخدمة.
+
+## اختيار طريقة إرسال بيانات القياس عن بُعد {#sending-telemetry}
+
+### تزويد التطبيقات بأدوات الرصد {#application-instrumentation}
+
+    تجمع حزم SDK الخاصة بلغات البرمجة بيانات القياس عن بُعد من داخل تطبيقاتك، مثل تتبّعات الطلبات وسجلات التطبيقات. هيّئ حزمة SDK لتصدير بيانات القياس عن بُعد عبر OTLP إلى نقطة النهاية المُدارة، أو إلى جامع بيانات في بيئتك يتولى إعادة توجيهها إلى الخدمة.
+
+    يمكنك الاستفادة من أدوات رصد OpenTelemetry المتوفرة لديك. كما توفر حزم SDK لـ ClickStack ميزات إضافية مثل إعادة تشغيل الجلسة في المتصفح؛ راجع [إعادة تشغيل الجلسة](/ar/clickstack/observability/features/session-replay) للاطلاع على مثال لإعداد مُدار.
+
+### البنية التحتية ووكلاء جمع البيانات {#collection-agents}
+
+    شغّل وكلاء جمع البيانات في بيئتك لجمع بيانات القياس عن بُعد، مثل مقاييس المضيف وسجلات الحاويات وأحداث Kubernetes. ويمكن تشغيل مُجمِّع OpenTelemetry بجانب التطبيق، أو على مضيف، أو بوصفه DaemonSet في Kubernetes، وذلك بحسب البيانات التي تحتاج إلى جمعها.
+
+    هيّئ هؤلاء الوكلاء لإعادة توجيه بيانات القياس عن بُعد إلى نقطة نهاية OTLP المُدارة باستخدام بيانات الاتصال الخاصة بخدمتك. ويمكنك أيضًا تمرير بيانات القياس عن بُعد الخاصة بالتطبيقات عبر جامعات البيانات هذه لمعالجتها قبل وصولها إلى ClickHouse Observability.
+
+## التحقق من الإدخال {#verify-ingestion}
+
+    بعد تهيئة تطبيقك أو جامع البيانات، أنشئ بعض بيانات القياس عن بُعد ثم افتح [البحث](/ar/clickstack/observability/features/search). اختر المصدر **Logs** أو **Traces**، وحدد نطاقًا زمنيًا يشمل الأحداث الجديدة، ثم ابحث عن اسم خدمتك للتأكد من وصول البيانات.
+  </Tab>
+
+  <Tab title="مُدار ذاتيًا">
+    تُستوعَب جميع البيانات في Self-managed ClickHouse Observability عبر **مُجمِّع OpenTelemetry (OTel)**، الذي يُعدّ نقطة الدخول الرئيسية للسجلات والمقاييس والتتبّعات وبيانات الجلسات.
+
+    يتولّى مُجمِّع OpenTelemetry الذي تشغّله بنفسك استقبالَ بيانات القياس عن بُعد من تطبيقاتك. أما في Self-managed ClickHouse Observability، فتُستضاف ClickHouse وواجهة المستخدم وتُدار في ClickHouse Cloud، مع مصادقة مدمجة وإدارة تشغيلية تُتولّى نيابةً عنك.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![بيانات القياس عن بُعد عبر OTLP تتدفق من خلال جامع بيانات مُدار ذاتيًا إلى ClickHouse، مع واجهة مستخدم ClickStack المستضافة في ClickHouse Cloud](/images/use-cases/observability/clickstack-self-managed-architecture.svg)
+      </Frame>
+    </div>
+
+    يوفّر جامع البيانات نقطتي نهاية OTLP:
+
+    * **HTTP** - المنفذ `4318`
+    * **gRPC** - المنفذ `4317`
+
+    يمكنك إرسال البيانات إلى نقطتي النهاية هاتين إما مباشرةً من [حزم SDK للغات البرمجة](/ar/clickstack/observability/ingesting-data/sdks)، أو من وكلاء جمع البيانات المتوافقين مع OTel، مثل جامعي بيانات OTel آخرين يجمعون مقاييس البنية التحتية وسجلاتها.
+
+    وبعبارة أدق:
+
+    * [**حزم SDK للغات البرمجة**](/ar/clickstack/observability/ingesting-data/sdks) مسؤولة عن جمع بيانات القياس عن بُعد من داخل تطبيقك - ولا سيما **التتبّعات** و**السجلات** - وتصديرها عبر نقطة نهاية OTLP إلى مُجمِّع OpenTelemetry، الذي يتولّى إدخالها إلى ClickHouse. لمزيد من التفاصيل حول حزم SDK المتاحة للغات البرمجة، راجع [SDKs](/ar/clickstack/observability/ingesting-data/sdks).
+
+    * **وكلاء جمع البيانات** هم وكلاء يُنشَرون على الحافة، أي على الخوادم أو عُقد Kubernetes أو إلى جانب التطبيقات. وهم يجمعون بيانات القياس عن بُعد الخاصة بالبنية التحتية (مثل السجلات والمقاييس)، أو يستقبلون الأحداث مباشرةً من التطبيقات المزوّدة بأدوات الرصد عبر حزم SDK. وفي هذه الحالة، يعمل الوكيل على المضيف نفسه الذي يعمل عليه التطبيق، وغالبًا ما يكون ذلك في صورة sidecar أو DaemonSet. ويُعيد هؤلاء الوكلاء توجيه البيانات إلى مُجمِّع OTel المركزي الخاص بـ ClickStack، الذي يعمل بوصفه [بوابة](/ar/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured)، ويُنشَر عادةً مرة واحدة لكل عنقود أو مركز بيانات أو منطقة. تستقبل [البوابة](/ar/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured) أحداث OTLP من الوكلاء أو التطبيقات وتتولّى إدخالها إلى ClickHouse. راجع [OTel collector](/ar/clickstack/self-configured/ingesting-data/collector) لمزيد من التفاصيل. ويمكن أن يكون هؤلاء الوكلاء نُسخًا أخرى من OTel collector، أو تقنيات بديلة مثل [Fluentd](https://www.fluentd.org/) أو [Vector](https://vector.dev/).
+
+    <Info>
+      **التوافق مع OpenTelemetry**
+
+      على الرغم من أن ClickStack توفّر حزم SDK خاصة بها للغات البرمجة ومُجمِّع OpenTelemetry مخصّصًا يقدّمان بيانات قياس عن بُعد وميزات محسّنة، فإنه يمكنك أيضًا استخدام حزم SDK لـ OpenTelemetry والوكلاء الموجودين لديك بسلاسة.
+    </Info>
+  </Tab>
+</Tabs>

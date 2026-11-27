@@ -1,0 +1,103 @@
+---
+slug: /clickstack/observability/faq
+title: 'FAQ ClickHouse Observability'
+sidebarTitle: 'FAQ'
+description: 'Questions fréquentes sur ClickHouse Observability, en version entièrement gérée ou autogérée : collecte de données, alertes, tableaux de bord et découverte des métriques.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'FAQ', 'alertes', 'tableaux de bord', 'drill-down', 'découverte des métriques']
+---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+Cette page présente les modes entièrement géré et autogéré de ClickHouse Observability, et répond aux questions fréquentes sur la collecte des données, les alertes, les tableaux de bord et la découverte des métriques.
+
+## Déploiement et collecte des données {#data-collection}
+
+<Accordion title="Quelle est la différence entre ClickHouse Observability entièrement géré et autogéré ?">
+  **Entièrement géré**
+
+  <BetaBadge label="Offre en version bêta" />
+
+  [ClickHouse Observability entièrement géré](/fr/clickstack/observability/overview) est le point de départ recommandé. Envoyez la télémétrie à l’endpoint OpenTelemetry géré : ClickHouse prend en charge le collecteur d’ingestion, les schémas, l’infrastructure et la mise à l’échelle.
+
+  **Autogéré**
+
+  [Self-managed ClickHouse Observability](/fr/clickstack/self-configured/overview) vous donne la maîtrise de l’ingestion, des schémas, de la rétention et de la configuration de la base de données. ClickHouse Cloud héberge ClickHouse et l’interface utilisateur de ClickStack, tandis que vous exploitez le collecteur d’ingestion et gérez l’optimisation et le dimensionnement de la base de données. L’option autogérée n’est pas une offre en version bêta.
+</Accordion>
+
+<Accordion title="Dois-je exécuter un collecteur OpenTelemetry ?">
+  **Entièrement géré :** vous n’avez pas besoin de déployer de collecteur d’ingestion. Les applications et les générateurs de télémétrie peuvent envoyer les données directement à l’endpoint OpenTelemetry géré.
+
+  Un collecteur peut toutefois rester nécessaire dans votre propre environnement pour lire des fichiers de logs ou recueillir des metrics d’hôte et Kubernetes, puis transmettre ces données au collecteur géré. Pour des exemples, consultez [Logs et metrics locaux](/fr/clickstack/observability/example-datasets/local-data) et [Supervision de Kubernetes](/fr/clickstack/observability/example-datasets/kubernetes).
+
+  **Autogéré :** vous avez besoin d’un collecteur d’ingestion actif, connecté à votre service ClickHouse Cloud. Les applications et les agents envoient la télémétrie à ce collecteur, qui l’écrit dans ClickHouse. Nous recommandons la distribution ClickStack. Consultez [Ingestion avec OpenTelemetry](/fr/clickstack/observability/ingesting-data/opentelemetry#installing-otel-collector-managed-self-configured) pour les instructions de connexion et le [guide de déploiement](/fr/clickstack/self-configured/deployment/managed#start-a-collector-existing) pour démarrer un collecteur.
+</Accordion>
+
+<Accordion title="Où trouver mon endpoint de télémétrie et mon API key ?">
+  **Entièrement géré :** dans votre service ClickHouse Observability, ouvrez **Paramètres de l’équipe → Données → Télémétrie gérée** et copiez l’endpoint OTLP ainsi que l’API key d’ingestion. Utilisez ces informations pour configurer votre SDK, votre collecteur de transfert ou votre générateur de télémétrie.
+
+  **Autogéré :** utilisez l’endpoint OTLP du collecteur que vous exploitez, ainsi que l’éventuel jeton d’authentification configuré sur son récepteur. Pour le collecteur ClickStack, si vous activez `OTLP_AUTH_TOKEN`, envoyez ce jeton dans l’en-tête `authorization`. Ces éléments sont distincts de l’endpoint et des identifiants de la base de données ClickHouse Cloud que le collecteur utilise pour écrire les données. Pour des exemples, consultez [Ingestion avec OpenTelemetry](/fr/clickstack/observability/ingesting-data/opentelemetry#sending-data-to-collector-managed-self-configured).
+
+  Respectez le format d’endpoint requis par l’outil que vous utilisez. Les [données d’exemple et démos](/fr/clickstack/observability/example-datasets) fournissent des exemples de configuration pour chaque outil.
+</Accordion>
+
+## Alertes {#alerting}
+
+<Accordion title="Quels types d’alertes ClickHouse Observability prend-il en charge ?">
+  ClickHouse Observability prend en charge deux types d’alertes :
+
+  * [Alertes de recherche](/fr/clickstack/observability/features/alerts#search-alerts) : déclenchent des notifications lorsque le nombre de journaux ou de traces correspondants sur une fenêtre temporelle dépasse un seuil ou passe en dessous.
+  * [Alertes sur les graphiques du tableau de bord](/fr/clickstack/observability/features/alerts#dashboard-alerts) : déclenchent des notifications lorsqu’une métrique affichée dans une tuile de tableau de bord franchit un seuil défini.
+
+  Les deux types d’alertes comparent les résultats à des seuils configurés. Pour en savoir plus, consultez [Alertes](/fr/clickstack/observability/features/alerts).
+</Accordion>
+
+<Accordion title="Puis-je créer des alertes sur des conditions de métriques complexes, comme des ratios, des p95/p99 ou des formules combinant plusieurs métriques ?">
+  Créez le calcul sous forme de graphique de tableau de bord, puis associez-lui une alerte à seuil. L’[éditeur de graphiques](/fr/clickstack/observability/features/dashboards/overview#navigate-chart-explorer) prend en charge des calculs tels que les ratios et les centiles.
+
+  Pour les calculs nécessitant du SQL, utilisez une [alerte de graphique basée sur SQL](/fr/clickstack/observability/features/alerts#sql-based-alerts). Les alertes SQL prennent en charge les graphiques de type Ligne, Barres empilées et Nombre. Enregistrez le tableau de bord pour activer l’alerte.
+</Accordion>
+
+## Tableaux de bord et drill-downs {#dashboards-and-drill-downs}
+
+<Accordion title="Des tableaux de bord prédéfinis sont-ils fournis ?">
+  Oui. Ouvrez **Tableaux de bord** pour accéder aux tableaux de bord prédéfinis **Services**, **Kubernetes** et **LLM**. Ces tableaux de bord affichent des données lorsque la télémétrie correspondante est en cours d’ingestion et que l’intervalle de temps sélectionné couvre ces données.
+
+  Vous pouvez également créer des tableaux de bord personnalisés à partir de vos journaux, traces et metrics ingérés. Consultez [Tableaux de bord](/fr/clickstack/observability/features/dashboards/overview) pour savoir comment créer des graphiques et les organiser en tableaux de bord.
+</Accordion>
+
+<Accordion title="ClickHouse Observability prend-il en charge les tableaux de bord paramétrés ou les variables de tableau de bord ?">
+  Oui, ClickHouse Observability prend en charge les tableaux de bord paramétrés par des filtres personnalisés et des variables, alimentés par des données interrogées dans ClickHouse. Ces filtres vous permettent de restreindre dynamiquement tout ou partie des tuiles d’un tableau de bord à une valeur précise (par exemple, un nom de service, un environnement ou un hôte).
+
+  Pour en savoir plus sur la création de tableaux de bord et l’application de filtres, consultez [Tableaux de bord](/fr/clickstack/observability/features/dashboards/overview).
+</Accordion>
+
+<Accordion title="Quelles sont les possibilités d’exploration détaillée ?">
+  ClickHouse Observability prend en charge les flux de travail de drill-down suivants :
+
+  * [Filtrage au niveau du tableau de bord](/fr/clickstack/observability/features/dashboards/overview#filter-dashboards) : les filtres Lucene ou SQL définis au niveau du tableau de bord s’appliquent aux tuiles pour lesquelles **Apply filters** est activé. Vous pouvez également ajuster l’intervalle de temps du tableau de bord.
+  * Filtres de tableau de bord personnalisés : les tableaux de bord personnalisés proposent des contrôles de filtre explicites, alimentés par des valeurs issues de vos données, qui permettent aux utilisateurs de restreindre les tuiles concernées sans avoir à écrire de requêtes.
+  * Affichage des événements en un clic : cliquer sur des données dans une tuile de tableau de bord, puis sélectionner **View Events**, ouvre la page [Recherche](/fr/clickstack/observability/features/search) avec les filtres appropriés pour les données de journal et de trace.
+  * [Drill-down par clic sur une ligne de tableau](/fr/clickstack/observability/features/dashboards/row-click-drilldowns) : une tuile de tableau peut être configurée de sorte qu’un clic sur une ligne ouvre la page Recherche ou un autre tableau de bord, en transmettant les valeurs de la ligne sous forme de filtres. Cela permet de mettre en place des flux de travail à plusieurs niveaux, par exemple un inventaire des services qui renvoie vers un tableau de bord détaillé propre à chaque service.
+
+  <Note>
+    Utilisez [Recherche](/fr/clickstack/observability/features/search) pour examiner individuellement les journaux et les traces. Utilisez l’Explorateur de graphiques pour explorer les metrics.
+  </Note>
+</Accordion>
+
+## Découverte des metrics {#metrics-discovery}
+
+<Accordion title="Existe-t-il une UI pour parcourir et rechercher des métriques ?">
+  ![Explorateur d’attributs de metrics](/images/clickstack/faq/metrics-explorer-fully-managed.png)
+
+  Les noms de metrics sont accessibles depuis la liste déroulante du nom de la metric dans l’[éditeur de graphiques](/fr/clickstack/observability/features/dashboards/overview#navigate-chart-explorer). Lorsque vous sélectionnez une metric, le panneau Explorateur d’attributs de metrics affiche sa description, ses unités ainsi que les attributs disponibles et leurs valeurs. Vous pouvez ainsi parcourir les attributs et les ajouter comme filtres ou champs group-by directement depuis le panneau.
+
+  Il n’existe pas encore de page dédiée à la recherche de metrics, comparable à celle proposée pour la recherche dans les journaux.
+</Accordion>
+
+## Pour aller plus loin {#further-reading}
+
+* [Alertes](/fr/clickstack/observability/features/alerts) : alertes de recherche, alertes sur les graphiques du tableau de bord et intégrations webhook.
+* [Tableaux de bord](/fr/clickstack/observability/features/dashboards/overview) : création de visualisations, conception de tableaux de bord et application de filtres.
+* [Recherche](/fr/clickstack/observability/features/search) : interrogation des logs et des traces avec Lucene et la syntaxe SQL.
+* [Architecture](/fr/clickstack/observability/architecture) : composants de ClickHouse Observability et leur articulation.

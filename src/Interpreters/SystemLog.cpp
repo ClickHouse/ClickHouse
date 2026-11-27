@@ -104,6 +104,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char sleep_in_logs_flush[];
+    extern const char system_log_flush_throw[];
 }
 
 namespace ServerSetting
@@ -114,6 +115,7 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -858,6 +860,8 @@ SystemLog<LogElement>::SystemLog(
     if (union_table_merge_rotated_tables || !union_table_cluster.empty())
         union_create_query = getCreateUnionTableQuery()->formatWithSecretsOneLine();
     chassert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
+
+    SystemLogMetrics::createFlushCounters(table_id.getDatabaseName(), table_id.getTableName());
 }
 
 template <typename LogElement>
@@ -932,6 +936,11 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         fiu_do_on(FailPoints::sleep_in_logs_flush,
         {
             sleepForSeconds(30);
+        });
+
+        fiu_do_on(FailPoints::system_log_flush_throw,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to flush system log {}", table_id.getNameForLogs());
         });
 
         /// We check for existence of the table and create it as needed at every
@@ -1012,12 +1021,17 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         flush_policy->afterFlush(io, is_manual_flush, flush_size);
         execute_insert_time = stopwatch.elapsedMilliseconds();
         stopwatch.restart();
+
+        /// This must stay the last statement of the `try` block: if a later statement throws,
+        /// the same flush is counted both as a success and as a failure.
+        SystemLogMetrics::onFlushSuccess(table_id.getDatabaseName(), table_id.getTableName(), flush_size);
     }
     catch (...)
     {
         if (is_manual_flush)
             flush_policy->cancelManualFlush();
         ProfileEvents::increment(ProfileEvents::SystemLogErrorOnFlush);
+        SystemLogMetrics::onFlushFailure(table_id.getDatabaseName(), table_id.getTableName(), flush_size);
         tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to flush system log {} with {} entries up to offset {}",
             table_id.getNameForLogs(), to_flush.size(), to_flush_end));
     }

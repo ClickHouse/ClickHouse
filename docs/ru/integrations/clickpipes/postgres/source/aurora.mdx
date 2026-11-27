@@ -13,14 +13,12 @@ integration:
 import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
-  ## Поддерживаемые версии Postgres
+  ## Поддерживаемые версии Postgres {#supported-postgres-versions}
 </div>
 
 ClickPipes поддерживает Aurora PostgreSQL-Compatible Edition версии 12 и выше.
 
-<div id="enable-logical-replication">
-  ## Включите логическую репликацию
-</div>
+## Включите логическую репликацию {#enable-logical-replication}
 
 Этот раздел можно пропустить, если для вашего экземпляра Aurora уже настроен следующий параметр:
 
@@ -42,52 +40,34 @@ postgres=> SHOW rds.logical_replication ;
    * Установите `rds.logical_replication` в значение 1
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Где найти группы параметров в Aurora](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
-
-</Frame>
-
+  <Frame>
+    ![Где найти группы параметров в Aurora](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Изменение rds.logical_replication](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
-
-</Frame>
-
+  <Frame>
+    ![Изменение rds.logical_replication](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
+  </Frame>
 </div>
 
 2. Примените новую группу параметров к кластеру Aurora PostgreSQL
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Изменение Aurora PostgreSQL с новой группой параметров](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
-
-</Frame>
-
+  <Frame>
+    ![Изменение Aurora PostgreSQL с новой группой параметров](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
+  </Frame>
 </div>
 
 3. Перезагрузите кластер Aurora, чтобы применить изменения
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Перезагрузка Aurora PostgreSQL](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
-
-</Frame>
-
+  <Frame>
+    ![Перезагрузка Aurora PostgreSQL](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
+  </Frame>
 </div>
 
-<div id="configure-database-user">
-  ## Настройте пользователя базы данных
-</div>
+## Настройте пользователя базы данных {#configure-database-user}
 
 Подключитесь к своему экземпляру Aurora PostgreSQL writer от имени администратора и выполните следующие команды:
 
@@ -123,16 +103,16 @@ postgres=> SHOW rds.logical_replication ;
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-  * Чтобы создать публикацию для всех таблиц в определённой схеме:
+* Чтобы создать публикацию для всех таблиц в определённой схеме:
 
-    ```sql
-    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-    ```
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+  ```
 
 Публикация `clickpipes` определяет набор таблиц, события изменений из которых будут передаваться в ClickPipes. Мы не рекомендуем использовать `FOR ALL TABLES`, если только вы действительно не планируете реплицировать все таблицы, поскольку включение лишних таблиц увеличивает объём WAL-трафика из Postgres в ClickPipes и снижает общую эффективность репликации.
 
 <div id="iam-authentication">
-  ### Использование аутентификации IAM (необязательно)
+  ### Использование аутентификации IAM (необязательно) {#iam-authentication}
 </div>
 
 <IAMAuthentication engine="postgres" service="aurora">
@@ -142,43 +122,33 @@ postgres=> SHOW rds.logical_replication ;
 </IAMAuthentication>
 
 <div id="configure-network-access">
-  ## Настройка сетевого доступа
+  ## Настройка сетевого доступа {#configure-network-access}
 </div>
 
-<div id="ip-based-access-control">
-  ### Управление доступом на основе IP
-</div>
+### Управление доступом на основе IP {#ip-based-access-control}
 
 Если вы хотите ограничить трафик к своему кластеру Aurora, добавьте [задокументированные статические NAT IP-адреса](/ru/integrations/clickpipes/networking/static-ips) в правила входящего трафика (`Inbound rules`) вашей группы безопасности Aurora.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Где найти группу безопасности в Aurora PostgreSQL?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
-
-</Frame>
-
+  <Frame>
+    ![Где найти группу безопасности в Aurora PostgreSQL?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Изменение правил входящего трафика для указанной выше группы безопасности](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
-
-</Frame>
-
+  <Frame>
+    ![Изменение правил входящего трафика для указанной выше группы безопасности](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+  </Frame>
 </div>
 
 <div id="private-access-via-aws-privatelink">
-  ### Приватный доступ через AWS PrivateLink
+  ### Приватный доступ через AWS PrivateLink {#private-access-via-aws-privatelink}
 </div>
 
 Чтобы подключиться к кластеру Aurora через частную сеть, можно использовать AWS PrivateLink. Чтобы настроить подключение, следуйте нашему [руководству по настройке AWS PrivateLink для ClickPipes](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes).
 
 <div id="aurora-specific-considerations">
-  ### Особенности Aurora
+  ### Особенности Aurora {#aurora-specific-considerations}
 </div>
 
 При настройке ClickPipes с Aurora PostgreSQL учитывайте следующие особенности:
@@ -192,7 +162,7 @@ postgres=> SHOW rds.logical_replication ;
 4. **Особенности хранения**: В Aurora уровень хранения является общим для всех экземпляров в кластере, что может обеспечивать более высокую производительность логической репликации по сравнению со стандартным RDS.
 
 <div id="dealing-with-dynamic-cluster-endpoints">
-  ### Работа с динамическими конечными точками кластера
+  ### Работа с динамическими конечными точками кластера {#dealing-with-dynamic-cluster-endpoints}
 </div>
 
 Хотя Aurora предоставляет стабильные конечные точки, которые автоматически направляют трафик на соответствующий экземпляр, есть и другие способы обеспечить стабильное подключение:
@@ -202,7 +172,7 @@ postgres=> SHOW rds.logical_replication ;
 2. Если вы используете межрегиональную репликацию, рассмотрите возможность настройки отдельных ClickPipes для каждого региона, чтобы снизить задержку и повысить отказоустойчивость.
 
 <div id="whats-next">
-  ## Что дальше?
+  ## Что дальше? {#whats-next}
 </div>
 
 Теперь вы можете [создать свой ClickPipe](/ru/integrations/clickpipes/postgres/index) и начать приём данных из вашего кластера Aurora PostgreSQL в ClickHouse Cloud.

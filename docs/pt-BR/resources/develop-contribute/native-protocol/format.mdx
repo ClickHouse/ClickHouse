@@ -203,22 +203,23 @@ O `count` é o comprimento total da pilha, **incluindo a entrada `DEFAULT` inici
 * a pilha começa com `DEFAULT`;
 * a pilha é uma subsequência de `DEFAULT`, `SPARSE`, `REPLICATED`, `DETACHED` — a ordem em que os tipos encapsulam uns aos outros. `SPARSE` pode ficar dentro de `REPLICATED`, mas não o contrário, e `DETACHED` é sempre o último, pois um `ColumnBLOB` contém a forma serializada de tudo o que está abaixo dele. Isso também significa que nenhum tipo aparece duas vezes, o que limita `count` ao número de tipos.
 
-Observe que essa ordem não corresponde à ordem dos valores dos bytes de tipo acima. Qualquer outra pilha descreve um layout de coluna que nenhum gravador constrói e que nenhuma etapa de materialização consegue desencapsular de volta em uma coluna completa do tipo declarado — por exemplo, um `ColumnSparse` cuja coluna de valores seja, ela própria, esparsa ou replicada permanece encapsulado.
+Observe que essa ordem não corresponde à ordem dos valores dos bytes de tipo acima. Qualquer outra pilha descreve um layout de coluna que nenhum componente de gravação constrói e que nenhuma etapa de materialização consegue desencapsular de volta em uma coluna completa do tipo declarado — por exemplo, um `ColumnSparse` cuja coluna de valores seja, ela própria, esparsa ou replicada permanece encapsulado.
 
-**`kind_stack` recursivo para colunas `Tuple`.** A carga útil de `kind_stack` descrita acima é o byte (ou a sequência `COMBINATION`) das informações de serialização de uma única coluna. Um `Tuple` carrega um `SerializationInfoTuple`, que primeiro grava a carga útil de pilha de tipos *da própria* tupla e depois grava uma carga útil completa de pilha de tipos para *cada* elemento, na ordem; um decodificador lê de volta essa mesma estrutura recursiva. Assim, para `Tuple(A, B, C)`, os bytes do campo 4 são `[tuple_kind][A_kind][B_kind][C_kind]`, e a carga útil de cada elemento também é recursiva se esse elemento for, por sua vez, composto. O byte `has_custom_serialization` (campo 3) é definido sempre que as informações da própria tupla *ou de qualquer elemento* forem diferentes do padrão; portanto, um `Tuple` cujo único elemento especial seja esparso ou replicado também aciona a carga útil de pilha de tipos. Um decodificador que leia apenas o byte de enum inicial de um `Tuple` vai parar cedo demais e interpretar os bytes de tipo restantes dos elementos, por engano, como dados de coluna.
+**`kind_stack` recursivo para colunas `Tuple`.** A carga útil de `kind_stack` descrita acima é o byte (ou a sequência `COMBINATION`) das informações de serialização de uma única coluna. Um `Tuple` carrega um `SerializationInfoTuple`, que primeiro grava a carga útil de pilha de tipos *da própria* tupla e depois grava uma carga útil completa de pilha de tipos para *cada* elemento, na ordem; um decodificador lê de volta essa mesma estrutura recursiva. Assim, para `Tuple(A, B, C)`, os bytes do campo 4 são `[tuple_kind][A_kind][B_kind][C_kind]`, e a carga útil de cada elemento também é recursiva se esse elemento for, por sua vez, composto. O byte `has_custom_serialization` (campo 3) é definido sempre que as informações da própria tupla *ou de qualquer elemento* forem diferentes do padrão; portanto, um `Tuple` cujo único elemento especial seja esparso também aciona a carga útil de pilha de tipos. Um decodificador que leia apenas o byte de enum inicial de um `Tuple` vai parar cedo demais e interpretar os bytes de tipo restantes dos elementos, por engano, como dados de coluna.
+A pilha de um elemento nunca contém `REPLICATED` nem `DETACHED`: ambos encapsulam apenas uma coluna inteira de nível superior, e um decodificador rejeita qualquer um deles em uma pilha de elemento com `INCORRECT_DATA`.
 
-**Formato wire esparso.** Quando `kind_stack = 0x01`, o `data` da coluna consiste em dois fluxos gravados um após o outro no único stream TCP compartilhado:
+**Formato wire esparso.** Quando `kind_stack = 0x01`, o `data` da coluna consiste em dois fluxos gravados em sequência no único fluxo TCP compartilhado:
 
 1. **Fluxo de offsets** — uma sequência de `VarUInt`s. Cada valor `v` pode ser:
    * `v` com o bit alto na posição 62 desligado: `(v & 0x3FFFFFFFFFFFFFFF)` = o número de posições com valor default antes do próximo valor explícito diferente do padrão. Essa posição diferente do padrão é `cursor + group_size`, em que `cursor` é a posição corrente; em seguida, `cursor` avança `group_size + 1`.
    * `v` com o bit 62 ligado (`END_OF_GRANULE_FLAG`): o valor com o flag desligado = o número de posições finais com valor default após o último valor diferente do padrão. Isso marca o fim do fluxo de offsets do bloco.
-2. **Stream de valores** — `count` valores diferentes do padrão, codificados de forma densa no tipo interno, em que `count` é o número de VarUInts não EOG lidos acima.
+2. **Fluxo de valores** — `count` valores diferentes do padrão, codificados de forma densa no tipo interno, em que `count` é o número de VarUInts não EOG lidos acima.
 
 Um decodificador reconstrói uma coluna densa de `num_rows` entradas preenchendo cada posição não explícita com o valor default do tipo interno (`0` para inteiros e floats, `""` para `String`, `0` dias para `Date` e assim por diante).
 
-Uma coluna `Nullable(T)` esparsa é um caso especial, pois o valor default de `Nullable(T)` é **NULL**. A codificação esparsa elimina por completo o stream de mapa de nulos que `Nullable` normalmente usa: o fluxo de offsets identifica as posições diferentes do padrão — isto é, não NULL —, o stream de valores contém apenas esses valores não NULL, de forma densa em `T`, e toda posição não explícita é reconstruída como NULL. Portanto, um decodificador *não* deve procurar um mapa de nulos no stream de valores nem preencher as lacunas com um `0` presente; ele deve preenchê-las com NULL.
+Uma coluna `Nullable(T)` esparsa é um caso especial, pois o valor default de `Nullable(T)` é **NULL**. A codificação esparsa elimina por completo o fluxo de mapa de nulos que `Nullable` normalmente usa: o fluxo de offsets identifica as posições diferentes do padrão — isto é, não NULL —, o fluxo de valores contém apenas esses valores não NULL, de forma densa em `T`, e toda posição não explícita é reconstruída como NULL. Portanto, um decodificador *não* deve procurar um mapa de nulos no fluxo de valores nem preencher as lacunas com um `0` presente; ele deve preenchê-las com NULL.
 
-**Formato wire Replicated.** Quando `kind_stack = 0x04`, o `data` da coluna é um dicionário: uma lista de valores distintos de elementos, acompanhada de um índice por linha que aponta para essa lista (a mesma estrutura de lookup de `LowCardinality`). Quando o próprio tipo interno é versionado — por exemplo, `LowCardinality(T)` —, seu prefixo de estado é gravado **primeiro**, antes do stream de índices: a serialização replicada delega a fase de prefixo ao tipo interno antes de gravar `num_rows`. Tipos internos com prefixo vazio (os tipos folha e os compostos simples) não acrescentam nenhum byte aqui.
+**Formato wire Replicated.** Quando `kind_stack = 0x04`, o `data` da coluna é um dicionário: uma lista de valores distintos de elementos, acompanhada de um índice por linha que aponta para essa lista (a mesma estrutura de lookup de `LowCardinality`). Quando o próprio tipo interno é versionado — por exemplo, `LowCardinality(T)` —, seu prefixo de estado é gravado **primeiro**, antes do fluxo de índices: a serialização replicada delega a fase de prefixo ao tipo interno antes de gravar `num_rows`. Tipos internos com prefixo vazio (os tipos folha e os compostos simples) não acrescentam nenhum byte aqui.
 
 ```text
 [inner type's state prefix]              empty for leaf inners; e.g. LowCardinality version (Int64 = 1)
@@ -239,7 +240,10 @@ Um decodificador reconstrói uma coluna densa selecionando `elements[indexes[i]]
 
 Se a coluna encapsulada for esparsa, sua pilha será `{DEFAULT, SPARSE, DETACHED}`, serializada como `DETACHED_OVER_SPARSE`. Um cliente que decodifica uma coluna desse tipo lê o comprimento e os bytes do blob e, em seguida, descomprime o blob para recuperar a carga útil da coluna interna (consulte a [nota sobre `ColumnBLOB`](#compression-negotiation) na seção de compressão).
 
-`DETACHED` é direcional: só pode aparecer em blocos de resultado enviados por um servidor e apenas para uma coluna inteira de nível superior — nunca como um dos tipos de elemento de uma `Tuple`. Ao contrário dos outros tipos, ele faz com que a coluna em tempo de execução seja uma `ColumnBLOB`, e não a coluna do tipo declarado; por isso, um receptor só o aceita quando seu próprio pipeline converte o blob de volta. Assim, um servidor rejeita `DETACHED` com `INCORRECT_DATA` em qualquer bloco enviado por um cliente, seja ele de dados de tabela externa, de escalares ou de dados de insert.
+`DETACHED` é direcional: só pode aparecer em blocos de resultado enviados por um servidor e apenas para uma coluna inteira de nível superior — nunca como um dos tipos de elemento de uma `Tuple`. Ao contrário dos outros tipos, ele faz com que a coluna em tempo de execução seja uma `ColumnBLOB`, e não a coluna do tipo declarado; por isso, um receptor só o aceita quando seu próprio pipeline converte o blob de volta.
+
+**Tipos em blocos enviados a um servidor.** Todo tipo diferente do padrão é direcional: só aparece em blocos de resultado enviados por um servidor.
+Um bloco enviado a um servidor — dados de insert, os dados da função de tabela `input`, dados de tabela externa e escalares, venha ele de um cliente ou de outro servidor — contém apenas pilhas `DEFAULT`: os remetentes convertem as colunas em colunas completas antes do envio, e um servidor rejeita com `INCORRECT_DATA` qualquer outro tipo nesse bloco.
 
 ### Variantes de bloco {#block-variants}
 
@@ -550,7 +554,7 @@ Valor `DateTime64(0)` `2024-01-15 12:30:45 UTC` (1705321845 s):
 
 Uma duração de relógio, e não um ponto no tempo. `Time` é uma contagem de segundos com sinal, em 4 bytes Int32 little-endian; `Time64(scale)` é uma contagem de ticks com sinal no escalar decimal informado (0–9), em 8 bytes Int64 little-endian — o mesmo formato wire de `DateTime64`.
 
-A forma textual é `[-]HH:MM:SS[.fraction]`, mas, diferentemente de `DateTime`, o campo de hora **não** é reiniciado a cada dia de 24 horas: ele representa a contagem total de horas e pode passar de 23. A magnitude exibida é limitada a `999:59:59` (`3599999` segundos); uma magnitude maior é exibida com os segundos no limite e a fração armazenada mantida como está, de modo que uma contagem de ticks de `3700000.25` é exibida como `999:59:59.250000`. `CAST` satura o valor armazenado no maior tick representável no escalar de destino (`999:59:59.999999` para `Time64(6)`), e não no segundo inteiro, enquanto operações aritméticas ainda podem deixar na coluna uma contagem de ticks fora do intervalo, que só é limitada na exibição. Nada disso afeta os bytes wire, que são simplesmente o inteiro com sinal.
+A forma textual é `[-]HH:MM:SS[.fraction]`, mas, diferentemente de `DateTime`, o campo de hora **não** é reiniciado a cada dia de 24 horas: ele representa a contagem total de horas e pode passar de 23. A magnitude exibida é limitada a `999:59:59` (`3599999` segundos); uma magnitude maior é exibida com os segundos no limite e a fração armazenada mantida como está, de modo que uma contagem de ticks de `3700000.25` é exibida como `999:59:59.250000`. `CAST` satura o valor armazenado no maior tick representável no escalar de destino (`999:59:59.999999` para `Time64(6)`), e não no segundo inteiro, enquanto operações aritméticas ainda podem deixar na coluna uma contagem de ticks fora do intervalo, que só é limitada na exibição. Nada disso afeta os bytes serializados, que são simplesmente o inteiro com sinal.
 
 Valor `Time` `45296` (`12:34:56`):
 
@@ -565,7 +569,7 @@ Valor `Time64(3)` de `45296789` ticks (`12:34:56.789`):
 ```
 
 <Note>
-  `Time` e `Time64` são experimentais e exigem `allow_experimental_time_time64_type = 1` no servidor.
+  `Time` e `Time64` estão habilitados por padrão desde a versão 25.12. Em servidores das versões 25.6 a 25.11, é necessária a configuração `enable_time_time64_type = 1`.
 </Note>
 
 #### Interval {#interval}
@@ -1443,6 +1447,16 @@ Os três bytes de método acima (`NONE`/`LZ4`/`ZSTD`) são os únicos que um tra
 
 Quando o flag `0x80` não está definido, a carga útil é um stream `.pco` independente, compatível byte a byte com a implementação de referência do pcodec, que descreve por si só seu tipo numérico; a forma armazenada (flag definido) é usada apenas quando a compressão não reduziria o tamanho do bloco, o que limita a saída ao tamanho da entrada mais os dois bytes de cabeçalho. O `PCO` precisa do tipo da coluna para comprimir, mas decodifica sem ele: a largura de elemento `W` e o tipo numérico contido no stream `.pco` são suficientes. Um decodificador que conhece o tipo da coluna esperado também rejeita um bloco cujo `W` — ou, na forma comprimida, cujo tipo numérico embutido — não corresponda a esse tipo, em vez de reinterpretar os valores.
 
+`0xa1` (GDeflate) contém um corpo gravado pelo codec `GDeflate`. Os bytes não comprimidos são divididos em blocos de 65536 bytes (o último pode ser menor), e cada bloco é comprimido em uma página GDeflate independente, a variante do Deflate com 32 subfluxos intercalados que o nvcomp e o DirectStorage descomprimem em uma GPU:
+
+```text
+[4 bytes:  N LE u32]                       ← number of chunks = ceil(uncompressed_size / 65536)
+[4 bytes × N: compressed chunk size LE u32]
+[chunk × N]                                ← each a GDeflate page, followed by zero bytes up to a multiple of 4
+```
+
+O bloco `i` se expande para os bytes `[i × 65536, min((i + 1) × 65536, uncompressed_size))` do bloco. O primeiro bloco começa logo após os tamanhos, e cada bloco começa em um múltiplo de 4 a partir do início do corpo.
+
 O byte de método também codifica os [codecs em nível de coluna](/pt-BR/reference/statements/create/table/codec). Eles são aplicados por coluna nos caminhos em disco do MergeTree, e não ao enquadramento de stream completo, mas o caminho de entrada HTTP com `decompress=1` obtém o codec a partir do byte de método de cada frame; por isso, qualquer um desses bytes pode aparecer legitimamente na entrada. Assim, um decodificador em conformidade deve reconhecer todo o espaço de valores atribuídos e rejeitar os bytes que não implementa, em vez de interpretar o corpo de forma incorreta. Os corpos desses codecs têm formato específico de cada um e estão fora deste contrato genérico de frame:
 
 | Byte   | Método                                                                         |
@@ -1461,12 +1475,23 @@ O byte de método também codifica os [codecs em nível de coluna](/pt-BR/refere
 | `0x9e` | `Quantized`                                                                    |
 | `0x9f` | `ZXC`                                                                          |
 | `0xa0` | `PCO` (consulte [Frames de codec por coluna](#per-column-codec-frames))        |
+| `0xa1` | `GDeflate` (consulte [Frames de codec por coluna](#per-column-codec-frames))   |
 
-`DoubleDelta` (`0x94`) armazena diferenças de segunda ordem como bits de prefixo/sinal/magnitude, com o MSB primeiro. A decodificação baseada em palavras preserva essa codificação, a contagem de elementos e o preenchimento do byte final.
+`DoubleDelta` (`0x94`) armazena segundas diferenças como bits de prefixo/sinal/magnitude, com o bit mais significativo primeiro (MSB-first). A decodificação baseada em palavras preserva essa codificação, a contagem de elementos e o preenchimento do byte final.
 
-`0x9c` (`ALP`) é um codec sem perdas em **beta** para `Float32` e `Float64` (compressão adaptativa de ponto flutuante sem perdas). Só é possível criar uma tabela com `CODEC(ALP)` quando a configuração `enable_alp_codec` está habilitada, mas o byte de método é sempre aceito na descompressão, para que dados gravados anteriormente continuem legíveis. `0x9d` (`SZ3`) é um codec *com perdas* **experimental**, com erro limitado, para `Float32`, `Float64` e `Array` desses tipos. Só é possível criar uma tabela com `CODEC(SZ3)` quando a configuração `enable_sz3_codec` está habilitada, mas o byte de método é sempre aceito na descompressão, para que dados gravados anteriormente continuem legíveis. `0x9f` (`ZXC`) é um codec LZ assimétrico **experimental**: lento na compressão, mas muito rápido na descompressão, com taxa de compressão entre a do `LZ4` e a do `ZSTD`. Só é possível criar uma tabela com `CODEC(ZXC)` quando a configuração `enable_zxc_codec` está habilitada, mas o byte de método é sempre aceito na descompressão, para que dados gravados anteriormente continuem legíveis. `0xa0` (`PCO`) é um codec sem perdas em **beta** para colunas numéricas de largura fixa, implementado pela biblioteca Rust pcodec. Só é possível criar uma tabela com `CODEC(PCO)` quando a configuração `enable_pco_codec` está habilitada. Em builds que incluem a biblioteca, o byte de método é sempre aceito na descompressão, para que dados gravados anteriormente continuem legíveis. Um servidor compilado sem ela (sem Rust ou com `ENABLE_PCO=OFF`) não registra o codec e rejeita frames `0xa0` com `UNKNOWN_CODEC`. Os bytes `0x99` (`DeflateQpl`) e `0x9b` (`ZSTD_QPL`) foram atribuídos a codecs que já foram removidos; eles permanecem reservados e não são reutilizados.
+Os bytes `0x99` (`DeflateQpl`) e `0x9b` (`ZSTD_QPL`) foram atribuídos a codecs que já foram removidos; eles permanecem reservados e não são reutilizados.
+
+`0x9c` (`ALP`) é um codec sem perdas para `Float32` e `Float64` (compressão adaptativa de ponto flutuante sem perdas).
+
+`0x9d` (`SZ3`) é um codec *com perdas* **experimental**, com erro limitado, para `Float32`, `Float64` e `Array` desses tipos. Só é possível criar uma tabela com `CODEC(SZ3)` quando a configuração `enable_sz3_codec` está habilitada, mas o byte de método é sempre aceito na descompressão, para que dados gravados anteriormente continuem legíveis.
 
 `0x9e` (`Quantized`) é um codec de coluna **experimental** para colunas vetoriais densas (`Array(Float32)` e tipos semelhantes). Assim como o `NONE`, ele apenas repassa os dados — o corpo em precisão total é armazenado sem alterações —, mas sua presença anexa uma serialização que grava um stream complementar, compacto e quantizado, usado para acelerar a busca vetorial. Só é possível criar uma tabela com `CODEC(Quantized(...))` quando a configuração `enable_quantized_codec` está habilitada, e o byte de método é sempre aceito na descompressão.
+
+`0x9f` (`ZXC`) é um codec LZ assimétrico em **beta**: lento na compressão, mas muito rápido na descompressão, com taxa de compressão entre a do `LZ4` e a do `ZSTD`. Só é possível criar uma tabela com `CODEC(ZXC)` quando a configuração `enable_zxc_codec` está habilitada, mas o byte de método é sempre aceito na descompressão, para que dados gravados anteriormente continuem legíveis.
+
+`0xa0` (`PCO`) é um codec sem perdas em **beta** para colunas numéricas de largura fixa, implementado pela biblioteca Rust pcodec. Só é possível criar uma tabela com `CODEC(PCO)` quando a configuração `enable_pco_codec` está habilitada. Em builds que incluem a biblioteca, o byte de método é sempre aceito na descompressão, para que dados gravados anteriormente continuem legíveis. Um servidor compilado sem ela (sem Rust ou com `ENABLE_PCO=OFF`) não registra o codec e rejeita frames `0xa0` com `UNKNOWN_CODEC`.
+
+`0xa1` (`GDeflate`) é uma variante **experimental** do Deflate cujos blocos podem ser expandidos em paralelo por uma GPU. Só é possível criar uma tabela com `CODEC(GDeflate)` quando a configuração `enable_gdeflate_codec` está habilitada, mas o byte de método é sempre aceito na descompressão, para que dados gravados anteriormente continuem legíveis.
 
 ### Checksum {#checksum}
 

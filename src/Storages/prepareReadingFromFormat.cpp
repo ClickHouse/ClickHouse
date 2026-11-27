@@ -455,6 +455,22 @@ bool ReadFromFormatInfo::formatReadsHivePartitionColumns() const
     return false;
 }
 
+bool ReadFromFormatInfo::formatReturnsColumnUnchanged(const String & name, const DataTypePtr & type) const
+{
+    if (formatReadsHivePartitionColumns())
+        return false;
+
+    if (columns_read_under_other_names.contains(name))
+        return false;
+
+    const auto * format_column = format_header.findByName(name);
+    if (!format_column || !format_column->type->equals(*type))
+        return false;
+
+    /// A column with a default expression is recomputed above the format for the values the reader reported as missing.
+    return !columns_description.hasDefault(name);
+}
+
 bool ReadFromFormatInfo::hasDefaultOfColumnOrParent(const String & name) const
 {
     if (columns_description.hasDefault(name))

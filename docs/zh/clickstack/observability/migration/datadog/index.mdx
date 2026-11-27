@@ -1,0 +1,184 @@
+---
+slug: /clickstack/observability/migration/datadog
+title: '从 Datadog 迁移'
+sidebarTitle: '从 Datadog 迁移'
+description: '将现有 Datadog 代理采集的日志、链路追踪和指标发送到托管或自管理的 ClickHouse Observability。'
+show_related_blogs: true
+doc_type: 'guide'
+keywords: ['Datadog', 'Datadog 代理', '迁移', 'ClickHouse Observability']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+将现有 Datadog 代理中的日志、链路追踪和指标发送到 ClickHouse Observability，应用程序无需更换现有的 Datadog SDK。您可以选择托管端点，也可以在自己的采集器中配置 Datadog receiver，之后均按照下文相同的 agent 配置步骤操作即可。
+
+## 前置条件 {#prerequisites}
+
+* 一个托管或自管理的 ClickHouse Observability 服务。
+* 一个正在运行的 Datadog 代理，并已在采集您要迁移的信号。对于链路追踪，您的应用程序必须已通过 Datadog SDK 将链路追踪发送到该代理。
+* 该代理能够通过网络访问您的 Datadog receiver 端点。
+
+## 设置目标端 {#connection-details}
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 产品" />
+
+    打开您的服务，导航到 **Team Settings → Data → Managed Telemetry**。复制 **OTLP HTTP endpoint** 和 **API key**。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Managed Telemetry 页面，显示已遮蔽的 OTLP HTTP 端点和 API key](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Datadog 端点使用相同的主机名，端口为 `8126`。无需额外部署采集器。请在下方的 agent 配置中使用以下值：
+
+    | 设置                       | 值                             |
+    | ------------------------ | ----------------------------- |
+    | `YOUR_API_KEY`           | 您服务的摄取 API key                |
+    | `YOUR_DATADOG_URL`       | `https://YOUR_OTEL_HOST:8126` |
+    | `YOUR_DATADOG_HOST_PORT` | `YOUR_OTEL_HOST:8126`         |
+    | `logs_no_ssl`            | `false`                       |
+  </Tab>
+
+  <Tab title="自管理" id="self-managed">
+    [ClickStack OpenTelemetry 采集器](/zh/clickstack/self-configured/ingesting-data/collector)内置了 [Datadog receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/datadogreceiver)。配置该接收器，并将其接入日志、链路追踪和指标管道。
+
+    将以下配置覆盖文件保存为 `datadog-collector.yaml`。该文件会将 Datadog receiver 添加到采集器现有的日志、链路追踪和指标管道中，同时保留 OTLP 接收器：
+
+    ```yaml
+    receivers:
+      datadog:
+        endpoint: 0.0.0.0:8126
+
+    service:
+      pipelines:
+        logs/in:
+          receivers: [otlp/hyperdx, datadog]
+        traces:
+          receivers: [otlp/hyperdx, datadog]
+        metrics:
+          receivers: [otlp/hyperdx, datadog]
+    ```
+
+    设置 ClickHouse 连接信息并启动采集器。采集器正常启动时，会在 `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE` 指定的数据库中创建遥测数据 schema，因此 ClickHouse 用户需要具备创建数据库和表的权限。如果您已有遥测数据库，请使用该数据库的名称。
+
+    此示例需要 Docker，使用 `2.40.0` 版本的采集器，并且仅在本地主机上发布 Datadog receiver：
+
+    ```shell
+    export CLICKHOUSE_ENDPOINT='https://YOUR_CLICKHOUSE_HOST:8443'
+    export CLICKHOUSE_USER='YOUR_CLICKHOUSE_USER'
+    export CLICKHOUSE_PASSWORD='YOUR_CLICKHOUSE_PASSWORD'
+    export HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE='default'
+
+    docker run --rm --name datadog-collector \
+      -e CLICKHOUSE_ENDPOINT \
+      -e CLICKHOUSE_USER \
+      -e CLICKHOUSE_PASSWORD \
+      -e HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/datadog-collector.yaml \
+      -v "$(pwd)/datadog-collector.yaml:/etc/datadog-collector.yaml:ro" \
+      -p 127.0.0.1:18126:8126 \
+      clickhouse/clickstack-otel-collector:2.40.0
+    ```
+
+    在配置和验证 agent 期间，请保持采集器在此终端中运行，并在另一个终端中执行其余命令。
+
+    如果 agent 运行在同一主机上，请使用以下值：
+
+    | 设置                       | 值                                  |
+    | ------------------------ | ---------------------------------- |
+    | `YOUR_API_KEY`           | 非空占位符，例如 `local-test`；此本地接收器不会校验该值 |
+    | `YOUR_DATADOG_URL`       | `http://localhost:18126`           |
+    | `YOUR_DATADOG_HOST_PORT` | `localhost:18126`                  |
+    | `logs_no_ssl`            | `true`                             |
+
+    使用主机端口 `18126`，可避免此目标端与 agent 在端口 `8126` 上的应用 trace 监听器发生冲突。如果 agent 以容器方式运行，请将两个容器连接到同一个 Docker 网络，并将 `http://datadog-collector:8126` 和 `datadog-collector:8126` 用作目标端的值。
+
+    此示例使用的是仅限本地主机访问、未启用身份验证的 HTTP 监听器。如需接收其他主机上的 agent 数据，在暴露该接收器之前，请提供受保护的网络路径，并在入口处配置 TLS 和身份验证。`OTLP_AUTH_TOKEN` 仅用于配置采集器的 OTLP 身份验证，无法保护此 Datadog 监听器。
+  </Tab>
+</Tabs>
+
+## 配置 Datadog 代理 {#configure-datadog-agent}
+
+更新 Datadog 代理的 [`datadog.yaml` 配置文件](https://docs.datadoghq.com/agent/configuration/agent-configuration-files/)。该文件在 Linux 上通常位于 `/etc/datadog-agent/datadog.yaml`，在 macOS 上通常位于 `/opt/datadog-agent/etc/datadog.yaml`。
+
+将以下设置合并到现有配置中，其中的目标端配置值请使用上方选项卡中的值：
+
+```yaml
+api_key: "YOUR_API_KEY"
+
+# Metrics destination
+dd_url: "YOUR_DATADOG_URL"
+
+# Use the v2 metrics intake.
+use_v3_api:
+  series:
+    enabled: false
+
+# Trace destination
+apm_config:
+  enabled: true
+  apm_dd_url: "YOUR_DATADOG_URL"
+  features:
+    - disable-convert-traces
+
+# Log destination
+logs_enabled: true
+logs_config:
+  logs_dd_url: "YOUR_DATADOG_HOST_PORT"
+  force_use_http: true
+  logs_no_ssl: false # Set to true for the local HTTP receiver.
+
+remote_updates: false
+remote_configuration:
+  enabled: false
+```
+
+将 `YOUR_DATADOG_URL` 替换为完整的目标端 URL，并将 `YOUR_DATADOG_HOST_PORT` 替换为其 `hostname:port` (不含协议前缀) 。将 `logs_no_ssl` 设置为目标端指定的值。
+
+<Note>
+  `disable-convert-traces` 可确保 agent 的 trace 载荷与 Datadog receiver 兼容。在 Datadog agent 7.85.2 与采集器 core 0.155.0 组合下，agent 默认的 indexed 载荷虽被接受并返回 HTTP 200，却未生成任何 span。转发 trace 时请使用上述设置，并保留现有 `apm_config.features` 列表中的其他条目。
+</Note>
+
+请保留现有的日志采集集成和应用程序追踪配置。这些设置仅改变 agent 发送遥测数据的目标位置，既不会为单个应用程序启用日志采集，也不会添加插桩。如果您通过[环境变量](https://docs.datadoghq.com/agent/guide/environment-variables/)配置 agent，请同时更新其中的相应设置，包括 `DD_API_KEY`。
+
+此配置会将 agent 的日志、链路追踪和指标从 Datadog 重定向到 ClickHouse Observability。如需先行评估，请先在测试 agent 上应用此配置，再推广到更大范围的部署。
+
+## 重启并验证 {#restart-and-verify}
+
+重启 agent 以使配置生效。在 Linux 上：
+
+```shell
+sudo systemctl restart datadog-agent
+sudo datadog-agent status
+```
+
+在 macOS 上：
+
+```shell
+sudo launchctl kickstart -k system/com.datadoghq.agent
+```
+
+对于容器化部署的 agent，请更新其配置并重新部署容器。
+
+生成一些新的应用活动，然后打开 ClickHouse Observability 并选择最近的时间范围：
+
+* **日志：** 选择你的日志数据源，并按应用的 `ServiceName` 进行过滤。
+* **链路追踪：** 选择你的链路追踪数据源，并按应用的 `ServiceName` 进行过滤。
+* **指标：** 搜索由你的应用或 agent 上报的指标。如果使用 DogStatsD 进行测试，请上报一个指定名称的 Gauge 并检查其值。
+
+如果数据未显示，请检查 agent 状态中是否存在投递错误。核实主机名、端口、API key 以及服务的网络访问设置。确认 agent 正在采集相应的信号，并且所有通过环境变量设置的覆盖配置都指向同一个目标端。
+
+对于链路追踪，请核实某个已知的追踪 ID，而不要仅依赖 agent 的投递成功计数器。如果服务过滤器导致该 trace 无法显示，请按 `TraceId` 搜索：接收器可能会将 tracer 的基础服务用作资源的服务名称，同时在 `service.name` 跨度属性中保留按跨度覆盖的服务名。请在应用的追踪配置中设置 `DD_SERVICE`，以指定其基础服务名称。
+
+## 支持的信号 {#supported-signals}
+
+Datadog receiver 目前处于实验性阶段，可将 Datadog 日志、链路追踪以及受支持的指标转换为 ClickHouse Observability 所使用的 OpenTelemetry 数据模型。上述配置使用的是 v2 指标摄取端点；其他 Datadog 后端功能不在本迁移流程的范围内。
+
+你可以保留现有的 Datadog 插桩，同时将应用程序逐步迁移到 OpenTelemetry。

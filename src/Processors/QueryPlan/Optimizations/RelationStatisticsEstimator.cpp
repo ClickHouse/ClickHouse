@@ -23,9 +23,12 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/StorageValues.h>
+#include <Storages/IStorage.h>
 #include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -712,6 +715,28 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
         return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name, .source = RowEstimateSource::Statistics};
+    }
+
+    /// The block of a `StorageValues`, e.g. the block inserted into the source table of a materialized view.
+    /// The step applies no filter itself, so with a filter above it the row count is an upper bound.
+    if (const auto * reading = typeid_cast<const ReadFromStorageStep *>(step))
+    {
+        /// `totalRows` of another storage can lock what the pipe of this step has locked already, as `StorageJoin` does.
+        const auto * storage = typeid_cast<const StorageValues *>(reading->getStorage().get());
+        if (!storage)
+            return {};
+
+        if (auto total_rows = storage->totalRows(reading->getContext()))
+        {
+            const bool rows_exact = !filter && !mayStopReadingEarly(reading->getQueryInfo());
+            return RelationStats{
+                .estimated_rows = *total_rows,
+                .table_name = storage->getStorageID().getTableName(),
+                .imprecise_estimate = !rows_exact,
+                .rows_exact = rows_exact,
+                .source = RowEstimateSource::Statistics};
+        }
+        return {};
     }
 
     /// We cannot do typeid_cast<const ReadFromSystemOneStep *>(step)

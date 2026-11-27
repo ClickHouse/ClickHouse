@@ -1,0 +1,21 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>CREATE TABLE t_substring_nullable (s Nullable(String)) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE t_substring_lc_nullable (s LowCardinality(Nullable(String))) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO t_substring_nullable SELECT if(number % 100 = 0, NULL, concat('key', toString(number), '=valuevaluevaluevaluevalue')) FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO t_substring_lc_nullable SELECT concat('key', toString(number % 5000), '=valuevaluevaluevaluevalue') FROM numbers(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_substring_lc_nullable FINAL</fill_query>
+
+    <query>SELECT substring(s, toUInt64(3)) FROM t_substring_nullable FORMAT Null</query>
+    <query>SELECT substring(s, toInt64(3)) FROM t_substring_nullable FORMAT Null</query>
+    <query>SELECT left(s, toUInt64(5)) FROM t_substring_nullable FORMAT Null</query>
+    <query>SELECT left(s, toUInt64(5)) FROM t_substring_lc_nullable FORMAT Null</query>
+    <query>SELECT left(s, toInt64(5)) FROM t_substring_lc_nullable FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_substring_nullable</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_substring_lc_nullable</drop_query>
+</test>

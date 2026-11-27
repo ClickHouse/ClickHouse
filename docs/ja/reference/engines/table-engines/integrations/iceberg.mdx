@@ -77,25 +77,26 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 
 次の表は、スキーマ推論時に (読み取り用として) Iceberg のデータ型が ClickHouse のデータ型にどのように対応付けられるかを示しています。
 
-### 基本データ型 {#primitive-types}
+### プリミティブデータ型 {#primitive-types}
 
-| Iceberg 型          | ClickHouse 型           | 注記                                |
-| ------------------ | ---------------------- | --------------------------------- |
-| `boolean`          | `Bool`                 |                                   |
-| `int`              | `Int32`                |                                   |
-| `long`, `bigint`   | `Int64`                |                                   |
-| `float`            | `Float32`              |                                   |
-| `double`           | `Float64`              |                                   |
-| `date`             | `Date32`               |                                   |
-| `time`             | `Int64`                | 午前0時からのマイクロ秒数                     |
-| `timestamp`        | `DateTime64(6)`        | マイクロ秒、タイムゾーンなし                    |
-| `timestamptz`      | `DateTime64(6, 'UTC')` | マイクロ秒、UTC タイムゾーン                  |
-| `timestamp_ns`     | `DateTime64(9)`        | ナノ秒、タイムゾーンなし (Iceberg v3 以降のみ)    |
-| `timestamptz_ns`   | `DateTime64(9, 'UTC')` | ナノ秒、UTC タイムゾーン (Iceberg v3 以降のみ)  |
-| `string`, `binary` | `String`               |                                   |
-| `uuid`             | `UUID`                 |                                   |
-| `fixed(N)`         | `FixedString(N)`       |                                   |
-| `decimal(P, S)`    | `Decimal(P, S)`        |                                   |
+| Iceberg 型          | ClickHouse 型           | 注記                                                                         |
+| ------------------ | ---------------------- | -------------------------------------------------------------------------- |
+| `boolean`          | `Bool`                 |                                                                            |
+| `int`              | `Int32`                |                                                                            |
+| `long`, `bigint`   | `Int64`                |                                                                            |
+| `float`            | `Float32`              |                                                                            |
+| `double`           | `Float64`              |                                                                            |
+| `date`             | `Date32`               |                                                                            |
+| `time`             | `Int64`                | 午前0時からのマイクロ秒数                                                              |
+| `timestamp`        | `DateTime64(6)`        | マイクロ秒、タイムゾーンなし                                                             |
+| `timestamptz`      | `DateTime64(6, 'UTC')` | マイクロ秒、タイムゾーンはテーブル設定 `iceberg_timezone_for_timestamptz` で設定                 |
+| `timestamp_ns`     | `DateTime64(9)`        | ナノ秒、タイムゾーンなし (Iceberg v3 以降のみ)                                             |
+| `timestamptz_ns`   | `DateTime64(9, 'UTC')` | ナノ秒、タイムゾーンはテーブル設定 `iceberg_timezone_for_timestamptz` で設定 (Iceberg v3 以降のみ) |
+| `string`, `binary` | `String`               |                                                                            |
+| `uuid`             | `UUID`                 |                                                                            |
+| `fixed(N)`         | `FixedString(N)`       |                                                                            |
+| `decimal(P, S)`    | `Decimal(P, S)`        |                                                                            |
+| `unknown`          | `Nullable(Nothing)`    | 常に `NULL`、データファイルには保存されない (Iceberg v3 以降のみ)                                |
 
 ### 複雑な型 {#complex-types}
 
@@ -109,19 +110,20 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 
 上記のデータ型マッピングは読み取り時に適用されます。ClickHouse で Iceberg スキーマを作成または変更し、データを書き込む際には、以下の制限事項があります。
 
-* ClickHouse では、`Bool`、`FixedString`、`Int8`、`UInt8`、`Int16`、`UInt16`、`Time`、`Time64` を含む Iceberg スキーマを作成したり、カラムをこれらの型のいずれかとして追加または変更したりすることはできません。この操作は、サポートされていない型の例外により失敗します。ただし、既存の Iceberg カラムに `Bool` の値を挿入することは可能です。
+* ClickHouse では、`FixedString`、`Time`、`Time64` を含む Iceberg スキーマを作成したり、カラムをこれらの型のいずれかとして追加または変更したりすることはできません。この操作は、サポートされていない型の例外により失敗します。`Bool` は Iceberg の `boolean` として保存されます。Iceberg には 8 ビットおよび 16 ビットの整数型がないため、`Int8`、`UInt8`、`Int16`、`UInt16` カラムは Iceberg の `int` に拡張され、読み取り時には `Int32` として返されます。
 * ClickHouse では、`UInt64` を含む Iceberg スキーマも作成できません。Iceberg で最も幅の広い整数型は符号付き 64 ビットの `long` であり、`UInt64` のすべての値を表現できないためです。代わりに `Int64` または `Decimal(20, 0)` を使用してください。`UInt64` カラム (`Array(UInt64)` のようなネストされたものを含む) を持つテーブルを作成しようとすると、そのパスに Iceberg テーブルがすでに存在する場合でも、例外が発生して失敗します。同じ理由から、`UInt32` カラムは Iceberg の `long` に拡張されるため、読み取り時には `Int64` として返されます。
 * ClickHouse で Iceberg スキーマを作成または変更する場合、すべての `DateTime` および `DateTime64` カラムは、マイクロ秒精度でタイムゾーンを持たない Iceberg の `timestamp` にマッピングされます。ClickHouse では `timestamptz`、`timestamp_ns`、`timestamptz_ns` のスキーマ型を生成できないため、より高い精度やタイムゾーンのセマンティクスは Iceberg スキーマに反映されません。
 * ClickHouse では、`decimal`、`fixed`、`timestamp_ns`、`timestamptz_ns` のカラムを直接パーティションフィールドとして使用する Iceberg テーブルには書き込めません。この操作は、サポートされていない型の例外により失敗します。
-* `Bool` や `Decimal` など、ClickHouse が境界値をシリアル化できない型を含むデータファイルでは、ClickHouse は Iceberg マニフェストエントリからすべてのカラムの下限値と上限値を省略します。カラムサイズと null カウントは引き続き含まれ、データの正確性も維持されますが、リーダーはこれらのファイルに対してマニフェストレベルの min-max プルーニングを使用できません。
+* `UUID` など、ClickHouse が境界値をシリアル化できない型を含むデータファイルでは、ClickHouse は Iceberg マニフェストエントリから該当するカラムの下限値と上限値を省略します。カラムサイズと null カウントは引き続き含まれ、データの正確性も維持されますが、リーダーはこれらのファイルに対してマニフェストレベルの min-max プルーニングを使用できません。
 
-## スキーマの進化 {#schema-evolution}
+## スキーマ進化 {#schema-evolution}
 
 ClickHouse は、時間の経過とともにスキーマが変化した Iceberg テーブル の読み取りをサポートしています。これには、カラムが追加、削除、並べ替えされたテーブルや、カラムが required から Nullable に変更されたテーブルが含まれます。さらに、次の型変換がサポートされています。
 
 * int -&gt; long
 * float -&gt; double
 * decimal(P, S) -&gt; decimal(P&#39;, S) where P&#39; &gt; P.
+* unknown -&gt; 任意のプリミティブ型 (Iceberg v3 以降のみ)
 
 現在のところ、ネストされた構造や、Array および Map 内の要素の型を変更することはできません。
 
@@ -137,7 +139,7 @@ ClickHouse は、Iceberg テーブルに対する SELECT クエリでパーテ�
 
 この操作を使用するには、`allow_insert_into_iceberg` を有効にしてください。
 
-この操作がサポートされるのは、Iceberg `format-version` 2 のテーブルで、パーティション仕様が 1 つだけかつ進化 (evolve) していない場合に限られます。選択したパーティションを含む各マニフェストには、他のパーティションのファイルが含まれていてはなりません。選択したパーティションと他のパーティションでマニフェストが共有されている場合、この操作はテーブルを変更せずに失敗します。また、対象のマニフェストに等価削除ファイル (equality-delete file) が含まれている場合も、この操作は拒否されます。
+この操作がサポートされるのは、Iceberg `format-version` 2 のテーブルで、パーティション仕様が 1 つだけかつ進化 (evolve) していない場合に限られます。選択したパーティションを含む各マニフェストには、他のパーティションのファイルが含まれていてはなりません。選択したパーティションと他のパーティションでマニフェストが共有されている場合、この操作はテーブルを変更せずに失敗します。`iceberg_insert_single_manifest_for_all_partitions` が有効な場合、`INSERT` の各挿入ストリームは、受け取ったすべてのパーティションのファイルを 1 つのマニフェストにまとめて書き込みます (`max_insert_threads = 1` の場合、マニフェストは `INSERT` ごとに厳密に 1 つになります)。そのため、他のパーティションと同じ `INSERT` で書き込まれたパーティションは削除できません。また、対象のマニフェストに等価削除ファイル (equality-delete file) が含まれている場合も、この操作は拒否されます。
 
 パーティションの値は `MergeTree` と同じ規則に従います。単一カラムのパーティションではスカラーリテラルを、複数カラムのパーティションでは値のタプルを指定します。
 
@@ -423,7 +425,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 Iceberg のメタデータには保存されず、テーブル定義にのみ保存される設定は、既存のテーブルに対して `ALTER TABLE ... MODIFY SETTING` および `ALTER TABLE ... RESET SETTING` で変更できます。
 
 * メタデータファイルのルックアップ: `iceberg_use_version_hint`、`iceberg_recent_metadata_file_by_last_updated_ms_field`、`iceberg_metadata_async_prefetch_period_ms`
-* バックグラウンドでのコンパクションとその後のクリーンアップ: `allow_experimental_iceberg_compaction`、`allow_experimental_cleanup_old_data_files_compaction`、`iceberg_compaction_lock_lease_seconds`、`iceberg_compaction_delay_bias`、`iceberg_compaction_data_cleanup`、`iceberg_read_with_snapshot_lease`、`iceberg_snapshot_lease_seconds`、`iceberg_outdated_snapshot_lifetime_seconds`、`iceberg_compaction_commit_batch_size`、`iceberg_compaction_max_rows_in_data_file`、`iceberg_compaction_max_bytes_in_data_file`、`iceberg_max_number_datafiles_to_compact`、`iceberg_data_file_size_lower_threshold_compaction`、`iceberg_data_file_size_upper_threshold_compaction`
+* バックグラウンドでのコンパクションとその後のクリーンアップ: `allow_experimental_iceberg_compaction`、`enable_cleanup_old_data_files_compaction` (またはその別名 `allow_experimental_cleanup_old_data_files_compaction`)、`iceberg_compaction_lock_lease_seconds`、`iceberg_compaction_delay_bias`、`iceberg_compaction_data_cleanup`、`iceberg_read_with_snapshot_lease`、`iceberg_snapshot_lease_seconds`、`iceberg_outdated_snapshot_lifetime_seconds`、`iceberg_compaction_commit_batch_size`、`iceberg_compaction_max_rows_in_data_file`、`iceberg_compaction_max_bytes_in_data_file`、`iceberg_max_number_datafiles_to_compact`、`iceberg_data_file_size_lower_threshold_compaction`、`iceberg_data_file_size_upper_threshold_compaction`
 
 新しい値は以降のクエリから適用され、テーブル定義に保存されます。設定の変更中はテーブルのバックグラウンドジョブがいったん停止し、新しい設定で再開されます。したがって、`allow_experimental_iceberg_compaction` を無効にするとテーブルのバックグラウンドコンパクションが停止し、有効にすると開始されます。上記以外の設定は変更できません。また、設定の変更を他の `ALTER` コマンドと同じクエリ内で組み合わせることもできません。`DataLakeCatalog` データベースのテーブルでは、設定の変更はサポートされていません。
 

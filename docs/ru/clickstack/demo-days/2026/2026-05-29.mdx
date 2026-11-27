@@ -7,9 +7,7 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Демо-дни']
 ---
 
-<div id="version-aware-improved-schema-filtering">
-  ## Улучшенная фильтрация схем с учётом версии
-</div>
+## Улучшенная фильтрация схем с учётом версии {#version-aware-improved-schema-filtering}
 
 *Демо от [@knudtty](https://github.com/knudtty)*
 
@@ -23,9 +21,7 @@ keywords: ['ClickStack', 'Демо-дни']
 
 **Связанные PR:** [#2341](https://github.com/hyperdxio/hyperdx/pull/2341) feat: по умолчанию добавляет оптимизацию direct&#95;read для журналов и трасс, [#2405](https://github.com/hyperdxio/hyperdx/pull/2405) feat(common-utils): применяет оптимизацию direct&#95;read для элементов KV к SQL-фильтрам, [#2376](https://github.com/hyperdxio/hyperdx/pull/2376) feat: использует text index для фильтров и автодополнения
 
-<div id="better-log-parsing">
-  ## Более качественный разбор журналов
-</div>
+## Более качественный разбор журналов {#better-log-parsing}
 
 *Демо от [@dhable](https://github.com/dhable)*
 
@@ -39,9 +35,7 @@ keywords: ['ClickStack', 'Демо-дни']
 
 **Связанные PR:** [#2363](https://github.com/hyperdxio/hyperdx/pull/2363) fix(log-parser): пропускать строковое определение, если тело разбирается как JSON с полем level
 
-<div id="mcp-server-improvements">
-  ## Улучшения MCP Server
-</div>
+## Улучшения MCP Server {#mcp-server-improvements}
 
 *Демо от [@brandon-pereira](https://github.com/brandon-pereira)*
 
@@ -53,25 +47,21 @@ keywords: ['ClickStack', 'Демо-дни']
 
 **Связанные PR:** [#2337](https://github.com/hyperdxio/hyperdx/pull/2337) feat(mcp): улучшение качества инструментов MCP — подсказки об ошибках, общие вспомогательные функции, более понятные сообщения, [#2396](https://github.com/hyperdxio/hyperdx/pull/2396) refactor(mcp): переименование префиксов инструментов с hyperdx&#95; на clickstack&#95;, [#2343](https://github.com/hyperdxio/hyperdx/pull/2343) feat(mcp): добавление инструментов patch&#95;dashboard, get&#95;dashboard&#95;tile, search&#95;dashboards, [#2418](https://github.com/hyperdxio/hyperdx/pull/2418) fix(mcp): улучшение описаний alias и примеров для более читаемых легенд диаграмм, [#2412](https://github.com/hyperdxio/hyperdx/pull/2412) refactor: упрощение проверки ObjectId в MCP с помощью общих вспомогательных функций и проверок на уровне схемы
 
-<div id="new-series-color-palette">
-  ## Новая цветовая палитра серий
-</div>
+## Новая цветовая палитра серий {#new-series-color-palette}
 
 *Демо от [@elizabetdev](https://github.com/elizabetdev)*
 
 <Frame>
-  <iframe src="https://www.youtube.com/embed/YzECP3diWvg" title="Проигрыватель видео YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  <iframe src="https://www.youtube.com/embed/YzECP3diWvg" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-Елизабет работала над унификацией цветовой палитры визуализации данных в темах HyperDX и ClickStack, дополняя работу Alex над компонентом выбора цвета. У этих двух тем были разные палитры и отдельные правила-исключения для каждой, из-за чего работа с цветами становилась неоправданно сложной. Цель состояла в том, чтобы создать единую палитру, подходящую для обеих тем.
+Елизабет работала над унификацией цветовой палитры визуализации данных в темах интерфейса ClickStack и ClickStack, дополняя работу Alex над выбором цвета. У этих двух тем были разные палитры и отдельные правила-исключения для каждой, из-за чего работа с цветами становилась неоправданно сложной. Цель состояла в том, чтобы создать единую палитру, подходящую для обеих тем.
 
 Она протестировала распространённые в индустрии палитры (Tableau, Observable, IBM) с помощью инструмента симуляции цветового зрения, чтобы проверить контрастность и доступность. Палитра ClickHouse показала плохие результаты — зелёный цвет недостаточно контрастен на белом фоне. И Tableau, и Observable не проходят как минимум одну из проверок; палитра IBM проходит их все, но в ней всего пять цветов, а этого недостаточно. В целом ближе всего подошла палитра Observable с небольшой корректировкой синего, и теперь она будет использоваться в обеих темах.
 
-**Связанные PR:** [#2362](https://github.com/hyperdxio/hyperdx/pull/2362) refactor(theme): переименовать токены палитры графиков в названия цветовых тонов + унифицировать для всех тем
+**Связанные PR:** [#2362](https://github.com/hyperdxio/hyperdx/pull/2362) refactor(theme): переименовать токены палитры чартов в названия цветовых тонов + унифицировать для всех тем
 
-<div id="new-page-layout-with-sticky-header">
-  ## Новый макет страницы с закреплённым заголовком
-</div>
+## Новый макет страницы с закреплённым заголовком {#new-page-layout-with-sticky-header}
 
 *Демо от [@elizabetdev](https://github.com/elizabetdev)*
 
@@ -85,9 +75,7 @@ keywords: ['ClickStack', 'Демо-дни']
 
 **Связанные PR:** [#2282](https://github.com/hyperdxio/hyperdx/pull/2282) Добавление PageHeader/PageLayout и миграция Sessions, [#2345](https://github.com/hyperdxio/hyperdx/pull/2345) Использование заголовка PageHeader на страницах списков, [#2346](https://github.com/hyperdxio/hyperdx/pull/2346) Миграция Service Map на PageLayout, [#2347](https://github.com/hyperdxio/hyperdx/pull/2347) Миграция панели мониторинга Kubernetes на PageLayout, [#2348](https://github.com/hyperdxio/hyperdx/pull/2348) Миграция панели мониторинга ClickHouse на PageLayout, [#2364](https://github.com/hyperdxio/hyperdx/pull/2364) feat(dashboard): миграция на PageLayout с закреплённой панелью инструментов запросов, [#2394](https://github.com/hyperdxio/hyperdx/pull/2394) fix(PageHeader): сохранение закреплённого заголовка под оверлеями drawer
 
-<div id="new-datasource-selector-and-color-picking-for-series">
-  ## Новый селектор источника данных и выбор цвета для серий
-</div>
+## Новый селектор источника данных и выбор цвета для серий {#new-datasource-selector-and-color-picking-for-series}
 
 *Демо от [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -101,9 +89,7 @@ keywords: ['ClickStack', 'Демо-дни']
 
 **Связанные PR:** [#2365](https://github.com/hyperdxio/hyperdx/pull/2365) feat(source-picker): chip + kebab menu UX, [#2265](https://github.com/hyperdxio/hyperdx/pull/2265) feat(app): number tile static color picker
 
-<div id="better-hints-for-dashboard-actions">
-  ## Более наглядные подсказки для действий на панели мониторинга
-</div>
+## Более наглядные подсказки для действий на панели мониторинга {#better-hints-for-dashboard-actions}
 
 *Демо от [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
