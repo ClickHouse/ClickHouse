@@ -66,6 +66,18 @@ Names storageColumns(const String & name, const ColumnsDescription & columns)
     return children;
 }
 
+using Readers = SetWithMemoryTracking<String>;
+
+/// what a `SELECT` level binds: the qualifiers of its names and the CTEs `c AS (SELECT ... FROM t)` over a checked
+/// table, so that `FROM c` reads t in the level and in the subqueries inside it
+struct Scope
+{
+    Strings qualifiers;
+    Readers readers;
+
+    auto operator<=>(const Scope &) const = default;
+};
+
 /// the identifiers a filter reads, SQL UDF bodies included, lambda parameters and the subqueries over other tables excluded
 struct FilterNames
 {
@@ -73,10 +85,8 @@ struct FilterNames
     const ColumnsDescription & columns;
     /// each name as written, then without each qualifier of its level that it starts with
     SetWithMemoryTracking<Strings> names;
-    /// a body is opened once per qualifiers and per subquery that reads a checked table or not
-    SetWithMemoryTracking<std::tuple<String, Strings, bool>> visited_udfs;
-    /// the CTEs `c AS (SELECT ... FROM t)` over a checked table, `FROM c` reads it too
-    NameSet readers;
+    /// a body is opened once per scope and per subquery that reads a checked table or not
+    SetWithMemoryTracking<std::tuple<String, Scope, bool>> visited_udfs;
 
     /// an unqualified table binds in the database of the reader, so it counts in every database
     [[nodiscard]] static bool binds(const ASTTableIdentifier & table, const StorageID & checked)
@@ -85,31 +95,66 @@ struct FilterNames
         return checked.table_name == id.table_name && (id.database_name.empty() || checked.database_name == id.database_name);
     }
 
-    [[nodiscard]] bool reads(const ASTTableIdentifier & table) const
+    [[nodiscard]] bool reads(const ASTTableIdentifier & table, const Readers & readers) const
     {
         return (!table.compound() && readers.contains(table.name()))
             || std::ranges::any_of(tables, [&](const auto & checked) { return binds(table, checked); });
     }
 
-    /// the tables of one subquery level are in its `FROM`, joins and `FROM` or `WITH` subqueries, a subquery
-    /// in its expressions is a level of its own
-    [[nodiscard]] bool readsCheckedTable(const IAST & ast) const
+    /// the tables of one subquery level are in its `FROM` and joins, a subquery in its expressions or `WITH` is
+    /// a level of its own
+    [[nodiscard]] bool readsCheckedTable(const IAST & ast, const Readers & readers) const
     {
         if (const auto * table = ast.as<ASTTableIdentifier>())
-            return reads(*table);
-        const bool from = ast.as<ASTTableExpression>() || ast.as<ASTWithElement>();
-        return std::ranges::any_of(ast.children, [&](const ASTPtr & child) { return (from || !child->as<ASTSubquery>()) && readsCheckedTable(*child); });
+            return reads(*table, readers);
+        auto children_read = [&](const Readers & level, bool from)
+        {
+            return std::ranges::any_of(ast.children, [&](const ASTPtr & child) { return (from || !child->as<ASTSubquery>()) && readsCheckedTable(*child, level); });
+        };
+        if (const auto * select = ast.as<ASTSelectQuery>())
+            return children_read(levelReaders(*select, readers), false);
+        return children_read(readers, ast.as<ASTTableExpression>() != nullptr);
+    }
+
+    /// a CTE of a `SELECT` hides the CTE of the same name around it, except in its own body, and can read a CTE
+    /// that comes after it
+    [[nodiscard]] Readers levelReaders(const ASTSelectQuery & select, const Readers & outer) const
+    {
+        auto with = select.with();
+        if (!with)
+            return outer;
+        Readers level = outer;
+        for (const auto & child : with->children)
+            if (const auto * cte = child->as<ASTWithElement>())
+                level.erase(cte->name);
+        for (bool changed = true; changed;)
+        {
+            changed = false;
+            for (const auto & child : with->children)
+            {
+                const auto * cte = child->as<ASTWithElement>();
+                if (!cte || level.contains(cte->name))
+                    continue;
+                if (outer.contains(cte->name))
+                    level.insert(cte->name);
+                if (readsCheckedTable(*cte->subquery, level))
+                {
+                    level.insert(cte->name);
+                    changed = true;
+                }
+                else
+                    level.erase(cte->name);
+            }
+        }
+        return level;
     }
 
     /// a table expression `... AS q` binds `q.` and a table t binds `t.` in its `SELECT` and in the subqueries inside,
     /// unless one of them binds the name again (see `tryBindIdentifierToTableExpression`), only a binding that reads
     /// a checked table qualifies its names
-    Strings levelQualifiers(const ASTSelectQuery & select, const Strings & outer)
+    Scope levelScope(const ASTSelectQuery & select, const Scope & outer) const
     {
-        if (auto with = select.with())
-            for (const auto & child : with->children)
-                if (const auto * cte = child->as<ASTWithElement>(); cte && readsCheckedTable(*child))
-                    readers.insert(cte->name);
+        const auto readers = levelReaders(select, outer.readers);
         Strings level;
         NameSet bound;
         if (auto from = select.tables())
@@ -119,7 +164,7 @@ struct FilterNames
                 const auto & table_expression = element->as<ASTTablesInSelectQueryElement &>().table_expression;
                 if (!table_expression)
                     continue;
-                const bool reading = readsCheckedTable(*table_expression);
+                const bool reading = readsCheckedTable(*table_expression, readers);
                 const auto & expression = table_expression->as<ASTTableExpression &>();
                 for (const auto & node : {expression.database_and_table_name, expression.table_function, expression.subquery})
                 {
@@ -141,25 +186,25 @@ struct FilterNames
                 }
             }
         }
-        for (const auto & qualifier : outer)
+        for (const auto & qualifier : outer.qualifiers)
             if (!bound.contains(qualifier.substr(0, qualifier.find('.'))))
                 level.push_back(qualifier);
-        return level;
+        return {std::move(level), readers};
     }
 
     /// a filter cannot be correlated and cannot read its own table (see `buildFilterInfo`), so the names of a subquery
     /// level count only when the level or a level around it, to which it can be correlated, reads a checked table
-    void collect(const ASTPtr & ast, const Strings & qualifiers, NameSet bound = {}, bool record = true, bool in_reader = false)
+    void collect(const ASTPtr & ast, const Scope & scope, NameSet bound = {}, bool record = true, bool in_reader = false)
     {
         if (const auto * select = ast->as<ASTSelectQuery>())
         {
-            const auto level = levelQualifiers(*select, qualifiers);
+            const auto level = levelScope(*select, scope);
             for (const auto & child : ast->children)
                 collect(child, level, bound, record, in_reader);
             return;
         }
         if (ast->as<ASTSubquery>())
-            record = in_reader = in_reader || readsCheckedTable(*ast);
+            record = in_reader = in_reader || readsCheckedTable(*ast, scope.readers);
         if (ast->as<ASTTableIdentifier>())
             return;
 
@@ -170,7 +215,7 @@ struct FilterNames
             if (!record || std::ranges::any_of(bound, [&](const auto & parameter) { return name == parameter || name.starts_with(parameter + "."); }))
                 return;
             Strings candidates{name};
-            for (const auto & qualifier : qualifiers)
+            for (const auto & qualifier : scope.qualifiers)
                 if (name.starts_with(qualifier))
                     candidates.push_back(name.substr(qualifier.size()));
             names.insert(std::move(candidates));
@@ -186,15 +231,15 @@ struct FilterNames
             {
                 for (const auto & parameter : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
                     bound.insert(parameter);
-                collect(function->arguments->children[1], qualifiers, bound, record, in_reader);
+                collect(function->arguments->children[1], scope, bound, record, in_reader);
                 return;
             }
         }
-        if (auto body = UserDefinedSQLFunctionFactory::instance().tryGet(name); record && body && visited_udfs.emplace(name, qualifiers, in_reader).second)
-            collect(body, qualifiers, {}, record, in_reader);
+        if (auto body = UserDefinedSQLFunctionFactory::instance().tryGet(name); record && body && visited_udfs.emplace(name, scope, in_reader).second)
+            collect(body, scope, {}, record, in_reader);
 
         for (const auto & child : ast->children)
-            collect(child, qualifiers, bound, record, in_reader);
+            collect(child, scope, bound, record, in_reader);
     }
 };
 
@@ -227,7 +272,7 @@ Names changedColumns(const AlterCommand & command, const ColumnsDescription & co
         {
             if (column.default_desc.kind != ColumnDefaultKind::Alias || std::ranges::contains(changed, column.name))
                 continue;
-            FilterNames sources{no_tables, columns, {}, {}, {}};
+            FilterNames sources{no_tables, columns, {}, {}};
             sources.collect(column.default_desc.expression, {});
             if (std::ranges::any_of(sources.names, [&](const auto & candidates) { return mentions(candidates, changed[i], columns); }))
                 changed.push_back(column.name);
@@ -282,14 +327,14 @@ void checkRowPoliciesBeforeAlter(const StoragePtr & table, const ColumnsDescript
         {
             if (candidate.database_name != policy->getDatabase() || (!policy->isForDatabase() && candidate.table_name != policy->getTableName()))
                 continue;
-            FilterNames filter_names{tables, columns, {}, {}, {}};
+            FilterNames filter_names{tables, columns, {}, {}};
             for (const auto & filter : policy->filters)
             {
                 if (filter.empty())
                     continue;
                 ParserExpression parser;
                 filter_names.collect(parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-                    {candidate.table_name + ".", candidate.database_name + "." + candidate.table_name + "."});
+                    {{candidate.table_name + ".", candidate.database_name + "." + candidate.table_name + "."}, {}});
             }
 
             for (const auto & command : commands)
