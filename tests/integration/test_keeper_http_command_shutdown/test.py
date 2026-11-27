@@ -50,10 +50,10 @@ def test_http_four_letter_command_finishes_before_keeper_shutdown(started_cluste
             result["error"] = repr(e)
 
     thread = threading.Thread(target=run_command)
+    request_sent = time.monotonic()
     thread.start()
     try:
         wait_for_log_contains("Received four letter command rqld")
-        command_started = time.monotonic()
 
         clickhouse_pid = node.get_process_pid("clickhouse server")
         assert clickhouse_pid is not None
@@ -68,8 +68,10 @@ def test_http_four_letter_command_finishes_before_keeper_shutdown(started_cluste
 
         # The forced exit comes after the Keeper teardown, which waits for the 20 s command.
         node.wait_start_failed(60)
-        elapsed = time.monotonic() - command_started
-        assert elapsed >= 15, f"Keeper exited {elapsed:.1f} s after the command started"
+        elapsed = time.monotonic() - request_sent
+        assert (
+            elapsed >= 20
+        ), f"Keeper exited {elapsed:.1f} s after the request was sent"
 
         thread.join(60)
         assert not thread.is_alive(), result
