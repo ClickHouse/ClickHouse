@@ -109,6 +109,16 @@ std::vector<AIQueryTableReference> collectImplicitSourcesForAIAgent(const IAST &
 /// server whether any of these names is a user-defined function there.
 std::vector<String> collectFunctionNamesForAIAgent(const IAST & ast);
 
+/// The names of the table functions called in the statement, deduplicated and sorted, each one as
+/// the factory of the table functions looks it up: the exact spelling of a case-sensitive one, and
+/// the lowercase one of `values` and `format`. `validateReadOnlyQueryForAIAgent` accepts a table
+/// function by the list of the client, which says what the builtin of that name does. But the
+/// server resolves the name on its own, and one that does not have the builtin - an older one -
+/// reads a parameterized view of that name instead (`CREATE VIEW generateSeries AS SELECT * FROM
+/// file({p:String}, ...)`), which is not collected as a named table. The caller asks the server
+/// whether every one of these names is a table function there.
+std::vector<String> collectTableFunctionNamesForAIAgent(const IAST & ast);
+
 /// Whether the database is owned by the server, so that its tables are judged by name
 /// (`isAllowedServerOwnedTableForAIAgent`) rather than by engine: `system` and the two spellings
 /// of `information_schema`, whose tables are views over `system` by design.

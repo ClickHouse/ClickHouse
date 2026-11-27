@@ -5203,6 +5203,11 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         /// the query.
         checkFunctionsForAIReadOnlyTool(collectFunctionNamesForAIAgent(*ast));
 
+        /// The same for the table functions: the static validation accepts the ones the client
+        /// knows to stay inside the server, and a server without the builtin of that name reads a
+        /// parameterized view of that name instead.
+        checkTableFunctionsForAIReadOnlyTool(collectTableFunctionNamesForAIAgent(*ast));
+
         /// Queries going through the confirmation prompt were already shown there.
         echoQueryForAI(query);
     }
@@ -5817,6 +5822,39 @@ void ClientBase::checkFunctionsForAIReadOnlyTool(const Strings & functions)
         result.getByPosition(0).column->getDataAt(0));
 }
 
+void ClientBase::checkTableFunctionsForAIReadOnlyTool(const Strings & table_functions)
+{
+    if (table_functions.empty())
+        return;
+
+    Strings name_literals;
+    name_literals.reserve(table_functions.size());
+    for (const auto & name : table_functions)
+        name_literals.push_back(quoteString(name));
+
+    const String query = fmt::format("SELECT name FROM system.table_functions WHERE name IN ({})", fmt::join(name_literals, ", "));
+
+    const Block result = materializeBlock(fetchInternalQueryResult(query, {}, /*from_ai_agent=*/ true));
+    NameSet known;
+    if (result.rows() != 0)
+    {
+        if (result.columns() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result of the table function resolution query of the AI agent");
+        const auto & column = *result.getByPosition(0).column;
+        for (size_t row = 0; row < column.size(); ++row)
+            known.emplace(column.getDataAt(row));
+    }
+
+    for (const auto & name : table_functions)
+        if (!known.contains(name))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The table function `{}` is not a table function of the connected server, although the client knows a "
+                "builtin of that name. The server can resolve the name to something else (a parameterized view), so what "
+                "it reads cannot be verified before execution. Use the run_query tool for this query",
+                name);
+}
+
 void ClientBase::checkNamedTablesForAIReadOnlyTool(
     const std::vector<AIQueryTableReference> & tables,
     bool allow_schema_access,
@@ -6312,8 +6350,16 @@ void ClientBase::resetServerSessionCaches()
 
 void ClientBase::noticeSessionReplacedByConnection()
 {
-    if (connection && connection->getNumberOfEstablishedConnections() != connections_established_in_session)
-        resetServerSessionCaches();
+    if (!connection || connection->getNumberOfEstablishedConnections() == connections_established_in_session)
+        return;
+
+    /// The settings the server reported in the handshake of the new session are not applied to the
+    /// client: that is done by `connect`, which did not run. So the copy of the settings the client
+    /// holds is the one of the previous session, and the new one can have another login profile
+    /// (another server behind the same address). From here on the client asks the server for the
+    /// effective values instead of taking its own copy for them, like after a `SET profile`.
+    settings_may_be_changed_by_profile = true;
+    resetServerSessionCaches();
 }
 
 #if USE_CLIENT_AI

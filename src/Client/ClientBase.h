@@ -358,6 +358,8 @@ protected:
         const std::vector<AIQueryTableReference> & implicit_sources);
     /// Refuses the query when a function it calls is a user-defined function on the server.
     void checkFunctionsForAIReadOnlyTool(const Strings & functions);
+    /// Refuses the query when a table function it calls is not a table function of the server.
+    void checkTableFunctionsForAIReadOnlyTool(const Strings & table_functions);
 
     /// The text of a query to record into the AI context buffer. The buffer is sent to the provider
     /// of the model with a later `?` turn, so the text is masked like `query_for_logging` on the
@@ -749,7 +751,9 @@ protected:
     int error_code = 0;
 
     /// A settings profile is applied on the server without its constituent settings being sent
-    /// back to the client. Once one is used, ask the server for the effective `dialect` (whether
+    /// back to the client. The same goes for a connection established again below the client
+    /// (see `noticeSessionReplacedByConnection`): the settings of its handshake are not applied to
+    /// the client. Once either has happened, ask the server for the effective `dialect` (whether
     /// the internal queries of the `help` command and of the AI agent need the pin to the
     /// ClickHouse dialect - see `internalQueriesRequireDialectPin`) and `readonly` (see
     /// `sessionReadonlyIfKnown`) instead of trusting the stale local values. Not guarded by `USE_CLIENT_AI`: `help` needs it in every build.

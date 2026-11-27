@@ -279,7 +279,7 @@ void checkNoProtectedSettingChanges(const IAST & ast)
 /// which is neither collected as a named table nor a function `system.functions` knows. Most of
 /// the allowed functions are registered with a case-sensitive name, so only their exact spelling
 /// is accepted; `values` and `format` are registered case-insensitively.
-bool isAllowedTableFunction(const String & name)
+std::optional<String> allowedTableFunctionNameInFactory(const String & name)
 {
     static const std::unordered_set<String> allowed_case_sensitive
     {
@@ -297,7 +297,16 @@ bool isAllowedTableFunction(const String & name)
         "values",
         "format",
     };
-    return allowed_case_sensitive.contains(name) || allowed_case_insensitive.contains(Poco::toLower(name));
+    if (allowed_case_sensitive.contains(name))
+        return name;
+    if (String lower_name = Poco::toLower(name); allowed_case_insensitive.contains(lower_name))
+        return lower_name;
+    return {};
+}
+
+bool isAllowedTableFunction(const String & name)
+{
+    return allowedTableFunctionNameInFactory(name).has_value();
 }
 
 /// The allowed table functions that take the structure of the table they generate as a string:
@@ -890,6 +899,25 @@ std::vector<AIQueryTableReference> collectImplicitSourcesForAIAgent(const IAST &
     std::vector<AIQueryTableReference> result;
     collectImplicitSources(ast, result);
     return result;
+}
+
+Strings collectTableFunctionNamesForAIAgent(const IAST & ast)
+{
+    std::set<String> names;
+    const auto collect = [&names](const auto & self, const IAST & node) -> void
+    {
+        if (const auto * table_expression = node.as<ASTTableExpression>(); table_expression && table_expression->table_function)
+        {
+            const auto & function = table_expression->table_function->as<ASTFunction &>();
+            /// A function that is not allowed has no name to look up: the validation refuses it.
+            if (auto name = allowedTableFunctionNameInFactory(function.name))
+                names.insert(std::move(*name));
+        }
+        for (const auto & child : node.children)
+            self(self, *child);
+    };
+    collect(collect, ast);
+    return Strings(names.begin(), names.end());
 }
 
 Strings collectFunctionNamesForAIAgent(const IAST & ast)
