@@ -43,8 +43,9 @@ for storage in full packed; do
         $CLICKHOUSE_CLIENT -m -q "
         SYSTEM DROP FILESYSTEM CACHE '$cache_name';
 
+        -- Both readers read the same table: no in-memory cache may serve the second one from the first one's read.
         SET enable_filesystem_cache = 1, read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0, force_read_through_distributed_cache = 0,
-            enable_reads_from_columns_cache = 0 $reader_settings;
+            enable_reads_from_columns_cache = 0, use_uncompressed_cache = 0 $reader_settings;
         SELECT json.b FROM t_cache_bounds_encrypted_$storage FORMAT Null;
         "
 
