@@ -13,7 +13,7 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/SecretArgumentsSpec.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Storages/Kafka/Kafka_fwd.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
@@ -380,6 +380,20 @@ void registerStorageKafka(StorageFactory & factory)
             /// secret and makes the collection name optional, so a named argument can be the first one.
             .secret_settings = Kafka::settingsToHide(),
             .settings_as_arguments = true,
+            .custom = [](FunctionSecretArgumentsFinder & finder)
+            {
+                for (size_t i = 0; i < finder.function->arguments->size(); ++i)
+                {
+                    const auto arg = finder.function->arguments->at(i)->getFunction();
+                    if (!arg || arg->name() != "equals" || !arg->arguments || arg->arguments->size() != 2)
+                        continue;
+
+                    String key;
+                    if (FunctionSecretArgumentsFinder::tryGetStringFromArgument(*arg->arguments->at(0), &key)
+                        && KafkaConfigLoader::isSensitiveNamedCollectionKey(key))
+                        finder.markSecretArgument(i, /* argument_is_named= */ true);
+                }
+            },
         },
         StorageFactory::StorageFeatures{
             .supports_settings = true,

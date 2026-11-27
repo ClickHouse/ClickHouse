@@ -233,10 +233,15 @@ void checkKafkaPropertyName(const String & key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka property name {} contains a null character", backQuote(key));
 }
 
+String normalizeKafkaPropertyName(const String & key)
+{
+    return (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
+}
+
 String toKafkaPropertyName(const String & key)
 {
     checkKafkaPropertyName(key);
-    const String name = (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
+    const String name = normalizeKafkaPropertyName(key);
     /// `test.mock.num.brokers` starts a mock cluster that uses memory addresses as member IDs.
     if (name.starts_with("test."))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka property {} is not allowed", name);
@@ -920,7 +925,8 @@ bool isSensitiveProperty(std::string_view name)
             res.emplace(*prop_name);
         return res;
     }();
-    return sensitive_properties.contains(name) || name.contains("password") || name.contains("secret");
+    /// The endpoint URL can contain credentials in its userinfo or query string.
+    return sensitive_properties.contains(name) || name.contains("password") || name.contains("secret") || name == "sasl.oauthbearer.token.endpoint.url";
 }
 
 /// Log all properties of a Kafka client configuration, replacing the values of sensitive
@@ -1022,6 +1028,12 @@ void KafkaConfigLoader::checkNamedCollection(const NamedCollection & collection)
         if (!property_key.empty())
             checkSQLKafkaProperty(toKafkaPropertyName(String(property_key)), collection.get<String>(key));
     }
+}
+
+bool KafkaConfigLoader::isSensitiveNamedCollectionKey(std::string_view key)
+{
+    const auto property = namedCollectionPropertyKey(key);
+    return !property.empty() && isSensitiveProperty(normalizeKafkaPropertyName(String(property)));
 }
 
 }
