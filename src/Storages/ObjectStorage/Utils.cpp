@@ -150,6 +150,26 @@ void validateSupportedColumns(
     }
 }
 
+CompressionMethod chooseCompressionMethodForRead(
+    RelativePathWithMetadata & object, const IObjectStorage & object_storage, const std::string & file_name, const std::string & compression_hint)
+{
+    const auto compression_method = chooseCompressionMethod(file_name, compression_hint);
+    if (compression_method == CompressionMethod::None)
+        return compression_method;
+
+    /// The `skip_object_metadata` placeholder says nothing about the object, so ask the storage.
+    if (object.metadata && !object.metadata->is_fetched && !object.metadata->is_from_table_records
+        && object_storage.getType() == ObjectStorageType::S3)
+        object.metadata = getObjectMetadataForRead(object_storage, object, /*with_tags=*/ false);
+
+    /// The server already decompressed the object while serving it (decompressive
+    /// transcoding), so the compression implied by the file extension must not be applied
+    if (object.metadata && object.metadata->is_server_side_decompressed)
+        return CompressionMethod::None;
+
+    return compression_method;
+}
+
 void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string_view lake_name)
 {
     size_t position = 0;

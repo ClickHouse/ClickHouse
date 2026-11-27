@@ -173,6 +173,16 @@ std::optional<std::string> translateHeaderNameFromGCS(const std::string & name)
     return {};
 }
 
+bool isDecompressiveTranscodingResponse(
+    const std::optional<std::string> & stored_content_encoding, bool has_content_encoding, bool has_content_length)
+{
+    return stored_content_encoding
+        && !stored_content_encoding->empty()
+        && !equalsCaseInsensitive(*stored_content_encoding, "identity")
+        && !has_content_encoding
+        && !has_content_length;
+}
+
 void translateHeadersToGCS(Aws::Http::HttpRequest & request)
 {
     const auto before = request.GetHeaders();

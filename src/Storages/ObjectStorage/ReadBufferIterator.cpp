@@ -160,12 +160,19 @@ std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
     const auto & path = current_object_info->isArchive() ? current_object_info->getPathToArchive() : current_object_info->getPath();
     std::unique_ptr<ReadBuffer> impl;
     using ObjectInfoInArchive = StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive;
+    CompressionMethod compression_method = {};
     if (const auto * object_info_in_archive = dynamic_cast<const ObjectInfoInArchive *>(current_object_info.get()))
+    {
         impl = object_info_in_archive->readFile();
+        compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
+    }
     else
+    {
         impl = createReadBuffer(current_object_info->relative_path_with_metadata, object_storage, context, getLogger("ReadBufferIterator"));
+        compression_method = chooseCompressionMethodForRead(
+            current_object_info->relative_path_with_metadata, *object_storage, current_object_info->getFileName(), configuration->compression_method);
+    }
 
-    const auto compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
     const auto & settings_ref = context->getSettingsRef();
     const auto zstd_window = static_cast<int>(settings_ref[Setting::zstd_window_log_max]);
 
@@ -288,9 +295,11 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         }
         else
         {
-            compression_method = chooseCompressionMethod(filename, configuration->compression_method);
             read_buf = createReadBuffer(
                 current_object_info->relative_path_with_metadata, object_storage, getContext(), getLogger("ReadBufferIterator"));
+            /// After `createReadBuffer`, which may fetch the metadata of the object.
+            compression_method = chooseCompressionMethodForRead(
+                current_object_info->relative_path_with_metadata, *object_storage, filename, configuration->compression_method);
         }
 
         if (!query_settings.skip_empty_files || !read_buf->eof())

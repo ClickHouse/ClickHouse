@@ -74,11 +74,19 @@ namespace
         ObjectInfo object_info;
         object_info.size = static_cast<size_t>(result.GetContentLength());
         object_info.is_size_known = result.ContentLengthHasBeenSet();
+        /// GCS decompressive transcoding, see `isDecompressiveTranscodingResponse`. `PocoHTTPClient` detects it
+        /// from the response headers and marks the response in its user-defined metadata.
+        const Aws::String transcoding_key(DECOMPRESSIVE_TRANSCODING_METADATA_KEY);
+        object_info.is_server_side_decompressed = result.GetMetadata().contains(transcoding_key);
         object_info.last_modification_time = result.GetLastModified().Seconds();
         object_info.etag = result.GetETag();
 
         if (with_metadata)
+        {
             object_info.metadata = objectAttributesFromAwsMap(result.GetMetadata());
+            /// The marker is not a part of the metadata of the object.
+            object_info.metadata.erase(String(DECOMPRESSIVE_TRANSCODING_METADATA_KEY));
+        }
 
         if (with_tags && result.GetTagCount() > 0)
             object_info.tags = getObjectTags(client, bucket, key, version_id);

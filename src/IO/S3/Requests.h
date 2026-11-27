@@ -137,6 +137,19 @@ void translateHeadersToGCS(Aws::Http::HttpRequest & request);
 /// of `translateHeadersToGCS`; `PocoHTTPClient` applies it so the SDK can parse the response.
 std::optional<std::string> translateHeaderNameFromGCS(const std::string & name);
 
+/// GCS serves an object stored with `Content-Encoding: gzip` decompressed (decompressive transcoding), and tells
+/// about it in headers the SDK does not parse. `PocoHTTPClient` puts this key into the user-defined metadata of
+/// the response of such a `HEAD` request (the only free-form part of `HeadObjectResult`), and `getObjectInfo`
+/// takes it out again.
+inline constexpr std::string_view DECOMPRESSIVE_TRANSCODING_METADATA_KEY = "clickhouse-decompressive-transcoding";
+
+/// Whether the headers of a response to `HEAD` say that the object is decompressed by the server while serving:
+/// it is stored with an encoding (`x-goog-stored-content-encoding` is not `identity`), but the response has
+/// neither `Content-Encoding` nor `Content-Length`.
+/// https://docs.cloud.google.com/storage/docs/transcoding#decompressive_transcoding
+bool isDecompressiveTranscodingResponse(
+    const std::optional<std::string> & stored_content_encoding, bool has_content_encoding, bool has_content_length);
+
 template <typename BaseRequest>
 class ExtendedRequest : public BaseRequest
 {

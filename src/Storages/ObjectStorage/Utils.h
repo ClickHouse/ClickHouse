@@ -1,4 +1,5 @@
 #pragma once
+#include <IO/CompressionMethod.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/StorageFactory.h>
@@ -55,6 +56,14 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const LoggerPtr & log,
     const std::optional<ReadSettings> & read_settings = std::nullopt,
     bool allow_page_cache = true);
+
+/// Chooses the compression to apply on top of the read buffer of an object, by its file name and the
+/// `compression_hint`. Returns `CompressionMethod::None` if the server decompresses the object while serving it
+/// (GCS decompressive transcoding). This is known only from a `HEAD` response, so call it after `createReadBuffer`,
+/// which may fetch the metadata. If the object still has only the `skip_object_metadata` placeholder (cluster
+/// functions), its metadata is fetched here. Metadata from a bucket listing does not have this information.
+CompressionMethod chooseCompressionMethodForRead(
+    RelativePathWithMetadata & object, const IObjectStorage & object_storage, const std::string & file_name, const std::string & compression_hint);
 
 /// Fetches the metadata of an object to read (e.g. by an S3 `HEAD` request), when its size and ETag are not
 /// known from listing or table metadata. Every metadata request of the read path must go through these

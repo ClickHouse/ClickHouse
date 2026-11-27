@@ -2027,7 +2027,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         else
         {
             ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
-            compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
             ReadSettings read_settings = context_->getReadSettings();
             /// A from-start read-ahead is wasted on a reader that seeks straight to a footer at the
             /// tail, but it is exactly what a reader that cannot seek consumes.
@@ -2036,6 +2035,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             read_buf = createReadBuffer(
                 object_info->relative_path_with_metadata, object_storage, context_, log,
                 read_settings, !headers_requested);
+            /// After `createReadBuffer`, which may fetch the metadata of the object.
+            compression_method = chooseCompressionMethodForRead(
+                object_info->relative_path_with_metadata, *object_storage, object_info->getFileName(), configuration->compression_method);
         }
 
         Block initial_header = read_from_format_info.format_header;
