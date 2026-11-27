@@ -4,7 +4,9 @@
 #include <tuple>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/QueueWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
@@ -163,23 +165,7 @@ static void checkCompleted(Processors & processors)
     }
 }
 
-/// `Offset` and `DelayedPorts` move the rows of each input only to its paired output.
-static IProcessor * getRowsProducer(OutputPort & output)
-{
-    OutputPort * port = &output;
-    while (true)
-    {
-        auto & processor = port->getProcessor();
-        if (auto * offset = typeid_cast<OffsetTransform *>(&processor))
-            port = &offset->getPairedInputPort(*port).getOutputPort();
-        else if (auto * delayed = typeid_cast<DelayedPortsProcessor *>(&processor))
-            port = &delayed->getPairedInputPort(*port).getOutputPort();
-        else
-            return &processor;
-    }
-}
-
-static void initRowsBeforeLimit(IOutputFormat * output_format)
+static void initRowsBeforeLimit(const Processors & pipeline_processors, IOutputFormat * output_format)
 {
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
     UnorderedSetWithMemoryTracking<IProcessor *> processors;
@@ -212,6 +198,41 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
                 input_port);
 
         counted_inputs_by_limit[limit].emplace(static_cast<size_t>(input_port));
+    };
+
+    /// Output -> the output whose rows it carries, through `DelayedPorts` and an `Offset` that skips nothing: they move the
+    /// rows of each input only to its paired output. An `Offset` that skips rows takes them from whichever input comes first.
+    UnorderedMapWithMemoryTracking<const OutputPort *, OutputPort *> paired_sources;
+    /// Producers of the `DelayedPorts` inputs that have no output (its delayed pipelines), followed from every output.
+    UnorderedMapWithMemoryTracking<const IProcessor *, VectorWithMemoryTracking<OutputPort *>> unpaired_sources;
+    for (const auto & processor : pipeline_processors)
+    {
+        if (auto * offset = typeid_cast<OffsetTransform *>(processor.get()); offset && offset->getOffset() == 0)
+        {
+            for (auto & output : offset->getOutputs())
+                paired_sources.emplace(&output, &offset->getPairedInputPort(output).getOutputPort());
+        }
+        else if (auto * delayed = typeid_cast<DelayedPortsProcessor *>(processor.get()))
+        {
+            for (auto & output : delayed->getOutputs())
+                paired_sources.emplace(&output, &delayed->getPairedInputPort(output).getOutputPort());
+            for (auto & input : delayed->getInputs())
+                if (!delayed->getPairedOutputPort(input))
+                    unpaired_sources[delayed].push_back(&input.getOutputPort());
+        }
+    }
+
+    auto push_child = [&](OutputPort & output, IProcessor * limit, ssize_t limit_port)
+    {
+        OutputPort * port = &output;
+        for (auto it = paired_sources.find(port); it != paired_sources.end(); it = paired_sources.find(port))
+        {
+            if (auto unpaired = unpaired_sources.find(&port->getProcessor()); unpaired != unpaired_sources.end())
+                for (auto * source : unpaired->second)
+                    queue.push({ &source->getProcessor(), limit, limit_port });
+            port = it->second;
+        }
+        queue.push({ &port->getProcessor(), limit, limit_port });
     };
 
     queue.push({ output_format, nullptr, -1 });
@@ -325,8 +346,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         /// Skip totals and extremes port for output format.
         if (auto * format = dynamic_cast<IOutputFormat *>(processor))
         {
-            auto * child_processor = getRowsProducer(format->getPort(IOutputFormat::PortKind::Main).getOutputPort());
-            queue.push({ child_processor, limit_being_counted, limit_input_port });
+            push_child(format->getPort(IOutputFormat::PortKind::Main).getOutputPort(), limit_being_counted, limit_input_port);
 
             continue;
         }
@@ -340,8 +360,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             ssize_t i = 0;
             for (auto & child_port : processor->getInputs())
             {
-                auto * child_processor = getRowsProducer(child_port.getOutputPort());
-                queue.push({ child_processor, limit_being_counted, i });
+                push_child(child_port.getOutputPort(), limit_being_counted, i);
                 ++i;
             }
         }
@@ -349,8 +368,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         {
             for (auto & child_port : processor->getInputs())
             {
-                auto * child_processor = getRowsProducer(child_port.getOutputPort());
-                queue.push({ child_processor, limit_being_counted, limit_input_port });
+                push_child(child_port.getOutputPort(), limit_being_counted, limit_input_port);
             }
         }
     }
@@ -693,7 +711,7 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     totals = nullptr;
     extremes = nullptr;
 
-    initRowsBeforeLimit(format_ptr);
+    initRowsBeforeLimit(*processors, format_ptr);
     for (const auto & context : resources.interpreter_context)
     {
         if (context->getSettingsRef()[Setting::rows_before_aggregation])
