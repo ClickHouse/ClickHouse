@@ -2643,6 +2643,7 @@ std::optional<ASTPtr> getKeyASTFromFields(
         return expressions->children.front();
     auto tuple = make_intrusive<ASTFunction>();
     tuple->name = "tuple";
+    tuple->setIsOperator(true);
     tuple->arguments = expressions;
     tuple->children.push_back(expressions);
     return tuple;
