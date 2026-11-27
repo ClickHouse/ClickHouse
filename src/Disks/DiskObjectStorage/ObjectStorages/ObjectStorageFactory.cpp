@@ -244,7 +244,7 @@ static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
             /// Checked before `HDFSObjectStorage` connects; a disk loaded from existing metadata is only reported.
             if (remote_host_filter_check != RemoteHostFilterCheck::None)
             {
-                const Poco::URI endpoint_uri(uri);
+                const Poco::URI endpoint_uri = parseURI(uri);
                 if (!context->getGlobalContext()->getRemoteHostFilter().checkURL(
                         endpoint_uri, /* throw_on_error */ remote_host_filter_check == RemoteHostFilterCheck::Enforce))
                     warnAboutDiskNotAllowedByRemoteHostFilter(

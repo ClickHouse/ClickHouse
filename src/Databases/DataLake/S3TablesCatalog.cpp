@@ -19,6 +19,7 @@
 #include <IO/S3/URI.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/parseURI.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -303,7 +304,7 @@ DB::ReadWriteBufferFromHTTPPtr S3TablesCatalog::createReadBuffer(
     const auto & context = getContext();
 
     /// enable_url_encoding=false to allow using tables with encoded sequences in names like 'foo%2Fbar'
-    Poco::URI url(base_url / endpoint, /* enable_url_encoding */ false);
+    Poco::URI url = DB::parseURI(base_url / endpoint, /* enable_url_encoding */ false);
     if (!params.empty())
         url.setQueryParameters(params);
 
