@@ -1,0 +1,204 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-11-20
+title: 'Demo days - 2026-11-20'
+sidebarTitle: '2026-11-20'
+description: 'ClickStack demo days for 2026-11-20'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+canonical: "https://clickhouse.com/docs/clickstack/demo-days/2026/2026-11-20"
+---
+
+## Columns and sort controls on the search results table {#columns-and-sort-controls-on-the-search-results-table}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+**This is exploratory work, with no commitment to ship it.**
+
+Previously, `SELECT` and `ORDER BY` were text inputs on the query form. Changing the columns or sort order meant writing SQL. In interviews, when we asked people to add a column, they couldn't find where to do it. There was no clear connection between those inputs and the table below. The inputs also appear above Event Patterns, where they have no effect.
+
+The proposal moves these into **Columns** and **Sort** controls on the results table. **Columns** lets you drag columns to reorder them, remove them, or choose a suggested field or type an expression like `upper(Body) as message` and click **Add**. **Sort** shows each `ORDER BY` field and its direction. Both have an **SQL** tab where you can edit the clause directly. Changes in the fields view update the SQL, so you can use either. The table actions (wrap lines, generated SQL, and CSV) move into the same toolbar. Previously, they were in the last column's header, which could put them out of view if that column was wide.
+
+If you close either popover with unapplied changes, it asks before discarding them. Removing a column also removes it from the sort, if it's used there. If the parser doesn't understand a clause, such as `Timestamp DESC NULLS LAST`, it keeps the SQL as written and opens the **SQL** tab. These controls aren't shown in Event Deltas or Event Patterns.
+
+This adds an extra toolbar row above the table. The editors have been merged, but aren't on the search page yet. The PR to add them is open. We held it back from the ClickHouse Observability beta because it's a large change. We could also remember which tab you last used and reopen on **SQL** if that's your preference. We'd like feedback on how this works.
+
+**Related PRs:** [#3431](https://github.com/ClickHouse/ClickStack/pull/3431) Add the column and sort editors, [#3432](https://github.com/ClickHouse/ClickStack/pull/3432) Mount Columns and Sort on the search page (open)
+
+## Connection and data source variables for dashboards {#connection-and-data-source-variables-for-dashboards}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=276" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+The audio on this clip isn't great, sorry about that.
+
+Dashboards have two new variable types under **Edit filters and variables**. A connection variable lets you choose from the team's ClickHouse connections. A data source variable lets you choose from its sources. You can limit the source types, for example to logs only, and optionally limit them to a connection. This can be a fixed connection or a connection variable, so changing the connection also changes the available sources.
+
+Tiles can use these variables instead of a specific source or connection. For example, a query builder tile can use `$logSource` as its data source, and a raw SQL tile can use `$connection`. The chart config stores `$varName` in the source or connection ID field. When the dashboard renders, we resolve it to an actual ID, so the rest works as before.
+
+Other filters can depend on these variables too. In the demo, a SQL expression values filter gets its service names from the selected source. Switching from the demo connection to a local one updates both the tiles and the service names in the filter. If a selection is missing or invalid, the tile shows a placeholder or error instead of running a query that fails. You can't use `$source` directly inside SQL yet. You choose the source on the tile, then use `$__sourceTable` to reference its table.
+
+Selections normally go into the URL as source and connection IDs, but you can also use names. This lets you share links across environments where sources have the same names but different IDs. It uses the same name lookup as the search page's `source=` parameter.
+
+Both variable types are also available through the external API and MCP. SQL query filters can reference source and connection variables too.
+
+**Related PRs:** [#3651](https://github.com/ClickHouse/ClickStack/pull/3651) Add data source and connection variable types to dashboards, [#3652](https://github.com/ClickHouse/ClickStack/pull/3652) Support data source and connection variables in the external API and MCP, [#3712](https://github.com/ClickHouse/ClickStack/pull/3712) Accept source and connection names for source and connection variables, [#3714](https://github.com/ClickHouse/ClickStack/pull/3714) Allow SQL filter to reference source var
+
+## Saving a temporary dashboard {#saving-a-temporary-dashboard}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=423" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Previously, the banner on a temporary dashboard said it couldn't be saved. If you wanted to keep what you'd built, you had to recreate it as a saved dashboard, which Vladimir ran into recently. The banner still says the dashboard is temporary, but now includes a button to save it with all its tiles.
+
+**Related PRs:** [#3729](https://github.com/ClickHouse/ClickStack/pull/3729) Save a temporary dashboard with its content intact
+
+## Documentation for dashboard filter types {#documentation-for-dashboard-filter-types}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=453" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+The dashboards documentation now covers all the filter types added over the last few months: SQL expression values, static values, SQL query values, PromQL label values, ad hoc keys and values, data source and connection. The [Filter types](https://clickhouse.com/docs/clickstack/observability/features/dashboards/overview#filter-types) table explains where each gets its values and whether it applies filters to tiles, works as a variable, or both. Each type has its own section below the table. The page also covers URL parameters for linking directly to a dashboard with filters already set.
+
+**Related PRs:** none, this is a documentation change rather than a code change; the published page is linked above.
+
+## Version-aware app builder {#version-aware-app-builder}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=477" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+ClickStack apps have had version history for a while. Each time you ask the agent to build, it creates a new version, and you can restore an earlier one. But the agent couldn't see those versions or tell when you'd restored one. It would still talk about code that was no longer in the app, so the conversation didn't match the source. If you reverted because you preferred how something worked before, it couldn't look back at that version either.
+
+The agent can now see all versions, knows when you've restored one, and has a diff tool to compare any two versions. In the demo, a Langfuse trace shows the agent calling the tool and the diff it gets back. So if you explain why you reverted a change, the agent can look at the versions and see exactly what it changed.
+
+## Faster app builds with fewer tokens {#faster-app-builds-with-fewer-tokens}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=569" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+The audio on this clip isn't great either, sorry about that.
+
+Three changes to the app builder to speed up builds and reduce token usage.
+
+The tool the agent uses to test SQL before adding it to the app can now run multiple queries in parallel, instead of one query per call. Agents using the MCP server can use the same tool to check SQL too.
+
+We've also changed when we compact the context. Previously, the builder kept only the last eight steps, the same as notebooks. This kept the context small, but every step after the eighth rewrote the prompt and broke the prompt cache, adding cost and latency. We now wait until the context reaches 600,000 tokens, 60% of the 1M-token window we've configured for the Opus models. After compaction, it has to grow back to that size before we compact again. No build in any of our environments has reached that limit yet, so we haven't needed to compact.
+
+Finally, the app info panel shows the queries the app runs. Previously, the agent wrote this list by hand, even though the queries were already in the code. If it got the list wrong, we sent back a warning and it tried again. Across our build history, writing and correcting this list accounted for a noticeable share of token usage and build time. We now extract the queries from the source. The prompt tells the agent how to format them so we can do this reliably, and we still send back a warning if the formatting needs fixing. Each query also gets a line number and a link to where it's used in the code.
+
+## Passing filters and time range through dashboard links {#passing-filters-and-time-range-through-dashboard-links}
+
+*Demo by [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=769" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Dashboards already support links to other dashboards. Clicking a row in a table tile can pass that row's values to another dashboard, and Markdown and table tiles can include plain links. But plain links didn't carry over the filters. You could filter an overview to one service's errors, follow a link to the service detail dashboard, and see every service again.
+
+Links can now include the current time range and filter selections using two global variables. `${__url_time_range}` expands to `from=…&to=…`, and `${__all_variables}` expands to the `filters=` parameter. This lets the destination dashboard open with the same services, statuses and time range selected. In the demo, we filter the overview to the API service's errors, then follow a link to the service detail dashboard, which already shows only that service's failing spans. The PR is still open.
+
+**Related PRs:** [#3726](https://github.com/ClickHouse/ClickStack/pull/3726) More global vars for dashboard links (open)
+
+## Ad hoc dashboard filters for every deployment {#ad-hoc-dashboard-filters-for-every-deployment}
+
+*Demo by [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=875" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Ad hoc filters let you choose a key, an operator and a value from the filter bar as you investigate, without needing the dashboard author to set up each filter in advance. We introduced them in October behind `NEXT_PUBLIC_ENABLE_ADHOC_FILTERS`, and the [October What's New](https://clickhouse.com/blog/whats-new-in-clickstack-october-2026#user-content-ad_hoc_dashboard_filters) covers the basics. We've now removed the flag, so they're enabled on every deployment.
+
+We've added a few things since then. You can scope an ad hoc filter using a dependent field. For example, one restricted to `ServiceName = api` only offers keys and values from that service. A filter can also apply to multiple sources. Selecting a `SpanName` for a traces source filters the charts and tables using that source. The external v2 dashboards API and MCP dashboard tools can now create, read and update dashboards with ad hoc filters. Previously, MCP hid them, and a `clickstack_save_dashboard` update that included `filters` silently deleted any existing ad hoc filters.
+
+An ad hoc filter's name is just its identifier, so you can't reference it as `$name` in a tile. It still needs to be unique because we use it to identify the filter's conditions in the `filters=` URL parameter.
+
+**Related PRs:** [#3585](https://github.com/ClickHouse/ClickStack/pull/3585) Add dependent adhoc filters, [#3658](https://github.com/ClickHouse/ClickStack/pull/3658) Ad hoc filter finishing touches, [#3659](https://github.com/ClickHouse/ClickStack/pull/3659) Support ad hoc dashboard filters in the external API, [#3660](https://github.com/ClickHouse/ClickStack/pull/3660) Support ad hoc dashboard filters in the MCP dashboard tools, [#3727](https://github.com/ClickHouse/ClickStack/pull/3727) Remove adhoc filters feature toggle
+
+## Faster filter loading {#faster-filter-loading}
+
+*Demo by [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=939" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+The search sidebar gets filter keys and values from a text index on the attribute maps, if the source has one (all values mode), or by scanning the table (exact mode). Both are now faster.
+
+Text index lookups previously read the dictionary from every part in the time range. For ClickHouse Observability, opening each part's index means a round trip to object storage. We now read 20 parts by default, choosing those closest to the median row count. Two new source settings control this: **Map key index parts** (`mapKeyIndexMaxParts`) sets how many parts to read, and **Map key index part size** (`mapKeyIndexPartSelection`) chooses between `median`, `smallest` and `largest`. The smallest parts are usually newer and unmerged, making them cheap to read and useful for finding new keys. The largest parts cover more keys but have bigger dictionaries.
+
+We can miss keys and values that only appear in parts outside that selection. **Load more** on a key reads every part. These settings are in the source form, though they're more advanced than the rest of the advanced section. How best to expose them is still an open question.
+
+The text index now returns the most frequent values, ranked with `topKWeighted`, instead of the first alphabetically. Lookups run in parallel batches of 10 keys. A key with a different value for every row, such as a request ID, only holds up its own batch instead of every key that sorts after it.
+
+The query also depends on the index's dictionary block size. With 8,192-token blocks, each key gets its own read, stopping after 20,000 index rows. The collector migration now sets `text_index_dictionary_block_size = 8192` on the default tables for ClickHouse 26.6 and later. ClickHouse's default also changes from 512 to 8,192 in 26.11. The demo loads 2,000 keys and values from the index, which was more than you could request before. Team settings now allow up to 10,000 keys per column.
+
+Exact mode had a serious performance bug. Lookups requested values for multiple map keys in one query. Because a `Map` is stored as an array of key-value pairs, ClickHouse scanned each row's array once for every requested key. We now find the requested keys in one pass per row. Scoped to a single service, exact mode is now fast enough that it may be the better default. It reads up to 3 million rows by default, adjustable in team settings. That limit probably belongs on the source, since ClickHouse Observability doesn't expose it to users at all.
+
+Concurrent requests for the same map keys now share one ClickHouse query, instead of each starting another while the first is still running.
+
+**Related PRs:** [#3611](https://github.com/ClickHouse/ClickStack/pull/3611) Share one Map key read between concurrent callers, [#3617](https://github.com/ClickHouse/ClickStack/pull/3617) Show the most frequent text index values, in batches of 10 keys, [#3635](https://github.com/ClickHouse/ClickStack/pull/3635) Read a configurable set of parts for text index key and value lookups, [#3657](https://github.com/ClickHouse/ClickStack/pull/3657) Allow up to 10,000 filter keys per column in team settings, [#3695](https://github.com/ClickHouse/ClickStack/pull/3695) Speed up exact filters, [ClickHouse/ClickHouse#132804](https://github.com/ClickHouse/ClickHouse/pull/132804) Change default text index dictionary block size
+
+## ClickStack Helm charts on Artifact Hub {#clickstack-helm-charts-on-artifact-hub}
+
+*Demo by [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1121" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+We've worked with the security team to set up a [`clickhouse` organisation on Artifact Hub](https://artifacthub.io/packages/search?org=clickhouse) for our official Helm charts. The `clickstack` and `clickstack-operators` charts are listed there with a verified publisher badge. Their metadata now points to the ClickStack-helm-charts repo instead of the old hyperdxio repo. This makes the charts easier to find, and Artifact Hub scans every release for vulnerabilities for free.
+
+Those scans have already helped. The report for chart 3.6.0 led to several fixes before the demo. Updating the collector base image and gomplate removed nine critical CVEs across the app and collector images. We also updated the custom collector build from contrib v0.155.0 to v0.165.0 and reduced the high-severity Node dependency findings in the app image from 50 to 2.
+
+The charts are also published to GHCR as OCI artifacts, and those packages are now public. You can run `helm install my-clickstack oci://ghcr.io/clickhouse/charts/clickstack` without adding the GitHub Pages repo first. The existing `helm repo add` route still works. We've also replaced the "WIP" landing page with installation instructions for both charts and links to the docs and upgrade guide.
+
+Next, we'll sign the charts and ask Artifact Hub to mark the packages under the organisation as official.
+
+**Related PRs:** [ClickHouse/ClickStack-helm-charts#297](https://github.com/ClickHouse/ClickStack-helm-charts/pull/297) Publish released charts to GHCR as OCI artifacts, [ClickHouse/ClickStack-helm-charts#319](https://github.com/ClickHouse/ClickStack-helm-charts/pull/319) Replace the empty Pages landing page and set up Artifact Hub, [ClickHouse/ClickStack-helm-charts#322](https://github.com/ClickHouse/ClickStack-helm-charts/pull/322) Document installing the charts from GHCR, [#3709](https://github.com/ClickHouse/ClickStack/pull/3709) Clear critical CVEs from the app and collector images, [#3710](https://github.com/ClickHouse/ClickStack/pull/3710) Bump base collector to v0.165.0, [#3711](https://github.com/ClickHouse/ClickStack/pull/3711) Update Node dependencies flagged as vulnerable in the app image
+
+## Filtering for or excluding an event pattern {#filtering-for-or-excluding-an-event-pattern}
+
+*Demo by [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1216" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+This came from a customer who liked Event Patterns but could only click through to a pattern's samples. Each row now has two actions that appear on hover. **Exclude this pattern** stays on Event Patterns and runs it again with that pattern excluded. You can exclude several patterns to keep removing noise. **Filter for this pattern** opens the results table with only the matching events.
+
+Both actions add a search filter using a SQL condition built from the pattern template. It's a shorter version of the condition used by the MCP `clickstack_event_patterns` tool for drill-downs, small enough to fit in the URL. ClickHouse applies it across the full time range, beyond the 10,000 sampled rows, so the results table, histogram and counts all update. These filters appear as **Pattern** pills alongside the other filters and are kept in the URL and saved searches.
+
+You can only include one pattern at a time. Filters are combined with `AND`, so including two patterns would match nothing. Choosing another pattern replaces the previous include filter. Templates longer than 4,000 characters don't show the buttons, matching the MCP limit.
+
+There are a few limitations. Generic templates like `<*> <*>` can match more events than the row suggests. If a template keeps a timestamp as literal text, it ties the pattern to that date and hour. Exclusion filters roughly double the query time, and the buttons aren't available on dashboard pattern tiles yet.
+
+**Related PRs:** [#3662](https://github.com/ClickHouse/ClickStack/pull/3662) Share the Event Patterns drill-down predicate, [#3663](https://github.com/ClickHouse/ClickStack/pull/3663) Use the shared pattern predicate for drill-downs, [#3664](https://github.com/ClickHouse/ClickStack/pull/3664) Add a compact form of the pattern predicate, [#3665](https://github.com/ClickHouse/ClickStack/pull/3665) Filter for or exclude a pattern from Event Patterns
+
+## RED metrics on trace search {#red-metrics-on-trace-search}
+
+*Demo by [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1308" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Previously, search showed a single count histogram above the results for every source. Trace sources with a duration column now show three tiles: **Throughput** shows span counts by status, **Errors** switches between an error rate line capped at 100% and error volume, and **Duration** shows Avg, P95 and P99 lines in the units set by the source's duration precision.
+
+You can show one tile or all three. Hovering over one shows a cursor at the same time on all three. Clicking a status series on Throughput or Errors filters the results, just as clicking the histogram did. Throughput uses the existing results count query, so it doesn't add another scan.
+
+The **RED** / **Heatmap** switch replaces the three tiles with a heatmap showing duration distribution over time. This is the same heatmap used in dashboards. The URL keeps your choice, so shared links open the same view. Live tail is off in the heatmap view. Setting a custom group by, such as `ServiceName`, brings back the grouped histogram. Log sources and narrow screens keep the existing histogram.
+
+**Related PRs:** [#3183](https://github.com/ClickHouse/ClickStack/pull/3183) Show RED metrics on the trace search results view, [#3184](https://github.com/ClickHouse/ClickStack/pull/3184) Add a duration heatmap view to trace search
+
+## Settings from the Cmd+K menu, and a hidden CRT mode {#settings-from-the-cmd-k-menu-and-a-hidden-crt-mode}
+
+*Demo by [@MikeShi42](https://github.com/MikeShi42)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1381" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Previously, you had to go through Team settings or the user menu to find settings. You can now search for them from `Cmd+K` (`Ctrl+K` elsewhere). The Settings group includes Team settings, Sources, Connections, Team members, API keys, Organization API keys, MCP server, Webhooks and Query settings. Each entry opens the right tab and scrolls to the section. This group is hidden in local mode, where there's no team page.
+
+The Preferences group opens the preferences modal. You can find it by searching for things like time zone, 12h/24h, font or row click. You can also change the theme directly from the menu with **Use light mode**, **Use dark mode** and **Use system color mode**.
+
+If you've got this far, there's also a little Easter egg for you, courtesy of [@jordan-simonovski](https://github.com/jordan-simonovski). Open **User preferences** and enter the Konami code: `Up, Up, Down, Down, Left, Right, Left, Right, B, A`. A short boot animation plays and a **CRT mode** switch appears. Turn it on to give the app an old CRT screen look, with scanlines, curved corners and glowing text.
+
+The effect is an overlay, so you can still use the app normally. The switch stays in Preferences while the mode is on, so you can turn it off without entering the code again. It's off by default, and the flicker and unlock animation don't play when `prefers-reduced-motion` is enabled. It took a few attempts to get the code right in the demo.
+
+**Related PRs:** [#3707](https://github.com/ClickHouse/ClickStack/pull/3707) Find settings and preferences from the Cmd+K menu, [#3704](https://github.com/ClickHouse/ClickStack/pull/3704) Hidden CRT mode, unlocked by the secret code in preferences
+
