@@ -414,8 +414,9 @@ public:
                     added_columns.checkColumnsOfRef(kept_words[j]);
 #endif
             lazy_output.row_refs.resize_assume_reserved(kept);
-            lazy_output.row_count += row_count;
-            lazy_output.hash_table_matches += matches;
+            const size_t output_rows = Handling::need_replication ? row_count : kept;
+            lazy_output.row_count += output_rows;
+            lazy_output.hash_table_matches += Handling::add_missing ? matches : output_rows;
         }
         else
             lazy_output.row_refs.clear();
