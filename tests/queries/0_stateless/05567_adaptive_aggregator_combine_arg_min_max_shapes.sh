@@ -6,10 +6,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Which aggregations `adaptive_aggregator_combine_arg_min_max` applies to. The aggregations whose aggregate
 # functions do not all select one row by one ordering column of a type stored as an integer of up to 64 bits
-# keep one staged record per missed row, and so does the bucket top-K, which counts the staged records of a
-# key as its rows. The other top-K modes and `HAVING` combine the misses. Each shape runs with the setting off
-# and then on, and prints whether the results match and, unless it stages no records, whether the setting
-# staged fewer records or the same records.
+# keep one staged record per missed row. The top-K modes and `HAVING` combine the misses. Each shape runs with
+# the setting off and then on, and prints whether the results match and, unless it stages no records, whether
+# the setting staged fewer records or the same records.
 #
 # Everything runs in one clickhouse-local process, so the staged-record counter in `system.events` belongs to
 # these queries, and each query's share is the difference of the counter around it. Four UNION ALL lanes feed
@@ -47,8 +46,6 @@ add_shape "another aggregate function" same "$HASH" "$(grouped "argMax(x, o), su
 add_shape "Float64 ordering" same "$HASH" "$(grouped "argMax(x, toFloat64(o)), max(toFloat64(o))")"
 add_shape "String ordering" same "$HASH" "$(grouped "argMax(x, toString(o)), max(toString(o))")"
 add_shape "any and count only" same "$HASH" "$(grouped "any(k * 2), count()")"
-# Every group counts 4 rows, so which 10 the top-K returns is not defined, while their number and counts are.
-add_shape "bucket top-K by count" same "count(), sum(c), min(a >= 0)" "$(grouped "argMax(x, o) AS a, count() AS c" "ORDER BY c DESC LIMIT 10")"
 add_shape "top-K by the ordering value" fewer "$HASH" "$(grouped "argMax(o, x), max(x) AS m" "ORDER BY m DESC LIMIT 10")"
 # The heap of the top-K by the key keeps the tables below the freeze threshold here, so only the results are
 # compared.

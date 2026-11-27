@@ -1027,10 +1027,12 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     if (params.enable_adaptive_aggregator && params.aggregates_size)
     {
-        /// The bucket top-K counts the staged records of a key as its rows, in its count bins and its
-        /// count-first units, so a record that combined several rows of its key would undercount it.
-        if (params.adaptive_aggregator_combine_arg_min_max && !params.bucket_top_k)
+        if (params.adaptive_aggregator_combine_arg_min_max)
             adaptive_row_selection = adaptiveRowSelectionOf(params.aggregates);
+        /// A row selection under the bucket top-K counts rows, because its rank is then a `count` of rows:
+        /// the other ranks, `uniqExact`, `uniqExactIf` and `count` of a `Nullable` argument, depend on every
+        /// row. The count bins and the count-first units add the rows that each record carries.
+        chassert(!adaptive_row_selection || !params.bucket_top_k || adaptive_row_selection->countsRows());
         adaptive_argument_layout = AdaptiveArgumentLayout::build(
             header_,
             keys_positions,

@@ -98,11 +98,18 @@ void Aggregator::accountStagedBatch(
     }
     const auto * hashes = misses.getHashes().data();
 
-    /// The rows behind the records go to the count bins of the top-K pruning: a count record carries
-    /// its combined multiplicity.
+    /// The rows behind the records go to the count bins of the top-K pruning. A batch that carries
+    /// multiplicities gives the rows that each record stands for: the batch of count records always does,
+    /// and that of a row selection that counts rows once a record stands for several rows. Every record of
+    /// any other batch stands for one row. A record that replaced an earlier one also carries the rows of
+    /// that record, which left the bins with it (see `AdaptiveMissCombiner`).
     if (adaptive.count_bins.isAllocated())
+    {
+        const bool has_multiplicities = misses.hasMultiplicities();
+        const auto & multiplicities = misses.getMultiplicities();
         for (size_t i = 0; i < total; ++i)
-            adaptive.count_bins.add(hashes[i], is_simple_count ? misses.getMultiplicities()[i] : 1);
+            adaptive.count_bins.add(hashes[i], has_multiplicities ? multiplicities[i] : 1);
+    }
 
     /// The records of the batch that replace records of earlier batches (see
     /// `AdaptiveMissBatch::addReplaced`) take the place of those, so the counts below are net of them. Each

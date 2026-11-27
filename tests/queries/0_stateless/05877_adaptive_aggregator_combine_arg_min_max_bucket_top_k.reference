@@ -1,0 +1,9 @@
+top-K	0	10036	3600	400
+top-K	0	10037	3700	400
+top-K	0	10038	3899	400
+top-K	0	10039	3999	400
+top-K	1	10036	3600	400
+top-K	1	10037	3700	400
+top-K	1	10038	3899	400
+top-K	1	10039	3999	400
+staged records without and with the setting: 4800, 816	pruned records with the setting: 1

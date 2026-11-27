@@ -4,8 +4,11 @@
          of a key that reach it close together into one record, which keeps their best row and, for `count`,
          their number. In the order of the table the rows of a user come in runs, so nearly all of them
          combine. The queries cover numeric and `String` arguments, the largest and the smallest `EventTime`,
-         and a `count` next to a selection. -->
+         and a `count` next to a selection, also as the rank of `ORDER BY count() LIMIT` in both directions,
+         where the top-K counts the rows that each record combined. -->
     <query>SELECT UserID, argMax(RegionID, EventTime), argMax(ResolutionWidth, EventTime), argMax(CounterID, EventTime), argMax(OS, EventTime), argMax(Age, EventTime) FROM hits_100m_single GROUP BY UserID FORMAT Null</query>
     <query>SELECT UserID, argMin(URL, EventTime), min(EventTime) FROM hits_100m_single GROUP BY UserID FORMAT Null</query>
     <query>SELECT UserID, argMax(URL, EventTime), count() FROM hits_100m_single GROUP BY UserID FORMAT Null</query>
+    <query>SELECT UserID, argMax(RegionID, EventTime), argMax(ResolutionWidth, EventTime), count() AS c FROM hits_100m_single GROUP BY UserID ORDER BY c DESC LIMIT 10 FORMAT Null</query>
+    <query>SELECT UserID, argMin(RegionID, EventTime), count() AS c FROM hits_100m_single GROUP BY UserID ORDER BY c ASC LIMIT 10 FORMAT Null</query>
 </test>

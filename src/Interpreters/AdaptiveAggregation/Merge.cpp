@@ -844,10 +844,13 @@ size_t NO_INLINE Aggregator::countPartitionGroups(
                     const Key key = format.readKey(record, hash);
                     emplaceStagedKey<copy_keys>(counting_table, arena, key, hash, it, inserted);
                     UInt64 & group_count = getInlineCountState(it->getMapped());
+                    UInt64 rows = 1;
+                    if constexpr (Record::with_multiplicity)
+                        rows = format.multiplicity(record);
                     if (inserted)
-                        group_count = 1;
+                        group_count = rows;
                     else
-                        ++group_count;
+                        group_count += rows;
                     update_candidates(group_count, key, hash, std::bool_constant<copy_keys>{});
                 }).skipped;
         }
@@ -935,9 +938,9 @@ Aggregator::CountFirstSelection Aggregator::selectCountFirstBestGroups(
     const size_t rank_offset = offsets_of_aggregate_states[params.bucket_top_k_rank_index];
     CountFirstSelection selection;
 
-    /// The groups are counted in the table, each count kept in the mapped value as a lone `count()` keeps it: a source
-    /// cell adds its count state, a record one row. With a descending order, the top takes every grown count and keeps
-    /// its indices in the high bits of the counts.
+    /// The groups are counted in the table, each count kept in the mapped value as a lone `count()` keeps it:
+    /// a source cell adds its count state, a record the rows it stands for. With a descending order, the top
+    /// takes every grown count and keeps its indices in the high bits of the counts.
     if (top_k)
         top_k->clear();
     for_each_cell([&](const auto & key, AggregateDataPtr * mapped, size_t hash)
