@@ -389,10 +389,11 @@ public:
     /// You should zero internal counters in the call, in order to make in idempotent.
     virtual std::optional<ReadProgress> getReadProgress() { return std::nullopt; }
 
-    /// Whether the processor is a source that does not end by itself, such as a `STREAM` subscription or a
-    /// full scan of `system.numbers`: it produces data until its consumers stop reading. An operator that
-    /// returns rows only at the end of its input, such as a spilled `DISTINCT`, would never return any over
-    /// such a source.
+    /// Whether the processor is a source that may not end by itself, such as a `STREAM` subscription, a full
+    /// scan of `system.numbers` or a recursive CTE: it may produce data until its consumers stop reading. An
+    /// operator that returns rows only at the end of its input, such as a spilled `DISTINCT`, might never
+    /// return any over such a source. A source that reads stored data, a file or a remote server reports
+    /// false: that data ends unless whatever provides it never stops, which the source cannot tell.
     virtual bool isUnboundedSource() const { return false; }
 
     /// Set rows_before_limit counter for current processor.

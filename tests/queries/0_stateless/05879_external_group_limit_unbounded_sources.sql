@@ -25,6 +25,10 @@ SELECT count() FROM (SELECT DISTINCT * FROM generateRandom('x UInt8', 1) LIMIT 3
 SELECT count() FROM (SELECT DISTINCT * FROM fuzzJSON('{"a": 1}', 1) LIMIT 3);
 -- The query fuzzer generates rows slowly, so it generates small blocks.
 SELECT count() FROM (SELECT DISTINCT * FROM fuzzQuery('SELECT 1', 500, 1) LIMIT 3) SETTINGS max_block_size = 16;
+SELECT count() FROM (SELECT DISTINCT * FROM obfuscate(SELECT number FROM numbers(100)) LIMIT 3);
+-- A recursive CTE ends only after a step that adds no rows, and every step below adds one.
+WITH RECURSIVE t AS (SELECT toUInt64(1) AS n UNION ALL SELECT n + 1 FROM t)
+SELECT n FROM t LIMIT 1 BY n LIMIT 3;
 
 -- A union never ends while one of its inputs never ends, and neither does a merge join, which reads both
 -- sides together.
