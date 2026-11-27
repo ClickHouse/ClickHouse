@@ -1116,6 +1116,9 @@ static void getFileReader(
     file_reader = createORCReader(std::move(input_stream), options);
 }
 
+static VectorWithMemoryTracking<std::optional<size_t>> matchORCStructFieldsByName(
+    const ORC::Type * orc_type, const Strings & element_names, bool ignore_case, bool * ambiguous);
+
 /// With `ambiguous`, a name that matches several fields only case-insensitively sets it and resolves to nothing instead of throwing.
 static const ORC::Type * traverseDownORCTypeByName(
     const std::string & target, const ORC::Type * orc_type, DataTypePtr & type, bool ignore_case, bool * ambiguous = nullptr)
@@ -1173,6 +1176,14 @@ static const ORC::Type * traverseDownORCTypeByName(
 
     if (ORC::STRUCT == orc_type->getKind())
     {
+        /// The fields of the root are columns, and one named like a dotted request wins over a subcolumn of another one.
+        if (orc_type->getColumnId() == 0 && target.contains('.'))
+        {
+            if (auto column = matchORCStructFieldsByName(orc_type, {target}, ignore_case, ambiguous).front())
+                return orc_type->getSubtype(*column);
+            if (ambiguous && *ambiguous)
+                return nullptr;
+        }
         const auto [next_target, next_orc_type] = search_struct_field(target, orc_type);
         return next_orc_type ? traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case, ambiguous) : nullptr;
     }
