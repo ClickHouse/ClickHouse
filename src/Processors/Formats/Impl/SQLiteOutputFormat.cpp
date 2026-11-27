@@ -1,7 +1,6 @@
 #include "config.h"
 
 #if USE_SQLITE
-#include <Common/VectorWithMemoryTracking.h>
 
 #    include <Columns/IColumn.h>
 #    include <Databases/SQLite/SQLiteUtils.h>
@@ -219,7 +218,7 @@ public:
 private:
     SharedHeader header;
     FormatSettings settings;
-    VectorWithMemoryTracking<SerializationPtr> serializations;
+    std::vector<SerializationPtr> serializations;
     bool write_serialized_database_to_output = false;
     SQLiteFormatImpl::SQLitePtr sqlite_db;
     SQLiteStatementPtr insert_statement{nullptr, sqlite3_finalize};

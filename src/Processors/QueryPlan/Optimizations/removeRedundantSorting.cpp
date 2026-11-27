@@ -7,7 +7,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
-#include <Processors/QueryPlan/InequalityJoinStep.h>
+#include <Processors/QueryPlan/IEJoinStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -36,7 +36,7 @@ class RemoveRedundantSorting : public QueryPlanVisitor<RemoveRedundantSorting>
     /// stack with nodes which affect order
     /// nodes added when traversing top-down
     /// as soon as all children for the node on top of stack are traversed, the node is removed from stack
-    VectorWithMemoryTracking<QueryPlan::Node *> nodes_affect_order;
+    std::vector<QueryPlan::Node *> nodes_affect_order;
 
 public:
     explicit RemoveRedundantSorting(QueryPlan::Node * root_) : QueryPlanVisitor<RemoveRedundantSorting>(root_) { }
@@ -273,8 +273,8 @@ private:
                 logical_join && logical_join->getJoinOperator().kind == JoinKind::Paste)
                 return false;
 
-            /// (3) InequalityJoin merges its pre-sorted inputs, its sortings are not redundant
-            if (typeid_cast<const InequalityJoinStep *>(step))
+            /// (3) IEJoin merges its pre-sorted inputs, its sortings are not redundant
+            if (typeid_cast<const IEJoinStep *>(step))
                 return false;
         }
 

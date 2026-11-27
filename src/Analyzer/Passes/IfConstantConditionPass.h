@@ -9,7 +9,6 @@ class QueryNode;
 
 /** Convert `if` with constant condition or `multiIf` with single constant condition into true condition argument value
   * or false condition argument value.
-  * Not done when the other argument contains an aggregate function or `arrayJoin`.
   *
   * Example: SELECT if(1, true_value, false_value);
   * Result: SELECT true_value;

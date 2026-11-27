@@ -54,17 +54,17 @@ FORMAT Null SETTINGS automatic_parallel_replicas_mode = 2, log_comment = 'q05480
 -- without parallel replicas.
 SELECT k, count() FROM t_05480 GROUP BY k ORDER BY k LIMIT 10 SETTINGS enable_parallel_replicas = 0;
 SELECT k, count() FROM t_05480 GROUP BY k ORDER BY k LIMIT 10
-SETTINGS automatic_parallel_replicas_mode = 1, automatic_parallel_replicas_ignore_thresholds = 1,
+SETTINGS automatic_parallel_replicas_mode = 1, merge_tree_min_bytes_per_task_for_remote_reading = 0,
     enable_group_by_top_k_dynamic_filtering = 1, log_comment = 'q05480_priced_order_by';
 SELECT k, count() FROM t_05480 GROUP BY k LIMIT 10
-SETTINGS automatic_parallel_replicas_mode = 1, automatic_parallel_replicas_ignore_thresholds = 1,
+SETTINGS automatic_parallel_replicas_mode = 1, merge_tree_min_bytes_per_task_for_remote_reading = 0,
     log_comment = 'q05480_priced_no_order_by';
 -- The same with query-based parallel replicas.
 SELECT k, count() FROM t_05480 GROUP BY k ORDER BY k LIMIT 10
-SETTINGS automatic_parallel_replicas_mode = 1, automatic_parallel_replicas_ignore_thresholds = 1,
+SETTINGS automatic_parallel_replicas_mode = 1, merge_tree_min_bytes_per_task_for_remote_reading = 0,
     parallel_replicas_plan_based = 0, log_comment = 'q05480_priced_query_based_order_by';
 SELECT k, count() FROM t_05480 GROUP BY k LIMIT 10
-SETTINGS automatic_parallel_replicas_mode = 1, automatic_parallel_replicas_ignore_thresholds = 1,
+SETTINGS automatic_parallel_replicas_mode = 1, merge_tree_min_bytes_per_task_for_remote_reading = 0,
     parallel_replicas_plan_based = 0, log_comment = 'q05480_priced_query_based_no_order_by';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;

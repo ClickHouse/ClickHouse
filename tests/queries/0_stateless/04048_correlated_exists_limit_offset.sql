@@ -4,6 +4,7 @@
 -- (LimitStep is converted to LimitByStep grouped by correlated columns).
 -- Requires the analyzer for correlated subquery decorrelation.
 
+SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 
 DROP TABLE IF EXISTS t_04048_outer;

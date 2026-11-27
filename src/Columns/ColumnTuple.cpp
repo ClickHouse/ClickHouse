@@ -824,12 +824,9 @@ void ColumnTuple::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> 
 
 void ColumnTuple::shrinkToFit()
 {
-    /// `shrinkToFit` is best-effort. Skip subcolumns that are still shared
-    /// to avoid violating the `assumeMutableRef` deep ownership check.
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
-        if (std::as_const(columns[i])->use_count() == 1)
-            getColumn(i).shrinkToFit();
+        getColumn(i).shrinkToFit();
 }
 
 void ColumnTuple::ensureOwnership()
@@ -1065,7 +1062,6 @@ ColumnPtr ColumnTuple::compress(bool force_compression) const
         byte_size += compressed_column->byteSize();
         compressed.emplace_back(std::move(compressed_column));
     }
-    Columns parts = compressed;
 
     return ColumnCompressed::create(size(), byte_size,
         [my_compressed = std::move(compressed)]() mutable
@@ -1075,21 +1071,13 @@ ColumnPtr ColumnTuple::compress(bool force_compression) const
             for (const auto & column : my_compressed)
                 decompressed.push_back(column->decompress());
             return ColumnTuple::create(decompressed);
-        },
-        std::move(parts));
+        });
 }
 
 void ColumnTuple::finalize()
 {
-    /// Each element of `columns` can be shared by a row-input format serializer that retains a
-    /// `ColumnPtr` to it between rows of the same chunk; the format then calls `finalize()` on the
-    /// owning column while the borrowed reference is still alive. Go through the const dereference
-    /// so that `WrappedPtr` does not trigger its `use_count() == 1` assertion in this safe case.
     for (auto & column : columns)
-    {
-        const auto & element_ref = column;
-        const_cast<IColumn &>(*element_ref).finalize();
-    }
+        column->finalize();
 }
 
 bool ColumnTuple::isFinalized() const

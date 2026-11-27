@@ -17,16 +17,24 @@
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/Impl/ArrowBatchRowLimit.h>
-#include <Processors/Formats/Impl/ArrowIPC/ArrowCData.h>
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
 #include <base/scope_guard.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
 
+#include <arrow/c/abi.h>
+#include <arrow/table.h>
+#include <arrow/c/bridge.h>
+#include <arrow/type_fwd.h>
+#include <arrow/api.h>
+#include <arrow/type.h>
+
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_EXCEPTION;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int NETWORK_ERROR;
 }
@@ -48,16 +56,21 @@ UInt64 getCurrentTimeMs()
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-/// The add-file records of a commit, in the layout the kernel expects from `get_engine_data`.
-struct WriteMetadata
+void exportRecordBatch(
+    const arrow::RecordBatch & batch,
+    ffi::FFI_ArrowArray & array,
+    ffi::FFI_ArrowSchema & schema)
 {
-    DB::Names names;
-    DB::DataTypes types;
-    DB::Columns columns;
-    size_t num_rows = 0;
-};
+    arrow::Status status = arrow::ExportRecordBatch(
+        batch,
+        reinterpret_cast<ArrowArray *>(&array),
+        reinterpret_cast<ArrowSchema *>(&schema));
 
-WriteMetadata getWriteMetadata(
+    if (!status.ok())
+        DB::throwFromArrowStatus(status, DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to export record batch");
+}
+
+std::shared_ptr<arrow::Table> getWriteMetadata(
     const std::vector<WriteTransaction::CommitFile> & files,
     LoggerPtr log)
 {
@@ -70,10 +83,8 @@ WriteMetadata getWriteMetadata(
             std::make_shared<DB::DataTypeNullable>(std::make_shared<DB::DataTypeString>())), "partitionValues"},
         {std::make_shared<DB::DataTypeInt64>(), "size"},
         {std::make_shared<DB::DataTypeInt64>(), "modificationTime"},
-        /// The kernel JSON-encodes this struct into `add.stats`, so its field names are the
-        /// committed JSON keys and must be the protocol's own.
         {std::make_shared<DB::DataTypeTuple>(
-                DB::DataTypes{std::make_shared<DB::DataTypeInt64>()}, DB::Names{"numRecords"}), "stats"}
+                DB::DataTypes{std::make_shared<DB::DataTypeString>()}, DB::Names{"stats_json"}), "stats"}
     };
 
     DB::MutableColumns columns;
@@ -94,18 +105,30 @@ WriteMetadata getWriteMetadata(
         columns[1]->insert(partition_values);
         columns[2]->insert(size_bytes);
         columns[3]->insert(getCurrentTimeMs());
-        columns[4]->insert(DB::Tuple{DB::Field(static_cast<Int64>(size_rows))});
+        std::string stats_json = fmt::format("{{\"numRecords\":{}}}", size_rows);
+        DB::Tuple stats{stats_json};
+        columns[4]->insert(stats);
     }
 
-    WriteMetadata result;
-    for (size_t i = 0; i < names_and_types.size(); ++i)
-    {
-        result.names.push_back(names_and_types[i].name);
-        result.types.push_back(names_and_types[i].type);
-        result.columns.push_back(std::move(columns[i]));
-    }
-    result.num_rows = files.size();
-    return result;
+    DB::FormatSettings format_settings;
+    auto arrow_column = std::make_unique<DB::CHColumnToArrowColumn>(
+        DB::Block(names_and_types),
+        "Arrow",
+        DB::CHColumnToArrowColumn::Settings
+        {
+            /* output_string_as_string */true,
+            format_settings.arrow.output_fixed_string_as_fixed_byte_array,
+            format_settings.arrow.low_cardinality_as_dictionary,
+            format_settings.arrow.use_signed_indexes_for_dictionary,
+            format_settings.arrow.use_64_bit_indexes_for_dictionary
+        });
+
+    std::vector<DB::Chunk> meta_chunks;
+    meta_chunks.emplace_back(std::move(columns), files.size());
+
+    std::shared_ptr<arrow::Table> arrow_table;
+    arrow_column->chChunkToArrowTable(arrow_table, meta_chunks, names_and_types.size());
+    return arrow_table;
 }
 
 }
@@ -216,43 +239,48 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     LOG_TEST(log, "Will commit {} files", files.size());
     auto write_metadata = getWriteMetadata(files, log);
 
-    /// The kernel takes record batches in the Arrow C data interface. Arrow buffers use 32-bit offsets, so metadata
-    /// too large for one batch is added to the transaction as several. An empty commit still reaches the kernel as
-    /// one empty batch.
-    DB::FormatSettings format_settings;
-    format_settings.arrow.output_string_as_string = true;
-    size_t begin = 0;
-    do
+    /// Metadata too large for one Arrow record batch comes back as several table chunks. Recombining them
+    /// would hit the same 32-bit offset limit, so each record batch is added to the transaction on its own.
+    /// `TableBatchReader` yields nothing for an empty table, which still has to reach the kernel as before.
+    arrow::RecordBatchVector batches;
+    if (write_metadata->num_rows() == 0)
     {
-        size_t rows = DB::maxRowsFittingOneArrowBatch(
-            write_metadata.columns, write_metadata.types, begin, write_metadata.num_rows,
-            format_settings.arrow.output_fixed_string_as_fixed_byte_array, format_settings.arrow.output_max_record_batch_bytes);
-        /// A row that does not fit on its own cannot be represented at all; let the export reject it.
-        rows = std::min(std::max<size_t>(rows, 1), write_metadata.num_rows - begin);
-        const size_t end = begin + rows;
+        auto empty_batch = arrow::RecordBatch::MakeEmpty(write_metadata->schema());
+        if (!empty_batch.ok())
+            DB::throwFromArrowStatus(empty_batch.status(), DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to create an empty record batch");
+        batches.push_back(*std::move(empty_batch));
+    }
+    else
+    {
+        arrow::TableBatchReader batch_reader(*write_metadata);
+        while (true)
+        {
+            std::shared_ptr<arrow::RecordBatch> batch;
+            arrow::Status read_status = batch_reader.ReadNext(&batch);
+            if (!read_status.ok())
+                DB::throwFromArrowStatus(read_status, DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to read a record batch");
+            if (!batch)
+                break;
+            batches.push_back(std::move(batch));
+        }
+    }
 
-        /// The structs are declared with the C data interface types and only cast to the kernel's identical
-        /// `ffi::FFI_Arrow*` types when passed to it: the `release` callbacks must be called through the
-        /// function type they are defined with, otherwise it is undefined behavior (`-fsanitize=function`).
-        ::ArrowArray array{};
-        ::ArrowSchema schema{};
+    for (const auto & batch : batches)
+    {
+        ffi::FFI_ArrowArray array{};
+        ffi::FFI_ArrowSchema schema{};
         SCOPE_EXIT({
             if (schema.release)
                 schema.release(&schema);
         });
-        DB::ArrowIPC::exportSchemaToC(write_metadata.names, write_metadata.types, format_settings, schema);
-        DB::ArrowIPC::exportRecordBatchToC(write_metadata.columns, write_metadata.types, format_settings, begin, end, array);
-        begin = end;
+        exportRecordBatch(*batch, array, schema);
 
         KernelEngineData engine_data;
         try
         {
-            /// Takes ownership of `array` (but not `schema`) if successfully called.
+            /// Takes ownership of `array` (but not`schema`) if successfully called.
             engine_data = DeltaLake::KernelUtils::unwrapResult(
-                ffi::get_engine_data(
-                    *reinterpret_cast<ffi::FFI_ArrowArray *>(&array),
-                    reinterpret_cast<ffi::FFI_ArrowSchema *>(&schema),
-                    &KernelUtils::allocateError),
+                ffi::get_engine_data(array, &schema, &KernelUtils::allocateError),
                 "get_engine_data");
         }
         catch (...)
@@ -263,7 +291,7 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
         }
 
         ffi::add_files(transaction.get(), engine_data.release());
-    } while (begin < write_metadata.num_rows);
+    }
 
     fiu_do_on(DB::FailPoints::delta_lake_commit_fail_before_log_write, {
         throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Failpoint for a commit failure before the log write enabled");

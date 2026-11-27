@@ -29,9 +29,7 @@ cat > "${work_dir}/config.xml" <<EOF
 </clickhouse>
 EOF
 
-# d.t loads in the background, and its load can consume the failpoint: wait for it first.
 ${CLICKHOUSE_LOCAL} --config-file "${work_dir}/config.xml" --path "${work_dir}/db" --query "
-SYSTEM WAIT LOADING PARTS d.t;
 SYSTEM ENABLE FAILPOINT disk_object_storage_fail_commit_metadata_transaction;
 DROP TABLE d.t SYNC;
 SELECT last_error_message FROM system.errors WHERE name = 'FAULT_INJECTED';

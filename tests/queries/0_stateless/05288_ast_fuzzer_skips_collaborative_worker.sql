@@ -1,13 +1,9 @@
--- Tags: no-shared-merge-tree, no-msan
+-- Tags: no-shared-merge-tree
 -- no-shared-merge-tree: the parallel replicas cluster used here points every replica at this server.
 
 -- The server-side AST fuzzer (`ast_fuzzer_runs`) must not re-run a statement on a node that executes it
 -- as a worker for another node's query, a parallel replicas participant or a cluster table function
 -- worker: a fuzzed copy would take part in the initiator's read a second time. The initiator is fuzzed.
-
--- The parallel replicas arms are pinned to the query-based implementation: the skip is counted on a worker
--- that parses the statement it was sent, while a plan-based worker receives a plan fragment, has no AST to
--- fuzz, and so never reaches the skip.
 
 -- Only the statements that set `ast_fuzzer_runs` themselves are fuzzed, never the measurements.
 SET ast_fuzzer_runs = 0;
@@ -65,7 +61,11 @@ INSERT INTO t05288_events
 SELECT 'view_before', count()
 FROM system.query_log
 WHERE event_date >= yesterday() AND is_initial_query = 0 AND has(databases, currentDatabase())
-  AND has(tables, currentDatabase() || '.t05288_view');
+  AND has(tables, currentDatabase() || '.t05288_view_src');
+INSERT INTO t05288_events
+SELECT 'plain_before', count()
+FROM system.query_log
+WHERE event_date >= yesterday() AND is_initial_query = 0 AND startsWith(query, 'SELECT 1 AS t05288_plain_control');
 -- A fuzzed copy runs internally, with an initiating row of its own naming the arm's source.
 INSERT INTO t05288_events
 SELECT 'worker_fuzz_copies_before', count()
@@ -87,7 +87,7 @@ SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          parallel_distributed_insert_select = 2,
          parallel_replicas_local_plan = 0,
          parallel_replicas_insert_select_local_pipeline = 0,
-         automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks', parallel_replicas_plan_based = 0,
+         automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks',
          ast_fuzzer_runs = 5, ast_fuzzer_any_query = 1;
 
 SYSTEM FLUSH LOGS query_log;
@@ -152,17 +152,7 @@ SELECT 'source_rows_written',
           AND has(tables, currentDatabase() || '.t05288_worker_src'));
 
 -- Control: an ordinary statement produces no worker queries. It reads no table, because the fuzzer can
--- rewrite a table read into a distributed one; the alias makes its rows selectable. The fuzzer's corpus is
--- server-wide, so fuzzed copies of other statements can carry the alias too: only workers of queries this
--- database initiates around this statement are counted.
-INSERT INTO t05288_events
-SELECT 'plain_before', count()
-FROM system.query_log
-WHERE event_date >= yesterday() AND is_initial_query = 0 AND startsWith(query, 'SELECT 1 AS t05288_plain_control')
-  AND initial_query_id IN (SELECT query_id FROM system.query_log
-                           WHERE event_date >= yesterday() AND is_initial_query = 1
-                             AND current_database = currentDatabase());
-
+-- rewrite a table read into a distributed one; the alias makes its rows selectable.
 SELECT 1 AS t05288_plain_control
 SETTINGS ast_fuzzer_runs = 5, ast_fuzzer_any_query = 1 FORMAT Null;
 
@@ -170,10 +160,7 @@ SYSTEM FLUSH LOGS query_log;
 INSERT INTO t05288_events
 SELECT 'plain_after', count()
 FROM system.query_log
-WHERE event_date >= yesterday() AND is_initial_query = 0 AND startsWith(query, 'SELECT 1 AS t05288_plain_control')
-  AND initial_query_id IN (SELECT query_id FROM system.query_log
-                           WHERE event_date >= yesterday() AND is_initial_query = 1
-                             AND current_database = currentDatabase());
+WHERE event_date >= yesterday() AND is_initial_query = 0 AND startsWith(query, 'SELECT 1 AS t05288_plain_control');
 
 SELECT 'plain_query_no_workers',
       (SELECT workers FROM t05288_events WHERE label = 'plain_after')
@@ -197,7 +184,7 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_rep
          parallel_distributed_insert_select = 2,
          parallel_replicas_local_plan = 0,
          parallel_replicas_insert_select_local_pipeline = 0,
-         automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks', parallel_replicas_plan_based = 0,
+         automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks',
          ast_fuzzer_runs = 5, ast_fuzzer_any_query = 1;
 
 SYSTEM FLUSH LOGS query_log;
@@ -317,7 +304,7 @@ SELECT 'cluster_no_internal_workers',
                                      AND current_database = currentDatabase())) = 0;
 
 -- A read through an `SQL SECURITY NONE` view, executed in a separately built context: the read succeeds
--- and its workers, which expand the view, are skipped too.
+-- and its workers, which read the view's source, are skipped too.
 CREATE VIEW t05288_view SQL SECURITY NONE AS SELECT id, v FROM t05288_view_src;
 
 INSERT INTO t05288_events
@@ -336,8 +323,7 @@ SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
          parallel_replicas_for_non_replicated_merge_tree = 1,
          parallel_replicas_local_plan = 0,
-         parallel_replicas_allow_view_over_mergetree = 1,
-         automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks', parallel_replicas_plan_based = 0,
+         automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks',
          ast_fuzzer_runs = 5, ast_fuzzer_any_query = 1;
 
 SYSTEM FLUSH LOGS query_log;
@@ -345,7 +331,7 @@ INSERT INTO t05288_events
 SELECT 'view_after', count()
 FROM system.query_log
 WHERE event_date >= yesterday() AND is_initial_query = 0 AND has(databases, currentDatabase())
-  AND has(tables, currentDatabase() || '.t05288_view');
+  AND has(tables, currentDatabase() || '.t05288_view_src');
 
 SELECT 'view_workers_ran',
       (SELECT workers FROM t05288_events WHERE label = 'view_after')
@@ -366,7 +352,7 @@ SELECT 'view_not_fuzzed',
             (SELECT uniqExact(normalized_query_hash) AS shapes
              FROM system.query_log
              WHERE event_date >= yesterday() AND is_initial_query = 0 AND has(databases, currentDatabase())
-               AND has(tables, currentDatabase() || '.t05288_view')
+               AND has(tables, currentDatabase() || '.t05288_view_src')
                AND initial_query_id IN (SELECT query_id FROM system.query_log
                                         WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 0
                                           AND current_database = currentDatabase())
@@ -381,7 +367,7 @@ SELECT 'view_no_internal_workers',
        (SELECT count() FROM system.query_log
         WHERE event_date >= yesterday() AND is_initial_query = 0 AND is_internal = 1
           AND has(databases, currentDatabase())
-          AND has(tables, currentDatabase() || '.t05288_view')
+          AND has(tables, currentDatabase() || '.t05288_view_src')
           AND initial_query_id IN (SELECT query_id FROM system.query_log
                                    WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 0
                                      AND current_database = currentDatabase())) = 0;

@@ -248,7 +248,7 @@ public:
         }
     };
 
-    [[nodiscard]] const std::unordered_map<QueryTreeNodePtr, Columns> & getColumnSourceToColumns() const
+    const std::unordered_map<QueryTreeNodePtr, Columns> & getColumnSourceToColumns() const
     {
         return column_source_to_columns;
     }
@@ -316,12 +316,12 @@ public:
         size_t subquery_depth = 0;
     };
 
-    [[nodiscard]] const IQueryTreeNode::ReplacementMap & getReplacementMap() const
+    const IQueryTreeNode::ReplacementMap & getReplacementMap() const
     {
         return replacement_map;
     }
 
-    [[nodiscard]] const std::vector<InFunctionOrJoin> & getGlobalInOrJoinNodes() const
+    const std::vector<InFunctionOrJoin> & getGlobalInOrJoinNodes() const
     {
         return global_in_or_join_nodes;
     }

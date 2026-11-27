@@ -29,7 +29,6 @@ ASTPtr ASTDropIndexQuery::clone() const
     res->children.push_back(res->index_name);
 
     cloneTableOptions(*res);
-    cloneOutputOptions(*res);
 
     return res;
 }

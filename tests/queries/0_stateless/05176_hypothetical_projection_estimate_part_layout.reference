@@ -65,11 +65,11 @@ hypothetical:
 marks: 10
 rows: 1000
 status: applicable
-marks: 2
-rows: 200
-read_ratio: 0.20x
+marks: 3
+rows: 300
+read_ratio: 0.30x
 verdict: chosen
-reason: 2 marks would be read instead of 10 from the base table
+reason: 3 marks would be read instead of 10 from the base table
 source: empirical
 real:
 ReadFromMergeTree (p_d)

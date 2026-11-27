@@ -1,29 +1,19 @@
 ---
 slug: /use-cases/observability/clickstack/tuning-clickstack-schema
-title: 'Tuning ClickHouse Observability: refining your schema'
-sidebarTitle: 'Tune your schema'
-description: 'Refine your ClickStack schema for improved query performance and storage efficiency on the self-managed experience of ClickHouse Observability'
+title: 'Tuning Managed ClickStack - refining your schema'
+description: 'Refine your ClickStack schema for improved query performance and storage efficiency in Managed ClickStack'
 doc_type: 'guide'
-keywords: ['clickstack', 'tuning', 'schema', 'self-managed', 'ClickHouse Observability', 'performance', 'optimization', 'storage']
+keywords: ['clickstack', 'tuning', 'schema', 'managed', 'observability', 'performance', 'optimization', 'storage']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
 ---
 
-<Note>
-**You are on the self-managed route**
-
-You have chosen to set up ClickHouse Observability yourself, using the [self-managed experience](/clickstack/self-configured/overview). On this route you run the OpenTelemetry collector, manage ingestion into your ClickHouse Cloud service, tune the schema, and separate ingestion and query workloads with warehouses. See [OpenTelemetry collector](/clickstack/self-configured/ingesting-data/collector), [Performance tuning](/clickstack/self-configured/managing/performance-tuning), and [Isolating read and write workloads](/clickstack/self-configured/managing/isolating-read-write).
-
-Prefer a serverless experience where ClickHouse handles ingestion, schemas, and compute for you? Use the default ClickHouse Observability experience, where the schema is managed for you: see [Getting started](/clickstack/observability/getting-started).
-</Note>
-
-
-If you've been running ClickHouse Observability for a while, you've probably noticed that the default schema handles most observability workloads without any changes. This page is for when that's no longer enough: query latency starts to climb, or your access patterns have drifted away from the defaults.
+If you've been running ClickStack for a while, you've probably noticed that the default schema handles most observability workloads without any changes. This page is for when that's no longer enough: query latency starts to climb, or your access patterns have drifted away from the defaults.
 
 Four optimizations cover most of what helps in practice. They're listed roughly in order of effort. The first two are local `ALTER TABLE` changes you can roll out incrementally. The third pays off when the same aggregation runs over and over on a dashboard. The fourth needs a table migration, so it's the most involved.
 
-The summaries below are short on purpose. For the reasoning behind each change, benchmarks, and the recipes for rolling it out to existing data, see [Performance tuning](/clickstack/self-configured/managing/performance-tuning).
+The summaries below are short on purpose. For the reasoning behind each change, benchmarks, and the recipes for rolling it out to existing data, see [Performance tuning](/clickstack/managing/performance-tuning).
 
 <Steps>
 <Step title="Materialize frequently queried attributes" id="materialize-attributes">
@@ -40,7 +30,7 @@ ALTER TABLE otel_logs
 
 Existing rows stay empty for the new column until you also `ALTER TABLE otel_logs MATERIALIZE COLUMN ServiceVersion`.
 
-Read more: [Materialize frequently queried attributes](/clickstack/self-configured/managing/performance-tuning#materialize-frequently-queried-attributes).
+Read more: [Materialize frequently queried attributes](/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes).
 </Step>
 <Step title="Add skip indexes" id="add-skip-indexes">
 
@@ -57,7 +47,7 @@ ALTER TABLE otel_traces MATERIALIZE INDEX idx_duration;
 
 A skip index only pays for its evaluation cost if it actually prunes granules. Confirm with `EXPLAIN indexes = 1` on a representative query before assuming it helped.
 
-Read more: [Adding skip indexes](/clickstack/self-configured/managing/performance-tuning#adding-skip-indexes).
+Read more: [Adding skip indexes](/clickstack/managing/performance-tuning#adding-skip-indexes).
 </Step>
 <Step title="Pre-compute repeated aggregations" id="materialized-views">
 
@@ -65,7 +55,7 @@ When the same aggregation runs again and again on a dashboard (top services by e
 
 This pays off when the dashboard is hot and the underlying table is large. The cost is some insert-time CPU and a second table to maintain.
 
-Read more: [Exploiting materialized views](/clickstack/self-configured/managing/performance-tuning#exploiting-materialized-views).
+Read more: [Exploiting materialized views](/clickstack/managing/performance-tuning#exploiting-materialized-views).
 </Step>
 <Step title="Choose a primary key for your access pattern" id="choose-primary-key">
 
@@ -84,12 +74,12 @@ ORDER BY (TenantId, ServiceName, Timestamp);
 
 ClickHouse doesn't allow editing the primary key in place, so this is a table migration rather than a simple `ALTER`. The performance tuning guide walks through creating the new table, redirecting ingestion, and using a `Merge` table so existing dashboards keep working across old and new data.
 
-Read more: [Modifying the primary key](/clickstack/self-configured/managing/performance-tuning#modifying-the-primary-key).
+Read more: [Modifying the primary key](/clickstack/managing/performance-tuning#modifying-the-primary-key).
 </Step>
 </Steps>
 
 ## Further reading {#further-reading}
 
-- [Performance tuning](/clickstack/self-configured/managing/performance-tuning): full guide, including projections and row-lookup acceleration.
-- [Tables and schemas used by ClickStack](/clickstack/self-configured/ingesting-data/schemas): the canonical DDL the optimizations build on.
-- [Going to production](/clickstack/self-configured/managing/production): broader production recommendations.
+- [Performance tuning](/clickstack/managing/performance-tuning): full guide, including projections and row-lookup acceleration.
+- [Tables and schemas used by ClickStack](/clickstack/ingesting-data/schemas): the canonical DDL the optimizations build on.
+- [Going to production](/clickstack/managing/production): broader production recommendations.

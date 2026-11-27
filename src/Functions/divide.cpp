@@ -16,9 +16,6 @@ struct DivideFloatingImpl
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
 
-    /// Documentation-only — see `PlusImpl::signature_documentation`.
-    static constexpr auto signature_documentation = "(Any, Any) -> Any";
-
     template <typename Result = ResultType>
     static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
@@ -53,9 +50,7 @@ using FunctionDivideLegacy = BinaryArithmeticOverloadResolver<DivideFloatingImpl
 class FunctionDivideExactBase final : public IFunctionBase
 {
 public:
-    FunctionDivideExactBase(FunctionBasePtr implementation_, bool allow_constant_folding_)
-        : implementation(std::move(implementation_))
-        , allow_constant_folding(allow_constant_folding_)
+    explicit FunctionDivideExactBase(FunctionBasePtr implementation_) : implementation(std::move(implementation_))
     {
     }
 
@@ -88,7 +83,7 @@ public:
 
     bool isSuitableForConstantFolding() const override
     {
-        return allow_constant_folding && implementation->isSuitableForConstantFolding();
+        return implementation->isSuitableForConstantFolding();
     }
     ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
@@ -128,7 +123,6 @@ public:
 
 private:
     FunctionBasePtr implementation;
-    bool allow_constant_folding;
 };
 
 class FunctionDivideExact final : public IFunctionOverloadResolver
@@ -164,12 +158,7 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
-        /// Keep a potentially throwing integer division as an expression until execution.
-        /// Folding it while resolving an unselected `if`, `multiIf`, or `CASE` branch defeats
-        /// short-circuit evaluation. Valid constant pairs remain foldable, while a selected or
-        /// top-level invalid pair still throws at execution.
-        return std::make_shared<FunctionDivideExactBase>(
-            delegate(arguments)->build(arguments), !constantExactIntegerDivisionCanThrow(arguments));
+        return std::make_shared<FunctionDivideExactBase>(delegate(arguments)->build(arguments));
     }
 
 private:

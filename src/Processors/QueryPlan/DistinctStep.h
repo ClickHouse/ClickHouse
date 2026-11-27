@@ -57,35 +57,35 @@ public:
         /// transform may abandon deduplication entirely (see `allow_preliminary_distinct_abandoning`).
         bool pre_distinct_);
 
-    [[nodiscard]] String getName() const override { return "Distinct"; }
-    [[nodiscard]] const Names & getColumnNames() const { return columns; }
+    String getName() const override { return "Distinct"; }
+    const Names & getColumnNames() const { return columns; }
 
-    [[nodiscard]] String getSerializationName() const override { return pre_distinct ? "PreDistinct" : "Distinct"; }
+    String getSerializationName() const override { return pre_distinct ? "PreDistinct" : "Distinct"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & format_settings) const override;
 
-    [[nodiscard]] bool isPreliminary() const { return pre_distinct; }
+    bool isPreliminary() const { return pre_distinct; }
 
-    [[nodiscard]] UInt64 getLimitHint() const { return limit_hint; }
+    UInt64 getLimitHint() const { return limit_hint; }
     void updateLimitHint(UInt64 hint);
 
     void serializeSettings(QueryPlanSerializationSettings & plan_settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
-    [[nodiscard]] bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx, bool pre_distinct_);
     static QueryPlanStepPtr deserializeNormal(Deserialization & ctx);
     static QueryPlanStepPtr deserializePre(Deserialization & ctx);
 
-    [[nodiscard]] QueryPlanStepPtr clone() const override;
+    QueryPlanStepPtr clone() const override;
 
-    [[nodiscard]] const Settings & getSettings() const { return settings; }
+    const Settings & getSettings() const { return settings; }
 
     void applyOrder(SortDescription sort_desc) { distinct_sort_desc = std::move(sort_desc); }
-    [[nodiscard]] const SortDescription & getSortDescription() const override { return distinct_sort_desc; }
+    const SortDescription & getSortDescription() const override { return distinct_sort_desc; }
 
     /// Each input stream contains a disjoint set of the DISTINCT key values (e.g. because each stream
     /// corresponds to a separate partition and the partition key is a function of the DISTINCT columns).
@@ -99,27 +99,10 @@ public:
     /// by construction; a spilling one restores it after merging its runs (see
     /// `ExternalDistinctTransform`).
     void preserveInputOrder() { preserve_input_order = true; }
-    [[nodiscard]] bool preservesInputOrder() const { return preserve_input_order; }
-
-    /// Allow final deduplication to run in parallel by partitioning streams by the hash of the `DISTINCT`
-    /// columns. Input-order requirements and sorted deduplication take precedence.
-    void enableParallelDistinct() { parallel_distinct = true; }
-
-    /// Merge the small output chunks of a preliminary step before a parallel final step scatters them (see
-    /// `DistinctTransform`). The transform bounds the delay by the input rows it consumes, so this is enabled
-    /// only when the input comes straight from a read and cannot stall behind a step that suppresses rows.
-    /// This affects only performance, so it is not serialized.
-    void coalesceOutput() { coalesce_output = true; }
-
-    /// Never spill to disk: deduplicate in memory only.
-    void disableExternalDistinct() { external_distinct_disabled = true; }
+    bool preservesInputOrder() const { return preserve_input_order; }
 
 private:
     void updateOutputHeader() override;
-
-    /// Partition by the hash of the `DISTINCT` keys when there are multiple streams, threads, and
-    /// non-constant keys. Return whether partitioning was applied; otherwise leave the pipeline intact.
-    bool tryScatterStreams(QueryPipelineBuilder & pipeline) const;
 
     Settings settings;
     UInt64 limit_hint;
@@ -127,10 +110,7 @@ private:
     bool pre_distinct;
     SortDescription distinct_sort_desc;
     bool skip_stream_merging = false;
-    bool parallel_distinct = false;
     bool preserve_input_order = false;
-    bool coalesce_output = false;
-    bool external_distinct_disabled = false;
 };
 
 }

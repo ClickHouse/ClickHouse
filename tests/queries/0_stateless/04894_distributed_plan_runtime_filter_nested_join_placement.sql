@@ -7,7 +7,7 @@ INSERT INTO fact SELECT number, number, number FROM numbers(1000000);
 INSERT INTO dim1 SELECT number * 10 FROM numbers(10000);
 INSERT INTO dim2 SELECT number * 100, number FROM numbers(1000);
 
-SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
+SET enable_analyzer = 1, enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0;
 SET max_rows_to_group_by = 0, query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
 -- The plan shape and transported-filter admission depend on the join order and the estimate
@@ -61,7 +61,7 @@ WITH
     (
         SELECT groupUniqArrayArray(extractAll(extract(message, 'output exchange streams: \\[([^\\]]*)\\]'), '(exchange_\\d+)__'))
         FROM system.text_log
-        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'executeDistributedQuery'
+        WHERE event_date >= yesterday() AND logger_name = 'executeDistributedQuery'
           AND startsWith(message, 'Task \'rf_merge_')
           AND query_id IN (
               SELECT query_id FROM system.query_log
@@ -76,7 +76,7 @@ SELECT length(filter_exchanges) = 2 AND count() >= 1
    AND uniqExact(extract(message, '^Task \'(stage_\\d+)_')) = 1
    AND min(arraySort(arrayDistinct(input_exchanges)) = arraySort(filter_exchanges))
 FROM system.text_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'executeDistributedQuery'
+WHERE event_date >= yesterday() AND logger_name = 'executeDistributedQuery'
   AND startsWith(message, 'Task \'stage_')
   AND hasAny(input_exchanges, filter_exchanges)
   AND query_id IN (

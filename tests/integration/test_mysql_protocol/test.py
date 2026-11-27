@@ -1431,10 +1431,11 @@ def test_mysql_dotnet_client(started_cluster):
         [
             "bash",
             "-c",
-            f"dotnet /testapp/out/testapp.dll --host {node.hostname} --port {server_port} --username default --password 123",
+            f"cd /testapp && dotnet run -- --host {node.hostname} --port {server_port} --username default --password 123",
         ],
     )
-    assert res == reference
+    # there is some thrash at the beggining of output, so it's better to use `in` instead of `==``
+    assert reference in res
 
 
 def _com_field_list(client, table):

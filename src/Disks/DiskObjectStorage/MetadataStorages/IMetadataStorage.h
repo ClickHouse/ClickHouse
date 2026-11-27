@@ -1,6 +1,5 @@
 #pragma once
 
-#include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -59,7 +58,7 @@ public:
         throwNotImplemented();
     }
 
-    [[nodiscard]] virtual bool supportsChmod() const = 0;
+    virtual bool supportsChmod() const = 0;
     virtual void chmod(const String & /* path */, mode_t /* mode */)
     {
         throwNotImplemented();
@@ -180,86 +179,86 @@ public:
     virtual MetadataTransactionPtr createTransaction() = 0;
 
     /// Get metadata root path.
-    [[nodiscard]] virtual const std::string & getPath() const = 0;
+    virtual const std::string & getPath() const = 0;
 
-    [[nodiscard]] virtual MetadataStorageType getType() const = 0;
+    virtual MetadataStorageType getType() const = 0;
 
-    [[nodiscard]] virtual std::string getZooKeeperName() const { return ""; }
-    [[nodiscard]] virtual std::string getZooKeeperPath() const { return ""; }
+    virtual std::string getZooKeeperName() const { return ""; }
+    virtual std::string getZooKeeperPath() const { return ""; }
 
     /// Returns true if empty file can be created without any blobs in the corresponding object storage.
     /// E.g. metadata storage can store the empty list of blobs corresponding to a file without actually storing any blobs.
     /// But if the metadata storage just relies on for example local FS to store data under logical path, then a file has to be created even if it's empty.
-    [[nodiscard]] virtual bool supportsEmptyFilesWithoutBlobs() const { return false; }
+    virtual bool supportsEmptyFilesWithoutBlobs() const { return false; }
 
     /// Whether small file content can be stored inside the metadata itself, with no backing blob
     /// (see `WriteSettings::inline_file_max_bytes`).
-    [[nodiscard]] virtual bool supportsInlineData() const { return false; }
+    virtual bool supportsInlineData() const { return false; }
 
     /// Returns true if underlying blob ids generator uses random.
-    [[nodiscard]] virtual bool areBlobPathsRandom() const = 0;
+    virtual bool areBlobPathsRandom() const = 0;
 
     /// Whether a cache keyed by the object path may hold a file's data. An object named after the
     /// path and rewritten in place would be read back as its previous content, since nothing
     /// invalidates it. Read-only metadata rewrites nothing, so its paths need not be random.
-    [[nodiscard]] bool mayCacheByObjectPath() const { return areBlobPathsRandom() || isReadOnly(); }
+    bool mayCacheByObjectPath() const { return areBlobPathsRandom() || isReadOnly(); }
 
     /// ==== General purpose methods. Define properties of object storage file based on metadata files ====
 
-    [[nodiscard]] virtual bool existsFile(const std::string & path) const = 0;
-    [[nodiscard]] virtual bool existsDirectory(const std::string & path) const = 0;
-    [[nodiscard]] virtual bool existsFileOrDirectory(const std::string & path) const = 0;
+    virtual bool existsFile(const std::string & path) const = 0;
+    virtual bool existsDirectory(const std::string & path) const = 0;
+    virtual bool existsFileOrDirectory(const std::string & path) const = 0;
 
-    [[nodiscard]] virtual uint64_t getFileSize(const std::string & path) const = 0;
+    virtual uint64_t getFileSize(const std::string & path) const = 0;
 
-    [[nodiscard]] virtual std::optional<uint64_t> getFileSizeIfExists(const std::string & path) const
+    virtual std::optional<uint64_t> getFileSizeIfExists(const std::string & path) const
     {
         if (existsFile(path))
             return getFileSize(path);
         return std::nullopt;
     }
 
-    [[nodiscard]] virtual Poco::Timestamp getLastModified(const std::string & path) const = 0;
+    virtual Poco::Timestamp getLastModified(const std::string & path) const = 0;
 
-    [[nodiscard]] virtual std::optional<Poco::Timestamp> getLastModifiedIfExists(const std::string & path) const
+    virtual std::optional<Poco::Timestamp> getLastModifiedIfExists(const std::string & path) const
     {
         if (existsFileOrDirectory(path))
             return getLastModified(path);
         return std::nullopt;
     }
 
-    [[nodiscard]] virtual time_t getLastChanged(const std::string & /* path */) const
+    virtual time_t getLastChanged(const std::string & /* path */) const
     {
         throwNotImplemented();
     }
 
-    [[nodiscard]] virtual bool supportsChmod() const = 0;
+    virtual bool supportsChmod() const = 0;
 
-    [[nodiscard]] virtual bool supportsStat() const = 0;
-    [[nodiscard]] virtual struct stat stat(const String & /* path */) const
+    virtual bool supportsStat() const = 0;
+    virtual struct stat stat(const String & /* path */) const
     {
         throwNotImplemented();
     }
 
-    [[nodiscard]] virtual std::vector<std::string> listDirectory(const std::string & path) const = 0;
+    virtual std::vector<std::string> listDirectory(const std::string & path) const = 0;
 
-    [[nodiscard]] virtual DirectoryIteratorPtr iterateDirectory(const std::string & path) const = 0;
+    virtual DirectoryIteratorPtr iterateDirectory(const std::string & path) const = 0;
 
-    [[nodiscard]] virtual bool isDirectoryEmpty(const std::string & path) const
+    virtual bool isDirectoryEmpty(const std::string & path) const
     {
         return !iterateDirectory(path)->isValid();
     }
 
-    [[nodiscard]] virtual uint32_t getHardlinkCount(const std::string & path) const = 0;
+    virtual uint32_t getHardlinkCount(const std::string & path) const = 0;
 
     /// Read metadata file to string from path
-    [[nodiscard]] virtual std::string readFileToString(const std::string & /* path */) const
+    virtual std::string readFileToString(const std::string & /* path */) const
     {
         throwNotImplemented();
     }
 
     /// Read inline data for file to string from path
-    [[nodiscard]] virtual std::string readInlineDataToString(const std::string & /* path */) const
+    virtual std::string readInlineDataToString(const std::string & /* path */) const
     {
         throwNotImplemented();
     }
@@ -284,48 +283,48 @@ public:
     /// ==== More specific methods. Previous were almost general purpose. ====
 
     /// Read multiple metadata files into strings and return mapping from file_path -> metadata
-    [[nodiscard]] virtual std::unordered_map<std::string, std::string> getSerializedMetadata(const std::vector<String> & /* file_paths */) const
+    virtual std::unordered_map<std::string, std::string> getSerializedMetadata(const std::vector<String> & /* file_paths */) const
     {
         throwNotImplemented();
     }
 
     /// Return object information (absolute_path, bytes_size, ...) for metadata path.
     /// object_storage_path is absolute.
-    [[nodiscard]] virtual StoredObjects getStorageObjects(const std::string & path) const = 0;
+    virtual StoredObjects getStorageObjects(const std::string & path) const = 0;
 
-    [[nodiscard]] virtual std::optional<StoredObjects> getStorageObjectsIfExist(const std::string & path) const
+    virtual std::optional<StoredObjects> getStorageObjectsIfExist(const std::string & path) const
     {
         if (existsFile(path))
             return getStorageObjects(path);
         return std::nullopt;
     }
 
-    [[nodiscard]] virtual bool isReadOnly() const = 0;
-    [[nodiscard]] virtual bool isRemote() const = 0;
+    virtual bool isReadOnly() const = 0;
+    virtual bool isRemote() const = 0;
 
     /// True if transactions apply operations immediately instead of accumulating them until commit.
-    [[nodiscard]] virtual bool appliesOperationsEagerly() const
+    virtual bool appliesOperationsEagerly() const
     {
         return false;
     }
 
     /// The generator of object storage keys for new blobs, if this storage owns one.
-    [[nodiscard]] virtual ObjectStorageKeyGeneratorPtr getKeyGenerator() const
+    virtual ObjectStorageKeyGeneratorPtr getKeyGenerator() const
     {
         return nullptr;
     }
 
-    [[nodiscard]] virtual bool isTransactional() const
+    virtual bool isTransactional() const
     {
         return false;
     }
 
-    [[nodiscard]] virtual bool isPlain() const
+    virtual bool isPlain() const
     {
         return false;
     }
 
-    [[nodiscard]] virtual bool isWriteOnce() const
+    virtual bool isWriteOnce() const
     {
         return false;
     }
@@ -333,7 +332,7 @@ public:
     /// Whether a hard link created by `createHardLink` really shares the blob between the two files,
     /// instead of copying it. The write-once (`plain`) metadata cannot represent hard links at all,
     /// and `plain_rewritable` does it only when the disk is configured for it.
-    [[nodiscard]] virtual bool supportsHardLinks() const
+    virtual bool supportsHardLinks() const
     {
         return !isWriteOnce() && !isPlain();
     }
@@ -341,20 +340,8 @@ public:
     using BlobsToRemove = std::unordered_map<StoredObject, LocationSet>;
     virtual BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & /*cluster*/, int64_t /*max_count*/) { return {}; }
     virtual int64_t recordAsRemoved(const StoredObjects & /*blobs*/) { return 0; }
-    [[nodiscard]] virtual bool hasPendingRemovalBlobs(const StoredObjects & /*blobs*/) const { return false; }
+    virtual bool hasPendingRemovalBlobs(const StoredObjects & /*blobs*/) const { return false; }
     virtual int64_t getDeadBlobsQueueEstimate() { return 0; }
-
-    /// Whether this storage ever puts anything into the queue of dead blobs above. The queue is drained in
-    /// background by `BlobKillerThread`, which never schedules its task for a storage that answers `false`:
-    /// `plain` and `plain_rewritable` remove blobs synchronously inside the transaction and the `web`
-    /// storages are read-only, so for them the task would only wake up every second to find nothing to do.
-    [[nodiscard]] virtual bool hasDeadBlobsQueue() const { return true; }
-
-    /// For a storage whose `hasDeadBlobsQueue` may change from `false` to `true` at runtime (a cache layer over
-    /// a read-only `plain` disk, which still drains the blobs queued before a reload), `BlobKillerThread` stops
-    /// polling once there is nothing left to do. The storage calls `callback` after it queued new dead blobs,
-    /// so that the blob killer wakes up. An empty `callback` unregisters it.
-    virtual void setDeadBlobsQueuedCallback(std::function<void()> /*callback*/) {}
 
     struct BlobsReplication
     {
@@ -367,11 +354,6 @@ public:
     virtual int64_t recordAsReplicated(const BlobsToReplicate & /*blobs*/) { return 0; }
     virtual bool hasUnreplicatedBlobs(const Location & /*location_to_check*/) { return false; }
     virtual int64_t getMissingBlobsQueueEstimate() { return 0; }
-
-    /// The same as `hasDeadBlobsQueue`, but for the queue of blobs missing in some of the cluster locations,
-    /// which is drained in background by `BlobCopierThread`. Only a storage spanning several locations
-    /// fills it, so every single-location storage, including `local`, answers `false`.
-    [[nodiscard]] virtual bool hasMissingBlobsQueue() const { return true; }
 
     /// Re-read paths or their full subtrees from disk and update cache.
     /// Can return serialized description of cache update which can be used to populate cache on other nodes.
@@ -391,7 +373,7 @@ public:
         ContextPtr /* context */) {}
 
     /// True if write with Append mode supported.
-    [[nodiscard]] virtual bool supportWritingWithAppend() const { return false; }
+    virtual bool supportWritingWithAppend() const { return false; }
 
 protected:
     [[noreturn]] static void throwNotImplemented()

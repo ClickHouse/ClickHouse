@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/SecretString.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/Cluster.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -41,7 +40,7 @@ public:
         const String & database_name_,
         const String & remote_database_,
         const String & username_,
-        std::string_view password_,
+        const String & password_,
         ClusterPtr cluster_,
         ClusterPtr remote_only_cluster_,
         bool secure_,
@@ -146,7 +145,7 @@ protected:
     StoragePtr fetchTable(const String & table_name, ContextPtr local_context, bool throw_on_error = false) const;
     StoragePtr fetchTable(const String & table_name, ContextPtr local_context, bool throw_on_error, const ProxyClusters & clusters) const;
 
-    const SecretString database_engine_define;
+    const ASTPtr database_engine_define;
     const String remote_database;
     LoggerPtr log;
 
@@ -157,7 +156,7 @@ private:
     /// definition switches to the positional form (see `getCreateTableQueryImpl`), which has to
     /// carry them explicitly.
     const String username;
-    const SecretString password;
+    const String password;
     /// The fixed clusters of the `Remote` engine, unused by the `Cluster` engine, whose clusters are
     /// dynamic; every metadata operation takes its snapshot through `getProxyClusters` instead.
     const ClusterPtr cluster;

@@ -18,15 +18,13 @@ class ASTLiteral;
 class ParserSubquery : public IParserBase
 {
 public:
-    [[nodiscard]] bool startsWithValidSelectOrExplain() const { return starts_with_valid_select_or_explain; }
+    bool startsWithValidSelectOrExplain() const { return starts_with_valid_select_or_explain; }
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "SELECT or EXPLAIN subquery"; }
+    const char * getName() const override { return "SELECT or EXPLAIN subquery"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:
-    bool parseSubquery(Pos & pos, ASTPtr & node, Expected & expected);
-
     bool starts_with_valid_select_or_explain = false;
 };
 
@@ -42,10 +40,10 @@ public:
         , highlight_type(highlight_type_)
     {
     }
-    [[nodiscard]] Highlight highlight() const override { return highlight_type; }
+    Highlight highlight() const override { return highlight_type; }
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "identifier"; }
+    const char * getName() const override { return "identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool allow_query_parameter;
     Highlight highlight_type;
@@ -60,9 +58,9 @@ public:
     explicit ParserTableAsStringLiteralIdentifier() = default;
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "string literal table identifier"; }
+    const char * getName() const override { return "string literal table identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    [[nodiscard]] Highlight highlight() const override { return Highlight::identifier; }
+    Highlight highlight() const override { return Highlight::identifier; }
 };
 
 
@@ -97,7 +95,7 @@ protected:
         JSON_PATH_COMBINED = '@',
     };
 
-    [[nodiscard]] const char * getName() const override { return "compound identifier"; }
+    const char * getName() const override { return "compound identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool table_name_with_optional_uuid;
     bool allow_query_parameter;
@@ -125,10 +123,10 @@ public:
     {
     }
 
-    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
+    std::map<String, Documentation> getDocumentation() const override;
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "COLUMNS transformers"; }
+    const char * getName() const override { return "COLUMNS transformers"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     ColumnTransformers allowed_transformers;
     bool is_strict;
@@ -146,7 +144,7 @@ public:
     }
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "asterisk"; }
+    const char * getName() const override { return "asterisk"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
     ColumnTransformers allowed_transformers;
@@ -157,7 +155,7 @@ protected:
 class ParserQualifiedAsterisk : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "qualified asterisk"; }
+    const char * getName() const override { return "qualified asterisk"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -173,7 +171,7 @@ public:
     }
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "COLUMNS matcher"; }
+    const char * getName() const override { return "COLUMNS matcher"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
     ColumnTransformers allowed_transformers;
@@ -191,7 +189,7 @@ public:
     }
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "qualified COLUMNS matcher"; }
+    const char * getName() const override { return "qualified COLUMNS matcher"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
     ColumnTransformers allowed_transformers;
@@ -200,7 +198,7 @@ protected:
 // Allows to make queries like SELECT SUM(<expr>) FILTER(WHERE <cond>) FROM ...
 class ParserFilterClause : public IParserBase
 {
-    [[nodiscard]] const char * getName() const override { return "filter"; }
+    const char * getName() const override { return "filter"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -208,13 +206,13 @@ class ParserFilterClause : public IParserBase
 // Can be either window name or window definition.
 class ParserWindowReference : public IParserBase
 {
-    [[nodiscard]] const char * getName() const override { return "window reference"; }
+    const char * getName() const override { return "window reference"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 class ParserWindowDefinition : public IParserBase
 {
-    [[nodiscard]] const char * getName() const override { return "window definition"; }
+    const char * getName() const override { return "window definition"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -222,14 +220,14 @@ class ParserWindowDefinition : public IParserBase
 // Returns an ASTExpressionList of ASTWindowListElement's.
 class ParserWindowList : public IParserBase
 {
-    [[nodiscard]] const char * getName() const override { return "WINDOW clause"; }
+    const char * getName() const override { return "WINDOW clause"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 class ParserCodecDeclarationList : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "codec declaration list"; }
+    const char * getName() const override { return "codec declaration list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -239,7 +237,7 @@ protected:
 class ParserCodec : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "codec"; }
+    const char * getName() const override { return "codec"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -247,7 +245,7 @@ protected:
 class ParserStatisticsType : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "statistics"; }
+    const char * getName() const override { return "statistics"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -257,7 +255,7 @@ protected:
 class ParserCollation : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "collation"; }
+    const char * getName() const override { return "collation"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:
@@ -271,7 +269,7 @@ private:
 class ParserCastOperator : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "CAST operator"; }
+    const char * getName() const override { return "CAST operator"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -280,7 +278,7 @@ protected:
 class ParserNull : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "NULL"; }
+    const char * getName() const override { return "NULL"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -289,7 +287,7 @@ protected:
 class ParserBool : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "Bool"; }
+    const char * getName() const override { return "Bool"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -298,9 +296,9 @@ protected:
 class ParserNumber : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "number"; }
+    const char * getName() const override { return "number"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    [[nodiscard]] Highlight highlight() const override { return Highlight::number; }
+    Highlight highlight() const override { return Highlight::number; }
 };
 
 /** Unsigned integer, used in right hand side of tuple access operator (x.1).
@@ -308,7 +306,7 @@ protected:
 class ParserUnsignedInteger : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "unsigned integer"; }
+    const char * getName() const override { return "unsigned integer"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -325,9 +323,9 @@ public:
     }
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "string literal"; }
+    const char * getName() const override { return "string literal"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    [[nodiscard]] Highlight highlight() const override { return color; }
+    Highlight highlight() const override { return color; }
     Highlight color;
 };
 
@@ -350,7 +348,7 @@ public:
     }
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "collection of literals"; }
+    const char * getName() const override { return "collection of literals"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:
@@ -365,7 +363,7 @@ public:
     ParserCollectionOfLiterals<Tuple> tuple_parser{TokenType::OpeningRoundBracket, TokenType::ClosingRoundBracket};
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "tuple"; }
+    const char * getName() const override { return "tuple"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override { return tuple_parser.parse(pos, node, expected); }
 };
 
@@ -375,7 +373,7 @@ public:
     ParserCollectionOfLiterals<Array> array_parser{TokenType::OpeningSquareBracket, TokenType::ClosingSquareBracket};
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "array"; }
+    const char * getName() const override { return "array"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override { return array_parser.parse(pos, node, expected); }
 };
 
@@ -391,7 +389,7 @@ public:
     }
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "combination of maps, arrays, tuples"; }
+    const char * getName() const override { return "combination of maps, arrays, tuples"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:
@@ -404,7 +402,7 @@ private:
 class ParserLiteral : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "literal"; }
+    const char * getName() const override { return "literal"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -424,7 +422,7 @@ private:
 
     bool allow_alias_without_as_keyword;
 
-    [[nodiscard]] const char * getName() const override { return "alias"; }
+    const char * getName() const override { return "alias"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -435,7 +433,7 @@ private:
 class ParserIdentifierOrSubstitution : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "identifier or substitution"; }
+    const char * getName() const override { return "identifier or substitution"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -446,9 +444,9 @@ protected:
 class ParserSubstitution : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "substitution"; }
+    const char * getName() const override { return "substitution"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    [[nodiscard]] Highlight highlight() const override { return Highlight::substitution; }
+    Highlight highlight() const override { return Highlight::substitution; }
 };
 
 
@@ -457,7 +455,7 @@ protected:
 class ParserMySQLGlobalVariable : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "MySQL-style global variable"; }
+    const char * getName() const override { return "MySQL-style global variable"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -477,7 +475,7 @@ protected:
     ParserPtr elem_parser;
     bool allow_alias_without_as_keyword;
 
-    [[nodiscard]] const char * getName() const override { return "element of expression with optional alias"; }
+    const char * getName() const override { return "element of expression with optional alias"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -494,7 +492,7 @@ public:
 protected:
     bool allow_order;
 
-    [[nodiscard]] const char * getName() const override { return "element of storage ORDER BY expression"; }
+    const char * getName() const override { return "element of storage ORDER BY expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -506,7 +504,7 @@ protected:
 class ParserOrderByElement : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "element of ORDER BY expression"; }
+    const char * getName() const override { return "element of ORDER BY expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -515,7 +513,7 @@ protected:
 class ParserInterpolateElement : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "element of INTERPOLATE expression"; }
+    const char * getName() const override { return "element of INTERPOLATE expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -531,7 +529,7 @@ public:
     }
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "function with key-value arguments"; }
+    const char * getName() const override { return "function with key-value arguments"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
     /// brackets for function arguments can be omitted
@@ -544,7 +542,7 @@ protected:
 class ParserIdentifierWithOptionalParameters : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "identifier with optional parameters"; }
+    const char * getName() const override { return "identifier with optional parameters"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -554,7 +552,7 @@ protected:
 class ParserTTLElement : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "element of TTL expression"; }
+    const char * getName() const override { return "element of TTL expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -562,7 +560,7 @@ protected:
 class ParserAssignment : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "column assignment"; }
+    const char * getName() const override { return "column assignment"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

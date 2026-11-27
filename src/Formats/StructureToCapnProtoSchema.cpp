@@ -10,8 +10,6 @@
 #include <Common/StringUtils.h>
 #include <Common/randomSeed.h>
 #include <pcg_random.hpp>
-#include <IO/WriteHelpers.h>
-#include <Common/Exception.h>
 
 
 namespace DB
@@ -27,7 +25,7 @@ namespace ErrorCodes
 namespace
 {
 
-[[clang::no_destroy]] const std::unordered_map<TypeIndex, String> capn_proto_simple_type_names =
+const std::unordered_map<TypeIndex, String> capn_proto_simple_type_names =
 {
     {TypeIndex::Int8, "Int8"},
     {TypeIndex::UInt8, "UInt8"},

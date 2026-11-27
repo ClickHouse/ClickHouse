@@ -1,5 +1,3 @@
-#include <set>
-
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -49,10 +47,8 @@
 #include <Interpreters/PreparedSets.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Identifier.h>
-#include <Analyzer/ListNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/QueryNode.h>
@@ -67,6 +63,7 @@
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/CollectTableExpressionData.h>
+#include <Planner/CollectMaterializedCTE.h>
 #include <Planner/Utils.h>
 #include <Interpreters/Context.h>
 #include <Parsers/makeASTForLogicalFunction.h>
@@ -75,7 +72,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <unordered_set>
 
 namespace ProfileEvents
 {
@@ -87,10 +83,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_nondeterministic_mutations;
-    extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
-    extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsUInt64 interactive_delay;
+    extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_rows_to_transfer;
+    extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
@@ -197,7 +194,7 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
     for (const MutationCommand & command : commands)
     {
         auto alter = command.ast();
-        if (ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(alter.get(), command.partition_ids, storage, context))
+        if (ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(alter.get(), storage, context))
             conditions.push_back(std::move(condition));
     }
 
@@ -233,35 +230,6 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     return query_tree;
 }
 
-NameSet getColumnsRequiredToRecalculateTTL(const StorageInMemoryMetadata & metadata)
-{
-    NameSet res;
-    const auto & columns = metadata.getColumns();
-    auto add = [&](const TTLDescription & ttl)
-    {
-        for (const auto & column : ttl.expression_columns)
-            if (columns.hasPhysical(column.name))
-                res.insert(column.name);
-    };
-
-    if (metadata.hasRowsTTL())
-        add(metadata.getRowsTTL());
-    for (const auto & ttl : metadata.getRowsWhereTTLs())
-        add(ttl);
-    for (const auto & ttl : metadata.getGroupByTTLs())
-        add(ttl);
-    for (const auto & [name, ttl] : metadata.getColumnTTLs())
-        add(ttl);
-    for (const auto & ttl : metadata.getMoveTTLs())
-        add(ttl);
-    for (const auto & ttl : metadata.getRecompressionTTLs())
-        add(ttl);
-
-    return res;
-}
-
-}
-
 ColumnDependencies getAllColumnDependencies(
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & updated_columns,
@@ -288,6 +256,8 @@ ColumnDependencies getAllColumnDependencies(
     return dependencies;
 }
 
+}
+
 
 IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
@@ -295,8 +265,7 @@ IsStorageTouched isStorageTouchedByMutations(
     const StorageMetadataPtr & /*metadata_snapshot*/,
     const std::vector<MutationCommand> & commands,
     ContextPtr context,
-    std::function<void(const Progress & value)> check_operation_is_not_cancelled,
-    std::function<void()> on_exception)
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled)
 {
     static constexpr IsStorageTouched no_rows = {.any_rows_affected = false, .all_rows_affected = false};
     static constexpr IsStorageTouched all_rows = {.any_rows_affected = true, .all_rows_affected = true};
@@ -328,15 +297,7 @@ IsStorageTouched isStorageTouchedByMutations(
                 return all_rows;
             }
 
-            /// The partitions of a scoped command were resolved when the mutation entry was created or
-            /// loaded; reading them here keeps this answer consistent with the filter the command is
-            /// executed with, and evaluates no user SQL.
-            if (command.partition_ids)
-            {
-                if (command.partition_ids->contains(source_part->info.getPartitionId()))
-                    all_commands_can_be_skipped = false;
-            }
-            else if (alter->partition)
+            if (alter->partition)
             {
                 const String partition_id = storage_from_part->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
                 if (partition_id == source_part->info.getPartitionId())
@@ -372,7 +333,6 @@ IsStorageTouched isStorageTouchedByMutations(
     io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
     /// It's actually not a progress callback, but a cancellation check.
     io.pipeline.setProgressCallback(check_operation_is_not_cancelled);
-    executor.setExceptionCallback(std::move(on_exception));
     /// Read progress is reported only by sources, so also poll the check while the pipeline works without reading.
     executor.setCancelCallback(
         [&executor, &check_operation_is_not_cancelled]
@@ -413,49 +373,12 @@ IsStorageTouched isStorageTouchedByMutations(
 
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     const ASTAlterCommand * alter,
-    const std::optional<NameSet> & resolved_partition_ids,
     const StoragePtr & storage,
     ContextPtr context
 )
 {
     ASTPtr partition_predicate_as_ast_func;
-
-    /// The partitions of a command scoped with `IN PARTITION` are resolved exactly once, when the
-    /// mutation entry is created or loaded (`MergeTreeData::resolvePartitionIdsOfScopedCommands`), and
-    /// they are the source of truth here. A partition expression is arbitrary user SQL, so evaluating it
-    /// again would let the rows the mutation touches drift from the ones the pending on-the-fly reads
-    /// have already been answering from, and the expression may even contain a subquery over the table
-    /// that is being read. The expression is evaluated below only for an entry left unresolved.
-    if (resolved_partition_ids)
-    {
-        /// Ordered, so that the built filter does not depend on the iteration order of the set.
-        const std::set<String> partition_ids(resolved_partition_ids->begin(), resolved_partition_ids->end());
-
-        if (partition_ids.empty())
-        {
-            /// Unreachable, as `isCommandScopedToPartitions` requires at least one partition; an engaged
-            /// but empty set matches no partition here, as it does in the other consumers of the ids.
-            partition_predicate_as_ast_func = make_intrusive<ASTLiteral>(Field(UInt8(0)));
-        }
-        else if (partition_ids.size() == 1)
-        {
-            partition_predicate_as_ast_func = makeASTOperator("equals",
-                        make_intrusive<ASTIdentifier>("_partition_id"),
-                        make_intrusive<ASTLiteral>(*partition_ids.begin())
-            );
-        }
-        else
-        {
-            auto func = makeASTFunction("in");
-            func->arguments->children.push_back(make_intrusive<ASTIdentifier>("_partition_id"));
-            auto tuple_func = makeASTFunction("tuple");
-            for (const auto & partition_id : partition_ids)
-                tuple_func->arguments->children.push_back(make_intrusive<ASTLiteral>(partition_id));
-            func->arguments->children.push_back(std::move(tuple_func));
-            partition_predicate_as_ast_func = std::move(func);
-        }
-    }
-    else if (alter && alter->partitions)
+    if (alter && alter->partitions)
     {
         auto resolved_storage = resolveStorageProxyLoading(storage);
         auto storage_merge_tree = castStorage<MergeTreeData>(resolved_storage, DeferredTable::Load);
@@ -597,11 +520,6 @@ bool MutationsInterpreter::Source::hasBrokenProjection(const String & name) cons
     return part && part->hasBrokenProjection(name);
 }
 
-bool MutationsInterpreter::Source::hasUnloadedProjection(const String & name) const
-{
-    return part && part->hasUnloadedProjection(name);
-}
-
 bool MutationsInterpreter::Source::isCompactPart() const
 {
     return part && part->getType() == MergeTreeDataPartType::Compact;
@@ -706,12 +624,6 @@ MutationsInterpreter::MutationsInterpreter(
     /// Mutation source reads build a synthetic `SELECT` without a table expression,
     /// so parallel replicas must not be used for them.
     new_context->setSetting("enable_parallel_replicas", Field(0));
-    /// A mutation runs locally, its set subqueries too.
-    new_context->setSetting("make_distributed_plan", Field(0));
-    /// `JOIN` -> `IN` in a set subquery would make the right side of the join the source of a new set,
-    /// which index analysis can build before the subquery materializes the CTEs and builds the sets that
-    /// the source reads.
-    new_context->setSetting("query_plan_convert_join_to_in", Field(0));
 
     context = std::move(new_context);
 }
@@ -753,13 +665,6 @@ static void validateUpdateColumns(
 
     const auto & storage_columns = storage_snapshot->metadata->columns;
     const auto & virtual_columns = storage_snapshot->metadata->virtuals;
-
-    /// The sign and version columns may be subcolumns, so recomputing the column they belong to changes them as well.
-    for (const auto & key_column : key_columns)
-    {
-        if (auto column = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column))
-            key_storage_columns.insert(column->getNameInStorage());
-    }
     for (const auto & column_name : updated_columns)
     {
         if (key_columns.contains(column_name))
@@ -880,9 +785,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// first command scan so their MATERIALIZED closure can be seeded into dependency analysis
     /// below, before the per-command stage loop runs.
     NameSet clear_column_names;
-    bool materialize_ttl_recalculate_only = settings.merge_tree_settings
-        ? (*settings.merge_tree_settings)[MergeTreeSetting::materialize_ttl_recalculate_only]
-        : source.materializeTTLRecalculateOnly();
+    bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
     bool has_lightweight_delete_materialization = false;
     bool has_rewrite_parts = false;
     bool has_clear_column = false;
@@ -1107,7 +1010,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         [&](const String & name, ColumnDependency::Kind kind)
     {
         if (kind == ColumnDependency::PROJECTION)
-            return source.hasProjection(name) || source.hasUnloadedProjection(name);
+            return source.hasProjection(name);
 
         if (kind == ColumnDependency::SKIP_INDEX)
             return source.hasSecondaryIndex(name, metadata_snapshot);
@@ -1182,7 +1085,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             }
 
             auto alter = command.ast();
-            if (auto filter = getPartitionAndPredicateExpressionForMutationCommand(alter.get(), command.partition_ids))
+            if (auto filter = getPartitionAndPredicateExpressionForMutationCommand(alter.get()))
                 all_filters.push_back(std::move(filter));
         }
 
@@ -1214,7 +1117,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (!settings.return_mutated_rows)
             {
                 auto alter = command.ast();
-                auto predicate = getPartitionAndPredicateExpressionForMutationCommand(alter.get(), command.partition_ids);
+                auto predicate = getPartitionAndPredicateExpressionForMutationCommand(alter.get());
                 predicate = makeASTFunction("isZeroOrNull", predicate);
                 stages.back().filters.push_back(predicate);
             }
@@ -1241,7 +1144,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// For a single command with returned mutated rows it is already checked by the prefilter.
             ASTPtr base_condition = condition_checked_by_prefilter
                 ? nullptr
-                : getPartitionAndPredicateExpressionForMutationCommand(alter.get(), command.partition_ids);
+                : getPartitionAndPredicateExpressionForMutationCommand(alter.get());
 
             for (const auto & [column_name, update_expr] : column_to_update)
             {
@@ -1531,10 +1434,9 @@ void MutationsInterpreter::prepare(bool dry_run)
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot MATERIALIZE TTL as there is no TTL set for table {}", source.getStorage()->getStorageID().getNameForLogs());
 
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            const bool ttl_only_drop_parts = settings.merge_tree_settings
-                ? (*settings.merge_tree_settings)[MergeTreeSetting::ttl_only_drop_parts]
-                : source.getMergeTreeData() && (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts];
-            const bool suitable_for_ttl_optimization = ttl_only_drop_parts && metadata_snapshot->hasOnlyRowsTTL();
+            bool suitable_for_ttl_optimization = source.getMergeTreeData()
+                && (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts]
+                && metadata_snapshot->hasOnlyRowsTTL();
 
             if (materialize_ttl_recalculate_only || suitable_for_ttl_optimization)
             {
@@ -1781,16 +1683,6 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// the freshly written value of the column it depends on.
     emit_materialized_recompute_stages(patch_affected_materialized, std::nullopt);
 
-    /// Without a TTL target the mutation only recalculates TTL infos (see `MutationHelpers::shouldExecuteTTL`),
-    /// and `TTLCalcTransform` evaluates every TTL rule, so it needs the inputs of all of them.
-    auto is_ttl_expression = [](const ColumnDependency & dependency) { return dependency.kind == ColumnDependency::TTL_EXPRESSION; };
-    auto is_ttl_target = [](const ColumnDependency & dependency) { return dependency.kind == ColumnDependency::TTL_TARGET; };
-    if (std::ranges::any_of(dependencies, is_ttl_expression) && std::ranges::none_of(dependencies, is_ttl_target))
-    {
-        for (const auto & name : getColumnsRequiredToRecalculateTTL(*metadata_snapshot))
-            dependencies.emplace(name, ColumnDependency::TTL_EXPRESSION);
-    }
-
     /// We care about affected indices and projections because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
     /// The same about columns, that are needed for calculation of TTL expressions.
@@ -1891,11 +1783,9 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 LOG_DEBUG(logger, "Will rebuild commit-order projection {}", projection.name);
                 materialized_projections.insert(projection.name);
-                continue;
             }
 
-            if (!source.hasUnloadedProjection(projection.name))
-                continue;
+            continue;
         }
 
         /// Always rebuild broken projections.
@@ -2235,13 +2125,15 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 ? actions_chain.getLastStepAvailableOutputColumns()
                 : input_columns;
 
-            /// Reuse the resolved expressions whose sets were collected above. Resolving the ASTs
-            /// again produces unaliased subqueries with different set keys, registering and building
-            /// a second copy of each set. The update expressions follow the filters in `expression`.
-            const auto & expression_nodes = expression->getChildren();
-            auto updates_begin = expression_nodes.begin() + num_filters;
-            auto update_tree = std::make_shared<ListNode>(QueryTreeNodes(
-                updates_begin, updates_begin + stage.column_to_updated.size()));
+            /// Build a combined expression list for all update expressions.
+            auto update_expr_list = make_intrusive<ASTExpressionList>();
+            for (const auto & kv : stage.column_to_updated)
+                update_expr_list->children.push_back(kv.second);
+
+            auto update_tree = buildQueryTree(update_expr_list, execution_context);
+            QueryAnalyzer update_analyzer(/*only_analyze=*/!execute_scalar_subqueries);
+            update_analyzer.resolve(update_tree, table_node, execution_context);
+            collectSetsAndSourceColumns(update_tree, planner_context, true);
 
             auto update_actions = std::make_shared<ActionsAndProjectInputsFlag>();
             update_actions->dag = ActionsDAG(available_columns_for_step);
@@ -2387,25 +2279,26 @@ MutationsInterpreter::Stage::~Stage() = default;
 MutationsInterpreter::Stage::Stage(Stage &&) noexcept = default;
 MutationsInterpreter::Stage & MutationsInterpreter::Stage::operator=(Stage &&) noexcept = default;
 
-/// Plan the subqueries of the sets (IN subqueries) of a stage and add the sets that are not built yet
-/// to `subqueries`. The mutation plan does not build them: see `addStreamsForLaterStages`.
-static void planSubqueriesForSets(
-    const PreparedSetsPtr & prepared_sets,
-    const ContextPtr & context_,
-    PreparedSets::Subqueries & subqueries,
-    std::unordered_set<const FutureSetFromSubquery *> & seen_subqueries)
+/// Build QueryPlans for subquery sets (IN subqueries) on the analyzer path,
+/// then add a DelayedCreatingSetsStep to the plan. This mirrors
+/// addBuildSubqueriesForSetsStepIfNeeded from the Planner.
+static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const PreparedSetsPtr & prepared_sets, ContextPtr context_)
 {
     if (!prepared_sets)
         return;
 
-    for (auto & subquery : prepared_sets->getSubqueries())
+    auto subqueries = prepared_sets->getSubqueries();
+    if (subqueries.empty())
+        return;
+
+    /// Materialized CTEs referenced by each planned set subquery.
+    std::vector<OrderedMaterializedCTEs> materialized_ctes_per_subquery;
+
+    for (auto & subquery : subqueries)
     {
-        if (subquery->get() || !seen_subqueries.insert(subquery.get()).second)
+        if (subquery->get())
             continue;
 
-        subqueries.push_back(subquery);
-
-        /// Without a query tree the subquery is planned already.
         auto query_tree = subquery->detachQueryTree();
         if (!query_tree)
             continue;
@@ -2420,7 +2313,9 @@ static void planSubqueriesForSets(
         createUniqueAliasesIfNecessary(query_tree, context_);
 
         auto subquery_options = SelectQueryOptions{}.subquery();
-        /// The set is built by a pipeline of its own, so its plan must materialize the CTEs it reads.
+        /// Sets may use Materialized CTEs; mirror the regular planner path
+        /// (`addBuildSubqueriesForSetsStepIfNeeded`) so CTE materialization is
+        /// preserved when the IN subquery references one.
         subquery_options.forceMaterializeCTE();
         subquery_options.ignore_limits = false;
         Planner subquery_planner(
@@ -2428,8 +2323,36 @@ static void planSubqueriesForSets(
             subquery_options,
             std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
         subquery_planner.buildQueryPlanIfNeeded();
-        subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
+
+        /// The subquery planner has built the plans of the CTEs it references, so the collector
+        /// admits them here (`hasPlanOrBuilt`). They are planted below, after the sets step.
+        materialized_ctes_per_subquery.push_back(collectMaterializedCTEs(query_tree, SelectQueryOptions{}));
+
+        auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
+        /// The set source is kept aside, so its contexts must follow this plan's distributed-plan decision.
+        query_plan.takeContextsFrom(subquery_plan);
+        subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
     }
+
+    const auto & settings = context_->getSettingsRef();
+    SizeLimits network_transfer_limits(
+        settings[Setting::max_rows_to_transfer],
+        settings[Setting::max_bytes_to_transfer],
+        settings[Setting::transfer_overflow_mode]);
+    auto prepared_sets_cache = context_->getPreparedSetsCache();
+
+    auto step = std::make_unique<DelayedCreatingSetsStep>(
+        query_plan.getCurrentHeader(),
+        std::move(subqueries),
+        network_transfer_limits,
+        prepared_sets_cache);
+    query_plan.addStep(std::move(step));
+
+    /// `DelayedCreatingSetsStep::makePlansForSets` strips the safety-net `DelayedMaterializingCTEsStep`
+    /// from a set plan built at run time and relies on the outer plan to gate the CTE readers, which
+    /// the `Planner` provides for a `SELECT`. This plan is assembled here, so plant that step here.
+    for (const auto & materialized_ctes : materialized_ctes_per_subquery)
+        addBuildSubqueriesForMaterializedCTEsIfNeeded(query_plan, SelectQueryOptions{}, materialized_ctes);
 }
 
 std::optional<ActionsDAG> MutationsInterpreter::createFilterDAGForStage(const Stage & stage)
@@ -2503,6 +2426,7 @@ void MutationsInterpreter::Source::read(
             mutation_settings.apply_deleted_mask,
             createFilterDAGForStage(first_stage),
             false,
+            /*prefetch_begin_of_range=*/ false,
             /*allow_remote_fs_prefetch=*/ canPrefetchInMergeOrMutation(*data, {part}, required_columns, context_),
             context_,
             getLogger("MutationsInterpreter"));
@@ -2570,14 +2494,12 @@ void MutationsInterpreter::initQueryPlan(Stage & first_stage, QueryPlan & plan)
     plan.setConcurrencyControl(false);
 
     source.read(first_stage, plan, metadata_snapshot, context, settings);
+
+    buildSubqueryPlansForSetsAndAdd(plan, first_stage.new_prepared_sets, context);
 }
 
 QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
 {
-    /// The sets of each stage, in the order of the stages.
-    std::vector<PreparedSets::Subqueries> subqueries_per_stage;
-    std::unordered_set<const FutureSetFromSubquery *> seen_subqueries;
-
     for (const Stage & stage : prepared_stages)
     {
         const auto & chain_steps = stage.new_actions_chain->getSteps();
@@ -2600,26 +2522,13 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
                     plan.getCurrentHeader(), std::move(dag)));
         }
 
-        planSubqueriesForSets(stage.new_prepared_sets, context, subqueries_per_stage.emplace_back(), seen_subqueries);
+        buildSubqueryPlansForSetsAndAdd(plan, stage.new_prepared_sets, context);
     }
 
-    /// The stages of the mutation plan must keep their shape, so the plan is not optimized.
     QueryPlanOptimizationSettings do_not_optimize_plan_settings(context);
     do_not_optimize_plan_settings.optimize_plan = false;
-    auto builder = plan.buildQueryPipeline(do_not_optimize_plan_settings, BuildQueryPipelineSettings(context));
 
-    /// The set subqueries are ordinary reads, so they are not in the plan: each set is built by a pipeline
-    /// of its own, from a fully optimized plan (e.g. its filter moves to `PREWHERE`), before any row reaches
-    /// the stages. A set that the read has already built for index analysis is skipped.
-    /// Each stage has sets of its own, so two stages can have different sets with the same key in the
-    /// `PreparedSetsCache`. If they are built at the same time, the second one waits for the first in the
-    /// same executor, which a mutation runs with one thread. So the sets of each stage get their own
-    /// `CreatingSets`: an outer one builds its sets before the inner one starts.
-    for (auto & subqueries : subqueries_per_stage)
-        if (!subqueries.empty())
-            builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), context);
-
-    auto pipeline = std::move(*builder);
+    auto pipeline = std::move(*plan.buildQueryPipeline(do_not_optimize_plan_settings, BuildQueryPipelineSettings(context)));
 
     pipeline.addSimpleTransform([&](const SharedHeader & header)
     {
@@ -2627,197 +2536,6 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
     });
 
     return pipeline;
-}
-
-namespace
-{
-
-/// Collects the names of the columns read from `table_node` in the resolved `node`, including the ones read
-/// by the definitions of `ALIAS` columns, which are computed on read. Subqueries are not entered: they are
-/// refused separately.
-void collectColumnsReadFromTable(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_node, NameSet & column_names)
-{
-    if (!node || node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
-        return;
-
-    if (const auto * column_node = node->as<ColumnNode>(); column_node && column_node->getColumnSourceOrNull() == table_node)
-        column_names.insert(column_node->getColumnName());
-
-    for (const auto & child : node->getChildren())
-        collectColumnsReadFromTable(child, table_node, column_names);
-}
-
-}
-
-/// Virtual columns declared with `deterministic = false` (`_table`, `_database`, `_disk_name`, ...)
-/// are constants on one server, but replicas of the same table may have different local names or
-/// disks, so a mutation that reads them would produce different parts on different replicas.
-/// The expressions of the mutation are resolved by the analyzer the same way they are when the mutation
-/// is executed, so a virtual column is found however it is reached: qualified with the table name, through
-/// an `ALIAS` column or its subcolumn, or through a `Nested` prefix assembled from `ALIAS` columns.
-std::optional<String> MutationsInterpreter::findNonDeterministicVirtualColumn(
-    const StoragePtr & storage,
-    const MutationCommands & commands,
-    ContextPtr context,
-    StorageMetadataHandle metadata_snapshot)
-{
-    /// A real column with the same name shadows the virtual one and is deterministic.
-    /// `_sample_factor` is non-deterministic only because of the `SAMPLE` clause of a `SELECT`; no `SAMPLE`
-    /// reaches a mutation, so there it is always 1 on every replica. `_part_index` and `_part_starting_offset`
-    /// depend on the set of parts read by a query, but a mutation reads every part on its own, so they are
-    /// always 0.
-    static const NameSet deterministic_in_mutations = {"_sample_factor", "_part_index", "_part_starting_offset"};
-
-    if (!metadata_snapshot)
-        metadata_snapshot = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
-    const auto & real_columns = metadata_snapshot->getColumns();
-    NameSet nondeterministic_virtual_columns;
-    for (const auto & virtual_column : metadata_snapshot->virtuals)
-    {
-        if (!virtual_column.deterministic && !deterministic_in_mutations.contains(virtual_column.name) && !real_columns.has(virtual_column.name))
-            nondeterministic_virtual_columns.insert(virtual_column.name);
-    }
-
-    if (nondeterministic_virtual_columns.empty())
-        return {};
-
-    /// A mutation builds or rebuilds projections: the one named in `MATERIALIZE PROJECTION`, but also the ones that
-    /// depend on the updated columns, the broken ones, or all of them with `lightweight_mutation_projection_mode =
-    /// 'rebuild'`. A projection is calculated from the block read by the mutation, which carries the virtual columns
-    /// as well, so a projection that reads a non-deterministic virtual column would differ between replicas. Which
-    /// projections are rebuilt depends on the state of each part, so every projection is checked, unless the
-    /// mutation only drops projections.
-    NameSet dropped_projections;
-    bool only_drops_projections = true;
-    for (const auto & command : commands)
-    {
-        if (command.type == MutationCommand::DROP_PROJECTION)
-            dropped_projections.insert(command.projection_name);
-        else
-            only_drops_projections = false;
-    }
-
-    if (!only_drops_projections)
-    {
-        for (const auto & projection : metadata_snapshot->getProjections())
-        {
-            if (dropped_projections.contains(projection.name))
-                continue;
-            for (const auto & column_name : projection.required_columns)
-                if (nondeterministic_virtual_columns.contains(column_name))
-                    return column_name;
-        }
-    }
-
-    /// Each command is resolved in its own scope, the same way the commands are analyzed in separate stages
-    /// when the mutation is executed, so an alias defined in one command cannot hide a virtual column read
-    /// in another one.
-    std::vector<ASTPtr> scopes;
-    for (const auto & command : commands)
-    {
-        /// `MATERIALIZE COLUMN` evaluates the default expression of the column (`DEFAULT`, `MATERIALIZED`,
-        /// or `EPHEMERAL`) inside the mutation and writes the result into the new part.
-        if (command.type == MutationCommand::MATERIALIZE_COLUMN)
-        {
-            if (const auto * column = real_columns.tryGet(command.column_name); column && column->default_desc.expression)
-            {
-                ASTPtr expressions = make_intrusive<ASTExpressionList>();
-                expressions->children.push_back(column->default_desc.expression->clone());
-                scopes.push_back(std::move(expressions));
-            }
-            continue;
-        }
-
-        if (command.type != MutationCommand::UPDATE && command.type != MutationCommand::DELETE)
-            continue;
-
-        ASTPtr expressions = make_intrusive<ASTExpressionList>();
-        auto alter = command.ast();
-        if (alter->predicate)
-            expressions->children.push_back(alter->predicate->clone());
-        if (command.type == MutationCommand::UPDATE && alter->update_assignments)
-            for (const auto & assignment : alter->update_assignments->children)
-                expressions->children.push_back(assignment->as<ASTAssignment &>().expression()->clone());
-
-        if (!expressions->children.empty())
-            scopes.push_back(std::move(expressions));
-    }
-
-    auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
-
-    /// How an identifier is resolved depends on the settings of name resolution: a compound identifier such as
-    /// `t._table` on `analyzer_compatibility_prefer_alias_over_subcolumn`, and a bare identifier that is both
-    /// an alias and a column (`UPDATE value = ('safe' AS _table) WHERE _table != ''`) on
-    /// `prefer_column_name_to_alias`. The mutation is validated with the settings of the query, but executed
-    /// with the settings of the background context, which may be different, so the interpretations of both
-    /// are checked. An interpretation which is not used by either of them is not required to be well-typed.
-    struct NameResolutionSettings
-    {
-        bool prefer_alias_over_subcolumn;
-        bool prefer_column_name_to_alias;
-
-        auto operator<=>(const NameResolutionSettings &) const = default;
-    };
-
-    auto get_name_resolution_settings = [](const ContextPtr & settings_context)
-    {
-        const auto & context_settings = settings_context->getSettingsRef();
-        return NameResolutionSettings{
-            .prefer_alias_over_subcolumn = context_settings[Setting::analyzer_compatibility_prefer_alias_over_subcolumn],
-            .prefer_column_name_to_alias = context_settings[Setting::prefer_column_name_to_alias]};
-    };
-
-    std::set<NameResolutionSettings> name_resolution_settings_variants = {
-        get_name_resolution_settings(context),
-        get_name_resolution_settings(context->getBackgroundContext())};
-
-    /// `EPHEMERAL` columns are not expanded by the analyzer, but their definitions may read virtual columns
-    /// as well (`e String EPHEMERAL _database`), so they are resolved in turn, each one in its own scope.
-    /// Column definitions cannot reference each other cyclically, and each one is resolved once.
-    NameSet followed_ephemeral_columns;
-    while (!scopes.empty())
-    {
-        NameSet read_columns;
-
-        for (const auto & expressions : scopes)
-        {
-            for (const auto & name_resolution_settings : name_resolution_settings_variants)
-            {
-                auto analysis_context = Context::createCopy(context);
-                analysis_context->setSetting("analyzer_compatibility_prefer_alias_over_subcolumn", name_resolution_settings.prefer_alias_over_subcolumn);
-                analysis_context->setSetting("prefer_column_name_to_alias", name_resolution_settings.prefer_column_name_to_alias);
-
-                auto expression = buildQueryTree(expressions->clone(), analysis_context);
-                /// The expressions are only analyzed, nothing is read, so the table is not locked.
-                auto table_node = std::make_shared<TableNode>(storage, TableLockHolder{}, storage_snapshot);
-
-                QueryAnalyzer query_analyzer(/*only_analyze=*/ true);
-                query_analyzer.resolve(expression, table_node, analysis_context);
-
-                collectColumnsReadFromTable(expression, table_node, read_columns);
-            }
-        }
-
-        scopes.clear();
-        for (const auto & name : read_columns)
-        {
-            if (nondeterministic_virtual_columns.contains(name))
-                return name;
-
-            auto column = real_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::Ephemeral, name);
-            if (!column)
-                continue;
-            const auto * description = real_columns.tryGet(column->getNameInStorage());
-            if (description && description->default_desc.expression && followed_ephemeral_columns.insert(description->name).second)
-            {
-                ASTPtr expressions = make_intrusive<ASTExpressionList>();
-                expressions->children.push_back(description->default_desc.expression->clone());
-                scopes.push_back(std::move(expressions));
-            }
-        }
-    }
-
-    return {};
 }
 
 void MutationsInterpreter::validateNonDeterministicMutationsForStorage(
@@ -2842,12 +2560,6 @@ void MutationsInterpreter::validateNonDeterministicMutationsForStorage(
                 "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic functions. "
                 "Function '{}' is non-deterministic", *nondeterministic_func_data.nondeterministic_function_name);
     }
-
-    if (auto virtual_column_name = findNonDeterministicVirtualColumn(storage, commands, context))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic expressions. "
-            "Virtual column '{}', read by the mutation or by a projection it may rebuild, is non-deterministic: "
-            "its value may differ between replicas, see allow_nondeterministic_mutations setting", *virtual_column_name);
 }
 
 void MutationsInterpreter::validate()
@@ -2996,10 +2708,9 @@ std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIf
     return sort_description;
 }
 
-ASTPtr MutationsInterpreter::getPartitionAndPredicateExpressionForMutationCommand(
-    const ASTAlterCommand * alter, const std::optional<NameSet> & resolved_partition_ids) const
+ASTPtr MutationsInterpreter::getPartitionAndPredicateExpressionForMutationCommand(const ASTAlterCommand * alter) const
 {
-    return DB::getPartitionAndPredicateExpressionForMutationCommand(alter, resolved_partition_ids, source.getStorage(), context);
+    return DB::getPartitionAndPredicateExpressionForMutationCommand(alter, source.getStorage(), context);
 }
 
 bool MutationsInterpreter::Stage::isAffectingAllColumns(const Names & storage_columns) const

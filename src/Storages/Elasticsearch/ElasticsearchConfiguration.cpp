@@ -21,7 +21,6 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
-#include <variant>
 
 namespace DB
 {
@@ -31,8 +30,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-using ConfigurationField = std::variant<String ElasticsearchConfiguration::*, SecretString ElasticsearchConfiguration::*>;
-using ConfigurationFields = std::unordered_map<std::string_view, ConfigurationField>;
+using ConfigurationFields = std::unordered_map<std::string_view, String ElasticsearchConfiguration::*>;
 
 namespace
 {
@@ -55,11 +53,6 @@ const ConfigurationFields & configurationFields()
     return fields;
 }
 
-void setField(ElasticsearchConfiguration & configuration, const ConfigurationField & field, const String & value)
-{
-    std::visit([&](auto member) { configuration.*member = value; }, field);
-}
-
 ElasticsearchConfiguration fromNamedCollection(const NamedCollection & collection)
 {
     ElasticsearchConfiguration configuration;
@@ -72,7 +65,7 @@ ElasticsearchConfiguration fromNamedCollection(const NamedCollection & collectio
     {
         String name{key};
         if (collection.has(name))
-            setField(configuration, member, collection.get<String>(name));
+            configuration.*member = collection.get<String>(name);
     }
     if (collection.has("query"))
         configuration.query = collection.get<String>("query");
@@ -227,7 +220,7 @@ ElasticsearchConfiguration ElasticsearchConfiguration::fromArguments(ASTs & args
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Elasticsearch argument '{}' must be a string literal", key);
                 if (!provided.emplace(it->first).second)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Elasticsearch argument '{}' is specified more than once", key);
-                setField(configuration, it->second, value.safeGet<String>());
+                configuration.*(it->second) = value.safeGet<String>();
             }
             else
             {
@@ -248,7 +241,7 @@ ElasticsearchConfiguration ElasticsearchConfiguration::fromArguments(ASTs & args
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Elasticsearch argument '{}' is specified both positionally and in the key = value form", positional_slots[i]);
-            setField(configuration, fields.at(positional_slots[i]), positional[i]);
+            configuration.*(fields.at(positional_slots[i])) = positional[i];
         }
 
         if (!provided.contains("url") || !provided.contains("index"))
@@ -285,9 +278,9 @@ HTTPHeaderEntries ElasticsearchConfiguration::authorizationHeaders() const
     switch (auth_kind)
     {
         case AuthKind::Bearer:
-            return {{"Authorization", fmt::format("Bearer {}", bearer_token)}};
+            return {{"Authorization", "Bearer " + bearer_token}};
         case AuthKind::ApiKey:
-            return {{"Authorization", fmt::format("ApiKey {}", api_key)}};
+            return {{"Authorization", "ApiKey " + api_key}};
         case AuthKind::Basic:
         case AuthKind::None:
             return {};

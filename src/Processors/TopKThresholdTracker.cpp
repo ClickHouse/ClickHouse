@@ -49,24 +49,16 @@ void TopKThresholdTrackerNumeric<T>::testAndSet(const Field & value)
 
     if (sort_desc.direction == 1)
     {
-        while (CompareHelper<T>::less(candidate, current, sort_desc.nulls_direction))
+        while (CompareHelper<T>::less(candidate, current, sort_desc.nulls_direction)
+            && !threshold.compare_exchange_weak(current, candidate, std::memory_order_relaxed))
         {
-            if (threshold.compare_exchange_weak(current, candidate, std::memory_order_relaxed))
-            {
-                version.fetch_add(1, std::memory_order_relaxed);
-                break;
-            }
         }
     }
     else
     {
-        while (CompareHelper<T>::greater(candidate, current, sort_desc.nulls_direction))
+        while (CompareHelper<T>::greater(candidate, current, sort_desc.nulls_direction)
+            && !threshold.compare_exchange_weak(current, candidate, std::memory_order_relaxed))
         {
-            if (threshold.compare_exchange_weak(current, candidate, std::memory_order_relaxed))
-            {
-                version.fetch_add(1, std::memory_order_relaxed);
-                break;
-            }
         }
     }
 }
@@ -112,17 +104,15 @@ void TopKThresholdTrackerGeneric::testAndSet(const Field & value)
     if (!is_set)
     {
         threshold = value;
-        version.fetch_add(1, std::memory_order_relaxed);
         is_set = true;
         return;
     }
 
     int cmp = compareFields(value, threshold);
-    if ((sort_desc.direction == 1 && cmp < 0) || (sort_desc.direction == -1 && cmp > 0))
-    {
+    if (sort_desc.direction == 1 && cmp < 0)
         threshold = value;
-        version.fetch_add(1, std::memory_order_relaxed);
-    }
+    else if (sort_desc.direction == -1 && cmp > 0)
+        threshold = value;
 }
 
 bool TopKThresholdTrackerGeneric::isValueInsideThreshold(const Field & value) const

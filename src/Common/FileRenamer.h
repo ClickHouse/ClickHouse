@@ -27,9 +27,9 @@ public:
 
     explicit FileRenamer(const String & renaming_rule);
 
-    [[nodiscard]] String generateNewFilename(const String & filename) const;
+    String generateNewFilename(const String & filename) const;
 
-    [[nodiscard]] bool isEmpty() const;
+    bool isEmpty() const;
 
     static bool validateRenamingRule(const String & rule, bool throw_on_error = false);
 

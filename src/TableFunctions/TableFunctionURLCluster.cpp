@@ -49,8 +49,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
             configuration.headers,
             configuration.http_method,
             nullptr,
-            /*distributed_processing=*/ true,
-            globCaller());
+            /*distributed_processing=*/ true);
     }
 
     return std::make_shared<StorageURLCluster>(
@@ -60,7 +59,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
         format,
         compression_method,
         StorageID(getDatabaseName(), table_name),
-        is_structure_not_overridable ? ColumnsDescription{} : columns,
+        getActualTableStructure(context, true),
         ConstraintsDescription{},
         configuration);
 }

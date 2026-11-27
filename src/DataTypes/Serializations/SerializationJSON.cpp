@@ -1,5 +1,4 @@
 #include <Common/SipHash.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -61,7 +60,7 @@ struct PathElements
         elements.emplace_back(last_dot_pos + 1, size_t(pos - last_dot_pos - 1));
     }
 
-    [[nodiscard]] size_t size() const { return elements.size(); }
+    size_t size() const { return elements.size(); }
 
     std::vector<std::string_view> elements;
 };
@@ -81,7 +80,7 @@ struct Prefix
     }
 
     /// Check is_first flag in current object.
-    [[nodiscard]] bool isFirstInCurrentObject() const
+    bool isFirstInCurrentObject() const
     {
         if (elements.empty())
             return root_is_first_flag;
@@ -97,7 +96,7 @@ struct Prefix
             elements.back().second = false;
     }
 
-    [[nodiscard]] size_t size() const { return elements.size(); }
+    size_t size() const { return elements.size(); }
 
     /// Elements of the prefix: (path element, is_first flag in this prefix).
     /// is_first flag indicates if we already serialized some key in the object with such prefix.
@@ -134,7 +133,7 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
     Prefix current_prefix;
     for (auto it = ColumnObject::SortedPathsIterator(column_object, row_num); !it.end(); it.next())
     {
-        auto path_info = it.getCurrentPathInfo(/*materialize_shared_data_value=*/ false);
+        auto path_info = it.getCurrentPathInfo();
 
         /// When type_json_skip_null_typed_paths is enabled, treat NULL in typed paths
         /// as absence of the path, matching the behavior of dynamic paths.
@@ -247,10 +246,6 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
                 typed_paths_serializations.at(String(path_info.path))->serializeTextJSONPretty(*path_info.column, path_info.row, ostr, settings, indent + current_prefix.size() + 1);
             else
                 typed_paths_serializations.at(String(path_info.path))->serializeTextJSON(*path_info.column, path_info.row, ostr, settings);
-        }
-        else if (path_info.type == ColumnObject::SortedPathsIterator::PathType::SHARED_DATA)
-        {
-            SerializationDynamic::serializeBinaryEncodedValueTextJSON(it.getCurrentSharedDataValue(), ostr, settings, pretty, indent + current_prefix.size() + 1);
         }
         else
         {

@@ -1,4 +1,4 @@
-<test requires_local_read_dataset="1">
+<test>
     <settings>
         <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
     </settings>

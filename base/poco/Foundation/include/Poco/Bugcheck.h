@@ -88,7 +88,7 @@ protected:
 // Ideally, static analysis tools should understand and reason correctly about
 // noreturn methods such as Bugcheck::bugcheck(). In practice, they don't.
 // Help them by turning these macros into std::abort() as described here:
-// https://web.archive.org/web/20150420120015/https://developer.klocwork.com/documentation/en/insight/10-1/tuning-cc-analysis#Usingthe__KLOCWORK__macro
+// https://developer.klocwork.com/documentation/en/insight/10-1/tuning-cc-analysis#Usingthe__KLOCWORK__macro
 
 #    include <cstdlib> // for abort
 #    define poco_assert_dbg(cond) \

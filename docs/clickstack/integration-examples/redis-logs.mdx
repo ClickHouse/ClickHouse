@@ -6,6 +6,8 @@ description: 'Monitoring Redis Logs with ClickStack'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -60,7 +62,7 @@ docker restart <redis-container>
 </Step>
 <Step title="Create custom OTel collector configuration" id="custom-otel">
 
-ClickStack allows you to extend the base OpenTelemetry Collector configuration by mounting a custom configuration file and setting an environment variable. The custom configuration is merged with the base configuration managed by ClickStack UI via OpAMP.
+ClickStack allows you to extend the base OpenTelemetry Collector configuration by mounting a custom configuration file and setting an environment variable. The custom configuration is merged with the base configuration managed by HyperDX via OpAMP.
 
 Create a file named `redis-monitoring.yaml` with the following configuration:
 ```yaml
@@ -102,7 +104,7 @@ service:
 This configuration:
 - Reads Redis Logs from their standard location
 - Parses Redis's log format using regex to extract structured fields (`pid`, `role`, `timestamp`, `log_level`, `message`)
-- Adds `source: redis` attribute for filtering in ClickStack UI
+- Adds `source: redis` attribute for filtering in HyperDX
 - Routes logs to the ClickHouse exporter via a dedicated pipeline
 
 <Note>
@@ -152,29 +154,13 @@ docker run --name clickstack \
 Ensure the ClickStack collector has appropriate permissions to read the Redis log files. In production, use read-only mounts (`:ro`) and follow the principle of least privilege.
 </Note>
 </Step>
-<Step title="Verifying Logs in ClickStack UI" id="verifying-logs">
+<Step title="Verifying Logs in HyperDX" id="verifying-logs">
 
-Once configured, log into ClickStack UI and verify that logs are flowing:
+Once configured, log into HyperDX and verify that logs are flowing:
 
-<div className="ch-image-lg">
+<Image img="/images/clickstack/redis/redis-log-view.webp" alt="Log view"/>
 
-<Frame>
-
-![Log view](/images/clickstack/redis/redis-log-view.webp)
-
-</Frame>
-
-</div>
-
-<div className="ch-image-lg">
-
-<Frame>
-
-![Log](/images/clickstack/redis/redis-log.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/redis/redis-log.webp" alt="Log"/>
 </Step>
 </Steps>
 
@@ -251,39 +237,23 @@ docker run --name clickstack-demo \
 
 </Note>
 
-## Verify logs in ClickStack UI {#verify-demo-logs}
+## Verify logs in HyperDX {#verify-demo-logs}
 
 Once ClickStack is running:
 
-1. Open [ClickStack UI](http://localhost:8080/) and log in to your account (you may need to create an account first)
+1. Open [HyperDX](http://localhost:8080/) and log in to your account (you may need to create an account first)
 2. Navigate to the Search view and set the source to `Logs`
 3. Set the time range to **2025-10-26 10:00:00 - 2025-10-29 10:00:00**
 
 <Info>
 **Timezone Display**
 
-ClickStack UI displays timestamps in your browser's local timezone. The demo data spans **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**. The wide time range ensures you'll see the demo logs regardless of your location. Once you see the logs, you can narrow the range to a 24-hour period for clearer visualizations.
+HyperDX displays timestamps in your browser's local timezone. The demo data spans **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**. The wide time range ensures you'll see the demo logs regardless of your location. Once you see the logs, you can narrow the range to a 24-hour period for clearer visualizations.
 </Info>
 
-<div className="ch-image-lg">
+<Image img="/images/clickstack/redis/redis-log-view.webp" alt="Log view"/>
 
-<Frame>
-
-![Log view](/images/clickstack/redis/redis-log-view.webp)
-
-</Frame>
-
-</div>
-
-<div className="ch-image-lg">
-
-<Frame>
-
-![Log](/images/clickstack/redis/redis-log.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/redis/redis-log.webp" alt="Log"/>
 </Step>
 </Steps>
 
@@ -298,30 +268,14 @@ To help you get started monitoring Redis with ClickStack, we provide essential v
 </Step>
 <Step title="Import Pre-built Dashboard" id="import-dashboard">
 
-1. Open ClickStack UI and navigate to the Dashboards section.
+1. Open HyperDX and navigate to the Dashboards section.
 2. Click "Import Dashboard" in the upper right corner under the ellipses.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Import Dashboard](/images/clickstack/import-dashboard.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/import-dashboard.webp" alt="Import Dashboard"/>
 
 3. Upload the redis-logs-dashboard.json file and click finish import.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Finish Import](/images/clickstack/redis/redis-import-dashboard.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/redis/redis-import-dashboard.webp" alt="Finish Import"/>
 </Step>
 <Step title="The dashboard will be created with all visualizations pre-configured" id="created-dashboard">
 
@@ -329,15 +283,7 @@ To help you get started monitoring Redis with ClickStack, we provide essential v
 For the demo dataset, set the time range to **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)** (adjust based on your local timezone). The imported dashboard won't have a time range specified by default.
 </Note>
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Example Dashboard](/images/clickstack/redis/redis-logs-dashboard.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/redis/redis-logs-dashboard.webp" alt="Example Dashboard"/>
 </Step>
 </Steps>
 
@@ -369,7 +315,7 @@ docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 1
 # Should show your filelog/redis receiver configuration
 ```
 
-### No logs appearing in ClickStack UI {#no-logs}
+### No logs appearing in HyperDX {#no-logs}
 
 **Ensure Redis is writing logs to a file:**
 ```bash

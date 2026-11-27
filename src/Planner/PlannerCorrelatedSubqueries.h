@@ -51,7 +51,7 @@ using CorrelatedSubqueries = std::vector<CorrelatedSubquery>;
 
 struct CorrelatedSubtrees
 {
-    [[nodiscard]] bool notEmpty() const noexcept { return !subqueries.empty(); }
+    bool notEmpty() const noexcept { return !subqueries.empty(); }
 
     void assertEmpty(std::string_view reason) const;
 

@@ -230,18 +230,14 @@ Chunk RabbitMQSource::generateImpl()
 
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
     EmptyReadBuffer empty_buf;
-    auto parser_shared_resources = FormatParserSharedResources::singleThreaded(context->getSettingsRef());
-    auto create_format = [&]
-    {
-        return FormatFactory::instance().getInput(
-            storage.getFormatName(),
-            empty_buf,
-            non_virtual_header,
-            context,
-            max_block_size,
-            std::nullopt,
-            parser_shared_resources);
-    };
+    auto input_format = FormatFactory::instance().getInput(
+        storage.getFormatName(),
+        empty_buf,
+        non_virtual_header,
+        context,
+        max_block_size,
+        std::nullopt,
+        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
 
     std::optional<String> exception_message;
     size_t total_rows = 0;
@@ -281,10 +277,7 @@ Chunk RabbitMQSource::generateImpl()
         }
     };
 
-    StreamingFormatExecutor executor(non_virtual_header, std::move(create_format), on_error);
-
-    const auto storage_id = storage.getStorageID();
-    const Field table_name = storage_id.getTableName();
+    StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
 
     bool aborted = false;
 
@@ -361,7 +354,7 @@ Chunk RabbitMQSource::generateImpl()
                 virtual_columns[3]->insert(message.redelivered);
                 virtual_columns[4]->insert(message.message_id);
                 virtual_columns[5]->insert(message.timestamp);
-                virtual_columns[6]->insert(table_name);
+                virtual_columns[6]->insert(storage.getStorageID().getTableName());
                 if (handle_error_mode == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
@@ -381,6 +374,7 @@ Chunk RabbitMQSource::generateImpl()
             {
                 chassert(exception_message);
                 const auto time_now = std::chrono::system_clock::now();
+                auto storage_id = storage.getStorageID();
 
                 auto dead_letter_queue = context->getDeadLetterQueue();
                 if (!dead_letter_queue)

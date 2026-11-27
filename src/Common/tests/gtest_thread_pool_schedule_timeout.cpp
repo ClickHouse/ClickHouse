@@ -23,7 +23,7 @@ namespace
 {
 
 /// A pool that is saturated as soon as one job is scheduled, so the next schedule takes the
-/// `slot_freed.wait_for` branch of ThreadPoolImpl::scheduleImpl -- the branch that converts
+/// `job_finished.wait_for` branch of ThreadPoolImpl::scheduleImpl -- the branch that converts
 /// `wait_microseconds` into a chrono duration.
 class SaturatedPool
 {

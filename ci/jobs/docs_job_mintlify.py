@@ -36,7 +36,6 @@ LOCALE_CHECK_TRIGGERS = tuple(f"docs/{d}/" for d in LOCALE_DIRS) + (
     #    runtime and validated by locale_components_check.py.
     "docs/snippets/",
     "docs/docs.json",
-    "docs/gt.config.json",
     "docs/_site/redirects.json",
     "docs/_site/customizations/",
 )
@@ -62,7 +61,6 @@ QUICKSTARTS_CHECK_TRIGGERS = (
     + tuple(f"docs/{d}/get-started/navigation.json" for d in LOCALE_DIRS)
     + (
         "docs/_site/redirects.json",
-        "docs/gt.config.json",
         "docs/_site/scripts/update_quickstarts.py",
         "ci/jobs/scripts/docs/quickstarts_check.py",
     )

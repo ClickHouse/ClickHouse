@@ -1,7 +1,6 @@
 #include <Access/AccessControl.h>
 #include <Access/DefinerDependencies.h>
 #include <Access/User.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -62,10 +61,8 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
-#include <Analyzer/Utils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Planner/findQueryForParallelReplicas.h>
-#include <Databases/IDatabase.h>
 
 namespace DB
 {
@@ -262,7 +259,7 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
         || select->group_by_with_totals || select->group_by_with_rollup
         || select->group_by_with_cube || select->group_by_with_grouping_sets
         || select->having() || select->qualify()
-        || select->orderBy() || select->order_by_all || select->shuffle
+        || select->orderBy() || select->order_by_all
         || select->limitLength() || select->limitOffset()
         || select->limitAfter() || select->limitUntil()
         || select->limitBy() || select->limit_by_all
@@ -340,13 +337,14 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
 
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
+  *
+  * The context is also marked as a view inner context so that the query analyzer
+  * resolves positional arguments inside the view even on remote/secondary nodes
+  * (views are expanded on remote nodes, unlike the outer query).
   */
-ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view, const ASTPtr & view_query)
+ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
-    if (context->hasQueryContext())
-        context->getQueryContext()->addSQLSecurityOverriddenBody(view->getStorageID(), view_context, view_query);
-
     Settings view_settings = view_context->getSettingsCopy();
 
     /// With plan-based parallel replicas we always build local, so there is no need to disable parallel replicas
@@ -416,12 +414,6 @@ public:
             return {};
         return {&view_plan};
     }
-
-    /// `getBuiltChildPlans` is deliberately left at the base implementation, which reports no child plans.
-    /// It is what the query plan captured into `system.query_log` walks, and that table is readable beyond
-    /// the user who ran the query, so returning `view_plan` here would write a sealed view's internals into
-    /// the log for readers that `show_plan` is meant to keep them from. The cost is that a sealed view is an
-    /// opaque leaf of the captured plan.
 
     void describePipeline(FormatSettings & settings) const override
     {
@@ -587,9 +579,6 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
         QueryTreePassManager pass_manager(context);
         addQueryTreePasses(pass_manager);
         pass_manager.runOnlyResolve(inner_query_tree);
-        /// Each replica would expand the body itself, and a decorrelated subquery reads the table again.
-        if (containsCorrelatedSubquery(inner_query_tree))
-            return nullptr;
     }
     catch (const Exception &)
     {
@@ -622,7 +611,7 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                     /// result semantics when evaluated per-replica must disqualify the view.
                     if (query_node.hasGroupBy() || query_node.hasHaving()
                         || query_node.hasWindow() || query_node.hasQualify()
-                        || query_node.hasOrderBy() || query_node.isShuffle() || query_node.isDistinct()
+                        || query_node.hasOrderBy() || query_node.isDistinct()
                         || query_node.hasLimitByLimit() || query_node.hasLimitByOffset()
                         || query_node.hasLimitBy()
                         || query_node.hasLimit() || query_node.hasOffset()
@@ -786,7 +775,7 @@ void StorageView::readImpl(
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
     const bool sealed = isSealed(*storage_snapshot->metadata, context) && !isReadByDefiner(*storage_snapshot->metadata, context);
-    auto view_context = getViewContext(context, storage_snapshot, this, current_inner_query);
+    auto view_context = getViewContext(context, storage_snapshot, this);
     {
         /// The outer filter is used only to analyze the indexes of the inner tables,
         /// but for a sealed view it would skip data by the values of the rows the view hides.
@@ -794,8 +783,6 @@ void StorageView::readImpl(
             current_inner_query, view_context, options, column_names, sealed ? nullptr : query_info.filter_actions_dag.get());
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
-        /// The plan owns the body's query context: its steps hold it only weakly, and the optimizer records projections into it.
-        query_plan.addInterpreterContext(view_context);
     }
 
     /// And also convert to expected structure.

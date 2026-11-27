@@ -57,6 +57,7 @@
       ]
     }
   ],
+  "icon": "/images/icons/icon-contribute.svg",
   "item": "开发与贡献",
   "root": "zh/resources/develop-contribute/index"
 }

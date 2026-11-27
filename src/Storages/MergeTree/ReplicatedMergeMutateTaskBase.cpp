@@ -9,7 +9,7 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ErrorCodes.h>
-#include <Common/ThreadStatus.h>
+#include <Common/ProfileEventsScope.h>
 
 
 namespace DB
@@ -47,6 +47,9 @@ void ReplicatedMergeMutateTaskBase::onCompleted()
 
 bool ReplicatedMergeMutateTaskBase::executeStep()
 {
+    /// Metrics will be saved in the local profile_counters.
+    ProfileEventsScope profile_events_scope(&profile_counters);
+
     std::exception_ptr saved_exception;
 
     bool need_to_save_exception = true;
@@ -147,13 +150,9 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
 
 bool ReplicatedMergeMutateTaskBase::executeImpl()
 {
-    if (!thread_group)
-    {
-        task_context = createTaskContext();
-        thread_group = ThreadGroup::createForMergeMutate(task_context);
-    }
-
-    ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+    std::optional<ThreadGroupSwitcher> switcher;
+    if (merge_mutate_entry)
+        switcher.emplace((*merge_mutate_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     auto remove_processed_entry = [&] () -> bool
     {

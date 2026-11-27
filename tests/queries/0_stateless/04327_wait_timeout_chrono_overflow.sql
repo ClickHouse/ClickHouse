@@ -1,7 +1,3 @@
--- Tags: no-parallel-replicas
--- no-parallel-replicas: the subquery query result cache is not used with plan-based parallel replicas
--- (https://github.com/ClickHouse/ClickHouse/issues/131463), and nothing here depends on parallel replicas.
-
 -- A `Milliseconds`-typed wait timeout that does not fit into Int64 microseconds is rejected by
 -- `SettingFieldTimespan` itself, which `gtest_settings` covers; what is left to the settings that
 -- reach a `wait_for` unchecked, such as the plain UInt64 `interactive_delay`, is the clamp below.
@@ -57,6 +53,7 @@ DROP TABLE t_04327_sync_merges;
 SELECT 'qc_04327_top' SETTINGS use_query_cache = 1, query_cache_ttl = 9223372036854;
 SELECT countIf(is_subquery = 0) > 0 AND max(stale) = 0 FROM system.query_cache WHERE query LIKE '%qc\_04327\_top%' AND query NOT LIKE '%system.query_cache%';
 
--- The `is_subquery = 1` entry is written by the Planner.
-SELECT sum(number) FROM (SELECT number FROM numbers(5) WHERE number > 41000000) SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, query_cache_ttl = 9223372036854;
+-- The is_subquery=1 entry is written only by the Planner, so pin enable_analyzer=1 here;
+-- with the old analyzer the Planner never runs and no is_subquery=1 entry is produced.
+SELECT sum(number) FROM (SELECT number FROM numbers(5) WHERE number > 41000000) SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, query_cache_ttl = 9223372036854, enable_analyzer = 1;
 SELECT countIf(is_subquery = 0) > 0 AND countIf(is_subquery = 1) > 0 AND max(stale) = 0 FROM system.query_cache WHERE query LIKE '%41000000%' AND query NOT LIKE '%system.query_cache%';

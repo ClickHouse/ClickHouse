@@ -605,7 +605,7 @@ private:
         if (!bytes_read)
             return false;
 
-        setWorkingBufferFromInternal();
+        working_buffer = internal_buffer;
         working_buffer.resize(bytes_read);
         return true;
     }

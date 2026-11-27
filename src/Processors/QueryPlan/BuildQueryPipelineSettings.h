@@ -29,7 +29,6 @@ struct BuildQueryPipelineSettings
 
     bool enable_multiple_filters_transforms_for_and_chain;
     bool allow_preliminary_distinct_abandoning;
-    bool optimize_uniq_exact_radix_partitioning;
 
     ExpressionActionsSettings actions_settings;
     QueryStatusPtr process_list_element;
@@ -46,7 +45,6 @@ struct BuildQueryPipelineSettings
     size_t min_outstreams_per_resize_after_split;
     size_t max_streams_for_union_step;
     double max_streams_for_union_step_to_max_threads_ratio;
-    size_t max_block_size;
 
     const ExpressionActionsSettings & getActionsSettings() const { return actions_settings; }
 };

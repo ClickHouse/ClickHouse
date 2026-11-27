@@ -36,7 +36,7 @@ ${CLICKHOUSE_CLIENT} --query "${QUERY} SETTINGS ${SETTINGS}, query_plan_lazy_mat
 
 # The heavy column of the other side is read lazily.
 ${CLICKHOUSE_CLIENT} --query "SELECT countIf(explain LIKE '%LazilyReadFromMergeTree%') FROM (
-    EXPLAIN SELECT o.k, o.payload, m.k, m.heavy FROM o CROSS JOIN m ORDER BY m.k LIMIT 3 SETTINGS ${SETTINGS})"
+    EXPLAIN SELECT o.k, o.payload, m.k, m.heavy FROM o CROSS JOIN m ORDER BY m.k LIMIT 3 SETTINGS ${SETTINGS}, query_plan_lazy_materialization_for_join = 1)"
 
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE o;

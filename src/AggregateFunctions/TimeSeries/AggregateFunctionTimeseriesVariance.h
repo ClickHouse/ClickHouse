@@ -57,13 +57,6 @@ struct AggregateFunctionTimeseriesVarianceTraits
             if (other.count == 0)
                 return;
 
-            /// Each window starts from an empty summary, so the first merge must reproduce `other` exactly.
-            if (count == 0)
-            {
-                *this = other;
-                return;
-            }
-
             const Float64 na = static_cast<Float64>(count);
             const Float64 nb = static_cast<Float64>(other.count);
             const Float64 total = na + nb;
@@ -108,7 +101,7 @@ struct AggregateFunctionTimeseriesVarianceTraits
             sliding_sum.removeBefore(cut_off);
         }
 
-        [[nodiscard]] std::optional<Float64> getResult(GridScaleTimestampType /*grid_timestamp*/) const
+        std::optional<Float64> getResult(GridScaleTimestampType /*grid_timestamp*/) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
             if (combined.count == 0)

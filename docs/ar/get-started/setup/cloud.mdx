@@ -7,6 +7,7 @@ description: 'دليل البدء السريع لـ ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
 import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.mdx";
 
 <Visibility for="agents">
@@ -28,29 +29,13 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
         * إذا سجلت باستخدام بريد إلكتروني وكلمة مرور، فتذكّر تأكيد عنوان بريدك الإلكتروني خلال 24 ساعة عبر الرابط الذي ستتلقاه في بريدك الإلكتروني
         * سجّل الدخول باستخدام اسم المستخدم وكلمة المرور اللذين أنشأتهما للتو
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![اختيار الخطة](/images/_snippets/signup_page.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/_snippets/signup_page.webp" size="lg" alt="اختيار الخطة" border />
 
         <br />
 
         بعد تسجيل الدخول، يبدأ ClickHouse Cloud معالج الإعداد الذي يرشدك خلال إنشاء خدمة ClickHouse جديدة. اختر المنطقة التي تريد نشر الخدمة فيها، وامنح خدمتك الجديدة اسمًا:
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![خدمة ClickHouse جديدة](/images/_snippets/createservice1.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/_snippets/createservice1.webp" size="lg" alt="خدمة ClickHouse جديدة" border />
 
         <br />
 
@@ -58,15 +43,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
 
         خصّص موارد الخدمة عند الحاجة عبر تحديد حجم أدنى وأقصى يمكن أن تتدرج replicas بينهما. عند الجاهزية، اختر `Create service`.
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![حدود التوسع](/images/_snippets/scaling_limits.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/_snippets/scaling_limits.webp" size="lg" alt="حدود التوسع" border />
 
         <br />
 
@@ -81,19 +58,11 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
 
         <br />
 
-### الاتصال باستخدام SQL Console {#connect-using-sql-console}
+### الاتصال باستخدام SQL Console
 
         للبدء بسرعة، يوفّر ClickHouse SQL Console عبر الويب، وستتم إعادتك إليها بعد إكمال Onboarding.
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![SQL Console](/images/_snippets/createservice8.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/_snippets/createservice8.webp" size="lg" alt="SQL Console" border />
 
         أنشئ علامة تبويب لاستعلام وأدخل استعلامًا بسيطًا للتحقق من عمل الاتصال:
 
@@ -103,33 +72,17 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
 
         سترى 4 قواعد بيانات في القائمة، بالإضافة إلى أي قواعد بيانات أضفتها.
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![SQL Console](/images/_snippets/show_databases.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/_snippets/show_databases.webp" size="lg" alt="SQL Console" border />
 
         <br />
 
         هذا كل شيء — أصبحت جاهزًا لبدء استخدام خدمة ClickHouse الجديدة!
 
-### الاتصال بتطبيقك {#connect-with-your-app}
+### الاتصال بتطبيقك
 
         اضغط على زر الاتصال في قائمة التنقل. ستُفتح نافذة تعرض بيانات اعتماد خدمتك ومجموعة من الإرشادات حول كيفية الاتصال عبر الواجهة أو مكتبات العملاء للغات البرمجة.
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![Service Connect](/images/_snippets/service_connect.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/_snippets/service_connect.webp" size="lg" alt="Service Connect" border />
 
         <br />
 
@@ -139,15 +92,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
       <Step title="إضافة بيانات" id="3-add-data">
         يزداد ClickHouse قوةً بوجود البيانات! هناك طرق متعددة لإضافة البيانات، ومعظمها متاح في صفحة مصادر البيانات التي يمكن الوصول إليها من قائمة التنقل.
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![مصادر البيانات](/images/_snippets/data_sources.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/_snippets/data_sources.webp" size="lg" alt="مصادر البيانات" border />
 
         <br />
 
@@ -159,23 +104,15 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
         * حمّل ملفًا - تشمل التنسيقات المقبولة JSON وCSV وTSV
         * حمّل البيانات من URL للملف
 
-### ClickPipes {#clickpipes}
+### ClickPipes
 
         [ClickPipes](/ar/integrations/clickpipes/home) هي منصة تكامل مُدارة تجعل استيعاب البيانات من مجموعة متنوعة من المصادر بسهولة النقر على بضعة أزرار. وقد صُممت لأكثر أحمال العمل تطلبًا، حيث تضمن معمارية ClickPipes المتينة والقابلة للتوسع أداءً وموثوقية متسقين. ويمكن استخدام ClickPipes لتلبية احتياجات البث طويلة الأمد أو لمهمة تحميل بيانات لمرة واحدة.
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![اختر مصدر البيانات](/images/_snippets/select_data_source.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/_snippets/select_data_source.webp" size="lg" alt="اختر مصدر البيانات" border />
 
         <br />
 
-### إضافة البيانات باستخدام SQL Console {#add-data-using-the-sql-console}
+### إضافة البيانات باستخدام SQL Console
 
         شأنه شأن معظم أنظمة إدارة قواعد البيانات، يُجمّع ClickHouse الجداول منطقيًا ضمن **قواعد بيانات**. استخدم الأمر [`CREATE DATABASE`](/ar/reference/statements/create/database) لإنشاء قاعدة بيانات جديدة في ClickHouse:
 
@@ -218,7 +155,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
           تتوفر العديد من محركات الجداول للاختيار من بينها، ولكن لجدول بسيط على خادم ClickHouse أحادي العقدة، يُرجّح أن يكون [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) خيارك.
         </Info>
 
-#### مقدمة موجزة عن المفاتيح الأساسية {#a-brief-intro-to-primary-keys}
+#### مقدمة موجزة عن المفاتيح الأساسية
 
         قبل المضي قدمًا، من المهم فهم كيفية عمل المفاتيح الأساسية في ClickHouse (فقد يبدو تطبيق
         المفاتيح الأساسية غير متوقع!):
@@ -238,7 +175,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
 
         للتعمق في المفاهيم الأساسية لـ ClickHouse، راجع [&quot;المفاهيم الأساسية&quot;](/ar/concepts/core-concepts/index).
 
-#### إدراج البيانات في جدولك {#insert-data-into-your-table}
+#### إدراج البيانات في جدولك
 
         يمكنك استخدام الأمر المألوف [`INSERT INTO TABLE`](/ar/reference/statements/insert-into) مع ClickHouse، لكن من المهم أن تدرك أن كل عملية insert في جدول [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) ينتج عنها إنشاء **part** في التخزين.
 
@@ -271,23 +208,15 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
         SELECT * FROM helloworld.my_first_table
         ```
 
-### إضافة البيانات باستخدام ClickHouse Client {#add-data-using-the-clickhouse-client}
+### إضافة البيانات باستخدام ClickHouse Client
 
         يمكنك أيضًا الاتصال بخدمة ClickHouse Cloud الخاصة بك باستخدام أداة سطر الأوامر [**clickhouse client**](/ar/concepts/features/interfaces/client). انقر على `Connect` في القائمة اليسرى للاطلاع على هذه التفاصيل، ثم اختر `Native` من القائمة المنسدلة في مربع الحوار:
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![تفاصيل اتصال عميل ClickHouse](/images/_snippets/client_details.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/_snippets/client_details.webp" size="lg" alt="تفاصيل اتصال عميل ClickHouse" border />
 
         <br />
 
-        1. ثبّت [ClickHouse](/ar/get-started/setup/self-managed/quick-install).
+        1. ثبّت [ClickHouse](/ar/concepts/features/interfaces/cli).
 
         2. نفّذ الأمر التالي، مع استبدال اسم المضيف واسم المستخدم وكلمة المرور بالقيم الخاصة بك:
 
@@ -359,7 +288,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
         exit
         ```
 
-### رفع ملف {#upload-a-file}
+### رفع ملف
 
         من المهام الشائعة عند البدء باستخدام قاعدة بيانات إدراجُ بعض البيانات الموجودة لديك مسبقًا في ملفات. ولدينا بعض
         البيانات النموذجية المتاحة عبر الإنترنت والتي يمكنك إدراجها، وهي تمثّل بيانات تدفق النقرات - إذ تتضمن معرّف مستخدم، وعنوان URL تمت زيارته،
@@ -389,15 +318,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
 
         <br />
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![صفوف جديدة من ملف CSV](/images/_snippets/new_rows_from_csv.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/_snippets/new_rows_from_csv.webp" size="lg" alt="صفوف جديدة من ملف CSV" />
 
         <br />
       </Step>
@@ -410,7 +331,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
       راجع [&quot;إعداد IP filters&quot;](/ar/products/cloud/guides/security/connectivity/setting-ip-filters) لمزيد من التفاصيل.
     </Tip>
 
-## ما الخطوة التالية؟ {#whats-next}
+## ما الخطوة التالية؟
 
     * يتيح لك الدليل العملي حول [بيانات سيارات الأجرة في نيويورك](/ar/get-started/sample-datasets/nyc-taxi) إدراج مليوني صف في جدول وكتابة بعض الاستعلامات التحليلية
     * لدينا قائمة بـ [مجموعات البيانات النموذجية](/ar/get-started/sample-datasets/index) تتضمن إرشادات حول كيفية إدراجها
@@ -420,7 +341,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
     * يوفّر دليل المستخدم حول [المفاتيح الأساسية](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) كل ما تحتاج إلى معرفته عن المفاتيح الأساسية وكيفية تعريفها
   </View>
 
-  <View title="واجهة سطر الأوامر">
+  <View title="CLI">
     يمكنك اتباع هذا المسار بنفسك، أو أتمتته ببرنامج نصي، أو إسناده إلى AI Agent. انتقل إلى عرض **Cloud UI** للإصدار الخاص بـ Console.
 
     <CloudQuickstartCLI />

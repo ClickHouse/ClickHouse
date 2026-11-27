@@ -39,11 +39,6 @@ struct CompressionCodecFamilyProperties
     /// given as a string (a table-level, network or temporary files setting, a server config), because there is
     /// no column there, and cannot be applied directly to bytes, e.g. by `estimateCompressionRatio`.
     bool is_declarative = false;
-
-    /// Whether the codec can be applied to a column of the given data type. Empty for a codec that does not
-    /// interpret the values and so applies to any type (e.g. `ZSTD`). Used by `FirstApplicable` to choose among
-    /// alternatives: the choice must not depend on catching the exception the creator throws for a wrong type.
-    std::function<bool(const IDataType & type)> is_applicable_to_type = {};
 };
 
 struct CodecValidationSettings
@@ -83,20 +78,14 @@ public:
     static CompressionCodecFactory & instance();
 
     /// Return default codec (currently ZSTD(3))
-    [[nodiscard]] CompressionCodecPtr getDefaultCodec() const;
+    CompressionCodecPtr getDefaultCodec() const;
 
     /// True if `codec` is the default codec: no CODEC clause (null), or a lone CODEC(Default).
     /// A compound such as CODEC(Delta, Default) would return false.
     static bool isDefaultCodec(const ASTPtr & codec);
 
-    /// The family name and the arguments of an element of a codec chain. Throws if it is malformed.
-    static std::pair<String, ASTPtr> getCodecNameAndArguments(const ASTPtr & element);
-
-    /// The properties of the codec family `family_name`, matched case-insensitively. Throws if it is unknown.
-    [[nodiscard]] const CompressionCodecFamilyProperties & getFamilyProperties(const String & family_name) const;
-
     /// Validate codecs AST specified by user and parses codecs description (substitute default parameters)
-    ASTPtr validateCodecAndGetPreprocessedAST( /// NOLINT(modernize-use-nodiscard): often called only for its side effect
+    ASTPtr validateCodecAndGetPreprocessedAST(
         const ASTPtr & ast, const DataTypePtr & column_type, const CodecValidationSettings & validation_settings) const;
 
     /// Validate codecs AST specified by user
@@ -117,26 +106,26 @@ public:
     CompressionCodecPtr get(const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default = nullptr, bool only_generic = false) const;
 
     /// Just wrapper for previous method.
-    [[nodiscard]] CompressionCodecPtr get(const ASTPtr & ast, const DataTypePtr & column_type, CompressionCodecPtr current_default = nullptr, bool only_generic = false) const
+    CompressionCodecPtr get(const ASTPtr & ast, const DataTypePtr & column_type, CompressionCodecPtr current_default = nullptr, bool only_generic = false) const
     {
         return get(ast, column_type.get(), current_default, only_generic);
     }
 
     /// Get codec by method byte (no params available)
-    [[nodiscard]] CompressionCodecPtr get(uint8_t byte_code) const;
+    CompressionCodecPtr get(uint8_t byte_code) const;
 
     /// For backward compatibility with config settings
-    [[nodiscard]] CompressionCodecPtr get(const String & family_name, std::optional<int> level) const;
+    CompressionCodecPtr get(const String & family_name, std::optional<int> level) const;
 
     /// Get codec by name with optional params. Example: LZ4, ZSTD(3)
-    [[nodiscard]] CompressionCodecPtr get(const String & compression_codec) const;
+    CompressionCodecPtr get(const String & compression_codec) const;
 
     /// Throws if any codec of the chain in `ast` is declarative (see `CompressionCodecFamilyProperties`).
     /// For a caller that applies a codec chain directly to bytes, e.g. `estimateCompressionRatio`.
     void checkCodecChainIsNotDeclarative(const ASTPtr & ast) const;
 
     /// Names of the dedicated settings gating registered codec families.
-    [[nodiscard]] Strings getGateSettingNames() const;
+    Strings getGateSettingNames() const;
 
     /// Insert codec information into MutableColumns to show in the system table
     void fillCodecDescriptions(MutableColumns & res_columns) const;
@@ -144,7 +133,7 @@ public:
     /// The embedded documentation of every registered codec, as a (family name, documentation) pair. The
     /// description is the codec's `getDescription` and the `source` is the file where the codec was registered.
     /// Used by `system.documentation`.
-    [[nodiscard]] VectorWithMemoryTracking<std::pair<String, Documentation>> getCodecDocumentations() const;
+    VectorWithMemoryTracking<std::pair<String, Documentation>> getCodecDocumentations() const;
 
     /// Register codec with parameters and column type. The `source` is captured automatically at the call site
     /// (the codec's registration), so it points to the source file that defines the codec; do not pass it explicitly.
@@ -168,7 +157,7 @@ public:
     /// Register codec without parameters
     void registerSimpleCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, SimpleCreator creator, std::source_location source = std::source_location::current());
 
-    [[nodiscard]] Strings getAllRegisteredNames() const;
+    Strings getAllRegisteredNames() const;
 
 protected:
     CompressionCodecPtr getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const;
@@ -176,10 +165,10 @@ protected:
 private:
     /// The canonical (registered) spelling of a codec family name matched case-insensitively, or nullptr if no such
     /// codec family is registered.
-    [[nodiscard]] const String * tryGetCanonicalFamilyName(const String & family_name) const;
+    const String * tryGetCanonicalFamilyName(const String & family_name) const;
 
     /// True if `family_name` names a registered declarative codec (see `CompressionCodecFamilyProperties`).
-    [[nodiscard]] bool isDeclarativeCodec(const String & family_name) const;
+    bool isDeclarativeCodec(const String & family_name) const;
 
     /// A declarative codec given as a string (a table-level, network or temporary files setting, a server config)
     /// has no column, so accepting it there would silently do nothing. `Default` stands for the codec that encloses
@@ -193,19 +182,6 @@ private:
 
     ASTPtr validateCodecAndGetPreprocessedASTImpl(
         const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const;
-
-    /// Validates `FirstApplicable` in the codec chain `ast`: every alternative must be a valid codec by itself, and
-    /// the chain resolved for every substream of `column_type` (or for no type) must pass the usual validation.
-    void validateCodecWithFirstApplicable(
-        const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const;
-
-    /// Validates an alternative of `FirstApplicable` by itself, without a data type. With `reject_lossy`, throws if it
-    /// has a lossy codec: where the data type is unknown, the combinator is selected again for the type of every column,
-    /// so a lossy alternative would bypass the checks that keep lossy codecs away from a sorting key, a Map or a LowCardinality.
-    void validateFirstApplicableAlternative(const ASTPtr & element, const Settings * settings, bool reject_lossy) const;
-
-    /// Throws if the codec family is gated by a setting that is disabled in `settings` (nullptr: accepts every codec).
-    static void checkCodecIsEnabled(const String & family_name, const Settings * settings);
 
     /// Name of the gate setting: `enable_<lowercase family>_codec`.
     static String getGateSettingName(const String & family_name);

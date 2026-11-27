@@ -217,7 +217,7 @@ void StorageRunner::setupStorage()
         int64_t zxid = next_zxid.fetch_add(1);
         try
         {
-            storage->preprocessRequest(request, setup_session_id, 0, zxid, /*check_acl=*/true, /*log_idx=*/0);
+            storage->preprocessRequest(request, setup_session_id, 0, zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
             auto responses = storage->processRequest(request, setup_session_id, zxid);
             for (const auto & response : responses)
             {
@@ -345,7 +345,7 @@ void StorageRunner::preprocessThread()
         try
         {
             std::shared_lock lock(state_machine_storage_mutex);
-            storage->preprocessRequest(item.request, item.session_id, /*time=*/0, item.zxid, /*check_acl=*/true, /*log_idx=*/0);
+            storage->preprocessRequest(item.request, item.session_id, /*time=*/0, item.zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
         }
         catch (...)
         {
@@ -375,9 +375,7 @@ void StorageRunner::commitThread()
         std::vector<QueueItem> batch_items;
 
         QueueItem read_item;
-        /// Cap the batch at the queue capacity: generators refill each freed slot while we pop, and nothing
-        /// is processed until the loop exits, so popping until empty can grow the batch without bound.
-        while (batch.size() < input_queue_size && read_queue->tryPop(read_item))
+        while (read_queue->tryPop(read_item))
         {
             DB::KeeperRequestForSession rfs;
             rfs.session_id = read_item.session_id;

@@ -83,7 +83,7 @@ struct QuantileInterpolatedWeighted
         }
     }
 
-    [[nodiscard]] Value get(Float64 level) const
+    Value get(Float64 level) const
     {
         return getImpl<Value>(level);
     }
@@ -94,7 +94,7 @@ struct QuantileInterpolatedWeighted
     }
 
     /// The same, but in the case of an empty state, NaN is returned.
-    [[nodiscard]] Float64 getFloat(Float64) const
+    Float64 getFloat(Float64) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat is not implemented for QuantileInterpolatedWeighted");
     }
@@ -109,7 +109,7 @@ private:
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
     template <typename T>
-    [[nodiscard]] T getImpl(Float64 level) const
+    T getImpl(Float64 level) const
     {
         size_t size = map.size();
 
@@ -307,7 +307,7 @@ private:
     }
 
     /// yl + (dy / dx) * (level - xl), computed in `UnderlyingType`.
-    [[nodiscard]] UnderlyingType interpolate(Float64 level, Float64 lower_percentile, Float64 upper_percentile, UnderlyingType lower_value, UnderlyingType upper_value) const
+    UnderlyingType interpolate(Float64 level, Float64 lower_percentile, Float64 upper_percentile, UnderlyingType lower_value, UnderlyingType upper_value) const
     {
         Float64 percentile_diff = upper_percentile - lower_percentile;
         percentile_diff = percentile_diff == 0 ? 1 : percentile_diff; /// to handle NaN behavior that might arise during integer division below.
@@ -371,7 +371,7 @@ void registerAggregateFunctionsQuantileInterpolatedWeighted(AggregateFunctionFac
 void registerAggregateFunctionsQuantileInterpolatedWeighted(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
     FunctionDocumentation::Description description = R"(
 Computes [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using linear interpolation, taking into account the weight of each element.
@@ -417,7 +417,7 @@ SELECT quantileInterpolatedWeighted(n, val) FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileInterpolatedWeighted::name, {createAggregateFunctionQuantile<FuncQuantileInterpolatedWeighted>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction(NameQuantileInterpolatedWeighted::name, {createAggregateFunctionQuantile<FuncQuantileInterpolatedWeighted>, documentation});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using linear interpolation at different levels simultaneously, taking into account the weight of each element.

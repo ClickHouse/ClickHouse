@@ -54,7 +54,8 @@ CREATE TABLE t_on_cluster_alter ON CLUSTER test_shard_localhost (key Int64) ENGI
 
 SET data_type_default_nullable = 1;
 
--- The worker does not apply the forwarded setting again, so it sees only the type resolved on the initiator.
+-- The oldest DDL entry format forwards no settings, so the worker sees only the type resolved on the initiator.
+SET distributed_ddl_entry_format_version = 1;
 ALTER TABLE t_on_cluster_alter ON CLUSTER test_shard_localhost ADD COLUMN added Int32, ADD COLUMN added_not_null Int32 NOT NULL FORMAT Null;
 
 SELECT name, type

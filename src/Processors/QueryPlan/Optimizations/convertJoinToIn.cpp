@@ -1,6 +1,4 @@
 #include <Columns/ColumnConst.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Columns/ColumnSet.h>
 #include <Core/Block.h>
 #include <Core/UUID.h>
@@ -10,7 +8,6 @@
 #include <Functions/tuple.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinExpressionActions.h>
-#include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
@@ -42,7 +39,7 @@ struct NamePair
     std::string_view rhs_name;
 };
 
-using NamePairs = VectorWithMemoryTracking<NamePair>;
+using NamePairs = std::vector<NamePair>;
 
 static InConversion buildInConversion(
     const SharedHeader & lhs_input_header,
@@ -51,18 +48,18 @@ static InConversion buildInConversion(
     FutureSetSettings set_settings)
 {
     ActionsDAG lhs_dag(lhs_input_header->getColumnsWithTypeAndName());
-    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> lhs_outputs;
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> lhs_outputs;
     for (const auto & output : lhs_dag.getOutputs())
         lhs_outputs.emplace(output->result_name, output);
 
     ActionsDAG rhs_dag(in_source->getCurrentHeader()->getColumnsWithTypeAndName());
-    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> rhs_outputs;
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> rhs_outputs;
     for (const auto & output : rhs_dag.getOutputs())
         rhs_outputs.emplace(output->result_name, output);
 
     rhs_dag.getOutputs().clear();
 
-    ActionsDAG::NodeRawConstPtrs left_columns;
+    std::vector<const ActionsDAG::Node *> left_columns;
     for (const auto & name_pair : name_pairs)
     {
         auto it = lhs_outputs.find(name_pair.lhs_name);
@@ -136,7 +133,7 @@ static ActionsDAG cloneSubDAGWithHeader(const SharedHeader & stream_header, Acti
 
 static bool hasCommonSubplanNodes(const QueryPlan::Node & root)
 {
-    VectorWithMemoryTracking<const QueryPlan::Node *> stack{&root};
+    std::vector<const QueryPlan::Node *> stack{&root};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -170,7 +167,8 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     /// Let's support only hash algorithm, because full sorting join may be more memory efficient than IN.
     const auto & join_algorithms = join->getJoinSettings().join_algorithms;
-    if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH))
+    if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH) &&
+        !TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH))
         return 0;
 
     const auto & join_operator = join->getJoinOperator();
@@ -188,16 +186,11 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         return 0;
 
     /// Only equality expressions are supported.
-    VectorWithMemoryTracking<std::pair<JoinActionRef, JoinActionRef>> key_pairs;
+    std::vector<std::pair<JoinActionRef, JoinActionRef>> key_pairs;
     for (const auto & predicate : join_operator.expression)
     {
         auto [op, lhs, rhs] = predicate.asBinaryPredicate();
         if (op != JoinConditionOperator::Equals)
-            return 0;
-
-        /// `IN` casts the probe key to the type of the set, so `toFixedString('a', 3) IN ('a\0\0')` is false
-        /// while the JOIN matches these keys.
-        if (!JoinCommon::isExactJoinKeyEquality(lhs.getType(), rhs.getType()))
             return 0;
 
         if (lhs.fromLeft() && rhs.fromRight())
@@ -267,7 +260,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         const auto & left_input_header = parent_node->children.at(0)->step->getOutputHeader();
         auto post_left_header = left_pre_join_actions.updateHeader(*left_input_header);
 
-        UnorderedMapWithMemoryTracking<std::string_view, size_t> forwarded_columns;
+        std::unordered_map<std::string_view, size_t> forwarded_columns;
         for (const auto & column : post_left_header)
             ++forwarded_columns[column.name];
 
@@ -296,7 +289,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     auto in_conversion = buildInConversion(
         lhs_in_node->step->getOutputHeader(),
         name_pairs,
-        std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes, *settings.source_plan)),
+        std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes)),
         std::move(set_settings));
 
     {

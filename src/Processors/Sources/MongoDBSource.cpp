@@ -231,10 +231,6 @@ Chunk MongoDBSource::generate()
     size_t num_rows = 0;
     for (const auto & doc : cursor)
     {
-        /// Check before reading `doc`: the next `cursor.begin` does not advance, it returns the same document again.
-        if (num_rows == max_block_size)
-            break;
-
         if (isCancelled())
             break;
 
@@ -260,7 +256,8 @@ Chunk MongoDBSource::generate()
                 insertDefaultValue(*columns[idx], *sample_column.column);
         }
 
-        ++num_rows;
+        if (++num_rows == max_block_size)
+            break;
     }
     if (num_rows < max_block_size)
         all_read = true;

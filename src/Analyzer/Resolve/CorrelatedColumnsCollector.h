@@ -28,9 +28,9 @@ struct CorrelatedColumnsCollector
         visitExpression(expression, current_scope);
     }
 
-    [[nodiscard]] bool has() const { return !correlated_columns.empty(); }
+    bool has() const { return !correlated_columns.empty(); }
 
-    [[nodiscard]] const QueryTreeNodes & get() const { return correlated_columns; }
+    const QueryTreeNodes & get() const { return correlated_columns; }
 
 private:
     void visitExpression(const QueryTreeNodePtr & expression, const IdentifierResolveScope * current_scope)

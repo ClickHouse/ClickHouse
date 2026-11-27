@@ -45,10 +45,7 @@ public:
     void addStorage(const std::string & table_name, StorageMaterializedPostgreSQL * storage);
 
     /// Fetch list of tables which are going to be replicated. Used for database engine.
-    /// `nested_tables_on_disk` are the tables that were already replicated before the restart (their nested tables exist).
-    /// `published_but_not_materialized` receives the tables that are in the publication but are not replicated,
-    /// because they do not have nested tables (for example, their initial snapshot has failed).
-    std::set<String> fetchRequiredTables(const std::set<String> & nested_tables_on_disk, std::set<String> & published_but_not_materialized);
+    std::set<String> fetchRequiredTables();
 
     /// Start replication setup immediately.
     void startSynchronization(bool throw_on_error);
@@ -75,8 +72,6 @@ private:
     void createPublicationIfNeeded(pqxx::nontransaction & tx);
 
     std::set<String> fetchTablesFromPublication(pqxx::work & tx);
-
-    void logPublishedButNotMaterialized(const std::set<String> & published_but_not_materialized) const;
 
     void dropPublication(pqxx::nontransaction & ntx);
 
@@ -135,10 +130,6 @@ private:
 
     /// A coma-separated list of tables, which are going to be replicated for database engine. By default, a whole database is replicated.
     String tables_list;
-
-    /// The published tables of a whole-schema database that were never materialized, persisted together with `tables_list`
-    /// (see the setting `materialized_postgresql_unmaterialized_tables_list`).
-    String unmaterialized_tables_list;
 
     String schema_list;
 

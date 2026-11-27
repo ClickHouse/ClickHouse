@@ -1,6 +1,5 @@
 -- Tests that _sample_factor is materialized by the per-part read path. See issue #78465.
 
-SET allow_reserved_column_names = 1;
 DROP TABLE IF EXISTS t_mut_sf;
 CREATE TABLE t_mut_sf (c0 UInt32, u Float64) ENGINE = MergeTree ORDER BY c0 SAMPLE BY c0;
 INSERT INTO t_mut_sf VALUES (1, 0), (5, 0);
@@ -39,12 +38,12 @@ ALTER TABLE t_mut_shadow DELETE WHERE arrayExists(_sample_factor -> _sample_fact
 SELECT 'lambda parameter', count() FROM t_mut_shadow;
 DROP TABLE t_mut_shadow;
 
--- _table and _database come from the local storage id, and the per-part read path publishes them
--- the same way a regular SELECT does. See issue #102331.
+-- _table and _database come from the local storage id, which a replica cannot reproduce, so
+-- a mutation still cannot materialize them and fails while the part is read.
 DROP TABLE IF EXISTS t_mut_local;
 CREATE TABLE t_mut_local (c0 UInt32) ENGINE = MergeTree ORDER BY c0;
 INSERT INTO t_mut_local VALUES (1), (5);
-ALTER TABLE t_mut_local DELETE WHERE _table != '' AND c0 < 2;
+ALTER TABLE t_mut_local DELETE WHERE _table != '' AND c0 < 2; -- { serverError UNFINISHED }
 SELECT 'local storage id', count() FROM t_mut_local;
 DROP TABLE t_mut_local;
 
@@ -53,6 +52,6 @@ DROP TABLE t_mut_local;
 DROP TABLE IF EXISTS t_mut_override;
 CREATE TABLE t_mut_override (c0 UInt32, _sample_factor Float64) ENGINE = MergeTree ORDER BY c0;
 INSERT INTO t_mut_override VALUES (1, 0.5), (5, 0.5);
-ALTER TABLE t_mut_override DELETE WHERE _sample_factor = 0.5 AND c0 < 2; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+ALTER TABLE t_mut_override DELETE WHERE _sample_factor = 0.5 AND c0 < 2 SETTINGS enable_analyzer = 1; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
 SELECT 'real column override', count() FROM t_mut_override;
 DROP TABLE t_mut_override;

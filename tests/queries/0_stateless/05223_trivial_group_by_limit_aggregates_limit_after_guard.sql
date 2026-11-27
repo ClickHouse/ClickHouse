@@ -2,9 +2,9 @@
 -- `LIMIT n UNTIL cond`: the range window is anchored at a boundary row that is only found
 -- once the boundary key is produced, so capping the aggregation at `n + offset` arbitrary
 -- groups can stop it before the boundary key appears and return an empty window while the
--- groups exist. Test `04343_limit_after_optimizer_guards` pins this for
--- aggregate-free projections; this test pins it for projections with aggregate
--- functions, where the planner applies the kept-keys cutoff.
+-- groups exist. Test `04343_limit_after_optimizer_guards` pins this for the settings-based
+-- rewrite of aggregate-free projections; this test pins it for projections with aggregate
+-- functions, where the planner applies the kept-keys cutoff through the shared helper.
 --
 -- The outer queries consume the inner aggregates, otherwise the analyzer removes them from
 -- the projection and the planner path is not exercised. The key is `UInt64` on purpose: for
@@ -19,6 +19,7 @@
 -- the boundary, whose number depends on the output order, so it cannot be pinned without an
 -- `ORDER BY`, which by itself disables the optimization; the guard covers both forms.)
 
+SET enable_analyzer = 1;
 SET optimize_trivial_group_by_limit_query = 1;
 -- The `GROUP BY` top-K heap takes this shape over from the kept-keys cutoff wherever it applies.
 SET enable_group_by_top_k_optimization = 0;

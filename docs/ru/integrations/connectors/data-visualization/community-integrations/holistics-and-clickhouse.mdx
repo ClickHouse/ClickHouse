@@ -7,6 +7,7 @@ title: 'Подключение ClickHouse к Holistics'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -53,15 +54,7 @@ GRANT SELECT ON system.* TO holistics_user;
 
     Эти сведения можно найти, нажав кнопку **Connect** в консоли ClickHouse Cloud и выбрав **HTTPS**.
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Расположение кнопки Connect в консоли ClickHouse Cloud](/images/integrations/data-visualization/holistics_01.webp)
-
-    </Frame>
-
-    </div>
+    <Image size="md" img="/images/integrations/data-visualization/holistics_01.webp" alt="Расположение кнопки Connect в консоли ClickHouse Cloud" border />
   </Step>
 
   <Step title="Настройте сетевой доступ" id="step-2-configure-network-access">
@@ -69,15 +62,7 @@ GRANT SELECT ON system.* TO holistics_user;
 
     1. **Прямое подключение (рекомендуется):** Добавьте IP-адреса Holistics в список разрешённых в вашем межсетевом экране или в ClickHouse Cloud IP Access List. Список IP-адресов можно найти в руководстве [IP Whitelisting](https://docs.holistics.io/docs/connect/ip-whitelisting).
 
-       <div className="ch-image-md">
-
-       <Frame>
-
-       ![Пример добавления IP-адресов в список разрешённых в ClickHouse Cloud](/images/integrations/data-visualization/holistics_02.webp)
-
-       </Frame>
-
-       </div>
+       <Image size="md" img="/images/integrations/data-visualization/holistics_02.webp" alt="Пример добавления IP-адресов в список разрешённых в ClickHouse Cloud" border />
 
     2. **Обратный SSH-туннель:** Если ваша база данных находится в частной сети (VPC) и не может быть доступна публично, используйте [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel).
   </Step>
@@ -85,27 +70,11 @@ GRANT SELECT ON system.* TO holistics_user;
   <Step title="Добавьте источник данных в Holistics" id="step-3-add-data-source-in-holistics">
     1. В Holistics перейдите в **Settings → источник данных**.
 
-       <div className="ch-image-md">
-
-       <Frame>
-
-       ![Переход к источнику данных в настройках Holistics](/images/integrations/data-visualization/holistics_03.webp)
-
-       </Frame>
-
-       </div>
+       <Image size="md" img="/images/integrations/data-visualization/holistics_03.webp" alt="Переход к источнику данных в настройках Holistics" border />
 
     2. Нажмите **New Data Source** и выберите **ClickHouse**.
 
-       <div className="ch-image-md">
-
-       <Frame>
-
-       ![Выбор ClickHouse из списка новых источников данных](/images/integrations/data-visualization/holistics_04.webp)
-
-       </Frame>
-
-       </div>
+       <Image size="md" img="/images/integrations/data-visualization/holistics_04.webp" alt="Выбор ClickHouse из списка новых источников данных" border />
 
     3. Заполните форму данными, собранными на шаге 1.
 
@@ -116,27 +85,11 @@ GRANT SELECT ON system.* TO holistics_user;
        | **Require SSL**   | Включите параметр (**ON**), если используете порт 8443 (обязательно для ClickHouse Cloud). |
        | **Database Name** | `default` (или имя вашей базы данных)                                                      |
 
-       <div className="ch-image-md">
-
-       <Frame>
-
-       ![Заполнение сведений о подключении к ClickHouse в Holistics](/images/integrations/data-visualization/holistics_05.webp)
-
-       </Frame>
-
-       </div>
+       <Image size="md" img="/images/integrations/data-visualization/holistics_05.webp" alt="Заполнение сведений о подключении к ClickHouse в Holistics" border />
 
     4. Нажмите **Test Connection**.
 
-       <div className="ch-image-md">
-
-       <Frame>
-
-       ![Успешная проверка подключения к ClickHouse в Holistics](/images/integrations/data-visualization/holistics_06.webp)
-
-       </Frame>
-
-       </div>
+       <Image size="md" img="/images/integrations/data-visualization/holistics_06.webp" alt="Успешная проверка подключения к ClickHouse в Holistics" border />
 
        * **Success:** Нажмите **Save**.
        * **Failure:** Проверьте имя пользователя и пароль, а также убедитесь, что [IP-адреса Holistics добавлены в список разрешённых](https://docs.holistics.io/docs/connect/ip-whitelisting).

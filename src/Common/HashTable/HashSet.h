@@ -108,57 +108,6 @@ public:
     {
     }
 
-    /// Inserts the keys, which must fit without a resize. Prefetches the cell of the key `prefetch_distance` ahead, if
-    /// it is not zero. The fields are kept in local variables, because the stores into the cells could alias them.
-    template <size_t prefetch_distance>
-    void ALWAYS_INLINE insertManyWithoutResize(const Key * __restrict keys, size_t num_keys)
-    {
-        Cell * __restrict cells = this->buf;
-        const Grower local_grower = this->grower;
-        size_t local_size = this->m_size;
-        bool has_zero = this->hasZero();
-
-        for (size_t i = 0; i < num_keys; ++i)
-        {
-            if constexpr (prefetch_distance != 0)
-            {
-                if (i + prefetch_distance < num_keys)
-                    __builtin_prefetch(&cells[local_grower.place(this->hash(keys[i + prefetch_distance]))]);
-            }
-
-            const Key key = keys[i];
-            if (Cell::isZero(key, *this))
-            {
-                has_zero = true;
-                continue;
-            }
-
-            const size_t hash_value = this->hash(key);
-            size_t place = local_grower.place(hash_value);
-            while (true)
-            {
-                Cell & cell = cells[place];
-                if (cell.keyEquals(key, hash_value, *this))
-                    break;
-                if (cell.isZero(*this))
-                {
-                    new (&cell) Cell(key, *this);
-                    cell.setHash(hash_value);
-                    ++local_size;
-                    break;
-                }
-                place = local_grower.next(place);
-            }
-        }
-
-        if (has_zero && !this->hasZero())
-        {
-            this->setHasZero();
-            ++local_size;
-        }
-        this->m_size = local_size;
-    }
-
     /// Merge every key of *this into `that`, growing `that` incrementally (with optional prefetch), reusing
     /// each source cell's stored hash. Unlike `merge`, it does NOT preemptively resize to dst+src - that
     /// over-allocates and triggers a full rehash for high-overlap aggregation merges. The set analogue of
@@ -284,12 +233,12 @@ struct HashSetCellWithSavedHash : public HashTableCell<Key, Hash, TState>
     HashSetCellWithSavedHash() : Base() {} // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `saved_hash` is set by `setHash` immediately after placement construction on insert; on the hot aggregation/join path we must avoid the redundant store
     HashSetCellWithSavedHash(const Key & key_, const typename Base::State & state) : Base(key_, state) {} // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the default constructor above
 
-    [[nodiscard]] bool keyEquals(const Key & key_) const { return bitEquals(this->key, key_); }
-    [[nodiscard]] bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && bitEquals(this->key, key_); }
-    [[nodiscard]] bool keyEquals(const Key & key_, size_t hash_, const typename Base::State &) const { return keyEquals(key_, hash_); }
+    bool keyEquals(const Key & key_) const { return bitEquals(this->key, key_); }
+    bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && bitEquals(this->key, key_); }
+    bool keyEquals(const Key & key_, size_t hash_, const typename Base::State &) const { return keyEquals(key_, hash_); }
 
     void setHash(size_t hash_value) { saved_hash = hash_value; }
-    [[nodiscard]] size_t getHash(const Hash & /*hash_function*/) const { return saved_hash; }
+    size_t getHash(const Hash & /*hash_function*/) const { return saved_hash; }
 };
 
 template <

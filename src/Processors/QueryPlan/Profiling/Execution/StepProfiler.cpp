@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
 {
@@ -8,46 +8,45 @@ namespace DB
 namespace
 {
 
-/// One clock per stage of every step the snapshot found.
-StepWallClocks collectWallClocksForPlanSteps(const PlanAnalysisSnapshot & plan_snapshot)
+StepWallClocks collectWallClocksForPlanSteps(const QueryPlan & plan)
 {
     StepWallClocks clocks;
 
-    for (const auto & [step_id, analyzer] : plan_snapshot.analyzers)
-        for (const auto & group : analyzer.groups)
-            clocks.try_emplace(std::make_pair(step_id, group.id), std::make_unique<StepWallClock>());
+    std::vector<const QueryPlan::Node *> stack;
+    stack.push_back(plan.getRootNode());
+
+    while (!stack.empty())
+    {
+        const auto * cur = stack.back();
+        stack.pop_back();
+
+        if (!cur)
+            continue;
+
+        for (size_t group : cur->step->getStepGroups())
+            clocks.try_emplace(std::make_pair(cur->step.get(), group), std::make_unique<StepWallClock>());
+
+        for (const auto * child : cur->children)
+            stack.push_back(child);
+        for (const auto * child_plan : cur->step->getChildPlans(/*for_explain=*/ false))
+            stack.push_back(child_plan->getRootNode());
+    }
 
     return clocks;
 }
 
 }
 
-StepProfiler::StepProfiler(const PlanWalk & walk, bool collect_work_intervals_)
+StepProfiler::StepProfiler(const QueryPlan & plan, bool collect_work_intervals_)
     : collect_work_intervals(collect_work_intervals_)
-    , plan_snapshot(PlanAnalysisSnapshot::capture(walk))
-    , clocks(collectWallClocksForPlanSteps(plan_snapshot))
+    , clocks(collectWallClocksForPlanSteps(plan))
 {
 }
 
-StepWallClock * StepProfiler::findClockForStep(const String & step_id, size_t group) const
+StepWallClock * StepProfiler::findClockForStep(const IQueryPlanStep * step, size_t group) const
 {
-    auto it = clocks.find({step_id, group});
+    auto it = clocks.find({step, group});
     return it != clocks.end() ? it->second.get() : nullptr;
-}
-
-void StepProfiler::markExecutionStarted()
-{
-    execution_start_ns.store(clock_gettime_ns(), std::memory_order_release);
-}
-
-void StepProfiler::markExecutionFinished()
-{
-    /// Zero until the executor starts, and a pipeline may be finalized without ever having run.
-    const UInt64 started_at = execution_start_ns.load(std::memory_order_acquire);
-    if (started_at == 0)
-        return;
-
-    execution_time_ns.store(clock_gettime_ns() - started_at, std::memory_order_release);
 }
 
 bool StepProfiler::needCollectWorkIntervals() const
@@ -64,13 +63,13 @@ void StepProfiler::addWorkIntervals(WorkIntervals intervals)
     intervals_per_thread.push_back(std::move(intervals));
 }
 
-WorkIntervalsPerThread StepProfiler::extractWorkIntervals(UInt64 rebase_origin_ns)
+WorkIntervalsPerThread StepProfiler::extractWorkIntervals(UInt64 execution_start_ns)
 {
     std::lock_guard lock(mutex);
 
     for (auto & thread_intervals : intervals_per_thread)
         for (auto & interval : thread_intervals)
-            interval.start_of_interval_ns -= rebase_origin_ns;
+            interval.start_of_interval_ns -= execution_start_ns;
 
     return std::move(intervals_per_thread);
 }

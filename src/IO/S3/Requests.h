@@ -71,7 +71,7 @@ inline Aws::S3::Model::ChecksumAlgorithm toSDKFlexibleChecksumAlgorithm(Algorith
 
 /// Set the flexible checksum on a request or a completed part; both expose `SetChecksumCRC32`/`SetChecksumSHA256`.
 template <typename T>
-inline void setChecksum(T & target, Algorithm algorithm, std::string_view checksum)
+inline void setChecksum(T & target, Algorithm algorithm, const std::string & checksum)
 {
     switch (algorithm)
     {
@@ -87,7 +87,7 @@ inline void setChecksum(T & target, Algorithm algorithm, std::string_view checks
     UNREACHABLE();
 }
 
-inline Aws::String calculateFlexibleChecksum(Model::UploadPartRequest & req, Algorithm algorithm)
+inline std::string calculateFlexibleChecksum(Model::UploadPartRequest & req, Algorithm algorithm)
 {
     const auto sdk_algorithm = toSDKFlexibleChecksumAlgorithm(algorithm);
 
@@ -105,14 +105,6 @@ inline Aws::String calculateFlexibleChecksum(Model::UploadPartRequest & req, Alg
 }
 
 Algorithm getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket);
-
-/// Whether `delete_checksum_algorithm` was set explicitly. An explicit value is never changed behind the user's back.
-bool hasExplicitDeleteChecksumAlgorithm(const S3RequestSettings & request_settings);
-
-/// The checksum for `DeleteObjects`, which cannot go without a digest. An explicit `delete_checksum_algorithm` wins;
-/// an explicit `MD5` is rejected when `S3Express` or when the `MD5` digest is unavailable (FIPS). Otherwise `MD5`,
-/// or `SHA256` when `MD5` is unavailable or the server already rejected it (`md5_rejected_by_server`).
-Algorithm getDeleteChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket, bool md5_rejected_by_server);
 
 template <typename R>
 inline void setChecksumAlgorithm(R & request, Algorithm algorithm)
@@ -151,7 +143,7 @@ public:
         {
             static const Aws::String AWS_S3_FORCE_PATH_STYLE = "ForcePathStyle";
             params.emplace_back(AWS_S3_FORCE_PATH_STYLE, !uri_override->is_virtual_hosted_style);
-            params.emplace_back("Endpoint", uri_override->endpoint.c_str());
+            params.emplace_back("Endpoint", uri_override->endpoint);
         }
 
         return params;
@@ -163,14 +155,14 @@ public:
         return false;
     }
 
-    const Aws::String & getRegionOverride() const
+    std::string getRegionOverride() const
     {
         return region_override;
     }
 
-    void overrideRegion(std::string_view region) const
+    void overrideRegion(std::string region) const
     {
-        region_override = region;
+        region_override = std::move(region);
     }
 
     void overrideURI(S3::URI uri) const
@@ -213,7 +205,7 @@ public:
     }
 
 protected:
-    mutable Aws::String region_override;
+    mutable std::string region_override;
     mutable std::optional<S3::URI> uri_override;
     mutable ApiMode api_mode{ApiMode::AWS};
     bool is_s3express_bucket = false;
@@ -253,8 +245,8 @@ static constexpr size_t IDEMPOTENCY_ID_LENGTH = 22;
 class RequestWithIdempotencyId
 {
 public:
-    void setIdempotencyId(std::string_view value) { idempotency_id = value; }
-    [[nodiscard]] const Aws::String & getIdempotencyId() const { return idempotency_id; }
+    void setIdempotencyId(Aws::String value) { idempotency_id = std::move(value); }
+    const Aws::String & getIdempotencyId() const { return idempotency_id; }
 
 private:
     Aws::String idempotency_id;
@@ -288,8 +280,8 @@ public:
 class DeleteObjectsRequest : public ExtendedRequest<Model::DeleteObjectsRequest>
 {
 public:
-    bool RequestChecksumRequired() const override { return hasFlexibleChecksum(); }
-    bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum(); }
+    bool RequestChecksumRequired() const override { return is_s3express_bucket; }
+    bool ShouldComputeContentMd5() const override { return !is_s3express_bucket; }
 };
 
 class ComposeObjectRequest : public ExtendedRequest<Aws::S3::S3Request>
@@ -317,13 +309,13 @@ public:
     void SetKey(Aws::String && value);
     void SetKey(const char * value);
 
-    void SetComponentNames(Aws::Vector<Aws::String> component_names_);
+    void SetComponentNames(Strings component_names_);
 
     void SetContentType(Aws::String value);
 private:
     Aws::String bucket;
     Aws::String key;
-    Aws::Vector<Aws::String> component_names;
+    Strings component_names;
     Aws::String content_type;
 };
 

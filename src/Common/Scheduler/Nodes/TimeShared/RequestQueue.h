@@ -81,7 +81,7 @@ public:
     /// Restart the ordering state (virtual time, arrival sequence) of the empty algorithm, as if new.
     virtual void reset() noexcept = 0;
 
-    [[nodiscard]] virtual bool empty() const = 0;
+    virtual bool empty() const = 0;
 };
 
 /// `fifo` — first-come-first-served. Byte-for-byte the historical leaf ordering.
@@ -120,7 +120,7 @@ public:
 
     void reset() noexcept override {}
 
-    [[nodiscard]] bool empty() const override { return requests.empty(); }
+    bool empty() const override { return requests.empty(); }
 
 private:
     ResourceRequest::EnqueuedList requests;
@@ -213,7 +213,7 @@ public:
         next_seq = 0;
     }
 
-    [[nodiscard]] bool empty() const override { return requests.empty(); }
+    bool empty() const override { return requests.empty(); }
 
 private:
     /// Undo the virtual runtime a request projected onto its query at push(), for a request that will
@@ -268,7 +268,7 @@ private:
     /// True once the query's real cumulative service crosses a `weight_lowering_*` threshold.
     /// `attained_cost` already tracks real service (finish folds its correction straight in). For CPU
     /// it is granted service and leads spent CPU by at most one quantum.
-    [[nodiscard]] bool weightLoweringThresholdCrossed(const ResourceSchedulingContext & ctx, const ResourceQueryState & state) const
+    bool weightLoweringThresholdCrossed(const ResourceSchedulingContext & ctx, const ResourceQueryState & state) const
     {
         if (ctx.weight_lowering_age_seconds > 0)
         {
@@ -391,7 +391,7 @@ public:
         next_seq = 0;
     }
 
-    [[nodiscard]] bool empty() const override { return requests.empty(); }
+    bool empty() const override { return requests.empty(); }
 
 private:
     /// Internal per-resource quantum used as the bucketing unit (not exposed as a SQL setting).
@@ -407,7 +407,7 @@ private:
         return 1;
     }
 
-    [[nodiscard]] UInt32 levelOf(Int64 attained) const
+    UInt32 levelOf(Int64 attained) const
     {
         if (attained <= 0)
             return 0;
@@ -495,7 +495,7 @@ public:
         next_seq = 0;
     }
 
-    [[nodiscard]] bool empty() const override { return requests.empty(); }
+    bool empty() const override { return requests.empty(); }
 
 private:
     struct ByKey
@@ -563,8 +563,8 @@ public:
 
         if (max_queued >= 0 && total_requests >= static_cast<size_t>(max_queued))
         {
-            incrementCounter(rejected_requests);
-            incrementCounter(rejected_cost, request->cost);
+            rejected_requests++;
+            rejected_cost += request->cost;
             throw Exception(ErrorCodes::SERVER_OVERLOADED,
                 "Workload limit `max_waiting_queries` has been reached: {} of {}", total_requests, max_queued);
         }
@@ -596,7 +596,7 @@ public:
         total_requests--;
         if (total_requests == 0)
         {
-            incrementCounter(busy_periods);
+            busy_periods++;
             cancelActivation();
         }
         incrementDequeued(request->cost, total_requests > 0);
@@ -614,11 +614,11 @@ public:
         queue_cost -= request->cost;
         chassert(total_requests > 0);
         total_requests--;
-        incrementCounter(canceled_requests);
-        incrementCounter(canceled_cost, request->cost);
+        canceled_requests++;
+        canceled_cost += request->cost;
         if (total_requests == 0)
         {
-            incrementCounter(busy_periods);
+            busy_periods++;
             cancelActivation();
         }
         return true;
@@ -663,13 +663,13 @@ public:
                 chassert(request);
                 queue_cost -= request->cost;
                 total_requests--;
-                incrementCounter(rejected_requests);
-                incrementCounter(rejected_cost, request->cost);
+                rejected_requests++;
+                rejected_cost += request->cost;
                 requests_to_fail.push_back(*request);
             }
             if (total_requests == 0)
             {
-                incrementCounter(busy_periods);
+                busy_periods++;
                 cancelActivation();
             }
         }

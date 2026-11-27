@@ -1,3 +1,4 @@
+set enable_analyzer=1;
 set type_json_allow_duplicated_key_with_literal_and_nested_object=1;
 
 -- Basic: typed path with literal first, object second

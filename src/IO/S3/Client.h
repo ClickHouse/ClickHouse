@@ -25,7 +25,6 @@ struct ServerSideEncryptionKMSConfig
 #if USE_AWS_S3
 
 #include <Common/assert_cast.h>
-#include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <base/scope_guard.h>
 
@@ -42,8 +41,6 @@ struct ServerSideEncryptionKMSConfig
 #include <aws/s3/S3ServiceClientModel.h>
 #include <aws/core/client/AWSErrorMarshaller.h>
 #include <aws/core/client/RetryStrategy.h>
-
-#include <Common/Silk/FiberMutex.h>
 
 namespace DB::S3
 {
@@ -63,13 +60,11 @@ struct ClientCache
 
     void clearCache();
 
-    mutable Silk::FiberMutex region_cache_mutex;
-    UnorderedMapWithMemoryTracking<std::string, std::string, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>
-        region_for_bucket_cache TSA_GUARDED_BY(region_cache_mutex);
+    mutable std::mutex region_cache_mutex;
+    NameToNameMap region_for_bucket_cache TSA_GUARDED_BY(region_cache_mutex);
 
     mutable std::mutex uri_cache_mutex;
-    UnorderedMapWithMemoryTracking<std::string, URI, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>
-        uri_for_bucket_cache TSA_GUARDED_BY(uri_cache_mutex);
+    UnorderedMapWithMemoryTracking<std::string, URI> uri_for_bucket_cache TSA_GUARDED_BY(uri_cache_mutex);
 };
 
 class ClientCacheRegistry
@@ -155,8 +150,8 @@ public:
     ~Client() override;
 
     /// Returns the initial endpoint.
-    const Aws::String & getInitialEndpoint() const { return initial_endpoint; }
-    const Aws::String & getRegion() const { return explicit_region; }
+    const String & getInitialEndpoint() const { return initial_endpoint; }
+    const String & getRegion() const { return explicit_region; }
 
     Aws::Auth::AWSCredentials getCredentials() const;
 
@@ -172,13 +167,13 @@ public:
         explicit RetryStrategy(const PocoHTTPClientConfiguration::RetryStrategy & config_);
 
         /// NOLINTNEXTLINE(google-runtime-int)
-        [[nodiscard]] bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
+        bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
 
         /// NOLINTNEXTLINE(google-runtime-int)
-        [[nodiscard]] long CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
+        long CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
 
         /// NOLINTNEXTLINE(google-runtime-int)
-        [[nodiscard]] long GetMaxAttempts() const override;
+        long GetMaxAttempts() const override;
 
         void RequestBookkeeping(const Aws::Client::HttpResponseOutcome & httpResponseOutcome) override;
         void RequestBookkeeping(
@@ -240,19 +235,19 @@ public:
 
     bool isClientForDisk() const
     {
-        return client_configuration.group == HTTPConnectionGroupType::DISK;
+        return client_configuration.for_disk_s3;
     }
 
     ProviderType getProviderType() const { return provider_type; }
 
     bool isClientForGCS() const { return provider_type == ProviderType::GCS; }
 
-    SecretString getGCSOAuthToken() const;
+    std::string getGCSOAuthToken() const;
 
     ThrottlerPtr getPutRequestThrottler() const { return client_configuration.request_throttler.put_throttler; }
     ThrottlerPtr getGetRequestThrottler() const { return client_configuration.request_throttler.get_throttler; }
 
-    std::string getRegionForBucket(std::string_view bucket, bool force_detect = false) const;
+    std::string getRegionForBucket(const std::string & bucket, bool force_detect = false) const;
 
     const PocoHTTPClientConfiguration & getClientConfiguration() const { return client_configuration; }
 
@@ -303,9 +298,9 @@ private:
     std::invoke_result_t<RequestFn, RequestType &>
     doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn) const;
 
-    void updateURIForBucket(std::string_view bucket, S3::URI new_uri) const;
+    void updateURIForBucket(const std::string & bucket, S3::URI new_uri) const;
     std::optional<S3::URI> getURIFromError(const Aws::S3::S3Error & error) const;
-    std::optional<Aws::S3::S3Error> updateURIForBucketForHead(std::string_view bucket) const;
+    std::optional<Aws::S3::S3Error> updateURIForBucketForHead(const std::string & bucket) const;
 
     Model::HeadObjectOutcome headObjectInternal(HeadObjectRequest & request) const;
 
@@ -321,10 +316,10 @@ private:
         const Aws::String & bucket, const Aws::String & key, const Aws::String & idempotency_id,
         bool warn_if_unproven) const;
 
-    std::optional<S3::URI> getURIForBucket(std::string_view bucket) const;
+    std::optional<S3::URI> getURIForBucket(const std::string & bucket) const;
 
-    bool checkIfWrongRegionDefined(std::string_view bucket, const Aws::S3::S3Error & error, Aws::String & region) const;
-    void insertRegionOverride(std::string_view bucket, std::string_view region) const;
+    bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
+    void insertRegionOverride(const std::string & bucket, const std::string & region) const;
 
     /// Returns true if a specified error means that the credentials used are expired or may have changed.
     bool checkIfCredentialsChanged(const Aws::S3::S3Error & error) const;
@@ -336,13 +331,13 @@ private:
     void slowDownAfterRetryableError() const;
 
     void logConfiguration() const;
-    Aws::String initial_endpoint;
+    String initial_endpoint;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
     PocoHTTPClientConfiguration client_configuration;
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads;
     ClientSettings client_settings;
 
-    Aws::String explicit_region;
+    std::string explicit_region;
     mutable bool detect_region = true;
 
     /// provider type can determine if some functionality is supported
@@ -376,41 +371,27 @@ public:
     std::unique_ptr<S3::Client> create(
         const PocoHTTPClientConfiguration & cfg,
         ClientSettings client_settings,
-        std::string_view access_key_id,
-        std::string_view secret_access_key,
-        std::string_view server_side_encryption_customer_key_base64,
+        const String & access_key_id,
+        const String & secret_access_key,
+        const String & server_side_encryption_customer_key_base64,
         ServerSideEncryptionKMSConfig sse_kms_config,
         NormalizedHTTPHeaderEntries headers,
         CredentialsConfiguration credentials_configuration,
-        std::string_view session_token = {},
+        const String & session_token = "",
         const std::shared_ptr<ClientCache> & shared_cache = nullptr);
 
     PocoHTTPClientConfiguration createClientConfiguration(
-        std::string_view force_region,
+        const String & force_region,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects,
         const PocoHTTPClientConfiguration::RetryStrategy & retry_strategy,
         bool s3_slow_all_threads_after_network_error,
         bool s3_slow_all_threads_after_retryable_error,
         bool enable_s3_requests_logging,
-        HTTPConnectionGroupType group,
+        bool for_disk_s3,
         std::optional<std::string> opt_disk_name,
         const HTTPRequestThrottler & request_throttler,
         const String & protocol = "https");
-
-    /// The configuration keeps a reference to the filter, so the filter must not be a temporary.
-    PocoHTTPClientConfiguration createClientConfiguration(
-        const String & force_region,
-        const RemoteHostFilter && remote_host_filter,
-        unsigned int s3_max_redirects,
-        const PocoHTTPClientConfiguration::RetryStrategy & retry_strategy,
-        bool s3_slow_all_threads_after_network_error,
-        bool s3_slow_all_threads_after_retryable_error,
-        bool enable_s3_requests_logging,
-        HTTPConnectionGroupType group,
-        std::optional<std::string> opt_disk_name,
-        const HTTPRequestThrottler & request_throttler,
-        const String & protocol = "https") = delete;
 
 private:
     ClientFactory();

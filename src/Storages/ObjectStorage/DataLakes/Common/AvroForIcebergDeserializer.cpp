@@ -11,18 +11,12 @@
 
 #if USE_AVRO
 
-#include <Columns/ColumnTuple.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <base/find_symbols.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
-#include <Common/typeid_cast.h>
 
 namespace DB::ErrorCodes
 {
@@ -34,34 +28,6 @@ namespace DB::Iceberg
 {
 
 using namespace DB;
-
-namespace
-{
-
-/// A field of the Avro type `null` is read as `Nothing`, which has no values. The Iceberg writers use it for a type
-/// that has no values but NULL: the partition field of a `void` transform whose source column was dropped (the `unknown`
-/// type of Iceberg v3). Read it as `Nullable(Nothing)`, so that its values are NULL.
-DataTypePtr makeNothingNullable(const DataTypePtr & type)
-{
-    if (isNothing(type))
-        return makeNullable(type);
-    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
-    {
-        DataTypes elements;
-        for (const auto & element : tuple->getElements())
-            elements.push_back(makeNothingNullable(element));
-        if (tuple->hasExplicitNames())
-            return std::make_shared<DataTypeTuple>(elements, tuple->getElementNames());
-        return std::make_shared<DataTypeTuple>(elements);
-    }
-    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
-        return std::make_shared<DataTypeArray>(makeNothingNullable(array->getNestedType()));
-    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
-        return std::make_shared<DataTypeMap>(map->getKeyType(), makeNothingNullable(map->getValueType()));
-    return type;
-}
-
-}
 
 AvroForIcebergDeserializer::AvroForIcebergDeserializer(
     std::unique_ptr<ReadBufferFromFileBase> buffer_,
@@ -75,7 +41,7 @@ try
         = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer), MAX_AVRO_SCHEMA_DEPTH);
 
     avro::NodePtr root_node = manifest_file_reader->dataSchema().root();
-    auto data_type = makeNothingNullable(AvroSchemaReader::avroNodeToDataType(root_node));
+    auto data_type = AvroSchemaReader::avroNodeToDataType(root_node);
 
     MutableColumns columns;
     columns.push_back(data_type->createColumn());
@@ -265,8 +231,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
 
     std::unordered_map<Int32, ColumnInfo> columns_infos;
 
-    for (const auto & path :
-         {c_data_file_value_counts, c_data_file_column_sizes, c_data_file_null_value_counts, c_data_file_nan_value_counts})
+    for (const auto & path : {c_data_file_value_counts, c_data_file_column_sizes, c_data_file_null_value_counts})
     {
         if (hasPath(path))
         {
@@ -274,21 +239,14 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
             for (const auto & column_stats : values_count.safeGet<Array>())
             {
                 const auto & column_number_and_count = column_stats.safeGet<Tuple>();
-                if (column_number_and_count.size() != 2)
-                    throw Exception(
-                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                        "Expected a key-value pair of 2 elements in {} in manifest file '{}', got {} elements",
-                        path, manifest_file_path, column_number_and_count.size());
                 Int32 number = static_cast<Int32>(column_number_and_count[0].safeGet<Int32>());
                 Int64 count = column_number_and_count[1].safeGet<Int64>();
                 if (path == c_data_file_value_counts)
                     columns_infos[number].rows_count = count;
                 else if (path == c_data_file_column_sizes)
                     columns_infos[number].bytes_size = count;
-                else if (path == c_data_file_null_value_counts)
-                    columns_infos[number].nulls_count = count;
                 else
-                    columns_infos[number].nans_count = count;
+                    columns_infos[number].nulls_count = count;
             }
         }
     }
@@ -302,11 +260,6 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
             for (const auto & column_stats : bounds.safeGet<Array>())
             {
                 const auto & column_number_and_bound = column_stats.safeGet<Tuple>();
-                if (column_number_and_bound.size() != 2)
-                    throw Exception(
-                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                        "Expected a key-value pair of 2 elements in {} in manifest file '{}', got {} elements",
-                        path, manifest_file_path, column_number_and_bound.size());
                 Int32 number = static_cast<Int32>(column_number_and_bound[0].safeGet<Int32>());
                 const Field & bound_value = column_number_and_bound[1];
 
@@ -363,18 +316,6 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
             content_size_in_bytes = content_size_field.safeGet<Int64>();
     }
 
-    std::optional<std::vector<Int64>> split_offsets;
-    if (hasPath(c_data_file_split_offsets))
-    {
-        Field split_offsets_field = getValueFromRowByName(row_index, c_data_file_split_offsets);
-        if (!split_offsets_field.isNull())
-        {
-            split_offsets.emplace();
-            for (const Field & offset : split_offsets_field.safeGet<Array>())
-                split_offsets->push_back(offset.safeGet<Int64>());
-        }
-    }
-
     switch (content_type)
     {
         case FileContentType::DATA: {
@@ -399,8 +340,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 /*equality_ids*/ std::nullopt,
                 sort_order_id,
                 record_count,
-                file_size_in_bytes,
-                split_offsets);
+                file_size_in_bytes);
         }
         case FileContentType::POSITION_DELETE: {
             /// reference_file_path can be absent in schema for some reason, though it is present in specification: https://iceberg.apache.org/spec/#manifests
@@ -531,31 +471,6 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::getParsedManifestFileEntr
     return parsed_manifest_file_entries[row_index];
 }
 
-namespace
-{
-
-/// Resolves a path made only of named Tuple elements, giving the same column and type as `IDataType::getSubcolumn`.
-std::optional<std::pair<ColumnPtr, DataTypePtr>> tryGetTupleElement(ColumnPtr column, DataTypePtr type, std::string_view path)
-{
-    while (true)
-    {
-        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
-        if (!tuple_type)
-            return {};
-        const size_t dot = path.find('.');
-        const auto position = tuple_type->tryGetPositionByName(path.substr(0, dot));
-        if (!position)
-            return {};
-        column = assert_cast<const ColumnTuple &>(*column).getColumnPtr(*position);
-        type = tuple_type->getElement(*position);
-        if (dot == std::string_view::npos)
-            return std::make_pair(std::move(column), std::move(type));
-        path.remove_prefix(dot + 1);
-    }
-}
-
-}
-
 std::optional<std::pair<ColumnPtr, DataTypePtr>> & AvroForIcebergDeserializer::extractSubcolumnWithType(const std::string & path) const
 {
     // First, try to read from cache with shared lock (for concurrent reads)
@@ -575,11 +490,7 @@ std::optional<std::pair<ColumnPtr, DataTypePtr>> & AvroForIcebergDeserializer::e
         return it->second;
 
     // Populate cache
-    if (auto element = tryGetTupleElement(parsed_column, parsed_column_data_type, path))
-    {
-        cache_extracted_subcolumns_with_types[path] = std::move(element);
-    }
-    else if (parsed_column_data_type->hasSubcolumn(path))
+    if (parsed_column_data_type->hasSubcolumn(path))
     {
         auto column = parsed_column_data_type->getSubcolumn(path, parsed_column);
         auto data_type = parsed_column_data_type->getSubcolumnType(path);

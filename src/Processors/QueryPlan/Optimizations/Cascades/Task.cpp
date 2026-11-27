@@ -1,5 +1,4 @@
 #include <cmath>
-#include <Common/VectorWithMemoryTracking.h>
 #include <limits>
 #include <memory>
 #include <Processors/QueryPlan/Optimizations/Cascades/Task.h>
@@ -90,9 +89,9 @@ void OptimizeGroupTask::execute(CascadesOptimizer & optimizer)
     }
 }
 
-GroupExpressions OptimizeGroupTask::runEnforcementStage(CascadesOptimizer & optimizer, const GroupPtr & group) const
+std::vector<GroupExpressionPtr> OptimizeGroupTask::runEnforcementStage(CascadesOptimizer & optimizer, const GroupPtr & group) const
 {
-    GroupExpressions enforcer_expressions;
+    std::vector<GroupExpressionPtr> enforcer_expressions;
 
     /// Fixed-point loop: iterate over newly-added physical expressions until no
     /// new enforcers are produced.  Each iteration may create expressions that
@@ -111,9 +110,7 @@ GroupExpressions OptimizeGroupTask::runEnforcementStage(CascadesOptimizer & opti
 
             if (required_properties.isSatisfiedBy(expression->properties))
             {
-                /// The expression can still wait for its cost, or its inputs can have better
-                /// implementations now: the enforcers below are priced on it.
-                optimizer.costAndUpdateBest(expression);
+                optimizer.updateBestPlan(expression);
                 continue;
             }
 
@@ -167,9 +164,9 @@ static void scheduleApplicableRules(
     CascadesOptimizer & optimizer,
     const GroupExpressionPtr & expression,
     const ExpressionProperties & required_properties,
-    const VectorWithMemoryTracking<OptimizationRulePtr> & rules)
+    const std::vector<OptimizationRulePtr> & rules)
 {
-    VectorWithMemoryTracking<std::pair<Promise, OptimizationRulePtr>> moves;
+    std::vector<std::pair<Promise, OptimizationRulePtr>> moves;
     for (const auto & rule : rules)
     {
         if (!expression->isApplied(*rule, required_properties) && rule->checkPattern(expression, required_properties, optimizer.getMemo()))
@@ -261,7 +258,9 @@ void OptimizeInputsTask::execute(CascadesOptimizer & optimizer)
         /// Ensure statistics are derived before cost estimation
         optimizer.deriveStatistics(expression->group_id);
 
-        optimizer.costAndUpdateBest(expression);
+        /// Cost the expression and drop it if the group already holds a cheaper best for the
+        /// same properties (same-group best-cost pruning, not a cost-bounded search).
+        optimizer.costAndUpdateBest(expression, /*prune_against_best=*/true);
         return;
     }
     else

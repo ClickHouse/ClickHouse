@@ -1,4 +1,4 @@
-set enable_kusto_dialect=1;
+set allow_experimental_kusto_dialect=1;
 set dialect = 'kusto';
 print '-- isnan --';
 print isnan(double(nan));

@@ -45,8 +45,8 @@ parallel full sorting merge
 1	['FULL_SORTING_MERGE']	['LEFT']	['ASOF']	[]
 1	['PARALLEL_FULL_SORTING_MERGE']	['INNER']	['ALL']	[]
 ie join
-1	['INEQUALITY']	['INNER']	['ALL']	[]
-1	['INEQUALITY']	['LEFT']	['ANTI']	[]
+1	['IE_JOIN']	['INNER']	['ALL']	[]
+1	['IE_JOIN']	['LEFT']	['ANTI']	[]
 explain reports the joins of the pipeline it builds
 1	['HASH']	['INNER']	['ALL']	[]
 1	['HASH']	['INNER']	['ALL']	[]

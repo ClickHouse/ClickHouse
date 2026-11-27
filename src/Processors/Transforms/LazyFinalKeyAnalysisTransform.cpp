@@ -1,5 +1,4 @@
 #include <Analyzer/TableExpressionModifiers.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeSet.h>
@@ -113,7 +112,7 @@ std::unique_ptr<ReadFromMergeTree> LazyFinalKeyAnalysisTransform::buildReadingSt
     const auto & merging_params = data.merging_params;
 
     Names all_column_names;
-    UnorderedSetWithMemoryTracking<std::string_view> columns_to_read;
+    std::unordered_set<std::string_view> columns_to_read;
     for (const auto & column : sorting_key.expression->getRequiredColumnsWithTypes())
     {
         columns_to_read.insert(column.name);

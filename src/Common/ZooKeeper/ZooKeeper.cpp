@@ -1420,16 +1420,11 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
         if (!state->event.tryWait(1000))
             continue;
 
-        /// Read the code once: every iteration issues a new `get` with the same callback, and a late response
-        /// of an earlier `get` may overwrite the code at any moment, e.g. with `ZNONODE` right after the watch
-        /// reported the deletion. Reading it twice could then pass the `ZNONODE` check and throw on the second read.
-        const auto code = static_cast<Coordination::Error>(state->code.load(std::memory_order_seq_cst));
-
-        if (code == Coordination::Error::ZNONODE)
+        if (state->code == static_cast<int32_t>(Coordination::Error::ZNONODE))
             return true;
 
-        if (code != Coordination::Error::ZOK)
-            throw KeeperException::fromPath(code, path);
+        if (state->code)
+            throw KeeperException::fromPath(static_cast<Coordination::Error>(state->code.load(std::memory_order_seq_cst)), path);
 
         if (state->event_type == Coordination::DELETED)
             return true;

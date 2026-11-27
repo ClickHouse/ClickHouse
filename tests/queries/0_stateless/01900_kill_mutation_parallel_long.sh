@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-msan
+# Tags: long
 
 #
 # Check that KILL MUTATION can be executed in parallel for different tables.

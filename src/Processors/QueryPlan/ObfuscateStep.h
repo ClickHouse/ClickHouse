@@ -18,7 +18,7 @@ public:
         Names column_names_,
         ContextPtr context_);
 
-    [[nodiscard]] String getName() const override { return "Obfuscate"; }
+    String getName() const override { return "Obfuscate"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 

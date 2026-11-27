@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Client/ConnectionPool_fwd.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
@@ -97,9 +96,6 @@ bool isInitiatorOnlySettingName(std::string_view name);
 /// via `formatWithSecretsOneLine()` in addition to the (already stripped) inter-server settings packet.
 void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query);
 
-/// Like `stripInitiatorOnlySettingsFromQuery`, for the text of a distributed DDL query.
-void stripInitiatorOnlySettingsFromDDLQuery(const ASTPtr & query);
-
 /// Update settings for Distributed query.
 ///
 /// - Removes different restrictions (like max_concurrent_queries_for_user, max_memory_usage_for_user, etc.)
@@ -127,15 +123,6 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context);
 /// bounds the local reading at least as tightly (a profile that caps both settings to the same value, like the
 /// one used by the Fast test job, must not disable the local plan for every query).
 bool leafTimeoutRequiresRemoteOnlyLeafReading(const Settings & settings);
-
-/// Returns per-replica liveness of `cluster` (resolved from `cluster_name`), in the cluster's replica order.
-/// It is the same `is_active` signal that `system.clusters` reports. Returns an empty vector when the
-/// liveness is unknown; the caller must then treat all replicas as usable.
-std::vector<bool> getReplicasLiveness(const String & cluster_name, const ClusterPtr & cluster);
-
-/// Number of replicas a parallel replicas query over `cluster` reads from, as the reading coordinator counts them:
-/// the active replicas (all of them when the liveness is unknown), at most `max_parallel_replicas`.
-size_t getReplicasCountForParallelReplicas(const ContextPtr & context, const ClusterPtr & cluster);
 
 /// Builds the `_shard_num` scalar shipped to a shard, recording which shard numbering the number belongs
 /// to: `Cluster::getShardScopeIdentity`, not the name, since a derived cluster keeps the name and may
@@ -172,7 +159,7 @@ struct LocalPlanParallelReplicasInfo
 {
     ParallelReplicasReadingCoordinatorPtr coordinator;
     /// Sized to the coordinator's replica count, with the local replica at `local_replica_index`.
-    VectorWithMemoryTracking<ConnectionPoolPtr> connection_pools;
+    std::vector<ConnectionPoolPtr> connection_pools;
     /// The local replica's number; matches the coordinator's snapshot replica number.
     std::optional<size_t> local_replica_index;
 };
@@ -207,7 +194,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const ContextPtr & context,
     std::optional<QueryPipeline> pipeline = std::nullopt,
     std::optional<ParallelReplicasReadingCoordinatorPtr> coordinator = std::nullopt,
-    VectorWithMemoryTracking<ConnectionPoolPtr> reused_connection_pools = {},
+    std::vector<ConnectionPoolPtr> reused_connection_pools = {},
     std::optional<size_t> reused_local_replica_index = std::nullopt);
 
 void executeQueryWithParallelReplicas(

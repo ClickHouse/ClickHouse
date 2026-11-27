@@ -14,7 +14,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVector.h>
-#include <Formats/FormatSettingsEnums.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/FieldInterval.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -34,7 +34,7 @@ static constexpr auto millisecond_multiplier = 1'000;
 static constexpr auto microsecond_multiplier = 1'000'000;
 static constexpr auto nanosecond_multiplier = 1'000'000'000;
 
-static constexpr FormatSettingsEnums::DateTimeOverflowBehavior default_date_time_overflow_behavior = FormatSettingsEnums::DateTimeOverflowBehavior::Ignore;
+static constexpr FormatSettings::DateTimeOverflowBehavior default_date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
 
 namespace ErrorCodes
 {
@@ -495,7 +495,7 @@ inline FieldIntervalPtr getPreimageForStartOfDay(const IDataType & type, const F
     return makeDateOrDateTimePreimageForDayRange(type, start_day, end_day, source_time_zone);
 }
 
-template <FormatSettingsEnums::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>
+template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>
 struct ToDateImpl
 {
     static constexpr auto name = "toDate";
@@ -513,14 +513,14 @@ struct ToDateImpl
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         auto day_num = time_zone.toDayNum(t);
-        if constexpr (date_time_overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Saturate)
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
             if (day_num < 0)
                 day_num = 0;
             else if (day_num > DATE_LUT_MAX_DAY_NUM)
                 day_num = DATE_LUT_MAX_DAY_NUM;
         }
-        else if constexpr (date_time_overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Throw)
+        else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             if (day_num < 0 || day_num > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", t);
@@ -533,14 +533,14 @@ struct ToDateImpl
     }
     static UInt16 execute(Int32 t, const DateLUTImpl &)
     {
-        if constexpr (date_time_overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Saturate)
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
             if (t < 0)
                 return UInt16(0);
             if (t > DATE_LUT_MAX_DAY_NUM)
                 return UInt16(DATE_LUT_MAX_DAY_NUM);
         }
-        else if constexpr (date_time_overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Throw)
+        else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             if (t < 0 || t > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", t);
@@ -1299,16 +1299,11 @@ struct ToStartOfInterval<IntervalKind::Kind::Month>
         /// `offset * scale_multiplier > t`, but cannot overflow near the top of the `DateTime64` range.
         /// `addMonths` keeps the time of day of the origin, also when the UTC offset changes on the day of the bucket
         /// start between midnight and that time, which the difference between the midnights would not account for.
-        /// `addMonths` maps the second occurrence of a repeated hour to the first one, so zero months is not passed to it.
-        auto bucket_start = [&](Int64 num_months)
-        {
-            return num_months == 0 ? 0 : time_zone.addMonths(scaled_origin, num_months) - scaled_origin;
-        };
-        Int64 offset = bucket_start(month_multiplier);
+        Int64 offset = time_zone.addMonths(scaled_origin, month_multiplier) - scaled_origin;
         while (month_multiplier >= months && offset > scaled_time)
         {
             month_multiplier -= months;
-            offset = bucket_start(month_multiplier);
+            offset = time_zone.addMonths(scaled_origin, month_multiplier) - scaled_origin;
         }
         return offset;
     }
@@ -3024,12 +3019,12 @@ struct ToRelativeHourNumImpl
         else
             return static_cast<UInt32>(std::clamp<Int64>(time_zone.toRelativeHourNum(ExtendedDayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
-    ALWAYS_INLINE static auto execute(UInt16 d, const DateLUTImpl & time_zone)
+    ALWAYS_INLINE static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int64>(time_zone.toStableRelativeHourNum(DayNum(d)));
+            return static_cast<UInt32>(time_zone.toStableRelativeHourNum(DayNum(d)));
         else
-            return static_cast<UInt32>(std::clamp<Int64>(time_zone.toRelativeHourNum(DayNum(d)), 0, std::numeric_limits<UInt32>::max()));
+            return static_cast<UInt32>(time_zone.toRelativeHourNum(DayNum(d)));
     }
     static constexpr bool hasPreimage() { return false; }
 
@@ -3060,12 +3055,9 @@ struct ToRelativeMinuteNumImpl
         else
             return static_cast<UInt32>(std::clamp<Int64>(time_zone.toRelativeMinuteNum(ExtendedDayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
-    static auto execute(UInt16 d, const DateLUTImpl & time_zone)
+    static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int64>(time_zone.toRelativeMinuteNum(DayNum(d)));
-        else
-            return static_cast<UInt32>(std::clamp<Int64>(time_zone.toRelativeMinuteNum(DayNum(d)), 0, std::numeric_limits<UInt32>::max()));
+        return static_cast<UInt32>(time_zone.toRelativeMinuteNum(DayNum(d)));
     }
     static constexpr bool hasPreimage() { return false; }
 
@@ -3096,13 +3088,10 @@ struct ToRelativeSecondNumImpl
         else
             return static_cast<UInt32>(std::clamp<Int64>(time_zone.fromDayNum(ExtendedDayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
-    static auto execute(UInt16 d, const DateLUTImpl & time_zone)
+    static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(d)));
-        else
-            /// Clamped: a Date past 2106-02-07 exceeds UInt32 seconds.
-            return static_cast<UInt32>(std::clamp<Int64>(time_zone.fromDayNum(DayNum(d)), 0, std::numeric_limits<UInt32>::max()));
+        /// Clamped: a Date past 2106-02-07 exceeds UInt32 seconds.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.fromDayNum(DayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
     static constexpr bool hasPreimage() { return false; }
 
@@ -3121,7 +3110,7 @@ struct ToRelativeSubsecondNumImpl
         if (scale == scale_multiplier)
             return t.value;
         if (scale > scale_multiplier)
-            return wholeSecondsRoundedDown(t.value, scale / scale_multiplier);
+            return t.value / (scale / scale_multiplier);
         return common::mulIgnoreOverflow(t.value, scale_multiplier / scale);
     }
     static Int64 execute(const Time64 &, const Time64::NativeType, const DateLUTImpl &)
@@ -3138,7 +3127,7 @@ struct ToRelativeSubsecondNumImpl
     }
     static Int64 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return common::mulIgnoreOverflow(static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(d))), scale_multiplier);
+        return common::mulIgnoreOverflow(static_cast<Int64>(time_zone.fromDayNum(DayNum(d))), scale_multiplier);
     }
 
     using FactorTransform = ZeroTransform;
@@ -3271,11 +3260,18 @@ struct ToDateTimeComponentsImpl
             --components.whole;
         }
 
-        /// In nanoseconds, so that the components of values with different scales can be compared.
-        const Int64 fractional = components.fractional * (nanosecond_multiplier / scale_multiplier);
-        UInt16 millisecond = static_cast<UInt16>(fractional / 1'000'000);
-        UInt16 microsecond = static_cast<UInt16>(fractional / 1000 % 1000);
-        UInt16 nanosecond = static_cast<UInt16>(fractional % 1000);
+        // Normalize the dividers between microseconds and nanoseconds w.r.t. the scale.
+        Int64 microsecond_divider = (millisecond_multiplier * scale_multiplier) / microsecond_multiplier;
+        Int64 nanosecond_divider = scale_multiplier / microsecond_multiplier;
+
+        // Protect against division by zero for smaller scale multipliers.
+        microsecond_divider = (microsecond_divider ? microsecond_divider : 1);
+        nanosecond_divider = (nanosecond_divider ? nanosecond_divider : 1);
+
+        const Int64 & fractional = components.fractional;
+        UInt16 millisecond = static_cast<UInt16>(fractional / microsecond_divider);
+        UInt16 microsecond = static_cast<UInt16>((fractional % microsecond_divider) / nanosecond_divider);
+        UInt16 nanosecond = static_cast<UInt16>(fractional % nanosecond_divider);
 
         return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(components.whole), millisecond, microsecond, nanosecond};
     }

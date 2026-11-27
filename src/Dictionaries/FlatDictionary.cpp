@@ -779,10 +779,6 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
             return;
         }
 
-        /// A repeated key keeps its last row, so a value replaces an earlier NULL.
-        if (attribute.is_nullable_set)
-            attribute.is_nullable_set->erase(key);
-
         auto & attribute_value = value.safeGet<AttributeType>();
 
         auto & container = std::get<ContainerType<ValueType>>(attribute.container);

@@ -26,8 +26,8 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO t_cc_renamed SELECT number, number * 2 FROM n
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t_cc_renamed RENAME COLUMN a TO b"
 
 # The part still stores the column as `a`; reading `b` populates the cache.
-$CLICKHOUSE_CLIENT -q "SELECT sum(b) FROM t_cc_renamed SETTINGS use_columns_cache = 1, use_statistics_for_sum_avg_aggregation = 0"
-$CLICKHOUSE_CLIENT -q "SELECT sum(b) FROM t_cc_renamed SETTINGS use_columns_cache = 1, use_statistics_for_sum_avg_aggregation = 0"
+$CLICKHOUSE_CLIENT -q "SELECT sum(b) FROM t_cc_renamed SETTINGS use_columns_cache = 1"
+$CLICKHOUSE_CLIENT -q "SELECT sum(b) FROM t_cc_renamed SETTINGS use_columns_cache = 1"
 
 echo 'cached columns of the table:'
 $CLICKHOUSE_CLIENT -q "
@@ -51,8 +51,8 @@ GROUP BY column ORDER BY column
 # The old name is reintroduced as a new column. A user granted only the new `a` must not learn
 # anything about the entries of `b`, which the part stores under the name `a`.
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t_cc_renamed ADD COLUMN a UInt64 DEFAULT 42"
-$CLICKHOUSE_CLIENT -q "SELECT sum(b) FROM t_cc_renamed SETTINGS use_columns_cache = 1, use_statistics_for_sum_avg_aggregation = 0"
-$CLICKHOUSE_CLIENT -q "SELECT sum(b) FROM t_cc_renamed SETTINGS use_columns_cache = 1, use_statistics_for_sum_avg_aggregation = 0"
+$CLICKHOUSE_CLIENT -q "SELECT sum(b) FROM t_cc_renamed SETTINGS use_columns_cache = 1"
+$CLICKHOUSE_CLIENT -q "SELECT sum(b) FROM t_cc_renamed SETTINGS use_columns_cache = 1"
 
 $CLICKHOUSE_CLIENT -q "CREATE USER ${user_a}"
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.columns_cache TO ${user_a}"

@@ -72,9 +72,9 @@ public:
         UNREACHABLE();
     }
 
-    [[nodiscard]] const Poco::URI & getURI() const { return uri; }
+    const Poco::URI & getURI() const { return uri; }
 
-    [[nodiscard]] const std::set<String, HTTPFieldLess> & getForwardHeaders() const { return forward_headers; }
+    const std::set<String, HTTPFieldLess> & getForwardHeaders() const { return forward_headers; }
 
 private:
     const ConnectionTimeouts timeouts;
@@ -94,7 +94,7 @@ public:
     using HTTPAuthClient<TResponseParser>::HTTPAuthClient;
     using Result = HTTPAuthClient<TResponseParser>::Result;
 
-    [[nodiscard]] Result authenticate(const String & user_name, const String & password, const std::map<String, String, HTTPFieldLess> & headers) const
+    Result authenticate(const String & user_name, const String & password, const std::map<String, String, HTTPFieldLess> & headers) const
     {
         Poco::Net::HTTPRequest request{
             Poco::Net::HTTPRequest::HTTP_GET, this->getURI().getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1};

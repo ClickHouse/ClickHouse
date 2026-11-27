@@ -14,12 +14,6 @@ Exporting backups to your own account does not normally disable ClickHouse-manag
 
 In this guide, we show examples of how to take full and incremental backups to AWS, GCP, Azure object storage as well as how to restore from the backups.
 
-<Warning>
-**Not available for regulated services**
-
-Services created with the **HIPAA compliant** or **PCI compliant** region type cannot export backups to a customer-owned bucket. The regulated environment does not permit writes to storage outside it, so the **Set up external backup** option is disabled in the console and the `BACKUP` privilege described below is not granted on these services. ClickHouse-managed backups, including configurable schedules, remain available. See [HIPAA onboarding](/products/cloud/guides/security/compliance/hipaa-onboarding#backups) and [PCI onboarding](/products/cloud/guides/security/compliance/pci-onboarding#backups).
-</Warning>
-
 <Note>
 Any usage where backups are being exported to a different region in the same cloud provider will incur [data transfer](/products/cloud/reference/billing/network-data-transfer) charges.  
 

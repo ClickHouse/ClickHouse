@@ -35,7 +35,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -145,7 +144,7 @@ Pipe buildPartitionReadingPipeline(
 
         auto align_step = std::make_unique<AlignStreamsStep>(metadata_plan->getCurrentHeader(), plan->getCurrentHeader(), partition_id, state.getPartitionWatermark(partition_id));
 
-        QueryPlanPtrs plans;
+        std::vector<QueryPlanPtr> plans;
         plans.push_back(std::move(metadata_plan));
         plans.push_back(std::move(plan));
 

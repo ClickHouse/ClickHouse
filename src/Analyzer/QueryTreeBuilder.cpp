@@ -49,6 +49,8 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/UnionNode.h>
 
+#include <AggregateFunctions/AggregateFunctionGroupConcat.h>
+
 #include <Core/Settings.h>
 
 #include <Databases/IDatabase.h>
@@ -61,7 +63,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_shuffle_query;
     extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsJoinStrictness join_default_strictness;
     extern const SettingsBool enable_order_by_all;
@@ -81,7 +82,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_QUERY_PARAMETER;
-    extern const int SUPPORT_IS_DISABLED;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -124,7 +125,7 @@ public:
 
     QueryTreeNodePtr buildQueryTreeNode(ASTPtr query_, ContextPtr context_);
 
-    [[nodiscard]] std::shared_ptr<TableFunctionNode> buildTableFunction(const ASTPtr & table_function, const ContextPtr & context) const;
+    std::shared_ptr<TableFunctionNode> buildTableFunction(const ASTPtr & table_function, const ContextPtr & context) const;
 
 private:
 
@@ -134,49 +135,51 @@ private:
         bool is_materialized = false;
     };
 
-    [[nodiscard]] QueryTreeNodePtr buildSelectOrUnionExpression(
+    QueryTreeNodePtr buildSelectOrUnionExpression(
         const ASTPtr & select_or_union_query,
         bool is_subquery,
         const CommonTableExpressionData & cte_data,
         const ASTPtr & aliases,
         const ContextPtr & context) const;
 
-    [[nodiscard]] QueryTreeNodePtr buildSelectWithUnionExpression(
+    QueryTreeNodePtr buildSelectWithUnionExpression(
         const ASTPtr & select_with_union_query,
         bool is_subquery,
         const CommonTableExpressionData & cte_data,
         const ASTPtr & aliases,
         const ContextPtr & context) const;
 
-    [[nodiscard]] QueryTreeNodePtr buildSelectIntersectExceptQuery(
+    QueryTreeNodePtr buildSelectIntersectExceptQuery(
         const ASTPtr & select_intersect_except_query,
         bool is_subquery,
         const CommonTableExpressionData & cte_data,
         const ASTPtr & aliases,
         const ContextPtr & context) const;
 
-    [[nodiscard]] QueryTreeNodePtr buildSelectExpression(
+    QueryTreeNodePtr buildSelectExpression(
         const ASTPtr & select_query,
         bool is_subquery,
         const CommonTableExpressionData & cte_data,
         const ASTPtr & aliases,
         const ContextPtr & context) const;
 
-    [[nodiscard]] QueryTreeNodePtr buildSortList(const ASTPtr & order_by_expression_list, const ContextPtr & context) const;
+    QueryTreeNodePtr buildSortList(const ASTPtr & order_by_expression_list, const ContextPtr & context) const;
 
-    [[nodiscard]] QueryTreeNodePtr buildInterpolateList(const ASTPtr & interpolate_expression_list, const ContextPtr & context) const;
+    QueryTreeNodePtr buildInterpolateList(const ASTPtr & interpolate_expression_list, const ContextPtr & context) const;
 
-    [[nodiscard]] QueryTreeNodePtr buildWindowList(const ASTPtr & window_definition_list, const ContextPtr & context) const;
+    QueryTreeNodePtr buildWindowList(const ASTPtr & window_definition_list, const ContextPtr & context) const;
 
-    [[nodiscard]] QueryTreeNodePtr buildExpressionList(const ASTPtr & expression_list, const ContextPtr & context) const;
+    QueryTreeNodePtr buildExpressionList(const ASTPtr & expression_list, const ContextPtr & context) const;
 
-    [[nodiscard]] QueryTreeNodePtr buildExpression(const ASTPtr & expression, const ContextPtr & context) const;
+    QueryTreeNodePtr buildExpression(const ASTPtr & expression, const ContextPtr & context) const;
 
-    [[nodiscard]] QueryTreeNodePtr buildWindow(const ASTPtr & window_definition, const ContextPtr & context) const;
+    QueryTreeNodePtr buildWindow(const ASTPtr & window_definition, const ContextPtr & context) const;
 
-    [[nodiscard]] QueryTreeNodePtr buildJoinTree(bool is_subquery, const ASTSelectQuery & select_query, const ContextPtr & context) const;
+    QueryTreeNodePtr buildJoinTree(bool is_subquery, const ASTSelectQuery & select_query, const ContextPtr & context) const;
 
-    [[nodiscard]] ColumnTransformersNodes buildColumnTransformers(const ASTPtr & matcher_expression, const ContextPtr & context) const;
+    ColumnTransformersNodes buildColumnTransformers(const ASTPtr & matcher_expression, const ContextPtr & context) const;
+
+    QueryTreeNodePtr setSecondArgumentAsParameter(const ASTFunction * function, const ContextPtr & context) const;
 };
 
 QueryTreeNodePtr QueryTreeBuilder::buildQueryTreeNode(ASTPtr query_, ContextPtr context_)
@@ -256,25 +259,46 @@ void applyQueryLevelSettings(
     /// uncastable value throws as for a top-level clause, on every server that executes the query. The
     /// node records the effective `changes`: the ones that survive, with their clamped values and the
     /// literals as written, so `toAST`, the tree hash, the `Planner` and the shards receiving the
-    /// subquery see what was applied. The changes are clamped one at a time, so that each is clamped
-    /// against the context as the preceding changes left it - the last-wins reading the clause has
-    /// everywhere else.
-    ///
-    /// `SETTINGS x = DEFAULT` is parsed into `default_settings`, not `changes`. Those settings are reset
-    /// in the subquery scope as well, so that the reset actually takes effect for the subquery (e.g. a
-    /// table function such as `obfuscate` reading the effective setting). A reset is an assignment of
-    /// the declared default, so it can violate the reader's constraints exactly like an explicit
-    /// assignment - without clamping, an inner `SETTINGS max_threads = DEFAULT` would escape a
-    /// `readonly`, `CONST` or `MIN` / `MAX` constraint that the same clause could not escape by writing
-    /// the value out. The top-level path throws (`checkSettingsConstraintsForSettingsReset` in
-    /// `InterpreterSetQuery`); here a forbidden reset is dropped, and a reset past a bound becomes an
-    /// assignment of the clamped value. The node keeps the resets as written.
-    ///
-    /// The sequence is shared with `ApplyWithSubqueryVisitor` and the query result cache check
-    /// (`Context::applyNestedQuerySettingsClamped`).
-    auto effective_changes = updated_context->applyNestedQuerySettingsClamped(set_query.changes, set_query.default_settings);
-    settings_changes.insert(settings_changes.end(), effective_changes.begin(), effective_changes.end());
-    default_settings.insert(default_settings.end(), set_query.default_settings.begin(), set_query.default_settings.end());
+    /// subquery see what was applied. `SETTINGS name = DEFAULT` is parsed into `default_settings`, not
+    /// into `changes`, and is clamped separately below.
+    if (!set_query.changes.empty())
+    {
+        /// One change at a time, so that each is clamped against the context as the preceding changes
+        /// left it. Clamping the whole clause as a batch checks every change against the context as it
+        /// was before the clause - so `SETTINGS use_query_cache = 1, use_query_cache = 0` could resolve
+        /// differently from the last-wins reading the clause has everywhere else.
+        for (const auto & change : set_query.changes)
+        {
+            SettingsChanges single_change{change};
+            updated_context->clampToSettingsConstraintsRejectingInvalidChanges(single_change, SettingSource::QUERY);
+            updated_context->applySettingsChanges(single_change);
+            settings_changes.insert(settings_changes.end(), single_change.begin(), single_change.end());
+        }
+    }
+
+    /// `SETTINGS x = DEFAULT` is parsed into `default_settings`, not `changes`. Reset those settings
+    /// to their default values in the subquery scope as well, so that the reset actually takes effect
+    /// for the subquery (e.g. a table function such as `obfuscate` reading the effective setting),
+    /// consistent with how `changes` are applied here and with how top-level query settings are
+    /// handled by `InterpreterSetQuery`.
+    if (!set_query.default_settings.empty())
+    {
+        default_settings.insert(default_settings.end(), set_query.default_settings.begin(), set_query.default_settings.end());
+
+        /// A reset is an assignment of the declared default, so it can violate the reader's constraints
+        /// exactly like an explicit assignment - without this, an inner `SETTINGS max_threads = DEFAULT`
+        /// or `additional_table_filters = DEFAULT` would escape a `readonly`, `CONST` or `MIN` / `MAX`
+        /// constraint that the same clause could not escape by writing the value out. The top-level path
+        /// throws (`checkSettingsConstraintsForSettingsReset` in `InterpreterSetQuery`); here, as for the
+        /// `changes` above, clamp instead: a forbidden reset is dropped, a reset past a bound becomes an
+        /// assignment of the clamped value. The node keeps the clause as written, so the tree's AST and
+        /// hash are unchanged.
+        auto allowed_resets = set_query.default_settings;
+        SettingsChanges clamped_resets;
+        updated_context->clampSettingsConstraintsForSettingsReset(allowed_resets, clamped_resets, SettingSource::QUERY);
+        updated_context->resetSettingsToDefaultValue(allowed_resets);
+        updated_context->applySettingsChanges(clamped_resets);
+    }
 
     if (!set_query.query_parameters.empty())
     {
@@ -289,10 +313,6 @@ void applyQueryLevelSettings(
             query_parameters_map.insert_or_assign(parameter_name, parameter_value);
         updated_context->addQueryParameters(query_parameters_map);
     }
-
-    /// The clause of a query inside the body of a `SQL SECURITY DEFINER` / `NONE` view must not turn parallel replicas back on.
-    if (updated_context->isSQLSecurityOverriddenBody())
-        updated_context->restrictParallelReplicasInSQLSecurityOverriddenBody();
 }
 
 QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
@@ -311,8 +331,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     /// A `SETTINGS` clause of a UNION is query-level: it applies to the whole union, not to a single
     /// arm. The grammar gives it two shapes - `ASTQueryWithOutput::settings_ast` for the top-level
     /// query, and, for every other position (a subquery, a table function argument, a CTE), the last
-    /// arm's own `SETTINGS` clause, which is where `ParserSelectQuery` leaves a trailing clause (possibly
-    /// nested into `INTERSECT` / `EXCEPT`, see `ASTSelectIntersectExceptQuery::getTrailingSettings`). Both
+    /// arm's own `SETTINGS` clause, which is where `ParserSelectQuery` leaves a trailing clause. Both
     /// are applied to the union's context, and that context is the one every arm is built from, so a
     /// nested `(SELECT ... UNION ALL SELECT ... SETTINGS x = ...)` shapes ALL of its arms - the same
     /// contract `InterpreterSetQuery::applySettingsFromQuery` implements for a directly executed
@@ -330,7 +349,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     };
 
     apply_settings(select_with_union_query_typed.settings_ast);
-    apply_settings(ASTSelectIntersectExceptQuery::getTrailingSettings(select_lists.children.back()));
+    if (auto * last_select = select_lists.children.back()->as<ASTSelectQuery>())
+        apply_settings(last_select->settings());
 
     auto union_node = std::make_shared<UnionNode>(
         std::move(updated_context),
@@ -393,9 +413,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     std::vector<String> default_settings;
     NameToNameVector query_parameters;
 
-    if (auto trailing_settings = ASTSelectIntersectExceptQuery::getTrailingSettings(select_lists.back()))
+    if (auto * last_select = select_lists.back()->as<ASTSelectQuery>())
     {
-        if (auto * set_query = trailing_settings->as<ASTSetQuery>())
+        if (auto * set_query = last_select->settings() ? last_select->settings()->as<ASTSetQuery>() : nullptr)
             applyQueryLevelSettings(*set_query, updated_context, settings_changes, default_settings, query_parameters);
     }
 
@@ -446,7 +466,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
             select_settings->as<ASTSetQuery &>(), updated_context, settings_changes, default_settings, query_parameters);
 
     const auto enable_order_by_all = updated_context->getSettingsRef()[Setting::enable_order_by_all];
-    const auto allow_experimental_shuffle_query = updated_context->getSettingsRef()[Setting::allow_experimental_shuffle_query];
 
     auto current_query_tree = std::make_shared<QueryNode>(
         std::move(updated_context), std::move(settings_changes), std::move(default_settings), std::move(query_parameters));
@@ -464,11 +483,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsGroupByWithGroupingSets(select_query_typed.group_by_with_grouping_sets);
     current_query_tree->setIsGroupByAll(select_query_typed.group_by_all);
     current_query_tree->setIsLimitByAll(select_query_typed.limit_by_all);
-
-    if (select_query_typed.shuffle && !allow_experimental_shuffle_query)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for `SHUFFLE` is disabled (turn on setting `allow_experimental_shuffle_query`)");
-
-    current_query_tree->setIsShuffle(select_query_typed.shuffle);
     current_query_tree->setIsLimitAfterAll(select_query_typed.limit_after_all);
     /// order_by_all flag in AST is set w/o consideration of `enable_order_by_all` setting
     /// since SETTINGS section has not been parsed yet, - so, check the setting here
@@ -815,33 +829,44 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         }
         else
         {
-            auto function_node = std::make_shared<FunctionNode>(function->name);
-            function_node->setNullsAction(function->getNullsAction());
-            function_node->markAsOperator(function->isOperator());
-
-            if (function->parameters)
+            const auto & group_concat_aliases = GroupConcatImpl<false>::getNameAndAliases();
+            if (!function->name.empty() && std::any_of(
+                    group_concat_aliases.begin(), group_concat_aliases.end(),
+                    [&](const std::string &s) { return Poco::toLower(s) == Poco::toLower(function->name); })
+                && function->arguments && function->arguments->children.size() == 2)
             {
-                const auto & function_parameters_list = function->parameters->as<ASTExpressionList>()->children;
-                for (const auto & argument : function_parameters_list)
-                    function_node->getParameters().getNodes().push_back(buildExpression(argument, context));
+                result = setSecondArgumentAsParameter(function, context);
             }
-
-            if (function->arguments)
+            else
             {
-                const auto & function_arguments_list = function->arguments->as<ASTExpressionList>()->children;
-                for (const auto & argument : function_arguments_list)
-                    function_node->getArguments().getNodes().push_back(buildExpression(argument, context));
-            }
+                auto function_node = std::make_shared<FunctionNode>(function->name);
+                function_node->setNullsAction(function->getNullsAction());
+                function_node->markAsOperator(function->isOperator());
 
-            if (function->isWindowFunction())
-            {
-                if (function->window_definition)
-                    function_node->getWindowNode() = buildWindow(function->window_definition, context);
-                else
-                    function_node->getWindowNode() = std::make_shared<IdentifierNode>(Identifier(function->window_name));
-            }
+                if (function->parameters)
+                {
+                    const auto & function_parameters_list = function->parameters->as<ASTExpressionList>()->children;
+                    for (const auto & argument : function_parameters_list)
+                        function_node->getParameters().getNodes().push_back(buildExpression(argument, context));
+                }
 
-            result = std::move(function_node);
+                if (function->arguments)
+                {
+                    const auto & function_arguments_list = function->arguments->as<ASTExpressionList>()->children;
+                    for (const auto & argument : function_arguments_list)
+                        function_node->getArguments().getNodes().push_back(buildExpression(argument, context));
+                }
+
+                if (function->isWindowFunction())
+                {
+                    if (function->window_definition)
+                        function_node->getWindowNode() = buildWindow(function->window_definition, context);
+                    else
+                        function_node->getWindowNode() = std::make_shared<IdentifierNode>(Identifier(function->window_name));
+                }
+
+                result = std::move(function_node);
+            }
         }
     }
     else if (const auto * subquery = expression->as<ASTSubquery>())
@@ -1384,6 +1409,57 @@ std::shared_ptr<TableFunctionNode> buildTableFunctionQueryTree(ASTPtr query, Con
 {
     QueryTreeBuilder builder;
     return builder.buildTableFunction(query, context);
+}
+
+QueryTreeNodePtr QueryTreeBuilder::setSecondArgumentAsParameter(const ASTFunction * function, const ContextPtr & context) const
+{
+    const auto * second_arg_ast = function->arguments->children[1].get();
+    const auto * second_arg_literal = second_arg_ast->as<ASTLiteral>();
+
+    if (!second_arg_literal)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "If groupConcat is used with two arguments, the second argument must be a constant String");
+    }
+
+    if (second_arg_literal->value.getType() != Field::Types::String)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "If groupConcat is used with two arguments, the second argument must be a constant String");
+    }
+
+    ASTPtr first_arg = function->arguments->children[0]->clone();
+
+    auto function_node = std::make_shared<FunctionNode>(function->name);
+    function_node->setNullsAction(function->getNullsAction());
+
+    /// Keep existing parameters (the optional limit)
+    ///  the second argument overrides the delimiter at slot 0
+    auto & parameters = function_node->getParameters().getNodes();
+    if (function->parameters)
+    {
+        const auto & function_parameters_list = function->parameters->as<ASTExpressionList>()->children;
+        for (const auto & parameter : function_parameters_list)
+            parameters.push_back(buildExpression(parameter, context));
+    }
+
+    auto delimiter_node = buildExpression(function->arguments->children[1], context); // Separator
+    if (parameters.empty())
+        parameters.push_back(std::move(delimiter_node));
+    else
+        parameters[0] = std::move(delimiter_node);
+
+    function_node->getArguments().getNodes().push_back(buildExpression(first_arg, context)); // Column to concatenate
+
+    if (function->isWindowFunction())
+    {
+        if (function->window_definition)
+            function_node->getWindowNode() = buildWindow(function->window_definition, context);
+        else
+            function_node->getWindowNode() = std::make_shared<IdentifierNode>(Identifier(function->window_name));
+    }
+
+    return std::move(function_node);
 }
 
 }

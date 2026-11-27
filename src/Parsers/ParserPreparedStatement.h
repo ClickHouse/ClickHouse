@@ -53,7 +53,7 @@ public:
     ParserPrepare() = default;
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "PREPARE query"; }
+    const char * getName() const override { return "PREPARE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -63,7 +63,7 @@ public:
     ParserExecute() = default;
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "EXECUTE query"; }
+    const char * getName() const override { return "EXECUTE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -73,7 +73,7 @@ public:
     ParserDeallocate() = default;
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "DEALLOCATE query"; }
+    const char * getName() const override { return "DEALLOCATE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

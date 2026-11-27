@@ -53,7 +53,7 @@ protected:
 class ParserDeclareReference : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "reference declaration"; }
+    const char * getName() const override { return "reference declaration"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

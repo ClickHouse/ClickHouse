@@ -2,23 +2,18 @@
 
 #if USE_AVRO
 
-#include <algorithm>
 #include <cstddef>
 #include <filesystem>
-#include <map>
 #include <memory>
 #include <optional>
-#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
-#include <Columns/ColumnConst.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Disks/IStoragePolicy.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Constant.h>
@@ -40,7 +35,6 @@
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <fmt/format.h>
-#include <boost/algorithm/string/predicate.hpp>
 
 
 namespace DB
@@ -76,7 +70,6 @@ extern const char paimon_incremental_read_pause_after_watermark_commit[];
 namespace DataLakeStorageSetting
 {
 extern const DataLakeStorageSettingsBool paimon_incremental_read;
-extern const DataLakeStorageSettingsBool paimon_incremental_read_append_overwrite;
 extern const DataLakeStorageSettingsInt64 paimon_metadata_refresh_interval_sec;
 extern const DataLakeStorageSettingsString paimon_keeper_path;
 extern const DataLakeStorageSettingsString paimon_replica_name;
@@ -84,32 +77,6 @@ extern const DataLakeStorageSettingsString paimon_replica_name;
 
 namespace
 {
-PaimonSnapshotIdentity getSnapshotIdentity(const PaimonTableState & state)
-{
-    return {state.commit_time_millis, state.base_manifest_list_path, state.delta_manifest_list_path};
-}
-
-/// Paimon's `FileEntry.Identifier`: an ADD and a DELETE entry cancel out only when all of these match.
-/// Compaction re-adds a file under the same name at another level, and a file index rewrite at the same level.
-String getManifestEntryIdentifier(const PaimonManifestEntry & entry)
-{
-    WriteBufferFromOwnString out;
-    writeStringBinary(entry.partition, out);
-    writeBinary(entry.bucket, out);
-    writeBinary(entry.file.level, out);
-    writeStringBinary(entry.file.file_name, out);
-    writeVarUInt(entry.file.extra_files.size(), out);
-    for (const auto & extra_file : entry.file.extra_files)
-        writeStringBinary(extra_file.safeGet<String>(), out);
-    for (const auto * value : {&entry.file.embedded_file_index, &entry.file.external_path})
-    {
-        writeBinary(static_cast<UInt8>(value->has_value()), out);
-        if (value->has_value())
-            writeStringBinary(**value, out);
-    }
-    return std::move(out.str());
-}
-
 /// Build a cache-key prefix that uniquely identifies a Paimon table instance.
 ///
 /// Paimon's own table UUID defaults to the table name, so it cannot
@@ -136,80 +103,6 @@ String buildPaimonCacheKeyPrefix(
     hash.update(table_name);
     hash.update(schema0_time_millis);
     return fmt::format("{:016x}", hash.get64());
-}
-
-/// Whether reading the fields nested in `file_parent[key]` by name with the type `read_parent[key]` binds a name to another
-/// field id. Only ids and names are read.
-bool nestedFieldsDiffer(
-    const Poco::JSON::Object::Ptr & file_parent,
-    const Poco::JSON::Object::Ptr & read_parent,
-    const String & key,
-    const String & file_path,
-    const String & read_path,
-    String & in_file,
-    String & in_read_schema)
-{
-    if (!file_parent->isObject(key) || !read_parent->isObject(key))
-        return false;
-    const auto file_type = file_parent->getObject(key);
-    const auto read_type = read_parent->getObject(key);
-    auto kind = [](const Poco::JSON::Object::Ptr & type)
-    {
-        const auto name = type->getValue<String>("type");
-        return name.substr(0, name.find(' '));
-    };
-    const String file_kind = kind(file_type);
-    if (file_kind != kind(read_type))
-        return false;
-
-    if (file_kind == "ROW")
-    {
-        const auto file_fields = file_type->getArray("fields");
-        const auto read_fields = read_type->getArray("fields");
-        for (unsigned i = 0; i < file_fields->size(); ++i)
-        {
-            const auto file_field = file_fields->getObject(i);
-            const auto field_id = file_field->getValue<Int32>("id");
-            const auto field_name = file_field->getValue<String>("name");
-            Poco::JSON::Object::Ptr same_id;
-            Poco::JSON::Object::Ptr same_name;
-            for (unsigned j = 0; j < read_fields->size(); ++j)
-            {
-                const auto read_field = read_fields->getObject(j);
-                if (read_field->getValue<Int32>("id") == field_id)
-                    same_id = read_field;
-                else if (!same_name && boost::iequals(read_field->getValue<String>("name"), field_name))
-                    same_name = read_field;
-            }
-
-            const String field_file_path = file_path + "." + field_name;
-            if (same_id && same_id->getValue<String>("name") != field_name)
-            {
-                in_file = fmt::format("field id {} is '{}'", field_id, field_file_path);
-                in_read_schema = fmt::format("'{}.{}'", read_path, same_id->getValue<String>("name"));
-                return true;
-            }
-            if (same_name)
-            {
-                in_file = fmt::format("'{}' is field id {}", field_file_path, field_id);
-                in_read_schema = fmt::format("field id {}", same_name->getValue<Int32>("id"));
-                return true;
-            }
-            if (same_id
-                && nestedFieldsDiffer(
-                    file_field, same_id, "type", field_file_path, read_path + "." + field_name, in_file, in_read_schema))
-                return true;
-        }
-        return false;
-    }
-    if (file_kind == "ARRAY" || file_kind == "MULTISET")
-        return nestedFieldsDiffer(
-            file_type, read_type, "element", file_path + ".element", read_path + ".element", in_file, in_read_schema);
-    if (file_kind == "MAP")
-        return nestedFieldsDiffer(file_type, read_type, "key", file_path + ".key", read_path + ".key", in_file, in_read_schema)
-            || nestedFieldsDiffer(
-                file_type, read_type, "value", file_path + ".value", read_path + ".value", in_file, in_read_schema);
-    return false;
 }
 }
 
@@ -260,11 +153,16 @@ DataLakeMetadataPtr PaimonMetadata::create(
     auto schema_processor = std::make_shared<PaimonSchemaProcessor>();
     auto schema = schema_processor->addSchema(schema_json);
 
+    /// Get partition default name from options
+    String partition_default_name = PARTITION_DEFAULT_VALUE;
+    auto it = schema->options.find(PAIMON_DEFAULT_PARTITION_NAME);
+    if (it != schema->options.end())
+        partition_default_name = it->second;
+
     /// Check if incremental read is enabled
-    const auto data_lake_settings = configuration_ptr->getDataLakeSettings();
-    bool incremental_read_enabled = (*data_lake_settings)[DataLakeStorageSetting::paimon_incremental_read].value;
-    Int64 metadata_refresh_interval_sec = (*data_lake_settings)[DataLakeStorageSetting::paimon_metadata_refresh_interval_sec].value;
-    bool incremental_read_append_overwrite = (*data_lake_settings)[DataLakeStorageSetting::paimon_incremental_read_append_overwrite].value;
+    const auto & data_lake_settings = configuration_ptr->getDataLakeSettings();
+    bool incremental_read_enabled = data_lake_settings[DataLakeStorageSetting::paimon_incremental_read].value;
+    Int64 metadata_refresh_interval_sec = data_lake_settings[DataLakeStorageSetting::paimon_metadata_refresh_interval_sec].value;
 
     /// The settings framework accesses field values through a pointer-to-member
     /// dereference (impl.get()->*t). MSan cannot track initialization across this
@@ -272,7 +170,6 @@ DataLakeMetadataPtr PaimonMetadata::create(
     /// source to prevent taint from propagating through PaimonPersistentComponents
     /// into PaimonMetadata members used on background threads.
     __msan_unpoison(&incremental_read_enabled, sizeof(incremental_read_enabled));
-    __msan_unpoison(&incremental_read_append_overwrite, sizeof(incremental_read_append_overwrite));
     __msan_unpoison(&metadata_refresh_interval_sec, sizeof(metadata_refresh_interval_sec));
 
     PaimonStreamStatePtr stream_state = nullptr;
@@ -282,8 +179,8 @@ DataLakeMetadataPtr PaimonMetadata::create(
         if (!local_context->hasZooKeeper())
             throw Exception(ErrorCodes::NO_ZOOKEEPER, "Incremental read requires Keeper but ZooKeeper is not configured");
 
-        String keeper_path = (*data_lake_settings)[DataLakeStorageSetting::paimon_keeper_path].value;
-        String replica_name = (*data_lake_settings)[DataLakeStorageSetting::paimon_replica_name].value;
+        String keeper_path = data_lake_settings[DataLakeStorageSetting::paimon_keeper_path].value;
+        String replica_name = data_lake_settings[DataLakeStorageSetting::paimon_replica_name].value;
         if (keeper_path.empty() || replica_name.empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -334,10 +231,10 @@ DataLakeMetadataPtr PaimonMetadata::create(
         configuration_ptr->getPathForRead().path,
         table_path,
         table_cache_key_prefix,
+        partition_default_name,
         incremental_read_enabled,
         metadata_refresh_interval_sec,
-        schema0_time_millis,
-        incremental_read_append_overwrite);
+        schema0_time_millis);
 
     return std::make_unique<PaimonMetadata>(
         object_storage, configuration_ptr, global_context, std::move(persistent_components), table_client);
@@ -423,18 +320,20 @@ PaimonTableStatePtr PaimonMetadata::loadLatestState() const
 
     auto snapshot = table_client->getSnapshot(*snapshot_info_opt);
 
-    /// A schema change writes a new schema file but no snapshot, so the latest state is read with the latest schema, as in Paimon.
-    const auto latest_schema_info = table_client->getLatestTableSchemaInfo();
-    const Int64 schema_id = latest_schema_info.first;
-    if (!persistent_components.schema_processor->hasSchema(schema_id))
-        persistent_components.schema_processor->addSchema(table_client->getTableSchemaJSON(latest_schema_info));
+    /// Ensure schema for this snapshot is cached in processor (use schema_id, not "latest")
+    if (!persistent_components.schema_processor->hasSchema(snapshot.schema_id))
+    {
+        auto schema_info = table_client->getTableSchemaInfoById(static_cast<Int32>(snapshot.schema_id));
+        auto schema_json = table_client->getTableSchemaJSON(schema_info);
+        persistent_components.schema_processor->addSchema(schema_json);
+    }
 
     /// Register snapshot-schema relationship
     persistent_components.schema_processor->registerSnapshotSchema(snapshot.id, snapshot.schema_id);
 
     return std::make_shared<PaimonTableState>(
         snapshot.id,
-        schema_id,
+        snapshot.schema_id,
         snapshot.base_manifest_list,
         snapshot.delta_manifest_list,
         snapshot.commit_kind,
@@ -442,8 +341,7 @@ PaimonTableStatePtr PaimonMetadata::loadLatestState() const
         snapshot.total_record_count,
         snapshot.delta_record_count,
         snapshot.changelog_record_count,
-        snapshot.watermark,
-        snapshot.index_manifest);
+        snapshot.watermark);
 }
 
 void PaimonMetadata::validateTableIdentity() const
@@ -508,11 +406,9 @@ void PaimonMetadata::update(const ContextPtr & /*local_context*/)
 
     LOG_DEBUG(
         log,
-        "Paimon table state updated: snapshot_id {} -> {}, schema_id {} -> {}",
+        "Paimon table state updated: snapshot_id {} -> {}",
         old_state ? old_state->snapshot_id : -1,
-        new_state->snapshot_id,
-        old_state ? old_state->schema_id : -1,
-        new_state->schema_id);
+        new_state->snapshot_id);
 }
 
 NamesAndTypesList PaimonMetadata::getTableSchema(ContextPtr /*local_context*/) const
@@ -623,16 +519,12 @@ ManifestConstPtr PaimonMetadata::getManifest(const String & manifest_path, Int64
     if (!schema)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Schema with id {} not found", schema_id);
 
-    String partition_default_name = PARTITION_DEFAULT_VALUE;
-    auto it = schema->options.find(PAIMON_DEFAULT_PARTITION_NAME);
-    if (it != schema->options.end())
-        partition_default_name = it->second;
-
     if (persistent_components.isMetadataCacheActive())
     {
         String cache_key = PaimonMetadataFilesCache::makeKey(persistent_components.table_cache_key_prefix, manifest_path + ":" + toString(schema_id));
         auto log_ptr = log;
         auto client = table_client;
+        auto partition_default_name = persistent_components.partition_default_name;
         auto load_manifest = [log_ptr, client, manifest_path, schema, partition_default_name]()
         {
             LOG_TRACE(log_ptr, "Loading manifest (cache miss): {}", manifest_path);
@@ -643,26 +535,7 @@ ManifestConstPtr PaimonMetadata::getManifest(const String & manifest_path, Int64
 
     LOG_TRACE(log, "Loading manifest (no cache): {}", manifest_path);
     return std::make_shared<const PaimonManifest>(
-        table_client->getDataManifest(manifest_path, *schema, partition_default_name));
-}
-
-PaimonIndexManifest PaimonMetadata::getIndexManifest(const String & index_manifest_path) const
-{
-    if (persistent_components.isMetadataCacheActive())
-    {
-        String cache_key = PaimonMetadataFilesCache::makeKey(persistent_components.table_cache_key_prefix, index_manifest_path + ":index");
-        auto log_ptr = log;
-        auto client = table_client;
-        auto load_index_manifest = [log_ptr, client, index_manifest_path]()
-        {
-            LOG_TRACE(log_ptr, "Loading index manifest (cache miss): {}", index_manifest_path);
-            return client->getIndexManifest(index_manifest_path, /*disable_filesystem_cache=*/true);
-        };
-        return persistent_components.metadata_cache->getOrSetIndexManifest(cache_key, load_index_manifest);
-    }
-
-    LOG_TRACE(log, "Loading index manifest (no cache): {}", index_manifest_path);
-    return table_client->getIndexManifest(index_manifest_path);
+        table_client->getDataManifest(manifest_path, *schema, persistent_components.partition_default_name));
 }
 
 ObjectIterator PaimonMetadata::iterate(
@@ -705,18 +578,16 @@ ObjectIterator PaimonMetadata::iterate(
     if (!schema)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Schema with id {} not found", state->schema_id);
 
-    /// The delta of a primary-key table lists changes to its keys, not their state.
-    if (persistent_components.incremental_read_enabled)
-    {
-        auto primary_keys = persistent_components.schema_processor->getPrimaryKeys(state->schema_id);
-        if (!primary_keys.empty())
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Incremental read of Paimon primary-key table (primary keys: {}) is not supported: "
-                "merge-on-read is not implemented, so the result would contain row versions "
-                "superseded by later writes.",
-                fmt::join(primary_keys, ", "));
-    }
+    /// The read path below returns the raw union of the snapshot's data files: row versions
+    /// superseded by later upserts are not eliminated. Refuse rather than return wrong results.
+    auto primary_keys = persistent_components.schema_processor->getPrimaryKeys(state->schema_id);
+    if (!primary_keys.empty())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Reading Paimon primary-key table (primary keys: {}) is not supported: "
+            "merge-on-read is not implemented, so the result would contain row versions "
+            "superseded by later writes.",
+            fmt::join(primary_keys, ", "));
 
     /// 3. Build partition pruner if needed
     std::optional<PartitionPruner> partition_pruner;
@@ -727,7 +598,7 @@ ObjectIterator PaimonMetadata::iterate(
     }
 
     /// 4. Collect data files based on read mode
-    DataFilesToRead data_files;
+    Strings data_files;
 
     /// 4.a Query-level targeted snapshot (only when incremental is enabled)
     const Int64 target_snapshot_id = query_context->getSettingsRef()[Setting::paimon_target_snapshot_id];
@@ -735,16 +606,11 @@ ObjectIterator PaimonMetadata::iterate(
     {
         auto target_state = loadStateForSnapshot(target_snapshot_id);
         if (target_state->isCompact())
-            LOG_WARNING(log, "Target snapshot_id={} of '{}' is a COMPACT snapshot. "
+            LOG_WARNING(log, "Target snapshot_id={} is a COMPACT snapshot. "
                 "Its delta manifest contains compaction output (not incremental changes). "
                 "Consider using a non-COMPACT snapshot for accurate incremental semantics.",
-                target_snapshot_id, persistent_components.table_path);
-        else if (target_state->isOverwrite())
-            LOG_WARNING(log, "Target snapshot_id={} of '{}' is an OVERWRITE snapshot. "
-                "When it rewrote data files (a copy-on-write DELETE, UPDATE or MERGE INTO), its delta manifest also "
-                "contains the rows of those files that it did not change.",
-                target_snapshot_id, persistent_components.table_path);
-        data_files = collectDeltaFilesForSnapshot(target_state, *schema, partition_pruner);
+                target_snapshot_id);
+        data_files = collectDeltaFilesForSnapshot(target_state, partition_pruner);
     }
     /// 4.b Regular incremental mode
     else if (isIncrementalReadEnabled())
@@ -784,10 +650,9 @@ ObjectIterator PaimonMetadata::iterate(
         const PaimonCommittedSnapshot committed_snapshot = stream_state->readCommittedSnapshot(*processing_lock);
 
         std::optional<Int64> last_consumed_snapshot_id;
-        std::optional<PaimonSnapshotIdentity> last_consumed_identity;
         const UInt64 max_consume_snapshots = query_context->getSettingsRef()[Setting::max_consume_snapshots];
         data_files = collectIncrementalDataFiles(
-            state, *schema, partition_pruner, max_consume_snapshots, committed_snapshot, last_consumed_snapshot_id, last_consumed_identity);
+            state, partition_pruner, max_consume_snapshots, committed_snapshot.snapshot_id, last_consumed_snapshot_id);
 
         if (last_consumed_snapshot_id)
         {
@@ -798,8 +663,7 @@ ObjectIterator PaimonMetadata::iterate(
             FailPointInjection::pauseFailPoint(
                 FailPoints::paimon_incremental_read_pause_before_watermark_commit);
 
-            stream_state->setCommittedSnapshot(
-                *processing_lock, committed_snapshot, *last_consumed_snapshot_id, last_consumed_identity);
+            stream_state->setCommittedSnapshot(*processing_lock, committed_snapshot, *last_consumed_snapshot_id);
             /// Test-only pause inside the at-most-once window: the watermark is
             /// committed, the collected batch has not been delivered yet. A crash
             /// here loses the batch; the failpoint lets tests pin that semantics
@@ -810,13 +674,13 @@ ObjectIterator PaimonMetadata::iterate(
     }
     else
     {
-        data_files = collectFullScanDataFiles(state, *schema, partition_pruner);
+        data_files = collectFullScanDataFiles(state, partition_pruner);
     }
 
     LOG_DEBUG(log, "Collected {} data files for snapshot_id={} (incremental={})",
-              data_files.paths.size(), state->snapshot_id, isIncrementalReadEnabled());
+              data_files.size(), state->snapshot_id, isIncrementalReadEnabled());
 
-    return createKeysIterator(std::move(data_files.paths), std::move(data_files.schema_transforms), object_storage, callback);
+    return createKeysIterator(std::move(data_files), object_storage, callback);
 }
 
 bool PaimonMetadata::isIncrementalReadEnabled() const
@@ -866,35 +730,6 @@ void PaimonMetadata::runBackgroundRefresh()
     refresh_task->scheduleAfter(refresh_interval_sec * 1000);
 }
 
-void PaimonMetadata::checkNoDeletionVectors(const PaimonTableState & state, std::optional<Int64> incremental_cursor) const
-{
-    if (!state.index_manifest || !getIndexManifest(*state.index_manifest).has_deletion_vectors)
-        return;
-
-    String recovery;
-    if (incremental_cursor && persistent_components.hasStreamState())
-        recovery = fmt::format(
-            "This incremental read, with its cursor at snapshot {}, cannot move past snapshot {} even after a full compaction: every "
-            "snapshot up to that compaction lists the same deletion vectors. It resumes once Paimon expires those snapshots, "
-            "or once they are abandoned by moving the cursor to the snapshot of the full compaction, which drops every "
-            "snapshot not yet consumed up to it: clickhouse-keeper-client -q \"set '{}/committed_snapshot' "
-            "'<snapshot id of the full compaction>'\"",
-            *incremental_cursor,
-            state.snapshot_id,
-            persistent_components.stream_state->getKeeperPath());
-    else
-        recovery = "A full compaction of the table in Paimon (compact_strategy 'full') applies the deletion vectors, "
-                   "and the snapshots created after it can be read";
-
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED,
-        "Reading Paimon snapshot {} of '{}' is not supported: its index manifest lists deletion vectors, and deletion "
-        "vectors are not applied, so the result would contain rows removed by later deletes and updates. {}.",
-        state.snapshot_id,
-        persistent_components.table_path,
-        recovery);
-}
-
 PaimonTableStatePtr PaimonMetadata::loadStateForSnapshot(Int64 snapshot_id) const
 {
     /// Get snapshot by ID
@@ -922,21 +757,18 @@ PaimonTableStatePtr PaimonMetadata::loadStateForSnapshot(Int64 snapshot_id) cons
         snapshot.total_record_count,
         snapshot.delta_record_count,
         snapshot.changelog_record_count,
-        snapshot.watermark,
-        snapshot.index_manifest);
+        snapshot.watermark);
 }
 
 std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
     Int64 from_snapshot_id,
     Int64 to_snapshot_id,
     UInt64 max_snapshots_to_load,
-    bool append_only,
-    std::optional<Int64> & last_scanned_snapshot_id,
-    PaimonTableStatePtr & last_scanned_state) const
+    bool skip_compact,
+    std::optional<Int64> & last_scanned_snapshot_id) const
 {
     std::vector<PaimonTableStatePtr> snapshots;
     last_scanned_snapshot_id.reset();
-    last_scanned_state.reset();
 
     if (to_snapshot_id <= from_snapshot_id)
         return snapshots;
@@ -982,20 +814,20 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
     };
 
     /// Spelling out the cost is part of the instruction: moving the cursor past a snapshot
-    /// is how the data in it is lost, so the operator has to opt into it.
-    auto move_cursor_hint = [&](Int64 id, std::string_view when) -> String
+    /// that cannot be read is how the data in it is lost, so the operator has to opt into it.
+    auto unreadable_snapshot_hint = [&](Int64 id) -> String
     {
         if (!persistent_components.hasStreamState())
             return {};
 
         const auto & keeper_path = persistent_components.stream_state->getKeeperPath();
         return fmt::format(
-            " {}, abandon it explicitly with: "
+            " If this snapshot is permanently unreadable, abandon it explicitly with: "
             "clickhouse-keeper-client -q \"set '{}/committed_snapshot' '{}'\". That permanently "
             "drops every snapshot not yet consumed up to and including {}, not just this one - "
             "the read failed before delivering any of them. To keep the readable ones, first "
             "poll with SETTINGS max_consume_snapshots = 1 until the read fails again.",
-            when, keeper_path, id, id);
+            keeper_path, id, id);
     };
 
     for (Int64 snapshot_id = from_snapshot_id + 1; snapshot_id <= to_snapshot_id; ++snapshot_id)
@@ -1013,7 +845,6 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
             if (auto prefix_end = expired_prefix_end(snapshot_id))
             {
                 last_scanned_snapshot_id = prefix_end;
-                last_scanned_state.reset();
                 /// The loop's ++ lands on the first surviving id.
                 snapshot_id = *prefix_end;
                 continue;
@@ -1028,7 +859,7 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
                 "once the underlying error clears.{}",
                 snapshot_id,
                 persistent_components.table_path,
-                move_cursor_hint(snapshot_id, "If this snapshot is permanently unreadable"));
+                unreadable_snapshot_hint(snapshot_id));
             throw;
         }
         catch (...)
@@ -1036,7 +867,6 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
             if (auto prefix_end = expired_prefix_end(snapshot_id))
             {
                 last_scanned_snapshot_id = prefix_end;
-                last_scanned_state.reset();
                 /// The loop's ++ lands on the first surviving id.
                 snapshot_id = *prefix_end;
                 continue;
@@ -1053,44 +883,16 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
                 getCurrentExceptionMessage(/*with_stacktrace=*/true),
                 snapshot_id,
                 persistent_components.table_path,
-                move_cursor_hint(snapshot_id, "If this snapshot is permanently unreadable"));
+                unreadable_snapshot_hint(snapshot_id));
         }
 
-        /// Track the highest snapshot_id actually resolved, whether it is used or skipped.
-        /// The caller uses this to advance the watermark past gaps.
+        /// Track the highest snapshot_id actually resolved, whether it is used or skipped
+        /// as compact. The caller uses this to advance the watermark past gaps.
         last_scanned_snapshot_id = snapshot_id;
-        last_scanned_state = state;
 
-        /// Deliver APPEND snapshots only, like Paimon's streaming read: COMPACT and OVERWRITE snapshots
-        /// rewrite or replace data files, ANALYZE ones add none. Like Paimon's streaming-read-append-overwrite,
-        /// paimon_incremental_read_append_overwrite delivers OVERWRITE ones too.
-        const bool deliver_overwrite = state->isOverwrite() && persistent_components.incremental_read_append_overwrite;
-        if (append_only && !state->isAppend() && !deliver_overwrite)
+        if (skip_compact && state->isCompact())
         {
-            if (!state->isCompact() && !state->isOverwrite() && !state->isAnalyze())
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Paimon snapshot {} of '{}' has commit kind '{}', which this version of ClickHouse does not know, so the "
-                    "incremental read cannot tell whether the snapshot adds new rows. The consumed-snapshot cursor was not "
-                    "advanced, and the read fails until ClickHouse is upgraded to a version that knows this commit kind.{}",
-                    snapshot_id,
-                    persistent_components.table_path,
-                    state->commit_kind,
-                    move_cursor_hint(snapshot_id, "To skip the snapshot instead, losing any rows it adds"));
-
-            /// The watermark moves past a skipped snapshot, which can add deletion vectors.
-            checkNoDeletionVectors(*state, from_snapshot_id);
-            if (state->isOverwrite())
-                LOG_WARNING(
-                    log,
-                    "Skipping OVERWRITE snapshot_id={} of '{}' in incremental read: the rows it writes, such as the rows of "
-                    "INSERT OVERWRITE and the new versions of rows changed by UPDATE, are not delivered. Set "
-                    "paimon_incremental_read_append_overwrite = 1 to deliver them, together with the unchanged rows of the "
-                    "data files it rewrote.",
-                    snapshot_id,
-                    persistent_components.table_path);
-            else
-                LOG_TRACE(log, "Skipping {} snapshot_id={} in incremental read", state->commit_kind, snapshot_id);
+            LOG_TRACE(log, "Skipping Compact snapshot_id={} in incremental read", snapshot_id);
             continue;
         }
 
@@ -1100,19 +902,15 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
     return snapshots;
 }
 
-PaimonMetadata::DataFilesToRead PaimonMetadata::collectIncrementalDataFiles(
+Strings PaimonMetadata::collectIncrementalDataFiles(
     const PaimonTableStatePtr & state,
-    const PaimonTableSchema & read_schema,
     const std::optional<PartitionPruner> & partition_pruner,
     UInt64 max_consume_snapshots,
-    const PaimonCommittedSnapshot & committed,
-    std::optional<Int64> & last_consumed_snapshot_id,
-    std::optional<PaimonSnapshotIdentity> & last_consumed_identity) const
+    std::optional<Int64> committed_snapshot_id,
+    std::optional<Int64> & last_consumed_snapshot_id) const
 {
-    DataFilesToRead data_files;
+    Strings data_files;
     last_consumed_snapshot_id.reset();
-    last_consumed_identity.reset();
-    const std::optional<Int64> & committed_snapshot_id = committed.snapshot_id;
 
     if (!committed_snapshot_id.has_value())
     {
@@ -1120,15 +918,11 @@ PaimonMetadata::DataFilesToRead PaimonMetadata::collectIncrementalDataFiles(
         /// First read should include full snapshot (base + delta) to build the initial watermark.
         LOG_INFO(log, "No committed snapshot found, performing initial full read (base+delta) for snapshot_id={}",
                  state->snapshot_id);
-        data_files = collectDataFilesFromManifests({state}, read_schema, ManifestKind::Both, partition_pruner, true, true);
+        data_files = collectDataFilesFromManifests({state}, ManifestKind::Both, partition_pruner, true, true);
         last_consumed_snapshot_id = state->snapshot_id;
-        last_consumed_identity = getSnapshotIdentity(*state);
     }
     else if (*committed_snapshot_id == state->snapshot_id)
     {
-        if (committed.snapshot_identity)
-            checkCursorSnapshotUnchanged(*committed_snapshot_id, *committed.snapshot_identity);
-
         /// Already processed this snapshot, no new data
         LOG_DEBUG(log, "Snapshot {} already processed (committed={}), no new data",
                   state->snapshot_id, *committed_snapshot_id);
@@ -1148,9 +942,6 @@ PaimonMetadata::DataFilesToRead PaimonMetadata::collectIncrementalDataFiles(
 
         if (latest_snapshot_info && *committed_snapshot_id <= latest_snapshot_info->first)
         {
-            if (committed.snapshot_identity)
-                checkCursorSnapshotUnchanged(*committed_snapshot_id, *committed.snapshot_identity);
-
             /// Everything up to the watermark has been consumed by another reader. Do not
             /// consume up to the fresh head either: this query's schema was resolved from
             /// the pinned state, and Paimon schemas can change across snapshots. The next
@@ -1198,97 +989,37 @@ PaimonMetadata::DataFilesToRead PaimonMetadata::collectIncrementalDataFiles(
 
         /// In Paimon, each snapshot's delta_manifest_list contains the changes in that snapshot.
         /// We need to read all delta manifests from snapshots between committed+1 and current.
-        /// Deliver APPEND snapshots only, like Paimon's streaming read of an append table.
+        /// Skip Compact snapshots: their delta manifests contain compaction output (not new data).
         std::optional<Int64> last_scanned_snapshot_id;
-        PaimonTableStatePtr last_scanned_state;
         auto snapshots = getSnapshotsBetween(
             *committed_snapshot_id, state->snapshot_id, max_consume_snapshots,
-            /*append_only=*/true, last_scanned_snapshot_id, last_scanned_state);
-
-        /// After the scan, so that a rewind landing before or during it is seen here.
-        if (committed.snapshot_identity)
-            checkCursorSnapshotUnchanged(*committed_snapshot_id, *committed.snapshot_identity);
+            /*skip_compact=*/true, last_scanned_snapshot_id);
 
         if (snapshots.empty())
         {
-            /// All snapshots in the range were either skipped or missing.
+            /// All snapshots in the range were either compact or missing.
             /// Still advance the watermark so we don't re-scan them next time.
             if (last_scanned_snapshot_id)
                 last_consumed_snapshot_id = last_scanned_snapshot_id;
-            if (last_scanned_state)
-                last_consumed_identity = getSnapshotIdentity(*last_scanned_state);
             return {};
         }
 
-        data_files = collectDataFilesFromManifests(
-            snapshots, read_schema, ManifestKind::Delta, partition_pruner, true, true, committed_snapshot_id);
-        /// Use last_scanned (not snapshots.back()) to advance past trailing skipped/missing snapshots.
+        data_files = collectDataFilesFromManifests(snapshots, ManifestKind::Delta, partition_pruner, true, true);
+        /// Use last_scanned (not snapshots.back()) to advance past trailing compact/missing snapshots.
         last_consumed_snapshot_id = last_scanned_snapshot_id.value_or(snapshots.back()->snapshot_id);
-        const auto & last_consumed_state = last_scanned_snapshot_id ? last_scanned_state : snapshots.back();
-        if (last_consumed_state)
-            last_consumed_identity = getSnapshotIdentity(*last_consumed_state);
     }
 
     return data_files;
 }
 
-void PaimonMetadata::checkCursorSnapshotUnchanged(Int64 snapshot_id, const PaimonSnapshotIdentity & consumed) const
-{
-    PaimonTableStatePtr cursor_state;
-    try
-    {
-        cursor_state = loadStateForSnapshot(snapshot_id);
-    }
-    catch (...)
-    {
-        /// Expired by Paimon: nothing at or below the cursor is left to compare with.
-        if (const auto earliest_snapshot_id = table_client->getEarliestSnapshotId();
-            earliest_snapshot_id && snapshot_id < *earliest_snapshot_id)
-            return;
-        throw;
-    }
-
-    const auto current = getSnapshotIdentity(*cursor_state);
-    if (current == consumed)
-        return;
-
-    const auto & keeper_path = persistent_components.stream_state->getKeeperPath();
-    throw Exception(
-        ErrorCodes::INVALID_STATE,
-        "Paimon incremental read cursor at '{}' consumed snapshot {} committed at timeMillis {}, but snapshot {} of '{}' "
-        "is a different snapshot (committed at timeMillis {}). The warehouse was rolled back, restored or recreated "
-        "and the writer reused snapshot ids the cursor had already consumed, so the snapshots now carrying them were "
-        "never delivered. No data was read and the cursor was not modified. To read every snapshot written since the "
-        "rewind, set the cursor to the snapshot the warehouse was rewound to: clickhouse-keeper-client -q \"set '{}/committed_snapshot' "
-        "'<that snapshot id>'\". Setting it to {} instead skips the snapshots at the reused ids.",
-        keeper_path, snapshot_id, consumed.time_millis, snapshot_id, persistent_components.table_path,
-        current.time_millis, keeper_path, snapshot_id);
-}
-
-PaimonMetadata::DataFilesToRead PaimonMetadata::collectDataFilesFromManifests(
+Strings PaimonMetadata::collectDataFilesFromManifests(
     const std::vector<PaimonTableStatePtr> & snapshots,
-    const PaimonTableSchema & read_schema,
     ManifestKind kind,
     const std::optional<PartitionPruner> & partition_pruner,
     bool deduplicate,
-    bool track_deletes,
-    std::optional<Int64> incremental_cursor,
-    const std::optional<PrimaryKeyRead> & primary_key_read) const
+    bool track_deletes) const
 {
-    for (const auto & snapshot_state : snapshots)
-        if (snapshot_state)
-            checkNoDeletionVectors(*snapshot_state, incremental_cursor);
-
-    struct DataFile
-    {
-        String identifier;
-        String path;
-        Int64 schema_id;
-        Int32 level;
-        String bucket_path;
-        std::optional<Int64> delete_row_count;
-    };
-    std::vector<DataFile> data_files;
+    Strings data_files;
     std::unordered_set<String> seen_files;
     std::unordered_set<String> delete_files;
 
@@ -1306,14 +1037,13 @@ PaimonMetadata::DataFilesToRead PaimonMetadata::collectDataFilesFromManifests(
                 Paimon::checkPathIsRelativeToTable(entry.file.file_name, "data file");
                 String file_path = (std::filesystem::path(persistent_components.table_path)
                     / entry.file.bucket_path / entry.file.file_name);
-                String identifier = (deduplicate || track_deletes) ? getManifestEntryIdentifier(entry) : String{};
 
                 if (entry.kind == PaimonManifestEntry::Kind::DELETE)
                 {
                     if (track_deletes)
                     {
-                        delete_files.emplace(std::move(identifier));
-                        LOG_TEST(log, "{} delete file: {}, level {}", type, file_path, entry.file.level);
+                        delete_files.emplace(file_path);
+                        LOG_TEST(log, "{} delete file: {}", type, file_path);
                     }
                     continue;
                 }
@@ -1325,26 +1055,14 @@ PaimonMetadata::DataFilesToRead PaimonMetadata::collectDataFilesFromManifests(
                     continue;
                 }
 
-                if (primary_key_read && primary_key_read->skip_level_zero && entry.file.level == 0)
-                {
-                    LOG_TEST(log, "Skip level-0 {} data file: {}", type, file_path);
-                    continue;
-                }
-
-                if (deduplicate && !seen_files.emplace(identifier).second)
+                if (deduplicate && !seen_files.emplace(file_path).second)
                 {
                     LOG_TEST(log, "Skip duplicated {} data file: {}", type, file_path);
                     continue;
                 }
 
-                data_files.push_back(
-                    {std::move(identifier),
-                     std::move(file_path),
-                     entry.file.schema_id,
-                     entry.file.level,
-                     entry.file.bucket_path,
-                     entry.file.delete_row_count});
-                LOG_TEST(log, "{} data file: {}, level {}", type, data_files.back().path, entry.file.level);
+                data_files.emplace_back(std::move(file_path));
+                LOG_TEST(log, "{} data file: {}", type, data_files.back());
             }
         }
     };
@@ -1363,229 +1081,26 @@ PaimonMetadata::DataFilesToRead PaimonMetadata::collectDataFilesFromManifests(
             std::remove_if(
                 data_files.begin(),
                 data_files.end(),
-                [&](const auto & data_file) { return delete_files.contains(data_file.identifier); }),
+                [&](const String & path) { return delete_files.contains(path); }),
             data_files.end());
     }
 
-    if (primary_key_read)
-    {
-        struct Bucket
-        {
-            std::set<Int32> levels;
-            size_t files_with_delete_rows = 0;
-        };
-        std::map<String, Bucket> buckets;
-        for (const auto & data_file : data_files)
-        {
-            auto & bucket = buckets[data_file.bucket_path];
-            bucket.levels.insert(data_file.level);
-            /// An unknown count is treated as nonzero.
-            if (data_file.delete_row_count.value_or(1) != 0)
-                ++bucket.files_with_delete_rows;
-        }
-
-        for (const auto & [bucket_path, bucket] : buckets)
-        {
-            if (*bucket.levels.begin() > 0 && bucket.files_with_delete_rows == 0
-                && (primary_key_read->allow_several_levels || bucket.levels.size() == 1))
-                continue;
-
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Reading bucket '{}' of Paimon primary-key table '{}' at snapshot {} is not supported: merge-on-read is not "
-                "implemented, and the bucket needs it: its data files are in levels {}, and {} of them have retract rows or an "
-                "unknown count of them. A full compaction of the table in Paimon (compact_strategy 'full') makes it readable.",
-                bucket_path,
-                persistent_components.table_path,
-                snapshots.back()->snapshot_id,
-                fmt::join(bucket.levels, ", "),
-                bucket.files_with_delete_rows);
-        }
-    }
-
-    DataFilesToRead result;
-    result.paths.reserve(data_files.size());
-    result.schema_transforms.reserve(data_files.size());
-    std::unordered_set<String> result_paths;
-    for (auto & data_file : data_files)
-    {
-        if (deduplicate && !result_paths.insert(data_file.path).second)
-            continue;
-        result.schema_transforms.push_back(getDataFileSchemaTransform(data_file.path, data_file.schema_id, read_schema, incremental_cursor));
-        result.paths.emplace_back(std::move(data_file.path));
-    }
-    return result;
+    return data_files;
 }
 
-std::shared_ptr<ActionsDAG> PaimonMetadata::getDataFileSchemaTransform(
-    const String & file_path,
-    Int64 file_schema_id,
-    const PaimonTableSchema & read_schema,
-    std::optional<Int64> incremental_cursor) const
-{
-    if (file_schema_id == read_schema.id)
-        return nullptr;
-
-    std::optional<FileSchemaMapping> mapping;
-    {
-        std::lock_guard lock(file_schema_transforms_mutex);
-        if (auto it = file_schema_transforms.find({file_schema_id, read_schema.id}); it != file_schema_transforms.end())
-            mapping = it->second;
-    }
-    if (!mapping)
-    {
-        mapping = getDataFileSchemaMapping(file_schema_id, read_schema);
-        std::lock_guard lock(file_schema_transforms_mutex);
-        file_schema_transforms.emplace(std::make_pair(file_schema_id, read_schema.id), *mapping);
-    }
-
-    if (mapping->in_file.empty())
-        return mapping->transform;
-
-    String recovery;
-    if (incremental_cursor && persistent_components.hasStreamState())
-        recovery = fmt::format(
-            "The cursor of this incremental read was not advanced, it is at snapshot {}. To move on, wait until Paimon expires "
-            "the snapshots committed before the change, or abandon them by moving the cursor to the last of them, which drops "
-            "every snapshot not yet consumed up to it: clickhouse-keeper-client -q \"set '{}/committed_snapshot' "
-            "'<id of the last snapshot committed before the change>'\"",
-            *incremental_cursor,
-            persistent_components.stream_state->getKeeperPath());
-    else
-        recovery = "Rewriting the table with the current schema in Paimon, for example with INSERT OVERWRITE <table> SELECT * "
-                   "FROM <table>, makes the snapshots created after it readable";
-
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED,
-        "Reading Paimon data file '{}' is not supported: {} in schema {} the file was written with, but {} in the "
-        "current schema {}. Fields of a ROW column are matched to data files by name, not by field id, so the result would "
-        "contain wrong values. {}.",
-        file_path, mapping->in_file, file_schema_id, mapping->in_read_schema, read_schema.id, recovery);
-}
-
-PaimonMetadata::FileSchemaMapping PaimonMetadata::getDataFileSchemaMapping(Int64 file_schema_id, const PaimonTableSchema & read_schema) const
-{
-    /// Only ids and names are read: a type the reader does not support must not fail a file it can read.
-    auto file_schema_json = table_client->getTableSchemaJSON(
-        table_client->getTableSchemaInfoById(static_cast<Int32>(file_schema_id)));
-    auto read_schema_json = table_client->getTableSchemaJSON(
-        table_client->getTableSchemaInfoById(static_cast<Int32>(read_schema.id)));
-    const auto file_fields = file_schema_json->getArray("fields");
-    const auto read_fields = read_schema_json->getArray("fields");
-    std::unordered_map<Int32, String> file_names_by_id;
-    bool read_by_name_differs = false;
-    FileSchemaMapping mapping;
-    for (unsigned i = 0; i < file_fields->size(); ++i)
-    {
-        const auto file_field = file_fields->getObject(i);
-        const auto field_id = file_field->getValue<Int32>("id");
-        const auto field_name = file_field->getValue<String>("name");
-        file_names_by_id.emplace(field_id, field_name);
-
-        for (unsigned j = 0; j < read_fields->size(); ++j)
-        {
-            const auto read_field = read_fields->getObject(j);
-            if (read_field->getValue<Int32>("id") == field_id
-                && nestedFieldsDiffer(
-                    file_field,
-                    read_field,
-                    "type",
-                    field_name,
-                    read_field->getValue<String>("name"),
-                    mapping.in_file,
-                    mapping.in_read_schema))
-                return mapping;
-        }
-
-        if (auto same_id = std::ranges::find(read_schema.fields, field_id, &DataField::id);
-            same_id != read_schema.fields.end() && same_id->name != field_name)
-            read_by_name_differs = true;
-        /// Case-insensitively: the Parquet and ORC readers can match column names that way.
-        else if (std::ranges::any_of(
-                     read_schema.fields,
-                     [&](const DataField & field) { return field.id != field_id && boost::iequals(field.name, field_name); }))
-            read_by_name_differs = true;
-    }
-
-    if (read_by_name_differs)
-    {
-        /// The inputs are the columns of the file under its own names, with the types of the read schema.
-        auto transform = std::make_shared<ActionsDAG>();
-        auto & outputs = transform->getOutputs();
-        for (const auto & field : read_schema.fields)
-        {
-            const auto & type = field.type.clickhouse_data_type;
-            if (auto it = file_names_by_id.find(field.id); it != file_names_by_id.end())
-            {
-                const auto * node = &transform->addInput(it->second, type);
-                if (it->second != field.name)
-                    node = &transform->addAlias(*node, field.name);
-                outputs.push_back(node);
-            }
-            else
-            {
-                const auto & constant = transform->addColumn(type->createColumnConstWithDefaultValue(0), type, field.name);
-                outputs.push_back(&transform->materializeNode(constant));
-            }
-        }
-
-        /// A transform without inputs is not sent to other replicas, which would then read the file by column name.
-        if (transform->getInputs().empty() && file_fields->size() > 0)
-        {
-            const auto file_field = file_fields->getObject(0);
-            transform->addInput(
-                file_field->getValue<String>("name"), Paimon::DataType::parse(file_field, "type").clickhouse_data_type);
-        }
-        mapping.transform = std::move(transform);
-    }
-    return mapping;
-}
-
-std::shared_ptr<NamesAndTypesList> PaimonMetadata::getInitialSchemaByPath(ContextPtr, ObjectInfoPtr object_info) const
-{
-    if (!object_info->data_lake_metadata || !object_info->data_lake_metadata->schema_transform)
-        return nullptr;
-
-    auto result = std::make_shared<NamesAndTypesList>();
-    for (const auto * input : object_info->data_lake_metadata->schema_transform->getInputs())
-        result->emplace_back(input->result_name, input->result_type);
-    return result;
-}
-
-PaimonMetadata::DataFilesToRead PaimonMetadata::collectDeltaFilesForSnapshot(
+Strings PaimonMetadata::collectDeltaFilesForSnapshot(
     const PaimonTableStatePtr & state,
-    const PaimonTableSchema & read_schema,
     const std::optional<PartitionPruner> & partition_pruner) const
 {
-    return collectDataFilesFromManifests({state}, read_schema, ManifestKind::Delta, partition_pruner, false, false);
+    return collectDataFilesFromManifests({state}, ManifestKind::Delta, partition_pruner, false, false);
 }
 
-PaimonMetadata::DataFilesToRead PaimonMetadata::collectFullScanDataFiles(
+Strings PaimonMetadata::collectFullScanDataFiles(
     const PaimonTableStatePtr & state,
-    const PaimonTableSchema & read_schema,
     const std::optional<PartitionPruner> & partition_pruner) const
 {
-    std::optional<PrimaryKeyRead> primary_key_read;
-    if (!read_schema.primary_keys.empty())
-    {
-        auto has_option = [&](const char * key, const char * value)
-        {
-            auto it = read_schema.options.find(key);
-            return it != read_schema.options.end() && boost::iequals(it->second, value);
-        };
-        const bool allow_several_levels
-            = has_option(PAIMON_DELETION_VECTORS_ENABLED, "true") || has_option(PAIMON_MERGE_ENGINE, PAIMON_MERGE_ENGINE_FIRST_ROW);
-        const bool level_filter = !read_schema.options.contains(PAIMON_BATCH_SCAN_MODE)
-            || has_option(PAIMON_BATCH_SCAN_MODE, PAIMON_BATCH_SCAN_MODE_NONE);
-        primary_key_read = PrimaryKeyRead{
-            .skip_level_zero = allow_several_levels && level_filter,
-            .allow_several_levels = allow_several_levels,
-        };
-    }
-
     /// Full scan: include base + delta, with dedup and tombstone handling.
-    return collectDataFilesFromManifests(
-        {state}, read_schema, ManifestKind::Both, partition_pruner, true, true, std::nullopt, primary_key_read);
+    return collectDataFilesFromManifests({state}, ManifestKind::Both, partition_pruner, true, true);
 }
 
 }

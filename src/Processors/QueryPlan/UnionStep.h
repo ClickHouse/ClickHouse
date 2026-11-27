@@ -22,24 +22,24 @@ public:
     /// fragment narrows the same unions the node that built it decided to narrow.
     explicit UnionStep(SharedHeaders input_headers_, size_t max_threads_ = 0, bool allow_narrowing_ = false);
 
-    [[nodiscard]] String getName() const override { return "Union"; }
+    String getName() const override { return "Union"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
     void describePipeline(FormatSettings & settings) const override;
 
-    [[nodiscard]] size_t getMaxThreads() const { return max_threads; }
-    [[nodiscard]] bool isNarrowingAllowed() const { return allow_narrowing; }
+    size_t getMaxThreads() const { return max_threads; }
+    bool isNarrowingAllowed() const { return allow_narrowing; }
     void disableNarrowing() { allow_narrowing = false; }
 
     void serialize(Serialization & ctx) const override;
-    [[nodiscard]] bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    [[nodiscard]] QueryPlanStepPtr clone() const override;
+    QueryPlanStepPtr clone() const override;
 
-    [[nodiscard]] bool hasCorrelatedExpressions() const override { return false; }
+    bool hasCorrelatedExpressions() const override { return false; }
 
 private:
     void updateOutputHeader() override;

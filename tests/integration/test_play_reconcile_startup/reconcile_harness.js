@@ -477,9 +477,7 @@ function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasm
 function extractScript(html) {
     const blocks = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]);
     if (!blocks.length) throw new Error('no <script> block found in play.html');
-    /// All of them, in order, as the browser runs them: the main script uses what the small one in
-    /// the head sets up (the color theme).
-    return blocks.join('\n;\n');
+    return blocks.reduce((a, b) => (a.length >= b.length ? a : b));
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

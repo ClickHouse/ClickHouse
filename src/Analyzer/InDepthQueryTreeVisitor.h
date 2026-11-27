@@ -42,7 +42,7 @@ public:
     using VisitQueryTreeNodeType = std::conditional_t<const_visitor, const QueryTreeNodePtr, QueryTreeNodePtr>;
 
     /// Return true if visitor should traverse tree top to bottom, false otherwise
-    [[nodiscard]] bool shouldTraverseTopToBottom() const
+    bool shouldTraverseTopToBottom() const
     {
         return true;
     }
@@ -71,7 +71,7 @@ private:
         return *static_cast<Derived *>(this);
     }
 
-    [[nodiscard]] const Derived & getDerived() const
+    const Derived & getDerived() const
     {
         return *static_cast<Derived *>(this);
     }
@@ -119,17 +119,17 @@ public:
         return true;
     }
 
-    [[nodiscard]] const ContextPtr & getContext() const
+    const ContextPtr & getContext() const
     {
         return current_context;
     }
 
-    [[nodiscard]] const Settings & getSettings() const
+    const Settings & getSettings() const
     {
         return current_context->getSettingsRef();
     }
 
-    [[nodiscard]] size_t getSubqueryDepth() const
+    size_t getSubqueryDepth() const
     {
         return subquery_depth;
     }
@@ -176,7 +176,7 @@ private:
         return *static_cast<Derived *>(this);
     }
 
-    [[nodiscard]] const Derived & getDerived() const
+    const Derived & getDerived() const
     {
         return *static_cast<Derived *>(this);
     }

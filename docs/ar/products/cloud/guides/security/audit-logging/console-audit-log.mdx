@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['سجل التدقيق']
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 تُسجَّل أنشطة Console في سجل التدقيق. يمكن للمستخدمين الذين لديهم صلاحية الوصول مراجعة السجل ودمجه مع أنظمة التسجيل لديهم. يخضع الوصول إلى سجل التدقيق لصلاحية **View audit logs** (`control-plane:organization:view-activities`):
 
 * المستخدمون الذين لديهم دور Admin على مستوى المؤسسة يمتلكون هذا الوصول افتراضيًا.
@@ -21,15 +23,7 @@ keywords: ['سجل التدقيق']
   <Step title="حدِّد المؤسسة" id="select-org">
     في ClickHouse Cloud، انتقل إلى تفاصيل مؤسستك.
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![علامة تبويب Activity في ClickHouse Cloud](/images/cloud/security/activity_log1.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/security/activity_log1.webp" size="md" alt="علامة تبويب Activity في ClickHouse Cloud" border />
 
     <br />
   </Step>
@@ -44,15 +38,7 @@ keywords: ['سجل التدقيق']
     * **IP Address:** عند الاقتضاء، يعرض هذا الحقل عنوان IP للمستخدم الذي بدأ الحدث
     * **Time:** الطابع الزمني للحدث
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![جدول Activity في ClickHouse Cloud](/images/cloud/security/activity_log2.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/security/activity_log2.webp" size="md" alt="جدول Activity في ClickHouse Cloud" border />
 
     <br />
   </Step>
@@ -63,15 +49,7 @@ keywords: ['سجل التدقيق']
 </Steps>
 
 <div class="eighty-percent">
-  <div className="ch-image-lg">
-
-  <Frame>
-
-  ![تصدير Activity بتنسيق CSV في ClickHouse Cloud](/images/cloud/security/activity_log3.webp)
-
-  </Frame>
-
-  </div>
+  <Image img="/images/cloud/security/activity_log3.webp" size="lg" alt="تصدير Activity بتنسيق CSV في ClickHouse Cloud" border />
 </div>
 
 ## الوصول إلى سجل تدقيق Console عبر واجهة برمجة تطبيقات {#console-audit-log-api}

@@ -3,7 +3,6 @@
 #if USE_SSL
 
 #include <Common/Exception.h>
-#include <Common/OpenSSLHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
@@ -107,26 +106,6 @@ int verifyCertificateWithStore(X509_STORE_CTX * original_ctx, X509 * certificate
     X509_VERIFY_PARAM_move_peername(X509_STORE_CTX_get0_param(original_ctx), X509_STORE_CTX_get0_param(verify_ctx.get()));
 
     return ok;
-}
-
-/// Reject a certificate chain and key that do not belong together, so that a mismatched pair
-/// (e.g. one file of a rotation is replaced, the other is not yet) never replaces the working one.
-/// `cert_source` and `key_source` only describe where the certificate and key came from, for the error message.
-void checkKeyMatchesCertificate(
-    const X509Certificate::List & certs_chain, const KeyPair & key, const std::string & cert_source, const std::string & key_source)
-{
-    if (certs_chain.empty())
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "Certificate chain ({}) is empty", cert_source);
-
-    X509 * leaf = static_cast<X509 *>(certs_chain.front());
-    EVP_PKEY * pkey = static_cast<EVP_PKEY *>(key);
-    if (X509_check_private_key(leaf, pkey) != 1)
-        throw Exception(
-            ErrorCodes::OPENSSL_ERROR,
-            "Private key ({}) does not match the certificate ({}): {}",
-            key_source,
-            cert_source,
-            getOpenSSLErrors());
 }
 
 /// Load the trusted CA certificates the same way `Poco::Net::Context` does it for the contexts created at startup,
@@ -376,16 +355,7 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
     /// no processing required
     if (new_cert_path.empty() || new_key_path.empty())
     {
-        if (new_cert_path.empty() != new_key_path.empty())
-            LOG_INFO(
-                log,
-                "Cannot apply new configuration for certificates in '{}': `certificateFile` is {} and `privateKeyFile` is {}. "
-                "Set both and try again.",
-                prefix,
-                new_cert_path.empty() ? "empty" : "set",
-                new_key_path.empty() ? "empty" : "set");
-        else
-            LOG_DEBUG(log, "No certificate and key configured in '{}', nothing to reload.", prefix);
+        LOG_INFO(log, "One of paths is empty. Cannot apply new configuration for certificates. Fill all paths and try again.");
         return;
     }
 
@@ -512,13 +482,11 @@ std::optional<Poco::Net::Context::CAPaths> CertificateReloader::getCAPaths(const
 CertificateReloader::Data::Data(std::string cert_path, std::string key_path, std::string pass_phrase)
     : certs_chain(X509Certificate::fromFile(cert_path)), key(KeyPair::fromFile(key_path, pass_phrase))
 {
-    checkKeyMatchesCertificate(certs_chain, key, cert_path, key_path);
 }
 
 CertificateReloader::Data::Data(KeyPair _pkey, X509Certificate::List _certs_chain, std::string _hash)
     : certs_chain(std::move(_certs_chain)), key(std::move(_pkey)), hash(std::move(_hash))
 {
-    checkKeyMatchesCertificate(certs_chain, key, "ACME certificate", "ACME private key");
 }
 
 

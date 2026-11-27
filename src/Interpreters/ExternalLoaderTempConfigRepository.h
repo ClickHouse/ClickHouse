@@ -13,8 +13,8 @@ class ExternalLoaderTempConfigRepository : public IExternalLoaderConfigRepositor
 public:
     ExternalLoaderTempConfigRepository(const String & repository_name_, const String & path_, const LoadablesConfigurationPtr & config_);
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] bool isTemporary() const override { return true; }
+    String getName() const override { return name; }
+    bool isTemporary() const override { return true; }
 
     std::set<String> getAllLoadablesDefinitionNames() override;
     bool exists(const String & path) override;

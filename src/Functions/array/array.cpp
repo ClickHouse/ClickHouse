@@ -42,47 +42,17 @@ public:
             settings[Setting::use_variant_as_common_type], settings[Setting::allow_lossy_numeric_supertype]);
     }
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     /// array(..., Nothing, ...) -> Array(..., Nothing, ...)
-    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    /// `array(x1, x2, ..., xN)` — N=0 yields `Array(Nothing)` (empty array literal);
-    /// non-empty yields `Array(leastSupertype{,OrVariant}(x1, ..., xN))`. The
-    /// `leastSupertypeOrVariant` branch is selected when `use_variant_as_common_type`
-    /// is enabled (the default).
-    [[nodiscard]] String getSignatureString() const override
-    {
-        /// The zero-arg overload can't be folded into the variadic form: with
-        /// `[T1], ...` the "skip optional" branch leaves `T1` unbound and the
-        /// return expression `leastSupertype(T1, ...)` fails as "T1 was not
-        /// captured." Keep the two alternatives separate.
-        if (use_variant_as_common_type)
-            return "() -> Array(Nothing) OR (T1, ...) -> Array(leastSupertypeOrVariant(T1, ...))";
-        return "() -> Array(Nothing) OR (T1, ...) -> Array(leastSupertype(T1, ...))";
-    }
-
-    /// The declarative signature cannot express `allow_lossy_numeric_supertype` (the `leastSupertype`
-    /// type-function always uses the strict mode), so when that setting is enabled, compute the common
-    /// type explicitly, mirroring the legacy implementation. Otherwise the signature stays authoritative.
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        if (!allow_lossy_numeric_supertype)
-            return IFunction::getReturnTypeImpl(arguments);
-
-        DataTypes types;
-        types.reserve(arguments.size());
-        for (const auto & arg : arguments)
-            types.push_back(arg.type);
-        return getReturnTypeImpl(types);
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (use_variant_as_common_type)
             return std::make_shared<DataTypeArray>(getLeastSupertypeOrVariant(arguments, allow_lossy_numeric_supertype));
@@ -90,7 +60,7 @@ public:
         return std::make_shared<DataTypeArray>(getLeastSupertype(arguments, allow_lossy_numeric_supertype));
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const size_t num_elements = arguments.size();
 
@@ -320,52 +290,14 @@ private:
 
     bool executeGeneric(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
-        if (executeArrays(columns, out_data, input_rows_count))
-            return true;
-
         for (size_t i = 0; i < input_rows_count; ++i)
             for (const auto * column : columns)
                 out_data.insertFrom(*column, i);
         return true;
     }
 
-    /// Elements that are arrays: fill the offsets directly and copy the nested data by ranges, with one virtual
-    /// call per element instead of two (`ColumnArray::insertFrom` and the `insertRangeFrom` of its data).
-    static bool executeArrays(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count)
-    {
-        auto * out_array = typeid_cast<ColumnArray *>(&out_data);
-        if (!out_array)
-            return false;
 
-        VectorWithMemoryTracking<const ColumnArray *> arrays;
-        arrays.reserve(columns.size());
-        for (const auto * column : columns)
-        {
-            const auto * array = typeid_cast<const ColumnArray *>(column);
-            if (!array)
-                return false;
-            arrays.push_back(array);
-        }
-
-        auto & out_offsets = out_array->getOffsets();
-        auto & out_nested = out_array->getData();
-        out_offsets.reserve(out_offsets.size() + input_rows_count * arrays.size());
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            for (const auto * array : arrays)
-            {
-                const auto & offsets = array->getOffsets();
-                const size_t offset = offsets[ssize_t(i) - 1];
-                const size_t size = offsets[i] - offset;
-                out_nested.insertRangeFrom(array->getData(), offset, size);
-                out_offsets.push_back(out_offsets.back() + size);
-            }
-        }
-        return true;
-    }
-
-
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }

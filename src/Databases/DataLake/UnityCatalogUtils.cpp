@@ -5,7 +5,7 @@
 #include <sstream>
 #include <Common/Exception.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaSchemaJSON.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 
 namespace DB::ErrorCodes
 {
@@ -15,7 +15,7 @@ namespace DB::ErrorCodes
 namespace DataLake
 {
 
-/// Delta primitive type name (see `getDeltaLakeSimpleTypeByName`) -> Unity `ColumnTypeName`.
+/// Delta primitive type name (see `DeltaLakeMetadata::getSimpleTypeByName`) -> Unity `ColumnTypeName`.
 static std::string deltaPrimitiveToUnityTypeName(const std::string & delta_type)
 {
     if (delta_type == "boolean") return "BOOLEAN";
@@ -63,7 +63,7 @@ Poco::JSON::Array::Ptr buildUnityColumnsFromDeltaSchema(const Poco::JSON::Array:
             type_name = deltaPrimitiveToUnityTypeName(delta_type);
             if (type_name == "DECIMAL")
             {
-                const auto decimal_type = DB::getDeltaLakeSimpleTypeByName(delta_type);
+                const auto decimal_type = DB::DeltaLakeMetadata::getSimpleTypeByName(delta_type);
                 precision = static_cast<int>(DB::getDecimalPrecision(*decimal_type));
                 scale = static_cast<int>(DB::getDecimalScale(*decimal_type));
             }
@@ -114,25 +114,6 @@ Poco::JSON::Object::Ptr buildUnityCreateTableBody(
     body->set("columns", columns);
     body->set("properties", Poco::JSON::Object::Ptr(new Poco::JSON::Object));
     return body;
-}
-
-bool hasValueAndItsNotNone(const std::string & value, const Poco::JSON::Object::Ptr & object)
-{
-    return object->has(value) && !object->isNull(value) && !object->get(value).isEmpty();
-}
-
-bool isUnityDeltaTable(const Poco::JSON::Object::Ptr & table_json)
-{
-    const bool has_securable_kind = hasValueAndItsNotNone("securable_kind", table_json);
-    const bool has_data_source_format = hasValueAndItsNotNone("data_source_format", table_json);
-
-    if (has_securable_kind && !UNITY_DELTA_SECURABLE_KINDS.contains(table_json->get("securable_kind").extract<String>()))
-        return false;
-
-    if (has_data_source_format && table_json->get("data_source_format").extract<String>() != UNITY_DELTA_DATA_SOURCE_FORMAT)
-        return false;
-
-    return has_securable_kind || has_data_source_format;
 }
 
 }

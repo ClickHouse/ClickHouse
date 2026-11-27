@@ -249,13 +249,13 @@ struct IdentifierResolveScope
     /// Node hash to mask id map
     std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
 
-    [[nodiscard]] [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const;
+    [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const;
 
     IdentifierResolveScope * getNearestQueryScope();
 
     AnalysisTableExpressionData & getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node);
 
-    [[nodiscard]] const AnalysisTableExpressionData & getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node) const;
+    const AnalysisTableExpressionData & getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node) const;
 
     void pushExpressionNode(const QueryTreeNodePtr & node);
 
@@ -280,10 +280,10 @@ struct IdentifierResolveScope
     /// Dump identifier resolve scope
     [[maybe_unused]] void dump(WriteBuffer & buffer) const;
 
-    [[nodiscard]] [[maybe_unused]] String dump() const;
+    [[maybe_unused]] String dump() const;
 
 private:
-    [[nodiscard]] bool canCacheIdentifier(
+    bool canCacheIdentifier(
         const IdentifierLookup & lookup,
         const IdentifierResolveContext & resolve_context) const;
 

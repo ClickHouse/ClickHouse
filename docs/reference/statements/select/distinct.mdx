@@ -121,11 +121,24 @@ Two settings control when spilling starts:
 
 - `max_bytes_before_external_distinct` sets a threshold in bytes of total query memory. It defaults
   to `0` (disabled).
-- `max_bytes_ratio_before_external_distinct` sets a fraction of available memory under the query's
-  `max_memory_usage` and the server or user limits, measured at the start of execution. It defaults
-  to `0.5` and has no effect when no limit applies.
+- `max_bytes_ratio_before_external_distinct` sets a fraction of available memory under server or
+  user limits, measured at the start of execution. It defaults to `0.5` and has no effect when
+  neither limit applies.
 
 When both thresholds apply, the smaller is used. Set both settings to `0` to disable spilling.
+
+`max_memory_usage` does not affect the ratio. To configure spilling relative to a query memory limit,
+set an absolute threshold below that limit. For example, this query uses a 16 MiB spill threshold
+with a 256 MiB query memory limit:
+
+```sql
+SELECT DISTINCT number % 1000000 AS id
+FROM numbers(2000000)
+SETTINGS
+    max_bytes_before_external_distinct = 16777216,
+    max_bytes_ratio_before_external_distinct = 0,
+    max_memory_usage = 268435456;
+```
 
 These thresholds do not cap memory usage. Leave room for other query processing and the spill
 itself. Spilling may also start earlier under memory pressure.

@@ -6,7 +6,6 @@
 #include <Core/Joins.h>
 
 #include <Interpreters/Context_fwd.h>
-
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
@@ -15,9 +14,6 @@ namespace DB
 struct GetColumnsOptions;
 struct IdentifierResolveScope;
 struct AnalysisTableExpressionData;
-struct StorageID;
-struct StorageSnapshot;
-using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 class QueryNode;
 class JoinNode;
@@ -47,11 +43,11 @@ struct SemiAntiJoinSideChecker
         const ContextPtr & context,
         const IQueryTreeNode * resolving_join_on_expression);
 
-    [[nodiscard]] bool shouldSkipSide(JoinTableSide side) const;
+    bool shouldSkipSide(JoinTableSide side) const;
 
     /// The side that stays visible when the compatibility settings hide the other one.
     /// Returns nullopt when both sides remain visible.
-    [[nodiscard]] std::optional<JoinTableSide> preservedSideOrNone() const;
+    std::optional<JoinTableSide> preservedSideOrNone() const;
 
     /// Throw if access to the given side of a SEMI/ANTI JOIN is denied.
     /// The caller is responsible for determining the correct side (e.g. via isFromJoinTree).
@@ -132,13 +128,6 @@ public:
         const Identifier & table_identifier,
         const ContextPtr & context,
         const StoragePtr & replaced_storage = nullptr);
-
-    /// Throw `ACCESS_DENIED` unless the user may see at least one column of the table.
-    static void checkAccessToTableMetadata(
-        const StoragePtr & storage,
-        const StorageID & storage_id,
-        const StorageSnapshotPtr & storage_snapshot,
-        const ContextPtr & context);
 
     /// Suggest a same/similar-named table when a table identifier cannot be resolved,
     /// possibly in another database (e.g. `system.functions` for a bare `functions`).

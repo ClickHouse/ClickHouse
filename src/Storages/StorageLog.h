@@ -176,7 +176,7 @@ private:
             : file_checker_tasks(std::move(file_checker_tasks_)), lock(std::move(lock_))
         {}
 
-        [[nodiscard]] size_t size() const override { return file_checker_tasks->size(); }
+        size_t size() const override { return file_checker_tasks->size(); }
 
         FileChecker::DataValidationTasksPtr file_checker_tasks;
         /// Lock to prevent table modification while checking
@@ -205,9 +205,9 @@ public:
     ReadFromStorageLogStep(const ReadFromStorageLogStep &) = default;
     ReadFromStorageLogStep(ReadFromStorageLogStep &&) = default;
 
-    [[nodiscard]] String getName() const override { return "ReadFromStorageLog"; }
+    String getName() const override { return "ReadFromStorageLog"; }
 
-    [[nodiscard]] QueryPlanStepPtr clone() const override
+    QueryPlanStepPtr clone() const override
     {
         return std::make_unique<ReadFromStorageLogStep>(*this);
     }

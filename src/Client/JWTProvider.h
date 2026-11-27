@@ -33,7 +33,7 @@ struct JWTProviderOptions
     std::string client_auth_method;
 
     /// No option is set explicitly. Only then does a ClickHouse Cloud host use the Cloud login flow.
-    [[nodiscard]] bool empty() const;
+    bool empty() const;
 };
 
 class JWTProvider
@@ -52,17 +52,17 @@ public:
     static Poco::Timestamp getJwtExpiry(const std::string & token);
 
 protected:
-    [[nodiscard]] virtual std::string getAudience() const { return oauth_audience; }
+    virtual std::string getAudience() const { return oauth_audience; }
     /// Show only `verification_uri_complete` (the URL with the code embedded) in the login prompt,
     /// instead of the short `verification_uri` followed by the shortcut URL.
-    [[nodiscard]] virtual bool preferCompleteVerificationURI() const { return false; }
+    virtual bool preferCompleteVerificationURI() const { return false; }
     void deviceCodeLogin();
     void refreshIdPAccessToken();
 
     /// Resolve device + token endpoints via explicit overrides or OIDC/OAuth discovery.
     void ensureOAuthEndpointsResolved();
 
-    [[nodiscard]] OAuthClientAuthMethod resolveClientAuthMethod() const;
+    OAuthClientAuthMethod resolveClientAuthMethod() const;
     void applyClientAuthentication(Poco::Net::HTTPRequest & request, std::string & body) const;
 
     static std::unique_ptr<Poco::Net::HTTPSClientSession> createHTTPSession(const Poco::URI & uri);

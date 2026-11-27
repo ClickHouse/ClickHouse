@@ -71,7 +71,7 @@ struct AggregateFunctionTimeseriesCountTraits
             sliding_sum.removeBefore(cut_off);
         }
 
-        [[nodiscard]] std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
+        std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
 

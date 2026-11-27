@@ -19,7 +19,7 @@ namespace Poco {
 namespace XML {
 
 
-[[clang::no_destroy]] const XMLString Comment::NODE_NAME = toXMLString("#comment");
+const XMLString Comment::NODE_NAME = toXMLString("#comment");
 
 
 Comment::Comment(Document* pOwnerDocument, const XMLString& data): 

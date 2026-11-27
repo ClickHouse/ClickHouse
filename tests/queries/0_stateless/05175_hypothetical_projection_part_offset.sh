@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
-# Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 # an offset predicate prunes a real projection read, so the estimate has to prune by it too
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

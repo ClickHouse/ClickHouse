@@ -100,13 +100,7 @@ struct ColumnReplicated::InsertionCache
 ColumnReplicated::ColumnReplicated(MutableColumnPtr && nested_column_)
     : nested_column(std::move(nested_column_)), id(global_id_counter.fetch_add(1))
 {
-    /// Use `std::as_const` for the read-only `size()` call: a non-const
-    /// `WrappedPtr::operator->` goes through `assumeMutableRef`, which
-    /// `chassert(use_count() == 1)`. This constructor is reached from
-    /// `ColumnReplicated::create(const ColumnPtr &)` where the caller still
-    /// keeps a reference to `nested_column_`, so `use_count()` is `> 1` and
-    /// the assertion would fire.
-    indexes.insertIndexesRange(0, std::as_const(nested_column)->size());
+    indexes.insertIndexesRange(0, nested_column->size());
 }
 
 ColumnReplicated::ColumnReplicated(MutableColumnPtr && nested_column_, MutableColumnPtr && indexes_)
@@ -553,7 +547,7 @@ struct ColumnReplicated::ComparatorBase
     {
     }
 
-    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = parent.compareAt(lhs, rhs, parent, nan_direction_hint);
 
@@ -572,7 +566,7 @@ struct ColumnReplicated::ComparatorCollationBase
     {
     }
 
-    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = parent.compareAtWithCollation(lhs, rhs, parent, nan_direction_hint, *collator);
 

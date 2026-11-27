@@ -171,7 +171,7 @@ private:
 class ReadFromSystemDetachedTables : public SourceStepWithFilter
 {
 public:
-    [[nodiscard]] std::string getName() const override { return "ReadFromSystemDetachedTables"; }
+    std::string getName() const override { return "ReadFromSystemDetachedTables"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromSystemDetachedTables(

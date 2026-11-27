@@ -4,7 +4,6 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/Utils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Columns/IColumn.h>
 #include <Core/Settings.h>
@@ -59,7 +58,7 @@ public:
         has_array_join = getFunctionCanonicalNameIfAny(function_node->getFunctionName()) == "arrayJoin";
     }
 
-    [[nodiscard]] bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
     {
         if (has_array_join)
             return false;
@@ -68,7 +67,7 @@ public:
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }
 
-    [[nodiscard]] bool hasArrayJoin() const
+    bool hasArrayJoin() const
     {
         return has_array_join;
     }
@@ -97,7 +96,7 @@ std::optional<UInt64> getTrivialGroupByLimit(const QueryNode & query, const Sett
     if (settings[Setting::exact_rows_before_limit])
         return std::nullopt;
 
-    if (!query.hasGroupBy() || !query.hasLimit() || query.hasHaving() || query.hasOrderBy() || query.isShuffle() || query.hasWindow()
+    if (!query.hasGroupBy() || !query.hasLimit() || query.hasHaving() || query.hasOrderBy() || query.hasWindow()
         || query.hasQualify() || query.hasLimitBy() || query.isDistinct() || query.isGroupByWithTotals()
         || query.isGroupByWithRollup() || query.isGroupByWithCube() || query.isGroupByWithGroupingSets())
         return std::nullopt;
@@ -105,17 +104,10 @@ std::optional<UInt64> getTrivialGroupByLimit(const QueryNode & query, const Sett
     /// `LIMIT n AFTER cond` / `LIMIT n UNTIL cond` select a window of `n` rows around a boundary
     /// that is only found once the boundary row is produced. Capping the aggregation at
     /// `n + offset` arbitrary groups can stop it before the boundary key ever appears, so the
-    /// window would be empty while the groups exist (the `04343` bug class).
+    /// window would be empty while the groups exist (the `04343` bug class). The guard has to
+    /// live here, not only in the settings-based pass: the planner calls this helper directly
+    /// for projections with aggregate functions.
     if (query.hasLimitAfter() || query.hasLimitUntil())
-        return std::nullopt;
-
-    /// `LIMIT` of a correlated subquery applies to each outer row, but after decorrelation one aggregation
-    /// serves all of them.
-    if (query.isCorrelated())
-        return std::nullopt;
-
-    /// The aggregation can run once more for a correlated subquery in the projection, and the two runs can keep different keys.
-    if (containsCorrelatedSubquery(query.getProjectionNode()))
         return std::nullopt;
 
     /// Window functions and `arrayJoin` in the projection consume the aggregated rows after

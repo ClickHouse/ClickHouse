@@ -40,16 +40,16 @@ public:
     virtual void next() = 0;
 
     /// Return `true` if the iterator points to a valid element.
-    [[nodiscard]] virtual bool isValid() const = 0;
+    virtual bool isValid() const = 0;
 
     /// Return `true` if the iterator points to a file.
-    [[nodiscard]] virtual bool isFile() const = 0;
+    virtual bool isFile() const = 0;
 
     /// Name of the file that the iterator currently points to.
-    [[nodiscard]] virtual std::string name() const = 0;
+    virtual std::string name() const = 0;
 
     /// Path of the file that the iterator currently points to.
-    [[nodiscard]] virtual std::string path() const = 0;
+    virtual std::string path() const = 0;
 
     virtual ~IDataPartStorageIterator() = default;
 };
@@ -79,9 +79,6 @@ struct WriteSettings;
 
 class TemporaryFileOnDisk;
 
-class TemporaryDataOnDiskScope;
-using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
-
 
 struct HardlinkedFiles
 {
@@ -101,14 +98,14 @@ class IDataPartStorage : public boost::noncopyable
 public:
     virtual ~IDataPartStorage() = default;
 
-    [[nodiscard]] virtual MergeTreeDataPartStorageType getType() const = 0;
+    virtual MergeTreeDataPartStorageType getType() const = 0;
 
     /// Methods to get path components of a data part.
-    [[nodiscard]] virtual std::string getFullPath() const = 0;         /// '/var/lib/clickhouse/data/database/table/moving/all_1_5_1'
-    [[nodiscard]] virtual std::string getRelativePath() const = 0;     ///                          'database/table/moving/all_1_5_1'
-    [[nodiscard]] virtual std::string getPartDirectory() const = 0;    ///                                                'all_1_5_1'
-    [[nodiscard]] virtual std::string getFullRootPath() const = 0;     /// '/var/lib/clickhouse/data/database/table/moving'
-    [[nodiscard]] virtual std::string getParentDirectory() const = 0;  ///                                                '' (or 'detached' for 'detached/all_1_5_1')
+    virtual std::string getFullPath() const = 0;         /// '/var/lib/clickhouse/data/database/table/moving/all_1_5_1'
+    virtual std::string getRelativePath() const = 0;     ///                          'database/table/moving/all_1_5_1'
+    virtual std::string getPartDirectory() const = 0;    ///                                                'all_1_5_1'
+    virtual std::string getFullRootPath() const = 0;     /// '/var/lib/clickhouse/data/database/table/moving'
+    virtual std::string getParentDirectory() const = 0;  ///                                                '' (or 'detached' for 'detached/all_1_5_1')
     /// Can add it if needed                             ///                          'database/table/moving'
     /// virtual std::string getRelativeRootPath() const = 0;
 
@@ -120,37 +117,37 @@ public:
         return getProjection(name, use_parent_transaction);
     }
 
-    [[nodiscard]] virtual std::shared_ptr<const IDataPartStorage> getProjection(const std::string & name) const = 0;
+    virtual std::shared_ptr<const IDataPartStorage> getProjection(const std::string & name) const = 0;
 
     /// Part directory exists.
-    [[nodiscard]] virtual bool exists() const = 0;
+    virtual bool exists() const = 0;
 
     /// File inside part directory exists. Specified path is relative to the part path.
-    [[nodiscard]] virtual bool existsFile(const std::string & name) const = 0;
-    [[nodiscard]] virtual bool existsDirectory(const std::string & name) const = 0;
+    virtual bool existsFile(const std::string & name) const = 0;
+    virtual bool existsDirectory(const std::string & name) const = 0;
 
     /// Modification time for part directory.
-    [[nodiscard]] virtual Poco::Timestamp getLastModified() const = 0;
+    virtual Poco::Timestamp getLastModified() const = 0;
 
     /// Iterate part directory. Iteration in subdirectory is not needed yet.
-    [[nodiscard]] virtual DataPartStorageIteratorPtr iterate() const = 0;
+    virtual DataPartStorageIteratorPtr iterate() const = 0;
 
     /// Get metadata for a file inside path dir.
-    [[nodiscard]] virtual Poco::Timestamp getFileLastModified(const std::string & file_name) const = 0;
-    [[nodiscard]] virtual size_t getFileSize(const std::string & file_name) const = 0;
+    virtual Poco::Timestamp getFileLastModified(const std::string & file_name) const = 0;
+    virtual size_t getFileSize(const std::string & file_name) const = 0;
     /// Uncompressed size of a packed skip-index substream from the archive index, or nullopt if
     /// unknown (non-packed file, or v0 archive). Callers fall back to the compressed size.
-    [[nodiscard]] virtual std::optional<UInt64> getPackedFileUncompressedSize(const std::string & /*file_name*/) const { return {}; }
-    [[nodiscard]] virtual UInt32 getRefCount(const std::string & file_name) const = 0;
+    virtual std::optional<UInt64> getPackedFileUncompressedSize(const std::string & /*file_name*/) const { return {}; }
+    virtual UInt32 getRefCount(const std::string & file_name) const = 0;
 
     /// Get path on remote filesystem from file name on local filesystem.
-    [[nodiscard]] virtual std::vector<std::string> getRemotePaths(const std::string & file_name) const = 0;
+    virtual std::vector<std::string> getRemotePaths(const std::string & file_name) const = 0;
 
-    [[nodiscard]] virtual UInt64 calculateTotalSizeOnDisk() const = 0;
+    virtual UInt64 calculateTotalSizeOnDisk() const = 0;
 
     /// Open the file for read and return ReadBufferFromFileBase object.
     /// Convenience wrapper: calls prepareRead() + pipeline.build().
-    [[nodiscard]] std::unique_ptr<ReadBufferFromFileBase> readFile(
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
         const std::string & name,
         const ReadSettings & settings,
         std::optional<size_t> read_hint) const;
@@ -163,7 +160,7 @@ public:
         std::optional<size_t> read_hint,
         ReadPipeline & pipeline) const = 0;
 
-    [[nodiscard]] virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const std::string & name,
         const ReadSettings & settings,
         std::optional<size_t> read_hint) const
@@ -191,7 +188,7 @@ public:
 
     /// Get a name like 'prefix_partdir_tryN' which does not exist in a root dir.
     /// TODO: remove it.
-    [[nodiscard]] virtual std::optional<String> getRelativePathForPrefix(
+    virtual std::optional<String> getRelativePathForPrefix(
         LoggerPtr log, const String & prefix, bool detached, bool broken) const = 0;
 
     /// Reset part directory, used for in-memory parts.
@@ -199,28 +196,28 @@ public:
     virtual void setRelativePath(const std::string & path) = 0;
 
     /// Some methods from IDisk. Needed to avoid getting internal IDisk interface.
-    [[nodiscard]] virtual std::string getDiskName() const = 0;
-    [[nodiscard]] virtual std::string getDiskType() const = 0;
-    [[nodiscard]] virtual bool isStoredOnRemoteDisk() const { return false; }
-    [[nodiscard]] virtual std::optional<String> getCacheName() const { return std::nullopt; }
-    [[nodiscard]] virtual bool supportZeroCopyReplication() const { return false; }
-    [[nodiscard]] virtual bool supportParallelWrite() const = 0;
-    [[nodiscard]] virtual bool isBroken() const = 0;
-    [[nodiscard]] virtual bool isReadonly() const = 0;
+    virtual std::string getDiskName() const = 0;
+    virtual std::string getDiskType() const = 0;
+    virtual bool isStoredOnRemoteDisk() const { return false; }
+    virtual std::optional<String> getCacheName() const { return std::nullopt; }
+    virtual bool supportZeroCopyReplication() const { return false; }
+    virtual bool supportParallelWrite() const = 0;
+    virtual bool isBroken() const = 0;
+    virtual bool isReadonly() const = 0;
 
     /// Get a path for internal disk if relevant. It is used mainly for logging.
-    [[nodiscard]] virtual std::string getDiskPath() const = 0;
+    virtual std::string getDiskPath() const = 0;
 
     /// Reserve space on the same disk.
     /// Probably we should try to remove it later.
     /// TODO: remove constness
-    [[nodiscard]] virtual ReservationPtr reserve(UInt64 /*bytes*/) const  { return nullptr; }
-    [[nodiscard]] virtual ReservationPtr tryReserve(UInt64 /*bytes*/) const  { return nullptr; }
+    virtual ReservationPtr reserve(UInt64 /*bytes*/) const  { return nullptr; }
+    virtual ReservationPtr tryReserve(UInt64 /*bytes*/) const  { return nullptr; }
 
     /// A leak of abstraction.
     /// Return some uniq string for file.
     /// Required for distinguish different copies of the same part on remote FS.
-    [[nodiscard]] virtual String getUniqueId() const = 0;
+    virtual String getUniqueId() const = 0;
 
     /// Represents metadata which is required for fetching of part.
     struct ReplicatedFilesDescription
@@ -240,8 +237,8 @@ public:
         String unique_id;
     };
 
-    [[nodiscard]] virtual ReplicatedFilesDescription getReplicatedFilesDescription(const NameSet & file_names) const = 0;
-    [[nodiscard]] virtual ReplicatedFilesDescription getReplicatedFilesDescriptionForRemoteDisk(const NameSet & file_names) const = 0;
+    virtual ReplicatedFilesDescription getReplicatedFilesDescription(const NameSet & file_names) const = 0;
+    virtual ReplicatedFilesDescription getReplicatedFilesDescriptionForRemoteDisk(const NameSet & file_names) const = 0;
 
     /// Create a backup of a data part.
     /// This method adds a new entry to backup_entries.
@@ -283,10 +280,6 @@ public:
         /// the disk root) so the new hardlink directory entries survive a power loss. Only honored
         /// by freeze() on a local disk, outside an external transaction.
         bool fsync_part_directory = false;
-        /// Where the buffered data of the files is moved if the clone rewrites them, see `setTemporaryDataForTransaction`.
-        /// It is not moved if `max_bytes_to_buffer_for_packed_part` is 0.
-        TemporaryDataOnDiskScopePtr temporary_data = nullptr;
-        size_t max_bytes_to_buffer_for_packed_part = 0;
     };
 
     /// For packed storage the whole data.packed archive is rewritten (copied) during a clone whenever
@@ -295,7 +288,7 @@ public:
     /// or its packed projections) are hardlinked from the source, so the caller must not record them as
     /// shared blobs. Full storage hardlinks members individually and has no such archive, so it never
     /// copies a whole archive.
-    [[nodiscard]] virtual bool cloneCopiesWholeArchive(const ClonePartParams & /*params*/) const { return false; }
+    virtual bool cloneCopiesWholeArchive(const ClonePartParams & /*params*/) const { return false; }
 
     virtual std::shared_ptr<IDataPartStorage> freeze(
         const std::string & to,
@@ -353,7 +346,7 @@ public:
     /// A special const method to write transaction file.
     /// It's const, because file with transaction metadata
     /// can be modified after part creation.
-    [[nodiscard]] virtual std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(const String & txn_file_name, WriteMode mode) const = 0;
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(const String & txn_file_name, WriteMode mode) const = 0;
 
     virtual void createFile(const String & name) = 0;
     virtual void moveFile(const String & from_name, const String & to_name) = 0;
@@ -364,7 +357,7 @@ public:
     virtual void removeRecursive() = 0;
     virtual void removeSharedRecursive(bool keep_in_remote_fs) = 0;
 
-    [[nodiscard]] virtual SyncGuardPtr getDirectorySyncGuard() const { return nullptr; }
+    virtual SyncGuardPtr getDirectorySyncGuard() const { return nullptr; }
 
     virtual void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) = 0;
     virtual void copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) = 0;
@@ -399,19 +392,11 @@ public:
     /// Prepares transaction to commit.
     /// It may be flush of buffered data or similar.
     virtual void precommitTransaction() = 0;
-    [[nodiscard]] virtual bool hasActiveTransaction() const = 0;
-    /// The active transaction was passed in at construction (e.g. the one of the parent part), and its owner commits or undoes it.
-    [[nodiscard]] virtual bool hasSharedTransaction() const = 0;
-
-    /// Lets the active transaction move the buffered data of the files being written to `tmp_data`
-    /// once it takes more than `max_bytes_in_memory` of memory. Applies until the transaction
-    /// is committed or rolled back, and to the projections that share the transaction.
-    /// Storages that write files directly instead of buffering them ignore it.
-    virtual void setTemporaryDataForTransaction(const TemporaryDataOnDiskScopePtr & /*tmp_data*/, size_t /*max_bytes_in_memory*/) {}
+    virtual bool hasActiveTransaction() const = 0;
 
     /// Returns true if underlying filesystem is case-insensitive,
     /// e.g. file_name and FILE_NAME are the same files.
-    [[nodiscard]] virtual bool isCaseInsensitive() const = 0;
+    virtual bool isCaseInsensitive() const = 0;
 };
 
 using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
@@ -429,10 +414,10 @@ public:
     }
 
     IDataPartStorage & getDataPartStorage() { return *storage; }
-    [[nodiscard]] const IDataPartStorage & getDataPartStorage() const { return *storage; }
+    const IDataPartStorage & getDataPartStorage() const { return *storage; }
 
     MutableDataPartStoragePtr getDataPartStoragePtr() { return storage; }
-    [[nodiscard]] DataPartStoragePtr getDataPartStoragePtr() const { return storage; }
+    DataPartStoragePtr getDataPartStoragePtr() const { return storage; }
 
 private:
     MutableDataPartStoragePtr storage;
@@ -446,13 +431,6 @@ inline bool isFullPartStorage(const IDataPartStorage & storage)
 inline bool isPackedPartStorage(const IDataPartStorage & storage)
 {
     return storage.getType() == MergeTreeDataPartStorageType::Packed;
-}
-
-/// Storage formats with one addressable object per logical file (Full), unlike the packed
-/// single-archive format. Only these support per-file hardlink reuse during mutations.
-inline bool isPerFilePartStorage(const IDataPartStorage & storage)
-{
-    return isFullPartStorage(storage);
 }
 
 }

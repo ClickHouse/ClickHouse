@@ -4,22 +4,24 @@
 SET inject_random_order_for_select_without_order_by = 1;
 
 -- Works only with enabled analyzer
+SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
 
--- If enabled, `SHUFFLE` is injected into the query plan.
+-- If enabled, `ORDER BY rand()` is injected into the query plan.
 -- We can not test the query result directly (because of randomization), we test the presence
--- or absence of shuffle and sorting operators in the query plan.
+-- or absence of sorting operators in the query plan.
 
-SELECT 'Simple SELECT: expect a Shuffle step injected';
+SELECT 'Simple SELECT: expect a Sorting step injected';
 SELECT count()
 FROM (EXPLAIN PLAN SELECT number FROM numbers(5))
-WHERE trimLeft(explain) LIKE 'Shuffle%';
+WHERE explain LIKE '%Sorting%';
 
-SELECT 'Simple SELECT with ORDER BY: no SHUFFLE injected';
-SELECT countIf(trimLeft(explain) LIKE 'Shuffle%'), countIf(explain LIKE '%Sorting%')
-FROM (EXPLAIN PLAN SELECT number FROM numbers(5) ORDER BY number);
+SELECT 'Simple SELECT with ORDER BY: no 2nd ORDER BY injected';
+SELECT count()
+FROM (EXPLAIN PLAN SELECT number FROM numbers(5) ORDER BY number)
+WHERE explain LIKE '%Sorting%';
 
-SELECT 'UNION: expect SHUFFLE injected into each child';
+SELECT 'UNION: expect ORDER BY injected into each child';
 SELECT count()
 FROM (
     EXPLAIN PLAN
@@ -27,12 +29,12 @@ FROM (
     UNION ALL
     SELECT number FROM numbers(5)
 )
-WHERE trimLeft(explain) LIKE 'Shuffle%';
+WHERE explain LIKE '%Sorting%';
 
 -- Now disable the setting
 SET inject_random_order_for_select_without_order_by = 0;
 
-SELECT 'Simple SELECT: no SHUFFLE injected';
+SELECT 'Simple SELECT: no ORDER BY injected';
 SELECT count()
 FROM (EXPLAIN PLAN SELECT number FROM numbers(5))
-WHERE explain LIKE '%Shuffle%';
+WHERE explain LIKE '%Sorting%';

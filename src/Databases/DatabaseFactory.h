@@ -63,7 +63,7 @@ public:
 
         /// The server replays a definition it stored itself: startup metadata loading (`is_metadata_replay`,
         /// which runs with mode `ATTACH`), `FORCE_ATTACH` or `FORCE_RESTORE`. Not a user `ATTACH DATABASE`.
-        [[nodiscard]] bool isLoadingFromExistingMetadata() const;
+        bool isLoadingFromExistingMetadata() const;
     };
 
     struct EngineFeatures
@@ -108,17 +108,17 @@ public:
         .has_builtin_setting_fn = nullptr,
     }, Documentation documentation = {});
 
-    [[nodiscard]] const DatabaseEngines & getDatabaseEngines() const { return database_engines; }
+    const DatabaseEngines & getDatabaseEngines() const { return database_engines; }
 
     /// Features of a registered database engine, or nullptr if the engine is not registered.
-    [[nodiscard]] const EngineFeatures * tryGetDatabaseEngineFeatures(const String & engine_name) const;
+    const EngineFeatures * tryGetDatabaseEngineFeatures(const String & engine_name) const;
 
-    [[nodiscard]] const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & engine_name) const;
+    const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & engine_name) const;
 
     /// Returns true if the given database engine accesses external data sources.
-    [[nodiscard]] bool isDatabaseExternal(const String & engine_name) const;
+    bool isDatabaseExternal(const String & engine_name) const;
 
-    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
         VectorWithMemoryTracking<String> result;
         auto getter = [](const auto & pair) { return pair.first; };

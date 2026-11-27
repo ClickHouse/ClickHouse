@@ -21,7 +21,7 @@ public:
         size_t num_ranges_to_choose = 100;
     };
 
-    [[nodiscard]] PartsRanges select(
+    PartsRanges select(
         const PartsRanges & parts_ranges,
         const MergeConstraints & merge_constraints,
         const RangeFilter & range_filter) const override;

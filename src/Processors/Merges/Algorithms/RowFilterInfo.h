@@ -16,7 +16,7 @@ struct RowFilterInfo : public ChunkInfoCloneable<RowFilterInfo>
     RowFilterInfo(const RowFilterInfo & other) { mask.assign(other.mask); }
 
     /// Not supported: nothing combines two chunks that each carry a mask.
-    [[nodiscard]] Ptr merge(const Ptr &) const override;
+    Ptr merge(const Ptr &) const override;
 
     IColumnFilter mask;
 };

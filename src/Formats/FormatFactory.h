@@ -106,7 +106,7 @@ public:
     using FileSegmentationEngineCreator = std::function<FileSegmentationEngine(
         const FormatSettings & settings)>;
 
-    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 private:
     // On the input side, there are two kinds of formats:
     //  * InputCreator - formats parsed sequentially, e.g. CSV. Almost all formats are like this.
@@ -208,7 +208,6 @@ private:
         SchemaReaderCreator schema_reader_creator;
         ExternalSchemaReaderCreator external_schema_reader_creator;
         bool supports_parallel_formatting{false};
-        bool supports_reset_parser{false};
         bool prefers_large_blocks{false};
         bool is_tty_friendly{true}; /// If false, client will ask before output in the terminal.
         /// If true, the output can contain arbitrary bytes that are not guaranteed to be valid UTF-8 text
@@ -316,7 +315,7 @@ public:
     OutputFormatPtr getDefaultJSONEachRowOutputFormat(WriteBuffer & buf, const Block & sample) const;
 
     /// Content-Type to set when sending HTTP response with this output format.
-    [[nodiscard]] String getContentType(const String & name, const std::optional<FormatSettings> & settings) const;
+    String getContentType(const String & name, const std::optional<FormatSettings> & settings) const;
 
     /// overload for formats that support object storage metadata
     SchemaReaderPtr getSchemaReader(
@@ -332,7 +331,7 @@ public:
         const ContextPtr & context,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
-    [[nodiscard]] ExternalSchemaReaderPtr getExternalSchemaReader(
+    ExternalSchemaReaderPtr getExternalSchemaReader(
         const String & name,
         const ContextPtr & context,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
@@ -352,10 +351,8 @@ public:
     bool checkIfFormatSupportAppend(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
 
     /// Register format by its name.
-    /// `supports_reset_parser`: `IInputFormat::resetParser` resets every per-input field, so the format
-    /// can be reused for the next input. Otherwise `StreamingFormatExecutor` creates a new one for each input.
-    void registerInputFormat(const String & name, InputCreator input_creator, bool supports_reset_parser = false);
-    void registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator, bool supports_reset_parser = false);
+    void registerInputFormat(const String & name, InputCreator input_creator);
+    void registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator);
     void registerRandomAccessInputFormatWithMetadata(const String & name, RandomAccessInputCreatorWithMetadata input_creator_with_metadata);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
 
@@ -377,7 +374,7 @@ public:
     /// `WithNames`/`WithNamesAndTypes` base format, in a deterministic order. The lowercased
     /// format name is always a part of the result, because format names are registered as
     /// extensions of the format itself.
-    [[nodiscard]] std::vector<String> getFileExtensionsForFormat(const String & format_name) const;
+    std::vector<String> getFileExtensionsForFormat(const String & format_name) const;
     String getFormatFromFileName(String file_name);
     std::optional<String> tryGetFormatFromFileName(String file_name);
     String getFormatFromFileDescriptor(int fd);
@@ -398,50 +395,46 @@ public:
 
     void markFormatSupportsSubsetOfColumns(const String & name);
     void registerSubsetOfColumnsSupportChecker(const String & name, SubsetOfColumnsSupportChecker subset_of_columns_support_checker);
-    [[nodiscard]] bool checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
+    bool checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
 
     void registerPrewhereSupportChecker(const String & name, PrewhereSupportChecker prewhere_support_checker);
-    [[nodiscard]] bool checkIfFormatSupportsPrewhere(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
+    bool checkIfFormatSupportsPrewhere(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
 
-    [[nodiscard]] bool checkIfFormatHasSchemaReader(const String & name) const;
-    [[nodiscard]] bool checkIfFormatHasExternalSchemaReader(const String & name) const;
-    [[nodiscard]] bool checkIfFormatHasAnySchemaReader(const String & name) const;
-    [[nodiscard]] bool checkIfOutputFormatPrefersLargeBlocks(const String & name) const;
-    [[nodiscard]] bool checkIfOutputFormatIsTTYFriendly(const String & name) const;
-    [[nodiscard]] bool checkIfOutputFormatMayProduceRawBytes(const String & name, const FormatSettings & settings, const Block & header) const;
+    bool checkIfFormatHasSchemaReader(const String & name) const;
+    bool checkIfFormatHasExternalSchemaReader(const String & name) const;
+    bool checkIfFormatHasAnySchemaReader(const String & name) const;
+    bool checkIfOutputFormatPrefersLargeBlocks(const String & name) const;
+    bool checkIfOutputFormatIsTTYFriendly(const String & name) const;
+    bool checkIfOutputFormatMayProduceRawBytes(const String & name, const FormatSettings & settings, const Block & header) const;
     /// Whether reading `name` will seek instead of consuming the input from the start. A
     /// random-access format reads its footer at the tail first, but only while it is allowed to
     /// seek: with `input_format_allow_seeks = 0` it reads sequentially from the start instead.
-    [[nodiscard]] bool checkIfFormatIsRandomAccessInput(
+    bool checkIfFormatIsRandomAccessInput(
         const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
 
-    [[nodiscard]] bool checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const;
-    /// The same check for a read whose files can have any format, such as the data files of a data
-    /// lake snapshot: it allows parallelizing only when every format would.
-    [[nodiscard]] bool checkParallelizeOutputAfterReadingForAnyFormat(const ContextPtr & context) const;
+    bool checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const;
 
     void registerAdditionalInfoForSchemaCacheGetter(const String & name, AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter);
     String getAdditionalInfoForSchemaCache(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
 
-    [[nodiscard]] const FormatsDictionary & getAllFormats() const
+    const FormatsDictionary & getAllFormats() const
     {
         return dict;
     }
 
-    [[nodiscard]] std::vector<String> getAllInputFormats() const;
+    std::vector<String> getAllInputFormats() const;
 
-    [[nodiscard]] bool isInputFormat(const String & name) const;
-    [[nodiscard]] bool isOutputFormat(const String & name) const;
+    bool isInputFormat(const String & name) const;
+    bool isOutputFormat(const String & name) const;
 
     /// Check that format with specified name exists and throw an exception otherwise.
     void checkFormatName(const String & name) const;
-    [[nodiscard]] bool exists(const String & name) const;
+    bool exists(const String & name) const;
 
     FileBucketInfoPtr getFileBucketInfo(const String & format);
     void registerFileBucketInfo(const String & format, FileBucketInfoCreator bucket_info);
     void registerSplitter(const String & format, BucketSplitterCreator splitter);
     BucketSplitter getSplitter(const String & format);
-    [[nodiscard]] bool checkIfFormatHasSplitter(const String & format) const;
 
 private:
     FormatsDictionary dict;
@@ -456,7 +449,7 @@ private:
     /// extension, so the lookup has to walk the aliases in both directions.
     std::unordered_map<String, std::set<String>> format_alias_groups;
 
-    [[nodiscard]] const Creators & getCreators(const String & name) const;
+    const Creators & getCreators(const String & name) const;
     Creators & getOrCreateCreators(const String & name);
 
     // Creates a ReadBuffer to give to an input format. Returns nullptr if we should use `buf` directly.

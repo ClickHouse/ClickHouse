@@ -12,7 +12,6 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCheckQuery.h>
-#include <Parsers/ASTCodecDeclaration.h>
 #include <Parsers/ASTCollation.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
@@ -169,7 +168,6 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
 
         /// DDL types
         {"ColumnDeclaration", [] { return make_intrusive<ASTColumnDeclaration>(); }},
-        {"CodecDeclaration", [] { return make_intrusive<ASTCodecDeclaration>(); }},
         {"IndexDeclaration", [] { return make_intrusive<ASTIndexDeclaration>(); }},
         {"ConstraintDeclaration", [] { return make_intrusive<ASTConstraintDeclaration>(); }},
         {"ProjectionDeclaration", [] { return make_intrusive<ASTProjectionDeclaration>(); }},

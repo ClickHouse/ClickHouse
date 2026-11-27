@@ -29,10 +29,10 @@ namespace ErrorCodes
 }
 
 /// 0b11 -- can be true and false at the same time
-[[clang::no_destroy]] static const Field UNKNOWN_FIELD(3u);
+static const Field UNKNOWN_FIELD(3u);
 
 /// 0b10 -- can be false only
-[[clang::no_destroy]] static const Field FALSE_FIELD(2u);
+static const Field FALSE_FIELD(2u);
 
 /// ColumnVariant::getExtremes, which ColumnDynamic delegates to, sets both bounds to Null without
 /// reading the rows, and a Null bound in Range means "unbounded", never "the value NULL".
@@ -666,11 +666,6 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
         return &node;
     }
 
-    /// The condition is computed on the values the index stores rather than on the rows, so it cannot use a
-    /// function that can return another value on each evaluation, such as `rand`.
-    if (node_to_check->type == ActionsDAG::ActionType::FUNCTION && !node_to_check->function_base->isDeterministicInScopeOfQuery())
-        return nullptr;
-
     RPNBuilderTreeNode tree_node(node_to_check, context);
 
     auto column_name = tree_node.getColumnName();
@@ -838,8 +833,6 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     {
         return !atomic && tryGetConstantCondition(node).value_or(true);
     }
-    if (node_to_check->type == ActionsDAG::ActionType::FUNCTION && !node_to_check->function_base->isDeterministicInScopeOfQuery())
-        return true;
     if (node.type == ActionsDAG::ActionType::FUNCTION)
     {
         auto column_name = tree_node.getColumnName();

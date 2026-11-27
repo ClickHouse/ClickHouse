@@ -59,7 +59,7 @@ struct MovingSumData : public MovingData<T>
 {
     static constexpr auto name = "groupArrayMovingSum";
 
-    [[nodiscard]] T NO_SANITIZE_UNDEFINED get(size_t idx, UInt64 window_size) const
+    T NO_SANITIZE_UNDEFINED get(size_t idx, UInt64 window_size) const
     {
         if (idx < window_size)
             return this->value[idx];
@@ -72,7 +72,7 @@ struct MovingAvgData : public MovingData<T>
 {
     static constexpr auto name = "groupArrayMovingAvg";
 
-    [[nodiscard]] T NO_SANITIZE_UNDEFINED get(size_t idx, UInt64 window_size) const
+    T NO_SANITIZE_UNDEFINED get(size_t idx, UInt64 window_size) const
     {
         if (idx < window_size)
             return this->value[idx] / T(window_size);
@@ -100,11 +100,11 @@ public:
         : IAggregateFunctionDataHelper<Data, MovingImpl<T, LimitNumElements, Data>>({data_type_}, parameters_, createResultType(data_type_))
         , window_size(window_size_) {}
 
-    [[nodiscard]] String getName() const override { return Data::name; }
+    String getName() const override { return Data::name; }
 
     /// The window size only affects finalization, not the serialized state, so parameterized and
     /// parameterless states share one representation and stay Merge-/CAST-compatible.
-    [[nodiscard]] DataTypePtr getNormalizedStateType() const override
+    DataTypePtr getNormalizedStateType() const override
     {
         DataTypes normalized_argument_types;
         normalized_argument_types.reserve(this->argument_types.size());
@@ -196,7 +196,7 @@ public:
         }
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override
+    bool allocatesMemoryInArena() const override
     {
         return true;
     }
@@ -306,7 +306,7 @@ AggregateFunctionPtr createAggregateFunctionMoving(
 void registerAggregateFunctionMoving(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMoving(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
     FunctionDocumentation::Description description_sum = R"(
 Calculates the moving sum of input values.

@@ -1,7 +1,6 @@
 import json
 import os
 import time
-import uuid
 
 import pytest
 import requests
@@ -20,7 +19,6 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/disable_cert_verification.xml"],
-    stay_alive=True,
     env_variables={
         "AZURE_TENANT_ID": TENANT_ID,
         "AZURE_CLIENT_ID": CLIENT_ID,
@@ -28,69 +26,50 @@ node = cluster.add_instance(
         "AZURE_AUTHORITY_HOST": f"https://127.0.0.1:{TOKEN_PORT}/",
     },
 )
-# delta-kernel fetches tokens and blobs through its own object store, which rejects the self-signed certificate of
-# the mock, so this node talks to a plain HTTP mock.
-delta_node = cluster.add_instance(
-    "delta_node",
-    env_variables={
-        "AZURE_TENANT_ID": TENANT_ID,
-        "AZURE_CLIENT_ID": CLIENT_ID,
-        "AZURE_FEDERATED_TOKEN_FILE": "/tmp/azure_federated_token",
-        "AZURE_AUTHORITY_HOST": f"http://127.0.0.1:{TOKEN_PORT}/",
-    },
-    # Env variables are shared across the cluster by default; keep this authority host to this node. `node` stays
-    # shared, so the MinIO settings of the remote database disk reach the cluster's env file.
-    instance_env_variables=True,
-    # `test_delta_lake_restricted_after_restart` restarts the server.
-    stay_alive=True,
-)
-
-
-def start_mock_server(instance_name, plain):
-    container_id = cluster.get_container_id(instance_name)
-    cluster.copy_file_to_container(
-        container_id,
-        os.path.join(SCRIPT_DIR, "mock_token_server.py"),
-        "mock_token_server.py",
-    )
-    cluster.exec_in_container(
-        container_id,
-        [
-            "bash",
-            "-c",
-            f"echo -n {FEDERATED_TOKEN} > /tmp/azure_federated_token",
-        ],
-    )
-    cluster.exec_in_container(
-        container_id,
-        [
-            "bash",
-            "-c",
-            f"python3 mock_token_server.py {TOKEN_PORT} {'plain' if plain else ''} "
-            "> /var/log/clickhouse-server/mock_token_server.log 2>&1",
-        ],
-        detach=True,
-    )
-
-    scheme = "http" if plain else "https"
-    for _ in range(60):
-        ping = cluster.exec_in_container(
-            container_id,
-            ["curl", "-sk", f"{scheme}://127.0.0.1:{TOKEN_PORT}/"],
-            nothrow=True,
-        )
-        if ping == "OK":
-            return
-        time.sleep(1)
-    raise Exception(f"Mock token server did not start on {instance_name}")
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
-        start_mock_server("node", plain=False)
-        start_mock_server("delta_node", plain=True)
+
+        container_id = cluster.get_container_id("node")
+        cluster.copy_file_to_container(
+            container_id,
+            os.path.join(SCRIPT_DIR, "mock_token_server.py"),
+            "mock_token_server.py",
+        )
+        cluster.exec_in_container(
+            container_id,
+            [
+                "bash",
+                "-c",
+                f"echo -n {FEDERATED_TOKEN} > /tmp/azure_federated_token",
+            ],
+        )
+        cluster.exec_in_container(
+            container_id,
+            [
+                "bash",
+                "-c",
+                f"python3 mock_token_server.py {TOKEN_PORT} "
+                "> /var/log/clickhouse-server/mock_token_server.log 2>&1",
+            ],
+            detach=True,
+        )
+
+        for _ in range(60):
+            ping = cluster.exec_in_container(
+                container_id,
+                ["curl", "-sk", f"https://127.0.0.1:{TOKEN_PORT}/"],
+                nothrow=True,
+            )
+            if ping == "OK":
+                break
+            time.sleep(1)
+        else:
+            raise Exception("Mock token server did not start")
+
         yield cluster
     finally:
         cluster.shutdown()
@@ -102,8 +81,7 @@ def test_token_request_goes_through_http_transport(started_cluster):
     later, on the request to the (unreachable) storage endpoint."""
 
     error = node.query_and_get_error(
-        "SELECT * FROM azureBlobStorage('https://localhost:1', 'cont', 'data.csv', 'CSV', 'auto', 'c UInt64') "
-        "SETTINGS s3_allow_server_credentials_in_user_queries = 1"
+        "SELECT * FROM azureBlobStorage('https://localhost:1', 'cont', 'data.csv', 'CSV', 'auto', 'c UInt64')"
     )
     assert "AuthenticationException" not in error
 
@@ -117,198 +95,3 @@ def test_token_request_goes_through_http_transport(started_cluster):
     for hit in hits:
         assert hit["path"] == f"/{TENANT_ID}/oauth2/v2.0/token"
         assert FEDERATED_TOKEN in hit["body"]
-
-
-def get_storage_hits(started_cluster):
-    node_ip = started_cluster.get_instance_ip("node")
-    return json.loads(
-        requests.get(f"https://{node_ip}:{TOKEN_PORT}/storage_hits", verify=False).text
-    )
-
-
-def test_table_created_with_opt_in_serves_no_restricted_session(started_cluster):
-    """A table that uses the server's identity follows the restriction of the accessing session, as for S3: a
-    restricted session is refused before any request, and the opt-in works again afterwards."""
-
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    allow = {"s3_allow_server_credentials_in_user_queries": 1}
-    node.query("DROP TABLE IF EXISTS t_opt_in SYNC")
-    node.query(
-        f"CREATE TABLE t_opt_in (c UInt64) ENGINE = AzureBlobStorage('https://127.0.0.1:{TOKEN_PORT}/account', 'cont', 'data.csv', 'CSV')",
-        settings=allow,
-    )
-
-    before = len(get_storage_hits(started_cluster))
-    error = node.query_and_get_error("SELECT * FROM t_opt_in", settings={"azure_sdk_max_retries": 0})
-    assert "ACCESS_DENIED" in error
-    assert get_storage_hits(started_cluster)[before:] == []
-
-    # Entrypoints that do not refresh the client, such as `ALTER` and `OPTIMIZE` of a data lake, are checked as well.
-    for query in ["OPTIMIZE TABLE t_opt_in", "ALTER TABLE t_opt_in ADD COLUMN d UInt64"]:
-        before = len(get_storage_hits(started_cluster))
-        assert "ACCESS_DENIED" in node.query_and_get_error(query, settings={"azure_sdk_max_retries": 0})
-        assert get_storage_hits(started_cluster)[before:] == []
-
-    before = len(get_storage_hits(started_cluster))
-    node.query_and_get_error("SELECT * FROM t_opt_in", settings={**allow, "azure_sdk_max_retries": 0})
-    allowed_hits = get_storage_hits(started_cluster)[before:]
-    assert any(hit["authorization"] for hit in allowed_hits)
-
-    node.query("DROP TABLE t_opt_in SYNC")
-
-
-def get_delta_node_hits(started_cluster, kind):
-    node_ip = started_cluster.get_instance_ip("delta_node")
-    return json.loads(requests.get(f"http://{node_ip}:{TOKEN_PORT}/{kind}").text)
-
-
-def test_delta_lake_follows_the_session(started_cluster):
-    """delta-kernel builds its object store from the params of the accessing session, not from a copy taken when
-    the table's metadata was created: after an opted-in session read the table, a restricted session is refused
-    without a token request, and the opt-in still signs its requests."""
-
-    # Builds without delta-kernel (e.g. MSan) do not have the engine.
-    if int(delta_node.query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLakeAzure'").strip()) == 0:
-        pytest.skip("DeltaLakeAzure engine is not available")
-
-    allow = {"s3_allow_server_credentials_in_user_queries": 1}
-    kernel = {"allow_experimental_delta_kernel_rs": 1, "azure_sdk_max_retries": 0}
-    delta_node.query("DROP TABLE IF EXISTS t_delta SYNC")
-    # `ATTACH` loads the table lazily, so nothing is read before the first query and no Delta log is needed.
-    # An Atomic database takes a full-definition `ATTACH` only with a UUID.
-    delta_node.query(
-        f"ATTACH TABLE t_delta UUID '{uuid.uuid4()}' (c UInt64) ENGINE = DeltaLakeAzure('http://127.0.0.1:{TOKEN_PORT}/account', 'cont', 'table/')",
-        settings=allow,
-    )
-
-    # The opted-in session creates the metadata and signs its requests; the read fails, as the mock has no Delta log.
-    before_tokens = len(get_delta_node_hits(started_cluster, "hits"))
-    before_storage = len(get_delta_node_hits(started_cluster, "storage_hits"))
-    delta_node.query_and_get_error("SELECT * FROM t_delta", settings={**allow, **kernel})
-    assert len(get_delta_node_hits(started_cluster, "hits")) > before_tokens
-    assert any(hit["authorization"] for hit in get_delta_node_hits(started_cluster, "storage_hits")[before_storage:])
-
-    before_tokens = len(get_delta_node_hits(started_cluster, "hits"))
-    before_storage = len(get_delta_node_hits(started_cluster, "storage_hits"))
-    error = delta_node.query_and_get_error("SELECT * FROM t_delta", settings=kernel)
-    assert "ACCESS_DENIED" in error
-    assert get_delta_node_hits(started_cluster, "hits")[before_tokens:] == []
-    assert get_delta_node_hits(started_cluster, "storage_hits")[before_storage:] == []
-
-    before_storage = len(get_delta_node_hits(started_cluster, "storage_hits"))
-    delta_node.query_and_get_error("SELECT * FROM t_delta", settings={**allow, **kernel})
-    assert any(hit["authorization"] for hit in get_delta_node_hits(started_cluster, "storage_hits")[before_storage:])
-
-    delta_node.query("DROP TABLE t_delta SYNC")
-
-
-def test_delta_lake_cached_stats_follow_the_session(started_cluster):
-    """With a pinned snapshot version, a restricted session does not get the row count an opted-in session cached:
-    `count()` is refused without a token request."""
-
-    if int(delta_node.query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLakeAzure'").strip()) == 0:
-        pytest.skip("DeltaLakeAzure engine is not available")
-
-    allow = {"s3_allow_server_credentials_in_user_queries": 1}
-    pinned = {
-        "allow_experimental_delta_kernel_rs": 1,
-        "azure_sdk_max_retries": 0,
-        "delta_lake_snapshot_version": 0,
-        "optimize_trivial_count_query": 1,
-    }
-    delta_node.query("DROP TABLE IF EXISTS t_delta_stats SYNC")
-    delta_node.query(
-        f"ATTACH TABLE t_delta_stats UUID '{uuid.uuid4()}' (c Int64) ENGINE = DeltaLakeAzure('http://127.0.0.1:{TOKEN_PORT}/account', 'cont', 'stats_table/')",
-        settings=allow,
-    )
-
-    # The opted-in session loads snapshot 0 from the mock's Delta log and caches its stats.
-    assert delta_node.query("SELECT count() FROM t_delta_stats", settings={**allow, **pinned}).strip() == "3"
-
-    before_tokens = len(get_delta_node_hits(started_cluster, "hits"))
-    before_storage = len(get_delta_node_hits(started_cluster, "storage_hits"))
-    error = delta_node.query_and_get_error("SELECT count() FROM t_delta_stats", settings=pinned)
-    assert "ACCESS_DENIED" in error
-    assert get_delta_node_hits(started_cluster, "hits")[before_tokens:] == []
-    assert get_delta_node_hits(started_cluster, "storage_hits")[before_storage:] == []
-
-    delta_node.query("DROP TABLE t_delta_stats SYNC")
-
-
-def test_delta_lake_restricted_after_restart(started_cluster):
-    """After a restart the table loads restricted, so the client is not rebuilt for a restricted session and only the
-    metadata checks refuse it: no token request, no storage request, not even an unsigned one."""
-
-    if int(delta_node.query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLakeAzure'").strip()) == 0:
-        pytest.skip("DeltaLakeAzure engine is not available")
-
-    allow = {"s3_allow_server_credentials_in_user_queries": 1}
-    kernel = {"allow_experimental_delta_kernel_rs": 1, "azure_sdk_max_retries": 0}
-    delta_node.query("DROP TABLE IF EXISTS t_delta_restart SYNC")
-    delta_node.query(
-        f"ATTACH TABLE t_delta_restart UUID '{uuid.uuid4()}' (c Int64) ENGINE = DeltaLakeAzure('http://127.0.0.1:{TOKEN_PORT}/account', 'cont', 'stats_table/')",
-        settings=allow,
-    )
-    delta_node.restart_clickhouse()
-
-    for query in ["SELECT * FROM t_delta_restart", "SELECT count() FROM t_delta_restart"]:
-        before_tokens = len(get_delta_node_hits(started_cluster, "hits"))
-        before_storage = len(get_delta_node_hits(started_cluster, "storage_hits"))
-        assert "ACCESS_DENIED" in delta_node.query_and_get_error(query, settings=kernel)
-        assert get_delta_node_hits(started_cluster, "hits")[before_tokens:] == []
-        assert get_delta_node_hits(started_cluster, "storage_hits")[before_storage:] == []
-
-    # The opt-in still works after the restart.
-    assert delta_node.query("SELECT count() FROM t_delta_restart", settings={**allow, **kernel}).strip() == "3"
-
-    delta_node.query("DROP TABLE t_delta_restart SYNC")
-
-
-def test_truncate_follows_the_session(started_cluster):
-    """`TRUNCATE` uses the client of the truncating session, not one an opted-in session left: a restricted session is
-    refused before any delete is sent."""
-
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    allow = {"s3_allow_server_credentials_in_user_queries": 1}
-    node.query("DROP TABLE IF EXISTS t_truncate SYNC")
-    node.query(
-        f"CREATE TABLE t_truncate (c UInt64) ENGINE = AzureBlobStorage('https://127.0.0.1:{TOKEN_PORT}/account', 'cont', 'data.csv', 'CSV')",
-        settings=allow,
-    )
-
-    before = len(get_storage_hits(started_cluster))
-    error = node.query_and_get_error("TRUNCATE TABLE t_truncate", settings={"azure_sdk_max_retries": 0})
-    assert "ACCESS_DENIED" in error
-    assert get_storage_hits(started_cluster)[before:] == []
-
-    node.query("DROP TABLE t_truncate SYNC")
-
-
-def test_table_loaded_anonymously_stays_anonymous(started_cluster):
-    """A table that used the server's identity is loaded at startup without credentials. An opted-in session does not
-    give the identity back to the shared client; attaching the table again in such a session does."""
-
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    allow = {"s3_allow_server_credentials_in_user_queries": 1, "azure_sdk_max_retries": 0}
-    node.query("DROP TABLE IF EXISTS t_reload SYNC")
-    node.query(
-        f"CREATE TABLE t_reload (c UInt64) ENGINE = AzureBlobStorage('https://127.0.0.1:{TOKEN_PORT}/account', 'cont', 'data.csv', 'CSV')",
-        settings=allow,
-    )
-
-    node.restart_clickhouse()
-
-    before = len(get_storage_hits(started_cluster))
-    node.query_and_get_error("SELECT * FROM t_reload", settings=allow)
-    hits = get_storage_hits(started_cluster)[before:]
-    assert hits, "the read sent no request to the storage"
-    assert not any(hit["authorization"] for hit in hits), hits
-
-    node.query("DETACH TABLE t_reload")
-    node.query("ATTACH TABLE t_reload", settings=allow)
-
-    before = len(get_storage_hits(started_cluster))
-    node.query_and_get_error("SELECT * FROM t_reload", settings=allow)
-    assert any(hit["authorization"] for hit in get_storage_hits(started_cluster)[before:])
-
-    node.query("DROP TABLE t_reload SYNC")

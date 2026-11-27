@@ -70,14 +70,14 @@ private:
         bool is_const = false;
     };
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return legacy_null_behavior; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return legacy_null_behavior; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
         if (types.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} cannot be called without arguments", getName());
@@ -85,7 +85,7 @@ private:
         return getLeastSupertype(types);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (arguments.size() == 1)
             return arguments[0].column;
@@ -330,13 +330,6 @@ public:
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return legacy_null_behavior; }
 
-    /// Declarative signature — the result is the least common supertype of
-    /// the inputs (or a specialized numeric result for two numeric args).
-    String getSignatureString() const override
-    {
-        return "(A1 : Any, ...) -> leastSupertype(A1, ...)";
-    }
-
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         DataTypes argument_types;
@@ -380,19 +373,6 @@ public:
         }
 
         return getLeastSupertype(types);
-    }
-
-    /// Bypass the DSL — the `(A1 : Any, ...) -> leastSupertype(A1, ...)` signature
-    /// is documentation-only and does not capture the cross-type numeric widening
-    /// performed by the two-argument specialization (e.g. signed + unsigned mixes
-    /// that `getLeastSupertype` rejects but `FunctionBinaryArithmetic` resolves).
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        DataTypes types;
-        types.reserve(arguments.size());
-        for (const auto & arg : arguments)
-            types.push_back(arg.type);
-        return getReturnTypeImpl(types);
     }
 
 private:

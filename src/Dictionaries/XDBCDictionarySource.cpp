@@ -88,6 +88,9 @@ XDBCDictionarySource::XDBCDictionarySource(
     , bridge_url(bridge_helper->getMainURI())
     , timeouts(ConnectionTimeouts::getHTTPTimeouts(context_->getSettingsRef(), context_->getServerSettings()))
 {
+    auto url_params = bridge_helper->getURLParams(max_block_size);
+    for (const auto & [name, value] : url_params)
+        bridge_url.addQueryParameter(name, value);
 }
 
 /// copy-constructor is provided in order to support cloneability
@@ -127,7 +130,7 @@ BlockIO XDBCDictionarySource::loadAll()
 {
     LOG_TRACE(log, fmt::runtime(load_all_query));
     BlockIO io;
-    io.pipeline = loadFromQuery(sample_block, load_all_query);
+    io.pipeline = loadFromQuery(bridge_url, sample_block, load_all_query);
     return io;
 }
 
@@ -138,7 +141,7 @@ BlockIO XDBCDictionarySource::loadUpdatedAll()
 
     LOG_TRACE(log, fmt::runtime(load_query_update));
     BlockIO io;
-    io.pipeline = loadFromQuery(sample_block, load_query_update);
+    io.pipeline = loadFromQuery(bridge_url, sample_block, load_query_update);
     return io;
 }
 
@@ -147,7 +150,7 @@ BlockIO XDBCDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & i
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
     BlockIO io;
-    io.pipeline = loadFromQuery(sample_block, query);
+    io.pipeline = loadFromQuery(bridge_url, sample_block, query);
     return io;
 }
 
@@ -156,7 +159,7 @@ BlockIO XDBCDictionarySource::loadKeys(const Columns & key_columns, const Vector
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
     BlockIO io;
-    io.pipeline = loadFromQuery(sample_block, query);
+    io.pipeline = loadFromQuery(bridge_url, sample_block, query);
     return io;
 }
 
@@ -205,19 +208,19 @@ std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request)
 
     bridge_helper->startBridgeSync();
 
-    QueryPipeline pipeline = loadFromQuery(invalidate_sample_block, request);
+    auto invalidate_url = bridge_helper->getMainURI();
+    auto url_params = bridge_helper->getURLParams(max_block_size);
+    for (const auto & [name, value] : url_params)
+        invalidate_url.addQueryParameter(name, value);
+
+    QueryPipeline pipeline = loadFromQuery(invalidate_url, invalidate_sample_block, request);
     return readInvalidateQuery(pipeline);
 }
 
 
-QueryPipeline XDBCDictionarySource::loadFromQuery(const Block & required_sample_block, const std::string & query) const
+QueryPipeline XDBCDictionarySource::loadFromQuery(const Poco::URI & uri, const Block & required_sample_block, const std::string & query) const
 {
     bridge_helper->startBridgeSync();
-
-    Poco::URI request_uri(bridge_url);
-    auto url_params = bridge_helper->getURLParams(max_block_size);
-    for (const auto & [name, value] : url_params)
-        request_uri.addQueryParameter(name, value);
 
     auto write_body_callback = [required_sample_block, query](WriteBuffer & out)
     {
@@ -226,7 +229,7 @@ QueryPipeline XDBCDictionarySource::loadFromQuery(const Block & required_sample_
         out << "query=" << escapeForFileName(query);
     };
 
-    auto buf = BuilderRWBufferFromHTTP(request_uri)
+    auto buf = BuilderRWBufferFromHTTP(uri)
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                    .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                    .withTimeouts(timeouts)

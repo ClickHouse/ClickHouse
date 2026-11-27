@@ -34,7 +34,11 @@
 
 
 #if !defined(Util_API)
-#    define Util_API
+#    if !defined(POCO_NO_GCC_API_ATTRIBUTE) && defined(__GNUC__) && (__GNUC__ >= 4)
+#        define Util_API __attribute__((visibility("default")))
+#    else
+#        define Util_API
+#    endif
 #endif
 
 

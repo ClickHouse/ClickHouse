@@ -148,11 +148,7 @@ UInt64 BackupWriterDisk::getFileSize(const String & file_name)
 
 std::unique_ptr<ReadBuffer> BackupWriterDisk::readFile(const String & file_name, size_t expected_file_size)
 {
-    /// This reads back a file this process just wrote, so it must observe the filesystem
-    /// rather than a read cache that may still hold the previous contents at the same path.
-    auto settings = read_settings.adjustBufferSize(expected_file_size);
-    settings.disableCaches();
-    return disk->readFile(root_path / file_name, settings);
+    return disk->readFile(root_path / file_name, read_settings.adjustBufferSize(expected_file_size));
 }
 
 std::unique_ptr<WriteBuffer> BackupWriterDisk::writeFile(const String & file_name)
@@ -179,16 +175,6 @@ void BackupWriterDisk::removeEmptyDirectories()
     removeEmptyDirectoriesImpl(root_path);
 }
 
-void BackupWriterDisk::removeEmptyRootDirectory()
-{
-    if (root_path.empty())
-        return;
-    if (disk->isSymlinkSupported() && disk->isSymlinkNoThrow(root_path))
-        return;
-    if (disk->existsDirectory(root_path) && disk->isDirectoryEmpty(root_path))
-        disk->removeDirectory(root_path);
-}
-
 void BackupWriterDisk::removeEmptyDirectoriesImpl(const fs::path & current_dir)
 {
     checkStackSize();
@@ -209,7 +195,7 @@ void BackupWriterDisk::removeEmptyDirectoriesImpl(const fs::path & current_dir)
         disk->removeDirectory(current_dir);
 }
 
-void BackupWriterDisk::copyFileFromDiskWithFallback(
+void BackupWriterDisk::copyFileFromDisk(
     const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
     /// Use `IDisk::copyFile` as a more optimal way to copy a file if it's possible.
@@ -231,7 +217,7 @@ void BackupWriterDisk::copyFileFromDiskWithFallback(
     }
 
     /// Fallback to copy through buffers.
-    BackupWriterDefault::copyFileFromDiskWithFallback(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
+    BackupWriterDefault::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
 }
 
 void BackupWriterDisk::copyFile(const String & destination, const String & source, size_t /*size*/)

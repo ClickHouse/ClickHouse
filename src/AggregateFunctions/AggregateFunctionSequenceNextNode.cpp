@@ -77,7 +77,7 @@ struct NodeBase
 
     char * data() { return reinterpret_cast<char *>(this) + sizeof(Node); }
 
-    [[nodiscard]] const char * data() const { return reinterpret_cast<const char *>(this) + sizeof(Node); }
+    const char * data() const { return reinterpret_cast<const char *>(this) + sizeof(Node); }
 
     Node * clone(Arena * arena) const
     {
@@ -214,9 +214,9 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return "sequenceNextNode"; }
+    String getName() const override { return "sequenceNextNode"; }
 
-    [[nodiscard]] bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
         return this->getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
     }
@@ -253,8 +253,6 @@ public:
         node->can_be_base = assert_cast<const ColumnVector<UInt8> *>(columns[base_cond_column_idx])->getData()[row_num];
 
         data(place).value.push_back(node, arena);
-        /// The state may have been sorted by an earlier `merge` or `insertResultInto`, and the new event can break that order.
-        data(place).sorted = false;
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -447,7 +445,7 @@ public:
         }
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return true; }
+    bool allocatesMemoryInArena() const override { return true; }
 };
 
 

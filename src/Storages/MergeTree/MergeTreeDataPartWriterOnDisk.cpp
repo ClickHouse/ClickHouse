@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
-#include <Formats/FormatSettings.h>
 
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/ColumnsDescription.h>
@@ -9,7 +8,6 @@
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
-#include <Storages/SubcolumnCodecs.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Common/CurrentThread.h>
@@ -21,7 +19,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
-#include <Compression/Adaptive/CompressionCodecAdaptive.h>
+#include <Compression/CompressionCodecAdaptive.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
@@ -86,26 +84,17 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
         initPrimaryIndex();
 
     initSkipIndices();
-
-    for (const auto & column : columns_list)
-    {
-        UInt64 min_compress_block_size = settings.min_compress_block_size;
-        const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getNameInStorage());
-        /// Honor an explicit column override even when it is 0 ("start a new block at every boundary");
-        /// inheritance is expressed by not setting it (or RESET SETTING), i.e. tryGet returning null.
-        if (column_desc)
-            if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
-                min_compress_block_size = value->safeGet<UInt64>();
-        min_compress_block_sizes.emplace(column.name, min_compress_block_size);
-    }
 }
 
 UInt64 MergeTreeDataPartWriterOnDisk::getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const
 {
-    const auto it = min_compress_block_sizes.find(name_and_type.name);
-    if (it == min_compress_block_sizes.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not in the columns list of the part writer", name_and_type.name);
-    return it->second;
+    const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
+    /// Honor an explicit column override even when it is 0 ("start a new block at every boundary");
+    /// inheritance is expressed by not setting it (or RESET SETTING), i.e. tryGet returning null.
+    if (column_desc)
+        if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
+            return value->safeGet<UInt64>();
+    return settings.min_compress_block_size;
 }
 
 void MergeTreeDataPartWriterOnDisk::cancel() noexcept
@@ -251,10 +240,6 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                 settings.marks_compress_block_size,
                 settings.query_write_settings,
                 packing);
-
-            /// An encrypting part codec is applied to every block, so the index data is not written in plain text.
-            if (!skip_index->isCompressible() && !default_codec->isEncryption())
-                stream->compressor.storeIncompressibleBlocksUncompressed();
 
             index_streams[index_substream.type] = stream.get();
             skip_indices_streams_holders.push_back(std::move(stream));
@@ -667,9 +652,6 @@ Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
 
 void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
 {
-    for (auto & column : block)
-        column.column = column.column->convertToFullColumnIfConst();
-
     /// If block sample is empty, initialize it using current block (it will be the first block to write).
     if (block_sample.empty())
     {
@@ -739,14 +721,17 @@ void MergeTreeDataPartWriterOnDisk::initStreamsIfNeeded()
     }
 
     for (const auto & column : columns_list)
-        addStreams(column);
+    {
+        auto compression = getCodecDescriptionOrDefault(column.name, default_codec);
+        addStreams(column, compression);
+    }
 
     streams_initialized = true;
 }
 
 void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
 {
-    if (columns_substreams.getTotalSubstreams())
+    if (columns_substreams.getTotalSubstreams() || (index_granularity_info.mark_type.part_type == MergeTreeDataPartType::Compact && !index_granularity_info.mark_type.with_substreams))
         return;
 
     /// Block sample is required. It's initialized in prepareBlockForWriting on first written block.
@@ -780,32 +765,18 @@ void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
 }
 
 CompressionCodecPtr MergeTreeDataPartWriterOnDisk::getSubstreamCodec(
-    const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path) const
+    const ASTPtr & effective_codec_desc, const ISerialization::SubstreamPath & substream_path, bool column_uses_default_codec) const
 {
-    const auto & column_name = name_and_type.getNameInStorage();
-    const ColumnDescription * column_desc = metadata_snapshot->columns.tryGet(column_name);
-    if (!column_desc)
-        column_desc = metadata_snapshot->virtuals.tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
-    if (!column_desc)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
-
-    ASTPtr declared_codec_desc = getSubstreamCodecDescription(substream_path, *column_desc);
-    /// No declaration, or an explicit lone `CODEC(Default)`.
-    const bool use_default_codec = CompressionCodecFactory::isDefaultCodec(declared_codec_desc);
-    /// `default_codec` comes from `MergeTreeData::getCompressionCodecForPart` and already accounts for
-    /// the `default_compression_codec` setting and `TTL ... RECOMPRESS`, so it is not re-read from the settings here.
-    const ASTPtr & effective_codec_desc = declared_codec_desc ? declared_codec_desc : default_codec->getFullCodecDescription();
-
     const auto & substream_type = substream_path.back().data.type;
-    /// The declared codec is meant for the values. Structural substreams keep only its generic codecs (`only_generic`).
+    /// The column's codec is meant for its values. Structural substreams keep only its generic codecs (`only_generic`).
     /// The type is omitted so the codecs about to be dropped are not validated against it.
     const bool is_data_substream = ISerialization::isSpecialCompressionAllowed(substream_path);
     auto codec = CompressionCodecFactory::instance().get(
         effective_codec_desc, is_data_substream ? substream_type.get() : nullptr, default_codec, /*only_generic=*/!is_data_substream);
 
     /// Adaptive could pick an unencrypted codec for some blocks and drop the encryption. Thus skip adaptivity for an encrypting codec.
-    if (settings.apply_adaptive_codec && use_default_codec && !codec->isEncryption())
-        return std::make_shared<CompressionCodecAdaptive>(substream_type, codec, settings.adaptive_codec_selection_period);
+    if (settings.apply_adaptive_codec && column_uses_default_codec && !codec->isEncryption())
+        return std::make_shared<CompressionCodecAdaptive>(substream_type, codec);
 
     return codec;
 }

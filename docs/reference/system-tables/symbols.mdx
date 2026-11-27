@@ -11,7 +11,6 @@ doc_type: 'reference'
 ## Description {#description}
 
 Contains information for introspection of `clickhouse` binary. It requires the introspection privilege to access.
-Only symbols of the main executable are listed; addresses are offsets inside it.
 This table is only useful for C++ experts and ClickHouse engineers.
 
 ## Columns {#columns}
@@ -19,8 +18,8 @@ This table is only useful for C++ experts and ClickHouse engineers.
 - `symbol` ([String](/reference/data-types/string)) — Symbol name in the binary. It is mangled. You can apply demangle(symbol) to obtain a readable name.
 - `symbol_demangled` ([Nullable(String)](/reference/data-types/nullable)) — Demangled symbol used for XRay instrumentation.
 - `function_id` ([Nullable(Int32)](/reference/data-types/nullable)) — Function ID in the XRay instrumentation map.
-- `address_begin` ([UInt64](/reference/data-types/int-uint)) — Start address of the symbol, as an offset inside the main executable.
-- `address_end` ([UInt64](/reference/data-types/int-uint)) — End address of the symbol, as an offset inside the main executable.
+- `address_begin` ([UInt64](/reference/data-types/int-uint)) — Start address of the symbol in the binary.
+- `address_end` ([UInt64](/reference/data-types/int-uint)) — End address of the symbol in the binary.
 
 ## Example {#example}
 

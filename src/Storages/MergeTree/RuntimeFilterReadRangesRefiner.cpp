@@ -12,7 +12,7 @@ namespace DB
 {
 
 RuntimeFilterReadRangesRefiner::RuntimeFilterReadRangesRefiner(
-    StorageMetadataPtr metadata_snapshot_, ContextPtr context_, VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> descriptors_)
+    StorageMetadataPtr metadata_snapshot_, ContextPtr context_, std::vector<RuntimeFilterIndexAnalysisDescriptor> descriptors_)
     : metadata_snapshot(std::move(metadata_snapshot_))
     , context(std::move(context_))
     , descriptors(std::move(descriptors_))

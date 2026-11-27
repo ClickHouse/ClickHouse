@@ -42,7 +42,7 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
 
 Strings MergeTreeDataPartCompact::getPreferredFileOrder() const
 {
-    Strings preferred_order = getCommonMetadataFiles();
+    Strings preferred_order = COMMON_METADATA_FILES;
 
     /// Files for partition key columns MinMax indices
     preferred_order.append_range(getMinMaxIndex()->getProbablyWrittenFiles(*this));

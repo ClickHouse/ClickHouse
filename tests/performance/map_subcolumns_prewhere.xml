@@ -106,9 +106,11 @@
         SETTINGS optimize_functions_to_subcolumns=1
     </query>
 
-    <!-- Wide: count() with PREWHERE over startsWith and LIKE with a constant pattern. They report true
-         from isSuitableForShortCircuitArgumentsExecution, but cannot throw on a String, so they share
-         a single step, like the `!= ''` shapes above. -->
+    <!-- Wide: count() with PREWHERE over conditions that the read step splitter treats as a step
+         boundary, because they report true from isSuitableForShortCircuitArgumentsExecution.
+         Each such condition gets its own step, but the Map they all read is read by the first step,
+         so it is deserialized once. These two queries measure the remaining cost against the
+         `!= ''` shapes above, which stay in a single step. -->
     <query>
         SELECT count() FROM map_subcol_pw_wide
         PREWHERE startsWith(tags['k0'], '1') AND startsWith(tags['k1'], '1') AND startsWith(tags['k2'], '1') AND startsWith(tags['k3'], '1')

@@ -1,0 +1,12 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- The global context takes its settings from this profile, so background Keeper users stop waiting for a busy client lock after 1 s. -->
+            <get_zookeeper_lock_acquire_timeout_ms>1000</get_zookeeper_lock_acquire_timeout_ms>
+            <!-- S3Queue reads Keeper under these retries: one retry without backoff keeps the test short. -->
+            <keeper_max_retries>1</keeper_max_retries>
+            <keeper_retry_initial_backoff_ms>0</keeper_retry_initial_backoff_ms>
+            <keeper_retry_max_backoff_ms>0</keeper_retry_max_backoff_ms>
+        </default>
+    </profiles>
+</clickhouse>

@@ -271,8 +271,7 @@ TEST(MemoryResizeTest, AlignmentWithRealAllocator)
         ASSERT_EQ(memory.m_size, 1);
     }
 
-#if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER) \
-    && !(defined(UNDEFINED_BEHAVIOR_SANITIZER) && defined(SANITIZER))
+#if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER) && !defined(UNDEFINED_BEHAVIOR_SANITIZER)
     {
         auto memory = Memory<>(0, 20); // not a power of 2, but more than MALLOC_MIN_ALIGNMENT
         ASSERT_EQ(memory.m_data, nullptr);

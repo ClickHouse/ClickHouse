@@ -1,7 +1,5 @@
 #include <Columns/ColumnLowCardinality.h>
 
-#include <utility>
-
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/IDataType.h>
@@ -137,95 +135,6 @@ namespace
             return mapUniqueIndexImpl(*data_uint64);
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for getUniqueIndex must be ColumnUInt, got {}", column.getName());
     }
-
-    /// Returns the positions used by `indexes[begin, end)` in the order of their first occurrence, the same list as `mapUniqueIndex`.
-    template <typename T>
-    MutableColumnPtr getUsedPositions(
-        const PaddedPODArray<T> & indexes, size_t begin, size_t end, size_t dictionary_size, size_t num_special_positions)
-    {
-        auto res = ColumnVector<T>::create(dictionary_size);
-        T * positions = res->getData().data();
-        size_t num_positions = 0;
-
-        PaddedPODArray<UInt8> seen(dictionary_size, 0);
-        UInt8 * seen_data = seen.data();
-        const T * data = indexes.data();
-
-        size_t row = begin;
-        if (dictionary_size > num_special_positions)
-        {
-            size_t regular_left = dictionary_size - num_special_positions;
-            /// A block that repeats the previous row (e.g. a sorted column) is skipped with vector compares.
-            constexpr size_t block_size = 32 / sizeof(T);
-            while (row < end)
-            {
-                size_t found_regular = 0;
-                if (end - row >= block_size)
-                {
-                    if (row != begin)
-                    {
-                        bool all_same = true;
-                        for (size_t i = 0; i < block_size; ++i)
-                            all_same &= data[row + i] == data[row + i - 1];
-                        if (all_same)
-                        {
-                            row += block_size;
-                            continue;
-                        }
-                    }
-
-                    /// A constant trip count lets the block be unrolled.
-#pragma clang loop unroll(full)
-                    for (size_t i = 0; i < block_size; ++i)
-                    {
-                        const T position = data[row + i];
-                        if (!seen_data[position]) [[unlikely]]
-                        {
-                            seen_data[position] = 1;
-                            positions[num_positions++] = position;
-                            found_regular += position >= num_special_positions;
-                        }
-                    }
-                    row += block_size;
-                }
-                else
-                {
-                    for (; row < end; ++row)
-                    {
-                        const T position = data[row];
-                        if (!seen_data[position])
-                        {
-                            seen_data[position] = 1;
-                            positions[num_positions++] = position;
-                            found_regular += position >= num_special_positions;
-                        }
-                    }
-                }
-                if (found_regular >= regular_left)
-                    break;
-                regular_left -= found_regular;
-            }
-        }
-
-        /// Only the special positions (the default and NULL) can occur first in the rest of the rows.
-        std::array<std::pair<size_t, T>, 2> found;
-        size_t num_found = 0;
-        for (size_t special = 0; special < num_special_positions; ++special)
-        {
-            if (seen_data[special])
-                continue;
-            const T * it = std::find(data + row, data + end, static_cast<T>(special));
-            if (it != data + end)
-                found[num_found++] = {static_cast<size_t>(it - data), static_cast<T>(special)};
-        }
-        if (num_found == 2 && found[1].first < found[0].first)
-            std::swap(found[0], found[1]);
-        for (size_t i = 0; i < num_found; ++i)
-            positions[num_positions++] = found[i].second;
-
-        res->getData().resize(num_positions);
-        return res;
-    }
 }
 
 
@@ -254,7 +163,7 @@ bool ColumnLowCardinality::tryInsert(const Field & x)
 
 void ColumnLowCardinality::insertDefault()
 {
-    idx.insertIndex(std::as_const(*this).getDictionary().getDefaultValueIndex());
+    idx.insertIndex(getDictionary().getDefaultValueIndex());
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -270,9 +179,7 @@ void ColumnLowCardinality::doInsertFrom(const IColumn & src, size_t n)
 
     size_t position = low_cardinality_src->getIndexes().getUInt(n);
 
-    /// Compare addresses through the const overload: the dictionary may be shared with `src`, and the
-    /// non-const `WrappedPtr` accessor would go through `assumeMutableRef` and trip `chassert(use_count() == 1)`.
-    if (&low_cardinality_src->getDictionary() == &std::as_const(*this).getDictionary())
+    if (&low_cardinality_src->getDictionary() == &getDictionary())
     {
         /// Dictionary is shared with src column. Insert only index.
         idx.insertIndex(position);
@@ -301,9 +208,7 @@ void ColumnLowCardinality::doInsertManyFrom(const IColumn & src, size_t position
 
     const size_t source_index = low_cardinality_src->getIndexes().getUInt(position);
 
-    /// Compare addresses through the const overload: the dictionary may be shared with `src`, and the
-    /// non-const `WrappedPtr` accessor would go through `assumeMutableRef` and trip `chassert(use_count() == 1)`.
-    if (&low_cardinality_src->getDictionary() == &std::as_const(*this).getDictionary())
+    if (&low_cardinality_src->getDictionary() == &getDictionary())
     {
         /// Dictionary is shared with src column. Insert only indexes.
         idx.insertManyIndexes(source_index, length);
@@ -341,20 +246,14 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
     /// an empty column to avoid rebuilding it and keep its indexes unchanged through generic range insertions.
     /// A private source dictionary can still be mutated in place, while an incompatible dictionary must be
     /// rebuilt to perform conversions such as nullable promotion.
-    /// Read the dictionary through the const overload on `*this` to avoid the non-const
-    /// `WrappedPtr::operator*` -> `assumeMutableRef` path, which would trip
-    /// `chassert(use_count() == 1)` when the dictionary is shared.
     if (
         empty()
         && low_cardinality_src->isSharedDictionary()
-        && std::as_const(*this).getDictionary().nestedColumnIsNullable() == low_cardinality_src->getDictionary().nestedColumnIsNullable()
-        && std::as_const(*this).getDictionary().structureEquals(low_cardinality_src->getDictionary()))
+        && getDictionary().nestedColumnIsNullable() == low_cardinality_src->getDictionary().nestedColumnIsNullable()
+        && getDictionary().structureEquals(low_cardinality_src->getDictionary()))
         setSharedDictionary(low_cardinality_src->getDictionaryPtr());
 
-    /// Use the const overload on `*this` to compare dictionary addresses without going through
-    /// the non-const `WrappedPtr::operator*` -> `assumeMutableRef` path, which would trip
-    /// `chassert(use_count() == 1)` when the dictionary is shared (e.g. with a global dictionary).
-    if (&low_cardinality_src->getDictionary() == &std::as_const(*this).getDictionary())
+    if (&low_cardinality_src->getDictionary() == &getDictionary())
     {
         /// Dictionary is shared with src column. Insert only indexes.
         idx.insertIndexesRange(low_cardinality_src->getIndexes(), start, length);
@@ -458,11 +357,6 @@ char * ColumnLowCardinality::serializeValueIntoMemory(size_t n, char * memory, c
     return getDictionary().serializeValueIntoMemory(getIndexes().getUInt(n), memory, settings);
 }
 
-void ColumnLowCardinality::serializeAsComparable(size_t n, String & out) const
-{
-    getDictionary().getNestedColumn()->serializeAsComparable(getIndexes().getUInt(n), out);
-}
-
 namespace
 {
 
@@ -486,7 +380,7 @@ void batchSerializeLowCardinalityString(
         const size_t value_size = offsets[index] - begin;
         const size_t stored_size = value_size + zero_byte;
         char * memory = memories[row];
-        unalignedStoreLittleEndian<size_t>(memory, stored_size);
+        memcpy(memory, &stored_size, sizeof(stored_size));
         memory += sizeof(stored_size);
         memcpy(memory, &chars[begin], value_size);
         if (zero_byte)
@@ -512,20 +406,6 @@ void collectLowCardinalityStringSizes(
         const size_t value_size = offsets[index] - offsets[static_cast<ssize_t>(index) - 1];
         sizes[row] += sizeof(size_t) + value_size + zero_byte;
     }
-}
-
-template <typename IndexType>
-void batchSerializeAsComparableLowCardinality(
-    const IColumn & nested_dict,
-    const ColumnVector<IndexType> & indexes,
-    size_t num_rows,
-    VectorWithMemoryTracking<String> & out,
-    const IColumn::Permutation * permutation,
-    const UInt8 * null_map)
-{
-    const auto & data = indexes.getData();
-    batchSerializeAsComparableImpl(num_rows, out, permutation, null_map,
-        [&](size_t src, String & dst) { nested_dict.serializeAsComparable(data[src], dst); });
 }
 
 }
@@ -567,31 +447,6 @@ void ColumnLowCardinality::batchSerializeValueIntoMemory(
     const IColumn & indexes = getIndexes();
     for (size_t i = 0; i < memories.size(); ++i)
         memories[i] = getDictionary().serializeValueIntoMemory(indexes.getUInt(start_row + i), memories[i], settings);
-}
-
-void ColumnLowCardinality::batchSerializeAsComparable(
-    size_t num_rows, VectorWithMemoryTracking<String> & out,
-    const Permutation * permutation, const UInt8 * null_map) const
-{
-    const IColumn & nested_dict = *getDictionary().getNestedColumn();
-    const IColumn & indexes = getIndexes();
-    switch (getSizeOfIndexType())
-    {
-        case sizeof(UInt8):
-            batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt8 &>(indexes), num_rows, out, permutation, null_map);
-            return;
-        case sizeof(UInt16):
-            batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt16 &>(indexes), num_rows, out, permutation, null_map);
-            return;
-        case sizeof(UInt32):
-            batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt32 &>(indexes), num_rows, out, permutation, null_map);
-            return;
-        case sizeof(UInt64):
-            batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt64 &>(indexes), num_rows, out, permutation, null_map);
-            return;
-        default:
-            throwUnexpectedLowCardinalityIndexType(getSizeOfIndexType());
-    }
 }
 
 std::optional<size_t> ColumnLowCardinality::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
@@ -684,9 +539,7 @@ void ColumnLowCardinality::updateHashFast(SipHash & hash) const
 
 MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
 {
-    /// Hold as `ColumnPtr` (immutable) to avoid triggering the `use_count == 1` assertion
-    /// on the non-const `WrappedPtr::operator->` — the dictionary still shares the column with us.
-    ColumnPtr unique_ptr = dictionary.getColumnUniquePtr();
+    auto unique_ptr = dictionary.getColumnUniquePtr();
     if (size == 0)
         unique_ptr = unique_ptr->cloneEmpty();
 
@@ -1055,41 +908,6 @@ ColumnLowCardinality::getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 li
     return {std::move(sub_keys), std::move(sub_indexes)};
 }
 
-ColumnPtr ColumnLowCardinality::getMinimalDictionary(UInt64 offset, UInt64 limit) const
-{
-    const IColumn & indexes = getIndexes();
-    if (offset > indexes.size() || limit > indexes.size() - offset)
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters offset = {}, limit = {} are out of bound in "
-            "ColumnLowCardinality::getMinimalDictionary method (size() = {}).", offset, limit, indexes.size());
-
-    /// The search needs memory proportional to the dictionary, which may be shared and much larger than the range.
-    const size_t dictionary_size = getDictionary().size();
-    if (dictionary_size > limit)
-        return getMinimalDictionaryEncodedColumn(offset, limit).dictionary;
-
-    const size_t num_special_positions = getDictionary().getNestedTypeDefaultValueIndex() + 1;
-    MutableColumnPtr positions;
-    switch (idx.getSizeOfIndexType())
-    {
-        case sizeof(UInt8):
-            positions = getUsedPositions(assert_cast<const ColumnUInt8 &>(indexes).getData(), offset, offset + limit, dictionary_size, num_special_positions);
-            break;
-        case sizeof(UInt16):
-            positions = getUsedPositions(assert_cast<const ColumnUInt16 &>(indexes).getData(), offset, offset + limit, dictionary_size, num_special_positions);
-            break;
-        case sizeof(UInt32):
-            positions = getUsedPositions(assert_cast<const ColumnUInt32 &>(indexes).getData(), offset, offset + limit, dictionary_size, num_special_positions);
-            break;
-        case sizeof(UInt64):
-            positions = getUsedPositions(assert_cast<const ColumnUInt64 &>(indexes).getData(), offset, offset + limit, dictionary_size, num_special_positions);
-            break;
-        default:
-            throwUnexpectedLowCardinalityIndexType(idx.getSizeOfIndexType());
-    }
-
-    return getDictionary().getNestedColumn()->index(*positions, 0);
-}
-
 PaddedPODArray<UInt64> ColumnLowCardinality::getDistinctIndexes(size_t offset, size_t limit) const
 {
     /// Work and memory are O(limit), not O(dictionary): MergeTreeIndexAggregatorBloomFilter
@@ -1147,26 +965,18 @@ void ColumnLowCardinality::applyNegatedNullMap(const NullMap & map, size_t offse
             "Null map of size {} at offset {} does not match {} of size {}",
             map.size(), offset, getName(), size());
 
-    /// Only the null value index is read from the dictionary here; the actual mutation happens on `idx`.
-    /// Use the const overload of `getDictionary` so the non-const `WrappedPtr` accessor does not go through
-    /// `assumeMutableRef` and trip `chassert(use_count() == 1)` when the dictionary is shared.
-    idx.setIndexesWhereMaskZero(map, std::as_const(*this).getDictionary().getNullValueIndex(), offset);
+    idx.setIndexesWhereMaskZero(map, getDictionary().getNullValueIndex(), offset);
 }
 
 ColumnLowCardinality::Dictionary::Dictionary(MutableColumnPtr && column_unique_, bool is_shared)
     : column_unique(std::move(column_unique_)), shared(is_shared)
 {
-    /// `column_unique` may be shared with the source column when called from
-    /// `create(const ColumnPtr &, const ColumnPtr &, bool)`, so the non-const
-    /// `WrappedPtr::operator*` would go through `assumeMutableRef` and trip
-    /// `chassert(use_count() == 1)`. Use the const overload — `checkColumn`
-    /// only needs read access for type verification.
-    checkColumn(*std::as_const(column_unique));
+    checkColumn(*column_unique);
 }
 ColumnLowCardinality::Dictionary::Dictionary(ColumnPtr column_unique_, bool is_shared)
     : column_unique(std::move(column_unique_)), shared(is_shared)
 {
-    checkColumn(*std::as_const(column_unique));
+    checkColumn(*column_unique);
 }
 
 void ColumnLowCardinality::Dictionary::setShared(const ColumnPtr & column_unique_)
@@ -1179,21 +989,13 @@ void ColumnLowCardinality::Dictionary::setShared(const ColumnPtr & column_unique
 
 void ColumnLowCardinality::Dictionary::compact(MutableColumnPtr & indexes)
 {
-    /// `column_unique` is by definition shared here (we only compact in place when `shared` is true),
-    /// so the non-const `getColumnUnique()` would trip the `use_count() == 1` assertion in `assumeMutableRef`.
-    /// Borrow it as `const`: the compact helper only reads from it and we replace `column_unique` with a
-    /// freshly-built compact dictionary below.
-    const auto & const_unique_ptr = column_unique;
-    const auto & const_unique = static_cast<const IColumnUnique &>(*const_unique_ptr);
-    column_unique = compact(const_unique, indexes);
+    column_unique = compact(getColumnUnique(), indexes);
     shared = false;
 }
 
 void ColumnLowCardinality::Dictionary::compactToNullable(MutableColumnPtr & indexes)
 {
-    const auto & const_unique_ptr = column_unique;
-    const auto & const_unique = static_cast<const IColumnUnique &>(*const_unique_ptr);
-    column_unique = compactToNullable(const_unique, indexes);
+    column_unique = compactToNullable(getColumnUnique(), indexes);
     shared = false;
 }
 

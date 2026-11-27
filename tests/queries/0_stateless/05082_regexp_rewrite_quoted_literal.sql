@@ -4,6 +4,7 @@
 -- are ordinary characters: they neither anchor the match nor can be removed.
 -- The haystack has to come from a column: a fully constant argument is folded before the rewrite.
 
+SET enable_analyzer = 1;
 SET optimize_rewrite_regexp_functions = 1;
 
 -- `(\d)\Q.*$` matches a digit followed by the literal text `.*$`, so `1x` does not match at all.

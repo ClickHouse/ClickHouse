@@ -9,7 +9,7 @@ struct BoolMask
     bool can_be_false = false;
 
     BoolMask() = default;
-    constexpr BoolMask(bool can_be_true_, bool can_be_false_) : can_be_true(can_be_true_), can_be_false(can_be_false_) { }
+    BoolMask(bool can_be_true_, bool can_be_false_) : can_be_true(can_be_true_), can_be_false(can_be_false_) { }
 
     BoolMask operator&(const BoolMask & m) const { return {can_be_true && m.can_be_true, can_be_false || m.can_be_false}; }
     BoolMask operator|(const BoolMask & m) const { return {can_be_true || m.can_be_true, can_be_false && m.can_be_false}; }
@@ -19,7 +19,7 @@ struct BoolMask
 
     /// Check if mask is no longer changeable under BoolMask::combine.
     /// We use this condition to early-exit KeyConditions::checkInRange methods.
-    [[nodiscard]] bool isComplete() const
+    bool isComplete() const
     {
         return can_be_true && can_be_false;
     }

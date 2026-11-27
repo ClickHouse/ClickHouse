@@ -437,19 +437,13 @@ public:
         return std::make_shared<ExtractKeyValuePairs>(context, std::move(name), with_escaping);
     }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3, 4}; }
+    String getName() const override { return name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3, 4}; }
 
-    [[nodiscard]] String getSignatureString() const override
-    {
-        /// Documentation only: the legacy `getReturnTypeImpl` below still runs to keep the per-argument error messages.
-        return "(StringOrFixedString, [StringOrFixedString], [StringOrFixedString], [StringOrFixedString], [StringOrFixedString]) -> Map(String, String)";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty() || arguments.size() > MAX_NUMBER_OF_ARGUMENTS)
         {
@@ -468,7 +462,7 @@ public:
         return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         KeyValuePairExtractor extractor(getConfiguration(arguments));
         const auto & data_column = *arguments[0].column;
@@ -503,7 +497,7 @@ private:
         "unexpected_quoting_character_strategy"
     };
 
-    [[nodiscard]] KeyValuePairExtractor::Configuration getConfiguration(const ColumnsWithTypeAndName & arguments) const
+    KeyValuePairExtractor::Configuration getConfiguration(const ColumnsWithTypeAndName & arguments) const
     {
         KeyValuePairExtractor::Configuration configuration;
         configuration.with_escaping = with_escaping;

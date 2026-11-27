@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['Dataflow', 'BigQuery']
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 قالب BigQuery إلى ClickHouse هو مسار معالجة دفعي يُدخِل البيانات من جدول BigQuery إلى جدول ClickHouse.
 يمكن للقالب قراءة الجدول بالكامل أو تصفية سجلات محددة باستخدام استعلام SQL مُقدَّم.
 
@@ -97,35 +99,11 @@ keywords: ['Dataflow', 'BigQuery']
     سجّل الدخول إلى Google Cloud Console وابحث عن DataFlow.
 
     1. اضغط على الزر `CREATE JOB FROM TEMPLATE`
-       <div className="ch-image-lg">
-
-       <Frame>
-
-       ![وحدة تحكم DataFlow](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
-
-       </Frame>
-
-       </div>
+       <Image img="/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp" border alt="وحدة تحكم DataFlow" />
     2. بعد فتح نموذج قالب، أدخل اسم المهمة وحدد المنطقة المطلوبة.
-       <div className="ch-image-lg">
-
-       <Frame>
-
-       ![النموذج الأولي لـ DataFlow قالب](/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp)
-
-       </Frame>
-
-       </div>
+       <Image img="/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp" border alt="النموذج الأولي لـ DataFlow قالب" />
     3. في حقل `DataFlow Template`، اكتب `ClickHouse` أو `BigQuery`، ثم اختر قالب ‏`BigQuery to ClickHouse`
-       <div className="ch-image-lg">
-
-       <Frame>
-
-       ![اختر قالب ‏من BigQuery إلى ClickHouse](/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp)
-
-       </Frame>
-
-       </div>
+       <Image img="/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp" border alt="اختر قالب ‏من BigQuery إلى ClickHouse" />
     4. بعد الاختيار، سيتوسع النموذج ليتيح لك إدخال تفاصيل إضافية:
        * عنوان JDBC URL لخادم ClickHouse، بالتنسيق التالي `jdbc:clickhouse://host:port/schema`.
        * اسم مستخدم ClickHouse.
@@ -138,15 +116,7 @@ keywords: ['Dataflow', 'BigQuery']
       لإضافتها، يُرجى التمرير إلى أسفل حتى خيار `Password for ClickHouse Endpoint`.
     </Note>
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![نموذج القالب الموسّع لـ من BigQuery إلى ClickHouse](/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp" border alt="نموذج القالب الموسّع لـ من BigQuery إلى ClickHouse" />
 
     5. خصّص وأضف أي إعدادات مرتبطة بـ BigQuery/ClickHouseIO، كما هو موضح في
        قسم [معلمات القالب](#template-parameters)
@@ -204,15 +174,7 @@ keywords: ['Dataflow', 'BigQuery']
 انتقل إلى [علامة التبويب Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs) في Google Cloud Console
 لمراقبة حالة المهمة. ستجد تفاصيل المهمة، بما في ذلك مدى التقدّم وأي أخطاء:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![واجهة Dataflow تعرض مهمة قيد التشغيل لنقل البيانات من BigQuery إلى ClickHouse](/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp" size="lg" border alt="واجهة Dataflow تعرض مهمة قيد التشغيل لنقل البيانات من BigQuery إلى ClickHouse" />
 
 <div id="troubleshooting">
   ## استكشاف الأخطاء وإصلاحها

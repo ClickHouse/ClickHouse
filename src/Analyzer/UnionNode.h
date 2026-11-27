@@ -58,13 +58,13 @@ public:
         NameToNameVector query_parameters_ = {});
 
     /// Get context
-    [[nodiscard]] ContextPtr getContext() const
+    ContextPtr getContext() const
     {
         return context;
     }
 
     /// Get mutable context
-    [[nodiscard]] const ContextMutablePtr & getMutableContext() const
+    const ContextMutablePtr & getMutableContext() const
     {
         return context;
     }
@@ -76,25 +76,25 @@ public:
     }
 
     /// Returns true if the union has a query-level `SETTINGS` clause of its own, false otherwise.
-    [[nodiscard]] bool hasSettingsChanges() const
+    bool hasSettingsChanges() const
     {
         return !settings_changes.empty() || !default_settings.empty() || !query_parameters.empty();
     }
 
     /// Get the settings changed by the union's own query-level `SETTINGS` clause
-    [[nodiscard]] const SettingsChanges & getSettingsChanges() const
+    const SettingsChanges & getSettingsChanges() const
     {
         return settings_changes;
     }
 
     /// Get the settings reset to their default value by the union's own query-level `SETTINGS` clause
-    [[nodiscard]] const std::vector<String> & getDefaultSettings() const
+    const std::vector<String> & getDefaultSettings() const
     {
         return default_settings;
     }
 
     /// Get the query parameters set in the union's own query-level `SETTINGS` clause
-    [[nodiscard]] const NameToNameVector & getQueryParameters() const
+    const NameToNameVector & getQueryParameters() const
     {
         return query_parameters;
     }
@@ -107,7 +107,7 @@ public:
     }
 
     /// Returns true if union node is subquery, false otherwise
-    [[nodiscard]] bool isSubquery() const
+    bool isSubquery() const
     {
         return is_subquery;
     }
@@ -119,7 +119,7 @@ public:
     }
 
     /// Returns true if union node is CTE, false otherwise
-    [[nodiscard]] bool isCTE() const
+    bool isCTE() const
     {
         return is_cte;
     }
@@ -131,7 +131,7 @@ public:
     }
 
     /// Returns true if union node is a MATERIALIZED CTE, false otherwise
-    [[nodiscard]] bool isMaterialized() const noexcept
+    bool isMaterialized() const noexcept
     {
         return is_materialized;
     }
@@ -143,7 +143,7 @@ public:
     }
 
     /// Returns true if union node CTE is specified in WITH RECURSIVE, false otherwise
-    [[nodiscard]] bool isRecursiveCTE() const
+    bool isRecursiveCTE() const
     {
         return is_recursive_cte;
     }
@@ -155,13 +155,13 @@ public:
     }
 
     /// Returns true if union node has recursive CTE table, false otherwise
-    [[nodiscard]] bool hasRecursiveCTETable() const
+    bool hasRecursiveCTETable() const
     {
         return recursive_cte_table.has_value();
     }
 
     /// Returns optional recursive CTE table
-    [[nodiscard]] const std::optional<RecursiveCTETable> & getRecursiveCTETable() const
+    const std::optional<RecursiveCTETable> & getRecursiveCTETable() const
     {
         return recursive_cte_table;
     }
@@ -179,7 +179,7 @@ public:
     }
 
     /// Get union node CTE name
-    [[nodiscard]] const std::string & getCTEName() const
+    const std::string & getCTEName() const
     {
         return cte_name;
     }
@@ -191,13 +191,13 @@ public:
     }
 
     /// Get union mode
-    [[nodiscard]] SelectUnionMode getUnionMode() const
+    SelectUnionMode getUnionMode() const
     {
         return union_mode;
     }
 
     /// Get union node queries
-    [[nodiscard]] const ListNode & getQueries() const
+    const ListNode & getQueries() const
     {
         return children[queries_child_index]->as<const ListNode &>();
     }
@@ -209,7 +209,7 @@ public:
     }
 
     /// Get union node queries node
-    [[nodiscard]] const QueryTreeNodePtr & getQueriesNode() const
+    const QueryTreeNodePtr & getQueriesNode() const
     {
         return children[queries_child_index];
     }
@@ -221,15 +221,15 @@ public:
     }
 
     /// Returns true if union node is resolved, false otherwise
-    [[nodiscard]] bool isResolved() const;
+    bool isResolved() const;
 
     /// Compute union node projection columns
-    [[nodiscard]] NamesAndTypes computeProjectionColumns() const;
+    NamesAndTypes computeProjectionColumns() const;
 
     /// Remove unused projection columns
     void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);
 
-    [[nodiscard]] bool isCorrelated() const
+    bool isCorrelated() const
     {
         return !children[correlated_columns_list_index]->as<ListNode>()->getNodes().empty();
     }
@@ -244,14 +244,14 @@ public:
         return children[correlated_columns_list_index]->as<ListNode &>();
     }
 
-    [[nodiscard]] const ListNode & getCorrelatedColumns() const
+    const ListNode & getCorrelatedColumns() const
     {
         return children[correlated_columns_list_index]->as<ListNode &>();
     }
 
     void addCorrelatedColumn(const QueryTreeNodePtr & correlated_column);
 
-    [[nodiscard]] QueryTreeNodeType getNodeType() const override
+    QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::UNION;
     }
@@ -259,13 +259,13 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState &, CompareOptions) const override;
 
-    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
+    QueryTreeNodePtr cloneImpl() const override;
 
-    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     bool is_subquery = false;

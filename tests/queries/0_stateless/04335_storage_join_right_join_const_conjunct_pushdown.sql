@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_left_04335;
 DROP TABLE IF EXISTS t_join_04335;

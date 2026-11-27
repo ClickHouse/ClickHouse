@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
-# Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 # every case has a twin table with the same projection materialized, the estimate must match what it reads
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

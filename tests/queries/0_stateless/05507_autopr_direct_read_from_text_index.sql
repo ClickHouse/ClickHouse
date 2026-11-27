@@ -32,9 +32,6 @@ SET max_threads = 1;
 SET automatic_parallel_replicas_min_bytes_per_replica = 0;
 SET merge_tree_min_bytes_per_task_for_remote_reading = 1024;
 SET parallel_replicas_min_number_of_rows_per_replica = 0;
--- The query condition cache filled by the first query would make the second one select fewer rows, which mode 1
--- takes for drifted statistics: it collects them again instead of deciding.
-SET use_query_condition_cache = 0;
 
 SELECT id % 10 AS k, count() FROM tab WHERE hasToken(str, 'rare') GROUP BY k ORDER BY k
 SETTINGS log_comment = '05507_direct_read';

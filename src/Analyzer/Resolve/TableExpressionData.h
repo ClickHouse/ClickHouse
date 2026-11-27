@@ -52,8 +52,6 @@ struct AnalysisTableExpressionData
     /// with `column_names` by `ensureColumnMembershipSetsArePopulated()`.
     mutable std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
     mutable bool column_membership_sets_populated = false;
-    /// Names of the ALIAS columns whose expressions are being resolved, outermost first.
-    std::vector<std::string> alias_columns_in_resolution;
 
     void ensureColumnMembershipSetsArePopulated() const;
 
@@ -149,13 +147,11 @@ struct AnalysisTableExpressionData
             /// `column_name_to_column_node` map to be built.
             if (!column_names.contains(column_name))
                 continue;
-            const auto & node_map = getColumnNodeMap();
-            auto it = node_map.find(column_name);
-            if (it == node_map.end())
-                continue;
-            /// The type is checked first: `tryGetColumnNode` resolves an ALIAS column, and this lookup is only a probe.
-            if (auto subcolumn_type = it->second->getResultType()->tryGetSubcolumnType(subcolumn_name))
-                return SubcolumnInfo{tryGetColumnNode(column_name), subcolumn_name, subcolumn_type};
+            if (auto column_node = tryGetColumnNode(column_name))
+            {
+                if (auto subcolumn_type = column_node->getResultType()->tryGetSubcolumnType(subcolumn_name))
+                    return SubcolumnInfo{column_node, subcolumn_name, subcolumn_type};
+            }
         }
 
         return std::nullopt;
@@ -165,7 +161,7 @@ private:
     mutable std::optional<ColumnNameToColumnNodeMap> column_name_to_column_node;
     ColumnNodeMapPopulator populate_column_node_map;
     AliasColumnResolver resolve_alias_column;
-    /// Names of ALIAS columns, which were not requested from this object yet.
+    /// Names of ALIAS columns, which expressions are not resolved yet.
     mutable std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> unresolved_alias_columns;
 };
 

@@ -1,3 +1,4 @@
+SET allow_experimental_analyzer = 1;
 SET allow_experimental_statistics = 1;
 SET materialize_statistics_on_insert = 1;
 SET use_statistics = 1;

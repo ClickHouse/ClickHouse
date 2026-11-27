@@ -8,18 +8,9 @@
 #include <Columns/ColumnTuple.h>
 #include <Functions/FunctionSpaceFillingCurve.h>
 
-/// Same as in `mortonDecode.cpp`: the morton-nd codecs are chains of small `constexpr` templates meant to
-/// fold into the per-row loop, and the two translation units must agree on the attributes of the shared
-/// inline functions.
-#if defined(__clang__)
-#pragma clang attribute push([[gnu::always_inline]], apply_to = function)
-#endif
 #include <morton-nd/mortonND_LUT.h>
 #if defined(__BMI2__)
 #include <morton-nd/mortonND_BMI2.h>
-#endif
-#if defined(__clang__)
-#pragma clang attribute pop
 #endif
 
 namespace DB
@@ -243,7 +234,7 @@ public:
         return std::make_shared<FunctionMortonEncode>();
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
@@ -272,7 +263,7 @@ public:
         return value;
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
             return ColumnUInt64::create();

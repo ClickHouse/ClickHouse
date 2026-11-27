@@ -1,4 +1,4 @@
--- Tags: long, no-random-settings, no-random-merge-tree-settings, no-msan
+-- Tags: long, no-random-settings, no-random-merge-tree-settings
 -- no-random-settings, no-random-merge-tree-settings: Explain output may differ
 
 -- Unlike DISTINCT / GROUP BY, per-partition set building has no cost heuristic (the ordinary set fill is

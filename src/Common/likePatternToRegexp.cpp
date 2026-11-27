@@ -543,18 +543,14 @@ String similarToPatternWithCustomEscapeToSimilarToPattern(std::string_view patte
                     in_bracket = true;
                     /// A `]` immediately after `[` or `[^` is a literal member, not the terminator.
                     /// Emit it verbatim and keep the bracket open (the translator re-quotes it for re2).
-                    /// Emit `^` only when consuming it with the `]`; otherwise the next iteration emits it.
                     size_t lookahead = 1;
-                    bool negated = false;
                     if (pos + lookahead < end && pos[lookahead] == '^')
                     {
-                        negated = true;
+                        res += '^';
                         ++lookahead;
                     }
                     if (pos + lookahead < end && pos[lookahead] == ']')
                     {
-                        if (negated)
-                            res += '^';
                         res += ']';
                         pos += lookahead;
                     }

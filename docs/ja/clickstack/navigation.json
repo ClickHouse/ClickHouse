@@ -1,4 +1,5 @@
 {
+  "icon": "/images/icons/icon-clickstack.svg",
   "item": "ClickStack",
   "pages": [
     "ja/clickstack/index",

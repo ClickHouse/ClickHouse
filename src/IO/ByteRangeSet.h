@@ -4,8 +4,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
-#include <optional>
-
 namespace DB
 {
 
@@ -21,32 +19,25 @@ public:
 
     /// Returns `range` minus all intervals in the set, as disjoint sub-ranges in
     /// increasing-offset order.
-    [[nodiscard]] VectorWithMemoryTracking<ByteRange> subtract(ByteRange range) const;
+    VectorWithMemoryTracking<ByteRange> subtract(ByteRange range) const;
 
     /// Remove `range`'s bytes from the set, trimming or splitting any overlapping interval.
     void remove(ByteRange range);
 
-    [[nodiscard]] ByteRangeSet intersect(ByteRange range) const;
-
-    /// End of the interval that holds `offset`, or of the next interval if it starts at most `max_lead` bytes
-    /// after `offset`; `nullopt` otherwise.
-    [[nodiscard]] std::optional<size_t> intervalEndAhead(size_t offset, size_t max_lead) const;
-
-    /// The set with every gap up to `max_gap` filled.
-    [[nodiscard]] ByteRangeSet mergeGapsUpTo(size_t max_gap) const;
+    ByteRangeSet intersect(ByteRange range) const;
 
     void shift(size_t delta);
 
     /// Total bytes held (sum of the disjoint intervals' sizes).
-    [[nodiscard]] size_t totalBytes() const;
+    size_t totalBytes() const;
 
-    [[nodiscard]] bool empty() const { return intervals.empty(); }
+    bool empty() const { return intervals.empty(); }
 
     /// For logs; from 10 ranges on, only the first 4 and the last 4.
-    [[nodiscard]] String describe() const;
+    String describe() const;
 
     /// The disjoint intervals in increasing-offset order (read-only view).
-    [[nodiscard]] const VectorWithMemoryTracking<ByteRange> & ranges() const { return intervals; }
+    const VectorWithMemoryTracking<ByteRange> & ranges() const { return intervals; }
 
 private:
     VectorWithMemoryTracking<ByteRange> intervals;

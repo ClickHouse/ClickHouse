@@ -85,7 +85,7 @@ protected:
         bool is_insert_query) const override;
 
     const char * getStorageEngineName() const override { return Definition::storage_engine_name; }
-    std::string_view getFunctionURI() const override { return configuration->getRawURI(); }
+    const String & getFunctionURI() const override { return configuration->getRawURI(); }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
@@ -97,7 +97,6 @@ protected:
 
     mutable StorageObjectStorageConfigurationPtr configuration;
     mutable ObjectStoragePtr object_storage;
-    mutable bool object_storage_is_readonly = false;
     ColumnsDescription structure_hint;
     std::shared_ptr<Settings> settings;
 

@@ -123,8 +123,7 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
         }
 
         case StoreMethod::CONST_STRING:
-        case StoreMethod::SAMPLES:
-        case StoreMethod::TIMESTAMP_AND_VALUE:
+        case StoreMethod::RAW_DATA:
         {
             /// toVectorGrid() can only be called with store method CONST_SCALAR or SCALAR_GRID or VECTOR_GRID.
             throw Exception(ErrorCodes::LOGICAL_ERROR,

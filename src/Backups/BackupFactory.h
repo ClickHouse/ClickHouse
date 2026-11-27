@@ -68,18 +68,18 @@ public:
         std::optional<BackupResumeParams> resume;
 #endif
 
-        [[nodiscard]] CreateParams getCreateParamsForBaseBackup(BackupInfo base_backup_info_, String old_password) const;
+        CreateParams getCreateParamsForBaseBackup(BackupInfo base_backup_info_, String old_password) const;
     };
 
     static BackupFactory & instance();
 
     /// Creates a new backup or opens it.
-    [[nodiscard]] BackupMutablePtr createBackup(const CreateParams & params) const;
+    BackupMutablePtr createBackup(const CreateParams & params) const;
 
     /// Returns a versioned, credential-free identity of the effective backup location.
     /// Named collections must be frozen first so identity generation and backup creation
     /// observe the same collection state.
-    [[nodiscard]] String getDestinationIdentity(const BackupInfo & backup_info, ContextPtr context) const;
+    String getDestinationIdentity(const BackupInfo & backup_info, ContextPtr context) const;
 
     /// The SOURCES grant required to open `backup_info` in `open_mode`, as declared by its engine.
     struct SourceAccessTarget
@@ -107,7 +107,7 @@ public:
         const SourceAccessFn & source_access_fn,
         SecretArgumentsSpec secret_arguments);
 
-    [[nodiscard]] const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & engine_name) const;
+    const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & engine_name) const;
 
 private:
     struct RegisteredEngine

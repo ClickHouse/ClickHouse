@@ -5,7 +5,6 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
@@ -75,15 +74,15 @@ private:
         {
         }
 
-        [[nodiscard]] String getName() const override { return name; }
+        String getName() const override { return name; }
 
     protected:
         /// The delegated functions were built over the original argument types, `Nullable` and
         /// all, and each handles its own nulls. Stripping `Nullable` here would hand them columns
         /// that no longer match what they were built for.
-        [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+        bool useDefaultImplementationForNulls() const override { return false; }
 
-        [[nodiscard]] ColumnPtr
+        ColumnPtr
         executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
         {
             ColumnsWithTypeAndName columns(slots.size());
@@ -132,11 +131,9 @@ public:
     {
     }
 
-    /// An argument slot drops `LowCardinality`: the default implementation hands the plan an
-    /// already-converted full column, with its null map intact.
-    size_t argument(const DataTypePtr & type)
+    size_t argument(DataTypePtr type)
     {
-        slots.push_back({recursiveRemoveLowCardinality(type), {}});
+        slots.push_back({std::move(type), {}});
         return slots.size() - 1;
     }
 
@@ -168,7 +165,7 @@ public:
         return slots.size() - 1;
     }
 
-    [[nodiscard]] const DataTypePtr & slotType(size_t slot) const { return slots[slot].type; }
+    const DataTypePtr & slotType(size_t slot) const { return slots[slot].type; }
 
     /// Whether a value of the given type is a datetime that `widenToDateTime64` accepts: a KQL
     /// datetime is a `DateTime64`, but a table queried with KQL may store its timestamps in the

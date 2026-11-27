@@ -80,14 +80,7 @@ extern std::unordered_map<String, CHSetting> formatSettings;
 
 extern std::unordered_map<String, CHSetting> allDatabaseSettings;
 
-extern std::unordered_map<String, CHSetting> replicatedDatabaseSettings;
-
-extern std::unordered_map<String, CHSetting> dataLakeCatalogSettings;
-
 extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
-
-/// `allTableSettings` without the settings that break result oracles
-extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> oracleTableSettings;
 
 extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allColumnSettings;
 
@@ -112,14 +105,12 @@ extern std::vector<SystemTable> systemTables;
 extern std::unordered_map<DictionaryLayouts, std::unordered_map<String, CHSetting>> allDictionaryLayoutSettings;
 
 String settingCombinations(RandomGenerator & rg, DB::Strings && choices);
-String formatFirstApplicable(RandomGenerator & rg);
 String generateNextCodecString(RandomGenerator & rg);
-/// `lossy` allows `SZ3` and `Quantized`, whose values a merge may change; exact-content oracles need it off
-String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp, bool lossy);
+String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp);
 String getNextIcebergTimestamp(RandomGenerator & rg, FuzzConfig & fc);
 String getNextIcebergExpireTimestamp(RandomGenerator & rg, FuzzConfig & fc);
 void loadFuzzerServerSettings(const FuzzConfig & fc);
-void loadFuzzerTableSettings(const FuzzConfig & fc, bool has_cloud_features);
+void loadFuzzerTableSettings(const FuzzConfig & fc);
 void loadSystemTables(FuzzConfig & fc);
 
 }

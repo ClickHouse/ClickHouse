@@ -23,7 +23,7 @@ namespace DB
 class ParserSQLSecurity : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "sql security"; }
+    const char * getName() const override { return "sql security"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -35,7 +35,7 @@ protected:
 class ParserIdentifierWithParameters : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "identifier with parameters"; }
+    const char * getName() const override { return "identifier with parameters"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -43,7 +43,7 @@ template <typename NameParser>
 class IParserNameTypePair : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const  override{ return "name and type pair"; }
+    const char * getName() const  override{ return "name and type pair"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -76,7 +76,7 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expect
 class ParserNameTypePairList : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "name and type pair list"; }
+    const char * getName() const override { return "name and type pair list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -84,7 +84,7 @@ protected:
 class ParserTypeList : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "type list"; }
+    const char * getName() const override { return "type list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
         return ParserList(std::make_unique<ParserDataType>(), std::make_unique<ParserToken>(TokenType::Comma), false).parse(pos, node, expected);
@@ -95,7 +95,7 @@ protected:
 class ParserNameList : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "name list"; }
+    const char * getName() const override { return "name list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -107,7 +107,7 @@ public:
 protected:
     bool allow_order;
 
-    [[nodiscard]] const char * getName() const override { return "storage order by clause"; }
+    const char * getName() const override { return "storage order by clause"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -125,7 +125,7 @@ public:
     void enableCheckTypeKeyword() { check_type_keyword = true; }
 
 protected:
-    [[nodiscard]] const char * getName() const  override{ return "column declaration"; }
+    const char * getName() const  override{ return "column declaration"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
@@ -491,23 +491,12 @@ public:
     }
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "column declaration list"; }
+    const char * getName() const override { return "column declaration list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
     const bool require_type;
     const bool allow_null_modifiers;
     const bool check_keywords_after_name;
-};
-
-
-/** CODEC name (codec, ...) for a column or a subcolumn.
-  * Fails on a column named `codec`, such as `codec Nullable(String)`, so that the column parser gets it.
-  */
-class ParserCodecDeclaration : public IParserBase
-{
-protected:
-    [[nodiscard]] const char * getName() const override { return "codec declaration"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 
@@ -518,7 +507,7 @@ public:
     ParserIndexDeclaration() = default;
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "index declaration"; }
+    const char * getName() const override { return "index declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -528,7 +517,7 @@ public:
     ParserStatisticsDeclaration() = default;
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "statistics declaration"; }
+    const char * getName() const override { return "statistics declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -538,7 +527,7 @@ public:
     ParserStatisticsDeclarationWithoutTypes() = default;
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "statistics declaration"; }
+    const char * getName() const override { return "statistics declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -546,7 +535,7 @@ protected:
 class ParserConstraintDeclaration : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "constraint declaration"; }
+    const char * getName() const override { return "constraint declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -557,21 +546,21 @@ bool parseProjectionDeclarationBody(IParser::Pos & pos, Expected & expected, con
 class ParserProjectionDeclaration : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "projection declaration"; }
+    const char * getName() const override { return "projection declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 class ParserForeignKeyDeclaration : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "foreign key declaration"; }
+    const char * getName() const override { return "foreign key declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 class ParserTablePropertyDeclaration : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "table property (column, index, constraint) declaration"; }
+    const char * getName() const override { return "table property (column, index, constraint) declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -579,21 +568,21 @@ protected:
 class ParserIndexDeclarationList : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "index declaration list"; }
+    const char * getName() const override { return "index declaration list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 class ParserConstraintDeclarationList : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "constraint declaration list"; }
+    const char * getName() const override { return "constraint declaration list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 class ParserProjectionDeclarationList : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "projection declaration list"; }
+    const char * getName() const override { return "projection declaration list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -601,7 +590,7 @@ protected:
 class ParserTablePropertiesDeclarationList : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "columns or indices declaration list"; }
+    const char * getName() const override { return "columns or indices declaration list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -622,7 +611,7 @@ public:
     explicit ParserStorage(EngineKind engine_kind_) : engine_kind(engine_kind_) {}
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "storage definition"; }
+    const char * getName() const override { return "storage definition"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     EngineKind engine_kind;
 };
@@ -650,7 +639,7 @@ protected:
 class ParserCreateTableQuery : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "CREATE TABLE or ATTACH TABLE query"; }
+    const char * getName() const override { return "CREATE TABLE or ATTACH TABLE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -661,14 +650,14 @@ public:
     explicit ParserTableOverrideDeclaration(bool is_standalone_ = true) : is_standalone(is_standalone_) { }
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "table override declaration"; }
+    const char * getName() const override { return "table override declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 class ParserTableOverridesDeclarationList : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "table overrides declaration list"; }
+    const char * getName() const override { return "table overrides declaration list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -676,7 +665,7 @@ protected:
 class ParserCreateDatabaseQuery : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "CREATE DATABASE query"; }
+    const char * getName() const override { return "CREATE DATABASE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -684,7 +673,7 @@ protected:
 class ParserCreateViewQuery : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "CREATE VIEW query"; }
+    const char * getName() const override { return "CREATE VIEW query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -694,7 +683,7 @@ protected:
 class ParserCreateDictionaryQuery : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "CREATE DICTIONARY"; }
+    const char * getName() const override { return "CREATE DICTIONARY"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -702,7 +691,7 @@ protected:
 class ParserCreateNamedCollectionQuery : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "CREATE NAMED COLLECTION"; }
+    const char * getName() const override { return "CREATE NAMED COLLECTION"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -733,10 +722,10 @@ protected:
 class ParserCreateQuery : public IParserBase
 {
 public:
-    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
+    std::map<String, Documentation> getDocumentation() const override;
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "CREATE TABLE or ATTACH TABLE query"; }
+    const char * getName() const override { return "CREATE TABLE or ATTACH TABLE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

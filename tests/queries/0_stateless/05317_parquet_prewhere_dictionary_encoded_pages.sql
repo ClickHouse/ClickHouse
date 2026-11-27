@@ -1,5 +1,4 @@
 -- Tags: no-fasttest
--- Random settings limits: output_format_parquet_max_dictionary_size=(1048576, None)
 -- PREWHERE over columns stored in dictionary-encoded pages of a Parquet file without a page index
 -- returns exactly the rows that a direct computation over the same data returns.
 

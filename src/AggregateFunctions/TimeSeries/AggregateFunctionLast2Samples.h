@@ -40,7 +40,7 @@ public:
     using TimestampColumnType = ColumnVectorOrDecimal<TimestampType>;
     using ValueColumnType = ColumnVectorOrDecimal<ValueType>;
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return "timeSeriesLastTwoSamples";
     }
@@ -188,19 +188,19 @@ public:
                 make_shared<DataTypeTuple>(DataTypes{timestamp_type, value_type}));
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
-    [[nodiscard]] bool hasTrivialDestructor() const override
+    bool hasTrivialDestructor() const override
     {
         return std::is_trivially_destructible_v<Data>;
     }
 
-    [[nodiscard]] size_t alignOfData() const override
+    size_t alignOfData() const override
     {
         return alignof(Data);
     }
 
-    [[nodiscard]] size_t sizeOfData() const override
+    size_t sizeOfData() const override
     {
         return sizeof(Data);
     }

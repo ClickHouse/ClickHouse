@@ -224,7 +224,7 @@ struct EngineSettingsSupport
         chassert(!supports_settings || has_builtin_setting_fn);
     }
 
-    [[nodiscard]] bool isEngineSetting(std::string_view name) const { return supports_settings && has_builtin_setting_fn(name); }
+    bool isEngineSetting(std::string_view name) const { return supports_settings && has_builtin_setting_fn(name); }
 
 private:
     bool supports_settings;

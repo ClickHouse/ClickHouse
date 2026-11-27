@@ -388,9 +388,9 @@ public:
     }
 
 private:
-    [[nodiscard]] bool isEnabled() const { return getSettings()[Setting::cross_to_inner_join_rewrite]; }
+    bool isEnabled() const { return getSettings()[Setting::cross_to_inner_join_rewrite]; }
 
-    [[nodiscard]] bool forceRewrite(bool is_comma) const
+    bool forceRewrite(bool is_comma) const
     {
         /// Comma join can be forced to rewrite
         return is_comma && getSettings()[Setting::cross_to_inner_join_rewrite] >= 2;

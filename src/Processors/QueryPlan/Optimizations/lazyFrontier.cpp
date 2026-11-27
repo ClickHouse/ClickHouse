@@ -4,8 +4,6 @@
 #include <Columns/ColumnFunction.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <Functions/IFunction.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -99,8 +97,8 @@ class FrontierChooser
 public:
     FrontierChooser(
         const MergedPlanDAG & merged_,
-        const VectorWithMemoryTracking<bool> & lazy_sources_,
-        const UnorderedSetWithMemoryTracking<const MergedPlanDAG::PaddedSide *> & masked_padded_sides_)
+        const std::vector<bool> & lazy_sources_,
+        const std::unordered_set<const MergedPlanDAG::PaddedSide *> & masked_padded_sides_)
         : merged(merged_), lazy_sources(lazy_sources_), masked_padded_sides(masked_padded_sides_)
     {
     }
@@ -146,7 +144,7 @@ public:
 
         /// Only a value to be recomputed needs its children placed first, so those are the only frames
         /// that stay on the stack. An explicit one at that: expression DAGs get deep.
-        VectorWithMemoryTracking<Frame> stack{{root}};
+        std::vector<Frame> stack{{root}};
         while (!stack.empty())
         {
             auto & frame = stack.back();
@@ -274,7 +272,7 @@ private:
         if (!node->function_base->isShortCircuit(settings, node->children.size()))
             return false;
 
-        VectorWithMemoryTracking<const ActionsDAG::Node *> stack(node->children.begin(), node->children.end());
+        std::vector<const ActionsDAG::Node *> stack(node->children.begin(), node->children.end());
         NodeSet visited;
         while (!stack.empty())
         {
@@ -320,8 +318,8 @@ private:
     }
 
     const MergedPlanDAG & merged;
-    const VectorWithMemoryTracking<bool> & lazy_sources;
-    const UnorderedSetWithMemoryTracking<const MergedPlanDAG::PaddedSide *> & masked_padded_sides;
+    const std::vector<bool> & lazy_sources;
+    const std::unordered_set<const MergedPlanDAG::PaddedSide *> & masked_padded_sides;
     NodeSet already_carried;
     LazyFrontier frontier;
 };
@@ -330,9 +328,9 @@ private:
 
 LazyFrontier chooseLazyFrontier(
     const MergedPlanDAG & merged,
-    const VectorWithMemoryTracking<size_t> & eager_output_positions,
-    const VectorWithMemoryTracking<bool> & lazy_sources,
-    const UnorderedSetWithMemoryTracking<const MergedPlanDAG::PaddedSide *> & masked_padded_sides)
+    const std::vector<size_t> & eager_output_positions,
+    const std::vector<bool> & lazy_sources,
+    const std::unordered_set<const MergedPlanDAG::PaddedSide *> & masked_padded_sides)
 {
     chassert(lazy_sources.size() == merged.sources.size());
 

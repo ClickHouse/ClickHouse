@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
@@ -21,7 +20,7 @@ using namespace DB;
 /// `max_bytes_before_external_join` alone.
 ///
 /// A peer below `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS` does not know the name -
-/// the reader of the step settings in such a peer throws on an unknown name, so it would reject the plan outright - but
+/// `QueryPlanSerializationSettings` is a strict named schema, so `readBinary` would reject the plan outright - but
 /// it does know the settings whose meaning changed, and it applies the legacy contract to them. Omitting the name
 /// alone would therefore hand such a peer a plan it happily runs with a different spill behavior, so serialization
 /// fails closed whenever the two contracts can diverge for the step being serialized, and only then.
@@ -39,11 +38,11 @@ JoinSettings makeJoinSettings(const std::vector<std::pair<String, Field>> & chan
     return JoinSettings(query_settings);
 }
 
-/// The name as it appears in the settings stream written by `QueryPlanSerializationSettings::write`.
+/// The name as it appears in the binary settings stream written by `writeChangedBinary`.
 bool wireCarriesSetting(const QueryPlanSerializationSettings & settings)
 {
     WriteBufferFromOwnString out;
-    settings.write(out);
+    settings.writeChangedBinary(out);
     return out.str().contains("legacy_join_size_limits_trigger_spilling");
 }
 
@@ -71,7 +70,7 @@ struct Step
 
     /// `l <op> r` over the `index`-th column of each side. The inputs of the DAG are the left header followed by
     /// the right one.
-    [[nodiscard]] JoinActionRef predicate(JoinConditionOperator op, size_t index) const
+    JoinActionRef predicate(JoinConditionOperator op, size_t index) const
     {
         const auto & inputs = expression_actions.getActionsDAG()->getInputs();
         JoinActionRef left(inputs.at(index), expression_actions);
@@ -456,7 +455,7 @@ TEST(JoinSpillTriggerPlanSetting, StepsWithoutASingleEqualityClause)
     /// `GraceHashJoin::isSupported` also requires a single join clause (`TableJoin::oneDisjunct`), which a step has
     /// only when its `ON` clause carries an equality between the two sides at the top level. Without one, neither
     /// side ever spills the step: a disjunction is split into one clause per disjunct and run by a plain
-    /// multi-clause hash join, an inequality-only join becomes an `InequalityJoinStep` (or a CROSS join with a residual
+    /// multi-clause hash join, an inequality-only join becomes an `IEJoinStep` (or a CROSS join with a residual
     /// filter), and every one of those checks the size limits as hard caps, like this side.
     Step disjunction(JoinKind::Inner, JoinStrictness::All, {});
     disjunction.onDisjunction();
@@ -478,9 +477,9 @@ TEST(JoinSpillTriggerPlanSetting, StepsWithoutASingleEqualityClause)
         EXPECT_NO_THROW(serializeAt(parallel_hash_with_threshold_and_limit, pre_setting_version, step->join_operator));
     }
 
-    /// `inequality` claims an inequality-only step before the preference list is consulted, and a list nothing else in
-    /// which runs the step is not a reason to refuse it either: the limits are hard caps for `InequalityJoinStep` on both sides.
-    for (const auto & algorithms : {"inequality", "inequality,hash", "hash,inequality", "direct"})
+    /// `ie_join` claims an inequality-only step before the preference list is consulted, and a list nothing else in
+    /// which runs the step is not a reason to refuse it either: the limits are hard caps for `IEJoinStep` on both sides.
+    for (const auto & algorithms : {"ie_join", "ie_join,hash", "hash,ie_join", "direct"})
     {
         EXPECT_NO_THROW(serializeAt(
             makeJoinSettings({{"join_algorithm", algorithms}, {"max_rows_in_join", 100u}}), pre_setting_version, inequalities.join_operator))
@@ -498,7 +497,7 @@ TEST(JoinSpillTriggerPlanSetting, StepsWithoutASingleEqualityClause)
     }
 
     /// One top-level equality is enough for a single clause: the disjunction is then a residual condition of a
-    /// spill-capable hash join, and an equality next to inequalities is a join key unless `inequality` is listed first -
+    /// spill-capable hash join, and an equality next to inequalities is a join key unless `ie_join` is listed first -
     /// which an old peer may not honor, so the gate does not rely on it. Both stay refused with a size limit.
     Step equality_and_disjunction(JoinKind::Inner, JoinStrictness::All, {});
     equality_and_disjunction.onEqualityAndDisjunction();
@@ -511,7 +510,7 @@ TEST(JoinSpillTriggerPlanSetting, StepsWithoutASingleEqualityClause)
     EXPECT_THROW(serializeAt(with_size_limit, pre_setting_version, equality_and_inequalities.join_operator), Exception);
     EXPECT_THROW(
         serializeAt(
-            makeJoinSettings({{"join_algorithm", "inequality,hash"}, {"max_rows_in_join", 100u}}), pre_setting_version,
+            makeJoinSettings({{"join_algorithm", "ie_join,hash"}, {"max_rows_in_join", 100u}}), pre_setting_version,
             equality_and_inequalities.join_operator),
         Exception);
 
@@ -579,7 +578,7 @@ TEST(JoinBlockNestedLoopPlanSetting, GatedOnThePlanVersion)
     auto carries_setting = [](const QueryPlanSerializationSettings & settings)
     {
         WriteBufferFromOwnString out;
-        settings.write(out);
+        settings.writeChangedBinary(out);
         return out.str().contains("allow_block_nested_loop_join");
     };
 
@@ -590,56 +589,4 @@ TEST(JoinBlockNestedLoopPlanSetting, GatedOnThePlanVersion)
     EXPECT_FALSE(carries_setting(serializeAt(disabled, pre_block_nested_loop_version)));
     EXPECT_FALSE(JoinSettings(serializeAt(makeJoinSettings({}), pre_block_nested_loop_version), pre_block_nested_loop_version)
                      .allow_block_nested_loop_join);
-}
-
-/// `min_string_column_bytes_for_hash_join_row_store` is written only towards a peer that knows the name, even with
-/// default join settings, and a plan from a peer that predates it is read back with the default.
-TEST(JoinRowStoreStringPlanSetting, GatedOnThePlanVersion)
-{
-    constexpr UInt64 pre_row_store_strings_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES - 1;
-    const auto defaults = makeJoinSettings({});
-    const auto changed = makeJoinSettings({{"min_string_column_bytes_for_hash_join_row_store", 1000u}});
-
-    auto carries_setting = [](const QueryPlanSerializationSettings & settings)
-    {
-        WriteBufferFromOwnString out;
-        settings.write(out);
-        return out.str().contains("min_string_column_bytes_for_hash_join_row_store");
-    };
-
-    EXPECT_TRUE(carries_setting(serializeAt(defaults, current_version)));
-    EXPECT_EQ(JoinSettings(serializeAt(changed, current_version), current_version).min_string_column_bytes_for_hash_join_row_store, 1000u);
-
-    EXPECT_FALSE(carries_setting(serializeAt(defaults, pre_row_store_strings_version)));
-    EXPECT_FALSE(carries_setting(serializeAt(changed, pre_row_store_strings_version)));
-    const JoinSettings read_back(serializeAt(changed, pre_row_store_strings_version), pre_row_store_strings_version);
-    EXPECT_EQ(read_back.min_string_column_bytes_for_hash_join_row_store, defaults.min_string_column_bytes_for_hash_join_row_store);
-}
-
-/// `enable_packed_string_keys_in_hash_join` and `min_rows_for_packed_string_keys_in_hash_join` are written at every
-/// version and read back as sent. Plan settings without the names read back as `false` and `0`: exact keys.
-TEST(JoinPackedStringKeysPlanSetting, RoundTrip)
-{
-    auto round_trip = [](const JoinSettings & join_settings)
-    {
-        WriteBufferFromOwnString out;
-        serializeAt(join_settings, current_version).write(out);
-        const String data = out.str();
-        ReadBufferFromString in(data);
-        QueryPlanSerializationSettings settings;
-        settings.read(in);
-        return JoinSettings(settings, current_version);
-    };
-
-    for (const auto & [enable, min_rows] : std::vector<std::pair<bool, UInt64>>{{true, 12345}, {false, 7}, {true, 0}})
-    {
-        const auto read_back = round_trip(makeJoinSettings(
-            {{"enable_packed_string_keys_in_hash_join", enable}, {"min_rows_for_packed_string_keys_in_hash_join", min_rows}}));
-        EXPECT_EQ(read_back.enable_packed_string_keys_in_hash_join, enable);
-        EXPECT_EQ(read_back.min_rows_for_packed_string_keys_in_hash_join, min_rows);
-    }
-
-    const JoinSettings without_names(QueryPlanSerializationSettings{}, current_version);
-    EXPECT_FALSE(without_names.enable_packed_string_keys_in_hash_join);
-    EXPECT_EQ(without_names.min_rows_for_packed_string_keys_in_hash_join, 0u);
 }

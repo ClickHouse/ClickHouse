@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <algorithm>
 #include <bit>
@@ -11,7 +9,7 @@
 namespace DB
 {
 
-using PlanMemo = UnorderedMapWithMemoryTracking<BitSet, DPJoinEntryPtr>;
+using PlanMemo = std::unordered_map<BitSet, DPJoinEntryPtr>;
 
 /// Result of estimating how much a set of join predicates reduces the cross product.
 /// `reliable` tells whether `value` is backed by real column statistics; `has_equi` tells whether
@@ -30,7 +28,7 @@ struct SelectivityEstimate
     bool has_equi = false;
 };
 
-using SelectivityCache = UnorderedMapWithMemoryTracking<JoinActionRef, SelectivityEstimate>;
+using SelectivityCache = std::unordered_map<JoinActionRef, SelectivityEstimate>;
 
 struct ColumnDistinctValues
 {
@@ -111,7 +109,7 @@ inline SelectivityEstimate computeSelectivity(
     const QueryGraph & query_graph,
     const PlanMemo & dp_table,
     SelectivityCache & expression_selectivity,
-    const VectorWithMemoryTracking<JoinActionRef *> & edges)
+    const std::vector<JoinActionRef *> & edges)
 {
     SelectivityEstimate estimate;
     for (const auto & edge : edges)

@@ -49,7 +49,7 @@ public:
 
     static bool trySyncReplica(StoragePtr table, SyncReplicaMode sync_replica_mode, const std::unordered_set<String> & src_replicas, ContextPtr context_);
 
-    [[clang::no_destroy]] inline static const String RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX = ".tmp_restore_db_for_table_dropping_";
+    inline static const String RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX = ".tmp_restore_db_for_table_dropping_";
 
 private:
     ASTPtr query_ptr;
@@ -105,7 +105,7 @@ private:
     std::vector<StoragePtr> getAccessibleStreamingStorages();
     void controlBackgroundActivity(const ASTSystemQuery & query);
 
-    [[nodiscard]] AccessRightsElements getRequiredAccessForDDLOnCluster() const;
+    AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);
 
     void prewarmMarkCache();

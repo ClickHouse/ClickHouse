@@ -1,7 +1,4 @@
 #include <algorithm>
-#include <Common/ListWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -23,10 +20,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/typeid_cast.h>
@@ -41,9 +36,8 @@ namespace Setting
     extern const SettingsBool allow_reorder_prewhere_conditions;
     extern const SettingsBool use_statistics;
     extern const SettingsBool apply_string_filters_during_scan;
-    extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
-    extern const SettingsBool enable_multiple_prewhere_read_steps;
-    extern const SettingsBool optimize_move_to_prewhere_respect_short_circuit;
+    extern const SettingsBool use_columns_cache;
+    extern const SettingsBool enable_writes_to_columns_cache;
 }
 
 namespace
@@ -123,8 +117,6 @@ bool typeContainsFloat(const DataTypePtr & type)
     return anyInTypeTree(*type, [](const IDataType & node) { return isFloat(node); });
 }
 
-}
-
 /// -0.0 compares equal to 0.0 and NaN payloads compare equal to each other, so a condition
 /// over a float sorting key column can tell apart rows of one dedup group and drop its winner
 NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_snapshot)
@@ -149,19 +141,10 @@ NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_sna
     return names;
 }
 
-namespace
-{
-
-bool isReadByTopKFilterOnly(const RPNBuilderTreeNode & conjunct, const NameSet & columns, const String & top_k_filter_column)
-{
-    return !top_k_filter_column.empty() && columns.size() == 1 && *columns.begin() == top_k_filter_column
-        && conjunct.getDAGNode() && canBeMovedToTheFrontOfAndChain(conjunct.getDAGNode());
-}
-
 }
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
-    UnorderedMapWithMemoryTracking<std::string, UInt64> column_sizes_,
+    std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageSnapshotPtr & storage_snapshot,
     ConditionSelectivityEstimatorPtr estimator_,
     const Names & queried_columns_,
@@ -190,40 +173,11 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
         total_rows = estimator->getTotalRows();
 }
 
-/// The nodes needed by more than one conjunct of the filter or by another output of the DAG.
-static std::unordered_set<const ActionsDAG::Node *> findSharedNodes(const ActionsDAG & dag, const ActionsDAG::Node & filter_node)
-{
-    auto roots = ActionsDAG::extractConjunctionAtoms(&filter_node);
-    for (const auto * output : dag.getOutputs())
-        if (output != &filter_node)
-            roots.push_back(output);
-
-    std::unordered_map<const ActionsDAG::Node *, size_t> root_of;
-    std::unordered_set<const ActionsDAG::Node *> shared;
-    for (size_t i = 0; i < roots.size(); ++i)
-    {
-        std::vector<const ActionsDAG::Node *> stack{roots[i]};
-        while (!stack.empty())
-        {
-            const auto * node = stack.back();
-            stack.pop_back();
-            auto [it, inserted] = root_of.emplace(node, i);
-            if (!inserted && (it->second == i || !shared.insert(node).second))
-                continue;
-            for (const auto * child : node->children)
-                stack.push_back(child);
-        }
-    }
-    return shared;
-}
-
 MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::optimize(const ActionsDAG & filter_dag,
     const std::string & filter_column_name,
     const ContextPtr & context,
     bool is_final,
-    const NameSet & columns_read_before_filter,
-    const String & top_k_filter_column,
-    const ActionsDAG * existing_prewhere_actions)
+    const NameSet & columns_read_before_filter)
 {
     const auto & settings = context->getSettingsRef();
     WhereOptimizerContext where_optimizer_context;
@@ -235,15 +189,9 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
     where_optimizer_context.is_final = is_final;
     where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
-    where_optimizer_context.short_circuit_function_evaluation = settings[Setting::optimize_move_to_prewhere_respect_short_circuit]
-        ? settings[Setting::short_circuit_function_evaluation].value
-        : ShortCircuitFunctionEvaluation::DISABLE;
-    where_optimizer_context.has_existing_prewhere = existing_prewhere_actions != nullptr;
-    /// The decision does not depend on the columns cache: whether a column is served from the cache, written to it
-    /// or read as usual is known only to the reader. The reader does not apply the string filter to a column it writes
-    /// to the cache (the cache must not keep the substituted values), but the condition is still worth moving to PREWHERE:
-    /// a column served from the cache is filtered by the reader then, and the next read is likely to be served from it.
-    where_optimizer_context.apply_string_filters_during_scan = settings[Setting::apply_string_filters_during_scan];
+    /// The reader does not apply string value filters when it may write the columns to the columns cache.
+    where_optimizer_context.apply_string_filters_during_scan = settings[Setting::apply_string_filters_during_scan]
+        && !(settings[Setting::use_columns_cache] && settings[Setting::enable_writes_to_columns_cache]);
     /// Resolve the columns to their storage columns: the reader disables the scan filter for a storage column
     /// when anything reads it before the filter, including its subcolumns (e.g. `payload.size0` for `payload`).
     NameSet storage_columns_read_before_filter;
@@ -256,25 +204,15 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
             storage_columns_read_before_filter.insert(column_name);
     }
     where_optimizer_context.columns_read_before_filter = &storage_columns_read_before_filter;
-    where_optimizer_context.top_k_filter_column = top_k_filter_column;
 
-    const auto & filter_node = filter_dag.findInOutputs(filter_column_name);
-    /// PREWHERE evaluated in one step computes the nodes it passes on for all rows. Besides the setting,
-    /// Memory evaluates it in one step when it, including the existing PREWHERE, has non-deterministic or stateful functions.
-    std::unordered_set<const ActionsDAG::Node *> shared_nodes;
-    if (!settings[Setting::enable_multiple_prewhere_read_steps] || filter_dag.hasNonDeterministicOrStatefulFunctions()
-        || (existing_prewhere_actions && existing_prewhere_actions->hasNonDeterministicOrStatefulFunctions()))
-        shared_nodes = findSharedNodes(filter_dag, filter_node);
-    where_optimizer_context.shared_nodes = &shared_nodes;
-
-    RPNBuilderTreeNode node(&filter_node, context);
+    RPNBuilderTreeNode node(&filter_dag.findInOutputs(filter_column_name), context);
 
     auto optimize_result = optimizeImpl(node, where_optimizer_context);
     if (!optimize_result)
         return {};
 
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> prewhere_conditions;
-    ListWithMemoryTracking<const ActionsDAG::Node *> prewhere_conditions_list;
+    std::unordered_set<const ActionsDAG::Node *> prewhere_conditions;
+    std::list<const ActionsDAG::Node *> prewhere_conditions_list;
     for (const auto & condition : optimize_result->prewhere_conditions)
     {
         for (const auto & n : condition.nodes)
@@ -449,84 +387,6 @@ static bool isJoinRuntimeFilter(const RPNBuilderTreeNode & node)
     return false;
 }
 
-/// Same test as `findLazyExecutedNodes` and `canBeExecutedOnMoreRows` in ExpressionActions.cpp.
-static bool mustFollowPrecedingConditions(const RPNBuilderTreeNode & node, ShortCircuitFunctionEvaluation short_circuit_function_evaluation)
-{
-    if (short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::DISABLE)
-        return false;
-    const bool force_lazy_execution = short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::FORCE_ENABLE;
-
-    const auto * root = node.getDAGNode();
-    if (!root)
-        return true;
-
-    std::unordered_map<const ActionsDAG::Node *, bool> is_lazy;
-    bool result = false;
-
-    auto visit = [&](this auto && self, const ActionsDAG::Node * dag_node) -> bool
-    {
-        if (auto it = is_lazy.find(dag_node); it != is_lazy.end())
-            return it->second;
-
-        bool has_lazy_child = false;
-        for (const auto * child : dag_node->children)
-            has_lazy_child |= self(child);
-
-        bool lazy = false;
-        if (dag_node->type == ActionsDAG::ActionType::ALIAS)
-        {
-            lazy = has_lazy_child;
-        }
-        else if (dag_node->type == ActionsDAG::ActionType::FUNCTION)
-        {
-            /// The constant columns are passed as well: with them `canThrow` knows, for example, that `LIKE` with
-            /// a constant pattern cannot throw, as in `prewhereConditionCannotThrow`.
-            DataTypesWithConstInfo arguments;
-            arguments.reserve(dag_node->children.size());
-            for (const auto * child : dag_node->children)
-                arguments.push_back({child->result_type, child->column != nullptr, child->column.get()});
-
-            const auto & function = *dag_node->function_base;
-            lazy = force_lazy_execution || has_lazy_child || function.isSuitableForShortCircuitArgumentsExecution(arguments);
-            if (lazy && !dag_node->column
-                && (function.isStateful() || function.hasObservableSideEffects() || !function.isDeterministicInScopeOfQuery()
-                    || function.canThrow(arguments)))
-                result = true;
-        }
-
-        is_lazy.emplace(dag_node, lazy);
-        return lazy;
-    };
-
-    visit(root);
-    return result;
-}
-
-static bool computesSharedNode(const RPNBuilderTreeNode & node, const std::unordered_set<const ActionsDAG::Node *> * shared_nodes)
-{
-    if (!shared_nodes || shared_nodes->empty())
-        return false;
-
-    const auto * root = node.getDAGNode();
-    if (!root)
-        return true;
-
-    std::unordered_set<const ActionsDAG::Node *> visited;
-    std::vector<const ActionsDAG::Node *> stack{root};
-    while (!stack.empty())
-    {
-        const auto * dag_node = stack.back();
-        stack.pop_back();
-        if (!visited.insert(dag_node).second)
-            continue;
-        if (dag_node->type == ActionsDAG::ActionType::FUNCTION && !dag_node->column && shared_nodes->contains(dag_node))
-            return true;
-        for (const auto * child : dag_node->children)
-            stack.push_back(child);
-    }
-    return false;
-}
-
 static void collectConjuncts(const RPNBuilderTreeNode & node, std::vector<RPNBuilderTreeNode> & conjuncts)
 {
     auto fn = node.toFunctionNodeOrNull();
@@ -587,8 +447,6 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         bool may_use_primary_index = true;
         bool viable = false;
         bool expensive = false;
-        bool must_follow_preceding_conditions = false;
-        bool must_be_first_in_prewhere = false;
     };
 
     std::vector<ConjunctInfo> infos;
@@ -621,16 +479,11 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             && columnsSupportPrewhere(info.columns)
             /// Do not move conditions involving all queried columns,
             /// unless the condition can be used as a string filter during the scan:
-            /// then it is beneficial on its own, because the reader skips copying the non-matching values,
-            /// or `__topKFilter` reads its only column in PREWHERE anyway, where the query condition cache records each emptied granule.
+            /// then it is beneficial on its own, because the reader skips copying the non-matching values.
             && (info.columns.size() < queried_columns.size()
-                || isReadByTopKFilterOnly(conjunct, info.columns, where_optimizer_context.top_k_filter_column)
                 || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct, where_optimizer_context)));
 
         info.expensive = isExpensiveExpression(conjunct);
-        info.must_follow_preceding_conditions = mustFollowPrecedingConditions(conjunct, where_optimizer_context.short_circuit_function_evaluation);
-        info.must_be_first_in_prewhere
-            = info.must_follow_preceding_conditions && computesSharedNode(conjunct, where_optimizer_context.shared_nodes);
 
         infos.push_back(std::move(info));
     }
@@ -651,8 +504,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     std::vector<NameSet> storage_columns_guarding_throwing_condition;
     for (size_t i = 0; i < infos.size(); ++i)
     {
-        const auto * dag_node = infos[i].node.getDAGNode();
-        if (!infos[i].viable || infos[i].expensive || !conditionMayThrow(dag_node) || prewhereConditionCannotThrow(dag_node))
+        if (!infos[i].viable || infos[i].expensive || !conditionMayThrow(infos[i].node.getDAGNode()))
             continue;
         for (size_t j = 0; j < i; ++j)
         {
@@ -710,15 +562,6 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         const auto & key = group_key(infos[i]);
         const bool uses_pk = uses_primary_key(infos[i]);
         auto g = infos[i].expensive ? std::nullopt : find_group_idx(key, uses_pk);
-        /// The group is emitted at its first conjunct, so do not join it across conjuncts that are not in it.
-        if (g.has_value() && infos[i].must_follow_preceding_conditions)
-        {
-            bool keep_apart = infos[i].must_be_first_in_prewhere;
-            for (size_t j = groups[*g].indices.front() + 1; j < i && !keep_apart; ++j)
-                keep_apart = !infos[j].viable || group_of[j] != *g;
-            if (keep_apart)
-                g.reset();
-        }
         if (!g.has_value())
         {
             group_of[i] = groups.size();
@@ -767,7 +610,6 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             bool group_may_use_primary_index = true;
             bool group_good = false;
             bool group_is_runtime_filter = true;
-            bool group_must_follow_preceding_conditions = false;
 
             for (size_t idx : group.indices)
             {
@@ -777,7 +619,6 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
                 if (!where_optimizer_context.use_statistics && !where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
                     group_good = group_good || isConditionGood(infos[idx].node, table_columns);
                 group_is_runtime_filter = group_is_runtime_filter && isJoinRuntimeFilter(infos[idx].node);
-                group_must_follow_preceding_conditions = group_must_follow_preceding_conditions || infos[idx].must_follow_preceding_conditions;
             }
 
             Condition cond(std::move(group_nodes));
@@ -787,8 +628,6 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             cond.good = group_good;
             cond.expensive = info.expensive;
             cond.is_runtime_filter = group_is_runtime_filter;
-            cond.must_follow_preceding_conditions = group_must_follow_preceding_conditions;
-            cond.must_be_first_in_prewhere = info.must_be_first_in_prewhere;
 
             if (where_optimizer_context.use_statistics)
             {
@@ -852,9 +691,6 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
             cond.columns_size = getColumnsSize(columns);
             cond.bytes_per_rejected_row = static_cast<double>(cond.columns_size);
             cond.is_runtime_filter = isJoinRuntimeFilter(conjunct);
-            cond.must_follow_preceding_conditions = mustFollowPrecedingConditions(conjunct, where_optimizer_context.short_circuit_function_evaluation);
-            cond.must_be_first_in_prewhere
-                = cond.must_follow_preceding_conditions && computesSharedNode(conjunct, where_optimizer_context.shared_nodes);
             cond.viable =
                 !has_invalid_column
                 && !columns.empty()
@@ -862,7 +698,6 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
                 && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
                 && columnsSupportPrewhere(columns)
                 && (columns.size() < queried_columns.size()
-                    || isReadByTopKFilterOnly(conjunct, columns, where_optimizer_context.top_k_filter_column)
                     || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct, where_optimizer_context)));
             res.emplace_back(std::move(cond));
         }
@@ -934,27 +769,10 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     /// Move conditions unless the ratio of total_size_of_moved_conditions to the total_size_of_queried_columns is less than some threshold.
     while (!where_conditions.empty())
     {
-        /// Move the best condition to PREWHERE if it is viable. One that must follow the preceding ones is moved only
-        /// after all of them, so while it is the best one, the best of them is moved instead.
-        const bool prewhere_is_empty = prewhere_conditions.empty() && !where_optimizer_context.has_existing_prewhere;
-        auto it = where_conditions.end();
-        bool preceding_can_move = true;
-        bool preceding_has_expensive = false;
-        for (auto candidate = where_conditions.begin(); candidate != where_conditions.end(); ++candidate)
-        {
-            const bool can_move = candidate->viable
-                && (!candidate->must_follow_preceding_conditions
-                    || (preceding_can_move && (candidate->expensive || !preceding_has_expensive)))
-                && (!candidate->must_be_first_in_prewhere || (prewhere_is_empty && candidate == where_conditions.begin()));
-            if (can_move && (it == where_conditions.end() || *candidate < *it))
-                it = candidate;
-            preceding_can_move = preceding_can_move && can_move;
-            preceding_has_expensive = preceding_has_expensive || candidate->expensive;
-        }
-        while (it != where_conditions.end() && it != where_conditions.begin() && it->must_follow_preceding_conditions)
-            it = std::min_element(where_conditions.begin(), it);
+        /// Move the best condition to PREWHERE if it is viable.
+        auto it = std::min_element(where_conditions.begin(), where_conditions.end());
 
-        if (it == where_conditions.end())
+        if (!it->viable)
             break;
 
         /// If any non-expensive conditions stay in WHERE then don't move expensive conditions to PREWHERE

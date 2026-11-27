@@ -64,9 +64,8 @@ S3TablesCatalog::S3TablesCatalog(
     const String & region_,
     const CatalogSettings & catalog_settings_,
     DB::ContextPtr context_,
-    bool allow_server_credentials_in_user_queries_,
-    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
-    : RestCatalog(warehouse_, base_url_, "", "", false, /* flat_namespaces */false, context_, snapshot_loading_mode_)
+    bool allow_server_credentials_in_user_queries_)
+    : RestCatalog(warehouse_, base_url_, "", "", false, /* flat_namespaces */false, context_)
     , region(region_)
     , storage_endpoint(catalog_settings_.storage_endpoint)
     , signing_service("s3tables")
@@ -108,11 +107,11 @@ S3TablesCatalog::S3TablesCatalog(
         s3_slow_all_threads_after_network_error,
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
-        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
+        /* for_disk_s3 = */ false,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {});
 
-    Aws::Auth::AWSCredentials credentials{Aws::String(catalog_settings_.aws_access_key_id), Aws::String(catalog_settings_.aws_secret_access_key)};
+    Aws::Auth::AWSCredentials credentials(catalog_settings_.aws_access_key_id, catalog_settings_.aws_secret_access_key);
     credentials_provider = DB::S3::getCredentialsProvider(poco_config, credentials, creds_config);
 
     signer = std::make_unique<Aws::Client::AWSAuthV4Signer>(

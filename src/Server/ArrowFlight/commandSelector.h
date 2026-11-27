@@ -22,7 +22,6 @@ struct SQLSet
     std::string sql;
     SchemaModifier schema_modifier;
     BlockModifier block_modifier;
-    bool skip_query_cache = false;
 };
 
 struct CommandSelectorResult : private std::variant<SQLSet, arrow::Result<std::shared_ptr<arrow::Table>>>

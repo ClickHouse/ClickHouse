@@ -36,7 +36,6 @@ struct NATSSettingsImpl;
     M(CLASS_NAME, ParquetCompression) \
     M(CLASS_NAME, ParquetVersion) \
     M(CLASS_NAME, SchemaInferenceMode) \
-    M(CLASS_NAME, SecretString) \
     M(CLASS_NAME, StreamingHandleErrorMode) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt64) \
@@ -58,7 +57,7 @@ struct NATSSettings
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection);
 
-    [[nodiscard]] SettingsChanges getFormatSettings() const;
+    SettingsChanges getFormatSettings() const;
 
     static bool hasBuiltin(std::string_view name);
 

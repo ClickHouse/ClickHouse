@@ -25,9 +25,9 @@ namespace DeleteBitmapFileOps
         std::string target;
 
         /// No committed transaction has csn 0, so a recorded version can only be an inherited one.
-        [[nodiscard]] bool isCarried() const { return version != 0; }
+        bool isCarried() const { return version != 0; }
 
-        [[nodiscard]] std::string fileName() const
+        std::string fileName() const
         {
             return isCarried()
                 ? DeleteBitmap::fileNameForCarriedTarget(version, target)
@@ -35,7 +35,7 @@ namespace DeleteBitmapFileOps
         }
 
         /// The `system.parts` form: the name without the prefix and suffix all of them share.
-        [[nodiscard]] std::string toString() const;
+        std::string toString() const;
 
         bool operator==(const BitmapFile & other) const = default;
     };

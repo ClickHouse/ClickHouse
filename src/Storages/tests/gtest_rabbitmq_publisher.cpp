@@ -3,7 +3,7 @@
 
 #if USE_AMQPCPP
 
-#include <Storages/RabbitMQ/RabbitMQPublisher.h>
+#include <Storages/RabbitMQ/RabbitMQProducer.h>
 #include <Common/logger_useful.h>
 
 #include <vector>
@@ -11,21 +11,21 @@
 namespace DB
 {
 
-/// Drives the publisher confirms handler `RabbitMQPublisher::removeRecord` directly. The delivery tag
+/// Drives the publisher confirms handler `RabbitMQProducer::removeRecord` directly. The delivery tag
 /// of an ack or nack comes from the broker, so it is not guaranteed to be in `delivery_record`.
-/// The publisher is never connected, so no connection to a broker is made.
-class RabbitMQPublisherTest : public ::testing::Test
+/// The producer is never started, so no connection to a broker is made.
+class RabbitMQProducerTest : public ::testing::Test
 {
 protected:
-    RabbitMQPublisherTest()
-        : publisher(RabbitMQConfiguration{}, Names{"key"}, "exchange", AMQP::ExchangeType::direct, 0, false, getLogger("RabbitMQPublisherTest"))
+    RabbitMQProducerTest()
+        : publisher(RabbitMQConfiguration{}, Names{"key"}, "exchange", AMQP::ExchangeType::direct, 0, false, shutdown_called, getLogger("RabbitMQProducerTest"))
     {
     }
 
     void addRecords(std::initializer_list<UInt64> tags)
     {
         for (UInt64 tag : tags)
-            publisher.delivery_record.emplace(tag, RabbitMQPublisher::Payload{"message_" + std::to_string(tag), tag});
+            publisher.delivery_record.emplace(tag, RabbitMQProducer::Payload{"message_" + std::to_string(tag), tag});
     }
 
     void removeRecord(UInt64 tag, bool multiple, bool republish) { publisher.removeRecord(tag, multiple, republish); }
@@ -41,16 +41,17 @@ protected:
     std::vector<UInt64> returnedIds()
     {
         std::vector<UInt64> result;
-        RabbitMQPublisher::Payload payload;
+        RabbitMQProducer::Payload payload;
         while (publisher.returned.tryPop(payload))
             result.push_back(payload.id);
         return result;
     }
 
-    RabbitMQPublisher publisher;
+    std::atomic<bool> shutdown_called{false};
+    RabbitMQProducer publisher;
 };
 
-TEST_F(RabbitMQPublisherTest, SingleAckRemovesOnlyItsRecord)
+TEST_F(RabbitMQProducerTest, SingleAckRemovesOnlyItsRecord)
 {
     addRecords({1, 2, 3});
     removeRecord(2, /* multiple = */ false, /* republish = */ false);
@@ -58,7 +59,7 @@ TEST_F(RabbitMQPublisherTest, SingleAckRemovesOnlyItsRecord)
     EXPECT_TRUE(returnedIds().empty());
 }
 
-TEST_F(RabbitMQPublisherTest, UnknownSingleAckOrNackIsIgnored)
+TEST_F(RabbitMQProducerTest, UnknownSingleAckOrNackIsIgnored)
 {
     addRecords({1, 3});
     removeRecord(2, /* multiple = */ false, /* republish = */ false);
@@ -68,7 +69,7 @@ TEST_F(RabbitMQPublisherTest, UnknownSingleAckOrNackIsIgnored)
     EXPECT_TRUE(returnedIds().empty());
 }
 
-TEST_F(RabbitMQPublisherTest, RepeatedSingleNackRequeuesOnce)
+TEST_F(RabbitMQProducerTest, RepeatedSingleNackRequeuesOnce)
 {
     addRecords({1, 2});
     removeRecord(1, /* multiple = */ false, /* republish = */ true);
@@ -77,7 +78,7 @@ TEST_F(RabbitMQPublisherTest, RepeatedSingleNackRequeuesOnce)
     EXPECT_EQ(returnedIds(), (std::vector<UInt64>{1}));
 }
 
-TEST_F(RabbitMQPublisherTest, MultipleAckWithMissingBoundaryTag)
+TEST_F(RabbitMQProducerTest, MultipleAckWithMissingBoundaryTag)
 {
     addRecords({1, 2, 4, 5});
     removeRecord(3, /* multiple = */ true, /* republish = */ false);
@@ -85,7 +86,7 @@ TEST_F(RabbitMQPublisherTest, MultipleAckWithMissingBoundaryTag)
     EXPECT_TRUE(returnedIds().empty());
 }
 
-TEST_F(RabbitMQPublisherTest, MultipleNackWithMissingBoundaryTagRequeuesOnce)
+TEST_F(RabbitMQProducerTest, MultipleNackWithMissingBoundaryTagRequeuesOnce)
 {
     addRecords({1, 2, 4, 5});
     removeRecord(3, /* multiple = */ true, /* republish = */ true);
@@ -94,7 +95,7 @@ TEST_F(RabbitMQPublisherTest, MultipleNackWithMissingBoundaryTagRequeuesOnce)
     EXPECT_EQ(returnedIds(), (std::vector<UInt64>{1, 2}));
 }
 
-TEST_F(RabbitMQPublisherTest, MultipleNackBeyondAllRecords)
+TEST_F(RabbitMQProducerTest, MultipleNackBeyondAllRecords)
 {
     addRecords({1, 2});
     removeRecord(100, /* multiple = */ true, /* republish = */ true);
@@ -102,7 +103,7 @@ TEST_F(RabbitMQPublisherTest, MultipleNackBeyondAllRecords)
     EXPECT_EQ(returnedIds(), (std::vector<UInt64>{1, 2}));
 }
 
-TEST_F(RabbitMQPublisherTest, ConfirmsOnEmptyRecord)
+TEST_F(RabbitMQProducerTest, ConfirmsOnEmptyRecord)
 {
     removeRecord(1, /* multiple = */ true, /* republish = */ false);
     removeRecord(1, /* multiple = */ true, /* republish = */ true);

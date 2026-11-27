@@ -28,7 +28,6 @@ namespace DB
 {
 
 class ASTExpressionList;
-class ASTColumns;
 class ASTFunction;
 class ASTIdentifier;
 class ASTOrderByElement;
@@ -36,8 +35,6 @@ class ASTCreateQuery;
 class ASTInsertQuery;
 class ASTColumnDeclaration;
 class ASTDropQuery;
-class ASTDictionaryLayout;
-class ASTFunctionWithKeyValueArguments;
 class ASTIndexDeclaration;
 class ASTProjectionDeclaration;
 class ASTRefreshStrategy;
@@ -90,14 +87,14 @@ public:
 
     static bool isSuitableForFuzzing(const ASTCreateQuery & create);
 
-    [[nodiscard]] UInt64 getSeed() const { return seed; }
+    UInt64 getSeed() const { return seed; }
 
     /// Returns the total number of accumulated AST fragments (column-like + table-like).
-    [[nodiscard]] size_t getAccumulatedStateSize() const { return column_like.size() + table_like.size(); }
+    size_t getAccumulatedStateSize() const { return column_like.size() + table_like.size(); }
 
     /// Returns query parameters collected/generated during the last fuzzMain() call.
     /// Callers should pass these to the execution context via setQueryParameters().
-    [[nodiscard]] const NameToNameMap & getLastQueryParameters() const { return last_query_parameters; }
+    const NameToNameMap & getLastQueryParameters() const { return last_query_parameters; }
 
     void setSeed(const UInt64 new_seed)
     {
@@ -266,8 +263,6 @@ private:
 
     // Various helper functions follow, normally you shouldn't have to call them.
     Field getRandomField(int type);
-    /// A `(key, value)` tuple, the element type of `Map`
-    Field getRandomMapEntry();
     Field fuzzField(Field field);
     ASTPtr getRandomColumnLike();
     /// Builds a fuzzed asterisk/matcher (`*`, `* LIKE/ILIKE '<pattern>'`, `table.*`, `COLUMNS(...)`),
@@ -333,19 +328,15 @@ private:
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzWindowDefinition(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
-    void fuzzOnCluster(IAST & ast);
+    void swapEngineToCollapsing(ASTStorage & storage, ASTExpressionList * columns_list);
     void fuzzRefreshStrategy(ASTRefreshStrategy & strategy, bool allow_incremental);
-    void fuzzTableStorage(ASTStorage & storage, ASTColumns * columns_list);
+    void fuzzTableStorage(ASTStorage & storage);
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
-    void fuzzCodecFunction(ASTFunction & codec_fn, bool always = false);
+    void fuzzCodecFunction(ASTFunction & codec_fn);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
     void fuzzColumnDeclarationList(ASTExpressionList & columns);
-    /// The `CODEC <path> (...)` entries of a column list, added to a list that has none.
-    void fuzzCodecDeclarations(ASTColumns & columns_list);
-    /// Point a codec target at a subcolumn inside it, or at its parent.
-    void fuzzCodecTarget(String & name);
     ASTPtr makeTextIndexTokenizer();
     String makeTextTokenizerArgument();
     void fuzzIndexDeclaration(ASTIndexDeclaration & index);
@@ -373,17 +364,6 @@ private:
 
     void fuzzTableFunctionName(ASTPtr & table_function);
     void fuzzClusterFunctionArguments(ASTFunction & fn);
-    void fuzzStorageArguments(ASTFunction & fn, ASTSetQuery * engine_settings);
-    String fuzzStructure(const String & structure);
-    String fuzzHivePath(String path);
-    String fuzzQueryText(const String & text, bool is_expression);
-    void fuzzDictionaryLayout(ASTDictionaryLayout & layout);
-    void fuzzDictionarySource(ASTFunctionWithKeyValueArguments & source);
-    void addQueueSettings(SettingsChanges & changes, bool on_s3);
-    void addMemorySettings(SettingsChanges & changes);
-    void fuzzExistingEngineParameters(ASTStorage & storage);
-    void fuzzProxyDatabaseEngine(ASTStorage & storage);
-    void fuzzStorageDatabaseEngine(ASTStorage & storage);
     void fuzzMergeFunctionArguments(ASTFunction & fn);
     String makeFuzzedLikePattern();
     String makeBraceExpansion();

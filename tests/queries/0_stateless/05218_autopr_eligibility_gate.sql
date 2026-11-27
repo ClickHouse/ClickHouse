@@ -9,7 +9,6 @@
 -- the context the check is handed. A regression that reads those settings from the wrong context
 -- would reject such queries, and parallel replicas would silently stop being considered for them.
 
-SET use_statistics_for_sum_avg_aggregation = 0;
 DROP TABLE IF EXISTS t_autopr_gate;
 DROP TABLE IF EXISTS t_autopr_gate_2;
 DROP TABLE IF EXISTS t_autopr_gate_alias;
@@ -32,6 +31,7 @@ CREATE TABLE t_autopr_gate_hop ENGINE = Alias('v_autopr_gate');
 INSERT INTO t_autopr_gate SELECT number, number % 100 FROM numbers(10000);
 INSERT INTO t_autopr_gate_2 SELECT number, number % 10 FROM numbers(1000);
 
+SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET cluster_for_parallel_replicas = 'parallel_replicas';
 SET max_parallel_replicas = 3;

@@ -79,9 +79,6 @@ inline ALWAYS_INLINE bool hasNull(const UInt8 * null_map, size_t null_map_size)
 
 /// Searches `value` in blocks of 128 bytes. A block is a few whole-vector comparisons and one test of the combined mask,
 /// so the search exits early without a branch per element. A 32-byte vector is one AVX2 register or two NEON registers.
-///
-/// On AArch64, long slices of 4 and 8-byte elements are searched in chunks of 512 bytes by a plain loop instead, which the
-/// compiler unrolls to 8 or 16 NEON comparisons per iteration.
 template <bool has_null_map, typename T>
 ALWAYS_INLINE bool sliceContains(const NumericArraySlice<T> & slice, const UInt8 * null_map, T value)
 {
@@ -133,42 +130,6 @@ ALWAYS_INLINE bool sliceContains(const NumericArraySlice<T> & slice, const UInt8
             found |= vector_matches(begin + offset);
         return anyLaneSet(found & significant);
     };
-
-#if defined(__aarch64__)
-    if constexpr (sizeof(T) >= 4)
-    {
-        /// Larger chunks were not faster and do more work when the value is near the front.
-        static constexpr size_t chunk = 512 / sizeof(T);
-        auto chunk_contains = [&](size_t begin) ALWAYS_INLINE
-        {
-            bool found = false;
-            /// Debug builds and sanitizer instrumentation of the loads prevent vectorization, and a requested but failed one is
-            /// an error (`-Wpass-failed`).
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
-#pragma clang loop vectorize(enable) vectorize_width(16) interleave_count(2)
-#endif
-            for (size_t i = begin; i < begin + chunk; ++i)
-                found |= (slice.data[i] == value) & (!has_null_map || !null_map[i]);
-            return found;
-        };
-
-        if (slice.size >= lanes + chunk)
-        {
-            if (vector_contains(0))
-                return true;
-
-            size_t i = lanes;
-            for (; i + chunk <= slice.size; i += chunk)
-            {
-                if (chunk_contains(i))
-                    return true;
-            }
-
-            /// The last chunk overlaps the previous one.
-            return i < slice.size && chunk_contains(slice.size - chunk);
-        }
-    }
-#endif
 
     if (slice.size < lanes)
     {

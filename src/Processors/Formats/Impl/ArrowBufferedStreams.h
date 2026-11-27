@@ -3,7 +3,7 @@
 
 #include <Common/threadPoolCallbackRunner.h>
 
-#if USE_ARROW_LIBRARY
+#if USE_ARROW || USE_PARQUET
 
 #include <Common/LoggingFormatStringHelpers.h>
 
@@ -14,6 +14,7 @@
 #include <arrow/memory_pool.h>
 #include <arrow/status.h>
 
+#define ORC_MAGIC_BYTES "ORC"
 #define PARQUET_MAGIC_BYTES "PAR1"
 #define ARROW_MAGIC_BYTES "ARROW1"
 
@@ -129,8 +130,8 @@ class ExceptionStatusDetail : public arrow::StatusDetail
 public:
     explicit ExceptionStatusDetail(std::exception_ptr exception_) : exception(std::move(exception_)) {}
 
-    [[nodiscard]] const char * type_id() const override { return "DB::Exception"; }
-    [[nodiscard]] std::string ToString() const override;
+    const char * type_id() const override { return "DB::Exception"; }
+    std::string ToString() const override;
 
     std::exception_ptr exception;
 };

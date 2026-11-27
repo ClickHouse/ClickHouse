@@ -108,14 +108,14 @@ SELECT toDecimal32(4.2, 8) AS x, 6 * x
 └────────────┴──────────────────────────────────┘
 ```
 
-With `decimal_check_overflow` enabled (the default), a comparison of values with different scales is exact, even when a value does not fit into the type at the common scale:
+Overflow checks happen not only on arithmetic operations but also on value comparison:
 
 ```sql
 SELECT toDecimal32(1, 8) < 100
 ```
 
 ```text
-1
+DB::Exception: Can't compare.
 ```
 
 **See also**

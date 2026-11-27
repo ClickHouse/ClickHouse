@@ -71,10 +71,6 @@ class AggregateFunctionQuantile final
 {
 private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
-    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, SecondArgumentType, FloatReturnType, returns_many, has_accuracy_parameter>>;
-
-    static constexpr bool has_add_many = std::is_same_v<SecondArgumentType, void>
-        && requires(Data & data, const Value * values) { data.addMany(values, size_t{}); };
 
     static constexpr bool returns_float = !std::is_same_v<FloatReturnType, void>;
     static constexpr bool is_quantile_ddsketch = std::is_same_v<Data, QuantileDD<Value>>;
@@ -184,7 +180,7 @@ public:
         }
     }
 
-    [[nodiscard]] String getName() const override { return Name::name; }
+    String getName() const override { return Name::name; }
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
@@ -211,13 +207,13 @@ public:
             return res;
     }
 
-    [[nodiscard]] bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
         return GatherFunctionQuantileData::toFusedNameOrSelf(getName()) == GatherFunctionQuantileData::toFusedNameOrSelf(rhs.getName())
             && this->haveEqualArgumentTypes(rhs);
     }
 
-    [[nodiscard]] DataTypePtr getNormalizedStateType() const override
+    DataTypePtr getNormalizedStateType() const override
     {
         /// Return normalized state type: quantiles*(1)(...)
         Array params{1};
@@ -233,7 +229,7 @@ public:
             params);
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -257,63 +253,12 @@ public:
             this->data(place).add(value);
     }
 
-    void addBatchSinglePlace(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos) const override
-    {
-        if constexpr (has_add_many)
-        {
-            const auto * values = assert_cast<const ColVecType &>(*columns[0]).getData().data() + row_begin;
-            if (if_argument_pos >= 0)
-            {
-                const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data() + row_begin;
-                this->data(place).template addManyFiltered<true>(values, row_end - row_begin, if_flags);
-            }
-            else
-                this->data(place).addMany(values, row_end - row_begin);
-        }
-        else
-            Base::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
-    }
-
-    void addBatchSinglePlaceNotNull(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        const UInt8 * null_map,
-        Arena * arena,
-        ssize_t if_argument_pos) const override
-    {
-        if constexpr (has_add_many)
-        {
-            const auto * values = assert_cast<const ColVecType &>(*columns[0]).getData().data() + row_begin;
-            const size_t count = row_end - row_begin;
-            if (if_argument_pos >= 0)
-            {
-                const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data() + row_begin;
-                auto keep = std::make_unique_for_overwrite<UInt8[]>(count);
-                for (size_t i = 0; i < count; ++i)
-                    keep[i] = !null_map[row_begin + i] & !!if_flags[i];
-                this->data(place).template addManyFiltered<true>(values, count, keep.get());
-            }
-            else
-                this->data(place).template addManyFiltered<false>(values, count, null_map + row_begin);
-        }
-        else
-            Base::addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
-    }
-
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
 
-    [[nodiscard]] bool isVersioned() const override { return state_version > 0; }
+    bool isVersioned() const override { return state_version > 0; }
 
     /// The default version - the one used when the type carries no explicit version - must stay 0.
     /// Unversioned `AggregateFunction(quantileDeterministic, ...)` types already exist in persisted
@@ -328,13 +273,13 @@ public:
     /// state (a `-State` query result, an inferred `CREATE TABLE ... AS SELECT` column, a value
     /// entering a `Dynamic` column) carries the version with it on every medium, while a fresh
     /// `CREATE TABLE` with a spelled-out unversioned column type gets the version pinned at DDL time.
-    [[nodiscard]] size_t getDefaultVersion() const override { return 0; }
+    size_t getDefaultVersion() const override { return 0; }
 
     /// The state type spells the version out, so that the type name and the payload stay consistent
     /// on every medium the state can travel through - including the generic formats, which serialize
     /// query results with the state type as-is (only the `Native` wire re-derives versions from the
     /// negotiated revision).
-    [[nodiscard]] DataTypePtr getStateType() const override
+    DataTypePtr getStateType() const override
     {
         if constexpr (state_version > 0)
             return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), this->argument_types, this->parameters, state_version);
@@ -342,7 +287,7 @@ public:
             return IAggregateFunction::getStateType();
     }
 
-    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
+    size_t getVersionFromRevision(size_t revision) const override
     {
         if constexpr (state_version >= 1)
         {

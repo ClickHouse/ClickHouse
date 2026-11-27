@@ -87,7 +87,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int NO_ZOOKEEPER;
-    extern const int UNKNOWN_FORMAT_VERSION;
 }
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";
@@ -270,7 +269,6 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         return nullptr;
     };
 
-    std::optional<ExecutionStatus> parse_error;
     try
     {
         /// Stage 1: parse entry
@@ -279,30 +277,11 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     }
     catch (...)
     {
-        parse_error = ExecutionStatus::fromCurrentException();
-    }
-
-    if (parse_error)
-    {
-        out_reason = "Incorrect task format";
-
-        /// An entry of an unsupported version still has its hosts parsed, so report the error under the one of this host.
-        if (parse_error->code == ErrorCodes::UNKNOWN_FORMAT_VERSION && !task->entry.hosts.empty())
-        {
-            updateHostIDs(task->entry.hosts);
-            if (!task->findCurrentHostID(context, log, zookeeper, config_host_name))
-            {
-                out_reason = "There is no a local address in host list";
-                return add_to_skip_set();
-            }
-            write_error_status(task->host_id_str, *parse_error, out_reason);
-            return add_to_skip_set();
-        }
-
         /// What should we do if we even cannot parse host name and therefore cannot properly submit execution status?
         /// We can try to create fail node using FQDN if it equal to host name in cluster config attempt will be successful.
         /// Otherwise, that node will be ignored by DDLQueryStatusSource.
-        write_error_status(host_fqdn_id, *parse_error, out_reason);
+        out_reason = "Incorrect task format";
+        write_error_status(host_fqdn_id, ExecutionStatus::fromCurrentException(), out_reason);
         return add_to_skip_set();
     }
 

@@ -50,7 +50,7 @@ ORDER BY p, x;
 SELECT '--- row_number / rank / dense_rank / percent_rank / cume_dist ---';
 -- row_number() needs a stable tiebreaker to be deterministic under ties.
 -- rank() / dense_rank() need no tiebreaker so ties are visible.
--- percent_rank() / cume_dist() read the whole partition whatever the frame.
+-- percent_rank() / cume_dist() require an explicit UNBOUNDED..UNBOUNDED frame.
 SELECT x, tb,
     row_number() OVER w_stable AS rn,
     rank() OVER w_x AS rnk,

@@ -63,17 +63,13 @@ public:
 
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationWeakPtr configuration,
-        ContextPtr /*local_context*/)
+        StorageObjectStorageConfigurationWeakPtr configuration)
     {
+        auto configuration_ptr = configuration.lock();
         return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage_, configuration);
     }
 
-    static bool supportsTotalRows(ContextPtr, ObjectStorageType) { return true; }
-
-    static bool supportsTotalBytes(ContextPtr, ObjectStorageType) { return true; }
-
-    /// CREATE TABLE entry point: validate the declared columns, write commit 0
+    /// CREATE TABLE entry point when the kernel is enabled: validate the declared columns, write commit 0
     /// (fresh) or attach to an existing `_delta_log`, and register the table in the catalog when present.
     static void createInitial(
         const ObjectStoragePtr & object_storage,
@@ -86,7 +82,7 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_);
 
-    std::optional<size_t> totalRows(ContextPtr, const std::optional<DataLakeTableStateSnapshot> &) const override;
+    std::optional<size_t> totalRows(ContextPtr) const override;
 
     std::optional<size_t> totalBytes(ContextPtr) const override;
 

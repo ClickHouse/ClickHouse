@@ -4,7 +4,7 @@
 -- `SETTINGS limit = ...` was consumed by `wrapNestedConstructionSettings` and re-scoped to the whole
 -- union, and the ambiguous mix of non-last-arm and last-arm construction `SETTINGS` was not rejected.
 
-SET enable_eval_table_function = 1;
+SET allow_experimental_eval_table_function = 1;
 
 -- { echoOn }
 -- A construction setting on a non-last arm caps only that arm, not the whole union.
@@ -13,7 +13,5 @@ SELECT count() FROM eval('(SELECT number FROM numbers(100) SETTINGS limit = 1) U
 SELECT number FROM eval('(SELECT number FROM numbers(10) SETTINGS filter = ''number % 2 = 0'', limit = 2) UNION ALL SELECT number FROM numbers(2)') ORDER BY number;
 -- The mixed non-last-arm / last-arm construction `SETTINGS` form is rejected as ambiguous,
 -- the same as for a directly executed query.
-SELECT count() FROM eval('SELECT number FROM numbers(10) SETTINGS limit = 1 UNION ALL SELECT number FROM numbers(10) SETTINGS limit = 3'); -- { serverError BAD_ARGUMENTS }
--- With a parenthesized non-last arm, the trailing clause caps the whole union.
-SELECT count() FROM eval('(SELECT number FROM numbers(10) SETTINGS limit = 1) UNION ALL SELECT number FROM numbers(10) SETTINGS limit = 3');
+SELECT count() FROM eval('(SELECT number FROM numbers(10) SETTINGS limit = 1) UNION ALL SELECT number FROM numbers(10) SETTINGS limit = 3'); -- { serverError BAD_ARGUMENTS }
 -- { echoOff }

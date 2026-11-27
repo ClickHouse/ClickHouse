@@ -1,4 +1,4 @@
-Functions: ntile(2_UInt8) OVER (ORDER BY __table1.number ASC)
+Functions: ntile(2_UInt8) OVER (ORDER BY __table1.number ASC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 0	1	12
 1	1	12
 2	1	12
@@ -10,9 +10,9 @@ Functions: ntile(2_UInt8) OVER (ORDER BY __table1.number ASC)
 8	2	27
 9	2	27
 --
-Functions: ntile(2_UInt8) OVER (ORDER BY __table1.number ASC)
-ntile(3_UInt8) OVER (ORDER BY __table1.number ASC)
-Functions: ntile(2_UInt8) OVER (ORDER BY __table1.number DESC)
+Functions: ntile(2_UInt8) OVER (ORDER BY __table1.number ASC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+ntile(3_UInt8) OVER (ORDER BY __table1.number ASC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+Functions: ntile(2_UInt8) OVER (ORDER BY __table1.number DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 0	1	2	1	8
 1	1	2	1	8
 2	1	2	1	8

@@ -32,6 +32,8 @@
 
 -- { echoOn }
 
+SET enable_analyzer = 1;
+
 -- WITH RECURSIVE
 
 -- sum of 1..100

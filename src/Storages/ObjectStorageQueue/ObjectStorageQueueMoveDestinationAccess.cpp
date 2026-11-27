@@ -57,24 +57,16 @@ bool isEmptyValue(const Field & value)
     return value.getType() == Field::Types::String && value.safeGet<String>().empty();
 }
 
-bool changesSourceObjects(const SettingChange & change)
-{
-    /// `after_processing` other than `keep` modifies the source files.
-    return (change.name == "after_processing" || change.name == "s3queue_after_processing")
-        && change.value.safeGet<String>() != "keep";
-}
-
 /// A table moves files only to the destination of its own storage type, see `ObjectStorageQueuePostProcessor::process`.
-AccessRightsElements getMoveDestinationAccess(const SettingsChanges & changes, MoveDestinationKind table_kind, bool own_engine)
+AccessRightsElements getMoveDestinationAccess(const SettingsChanges & changes, MoveDestinationKind table_kind)
 {
     const bool sets_destination = std::ranges::any_of(
         changes,
         [&](const SettingChange & change) { return getMoveDestinationKind(change.name) == table_kind && !isEmptyValue(change.value); });
-    if (!sets_destination && !(own_engine && std::ranges::any_of(changes, changesSourceObjects)))
+    if (!sets_destination)
         return {};
 
     /// Unfiltered on purpose: a move has no single destination path to match a filter against.
-    /// For `after_processing`, the URL of the table is not known here either.
     /// For S3, the move writes keys built from `after_processing_move_prefix` and the source keys, and uses only
     /// the bucket of the URI, not its key. For Azure, the `azureBlobStorage` function matches source filters against
     /// the blob path (`StorageAzureConfiguration::getRawURI` returns `blob_path.path`).
@@ -86,14 +78,14 @@ AccessRightsElements getMoveDestinationAccess(const SettingsChanges & changes, M
 
 }
 
-AccessRightsElements getS3QueueMoveDestinationAccess(const SettingsChanges & changes, bool own_engine)
+AccessRightsElements getS3QueueMoveDestinationAccess(const SettingsChanges & changes)
 {
-    return getMoveDestinationAccess(changes, MoveDestinationKind::S3, own_engine);
+    return getMoveDestinationAccess(changes, MoveDestinationKind::S3);
 }
 
-AccessRightsElements getAzureQueueMoveDestinationAccess(const SettingsChanges & changes, bool own_engine)
+AccessRightsElements getAzureQueueMoveDestinationAccess(const SettingsChanges & changes)
 {
-    return getMoveDestinationAccess(changes, MoveDestinationKind::Azure, own_engine);
+    return getMoveDestinationAccess(changes, MoveDestinationKind::Azure);
 }
 
 void checkObjectStorageQueueS3MoveDestinationHost(
@@ -116,7 +108,10 @@ void checkObjectStorageQueueAzureMoveDestinationHost(
     {
         AzureBlobStorage::ConnectionParams connection_params;
         AzureBlobStorage::processURL(move_connection_string, move_container, connection_params.endpoint, connection_params.auth_method);
-        filter.checkURL(Poco::URI(connection_params.getConnectionURLWithoutQuery()));
+        /// Without the query: a connection string can carry a SAS, which the message of `checkURL` must not show.
+        String url = connection_params.getConnectionURL();
+        url = url.substr(0, url.find_first_of("?#"));
+        filter.checkURL(Poco::URI(url));
     }
 #endif
 }

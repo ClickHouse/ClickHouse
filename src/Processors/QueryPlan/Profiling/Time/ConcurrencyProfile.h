@@ -1,7 +1,6 @@
 #pragma once
 
 #include <vector>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Profiling/Execution/WorkInterval.h>
 #include <Processors/QueryPlan/Profiling/Time/TimeIntervals.h>
 #include <base/types.h>
@@ -26,17 +25,17 @@ public:
     explicit ConcurrencyProfile(const WorkIntervalsPerThread & intervals_per_thread);
 
     /// Time-weighted number of busy threads over the given non-overlapping sequence
-    [[nodiscard]] UInt64 busyTimeIn(const TimeIntervals & intervals) const;
+    UInt64 busyTimeIn(const TimeIntervals & intervals) const;
 
     /// Length of the union of all intervals: the time during which at least one thread was busy.
-    [[nodiscard]] UInt64 activeTime() const { return active_time_ns; }
+    UInt64 activeTime() const { return active_time_ns; }
 
 private:
-    [[nodiscard]] UInt64 integralAt(UInt64 time) const;
+    UInt64 integralAt(UInt64 time) const;
 
-    VectorWithMemoryTracking<UInt64> times;
-    VectorWithMemoryTracking<UInt64> concurrency;
-    VectorWithMemoryTracking<UInt64> busy_integral;
+    std::vector<UInt64> times;
+    std::vector<UInt64> concurrency;
+    std::vector<UInt64> busy_integral;
     UInt64 active_time_ns = 0;
 };
 

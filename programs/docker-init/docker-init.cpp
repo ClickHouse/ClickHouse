@@ -37,7 +37,7 @@ namespace
 
 /// Path to the clickhouse multi-tool binary, derived from argv[0].
 /// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-[[clang::no_destroy]] std::string g_clickhouse_binary;
+std::string g_clickhouse_binary;
 
 /// Set by the SIGTERM/SIGINT handler during init to request graceful shutdown.
 /// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)

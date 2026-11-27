@@ -5,6 +5,7 @@ description: "Learn how to profile ClickHouse using LLVM's XRay instrumentation 
 tags: ['Performance and Optimizations', 'Tools and Utilities']
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
 
 ## Types of profilers {#types-of-profilers}
 LLVM already includes a tool that instruments the code that allows us to do [instrumentation
@@ -47,22 +48,14 @@ format](/reference/system-tables/trace_log#chrome-event-trace-format) to
 visualize it in [Perfetto](https://ui.perfetto.dev). Notice the query_id, cpu_id and stacktrace for
 every entry.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp" size="md" alt="time-order" />
 
 ## Profiling a native application using XRay {#profiling-a-native-application-using-xray}
 The following section is left as a reference to know how XRay works under the hood and how it can be
 used out of the box to profile a native application.
 
 ### Instrument the code {#instrument-the-code}
-Imagine the following source code:
+Imagine the following souce code:
 
 ```cpp
 #include <chrono>
@@ -147,37 +140,13 @@ While Perfetto makes visualizing multiple threads and querying the data easier, 
 generating a flamegraph and a sandwich view of your data.
 
 #### Time Order {#time-order}
-<div className="ch-image-md">
-
-<Frame>
-
-![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp" size="md" alt="time-order" />
 
 #### Left Heavy {#left-heavy}
-<div className="ch-image-md">
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp" size="md" alt="left-heavy" />
 
-<Frame>
-
-![left-heavy](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
-
-</Frame>
-
-</div>
-
-#### Sandwich {#sandwitch}
-<div className="ch-image-md">
-
-<Frame>
-
-![sandwich](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
-
-</Frame>
-
-</div>
+#### Sandwitch {#sandwitch}
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp" size="md" alt="sandwich" />
 
 ## Check out the docs {#check-out-the-docs}
 - [SYSTEM INSTRUMENT](/reference/statements/system#instrument) — Add

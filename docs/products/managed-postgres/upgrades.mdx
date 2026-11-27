@@ -7,8 +7,11 @@ keywords: ['managed postgres upgrades', 'postgres version', 'minor upgrade', 'ma
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
 
 ClickHouse Managed Postgres handles PostgreSQL version upgrades to keep your instances secure and up to date. Both minor and major version upgrades are supported with minimal disruption.
 
@@ -106,7 +109,7 @@ resizing storage, and changing [configuration parameters](/products/managed-post
 
 <Note>
 Scheduled upgrades are best effort. Maintenance may be applied outside your window when it's
-required for the health of your instance, such as when disk usage reaches 95%, or for
+required for the health of your instance — for example when disk usage reaches 95% — or for
 critical security patches and vulnerability fixes. You'll be notified of such exceptions as
 necessary.
 </Note>

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/logger_useful.h>
-#include <Common/SecretString.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
@@ -21,7 +20,7 @@ public:
         String after_processing_move_prefix;
         bool after_processing_move_preserve_path = false;
         String after_processing_move_access_key_id;
-        SecretString after_processing_move_secret_access_key;
+        String after_processing_move_secret_access_key;
         String after_processing_move_connection_string;
         String after_processing_move_container;
         String after_processing_tag_key;
@@ -36,9 +35,6 @@ public:
         const ObjectStorageQueueTableMetadata & table_metadata_,
         AfterProcessingSettings settings_);
 
-    /// Like a move to another S3 bucket, a move to another Azure container must carry its own credentials.
-    static void checkAzureMoveDestination(const String & move_connection_string, const String & move_container);
-
     /// Apply post-processing to the objects. Can throw exceptions in case of misconfiguration.
     /// The method intercepts exceptions caused by remote storage interaction and reports them to the log.
     void process(
@@ -46,7 +42,7 @@ public:
         UnorderedSetWithMemoryTracking<String> & failed_object_paths) const;
 
 private:
-    [[nodiscard]] String getName() const { return engine_name; }
+    String getName() const { return engine_name; }
 
     void doWithRetries(std::function<void()> action) const;
 

@@ -69,9 +69,9 @@ public:
     virtual ~FutureSet() = default;
 
     /// Returns set if set is ready (created and filled) or nullptr if not.
-    [[nodiscard]] virtual SetPtr get() const = 0;
+    virtual SetPtr get() const = 0;
     /// Returns set->getElementsTypes(), even if set is not created yet.
-    [[nodiscard]] virtual DataTypes getTypes() const = 0;
+    virtual DataTypes getTypes() const = 0;
     /// If possible, return set with stored elements useful for PK analysis.
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
 
@@ -89,12 +89,12 @@ public:
     /// a decision from the set and never revisits it - index analysis that prunes granules, say - must
     /// refuse a mutable one. Deliberately abstract: a new kind of set has to answer this before index
     /// analysis will trust it, rather than inheriting "immutable" by omission.
-    [[nodiscard]] virtual bool isMutableDuringQuery() const = 0;
+    virtual bool isMutableDuringQuery() const = 0;
 
     using Hash = CityHash_v1_0_2::uint128;
-    [[nodiscard]] virtual Hash getHash() const = 0;
+    virtual Hash getHash() const = 0;
 
-    [[nodiscard]] virtual ASTPtr getSourceAST() const = 0;
+    virtual ASTPtr getSourceAST() const = 0;
 };
 
 using FutureSetPtr = std::shared_ptr<FutureSet>;
@@ -109,15 +109,15 @@ public:
     /// today, but a storage id is an identity, not a statement about who may write to the set.
     explicit FutureSetFromStorage(Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id, bool is_mutable_during_query_);
 
-    [[nodiscard]] SetPtr get() const override;
-    [[nodiscard]] DataTypes getTypes() const override;
+    SetPtr get() const override;
+    DataTypes getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr &) override;
-    [[nodiscard]] Hash getHash() const override;
-    [[nodiscard]] ASTPtr getSourceAST() const override { return ast; }
+    Hash getHash() const override;
+    ASTPtr getSourceAST() const override { return ast; }
 
-    [[nodiscard]] bool isMutableDuringQuery() const override { return is_mutable_during_query; }
+    bool isMutableDuringQuery() const override { return is_mutable_during_query; }
 
-    [[nodiscard]] const std::optional<StorageID> & getStorageID() const { return storage_id; }
+    const std::optional<StorageID> & getStorageID() const { return storage_id; }
 private:
     Hash hash;
     ASTPtr ast;
@@ -211,15 +211,15 @@ public:
     void replaceSetAndKey(SetAndKeyPtr set);
     [[nodiscard]] const SetAndKeyPtr & getSetAndKey() const { return set_and_key; }
 
-    [[nodiscard]] SetPtr get() const override;
-    [[nodiscard]] DataTypes getTypes() const override;
-    [[nodiscard]] Hash getHash() const override;
-    [[nodiscard]] ASTPtr getSourceAST() const override { return ast; }
+    SetPtr get() const override;
+    DataTypes getTypes() const override;
+    Hash getHash() const override;
+    ASTPtr getSourceAST() const override { return ast; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
     /// The query runs the subquery that fills this set, once; nothing outside the query can write to it.
     /// Whether it is filled *yet* is a different question, answered by `get`.
-    [[nodiscard]] bool isMutableDuringQuery() const override { return false; }
+    bool isMutableDuringQuery() const override { return false; }
 
     /// `recoverable_build` marks the one in-place build whose result the deferred build can still redo;
     /// see `CreatingSetStep::recoverable_build`. Deliberately not defaulted.
@@ -235,7 +235,7 @@ public:
 
     void buildSetInplace(const ContextPtr & context);
 
-    [[nodiscard]] const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
+    const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
 
@@ -243,12 +243,12 @@ public:
     void setExternalTable(StoragePtr external_table_);
     void markExternalTableExpected() { set_and_key->external_table_expected = true; }
 
-    [[nodiscard]] const QueryPlan * getQueryPlan() const { return source.get(); }
+    const QueryPlan * getQueryPlan() const { return source.get(); }
     QueryPlan * getQueryPlan() { return source.get(); }
 
     /// The set is backed by a `GLOBAL IN` / `GLOBAL JOIN` external table, either through the
     /// set that fills that table or through the table stored next to the set itself.
-    [[nodiscard]] bool hasExternalTable() const;
+    bool hasExternalTable() const;
 
 private:
     Hash hash;
@@ -320,15 +320,15 @@ public:
         QueryTreeNodePtr query_tree,
         const Settings & settings);
 
-    [[nodiscard]] FutureSetFromTuplePtr findTuple(const Hash & key, const DataTypes & types) const;
-    [[nodiscard]] FutureSetFromStoragePtr findStorage(const Hash & key) const;
-    [[nodiscard]] FutureSetFromSubqueryPtr findSubquery(const Hash & key) const;
+    FutureSetFromTuplePtr findTuple(const Hash & key, const DataTypes & types) const;
+    FutureSetFromStoragePtr findStorage(const Hash & key) const;
+    FutureSetFromSubqueryPtr findSubquery(const Hash & key) const;
 
     using Subqueries = std::vector<FutureSetFromSubqueryPtr>;
-    [[nodiscard]] Subqueries getSubqueries() const;
-    [[nodiscard]] bool hasSubqueries() const { return !sets_from_subqueries.empty(); }
+    Subqueries getSubqueries() const;
+    bool hasSubqueries() const { return !sets_from_subqueries.empty(); }
 
-    [[nodiscard]] const SetsFromTuple & getSetsFromTuple() const { return sets_from_tuple; }
+    const SetsFromTuple & getSetsFromTuple() const { return sets_from_tuple; }
     // const SetsFromStorage & getSetsFromStorage() const { return sets_from_storage; }
     // const SetsFromSubqueries & getSetsFromSubquery() const { return sets_from_subqueries; }
 
@@ -352,22 +352,9 @@ using SharedSet = std::shared_future<SetPtr>;
 class PreparedSetsCache
 {
 public:
-    PreparedSetsCache() = default;
-
-    /// A cache for the sets of one task that shares them through `shared_cache_` with the other tasks,
-    /// e.g. a mutation of one part: see `findOrPromiseToBuild`.
-    explicit PreparedSetsCache(std::shared_ptr<PreparedSetsCache> shared_cache_);
-
     /// Lookup for set in the cache.
     /// If it is found, get the future to be able to wait for the set to be built.
     /// Otherwise create a promise, build the set and set the promise value.
-    ///
-    /// A mutation task runs its pipeline with one thread, so while it waits for a set, the sets it has promised
-    /// to build are not built. It could wait for a set that it builds itself (the same `IN` subquery inside two
-    /// set subqueries gives two sets with the same key), or two tasks could wait for each other (each builds
-    /// one set and waits for the set the other builds). So a task that has an unfinished build of its own does
-    /// not wait for a set that is not built yet: it gets a promise that is not in the cache, and builds the set
-    /// once more. A task waits only when it builds nothing, so the task it waits for is not waiting.
     std::variant<std::promise<SetPtr>, SharedSet> findOrPromiseToBuild(const String & key);
 
 private:
@@ -376,16 +363,8 @@ private:
         SharedSet future; /// Other tasks can wait for the set to be built.
     };
 
-    /// The same as `findOrPromiseToBuild` of a cache without `shared_cache`; with a promise,
-    /// `promised_future` is the future that the other tasks wait for.
-    std::variant<std::promise<SetPtr>, SharedSet> findOrPromiseToBuildImpl(const String & key, SharedSet & promised_future);
-
     std::mutex cache_mutex;
     std::unordered_map<String, Entry> cache;
-
-    /// If set, the sets are looked up there, and `own_builds` are the futures of the sets this task promised to build.
-    const std::shared_ptr<PreparedSetsCache> shared_cache;
-    std::vector<SharedSet> own_builds;
 };
 
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;

@@ -1,5 +1,4 @@
 #include <Planner/Utils.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 
 #include <Analyzer/TableNode.h>
@@ -12,7 +11,6 @@
 
 #include <functional>
 #include <stack>
-#include <Common/StackWithMemoryTracking.h>
 
 namespace DB
 {
@@ -71,7 +69,7 @@ void MaterializingCTEStep::describeActions([[maybe_unused]] FormatSettings & set
 {
 }
 
-MaterializingCTEsStep::MaterializingCTEsStep(SharedHeaders input_headers_, VectorWithMemoryTracking<MaterializedCTEPtr> ctes_)
+MaterializingCTEsStep::MaterializingCTEsStep(SharedHeaders input_headers_, std::vector<MaterializedCTEPtr> ctes_)
     : ctes(std::move(ctes_))
 {
     input_headers = std::move(input_headers_);
@@ -109,7 +107,7 @@ QueryPipelineBuilderPtr MaterializingCTEsStep::updatePipeline(QueryPipelineBuild
 
 DelayedMaterializingCTEsStep::DelayedMaterializingCTEsStep(
     SharedHeader input_header,
-    VectorWithMemoryTracking<MaterializedCTEPtr> ctes_
+    std::vector<MaterializedCTEPtr> ctes_
 )
     : ctes(std::move(ctes_))
 {
@@ -154,9 +152,9 @@ bool DelayedMaterializingCTEsStep::eraseCTEs(const MaterializedCTESet & ctes_to_
     return ctes.empty();
 }
 
-VectorWithMemoryTracking<DelayedMaterializingCTEsStep::ClaimedCTE> DelayedMaterializingCTEsStep::makePlansForCTEs(DelayedMaterializingCTEsStep && step)
+std::vector<DelayedMaterializingCTEsStep::ClaimedCTE> DelayedMaterializingCTEsStep::makePlansForCTEs(DelayedMaterializingCTEsStep && step)
 {
-    VectorWithMemoryTracking<ClaimedCTE> claimed;
+    std::vector<ClaimedCTE> claimed;
     for (auto & materialized_cte : step.ctes)
     {
         /// Every claimed entry carries a plan, so the attach site can dereference it. Skipping
@@ -249,7 +247,7 @@ static void removeDelayedMaterializingCTEsStepIf(
     /// replace the pointer with its single grandchild. The orphaned step's
     /// `Node` remains in `QueryPlan::nodes` (memory is owned by the list) but
     /// is no longer reachable from the root.
-    StackWithMemoryTracking<QueryPlan::Node *> stack;
+    std::stack<QueryPlan::Node *> stack;
     stack.push(root);
     while (!stack.empty())
     {

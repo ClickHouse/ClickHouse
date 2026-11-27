@@ -31,8 +31,7 @@ public:
         bool no_squash_,
         bool no_destination,
         bool async_insert_,
-        bool is_initial_insert_ = false,
-        bool positional_arguments_already_resolved_ = false);
+        bool is_initial_insert_ = false);
 
     /** Prepare a request for execution. Return block streams
       * - the stream into which you can write data to execute the query, if INSERT;
@@ -41,7 +40,7 @@ public:
       */
     BlockIO execute() override;
 
-    [[nodiscard]] StorageID getDatabaseTable() const;
+    StorageID getDatabaseTable() const;
 
     static void extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_);
 
@@ -57,7 +56,7 @@ public:
         bool no_destination = false,
         bool allow_materialized = false);
 
-    [[nodiscard]] bool supportsTransactions() const override { return true; }
+    bool supportsTransactions() const override { return true; }
 
     /// Skip the target-table `INSERT` access check for this query. Used only for the internal populate of
     /// `CREATE TABLE ... AS SELECT` published via `doCreateOrReplaceTable`: the target is a random
@@ -65,9 +64,6 @@ public:
     /// privilege is verified up front by the caller. The source `SELECT` access is still checked as the user.
     /// Never set this for a user-visible target table.
     void setSkipTargetInsertAccessCheck(bool skip) { skip_target_insert_access_check = skip; }
-
-    /// The pipeline is built only to be printed by `EXPLAIN PIPELINE` and is not executed.
-    void setExplainOnly(bool value) { explain_only = value; }
 
     static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
 
@@ -98,8 +94,7 @@ public:
         const StoragePtr & table,
         size_t max_threads_,
         bool no_squash_,
-        bool async_insert_,
-        ProcessorPtr * returning_output = nullptr);
+        bool async_insert_);
 
 private:
     static Block getSampleBlock(
@@ -117,21 +112,11 @@ private:
     const bool async_insert;
     /// True only for the user-initiated INSERT the factory builds; internal inserts stay synchronous.
     const bool is_initial_insert;
-    /// See `SelectQueryOptions::positional_arguments_already_resolved`, applies to `query.select`.
-    const bool positional_arguments_already_resolved;
     bool select_query_sorted = false;
     bool skip_target_insert_access_check = false;
 
     size_t max_threads = 0;
     size_t max_insert_threads = 0;
-
-    /// For INSERT ... RETURNING: the processor with the copy of the data written into the table.
-    ProcessorPtr returning_output;
-    /// The insert pushes to dependent materialized views sequentially (`parallel_view_processing = 0`),
-    /// so the combined pipeline with the RETURNING query must not widen it.
-    bool returning_insert_views_serial = false;
-    bool explain_only = false;
-    void addReturning(ASTInsertQuery & query, const StoragePtr & table, BlockIO & res);
 
     /// `destination_lock` is moved into the async insert queue transform when that route is taken, so the
     /// transform can drop it as soon as the queue has the block; the caller is left with an empty holder.

@@ -153,14 +153,14 @@ public:
 
     ~SpaceSaving() { destroyElements(); }
 
-    [[nodiscard]] bool empty() const { return counter_list.empty(); }
+    bool empty() const { return counter_list.empty(); }
 
-    [[nodiscard]] size_t size() const
+    size_t size() const
     {
         return counter_list.size();
     }
 
-    [[nodiscard]] size_t capacity() const { return requested_capacity; }
+    size_t capacity() const { return requested_capacity; }
 
     void clear()
     {
@@ -272,7 +272,7 @@ public:
         truncateIfNeeded(true);
     }
 
-    [[nodiscard]] std::vector<Counter> topK(size_t k) const
+    std::vector<Counter> topK(size_t k) const
     {
         std::vector<Counter> new_list;
         new_list.reserve(counter_list.size());

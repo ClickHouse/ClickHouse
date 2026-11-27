@@ -9,7 +9,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/Set.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -17,8 +16,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -43,32 +42,21 @@ public:
         return std::make_shared<FunctionIn>(std::move(name), negative, null_is_skipped, ignore_set);
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return function_name;
     }
 
     /// The `IgnoreSet` variants are called with the left operand alone during type analysis, but
     /// `inIgnoreSet(x, set)` written explicitly stays valid, hence the variadic arity.
-    [[nodiscard]] bool isVariadic() const override { return ignore_set; }
+    bool isVariadic() const override { return ignore_set; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return ignore_set ? 0 : 2;
     }
 
-    [[nodiscard]] String getSignatureString() const override
-    {
-        /// The `IgnoreSet` variants are called with the left operand alone during type analysis,
-        /// hence the optional second argument there.
-        return ignore_set ? "(Any, [Any]) -> UInt8" : "(Any, Any) -> UInt8";
-    }
-
-    /// The `Any` matchers document the arity and return type, but they cannot express the legacy
-    /// rejection of an argument with a dynamic structure (`Dynamic`, `JSON`/`Object`, and nested
-    /// forms), nor the exact arity diagnostic of the `IgnoreSet` variants. Restore both here, then
-    /// delegate to the signature.
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (ignore_set && (arguments.empty() || arguments.size() > 2))
             throw Exception(
@@ -77,10 +65,10 @@ public:
                 getName(),
                 arguments.size());
 
-        if (arguments[0].type->hasDynamicStructure())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}", arguments[0].type->getName(), getName());
-        return IFunction::getReturnTypeImpl(arguments);
+        if (arguments[0]->hasDynamicStructure())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
+
+        return std::make_shared<DataTypeUInt8>();
     }
 
     /// We can't use the default constant-folding wrapper because it would wrap a
@@ -88,21 +76,21 @@ public:
     /// would then see a subquery-IN with an unbuilt set as "always false" (the
     /// dry-run path returns 0) and skip the filter entirely. Handle the size-0
     /// ColumnConst arguments produced by `ActionsDAG::addColumn` directly below.
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return false; }
 
-    [[nodiscard]] bool useDefaultImplementationForDynamic() const override
+    bool useDefaultImplementationForDynamic() const override
     {
         return false;
     }
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
+    bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// An empty set makes the result independent of the left operand, so the result is constant
     /// even when that operand is not. Reporting it here keeps DAG nodes in agreement with
     /// `executeImpl`, which returns a ColumnConst for the same case.
-    [[nodiscard]] ColumnPtr getConstantResultForNonConstArguments(
+    ColumnPtr getConstantResultForNonConstArguments(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
         /// The -IgnoreSet variants carry no set to inspect: they exist to resolve types without one.
@@ -128,17 +116,17 @@ public:
         return result_type->createColumnConst(1, static_cast<UInt8>(negative));
     }
 
-    [[nodiscard]] ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return executeImpl(arguments, true, input_rows_count);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return executeImpl(arguments, false, input_rows_count);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, bool dry_run, size_t input_rows_count) const
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, bool dry_run, size_t input_rows_count) const
     {
         if (ignore_set)
             return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));

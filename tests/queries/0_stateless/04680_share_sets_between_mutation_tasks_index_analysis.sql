@@ -54,7 +54,9 @@ SELECT
     -- it per key and per part task states exactly that. Before sharing the speculative build, the
     -- part task that ran the speculative pass materialized the mutation's read key a second time for
     -- the deferred build, which this catches while staying independent of how many part tasks
-    -- overlap in time. How many distinct keys the mutation materializes is not asserted.
+    -- overlap in time. How many distinct keys the mutation materializes is not asserted:
+    -- `enable_analyzer = 0` and `enable_analyzer = 1` disagree on whether the
+    -- `isStorageTouchedByMutations` count probe and the mutation's own read get the same cache key.
     -- The `>= 1` keeps the assertion from passing vacuously when nothing was materialized at all.
     (
         SELECT (count() >= 1) AND (max(materializations_by_one_part_task) = 1)
@@ -64,8 +66,8 @@ SELECT
                 extract(message, 'key: (__set_[0-9_]+)') AS set_key,
                 count() AS materializations_by_one_part_task
             FROM system.text_log
-            WHERE event_date >= yesterday() AND event_time >= now() - 600
-                AND query_id LIKE concat(CAST(table_uuid, 'String'), '::all\\_%')
+            WHERE
+                query_id LIKE concat(CAST(table_uuid, 'String'), '::all\\_%')
                 AND message LIKE 'Creating set, key: %'
                 AND (event_date >= yesterday() AND event_time >= now() - 600)
             GROUP BY set_key, query_id
@@ -96,8 +98,8 @@ FROM
         maxIf(1, message LIKE 'Selected %0 marks to read from 0 ranges') = 1    AS pruned_everything,
         query_id LIKE concat(CAST(table_uuid, 'String'), '::all\\_1\\_1\\_%')   AS holds_the_matching_rows
     FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600
-        AND query_id LIKE concat(CAST(table_uuid, 'String'), '::all\\_%')
+    WHERE
+        query_id LIKE concat(CAST(table_uuid, 'String'), '::all\\_%')
         AND (event_date >= yesterday() AND event_time >= now() - 600)
     GROUP BY query_id
 )

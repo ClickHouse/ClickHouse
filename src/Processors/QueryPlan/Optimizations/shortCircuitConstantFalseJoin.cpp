@@ -78,9 +78,6 @@ size_t tryShortCircuitConstantFalseJoin(QueryPlan::Node * parent_node, QueryPlan
             return 0;
         if (typeid_cast<const JoinStepLogicalLookup *>(side_node->step.get()))
             return 0;
-        /// The join builds its totals row from the totals of its inputs.
-        if (canProduceTotals(*side_node))
-            return 0;
 
         auto & empty_node = nodes.emplace_back();
         empty_node.step = std::make_unique<ReadNothingStep>(side_node->step->getOutputHeader());

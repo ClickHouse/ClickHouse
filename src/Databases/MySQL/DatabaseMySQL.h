@@ -5,7 +5,6 @@
 
 #include <mysqlxx/Pool.h>
 
-#include <Common/SecretString.h>
 #include <Common/ThreadPool.h>
 #include <Core/LogsLevel.h>
 #include <Storages/ColumnsDescription.h>
@@ -100,7 +99,7 @@ protected:
 
 private:
     String metadata_path;
-    SecretString database_engine_define;
+    ASTPtr database_engine_define;
     String database_name_in_mysql;
     std::unique_ptr<MySQLSettings> mysql_settings;
 

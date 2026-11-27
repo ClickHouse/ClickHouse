@@ -45,7 +45,7 @@ public:
     BackupReaderS3(
         const S3::URI & s3_uri_,
         const String & access_key_id_,
-        std::string_view secret_access_key_,
+        const String & secret_access_key_,
         const String & role_arn,
         const String & role_session_name,
         const String & external_id,
@@ -69,7 +69,7 @@ public:
                              bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
                              WriteMode write_mode) override;
 
-    [[nodiscard]] std::map<String, String> getSerializedSettings() const override;
+    std::map<String, String> getSerializedSettings() const override;
 
 private:
     void copyToDiskImpl(const String & path_in_backup, size_t offset, size_t size, size_t file_size, bool is_range,
@@ -80,7 +80,6 @@ private:
     const DataSourceDescription data_source_description;
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
-    S3BackupDiskClientFactory disk_client_factory;
 };
 
 
@@ -90,7 +89,7 @@ public:
     BackupWriterS3(
         const S3::URI & s3_uri_,
         const String & access_key_id_,
-        std::string_view secret_access_key_,
+        const String & secret_access_key_,
         const String & role_arn,
         const String & role_session_name,
         const String & external_id,
@@ -111,23 +110,9 @@ public:
     bool supportsAtomicCreateIfNotExists() const override { return true; }
 
     void copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length) override;
-    bool copyFileFromDiskNatively(
+    void copyFileFromDisk(
         const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
         override;
-    void copyFileFromDiskWithFallback(
-        const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
-        override;
-
-    bool copyFileFromBlobPath(
-        const String & path_in_backup,
-        DiskPtr src_disk,
-        const String & src_blob_key,
-        const String & src_blob_namespace,
-        bool copy_encrypted,
-        UInt64 start_pos,
-        UInt64 length,
-        UInt64 src_object_size,
-        const CreateReadBufferFunction & create_fallback_read_buffer) override;
 
     void copyFile(const String & destination, const String & source, size_t size) override;
 

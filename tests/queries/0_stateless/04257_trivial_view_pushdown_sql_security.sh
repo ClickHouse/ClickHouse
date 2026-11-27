@@ -55,6 +55,7 @@ echo "=== INVOKER: privilege check ==="
 ${CLICKHOUSE_CLIENT} \
     --user "${user}" \
     --query "
+        SET enable_analyzer = 1;
         SET enable_parallel_replicas = 0;
         SET prefer_localhost_replica = 0;
         SET serialize_query_plan = 0;
@@ -77,6 +78,7 @@ echo "=== INVOKER: access check pruned to outer-referenced columns ==="
 ${CLICKHOUSE_CLIENT} \
     --user "${user}" \
     --query "
+        SET enable_analyzer = 1;
         SET enable_parallel_replicas = 0;
         SET prefer_localhost_replica = 0;
         SET serialize_query_plan = 0;
@@ -106,6 +108,7 @@ echo "=== NONE: direct table access denied ==="
 ${CLICKHOUSE_CLIENT} \
     --user "${user}" \
     --query "
+        SET enable_analyzer = 1;
         SET enable_parallel_replicas = 0;
         SET prefer_localhost_replica = 0;
         SELECT id FROM ${db}.t04257_dist ORDER BY id;
@@ -115,6 +118,7 @@ echo "=== NONE: view access succeeds ==="
 ${CLICKHOUSE_CLIENT} \
     --user "${user}" \
     --query "
+        SET enable_analyzer = 1;
         SET enable_parallel_replicas = 0;
         SET prefer_localhost_replica = 0;
         SET serialize_query_plan = 0;
@@ -125,6 +129,7 @@ ${CLICKHOUSE_CLIENT} \
 echo "=== NONE: the view is sealed instead of pushed down ==="
 ${CLICKHOUSE_CLIENT} \
     --query "
+        SET enable_analyzer = 1;
         SET enable_parallel_replicas = 0;
         SET prefer_localhost_replica = 0;
         SET optimize_trivial_view_pushdown_to_distributed = 1;

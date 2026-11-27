@@ -1,6 +1,5 @@
 #include <Backups/BackupIO_Default.h>
 
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -9,7 +8,6 @@
 #include <Common/ErrnoException.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
-#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Poco/Exception.h>
 
@@ -33,11 +31,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-
-namespace FailPoints
-{
-    extern const char backup_pause_before_reading_file_contents[];
-}
 
 namespace ErrorCodes
 {
@@ -171,9 +164,6 @@ try
     if (!fileExists(file_name))
         return false;
 
-    /// The window a caller has to survive: a file removed after the check above fails the read below.
-    FailPointInjection::pauseFailPoint(FailPoints::backup_pause_before_reading_file_contents);
-
     auto in = readFile(file_name, expected_file_contents.size());
     actual_file_contents = String(expected_file_contents.size(), ' ');
     return (in->read(actual_file_contents.data(), actual_file_contents.size()) == actual_file_contents.size())
@@ -209,13 +199,7 @@ void BackupWriterDefault::copyDataToFile(const String & path_in_backup, const Cr
     write_buffer->finalize();
 }
 
-bool BackupWriterDefault::copyFileFromDiskNatively(
-    const String &, DiskPtr, const String &, bool, UInt64, UInt64)
-{
-    return false;
-}
-
-void BackupWriterDefault::copyFileFromDiskWithFallback(
+void BackupWriterDefault::copyFileFromDisk(
     const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
     /// Copy through buffers (derived classes may override with optimized implementations)
@@ -229,21 +213,6 @@ void BackupWriterDefault::copyFileFromDiskWithFallback(
     };
 
     copyDataToFile(path_in_backup, create_read_buffer, start_pos, length);
-}
-
-bool BackupWriterDefault::copyFileFromBlobPath(
-    const String & /* path_in_backup */,
-    DiskPtr /* src_disk */,
-    const String & /* src_blob_key */,
-    const String & /* src_blob_namespace */,
-    bool /* copy_encrypted */,
-    UInt64 /* start_pos */,
-    UInt64 /* length */,
-    UInt64 /* src_object_size */,
-    const CreateReadBufferFunction & /* create_fallback_read_buffer */)
-{
-    /// Default implementation: no native blob copy support
-    return false;
 }
 
 void BackupWriterDefault::removeFiles(const Strings & file_names)

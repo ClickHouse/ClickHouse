@@ -37,7 +37,7 @@ INSERT INTO t3 VALUES (10);
 CREATE TABLE t3v (k Variant(Int64), tag String) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
 INSERT INTO t3v VALUES (10::Int64, 'ten'), (NULL, 'null_key');
 
-SET single_join_prefer_left_table = 0;
+SET enable_analyzer = 1, single_join_prefer_left_table = 0;
 -- Pinned because the test asserts on the join plan shape.
 SET query_plan_optimize_join_order_randomize = 0, use_hash_table_stats_for_join_reordering = 0;
 -- Make t1 look expensive so the detector prefers to reorder t2/t3 to the front.
@@ -48,7 +48,7 @@ SELECT 'baseline           ' AS arm, s AS step FROM (
         '^Join \(.*$', 'Join'), '^ReadFromMergeTree \([^.]+\.([^)]+)\).*$', 'Read(\1)') AS s
     FROM (
         EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON t2.k = t3.k
-        SETTINGS enable_parallel_replicas = 0, join_use_nulls = 1, query_plan_optimize_join_order_limit = 0
+        SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 0
     )
 ) WHERE s IN ('Join', 'Read(t1)', 'Read(t2)', 'Read(t3)');
 
@@ -57,7 +57,7 @@ SELECT 'cast-int64    cd_a ' AS arm, s AS step FROM (
         '^Join \(.*$', 'Join'), '^ReadFromMergeTree \([^.]+\.([^)]+)\).*$', 'Read(\1)') AS s
     FROM (
         EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON CAST(t2.k AS Int64) = t3.k
-        SETTINGS enable_parallel_replicas = 0, join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
+        SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
             query_plan_optimize_join_order_algorithm = 'dpsub',
             query_plan_optimize_join_order_conflict_detector = 'a'
     )
@@ -68,7 +68,7 @@ SELECT 'cast-int64    cd_c ' AS arm, s AS step FROM (
         '^Join \(.*$', 'Join'), '^ReadFromMergeTree \([^.]+\.([^)]+)\).*$', 'Read(\1)') AS s
     FROM (
         EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON CAST(t2.k AS Int64) = t3.k
-        SETTINGS enable_parallel_replicas = 0, join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
+        SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
             query_plan_optimize_join_order_algorithm = 'dpsub',
             query_plan_optimize_join_order_conflict_detector = 'c'
     )
@@ -79,7 +79,7 @@ SELECT 'cast-nullable cd_a ' AS arm, s AS step FROM (
         '^Join \(.*$', 'Join'), '^ReadFromMergeTree \([^.]+\.([^)]+)\).*$', 'Read(\1)') AS s
     FROM (
         EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON CAST(t2.k AS Nullable(Int64)) = t3.k
-        SETTINGS enable_parallel_replicas = 0, join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
+        SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
             query_plan_optimize_join_order_algorithm = 'dpsub',
             query_plan_optimize_join_order_conflict_detector = 'a'
     )
@@ -90,7 +90,7 @@ SELECT 'plain         cd_a ' AS arm, s AS step FROM (
         '^Join \(.*$', 'Join'), '^ReadFromMergeTree \([^.]+\.([^)]+)\).*$', 'Read(\1)') AS s
     FROM (
         EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON t2.k = t3.k
-        SETTINGS enable_parallel_replicas = 0, join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
+        SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
             query_plan_optimize_join_order_algorithm = 'dpsub',
             query_plan_optimize_join_order_conflict_detector = 'a'
     )

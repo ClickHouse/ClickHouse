@@ -58,7 +58,7 @@ public:
     static constexpr UInt32 NUM_BUCKETS = 1ULL << BITS_FOR_BUCKET;
     static constexpr UInt32 MAX_BUCKET = NUM_BUCKETS - 1;
 
-    [[nodiscard]] size_t hash(const Key & x) const { return Hash::operator()(x); }
+    size_t hash(const Key & x) const { return Hash::operator()(x); }
 
     /// NOTE Bad for hash tables with more than 2^32 cells.
     static size_t getBucketFromHash(size_t hash_value) { return (hash_value >> (32 - BITS_FOR_BUCKET)) & MAX_BUCKET; }
@@ -98,13 +98,6 @@ public:
     using ConstLookupResult = typename Impl::ConstLookupResult;
 
     Impl impls[NUM_BUCKETS];
-
-    /// Whether the buckets may switch to the Robin Hood mode when they become large. Call it before inserting.
-    void setRobinHoodAllowed(bool allowed) requires GrowerWithRobinHood<Grower>
-    {
-        for (auto & impl : impls)
-            impl.grower.setRobinHoodAllowed(allowed);
-    }
 
     /// `bucket_cells_prefix[b]` is the number of cells in the buckets before `b`. See `computeBucketPrefix`.
     std::vector<size_t> bucket_cells_prefix;
@@ -175,9 +168,9 @@ public:
         Cell & operator* () const { return *current_it; }
         Cell * operator->() const { return current_it.getPtr(); }
 
-        [[nodiscard]] Cell * getPtr() const { return current_it.getPtr(); }
-        [[nodiscard]] size_t getHash() const { return current_it.getHash(); }
-        [[nodiscard]] size_t getBucket() const { return bucket; }
+        Cell * getPtr() const { return current_it.getPtr(); }
+        size_t getHash() const { return current_it.getHash(); }
+        size_t getBucket() const { return bucket; }
     };
 
 
@@ -216,13 +209,13 @@ public:
         const Cell & operator* () const { return *current_it; }
         const Cell * operator->() const { return current_it.getPtr(); }
 
-        [[nodiscard]] const Cell * getPtr() const { return current_it.getPtr(); }
-        [[nodiscard]] size_t getHash() const { return current_it.getHash(); }
-        [[nodiscard]] size_t getBucket() const { return bucket; }
+        const Cell * getPtr() const { return current_it.getPtr(); }
+        size_t getHash() const { return current_it.getHash(); }
+        size_t getBucket() const { return bucket; }
     };
 
 
-    [[nodiscard]] const_iterator begin() const
+    const_iterator begin() const
     {
         size_t buck = 0;
         typename Impl::const_iterator impl_it = beginOfNextNonEmptyBucket(buck);
@@ -236,10 +229,10 @@ public:
         return { this, buck, impl_it };
     }
 
-    [[nodiscard]] const_iterator end() const         { return { this, MAX_BUCKET, impls[MAX_BUCKET].end() }; }
+    const_iterator end() const         { return { this, MAX_BUCKET, impls[MAX_BUCKET].end() }; }
     iterator end()                     { return { this, MAX_BUCKET, impls[MAX_BUCKET].end() }; }
 
-    [[nodiscard]] const_iterator iteratorAt(size_t bucket) const
+    const_iterator iteratorAt(size_t bucket) const
     {
         if (bucket >= NUM_BUCKETS)
             return end();
@@ -299,7 +292,7 @@ public:
         impls[bucket].prefetchByHash(key_hash);
     }
 
-    [[nodiscard]] bool ALWAYS_INLINE isEmptyCell(size_t key_hash) const
+    bool ALWAYS_INLINE isEmptyCell(size_t key_hash) const
     {
         const auto bucket = getBucketFromHash(key_hash);
         return impls[bucket].isEmptyCell(key_hash);
@@ -343,14 +336,14 @@ public:
         return impls[buck].find(x, hash_value);
     }
 
-    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(Key x, size_t hash_value) const
+    ConstLookupResult ALWAYS_INLINE find(Key x, size_t hash_value) const
     {
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x, hash_value);
     }
 
     LookupResult ALWAYS_INLINE find(Key x) { return find(x, hash(x)); }
 
-    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(Key x) const { return find(x, hash(x)); }
+    ConstLookupResult ALWAYS_INLINE find(Key x) const { return find(x, hash(x)); }
 
     bool ALWAYS_INLINE erase(Key x, size_t hash_value)
     {
@@ -394,7 +387,7 @@ public:
     }
 
 
-    [[nodiscard]] size_t size() const
+    size_t size() const
     {
         size_t res = 0;
         for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
@@ -413,7 +406,7 @@ public:
             impls[i].forEachMapped(func);
     }
 
-    [[nodiscard]] bool empty() const
+    bool empty() const
     {
         for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
             if (!impls[i].empty())
@@ -422,7 +415,7 @@ public:
         return true;
     }
 
-    [[nodiscard]] size_t getBufferSizeInBytes() const
+    size_t getBufferSizeInBytes() const
     {
         size_t res = 0;
         for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
@@ -431,7 +424,7 @@ public:
         return res;
     }
 
-    [[nodiscard]] size_t getBufferSizeInCells() const
+    size_t getBufferSizeInCells() const
     {
         size_t res = 0;
         for (UInt32 i = 0; i < NUM_BUCKETS; ++i)

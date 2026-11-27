@@ -103,10 +103,10 @@ private:
 
         void pop_back() { --size; } /// NOLINT
         T * begin() { return data_ptr; }
-        [[nodiscard]] T * end() const { return data_ptr + size; }
-        [[nodiscard]] bool empty() const { return size == 0; }
+        T * end() const { return data_ptr + size; }
+        bool empty() const { return size == 0; }
         T & front() { return *data_ptr; }
-        [[nodiscard]] const T & front() const { return *data_ptr; }
+        const T & front() const { return *data_ptr; }
 
         using value_type = T;
         using reference = T&;
@@ -340,7 +340,7 @@ public:
     {
     }
 
-    [[nodiscard]] size_t sizeOfData() const override
+    size_t sizeOfData() const override
     {
         return Data::structSize(max_bins);
     }
@@ -361,7 +361,7 @@ public:
         return std::make_shared<DataTypeArray>(tuple);
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -400,7 +400,7 @@ public:
         offsets_to.push_back(to_tuple.size());
     }
 
-    [[nodiscard]] String getName() const override { return "histogram"; }
+    String getName() const override { return "histogram"; }
 };
 
 
@@ -436,7 +436,7 @@ AggregateFunctionPtr createAggregateFunctionHistogram(const std::string & name, 
 void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory);
 void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("histogram", {createAggregateFunctionHistogram, {.description = R"DOC(Calculates an adaptive histogram with up to the specified number of bins over the input values, returning an array of (lower, upper, height) tuples.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("histogram", {createAggregateFunctionHistogram, {.description = R"DOC(Calculates an adaptive histogram with up to the specified number of bins over the input values, returning an array of (lower, upper, height) tuples.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
 }
 
 }

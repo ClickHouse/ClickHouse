@@ -89,7 +89,6 @@ public:
         auto res = make_intrusive<ASTExistsDatabaseQuery>(*this);
         res->children.clear();
         cloneTableOptions(*res);
-        cloneOutputOptions(*res);
         return res;
     }
 
@@ -112,7 +111,6 @@ public:
         auto res = make_intrusive<ASTShowCreateDatabaseQuery>(*this);
         res->children.clear();
         cloneTableOptions(*res);
-        cloneOutputOptions(*res);
         return res;
     }
 

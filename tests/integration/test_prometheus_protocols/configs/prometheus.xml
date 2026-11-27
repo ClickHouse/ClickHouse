@@ -35,15 +35,6 @@
                 </handler>
             </my_rule_4>
 
-            <!-- All the Prometheus HTTP API endpoints behind one combined handler. -->
-            <my_rule_combined>
-                <url_prefix>/combined</url_prefix>
-                <handler>
-                    <type>api_v1</type>
-                    <table>default.prometheus</table>
-                </handler>
-            </my_rule_combined>
-
             <!-- Query and metadata endpoints of the Prometheus HTTP API -->
             <my_rule_5>
                 <url>/api/v1/query</url>
@@ -87,20 +78,6 @@
                     <table>default.prometheus</table>
                 </handler>
             </my_rule_13>
-            <my_rule_19>
-                <url>/federate</url>
-                <handler>
-                    <type>query</type>
-                    <table>default.prometheus</table>
-                </handler>
-            </my_rule_19>
-            <!-- No table is set, so /federate reads the table name from the 'table' query parameter. -->
-            <my_rule_20>
-                <url>/dynamic_table/federate</url>
-                <handler>
-                    <type>query</type>
-                </handler>
-            </my_rule_20>
             <!-- A table which never gets any metrics metadata: /api/v1/metadata must return an empty result for it. -->
             <my_rule_14>
                 <url>/empty/api/v1/metadata</url>

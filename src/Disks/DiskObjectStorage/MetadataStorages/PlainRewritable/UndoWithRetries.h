@@ -16,10 +16,9 @@ namespace DB
   * the thread, and the metadata lock with it, which is deliberate - a disk whose metadata cannot be repaired must not
   * accept more metadata.
   *
-  * `LOGICAL_ERROR`, `CORRUPTED_DATA` and `READONLY` are not repeated, because asking again repairs nothing. A stage
-  * throws `CORRUPTED_DATA` when the blob it has to restore exists nowhere; `MetadataOperationsHolder::rollback` then
-  * stops, and the operations below it keep their writes. `READONLY` comes from an object storage that refuses every
-  * write for its whole life, so the transaction wrote nothing there to reverse.
+  * `LOGICAL_ERROR` and `CORRUPTED_DATA` are not repeated, because asking again repairs nothing. A stage throws
+  * `CORRUPTED_DATA` when the blob it has to restore exists nowhere; `MetadataOperationsHolder::rollback` then stops, and
+  * the operations below it keep their writes.
   */
 void undoWithRetries(const LoggerPtr & log, std::string_view description, const std::function<void()> & stage);
 

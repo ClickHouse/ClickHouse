@@ -1,4 +1,6 @@
--- Random settings limits: input_format_parquet_filter_push_down=(1, 1); input_format_parquet_memory_high_watermark=(67108864, None); input_format_parquet_page_filter_push_down=(1, 1); output_format_parquet_max_dictionary_size=(1048576, None); output_format_parquet_write_page_index=(1, 1)
+-- Tags: no-fasttest
+-- no-fasttest: the Parquet format is not built in the fast-test image.
+
 -- A Parquet UINT_8 column read with a `Bool` hint: every nonzero value is read as `true`, so `x = true`,
 -- `x IN (true)` and `WHERE x` agree, and min/max statistics above 1 bound the column as 1.
 

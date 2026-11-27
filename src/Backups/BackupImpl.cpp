@@ -763,7 +763,7 @@ void BackupImpl::readBackupMetadata()
                 ErrorCodes::BACKUP_DAMAGED, "Backup {}: Cannot parse <{}> value {}", backup_name_for_logging, key, quoteString(value));
         return result;
     };
-    auto to_bool = [&](const String & value, std::string_view key) -> bool
+    auto to_bool = [&](const String & value, const String & key) -> bool
     {
         if (value == "true" || value == "1")
             return true;
@@ -777,7 +777,7 @@ void BackupImpl::readBackupMetadata()
 
     handler.on_header = [&](const BackupMetadataHandler::Fields & h)
     {
-        auto req = [&](const Poco::XML::XMLString & key) -> const String &
+        auto req = [&](const String & key) -> const String &
         {
             auto it = h.find(key);
             if (it == h.end())
@@ -839,7 +839,7 @@ void BackupImpl::readBackupMetadata()
     /// see through the lambda boundary, hence the explicit suppression.
     handler.on_file = [&](const BackupMetadataHandler::Fields & f) TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        auto req = [&](const Poco::XML::XMLString & key) -> const String &
+        auto req = [&](const String & key) -> const String &
         {
             auto it = f.find(key);
             if (it == f.end())
@@ -847,12 +847,12 @@ void BackupImpl::readBackupMetadata()
                     ErrorCodes::BACKUP_DAMAGED, "Backup {}: Cannot read <{}> of a file from metadata", backup_name_for_logging, key);
             return it->second;
         };
-        auto opt = [&](const Poco::XML::XMLString & key, const String & def) -> String
+        auto opt = [&](const String & key, const String & def) -> String
         {
             auto it = f.find(key);
             return it == f.end() ? def : it->second;
         };
-        auto get_bool = [&](const Poco::XML::XMLString & key, bool def)
+        auto get_bool = [&](const String & key, bool def)
         {
             auto it = f.find(key);
             return it == f.end() ? def : to_bool(it->second, key);
@@ -1759,12 +1759,7 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
         if (src_disk && from_immutable_file)
         {
             LOG_TRACE(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
-            if (!writer->copyFileFromDiskNatively(
-                    info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size))
-            {
-                writer->copyFileFromDiskWithFallback(
-                    info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
-            }
+            writer->copyFileFromDisk(info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
         }
         else
         {
@@ -1814,7 +1809,6 @@ void BackupImpl::finalizeWriting()
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_before_writing_metadata is triggered");
         });
-        started_writing_metadata = true;
 #if CLICKHOUSE_CLOUD && USE_SSL
         if (!use_archive)
             uncompressed_size += encryption_sidecar->write();
@@ -1919,7 +1913,7 @@ bool BackupImpl::setIsCorrupted() noexcept
 
         if (writing_finalized)
         {
-            LOG_WARNING(log, "An error happened after the backup was completed successfully, the backup must be correct");
+            LOG_WARNING(log, "An error happened after the backup was completed successfully, the backup must be correct!");
             return false;
         }
 
@@ -1997,28 +1991,6 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
     catch (...)
     {
         DB::tryLogCurrentException(log, "Caught exception while removing files of a corrupted backup");
-        return false;
-    }
-}
-
-
-bool BackupImpl::tryRemoveLockFileIfNothingWritten() noexcept
-{
-    try
-    {
-        std::lock_guard lock{mutex};
-        if (!corrupted || use_archive || lock_file_before_first_file_checked || started_writing_metadata)
-            return false;
-
-        LOG_INFO(log, "Removing the lock file of backup {}, nothing else was written", backup_name_for_logging);
-        if (!tryRemoveOwnLockFile())
-            return false;
-        writer->removeEmptyRootDirectory();
-        return true;
-    }
-    catch (...)
-    {
-        DB::tryLogCurrentException(log, "Caught exception while removing the lock file of a corrupted backup");
         return false;
     }
 }

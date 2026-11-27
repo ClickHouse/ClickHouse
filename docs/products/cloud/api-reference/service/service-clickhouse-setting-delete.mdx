@@ -1,7 +1,7 @@
 ---
 title: "Reset ClickHouse setting to default"
 openapi: "/_specs/cloud-openapi.json DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/{settingName}"
-description: "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Removes a previously-configured ClickHouse setting, reverting its effective value to the platform default. The reset is applied before this endpoint responds, so the response `warnings` describe what happens next and cannot prevent it. To find out beforehand, check the setting's `warning` field in the [schema endpoint](/products/cloud/api-reference/service/service-clickhouse-settings-schema-get) (`GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/schema`, one entry per setting in `settings`). It says whether changing or resetting the setting triggers a ClickHouse server rollout restart (e.g. `compatibility`, `keep_alive_timeout`, `mark_cache_ram_ratio`) or takes effect after a short delay. When the setting was configured, the response `warnings` repeat that same message. Deleting a setting that was never configured is a no-op (200 OK) and returns no warnings."
+description: "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Removes a previously-configured ClickHouse setting, reverting its effective value to the platform default. Settings under `spec.extraConfig.server.*` (e.g. `keep_alive_timeout`, `shared_merge_tree_disable_merges_and_mutations_assignment`) trigger a ClickHouse server rollout restart; other settings propagate to all replicas after a short delay. Deleting a setting that was never configured is a no-op (200 OK)."
 tag: "Beta"
 ---
 
@@ -9,7 +9,7 @@ tag: "Beta"
 
 <span data-endpoint-badge="Beta"><Badge color="blue">Beta</Badge></span>
 
-**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Removes a previously-configured ClickHouse setting, reverting its effective value to the platform default. The reset is applied before this endpoint responds, so the response `warnings` describe what happens next and cannot prevent it. To find out beforehand, check the setting's `warning` field in the [schema endpoint](/products/cloud/api-reference/service/service-clickhouse-settings-schema-get) (`GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/schema`, one entry per setting in `settings`). It says whether changing or resetting the setting triggers a ClickHouse server rollout restart (e.g. `compatibility`, `keep_alive_timeout`, `mark_cache_ram_ratio`) or takes effect after a short delay. When the setting was configured, the response `warnings` repeat that same message. Deleting a setting that was never configured is a no-op (200 OK) and returns no warnings.
+**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Removes a previously-configured ClickHouse setting, reverting its effective value to the platform default. Settings under `spec.extraConfig.server.*` (e.g. `keep_alive_timeout`, `shared_merge_tree_disable_merges_and_mutations_assignment`) trigger a ClickHouse server rollout restart; other settings propagate to all replicas after a short delay. Deleting a setting that was never configured is a no-op (200 OK).
 
 <div data-permissions class="api-section">
 <div class="api-section-heading flex flex-col gap-y-4 w-full">

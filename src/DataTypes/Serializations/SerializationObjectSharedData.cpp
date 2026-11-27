@@ -14,7 +14,6 @@
 #include <IO/ReadHelpers.h>
 #include <algorithm>
 #include <numeric>
-#include <IO/WriteHelpers.h>
 
 namespace DB
 {

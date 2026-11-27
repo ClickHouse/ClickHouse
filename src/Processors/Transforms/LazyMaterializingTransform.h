@@ -35,7 +35,7 @@ struct LazyMaterializingRows : public ILazyMaterializingRows
 {
     using PartOffsetInDataPart = PaddedPODArray<UInt64>;
     /// part_index_in_query -> row numbers
-    using RowsInParts = MapWithMemoryTracking<size_t, PartOffsetInDataPart>;
+    using RowsInParts = std::map<size_t, PartOffsetInDataPart>;
 
     RowsInParts rows_in_parts;
 

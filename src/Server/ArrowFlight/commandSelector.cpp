@@ -194,7 +194,7 @@ static arrow::Result<std::shared_ptr<arrow::Table>> commandGetSqlInfo(const arro
 
 static SQLSet commandGetCatalogs()
 {
-    return {"SELECT '' AS catalog_name FROM numbers(0)", {}, {}, /* skip_query_cache = */ true};
+    return {"SELECT '' AS catalog_name FROM numbers(0)", {}, {}};
 }
 
 static SQLSet commandGetDbSchemas(const arrow::flight::protocol::sql::CommandGetDbSchemas & command)
@@ -203,7 +203,7 @@ static SQLSet commandGetDbSchemas(const arrow::flight::protocol::sql::CommandGet
     if (command.has_db_schema_filter_pattern())
         where_expression = " WHERE database LIKE " + quoteString(command.db_schema_filter_pattern());
 
-    return {"SELECT NULL::Nullable(String) AS catalog_name, name AS db_schema_name FROM system.databases" + where_expression, {}, {}, /* skip_query_cache = */ true};
+    return {"SELECT NULL::Nullable(String) AS catalog_name, name AS db_schema_name FROM system.databases" + where_expression, {}, {}};
 }
 
 /// Splits a formatted expression list (e.g. from `system.tables.primary_key`) into
@@ -331,10 +331,10 @@ static SQLSet commandGetPrimaryKeys(const arrow::flight::protocol::sql::CommandG
         block.setColumns(std::move(new_columns));
     };
 
-    return {sql, {}, block_modifier, /* skip_query_cache = */ true};
+    return {sql, {}, block_modifier};
 }
 
-[[clang::no_destroy]] const static std::vector<std::pair<std::string, std::string>> engine_to_type =
+const static std::vector<std::pair<std::string, std::string>> engine_to_type =
 {
     // Log tables
     {"Log", "LOG TABLE"},
@@ -509,8 +509,7 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
             ")"
             + where_expression,
             {},
-            {},
-            /* skip_query_cache = */ true
+            {}
         };
     }
 
@@ -587,12 +586,12 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
             table_schema_column.name);
     };
 
-    return {sql, schema_modifier, block_modifier, /* skip_query_cache = */ true};
+    return {sql, schema_modifier, block_modifier};
 }
 
 static SQLSet commandGetTableTypes()
 {
-    return {"SELECT DISTINCT transform(name, " + getTableTypeMap() + ", 'UNKNOWN TABLE TYPE') AS table_type FROM system.table_engines", {}, {}, /* skip_query_cache = */ true};
+    return {"SELECT DISTINCT transform(name, " + getTableTypeMap() + ", 'UNKNOWN TABLE TYPE') AS table_type FROM system.table_engines", {}, {}};
 }
 
 static CommandSelectorResult commandStatementQuery(const arrow::flight::protocol::sql::CommandStatementQuery & command)

@@ -57,6 +57,7 @@
       ]
     }
   ],
+  "icon": "/images/icons/icon-contribute.svg",
   "item": "開発と貢献",
   "root": "ja/resources/develop-contribute/index"
 }

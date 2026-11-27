@@ -1,5 +1,4 @@
 #include <IO/Operators.h>
-#include <Common/SetWithMemoryTracking.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -211,7 +210,7 @@ bool guardsHold(const ReadFromMergeTree & reading)
 
         if (max_partitions_to_read > 0)
         {
-            SetWithMemoryTracking<String> partitions;
+            std::set<String> partitions;
             for (const auto & part_with_ranges : reading.getParts())
             {
                 partitions.insert(part_with_ranges.data_part->info.getPartitionId());
@@ -251,11 +250,8 @@ bool guardsHold(const ReadFromMergeTree & reading)
     if (!reading.getStorageID().hasDatabase() || getEffectiveRowPolicyFilter(reading.getMergeTreeData(), context))
         return false;
 
-    /// A pending DROP COLUMN (a metadata mutation) makes the reader return defaults, so the cardinalities are stale.
     if (const auto & mutations = reading.getMutationsSnapshot();
-        mutations
-        && (mutations->hasDataMutations() || mutations->hasMetadataMutations() || mutations->hasPatchParts()
-            || mutations->hasLightweightDeletedMask()))
+        mutations && (mutations->hasDataMutations() || mutations->hasPatchParts() || mutations->hasLightweightDeletedMask()))
         return false;
 
     if (reading.getStorageMetadata()->hasUniqueKey())
@@ -427,10 +423,6 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
     }
 
     String description = makeStepDescription(*search_query);
-
-    if (!matched->reading->getQueryInfo().is_internal && matched->reading->getContext()->hasQueryContext())
-        matched->reading->getContext()->getQueryContext()->addUsedDataSkippingIndex(
-            matched->reading->getMergeTreeData().getStorageID(), search_query->index.index->index.name);
 
     auto & source_node = nodes.emplace_back();
     source_node.step = std::make_unique<ReadFromTextIndexCount>(

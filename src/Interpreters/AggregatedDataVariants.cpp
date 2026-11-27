@@ -9,14 +9,10 @@
 #include <Common/MemoryTracker.h>
 #include <Common/logger_useful.h>
 
-#include <bit>
-#include <optional>
-
 namespace ProfileEvents
 {
     extern const Event AggregationPreallocatedElementsInHashTables;
     extern const Event AggregationConvertedToTwoLevel;
-    extern const Event AggregationIndexedTables;
 }
 
 namespace DB
@@ -48,27 +44,19 @@ AggregatedDataVariants::~AggregatedDataVariants()
 }
 
 template <typename Method>
-auto constructWithReserveIfPossible(AggregatedDataVariants::SizeHint size_hint)
+auto constructWithReserveIfPossible(size_t size_hint)
 {
     if constexpr (HasConstructorOfNumberOfElements<typename Method::Data>::value)
     {
-        ProfileEvents::increment(ProfileEvents::AggregationPreallocatedElementsInHashTables, size_hint.keys);
-        return std::make_unique<Method>(size_hint.keys);
-    }
-    else if constexpr (is_keys_and_packed_string<typename Method::Data::key_type>)
-    {
-        if (!size_hint.keys_with_empty_string)
-            return std::make_unique<Method>();
-        ProfileEvents::increment(ProfileEvents::AggregationPreallocatedElementsInHashTables, size_hint.keys);
-        return std::make_unique<Method>(size_hint.keys, *size_hint.keys_with_empty_string);
+        ProfileEvents::increment(ProfileEvents::AggregationPreallocatedElementsInHashTables, size_hint);
+        return std::make_unique<Method>(size_hint);
     }
     else
         return std::make_unique<Method>();
 }
 
-void AggregatedDataVariants::init(Type type_, std::optional<SizeHint> size_hint)
+void AggregatedDataVariants::init(Type type_, std::optional<size_t> size_hint)
 {
-    cell_index.reset();
     /// `init` also reinitializes a table after an external-aggregation flush, so preserve
     /// whether the heap rejected anything before the old method is replaced.
     top_k_heap_ever_rejected = topKHeapEverRejected();
@@ -105,31 +93,6 @@ size_t AggregatedDataVariants::size() const
     #define M(NAME, IS_TWO_LEVEL) \
         case Type::NAME: \
             return (NAME)->data.size() + (without_key != nullptr);
-        APPLY_FOR_AGGREGATED_VARIANTS(M)
-    #undef M
-    }
-}
-
-template <typename Method>
-size_t sizeWithEmptyStringOf(const Method & method)
-{
-    if constexpr (is_keys_and_packed_string<typename Method::Data::key_type>)
-        return method.data.sizeWithEmptyString();
-    else
-        return 0;
-}
-
-size_t AggregatedDataVariants::sizeWithEmptyString() const
-{
-    switch (type)
-    {
-        case Type::EMPTY:
-        case Type::without_key:
-            return 0;
-
-    #define M(NAME, IS_TWO_LEVEL) \
-        case Type::NAME: \
-            return sizeWithEmptyStringOf(*(NAME));
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
     }
@@ -173,7 +136,6 @@ bool AggregatedDataVariants::topKHeapInactive() const
 void AggregatedDataVariants::resetAfterStateOwnershipTransfer()
 {
     chassert(!aggregator);
-    cell_index.reset();
     switch (type)
     {
         case Type::EMPTY:
@@ -199,33 +161,23 @@ void AggregatedDataVariants::resetAfterStateOwnershipTransfer()
 
 size_t AggregatedDataVariants::allocatedBytes() const
 {
-    size_t res = hashTableBufferBytes();
+    size_t res = 0;
     for (const auto & pool : aggregates_pools)
         res += pool->allocatedBytes();
-    return res;
-}
 
-size_t AggregatedDataVariants::hashTableBufferBytes() const
-{
     switch (type)
     {
         case Type::EMPTY:
         case Type::without_key:
-            return 0;
+            break;
 
     #define M(NAME, IS_TWO_LEVEL) \
         case Type::NAME: \
-            return (NAME)->data.getBufferSizeInBytes();
+            res += (NAME)->data.getBufferSizeInBytes(); \
+            break;
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
     }
-}
-
-size_t AggregatedDataVariants::usedArenaBytes() const
-{
-    size_t res = 0;
-    for (const auto & pool : aggregates_pools)
-        res += pool->usedBytes();
     return res;
 }
 
@@ -308,52 +260,9 @@ bool AggregatedDataVariants::isConvertibleToTwoLevel(Type type_)
     }
 }
 
-bool AggregatedDataVariants::isKeysAndPackedString(Type type_)
-{
-    switch (type_)
-    {
-        case Type::keys32_packed_string:
-        case Type::keys64_packed_string:
-        case Type::keys128_packed_string:
-        case Type::keys32_packed_string_two_level:
-        case Type::keys64_packed_string_two_level:
-        case Type::keys128_packed_string_two_level:
-        case Type::keys32_packed_string_void:
-        case Type::keys64_packed_string_void:
-        case Type::keys128_packed_string_void:
-        case Type::keys32_packed_string_void_two_level:
-        case Type::keys64_packed_string_void_two_level:
-        case Type::keys128_packed_string_void_two_level:
-            return true;
-        default:
-            return false;
-    }
-}
-
-void AggregatedDataVariants::resetToSingleLevel()
-{
-    chassert(!hasData());
-    switch (type)
-    {
-#define M(NAME) \
-        case Type::NAME ## _two_level: \
-            init(Type::NAME); \
-            (NAME ## _two_level).reset(); \
-            break;
-
-        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
-
-    #undef M
-
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong data variant passed.");
-    }
-}
-
 void AggregatedDataVariants::convertToTwoLevel()
 {
     ProfileEvents::increment(ProfileEvents::AggregationConvertedToTwoLevel);
-    cell_index.reset();
 
     if (aggregator)
         LOG_TRACE(aggregator->log, "Converting aggregation data to two-level.");
@@ -375,17 +284,6 @@ void AggregatedDataVariants::convertToTwoLevel()
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong data variant passed.");
     }
-}
-
-void AggregatedDataVariants::setCellIndex(AggregationCellIndex && index)
-{
-    ProfileEvents::increment(ProfileEvents::AggregationIndexedTables);
-    cell_index = std::move(index);
-}
-
-void AggregatedDataVariants::throwCannotIndexCells() const
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot index the cells of aggregated data variant {}", getMethodName());
 }
 
 bool AggregatedDataVariants::isLowCardinality() const
@@ -667,38 +565,6 @@ AggregatedDataVariants::Type AggregatedDataVariants::chooseMethod(
         if (has_low_cardinality)
             return Type::low_cardinality_key_string;
         return Type::key_packed_string;
-    }
-
-    /// If fixed-width keys of 1, 2, 4, 8 or 16 bytes and one string key - will use a hash table keyed by the
-    /// fixed-width values packed into 32, 64 or 128 bits and a packed reference to the string, which keeps
-    /// strings of up to 15 bytes inline after 32 bits and of up to 11 bytes otherwise (see
-    /// `KeysAndPackedString`). The string key is the one with value size 0. The Aggregator may remap this to
-    /// `prealloc_serialized` (see `Params::enable_fixed_and_packed_string_keys`). `LowCardinality` keys take
-    /// these methods as well (see `HashMethodKeysAndPackedString`): with another method, the shards of a
-    /// distributed query that store a column as `String` and as `LowCardinality(String)` would number the
-    /// two-level buckets differently and return a group once per numbering. A `LowCardinality(Nullable)` key
-    /// is nullable, so it took a nullable method above.
-    if (keys_size > 1 && num_fixed_contiguous_keys + 1 == keys_size && keys_bytes <= 16)
-    {
-        std::optional<size_t> string_key;
-        bool fixed_sizes_are_powers_of_two = true;
-        for (size_t j = 0; j < keys_size; ++j)
-        {
-            if (isString(types_removed_nullable[j]))
-                string_key = j;
-            else
-                fixed_sizes_are_powers_of_two &= std::has_single_bit(out_key_sizes[j]);
-        }
-
-        if (string_key && fixed_sizes_are_powers_of_two)
-        {
-            out_key_sizes[*string_key] = 0;
-            if (keys_bytes <= 4)
-                return Type::keys32_packed_string;
-            if (keys_bytes <= 8)
-                return Type::keys64_packed_string;
-            return Type::keys128_packed_string;
-        }
     }
 
     if (keys_size > 1 && all_keys_are_numbers_or_strings)

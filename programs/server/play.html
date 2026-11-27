@@ -1,26 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <!-- Trusted Types, see `play_policy`. Must be the first element of the head to apply to everything. -->
-    <meta http-equiv="Content-Security-Policy" content="require-trusted-types-for 'script'; trusted-types play">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <!-- Lets the browser paint its initial canvas in the right theme, see also `color-scheme` in the styles. -->
-    <meta name="color-scheme" content="light dark">
     <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDExIDEwIj48c3R5bGU+LmJne2ZpbGw6I2ZmMH0ub3tmaWxsOiMwMDB9PC9zdHlsZT48cmVjdCBjbGFzcz0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiLz48cGF0aCBkPSJNMSwxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik0zLDEgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTUsMSBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNNywxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik05LDQuMjUgaDEgdjEuNSBoLTEgeiIgY2xhc3M9Im8iLz48L3N2Zz4K">
     <title>ClickHouse Query</title>
-    <script>
-        /// The color theme is set here, before the body, so that the page is painted in the right
-        /// theme from the start rather than switching once the large main script at the end has run.
-        /// The `theme` URL parameter wins, then the choice saved in `localStorage`, then the system
-        /// preference - which the main script keeps following unless the theme was chosen explicitly.
-        const theme_url_parameter = new URL(location.href).searchParams.get('theme');
-        const theme_explicit = ['dark', 'light'].includes(theme_url_parameter)
-            ? theme_url_parameter
-            : ['dark', 'light'].find(t => t === window.localStorage.getItem('theme'));
-        document.documentElement.setAttribute('data-theme',
-            theme_explicit ?? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
-    </script>
 
     <!-- Code Style:
 
@@ -58,8 +42,6 @@
 
     <style>
         :root {
-            /* Native controls, scrollbars and the canvas follow the page theme (`data-theme`). */
-            color-scheme: light;
             --background-color-rotate: 215;
             --background-color: oklch(96% 0.0296 var(--background-color-rotate));
             /* Top color of the active tab's gradient: same hue/lightness as the page but
@@ -169,7 +151,6 @@
         }
 
         [data-theme="dark"] {
-            color-scheme: dark;
             --background-color-rotate: 250;
             --background-color: oklch(15% 0.0296 var(--background-color-rotate));
             /* Top color of the active tab's gradient: same hue as the page but brighter
@@ -1422,7 +1403,7 @@
         /* The rule above removes the default outline; re-add a clear one for
            keyboard focus only (Tab), so the controls show where focus is while a
            mouse click does not draw a ring. Covers the real <button>s (Run, Run
-           all, Download, the copy, download and theme switcher icons). */
+           all, Download) and the icon "buttons" (copy, download, theme switcher). */
         button:focus-visible,
         [role="button"]:focus-visible
         {
@@ -1729,7 +1710,6 @@
             padding: 0.25rem 0.65rem;
             cursor: pointer;
             position: relative;
-            font: inherit; /* A button element does not inherit the font, and the icon is sized in `em`. */
         }
 
         .copy-balloon
@@ -1788,7 +1768,6 @@
             padding: 0.25rem 0.65rem;
             cursor: pointer;
             position: relative;
-            font: inherit; /* A button element does not inherit the font, and the icon is sized in `em`. */
         }
 
         #download
@@ -1798,20 +1777,20 @@
             vertical-align: middle;
         }
 
-        /* A `popover`, so the browser closes it on a click outside or Escape. It is positioned next to
-           the download button by `positionDownloadDropdown`; the rest overrides the default popover
-           look (centered in the viewport, system colors). */
         #download-dropdown
         {
-            position: fixed;
-            inset: auto;
-            margin: 0;
-            color: inherit;
+            display: none;
+            position: absolute;
             background-color: var(--button-color);
             border: 1px solid var(--button-text-color);
             padding: 0.5rem;
             z-index: 999;
             box-shadow: 0 4px 6px var(--shadow-color);
+        }
+
+        #download-dropdown.show
+        {
+            display: block;
         }
 
         .download-option
@@ -1875,10 +1854,6 @@
         #theme
         {
             grid-area: theme;
-            font: inherit;
-            padding: 0;
-            background: none;
-            cursor: pointer;
         }
 
         #toggle-light, #toggle-dark
@@ -2538,20 +2513,20 @@
                 <button type="button" class="shadow" id="run-all">Run all</button>
                 <div id="hint">&nbsp;(<span id="hint-modifier">Ctrl/Cmd</span>+Enter<span id="hint-run-all" style="display: none">, +Shift to run all</span>)</div>
                 <query-progress id="query-progress"></query-progress>
-                <button type="button" id="copy-div" class="shadow" title="Copy raw result to clipboard" aria-label="Copy raw result to clipboard">
+                <div id="copy-div" class="shadow" title="Copy raw result to clipboard">
                     <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                         <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                     </svg>
-                </button>
-                <button type="button" id="download-div" class="shadow" title="Download the result" aria-label="Download the result" popovertarget="download-dropdown">
+                </div>
+                <div id="download-div" class="shadow">
                     <svg id="download" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                         <polyline points="7 10 12 15 17 10"/>
                         <line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>
-                </button>
-                <button type="button" id="theme" title="Switch the color theme" aria-label="Switch the color theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></button>
+                </div>
+                <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
             </div>
         </form>
         <div id="result-panels"></div>
@@ -2561,7 +2536,7 @@
             </a>
             <a id="cloud-logo" target="_blank" rel="noopener noreferrer" href="https://clickhouse.cloud/">&#9729;</a>
         </p>
-        <div id="download-dropdown" popover>
+        <div id="download-dropdown">
             <div>
                 <div class="download-option">
                     <label for="download-format">Format:</label>
@@ -2612,32 +2587,6 @@
 </body>
 
 <script type="text/javascript">
-
-/// Trusted Types (see the `Content-Security-Policy` at the top of the head). They are enforced, so
-/// the HTML sinks (`innerHTML`) take only values made by this policy, `<script src>` takes only the
-/// scripts that ship with the server (see `_loadJS`), and the sinks that turn a string into code
-/// (`eval`, `new Function`, `setTimeout` with a string) are blocked. The policy does not sanitize:
-/// every caller of `trustedHTML` builds its HTML from static markup and escaped text (`escapeHTML`,
-/// `escapeAttr`). What it gives is that all the places writing HTML are calls of `trustedHTML` that
-/// can be found and reviewed, while any other write - a new one, or one in a third-party library -
-/// throws instead of injecting markup.
-/// A browser without Trusted Types gets a pass-through stand-in with the same interface.
-const play_policy = (window.trustedTypes ?? { createPolicy: (name, rules) => rules }).createPolicy('play', {
-    createHTML: html => html,
-    createScriptURL: url =>
-    {
-        if (['uplot.js', 'viz-standalone.js'].some(name => url === QueryResultElement._assetURL(name)))
-        {
-            return url;
-        }
-        throw new Error('The script URL is not allowed by the Trusted Types policy: ' + url);
-    },
-});
-
-function trustedHTML(html)
-{
-    return play_policy.createHTML(html);
-}
 
 /// A fresh state object for the realtime resource meters (CPU/memory/disk). The state is owned by
 /// the tab whose query produced it (see `readEventStream`), NOT by the shared progress line: the
@@ -2701,7 +2650,7 @@ class QueryProgressElement extends HTMLElement
     {
         super();
         this.attachShadow({ mode: 'open' });
-        this.shadowRoot.innerHTML = trustedHTML(`
+        this.shadowRoot.innerHTML = `
             <style>
                 :host
                 {
@@ -2858,7 +2807,7 @@ class QueryProgressElement extends HTMLElement
             <span id="logs-toggle" class="progress-toggle">Logs</span>
             <span id="metrics-toggle" class="progress-toggle">Metrics</span>
             <div id="progress"><span id="progress-text"></span><span id="stats"></span></div>
-        `);
+        `;
         this._hourglass = this.shadowRoot.getElementById('hourglass');
         this._checkMark = this.shadowRoot.getElementById('check-mark');
         this._progress = this.shadowRoot.getElementById('progress');
@@ -3096,7 +3045,7 @@ class QueryProgressElement extends HTMLElement
         this._resources_final = true;
         /// Drop the now-meaningless leading "NN.N%, " from the read stats (the query reached 100%).
         this._finished = true;
-        this._stats.innerHTML = trustedHTML(this._stats.innerHTML.replace(/^\d+(\.\d+)?%,\s*/, ''));
+        this._stats.innerHTML = this._stats.innerHTML.replace(/^\d+(\.\d+)?%,\s*/, '');
         this._renderResources();
     }
 
@@ -3149,7 +3098,7 @@ class QueryProgressElement extends HTMLElement
             if (rps > 1e6) { text += ` (${formatted_rps}, ${formatted_bps})`; }
         }
 
-        this._stats.innerHTML = trustedHTML(text);
+        this._stats.innerHTML = text;
 
         this.style.setProperty('--progress',
             rows && total_rows ? (100 * rows / total_rows) + '%' : '0%');
@@ -3547,7 +3496,7 @@ class QueryResultElement extends HTMLElement
     {
         super();
         this.attachShadow({ mode: 'open' });
-        this.shadowRoot.innerHTML = trustedHTML(`
+        this.shadowRoot.innerHTML = `
             <style>
                 *
                 {
@@ -4901,7 +4850,7 @@ class QueryResultElement extends HTMLElement
             </div>
             <div id="logs_div"><div id="logs-content" class="monospace"></div></div>
             <div id="metrics_div"><table id="metrics-table" class="monospace"><tbody id="metrics-body"></tbody></table></div>
-        `);
+        `;
 
         this._resultGroup = this.shadowRoot.getElementById('result-group');
         this._viewToggle = this.shadowRoot.getElementById('view-toggle');
@@ -5115,7 +5064,7 @@ class QueryResultElement extends HTMLElement
     disconnectedCallback()
     {
         /// Multi-query results are transient elements that get removed from the DOM
-        /// (e.g. via `multiQueryContainer.replaceChildren()`) without going through `clear`,
+        /// (e.g. via `multiQueryContainer.innerHTML = ''`) without going through `clear`,
         /// so revoke the image object URL here to avoid leaking the response blob.
         this._clearImage();
         /// Removing this result from the DOM (tab close, multi-query re-render) also removes
@@ -5397,7 +5346,7 @@ class QueryResultElement extends HTMLElement
         /// a four-digit number is as often a year, which nobody groups.
         if (this._column_is_number[name] && text.match(/^\d{5,}$/))
         {
-            div.innerHTML = trustedHTML(digitGroupsHTML(text));
+            div.innerHTML = digitGroupsHTML(text);
             td.appendChild(div);
             this._appendCopyButton(td, text, value);
             return td;
@@ -5419,7 +5368,7 @@ class QueryResultElement extends HTMLElement
         let btn = document.createElement('span');
         btn.className = 'cell-copy';
         btn.title = 'Copy to clipboard';
-        btn.innerHTML = trustedHTML(copyIcon);
+        btn.innerHTML = copyIcon;
         let revertTimer = null;
         btn.onclick = async (e) => {
             e.stopPropagation();
@@ -5428,12 +5377,12 @@ class QueryResultElement extends HTMLElement
                 try
                 {
                     await navigator.clipboard.writeText(text);
-                    btn.innerHTML = trustedHTML(copiedIcon);
+                    btn.innerHTML = copiedIcon;
                     btn.title = 'Copied';
                     if (revertTimer)
                         clearTimeout(revertTimer);
                     revertTimer = setTimeout(() => {
-                        btn.innerHTML = trustedHTML(copyIcon);
+                        btn.innerHTML = copyIcon;
                         btn.title = 'Copy to clipboard';
                         revertTimer = null;
                     }, 1000);
@@ -5555,7 +5504,7 @@ class QueryResultElement extends HTMLElement
         td.className = 'row-number';
         /// Numbered within the whole result, not within the page (see `_rowNumberOffset`).
         const row_number = String(this._rowNumberOffset() + this._row_idx);
-        if (row_number.length >= 5) { td.innerHTML = trustedHTML(digitGroupsHTML(row_number)); }
+        if (row_number.length >= 5) { td.innerHTML = digitGroupsHTML(row_number); }
         else { td.appendChild(document.createTextNode(row_number)); }
         tr.appendChild(td);
 
@@ -5595,7 +5544,7 @@ class QueryResultElement extends HTMLElement
         toggle.type = 'button';
         toggle.className = 'pin-toggle';
         toggle.disabled = true;
-        toggle.innerHTML = trustedHTML(QueryResultElement._PIN_ICON);
+        toggle.innerHTML = QueryResultElement._PIN_ICON;
         this._updatePinToggle(toggle, name);
         toggle.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -5869,7 +5818,7 @@ class QueryResultElement extends HTMLElement
     {
         const toggle = document.createElement('span');
         toggle.className = 'colorize-toggle';
-        toggle.innerHTML = trustedHTML(QueryResultElement._PALETTE_ICON);
+        toggle.innerHTML = QueryResultElement._PALETTE_ICON;
         this._updateColorizeToggleTitle(toggle, name);
         toggle.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -6066,7 +6015,7 @@ class QueryResultElement extends HTMLElement
         const toggle = document.createElement('button');
         toggle.type = 'button';
         toggle.className = 'filter-toggle';
-        toggle.innerHTML = trustedHTML(QueryResultElement._FUNNEL_ICON);
+        toggle.innerHTML = QueryResultElement._FUNNEL_ICON;
         const toggle_label = 'Filter by this column (re-runs the query)';
         toggle.title = toggle_label;
         toggle.setAttribute('aria-label', toggle_label);
@@ -6141,7 +6090,7 @@ class QueryResultElement extends HTMLElement
         const apply = document.createElement('button');
         apply.type = 'button';
         apply.className = 'filter-apply';
-        apply.innerHTML = trustedHTML(QueryResultElement._PLAY_ICON);
+        apply.innerHTML = QueryResultElement._PLAY_ICON;
         const apply_label = 'Apply this filter (re-runs the query)';
         apply.title = apply_label;
         apply.setAttribute('aria-label', apply_label);
@@ -6348,7 +6297,7 @@ class QueryResultElement extends HTMLElement
 
         const button = document.createElement('span');
         button.className = 'cell-filter';
-        button.innerHTML = trustedHTML(QueryResultElement._FUNNEL_ICON);
+        button.innerHTML = QueryResultElement._FUNNEL_ICON;
         const label = 'Filter by this value';
         button.title = label;
         button.setAttribute('aria-label', label);
@@ -7847,7 +7796,7 @@ class QueryResultElement extends HTMLElement
 
             const spark_td = document.createElement('td');
             spark_td.className = 'metric-spark';
-            spark_td.innerHTML = trustedHTML(this._sparklineSVG(row.history, row.valueType, row.maxRate));
+            spark_td.innerHTML = this._sparklineSVG(row.history, row.valueType, row.maxRate);
 
             tr.append(name_td, value_td, rate_td, spark_td);
             fragment.appendChild(tr);
@@ -8096,15 +8045,22 @@ class QueryResultElement extends HTMLElement
         this._selectCell(new_cell);
     }
 
-    /// Only for the JavaScript assets that ship with the server (see `_assetURL`):
-    /// no third-party code is loaded into the page.
-    _loadJS(src)
+    _loadJS(src, integrity)
     {
         return new Promise((resolve, reject) => {
             const script = document.createElement('script');
-            script.src = play_policy.createScriptURL(src);
+            script.src = src;
+            if (integrity)
+            {
+                script.crossOrigin = 'anonymous';
+                script.integrity = integrity;
+            }
+            else if (!src.startsWith('/'))
+            {
+                console.warn('no integrity for', src);
+            }
             script.addEventListener('load', function() { resolve(true); });
-            /// Reject on a failed load (missing asset or network error)
+            /// Reject on a failed load (blocked/unavailable CDN, network error, or SRI mismatch)
             /// so awaiting callers (the chart/graph renderers in the query lifecycle) fall into
             /// their `catch` and report the error instead of hanging forever - the script `error`
             /// event otherwise leaves this promise pending and the run stuck in flight.
@@ -8149,7 +8105,8 @@ class QueryResultElement extends HTMLElement
     _loadUplot()
     {
         if (QueryResultElement._loadUplotPromise) { return QueryResultElement._loadUplotPromise; }
-        QueryResultElement._loadUplotPromise = this._loadJS(QueryResultElement._assetURL('uplot.js'))
+        QueryResultElement._loadUplotPromise = this._loadJS('https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js',
+            'sha384-TwdJPnTsKP6pnvFZZKda0WJCXpjcHCa7MYHmjrYDu6rsEsb/UnFdoL0phS5ODqTA')
             /// Drop the cached promise on failure so a later attempt can retry the load
             /// instead of re-awaiting a permanently rejected promise.
             .catch((e) => { QueryResultElement._loadUplotPromise = null; throw e; });
@@ -8171,15 +8128,11 @@ class QueryResultElement extends HTMLElement
         /// labels sized for the wrong font and spilling out of their boxes. A transparent
         /// background drops the opaque white canvas rectangle, letting `#graph` (and with it the
         /// light/dark theme) show through.
-        const svg_text = viz.renderString(this._explain_graph, {
-            format: 'svg',
+        const svg = viz.renderSVGElement(this._explain_graph, {
             graphAttributes: { fontname: 'Helvetica', bgcolor: 'transparent' },
             nodeAttributes: { fontname: 'Helvetica' },
             edgeAttributes: { fontname: 'Helvetica' },
         });
-        /// What `viz.renderSVGElement` does, but through the Trusted Types policy: its own
-        /// `DOMParser` call passes a plain string and is blocked. Graphviz escapes the labels.
-        const svg = new DOMParser().parseFromString(trustedHTML(svg_text), 'image/svg+xml').documentElement;
         this._graph.replaceChildren(svg);
         this._graph.style.display = 'block';
     }
@@ -12944,7 +12897,7 @@ async function postMulti(cell, posted_request_num, parsed, paramValuesSnapshot, 
         cell.multiContainer.className = 'multi-query-results';
         cell.resultSlot.insertBefore(cell.multiContainer, cell.resultEl);
     }
-    cell.multiContainer.replaceChildren();
+    cell.multiContainer.innerHTML = '';
     cell.multiContainer.style.display = 'block';
     if (active()) multiQueryContainer = cell.multiContainer;
     tab.multiControllers = [];
@@ -13672,7 +13625,7 @@ async function restoreMultiQuery(snapshot, cell, matToken) {
         cell.multiContainer.className = 'multi-query-results';
         cell.resultSlot.insertBefore(cell.multiContainer, cell.resultEl);
     }
-    cell.multiContainer.replaceChildren();
+    cell.multiContainer.innerHTML = '';
     cell.multiContainer.style.display = 'block';
     if (cellIsOnScreen(cell)) multiQueryContainer = cell.multiContainer;
 
@@ -13772,7 +13725,7 @@ async function restoreEditor(state, token) {
         /// and persist them into history / `IndexedDB`. Fall back to this tab's own saved
         /// snapshot, and clear the stale param inputs (and the stale list) so the previous tab's
         /// names/values cannot linger in the UI or leak through `getParamValues`.
-        queryParamsContainer.replaceChildren();
+        queryParamsContainer.innerHTML = '';
         currentQueryParams = [];
         /// The cleared inputs describe no text in particular; force `captureActiveTab` to
         /// re-derive (or keep the snapshot committed below) instead of trusting them.
@@ -14576,7 +14529,7 @@ function setActivePanel(tab) {
 /// clear stays local to the cell.
 function clearCell(cell) {
     if (cell.resultEl) { cell.resultEl.clear(); cell.resultEl.style.display = ''; }
-    if (cell.multiContainer) { cell.multiContainer.replaceChildren(); cell.multiContainer.style.display = 'none'; }
+    if (cell.multiContainer) { cell.multiContainer.innerHTML = ''; cell.multiContainer.style.display = 'none'; }
     /// A cleared cell no longer owns a result. Clear both the cell-owned controls and the data that
     /// backs the shared Download/Copy handlers, otherwise a connection failure after a successful
     /// query can leave actions for that previous, invisible result available.
@@ -14854,7 +14807,7 @@ function renderQueryCellEditor(tab, cell) {
     }
     const text = (cell.query || '').trim();
     preview.classList.toggle('query-preview-empty', text === '');
-    preview.innerHTML = trustedHTML(text === '' ? 'empty query' : collapsedQueryHTML(text));
+    preview.innerHTML = text === '' ? 'empty query' : collapsedQueryHTML(text);
     /// Fade the tail only when there IS a tail. A hidden panel measures 0, so the check is
     /// repeated when the panel becomes visible (`renderNotebook` runs on every activation).
     preview.classList.toggle('query-preview-clipped', preview.scrollWidth > preview.clientWidth + 1);
@@ -14896,7 +14849,7 @@ function renderTextCell(tab, cell) {
     if (cell.editing) {
         if (cell.textarea && body.contains(cell.textarea.parentNode)) {
             /// Already editing: only the highlight can be out of date.
-            cell.backdrop.innerHTML = trustedHTML(highlightMarkdown(cell.textarea.value));
+            cell.backdrop.innerHTML = highlightMarkdown(cell.textarea.value);
             return;
         }
         body.textContent = '';
@@ -14931,7 +14884,7 @@ function renderTextCell(tab, cell) {
             apply: (px) => { cell.textHeight = px; autoGrow(); },
         });
         const repaint = () => {
-            backdrop.innerHTML = trustedHTML(highlightMarkdown(textarea.value));
+            backdrop.innerHTML = highlightMarkdown(textarea.value);
             autoGrow();
         };
         repaint();
@@ -14966,7 +14919,7 @@ function renderTextCell(tab, cell) {
         view.classList.add('cell-text-empty');
         view.textContent = 'Empty text cell — click to write Markdown';
     } else {
-        view.innerHTML = trustedHTML(renderMarkdown(cell.text));
+        view.innerHTML = renderMarkdown(cell.text);
     }
     view.addEventListener('click', (e) => {
         /// A link inside the rendered Markdown should follow, not open the editor.
@@ -17953,7 +17906,8 @@ const isMac = /mac|iphone|ipad|ipod|ios/i.test(navigator.userAgentData?.platform
 document.getElementById('hint-modifier').innerText = isMac ? 'Cmd' : 'Ctrl';
 
 document.addEventListener('keydown', event => {
-    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+    /// Firefox has code 13 for Enter and Chromium has code 10.
+    if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
         markBootstrapDirty(event);
         if (activeInFlight()) {
             cancel();
@@ -20222,7 +20176,7 @@ function renderQueryBackdrop() {
     /// Trailing newline fix: browsers collapse a trailing \n in a div.
     if (html.endsWith('\n')) html += ' ';
 
-    queryBackdrop.innerHTML = trustedHTML(html);
+    queryBackdrop.innerHTML = html;
     queryBackdrop.style.display = 'block';
     query_area.classList.add('has-backdrop');
 
@@ -20806,7 +20760,7 @@ function renderCompletionOverlay() {
 
     const rowTop = (row) => (caretEnd.top + row * caretEnd.height - scrollTop) + 'px';
 
-    completionOverlay.replaceChildren();
+    completionOverlay.innerHTML = '';
     for (let i = winStart; i <= winEnd; ++i) {
         const word = completionCandidates[i];
         const selected = i === completionSelected;
@@ -20851,7 +20805,7 @@ function closeCompletions() {
         completionPrefix = '';
         completionPrefixStart = -1;
         completionOverlay.style.display = 'none';
-        completionOverlay.replaceChildren();
+        completionOverlay.innerHTML = '';
         /// Redraw the backdrop to drop the reserved spacer (unless we are already inside a
         /// backdrop render).
         if (!inRenderBackdrop) {
@@ -21278,7 +21232,7 @@ async function updateQueryParams()
     const query = query_area.value;
     if (!query)
     {
-        queryParamsContainer.replaceChildren();
+        queryParamsContainer.innerHTML = '';
         currentQueryParams = [];
         updateRunButtons(false);
         updateQueryBackdrop('', [], []);
@@ -21337,7 +21291,7 @@ async function updateQueryParams()
     /// an input at all.
     const savedValues = (getActiveTab() || {}).params || {};
     currentQueryParams = params;
-    queryParamsContainer.replaceChildren();
+    queryParamsContainer.innerHTML = '';
 
     for (const param of params)
     {
@@ -21468,12 +21422,25 @@ function setColorTheme(new_theme, update_preference) {
     /// the query is safe (empty).
     for (const el of resultPanelsEl.querySelectorAll('query-result')) el.redrawChart();
 }
-/// The theme was already applied by the script in the head, see `theme_explicit`.
-let theme = document.documentElement.getAttribute('data-theme');
+/// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
+let theme = current_url.searchParams.get('theme');
+if (['dark', 'light'].indexOf(theme) === -1) {
+    theme = window.localStorage.getItem('theme');
+}
 
-if (!theme_explicit) {
+if (theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+} else {
+    /// Obtain system-level user preference
+    const media_query_list = window.matchMedia('(prefers-color-scheme: dark)');
+    if (media_query_list.matches) {
+        setColorTheme('dark');
+    } else {
+        setColorTheme('light');
+    }
+
     /// There is a rumor that on some computers, the theme is changing automatically on day/night.
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+    media_query_list.addEventListener('change', function(e) {
         setColorTheme(e.matches ? 'dark' : 'light');
     });
 }
@@ -22051,7 +22018,7 @@ async function reconcileStartup() {
             /// different query; rebuilding from it would attach the wrong placeholder names to
             /// the reconciled tab (and auto-run with them). Clear the stale inputs/list and leave
             /// the tab's own reconciled params in place rather than deriving bogus ones.
-            queryParamsContainer.replaceChildren();
+            queryParamsContainer.innerHTML = '';
             currentQueryParams = [];
             params_synced_text = null;
         }
@@ -22116,7 +22083,32 @@ if (wasmAvailable()) loadLexer().catch(() => { /* the first tokenization retries
 dbReady = openDb();
 reconcileStartup();
 
-document.getElementById('theme').addEventListener('click', () => setColorTheme(theme === 'dark' ? 'light' : 'dark', true));
+document.getElementById('toggle-light').onclick = function() {
+    setColorTheme('light', true);
+}
+
+document.getElementById('toggle-dark').onclick = function() {
+    setColorTheme('dark', true);
+}
+
+/// Make the icon "buttons" (copy, download) and the theme switcher reachable and
+/// operable from the keyboard: Tab focuses them, Enter/Space activates them.
+/// (Real <button> elements like Run already get this for free.)
+function makeButtonLike(elem, action)
+{
+    elem.setAttribute('tabindex', '0');
+    elem.setAttribute('role', 'button');
+    elem.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            action();
+        }
+    });
+}
+
+makeButtonLike(document.getElementById('copy-div'), () => document.getElementById('copy-div').click());
+makeButtonLike(document.getElementById('download-div'), () => document.getElementById('download-div').click());
+makeButtonLike(document.getElementById('theme'), () => setColorTheme(theme === 'dark' ? 'light' : 'dark', true));
 
 // Copy raw result to clipboard
 document.getElementById('copy-div').addEventListener('click', function() {
@@ -22154,36 +22146,50 @@ let last_database_for_download = '';
 let last_url_for_download = '';
 let last_user_for_download = '';
 
-/// The download menu is a `popover` opened by the download button (`popovertarget`); the browser
-/// toggles it on a click of the button and closes it on a click outside or Escape. It is in the top
-/// layer, so it is placed in viewport coordinates: right-aligned with the button, over its top edge.
-/// The button scrolls with `#main` (in notebook mode it rides with the active cell's Run row), so
-/// the menu follows it on scroll and resize.
-const download_dropdown_elem = document.getElementById('download-dropdown');
+// Toggle download dropdown
+document.getElementById('download-div').addEventListener('click', function(e) {
+    e.stopPropagation();
+    const dropdown = document.getElementById('download-dropdown');
+    const button = document.getElementById('download-div');
+    const context = document.getElementById('main');
 
-function positionDownloadDropdown()
-{
-    const button_rect = document.getElementById('download-div').getBoundingClientRect();
-    download_dropdown_elem.style.top = button_rect.top + 'px';
-    download_dropdown_elem.style.right = (document.documentElement.clientWidth - button_rect.right) + 'px';
-}
+    if (dropdown.classList.contains('show')) {
+        dropdown.classList.remove('show');
+    } else {
+        // Position the dropdown relative to the button
+        dropdown.classList.add('show');
+        const button_rect = button.getBoundingClientRect();
+        const context_rect = context.getBoundingClientRect();
+        const dropdown_rect = dropdown.getBoundingClientRect();
 
-download_dropdown_elem.addEventListener('beforetoggle', e => {
-    if (e.newState === 'open') positionDownloadDropdown();
+        /// `#main` is the scroll container AND the positioning ancestor, so the offsets have to be
+        /// in its scrolled coordinate space: client rects are viewport-relative, hence the scroll
+        /// offsets. This matters in notebook mode, where the button rides with the active cell's
+        /// Run row and is normally well down a scrolled page.
+        dropdown.style.top = (button_rect.top - context_rect.top + context.scrollTop) + 'px';
+        dropdown.style.left = (button_rect.left - context_rect.left + context.scrollLeft
+                               + button_rect.width - dropdown_rect.width) + 'px';
+
+        // Move focus into the menu so keyboard users land on the format selection.
+        document.getElementById('download-format').focus();
+    }
 });
-download_dropdown_elem.addEventListener('toggle', e => {
-    /// Move focus into the menu so keyboard users land on the format selection.
-    if (e.newState === 'open') document.getElementById('download-format').focus();
+
+// Prevent dropdown from closing when clicking inside it
+document.getElementById('download-dropdown').addEventListener('click', function(e) {
+    e.stopPropagation();
 });
-for (const target of [document.getElementById('main'), window]) {
-    target.addEventListener(target === window ? 'resize' : 'scroll', () => {
-        if (download_dropdown_elem.matches(':popover-open')) positionDownloadDropdown();
-    }, { passive: true });
-}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function() {
+    const dropdown = document.getElementById('download-dropdown');
+    dropdown.classList.remove('show');
+});
 
 /// Keep the open download menu contiguous with the download button in the tab
-/// order. The dropdown lives at the end of the DOM, so without this its controls
-/// would land at the very end of the tab sequence. Tab/Shift+Tab flow:
+/// order. The dropdown lives at the end of the DOM (so it is positioned without
+/// being clipped), so without this its controls would otherwise land at the very
+/// end of the tab sequence. Tab/Shift+Tab flow:
 ///   download button -> format select -> [other format] -> Download button
 /// and leaving either end closes the menu. Escape also closes it.
 function downloadTabSequence() {
@@ -22195,12 +22201,12 @@ function downloadTabSequence() {
 }
 
 document.getElementById('main').addEventListener('keydown', e => {
-    if (!download_dropdown_elem.matches(':popover-open')) return;
+    const dropdown = document.getElementById('download-dropdown');
+    if (!dropdown.classList.contains('show')) return;
 
-    /// Handled here rather than left to the popover, so that the focus goes back to the button.
     if (e.key === 'Escape') {
         e.preventDefault();
-        download_dropdown_elem.hidePopover();
+        dropdown.classList.remove('show');
         document.getElementById('download-div').focus();
         return;
     }
@@ -22217,7 +22223,7 @@ document.getElementById('main').addEventListener('keydown', e => {
             seq[idx + 1].focus();
         } else {
             /// Past the last item: close the menu and continue to the next toolbar control.
-            download_dropdown_elem.hidePopover();
+            dropdown.classList.remove('show');
             e.preventDefault();
             document.getElementById('theme').focus();
         }
@@ -22227,7 +22233,7 @@ document.getElementById('main').addEventListener('keydown', e => {
             seq[idx - 1].focus();
         } else {
             /// Before the download button: close the menu and let focus move naturally.
-            download_dropdown_elem.hidePopover();
+            dropdown.classList.remove('show');
         }
     }
 });
@@ -22351,7 +22357,7 @@ document.getElementById('download-button').addEventListener('click', async funct
     document.body.removeChild(form);
 
     // Close dropdown
-    download_dropdown_elem.hidePopover();
+    document.getElementById('download-dropdown').classList.remove('show');
 });
 
 // Web Terminal integration

@@ -41,13 +41,13 @@ const std::string SSLManager::CFG_ENABLE_DEFAULT_CA("loadDefaultCAFile");
 const bool        SSLManager::VAL_ENABLE_DEFAULT_CA(true);
 const std::string SSLManager::CFG_CIPHER_LIST("cipherList");
 const std::string SSLManager::CFG_CYPHER_LIST("cypherList");
-[[clang::no_destroy]] const std::string SSLManager::VAL_CIPHER_LIST("ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH");
+const std::string SSLManager::VAL_CIPHER_LIST("ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH");
 const std::string SSLManager::CFG_CIPHER_SUITES("cipherSuites");
 const std::string SSLManager::CFG_PREFER_SERVER_CIPHERS("preferServerCiphers");
-[[clang::no_destroy]] const std::string SSLManager::CFG_DELEGATE_HANDLER("privateKeyPassphraseHandler.name");
+const std::string SSLManager::CFG_DELEGATE_HANDLER("privateKeyPassphraseHandler.name");
 const std::string SSLManager::VAL_DELEGATE_HANDLER("KeyConsoleHandler");
-[[clang::no_destroy]] const std::string SSLManager::CFG_CERTIFICATE_HANDLER("invalidCertificateHandler.name");
-[[clang::no_destroy]] const std::string SSLManager::VAL_CERTIFICATE_HANDLER("RejectCertificateHandler");
+const std::string SSLManager::CFG_CERTIFICATE_HANDLER("invalidCertificateHandler.name");
+const std::string SSLManager::VAL_CERTIFICATE_HANDLER("RejectCertificateHandler");
 const std::string SSLManager::CFG_SERVER_PREFIX("openSSL.server.");
 const std::string SSLManager::CFG_CLIENT_PREFIX("openSSL.client.");
 const std::string SSLManager::CFG_CACHE_SESSIONS("cacheSessions");
@@ -359,9 +359,7 @@ void SSLManager::initDefaultContext(bool server)
 	{
 		_ptrDefaultClientContext->enableSessionCache(cacheSessions);
 	}
-	/// Only an outbound connection has a requested host name to check: on an accepted socket this
-	/// would run against the client's address, which a client certificate does not name.
-	bool extendedVerification = config.getBool(prefix + CFG_EXTENDED_VERIFICATION, !server);
+	bool extendedVerification = config.getBool(prefix + CFG_EXTENDED_VERIFICATION, false);
 	if (server)
 		_ptrDefaultServerContext->enableExtendedCertificateVerification(extendedVerification);
 	else

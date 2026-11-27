@@ -9,6 +9,8 @@ custom_edit_url: null
 hide_advert: true
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/pt-BR/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 Este guia mostra como encaminhar logs do AWS CloudWatch para o Managed ClickStack usando o [`awscloudwatch` receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver) do OpenTelemetry e, depois, visualizá-los na ClickStack UI.
@@ -255,27 +257,11 @@ O coletor do ClickStack pode ser implantado como um **contêiner Docker** (consu
   <Step title="Confirme na ClickStack UI" id="confirm-in-ui">
     Abra seu serviço no [console do ClickHouse Cloud](https://console.clickhouse.cloud) e selecione **ClickStack** no menu à esquerda.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Iniciar o ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="Iniciar o ClickStack" border />
 
     Na visualização **Busca**, altere a fonte para `Logs` e defina o intervalo de tempo como **Últimos 15 minutos**. Os eventos do CloudWatch devem aparecer em um ou dois intervalos de polling.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Visualização Busca do ClickStack com logs do CloudWatch](/images/clickstack/cloudwatch/log-search-view-clickstack.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/cloudwatch/log-search-view-clickstack.webp" size="lg" alt="Visualização Busca do ClickStack com logs do CloudWatch" />
 
     Cada evento traz o grupo e o stream de origem como atributos de recurso:
 
@@ -286,27 +272,11 @@ O coletor do ClickStack pode ser implantado como um **contêiner Docker** (consu
 
     Modifique a busca para `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body` para incluir esses atributos:
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Visualização Busca do ClickStack com logs e atributos do CloudWatch](/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp" size="lg" alt="Visualização Busca do ClickStack com logs e atributos do CloudWatch" />
 
     Selecione uma entrada de log para inspecionar seus metadados:
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Atributos do CloudWatch na visualização de detalhes do log](/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp" size="lg" alt="Atributos do CloudWatch na visualização de detalhes do log" />
 
     Se nada aparecer:
 
@@ -321,27 +291,11 @@ O coletor do ClickStack pode ser implantado como um **contêiner Docker** (consu
 
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">Baixe `cloudwatch-logs-dashboard.json`</TrackedLink> e, em seguida, na ClickStack UI, navegue até **Dashboards** e clique em **Import**.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Botão de importação de dashboard](/images/clickstack/clickstack-import-dashboard.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/clickstack-import-dashboard.webp" size="lg" alt="Botão de importação de dashboard" />
 
     Faça upload do arquivo JSON e clique em **Finish Import**.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Janela de diálogo Finish Import](/images/clickstack/cloudwatch/finish-clickstack-import.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/cloudwatch/finish-clickstack-import.webp" size="lg" alt="Janela de diálogo Finish Import" />
   </Step>
 
   <Step title="Leitura adicional" id="further-reading">

@@ -36,8 +36,6 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Databases/IDatabase.h>
-#include <Processors/ISource.h>
 
 
 namespace DB

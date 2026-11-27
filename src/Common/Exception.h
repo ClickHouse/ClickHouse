@@ -365,7 +365,7 @@ struct ExecutionStatus
 
     static ExecutionStatus fromText(const std::string & data);
 
-    [[nodiscard]] std::string serializeText() const;
+    std::string serializeText() const;
 
     void deserializeText(const std::string & data);
 

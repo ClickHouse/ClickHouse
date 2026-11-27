@@ -29,7 +29,7 @@ public:
             elem.second.reload();
     }
 
-    [[nodiscard]] const RegionsHierarchy & get(const std::string & key) const
+    const RegionsHierarchy & get(const std::string & key) const
     {
         auto it = data.find(key);
 

@@ -109,8 +109,7 @@ QuantileLevel getQuantileLevel(SQLQueryPiece & scalar_argument, ConverterContext
 
         case StoreMethod::CONST_STRING:
         case StoreMethod::VECTOR_GRID:
-        case StoreMethod::SAMPLES:
-        case StoreMethod::TIMESTAMP_AND_VALUE:
+        case StoreMethod::RAW_DATA:
         {
             /// Can't get in here because these store methods are incompatible with a scalar (see checkArgumentTypes()).
             throwUnexpectedStoreMethod(scalar_argument, context);
@@ -168,12 +167,11 @@ SQLQueryPiece applyFunctionQuantileOverTime(
                         "a fixed @ modifier on the range vector {}",
                         function_name, getPromQLText(range_argument, context));
     }
-    const auto aggregation_range = getRangeAggregationRange(range_argument, node_range, context);
+    const auto aggregation_range = getRangeAggregationRange(fixed_at_node, node_range, context);
 
     /// A range vector made from a scalar has no `group` column. The result is still a vector grid with one series without
     /// tags, because the aggregate function returns NULL for a window without enough samples and only VECTOR_GRID can hold NULL.
-    const bool from_scalar = (range_argument.store_method == StoreMethod::CONST_SCALAR)
-        || (range_argument.store_method == StoreMethod::SINGLE_SCALAR) || (range_argument.store_method == StoreMethod::SCALAR_GRID);
+    const bool from_scalar = (range_argument.store_method != StoreMethod::VECTOR_GRID) && (range_argument.store_method != StoreMethod::RAW_DATA);
 
     SelectQueryBuilder builder;
 

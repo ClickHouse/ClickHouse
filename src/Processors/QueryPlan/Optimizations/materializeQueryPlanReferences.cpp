@@ -1,5 +1,4 @@
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
@@ -50,7 +49,7 @@ PreparedSets::Subqueries extractSetsForMaterialization(QueryPlan::Node & subplan
         std::move(step_sets.begin(), step_sets.end(), std::back_inserter(sets));
     }
 
-    VectorWithMemoryTracking<QueryPlan::Node *> stack{&subplan_root};
+    std::vector<QueryPlan::Node *> stack{&subplan_root};
     while (!stack.empty())
     {
         auto * node = stack.back();
@@ -84,7 +83,7 @@ PreparedSets::Subqueries extractSetsForMaterialization(QueryPlan::Node & subplan
 }
 
 void materializeQueryPlanReferences(
-    QueryPlan::Node & node, QueryPlan::Nodes & nodes, std::vector<FutureSetFromSubqueryPtr> & extracted_sets) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- this is `PreparedSets::Subqueries`; naming it here would need the full PreparedSets header
+    QueryPlan::Node & node, QueryPlan::Nodes & nodes, std::vector<FutureSetFromSubqueryPtr> & extracted_sets)
 {
     auto * subplan_reference = typeid_cast<CommonSubplanReferenceStep *>(node.step.get());
     if (!subplan_reference)

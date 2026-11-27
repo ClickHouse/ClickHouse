@@ -944,9 +944,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             if (!relation_id_to_name.contains(relation_id))
                 relation_id_to_name[relation_id] = table_name;
 
-            /// `deleted_tables` and `waiting_list` are keyed by the ClickHouse table name, which includes
-            /// the PostgreSQL schema in the multi-schema modes, as for the other message types.
-            if (!isSyncAllowed(relation_id, table_name))
+            if (!isSyncAllowed(relation_id, relation_name))
                 return;
 
             auto storage_iter = storages.find(table_name);
@@ -1378,7 +1376,7 @@ bool MaterializedPostgreSQLConsumer::consume()
 
         while (true)
         {
-            const std::vector<std::string_view> * row{stream.read_row()};
+            const std::vector<pqxx::zview> * row{stream.read_row()};
 
             if (!row)
             {
@@ -1400,7 +1398,7 @@ bool MaterializedPostgreSQLConsumer::consume()
             try
             {
                 /// LOG_DEBUG(log, "Current message: {}", (*row)[1]);
-                processReplicationMessage((*row)[1].data(), (*row)[1].size());
+                processReplicationMessage((*row)[1].c_str(), (*row)[1].size());
             }
             catch (const Exception & e)
             {

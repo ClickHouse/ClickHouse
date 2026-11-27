@@ -36,14 +36,14 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return "SortedCustomSource"; }
+    String getName() const override { return "SortedCustomSource"; }
 
     void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The step is only used to test plan optimizations");
     }
 
-    [[nodiscard]] const SortDescription & getSortDescription() const override { return sort_description; }
+    const SortDescription & getSortDescription() const override { return sort_description; }
 
 private:
     SortDescription sort_description;

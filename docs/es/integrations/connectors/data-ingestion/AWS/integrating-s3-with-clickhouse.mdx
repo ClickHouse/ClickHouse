@@ -12,6 +12,8 @@ integration:
 
 import BucketDetails from '/snippets/es/_S3_authentication_and_bucket.mdx';
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 Puede insertar datos de S3 en ClickHouse y también usar S3 como destino de exportación, lo que permite interactuar con arquitecturas de &quot;lago de datos&quot;. Además, S3 puede proporcionar niveles de almacenamiento &quot;en frío&quot; y ayudar a separar el almacenamiento del cómputo. En las secciones siguientes, usamos el conjunto de datos de taxis de la ciudad de Nueva York para mostrar el proceso de transferir datos entre S3 y ClickHouse, así como identificar parámetros clave de configuración y ofrecer sugerencias para optimizar el rendimiento.
 
 ## Funciones de tabla S3 {#s3-table-functions}
@@ -232,13 +234,11 @@ clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'd
   Para ejecutar esto a través de una conexión SSL segura, utilice la función `remoteSecure`.
 </Note>
 
-### Exportación de datos {#exporting-data}
+<div id="exporting-data">
+  ### Exportación de datos
+</div>
 
 Puede escribir archivos en S3 mediante la función de tabla `s3`. Para ello, necesitará los permisos adecuados. Incluimos las credenciales necesarias en la solicitud, pero consulte la página [Gestión de credenciales](#managing-credentials) para ver más opciones.
-
-<Warning>
-  Al exportar desde ClickHouse Cloud a Amazon S3, utilice el punto de conexión de S3 regional del bucket, como `https://my-bucket.s3.eu-west-1.amazonaws.com/...`, en lugar del punto de conexión global `https://s3.amazonaws.com/...`. Usar el punto de conexión global puede generar cargos adicionales por transferencia de datos.
-</Warning>
 
 En el sencillo ejemplo siguiente, usamos la función de tabla como destino en lugar de como origen. Aquí enviamos 10,000 filas de la tabla `trips` a un bucket, especificando compresión `lz4` y el tipo de salida `CSV`:
 
@@ -255,7 +255,7 @@ FROM trips
 LIMIT 10000;
 ```
 
-Observe aquí cómo el formato del archivo se infiere de la extensión. Tampoco es necesario especificar las columnas en la función `s3`; esto puede inferirse de `SELECT`.
+Observe aquí cómo el formato del archivo se deduce de la extensión. Tampoco es necesario especificar las columnas en la función `s3`; esto puede deducirse de `SELECT`.
 
 <div id="splitting-large-files">
   ### Dividir archivos grandes
@@ -700,8 +700,7 @@ Aquí reutilizamos el volumen principal en nuestra nueva política s3&#95;tiered
 
 La replicación con discos S3 puede implementarse mediante el motor de tabla `ReplicatedMergeTree`. Consulte la guía sobre [cómo replicar un único segmento entre dos regiones de AWS con almacenamiento de objetos S3](#s3-multi-region) para obtener más detalles.
 
-<a id="read--writes" />
-### Lecturas y escrituras
+### Lecturas y escrituras {#read--writes}
 
 Las siguientes notas describen la implementación de las interacciones de S3 con ClickHouse. Aunque en general son solo informativas, pueden resultar útiles al [optimización del rendimiento](#s3-optimizing-performance):
 
@@ -782,8 +781,7 @@ chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
 service clickhouse-server restart
 ```
 
-<a id="testing" />
-### Prueba
+### Prueba {#testing}
 
 1. Inicie sesión con el cliente de ClickHouse; por ejemplo:
 
@@ -861,15 +859,7 @@ SELECT * FROM s3_table1;
 6. En la consola de AWS, ve a los buckets y selecciona el bucket nuevo y la carpeta.
    Deberías ver algo parecido a lo siguiente:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Vista del bucket de S3 en la consola de AWS que muestra archivos de datos de ClickHouse almacenados en S3](/images/integrations/data-ingestion/s3/s3-j.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/s3/s3-j.webp" size="lg" border alt="Vista del bucket de S3 en la consola de AWS que muestra archivos de datos de ClickHouse almacenados en S3" />
 
 <div id="s3-multi-region">
   ## Replicar un único segmento entre dos regiones de AWS mediante almacenamiento de objetos en S3
@@ -1176,8 +1166,7 @@ En cada servidor de ClickHouse, ejecute
 sudo service clickhouse-server start
 ```
 
-<a id="verify-clickhouse-server" />
-#### Verificar el servidor de ClickHouse
+#### Verificar el servidor de ClickHouse {#verify-clickhouse-server}
 
 Cuando agregó la [configuración del clúster](#define-a-cluster), se definió un único segmento replicado entre los dos nodos de ClickHouse. En este paso de verificación, comprobará que el clúster se creó cuando se inició ClickHouse y creará una tabla replicada usando ese clúster.
 
@@ -1248,8 +1237,7 @@ Cuando agregó la [configuración del clúster](#define-a-cluster), se definió 
   Puede personalizar la ruta de ZooKeeper `'clickhouse/tables/{uuid}/{shard}` que se muestra arriba configurando `default_replica_path` y `default_replica_name`. La documentación está [aquí](/es/reference/settings/server-settings/settings/default-replica#default_replica_path).
 </Note>
 
-<a id="testing-1" />
-### Pruebas
+### Pruebas {#testing-1}
 
 Estas pruebas verificarán que los datos se estén replicando entre los dos servidores y que se almacenen en los buckets de S3, no en el disco local.
 
@@ -1310,25 +1298,9 @@ Estas pruebas verificarán que los datos se estén replicando entre los dos serv
 
   Compruebe los datos de S3 en cada bucket de S3 (no se muestran los totales, pero ambos buckets tienen aproximadamente 36 MiB almacenados después de las inserciones):
 
-<div className="ch-image-lg">
+<Image img="/images/integrations/data-ingestion/s3/bucket1.webp" size="lg" border alt="Tamaño de los datos en el primer bucket de S3, con métricas de uso de almacenamiento" />
 
-<Frame>
-
-![Tamaño de los datos en el primer bucket de S3, con métricas de uso de almacenamiento](/images/integrations/data-ingestion/s3/bucket1.webp)
-
-</Frame>
-
-</div>
-
-<div className="ch-image-lg">
-
-<Frame>
-
-![Tamaño de los datos en el segundo bucket de S3, con métricas de uso de almacenamiento](/images/integrations/data-ingestion/s3/bucket2.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/s3/bucket2.webp" size="lg" border alt="Tamaño de los datos en el segundo bucket de S3, con métricas de uso de almacenamiento" />
 
 <div id="s3express">
   ## S3Express

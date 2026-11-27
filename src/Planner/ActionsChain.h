@@ -65,19 +65,19 @@ public:
     }
 
     /// Get actions
-    [[nodiscard]] const ActionsAndProjectInputsFlagPtr & getActions() const
+    const ActionsAndProjectInputsFlagPtr & getActions() const
     {
         return actions;
     }
 
     /// Get available output columns
-    [[nodiscard]] const ColumnsWithTypeAndName & getAvailableOutputColumns() const
+    const ColumnsWithTypeAndName & getAvailableOutputColumns() const
     {
         return available_output_columns;
     }
 
     /// Get input column names
-    [[nodiscard]] const NameSet & getInputColumnNames() const
+    const NameSet & getInputColumnNames() const
     {
         return input_columns_names;
     }
@@ -85,7 +85,7 @@ public:
     /** Get child required output columns names.
       * Initialized during finalizeOutputColumns method call.
       */
-    [[nodiscard]] const NameSet & getChildRequiredOutputColumnsNames() const
+    const NameSet & getChildRequiredOutputColumnsNames() const
     {
         return child_required_output_columns_names;
     }
@@ -103,7 +103,7 @@ public:
     void dump(WriteBuffer & buffer) const;
 
     /// Dump step
-    [[nodiscard]] String dump() const;
+    String dump() const;
 
 private:
     void initialize();
@@ -134,18 +134,18 @@ public:
     }
 
     /// Get steps
-    [[nodiscard]] const ActionsChainSteps & getSteps() const
+    const ActionsChainSteps & getSteps() const
     {
         return steps;
     }
 
     /// Get steps size
-    [[nodiscard]] size_t getStepsSize() const
+    size_t getStepsSize() const
     {
         return steps.size();
     }
 
-    [[nodiscard]] const ActionsChainStepPtr & at(size_t index) const
+    const ActionsChainStepPtr & at(size_t index) const
     {
         if (index >= steps.size())
             throw std::out_of_range("actions chain access is out of range");
@@ -202,13 +202,13 @@ public:
     }
 
     /// Get last step available output columns
-    [[nodiscard]] const ColumnsWithTypeAndName & getLastStepAvailableOutputColumns() const
+    const ColumnsWithTypeAndName & getLastStepAvailableOutputColumns() const
     {
         return steps.back()->getAvailableOutputColumns();
     }
 
     /// Get last step available output columns or throw exception if chain is empty
-    [[nodiscard]] const ColumnsWithTypeAndName & getLastStepAvailableOutputColumnsOrThrow() const
+    const ColumnsWithTypeAndName & getLastStepAvailableOutputColumnsOrThrow() const
     {
         if (steps.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ActionsChain is empty");
@@ -217,7 +217,7 @@ public:
     }
 
     /// Get last step available output columns or null if chain is empty
-    [[nodiscard]] const ColumnsWithTypeAndName * getLastStepAvailableOutputColumnsOrNull() const
+    const ColumnsWithTypeAndName * getLastStepAvailableOutputColumnsOrNull() const
     {
         if (steps.empty())
             return nullptr;
@@ -232,7 +232,7 @@ public:
     void dump(WriteBuffer & buffer) const;
 
     /// Dump chain
-    [[nodiscard]] String dump() const;
+    String dump() const;
 
 private:
     ActionsChainSteps steps;

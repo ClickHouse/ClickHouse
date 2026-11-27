@@ -75,16 +75,16 @@ namespace
 {
 
 /// The only indexing method currently supported by USearch
-[[clang::no_destroy]] const std::set<String> methods = {"hnsw"};
+const std::set<String> methods = {"hnsw"};
 
 /// Maps from user-facing name to internal name
-[[clang::no_destroy]] const std::unordered_map<String, unum::usearch::metric_kind_t> distanceFunctionToMetricKind = {
+const std::unordered_map<String, unum::usearch::metric_kind_t> distanceFunctionToMetricKind = {
     {"L2Distance", unum::usearch::metric_kind_t::l2sq_k},
     {"cosineDistance", unum::usearch::metric_kind_t::cos_k},
     {"dotProduct", unum::usearch::metric_kind_t::ip_k}};
 
 /// Maps from user-facing name to internal name
-[[clang::no_destroy]] const std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToScalarKind = {
+const std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToScalarKind = {
     {"f64", unum::usearch::scalar_kind_t::f64_k},
     {"f32", unum::usearch::scalar_kind_t::f32_k},
     {"f16", unum::usearch::scalar_kind_t::f16_k},
@@ -92,10 +92,6 @@ namespace
     {"i8", unum::usearch::scalar_kind_t::i8_k},
     {"b1", unum::usearch::scalar_kind_t::b1x8_k}};
 /// Usearch provides more quantizations but ^^ above ones seem the only ones comprehensively supported across all distance functions.
-
-/// Limits as in Lucene.
-constexpr UInt64 max_hnsw_max_connections_per_layer = 512;
-constexpr UInt64 max_hnsw_candidate_list_size_for_construction = 3200;
 
 template<typename T>
 concept is_set = std::same_as<T, std::set<typename T::key_type, typename T::key_compare, typename T::allocator_type>>;
@@ -751,11 +747,6 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
         unum::usearch::index_dense_config_t config(connectivity, expansion_add, expansion_search);
         if (auto error = config.validate(); error)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parameters passed to vector similarity index. Error: {}", error.release());
-
-        if (connectivity > max_hnsw_max_connections_per_layer)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Fifth argument (hnsw_max_connections_per_layer) of vector similarity index must not be greater than {}", max_hnsw_max_connections_per_layer);
-        if (expansion_add > max_hnsw_candidate_list_size_for_construction)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Sixth argument (hnsw_candidate_list_size_for_construction) of vector similarity index must not be greater than {}", max_hnsw_candidate_list_size_for_construction);
     }
 
     /// Check that the index is created on a single column

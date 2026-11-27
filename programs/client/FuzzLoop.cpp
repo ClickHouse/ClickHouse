@@ -1,7 +1,5 @@
 #pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
-#include "config.h"
-
 #include <Client.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
@@ -167,10 +165,10 @@ bool Client::processASTFuzzerStep(const String & query_to_execute, const ASTPtr 
     /// crashes the server before the message can even propagate back here.
     if (have_error
         && exception->code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-        exitOnOracleMismatch(parsed_query->formatWithSecretsOneLine(), exception->message());
+        exitOnOracleMismatch(parsed_query->formatForErrorMessage(), exception->message());
     if (have_error)
     {
-        fmt::print(stderr, "Error on processing query '{}': {}\n", parsed_query->formatWithSecretsOneLine(), exception->message());
+        fmt::print(stderr, "Error on processing query '{}': {}\n", parsed_query->formatForErrorMessage(), exception->message());
     }
     return tryToReconnect(1, 10);
 }
@@ -283,7 +281,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
         ASTPtr ast_to_process;
         try
         {
-            auto base_before_fuzz = fuzz_base->formatWithSecretsOneLine();
+            auto base_before_fuzz = fuzz_base->formatForErrorMessage();
 
             ast_to_process = fuzz_base->clone();
             // Run the original query as well.
@@ -300,8 +298,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
                     query_parameters.insert_or_assign(name, value);
             }
 
-            /// The fuzzer runs the text it formats, so the secrets stay in it.
-            query_to_execute = ast_to_process->formatWithSecretsOneLine();
+            query_to_execute = ast_to_process->formatForErrorMessage();
             if (fuzz_step > 0 && query_to_execute == base_before_fuzz)
             {
                 fmt::print(stderr, "Got boring AST\n");
@@ -341,7 +338,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
                     /// Dump into /dev/null, we are not interested in sending the results back to the client
                     insert_into->select = ast_to_process;
                     ast_to_process = insert_into;
-                    query_to_execute = ast_to_process->formatWithSecretsOneLine();
+                    query_to_execute = ast_to_process->formatForErrorMessage();
                 }
                 else
                 {
@@ -354,7 +351,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             /// `base_after_fuzz` should format from `ast_to_process`
             WriteBufferFromOwnString dump_before_fuzz;
             fuzz_base->dumpTree(dump_before_fuzz);
-            auto base_after_fuzz = fuzz_base->formatWithSecretsOneLine();
+            auto base_after_fuzz = fuzz_base->formatForErrorMessage();
 
             // Check that the source AST didn't change after fuzzing. This
             // helps debug AST cloning errors, where the cloned AST doesn't
@@ -486,7 +483,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             fuzzer.notifyQueryFailed(ast_to_process);
             have_error = false;
         }
-        else if (ast_to_process->formatWithSecretsOneLine().size() > 2000)
+        else if (ast_to_process->formatForErrorMessage().size() > 2000)
         {
             // ast too long, start from original ast
             fmt::print(stderr, "Current AST is too long, discarding it and using the original AST as a start\n");
@@ -522,7 +519,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
 
         try
         {
-            query_to_execute = query->formatWithSecretsOneLine();
+            query_to_execute = query->formatForErrorMessage();
             const auto res = processASTFuzzerStep(query_to_execute, query);
             if (!res)
                 return res;
@@ -766,7 +763,7 @@ bool Client::buzzHouse()
         /// Load server configurations for the fuzzer
         fuzz_config->loadServerConfigurations();
         loadFuzzerServerSettings(*fuzz_config);
-        loadFuzzerTableSettings(*fuzz_config, has_cloud_features);
+        loadFuzzerTableSettings(*fuzz_config);
         loadSystemTables(*fuzz_config);
 
         if (fuzz_config->allow_client_restarts && fuzz_config->allow_query_oracles)
@@ -796,24 +793,18 @@ bool Client::buzzHouse()
         BuzzHouse::QueryOracle qo(*fuzz_config);
         /// Open transactions and hypothetical objects are session scoped on the server, so the
         /// bookkeeping must be dropped on every reconnect, including the ones `tryToReconnect`
-        /// does after query errors on a dropped TCP session. A reconnect can happen while generation
-        /// or an oracle still holds references into the catalog, so the cleanup waits for the next iteration.
-        bool session_reset = false;
-        after_fuzz_reconnect = [&session_reset]() { session_reset = true; };
+        /// does after query errors on a dropped TCP session.
+        after_fuzz_reconnect = [&gen]()
+        {
+            gen.setInTransaction(false);
+            gen.clearHypotheticals();
+        };
         SCOPE_EXIT({ after_fuzz_reconnect = {}; });
         while (server_up)
         {
             no_timeout = !deadline || clock::now() < *deadline;
             if (!no_timeout)
                 break;
-
-            if (session_reset)
-            {
-                session_reset = false;
-                gen.setInTransaction(false);
-                gen.clearHypotheticals();
-                gen.dropTemporaryObjects();
-            }
 
             sq1.Clear();
             full_query.resize(0);
@@ -957,8 +948,7 @@ bool Client::buzzHouse()
                          BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::DO_NOTHING;
 
                          rg.pickWeighted(
-                             /// `OPTIMIZE` drops all-zero `SummingMergeTree` rows that `SELECT ... FINAL` keeps
-                             {{15 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges && !tbl.get().isSummingMergeTree(true)),
+                             {{15 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::OPTIMIZE; }},
                               {25 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::REATTACH; }},
                               {10 * static_cast<uint32_t>(fuzz_config->enable_backups && test_content),
@@ -1036,8 +1026,6 @@ bool Client::buzzHouse()
                                  BuzzHouse::SQLQueryToString(full_query, reload);
                                  fuzz_config->outf << full_query << std::endl;
                                  server_up &= processBuzzHouseQuery(full_query);
-                                 /// A failed reload keeps the previous version, which a reattach then drops.
-                                 qo.setIntermediateStepSuccess(!have_error);
                              },
                              [&](auto s)
                              { qo.dumpObjectIntermediateSteps(rg, gen, dict, BuzzHouse::SQLObject::DICTIONARY, s, intermediate_queries); },
@@ -1238,12 +1226,17 @@ bool Client::buzzHouse()
                          const uint64_t nseed = rg.nextInFullRange();
                          const auto & tbl
                              = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call)).get();
-                         const String engine = tbl.getDolorEngineName();
+                         const auto & engine = tbl.isAnyIcebergEngine()
+                             ? "iceberg"
+                             : (tbl.isAnyDeltaLakeEngine()
+                                    ? "deltalake"
+                                    : (tbl.isAnyPaimonEngine() ? "paimon" : (tbl.isFileEngine() ? "file" : "kafka")));
                          const auto & ndname
-                             = (tbl.isAnyStreamingEngine() || tbl.isFileEngine()) ? tbl.getDatabaseName() : tbl.getSparkCatalogName();
+                             = (tbl.isKafkaEngine() || tbl.isFileEngine()) ? tbl.getDatabaseName() : tbl.getSparkCatalogName();
                          const auto & ntname = tbl.getBaseName(false);
                          const bool async = fuzz_config->allow_async_requests && rg.nextSmallNumber() < 4;
 
+                         chassert(tbl.isAnyLakeEngine() || tbl.isKafkaEngine() || tbl.isFileEngine());
                          fuzz_config->outf << external_cmd << (async ? "async " : "") << "with seed " << nseed << " to " << engine
                                            << " table " << markerHexEncode(ndname) << " " << markerHexEncode(ntname) << std::endl;
                          runExternalCommand(external_integrations, nseed, async, engine, ndname, ntname);
@@ -1271,16 +1264,13 @@ bool Client::buzzHouse()
     {
         LOG_INFO(fuzz_config->log, "The server is not responding, stopping fuzzing");
     }
-    if (!no_timeout || !no_eof)
+    if (!no_timeout)
     {
         /// Don't let the last query's error code become the exit code
         have_error = false;
         error_code = 0;
         server_exception.reset();
         client_exception.reset();
-    }
-    if (!no_timeout)
-    {
         LOG_INFO(fuzz_config->log, "The fuzzing time limit has been reached, stopping fuzzing");
     }
     if (!no_eof)
