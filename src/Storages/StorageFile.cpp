@@ -81,6 +81,9 @@
 #include <Common/re2.h>
 #include <Common/ErrnoException.h>
 #include <Common/saturatedDuration.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <base/defines.h>
 
@@ -96,6 +99,8 @@
 #include <filesystem>
 #include <shared_mutex>
 #include <algorithm>
+#include <limits>
+#include <optional>
 #include <unordered_set>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -112,6 +117,7 @@ namespace ProfileEvents
     extern const Event EngineFileLikeReadFiles;
     extern const Event QueryConditionCacheHits;
     extern const Event QueryConditionCacheMisses;
+    extern const Event ParquetPrunedRowGroups;
 }
 
 namespace fs = std::filesystem;
@@ -155,6 +161,7 @@ namespace ErrorCodes
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int READONLY;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
@@ -203,17 +210,326 @@ std::string collapseRedundantSeparators(const std::string & path)
     return result;
 }
 
-/* Recursive directory listing with matched paths as a result.
- * Have the same method in StorageHDFS.
- */
+/// True when the glob pattern contains a path component equal to exactly `**` (the recursive
+/// globstar that matches any number of directory levels). Finite components such as `a**` or
+/// `**.txt` must NOT count: those are ordinary single-level globs, not recursive descents.
+bool patternHasGlobstarSegment(const std::string & pattern)
+{
+    for (const auto & segment : fs::path(pattern))
+        if (segment == "**")
+            return true;
+    return false;
+}
+
+bool hasDotDotSegment(const std::string & path)
+{
+    for (const auto & segment : fs::path(path))
+        if (segment == "..")
+            return true;
+    return false;
+}
+
+/// How many levels above where `pattern` starts its `..` segments can reach: every other segment except `**` descends one.
+size_t dotDotClimb(const std::string & pattern)
+{
+    ssize_t depth = 0;
+    ssize_t lowest = 0;
+    for (const auto & segment : fs::path(pattern))
+    {
+        if (segment == "..")
+            lowest = std::min(lowest, --depth);
+        else if (!segment.empty() && segment != "/" && segment != "." && segment != "**")
+            ++depth;
+    }
+    return static_cast<size_t>(-lowest);
+}
+
+/// How many levels above two lexically normal directory spellings they first name the same directory.
+size_t levelsToCommonDirectory(const std::string & a, const std::string & b)
+{
+    if (a == b)
+        return 0;
+    fs::path x = fs::path(a).parent_path();
+    fs::path y = fs::path(b).parent_path();
+    for (size_t level = 1; x.has_relative_path() || y.has_relative_path(); ++level)
+    {
+        x = x.parent_path();
+        y = y.parent_path();
+        if (x == y)
+            return level;
+    }
+    return std::numeric_limits<size_t>::max();
+}
+
+/// Classifies a filesystem query that failed while a glob was being expanded, at a place that
+/// reacts by skipping the path. The codes below mean nothing listable is there; any other error
+/// means matching files may exist but could not be read, which must not become missing rows.
+void skipUnresolvableOrThrow(const std::error_code & ec, const std::string & path)
+{
+    if (ec == std::errc::too_many_symbolic_link_levels
+        || ec == std::errc::no_such_file_or_directory
+        || ec == std::errc::not_a_directory
+        || ec == std::errc::filename_too_long)
+        return;
+
+    throw fs::filesystem_error("Cannot expand the glob", path, ec);
+}
+
+/// One entry of the traversal-pruning set: the lexical directory path that last walked this
+/// (canonical directory, remaining pattern) frame, and how many matches that frame's subtree
+/// emitted. A later frame pruned against it would have emitted exactly the same ones, so both
+/// fields are needed to tell whether pruning hid a genuine second name for a file.
+struct VisitedFrame
+{
+    std::string lexical_dir;
+    size_t matches = 0;
+    /// The walked directory as spelled (`prefix_without_globs`) and resolved.
+    std::string prefix;
+    fs::path canonical;
+    /// On the walk's stack: arriving here again is a cycle.
+    bool walking = false;
+    /// The first path below `prefix` that the last walk skipped on an `ELOOP` or `ENAMETOOLONG` caused
+    /// by the symlinks or length of `prefix` itself. A name that resolves it walks the frame again, and
+    /// that walk may leave a deeper path unresolved for a further name. Retries stay finite because a
+    /// frame is never entered while it is `walking`, so no frame appears twice on the walk's stack.
+    std::optional<std::string> unresolved;
+    /// The `PruningState::skipped_paths` the last walk recorded.
+    size_t skipped_begin = 0;
+    size_t skipped_end = 0;
+    /// `matches` at the start of each retry, in order.
+    VectorWithMemoryTracking<size_t> matches_before_retries;
+    /// The fewest levels above `prefix` that the `..` of a match of the current walk reach. Another spelling
+    /// of the directory returns the same path for such a match only if both spellings are equal that far up.
+    size_t min_match_climb = std::numeric_limits<size_t>::max();
+    /// `lexical_dir` and `min_match_climb` of each walk before the current one, in order.
+    VectorWithMemoryTracking<std::pair<std::string, size_t>> earlier_walks;
+};
+
+/// State the traversal pruning carries across one expanded pattern.
+struct PruningState
+{
+    /// Frames the walk has entered, keyed by (canonical directory, remaining pattern).
+    UnorderedMapWithMemoryTracking<std::string, VisitedFrame> visited_frames;
+    /// The frames currently on the walk's stack. A match belongs to all of them, because a frame
+    /// pruned against any one of them would have re-walked that whole subtree. Pointers into
+    /// `visited_frames` stay valid across its rehashing, which is what makes them safe to hold.
+    VectorWithMemoryTracking<VisitedFrame *> active_frames;
+    /// Frames pruned because another frame reached the same place under a different lexical path.
+    /// Whether that hid a real second name depends on how many matches the claiming frame ends up
+    /// with, so the answer is deferred until the walk is over and every count is final. Deciding
+    /// at the collision instead would read a count that is not yet final whenever the collision
+    /// comes from inside the claiming frame's own subtree, which is what an ancestor loop is: the
+    /// loop can re-enter the root before the root has matched anything. A collision before one of
+    /// the frame's retries counts only the matches from before that retry: the pruned name has more
+    /// symlinks than the retry's name.
+    struct Collision
+    {
+        const VisitedFrame * frame = nullptr;
+        /// How many retries the frame had at the time.
+        size_t retries = 0;
+        /// The pruned spelling's `lexical_dir` when `..` are folded, else empty: every match is then another path.
+        std::string pruned_dir;
+    };
+    VectorWithMemoryTracking<Collision> pending_collisions;
+
+    /// What a path skipped on `ELOOP` or `ENAMETOOLONG` would have added to the result. The walk fails at the end
+    /// unless another name found it, or a later walk of `frame` superseded the skip.
+    struct SkippedPath
+    {
+        std::error_code ec;
+        std::string path;
+        const VisitedFrame * frame = nullptr;
+        size_t walk = 0;
+        /// A key of `visited_frames` (`listed_tails` if `is_tail`) for a directory that is walked further, of
+        /// `matched_paths` for a match, or empty when neither can tell.
+        bool is_walk = false;
+        std::string key;
+        bool found = false;
+        bool is_tail = false;
+    };
+    VectorWithMemoryTracking<SkippedPath> skipped_paths;
+    /// (canonical directory, remaining pattern) of every directory a bounded tail below a `**` has listed.
+    UnorderedSetWithMemoryTracking<std::string> listed_tails;
+    /// The pattern has a `..` segment and ends in a name without globs, which the exact-match branch returns with
+    /// the `..` folded lexically.
+    bool folds_dot_dot = false;
+};
+
+/// Whether walking `pattern` from a directory spelled `spelling` returns files that depend on the spelling, not only on
+/// where it resolves: a folded `..` that reaches above the directory, or one in the spelling itself.
+bool foldsAgainstSpelling(const PruningState & pruning, const std::string & spelling, const std::string & pattern)
+{
+    return pruning.folds_dot_dot && (dotDotClimb(pattern) > 0 || hasDotDotSegment(spelling));
+}
+
+/// What a path that `notePathLimitSkip` records adds to the result if it resolves to a directory or a file.
+enum class SkippedYield : uint8_t
+{
+    None,
+    Match,
+    /// The directory is walked with the `walk_suffix` of the call.
+    Walk,
+    /// Not recorded anywhere a later lookup can find.
+    Unknown,
+};
+
+/// Records an `ELOOP` or `ENAMETOOLONG` on `path` in the frames being walked, unless no name for them
+/// can do better: a loop that also fails from the innermost canonical directory, or a directory walked
+/// with `walk_suffix` that is on the stack or left nothing unresolved.
+void notePathLimitSkip(
+    const std::error_code & ec, const std::string & path, const std::string * walk_suffix, PruningState & pruning,
+    SkippedYield if_directory = SkippedYield::None, SkippedYield if_file = SkippedYield::None)
+{
+    const bool symlink_limit = ec == std::errc::too_many_symbolic_link_levels;
+    if ((!symlink_limit && ec != std::errc::filename_too_long) || pruning.active_frames.empty()
+        || !path.starts_with(pruning.active_frames.back()->prefix))
+        return;
+
+    const VisitedFrame & innermost = *pruning.active_frames.back();
+    std::string tail = path.substr(innermost.prefix.size());
+    tail.erase(0, tail.find_first_not_of('/'));
+    std::error_code target_ec;
+    const fs::path target = fs::canonical(innermost.canonical / tail, target_ec);
+    if (symlink_limit && target_ec == std::errc::too_many_symbolic_link_levels)
+        return;
+    std::string walk_key;
+    std::error_code walk_ec;
+    bool walk_is_tail = false;
+    bool walk_is_match = false;
+    if (!target_ec && walk_suffix)
+    {
+        /// The literal components before the first glob of `walk_suffix` are part of the walked frame's directory.
+        const size_t first_glob = walk_suffix->find_first_of("*?{");
+        const size_t literal_end = walk_suffix->substr(0, first_glob).rfind('/');
+        const fs::path walked = literal_end ? fs::canonical(target / walk_suffix->substr(1, literal_end), walk_ec) : target;
+        /// No other name is known to return what a walk folded against its own spelling would.
+        const bool spelled = foldsAgainstSpelling(pruning, path + walk_suffix->substr(0, literal_end), walk_suffix->substr(literal_end));
+        if (!walk_ec && !spelled && first_glob == std::string::npos)
+        {
+            /// A suffix without globs names one file, under the key `add_matched_path` gives it.
+            (void)fs::canonical(target / walk_suffix->substr(1), walk_ec);
+            if (!walk_ec)
+                walk_key = (walked / walk_suffix->substr(literal_end + 1)).string();
+            walk_is_match = true;
+        }
+        else if (!walk_ec && !spelled)
+        {
+            const std::string remaining = walk_suffix->substr(literal_end);
+            walk_key = walked.string() + '\0' + remaining;
+            walk_is_tail = !patternHasGlobstarSegment(remaining);
+            bool returned = false;
+            if (walk_is_tail)
+                returned = pruning.listed_tails.contains(walk_key);
+            else if (const auto visited = pruning.visited_frames.find(walk_key); visited != pruning.visited_frames.end())
+                returned = visited->second.walking || !visited->second.unresolved;
+            if (returned)
+                return;
+        }
+    }
+
+    SkippedYield yield = if_file;
+    if (target_ec == std::errc::no_such_file_or_directory || target_ec == std::errc::not_a_directory)
+        yield = SkippedYield::None;
+    else if (if_directory != if_file)
+    {
+        std::error_code type_ec;
+        const bool is_directory = !target_ec && fs::is_directory(target, type_ec);
+        yield = target_ec || type_ec ? SkippedYield::Unknown : (is_directory ? if_directory : if_file);
+    }
+    if (yield == SkippedYield::Walk && (walk_ec == std::errc::no_such_file_or_directory || walk_ec == std::errc::not_a_directory))
+        yield = SkippedYield::None;
+    if (yield != SkippedYield::None)
+    {
+        PruningState::SkippedPath skipped{ec, path, &innermost, innermost.matches_before_retries.size(), false, {}, false};
+        if (yield == SkippedYield::Walk && !walk_key.empty())
+        {
+            skipped.is_walk = !walk_is_match;
+            skipped.is_tail = walk_is_tail;
+            skipped.key = std::move(walk_key);
+        }
+        else if (yield == SkippedYield::Match)
+        {
+            /// The key `add_matched_path` gives the match under any name: resolved parent, final component as written.
+            /// Folding the tail against `innermost.canonical` mirrors the returned path only if the prefix has no `..`.
+            const fs::path normal_tail = fs::path(tail).lexically_normal();
+            std::error_code parent_ec;
+            const fs::path parent = fs::canonical(innermost.canonical / normal_tail.parent_path(), parent_ec);
+            if (!parent_ec && normal_tail.has_filename() && *normal_tail.begin() != ".." && !hasDotDotSegment(innermost.prefix))
+                skipped.key = (parent / normal_tail.filename()).string();
+        }
+        pruning.skipped_paths.push_back(std::move(skipped));
+    }
+
+    for (auto * frame : pruning.active_frames)
+        if (!frame->unresolved)
+            frame->unresolved = path.substr(frame->prefix.size());
+}
+
+/// Whether a skip still counts and no other name has returned what it would have.
+bool isMissing(
+    PruningState::SkippedPath & skipped, const PruningState & pruning,
+    const UnorderedMapWithMemoryTracking<std::string, size_t> & matched_paths)
+{
+    if (skipped.walk != skipped.frame->matches_before_retries.size())
+        return false;
+    if (!skipped.found && !skipped.key.empty())
+    {
+        if (!skipped.is_walk)
+            skipped.found = matched_paths.contains(skipped.key);
+        else
+            skipped.found = skipped.is_tail ? pruning.listed_tails.contains(skipped.key) : pruning.visited_frames.contains(skipped.key);
+    }
+    return !skipped.found;
+}
+
+/// Whether `prefix`, another name for the frame's directory, resolves what its last walk could not: the
+/// first path it left unresolved, or any skip below it that is still missing or leads into an incomplete frame.
+bool resolvesUnresolved(
+    const VisitedFrame & frame, const std::string & prefix, PruningState & pruning,
+    const UnorderedMapWithMemoryTracking<std::string, size_t> & matched_paths)
+{
+    if (!frame.unresolved)
+        return false;
+    auto resolves = [](const std::string & path)
+    {
+        std::error_code ec;
+        (void)fs::status(path, ec);
+        if (ec)
+            skipUnresolvableOrThrow(ec, path);
+        return !ec;
+    };
+    auto into_incomplete_frame = [&](const PruningState::SkippedPath & skipped)
+    {
+        if (!skipped.is_walk || skipped.is_tail || skipped.walk != skipped.frame->matches_before_retries.size())
+            return false;
+        const auto target = pruning.visited_frames.find(skipped.key);
+        return target != pruning.visited_frames.end() && !target->second.walking && target->second.unresolved.has_value();
+    };
+    if (resolves(prefix + *frame.unresolved))
+        return true;
+    for (size_t i = frame.skipped_begin; i < frame.skipped_end; ++i)
+    {
+        auto & skipped = pruning.skipped_paths[i];
+        if ((isMissing(skipped, pruning, matched_paths) || into_incomplete_frame(skipped))
+            && resolves(prefix + skipped.path.substr(frame.prefix.size())))
+            return true;
+    }
+    return false;
+}
+
+/// Recursive directory listing with matched paths as a result.
+/// Have the same method in StorageHDFS.
 void listFilesWithRegexpMatchingImpl(
     const std::string & path_for_ls,
     const std::string & for_match,
     size_t & total_bytes_to_read,
     std::vector<std::string> & result,
-    std::unordered_set<std::string> & matched_paths,
+    UnorderedMapWithMemoryTracking<std::string, size_t> & matched_paths,
     bool recursive,
-    size_t depth)
+    size_t depth,
+    PruningState & pruning,
+    bool deduplicate_by_canonical_path,
+    bool & collapsed_a_match)
 {
     if (depth > MAX_LIST_FILES_RECURSION_DEPTH)
         throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
@@ -225,6 +541,17 @@ void listFilesWithRegexpMatchingImpl(
     if (depth % 16 == 0)
         checkStackSize();
 
+    /// Set when this invocation claimed a frame, so the stack is popped on every exit from here.
+    bool frame_pushed = false;
+    SCOPE_EXIT({
+        if (frame_pushed)
+        {
+            pruning.active_frames.back()->walking = false;
+            pruning.active_frames.back()->skipped_end = pruning.skipped_paths.size();
+            pruning.active_frames.pop_back();
+        }
+    });
+
     /// Appends a matched path to the result and counts its bytes, deduplicating by its
     /// normalized form. Adjacent globstars (e.g. `**/**/*.tsv`) can reach the same filesystem
     /// entry through both the zero-level branch and the recursive descent, so without this
@@ -232,12 +559,54 @@ void listFilesWithRegexpMatchingImpl(
     /// The returned path is collapsed so that one file is named by one path whichever branch
     /// matched it: the prefixes below can end up with a doubled separator, and
     /// `fs::directory_iterator` preserves the spelling it is handed.
-    auto add_matched_path = [&](const std::string & path, size_t bytes)
+    /// `parent_canonical_hint` lets a caller that has already resolved this path's parent pass the
+    /// result in, so the same directory is not resolved twice for one match.
+    /// `unfolded` is `path` as spelled before its `..` were folded.
+    auto add_matched_path = [&](const std::string & path, size_t bytes, const fs::path * parent_canonical_hint = nullptr,
+                                const std::string * unfolded = nullptr)
     {
-        if (matched_paths.emplace(fs::path(path).lexically_normal().string()).second)
+        /// Resolve the PARENT but keep the final component as written: an ancestor-aliasing
+        /// symlink gives one file several lexical paths, while a symlink TO a file is a distinct
+        /// name the pattern selected and must stay its own row. Lexical form if it cannot resolve.
+        std::string dedup_key;
+        if (!deduplicate_by_canonical_path)
+        {
+            dedup_key = fs::path(path).lexically_normal().string();
+        }
+        else
+        {
+            const fs::path as_path(path);
+            if (parent_canonical_hint)
+            {
+                dedup_key = (*parent_canonical_hint / as_path.filename()).string();
+            }
+            else
+            {
+                std::error_code canon_ec;
+                const auto parent_canonical = fs::canonical(as_path.parent_path(), canon_ec);
+                if (canon_ec)
+                    dedup_key = as_path.lexically_normal().string();
+                else
+                    dedup_key = (parent_canonical / as_path.filename()).string();
+            }
+        }
+        const auto [returned, inserted] = matched_paths.try_emplace(std::move(dedup_key), result.size());
+        if (inserted)
         {
             total_bytes_to_read += bytes;
             result.push_back(collapseRedundantSeparators(path));
+            for (auto * frame : pruning.active_frames)
+            {
+                ++frame->matches;
+                frame->min_match_climb = std::min(frame->min_match_climb,
+                    unfolded && unfolded->starts_with(frame->prefix) ? dotDotClimb(unfolded->substr(frame->prefix.size())) : 0);
+            }
+        }
+        else if (fs::path(result[returned->second]).lexically_normal() != fs::path(path).lexically_normal())
+        {
+            /// Another path to a file already returned. The read-only guard on writes counts the
+            /// paths the pattern selected, so it has to know; the same path reached twice is not one.
+            collapsed_a_match = true;
         }
     };
 
@@ -245,29 +614,43 @@ void listFilesWithRegexpMatchingImpl(
 
     if (first_glob_pos == std::string::npos)
     {
-        try
+        /// We use fs::canonical to resolve the canonical path and check if the file does exists
+        /// but the result path will be fs::absolute.
+        /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
+        /// It is the existence check that skips a suffix that does not resolve, classified like the
+        /// other filesystem queries of the walk: a missing file is no match, but an error such as
+        /// `EACCES` on a component means the file may exist and could not be read. The WHOLE
+        /// candidate is resolved rather than only its parent: a `..` behind a symlink can make the
+        /// raw path resolve while the normalized path below names a missing lexical sibling, and
+        /// that sibling must still be returned so the reader reports it as absent instead of
+        /// silently skipping.
+        const std::string candidate = path_for_ls + for_match;
+        std::error_code canon_ec;
+        (void)fs::canonical(candidate, canon_ec);
+        if (canon_ec)
         {
-            /// We use fs::canonical to resolve the canonical path and check if the file does exists
-            /// but the result path will be fs::absolute.
-            /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-            (void)fs::canonical(path_for_ls + for_match);
-            /// `checkCreationIsAllowed` normalizes its own copy of this path, so a `..` must not
-            /// survive here: the check and the reader would name different files.
-            const fs::path absolute_path = fs::absolute(path_for_ls + for_match).lexically_normal();
-            /// This exact-match branch is reached for suffixes without globs, including the
-            /// zero-level `**/` case (e.g. `data/**/file.txt` matching `data/file.txt`). The file
-            /// is returned and read, so its bytes must be counted towards `total_bytes_to_read`
-            /// for progress reporting. `fs::file_size` errors for non-regular targets (e.g. a
-            /// directory); in that case keep the byte count at zero but still return the path.
-            std::error_code size_ec;
-            const size_t file_size = fs::file_size(absolute_path, size_ec);
-            add_matched_path(absolute_path.string(), size_ec ? 0 : file_size);
+            skipUnresolvableOrThrow(canon_ec, candidate);
+            notePathLimitSkip(canon_ec, candidate, nullptr, pruning, SkippedYield::Match, SkippedYield::Match);
+            return;
         }
-        catch (const std::exception &) // NOLINT
+        /// `checkCreationIsAllowed` normalizes its own copy of this path, so a `..` must not
+        /// survive here: the check and the reader would name different files.
+        const fs::path absolute_path = fs::absolute(candidate).lexically_normal();
+        /// This exact-match branch is reached for suffixes without globs, including the
+        /// zero-level `**/` case (e.g. `data/**/file.txt` matching `data/file.txt`). The file
+        /// is returned and read, so its bytes must be counted towards `total_bytes_to_read`
+        /// for progress reporting. `fs::file_size` errors for non-regular targets (e.g. a
+        /// directory); in that case keep the byte count at zero but still return the path.
+        std::error_code size_ec;
+        const size_t file_size = fs::file_size(absolute_path, size_ec);
+        /// `realpath` can resolve a path the kernel refuses: a spelling over `PATH_MAX`, or one symlink more on macOS.
+        if (!pruning.active_frames.empty()
+            && (size_ec == std::errc::too_many_symbolic_link_levels || size_ec == std::errc::filename_too_long))
         {
-            /// There is no such file, but we just ignore this.
-            /// throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", for_match);
+            notePathLimitSkip(size_ec, candidate, nullptr, pruning, SkippedYield::Match, SkippedYield::Match);
+            return;
         }
+        add_matched_path(absolute_path.string(), size_ec ? 0 : file_size, nullptr, pruning.folds_dot_dot ? &candidate : nullptr);
         return;
     }
 
@@ -290,9 +673,124 @@ void listFilesWithRegexpMatchingImpl(
         recursive = current_glob == "/**" ;
 
     const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
+    const bool walks_frame = patternHasGlobstarSegment(suffix_with_globs);
 
-    if (!existsOrFileNameTooLong([&] { return fs::exists(prefix_without_globs); }))
+    /// Use the `std::error_code` overload: a path that fails to resolve (`ELOOP`, dangling
+    /// symlink, a component over `NAME_MAX`) is skipped instead of surfacing the raw
+    /// `filesystem_error` exception. This matches the existing skip semantics of
+    /// `it.increment(ec)` below for individual entries.
+    std::error_code prefix_exists_ec;
+    const bool prefix_exists = fs::exists(prefix_without_globs, prefix_exists_ec);
+    if (prefix_exists_ec)
+    {
+        skipUnresolvableOrThrow(prefix_exists_ec, prefix_without_globs);
+        notePathLimitSkip(prefix_exists_ec, prefix_without_globs, &suffix_with_globs, pruning, SkippedYield::Walk);
+    }
+    if (!prefix_exists)
         return;
+
+    /// The frame key below and every entry the loop emits name this same directory, so one
+    /// resolution serves them all. Null means it does not resolve: a skip for the frame key,
+    /// the lexical fallback for a match.
+    std::optional<fs::path> dir_canonical;
+    bool dir_canonical_attempted = false;
+    auto dir_canonical_hint = [&]() -> const fs::path *
+    {
+        if (!dir_canonical_attempted)
+        {
+            dir_canonical_attempted = true;
+            std::error_code canon_ec;
+            auto canonical_path = fs::canonical(prefix_without_globs, canon_ec);
+            if (canon_ec)
+            {
+                skipUnresolvableOrThrow(canon_ec, prefix_without_globs);
+                notePathLimitSkip(canon_ec, prefix_without_globs, walks_frame ? &suffix_with_globs : nullptr, pruning,
+                                  walks_frame ? SkippedYield::Walk : SkippedYield::None);
+            }
+            else
+                dir_canonical = std::move(canonical_path);
+        }
+        return dir_canonical ? &*dir_canonical : nullptr;
+    };
+
+    /// A frame is (canonical directory, remaining pattern), which is the whole state of the walk,
+    /// so a repeated pair can only redo what its claimant already does. The directory alone is NOT
+    /// a sufficient key: `**` also matches zero levels, so re-entering with a SHORTER suffix is new
+    /// work that can reach files no other path reaches.
+    ///
+    /// Only frames whose remaining pattern still holds a whole-segment `**` are tracked, since a
+    /// bounded finite tail cannot recurse without end and may legitimately reach a file through an
+    /// ancestor symlink.
+    ///
+    /// This prunes TRAVERSAL, which is separate from the output deduplication in
+    /// `add_matched_path`: that filters rows, this stops the repeated visit happening at all.
+    if (walks_frame)
+    {
+        const fs::path * prefix_canonical_ptr = dir_canonical_hint();
+        if (!prefix_canonical_ptr)
+            return; /// Dangling/inaccessible: mirror the pre-existing `it.increment(ec)` skip semantics.
+        const fs::path & prefix_canonical = *prefix_canonical_ptr;
+        /// Key on `suffix_with_globs` rather than `for_match`: `for_match` still carries the
+        /// literal prefix that `prefix_without_globs` has already consumed, so the same walk
+        /// state would get different keys depending on how much literal text the caller passed
+        /// down (the outer frame sees `/root/**/*.txt` where a re-entry sees `/**/*.txt`) and the
+        /// ancestor subtree would be rescanned once per loop instead of being pruned.
+        /// `\0` cannot occur in a path or a pattern, so it is an unambiguous separator.
+        std::string frame_key = prefix_canonical.string() + '\0' + suffix_with_globs;
+        const std::string lexical_dir = fs::path(prefix_without_globs).lexically_normal().string();
+        if (foldsAgainstSpelling(pruning, prefix_without_globs, suffix_with_globs))
+        {
+            /// Also where the spelling leads: the lexical directory and each ancestor a `..` of the suffix can climb to.
+            fs::path ancestor = fs::path(lexical_dir).parent_path();
+            const size_t climb = dotDotClimb(suffix_with_globs);
+            for (size_t level = 0; level <= climb; ++level, ancestor = ancestor.parent_path())
+            {
+                std::error_code ancestor_ec;
+                const fs::path resolved = fs::canonical(ancestor, ancestor_ec);
+                frame_key += '\0';
+                frame_key += (ancestor_ec ? ancestor : resolved).string();
+            }
+        }
+        const auto [claimed, is_new] = pruning.visited_frames.try_emplace(frame_key);
+        VisitedFrame & frame = claimed->second;
+        if (!is_new
+            && (frame.walking || frame.lexical_dir == lexical_dir
+                || !resolvesUnresolved(frame, prefix_without_globs, pruning, matched_paths)))
+        {
+            /// Pruning happens before any match is emitted, so a pruned frame can never reach
+            /// `add_matched_path` to report that two paths named one file. Record it here instead,
+            /// but only when it arrived by a DIFFERENT lexical directory path than the one that
+            /// claimed the frame: that is a second name for the same place, whereas re-entering
+            /// under the SAME path is a globstar re-applying at one directory and is not a second
+            /// name. Whether the pruned frame would have matched anything is decided after the
+            /// walk, because the claiming frame may still be finding matches right now.
+            if (frame.lexical_dir != lexical_dir)
+                pruning.pending_collisions.push_back(
+                    {&frame, frame.matches_before_retries.size(), pruning.folds_dot_dot ? lexical_dir : std::string{}});
+            /// What the frame could not resolve is also unresolved under the frames reaching it now.
+            if (!frame.walking && frame.unresolved)
+                notePathLimitSkip(std::make_error_code(std::errc::too_many_symbolic_link_levels),
+                                     prefix_without_globs + *frame.unresolved, nullptr, pruning);
+            return; /// This directory has already been walked with this remaining pattern.
+        }
+        if (!is_new)
+        {
+            frame.matches_before_retries.push_back(frame.matches);
+            frame.earlier_walks.emplace_back(std::move(frame.lexical_dir), frame.min_match_climb);
+            frame.min_match_climb = std::numeric_limits<size_t>::max();
+        }
+        frame.lexical_dir = lexical_dir;
+        frame.prefix = prefix_without_globs;
+        frame.canonical = prefix_canonical;
+        frame.unresolved.reset();
+        frame.skipped_begin = frame.skipped_end = pruning.skipped_paths.size();
+        /// This frame owns everything its subtree matches, so keep it on the stack until the
+        /// subtree is done. Ancestors stay on the stack too: a frame pruned against an ancestor
+        /// would have re-walked this subtree as well.
+        frame.walking = true;
+        pruning.active_frames.push_back(&frame);
+        frame_pushed = true;
+    }
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
 
@@ -303,7 +801,37 @@ void listFilesWithRegexpMatchingImpl(
     /// (`recursive` is `false`) to avoid producing the same results twice.
     if (current_glob == "/**" && looking_for_directory)
         listFilesWithRegexpMatchingImpl(prefix_without_globs + "/", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                        total_bytes_to_read, result, matched_paths, false, depth + 1);
+                                        total_bytes_to_read, result, matched_paths, false, depth + 1,
+                                        pruning, deduplicate_by_canonical_path, collapsed_a_match);
+
+    /// One subdirectory to descend into: where to list, the pattern left to match there, and
+    /// whether that descent may recurse further.
+    struct Descent
+    {
+        std::string path_for_ls;
+        std::string pattern;
+        bool recursive = false;
+
+        bool operator<(const Descent & other) const { return path_for_ls < other.path_for_ls; }
+    };
+
+    /// Subdirectories to descend into, collected while listing below and walked in sorted order
+    /// afterwards instead of in the order `fs::directory_iterator` hands them over.
+    ///
+    /// `readdir` order is a property of the filesystem, not of the names: measured over identical
+    /// name sets, ext4 and tmpfs return a hash order while XFS returns creation order. The frame
+    /// pruning above keeps the FIRST lexical spelling that reaches a given canonical directory, so
+    /// with two sibling symlinks naming one directory (`root/aliasA` and `root/aliasB` both naming
+    /// `root/target`) an unsorted descent would let the filesystem pick which spelling survives,
+    /// and a `_path` predicate applied later in `StorageFileSource::FilesIterator` would then match
+    /// or not depending on that. Sorting fixes the representative to the lexicographically smallest
+    /// spelling on every filesystem, which is the property `_path` filtering needs.
+    ///
+    /// Only DIRECTORY entries are buffered, so this costs the number of subdirectories of one
+    /// level rather than its number of files: a directory holding many files still streams them.
+    /// File matches keep being emitted while listing, so they precede this level's descents in
+    /// `result`; that only orders rows, which no caller relies on.
+    VectorWithMemoryTracking<Descent> descents;
 
     const fs::directory_iterator end;
     std::error_code ec;
@@ -311,59 +839,93 @@ void listFilesWithRegexpMatchingImpl(
     {
         if (ec)
         {
-            return;
+            /// Stop listing, but still walk what was already listed: the entries before the error
+            /// were descended right away before the descents below were deferred to one sorted
+            /// pass, and dropping them now would lose their matches.
+            break;
         }
 
         const std::string full_path = it->path().string();
         const size_t last_slash = full_path.rfind('/');
         const String file_name = full_path.substr(last_slash);
 
+        /// Use the `std::error_code` overload of `is_directory`: a directory entry that
+        /// fails to resolve (`ELOOP` on a mutual symlink cycle `a -> b, b -> a`, dangling
+        /// symlink) is skipped instead of surfacing the raw `filesystem_error` exception.
+        /// The throwing overload would otherwise abort the entire glob expansion before the
+        /// canonical-stack guard above could prune the entry.
+        std::error_code is_dir_ec;
+        const bool is_directory = it->is_directory(is_dir_ec);
+        if (is_dir_ec)
+        {
+            skipUnresolvableOrThrow(is_dir_ec, full_path);
+            /// Only an entry this level can select may hide a match.
+            if (recursive || skip_regex || re2::RE2::FullMatch(file_name, matcher))
+            {
+                const std::string rest = looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : "";
+                const std::string * walk_suffix = recursive ? &suffix_with_globs : (looking_for_directory ? &rest : nullptr);
+                notePathLimitSkip(is_dir_ec, full_path, walk_suffix, pruning, walk_suffix ? SkippedYield::Walk : SkippedYield::None,
+                                  looking_for_directory ? SkippedYield::None : SkippedYield::Match);
+            }
+            continue;
+        }
+
         /// Condition is_directory means what kind of path is it in current iteration of ls
-        if (!it->is_directory() && !looking_for_directory)
+        if (!is_directory && !looking_for_directory)
         {
             if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
             {
                 const size_t file_size = it->file_size(ec);
                 if (ec)
                 {
+                    notePathLimitSkip(ec, full_path, nullptr, pruning, SkippedYield::Match, SkippedYield::Match);
                     ec.clear();
                     continue;
                 }
 
-                add_matched_path(it->path().string(), file_size);
+                add_matched_path(it->path().string(), file_size,
+                                 deduplicate_by_canonical_path ? dir_canonical_hint() : nullptr);
             }
         }
-        else if (it->is_directory())
+        else if (is_directory)
         {
             if (recursive)
             {
-                /// When the current segment is the globstar `**` followed by a suffix (e.g.
-                /// `**/file.txt`), descend into subdirectories keeping the whole `**/...` pattern,
-                /// so the globstar keeps matching at every deeper level (any number of
-                /// directories). The zero-level branch above applies the post-`**` suffix at the
-                /// current level, so the combination matches zero, one, or more directory
-                /// components. Without this, a literal suffix (e.g. `pick.tsv`) would short-circuit
-                /// the recursion at the no-glob exact-match branch after a single level, and only a
-                /// glob suffix (e.g. `*.tsv`) would keep descending. For a trailing `**` (no
-                /// suffix), keep re-applying `current_glob` (`/**`) to list all files recursively,
-                /// as before.
+                /// A `**` with a suffix descends carrying the WHOLE `**/...` pattern, so the
+                /// globstar keeps matching at every depth; the zero-level branch above covers the
+                /// current level. A trailing `**` keeps re-applying `current_glob`.
                 const std::string descent_pattern = (current_glob == "/**" && looking_for_directory)
                     ? suffix_with_globs
                     : (looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob);
-                listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
-                                                descent_pattern,
-                                                total_bytes_to_read, result, matched_paths, recursive, depth + 1);
+                descents.push_back({(fs::path(full_path).append(it->path().string()) / "").string(), descent_pattern, recursive});
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
-                listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, result, matched_paths, false, depth + 1);
+                descents.push_back({(fs::path(full_path) / "").string(), suffix_with_globs.substr(next_slash_after_glob_pos), false});
         }
     }
+
+    if (!walks_frame && !ec && !pruning.active_frames.empty())
+    {
+        const VisitedFrame & innermost = *pruning.active_frames.back();
+        const bool frame_directory = prefix_without_globs.starts_with(innermost.prefix)
+            && prefix_without_globs.find_first_not_of('/', innermost.prefix.size()) == std::string::npos;
+        const fs::path * listed = frame_directory ? &innermost.canonical : dir_canonical_hint();
+        if (listed)
+            pruning.listed_tails.insert(listed->string() + '\0' + suffix_with_globs);
+    }
+
+    std::sort(descents.begin(), descents.end());
+
+    for (const auto & descent : descents)
+        listFilesWithRegexpMatchingImpl(descent.path_for_ls, descent.pattern,
+                                        total_bytes_to_read, result, matched_paths, descent.recursive, depth + 1,
+                                        pruning, deduplicate_by_canonical_path, collapsed_a_match);
 }
 
 std::vector<std::string> listFilesWithRegexpMatching(
     const std::string & for_match,
-    size_t & total_bytes_to_read)
+    size_t & total_bytes_to_read,
+    bool & collapsed_a_match)
 {
     std::vector<std::string> result;
 
@@ -372,12 +934,60 @@ std::vector<std::string> listFilesWithRegexpMatching(
     for (const auto & for_match_expanded : for_match_paths_expanded)
     {
         /// Tracks the normalized form of every matched path so that adjacent globstars such as
-        /// `**/**/*.tsv` do not emit the same filesystem entry more than once. The set is scoped
+        /// `**/**/*.tsv` do not emit the same filesystem entry more than once. The map is scoped
         /// to a single expanded pattern on purpose: independent brace-expanded alternatives
         /// (e.g. `{top,top}.tsv` or `{a*,*}`) keep their pre-existing behavior of reading the
         /// same concrete file once per alternative, rather than being silently collapsed.
-        std::unordered_set<std::string> matched_paths;
-        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, matched_paths, false, 0);
+        /// Each key maps to the index of the path returned for it in `result`.
+        UnorderedMapWithMemoryTracking<std::string, size_t> matched_paths;
+
+        /// Records the (canonical directory, remaining pattern) frames the walk has already
+        /// entered, so a symlink cycle or an aliased directory is not walked twice. Scoped per
+        /// expanded pattern for the same reason as `matched_paths`, which also keeps sibling
+        /// brace-expansion alternatives independent. Only frames whose remaining pattern still has
+        /// a whole-segment `**` are recorded, i.e. those that can still recurse without bound (see
+        /// `patternHasGlobstarSegment` inside `listFilesWithRegexpMatchingImpl`).
+        PruningState pruning;
+        pruning.folds_dot_dot = hasDotDotSegment(for_match_expanded)
+            && fs::path(for_match_expanded).filename().string().find_first_of("*?{") == std::string::npos;
+
+        /// Deduplicate by canonical path only for a `**` expansion, where the recursive descent
+        /// can re-enter one directory under many aliases and would otherwise report a file once
+        /// per alias. A finite glob can also reach one file through two symlinked directories
+        /// (`root/a*/back/*.txt` with two `back` links to the same place), but there it reports
+        /// both paths today and must keep doing so: the lexical key is what a finite pattern
+        /// selected, and collapsing it would drop a `_file` value a user asked for, exactly as it
+        /// would for a plain `*` matching a symlink beside its target.
+        const bool deduplicate_by_canonical_path = patternHasGlobstarSegment(for_match_expanded);
+
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, matched_paths, false, 0,
+                                        pruning, deduplicate_by_canonical_path, collapsed_a_match);
+
+        /// A path that failed only because of how it was spelled names files that may still be readable, so,
+        /// like any other unreadable path, it fails the glob unless another name returned what it would have.
+        for (auto & skipped : pruning.skipped_paths)
+            if (isMissing(skipped, pruning, matched_paths))
+                throw fs::filesystem_error("Cannot expand the glob", skipped.path, skipped.ec);
+
+        /// Now that every frame's match count is final, decide whether pruning hid a real second
+        /// name for a file: a pruned frame would have emitted exactly what its claiming frame did,
+        /// so it collapsed something only if a walk the collision counts matched something whose
+        /// folded `..` did not climb to where that walk's spelling and the pruned one meet. Deciding here rather
+        /// than at the collision keeps the answer independent of the order the walk took.
+        for (const auto & collision : pruning.pending_collisions)
+        {
+            const VisitedFrame & claimed = *collision.frame;
+            for (size_t walk = 0; walk <= collision.retries && !collapsed_a_match; ++walk)
+            {
+                const bool earlier = walk < claimed.earlier_walks.size();
+                const std::string & dir = earlier ? claimed.earlier_walks[walk].first : claimed.lexical_dir;
+                const size_t climb = earlier ? claimed.earlier_walks[walk].second : claimed.min_match_climb;
+                if (climb == std::numeric_limits<size_t>::max())
+                    continue;
+                if (collision.pruned_dir.empty() || climb < levelsToCommonDirectory(dir, collision.pruned_dir))
+                    collapsed_a_match = true;
+            }
+        }
     }
 
     return result;
@@ -470,7 +1080,7 @@ void checkCreationIsAllowedResolvingDotDot(
 }
 
 /// Finds files matching a specified pattern with globs.
-Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read)
+Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read, bool & collapsed_a_match)
 {
     /// The listing below stats the path and expands its globs on the filesystem before the matched paths
     /// are checked for containment in `user_files_path`, so the path must be rejected here, not there.
@@ -508,14 +1118,14 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
         else
         {
             /// We list non-directory files under that directory.
-            paths = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read);
+            paths = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read, collapsed_a_match);
             can_be_directory = false;
         }
     }
     else
     {
         /// We list only non-directory files.
-        paths = listFilesWithRegexpMatching(pattern, total_bytes_to_read);
+        paths = listFilesWithRegexpMatching(pattern, total_bytes_to_read, collapsed_a_match);
         can_be_directory = false;
     }
 
@@ -555,7 +1165,8 @@ StorageFile::ArchiveInfo getArchiveInfo(
         };
     }
 
-    archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_path, context, total_bytes_to_read);
+    bool archive_collapsed_a_match = false;
+    archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_path, context, total_bytes_to_read, archive_collapsed_a_match);
 
     return archive_info;
 }
@@ -661,39 +1272,6 @@ struct stat getFileStat(const String & current_path, bool use_table_fd, int tabl
     return file_stat;
 }
 
-/// Sub-second-precision version token for a file, folding in the inode and size so that an
-/// in-place rewrite which lands in the same timestamp tick as the previous write (see the
-/// settle-window comment at its call site) is still distinguishable from a rewrite that isn't.
-String computeFileCacheVersionToken(const struct stat & file_stat)
-{
-#if defined(OS_DARWIN)
-    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-    const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
-#else
-    const auto mtim_sec = file_stat.st_mtim.tv_sec;
-    const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
-#endif
-    return fmt::format(
-        "{}.{:09}_{}_{}",
-        static_cast<Int64>(mtim_sec),
-        static_cast<Int64>(mtim_nsec),
-        static_cast<Int64>(file_stat.st_ino),
-        file_stat.st_size);
-}
-
-/// Whether the version token of the file proves a rewrite: the last modification is far enough in
-/// the past that any further write changes the token, see the settle-window comment at the call site.
-bool isFileCacheVersionTokenSettled(const struct stat & file_stat)
-{
-#if defined(OS_DARWIN)
-    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-#else
-    const auto mtim_sec = file_stat.st_mtim.tv_sec;
-#endif
-    static constexpr Int64 file_version_settle_seconds = 3;
-    return static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
-}
-
 /// Re-stats `path` and reports whether it still produces `expected_token`. Used to bracket a
 /// local-file read (once right after opening, once right before trusting the read for the Query
 /// Condition Cache) so a rewrite by another writer that lands strictly between the initial `stat`
@@ -735,6 +1313,13 @@ void writeQueryConditionCacheEntry(
             table_uuid, cache_file_key, condition_hash, condition, unmatched_ranges, total_row_groups, /*has_final_mark=*/false);
 }
 
+std::unique_ptr<ReadBuffer> wrapReadBufferWithCompression(std::unique_ptr<ReadBuffer> nested_buffer, CompressionMethod method, const ContextPtr & context)
+{
+    const auto & file_settings = context->getSettingsRef();
+    int zstd_window_log_max = static_cast<int>(file_settings[Setting::zstd_window_log_max]);
+    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max, file_settings[Setting::snappy_mode]);
+}
+
 std::unique_ptr<ReadBuffer> createReadBuffer(
     const String & current_path,
     const struct stat & file_stat,
@@ -750,10 +1335,44 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         method = chooseCompressionMethod(current_path, compression_method);
 
     std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
+    return wrapReadBufferWithCompression(std::move(nested_buffer), method, context);
+}
 
-    const auto & file_settings = context->getSettingsRef();
-    int zstd_window_log_max = static_cast<int>(file_settings[Setting::zstd_window_log_max]);
-    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max, file_settings[Setting::snappy_mode]);
+/// Makes `read_buf`, which reads a file inside an archive, decompress it by `method`, like `createReadBuffer` does
+/// for a plain file. The archive reader needs its own buffer back to move to the next file (see `IArchiveReader::nextFile`),
+/// so that buffer is kept in `archive_entry_buf` and the decompressing buffer only references it.
+void decompressArchiveEntryReadBuffer(
+    std::unique_ptr<ReadBuffer> & read_buf,
+    std::unique_ptr<ReadBuffer> & archive_entry_buf,
+    CompressionMethod method,
+    const ContextPtr & context)
+{
+    archive_entry_buf.reset();
+    if (!read_buf || method == CompressionMethod::None)
+        return;
+
+    archive_entry_buf = std::move(read_buf);
+    read_buf = wrapReadBufferWithCompression(wrapReadBufferReference(*archive_entry_buf), method, context);
+}
+
+/// Returns the archive reader's own buffer for `read_buf` made by `decompressArchiveEntryReadBuffer`.
+std::unique_ptr<ReadBuffer> takeArchiveEntryReadBuffer(std::unique_ptr<ReadBuffer> read_buf, std::unique_ptr<ReadBuffer> & archive_entry_buf)
+{
+    if (!archive_entry_buf)
+        return read_buf;
+
+    read_buf.reset();
+    return std::move(archive_entry_buf);
+}
+
+/// The schema and row-count cache key of an archive entry. The same entry gives different rows under
+/// different member compression methods, so the effective method is part of the key.
+std::string getArchiveEntryCacheKey(const std::string & path, std::optional<size_t> position, CompressionMethod method)
+{
+    /// An entry read without decompression keeps the plain key, so the key of a not compressed entry does not change.
+    if (method == CompressionMethod::None)
+        return getArchiveEntryKey(path, position);
+    return getArchiveEntryKey(fmt::format("{}#compression_method={}", path, toContentEncodingName(method)), position);
 }
 
 }
@@ -863,7 +1482,7 @@ namespace
             StorageFile::getSchemaCache(getContext()).addColumns(cache_key, columns);
         }
 
-        String getLastFilePath() const override
+        [[nodiscard]] String getLastFilePath() const override
         {
             if (current_index != 0)
                 return paths[current_index - 1];
@@ -875,7 +1494,7 @@ namespace
             format = format_name;
         }
 
-        bool supportsLastReadBufferRecreation() const override { return true; }
+        [[nodiscard]] bool supportsLastReadBufferRecreation() const override { return true; }
 
         std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override
         {
@@ -946,11 +1565,13 @@ namespace
         ReadBufferFromArchiveIterator(
             const StorageFile::ArchiveInfo & archive_info_,
             std::optional<String> format_,
+            const String & compression_method_,
             const std::optional<FormatSettings> & format_settings_,
             const ContextPtr & context_)
             : WithContext(context_)
             , archive_info(archive_info_)
             , format(std::move(format_))
+            , compression_method(compression_method_)
             , format_settings(format_settings_)
         {
         }
@@ -963,7 +1584,11 @@ namespace
             {
                 for (const auto & archive : archive_info.paths_to_archives)
                 {
-                    if (auto cached_schema = tryGetSchemaFromCache(archive, fmt::format("{}::{}", archive, archive_info.path_in_archive)))
+                    auto cache_key = getArchiveEntryCacheKey(
+                        fmt::format("{}::{}", archive, archive_info.path_in_archive),
+                        std::nullopt,
+                        chooseCompressionMethod(archive_info.path_in_archive, compression_method));
+                    if (auto cached_schema = tryGetSchemaFromCache(archive, cache_key))
                         return {nullptr, cached_schema, format};
                 }
             }
@@ -1025,22 +1650,27 @@ namespace
                         continue;
 
                     last_read_file_path = paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), archive_info.path_in_archive));
-                    last_read_file_cache_key = getArchiveEntryKey(last_read_file_path, std::nullopt);
+                    auto method = chooseCompressionMethod(archive_info.path_in_archive, compression_method);
+                    last_read_file_cache_key = getArchiveEntryCacheKey(last_read_file_path, std::nullopt, method);
                     is_first = false;
 
                     if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_cache_key))
                         return {nullptr, cached_schema, format};
+
+                    decompressArchiveEntryReadBuffer(read_buf, archive_entry_read_buffer, method, getContext());
                 }
                 else
                 {
                     if (last_read_buffer)
                     {
                         file_enumerator = archive_reader->nextFile(std::move(last_read_buffer));
+                        ++current_entry_index;
                     }
                     else
                     {
                         file_enumerator = archive_reader->firstFile();
                         entry_positions.reset();
+                        current_entry_index = 0;
                     }
 
                     if (!file_enumerator)
@@ -1059,6 +1689,7 @@ namespace
                             break;
                         }
 
+                        ++current_entry_index;
                         filename = &file_enumerator->getFileName();
                         entry_position = entry_positions.onEntry(*filename);
                     }
@@ -1070,7 +1701,8 @@ namespace
                     }
 
                     last_read_file_path = paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), *filename));
-                    last_read_file_cache_key = getArchiveEntryKey(last_read_file_path, entry_position);
+                    auto method = chooseCompressionMethod(*filename, compression_method);
+                    last_read_file_cache_key = getArchiveEntryCacheKey(last_read_file_path, entry_position, method);
                     is_first = false;
 
                     /// If format is unknown we can try to determine it by the file name.
@@ -1092,6 +1724,7 @@ namespace
                     }
 
                     read_buf = archive_reader->readFile(std::move(file_enumerator));
+                    decompressArchiveEntryReadBuffer(read_buf, archive_entry_read_buffer, method, getContext());
                 }
 
                 break;
@@ -1103,7 +1736,7 @@ namespace
         void setPreviousReadBuffer(std::unique_ptr<ReadBuffer> buffer) override
         {
             if (buffer)
-                last_read_buffer = std::move(buffer);
+                last_read_buffer = takeArchiveEntryReadBuffer(std::move(buffer), archive_entry_read_buffer);
         }
 
         void setNumRowsToLastFile(size_t num_rows) override
@@ -1132,12 +1765,12 @@ namespace
             format = format_name;
         }
 
-        String getLastFilePath() const override
+        [[nodiscard]] String getLastFilePath() const override
         {
             return last_read_file_path;
         }
 
-        bool supportsLastReadBufferRecreation() const override { return true; }
+        [[nodiscard]] bool supportsLastReadBufferRecreation() const override { return true; }
 
         std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override
         {
@@ -1146,15 +1779,32 @@ namespace
                 chassert(current_archive_index > 0 && current_archive_index <= archive_info.paths_to_archives.size());
                 const auto & archive = archive_info.paths_to_archives[current_archive_index - 1];
                 auto archive_reader = createArchiveReader(archive);
-                return archive_reader->readFile(archive_info.path_in_archive, false);
+                std::unique_ptr<ReadBuffer> read_buf = archive_reader->readFile(archive_info.path_in_archive, false);
+                decompressArchiveEntryReadBuffer(
+                    read_buf, archive_entry_read_buffer, chooseCompressionMethod(archive_info.path_in_archive, compression_method), getContext());
+                return read_buf;
             }
 
             chassert(current_archive_index >= 0 && current_archive_index < archive_info.paths_to_archives.size());
             const auto & archive = archive_info.paths_to_archives[current_archive_index];
             auto archive_reader = createArchiveReader(archive);
-            chassert(last_read_buffer);
-            file_enumerator = archive_reader->currentFile(std::move(last_read_buffer));
-            return archive_reader->readFile(std::move(file_enumerator));
+            /// The previous buffer has already consumed some data of the entry, and not every archive reader can rewind it
+            /// (`LibArchiveReader::currentFile` for tar continues where the previous buffer stopped), so the entry is opened
+            /// again from its beginning by enumerating the archive up to it.
+            last_read_buffer.reset();
+            file_enumerator = archive_reader->firstFile();
+            for (size_t i = 0; file_enumerator && i < current_entry_index; ++i)
+            {
+                if (!file_enumerator->nextFile())
+                    file_enumerator.reset();
+            }
+            if (!file_enumerator)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Cannot find entry {} in archive {} to read it again", current_entry_index, archive);
+            auto method = chooseCompressionMethod(file_enumerator->getFileName(), compression_method);
+            std::unique_ptr<ReadBuffer> read_buf = archive_reader->readFile(std::move(file_enumerator));
+            decompressArchiveEntryReadBuffer(read_buf, archive_entry_read_buffer, method, getContext());
+            return read_buf;
         }
 
     private:
@@ -1211,9 +1861,14 @@ namespace
 
         std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
         ArchiveEntryPositions entry_positions;
+        /// The 0-based position of the last read entry in enumeration order of the current archive.
+        size_t current_entry_index = 0;
         std::unique_ptr<ReadBuffer> last_read_buffer;
+        /// See `decompressArchiveEntryReadBuffer`.
+        std::unique_ptr<ReadBuffer> archive_entry_read_buffer;
 
         std::optional<String> format;
+        String compression_method;
         const std::optional<FormatSettings> & format_settings;
         std::vector<std::string> paths_for_schema_cache;
     };
@@ -1235,12 +1890,20 @@ StorageFile::FileSource StorageFile::FileSource::parse(const String & source, co
     FileSource res;
     String user_files_path = context->getUserFilesPath();
 
+    /// Set when deduplication collapsed two matching paths into one, see below.
+    bool collapsed_a_match = false;
+
     if (!path_to_archive.empty())
         res.archive_info = getArchiveInfo(path_to_archive, filename, user_files_path, context, res.total_bytes_to_read);
     else
-        res.paths = getPathsList(filename, user_files_path, context, res.total_bytes_to_read);
+        res.paths = getPathsList(filename, user_files_path, context, res.total_bytes_to_read, collapsed_a_match);
 
-    res.with_globs = res.paths.size() > 1;
+    /// A single returned path usually does mean the source named a single file, which is why a
+    /// finite glob matching exactly one file stays writable. The exception is deduplication by
+    /// canonical path: it can collapse several matching paths into one, and the read-only guard on
+    /// writes must not be unlocked by that, because the source still selected files by pattern.
+    /// So ask whether a collapse actually happened rather than whether the source looks globbed.
+    res.with_globs = res.paths.size() > 1 || collapsed_a_match;
 
     if (res.archive_info)
     {
@@ -1339,7 +2002,7 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
 
     if (archive_info)
     {
-        ReadBufferFromArchiveIterator read_buffer_iterator(*archive_info, format, format_settings, context);
+        ReadBufferFromArchiveIterator read_buffer_iterator(*archive_info, format, compression_method, format_settings, context);
         if (format)
             return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
 
@@ -1429,16 +2092,18 @@ size_t StorageFile::getMaxReadStreams(size_t num_streams, ContextPtr)
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
+    /// This check goes before any use of the descriptor: otherwise the error would depend on whether
+    /// the descriptor is open, and a query could find out which descriptor numbers the server uses.
+    if (args.getContext()->getApplicationType() == Context::ApplicationType::SERVER)
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Using file descriptor as source of storage isn't allowed for server daemons");
+    if (args.format_name == "Distributed")
+        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Distributed format is allowed only with explicit file path");
+
     struct stat buf{};
     int res = fstat(table_fd_, &buf);
     if (-1 == res)
         throw ErrnoException(ErrorCodes::CANNOT_FSTAT, "Cannot execute fstat");
     total_bytes_to_read = buf.st_size;
-
-    if (args.getContext()->getApplicationType() == Context::ApplicationType::SERVER)
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Using file descriptor as source of storage isn't allowed for server daemons");
-    if (args.format_name == "Distributed")
-        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Distributed format is allowed only with explicit file path");
 
     is_db_table = false;
     use_table_fd = true;
@@ -1604,13 +2269,15 @@ StorageFileSource::FilesIterator::FilesIterator(
     const NamesAndTypesList & hive_columns_,
     const ContextPtr & context_,
     bool distributed_processing_,
-    String archive_member_path_)
+    String archive_member_path_,
+    std::optional<FormatSettings> format_settings_)
     : WithContext(context_)
     , files(files_)
     , archive_info(std::move(archive_info_))
     , distributed_processing(distributed_processing_)
     , virtual_columns(virtual_columns_)
     , hive_columns(hive_columns_)
+    , format_settings(std::move(format_settings_))
     , archive_member_path(std::move(archive_member_path_))
 {
     std::optional<ActionsDAG> filter_dag;
@@ -1632,10 +2299,12 @@ StorageFileSource::FilesIterator::FilesIterator(
             std::vector<String> archive_member_names;
             if (!archive_member_path.empty())
                 archive_member_names.assign(filter_sources.size(), archive_member_path);
-            VirtualColumnUtils::filterByPathOrFile(
-                filter_sources, filter_paths, actions, virtual_columns_, hive_columns_, context_,
-                /*format_settings=*/std::nullopt,
-                archive_member_path.empty() ? nullptr : &archive_member_names);
+            VirtualColumnUtils::filterSourcesByIndexes(
+                filter_sources,
+                VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                    filter_paths, actions, virtual_columns_, hive_columns_, context_,
+                    format_settings,
+                    archive_member_path.empty() ? nullptr : &archive_member_names));
         }
         else
             deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(context_));
@@ -1674,10 +2343,12 @@ String StorageFileSource::FilesIterator::next()
             std::vector<String> archive_member_names;
             if (!archive_member_path.empty())
                 archive_member_names.push_back(archive_member_path);
-            VirtualColumnUtils::filterByPathOrFile(
-                filtered_files, filter_paths, deferred_filter_actions, virtual_columns, hive_columns, getContext(),
-                /*format_settings=*/std::nullopt,
-                archive_member_path.empty() ? nullptr : &archive_member_names);
+            VirtualColumnUtils::filterSourcesByIndexes(
+                filtered_files,
+                VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                    filter_paths, deferred_filter_actions, virtual_columns, hive_columns, getContext(),
+                    format_settings,
+                    archive_member_path.empty() ? nullptr : &archive_member_names));
             if (filtered_files.empty())
                 continue;
         }
@@ -1713,7 +2384,8 @@ StorageFileSource::StorageFileSource(
     FormatFilterInfoPtr format_filter_info_,
     LazyFileRegistryPtr lazy_row_index_registry_,
     TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_,
-    const UUID & query_condition_cache_table_id_)
+    const UUID & query_condition_cache_table_id_,
+    SplitFilePtr split_file_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , WithContext(context_)
     , storage(std::move(storage_))
@@ -1723,11 +2395,14 @@ StorageFileSource::StorageFileSource(
     , format_filter_info(std::move(format_filter_info_))
     , query_condition_cache_table_id(query_condition_cache_table_id_)
     , top_k_query_condition_cache_key(std::move(top_k_query_condition_cache_key_))
+    , split_file(std::move(split_file_))
     , columns_description(info.columns_description)
     , requested_columns(info.requested_columns)
     , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
     , serialization_hints(info.serialization_hints)
+    , map_columns_read_by_keys(info.map_columns_read_by_keys)
+    , map_columns_read_by_values(info.map_columns_read_by_values)
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
@@ -1830,7 +2505,21 @@ bool StorageFileSource::canSkipFileByCachedStatistics()
     if (!num_row_groups || !fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
         return false;
 
-    ParquetCachedStatisticsFilter::countSkippedFile(*num_row_groups);
+    if (split_file)
+    {
+        /// The source of each bucket counts the row groups of its bucket as pruned, so that the total does not depend
+        /// on which sources read their buckets and which skip them: the statistics kept by the reader of one bucket
+        /// may let the sources of the other buckets, that start later in the same query, skip the file.
+        /// The file is counted as skipped once.
+        const auto * bucket = typeid_cast<const ParquetFileBucketInfo *>(split_file->buckets.at(split_file_bucket).get());
+        if (!bucket)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A bucket of the split Parquet file {} is not a Parquet bucket", current_path);
+        ParquetCachedStatisticsFilter::countSkippedFile(bucket->row_group_ids.size(), /*count_file=*/ split_file_bucket == 0);
+    }
+    else
+    {
+        ParquetCachedStatisticsFilter::countSkippedFile(*num_row_groups);
+    }
     return true;
 #else
     return false;
@@ -1898,6 +2587,15 @@ Chunk StorageFileSource::generate()
 {
     const bool is_one_format = Poco::toLower(storage->format_name) == "one";
 
+    /// Fills `_size` and `_time` of the current file.
+    auto stat_current_file = [&]
+    {
+        struct stat file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
+        current_file_size = file_stat.st_size;
+        current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
+        return file_stat;
+    };
+
     while (!finished_generate)
     {
         /// Open file lazily on first read. This is needed to avoid too many open files from different streams.
@@ -1929,7 +2627,8 @@ Chunk StorageFileSource::generate()
                         filename_override = files_iterator->getFileNameInArchive();
 
                         current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
-                        current_archive_entry_cache_key = getArchiveEntryKey(current_path, std::nullopt);
+                        current_archive_entry_cache_key = getArchiveEntryCacheKey(
+                            current_path, std::nullopt, chooseCompressionMethod(*filename_override, storage->compression_method));
                         if (need_only_count && tryGetCountFromCache(file_stat))
                             continue;
 
@@ -1949,6 +2648,9 @@ Chunk StorageFileSource::generate()
 
                             if (auto progress_callback = getContext()->getFileProgressCallback())
                                 progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
+
+                            decompressArchiveEntryReadBuffer(
+                                read_buf, archive_entry_read_buf, chooseCompressionMethod(*filename_override, storage->compression_method), getContext());
                         }
                     }
                     else
@@ -2003,7 +2705,8 @@ Chunk StorageFileSource::generate()
 
                         chassert(file_enumerator);
                         current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
-                        current_archive_entry_cache_key = getArchiveEntryKey(current_path, entry_position);
+                        current_archive_entry_cache_key = getArchiveEntryCacheKey(
+                            current_path, entry_position, chooseCompressionMethod(*filename_override, storage->compression_method));
                         current_file_size = file_enumerator->getFileInfo().uncompressed_size;
                         current_file_last_modified = file_enumerator->getFileInfo().last_modified;
                         if (need_only_count && tryGetCountFromCache(current_archive_stat))
@@ -2019,18 +2722,38 @@ Chunk StorageFileSource::generate()
                             read_buf = archive_reader->readFile(std::move(file_enumerator));
                             if (auto progress_callback = getContext()->getFileProgressCallback())
                                 progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
+
+                            decompressArchiveEntryReadBuffer(
+                                read_buf, archive_entry_read_buf, chooseCompressionMethod(*filename_override, storage->compression_method), getContext());
                         }
                     }
                 }
                 else
                 {
-                    current_path = files_iterator->next();
+                    if (split_file)
+                    {
+                        split_file_bucket = split_file->next_bucket.fetch_add(1);
+                        current_path = split_file_bucket < split_file->buckets.size() ? split_file->path : String{};
+                    }
+                    else
+                    {
+                        current_path = files_iterator->next();
+                    }
                     current_archive_entry_cache_key.reset();
                     if (current_path.empty())
+                    {
+                        read_buf.reset();
                         return {};
+                    }
 
                     if (!existsOrFileNameTooLong([&] { return fs::exists(current_path); }))
                     {
+                        /// The file existed when it was split, and the other buckets may be read already:
+                        /// skipping only this one would return a part of the file.
+                        if (split_file)
+                            throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
+                                "File {} was removed while being read. Rerun the query", current_path);
+
                         if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                         {
                             /// The file existed when the TopK key was made, so it has changed since.
@@ -2045,19 +2768,26 @@ Chunk StorageFileSource::generate()
                 /// Special case for distributed format. Defaults are not needed here.
                 if (storage->format_name == "Distributed")
                 {
-                    pipeline = std::make_unique<QueryPipeline>(std::make_shared<DistributedAsyncInsertSource>(current_path));
+                    stat_current_file();
+
+                    QueryPipelineBuilder builder;
+                    builder.init(Pipe(std::make_shared<DistributedAsyncInsertSource>(current_path)));
+                    builder.addSimpleTransform([&](const SharedHeader & header)
+                    {
+                        return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
+                    });
+
+                    pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
                     pipeline->disableProfileEventUpdate();
                     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
                     continue;
                 }
             }
 
-            if (!read_buf)
+            /// The source of a split file keeps its buffer between buckets but checks the file version for each.
+            if (!read_buf || split_file)
             {
-                struct stat file_stat{};
-                file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
-                current_file_size = file_stat.st_size;
-                current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
+                struct stat file_stat = stat_current_file();
 
                 /// Build a sub-second-precision version token for the format metadata cache key.
                 /// `st_mtime` alone is second-resolution, so an in-place rewrite within the same
@@ -2076,6 +2806,11 @@ Chunk StorageFileSource::generate()
                 /// network mount - it fails close and stays bypassed (see the gates below)
                 /// rather than risking stale results.
                 current_file_version_settled = isFileCacheVersionTokenSettled(file_stat);
+
+                /// The buckets of a split file describe the version of the file that was split.
+                if (split_file && *current_file_cache_version != split_file->file_cache_version)
+                    throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
+                        "File {} was modified while being read. Rerun the query", current_path);
 
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                 {
@@ -2099,7 +2834,7 @@ Chunk StorageFileSource::generate()
                     /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
                     read_buf = std::make_unique<EmptyReadBuffer>();
                 }
-                else
+                else if (!read_buf)
                 {
                     read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
 
@@ -2110,9 +2845,14 @@ Chunk StorageFileSource::generate()
                     /// opening: if the token no longer matches what we just opened, it cannot be trusted to
                     /// pin this read's generation, so fail close (the gates below skip both the Query
                     /// Condition Cache lookup and, per the bracketing check further down, its population).
-                    if (!storage->use_table_fd && current_file_version_settled
+                    if (!storage->use_table_fd && (current_file_version_settled || split_file)
                         && !fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+                    {
+                        if (split_file)
+                            throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
+                                "File {} was modified while being read. Rerun the query", current_path);
                         current_file_version_settled = false;
+                    }
                 }
 
                 checkTopKQueryConditionCacheKeyHolds(/*still_holds=*/ true);
@@ -2173,18 +2913,20 @@ Chunk StorageFileSource::generate()
             /// same predicate, and the TopK key of this query (see `TopKQueryConditionCacheKey`), whose
             /// entries only a previous run of the same TopN over the same file set could have written.
             /// A row group may be skipped iff either verdict excludes it.
+            /// A statistics-only TopN read (`filter_rows = false`) is a plain read for the cache.
             FileBucketInfoPtr buckets_to_read;
             std::optional<UInt64> plain_condition_hash;
             if (format_filter_info && format_filter_info->condition_hash
-                && (!format_filter_info->top_k_filter
+                && (!format_filter_info->top_k_filter || !format_filter_info->top_k_filter->filter_rows
                     || getContext()->getSettingsRef()[Setting::use_query_condition_cache_for_top_k]))
                 plain_condition_hash = format_filter_info->condition_hash;
 
             std::optional<UInt64> top_k_condition_hash = getTopKConditionHashForCurrentFile();
 
             QueryConditionCachePtr query_condition_cache;
+            /// For a split file, the cache was consulted once for all buckets (see `ReadFromFile::trySplitSingleFile`).
             if (object_with_metadata.has_value() && current_file_version_settled && (plain_condition_hash || top_k_condition_hash)
-                && query_condition_cache_table_id != UUIDHelpers::Nil)
+                && query_condition_cache_table_id != UUIDHelpers::Nil && !split_file)
                 query_condition_cache = getContext()->getQueryConditionCache();
 
             if (query_condition_cache)
@@ -2243,7 +2985,7 @@ Chunk StorageFileSource::generate()
                 if (matching_marks.has_value())
                 {
                     const auto & marks = *matching_marks;
-                    std::vector<size_t> matching_row_groups;
+                    RowGroupIndices matching_row_groups;
                     for (size_t i = 0; i < marks.size(); ++i)
                         if (marks[i])
                             matching_row_groups.push_back(i);
@@ -2311,8 +3053,9 @@ Chunk StorageFileSource::generate()
                     need_only_count);
             }
 
-            input_format->setBucketsToRead(buckets_to_read);
+            input_format->setBucketsToRead(split_file ? split_file->buckets.at(split_file_bucket) : buckets_to_read);
             input_format->setSerializationHints(serialization_hints);
+            input_format->setMapColumnsReadByOneSide(map_columns_read_by_keys, map_columns_read_by_values);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -2445,8 +3188,10 @@ Chunk StorageFileSource::generate()
         if (storage->use_table_fd)
             finished_generate = true;
 
+        /// A source reading a bucket of a split file has seen only some of its rows.
         if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && (!format_filter_info || !format_filter_info->hasFilter()) && !input_format->isMinMaxFromStatisticsApplied())
+            && (!format_filter_info || !format_filter_info->hasFilter()) && !input_format->isMinMaxFromStatisticsApplied()
+            && !split_file)
             addNumRowsToCache(current_archive_entry_cache_key.value_or(current_path), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -2479,14 +3224,26 @@ Chunk StorageFileSource::generate()
         if (input_format && current_file_cache_version.has_value() && top_k_query_condition_cache_key)
             checkTopKQueryConditionCacheKeyHolds(fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version));
 
-        if (input_format && current_file_cache_version.has_value() && current_file_version_settled && !isCancelled() && format_filter_info
+        if (input_format && split_file)
+        {
+            finishReadingSplitFileBucket();
+
+            /// Only the reader of one of the buckets has recorded the statistics, the others do nothing here.
+            if (current_file_cache_version.has_value() && current_file_version_settled && !isCancelled() && format_filter_info
+                && getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache])
+            {
+                if (fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+                    input_format->cacheFilterColumnStatistics();
+            }
+        }
+        else if (input_format && current_file_cache_version.has_value() && current_file_version_settled && !isCancelled() && format_filter_info
             && fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
         {
             try
             {
                 auto buckets_opt = input_format->getMatchedBuckets();
                 const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
-                if (buckets_opt.has_value() && format_filter_info->top_k_filter)
+                if (buckets_opt.has_value() && format_filter_info->top_k_filter && format_filter_info->top_k_filter->filter_rows)
                 {
                     if (getTopKConditionHashForCurrentFile())
                         pending_top_k_query_condition_cache_entries.push_back(PendingTopKQueryConditionCacheEntry{
@@ -2531,14 +3288,64 @@ Chunk StorageFileSource::generate()
             }
             else
             {
-                file_enumerator = archive_reader->nextFile(std::move(read_buf));
+                file_enumerator = archive_reader->nextFile(takeArchiveEntryReadBuffer(std::move(read_buf), archive_entry_read_buf));
             }
         }
 
-        read_buf.reset();
+        if (!split_file)
+            read_buf.reset();
+        archive_entry_read_buf.reset();
     }
 
     return {};
+}
+
+void StorageFileSource::finishReadingSplitFileBucket()
+{
+    /// The other row groups of the file belong to the other buckets, so they must not be recorded as
+    /// having no matching rows until those buckets are read too. A row group that was
+    /// not assigned to any bucket was skipped by the query condition cache entry for the same condition.
+    bool can_write = !isCancelled() && format_filter_info && format_filter_info->condition_hash && current_file_version_settled
+        && query_condition_cache_table_id != UUIDHelpers::Nil;
+    std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> buckets_opt;
+    if (can_write)
+    {
+        /// Re-stat, to not write an entry derived from bytes the version token no longer describes.
+        if (fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+            buckets_opt = input_format->getMatchedBuckets();
+        can_write = buckets_opt.has_value();
+    }
+
+    size_t total_row_groups = 0;
+    std::unordered_set<size_t> matched_row_groups;
+    {
+        std::lock_guard lock(split_file->mutex);
+        if (can_write && split_file->can_write_query_condition_cache)
+        {
+            split_file->total_row_groups = buckets_opt->second;
+            split_file->matched_row_groups.insert(buckets_opt->first.begin(), buckets_opt->first.end());
+        }
+        else
+        {
+            split_file->can_write_query_condition_cache = false;
+        }
+
+        ++split_file->buckets_read;
+        if (split_file->buckets_read < split_file->buckets.size() || !split_file->can_write_query_condition_cache)
+            return;
+
+        total_row_groups = split_file->total_row_groups;
+        matched_row_groups = std::move(split_file->matched_row_groups);
+    }
+
+    writeQueryConditionCacheEntry(
+        query_condition_cache_table_id,
+        QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version),
+        *format_filter_info->condition_hash,
+        format_filter_info->filter_actions_dag->dumpNames(),
+        total_row_groups,
+        matched_row_groups,
+        getContext());
 }
 
 std::optional<UInt64> StorageFileSource::getTopKConditionHashForCurrentFile() const
@@ -2592,12 +3399,18 @@ void StorageFileSource::onFinish() { parser_shared_resources->finishStream(); }
 
 void StorageFileSource::addNumRowsToCache(const String & path, size_t num_rows) const
 {
+    if (!canUseNumRowsFromSchemaCache(storage->format_settings, getContext()))
+        return;
+
     auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, getContext());
     StorageFile::getSchemaCache(getContext()).addNumRows(key, num_rows);
 }
 
 std::optional<size_t> StorageFileSource::tryGetNumRowsFromCache(const String & path, time_t last_mod_time) const
 {
+    if (!canUseNumRowsFromSchemaCache(storage->format_settings, getContext()))
+        return std::nullopt;
+
     auto & schema_cache = StorageFile::getSchemaCache(getContext());
     auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, getContext());
     auto get_last_mod_time = [&]() -> std::optional<time_t>
@@ -2635,7 +3448,13 @@ bool ReadFromFile::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_
     /// recomputed values while the reader compares its own placeholders against it, which can drop
     /// rows that belong to the top-K. A column with no default expression is never rewritten above
     /// the reader, so for it the two values always agree.
-    return !info.columns_description.hasDefault(sort_column.name);
+    return !info.columns_description.hasDefault(sort_column.name) && !info.defaultsDependOnTheirBlock(getContext());
+}
+
+bool ReadFromFile::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
+{
+    const auto settings = storage->format_settings ? *storage->format_settings : getFormatSettings(getContext());
+    return formatSkipsDataByStatistics(storage->format_name, settings) && info.canSkipDataByStatisticsOf(column);
 }
 
 bool ReadFromFile::supportsMinMaxFromStatistics() const
@@ -2665,7 +3484,7 @@ void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    if (boost::iequals(storage->format_name, "Parquet") || boost::iequals(storage->format_name, "ORC"))
+    if (formatNeedsEagerKeyConditionSets(storage->format_name))
         prepareEagerKeyConditionSets(
             filter_actions_dag,
             storage_snapshot, info.source_header,
@@ -2688,8 +3507,9 @@ bool ReadFromFile::canUseLazyMaterialization() const
 
     /// The global row index requires per-row file row numbers (ChunkInfoRowNumbers), and the lazy
     /// branch requires reading an explicit set of rows (FormatFilterInfo::rows_to_read).
-    /// Only the Parquet reader supports both.
-    if (!boost::iequals(storage->format_name, "Parquet"))
+    /// Only the Parquet and Vortex readers support both.
+    if (!boost::iequals(storage->format_name, "Parquet")
+        && !boost::iequals(storage->format_name, "Vortex"))
         return false;
 
     /// A file descriptor (e.g. stdin) is consumed by the main read and cannot be reopened.
@@ -2766,6 +3586,23 @@ std::unique_ptr<LazilyReadFromFile> ReadFromFile::keepOnlyRequiredColumnsAndCrea
     return lazy_step;
 }
 
+void StorageFile::checkAccessForRenamingFiles(const ContextPtr & context)
+{
+    const auto access = context->getAccess();
+    access->checkAccessWithFilter(AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+
+    /// The readonly gate does not refuse `WRITE` on a source, which also authorizes `BACKUP` destinations.
+    const auto & params = access->getParams();
+    if (!params.readonly || params.full_access)
+        return;
+    if (params.interface == ClientInfo::Interface::HTTP && params.http_method == ClientInfo::HTTPMethod::GET)
+        throw Exception(ErrorCodes::READONLY,
+            "{}: Cannot execute query in readonly mode. "
+            "For queries over HTTP, method GET implies readonly. "
+            "You should use method POST for modifying queries", access->getUserName());
+    throw Exception(ErrorCodes::READONLY, "{}: Cannot execute query in readonly mode", access->getUserName());
+}
+
 void StorageFile::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -2780,8 +3617,7 @@ void StorageFile::read(
     /// (`StorageFileSource::beforeDestroy`), so reading it needs `WRITE` on the source besides `READ`.
     /// This context is the reading query's, not that of the query which built the storage.
     if (!file_renamer.isEmpty())
-        context->getAccess()->checkAccessWithFilter(
-            AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+        checkAccessForRenamingFiles(context);
 
     if (distributed_processing && context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = clampClusterFunctionNumStreams(
@@ -2838,13 +3674,17 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         info.hive_partition_columns_to_read_from_file_path,
         context,
         storage->distributed_processing,
-        storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{});
+        storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{},
+        storage->format_settings);
 }
 
 StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryConditionCacheKey() const
 {
     const auto & settings = getContext()->getSettingsRef();
     if (!top_k_filter || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
+        return {};
+
+    if (!top_k_filter->filter_rows)
         return {};
 
     /// Only plain local files have version tokens. A table without a UUID (the `file` table function, or a
@@ -2860,6 +3700,9 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     /// pushed into the format (without the conjuncts on virtual and hive partition columns).
     /// Without any of them nothing else drops rows. A row policy is covered by neither.
     if (query_info.row_level_filter)
+        return {};
+
+    if (std::ranges::any_of(top_k_filter->columns_deciding_threshold, [&](const String & name) { return info.hasDefaultOfColumnOrParent(name); }))
         return {};
 
     auto key = std::make_shared<StorageFileSource::TopKQueryConditionCacheKey>();
@@ -2907,11 +3750,144 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     table_name_hash.update(table_name.size());
     table_name_hash.update(table_name);
 
+    /// The key covers the whole filter including the conjuncts on hive partition columns, and whether a column
+    /// is read from the path or from the file depends on `use_hive_partitioning` of the query that created the
+    /// storage (for the `file` table function it is created per query), which the `table_id` does not cover.
+    SipHash hive_columns_hash;
+    for (const auto & column : storage->hive_partition_columns_to_read_from_file_path)
+    {
+        hive_columns_hash.update(column.name.size());
+        hive_columns_hash.update(column.name);
+        const String type_name = column.type->getName();
+        hive_columns_hash.update(type_name.size());
+        hive_columns_hash.update(type_name);
+    }
+
     boost::hash_combine(condition_hash, top_k_filter->plan_hash);
     boost::hash_combine(condition_hash, files_hash.get64());
     boost::hash_combine(condition_hash, table_name_hash.get64());
+    boost::hash_combine(condition_hash, hive_columns_hash.get64());
     key->condition_hash = condition_hash;
     return key;
+}
+
+StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
+    const FormatFilterInfoPtr & format_filter_info, const UUID & query_condition_cache_table_id, RWLockImpl::LockHolder & read_lock) const
+{
+    const auto & context = getContext();
+
+    /// `parallelize_output_from_storages = 0` asks to read a file by a single stream. A TopN read and
+    /// lazy materialization keep per-file state, that would have to be shared between the buckets.
+    /// Counting rows and taking min / max from statistics read only the metadata.
+    if (max_num_streams < 2 || need_only_count || format_filter_info->min_max_from_statistics
+        || top_k_filter || lazy_row_index_registry
+        || !context->getSettingsRef()[Setting::parallelize_output_from_storages]
+        || storage->use_table_fd || storage->archive_info || storage->distributed_processing
+        || !FormatFactory::instance().checkIfFormatHasSplitter(storage->format_name)
+        || !storage->parallelizeOutputAfterReading(context))
+        return nullptr;
+
+    /// The files left after filtering by `_path` and `_file`, if known in advance.
+    auto files = files_iterator->tryGetFiles();
+    if (!files || files->size() != 1)
+        return nullptr;
+    const String & path = files->front();
+
+    /// The buckets are read by seeking, which is not possible in a compressed file.
+    if (chooseCompressionMethod(path, storage->compression_method) != CompressionMethod::None)
+        return nullptr;
+
+    /// Wait for a concurrent `INSERT` to finish writing the file (including the footer) before reading
+    /// its metadata, as the sources do. The caller keeps the lock until the sources take their own.
+    read_lock = storage->lockRwlock(RWLockImpl::Read, context);
+
+    /// A file that has disappeared is handled by the source, according to `engine_file_empty_if_not_exists`.
+    struct stat file_stat{};
+    if (0 != stat(path.c_str(), &file_stat) || !S_ISREG(file_stat.st_mode) || file_stat.st_size == 0)
+        return nullptr;
+
+    auto split_file = std::make_shared<StorageFileSource::SplitFile>();
+    split_file->path = path;
+    split_file->file_cache_version = computeFileCacheVersionToken(file_stat);
+
+    auto read_buf = createReadBuffer(path, file_stat, /*use_table_fd=*/ false, /*table_fd=*/ -1, storage->compression_method, context);
+    /// The file may have been rewritten between `stat` and opening it, then the version token does not
+    /// describe what we read. Every source checks the token again when it opens the file.
+    if (!fileCacheVersionTokenStillHolds(path, split_file->file_cache_version))
+        return nullptr;
+
+    /// The same metadata cache key as `StorageFileSource::generate` uses.
+    ObjectMetadata object_metadata;
+    object_metadata.size_bytes = file_stat.st_size;
+    object_metadata.last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
+    object_metadata.etag = split_file->file_cache_version;
+    std::optional<RelativePathWithMetadata> object_with_metadata(std::in_place, path, std::move(object_metadata));
+
+    static constexpr size_t split_file_buckets_per_stream = 4;
+    split_file->buckets = FormatFactory::instance().getSplitter(storage->format_name)->splitForParallelReading(
+        max_num_streams * split_file_buckets_per_stream,
+        *read_buf,
+        storage->format_settings ? *storage->format_settings : getFormatSettings(context),
+        object_with_metadata,
+        context);
+    if (split_file->buckets.size() < 2)
+        return nullptr;
+
+    /// Consult the query condition cache once for the whole file, rather than in every source, and drop
+    /// the row groups it knows to have no matching rows. See the comments in `StorageFileSource::generate`.
+    if (format_filter_info->condition_hash && isFileCacheVersionTokenSettled(file_stat) && query_condition_cache_table_id != UUIDHelpers::Nil)
+    {
+        if (auto query_condition_cache = context->getQueryConditionCache())
+        {
+            auto matching_marks = query_condition_cache->read(
+                query_condition_cache_table_id,
+                QueryConditionCache::makeFilePartName(path, split_file->file_cache_version),
+                *format_filter_info->condition_hash,
+                /*increment_profile_events=*/ false);
+
+            RowGroupIndices matching_row_groups;
+            VectorWithMemoryTracking<FileBucketInfoPtr> buckets;
+            if (matching_marks)
+            {
+                for (size_t i = 0; i < matching_marks->size(); ++i)
+                    if ((*matching_marks)[i])
+                        matching_row_groups.push_back(i);
+
+                for (const auto & bucket : split_file->buckets)
+                    if (auto filtered_bucket = bucket->filterByMatchingRowGroups(matching_row_groups))
+                        buckets.push_back(std::move(filtered_bucket));
+
+                /// No row group of the file can match: do not split it. Its only source then skips it by the
+                /// same cache entry (and counts it), and still finalizes the file, e.g. renames it according
+                /// to `rename_files_after_processing`, which is done when a source is destroyed.
+                if (buckets.empty())
+                    return nullptr;
+            }
+
+            ProfileEvents::increment(matching_marks ? ProfileEvents::QueryConditionCacheHits : ProfileEvents::QueryConditionCacheMisses);
+
+            if (matching_marks)
+            {
+                LOG_DEBUG(
+                    getLogger("StorageFile"),
+                    "Query condition cache has dropped {}/{} row groups for condition {} in file {}.",
+                    matching_marks->size() - matching_row_groups.size(),
+                    matching_marks->size(),
+                    format_filter_info->filter_actions_dag->dumpNames(),
+                    path);
+
+                /// The readers of the buckets count as pruned only the row groups of their own buckets. When the
+                /// file is not split, the row groups dropped here count as pruned too, by its only reader.
+                /// Only Parquet has a splitter.
+                ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, matching_marks->size() - matching_row_groups.size());
+
+                /// Fewer buckets may be left, and they are still read as a split file.
+                split_file->buckets = std::move(buckets);
+            }
+        }
+    }
+
+    return split_file;
 }
 
 void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
@@ -2929,9 +3905,6 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (max_num_streams > files_to_read)
         num_streams = files_to_read;
 
-    Pipes pipes;
-    pipes.reserve(num_streams);
-
     auto ctx = getContext();
 
     /// Set total number of bytes to process. For progress bar.
@@ -2940,9 +3913,10 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (progress_callback && !storage->archive_info)
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
-    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
         info.getFormatFilter(filter_actions_dag), ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    format_filter_info->need_row_numbers
+        = lazy_row_index_registry != nullptr || VirtualColumnUtils::hasRowDependentVirtualColumns(info.requested_virtual_columns);
     format_filter_info->top_k_filter = top_k_filter;
     format_filter_info->min_max_from_statistics = read_min_max_from_statistics && !filter_actions_dag
         && !query_info.prewhere_info && !query_info.row_level_filter;
@@ -2971,6 +3945,22 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             format_filter_info->column_mapper.get(),
             storage->format_settings ? &*storage->format_settings : nullptr);
 
+    /// Held until the sources are constructed, see `trySplitSingleFile`.
+    RWLockImpl::LockHolder split_file_read_lock;
+    auto split_file = trySplitSingleFile(format_filter_info, query_condition_cache_table_id, split_file_read_lock);
+    if (split_file)
+        num_streams = std::min(split_file->buckets.size(), max_num_streams);
+
+    Pipes pipes;
+    pipes.reserve(num_streams);
+
+    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
+    /// If the sources of a split file get no more than one parsing thread each, let them parse in the
+    /// threads of the pipeline instead. It saves starting a thread pool as large as the pipeline (which
+    /// is noticeable for short queries), and passing every task of the readers between the threads.
+    if (split_file && num_streams >= parser_shared_resources->max_parsing_threads)
+        parser_shared_resources = FormatParserSharedResources::singleThreaded(ctx->getSettingsRef(), num_streams);
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         /// In case of reading from fd we have to check whether we have already created
@@ -2993,7 +3983,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             format_filter_info,
             lazy_row_index_registry,
             top_k_query_condition_cache_key,
-            query_condition_cache_table_id);
+            query_condition_cache_table_id,
+            split_file);
 
         pipes.emplace_back(std::move(source));
     }
@@ -3005,6 +3996,16 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
     if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < resize_to)
         pipe.resize(resize_to);
+    /// The sources of a split file read whole buckets, and the rows passing a filter may all be in one of them.
+    else if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && split_file && output_ports > 1)
+    {
+        /// The setting's default (24) splits only from 48 streams, but one `Resize` over 16 or 32 streams already slows short queries.
+        static constexpr UInt64 split_file_min_streams_per_resize = 8;
+        pipe.resize(
+            resize_to,
+            /*strict=*/ false,
+            std::min<UInt64>(build_settings.min_outstreams_per_resize_after_split, split_file_min_streams_per_resize));
+    }
 
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
@@ -3027,7 +4028,7 @@ public:
         ReadFromFormatInfo info_,
         const ContextPtr & context_,
         size_t max_block_size_,
-        std::vector<FileLazyMaterializingRows::FileRows> files_)
+        VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files_)
         : ISource(std::move(header), false)
         , WithContext(context_)
         , storage(std::move(storage_))
@@ -3104,11 +4105,13 @@ public:
                 /// LazyMaterializingTransform would restore the original row order incorrectly.
                 FormatSettings format_settings = storage->format_settings ? *storage->format_settings : getFormatSettings(getContext());
                 format_settings.parquet.preserve_order = true;
+                format_settings.vortex.preserve_order = true;
 
                 /// There is no filter and no prewhere here: the surviving rows are known exactly,
                 /// so the deferred columns are read without any filtering expressions.
                 auto format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, getContext(), nullptr, nullptr, nullptr);
                 format_filter_info->rows_to_read = file.rows;
+                format_filter_info->need_row_numbers = true;
 
                 if (object_with_metadata)
                 {
@@ -3142,6 +4145,7 @@ public:
                         /*need_only_count=*/ false);
                 }
                 input_format->setSerializationHints(info.serialization_hints);
+                input_format->setMapColumnsReadByOneSide(info.map_columns_read_by_keys, info.map_columns_read_by_values);
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(input_format));
@@ -3195,7 +4199,7 @@ private:
     std::shared_ptr<StorageFile> storage;
     ReadFromFormatInfo info;
     size_t max_block_size;
-    std::vector<FileLazyMaterializingRows::FileRows> files;
+    VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files;
     size_t next_file_index = 0;
 
     FormatParserSharedResourcesPtr parser_shared_resources;
@@ -3212,7 +4216,7 @@ std::shared_ptr<ISource> StorageFile::createLazyRowsSource(
     const ReadFromFormatInfo & info,
     const ContextPtr & context,
     size_t max_block_size,
-    std::vector<FileLazyMaterializingRows::FileRows> files)
+    VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files)
 {
     return std::make_shared<StorageFileLazyRowsSource>(
         std::make_shared<const Block>(info.source_header), storage, info, context, max_block_size, std::move(files));
@@ -3340,6 +4344,17 @@ public:
             return;
 
         finalizeBuffers();
+        releaseBuffers();
+    }
+
+    void onPipelineFinished() override
+    {
+        /// A `timeout_overflow_mode = 'break'` stop cancels the sink before `onFinish` but is a successful exit.
+        if (isCancelled() && stage != Stage::Exception)
+        {
+            finalizeBuffers();
+            releaseBuffers();
+        }
     }
 
 private:
@@ -3445,6 +4460,12 @@ public:
             format_name,
             context,
             flags);
+    }
+
+    void onPipelineFinished() override
+    {
+        if (isCancelled() && stage != Stage::Exception)
+            PartitionedSink::onFinish();
     }
 
 private:
@@ -3683,6 +4704,8 @@ void registerStorageFile(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::FILE,
         .has_builtin_setting_fn = Settings::hasBuiltin,
+        .stores_data_on_disk = true,
+        .supports_temporary = true,
     };
 
     factory.registerStorage(
@@ -3800,7 +4823,7 @@ void registerStorageFile(StorageFactory & factory)
         storage_features,
         Documentation{
             .description = R"DOCS_MD(
-The File table engine keeps the data in a file in one of the supported [file formats](/reference/formats#formats-overview) (`TabSeparated`, `Native`, etc.).
+The File table engine keeps the data in a file in one of the supported [file formats](/reference/formats/index#formats-overview) (`TabSeparated`, `Native`, etc.).
 
 Usage scenarios:
 
@@ -3821,7 +4844,7 @@ File(Format)
 The `Format` parameter specifies one of the available file formats. To perform
 `SELECT` queries, the format must be supported for input, and to perform
 `INSERT` queries – for output. The available formats are listed in the
-[Formats](/reference/formats#formats-overview) section.
+[Formats](/reference/formats/index#formats-overview) section.
 
 ClickHouse does not allow specifying filesystem path for `File`. It will use folder defined by [path](/reference/settings/server-settings/settings/other#path) setting in server configuration.
 
@@ -3887,9 +4910,9 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 
 ## PARTITION BY {#partition-by}
 
-`PARTITION BY` — Optional.  It is possible to create separate files by partitioning the data on a partition key. In most cases, you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+`CREATE TABLE ... ENGINE = File` does not support `PARTITION BY`. To write separate files by a partition key, use `INSERT INTO FUNCTION file(...) PARTITION BY` with `{_partition_id}` in the file name. For example, `INSERT INTO FUNCTION file('out_{_partition_id}.csv', 'CSV', 'd Date, v String') PARTITION BY toYYYYMM(d) SELECT ...` writes one file per month, such as `out_202601.csv`. The placeholder is not expanded when reading, so read the files back with a glob, such as `file('out_*.csv')`.
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
+To read data stored in Hive-style `key=value/` directories, use the [`file`](/reference/functions/table-functions/file#hive-style-partitioning) table function with `use_hive_partitioning = 1`. A filter on a partition column then reads only the matching files.
 
 ## Virtual columns {#virtual-columns}
 

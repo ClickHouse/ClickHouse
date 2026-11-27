@@ -10,18 +10,15 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/pt-BR/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
-  ## Versões compatíveis do Postgres
+  ## Versões compatíveis do Postgres {#supported-postgres-versions}
 </div>
 
 O ClickPipes oferece suporte ao Postgres versão 12 e posteriores.
 
-<div id="enable-logical-replication">
-  ## Habilite a replicação lógica
-</div>
+## Habilite a replicação lógica {#enable-logical-replication}
 
 Você pode pular esta seção se a sua instância do RDS já tiver a seguinte configuração definida:
 
@@ -42,21 +39,35 @@ Caso ainda não esteja configurado, siga estas etapas:
 1. Crie um novo grupo de parâmetros para a sua versão do Postgres com as configurações necessárias:
    * Defina `rds.logical_replication` como 1
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp" alt="Onde encontrar grupos de parâmetros no RDS?" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Onde encontrar grupos de parâmetros no RDS?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
+  </Frame>
+</div>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp" alt="Alterando rds.logical_replication" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Alterando rds.logical_replication](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
+  </Frame>
+</div>
 
 2. Aplique o novo grupo de parâmetros ao seu banco de dados RDS Postgres
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp" alt="Modificando o RDS Postgres com o novo grupo de parâmetros" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Modificando o RDS Postgres com o novo grupo de parâmetros](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
+  </Frame>
+</div>
 
 3. Reinicie a sua instância do RDS para aplicar as alterações
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp" alt="Reiniciando o RDS Postgres" size="lg" border />
-
-<div id="configure-database-user">
-  ## Configurar o usuário do banco de dados
+<div className="ch-image-lg">
+  <Frame>
+    ![Reiniciar o RDS Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
+  </Frame>
 </div>
+
+## Configurar o usuário do banco de dados {#configure-database-user}
 
 Conecte-se à sua instância do RDS Postgres como usuário administrador e execute os seguintes comandos:
 
@@ -92,16 +103,16 @@ Conecte-se à sua instância do RDS Postgres como usuário administrador e execu
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-  * Para criar uma publicação para todas as tabelas em um schema específico:
+* Para criar uma publicação para todas as tabelas em um schema específico:
 
-    ```sql
-    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-    ```
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+  ```
 
 A publicação `clickpipes` define o conjunto de tabelas cujos eventos de alteração serão transmitidos ao ClickPipes. Recomendamos não usar `FOR ALL TABLES`, a menos que você pretenda replicar todas as tabelas, pois incluir tabelas desnecessárias aumenta o tráfego de WAL do Postgres para o ClickPipes e reduz a eficiência geral da replicação.
 
 <div id="iam-authentication">
-  ### Usando autenticação IAM (opcional)
+  ### Usando autenticação IAM (opcional) {#iam-authentication}
 </div>
 
 <IAMAuthentication engine="postgres" service="rds">
@@ -111,27 +122,33 @@ A publicação `clickpipes` define o conjunto de tabelas cujos eventos de altera
 </IAMAuthentication>
 
 <div id="configure-network-access">
-  ## Configurar o acesso à rede
+  ## Configurar o acesso à rede {#configure-network-access}
 </div>
 
-<div id="ip-based-access-control">
-  ### Controle de acesso por IP
+### Controle de acesso por IP {#ip-based-access-control}
+
+Se você quiser restringir o tráfego para sua instância do RDS, adicione os [IPs NAT estáticos documentados](/pt-BR/integrations/clickpipes/networking/static-ips) às `Regras de entrada` do grupo de segurança do RDS.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Onde encontrar o grupo de segurança no RDS Postgres?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
+  </Frame>
 </div>
 
-Se você quiser restringir o tráfego para sua instância do RDS, adicione os [IPs NAT estáticos documentados](/pt-BR/integrations/clickpipes/networking/static-ips) às `Inbound rules` do grupo de segurança do RDS.
-
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="Onde encontrar o grupo de segurança no RDS Postgres?" size="lg" border />
-
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Editar as regras de entrada do grupo de segurança acima" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Editar as regras de entrada do grupo de segurança acima](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+  </Frame>
+</div>
 
 <div id="private-access-via-aws-privatelink">
-  ### Acesso privado via AWS PrivateLink
+  ### Acesso privado via AWS PrivateLink {#private-access-via-aws-privatelink}
 </div>
 
 Para se conectar à sua instância do RDS por uma rede privada, você pode usar o AWS PrivateLink. Siga nosso [guia de configuração do AWS PrivateLink para ClickPipes](/pt-BR/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) para configurar a conexão.
 
 <div id="workarounds-for-rds-proxy">
-  ### Soluções alternativas para o RDS Proxy
+  ### Soluções alternativas para o RDS Proxy {#workarounds-for-rds-proxy}
 </div>
 
 O RDS Proxy não oferece suporte a conexões de replicação lógica. Se você tiver endereços IP dinâmicos no RDS e não puder usar um nome DNS ou uma função Lambda, aqui estão algumas alternativas:
@@ -142,7 +159,7 @@ O RDS Proxy não oferece suporte a conexões de replicação lógica. Se você t
 4. Automatize o gerenciamento de endereços IP usando ferramentas como Terraform ou CloudFormation.
 
 <div id="whats-next">
-  ## Próximos passos
+  ## Próximos passos {#whats-next}
 </div>
 
 Agora você pode [criar seu ClickPipe](/pt-BR/integrations/clickpipes/postgres/index) e começar a fazer a ingestão de dados da sua instância do Postgres para o ClickHouse Cloud.

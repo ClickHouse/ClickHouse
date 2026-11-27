@@ -47,7 +47,7 @@ namespace
         std::unordered_map<UUID, std::pair<String, AccessEntityType>> dependencies;
         std::unordered_map<UUID, AccessEntityPtr> dependents;
 
-        BackupEntryPtr toBackupEntry() const
+        [[nodiscard]] BackupEntryPtr toBackupEntry() const
         {
             WriteBufferFromOwnString buf;
 
@@ -262,6 +262,22 @@ AccessRestorerFromBackup::AccessRestorerFromBackup(
     , update_dependents(restore_settings_.update_access_entities_dependents)
     , restore_with_current_grants(restore_settings_.restore_access_entities_with_current_grants)
     , log(getLogger("AccessRestorerFromBackup"))
+{
+}
+
+AccessRestorerFromBackup::AccessRestorerFromBackup(
+    const AccessRestorerFromBackup & src, RestoreAccessCreationMode creation_mode_, bool skip_unresolved_dependencies_)
+    : backup(src.backup)
+    , creation_mode(creation_mode_)
+    , skip_unresolved_dependencies(skip_unresolved_dependencies_)
+    , update_dependents(src.update_dependents)
+    , restore_with_current_grants(src.restore_with_current_grants)
+    , log(src.log)
+    , loaded(src.loaded)
+    , ids_assigned(src.ids_assigned)
+    , data_paths_in_backup(src.data_paths_in_backup)
+    , data_path_with_entities_to_restore(src.data_path_with_entities_to_restore)
+    , entity_infos(src.entity_infos)
 {
 }
 
@@ -484,6 +500,7 @@ void AccessRestorerFromBackup::generateRandomIDsAndResolveDependencies(const Acc
             bool was_going_to_restore = entity_info.restore;
             entity_info.new_id = *existing_id;
             entity_info.restore = false;
+            entity_info.exists = was_going_to_restore;
             LOG_TRACE(log, "{}: Found with UUID {}{}", AccessEntityTypeInfo::get(type).formatEntityNameWithType(name), *existing_id,
                       (was_going_to_restore ? ", will not restore" : ""));
         }
@@ -535,7 +552,7 @@ void AccessRestorerFromBackup::generateRandomIDsAndResolveDependencies(const Acc
     /// Remap the UUIDs of dependencies in the access entities we're going to restore.
     for (auto & [id, entity_info] : entity_infos)
     {
-        if (entity_info.restore || entity_info.is_dependent)
+        if (entity_info.restore || entity_info.is_dependent || entity_info.exists)
         {
             auto new_entity = entity_info.entity->clone();
             new_entity->replaceDependencies(old_to_new_ids);
@@ -573,6 +590,31 @@ AccessEntitiesToRestore AccessRestorerFromBackup::getEntitiesToRestore(const Str
     }
 
     return res;
+}
+
+
+std::vector<std::pair<UUID, AccessEntityPtr>> AccessRestorerFromBackup::getEntitiesFromBackup() const
+{
+    if (!ids_assigned)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "IDs not assigned");
+
+    std::vector<std::pair<UUID, AccessEntityPtr>> res;
+    for (const auto & [id, entity_info] : entity_infos)
+    {
+        if (entity_info.restore || entity_info.exists)
+            res.emplace_back(*entity_info.new_id, entity_info.entity);
+    }
+    return res;
+}
+
+
+AccessRestorerFromBackup AccessRestorerFromBackup::makeCopyForChecking() const
+{
+    if (!loaded || ids_assigned)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Access entities must be loaded and not resolved to make a copy for checking");
+
+    auto mode = (creation_mode == RestoreAccessCreationMode::kCreate) ? RestoreAccessCreationMode::kCreateIfNotExists : creation_mode;
+    return AccessRestorerFromBackup(*this, mode, /* skip_unresolved_dependencies_= */ true);
 }
 
 

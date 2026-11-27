@@ -1,0 +1,17 @@
+-- Tags: no-fasttest
+-- no-fasttest: requires the SQLite library, which is not built in the fast test.
+
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = SQLite({CLICKHOUSE_DATABASE_1:String}) COMMENT 'old';
+
+SHOW CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} FORMAT TSVRaw;
+SELECT engine_full, comment FROM system.databases WHERE name = {CLICKHOUSE_DATABASE_1:String} FORMAT TSVRaw;
+
+ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY COMMENT 'new';
+DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
+SHOW CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} FORMAT TSVRaw;
+SELECT engine_full, comment FROM system.databases WHERE name = {CLICKHOUSE_DATABASE_1:String} FORMAT TSVRaw;
+
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

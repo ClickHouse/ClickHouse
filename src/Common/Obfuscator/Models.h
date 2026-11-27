@@ -192,9 +192,9 @@ static Int64 transformSigned(Int64 x, UInt64 seed)
     if (x == std::numeric_limits<Int64>::min())
         return x;
 
-    /// Negate using unsigned arithmetic to obtain the magnitude;
-    /// `-x` on the signed integer would be undefined behavior on the boundary value.
-    return -transform(-static_cast<UInt64>(x), seed);
+    /// `-x` is representable, because the minimum value is handled above. The permutation keeps
+    /// the highest bit of the magnitude, so the result is below 2^63 and can be negated as `Int64`.
+    return -static_cast<Int64>(transform(static_cast<UInt64>(-x), seed));
 }
 
 
@@ -564,6 +564,31 @@ static Int64 makeDateTimeOnDayOf(const DateLUTImpl & date_lut, Int64 time, UInt8
     return res;
 }
 
+/// The obfuscated `value` of a type with the range [`min`, `max`], in units of 1 / `scale_multiplier` seconds,
+/// kept on the local day of the source value `src_value`, whose whole seconds are `src_whole`.
+/// At the ends of the range of the type, the source local day can be representable only in part, e.g. `1970-01-01`
+/// in `DateTime('Asia/Tokyo')` or `2262-04-12` in `DateTime64(9, 'Pacific/Kiritimati')`, and the obfuscated time of
+/// day can fall outside of this part. Fold the value into the representable part of the source day. The range is
+/// extended to contain the source value, so it is never empty, even for a value outside of the date lookup table.
+static Int128 foldIntoRepresentablePartOfDay(
+    const DateLUTImpl & date_lut, Int128 value, Int64 src_whole, Int128 src_value, Int64 scale_multiplier, Int128 min, Int128 max)
+{
+    if (value >= min && value <= max)
+        return value;
+
+    Int128 day_begin = Int128(makeDateTimeOnDayOf(date_lut, src_whole, 0, 0, 0)) * scale_multiplier;
+    Int128 day_end = (Int128(makeDateTimeOnDayOf(date_lut, src_whole, 23, 59, 59)) + 1) * scale_multiplier - 1;
+
+    Int128 range_begin = std::min<Int128>(std::max<Int128>(day_begin, min), src_value);
+    Int128 range_end = std::max<Int128>(std::min<Int128>(day_end, max), src_value);
+    Int128 range_size = range_end - range_begin + 1;
+
+    Int128 offset = (value - range_begin) % range_size;
+    if (offset < 0)
+        offset += range_size;
+    return range_begin + offset;
+}
+
 
 /// Leave date part as is and apply pseudorandom permutation to time difference with previous value within the same log2 class.
 class DateTimeModel : public IModel
@@ -604,12 +629,15 @@ public:
             /// time of `new_datetime` keeps it inside the source local day even across DST transitions,
             /// where day lengths differ from 24 hours and a raw "seconds since midnight" offset added to
             /// the source midnight could otherwise spill onto a neighbouring displayed date.
-            res_data[i] = static_cast<UInt32>(makeDateTimeOnDayOf(
+            const Int64 res_datetime = makeDateTimeOnDayOf(
                 date_lut,
                 src_datetime,
                 static_cast<UInt8>(date_lut.toHour(new_datetime)),
                 static_cast<UInt8>(date_lut.toMinute(new_datetime)),
-                static_cast<UInt8>(date_lut.toSecond(new_datetime))));
+                static_cast<UInt8>(date_lut.toSecond(new_datetime)));
+
+            res_data[i] = static_cast<UInt32>(foldIntoRepresentablePartOfDay(
+                date_lut, res_datetime, src_datetime, src_datetime, 1, 0, std::numeric_limits<UInt32>::max()));
 
             src_prev_value = src_datetime;
             res_prev_value = res_data[i];
@@ -672,9 +700,9 @@ public:
 
             /// Wrapping arithmetic: the values of arbitrary decimals may be far outside the range of the
             /// date lookup table, and the result is only required to be deterministic.
-            const Int64 src_diff = static_cast<Int64>(static_cast<UInt64>(src_whole) - static_cast<UInt64>(src_prev_value));
+            const Int64 src_diff = static_cast<Int64>(common::subIgnoreOverflow(static_cast<UInt64>(src_whole), static_cast<UInt64>(src_prev_value)));
             const Int64 res_diff = transformSigned(src_diff, seed);
-            const Int64 new_datetime = static_cast<Int64>(static_cast<UInt64>(res_prev_value) + static_cast<UInt64>(res_diff));
+            const Int64 new_datetime = static_cast<Int64>(common::addIgnoreOverflow(static_cast<UInt64>(res_prev_value), static_cast<UInt64>(res_diff)));
 
             Int64 res_whole = makeDateTimeOnDayOf(
                 date_lut,
@@ -688,29 +716,11 @@ public:
                 res_fraction = transform(res_fraction, seed);
             while (res_fraction >= static_cast<UInt64>(scale_multiplier));
 
-            Int128 res_value = Int128(res_whole) * scale_multiplier + Int128(res_fraction);
+            const Int128 res_value = Int128(res_whole) * scale_multiplier + Int128(res_fraction);
 
-            /// At the ends of the range of `Int64`, the source local day can be representable only in part,
-            /// e.g. `2262-04-12` in `DateTime64(9, 'Pacific/Kiritimati')`, and the obfuscated time of day can
-            /// fall outside of this part. Fold the value into the representable part of the source day.
-            /// The range is extended to contain the source value, so it is never empty, even for a value
-            /// outside of the date lookup table.
-            if (res_value < std::numeric_limits<Int64>::min() || res_value > std::numeric_limits<Int64>::max())
-            {
-                Int128 day_begin = Int128(makeDateTimeOnDayOf(date_lut, src_whole, 0, 0, 0)) * scale_multiplier;
-                Int128 day_end = (Int128(makeDateTimeOnDayOf(date_lut, src_whole, 23, 59, 59)) + 1) * scale_multiplier - 1;
-
-                Int128 range_begin = std::min<Int128>(std::max<Int128>(day_begin, std::numeric_limits<Int64>::min()), src_value);
-                Int128 range_end = std::max<Int128>(std::min<Int128>(day_end, std::numeric_limits<Int64>::max()), src_value);
-                Int128 range_size = range_end - range_begin + 1;
-
-                Int128 offset = (res_value - range_begin) % range_size;
-                if (offset < 0)
-                    offset += range_size;
-                res_value = range_begin + offset;
-            }
-
-            res_data[i] = static_cast<Int64>(res_value);
+            res_data[i] = static_cast<Int64>(foldIntoRepresentablePartOfDay(
+                date_lut, res_value, src_whole, src_value, scale_multiplier,
+                std::numeric_limits<Int64>::min(), std::numeric_limits<Int64>::max()));
 
             src_prev_value = src_whole;
             res_prev_value = res_whole;
@@ -740,7 +750,7 @@ private:
     UInt64 seed;
     std::optional<Integer> max_abs_value;
 
-    bool isInRange(Integer x) const
+    [[nodiscard]] bool isInRange(Integer x) const
     {
         if constexpr (is_unsigned_v<Integer>)
             return x <= *max_abs_value;
@@ -748,7 +758,7 @@ private:
             return x <= *max_abs_value && x >= -*max_abs_value;
     }
 
-    Integer transformValue(Integer x) const
+    [[nodiscard]] Integer transformValue(Integer x) const
     {
         Integer res = transformInteger(x, seed);
         if (max_abs_value && isInRange(x))
@@ -942,7 +952,7 @@ private:
             ++count_end;
         }
 
-        CodePoint sample(UInt64 random, double end_multiplier) const
+        [[nodiscard]] CodePoint sample(UInt64 random, double end_multiplier) const
         {
             UInt64 range = total + static_cast<UInt64>(static_cast<double>(count_end) * end_multiplier);
             if (range == 0)
@@ -1261,7 +1271,10 @@ public:
 
             /// If string is greater than desired_size, increase probability of end.
             double end_probability_multiplier = 0;
-            Int64 num_bytes_after_desired_size = (pos - data) - desired_size;
+            /// `pos - data` is signed but `desired_size` is not, so without the cast the whole
+            /// subtraction happens in `size_t` and only the assignment back to `Int64` recovers the
+            /// negative value for a string that is still shorter than desired.
+            Int64 num_bytes_after_desired_size = (pos - data) - static_cast<Int64>(desired_size);
 
             if (num_bytes_after_desired_size > 0)
                 end_probability_multiplier = std::pow(1.25, num_bytes_after_desired_size);
@@ -1620,7 +1633,7 @@ private:
     }
 
 public:
-    ModelPtr get(const IDataType & data_type, UInt64 seed, MarkovModelParameters markov_model_params) const
+    [[nodiscard]] ModelPtr get(const IDataType & data_type, UInt64 seed, MarkovModelParameters markov_model_params) const
     {
         WhichDataType which(data_type);
 

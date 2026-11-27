@@ -23,6 +23,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -39,6 +40,7 @@
 
 #include <Formats/MsgPackExtensionTypes.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/checkEnumValue.h>
 
 namespace DB
 {
@@ -56,12 +58,12 @@ MsgPackRowInputFormat::MsgPackRowInputFormat(SharedHeader header_, ReadBuffer & 
     : MsgPackRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, settings) {}
 
 MsgPackRowInputFormat::MsgPackRowInputFormat(SharedHeader header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings)
-    : IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_)), visitor(settings.null_as_default), parser(visitor), data_types(header_->getDataTypes())  {}
+    : IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_)), visitor(settings.null_as_default, settings.check_conversion_from_numbers_to_enum), parser(visitor), data_types(header_->getDataTypes())  {}
 
 void MsgPackRowInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
-    visitor.reset();
+    parser.init();
 }
 
 void MsgPackRowInputFormat::setReadBuffer(ReadBuffer & in_)
@@ -85,7 +87,7 @@ void MsgPackVisitor::set_info(IColumn & column, DataTypePtr type, UInt8 & read) 
     info_stack.push(Info{column, type, false, std::nullopt, &read});
 }
 
-void MsgPackVisitor::reset()
+void MsgPackVisitor::init()
 {
     info_stack = {};
 }
@@ -121,11 +123,12 @@ static bool checkAndInsertLowCardinality(IColumn & column, DataTypePtr type, Ins
     return false;
 }
 
-static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
+template <typename T>
+static void insertInteger(IColumn & column, DataTypePtr type, T value, bool check_conversion_from_numbers_to_enum)
 {
     auto insert_func = [&](IColumn & column_, DataTypePtr type_)
     {
-        insertInteger(column_, type_, value);
+        insertInteger(column_, type_, value, check_conversion_from_numbers_to_enum);
     };
 
     if (checkAndInsertNullable(column, type, insert_func) || checkAndInsertLowCardinality(column, type, insert_func))
@@ -155,13 +158,25 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
             assert_cast<ColumnUInt64 &>(column).insertValue(value);
             break;
         }
-        case TypeIndex::Enum8: [[fallthrough]];
+        case TypeIndex::Enum8:
+        {
+            if (check_conversion_from_numbers_to_enum)
+                checkEnumValue<DataTypeEnum8>(*type, value);
+            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value));
+            break;
+        }
         case TypeIndex::Int8:
         {
             assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value));
             break;
         }
-        case TypeIndex::Enum16: [[fallthrough]];
+        case TypeIndex::Enum16:
+        {
+            if (check_conversion_from_numbers_to_enum)
+                checkEnumValue<DataTypeEnum16>(*type, value);
+            assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value));
+            break;
+        }
         case TypeIndex::Int16:
         {
             assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value));
@@ -319,7 +334,10 @@ static void insertNull(IColumn & column, DataTypePtr type, UInt8 * read, bool nu
         if (!null_as_default)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack null into non-nullable column with type {}.", type->getName());
-        column.insertDefault();
+        if (type->isDefaultInsertTrivial())
+            column.insertDefault();
+        else
+            type->insertDefaultInto(column);
         /// In case of default on null column can have defined DEFAULT expression that should be used.
         if (read)
             *read = false;
@@ -350,13 +368,13 @@ static void insertUUID(IColumn & column, DataTypePtr type, const char * value, s
 
 bool MsgPackVisitor::visit_positive_integer(UInt64 value) // NOLINT
 {
-    insertInteger(info_stack.top().column, info_stack.top().type, value);
+    insertInteger(info_stack.top().column, info_stack.top().type, value, check_conversion_from_numbers_to_enum);
     return true;
 }
 
 bool MsgPackVisitor::visit_negative_integer(Int64 value) // NOLINT
 {
-    insertInteger(info_stack.top().column, info_stack.top().type, value);
+    insertInteger(info_stack.top().column, info_stack.top().type, value, check_conversion_from_numbers_to_enum);
     return true;
 }
 
@@ -386,7 +404,7 @@ bool MsgPackVisitor::visit_float64(Float64 value) // NOLINT
 
 bool MsgPackVisitor::visit_boolean(bool value)
 {
-    insertInteger(info_stack.top().column, info_stack.top().type, UInt64(value));
+    insertInteger(info_stack.top().column, info_stack.top().type, UInt64(value), check_conversion_from_numbers_to_enum);
     return true;
 }
 
@@ -467,9 +485,12 @@ bool MsgPackVisitor::start_map(uint32_t size) // NOLINT
 
 bool MsgPackVisitor::start_map_key() // NOLINT
 {
-    auto key_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumns()[0];
+    /// Use `getColumn(0)` to obtain a direct `IColumn &` rather than `getColumns()[0]`,
+    /// which returns a `ColumnPtr` by value and bumps `use_count` to 2; the subsequent
+    /// `WrappedPtr::operator*` would then trip `assumeMutableRef`'s `use_count() == 1` check.
+    IColumn & key_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumn(0);
     auto key_type = assert_cast<const DataTypeMap &>(*info_stack.top().type).getKeyType();
-    info_stack.push(Info{*key_column, key_type, false, std::nullopt, nullptr});
+    info_stack.push(Info{key_column, key_type, false, std::nullopt, nullptr});
     return true;
 }
 
@@ -481,9 +502,10 @@ bool MsgPackVisitor::end_map_key() // NOLINT
 
 bool MsgPackVisitor::start_map_value() // NOLINT
 {
-    auto value_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumns()[1];
+    /// Same `getColumn` vs `getColumns()[i]` distinction as in `start_map_key`.
+    IColumn & value_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumn(1);
     auto value_type = assert_cast<const DataTypeMap &>(*info_stack.top().type).getValueType();
-    info_stack.push(Info{*value_column, value_type, false, std::nullopt, nullptr});
+    info_stack.push(Info{value_column, value_type, false, std::nullopt, nullptr});
     return true;
 }
 
@@ -805,7 +827,7 @@ void registerInputFormatMsgPack(FormatFactory & factory)
             const FormatSettings & settings)
     {
         return std::make_shared<MsgPackRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
-    });
+    }, /*supports_reset_parser=*/ true);
     factory.registerFileExtension("messagepack", "MsgPack");
 
     factory.setDocumentation("MsgPack", Documentation{

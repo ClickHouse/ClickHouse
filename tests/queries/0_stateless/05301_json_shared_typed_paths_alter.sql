@@ -1,5 +1,7 @@
--- Tags: long
+-- Tags: long, no-msan
 -- long: many statements; over the time limit of the flaky check under the thread fuzzer.
+-- no-msan: a median of 370 s under MSan against 9 s in a debug build, and it hits the 600 s per-test timeout;
+-- the test still runs under ASan, UBSan and TSan.
 
 -- SHARED added and removed by ALTER MODIFY COLUMN, lazily (a type hint change is metadata only) and by mutation, parts
 -- of both layouts read together and merged, path type changes, a column absent from the part, and the layout of each
@@ -87,6 +89,7 @@ SELECT 'b_w [(json.a, json)]', (SELECT arraySort(groupArray((x, toString((json.a
 SELECT 'b_w [(json.a, json)] max_block_size = 7', (SELECT arraySort(groupArray((x, toString((json.a, json))))) FROM b_w  SETTINGS max_threads = 1, max_block_size = 7) = (SELECT arraySort(groupArray((x, toString((json.a, json))))) FROM bmem );
 SELECT 'b_w [(json.c, json.a, json.b)]', (SELECT arraySort(groupArray((x, toString((json.c, json.a, json.b))))) FROM b_w  SETTINGS max_threads = 1) = (SELECT arraySort(groupArray((x, toString((json.c, json.a, json.b))))) FROM bmem );
 SELECT 'b_w [(json.c, json.a, json.b)] max_block_size = 7', (SELECT arraySort(groupArray((x, toString((json.c, json.a, json.b))))) FROM b_w  SETTINGS max_threads = 1, max_block_size = 7) = (SELECT arraySort(groupArray((x, toString((json.c, json.a, json.b))))) FROM bmem );
+-- The conversion of the old part keeps a shared data path in shared data even when a dynamic path becomes typed.
 SELECT 'b_w paths after', JSONDynamicPaths(json), JSONSharedDataPaths(json), JSONAllPaths(json) FROM b_w WHERE x = 2;
 OPTIMIZE TABLE b_w FINAL;
 SELECT 'b_w [json]', (SELECT arraySort(groupArray((x, toString(json)))) FROM b_w  SETTINGS max_threads = 1) = (SELECT arraySort(groupArray((x, toString(json)))) FROM bmem );
@@ -188,6 +191,7 @@ SELECT 'b_cn [(json.a, json)]', (SELECT arraySort(groupArray((x, toString((json.
 SELECT 'b_cn [(json.a, json)] max_block_size = 7', (SELECT arraySort(groupArray((x, toString((json.a, json))))) FROM b_cn  SETTINGS max_threads = 1, max_block_size = 7) = (SELECT arraySort(groupArray((x, toString((json.a, json))))) FROM bmem );
 SELECT 'b_cn [(json.c, json.a, json.b)]', (SELECT arraySort(groupArray((x, toString((json.c, json.a, json.b))))) FROM b_cn  SETTINGS max_threads = 1) = (SELECT arraySort(groupArray((x, toString((json.c, json.a, json.b))))) FROM bmem );
 SELECT 'b_cn [(json.c, json.a, json.b)] max_block_size = 7', (SELECT arraySort(groupArray((x, toString((json.c, json.a, json.b))))) FROM b_cn  SETTINGS max_threads = 1, max_block_size = 7) = (SELECT arraySort(groupArray((x, toString((json.c, json.a, json.b))))) FROM bmem );
+-- The conversion of the old part keeps a shared data path in shared data even when a dynamic path becomes typed.
 SELECT 'b_cn paths after', JSONDynamicPaths(json), JSONSharedDataPaths(json), JSONAllPaths(json) FROM b_cn WHERE x = 2;
 OPTIMIZE TABLE b_cn FINAL;
 SELECT 'b_cn [json]', (SELECT arraySort(groupArray((x, toString(json)))) FROM b_cn  SETTINGS max_threads = 1) = (SELECT arraySort(groupArray((x, toString(json)))) FROM bmem );

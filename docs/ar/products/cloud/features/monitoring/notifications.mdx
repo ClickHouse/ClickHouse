@@ -7,44 +7,54 @@ sidebarTitle: 'الإشعارات'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يرسل ClickHouse Cloud إشعارات بشأن الأحداث المهمة المرتبطة بخدمتك أو بمؤسستك. وهناك بعض المفاهيم التي ينبغي وضعها في الاعتبار لفهم كيفية إرسال الإشعارات وإعدادها:
 
 1. **فئة الإشعارات**: تشير إلى مجموعات من الإشعارات، مثل إشعارات الفوترة والإشعارات المتعلقة بالخدمة وما إلى ذلك. وضمن كل فئة، توجد عدة إشعارات يمكن إعداد طريقة تسليمها.
 2. **مستوى خطورة الإشعار**: يمكن أن يكون مستوى خطورة الإشعار `info` أو `warning` أو `critical`، وذلك بحسب مدى أهمية الإشعار. وهذا غير قابل للإعداد.
 3. **قناة الإشعار**: تشير القناة إلى الوسيلة التي يُستقبل من خلالها الإشعار، مثل واجهة ClickHouse Cloud أو البريد الإلكتروني أو Slack وما إلى ذلك. ويمكن إعداد ذلك لمعظم الإشعارات.
 
-<div id="receiving-notifications">
-  ## تلقي الإشعارات
-</div>
+## تلقي الإشعارات {#receiving-notifications}
 
 يمكن تلقي الإشعارات عبر قنوات متعددة. يدعم ClickHouse Cloud تلقي الإشعارات عبر البريد الإلكتروني، وواجهة ClickHouse Cloud، وSlack. يمكنك النقر على أيقونة الجرس في القائمة العلوية اليسرى لعرض الإشعارات الحالية، مما يفتح لوحة منبثقة جانبية. وسيؤدي النقر على الزر **View All** في أسفل اللوحة المنبثقة الجانبية إلى نقلك إلى صفحة تعرض سجل النشاط لجميع الإشعارات.
 
-<Image img="/images/cloud/manage/notifications-1.webp" size="md" alt="اللوحة المنبثقة الجانبية لإشعارات ClickHouse Cloud" border />
-
-<Image img="/images/cloud/manage/notifications-2.webp" size="md" alt="سجل نشاط إشعارات ClickHouse Cloud" border />
-
-<div id="customizing-notifications">
-  ## تخصيص الإشعارات
+<div className="ch-image-md">
+  <Frame>
+    ![اللوحة المنبثقة الجانبية لإشعارات ClickHouse Cloud](/images/cloud/manage/notifications-1.webp)
+  </Frame>
 </div>
+
+<div className="ch-image-md">
+  <Frame>
+    ![سجل نشاط إشعارات ClickHouse Cloud](/images/cloud/manage/notifications-2.webp)
+  </Frame>
+</div>
+
+## تخصيص الإشعارات {#customizing-notifications}
 
 بالنسبة إلى كل إشعار، يمكنك تخصيص طريقة استلامه. يمكنك الوصول إلى شاشة الإعدادات من اللوحة المنبثقة الجانبية للإشعارات أو من علامة التبويب الثانية في سجل النشاط الإشعارات.
 
-يمكنك تخصيص الإشعارات التي تُرسَل عبر واجهة ClickHouse Cloud، وتُطبَّق هذه التخصيصات على كل مستخدم بشكل فردي. كما يمكنك تخصيص الإشعارات التي تُرسَل إلى بريدك الإلكتروني، ولكن لا يمكن تخصيص الإشعارات المُرسَلة إلى عناوين بريد إلكتروني مخصصة أو إلى قنوات Slack إلا من قِبل المستخدمين الذين لديهم صلاحيات المسؤول.
+يمكنك تخصيص الإشعارات التي تُرسَل عبر واجهة ClickHouse Cloud، وتُطبَّق هذه التخصيصات على كل مستخدم بشكل فردي. كما يمكنك تخصيص الإشعارات التي تُرسَل إلى بريدك الإلكتروني، ولكن لا يمكن تخصيص الإشعارات المُرسَلة إلى عناوين بريد إلكتروني مخصصة أو إلى قنوات Slack إلا من قِبل المستخدمين الذين لديهم صلاحيات المسؤول.
 
 لتهيئة التسليم لإشعار معيّن، انقر على أيقونة القلم لتعديل قنوات تسليم الإشعار.
 
-<Image img="/images/cloud/manage/notifications-3.webp" size="md" alt="شاشة إعدادات إشعارات ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![شاشة إعدادات إشعارات ClickHouse Cloud](/images/cloud/manage/notifications-3.webp)
+  </Frame>
+</div>
 
-<Image img="/images/cloud/manage/notifications-4.webp" size="md" alt="إعدادات تسليم إشعارات ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![إعدادات تسليم إشعارات ClickHouse Cloud](/images/cloud/manage/notifications-4.webp)
+  </Frame>
+</div>
 
 <Note>
   بعض الإشعارات **الإلزامية**، مثل **فشل الدفع**، غير قابلة للتهيئة.
 </Note>
 
 <div id="service-notifications">
-  ## إشعارات الخدمة
+  ## إشعارات الخدمة {#service-notifications}
 </div>
 
 يرسل ClickHouse إشعارات الخدمة عند استيفاء شرط تنبيه معيّن. اطّلع أدناه على مزيد من المعلومات حول إشعارات الخدمة في ClickHouse Cloud:
@@ -60,25 +70,25 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 | تغيّر إصدار ClickHouse   | عند بدء تحديث إصدار خدمة ClickHouse وعند اكتماله.                                                                    |                                                  | لا ينطبق                                                                                                                                                     |
 
 <div id="clickpipes-notifications">
-  ## إشعارات ClickPipes
+  ## إشعارات ClickPipes {#clickpipes-notifications}
 </div>
 
 ترسل ClickHouse إشعارات ClickPipes عندما يواجه ClickPipe الخاص بك أعطالًا أو مشكلات.
 
 <div id="billing-notifications">
-  ## إشعارات الفوترة
+  ## إشعارات الفوترة {#billing-notifications}
 </div>
 
 يرسل ClickHouse إشعارات الفوترة عند حدوث مشكلات في الدفع، وعندما تبلغ الالتزامات المدفوعة مسبقًا عتبات استهلاك معيّنة.
 
 <div id="supported-notifications">
-  ## الإشعارات المدعومة
+  ## الإشعارات المدعومة {#supported-notifications}
 </div>
 
 نرسل حاليًا إشعارات متعلقة بالفوترة (مثل فشل الدفع، أو تجاوز الاستخدام عتبة معينة، وما إلى ذلك)، بالإضافة إلى إشعارات متعلقة بأحداث التحجيم (مثل اكتمال التحجيم، أو تعذّر التحجيم، وما إلى ذلك).
 
 <div id="related">
-  ## صفحات ذات صلة
+  ## صفحات ذات صلة {#related}
 </div>
 
 * [مراقبة Cloud Console](/ar/products/cloud/features/monitoring/cloud-console) — لوحات معلومات مدمجة لصحة الخدمة والموارد وأداء الاستعلامات

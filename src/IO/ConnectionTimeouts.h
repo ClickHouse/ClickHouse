@@ -6,6 +6,8 @@
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Timespan.h>
 
+#include <chrono>
+
 namespace DB
 {
 
@@ -48,7 +50,10 @@ struct ConnectionTimeouts
     ConnectionTimeouts() = default;
 
     static Poco::Timespan saturate(Poco::Timespan timespan, Poco::Timespan limit);
-    ConnectionTimeouts getSaturated(Poco::Timespan limit) const;
+    [[nodiscard]] ConnectionTimeouts getSaturated(Poco::Timespan limit) const;
+    /// The connect, send and receive timeouts capped at the time left before `deadline`, at least 1 ms.
+    /// A zero timeout, which means no limit, is capped too.
+    [[nodiscard]] ConnectionTimeouts getCappedAt(std::chrono::steady_clock::time_point deadline) const;
 
     /// Timeouts for the case when we have just single attempt to connect.
     static ConnectionTimeouts getTCPTimeoutsWithoutFailover(const Settings & settings);
@@ -63,7 +68,7 @@ struct ConnectionTimeouts
 
     static ConnectionTimeouts getFetchPartHTTPTimeouts(const ServerSettings & server_settings, const Settings & user_settings);
 
-    ConnectionTimeouts getAdaptiveTimeouts(const String & method, bool first_attempt, bool first_byte) const;
+    [[nodiscard]] ConnectionTimeouts getAdaptiveTimeouts(const String & method, bool first_attempt, bool first_byte) const;
 
 #define DECLARE_BUILDER_FOR_MEMBER(member, setter_func) \
     ConnectionTimeouts & setter_func(size_t seconds); \

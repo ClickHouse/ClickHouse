@@ -7,11 +7,7 @@ keywords: ['managed postgres', 'django', 'python', 'psycopg', 'psycopg 3', 'orm'
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-django-beta" />
-
-[Django](https://www.djangoproject.com/) は、ORM とマイグレーション機能を標準で備えた Python の Web フレームワークで、[psycopg 3](https://www.psycopg.org/psycopg3/) ドライバーを介して PostgreSQL と通信します。このガイドでは、新規の Django プロジェクトを PgBouncer 経由で ClickHouse Managed Postgres に接続し、マイグレーションで `todos` テーブルを作成したうえで、小規模な JSON ビューで作成・読み取り・更新・削除のリクエストを処理します。すべての接続で、証明書の完全な検証を伴う TLS を使用します。
+[Django](https://www.djangoproject.com/) は、ORM と移行機能を標準で備えた Python の Web フレームワークで、[psycopg 3](https://www.psycopg.org/psycopg3/) ドライバーを介して PostgreSQL と通信します。このガイドでは、新規の Django プロジェクトを PgBouncer 経由で ClickHouse Managed Postgres に接続し、移行で `todos` テーブルを作成したうえで、小規模な JSON ビューで作成・読み取り・更新・削除のリクエストを処理します。すべての接続で、証明書の完全な検証を伴う TLS を使用します。
 
 ## 前提条件 {#prerequisites}
 

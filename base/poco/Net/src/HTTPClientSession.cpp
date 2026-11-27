@@ -193,7 +193,7 @@ void HTTPClientSession::setProxyTunnel(bool tunnel)
 void HTTPClientSession::setProxyCredentials(const std::string& username, const std::string& password)
 {
 	_proxyConfig.username = username;
-	_proxyConfig.password = password;
+	_proxyConfig.password.assign(password.begin(), password.end());
 }
 
 
@@ -205,7 +205,7 @@ void HTTPClientSession::setProxyUsername(const std::string& username)
 
 void HTTPClientSession::setProxyPassword(const std::string& password)
 {
-	_proxyConfig.password = password;
+	_proxyConfig.password.assign(password.begin(), password.end());
 }
 
 
@@ -295,6 +295,7 @@ std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request, uint64_t * co
     _pResponseStream = 0;
 	clearException();
 	_responseReceived = false;
+	_responseParser.reset(HTTPHeaderLimits{});
 	/// A new exchange starts: nothing of it has been transferred yet. The flags are only
 	/// consulted while there is no body stream to inspect (see isRequestBodyComplete), but they
 	/// must not keep the value left by a previous exchange on this session.
@@ -388,6 +389,7 @@ HTTPClientSession::BodyInfo HTTPClientSession::sendRequestHeaders(HTTPRequest& r
 	_responseReceived = false;
 	_requestBodyComplete = false;
 	_responseBodyComplete = false;
+	_responseParser.reset(HTTPHeaderLimits{});
 
 	_keepAliveCurrentRequest += 1;
 
@@ -700,16 +702,12 @@ void HTTPClientSession::reconnect(uint64_t * connect_time)
     try
     {
         connect_watch.restart();
-        if (_proxyConfig.host.empty() || bypassProxy())
-        {
-            SocketAddress addr(_resolved_host.empty() ? _host : _resolved_host, _port);
-            connect(addr);
-        }
-        else
-        {
-            SocketAddress addr(_proxyConfig.host, _proxyConfig.port);
-            connect(addr);
-        }
+        _connect_address.clear();
+        const auto address = (_proxyConfig.host.empty() || bypassProxy())
+            ? SocketAddress(_resolved_host.empty() ? _host : _resolved_host, _port)
+            : SocketAddress(_proxyConfig.host, _proxyConfig.port);
+        _connect_address = address.toString();
+        connect(address);
         if (connect_time)
             *connect_time = connect_watch.elapsed();
     }
@@ -767,13 +765,13 @@ void HTTPClientSession::proxyAuthenticateImpl(HTTPRequest& request)
 {
 	if (!_proxyConfig.username.empty())
 	{
-		HTTPBasicCredentials creds(_proxyConfig.username, _proxyConfig.password);
+		HTTPBasicCredentials creds(_proxyConfig.username, getProxyPassword());
 		creds.proxyAuthenticate(request);
 	}
 }
 
 
-StreamSocket HTTPClientSession::proxyConnect()
+StreamSocket HTTPClientSession::proxyConnect(const SocketAddress * resolvedProxyAddress)
 {
 	URI proxyUri;
 	proxyUri.setScheme(getProxyProtocol());
@@ -781,6 +779,11 @@ StreamSocket HTTPClientSession::proxyConnect()
 	proxyUri.setPort(getProxyPort());
 
 	SharedPtr<HTTPClientSession> proxySession (_proxySessionFactory.createClientSession(proxyUri));
+
+	_connect_address.clear();
+	const SocketAddress proxyAddress = resolvedProxyAddress ? *resolvedProxyAddress : SocketAddress(getProxyHost(), getProxyPort());
+	_connect_address = proxyAddress.toString();
+	proxySession->setResolvedHost(proxyAddress.host().toString());
 
 	proxySession->setTimeout(getTimeout());
 	std::string targetAddress(_host);
@@ -829,6 +832,7 @@ void HTTPClientSession::assign(Poco::Net::HTTPClientSession & session)
     poco_assert(!connected());
 
     setResolvedHost(session.getResolvedHost());
+    _connect_address = session._connect_address;
     setProxyConfig(session.getProxyConfig());
 
     setTimeout(session.getConnectionTimeout(), session.getSendTimeout(), session.getReceiveTimeout());

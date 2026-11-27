@@ -6,17 +6,18 @@
 #include <Storages/StorageInput.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
-#include <Common/MemoryTracker.h>
 #include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
 #include <Core/DeduplicateInsert.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryAliasesVisitor.h>
@@ -113,16 +114,20 @@ namespace Setting
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsBool enable_global_with_statement;
-    extern const SettingsBool implicit_transaction;
-    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
+    extern const SettingsUInt64 readonly;
 }
 
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool add_implicit_sign_column_constraint_for_collapsing_engine;
+}
+
+namespace FailPoints
+{
+    extern const char insert_pause_before_reading_serialization_hints[];
 }
 
 namespace ServerSetting
@@ -140,6 +145,8 @@ namespace ErrorCodes
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_USAGE_OF_INPUT;
+    extern const int READONLY;
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
@@ -163,8 +170,9 @@ InterpreterInsertQuery::InterpreterInsertQuery(
     }
 
     const Settings & settings = getContext()->getSettingsRef();
-    max_threads = getEffectiveMaxThreads(settings);
-    max_insert_threads = getMaxThreadsForAvailableMemory(
+    max_threads = getEffectiveMaxThreads(*getContext());
+    max_insert_threads = limitThreadsByFreeMemory(
+        *getContext(),
         std::min(std::max<size_t>(1, settings[Setting::max_insert_threads]), max_threads),
         settings[Setting::max_insert_threads_min_free_memory_per_thread]);
 }
@@ -175,6 +183,19 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
 
     if (query.table_function)
     {
+        /// An insert into a table function writes to its source, not to a temporary table,
+        /// so unlike temporary tables it is not allowed at `readonly = 2` either.
+        if (current_context->getSettingsRef()[Setting::readonly])
+        {
+            const auto & client_info = current_context->getClientInfo();
+            if (client_info.interface == ClientInfo::Interface::HTTP && client_info.http_method == ClientInfo::HTTPMethod::GET)
+                throw Exception(ErrorCodes::READONLY,
+                    "{}: Cannot execute query in readonly mode. "
+                    "For queries over HTTP, method GET implies readonly. "
+                    "You should use method POST for modifying queries", current_context->getUserName());
+            throw Exception(ErrorCodes::READONLY, "{}: Cannot execute query in readonly mode", current_context->getUserName());
+        }
+
         const auto & factory = TableFunctionFactory::instance();
         TableFunctionPtr table_function_ptr = factory.get(query.table_function, current_context);
 
@@ -369,7 +390,8 @@ bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & tab
     return !(settings[Setting::distributed_foreground_insert] && table->isRemote());
 }
 
-static std::pair<QueryPipelineBuilder, ClusterProxy::LocalPlanParallelReplicasInfo> getLocalSelectPipelineForInserSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
+static std::optional<std::pair<QueryPipelineBuilder, ClusterProxy::LocalPlanParallelReplicasInfo>>
+getLocalSelectPipelineForInserSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
 {
     auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, /*subquery_depth_=*/1);
 
@@ -383,7 +405,10 @@ static std::pair<QueryPipelineBuilder, ClusterProxy::LocalPlanParallelReplicasIn
     /// The connection pools and local replica index decided here are returned too, so the remote pass
     /// reuses the exact same replica set rather than recomputing liveness from a fresh snapshot.
     auto parallel_replicas_info = ClusterProxy::dropReadFromRemoteInPlan(plan);
-    return {interpreter.buildQueryPipeline(), std::move(parallel_replicas_info)};
+    if (!parallel_replicas_info)
+        return {};
+
+    return std::make_pair(interpreter.buildQueryPipeline(), std::move(*parallel_replicas_info));
 }
 
 
@@ -544,7 +569,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
         async_insert, /*skip_destination_table*/ no_destination, max_insert_threads,
-        context, num_concurrent_copies);
+        context, /*preserve_input_order=*/ pipeline.getNumStreams() == 1);
     returning_insert_views_serial = query.returning && insert_dependencies->getViewProcessingNumThreads() == 1;
 
     const auto & settings = context->getSettingsRef();
@@ -648,7 +673,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
             {
                 size_t min_block_size_bytes = table->prefersLargeBlocks() ? context->getSettingsRef()[Setting::min_insert_block_size_bytes] : 0ULL;
                 /// On low-memory systems, cap squashing block size to avoid accumulating too much data.
-                min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(min_block_size_bytes, insert_dependencies->getNumSquashesSharingRootBudget());
+                min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(min_block_size_bytes, settings);
                 return std::make_shared<PlanSquashingTransform>(
                     in_header,
                     table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
@@ -745,8 +770,8 @@ void InterpreterInsertQuery::applyTrivialInsertSelectOptimization(ASTInsertQuery
             if (settings[Setting::min_insert_block_size_bytes])
             {
                 /// On low-memory systems, cap the input format block size.
-                size_t block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], /*num_simultaneous_squashes=*/ 1);
-                new_settings[Setting::preferred_block_size_bytes] = block_size_bytes;
+                new_settings[Setting::preferred_block_size_bytes]
+                    = capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], settings);
             }
         }
 
@@ -800,18 +825,22 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(
 }
 
 
-std::pair<QueryPipeline, ClusterProxy::LocalPlanParallelReplicasInfo> InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(
+std::optional<std::pair<QueryPipeline, ClusterProxy::LocalPlanParallelReplicasInfo>>
+InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(
     ASTInsertQuery & query, const StoragePtr & table, ContextPtr select_context)
 {
     applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), max_insert_threads, select_context);
 
-    auto [pipeline_builder, parallel_replicas_info]
-        = getLocalSelectPipelineForInserSelectWithParallelReplicas(query.select, select_context);
+    auto local_select = getLocalSelectPipelineForInserSelectWithParallelReplicas(query.select, select_context);
+    if (!local_select)
+        return {};
+
+    auto & [pipeline_builder, parallel_replicas_info] = *local_select;
     /// Parallel replicas builds its own local pipeline and never routes through the async insert queue,
     /// so it hands over no lock and the caller keeps it for the whole pipeline.
     auto local_pipeline = addInsertToSelectPipeline(
         query, table, pipeline_builder, /* add_async_insert_queue_transform */ false, /* destination_lock */ nullptr);
-    return {std::move(local_pipeline), std::move(parallel_replicas_info)};
+    return std::make_pair(std::move(local_pipeline), std::move(parallel_replicas_info));
 }
 
 
@@ -890,9 +919,12 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     /// bringing the plan-based implementation or the automatic mode back for the plans built below, and
     /// the automatic mode would make the probe below decline to distribute the insert. `execute` restores
     /// `query.select` from its backup once this returns, so the user's query text is not affected.
-    static constexpr std::array settings_overridden_for_this_path{
-        std::string_view{"parallel_replicas_plan_based"}, std::string_view{"automatic_parallel_replicas_mode"}};
+    /// `parallel_replicas_plan_based` is removed from subqueries too: this path is query-based, so the
+    /// setting has no effect anywhere in it, and a subquery keeping it would be rejected as plan-based.
+    static constexpr std::array settings_overridden_for_this_path{std::string_view{"automatic_parallel_replicas_mode"}};
     removeSettingsFromQueryTopLevel(query.select, settings_overridden_for_this_path);
+    static constexpr std::array settings_without_effect_on_this_path{std::string_view{"parallel_replicas_plan_based"}};
+    removeSettingsFromQuery(query.select, settings_without_effect_on_this_path);
 
     auto select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front();
     if (!ClusterProxy::isSuitableForInsertSelectWithParallelReplicas(select, context))
@@ -916,9 +948,9 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
                 "initiator's: the local pipeline shares the initiator's query status and cannot use the leaf "
                 "timeout separately");
         }
-        else
+        else if (auto local = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context))
         {
-            auto [local_pipeline, parallel_replicas_info] = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context);
+            auto & [local_pipeline, parallel_replicas_info] = *local;
             auto coordinator = parallel_replicas_info.coordinator;
             auto local_replica_index = parallel_replicas_info.local_replica_index;
             return ClusterProxy::executeInsertSelectWithParallelReplicas(
@@ -928,6 +960,10 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
                 std::move(coordinator),
                 std::move(parallel_replicas_info.connection_pools),
                 local_replica_index);
+        }
+        else
+        {
+            LOG_TRACE(logger, "Not using the local insert select pipeline because the SELECT plan has no local part");
         }
     }
 
@@ -1107,8 +1143,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         async_insert,
         /*skip_destination_table*/ no_destination,
         insert_threads,
-        context,
-        num_concurrent_copies);
+        context);
     returning_insert_views_serial = query.returning && insert_dependencies->getViewProcessingNumThreads() == 1;
 
     QueryPipeline pipeline
@@ -1120,7 +1155,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, context, nullptr);
 
         if (settings[Setting::enable_parsing_to_custom_serialization])
-            format->setSerializationHints(table->getSerializationHints());
+        {
+            /// The format parses the columns with the types from `metadata_snapshot`; a concurrent `ALTER` may have changed them since.
+            FailPointInjection::pauseFailPoint(FailPoints::insert_pause_before_reading_serialization_hints);
+            format->setSerializationHints(table->getSerializationHints(*metadata_snapshot));
+        }
 
         auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), context, nullptr);
         pipeline.complete(std::move(pipe));
@@ -1206,10 +1245,9 @@ QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
     if (should_squash)
     {
         bool table_prefers_large_blocks = table->prefersLargeBlocks();
+        size_t min_block_size_bytes = table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL;
         /// On low-memory systems, cap squashing block size to avoid accumulating too much data.
-        size_t min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(
-            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL,
-            insert_dependencies->getNumSquashesSharingRootBudget());
+        min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(min_block_size_bytes, settings);
         add_head_transform(std::make_shared<PlanSquashingTransform>(
             insert_header,
             table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
@@ -1526,6 +1564,11 @@ BlockIO InterpreterInsertQuery::execute()
         if (no_destination || async_insert)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "RETURNING is not supported for this kind of INSERT");
 
+        ASTPtr returning_input_function;
+        ASTInsertQuery::tryFindInputFunction(query.returning, returning_input_function);
+        if (returning_input_function)
+            throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "The `input` table function is not supported in RETURNING");
+
         if (query.select)
         {
             ASTPtr input_function;
@@ -1622,16 +1665,8 @@ BlockIO InterpreterInsertQuery::execute()
             /// downgrade the query, and with the same contract as the inlined-data path in
             /// `executeQuery`, so `INSERT ... VALUES` and `INSERT ... SELECT` react to the same
             /// settings alike: throw, unless the user opted out of the exception.
-            else if (context->getCurrentTransaction() || settings[Setting::implicit_transaction])
-            {
-                if (settings[Setting::throw_on_unsupported_query_inside_transaction])
-                {
-                    if (settings[Setting::implicit_transaction])
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
-                }
+            else if (AsynchronousInsertQueue::checkInsideTransaction(context))
                 reason = "query runs inside a transaction";
-            }
             /// `StorageAlias::isMergeTree` delegates to its target, so the alias needs no unwrapping.
             else if (!table->isMergeTree())
                 reason = "destination table is not a MergeTree-family table";
