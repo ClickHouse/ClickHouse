@@ -384,3 +384,83 @@ def test_reload_never_installs_mixed_handler_snapshot(started_cluster):
     for n in (replica1, replica2):
         n.query("DROP HANDLER IF EXISTS swap_a")
         n.query("DROP HANDLER IF EXISTS swap_b")
+
+
+def test_sql_security_definer_survives_restart(started_cluster):
+    # The DEFINER / SQL SECURITY clause is stored with the handler, and after a restart the definer is registered
+    # again when the handlers are loaded, so the definer cannot be dropped even before the first request.
+    for node in (local1, replica1):
+        node.query("DROP HANDLER IF EXISTS definer_h")
+        node.query("DROP USER IF EXISTS definer_u, caller_u")
+        node.query("DROP TABLE IF EXISTS definer_t SYNC")
+        node.query("CREATE TABLE definer_t (x UInt8) ENGINE = MergeTree ORDER BY x")
+        node.query("INSERT INTO definer_t VALUES (7)")
+        node.query("CREATE USER definer_u, caller_u")
+        node.query("GRANT SELECT ON default.definer_t TO definer_u")
+        node.query(
+            "CREATE HANDLER definer_h URL '/definer_h' DEFINER = definer_u SQL SECURITY DEFINER AS SELECT x FROM definer_t FORMAT TSV"
+        )
+
+        node.restart_clickhouse()
+
+        assert "HAVE_DEPENDENT_OBJECTS" in node.query_and_get_error("DROP USER definer_u")
+        create_query = node.query("SELECT create_query FROM system.handlers WHERE name = 'definer_h'")
+        assert "DEFINER = definer_u SQL SECURITY DEFINER AS SELECT x FROM default.definer_t" in create_query, create_query
+        # The query runs as the definer, the requesting user has no grants.
+        response = node.exec_in_container(
+            ["bash", "-c", "curl -s -u caller_u: http://127.0.0.1:8123/definer_h"], user="root"
+        )
+        assert response.strip() == "7", response
+
+        node.query("DROP HANDLER definer_h")
+        node.query("DROP USER definer_u, caller_u")
+        node.query("DROP TABLE definer_t SYNC")
+
+
+def test_keeper_storage_creator_access(started_cluster):
+    # A handler whose query the creator cannot run is rejected before anything is written to Keeper.
+    replica1.query("DROP USER IF EXISTS limited_u")
+    replica1.query("DROP TABLE IF EXISTS limited_t SYNC")
+    replica1.query("CREATE TABLE limited_t (x UInt8) ENGINE = MergeTree ORDER BY x")
+    replica1.query("CREATE USER limited_u")
+    replica1.query("GRANT CREATE HANDLER ON *.* TO limited_u")
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    children_before = sorted(zk.get_children("/clickhouse/handlers"))
+    error = replica1.query_and_get_error(
+        "CREATE HANDLER limited_h URL '/limited_h' AS SELECT * FROM default.limited_t", user="limited_u"
+    )
+    assert "ACCESS_DENIED" in error, error
+    assert sorted(zk.get_children("/clickhouse/handlers")) == children_before
+
+    replica1.query("DROP USER limited_u")
+    replica1.query("DROP TABLE limited_t SYNC")
+
+
+def test_keeper_storage_definer_of_handler_from_another_replica(started_cluster):
+    # A handler created on another replica registers its definer on this one.
+    for n in (replica1, replica2):
+        n.query("DROP HANDLER IF EXISTS remote_definer_h")
+        n.query("DROP USER IF EXISTS remote_definer_u")
+        n.query("CREATE USER remote_definer_u")
+
+    replica1.query(
+        "CREATE HANDLER remote_definer_h URL '/remote_definer_h' DEFINER = remote_definer_u SQL SECURITY DEFINER AS SELECT 1 FORMAT TSV"
+    )
+    replica2.query_with_retry(
+        "SELECT count() FROM system.handlers WHERE name = 'remote_definer_h'",
+        check_callback=lambda res: res.strip() == "1",
+        retry_count=30,
+        sleep_time=0.5,
+    )
+    assert "HAVE_DEPENDENT_OBJECTS" in replica2.query_and_get_error("DROP USER remote_definer_u")
+
+    replica1.query("DROP HANDLER remote_definer_h")
+    for n in (replica1, replica2):
+        n.query_with_retry(
+            "SELECT count() FROM system.handlers WHERE name = 'remote_definer_h'",
+            check_callback=lambda res: res.strip() == "0",
+            retry_count=30,
+            sleep_time=0.5,
+        )
+        n.query("DROP USER remote_definer_u")

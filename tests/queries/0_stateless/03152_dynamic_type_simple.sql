@@ -1,4 +1,3 @@
-SET allow_experimental_dynamic_type=1;
 
 DROP TABLE IF EXISTS test_max_types;
 CREATE TABLE test_max_types (d Dynamic(max_types=5)) ENGINE = Memory;

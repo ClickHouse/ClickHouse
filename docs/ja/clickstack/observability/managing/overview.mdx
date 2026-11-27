@@ -1,0 +1,29 @@
+---
+slug: /clickstack/observability/managing/overview
+title: 'ClickHouse オブザーバビリティの管理'
+sidebarTitle: '概要'
+description: '完全マネージド型の ClickHouse オブザーバビリティで、テレメトリーへのアクセス、API およびエージェントの接続、クエリ設定、チームのアクセス許可を管理します。'
+doc_type: 'guide'
+keywords: ['ClickHouse オブザーバビリティ', '管理', 'ソース', 'クエリ設定', 'ロール', 'アクセス許可']
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="ベータ版サービス" />
+
+<Note>
+  このガイドでは、完全マネージド型の ClickHouse オブザーバビリティについて説明します。Self-managed ClickHouse Observability については、サイジング、保持期間、スキーマのチューニング、本番環境向けのガイダンスは [データベース管理](/ja/clickstack/self-configured/managing/overview) を、ソース設定については [設定オプション](/ja/clickstack/self-configured/managing/config) を参照してください。
+</Note>
+
+ClickHouse オブザーバビリティでは、**チーム設定** から、テレメトリーへのアクセス、ソース、API およびエージェントの接続、インテグレーション、クエリ設定、チームのアクセス許可を管理できます。
+
+## 管理ガイド {#admin-guides}
+
+| ガイド                                                      | できること                                                                       |
+| -------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [設定オプション](/ja/clickstack/observability/managing/config)     | ソースと collector へのアクセスの管理、テレメトリーの接続情報の確認、API およびエージェントのアクセス設定、クエリ設定の調整を行えます。 |
+| [ロールベースのアクセス制御](/ja/clickstack/observability/managing/rbac) | 組み込みロールの確認、カスタムロールの作成、ダッシュボード・保存済み検索・ソースなどのリソースに対するアクセス許可の設定を行えます。          |
+
+## テレメトリーの送信 {#sending-telemetry}
+
+アプリケーションやコレクターを接続するには、まず **チーム設定 → Data → マネージドテレメトリー** で接続情報を確認し、続いて[インジェストガイド](/ja/clickstack/observability/ingesting-data/overview)の手順に従ってください。

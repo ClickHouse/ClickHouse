@@ -1,0 +1,8 @@
+<clickhouse>
+    <proxy>
+        <https>
+            <!-- Dead port: the tunnel's connect to the proxy is refused. -->
+            <uri>http://peer:1</uri>
+        </https>
+    </proxy>
+</clickhouse>

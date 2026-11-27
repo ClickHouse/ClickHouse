@@ -565,6 +565,10 @@ public:
 
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
 
+    /// The znode names of the mutations not done on this replica that clear `_block_number` / `_block_offset`
+    /// (see `isClearOfBlockColumns`) and have a lower block number than the given one in one of the partitions.
+    Strings getUnfinishedClearsOfBlockColumns(const PartitionIdToMaxBlock & partitions, const StorageInMemoryMetadata & metadata) const;
+
     void removeCurrentPartsFromMutations();
 
     /// Not std::scoped_lock: libc++ 23 annotates it for Clang's thread-safety analysis, which
