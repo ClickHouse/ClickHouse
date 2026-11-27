@@ -1,0 +1,6 @@
+snapshots: 1 cursor partitions: 1
+snapshots: 2 cursor partitions: 1 2
+snapshots: 2 cursor partitions: 1 2
+snapshots: 3 cursor partitions: 1 2 3
+1
+3
