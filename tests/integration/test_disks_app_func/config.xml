@@ -19,12 +19,14 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <remove_shared_recursive_file_limit>4</remove_shared_recursive_file_limit>
+                <persistent_removal_log>true</persistent_removal_log>
             </test3>
             <test4>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <persistent_removal_log>true</persistent_removal_log>
             </test4>
         </disks>
         <policies>

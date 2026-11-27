@@ -101,6 +101,9 @@ bool isAlwaysChangeableInReadonly(std::string_view name)
     /// Output format selection and response compression.
     if (name == "format" || name == "input_format" || name == "output_format" || name == "compression")
         return true;
+    /// Response buffering; also set by the `buffer_size` / `wait_end_of_query` URL parameters.
+    if (name == "http_response_buffer_size" || name == "http_wait_end_of_query")
+        return true;
     /// Query-construction settings introduced for the HTTP "table as file" feature.
     if (name == "select" || name == "order" || name == "sort" || name == "filter")
         return true;

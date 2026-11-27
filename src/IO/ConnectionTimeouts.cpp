@@ -41,6 +41,20 @@ Poco::Timespan ConnectionTimeouts::saturate(Poco::Timespan timespan, Poco::Times
     return (timespan > limit) ? limit : timespan;
 }
 
+ConnectionTimeouts ConnectionTimeouts::getCappedAt(std::chrono::steady_clock::time_point deadline) const
+{
+    /// Socket waits count whole milliseconds: rounding up keeps a capped wait from ending just before the deadline.
+    const auto left = std::chrono::ceil<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+    const Poco::Timespan limit(std::max<Poco::Timespan::TimeDiff>(left.count(), 1) * 1000);
+    ConnectionTimeouts result = *this;
+    for (auto * timeout : {&result.connection_timeout, &result.send_timeout, &result.receive_timeout})
+    {
+        if (*timeout == 0 || *timeout > limit)
+            *timeout = limit;
+    }
+    return result;
+}
+
 /// Timeouts for the case when we have just single attempt to connect.
 ConnectionTimeouts ConnectionTimeouts::getTCPTimeoutsWithoutFailover(const Settings & settings)
 {

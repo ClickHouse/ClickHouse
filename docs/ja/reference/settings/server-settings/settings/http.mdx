@@ -125,18 +125,18 @@ HTTP インターフェイスで、パス形式のリクエスト (`/my_db/my_ta
 
 ## http_server_default_response {#http_server_default_response}
 
-ClickHouse HTTP(s) server にアクセスしたときにデフォルトで表示されるページです。
+ClickHouse HTTP(s) サーバー にアクセスしたときにデフォルトで表示されるページです。
 デフォルト値は &quot;Ok.&quot; です (末尾に改行文字を含みます) 。
 
 * **デフォルト:** `"Ok.\n"`
 
 **例**
 
-`http://localhost: http_port` にアクセスすると、`https://tabix.io/` が開きます。
+`http://localhost: http_port` にアクセスすると、組み込みのウェブUI (`/play`) が開きます。
 
 ```xml
 <http_server_default_response>
-  <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
+  <![CDATA[<html><head><meta http-equiv="refresh" content="0; url=/play"></head><body><a href="/play">ClickHouse Web UI</a></body></html>]]>
 </http_server_default_response>
 ```
 

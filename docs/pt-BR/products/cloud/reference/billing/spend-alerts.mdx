@@ -10,13 +10,13 @@ doc_type: 'guide'
 Os alertas de gastos notificam você quando o uso da sua organização atinge os limites configurados em um período de faturamento, para que você possa evitar cobranças inesperadas. Eles apenas enviam notificações; para limites que acionam o faturamento automático, consulte [Limites de pagamento](/pt-BR/products/cloud/reference/billing/payment-thresholds).
 
 <div id="prerequisites">
-  ## Pré-requisitos
+  ## Pré-requisitos {#prerequisites}
 </div>
 
 * Você precisa ter a função **Organization Admin** ou **Billing Admin** para configurar e visualizar alertas de gastos.
 
 <div id="how-spend-alerts-work">
-  ## Como os alertas de gastos funcionam
+  ## Como os alertas de gastos funcionam {#how-spend-alerts-work}
 </div>
 
 * Os alertas se baseiam no uso bruto ao longo de um período de faturamento e são redefinidos no início de cada novo ciclo.
@@ -28,23 +28,17 @@ Os alertas de gastos notificam você quando o uso da sua organização atinge os
   Atingir 100% do seu alerta de gastos não restringe nem limita seu uso — os gastos continuam se acumulando além do limite de 100%.
 </Info>
 
-<div id="set-up-spend-alert">
-  ## Configurar um alerta de gastos
-</div>
+## Configurar um alerta de gastos {#set-up-spend-alert}
 
 <Steps>
   <Step title="Abra a caixa de diálogo de alerta de gastos" id="open-spend-alerts-dialog">
-    1. Acesse **Organization &gt; Billing** no console do ClickHouse Cloud.
-    2. Clique em **Actions &gt; Add spend alerts**.
+    1. Acesse **Organização &gt; Faturamento** no console do ClickHouse Cloud.
+    2. Clique em **Actions &gt; Add alertas de gastos**.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Página Billing com o menu Actions aberto e Add spend alerts em destaque](/images/cloud/reference/billing/spend-alerts-actions.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Página Faturamento com o menu Actions aberto e Add alertas de gastos em destaque](/images/cloud/reference/billing/spend-alerts-actions.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -54,19 +48,15 @@ Os alertas de gastos notificam você quando o uso da sua organização atinge os
     3. Clique em **Save**.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Caixa de diálogo de alerta de gastos da organização com limite de gastos, alertas automáticos por limite e canais de notificação](/images/cloud/reference/billing/spend-alerts-config.png)
-
-    </Frame>
-
+      <Frame>
+        ![Caixa de diálogo de alerta de gastos da organização com limite de gastos, alertas automáticos por limite e canais de notificação](/images/cloud/reference/billing/spend-alerts-config.png)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="threshold-alerts">
-  ## Alertas automáticos por limite
+  ## Alertas automáticos por limite {#threshold-alerts}
 </div>
 
 Quatro alertas são criados e acionados automaticamente com base no valor configurado para o alerta de gastos:
@@ -79,7 +69,7 @@ Quatro alertas são criados e acionados automaticamente com base no valor config
 | **100%** | Gasto total atingido                 | $10                     |
 
 <div id="notification-channels">
-  ## Canais de notificação
+  ## Canais de notificação {#notification-channels}
 </div>
 
 | Canal     | Descrição                                                                                                   |

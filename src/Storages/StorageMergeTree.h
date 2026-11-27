@@ -127,6 +127,8 @@ public:
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
+    void deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr context) override;
+
     /// Called when the deferred fsync of an inserted part failed, see `DeferredPartsSync`. Its data may not be durable,
     /// so the part is moved to `detached` with the prefix `fsync-failed`, and it is removed from the deduplication log,
     /// so that a retry of the insert writes the data again, even after a restart of the server.
@@ -177,6 +179,10 @@ private:
     void removeCommittingBlock(CommittingBlock block);
     std::unique_ptr<PlainCommittingBlockHolder> allocateBlockNumber(CommittingBlock::Op op);
     void waitForCommittingInsertsAndMutations(Int64 max_block_number, size_t timeout_ms) const;
+
+    /// Throws if a mutation with a lower version than the lightweight update with `block_number` clears
+    /// `_block_number` / `_block_offset` (see `isClearOfBlockColumns`) and is not finished.
+    void assertNoUnfinishedClearOfBlockColumns(Int64 block_number, const StorageMetadataPtr & metadata_snapshot) const;
     CommittingBlocksSet getCommittingBlocks() const;
 
     std::atomic<bool> shutdown_called {false};
@@ -220,7 +226,7 @@ private:
             bool optimize_skip_merged_partitions = false);
 
     /// Returns the parts that the new empty parts covered, i.e. the parts this call removed.
-    DataPartsVector renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
+    DataPartsVector renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction, bool remove_covered_parts_immediately);
 
     /// Must be called from a `catch` block after renaming the empty parts of `transaction` failed or committing them failed.
     /// Without a `MergeTreeTransaction`, removes the rolled back empty parts from disk right away. Rethrows the current exception.

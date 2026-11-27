@@ -1,9 +1,10 @@
 ---
 slug: /use-cases/observability/clickstack/monitoring-aws-cloudwatch-logs
-title: 'Мониторинг журналов AWS CloudWatch с помощью Управляемого ClickStack'
-description: 'Отправляйте журналы AWS CloudWatch в Управляемый ClickStack через приёмник CloudWatch OpenTelemetry'
+title: 'Мониторинг журналов AWS CloudWatch с помощью ClickHouse Observability'
+sidebarTitle: 'Мониторинг журналов AWS CloudWatch'
+description: 'Пересылка журналов AWS CloudWatch в самоуправляемый ClickHouse Observability с помощью приёмника CloudWatch из OpenTelemetry'
 doc_type: 'guide'
-keywords: ['clickstack', 'aws', 'cloudwatch', 'журналы', 'управляемый', 'обсервабилити', 'otel']
+keywords: ['clickstack', 'aws', 'cloudwatch', 'logs', 'self-managed', 'ClickHouse Observability', 'otel']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
@@ -11,13 +12,21 @@ hide_advert: true
 
 import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
-Это руководство поможет вам настроить пересылку журналов AWS CloudWatch в Управляемый ClickStack с помощью OpenTelemetry [`awscloudwatch` приёмника](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver), а затем просматривать их в интерфейсе ClickStack.
+<Note>
+  **Вы выбрали самоуправляемый вариант**
 
-Мы запустим отдельный коллектор, который опрашивает CloudWatch через AWS API и пересылает события в ваш коллектор ClickStack по OTLP. Размещайте этот коллектор в том же аккаунте AWS и регионе, что и группы логов, чтобы свести к минимуму задержку API и затраты.
+  Вы решили настроить ClickHouse Observability самостоятельно, используя [самоуправляемый вариант](/ru/clickstack/self-configured/overview). В этом случае вы сами запускаете коллектор OpenTelemetry, управляете ингестией данных в ваш сервис ClickHouse Cloud, настраиваете схему и разделяете рабочие нагрузки ингестии и запросов с помощью хранилищ. См. разделы [Коллектор OpenTelemetry](/ru/clickstack/self-configured/ingesting-data/collector), [Настройка производительности](/ru/clickstack/self-configured/managing/performance-tuning) и [Изоляция рабочих нагрузок чтения и записи](/ru/clickstack/self-configured/managing/isolating-read-write).
 
-Предполагается, что вы уже выполнили [Setting up your OpenTelemetry Collector](/ru/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) и у вас запущен коллектор ClickStack.
+  Предпочитаете бессерверный вариант, в котором ClickHouse берёт на себя ингестию, схемы и вычислительные ресурсы? Используйте стандартный вариант ClickHouse Observability и воспользуйтесь вместо этого руководством [Сбор журналов AWS CloudWatch с помощью OpenTelemetry](/ru/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs-serverless).
+</Note>
 
-Коллектор ClickStack можно развернуть либо как **контейнер Docker** (см. [Setting up your OpenTelemetry Collector](/ru/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector)), либо как **релиз Helm** в Kubernetes через upstream Helm-чарт OpenTelemetry с образом коллектора ClickStack (см. [Deploying the collector](/ru/clickstack/ingesting-data/collector#configuring-the-collector)). **Убедитесь, что вы сохранили его конечную точку OTLP** и `OTLP_AUTH_TOKEN`, который задали при развертывании.
+В этом руководстве описано, как пересылать журналы AWS CloudWatch в ClickHouse Observability с помощью [приёмника `awscloudwatch`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver) OpenTelemetry, а затем просматривать их в интерфейсе ClickStack.
+
+Мы запустим отдельный коллектор, который опрашивает CloudWatch через AWS API и пересылает события в ваш коллектор ClickStack по OTLP. Размещайте этот коллектор в той же учетной записи AWS и в том же регионе, что и группы журналов: это позволит свести к минимуму задержки API и затраты.
+
+Предполагается, что вы уже выполнили шаги из руководства [Настройка коллектора OpenTelemetry](/ru/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector) и у вас запущен коллектор ClickStack.
+
+Коллектор ClickStack можно развернуть либо как **Docker-контейнер** (см. [Настройка коллектора OpenTelemetry](/ru/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector)), либо как **релиз Helm** в Kubernetes с помощью вышестоящего Helm-чарта OpenTelemetry и образа коллектора ClickStack (см. [Развертывание коллектора](/ru/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured)). **Убедитесь, что вы сохранили его конечную точку OTLP**, а также значение `OTLP_AUTH_TOKEN`, заданное при развертывании.
 
 <Steps>
   <Step title="Подготовьте всё необходимое" id="gather-prerequisites">
@@ -56,12 +65,15 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
       "Version": "2012-10-17",
       "Statement": [
         {
+          "Sid": "CloudWatchLogsList",
+          "Effect": "Allow",
+          "Action": "logs:DescribeLogGroups",
+          "Resource": "*"
+        },
+        {
           "Sid": "CloudWatchLogsRead",
           "Effect": "Allow",
-          "Action": [
-            "logs:DescribeLogGroups",
-            "logs:FilterLogEvents"
-          ],
+          "Action": "logs:FilterLogEvents",
           "Resource": "arn:aws:logs:*:YOUR_ACCOUNT_ID:log-group:*"
         }
       ]
@@ -256,25 +268,17 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     Откройте свой сервис в [консоли ClickHouse Cloud](https://console.clickhouse.cloud) и выберите **ClickStack** в левом меню.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Запуск ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Запуск ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
+      </Frame>
     </div>
 
     В представлении **Search** переключите источник на `Logs` и установите временной диапазон **Last 15 minutes**. События CloudWatch должны появиться в течение нескольких интервалов опроса.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Представление Search в ClickStack с журналами CloudWatch](/images/clickstack/cloudwatch/log-search-view-clickstack.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Представление Search в ClickStack с журналами CloudWatch](/images/clickstack/cloudwatch/log-search-view-clickstack.webp)
+      </Frame>
     </div>
 
     Каждое событие содержит исходную группу и поток как атрибуты ресурса:
@@ -287,25 +291,17 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     Измените запрос поиска на `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body`, чтобы добавить эти атрибуты:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Представление Search в ClickStack с журналами CloudWatch и атрибутами](/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Представление Search в ClickStack с журналами CloudWatch и атрибутами](/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp)
+      </Frame>
     </div>
 
     Выберите запись в журнале, чтобы просмотреть её метаданные:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Атрибуты CloudWatch в представлении сведений о журнале](/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Атрибуты CloudWatch в представлении сведений о журнале](/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp)
+      </Frame>
     </div>
 
     Если ничего не отображается:
@@ -322,32 +318,24 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">Скачать `cloudwatch-logs-dashboard.json`</TrackedLink>, затем в интерфейсе ClickStack перейдите в **Панели мониторинга** и нажмите **Импортировать**.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Кнопка импорта панели мониторинга](/images/clickstack/clickstack-import-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Кнопка импорта панели мониторинга](/images/clickstack/clickstack-import-dashboard.webp)
+      </Frame>
     </div>
 
     Загрузите JSON‑файл и нажмите **Завершить импорт**.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Диалог завершения импорта](/images/clickstack/cloudwatch/finish-clickstack-import.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Диалог завершения импорта](/images/clickstack/cloudwatch/finish-clickstack-import.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="Дополнительные материалы" id="further-reading">
-    * [Справочник по интеграции AWS CloudWatch Logs](/ru/clickstack/integration-examples/cloudwatch) для демо-набора данных, подробного устранения неполадок и вариантов тонкой настройки.
-    * [Защита коллектора](/ru/clickstack/ingesting-data/collector#securing-the-collector) с помощью TLS на конечной точке OTLP и пользователей для ингестии с минимально необходимыми привилегиями.
-    * [Обработка, фильтрация и обогащение](/ru/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) событий в коллекторе.
-    * [Переход в продакшн](/ru/clickstack/managing/production) с рекомендациями по выходу в продакшн.
+    * [Справочник по интеграции AWS CloudWatch Logs](/ru/clickstack/observability/integration-examples/cloudwatch#self-managed) для демо-набора данных, подробного устранения неполадок и вариантов тонкой настройки.
+    * [Защита коллектора](/ru/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) с помощью TLS на конечной точке OTLP и пользователей для ингестии с минимально необходимыми привилегиями.
+    * [Обработка, фильтрация и обогащение](/ru/clickstack/self-configured/ingesting-data/collector#processing-filtering-transforming-enriching-self-configured) событий в коллекторе.
+    * [Переход в продакшн](/ru/clickstack/self-configured/managing/production) с рекомендациями по выходу в продакшн.
   </Step>
 </Steps>

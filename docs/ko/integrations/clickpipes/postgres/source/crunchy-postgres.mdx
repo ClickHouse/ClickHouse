@@ -13,7 +13,7 @@ integration:
 ClickPipes는 Postgres 12 이상 버전을 지원합니다.
 
 <div id="enable-logical-replication">
-  ## 논리적 복제 활성화
+  ## 논리적 복제 활성화 {#enable-logical-replication}
 </div>
 
 Crunchy Bridge는 [기본적으로](https://docs.crunchybridge.com/how-to/logical-replication) 논리적 복제가 활성화되어 있습니다. 아래 설정이 올바르게 구성되어 있는지 확인하고, 아니라면 그에 맞게 조정하십시오.
@@ -24,9 +24,7 @@ SHOW max_wal_senders; -- 10이어야 합니다
 SHOW max_replication_slots; -- 10이어야 합니다
 ```
 
-<div id="creating-clickpipes-user-and-granting-permissions">
-  ## ClickPipes 사용자 생성 및 권한 부여
-</div>
+## ClickPipes 사용자 생성 및 권한 부여 {#creating-clickpipes-user-and-granting-permissions}
 
 `postgres` 사용자로 Crunchy Bridge Postgres에 연결한 후, 아래 명령을 실행합니다.
 
@@ -62,42 +60,32 @@ SHOW max_replication_slots; -- 10이어야 합니다
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-  * 특정 스키마의 모든 테이블에 대한 publication을 생성하려면:
+* 특정 스키마의 모든 테이블에 대한 publication을 생성하려면:
 
-    ```sql
-    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-    ```
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+  ```
 
 `clickpipes` publication은 변경 이벤트가 ClickPipes로 스트리밍될 테이블 집합을 정의합니다. 모든 테이블을 복제할 계획이 아니라면 `FOR ALL TABLES` 사용은 권장하지 않습니다. 불필요한 테이블을 포함하면 Postgres에서 ClickPipes로 전송되는 WAL 트래픽이 증가하고 전체 복제 효율이 저하되기 때문입니다.
 
-<div id="safe-list-clickpipes-ips">
-  ## ClickPipes IP 주소를 허용 목록에 등록하기
-</div>
+## ClickPipes IP 주소를 허용 목록에 등록하기 {#safe-list-clickpipes-ips}
 
 Crunchy Bridge에서 Firewall Rules를 추가해 [ClickPipes IP 주소](/ko/integrations/clickpipes/networking/static-ips)를 허용 목록에 등록합니다.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Crunchy Bridge에서 Firewall Rules를 찾는 위치](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/firewall_rules_crunchy_bridge.webp)
-
-</Frame>
-
+  <Frame>
+    ![Crunchy Bridge에서 Firewall Rules 위치](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/firewall_rules_crunchy_bridge.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickPipes용 Firewall Rules 추가](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/add_firewall_rules_crunchy_bridge.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickPipes용 Firewall Rules 추가](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/add_firewall_rules_crunchy_bridge.webp)
+  </Frame>
 </div>
 
 <div id="whats-next">
-  ## 다음 단계는 무엇인가요?
+  ## 다음 단계는 무엇인가요? {#whats-next}
 </div>
 
 이제 [ClickPipe를 생성](/ko/integrations/clickpipes/postgres/index)하고 Postgres 인스턴스에서 ClickHouse Cloud로 데이터를 수집하기 시작할 수 있습니다.

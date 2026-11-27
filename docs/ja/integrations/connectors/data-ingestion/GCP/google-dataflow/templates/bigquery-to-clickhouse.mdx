@@ -1,8 +1,8 @@
 ---
 sidebarTitle: 'BigQuery から ClickHouse へ'
 slug: /integrations/google-dataflow/templates/bigquery-to-clickhouse
-description: 'Google Dataflow テンプレートを使用して、BigQuery から ClickHouse にデータを取り込めます'
-title: 'Dataflow BigQuery to ClickHouse テンプレート'
+description: 'Google Dataflow Templateを使用して、BigQuery から ClickHouse にデータを取り込めます'
+title: 'Dataflow BigQuery to ClickHouse Template'
 doc_type: 'guide'
 keywords: ['Dataflow', 'BigQuery']
 ---
@@ -11,7 +11,7 @@ BigQuery から ClickHouse へのTemplateは、BigQuery テーブルから Click
 このTemplateでは、テーブル全体を読み取ることも、指定したSQLクエリを使って特定のレコードをフィルタリングすることもできます。
 
 <div id="pipeline-requirements">
-  ## パイプラインの要件
+  ## パイプラインの要件 {#pipeline-requirements}
 </div>
 
 * ソースとなる BigQuery テーブルが存在している必要があります。
@@ -19,7 +19,7 @@ BigQuery から ClickHouse へのTemplateは、BigQuery テーブルから Click
 * Dataflow のワーカーマシンから ClickHouse ホストにアクセスできる必要があります。
 
 <div id="template-parameters">
-  ## Template パラメータ
+  ## Template パラメータ {#template-parameters}
 </div>
 
 <br />
@@ -50,7 +50,7 @@ BigQuery から ClickHouse へのTemplateは、BigQuery テーブルから Click
 </Note>
 
 <div id="source-and-target-tables-schema">
-  ## ソーステーブルとターゲットテーブルのスキーマ
+  ## ソーステーブルとターゲットテーブルのスキーマ {#source-and-target-tables-schema}
 </div>
 
 BigQuery のデータセットを ClickHouse に効率よくロードするために、このパイプラインでは次のフェーズでカラム推論を行います。
@@ -66,7 +66,7 @@ BigQuery のデータセットを ClickHouse に効率よくロードするた�
 </Warning>
 
 <div id="data-types-mapping">
-  ## データ型マッピング
+  ## データ型マッピング {#data-types-mapping}
 </div>
 
 BigQuery の型は、ClickHouse のテーブル定義に基づいて変換されます。したがって、上の表には、
@@ -82,9 +82,7 @@ BigQuery の型は、ClickHouse のテーブル定義に基づいて変換され
 | [**Numeric - Integer Types**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types) | [**Integer Types**](/ja/reference/data-types/int-uint) | BigQuery では、すべての Int 型 (`INT`、`SMALLINT`、`INTEGER`、`BIGINT`、`TINYINT`、`BYTEINT`) は `INT64` の別名です。ClickHouse では、適切な Integer サイズを設定することを推奨します。テンプレートは、定義されたカラム型 (`Int8`、`Int16`、`Int32`、`Int64`) に基づいてカラムを変換するためです。さらに、ClickHouse テーブルで符号なし Int 型 (`UInt8`、`UInt16`、`UInt32`、`UInt64`) が使われている場合も変換されます。 |
 | [**Numeric - Float Types**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types)   | [**Float Types**](/ja/reference/data-types/float)      | サポートされる ClickHouse の型: `Float32` および `Float64`                                                                                                                                                                                                                                                         |
 
-<div id="running-the-template">
-  ## Templateの実行
-</div>
+## Templateの実行 {#running-the-template}
 
 BigQuery から ClickHouse へのTemplateは、Google Cloud CLI 経由で実行できます。
 
@@ -97,34 +95,25 @@ BigQuery から ClickHouse へのTemplateは、Google Cloud CLI 経由で実行�
     Google Cloud Console にサインインし、DataFlow を検索します。
 
     1. `CREATE JOB FROM TEMPLATE` ボタンをクリックします
+
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![DataFlow コンソール](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
-
-       </Frame>
-
+         <Frame>
+           ![DataFlow コンソール](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
+         </Frame>
        </div>
-    2. Templateフォームが開いたら、ジョブ名を入力し、目的のリージョンを選択します。
+    2. Templateフォームが開いたら、Job名を入力し、目的のリージョンを選択します。
+
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![DataFlow Templateの初期フォーム](/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp)
-
-       </Frame>
-
+         <Frame>
+           ![DataFlow Templateの初期フォーム](/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp)
+         </Frame>
        </div>
     3. `DataFlow Template` の入力欄に `ClickHouse` または `BigQuery` と入力し、`BigQuery to ClickHouse` Templateを選択します
+
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![BigQuery to ClickHouse Templateを選択](/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp)
-
-       </Frame>
-
+         <Frame>
+           ![BigQuery to ClickHouse Templateを選択](/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp)
+         </Frame>
        </div>
     4. 選択するとフォームが展開され、追加情報を入力できるようになります。
        * 次の形式の ClickHouse server JDBC URL: `jdbc:clickhouse://host:port/schema`
@@ -139,13 +128,9 @@ BigQuery から ClickHouse へのTemplateは、Google Cloud CLI 経由で実行�
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![BigQuery to ClickHouse の拡張Templateフォーム](/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp)
-
-    </Frame>
-
+      <Frame>
+        ![BigQuery to ClickHouse の拡張Templateフォーム](/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp)
+      </Frame>
     </div>
 
     5. [Template パラメータ](#template-parameters) セクションの説明に従って、
@@ -153,15 +138,15 @@ BigQuery から ClickHouse へのTemplateは、Google Cloud CLI 経由で実行�
   </Tab>
 
   <Tab title="Google Cloud CLI">
-    ### `gcloud` CLI のインストールと設定
+### `gcloud` CLI のインストールと設定 {#install--configure-gcloud-cli}
 
     * まだインストールしていない場合は、[`gcloud` CLI](https://cloud.google.com/sdk/docs/install) をインストールします。
     * [このガイド](https://cloud.google.com/dataflow/docs/guides/templates/using-flex-templates#before-you-begin) の `Before you begin` セクションに従って、
-      DataFlow Templateの実行に必要な設定、構成、権限をセットアップしてください。
+      DataFlow Templateの実行に必要な設定、構成、アクセス許可をセットアップしてください。
 
-    ### コマンドの実行
+### コマンドの実行 {#run-command}
 
-    Flex Template を使用する Dataflow ジョブを実行するには、
+    Flex Template を使用する Dataflow Jobを実行するには、
     [`gcloud dataflow flex-template run`](https://cloud.google.com/sdk/gcloud/reference/dataflow/flex-template/run)
     コマンドを使用します。
 
@@ -173,14 +158,14 @@ BigQuery から ClickHouse へのTemplateは、Google Cloud CLI 経由で実行�
      --parameters inputTableSpec="<bigquery table id>",jdbcUrl="jdbc:clickhouse://<clickhouse host>:<clickhouse port>/<schema>?ssl=true&sslmode=NONE",clickHouseUsername="<username>",clickHousePassword="<password>",clickHouseTable="<clickhouse target table>"
     ```
 
-    ### コマンドの内訳
+### コマンドの内訳 {#command-breakdown}
 
-    * **Job Name:** `run` キーワードの後ろの文字列が、一意のジョブ名です。
+    * **Job Name:** `run` キーワードの後ろの文字列が、一意のJob名です。
     * **Template File:** `--template-file-gcs-location` で指定する JSON file は、Templateの構造と
       受け付けるパラメータの詳細を定義します。ここで示している file path は公開されており、そのまま使用できます。
     * **パラメータ:** パラメータ はカンマ区切りです。文字列型のパラメータでは、値を二重引用符で囲みます。
 
-    ### 想定されるレスポンス
+### 想定されるレスポンス {#expected-response}
 
     コマンドを実行すると、次のようなレスポンスが表示されます。
 
@@ -197,29 +182,23 @@ BigQuery から ClickHouse へのTemplateは、Google Cloud CLI 経由で実行�
   </Tab>
 </Tabs>
 
-<div id="monitor-the-job">
-  ### ジョブを監視する
-</div>
+### Jobを監視する {#monitor-the-job}
 
 Google Cloud Console の [Dataflow Jobs タブ](https://console.cloud.google.com/dataflow/jobs) に移動し、
-ジョブのステータスを確認します。進行状況やエラーを含むジョブの詳細を確認できます。
+Jobのステータスを確認します。進行状況やエラーを含むJobの詳細を確認できます。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![実行中の BigQuery から ClickHouse へのジョブが表示された Dataflow コンソール](/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp)
-
-</Frame>
-
+  <Frame>
+    ![実行中の BigQuery から ClickHouse へのJobを表示している DataFlow コンソール](/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp)
+  </Frame>
 </div>
 
 <div id="troubleshooting">
-  ## トラブルシューティング
+  ## トラブルシューティング {#troubleshooting}
 </div>
 
 <div id="code-241-dbexception-memory-limit-total-exceeded">
-  ### メモリ制限 (合計) 超過エラー (コード 241)
+  ### メモリ制限 (合計) 超過エラー (コード 241) {#code-241-dbexception-memory-limit-total-exceeded}
 </div>
 
 このエラーは、大きなバッチデータの処理中に ClickHouse のメモリが不足すると発生します。この問題を解決するには、次の対応を行ってください。
@@ -228,7 +207,7 @@ Google Cloud Console の [Dataflow Jobs タブ](https://console.cloud.google.com
 * バッチサイズを小さくする: Dataflow ジョブの設定でバッチサイズを調整し、より小さな chunk のデータを ClickHouse に送信することで、バッチごとのメモリ消費を抑えます。これらの変更は、データのインジェスト時にリソース使用量のバランスを取るのに役立ちます。
 
 <div id="template-source-code">
-  ## Template のソースコード
+  ## Template のソースコード {#template-source-code}
 </div>
 
 Template のソースコードは以下で公開されています。

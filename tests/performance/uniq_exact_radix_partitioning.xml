@@ -16,6 +16,8 @@
 
     <create_query>CREATE TABLE radix_low_cardinality (s LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <fill_query>INSERT INTO radix_low_cardinality SELECT toString(number % 100000) FROM numbers(50000000)</fill_query>
+    <create_query>CREATE TABLE radix_fixed_strings_64 (s FixedString(64)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <fill_query>INSERT INTO radix_fixed_strings_64 SELECT toFixedString(substring(repeat(hex(cityHash64(number)), 4), 1, 64), 64) FROM numbers(5000000)</fill_query>
 
     <query>SELECT count(DISTINCT {col}) FROM hits_100m_single FORMAT Null</query>
 
@@ -32,6 +34,9 @@
     <!-- The other tuples are hashed several rows at a time, after the rows that repeat the previous one are skipped. -->
     <query>SELECT uniqExact((CounterID, RegionID, UserID, EventDate)) FROM hits_100m_single FORMAT Null</query>
     <query>SELECT uniqExact((RegionID, SearchPhrase)) FROM hits_100m_single FORMAT Null</query>
+    <!-- `FixedString(64)` values are hashed several at a time, as the `URL` values above. -->
+    <query>SELECT uniqExact(s) FROM radix_fixed_strings_64 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS radix_low_cardinality</drop_query>
+    <drop_query>DROP TABLE IF EXISTS radix_fixed_strings_64</drop_query>
 </test>

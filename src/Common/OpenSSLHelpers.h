@@ -22,15 +22,10 @@ struct X509ExtensionStackDeleter
 {
     void operator()(X509_EXTENSIONS * ptr) const
     {
-        OPENSSL_sk_pop_free(
-            reinterpret_cast<OPENSSL_STACK *>(ptr),
-            &X509ExtensionStackDeleter::freeX509Extension
-        );
-    }
-
-    static void freeX509Extension(void * ptr)
-    {
-        X509_EXTENSION_free(static_cast<X509_EXTENSION *>(ptr));
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
+        sk_X509_EXTENSION_pop_free(ptr, X509_EXTENSION_free);
+#pragma clang diagnostic pop
     }
 };
 

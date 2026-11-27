@@ -317,7 +317,6 @@ test_keeper_opentelemetry_tracing/test.py	82072
 test_refreshable_mv_watch_fault/test.py	81637
 test_always_fetch_merged/test.py	80848
 test_system_flush_logs/test.py	80564
-test_store_cleanup/test.py	80458
 test_rmv_access_denied_on_rename_race/test.py	80328
 test_replicated_merge_tree_compatibility/test.py	79758
 test_clickhouse_server_wait_server_pool/test.py	79623

@@ -10,7 +10,6 @@ integration:
   - category: 'sql_client'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -69,8 +68,8 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
     4. HTTPS를 사용하려면 **SSL / TLS**를 열고 `disable` 이외의 SSL 모드를 선택한 다음, **Port**를
        서버의 HTTPS 포트(보통 `8443`)로 변경합니다. `disable` 이외의 모든 모드는 LibreDB Studio 서버가 신뢰하는
        인증 기관(CA)을 기준으로 서버 인증서를 검증하며, 이것이 `verify-system`에 해당하는 동작입니다.
-       이 방식은 ClickHouse Cloud 및 공개적으로 신뢰되는 CA가 발급한 인증서를 사용하는 서버에서 동작합니다.
-       자체 서명 인증서나 사설 CA 인증서를 사용하는 경우
+       이 방식은 ClickHouse Cloud 및 공개적으로 신뢰되는 인증 기관(CA)이 발급한 인증서를 사용하는 서버에서 동작합니다.
+       자체 서명 인증서나 사설 인증 기관(CA) 인증서를 사용하는 경우
        [문제 해결](#troubleshooting)을 참조하십시오.
     5. **Test Connection**을 선택한 다음 **Establish Connection**을 선택합니다.
 
@@ -78,7 +77,11 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
     `clickhouse://localhost:8123/default` 또는 `https://reader:secret@ch.example.com:8443/analytics`).
     `https://` URL을 사용하면 TLS가 활성화됩니다.
 
-    <Image img="/images/integrations/sql-clients/libredb-studio-new-connection.png" size="sm" border alt="ClickHouse가 선택되고 호스트, 포트 8123, 사용자 이름, 데이터베이스가 입력되었으며 연결 테스트에 성공한 LibreDB Studio New Connection 대화 상자" />
+    <div className="ch-image-sm">
+      <Frame>
+        ![ClickHouse가 선택되고 호스트, 포트 8123, 사용자 이름, 데이터베이스가 입력되었으며 연결 테스트에 성공한 LibreDB Studio New Connection 대화 상자](/images/integrations/sql-clients/libredb-studio-new-connection.png)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="쿼리 실행" id="run-a-query">
@@ -101,7 +104,11 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
     LIMIT 10
     ```
 
-    <Image img="/images/integrations/sql-clients/libredb-studio-query.png" size="md" border alt="uk_price_paid 쿼리와 선언된 ClickHouse 컬럼 타입이 표시된 결과 그리드를 보여주는 LibreDB Studio SQL 편집기" />
+    <div className="ch-image-md">
+      <Frame>
+        ![uk_price_paid 쿼리와 선언된 ClickHouse 컬럼 타입이 표시된 결과 그리드를 보여주는 LibreDB Studio SQL 편집기](/images/integrations/sql-clients/libredb-studio-query.png)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
@@ -127,7 +134,11 @@ LibreDB Studio에서는 테이블에 `OPTIMIZE TABLE ... FINAL`을 실행하거�
 확인하거나, `KILL QUERY ... SYNC`로 실행 중인 쿼리를 중지할 수도 있습니다. 이러한 작업을 수행하려면
 각 작업에 맞는 권한이 필요합니다.
 
-<Image img="/images/integrations/sql-clients/libredb-studio-monitoring.png" size="md" border alt="ClickHouse 연결에 대한 LibreDB Studio 모니터링 개요 화면으로, 서버 버전, 가동 시간, 연결, 스토리지 크기, 캐시 적중률 및 테이블 수를 보여줍니다" />
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse 연결에 대한 LibreDB Studio 모니터링 개요 화면으로, 서버 버전, 가동 시간, 연결, 스토리지 크기, 캐시 적중률 및 테이블 수를 보여줍니다](/images/integrations/sql-clients/libredb-studio-monitoring.png)
+  </Frame>
+</div>
 
 ## 문제 해결 {#troubleshooting}
 

@@ -304,7 +304,8 @@ void ColumnNullable::doInsertFrom(const IColumn & src, size_t n)
 {
     const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
     getNestedColumn().insertFrom(src_concrete.getNestedColumn(), n);
-    getNullMapData().push_back(src_concrete.getNullMapData()[n]);
+    const UInt8 is_null = src_concrete.getNullMapData()[n];
+    getNullMapData().push_back(is_null);
 }
 
 
@@ -599,8 +600,8 @@ void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direct
     {
         /// Shift all NULL values to the beginning.
 
-        ssize_t read_idx = res.size() - 1;
-        ssize_t write_idx = res.size() - 1;
+        ssize_t read_idx = static_cast<ssize_t>(res.size()) - 1;
+        ssize_t write_idx = static_cast<ssize_t>(res.size()) - 1;
 
         while (read_idx >= 0 && !isNullAt(res[read_idx]))
         {
@@ -700,8 +701,8 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
             if (limit && first > limit)
                 break;
 
-            ssize_t read_idx = last - 1;
-            ssize_t write_idx = last - 1;
+            ssize_t read_idx = static_cast<ssize_t>(last) - 1;
+            ssize_t write_idx = static_cast<ssize_t>(last) - 1;
             ssize_t begin_idx = static_cast<ssize_t>(first) - 1;
 
             while (read_idx > begin_idx && !isNullAt(res[read_idx]))

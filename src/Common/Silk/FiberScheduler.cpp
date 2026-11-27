@@ -9,9 +9,12 @@
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ThreadStatus.h>
 
+#include <Poco/Message.h>
+
 #include <silk/fibers/fiber.h>
 #include <silk/fibers/future.h>
 #include <silk/util/init.h>
+#include <silk/util/logger.h>
 #include <silk/util/perf.h>
 #include <silk/util/platform.h>
 
@@ -104,9 +107,18 @@ void onMemoryUnmapped(void * ptr, size_t size) noexcept
 
 }
 
-void initializeFiberScheduler(uint32_t fiber_stack_size)
+void initialize(uint32_t fiber_stack_size, int log_level)
 {
     silk::initialize();
+
+    if (log_level >= Poco::Message::PRIO_DEBUG)
+        silk::Logger::setLevel(silk::LogLevel::DEBUG);
+    else if (log_level >= Poco::Message::PRIO_INFORMATION)
+        silk::Logger::setLevel(silk::LogLevel::INFO);
+    else if (log_level >= Poco::Message::PRIO_WARNING)
+        silk::Logger::setLevel(silk::LogLevel::WARN);
+    else
+        silk::Logger::setLevel(silk::LogLevel::ERROR);
 
     const silk::FiberScheduler::Options options =
     {
@@ -153,7 +165,7 @@ RuntimeCounters getRuntimeCounters()
         return result;
 
     /// No TOCTOU is possible:
-    /// 1. Registration is append-only and confined to initializeFiberScheduler.
+    /// 1. Registration is append-only and confined to initialize.
     /// 2. Destruction presupposes quiesced readers as Silk runtime is explicitly destroyed after shutting down the global thread pool.
     /// 3. In between, the counter set is immutable.
     /// 4. In theory, if the current thread reads a stale counter count, getSimpleCounters respects the counterArraySize argument.

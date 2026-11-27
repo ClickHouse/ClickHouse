@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: the `ParquetMetadata` format needs the Arrow library, which the Fast test build does not include.
 
--- Arrays whose values span more than 2 Parquet data pages. Without the page index the writer cuts a page inside
+-- Arrays whose values span more than 2 Parquet data pages. Without the page index the writer cuts a V1 page inside
 -- a row, here after every 1000 values, so a page can hold no row start at all. Both encodings, read whole,
 -- with rows skipped by PREWHERE, and one row per block.
 
@@ -18,10 +18,10 @@ FROM numbers(4);
 
 INSERT INTO FUNCTION file(currentDatabase() || '_05829_dict.parquet') SELECT * FROM src
 SETTINGS output_format_parquet_write_page_index = 0, output_format_parquet_data_page_size = 100, output_format_parquet_batch_size = 1000,
-    output_format_parquet_max_dictionary_size = 1048576;
+    output_format_parquet_max_dictionary_size = 1048576, output_format_parquet_use_data_page_v2 = 0;
 INSERT INTO FUNCTION file(currentDatabase() || '_05829_plain.parquet') SELECT * FROM src
 SETTINGS output_format_parquet_write_page_index = 0, output_format_parquet_data_page_size = 100, output_format_parquet_batch_size = 1000,
-    output_format_parquet_max_dictionary_size = 0;
+    output_format_parquet_max_dictionary_size = 0, output_format_parquet_use_data_page_v2 = 0;
 
 -- The dictionary file must keep every column dictionary-encoded and the PLAIN file none, otherwise one encoding is tested twice.
 SELECT arrayMap(c -> has(tupleElement(c, 'encodings'), 'RLE_DICTIONARY'), columns)

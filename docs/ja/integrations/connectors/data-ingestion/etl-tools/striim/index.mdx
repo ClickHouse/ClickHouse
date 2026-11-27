@@ -1,0 +1,91 @@
+---
+title: "Striim for ClickHouse"
+sidebarTitle: "概要"
+slug: /integrations/connectors/data-ingestion/etl-tools/striim
+description: "Striim for ClickHouse を使用して、データベース、データウェアハウス、データレイク、SaaS アプリケーションのデータを ClickHouse に複製します。"
+doc_type: guide
+keywords: ['striim', 'clickhouse', 'cdc', 'データ取り込み', 'リアルタイムレプリケーション']
+---
+
+[Striim for ClickHouse](https://www.striim.com/docs/striimforclickhouse/en/introducing-striim-for-clickhouse.html) は、データベース、データウェアハウス、データレイク、SaaS アプリケーションのデータを ClickHouse に取り込むフルマネージドの SaaS です。Oracle、Microsoft SQL Server、Snowflake といったエンタープライズ向けのソースにも対応しています。既存のレコードを読み込んだ後は、CDC (変更データキャプチャ) によって挿入・更新・削除をストリーミングし、AI ワークロード、ダッシュボード、データアプリケーションで利用する ClickHouse のデータを常に最新の状態に保ちます。
+
+Striim for ClickHouse は AWS 上の Striim Cloud でホストされています。セルフサービスでサインアップでき、請求は使用量に応じた月額課金で、年間契約は不要です。striim.com または AWS Marketplace からサインアップして 14 日間の無料試用を開始すれば、自然言語のプロンプト、ウィザード、フローデザイナーのいずれかでパイプラインを構築できます。
+
+## 主な機能 {#key-features}
+
+* **変更データキャプチャと初期ロード:** 既存データをロードした後、挿入・更新・削除を継続的にリアルタイムでレプリケーションするモードに切り替えます。自動化されたパイプラインウィザードを使うと、両フェーズの作成と関連付けを行い、初期ロードからCDC (変更データキャプチャ) レプリケーションへ自動的に移行できます。
+* **ClickHouse Writer:** パイプラインごとにテーブルエンジン (`MergeTree`、`ReplacingMergeTree`、`CollapsingMergeTree`、`CoalescingMergeTree` など) を選択できます。Striimは宛先テーブルを作成し、選択したエンジンに応じて更新と削除を処理するほか、sorting keyも設定します。
+* **スキーマの処理:** サポート対象のソースでは、ソースに基づいて移行先のスキーマを自動作成します。また、サポート対象のCDCソースでは、一部のDDL変更 (`CREATE TABLE`、`ADD COLUMN`、`ALTER TABLE ... MODIFY COLUMN`、`DROP COLUMN`、`DROP TABLE`、`TRUNCATE TABLE`) を移行先に反映します。
+* **転送中のデータ処理:** ソースとClickHouseの間で、データのフィルタ、拡充、変換を行えます。
+* **AIによる運用支援:** 対話型AIエージェントのStriim Clara AIは、自然言語による説明からパイプラインを構築し、遅延やスループットを報告するとともに、障害の原因を説明します。本番環境にデプロイする前に、生成された内容を必ず確認してください。
+* **プライベート接続:** ソースおよびClickHouseへの接続には、AWS PrivateLink、SSHトンネル、IP許可リストを利用できます。
+* **監視とアラート:** パイプライン監視機能が組み込まれており、アラートをメール、Slack、Microsoft Teams、StriimのウェブUIに通知できます。
+
+## ユースケース {#use-cases}
+
+| **ユースケース**    | **Striim for ClickHouse の活用方法**                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------------------------------- |
+| リアルタイム分析      | CDC (変更データキャプチャ) リーダーが ClickHouse テーブルを常に最新の状態に保つため、対話型ダッシュボードには前回のバッチサイクル時点ではなく、数秒前のアクティビティが反映されます。                  |
+| AIエージェントと RAG | ベクトル検索や MCPサーバーで使用されるテーブルも含め、ClickHouse テーブルを常に最新の状態に保つため、エージェントは最新の運用データを参照できます。                                     |
+| 特徴量ストアとモデル推論  | 不正検知やパーソナライゼーションなど、ほぼリアルタイムでスコアリングを行うモデル向けに、エンティティ単位の特徴量を常に最新の状態に保ちます。                                                |
+| データウェアハウジング   | Oracle、SQL Server、Snowflake、Salesforce などのソースから、中間のステージングレイヤーやストリーミングレイヤーを介さずに ClickHouse へ直接データを連携します。               |
+| オブザーバビリティ     | データベースやアプリケーションのログをテレメトリーと同じ ClickHouse インスタンスにストリーミングするため、両者を横断してクエリできます。ClickStack や OpenTelemetry によるインジェストを補完します。 |
+
+## サポートされているソース {#supported-sources}
+
+以下の表は、サポートされているソースをカテゴリ別にまとめたものです。CDC (変更データキャプチャ) は、サポート対象のソースで発生した挿入、更新、削除を継続的に複製します。初期ロードでは既存のレコードをコピーします。CDC 以外のインジェストには、ファイルの読み取り、アプリケーション API 経由の読み取り、メッセージストリームが含まれます。
+
+プランごとの提供状況については [製品概要](https://www.striim.com/docs/striimforclickhouse/en/product-summary.html) を、ソースごとの機能やセットアップ要件については [Striim for ClickHouse のドキュメント](https://www.striim.com/docs/striimforclickhouse/en/pipelines.html#supported-sources-and-targets-for-striim-for-clickhouse) を参照してください。
+
+| **カテゴリ**           | **ソース**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CDC ソース            | Azure CosmosDB<br />MariaDB (Galera Cluster、XPand、SkySQL、Amazon RDS を含む) <br />MongoDB (セルフマネージドのデプロイメント、および AWS、Azure、Google Cloud 上の MongoDB Atlas を含む) <br />MySQL (セルフマネージドのデプロイメント、Amazon Aurora、Amazon RDS、Azure Database、Google Cloud SQL を含む) <br />Oracle (セルフマネージドのデプロイメント、Amazon RDS を含む) <br />PostgreSQL (セルフマネージドのデプロイメント、Amazon Aurora、Amazon RDS、Azure Database、Crunchy Postgres、Google AlloyDB、Google Cloud SQL、Neon を含む) <br />SQL Server (セルフマネージドのデプロイメント、Amazon RDS、Azure SQL Database を含む) <br />Salesforce<br />Snowflake<br />Yugabyte |
+| その他のデータベース         | Teradata                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| データウェアハウス          | BigQuery、Snowflake                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| データレイクおよびファイル      | Amazon S3、Azure Data Lake Service、Google Cloud ストレージ<br />HDFS、MapR ファイルシステム、ローカルファイル<br />ファイルフォーマット: Avro、Parquet、JSON、XML、区切り形式、自由形式、バイナリ、Apache アクセスログ、Cobol copybook、CollectD、HL7v2、Netflow、名前と値のペア                                                                                                                                                                                                                                                                                                                                                       |
+| SaaS アプリケーション      | Atlassian Jira<br />Google Ads<br />HubSpot<br />Intercom<br />Microsoft Dynamics 365、Microsoft Dynamics 365 Business Central<br />Salesforce、Salesforce Pardot、Salesforce Platform Event および PushTopic<br />ServiceNow<br />Stripe<br />Zendesk                                                                                                                                                                                                                                                                                                               |
+| メッセージング、IoT、ネットワーク | Apache Kafka<br />JMS、MQTT、OPC UA、HTTP、TCP、UDP、JMX、Windows Event Log                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+
+## プラン、無料試用、請求 {#plans-trial-and-billing}
+
+| 設定     | **Standard**                                                                   | **Premium**                                                   |
+| ------ | ------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| コンピュート | 4 vCPU                                                                         | 8 vCPU                                                        |
+| ソース    | CDC 以外のソース、および PostgreSQL、MySQL、MariaDB、MongoDB、YugabyteDB の CDC (変更データキャプチャ)  | Standard のすべてに加え、Oracle、SQL Server、Snowflake、Salesforce の CDC |
+| 移行先    | ClickHouse および File Writer                                                     | ClickHouse および File Writer                                    |
+| リージョン  | AWS us-east-1、us-east-2、us-west-2                                              | AWS us-east-1、us-east-2、us-west-2                             |
+
+請求は月単位の従量課金制で、年間契約は不要です。料金はコンピュートインフラストラクチャと処理済みイベント数に基づいて算出されます。お支払いは、striim.com でのクレジットカード決済、または AWS Marketplace 経由で行えます。詳しくは[料金体系の詳細](https://www.striim.com/docs/striimforclickhouse/en/product-summary.html)を参照してください。
+
+## 運用上の考慮事項 {#operational-considerations}
+
+* 配信は at-least-once (少なくとも 1 回) 方式です。再起動や復旧の後、書き込み済みのイベントが再度書き込まれる可能性があります。最終的なデータレコードはテーブルエンジンによって異なります ([ClickHouse へのデータの格納方法](/ja/integrations/connectors/data-ingestion/etl-tools/striim/get-started#how-data-lands-in-clickhouse)を参照してください) 。
+* スキーマ進化では、カラムのリネームや NULL 許容性の変更はサポートされていません。また、`AggregatingMergeTree`、`Replicated`、`Distributed` の移行先には適用されません。`VersionedCollapsingMergeTree` と `GraphiteMergeTree` はサポートされていません。
+* 一部のソースの型は ClickHouse にマッピングできないため、スキーマの自動作成時にスキップされます。例：`SQL Server GEOGRAPHY`、`GEOMETRY`、`HIERARCHYID`、`SQL_VARIANT`、`Oracle BFILE`、`LONG`、`LONG RAW`、`SDO_GEOMETRY`、`UROWID`、`MySQL GEOMETRY`、`SET`。
+
+## お問い合わせとサポート {#contact-and-support}
+
+Striim for ClickHouse のサポートは、他の Striim サービスと同じ [Striim サポートポリシー](https://www.striim.com/msa/) に基づき、Striim が提供しています。ご契約中のお客様は、[Striim サポートポータル](https://support.striim.com/hc/en-us) から、または Striim クラウドコンソールのヘルプメニューで **Create ticket** を選択して、チケットを送信できます。
+
+| **チャネル**                 | **対応時間**                                     |
+| ------------------------ | -------------------------------------------- |
+| サポートポータル                 | 24 x 7 x 365 (年中無休)                          |
+| メール (support@striim.com) | 24 x 7 x 365 (年中無休)                          |
+| 電話 (+1 650 241-0680)     | 月曜日～金曜日の午前 8 時～午後 7 時 (太平洋時間、Striim の休業日を除く) |
+
+### サポートの担当範囲 {#support-ownership}
+
+| **領域**                         | **担当**           | **例**                                                                             |
+| ------------------------------ | ---------------- | --------------------------------------------------------------------------------- |
+| Striim for ClickHouse サービス     | Striim           | サインアップ、請求、無料試用、サービスの作成、リージョン、プランの変更、Clara AI                                      |
+| ソース接続と CDC                     | Striim           | ソースリーダーとそのセットアップ、初期ロード、遅延、スキーマ進化                                                  |
+| ClickHouse Writer              | Striim           | テーブルエンジンの動作、Striim のメタデータカラム、型マッピング、バッチおよびアップロードの設定、at-least-once の再適用動作          |
+| Striim からのネットワーク接続             | Striim           | AWS PrivateLink、Striim 側での SSH および IP 許可リストの設定                                    |
+| ClickHouseデータベースまたは Cloud サービス | ClickHouse       | サービスの可用性、クエリパフォーマンス、サーバー設定、権限、マージ、ClickHouse 側の PrivateLink と許可リスト                |
+| 双方にまたがる問題                      | まず Striim に問い合わせ | 原因が特定できない書き込みエラーや挿入処理の遅延。Striim が切り分けを行い、根本原因がデータベース側にある場合は ClickHouse に協力を依頼します。 |
+
+## 関連ページ {#related-pages}
+
+* [Striim for ClickHouse をはじめる](/ja/integrations/connectors/data-ingestion/etl-tools/striim/get-started): サインアップ、ClickHouse のセットアップ、テーブルエンジンの選択について説明します。
+* [サンプルパイプライン: SQL Server から ClickHouse へ](/ja/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline): 自動パイプラインウィザードを使用した初期ロードと CDC (変更データキャプチャ) について説明します。
+* [Striim for ClickHouse のドキュメント](https://www.striim.com/docs/striimforclickhouse/en/index-en.html)

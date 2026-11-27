@@ -1,7 +1,6 @@
 -- The Join table engine reuses one prebuilt join, so it cannot serve an ON condition that
 -- references both tables. Such queries used to reach inconsistent state and fail with a
 -- logical error, std::bad_variant_access, or a misleading "with ORs" message.
-SET allow_experimental_join_condition = 1;
 -- join_algorithm is load-bearing: chooseJoinAlgorithm rejects a mixed ON condition outright for
 -- any algorithm other than hash, parallel_hash or grace_hash, and it does so before reaching the
 -- Join-engine branch, so without this pin a randomized join_algorithm changes the expected errors.

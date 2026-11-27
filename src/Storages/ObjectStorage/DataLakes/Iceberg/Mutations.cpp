@@ -23,6 +23,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStatisticsNdv.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
@@ -60,6 +61,11 @@ extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
 extern const int NOT_IMPLEMENTED;
+}
+
+namespace DB::Setting
+{
+extern const SettingsNonZeroUInt64 iceberg_metadata_previous_versions_max;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -112,6 +118,8 @@ struct WriteDataFilesResult
     DataFileWriteResultWithStats delete_file;
     /// Empty unless this is an UPDATE, which also writes new data files.
     DataFileWriteResultWithStats data_file;
+    /// Null without statistics.
+    std::unique_ptr<IcebergColumnSketches> updated_rows_sketches;
 };
 
 static Block getPositionDeleteFileSampleBlock()
@@ -276,7 +284,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
     const Iceberg::IcebergPathResolver & path_resolver,
     const std::optional<FormatSettings> & format_settings,
     std::optional<ChunkPartitioner> & chunk_partitioner,
-    Poco::JSON::Object::Ptr data_schema)
+    Poco::JSON::Object::Ptr data_schema,
+    bool write_statistics)
 {
     chassert(commands.size() == 1);
     DataFileWriteResultWithStats delete_files;
@@ -285,6 +294,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
     DataFileStatisticsByPartitionKey update_data_statistics;
     std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> update_data_write_buffers;
     std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> update_data_writers;
+    std::unique_ptr<IcebergColumnSketches> updated_rows_sketches;
 
     /// No snapshot references these files until the caller commits them, so remove them if writing fails.
     bool written = false;
@@ -455,6 +465,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
 
         auto header = interpreter->getUpdatedHeader();
         auto update_sample_block = getNonVirtualColumns(header, /*remove_low_cardinality=*/ true);
+        if (write_statistics)
+            updated_rows_sketches = std::make_unique<IcebergColumnSketches>(update_sample_block, data_schema->getArray(Iceberg::f_fields));
 
         Block block;
         while (executor.pull(block))
@@ -465,6 +477,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
             /// Strip virtual columns and unwrap LowCardinality to ensure the
             /// block types are compatible with the Avro serializer schema.
             auto data_block = getNonVirtualColumns(block, /*remove_low_cardinality=*/ true);
+            if (updated_rows_sketches)
+                updated_rows_sketches->update(data_block.getColumns());
             Chunk chunk(data_block.getColumns(), data_block.rows());
             auto partition_result = getPartitionedChunks(chunk, chunk_partitioner);
 
@@ -526,7 +540,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
     std::optional<WriteDataFilesResult> result;
     if (commands[0].type == MutationCommand::DELETE)
     {
-        result = WriteDataFilesResult{std::move(delete_files), {}};
+        result = WriteDataFilesResult{std::move(delete_files), {}, nullptr};
     }
     else if (commands[0].type == MutationCommand::UPDATE)
     {
@@ -538,7 +552,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
             partition_files.files.push_back(data_file);
             partition_files.statistics.push_back(std::move(update_data_statistics.at(partition_key)));
         }
-        result = WriteDataFilesResult{std::move(delete_files), std::move(data_files)};
+        result = WriteDataFilesResult{std::move(delete_files), std::move(data_files), std::move(updated_rows_sketches)};
     }
     written = true;
     return result;
@@ -547,6 +561,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
 static bool writeMetadataFiles(
     const DataFileWriteResultWithStats & delete_files,
     const DataFileWriteResultWithStats & data_files,
+    IcebergColumnSketches * updated_rows_sketches,
+    bool write_statistics,
     ObjectStoragePtr object_storage,
     ContextPtr context,
     FileNamesGenerator & filename_generator,
@@ -595,7 +611,7 @@ static bool writeMetadataFiles(
     for (const auto & [partition_key, _] : data_files.files_by_partition)
         touched_partitions.insert(partition_key);
 
-    auto result = MetadataGenerator(metadata).generateNextMetadata(
+    auto result = MetadataGenerator(metadata, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]).generateNextMetadata(
         filename_generator,
         metadata_info.path,
         parent_snapshot,
@@ -618,9 +634,10 @@ static bool writeMetadataFiles(
 
     auto hint_path = filename_generator.generateVersionHint();
     const bool use_version_hint = data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint];
+    std::optional<String> statistics_file_path;
 
     auto cleanup = [object_storage, &delete_files, &data_files, &path_resolver, manifest_entries_in_storage,
-                    storage_manifest_list_name]()
+                    storage_manifest_list_name, &statistics_file_path]()
     {
         try
         {
@@ -633,6 +650,8 @@ static bool writeMetadataFiles(
                 object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
             object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+            if (statistics_file_path)
+                object_storage->removeObjectIfExists(StoredObject(*statistics_file_path));
         }
         catch (...)
         {
@@ -756,6 +775,12 @@ static bool writeMetadataFiles(
                 manifest_entry_file_counts);
             buffer_manifest_list->finalize();
         }
+
+        /// An UPDATE adds the new versions of the updated rows, a DELETE keeps the parent's sketches.
+        if (write_statistics)
+            statistics_file_path = writeIcebergTableStatisticsNdv(
+                updated_rows_sketches, /*union_with_parent=*/ true, metadata, new_snapshot, filename_generator, path_resolver,
+                object_storage, context);
 
         std::string json_representation = stringifyJSON(metadata, 4);
 
@@ -904,6 +929,7 @@ void mutate(
     if (!common_path.starts_with('/'))
         common_path = "/" + common_path;
 
+    const bool write_statistics = shouldWriteIcebergTableStatisticsNdv(context, catalog);
     int max_retries = MAX_TRANSACTION_RETRIES;
     while (--max_retries > 0)
     {
@@ -995,13 +1021,16 @@ void mutate(
             persistent_table_components.path_resolver,
             format_settings,
             chunk_partitioner,
-            current_schema);
+            current_schema,
+            write_statistics);
 
         if (mutation_files)
         {
             if (!writeMetadataFiles(
                     mutation_files->delete_file,
                     mutation_files->data_file,
+                    mutation_files->updated_rows_sketches.get(),
+                    write_statistics,
                     object_storage,
                     context,
                     filename_generator,
@@ -1023,6 +1052,54 @@ void mutate(
 
     if (max_retries == 0)
         throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to create iceberg snapshot");
+}
+
+/// Iceberg (`TableMetadata.Builder.build`) requires each source column of the default partition spec and of the default
+/// sort order to be in `schema`; a `void` partition field, which format version 1 keeps for a removed field, needs none.
+static std::optional<String> findFieldWithoutSourceColumn(const Poco::JSON::Object::Ptr & metadata, const Poco::JSON::Object::Ptr & schema)
+{
+    const auto columns = IcebergSchemaProcessor::collectIcebergPrimitiveTypesById(schema->getArray(Iceberg::f_fields));
+    auto find_missing_source_id = [&](const Poco::JSON::Object::Ptr & field) -> std::optional<Int64>
+    {
+        if (field->has(Iceberg::f_source_id) && !columns.contains(field->getValue<Int64>(Iceberg::f_source_id)))
+            return field->getValue<Int64>(Iceberg::f_source_id);
+        if (const auto source_ids = field->getArray(Iceberg::f_source_ids))
+            for (UInt32 i = 0; i < source_ids->size(); ++i)
+                if (!columns.contains(source_ids->getElement<Int64>(i)))
+                    return source_ids->getElement<Int64>(i);
+        return std::nullopt;
+    };
+
+    if (metadata->has(Iceberg::f_partition_specs) && metadata->has(Iceberg::f_default_spec_id))
+    {
+        const auto default_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
+        const auto specs = metadata->getArray(Iceberg::f_partition_specs);
+        for (UInt32 i = 0; i < specs->size(); ++i)
+        {
+            const auto spec = specs->getObject(i);
+            if (spec->getValue<Int64>(Iceberg::f_spec_id) != default_spec_id)
+                continue;
+            const auto fields = spec->getArray(Iceberg::f_fields);
+            for (UInt32 j = 0; j < fields->size(); ++j)
+            {
+                const auto field = fields->getObject(j);
+                if (Poco::toLower(field->getValue<String>(Iceberg::f_transform)) == "void")
+                    continue;
+                if (auto id = find_missing_source_id(field))
+                    return fmt::format(
+                        "the partition field '{}' of the default partition spec has no source column with field id {}",
+                        field->getValue<String>(Iceberg::f_name), *id);
+            }
+        }
+    }
+
+    if (metadata->has(Iceberg::f_sort_orders) && metadata->has(Iceberg::f_default_sort_order_id))
+        if (const auto fields = getDefaultSortOrderFields(metadata))
+            for (UInt32 i = 0; i < fields->size(); ++i)
+                if (auto id = find_missing_source_id(fields->getObject(i)))
+                    return fmt::format("the default sort order has no source column with field id {}", *id);
+
+    return std::nullopt;
 }
 
 void alter(
@@ -1067,7 +1144,7 @@ void alter(
 
         const auto previous_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
 
-        auto metadata_json_generator = MetadataGenerator(metadata);
+        auto metadata_json_generator = MetadataGenerator(metadata, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]);
 
         switch (params[0].type)
         {
@@ -1103,13 +1180,25 @@ void alter(
         }
         if (new_schema)
         {
-            if (auto violation = IcebergSchemaProcessor::findSchemaViolation(*new_schema, /*is_table_schema=*/ true))
+            auto violation = IcebergSchemaProcessor::findSchemaViolation(*new_schema, /*is_table_schema=*/ true);
+            if (!violation)
+                violation = findFieldWithoutSourceColumn(metadata, new_schema);
+            if (violation)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter the Iceberg table, its new schema would be invalid: {}", *violation);
         }
 
-        std::string json_representation = stringifyJSON(metadata, 4);
-
         auto metadata_info = filename_generator.generateMetadataPathWithInfo();
+        const Int64 commit_timestamp = std::max<Int64>(
+            metadata->getValue<Int64>(Iceberg::f_last_updated_ms),
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+        metadata->set(Iceberg::f_last_updated_ms, commit_timestamp);
+        appendToMetadataLog(
+            metadata,
+            metadata_info.path.serialize(),
+            commit_timestamp,
+            context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]);
+
+        std::string json_representation = stringifyJSON(metadata, 4);
 
         auto hint_path = filename_generator.generateVersionHint();
 
