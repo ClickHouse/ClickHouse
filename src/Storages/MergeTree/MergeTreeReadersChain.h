@@ -36,12 +36,6 @@ LoggerPtr getMergeTreeReadersChainLogger();
 
 class MergeTreeReadersChain
 {
-    using DataflowCacheUpdateCallback = std::function<void(
-        const ColumnsWithTypeAndName & columns,
-        const NameSet & partially_read_columns,
-        size_t read_bytes,
-        std::optional<bool> & should_continue_sampling)>;
-
 public:
     MergeTreeReadersChain() = default;
     MergeTreeReadersChain(RangeReaders range_readers_, MergeTreePatchReaders patch_readers_);
@@ -50,8 +44,7 @@ public:
     using ReadResult = MergeTreeRangeReader::ReadResult;
 
     ReadResult
-    read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges, const DataflowCacheUpdateCallback & update_cb = {},
-         size_t max_stripe_block_rows = 0);
+    read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges, size_t max_stripe_block_rows = 0);
 
     [[nodiscard]] size_t numReadRowsInCurrentGranule() const;
     [[nodiscard]] size_t numPendingRowsInCurrentGranule() const;

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database
+# Tags: no-fasttest, no-replicated-database, zookeeper
 # no-fasttest: the Kafka engine is not built in fasttest
 # no-replicated-database: named collections created by SQL are not replicated
+# zookeeper: a section creates its own Replicated database
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 
@@ -140,3 +141,53 @@ echo '--- Consumers are created for the accepted properties'
 echo '--- A property that is added after the table is created'
 alter_collection_of_existing_table 'kafka.future_option' kafka_altered_table
 alter_collection_of_existing_table 'kafka.ssl_key_location\0suffix' kafka_altered_null_table
+
+echo '--- A stored table is loaded at server startup, and its consumers and producers are refused'
+# Each `clickhouse-local` run over the same path loads the stored tables as a server start does.
+local_path="${CLICKHOUSE_TMP:?}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+rm -rf "$local_path"
+
+function run_local()
+{
+    local output
+    local message
+    if output=$($CLICKHOUSE_LOCAL --path="$local_path" -q "$1" 2>&1 < /dev/null)
+    then
+        echo "OK${output:+ $output}"
+    else
+        message=$(grep -o 'Kafka property .*(BAD_ARGUMENTS)' <<< "$output" | sed 's/: While executing [A-Za-z]*\././' | head -1)
+        echo "${message:-$output}"
+    fi
+}
+
+run_local "
+    CREATE NAMED COLLECTION nc_path AS ${required_keys};
+    CREATE NAMED COLLECTION nc_null AS ${required_keys};
+    CREATE DATABASE d ENGINE = Atomic;
+    CREATE TABLE d.kafka_path (x UInt64) ENGINE = Kafka(nc_path) ${table_settings};
+    CREATE TABLE d.kafka_null (x UInt64) ENGINE = Kafka(nc_null) ${table_settings};
+    ALTER NAMED COLLECTION nc_path SET \`kafka.ssl_key_location\` = '/etc/passwd';
+    ALTER NAMED COLLECTION nc_null SET \`kafka.ssl_key_location\\0suffix\` = '/etc/passwd';"
+run_local "SELECT arrayStringConcat(groupArray(name), ',') FROM (SELECT name FROM system.tables WHERE database = 'd' ORDER BY name)"
+run_local "SELECT count() FROM d.kafka_path SETTINGS stream_like_engine_allow_direct_select = 1"
+run_local "INSERT INTO d.kafka_null VALUES (1)"
+run_local "DROP TABLE d.kafka_path; DROP TABLE d.kafka_null; SELECT count() FROM system.tables WHERE database = 'd'"
+rm -rf "$local_path"
+
+echo '--- A new replica of a Replicated database recovers a stored table, and its consumers are refused'
+replicated_collection="${collection}_replicated"
+all_collections+=("$replicated_collection")
+db_r1="${CLICKHOUSE_DATABASE}_kafka_r1"
+db_r2="${CLICKHOUSE_DATABASE}_kafka_r2"
+zk_path="/test/${CLICKHOUSE_TEST_UNIQUE_NAME}/kafka_replicated"
+run "
+    SET distributed_ddl_output_mode = 'none';
+    CREATE NAMED COLLECTION ${replicated_collection} AS ${required_keys};
+    CREATE DATABASE ${db_r1} ENGINE = Replicated('${zk_path}', 's1', 'r1');
+    CREATE TABLE ${db_r1}.kafka_replicated (x UInt64) ENGINE = Kafka(${replicated_collection}) ${table_settings};
+    ALTER NAMED COLLECTION ${replicated_collection} SET \`kafka.ssl_key_location\` = '/etc/passwd';
+    CREATE DATABASE ${db_r2} ENGINE = Replicated('${zk_path}', 's1', 'r2');
+    DROP DATABASE ${db_r1} SYNC;"
+run "SET receive_timeout = 60; SYSTEM SYNC DATABASE REPLICA ${db_r2}; SELECT name FROM system.tables WHERE database = '${db_r2}'"
+run "SELECT count() FROM ${db_r2}.kafka_replicated SETTINGS stream_like_engine_allow_direct_select = 1"
+run "DROP DATABASE IF EXISTS ${db_r1} SYNC; DROP DATABASE ${db_r2} SYNC"

@@ -56,6 +56,7 @@ case "$sub" in
       cnt=$(cat "$GH_STUB_DIR/checks/$n.count" 2>/dev/null || echo 0)
       cnt=$(( cnt + 1 )); printf '%s\n' "$cnt" > "$GH_STUB_DIR/checks/$n.count"
       if [ "$cnt" -le "$(cat "$GH_STUB_DIR/checks/$n.flaky")" ]; then
+        if [ -f "$GH_STUB_DIR/checks/$n.flakymsg" ]; then cat "$GH_STUB_DIR/checks/$n.flakymsg" >&2; exit 1; fi
         echo "HTTP 503: 503 Service Unavailable (https://api.github.com/graphql)" >&2; exit 1
       fi
     fi
@@ -267,6 +268,25 @@ if [ "$(grep -c '^pr checks 601 ' "$F/calls.log")" = 3 ]; then
   ok "gh pr checks retried exactly until it succeeded"
 else
   bad "gh pr checks retried exactly until it succeeded (got $(grep -c '^pr checks 601 ' "$F/calls.log") calls)"
+fi
+rm -rf "$F"
+
+########### Test F2: a GraphQL "Something went wrong" error is retried ##########
+echo "Test F2: GraphQL internal errors are retried and the run still succeeds"
+F=$(mktemp -d); write_stub "$F"; mkdir -p "$F/fix/list" "$F/fix/checks" "$F/fix/view"
+printf 'testuser\n' > "$F/fix/me"
+printf '602\ttestuser\tGraphQL hiccup then green\n' > "$F/fix/list/author_testuser.tsv"
+printf '1\n' > "$F/fix/checks/602.flaky"   # fail once, succeed on the second call
+printf '%s\n' 'GraphQL: Something went wrong while executing your query on 2026-11-25T21:46:28Z. Please include `834C:2EA2FD:21A22D:315A3E:6B075732` when reporting this issue.' > "$F/fix/checks/602.flakymsg"
+printf '%s\n' '[{"name":"CH Inc sync","state":"SUCCESS","bucket":"pass"}]' > "$F/fix/checks/602.json"
+printf 'OPEN\ttrue\tMERGEABLE\n' > "$F/fix/view/602.tsv"
+run_report "$F"
+[ "$EXIT" = 0 ] && ok "exit code 0 after a retried GraphQL internal error" || { bad "exit code 0 after a retried GraphQL internal error (got $EXIT)"; cat "$ERRF"; }
+row_has "$OUT" 602 GREEN "#602 rendered after the GraphQL internal error"
+if [ "$(grep -c '^pr checks 602 ' "$F/calls.log")" = 2 ]; then
+  ok "gh pr checks retried once after the GraphQL internal error"
+else
+  bad "gh pr checks retried once after the GraphQL internal error (got $(grep -c '^pr checks 602 ' "$F/calls.log") calls)"
 fi
 rm -rf "$F"
 
