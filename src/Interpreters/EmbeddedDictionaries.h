@@ -2,11 +2,14 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Common/Logger_fwd.h>
+#include <Common/ActionBlocker.h>
+#include <Common/ActionLock.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
 
 #include <Poco/Event.h>
 
+#include <atomic>
 #include <thread>
 #include <functional>
 
@@ -35,9 +38,13 @@ private:
     /// Directories' updating periodicity (in seconds).
     int reload_period;
     int cur_reload_period = 1;
-    bool is_fast_start_stage = true;
+    /// Written by the periodic thread, read by `reloadImpl`, which also runs in `SYSTEM START RELOAD DICTIONARIES`.
+    std::atomic<bool> is_fast_start_stage = true;
+    ActionBlocker reload_blocker;
 
     mutable std::mutex mutex;
+    /// A load was skipped because of `SYSTEM STOP RELOAD DICTIONARIES`. Guarded by `mutex`.
+    bool reload_skipped_while_stopped = false;
 
     ThreadFromGlobalPool reloading_thread;
     Poco::Event destroy;
@@ -69,10 +76,15 @@ public:
     EmbeddedDictionaries(
         std::unique_ptr<GeoDictionariesLoader> geo_dictionaries_loader,
         ContextPtr context,
+        ActionBlocker reload_blocker_,
         bool throw_on_error);
 
     /// Forcibly reloads all dictionaries.
     void reload();
+
+
+    /// Makes the load skipped while reloads were stopped, if any, without waiting for the next periodic one.
+    void reloadSkippedWhileStopped();
 
     ~EmbeddedDictionaries();
 

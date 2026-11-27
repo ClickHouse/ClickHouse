@@ -224,6 +224,8 @@ namespace ActionLocks
     extern const StorageActionBlockType ViewRefresh;
     extern const StorageActionBlockType ViewRefreshPause;
     extern const StorageActionBlockType StreamConsume;
+    extern const StorageActionBlockType ReloadExternalDictionaries;
+    extern const StorageActionBlockType ReloadEmbeddedDictionaries;
     extern const StorageActionBlockType VirtualPartsUpdate;
     extern const StorageActionBlockType ReduceBlockingParts;
 }
@@ -396,6 +398,30 @@ void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType ac
     }
 }
 
+void InterpreterSystemQuery::startStopReloadDictionaries(bool start)
+{
+    getContext()->getAccess()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
+
+    auto manager = getContext()->getActionLocksManager();
+
+    if (start)
+    {
+        manager->remove(ActionLocks::ReloadExternalDictionaries);
+        manager->remove(ActionLocks::ReloadEmbeddedDictionaries);
+        /// Requeue config-driven reloads and eager initial loads that were skipped while stopped
+        /// they won't be retried on their own since the periodic updater only reacts to a changed config.
+        getContext()->getExternalDictionariesLoader().reloadBlockedObjects();
+        /// The periodic reload of embedded dictionaries can be up to `builtin_dictionaries_reload_interval` away.
+        getContext()->reloadEmbeddedDictionariesSkippedWhileStopped();
+        return;
+    }
+
+    manager->add(ActionLocks::ReloadExternalDictionaries,
+                 getContext()->getExternalDictionariesLoader().getActionLock());
+
+    manager->add(ActionLocks::ReloadEmbeddedDictionaries,
+                 getContext()->stopEmbeddedDictionariesReload());
+}
 
 static void reloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader, const ASTSystemQuery & query, ContextPtr context)
 {
@@ -1011,6 +1037,12 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::START_REPLICATION_QUEUES:
             startStopAction(ActionLocks::ReplicationQueue, true);
+            break;
+        case Type::STOP_RELOAD_DICTIONARIES:
+            startStopReloadDictionaries(false);
+            break;
+        case Type::START_RELOAD_DICTIONARIES:
+            startStopReloadDictionaries(true);
             break;
         case Type::STOP_REPLICATED_DDL_QUERIES:
             stopReplicatedDDLQueries();
@@ -3199,7 +3231,10 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_DICTIONARIES:
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
         case Type::UNLOAD_DICTIONARY:
-        case Type::UNLOAD_DICTIONARIES: {
+        case Type::UNLOAD_DICTIONARIES:
+        case Type::STOP_RELOAD_DICTIONARIES:
+        case Type::START_RELOAD_DICTIONARIES:
+        {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_DICTIONARY);
             break;
         }

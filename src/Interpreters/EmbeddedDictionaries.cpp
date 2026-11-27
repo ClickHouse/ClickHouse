@@ -17,6 +17,11 @@ namespace ErrorCodes
     extern const int UNFINISHED;
 }
 
+namespace ActionLocks
+{
+    extern const StorageActionBlockType ReloadEmbeddedDictionaries;
+}
+
 void EmbeddedDictionaries::handleException(const bool throw_on_error) const
 {
     const auto exception_ptr = std::current_exception();
@@ -61,6 +66,13 @@ bool EmbeddedDictionaries::reloadDictionary(
 bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error, const bool force_reload)
 {
     std::lock_guard lock(mutex);
+
+    if (reload_blocker.isCancelled())
+    {
+        LOG_DEBUG(log, "Loading of embedded dictionaries is stopped.");
+        reload_skipped_while_stopped = true;
+        return false;
+    }
 
     /** If you can not update the directories, then despite this, do not throw an exception (use the old directories).
       * If there are no old correct directories, then when using functions that depend on them,
@@ -110,6 +122,11 @@ void EmbeddedDictionaries::reloadPeriodically()
             cur_reload_period = reload_period;
             is_fast_start_stage = false;
         }
+        else if (reload_blocker.isCancelled())
+        {
+            /// Skipped, not failed: keep the fast start delay, `reloadSkippedWhileStopped` runs the load on start.
+            continue;
+        }
 
         if (is_fast_start_stage)
         {
@@ -123,11 +140,13 @@ void EmbeddedDictionaries::reloadPeriodically()
 EmbeddedDictionaries::EmbeddedDictionaries(
     std::unique_ptr<GeoDictionariesLoader> geo_dictionaries_loader_,
     ContextPtr context_,
+    ActionBlocker reload_blocker_,
     const bool throw_on_error)
     : WithContext(context_)
     , log(getLogger("EmbeddedDictionaries"))
     , geo_dictionaries_loader(std::move(geo_dictionaries_loader_))
     , reload_period(getContext()->getConfigRef().getInt("builtin_dictionaries_reload_interval", 3600))
+    , reload_blocker(std::move(reload_blocker_))
 {
     reloadImpl(throw_on_error);
     reloading_thread = ThreadFromGlobalPool([this] { reloadPeriodically(); });
@@ -146,5 +165,15 @@ void EmbeddedDictionaries::reload()
         throw Exception(ErrorCodes::UNFINISHED, "Some embedded dictionaries were not successfully reloaded");
 }
 
+void EmbeddedDictionaries::reloadSkippedWhileStopped()
+{
+    {
+        std::lock_guard lock(mutex);
+        if (!reload_skipped_while_stopped)
+            return;
+        reload_skipped_while_stopped = false;
+    }
+    reloadImpl(false);
+}
 
 }
