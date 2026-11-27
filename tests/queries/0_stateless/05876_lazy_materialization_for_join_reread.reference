@@ -91,3 +91,6 @@ Lazily read columns: rheavy
 299	600	1
 Lazily read columns: m, heavy
 Lazily read columns: rheavy
+-- a deterministic data mutation applied on the fly that reads a non-deterministic default
+10	10
+Lazily read columns: rheavy

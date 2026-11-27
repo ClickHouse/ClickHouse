@@ -173,6 +173,23 @@ SELECT extract(explain, 'Lazily read columns: .*') FROM (EXPLAIN actions = 1
 WHERE explain LIKE '%Lazily read columns%';
 DROP TABLE mut3;
 
+SELECT '-- a deterministic data mutation applied on the fly that reads a non-deterministic default';
+DROP TABLE IF EXISTS mut4;
+CREATE TABLE mut4 (k UInt64, a UInt64, y String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64;
+INSERT INTO mut4 SELECT number, number % 100, '0' FROM numbers(1000);
+-- The part has no `x`, so each read fills it from its default.
+ALTER TABLE mut4 ADD COLUMN x UInt64 DEFAULT rand64();
+SYSTEM STOP MERGES mut4;
+ALTER TABLE mut4 UPDATE y = toString(x) WHERE 1 SETTINGS mutations_sync = 0;
+SELECT count(), countIf(toUInt64(y) % 2 = 0) FROM (
+    SELECT mut4.k, mut4.y AS y, r.rheavy FROM mut4 JOIN r ON mut4.k = r.k WHERE toUInt64(mut4.y) % 2 = 0 ORDER BY mut4.a DESC, mut4.k LIMIT 10)
+SETTINGS apply_mutations_on_fly = 1;
+SELECT extract(explain, 'Lazily read columns: .*') FROM (EXPLAIN actions = 1
+    SELECT mut4.k, mut4.y, r.rheavy FROM mut4 JOIN r ON mut4.k = r.k WHERE toUInt64(mut4.y) % 2 = 0 ORDER BY mut4.a DESC, mut4.k LIMIT 10
+    SETTINGS apply_mutations_on_fly = 1)
+WHERE explain LIKE '%Lazily read columns%';
+DROP TABLE mut4;
+
 DROP TABLE l;
 DROP TABLE r;
 DROP TABLE j;

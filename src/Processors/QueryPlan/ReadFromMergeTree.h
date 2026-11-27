@@ -744,8 +744,9 @@ public:
 
     /// Whether the read computes a column again with a non-deterministic expression, so that two reads of the same rows
     /// differ: a data mutation applied on the fly, or a masking policy, which is applied the same way, computes again the
-    /// `MATERIALIZED` columns computed from the columns it changes, also the ones the read needs only to compute others.
-    /// The expressions of the changes themselves are deterministic: `AlterConversions` does not apply others on the fly.
+    /// `MATERIALIZED` columns computed from the columns it changes, also the ones the read needs only to compute others. The
+    /// expressions of the changes are deterministic - `AlterConversions` does not apply others on the fly - but they, their
+    /// predicates and the `MATERIALIZED` columns can read a column the read fills from a non-deterministic default.
     bool recomputesColumnsNonDeterministically() const;
 
     /// Whether some columns of this read were moved to a lazy read, which addresses the rows of this one by their part

@@ -42,6 +42,8 @@
 #include <Interpreters/extractStringValueFilters.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -5504,6 +5506,29 @@ static bool isFilledFromDefaultInSomePart(
     });
 }
 
+/// The columns the assignments and the predicate of an `UPDATE` or a `DELETE` read.
+static Names getColumnsReadByMutationCommand(const MutationCommand & command)
+{
+    if (command.type != MutationCommand::UPDATE && command.type != MutationCommand::DELETE)
+        return {};
+
+    const auto alter = command.ast();
+    RequiredSourceColumnsVisitor::Data required_columns;
+    if (command.type == MutationCommand::UPDATE && alter->update_assignments)
+    {
+        auto assignments = alter->update_assignments->clone();
+        RequiredSourceColumnsVisitor(required_columns).visit(assignments);
+    }
+    if (alter->predicate)
+    {
+        auto predicate = alter->predicate->clone();
+        RequiredSourceColumnsVisitor(required_columns).visit(predicate);
+    }
+
+    const auto names = required_columns.requiredColumns();
+    return Names(names.begin(), names.end());
+}
+
 bool ReadFromMergeTree::recomputesColumnsNonDeterministically() const
 {
     if ((!mutations_snapshot || !mutations_snapshot->hasDataMutations()) && !data.hasEnabledMaskingPolicies(context))
@@ -5524,26 +5549,31 @@ bool ReadFromMergeTree::recomputesColumnsNonDeterministically() const
 #endif
         );
         const auto & changed_columns = alter_conversions->getAllUpdatedColumns();
-        if (changed_columns.empty())
+        const auto & commands = alter_conversions->getMutationCommands();
+        if (changed_columns.empty() && commands.empty())
             continue;
 
-        Names recomputed;
+        /// What the read computes: the recomputed `MATERIALIZED` columns, and the assignments and the predicates of the
+        /// commands, through the columns they read.
+        Names computed_from;
         NameSet recomputed_set;
         for (const auto & column : columns.getMaterialized())
         {
-            if (!dependencies.findColumnsToRecalculate(column.name, changed_columns).empty())
+            if (!changed_columns.empty() && !dependencies.findColumnsToRecalculate(column.name, changed_columns).empty())
             {
-                recomputed.push_back(column.name);
+                computed_from.push_back(column.name);
                 recomputed_set.insert(column.name);
             }
         }
-        if (recomputed.empty())
+        for (const auto & command : commands)
+            std::ranges::move(getColumnsReadByMutationCommand(command), std::back_inserter(computed_from));
+        if (computed_from.empty())
             continue;
 
-        /// A recomputed column reads the columns it is computed from as the read has them: a recomputed one, or one the read
-        /// fills from its default in this part.
+        /// A computed column reads the columns it is computed from as the read has them: a recomputed one, or one the read
+        /// fills from its default in this part, such as a column added after the part was written.
         const RangesInDataParts this_part{part};
-        const auto non_deterministic = getNonDeterministicDefaults(recomputed, columns, [&](const String & column)
+        const auto non_deterministic = getNonDeterministicDefaults(computed_from, columns, [&](const String & column)
         {
             return recomputed_set.contains(column) || isFilledFromDefaultInSomePart(column, this_part, metadata, mutations_snapshot, context);
         }, context);

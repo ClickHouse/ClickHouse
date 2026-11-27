@@ -54,6 +54,8 @@ public:
     static void addUpdatedColumns(const MutationCommand & command, NameSet & updated_columns);
 
     [[nodiscard]] const NameSet & getAllUpdatedColumns() const { return all_updated_columns; }
+    /// The `UPDATE` and `DELETE` commands applied on the fly, those of masking policies included.
+    [[nodiscard]] const MutationCommands & getMutationCommands() const { return mutation_commands; }
 
     /// The columns a skip index must not depend on to be usable for this part: the columns updated on
     /// the fly (`getAllUpdatedColumns`) plus every name touched by a pending `DROP COLUMN` or
