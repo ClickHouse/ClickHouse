@@ -4,7 +4,7 @@
 # remote or local insert per branch that stamps the deduplication info from scratch, so the source
 # block numbering restarts at zero on every branch: two identical blocks on different branches get
 # identical deduplication ids and a deduplicating target MergeTree silently drops one of them - the
-# fan-out must fail closed for Distributed. An AliasSink runs its nested INSERT in this query's
+# fan-out must fail closed for Distributed. An NestedInsertSink runs its nested INSERT in this query's
 # context with the chunk's deduplication info intact, and an already-stamped chunk is not restamped,
 # so without strict insert block limits the globally stamped numbering survives the hop, the ids stay
 # distinct across branches, and the INSERT fans out like one into the alias target itself.
@@ -32,20 +32,20 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE fwd_dedup_dist (x UInt64) ENGINE = Distribut
 
 # An Alias of a deduplicating table with deduplication active: the INSERT fans out, because without
 # strict insert block limits the source block numbering is stamped globally in the single-stream head
-# of the pipeline and survives each branch's AliasSink hop (the nested INSERT does not restamp an
+# of the pipeline and survives each branch's NestedInsertSink hop (the nested INSERT does not restamp an
 # already-stamped chunk), so identical blocks on different branches keep distinct ids - the same
 # reason a plain INSERT into the deduplicating target itself fans out.
 $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 -q \
-    "EXPLAIN PIPELINE INSERT INTO fwd_dedup_alias VALUES (1)" | grep -c "AliasSink"
+    "EXPLAIN PIPELINE INSERT INTO fwd_dedup_alias VALUES (1)" | grep -c "NestedInsertSink"
 
 # Deduplication disabled for the session (deduplicate_insert = disable): no sink consults the ids,
 # so the INSERT fans out.
 $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 --deduplicate_insert='disable' -q \
-    "EXPLAIN PIPELINE INSERT INTO fwd_dedup_alias VALUES (1)" | grep -c "AliasSink"
+    "EXPLAIN PIPELINE INSERT INTO fwd_dedup_alias VALUES (1)" | grep -c "NestedInsertSink"
 
 # An Alias of a table that never deduplicates: the target is known locally, so the INSERT fans out.
 $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 -q \
-    "EXPLAIN PIPELINE INSERT INTO fwd_dedup_alias_nodedup VALUES (1)" | grep -c "AliasSink"
+    "EXPLAIN PIPELINE INSERT INTO fwd_dedup_alias_nodedup VALUES (1)" | grep -c "NestedInsertSink"
 
 # A Distributed table: its ultimate target is not cheaply known here (it may be a deduplicating
 # MergeTree, as in this test), so the fan-out fails closed while deduplication is active.
@@ -70,7 +70,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count(), sum(x), min(x), max(x) FROM fwd_dedup_tar
 
 # A forwarding storage whose immediate target never deduplicates but which has a deduplicating
 # dependent materialized view (fwd_dedup_mv_src -> fwd_dedup_mv_mv -> fwd_dedup_mv_dst): the
-# src -> mv -> dst chain lives behind the AliasSink's nested INSERT and is not visible to
+# src -> mv -> dst chain lives behind the NestedInsertSink's nested INSERT and is not visible to
 # InsertDependenciesBuilder, so the safety of the fan-out is decided by the outer guard. Without
 # strict insert block limits the source numbering is global and survives the hop, the view-level ids
 # fold it in and stay distinct across branches, so the INSERT fans out; under
@@ -85,11 +85,11 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE fwd_dedup_mv_alias ENGINE = Alias('fwd_dedup
 # Dependent-MV deduplication active, no strict limits: the INSERT fans out - the global source
 # numbering survives the alias hop and keeps the view-level ids distinct across branches.
 $CLICKHOUSE_CLIENT $SETTINGS $MV_SETTINGS --max_insert_threads=4 -q \
-    "EXPLAIN PIPELINE INSERT INTO fwd_dedup_mv_alias VALUES (1)" | grep -c "AliasSink"
+    "EXPLAIN PIPELINE INSERT INTO fwd_dedup_mv_alias VALUES (1)" | grep -c "NestedInsertSink"
 
 # Deduplication disabled for the session: no target consults the ids, so the INSERT fans out.
 $CLICKHOUSE_CLIENT $SETTINGS $MV_SETTINGS --max_insert_threads=4 --deduplicate_insert='disable' -q \
-    "EXPLAIN PIPELINE INSERT INTO fwd_dedup_mv_alias VALUES (1)" | grep -c "AliasSink"
+    "EXPLAIN PIPELINE INSERT INTO fwd_dedup_mv_alias VALUES (1)" | grep -c "NestedInsertSink"
 
 # Row integrity through the alias into the deduplicating MV target with the fan-out active: four
 # identical 100-row blocks must all arrive in the MV target.

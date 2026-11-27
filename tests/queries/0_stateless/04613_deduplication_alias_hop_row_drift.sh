@@ -5,7 +5,7 @@
 # merge behind the alias hop. Settings randomization perturbs that (e.g. a different squash
 # threshold changes the token identity and with it the deduplication outcome), so it is disabled.
 # Regression test: a dependent materialized view with a row-count-changing inner query (GROUP BY)
-# targeting an Alias, with a deduplicating table behind the alias hop. The AliasSink runs a nested
+# targeting an Alias, with a deduplicating table behind the alias hop. The NestedInsertSink runs a nested
 # INSERT whose squashing and AddDeduplicationInfoTransform re-anchor the DeduplicationInfo's
 # original block to the view-output chunks, which no longer match the source rows its offsets
 # describe. Computing the deduplication data hash after that re-anchoring read out of the block's
@@ -31,7 +31,7 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS drift_inner"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS drift_dst"
 
 # Only dst, behind the alias hop, deduplicates. mv1's GROUP BY makes the view output 100 rows from
-# the 400-row source block, so the nested INSERT the AliasSink runs sees chunks whose row count
+# the 400-row source block, so the nested INSERT the NestedInsertSink runs sees chunks whose row count
 # differs from the rows the restored deduplication info describes.
 $CLICKHOUSE_CLIENT -q "CREATE TABLE drift_src (x UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS non_replicated_deduplication_window = 0"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE drift_inner (x UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS non_replicated_deduplication_window = 0"

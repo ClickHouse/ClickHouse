@@ -210,6 +210,17 @@ public:
     /// Whether splitting a single input stream among parallel sinks can change the result.
     virtual bool isInsertOrderSensitive() const { return false; }
 
+    /// Returns true if the storage does not store the inserted data itself, but its sink executes a nested `INSERT`
+    /// query into another table in the context of the outer query (`NestedInsertSink`), as `Alias` and `Merge` do.
+    /// The dependent materialized views of that table are expanded only inside the nested query, so the outer
+    /// `INSERT` looks through such storages with `tryGetNestedInsertTarget` when it decides whether the write
+    /// can be parallelized.
+    virtual bool insertsThroughNestedQuery() const { return false; }
+
+    /// The table the nested `INSERT` writes into, see `insertsThroughNestedQuery`.
+    /// Returns nullptr if it cannot be determined without executing the query.
+    virtual StoragePtr tryGetNestedInsertTarget() const { return nullptr; }
+
     /// Returns true if the storage supports deduplication of inserted data blocks.
     virtual bool supportsDeduplication() const { return false; }
 

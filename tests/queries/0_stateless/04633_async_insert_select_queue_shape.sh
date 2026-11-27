@@ -279,7 +279,7 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_04633_skewed"
 # Case 9: an Alias destination whose target has a dependent materialized view must never reach
 # the queue either. The view is attached to the target, not to the Alias itself, so it is invisible
 # to `InsertDependenciesBuilder::isViewsInvolved` and is only caught via
-# `forwardedInsertHidesDependentView` (the `AliasSink` runs its nested `INSERT` into the target,
+# `forwardedInsertHidesDependentView` (the `NestedInsertSink` runs its nested `INSERT` into the target,
 # and that hidden `INSERT` is what would actually feed the view).
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_04633_alias_mv_alias"
 ${CLICKHOUSE_CLIENT} -q "DROP VIEW IF EXISTS test_04633_alias_mv"

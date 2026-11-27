@@ -584,7 +584,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
         /// Views are excluded wholesale, not per view target: a diverted block leaves their sink chain
         /// built but unfed. `isViewsInvolved` only sees the dependency graph `collectAllDependencies`
         /// walked from `table`; an `Alias` destination hides its target's own dependent views behind
-        /// the nested `INSERT` its `AliasSink` runs at execution time, so that hop needs its own probe.
+        /// the nested `INSERT` its `NestedInsertSink` runs at execution time, so that hop needs its own probe.
         else if (insert_dependencies->isViewsInvolved() || InsertDependenciesBuilder::forwardedInsertHidesDependentView(table))
             reason = "destination table has dependent views";
 
@@ -600,7 +600,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
     /// Hands the whole destination side over to the queue transform: either divert a single small
     /// block to the async queue, or lazily build the same push pipeline a plain `INSERT` would use,
     /// once ineligibility is actually confirmed. Building the sink chain below unconditionally would
-    /// start it (and any start-time side effect it has, e.g. `AliasSink` opening its nested `INSERT`)
+    /// start it (and any start-time side effect it has, e.g. `NestedInsertSink` opening its nested `INSERT`)
     /// before that decision is made; see `AsyncInsertQueueTransform`.
     if (add_async_insert_queue_transform)
     {
@@ -1037,7 +1037,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // through a nested `INSERT` that stamps the deduplication info from scratch (`Distributed`,
     // `Buffer`): each parallel branch gets its own sink, whose nested `INSERT` restarts the source
     // block numbering per branch even though this query stamped it globally in the single-stream head
-    // of the pipeline. An `Alias` is different: its `AliasSink` runs the nested `INSERT` in this
+    // of the pipeline. An `Alias` is different: its `NestedInsertSink` runs the nested `INSERT` in this
     // query's context with the chunk's deduplication info intact, and an already-stamped chunk is not
     // restamped, so the globally stamped numbering survives the hop and the fan-out stays safe
     // without strict limits - an `Alias` behaves like the table it forwards to.
@@ -1088,16 +1088,16 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // make the write fan-out safe: the downstream flush can still deduplicate on its destination while each
     // parallel branch restarts the source block numbering from zero, so identical blocks on different
     // branches collide and rows are silently dropped. Fail closed and keep such inserts single-stream
-    // regardless of the deduplication settings on this query. (Unlike an `Alias`, whose `AliasSink` runs its
+    // regardless of the deduplication settings on this query. (Unlike an `Alias`, whose `NestedInsertSink` runs its
     // nested `INSERT` in this query's context and so does observe a `deduplicate_insert = disable` here.)
     const bool forwards_to_separate_context =
         InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(table);
 
     /// An `Alias` itself keeps the nested `INSERT` in this query's context, but the dependent-view
-    /// graph of its target - hidden behind the nested `INSERT` each `AliasSink` runs - can contain a
+    /// graph of its target - hidden behind the nested `INSERT` each `NestedInsertSink` runs - can contain a
     /// materialized view whose target is a `Buffer` or a `Distributed`. That hidden separate-context
     /// sink drops the carried deduplication info (`BufferSink` / `DistributedSink` restamp the source
-    /// block numbering from scratch in another context), so with a fan-out to several `AliasSink`s
+    /// block numbering from scratch in another context), so with a fan-out to several `NestedInsertSink`s
     /// identical blocks from different branches can still collide on the final deduplicating
     /// destination - even when this query disabled deduplication, because those settings never reach
     /// the separate-context write. The visible variant of this topology is failed closed inside
@@ -1110,7 +1110,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // For a dependent-view graph visible to `InsertDependenciesBuilder` this is enforced there (the
     // sink stream size stays 1 when views are involved and the setting is disabled) and by the
     // single-thread pipeline cap below. A forwarding storage hides its target's dependent-view
-    // graph behind the nested `INSERT` its sink runs per branch (`AliasSink`), so a fan-out to
+    // graph behind the nested `INSERT` its sink runs per branch (`NestedInsertSink`), so a fan-out to
     // several sinks would push those hidden views concurrently even though
     // `parallel_view_processing` is disabled. Keep such inserts single-stream, independently of any
     // deduplication hazard. (`Distributed` and `Buffer` also hide their dependent views, but they

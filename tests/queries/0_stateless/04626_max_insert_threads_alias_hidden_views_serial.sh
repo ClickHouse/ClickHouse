@@ -2,8 +2,8 @@
 # Regression test: `parallel_view_processing = 0` must keep the pushing to dependent materialized
 # views sequential even when the view graph hides behind an Alias hop. For a visible view graph
 # InsertDependenciesBuilder keeps the sink stream size at 1, but an INSERT INTO an Alias of a table
-# with dependent views expands that graph only inside the nested INSERT each AliasSink runs, so a
-# max_insert_threads fan-out to several AliasSinks would push the hidden views concurrently. The
+# with dependent views expands that graph only inside the nested INSERT each NestedInsertSink runs, so a
+# max_insert_threads fan-out to several NestedInsertSinks would push the hidden views concurrently. The
 # outer insert must stay single-stream in that case, independently of any deduplication hazard, and
 # fan out again once parallel_view_processing is enabled or when the alias target has no dependent
 # views.
@@ -28,16 +28,16 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE alias_hv_dst (x UInt64) ENGINE = MergeTree O
 $CLICKHOUSE_CLIENT -q "CREATE TABLE alias_hv_alias ENGINE = Alias('alias_hv_src')"
 $CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW alias_hv_mv TO alias_hv_dst AS SELECT x FROM alias_hv_src"
 
-# The alias target has a dependent materialized view hidden behind the AliasSink's nested INSERT:
+# The alias target has a dependent materialized view hidden behind the NestedInsertSink's nested INSERT:
 # with parallel_view_processing disabled the view pushing must stay sequential, so the outer INSERT
-# keeps a single AliasSink despite max_insert_threads.
+# keeps a single NestedInsertSink despite max_insert_threads.
 $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 --parallel_view_processing=0 -q \
-    "EXPLAIN PIPELINE INSERT INTO alias_hv_alias VALUES (1)" | grep -c "AliasSink"
+    "EXPLAIN PIPELINE INSERT INTO alias_hv_alias VALUES (1)" | grep -c "NestedInsertSink"
 
 # With parallel_view_processing enabled the concurrent pushing of the hidden views is requested
-# explicitly: four AliasSinks.
+# explicitly: four NestedInsertSinks.
 $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 --parallel_view_processing=1 -q \
-    "EXPLAIN PIPELINE INSERT INTO alias_hv_alias VALUES (1)" | grep -c "AliasSink"
+    "EXPLAIN PIPELINE INSERT INTO alias_hv_alias VALUES (1)" | grep -c "NestedInsertSink"
 
 # Row integrity for the serial case: all rows must reach both the alias target and the view target.
 seq 1 400 | $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 --parallel_view_processing=0 \
@@ -49,7 +49,7 @@ $CLICKHOUSE_CLIENT -q "SELECT (SELECT count() FROM alias_hv_src), (SELECT count(
 # parallel_view_processing disabled: there is nothing to push sequentially.
 $CLICKHOUSE_CLIENT -q "DROP TABLE alias_hv_mv"
 $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 --parallel_view_processing=0 -q \
-    "EXPLAIN PIPELINE INSERT INTO alias_hv_alias VALUES (1)" | grep -c "AliasSink"
+    "EXPLAIN PIPELINE INSERT INTO alias_hv_alias VALUES (1)" | grep -c "NestedInsertSink"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE alias_hv_alias"
 $CLICKHOUSE_CLIENT -q "DROP TABLE alias_hv_src"

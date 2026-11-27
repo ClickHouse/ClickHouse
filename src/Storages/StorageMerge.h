@@ -75,9 +75,6 @@ public:
     std::optional<NameSet> supportedPrewhereColumns() const override;
     bool supportedPrewhereColumnsIncludeSubcolumns() const override;
 
-    // Would be checked for inner table during sink creation.
-    bool supportsSparseSerialization() const override { return true; }
-
     bool canMoveConditionsToPrewhere() const override;
 
     QueryProcessingStage::Enum
@@ -127,6 +124,19 @@ public:
         const String & source_table_regexp,
         size_t max_tables_to_look);
 
+    /// Inserts are forwarded into `table_to_write` (the third engine argument) by a nested `INSERT` query,
+    /// which applies the defaults and the constraints of that table and pushes the data to its materialized views.
+    SinkToStoragePtr write(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr local_context,
+        bool async_insert) override;
+
+    bool insertsThroughNestedQuery() const override { return table_to_write.has_value() || table_to_write_auto; }
+    StoragePtr tryGetNestedInsertTarget() const override;
+
+    /// The table the inserts are written into. With `auto`, it is the table with the greatest name among the tables
+    /// of this `Merge` table that the user of `query_context` can see.
     StorageID getTableToWrite(ContextPtr query_context) const;
 
 private:

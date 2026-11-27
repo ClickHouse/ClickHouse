@@ -1,0 +1,9 @@
+--- the columns that the table to write does not have are not written
+1	default
+--- no columns in common
+--- INSERT SELECT with several insert threads
+1001	99501	1
+--- Alias of a Merge table
+250	default
+--- the materialized view of the table to write sees the converted data
+2550	default

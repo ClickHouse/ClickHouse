@@ -8,14 +8,15 @@
 -- insert in chain of merges
 1
 -- views permissions check
-default_view_user_2
-default.complex_merge_3
-default.complex_merge_4
-default_view_user_5
-default_view_user_4
-default_view_user_3
-default_view_user_1
-default.complex_merge_2
+default_view_user_1: INSERT ON default.complex_merge_2
+default_view_user_1: no table to write for default.complex_merge_2
+default_view_user_2: INSERT ON default.complex_merge_3
+default_view_user_2: no table to write for default.complex_merge_3
+default_view_user_2: no table to write for default.complex_merge_4
+default_view_user_3: INSERT ON default.complex_table_3
+default_view_user_4: INSERT ON default.complex_table_5
+default_view_user_5: INSERT ON default.complex_table_6
+inserted
 -- check data written
 complex_table_1	7
 complex_table_2	7

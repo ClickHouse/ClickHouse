@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The nested `INSERT` of an `AliasSink` reaches tables that the outer insert does not see. These cases check
+# The nested `INSERT` of an `NestedInsertSink` reaches tables that the outer insert does not see. These cases check
 # how the outer insert counts its sinks when the `Alias` points to a materialized view, to a table made from a
 # table function, and to a table with a long cascade of materialized views.
 
@@ -19,7 +19,7 @@ INSERT_SETTINGS=(
 
 count_alias_sinks()
 {
-    $CLICKHOUSE_CLIENT "${INSERT_SETTINGS[@]}" -q "EXPLAIN PIPELINE $1" | grep -c "AliasSink" || true
+    $CLICKHOUSE_CLIENT "${INSERT_SETTINGS[@]}" -q "EXPLAIN PIPELINE $1" | grep -c "NestedInsertSink" || true
 }
 
 # An `Alias` of a materialized view writes into the target of the view.

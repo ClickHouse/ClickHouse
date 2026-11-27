@@ -149,32 +149,35 @@ $CLICKHOUSE_CLIENT --multiline -q """
     SELECT '-- views permissions check';
 """
 
-# Check INSERT grants
-$CLICKHOUSE_USER_CLIENT -q "INSERT INTO complex_merge_1 VALUES (49)" 2>&1 | grep -o ${CLICKHOUSE_DATABASE}_view_user_2 | uniq || echo "NO ERROR"
-$CLICKHOUSE_CLIENT -q "GRANT INSERT ON $CLICKHOUSE_DATABASE.complex_merge_3 TO ${CLICKHOUSE_DATABASE}_view_user_2;"
+# Check INSERT grants: every grant missing on the way is reported, then given, until the insert succeeds.
+# The order in which the missing grants are found is not specified, so the output is sorted.
+for _ in $(seq 1 20); do
+    if err=$($CLICKHOUSE_USER_CLIENT --send_logs_level=none -q "INSERT INTO complex_merge_1 VALUES (7)" 2>&1); then
+        echo "inserted"
+        break
+    fi
+    # With `auto`, a Merge table writes only into the tables that the definer of the materialized view can see.
+    no_table=$(echo "$err" | grep -oE "Can't find any table to write for storage ${CLICKHOUSE_DATABASE}\.complex_merge_[0-9]" | head -n1 | grep -oE "complex_merge_[0-9]$" || true)
+    if [ -n "$no_table" ]; then
+        case "$no_table" in
+            complex_merge_2) user=${CLICKHOUSE_DATABASE}_view_user_1; table=complex_table_2 ;;
+            complex_merge_3) user=${CLICKHOUSE_DATABASE}_view_user_2; table=complex_merge_4 ;;
+            complex_merge_4) user=${CLICKHOUSE_DATABASE}_view_user_2; table=complex_table_4 ;;
+        esac
+        echo "$user: no table to write for ${CLICKHOUSE_DATABASE}.$no_table"
+        $CLICKHOUSE_CLIENT -q "GRANT INSERT ON $CLICKHOUSE_DATABASE.$table TO $user"
+        continue
+    fi
+    user=$(echo "$err" | grep -oE "${CLICKHOUSE_DATABASE}_view_user_[0-9]+" | head -n1 || true)
+    grant=$(echo "$err" | grep -oE "grant INSERT ON ${CLICKHOUSE_DATABASE}\.[a-z_0-9]+" | head -n1 | sed 's/^grant //' || true)
+    if [ -z "$user" ] || [ -z "$grant" ]; then
+        echo "Unexpected error: $err"
+        break
+    fi
+    echo "$user: $grant"
+    $CLICKHOUSE_CLIENT -q "GRANT $grant TO $user"
+done | sed "s/${CLICKHOUSE_DATABASE}/default/g" | sort
 
-$CLICKHOUSE_USER_CLIENT -q "INSERT INTO complex_merge_1 VALUES (49)" 2>&1 | grep -o "${CLICKHOUSE_DATABASE}.complex_merge_3" | uniq || echo "NO ERROR"
-$CLICKHOUSE_CLIENT -q "GRANT INSERT ON $CLICKHOUSE_DATABASE.complex_merge_4 TO ${CLICKHOUSE_DATABASE}_view_user_2;"
-
-$CLICKHOUSE_USER_CLIENT -q "INSERT INTO complex_merge_1 VALUES (49)" 2>&1 | grep -o "${CLICKHOUSE_DATABASE}.complex_merge_4" | uniq || echo "NO ERROR"
-$CLICKHOUSE_CLIENT -q "GRANT INSERT ON $CLICKHOUSE_DATABASE.complex_table_4 TO ${CLICKHOUSE_DATABASE}_view_user_2;"
-
-$CLICKHOUSE_USER_CLIENT -q "INSERT INTO complex_merge_1 VALUES (49)" 2>&1 | grep -o ${CLICKHOUSE_DATABASE}_view_user_5 | uniq || echo "NO ERROR"
-$CLICKHOUSE_CLIENT -q "GRANT INSERT ON $CLICKHOUSE_DATABASE.complex_table_6 TO ${CLICKHOUSE_DATABASE}_view_user_5;"
-
-$CLICKHOUSE_USER_CLIENT -q "INSERT INTO complex_merge_1 VALUES (49)" 2>&1 | grep -o ${CLICKHOUSE_DATABASE}_view_user_4 | uniq || echo "NO ERROR"
-$CLICKHOUSE_CLIENT -q "GRANT INSERT ON $CLICKHOUSE_DATABASE.complex_table_5 TO ${CLICKHOUSE_DATABASE}_view_user_4;"
-
-$CLICKHOUSE_USER_CLIENT -q "INSERT INTO complex_merge_1 VALUES (49)" 2>&1 | grep -o ${CLICKHOUSE_DATABASE}_view_user_3 | uniq || echo "NO ERROR"
-$CLICKHOUSE_CLIENT -q "GRANT INSERT ON $CLICKHOUSE_DATABASE.complex_table_3 TO ${CLICKHOUSE_DATABASE}_view_user_3;"
-
-$CLICKHOUSE_USER_CLIENT -q "INSERT INTO complex_merge_1 VALUES (49)" 2>&1 | grep -o ${CLICKHOUSE_DATABASE}_view_user_1 | uniq || echo "NO ERROR"
-$CLICKHOUSE_CLIENT -q "GRANT INSERT ON $CLICKHOUSE_DATABASE.complex_merge_2 TO ${CLICKHOUSE_DATABASE}_view_user_1;"
-
-$CLICKHOUSE_USER_CLIENT -q "INSERT INTO complex_merge_1 VALUES (49)" 2>&1 | grep -o "${CLICKHOUSE_DATABASE}.complex_merge_2" | uniq || echo "NO ERROR"
-$CLICKHOUSE_CLIENT -q "GRANT INSERT ON $CLICKHOUSE_DATABASE.complex_table_2 TO ${CLICKHOUSE_DATABASE}_view_user_1;"
-
-$CLICKHOUSE_USER_CLIENT -q "INSERT INTO complex_merge_1 VALUES (7)"
 $CLICKHOUSE_CLIENT --multiline -q """
     SELECT '-- check data written';
     SELECT _table, * FROM merge($CLICKHOUSE_DATABASE, 'complex_table_[1-5]') ORDER BY ALL;
@@ -182,8 +185,8 @@ $CLICKHOUSE_CLIENT --multiline -q """
 """
 
 $CLICKHOUSE_CLIENT --multiline -q """
-    DROP VIEW test_mat_view;
+    DROP VIEW test_mat_view SYNC;
     DROP USER $CLICKHOUSE_USER, $CLICKHOUSE_VIEW_USER;
-    DROP VIEW complex_mat_view_1, complex_mat_view_2, complex_mat_view_3, complex_mat_view_4, complex_mat_view_5;
+    DROP VIEW complex_mat_view_1, complex_mat_view_2, complex_mat_view_3, complex_mat_view_4, complex_mat_view_5 SYNC;
     DROP USER ${CLICKHOUSE_DATABASE}_view_user_1, ${CLICKHOUSE_DATABASE}_view_user_2, ${CLICKHOUSE_DATABASE}_view_user_3, ${CLICKHOUSE_DATABASE}_view_user_4, ${CLICKHOUSE_DATABASE}_view_user_5;
 """

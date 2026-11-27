@@ -13,7 +13,6 @@
 #include <Processors/Transforms/RemovingReplicatedColumnsTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
@@ -749,6 +748,10 @@ private:
 };
 
 
+/// In the probes below, `Alias` stands for any storage that forwards the write through a nested `INSERT` in this
+/// query's context (`IStorage::insertsThroughNestedQuery`, e.g. `Alias` and `Merge`); its target is resolved with
+/// `IStorage::tryGetNestedInsertTarget`, failing closed when it cannot be resolved.
+///
 /// Maximum length of a chain of forwarding storages (`MaterializedView` -> `Alias` -> ...) the probes
 /// below are willing to follow. A longer chain (or a cycle of aliases) fails closed.
 static constexpr size_t max_insert_forwarding_depth = 16;
@@ -776,9 +779,9 @@ bool InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(const StorageP
         auto target = materialized_view->tryGetTargetTable();
         return !target || storageDeduplicatesBlocksOnInsert(target, depth + 1);
     }
-    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    if (storage->insertsThroughNestedQuery())
     {
-        auto target = alias->tryGetTargetTable();
+        auto target = storage->tryGetNestedInsertTarget();
         return !target || storageDeduplicatesBlocksOnInsert(target, depth + 1);
     }
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
@@ -810,9 +813,9 @@ bool InsertDependenciesBuilder::storageRebuildsDeduplicationIdsOnInsert(const St
         || dynamic_cast<const StorageBuffer *>(storage.get()))
         return true;
 
-    /// `Alias` also executes a full nested `INSERT` query per sink (`AliasSink`), but that nested
+    /// `Alias` also executes a full nested `INSERT` query per sink (`NestedInsertSink`), but that nested
     /// `INSERT` runs in this query's context and receives the chunk's `DeduplicationInfo` intact
-    /// (`AliasSink` clones the chunk infos), and its `AddDeduplicationInfoTransform` restamps the
+    /// (`NestedInsertSink` clones the chunk infos), and its `AddDeduplicationInfoTransform` restamps the
     /// source block number only when the info has not visited any view yet
     /// (`DeduplicationTokenTransforms.cpp`). A chunk stamped by this query's single-stream head
     /// already carries the root entry pushed by `setRootViewID`, so the global numbering survives the
@@ -820,9 +823,9 @@ bool InsertDependenciesBuilder::storageRebuildsDeduplicationIdsOnInsert(const St
     /// numbering arises only under `use_strict_insert_block_limits`, which both call sites of this
     /// probe guard separately. Look through to the target like for `MaterializedView` (failing closed
     /// when it cannot be resolved).
-    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    if (storage->insertsThroughNestedQuery())
     {
-        auto target = alias->tryGetTargetTable();
+        auto target = storage->tryGetNestedInsertTarget();
         return !target || storageRebuildsDeduplicationIdsOnInsert(target, depth + 1);
     }
 
@@ -847,9 +850,9 @@ bool InsertDependenciesBuilder::forwardedInsertReachesDependentView(const Storag
         return true;
 
     /// Follow the forwarding chain to the concrete local target where it is known ...
-    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    if (storage->insertsThroughNestedQuery())
     {
-        auto target = alias->tryGetTargetTable();
+        auto target = storage->tryGetNestedInsertTarget();
         return !target || forwardedInsertReachesDependentView(target, depth + 1);
     }
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
@@ -878,12 +881,12 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StorageP
     if (depth > max_insert_forwarding_depth)
         return true;
 
-    /// `Alias` executes a full nested `INSERT` into its target per sink (`AliasSink`), so the target's
+    /// `Alias` executes a full nested `INSERT` into its target per sink (`NestedInsertSink`), so the target's
     /// dependent-view graph is expanded only inside that nested `INSERT` at execution time -
     /// `collectAllDependencies` never sees it. Anything the nested write can reach counts as hidden.
-    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    if (storage->insertsThroughNestedQuery())
     {
-        auto target = alias->tryGetTargetTable();
+        auto target = storage->tryGetNestedInsertTarget();
         return !target || forwardedInsertReachesDependentView(target, depth + 1);
     }
 
@@ -926,13 +929,13 @@ bool InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(const Sto
         return true;
 
     /// `Alias` / `MaterializedView` / proxies run their nested `INSERT` in this query's context (the
-    /// `AliasSink` copies the context passed to `StorageAlias::write`), so this query's deduplication
+    /// `NestedInsertSink` copies the context passed to `write`), so this query's deduplication
     /// settings do reach their write - the separate-context switch only happens if the chain ends in a
     /// `Buffer` or a `Distributed`. Follow the chain, failing closed when a forwarded-to target cannot be
     /// resolved.
-    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    if (storage->insertsThroughNestedQuery())
     {
-        auto target = alias->tryGetTargetTable();
+        auto target = storage->tryGetNestedInsertTarget();
         return !target || storageForwardsInsertToSeparateContext(target, depth + 1);
     }
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
@@ -988,13 +991,13 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentViewForwardingToSep
     if (depth > max_insert_forwarding_depth)
         return true;
 
-    /// An `Alias` executes a full nested `INSERT` into its target per sink (`AliasSink`), so the
+    /// An `Alias` executes a full nested `INSERT` into its target per sink (`NestedInsertSink`), so the
     /// target's dependent-view graph is expanded only inside that nested `INSERT` at execution time -
     /// the outer builder never sees it. Check that hidden graph for a separate-context forwarder, and
     /// follow further `Alias` hops of the target chain.
-    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    if (storage->insertsThroughNestedQuery())
     {
-        auto target = alias->tryGetTargetTable();
+        auto target = storage->tryGetNestedInsertTarget();
         if (!target)
             return true;
         return dependentViewForwardsInsertToSeparateContext(target, context, depth + 1)
@@ -1030,11 +1033,11 @@ bool InsertDependenciesBuilder::forwardedInsertHidesSerialDestination(
     if (depth > max_insert_forwarding_depth)
         return true;
 
-    /// Only the nested `INSERT` of an `AliasSink` expands its target's dependent-view graph, so the outer
+    /// Only the nested `INSERT` of an `NestedInsertSink` expands its target's dependent-view graph, so the outer
     /// builder never sees a destination inside it.
-    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    if (storage->insertsThroughNestedQuery())
     {
-        auto target = alias->tryGetTargetTable();
+        auto target = storage->tryGetNestedInsertTarget();
         return !target || insertReachesSerialDestination(target, context, preserve_input_order, depth + 1);
     }
 
@@ -1070,9 +1073,9 @@ bool InsertDependenciesBuilder::insertReachesSerialDestination(
             return true;
     }
 
-    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    if (storage->insertsThroughNestedQuery())
     {
-        auto target = alias->tryGetTargetTable();
+        auto target = storage->tryGetNestedInsertTarget();
         return !target || insertReachesSerialDestination(target, context, preserve_input_order, depth + 1);
     }
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
@@ -1179,7 +1182,7 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     /// `InterpreterInsertQuery` via `storageForwardsInsertToSeparateContext`. Fail closed on such a
     /// dependent target regardless of this query's deduplication settings. A dependent target that is
     /// an `Alias` additionally hides its own target's dependent-view graph behind the nested `INSERT`
-    /// its `AliasSink` runs, so a separate-context forwarder inside that hidden graph must be probed
+    /// its `NestedInsertSink` runs, so a separate-context forwarder inside that hidden graph must be probed
     /// explicitly - `collectAllDependencies` never expands it.
     const bool any_dependent_target_forwards_to_separate_context = std::ranges::any_of(storages, [&] (const auto & entry)
     {

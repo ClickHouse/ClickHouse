@@ -1,4 +1,5 @@
 #include <Storages/StorageAlias.h>
+#include <Storages/NestedInsertSink.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableProxy.h>
@@ -6,17 +7,13 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/InsertDeduplication.h>
-#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Settings.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
@@ -199,146 +196,6 @@ std::optional<IStorage::ColumnSizeByName> StorageAlias::tryGetColumnSizes(const 
     return sizes;
 }
 
-/// AliasSink: Writes data to the target table using full INSERT pipeline
-/// which triggers materialized views on the target table.
-class AliasSink final : public SinkToStorage, WithContext
-{
-public:
-    AliasSink(
-        StorageAlias & storage_,
-        ContextPtr context_,
-        const StorageMetadataPtr & metadata_snapshot_,
-        bool async_insert_)
-        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
-        , WithContext(context_)
-        , storage(storage_)
-        , non_materialized_header(metadata_snapshot_->getSampleBlockNonMaterialized())
-        , async_insert(async_insert_)
-    {
-    }
-
-    ~AliasSink() override
-    {
-        /// On cancellation without an exception (e.g. `KILL QUERY`) neither
-        /// onFinish() nor onException() runs, leaving the nested executor started but unfinished.
-        /// Cancel it so ~PushingPipelineExecutor's finished-or-unwinding invariant holds.
-        if (executor)
-        {
-            try
-            {
-                executor->cancel();
-            }
-            catch (...)
-            {
-                tryLogCurrentException("AliasSink");
-            }
-        }
-    }
-
-    String getName() const override { return "AliasSink"; }
-
-    void onStart() override
-    {
-        StoragePtr target = storage.getTargetTable();
-
-        std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-        insert->table_id = target->getStorageID();
-        ASTPtr query_ptr(insert.release());
-
-        auto insert_context = Context::createCopy(getContext());
-        insert_context->makeQueryContext();
-        /// A part of the outer query: plan it from the same snapshot.
-        insert_context->shareQueryMaxThreadsSnapshot(*getContext());
-        if (getContext()->hasQueryContext())
-            insert_context->setQueryAccessInfo(getContext()->getQueryContext()->getQueryAccessInfoPtr());
-        addInterpreterContext(insert_context);
-
-        /// This sink is one branch of the outer query's `max_insert_threads` fan-out (or its only
-        /// stream). Keep the nested INSERT single-stream: with the outer fan-out already in place,
-        /// letting every branch fan out again would multiply the number of real sink branches (part
-        /// writers, squashing and compression buffers) up to `max_insert_threads^2`, exceeding the
-        /// budget the user allowed for this INSERT.
-        insert_context->setSetting("max_insert_threads", 1);
-
-        /// Thread the outer async-insert flag into the nested target pipeline so INSERT through
-        /// Alias matches a direct insert: async batches select async dedup settings and skip the
-        /// strict block-limit squashing that would slice their multi-token DeduplicationInfo and
-        /// break its row/offset invariant.
-        InterpreterInsertQuery interpreter(
-            query_ptr,
-            insert_context,
-            /* allow_materialized */ false,
-            /* no_squash */ false,
-            /* no_destination */ false,
-            /* async_insert */ async_insert);
-
-        block_io = interpreter.execute();
-        executor = std::make_unique<PushingPipelineExecutor>(block_io.pipeline);
-        executor->start();
-    }
-
-    void consume(Chunk & chunk) override
-    {
-        if (chunk.getNumRows() == 0)
-            return;
-
-        auto block = getHeader().cloneWithColumns(chunk.getColumns());
-
-        Block non_materialized_block;
-        for (const auto & col : non_materialized_header)
-            non_materialized_block.insert(block.getByName(col.name));
-
-        Chunk non_materialized_chunk(non_materialized_block.getColumns(), non_materialized_block.rows());
-        non_materialized_chunk.setChunkInfos(chunk.getChunkInfos().clone());
-
-        /// The nested INSERT re-anchors the deduplication info to its own chunks (its squashing and
-        /// `AddDeduplicationInfoTransform` call `updateOriginalBlock`). When this sink is fed by a
-        /// dependent materialized view whose inner query changed the number of rows, those chunks
-        /// no longer match the rows the info's offsets describe, and computing a data hash after
-        /// that re-anchoring would read out of the block's bounds. Cache the hashes now, while the
-        /// info is still consistent.
-        if (auto deduplication_info = non_materialized_chunk.getChunkInfos().get<DeduplicationInfo>())
-            deduplication_info->cacheDataHashes(data_hash_cache);
-
-        executor->push(std::move(non_materialized_chunk));
-    }
-
-    void onFinish() override
-    {
-        executor->finish();
-        executor.reset();
-
-        block_io.onFinish();
-        block_io = {};
-    }
-
-    void onPipelineFinished() override
-    {
-        /// Stopped by `timeout_overflow_mode = 'break'`: the nested INSERT finishes as if the input had ended.
-        if (isCancelled() && stage != Stage::Exception && executor)
-            onFinish();
-    }
-
-    void onException(std::exception_ptr) override
-    {
-        if (executor)
-            executor->cancel();
-        executor.reset();
-        block_io.onException();
-        block_io = {};
-    }
-
-private:
-    StorageAlias & storage;
-    Block non_materialized_header;
-    bool async_insert;
-    BlockIO block_io;
-    std::unique_ptr<PushingPipelineExecutor> executor;
-    /// Memoizes the deduplication data hashes across the sibling chunks of one source block, so a
-    /// row-count-changing view fanned out into many chunks does not re-hash the source per chunk.
-    DeduplicationInfo::DataHashCache data_hash_cache;
-};
-
 void StorageAlias::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -396,9 +253,14 @@ SinkToStoragePtr StorageAlias::write(
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::INSERT});
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
 
-    /// Use AliasSink which executes full INSERT pipeline on target
-    /// Therefore it will trigger the MV on the target
-    return std::make_shared<AliasSink>(*this, local_context, target_metadata, async_insert);
+    /// Execute a full nested INSERT into the target, so it triggers the materialized views of the target.
+    return std::make_shared<NestedInsertSink>(
+        std::make_shared<const Block>(target_metadata->getSampleBlock()),
+        target_storage->getStorageID(),
+        target_metadata->getSampleBlockNonMaterialized().getNames(),
+        /*explicit_column_list=*/ false,
+        local_context,
+        async_insert);
 }
 
 void StorageAlias::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const

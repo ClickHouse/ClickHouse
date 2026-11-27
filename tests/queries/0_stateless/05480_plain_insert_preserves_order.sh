@@ -73,7 +73,7 @@ $CLICKHOUSE_CLIENT --multiquery -q "
 for table in order_alias order_outer; do
     echo "$table"
     $CLICKHOUSE_CLIENT "${INSERT_SETTINGS[@]}" --parallel_view_processing=1 -q \
-        "EXPLAIN PIPELINE INSERT INTO $table VALUES (0, 0)" | grep -c "AliasSink" || true
+        "EXPLAIN PIPELINE INSERT INTO $table VALUES (0, 0)" | grep -c "NestedInsertSink" || true
 done
 
 $CLICKHOUSE_CLIENT -q "SELECT number % 10, number FROM numbers(100000) FORMAT TSV" > "$DATA_FILE"
