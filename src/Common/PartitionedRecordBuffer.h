@@ -76,11 +76,8 @@ public:
     }
 
     /// Prefetches the storage of a later record, whose append can target any partition: the append position and the
-    /// cache line after it. With many partitions, the appends of a partition are far apart, and each line of its chunk
-    /// is first written by the append that reaches it, which would wait for the line to come from memory. Prefetched
-    /// with the position, the next line arrives an append of the partition early. The position is null while the
-    /// partition has no chunk, so the addresses are computed as integers: a prefetch of any address is harmless, but an
-    /// offset from a null pointer is undefined.
+    /// cache line after it, which a later append of the partition writes. The position is null while the partition has
+    /// no chunk, so the addresses are computed as integers.
     ALWAYS_INLINE void prefetchAppend(size_t partition) const
     {
         const uintptr_t pos = reinterpret_cast<uintptr_t>(cursors[partition].pos);
