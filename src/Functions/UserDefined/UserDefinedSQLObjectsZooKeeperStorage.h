@@ -15,7 +15,7 @@ namespace DB
 class UserDefinedSQLObjectsZooKeeperStorage : public UserDefinedSQLObjectsStorageBase
 {
 public:
-    UserDefinedSQLObjectsZooKeeperStorage(const ContextPtr & global_context_, const String & zookeeper_path_);
+    UserDefinedSQLObjectsZooKeeperStorage(const ContextPtr & global_context_, UserDefinedSQLObjectType object_type_, const String & zookeeper_path_);
     ~UserDefinedSQLObjectsZooKeeperStorage() override;
 
     bool isReplicated() const override { return true; }

@@ -84,6 +84,10 @@ private:
     /// after the stage barrier that follows restoreNamedCollections.
     bool named_collections_restored = false;
 
+    /// Whether the backup has user-defined types to restore on this host (by this host or, with a replicated storage,
+    /// possibly by another host), see restoreUserDefinedTypes.
+    bool user_defined_types_restored = false;
+
     void findDatabasesAndTablesInBackup();
 
     void logNumberOfDatabasesAndTablesToRestore() const;
@@ -109,6 +113,19 @@ private:
     /// table) before any database or table is created, because database and table engines resolve
     /// named collections inside CREATE. Runs at the end of the CHECKING_ACCESS_RIGHTS stage.
     void restoreNamedCollections();
+
+    /// Returns the data path of the "system.user_defined_types" table in the backup, or an empty string when
+    /// this host's part of the backup holds no user-defined types.
+    String findUserDefinedTypesDataPathInBackup() const;
+
+    /// With a replicated storage of user-defined types, tells the other hosts which directory of the backup this host
+    /// would restore the types from, so the one host restoring them restores the types of every host sharing the storage.
+    void registerUserDefinedTypesForRestore();
+
+    /// Restores user-defined types from the backup (if the backup has the "system.user_defined_types" table)
+    /// before any table is created, because the persisted expressions of tables can refer to user-defined types
+    /// by name (e.g. `ORDER BY CAST(x, 'MyType')`). Runs at the end of the CHECKING_ACCESS_RIGHTS stage.
+    void restoreUserDefinedTypes();
 
     void createAndCheckDatabases();
     void createAndCheckDatabase(const String & database_name);

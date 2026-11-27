@@ -16,7 +16,7 @@ class IAST;
 struct Settings;
 enum class UserDefinedSQLObjectType : uint8_t;
 
-/// Interface for a storage of user-defined SQL objects.
+/// Interface for a storage of user-defined SQL objects of one kind (functions or types).
 /// Implementations: UserDefinedSQLObjectsDiskStorage, UserDefinedSQLObjectsZooKeeperStorage
 class IUserDefinedSQLObjectsStorage
 {
@@ -57,7 +57,7 @@ public:
     /// Immediately reloads a specified object only.
     virtual void reloadObject(UserDefinedSQLObjectType object_type, const String & object_name) = 0;
 
-    /// Stores an object (must be called only by UserDefinedSQLFunctionFactory::registerFunction).
+    /// Stores an object (must be called only by `UserDefinedSQLFunctionFactory::registerFunction` or `UserDefinedTypeFactory::registerType`).
     virtual bool storeObject(
         const ContextPtr & current_context,
         UserDefinedSQLObjectType object_type,
@@ -67,7 +67,7 @@ public:
         bool replace_if_exists,
         const Settings & settings) = 0;
 
-    /// Removes an object (must be called only by UserDefinedSQLFunctionFactory::unregisterFunction).
+    /// Removes an object (must be called only by `UserDefinedSQLFunctionFactory::unregisterFunction` or `UserDefinedTypeFactory::unregisterType`).
     virtual bool removeObject(
         const ContextPtr & current_context,
         UserDefinedSQLObjectType object_type,

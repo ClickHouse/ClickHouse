@@ -1,0 +1,7 @@
+FixedString(3)
+DateTime64(3, \'UTC\')
+Decimal(10, 2)
+Map(String, Array(UInt8))
+Variant(String, UInt64)
+Map(String, Array(FixedString(2)))
+AggregateFunction(sum, UInt64)

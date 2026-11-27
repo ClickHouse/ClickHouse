@@ -52,6 +52,23 @@ bool RestoreCoordinationLocal::acquireReplicatedSQLObjects(const String &, UserD
     return true;
 }
 
+void RestoreCoordinationLocal::addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path)
+{
+    std::lock_guard lock{mutex};
+    auto & dirs = replicated_sql_objects_dirs[{loader_zk_path, object_type}];
+    if (std::find(dirs.begin(), dirs.end(), dir_path) == dirs.end())
+        dirs.push_back(dir_path);
+}
+
+Strings RestoreCoordinationLocal::getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const
+{
+    std::lock_guard lock{mutex};
+    auto it = replicated_sql_objects_dirs.find({loader_zk_path, object_type});
+    if (it == replicated_sql_objects_dirs.end())
+        return {};
+    return it->second;
+}
+
 bool RestoreCoordinationLocal::acquireReplicatedWorkloadEntities(const String &)
 {
     return true;

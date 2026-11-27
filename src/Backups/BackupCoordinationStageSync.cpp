@@ -57,7 +57,14 @@ namespace
         /// by an older initiator must neither export nor restore the collections.
         kVersionWithNamedCollectionsAccessDecisions = 3,
 
-        kCurrentVersion = 3,
+        /// Since this version the initiating host of a RESTORE ON CLUSTER requires the rights restoring user-defined
+        /// types needs (`CREATE TYPE`, and `DROP TYPE` to replace existing ones, see
+        /// `RestorerFromBackup::getRequiredAccess`) of the initiating user before dispatching the query. An older
+        /// initiator does not know the `system.user_defined_types` table and requires nothing for it, so a host
+        /// receiving a query dispatched by it must not restore the types.
+        kVersionWithUserDefinedTypesRestoreRights = 4,
+
+        kCurrentVersion = 4,
     };
 }
 
@@ -1234,6 +1241,12 @@ int BackupCoordinationStageSync::getInitiatorVersion() const
 bool BackupCoordinationStageSync::doesInitiatorTakeNamedCollectionsAccessDecisions() const
 {
     return getInitiatorVersion() >= kVersionWithNamedCollectionsAccessDecisions;
+}
+
+
+bool BackupCoordinationStageSync::doesInitiatorCheckUserDefinedTypesRestoreRights() const
+{
+    return getInitiatorVersion() >= kVersionWithUserDefinedTypesRestoreRights;
 }
 
 

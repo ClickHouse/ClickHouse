@@ -34,6 +34,10 @@
 #include <Storages/StorageFactory.h>
 #include <Common/FailPoint.h>
 #include <Common/NamedCollections/NamedCollectionsBackup.h>
+#include <DataTypes/UserDefinedTypeFactory.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectsBackup.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -104,6 +108,12 @@ namespace
     bool isSystemFunctionsTableName(const QualifiedTableName & table_name)
     {
         return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "functions");
+    }
+
+    /// Whether a specified name corresponds to the system table backing user-defined types.
+    bool isSystemUserDefinedTypesTableName(const QualifiedTableName & table_name)
+    {
+        return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "user_defined_types");
     }
 
     /// Whether a specified name corresponds to the table backuping named collections.
@@ -203,6 +213,9 @@ void RestorerFromBackup::run(Mode mode_)
     /// every registration visible to it before it reads them.
     registerNamedCollectionsForRestore();
 
+    /// The same for user-defined types (see restoreUserDefinedTypes below).
+    registerUserDefinedTypesForRestore();
+
     /// Check access rights.
     setStage(Stage::CHECKING_ACCESS_RIGHTS);
     loadSystemAccessTables();
@@ -222,8 +235,22 @@ void RestorerFromBackup::run(Mode mode_)
     /// knows it.
     restoreNamedCollections();
 
+    /// Restore user-defined types before any table is created, because the persisted expressions of tables
+    /// can refer to them by name. Like named collections, at the end of the CHECKING_ACCESS_RIGHTS stage.
+    restoreUserDefinedTypes();
+
     /// Create databases using the create queries read from the backup.
     setStage(Stage::CREATING_DATABASES);
+
+    /// With a replicated storage of user-defined types only one host has written the restored types; the other
+    /// hosts observe the write through an asynchronous Keeper watch. The stage barrier above guarantees the writer
+    /// has finished, so make the types visible on this host synchronously before a table CREATE refers to one.
+    if (user_defined_types_restored)
+    {
+        auto & types_storage = context->getUserDefinedTypesStorage();
+        if (types_storage.isReplicated())
+            types_storage.reloadObjects();
+    }
 
     /// With a replicated named-collections storage only one host has written the restored
     /// collections (see restoreNamedCollections above); the other hosts observe the write through
@@ -407,6 +434,18 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                         required_access.emplace_back(AccessType::CREATE_FUNCTION);
                         if (restore_settings.create_function == RestoreUDFCreationMode::kReplace)
                             required_access.emplace_back(AccessType::DROP_FUNCTION);
+                    }
+                }
+                else if (isSystemUserDefinedTypesTableName(table_name))
+                {
+                    /// RESTORE registers the types directly, bypassing InterpreterCreateTypeQuery's own access check,
+                    /// so require the access of CREATE TYPE, and of CREATE OR REPLACE TYPE in 'replace' mode.
+                    /// The types are restored even under `structure_only`, see restoreUserDefinedTypes.
+                    if (table_info.has_data)
+                    {
+                        required_access.emplace_back(AccessType::CREATE_TYPE);
+                        if (restore_settings.create_function == RestoreUDFCreationMode::kReplace)
+                            required_access.emplace_back(AccessType::DROP_TYPE);
                     }
                 }
                 else if (isSystemNamedCollectionsTableName(table_name))
@@ -926,6 +965,51 @@ void RestorerFromBackup::restoreNamedCollections()
     named_collections_restored = DB::restoreNamedCollections(*this, findNamedCollectionsDataPathInBackup());
 }
 
+String RestorerFromBackup::findUserDefinedTypesDataPathInBackup() const
+{
+    std::lock_guard lock{mutex};
+    for (const auto & [table_name, table_info] : table_infos)
+    {
+        if (isSystemUserDefinedTypesTableName(table_name) && table_info.has_data)
+        {
+            if (table_info.partitions)
+                throw Exception(
+                    ErrorCodes::CANNOT_RESTORE_TABLE,
+                    "Cannot restore the `system.user_defined_types` table with a PARTITIONS clause: "
+                    "it doesn't support partitions");
+
+            return table_info.data_path_in_backup;
+        }
+    }
+    return {};
+}
+
+void RestorerFromBackup::registerUserDefinedTypesForRestore()
+{
+    /// The initiating host of a RESTORE ON CLUSTER query checks access rights through a restorer
+    /// without a coordination (see BackupsWorker) and restores nothing, so it registers nothing.
+    if (!restore_coordination)
+        return;
+
+    String data_path_in_backup = findUserDefinedTypesDataPathInBackup();
+    if (data_path_in_backup.empty())
+        return;
+
+    DB::registerUserDefinedSQLObjectsDirForRestore(*this, data_path_in_backup, UserDefinedSQLObjectType::Type);
+}
+
+void RestorerFromBackup::restoreUserDefinedTypes()
+{
+    /// The types are a part of the schema: a table restored with `structure_only` or `restore_table_data = false` is
+    /// still created, and its persisted expressions can refer to the types by name. So the types are restored
+    /// whenever `system.user_defined_types` is selected for the restore, independently of these settings.
+    ///
+    /// The data path is empty when this host's part of the backup holds no types, but a host sharing a replicated
+    /// storage with this one may still restore the types of its own part, and then this host has to reload them after
+    /// the stage barrier; the return value covers both.
+    user_defined_types_restored = UserDefinedTypeFactory::instance().restore(*this, findUserDefinedTypesDataPathInBackup());
+}
+
 void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)
 {
     constexpr auto setting_name = "storage_policy";
@@ -1293,6 +1377,12 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
     {
         /// Named collections were already restored before the databases and tables were created
         /// (see restoreNamedCollections), don't restore them twice.
+        return;
+    }
+    else if (isSystemUserDefinedTypesTableName(table_name))
+    {
+        /// User-defined types were already restored before the tables were created
+        /// (see restoreUserDefinedTypes), don't restore them twice.
         return;
     }
     else if (!restore_settings.shouldRestoreTableData())
