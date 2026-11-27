@@ -23,6 +23,7 @@
 namespace ProfileEvents
 {
 extern const Event AutoParallelReplicasNoStatistics;
+extern const Event AutoParallelReplicasRejectedByUnmeasuredInput;
 extern const Event RuntimeDataflowStatisticsInputBytes;
 extern const Event RuntimeDataflowStatisticsOutputBytes;
 extern const Event RuntimeDataflowStatisticsOutputNanoseconds;
@@ -88,12 +89,13 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
         return;
     }
 
+    /// Under the key of the query, which hashes `automatic_parallel_replicas_max_counted_ranges` too: a run with another
+    /// limit collects the statistics again.
     if (counted_ranges_limit_exceeded)
     {
-        LOG_DEBUG(getLogger("RuntimeDataflowStatisticsCacheUpdater"), "The input is not measured, the statistics only record that");
-        dataflow_cache.update(cache_key, {.total_rows_to_read = total_rows_to_read, .input_not_measured = true, .max_counted_ranges = max_counted_ranges});
+        LOG_DEBUG(getLogger("RuntimeDataflowStatisticsCacheUpdater"), "The input is not measured, skipping statistics update.");
         if (undecided_query_key)
-            dataflow_cache.forgetUndecided(undecided_query_key);
+            dataflow_cache.setUndecided(undecided_query_key, ProfileEvents::AutoParallelReplicasRejectedByUnmeasuredInput);
         return;
     }
 

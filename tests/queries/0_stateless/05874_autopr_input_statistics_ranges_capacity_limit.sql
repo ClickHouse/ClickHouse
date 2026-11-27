@@ -1,8 +1,9 @@
 -- `automatic_parallel_replicas_max_counted_ranges` is charged by the ranges of compressed blocks a query keeps, not
 -- only by the files it reads: a budget that admits both files of the read is exhausted by their disjoint ranges, the
--- query still completes, and the next run declines parallel replicas because its input was not measured, as does one
--- with a smaller limit. One with no limit collects the statistics again, which measure the input, and the next run is
--- decided by the cost model.
+-- query still completes, and no statistics are recorded. As after any collection that ends without a decision, the run
+-- that follows collects them again, and the next one skips building the plan with parallel replicas. A run with no
+-- limit has another key, so it collects the statistics at once, they measure the input, and the next run is decided by
+-- the cost model.
 
 DROP TABLE IF EXISTS t_autopr_ranges_capacity;
 
@@ -25,6 +26,7 @@ SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1,
 SET automatic_parallel_replicas_min_bytes_per_replica = 0;
 -- The runs must select the same granules, see `05332_autopr_min_bytes_per_replica_events`.
 SET use_query_condition_cache = 0;
+SET automatic_parallel_replicas_undecided_retry_after_executions = 10;
 -- The filter is written as `PREWHERE`: under `parallel_replicas_plan_based = 1`, a filter that `optimize_move_to_prewhere`
 -- moves makes the plans not comparable, and no statistics are collected.
 
@@ -32,15 +34,14 @@ SET use_query_condition_cache = 0;
 SELECT key % 10 AS k, max(value) FROM t_autopr_ranges_capacity PREWHERE key % 256 < 128 GROUP BY k FORMAT Null
 SETTINGS automatic_parallel_replicas_max_counted_ranges = 100, log_comment = 'autopr_ranges_capacity_1_collect';
 SELECT key % 10 AS k, max(value) FROM t_autopr_ranges_capacity PREWHERE key % 256 < 128 GROUP BY k FORMAT Null
-SETTINGS automatic_parallel_replicas_max_counted_ranges = 100, log_comment = 'autopr_ranges_capacity_2_rejected';
+SETTINGS automatic_parallel_replicas_max_counted_ranges = 100, log_comment = 'autopr_ranges_capacity_2_collect_again';
+SELECT key % 10 AS k, max(value) FROM t_autopr_ranges_capacity PREWHERE key % 256 < 128 GROUP BY k FORMAT Null
+SETTINGS automatic_parallel_replicas_max_counted_ranges = 100, log_comment = 'autopr_ranges_capacity_3_skipped';
 
 SELECT key % 10 AS k, max(value) FROM t_autopr_ranges_capacity PREWHERE key % 256 < 128 GROUP BY k FORMAT Null
-SETTINGS automatic_parallel_replicas_max_counted_ranges = 50, log_comment = 'autopr_ranges_capacity_2_rejected_smaller';
-
+SETTINGS automatic_parallel_replicas_max_counted_ranges = 0, log_comment = 'autopr_ranges_capacity_4_recollect';
 SELECT key % 10 AS k, max(value) FROM t_autopr_ranges_capacity PREWHERE key % 256 < 128 GROUP BY k FORMAT Null
-SETTINGS automatic_parallel_replicas_max_counted_ranges = 0, log_comment = 'autopr_ranges_capacity_3_recollect';
-SELECT key % 10 AS k, max(value) FROM t_autopr_ranges_capacity PREWHERE key % 256 < 128 GROUP BY k FORMAT Null
-SETTINGS automatic_parallel_replicas_max_counted_ranges = 0, log_comment = 'autopr_ranges_capacity_4_evaluated';
+SETTINGS automatic_parallel_replicas_max_counted_ranges = 0, log_comment = 'autopr_ranges_capacity_5_evaluated';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
@@ -48,7 +49,6 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment,
        ProfileEvents['AutoParallelReplicasNoStatistics'] AS collected,
-       ProfileEvents['AutoParallelReplicasUnmeasuredInputRecounted'] AS recollected,
        ProfileEvents['AutoParallelReplicasRejectedByUnmeasuredInput'] AS rejected,
        ProfileEvents['AutoParallelReplicasCostModelEvaluated'] AS evaluated
 FROM system.query_log
