@@ -1,18 +1,27 @@
 #pragma once
 
 #include <algorithm>
+#include <cstddef>
 #include <functional>
 #include <iterator>
 
+#include <base/inplaceMergeWithOtherRange.h>
 
-namespace DB
-{
 
 /// Merges the adjacent sorted ranges `[begin, middle)` and `[middle, end)` in place, keeping the order of equal elements.
-/// It works like `std::inplace_merge`, but takes the memory from `temp_buffer`, so a series of merges can share one allocation.
+/// The shorter range is copied to `temp_buffer`, and the ranges are merged starting from its side, so no element is overwritten before it is read.
 /// The buffer is grown if it is smaller than the shorter range, and it is never shrunk; its contents are not kept.
-/// The shorter range is copied to the buffer, and the ranges are merged starting from its side, so no element is overwritten before it is read.
 /// `TempBuffer` is any contiguous container with `size`, `resize` and `data`, such as `PODArray` or `VectorWithMemoryTracking`.
+///
+/// The difference from `std::inplace_merge`: it allocates a temporary buffer of its own in every call,
+/// while here a series of merges can share one buffer, and the caller chooses how its memory is allocated.
+///
+/// Example:
+///     std::vector<int> values = {5, 6, 7, 8, 1, 2};
+///     size_t left_size = 4;
+///     std::vector<int> temp_buffer;
+///     inplaceMergeWithTempBuffer(values.begin(), values.begin() + left_size, values.end(), std::less<>{}, temp_buffer);
+/// After that `values` is `{1, 2, 5, 6, 7, 8}`, and `temp_buffer` can be passed to the next merge.
 template <std::bidirectional_iterator Iterator, typename Less = std::less<>, typename TempBuffer>
 void inplaceMergeWithTempBuffer(Iterator begin, Iterator middle, Iterator end, Less less, TempBuffer & temp_buffer)
 {
@@ -48,26 +57,9 @@ void inplaceMergeWithTempBuffer(Iterator begin, Iterator middle, Iterator end, L
     }
     else
     {
-        /// `left` and `right` point after the last elements which are not merged yet.
         auto * right_begin = temp_buffer.data();
-        auto * right = std::copy(middle, end, right_begin);
-        Iterator left = middle;
-        Iterator out = end;
-        while (left != begin && right != right_begin)
-        {
-            Iterator last_left = std::prev(left);
-            if (less(right[-1], *last_left))
-            {
-                *--out = *last_left;
-                left = last_left;
-            }
-            else
-            {
-                *--out = *--right;
-            }
-        }
-        /// The rest of the left range is already in its place.
-        std::copy_backward(right_begin, right, out);
+        auto * right_end = std::copy(middle, end, right_begin);
+        inplaceMergeWithOtherRange(begin, middle, end, right_begin, right_end, less);
     }
 }
 
@@ -76,6 +68,4 @@ template <std::bidirectional_iterator Iterator, typename Less = std::less<>, typ
 void inplaceMergeWithTempBuffer(Iterator begin, Iterator middle, Iterator end, TempBuffer & temp_buffer)
 {
     inplaceMergeWithTempBuffer(begin, middle, end, Less{}, temp_buffer);
-}
-
 }

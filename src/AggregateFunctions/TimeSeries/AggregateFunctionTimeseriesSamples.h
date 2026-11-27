@@ -6,12 +6,13 @@
 
 #include <absl/container/inlined_vector.h>
 
+#include <base/inplaceMergeWithOtherRange.h>
+#include <base/inplaceMergeWithTempBuffer.h>
 #include <base/sort.h>
 
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
-#include <Common/inplaceMergeWithTempBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -123,14 +124,8 @@ public:
         }
         else
         {
-            /// Overlapping ranges: the prefix samples are appended and merged into this buffer in place.
-            /// Until they are merged they count as an unsorted tail, so the state stays valid if the merge throws.
-            const size_t tail_begin = buffer.size();
-            buffer.insert(buffer.end(), other_prefix_begin, other_prefix_end);
-            unsorted_begin = tail_begin;
-            MergeBuffer merge_buffer;
-            mergeSortedTail(buffer, tail_begin, merge_buffer);
-            unsorted_begin = NO_UNSORTED;
+            /// Overlapping ranges: the prefix samples are merged into this buffer right from the buffer of `other`.
+            mergeSortedSamples(buffer, other_prefix_begin, other_prefix_end);
         }
 
         if (other_prefix_end != other.buffer.end())
@@ -336,6 +331,20 @@ private:
             return;
         inplaceMergeWithTempBuffer(merge_begin, tail, buf.end(), lessByTimestamp, merge_buffer);
         deduplicateSorted(buf, merge_begin - buf.begin());
+    }
+
+    /// Merges the sorted and unique samples `[other_begin, other_end)` of another buffer into the sorted and unique buffer `buf`.
+    /// The buffer is grown first, and then the samples are merged into it starting from its end, so no other memory is needed.
+    static void mergeSortedSamples(Buffer & buf, const Sample * other_begin, const Sample * other_end)
+    {
+        chassert(other_begin != other_end);
+        const size_t old_size = buf.size();
+        /// The samples before `merge_begin` are less than every sample of `other`, so they keep their positions,
+        /// and the merge and the deduplication start at `merge_begin`.
+        const size_t merge_begin = std::lower_bound(buf.begin(), buf.end(), *other_begin, lessByTimestamp) - buf.begin();
+        buf.resize(old_size + (other_end - other_begin));
+        inplaceMergeWithOtherRange(buf.data() + merge_begin, buf.data() + old_size, buf.data() + buf.size(), other_begin, other_end, lessByTimestamp);
+        deduplicateSorted(buf, merge_begin);
     }
 
     /// Restores the invariant in place after out-of-order `add`s; no-op in the common (already sorted) case.
