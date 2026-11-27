@@ -24,21 +24,21 @@ function wait_for_mutation_entries()
     done
 }
 
+# The cleanup thread wakes up every second.
+# SharedMergeTree also needs a fresh set of replicas to find out that the mutation is finished on all of them.
+CLEANUP_SETTINGS="finished_mutations_to_keep=0, merge_tree_clear_old_parts_interval_seconds=1, cleanup_delay_period=1, max_cleanup_delay_period=1, cleanup_delay_period_random_add=0, cleanup_thread_preferred_points_per_iteration=0, shared_merge_tree_replica_set_max_lifetime_seconds=1"
+
+$CLICKHOUSE_CLIENT -q "
+    drop table if exists data_rmt;
+    drop table if exists data_mt;
+
+    create table data_rmt (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', '{table}') order by tuple() settings $CLEANUP_SETTINGS;
+    create table data_mt (key Int) engine=MergeTree() order by tuple() settings $CLEANUP_SETTINGS;
+"
+
 for table in data_rmt data_mt
 do
-    if [[ $table == "data_rmt" ]]
-    then
-        engine="ReplicatedMergeTree('/tables/{database}/data', '{table}')"
-    else
-        engine="MergeTree()"
-    fi
-
-    # The cleanup thread wakes up every second.
     $CLICKHOUSE_CLIENT -q "
-        drop table if exists $table;
-        create table $table (key Int) engine=$engine order by tuple()
-            settings finished_mutations_to_keep=0, merge_tree_clear_old_parts_interval_seconds=1,
-                     cleanup_delay_period=1, cleanup_delay_period_random_add=0, cleanup_thread_preferred_points_per_iteration=0;
         insert into $table values (1);
 
         -- The mutation cannot be finished while merges are stopped, and the entry of an unfinished mutation is never removed.
