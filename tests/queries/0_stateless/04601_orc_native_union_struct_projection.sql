@@ -1,8 +1,6 @@
 -- Tags: no-fasttest
 -- no-fasttest: requires the ORC input format, which is not built in fasttest.
 
-SET allow_experimental_variant_type = 1;
-
 -- ORC uniontype<struct<a:int,b:string>, string>, rows: struct{10,'x'}, string 'hello', struct{20,'y'}.
 -- The struct branch is matched against an explicit Variant alternative by field name, just like the
 -- non-union ORC struct path, so a target tuple may project (drop) and reorder the ORC struct fields.

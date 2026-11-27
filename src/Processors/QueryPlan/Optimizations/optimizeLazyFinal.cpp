@@ -237,6 +237,8 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
     non_final_reading->disableQueryConditionCache();
     /// The parts keep their numbering, so the lazy read of the columns the read leaves out reads these rows as well.
     non_final_reading->shareLazyReadOf(*reading_step);
+    /// The JOIN runtime filters were attached to the read before this optimization, see `collectAppliedJoinRuntimeFilters`.
+    non_final_reading->copyJoinRuntimeFilterIndexAnalysisDescriptors(*reading_step);
 
     /// `optimizeReadInOrder` runs before this optimization and may have already opted the original
     /// read out of `PrefetchingConcatProcessor` (aggregation-, distinct- or `LIMIT BY`-in-order, or a
@@ -696,6 +698,8 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
         /// This is an internal read — don't pollute or use the query condition cache.
         set_reading->disableQueryConditionCache();
+        /// A granule that a JOIN runtime filter skips holds no row the join needs, so the set loses no key of such a row.
+        set_reading->copyJoinRuntimeFilterIndexAnalysisDescriptors(*reading_step);
 
         /// Same as for `non_final_reading` above: preserve the `PrefetchingConcatProcessor` opt-out
         /// that `optimizeReadInOrder` has possibly already applied to the original read, and the
