@@ -179,6 +179,21 @@ CREATE ROW POLICY pal3 ON $DB.al3 FOR SELECT USING id IN (SELECT q.id FROM tal3 
 refused "ALTER TABLE tal3 DROP COLUMN tenant" ALTER_OF_COLUMN_IS_FORBIDDEN
 refused "ALTER TABLE tal3 RENAME COLUMN note TO comment" ALTER_OF_COLUMN_IS_FORBIDDEN
 
+echo "-- the names of a subquery count only when it, or a subquery around it, reads the target"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tal4 (id UInt32, tenant UInt32, note String, extra UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tal4 VALUES (1, 1, 'a', 1), (2, 2, 'b', 1), (3, 1, 'c', 5);
+CREATE TABLE other4 (id UInt32, note String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO other4 VALUES (1, 'x'), (2, 'y'), (3, 'z');
+CREATE TABLE al4 ENGINE = Alias(tal4);
+CREATE ROW POLICY pal4 ON $DB.al4 FOR SELECT USING id IN (SELECT id FROM $DB.other4 WHERE note != '' AND id IN (SELECT q.id FROM $DB.tal4 AS q WHERE q.tenant = 1))
+    AND id IN (SELECT q.id FROM $DB.tal4 AS q WHERE EXISTS (SELECT 1 FROM $DB.other4 AS o WHERE o.id = q.extra)) TO CURRENT_USER;
+"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tal4 DROP COLUMN note"
+refused "ALTER TABLE tal4 DROP COLUMN tenant" ALTER_OF_COLUMN_IS_FORBIDDEN
+refused "ALTER TABLE tal4 DROP COLUMN extra" ALTER_OF_COLUMN_IS_FORBIDDEN
+$CLICKHOUSE_CLIENT -q "SELECT 'nested subquery policy after drop', arraySort(groupArray(id)) FROM al4 SETTINGS enable_parallel_replicas = 0"
+
 echo "-- a table qualifier that is also a column name is removed when the subcolumn does not exist"
 $CLICKHOUSE_CLIENT --multiquery -q "
 CREATE TABLE tc (id UInt32, tc UInt8, tenant UInt32) ENGINE = MergeTree ORDER BY id;
@@ -261,6 +276,7 @@ DROP ROW POLICY ptal ON $DB.tal;
 DROP ROW POLICY pal ON $DB.al;
 DROP ROW POLICY pal2 ON $DB.al2;
 DROP ROW POLICY pal3 ON $DB.al3;
+DROP ROW POLICY pal4 ON $DB.al4;
 DROP ROW POLICY pc ON $DB.tc;
 DROP ROW POLICY png ON $DB.tng;
 DROP ROW POLICY pm ON $DB.tm;
@@ -288,6 +304,9 @@ DROP TABLE al2;
 DROP TABLE tal2;
 DROP TABLE al3;
 DROP TABLE tal3;
+DROP TABLE al4;
+DROP TABLE tal4;
+DROP TABLE other4;
 DROP TABLE tc;
 DROP TABLE tng;
 DROP TABLE tm;

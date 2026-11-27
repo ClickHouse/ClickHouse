@@ -51,6 +51,10 @@ ALTER_OF_COLUMN_IS_FORBIDDEN
 -- a name in that subquery can have the qualifier of the target or of its alias
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
+-- the names of a subquery count only when it, or a subquery around it, reads the target
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+nested subquery policy after drop	[1]
 -- a table qualifier that is also a column name is removed when the subcolumn does not exist
 ALTER_OF_COLUMN_IS_FORBIDDEN
 qualifier column policy after drop	[1]
