@@ -109,6 +109,11 @@ void JSONObjectEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, D
     transformInferredJSONTypesIfNeeded(type, new_type, format_settings, &inference_info);
 }
 
+void JSONObjectEachRowSchemaReader::transformEqualTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
+{
+    transformEqualInferredJSONTypesIfNeeded(type, new_type, format_settings, &inference_info);
+}
+
 void JSONObjectEachRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
 {
     transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);

@@ -25,6 +25,8 @@ struct JSONInferenceInfo
     DataTypePtr getNumberParsedFromString(const DataTypePtr & number_type);
     [[nodiscard]] bool isNegativeInteger(const IDataType & type) const;
     [[nodiscard]] bool isNumberParsedFromString(const IDataType & type) const;
+    /// True if at least one number was marked as parsed from a string.
+    [[nodiscard]] bool hasNumbersParsedFromStrings() const;
 
     /// Indicates if currently we are inferring type for Map/Object key.
     bool is_object_key = false;
@@ -109,6 +111,16 @@ void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, c
 ///     We merge DataTypeJSONPaths types to a single DataTypeJSONPaths type with union of all JSON paths.
 void transformInferredJSONTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings, JSONInferenceInfo * json_info);
 void transformInferredJSONTypesIfNeeded(DataTypes & types, const FormatSettings & settings, JSONInferenceInfo * json_info);
+
+/// Should be called before equal types inferred for JSON data are collapsed into one of them
+/// (elements of an array, the same column in different rows).
+/// Equal types can still differ in the marks of numbers parsed from strings stored in json_info.
+/// If numbers on the same place were parsed both from strings and from bare JSON numbers, the mark is removed
+/// from all of them, so the type that is kept does not turn a bare number into String later.
+/// The types stay equal. It does nothing unless input_format_json_try_infer_numbers_from_strings is enabled,
+/// input_format_json_read_numbers_as_strings is disabled and at least one number was parsed from a string.
+void transformEqualInferredJSONTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings, JSONInferenceInfo * json_info);
+void transformEqualInferredJSONTypesIfNeeded(DataTypes & types, const FormatSettings & settings, JSONInferenceInfo * json_info);
 
 /// Make final transform for types inferred in JSON format. It does 3 types of transformation:
 /// 1) Checks if type is unnamed Tuple(...), tries to transform nested types to find a common type for them and if all nested types

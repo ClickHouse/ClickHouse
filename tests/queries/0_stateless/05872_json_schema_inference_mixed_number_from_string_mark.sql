@@ -9,6 +9,10 @@ DESC format(JSONEachRow, '{"x":"1"}\n{"x":18446744073709551615}\n{"x":"abc"}'); 
 DESC format(JSONEachRow, '{"x":18446744073709551615}\n{"x":"1"}\n{"x":"abc"}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
 DESC format(JSONEachRow, '{"x":1.5}\n{"x":"1"}\n{"x":"abc"}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
 
+-- The same when the bare number and the number parsed from a string have equal types from the start.
+SELECT x, toTypeName(x) FROM format(JSONEachRow, '{"x":[[1, "1"], ["abc"]]}');
+DESC format(JSONEachRow, '{"x":"1"}\n{"x":1}\n{"x":"abc"}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+
 -- Numbers that were all parsed from strings are still converted back to String.
 DESC format(JSONEachRow, '{"x":"1"}\n{"x":"18446744073709551615"}\n{"x":"abc"}');
 DESC format(JSONEachRow, '{"x":"1"}\n{"x":"1.5"}\n{"x":"abc"}');
