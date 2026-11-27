@@ -14,6 +14,12 @@ ClickHouse Cloud 支持将备份导出到您自己的云服务提供商 (CSP) �
 
 本指南将通过示例说明如何将全量备份和增量备份导出到 AWS、GCP 和 Azure 对象存储，以及如何从这些备份中恢复。
 
+<Warning>
+  **不适用于受监管的服务**
+
+  使用 **HIPAA 合规** 或 **符合 PCI 标准** 区域类型创建的服务无法将备份导出到客户自有的存储桶。受监管环境不允许向环境外部的存储写入数据，因此控制台中的 **Set up external backup** 选项处于禁用状态，这些服务也不会被授予下文所述的 `BACKUP` 特权。由 ClickHouse 管理的备份 (包括可配置的调度计划) 仍然可用。请参阅 [HIPAA 引导](/zh/products/cloud/guides/security/compliance/hipaa-onboarding#backups)和 [PCI 引导](/zh/products/cloud/guides/security/compliance/pci-onboarding#backups)。
+</Warning>
+
 <Note>
   如果将备份导出到同一云提供商的其他区域，则会产生[数据传输](/zh/products/cloud/reference/billing/network-data-transfer)费用。
 
@@ -40,19 +46,19 @@ ClickHouse Cloud 支持将备份导出到您自己的云服务提供商 (CSP) �
 1. AWS S3 端点，格式为：
 
 ```text
-  s3://<bucket_name>.s3.amazonaws.com/<directory>
+s3://<bucket_name>.s3.amazonaws.com/<directory>
 ```
 
 例如：
 
 ```text
-  s3://testchbackups.s3.amazonaws.com/backups/
+s3://testchbackups.s3.amazonaws.com/backups/
 ```
 
 其中：
 
 * `testchbackups` 是用于导出备份的 S3 存储桶 名称。
-  * `backups` 是一个可选的子目录。
+* `backups` 是一个可选的子目录。
 
 2. AWS 访问密钥和秘密密钥。也支持基于 AWS Role 的身份验证，可替代 AWS 访问密钥和秘密密钥使用。
 

@@ -1,152 +1,124 @@
 ---
 slug: /use-cases/AI_ML/AIChat
-sidebarTitle: 'Overview'
+sidebarTitle: 'نظرة عامة'
 title: 'Assistant في ClickHouse Cloud'
-description: 'تعرّف على Assistant، ومكّنه واستخدمه في ClickHouse Cloud console'
-keywords: ['AI', 'ClickHouse Cloud', 'دردشة', 'SQL Console', 'Agent', 'Docs AI']
+description: 'تعرّف على Assistant وكيفية تمكينه واستخدامه في وحدة تحكم ClickHouse Cloud'
+keywords: ['AI', 'ClickHouse Cloud', 'Chat', 'SQL Console', 'Agent', 'Docs AI']
 show_related_blogs: true
 doc_type: 'guide'
 ---
 
-يتيح لك Assistant استخدام اللغة الطبيعية لتحليل البيانات في خدمة ClickHouse Cloud. ويمكنه إنشاء استعلامات وتصورات وملخصات باستخدام سياق مثل علامات التبويب النشطة والاستعلامات المحفوظة والمخططات ولوحات المعلومات.
+يتيح لك Assistant تحليل البيانات في خدمة ClickHouse Cloud باستخدام اللغة الطبيعية. ويمكنه إنشاء الاستعلامات والتمثيلات المرئية والملخصات اعتمادًا على السياق، مثل علامات التبويب النشطة والاستعلامات المحفوظة والمخططات ولوحات المعلومات.
 
-يتضمن Assistant أيضًا وضع Docs AI لطرح أسئلة تستند إلى وثائق ClickHouse. استخدم هذا الدليل لتمكين Assistant والعمل مع كلا الوضعين في وحدة تحكم ClickHouse Cloud.
+ويتضمن Assistant أيضًا وضع Docs AI لطرح أسئلة تستند إجاباتها إلى وثائق ClickHouse. يشرح هذا الدليل كيفية تمكين Assistant والعمل بكلا الوضعين في وحدة تحكم ClickHouse Cloud.
 
 <Steps>
   <Step title="المتطلبات المسبقة" id="prerequisites">
-    1. يجب أن تكون لديك صلاحية الوصول إلى organization في ClickHouse Cloud مع تمكين ميزات AI (تواصل مع مسؤول org أو فريق الدعم إذا لم تكن الميزة متاحة).
+    1. يجب أن تتوفر لديك صلاحية الوصول إلى مؤسسة ClickHouse Cloud مُفعَّلة فيها ميزات الذكاء الاصطناعي (تواصل مع مسؤول مؤسستك أو مع الدعم إذا لم تكن متاحة).
   </Step>
 
-  <Step title="فتح لوحة AI Chat" id="open-panel">
+  <Step title="فتح لوحة دردشة الذكاء الاصطناعي" id="open-panel">
     1. انتقل إلى خدمة ClickHouse Cloud.
-    2. في الشريط الجانبي الأيسر، انقر على أيقونة اللمعان المسمّاة “Assistant”.
+    2. في الشريط الجانبي الأيسر، انقر على أيقونة البريق التي تحمل التسمية &quot;Assistant&quot;.
     3. (اختصار) اضغط <kbd>⌘</kbd> + <kbd>&#39;</kbd> (macOS) أو <kbd>Ctrl</kbd> + <kbd>&#39;</kbd> (Linux/Windows) لفتح اللوحة أو إغلاقها.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![فتح لوحة AI Chat الجانبية](/images/use-cases/AI_ML/AIChat/1_open_chat.webp)
-
-    </Frame>
-
+      <Frame>
+        ![فتح اللوحة المنبثقة الجانبية لدردشة الذكاء الاصطناعي](/images/use-cases/AI_ML/AIChat/1_open_chat.webp)
+      </Frame>
     </div>
   </Step>
 
-  <Step title="قبول الموافقة على استخدام البيانات (عند أول تشغيل)" id="consent">
-    1. عند الاستخدام لأول مرة، سيظهر لك مربع حوار للموافقة يوضح كيفية التعامل مع البيانات والمعالِجات الفرعية الخارجية الخاصة بـ LLM.
-    2. راجعه ووافق عليه للمتابعة. إذا رفضت، فلن تفتح اللوحة.
+  <Step title="الموافقة على شروط استخدام البيانات (عند الاستخدام الأول)" id="consent">
+    1. عند الاستخدام الأول، يظهر لك مربع حوار للموافقة يوضح كيفية التعامل مع البيانات والمعالجين الفرعيين من جهات خارجية الذين يقدّمون نماذج LLM.
+    2. راجعه ووافق عليه للمتابعة. إذا رفضت، فلن تُفتح اللوحة.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![مربع حوار الموافقة](/images/use-cases/AI_ML/AIChat/2_consent.webp)
-
-    </Frame>
-
+      <Frame>
+        ![مربع حوار الموافقة](/images/use-cases/AI_ML/AIChat/2_consent.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="اختيار وضع الدردشة" id="modes">
-    يدعم AI Chat حاليًا:
+    تدعم دردشة الذكاء الاصطناعي حاليًا الأوضاع التالية:
 
-    * **Agent**: استدلال متعدد الخطوات على مخطط وmetadata (يجب أن تكون خدمة نشطة).
+    * **Agent**: استدلال متعدد الخطوات استنادًا إلى المخطط والبيانات الوصفية (يجب أن تكون الخدمة نشطة).
     * **Docs AI (Ask)**: أسئلة وأجوبة مركّزة تستند إلى وثائق ClickHouse الرسمية ومراجع أفضل الممارسات.
 
-    استخدم محدد الوضع في أسفل يسار اللوحة الجانبية للتبديل بين الأوضاع.
+    للتبديل بين الأوضاع، استخدم محدِّد الوضع في أسفل يسار اللوحة المنبثقة الجانبية.
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![اختيار الوضع](/images/use-cases/AI_ML/AIChat/3_modes.webp)
-
-    </Frame>
-
+      <Frame>
+        ![اختيار الوضع](/images/use-cases/AI_ML/AIChat/3_modes.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="كتابة رسالة وإرسالها" id="compose">
-    1. اكتب سؤالك (مثلًا: “Create a materialized view to aggregate daily events by user”).
-    2. اضغط <kbd>Enter</kbd> للإرسال (استخدم <kbd>Shift</kbd> + <kbd>Enter</kbd> للانتقال إلى سطر جديد).
-    3. أثناء processing لدى model، يمكنك النقر على “Stop” للمقاطعة.
+    1. اكتب سؤالك (مثلًا: &quot;أنشئ عرضًا مُجسَّدًا لتجميع الأحداث اليومية حسب المستخدم&quot;).
+    2. اضغط <kbd>Enter</kbd> للإرسال (أو <kbd>Shift</kbd> + <kbd>Enter</kbd> لإضافة سطر جديد).
+    3. أثناء معالجة النموذج للطلب، يمكنك النقر على &quot;Stop&quot; لإيقافه.
   </Step>
 
-  <Step title="فهم خطوات Thinking في “Agent”" id="thinking-steps">
-    في وضع Agent، قد تظهر لك خطوات وسيطة قابلة للتوسيع خاصة بـ “thinking” أو التخطيط. توفّر هذه الخطوات شفافية حول كيفية صياغة المساعد لإجابته. قم بطيّها أو توسيعها حسب الحاجة.
+  <Step title="فهم خطوات التفكير في وضع &#x22;Agent&#x22;" id="thinking-steps">
+    في وضع Agent، قد تظهر لك خطوات وسيطة قابلة للتوسيع تعرض &quot;التفكير&quot; أو التخطيط. تتيح هذه الخطوات رؤية واضحة لكيفية صياغة المساعد لإجابته، ويمكنك طيّها أو توسيعها حسب الحاجة.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![خطوات Thinking](/images/use-cases/AI_ML/AIChat/4_thinking.webp)
-
-    </Frame>
-
+      <Frame>
+        ![خطوات التفكير](/images/use-cases/AI_ML/AIChat/4_thinking.webp)
+      </Frame>
     </div>
   </Step>
 
-  <Step title="بدء دردشات جديدة" id="new-chats">
-    انقر على زر “New Chat” لمسح Context وبدء session جديدة.
+  <Step title="بدء محادثات جديدة" id="new-chats">
+    انقر على زر &quot;New Chat&quot; لمسح السياق وبدء session جديدة.
   </Step>
 
-  <Step title="عرض history الدردشة" id="history">
-    1. يسرد القسم السفلي دردشاتك الأخيرة.
-    2. اختر دردشة سابقة لتحميل رسائلها.
-    3. احذف conversation باستخدام أيقونة سلة المهملات.
+  <Step title="عرض سجل الدردشة" id="history">
+    1. يعرض القسم السفلي محادثاتك الأخيرة.
+    2. اختر محادثة سابقة لتحميل رسائلها.
+    3. لحذف محادثة، استخدم أيقونة سلة المهملات.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![قائمة history الدردشة](/images/use-cases/AI_ML/AIChat/5_history.webp)
-
-    </Frame>
-
+      <Frame>
+        ![قائمة سجل الدردشة](/images/use-cases/AI_ML/AIChat/5_history.webp)
+      </Frame>
     </div>
   </Step>
 
-  <Step title="العمل مع generated SQL" id="sql-actions">
-    عندما يعرض المساعد SQL:
+  <Step title="التعامل مع SQL المُولَّد" id="sql-actions">
+    عندما يُعيد المساعد استعلام SQL:
 
-    * راجعه للتأكد من صحته.
-    * انقر على “Open in editor” لتحميل query في tab SQL جديدة.
-    * عدّله ونفّذه داخل Console.
+    * راجعه للتحقق من صحته.
+    * انقر على &quot;Open in editor&quot; لتحميل الاستعلام في علامة تبويب SQL جديدة.
+    * عدّله ونفّذه داخل وحدة التحكم.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![إجراءات النتائج](/images/use-cases/AI_ML/AIChat/6_result_actions.webp)
-
-    </Frame>
-
+      <Frame>
+        ![إجراءات النتيجة](/images/use-cases/AI_ML/AIChat/6_result_actions.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![فتح query المُنشأ في المحرر](/images/use-cases/AI_ML/AIChat/7_open_in_editor.webp)
-
-    </Frame>
-
+      <Frame>
+        ![فتح الاستعلام المُولَّد في المحرر](/images/use-cases/AI_ML/AIChat/7_open_in_editor.webp)
+      </Frame>
     </div>
   </Step>
 
-  <Step title="إيقاف response أو مقاطعته" id="interrupt">
-    إذا كانت response تستغرق وقتًا طويلًا أو تنحرف عن المطلوب:
+  <Step title="إيقاف الاستجابة أو مقاطعتها" id="interrupt">
+    إذا استغرقت الاستجابة وقتًا طويلًا أو خرجت عن المطلوب:
 
-    1. انقر على زر “Stop” (يكون ظاهرًا أثناء processing).
-    2. ستُعلَّم الرسالة على أنها مقاطَعة؛ ويمكنك تحسين prompt ثم إعادة الإرسال.
+    1. انقر على زر &quot;Stop&quot; (يظهر أثناء المعالجة).
+    2. تُعلَّم الرسالة على أنها مُقاطَعة، ويمكنك بعدها تحسين الموجّه وإعادة إرساله.
   </Step>
 
   <Step title="اختصارات لوحة المفاتيح" id="shortcuts">
-    | الإجراء     | الاختصار             |
-    | ----------- | -------------------- |
-    | فتح AI Chat | `⌘ + '` / `Ctrl + '` |
-    | إرسال رسالة | `Enter`              |
-    | سطر جديد    | `Shift + Enter`      |
+    | الإجراء                    | الاختصار             |
+    | -------------------------- | -------------------- |
+    | فتح دردشة الذكاء الاصطناعي | `⌘ + '` / `Ctrl + '` |
+    | إرسال رسالة                | `Enter`              |
+    | سطر جديد                   | `Shift + Enter`      |
   </Step>
 </Steps>

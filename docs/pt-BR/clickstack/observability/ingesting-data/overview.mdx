@@ -1,0 +1,89 @@
+---
+slug: /clickstack/observability/ingesting-data/overview
+title: 'Ingestão de dados'
+sidebarTitle: 'Visão geral'
+description: 'Envie a telemetria de aplicações e de infraestrutura para o coletor OpenTelemetry gerenciado do ClickHouse Observability.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'ingestão', 'OpenTelemetry', 'OTLP', 'logs', 'métricas', 'rastros']
+---
+
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+<Tabs>
+  <Tab title="Totalmente gerenciado">
+    <BetaBadge label="Oferta Beta" />
+
+    O ClickHouse Observability inclui um **coletor OpenTelemetry (OTel) gerenciado** que recebe logs, métricas, rastros e dados de reprodução de sessão e os grava no ClickHouse Cloud. O ClickHouse Cloud opera o coletor de ingestão, o banco de dados e a Interface do ClickStack. Cabe a você instrumentar suas aplicações e configurá-las, ou configurar seus agentes de coleta de dados, para enviar telemetria ao serviço gerenciado.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Arquitetura totalmente gerenciada com o coletor OpenTelemetry, o ClickHouse e a Interface do ClickStack operados pelo ClickHouse Cloud](/images/use-cases/observability/clickstack-managed-architecture.svg)
+      </Frame>
+    </div>
+
+    Para mais detalhes sobre esses componentes, consulte [Arquitetura](/pt-BR/clickstack/observability/architecture).
+
+## Encontre seus detalhes de conexão {#connection-details}
+
+    No seu serviço, abra **Team Settings → Data** e localize **Managed Telemetry**. Essa seção fornece o endpoint OTLP e a chave de API para enviar telemetria ao seu serviço.
+
+    Selecione **URL**, **Collector config** ou **Env vars** para visualizar os detalhes de conexão no formato desejado e, em seguida, clique em **Copy connection details**. Configure seu SDK ou coletor com o endpoint e as configurações de autenticação fornecidos.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Telemetria Gerenciada exibindo o endpoint OTLP HTTP e a chave de API mascarados](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Consulte [Telemetria Gerenciada](/pt-BR/clickstack/observability/managing/config#managed-telemetry) para mais detalhes. Você pode usar **Send a Test Log** para enviar um log de exemplo ao serviço.
+
+## Escolha como enviar telemetria {#sending-telemetry}
+
+### Instrumentação de aplicações {#application-instrumentation}
+
+    Os SDKs de linguagem coletam telemetria de dentro das suas aplicações, como rastros de requisições e logs de aplicação. Configure seu SDK para exportar telemetria via OTLP para o endpoint gerenciado ou para um coletor no seu ambiente que a encaminhe ao serviço.
+
+    Você pode aproveitar a instrumentação OpenTelemetry já existente. Os SDKs do ClickStack também oferecem funcionalidades como reprodução de sessão no navegador; consulte [Reprodução de sessão](/pt-BR/clickstack/observability/features/session-replay) para ver um exemplo de configuração gerenciada.
+
+### Infraestrutura e agentes de coleta {#collection-agents}
+
+    Execute agentes de coleta no seu ambiente para reunir telemetria, como métricas de host, logs de contêineres e eventos do Kubernetes. Um coletor OpenTelemetry pode ser executado junto a uma aplicação, em um host ou como um DaemonSet do Kubernetes, dependendo do que você precisa coletar.
+
+    Configure esses agentes para encaminhar telemetria ao endpoint OTLP gerenciado usando os detalhes de conexão do seu serviço. Você também pode rotear a telemetria das aplicações por esses coletores para processá-la antes que chegue ao ClickHouse Observability.
+
+## Verifique a ingestão {#verify-ingestion}
+
+    Depois de configurar sua aplicação ou coletor, gere um pouco de telemetria e abra a [Busca](/pt-BR/clickstack/observability/features/search). Selecione a fonte **Logs** ou **Traces**, escolha um intervalo de tempo que inclua os novos eventos e pesquise pelo nome do seu serviço para confirmar que os dados chegaram.
+  </Tab>
+
+  <Tab title="Autogerenciado">
+    Todos os dados são ingeridos no Self-managed ClickHouse Observability por meio de um **coletor OpenTelemetry (OTel)**. Ele atua como o principal ponto de entrada para logs, métricas, rastros e dados de sessão.
+
+    Você executa um Coletor OpenTelemetry para receber dados de telemetria das suas aplicações. Com o Self-managed ClickHouse Observability, o ClickHouse e a UI são hospedados e gerenciados no ClickHouse Cloud, e a autenticação integrada e o gerenciamento operacional ficam por nossa conta.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Telemetria OTLP fluindo por um coletor autogerenciado até o ClickHouse, com a Interface do ClickStack hospedada no ClickHouse Cloud](/images/use-cases/observability/clickstack-self-managed-architecture.svg)
+      </Frame>
+    </div>
+
+    O coletor expõe dois endpoints OTLP:
+
+    * **HTTP** - porta `4318`
+    * **gRPC** - porta `4317`
+
+    Você pode enviar dados para esses endpoints diretamente a partir de [SDKs de linguagem](/pt-BR/clickstack/observability/ingesting-data/sdks) ou de agentes de coleta de dados compatíveis com OTel, como outros OTel collectors que coletam métricas e logs de infraestrutura.
+
+    Mais especificamente:
+
+    * Os [**SDKs de linguagem**](/pt-BR/clickstack/observability/ingesting-data/sdks) são responsáveis por coletar telemetria de dentro da sua aplicação — principalmente **rastros** e **logs** — e exportar esses dados, por meio do endpoint OTLP, para o coletor OpenTelemetry, que cuida da ingestão no ClickHouse. Para mais detalhes sobre os SDKs de linguagem disponíveis, consulte [SDKs](/pt-BR/clickstack/observability/ingesting-data/sdks).
+
+    * Os **agentes de coleta de dados** são agentes implantados na borda — em servidores, nós do Kubernetes ou junto às aplicações. Eles coletam telemetria de infraestrutura (por exemplo, logs e métricas) ou recebem eventos diretamente de aplicações instrumentadas com SDKs. Nesse caso, o agente é executado no mesmo host que a aplicação, muitas vezes como sidecar ou DaemonSet. Esses agentes encaminham os dados para o coletor OTel do ClickStack central, que atua como [gateway](/pt-BR/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured) e normalmente é implantado uma vez por cluster, data center ou região. O [gateway](/pt-BR/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured) recebe eventos OTLP de agentes ou aplicações e cuida da ingestão no ClickHouse. Consulte [OTel collector](/pt-BR/clickstack/self-configured/ingesting-data/collector) para mais detalhes. Esses agentes podem ser outras instâncias do OTel collector ou tecnologias alternativas, como [Fluentd](https://www.fluentd.org/) ou [Vector](https://vector.dev/).
+
+    <Info>
+      **Compatibilidade com OpenTelemetry**
+
+      Embora o ClickStack ofereça seus próprios SDKs de linguagem e um coletor OpenTelemetry personalizado, com telemetria e recursos aprimorados, você também pode usar normalmente os SDKs do OpenTelemetry e os agentes que já utiliza.
+    </Info>
+  </Tab>
+</Tabs>

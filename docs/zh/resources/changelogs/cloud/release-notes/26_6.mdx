@@ -9,6 +9,10 @@ doc_type: 'changelog'
 
 ## 向后不兼容的变更 {#backward-incompatible-changes}
 
+### 字典源凭证 {#dictionary-source-credentials}
+
+* 自 ClickHouse Cloud 26.6.1.240 版本起，除 `default` 以外的用户无论提供何种密码，都无法再创建以 `default` 作为 `CLICKHOUSE` 源用户的字典。源凭证来自命名集合时同样受此限制。此前已要求同时指定 `user` 和 `password`；现在若显式指定 `default`，将被拒绝并返回 `BAD_ARGUMENTS` (代码 36) ：``A non-default user cannot create a dictionary that connects as passwordless dictionary source user `default`.`` 请更新用于创建字典和迁移的 DDL，改用专用的源用户，并为其授予源表的 `SELECT` 权限。请参阅 [ClickHouse 字典源示例](/zh/reference/statements/create/dictionary/sources/clickhouse)。
+
 ### 查询与语法变更 {#query-and-syntax-changes}
 
 * 窗口函数 `RANK` 和 `DENSE_RANK` 现在会拒绝接受参数，并抛出 `NUMBER_OF_ARGUMENTS_DOESNT_MATCH`，以符合 SQL 标准。此前，诸如 `RANK(x) OVER (ORDER BY id)` 之类的查询会被静默接受，参数则被忽略，这经常让用户感到困惑。若要恢复此前的宽松行为，请设置 `allow_rank_dense_rank_arguments = 1`。[#104324](https://github.com/ClickHouse/ClickHouse/pull/104324) ([groeneai](https://github.com/groeneai))。

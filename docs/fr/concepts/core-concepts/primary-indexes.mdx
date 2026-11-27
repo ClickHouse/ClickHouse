@@ -7,7 +7,7 @@ doc_type: 'guide'
 ---
 
 <Tip>
-  **Vous cherchez des informations avancées sur l’indexation ?**
+  **Vous cherchez des informations avancées sur l’indexation ?**
 
   Cette page présente l’index primaire clairsemé de ClickHouse, sa construction, son fonctionnement et la manière dont il accélère les requêtes.
 
@@ -15,47 +15,37 @@ doc_type: 'guide'
 </Tip>
 
 <div id="how-does-the-sparse-primary-index-work-in-clickHouse">
-  ## Comment fonctionne l’index primaire clairsemé dans ClickHouse ?
+  ## Comment fonctionne l’index primaire clairsemé dans ClickHouse ? {#how-does-the-sparse-primary-index-work-in-clickHouse}
 </div>
 
 <br />
 
 Dans ClickHouse, l’index primaire clairsemé permet d’identifier efficacement les [granules](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) — des blocs de lignes — susceptibles de contenir des données correspondant à la condition d’une requête sur les colonnes de clé primaire de la table. Dans la section suivante, nous expliquons comment cet index est construit à partir des valeurs de ces colonnes.
 
-<div id="sparse-primary-index-creation">
-  ### Création de l’index primaire clairsemé
-</div>
+### Création de l’index primaire clairsemé {#sparse-primary-index-creation}
 
 Pour illustrer la façon dont l’index primaire clairsemé est construit, nous utilisons la table [uk&#95;price&#95;paid&#95;simple](/fr/concepts/core-concepts/parts) ainsi que quelques animations.
 
-Pour [rappel](/fr/concepts/core-concepts/parts), dans notre table d’exemple ① avec la clé primaire (town, street), les données ② insérées sont ③ stockées sur disque, triées selon les valeurs des colonnes de la clé primaire et compressées, dans des fichiers distincts pour chaque colonne :
+Pour [rappel](/fr/concepts/core-concepts/parts), dans notre table d’exemple ① avec la clé primaire (town, street), les données ② insérées sont ③ stockées sur disque, triées selon les valeurs des colonnes de la clé primaire et compressées, dans des fichiers distincts pour chaque colonne :
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![](/images/managing-data/core-concepts/primary-index-light_01.webp)
-
-</Frame>
-
+  <Frame>
+    ![](/images/managing-data/core-concepts/primary-index-light_01.webp)
+  </Frame>
 </div>
 
 <br />
 
 <br />
 
-Lors du traitement, les données de chaque colonne sont ④ logiquement divisées en granules — chacune couvrant 8 192 lignes — qui constituent les plus petites unités de travail des mécanismes de traitement des données de ClickHouse.
+Lors du traitement, les données de chaque colonne sont ④ logiquement divisées en granules — chacune couvrant 8 192 lignes — qui constituent les plus petites unités de travail des mécanismes de traitement des données de ClickHouse.
 
-Cette structure en granules est aussi ce qui rend l’index primaire **sparse** : au lieu d’indexer chaque ligne, ClickHouse stocke ⑤ les valeurs de la clé primaire d’une seule ligne par granule — plus précisément, la première ligne. On obtient ainsi une entrée d’index par granule :
+Cette structure en granules est aussi ce qui rend l’index primaire **sparse** : au lieu d’indexer chaque ligne, ClickHouse stocke ⑤ les valeurs de la clé primaire d’une seule ligne par granule — plus précisément, la première ligne. On obtient ainsi une entrée d’index par granule :
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![](/images/managing-data/core-concepts/primary-index-light_02.webp)
-
-</Frame>
-
+  <Frame>
+    ![](/images/managing-data/core-concepts/primary-index-light_02.webp)
+  </Frame>
 </div>
 
 <br />
@@ -64,20 +54,14 @@ Cette structure en granules est aussi ce qui rend l’index primaire **sparse**�
 
 Grâce à sa nature sparse, l’index primaire est suffisamment compact pour tenir entièrement en mémoire, ce qui permet un filtrage rapide des requêtes comportant des prédicats sur les colonnes de la clé primaire. Dans la section suivante, nous montrons comment il contribue à accélérer ces requêtes.
 
-<div id="primary-index-usage">
-  ### Utilisation de l’index primaire
-</div>
+### Utilisation de l’index primaire {#primary-index-usage}
 
-Nous montrons brièvement comment l’index primaire clairsemé est utilisé pour accélérer les requêtes à l’aide d’une autre animation :
+Nous montrons brièvement comment l’index primaire clairsemé est utilisé pour accélérer les requêtes à l’aide d’une autre animation :
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![](/images/managing-data/core-concepts/primary-index-light_03.webp)
-
-</Frame>
-
+  <Frame>
+    ![](/images/managing-data/core-concepts/primary-index-light_03.webp)
+  </Frame>
 </div>
 
 <br />
@@ -86,7 +70,7 @@ Nous montrons brièvement comment l’index primaire clairsemé est utilisé pou
 
 <Steps>
   <Step title="Analyser le prédicat de la requête">
-    La requête d’exemple inclut un prédicat sur les deux colonnes de la clé primaire : `town = 'LONDON' AND street = 'OXFORD STREET'`.
+    La requête d’exemple inclut un prédicat sur les deux colonnes de la clé primaire : `town = 'LONDON' AND street = 'OXFORD STREET'`.
   </Step>
 
   <Step title="Charger l’index primaire">
@@ -103,7 +87,7 @@ Nous montrons brièvement comment l’index primaire clairsemé est utilisé pou
 </Steps>
 
 <div id="monitoring-primary-indexes">
-  ## Suivi des index primaires
+  ## Suivi des index primaires {#monitoring-primary-indexes}
 </div>
 
 Chaque [partie de données](/fr/concepts/core-concepts/parts) de la table possède son propre index primaire. Nous pouvons inspecter le contenu de ces index à l’aide de la fonction de table [mergeTreeIndex](/fr/reference/functions/table-functions/mergeTreeIndex).
@@ -216,7 +200,7 @@ SELECT count() FROM uk.uk_price_paid_simple;
 ```
 
 <div id="key-takeaways">
-  ## Points clés à retenir
+  ## Points clés à retenir {#key-takeaways}
 </div>
 
 * Les **index primaires clairsemés** aident ClickHouse à ignorer les données inutiles en identifiant les granules susceptibles de contenir des lignes correspondant aux conditions de requête sur les colonnes de clé primaire.
@@ -229,9 +213,7 @@ SELECT count() FROM uk.uk_price_paid_simple;
 
 * Vous pouvez **inspecter le contenu de l&#39;index** à l&#39;aide de la fonction de table `mergeTreeIndex` et surveiller l&#39;utilisation de l&#39;index avec la clause `EXPLAIN`.
 
-<div id="where-to-find-more-information">
-  ## Où trouver plus d’informations
-</div>
+## Où trouver plus d’informations {#where-to-find-more-information}
 
 Pour mieux comprendre le fonctionnement des index primaires clairsemés dans ClickHouse, notamment en quoi ils diffèrent des index de base de données traditionnels et quelles sont les bonnes pratiques pour les utiliser, consultez notre [guide détaillé](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) sur l’indexation.
 

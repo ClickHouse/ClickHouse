@@ -32,6 +32,8 @@ public:
     [[nodiscard]] String getName() const override { return "ReadFromStorage"; }
 
     [[nodiscard]] const StoragePtr & getStorage() const { return storage; }
+    [[nodiscard]] const ContextPtr & getContext() const { return context; }
+    [[nodiscard]] const SelectQueryInfo & getQueryInfo() const { return query_info; }
 
     void serialize(Serialization & ctx) const override;
     /// serialize is implemented only for StorageSystemOne.

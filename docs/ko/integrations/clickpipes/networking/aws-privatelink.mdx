@@ -250,49 +250,33 @@ AWS PrivateLink는 검증된 도메인이 있는 VPC 엔드포인트 서비스�
 1. ClickHouse Cloud 서비스의 SQL 콘솔에 액세스합니다.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ClickPipes 서비스](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickPipes 서비스](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+  </Frame>
 </div>
 
 2. 왼쪽 메뉴에서 `Data Sources` 버튼을 선택하고 &quot;ClickPipe 설정&quot;을 클릭합니다.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![가져오기 선택](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
-
-</Frame>
-
+  <Frame>
+    ![가져오기 선택](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+  </Frame>
 </div>
 
 3. 데이터 소스로 Kafka 또는 Postgres를 선택합니다.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![데이터 소스 선택](/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp)
-
-</Frame>
-
+  <Frame>
+    ![데이터 소스 선택](/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp)
+  </Frame>
 </div>
 
 4. `Reverse private endpoint` 옵션을 선택합니다.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![reverse private endpoint 선택](/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp)
-
-</Frame>
-
+  <Frame>
+    ![역방향 프라이빗 엔드포인트 선택](/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp)
+  </Frame>
 </div>
 
 5. 기존 역방향 프라이빗 엔드포인트를 선택하거나 새로 만듭니다.
@@ -305,25 +289,17 @@ AWS PrivateLink는 검증된 도메인이 있는 VPC 엔드포인트 서비스�
 </Info>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![reverse private endpoint 선택](/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp)
-
-</Frame>
-
+  <Frame>
+    ![역방향 프라이빗 엔드포인트 선택](/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp)
+  </Frame>
 </div>
 
 6. 선택한 엔드포인트 유형에 필요한 매개변수를 입력합니다.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![reverse private endpoint 선택](/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp)
-
-</Frame>
-
+  <Frame>
+    ![역방향 프라이빗 엔드포인트 선택](/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp)
+  </Frame>
 </div>
 
 * VPC 리소스에는 구성 공유 ARN과 구성 ID를 입력합니다.
@@ -338,13 +314,9 @@ AWS PrivateLink는 검증된 도메인이 있는 VPC 엔드포인트 서비스�
    VPC 엔드포인트 서비스는 AWS 콘솔에서 연결 요청을 수락해야 할 수 있습니다.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![reverse private endpoint 선택](/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp)
-
-</Frame>
-
+  <Frame>
+    ![역방향 프라이빗 엔드포인트 선택](/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp)
+  </Frame>
 </div>
 
 8. 엔드포인트가 Ready 상태가 되면 DNS 이름을 사용하여 데이터 소스에 연결할 수 있습니다.
@@ -359,35 +331,27 @@ AWS PrivateLink는 검증된 도메인이 있는 VPC 엔드포인트 서비스�
 
    전체 DNS 이름 목록은 Cloud 서비스 설정에서 확인할 수 있습니다.
 
-## Reverse Private Endpoint 관리 {#managing-rpes}
+## 역방향 프라이빗 엔드포인트 관리 {#managing-rpes}
 
-ClickHouse Cloud 서비스 설정에서 기존 Reverse Private Endpoint를 관리할 수 있습니다.
+ClickHouse Cloud 서비스 설정에서 기존 역방향 프라이빗 엔드포인트를 관리할 수 있습니다.
 
 1. 사이드바에서 `Settings` 버튼을 찾아 클릭합니다.
 
    <div className="ch-image-lg">
-
-   <Frame>
-
-   ![ClickHouse Cloud 설정](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp)
-
-   </Frame>
-
+     <Frame>
+       ![ClickHouse Cloud 설정](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp)
+     </Frame>
    </div>
 
 2. `ClickPipe reverse private endpoints` 섹션에서 `Reverse private endpoints`를 클릭합니다.
 
    <div className="ch-image-md">
-
-   <Frame>
-
-   ![ClickHouse Cloud 설정](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp)
-
-   </Frame>
-
+     <Frame>
+       ![ClickHouse Cloud 설정](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp)
+     </Frame>
    </div>
 
-   플라이아웃에 Reverse Private Endpoint의 상세 정보가 표시됩니다.
+   플라이아웃에 역방향 프라이빗 엔드포인트의 상세 정보가 표시됩니다.
 
    엔드포인트는 생성한 후 편집할 수 없습니다. 엔드포인트의 `×`를 클릭하고 확인하면 삭제할 수 있습니다. 삭제하면 복구할 수 없으며, 해당 엔드포인트를 사용 중인 모든 ClickPipe가 중단됩니다.
 
