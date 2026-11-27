@@ -1,0 +1,9 @@
+parallelized	1
+order preserved	1
+order preserved with limit	1
+small limit not parallelized	0
+large limit parallelized	1
+stateful	0
+merged stateful	0
+merged non-deterministic	0
+array join order preserved	1
