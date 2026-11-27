@@ -10,6 +10,8 @@
 #include <Storages/ObjectStorage/DataLakes/Common/DataLakeColumnStatistics.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 
+#include <memory>
+
 namespace DB
 {
 class ColumnsDescription;
@@ -31,6 +33,7 @@ public:
         const DB::Names & partition_columns,
         const DB::NameToNameMap & physical_names_map,
         DB::ContextPtr context);
+    ~LogColumnStatistics();
 
     /// Returns false for a file without a valid `numRecords`, which leaves the read without a row estimate.
     bool addFile(const TableSnapshot::DataFileStatistics & file);
@@ -50,12 +53,18 @@ private:
         std::optional<size_t> partition_index;
         /// The type can have min/max statistics (numbers and dates).
         bool tracks_min_max;
+        /// The type the bounds are parsed with: `DateTime64` in UTC, as the ticks in the data files do not depend on a time zone.
+        DB::DataTypePtr bound_type;
     };
+
+    struct Parser;
 
     DB::DataLakeColumnStatistics statistics;
     std::vector<TargetSource> sources;
     /// Bounds of timestamps are ISO 8601 strings.
     DB::FormatSettings format_settings;
+    /// The JSON parser of the `stats`, reused over the files.
+    std::unique_ptr<Parser> parser;
     UInt64 deleted_rows = 0;
     bool has_deletion_vectors = false;
 };

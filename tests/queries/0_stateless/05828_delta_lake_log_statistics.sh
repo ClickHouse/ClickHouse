@@ -20,9 +20,9 @@ PINS="--query_plan_optimize_join_order_randomize=0 --query_plan_optimize_join_or
     --use_hash_table_stats_for_join_reordering=0 --collect_hash_table_stats_during_joins=0
     --enable_join_runtime_filters=0 --enable_parallel_replicas=0 --enable_join_transitive_predicates=0
     --query_plan_propagate_predicate_across_join=0 --use_statistics=1 --materialize_statistics_on_insert=1
-    --explain_query_plan_default=legacy --max_insert_threads=1 --max_threads=1 --session_timezone=UTC
+    --explain_query_plan_default=legacy --max_insert_threads=1 --max_threads=1
     --allow_experimental_delta_kernel_rs=1 --allow_delta_lake_writes=1 --allow_delta_lake_create_table=1"
-ON="--use_datalake_metadata_statistics=1"
+ON="--use_datalake_metadata_statistics=1 --session_timezone=UTC"
 
 LAKE="${CLICKHOUSE_USER_FILES_UNIQUE}"
 rm -rf "${LAKE}"
@@ -43,7 +43,7 @@ labels()
     ${CLICKHOUSE_CLIENT} ${PINS} ${settings} --query "
         SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, actions = 1 SELECT count() FROM mt AS m JOIN ${table} AS t ON m.k = t.${key} WHERE ${filter})
         WHERE explain LIKE '%Join: %'"
-    echo "live rows: $(${CLICKHOUSE_CLIENT} ${PINS} --query "SELECT count() FROM ${table} AS t WHERE ${filter}")"
+    echo "live rows: $(${CLICKHOUSE_CLIENT} ${PINS} ${settings} --query "SELECT count() FROM ${table} AS t WHERE ${filter}")"
 }
 
 # Prints the rows and the number of distinct values of the join key that the optimizer gets for the read.
@@ -64,6 +64,18 @@ ${CLICKHOUSE_CLIENT} ${PINS} --query "
     INSERT INTO written SELECT number, number % 5 FROM numbers(100, 50);
 "
 
+# wide_decimal: 1 data file of 10 rows whose `d` bounds do not fit in 64 bits, with a hand-written log.
+mkdir -p "${LAKE}/wide_decimal/_delta_log"
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION file('${LAKE}/wide_decimal/part-0.parquet', Parquet, 'id Nullable(Int64), d Nullable(Decimal(38, 0))')
+    SELECT number, toDecimal128('123456789012345678901234567890', 0) FROM numbers(10)"
+WIDE_SIZE=$(wc -c < "${LAKE}/wide_decimal/part-0.parquet" | tr -d ' ')
+cat > "${LAKE}/wide_decimal/_delta_log/00000000000000000000.json" <<EOF
+{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
+{"metaData":{"id":"5fba94ed-9794-4965-ba6e-6ee3c0d22af9","format":{"provider":"parquet","options":{}},"schemaString":"{\\"type\\":\\"struct\\",\\"fields\\":[{\\"name\\":\\"id\\",\\"type\\":\\"long\\",\\"nullable\\":true,\\"metadata\\":{}},{\\"name\\":\\"d\\",\\"type\\":\\"decimal(38,0)\\",\\"nullable\\":true,\\"metadata\\":{}}]}","partitionColumns":[],"configuration":{},"createdTime":0}}
+{"add":{"path":"part-0.parquet","partitionValues":{},"size":${WIDE_SIZE},"modificationTime":0,"dataChange":true,"stats":"{\\"numRecords\\":10,\\"minValues\\":{\\"id\\":0,\\"d\\":123456789012345678901234567890},\\"maxValues\\":{\\"id\\":9,\\"d\\":123456789012345678901234567890},\\"nullCount\\":{\\"id\\":0,\\"d\\":0}}"}}
+EOF
+
 echo '--- T1: the setting is off'
 labels "" "deltaLakeLocal('${LAKE}/deletion_vectors')"
 echo '--- T2: 3 data files of 100, 50 and 12 rows, deletion vectors of 39 and 11 rows'
@@ -76,6 +88,11 @@ echo '--- T3: WHERE p_int = 1 keeps 8 files'
 labels "${ON}" "deltaLakeLocal('${LAKE}/partitioned')" "t.p_int = 1"
 echo '--- T3: WHERE p_int IS NULL keeps 6 files'
 labels "${ON}" "deltaLakeLocal('${LAKE}/partitioned')" "t.p_int IS NULL"
+echo '--- T3: planning builds no IN set, which would run throwIf'
+${CLICKHOUSE_CLIENT} ${PINS} ${ON} --query "
+    SELECT count() FROM (EXPLAIN keep_logical_steps = 1, actions = 1 SELECT count() FROM mt AS m JOIN deltaLakeLocal('${LAKE}/partitioned') AS t ON m.k = t.id
+        WHERE t.p_int GLOBAL IN (SELECT throwIf(number = 0) FROM numbers(1)))
+    WHERE explain LIKE '%Join: %'"
 echo '--- T3: p_int has 3 partition values and NULL'
 distinct_values "deltaLakeLocal('${LAKE}/partitioned')" p_int
 echo '--- T4: bounds of each type, 2 data files of 20 and 15 rows'
@@ -87,6 +104,8 @@ labels "${ON}" "deltaLakeLocal('${LAKE}/all_types')" "t.dec < 30"
 labels "${ON}" "deltaLakeLocal('${LAKE}/all_types')" "t.dt < '1970-01-01'"
 labels "${ON}" "deltaLakeLocal('${LAKE}/all_types')" "t.ts < '1970-01-05 00:00:00'"
 labels "${ON}" "deltaLakeLocal('${LAKE}/all_types')" "t.ts_ntz >= '1970-01-01 20:00:00'"
+echo '--- T4: the bounds of ts_ntz do not depend on the session time zone'
+labels "--use_datalake_metadata_statistics=1 --session_timezone=Asia/Tokyo" "deltaLakeLocal('${LAKE}/all_types')" "t.ts_ntz >= toDateTime64('1970-01-01 20:00:00', 6, 'UTC')"
 echo '--- T4: s has 7 NULLs in 35 rows'
 labels "${ON}" "deltaLakeLocal('${LAKE}/all_types')" "t.s IS NULL"
 echo '--- T5: column mapping, the statistics are keyed by physical names'
@@ -95,5 +114,8 @@ labels "${ON}" "deltaLakeLocal('${LAKE}/column_mapping_id')" "t.id < 2"
 echo '--- T6: written by ClickHouse, only the rows'
 labels "${ON}" written
 labels "${ON}" written "t.v = 1"
+echo '--- T7: bounds of a Decimal(38, 0) wider than 64 bits keep the rows, with and without the column'
+labels "${ON}" "deltaLakeLocal('${LAKE}/wide_decimal')"
+labels "${ON}" "deltaLakeLocal('${LAKE}/wide_decimal')" "t.d IS NOT NULL"
 
 rm -rf "${LAKE}"

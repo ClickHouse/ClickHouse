@@ -1101,7 +1101,8 @@ bool TableSnapshot::visitDataFileStatisticsImpl(
             scan_schema.table_schema,
             scan_schema.partition_columns,
             scan_schema.physical_names_map,
-            DB::Context::getGlobalContextInstance());
+            DB::Context::getGlobalContextInstance(),
+            /* require_ready_sets */ true);
 
     std::exception_ptr engine_predicate_exception;
     auto scan = createScan(

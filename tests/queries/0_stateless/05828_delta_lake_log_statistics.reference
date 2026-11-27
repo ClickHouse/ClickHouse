@@ -16,6 +16,8 @@ live rows: 8
 --- T3: WHERE p_int IS NULL keeps 6 files
 Join: m[1000] ⋈ t[no_stats~6]
 live rows: 6
+--- T3: planning builds no IN set, which would run throwIf
+1
 --- T3: p_int has 3 partition values and NULL
 t: 30 rows
 __table2.p_int: 3
@@ -36,6 +38,9 @@ Join: m[1000] ⋈ t[no_stats~16]
 live rows: 16
 Join: m[1000] ⋈ t[no_stats~14]
 live rows: 15
+--- T4: the bounds of ts_ntz do not depend on the session time zone
+Join: m[1000] ⋈ t[no_stats~14]
+live rows: 15
 --- T4: s has 7 NULLs in 35 rows
 Join: m[1000] ⋈ t[no_stats~7]
 live rows: 7
@@ -49,3 +54,8 @@ Join: m[1000] ⋈ t[150]
 live rows: 150
 Join: m[1000] ⋈ t[no_stats~?]
 live rows: 30
+--- T7: bounds of a Decimal(38, 0) wider than 64 bits keep the rows, with and without the column
+Join: m[1000] ⋈ t[10]
+live rows: 10
+Join: m[1000] ⋈ t[no_stats~10]
+live rows: 10

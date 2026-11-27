@@ -2,6 +2,8 @@
 
 #if USE_DELTA_KERNEL_RS
 
+#include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/convertFieldToType.h>
@@ -9,8 +11,14 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/Statistics/Statistics.h>
 
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Parser.h>
+#if USE_SIMDJSON
+#include <Common/JSONParsers/SimdJSONParser.h>
+#elif USE_RAPIDJSON
+#include <Common/JSONParsers/RapidJSONParser.h>
+#else
+#include <Common/JSONParsers/DummyJSONParser.h>
+#endif
+#include <IO/WriteHelpers.h>
 
 namespace DeltaLake
 {
@@ -18,20 +26,75 @@ namespace DeltaLake
 namespace
 {
 
+#if USE_SIMDJSON
+using JSONParser = DB::SimdJSONParser;
+#elif USE_RAPIDJSON
+using JSONParser = DB::RapidJSONParser;
+#else
+using JSONParser = DB::DummyJSONParser;
+#endif
+
+/// The text of a number, string or boolean field of `object`; nullopt if the field is missing or of another kind.
+std::optional<String> getScalarText(const std::optional<JSONParser::Object> & object, const String & name)
+{
+    JSONParser::Element value;
+    if (!object || !object->find(name, value))
+        return std::nullopt;
+    /// Also an integer wider than 64 bits, as a decimal bound can be.
+    if (value.isString())
+        return String(value.getString());
+    if (value.isInt64())
+        return DB::toString(value.getInt64());
+    if (value.isUInt64())
+        return DB::toString(value.getUInt64());
+    if (value.isDouble())
+        return DB::toString(value.getDouble());
+    if (value.isBool())
+        return String(value.getBool() ? "true" : "false");
+    return std::nullopt;
+}
+
+/// A non-negative integer field of `object`; nullopt if it is missing or is not one.
+std::optional<UInt64> getCount(const std::optional<JSONParser::Object> & object, const String & name)
+{
+    JSONParser::Element value;
+    if (!object || !object->find(name, value))
+        return std::nullopt;
+    if (value.isUInt64())
+        return value.getUInt64();
+    if (value.isInt64() && value.getInt64() >= 0)
+        return static_cast<UInt64>(value.getInt64());
+    return std::nullopt;
+}
+
 /// A bound in `minValues` or `maxValues` as a value of `type`; Null if it is missing or does not convert.
 DB::Field getBound(
-    const Poco::JSON::Object::Ptr & bounds, const String & name, const DB::IDataType & type, const DB::FormatSettings & format_settings)
+    const std::optional<JSONParser::Object> & bounds, const String & name, const DB::IDataType & type, const DB::FormatSettings & format_settings)
 {
-    if (!bounds || !bounds->has(name) || bounds->isNull(name))
-        return {};
-    const auto value = bounds->get(name);
-    if (!value.isString() && !value.isNumeric() && !value.isBoolean())
+    const auto text = getScalarText(bounds, name);
+    if (!text)
         return {};
     /// As text, so that a number, a date and a timestamp are all parsed by the type itself.
-    return DB::tryConvertFieldToType(DB::Field(value.convert<String>()), type, nullptr, format_settings);
+    return DB::tryConvertFieldToType(DB::Field(*text), type, nullptr, format_settings);
+}
+
+/// The object field `name` of `object`, if it has one.
+std::optional<JSONParser::Object> getObject(const JSONParser::Object & object, const String & name)
+{
+    JSONParser::Element value;
+    if (!object.find(name, value) || !value.isObject())
+        return std::nullopt;
+    return value.getObject();
 }
 
 }
+
+struct LogColumnStatistics::Parser
+{
+    JSONParser parser;
+};
+
+LogColumnStatistics::~LogColumnStatistics() = default;
 
 LogColumnStatistics::LogColumnStatistics(
     const DB::Names & column_names,
@@ -40,6 +103,7 @@ LogColumnStatistics::LogColumnStatistics(
     const DB::NameToNameMap & physical_names_map,
     DB::ContextPtr context)
     : statistics(std::move(context))
+    , parser(std::make_unique<Parser>())
 {
     format_settings.date_time_input_format = DB::FormatSettings::DateTimeInputFormat::BestEffort;
 
@@ -57,7 +121,9 @@ LogColumnStatistics::LogColumnStatistics(
         if (!physical_name)
             continue;
 
-        TargetSource source{std::move(*physical_name), std::nullopt, DB::canStatisticsTrackMinMax(column->type)};
+        TargetSource source{std::move(*physical_name), std::nullopt, DB::canStatisticsTrackMinMax(column->type), nested_type};
+        if (const auto * date_time = typeid_cast<const DB::DataTypeDateTime64 *>(nested_type.get()))
+            source.bound_type = std::make_shared<DB::DataTypeDateTime64>(date_time->getScale(), "UTC");
         if (const auto it = std::ranges::find(partition_columns, name); it != partition_columns.end())
             source.partition_index = it - partition_columns.begin();
 
@@ -71,22 +137,15 @@ bool LogColumnStatistics::addFile(const TableSnapshot::DataFileStatistics & file
     if (!file.stats)
         return false;
 
-    Poco::JSON::Object::Ptr stats;
-    try
-    {
-        stats = Poco::JSON::Parser().parse(String(*file.stats)).extract<Poco::JSON::Object::Ptr>();
-    }
-    catch (const Poco::Exception &)
-    {
+    /// The stats are optional columns over a required row count; a document that does not parse gives neither.
+    JSONParser::Element document;
+    if (!parser->parser.parse(*file.stats, document) || !document.isObject())
         return false;
-    }
-
-    if (!stats || !stats->has("numRecords") || !stats->get("numRecords").isInteger())
+    const std::optional<JSONParser::Object> stats = document.getObject();
+    const auto num_records = getCount(stats, "numRecords");
+    if (!num_records)
         return false;
-    const auto num_records = stats->getValue<Int64>("numRecords");
-    if (num_records < 0)
-        return false;
-    const auto rows = static_cast<UInt64>(num_records);
+    const UInt64 rows = *num_records;
 
     if (file.deleted_rows)
     {
@@ -106,9 +165,9 @@ bool LogColumnStatistics::addFile(const TableSnapshot::DataFileStatistics & file
         return true;
     }
 
-    const auto min_values = stats->getObject("minValues");
-    const auto max_values = stats->getObject("maxValues");
-    const auto null_counts = stats->getObject("nullCount");
+    const auto min_values = getObject(*stats, "minValues");
+    const auto max_values = getObject(*stats, "maxValues");
+    const auto null_counts = getObject(*stats, "nullCount");
 
     std::vector<DB::DataLakeColumnStatistics::ColumnMetrics> file_metrics(targets.size());
     for (size_t i = 0; i < targets.size(); ++i)
@@ -131,8 +190,8 @@ bool LogColumnStatistics::addFile(const TableSnapshot::DataFileStatistics & file
 
         if (source.tracks_min_max)
         {
-            auto lower = getBound(min_values, source.physical_name, nested_type, format_settings);
-            auto upper = getBound(max_values, source.physical_name, nested_type, format_settings);
+            auto lower = getBound(min_values, source.physical_name, *source.bound_type, format_settings);
+            auto upper = getBound(max_values, source.physical_name, *source.bound_type, format_settings);
             if (!lower.isNull() && !upper.isNull())
             {
                 metrics.min_value = std::move(lower);
@@ -140,12 +199,8 @@ bool LogColumnStatistics::addFile(const TableSnapshot::DataFileStatistics & file
             }
         }
 
-        if (null_counts && null_counts->has(source.physical_name) && null_counts->get(source.physical_name).isInteger())
-        {
-            const auto nulls = null_counts->getValue<Int64>(source.physical_name);
-            if (nulls >= 0 && static_cast<UInt64>(nulls) <= rows)
-                metrics.nulls = static_cast<UInt64>(nulls);
-        }
+        if (const auto nulls = getCount(null_counts, source.physical_name); nulls && *nulls <= rows)
+            metrics.nulls = *nulls;
     }
     statistics.addFile(rows, file_metrics);
     return true;

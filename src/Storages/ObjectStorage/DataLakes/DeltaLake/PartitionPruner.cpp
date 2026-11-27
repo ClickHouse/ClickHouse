@@ -66,7 +66,8 @@ PartitionPruner::PartitionPruner(
     const DB::NamesAndTypesList & table_schema_,
     const DB::Names & partition_columns_,
     const DB::NameToNameMap & physical_names_map_,
-    DB::ContextPtr context)
+    DB::ContextPtr context,
+    bool require_ready_sets)
     : physical_partition_columns(partition_columns_)
 {
     if (!partition_columns_.empty())
@@ -88,9 +89,11 @@ PartitionPruner::PartitionPruner(
 
         DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag.getOutputs().front(), context, /* boolean_context */ true);
         key_condition.emplace(
-            inverted_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */);
+            inverted_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */,
+            false /* skip_analysis */, require_ready_sets);
         nullable_key_condition.emplace(
-            inverted_dag, context, nullable_partition_key.column_names, nullable_partition_key.expression, true /* single_point */);
+            inverted_dag, context, nullable_partition_key.column_names, nullable_partition_key.expression, true /* single_point */,
+            false /* skip_analysis */, require_ready_sets);
     }
     if (!physical_names_map_.empty())
     {
