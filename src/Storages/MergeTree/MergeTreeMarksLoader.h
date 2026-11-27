@@ -16,7 +16,7 @@ using MarksPtr = MarkCache::MappedPtr;
 class Threadpool;
 
 /// Class that helps to get marks by indexes.
-/// Always immutable and thread safe.
+/// Thread safe. Decoded blocks are private to this getter.
 /// Marks can be shared between several threads
 /// that read columns from the same file.
 class MergeTreeMarksGetter
@@ -30,6 +30,7 @@ public:
 private:
     const MarkCache::MappedPtr marks;
     const size_t num_columns_in_mark;
+    std::unique_ptr<MarksInCompressedFile::Reader> reader;
 };
 
 using MergeTreeMarksGetterPtr = std::unique_ptr<const MergeTreeMarksGetter>;
