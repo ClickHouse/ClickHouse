@@ -127,13 +127,13 @@ public:
     CachePriorityGuard & getPriorityGuardForTests() { return getPriorityGuard(); }
 
 protected:
-    void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate) override
+    void setMaintenanceTask(FileCacheMaintenanceTask & task, size_t invalidated_entries_threshold) override
     {
-        /// Remember the hook on this priority as well: `OvercommitFileCachePriority`
+        /// Remember the task on this priority as well: `OvercommitFileCachePriority`
         /// reads it back when wiring newly created per-user priorities.
-        IFileCachePriority::setInvalidateNotifier(threshold, on_invalidate);
-        protected_queue.setInvalidateNotifier(threshold, on_invalidate);
-        probationary_queue.setInvalidateNotifier(threshold, on_invalidate);
+        IFileCachePriority::setMaintenanceTask(task, invalidated_entries_threshold);
+        protected_queue.setMaintenanceTask(task, invalidated_entries_threshold);
+        probationary_queue.setMaintenanceTask(task, invalidated_entries_threshold);
     }
 
     size_t removeInvalidatedEntries(size_t max_batch) override
@@ -142,6 +142,11 @@ protected:
         if (removed < max_batch)
             removed += probationary_queue.removeInvalidatedEntries(max_batch - removed);
         return removed;
+    }
+
+    size_t getInvalidatedEntriesCountApprox() const override
+    {
+        return protected_queue.getInvalidatedEntriesCountApprox() + probationary_queue.getInvalidatedEntriesCountApprox();
     }
 
     size_t getHoldSize() override { return protected_queue.getHoldSize() + probationary_queue.getHoldSize(); }

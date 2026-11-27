@@ -230,11 +230,10 @@ void LRUFileCachePriority::addInvalidatedRef(std::weak_ptr<Entry> entry, LRUQueu
         prev = invalidated_count.fetch_add(1, std::memory_order_relaxed);
     }
 
-    /// `invalidate_notifier` is set once on startup and never changed, so it needs no lock.
-    /// Notify outside `invalidated_mutex` to avoid calling into the schedule pool under it.
+    /// Outside `invalidated_mutex`, so that it does not call into the schedule pool under it.
     const size_t threshold = invalidated_threshold.load(std::memory_order_relaxed);
-    if (invalidate_notifier && threshold && prev + 1 == threshold)
-        invalidate_notifier();
+    if (threshold && prev + 1 == threshold)
+        wakeMaintenanceTask();
 }
 
 LRUFileCachePriority::LRUIterator::LRUIterator(
@@ -387,7 +386,7 @@ LRUFileCachePriority::iterateImpl(
                 }
                 case Entry::State::Invalidated:
                 {
-                    /// Skip invalidated entries; the background cleanup task removes them.
+                    /// Skip invalidated entries; the background maintenance task removes them.
                     stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Invalidated);
                     return false;
                 }
@@ -839,7 +838,7 @@ void LRUFileCachePriority::LRUIterator::invalidate() noexcept
 {
     invalidateImpl();
 
-    /// Only the `Main` priority drains `invalidated_refs` via the background cleanup task.
+    /// Only the `Main` priority drains `invalidated_refs` via the background maintenance task.
     if (cache_priority->getQueueType() == QueueType::Main)
         cache_priority->addInvalidatedRef(entry, iterator);
 }

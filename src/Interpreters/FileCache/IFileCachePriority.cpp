@@ -20,6 +20,19 @@ IFileCachePriority::IFileCachePriority(QueueType queue_type_, size_t max_size_, 
 {
 }
 
+void IFileCachePriority::registerMaintenanceJobs(FileCacheMaintenanceTask & task, const FileCachePriorityMaintenanceJobs::Settings & settings)
+{
+    maintenance_jobs = std::make_unique<FileCachePriorityMaintenanceJobs>(*this, settings);
+    maintenance_jobs->addTo(task);
+    setMaintenanceTask(task, settings.invalidated_entries_threshold);
+}
+
+void IFileCachePriority::wakeMaintenanceTask() const
+{
+    if (maintenance_task)
+        maintenance_task->wake();
+}
+
 IFileCachePriority::Entry::Entry(
     const Key & key_,
     size_t offset_,

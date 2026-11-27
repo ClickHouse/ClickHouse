@@ -581,13 +581,17 @@ void FileCache::initializeImpl(bool load_metadata)
         if (client_tracking_possible)
             metadata.setClientAccessCallback([this](const std::string & user_id) { main_priority->touchClientAccess(user_id); });
 
-        /// The single maintenance task (invalidated-entries cleanup + idle eviction).
-        /// Publish the wake notifier before loadMetadata can invalidate entries.
-        background_cleanup_task = Context::getGlobalContextInstance()->getSchedulePool()->createTask(
-            StorageID::createEmpty(), "FileCacheBackgroundCleanup", [this] { backgroundCleanupTaskFunc(); });
-        main_priority->setInvalidateNotifier(
-            invalidated_entries_cleanup_threshold, [this] { background_cleanup_task->schedule(); });
-        background_cleanup_task->scheduleAfter(backgroundCleanupIntervalMs());
+        /// Before loadMetadata, which can invalidate entries and so wake the task.
+        main_priority->registerMaintenanceJobs(
+            maintenance_task,
+            {
+                .invalidated_entries_threshold = invalidated_entries_cleanup_threshold,
+                .invalidated_entries_removal_interval = std::chrono::milliseconds(invalidated_entries_cleanup_interval_ms),
+                .invalidated_entries_removal_batch = invalidated_entries_cleanup_remove_batch,
+            });
+        if (client_tracking_possible)
+            maintenance_task.addJob("evict idle clients", [this](MaintenanceTimePoint now) { return evictIdleClientsIfDue(now); });
+        maintenance_task.start(*Context::getGlobalContextInstance()->getSchedulePool(), "FileCacheBackgroundMaintenance");
 
         if (load_metadata)
             loadMetadata();
@@ -596,10 +600,8 @@ void FileCache::initializeImpl(bool load_metadata)
     }
     catch (...)
     {
-        /// The cleanup task may already be scheduled; stop it so a retried
-        /// initialization does not leave an orphaned task rescheduling on `this`.
-        if (background_cleanup_task)
-            background_cleanup_task->deactivate();
+        /// The maintenance task may already be started: it must not keep running on a cache which failed to initialize.
+        maintenance_task.stop();
         init_exception = std::current_exception();
         tryLogCurrentException(__PRETTY_FUNCTION__);
         throw;
@@ -634,6 +636,8 @@ void FileCache::initializeImpl(bool load_metadata)
     }
 
     is_initialized = true;
+    /// The jobs which wait for `is_initialized` have said that they are never due.
+    maintenance_task.wake();
     LOG_TEST(log, "Initialized cache from {}", metadata.getBaseDirectory());
 }
 
@@ -1869,82 +1873,33 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
     assertCacheCorrectness();
 }
 
-UInt64 FileCache::backgroundCleanupIntervalMs() const
+FileCache::MaintenanceTimePoint FileCache::evictIdleClientsIfDue(MaintenanceTimePoint now)
 {
-    /// Invalidated-entries interval, shrunk to the idle-client check cadence
-    /// (default `ttl/10`) while idle-client eviction is enabled.
-    const auto ttl_sec = idle_client_ttl_sec.load();
-    if (ttl_sec == 0)
-        return invalidated_entries_cleanup_interval_ms;
-    const auto check_sec = idle_client_check_interval_sec.load();
-    const auto interval_sec = check_sec > 0 ? check_sec : std::max<UInt64>(1, ttl_sec / 10);
-    return std::min<UInt64>(invalidated_entries_cleanup_interval_ms, interval_sec * 1000);
-}
-
-void FileCache::backgroundCleanupTaskFunc()
-{
-    size_t removed = 0;
-    {
-        Stopwatch watch;
-        try
-        {
-            removed = main_priority->removeInvalidatedEntries(invalidated_entries_cleanup_remove_batch);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-        ProfileEvents::increment(
-            ProfileEvents::FilesystemCacheInvalidatedEntriesCleanupThreadWorkMilliseconds, watch.elapsedMilliseconds());
-    }
-
-    /// Idle-client eviction shares this thread; self-throttled to its own interval.
-    /// Possible only for client-tracking (overcommit) policies; the live TTL gates it.
-    if (client_tracking_possible)
-    {
-        try
-        {
-            evictIdleClients();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
-    if (shutdown || !background_cleanup_task)
-        return;
-
-    /// A full batch likely means there is more to clean: come back immediately.
-    if (removed == invalidated_entries_cleanup_remove_batch)
-        background_cleanup_task->schedule();
-    else
-        background_cleanup_task->scheduleAfter(backgroundCleanupIntervalMs());
-}
-
-void FileCache::evictIdleClients()
-{
-    /// Wait for `is_initialized`: the cleanup task is scheduled before loadMetadata,
-    /// and purging a client mid-load could race a key still being reconstructed.
+    /// Evicting a client while metadata is loading could race with a key which is still being loaded.
+    /// The end of initialization wakes the task.
     if (!is_initialized || shutdown)
-        return;
+        return FileCacheMaintenanceTask::never;
 
-    /// TTL is reloadable: zero means eviction is currently disabled. Access tracking
-    /// keeps running, so last-access stays fresh if it is re-enabled later.
+    /// The TTL is reloadable, zero disables eviction. Changing it from zero wakes the task.
     const auto ttl_sec = idle_client_ttl_sec.load();
     if (ttl_sec == 0)
-        return;
+        return FileCacheMaintenanceTask::never;
 
-    /// Self-throttle to the check interval: the cleanup task can fire more often.
-    /// Runs only on the cleanup-task thread, so `last_idle_eviction` needs no sync.
-    const auto now = std::chrono::steady_clock::now();
-    const auto configured = idle_client_check_interval_sec.load();
-    const std::chrono::seconds check_interval(configured > 0 ? configured : std::max<UInt64>(1, ttl_sec / 10));
-    if (last_idle_eviction.time_since_epoch().count() != 0 && now - last_idle_eviction < check_interval)
-        return;
+    const auto configured_check_interval_sec = idle_client_check_interval_sec.load();
+    const std::chrono::seconds check_interval(
+        configured_check_interval_sec > 0 ? configured_check_interval_sec : std::max<UInt64>(1, ttl_sec / 10));
+
+    const bool evicted_before = last_idle_eviction != MaintenanceTimePoint{};
+    if (evicted_before && now - last_idle_eviction < check_interval)
+        return last_idle_eviction + check_interval;
+
     last_idle_eviction = now;
+    evictIdleClients(std::chrono::seconds(ttl_sec));
+    return now + check_interval;
+}
 
-    const std::chrono::seconds ttl(ttl_sec);
+void FileCache::evictIdleClients(std::chrono::seconds ttl)
+{
     const auto idle_clients = main_priority->collectIdleClients(ttl);
     if (idle_clients.empty())
         return;
@@ -1969,11 +1924,11 @@ void FileCache::evictIdleClients()
                 if (usage->total_size == 0)
                     continue;
 
-                /// Report success only on a full purge; held segments are retried next sweep.
+                /// Report success only on a full purge; held segments are retried by the next pass.
                 if (metadata.removeAllKeys(user_id))
                 {
                     ProfileEvents::increment(ProfileEvents::FilesystemCacheIdleClientEvictions);
-                    LOG_INFO(log, "Purged cache for idle client '{}' (idle for >= {} sec)", user_id, ttl_sec);
+                    LOG_INFO(log, "Purged cache for idle client '{}' (idle for >= {} sec)", user_id, ttl.count());
                 }
             }
             catch (...)
@@ -1983,7 +1938,7 @@ void FileCache::evictIdleClients()
         }
     };
 
-    /// The current (cleanup-task) thread participates, so spawn one fewer worker.
+    /// The current (maintenance task) thread participates, so spawn one fewer worker.
     const size_t num_extra_threads = std::min<size_t>(idle_clients.size(), idle_client_eviction_threads) - 1;
     std::vector<ThreadFromGlobalPool> threads;
     try
@@ -2657,9 +2612,7 @@ void FileCache::deactivateBackgroundOperations()
 
     if (keep_up_free_space_ratio_task)
         keep_up_free_space_ratio_task->deactivate();
-    /// The single maintenance task: invalidated-entries cleanup + idle-client eviction.
-    if (background_cleanup_task)
-        background_cleanup_task->deactivate();
+    maintenance_task.stop();
 
     /// The task is stopped, so no new eviction jobs can be scheduled - drain the rest.
     if (eviction_pool)
@@ -2925,9 +2878,9 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         if (new_ttl > 0 && !client_tracking_possible)
             LOG_WARNING(log, "idle_client_ttl_sec is set but the cache policy does not track "
                              "per-client usage; idle-client eviction is disabled");
-        /// Just enabled: wake the task so the first sweep does not wait a full interval.
-        else if (new_ttl > 0 && !was_enabled && client_tracking_possible && background_cleanup_task)
-            background_cleanup_task->schedule();
+        /// Just enabled: `evictIdleClientsIfDue` has said that it is never due.
+        else if (new_ttl > 0 && !was_enabled && client_tracking_possible)
+            maintenance_task.wake();
     }
 
     if (new_settings[FileCacheSetting::idle_client_check_interval_sec] != actual_settings[FileCacheSetting::idle_client_check_interval_sec])
@@ -2938,6 +2891,10 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
                  actual_settings[FileCacheSetting::idle_client_check_interval_sec].value,
                  new_settings[FileCacheSetting::idle_client_check_interval_sec].value);
         actual_settings[FileCacheSetting::idle_client_check_interval_sec] = new_settings[FileCacheSetting::idle_client_check_interval_sec];
+
+        /// The task is scheduled by the old interval, which may be longer than the new one.
+        if (client_tracking_possible)
+            maintenance_task.wake();
     }
 
     if (new_settings[FileCacheSetting::expose_prometheus_eviction_metrics] != actual_settings[FileCacheSetting::expose_prometheus_eviction_metrics])

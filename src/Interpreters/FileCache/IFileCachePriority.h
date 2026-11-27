@@ -5,6 +5,7 @@
 #include <Core/Types.h>
 #include <Interpreters/FileCache/Guards.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
+#include <Interpreters/FileCache/FileCachePriorityMaintenanceJobs.h>
 
 #include <atomic>
 #include <chrono>
@@ -403,18 +404,9 @@ public:
 
     virtual void resetEvictionPos(EvictionCursor cursor) = 0;
 
-    /// Hook fired from invalidate() once pending invalidated entries reach
-    /// `threshold` (FileCache wakes its cleanup task). Wrappers propagate it down.
-    virtual void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate)
-    {
-        invalidated_threshold.store(threshold, std::memory_order_relaxed);
-        invalidate_notifier = on_invalidate;
-    }
-
-    /// Remove up to `max_batch` invalidated entries (driven by `FileCache`'s cleanup task), each
-    /// under its owning queue's write lock so cleanup serializes with foreground operations.
-    /// Returns the number removed.
-    virtual size_t removeInvalidatedEntries(size_t max_batch) = 0;
+    /// Adds the jobs of this priority to `task` and lets the priority wake it. Called once, only on the top-level
+    /// priority, before `task.start`. `task` must be stopped before this priority is destroyed.
+    void registerMaintenanceJobs(FileCacheMaintenanceTask & task, const FileCachePriorityMaintenanceJobs::Settings & settings);
 
     struct UsageStat
     {
@@ -523,6 +515,24 @@ protected:
     /// return a redirected guard, and by the Overcommit/Split wrappers to throw.
     virtual CachePriorityGuard & getPriorityGuard() const { return priority_guard; }
 
+    /// Lets this priority wake `task` once `invalidated_entries_threshold` invalidated entries accumulate, without adding
+    /// jobs: the jobs of the top-level priority walk the inner priorities. Wrappers pass it down.
+    virtual void setMaintenanceTask(FileCacheMaintenanceTask & task, size_t invalidated_entries_threshold)
+    {
+        invalidated_threshold.store(invalidated_entries_threshold, std::memory_order_relaxed);
+        maintenance_task = &task;
+    }
+
+    /// Does nothing in a priority without a task: a query priority, or one which a test built without a cache.
+    void wakeMaintenanceTask() const;
+
+    /// Remove up to `max_batch` invalidated entries, each under its owning queue's write lock so that the removal
+    /// serializes with foreground operations. Returns the number removed. Wrappers remove from all their inner priorities.
+    virtual size_t removeInvalidatedEntries(size_t max_batch) = 0;
+
+    /// The number of invalidated entries which `removeInvalidatedEntries` has not removed yet.
+    virtual size_t getInvalidatedEntriesCountApprox() const = 0;
+
     const QueueType queue_type;
     std::atomic<size_t> max_size = 0;
     std::atomic<size_t> max_elements = 0;
@@ -531,9 +541,15 @@ protected:
 
     OnEvictCallback on_evict_callback;
 
-    /// Fire `invalidate_notifier` once a queue accumulates this many pending invalidated entries.
+    /// Wake `maintenance_task` once a queue accumulates this many pending invalidated entries.
     std::atomic<size_t> invalidated_threshold = 0;
-    std::function<void()> invalidate_notifier;
+    /// Owned by `FileCache`. Null if the priority has no task to wake.
+    FileCacheMaintenanceTask * maintenance_task = nullptr;
+
+private:
+    friend class FileCachePriorityMaintenanceJobs;
+    /// Set only in the top-level priority, by `registerMaintenanceJobs`.
+    std::unique_ptr<FileCachePriorityMaintenanceJobs> maintenance_jobs;
 };
 
 using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;

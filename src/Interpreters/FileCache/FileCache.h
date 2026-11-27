@@ -16,6 +16,7 @@
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/Metadata.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
+#include <Interpreters/FileCache/FileCacheMaintenanceTask.h>
 #include <Interpreters/FileCache/FileCacheSettings.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
@@ -268,16 +269,17 @@ public:
 
     void freeSpaceRatioKeepingThreadFunc();
 
-    void backgroundCleanupTaskFunc();
-
-    void evictIdleClients();
-
-    /// Cleanup-task reschedule interval; recomputed from current (reloadable) settings.
-    UInt64 backgroundCleanupIntervalMs() const;
-
     const String & getName() const { return name; }
 
 private:
+    using MaintenanceTimePoint = FileCacheMaintenanceTask::TimePoint;
+
+    /// A job of `maintenance_task`, see `FileCacheMaintenanceTask::Job`.
+    MaintenanceTimePoint evictIdleClientsIfDue(MaintenanceTimePoint now);
+
+    /// Removes the cache of every client which was not accessed for `ttl`.
+    void evictIdleClients(std::chrono::seconds ttl);
+
     void onSegmentEvicted(const FileSegment & segment, size_t disk_accounted_size, const String & user_id) const;
     IFileCachePriority::OnEvictCallback getOnBackgroundEvictCallback() const;
     void onSegmentEvictedInTheBackground(const FileSegment & segment, size_t disk_accounted_size, const String & user_id) const;
@@ -312,9 +314,9 @@ private:
     const size_t drop_cache_threads;
     std::unique_ptr<ThreadPool> drop_cache_pool;
 
-    /// Single background maintenance task: removes the priority's invalidated
-    /// queue entries and, on the same ticks, evicts idle clients.
-    BackgroundSchedulePoolTaskHolder background_cleanup_task;
+    /// Runs the jobs of the priority, which remove invalidated queue entries, and evicts idle clients.
+    /// Declared before `main_priority`, which holds a pointer to it.
+    FileCacheMaintenanceTask maintenance_task;
     const UInt64 invalidated_entries_cleanup_threshold;
     const UInt64 invalidated_entries_cleanup_interval_ms;
     const UInt64 invalidated_entries_cleanup_remove_batch;
@@ -325,8 +327,8 @@ private:
     std::atomic<UInt64> idle_client_ttl_sec{0};
     std::atomic<UInt64> idle_client_check_interval_sec{0};
     const UInt64 idle_client_eviction_threads;
-    /// Last idle sweep wall-clock; touched only from the cleanup task thread.
-    std::chrono::steady_clock::time_point last_idle_eviction;
+    /// Touched only by `evictIdleClientsIfDue`.
+    MaintenanceTimePoint last_idle_eviction;
     /// Decided in the constructor: only overcommit policies with per-user-id
     /// directories track per-client usage, so idle eviction is possible only then.
     bool client_tracking_possible = false;

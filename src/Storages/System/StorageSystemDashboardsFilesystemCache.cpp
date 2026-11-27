@@ -293,6 +293,7 @@ const std::vector<Chart> & getCharts()
                 {"DownloadQueuePush", "sum(ProfileEvent_FilesystemCacheBackgroundDownloadQueuePush)"},
                 {"RemovedInvalidatedEntries", "sum(ProfileEvent_FilesystemCacheBackgroundRemovedInvalidatedEntries)"},
                 {"IdleClientEvictions", "sum(ProfileEvent_FilesystemCacheIdleClientEvictions)"},
+                {"MaintenanceTaskWakeUps", "sum(ProfileEvent_FilesystemCacheMaintenanceTaskWakeUps)"},
             },
         },
         {

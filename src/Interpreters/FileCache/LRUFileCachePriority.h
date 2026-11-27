@@ -202,6 +202,8 @@ private:
 
     size_t removeInvalidatedEntries(size_t max_batch) override;
 
+    size_t getInvalidatedEntriesCountApprox() const override { return invalidated_count.load(std::memory_order_relaxed); }
+
     /// The walk itself; the callers release the lock before logging a failure.
     bool collectCandidatesForEvictionImpl(
         EvictionInfo & eviction_info,

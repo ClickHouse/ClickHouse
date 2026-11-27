@@ -132,10 +132,11 @@ public:
 protected:
     [[noreturn]] CachePriorityGuard & getPriorityGuard() const override;
 
-    void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate) override
+    void setMaintenanceTask(FileCacheMaintenanceTask & task, size_t invalidated_entries_threshold) override
     {
-        getPriority(SegmentType::Data).setInvalidateNotifier(threshold, on_invalidate);
-        getPriority(SegmentType::System).setInvalidateNotifier(threshold, on_invalidate);
+        IFileCachePriority::setMaintenanceTask(task, invalidated_entries_threshold);
+        getPriority(SegmentType::Data).setMaintenanceTask(task, invalidated_entries_threshold);
+        getPriority(SegmentType::System).setMaintenanceTask(task, invalidated_entries_threshold);
     }
 
     size_t removeInvalidatedEntries(size_t max_batch) override
@@ -144,6 +145,12 @@ protected:
         if (removed < max_batch)
             removed += getPriority(SegmentType::System).removeInvalidatedEntries(max_batch - removed);
         return removed;
+    }
+
+    size_t getInvalidatedEntriesCountApprox() const override
+    {
+        return getPriority(SegmentType::Data).getInvalidatedEntriesCountApprox()
+            + getPriority(SegmentType::System).getInvalidatedEntriesCountApprox();
     }
 
     size_t getHoldSize() override;
