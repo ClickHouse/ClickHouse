@@ -33,10 +33,17 @@ ALTER_OF_COLUMN_IS_FORBIDDEN
 lambda policy after drop	[1]
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
--- a name binds as written first, exact column or subcolumn, the qualifier is removed only after that
+-- a name binds as written first, exact column or subcolumn, a table name or an alias is removed first with analyzer_compatibility_prefer_alias_over_subcolumn, both count
+subcolumn first	[2]
+column first	[1]
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- a column cannot get a name that a policy reads as another column, the table name included
+ALTER_OF_COLUMN_IS_FORBIDDEN
+qualifier policy after rename	[1]
 -- a column of its own with a dot in the name is not a subcolumn of the shorter name
 dotted column policy after alters	[1]
 ALTER_OF_COLUMN_IS_FORBIDDEN
@@ -64,6 +71,12 @@ derived table policy after drop	[1,3]
 -- so does a table function that reads the target
 ALTER_OF_COLUMN_IS_FORBIDDEN
 table function policy after drop	[1,3]
+-- a SQL function can read the target in a subquery inside a subquery over another table
+ALTER_OF_COLUMN_IS_FORBIDDEN
+function in subquery policy after drop	[2]
+-- a CTE over another table hides the target of the same name
+ALTER_OF_COLUMN_IS_FORBIDDEN
+hidden target policy after rename	[2]
 -- a qualifier binds in its own subquery, an alias of another table there hides the policy table and the outer aliases
 ALTER_OF_COLUMN_IS_FORBIDDEN
 scoped alias policy after rename	[1,2]

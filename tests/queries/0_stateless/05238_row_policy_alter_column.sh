@@ -109,18 +109,35 @@ $CLICKHOUSE_CLIENT -q "SELECT 'lambda policy after drop', arraySort(groupArray(i
 refused "ALTER TABLE tlam DROP COLUMN arr" ALTER_OF_COLUMN_IS_FORBIDDEN
 refused "ALTER TABLE tlam RENAME COLUMN tenant TO tenant_id" ALTER_OF_COLUMN_IS_FORBIDDEN
 
-echo "-- a name binds as written first, exact column or subcolumn, the qualifier is removed only after that"
+echo "-- a name binds as written first, exact column or subcolumn, a table name or an alias is removed first with analyzer_compatibility_prefer_alias_over_subcolumn, both count"
 $CLICKHOUSE_CLIENT --multiquery -q "
 CREATE TABLE tt (id UInt32, x UInt8, tt Tuple(x UInt8)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tt VALUES (1, 1, (0)), (2, 0, (1));
 CREATE ROW POLICY ptt ON $DB.tt FOR SELECT USING tt.x = 1 TO CURRENT_USER;
 CREATE TABLE tl (id UInt32, x UInt8, \`tl.x\` UInt8, \`$DB.tl.x\` UInt8) ENGINE = MergeTree ORDER BY id;
 CREATE ROW POLICY ptl ON $DB.tl FOR SELECT USING tl.x = 1 AND $DB.tl.x = 1 TO CURRENT_USER;
+CREATE TABLE tl2 (id UInt32, x UInt8, \`$DB.tl2.x\` UInt8) ENGINE = MergeTree ORDER BY id;
+CREATE ROW POLICY ptl2 ON $DB.tl2 FOR SELECT USING $DB.tl2.x = 1 TO CURRENT_USER;
 "
+$CLICKHOUSE_CLIENT -q "SELECT 'subcolumn first', arraySort(groupArray(id)) FROM tt"
+$CLICKHOUSE_CLIENT -q "SELECT 'column first', arraySort(groupArray(id)) FROM tt SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1"
 refused "ALTER TABLE tt DROP COLUMN tt" ALTER_OF_COLUMN_IS_FORBIDDEN
-$CLICKHOUSE_CLIENT -q "ALTER TABLE tt DROP COLUMN x"
+refused "ALTER TABLE tt DROP COLUMN x" ALTER_OF_COLUMN_IS_FORBIDDEN
 refused "ALTER TABLE tl RENAME COLUMN \`tl.x\` TO \`tl.y\`" ALTER_OF_COLUMN_IS_FORBIDDEN
 refused "ALTER TABLE tl DROP COLUMN \`$DB.tl.x\`" ALTER_OF_COLUMN_IS_FORBIDDEN
-$CLICKHOUSE_CLIENT -q "ALTER TABLE tl DROP COLUMN x"
+refused "ALTER TABLE tl DROP COLUMN x" ALTER_OF_COLUMN_IS_FORBIDDEN
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tl2 DROP COLUMN x"
+
+echo "-- a column cannot get a name that a policy reads as another column, the table name included"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tr (id UInt32, tenant UInt8, payload Tuple(tenant String), misc UInt8) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tr VALUES (1, 1, ('no'), 0), (2, 2, ('yes'), 0);
+CREATE ROW POLICY ptr ON $DB.tr FOR SELECT USING tr.tenant = 1 TO CURRENT_USER;
+"
+refused "ALTER TABLE tr RENAME COLUMN payload TO tr" ALTER_OF_COLUMN_IS_FORBIDDEN
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tr RENAME COLUMN payload TO payload2"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tr RENAME COLUMN misc TO misc2"
+$CLICKHOUSE_CLIENT -q "SELECT 'qualifier policy after rename', arraySort(groupArray(id)) FROM tr"
 
 echo "-- a column of its own with a dot in the name is not a subcolumn of the shorter name"
 $CLICKHOUSE_CLIENT --multiquery -q "
@@ -223,6 +240,32 @@ CREATE ROW POLICY pal6 ON $DB.al6 FOR SELECT USING id IN (SELECT q.id FROM view(
 refused "ALTER TABLE tal6 DROP COLUMN tenant" ALTER_OF_COLUMN_IS_FORBIDDEN
 $CLICKHOUSE_CLIENT -q "ALTER TABLE tal6 DROP COLUMN misc"
 $CLICKHOUSE_CLIENT -q "SELECT 'table function policy after drop', arraySort(groupArray(id)) FROM al6 SETTINGS enable_parallel_replicas = 0"
+
+echo "-- a SQL function can read the target in a subquery inside a subquery over another table"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tal9 (id UInt32, tenant UInt32, misc UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tal9 VALUES (1, 1, 0), (2, 2, 0);
+CREATE TABLE al9 ENGINE = Alias(tal9);
+CREATE FUNCTION ${UDF}_max AS () -> (SELECT max(tenant) FROM $DB.tal9);
+CREATE ROW POLICY pal9 ON $DB.al9 FOR SELECT USING id IN (SELECT ${UDF}_max() FROM numbers(1)) TO CURRENT_USER;
+"
+refused "ALTER TABLE tal9 DROP COLUMN tenant" ALTER_OF_COLUMN_IS_FORBIDDEN
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tal9 DROP COLUMN misc"
+$CLICKHOUSE_CLIENT -q "SELECT 'function in subquery policy after drop', arraySort(groupArray(id)) FROM al9 SETTINGS enable_parallel_replicas = 0"
+
+echo "-- a CTE over another table hides the target of the same name"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tal10 (id UInt32, tenant UInt32, flag UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tal10 VALUES (1, 1, 1), (2, 2, 1);
+CREATE TABLE other10 (id UInt32, tenant UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO other10 VALUES (1, 0), (2, 1);
+CREATE TABLE al10 ENGINE = Alias(tal10);
+CREATE ROW POLICY pal10 ON $DB.al10 FOR SELECT USING id IN (WITH tal10 AS (SELECT * FROM $DB.other10) SELECT id FROM tal10 WHERE tenant = 1)
+    AND id IN (SELECT id FROM tal10 WHERE flag = 1) TO CURRENT_USER;
+"
+refused "ALTER TABLE tal10 DROP COLUMN flag" ALTER_OF_COLUMN_IS_FORBIDDEN
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tal10 RENAME COLUMN tenant TO tenant_id"
+$CLICKHOUSE_CLIENT -q "SELECT 'hidden target policy after rename', arraySort(groupArray(id)) FROM al10 SETTINGS enable_parallel_replicas = 0"
 
 echo "-- a qualifier binds in its own subquery, an alias of another table there hides the policy table and the outer aliases"
 $CLICKHOUSE_CLIENT --multiquery -q "
@@ -330,6 +373,8 @@ DROP ROW POLICY pf ON $DB.tf;
 DROP ROW POLICY plam ON $DB.tlam;
 DROP ROW POLICY ptt ON $DB.tt;
 DROP ROW POLICY ptl ON $DB.tl;
+DROP ROW POLICY ptl2 ON $DB.tl2;
+DROP ROW POLICY ptr ON $DB.tr;
 DROP ROW POLICY pd ON $DB.td;
 DROP ROW POLICY ps ON $DB.ts;
 DROP ROW POLICY psame ON $DB.tsame;
@@ -342,10 +387,13 @@ DROP ROW POLICY pal5 ON $DB.al5;
 DROP ROW POLICY pal6 ON $DB.al6;
 DROP ROW POLICY pal7 ON $DB.al7;
 DROP ROW POLICY pal8 ON $DB.al8;
+DROP ROW POLICY pal9 ON $DB.al9;
+DROP ROW POLICY pal10 ON $DB.al10;
 DROP ROW POLICY pc ON $DB.tc;
 DROP ROW POLICY png ON $DB.tng;
 DROP ROW POLICY pm ON $DB.tm;
 DROP FUNCTION $UDF;
+DROP FUNCTION ${UDF}_max;
 DROP TABLE t;
 DROP TABLE t2;
 DROP TABLE allowed;
@@ -359,6 +407,8 @@ DROP TABLE tf;
 DROP TABLE tlam;
 DROP TABLE tt;
 DROP TABLE tl;
+DROP TABLE tl2;
+DROP TABLE tr;
 DROP TABLE td;
 DROP TABLE ts;
 DROP DATABASE ${DB}_2;
@@ -383,6 +433,11 @@ DROP TABLE other7;
 DROP TABLE al8;
 DROP TABLE tal8;
 DROP TABLE c8;
+DROP TABLE al9;
+DROP TABLE tal9;
+DROP TABLE al10;
+DROP TABLE tal10;
+DROP TABLE other10;
 DROP TABLE tc;
 DROP TABLE tng;
 DROP TABLE tm;
