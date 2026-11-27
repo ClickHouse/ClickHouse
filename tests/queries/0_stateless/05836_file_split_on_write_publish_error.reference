@@ -1,0 +1,6 @@
+--- A split insert writes two files and fails to register the third one
+data.1.tsv	300
+data.tsv	300
+--- A smaller truncating insert leaves only its own rows
+data.tsv	100	0	99
+100	0	99

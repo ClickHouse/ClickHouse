@@ -1,0 +1,11 @@
+--- The first insert
+p_0_part.json
+--- The second insert fails in its second block, while writing the new numbered file
+FUNCTION_THROW_IF_VALUE_IS_NON_ZERO
+--- Only the completed file remains
+p_0_part.json
+0	100	4950
+--- The next insert succeeds and steps aside into the same numbered file
+p_0_part.1.json
+p_0_part.json
+0	200	19900

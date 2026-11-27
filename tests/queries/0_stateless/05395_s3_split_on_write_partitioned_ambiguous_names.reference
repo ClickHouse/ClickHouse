@@ -1,0 +1,20 @@
+--- The partition `a.1` is not deleted as a numbered object of the partition `a`
+BAD_ARGUMENTS
+p_a.1.tsv	a.1	1
+--- The partition `a` is not split into `p_a.1.tsv` either, with or without s3_create_new_file_on_insert
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+p_a.1.tsv	a.1	1
+--- A character that is not a digit between the partition id and the extension
+a	100	4950	1
+a.1	1	1	1
+suffix/p_a.1_part.tsv
+suffix/p_a_part.tsv
+--- The partition id in a directory
+a	100	4950	1
+a.1	1	1	1
+directory/a.1/data.tsv
+directory/a/data.tsv
+--- A partition key that cannot have a dot in it
+p_1.tsv
+1	100	4950

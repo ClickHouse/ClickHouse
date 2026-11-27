@@ -1,0 +1,15 @@
+--- Someone else owns two of the numbered names
+--- A large insert skips the taken names
+1000	0	999
+--- A truncating rewrite that needs the numbered names as well
+1000	0	999
+--- The names the rewrite does not own are intact
+foreign 1
+foreign 3
+--- The files of the previous insert are deleted, and the rewrite has stepped over the foreign names
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.4.tsv
+data.5.tsv
+data.tsv

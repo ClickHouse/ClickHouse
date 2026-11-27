@@ -75,6 +75,10 @@ public:
 
     [[nodiscard]] bool supportsPartialPathPrefix() const override { return false; }
 
+    [[nodiscard]] const Paths & getPathsUnlocked() const override { return paths; }
+    Paths & getMutablePathsUnlocked() override { return paths; }
+    void setPathsUnlocked(const Paths & paths_) override { paths = paths_; }
+
     [[nodiscard]] String getNamespace() const override { return namespace_prefix; }
     [[nodiscard]] String getDataSourceDescription() const override { return raw_url; }
 
@@ -95,9 +99,6 @@ public:
         bool with_structure) override;
 
 protected:
-    const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return paths; }
-    void setPathsImpl(const Paths & paths_) override TSA_REQUIRES(paths_mutex) { paths = paths_; }
-
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
@@ -111,7 +112,7 @@ private:
     WebObjectStorage::URLShards url_shards;
     String namespace_prefix;
     Path path;
-    Paths paths TSA_GUARDED_BY(paths_mutex);
+    Paths paths;
     std::optional<String> archive_pattern;
     HTTPHeaderEntries headers_from_ast;
 };

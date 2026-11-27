@@ -1,0 +1,11 @@
+--- s3_create_new_file_on_insert, then a truncating insert
+1
+3
+data.1.tsv
+data.tsv
+--- s3_create_new_file_on_insert, a split insert, then a truncating insert
+302	1
+1
+3
+data.1.tsv
+data.tsv

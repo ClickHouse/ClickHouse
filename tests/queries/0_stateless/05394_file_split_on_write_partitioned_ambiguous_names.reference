@@ -1,0 +1,21 @@
+--- The partition `a.1` is not deleted as a numbered file of the partition `a`
+BAD_ARGUMENTS
+p_a.1.tsv
+a.1	1
+--- The partition `a` is not split into `p_a.1.tsv` either, with or without engine_file_allow_create_multiple_files
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+p_a.1.tsv
+--- A character that is not a digit between the partition id and the extension
+a	100	4950	1
+a.1	1	1	1
+p_a.1_part.tsv
+p_a_part.tsv
+--- The partition id in a directory
+a	100	4950	1
+a.1	1	1	1
+a.1/data.tsv
+a/data.tsv
+--- A partition key that cannot have a dot in it
+1	100	4950	1
+p_1.tsv
