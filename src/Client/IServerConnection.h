@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Throttler.h>
+#include <Core/Names.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Block.h>
@@ -180,6 +181,14 @@ public:
     /// notice it with `getNumberOfEstablishedConnections`, before the checks that depend on the
     /// session.
     virtual void reconnectIfNeeded(const ConnectionTimeouts & /*timeouts*/) {}
+
+    /// The settings that `sendQuery` sends whatever their values are, until other ones are set.
+    /// A connection to a server does not send back a setting whose value is the one the server
+    /// reported in the handshake, because the client only mirrors it. But the session can hold
+    /// another value by the time of the query (a `SET profile` changes it on the server without
+    /// telling the client), and then leaving the setting out lets the value of the session apply.
+    /// So a caller that relies on a value being in force for its query names the setting here.
+    virtual void setSettingsAlwaysSent(NameSet /*names*/) {}
 
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     virtual void setThrottler(const ThrottlerPtr & throttler_) = 0;

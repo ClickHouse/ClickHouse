@@ -1156,6 +1156,11 @@ void Connection::sendQuery(
             modified_settings.emplace(*settings);
             for (const SettingChange & change : settings_from_server)
             {
+                /// The caller relies on this value being in force for the query, and the session
+                /// may hold another one by now - see `setSettingsAlwaysSent`.
+                if (settings_always_sent.contains(change.name))
+                    continue;
+
                 Field value;
                 if (settings->tryGet(change.name, value) && value == change.value)
                 {

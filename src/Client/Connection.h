@@ -177,6 +177,7 @@ public:
     UInt64 getNumberOfEstablishedConnections() const override { return number_of_established_connections; }
     void setReconnectInSendQueryAllowed(bool allowed) override { reconnect_in_send_query_allowed = allowed; }
     void reconnectIfNeeded(const ConnectionTimeouts & timeouts) override;
+    void setSettingsAlwaysSent(NameSet names) override { settings_always_sent = std::move(names); }
 
     bool isConnected() const override { return connected && in && out && !in->isCanceled() && !out->isCanceled(); }
 
@@ -292,6 +293,8 @@ private:
     String server_timezone;
     String server_display_name;
     SettingsChanges settings_from_server;
+    /// See `setSettingsAlwaysSent`.
+    NameSet settings_always_sent;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::shared_ptr<ReadBufferFromPocoSocketChunked> in;

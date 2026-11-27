@@ -167,7 +167,7 @@ protected:
     /// `send_query` (a `sendQuery` call on the shared connection). If the call fails before the
     /// first byte of the query packet has been written, the flag is disarmed again: the protocol
     /// never left sync, and the session must not pay for the failure with a round trip.
-    void armResynchronizationAndSendQuery(std::function<void()> send_query);
+    void armResynchronizationAndSendQuery(std::function<void()> send_query, const NameSet & settings_always_sent = {});
 
     virtual void processError(std::string_view query) const = 0;
     virtual String getName() const = 0;
@@ -727,6 +727,11 @@ protected:
     /// and a reconnection could needlessly lose the session state (temporary tables, the current
     /// database, session settings).
     bool connection_needs_resynchronization = false;
+
+    /// The settings that the query being run relies on, so they are sent with it whatever their
+    /// values are (see `IServerConnection::setSettingsAlwaysSent`). Empty for the queries of the
+    /// user: it holds the settings the AI agent installs for a query it runs - see `runQueryForAI`.
+    NameSet settings_pinned_for_running_query;
 
     std::list<ExternalTable> external_tables; /// External tables info.
     std::list<ExternalTable> external_scalars; /// External scalars info.

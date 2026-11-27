@@ -21,4 +21,20 @@ $CLICKHOUSE_CLIENT -q "SET profile = '${profile}'; SELECT toUInt8(getSetting('fo
 
 CLICKHOUSE_AI_TEST_PROFILE="${profile}" python3 "$CUR_DIR"/05210_client_ai_masks_secrets_after_set_profile.python
 
+# The same session as a user whose own settings name the setting. The server reports such a value
+# to the client in the handshake, and the client does not send a setting back to the server when
+# its value is the reported one. The mask of the agent is that very value here, so it used to be
+# left out of the query, and the value of the profile applied to it.
+user="user_${CLICKHOUSE_DATABASE}"
+
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user}"
+$CLICKHOUSE_CLIENT -q "CREATE USER ${user} IDENTIFIED WITH no_password SETTINGS format_display_secrets_in_show_and_select = 0"
+$CLICKHOUSE_CLIENT -q "GRANT ALL ON *.* TO ${user}"
+
+# The positive control again: the profile turns the setting on for this user as well.
+$CLICKHOUSE_CLIENT --user "${user}" -q "SET profile = '${profile}'; SELECT toUInt8(getSetting('format_display_secrets_in_show_and_select'))"
+
+CLICKHOUSE_AI_TEST_PROFILE="${profile}" CLICKHOUSE_AI_TEST_USER="${user}" python3 "$CUR_DIR"/05210_client_ai_masks_secrets_after_set_profile.python
+
+$CLICKHOUSE_CLIENT -q "DROP USER ${user}"
 $CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE ${profile}"

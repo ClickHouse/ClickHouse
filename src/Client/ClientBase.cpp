@@ -1111,8 +1111,16 @@ void ClientBase::resynchronizeConnectionAfterError()
 }
 
 
-void ClientBase::armResynchronizationAndSendQuery(std::function<void()> send_query)
+void ClientBase::armResynchronizationAndSendQuery(std::function<void()> send_query, const NameSet & settings_always_sent)
 {
+    /// The settings the caller relies on are sent with this query whatever their values are - see
+    /// `IServerConnection::setSettingsAlwaysSent`. Only for this query: the next one names its own.
+    connection->setSettingsAlwaysSent(settings_always_sent);
+    SCOPE_EXIT({
+        if (connection)
+            connection->setSettingsAlwaysSent({});
+    });
+
 #if USE_CLIENT_AI
     /// A turn of the AI agent is bound to the session it started on - see `ai_turn_session_generation`.
     /// Every query of the client is sent from here, so this is the check that nothing can get past:
@@ -2161,7 +2169,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                         true,
                         {},
                         [&](const Progress & progress) { onProgress(progress); });
-                });
+                }, settings_pinned_for_running_query);
 
                 if (send_external_tables)
                     sendExternalTables(parsed_query);
@@ -2922,7 +2930,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
             true,
             {},
             [&](const Progress & progress) { onProgress(progress); });
-    });
+    }, settings_pinned_for_running_query);
 
     try
     {
@@ -5224,6 +5232,19 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
     /// Whether the pin is needed is decided by `internalQueriesRequireDialectPin`, which asks the
     /// server when the client cannot see its effective settings (`apply_settings_from_server = 0`,
     /// or after a `SET profile`) instead of trusting the local value, and fails when the question fails.
+    /// The settings installed below have to reach the server whatever their values are.
+    /// `Connection::sendQuery` does not send back a setting whose value is the one the server
+    /// reported in the handshake, and after a `SET profile` the session can hold another value by
+    /// now. A mask or a limit that happens to be the value of the login profile would then be left
+    /// out of the query, and the value of the session would apply instead. So every setting the
+    /// agent installs for its query is recorded, and named for the connection to send it anyway.
+    NameSet pinned_settings;
+    const auto pin_setting = [&](std::string_view name, const auto & value)
+    {
+        client_context->setSetting(name, value);
+        pinned_settings.emplace(name);
+    };
+
     std::optional<Field> dialect_to_restore;
     if (internalQueriesRequireDialectPin())
     {
@@ -5238,7 +5259,7 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
 
         if (!readonly)
             dialect_to_restore = client_context->getSettingsRef().get("dialect");
-        client_context->setSetting("dialect", String("clickhouse"));
+        pin_setting("dialect", String("clickhouse"));
     }
     /// This guard is the one that consumes `ai_running_query_changed_dialect`, so it is also the one
     /// that clears it: the guards run in reverse order of declaration, and a guard declared below it
@@ -5258,20 +5279,20 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         /// schema content and force the safe source so inherited session state cannot execute
         /// a query, write a cached schema file, or fetch the schema of `AvroConfluent` from a
         /// schema registry through a `FORMAT` clause or the `format` table function.
-        client_context->setSetting("format_schema_source", String("file"));
-        client_context->setSetting("format_schema", String{});
-        client_context->setSetting("format_schema_message_name", String{});
-        client_context->setSetting("output_format_schema", String{});
-        client_context->setSetting("format_template_resultset", String{});
-        client_context->setSetting("format_template_row", String{});
-        client_context->setSetting("format_avro_schema_registry_url", String{});
+        pin_setting("format_schema_source", String("file"));
+        pin_setting("format_schema", String{});
+        pin_setting("format_schema_message_name", String{});
+        pin_setting("output_format_schema", String{});
+        pin_setting("format_template_resultset", String{});
+        pin_setting("format_template_row", String{});
+        pin_setting("format_avro_schema_registry_url", String{});
 
         /// The settings the server turns into a part of a `SELECT` after the validation above would
         /// add expressions and tables to the query that the validation has not seen. A `SETTINGS`
         /// clause of the query cannot set them (the validation refuses it), and the values the
         /// session holds - visible to the client or not - are reset here.
         for (const auto * name : query_construction_settings)
-            client_context->setSetting(name, String{});
+            pin_setting(name, String{});
 
         /// `SHOW CREATE TABLE` of an external-engine table renders its connection configuration,
         /// including credentials, when the user enabled `format_display_secrets_in_show_and_select`
@@ -5284,28 +5305,28 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         /// query above instead, so here it is only skipped for a session that cannot display
         /// secrets at all - it has nothing to mask.
         if (serverSupportsSetting("format_display_secrets_in_show_and_select"))
-            client_context->setSetting("format_display_secrets_in_show_and_select", false);
+            pin_setting("format_display_secrets_in_show_and_select", false);
 
         /// `system.tables` and `system.columns` enumerate a remote (`MySQL`, `PostgreSQL`)
         /// database or a data-lake catalog when the session lets them, and enumerating one
         /// contacts it. An unconfirmed query must not leave this server, so both switches are
         /// turned off for it; they are protected settings, so the query cannot turn them back on.
         /// Neither is `IMPORTANT`, so a server that predates them ignores them.
-        client_context->setSetting("show_remote_databases_in_system_tables", false);
-        client_context->setSetting("show_data_lake_catalogs_in_system_tables", false);
+        pin_setting("show_remote_databases_in_system_tables", false);
+        pin_setting("show_data_lake_catalogs_in_system_tables", false);
 
         /// With `apply_mutations_on_fly` a read of a `MergeTree` table evaluates the expressions of
         /// its pending mutations, which the validation has not seen: a pending `ALTER TABLE t UPDATE
         /// e = aiEmbed(text, ...)` would send `text` to the embedding provider from an unconfirmed
         /// `SELECT e FROM t`. A settings profile can turn it on unseen, so it is turned off for the
         /// query whatever the session has; it is a protected setting, so the query cannot turn it on.
-        client_context->setSetting("apply_mutations_on_fly", false);
+        pin_setting("apply_mutations_on_fly", false);
 
         /// The server logs of the query are written to the terminal as they are, and they quote the
         /// text of the query and the messages of its errors, both chosen by the model. They are not
         /// made visible-safe like the result is, so the query does not ask for them at all; it is a
         /// protected setting, so the query cannot ask for them itself.
-        client_context->setSetting("send_logs_level", String("none"));
+        pin_setting("send_logs_level", String("none"));
 
         /// Parallel replicas would run the validated query on other servers than the tables were
         /// checked on (`cluster_for_parallel_replicas`), and in the custom-key modes they add a filter
@@ -5313,19 +5334,19 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         /// even to a read of a local `Memory` table. A settings profile can enable them unseen, so
         /// they are turned off for the query whatever the session has; the validation refuses a
         /// `SETTINGS` clause that touches them.
-        client_context->setSetting("allow_experimental_parallel_reading_from_replicas", static_cast<UInt64>(0));
+        pin_setting("allow_experimental_parallel_reading_from_replicas", static_cast<UInt64>(0));
 
         /// The distributed query plan (`make_distributed_plan`) is a separate execution engine that
         /// dispatches the tasks of the plan to the stateless workers of the cluster over the network,
         /// which disabling parallel replicas does not prevent. It is turned off the same way; the
         /// validation refuses a `SETTINGS` clause that touches it.
-        client_context->setSetting("make_distributed_plan", false);
+        pin_setting("make_distributed_plan", false);
 
         /// The distributed index analysis (`distributed_index_analysis`) sends the analysis of the
         /// indexes of a `MergeTree` table to the replicas of `cluster_for_parallel_replicas`, and
         /// neither of the two switches above gates it. It is turned off the same way; the
         /// validation refuses a `SETTINGS` clause that touches it.
-        client_context->setSetting("distributed_index_analysis", false);
+        pin_setting("distributed_index_analysis", false);
 
         /// With `convert_query_to_cnf` the filters of the query are optimized with the `CHECK` and
         /// `ASSUME` constraints of the tables it reads (`optimize_using_constraints`,
@@ -5334,7 +5355,7 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         /// anything (`ASSUME x < (SELECT generateSerialID('counter'))`). Every one of those
         /// optimizations is gated by this setting, so it is turned off for the query whatever the
         /// session has; it is a protected setting, so the query cannot turn it back on.
-        client_context->setSetting("convert_query_to_cnf", false);
+        pin_setting("convert_query_to_cnf", false);
 
         static constexpr UInt64 max_execution_time_limit = 30;
         static constexpr UInt64 max_memory_usage_limit = 10'000'000'000;
@@ -5378,9 +5399,9 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         const auto tighten = [&](std::string_view name, UInt64 current_value, UInt64 limit)
         {
             if (current_value == 0 || current_value > limit)
-                client_context->setSetting(name, limit);
+                pin_setting(name, limit);
             else
-                client_context->setSetting(name, current_value);
+                pin_setting(name, current_value);
         };
         /// The execution-time limits only look like whole seconds: they are `Seconds` settings
         /// backed by microseconds, and `0.5` is a value a session can legitimately hold. Compared
@@ -5391,11 +5412,11 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         {
             const Int64 limit_microseconds = static_cast<Int64>(limit_seconds) * 1'000'000;
             if (current_microseconds == 0 || current_microseconds > limit_microseconds)
-                client_context->setSetting(name, limit_seconds);
+                pin_setting(name, limit_seconds);
             else
                 /// The effective value can be stricter than the local one (see above), and the local one
                 /// is what the query carries, so the effective one is pinned explicitly.
-                client_context->setSetting(name, static_cast<Float64>(current_microseconds) / 1'000'000);
+                pin_setting(name, static_cast<Float64>(current_microseconds) / 1'000'000);
         };
         tighten_seconds("max_execution_time", current[Setting::max_execution_time].totalMicroseconds(), max_execution_time_limit);
         tighten_seconds(
@@ -5411,7 +5432,7 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         /// marked query id), so it is what takes `read_query_log` away for the rest of the session:
         /// its row cannot be told apart from the history of the user any more.
         if (aiQueryLogMarkerAllowed())
-            client_context->setSetting("log_comment", String(AI_AGENT_LOG_COMMENT));
+            pin_setting("log_comment", String(AI_AGENT_LOG_COMMENT));
         else
             ai_query_log_access_permanently_disabled = true;
 
@@ -5420,7 +5441,7 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         /// value is used, not the one in the client context: the server may have applied a profile
         /// the client does not see.
         if (aiSessionReadonly() == 0)
-            client_context->setSetting("readonly", static_cast<UInt64>(1));
+            pin_setting("readonly", static_cast<UInt64>(1));
     }
 
     /// The result of a confirmed query reaches the model as well: it is recorded into the
@@ -5462,7 +5483,7 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
             if (display_secrets_was_set_by_client)
                 display_secrets_to_restore = current.get("format_display_secrets_in_show_and_select");
             restore_display_secrets = true;
-            client_context->setSetting("format_display_secrets_in_show_and_select", false);
+            pin_setting("format_display_secrets_in_show_and_select", false);
         }
     }
     SCOPE_EXIT_SAFE({
@@ -5489,6 +5510,9 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         ai_line_reader->addQueryToHistory(query);
 
     const UInt64 seqno_before = ai_query_context->latestSeqno();
+
+    settings_pinned_for_running_query = std::move(pinned_settings);
+    SCOPE_EXIT({ settings_pinned_for_running_query.clear(); });
 
     ai_running_query_changed_dialect = false;
     ai_running_query = true;
@@ -6516,6 +6540,9 @@ Block ClientBase::fetchInternalQueryResult(
     /// The question about `readonly` is checked first: it is asked from within the question about
     /// the dialect, while that one is still in progress, and it needs its pin.
     std::optional<Settings> settings_to_send;
+    /// The knobs of the network codec, which are the values of the session and not something this
+    /// query installs - see where the settings are sent.
+    NameSet settings_copied_from_session;
     if (asking_session_readonly)
     {
         settings_to_send.emplace();
@@ -6528,6 +6555,9 @@ Block ClientBase::fetchInternalQueryResult(
     else if (!session_is_readonly)
     {
         settings_to_send = networkCompressionSettings(client_context->getSettingsRef());
+        for (const auto & change : settings_to_send->changes())
+            if (change.name != "dialect")
+                settings_copied_from_session.insert(change.name);
     }
 
     /// Left empty for the queries of the `help` command, so the server assigns the query id. This
@@ -6698,6 +6728,18 @@ Block ClientBase::fetchInternalQueryResult(
     if (connection_needs_resynchronization)
         resynchronizeConnectionAfterError();
 
+    /// A setting installed for an internal query is there because the query relies on it: the pin
+    /// to the ClickHouse dialect, the mask of the secrets, the overflow modes. So these are sent
+    /// whatever their values are. A value that is the one the server reported in the handshake
+    /// would otherwise be left out, and after a `SET profile` the value of the session would apply.
+    /// The knobs of the network codec are the values of the session itself, so they are sent the
+    /// way the queries of the session send them.
+    NameSet settings_always_sent;
+    if (settings_to_send)
+        for (const auto & change : settings_to_send->changes())
+            if (!settings_copied_from_session.contains(change.name))
+                settings_always_sent.insert(change.name);
+
     armResynchronizationAndSendQuery([&]
     {
         connection->sendQuery(
@@ -6712,7 +6754,7 @@ Block ClientBase::fetchInternalQueryResult(
             {}, /// external_roles
             {} /// process_progress_callback
         );
-    });
+    }, settings_always_sent);
 
     Blocks blocks;
     while (true)
