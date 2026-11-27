@@ -227,7 +227,7 @@ static void initRowsBeforeLimit(const Processors & pipeline_processors, IOutputF
         }
     }
 
-    auto push_child = [&](OutputPort & output, IProcessor * limit, ssize_t limit_port)
+    auto push_child = [&](OutputPort & output, IProcessor * limit, ssize_t limit_port) ALWAYS_INLINE
     {
         OutputPort * port = &output;
         while (std::ranges::contains(paired_processors, &port->getProcessor()))
