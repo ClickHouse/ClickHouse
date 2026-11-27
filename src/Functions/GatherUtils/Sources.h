@@ -598,11 +598,13 @@ struct UTF8StringSource : public StringSource
             length -= clipped_prefix;
         }
 
-        const auto * res_end = skipCodePointsForward(res_begin, length, end);
-
-        if (res_end >= end)
+        if (length >= skipped)
             return {res_begin, size_t(end - res_begin)};
 
+        /// Find the end walking backward too. A forward walk counts a lone continuation byte as its own
+        /// code point, while the backward walk merges it into the preceding byte, so on invalid UTF-8
+        /// a forward walk of `length` code points from `res_begin` can stop before the end of the suffix.
+        const auto * res_end = skipCodePointsBackward(end, skipped - length, begin);
         return {res_begin, size_t(res_end - res_begin)};
     }
 };
