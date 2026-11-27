@@ -447,8 +447,27 @@ std::string_view namedCollectionPropertyKey(std::string_view key)
     return key;
 }
 
+/// The collection from the server configuration file that `collection` is a copy of, nullptr for a collection created by SQL.
+NamedCollectionPtr getConfigCollection(const NamedCollection & collection)
+{
+    if (collection.getSourceId() != NamedCollection::SourceId::CONFIG)
+        return nullptr;
+    if (auto config_collection = NamedCollectionFactory::instance().tryGet(collection.getName());
+        config_collection && config_collection->getSourceId() == NamedCollection::SourceId::CONFIG)
+        return config_collection;
+    return nullptr;
+}
+
+/// A copy of a collection from the server configuration file can have overrides from the table definition:
+/// a value is from that file only if the file has the same value.
+bool isSetFromSQL(const NamedCollection & collection, const NamedCollectionPtr & config_collection, const String & key)
+{
+    return !config_collection || !config_collection->has(key) || config_collection->get<String>(key) != collection.get<String>(key);
+}
+
 void loadNamedCollectionConfig(cppkafka::Configuration & kafka_config, const NamedCollection & collection, const String & config_prefix)
 {
+    const auto config_collection = getConfigCollection(collection);
     for (const auto & key : collection.getKeys(-1, config_prefix))
     {
         const auto property_key = namedCollectionPropertyKey(key);
@@ -458,7 +477,7 @@ void loadNamedCollectionConfig(cppkafka::Configuration & kafka_config, const Nam
         const auto value = collection.get<String>(key);
         /// The check when the table is created or loaded is not sufficient: the collection is read again here,
         /// and `ALTER NAMED COLLECTION` can add a property while the table exists.
-        setKafkaConfigValue(kafka_config, param_name, value, collection.getSourceId() != NamedCollection::SourceId::CONFIG);
+        setKafkaConfigValue(kafka_config, param_name, value, isSetFromSQL(collection, config_collection, key));
     }
 }
 
@@ -904,11 +923,11 @@ KafkaConfigLoader::getProducerConfiguration<StorageKafka2>(StorageKafka2 & stora
 
 void KafkaConfigLoader::checkNamedCollection(const NamedCollection & collection)
 {
-    if (collection.getSourceId() == NamedCollection::SourceId::CONFIG)
-        return;
-
+    const auto config_collection = getConfigCollection(collection);
     for (const auto & key : collection.getKeys(-1, CONFIG_KAFKA_TAG))
     {
+        if (!isSetFromSQL(collection, config_collection, key))
+            continue;
         checkKafkaPropertyName(key);
         const auto property_key = namedCollectionPropertyKey(key);
         if (!property_key.empty())

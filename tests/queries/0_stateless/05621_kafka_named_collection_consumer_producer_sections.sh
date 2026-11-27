@@ -23,8 +23,8 @@ $CLICKHOUSE_CLIENT -q "
         \`kafka.producer.linger_ms\` = '777',
         \`kafka.kafka_topic.name\` = 'topic',
         \`kafka.kafka_topic.retry_backoff_ms\` = '777',
-        \`kafka.kafka_topic_baseball.name\` = 'baseball',
-        \`kafka.kafka_topic_baseball.reconnect_backoff_ms\` = '777';
+        \`kafka.kafka_topic[1].name\` = 'baseball',
+        \`kafka.kafka_topic[1].reconnect_backoff_ms\` = '777';
     CREATE TABLE kafka_probe (x UInt64) ENGINE = Kafka($collection)
         SETTINGS kafka_poll_timeout_ms = 100, kafka_flush_interval_ms = 100;
 "
@@ -73,8 +73,23 @@ $CLICKHOUSE_CLIENT -q "
 "
 echo "secret shown: $($CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE kafka_secret" | grep -c 'secret_05621')"
 
+# The overrides of a collection from the server configuration file are checked as the keys of a collection created by SQL.
+echo "file path override rejected: $($CLICKHOUSE_CLIENT -q "
+    CREATE TABLE kafka_paths (x UInt64) ENGINE = Kafka(kafka_config_file_paths, \`kafka.ssl_key_location\` = '/etc/passwd')
+" 2>&1 | grep -c 'Kafka property \`ssl.key.location\` can only be specified')"
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE kafka_config (x UInt64) ENGINE = Kafka(kafka_config_file_paths, \`kafka.consumer.fetch_min_bytes\` = '555')
+        SETTINGS kafka_poll_timeout_ms = 100, kafka_flush_interval_ms = 100
+"
+logs=$($CLICKHOUSE_CLIENT --send_logs_level=trace -q "
+    SELECT * FROM kafka_config LIMIT 1 SETTINGS stream_like_engine_allow_direct_select = 1
+" 2>&1 >/dev/null)
+echo "override of config collection set: $(grep -c 'Consumer set property fetch.min.bytes:555' <<< "$logs")"
+
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE kafka_secret;
+    DROP TABLE kafka_config;
+    DROP TABLE IF EXISTS kafka_paths;
     DROP TABLE kafka_probe;
     DROP NAMED COLLECTION $collection;
 "

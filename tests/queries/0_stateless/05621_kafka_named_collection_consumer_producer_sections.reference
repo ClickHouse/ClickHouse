@@ -10,3 +10,5 @@ stored values set: 0
 changed collection property set: 1
 changed overridden property set: 0
 secret shown: 0
+file path override rejected: 1
+override of config collection set: 1
