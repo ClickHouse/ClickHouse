@@ -82,7 +82,7 @@ static ExpressionStatistics deriveStatisticsOfPassedColumns(const IQueryPlanStep
 
     std::erase_if(result.column_statistics, [&](const auto & column) { return !passes_unchanged(column.first); });
     result.equivalences = keepEquivalencesBetween(input_statistics.equivalences, passes_unchanged);
-    result.estimated_bytes_per_row = estimateRowWidth(output_header, result.column_statistics);
+    result.estimated_bytes_per_row = estimateOutputRowWidth(output_header, result.column_statistics, input_statistics.estimated_bytes_per_row);
     return result;
 }
 
@@ -688,7 +688,8 @@ ExpressionStatistics StatisticsDerivation::deriveFilterStatistics(const FilterSt
         result_statistics.column_statistics, filter_step.getExpression(), *filter_step.getOutputHeader());
     result_statistics.equivalences = remapEquivalences(input_statistics.equivalences, filter_step.getExpression());
     /// The filter can drop and add columns, as an expression can.
-    result_statistics.estimated_bytes_per_row = estimateRowWidth(*filter_step.getOutputHeader(), result_statistics.column_statistics);
+    result_statistics.estimated_bytes_per_row = estimateOutputRowWidth(
+        *filter_step.getOutputHeader(), result_statistics.column_statistics, input_statistics.estimated_bytes_per_row);
 
     const ActionsDAG::Node * filter_node = nullptr;
     for (const auto & dag_node : filter_step.getExpression().getNodes())
@@ -723,9 +724,10 @@ ExpressionStatistics StatisticsDerivation::deriveExpressionStatistics(const Expr
     result_statistics.equivalences = remapEquivalences(input_statistics.equivalences, expression_step.getExpression());
     /// The expression can drop and add columns, so the row width is that of its output columns. A column that
     /// passes through keeps the value size that the column statistics hold; a computed column gets the size of
-    /// its type.
+    /// its type. If a type does not give the size, the row keeps at least the width of the input row.
     /// TODO: an arrayJoin also grows the row count (preserves_number_of_rows is false), which we do not estimate yet.
-    result_statistics.estimated_bytes_per_row = estimateRowWidth(*expression_step.getOutputHeader(), result_statistics.column_statistics);
+    result_statistics.estimated_bytes_per_row = estimateOutputRowWidth(
+        *expression_step.getOutputHeader(), result_statistics.column_statistics, input_statistics.estimated_bytes_per_row);
     return result_statistics;
 }
 
@@ -881,7 +883,8 @@ static ExpressionStatistics makeGroupSetsStatistics(
         key_statistics = input_key_statistics->second;
         addValueOfSetsWithoutKey(key_statistics);
     }
-    statistics.estimated_bytes_per_row = estimateRowWidth(output_header, statistics.column_statistics);
+    statistics.estimated_bytes_per_row
+        = estimateOutputRowWidth(output_header, statistics.column_statistics, input_statistics.estimated_bytes_per_row);
     return statistics;
 }
 

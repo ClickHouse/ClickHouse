@@ -548,8 +548,15 @@ columns through renames only while the value bytes are unchanged (`Nullable`/`Lo
 such as `toString` drops the width to unknown, falling back to the type default — 64 bytes
 for `String`). The row width of every step is the sum of the widths of its output columns:
 the known width of a column, else the default of its type. So a projection that drops a
-column makes the rows narrower for the exchanges above it. The only floor is 1 byte per row,
-guarding against a zero-width row (a bare `count()`) making exchanges look free.
+column makes the rows narrower for the exchanges above it. An expression, a filter, a
+`ROLLUP` or `CUBE` step, and a step without its own estimate make the row narrower than
+their input row only if the width of each output column is known (a width in the column
+statistics, or a type that gives the size of its values). A computed value of a variable
+size with no known width, such as the result of `concat`, can be as wide as the columns
+that it is computed from, so the row then keeps at least the width of the input row. A
+join, an aggregation and a `UNION ALL` do not have this rule: above them such a value has
+the default of its type. The last floor is 1 byte per row, guarding against a zero-width
+row (a bare `count()`) making exchanges look free.
 
 **Key files**: `Statistics.h/cpp`, `StatisticsDerivation.cpp`
 
@@ -651,10 +658,14 @@ branch-and-bound pruning as the primary bound.
    map to existing groups instead of cloning.
 11. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using
    functional dependencies from MergeTree keys.
-12. **Width through same-type value-changing functions**: a deterministic `String` ->
-   `String` function (`substring`, `hex`) keeps the source column's average width even
-   though the bytes change; width preservation needs a value-pass-through rule separate
-   from the NDV rule.
+12. **Width of computed values**: a deterministic `String` -> `String` function
+   (`substring`, `hex`) keeps the source column's average width even though the bytes
+   change; width preservation needs a value-pass-through rule separate from the NDV rule.
+   A computed value with no known width has no estimate of its own: an expression or a
+   filter keeps the width of its input row for it, so a narrow value that is computed from
+   a wide column (`substring(url, 1, 10)`) is priced as wide, and above a join, an
+   aggregation or a `UNION ALL` it has the default of its type. Both need an estimated
+   width for each computed column that follows the column through all steps.
 13. **Reads from remote shards**: a read from a `Distributed` table (or the `remote`/
    `cluster` table functions) with genuinely remote shards is rejected up front
    (`checkStepSupportedByCascades`); localhost shards are inlined and planned normally.

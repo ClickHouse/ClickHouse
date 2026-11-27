@@ -57,12 +57,20 @@ String ExpressionStatistics::dump() const
 }
 
 
-Float64 estimateColumnWidthFromType(const IDataType & type)
+/// The size of a value of the type, if the type gives it.
+static std::optional<Float64> knownWidthOfType(const IDataType & type)
 {
     if (type.haveMaximumSizeOfValue())
         return Float64(type.getMaximumSizeOfValueInMemory());
     if (const auto * agg_type = typeid_cast<const DataTypeAggregateFunction *>(&type))
         return Float64(agg_type->getFunction()->sizeOfData());
+    return {};
+}
+
+Float64 estimateColumnWidthFromType(const IDataType & type)
+{
+    if (auto width = knownWidthOfType(type))
+        return *width;
     if (type.getTypeId() == TypeIndex::String)
         return CascadesDefaults::DEFAULT_STRING_SIZE;
     return CascadesDefaults::DEFAULT_COMPLEX_TYPE_SIZE;
@@ -90,6 +98,27 @@ Float64 estimateRowWidth(const Block & header, const UnorderedMapWithMemoryTrack
     }
 
     return std::max(total, CascadesDefaults::MIN_ROW_WIDTH);
+}
+
+/// Whether the size of each column of the header is known: a size in the column statistics, or a type that gives
+/// the size of its values. `estimateRowWidth` takes a default for each other column.
+static bool hasKnownRowWidth(const Block & header, const UnorderedMapWithMemoryTracking<String, ColumnStats> & column_statistics)
+{
+    for (const auto & column : header)
+    {
+        auto it = column_statistics.find(column.name);
+        const bool has_size_in_statistics = it != column_statistics.end() && it->second.avg_bytes > 0;
+        if (!has_size_in_statistics && !knownWidthOfType(*column.type))
+            return false;
+    }
+    return true;
+}
+
+Float64 estimateOutputRowWidth(
+    const Block & header, const UnorderedMapWithMemoryTracking<String, ColumnStats> & column_statistics, Float64 input_row_width)
+{
+    const Float64 width = estimateRowWidth(header, column_statistics);
+    return hasKnownRowWidth(header, column_statistics) ? width : std::max(width, input_row_width);
 }
 
 /// Statistics hint can be passed in JSON as query parameter. `avg_row_bytes` and `column_bytes`
@@ -346,6 +375,7 @@ std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
                 column_sizes[column_name].avg_bytes = width;
             /// The statistics of a filter over the read have the names of the filter's output columns. A column
             /// that the filter passes through keeps the size of its read column.
+            const Float64 read_row_width = estimateRowWidth(*read_step->getOutputHeader(), column_sizes);
             if (filter_step)
                 QueryPlanOptimizations::remapColumnStatsOfStep(
                     column_sizes, filter_step->getExpression(), *filter_step->getOutputHeader());
@@ -355,7 +385,8 @@ std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
                 if (column_stats.avg_bytes == 0)
                     column_stats.avg_bytes = column_size.avg_bytes;
             }
-            stats->estimated_bytes_per_row = estimateRowWidth(*node.step->getOutputHeader(), stats->column_statistics);
+            stats->estimated_bytes_per_row
+                = estimateOutputRowWidth(*node.step->getOutputHeader(), stats->column_statistics, read_row_width);
             /// A read (with or without a filter) cannot emit more rows than the table holds. Stat
             /// hints can deliberately claim more rows than the table physically has (tiny tables
             /// standing in for big ones in tests), so never put the bound below the estimate.

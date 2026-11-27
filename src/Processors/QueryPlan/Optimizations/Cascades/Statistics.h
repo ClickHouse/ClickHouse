@@ -91,6 +91,14 @@ Float64 estimateRowWidthFromHeader(const Block & header);
 /// over the type-based estimate.
 Float64 estimateRowWidth(const Block & header, const UnorderedMapWithMemoryTracking<String, ColumnStats> & column_statistics);
 
+/// Estimate average bytes per row that a step emits from input rows of `input_row_width` bytes. The sum of the
+/// column sizes is the estimate if the size of each column is known: a size in the column statistics, or a type
+/// that gives the size of its values. A value of a variable size with no known size (the result of `concat`, for
+/// example) can be as wide as the columns that it is computed from, so the row then keeps at least the width of
+/// the input row.
+Float64 estimateOutputRowWidth(
+    const Block & header, const UnorderedMapWithMemoryTracking<String, ColumnStats> & column_statistics, Float64 input_row_width);
+
 std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node);
 
 /// Sets `physical_read_bytes` from the rows the primary key keeps (`physical_selected_rows`,
