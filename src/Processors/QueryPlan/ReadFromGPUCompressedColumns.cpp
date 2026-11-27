@@ -74,6 +74,8 @@ struct SharedState
     ContextPtr context;
     MergeTreeReaderSettings reader_settings = MergeTreeReaderSettings::createFromSettings();
     size_t batch_bytes;
+    /// The rows of a batch at most, of `batch_bytes`, a range of marks each.
+    size_t batch_rows = 0;
     size_t num_readers = 1;
     bool collect = false;
     /// The columns read: the keys, the values, then the columns of the filter that are neither, with the element types
@@ -117,12 +119,39 @@ DataTypes typesOf(const std::vector<NameAndTypePair> & columns)
     return types;
 }
 
-/// Whether every column the read takes is of a fixed width, so that a part can be read in ranges of its marks.
-bool readsFixedWidthOnly(const SharedState & state)
+/// What cuDF takes as the rows of a column.
+constexpr size_t max_batch_rows = (1UL << 31) - 1;
+
+/// The rows of a batch of `batch_bytes`, a `String` counting as one byte per row.
+size_t batchRowsOf(const std::vector<GPU::GPUElementType> & column_types, size_t batch_bytes)
 {
-    const auto fixed = [](const NameAndTypePair & column) { return !isString(*column.type); };
-    return std::ranges::all_of(state.keys, fixed) && std::ranges::all_of(state.columns, [&](const auto & column) { return fixed(column.column); })
-        && std::ranges::all_of(filterColumnsOf(state), fixed);
+    size_t row_bytes = 0;
+    for (const GPU::GPUElementType type : column_types)
+        row_bytes += type == GPU::GPUElementType::String ? 1 : GPU::sizeOf(type);
+    return std::clamp<size_t>(batch_bytes / std::max<size_t>(row_bytes, 1), 1, max_batch_rows);
+}
+
+/// The `ranges` of `part`, or all of its marks, cut into ranges of at most `batch_rows` rows, a granule at least: a batch
+/// each, which every column has exactly by its marks.
+MarkRanges batchRangesOf(const IMergeTreeDataPart & part, const MarkRanges & ranges, size_t batch_rows)
+{
+    const auto & granularity = *part.index_granularity;
+    const MarkRanges whole = ranges.empty() ? MarkRanges{MarkRange(0, granularity.getMarksCountWithoutFinal())} : ranges;
+    MarkRanges result;
+    for (const MarkRange & range : whole)
+    {
+        size_t begin = range.begin;
+        while (begin < range.end)
+        {
+            size_t end = begin + 1;
+            size_t rows = granularity.getMarkRows(begin);
+            while (end < range.end && rows + granularity.getMarkRows(end) <= batch_rows)
+                rows += granularity.getMarkRows(end++);
+            result.push_back(MarkRange(begin, end));
+            begin = end;
+        }
+    }
+    return result;
 }
 
 /// A piece smaller than this is not split: a reader gathers about a batch of rows before the device groups them.
@@ -327,7 +356,7 @@ public:
         , state(std::move(state_))
         , query_status(std::move(query_status_))
         , pool(std::make_shared<GPU::GPUHostBatchPool>())
-        , stager(state->column_types, state->batch_bytes, pool)
+        , stager(state->column_types, pool)
     {
     }
 
@@ -355,9 +384,7 @@ protected:
 
             if (!current->reader->readNext(*current->feed))
             {
-                const size_t rows = current->reader->rowsRead();
-                progress(rows, current->feed->bytes);
-                stager.finishPart(rows);
+                progress(current->reader->rowsRead(), current->feed->bytes);
                 current.reset();
             }
         }
@@ -392,6 +419,8 @@ private:
             bytes += kept;
         }
 
+        void finishRange(size_t rows) override { source.stager.finishBatch(rows); }
+
         void checkCancelled() override
         {
             if (source.isCancelled())
@@ -414,8 +443,7 @@ private:
         std::unique_ptr<MergeTreeCompressedColumnsReader> reader;
     };
 
-    /// Opens the next part no source took yet, of the columns read. The rows of all the ranges of a part are read as the
-    /// rows of one part.
+    /// Opens the next part no source took yet, of the columns read, in ranges of a batch each.
     std::optional<OpenPart> openNextPart()
     {
         const size_t part_index = state->next_part.fetch_add(1);
@@ -429,23 +457,13 @@ private:
             feed->names.push_back(column.name);
 
         auto reader = std::make_unique<MergeTreeCompressedColumnsReader>(
-            part, state->read_columns, state->reader_settings, part_to_read.ranges);
+            part, state->read_columns, state->reader_settings, batchRangesOf(part, part_to_read.ranges, state->batch_rows));
         return OpenPart{.feed = std::move(feed), .reader = std::move(reader)};
     }
 
-    /// The rows of the chunk are about the rows staged, at least one, so that the pipeline keeps the chunk that ends a
-    /// part: the uploader tells how many rows a batch really has.
     Chunk chunkOf(std::unique_ptr<GPU::GPUHostBatch> batch) const
     {
-        size_t rows = 0;
-        for (size_t c = 0; c < state->column_types.size(); ++c)
-        {
-            const GPU::GPUHostColumn & column = batch->columns[c];
-            const GPU::GPUElementType type = state->column_types[c];
-            rows = std::max(rows, type == GPU::GPUElementType::String ? column.sizes.kept_bytes / sizeof(UInt64) : column.values.kept_bytes / GPU::sizeOf(type));
-        }
-
-        Chunk chunk(Columns{}, std::max<size_t>(rows, 1));
+        Chunk chunk(Columns{}, std::max<size_t>(batch->rows, 1));
         chunk.getChunkInfos().add(std::make_shared<StagedBatchInfo>(
             std::make_shared<StagedBatchHolder>(std::move(batch), pool)));
         return chunk;
@@ -460,12 +478,13 @@ private:
     std::optional<OpenPart> ahead;
 };
 
-/// Sends the staged blocks of one stream to the device and expands them there: a batch on the device per chunk.
+/// Sends the staged blocks of a reader to the device and expands them there, on a stream of its own: a batch on the device
+/// per chunk.
 class GPUUploadTransform : public ISimpleTransform
 {
 public:
-    explicit GPUUploadTransform(const SharedState & state)
-        : ISimpleTransform(emptyHeader(), emptyHeader(), /*skip_empty_chunks=*/true), uploader(state.column_types)
+    GPUUploadTransform()
+        : ISimpleTransform(emptyHeader(), emptyHeader(), /*skip_empty_chunks=*/true)
     {
     }
 
@@ -475,19 +494,16 @@ protected:
     void transform(Chunk & chunk) override
     {
         auto info = infoOrThrow<StagedBatchInfo>(chunk, getName());
-        std::optional<GPU::GPUFuture<GPU::GPUDeviceBatch>> batch = uploader.sendHostToDevice(*info->holder->batch);
+        const size_t rows = info->holder->batch->rows;
+        auto batch = std::make_shared<GPU::GPUFuture<GPU::GPUDeviceBatch>>(GPU::copyHostToDevice(*info->holder->batch, stream));
         info.reset();
 
-        chunk.clear();
-        if (!batch)
-            return;
-        /// A row, so that the pipeline keeps the chunk: the lane tells how many rows the batch has.
-        chunk = Chunk(Columns{}, 1);
-        chunk.getChunkInfos().add(std::make_shared<DeviceBatchInfo>(std::make_shared<GPU::GPUFuture<GPU::GPUDeviceBatch>>(std::move(*batch))));
+        chunk = Chunk(Columns{}, std::max<size_t>(rows, 1));
+        chunk.getChunkInfos().add(std::make_shared<DeviceBatchInfo>(std::move(batch)));
     }
 
 private:
-    GPU::GPUBatchUploader uploader;
+    const std::shared_ptr<GPU::StreamPtr> stream = std::make_shared<GPU::StreamPtr>(GPU::createStream());
 };
 
 /// The groups of a lane after `finalize`, of `num_groups`, that the `HAVING` keeps, as a chunk of the aggregation's header:
@@ -793,9 +809,9 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
         state->batch_columns.where.push_back(same ? *same : add_column(filter_columns[i], filter_types[i]));
     }
 
-    /// A read of columns of a fixed width reads a large part in pieces, a reader each.
-    if (readsFixedWidthOnly(*state))
-        splitPartsAmongReaders(state->parts, 2 * state->num_readers);
+    /// A large part is read in pieces, a reader each.
+    splitPartsAmongReaders(state->parts, 2 * state->num_readers);
+    state->batch_rows = batchRowsOf(state->column_types, batch_bytes);
 
     const size_t num_sources = std::max<size_t>(1, std::min(state->num_readers, state->parts.size()));
     const size_t num_lanes = std::min(num_sources, max_lanes);
@@ -809,7 +825,7 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
         sources.emplace_back(std::make_shared<GPUCompressedBlocksSource>(state, settings.process_list_element));
     Pipe pipe = Pipe::unitePipes(std::move(sources));
 
-    pipe.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUUploadTransform>(*state); });
+    pipe.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUUploadTransform>(); });
     pipe.resize(num_lanes);
     if (collect)
     {

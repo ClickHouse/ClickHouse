@@ -664,15 +664,10 @@ bool queryLimitsAllowReading(const ReadFromMergeTree & reading)
     return true;
 }
 
-/// The parts to read, each whole or in the ranges of marks the indexes left of it: in ranges only for an aggregation
-/// without columns of varying width, which a part's every row needs the same from.
+/// The parts to read, each whole or in the ranges of marks the indexes left of it.
 std::optional<std::vector<ReadFromGPUCompressedColumns::PartToRead>> matchParts(
     const ReadFromMergeTree & reading, const RangesInDataParts & parts_with_ranges, const ReadColumns & columns)
 {
-    const auto is_variable = [](const NameAndTypePair & column) { return GPU::isStringKey(*column.type); };
-    const bool fixed_width = std::ranges::none_of(columns.keys, is_variable)
-        && std::ranges::none_of(columns.columns, [&](const auto & column) { return is_variable(column.column); });
-
     const MergeTreeData::MutationsSnapshotPtr & mutations = reading.getMutationsSnapshot();
 
     if (!mutations)
@@ -698,8 +693,6 @@ std::optional<std::vector<ReadFromGPUCompressedColumns::PartToRead>> matchParts(
             GPU_COMPRESSED_REFUSE("a projection part");
 
         const bool whole = part_with_ranges.getRowsCount() == part->rows_count;
-        if (!whole && !fixed_width)
-            GPU_COMPRESSED_REFUSE("a part of which less than every row is read, of an aggregation of strings");
 
         if (part->hasLightweightDelete())
             GPU_COMPRESSED_REFUSE("a part with a lightweight delete mask");
