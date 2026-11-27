@@ -30,8 +30,6 @@ SELECT number, randomString(30), (randomString(1), randomString(300))
 FROM numbers(100000);
 OPTIMIZE TABLE t_prewhere_subcolumn_size FINAL;
 
-SET enable_analyzer = 1;
-
 SELECT '-- analyzer path, setting on: exact subcolumn size, cheap tup.small first';
 SELECT position(explain, 'tup.small') > 0 AND position(explain, 'tup.small') < position(explain, 'medium') AS subcolumn_first
 FROM (

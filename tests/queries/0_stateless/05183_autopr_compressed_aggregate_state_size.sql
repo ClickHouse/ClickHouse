@@ -3,7 +3,6 @@
 -- one reaches 119s against a 10.3s median, close enough to the 180s verdict to be exempted from it.
 
 -- For runs with the old analyzer
-SET enable_analyzer=1;
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
@@ -15,6 +14,9 @@ SET use_query_condition_cache=0;
 -- so the states are estimated off one hash table.
 SET max_threads=4;
 SET group_by_two_level_threshold=0, group_by_two_level_threshold_bytes=0;
+-- The adaptive aggregator also takes an aggregation with both two-level thresholds at 0, and it records its
+-- output in its own way, so it is off.
+SET enable_adaptive_aggregator=0;
 
 DROP TABLE IF EXISTS asz_t;
 

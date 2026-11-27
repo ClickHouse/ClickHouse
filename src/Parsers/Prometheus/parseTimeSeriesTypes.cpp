@@ -3,12 +3,16 @@
 #include <Common/DateLUT.h>
 #include <Common/IntervalKind.h>
 #include <Common/quoteString.h>
+#include <Core/ConstantValue.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/parseDateTimeBestEffort.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 
@@ -217,6 +221,31 @@ namespace
         return !offset || !common::subOverflow(result.value, getFromInt<DateTime64>(*offset, scale).value, result.value);
     }
 
+    /// Whether the text has the shape of a number: '5', '-1.5', '1_000', '2023e6' or '0x1F'.
+    bool looksLikeNumber(std::string_view str)
+    {
+        if (str.starts_with('+') || str.starts_with('-'))
+            str.remove_prefix(1);
+        while (!str.empty() && isWhitespaceASCII(str.front()))
+            str.remove_prefix(1);
+
+        if (str.starts_with("0x") || str.starts_with("0X"))
+            return true;
+
+        size_t mantissa_size = std::min(str.find_first_not_of("0123456789._"), str.size());
+        if (mantissa_size == 0)
+            return false;
+        if (mantissa_size == str.size())
+            return true;
+        if (str[mantissa_size] != 'e' && str[mantissa_size] != 'E')
+            return false;
+
+        std::string_view exponent = str.substr(mantissa_size + 1);
+        if (exponent.starts_with('+') || exponent.starts_with('-'))
+            exponent.remove_prefix(1);
+        return exponent.find_first_not_of("0123456789") == std::string_view::npos;
+    }
+
     template <is_decimal T>
     T parseFromString(std::string_view str, UInt32 scale)
     {
@@ -226,11 +255,26 @@ namespace
 
         if constexpr (std::is_same_v<T, DateTime64>)
         {
-            if (PrometheusQueryParsingUtil::tryParseTimestamp(
+            /// Like Prometheus, a time with leading or trailing whitespace is an error.
+            if (!str.empty() && (isWhitespaceASCII(str.front()) || isWhitespaceASCII(str.back())))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse a timestamp from string {}: Leading or trailing whitespace", quoteString(str));
+
+            /// No number has two decimal points, so a dotted date like '14.11.2023' is not read as Unix seconds.
+            bool may_be_number = std::ranges::count(str, '.') < 2;
+            if (!may_be_number)
+                error_message = "Too many decimal points";
+            else if (PrometheusQueryParsingUtil::tryParseTimestamp(
                     str, scale, result, &error_message, &error_pos, /* allow_octal_literals */ false))
                 return result;
 
             if (tryParseDateTime(str, scale, result))
+                return result;
+
+            /// Otherwise accept any date-time text parseDateTimeBestEffort understands, e.g. 'Tue, 14 Nov 2023 22:13:20 GMT'.
+            /// A number is always Unix seconds, so one that failed above (too big) is not read as a date.
+            bool is_number = may_be_number && looksLikeNumber(str);
+            ReadBufferFromString buf{str};
+            if (!is_number && tryParseDateTime64BestEffort(result, scale, buf, DateLUT::instance(), DateLUT::instance("UTC")) && buf.eof())
                 return result;
         }
         else
@@ -245,16 +289,13 @@ namespace
     }
 
     template <is_decimal T>
-    T getFromField(const Field & field, const DataTypePtr & field_data_type, UInt32 scale)
+    T getFromField(const Field & field, UInt32 scale)
     {
         switch (field.getType())
         {
             case Field::Types::Int64:
             {
-                if (const auto * interval_type = typeid_cast<const DataTypeInterval *>(field_data_type.get()))
-                    return getFromIntervalKind<T>(field.safeGet<Int64>(), interval_type->getKind(), scale);
-                else
-                    return getFromInt<T>(field.safeGet<Int64>(), scale);
+                return getFromInt<T>(field.safeGet<Int64>(), scale);
             }
             case Field::Types::UInt64:
             {
@@ -292,6 +333,53 @@ namespace
             }
         }
     }
+
+    /// Same as `getFromField`, reading the value straight from the constant column by its exact type. The types
+    /// accepted are the ones whose values `getFromField` accepts, except `Bool`, which is rejected whether it comes
+    /// from a literal or an expression (it is not a time).
+    template <is_decimal T>
+    T getFromConstant(const ConstantValue & value, UInt32 scale)
+    {
+        const auto & type = value.getType();
+        const auto data_type = removeLowCardinalityAndNullable(type);
+        const WhichDataType which(data_type);
+
+        if (value.isNull())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot extract a {} from NULL", getTypeName<T>());
+
+        if (isBool(data_type))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot extract a {} from a value of type {}", getTypeName<T>(), type->getName());
+
+        if (const auto * interval_type = typeid_cast<const DataTypeInterval *>(data_type.get()))
+            return getFromIntervalKind<T>(value.getInt(), interval_type->getKind(), scale);
+
+        if (which.isNativeInt() || which.isDate32() || which.isEnum() || which.isTime())
+            return getFromInt<T>(value.getInt(), scale);
+
+        if (which.isNativeUInt() || which.isDate() || which.isDateTime())
+        {
+            const UInt64 uint_value = value.getUInt();
+            if (uint_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Cannot convert {} to {}: Overflow, the number is too big",
+                                uint_value, getTypeName<T>());
+            }
+            return getFromInt<T>(static_cast<Int64>(uint_value), scale);
+        }
+
+        if (which.isFloat())
+            return getFromFloat<T>(value.getFloat64(), scale);
+
+        /// `DateTime64` and `Time64` are stored as `Decimal64`.
+        if (which.isDecimal32() || which.isDecimal64() || which.isDateTime64() || which.isTime64())
+            return getFromDecimal<T>(value.getInt(), getDecimalScale(*data_type), scale);
+
+        if (which.isStringOrFixedString())
+            return parseFromString<T>(value.getDataAt(), scale);
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot extract a {} from a value of type {}", getTypeName<T>(), type->getName());
+    }
 }
 
 DateTime64 parseTimeSeriesTimestamp(const String & str, UInt32 timestamp_scale)
@@ -301,12 +389,7 @@ DateTime64 parseTimeSeriesTimestamp(const String & str, UInt32 timestamp_scale)
 
 DateTime64 parseTimeSeriesTimestamp(const Field & field, UInt32 timestamp_scale)
 {
-    return getFromField<DateTime64>(field, nullptr, timestamp_scale);
-}
-
-DateTime64 parseTimeSeriesTimestamp(const Field & field, const DataTypePtr & field_data_type, UInt32 timestamp_scale)
-{
-    return getFromField<DateTime64>(field, field_data_type, timestamp_scale);
+    return getFromField<DateTime64>(field, timestamp_scale);
 }
 
 Decimal64 parseTimeSeriesDuration(const String & str, UInt32 duration_scale)
@@ -316,12 +399,17 @@ Decimal64 parseTimeSeriesDuration(const String & str, UInt32 duration_scale)
 
 Decimal64 parseTimeSeriesDuration(const Field & field, UInt32 duration_scale)
 {
-    return getFromField<Decimal64>(field, nullptr, duration_scale);
+    return getFromField<Decimal64>(field, duration_scale);
 }
 
-Decimal64 parseTimeSeriesDuration(const Field & field, const DataTypePtr & field_data_type, UInt32 duration_scale)
+DateTime64 parseTimeSeriesTimestamp(const ConstantValue & value, UInt32 timestamp_scale)
 {
-    return getFromField<Decimal64>(field, field_data_type, duration_scale);
+    return getFromConstant<DateTime64>(value, timestamp_scale);
+}
+
+Decimal64 parseTimeSeriesDuration(const ConstantValue & value, UInt32 duration_scale)
+{
+    return getFromConstant<Decimal64>(value, duration_scale);
 }
 
 }

@@ -50,7 +50,6 @@ SET query_plan_join_swap_table='false';
 -- present - this test is the only mode=1 APPLY coverage for that RIGHT JOIN plan shape.
 SET query_plan_optimize_join_order_randomize=0, enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows=1000;
 -- For runs with the old analyzer
-SET enable_analyzer=1;
 -- Small blocks so enough are fed to the statistics collector.
 SET max_threads=4, max_block_size=128;
 -- Don't let the min-bytes gate or remote-read task sizing disable parallel replicas for this data.

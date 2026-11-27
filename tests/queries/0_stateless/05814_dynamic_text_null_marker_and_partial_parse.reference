@@ -1,0 +1,37 @@
+Values
+42	0	Int64
+\N	1	None
+\N	1	None
+NULL	0	String
+CSV
+42	0	Int64
+\N	1	None
+\\N	0	String
+CSV with custom null representation
+42	0	Int64
+\N	1	None
+missing_suffix	0	String
+TSV
+42	0	Int64
+\N	1	None
+hello	0	String
+TSV without best-effort inference
+42	0	String
+\N	1	None
+TSVRaw
+42	0	Int64
+\N	1	None
+hello	0	String
+JSONEachRow
+42	0	Int64
+\N	1	None
+null	0	String
+Array(Dynamic)
+[1,NULL,'a']	[0,1,0]
+Whole text has no null marker
+NULL	0	String
+TSV escapes are decoded once
+a\\tb	615C7462	String
+A value of incomplete type is not parsed partially into an existing variant
+42	Int64
+[]	String

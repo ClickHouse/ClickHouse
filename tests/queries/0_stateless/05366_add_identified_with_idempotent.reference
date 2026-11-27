@@ -1,0 +1,5 @@
+['plaintext_password','ldap']	['{}','{"server":"srv"}']
+['plaintext_password','ldap','kerberos']	['{}','{"server":"srv"}','{"realm":"r"}']
+['plaintext_password','ldap','kerberos','sha256_password','sha256_password']
+['plaintext_password','ldap']	[4070908800,4070908800]
+['plaintext_password']

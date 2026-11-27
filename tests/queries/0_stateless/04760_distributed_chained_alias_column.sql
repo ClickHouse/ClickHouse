@@ -9,8 +9,6 @@
 -- Carried over from https://github.com/ClickHouse/ClickHouse/pull/101789; the duplicate-`ALIAS`
 -- half of that pull request is already covered on master.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS shard_chain_alias;
 DROP TABLE IF EXISTS dist_chain_alias;
 

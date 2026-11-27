@@ -8,7 +8,6 @@
 -- The join shapes and dispatch modes are in 04761, to keep each test's runtime down.
 
 -- The shipping path under test only exists in the analyzer.
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_ship_alias;
 DROP TABLE IF EXISTS t_ship_plain;

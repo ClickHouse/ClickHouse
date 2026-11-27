@@ -14,23 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_STRING_SIZE;
-    extern const int CANNOT_READ_ALL_DATA;
-}
-
-/// Appends bytes to `s` until it holds `size` of them, extending it only by what the buffer already has.
-template <typename StringType>
-inline void readStringGrowing(StringType & s, size_t size, ReadBuffer & buf)
-{
-    while (s.size() < size)
-    {
-        if (buf.eof())
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                "Cannot read all data. Bytes read: {}. Bytes expected: {}.", s.size(), size);
-
-        const size_t bytes_to_copy = std::min(size - s.size(), buf.available());
-        s.append(buf.position(), bytes_to_copy);
-        buf.position() += bytes_to_copy;
-    }
 }
 
 inline std::string_view readStringBinaryInto(Arena & arena, ReadBuffer & buf)

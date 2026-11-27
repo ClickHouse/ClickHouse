@@ -35,11 +35,11 @@
     <create_query>INSERT INTO {database}.part_bucket SELECT l_orderkey, l_quantity FROM tpch10.lineitem LIMIT 200000 SETTINGS max_threads = 1, max_insert_threads = 1</create_query>
     <query>SELECT count(), sum(l_quantity) FROM {database}.part_bucket WHERE l_orderkey = 12345678</query>
 
-    <!-- update_partition_key_move: ALTER UPDATE rewriting the partition column for 1-in-5 rows, forcing a cross-partition row move no other mutation scenario triggers. -->
+    <!-- update_partition_key_move: the prewarm run moves 1-in-5 rows to partition 'X', a cross-partition row move no other mutation scenario triggers; later runs match nothing and commit nothing, because every committed rewrite adds data and position-delete files that the next run would read. -->
     <create_query>DROP TABLE IF EXISTS {database}.upd_part</create_query>
     <create_query>CREATE TABLE {database}.upd_part (l_orderkey Int32, l_returnflag String, l_quantity Float64) ENGINE = {engine_function_update_partition_key_move} PARTITION BY (l_returnflag)</create_query>
     <create_query>INSERT INTO {database}.upd_part SELECT l_orderkey, l_returnflag, l_quantity FROM tpch10.lineitem LIMIT 200000 SETTINGS max_threads = 1, max_insert_threads = 1</create_query>
-    <query>ALTER TABLE {database}.upd_part UPDATE l_returnflag = 'X' WHERE l_orderkey % 5 = 0</query>
+    <query>ALTER TABLE {database}.upd_part UPDATE l_returnflag = 'X' WHERE l_orderkey % 5 = 0 AND l_returnflag != 'X'</query>
 
     <!-- sort_order_minmax_read: ORDER BY write into 50K-row files yields tight per-file min/max; the one-month range read prunes on stats produced by ClickHouse's own write. -->
     <create_query>DROP TABLE IF EXISTS {database}.sorted_li</create_query>
@@ -59,11 +59,11 @@
     <create_query>INSERT INTO {database}.small_files SELECT l_orderkey, l_quantity FROM tpch10.lineitem LIMIT 200000 SETTINGS max_threads = 1, max_insert_threads = 1, iceberg_insert_max_rows_in_data_file = 1000</create_query>
     <query>SELECT count(), sum(l_quantity) FROM {database}.small_files</query>
 
-    <!-- update_every_file: min/max stats cannot refute the modulo predicate, so every run scans all three data files and rewrites the matches; 30K rows keeps a single run under the report's 2 s budget. -->
+    <!-- update_every_file: min/max stats cannot refute the modulo predicate, so every run scans the original data; the prewarm run rewrites the matches, later runs match nothing and commit nothing, keeping the file set fixed; 30K rows keeps a single run under the report's 2 s budget. -->
     <create_query>DROP TABLE IF EXISTS {database}.upd_files</create_query>
     <create_query>CREATE TABLE {database}.upd_files (l_orderkey Int32, l_partkey Int32, l_quantity Float64) ENGINE = {engine_function_update_every_file}</create_query>
     <create_query>INSERT INTO {database}.upd_files SELECT l_orderkey, l_partkey, l_quantity FROM tpch10.lineitem LIMIT 30000 SETTINGS max_threads = 1, max_insert_threads = 1, iceberg_insert_max_rows_in_data_file = 10000</create_query>
-    <query>ALTER TABLE {database}.upd_files UPDATE l_quantity = l_quantity + 1 WHERE l_partkey % 10 = 0</query>
+    <query>ALTER TABLE {database}.upd_files UPDATE l_quantity = l_quantity + 100 WHERE l_partkey % 10 = 0 AND l_quantity &lt; 100</query>
 
     <!-- modify_column: metadata-only schema commit; the prewarm run does the real Int32 -> Int64 promotion, later runs re-commit the same type. -->
     <create_query>DROP TABLE IF EXISTS {database}.evo_promote</create_query>
@@ -156,11 +156,8 @@
     <!-- manifest_list_prune: partition-only filter with cache off; all twelve manifests are decoded today, and whole-manifest skipping via the manifest-list partition summary will show here once implemented. -->
     <query>SELECT count(), sum(l_quantity) FROM {database}.manifest_grid WHERE l_month = 199406 SETTINGS use_iceberg_metadata_files_cache = 0</query>
 
-    <!-- manifest_decode_serial: cache-off full scan decoding the twelve manifests one at a time. -->
-    <query>SELECT count(), sum(l_quantity) FROM {database}.manifest_grid SETTINGS use_iceberg_metadata_files_cache = 0, iceberg_manifest_decode_concurrency = 1</query>
-
-    <!-- manifest_decode_parallel: the same scan with concurrent manifest decoding; the pair isolates the parallel decode path. -->
-    <query>SELECT count(), sum(l_quantity) FROM {database}.manifest_grid SETTINGS use_iceberg_metadata_files_cache = 0, iceberg_manifest_decode_concurrency = 8</query>
+    <!-- manifest_scan: cache-off full scan reading and parsing the twelve manifests. -->
+    <query>SELECT count(), sum(l_quantity) FROM {database}.manifest_grid SETTINGS use_iceberg_metadata_files_cache = 0</query>
 
     <drop_query>DROP TABLE IF EXISTS {database}.evo_add</drop_query>
     <drop_query>DROP TABLE IF EXISTS {database}.evo_drop</drop_query>

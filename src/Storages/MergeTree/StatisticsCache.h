@@ -54,6 +54,15 @@ public:
     /// The key of the statistics of a column of the part stored at `part_path`.
     static UInt128 hash(const String & part_path, const String & column_name);
 
+    /// Does not count a miss: the statistics are loaded with `getOrSet` then, which counts it.
+    MappedPtr get(const Key & key)
+    {
+        auto result = Base::get(key);
+        if (result)
+            ProfileEvents::increment(ProfileEvents::StatisticsCacheHits);
+        return result;
+    }
+
     template <typename LoadFunc>
     MappedPtr getOrSet(const Key & key, LoadFunc && load)
     {

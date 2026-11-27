@@ -77,16 +77,14 @@ public:
     DeleteBitmap & operator=(DeleteBitmap &&) noexcept;
 
     /// True if `row` is set.
-    bool contains(UInt64 row) const;
+    [[nodiscard]] bool contains(UInt64 row) const;
 
-    /// Bulk point-containment; writes 1 to `out_keep[i]` when `rows[i]` is
-    /// *not* in the bitmap, 0 otherwise. `n == 0` is a no-op.
-    void containsBulk(const UInt64 * rows, size_t n, uint8_t * out_keep) const;
-
-    /// Build a per-row keep mask for `rows` (1=keep, 0=deleted) into `out_keep`;
-    /// returns the number kept. Wraps `containsBulk`. Caller sizes `out_keep` to `n`.
-    size_t buildKeepFilter(const UInt64 * rows, size_t n, UInt8 * out_keep) const;
+    /// Build a per-row keep mask (1=keep, 0=deleted) for rows [`begin`, `begin` + `n`) into `out_keep`;
+    /// returns the number kept. Caller sizes `out_keep` to `n`.
     size_t buildKeepFilterRange(UInt64 begin, size_t n, UInt8 * out_keep) const;
+
+    /// Zero `filter[row - begin]` for every set row in [`begin`, `begin` + `n`); returns how many rows that is.
+    size_t clearInFilter(UInt64 begin, size_t n, UInt8 * filter) const;
 
     /// Set `row`.
     void add(UInt64 row);
@@ -98,22 +96,22 @@ public:
     void subtract(const DeleteBitmap & other);
 
     /// Number of set bits.
-    size_t cardinality() const;
+    [[nodiscard]] size_t cardinality() const;
     /// True if no bits are set.
-    bool empty() const;
+    [[nodiscard]] bool empty() const;
 
     /// |bitmap ∩ [begin, end)|, computed as `rank(end-1) - rank(begin-1)`.
     /// O(log N) per `rank` on bitset containers, O(log K) on array containers.
-    size_t rangeCardinality(UInt64 begin, UInt64 end) const;
+    [[nodiscard]] size_t rangeCardinality(UInt64 begin, UInt64 end) const;
 
     /// All set row indices in ascending order. O(cardinality).
-    std::vector<UInt64> toVector() const;
-    IColumn::Permutation toPermutation() const;
+    [[nodiscard]] std::vector<UInt64> toVector() const;
+    [[nodiscard]] IColumn::Permutation toPermutation() const;
 
     /// Portable-serialized size + a small entry overhead. Stable proxy for
     /// the on-disk `.rbm` cost; empty bitmap returns a small non-zero constant
     /// so cache weighting works.
-    size_t memoryUsage() const;
+    [[nodiscard]] size_t memoryUsage() const;
 
     /// Serialize to the on-disk format.
     void serialize(WriteBuffer & out) const;
@@ -167,7 +165,7 @@ private:
     /// this file.
     std::variant<R32Ptr, R64Ptr> bitmap;
 
-    bool is64Bit() const;
+    [[nodiscard]] bool is64Bit() const;
     void upgradeTo64();
 };
 

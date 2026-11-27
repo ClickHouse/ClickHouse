@@ -54,12 +54,12 @@ public:
     {
     }
 
-    const String & getKey() const
+    [[nodiscard]] const String & getKey() const
     {
         return key;
     }
 
-    String getValue() const
+    [[nodiscard]] String getValue() const
     {
         return std::visit([]<typename T>(T && v)
         {
@@ -128,7 +128,7 @@ struct Span
     bool addAttribute(std::exception_ptr e) noexcept;
     bool addAttribute(const ExecutionStatus & e) noexcept;
 
-    bool isTraceEnabled() const
+    [[nodiscard]] bool isTraceEnabled() const
     {
         return trace_id != UUID();
     }
@@ -274,7 +274,7 @@ public:
     /// Emits the span if `finish` has not been called before.
     ~ManualSpan();
 
-    bool isTraceEnabled() const
+    [[nodiscard]] bool isTraceEnabled() const
     {
         return span.isTraceEnabled();
     }
@@ -302,7 +302,7 @@ public:
     void finish(SpanStatus status, String status_message = {}) noexcept;
 
     /// For parenting spans created elsewhere under this one (`ParentSpanGuard`, a seeded `TracingContextOnThread`).
-    UInt64 getSpanId() const
+    [[nodiscard]] UInt64 getSpanId() const
     {
         return span.span_id;
     }

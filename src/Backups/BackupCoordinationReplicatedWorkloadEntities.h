@@ -40,7 +40,7 @@ public:
     void addDirectory(DirectoryPathForWorkloadEntity && directory_path_for_workload_entity);
 
     /// Returns all added paths to directories if `host_id` is a host chosen to store workload entities.
-    Strings getDirectories(const String & loader_zk_path, WorkloadEntityType entity_type, const String & host_id) const;
+    [[nodiscard]] Strings getDirectories(const String & loader_zk_path, WorkloadEntityType entity_type, const String & host_id) const;
 
 private:
     using ZkPathAndEntityType = std::pair<String, WorkloadEntityType>;

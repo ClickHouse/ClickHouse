@@ -1,0 +1,62 @@
+---
+sidebarTitle: 'arcodash'
+slug: /integrations/arcodash
+keywords: ['clickhouse', 'arcodash', 'connect', 'integrate', 'visualization', 'dashboard', 'alerts']
+description: 'HTTP インターフェース経由で arcodash を ClickHouse に接続し、SQL ダッシュボードや定期実行のデータチェックを構築します。'
+title: 'arcodash を ClickHouse に接続する'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[arcodash](https://www.arcodash.com/connectors/clickhouse/?utm_source=clickhouse-docs\&utm_medium=docs\&utm_campaign=growth-v2\&utm_content=clickhouse-docs-integration) は、データチェック機能を備えたホスト型 BI ツールです。SQL ダッシュボード、AI クエリアシスタントに加え、メール、Slack、Teams、Webhook、PagerDuty でアラートを通知する定期実行チェックを利用できます。ClickHouse には HTTP(S) インターフェイス経由で接続します。
+
+<Steps>
+  <Step title="接続情報を確認する" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+
+    arcodash には、ホスト、HTTP ポート (`8123`、または HTTPS を使用する ClickHouse Cloud の場合は `8443`) 、ユーザー、パスワード、データベースが必要です。
+  </Step>
+
+  <Step title="読み取り専用ユーザーを作成する" id="2-create-a-read-only-user">
+    ```sql
+    CREATE USER arcodash_ro IDENTIFIED BY 'change-me' SETTINGS readonly = 1;
+    GRANT SELECT ON analytics.* TO arcodash_ro;
+    GRANT SELECT ON system.columns TO arcodash_ro;
+    ```
+
+    スキーマブラウザーは `system.columns` を参照します。
+  </Step>
+
+  <Step title="コネクタを追加する" id="3-add-the-connector">
+    arcodash で **Connect** &gt; **ClickHouse** を選択し、ホスト、ポート、ユーザー、パスワード、データベースを入力します。ClickHouse Cloud の場合は HTTPS を有効にしてから、接続テストを実行します。
+
+    <Image size="lg" img="/images/integrations/data-visualization/arcodash_01.png" alt="arcodash の ClickHouse コネクタ設定フォーム" border />
+  </Step>
+
+  <Step title="クエリとチェックを実行する" id="4-run-a-query-and-a-check">
+    ```sql
+    SELECT dateDiff('second', max(loaded_at), now()) AS seconds_since_last_row
+    FROM analytics.events
+    ```
+
+    テーブルへのデータ取り込みが止まったときにアラートを通知するには、このクエリを `seconds_since_last_row` を対象とするモニターとして、条件 `>` `3600` で保存します。
+
+    <Image size="lg" img="/images/integrations/data-visualization/arcodash_02.png" alt="ClickHouse クエリに対する arcodash のモニター" border />
+  </Step>
+</Steps>
+
+## 制限事項 {#limitations}
+
+* arcodash は HTTP インターフェースのみを使用し、ネイティブポート `9000` は使用しません。
+* arcodash は `FORMAT` 句を自動的に追記するため、クエリの末尾に独自の `FORMAT` を記述しないでください。
+* 結果は 1 クエリあたり最大 10,000 行です。
+* arcodash は固定のアウトバウンド IPアドレスを公開していないため、ClickHouseサーバーにはインターネットから接続可能である必要があります。

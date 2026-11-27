@@ -294,6 +294,14 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
                 task_status.status = "Running";
                 break;
             }
+            case StatelessTaskExecutor::TaskFailing:
+            {
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+                task_status.status = "Failing";
+                task_status.error_message = status.message;
+                task_status.error_code = status.error_code;
+                break;
+            }
             case StatelessTaskExecutor::TaskFinished:
             {
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);

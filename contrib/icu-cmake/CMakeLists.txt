@@ -490,6 +490,13 @@ endif ()
 # Only the endianness and the character set (ASCII, EBCDIC) makes a difference, also see
 # https://unicode-org.github.io/icu/userguide/icu_data/#sharing-icu-data-between-platforms, 'Sharing ICU Data Between Platforms')
 # (and as an experiment, try re-generating the data files on x86 vs. ARM, ... you'll get exactly the same files)
+#
+# The data is filtered (`filter.json` in `contrib/icudata`): it has what ClickHouse reads, that is collation,
+# converters, break iteration, normalization, character properties and the English names of languages.
+# The linker discards the ICU code that is not used, but it cannot discard the data for it, so the data for
+# formatting dates, numbers, units and currencies, for time zone names and for transliteration is left out.
+# If you start using such a part of ICU, it fails with `U_MISSING_RESOURCE_ERROR` until the data is regenerated
+# without the corresponding line of the filter.
 
 set(ICUDATA_SOURCES
     "${ICUDATA_SOURCE_FILE}"

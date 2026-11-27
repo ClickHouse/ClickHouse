@@ -1,0 +1,254 @@
+---
+slug: /clickstack/managed-onboarding/migrating-from-datadog-serverless
+title: 'Migración desde Datadog con sus agentes existentes'
+sidebarTitle: 'Migrar desde Datadog'
+description: 'Dirija los agentes de Datadog que ya ejecuta al endpoint compatible con Datadog de ClickHouse Observability, junto con Datadog o en su lugar, y explore sus logs, trazas y métricas sin modificar sus aplicaciones.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'Datadog', 'Datadog Agent', 'migration', 'dual shipping', 'additional_endpoints', 'Datadog receiver', 'logs', 'trazas', 'metrics']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+<Info>
+  **Resumen**
+
+  Añada el endpoint compatible con Datadog de su servicio a los agentes de Datadog que ya ejecuta, ya sea junto a Datadog o en su lugar, y reinícielos. Sus logs, trazas y métricas aparecerán en ClickHouse Observability. No hace falta desplegar ningún recolector ni modificar sus aplicaciones.
+
+  Tiempo estimado: unos 15 minutos
+</Info>
+
+Ya ha creado su servicio de ClickHouse Observability y su telemetría ya circula a través de agentes de Datadog. Para ver qué hace el servicio con sus propios datos, no necesita reemplazar esos agentes ni modificar sus aplicaciones.
+
+ClickHouse Observability incluye un endpoint compatible con Datadog. Este acepta los logs, trazas y métricas que sus agentes ya generan, los convierte a OpenTelemetry y los almacena en su servicio. Solo hay que cambiar la configuración del agente. Esto le permite:
+
+* Evaluar ClickHouse Observability con su telemetría real de producción en lugar de un conjunto de datos de ejemplo.
+* Seguir enviando datos a Datadog mientras compara ambas plataformas en paralelo.
+* Migrar de forma gradual: trasladar los agentes grupo por grupo y adoptar la instrumentación de OpenTelemetry a su propio ritmo.
+
+<img src="/images/clickstack/observability/clickstack-datadog-agents-overview-dark.svg" alt="Los agentes de Datadog en hosts, clústeres de Kubernetes y contenedores permanecen sin cambios y envían logs, trazas y métricas al endpoint compatible con Datadog de ClickHouse Observability, que alimenta la UI de ClickStack. Opcionalmente, siguen enviando datos a Datadog mientras usted compara ambas plataformas." width="720" height="300" className="ch-transparent hidden dark:block" style={{ width: '100%', height: 'auto', margin: '16px 0 8px', background: 'transparent', borderRadius: 0 }} />
+
+<img src="/images/clickstack/observability/clickstack-datadog-agents-overview-light.svg" alt="Los agentes de Datadog en hosts, clústeres de Kubernetes y contenedores permanecen sin cambios y envían logs, trazas y métricas al endpoint compatible con Datadog de ClickHouse Observability, que alimenta la UI de ClickStack. Opcionalmente, siguen enviando datos a Datadog mientras usted compara ambas plataformas." width="720" height="300" className="ch-transparent block dark:hidden" style={{ width: '100%', height: 'auto', margin: '16px 0 8px', background: 'transparent', borderRadius: 0 }} />
+
+<Note>
+  **¿Ya utiliza OpenTelemetry?**
+
+  Si su telemetría circula a través de Colectores de OpenTelemetry, basta con añadir un exportador: consulte [Conectar un Colector de OpenTelemetry](/es/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless). Para instrumentar una aplicación directamente, consulte [Instrumentar su aplicación con OpenTelemetry](/es/clickstack/managed-onboarding/instrument-application-serverless).
+</Note>
+
+## Requisitos previos {#prerequisites}
+
+* Un servicio de ClickHouse Observability. Si aún no tiene uno, siga la [guía de introducción](/es/clickstack/observability/getting-started).
+* Datadog agente 7 en los hosts, contenedores o clústeres de Kubernetes que desee usar para la evaluación, y que ya recopile los logs y las métricas que le interesan. En el caso de las trazas, sus aplicaciones ya deben enviarlas al agente mediante las bibliotecas de tracing de Datadog.
+* Acceso a la configuración del agente, ya sea `datadog.yaml` o las variables de entorno equivalentes, y permiso para reiniciar el agente.
+* Acceso HTTPS saliente por el puerto `8126` desde los hosts del agente al endpoint de telemetría de su servicio.
+
+## Conecta tus agentes de Datadog {#connect-your-datadog-agents}
+
+<Steps>
+  <Step title="Copie sus datos de conexión" id="copy-connection-details">
+    Abra su servicio de ClickHouse Observability. Mientras no lleguen datos, se muestra la página **Start sending telemetry**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Página Start sending telemetry que muestra el servicio actual todavía sin datos y tres opciones: Use an existing OpenTelemetry setup, Instrument with AI y Follow setup guides](/images/clickstack/getting-started/observability-start-sending-telemetry.png)
+      </Frame>
+    </div>
+
+    En **Use an existing OpenTelemetry setup**, seleccione **View connection details**. La pestaña **URL** muestra su endpoint OTLP, `https://YOUR_OTEL_HOST:4318`, y su clave de API. Seleccione **Reveal key** para ver la clave completa y, a continuación, cópiela con el botón de copiar.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Cuadro de diálogo Set up OpenTelemetry con las opciones URL, Collector config y Env vars, y los datos de conexión enmascarados](/images/clickstack/getting-started/observability-connection-details.png)
+      </Frame>
+    </div>
+
+    El endpoint compatible con Datadog se encuentra en el mismo host que el endpoint OTLP, pero en el puerto `8126` en lugar del `4318`, y la clave de API de su servicio sirve también como clave de API de Datadog. En el resto de esta guía se usan los siguientes marcadores de posición:
+
+    | Marcador de posición          | Valor                                                                                         |
+    | ----------------------------- | --------------------------------------------------------------------------------------------- |
+    | `YOUR_API_KEY`                | La clave de API de su servicio                                                                |
+    | `YOUR_OTEL_HOST`              | El nombre del host del endpoint OTLP, sin `https://` ni el puerto                             |
+    | `https://YOUR_OTEL_HOST:8126` | El endpoint compatible con Datadog para métricas y trazas                                     |
+    | `YOUR_OTEL_HOST:8126`         | El mismo endpoint en formato `host:port`, que es el que esperan los ajustes de logs del Agent |
+
+    Puede consultar estos mismos valores en cualquier momento en **Team Settings → Managed Telemetry**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Página Managed Telemetry en Team Settings que muestra el endpoint OTLP HTTP y la clave de API enmascarados](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Configure sus agentes de Datadog" id="configure-your-datadog-agents">
+    Elija cómo deben enviar los datos los agentes. Ambas opciones modifican únicamente la configuración del Agent, ya sea en `datadog.yaml` o mediante variables de entorno, y ninguna altera lo que recopila el Agent. Empiece con un solo agente, compruebe que sus datos llegan y, después, extienda el cambio al resto.
+
+    <Tabs>
+      <Tab title="Junto con Datadog" id="alongside-datadog">
+        El Agent puede enviar cada carga útil a más de un destino. Conserve sus valores actuales de `api_key` y `site`, y agregue su servicio como endpoint adicional para métricas, trazas y logs. Datadog denomina esta funcionalidad [envío dual](https://docs.datadoghq.com/agent/configuration/dual-shipping/).
+
+        ```yaml
+        # datadog.yaml: mantenga api_key y site tal como están y, a continuación, agregue estos ajustes.
+
+        # Métricas
+        additional_endpoints:
+          "https://YOUR_OTEL_HOST:8126":
+            - "YOUR_API_KEY"
+
+        # Usar la ingesta de métricas v2.
+        use_v3_api:
+          series:
+            enabled: false
+
+        # Trazas
+        apm_config:
+          additional_endpoints:
+            "https://YOUR_OTEL_HOST:8126":
+              - "YOUR_API_KEY"
+
+        # Logs
+        logs_config:
+          force_use_http: true
+          additional_endpoints:
+            - api_key: "YOUR_API_KEY"
+              Host: "YOUR_OTEL_HOST"
+              Port: 8126
+              is_reliable: true
+        ```
+
+        Datadog sigue recibiendo todo como hasta ahora. Cada destino tiene su propia clave de API, por lo que su clave de Datadog nunca llega a ClickHouse Observability y su clave de ClickHouse Observability nunca llega a Datadog. Los logs solo se envían a endpoints adicionales mediante HTTP, que se activa con `force_use_http`; además, `is_reliable: true` hace que el Agent almacene en búfer y reintente el envío de los logs al nuevo endpoint en lugar de descartarlos si este deja de estar accesible momentáneamente. Si `apm_config` o `logs_config` ya existen en su archivo, agregue las nuevas claves a esas secciones.
+      </Tab>
+
+      <Tab title="En lugar de Datadog" id="instead-of-datadog">
+        Para migrar un agente por completo, apunte sus destinos principales a su servicio y use la clave de API de este:
+
+        ```yaml
+        api_key: "YOUR_API_KEY"
+
+        # Destino de métricas
+        dd_url: "https://YOUR_OTEL_HOST:8126"
+
+        # Usar la ingesta de métricas v2.
+        use_v3_api:
+          series:
+            enabled: false
+
+        # Destino de trazas
+        apm_config:
+          enabled: true
+          apm_dd_url: "https://YOUR_OTEL_HOST:8126"
+
+        # Destino de logs
+        logs_enabled: true
+        logs_config:
+          logs_dd_url: "YOUR_OTEL_HOST:8126"
+          force_use_http: true
+          logs_no_ssl: false
+
+        remote_updates: false
+        remote_configuration:
+          enabled: false
+        ```
+
+        Estos ajustes redirigen los logs, las trazas y las métricas del Agent. No modifican qué logs recopila el Agent ni añaden instrumentación, así que conserve sus integraciones de recopilación de logs y su configuración de tracing actuales. La configuración remota se desactiva porque, de lo contrario, el Agent seguiría solicitando configuración a Datadog con una clave que Datadog ya no reconoce.
+      </Tab>
+    </Tabs>
+
+    <Accordion title="Configurar mediante variables de entorno">
+      Las implementaciones en contenedores y en Kubernetes suelen configurar el Agent mediante variables de entorno `DD_`, que sobrescriben `datadog.yaml`. Defínalas en su comando de Docker, en los valores de Helm o en el spec del Operator.
+
+      Para enviar datos en paralelo a Datadog:
+
+      ```shell
+      DD_ADDITIONAL_ENDPOINTS='{"https://YOUR_OTEL_HOST:8126": ["YOUR_API_KEY"]}'
+      DD_APM_ADDITIONAL_ENDPOINTS='{"https://YOUR_OTEL_HOST:8126": ["YOUR_API_KEY"]}'
+      DD_LOGS_CONFIG_FORCE_USE_HTTP=true
+      DD_LOGS_CONFIG_ADDITIONAL_ENDPOINTS='[{"api_key": "YOUR_API_KEY", "Host": "YOUR_OTEL_HOST", "Port": 8126, "is_reliable": true}]'
+      ```
+
+      Para enviar los datos aquí en lugar de a Datadog:
+
+      ```shell
+      DD_API_KEY=YOUR_API_KEY
+      DD_DD_URL=https://YOUR_OTEL_HOST:8126
+      DD_APM_ENABLED=true
+      DD_APM_DD_URL=https://YOUR_OTEL_HOST:8126
+      DD_LOGS_ENABLED=true
+      DD_LOGS_CONFIG_LOGS_DD_URL=YOUR_OTEL_HOST:8126
+      DD_LOGS_CONFIG_FORCE_USE_HTTP=true
+      DD_REMOTE_CONFIGURATION_ENABLED=false
+      ```
+
+      El Agent 7.81 y las versiones posteriores envían métricas de forma predeterminada a un endpoint de ingesta de series más reciente. Si no llegan métricas desde un agente configurado de esta manera, añada `use_v3_api.series.enabled: false` a su `datadog.yaml`, como se hace en los ejemplos basados en archivos anteriores.
+    </Accordion>
+  </Step>
+
+  <Step title="Reinicie el agente y compruebe su estado" id="restart-and-check">
+    Reinicie el Agent para aplicar la configuración. En Linux:
+
+    ```shell
+    sudo systemctl restart datadog-agent
+    sudo datadog-agent status
+    ```
+
+    En MacOS:
+
+    ```shell
+    sudo launchctl kickstart -k system/com.datadoghq.agent
+    datadog-agent status
+    ```
+
+    Si el Agent se ejecuta en un contenedor, actualice su entorno y vuelva a desplegar el contenedor o el pod de Kubernetes; a continuación, ejecute `agent status` dentro de él.
+
+    En la salida del comando, las secciones **Forwarder**, **APM Agent** y **Logs Agent** enumeran cada destino. Si el agente funciona correctamente, muestra su endpoint sin errores. Las respuestas `403` indican que la clave de API es incorrecta o que se copió antes de seleccionar **Reveal key**. Los errores de conexión o los tiempos de espera agotados apuntan a un error tipográfico en el host, a un puerto distinto de `8126` o a un acceso saliente bloqueado.
+  </Step>
+</Steps>
+
+## Confirmar que los datos están llegando {#confirm-data-is-arriving}
+
+Vuelva a la página **Start sending telemetry** de su servicio y seleccione **Check for data**. Cuando llegue su telemetría, el estado del servicio cambiará a **Data received** y **Start exploring** estará disponible.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Página Start sending telemetry que muestra el estado del servicio como Data received, una confirmación de que está listo para explorar y el botón Start exploring habilitado](/images/clickstack/getting-started/observability-data-received.png)
+  </Frame>
+</div>
+
+Seleccione **Start exploring** para abrir **Búsqueda**. Seleccione la fuente **Logs**, establezca el intervalo de tiempo en **Last 15 minutes** y filtre `ServiceName` por la etiqueta `service` que aplica su agente. Expanda un registro: las etiquetas `host`, `env`, de contenedor y de Kubernetes del agente aparecen como atributos del recurso, y el `status` de Datadog se asigna a `SeverityText`, por lo que los filtros como `level:error` funcionan igual que con los logs de OpenTelemetry.
+
+{/* TODO(dale): captura de pantalla de Búsqueda con logs de un agente de Datadog y los atributos service y host visibles. */}
+
+Cambie a la fuente **Trazas** para ver los servicios que notifican sus bibliotecas de tracing de Datadog. Los logs que incluyen `dd.trace_id` se correlacionan con sus spans, de modo que cada traza muestra junto a ella sus registros de log. Para las métricas, abra el **Explorador de Gráficos**, seleccione **Serie temporal** y la fuente **Métricas**, y represente gráficamente una métrica que notifique su agente, como `system.cpu.user`.
+
+{/* TODO(dale): captura de pantalla de una traza generada por una biblioteca de tracing de Datadog con logs correlacionados. */}
+
+## Si no aparece nada {#if-nothing-shows-up}
+
+* Consulte primero el estado del agente. Allí se notifican, para cada destino, los problemas de autenticación, de endpoint y de red. En la configuración en paralelo, los errores de su endpoint nunca impiden que los datos lleguen a Datadog.
+* Compruebe la clave de API. Debe ser el valor completo, que puede copiar tras seleccionar **Reveal key**, y se utiliza como `api_key` de Datadog para su endpoint, no como encabezado.
+* Confirme el endpoint. Las métricas y las trazas usan `https://YOUR_OTEL_HOST:8126` con el esquema; la configuración de logs usa `YOUR_OTEL_HOST:8126` sin él. El nombre del host es el de su endpoint OTLP, y el puerto es `8126`, no `4318`.
+* Si no llegan logs, confirme que `logs_enabled: true` está definido y que la recopilación de logs está configurada para las integraciones o los archivos que corresponda. El endpoint solo acepta logs a través de HTTP, por lo que `force_use_http` debe ser `true`.
+* Si no llegan trazas, confirme que `apm_config.enabled: true` está definido y que sus aplicaciones envían trazas al agente. El endpoint recibe lo que el agente reenvía; no instrumenta las aplicaciones.
+* Si no llegan métricas, confirme que el agente utiliza la ingesta de series v2 con `use_v3_api.series.enabled: false`.
+* Amplíe el intervalo de tiempo en **Búsqueda** y elimine todos los filtros. Es posible que la fuente predeterminada sea **Trazas** en lugar de **Logs**.
+* Para descartar un problema del propio servicio, vaya a **Team Settings → Managed Telemetry** y utilice **Send a Test Log**. Si ese log aparece en **Búsqueda**, el servicio está recibiendo datos y el problema está entre el agente y el endpoint.
+
+## Qué acepta el endpoint {#what-the-endpoint-accepts}
+
+El endpoint admite los protocolos que utiliza el agente de Datadog y convierte cada carga útil a OpenTelemetry antes de que llegue a su servicio:
+
+* **Logs.** Las marcas de tiempo, los cuerpos y los estados de Datadog se convierten en marcas de tiempo, cuerpos y niveles de severidad de OpenTelemetry. Los logs JSON estructurados se decodifican, por lo que sus campos se pueden consultar. Los nombres de host, los nombres de servicio, los entornos y las etiquetas conocidas de contenedores, nube y Kubernetes se convierten en atributos del recurso.
+* **Trazas.** Los spans procedentes de las bibliotecas de tracing de Datadog conservan sus datos de servicio, recurso y etiquetas, y los ID de traza de 128 bits se reconstruyen para que los logs y spans procedentes de Datadog puedan correlacionarse con los servicios instrumentados con OpenTelemetry.
+* **Métricas.** Series enviadas a la ingesta v2, incluidas las métricas de host del agente, las métricas personalizadas y los gauges y contadores de DogStatsD. Las distribuciones llegan como sketches.
+* **Compresión.** Las versiones 7.59 y posteriores del agente comprimen las cargas útiles HTTP con Zstandard, formato que el endpoint acepta además de gzip.
+
+El endpoint se basa en el receiver de Datadog del Colector de OpenTelemetry, un componente en fase alfa, y tiene carácter experimental en ClickHouse Observability. Las funcionalidades propias del backend de Datadog, como los monitores, las canalizaciones y los procesadores, quedan fuera de su alcance. Para consultar la guía completa de migración, que incluye un receptor que usted mismo puede ejecutar en la experiencia autogestionada, consulte [Migración desde Datadog](/es/clickstack/observability/migration/datadog).
+
+## Próximos pasos {#next-steps}
+
+* **Amplíe la evaluación.** Añada la configuración paralela a más agentes para comparar ambas plataformas con los workloads que le importan y, luego, cambie los agentes a la configuración de sustitución cuando esté listo. En ninguno de los dos pasos es necesario modificar sus aplicaciones.
+* [Instrumente su aplicación con OpenTelemetry](/es/clickstack/managed-onboarding/instrument-application-serverless): envíe los servicios nuevos o migrados directamente a su endpoint OTLP con los SDK de OpenTelemetry, mientras los agentes de Datadog siguen cubriendo el resto.
+* [Conexión de un Colector de OpenTelemetry](/es/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless): si también ejecuta Colectores de OpenTelemetry, diríjalos al mismo servicio.
+* [Búsqueda](/es/clickstack/observability/features/search): consulte los logs y las trazas procedentes de Datadog con sintaxis de tipo Lucene o con SQL.
+* [Dashboards](/es/clickstack/observability/features/dashboards/overview) y [Alertas](/es/clickstack/observability/features/alerts): reconstruya sobre los mismos datos las vistas y los monitores en los que se apoya en Datadog.

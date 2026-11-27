@@ -13,6 +13,13 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Interpreters/Context.h>
 
+#include "config.h"
+
+#if USE_SILK
+#include <Common/Silk/FiberScheduler.h>
+#include <Common/Silk/tests/gtest_silk_scheduler.h>
+#endif
+
 namespace ProfileEvents
 {
     extern const Event MemoryAllocatedWithoutCheck;
@@ -138,6 +145,59 @@ TEST(ThreadGroupSwitcher, RestoresBorrowedThreadName)
     });
     t.join();
 }
+
+#if USE_SILK
+
+/// A fiber has a `ThreadStatus` without an OS thread of its own, so joining a thread group must not rename the
+/// scheduler thread the fiber happens to run on, neither when it attaches nor when it borrows a group-owning status.
+/// Nothing between the name reads can suspend the fiber, so they all see the same scheduler thread.
+TEST(ThreadGroupSwitcher, DoesNotRenameSchedulerThreadInFiber)
+{
+    initializeFiberSchedulerForTests();
+
+    /// A thread group needs the `ThreadStatus` of the thread that creates it.
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto G0 = std::make_shared<ThreadGroup>(context, 0);
+        auto G1 = std::make_shared<ThreadGroup>(context, 0);
+
+        for (bool allow_existing_group : {false, true})
+        {
+            ThreadName name_before = ThreadName::UNKNOWN;
+            ThreadName name_inside = ThreadName::UNKNOWN;
+            ThreadName name_after = ThreadName::UNKNOWN;
+            bool bound_to_os_thread = true;
+
+            EXPECT_EQ(Silk::runBlocking([&]
+            {
+                bound_to_os_thread = current_thread->boundToOSThread();
+                if (allow_existing_group)
+                    CurrentThread::attachToGroupIfDetached(G0);
+
+                name_before = getThreadName();
+                {
+                    ThreadGroupSwitcher switcher(G1, ThreadName::MERGE_MUTATE, allow_existing_group);
+                    name_inside = getThreadName();
+                }
+                name_after = getThreadName();
+
+                if (allow_existing_group)
+                    CurrentThread::detachFromGroupIfNotDetached();
+                return 0;
+            }), 0);
+
+            EXPECT_FALSE(bound_to_os_thread);
+            ASSERT_NE(name_before, ThreadName::MERGE_MUTATE);
+            EXPECT_EQ(name_inside, name_before) << "allow_existing_group = " << allow_existing_group;
+            EXPECT_EQ(name_after, name_before) << "allow_existing_group = " << allow_existing_group;
+        }
+    });
+    t.join();
+}
+
+#endif
 
 /// Reparenting a thread's `MemoryTracker` flushes the untracked balance the thread carried in, and that
 /// flush increments `MemoryAllocatedWithoutCheck` and `MemoryAllocatedWithoutCheckBytes` on whatever

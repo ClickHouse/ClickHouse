@@ -430,6 +430,10 @@ mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_coll
     ssl_params.ca_pem = named_collection.getOrDefault<String>("ssl_ca_pem", "");
     ssl_params.cert_pem = named_collection.getOrDefault<String>("ssl_cert_pem", "");
     ssl_params.key_pem = named_collection.getOrDefault<String>("ssl_key_pem", "");
+    ssl_params.key_passphrase = named_collection.getOrDefault<String>("ssl_key_passphrase", "");
+    if (!ssl_params.key_passphrase.empty() && ssl_params.key_path.empty() && ssl_params.key_pem.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "`ssl_key_passphrase` requires `ssl_key` or `ssl_key_pem`");
     return ssl_params;
 }
 
@@ -455,7 +459,7 @@ mysqlxx::SSLParams StorageMySQL::extractSSLParamsFromArguments(ASTs & arguments,
             break;
 
         const String key = identifier->name();
-        bool is_contents_key = false;
+        bool is_sql_key = key == "ssl_key_passphrase";
         for (const auto & [path_key, contents_key] : tls_keys)
         {
             if (key == path_key)
@@ -465,11 +469,11 @@ mysqlxx::SSLParams StorageMySQL::extractSSLParamsFromArguments(ASTs & arguments,
                     "Pass the contents of the file in `{}` instead",
                     path_key, contents_key);
             if (key == contents_key)
-                is_contents_key = true;
+                is_sql_key = true;
         }
 
         /// Anything else is left in place, so that it is reported as an unexpected argument.
-        if (!is_contents_key)
+        if (!is_sql_key)
             break;
 
         auto value = evaluateConstantExpressionOrIdentifierAsLiteral(function->arguments->children[1], context_);
@@ -491,17 +495,23 @@ mysqlxx::SSLParams StorageMySQL::extractSSLParamsFromArguments(ASTs & arguments,
     ssl_params.ca_pem = get("ssl_ca_pem");
     ssl_params.cert_pem = get("ssl_cert_pem");
     ssl_params.key_pem = get("ssl_key_pem");
+    ssl_params.key_passphrase = get("ssl_key_passphrase");
+    if (!ssl_params.key_passphrase.empty() && ssl_params.key_pem.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "`ssl_key_passphrase` requires `ssl_key` or `ssl_key_pem`");
     return ssl_params;
 }
 
 StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
-    const NamedCollection & named_collection, MySQLSettings & storage_settings, ContextPtr context_, bool require_table_or_query)
+    const NamedCollection & named_collection, MySQLSettings & storage_settings, ContextPtr context_,
+    const RemoteDescriptionCaller & caller, bool require_table_or_query)
 {
     StorageMySQL::Configuration configuration;
 
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments
         = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port",
-           "ssl_ca", "ssl_cert", "ssl_key", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem"};
+           "ssl_ca", "ssl_cert", "ssl_key", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem",
+           "ssl_key_passphrase"};
     auto mysql_settings_names = storage_settings.getAllRegisteredNames();
     for (const auto & name : mysql_settings_names)
         optional_arguments.insert(name);
@@ -528,7 +538,7 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     {
         size_t max_addresses = context_->getSettingsRef()[Setting::glob_expansion_max_elements];
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(
-            configuration.addresses_expr, max_addresses, 3306);
+            configuration.addresses_expr, max_addresses, 3306, caller);
     }
 
     configuration.username = named_collection.getAny<String>({"username", "user"});
@@ -552,13 +562,13 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
 
 StorageMySQL::Configuration StorageMySQL::getConfiguration(
     ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings,
-    const StorageID * table_id, const ASTSetQuery * settings)
+    const RemoteDescriptionCaller & caller, const StorageID * table_id, const ASTSetQuery * settings)
 {
     StorageMySQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(
             engine_args, context_, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr, table_id, settings))
     {
-        configuration = StorageMySQL::processNamedCollectionResult(*named_collection, storage_settings, context_);
+        configuration = StorageMySQL::processNamedCollectionResult(*named_collection, storage_settings, context_, caller);
     }
     else
     {
@@ -568,7 +578,7 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage MySQL requires 5-7 parameters: "
                             "MySQL('host:port' (or 'addresses_pattern'), database, table (or query), "
                             "'user', 'password'[, replace_query, 'on_duplicate_clause']"
-                            "[, ssl_ca_pem = '...', ssl_cert_pem = '...', ssl_key_pem = '...']).");
+                            "[, ssl_ca_pem = '...', ssl_cert_pem = '...', ssl_key_pem = '...', ssl_key_passphrase = '...']).");
 
         /// The 3rd argument is either a table name, or a query passed to MySQL as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
@@ -584,7 +594,8 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(
         configuration.addresses_expr = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
         size_t max_addresses = context_->getSettingsRef()[Setting::glob_expansion_max_elements];
 
-        configuration.addresses = parseRemoteDescriptionForExternalDatabase(configuration.addresses_expr, max_addresses, 3306);
+        configuration.addresses = parseRemoteDescriptionForExternalDatabase(
+            configuration.addresses_expr, max_addresses, 3306, caller);
         configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
         if (maybe_query)
             configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::QUERY, *maybe_query);
@@ -634,13 +645,17 @@ void registerStorageMySQL(StorageFactory & factory)
     {
         MySQLSettings mysql_settings; /// TODO: move some arguments from the arguments to the SETTINGS.
         auto configuration = StorageMySQL::getConfiguration(
-            args.engine_args, args.getLocalContext(), mysql_settings, &args.table_id, args.storage_def->settings);
+            args.engine_args, args.getLocalContext(), mysql_settings, globCaller("Table engine 'MySQL'"),
+            &args.table_id, args.storage_def->settings);
 
         /// Bridge the query-context value of `mysql_datatypes_support_level` into the engine settings
         /// (and freeze it into the table definition) so that it is honored during schema inference,
         /// the same way the MySQL database engine does. An explicit per-engine SETTINGS value, loaded
-        /// right after, takes precedence over it.
-        mysql_settings.loadFromQueryContext(args.getLocalContext(), *args.storage_def);
+        /// right after, takes precedence over it. On `RESTORE` we don't use the session context: it may contain a
+        /// conflicting `mysql_datatypes_support_level` setting and make the `RESTORE` fail. The same for a short
+        /// `ATTACH` in a `MySQL` database, which `DatabaseMySQL::createTable` rejects if the definition differs.
+        if (!args.is_restore_from_backup && !args.query.attach_short_syntax)
+            mysql_settings.loadFromQueryContext(args.getLocalContext(), *args.storage_def);
         if (args.storage_def->settings)
             mysql_settings.loadFromQuery(*args.storage_def);
 
@@ -703,7 +718,7 @@ The table structure can differ from the original MySQL table structure:
 
 **Engine Parameters**
 
-- `host:port` — MySQL server address.
+- `host:port` — MySQL server address. The host must be a plain host name or IP address and is reached over TCP at the given port, also for `localhost`: Unix sockets are not supported. Other host syntax of the MySQL client library, such as connection strings or comma-separated host lists, is rejected.
 - `database` — Remote database name.
 - `table` — Remote table name, or a query passed to MySQL as is (see [Passing a query instead of a table name](#passing-a-query)).
 - `user` — MySQL user.
@@ -728,8 +743,9 @@ The credentials of an encrypted connection to MySQL are passed as named collecti
 | `ssl_ca_pem` | Contents of the CA certificate that the MySQL server certificate is verified against. |
 | `ssl_cert_pem` | Contents of the client certificate, for certificate-based authentication. |
 | `ssl_key_pem` | Contents of the private key belonging to `ssl_cert_pem`. |
+| `ssl_key_passphrase` | Passphrase of an encrypted `ssl_key` / `ssl_key_pem`. Optional. |
 
-The values are the contents of the corresponding PEM files, which can be copied into a named collection or into a query. They are masked in logs and in `SHOW` queries, the same way passwords are.
+The values are the contents of the corresponding PEM files (and the key passphrase), which can be copied into a named collection or into a query. They are masked in logs and in `SHOW` queries, the same way passwords are.
 
 The same credentials can also be given as paths to files on the server, in `ssl_ca`, `ssl_cert` and `ssl_key` — but **only in a named collection defined in the server configuration file**, and such a value cannot be overridden in a query. The server opens those files with its own privileges, so accepting a path from SQL would let any user who is able to define a MySQL source probe the local filesystem, and authenticate with a certificate and key they are not allowed to read themselves.
 

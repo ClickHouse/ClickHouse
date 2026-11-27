@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Columns/FilterDescription.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ISource.h>
@@ -64,7 +66,7 @@ struct BlockNestedLoopPredicate
 
     ExpressionActionsPtr actions;
     /// One entry per required column of `actions`, in `getRequiredColumnsWithTypes` order.
-    std::vector<Source> inputs;
+    VectorWithMemoryTracking<Source> inputs;
 };
 
 /// Matches every probe (left) row against the materialized build side by evaluating the join
@@ -144,7 +146,7 @@ private:
         /// output chunk may hold, and dropping the emitted prefix on every chunk would move the rest
         /// of them each time; the prefix is dropped in one go instead, once it is the larger part.
         size_t matched_rows_offset = 0;
-        std::deque<BuildRun> build_runs;
+        DequeWithMemoryTracking<BuildRun> build_runs;
         /// What the blocks held by `build_runs` cost on top of the store, i.e. the sum over the runs
         /// whose block the reader had to decompress or read back from disk.
         size_t retained_build_bytes = 0;
@@ -195,7 +197,7 @@ private:
     SetSpillables set_spillables;
     /// The fixed input structure of `predicate.actions`, and its precomputed input mapping.
     Block predicate_input_header;
-    std::vector<ssize_t> predicate_input_positions;
+    VectorWithMemoryTracking<ssize_t> predicate_input_positions;
 
     /// Limits on one output chunk; the walk over the build side yields as soon as either is reached.
     const size_t max_block_size;

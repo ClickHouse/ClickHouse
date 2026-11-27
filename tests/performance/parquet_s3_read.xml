@@ -1,0 +1,105 @@
+<!--
+    Parquet over the job-local S3 (SeaweedFS, `perf_s3`: a separate prefix per server). ClickBench-style queries
+    (aggregation, text filter, top-N with late materialization, the whole file) over two writers: one 10 M-row file written
+    by ClickHouse (the obfuscated `hits_10m_single`, 17 row groups) and the first ten 1 M-row files of the ClickBench
+    `athena_partitioned` set (`Nullable` columns, 2-5 row groups each). Then the Parquet metadata cache off and on:
+    `count()` over 2000 small objects (about 100 rows each, written in setup from the 10 M-row file with one insert and one
+    encoder thread) needs only their footers; off: one GET (the whole object) and one footer parse per object, on: no
+    object read, the prewarm fills the cache. No prefetch (it fetches every object even when its footer is cached), no
+    count cache. `http_max_tries` rides out transient errors of the public downloads.
+    The setup checks every (file, size) and object count (a stale object fails it), the 10 M-row file row by row against
+    `hits_10m_single` and the athena files against a pinned fingerprint (no second Parquet reader exists), runs every
+    timed query once against the same query with filter pushdown, PREWHERE, top-K filtering and lazy materialization off,
+    and the cache passes with exact GET and cache hit/miss counts.
+    Per server and invocation: 2011 S3 objects, about 2.6 GB uploaded from public S3 and 0.15 GB written by the setup; no
+    local disk; the harness empties the prefix after the test.
+-->
+<test requires_s3="1" run_all_queries="1" max_query_seconds="60">
+
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+    <use_cache_for_count_from_files>0</use_cache_for_count_from_files>
+    <http_max_tries>30</http_max_tries>
+</settings>
+
+<substitutions>
+    <substitution>
+        <name>part</name>
+        <values>
+            <value>0</value><value>1</value><value>2</value><value>3</value><value>4</value>
+            <value>5</value><value>6</value><value>7</value><value>8</value><value>9</value>
+        </values>
+    </substitution>
+    <substitution>
+        <name>src</name>
+        <values>
+            <value>s3(perf_s3, filename = 'parquet_s3_read/hits_10m.parquet', format = Parquet)</value>
+            <value>s3(perf_s3, filename = 'parquet_s3_read/athena/hits_*.parquet', format = Parquet)</value>
+        </values>
+    </substitution>
+    <substitution>
+        <name>many</name>
+        <values><value>s3(perf_s3, filename = 'parquet_s3_read_many/*.parquet', format = Parquet, structure = 'WatchID UInt64')</value></values>
+    </substitution>
+    <substitution>
+        <name>cache</name>
+        <values>
+            <value>0</value>
+            <value>1</value>
+        </values>
+    </substitution>
+</substitutions>
+
+<create_query>CREATE TABLE pq_s3_blob_10m (raw_blob String) ENGINE = S3(perf_s3, filename = 'parquet_s3_read/hits_10m.parquet', format = RawBLOB)</create_query>
+<create_query>CREATE TABLE pq_s3_blob_{part} (raw_blob String) ENGINE = S3(perf_s3, filename = 'parquet_s3_read/athena/hits_{part}.parquet', format = RawBLOB)</create_query>
+
+<fill_query>INSERT INTO pq_s3_blob_10m SELECT * FROM url('https://clickhouse-datasets.s3.amazonaws.com/hits/hits_10m_single_obfuscated.parquet', RawBLOB) SETTINGS s3_truncate_on_insert = 1</fill_query>
+<fill_query>INSERT INTO pq_s3_blob_{part} SELECT * FROM url('https://clickhouse-public-datasets.s3.amazonaws.com/hits_compatible/athena_partitioned/hits_{part}.parquet', RawBLOB) SETTINGS s3_truncate_on_insert = 1</fill_query>
+
+<fill_query>SELECT throwIf(arraySort(groupArray((_file, _size))) != [('hits_0.parquet', 122446530), ('hits_1.parquet', 174965044), ('hits_10m.parquet', 1144869403), ('hits_2.parquet', 230595491), ('hits_3.parquet', 192507052), ('hits_4.parquet', 140929275), ('hits_5.parquet', 122286439), ('hits_6.parquet', 122927935), ('hits_7.parquet', 123902333), ('hits_8.parquet', 122735269), ('hits_9.parquet', 133629314)]) FROM s3(perf_s3, filename = 'parquet_s3_read/**.parquet', format = One)</fill_query>
+<fill_query>SELECT throwIf(sum(num_row_groups) != 17 OR sum(num_rows) != 10000000) FROM s3(perf_s3, filename = 'parquet_s3_read/hits_10m.parquet', format = ParquetMetadata)</fill_query>
+<fill_query>SELECT throwIf(sum(num_row_groups) != 28 OR sum(num_rows) != 10000000) FROM s3(perf_s3, filename = 'parquet_s3_read/athena/hits_*.parquet', format = ParquetMetadata)</fill_query>
+<fill_query><![CDATA[
+SELECT throwIf((count(), sum(cityHash64(*))) != (SELECT count(), sum(cityHash64(*)) FROM hits_10m_single))
+FROM (SELECT * REPLACE (toDateTime(EventTime) AS EventTime, toDate(EventDate) AS EventDate, toDateTime(ClientEventTime) AS ClientEventTime,
+    toDateTime(LocalEventTime) AS LocalEventTime) FROM s3(perf_s3, filename = 'parquet_s3_read/hits_10m.parquet', format = Parquet))
+]]></fill_query>
+<fill_query>SELECT throwIf((count(), sum(cityHash64(tuple(*)))) != (10000000, 8843882336968295263)) FROM s3(perf_s3, filename = 'parquet_s3_read/athena/hits_*.parquet', format = Parquet)</fill_query>
+<fill_query><![CDATA[
+SELECT throwIf(arraySort(groupArray((SearchPhrase, c))) != (SELECT arraySort(groupArray((SearchPhrase, c)))
+    FROM (SELECT SearchPhrase, count() AS c FROM {src} WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10) SETTINGS input_format_parquet_filter_push_down = 0, input_format_parquet_bloom_filter_push_down = 0, input_format_parquet_page_filter_push_down = 0, optimize_move_to_prewhere = 0, use_top_k_dynamic_filtering = 0, query_plan_optimize_lazy_materialization = 0))
+FROM (SELECT SearchPhrase, count() AS c FROM {src} WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10)
+]]></fill_query>
+<fill_query><![CDATA[
+SELECT throwIf(count() != (SELECT count() FROM {src} WHERE URL LIKE '%google%' SETTINGS input_format_parquet_filter_push_down = 0, input_format_parquet_bloom_filter_push_down = 0, input_format_parquet_page_filter_push_down = 0, optimize_move_to_prewhere = 0, use_top_k_dynamic_filtering = 0, query_plan_optimize_lazy_materialization = 0)) FROM {src} WHERE URL LIKE '%google%'
+]]></fill_query>
+<fill_query><![CDATA[
+SELECT throwIf((count(), sum(cityHash64(tuple(*)))) != (SELECT count(), sum(cityHash64(tuple(*)))
+    FROM (SELECT * FROM {src} WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10) SETTINGS input_format_parquet_filter_push_down = 0, input_format_parquet_bloom_filter_push_down = 0, input_format_parquet_page_filter_push_down = 0, optimize_move_to_prewhere = 0, use_top_k_dynamic_filtering = 0, query_plan_optimize_lazy_materialization = 0))
+FROM (SELECT * FROM {src} WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10)
+]]></fill_query>
+
+<fill_query>INSERT INTO FUNCTION s3(perf_s3, filename = 'parquet_s3_read_many/{{_partition_id}}.parquet', format = Parquet) PARTITION BY cityHash64(WatchID) % 2000 SELECT * FROM s3(perf_s3, filename = 'parquet_s3_read/hits_10m.parquet', format = Parquet) WHERE intHash32(WatchID) % 50 = 0 SETTINGS s3_truncate_on_insert = 1, output_format_parquet_parallel_encoding = 0, max_insert_threads = 1</fill_query>
+<fill_query>SELECT throwIf((count(), sum(num_row_groups), sum(num_rows)) != (2000, 2000, 200364)) FROM s3(perf_s3, filename = 'parquet_s3_read_many/*.parquet', format = ParquetMetadata)</fill_query>
+<fill_query>SYSTEM DROP PARQUET METADATA CACHE</fill_query>
+<fill_query>SELECT throwIf(count() != 200364) FROM {many} SETTINGS use_parquet_metadata_cache = 0, remote_filesystem_read_prefetch = 0, log_comment = 'parquet_s3_read.many'</fill_query>
+<fill_query>SELECT throwIf(count() != 200364) FROM {many} SETTINGS use_parquet_metadata_cache = 1, remote_filesystem_read_prefetch = 0, log_comment = 'parquet_s3_read.many'</fill_query>
+<fill_query>SELECT throwIf(count() != 200364) FROM {many} SETTINGS use_parquet_metadata_cache = 1, remote_filesystem_read_prefetch = 0, log_comment = 'parquet_s3_read.many'</fill_query>
+<fill_query>SYSTEM FLUSH LOGS</fill_query>
+<fill_query>SELECT throwIf(groupArray((ProfileEvents['S3GetObject'], ProfileEvents['ParquetMetadataCacheHits'], ProfileEvents['ParquetMetadataCacheMisses'])) != [(2000, 0, 0), (2000, 0, 2000), (0, 2000, 0)]) FROM (SELECT ProfileEvents FROM system.query_log WHERE event_date >= yesterday() AND type = 'QueryFinish' AND log_comment = 'parquet_s3_read.many' AND query_start_time >= (SELECT max(_time) FROM s3(perf_s3, filename = 'parquet_s3_read_many/*.parquet', format = One)) ORDER BY event_time_microseconds)</fill_query>
+<fill_query>SYSTEM DROP PARQUET METADATA CACHE</fill_query>
+
+<query>SELECT count() FROM {many} SETTINGS use_parquet_metadata_cache = {cache}, remote_filesystem_read_prefetch = 0</query>
+
+<query>SELECT SearchPhrase, count() AS c FROM {src} WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10 FORMAT Null</query>
+<query>SELECT count() FROM {src} WHERE URL LIKE '%google%'</query>
+<query>SELECT * FROM {src} WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 FORMAT Null</query>
+<query>SELECT * FROM {src} FORMAT Null</query>
+
+<drop_query>TRUNCATE TABLE IF EXISTS pq_s3_blob_10m</drop_query>
+<drop_query>TRUNCATE TABLE IF EXISTS pq_s3_blob_{part}</drop_query>
+<drop_query>DROP TABLE IF EXISTS pq_s3_blob_10m, pq_s3_blob_0, pq_s3_blob_1, pq_s3_blob_2, pq_s3_blob_3, pq_s3_blob_4, pq_s3_blob_5, pq_s3_blob_6, pq_s3_blob_7, pq_s3_blob_8, pq_s3_blob_9 SYNC</drop_query>
+
+</test>

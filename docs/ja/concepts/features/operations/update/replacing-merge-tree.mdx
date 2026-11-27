@@ -7,16 +7,12 @@ doc_type: 'guide'
 sidebarTitle: 'ReplacingMergeTree エンジンの使い方'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
+トランザクション型データベースは、更新や削除を伴うトランザクション処理向けのワークロードに最適化されていますが、OLAPデータベースでは、こうした操作に対する保証は限定的です。代わりに、分析クエリを大幅に高速化するために、batchesで挿入される不変データ向けに最適化されています。ClickHouseは、mutationsによる更新操作に加え、行を軽量に削除する手段も提供していますが、カラム指向のstructureであるため、これらの操作は上で説明したとおり慎重にスケジュールする必要があります。これらの操作は非同期に処理され、単一のthreadで実行され、さらに (更新の場合は) ディスク上のデータを書き換える必要があります。したがって、多数の小さな変更には使用すべきではありません。
+更新行および削除行のstreamを処理しつつ、上記のような使用パターンを避けるには、ClickHouseのテーブルエンジンであるReplacingMergeTreeを使用できます。
 
-トランザクション型データベースは、更新や削除を伴うトランザクション処理向けのworkloadsに最適化されていますが、OLAPデータベースでは、こうした操作に対する保証は限定的です。代わりに、分析queriesを大幅に高速化するために、batchesで挿入される不変データ向けに最適化されています。ClickHouseは、mutationsによる更新操作に加え、行を軽量に削除する手段も提供していますが、カラム指向のstructureであるため、これらの操作は上で説明したとおり慎重にスケジュールする必要があります。これらの操作は非同期に処理され、単一のthreadで実行され、さらに (更新の場合は) ディスク上のデータを書き換える必要があります。したがって、多数の小さな変更には使用すべきではありません。
-更新行および削除行のstreamを処理しつつ、上記のような使用パターンを避けるには、ClickHouseのtable engineであるReplacingMergeTreeを使用できます。
+## 挿入された行の自動 upsert {#automatic-upserts-of-inserted-rows}
 
-<div id="automatic-upserts-of-inserted-rows">
-  ## 挿入された行の自動 upsert
-</div>
-
-[ReplacingMergeTree テーブルエンジン](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) では、非効率な `ALTER` や `DELETE` ステートメントを使わなくても、同じ行の複数のコピーを挿入し、そのうち 1 つを最新バージョンとして示すことで、更新操作を適用できます。これに対し、バックグラウンドプロセスが同じ行の古いバージョンを非同期に削除し、不変な insert を使って更新操作を効率的に再現します。
+[ReplacingMergeTree テーブルエンジン](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) では、非効率な `ALTER` や `DELETE` ステートメントを使わなくても、同じ行の複数のコピーを挿入し、そのうち 1 つを最新バージョンとして示すことで、更新操作を適用できます。これに対し、バックグラウンドプロセスが同じ行の古いバージョンを非同期に削除し、不変な 挿入 を使って更新操作を効率的に再現します。
 これは、テーブルエンジンが重複行を識別できることに依存しています。これは、一意性の判定に `ORDER BY` 句を使うことで実現されます。つまり、2 つの行が `ORDER BY` で指定されたカラムに対して同じ値を持つ場合、それらは重複と見なされます。テーブル定義時に指定する `version` カラムにより、2 つの行が重複と識別された場合に最新バージョンの行を保持できます。つまり、version の値が最も大きい行が保持されます。
 このプロセスを以下の例で示します。ここでは、行は A カラム (このテーブルの `ORDER BY`) によって一意に識別されます。これらの行は 2 つの batches として挿入され、その結果、ディスク上に 2 つのパーツが作成されたと仮定します。その後、非同期のバックグラウンドプロセスで、これらのパーツがマージされます。
 
@@ -32,7 +28,11 @@ ReplacingMergeTree では、さらに deleted カラムも指定できます。�
 
 <br />
 
-<Image img="/images/migrations/postgres-replacingmergetree.webp" size="md" alt="ReplacingMergeTree のプロセス" />
+<div className="ch-image-md">
+  <Frame>
+    ![ReplacingMergeTree のプロセス](/images/migrations/postgres-replacingmergetree.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -47,15 +47,13 @@ ReplacingMergeTree では、さらに deleted カラムも指定できます。�
 SYSTEM SYNC REPLICA table
 ```
 
-(1) が保証されたら、このコマンドとそれに続くクリーンアップが完了するまで、insert を一時停止することを推奨します。
+(1) が保証されたら、このコマンドとそれに続くクリーンアップが完了するまで、挿入 を一時停止することを推奨します。
 
-> ReplacingMergeTree で deletes を処理する方法は、上記の条件でクリーンアップ期間を確保できる場合を除き、delete の割合が少量から中程度 (10%未満) の table にのみ推奨されます。
+> ReplacingMergeTree で 削除 を処理する方法は、上記の条件でクリーンアップ期間を確保できる場合を除き、delete の割合が少量から中程度 (10%未満) の テーブル にのみ推奨されます。
 
 > ヒント: 今後変更されない一部のパーティションに対して `OPTIMIZE FINAL CLEANUP` を実行できる場合もあります。
 
-<div id="choosing-a-primarydeduplication-key">
-  ## プライマリ/重複排除キーの選択
-</div>
+## プライマリ/重複排除キーの選択 {#choosing-a-primarydeduplication-key}
 
 前述のとおり、ReplacingMergeTree では、さらに重要な制約を満たす必要があります。`ORDER BY` のカラムの値は、変更をまたいでも行を一意に識別できなければなりません。そのため、Postgres のようなトランザクション型データベースから移行する場合は、元の Postgres の主キーを ClickHouse の `ORDER BY` 句に含める必要があります。
 
@@ -69,22 +67,22 @@ CREATE TABLE stackoverflow.posts_updateable
 (
        `Version` UInt32,
        `Deleted` UInt8,
-        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `Id` Int32 CODEC(Delta, Default),
         `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
         `AcceptedAnswerId` UInt32,
         `CreationDate` DateTime64(3, 'UTC'),
         `Score` Int32,
-        `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+        `ViewCount` UInt32 CODEC(Delta, Default),
         `Body` String,
         `OwnerUserId` Int32,
         `OwnerDisplayName` String,
         `LastEditorUserId` Int32,
         `LastEditorDisplayName` String,
-        `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+        `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
         `LastActivityDate` DateTime64(3, 'UTC'),
         `Title` String,
         `Tags` String,
-        `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+        `AnswerCount` UInt16 CODEC(Delta, Default),
         `CommentCount` UInt8,
         `FavoriteCount` UInt8,
         `ContentLicense` LowCardinality(String),
@@ -99,16 +97,14 @@ ORDER BY (PostTypeId, toDate(CreationDate), CreationDate, Id)
 
 `ORDER BY` キーとして `(PostTypeId, toDate(CreationDate), CreationDate, Id)` を使用します。各投稿で一意な `Id` カラムにより、行を重複排除できます。必要に応じて、`Version` カラムと `Deleted` カラムをスキーマに追加します。
 
-<div id="querying-replacingmergetree">
-  ## ReplacingMergeTree のクエリ
-</div>
+## ReplacingMergeTree のクエリ {#querying-replacingmergetree}
 
-マージ時に ReplacingMergeTree は、`ORDER BY` カラムの値を一意の識別子として使って重複した行を特定し、最も大きいバージョンだけを残すか、最新バージョンが削除を示している場合は重複した行をすべて削除します。ただし、これで保証されるのは最終的な整合性だけであり、行が必ず重複排除されるわけではないため、これに依存すべきではありません。
+マージ時に ReplacingMergeTree は、`ORDER BY` カラムの値を一意の識別子として使って重複行を特定し、最も大きいバージョンだけを残すか、最新バージョンが削除を示している場合は重複行をすべて削除します。ただし、これで保証されるのは最終的な整合性だけであり、行が必ず重複排除されるわけではないため、これに依存すべきではありません。
 
 <Info>
   **重複排除されたデータを読み取るには FINAL を使用する**
 
-  重複排除は background merges の間にのみ行われるため、通常の `SELECT` でも重複した行や削除済みの行が返されることがあります。クエリ時に正しい結果を取得するには、`FINAL` modifier を使用してください。これにより、クエリの実行時に重複排除と削除行の除去が完了します。
+  重複排除は background merges の間にのみ行われるため、通常の `SELECT` でも重複行や削除済みの行が返されることがあります。クエリ実行時に正しい結果を取得するには、`FINAL` modifier を使用してください。これにより、クエリの実行時に重複排除と削除行の除去が完了します。
 </Info>
 
 上記の Posts テーブルについて考えてみましょう。このデータセットは通常の方法でロードできますが、値として 0 を指定した deleted カラムと version カラムを追加します。例を簡単にするため、ここでは 10000 行のみをロードします。
@@ -136,7 +132,7 @@ SELECT count() FROM stackoverflow.posts_updateable
 1 row in set. Elapsed: 0.002 sec.
 ```
 
-ここで、回答後の統計を更新します。これらの値を更新するのではなく、5000行の新しいコピーを挿入し、それらのバージョン番号に 1 を加えます (つまり、テーブル内には 150 行が存在することになります) 。これは、単純な `INSERT INTO SELECT` でシミュレートできます。
+ここで、回答後の統計を更新します。これらの値を更新するのではなく、5000行の新しいコピーを挿入し、それらのバージョン番号に 1 を加えます (つまり、テーブル内には 15000 行が存在することになります) 。これは、単純な `INSERT INTO SELECT` でシミュレートできます。
 
 ```sql
 INSERT INTO posts_updateable SELECT
@@ -242,7 +238,7 @@ Peak memory usage: 8.14 MiB.
 ```
 
 <div id="final-performance">
-  ## `FINAL` のパフォーマンス
+  ## `FINAL` のパフォーマンス {#final-performance}
 </div>
 
 `FINAL` 演算子は、クエリにわずかなパフォーマンス上のオーバーヘッドをもたらします。
@@ -252,13 +248,11 @@ Peak memory usage: 8.14 MiB.
 
 `WHERE` 条件でキーカラムを使用しない場合、ClickHouse は現在、`FINAL` 使用時に `PREWHERE` 最適化を利用しません。この最適化は、フィルタされていないカラムについて読み取る行数を減らすことを目的としています。この `PREWHERE` を再現し、パフォーマンスを改善できる可能性がある例は、[こちら](https://clickhouse.com/blog/clickhouse-postgresql-change-data-capture-cdc-part-1#final-performance)で確認できます。
 
-<div id="exploiting-partitions-with-replacingmergetree">
-  ## ReplacingMergeTree でパーティションを活用する
-</div>
+## ReplacingMergeTree でパーティションを活用する {#exploiting-partitions-with-replacingmergetree}
 
 ClickHouse では、データのマージはパーティション単位で行われます。ReplacingMergeTree を使用する場合は、**そのパーティションキーが行ごとに変わらない**ことを保証できるなら、ベストプラクティスに従ってテーブルをパーティション化することを推奨します。これにより、同じ行に対する更新は同じ ClickHouse パーティションに送られます。ここで説明するベストプラクティスに従っている限り、Postgres と同じパーティションキーを使い回すこともできます。
 
-これが当てはまる場合は、`FINAL` クエリのパフォーマンスを向上させるために、`do_not_merge_across_partitions_select_final=1` という設定を使用できます。この設定により、FINAL 使用時にはパーティションごとに個別にマージと処理が行われます。
+これが当てはまる場合は、`FINAL` クエリパフォーマンスを向上させるために、`do_not_merge_across_partitions_select_final=1` という設定を使用できます。この設定により、FINAL 使用時にはパーティションごとに個別にマージと処理が行われます。
 
 次の posts テーブルでは、パーティション化を使用していません。
 
@@ -267,7 +261,7 @@ CREATE TABLE stackoverflow.posts_no_part
 (
         `Version` UInt32,
         `Deleted` UInt8,
-        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `Id` Int32 CODEC(Delta, Default),
         ...
 )
 ENGINE = ReplacingMergeTree
@@ -281,7 +275,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow
 0 rows in set. Elapsed: 182.895 sec. Processed 59.82 million rows, 38.07 GB (327.07 thousand rows/s., 208.17 MB/s.)
 ```
 
-`FINAL` が実際に処理を行う必要があるように、重複した行を insert して `AnswerCount` を増やし、100万行を更新します。
+`FINAL` が実際に処理を行う必要があるように、重複行を 挿入 して `AnswerCount` を増やし、100万行を更新します。
 
 ```sql
 INSERT INTO posts_no_part SELECT Version + 1 AS Version, Deleted, Id, PostTypeId, AcceptedAnswerId, CreationDate, Score, ViewCount, Body, OwnerUserId, OwnerDisplayName, LastEditorUserId, LastEditorDisplayName, LastEditDate, LastActivityDate, Title, Tags, AnswerCount + 1 AS AnswerCount, CommentCount, FavoriteCount, ContentLicense, ParentId, CommunityOwnedDate, ClosedDate
@@ -317,7 +311,7 @@ CREATE TABLE stackoverflow.posts_with_part
 (
         `Version` UInt32,
         `Deleted` UInt8,
-        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `Id` Int32 CODEC(Delta, Default),
         ...
 )
 ENGINE = ReplacingMergeTree
@@ -346,22 +340,22 @@ ORDER BY year ASC
 17 rows in set. Elapsed: 0.994 sec. Processed 64.65 million rows, 983.64 MB (65.02 million rows/s., 989.23 MB/s.)
 ```
 
-ご覧のとおり、このケースでは、重複排除をパーティション単位で並列に実行できるため、パーティション化によってクエリのパフォーマンスが大幅に向上しました。
+ご覧のとおり、このケースでは、重複排除をパーティション単位で並列に実行できるため、パーティション化によってクエリパフォーマンスが大幅に向上しました。
 
 <div id="merge-behavior-considerations">
-  ## マージ動作に関する考慮事項
+  ## マージ動作に関する考慮事項 {#merge-behavior-considerations}
 </div>
 
 ClickHouseのマージ選択メカニズムは、単にパーツをマージするだけではありません。以下では、この挙動をReplacingMergeTreeの文脈で見ていきながら、古いデータをより積極的にマージするための設定オプションや、大きなパーツに関する考慮事項について説明します。
 
 <div id="merge-selection-logic">
-  ### マージ選択ロジック
+  ### マージ選択ロジック {#merge-selection-logic}
 </div>
 
 マージではパーツ数をできるだけ減らすことを目指しますが、同時に書き込み増幅のコストとのバランスも考慮されます。そのため、内部計算の結果、過度な書き込み増幅を招くパーツ範囲はマージ対象から除外されます。この挙動により、不要なリソース消費を防ぎ、ストレージコンポーネントの寿命を延ばすことができます。
 
 <div id="merging-behavior-on-large-parts">
-  ### 大きなパーツにおけるマージ動作
+  ### 大きなパーツにおけるマージ動作 {#merging-behavior-on-large-parts}
 </div>
 
 ClickHouse の ReplacingMergeTree エンジンは、パーツをマージして重複する行を管理し、指定した一意キーに基づいて各行の最新バージョンのみを保持するよう最適化されています。ただし、マージ後のパーツが `max_bytes_to_merge_at_max_space_in_pool` のしきい値に達すると、`min_age_to_force_merge_seconds` が設定されていても、以降のマージ対象には選ばれなくなります。その結果、継続的なデータ挿入に伴って蓄積する可能性がある重複の除去を、自動マージに頼ることはできなくなります。
@@ -371,13 +365,13 @@ ClickHouse の ReplacingMergeTree エンジンは、パーツをマージして�
 パフォーマンスを維持しつつ、より持続可能な解決策とするには、テーブルのパーティション化を推奨します。これにより、パーツがマージの最大サイズに達するのを防ぎやすくなり、継続的な手動最適化の必要性も減らせます。
 
 <div id="partitioning-and-merging-across-partitions">
-  ### パーティション化とパーティションをまたぐマージ
+  ### パーティション化とパーティションをまたぐマージ {#partitioning-and-merging-across-partitions}
 </div>
 
 ReplacingMergeTree でパーティションを活用するで説明したように、ベストプラクティスとしてテーブルのパーティション化を推奨します。パーティション化するとデータが分離されるため、マージの効率が向上し、特にクエリ実行時にパーティションをまたぐマージを回避できます。この動作は 23.12 以降のバージョンでさらに強化されており、パーティションキーがソートキーのプレフィックスである場合、クエリ実行時にはパーティションをまたぐマージは行われず、クエリパフォーマンスが向上します。
 
 <div id="tuning-merges-for-better-query-performance">
-  ### クエリパフォーマンスを向上させるためのマージの調整
+  ### クエリパフォーマンスを向上させるためのマージの調整 {#tuning-merges-for-better-query-performance}
 </div>
 
 デフォルトでは、`min_age_to_force_merge_seconds` と `min_age_to_force_merge_on_partition_only` はそれぞれ 0 と false に設定されており、これらの機能は無効です。この構成では、ClickHouse はパーティションの経過時間に基づいてマージを強制せず、標準のマージ動作を適用します。
@@ -387,7 +381,7 @@ ReplacingMergeTree でパーティションを活用するで説明したよう�
 この挙動は、`min_age_to_force_merge_on_partition_only=true` を設定することでさらに調整できます。この設定では、積極的なマージを行う条件として、パーティション内のすべてのパーツが `min_age_to_force_merge_seconds` で指定した時間より古くなっている必要があります。この構成により、古いパーティションは時間の経過とともに 1 つのパーツまでマージされ、データが集約されることでクエリパフォーマンスを維持できます。
 
 <div id="recommended-settings">
-  ### 推奨設定
+  ### 推奨設定 {#recommended-settings}
 </div>
 
 <Warning>

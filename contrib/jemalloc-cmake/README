@@ -15,3 +15,14 @@ It allows to integrate JEMalloc into CMake project.
   This can be done with the following command:
 
       gg JEMALLOC_HAVE_CLOCK_MONOTONIC_COARSE | cut -d: -f1 | xargs sed -i 's@#define JEMALLOC_HAVE_CLOCK_MONOTONIC_COARSE@/* #undef JEMALLOC_HAVE_CLOCK_MONOTONIC_COARSE */@'
+
+- JEMALLOC_HAVE_DLSYM should be disabled
+
+  With it, the background threads find `pthread_create` with `dlsym(RTLD_NEXT)`, which only
+  matters for applications that wrap `pthread_create` (we don't, and lazy locking is off), and call
+  it through the returned pointer, which Clang CFI (`ENABLE_CFI`) rejects: the target is outside
+  the binary. Without it, jemalloc calls `pthread_create` directly.
+
+  This can be done with the following command:
+
+      gg '#define JEMALLOC_HAVE_DLSYM' | cut -d: -f1 | xargs sed -i 's@^#define JEMALLOC_HAVE_DLSYM *$@/* #undef JEMALLOC_HAVE_DLSYM */@'

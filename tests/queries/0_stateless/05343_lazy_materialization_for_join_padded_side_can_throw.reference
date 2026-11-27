@@ -1,0 +1,28 @@
+-- different scales: computed below the LIMIT
+0	l0	1
+1	l1	0
+2	l2	1
+3	l3	0
+4	l4	1
+5	l5	0
+0	l0	1
+1	l1	0
+2	l2	1
+3	l3	0
+4	l4	1
+5	l5	0
+0
+-- the same scale: computed above the LIMIT
+0	l0	1
+1	l1	0
+2	l2	1
+3	l3	0
+4	l4	1
+5	l5	0
+0	l0	1
+1	l1	0
+2	l2	1
+3	l3	0
+4	l4	1
+5	l5	0
+1

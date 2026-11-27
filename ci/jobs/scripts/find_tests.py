@@ -2,7 +2,6 @@ import argparse
 import json
 import os
 import re
-import shlex
 import sys
 from pathlib import Path
 from dataclasses import asdict
@@ -13,8 +12,9 @@ sys.path.append("./")
 
 from ci.jobs.scripts.coverage_selection import (
     attach_bracket_owners,
-    build_bracket_owners_query,
-    build_bracket_spans_query,
+    build_bracket_owners_queries,
+    build_bracket_spans_queries,
+    build_candidate_queries,
     build_candidate_query,
     build_selector_smoke_seed_query,
     canonical_coverage_path,
@@ -31,11 +31,13 @@ from ci.jobs.scripts.test_selection_config import (
     SELECTION_CONFIG,
 )
 
-from ci.praktika.cidb import CIDB
+from ci.praktika.cidb import CIDB, CIDBTimeoutError
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell
 from ci.settings.settings import SECRET_CI_DB_CONNECTION
+
+GITHUB_API_URL = "https://api.github.com"
 
 # Query to fetch failed tests from CIDB for a given PR.
 # Pre-filters out commit/check_name combinations with >= 20 failures — these indicate
@@ -72,6 +74,12 @@ FAILED_TESTS_QUERY = """ \
 """
 
 
+class GitHubUnavailableError(RuntimeError):
+    """A GitHub API read of the test selection kept failing for a reason outside
+    the pull request: a server or network error, a rate limit, or a diff that
+    GitHub was still generating."""
+
+
 class Targeting:
     INTEGRATION_JOB_TYPE = "Integration"
     STATELESS_JOB_TYPE = "Stateless"
@@ -89,6 +97,18 @@ class Targeting:
         else:
             self.job_type = None
 
+    @property
+    def pr_number(self):
+        """The pull request whose change the selection is for.
+
+        In a merge-queue run `Info.pr_number` is 0, but the queue entry is built
+        for exactly one PR, parsed from the merge group head ref (the same PR
+        `GH.get_changed_file_statuses` lists the changed files of).
+        """
+        if self.info.pr_number <= 0 and self.info.is_merge_queue_event:
+            return self.info.linked_pr_number
+        return self.info.pr_number
+
     def _ci_db(self):
         # Queries run as the privileged CI user. The public `play` user is
         # rate/row/time-limited and must be used only for links handed to humans
@@ -99,6 +119,7 @@ class Targeting:
                 url=conn.get("url"),
                 user=conn.get("user"),
                 passwd=conn.get("password"),
+                refused_retry_sec=self.config.cidb_refused_retry_sec,
             )
         return self._cidb
 
@@ -160,8 +181,8 @@ class Targeting:
         A data fixture may sit next to its test (`02995_settings_26_4_1.tsv`) or
         in a subdirectory (`data_parquet/02716_data.parquet`); either way it has
         no test of its own, so `_derive_test_name` skips it. But such a fixture
-        change still alters the surface of the test that consumes it, and a drift
-        guard that skips it would false-green the very drift it exists to catch.
+        change still alters the surface of the test that consumes it, and a check
+        that skipped it would false-green the very change it exists to catch.
 
         Fixtures carry their owning test's five-digit prefix by convention, so
         the prefix narrows the candidates to the `NNNNN_*` tests at the suite
@@ -210,7 +231,7 @@ class Targeting:
         return sorted(referencing) if referencing else sorted(candidates)
 
     # Submodules with test data, the same as `test_data_submodules` in `ci/defs/job_configs.py`.
-    TEST_DATA_SUBMODULES = ("contrib/parquet-testing",)
+    TEST_DATA_SUBMODULES = ("contrib/arrow-testing", "contrib/parquet-testing")
 
     @classmethod
     def is_test_data_submodule(cls, fpath: str) -> bool:
@@ -250,6 +271,29 @@ class Targeting:
         """A changed path that is itself a stateless functional test source file."""
         fpath = fpath.removeprefix("./")
         return fpath.startswith("tests/queries/0_stateless/") and Path(fpath).is_file()
+
+    @classmethod
+    def owning_test_modules(cls, changed_files):
+        """Test modules of the integration test packages whose supporting files (configs,
+        data, package-local helpers) changed, e.g. `test_x/configs/config.xml` -> `test_x/test*.py`.
+        Changed test modules themselves are found by `is_integration_test_file`."""
+        modules = []
+        for file in changed_files:
+            file = file.removeprefix("./")
+            parts = file.split("/")
+            if (
+                len(parts) < 4
+                or parts[:2] != ["tests", "integration"]
+                or not parts[2].startswith("test_")
+                or parts[2].startswith("test_e2e_")
+                or cls.is_integration_test_file(file)
+            ):
+                continue
+            package = Path("tests/integration") / parts[2]
+            modules.extend(
+                str(p.relative_to("tests/integration")) for p in sorted(package.glob("test*.py"))
+            )
+        return list(dict.fromkeys(modules))
 
     @staticmethod
     def is_integration_test_file(fpath: str) -> bool:
@@ -395,7 +439,6 @@ class Targeting:
 
     def get_changed_tests(self, strict=False):
         # TODO: add support for integration tests
-        result = set()
         if hasattr(self, "_diff_text") and self._diff_text:
             # Reuse already-fetched diff text to extract changed file names — avoids
             # a second diff fetch and works when the diff was pre-fetched via --diff-file.
@@ -411,7 +454,7 @@ class Targeting:
             )
         elif self.info.is_local_run:
             changed_files = Shell.get_output(
-                f"gh pr diff {self.info.pr_number} --repo ClickHouse/ClickHouse --name-only"
+                f"gh pr diff {self.pr_number} --repo ClickHouse/ClickHouse --name-only"
             ).splitlines()
         else:
             changed_files = self.info.get_changed_files()
@@ -419,8 +462,16 @@ class Targeting:
             raise RuntimeError(
                 "Failed to get changed files required for test selection"
             )
+        return self.tests_from_changed_files(changed_files)
+
+    @classmethod
+    def tests_from_changed_files(cls, changed_files, verbose=True):
+        """The stateless tests to rerun for the given changed files: the changed
+        tests themselves and the owners of changed data files."""
+        log = print if verbose else lambda *args: None
+        result = set()
         if not changed_files:
-            return result
+            return []
 
         # Tests removed by the change, with no source file left under that name.
         # Their supporting files (`.reference`, the `.python` helper of a `.sh`
@@ -435,20 +486,20 @@ class Targeting:
         }
         removed_tests = set()
         for fname in removed_files:
-            for ext in self._TEST_FILE_EXTENSIONS:
+            for ext in cls._TEST_FILE_EXTENSIONS:
                 if not fname.endswith(ext):
                     continue
                 name = fname[: -len(ext)]
                 if (
                     f"{name}.reference" in removed_files
                     or f"{name}.reference.j2" in removed_files
-                ) and not self.functional_test_source_file(name):
+                ) and not cls.functional_test_source_file(name):
                     removed_tests.add(name)
 
         for fpath in changed_files:
-            if self.is_test_data_submodule(fpath):
-                for base_name in self._tests_using_test_data_submodule(fpath):
-                    print(
+            if cls.is_test_data_submodule(fpath):
+                for base_name in cls._tests_using_test_data_submodule(fpath):
+                    log(
                         f"Detected changed test data submodule '{fpath}' used by test '{base_name}'"
                     )
                     result.add(f"{base_name}.")
@@ -457,7 +508,7 @@ class Targeting:
             if not fpath.startswith("tests/queries/0_stateless/"):
                 if fpath.startswith("tests/queries/"):
                     # Log any other changed file under tests/queries for future debugging
-                    print(
+                    log(
                         f"File '{fpath}' changed, but doesn't match expected test pattern"
                     )
                 continue
@@ -466,11 +517,11 @@ class Targeting:
             # supporting file (`.reference`, a `.sql.j2` template, ...) whose sibling
             # test shares its base name.
             if Path(fpath).parent == Path("tests/queries/0_stateless"):
-                test_base_name = self._derive_test_name(fpath)
-                if test_base_name is not None and self.functional_test_source_file(
+                test_base_name = cls._derive_test_name(fpath)
+                if test_base_name is not None and cls.functional_test_source_file(
                     test_base_name
                 ):
-                    print(f"Detected changed test: '{test_base_name}' (from '{fpath}')")
+                    log(f"Detected changed test: '{test_base_name}' (from '{fpath}')")
                     # The '.' suffix marks a whole-test name; `selection_pattern`
                     # turns it into the selector that runs only this test.
                     result.add(f"{test_base_name}.")
@@ -485,7 +536,7 @@ class Targeting:
                         if candidate in removed_tests:
                             break
                     if candidate in removed_tests:
-                        print(
+                        log(
                             f"File '{fpath}' belongs to the removed test '{candidate}' — skipping"
                         )
                         continue
@@ -494,22 +545,22 @@ class Targeting:
             # (`data_parquet/02716_data.parquet`) or a root-level orphan data file
             # (`02995_settings_26_4_1.tsv`) with no sibling test. Map it back to the
             # test(s) that own it so a fixture-only change still reruns the tests
-            # that consume it; otherwise the flaky check — and the merge-queue drift
-            # guard built on it — would silently skip the very test surface the
-            # change affects. Emit only real tests: `_tests_owning_data_file` returns
+            # that consume it; otherwise the flaky and targeted checks would
+            # silently skip the very test surface the change affects. Emit only
+            # real tests: `_tests_owning_data_file` returns
             # an empty list when nothing maps, so we never fabricate a no-match
             # pattern (which would make clickhouse-test exit 1).
-            owning_tests = self._tests_owning_data_file(fpath)
+            owning_tests = cls._tests_owning_data_file(fpath)
             if owning_tests:
                 for base_name in owning_tests:
-                    print(
+                    log(
                         f"Detected changed data file '{fpath}' owned by test '{base_name}'"
                     )
                     # The '.' suffix marks a whole-test name; `selection_pattern`
                     # turns it into the selector that runs only this test.
                     result.add(f"{base_name}.")
             else:
-                print(
+                log(
                     f"File '{fpath}' is not a test source and has no owning test — skipping"
                 )
 
@@ -518,7 +569,7 @@ class Targeting:
     def get_previously_failed_tests(self):
         assert self.job_type, "Unsupported job type"
         assert (
-            self.info.pr_number > 0
+            self.pr_number > 0
         ), "Find tests by previous failures applicable only for PRs"
 
         tests = []
@@ -530,7 +581,7 @@ class Targeting:
         else:
             assert False, f"Not supported job type [{self.job_type}]"
         query = FAILED_TESTS_QUERY.format(
-            PR_NUMBER=self.info.pr_number,
+            PR_NUMBER=self.pr_number,
             JOB_TYPE=self.job_type,
             TEST_NAME_PATTERN=test_name_pattern,
             CUTOFF=self.selection_cutoff(),
@@ -627,21 +678,64 @@ class Targeting:
             self.selection_diagnostics["cutoff"] = self._selection_cutoff
         return self._selection_cutoff
 
-    def _run_attempt_start_time(self):
+    def _github_get(self, path, accept="application/vnd.github+json"):
+        """GET `repos/<repo>/<path>` of the GitHub API. Failures that GitHub may not
+        repeat are retried for `github_retry_sec`, then `GitHubUnavailableError`."""
         import requests
 
-        headers = {"Accept": "application/vnd.github+json"}
+        headers = {"Accept": accept}
         token = os.environ.get("GITHUB_TOKEN", "")
         if token:
             headers["Authorization"] = f"Bearer {token}"
         repo = self.info.repo_name or "ClickHouse/ClickHouse"
-        response = requests.get(
-            f"https://api.github.com/repos/{repo}/actions/runs/{self.info.run_id}"
-            f"/attempts/{self.info.run_attempt}",
-            headers=headers,
-            timeout=60,
+        url = f"{GITHUB_API_URL}/repos/{repo}/{path}"
+        deadline = time.monotonic() + self.config.github_retry_sec
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                response = requests.get(url, headers=headers, timeout=60)
+                response.raise_for_status()
+                return response
+            except requests.HTTPError as ex:
+                error = ex
+                status = ex.response.status_code if ex.response is not None else 0
+                body = ex.response.text if ex.response is not None else ""
+                if status == 429 or (
+                    status == 403
+                    and (
+                        ex.response.headers.get("x-ratelimit-remaining") == "0"
+                        or "rate limit" in body.lower()
+                    )
+                ):
+                    # GitHub asks not to retry before the limit resets.
+                    raise GitHubUnavailableError(f"GitHub API {ex}") from ex
+                # GitHub generates a large diff in the background for a later request.
+                if not (
+                    status >= 500 or (status == 422 and "too long to generate" in body)
+                ):
+                    raise
+            except (
+                requests.ConnectionError,
+                requests.Timeout,
+                requests.exceptions.ChunkedEncodingError,
+            ) as ex:
+                error = ex
+            remaining = deadline - time.monotonic()
+            print(
+                f"WARNING: GitHub API request failed, attempt {attempt}, "
+                f"{max(remaining, 0):.0f} s left to retry: {error}"
+            )
+            if remaining <= 0:
+                raise GitHubUnavailableError(
+                    f"GitHub API failed {attempt} times: {error}"
+                ) from error
+            time.sleep(min(2**attempt, remaining))
+
+    def _run_attempt_start_time(self):
+        response = self._github_get(
+            f"actions/runs/{self.info.run_id}/attempts/{self.info.run_attempt}"
         )
-        response.raise_for_status()
         return datetime.fromisoformat(
             response.json()["run_started_at"].replace("Z", "+00:00")
         ).astimezone(timezone.utc)
@@ -679,6 +773,15 @@ class Targeting:
         return build_candidate_query(
             changed_lines, hunk_ranges or {}, self.coverage_snapshots(), self.config
         )
+
+    def _query_rows(self, queries):
+        """The rows of `queries` one after another, and their size in bytes."""
+        rows, size = [], 0
+        for query in queries:
+            raw = self._ci_db().query(query, log_level="")
+            rows += parse_rows(raw)
+            size += len(raw.encode())
+        return rows, size
 
     def check_coverage_canary(self):
         if self.selection_diagnostics.get("canary", {}).get("status") == "OK":
@@ -746,15 +849,16 @@ class Targeting:
             self._coverage_regions = []
             return []
         self.check_coverage_canary()
-        query = self.build_coverage_query(coverage_lines, hunk_ranges)
+        queries = build_candidate_queries(
+            coverage_lines, hunk_ranges or {}, self.coverage_snapshots(), self.config
+        )
         started = time.monotonic()
-        raw = self._ci_db().query(query, log_level="")
-        self._coverage_regions = parse_rows(raw)
+        self._coverage_regions, response_bytes = self._query_rows(queries)
         self.selection_diagnostics.update(
             {
-                "query": query,
+                "queries": queries,
                 "query_seconds": time.monotonic() - started,
-                "response_bytes": len(raw.encode()),
+                "response_bytes": response_bytes,
                 "region_count": len(self._coverage_regions),
                 "coverage_state": (
                     "precise_matches"
@@ -786,18 +890,13 @@ class Targeting:
         if not hunks:
             return []
         snapshots = self.coverage_snapshots()
-        spans = parse_rows(
-            self._ci_db().query(
-                build_bracket_spans_query(hunks, snapshots, self.config), log_level=""
-            )
+        spans, _ = self._query_rows(
+            build_bracket_spans_queries(hunks, snapshots, self.config)
         )
         brackets = find_brackets(hunks, spans, self.config)
         if brackets:
-            owners = parse_rows(
-                self._ci_db().query(
-                    build_bracket_owners_query(brackets, snapshots, self.config),
-                    log_level="",
-                )
+            owners, _ = self._query_rows(
+                build_bracket_owners_queries(brackets, snapshots, self.config)
             )
             attach_bracket_owners(brackets, owners)
         self.selection_diagnostics["brackets"] = [
@@ -821,6 +920,9 @@ class Targeting:
             tests = self.get_previously_failed_tests()
         except Exception as e:
             if strict:
+                # The targeted jobs skip when CIDB or GitHub is unavailable.
+                if isinstance(e, (CIDBTimeoutError, GitHubUnavailableError)):
+                    raise
                 raise RuntimeError(
                     "Failed to get previously failed tests required for test selection"
                 ) from e
@@ -920,39 +1022,29 @@ class Targeting:
         """
         if hasattr(self, "_diff_text") and self._diff_text is not None:
             return self._diff_text
-        assert self.info.pr_number > 0, "Diff fetching applicable for PRs only"
+        assert self.pr_number > 0, "Diff fetching applicable for PRs only"
         repo = self.info.repo_name or "ClickHouse/ClickHouse"
         if self.info.is_local_run:
             self._diff_text = Shell.get_output(
-                f"gh pr diff {self.info.pr_number} --repo {repo}"
+                f"gh pr diff {self.pr_number} --repo {repo}"
             )
         else:
-            import requests
-
-            headers = {"Accept": "application/vnd.github+json"}
-            token = os.environ.get("GITHUB_TOKEN", "")
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-            response = requests.get(
-                f"https://api.github.com/repos/{repo}/pulls/{self.info.pr_number}",
-                headers=headers,
-                timeout=60,
-            )
-            response.raise_for_status()
-            metadata = response.json()
-            if metadata["head"]["sha"] != self.info.sha:
+            metadata = self._github_get(f"pulls/{self.pr_number}").json()
+            head_sha = self.info.sha
+            if self.info.is_merge_queue_event:
+                # The merge group commit is the PR merged onto the queue base, not
+                # the PR head, and a PR cannot change while it is queued (a push
+                # removes it from the queue). Select by the PR's own diff.
+                head_sha = metadata["head"]["sha"]
+            elif metadata["head"]["sha"] != self.info.sha:
                 raise RuntimeError(
                     "PR head changed before test selection; refusing a diff for a different SHA"
                 )
             base_sha = metadata["base"]["sha"]
-            headers["Accept"] = "application/vnd.github.diff"
-            response = requests.get(
-                f"https://api.github.com/repos/{repo}/compare/{base_sha}...{self.info.sha}",
-                headers=headers,
-                timeout=60,
-            )
-            response.raise_for_status()
-            self._diff_text = response.text
+            self._diff_text = self._github_get(
+                f"compare/{base_sha}...{head_sha}",
+                accept="application/vnd.github.diff",
+            ).text
             self.selection_diagnostics["diff_base_sha"] = base_sha
         return self._diff_text
 
@@ -961,7 +1053,7 @@ class Targeting:
         Return changed lines from the PR diff.
         In CI fetches the diff from GitHub API; for local runs uses `gh pr diff`.
         """
-        assert self.info.pr_number > 0, "Find tests by diff applicable for PRs only"
+        assert self.pr_number > 0, "Find tests by diff applicable for PRs only"
         return self._parse_diff_lines(self.get_diff_text())
 
     @classmethod
@@ -986,15 +1078,6 @@ class Targeting:
         name = re.escape(cls.selection_test_name(test).rstrip("."))
         extensions = "|".join(re.escape(ext) for ext in cls._TEST_FILE_EXTENSIONS)
         return f"^{name}(?:{extensions})$"
-
-    @staticmethod
-    def selection_args(tests):
-        """Render selectors as the argument list of a `clickhouse-test` command line.
-
-        `run_tests` executes that command line through bash, whose quote removal would
-        otherwise consume the regex syntax before `clickhouse-test` parses it.
-        """
-        return " ".join(shlex.quote(test) for test in tests) if tests else ""
 
     def get_most_relevant_tests(self):
         changed_lines = self.get_changed_lines_from_diff()
@@ -1025,14 +1108,24 @@ class Targeting:
         )
 
     def get_all_relevant_tests_with_info(self, include_changed_tests=True):
+        # The manifest records the cutoff, but only the failed-tests query and the
+        # coverage snapshots resolve it. In the merge queue neither runs for a
+        # diff without coverage lines, so resolve it here.
+        self.selection_cutoff()
         self.get_diff_text()
         results = []
         changed = []
         if include_changed_tests and self.job_type == self.STATELESS_JOB_TYPE:
             changed, result = self.get_changed_or_new_tests_with_info(strict=True)
             results.append(result)
-        failed, result = self.get_previously_failed_tests_with_info(strict=True)
-        results.append(result)
+        failed = []
+        # The merge queue reruns the selection against the merged state to catch
+        # conflicts with `master` changes that landed after the PR's last CI run.
+        # The tests that failed while the PR was developed were already rerun in
+        # its CI, and a flaky one among them would only bounce the PR from the queue.
+        if not self.info.is_merge_queue_event:
+            failed, result = self.get_previously_failed_tests_with_info(strict=True)
+            results.append(result)
         _, result = self.get_most_relevant_tests()
         candidates = self._coverage_candidates
         results.append(result)
@@ -1089,6 +1182,7 @@ if __name__ == "__main__":
     class InfoLocalTest:
         pr_number = int(args.pr)
         is_local_run = True
+        is_merge_queue_event = False
         job_name = "Stateless"
 
     info = InfoLocalTest()

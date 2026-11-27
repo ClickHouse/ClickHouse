@@ -19,9 +19,9 @@ DROP TABLE IF EXISTS t_coord_baseline;
 -- Pinned layout: the cost model works off estimated bytes, and leaving granularity or part format to
 -- randomization changes whether the optimization runs at all.
 CREATE TABLE t_coord_big   (key UInt64, v UInt64) ENGINE = MergeTree ORDER BY key
-    SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0;
 CREATE TABLE t_coord_small (key UInt64, v UInt64) ENGINE = MergeTree ORDER BY key
-    SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0;
 
 -- The two tables differ by two orders of magnitude so that which one is "big" is never in doubt.
 INSERT INTO t_coord_big   SELECT number, number FROM numbers(300000);
@@ -32,7 +32,6 @@ OPTIMIZE TABLE t_coord_small FINAL;
 
 CREATE TABLE t_coord_baseline (c UInt64) ENGINE = Memory;
 
-SET enable_analyzer = 1;
 -- The read has to be pruned by its own key condition only: a filter built from the other side at runtime
 -- would change how many bytes are read and make the comparison below about something else.
 SET enable_join_runtime_filters = 0;

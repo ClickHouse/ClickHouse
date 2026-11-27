@@ -8,15 +8,20 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/memory.h>
 #include <base/getPageSize.h>
 #include <base/scope_guard.h>
+#include <fmt/format.h>
 #include <cerrno>
 #include <cstdlib>
 #include <limits>
+#include <new>
+#include <optional>
+#include <string>
 
 namespace DB::ErrorCodes
 {
@@ -167,6 +172,66 @@ TEST(AllocationInterceptors, MallocZeroFreeDoesNotCauseNegativeDrift)
 
     EXPECT_GE(CurrentThread::get().memory_tracker.get() - before_thread, -64 * 1024);
     EXPECT_GE(total_memory_tracker.get() - before_global, -64 * 1024);
+}
+
+/// Sized `operator delete` credits the size class computed from the size it is given, not the one jemalloc
+/// reports for the pointer, so it must match what `operator new` charged, also for over-page alignments.
+TEST(AllocationInterceptors, SizedDeleteCreditsWhatNewCharged)
+{
+    MainThreadStatus::getInstance();
+#if USE_JEMALLOC
+    /// jemalloc's page can be larger than the OS page (64 KiB by default on aarch64).
+    const size_t page_size = Jemalloc::getValue<size_t>("arenas.page");
+#else
+    const size_t page_size = getPageSize();
+#endif
+
+    auto check = [](size_t size, std::optional<size_t> alignment, bool sized)
+    {
+        const std::string context = fmt::format("size {}, alignment {}, sized {}", size, alignment.value_or(0), sized);
+
+        CurrentThread::flushUntrackedMemory();
+        const Int64 before = CurrentThread::get().memory_tracker.get();
+
+        void * ptr = alignment ? ::operator new(size, std::align_val_t{*alignment}) : ::operator new(size);
+        useMisterPointer(ptr);
+
+#if USE_JEMALLOC
+        /// The size class of the allocation itself must be the one that is charged, and that sized delete
+        /// credits and passes to `je_sdallocx`; otherwise the counters balance but `je_sdallocx` frees
+        /// with a wrong size class.
+        const size_t charged = alignment ? Memory::getActualAllocationSize(size, std::align_val_t{*alignment})
+                                         : Memory::getActualAllocationSize(size);
+        EXPECT_EQ(je_sallocx(ptr, 0), charged) << context;
+#endif
+
+        if (alignment && sized)
+            ::operator delete(ptr, size, std::align_val_t{*alignment});
+        else if (alignment)
+            ::operator delete(ptr, std::align_val_t{*alignment});
+        else if (sized)
+            ::operator delete(ptr, size);
+        else
+            ::operator delete(ptr);
+
+        CurrentThread::flushUntrackedMemory();
+        EXPECT_EQ(CurrentThread::get().memory_tracker.get(), before) << context;
+    };
+
+#if USE_JEMALLOC
+    for (bool sized : {true, false})
+#else
+    /// Without jemalloc, unsized delete credits `malloc_usable_size`, which includes padding that is not charged.
+    for (bool sized : {true})
+#endif
+    {
+        check(100, {}, sized);
+        check(100000, {}, sized);
+        check(100, 64, sized);
+        /// With `size` rounded up to `alignment` before allocating, these got a larger size class than charged.
+        check(1, 8 * page_size, sized);
+        check(4 * page_size + 1, 2 * page_size, sized);
+    }
 }
 
 namespace

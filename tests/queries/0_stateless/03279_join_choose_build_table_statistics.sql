@@ -6,7 +6,6 @@ SET optimize_move_to_prewhere = 1;
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS sales;
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_randomize = 0;
 
 CREATE TABLE sales (

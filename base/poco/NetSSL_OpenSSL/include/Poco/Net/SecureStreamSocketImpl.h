@@ -40,6 +40,9 @@ namespace Net
         SecureStreamSocketImpl(StreamSocketImpl * pStreamSocket, Context::Ptr pContext);
         /// Creates the SecureStreamSocketImpl.
 
+        SecureStreamSocketImpl(Poco::AutoPtr<StreamSocketImpl> pStreamSocket, Context::Ptr pContext);
+        /// Creates the SecureStreamSocketImpl.
+
         void setSendTimeout(const Poco::Timespan & timeout);
         void setReceiveTimeout(const Poco::Timespan & timeout);
 

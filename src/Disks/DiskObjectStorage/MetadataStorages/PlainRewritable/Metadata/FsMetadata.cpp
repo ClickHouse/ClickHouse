@@ -29,6 +29,7 @@ std::vector<std::string> FsMetadata::applyJournal(const FsJournal & journal)
     /// The deltas are now part of the committed counts; drop them so reads through the committed snapshot do not re-apply them.
     new_snapshot->resetDeltas();
     latest_snapshot = std::move(new_snapshot);
+    ++version;
     remote_layout_directories_count.add(directories_delta);
     remote_layout_files_count.add(files_delta);
     return unlinked_blob_keys;
@@ -53,6 +54,7 @@ void FsMetadata::applyLayout(
     UniqueLock lock(mutex);
     blob_link_counts->replace(new_blob_link_counts);
     latest_snapshot = std::move(new_tree);
+    ++version;
     remote_layout_directories_count.changeTo(directories_count);
     remote_layout_files_count.changeTo(files_count);
 }
@@ -67,6 +69,18 @@ std::shared_ptr<const FsSnapshot> FsMetadata::takeReadOnlySnapshot() const
 {
     UniqueLock lock(mutex);
     return latest_snapshot;
+}
+
+std::pair<std::shared_ptr<const FsSnapshot>, UInt64> FsMetadata::takeReadOnlySnapshotWithVersion() const
+{
+    UniqueLock lock(mutex);
+    return {latest_snapshot, version};
+}
+
+UInt64 FsMetadata::getVersion() const
+{
+    UniqueLock lock(mutex);
+    return version;
 }
 
 }

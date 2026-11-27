@@ -432,7 +432,7 @@ CREATE DICTIONARY all_types_dict (id UInt32, UInt64_value UInt64) PRIMARY KEY id
 -- for key which exists
 SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1);
 
--- for key which does not exist, returns the provideddefault value (0)
+-- for key which does not exist, returns the provided default value (0)
 SELECT dictGetUInt64OrDefault('all_types_dict', 'UInt64_value', 999, 0);
 )",
 R"(

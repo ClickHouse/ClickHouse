@@ -1,6 +1,5 @@
 -- Test that subcolumn reads work correctly with VIEW subquery inlining.
 
-SET enable_analyzer = 1;
 SET analyzer_inline_views = 1;
 
 DROP TABLE IF EXISTS t_subcol_src;

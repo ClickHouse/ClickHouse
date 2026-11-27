@@ -35,11 +35,13 @@ Valores posibles:
 Habilita o deshabilita la optimización automática de [PREWHERE](/es/reference/statements/select/prewhere) en las consultas [SELECT](/es/reference/statements/select/index) con el modificador [FINAL](/es/reference/statements/select/from#final-modifier).
 
 Solo se mueven las condiciones que dependen únicamente de la clave de ordenación y que son deterministas dentro de la consulta,
-por lo que el resultado de `FINAL` no se ve afectado.
+por lo que el resultado de `FINAL` no se ve afectado. En [GraphiteMergeTree](/es/reference/engines/table-engines/mergetree-family/graphitemergetree),
+`FINAL` fusiona en una sola fila las filas adyacentes de una misma ruta. Por ello, la optimización solo mueve las condiciones sobre la columna de ruta,
+y únicamente si la ruta es la primera columna de la clave de ordenación.
 
 Solo funciona con tablas [*MergeTree](/es/reference/engines/table-engines/mergetree-family/index).
 
-Posibles valores:
+Valores posibles:
 
 * 0 — La optimización automática de `PREWHERE` en las consultas `SELECT` con el modificador `FINAL` está deshabilitada.
 * 1 — La optimización automática de `PREWHERE` en las consultas `SELECT` con el modificador `FINAL` está habilitada.

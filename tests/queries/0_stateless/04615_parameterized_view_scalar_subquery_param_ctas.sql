@@ -4,8 +4,6 @@
 -- uses a placeholder parameter value, but it is used only to infer the header;
 -- the population runs a fresh non-only-analyze analysis with the real scalar value.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS date_table_pv_ctas;
 DROP VIEW IF EXISTS date_pv_ctas;
 DROP TABLE IF EXISTS dst_pv_ctas;

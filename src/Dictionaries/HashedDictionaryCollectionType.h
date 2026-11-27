@@ -106,7 +106,7 @@ public:
         increaseSizeDegree(0);
     }
 
-    UInt8 sizeDegree() const { return size_degree; }
+    [[nodiscard]] UInt8 sizeDegree() const { return size_degree; }
 
     void increaseSizeDegree(UInt8 delta)
     {
@@ -116,16 +116,16 @@ public:
     }
 
     /// The size of the hash table in the cells.
-    size_t bufSize() const { return 1ULL << size_degree; }
+    [[nodiscard]] size_t bufSize() const { return 1ULL << size_degree; }
 
     /// From the hash value, get the cell number in the hash table.
-    size_t place(size_t x) const { return x & precalculated_mask; }
+    [[nodiscard]] size_t place(size_t x) const { return x & precalculated_mask; }
 
     /// The next cell in the collision resolution chain.
-    size_t next(size_t pos) const { return (pos + 1) & precalculated_mask; }
+    [[nodiscard]] size_t next(size_t pos) const { return (pos + 1) & precalculated_mask; }
 
     /// Whether the hash table is sufficiently full. You need to increase the size of the hash table, or remove something unnecessary from it.
-    bool overflow(size_t elems) const { return elems > precalculated_max_fill; }
+    [[nodiscard]] bool overflow(size_t elems) const { return elems > precalculated_max_fill; }
 
     /// Increase the size of the hash table.
     void increaseSize() { increaseSizeDegree(size_degree >= max_size_degree_quadratic ? 1 : 2); }

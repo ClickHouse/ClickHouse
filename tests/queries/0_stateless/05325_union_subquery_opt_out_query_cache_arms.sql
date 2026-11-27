@@ -6,7 +6,9 @@
 -- propagation either - not even its earlier arms, which do not carry the clause themselves (only the last
 -- arm does, where the parser leaves a trailing clause).
 
-SET allow_experimental_analyzer = 1;
+-- The subquery query result cache is not used with plan-based parallel replicas:
+-- https://github.com/ClickHouse/ClickHouse/issues/131463
+SET parallel_replicas_plan_based = 0;
 
 SYSTEM DROP QUERY CACHE TAG '05325_union_opt_out';
 

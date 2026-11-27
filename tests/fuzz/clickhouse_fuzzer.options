@@ -3,6 +3,24 @@ timeout = 20
 use_value_profile = 1
 rss_limit_mb = 4096
 dict = all.dict
+# `clickhouse local` keeps caches and other global state between inputs, so almost every
+# input ends with more allocations than frees. Then libfuzzer re-runs the input and runs a
+# LeakSanitizer pass, which stops all threads and scans the whole heap, after each one.
+# Note that the CI run ends by a timeout that kills the process, so the exit-time leak check
+# does not run there either: leaks are not detected by this fuzzer in CI.
+detect_leaks = 0
+
+[asan]
+# libfuzzer enforces `malloc_limit_mb` (which defaults to `rss_limit_mb`) from the same malloc
+# hook that it installs only with `detect_leaks = 1`. Keep the limit for a single allocation
+# with the equivalent AddressSanitizer option, so that a huge allocation fails immediately
+# instead of waiting for the RSS watchdog, which polls once per second.
+max_allocation_size_mb = 4096
+# `base/base/sanitizer_options.h` sets `allocator_may_return_null=1`, which would turn an oversized
+# allocation into a recoverable `CANNOT_ALLOCATE_MEMORY` exception, and the input would be discarded.
+# Make it a fatal sanitizer report instead, so that libfuzzer saves the reproducer, as it did
+# with `malloc_limit_mb`.
+allocator_may_return_null = 0
 
 [fuzzer_arguments]
 --max_execution_time=10

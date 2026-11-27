@@ -30,19 +30,19 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMinSampleSize<Impl>>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return Impl::num_args; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override { return Impl::num_args; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         return ColumnNumbers(std::begin(Impl::const_args), std::end(Impl::const_args));
     }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         String args;
         for (size_t i = 0; i < Impl::num_args; ++i)
@@ -57,7 +57,7 @@ public:
                                        "detect_range_upper Float64)";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return Impl::execute(arguments, input_rows_count);
     }
@@ -306,7 +306,7 @@ Uses the formula described in [this article](https://towardsdatascience.com/requ
         {"Tuple(Float64, Float64, Float64)"}
     };
     FunctionDocumentation::Examples examples_conversion = {
-        {"minSampleSizeConversion", "SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size", "(3396.077603219163,0.22,0.28)"}
+        {"minSampleSizeConversion", "SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size", "(3396.077603219162,0.22,0.28)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_conversion = {22, 6};
     FunctionDocumentation::Category category_conversion = FunctionDocumentation::Category::Other;

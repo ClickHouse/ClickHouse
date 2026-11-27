@@ -7,7 +7,6 @@ QUERY id: 0
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.t_similar_to_cnf
-  SETTINGS enable_analyzer=1
 -- s NOT SIMILAR TO ...
 QUERY id: 0
   PROJECTION COLUMNS
@@ -17,4 +16,3 @@ QUERY id: 0
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.t_similar_to_cnf
-  SETTINGS enable_analyzer=1

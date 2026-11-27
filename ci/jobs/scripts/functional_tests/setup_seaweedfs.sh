@@ -140,7 +140,9 @@ start_seaweedfs() {
 }
 
 setup_seaweedfs() {
-  echo "s3.bucket.create -name test" | weed shell -master "localhost:11112"
+  if ! echo "s3.bucket.list" | weed shell -master "localhost:11112" | awk '$1 == "test" { found = 1 } END { exit !found }'; then
+    echo "s3.bucket.create -name test" | weed shell -master "localhost:11112"
+  fi
   # writes fail until the initial volume allocation is done on a cold start,
   # so wait until a real write succeeds
   local counter=0
