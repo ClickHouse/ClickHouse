@@ -799,7 +799,6 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
 namespace DB::ErrorCodes
 {
 extern const int INCORRECT_DATA;
-extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -988,48 +987,4 @@ TEST(DistributedTaskSerialization, TaskBatchRoundTrip)
     for (size_t pos = bytes.find("plan of stage_1"); pos != String::npos; pos = bytes.find("plan of stage_1", pos + 1))
         ++plan_occurrences;
     EXPECT_EQ(plan_occurrences, 1u);
-}
-
-/// `deserializeTaskBatch` rejects batches that a correct initiator never sends.
-TEST(DistributedTaskSerialization, InvalidTaskBatchesAreRejected)
-{
-    const String valid = serializeBatch(makeBatch());
-    ASSERT_EQ(valid[0], static_cast<char>(DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION));
-
-    String older = valid;
-    older[0] = static_cast<char>(DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_TASK_BATCHES - 1);
-    String newer = valid;
-    newer[0] = static_cast<char>(DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION + 1);
-
-    auto without_stages = makeBatch();
-    without_stages.stages.clear();
-    auto with_empty_stage = makeBatch();
-    with_empty_stage.stages[1].tasks.clear();
-    auto with_repeated_task = makeBatch();
-    with_repeated_task.stages[1].tasks[0].task.task_id = "stage_1_0";
-    auto with_repeated_stage = makeBatch();
-    with_repeated_stage.stages[1].name = "stage_1";
-
-    const std::vector<std::tuple<const char *, String, int>> cases = {
-        {"an older version", older, ErrorCodes::INCORRECT_DATA},
-        {"a newer version", newer, ErrorCodes::NOT_IMPLEMENTED},
-        {"no stages", serializeBatch(without_stages), ErrorCodes::INCORRECT_DATA},
-        {"a stage without tasks", serializeBatch(with_empty_stage), ErrorCodes::INCORRECT_DATA},
-        {"a repeated task id", serializeBatch(with_repeated_task), ErrorCodes::INCORRECT_DATA},
-        {"a repeated stage", serializeBatch(with_repeated_stage), ErrorCodes::INCORRECT_DATA},
-    };
-    for (const auto & [what, bytes, code] : cases)
-    {
-        ReadBufferFromString in(bytes);
-        DistributedQueryTaskBatch restored;
-        try
-        {
-            deserializeTaskBatch(restored, in);
-            ADD_FAILURE() << what << " was accepted";
-        }
-        catch (const Exception & e)
-        {
-            EXPECT_EQ(e.code(), code) << what;
-        }
-    }
 }

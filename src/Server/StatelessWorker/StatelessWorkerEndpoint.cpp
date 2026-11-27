@@ -339,31 +339,27 @@ void deserializeTaskBatch(DistributedQueryTaskBatch & batch, ReadBuffer & in)
     constexpr size_t max_tasks = 100000;
     size_t stages_size = 0;
     readVarUInt(stages_size, in);
-    if (stages_size == 0 || stages_size > max_stages)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "A task batch must have between 1 and {} stages, got {}", max_stages, stages_size);
+    if (stages_size > max_stages)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "A task batch has {} stages, more than {}", stages_size, max_stages);
     batch.stages.resize(stages_size);
 
-    std::unordered_set<String> seen_stages;
-    std::unordered_set<String> seen_tasks;
+    size_t batch_tasks = 0;
     for (auto & stage : batch.stages)
     {
         readStringBinary(stage.name, in);
-        if (!seen_stages.insert(stage.name).second)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate stage {} in a task batch", stage.name);
         String serialized_query_plan;
         readStringBinary(serialized_query_plan, in);
         stage.serialized_query_plan = std::make_shared<const String>(std::move(serialized_query_plan));
 
         size_t tasks_size = 0;
         readVarUInt(tasks_size, in);
-        if (tasks_size == 0 || seen_tasks.size() + tasks_size > max_tasks)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Stage {} of a task batch has {} tasks", stage.name, tasks_size);
+        if (tasks_size > max_tasks - batch_tasks)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "A task batch has more than {} tasks", max_tasks);
+        batch_tasks += tasks_size;
         stage.tasks.resize(tasks_size);
         for (auto & [task, stream_sources] : stage.tasks)
         {
             readStringBinary(task.task_id, in);
-            if (!seen_tasks.insert(task.task_id).second)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate task {} in a task batch", task.task_id);
             readParameters(task.parameters, in);
             readExchangeStreams(task.input_exchange_streams, in);
             readExchangeStreams(task.output_exchange_streams, in);

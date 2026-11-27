@@ -12,7 +12,7 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
 void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuffer & in);
 
 void serializeTaskBatch(const DistributedQueryTaskBatch & batch, WriteBuffer & out);
-/// Rejects a batch that a correct initiator never sends: no stages, a stage without tasks, a repeated stage or task id.
+/// Rejects a batch of an unsupported version or with more stages or tasks than a real one has.
 void deserializeTaskBatch(DistributedQueryTaskBatch & batch, ReadBuffer & in);
 
 }
