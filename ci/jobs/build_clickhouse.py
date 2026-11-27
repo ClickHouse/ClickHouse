@@ -279,10 +279,6 @@ def setup_build_caches_env(info):
     os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
     os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
     os.environ["SCCACHE_LOG"] = "info"
-    # In the main repo's CI, access the sccache S3 bucket anonymously (no
-    # credentials required). Other repositories keep using their own credentials.
-    if info.repo_name == "ClickHouse/ClickHouse":
-        os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
     # PR builds must not pollute the shared sccache bucket. Only master/release
     # builds (pr_number == 0) and backport PRs from this repository write entries.
     backport_from_repo = (
@@ -290,6 +286,11 @@ def setup_build_caches_env(info):
     )
     if info.pr_number > 0 and not backport_from_repo:
         os.environ["SCCACHE_S3_RW_MODE"] = "READ_ONLY"
+        # Read-only builds in the main repo access the sccache S3 bucket
+        # anonymously (no credentials required). Cache writers keep using their
+        # credentials. Other repositories keep using their own credentials.
+        if info.repo_name == "ClickHouse/ClickHouse":
+            os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
     os.makedirs(build_dir, exist_ok=True)
 
     if info.is_local_run:

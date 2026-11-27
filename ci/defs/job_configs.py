@@ -1,4 +1,6 @@
 from praktika import Job
+from praktika.info import Info
+from praktika.settings import Settings
 from praktika.utils import Utils
 
 from ci.defs.functional_test_selection import targeted_variants
@@ -103,8 +105,19 @@ integration_dind_env = dind_containment_env(LIMITED_MEM)
 # different runs (and missed the cache). Whole GiB is stable across such hosts.
 BINARY_DOCKER_MEM = Utils.physical_memory() // 1024**3 * 1024**3
 
+# A pull request against the default branch runs untrusted code and only reads the
+# sccache bucket, so its containers must not reach the EC2 instance metadata endpoint.
+# Every other context (master, release branches, backports, the merge queue) writes the
+# bucket and reaches the metadata endpoint for credentials through host networking.
+_info = Info()
+HOST_NETWORK = (
+    ""
+    if _info.pr_number > 0 and _info.base_branch == Settings.MAIN_BRANCH
+    else "+--network=host"
+)
+
 BINARY_DOCKER_COMMAND = (
-    "clickhouse/binary-builder"
+    f"clickhouse/binary-builder{HOST_NETWORK}"
     f"+--memory={BINARY_DOCKER_MEM * 95 // 100}"
     f"+--memory-reservation={BINARY_DOCKER_MEM * 9 // 10}"
     f"+--volume=.:/ClickHouse"
@@ -387,15 +400,10 @@ class JobConfigs:
         name=JobNames.FAST_TEST,
         runs_on=RunnerLabels.ARM_LARGE,
         command="python3 ./ci/jobs/fast_test.py",
-        run_in_docker="clickhouse/fasttest+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+--volume=.:/ClickHouse",
+        run_in_docker=f"clickhouse/fasttest{HOST_NETWORK}+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+--volume=.:/ClickHouse",
         digest_config=fast_test_digest_config,
         result_name_for_cidb="Tests",
         needs_submodules=True,
-    )
-    # The merge queue writes the sccache bucket and needs the EC2 metadata endpoint for credentials
-    fast_test_mq = fast_test.copy()
-    fast_test_mq.run_in_docker = fast_test.run_in_docker.replace(
-        "fasttest+", "fasttest+--network=host+", 1
     )
     darwin_fast_test_jobs = Job.Config(
         name="Fast test",
@@ -1036,7 +1044,7 @@ class JobConfigs:
         runs_on=None,  # set per ParamSet
         command="python3 ./ci/jobs/functional_tests.py --options BugfixValidation",
         # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
-        run_in_docker="clickhouse/stateless-test+--privileged+--cgroupns=host+root+--security-opt seccomp=unconfined+--ulimit nofile=1048576:1048576+--tmpfs /tmp/clickhouse:mode=1777",
+        run_in_docker=f"clickhouse/stateless-test{HOST_NETWORK}+--privileged+--cgroupns=host+root+--security-opt seccomp=unconfined+--ulimit nofile=1048576:1048576+--tmpfs /tmp/clickhouse:mode=1777",
         # No digest_config: the Bugfix Validation verdict is intentionally NOT
         # cacheable. Its inputs are not captured by any set of repository files -
         # it depends on (1) the PR's source fix and (2) the master-HEAD binary
@@ -2222,7 +2230,7 @@ class JobConfigs:
                 "./tests/config/users.d/ci_logs_sender.yaml",
             ],
         ),
-        run_in_docker="clickhouse/stateless-test+--shm-size=16g",
+        run_in_docker=f"clickhouse/stateless-test+--shm-size=16g{HOST_NETWORK}",
     ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_RELEASE,
@@ -2567,7 +2575,7 @@ class JobConfigs:
         name=JobNames.COLLECT_CLICKHOUSE_PROFILES,
         runs_on=[],  # from parametrize()
         command="python3 ./ci/jobs/collect_clickhouse_profiles.py",
-        run_in_docker=BINARY_DOCKER_COMMAND + "+--network=host",
+        run_in_docker=BINARY_DOCKER_COMMAND,
         timeout=8 * 3600,
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -2739,7 +2747,7 @@ class JobConfigs:
         name=JobNames.SIGN_MACOS,
         runs_on=RunnerLabels.RELEASE_RUNNER,
         command="python3 ./ci/jobs/sign_macos_binary.py --build-type {PARAMETER}",
-        run_in_docker="clickhouse/utils+--network=host+root",
+        run_in_docker=f"clickhouse/utils{HOST_NETWORK}+root",
         timeout=3600,
         digest_config=Job.CacheDigestConfig(
             include_paths=build_digest_config.include_paths
