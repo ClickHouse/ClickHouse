@@ -7,42 +7,42 @@
       "versionId": "626f994624b93eb9edf478df58264b0784feb8e8423734cc7c78955f5ed4b4f7",
       "translations": {
         "zh": {
-          "updatedAt": "2026-11-27T15:30:21.036Z",
+          "updatedAt": "2026-11-27T15:32:55.995Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "es": {
-          "updatedAt": "2026-11-27T15:30:20.676Z",
+          "updatedAt": "2026-11-27T15:32:55.627Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "ja": {
-          "updatedAt": "2026-11-27T15:30:20.749Z",
+          "updatedAt": "2026-11-27T15:32:55.700Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "fr": {
-          "updatedAt": "2026-11-27T15:30:21.173Z",
+          "updatedAt": "2026-11-27T15:32:56.138Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "ru": {
-          "updatedAt": "2026-11-27T15:30:20.965Z",
+          "updatedAt": "2026-11-27T15:32:55.923Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "pt-BR": {
-          "updatedAt": "2026-11-27T15:30:20.895Z",
+          "updatedAt": "2026-11-27T15:32:55.852Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "ar": {
-          "updatedAt": "2026-11-27T15:30:21.105Z",
+          "updatedAt": "2026-11-27T15:32:56.066Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "ko": {
-          "updatedAt": "2026-11-27T15:30:20.824Z",
+          "updatedAt": "2026-11-27T15:32:55.779Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         }
@@ -71315,47 +71315,47 @@
     },
     {
       "fileId": "969e0f9553959710975c69eaf4a3f200b31677aa81405eecf50acde9d374ee98",
-      "versionId": "d907b77092f456997fdb177c6349a6ddf1abc000a81b73302f5422d721500369",
+      "versionId": "5db22c44f77c1cfac2106dbd2c88f4cb40dfe3a0141f60065f0febf94e5c853c",
       "translations": {
-        "ja": {
-          "updatedAt": "2026-11-26T13:35:10.353Z",
-          "fileName": "ja/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "9c93b099b57c7a4281e503787b26aaf859bf959dcf159c4b35d678b3f97b4dda"
-        },
-        "ru": {
-          "updatedAt": "2026-11-26T13:35:10.354Z",
-          "fileName": "ru/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "bec8b32b33fc1831120816bc233e6334daf2b5f9f4642b8e6f1ba9766625e9fc"
+        "pt-BR": {
+          "updatedAt": "2026-11-27T15:32:58.624Z",
+          "fileName": "pt-BR/concepts/features/configuration/server-config/workload-scheduling.mdx",
+          "postProcessHash": "3e89caa395a2381d0a34056e20a63683a2f089b550f2c87a614012640205e733"
         },
         "zh": {
-          "updatedAt": "2026-11-26T13:35:10.354Z",
+          "updatedAt": "2026-11-27T15:32:58.626Z",
           "fileName": "zh/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "0dc46105acd5d87d815ad950469e4c3b0d9d8adf131cf2b6e7416f1d00b97ef9"
-        },
-        "ko": {
-          "updatedAt": "2026-11-26T13:35:10.354Z",
-          "fileName": "ko/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "1058d4b8853c6f120b776258dcee65c65783eac22b8c66715afa74c7ccb7295b"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-11-26T13:35:10.354Z",
-          "fileName": "pt-BR/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "9f7a8acc1212207a4a452a207eba091d20278fdb44da493373d038c1e4b74c40"
-        },
-        "es": {
-          "updatedAt": "2026-11-26T13:35:10.355Z",
-          "fileName": "es/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "fd9778f79787e926d504ccf5cbbd440aee3d3202d751f8a23bfaaf5d1b4f8fcf"
-        },
-        "ar": {
-          "updatedAt": "2026-11-26T13:35:10.355Z",
-          "fileName": "ar/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "6468807111c21466d9754c5b821df158f974ffe74979d2c52d3a1fbe40dd1172"
+          "postProcessHash": "8cfddff9e7fb1ec8bcd85762ec7d023f19a39e44394cecf293e22aeafbe8f85e"
         },
         "fr": {
-          "updatedAt": "2026-11-26T13:35:10.356Z",
+          "updatedAt": "2026-11-27T15:32:58.627Z",
           "fileName": "fr/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "f197de403c9c1f0c0eb161e7ba795e25c155b7e5fbbf15a2b75f280df300acdf"
+          "postProcessHash": "a3ffe3c0b8e880d22f4ec58b65da4f7089f998a0f53973c2d13a7df4fb3b7beb"
+        },
+        "ru": {
+          "updatedAt": "2026-11-27T15:32:58.628Z",
+          "fileName": "ru/concepts/features/configuration/server-config/workload-scheduling.mdx",
+          "postProcessHash": "d278ef9940e29418e6f6e4c804bdce5b7c77c8defcc57724975cc5b38eceffe9"
+        },
+        "es": {
+          "updatedAt": "2026-11-27T15:32:58.629Z",
+          "fileName": "es/concepts/features/configuration/server-config/workload-scheduling.mdx",
+          "postProcessHash": "3ee33c9497db7ffd53a7d30d006ff9db0ac47b5d70272a95b0e61757b797c35c"
+        },
+        "ja": {
+          "updatedAt": "2026-11-27T15:32:58.631Z",
+          "fileName": "ja/concepts/features/configuration/server-config/workload-scheduling.mdx",
+          "postProcessHash": "e4607614370a2467f1ef4103a7836284c8f08ffcf0b32055c757c0c02a91148b"
+        },
+        "ko": {
+          "updatedAt": "2026-11-27T15:32:58.632Z",
+          "fileName": "ko/concepts/features/configuration/server-config/workload-scheduling.mdx",
+          "postProcessHash": "17ed035bb899c64b35ac49c76b60b31e45ba7d5412debb24c795f72530f99ea9"
+        },
+        "ar": {
+          "updatedAt": "2026-11-27T15:32:58.633Z",
+          "fileName": "ar/concepts/features/configuration/server-config/workload-scheduling.mdx",
+          "postProcessHash": "e5b114b31eb65fa4a0f913b3d7f4ac0e6d320bb08eda8f642d7aef8722cafc32"
         }
       },
       "fileName": "concepts/features/configuration/server-config/workload-scheduling.mdx"
@@ -144774,47 +144774,47 @@
     },
     {
       "fileId": "28b310883eb3cb83171946e0888b32f57b2c283fdbeffc96d61dde9081472017",
-      "versionId": "bfa04828fe598d803f7da8e0fdf6226d24b731d826fbe9428740213e14220987",
+      "versionId": "d593ae88b0b81bb0493e70daea080cba0c3b8bfbc359ed592c1ad131bcfdad9e",
       "translations": {
-        "es": {
-          "updatedAt": "2026-11-17T19:23:07.751Z",
-          "fileName": "es/clickstack/observability/features/alerts.mdx",
-          "postProcessHash": "5f55477db16f72543f9e94a63502c6369e604a52a2cae808a2f3c0e9b6f9765d"
-        },
-        "ja": {
-          "updatedAt": "2026-11-17T19:23:07.751Z",
-          "fileName": "ja/clickstack/observability/features/alerts.mdx",
-          "postProcessHash": "0ea22a6e68578e1e0eb59b0e646bc49cb4d621e0e2bc9d198367088a09fc137f"
+        "fr": {
+          "updatedAt": "2026-11-27T15:32:58.628Z",
+          "fileName": "fr/clickstack/observability/features/alerts.mdx",
+          "postProcessHash": "e0fbaf9bbe8b6bdd63da2a0c8e9f72cb10e92e6b43ec84950e58ff6b2fb66d8b"
         },
         "ko": {
-          "updatedAt": "2026-11-17T19:23:07.751Z",
+          "updatedAt": "2026-11-27T15:32:58.629Z",
           "fileName": "ko/clickstack/observability/features/alerts.mdx",
-          "postProcessHash": "92c0a766cbccf377f13d1de0e60f08ffbf0cce556e47b34e4626fd41e0f321ad"
+          "postProcessHash": "7c79b0c3ea8f87ec9b48fa1fcaa7f2b0a085c12d0502b629b4c08f445396f7e5"
         },
-        "pt-BR": {
-          "updatedAt": "2026-11-17T19:23:07.752Z",
-          "fileName": "pt-BR/clickstack/observability/features/alerts.mdx",
-          "postProcessHash": "e6d05644bf2f5ca4240dd7a73252188a87facd4a3af775860124d50553a4cd36"
+        "es": {
+          "updatedAt": "2026-11-27T15:32:58.630Z",
+          "fileName": "es/clickstack/observability/features/alerts.mdx",
+          "postProcessHash": "d385f144d6380eb44b7d680956c852eba388afdf4db10ef57c3d80fac48706d3"
         },
-        "ru": {
-          "updatedAt": "2026-11-17T19:23:07.752Z",
-          "fileName": "ru/clickstack/observability/features/alerts.mdx",
-          "postProcessHash": "4df6a8d6626d9d0cacd5db8c7deb6655929ff2f19f3d01b1725974e0f061433a"
+        "ja": {
+          "updatedAt": "2026-11-27T15:32:58.630Z",
+          "fileName": "ja/clickstack/observability/features/alerts.mdx",
+          "postProcessHash": "cbd58530032c3eacbe5cd546a93043f9e31c6a2daa56bcf2cc4a78cf40fae78b"
         },
         "zh": {
-          "updatedAt": "2026-11-17T19:23:07.752Z",
+          "updatedAt": "2026-11-27T15:32:58.631Z",
           "fileName": "zh/clickstack/observability/features/alerts.mdx",
-          "postProcessHash": "b9e82ea8671fec4f7b52149c42c0d330c6a4aa2b1aa692b0ec3a2174cc6c8132"
+          "postProcessHash": "57a896fc0bdc7eb36a9a56a3daca336f9098253cf1ffd4de7fa1f19ddbcc8b4a"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-27T15:32:58.632Z",
+          "fileName": "pt-BR/clickstack/observability/features/alerts.mdx",
+          "postProcessHash": "2906dc67a459cd4a2e06a85b66141294c3d4fd21e6e6cc4ea5a3dd196457d4c6"
+        },
+        "ru": {
+          "updatedAt": "2026-11-27T15:32:58.632Z",
+          "fileName": "ru/clickstack/observability/features/alerts.mdx",
+          "postProcessHash": "f890b16c553063431a5db5a0de81287f675c22defd3c0aabecabbf7f94178a51"
         },
         "ar": {
-          "updatedAt": "2026-11-17T19:23:07.752Z",
+          "updatedAt": "2026-11-27T15:32:58.633Z",
           "fileName": "ar/clickstack/observability/features/alerts.mdx",
-          "postProcessHash": "857cc8cb8e7459ab58ea8ba058e5a6ee0abb499e8a4ee5f629aaf0b18aaa601f"
-        },
-        "fr": {
-          "updatedAt": "2026-11-17T19:23:07.753Z",
-          "fileName": "fr/clickstack/observability/features/alerts.mdx",
-          "postProcessHash": "3ddaefe2b4bb9b4dd0444f33a4675408336c52d0542354bf0cca3dd9e44b4c1e"
+          "postProcessHash": "8dcaa23fdfd7a2f92095f05732d6521d0477b9ea33879f54b7d6df3089f2975c"
         }
       },
       "fileName": "clickstack/observability/features/alerts.mdx"

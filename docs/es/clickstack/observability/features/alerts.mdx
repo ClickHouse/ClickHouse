@@ -205,6 +205,7 @@ Según el tipo de servicio, deberá proporcionar distintos datos. En concreto:
 **Slack (API)**
 
 * Token del bot de Slack. Consulte la [documentación de Slack](https://docs.slack.dev/authentication/tokens/#bot/) para obtener más información.
+* Los Bot Token Scopes de la aplicación de Slack deben incluir `groups:read`, `channels:read` y `chat:write`. Los ámbitos de lectura permiten que ClickHouse Observability liste los canales de Slack durante la edición de una alerta.
 
 **API de PagerDuty**
 

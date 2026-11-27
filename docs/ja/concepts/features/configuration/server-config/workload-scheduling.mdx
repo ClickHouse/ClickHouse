@@ -403,6 +403,14 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
   ブロックされたクエリは、すべての制約が満たされるまで無期限に待機し、`SHOW PROCESSLIST` には表示されません。
 </Note>
 
+## サーバー全体の制限 {#server_wide_limits}
+
+サーバー設定 `workloads_respect_server_cpu_limit` および `workloads_respect_server_memory_limit` を使用すると、サーバー全体の制限である `concurrent_threads_soft_limit_num` と `max_server_memory_usage` がワークロードスケジューラを通じて適用されます。これらの設定は、同じロールに対してリソースが定義されていない限り、リソース `__server_cpu__` (`MASTER THREAD, WORKER THREAD`) と `__server_memory__` (`MEMORY RESERVATION`) を作成し、ルートワークロード (名前が空のワークロード) の `max_concurrent_threads` と `max_memory` を設定します。これにより、すべてのワークロードが 1 つの割り当て量を共有します。
+
+<Note>
+  これらの設定と併せて `implicit_default_workload` を有効化するか、`default` ワークロードを定義してください。これらの割り当て量による制限を受けるのは、いずれかのワークロードに分類されたクエリのみです。`default` ワークロードがない場合、`workload` 設定をデフォルト値のまま使用するクエリや、デフォルトワークロードのマージとミューテーションには、CPU の制限が一切かかりません。CPU がワークロードスケジューラによってスケジューリングされると、組み込みの同時実行度制御が適用されなくなるためです。バックグラウンドマージおよびミューテーションはワークロードからメモリを予約しないため、それらが使用するメモリはメモリ割り当て量に含まれません。
+</Note>
+
 ## ワークロードとリソースのストレージ {#workload_entity_storage}
 
 `CREATE WORKLOAD` および `CREATE RESOURCE` クエリ形式の、すべてのワークロードとリソースの定義は、`workload_path` のディスク上、または `workload_zookeeper_path` の ZooKeeper に永続的に保存されます。ノード間の整合性を確保するには、ZooKeeper ストレージの使用を推奨します。あるいは、ディスクストレージとあわせて `ON CLUSTER` 句を使用することもできます。
@@ -413,7 +421,7 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
 
 SQL ベースの定義に加えて、ワークロードとリソースはサーバーの設定ファイルで事前定義することもできます。これは、Cloud 環境では一部の制限がインフラストラクチャによって規定される一方で、別の制限は顧客が変更できる場合に有用です。設定ベースのエンティティは SQL で定義されたものよりも優先され、SQL コマンドで変更または削除することはできません。
 
-### Configuration のフォーマット {#config_based_workloads_format}
+### 設定のフォーマット {#config_based_workloads_format}
 
 ```xml
 <clickhouse>
@@ -427,7 +435,7 @@ SQL ベースの定義に加えて、ワークロードとリソースはサー�
 </clickhouse>
 ```
 
-この設定では、`CREATE WORKLOAD` 文および `CREATE RESOURCE` 文と同じ SQL 構文を使用します。すべてのクエリは有効である必要があります。
+この設定では、`CREATE WORKLOAD` 文および `CREATE RESOURCE` 文と同じ SQL 構文を使用します。すべてのクエリは有効である必要があります。設定内で定義されたワークロードが持てる親ワークロードと `FOR` リソースは、同じく設定内で定義されたものに限られます。SQLで定義されたワークロードは、設定ベースのワークロードの子にすることができます。SQLで定義されたワークロードから参照されているワークロードやリソースは、設定から削除しないでください。削除すると、サーバーはそれらのSQLで定義されたワークロードを読み込めなくなります。
 
 ### 使用時の推奨事項 {#config_based_workloads_usage_recommendations}
 

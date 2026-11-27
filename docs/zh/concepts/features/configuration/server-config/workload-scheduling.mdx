@@ -403,6 +403,14 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
   被阻塞的查询会无限期等待，并且在所有约束条件都满足之前，不会出现在 `SHOW PROCESSLIST` 中。
 </Note>
 
+## 服务器级限制 {#server_wide_limits}
+
+服务器设置 `workloads_respect_server_cpu_limit` 和 `workloads_respect_server_memory_limit` 会通过工作负载调度器来应用服务器级限制 `concurrent_threads_soft_limit_num` 和 `max_server_memory_usage`。除非已为同一角色定义了资源，否则它们会创建资源 `__server_cpu__` (`MASTER THREAD, WORKER THREAD`) 和 `__server_memory__` (`MEMORY RESERVATION`) ，并设置根工作负载 (名称为空的工作负载) 的 `max_concurrent_threads` 和 `max_memory`，使所有工作负载共享同一份预算。
+
+<Note>
+  请同时启用 `implicit_default_workload`，或定义一个 `default` 工作负载。只有被归入某个工作负载的查询才受这些预算约束。如果没有 `default` 工作负载，那么使用默认 `workload` 设置值的查询，以及默认工作负载中的合并与变更，将完全不受 CPU 限制，因为 CPU 一旦交由工作负载调度器调度，内置的并发度控制便不再生效。后台合并与变更不会从工作负载中预留内存，因此其内存占用不计入内存预算。
+</Note>
+
 ## 工作负载和资源存储 {#workload_entity_storage}
 
 所有工作负载和资源的定义都会以 `CREATE WORKLOAD` 和 `CREATE RESOURCE` 查询的形式持久化存储在磁盘上的 `workload_path` 或 ZooKeeper 中的 `workload_zookeeper_path`。为确保节点之间的一致性，建议使用 ZooKeeper 存储。或者，也可以将 `ON CLUSTER` 子句与磁盘存储配合使用。
@@ -427,7 +435,7 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
 </clickhouse>
 ```
 
-该配置使用与 `CREATE WORKLOAD` 和 `CREATE RESOURCE` 语句相同的 SQL 语法。所有查询都必须是有效的。
+该配置使用与 `CREATE WORKLOAD` 和 `CREATE RESOURCE` 语句相同的 SQL 语法。所有查询都必须是有效的。在配置中定义的工作负载，其父工作负载以及 `FOR` 所引用的资源也必须在配置中定义。由 SQL 定义的工作负载可以作为基于配置的工作负载的子工作负载。如果仍有由 SQL 定义的工作负载引用某个工作负载或资源，请勿将其从配置中移除，否则服务器将无法加载这些由 SQL 定义的工作负载。
 
 ### 使用建议 {#config_based_workloads_usage_recommendations}
 

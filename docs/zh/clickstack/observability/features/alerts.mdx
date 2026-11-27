@@ -205,6 +205,7 @@ Webhook 名称为必填项，描述为可选项。其他必填设置因服务类
 **Slack (API)**
 
 * Slack 机器人令牌。更多详情请参阅 [Slack 文档](https://docs.slack.dev/authentication/tokens/#bot/)。
+* Slack 应用的 Bot Token Scopes 必须包含 `groups:read`、`channels:read` 和 `chat:write`。其中的只读作用域用于让 ClickHouse Observability 在您编辑告警时列出 Slack 频道。
 
 **PagerDuty API**
 

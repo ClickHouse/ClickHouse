@@ -205,6 +205,7 @@ keywords: ['ClickHouse Observability', 'observability', 'alerts', 'search-alerts
 **Slack (API)**
 
 * رمز بوت Slack. راجع [وثائق Slack](https://docs.slack.dev/authentication/tokens/#bot/) لمزيد من التفاصيل.
+* يجب أن تتضمن نطاقات Bot Token Scopes في تطبيق Slack كلاً من `groups:read` و`channels:read` و`chat:write`. تتيح نطاقات القراءة لـ ClickHouse Observability استعراض قنوات Slack أثناء تعديلك تنبيهًا.
 
 **PagerDuty API**
 

@@ -205,6 +205,7 @@ ClickHouse Observability는 알림 기능을 기본으로 지원하므로, 팀�
 **Slack (API)**
 
 * Slack 봇 토큰. 자세한 내용은 [Slack 문서](https://docs.slack.dev/authentication/tokens/#bot/)를 참조하십시오.
+* Slack 앱의 Bot Token Scopes에는 `groups:read`, `channels:read`, `chat:write`가 포함되어야 합니다. 읽기 범위가 있어야 알림을 편집할 때 ClickHouse Observability가 Slack 채널 목록을 조회할 수 있습니다.
 
 **PagerDuty API**
 

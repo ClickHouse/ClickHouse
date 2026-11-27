@@ -403,6 +403,14 @@ La configuración de carga de trabajo `max_waiting_queries` limita la cantidad d
   Las consultas bloqueadas esperarán indefinidamente y no aparecerán en `SHOW PROCESSLIST` hasta que se cumplan todas las restricciones.
 </Note>
 
+## Límites a nivel de servidor {#server_wide_limits}
+
+Los ajustes del servidor `workloads_respect_server_cpu_limit` y `workloads_respect_server_memory_limit` aplican los límites a nivel de servidor `concurrent_threads_soft_limit_num` y `max_server_memory_usage` a través del planificador de workload. Crean los recursos `__server_cpu__` (`MASTER THREAD, WORKER THREAD`) y `__server_memory__` (`MEMORY RESERVATION`), salvo que ya exista un recurso definido para el mismo rol, y establecen `max_concurrent_threads` y `max_memory` del workload raíz (el workload sin nombre), de modo que todos los workloads comparten un único presupuesto.
+
+<Note>
+  Active `implicit_default_workload` junto con ellos o defina un workload `default`. Estos presupuestos solo limitan las consultas clasificadas en un workload. Sin un workload `default`, las consultas que usan el valor predeterminado del ajuste `workload`, así como las fusiones y mutaciones del workload predeterminado, no tienen ningún límite de CPU, ya que el control de concurrencia integrado deja de aplicarse en cuanto el planificador de workload pasa a gestionar la CPU. Las fusiones y mutaciones en segundo plano no reservan memoria de los workloads, por lo que su memoria no forma parte del presupuesto de memoria.
+</Note>
+
 ## Almacenamiento de workloads y recursos {#workload_entity_storage}
 
 Las definiciones de todos los workloads y recursos, en forma de consultas `CREATE WORKLOAD` y `CREATE RESOURCE`, se almacenan de forma persistente, ya sea en disco, en `workload_path`, o en ZooKeeper, en `workload_zookeeper_path`. Se recomienda el almacenamiento en ZooKeeper para garantizar la consistencia entre los nodos. Como alternativa, se puede usar la cláusula `ON CLUSTER` junto con el almacenamiento en disco.
@@ -427,7 +435,7 @@ Además de las definiciones basadas en SQL, las cargas de trabajo y los recursos
 </clickhouse>
 ```
 
-La configuración usa la misma sintaxis SQL que las sentencias `CREATE WORKLOAD` y `CREATE RESOURCE`. Todas las consultas deben ser válidas.
+La configuración usa la misma sintaxis SQL que las sentencias `CREATE WORKLOAD` y `CREATE RESOURCE`. Todas las consultas deben ser válidas. Un workload definido en la configuración solo puede tener un workload padre y recursos `FOR` que también estén definidos en la configuración. Los workloads SQL-defined pueden ser hijos de workloads basados en la configuración. No elimine un workload ni un recurso de la configuración mientras haya workloads SQL-defined que hagan referencia a él: el servidor no podrá cargar esos workloads SQL-defined.
 
 ### Recomendaciones de uso {#config_based_workloads_usage_recommendations}
 

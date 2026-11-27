@@ -403,6 +403,14 @@ A configuração de carga de trabalho `max_waiting_queries` limita o número de 
   As consultas bloqueadas ficarão em espera indefinidamente e não aparecerão em `SHOW PROCESSLIST` até que todas as restrições sejam atendidas.
 </Note>
 
+## Limites globais do servidor {#server_wide_limits}
+
+As configurações do servidor `workloads_respect_server_cpu_limit` e `workloads_respect_server_memory_limit` aplicam os limites globais do servidor `concurrent_threads_soft_limit_num` e `max_server_memory_usage` por meio do scheduler de carga de trabalho. Elas criam os recursos `__server_cpu__` (`MASTER THREAD, WORKER THREAD`) e `__server_memory__` (`MEMORY RESERVATION`), a menos que já exista um recurso definido para a mesma função, e definem `max_concurrent_threads` e `max_memory` da carga de trabalho raiz (a carga de trabalho sem nome), de modo que todas as cargas de trabalho compartilhem um único orçamento.
+
+<Note>
+  Habilite `implicit_default_workload` junto com elas ou defina uma carga de trabalho `default`. Somente as consultas classificadas em uma carga de trabalho estão sujeitas a esses orçamentos. Sem uma carga de trabalho `default`, as consultas que usam o valor padrão da configuração `workload`, bem como as mesclagens e mutações da carga de trabalho padrão, ficam sem nenhum limite de CPU, pois o controle de concorrência integrado deixa de valer quando a CPU passa a ser agendada pelo scheduler de carga de trabalho. As mesclagens e mutações em segundo plano não reservam memória das cargas de trabalho, portanto a memória que utilizam não entra no orçamento de memória.
+</Note>
+
 ## Armazenamento de cargas de trabalho e recursos {#workload_entity_storage}
 
 As definições de todas as cargas de trabalho e de todos os recursos, na forma de consultas `CREATE WORKLOAD` e `CREATE RESOURCE`, são armazenadas de forma persistente em disco, em `workload_path`, ou no ZooKeeper, em `workload_zookeeper_path`. Recomenda-se usar o armazenamento no ZooKeeper para garantir consistência entre os nós. Como alternativa, a cláusula `ON CLUSTER` pode ser usada em conjunto com o armazenamento em disco.
@@ -427,7 +435,7 @@ Além das definições baseadas em SQL, cargas de trabalho e recursos podem ser 
 </clickhouse>
 ```
 
-A configuração usa a mesma sintaxe SQL das instruções `CREATE WORKLOAD` e `CREATE RESOURCE`. Todas as consultas devem ser válidas.
+A configuração usa a mesma sintaxe SQL das instruções `CREATE WORKLOAD` e `CREATE RESOURCE`. Todas as consultas devem ser válidas. Uma carga de trabalho definida na configuração só pode ter uma carga de trabalho pai e recursos `FOR` que também estejam definidos na configuração. Cargas de trabalho definidas em SQL podem ser filhas de cargas de trabalho baseadas em configuração. Não remova uma carga de trabalho ou um recurso da configuração enquanto houver cargas de trabalho definidas em SQL que façam referência a eles: o servidor não conseguirá carregar essas cargas de trabalho definidas em SQL.
 
 ### Recomendações de uso {#config_based_workloads_usage_recommendations}
 

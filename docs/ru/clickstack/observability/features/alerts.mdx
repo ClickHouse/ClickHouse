@@ -198,13 +198,14 @@ ClickHouse Observability поддерживает оповещения «из к
 
 В зависимости от типа сервиса потребуется указать разные данные, а именно:
 
-**Slack (Webhook URL)**
+**Slack (URL вебхука)**
 
-* Webhook URL. Например: `https://hooks.slack.com/services/<unique_path>`. Подробнее см. в [документации Slack](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/).
+* URL вебхука. Например: `https://hooks.slack.com/services/<unique_path>`. Подробнее см. в [документации Slack](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/).
 
 **Slack (API)**
 
 * Токен бота Slack. Подробнее см. в [документации Slack](https://docs.slack.dev/authentication/tokens/#bot/).
+* В разделе Bot Token Scopes приложения Slack должны быть указаны области доступа `groups:read`, `channels:read` и `chat:write`. Области доступа на чтение нужны, чтобы ClickHouse Observability могла получать список каналов Slack при редактировании оповещения.
 
 **PagerDuty API**
 
@@ -212,7 +213,7 @@ ClickHouse Observability поддерживает оповещения «из к
 
 **Generic**
 
-* Webhook URL
+* URL вебхука
 * Заголовки вебхука (необязательно)
 * Тело вебхука (необязательно). Тело представляет собой шаблон Handlebars. Помимо `{{title}}`, `{{body}}` и `{{link}}`, в нём можно использовать переменные, описывающие оповещение и его срабатывание, например `{{alertId}}`, `{{status}}`, `{{value}}`, `{{threshold}}` и `{{groupKey}}`. Полный список см. в разделе [Переменные шаблона вебхука оповещений](https://github.com/ClickHouse/ClickStack/blob/main/docs/alert-webhook-template-variables.md).
 
