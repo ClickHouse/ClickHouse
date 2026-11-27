@@ -3808,6 +3808,12 @@ std::pair<DataTypePtr, DataTypePtr> withPairedDateTimesInUTC(const DataTypeObjec
                 leaf = std::make_shared<DataTypeDateTime>("UTC");
         }
     };
+    auto nested_json = [](DataTypes & types, TypeIndexesSet & type_indexes)
+    {
+        if (type_indexes.size() == 1 && type_indexes.contains(TypeIndex::Object))
+            std::tie(types[0], types[1]) = withPairedDateTimesInUTC(
+                assert_cast<const DataTypeObject &>(*types[0]), assert_cast<const DataTypeObject &>(*types[1]));
+    };
     auto from_paths = from.getTypedPaths();
     auto to_paths = to.getTypedPaths();
     UnorderedSetWithMemoryTracking<std::string_view> overlapping;
@@ -3822,8 +3828,9 @@ std::pair<DataTypePtr, DataTypePtr> withPairedDateTimesInUTC(const DataTypeObjec
         if (it == to_paths.end() || overlapping.contains(path))
             continue;
         /// Any alternative of a `Variant` can parse the text, also one that was written from another alternative.
+        /// A nested JSON is paired here too, by its common typed paths and with the same overlap check.
         DataTypes types{from_type, it->second};
-        transformTypesRecursively(types, to_utc, /*transform_complex_types=*/ nullptr, /*format_settings=*/ nullptr, {TypeIndex::Variant});
+        transformTypesRecursively(types, to_utc, nested_json, /*format_settings=*/ nullptr, {TypeIndex::Variant, TypeIndex::Object});
         from_type = std::move(types[0]);
         it->second = std::move(types[1]);
     }

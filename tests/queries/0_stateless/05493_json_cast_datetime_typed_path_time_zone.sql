@@ -12,6 +12,9 @@ SELECT toUnixTimestamp(CAST('{"d":1793514600}'::JSON(d DateTime('America/New_Yor
 SELECT toUnixTimestamp(j.a[1]), toUnixTimestamp(tupleElement(j.t, 'd')), toUnixTimestamp(j.m['k']), toUnixTimestamp(j.n[1].d), toUnixTimestamp(j.o[1].d)
 FROM (SELECT CAST('{"a":["2026-01-01 00:00:00"],"t":{"d":"2026-01-01 00:00:00"},"m":{"k":"2026-01-01 00:00:00"},"n":[{"d":"2026-01-01 00:00:00"}],"o":[{"d":"2026-01-01 00:00:00"}]}'::JSON(a Array(DateTime('UTC')), t Tuple(d DateTime('UTC')), m Map(String, DateTime('UTC')), n Nested(d DateTime('UTC')), o Array(JSON(d DateTime('UTC')))),
     'JSON(a Array(DateTime64(0, ''Asia/Tokyo'')), t Tuple(d DateTime64(0, ''Asia/Tokyo'')), m Map(String, DateTime64(0, ''Asia/Tokyo'')), n Nested(d DateTime(''Asia/Tokyo'')), o Array(JSON(d DateTime64(0, ''Asia/Tokyo''))))') AS j);
+-- A nested JSON pairs the typed paths it shares with the other one, and keeps a typed path overlapping another one as is.
+SELECT toUnixTimestamp(c.o[1].d) FROM (SELECT CAST('{"o":[{"d":"2026-01-01 00:00:00","y":1}]}'::JSON(o Array(JSON(d DateTime('UTC'), y UInt8))), 'JSON(o Array(JSON(d DateTime64(0, ''Asia/Tokyo''), x UInt8)))') AS c);
+SELECT c.o[1].t FROM (SELECT CAST('{"o":[{"t.d":"2026-01-01 00:00:00"}]}'::JSON(o Array(JSON(t Nullable(String), `t.d` DateTime('Asia/Tokyo')))), 'JSON(o Array(JSON(t Nullable(String), `t.d` DateTime64(0, ''UTC''))))') AS c) SETTINGS type_json_allow_duplicated_key_with_literal_and_nested_object = 0, type_json_skip_null_typed_paths = 1;
 -- Without the setting, the typed path `t` reads the whole object, with the text of `t.d`.
 SELECT tupleElement(CAST('{"t":{"d":"2026-01-01 00:00:00"}}'::JSON(`t.d` DateTime('Asia/Tokyo')), 'JSON(t Tuple(d String), `t.d` DateTime(''UTC''))').t, 'd') SETTINGS type_json_allow_duplicated_key_with_literal_and_nested_object = 0;
 -- With it, the object at `t` fills the typed path `t.d`.
