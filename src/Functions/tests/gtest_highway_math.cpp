@@ -47,7 +47,9 @@ double ulpError(T got, long double ref)
 
 long double sigmoidReference(long double x)
 {
-    return 1.0L / (1.0L + std::exp(-x));
+    /// Not 1 / (1 + exp(-x)): `long double` may have the range of `double` (it does with musl on aarch64), and then exp(-x) overflows.
+    long double e = std::exp(-std::abs(x));
+    return (x < 0 ? e : 1.0L) / (1.0L + e);
 }
 
 template <typename T>
