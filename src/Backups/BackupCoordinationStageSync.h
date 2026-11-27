@@ -214,7 +214,7 @@ private:
 
         /// Returns ": " followed by why this host may keep us waiting (it hasn't started yet or it's disconnected), or an empty string.
         /// The result is appended to messages about waiting for this host.
-        String getStatusDesc(const String & operation) const;
+        [[nodiscard]] String getStatusDesc(const String & operation) const;
     };
 
     /// Information about all the host participating in the current BACKUP or RESTORE operation.
