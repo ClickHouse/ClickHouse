@@ -17,6 +17,7 @@ node1 = cluster.add_instance(
 node_pr = cluster.add_instance(
     "node_pr",
     with_remote_database_disk=True,
+    with_zookeeper=True,
     stay_alive=True,
 )
 
@@ -185,4 +186,54 @@ def test_copy_of_temporary_table_under_unrelated_name(started_cluster):
     assert node_pr.contains_in_log(
         f"Metadata file {tmp_path} refers to the same table (UUID {tmp_uuid}) as {db_dir}/u.sql"
     )
+    node_pr.query(f"DROP DATABASE {db} SYNC")
+
+
+def test_failed_detach_permanently_in_replicated_database(started_cluster):
+    db = "db_replicated_detach_permanently"
+    zk_metadata = f"/clickhouse/databases/{db}/metadata"
+
+    def count_in_keeper(table):
+        return node_pr.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{zk_metadata}' AND name = '{table}'"
+        )
+
+    node_pr.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+    node_pr.query(
+        "SYSTEM ENABLE FAILPOINT database_replicated_force_metadata_digest_check"
+    )
+    try:
+        node_pr.query(
+            f"CREATE DATABASE {db} ENGINE = Replicated('/clickhouse/databases/{db}', 's1', 'r1')"
+        )
+        node_pr.query(f"CREATE TABLE {db}.t (x UInt64) ENGINE = MergeTree ORDER BY x")
+        node_pr.query(f"INSERT INTO {db}.t VALUES (1)")
+        # Creates the system log tables, whose metadata is on the same disk, so that they do not consume the failpoint.
+        node_pr.query("SYSTEM FLUSH LOGS")
+        node_pr.query(
+            "SYSTEM ENABLE FAILPOINT disk_object_storage_fail_commit_metadata_transaction"
+        )
+        error = node_pr.query_and_get_error(f"DETACH TABLE {db}.t PERMANENTLY")
+        assert "while trying to set permanently detached flag" in error
+
+        # The table is detached on the replica, so it must be detached in Keeper too.
+        assert (
+            node_pr.query(
+                f"SELECT count() FROM system.tables WHERE database = '{db}' AND name = 't'"
+            )
+            == "0\n"
+        )
+        assert count_in_keeper("t") == "0\n"
+        node_pr.query(f"CREATE TABLE {db}.u (x UInt8) ENGINE = MergeTree ORDER BY x")
+
+        node_pr.query(f"ATTACH TABLE {db}.t")
+        assert node_pr.query(f"SELECT * FROM {db}.t") == "1\n"
+        assert count_in_keeper("t") == "1\n"
+    finally:
+        node_pr.query(
+            "SYSTEM DISABLE FAILPOINT disk_object_storage_fail_commit_metadata_transaction"
+        )
+        node_pr.query(
+            "SYSTEM DISABLE FAILPOINT database_replicated_force_metadata_digest_check"
+        )
     node_pr.query(f"DROP DATABASE {db} SYNC")
