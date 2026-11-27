@@ -611,6 +611,7 @@
     M(StatelessWorkerInUse, "Number of stateless workers currently in use by running queries.") \
     M(StatelessWorkerIdle, "Number of stateless workers currently held by the server but not used by any running query.") \
     M(StatelessWorkerServerActiveTasks, "Number of query execution tasks currently active on a stateless worker (accepted from a tenant and not yet released).") \
+    M(StatelessWorkerQueryControllers, "Number of distributed queries with tasks on this stateless worker started by `start_tasks`, one query controller each.") \
     M(StatelessWorkerDiscoveryFreeWorkers, "Number of stateless workers that are registered and available to be leased, as tracked by the stateless worker discovery service.") \
     M(StatelessWorkerDiscoveryLeasedWorkers, "Number of stateless workers currently leased to tenants, as tracked by the stateless worker discovery service.") \
     M(StatelessWorkerDiscoveryDyingWorkers, "Number of stateless workers that have been evicted and are awaiting removal, as tracked by the stateless worker discovery service.") \

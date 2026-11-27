@@ -33,10 +33,18 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int FAULT_INJECTED;
+    extern const int QUERY_WAS_CANCELLED;
+}
+
 namespace FailPoints
 {
     extern const char distributed_plan_delay_root_cause_report[];
     extern const char distributed_plan_delay_failed_task_release[];
+    extern const char stateless_worker_fail_after_registering_task[];
+    extern const char stateless_worker_pause_task_cancel[];
 }
 
 namespace Setting
@@ -76,6 +84,29 @@ std::optional<StatelessTaskExecutor::TaskFailure> StatelessTaskExecutor::Failure
     return failure;
 }
 
+void StatelessTaskExecutor::TaskCancellation::cancel()
+{
+    std::shared_ptr<QueryStatus> running_query;
+    {
+        std::lock_guard lock(mutex);
+        cancelled = true;
+        running_query = query.lock();
+    }
+    /// Cancels as `KILL QUERY` does: the running executor stops at once.
+    if (running_query)
+    {
+        FailPointInjection::pauseFailPoint(FailPoints::stateless_worker_pause_task_cancel);
+        running_query->cancelQuery(CancelReason::CANCELLED_BY_USER);
+    }
+}
+
+bool StatelessTaskExecutor::TaskCancellation::setQuery(std::weak_ptr<QueryStatus> query_)
+{
+    std::lock_guard lock(mutex);
+    query = std::move(query_);
+    return !cancelled;
+}
+
 void StatelessTaskExecutor::LogsQueueSlot::set(InternalTextLogsQueuePtr logs_queue_)
 {
     std::lock_guard lock(mutex);
@@ -88,13 +119,20 @@ InternalTextLogsQueuePtr StatelessTaskExecutor::LogsQueueSlot::get() const
     return logs_queue;
 }
 
-StatelessTaskExecutor::StatelessTaskExecutor(size_t max_threads, size_t max_free_threads, size_t queue_size)
-    : thread_pool(
+StatelessTaskExecutor::StatelessTaskExecutor(size_t max_queries_)
+    : max_queries(max_queries_)
+    , thread_pool(
         CurrentMetrics::StatelessWorkerThreads,
         CurrentMetrics::StatelessWorkerThreadsActive,
         CurrentMetrics::StatelessWorkerThreadsScheduled,
-        max_threads, max_free_threads, queue_size)
+        GlobalThreadPool::instance().getMaxThreads(), /*max_free_threads=*/ 0, /*queue_size=*/ 0)
 {
+}
+
+StatelessTaskExecutor::~StatelessTaskExecutor()
+{
+    /// The task jobs use the members declared after `thread_pool` when they end.
+    thread_pool.wait();
 }
 
 struct StatelessTaskExecutor::TaskSetup
@@ -174,7 +212,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     return Result::Ok;
 }
 
-void StatelessTaskExecutor::startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors)
+bool StatelessTaskExecutor::startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors)
 {
     const OpenTelemetry::TracingContext & trace_context = OpenTelemetry::CurrentContext();
     size_t task_count = 0;
@@ -200,27 +238,49 @@ void StatelessTaskExecutor::startTasks(const String & unique_query_id, Distribut
             auto task_state = std::make_shared<TaskState>();
             task_state->completion_future = task_promise->get_future();
             task_state->collectors = collectors;
+            task_state->unique_query_id = unique_query_id;
 
             {
                 std::lock_guard lock(tasks_mutex);
+                auto controller = query_controllers.find(unique_query_id);
+                /// A query without a controller has no task here, so refusing it leaves nothing behind.
+                if (controller == query_controllers.end() && query_controllers.size() >= max_queries)
+                {
+                    LOG_INFO(getLogger("StatelessTaskExecutor"), "Refusing the tasks of {}: {} queries run already", unique_query_id, max_queries);
+                    return false;
+                }
                 if (!tryRegisterTaskLocked(unique_task_id, task_state))
                     continue;
+                try
+                {
+                    if (controller == query_controllers.end())
+                    {
+                        controller = query_controllers.emplace(unique_query_id, std::make_shared<WorkerQueryController>(unique_query_id)).first;
+                        LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Created the query controller of {}", unique_query_id);
+                    }
+                    controller->second->addTask(unique_task_id);
+                    fiu_do_on(FailPoints::stateless_worker_fail_after_registering_task,
+                    {
+                        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after registering task {}", unique_task_id);
+                    });
+                }
+                catch (...)
+                {
+                    /// Otherwise the task stays registered with a broken promise, which its status polls rethrow.
+                    eraseTaskLocked(unique_task_id);
+                    throw;
+                }
             }
 
             scheduleTask(unique_task_id, std::move(task_state), std::move(task_promise), std::move(task_description), unique_temp_file_path, trace_context);
         }
     }
+    return true;
 }
 
 void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStatePtr task_state, TaskPromisePtr task_promise,
     DistributedQueryTaskDescription task_description_, const String & unique_temp_file_path, OpenTelemetry::TracingContext trace_context_)
 {
-    /// Callback for periodic cancellation check
-    auto is_task_cancelled = [cancelled = task_state->cancelled]() -> bool
-    {
-        return *cancelled;
-    };
-
     auto update_progress = [task_progress = task_state->progress](const Progress & progress)
     {
         task_progress->incrementPiecewiseAtomically(progress);
@@ -238,9 +298,9 @@ void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStat
         failure_slot->set(std::move(failure));
     };
 
-    auto task_function = [unique_task_id, task_description = std::move(task_description_), distributed_query_id = unique_temp_file_path,
+    auto task_function = [this, unique_task_id, task_description = std::move(task_description_), distributed_query_id = unique_temp_file_path,
         collectors = task_state->collectors, trace_context = std::move(trace_context_), logs_queue_slot = task_state->logs_queue,
-        task_promise, is_task_cancelled, update_progress, report_failure] mutable
+        cancellation = task_state->cancellation, task_promise, update_progress, report_failure] mutable
     {
         /// The promise must be fulfilled strictly after the last log line of this task:
         /// `getStatus` treats a ready future as a terminal state
@@ -264,11 +324,13 @@ void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStat
                 /// Process-list insertion can throw (query limit); keep it inside the try.
                 auto process_list_entry = query_context->getProcessList().insert(task_description.task.task_id, query_plan_hash, &ast_stub, query_context, start_watch.getStart(), false);
                 query_context->setProcessListElement(process_list_entry->getQueryStatus());
+                if (!cancellation->setQuery(process_list_entry->getQueryStatus()))
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Task {} was cancelled before it started", task_description.task.task_id);
 
                 /// A dispatched task is by definition not the initiator's in-process execution, so its
                 /// exchanges use the streaming/persisted transports rather than in-memory queues.
                 doExecuteTask(task_description, object_storage, object_storage_path, distributed_query_id, query_context,
-                    /*execute_locally=*/false, is_task_cancelled, update_progress, report_failure);
+                    /*execute_locally=*/false, /*is_cancelled=*/ {}, update_progress, report_failure);
             }
             catch (...)
             {
@@ -290,6 +352,7 @@ void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStat
             task_failure = currentTaskFailure();
         }
         task_promise->set_value(task_failure);
+        onTaskEnded(unique_task_id);
     };
 
     try
@@ -386,23 +449,28 @@ StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String 
 
 StatelessTaskExecutor::Result StatelessTaskExecutor::cancelTask(const String & task_id)
 {
-    std::lock_guard lock(tasks_mutex);
-    auto it = tasks.find(task_id);
-    if (it == tasks.end())
+    std::shared_ptr<TaskCancellation> cancellation;
     {
-        if (cancelled_before_start.insert(task_id).second)
+        std::lock_guard lock(tasks_mutex);
+        auto it = tasks.find(task_id);
+        if (it == tasks.end())
         {
-            LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Remembering cancelled unknown task {}, so a late start is ignored", task_id);
-            cancelled_before_start_order.push_back(task_id);
-            if (cancelled_before_start_order.size() > MAX_CANCELLED_BEFORE_START)
+            if (cancelled_before_start.insert(task_id).second)
             {
-                cancelled_before_start.erase(cancelled_before_start_order.front());
-                cancelled_before_start_order.pop_front();
+                LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Remembering cancelled unknown task {}, so a late start is ignored", task_id);
+                cancelled_before_start_order.push_back(task_id);
+                if (cancelled_before_start_order.size() > MAX_CANCELLED_BEFORE_START)
+                {
+                    cancelled_before_start.erase(cancelled_before_start_order.front());
+                    cancelled_before_start_order.pop_front();
+                }
             }
+            return Result::UnknownTaskId;
         }
-        return Result::UnknownTaskId;
+        cancellation = it->second->cancellation;
     }
-    *it->second->cancelled = true;
+    /// Outside the lock: cancelling the task's query runs its processors' `onCancel`, which can block.
+    cancellation->cancel();
 
     return Result::Ok;
 }
@@ -410,7 +478,32 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::cancelTask(const String & t
 StatelessTaskExecutor::Result StatelessTaskExecutor::forgetTask(const String & task_id)
 {
     std::lock_guard lock(tasks_mutex);
-    return eraseTaskLocked(task_id) ? Result::Ok : Result::UnknownTaskId;
+    auto it = tasks.find(task_id);
+    if (it == tasks.end())
+        return Result::UnknownTaskId;
+    /// A running task stays registered until it ends, so it is never orphaned and keeps its query's slot until then.
+    if (it->second->completion_future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+    {
+        it->second->forget_when_ended = true;
+        LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Task {} is forgotten while running, so it is dropped when it ends", task_id);
+        return Result::Ok;
+    }
+    eraseTaskLocked(task_id);
+    return Result::Ok;
+}
+
+void StatelessTaskExecutor::onTaskEnded(const String & unique_task_id) noexcept
+{
+    try
+    {
+        std::lock_guard lock(tasks_mutex);
+        if (auto it = tasks.find(unique_task_id); it != tasks.end() && it->second->forget_when_ended)
+            eraseTaskLocked(unique_task_id);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 bool StatelessTaskExecutor::tryRegisterTaskLocked(const String & unique_task_id, const TaskStatePtr & task_state)
@@ -432,14 +525,29 @@ bool StatelessTaskExecutor::tryRegisterTaskLocked(const String & unique_task_id,
 
 bool StatelessTaskExecutor::eraseTaskLocked(const String & unique_task_id)
 {
-    return tasks.erase(unique_task_id) > 0;
+    auto it = tasks.find(unique_task_id);
+    if (it == tasks.end())
+        return false;
+
+    const String & unique_query_id = it->second->unique_query_id;
+    if (!unique_query_id.empty())
+    {
+        auto controller = query_controllers.find(unique_query_id);
+        if (controller != query_controllers.end() && controller->second->removeTask(unique_task_id))
+        {
+            LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Dropped the query controller of {}", unique_query_id);
+            query_controllers.erase(controller);
+        }
+    }
+    tasks.erase(it);
+    return true;
 }
 
 void StatelessTaskExecutor::shutdown()
 {
     std::lock_guard lock(tasks_mutex);
     for (auto & [task_id, task_state] : tasks)
-        *task_state->cancelled = true;
+        task_state->cancellation->cancel();
 
     for (auto & [task_id, task_state] : tasks)
         task_state->completion_future.wait();

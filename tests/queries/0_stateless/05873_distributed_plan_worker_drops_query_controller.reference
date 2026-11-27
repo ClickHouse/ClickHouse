@@ -1,0 +1,8 @@
+-- registration_error: the worker fails right after registering a task of a batch: the query fails with the injected error,
+-- the worker drops the task at once, so the teardown does not wait for it, and no query controller is left.
+-- forget_running_task: a failing reader frees its resources for 5 s, longer than the teardown waits for it: the teardown
+-- forgets it anyway, the worker keeps the running task until it ends, and then drops it with the query controller.
+┌─case────────────────┬─error───────────────────────────────┬─teardown_waited─┬─worker_kept_running_task─┬─controllers_left─┐
+│ registration_error  │ FAULT_INJECTED                      │               0 │                        0 │                0 │
+│ forget_running_task │ FUNCTION_THROW_IF_VALUE_IS_NON_ZERO │               1 │                        1 │                0 │
+└─────────────────────┴─────────────────────────────────────┴─────────────────┴──────────────────────────┴──────────────────┘

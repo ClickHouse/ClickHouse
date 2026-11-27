@@ -1,6 +1,7 @@
 #pragma once
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Server/StatelessWorker/StatelessWorkerProtocol.h>
+#include <Server/StatelessWorker/WorkerQueryController.h>
 #include <IO/Progress.h>
 #include <Common/ThreadPool.h>
 #include <Common/OpenTelemetryTracingContext.h>
@@ -20,12 +21,13 @@
 namespace DB
 {
 
+class QueryStatus;
 
 class StatelessTaskExecutor
 {
 public:
-    StatelessTaskExecutor(size_t max_threads, size_t max_free_threads, size_t queue_size);
-    virtual ~StatelessTaskExecutor() = default;
+    explicit StatelessTaskExecutor(size_t max_queries_);
+    virtual ~StatelessTaskExecutor();
 
     enum Result
     {
@@ -72,10 +74,12 @@ public:
     Result startTask(const String & unique_task_id, DistributedQueryTaskDescription task, const String & unique_temp_file_path, const TaskCollectors & collectors);
     /// Starts the tasks of a `start_tasks` batch of the query `unique_query_id`, skipping those cancelled before their start or
     /// already started. A task that cannot be scheduled fails the call; the tasks scheduled before it keep running.
-    void startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors);
+    /// Returns false for a query with no task on this worker when `max_queries` queries have tasks here.
+    bool startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors);
     TaskStatus getStatus(const String & task_id, UInt64 wait_milliseconds);
     /// Remembers an unknown id, so its start, still on the wire, is ignored when it arrives.
     Result cancelTask(const String & task_id);
+    /// Drops a task that has ended; a running one is dropped when it ends.
     Result forgetTask(const String & task_id);
 
     void shutdown();
@@ -97,6 +101,20 @@ private:
         std::optional<TaskFailure> failure TSA_GUARDED_BY(mutex);
     };
 
+    /// Cancels a task: the flag covers the time before the task's process-list entry exists, the entry's query the rest.
+    class TaskCancellation
+    {
+    public:
+        void cancel();
+        /// Publishes the running task's query; false when the task was cancelled before, so it must not run.
+        bool setQuery(std::weak_ptr<QueryStatus> query_);
+
+    private:
+        std::mutex mutex;
+        bool cancelled TSA_GUARDED_BY(mutex) = false;
+        std::weak_ptr<QueryStatus> query TSA_GUARDED_BY(mutex);
+    };
+
     /// Not guarded by `tasks_mutex`: the task sets it, and `shutdown` holds that mutex while it waits for the tasks.
     class LogsQueueSlot
     {
@@ -116,7 +134,7 @@ private:
         /// Fulfilled when the task ends: with nothing on success, with the failure otherwise.
         std::shared_future<std::optional<TaskFailure>> completion_future;
         std::shared_ptr<FailureSlot> failure = std::make_shared<FailureSlot>();
-        std::shared_ptr<std::atomic<bool>> cancelled = std::make_shared<std::atomic<bool>>(false);
+        std::shared_ptr<TaskCancellation> cancellation = std::make_shared<TaskCancellation>();
         std::shared_ptr<Progress> progress = std::make_shared<Progress>();
         /// What the coordinator asked to collect for this task; decides which payloads a status reply carries.
         TaskCollectors collectors;
@@ -124,6 +142,10 @@ private:
         std::shared_ptr<LogsQueueSlot> logs_queue = std::make_shared<LogsQueueSlot>();
         /// Lines handed to status replies so far.
         std::shared_ptr<ForwardedLogsCounter> forwarded_logs = std::make_shared<ForwardedLogsCounter>();
+        /// The query of a task started by `startTasks`, which keys its `WorkerQueryController`; empty for `startTask`.
+        String unique_query_id;
+        /// Set under `tasks_mutex` by a `forget` that came while the task was running.
+        bool forget_when_ended = false;
     };
 
     using TaskStatePtr = std::shared_ptr<TaskState>;
@@ -138,11 +160,16 @@ private:
     bool tryRegisterTaskLocked(const String & unique_task_id, const TaskStatePtr & task_state) TSA_REQUIRES(tasks_mutex);
     /// Removes a task from `tasks`; false for an unknown one.
     bool eraseTaskLocked(const String & unique_task_id) TSA_REQUIRES(tasks_mutex);
+    /// Removes the task if it was forgotten while running; called by its thread after its promise is set.
+    void onTaskEnded(const String & unique_task_id) noexcept;
 
     /// Schedules a registered task in `thread_pool`; `trace_context_` is the dispatch request's.
     void scheduleTask(const String & unique_task_id, TaskStatePtr task_state, TaskPromisePtr task_promise,
         DistributedQueryTaskDescription task_description_, const String & unique_temp_file_path, OpenTelemetry::TracingContext trace_context_);
 
+    /// The most queries with tasks on this worker at once.
+    const size_t max_queries;
+    /// One thread per task up to the global pool's size, so a task never queues behind a running one.
     ThreadPool thread_pool;
 
     std::unordered_map<String, TaskStatePtr> tasks TSA_GUARDED_BY(tasks_mutex);
@@ -150,6 +177,7 @@ private:
     static constexpr size_t MAX_CANCELLED_BEFORE_START = 1000;
     std::unordered_set<String> cancelled_before_start TSA_GUARDED_BY(tasks_mutex);
     std::deque<String> cancelled_before_start_order TSA_GUARDED_BY(tasks_mutex);
+    std::unordered_map<String, WorkerQueryControllerPtr> query_controllers TSA_GUARDED_BY(tasks_mutex);
     std::mutex tasks_mutex;
 };
 

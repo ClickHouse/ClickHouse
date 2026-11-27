@@ -1,0 +1,7 @@
+-- The first query is killed, and the worker's cancellation of one of its tasks is paused, so the query is still running
+-- (first_query_held_by_the_cancel). Meanwhile a second query starts, runs and ends all its tasks on the same worker and
+-- returns the local result: the paused cancellation does not hold the lock of all the worker's tasks. Released, the
+-- cancellation ends the first query as cancelled.
+┌─first_query_held_by_the_cancel─┬─second_query_tasks─┬─second_query_tasks_ran─┬─second_query_result_same─┬─first_query_cancelled─┐
+│                              1 │                  5 │                      5 │                        1 │                     1 │
+└────────────────────────────────┴────────────────────┴────────────────────────┴──────────────────────────┴───────────────────────┘
