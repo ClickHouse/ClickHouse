@@ -2428,7 +2428,8 @@ namespace
         ASTCreateQuery & create_query,
         const ResolvedTimeSeriesTypes & new_types,
         const ASTCreateQuery & old_create_query,
-        const ResolvedTimeSeriesTypes & old_types)
+        const ResolvedTimeSeriesTypes & old_types,
+        const std::function<void(const IAST &)> & check_copied_definition)
     {
         /// Copy settings from the old table. Settings are merged by name: a setting written in this query wins.
         if (old_create_query.storage && old_create_query.storage->settings)
@@ -2482,6 +2483,8 @@ namespace
                     removeInnerColumnsDisabledByNewSettings(*new_inner_columns, kind, old_settings, new_settings);
                     removeGeneratedInnerColumns(*new_inner_columns, kind, old_settings);
                     removeGeneratedInnerIndices(*new_inner_columns, kind);
+                    if (check_copied_definition)
+                        check_copied_definition(*new_inner_columns);
                     create_query.setTargetInnerColumns(kind, new_inner_columns);
                 }
             }
@@ -2498,6 +2501,8 @@ namespace
                     /// generated for.
                     removeGeneratedInnerEngine(*new_inner_engine, kind, old_settings);
                     removeInnerEngineDisabledByNewSettings(*new_inner_engine, kind, old_settings, new_settings);
+                    if (check_copied_definition)
+                        check_copied_definition(*new_inner_engine);
                     create_query.setTargetInnerEngine(kind, new_inner_engine);
                 }
             }
@@ -2612,7 +2617,7 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
     /// This must happen before pinning the version below: the AS clause merges the SETTINGS clause
     /// of the old table into the query, and the version is pinned in the merged settings.
     if (old_create_query)
-        applyASClause(create_query, resolved_types, *old_create_query, *old_types);
+        applyASClause(create_query, resolved_types, *old_create_query, *old_types, params.check_copied_definition);
 
     /// For new tables: per-kind, check external tables or normalize the inner table's columns and assign its engine.
     if (is_new_table)

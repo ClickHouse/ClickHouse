@@ -74,7 +74,16 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
         params.external_target_columns = readExternalTargetColumns(create_query, context);
 
         if (!create_query.as_table.empty())
+        {
             params.as_create_query = readASCreateQuery(create_query, context);
+
+            /// `SHOW CREATE TABLE` masks credentials, but the copy can evaluate them, so copying them needs `SELECT`.
+            params.check_copied_definition = [&](const IAST & definition)
+            {
+                if (definition.hasSecretParts())
+                    context->checkAccess(AccessType::SELECT, context->resolveDatabase(create_query.as_database), create_query.as_table);
+            };
+        }
     }
 
     normalizeTimeSeriesDefinitionImpl(create_query, params);

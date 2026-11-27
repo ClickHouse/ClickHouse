@@ -1838,19 +1838,10 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         }
         else if (as_create.is_time_series_table)
         {
-            /// Only the engine is inherited here: the settings and the inner tables are copied by normalizeTimeSeriesDefinition.
+            /// Only the engine is inherited here: the settings and the inner tables are copied (and their secrets checked) by normalizeTimeSeriesDefinition.
             storage_def = make_intrusive<ASTStorage>();
             storage_def->set(storage_def->engine, as_create.storage->engine->clone());
             create.is_time_series_table = true;
-
-            /// normalizeTimeSeriesDefinition copies the settings and the inner engines of the source,
-            /// and this query inherits each one it does not give itself
-            if (as_create.storage->settings && !(create.storage && create.storage->settings))
-                check_access_to_inherited_definition(*as_create.storage->settings);
-            if (as_create.targets)
-                for (const auto & target : as_create.targets->targets)
-                    if (target.inner_engine && !create.getTargetInnerEngine(target.kind))
-                        check_access_to_inherited_definition(*target.inner_engine);
         }
         else if (as_create.storage)
         {

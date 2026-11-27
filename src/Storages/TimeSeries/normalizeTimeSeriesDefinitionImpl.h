@@ -4,13 +4,15 @@
 #include <Parsers/ASTViewTargets.h>
 #include <Storages/ColumnsDescription.h>
 
-#include <boost/smart_ptr/intrusive_ptr.hpp>
+#include <functional>
 #include <map>
+#include <boost/smart_ptr/intrusive_ptr.hpp>
 
 
 namespace DB
 {
 class ASTCreateQuery;
+class IAST;
 struct Settings;
 
 /// The parameters of the normalization of a TimeSeries table definition (see `normalizeTimeSeriesDefinitionImpl`).
@@ -30,6 +32,9 @@ struct NormalizeTimeSeriesDefinitionParams
     /// The CREATE query of the table from the clause `AS <other_table>`, as it is stored (not normalized).
     /// Required for a new table with that clause.
     boost::intrusive_ptr<const ASTCreateQuery> as_create_query;
+
+    /// Called with each inner columns and inner engine definition copied from `as_create_query`.
+    std::function<void(const IAST &)> check_copied_definition;
 
     /// The columns of every external target table of the query, by the kind of the target
     /// (a table of version 9 or earlier could have external target tables, see TimeSeriesVersion.h).
