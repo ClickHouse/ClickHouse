@@ -146,14 +146,33 @@ namespace
             column.popBack(n);
         }
     }
+    enum class EnumWrapperDefault
+    {
+        TypeDefault,
+        Zero,
+        EmptyName,
+    };
+
+    /// Appends the value an empty Google wrapper stands for to an `Enum` column, if the `Enum` has it.
+    template <typename EnumType>
+    bool insertEnumWrapperDefault(const EnumType & enum_type, IColumn & column, EnumWrapperDefault enum_default)
+    {
+        typename EnumType::FieldType value{};
+        if (enum_default == EnumWrapperDefault::EmptyName ? !enum_type.tryGetValue(value, std::string_view{}) : !enum_type.hasValue(0))
+            return false;
+        assert_cast<ColumnVector<typename EnumType::FieldType> &>(column).insertValue(value);
+        return true;
+    }
+
     /// Appends a default row to a column, walking composite columns through the borrowed
     /// sub-column pointers for the same reason as `popBackBorrowed`: `IColumn::insertDefault`
     /// of a composite column would reach sub-columns that are also held by the serializers
     /// of its nested fields through the non-const `WrappedPtr` dereference.
     /// Exception-safe: on failure, the already appended sub-columns are rolled back.
     /// With `type`, a scalar gets the default of its type (e.g. the first element of an `Enum`), not the column's.
-    /// With `enum_zero`, an `Enum` with 0 gets 0, the value of an empty numeric wrapper.
-    void insertDefaultBorrowed(IColumn & column, const IDataType * type = nullptr, bool enum_zero = false)
+    /// With `enum_default`, an `Enum` gets the value an empty wrapper stands for: 0 for a numeric wrapper, the element
+    /// named '' for a string or bytes wrapper. An `Enum` without that element gets its type default.
+    void insertDefaultBorrowed(IColumn & column, const IDataType * type = nullptr, EnumWrapperDefault enum_default = EnumWrapperDefault::TypeDefault)
     {
         if (auto * column_array = typeid_cast<ColumnArray *>(&column))
         {
@@ -176,7 +195,7 @@ namespace
             try
             {
                 for (; i < elements.size(); ++i)
-                    insertDefaultBorrowed(borrowColumnRef(elements[i]), tuple_type ? tuple_type->getElement(i).get() : nullptr, enum_zero);
+                    insertDefaultBorrowed(borrowColumnRef(elements[i]), tuple_type ? tuple_type->getElement(i).get() : nullptr, enum_default);
             }
             catch (...)
             {
@@ -204,13 +223,11 @@ namespace
                 throw;
             }
         }
-        else if (const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(type); enum_zero && enum8 && enum8->hasValue(0))
+        else if (const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(type); enum_default != EnumWrapperDefault::TypeDefault && enum8 && insertEnumWrapperDefault(*enum8, column, enum_default))
         {
-            column.insertDefault();
         }
-        else if (const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(type); enum_zero && enum16 && enum16->hasValue(0))
+        else if (const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(type); enum_default != EnumWrapperDefault::TypeDefault && enum16 && insertEnumWrapperDefault(*enum16, column, enum_default))
         {
-            column.insertDefault();
         }
         else if (type)
         {
@@ -2363,13 +2380,13 @@ namespace
             }
         }
 
-        void insertNestedDefaults(size_t row_num, bool enum_zero)
+        void insertNestedDefaults(size_t row_num, EnumWrapperDefault enum_default)
         {
             auto & column_nullable = assert_cast<ColumnNullable &>(borrowColumnRef(column));
             if (row_num < column_nullable.size())
                 return;
             auto & nested_column = borrowColumnRef(column_nullable.getNestedColumnPtr());
-            insertDefaultBorrowed(nested_column, nested_type.get(), enum_zero);
+            insertDefaultBorrowed(nested_column, nested_type.get(), enum_default);
             /// Same rollback contract as in `insertDefaults` above.
             try
             {
@@ -2932,7 +2949,8 @@ namespace
                             if (google_wrappers_special_treatment && isNullableGoogleWrapper())
                             {
                                 auto * nullable_ser = dynamic_cast<ProtobufSerializerNullable*>(info.field_serializer.get());
-                                nullable_ser->insertNestedDefaults(row_num, info.field_descriptor->type() != FieldTypeId::TYPE_STRING && info.field_descriptor->type() != FieldTypeId::TYPE_BYTES);
+                                const bool is_string_wrapper = info.field_descriptor->type() == FieldTypeId::TYPE_STRING || info.field_descriptor->type() == FieldTypeId::TYPE_BYTES;
+                                nullable_ser->insertNestedDefaults(row_num, is_string_wrapper ? EnumWrapperDefault::EmptyName : EnumWrapperDefault::Zero);
                             }
                             else
                             {

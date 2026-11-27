@@ -43,9 +43,10 @@ SELECT * FROM format(ProtobufSingle, 'w Nullable(Enum8(\'a\' = 1, \'b\' = 2)), k
 SELECT * FROM format(ProtobufSingle, 's Nullable(Date), k Int32', '\x1a\x00\x10\x01');
 SELECT * FROM format(ProtobufSingle, 's Nullable(UUID), k Int32', '\x1a\x00\x10\x01');
 SELECT * FROM format(ProtobufSingle, 's Nullable(Enum8(\'\' = -1, \'zero\' = 0)), k Int32', '\x1a\x00\x10\x01');
+SELECT * FROM format(ProtobufSingle, 's Nullable(Enum8(\'zero\' = 0, \'\' = 1)), k Int32', '\x1a\x00\x10\x01');
 
 -- The value 0 of an Int32Value and the empty name of a StringValue are written as a wrapper without `value`, so they
--- must read back as the element 0 and the element ''.
+-- must read back as the element 0 and the element '', also when '' is not the smallest element.
 SET output_format_protobuf_nullables_with_google_wrappers = 1;
 INSERT INTO FUNCTION file(currentDatabase() || '_05872.pb', Protobuf, 'w Nullable(Enum8(\'neg\' = -1, \'zero\' = 0, \'pos\' = 1)), k Int32')
 SELECT * FROM values('w Nullable(Enum8(\'neg\' = -1, \'zero\' = 0, \'pos\' = 1)), k Int32', ('neg', 1), ('zero', 2), ('pos', 3), (NULL, 4))
@@ -55,6 +56,10 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05872.pb', Protobuf, 's Nullabl
 SELECT * FROM values('s Nullable(Enum8(\'\' = -1, \'zero\' = 0)), k Int32', ('', 1), ('zero', 2), (NULL, 3))
 SETTINGS engine_file_truncate_on_insert = 1;
 SELECT * FROM file(currentDatabase() || '_05872.pb', Protobuf, 's Nullable(Enum8(\'\' = -1, \'zero\' = 0)), k Int32') ORDER BY k;
+INSERT INTO FUNCTION file(currentDatabase() || '_05872.pb', Protobuf, 's Nullable(Enum8(\'zero\' = 0, \'\' = 1)), k Int32')
+SELECT * FROM values('s Nullable(Enum8(\'zero\' = 0, \'\' = 1)), k Int32', ('', 1), ('zero', 2), (NULL, 3))
+SETTINGS engine_file_truncate_on_insert = 1;
+SELECT * FROM file(currentDatabase() || '_05872.pb', Protobuf, 's Nullable(Enum8(\'zero\' = 0, \'\' = 1)), k Int32') ORDER BY k;
 
 SELECT 'FileLog, handle_error_mode = stream';
 DROP TABLE IF EXISTS file_log;
