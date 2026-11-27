@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/DiskSetBlockFormat.h>
+#include <Interpreters/DiskSet/BlockFormat.h>
 #include <Common/PODArray.h>
 #include <base/unit.h>
 

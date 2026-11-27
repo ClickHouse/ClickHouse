@@ -26,9 +26,9 @@
 
 #include <Interpreters/Set.h>
 #include <Interpreters/SetVariants.h>
-#include <Interpreters/DiskSet.h>
-#include <Interpreters/DiskSetBuilder.h>
-#include <Interpreters/DiskSetKeys.h>
+#include <Interpreters/DiskSet/DiskSet.h>
+#include <Interpreters/DiskSet/Builder.h>
+#include <Interpreters/DiskSet/Keys.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>

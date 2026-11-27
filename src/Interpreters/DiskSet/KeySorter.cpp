@@ -1,6 +1,6 @@
-#include <Interpreters/DiskSetKeySorter.h>
+#include <Interpreters/DiskSet/KeySorter.h>
 
-#include <Interpreters/DiskSetRunMerge.h>
+#include <Interpreters/DiskSet/RunMerge.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
