@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <stdexcept>
+#include <string>
 #include <utility>
 
 TEST(ScopeGuard, ExplicitResetPropagatesDuringUnwinding)
@@ -9,22 +11,22 @@ TEST(ScopeGuard, ExplicitResetPropagatesDuringUnwinding)
     bool recovered = false;
     try
     {
-        scope_guard guard([] { throw 2; });
+        scope_guard guard([] { throw std::runtime_error("cleanup"); });
         SCOPE_EXIT(
             try
             {
                 guard.reset();
             }
-            catch (int)
+            catch (const std::runtime_error &)
             {
                 recovered = true;
                 guard.release();
             });
-        throw 1;
+        throw std::runtime_error("original");
     }
-    catch (int value)
+    catch (const std::runtime_error & error)
     {
-        EXPECT_EQ(value, 1);
+        EXPECT_STREQ(error.what(), "original");
     }
     EXPECT_TRUE(recovered);
 }
@@ -34,48 +36,48 @@ TEST(ScopeGuard, MoveAssignmentPropagatesDuringUnwinding)
     bool recovered = false;
     try
     {
-        scope_guard target([] { throw 2; });
+        scope_guard target([] { throw std::runtime_error("cleanup"); });
         scope_guard source([] {});
         SCOPE_EXIT(
             try
             {
                 target = std::move(source);
             }
-            catch (int)
+            catch (const std::runtime_error &)
             {
                 recovered = true;
                 target.release();
                 source.release();
             });
-        throw 1;
+        throw std::runtime_error("original");
     }
-    catch (int value)
+    catch (const std::runtime_error & error)
     {
-        EXPECT_EQ(value, 1);
+        EXPECT_STREQ(error.what(), "original");
     }
     EXPECT_TRUE(recovered);
 }
 
-TEST(ScopeGuard, SCOPE_EXITExceptionPropagatesOnNormalExit)
+TEST(ScopeGuard, ScopeExitExceptionPropagatesOnNormalExit)
 {
     EXPECT_THROW(
         {
-            SCOPE_EXIT(throw 1;);
+            SCOPE_EXIT(throw std::runtime_error("cleanup"););
         },
-        int);
+        std::runtime_error);
 }
 
-TEST(ScopeGuard, SCOPE_EXITExceptionDoesNotReplaceOriginalException)
+TEST(ScopeGuard, ScopeExitExceptionDoesNotReplaceOriginalException)
 {
-    int caught = 0;
+    bool original_exception_caught = false;
     try
     {
-        SCOPE_EXIT(throw 2;);
-        throw 1;
+        SCOPE_EXIT(throw std::runtime_error("cleanup"););
+        throw std::runtime_error("original");
     }
-    catch (int value)
+    catch (const std::runtime_error & error)
     {
-        caught = value;
+        original_exception_caught = std::string(error.what()) == "original";
     }
-    EXPECT_EQ(caught, 1);
+    EXPECT_TRUE(original_exception_caught);
 }
