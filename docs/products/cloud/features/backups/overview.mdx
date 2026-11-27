@@ -33,6 +33,15 @@ Currently services are defaulted to one daily backup with a 24 hour retention. B
 
 See ["Review and restore backups"](/products/cloud/guides/backups/review-and-restore-backups) for further details.
 
+### Backups and service deletion {#backups-and-service-deletion}
+
+Backups managed by ClickHouse Cloud belong to the service they were taken for.
+After a service is deleted, its backups can't be restored, and the backup retention you configured doesn't extend their lifetime.
+Don't rely on these backups to recover a deleted service.
+
+To keep backups that outlive a service, [export backups to your own bucket](#byob).
+You can restore them to a new service at any time, and you manage their lifecycle in your bucket.
+
 ## Configurable backups {#configurable-backups}
 
 <ScalePlanFeatureBadge feature="Configurable Backups" linking_verb_are="True"/>
