@@ -18,7 +18,7 @@ doc_type: 'reference'
 ClickHouse prend en charge les tables temporaires, qui présentent les caractéristiques suivantes :
 
 * Les tables temporaires disparaissent à la fin de la session, y compris en cas de perte de connexion.
-* Une table temporaire utilise le moteur de table Memory lorsqu’aucun moteur n’est spécifié et peut utiliser n’importe quel moteur de table, à l’exception de Replicated et `KeeperMap`.
+* Une table temporaire utilise le moteur de table `Memory` lorsqu’aucun moteur n’est spécifié. Seuls des moteurs légers peuvent servir de support à une table temporaire : `Memory`, la famille `MergeTree` non répliquée, `Log`, `TinyLog`, `StripeLog`, `File`, `URL`, `Null`, `Join` et `Set`. Lorsque `cloud_mode` est activé, les moteurs qui stockent les données sur le disque local sont également interdits.
 * Il n’est pas possible de spécifier une DB pour une table temporaire. Celle-ci est créée en dehors des bases de données.
 * Il est impossible de créer une table temporaire à l’aide d’une requête DDL distribuée sur tous les serveurs du cluster (avec `ON CLUSTER`) : cette table n’existe que dans la session en cours.
 * Si une table temporaire porte le même nom qu’une autre table et qu’une requête spécifie le nom de la table sans indiquer la DB, la table temporaire est utilisée.

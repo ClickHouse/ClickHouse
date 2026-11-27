@@ -193,6 +193,16 @@ def describe_transport_error_for_host(host, error_text):
 set_transport_error_describer(describe_transport_error_for_host)
 
 
+def describe_lost_network_interfaces():
+    """The verdicts of the instances that already reported a lost interface and still have none, or ""."""
+    verdicts = [
+        instance.describe_lost_network_interface()
+        for instance in list(_INSTANCES_BY_ADDRESS.values())
+        if instance.reported_lost_network_interface
+    ]
+    return " ".join(verdict for verdict in verdicts if verdict)
+
+
 def find_default_config_path():
     path = os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", None)
     if path is not None:
@@ -5566,6 +5576,7 @@ class ClickHouseInstance:
 
         self.docker_client = None
         self.ip_address = None
+        self.reported_lost_network_interface = False
         self.client = None
         self.image = image
         self.tag = tag
@@ -5701,6 +5712,7 @@ class ClickHouseInstance:
         if interfaces - DISCONNECTED_INTERFACE_NAMES:
             return ""
 
+        self.reported_lost_network_interface = True
         return (
             f"{LOST_NETWORK_INTERFACE_ERROR} {self.docker_id}: docker attached it to the "
             f"cluster network with address {expected_ip}, but the running container is "
@@ -6639,11 +6651,12 @@ class ClickHouseInstance:
                 "echo 'restart_with_original_version: From version' && /usr/bin/clickhouse server --version && echo 'To version' && /usr/share/clickhouse_original server --version",
             ]
         )
+        # Unlink first: a process that is still exiting may keep the old file busy (ETXTBSY).
         self.exec_in_container(
             [
                 "bash",
                 "-c",
-                "cp /usr/share/clickhouse_original /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse",
+                "rm -f /usr/bin/clickhouse && cp /usr/share/clickhouse_original /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse",
             ],
             user="root",
         )
@@ -6728,11 +6741,12 @@ class ClickHouseInstance:
             ["bash", "-c", "cp /usr/bin/clickhouse /usr/share/clickhouse_original"],
             user="root",
         )
+        # Unlink first: a process that is still exiting may keep the old file busy (ETXTBSY).
         self.exec_in_container(
             [
                 "bash",
                 "-c",
-                "cp /usr/share/clickhouse_fresh /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse",
+                "rm -f /usr/bin/clickhouse && cp /usr/share/clickhouse_fresh /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse",
             ],
             user="root",
         )

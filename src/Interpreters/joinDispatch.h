@@ -48,7 +48,9 @@ template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Full, JoinStr
 template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::Anti, false>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
 template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::Anti, true>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
 template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Inner, JoinStrictness::Anti, prefer_use_maps_all> { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Right, JoinStrictness::Anti, prefer_use_maps_all> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
+/// RIGHT ANTI gets `MapsOne` only for `EXCEPT DISTINCT`, which emits one row per key.
+template <> struct MapGetterImpl<JoinKind::Right, JoinStrictness::Anti, false> { using Map = HashJoin::MapsOne; static constexpr bool flagged = true; };
+template <> struct MapGetterImpl<JoinKind::Right, JoinStrictness::Anti, true> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
 template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Full, JoinStrictness::Anti, prefer_use_maps_all>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
 
 template <JoinKind kind, bool prefer_use_maps_all>
@@ -65,6 +67,9 @@ struct MapGetter : MapGetterImpl<kind, join_strictness, maps_kind == JoinMapsKin
 /// nothing of the right side is selected, so neither ever reads a right row.
 template <> struct MapGetter<JoinKind::Left, JoinStrictness::Anti, JoinMapsKind::Set> { using Map = HashJoin::MapsSet; static constexpr bool flagged = false; };
 template <> struct MapGetter<JoinKind::Left, JoinStrictness::Semi, JoinMapsKind::Set> { using Map = HashJoin::MapsSet; static constexpr bool flagged = false; };
+/// INNER ANY that selects no right column needs only the keys. It emits one left row per key: the first row
+/// to find a key sets the used flag of its cell, and later rows with that key are dropped.
+template <> struct MapGetter<JoinKind::Inner, JoinStrictness::Any, JoinMapsKind::Set> { using Map = HashJoin::MapsSet; static constexpr bool flagged = true; };
 
 /// Constrain the pairs of routines that differ only in whether a right row can be read from the map.
 template <typename Maps>

@@ -2,19 +2,19 @@
 title: 'المراقبة في ClickHouse Cloud Console'
 slug: /cloud/monitoring/cloud-console
 description: 'لوحات معلومات المراقبة المدمجة في ClickHouse Cloud Console'
-keywords: ['السحابة', 'المراقبة', 'لوحات المعلومات', 'صحة الخدمة', 'استخدام الموارد', 'لوحة المعلومات المتقدمة']
+keywords: ['السحابة', 'المراقبة', 'لوحات المعلومات', 'حالة الخدمة', 'استخدام الموارد', 'لوحة المعلومات المتقدمة']
 sidebarTitle: 'Cloud Console'
 doc_type: 'guide'
 ---
 
-تأتي الخدمات في ClickHouse Cloud مزوّدةً بمكوّنات Monitoring جاهزة توفّر للمستخدمين لوحات معلومات وإشعارات. وبشكل افتراضي، يمكن لجميع المستخدمين في Cloud Console الوصول إلى لوحات المعلومات هذه.
+تأتي الخدمات في ClickHouse Cloud مزوّدةً بمكوّنات المراقبة جاهزة توفّر للمستخدمين لوحات معلومات وإشعارات. وبشكل افتراضي، يمكن لجميع المستخدمين في Cloud Console الوصول إلى لوحات المعلومات هذه.
 
 <div id="dashboards">
-  ## لوحات المعلومات
+  ## لوحات المعلومات {#dashboards}
 </div>
 
 <div id="service-health">
-  ### Service Health
+  ### Service Health {#service-health}
 </div>
 
 يمكن استخدام لوحة المعلومات Service Health لمراقبة الوضع الصحي العام للخدمة. يجمع ClickHouse Cloud المقاييس المعروضة في لوحة المعلومات هذه من جداول النظام ويخزنها، بحيث يمكن عرضها عندما تكون الخدمة في حالة خمول.
@@ -22,13 +22,13 @@ doc_type: 'guide'
 {/* TODO: أضف لقطة شاشة للوحة معلومات Service Health */}
 
 <div id="resource-utilization">
-  ### استخدام الموارد
+  ### استخدام الموارد {#resource-utilization}
 </div>
 
 توفّر لوحة معلومات Infrastructure عرضًا تفصيليًا للموارد التي تستخدمها عملية ClickHouse. ويجمع ClickHouse Cloud المقاييس المعروضة على لوحة المعلومات هذه من جداول النظام ويخزّنها، بحيث يمكن عرضها عندما تكون الخدمة في حالة خمول.
 
 <div id="memory-and-cpu">
-  #### الذاكرة وCPU
+  #### الذاكرة وCPU {#memory-and-cpu}
 </div>
 
 تعرض الرسوم البيانية **CPU المخصّص** و**الذاكرة المخصّصة** إجمالي موارد الحوسبة المتاحة لكل نسخة متماثلة في خدمتك. ويمكن تغيير هذه المخصّصات باستخدام [ميزات التوسّع](/ar/products/cloud/features/autoscaling/overview) في ClickHouse Cloud.
@@ -55,25 +55,19 @@ doc_type: 'guide'
 | CPU المستخدم      | مقياس CPU للنظام    | الحد الأقصى | `ClickHouseServer_UsageCores` عبر نقطة نهاية Prometheus |
 
 <div id="data-transfer">
-  #### نقل البيانات
+  #### نقل البيانات {#data-transfer}
 </div>
 
 تعرض الرسوم البيانية حركة البيانات الداخلة والخارجة من ClickHouse Cloud. تعرّف على المزيد حول [نقل بيانات الشبكة](/ar/products/cloud/reference/billing/network-data-transfer).
 
-<div id="advanced-dashboard">
-  ### لوحة المعلومات المتقدمة
-</div>
+### لوحة المعلومات المتقدمة {#advanced-dashboard}
 
 لوحة المعلومات هذه هي نسخة معدّلة من [لوحة observability المتقدمة المضمّنة](/ar/products/cloud/features/monitoring/advanced-dashboard)، حيث تمثّل كل سلسلة المقاييس لكل نسخة متماثلة. يمكن أن تكون هذه اللوحة مفيدة في مراقبة المشكلات الخاصة بـ ClickHouse واستكشافها وإصلاحها.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![لوحة المعلومات المتقدمة في ClickHouse Cloud](/images/cloud/manage/monitoring/advanced_dashboard.webp)
-
-</Frame>
-
+  <Frame>
+    ![لوحة المعلومات المتقدمة في ClickHouse Cloud](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+  </Frame>
 </div>
 
 <Note>
@@ -92,8 +86,8 @@ doc_type: 'guide'
 | انتظار القراءة من S3                              | `ProfileEvent_ReadBufferFromS3Microseconds`                                                                                                                             | `metric_log`              | Sum / bucketSizeSeconds |
 | أخطاء القراءة من S3/ثانية                         | `ProfileEvent_ReadBufferFromS3RequestsErrors`                                                                                                                           | `metric_log`              | Sum / bucketSizeSeconds |
 | انتظار CPU                                        | `ProfileEvent_OSCPUWaitMicroseconds`                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
-| استخدام CPU لنظام التشغيل (userspace، normalized) | `OSUserTimeNormalized`                                                                                                                                                  | `asynchronous_metric_log` |                         |
-| استخدام CPU لنظام التشغيل (kernel، normalized)    | `OSSystemTimeNormalized`                                                                                                                                                | `asynchronous_metric_log` |                         |
+| استخدام CPU لنظام التشغيل (userspace، موحَّد الصيغة) | `OSUserTimeNormalized`                                                                                                                                                  | `asynchronous_metric_log` |                         |
+| استخدام CPU لنظام التشغيل (kernel، موحَّد الصيغة)    | `OSSystemTimeNormalized`                                                                                                                                                | `asynchronous_metric_log` |                         |
 | القراءة من disk                                   | `ProfileEvent_OSReadBytes`                                                                                                                                              | `metric_log`              | Sum / bucketSizeSeconds |
 | القراءة من filesystem                             | `ProfileEvent_OSReadChars`                                                                                                                                              | `metric_log`              | Sum / bucketSizeSeconds |
 | الذاكرة (المتعقبة، بايتات)                        | `CurrentMetric_MemoryTracking`                                                                                                                                          | `metric_log`              |                         |
@@ -113,91 +107,61 @@ doc_type: 'guide'
 
 للحصول على معلومات تفصيلية حول كل تصور وكيفية استخدامه في استكشاف المشكلات وإصلاحها، راجع [توثيق لوحة المعلومات المتقدمة](/ar/products/cloud/features/monitoring/advanced-dashboard).
 
-<div id="query-insights">
-  ## Query insights
-</div>
+## رؤى الاستعلامات {#query-insights}
 
-تُسهّل ميزة **Query Insights** استخدام سجل الاستعلامات المضمّن في ClickHouse من خلال مجموعة متنوعة من التصورات والجداول. ويُعد جدول ClickHouse ‏`system.query_log` مصدرًا أساسيًا للمعلومات اللازمة لتحسين الاستعلامات، واستكشاف الأخطاء وإصلاحها، ومراقبة الحالة العامة للعنقود وأدائه.
+تُسهّل ميزة **رؤى الاستعلامات** استخدام سجل الاستعلامات المضمّن في ClickHouse من خلال مجموعة متنوعة من التصورات والجداول. ويُعد جدول ClickHouse ‏`system.query_log` مصدرًا أساسيًا للمعلومات اللازمة لتحسين الاستعلامات، واستكشاف الأخطاء وإصلاحها، ومراقبة الحالة العامة للعنقود وأدائه.
 
-بعد تحديد خدمة، يتوسّع عنصر التنقل **Monitoring** في الشريط الجانبي الأيسر ليُظهر عنصرًا فرعيًا باسم **Query insights**:
+بعد تحديد خدمة، يتوسّع عنصر التنقل **المراقبة** في الشريط الجانبي الأيسر ليُظهر عنصرًا فرعيًا باسم **رؤى الاستعلامات**:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![نظرة عامة على واجهة مستخدم Query Insights](/images/cloud/sqlconsole/insights_overview.webp)
-
-</Frame>
-
+  <Frame>
+    ![نظرة عامة على واجهة رؤى الاستعلامات](/images/cloud/sqlconsole/insights_overview.webp)
+  </Frame>
 </div>
 
-<div id="top-level-metrics">
-  ### المقاييس عالية المستوى
-</div>
+### المقاييس عالية المستوى {#top-level-metrics}
 
 تمثل مربعات الإحصاءات في الأعلى مقاييس الاستعلام الأساسية خلال الفترة الزمنية المحددة. وأسفلها، تعرض المخططات الزمنية حجم الاستعلامات، وزمن الاستجابة، ومعدل الأخطاء، مقسّمة حسب نوع الاستعلام (select وinsert وother). ويمكن ضبط مخطط زمن الاستجابة لعرض قيم p50 وp90 وp99:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![مخطط زمن الاستجابة في Query Insights](/images/cloud/sqlconsole/insights_latency.webp)
-
-</Frame>
-
+  <Frame>
+    ![مخطط زمن الاستجابة في رؤى الاستعلامات](/images/cloud/sqlconsole/insights_latency.webp)
+  </Frame>
 </div>
 
-<div id="recent-queries">
-  ### الاستعلامات الأخيرة
-</div>
+### الاستعلامات الأخيرة {#recent-queries}
 
-يعرض الجدول إدخالات من سجل الاستعلامات، مجمّعة حسب تجزئة الاستعلام المُطبَّع والمستخدم ضمن الفترة الزمنية المحددة. يمكن تصفية الاستعلامات الأخيرة وفرزها حسب أي حقل متاح، كما يمكن تهيئة الجدول لعرض حقول إضافية مثل الجداول وزمني الاستجابة p90 وp99 أو إخفائها:
+يعرض الجدول إدخالات من سجل الاستعلامات، مجمّعة حسب تجزئة الاستعلام الموحَّد الصيغة والمستخدم ضمن الفترة الزمنية المحددة. يمكن تصفية الاستعلامات الأخيرة وفرزها حسب أي حقل متاح، كما يمكن تهيئة الجدول لعرض حقول إضافية مثل الجداول وزمني الاستجابة p90 وp99 أو إخفائها:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![جدول الاستعلامات الأخيرة في Query Insights](/images/cloud/sqlconsole/insights_recent.webp)
-
-</Frame>
-
+  <Frame>
+    ![جدول الاستعلامات الأخيرة في رؤى الاستعلامات](/images/cloud/sqlconsole/insights_recent.webp)
+  </Frame>
 </div>
 
-<div id="query-drill-down">
-  ### التعمّق في الاستعلام
-</div>
+### التعمّق في الاستعلام {#query-drill-down}
 
 يؤدي اختيار استعلام من جدول الاستعلامات الأخيرة إلى فتح لوحة منبثقة تحتوي على مقاييس ومعلومات خاصة بالاستعلام المحدد:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![واجهة Query Insights للتعمّق في الاستعلام](/images/cloud/sqlconsole/insights_drilldown.webp)
-
-</Frame>
-
+  <Frame>
+    ![واجهة رؤى الاستعلامات للتعمّق في الاستعلام](/images/cloud/sqlconsole/insights_drilldown.webp)
+  </Frame>
 </div>
 
 جميع المقاييس في علامة التبويب **معلومات الاستعلام** هي مقاييس مُجمّعة، ولكن يمكننا أيضًا عرض مقاييس عمليات التنفيذ الفردية عبر تحديد علامة التبويب **سجل الاستعلام**:
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![واجهة Query Insights لمعلومات الاستعلام](/images/cloud/sqlconsole/insights_query_info.webp)
-
-</Frame>
-
+  <Frame>
+    ![واجهة رؤى الاستعلامات لمعلومات الاستعلام](/images/cloud/sqlconsole/insights_query_info.webp)
+  </Frame>
 </div>
 
 من هذه اللوحة، يمكن توسيع العنصرين `Settings` و`Profile Events` لكل عملية تنفيذ استعلام لإظهار معلومات إضافية.
 
-<div id="related">
-  ## صفحات ذات صلة
-</div>
+## صفحات ذات صلة {#related}
 
-* [الإشعارات](/ar/products/cloud/features/monitoring/notifications) — يمكنك تهيئة التنبيهات لأحداث التحجيم والأخطاء والفوترة
-* [لوحة المعلومات المتقدمة](/ar/products/cloud/features/monitoring/advanced-dashboard) — مرجع تفصيلي لكل تصوّر في لوحة المعلومات
-* [الاستعلام عن جداول النظام](/ar/products/cloud/features/monitoring/system-tables) — شغّل استعلامات SQL مخصصة على جداول النظام لإجراء فحص داخلي متعمق
-* [نقطة نهاية Prometheus](/ar/products/cloud/features/monitoring/prometheus) — صدّر المقاييس إلى Grafana أو Datadog أو غيرها من الأدوات المتوافقة مع Prometheus
+* [الإشعارات](/ar/products/cloud/features/monitoring/notifications) — تهيئة التنبيهات لأحداث توسيع النطاق والأخطاء والفوترة
+* [لوحة معلومات متقدمة](/ar/products/cloud/features/monitoring/advanced-dashboard) — مرجع تفصيلي لكل تصور في لوحة المعلومات
+* [الاستعلام عن جداول النظام](/ar/products/cloud/features/monitoring/system-tables) — تشغيل استعلامات SQL مخصّصة على جداول النظام لإجراء استبطان معمّق
+* [نقطة نهاية Prometheus](/ar/products/cloud/features/monitoring/prometheus) — تصدير المقاييس إلى Grafana أو Datadog أو غيرهما من الأدوات المتوافقة مع Prometheus

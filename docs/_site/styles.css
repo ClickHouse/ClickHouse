@@ -1946,6 +1946,25 @@ html:not(.dark) .prose a:not(.card):not(.card *):not(.ch-product-availability *)
     opacity: 1;
 }
 
+/* Mintlify's list link styling can override the base prose selector in dark
+   mode. Match list items explicitly so links keep the same yellow default and
+   acquire an underline only on hover. */
+.dark .prose li a:not(.card):not(.card *),
+:is(.dark) .prose li a:not(.card):not(.card *) {
+    color: #FAFF69 !important;
+    text-decoration: none !important;
+}
+.dark .prose li a:not(.card):not(.card *) strong,
+:is(.dark) .prose li a:not(.card):not(.card *) strong {
+    color: inherit !important;
+}
+.dark .prose li a:not(.card):not(.card *):hover,
+:is(.dark) .prose li a:not(.card):not(.card *):hover {
+    color: #FAFF69 !important;
+    text-decoration: underline !important;
+    opacity: 1;
+}
+
 /* Override yellow links for product selector items */
 .dark .product-selector-radio-group a,
 .dark [role="radiogroup"] a,

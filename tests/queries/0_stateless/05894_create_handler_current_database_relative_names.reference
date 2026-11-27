@@ -1,0 +1,22 @@
+--- 1. a parameterized view
+(UNKNOWN_FUNCTION) The query is checked without a current database
+OK
+public
+--- 2. ALTER is checked the same way, and a refused ALTER leaves the handler as it was
+(UNKNOWN_FUNCTION) The query is checked without a current database
+public
+OK
+public!
+--- 3. a dictionary
+(ACCESS_DENIED) The query is checked without a current database
+OK
+public
+--- 4. the tables in the query of the view table function are qualified with the database of the author
+OK
+public
+--- 5. a table name is qualified with the database of the author
+OK
+public
+--- 6. a user with full access is not restricted: the handler runs with the privileges and the database of the request
+public
+secret

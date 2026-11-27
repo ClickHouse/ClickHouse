@@ -1,17 +1,17 @@
 ---
 sidebarTitle: 'BigQuery para ClickHouse'
 slug: /integrations/google-dataflow/templates/bigquery-to-clickhouse
-description: 'Você pode ingerir dados do BigQuery no ClickHouse usando o template do Google Dataflow'
+description: 'Você pode ingerir dados do BigQuery no ClickHouse usando o Template do Google Dataflow'
 title: 'Template do Dataflow: BigQuery para ClickHouse'
 doc_type: 'guide'
 keywords: ['Dataflow', 'BigQuery']
 ---
 
-O template do BigQuery para o ClickHouse é um pipeline em lote que faz a ingestão de dados de uma tabela do BigQuery para uma tabela no ClickHouse.
-O template pode ler a tabela inteira ou filtrar registros específicos usando uma consulta SQL fornecida.
+O Template do BigQuery para ClickHouse é um pipeline em lote que faz a ingestão de dados de uma tabela do BigQuery para uma tabela no ClickHouse.
+O Template pode ler a tabela inteira ou filtrar registros específicos usando uma consulta SQL fornecida.
 
 <div id="pipeline-requirements">
-  ## Requisitos do pipeline
+  ## Requisitos do pipeline {#pipeline-requirements}
 </div>
 
 * A tabela de origem no BigQuery deve existir.
@@ -19,7 +19,7 @@ O template pode ler a tabela inteira ou filtrar registros específicos usando um
 * O host do ClickHouse deve estar acessível a partir das máquinas worker do Dataflow.
 
 <div id="template-parameters">
-  ## Parâmetros do template
+  ## Parâmetros do template {#template-parameters}
 </div>
 
 <br />
@@ -50,7 +50,7 @@ O template pode ler a tabela inteira ou filtrar registros específicos usando um
 </Note>
 
 <div id="source-and-target-tables-schema">
-  ## Esquema das tabelas de origem e de destino
+  ## Esquema das tabelas de origem e de destino {#source-and-target-tables-schema}
 </div>
 
 Para carregar corretamente o conjunto de dados do BigQuery no ClickHouse, o pipeline executa um processo de inferência de colunas com as seguintes fases:
@@ -65,7 +65,7 @@ Para carregar corretamente o conjunto de dados do BigQuery no ClickHouse, o pipe
 </Warning>
 
 <div id="data-types-mapping">
-  ## Mapeamento de tipos de dados
+  ## Mapeamento de tipos de dados {#data-types-mapping}
 </div>
 
 Os tipos do BigQuery são convertidos com base na definição da sua tabela no ClickHouse. Portanto, a tabela acima mostra o
@@ -81,15 +81,13 @@ mapeamento recomendado que você deve ter na sua tabela ClickHouse de destino (p
 | [**Tipos Numeric - Integer**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types) | [**Tipos Integer**](/pt-BR/reference/data-types/int-uint) | No BigQuery, todos os tipos Int (`INT`, `SMALLINT`, `INTEGER`, `BIGINT`, `TINYINT`, `BYTEINT`) são aliases de `INT64`. Recomendamos que você defina no ClickHouse o tamanho de inteiro adequado, pois o modelo converterá a coluna com base no tipo de coluna definido (`Int8`, `Int16`, `Int32`, `Int64`). O modelo também converterá tipos Int sem sinal, se forem usados na tabela do ClickHouse (`UInt8`, `UInt16`, `UInt32`, `UInt64`). |
 | [**Tipos Numeric - Float**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types)   | [**Tipos Float**](/pt-BR/reference/data-types/float)      | Tipos compatíveis no ClickHouse: `Float32` e `Float64`                                                                                                                                                                                                                                                                                                                                                                                       |
 
-<div id="running-the-template">
-  ## Executando o template
-</div>
+## Executando o Template {#running-the-template}
 
-O template do BigQuery para o ClickHouse pode ser executado pela Google Cloud CLI.
+O Template do BigQuery para ClickHouse pode ser executado pela Google Cloud CLI.
 
 <Note>
   Revise este documento e, em especial, as seções acima para entender completamente os requisitos de configuração
-  e os pré-requisitos do template.
+  e os pré-requisitos do Template.
 </Note>
 
 <Tabs>
@@ -97,34 +95,25 @@ O template do BigQuery para o ClickHouse pode ser executado pela Google Cloud CL
     Faça login no Google Cloud Console e procure por DataFlow.
 
     1. Clique no botão `CREATE JOB FROM TEMPLATE`
+
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![console do DataFlow](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
-
-       </Frame>
-
+         <Frame>
+           ![console do DataFlow](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
+         </Frame>
        </div>
-    2. Quando o formulário do template abrir, informe um nome para o job e selecione a região desejada.
+    2. Quando o formulário do Template abrir, informe um nome para o job e selecione a região desejada.
+
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![formulário inicial do template do DataFlow](/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp)
-
-       </Frame>
-
+         <Frame>
+           ![formulário inicial do Template do DataFlow](/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp)
+         </Frame>
        </div>
-    3. No campo `DataFlow Template`, digite `ClickHouse` ou `BigQuery` e selecione o template `BigQuery to ClickHouse`
+    3. No campo `DataFlow Template`, digite `ClickHouse` ou  `BigQuery` e selecione o Template `BigQuery to ClickHouse`
+
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Selecionar template BigQuery para ClickHouse](/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Selecionar Template BigQuery para ClickHouse](/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp)
+         </Frame>
        </div>
     4. Depois de selecionado, o formulário será expandido para que você possa fornecer detalhes adicionais:
        * A URL JDBC do servidor ClickHouse, no formato `jdbc:clickhouse://host:port/schema`.
@@ -139,28 +128,24 @@ O template do BigQuery para o ClickHouse pode ser executado pela Google Cloud CL
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![formulário expandido do template BigQuery para ClickHouse](/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp)
-
-    </Frame>
-
+      <Frame>
+        ![formulário expandido do Template BigQuery para ClickHouse](/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp)
+      </Frame>
     </div>
 
     5. Personalize e adicione quaisquer configurações relacionadas ao BigQuery/ClickHouseIO, conforme detalhado na
-       seção [Parâmetros do template](#template-parameters)
+       seção [Parâmetros do Template](#template-parameters)
   </Tab>
 
   <Tab title="Google Cloud CLI">
-    ### Instale e configure a CLI `gcloud`
+### Instale e configure a CLI `gcloud` {#install--configure-gcloud-cli}
 
     * Se ainda não estiver instalada, instale a [CLI `gcloud`](https://cloud.google.com/sdk/docs/install).
     * Siga a seção `Before you begin`
       deste [guia](https://cloud.google.com/dataflow/docs/guides/templates/using-flex-templates#before-you-begin) para configurar
-      os parâmetros, ajustes e permissões necessários para executar o template do DataFlow.
+      os parâmetros, ajustes e permissões necessários para executar o Template do DataFlow.
 
-    ### Executar o comando
+### Executar o comando {#run-command}
 
     Use o comando [`gcloud dataflow flex-template run`](https://cloud.google.com/sdk/gcloud/reference/dataflow/flex-template/run)
     para executar um job do Dataflow usando o Flex Template.
@@ -173,14 +158,14 @@ O template do BigQuery para o ClickHouse pode ser executado pela Google Cloud CL
      --parameters inputTableSpec="<bigquery table id>",jdbcUrl="jdbc:clickhouse://<clickhouse host>:<clickhouse port>/<schema>?ssl=true&sslmode=NONE",clickHouseUsername="<username>",clickHousePassword="<password>",clickHouseTable="<clickhouse target table>"
     ```
 
-    ### Detalhamento do comando
+### Detalhamento do comando {#command-breakdown}
 
     * **Nome do job:** O texto após a palavra-chave `run` é o nome exclusivo do job.
-    * **Arquivo do template:** O arquivo JSON especificado por `--template-file-gcs-location` define a estrutura do template e
+    * **Arquivo do Template:** O arquivo JSON especificado por `--template-file-gcs-location` define a estrutura do Template e
       os detalhes dos parâmetros aceitos. O caminho de arquivo mencionado é público e está pronto para uso.
     * **Parâmetros:** Os parâmetros são separados por vírgulas. Para parâmetros baseados em string, coloque os valores entre aspas duplas.
 
-    ### Resposta esperada
+### Resposta esperada {#expected-response}
 
     Após executar o comando, você deverá ver uma resposta semelhante a esta:
 
@@ -197,29 +182,23 @@ O template do BigQuery para o ClickHouse pode ser executado pela Google Cloud CL
   </Tab>
 </Tabs>
 
-<div id="monitor-the-job">
-  ### Monitore o job
-</div>
+### Monitore o job {#monitor-the-job}
 
 Acesse a [aba Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs) no Google Cloud Console para
 monitorar o status do job. Você verá os detalhes do job, incluindo o progresso e eventuais erros:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Console do Dataflow mostrando um job do BigQuery para o ClickHouse em execução](/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp)
-
-</Frame>
-
+  <Frame>
+    ![Console do DataFlow mostrando um job BigQuery para ClickHouse em execução](/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp)
+  </Frame>
 </div>
 
 <div id="troubleshooting">
-  ## Solução de problemas
+  ## Solução de problemas {#troubleshooting}
 </div>
 
 <div id="code-241-dbexception-memory-limit-total-exceeded">
-  ### Erro de limite de memória (total) excedido (código 241)
+  ### Erro de limite de memória (total) excedido (código 241) {#code-241-dbexception-memory-limit-total-exceeded}
 </div>
 
 Esse erro ocorre quando o ClickHouse fica sem memória ao processar grandes lotes de dados. Para resolver esse problema:
@@ -228,7 +207,7 @@ Esse erro ocorre quando o ClickHouse fica sem memória ao processar grandes lote
 * Reduza o tamanho do lote: ajuste o tamanho do lote na configuração do job do Dataflow para enviar fragmentos menores de dados ao ClickHouse, reduzindo o consumo de memória por lote. Essas mudanças podem ajudar a equilibrar o uso de recursos durante a ingestão de dados.
 
 <div id="template-source-code">
-  ## Código-fonte do template
+  ## Código-fonte do template {#template-source-code}
 </div>
 
 O código-fonte do template está disponível em:

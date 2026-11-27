@@ -1598,7 +1598,7 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
         }
         else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
         {
-            size_t j = array_size + index;
+            size_t j = array_size - common::negateIgnoreOverflow(static_cast<size_t>(index));
             positions[i] = j;
             builder.update(j);
         }
@@ -1630,13 +1630,57 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
 
     /// A copy of the selected elements can be as large as the result, so insert the rows one by one.
     auto res = result_type->createColumn();
-    for (const auto position : positions)
+    auto insert_rows = [&](auto && insert_value, auto && insert_default)
     {
-        if (position == no_element)
-            res->insertDefault();
-        else
-            res->insertFrom(array_elements, position);
+        for (const auto position : positions)
+        {
+            if (position == no_element)
+                insert_default();
+            else
+                insert_value(position);
+        }
+    };
+
+    const auto * nested_arrays = typeid_cast<const ColumnArray *>(&array_elements);
+    auto * result_arrays = typeid_cast<ColumnArray *>(res.get());
+    if (nested_arrays && result_arrays)
+    {
+        const auto & source_values = nested_arrays->getData();
+        const IColumn * leaf = &source_values;
+        if (const auto * nullable = typeid_cast<const ColumnNullable *>(leaf))
+            leaf = &nullable->getNestedColumn();
+
+        /// Inspect the constant input once, rather than classifying every inserted row.
+        /// Composite and dictionary values keep their original range-insertion semantics.
+        if (leaf->isFixedAndContiguous() || typeid_cast<const ColumnString *>(leaf))
+        {
+            const auto & source_offsets = nested_arrays->getOffsets();
+            auto & result_values = result_arrays->getData();
+            auto & result_offsets = result_arrays->getOffsets();
+            /// Keep range insertion for the first nonempty copy and its initial allocation.
+            bool copied_data = false;
+            insert_rows(
+                [&](size_t j)
+                {
+                    const size_t offset = source_offsets[static_cast<ssize_t>(j) - 1];
+                    const size_t length = source_offsets[j] - offset;
+                    if (length == 1 && copied_data)
+                        result_values.insertFrom(source_values, offset);
+                    else if (length)
+                        result_values.insertRangeFrom(source_values, offset, length);
+                    result_offsets.push_back(result_offsets.back() + length);
+                    copied_data |= length != 0;
+                },
+                [&]
+                {
+                    const auto offset = result_offsets.back();
+                    result_offsets.push_back(offset);
+                });
+            return res;
+        }
     }
+
+    insert_rows([&](size_t j) { res->insertFrom(array_elements, j); }, [&] { res->insertDefault(); });
     return res;
 }
 
@@ -2300,7 +2344,7 @@ ColumnPtr FunctionArrayElement<mode>::applyOuterNullMap(
     /// OR-ed in, which keeps the (type, column) pair consistent with `getReturnTypeImpl` and with reading
     /// the subcolumn directly.
     if (canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(element_type) || canContainNull(*element_type))
-        return NullableSubcolumnCreator(null_map_column).create(element_column);
+        return NullableSubcolumnCreator(null_map_column).create(element_column, element_type);
 
     /// A typed path that has no NULL representation at all (e.g. `Array`, `Map`) is default-filled for the
     /// outer-NULL rows, matching the stored subcolumn, instead of leaking the payload hidden under the mask.

@@ -5,7 +5,6 @@
 -- substream, so a tiny index_granularity multiplies the mark count by the
 -- substream count and makes this long test time out on sanitizer builds.
 
-SET enable_json_type = 1;
 set max_block_size = 20000;
 set merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0;
 

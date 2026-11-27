@@ -56,6 +56,10 @@ public:
     /// hides every other positional argument.
     void maskPositionalsAfterCollectionName();
 
+    /// Hides argument `index` (only the value of a `key = value` argument) when it calls a name that is
+    /// neither a table function nor a function.
+    void maskUnknownTableFunction(size_t index, bool argument_is_named = false);
+
     bool tryGetStringFromArgument(size_t arg_idx, String * res, bool allow_identifier = true) const;
     static bool tryGetStringFromArgument(const AbstractFunction::Argument & argument, String * res, bool allow_identifier = true);
 

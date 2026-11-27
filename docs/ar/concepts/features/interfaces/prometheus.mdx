@@ -54,15 +54,18 @@ SET enable_time_series_table = 1;
 
 `<defaults/>` يحافظ على المعالجات المضمنة لنقاط النهاية، مثل `/ping` وطلبات SQL. تتيح البادئة أعلاه الوصول إلى هذه النقاط عبر معالج واحد:
 
-| نقطة النهاية                      | الغرض                            |
-| --------------------------------- | -------------------------------- |
-| `/prometheus/api/v1/write`        | الكتابة عن بُعد في Prometheus    |
-| `/prometheus/api/v1/read`         | القراءة عن بُعد من Prometheus    |
-| `/prometheus/api/v1/query`        | استعلامات PromQL الفورية         |
-| `/prometheus/api/v1/query_range`  | استعلامات PromQL للنطاق          |
-| `/prometheus/api/v1/format_query` | تنسيق تعبير PromQL               |
-| `/prometheus/api/v1/series`       | البيانات الوصفية للسلاسل         |
-| `/prometheus/api/v1/metadata`     | البيانات الوصفية لعائلة المقاييس |
+| نقطة النهاية                             | الغرض                            |
+| ---------------------------------------- | -------------------------------- |
+| `/prometheus/api/v1/write`               | الكتابة عن بُعد في Prometheus    |
+| `/prometheus/api/v1/read`                | القراءة عن بُعد من Prometheus    |
+| `/prometheus/api/v1/query`               | استعلامات PromQL الفورية         |
+| `/prometheus/api/v1/query_range`         | استعلامات PromQL للنطاق          |
+| `/prometheus/api/v1/format_query`        | تنسيق تعبير PromQL               |
+| `/prometheus/api/v1/series`              | البيانات الوصفية لسلاسل البيانات         |
+| `/prometheus/api/v1/labels`              | أسماء الوسوم                     |
+| `/prometheus/api/v1/label/<name>/values` | قيم الوسوم                       |
+| `/prometheus/api/v1/metadata`            | البيانات الوصفية لعائلة المقاييس |
+| `/prometheus/api/v1/federate`            | اتحاد أحدث العينات               |
 
 يحذف المثال `database` و`table` من المعالج. يجب أن يتضمن كل طلب معلمة الاستعلام `table` (باستثناء `/format_query`، الذي يحلل تعبير PromQL المُعطى فقط ولا يحتاج إلى جدول). ويمكنه أيضًا تضمين `database`، أو استخدام اسم جدول مؤهل مثل `prometheus.metrics`، أو حذف قاعدة البيانات لاستخدام `default`. يتيح ذلك لمعالج واحد خدمة عدة جداول `TimeSeries`.
 
@@ -76,7 +79,7 @@ SET enable_time_series_table = 1;
 </handler>
 ```
 
-لا يمكن تجاوز جدول مُهيأ في المعالج باستخدام معاملات الطلب.
+لا يمكن تجاوز جدول مُهيأ في المعالج باستخدام معلمات الطلب.
 
 إعدادات التوجيه والمعالج:
 
@@ -191,10 +194,10 @@ datasources:
 
 يُلحق Grafana المسارَين ‎`/api/v1/query` أو ‎`/api/v1/query_range` بعنوان URL الأساسي هذا، ويضيف `customQueryParameters` إلى كل طلب.
 
-عند استخدام `httpMethod: POST`، يرسل Grafana معلمات الاستعلام في متن الطلب. ويقرأ ClickHouse متن الطلب واستعلام عنوان URL معًا، لذا يظل `customQueryParameters` ساريًا. استخدم `POST` لتعبيرات PromQL الطويلة، لأن عنوان URL له حد أقصى للطول.
+عند استخدام `httpMethod: POST`، يرسل Grafana معلمات الاستعلام في متن الطلب. ويقرأ ClickHouse متن الطلب وسلسلة استعلام URL معًا، لذا يظل `customQueryParameters` ساريًا. استخدم `POST` لتعبيرات PromQL الطويلة، لأن عنوان URL له حد أقصى للطول.
 
 <Note>
-  لا تُنفَّذ إلا نقاط نهاية الاستعلام ‎`/api/v1/query` و‎`/api/v1/query_range` و‎`/api/v1/format_query` ونقاط نهاية البيانات الوصفية ‎`/api/v1/series` و‎`/api/v1/labels` و‎`/api/v1/label/<name>/values` و‎`/api/v1/metadata`. تتطلب ‎`/api/v1/series` محدِّد سلاسل واحدًا على الأقل من `match[]`، وتدعم المعلمات الاختيارية `start` و`end` و`limit`، وتُرجع اتحاد السلاسل المطابقة لكل محدِّد. تقبل ‎`/api/v1/labels` المعلمات نفسها، مع كون `match[]` اختياريًا، وتُرجع أسماء التسميات المرتبة للسلاسل المطابقة (أو لجميع السلاسل عند عدم تقديم أي محددات). وتقبل ‎`/api/v1/label/<name>/values` المعلمات نفسها التي تقبلها ‎`/api/v1/labels` وتُرجع القيم المرتبة لتسمية واحدة، مع إمكانية استخدام `<name>` لإفلات Prometheus بصيغة `U__...` لأسماء التسميات التي تحتوي على محارف خارج النطاق `[a-zA-Z0-9_]`. تغطي نقاط النهاية هذه ما يستخدمه مصدر بيانات Prometheus في Grafana لتصفّح التسميات ومتغيرات القوالب والإكمال التلقائي في أداة إنشاء الاستعلامات.
+  لا تُنفَّذ إلا نقاط نهاية الاستعلام ‎`/api/v1/query` و‎`/api/v1/query_range` و‎`/api/v1/format_query`، ونقاط نهاية البيانات الوصفية ‎`/api/v1/series` و‎`/api/v1/labels` و‎`/api/v1/label/<name>/values` و‎`/api/v1/metadata`، ونقطة نهاية [الاتحاد](#federation) ‎`/api/v1/federate`. تتطلب ‎`/api/v1/series` محدِّد سلاسل بيانات واحدًا على الأقل من `match[]`، وتدعم المعلمات الاختيارية `start` و`end` و`limit`، وتُرجع اتحاد سلاسل البيانات المطابقة لكل محدِّد. تقبل ‎`/api/v1/labels` المعلمات نفسها، مع كون `match[]` اختياريًا، وتُرجع أسماء الوسوم المرتبة لسلاسل البيانات المطابقة (أو لجميع سلاسل البيانات عند عدم تقديم أي محددات). وتقبل ‎`/api/v1/label/<name>/values` المعلمات نفسها التي تقبلها ‎`/api/v1/labels` وتُرجع القيم المرتبة لوسم واحد، مع إمكانية استخدام `<name>` لإفلات Prometheus بصيغة `U__...` لأسماء الوسوم التي تحتوي على محارف خارج النطاق `[a-zA-Z0-9_]`. تغطي نقاط النهاية هذه ما يستخدمه مصدر بيانات Prometheus في Grafana لتصفّح الوسوم ومتغيرات القوالب والإكمال التلقائي في أداة إنشاء الاستعلامات.
 </Note>
 
 ### نقاط إدخال SQL {#sql-entry-points}
@@ -240,6 +243,23 @@ curl --user default:<password> --get \
   --data-urlencode "metric=http_requests_total" \
   --data-urlencode "database=prometheus" \
   --data-urlencode "table=metrics"
+```
+
+## اتحاد المقاييس {#federation}
+
+يدعم ClickHouse نقطة نهاية [الاتحاد في Prometheus](https://prometheus.io/docs/prometheus/latest/federation/) على المسار `/prometheus/api/v1/federate` (أو على أي مسار ينتهي بـ `/federate` يخدمه معالج من النوع `query`). ولكل سلسلة بيانات تطابق المحدِّدات `match[]`، يُعيد أحدث عينة ضمن آخر 5 دقائق بالتنسيق النصي الخاص بـ Prometheus، ليتمكّن خادم Prometheus من سحبها:
+
+```yaml
+scrape_configs:
+  - job_name: clickhouse-federate
+    honor_labels: true
+    scheme: https
+    metrics_path: /prometheus/api/v1/federate
+    params:
+      'match[]': ['{job="node"}']
+      table: ['prometheus.metrics']
+    static_configs:
+      - targets: ['clickhouse.example.com:8443']
 ```
 
 ## قراءة المقاييس عبر القراءة عن بُعد {#remote-read}

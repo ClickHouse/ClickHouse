@@ -23,7 +23,7 @@ O Streamkap permite transmitir cada inserção, atualização e exclusão de ban
 Isso o torna ideal para alimentar dashboards analíticos em tempo real, análises operacionais e modelos de machine learning com dados em tempo real.
 
 <div id="key-features">
-  ## Principais recursos
+  ## Principais recursos {#key-features}
 </div>
 
 * **CDC de streaming em tempo real:** O Streamkap captura alterações diretamente dos logs do seu banco de dados, garantindo que os dados no ClickHouse sejam uma réplica em tempo real da fonte.
@@ -38,13 +38,13 @@ Isso o torna ideal para alimentar dashboards analíticos em tempo real, análise
 * **Entrega resiliente:** A plataforma oferece garantia de entrega de pelo menos uma vez, assegurando a consistência dos dados entre sua fonte e o ClickHouse. Para operações de upsert, ela realiza desduplicação com base na chave primária.
 
 <div id="started">
-  ## Primeiros passos
+  ## Primeiros passos {#started}
 </div>
 
 Este guia oferece uma visão geral de como configurar um pipeline do Streamkap para carregar dados no ClickHouse.
 
 <div id="prerequisites">
-  ### Pré-requisitos
+  ### Pré-requisitos {#prerequisites}
 </div>
 
 * Uma <a href="https://app.streamkap.com/account/sign-up" target="_blank">conta do Streamkap</a>.
@@ -90,13 +90,13 @@ Este guia oferece uma visão geral de como configurar um pipeline do Streamkap p
 </Steps>
 
 <div id="how-it-works-with-clickhouse">
-  ## Como funciona com o ClickHouse
+  ## Como funciona com o ClickHouse {#how-it-works-with-clickhouse}
 </div>
 
 A integração do Streamkap foi desenvolvida para gerenciar com eficiência os dados de CDC no ClickHouse.
 
 <div id="table-engine-data-handling">
-  ### Engine de Tabela e Tratamento de Dados
+  ### Engine de Tabela e Tratamento de Dados {#table-engine-data-handling}
 </div>
 
 Por padrão, o Streamkap usa o modo de ingestão upsert. Quando cria uma tabela no ClickHouse, ele usa o engine ReplacingMergeTree. Esse engine é ideal para lidar com eventos de CDC:
@@ -109,7 +109,7 @@ Por padrão, o Streamkap usa o modo de ingestão upsert. Quando cria uma tabela 
   * Opcionalmente, os registros excluídos podem ser mantidos no ClickHouse para fins analíticos
 
 <div id="metadata-columns">
-  ### Colunas de metadados
+  ### Colunas de metadados {#metadata-columns}
 </div>
 
 O Streamkap adiciona várias colunas de metadados a cada tabela para gerenciar o estado dos dados:
@@ -122,7 +122,7 @@ O Streamkap adiciona várias colunas de metadados a cada tabela para gerenciar o
 | `_STREAMKAP_OFFSET`       | Valor de offset dos logs internos do Streamkap, útil para ordenação e depuração.       |
 
 <div id="query-latest-data">
-  ### Consultando os dados mais recentes
+  ### Consultando os dados mais recentes {#query-latest-data}
 </div>
 
 Como o ReplacingMergeTree processa atualizações e exclusões em segundo plano, uma consulta `SELECT *` simples pode mostrar linhas históricas ou já excluídas antes que uma mesclagem seja concluída. Para obter o estado mais atual dos seus dados, você deve filtrar os registros excluídos e selecionar apenas a versão mais recente de cada linha.
@@ -152,7 +152,7 @@ GROUP BY key;
 Para casos de uso em produção e consultas recorrentes e simultâneas de usuários finais, visões materializadas podem ser usadas para modelar os dados de forma que se adaptem melhor aos padrões de acesso subsequentes.
 
 <div id="further-reading">
-  ## Leitura adicional
+  ## Leitura adicional {#further-reading}
 </div>
 
 * <a href="https://streamkap.com/" target="_blank">Site da Streamkap</a>
