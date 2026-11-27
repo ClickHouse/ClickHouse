@@ -91,6 +91,8 @@ void ReplicatedMergeTreeQueue::clear()
     inserts_by_time.clear();
     mutations_by_znode.clear();
     mutations_by_partition.clear();
+    /// The queue is reinitialized when the replica is restarted, which interrupts the queries waiting for mutations.
+    killed_mutations.clear();
     mutation_pointer.clear();
     mutation_pointer_mtime = 0;
     mutation_pointer_being_written.clear();
@@ -1193,7 +1195,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                     LOG_DEBUG(log, "Removing killed mutation {} from local state.", entry.znode_name);
                     some_active_mutations_were_killed = true;
                     if (isRemovedMutationKilled(it->second))
-                        killed_mutations.insert(entry.znode_name);
+                        rememberKilledMutation(entry.znode_name);
                     if (entry.isAlterMutation())
                     {
                         LOG_DEBUG(log, "Removed alter {} because mutation {} were killed.", entry.alter_version, entry.znode_name);
@@ -1368,7 +1370,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
         {
             decrementMutationsCounters(mutation_counters, entry->commands);
             if (isRemovedMutationKilled(it->second))
-                killed_mutations.insert(entry->znode_name);
+                rememberKilledMutation(entry->znode_name);
         }
 
         if (hasSupportedMetadataMutation(entry->commands))
@@ -2896,6 +2898,13 @@ bool ReplicatedMergeTreeQueue::isMutationKilled(const String & znode_name) const
 {
     std::shared_lock lock(state_mutex);
     return killed_mutations.contains(znode_name);
+}
+
+void ReplicatedMergeTreeQueue::rememberKilledMutation(const String & znode_name)
+{
+    killed_mutations.insert(znode_name);
+    if (killed_mutations.size() > max_remembered_killed_mutations)
+        killed_mutations.erase(killed_mutations.begin());
 }
 
 bool ReplicatedMergeTreeQueue::isRemovedMutationKilled(const MutationStatus & status) const

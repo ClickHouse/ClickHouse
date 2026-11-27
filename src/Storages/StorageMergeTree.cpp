@@ -989,7 +989,7 @@ void StorageMergeTree::alter(
                         if (it != current_mutations_by_version.end())
                         {
                             decrementMutationsCounters(mutation_counters, *it->second.commands);
-                            unfinished_removed_mutation_versions.insert(it->first);
+                            rememberUnfinishedRemovedMutation(it->first);
                             held_version = it->first;
                             held_entry.emplace(std::move(it->second));
                             current_mutations_by_version.erase(it);
@@ -1337,7 +1337,7 @@ Int64 StorageMergeTree::startMutation(PreparedMutationEntry prepared, ContextPtr
             if (it != current_mutations_by_version.end())
             {
                 decrementMutationsCounters(mutation_counters, *it->second.commands);
-                unfinished_removed_mutation_versions.insert(it->first);
+                rememberUnfinishedRemovedMutation(it->first);
                 rolled_back_entry.emplace(std::move(it->second));
                 current_mutations_by_version.erase(it);
             }
@@ -1662,6 +1662,13 @@ bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
 
 }
 
+void StorageMergeTree::rememberUnfinishedRemovedMutation(UInt64 version)
+{
+    unfinished_removed_mutation_versions.insert(version);
+    if (unfinished_removed_mutation_versions.size() > max_remembered_unfinished_removed_mutations)
+        unfinished_removed_mutation_versions.erase(unfinished_removed_mutation_versions.begin());
+}
+
 std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsStatus(
     Int64 mutation_version, std::set<String> * mutation_ids, bool from_another_mutation) const
 {
@@ -1913,7 +1920,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
             if (!it->second.is_done)
             {
                 decrementMutationsCounters(mutation_counters, *it->second.commands);
-                unfinished_removed_mutation_versions.insert(it->first);
+                rememberUnfinishedRemovedMutation(it->first);
             }
 
             to_kill.emplace(std::move(it->second));

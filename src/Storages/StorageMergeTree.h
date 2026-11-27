@@ -180,8 +180,15 @@ private:
     /// greater than this version was either finished or removed before that for another reason.
     UInt64 max_cleared_finished_mutation_version = 0;
     /// Versions of the mutations whose entries were removed before the mutations were finished: killed
-    /// by `KILL MUTATION` or rolled back. There is one element per such mutation, and they are rare.
+    /// by `KILL MUTATION` or rolled back. Only the latest ones are kept, see `rememberUnfinishedRemovedMutation`.
     std::set<UInt64> unfinished_removed_mutation_versions;
+    static constexpr size_t max_remembered_unfinished_removed_mutations = 1000;
+
+    /// Remembers that the entry of the mutation is removed before the mutation is finished.
+    /// The queries waiting for such a mutation are woken up when it happens, so the versions are needed
+    /// for a short time only, and the oldest ones are forgotten to keep the set small.
+    /// Requires `currently_processing_in_background_mutex`.
+    void rememberUnfinishedRemovedMutation(UInt64 version);
 
     /// Unfinished mutations that are required for AlterConversions.
     MutationCounters mutation_counters;

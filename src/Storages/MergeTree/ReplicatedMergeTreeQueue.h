@@ -176,8 +176,13 @@ private:
     std::map<String, MutationStatus> mutations_by_znode;
 
     /// Mutations whose entries were removed before the mutations were finished on this replica,
-    /// that is, the killed ones, see `isMutationKilled`. There is one element per such mutation, and they are rare.
+    /// that is, the killed ones, see `isMutationKilled`. The queries waiting for such a mutation are woken up
+    /// when its entry is removed, so the names are needed for a short time only, and only the latest ones are kept.
     std::set<String> killed_mutations;
+    static constexpr size_t max_remembered_killed_mutations = 1000;
+
+    /// Requires `state_mutex`.
+    void rememberKilledMutation(const String & znode_name);
 
     /// Tells whether a mutation whose entry has just been removed was killed rather than finished on this replica.
     /// A mutation that is not greater than the mutation pointer is considered done even if it is not marked
