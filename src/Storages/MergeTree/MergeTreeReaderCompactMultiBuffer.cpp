@@ -257,7 +257,7 @@ void MergeTreeReaderCompactMultiBuffer::prefetchBeginOfRange(Priority priority)
 try
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeReaderCompactMultiBuffer::prefetchBeginOfRange");
-    if (all_mark_ranges.getNumberOfMarks() == 0)
+    if (!use_prefetch || all_mark_ranges.getNumberOfMarks() == 0)
         return;
 
     adjustLastRightMark(all_mark_ranges.front().begin);

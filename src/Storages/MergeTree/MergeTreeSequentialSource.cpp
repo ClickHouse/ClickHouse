@@ -230,10 +230,9 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         size_t compressed_size = data_part->getTotalColumnsSize().data_compressed;
         size_t bytes_to_prefetch = (*storage.getSettings())[MergeTreeSetting::compact_parts_merge_max_bytes_to_prefetch_part];
 
-        /// A merge also reads a bigger part with one buffer if the part fits into the worst-case memory of the per-column
-        /// buffers, and sends one request instead of one per column per stripe. A mutation reads columns out of the file
-        /// order, and one buffer would read the file again on each backward seek.
-        if (type == Merge && bytes_to_prefetch)
+        /// A bigger part is also read with one buffer if it fits into the worst-case memory of the per-column buffers:
+        /// one request instead of one per column per stripe.
+        if (bytes_to_prefetch)
             bytes_to_prefetch = std::max(bytes_to_prefetch, estimateCompactMultiBufferMemory(*data_part, read_settings));
 
         if (compressed_size <= bytes_to_prefetch)

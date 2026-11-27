@@ -288,9 +288,9 @@ of one column together, then the granules of the next column. With 1 every granu
 columns one after another.
 )", 0) \
     DECLARE(UInt64, compact_parts_merge_max_bytes_to_prefetch_part, 16 * 1024 * 1024, R"(
-Maximal size of a Compact part to read it as a whole into memory during a merge,
-with a single read buffer instead of a buffer per column. A merge also reads a bigger
-part as a whole if the part is not bigger than the worst-case memory of a read buffer
+Maximal size of a Compact part to read it as a whole into memory during a merge or
+mutation, with a single read buffer instead of a buffer per column. A bigger part is also
+read as a whole if the part is not bigger than the worst-case memory of a read buffer
 for each column (the configured buffer size, twice with prefetch). For a part with small
 stripes this can take more memory than reading each column separately, but it sends one
 request instead of one per column per stripe. 0 disables it.
