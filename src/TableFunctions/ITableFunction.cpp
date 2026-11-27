@@ -1,4 +1,7 @@
 #include <Access/ContextAccess.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/IdentifierNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
@@ -119,7 +122,7 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
     auto context_to_use = use_global_context ? context->getGlobalContext() : context;
 
     StoragePtr storage;
-    if (cached_columns.empty())
+    if (!isTableDefinition(cached_columns))
     {
         storage = executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
     }
@@ -323,6 +326,32 @@ void ITableFunction::checkSourceAccessForURI(
     if (subject != escaped_subject && !access->isGrantedWithFilter(flags, source_name, escaped_subject))
         subject.clear();
     access->checkAccessWithFilter(flags, source_name, subject);
+}
+
+void ITableFunction::appendNamedArgumentIndexes(
+    const QueryTreeNodePtr & query_node_table_function, VectorWithMemoryTracking<size_t> & result, const Strings & wrapper_names)
+{
+    const auto & arguments = query_node_table_function->as<TableFunctionNode &>().getArguments().getNodes();
+    auto is_wrapper = [&](const FunctionNode * function_node)
+    { return function_node && std::ranges::find(wrapper_names, function_node->getFunctionName()) != wrapper_names.end(); };
+
+    for (size_t i = 0; i < arguments.size(); ++i)
+        if (is_wrapper(arguments[i]->as<FunctionNode>()))
+            result.push_back(i);
+
+    for (size_t i = arguments.size(); i > 0;)
+    {
+        --i;
+        const auto * function_node = arguments[i]->as<FunctionNode>();
+        if (!function_node)
+            break;
+        if (is_wrapper(function_node))
+            continue;
+        const auto & function_arguments = function_node->getArguments().getNodes();
+        if (function_node->getFunctionName() != "equals" || function_arguments.size() != 2 || !function_arguments[0]->as<IdentifierNode>())
+            break;
+        result.push_back(i);
+    }
 }
 
 }

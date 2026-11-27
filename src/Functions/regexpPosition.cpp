@@ -34,6 +34,8 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// A zero position or occurrence is not valid.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 5}; }
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -153,7 +155,7 @@ public:
             if (col_haystack_vector)
             {
                 const auto & offsets = col_haystack_vector->getOffsets();
-                const size_t row_data_offset = i == 0 ? 0 : offsets[i - 1];
+                const size_t row_data_offset = i == 0 ? 0 : offsets[static_cast<ssize_t>(i) - 1];
                 row_size = offsets[i] - row_data_offset;
                 row_data = reinterpret_cast<const char *>(&col_haystack_vector->getChars()[row_data_offset]);
             }

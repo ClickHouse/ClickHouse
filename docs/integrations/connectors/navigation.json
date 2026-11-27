@@ -185,12 +185,14 @@
             "integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline"
           ]
         },
+        "integrations/connectors/data-ingestion/etl-tools/workos",
         {
           "expanded": false,
           "group": "Community integrations",
           "pages": [
             "integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
             "integrations/connectors/data-ingestion/community-integrations/erathos",
+            "integrations/connectors/data-ingestion/community-integrations/olake-and-clickhouse",
             "integrations/connectors/data-ingestion/community-integrations/sqlflow",
             {
               "group": "Estuary",

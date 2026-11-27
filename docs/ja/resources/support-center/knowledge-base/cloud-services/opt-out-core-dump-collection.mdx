@@ -2,11 +2,11 @@
 date: 2026-02-04
 title: 'クラッシュレポートの収集を無効にする方法'
 description: 'この記事では、ClickHouse Cloud でクラッシュレポートの収集を無効にする方法を説明します'
-tags: ['Cloud 管理']
+tags: ['Managing Cloud']
 ---
 
 <div id="overview">
-  ## 概要
+  ## 概要 {#overview}
 </div>
 
 **2026年2月27日**より、ClickHouse Cloud では、サーバーのクラッシュ発生時にクラッシュレポートの収集を開始します。これは、すべてのユーザーの皆様により信頼性の高いサービスを提供するための取り組みの一環です。
@@ -18,7 +18,7 @@ tags: ['Cloud 管理']
 * サービス利用体験を継続的に改善する
 
 <div id="whats-collected">
-  ## 収集されるもの
+  ## 収集されるもの {#whats-collected}
 </div>
 
 クラッシュが発生すると、クラッシュレポートにはその時点でのサーバーの状態を示すスナップショットが記録されます。ここで明確にしておきたいのは、これにはメモリ上に存在していた次のような機密情報が含まれる可能性があるということです。
@@ -29,7 +29,7 @@ tags: ['Cloud 管理']
 * クラッシュ発生時にメモリ上に存在していたその他のデータ
 
 <div id="how-we-protect-your-data">
-  ### お客様のデータを保護する仕組み
+  ### お客様のデータを保護する仕組み {#how-we-protect-your-data}
 </div>
 
 当社は、このデータのセキュリティを非常に重要視しています。
@@ -39,7 +39,7 @@ tags: ['Cloud 管理']
 * **限定的な保持期間**: データはデバッグに必要な期間だけ保持され、その後は安全に削除されます
 
 <div id="services-automatically-excluded">
-  ## 自動的に除外されるサービス
+  ## 自動的に除外されるサービス {#services-automatically-excluded}
 </div>
 
 次のサービスは、クラッシュレポートの収集対象から自動的に除外されます。
@@ -48,26 +48,20 @@ tags: ['Cloud 管理']
 * **PCI** 準拠が必要なサービス
 * **BYOC** (Bring Your Own Cloud) サービス
 
-<div id="how-to-opt-out">
-  ## オプトアウトする方法
-</div>
+## オプトアウトする方法 {#how-to-opt-out}
 
 クラッシュレポートの収集に参加したくない場合は、以下の手順で簡単にオプトアウトできます。
 
 1. [ClickHouse Cloud Console](https://clickhouse.cloud) にアクセスします
 2. 対象のサービスを選択します
 3. **Settings** タブをクリックします
-4. スクロールして「Share crash reports with ClickHouse」を探します
+4. スクロールして「Share クラッシュレポート with ClickHouse」を探します
 5. このオプションをオフにすると、オプトアウトできます
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Cloud UIでオプトアウトのオプションを見つける場所](/images/crash-reports.png)
-
-</Frame>
-
+  <Frame>
+    ![Cloud UIでオプトアウトのオプションを見つける場所](/images/crash-reports.png)
+  </Frame>
 </div>
 
 <Note>
@@ -75,11 +69,7 @@ tags: ['Cloud 管理']
 </Note>
 
 <div className="ch-image-md">
-
-<Frame>
-
-![クラッシュレポートの収集](/images/cloud/crash-reports-collection.png)
-
-</Frame>
-
+  <Frame>
+    ![クラッシュレポートの収集](/images/cloud/crash-reports-collection.png)
+  </Frame>
 </div>

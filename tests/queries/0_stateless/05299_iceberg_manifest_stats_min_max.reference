@@ -3,7 +3,7 @@ ice_added_column	3	4000
 ice_left	1	1000
 ice_right	1	1000
 ice_types	1	1000
---- T1: ie_join keys chosen by the min/max from the manifests
+--- T1: inequality keys chosen by the min/max from the manifests
 Expect a1 < b1 AND a3 < b3, the two most selective by the min/max; without statistics a1, a2 in syntax order.
 Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
 --- T2: rows, then NDV [NULL fraction] per column
@@ -21,6 +21,8 @@ Expect added 400, null 0.5: 2000 of the 4000 rows count as NULLs; the range 3999
 ice_added_column: 4000 rows
 __table1.added: 400 [null 0.5]
 __table1.id: 4000
+Expect range measured-statistics, without partial-statistics-coverage: the files without bounds hold only NULLs.
+range: measured-statistics
 --- T4: rows of a range condition over half of each range
 Expect about 500 of the 1000 rows: Decimal, DateTime64 in s, Date32 in days, Int64; nullable_int 3/4 non-NULL.
 decimal_value < 125: ice_types: 501 rows

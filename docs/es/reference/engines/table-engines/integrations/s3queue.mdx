@@ -199,6 +199,8 @@ Valor predeterminado: cadena vacía.
 
 URI del bucket de S3 al que se moverán los archivos procesados correctamente, si el destino es otro bucket de S3.
 
+Configurarlo implica el mismo flujo de datos que `INSERT INTO FUNCTION s3('<destination>') SELECT * FROM <table>`, por lo que requiere el permiso `WRITE` sobre la fuente `S3`. Un permiso restringido mediante un filtro de URL no es suficiente, ya que el movimiento escribe claves que se construyen a partir de `after_processing_move_prefix` y de las claves de origen, no a partir del URI. `ALTER TABLE ... MODIFY SETTING` también requiere `SELECT` sobre la table. El destino debe estar permitido en `remote_url_allow_hosts`. El movimiento siempre analiza el URI con detección automática del estilo, tal como lo hace la función de table `s3` con el valor predeterminado de `s3_uri_style`, por lo que ni el ajuste del servidor `uri_style` ni el ajuste de consulta `s3_uri_style` se aplican en este caso.
+
 Valores posibles:
 
 * String.

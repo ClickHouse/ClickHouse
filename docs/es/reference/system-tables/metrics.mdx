@@ -51,6 +51,26 @@ Número de hilos del pool de hilos de Aggregator que están ejecutando una tarea
 
 Número de trabajos en cola o activos en el pool de hilos de Aggregator.
 
+### AIRequestThreads {#airequestthreads}
+
+Número de threads en el pool de hilos de solicitudes de IA.
+
+### AIRequestThreadsActive {#airequestthreadsactive}
+
+Número de threads del pool de hilos de solicitudes de IA que están ejecutando una tarea.
+
+### AIRequestThreadsScheduled {#airequestthreadsscheduled}
+
+Número de trabajos en cola o en ejecución en el pool de hilos de solicitudes de IA.
+
+### AmberConnectionsStored {#amberconnectionsstored}
+
+Número total de sesiones almacenadas en el grupo de sesiones de Amber
+
+### AmberConnectionsTotal {#amberconnectionstotal}
+
+Número total de sesiones: tanto las almacenadas en el grupo como las que se están usando activamente en este momento para Amber
+
 ### ASTFuzzerAccumulatedFragments {#astfuzzeraccumulatedfragments}
 
 Número de fragmentos de AST acumulados por el AST fuzzer del servidor para usarlos en futuras mutaciones.
@@ -383,18 +403,6 @@ Número total de solicitudes de slots de CPU programadas actualmente
 
 Valor del límite blando para el número de slots de CPU
 
-### ConcurrentHashJoinPoolThreads {#concurrenthashjoinpoolthreads}
-
-Número de hilos del pool de hilos para hash join concurrente.
-
-### ConcurrentHashJoinPoolThreadsActive {#concurrenthashjoinpoolthreadsactive}
-
-Número de hilos en el pool de hilos del hash join concurrente que está ejecutando una tarea.
-
-### ConcurrentHashJoinPoolThreadsScheduled {#concurrenthashjoinpoolthreadsscheduled}
-
-Número de trabajos en cola o en ejecución en el pool de hilos para hash join concurrente.
-
 ### ConcurrentQueryAcquired {#concurrentqueryacquired}
 
 Número total de slots de consulta obtenidos
@@ -607,6 +615,14 @@ Número de servidores registrados de Distributed Cache
 
 Número de servidores registrados de caché distribuida en la zona de disponibilidad actual
 
+### DistrCacheServerCommittedTemporaryFiles {#distrcacheservercommittedtemporaryfiles}
+
+Número de archivos temporales committed que pertenecen a este proceso del servidor de Distributed Cache
+
+### DistrCacheServerCommittedTemporaryFilesBytes {#distrcacheservercommittedtemporaryfilesbytes}
+
+Tamaño total en bytes de los archivos temporales committed que pertenecen a este proceso del servidor de Distributed Cache
+
 ### DistrCacheServerConnections {#distrcacheserverconnections}
 
 Número de conexiones abiertas al servidor de ClickHouse desde Distributed Cache
@@ -622,6 +638,18 @@ Número de clientes de S3 almacenados en caché en la caché distribuida
 ### DistrCacheSharedLimitCount {#distrcachesharedlimitcount}
 
 Número de conexiones abiertas según DistributedCache::ConnectionPool::SharedLimit
+
+### DistrCacheTemporaryDataActiveIds {#distrcachetemporarydataactiveids}
+
+Número de ID activos de datos temporales committed
+
+### DistrCacheTemporaryDataConnectionsBypassingPool {#distrcachetemporarydataconnectionsbypassingpool}
+
+Métrica del cliente de Distributed Cache. Número de conexiones abiertas por datos temporales sin pasar por el grupo de conexiones
+
+### DistrCacheTemporaryDataServers {#distrcachetemporarydataservers}
+
+Número de servidores con datos temporales committed
 
 ### DistrCacheUsedConnections {#distrcacheusedconnections}
 
@@ -855,13 +883,13 @@ Número de hilos del pool global de hilos que están ejecutando una tarea.
 
 Número de trabajos en cola o activos en el pool global de hilos.
 
-### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+### GPUExpressionKernelCacheBytes {#gpuexpressionkernelcachebytes}
 
-Tamaño, en bytes, de la caché de los tipos de campo del esquema actual de Iceberg en los catálogos de Glue
+Bytes del código PTX de los kernels que el motor de GPU ha compilado para las expresiones y que mantiene cargados en el dispositivo.
 
-### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+### GPUExpressionKernelCacheCount {#gpuexpressionkernelcachecount}
 
-Número de entradas en la caché de tipos de campo del esquema actual de Iceberg en los catálogos de Glue
+Kernels que el motor de GPU ha compilado para expresiones y que mantiene cargados en el dispositivo.
 
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
@@ -874,6 +902,18 @@ Número de hilos del pool de hilos de HashedDictionary que están ejecutando una
 ### HashedDictionaryThreadsScheduled {#hasheddictionarythreadsscheduled}
 
 Número de trabajos en cola o activos en el pool de hilos de HashedDictionary.
+
+### HashJoinDestroyThreads {#hashjoindestroythreads}
+
+Número de threads del pool de threads para destruir la tabla derecha de un hash join.
+
+### HashJoinDestroyThreadsActive {#hashjoindestroythreadsactive}
+
+Número de threads en el pool de threads para destruir la tabla derecha de un hash join que están ejecutando una tarea.
+
+### HashJoinDestroyThreadsScheduled {#hashjoindestroythreadsscheduled}
+
+Número de trabajos en cola o en ejecución en el pool de hilos para destruir la tabla derecha de un hash join.
 
 ### HiveFilesCacheBytes {#hivefilescachebytes}
 
@@ -943,18 +983,6 @@ Número de hilos del pool de hilos IcebergCompaction que están ejecutando una t
 
 Número de trabajos en cola o activos en el pool de hilos IcebergCompaction.
 
-### IcebergManifestDecodeThreads {#icebergmanifestdecodethreads}
-
-Número de threads en el pool de hilos utilizado para decodificar los archivos de manifiesto de datos de Iceberg.
-
-### IcebergManifestDecodeThreadsActive {#icebergmanifestdecodethreadsactive}
-
-Número de threads del pool de hilos utilizado para decodificar archivos de manifiesto de datos de Iceberg que están ejecutando una task.
-
-### IcebergManifestDecodeThreadsScheduled {#icebergmanifestdecodethreadsscheduled}
-
-Número de jobs en cola o activos en el pool de hilos utilizado para decodificar archivos de manifiesto de datos de Iceberg.
-
 ### IcebergMetadataFilesCacheBytes {#icebergmetadatafilescachebytes}
 
 Tamaño de la caché de metadatos de Iceberg en bytes
@@ -962,6 +990,14 @@ Tamaño de la caché de metadatos de Iceberg en bytes
 ### IcebergMetadataFilesCacheFiles {#icebergmetadatafilescachefiles}
 
 Número de archivos en caché en la caché de metadatos de Iceberg
+
+### IcebergRESTCatalogWarehouseCacheEntries {#icebergrestcatalogwarehousecacheentries}
+
+Número de almacenes en la caché de almacenes del servidor de catálogo REST de Iceberg
+
+### IcebergRESTCatalogWarehouseCacheSize {#icebergrestcatalogwarehousecachesize}
+
+Tamaño de la caché de almacenes del servidor del catálogo REST de Iceberg. Cada almacén cuenta como 1
 
 ### IcebergSchedulePoolSize {#icebergschedulepoolsize}
 
@@ -1326,6 +1362,18 @@ Número de hilos activos usados para confirmar la instantánea
 ### MergeTreeSnapshotCommitThreadsScheduled {#mergetreesnapshotcommitthreadsscheduled}
 
 Número de hilos programados que se usan para confirmar la instantánea
+
+### MergeTreeStatisticsLoaderThreads {#mergetreestatisticsloaderthreads}
+
+Número de threads del pool de threads para la carga de las estadísticas de las partes de datos.
+
+### MergeTreeStatisticsLoaderThreadsActive {#mergetreestatisticsloaderthreadsactive}
+
+Número de threads en el pool de threads para la carga de las estadísticas de las partes de datos que está ejecutando una tarea.
+
+### MergeTreeStatisticsLoaderThreadsScheduled {#mergetreestatisticsloaderthreadsscheduled}
+
+Número de trabajos en cola o en ejecución en el pool de hilos para la carga de las estadísticas de las partes de datos.
 
 ### MergeTreeSubcolumnsReaderThreads {#mergetreesubcolumnsreaderthreads}
 
@@ -2270,6 +2318,18 @@ Número de entradas en las cachés de deduplicación de las tablas de etiquetas 
 ### TotalTemporaryFiles {#totaltemporaryfiles}
 
 Número de archivos temporales creados
+
+### TransactionLogEntries {#transactionlogentries}
+
+Número de entradas en el log de transacciones (`/log`) en su última enumeración
+
+### TransactionsRunning {#transactionsrunning}
+
+Número de transacciones en curso iniciadas en esta réplica
+
+### TransactionWatermarkLag {#transactionwatermarklag}
+
+Instantánea de transacción más reciente menos la marca de agua global; las nuevas transacciones leen con este número de CSN de retraso
 
 ### UDFDriverInvokerThreads {#udfdriverinvokerthreads}
 

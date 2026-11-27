@@ -33,7 +33,7 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 
 **Parâmetros do mecanismo**
 
-* `host:port` — Endereço do servidor MySQL.
+* `host:port` — Endereço do servidor MySQL. O host deve ser um nome de host simples ou um endereço IP e é acessado via TCP na porta informada, inclusive no caso de `localhost`: sockets Unix não são suportados. Outras sintaxes de host da biblioteca cliente do MySQL, como strings de conexão ou listas de hosts separados por vírgula, são rejeitadas.
 * `database` — Nome do banco de dados remoto.
 * `user` — Usuário do MySQL.
 * `password` — Senha do usuário.
@@ -64,13 +64,14 @@ Valor default: `1`.
 
 As credenciais de uma conexão criptografada com o MySQL são passadas como chaves de uma [coleção nomeada](/pt-BR/concepts/features/configuration/server-config/named-collections) (ou como argumentos de chave-valor):
 
-| Parâmetro      | Descrição                                                                           |
-| -------------- | ----------------------------------------------------------------------------------- |
-| `ssl_ca_pem`   | Conteúdo do certificado da CA usado para verificar o certificado do servidor MySQL. |
-| `ssl_cert_pem` | Conteúdo do certificado do cliente, para autenticação baseada em certificado.       |
-| `ssl_key_pem`  | Conteúdo da chave privada associada a `ssl_cert_pem`.                               |
+| Parâmetro            | Descrição                                                                           |
+| -------------------- | ----------------------------------------------------------------------------------- |
+| `ssl_ca_pem`         | Conteúdo do certificado da CA usado para verificar o certificado do servidor MySQL. |
+| `ssl_cert_pem`       | Conteúdo do certificado do cliente, para autenticação baseada em certificado.       |
+| `ssl_key_pem`        | Conteúdo da chave privada associada a `ssl_cert_pem`.                               |
+| `ssl_key_passphrase` | Frase secreta de uma `ssl_key` / `ssl_key_pem` criptografada. Opcional.             |
 
-Os valores correspondem ao conteúdo dos arquivos PEM respectivos, que pode ser copiado para uma coleção nomeada ou para uma consulta. Esses valores são mascarados nos logs e em consultas `SHOW`, assim como as senhas.
+Os valores correspondem ao conteúdo dos arquivos PEM respectivos (e à frase secreta da chave), que pode ser copiado para uma coleção nomeada ou para uma consulta. Esses valores são mascarados nos logs e em consultas `SHOW`, assim como as senhas.
 
 As mesmas credenciais também podem ser fornecidas como caminhos para arquivos no servidor, em `ssl_ca`, `ssl_cert` e `ssl_key` — mas **somente em uma coleção nomeada definida no arquivo de configuração do servidor**; esse valor não pode ser substituído em uma consulta. O servidor abre esses arquivos usando seus próprios privilégios; portanto, aceitar um caminho via SQL permitiria que qualquer usuário capaz de definir uma fonte MySQL sondasse o sistema de arquivos local e se autenticasse com um certificado e uma chave que não tem permissão para ler.
 

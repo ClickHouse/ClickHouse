@@ -1,0 +1,29 @@
+count_implicit_proj	3
+count_pred_implicit_proj	3
+plan_pred_sparsity	0
+plan_pred_sparsity_no_uk	1
+gran_after_insert	8
+gran_after_delete	4
+gran_survivors	5	e
+gran_survivors	6	f
+gran_survivors	7	g
+gran_survivors	8	h
+gran_filtered	1
+po_after_delete	4
+po_all_rows	1	a
+po_all_rows	3	c
+po_all_rows	5	e
+po_all_rows	6	f
+po_grp100	1	a
+po_grp100	5	e
+lazy	96	1	replaced96
+lazy	147	753	y47
+lazy	146	754	y46
+lazy	145	755	y45
+lazy	144	756	y44
+token_search	1
+token_search	3
+plain_scan	1
+plain_scan	3
+dplan_fallback	1	a
+dplan_fallback	3	c

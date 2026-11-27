@@ -91,6 +91,19 @@ S3エンジンで空ファイルのスキップを有効または無効にしま
 * 0 — 空ファイルが要求されたフォーマットと互換性がない場合、`SELECT` は例外をスローします。
 * 1 — 空ファイルの場合、`SELECT` は空の結果を返します。
 
+## azure_skip_hidden_files {#azure_skip_hidden_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新しい設定: 他の Hive エコシステムのリーダーと同様に、glob でファイルを一覧表示する際、glob を含まないプレフィックスより下に `_` または `.` で始まるパスセグメントを持つ ブロブ をスキップします。`partition_strategy = 'hive'` を指定したテーブルでは、このようなパスは常にスキップされます。"}]}]} />
+
+[AzureBlobStorage](/ja/reference/engines/table-engines/integrations/azureBlobStorage) エンジンを使用するテーブルで glob によりファイルを一覧表示する際に、隠しパス (パスのうち glob を含まないプレフィックスより下に、`_` または `.` で始まるパスセグメントを持つ ブロブ) をスキップするかどうかを有効または無効にします。`=` を含むセグメントはパーティションディレクトリ (たとえばパーティション列 `_p` に対する `_p=1`) であり、隠しパスとは見なされません。Hive エコシステムのライター (Hive、Spark、Trino) は、処理中の出力のステージングやマーカーオブジェクトの書き込みをこのようなパス (`_temporary/`、`.spark-staging-<id>/`、`_SUCCESS`) の下で行うため、これらを読み取るとライターのコミットとの間で競合状態が発生します。glob を含まないプレフィックス内のセグメントはチェックされません。`partition_strategy = 'hive'` を指定したテーブルでは、この設定に関係なく隠しパスは常にスキップされます。
+
+設定可能な値:
+
+* 0 — glob に一致するすべての ブロブ を読み取ります。
+* 1 — glob を含まないプレフィックスより下に隠しパスセグメントを持つ ブロブ をスキップします。
+
 ## azure_strict_upload_part_size {#azure_strict_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

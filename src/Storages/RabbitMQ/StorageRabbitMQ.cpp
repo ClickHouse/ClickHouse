@@ -1060,7 +1060,9 @@ void StorageRabbitMQ::publisherCleanupFunc()
 
 void StorageRabbitMQ::scheduleStreamingTasksImpl()
 {
-    streaming_task->schedule();
+    /// Until the setup is done `connectionFunc` keeps retrying it and schedules the streaming task once it succeeds.
+    if (initialized)
+        streaming_task->schedule();
 }
 
 
@@ -1679,7 +1681,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         creator_fn,
         SecretArgumentsSpec{
             /// RabbitMQ(named_collection, rabbitmq_address = '...', rabbitmq_password = '...')
-            .secret_settings = RabbitMQ::SETTINGS_TO_HIDE,
+            .secret_settings = RabbitMQ::settingsToHide(),
             .settings_as_arguments = true,
             .custom = [](FunctionSecretArgumentsFinder & finder) { finder.maskPositionalsAfterCollectionName(); },
         },

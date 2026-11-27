@@ -24,6 +24,7 @@
 #include <Interpreters/Context.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 
 #include <Common/Macros.h>
@@ -322,7 +323,7 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         /// As for the `AzureBlobStorage` table engine, a connection string is described by its blob service URL.
         String description = std::holds_alternative<AzureBlobStorage::ConnectionString>(params.auth_method)
             ? params.getConnectionURLWithoutQuery()
-            : params.endpoint.getServiceEndpoint().substr(0, params.endpoint.getServiceEndpoint().find_first_of("?#"));
+            : String(stripQueryAndFragment(params.endpoint.getServiceEndpoint()));
 
         return std::make_shared<AzureObjectStorage>(
             name,

@@ -14,9 +14,9 @@
 #include <zstd.h>
 #include <zstd_errors.h>
 
-#if defined(OS_DARWIN) && defined(__GNUC__)
+#if defined(OS_DARWIN)
 #   include <machine/endian.h>
-#elif defined(OS_FREEBSD) && defined(__GNUC__)
+#elif defined(OS_FREEBSD)
 #   include <machine/endian.h>
 #   include <sys/endian.h>
 #else

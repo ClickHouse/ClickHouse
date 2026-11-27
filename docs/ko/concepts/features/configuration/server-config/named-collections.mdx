@@ -501,13 +501,17 @@ SELECT * FROM remote(remote1, database = default, table = test);
 
 ### 소스로 ClickHouse를 사용하는 딕셔너리에서 이름이 지정된 컬렉션을 사용하는 예시 {#example-of-using-named-collections-with-a-dictionary-with-source-clickhouse}
 
+<Note title="ClickHouse Cloud">
+  ClickHouse 테이블(table)에서 데이터를 읽는 딕셔너리를 생성할 때는 `SOURCE` 절에 전용 사용자의 사용자 이름과 비밀번호를 지정하십시오. 해당 사용자에게는 원본 테이블에 대한 `SELECT` 권한(permission)이 있어야 합니다. 자세한 내용은 [ClickHouse 딕셔너리 소스 예시](/ko/reference/statements/create/dictionary/sources/clickhouse)를 참고하십시오.
+</Note>
+
 ```sql
 CREATE NAMED COLLECTION remote_dict AS
 host = 'localhost',
 port = 9000,
 database = 'default',
-user = 'default',
-password = '';
+user = 'dict_reader',
+password = 'dict_reader_password';
 
 CREATE DICTIONARY dict(a Int64, b String)
 PRIMARY KEY a
@@ -552,6 +556,22 @@ kafka_max_block_size = '1048576';
     </named_collections>
 </clickhouse>
 ```
+
+### TLS 및 클라이언트 인증서 {#kafka-mtls-named-collection}
+
+TLS 경로와 `ssl.key.password`는 Kafka 테이블 엔진의 `kafka_*` 설정이 아니라 [확장 librdkafka 설정](/ko/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections)입니다. 이름이 지정된 컬렉션에서는 DDL에서 `kafka.` 접두사를 붙여 지정하거나(예: `kafka.ssl_ca_location`), XML에서 `<kafka>` 아래에 지정합니다(예: `<ssl_ca_location>`). `ENGINE = Kafka(collection)`에서 해당 컬렉션을 사용하면 서버의 전역 `<kafka>` 구성은 머지되지 않습니다.
+
+```sql
+CREATE NAMED COLLECTION kafka_mtls AS
+    kafka.security_protocol = 'SASL_SSL',
+    kafka.sasl_mechanism = 'PLAIN',
+    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
+    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
+    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_key_password = 'secret';
+```
+
+`kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format`, `kafka_sasl_username`, `kafka_sasl_password` 값을 테이블마다 다르게 지정해야 하는 경우 테이블 `SETTINGS`를 사용하세요. 전체 `CREATE TABLE` 예시는 [이름이 지정된 컬렉션을 사용한 TLS 및 SASL](/ko/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections)을 참고하세요.
 
 ### OAUTHBEARER/OIDC 인증 {#oauthbearer-oidc-authentication}
 

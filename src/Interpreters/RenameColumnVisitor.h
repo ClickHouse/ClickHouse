@@ -21,7 +21,7 @@ struct RenameColumnData
     /// which refers to the key fields by id.
     bool rename_subcolumns = false;
     /// With `rename_subcolumns`: the columns of the table. A name `column_name.x` is renamed only if it is not a column of
-    /// the table itself.
+    /// the table itself or a subcolumn of one.
     const ColumnsDescription * columns = nullptr;
 
     void visit(ASTIdentifier & identifier, ASTPtr & ast) const;

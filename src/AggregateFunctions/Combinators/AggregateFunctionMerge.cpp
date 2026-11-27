@@ -62,13 +62,6 @@ AggregateFunctionMerge::AggregateFunctionMerge(const AggregateFunctionPtr & nest
         argument_func->getStateType()->getName());
 }
 
-bool AggregateFunctionMerge::canMergeStatesOf(const IAggregateFunction & nested, const IAggregateFunction & argument_func)
-{
-    if (nested.haveSameStateRepresentation(argument_func))
-        return true;
-    return argument_func.getName() == nested.getName() && nested.canMergeStateFromDifferentVariant(argument_func);
-}
-
 void AggregateFunctionMerge::add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const
 {
     const auto & column = assert_cast<const ColumnAggregateFunction &>(*columns[0]);

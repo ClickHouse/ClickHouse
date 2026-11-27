@@ -156,12 +156,7 @@ snapshot of the table, that is without `iceberg_snapshot_id`, `iceberg_timestamp
 only once it has run for two thirds of this time, so the queries shorter than that put no lease objects to the object storage. Time
 travel queries write their lease before they start reading. Set to 0 to make every query write its lease before it starts reading.
 )", 0) \
-    DECLARE(UInt64, iceberg_compaction_commit_batch_size, 100, R"(
-Per-table counterpart of the query-level setting of the same name: number of merged data files accumulated before compaction
-publishes them in a new snapshot.
-Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
-)", 0) \
-    DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 100, R"(
+    DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
 Per-table counterpart of the query-level setting of the same name: max number of data files merged by one compaction merge.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
 )", 0) \
@@ -199,7 +194,8 @@ Stored in the table definition, so it survives a server restart. Falls back to t
     MAKE_OBSOLETE(M, Bool, allow_dynamic_metadata_for_data_lakes, true) \
     MAKE_OBSOLETE(M, UInt64, iceberg_compaction_max_rows_in_data_file, std::numeric_limits<UInt64>::max()) \
     MAKE_OBSOLETE(M, UInt64, iceberg_compaction_max_bytes_in_data_file, 512_MiB) \
-    MAKE_OBSOLETE(M, UInt64, iceberg_data_file_size_upper_threshold_compaction, 512_MiB * 9 / 5)
+    MAKE_OBSOLETE(M, UInt64, iceberg_data_file_size_upper_threshold_compaction, 512_MiB * 9 / 5) \
+    MAKE_OBSOLETE(M, UInt64, iceberg_compaction_commit_batch_size, 100)
 // clang-format on
 
 STORAGE_DATA_LAKE_STORAGE_SETTINGS_SUPPORTED_TYPES(DataLakeStorageSettings, DECLARE_SETTING_TRAIT)
