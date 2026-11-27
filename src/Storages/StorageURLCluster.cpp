@@ -68,13 +68,14 @@ StorageURLCluster::StorageURLCluster(
         ColumnsDescription columns;
         if (format_name == "auto")
             std::tie(columns, format_name) = StorageURL::getTableStructureAndFormatFromData(
-                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context, glob_caller, /*check_redirect_access=*/ true);
+                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, configuration_.storageHTTPMethod(), std::nullopt, context, glob_caller, /*check_redirect_access=*/ true);
         else
             columns = StorageURL::getTableStructureFromData(
                 format_,
                 uri,
                 chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method),
                 headers,
+                configuration_.storageHTTPMethod(),
                 std::nullopt,
                 context,
                 glob_caller,
@@ -89,6 +90,7 @@ StorageURLCluster::StorageURLCluster(
                            uri,
                            chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method),
                            headers,
+                           configuration_.storageHTTPMethod(),
                            std::nullopt,
                            context,
                            glob_caller,
