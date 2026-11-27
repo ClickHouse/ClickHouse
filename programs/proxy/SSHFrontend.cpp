@@ -200,14 +200,16 @@ size_t writeWithinWindow(ssh_channel channel, const char * data, size_t size, bo
 }
 
 /// Forwards data from the source channel to @p destination, keeping what does not fit in its window.
-/// Returns the number of bytes consumed from the source.
-size_t forward(PendingOutput & out, ssh_channel destination, const char * data, size_t size, bool is_stderr)
+/// Returns the number of bytes consumed from the source: what does not fit in the bound of the pending output
+/// is left to the source, unless @p keep_all is set for data that is already taken from it.
+size_t forward(PendingOutput & out, ssh_channel destination, const char * data, size_t size, bool is_stderr, bool keep_all = false)
 {
     size_t consumed = 0;
     if (out.segments.empty())
         consumed = writeWithinWindow(destination, data, size, is_stderr);
 
-    const size_t keep = std::min(size - consumed, max_pending_output_bytes - std::min(out.bytes, max_pending_output_bytes));
+    const size_t room = keep_all ? size : max_pending_output_bytes - std::min(out.bytes, max_pending_output_bytes);
+    const size_t keep = std::min(size - consumed, room);
     if (keep)
     {
         out.segments.emplace_back(is_stderr, String(data + consumed, keep));
@@ -253,13 +255,15 @@ bool pump(PendingOutput & out, ssh_channel source, ssh_channel destination, bool
                 break;
             }
             /// The data callbacks may run within the read for newly arrived data: they take the data from
-            /// the front of the same buffer, so the order is preserved.
+            /// the front of the same buffer, so the order is preserved. They may also fill the pending output
+            /// up to its bound, while the bytes that the read returns are already removed from the channel:
+            /// all of them are kept, which exceeds the bound by at most this buffer.
             char buffer[16384];
             const int read = ssh_channel_read_nonblocking(source, buffer,
                 static_cast<uint32_t>(std::min(sizeof(buffer), max_pending_output_bytes - out.bytes)), is_stderr);
             if (read <= 0)
                 break;
-            forward(out, destination, buffer, read, is_stderr);
+            forward(out, destination, buffer, read, is_stderr, /*keep_all=*/ true);
             if (backend)
             {
                 if (to_client)
