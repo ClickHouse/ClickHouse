@@ -1,0 +1,22 @@
+ARRAY JOIN
+10	2	1
+
+10	6	0
+DISTINCT
+2	1
+
+6	0
+another expression reads the filter
+2	0
+
+6	1
+the filter is Bool
+2	true
+
+6	false
+the part that stays above is a selected column
+1	2	1
+
+0	6	0
+plan
+1
