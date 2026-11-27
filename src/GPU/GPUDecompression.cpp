@@ -7,6 +7,10 @@
 
 #include <Common/Exception.h>
 
+#include <Compression/CompressionCodecGDeflate.h>
+#include <base/unaligned.h>
+
+#include <nvcomp/gdeflate.h>
 #include <nvcomp/lz4.h>
 #include <nvcomp/zstd.h>
 
@@ -15,6 +19,7 @@
 
 namespace DB::ErrorCodes
 {
+    extern const int CANNOT_DECOMPRESS;
     extern const int GPU_ERROR;
 }
 
@@ -41,6 +46,9 @@ nvcompStatus_t decompressTempBytes(
         case GPUCodec::ZSTD:
             return nvcompBatchedZstdDecompressGetTempSize(
                 num_blocks, max_decompressed, nvcompBatchedZstdDecompressDefaultOpts, temp_bytes, decompressed_total, stream.get());
+        case GPUCodec::GDEFLATE:
+            return nvcompBatchedGdeflateDecompressGetTempSize(
+                num_blocks, max_decompressed, nvcompBatchedGdeflateDecompressDefaultOpts, temp_bytes, decompressed_total, stream.get());
     }
     throw Exception(ErrorCodes::GPU_ERROR, "Unknown GPU codec {}", static_cast<int>(codec));
 }
@@ -86,6 +94,19 @@ nvcompStatus_t decompressAsync(
                 nvcompBatchedZstdDecompressDefaultOpts,
                 device_statuses,
                 stream.get());
+        case GPUCodec::GDEFLATE:
+            return nvcompBatchedGdeflateDecompressAsync(
+                device_compressed_ptrs,
+                device_compressed_bytes,
+                device_decompressed_bytes,
+                device_actual_bytes,
+                num_blocks,
+                device_temp,
+                temp_bytes,
+                device_value_ptrs,
+                nvcompBatchedGdeflateDecompressDefaultOpts,
+                device_statuses,
+                stream.get());
     }
     throw Exception(ErrorCodes::GPU_ERROR, "Unknown GPU codec {}", static_cast<int>(codec));
 }
@@ -98,6 +119,47 @@ T * arrayAt(char * base, size_t & offset, size_t count)
     return values;
 }
 
+}
+
+void addCompressedBlocksOf(
+    GPUCodec codec, std::string_view payload, size_t offset, size_t decompressed_bytes, std::vector<CompressedBlock> & blocks)
+{
+    if (codec != GPUCodec::GDEFLATE)
+    {
+        blocks.push_back({.offset = offset, .compressed_bytes = payload.size(), .decompressed_bytes = decompressed_bytes});
+        return;
+    }
+
+    /// The number of chunks, the compressed size of each, then the chunks, each from a multiple of 4 bytes.
+    constexpr size_t chunk_bytes = CompressionCodecGDeflate::chunk_bytes;
+    constexpr size_t chunk_alignment = 4;
+    if (payload.size() < sizeof(UInt32))
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "A GDeflate block of {} bytes", payload.size());
+    const size_t num_chunks = unalignedLoadLittleEndian<UInt32>(payload.data());
+    const size_t header_bytes = sizeof(UInt32) * (1 + num_chunks);
+    if (num_chunks != (decompressed_bytes + chunk_bytes - 1) / chunk_bytes || header_bytes > payload.size())
+        throw Exception(
+            ErrorCodes::CANNOT_DECOMPRESS,
+            "A GDeflate block of {} bytes holds {} chunks, where {} expanded bytes make {}",
+            payload.size(),
+            num_chunks,
+            decompressed_bytes,
+            (decompressed_bytes + chunk_bytes - 1) / chunk_bytes);
+
+    size_t at = header_bytes;
+    for (size_t i = 0; i < num_chunks; ++i)
+    {
+        const size_t compressed_bytes = unalignedLoadLittleEndian<UInt32>(payload.data() + sizeof(UInt32) * (1 + i));
+        if (at + compressed_bytes > payload.size())
+            throw Exception(
+                ErrorCodes::CANNOT_DECOMPRESS, "Chunk {} of a GDeflate block of {} bytes ends at {}", i, payload.size(), at + compressed_bytes);
+        blocks.push_back({
+            .offset = offset + at,
+            .compressed_bytes = compressed_bytes,
+            .decompressed_bytes = std::min(chunk_bytes, decompressed_bytes - i * chunk_bytes),
+        });
+        at = (at + compressed_bytes + chunk_alignment - 1) / chunk_alignment * chunk_alignment;
+    }
 }
 
 size_t decompressedBytesOf(std::span<const CompressedBlock> blocks)
