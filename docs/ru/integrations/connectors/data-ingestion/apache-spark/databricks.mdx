@@ -14,7 +14,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 Коннектор ClickHouse Spark без проблем работает с Databricks. В этом руководстве описаны особенности настройки, установки и использования на платформе Databricks.
 
 <div id="api-selection">
-  ## Выбор API для Databricks
+  ## Выбор API для Databricks {#api-selection}
 </div>
 
 По умолчанию Databricks использует Unity Catalog, который блокирует регистрацию каталога Spark. В этом случае **необходимо** использовать **TableProvider API** (**доступ на основе формата**).
@@ -27,12 +27,10 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 | **Отключен** (No isolation shared) | Catalog API                                  | Требуется кластер с режимом доступа &quot;No isolation shared&quot; |
 
 <div id="installation">
-  ## Установка в Databricks
+  ## Установка в Databricks {#installation}
 </div>
 
-<div id="installation-ui">
-  ### Вариант 1: Загрузка JAR через интерфейс Databricks
-</div>
+### Вариант 1: Загрузка JAR через интерфейс Databricks {#installation-ui}
 
 1. Соберите или [скачайте](https://repo1.maven.org/maven2/com/clickhouse/spark/) runtime JAR-файл:
    ```bash
@@ -52,29 +50,21 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
    * Нажмите **Install**
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Вкладка Libraries в Databricks](/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp)
-
-</Frame>
-
+  <Frame>
+    ![Вкладка Libraries в Databricks](/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Установка библиотеки из тома рабочего пространства](/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp)
-
-</Frame>
-
+  <Frame>
+    ![Установка библиотеки из тома рабочего пространства](/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp)
+  </Frame>
 </div>
 
 4. Перезапустите кластер, чтобы загрузить библиотеку
 
 <div id="installation-cli">
-  ### Вариант 2: Установите через Databricks CLI
+  ### Вариант 2: Установите через Databricks CLI {#installation-cli}
 </div>
 
 ```bash
@@ -88,9 +78,7 @@ databricks libraries install \
   --jar dbfs:/FileStore/jars/clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}-{{ stable_version }}.jar
 ```
 
-<div id="installation-maven">
-  ### Вариант 3: координаты Maven (рекомендуется)
-</div>
+### Вариант 3: координаты Maven (рекомендуется) {#installation-maven}
 
 1. Перейдите в рабочее пространство Databricks:
    * Перейдите в **Compute** → выберите кластер
@@ -105,25 +93,21 @@ com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scal
 ```
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Настройка библиотек Maven в Databricks](/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp)
-
-</Frame>
-
+  <Frame>
+    ![Настройка библиотек Maven в Databricks](/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp)
+  </Frame>
 </div>
 
 3. Нажмите **Install** и перезапустите кластер, чтобы загрузить библиотеку
 
 <div id="tableprovider-api">
-  ## Использование TableProvider API
+  ## Использование TableProvider API {#tableprovider-api}
 </div>
 
 Когда Unity Catalog включен (по умолчанию), **необходимо** использовать TableProvider API (доступ на основе формата), поскольку Unity Catalog блокирует регистрацию каталога Spark. Если вы отключили Unity Catalog, используя кластер с режимом доступа &quot;No isolation shared&quot;, вместо этого можно использовать [Catalog API](/ru/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required).
 
 <div id="reading-data-table-provider">
-  ### Чтение данных
+  ### Чтение данных {#reading-data-table-provider}
 </div>
 
 <Tabs>
@@ -167,7 +151,7 @@ com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scal
 </Tabs>
 
 <div id="writing-data-unity">
-  ### Запись данных
+  ### Запись данных {#writing-data-unity}
 </div>
 
 <Tabs>
@@ -216,11 +200,11 @@ com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scal
 </Note>
 
 <div id="considerations">
-  ## Особенности Databricks
+  ## Особенности Databricks {#considerations}
 </div>
 
 <div id="access-mode">
-  ### Требования к режиму доступа
+  ### Требования к режиму доступа {#access-mode}
 </div>
 
 Коннектор ClickHouse Spark требует режима доступа **Dedicated** (ранее — Single User). Режим доступа **Standard** (ранее — Shared) не поддерживается при включенном Unity Catalog, поскольку в такой конфигурации Databricks блокирует внешние коннекторы DataSource V2.
@@ -233,7 +217,7 @@ com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scal
 | Standard (Shared)       | Отключен      | ✅ Да           |
 
 <div id="secret-management">
-  ### Управление секретами
+  ### Управление секретами {#secret-management}
 </div>
 
 Используйте secret scopes в Databricks для безопасного хранения учетных данных ClickHouse:
@@ -248,7 +232,7 @@ password = dbutils.secrets.get(scope="clickhouse", key="password")
 {/* TODO: Добавить снимок экрана с настройкой secret scopes в Databricks */}
 
 <div id="clickhouse-cloud">
-  ### Подключение к ClickHouse Cloud
+  ### Подключение к ClickHouse Cloud {#clickhouse-cloud}
 </div>
 
 При подключении к ClickHouse Cloud из Databricks:
@@ -257,11 +241,11 @@ password = dbutils.secrets.get(scope="clickhouse", key="password")
 2. Включите **SSL** (`ssl: true`)
 
 <div id="examples">
-  ## Примеры
+  ## Примеры {#examples}
 </div>
 
 <div id="workflow-example">
-  ### Полный пример рабочего процесса
+  ### Полный пример рабочего процесса {#workflow-example}
 </div>
 
 <Tabs>
@@ -352,9 +336,7 @@ password = dbutils.secrets.get(scope="clickhouse", key="password")
   </Tab>
 </Tabs>
 
-<div id="related">
-  ## Связанная документация
-</div>
+## Связанная документация {#related}
 
 * [Руководство по Spark Native Connector](/ru/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - Полная документация по коннектору
 * [Документация по TableProvider API](/ru/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#using-the-tableprovider-api) - Подробная информация о доступе на основе формата

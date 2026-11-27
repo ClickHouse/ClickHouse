@@ -1,0 +1,230 @@
+---
+slug: /clickstack/observability/url-parameters
+title: 'Liens profonds'
+sidebarTitle: 'Liens profonds'
+description: 'Créer des liens directs vers les pages de ClickHouse Observability à l’aide des paramètres de requête d’URL'
+doc_type: 'reference'
+keywords: ['ClickHouse Observability', 'paramètres d’URL', 'paramètres de requête', 'liens profonds', 'permalien', 'interface utilisateur de ClickStack']
+---
+
+Les pages de ClickHouse Observability peuvent être ouvertes au moyen de liens profonds grâce aux paramètres de requête d’URL : vous pouvez ainsi accéder directement à une recherche, à un tableau de bord ou à un panneau précis depuis un système externe (notification d’alerte, runbook, tâche de CI, message de conversation, etc.).
+
+Les exemples de cette page utilisent `<YOUR_CLICKSTACK_URL>`. Remplacez cette valeur par l’URL de base de votre UI d’observability.
+
+<Note>
+  Par souci de lisibilité, les exemples présentent les paramètres de requête sans encodage d’URL. Si vous générez des liens par programmation, encodez en URL la valeur de chaque paramètre de requête.
+</Note>
+
+<Info>
+  **Paramètre d’identifiant de Service Cloud**
+
+  Dans l’UI Cloud, les liens doivent inclure un paramètre `?chcServiceId=` indiquant le service ClickHouse Cloud à charger lorsque l’utilisateur authentifié qui suit le lien a accès à plusieurs services ClickHouse Cloud.
+
+  Exemple : ouvrir la page Recherche sur un Service Cloud spécifique
+
+  ```text
+  https://hyperdx.clickhouse.cloud/search?chcServiceId=abc123
+  ```
+</Info>
+
+## Recherche — `/search` {#search}
+
+La vue de recherche principale pour les logs et les traces. Consultez [Recherche](/fr/clickstack/observability/features/search) pour en savoir plus sur la syntaxe de recherche.
+
+| Paramètre       | Format                                                                     | Description                                                                                                                                                                                              |
+| --------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source`        | string                                                                     | La source dans laquelle effectuer la recherche : accepte soit un ID de source, soit un **nom** de source (par ex. `Logs`). Seules les sources de type Log et Trace sont prises en charge sur cette page. |
+| `where`         | string                                                                     | Texte de la requête de filtrage, en syntaxe Lucene ou SQL (voir `whereLanguage`).                                                                                                                        |
+| `whereLanguage` | `lucene` | `sql`                                                           | Langage de requête dans lequel `where` est écrit.                                                                                                                                                        |
+| `select`        | string                                                                     | Liste de colonnes/expressions SQL à afficher dans le tableau des résultats.                                                                                                                              |
+| `filters`       | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]` | Filtres de facettes structurés, appliqués en plus de `where`.                                                                                                                                            |
+| `orderBy`       | string                                                                     | Expression SQL de tri du tableau des résultats.                                                                                                                                                          |
+| `mode`          | `results` | `delta` | `pattern`                                            | Mode d’analyse actif. `delta` n’est disponible que pour les sources de traces.                                                                                                                           |
+| `isLive`        | `true` | `false`                                                           | Indique si le suivi en direct (live tail) est activé (valeur par défaut : `true`).                                                                                                                       |
+| `traceId`       | string                                                                     | Ouvre directement la vue en cascade des traces pour l’ID de trace indiqué.                                                                                                                               |
+| `from`, `to`    | millisecondes depuis l’époque Unix                                         | Intervalle de temps absolu. S’il est omis, les 15 dernières minutes sont utilisées par défaut.                                                                                                           |
+
+Une recherche enregistrée peut également être ouverte directement via `/search/<savedSearchId>`.
+
+### Exemple : rechercher les erreurs du service `checkout` dans la source `Logs` sur un intervalle de temps donné {#example-search-errors}
+
+```text
+<YOUR_CLICKSTACK_URL>/search?source=Logs&from=1735689600000&to=1735693200000&where=level:error&filters=[{"type":"sql","condition":"ServiceName IN ('checkout')"}]
+```
+
+### Exemple : accéder directement à la vue en cascade d&#39;une trace {#example-search-trace}
+
+```text
+<YOUR_CLICKSTACK_URL>/search?source=Traces&traceId=ba7217967eb90d040b7eb39f97ecc5c4
+```
+
+## Recherches enregistrées — `/search/list` {#saved-searches}
+
+Liste des recherches enregistrées.
+
+| Paramètre | Format | Description                                                          |
+| --------- | ------ | -------------------------------------------------------------------- |
+| `tag`     | string | Limite la liste aux recherches enregistrées portant cette étiquette. |
+
+### Exemple : lister les recherches enregistrées avec l&#39;étiquette `production` {#example-saved-searches-tag}
+
+```text
+<YOUR_CLICKSTACK_URL>/search/list?tag=production
+```
+
+## Tableaux de bord — `/dashboards/<dashboardId>` {#dashboards}
+
+Un tableau de bord enregistré. Omettez `<dashboardId>` (`/dashboards`) pour ouvrir un tableau de bord temporaire non enregistré. Consultez [Tableaux de bord](/fr/clickstack/observability/features/dashboards/overview) pour en savoir plus sur la création de tableaux de bord.
+
+| Paramètre           | Format                                                                                                                              | Description                                                                                                                                   |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `from`, `to`        | millisecondes depuis l’époque Unix                                                                                                  | Intervalle de temps appliqué à toutes les tuiles. S’il est omis, les 15 dernières minutes sont utilisées par défaut.                          |
+| `where`             | string                                                                                                                              | Texte de la requête de filtre au niveau du tableau de bord, appliqué à toutes les tuiles.                                                     |
+| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | Langage de requête dans lequel `where` est écrit.                                                                                             |
+| `filters`           | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]`                                                          | Valeurs structurées des filtres du tableau de bord ; ici, sélection de deux éléments dans la liste déroulante du filtre `ServiceName`.        |
+| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | Taille de bucket pour les tuiles de séries temporelles. `auto` choisit une taille de bucket en fonction de l’intervalle de temps sélectionné. |
+| `highlightedTileId` | string                                                                                                                              | Fait défiler la page jusqu’à une tuile donnée et la met en surbrillance — pratique pour un lien depuis une alerte.                            |
+
+### Exemple : ouvrir un tableau de bord sur un intervalle de temps avec une tuile mise en évidence {#example-dashboard-highlight}
+
+Utile pour pointer, depuis une notification d’alerte, directement vers la tuile qui l’a déclenchée.
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
+```
+
+## Liste des tableaux de bord — `/dashboards/list` {#dashboards-list}
+
+| Paramètre | Format | Description                                         |
+| --------- | ------ | --------------------------------------------------- |
+| `tag`     | string | Filtre la liste des tableaux de bord par étiquette. |
+
+### Exemple : lister les tableaux de bord avec l&#39;étiquette `infra` {#example-dashboards-list-tag}
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/list?tag=infra
+```
+
+## Explorateur de graphiques — `/chart` {#chart-explorer}
+
+Un éditeur de graphiques ad hoc et partageable.
+
+| Paramètre    | Format                             | Description                                                                                                                                                                                      |
+| ------------ | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `config`     | JSON                               | La configuration complète du graphique (source, select, where, type de graphique, etc.). Elle est généralement générée par les liens « Partager » de l’application plutôt que rédigée à la main. |
+| `from`, `to` | millisecondes depuis l’époque Unix | Intervalle de temps. S’il est omis, les 15 dernières minutes sont utilisées par défaut.                                                                                                          |
+
+### Exemple : ouvrir la configuration d&#39;un graphique de latence p99 sur un intervalle de temps {#example-chart-config}
+
+```text
+<YOUR_CLICKSTACK_URL>/chart?granularity=auto&from=1785759381784&to=1785762981785&config={"name":"","select":[{"aggFn":"quantile","aggCondition":"","aggConditionLanguage":"lucene","valueExpression":"Duration","level":0.99,"alias":"p99"}],"where":"","whereLanguage":"lucene","displayType":"line","alignDateRangeToGranularity":true,"source":"68814eb5d40a9d0449afc1f2","connection":"68814b6fd40a9d0449afbe78","groupBy":"ServiceName"}
+```
+
+## Alertes — `/alerts` {#alerts}
+
+Consultez [Alertes](/fr/clickstack/observability/features/alerts) pour en savoir plus sur la création et la gestion des alertes.
+
+| Paramètre | Format | Description                                                     |
+| --------- | ------ | --------------------------------------------------------------- |
+| `search`  | string | Filtre en texte libre sur le nom ou la description de l’alerte. |
+| `tag`     | string | Filtre par étiquette.                                           |
+| `creator` | string | Filtre par nom du créateur de l’alerte.                         |
+
+### Exemple : lister les alertes étiquetées `on-call` {#example-alerts-filter}
+
+```text
+<YOUR_CLICKSTACK_URL>/alerts?tag=on-call
+```
+
+## Relecture de session — `/sessions` {#session-replay}
+
+Navigation dans les sessions et lecture des relectures. Pour plus de détails sur cette fonctionnalité, consultez [Relecture de session](/fr/clickstack/observability/features/session-replay).
+
+| Paramètre       | Format                             | Description                                                                                       |
+| --------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `sessionSource` | string                             | ID ou nom de la source de sessions.                                                               |
+| `where`         | string                             | Texte de la requête de filtrage appliquée à la liste des sessions.                                |
+| `whereLanguage` | `lucene` | `sql`                   | Langage de requête dans lequel `where` est écrit.                                                 |
+| `from`, `to`    | millisecondes depuis l’époque Unix | Intervalle de temps de la liste des sessions. Par défaut, les 15 dernières minutes s’il est omis. |
+| `sid`           | string                             | Ouvre une session donnée à partir de son ID.                                                      |
+| `sfrom`, `sto`  | millisecondes depuis l’époque Unix | Fenêtre temporelle de la session ouverte (à utiliser avec `sid`).                                 |
+
+### Exemple : parcourir les relectures de session sur un intervalle de temps {#example-sessions-time-range}
+
+```text
+<YOUR_CLICKSTACK_URL>/sessions?from=1735689600000&to=1735693200000
+```
+
+### Exemple : ouvrir une relecture de session précise dans sa fenêtre temporelle d&#39;enregistrement {#example-sessions-open}
+
+```text
+<YOUR_CLICKSTACK_URL>/sessions?sid=6712abf0e4b0f2a1c3d4e5f6&sfrom=1735689600000&sto=1735690200000
+```
+
+## Cartographie des services — `/service-map` {#service-map}
+
+Pour plus de détails sur cette fonctionnalité, consultez [Cartographie des services](/fr/clickstack/observability/service-maps).
+
+| Paramètre        | Format                             | Description                                                                                       |
+| ---------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `source`         | string                             | ID ou nom de la source de traces.                                                                 |
+| `samplingFactor` | integer                            | Diviseur d&#39;échantillonnage des traces (`1` = 100 % des traces, `2` = 50 %, `4` = 25 %, etc.). |
+| `from`, `to`     | millisecondes depuis l’époque Unix | Intervalle de temps. S&#39;il est omis, les 15 dernières minutes sont utilisées par défaut.       |
+
+### Exemple : afficher la cartographie des services sur un intervalle de temps {#example-service-map}
+
+```text
+<YOUR_CLICKSTACK_URL>/service-map?from=1735689600000&to=1735693200000
+```
+
+## Services — `/services` {#services}
+
+Tableaux de bord HTTP, base de données et erreurs, par service.
+
+| Paramètre       | Format                                                                     | Description                                                                                      |
+| --------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `tab`           | `http` | `database` | `errors`                                             | Sous-onglet du tableau de bord du service affiché. Par défaut : `http`                           |
+| `source`        | string                                                                     | ID de la source de traces.                                                                       |
+| `service`       | string                                                                     | Nom du service sélectionné.                                                                      |
+| `where`         | string                                                                     | Texte de la requête de filtrage.                                                                 |
+| `whereLanguage` | `lucene` | `sql`                                                           | Langage de requête dans lequel `where` est écrit (`sql` par défaut sur cette page).              |
+| `filters`       | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]` | Valeurs de la barre de filtres du tableau de bord.                                               |
+| `from`, `to`    | millisecondes depuis l’époque Unix                                         | Intervalle de temps. En l’absence de valeur, les 15 dernières minutes sont utilisées par défaut. |
+
+### Exemple : afficher le tableau de bord de la base de données d&#39;un service sur un intervalle de temps {#example-services-database}
+
+```text
+<YOUR_CLICKSTACK_URL>/services?tab=database&service=checkout&from=1735689600000&to=1735693200000
+```
+
+### Exemple : afficher le tableau de bord des erreurs d&#39;un service {#example-services-errors}
+
+```text
+<YOUR_CLICKSTACK_URL>/services?tab=errors&service=payments
+```
+
+## Kubernetes — `/kubernetes` {#kubernetes}
+
+| Paramètre                              | Format                               | Description                                                                                                               |
+| -------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `logSource`, `metricSource`            | string                               | ID des sources de log et de métriques. Si une seule est fournie, l&#39;autre correspond par défaut à une source corrélée. |
+| `tab`                                  | p. ex. `pods`, `nodes`, `namespaces` | Sous-vue active.                                                                                                          |
+| `q`                                    | string                               | Requête Lucene appliquée à la liste des ressources.                                                                       |
+| `podName`, `nodeName`, `namespaceName` | string                               | Ouvre le panneau de détails d&#39;un groupe de conteneurs, d&#39;un nœud ou d&#39;un espace de noms donné.                |
+| `from`, `to`                           | millisecondes depuis l’époque Unix   | Intervalle de temps. S&#39;il est omis, les 15 dernières minutes sont utilisées par défaut.                               |
+
+### Exemple : ouvrir le panneau de détails d&#39;un groupe de conteneurs donné {#example-kubernetes-pod}
+
+```text
+<YOUR_CLICKSTACK_URL>/kubernetes?tab=pods&podName=checkout-7d9f8b5c-2xk9p
+```
+
+## Carnets — `/notebook/<notebookId>` {#notebooks}
+
+Pour en savoir plus sur cette fonctionnalité, consultez [Notebooks IA](/fr/clickstack/observability/notebooks).
+
+### Exemple : ouvrir un notebook précis dans un Service Cloud donné {#example-notebook-open}
+
+```text
+<YOUR_CLICKSTACK_URL>/notebook/64f1c2a1e8b9f3a1b0d2e5c7?chcServiceId=abc123
+```

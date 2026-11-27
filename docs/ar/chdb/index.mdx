@@ -11,7 +11,7 @@ chDB هو محرك SQL OLAP سريع يعمل ضمن العملية، ومدعو
 يمكنك استخدامه عندما تريد الاستفادة من قدرات ClickHouse داخل لغة برمجة من دون الحاجة إلى الاتصال بخادم ClickHouse.
 
 <div id="key-features">
-  ## الميزات الرئيسية
+  ## الميزات الرئيسية {#key-features}
 </div>
 
 * **محرك SQL OLAP يعمل ضمن العملية** - مدعوم من ClickHouse، ولا حاجة إلى تثبيت خادم ClickHouse
@@ -22,7 +22,7 @@ chDB هو محرك SQL OLAP سريع يعمل ضمن العملية، ومدعو
 * **DataStore API** - واجهة برمجة تطبيقات متوافقة مع Pandas مع تحسين SQL، وتدعم أكثر من 630 طريقة
 
 <div id="datastore">
-  ## DataStore: واجهة برمجة تطبيقات متوافقة مع pandas
+  ## DataStore: واجهة برمجة تطبيقات متوافقة مع pandas {#datastore}
 </div>
 
 **جديد!** يوفّر DataStore واجهة برمجة تطبيقات متوافقة مع pandas تجمع بين أسلوب pandas المألوف وأداء ClickHouse.
@@ -35,7 +35,7 @@ chDB هو محرك SQL OLAP سريع يعمل ضمن العملية، ومدعو
 </Tip>
 
 <div id="one-line-migration">
-  ### الترحيل بتعديل سطر واحد
+  ### الترحيل بتعديل سطر واحد {#one-line-migration}
 </div>
 
 ```python
@@ -48,7 +48,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 ```
 
 <div id="performance-highlights">
-  ### أبرز نتائج الأداء
+  ### أبرز نتائج الأداء {#performance-highlights}
 </div>
 
 | العملية           | pandas  | DataStore | التسريع    |
@@ -60,7 +60,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 *اختبارات الأداء على 10 ملايين صف*
 
 <div id="datastore-features">
-  ### ميزات DataStore
+  ### ميزات DataStore {#datastore-features}
 </div>
 
 * **أكثر من 630 طريقة في واجهة برمجة التطبيقات** - 209 طريقة لـ pandas DataFrame، وأكثر من 185 طريقة Accessor
@@ -71,7 +71,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 تعرّف على المزيد: [توثيق DataStore](/ar/chdb/datastore/index)
 
 <div id="what-languages-are-supported-by-chdb">
-  ## ما اللغات التي يدعمها chDB؟
+  ## ما اللغات التي يدعمها chDB؟ {#what-languages-are-supported-by-chdb}
 </div>
 
 يوفّر chDB واجهات الربط اللغوية التالية:
@@ -84,14 +84,14 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 * [C وC++](/ar/chdb/install/c)
 
 <div id="how-do-i-get-started">
-  ## كيف أبدأ؟
+  ## كيف أبدأ؟ {#how-do-i-get-started}
 </div>
 
 * إذا كنت تستخدم [Go](/ar/chdb/install/go) أو [Rust](/ar/chdb/install/rust) أو [NodeJS](/ar/chdb/install/nodejs) أو [Bun](/ar/chdb/install/bun) أو [C and C++](/ar/chdb/install/c)، فاطّلع على الصفحة الخاصة بكل لغة.
-* إذا كنت تستخدم بايثون، فراجع [دليل البدء للمطورين](/ar/chdb/getting-started) أو [دورة chDB حسب الطلب](<https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python>).
+* إذا كنت تستخدم بايثون، فراجع [دليل البدء للمطورين](/ar/chdb/getting-started) أو [دورة chDB حسب الطلب](https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python).
 
 <div id="for-pandas-users">
-  ### لمستخدمي pandas
+  ### لمستخدمي pandas {#for-pandas-users}
 </div>
 
 ابدأ بواجهة برمجة تطبيقات DataStore للحصول على تجربة pandas مألوفة مع أداء ClickHouse:
@@ -103,7 +103,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 * [دليل الأداء](/ar/chdb/guides/pandas-performance) - نصائح للتحسين
 
 <div id="datastore-reference">
-  ### مرجع واجهة برمجة تطبيقات DataStore
+  ### مرجع واجهة برمجة تطبيقات DataStore {#datastore-reference}
 </div>
 
 * [دوال المصنع](/ar/chdb/datastore/factory-methods) - الإنشاء من الملفات وقواعد البيانات والتخزين السحابي
@@ -114,7 +114,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 * [تصحيح الأخطاء](/ar/chdb/debugging/index) - explain()، وتحليل الأداء، والتسجيل
 
 <div id="sql-guides">
-  ### أدلة واجهة برمجة تطبيقات SQL
+  ### أدلة واجهة برمجة تطبيقات SQL {#sql-guides}
 </div>
 
 * [مرجع واجهة برمجة تطبيقات بايثون](/ar/chdb/api/python) - الوثائق الكاملة لواجهة برمجة تطبيقات SQL
@@ -127,7 +127,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 * [استخدام قاعدة بيانات clickhouse-local](/ar/chdb/guides/clickhouse-local)
 
 <div id="an-introductory-video">
-  ## فيديو تمهيدي
+  ## فيديو تمهيدي {#an-introductory-video}
 </div>
 
 شاهد مقدمة موجزة إلى chDB وتعرّف على كيف يتيح لك الاستفادة من قوة ClickHouse داخل بيئة بايثون الخاصة بك:
@@ -139,7 +139,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 </div>
 
 <div id="performance-benchmarks">
-  ## اختبارات الأداء
+  ## اختبارات الأداء {#performance-benchmarks}
 </div>
 
 يوفّر chDB أداءً استثنائيًا في سيناريوهات مختلفة:
@@ -149,27 +149,21 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 * **[DataStore مقابل Pandas](/ar/chdb/datastore/index#performance)** - أسرع بما يصل إلى 20 مرة من pandas في العمليات الشائعة
 
 <div className="ch-image-md">
-
-<Frame>
-
-![نتائج قياس أداء DataFrame](/images/chdb/df_bench.webp)
-
-</Frame>
-
+  <Frame>
+    ![نتائج اختبار أداء DataFrame](/images/chdb/df_bench.webp)
+  </Frame>
 </div>
 
-<div id="about-chdb">
-  ## حول chDB
-</div>
+## حول chDB {#about-chdb}
 
 * اقرأ القصة الكاملة عن نشأة مشروع chDB على [المدونة](https://clickhouse.com/blog/chdb-embedded-clickhouse-rocket-engine-on-a-bicycle)
 * اقرأ عن chDB وحالات استخدامه على [المدونة](https://clickhouse.com/blog/welcome-chdb-to-clickhouse)
-* التحق بـ [دورة chDB عند الطلب](<https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python>)
+* التحق بـ [دورة chDB حسب الطلب](https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python)
 * استكشف chDB في متصفحك باستخدام [أمثلة codapi](https://antonz.org/trying-chdb/)
 * لمزيد من الأمثلة، راجع (https://github.com/chdb-io/chdb/tree/main/examples)
 
 <div id="license">
-  ## الترخيص
+  ## الترخيص {#license}
 </div>
 
 يتوفر chDB بموجب ترخيص Apache، الإصدار 2.0. لمزيد من المعلومات، راجع [LICENSE](https://github.com/chdb-io/chdb/blob/main/LICENSE.txt).

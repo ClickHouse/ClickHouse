@@ -91,6 +91,19 @@ Valores possíveis:
 * 0 — `SELECT` lança uma exceção se o arquivo vazio não for compatível com o formato solicitado.
 * 1 — `SELECT` retorna um resultado vazio para um arquivo vazio.
 
+## azure_skip_hidden_files {#azure_skip_hidden_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração: ignora blobs com um segmento de caminho iniciado por `_` ou `.` abaixo do prefixo sem glob ao listar arquivos por glob, como fazem outros leitores do ecossistema Hive. Tabelas com `partition_strategy = 'hive'` sempre ignoram esses caminhos."}]}]} />
+
+Habilita ou desabilita a omissão de caminhos ocultos ao listar arquivos por glob em tabelas com o motor [AzureBlobStorage](/pt-BR/reference/engines/table-engines/integrations/azureBlobStorage), ou seja, blobs com um segmento de caminho iniciado por `_` ou `.` abaixo do prefixo sem glob do caminho. Um segmento que contém `=` é um diretório de partição (como `_p=1` para uma coluna de partição `_p`) e não é considerado oculto. Os gravadores do ecossistema Hive (Hive, Spark, Trino) usam esses caminhos para fazer staging da saída em andamento e gravar objetos marcadores (`_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), e lê-los cria uma condição de corrida com o commit do gravador. Segmentos dentro do prefixo sem glob não são verificados. Tabelas com `partition_strategy = 'hive'` sempre ignoram caminhos ocultos, independentemente desta configuração.
+
+Valores possíveis:
+
+* 0 — todos os blobs correspondentes ao glob são lidos.
+* 1 — blobs com um segmento de caminho oculto abaixo do prefixo sem glob são ignorados.
+
 ## azure_strict_upload_part_size {#azure_strict_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

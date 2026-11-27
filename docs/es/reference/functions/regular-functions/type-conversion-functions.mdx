@@ -19,31 +19,41 @@ Las funciones `to<type>` y [cast](#CAST) se comportan de manera diferente en alg
 
 Ejemplo:
 
-```sql
+```sql title="Query"
 SELECT
     toTypeName(toLowCardinality('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
+```
 
+```text title="Response"
 ┌─source_type────────────┬─to_type_result_type────┬─cast_result_type─┐
 │ LowCardinality(String) │ LowCardinality(String) │ String           │
 └────────────────────────┴────────────────────────┴──────────────────┘
+```
 
+```sql title="Query"
 SELECT
     toTypeName(toNullable('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
+```
 
+```text title="Response"
 ┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
 │ Nullable(String) │ Nullable(String)    │ String           │
 └──────────────────┴─────────────────────┴──────────────────┘
+```
 
+```sql title="Query"
 SELECT
     toTypeName(toNullable('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
 SETTINGS cast_keep_nullable = 1
+```
 
+```text title="Response"
 ┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
 │ Nullable(String) │ Nullable(String)    │ Nullable(String) │
 └──────────────────┴─────────────────────┴──────────────────┘
@@ -119,6 +129,51 @@ Introducido en: v1.1.0
 Convierte un valor a un tipo de dato especificado.
 A diferencia de la función reinterpret, CAST intenta generar el mismo valor en el tipo de destino.
 Si no es posible, se genera una excepción.
+
+`CAST` elimina el envoltorio `LowCardinality`. En cambio, las funciones `to<Type>` lo conservan.
+Las funciones `to<Type>` también conservan el envoltorio `Nullable`. `CAST` elimina `Nullable` de forma predeterminada, pero
+lo conserva cuando el parámetro de configuración [`cast_keep_nullable`](/es/reference/settings/session-settings/cast#cast_keep_nullable)
+está habilitado.
+
+```sql title="Query"
+SELECT
+    toTypeName(toLowCardinality('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type────────────┬─to_type_result_type────┬─cast_result_type─┐
+│ LowCardinality(String) │ LowCardinality(String) │ String           │
+└────────────────────────┴────────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ String           │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+SETTINGS cast_keep_nullable = 1
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ Nullable(String) │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
 
 Cuando `x` se escribe como un número y `T` es un `Decimal` o un entero de más de 64 bits, los dígitos
 del número se leen directamente con `T`, por lo que no se pierde precisión en el proceso. Sin esto,
@@ -2743,7 +2798,7 @@ Argumentos no admitidos (devuelven `NULL`):
   La función permite una pérdida silenciosa de precisión al convertir a partir de la representación en cadena.
 </Note>
 
-Vea también:
+Véase también:
 
 * [`toBFloat16`](#toBFloat16).
 * [`toBFloat16OrZero`](#toBFloat16OrZero).
