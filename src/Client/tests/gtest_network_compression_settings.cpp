@@ -120,7 +120,7 @@ TEST(NetworkCompressionSettings, KeepsAnExplicitSmallFrameThreshold)
 TEST(NetworkCompressionSettings, CompatibilityDerivedSmallFrameThresholdIsNotSerialized)
 {
     Settings settings;
-    settings.set("compatibility", "26.10");
+    settings.set("compatibility", "26.11");
     ASSERT_TRUE(settings.isChanged("network_compression_min_bytes"));
     ASSERT_EQ(settings.get("network_compression_min_bytes").safeGet<UInt64>(), 0u);
 
@@ -136,7 +136,7 @@ TEST(NetworkCompressionSettings, CompatibilityDerivedSmallFrameThresholdIsNotSer
 TEST(NetworkCompressionSettings, ExplicitSmallFrameThresholdOverridesCompatibility)
 {
     Settings settings;
-    settings.set("compatibility", "26.10");
+    settings.set("compatibility", "26.11");
     settings.set("network_compression_min_bytes", 256u);
 
     const Settings result = networkCompressionSettings(settings);
