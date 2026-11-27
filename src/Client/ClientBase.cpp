@@ -6033,8 +6033,9 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(
             if (!reference.table.empty() && !isAllowedServerOwnedTableForAIAgent(database, reference.table))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "The table `{}.{}` reads state outside of this server (Keeper or object storage), or holds "
-                    "the texts of queries or errors, or access metadata, so it is not allowed for the read-only tool. "
+                    "The table `{}.{}` is not allowed for the read-only tool: it reads state outside of this server "
+                    "(Keeper or object storage), or it holds the texts of queries or errors, the definitions of "
+                    "databases or of server-wide objects, access metadata, or the internals of the server process. "
                     "Use the run_query tool for this query",
                     database,
                     reference.table);

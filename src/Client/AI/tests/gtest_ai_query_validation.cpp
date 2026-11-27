@@ -222,6 +222,8 @@ TEST(AIQueryValidation, RejectsRunningQueriesAndAccessMetadata)
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "user_defined_functions"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "workloads"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "resources"));
+    /// The definitions of the databases, with the parameters of their engines and the paths of the server.
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "databases"));
     /// The introspection of the server process shows the addresses of its code.
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "stack_trace"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "symbols"));

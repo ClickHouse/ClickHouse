@@ -976,6 +976,13 @@ bool isAllowedServerOwnedTableForAIAgent(const String & database, const String &
         /// `SHOW CREATE` of a view is. The names and the engines of the tables are available
         /// through the `list_tables` tool, and the columns in `system.columns`.
         "tables",
+        /// The definitions of the databases: `engine_full` holds the parameters of the engine of a
+        /// database (the address and the user of a `MySQL` or `PostgreSQL` one, the path of a
+        /// `Filesystem` one), which `SHOW CREATE DATABASE` is refused for unless the engine is a
+        /// plain one of this server, and `data_path` and `metadata_path` the directories of the
+        /// server. The names of the databases are available through the `list_databases` tool
+        /// and `SHOW DATABASES`.
+        "databases",
 
         "zookeeper",
         "zookeeper_connection",
