@@ -498,7 +498,7 @@ set (COMPILER_FLAGS "${COMPILER_FLAGS} -fno-math-errno")
 
 # `-fno-math-errno` lets the compiler fold, hoist, and eliminate libm calls. That can remove the
 # last `src/`-side references to a libm function, leaving its only references in contrib objects
-# (e.g. usearch, arrow) that are linked after our in-tree `glibc-compatibility` math archive. Since
+# (e.g. usearch) that are linked after our in-tree `glibc-compatibility` math archive. Since
 # an archive member is pulled only to satisfy an already-undefined symbol, the in-tree object is
 # never extracted and the reference binds to shared glibc's newer symbol version, which the
 # compatibility check rejects (max allowed GLIBC version is 2.4 on amd64, 2.18 on aarch64). Force

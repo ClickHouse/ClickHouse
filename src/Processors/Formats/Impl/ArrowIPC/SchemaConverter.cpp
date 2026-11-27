@@ -498,9 +498,7 @@ int arrowTimeUnitForScale(UInt32 scale)
 /// zone". Normalize only those two intended forms: a full [+|-]HH:MM[:SS] offset (the minute component
 /// is mandatory) and the "fixed" marker. Everything else (misspelled IANA names, bare-hour strings like
 /// "12" or "+05") is passed through unchanged so `DataTypeDateTime64` still rejects genuinely-malformed
-/// producer metadata with "Cannot load time zone" instead of silently masking it. This mirrors
-/// `normalizeArrowTimezone` in the Apache-Arrow-library reader (`ArrowColumnToCHColumn.cpp`), so the
-/// native reader interprets fixed-offset timezones identically.
+/// producer metadata with "Cannot load time zone" instead of silently masking it.
 String normalizeArrowTimezone(const String & timezone)
 {
     if (timezone.empty())
