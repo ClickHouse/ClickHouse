@@ -495,7 +495,7 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
 ```
 
 <Warning>
-This works while the query is shipped as text, which is the default. With [`serialize_query_plan = 1`](/reference/settings/session-settings/serialize#serialize_query_plan) the initiator ships an already-built read plan instead, and a remote server executing such a plan does not apply its own row policies, so a read of a `Distributed` table over `local_table` returns unfiltered rows. Keep `serialize_query_plan = 0` for users whose row policies must be enforced. See [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
+With [`serialize_query_plan = 1`](/reference/settings/session-settings/serialize#serialize_query_plan) the initiator sends a read plan that contains its own policy for `local_table`. The remote server applies that policy and not its own, so define the same policy on the initiator and on the remote servers.
 </Warning>
 
 ## Join tables {#join-tables}
