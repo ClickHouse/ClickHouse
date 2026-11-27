@@ -83,7 +83,7 @@ public:
         nested_func->add(place, columns, row_num, arena);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         nested_func->merge(place, rhs, arena);
     }
@@ -91,16 +91,6 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         nested_func->serialize(place, buf, version);
-    }
-
-    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
-    {
-        return nested_func->getSerializedSizeBound(version);
-    }
-
-    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
-    {
-        return nested_func->serializeToMemory(place, dst, version);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override

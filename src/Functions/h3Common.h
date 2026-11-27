@@ -35,7 +35,6 @@ struct H3Validator
     explicit H3Validator(const ContextPtr & context);
 
     bool validateCell(uint64_t h) const;
-    bool validateEdge(uint64_t h) const;
 };
 
 }

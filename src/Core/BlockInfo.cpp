@@ -1,4 +1,3 @@
-#include <Core/ProtocolDefines.h>
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <IO/ReadBuffer.h>
@@ -50,7 +49,7 @@ void readField(T & value, ReadBuffer & in)
   */
 constexpr size_t MAX_OUT_OF_ORDER_BUCKETS = 256;
 
-void readField(VectorWithMemoryTracking<Int32> & value, ReadBuffer & in)
+void readField(std::vector<Int32> & value, ReadBuffer & in)
 {
     readVectorBinary(value, in, MAX_OUT_OF_ORDER_BUCKETS);
 }

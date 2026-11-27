@@ -7,32 +7,18 @@
 # - __EXTENSIONS__: expose non-standard but necessary APIs
 add_compile_definitions(_REENTRANT _POSIX_PTHREAD_SEMANTICS __EXTENSIONS__)
 
-# We use illumos ld for native builds and lld to cross-build on linux. Detect
-# the linker being used for conditional options below.
-set (SUNOS_LINKER_EXECUTABLE "${ILLUMOS_LLD}")
-if (NOT SUNOS_LINKER_EXECUTABLE)
-    execute_process(COMMAND "${CMAKE_CXX_COMPILER}" --print-prog-name=ld
-        OUTPUT_VARIABLE SUNOS_LINKER_EXECUTABLE OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
-endif ()
-execute_process(COMMAND "${SUNOS_LINKER_EXECUTABLE}" --version
-    OUTPUT_VARIABLE SUNOS_LINKER_BANNER ERROR_VARIABLE SUNOS_LINKER_BANNER COMMAND_ERROR_IS_FATAL ANY)
-set (LINKER_IS_SOLARIS OFF)
-if (SUNOS_LINKER_BANNER MATCHES "Solaris Link Editors")
-    set (LINKER_IS_SOLARIS ON)
-endif ()
+set (DEFAULT_LIBS "-nodefaultlibs")
 
-set (DEFAULT_LIBS "-nodefaultlibs -nostdlib++")
-
-# On SunOS/illumos, building compiler-rt from source is not yet supported
-# (no toolchain file in contrib/compiler-rt-cmake/), so we use -lgcc_s.
 set (BUILTINS_LIBRARY "-lgcc_s")
-
-# Unlike lld, native illumos ld is sensitive to the order of dependencies.
-# Set `-z rescan-now` so that we don't have to explicitly manage the
-# dependency graph in DEPENDS.
-if (LINKER_IS_SOLARIS)
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-z,rescan-now")
+if (USE_SYSTEM_COMPILER_RT)
+    # Try to find the clang builtins library
+    execute_process(COMMAND
+        ${CMAKE_CXX_COMPILER} --print-libgcc-file-name --rtlib=compiler-rt
+        OUTPUT_VARIABLE BUILTINS_LIBRARY
+        COMMAND_ERROR_IS_FATAL ANY
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
 endif ()
+
 set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} -lc -lm -lrt -lpthread -ldl -lsocket -lnsl -lsendfile -lproc -lumem")
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")

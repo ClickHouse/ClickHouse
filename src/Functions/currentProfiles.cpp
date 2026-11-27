@@ -33,7 +33,7 @@ namespace
         }
     }
 
-    class FunctionProfiles final : public IFunction
+    class FunctionProfiles : public IFunction
     {
     public:
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
@@ -48,21 +48,47 @@ namespace
 
         explicit FunctionProfiles(const ContextPtr & context_, Kind kind_)
             : kind(kind_)
-        {
-            const auto & manager = context_->getAccessControl();
+            , context(context_)
+        {}
 
-            UUIDs profile_ids;
+        size_t getNumberOfArguments() const override { return 0; }
+        bool isDeterministic() const override { return false; }
+
+        DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+        {
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+        }
+
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+        {
+            std::call_once(initialized_flag, [&]{ initialize(); });
+
+            auto col_res = ColumnArray::create(ColumnString::create());
+            ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
+            ColumnArray::Offsets & res_offsets = col_res->getOffsets();
+            for (const String & profile_name : profile_names)
+                res_strings.insertData(profile_name.data(), profile_name.length());
+            res_offsets.push_back(res_strings.size());
+            return ColumnConst::create(std::move(col_res), input_rows_count);
+        }
+
+    private:
+        void initialize() const
+        {
+            const auto & manager = context->getAccessControl();
+
+            std::vector<UUID> profile_ids;
 
             switch (kind)
             {
                 case Kind::currentProfiles:
-                    profile_ids = context_->getCurrentProfiles();
+                    profile_ids = context->getCurrentProfiles();
                     break;
                 case Kind::enabledProfiles:
-                    profile_ids = context_->getEnabledProfiles();
+                    profile_ids = context->getEnabledProfiles();
                     break;
                 case Kind::defaultProfiles:
-                    const auto user = context_->getAccess()->tryGetUser();
+                    const auto user = context->getAccess()->tryGetUser();
                     if (user)
                         profile_ids = user->settings.toProfileIDs();
                     break;
@@ -71,30 +97,11 @@ namespace
             profile_names = manager.tryReadNames(profile_ids);
         }
 
-        size_t getNumberOfArguments() const override { return 0; }
-        bool isDeterministic() const override { return false; }
+        mutable std::once_flag initialized_flag;
 
-        String getSignatureString() const override
-        {
-            return "() -> Array(String)";
-        }
-
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
-        {
-            auto res_strings_column = ColumnString::create();
-            auto res_offsets_column = ColumnArray::ColumnOffsets::create();
-            ColumnString & res_strings = *res_strings_column;
-            ColumnArray::Offsets & res_offsets = res_offsets_column->getData();
-            for (const String & profile_name : profile_names)
-                res_strings.insertData(profile_name.data(), profile_name.length());
-            res_offsets.push_back(res_strings.size());
-            auto col_res = ColumnArray::create(std::move(res_strings_column), std::move(res_offsets_column));
-            return ColumnConst::create(std::move(col_res), input_rows_count);
-        }
-
-    private:
         Kind kind;
-        Strings profile_names;
+        ContextPtr context;
+        mutable Strings profile_names;
     };
 }
 
@@ -113,9 +120,9 @@ Returns an array of the setting profiles for the current user.
 SELECT currentProfiles();
         )",
         R"(
-┌─currentProfiles()─┐
-│ ['default']       │
-└───────────────────┘
+┌─currentProfiles()─────────────────────────────┐
+│ ['default', 'readonly_user', 'web_analytics'] │
+└───────────────────────────────────────────────┘
         )"
     }
     };
@@ -136,9 +143,9 @@ Returns an array of setting profile names which are enabled for the current user
 SELECT enabledProfiles();
         )",
         R"(
-┌─enabledProfiles()─┐
-│ ['default']       │
-└───────────────────┘
+┌─enabledProfiles()─────────────────────────────────────────────────┐
+│ ['default', 'readonly_user', 'web_analytics', 'batch_processing'] │
+└───────────────────────────────────────────────────────────────────┘
         )"
     }
     };

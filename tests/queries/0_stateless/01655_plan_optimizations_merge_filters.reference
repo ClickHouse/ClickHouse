@@ -3,3 +3,8 @@
     Aggregating
       Filter ((((WHERE + (Change column names to column identifiers + (Project names + Projection))) + HAVING) + (Before GROUP BY + Change column names to column identifiers)))
       Filter column: equals(__table1.key, 7_UInt8) (removed)
+  Filter (((WHERE + (Projection + Before ORDER BY)) + HAVING))
+  Filter column: and(notEquals(sum(number), 0), equals(key, 7)) (removed)
+    Aggregating
+      Filter (((((WHERE + (Projection + Before ORDER BY)) + HAVING) + Before GROUP BY) + WHERE))
+      Filter column: and(equals(bitAnd(number, 15), 7), equals(key, 7)) (removed)

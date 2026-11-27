@@ -18,7 +18,6 @@
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 
@@ -33,13 +32,13 @@
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
-#include <Storages/ObjectStorage/Utils.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
 #include <roaring/roaring.hh>
 
 namespace DB::ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int DELTA_KERNEL_ERROR;
 }
@@ -64,18 +63,35 @@ namespace DB::FailPoints
     extern const char delta_kernel_force_stale_token_error[];
 }
 
+namespace DB
+{
+
+Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
+{
+    try
+    {
+        ReadBufferFromString buffer(value);
+        auto col = data_type->createColumn();
+        auto serialization = data_type->getDefaultSerialization();
+        serialization->deserializeWholeText(*col, buffer, FormatSettings{});
+        return (*col)[0];
+    }
+    catch (...)
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot parse {} for data type {}: {}",
+            value, data_type->getName(), getCurrentExceptionMessage(false));
+    }
+}
+
+}
+
 namespace DeltaLake
 {
 
 namespace
 {
-
-/// A file's `numRecords` statistic counts rows that a deletion vector still logically removes,
-/// so it is not a row count for such a file.
-bool hasDeletionVector(ffi::SharedDvInfo * dv_info_ptr)
-{
-    return dv_info_ptr && ffi::dv_info_has_vector(dv_info_ptr);
-}
 
 /// A data file with the size its `add` action records.
 struct DataObjectInfo : public DB::ObjectInfo
@@ -85,8 +101,6 @@ struct DataObjectInfo : public DB::ObjectInfo
         , size(size_)
     {
     }
-
-    std::shared_ptr<DB::ObjectInfo> clone() const override { return std::make_shared<DataObjectInfo>(*this); }
 
     std::optional<size_t> getFileSizeHint() const override
     {
@@ -100,7 +114,7 @@ struct DataObjectInfo : public DB::ObjectInfo
 
 }
 
-class TableSnapshot::Iterator final : public DB::IObjectIterator, private DB::WithContext
+class TableSnapshot::Iterator final : public DB::IObjectIterator
 {
 private:
     /// Struct to hold ObjectInfo along with FFI handles for lazy parsing
@@ -136,11 +150,9 @@ public:
         bool enable_expression_visitor_logging_,
         bool throw_on_engine_predicate_error_,
         bool enable_engine_predicate_,
-        DB::ContextPtr query_context_,
         UpdateStatsFunc update_stats_func_,
         LoggerPtr log_)
-        : DB::WithContext(query_context_)
-        , kernel_snapshot_state(kernel_snapshot_state_)
+        : kernel_snapshot_state(kernel_snapshot_state_)
         , captured_credentials_fingerprint(helper_->getCredentialsFingerprint())
         , helper(helper_)
         , read_schema(read_schema_)
@@ -174,10 +186,10 @@ public:
         if (!physical_names_map_.empty())
         {
             for (auto & [name, value] : expression_schema)
-                name = getPhysicalName(appendToLogicalPath({}, name), physical_names_map_);
+                name = getPhysicalName(name, physical_names_map_);
 
             for (auto & name : partition_columns)
-                name = getPhysicalName(appendToLogicalPath({}, name), physical_names_map_);
+                name = getPhysicalName(name, physical_names_map_);
         }
 
         thread = ThreadFromGlobalPool(
@@ -192,12 +204,7 @@ public:
 
     ~Iterator() override
     {
-        {
-            /// Under the mutex, so that the scanning thread does not miss the notification between checking
-            /// the condition and starting to wait.
-            std::lock_guard lock(next_mutex);
-            shutdown.store(true);
-        }
+        shutdown.store(true);
         schedule_next_batch_cv.notify_one();
         if (thread.joinable())
             thread.join();
@@ -207,11 +214,8 @@ public:
 
     const std::string & getTableLocation() const { return helper->getTableLocation(); }
 
-    /// Called on the scanning thread. Under the mutex, so that `next` does not miss the notification between
-    /// checking the condition and starting to wait, and reads `scan_exception` after it is set.
     void setScanException()
     {
-        std::lock_guard lock(next_mutex);
         if (!scan_exception)
         {
             scan_exception = std::current_exception();
@@ -223,7 +227,7 @@ public:
     {
         if (filter.has_value() && enable_engine_predicate)
         {
-            auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception, getContext());
+            auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception, nullptr);
             scan = KernelUtils::unwrapResult(
                 ffi::scan(
                     kernel_snapshot_state->snapshot.get(),
@@ -256,9 +260,9 @@ public:
             return false;
         const auto & msg = e.message();
         const bool stale_credentials_error =
-            msg.contains("ExpiredToken")
-            || msg.contains("InvalidToken")
-            || msg.contains("TokenRefreshRequired");
+            msg.find("ExpiredToken") != std::string::npos
+            || msg.find("InvalidToken") != std::string::npos
+            || msg.find("TokenRefreshRequired") != std::string::npos;
         if (!stale_credentials_error)
             return false;
 
@@ -589,9 +593,6 @@ public:
         if (transform.tag == ffi::OptionalValue<ffi::SharedExpression *>::Tag::Some)
             transform_handle.emplace(transform.some._0);
 
-        /// Read before `dv_info_handle` is moved into `data_files` below.
-        const bool has_deletion_vector = hasDeletionVector(dv_info_handle.get());
-
         auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
         if (context->shutdown)
         {
@@ -636,8 +637,6 @@ public:
             context->getDataPath(), DB::unescapeForFileName(KernelUtils::fromDeltaString(path)));
         auto object = std::make_shared<DataObjectInfo>(std::move(full_path), size);
         object->data_lake_metadata.emplace();
-        if (stats)
-            object->data_lake_metadata->num_rows = stats->num_records;
 
         LOG_TEST(
             context->log,
@@ -651,7 +650,7 @@ public:
 
         context->total_data_files += 1;
         context->total_bytes += size;
-        if (stats && !has_deletion_vector && context->total_rows.has_value())
+        if (stats && context->total_rows.has_value())
             context->total_rows.value() += stats->num_records;
         else
             context->total_rows = std::nullopt;
@@ -819,7 +818,7 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
             auto * visitor = static_cast<StatsVisitor *>(engine_context);
             visitor->total_data_files += 1;
             visitor->total_bytes += static_cast<size_t>(size);
-            if (stats && !hasDeletionVector(dv_info_handle.get()) && visitor->total_rows.has_value())
+            if (stats && visitor->total_rows.has_value())
                 visitor->total_rows.value() += stats->num_records;
             else
                 visitor->total_rows = std::nullopt;
@@ -906,9 +905,9 @@ bool TableSnapshot::tryRefreshAfterStaleTokenError(
         return false;
     const auto & msg = e.message();
     const bool stale_credentials_error =
-        msg.contains("ExpiredToken")
-        || msg.contains("InvalidToken")
-        || msg.contains("TokenRefreshRequired");
+        msg.find("ExpiredToken") != std::string::npos
+        || msg.find("InvalidToken") != std::string::npos
+        || msg.find("TokenRefreshRequired") != std::string::npos;
     if (!stale_credentials_error)
         return false;
 
@@ -1040,7 +1039,6 @@ DB::ObjectIterator TableSnapshot::iterate(
         settings[DB::Setting::delta_lake_enable_expression_visitor_logging],
         settings[DB::Setting::delta_lake_throw_on_engine_predicate_error],
         settings[DB::Setting::delta_lake_enable_engine_predicate],
-        context,
         std::move(update_stats_func),
         log);
 }
@@ -1050,20 +1048,13 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
     if (!schema.has_value())
     {
         auto state = getKernelSnapshotState();
-        auto [table_schema, physical_names_map, timestamp_ntz_paths]
-            = getTableSchemaFromSnapshot(state->snapshot.get(), state->engine.get());
+        auto [table_schema, physical_names_map] = getTableSchemaFromSnapshot(state->snapshot.get(), state->engine.get());
 
         if (table_schema.empty())
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Table schema cannot be empty");
 
         auto read_schema = getReadSchemaFromSnapshot(state->scan.get(), state->engine.get());
         auto partition_columns = getPartitionColumnsFromSnapshot(state->snapshot.get());
-
-        /// Both names are logical here; the rename to physical names happens later, on copies.
-        for (const auto & column_name : partition_columns)
-            if (!table_schema.tryGetByName(column_name))
-                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
-                    "Partition column {} is not present in the table schema", column_name);
 
         LOG_TRACE(
             log, "Table logical schema: {}, read schema: {}, "
@@ -1078,7 +1069,6 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
             .read_schema = std::move(read_schema),
             .physical_names_map = std::move(physical_names_map),
             .partition_columns = std::move(partition_columns),
-            .timestamp_ntz_paths = std::move(timestamp_ntz_paths),
         });
     }
 }
@@ -1097,13 +1087,6 @@ const DB::NamesAndTypesList & TableSnapshot::getReadSchema() const
     return schema->read_schema;
 }
 
-Poco::JSON::Array::Ptr TableSnapshot::getRawDeltaSchemaFields() const
-{
-    std::lock_guard lock(mutex);
-    auto state = getKernelSnapshotState();
-    return getDeltaSchemaFieldsFromSnapshot(state->snapshot.get());
-}
-
 const DB::Names & TableSnapshot::getPartitionColumns() const
 {
     std::lock_guard lock(mutex);
@@ -1116,13 +1099,6 @@ const DB::NameToNameMap & TableSnapshot::getPhysicalNamesMap() const
     std::lock_guard lock(mutex);
     initOrUpdateSchemaIfChanged();
     return schema->physical_names_map;
-}
-
-const std::unordered_set<String> & TableSnapshot::getTimestampNtzPaths() const
-{
-    std::lock_guard lock(mutex);
-    initOrUpdateSchemaIfChanged();
-    return schema->timestamp_ntz_paths;
 }
 
 }

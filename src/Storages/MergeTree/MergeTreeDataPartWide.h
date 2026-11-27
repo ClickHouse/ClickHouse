@@ -2,9 +2,6 @@
 
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/StreamWithSizeHint.h>
-
-#include <functional>
 
 namespace DB
 {
@@ -25,10 +22,7 @@ public:
         const String & name_,
         const MergeTreePartInfo & info_,
         const MutableDataPartStoragePtr & data_part_storage_,
-        const IMergeTreeDataPart * parent_part_,
-        PartDirIntent intent);
-
-    Strings getPreferredFileOrder() const override;
+        const IMergeTreeDataPart * parent_part_ = nullptr);
 
     bool isStoredOnReadonlyDisk() const override;
 
@@ -36,7 +30,7 @@ public:
 
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override;
 
-    std::optional<String> getFirstFileNameForColumn(const NameAndTypePair & column) const override;
+    std::optional<String> getFileNameForColumn(const NameAndTypePair & column) const override;
 
     ~MergeTreeDataPartWide() override;
 
@@ -47,6 +41,7 @@ public:
     void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
     void removeMarksFromCache(MarkCache * mark_cache) const override;
 
+protected:
     static void loadIndexGranularityImpl(
         MergeTreeIndexGranularityPtr & index_granularity_ptr,
         MergeTreeIndexGranularityInfo & index_granularity_info_,
@@ -54,7 +49,6 @@ public:
         const std::string & any_column_file_name,
         const MergeTreeSettings & storage_settings);
 
-protected:
     void doCheckConsistency(bool require_part_metadata) const override;
 
 private:
@@ -65,19 +59,11 @@ private:
 
     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 
-    std::vector<ColumnSize> calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const override;
+    ColumnSize calculateSubcolumnSize(const String & subcolumn_name) const override;
 
     void addStreamToColumnSize(const String & stream_name, ColumnSize & size) const;
 
-    /// Adds the stream's share of its file where it has a size hint, else the whole file.
-    void addStreamWithSizeHintToColumnSize(const StreamWithSizeHint & stream, ColumnSize & size) const;
-
-    /// The names of the column's streams that exist in the part, from columns_substreams.txt where the part has it, else
-    /// from the serialization, whose state-less enumeration misses the data-dependent streams of dynamic subcolumns.
-    void forEachExistingStreamOfColumn(const String & column_name, const std::function<void(const String & stream_name)> & callback) const;
-
-    /// The streams a read of the columns touches, by requested name, listed by one reader after it has read the prefixes.
-    std::unordered_map<String, std::vector<StreamWithSizeHint>> getListOfStreamsForColumns(const NamesAndTypesList & columns) const;
+    std::vector<String> getListOfStreamsForColumn(const NameAndTypePair & column) const;
 };
 
 }

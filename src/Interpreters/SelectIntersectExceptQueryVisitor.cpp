@@ -26,15 +26,7 @@ namespace ErrorCodes
 
 void SelectIntersectExceptQueryMatcher::visit(ASTPtr & ast, Data & data)
 {
-    /// Skip already-normalized union queries: `NormalizeSelectWithUnionQueryMatcher`
-    /// flattens inner `UNION ALL` / `UNION DISTINCT` children into the parent's
-    /// `list_of_selects` without updating `list_of_modes`, so on a normalized AST
-    /// `list_of_modes.size() + 1 == list_of_selects->children.size()` no longer
-    /// holds. A normalized AST also cannot contain `INTERSECT` or `EXCEPT` modes
-    /// (`NormalizeSelectWithUnionQueryMatcher` only sets `union_mode` to
-    /// `UNION_ALL` or `UNION_DISTINCT`), so this matcher has nothing to do.
-    /// Mirrors the early-return check in `NormalizeSelectWithUnionQueryMatcher::visit`.
-    if (auto * select_union = ast->as<ASTSelectWithUnionQuery>(); select_union && !select_union->is_normalized)
+    if (auto * select_union = ast->as<ASTSelectWithUnionQuery>())
         visit(*select_union, data);
 }
 
@@ -68,9 +60,7 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
                 mode = SelectUnionMode::EXCEPT_DISTINCT;
             else
                 throw Exception(ErrorCodes::EXPECTED_ALL_OR_DISTINCT,
-                    "Expected ALL or DISTINCT after EXCEPT. Write `EXCEPT ALL` to keep duplicate rows or "
-                    "`EXCEPT DISTINCT` to remove them, or set `except_default_mode` to choose what a bare "
-                    "EXCEPT means");
+                    "Expected ALL or DISTINCT in EXCEPT query, because setting (except_default_mode) is empty");
         }
         else if (mode == SelectUnionMode::INTERSECT_DEFAULT)
         {
@@ -80,9 +70,7 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
                 mode = SelectUnionMode::INTERSECT_DISTINCT;
             else
                 throw Exception(ErrorCodes::EXPECTED_ALL_OR_DISTINCT,
-                    "Expected ALL or DISTINCT after INTERSECT. Write `INTERSECT ALL` to keep duplicate rows "
-                    "or `INTERSECT DISTINCT` to remove them, or set `intersect_default_mode` to choose what "
-                    "a bare INTERSECT means");
+                    "Expected ALL or DISTINCT in INTERSECT query, because setting (intersect_default_mode) is empty");
         }
 
         switch (mode)

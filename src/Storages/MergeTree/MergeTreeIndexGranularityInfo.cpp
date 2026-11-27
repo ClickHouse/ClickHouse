@@ -119,8 +119,7 @@ MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(
     const MergeTreeData & storage, const MergeTreeSettings & storage_settings, MergeTreeDataPartType type_)
     : MergeTreeIndexGranularityInfo(
           storage_settings,
-          {/// Only Wide parts can be non-adaptive; a Compact part is always adaptive (MarkType ctor).
-           storage.canUseAdaptiveGranularity() || type_ != MergeTreeDataPartType::Wide,
+          {storage.canUseAdaptiveGranularity(),
            storage_settings[MergeTreeSetting::compress_marks],
            storage_settings[MergeTreeSetting::write_marks_for_substreams_in_compact_parts],
            type_.getValue()})

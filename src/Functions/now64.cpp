@@ -1,5 +1,4 @@
 #include <Common/assert_cast.h>
-#include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -27,7 +26,7 @@ namespace
 {
 
 /// Get the current time. (It is a constant, it is evaluated once for the entire query.)
-class ExecutableFunctionNow64 final : public IExecutableFunction
+class ExecutableFunctionNow64 : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionNow64(Field time_) : time_value(time_) {}
@@ -43,7 +42,7 @@ private:
     Field time_value;
 };
 
-class FunctionBaseNow64 final : public IFunctionBase
+class FunctionBaseNow64 : public IFunctionBase
 {
 public:
     explicit FunctionBaseNow64(Field time_, DataTypes argument_types_, DataTypePtr return_type_)
@@ -82,7 +81,7 @@ private:
     DataTypePtr return_type;
 };
 
-class Now64OverloadResolver final : public IFunctionOverloadResolver
+class Now64OverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "now64";
@@ -99,19 +98,15 @@ public:
         : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
-    /// Not declarative: the timezone argument's constness requirement is
-    /// gated by the `allow_nonconst_timezone_arguments` setting, which the DSL
-    /// cannot express. With the setting enabled, a non-constant timezone is
-    /// accepted and the result becomes tz-less `DateTime64`, mirroring `now`.
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         UInt32 scale = DataTypeDateTime64::default_scale;
         String timezone_name;
 
         if (arguments.size() > 2)
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                "Arguments size of function {} should be 0, or 1, or 2", getName());
-
+        {
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Arguments size of function {} should be 0, or 1, or 2", getName());
+        }
         if (!arguments.empty())
         {
             const auto & argument = arguments[0];
@@ -122,7 +117,9 @@ public:
             scale = static_cast<UInt32>(argument.column->get64(0));
         }
         if (arguments.size() == 2)
+        {
             timezone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, allow_nonconst_timezone_arguments);
+        }
 
         return std::make_shared<DataTypeDateTime64>(scale, timezone_name);
     }
@@ -141,7 +138,6 @@ public:
 
         return std::make_unique<FunctionBaseNow64>(nowSubsecond(scale), std::move(arg_types), result_type);
     }
-
 private:
     const bool allow_nonconst_timezone_arguments;
 };

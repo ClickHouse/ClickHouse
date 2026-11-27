@@ -7,6 +7,7 @@
 
 #if USE_ARROW || USE_PARQUET
 
+#include <DataTypes/IDataType.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>
 #include <arrow/table.h>
@@ -55,7 +56,6 @@ public:
         const std::string & format_name,
         const FormatSettings & format_settings,
         bool skip_columns_with_unsupported_types = false,
-        bool allow_arrow_null_type = false,
         bool allow_inferring_nullable_columns = true,
         bool case_insensitive_matching = false,
         bool allow_geoparquet_parser = true,
@@ -67,7 +67,7 @@ public:
     {
         std::shared_ptr<ColumnWithTypeAndName> values;
         Int64 default_value_index = -1;
-        UInt64 dictionary_size{};
+        UInt64 dictionary_size;
     };
 
 private:

@@ -16,12 +16,10 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
-#include <Analyzer/Passes/AggregateFunctionsArithmeticOperationsPass.h>
+#include <Analyzer/Passes/AggregateFunctionsArithmericOperationsPass.h>
 #include <Analyzer/Passes/ArrayExistsToHasPass.h>
-#include <Analyzer/Passes/RewriteArrayFilterLengthToArrayCountPass.h>
 #include <Analyzer/Passes/AutoFinalOnQueryPass.h>
 #include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
-#include <Analyzer/Passes/HasToInPass.h>
 #include <Analyzer/Passes/ConvertEmptyStringComparisonToFunctionPass.h>
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
@@ -35,7 +33,6 @@
 #include <Analyzer/Passes/IfConstantConditionPass.h>
 #include <Analyzer/Passes/IfTransformStringsToEnumPass.h>
 #include <Analyzer/Passes/InjectRandomOrderIfNoOrderByPass.h>
-#include <Analyzer/Passes/DictGetTupleElementPass.h>
 #include <Analyzer/Passes/InverseDictionaryLookupPass.h>
 #include <Analyzer/Passes/DistanceTransposedPartialReadsPass.h>
 #include <Analyzer/Passes/LikePerfectAffixRewritePass.h>
@@ -45,10 +42,7 @@
 #include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
 #include <Analyzer/Passes/OptimizeGroupByFunctionKeysPass.h>
 #include <Analyzer/Passes/OptimizeGroupByInjectiveFunctionsPass.h>
-#include <Analyzer/Passes/OptimizeLimitByFunctionKeysPass.h>
-#include <Analyzer/Passes/OptimizeLimitByInjectiveFunctionsPass.h>
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
-#include <Analyzer/Passes/OptimizeTrivialGroupByLimitPass.h>
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 #include <Analyzer/Passes/OrderByTupleEliminationPass.h>
 #include <Analyzer/Passes/PruneArrayJoinColumnsPass.h>
@@ -59,7 +53,6 @@
 #include <Analyzer/Passes/RewriteSumFunctionWithSumAndCountPass.h>
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/Passes/SumIfToCountIfPass.h>
-#include <Analyzer/Passes/TruncateOrderByAfterGroupByKeysPass.h>
 #include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
 #include <Analyzer/Passes/UniqToCountPass.h>
 #include <Analyzer/Utils.h>
@@ -106,7 +99,7 @@ public:
 private:
     void visitColumn(ColumnNode * column) const
     {
-        if (column->getColumnSourceOrNull() == nullptr && !column->mayHaveNoSource())
+        if (column->getColumnSourceOrNull() == nullptr && column->getColumnName() != "__grouping_set")
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Column {} {} query tree node does not have valid source node after running {} pass",
                 column->getColumnName(), column->getColumnType(), pass_name);
@@ -213,26 +206,7 @@ void QueryTreePassManager::runOnlyResolve(QueryTreeNodePtr & query_tree_node)
     // 2. GroupingFunctionsResolvePass
     // 3. AutoFinalOnQueryPass
     // 4. RemoveUnusedProjectionColumnsPass
-    run(query_tree_node, resolve_passes_count);
-}
-
-void QueryTreePassManager::runFrom(QueryTreeNodePtr & query_tree_node, size_t from_pass_index)
-{
-    size_t passes_size = passes.size();
-    if (from_pass_index > passes_size)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Requested to run passes from {} pass. There are only {} passes",
-            from_pass_index,
-            passes_size);
-
-    auto current_context = getContext();
-    for (size_t i = from_pass_index; i < passes_size; ++i)
-    {
-        passes[i]->run(query_tree_node, current_context);
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-        ValidationChecker(passes[i]->getName()).visit(query_tree_node);
-#endif
-    }
+    run(query_tree_node, 4);
 }
 
 void QueryTreePassManager::run(QueryTreeNodePtr & query_tree_node, size_t up_to_pass_index)
@@ -285,10 +259,9 @@ void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
     }
 }
 
-void addQueryTreePasses(
-    QueryTreePassManager & manager, bool only_analyze, bool positional_arguments_already_resolved, StoragePtr replaced_storage)
+void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 {
-    manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze, positional_arguments_already_resolved, std::move(replaced_storage)));
+    manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze));
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
     /// This pass should be run for the secondary queries
@@ -296,7 +269,6 @@ void addQueryTreePasses(
     manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
     manager.addPass(std::make_unique<PruneArrayJoinColumnsPass>());
 
-    manager.addPass(std::make_unique<DictGetTupleElementPass>());
     manager.addPass(std::make_unique<ConvertEmptyStringComparisonToFunctionPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
 
@@ -307,15 +279,14 @@ void addQueryTreePasses(
     manager.addPass(std::make_unique<CountDistinctPass>());
     manager.addPass(std::make_unique<UniqToCountPass>());
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
-    manager.addPass(std::make_unique<RewriteArrayFilterLengthToArrayCountPass>());
-    manager.addPass(std::make_unique<RewriteHasToInPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
+
     manager.addPass(std::make_unique<DistanceTransposedPartialReadsPass>());
 
-    /// should before AggregateFunctionsArithmeticOperationsPass
+    /// should before AggregateFunctionsArithmericOperationsPass
     manager.addPass(std::make_unique<AggregateFunctionOfGroupByKeysPass>());
 
-    manager.addPass(std::make_unique<AggregateFunctionsArithmeticOperationsPass>());
+    manager.addPass(std::make_unique<AggregateFunctionsArithmericOperationsPass>());
     manager.addPass(std::make_unique<UniqInjectiveFunctionsEliminationPass>());
 
     // Should run before optimization of GROUP BY keys to allow the removal of
@@ -348,13 +319,7 @@ void addQueryTreePasses(
     manager.addPass(std::make_unique<OptimizeRedundantFunctionsInOrderByPass>());
 
     manager.addPass(std::make_unique<OrderByTupleEliminationPass>());
-
-    manager.addPass(std::make_unique<OptimizeLimitByFunctionKeysPass>());
-    manager.addPass(std::make_unique<OptimizeLimitByInjectiveFunctionsPass>());
-
     manager.addPass(std::make_unique<OrderByLimitByDuplicateEliminationPass>());
-
-    manager.addPass(std::make_unique<TruncateOrderByAfterGroupByKeysPass>());
 
     manager.addPass(std::make_unique<FuseFunctionsPass>());
 
@@ -365,8 +330,6 @@ void addQueryTreePasses(
 
     manager.addPass(std::make_unique<CrossToInnerJoinPass>());
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
-
-    manager.addPass(std::make_unique<OptimizeTrivialGroupByLimitPass>());
 
     manager.addPass(std::make_unique<InjectRandomOrderIfNoOrderByPass>());
 

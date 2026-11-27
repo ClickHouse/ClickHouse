@@ -170,10 +170,6 @@ namespace Net
         /// Returns true iff the peer has presented a
         /// certificate.
 
-        bool needHandshake() const;
-        /// Returns true while the handshake is still owed, so that a caller
-        /// can tell that any I/O it starts would run the handshake first.
-
         X509 * peerCertificate() const;
         /// Returns the peer's X509 certificate.
         ///
@@ -186,9 +182,6 @@ namespace Net
         SSL * ssl() const;
         /// Returns the underlying OpenSSL SSL object, or null if the SSL handshake
         /// has not been performed yet.
-
-        void markFatalError();
-        /// Records that an external operation on the underlying `SSL` object failed fatally.
 
         void setLazyHandshake(bool flag = true);
         /// Enable lazy SSL handshake. If enabled, the SSL handshake
@@ -242,14 +235,6 @@ namespace Net
         /// Returns the blocking mode of the socket.
         /// This method will only work if the blocking modes of
         /// the socket are changed via the setBlocking method!
-
-        void setBioMethod(const BIO_METHOD * method);
-        /// Optionally inject a custom BIO_METHOD into the underlying SSL machinery.
-        /// Has no effect once the SSL handshake has been initiated (i.e. once
-        /// any I/O has happened). If never called, `BIO_s_socket()` is used.
-
-        void setMutex(std::unique_ptr<SecureSocketImpl::RecursiveMutex> mutex);
-        /// Replace the lock guarding SSL operations on the underlying impl.
 
 
     protected:
@@ -305,12 +290,6 @@ namespace Net
     inline SSL * SecureStreamSocketImpl::ssl() const
     {
         return _impl.ssl();
-    }
-
-
-    inline void SecureStreamSocketImpl::markFatalError()
-    {
-        _impl.markFatalError();
     }
 
 

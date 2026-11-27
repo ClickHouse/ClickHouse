@@ -15,17 +15,17 @@ struct ZooKeeperConnectionLogElement
         Disconnected = 1,
     };
 
-    EventType event_type{};
+    EventType event_type;
 
     time_t event_time{};
     Decimal64 event_time_microseconds = 0;
 
     String cluster_name;
     String host;
-    UInt16 port{};
-    UInt8 index{};
-    Int64 client_id{};
-    UInt8 keeper_api_version{};
+    UInt16 port;
+    UInt8 index;
+    Int64 client_id;
+    UInt8 keeper_api_version;
     Array enabled_feature_flags;
     String availability_zone;
     String reason;
@@ -40,8 +40,6 @@ class ZooKeeperConnectionLog : public SystemLog<ZooKeeperConnectionLogElement>
 {
 public:
     using SystemLog<ZooKeeperConnectionLogElement>::SystemLog;
-
-    static const char * getDefaultTTL() { return "event_date + INTERVAL 30 DAY"; }
 
     void addConnected(std::string_view name, const zkutil::ZooKeeper& zookeeper, std::string_view reason);
     void addDisconnected(std::string_view name, const zkutil::ZooKeeper& zookeeper, std::string_view reason);

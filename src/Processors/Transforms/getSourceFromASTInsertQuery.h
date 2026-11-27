@@ -3,7 +3,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <IO/SnappyMode.h>
 #include <cstddef>
 #include <memory>
 
@@ -41,7 +40,7 @@ class ReadBuffer;
 
 /// Prepares a read buffer, that allows to read inlined data
 /// from ASTInsertQuert directly, and from tail buffer, if it exists.
-/// `snappy_mode` selects the snappy framing used when the data (e.g. `INSERT ... FROM INFILE`) is snappy-compressed.
-std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, SnappyMode snappy_mode = SnappyMode::Basic);
+/// Throws for `INSERT ... FROM INFILE` in the server: the client reads the file, the server must not open the path.
+std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, const ContextPtr & context);
 
 }

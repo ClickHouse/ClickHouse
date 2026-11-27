@@ -2,9 +2,6 @@
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 
-SET explain_query_plan_default = 'legacy';
-SET materialize_statistics_on_insert = 0; -- pin (randomized in CI): statistics built on INSERT change the plan
-
 -- { echo }
 
 SET optimize_use_projections = 1;
@@ -27,15 +24,15 @@ INSERT INTO test_distinct_proj_partial_projection VALUES (3, 30), (4, 40), (4, 4
 SELECT count() FROM test_distinct_proj_partial_projection;
 
 SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection ORDER BY a, b;
-EXPLAIN SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection ORDER BY a, b SETTINGS optimize_move_to_prewhere = 1;
+EXPLAIN SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection ORDER BY a, b SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a <= 2 ORDER BY a, b;
-EXPLAIN SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a <= 2 ORDER BY a, b SETTINGS optimize_move_to_prewhere = 1;
+EXPLAIN SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a <= 2 ORDER BY a, b SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a >= 4 ORDER BY a, b;
-EXPLAIN SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a >= 4 ORDER BY a, b SETTINGS optimize_move_to_prewhere = 1;
+EXPLAIN SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a >= 4 ORDER BY a, b SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a = 3 ORDER BY a, b;
-EXPLAIN SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a = 3 ORDER BY a, b SETTINGS optimize_move_to_prewhere = 1;
+EXPLAIN SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a = 3 ORDER BY a, b SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 DROP TABLE test_distinct_proj_partial_projection;

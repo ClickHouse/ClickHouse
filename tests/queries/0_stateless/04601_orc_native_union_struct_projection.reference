@@ -1,7 +1,0 @@
-Variant(String, Tuple(\n    a Nullable(Int32),\n    b Nullable(String)))
-('x')
-('y')
-hello
-('x',10)
-('y',20)
-hello

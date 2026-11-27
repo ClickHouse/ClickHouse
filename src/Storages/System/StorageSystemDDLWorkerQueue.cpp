@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDDLWorkerQueue.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Interpreters/DDLTask.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -191,7 +190,7 @@ static void fillCommonColumns(
     /// settings
     res_columns[col++]->insert(settings_map);
 
-    res_columns[col++]->insert(query_create_time_ms / 1000);
+    res_columns[col++]->insert(static_cast<UInt64>(query_create_time_ms / 1000));
 }
 
 static void repeatValuesInCommonColumns(MutableColumns & res_columns, size_t num_filled_columns)
@@ -425,6 +424,3 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDDLWorkerQueue) }

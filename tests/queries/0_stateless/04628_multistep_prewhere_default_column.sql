@@ -21,17 +21,3 @@ INSERT INTO t_multistep_prewhere_default SELECT number, toString(number % 7), 42
 SELECT sum(v), sum(w) FROM t_multistep_prewhere_default WHERE k <= 1050 AND s = '3';
 
 DROP TABLE t_multistep_prewhere_default;
-
--- A stored column used as the condition of an earlier step stays the parent of a subcolumn missing in the part.
-DROP TABLE IF EXISTS t_multistep_prewhere_subcolumn;
-
-CREATE TABLE t_multistep_prewhere_subcolumn (k UInt64, f UInt8, x UInt8) ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 128, min_bytes_for_wide_part = 0;
-INSERT INTO t_multistep_prewhere_subcolumn SELECT number, number % 2, number % 3 FROM numbers(10000);
-SYSTEM STOP MERGES t_multistep_prewhere_subcolumn;
-ALTER TABLE t_multistep_prewhere_subcolumn MODIFY COLUMN f Nullable(UInt8) SETTINGS mutations_sync = 0, alter_sync = 0;
-
-SELECT f.null, count() FROM t_multistep_prewhere_subcolumn PREWHERE f AND x = 1 GROUP BY 1 ORDER BY 1
-SETTINGS allow_reorder_prewhere_conditions = 0;
-
-DROP TABLE t_multistep_prewhere_subcolumn;

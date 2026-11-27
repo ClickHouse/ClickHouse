@@ -2,11 +2,10 @@
 
 #include <optional>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 #include <boost/noncopyable.hpp>
-
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 struct UCollator;
 
@@ -21,8 +20,8 @@ public:
         std::optional<std::string> language; /// full language name in English
     };
 
-    using AvailableLocalesMap = DB::UnorderedMapWithMemoryTracking<std::string, LocaleAndLanguage>;
-    using LocalesVector = DB::VectorWithMemoryTracking<LocaleAndLanguage>;
+    using AvailableLocalesMap = std::unordered_map<std::string, LocaleAndLanguage>;
+    using LocalesVector = std::vector<LocaleAndLanguage>;
 
     static const AvailableCollationLocales & instance();
 

@@ -19,15 +19,10 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    QueryPlanStepPtr clone() const override;
-
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
-
-    /// Like `FractionalLimitStep`: the fraction is resolved against the whole result.
-    bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
     void updateOutputHeader() override { output_header = input_headers.front(); }

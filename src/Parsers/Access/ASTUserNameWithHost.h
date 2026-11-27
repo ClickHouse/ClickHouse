@@ -16,20 +16,15 @@ namespace DB
 class ASTUserNameWithHost : public IAST
 {
 public:
-    ASTUserNameWithHost() = default;
     explicit ASTUserNameWithHost(const String & name_);
     explicit ASTUserNameWithHost(ASTPtr && name_ast_, String && host_pattern_ = "");
 
     String getHostPattern() const;
     String toString() const;
-    bool usernameWasQueryParameter() const { return username_was_query_parameter; }
 
     String getID(char) const override { return "UserNameWithHost"; }
     ASTPtr clone() const override;
     void replace(String name_);
-
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
@@ -40,7 +35,6 @@ private:
 
     ASTPtr username;
     ASTPtr host_pattern;
-    bool username_was_query_parameter = false;
 };
 
 
@@ -54,14 +48,6 @@ public:
     auto begin() const { return children.begin(); }
     auto end() const { return children.end(); }
 
-    bool hasQueryParameters() const
-    {
-        for (const auto & name : children)
-            if (name->as<const ASTUserNameWithHost &>().usernameWasQueryParameter())
-                return true;
-        return false;
-    }
-
     Strings toStrings() const;
     bool getHostPatternIfCommon(String & out_common_host_pattern) const;
 
@@ -72,9 +58,6 @@ public:
         clone->cloneChildren();
         return clone;
     }
-
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

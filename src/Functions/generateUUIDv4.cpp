@@ -2,36 +2,39 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsRandom.h>
-#include <Core/UUID.h>
 
 namespace DB
 {
+
+#define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
+DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
+DECLARE_X86_64_V3_SPECIFIC_CODE(__VA_ARGS__)
+
+DECLARE_SEVERAL_IMPLEMENTATIONS(
 
 class FunctionGenerateUUIDv4 : public IFunction
 {
 public:
     static constexpr auto name = "generateUUIDv4";
 
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<FunctionGenerateUUIDv4>();
-    }
-
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 0; }
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
-    /// The optional argument only defeats common subexpression elimination; `executeImpl` never reads it.
-    bool useDefaultImplementationForSparseColumns() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "([Any]) -> UUID";
+        FunctionArgumentDescriptors mandatory_args;
+        FunctionArgumentDescriptors optional_args{
+            {"expr", nullptr, nullptr, "any type"}
+        };
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeUUID>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
@@ -57,13 +60,44 @@ public:
     }
 };
 
+) // DECLARE_SEVERAL_IMPLEMENTATIONS
+#undef DECLARE_SEVERAL_IMPLEMENTATIONS
+
+class FunctionGenerateUUIDv4 : public TargetSpecific::Default::FunctionGenerateUUIDv4
+{
+public:
+    explicit FunctionGenerateUUIDv4(ContextPtr context) : selector(context)
+    {
+        selector.registerImplementation<TargetArch::Default,
+            TargetSpecific::Default::FunctionGenerateUUIDv4>();
+
+#if USE_MULTITARGET_CODE
+        selector.registerImplementation<TargetArch::x86_64_v3,
+            TargetSpecific::x86_64_v3::FunctionGenerateUUIDv4>();
+#endif
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+    }
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionGenerateUUIDv4>(context);
+    }
+
+private:
+    ImplementationSelector<IFunction> selector;
+};
+
 REGISTER_FUNCTION(GenerateUUIDv4)
 {
     /// generateUUIDv4 documentation
-    FunctionDocumentation::Description description = R"(Generates a [version 4](https://tools.ietf.org/html/rfc4122#section-4.4) [UUID](/reference/data-types/uuid).)";
+    FunctionDocumentation::Description description = R"(Generates a [version 4](https://tools.ietf.org/html/rfc4122#section-4.4) [UUID](../data-types/uuid.md).)";
     FunctionDocumentation::Syntax syntax = "generateUUIDv4([expr])";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "Optional. An arbitrary expression used to bypass [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID."}
+        {"expr", "Optional. An arbitrary expression used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a UUIDv4.", {"UUID"}};
     FunctionDocumentation::Examples examples = {
@@ -97,7 +131,6 @@ SELECT generateUUIDv4(1), generateUUIDv4(1);
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionGenerateUUIDv4>(documentation);
-    factory.registerAlias("uuid", "generateUUIDv4", FunctionFactory::Case::Insensitive);
 }
 
 }

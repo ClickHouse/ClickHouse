@@ -67,8 +67,8 @@ ColumnPtr deserialize(const DataTypePtr & type, const Streams & streams, size_t 
     settings.native_format = false;
     ISerialization::DeserializeBinaryBulkStatePtr state;
     serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-    auto column = type->createColumn();
-    serialization->deserializeBinaryBulkWithMultipleStreams(*column, rows, settings, state, nullptr);
+    ColumnPtr column = type->createColumn();
+    serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, rows, settings, state, nullptr);
     return column;
 }
 

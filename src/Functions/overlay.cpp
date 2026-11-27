@@ -17,7 +17,7 @@ namespace
 /// Syntax:
 /// - overlay(s, replace, offset[, length])
 /// - overlayUTF8(s, replace, offset[, length]) - measure offset and length in code points instead of bytes
-class FunctionOverlay final : public IFunction
+class FunctionOverlay : public IFunction
 {
 public:
     FunctionOverlay(const char * name_, bool is_utf8_) : function_name(name_), is_utf8(is_utf8_) {}
@@ -29,9 +29,21 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(String, String, NativeInteger, [NativeInteger]) -> String";
+        FunctionArgumentDescriptors mandatory_args{
+            {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"replace", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "(U)Int8/16/32/64"},
+        };
+
+        FunctionArgumentDescriptors optional_args{
+            {"length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "(U)Int8/16/32/64"},
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -244,7 +256,7 @@ private:
         size_t valid_length = 0; // not negative
         if constexpr (has_four_args && length_is_const)
         {
-            chassert(const_length >= 0);
+            assert(const_length >= 0);
             valid_length = const_length;
         }
         else if constexpr (!has_four_args)
@@ -351,7 +363,7 @@ private:
         size_t valid_length = 0; // not negative
         if constexpr (has_four_args && length_is_const)
         {
-            chassert(const_length >= 0);
+            assert(const_length >= 0);
             valid_length = const_length;
         }
         else if constexpr (!has_four_args)
@@ -470,7 +482,7 @@ private:
         size_t valid_length = 0; // not negative
         if constexpr (has_four_args && length_is_const)
         {
-            chassert(const_length >= 0);
+            assert(const_length >= 0);
             valid_length = const_length;
         }
 
@@ -588,7 +600,7 @@ private:
         size_t valid_length = 0; // not negative
         if constexpr (has_four_args && length_is_const)
         {
-            chassert(const_length >= 0);
+            assert(const_length >= 0);
             valid_length = const_length;
         }
 
@@ -704,18 +716,18 @@ Replaces part of the string `input` with another string `replace`, starting at t
         "Basic replacement",
         "SELECT overlay('My father is from Mexico.', 'mother', 4) AS res;",
         R"(
-┌─res───────────────────────┐
-│ My mother is from Mexico. │
-└───────────────────────────┘
+┌─res──────────────────────┐
+│ My mother is from Mexico.│
+└──────────────────────────┘
         )"
     },
     {
         "Replacement with length",
         "SELECT overlay('My father is from Mexico.', 'dad', 4, 6) AS res;",
         R"(
-┌─res────────────────────┐
-│ My dad is from Mexico. │
-└────────────────────────┘
+┌─res───────────────────┐
+│ My dad is from Mexico.│
+└───────────────────────┘
         )"
     }
     };
@@ -745,9 +757,9 @@ If this assumption is violated, no exception is thrown and the result is undefin
         "UTF-8 replacement",
         "SELECT overlayUTF8('Mein Vater ist aus Österreich.', 'der Türkei', 20) AS res;",
         R"(
-┌─res────────────────────────────┐
-│ Mein Vater ist aus der Türkei. │
-└────────────────────────────────┘
+┌─res───────────────────────────┐
+│ Mein Vater ist aus der Türkei.│
+└───────────────────────────────┘
         )"
     }
     };

@@ -4,9 +4,7 @@
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 
-#include <map>
 #include <mutex>
-#include <optional>
 
 
 namespace Poco { namespace Util { class AbstractConfiguration; } }
@@ -63,17 +61,6 @@ public:
 
     bool isOverridable(const Key & key, bool default_value) const;
 
-    /// Record that `key` was overridden by a user query argument (e.g. `s3(collection, key = ...)`) rather
-    /// than coming from the stored collection, so callers can keep operator and user values distinct.
-    /// Must be called before the override is written into the collection: it remembers the stored
-    /// value the override replaces (see `getValueBeforeQueryOverride`).
-    void markQueryOverridden(const Key & key);
-    bool isQueryOverridden(const Key & key) const;
-    /// The value the collection itself stored for a query-overridden `key` at the time it was marked
-    /// (see `markQueryOverridden`); nullopt when the collection had no such key or the key was not
-    /// marked as overridden.
-    std::optional<String> getValueBeforeQueryOverride(const Key & key) const;
-
     template <bool locked = false> void remove(const Key & key);
 
     /// Creates a mutable full copy, keeping the source of the original.
@@ -92,9 +79,6 @@ public:
 
     bool isMutable() const { return is_mutable; }
 
-    /// Where the collection was defined. A duplicate (see `duplicate`) keeps the source of the
-    /// collection it was made from, so that callers can distinguish values an operator put into
-    /// the server configuration from values any user could have set with SQL.
     SourceId getSourceId() const { return source_id; }
 
     virtual String getCreateStatement(bool /*show_secrects*/) { return  {}; }
@@ -120,8 +104,6 @@ protected:
     const std::string collection_name;
     const bool is_mutable;
     const SourceId source_id;
-    Keys query_overridden_keys;
-    std::map<Key, String, std::less<>> values_before_query_override;
     mutable std::mutex mutex;
 };
 

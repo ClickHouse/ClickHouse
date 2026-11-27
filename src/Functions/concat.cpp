@@ -15,21 +15,25 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+}
 
 using namespace GatherUtils;
 
 namespace
 {
 
-class ConcatImpl final : public IFunction
+class ConcatImpl : public IFunction
 {
 public:
-    ConcatImpl(const char * name_, bool is_injective_)
-        : function_name(name_), injective(is_injective_) {}
+    ConcatImpl(ContextPtr context_, const char * name_, bool is_injective_)
+        : context(context_), function_name(name_), injective(is_injective_) {}
 
-    static FunctionPtr create(ContextPtr, const char * name = "concat", bool is_injective = false)
+    static FunctionPtr create(ContextPtr context, const char * name = "concat", bool is_injective = false)
     {
-        return std::make_shared<ConcatImpl>(name, is_injective);
+        return std::make_shared<ConcatImpl>(context, name, is_injective);
     }
 
     String getName() const override { return function_name; }
@@ -44,15 +48,12 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        /// Accept zero or at least two arguments, but not exactly one: a single argument hits the
-        /// passthrough in `executeImpl` that returns the input column unchanged, which would
-        /// contradict the declared `String` result type (legacy rejected it with
-        /// `TOO_FEW_ARGUMENTS_FOR_FUNCTION`). The `concat` overload resolver routes a single
-        /// argument to `toString` separately, so only the direct `ConcatImpl`
-        /// (`concatAssumeInjective`) relies on this.
-        return "() -> String OR (Any, Any, ...) -> String";
+        if (arguments.size() == 1)
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Number of arguments for function {} should not be 1", getName());
+
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -80,6 +81,7 @@ public:
     }
 
 private:
+    ContextWeakPtr context;
     const char * function_name;
     bool injective;
 
@@ -113,14 +115,14 @@ private:
     ColumnPtr executeFormatImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const size_t num_arguments = arguments.size();
-        chassert(num_arguments >= 2);
+        assert(num_arguments >= 2);
 
         auto col_res = ColumnString::create();
-        VectorWithMemoryTracking<const ColumnString::Chars *> data(num_arguments);
-        VectorWithMemoryTracking<const ColumnString::Offsets *> offsets(num_arguments);
-        VectorWithMemoryTracking<size_t> fixed_string_sizes(num_arguments);
-        VectorWithMemoryTracking<std::optional<String>> constant_strings(num_arguments);
-        VectorWithMemoryTracking<ColumnString::MutablePtr> converted_col_ptrs(num_arguments);
+        std::vector<const ColumnString::Chars *> data(num_arguments);
+        std::vector<const ColumnString::Offsets *> offsets(num_arguments);
+        std::vector<size_t> fixed_string_sizes(num_arguments);
+        std::vector<std::optional<String>> constant_strings(num_arguments);
+        std::vector<ColumnString::MutablePtr> converted_col_ptrs(num_arguments);
         bool has_column_string = false;
         bool has_column_fixed_string = false;
         for (size_t i = 0; i < num_arguments; ++i)
@@ -145,7 +147,12 @@ private:
             else
             {
                 /// A non-String/non-FixedString-type argument: use the default serialization to convert it to String.
-                auto full_column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+                /// Only strip top-level wrappers (Const, Sparse, LowCardinality) without recursing into subcolumns.
+                /// Using the recursive convertToFullIfNeeded would strip LowCardinality from inside
+                /// compound types like Variant while the type is not updated, creating a type/column mismatch.
+                auto full_column = column->convertToFullColumnIfConst()
+                    ->convertToFullColumnIfSparse()
+                    ->convertToFullColumnIfLowCardinality();
                 auto serialization = arguments[i].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
                 ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());
@@ -193,52 +200,38 @@ private:
 
 /// Works with arrays via `arrayConcat`, maps via `mapConcat`, and tuples via `tupleConcat`.
 /// Additionally, allows concatenation of arbitrary types that can be cast to string using the corresponding default serialization.
-class ConcatOverloadResolver final : public IFunctionOverloadResolver
+class ConcatOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "concat";
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ConcatOverloadResolver>(context); }
 
-    explicit ConcatOverloadResolver(ContextPtr context_)
-        : to_string(FunctionFactory::instance().getImpl("toString", context_))
-        , array_concat(FunctionFactory::instance().getImpl("arrayConcat", context_))
-        , map_concat(FunctionFactory::instance().getImpl("mapConcat", context_))
-        , tuple_concat(FunctionFactory::instance().getImpl("tupleConcat", context_))
-    {
-    }
+    explicit ConcatOverloadResolver(ContextPtr context_) : context(context_) { }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
 
-    bool isInjective(const ColumnsWithTypeAndName & arguments) const override
-    {
-        /// When called with a single argument, concat delegates to toString, so the claim has to be
-        /// the one toString makes: it depends on the argument type, because rendering a date-time in a
-        /// time zone that has a UTC offset transition maps two distinct instants onto one string.
-        return arguments.size() == 1 && to_string->isInjective(arguments);
-    }
-
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (arguments.size() == 1)
-            return to_string->build(arguments);
+            return FunctionFactory::instance().getImpl("toString", context)->build(arguments);
         if (!arguments.empty() && std::ranges::all_of(arguments, [](const auto & elem) { return isArray(elem.type); }))
-            return array_concat->build(arguments);
+            return FunctionFactory::instance().getImpl("arrayConcat", context)->build(arguments);
         if (!arguments.empty() && std::ranges::all_of(arguments, [](const auto & elem) { return isMap(elem.type); }))
-            return map_concat->build(arguments);
+            return FunctionFactory::instance().getImpl("mapConcat", context)->build(arguments);
         if (!arguments.empty() && std::ranges::all_of(arguments, [](const auto & elem) { return isTuple(elem.type); }))
-            return tuple_concat->build(arguments);
+            return FunctionFactory::instance().getImpl("tupleConcat", context)->build(arguments);
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
-            ConcatImpl::create(nullptr),
+            ConcatImpl::create(context),
             DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
             return_type);
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        /// We always return String from concat, even if arguments were fixed strings.
-        return "([Any], ...) -> String";
+        /// We always return Strings from concat, even if arguments were fixed strings.
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -247,10 +240,7 @@ public:
     }
 
 private:
-    FunctionOverloadResolverPtr to_string;
-    FunctionOverloadResolverPtr array_concat;
-    FunctionOverloadResolverPtr map_concat;
-    FunctionOverloadResolverPtr tuple_concat;
+    ContextPtr context;
 };
 
 }
@@ -260,7 +250,7 @@ REGISTER_FUNCTION(Concat)
     FunctionDocumentation::Description description = R"(
 Concatenates the given arguments.
 
-Arguments which are not of types [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) are converted to strings using their default serialization.
+Arguments which are not of types [`String`](../data-types/string.md) or [`FixedString`](../data-types/fixedstring.md) are converted to strings using their default serialization.
 As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 )";
     FunctionDocumentation::Syntax syntax = "concat([s1, s2, ...])";
@@ -312,17 +302,13 @@ Can be used for optimization of `GROUP BY`.
     FunctionDocumentation::Examples examples_injective = {
     {
         "Group by optimization",
+        "SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concatAssumeInjective(key1, key2)",
         R"(
-CREATE TABLE key_val (key1 String, key2 String, value UInt32) ENGINE = Memory;
-INSERT INTO key_val VALUES ('Hello, ', 'World!', 1), ('Hello, ', 'World!', 2), ('Hello, ', 'World', 3);
-
-SELECT concatAssumeInjective(key1, key2) AS key, sum(value) FROM key_val GROUP BY key ORDER BY key;
-        )",
-        R"(
-┌─key───────────┬─sum(value)─┐
-│ Hello, World  │          3 │
-│ Hello, World! │          3 │
-└───────────────┴────────────┘
+┌─concat(key1, key2)─┬─sum(value)─┐
+│ Hello, World!      │          3 │
+│ Hello, World!      │          2 │
+│ Hello, World       │          3 │
+└────────────────────┴────────────┘
         )"
     }
     };

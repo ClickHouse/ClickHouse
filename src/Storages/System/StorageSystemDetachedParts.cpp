@@ -1,8 +1,6 @@
 #include <Storages/System/StorageSystemDetachedParts.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -18,7 +16,6 @@
 #include <IO/SharedThreadPools.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
@@ -46,7 +43,6 @@ void calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & from, UIn
 
 UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk, const String & from)
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageSystemDetachedParts::calculateTotalSizeOnDisk");
     UInt64 total_size = 0;
     try
     {
@@ -90,7 +86,7 @@ struct WorkerState
     std::atomic<size_t> next_task = {0};
 };
 
-class DetachedPartsSource final : public ISource
+class DetachedPartsSource : public ISource
 {
 public:
     DetachedPartsSource(SharedHeader header_, std::shared_ptr<SourceState> state_, std::vector<UInt8> columns_mask_, UInt64 block_size_)
@@ -116,7 +112,6 @@ protected:
 
     Chunk generate() override
     {
-        auto component_guard = Coordination::setCurrentComponent("DetachedPartsSource::generate");
         MutableColumns new_columns = getPort().getHeader().cloneEmptyColumns();
         chassert(!new_columns.empty());
 
@@ -181,8 +176,6 @@ private:
             /// Passing a reference to worker_state is safe, because the variable outlives runner
             auto worker = [&worker_state] ()
             {
-                auto component_guard = Coordination::setCurrentComponent("DetachedPartsSource::calculatePartSizeOnDisk");
-
                 for (auto id = worker_state.next_task++; id < worker_state.tasks.size(); id = worker_state.next_task++)
                 {
                     auto & task = worker_state.tasks.at(id);
@@ -199,8 +192,6 @@ private:
 
     void generateRows(MutableColumns & new_columns, size_t max_rows)
     {
-        auto component_guard = Coordination::setCurrentComponent("DetachedPartsSource::generateRows");
-
         chassert(current_info);
 
         auto rows = std::min(max_rows, detached_parts.size());
@@ -265,7 +256,7 @@ private:
 }
 
 StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_id_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription{{
@@ -282,16 +273,7 @@ StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_i
         {"max_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()), "The maximum number of data parts that make up the current part after merging."},
         {"level",            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>()), "Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts."},
     }});
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-}
-
-VirtualColumnsDescription StorageSystemDetachedParts::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 class ReadFromSystemDetachedParts : public SourceStepWithFilter
@@ -327,7 +309,6 @@ protected:
     std::shared_ptr<StorageSystemDetachedParts> storage;
     std::vector<UInt8> columns_mask;
 
-    std::optional<ActionsDAG> filter_by_database;
     std::optional<ActionsDAG> filter;
     const size_t max_block_size;
     const size_t num_streams;
@@ -343,27 +324,18 @@ void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes
 
         Block block;
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "database"));
-
-        /// Same as for `system.parts`: the condition on `database` alone decides which databases
-        /// are worth enumerating at all, so it is applied before their tables are listed.
-        filter_by_database = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
-        if (filter_by_database)
-            VirtualColumnUtils::buildSetsForDAG(*filter_by_database, context);
-
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "table"));
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "engine"));
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUInt8>(), "active"));
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUUID>(), "uuid"));
 
         filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
-        /// `StoragesInfoStream` reads the condition on `table` back from this filter to narrow the
-        /// enumeration, which needs the elements of an `IN` over a subquery: keep them.
         if (filter)
-            VirtualColumnUtils::buildSetsForDAGKeepingElements(*filter, context);
+            VirtualColumnUtils::buildSetsForDAG(*filter, context);
     }
 }
 
-void StorageSystemDetachedParts::readImpl(
+void StorageSystemDetachedParts::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -389,7 +361,7 @@ void StorageSystemDetachedParts::readImpl(
 
 void ReadFromSystemDetachedParts::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto state = std::make_shared<SourceState>(StoragesInfoStream(std::move(filter_by_database), std::move(filter), context));
+    auto state = std::make_shared<SourceState>(StoragesInfoStream({}, std::move(filter), context));
 
     Pipe pipe;
 
@@ -403,6 +375,3 @@ void ReadFromSystemDetachedParts::initializePipeline(QueryPipelineBuilder & pipe
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDetachedParts) }

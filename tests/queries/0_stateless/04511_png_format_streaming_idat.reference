@@ -1,6 +1,0 @@
-signature ok
-all chunk crcs ok
-multiple IDAT chunks: yes
-filters valid ok
-pixels round-trip ok
-streaming under memory limit: ok

@@ -1,6 +1,0 @@
--- count_values expects exactly 2 arguments
--- the first argument must be a string
--- the second argument must be an instant vector
--- a valid call counts the series per distinct sample value
-[('v','2.5')]	1970-01-01 00:01:50.000	2
-[('v','7')]	1970-01-01 00:01:50.000	1

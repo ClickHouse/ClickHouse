@@ -5,21 +5,21 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
 {
-    const UnorderedMapWithMemoryTracking<std::string_view, Float64> time_unit_to_float =
+    const std::unordered_map<std::string_view, Float64> time_unit_to_float =
     {
         {"years", 365 * 24 * 3600},
         {"year", 365 * 24 * 3600},
@@ -101,7 +101,7 @@ namespace
      * The length of years and months (and even days in presence of time adjustments) are rough:
      * year is just 365 days, month is 30.5 days, day is 86400 seconds, similarly to what formatReadableTimeDelta is doing.
      */
-    class FunctionParseTimeDelta final : public IFunction
+    class FunctionParseTimeDelta : public IFunction
     {
     public:
         static constexpr auto name = "parseTimeDelta";
@@ -109,31 +109,40 @@ namespace
 
         String getName() const override { return name; }
 
+        bool isVariadic() const override { return true; }
+
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        size_t getNumberOfArguments() const override { return 1; }
+        size_t getNumberOfArguments() const override { return 0; }
 
-        String getSignatureString() const override
+        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
-            return "(String) -> Float64";
-        }
+            if (arguments.empty())
+                throw Exception(
+                    ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                    "Number of arguments for function {} doesn't match: passed {}, should be 1.",
+                    getName(),
+                    arguments.size());
 
-        /// `parseTimeDelta` distinguished the two arity errors before it adopted the declarative
-        /// signature, and its tests pin those codes.
-        int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const override
-        {
-            return number_of_arguments < 1 ? ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION : ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+            if (arguments.size() > 1)
+                throw Exception(
+                    ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
+                    "Number of arguments for function {} doesn't match: passed {}, should be 1.",
+                    getName(),
+                    arguments.size());
+
+            const IDataType & type = *arguments[0];
+
+            if (!isString(type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time string.", type.getName());
+
+            return std::make_shared<DataTypeFloat64>();
         }
 
         DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {
             return std::make_shared<DataTypeFloat64>();
         }
-
-        /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-        /// row references it, so a function that throws on the default value must not be executed on
-        /// the whole dictionary - it would fail on entirely valid data.
-        bool canBeExecutedOnDefaultArguments() const override { return false; }
 
         bool useDefaultImplementationForConstants() const override { return true; }
 

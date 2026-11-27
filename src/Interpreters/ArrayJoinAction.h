@@ -12,9 +12,6 @@ namespace DB
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
 class DataTypeArray;
 class ColumnArray;
 std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type);
@@ -43,10 +40,6 @@ public:
     /// For LEFT ARRAY JOIN.
     FunctionOverloadResolverPtr function_builder;
 
-    /// Optional element-space filter: drops elements before expansion so they're never replicated
-    ExpressionActionsPtr element_filter;
-    String element_filter_column_name;
-
     ArrayJoinAction(const Names & columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_, bool enable_lazy_columns_replication_);
     static void prepare(const NameSet & columns, ColumnsWithTypeAndName & sample);
     static void prepare(const Names & columns, ColumnsWithTypeAndName & sample);
@@ -66,21 +59,14 @@ public:
     bool hasNext() const;
 
 private:
-    /// Element-space filtered variant of next(): runs the element filter over one window (row columns
-    /// it reads are broadcast to the elements) and expands only the survivors.
-    Block nextWithElementFilter();
-
     void initAnyArray();
     const PaddedPODArray<UInt64> & anyOffsets() const;
     ColumnPtr cutAnyArray(size_t start, size_t length) const;
-    /// Window of the joined column `name` as a full ColumnArray, padded for aligned LEFT ARRAY JOIN.
-    ColumnPtr cutArrayJoinColumn(const String & name, const ColumnPtr & column, const ColumnPtr & cut_any_col, size_t window_rows) const;
 
     const ArrayJoinAction * array_join;
     Block block;
     bool enable_lazy_columns_replication;
 
-    /// Array of the first joined column, padded for LEFT ARRAY JOIN and resized if unaligned.
     ColumnPtr any_array_map_ptr;
     /// Null if the joined column is replicated, then replicated_offsets is used instead.
     const ColumnArray * any_array = nullptr;
