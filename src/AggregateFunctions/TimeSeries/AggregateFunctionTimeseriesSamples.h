@@ -6,8 +6,7 @@
 
 #include <absl/container/inlined_vector.h>
 
-#include <base/inplaceMergeWithOtherRange.h>
-#include <base/inplaceMergeWithTempBuffer.h>
+#include <base/inplaceMergeWithBuffer.h>
 #include <base/sort.h>
 
 #include <Common/AllocatorWithMemoryTracking.h>
@@ -293,7 +292,7 @@ private:
 
         for_each_merge([&](Sample * run_begin, Sample * run_middle, Sample * run_end)
         {
-            inplaceMergeWithTempBuffer(run_begin, run_middle, run_end, lessByTimestamp, merge_buffer);
+            inplaceMergeWithTempBuffer(run_begin, run_middle, run_end, merge_buffer, lessByTimestamp);
         });
     }
 
@@ -329,7 +328,7 @@ private:
         /// With the tail after the prefix there is nothing to merge, and a unique tail leaves nothing to deduplicate.
         if (merge_begin == tail)
             return;
-        inplaceMergeWithTempBuffer(merge_begin, tail, buf.end(), lessByTimestamp, merge_buffer);
+        inplaceMergeWithTempBuffer(merge_begin, tail, buf.end(), merge_buffer, lessByTimestamp);
         deduplicateSorted(buf, merge_begin - buf.begin());
     }
 
@@ -343,7 +342,7 @@ private:
         /// and the merge and the deduplication start at `merge_begin`.
         const size_t merge_begin = std::lower_bound(buf.begin(), buf.end(), *other_begin, lessByTimestamp) - buf.begin();
         buf.resize(old_size + (other_end - other_begin));
-        inplaceMergeWithOtherRange(buf.data() + merge_begin, buf.data() + old_size, buf.data() + buf.size(), other_begin, other_end, lessByTimestamp);
+        inplaceMergeWithOtherBuffer(buf.data() + merge_begin, buf.data() + old_size, buf.data() + buf.size(), other_begin, other_end, lessByTimestamp);
         deduplicateSorted(buf, merge_begin);
     }
 

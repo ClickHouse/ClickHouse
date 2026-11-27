@@ -7,11 +7,10 @@
 
 #include <gtest/gtest.h>
 
-#include <base/inplaceMergeWithOtherRange.h>
-#include <base/inplaceMergeWithTempBuffer.h>
+#include <base/inplaceMergeWithBuffer.h>
 #include <Common/PODArray.h>
 
-/// `inplaceMergeWithOtherRange` and `inplaceMergeWithTempBuffer` are compared with `std::merge` and `std::inplace_merge`
+/// `inplaceMergeWithOtherBuffer` and `inplaceMergeWithTempBuffer` are compared with `std::merge` and `std::inplace_merge`
 /// on random sorted ranges with many equal keys, including empty ranges.
 
 namespace
@@ -39,7 +38,7 @@ Elements makeSortedRange(std::mt19937 & rng, int first_tag)
 
 }
 
-TEST(InplaceMerge, WithOtherRangeMatchesStdMerge)
+TEST(InplaceMerge, WithOtherBufferMatchesStdMerge)
 {
     std::mt19937 rng(42); // NOLINT(bugprone-random-generator-seed,cert-msc51-cpp,cert-msc32-c): deterministic seed for reproducible test failures
     for (size_t iteration = 0; iteration < num_iterations; ++iteration)
@@ -52,7 +51,7 @@ TEST(InplaceMerge, WithOtherRangeMatchesStdMerge)
 
         Elements grown = left;
         grown.resize(left.size() + right.size());
-        inplaceMergeWithOtherRange(
+        inplaceMergeWithOtherBuffer(
             grown.data(), grown.data() + left.size(), grown.data() + grown.size(), right.data(), right.data() + right.size(), less_by_key);
         ASSERT_EQ(grown, expected);
 
@@ -60,7 +59,7 @@ TEST(InplaceMerge, WithOtherRangeMatchesStdMerge)
         std::list<Element> grown_list(left.begin(), left.end());
         grown_list.resize(left.size() + right.size());
         const std::list<Element> other_list(right.begin(), right.end());
-        inplaceMergeWithOtherRange(
+        inplaceMergeWithOtherBuffer(
             grown_list.begin(), std::next(grown_list.begin(), left.size()), grown_list.end(), other_list.begin(), other_list.end(), less_by_key);
         ASSERT_EQ(Elements(grown_list.begin(), grown_list.end()), expected);
     }
@@ -83,12 +82,12 @@ TEST(InplaceMerge, WithTempBufferMatchesStdInplaceMerge)
         std::inplace_merge(expected.begin(), expected.begin() + left.size(), expected.end(), less_by_key);
 
         Elements merged = adjacent;
-        inplaceMergeWithTempBuffer(merged.data(), merged.data() + left.size(), merged.data() + merged.size(), less_by_key, pod_array_buffer);
+        inplaceMergeWithTempBuffer(merged.data(), merged.data() + left.size(), merged.data() + merged.size(), pod_array_buffer, less_by_key);
         ASSERT_EQ(merged, expected);
 
         /// Iterators without random access.
         std::list<Element> merged_list(adjacent.begin(), adjacent.end());
-        inplaceMergeWithTempBuffer(merged_list.begin(), std::next(merged_list.begin(), left.size()), merged_list.end(), less_by_key, vector_buffer);
+        inplaceMergeWithTempBuffer(merged_list.begin(), std::next(merged_list.begin(), left.size()), merged_list.end(), vector_buffer, less_by_key);
         ASSERT_EQ(Elements(merged_list.begin(), merged_list.end()), expected);
     }
 }
@@ -99,7 +98,7 @@ TEST(InplaceMerge, DefaultComparison)
     const std::vector<int> other = {2, 9};
     const size_t old_values_size = values.size();
     values.resize(old_values_size + other.size());
-    inplaceMergeWithOtherRange(values.begin(), values.begin() + old_values_size, values.end(), other.begin(), other.end());
+    inplaceMergeWithOtherBuffer(values.begin(), values.begin() + old_values_size, values.end(), other.begin(), other.end());
     EXPECT_EQ(values, (std::vector<int>{1, 2, 4, 7, 9}));
 
     std::vector<int> adjacent = {5, 6, 7, 8, 1, 2};
