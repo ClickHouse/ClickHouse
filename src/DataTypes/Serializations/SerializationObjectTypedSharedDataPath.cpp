@@ -23,6 +23,8 @@ SerializationObjectTypedSharedDataPath::SerializationObjectTypedSharedDataPath(
     , path_index(path_index_)
     , num_paths(num_paths_)
     , subcolumn_name(subcolumn_name_)
+    , read_type(subcolumn_name.empty() ? path.type : path.type->getSubcolumnType(subcolumn_name))
+    , read_serialization(subcolumn_name.empty() ? path.serialization : path.type->getSubcolumnSerialization(subcolumn_name, path.serialization))
 {
 }
 
@@ -82,9 +84,38 @@ void SerializationObjectTypedSharedDataPath::enumerateStreams(
         settings.path.pop_back();
     });
 
+    const auto * reader_state = data.deserialize_state
+        ? checkAndGetState<SerializationObjectTypedSharedData::DeserializeBinaryBulkStatePathsReader>(data.deserialize_state)
+        : nullptr;
+
+    /// Only the prefixes tell the layout the path is read from: without them only the header, which they read, is sure.
+    if (!reader_state)
+    {
+        settings.path.push_back(Substream::ObjectTypedSharedDataHeader);
+        callback(settings.path);
+        settings.path.pop_back();
+        return;
+    }
+
+    auto * shared_state = checkAndGetState<SerializationObjectTypedSharedData::DeserializeBinaryBulkStateObjectTypedSharedData>(
+        reader_state->shared_state);
+
+    /// A v2 Wide part reads the path over the regions of its substreams, unless another reader of the path needs the
+    /// plain layout, whose decode then serves the path too and a region prefetch would be wasted.
+    if (shared_state->readsFromRegions(path_index))
+    {
+        settings.path.push_back(Substream::ObjectTypedSharedDataHeader);
+        callback(settings.path);
+        settings.path.pop_back();
+
+        auto path_data = SubstreamData(read_serialization).withType(read_type).withDeserializeState(reader_state->path_states.front());
+        SerializationObjectTypedSharedData::enumeratePathRegionsStreams(settings, callback, *shared_state, path_index, path_data);
+        return;
+    }
+
     /// With a reader's state at hand, the path's bytes of the shared data stream, for the part's subcolumn sizes.
     SerializationObjectTypedSharedData::enumerateTypedSharedDataStreams(
-        settings, callback, SerializationObjectTypedSharedData::pathsSizeHint(data.deserialize_state, path_index, 1));
+        settings, callback, SerializationObjectTypedSharedData::pathsSizeHint(reader_state->shared_state, path_index, 1));
 }
 
 void SerializationObjectTypedSharedDataPath::serializeBinaryBulkStatePrefix(
@@ -122,15 +153,25 @@ void SerializationObjectTypedSharedDataPath::deserializeBinaryBulkStatePrefix(
         settings.path.pop_back();
     });
 
-    auto structure_state = SerializationObjectTypedSharedData::deserializeStructureStatePrefix(settings, cache, num_paths);
-    if (!structure_state)
+    auto shared_state = SerializationObjectTypedSharedData::deserializeSharedState(settings, cache, num_paths);
+    if (!shared_state)
         return;
 
-    /// A subcolumn reader registers the whole path too: it is extracted from the decoded path.
-    auto * structure
-        = checkAndGetState<SerializationObjectTypedSharedData::DeserializeBinaryBulkStateObjectTypedSharedDataStructure>(structure_state);
-    structure->requestPath(path_index, path);
-    state = std::move(structure_state);
+    auto * typed_shared_data_state
+        = checkAndGetState<SerializationObjectTypedSharedData::DeserializeBinaryBulkStateObjectTypedSharedData>(shared_state);
+    typed_shared_data_state->requestPath(path_index, path, /*from_plain_layout=*/ false);
+
+    auto reader_state = std::make_shared<SerializationObjectTypedSharedData::DeserializeBinaryBulkStatePathsReader>();
+    reader_state->path_states.resize(1);
+    if (typed_shared_data_state->readsFromRegions(path_index))
+    {
+        settings.path.push_back(SerializationObjectTypedSharedData::getPathElement(path.name));
+        SCOPE_EXIT(settings.path.pop_back());
+        SerializationObjectTypedSharedData::deserializePathRegionsPrefix(
+            settings, *typed_shared_data_state, path_index, *read_serialization, reader_state->path_states.front(), cache);
+    }
+    reader_state->shared_state = std::move(shared_state);
+    state = std::move(reader_state);
 }
 
 void SerializationObjectTypedSharedDataPath::deserializeBinaryBulkWithMultipleStreams(
@@ -144,8 +185,9 @@ void SerializationObjectTypedSharedDataPath::deserializeBinaryBulkWithMultipleSt
     if (!state)
         return;
 
-    auto * structure
-        = checkAndGetState<SerializationObjectTypedSharedData::DeserializeBinaryBulkStateObjectTypedSharedDataStructure>(state);
+    auto * reader_state = checkAndGetState<SerializationObjectTypedSharedData::DeserializeBinaryBulkStatePathsReader>(state);
+    auto * shared_state = checkAndGetState<SerializationObjectTypedSharedData::DeserializeBinaryBulkStateObjectTypedSharedData>(
+        reader_state->shared_state);
 
     settings.path.push_back(Substream::ObjectData);
     settings.path.push_back(Substream::ObjectTypedSharedData);
@@ -154,12 +196,23 @@ void SerializationObjectTypedSharedDataPath::deserializeBinaryBulkWithMultipleSt
         settings.path.pop_back();
     });
 
+    /// A v2 Wide part reads the path, or the subcolumn, over the regions of its substreams like a column of a Wide part,
+    /// unless another reader of the path needs the plain layout, whose one decode then serves every path read from it.
+    if (shared_state->readsFromRegions(path_index))
+    {
+        settings.path.push_back(SerializationObjectTypedSharedData::getPathElement(path.name));
+        SCOPE_EXIT(settings.path.pop_back());
+        SerializationObjectTypedSharedData::deserializePathRegions(
+            column, limit, settings, *shared_state, path_index, *read_serialization, reader_state->path_states.front(), cache);
+        return;
+    }
+
     if (subcolumn_name.empty())
     {
         if (SerializationObjectTypedSharedData::insertPathFromCache(column, path.name, settings, cache))
             return;
-        SerializationObjectTypedSharedData::deserializeRequestedPaths(
-            limit, settings, *structure, cache, [&](size_t index) -> IColumn * { return index == path_index ? &column : nullptr; });
+        SerializationObjectTypedSharedData::deserializePlainLayoutPaths(
+            limit, settings, *shared_state, cache, [&](size_t index) -> IColumn * { return index == path_index ? &column : nullptr; });
         return;
     }
 
@@ -169,7 +222,7 @@ void SerializationObjectTypedSharedDataPath::deserializeBinaryBulkWithMultipleSt
     settings.path.pop_back();
     if (!cached)
     {
-        SerializationObjectTypedSharedData::deserializeRequestedPaths(limit, settings, *structure, cache, [](size_t) -> IColumn * { return nullptr; });
+        SerializationObjectTypedSharedData::deserializePlainLayoutPaths(limit, settings, *shared_state, cache, [](size_t) -> IColumn * { return nullptr; });
         settings.path.push_back(SerializationObjectTypedSharedData::getPathElement(path.name));
         cached = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path);
         settings.path.pop_back();

@@ -32,6 +32,12 @@ public:
     void setReadUntilEnd() override;
     bool supportsRightBoundedReads() const override { return true; }
 
+    /// The encrypted file has the header in front of the data.
+    void setReadBounds(size_t left, size_t right) override
+    {
+        in->setReadBounds(left + FileEncryption::Header::kSize, right + FileEncryption::Header::kSize);
+    }
+
     void prefetch(Priority priority) override;
 
     bool supportsReadAt() override { return in->supportsReadAt(); }

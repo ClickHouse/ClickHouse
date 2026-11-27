@@ -59,6 +59,7 @@
     M(TemporaryFilesForSet, "Number of temporary files created for `IN` sets in external memory") \
     M(TemporaryFilesForDistinct, "Number of temporary files created for external DISTINCT") \
     M(TemporaryFilesForMerge, "Number of temporary files for vertical merge") \
+    M(TemporaryFilesForSerializationSpills, "Number of temporary files of serialized data spilled by part writes") \
     M(TemporaryFilesForPackedParts, "Number of temporary files with the buffered data of packed data parts being written") \
     M(PackedPartsBufferedBytes, "Amount of memory (bytes) allocated for the buffered data of packed data parts being written. The data moved to temporary files is not included.") \
     M(TemporaryFilesUnknown, "Number of temporary files created without known purpose") \

@@ -67,7 +67,7 @@ private:
 
     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 
-    std::vector<ColumnSize> calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const override;
+    std::vector<SubcolumnStreamsPtr> calculateSubcolumnStreams(const NamesAndTypesList & subcolumns) const override;
     bool canCalculateSubcolumnSizeFromMemory(const NameAndTypePair & subcolumn) const override;
 
     /// The sum of the per-column read sizes.
@@ -80,7 +80,7 @@ private:
     void addStreamToColumnSize(const String & stream_name, ColumnSize & size) const;
 
     /// Adds the stream's share of its file where it has a size hint, else the whole file.
-    void addStreamWithSizeHintToColumnSize(const StreamWithSizeHint & stream, ColumnSize & size) const;
+    void addStreamWithSizeHintToColumnSize(const StreamWithSizeHint & stream, ColumnSize & size, std::unordered_set<String> & counted_files) const;
 
     /// The names of the column's streams that exist in the part, from columns_substreams.txt where the part has it, else
     /// from the serialization, whose state-less enumeration misses the data-dependent streams of dynamic subcolumns.
@@ -91,7 +91,9 @@ private:
         const NamesAndTypesList & columns, const ReadSettings & read_settings) const;
 
     mutable std::mutex columns_read_sizes_mutex;
-    mutable std::map<String, ColumnSize> columns_read_sizes TSA_GUARDED_BY(columns_read_sizes_mutex);
+    /// Only a column with dynamic subcolumns has a read size below its on-disk size, so this is populated (and
+    /// allocated) only on parts that have such a column.
+    mutable std::unique_ptr<std::map<String, ColumnSize>> columns_read_sizes TSA_GUARDED_BY(columns_read_sizes_mutex);
 };
 
 }

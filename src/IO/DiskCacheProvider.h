@@ -103,7 +103,8 @@ public:
         const FilesystemCacheSettings & cache_settings_,
         ThrottlerPtr local_throttler_ = nullptr,
         std::optional<FileCacheKey> custom_cache_key_ = std::nullopt,
-        std::optional<FileCacheOriginInfo> custom_origin_ = std::nullopt);
+        std::optional<FileCacheOriginInfo> custom_origin_ = std::nullopt,
+        std::optional<std::pair<size_t, size_t>> read_bounds_ = std::nullopt);
 
     String name() const override { return "DiskCache"; }
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
@@ -113,6 +114,8 @@ public:
     VectorWithMemoryTracking<CacheResolution> resolve(
         const StoredObject & object, size_t object_offset, ByteRange range) override;
 
+    void setReadBounds(std::optional<std::pair<size_t, size_t>> bounds) override { read_bounds = bounds; }
+
 private:
     FileCachePtr cache;
     FilesystemCacheSettings cache_settings;
@@ -120,6 +123,9 @@ private:
     ThrottlerPtr local_throttler;
     std::optional<FileCacheKey> custom_cache_key;
     std::optional<FileCacheOriginInfo> custom_origin;
+    /// The byte range [begin, end) the reader stays within, in the file's physical offsets (the cache's
+    /// coordinates, so past the encryption header). The cache does not align its segments past it.
+    std::optional<std::pair<size_t, size_t>> read_bounds;
     /// Keep-alive anchors for recently-used cache-segment readers; see
     /// `ReaderAnchorCache`.
     ReaderAnchorCache reader_anchors;

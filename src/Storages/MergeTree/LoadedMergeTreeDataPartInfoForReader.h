@@ -85,10 +85,16 @@ public:
     [[nodiscard]] CompressionCodecPtr getDefaultCompressionCodec() const override { return data_part->default_codec; }
 
     [[nodiscard]] ColumnSize getSubcolumnSize(const String & subcolumn_name) const override { return data_part->getSubcolumnSize(subcolumn_name); }
+    [[nodiscard]] SubcolumnStreamsPtr tryGetCachedSubcolumnStreams(const String & subcolumn_name) const override
+    {
+        return data_part->tryGetCachedSubcolumnStreams(subcolumn_name);
+    }
 
     [[nodiscard]] const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
 
     [[nodiscard]] const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes() const override { return data_part->getSecondaryIndexColumnTypes(); }
+
+    void registerMarkCacheKey(UInt128 key) const override { data_part->registerMarkCacheKey(key); }
 
     void reportBroken() override { data_part->storage.reportBrokenPart(data_part); }
 

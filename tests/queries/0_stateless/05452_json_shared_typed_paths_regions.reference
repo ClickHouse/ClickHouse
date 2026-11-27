@@ -1,0 +1,25 @@
+-- direct mode (Wide, one block)
+json	1
+json.a	1
+json.b	1
+json.c	1
+json.a,json.b	1
+json.j	1
+json.j.p	1
+json.a mbs=1	1
+json.a mbs=3	1
+json.a WHERE	1
+json.a PREWHERE	1
+json.a LIMIT	1
+-- buffered mode (Wide, merged, granule spans blocks)
+parts	1
+json	1
+json.a	1
+json.b	1
+json.c	1
+json.j.p	1
+json.a mbs=1	1
+-- Compact part (v2 setting, the plain layout)
+part_type	Compact
+json.a	1
+json.j.p	1

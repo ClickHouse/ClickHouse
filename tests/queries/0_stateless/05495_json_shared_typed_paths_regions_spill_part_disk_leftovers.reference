@@ -1,0 +1,12 @@
+t_local_horizontal	merge spilled	1	Horizontal
+t_local_horizontal	mutation spilled	1
+t_local_horizontal	parts	1
+1
+t_local_horizontal	data	1
+t_local_horizontal temporary directories left: 0
+t_s3_vertical	merge spilled	1	Vertical
+t_s3_vertical	mutation spilled	1
+t_s3_vertical	parts	1
+1
+t_s3_vertical	data	1
+t_s3_vertical temporary directories left: 0

@@ -266,11 +266,10 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
 }
 
 
-std::vector<ColumnSize> MergeTreeDataPartWide::calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const
+std::vector<SubcolumnStreamsPtr> MergeTreeDataPartWide::calculateSubcolumnStreams(const NamesAndTypesList & subcolumns) const
 {
-    std::vector<ColumnSize> sizes(subcolumns.size());
     if (checksums.empty() || isEmpty() || subcolumns.empty())
-        return sizes;
+        return IMergeTreeDataPart::calculateSubcolumnStreams(subcolumns);
 
     /// Only the prefixes are read: no prefetches, but through the caches the query reads the part with.
     ReadSettings read_settings = getReadSettingsForMetadata();
@@ -280,20 +279,24 @@ std::vector<ColumnSize> MergeTreeDataPartWide::calculateSubcolumnSizes(const Nam
 
     /// One reader for all of them, so a prefix the sub-columns share is read once.
     auto streams = getListOfStreamsForColumns(subcolumns, read_settings);
-    size_t i = 0;
+    std::vector<SubcolumnStreamsPtr> result;
+    result.reserve(subcolumns.size());
     for (const auto & subcolumn : subcolumns)
     {
-        for (const auto & stream : streams[subcolumn.name])
-            addStreamWithSizeHintToColumnSize(stream, sizes[i]);
-        ++i;
+        auto subcolumn_streams = std::make_shared<SubcolumnStreams>();
+        subcolumn_streams->streams = std::move(streams[subcolumn.name]);
+        std::unordered_set<String> counted_files;
+        for (const auto & stream : subcolumn_streams->streams)
+            addStreamWithSizeHintToColumnSize(stream, subcolumn_streams->size, counted_files);
+        result.push_back(std::move(subcolumn_streams));
     }
 
-    return sizes;
+    return result;
 }
 
 bool MergeTreeDataPartWide::canCalculateSubcolumnSizeFromMemory(const NameAndTypePair & subcolumn) const
 {
-    /// As calculateSubcolumnSizes, whose reader reads files only for the prefixes.
+    /// As calculateSubcolumnStreams, whose reader reads files only for the prefixes.
     return checksums.empty() || isEmpty() || !MergeTreeReaderWide::streamsDependOnPrefixes(subcolumn, getSerializationInfos());
 }
 
@@ -307,17 +310,25 @@ ColumnSize MergeTreeDataPartWide::calculateTotalColumnsReadSize() const
 
 ColumnSize MergeTreeDataPartWide::getColumnReadSize(const NameAndTypePair & column) const
 {
+    /// A column without dynamic subcolumns reads its whole on-disk size (see calculateColumnReadSize), which is already
+    /// known, so there is nothing to cache.
+    if (!column.type->hasDynamicSubcolumns())
+        return getColumnSize(column.name);
+
     {
         std::lock_guard lock(columns_read_sizes_mutex);
-        if (auto it = columns_read_sizes.find(column.name); it != columns_read_sizes.end())
-            return it->second;
+        if (columns_read_sizes)
+            if (auto it = columns_read_sizes->find(column.name); it != columns_read_sizes->end())
+                return it->second;
     }
 
     /// Calculated outside the lock, since it may read the part's prefixes.
     auto size = calculateColumnReadSize(column);
 
     std::lock_guard lock(columns_read_sizes_mutex);
-    return columns_read_sizes.emplace(column.name, size).first->second;
+    if (!columns_read_sizes)
+        columns_read_sizes = std::make_unique<std::map<String, ColumnSize>>();
+    return columns_read_sizes->emplace(column.name, size).first->second;
 }
 
 ColumnSize MergeTreeDataPartWide::calculateColumnReadSize(const NameAndTypePair & column) const
@@ -332,31 +343,31 @@ ColumnSize MergeTreeDataPartWide::calculateColumnReadSize(const NameAndTypePair 
 
     ColumnSize size;
     /// A file shared by streams of several subcolumns, such as the sizes of a Nested, counts once.
-    std::unordered_set<String> processed_streams;
+    std::unordered_set<String> counted_files;
     for (const auto & [_, streams] : getListOfStreamsForColumns({column}, getReadSettingsForMetadata()))
     {
         for (const auto & stream : streams)
-        {
-            if (stream.size_hint || processed_streams.insert(stream.name).second)
-                addStreamWithSizeHintToColumnSize(stream, size);
-        }
+            addStreamWithSizeHintToColumnSize(stream, size, counted_files);
     }
 
     return size;
 }
 
-void MergeTreeDataPartWide::addStreamWithSizeHintToColumnSize(const StreamWithSizeHint & stream, ColumnSize & size) const
+void MergeTreeDataPartWide::addStreamWithSizeHintToColumnSize(
+    const StreamWithSizeHint & stream, ColumnSize & size, std::unordered_set<String> & counted_files) const
 {
-    /// A hint is the column's share of a file it shares with others; the marks file is the stream's own.
+    /// A hint is the column's share of a file it shares with others, and the hints of several views of one file add
+    /// up; the file's marks, and a file without a hint, count once.
+    const bool first_of_file = counted_files.insert(stream.name).second;
     if (stream.size_hint)
     {
         size.data_compressed += stream.size_hint->compressed;
         size.data_uncompressed += stream.size_hint->uncompressed;
         auto mrk_checksum = checksums.files.find(stream.name + getMarksFileExtension());
-        if (mrk_checksum != checksums.files.end())
+        if (first_of_file && mrk_checksum != checksums.files.end())
             size.marks += mrk_checksum->second.file_size;
     }
-    else
+    else if (first_of_file)
     {
         addStreamToColumnSize(stream.name, size);
     }
@@ -492,6 +503,8 @@ void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
             mark_cache->remove(key);
         });
     }
+
+    removeRegisteredMarksFromCache(mark_cache);
 }
 
 void MergeTreeDataPartWide::forEachExistingStreamOfColumn(

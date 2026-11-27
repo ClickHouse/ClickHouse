@@ -118,6 +118,21 @@ void WriteBufferToFileSegment::nextImpl()
     }
 }
 
+bool WriteBufferToFileSegment::reserveAhead(
+    FileSegment & file_segment, size_t size, FileCacheReserveStat & reserve_stat, std::string & failure_reason)
+{
+    auto downloader = file_segment.getOrSetDownloader();
+    if (downloader != FileSegment::getCallerId())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Failed to set a downloader (current downloader: {}, file segment info: {})",
+                        downloader, file_segment.getInfoForLog());
+    }
+
+    SCOPE_EXIT({ file_segment.completePartAndResetDownloader(); });
+    return file_segment.reserve(size, getCacheLockWaitTimeout(), failure_reason, &reserve_stat);
+}
+
 void WriteBufferToFileSegment::finalizeImpl()
 {
     next();

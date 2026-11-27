@@ -155,7 +155,9 @@ public:
         const CreateFileSegmentSettings & settings,
         size_t file_segments_limit,
         const OriginInfo & origin,
-        std::optional<size_t> boundary_alignment_ = std::nullopt);
+        std::optional<size_t> boundary_alignment_ = std::nullopt,
+        /// The range the caller's reads stay within: the alignment does not create segments past it.
+        std::optional<FileSegment::Range> alignment_bounds = std::nullopt);
 
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous

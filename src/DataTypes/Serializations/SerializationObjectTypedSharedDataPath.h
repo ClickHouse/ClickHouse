@@ -7,10 +7,11 @@ namespace DB
 {
 
 /// Serialization of one SHARED typed path of Object, or of a subcolumn of it, read from the typed shared data of a
-/// part. The prefix registers the path in the structure state shared by the readers of the column; the data call
-/// takes the call's rows of the path from the substreams cache or, as the first reader of the call, decodes every
-/// requested path (SerializationObjectTypedSharedData::deserializeRequestedPaths). A subcolumn is extracted from the
-/// decoded path.
+/// part. The prefix registers the path in the state shared by the readers of the column. Over the regions of a v2 part
+/// the path or the subcolumn is read like a column of a Wide part, by its own serialization over the regions of its
+/// substreams; otherwise the data call takes the call's rows of the path from the substreams cache or, as the first
+/// reader of the plain layout in the call, decodes every path read from it
+/// (SerializationObjectTypedSharedData::deserializePlainLayoutPaths), and a subcolumn is extracted from the decoded path.
 class SerializationObjectTypedSharedDataPath final : public SerializationWrapper
 {
 private:
@@ -73,6 +74,9 @@ private:
     size_t num_paths;
     /// Empty when the whole path is read.
     String subcolumn_name;
+    /// The path's, or the subcolumn's resolved from the path type alone, which reads it over the regions.
+    DataTypePtr read_type;
+    SerializationPtr read_serialization;
 };
 
 }

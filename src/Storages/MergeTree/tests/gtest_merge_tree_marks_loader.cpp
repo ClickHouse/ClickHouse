@@ -43,10 +43,12 @@ public:
     [[nodiscard]] std::shared_ptr<const std::unordered_map<String, ColumnSize>> getColumnSizes() const override { unexpectedCall(); }
     [[nodiscard]] CompressionCodecPtr getDefaultCompressionCodec() const override { unexpectedCall(); }
     [[nodiscard]] ColumnSize getSubcolumnSize(const String &) const override { unexpectedCall(); }
+    [[nodiscard]] SubcolumnStreamsPtr tryGetCachedSubcolumnStreams(const String &) const override { return nullptr; }
     [[nodiscard]] MergeTreeSettingsPtr getStorageSettings() const override { unexpectedCall(); }
     [[nodiscard]] std::shared_ptr<const IMergeTreeDataPart> getDataPart() const override { unexpectedCall(); }
     [[nodiscard]] const MergeTreeDataPartChecksums & getChecksums() const override { unexpectedCall(); }
     [[nodiscard]] const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes() const override { unexpectedCall(); }
+    void registerMarkCacheKey(UInt128) const override { unexpectedCall(); }
     [[nodiscard]] AlterConversionsPtr getAlterConversions() const override { unexpectedCall(); }
     [[nodiscard]] size_t getMarksCount() const override { unexpectedCall(); }
     [[nodiscard]] size_t getFileSizeOrZero(const std::string &) const override { unexpectedCall(); }

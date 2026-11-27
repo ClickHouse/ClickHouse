@@ -1,0 +1,40 @@
+parts	t_merged	1
+parts	t_one_block	1
+parts	t_spilled	1
+-- one path or subcolumn per query, merged part
+json.a	1
+json.a.null	1
+json.b	1
+json.b.size0	1
+json.b.null	1
+json.c	1
+json.d	1
+json.d.x	1
+json.d.y.size0	1
+json.e	1
+json.e.Int64	1
+json.e.String	1
+json.f	1
+json.f.String	1
+json.g	1
+json.g.keys	1
+json.h	1
+json.h.i	1
+json.h.k	1
+json.s.p2	1
+json.^s	1
+-- everything in one query, every part
+t_merged	1
+t_one_block	1
+t_spilled	1
+-- cut granules, filters, PREWHERE
+max_block_size = 5	1
+WHERE x	1
+PREWHERE path	1
+PREWHERE subcolumn	1
+-- layouts read
+05482_json_path	1	0
+05482_region	1	0
+1
+1
+1

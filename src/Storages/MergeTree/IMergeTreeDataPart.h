@@ -9,6 +9,8 @@
 #include <filesystem>
 #include <functional>
 #include <mutex>
+#include <unordered_set>
+#include <Common/HashTable/Hash.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -30,6 +32,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/StreamWithSizeHint.h>
 #include <Storages/MergeTree/MergeTreePartMinMaxIndex.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
@@ -177,6 +180,8 @@ public:
     ColumnSize getSubcolumnSize(const String & /*subcolumn_name*/) const;
     /// The same for several subcolumns at once, listed by one reader; the results go to the cache as well.
     std::vector<ColumnSize> getSubcolumnSizes(const NamesAndTypesList & subcolumns) const;
+    /// The streams of a subcolumn if they are in the cache already; never lists them.
+    SubcolumnStreamsPtr tryGetCachedSubcolumnStreams(const String & subcolumn_name) const;
     /// The sizes of the subcolumns, and, if `with_columns`, of the columns among `column_names` that the part has. The uncached
     /// subcolumn sizes are calculated with one reader per column, or nullopt is returned if `only_from_memory` and that reads files.
     std::optional<std::vector<std::pair<String, ColumnSize>>> getColumnAndSubcolumnSizes(
@@ -305,6 +310,10 @@ public:
 
     /// Removes marks from cache for all columns in part.
     virtual void removeMarksFromCache(MarkCache * mark_cache) const = 0;
+
+    /// Records the key of marks cached under a key that cannot be computed from the part's files (a slice of a file),
+    /// so that removeMarksFromCache removes them too.
+    void registerMarkCacheKey(UInt128 key) const;
 
     /// Loads index marks for secondary indices and saves them into the index mark cache.
     void loadIndexMarksToCache(MarkCache * index_mark_cache) const;
@@ -872,6 +881,9 @@ protected:
     mutable std::mutex index_mutex;
     mutable IndexPtr index;
 
+    /// Removes the marks registered with registerMarkCacheKey.
+    void removeRegisteredMarksFromCache(MarkCache * mark_cache) const;
+
 private:
     void calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked() const TSA_REQUIRES(columns_and_secondary_indices_sizes_mutex);
 
@@ -887,10 +899,10 @@ private:
 
     mutable IndexSizeByNameConstPtr secondary_index_sizes TSA_GUARDED_BY(columns_and_secondary_indices_sizes_mutex);
 
-    /// Sometimes we need to calculate the size of all files required to read a specific subcolumn.
-    /// We do it on the first request and save it in the subcolumns_sizes_cache.
+    /// Sometimes we need the streams required to read a specific subcolumn and their size: listing them reads the
+    /// prefixes, so we do it on the first request and save them in the subcolumns_streams_cache.
     /// The number of subcolumns can be infinite due to dynamic subcolumns in JSON, so we use LRU cache here.
-    mutable Poco::LRUCache<String, ColumnSize> subcolumns_sizes_cache = Poco::LRUCache<String, ColumnSize>(1024);
+    mutable Poco::LRUCache<String, SubcolumnStreamsPtr> subcolumns_streams_cache = Poco::LRUCache<String, SubcolumnStreamsPtr>(1024);
 
     /// PackedFilesReader for statistics archive.
     /// Lazily loaded on first access to loadStatistics when packed format is used.
@@ -918,8 +930,8 @@ protected:
     /// disk using columns and checksums.
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
-    /// Calculate the sizes of all files required to read the specified subcolumns, one size per subcolumn.
-    virtual std::vector<ColumnSize> calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const { return std::vector<ColumnSize>(subcolumns.size()); }
+    /// List the streams required to read the specified subcolumns with their sizes, one entry per subcolumn.
+    virtual std::vector<SubcolumnStreamsPtr> calculateSubcolumnStreams(const NamesAndTypesList & subcolumns) const;
     virtual bool canCalculateSubcolumnSizeFromMemory(const NameAndTypePair & /*subcolumn*/) const { return true; }
 
     /// Calculate the size of the streams a read of all columns touches; the size on disk where columns are not stored
@@ -1078,6 +1090,10 @@ private:
 
     /// If it's true then data related to this part is cleared from mark and index caches.
     mutable std::atomic_bool cleared_data_in_caches = false;
+
+    mutable std::mutex registered_mark_cache_keys_mutex;
+    /// Only a region read of a JSON column registers keys here, so it stays unallocated on other parts.
+    mutable std::unique_ptr<std::unordered_set<UInt128, UInt128TrivialHash>> registered_mark_cache_keys TSA_GUARDED_BY(registered_mark_cache_keys_mutex);
 
     /// If it's true then the statistics of this part may have been put into the statistics cache.
     mutable std::atomic_bool may_store_data_in_statistics_cache = false;

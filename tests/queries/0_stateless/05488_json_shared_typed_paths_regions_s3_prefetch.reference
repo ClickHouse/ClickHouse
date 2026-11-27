@@ -1,0 +1,18 @@
+parts	3
+-- first run
+json.b.size0	1
+json.a.null	1
+json.c	1
+json.e.String	1
+json.h.k1	1
+json.^s	1
+everything	1
+WHERE x	1
+PREWHERE	1
+-- second run, from the caches
+json.b.size0	1
+json.e.String	1
+json.h.k1	1
+everything	1
+PREWHERE	1
+layouts read	1	0

@@ -66,6 +66,7 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, MergeTreeObjectSharedDataSerializationVersion) \
     M(CLASS_NAME, MergeTreeDynamicSerializationVersion) \
     M(CLASS_NAME, MergeTreeObjectTypedSharedDataSerializationVersion) \
+    M(CLASS_NAME, MergeTreeSerializationSpillErrorMode) \
     M(CLASS_NAME, MergeTreePatchPartsVersion) \
     M(CLASS_NAME, MergeTreeMapBucketsStrategy) \
     M(CLASS_NAME, MergeTreeMapSerializationVersion) \

@@ -162,6 +162,9 @@ struct SerializationSubstream
         ObjectTypedSharedDataHeader,
         ObjectTypedSharedDataPathsData,
         ObjectTypedSharedDataPathsMarks,
+        /// The regions of the paths' substreams and their marks slices (v2 layout), read through views.
+        ObjectTypedSharedDataPathsRegionData,
+        ObjectTypedSharedDataPathsRegionMarks,
         /// A SHARED typed path of Object: the identity element of the resolved path, with no file of its own.
         ObjectTypedSharedDataPath,
         ObjectStructure,
@@ -205,6 +208,11 @@ struct SerializationSubstream
         size_t uncompressed = 0;
     };
     std::optional<SizeHint> size_hint;
+
+    /// For a stream living in a slice of a shared file, set by such a serialization on the element its path inside
+    /// the slice starts with; the path is otherwise the stream's own. Defined in SubstreamView.h.
+    struct StreamView;
+    std::shared_ptr<const StreamView> view;
 
     /// Data for current substream.
     SerializationSubstreamData data;

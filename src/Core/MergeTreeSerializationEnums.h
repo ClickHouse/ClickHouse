@@ -50,6 +50,17 @@ enum class MergeTreeDynamicSerializationVersion : uint8_t
 enum class MergeTreeObjectTypedSharedDataSerializationVersion : uint8_t
 {
     V1 = 1,
+    V2 = 2,
+};
+
+/// What an error that loses serialized data a part write spilled to temporary storage does to the part write.
+enum class MergeTreeSerializationSpillErrorMode : uint8_t
+{
+    /// The part write fails.
+    THROW,
+    /// The part is written without what the serialization built from the spilled data (for JSON columns, the regions
+    /// of the `SHARED` typed paths).
+    SKIP,
 };
 
 enum class MergeTreePatchPartsVersion : uint8_t

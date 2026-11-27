@@ -852,6 +852,16 @@ void ReaderExecutor::seek(size_t new_position)
     /// frees or resets it (a discontinuity `reset`s the plan, a forward move `dropBefore`s it).
 }
 
+void ReaderExecutor::setReadBounds(size_t left, size_t right)
+{
+    if (left >= right)
+        return;
+    /// The cache tiers see the physical file, past the encryption header.
+    const std::pair<size_t, size_t> physical{toPhysical(left), toPhysical(right)};
+    for (const auto & cache : cache_chain)
+        cache->setReadBounds(physical);
+}
+
 void ReaderExecutor::setRequestMap(ByteRangeSet ranges)
 {
     request_map = std::move(ranges);

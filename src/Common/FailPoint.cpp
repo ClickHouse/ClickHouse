@@ -41,6 +41,10 @@ static struct InitFiu
     ONCE(transaction_metadata_store_fail) \
     ONCE(transaction_mutation_csn_store_fail) \
     REGULAR(executing_graph_build_fail) \
+    REGULAR(serialization_spill_fail_write) \
+    REGULAR(serialization_spill_fail_part_disk) \
+    REGULAR(serialization_spill_read_eof) \
+    ONCE(serialization_spill_reserve_more_refused) \
     PAUSEABLE_ONCE(polling_queue_before_try_poll) \
     ONCE(transaction_mutation_csn_store_fail_after_write) \
     ONCE(local_directory_sync_fail) \

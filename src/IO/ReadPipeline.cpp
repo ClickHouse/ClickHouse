@@ -216,6 +216,11 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     impl = wrapAsyncPrefetch(std::move(impl)); // Stage 5
     impl = wrapDecryption(std::move(impl));    // Stage 6 (encryption)
 
+    /// Keep a filesystem cache's file segments of a range read within it; see `wrapDecryption`. Without such a cache
+    /// this bound has no reader to act on it, and leaving it unset keeps a range read identical to an unbounded one.
+    if (initial_read_bounds && !filesystem_caches.empty())
+        impl->setReadBounds(initial_read_bounds->first, initial_read_bounds->second);
+
     return impl;
 }
 
@@ -317,6 +322,19 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
             total_file_size));
     }
 
+    /// The read bounds in the file's physical offsets (past the encryption headers the executor reads and
+    /// strips), so the cache keeps its segments of a range read within it; see `wrapDecryption`.
+    std::optional<std::pair<size_t, size_t>> cache_read_bounds;
+    if (initial_read_bounds)
+    {
+        size_t headers_size = 0;
+#if USE_SSL
+        const size_t layers = std::ranges::count_if(decryption_stages, [](const auto & dec) { return dec.key_finder != nullptr; });
+        headers_size = layers * FileEncryption::Header::kSize;
+#endif
+        cache_read_bounds.emplace(initial_read_bounds->first + headers_size, initial_read_bounds->second + headers_size);
+    }
+
     /// Cache chain of the filesystem cache(s). `filesystem_caches` is inner-to-outer; the executor
     /// queries the front first, so reverse it.
     for (auto it = filesystem_caches.rbegin(); it != filesystem_caches.rend(); ++it)
@@ -324,7 +342,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
         chassert(it->cache);
         cache_chain.push_back(std::make_shared<DiskCacheProvider>(
             it->cache, it->cache_settings, settings.local_throttler,
-            it->custom_cache_key, it->custom_origin));
+            it->custom_cache_key, it->custom_origin, cache_read_bounds));
     }
 
     auto executor = std::make_unique<ReaderExecutor>(
@@ -838,8 +856,22 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapDecryption(std::unique
     const size_t layers = std::ranges::count_if(decryption_stages, [](const auto & dec) { return dec.key_finder != nullptr; });
 
     /// Bound the source before reading the headers. Every encryption layer adds a header in front of the data it wraps.
-    if (initial_read_until_position && layers)
+    /// Bounding the header reads to the headers keeps a filesystem cache below from creating a segment for the header
+    /// read that spans the range (it aligns segments outward to its boundary). Without such a cache the bound would
+    /// only change which bytes a request covers, not the caching, and a view's reads of one file share no stream: a
+    /// per-read header bound would make each read start at the file's beginning. So split the header read off only when
+    /// a filesystem cache is below; without one, leave the header read as the plain case does.
+    const bool cache_below = !filesystem_caches.empty();
+    if (layers && initial_read_bounds && cache_below)
+    {
+        const size_t headers_size = layers * FileEncryption::Header::kSize;
+        impl->setReadUntilPosition(headers_size);
+        impl->setReadBounds(0, headers_size);
+    }
+    else if (layers && initial_read_until_position)
+    {
         impl->setReadUntilPosition(*initial_read_until_position + layers * FileEncryption::Header::kSize);
+    }
 
     /// The header of a file never changes: the cache is only set for disks where every write creates a new blob, so it is
     /// keyed by the blob path. With a cached header the source is not read here, and `ReadBufferFromEncryptedFile` moves it

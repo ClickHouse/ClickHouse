@@ -1,0 +1,17 @@
+-- every sub-object over regions
+json.a, json.^x	1
+json.^x, json.^x.y	1
+-- a wide sub-object reads the plain layout, the other paths their regions
+json.a, json.^x	1
+json.x.p1, json.^x, json.b	1
+json.a, json.^x WHERE	1
+-- a narrow sub-object inside a wide one
+json.^x, json.^x.y	1
+json.^x.y, json.a	1
+-- the whole column with a path
+json, json.a	1
+-- the layouts read
+05458_narrow_sub_object	1	0
+05458_path	1	0
+05458_whole_column	0	1
+05458_wide_sub_object	1	1

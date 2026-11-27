@@ -1,0 +1,16 @@
+t_in_memory	0
+t_spilled	1
+-- in memory
+1
+json	1
+json.a	1
+json.d	1
+json.d.String	1
+-- spilled
+1
+json	1
+json.a	1
+json.d	1
+json.d.String	1
+05496_in_memory_region_read	1
+05496_spilled_region_read	1
