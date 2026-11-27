@@ -11,6 +11,8 @@ This guide installs [ClickHouse Loom](https://loom.clickhouse.com/), an open-sou
 
 ## Before you begin {#before-you-begin}
 
+If you're evaluating memory for a coding team, use the [coding-agent memory selector](https://loom.clickhouse.com/agent-memory-selector) to choose a starting setup and copy a checklist for your repository.
+
 - Docker with Compose 2.20 or later, on Linux `amd64` or `arm64` (Docker Desktop on Apple Silicon works), and port 7777 free.
 - A ClickHouse for Loom. The Loom stack can run its own ClickHouse container. To use a ClickHouse Cloud service or a self-managed server instead:
   - version 26.4 or later (on Cloud, the service's oldest replica counts);
@@ -161,6 +163,10 @@ Yes. A new deployment can choose Postgres at its first boot as the authority for
 
 - [Loom documentation](https://loom.clickhouse.com/docs) for deployment, clients, and operations.
 - [Evaluate shared memory for coding agents](https://loom.clickhouse.com/docs/use-cases/agent-memory) across sessions and tools.
-- [Loom quickstart](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/getting-started/quickstart.md)
-- [Connect a coding agent](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/getting-started/connect-a-coding-agent.md)
+- [Try code-linked agent memory](https://loom.clickhouse.com/docs/use-cases/memory-linked-to-code#check-a-lesson-after-a-code-edit) and see how Loom flags a saved lesson when the code it refers to changes.
+- [Test agent memory for a software factory](https://loom.clickhouse.com/docs/use-cases/multi-agent#choosing-memory-for-a-software-factory) on one repository with separate implementer and reviewer credentials.
+- [Build a knowledge factory for AI agents](https://loom.clickhouse.com/docs/use-cases/knowledge-factory) by publishing a runbook, retrieving a cited revision, and updating a saved lesson.
+- Install Loom with the [quickstart](https://loom.clickhouse.com/docs/getting-started/quickstart) or read the [Simplified Chinese quickstart (简体中文)](https://loom.clickhouse.com/docs/zh-CN/getting-started/quickstart).
+- [Connect a coding agent](https://loom.clickhouse.com/docs/getting-started/connect-a-coding-agent) to share memory across sessions.
+- [Audit agent memory with SQL](https://loom.clickhouse.com/docs/use-cases/self-hosted-clickhouse#query-agent-memory-with-sql) to inspect decision history and trace a saved memory to its agent run with a namespace-scoped reader.
 - [Use ClickHouse with MCP](/guides/use-cases/ai-ml/MCP/index)
