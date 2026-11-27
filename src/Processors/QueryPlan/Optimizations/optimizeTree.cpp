@@ -497,7 +497,6 @@ void optimizeTreeSecondPass(
         /// A filter moved entirely to PREWHERE leaves an expression in its place, after the expressions were merged.
         /// Merge it with the expression above, as optimizing the plan again would: a plan fragment of plan-based
         /// parallel replicas is optimized again, and automatic parallel replicas can't match it with this plan otherwise.
-        /// Not with a filter above, which would be rebuilt and lose its query condition cache key.
         UnorderedSetWithMemoryTracking<const QueryPlan::Node *> moved_filters;
         traverseQueryPlan(stack, root,
             [&](auto & frame_node)

@@ -20,9 +20,7 @@ DelayedPorts 2 → 1
 (CreatingSets)
   (Expression)
   ExpressionTransform
-    (Expression)
-    ExpressionTransform
-      (ReadFromMemoryStorage)
+    (ReadFromMemoryStorage)
 -- the shape that motivated this: a downstream JOIN with an empty right side closes its inputs early
 -- a row policy with IN (subquery) is built in place as well
 (CreatingSets)

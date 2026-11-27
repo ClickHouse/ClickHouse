@@ -1,38 +1,34 @@
 ============ #66878
 Union
-  Expression ((Project names + Projection))
-  Actions: INPUT : 0 -> __table1.x UInt32 : 0
-           INPUT : 1 -> __table1.y UInt32 : 1
+  Expression (((Project names + Projection) + (WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
+  Actions: INPUT : 1 -> y UInt32 : 0
+           INPUT : 0 -> x UInt32 : 1
+           ALIAS y :: 0 -> __table1.y UInt32 : 2
+           ALIAS x :: 1 -> __table1.x UInt32 : 0
+           ALIAS __table1.y :: 2 -> y UInt32 : 1
            ALIAS __table1.x :: 0 -> x UInt32 : 2
-           ALIAS __table1.y :: 1 -> y UInt32 : 0
-  Positions: 2 0
-    Expression ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
-    Actions: INPUT : 1 -> y UInt32 : 0
-             INPUT : 0 -> x UInt32 : 1
-             ALIAS y :: 0 -> __table1.y UInt32 : 2
-             ALIAS x :: 1 -> __table1.x UInt32 : 0
-    Positions: 0 2
-      ReadFromMergeTree (default.tab0)
-      ReadType: Default
-      Parts: 1
-      Granules: 1
-      Prewhere info
-      Need filter: 1
-        Prewhere filter
-        Prewhere filter column: equals(__table1.x, 42_UInt8) (removed)
-        Actions: INPUT : 0 -> x UInt32 : 0
-                 COLUMN Const(UInt8) -> 42_UInt8 UInt8 : 1
-                 FUNCTION equals(x : 0, 42_UInt8 :: 1) -> equals(__table1.x, 42_UInt8) UInt8 : 2
-        Positions: 0 2
-      Indexes:
-        PrimaryKey
-          Keys:
-            x
-          Condition: (x in [42, 42])
-          Parts: 1/1
-          Granules: 1/123
-          Search Algorithm: binary search
-        Ranges: 1
+  Positions: 2 1
+    ReadFromMergeTree (default.tab0)
+    ReadType: Default
+    Parts: 1
+    Granules: 1
+    Prewhere info
+    Need filter: 1
+      Prewhere filter
+      Prewhere filter column: equals(__table1.x, 42_UInt8) (removed)
+      Actions: INPUT : 0 -> x UInt32 : 0
+               COLUMN Const(UInt8) -> 42_UInt8 UInt8 : 1
+               FUNCTION equals(x : 0, 42_UInt8 :: 1) -> equals(__table1.x, 42_UInt8) UInt8 : 2
+      Positions: 0 2
+    Indexes:
+      PrimaryKey
+        Keys:
+          x
+        Condition: (x in [42, 42])
+        Parts: 1/1
+        Granules: 1/123
+        Search Algorithm: binary search
+      Ranges: 1
   Expression ((Project names + Projection))
   Actions: INPUT : 0 -> __table1.x UInt32 : 0
            INPUT : 1 -> __table1.y UInt32 : 1
@@ -49,39 +45,35 @@ Union
              FUNCTION equals(x :: 0, 42_UInt8 :: 2) -> equals(__table1.x, 42_UInt8) UInt8 : 1
     Positions: 1 3 4
       ReadFromRemote (Read from remote replica)
-        Expression ((Project names + Projection))
-        Actions: INPUT : 0 -> __table1.x UInt32 : 0
-                 INPUT : 1 -> __table1.y UInt32 : 1
+        Expression (((Project names + Projection) + (WHERE + Change column names to column identifiers)))
+        Actions: INPUT : 1 -> y UInt32 : 0
+                 INPUT : 0 -> x UInt32 : 1
+                 ALIAS y :: 0 -> __table1.y UInt32 : 2
+                 ALIAS x :: 1 -> __table1.x UInt32 : 0
+                 ALIAS __table1.y :: 2 -> y UInt32 : 1
                  ALIAS __table1.x :: 0 -> x UInt32 : 2
-                 ALIAS __table1.y :: 1 -> y UInt32 : 0
-        Positions: 2 0
-          Expression ((WHERE + Change column names to column identifiers))
-          Actions: INPUT : 1 -> y UInt32 : 0
-                   INPUT : 0 -> x UInt32 : 1
-                   ALIAS y :: 0 -> __table1.y UInt32 : 2
-                   ALIAS x :: 1 -> __table1.x UInt32 : 0
-          Positions: 0 2
-            ReadFromMergeTree (default.tab0)
-            ReadType: Default
-            Parts: 1
-            Granules: 1
-            Prewhere info
-            Need filter: 1
-              Prewhere filter
-              Prewhere filter column: equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) (removed)
-              Actions: INPUT : 0 -> x UInt32 : 0
-                       COLUMN Const(UInt8) -> _CAST(42_UInt8, \'UInt8\'_String) UInt8 : 1
-                       FUNCTION equals(x : 0, _CAST(42_UInt8, \'UInt8\'_String) :: 1) -> equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) UInt8 : 2
-              Positions: 0 2
-            Indexes:
-              PrimaryKey
-                Keys:
-                  x
-                Condition: (x in [42, 42])
-                Parts: 1/1
-                Granules: 1/123
-                Search Algorithm: binary search
-              Ranges: 1
+        Positions: 2 1
+          ReadFromMergeTree (default.tab0)
+          ReadType: Default
+          Parts: 1
+          Granules: 1
+          Prewhere info
+          Need filter: 1
+            Prewhere filter
+            Prewhere filter column: equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) (removed)
+            Actions: INPUT : 0 -> x UInt32 : 0
+                     COLUMN Const(UInt8) -> _CAST(42_UInt8, \'UInt8\'_String) UInt8 : 1
+                     FUNCTION equals(x : 0, _CAST(42_UInt8, \'UInt8\'_String) :: 1) -> equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) UInt8 : 2
+            Positions: 0 2
+          Indexes:
+            PrimaryKey
+              Keys:
+                x
+              Condition: (x in [42, 42])
+              Parts: 1/1
+              Granules: 1/123
+              Search Algorithm: binary search
+            Ranges: 1
 ============ lambdas
 41	41
 41	41
@@ -100,34 +92,31 @@ Positions: 1
         Arguments: __table1.y
   Skip merging: 0
     Union
-      Expression (Before GROUP BY)
-      Actions: INPUT :: 0 -> __table1.y UInt32 : 0
-      Positions: 0
-        Expression ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
-        Actions: INPUT : 0 -> y UInt32 : 0
-                 ALIAS y :: 0 -> __table1.y UInt32 : 1
-        Positions: 1
-          ReadFromMergeTree (default.tab0)
-          ReadType: Default
-          Parts: 1
-          Granules: 1
-          Prewhere info
-          Need filter: 1
-            Prewhere filter
-            Prewhere filter column: equals(__table1.x, 42_UInt8) (removed)
-            Actions: INPUT : 0 -> x UInt32 : 0
-                     COLUMN Const(UInt8) -> 42_UInt8 UInt8 : 1
-                     FUNCTION equals(x :: 0, 42_UInt8 :: 1) -> equals(__table1.x, 42_UInt8) UInt8 : 2
-            Positions: 2
-          Indexes:
-            PrimaryKey
-              Keys:
-                x
-              Condition: (x in [42, 42])
-              Parts: 1/1
-              Granules: 1/123
-              Search Algorithm: binary search
-            Ranges: 1
+      Expression ((Before GROUP BY + (WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
+      Actions: INPUT : 0 -> y UInt32 : 0
+               ALIAS y :: 0 -> __table1.y UInt32 : 1
+      Positions: 1
+        ReadFromMergeTree (default.tab0)
+        ReadType: Default
+        Parts: 1
+        Granules: 1
+        Prewhere info
+        Need filter: 1
+          Prewhere filter
+          Prewhere filter column: equals(__table1.x, 42_UInt8) (removed)
+          Actions: INPUT : 0 -> x UInt32 : 0
+                   COLUMN Const(UInt8) -> 42_UInt8 UInt8 : 1
+                   FUNCTION equals(x :: 0, 42_UInt8 :: 1) -> equals(__table1.x, 42_UInt8) UInt8 : 2
+          Positions: 2
+        Indexes:
+          PrimaryKey
+            Keys:
+              x
+            Condition: (x in [42, 42])
+            Parts: 1/1
+            Granules: 1/123
+            Search Algorithm: binary search
+          Ranges: 1
       Expression (Before GROUP BY)
       Actions: INPUT :: 0 -> __table1.y UInt32 : 0
       Positions: 0
@@ -140,39 +129,35 @@ Positions: 1
                  FUNCTION equals(x :: 0, 42_UInt8 :: 2) -> equals(__table1.x, 42_UInt8) UInt8 : 1
         Positions: 1 3
           ReadFromRemote (Read from remote replica)
-            Expression ((Project names + Projection))
-            Actions: INPUT : 0 -> __table1.x UInt32 : 0
-                     INPUT : 1 -> __table1.y UInt32 : 1
+            Expression (((Project names + Projection) + (WHERE + Change column names to column identifiers)))
+            Actions: INPUT : 1 -> y UInt32 : 0
+                     INPUT : 0 -> x UInt32 : 1
+                     ALIAS y :: 0 -> __table1.y UInt32 : 2
+                     ALIAS x :: 1 -> __table1.x UInt32 : 0
+                     ALIAS __table1.y :: 2 -> y UInt32 : 1
                      ALIAS __table1.x :: 0 -> x UInt32 : 2
-                     ALIAS __table1.y :: 1 -> y UInt32 : 0
-            Positions: 2 0
-              Expression ((WHERE + Change column names to column identifiers))
-              Actions: INPUT : 1 -> y UInt32 : 0
-                       INPUT : 0 -> x UInt32 : 1
-                       ALIAS y :: 0 -> __table1.y UInt32 : 2
-                       ALIAS x :: 1 -> __table1.x UInt32 : 0
-              Positions: 0 2
-                ReadFromMergeTree (default.tab0)
-                ReadType: Default
-                Parts: 1
-                Granules: 1
-                Prewhere info
-                Need filter: 1
-                  Prewhere filter
-                  Prewhere filter column: equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) (removed)
-                  Actions: INPUT : 0 -> x UInt32 : 0
-                           COLUMN Const(UInt8) -> _CAST(42_UInt8, \'UInt8\'_String) UInt8 : 1
-                           FUNCTION equals(x : 0, _CAST(42_UInt8, \'UInt8\'_String) :: 1) -> equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) UInt8 : 2
-                  Positions: 0 2
-                Indexes:
-                  PrimaryKey
-                    Keys:
-                      x
-                    Condition: (x in [42, 42])
-                    Parts: 1/1
-                    Granules: 1/123
-                    Search Algorithm: binary search
-                  Ranges: 1
+            Positions: 2 1
+              ReadFromMergeTree (default.tab0)
+              ReadType: Default
+              Parts: 1
+              Granules: 1
+              Prewhere info
+              Need filter: 1
+                Prewhere filter
+                Prewhere filter column: equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) (removed)
+                Actions: INPUT : 0 -> x UInt32 : 0
+                         COLUMN Const(UInt8) -> _CAST(42_UInt8, \'UInt8\'_String) UInt8 : 1
+                         FUNCTION equals(x : 0, _CAST(42_UInt8, \'UInt8\'_String) :: 1) -> equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) UInt8 : 2
+                Positions: 0 2
+              Indexes:
+                PrimaryKey
+                  Keys:
+                    x
+                  Condition: (x in [42, 42])
+                  Parts: 1/1
+                  Granules: 1/123
+                  Search Algorithm: binary search
+                Ranges: 1
 Expression ((Project names + (Projection + (WHERE + (Change column names to column identifiers + (Project names + Projection))))))
 Actions: INPUT : 0 -> sum(__table2.y) UInt64 : 0
          INPUT : 1 -> __table2.x UInt32 : 1
@@ -268,34 +253,32 @@ CreatingSets (Create sets before main query execution)
   Expression ((Project names + Projection))
     Aggregating
       Union
-        Expression (Before GROUP BY)
-          Expression ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
-            ReadFromMergeTree (default.tab0)
-            Indexes:
-              PrimaryKey
-                Keys:
-                  x
-                Condition: (x in 1-element set)
-                Parts: 1/1
-                Granules: 1/123
-                Search Algorithm: binary search
-              Ranges: 1
+        Expression ((Before GROUP BY + (WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
+          ReadFromMergeTree (default.tab0)
+          Indexes:
+            PrimaryKey
+              Keys:
+                x
+              Condition: (x in 1-element set)
+              Parts: 1/1
+              Granules: 1/123
+              Search Algorithm: binary search
+            Ranges: 1
         Expression (Before GROUP BY)
           Filter (( + Change column names to column identifiers))
             ReadFromRemote (Read from remote replica)
               CreatingSets (Create sets before main query execution)
-                Expression ((Project names + Projection))
-                  Expression ((WHERE + Change column names to column identifiers))
-                    ReadFromMergeTree (default.tab0)
-                    Indexes:
-                      PrimaryKey
-                        Keys:
-                          x
-                        Condition: (x in 1-element set)
-                        Parts: 1/1
-                        Granules: 1/123
-                        Search Algorithm: binary search
-                      Ranges: 1
+                Expression (((Project names + Projection) + (WHERE + Change column names to column identifiers)))
+                  ReadFromMergeTree (default.tab0)
+                  Indexes:
+                    PrimaryKey
+                      Keys:
+                        x
+                      Condition: (x in 1-element set)
+                      Parts: 1/1
+                      Granules: 1/123
+                      Search Algorithm: binary search
+                    Ranges: 1
 42
 CreatingSets (Create sets before main query execution)
   Expression ((Project names + Projection))
@@ -499,34 +482,32 @@ CreatingSets (Create sets before main query execution)
 ============ #65638
 CreatingSets (Create sets before main query execution)
   Union
-    Expression ((Project names + Projection))
-      Expression ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
-        ReadFromMergeTree (default.tab1)
-        Indexes:
-          PrimaryKey
-            Keys:
-              recordTimestamp
-            Condition: (recordTimestamp in 0-element set)
-            Parts: 0/1
-            Granules: 0/1
-            Search Algorithm: generic exclusion search
-          Ranges: 0
+    Expression (((Project names + Projection) + (WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
+      ReadFromMergeTree (default.tab1)
+      Indexes:
+        PrimaryKey
+          Keys:
+            recordTimestamp
+          Condition: (recordTimestamp in 0-element set)
+          Parts: 0/1
+          Granules: 0/1
+          Search Algorithm: generic exclusion search
+        Ranges: 0
     Expression ((Project names + Projection))
       Filter (( + Change column names to column identifiers))
         ReadFromRemote (Read from remote replica)
           CreatingSets (Create sets before main query execution)
-            Expression ((Project names + Projection))
-              Expression ((WHERE + Change column names to column identifiers))
-                ReadFromMergeTree (default.tab1)
-                Indexes:
-                  PrimaryKey
-                    Keys:
-                      recordTimestamp
-                    Condition: (recordTimestamp in 0-element set)
-                    Parts: 0/1
-                    Granules: 0/1
-                    Search Algorithm: generic exclusion search
-                  Ranges: 0
+            Expression (((Project names + Projection) + (WHERE + Change column names to column identifiers)))
+              ReadFromMergeTree (default.tab1)
+              Indexes:
+                PrimaryKey
+                  Keys:
+                    recordTimestamp
+                  Condition: (recordTimestamp in 0-element set)
+                  Parts: 0/1
+                  Granules: 0/1
+                  Search Algorithm: generic exclusion search
+                Ranges: 0
 ============ #68030
 Union
   Expression ((Project names + Projection))
