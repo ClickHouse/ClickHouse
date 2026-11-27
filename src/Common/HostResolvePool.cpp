@@ -4,7 +4,7 @@
 #include <Common/FailPoint.h>
 #include <Common/NetException.h>
 #include <Common/thread_local_rng.h>
-#include <Common/MemoryTrackerSwitcher.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/logger_useful.h>
 
 #include <mutex>
@@ -108,7 +108,7 @@ HostResolver::Entry::~Entry()
 
 void HostResolver::update()
 {
-    MemoryTrackerSwitcher switcher{&total_memory_tracker};
+    ServerOwnedMemoryScope server_owned;
 
     auto next_gen = resolve_function(host);
     if (next_gen.empty())
