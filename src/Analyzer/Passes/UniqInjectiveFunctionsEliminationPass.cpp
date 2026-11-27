@@ -11,6 +11,7 @@
 
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
 
@@ -46,7 +47,7 @@ public:
             return;
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isAggregateFunction() || !isUniqFunction(function_node->getFunctionName()))
+        if (!function_node || !function_node->isAggregationCall() || !isUniqFunction(function_node->getFunctionName()))
             return;
 
         bool replaced_argument = false;
@@ -56,7 +57,7 @@ public:
         auto remove_injective_function = [&replaced_argument](QueryTreeNodePtr & arg) -> bool
         {
             auto * arg_typed = arg->as<FunctionNode>();
-            if (!arg_typed || !arg_typed->isOrdinaryFunction())
+            if (!arg_typed || !arg_typed->isOrdinaryCall())
                 return false;
 
             /// Do not apply optimization if injective function contains multiple arguments
@@ -65,13 +66,15 @@ public:
                 return false;
 
             const auto & arg_function = arg_typed->getFunction();
-            if (!arg_function->isInjective({}))
+            /// Pass the argument types: whether a function is injective can depend on them, as it
+            /// does for `toString` of a date-time in a time zone with a fall-back transition.
+            if (!arg_function->isInjective(arg_typed->getArgumentColumns()))
                 return false;
 
-            /// The `Null` combinator makes `uniq*` skip rows where a Nullable argument is NULL: `uniq(tuple(x))`
-            /// counts the (NULL) row while `uniq(x)` skips it.
-            if (isNullableOrLowCardinalityNullable(arg->getResultType())
-                != isNullableOrLowCardinalityNullable(arg_arguments_nodes[0]->getResultType()))
+            /// The null adapters make `uniq*` skip rows where an argument is `NULL`: `uniq(tuple(x))`
+            /// counts the tuple containing `NULL` while `uniq(x)` skips it. This applies to both
+            /// `Nullable` and types such as `Variant` and `Dynamic` that store `NULL` internally.
+            if (canContainNull(*arg->getResultType()) != canContainNull(*arg_arguments_nodes[0]->getResultType()))
                 return false;
 
             arg = arg_arguments_nodes[0];

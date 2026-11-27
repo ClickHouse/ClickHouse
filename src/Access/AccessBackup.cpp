@@ -1,12 +1,14 @@
 #include <Access/AccessBackup.h>
 #include <Access/AccessControl.h>
 #include <Access/AccessEntityIO.h>
+#include <Access/AccessRights.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/User.h>
 #include <Access/Role.h>
 #include <Access/SettingsProfile.h>
 #include <Access/RowPolicy.h>
 #include <Access/Quota.h>
+#include <Access/MaskingPolicy.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackup.h>
@@ -45,7 +47,7 @@ namespace
         std::unordered_map<UUID, std::pair<String, AccessEntityType>> dependencies;
         std::unordered_map<UUID, AccessEntityPtr> dependents;
 
-        BackupEntryPtr toBackupEntry() const
+        [[nodiscard]] BackupEntryPtr toBackupEntry() const
         {
             WriteBufferFromOwnString buf;
 
@@ -177,6 +179,23 @@ namespace
             }
         }
     };
+
+    AccessRights getRequiredAccessToRestoreGrants(const AccessRights & access)
+    {
+        AccessRights required_access;
+        for (const auto & element : access.getElements())
+        {
+            /// Restoring a grant requires `GRANT OPTION` even if the backed-up entity does not have it.
+            if (element.is_partial_revoke && element.grant_option)
+                continue;
+
+            if (element.is_partial_revoke)
+                required_access.revoke(element);
+            else
+                required_access.grantWithGrantOption(element);
+        }
+        return required_access;
+    }
 }
 
 
@@ -243,6 +262,22 @@ AccessRestorerFromBackup::AccessRestorerFromBackup(
     , update_dependents(restore_settings_.update_access_entities_dependents)
     , restore_with_current_grants(restore_settings_.restore_access_entities_with_current_grants)
     , log(getLogger("AccessRestorerFromBackup"))
+{
+}
+
+AccessRestorerFromBackup::AccessRestorerFromBackup(
+    const AccessRestorerFromBackup & src, RestoreAccessCreationMode creation_mode_, bool skip_unresolved_dependencies_)
+    : backup(src.backup)
+    , creation_mode(creation_mode_)
+    , skip_unresolved_dependencies(skip_unresolved_dependencies_)
+    , update_dependents(src.update_dependents)
+    , restore_with_current_grants(src.restore_with_current_grants)
+    , log(src.log)
+    , loaded(src.loaded)
+    , ids_assigned(src.ids_assigned)
+    , data_paths_in_backup(src.data_paths_in_backup)
+    , data_path_with_entities_to_restore(src.data_path_with_entities_to_restore)
+    , entity_infos(src.entity_infos)
 {
 }
 
@@ -339,12 +374,14 @@ void AccessRestorerFromBackup::loadFromBackup()
 }
 
 
-AccessRightsElements AccessRestorerFromBackup::getRequiredAccess() const
+AccessRights AccessRestorerFromBackup::getRequiredAccess() const
 {
     if (!loaded)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Access entities not loaded");
 
-    AccessRightsElements res;
+    AccessRights res;
+    /// Like `CREATE ... OR REPLACE`, replacement requires `DROP` even if the entity does not exist.
+    const bool replace = (creation_mode == RestoreAccessCreationMode::kReplace);
     for (const auto & [id, entity_info] : entity_infos)
     {
         if (!entity_info.restore)
@@ -356,59 +393,71 @@ AccessRightsElements AccessRestorerFromBackup::getRequiredAccess() const
             case User::TYPE:
             {
                 const auto & user = typeid_cast<const User &>(*entity);
-                res.emplace_back(AccessType::CREATE_USER, user.getName());
+                AccessFlags flags = AccessType::CREATE_USER;
+                if (replace)
+                    flags |= AccessType::DROP_USER;
+                res.grant(flags, user.getName());
                 if (!restore_with_current_grants)
-                {
-                    auto elements = user.access.getElements();
-                    for (auto & element : elements)
-                    {
-                        if (!element.is_partial_revoke)
-                            element.grant_option = true;
-                        res.emplace_back(element);
-                    }
-                }
+                    res.makeUnion(getRequiredAccessToRestoreGrants(user.access));
                 if (!user.granted_roles.isEmpty())
-                    res.emplace_back(AccessType::ROLE_ADMIN);
+                    res.grant(AccessType::ROLE_ADMIN);
                 break;
             }
 
             case Role::TYPE:
             {
                 const auto & role = typeid_cast<const Role &>(*entity);
-                res.emplace_back(AccessType::CREATE_ROLE, role.getName());
+                AccessFlags flags = AccessType::CREATE_ROLE;
+                if (replace)
+                    flags |= AccessType::DROP_ROLE;
+                res.grant(flags, role.getName());
                 if (!restore_with_current_grants)
-                {
-                    auto elements = role.access.getElements();
-                    for (auto & element : elements)
-                    {
-                        if (!element.is_partial_revoke)
-                            element.grant_option = true;
-                        res.emplace_back(element);
-                    }
-                }
+                    res.makeUnion(getRequiredAccessToRestoreGrants(role.access));
                 if (!role.granted_roles.isEmpty())
-                    res.emplace_back(AccessType::ROLE_ADMIN);
+                    res.grant(AccessType::ROLE_ADMIN);
                 break;
             }
 
             case SettingsProfile::TYPE:
             {
-                res.emplace_back(AccessType::CREATE_SETTINGS_PROFILE);
+                AccessFlags flags = AccessType::CREATE_SETTINGS_PROFILE;
+                if (replace)
+                    flags |= AccessType::DROP_SETTINGS_PROFILE;
+                res.grant(flags);
                 break;
             }
 
             case RowPolicy::TYPE:
             {
                 const auto & policy = typeid_cast<const RowPolicy &>(*entity);
-                res.emplace_back(AccessType::CREATE_ROW_POLICY, policy.getDatabase(), policy.getTableName());
+                AccessFlags flags = AccessType::CREATE_ROW_POLICY;
+                if (replace)
+                    flags |= AccessType::DROP_ROW_POLICY;
+                res.grant(flags, policy.getDatabase(), policy.getTableName());
                 break;
             }
 
             case Quota::TYPE:
             {
-                res.emplace_back(AccessType::CREATE_QUOTA);
+                AccessFlags flags = AccessType::CREATE_QUOTA;
+                if (replace)
+                    flags |= AccessType::DROP_QUOTA;
+                res.grant(flags);
                 break;
             }
+
+#if CLICKHOUSE_CLOUD
+            case MaskingPolicy::TYPE:
+            {
+                /// `CREATE MASKING POLICY` is a GLOBAL-scope privilege, so the element carries no database or
+                /// table argument even though the policy itself names a table.
+                AccessFlags flags = AccessType::CREATE_MASKING_POLICY;
+                if (replace)
+                    flags |= AccessType::DROP_MASKING_POLICY;
+                res.grant(flags);
+                break;
+            }
+#endif
 
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type: {}", toString(entity_type));
@@ -451,6 +500,7 @@ void AccessRestorerFromBackup::generateRandomIDsAndResolveDependencies(const Acc
             bool was_going_to_restore = entity_info.restore;
             entity_info.new_id = *existing_id;
             entity_info.restore = false;
+            entity_info.exists = was_going_to_restore;
             LOG_TRACE(log, "{}: Found with UUID {}{}", AccessEntityTypeInfo::get(type).formatEntityNameWithType(name), *existing_id,
                       (was_going_to_restore ? ", will not restore" : ""));
         }
@@ -502,7 +552,7 @@ void AccessRestorerFromBackup::generateRandomIDsAndResolveDependencies(const Acc
     /// Remap the UUIDs of dependencies in the access entities we're going to restore.
     for (auto & [id, entity_info] : entity_infos)
     {
-        if (entity_info.restore || entity_info.is_dependent)
+        if (entity_info.restore || entity_info.is_dependent || entity_info.exists)
         {
             auto new_entity = entity_info.entity->clone();
             new_entity->replaceDependencies(old_to_new_ids);
@@ -540,6 +590,31 @@ AccessEntitiesToRestore AccessRestorerFromBackup::getEntitiesToRestore(const Str
     }
 
     return res;
+}
+
+
+std::vector<std::pair<UUID, AccessEntityPtr>> AccessRestorerFromBackup::getEntitiesFromBackup() const
+{
+    if (!ids_assigned)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "IDs not assigned");
+
+    std::vector<std::pair<UUID, AccessEntityPtr>> res;
+    for (const auto & [id, entity_info] : entity_infos)
+    {
+        if (entity_info.restore || entity_info.exists)
+            res.emplace_back(*entity_info.new_id, entity_info.entity);
+    }
+    return res;
+}
+
+
+AccessRestorerFromBackup AccessRestorerFromBackup::makeCopyForChecking() const
+{
+    if (!loaded || ids_assigned)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Access entities must be loaded and not resolved to make a copy for checking");
+
+    auto mode = (creation_mode == RestoreAccessCreationMode::kCreate) ? RestoreAccessCreationMode::kCreateIfNotExists : creation_mode;
+    return AccessRestorerFromBackup(*this, mode, /* skip_unresolved_dependencies_= */ true);
 }
 
 

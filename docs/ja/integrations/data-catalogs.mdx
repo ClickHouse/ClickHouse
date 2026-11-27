@@ -9,29 +9,30 @@ doc_type: 'guide'
 keywords: ['データカタログ', 'データレイク', 'iceberg', 'unity catalog', 'glue', 'delta lake', 'onelake', 'polaris', 'biglake', 'clickhouse cloud']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
 ClickHouse Cloud をデータカタログに接続すると、オープンテーブルフォーマットのテーブルにアクセスできます。接続は **データソース** UI で設定できます。SQL で設定する場合は、任意の SQL エディタで [`DataLakeCatalog`](/ja/reference/engines/database-engines/datalake) データベースエンジンを使用します。
 
-<Image img="/images/cloud/features/data-catalogs-ui.png" size="md" alt="データカタログインテグレーションを表示する ClickHouse Cloud UI" />
-
-接続後、カタログ内のテーブルは指定したデータベース名の下に SQL コンソールで表示されます。標準の ClickHouse SQL でクエリを実行したり、[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルと結合したり、[materialized view](/ja/concepts/features/materialized-views) のソースとして使用したりできます。
-
-<div id="prerequisites">
-  ## 前提条件
+<div className="ch-image-md">
+  <Frame>
+    ![データカタログ連携が表示された ClickHouse Cloud UI](/images/cloud/features/data-catalogs-ui.png)
+  </Frame>
 </div>
 
-カタログを接続する前に、以下を確認してください。
+接続すると、カタログテーブルは SQL コンソール内の指定したデータベース名の下に表示されます。標準の ClickHouse SQL でクエリを実行したり、[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルと結合したり、[materialized view](/ja/concepts/features/materialized-views) のソースとして使用したりできます。
 
-* **サービスの権限。** **データソース**ページにアクセスしてカタログを追加するには、`control-plane:service:manage`権限が必要です。
-* **実行中のサービス。** サービスがアイドル状態の場合は、接続またはリンク済みカタログを表示する前に、**データソース**ページまたはサービス設定ページからサービスを起動してください。
-* **カタログの認証情報。** フライアウトを開く前に、カタログの種類に応じた接続情報を用意してください。カタログごとに必要なフィールドと認証方法は異なります。以下の「[カタログ接続を追加する](#add-your-catalog-connection)」を参照してください。
+## 前提条件 {#prerequisites}
+
+カタログを接続する前に、次の点を確認してください。
+
+* **サービスのアクセス許可。** **Data sources** ページにアクセスしてカタログを追加するには、`control-plane:service:manage` アクセス許可が必要です。
+* **サービスが稼働中であること。** サービスがアイドル状態の場合は、カタログを接続したり関連付け済みのカタログを表示したりする前に、**Data sources** ページまたはサービス設定ページからサービスを起動してください。
+* **カタログの認証情報。** フライアウトを開く前に、使用するカタログの種類に応じた接続情報を用意してください。必要なフィールドと認証方式はカタログごとに異なります。詳しくは、後述の[カタログ接続を追加する](#add-your-catalog-connection)を参照してください。
 
 <div id="connect-your-catalog">
-  ## カタログに接続する
+  ## カタログに接続する {#connect-your-catalog}
 </div>
 
 <Steps>
@@ -40,7 +41,11 @@ ClickHouse Cloud をデータカタログに接続すると、オープンテー
     2. データソースをまだ設定していない場合は、**+ カタログを追加**をクリックします。設定済みの場合は、**データソースを追加** &gt; **データレイクカタログを追加**をクリックします。
     3. **データカタログに接続**フライアウトで、**カタログを選択**ドロップダウンからカタログを選択します。カタログが複数のオープンテーブルフォーマットに対応している場合は、**オープンテーブルフォーマット**でフォーマットを選択します。
 
-    <Image img="/images/integrations/data-catalogs/catalog-flyout-select.png" alt="AWS Glue、BigLake Metastore、Microsoft OneLake、Polaris、REST Catalog、Unity Catalog が表示された［カタログを選択］ドロップダウンを含む［データカタログに接続］フライアウト" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![AWS Glue、BigLake Metastore、Microsoft OneLake、Polaris、REST Catalog、Unity Catalog が表示された［カタログを選択］ドロップダウンを含む［データカタログに接続］フライアウト](/images/integrations/data-catalogs/catalog-flyout-select.png)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="カタログ接続を追加する" id="add-your-catalog-connection">
@@ -65,7 +70,7 @@ ClickHouse Cloud をデータカタログに接続すると、オープンテー
         2. **Access Key ID** と **Secret Access Key** を入力します。
         3. Glue テーブルを公開する ClickHouse データベースの **Database name** を入力します。
 
-        **IAM ロール認証 (26.2 以降)&#x20;**
+        **IAM ロール認証 (26.2 以降)**
 
         1. **Authentication method** として **AWS IAM Role** を選択します。
         2. フライアウトパネルから **Service role ID (IAM)** をコピーし、IAM ロールの信頼ポリシーに追加します。
@@ -198,15 +203,17 @@ ClickHouse Cloud をデータカタログに接続すると、オープンテー
   </Step>
 </Steps>
 
-<div id="query-data">
-  ## データをクエリする
-</div>
+## データをクエリする {#query-data}
 
 <Steps>
-  <Step title="カタログのテーブルを表示する" id="view-tables">
+  <Step title="カタログテーブルを表示する" id="view-tables">
     **データソース**ページで、**リンク済みカタログ**テーブルからカタログを見つけ、**テーブルを表示**をクリックします。
 
-    <Image img="/images/integrations/data-catalogs/linked-catalogs-table.png" alt="「テーブルを表示」操作を含むリンク済みカタログのテーブル" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![「テーブルを表示」操作を含むリンク済みカタログのテーブル](/images/integrations/data-catalogs/linked-catalogs-table.png)
+      </Frame>
+    </div>
 
     ClickHouse で SQL コンソールが開き、カタログデータベースが選択された状態で利用可能なテーブルが一覧表示されます。
 
@@ -214,7 +221,11 @@ ClickHouse Cloud をデータカタログに接続すると、オープンテー
       カタログを接続した直後は、テーブルが表示されないことがあります。カタログによっては、すべてのテーブルが一覧表示されるまでに最大 3 分かかる場合があります。
     </Note>
 
-    <Image img="/images/integrations/data-catalogs/catalog-tables-browser.png" alt="カタログのテーブルを表示する SQL コンソールのテーブルブラウザ" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![カタログテーブルを表示する SQL コンソールのテーブルブラウザ](/images/integrations/data-catalogs/catalog-tables-browser.png)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="クエリを実行する" id="run-a-query">
@@ -224,19 +235,21 @@ ClickHouse Cloud をデータカタログに接続すると、オープンテー
     SELECT * FROM `identity_profiles.identity_profiles_iceberg`
     ```
 
-    <Image img="/images/integrations/data-catalogs/catalog-sql-query.png" alt="ドットを含むテーブル名をバッククォートで囲んだ、結果付きの SQL クエリ" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![ドットを含むテーブル名をバッククォートで囲んだ、結果付きの SQL クエリ](/images/integrations/data-catalogs/catalog-sql-query.png)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## トラブルシューティング
+  ## トラブルシューティング {#troubleshooting}
 </div>
 
 * SQL コンソールにテーブルが表示されない場合は、カタログ内の認証情報、ネットワークアクセス、テーブルの種類を確認してください。表示したいテーブルが、サポートされているファイル形式およびテーブル形式であることを確認してください。
 
-<div id="see-also">
-  ## 関連項目
-</div>
+## 関連項目 {#see-also}
 
-* [レイクハウスデータの分析を高速化](/ja/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — 繰り返し実行するクエリに備え、カタログテーブルをMergeTreeに読み込む
-* [Icebergデータへの安全なアクセス](/ja/products/cloud/guides/data-sources/accessing-iceberg-data-securely) — AWS IcebergおよびGlueへのアクセスに必要なIAMロールの設定
+* [レイクハウスデータの分析を高速化する](/ja/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — 繰り返し実行するクエリに備えて、カタログテーブルを MergeTree に読み込む
+* [Iceberg データへの安全なアクセス](/ja/products/cloud/guides/data-sources/accessing-iceberg-data-securely) — AWS の Iceberg および Glue にアクセスするための IAM ロールの設定

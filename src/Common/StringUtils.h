@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <string>
 #include <string_view>
+#include <span>
 #include <cstring>
-#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
@@ -29,7 +29,7 @@ inline bool endsWith(const std::string & s, const std::string & suffix)
 }
 
 
-/// With GCC, strlen is evaluated compile time if we pass it a constant
+/// strlen is evaluated at compile time if we pass it a constant
 /// string that is known at compile time.
 inline bool startsWith(const std::string & s, const char * prefix)
 {
@@ -66,31 +66,28 @@ std::string getOrdinalSuffix(T n)
 
 /// More efficient than libc, because doesn't respect locale. But for some functions table implementation could be better.
 
-inline bool isASCII(char c)
+constexpr bool isASCII(char c)
 {
     return static_cast<unsigned char>(c) < 0x80;
 }
 
-inline bool isLowerAlphaASCII(char c)
+constexpr bool isLowerAlphaASCII(char c)
 {
     return (c >= 'a' && c <= 'z');
 }
 
-inline bool isUpperAlphaASCII(char c)
+constexpr bool isUpperAlphaASCII(char c)
 {
     return (c >= 'A' && c <= 'Z');
 }
 
-inline bool isAlphaASCII(char c)
+constexpr bool isAlphaASCII(char c)
 {
     return isLowerAlphaASCII(c) || isUpperAlphaASCII(c);
 }
 
-inline bool isNumericASCII(char c)
+constexpr bool isNumericASCII(char c)
 {
-    /// This is faster than
-    /// return UInt8(UInt8(c) - UInt8('0')) < UInt8(10);
-    /// on Intel CPUs when compiled by gcc 8.
     return (c >= '0' && c <= '9');
 }
 
@@ -101,7 +98,7 @@ inline bool isHexDigit(char c)
         || (c >= 'A' && c <= 'F');
 }
 
-inline bool isAlphaNumericASCII(char c)
+constexpr bool isAlphaNumericASCII(char c)
 {
     return isAlphaASCII(c)
         || isNumericASCII(c);
@@ -146,9 +143,26 @@ inline std::string_view trimWhitespace(std::string_view str)
     return str;
 }
 
+/// The part of a URL before its query string or fragment, i.e. before the first '?' or '#'.
+inline std::string_view stripQueryAndFragment(std::string_view url)
+{
+    return url.substr(0, url.find_first_of("?#"));
+}
+
 inline bool isControlASCII(char c)
 {
     return static_cast<unsigned char>(c) <= 31;
+}
+
+inline bool isControlOrDeleteASCII(char c)
+{
+    return isControlASCII(c) || c == 0x7F;
+}
+
+/// A character allowed in an HTTP token, such as a header name (RFC 9110, section 5.6.2).
+inline bool isHTTPTokenChar(char c)
+{
+    return isAlphaNumericASCII(c) || std::string_view("!#$%&'*+-.^_`|~").contains(c);
 }
 
 inline bool isPrintableASCII(char c)
@@ -209,7 +223,7 @@ inline char toUpperIfAlphaASCII(char c)
     return c & (~0x20);
 }
 
-inline char alternateCaseIfAlphaASCII(char c)
+constexpr char alternateCaseIfAlphaASCII(char c)
 {
     return c ^ 0x20;
 }
@@ -277,15 +291,39 @@ inline const char * skipWhitespacesUTF8(const char * pos, const char * end)
     return pos;
 }
 
-inline bool equalsCaseInsensitive(char a, char b)
+constexpr bool equalsCaseInsensitive(const char a, const char b)
 {
     return a == b || (isAlphaASCII(a) && alternateCaseIfAlphaASCII(a) == b);
 }
 
-inline bool equalsCaseInsensitive(std::string_view a, std::string_view b)
+constexpr bool equalsCaseInsensitive(std::string_view a, std::string_view b)
 {
     return a.size() == b.size()
         && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) { return equalsCaseInsensitive(x, y); });
+}
+
+/// Equality for secret-derived byte sequences such as passwords and one-time codes. Unlike `memcmp`
+/// and `operator==`, the runtime does not depend on the position of the first mismatch, so timing does
+/// not reveal how many leading bytes were right. The lengths are treated as public, as in OpenSSL's
+/// `CRYPTO_memcmp`. The `volatile` reads keep the compiler from turning the loop into an early-exit compare.
+inline bool constantTimeEquals(std::span<const uint8_t> lhs, std::span<const uint8_t> rhs)
+{
+    if (lhs.size() != rhs.size())
+        return false;
+
+    const volatile uint8_t * a = lhs.data();
+    const volatile uint8_t * b = rhs.data();
+    uint8_t diff = 0;
+    for (size_t i = 0; i < lhs.size(); ++i)
+        diff |= a[i] ^ b[i];
+    return diff == 0;
+}
+
+inline bool constantTimeEquals(std::string_view lhs, std::string_view rhs)
+{
+    return constantTimeEquals(
+        std::span(reinterpret_cast<const uint8_t *>(lhs.data()), lhs.size()),
+        std::span(reinterpret_cast<const uint8_t *>(rhs.data()), rhs.size()));
 }
 
 /// ASCII-only case conversion. Keywords, identifiers and function names are ASCII, and applying
@@ -389,7 +427,10 @@ inline void trimRight(std::string_view & str, char c = ' ')
 
 inline void trimRight(std::string & str, char c = ' ')
 {
-    str.erase(str.find_last_not_of(c) + 1);
+    /// `find_last_not_of` answers `npos` for a string that is entirely `c`, and `npos + 1` only
+    /// lands on the 0 this wants by wrapping.
+    const size_t last_kept = str.find_last_not_of(c);
+    str.erase(last_kept == std::string::npos ? 0 : last_kept + 1);
 }
 
 inline void trim(std::string_view & str, char c = ' ')
@@ -406,6 +447,9 @@ inline void trim(std::string & str, char c = ' ')
 
 /// If all characters in the string are ASCII, return true
 bool isAllASCII(const UInt8 * data, size_t size);
+
+/// Position of the first byte >= 0x80, or `size` if there is none.
+size_t findFirstNonASCII(const UInt8 * data, size_t size);
 
 constexpr bool containsGlobs(const std::string & str)
 {

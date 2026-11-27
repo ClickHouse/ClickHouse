@@ -1,0 +1,12 @@
+Atomic
+10	45
+{'a':'CODEC(Delta(8), ZSTD(1))'}
+Replicated
+10	45
+{'a':'CODEC(Delta(8), ZSTD(1))'}
+Materialized view
+10	45
+{'a':'CODEC(Delta(8), ZSTD(1))'}
+Refreshable APPEND
+20	90
+{'a':'CODEC(Delta(8), ZSTD(1))'}

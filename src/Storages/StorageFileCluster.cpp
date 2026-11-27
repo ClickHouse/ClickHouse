@@ -6,6 +6,10 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -94,8 +98,7 @@ namespace
 void checkWriteAccessIfFilesAreRenamed(const ContextPtr & context)
 {
     if (!context->getSettingsRef()[Setting::rename_files_after_processing].value.empty())
-        context->getAccess()->checkAccessWithFilter(
-            AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+        StorageFile::checkAccessForRenamingFiles(context);
 }
 
 }
@@ -105,18 +108,36 @@ void StorageFileCluster::updateBeforeRead(const ContextPtr & context)
     checkWriteAccessIfFilesAreRenamed(context);
 }
 
-void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const DB::ContextPtr & context)
+void StorageFileCluster::updateQueryToSendIfNeeded(
+    DB::ASTPtr & query,
+    const StorageSnapshotPtr & storage_snapshot,
+    const DB::ContextPtr & context,
+    const String & target_cluster_name,
+    bool add_structure_and_format)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function fileCluster, got '{}'", query->formatForErrorMessage());
 
-    TableFunctionFileCluster::updateStructureAndFormatArgumentsIfNeeded(
-        table_function,
-        storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
-        format_name,
-        context
-    );
+    if (add_structure_and_format)
+        TableFunctionFileCluster::updateStructureAndFormatArgumentsIfNeeded(
+            table_function,
+            getStructureToSend(storage_snapshot->metadata->getColumns(), context->getInsertionTableColumnsDescription().get()),
+            format_name,
+            context
+        );
+
+    /// `fileCluster` has no plain counterpart that `parallel_replicas_for_cluster_engines` could convert, so
+    /// the function is always already the `*Cluster` variant and carries a cluster name the user wrote.
+    /// Replace it with the cluster whose nodes will actually run the query - the two differ when the
+    /// destination drives the fan-out (`INSERT INTO <Distributed table> SELECT`), and those nodes reject a
+    /// name their own `remote_servers` does not define even though they take their share of the work from
+    /// the initiator rather than dispatching by it.
+    auto * expression_list = table_function->arguments->as<ASTExpressionList>();
+    if (!expression_list || expression_list->children.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function fileCluster, got '{}'", query->formatForErrorMessage());
+    if (!target_cluster_name.empty())
+        expression_list->children.front() = make_intrusive<ASTLiteral>(target_cluster_name);
 }
 
 RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
@@ -127,7 +148,7 @@ RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
     checkWriteAccessIfFilesAreRenamed(context);
 
     auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context);
-    auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
+    auto next_callback = [iter = std::move(iterator)](size_t, const std::atomic_bool &) mutable -> ClusterFunctionReadTaskResponsePtr
     {
         auto file = iter->next();
         if (file.empty())

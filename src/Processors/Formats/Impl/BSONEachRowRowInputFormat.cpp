@@ -7,6 +7,7 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/BSONTypes.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/checkEnumValue.h>
 #include <Processors/Formats/Impl/BSONEachRowRowInputFormat.h>
 #include <IO/ReadHelpers.h>
 
@@ -23,6 +24,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -126,29 +128,41 @@ static size_t readBSONSize(ReadBuffer & in)
     return size;
 }
 
-template <typename T>
+template <typename T, bool check_enum_value = false>
 static void readAndInsertInteger(ReadBuffer & in, IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
     /// We allow to read any integer into any integer column.
     /// For example we can read BSON Int32 into ClickHouse UInt8.
+    auto insert = [&](auto value)
+    {
+        if constexpr (check_enum_value)
+        {
+            /// BSON int32 and int64 are signed; a bool byte is checked as the unsigned value that is stored.
+            if constexpr (std::is_same_v<decltype(value), UInt8>)
+                checkEnumValue<DataTypeEnum<T>>(*data_type, static_cast<UInt16>(value));
+            else
+                checkEnumValue<DataTypeEnum<T>>(*data_type, static_cast<std::make_signed_t<decltype(value)>>(value));
+        }
+        assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
+    };
 
     if (bson_type == BSONType::INT32)
     {
         UInt32 value = 0;
         readBinaryLittleEndian(value, in);
-        assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
+        insert(value);
     }
     else if (bson_type == BSONType::INT64)
     {
         UInt64 value = 0;
         readBinaryLittleEndian(value, in);
-        assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
+        insert(value);
     }
     else if (bson_type == BSONType::BOOL)
     {
         UInt8 value = 0;
         readBinaryLittleEndian(value, in);
-        assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
+        insert(value);
     }
     else
     {
@@ -523,7 +537,10 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
                             "Cannot insert BSON Null value into non-nullable column with type {}",
                             data_type->getName());
 
-        column.insertDefault();
+        if (!data_type->isDefaultInsertTrivial())
+            data_type->insertDefaultInto(column);
+        else
+            column.insertDefault();
         return false;
     }
 
@@ -552,7 +569,13 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
             lc_column.insertFromFullColumn(*tmp_column, 0);
             return res;
         }
-        case TypeIndex::Enum8: [[fallthrough]];
+        case TypeIndex::Enum8:
+            if (format_settings.check_conversion_from_numbers_to_enum)
+            {
+                readAndInsertInteger<Int8, true>(*in, column, data_type, bson_type);
+                return true;
+            }
+            [[fallthrough]];
         case TypeIndex::Int8:
         {
             readAndInsertInteger<Int8>(*in, column, data_type, bson_type);
@@ -563,7 +586,13 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
             readAndInsertInteger<UInt8>(*in, column, data_type, bson_type);
             return true;
         }
-        case TypeIndex::Enum16: [[fallthrough]];
+        case TypeIndex::Enum16:
+            if (format_settings.check_conversion_from_numbers_to_enum)
+            {
+                readAndInsertInteger<Int16, true>(*in, column, data_type, bson_type);
+                return true;
+            }
+            [[fallthrough]];
         case TypeIndex::Int16:
         {
             readAndInsertInteger<Int16>(*in, column, data_type, bson_type);
@@ -836,11 +865,18 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
             current_key_name.assign(name.data(), name.size());
             skipUnknownField(BSONType(type), current_key_name);
         }
+        else if (seen_columns[index])
+        {
+            if (!format_settings.skip_duplicated_fields)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Duplicate field found while parsing BSONEachRow format: {}. You can enable setting input_format_skip_duplicated_fields to keep the first value of a repeated field",
+                    name);
+
+            skipBSONField(*in, BSONType(type));
+        }
         else
         {
-            if (seen_columns[index])
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name);
-
             seen_columns[index] = true;
             read_columns[index] = readField(*columns[index], types[index], BSONType(type));
         }
@@ -1036,11 +1072,18 @@ NamesAndTypesList BSONEachRowSchemaReader::getDataTypesFromBSONDocument(bool all
     BSONSizeT document_size = 0;
     readBinaryLittleEndian(document_size, in);
     NamesAndTypesList names_and_types;
+    NameSet row_field_names;
     while (in.count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
     {
         auto bson_type = getBSONType(readBSONType(in));
         String name;
         readNullTerminated(name, in);
+        if (depth == 1 && format_settings.skip_duplicated_fields
+            && !row_field_names.insert(getColumnMatchingKeyForSchemaInference(name, format_settings)).second)
+        {
+            skipBSONField(in, bson_type);
+            continue;
+        }
         bool skip = false;
         auto type = getDataTypeFromBSONField(bson_type, allow_to_skip_unsupported_types, skip, depth);
         if (!skip)
@@ -1085,7 +1128,8 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
         if (document_size < sizeof(document_size))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
 
-        if (min_bytes != 0 && document_size > 10 * min_bytes)
+        /// Same as `document_size > 10 * min_bytes`, but without overflow for huge `min_bytes`.
+        if (min_bytes != 0 && (document_size + 9ULL) / 10 > min_bytes)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Size of BSON document is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. Increase "
@@ -1096,7 +1140,7 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
             throw Exception(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
 
         size_t old_size = memory.size();
-        memory.resize(old_size + document_size);
+        memory.resizeAmortized(old_size + document_size);
         unalignedStoreLittleEndian<BSONSizeT>(memory.data() + old_size, document_size);
         in.readStrict(memory.data() + old_size + sizeof(document_size), document_size - sizeof(document_size));
         ++number_of_rows;
@@ -1111,7 +1155,8 @@ void registerInputFormatBSONEachRow(FormatFactory & factory)
     factory.registerInputFormat(
         "BSONEachRow",
         [](ReadBuffer & buf, const Block & sample, IRowInputFormat::Params params, const FormatSettings & settings)
-        { return std::make_shared<BSONEachRowRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings); });
+        { return std::make_shared<BSONEachRowRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings); },
+        /*supports_reset_parser=*/ true);
     factory.registerFileExtension("bson", "BSONEachRow");
 
     factory.setDocumentation("BSONEachRow", Documentation{
@@ -1183,9 +1228,9 @@ For example, it is possible to insert a BSON `int32` value into ClickHouse as [`
 Big integers and decimals such as `Int128`/`UInt128`/`Int256`/`UInt256`/`Decimal128`/`Decimal256` can be parsed from a BSON Binary value with the `\x00` binary subtype. 
 In this case, the format will validate that the size of the binary data equals the size of the expected value.
 
-:::note
+<Note>
 This format does not work properly on Big-Endian platforms.
-:::
+</Note>
 
 ## Example usage {#example-usage}
 
@@ -1231,9 +1276,9 @@ FROM football INTO OUTFILE 'docs_data/bson/football.bson'
 FORMAT BSONEachRow
 ```
 
-:::tip
+<Tip>
 BSON is a binary format that does not display in a human-readable form on the terminal. Use the `INTO OUTFILE` to output BSON files.
-:::
+</Tip>
 
 ## Format settings {#format-settings}
 

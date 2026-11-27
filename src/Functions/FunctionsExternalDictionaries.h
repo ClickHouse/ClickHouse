@@ -93,17 +93,14 @@ class FunctionDictHelper
 public:
     explicit FunctionDictHelper(ContextPtr context_) : context(context_) {}
 
+    [[nodiscard]] const ContextPtr & getContext() const { return context; }
+
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
-        auto dict = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
-
-        if (!access_checked)
-        {
-            context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
-            access_checked = true;
-        }
-
-        return dict;
+        /// Check access before loading the dictionary, because loading contacts the dictionary source,
+        /// and load the dictionary that passed the check.
+        const auto & external_loader = context->getExternalDictionariesLoader();
+        return external_loader.getDictionary(external_loader.resolveDictionaryCheckingAccess(dictionary_name, context), context);
     }
 
     std::shared_ptr<const IDictionary> getDictionary(const ColumnPtr & column)
@@ -163,17 +160,16 @@ public:
         return getDictionary(dictionary_name)->isInjective(attribute_name);
     }
 
-    DictionaryStructure getDictionaryStructure(const String & dictionary_name) const
+    DictionaryStructure getDictionaryStructure(const String & dictionary_name)
     {
-        return context->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, context);
+        /// Check access before reading the definition, so that a user without access learns nothing about the dictionary.
+        const auto & external_loader = context->getExternalDictionariesLoader();
+        return external_loader.getDictionaryStructure(external_loader.resolveDictionaryCheckingAccess(dictionary_name, context));
     }
 
     const ContextPtr context;
 
 private:
-    /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
-    std::atomic<bool> access_checked = false;
-
     /// We must not cache dictionary or dictionary's structure here, because there are places
     /// where ExpressionActionsPtr is cached (StorageDistributed caching it for sharding_key_expr and
     /// optimize_skip_unused_shards), and if the dictionary will be cached within "query" then
@@ -208,20 +204,9 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() < 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Wrong argument count for function {}",
-                getName());
-
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected a string",
-                arguments[0]->getName(),
-                getName());
-
-        return std::make_shared<DataTypeUInt8>();
+        return "(const String, Any, ...) -> UInt8";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -300,7 +285,7 @@ public:
                 {
                     throw Exception(
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute."
+                        "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute. "
                         "Actual type {}.",
                         getName(),
                         key_column_type->getName());
@@ -371,6 +356,16 @@ public:
 
     bool useDefaultImplementationForConstants() const final { return true; }
     bool useDefaultImplementationForNulls() const final { return false; }
+
+    /// For a `LowCardinality` argument the function runs on the values of its dictionary, which always
+    /// holds the type's default value. A default argument of `dictGetOrDefault` is converted to the
+    /// attribute type, and the type's default value (such as an empty `String` for a numeric attribute)
+    /// may be impossible to convert, though no row uses it.
+    bool canBeExecutedOnDefaultArguments() const override
+    {
+        return dictionary_get_function_type != DictionaryGetFunctionType::getOrDefault;
+    }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final
     {
         if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
@@ -384,6 +379,18 @@ public:
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
     {
         return helper.isDictGetFunctionInjective(sample_columns);
+    }
+
+    /// Documentation-only — the result type comes from the dictionary
+    /// schema's `attribute_name` column, which can't be expressed in the
+    /// DSL since it requires runtime access to the dictionary registry.
+    String getSignatureString() const override
+    {
+        if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault)
+            return "(const String, const String | Tuple, Any, Any) -> Any";
+        if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
+            return "(const String, const String | Tuple, Any, [UInt64]) -> Array(Any)";
+        return "(const String, const String | Tuple, Any) -> Any";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -564,8 +571,12 @@ public:
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
         bool key_is_nullable = key_col_with_type.type->isNullable();
+        ColumnPtr nullable_key_column;
         if (key_is_nullable)
+        {
+            nullable_key_column = key_col_with_type.column;
             key_col_with_type = columnGetNested(key_col_with_type);
+        }
 
         auto key_column = key_col_with_type.column;
 
@@ -596,7 +607,7 @@ public:
                 {
                     throw Exception(
                          ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                         "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute."
+                         "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute. "
                          "Actual type {}.",
                          getName(),
                          key_col_with_type.type->getName());
@@ -631,7 +642,7 @@ public:
 
         auto result_column = executeDictionaryRequest(
             dictionary, attribute_names, key_columns, key_types, attribute_type, default_cols,
-            collect_values_limit, arguments[current_arguments_index-1], result_type);
+            collect_values_limit, arguments[current_arguments_index-1], result_type, nullable_key_column);
 
         if (key_is_nullable)
             result_column = wrapInNullable(result_column, {arguments[2]}, result_type, input_rows_count);
@@ -685,20 +696,49 @@ private:
     std::pair<ColumnPtr, ColumnPtr> getDefaultsShortCircuit(
         IColumn::Filter && default_mask,
         const DataTypePtr & result_type,
-        const ColumnWithTypeAndName & last_argument) const
+        const ColumnWithTypeAndName & last_argument,
+        const ColumnPtr & nullable_key_column) const
     {
+        /// A NULL key takes NULL from the key's null map after the lookup, so it never takes the default.
+        if (const auto * nullable_key = checkAndGetColumn<ColumnNullable>(nullable_key_column.get()))
+        {
+            const auto & null_map = nullable_key->getNullMapData();
+            chassert(null_map.size() == default_mask.size());
+            for (size_t i = 0; i < default_mask.size(); ++i)
+                if (null_map[i])
+                    default_mask[i] = 0;
+        }
+        else if (nullable_key_column && nullable_key_column->isNullAt(0))
+        {
+            /// A constant key is NULL in every row or in none of them.
+            std::fill(default_mask.begin(), default_mask.end(), 0);
+        }
+
         ColumnWithTypeAndName column_before_cast = last_argument;
         maskedExecute(column_before_cast, default_mask);
 
         auto mutable_col = IColumn::mutate(column_before_cast.column->convertToFullColumnIfConst());
         clearMaskedNullsBeforeCast(*mutable_col, default_mask, result_type);
 
+        /// `maskedExecute` fills the rows that do not need the default with the argument type's default value.
+        /// An identity conversion can neither reject that value nor turn it into a NULL.
+        const bool identity_conversion = column_before_cast.type->equals(*result_type);
+        const size_t rows_needing_default = identity_conversion ? default_mask.size() : countBytesInFilter(default_mask);
+        const bool skip_unused_rows = rows_needing_default != default_mask.size();
+
+        ColumnPtr column_to_convert = std::move(mutable_col);
+        if (skip_unused_rows)
+            column_to_convert = column_to_convert->filter(default_mask, static_cast<ssize_t>(rows_needing_default));
+
         ColumnWithTypeAndName column_to_cast = {
-            std::move(mutable_col),
+            column_to_convert,
             column_before_cast.type,
             column_before_cast.name};
 
         auto cast = IColumn::mutate(castColumnAccurate(column_to_cast, result_type));
+
+        if (skip_unused_rows)
+            cast->expand(default_mask, /* inverted= */ false);
 
         auto mask_col = ColumnUInt8::create();
         mask_col->getData() = std::move(default_mask);
@@ -711,6 +751,24 @@ private:
         ColumnPtr mask_column,
         const DataTypePtr & result_type) const
     {
+        /// `if` creates its result from the type, which brings back the dynamic paths the dictionary column avoids.
+        if (result_type->hasDynamicSubcolumns())
+        {
+            const auto & mask = assert_cast<const ColumnUInt8 &>(*mask_column).getData();
+            auto merged = result_column->cloneEmpty();
+            merged->reserve(mask.size());
+            for (size_t start = 0; start < mask.size();)
+            {
+                size_t end = start + 1;
+                while (end < mask.size() && mask[end] == mask[start])
+                    ++end;
+                merged->insertRangeFrom(mask[start] ? *defaults_column : *result_column, start, end - start);
+                start = end;
+            }
+            result_column = std::move(merged);
+            return;
+        }
+
         auto if_func = FunctionFactory::instance().get("if", helper.context);
         ColumnsWithTypeAndName if_args =
         {
@@ -733,7 +791,8 @@ private:
         const Columns & default_cols,
         size_t collect_values_limit,
         const ColumnWithTypeAndName & last_argument,
-        const DataTypePtr & result_type) const
+        const DataTypePtr & result_type,
+        const ColumnPtr & nullable_key_column) const
     {
         ColumnPtr result;
 
@@ -753,7 +812,7 @@ private:
                 result_columns = dictionary->getColumns(attribute_names, attribute_tuple_type.getElements(), key_columns, key_types, default_mask);
 
                 auto [defaults_column, mask_column] =
-                    getDefaultsShortCircuit(std::move(default_mask), result_type, last_argument);
+                    getDefaultsShortCircuit(std::move(default_mask), result_type, last_argument, nullable_key_column);
 
                 const auto & tuple_defaults = assert_cast<const ColumnTuple &>(*defaults_column);
                 const auto & result_tuple_type = assert_cast<const DataTypeTuple &>(*result_type);
@@ -788,7 +847,7 @@ private:
                 result = dictionary->getColumn(attribute_names[0], attribute_type, key_columns, key_types, default_mask);
 
                 auto [defaults_column, mask_column] =
-                    getDefaultsShortCircuit(std::move(default_mask), attribute_type, last_argument);
+                    getDefaultsShortCircuit(std::move(default_mask), attribute_type, last_argument, nullable_key_column);
 
                 restoreShortCircuitColumn(result, defaults_column, mask_column, attribute_type);
             }
@@ -862,39 +921,42 @@ public:
 
     explicit FunctionDictGetImpl(ContextPtr context_) : impl(context_) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
 private:
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    bool useDefaultImplementationForConstants() const final { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const final { return true; }
 
-    bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return impl.canBeExecutedOnDefaultArguments(); }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
+
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
     {
         return impl.isInjective(sample_columns);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    [[nodiscard]] String getSignatureString() const override
     {
+        /// dictGetUInt8/Int64/Date/UUID/IPv4/String/... - the typed variants always return
+        /// the type embedded in the function name. Arguments mirror dictGet: at minimum
+        /// (dict, attr, key); a default-value tuple may follow.
         DataTypePtr result;
-
         if constexpr (IsDataTypeDecimal<DataType>)
             result = std::make_shared<DataType>(DataType::maxPrecision(), 0);
         else
             result = std::make_shared<DataType>();
-
-        return result;
+        return "(const String, const String, Any, ...) -> " + result->getName();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto return_type = impl.getReturnTypeImpl(arguments);
 
@@ -1017,6 +1079,13 @@ private:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
 
+    /// Documentation-only — same shape as `dictGet`, with `Nullable` result
+    /// (or `Tuple(Nullable, ...)` when multiple attributes are requested).
+    String getSignatureString() const override
+    {
+        return "(const String, const String | Tuple, Any) -> Nullable(Any)";
+    }
+
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
     {
         return dictionary_get_func_impl.isInjective(sample_columns);
@@ -1060,9 +1129,14 @@ private:
             2. If column is already nullable we merge column null map with null map that we get from dict has.
           */
 
+        if (arguments[2].type->onlyNull())
+            return dictionary_get_func_impl.executeImpl(arguments, result_type, input_rows_count);
+
         auto dict_has_arguments = filterAttributeNameArgumentForDictHas(arguments);
+        /// `dictHas` expects a key that is not `Nullable`. `NULL` keys are already `NULL` in the `dictGet` result below.
+        dict_has_arguments[1] = columnGetNested(dict_has_arguments[1]);
         auto is_key_in_dictionary_column = dictionary_has_func_impl.executeImpl(dict_has_arguments, std::make_shared<DataTypeUInt8>(), input_rows_count);
-        auto is_key_in_dictionary_column_mutable = is_key_in_dictionary_column->assumeMutable();
+        auto is_key_in_dictionary_column_mutable = IColumn::mutate(std::move(is_key_in_dictionary_column));
         ColumnVector<UInt8> & is_key_in_dictionary_column_typed = assert_cast<ColumnVector<UInt8> &>(*is_key_in_dictionary_column_mutable);
         PaddedPODArray<UInt8> & is_key_in_dictionary_data = is_key_in_dictionary_column_typed.getData();
         for (auto & key : is_key_in_dictionary_data)
@@ -1088,9 +1162,9 @@ private:
 
         if (dictionary_get_result_data_type.isTuple())
         {
-            ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(*dictionary_get_result_column_mutable);
-
-            const auto & columns = column_tuple.getColumns();
+            /// Release the tuple, so that each element is owned only by `columns` and can be mutated.
+            Columns columns = assert_cast<const ColumnTuple &>(*dictionary_get_result_column_mutable).getColumnsCopy();
+            dictionary_get_result_column_mutable.reset();
             size_t tuple_size = columns.size();
 
             MutableColumns new_columns(tuple_size);
@@ -1100,7 +1174,7 @@ private:
                 auto & nullable_column_map_data = nullable_column_map->getData();
                 nullable_column_map_data.assign(is_key_in_dictionary_data);
 
-                auto mutable_column = columns[tuple_column_index]->assumeMutable();
+                auto mutable_column = IColumn::mutate(std::move(columns[tuple_column_index]));
                 if (ColumnNullable * nullable_column = typeid_cast<ColumnNullable *>(mutable_column.get()))
                 {
                     auto & null_map_data = nullable_column->getNullMapData();
@@ -1185,6 +1259,14 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
     bool isDeterministic() const override { return false; }
+
+    /// Documentation-only — returns an array of ancestor keys from a
+    /// hierarchical dictionary. The key column type matches the dictionary's
+    /// hierarchical-attribute type (typically `UInt64`).
+    String getSignatureString() const override
+    {
+        return "(const String, UInt64) -> Array(UInt64)";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -1326,15 +1408,9 @@ private:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type of first argument of function {}. Expected String. Actual type {}",
-                getName(),
-                arguments[0]->getName());
-
-        return std::make_shared<DataTypeUInt8>();
+        return "(const String, Any, Any) -> UInt8";
     }
 
     bool isDeterministic() const override { return false; }
@@ -1376,13 +1452,13 @@ public:
         , dictionary_helper(std::move(dictionary_helper_))
     {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
             return result_type->createColumn();
@@ -1472,6 +1548,15 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
 
     bool isDeterministic() const override { return false; }
+
+    /// Documentation-only — covers `dictGetDescendants` (variadic, with
+    /// optional const-UInt level) and `dictGetChildren` (fixed level=1).
+    String getSignatureString() const override
+    {
+        if constexpr (Strategy::is_variadic)
+            return "(const String, UInt64, [const UInt]) -> Array(UInt64)";
+        return "(const String, UInt64) -> Array(UInt64)";
+    }
 
     explicit FunctionDictGetDescendantsOverloadResolverImpl(ContextPtr context)
         : dictionary_helper(std::make_shared<FunctionDictHelper>(std::move(context)))

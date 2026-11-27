@@ -26,7 +26,8 @@ public:
         size_t part_uncompressed_bytes,
         WrittenOffsetSubstreams * written_offset_substreams,
         bool try_adaptive_codec,
-        class PackedFilesWriter * external_packed_skip_indices_writer = nullptr);
+        class PackedFilesWriter * external_packed_skip_indices_writer,
+        StreamBaseManifestPtr stream_base_manifest);
 
     void write(const Block & block) override;
     void finalizeIndexGranularity();
@@ -38,10 +39,13 @@ public:
         writer->preloadPackedSkipIndicesArchive(source, files);
     }
 
-    const Block & getColumnsSample() const { return writer->getColumnsSample(); }
-    const ColumnsSubstreams & getColumnsSubstreams() const { return writer->getColumnsSubstreams(); }
+    [[nodiscard]] const Block & getColumnsSample() const { return writer->getColumnsSample(); }
+    [[nodiscard]] const ColumnsSubstreams & getColumnsSubstreams() const { return writer->getColumnsSubstreams(); }
     void finish(bool sync);
     void cancel() noexcept override;
+
+private:
+    NameSet files_to_remove_after_finish;
 };
 
 using MergedColumnOnlyOutputStreamPtr = std::shared_ptr<MergedColumnOnlyOutputStream>;

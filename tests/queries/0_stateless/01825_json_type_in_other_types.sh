@@ -17,7 +17,7 @@ ${CLICKHOUSE_CLIENT} -q "
     )
     ENGINE = MergeTree ORDER BY id
     SETTINGS map_serialization_version = 'basic',
-             map_serialization_version_for_zero_level_parts = 'basic'" --enable_json_type 1
+             map_serialization_version_for_zero_level_parts = 'basic'"
 
 cat <<EOF | $CLICKHOUSE_CLIENT -q "INSERT INTO t_json_nested FORMAT JSONEachRow"
 {
@@ -80,7 +80,7 @@ $CLICKHOUSE_CLIENT -q "
 
 echo "============="
 
-$CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
+$CLICKHOUSE_CLIENT -q "
     WITH (data.2)['aa'] AS aa, (data.2)['bb'] AS bb
     SELECT aa.k1 AS k1,
            aa.k4 AS k4

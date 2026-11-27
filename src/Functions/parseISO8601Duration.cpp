@@ -5,6 +5,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/readFloatText.h>
 #include <Common/StringUtils.h>
 
 #include <cmath>
@@ -40,13 +42,13 @@ namespace
         static constexpr auto name = "parseISO8601Duration";
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionParseISO8601Duration>(); }
 
-        String getName() const override { return name; }
+        [[nodiscard]] String getName() const override { return name; }
 
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        size_t getNumberOfArguments() const override { return 1; }
+        [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             /// A literal `NULL` carries no argument type to validate, and the result is `NULL` anyway.
             if (!arguments.empty() && arguments[0].type->onlyNull())
@@ -68,31 +70,31 @@ namespace
             return result_type;
         }
 
-        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {
             return std::make_shared<DataTypeFloat64>();
         }
 
-        bool useDefaultImplementationForConstants() const override { return true; }
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
         /// The default implementation applies the function to the whole dictionary, which always holds
         /// the default empty string whether or not any row references it, and an empty string is not a
         /// duration.
-        bool canBeExecutedOnDefaultArguments() const override { return false; }
+        [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
         /// The default implementation would apply the function to the values sitting under the null
         /// map. Those are the nested column's defaults, and parsing them would throw on rows whose
         /// result is discarded anyway.
-        bool useDefaultImplementationForNulls() const override { return false; }
+        [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
         /// The `Dynamic` and `Variant` adaptors default to `useDefaultImplementationForNulls`, so
         /// turning that off above would disable them as a side effect and leave
         /// `getReturnTypeForDefaultImplementationForDynamic` unreachable. They dispatch on the concrete
         /// type held in the column and deal with null rows themselves, so keep them enabled.
-        bool useDefaultImplementationForDynamic() const override { return true; }
-        bool useDefaultImplementationForVariant() const override { return true; }
+        [[nodiscard]] bool useDefaultImplementationForDynamic() const override { return true; }
+        [[nodiscard]] bool useDefaultImplementationForVariant() const override { return true; }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             auto col_to = ColumnFloat64::create();
             auto & res_data = col_to->getData();
@@ -130,7 +132,7 @@ namespace
                 ErrorCodes::BAD_ARGUMENTS, "Invalid argument of function {}: {}, str: \"{}\".", getName(), reason, String(str));
         }
 
-        Float64 parseDuration(std::string_view str) const
+        [[nodiscard]] Float64 parseDuration(std::string_view str) const
         {
             if (str.empty())
                 invalid(str, "the duration is empty");
@@ -166,25 +168,28 @@ namespace
                 if (pos == number_begin)
                     invalid(str, fmt::format("expected a number at position {}", number_begin));
 
-                Float64 value = 0;
-                for (size_t j = number_begin; j < pos; ++j)
-                    value = value * 10 + (str[j] - '0');
-
                 if (pos < str.length() && str[pos] == '.')
                 {
                     ++pos;
                     const size_t fraction_begin = pos;
-                    Float64 scale = 0.1;
                     while (pos < str.length() && isNumericASCII(str[pos]))
-                    {
-                        value += (str[pos] - '0') * scale;
-                        scale *= 0.1;
                         ++pos;
-                    }
 
                     if (pos == fraction_begin)
                         invalid(str, "expected digits after the decimal point");
                 }
+
+                /// Hand the whole decimal to a correctly rounded reader rather than accumulating it
+                /// digit by digit. Summing `digit * 0.1^k` rounds every term before adding it, and the
+                /// errors compound: `PT0.7S` came back as 0.7000000000000001, and 700 of the 1000
+                /// fractions `PT0.<n>S` differed from the double the same decimal parses to. The
+                /// substring holds only digits and at most one point, so there is no exponent to read.
+                const std::string_view number_text = str.substr(number_begin, pos - number_begin);
+                ReadBufferFromMemory number_buffer(number_text.data(), number_text.size());
+
+                Float64 value = 0;
+                if (!tryReadFloatTextPrecise(value, number_buffer) || !number_buffer.eof())
+                    invalid(str, fmt::format("could not read the number at position {}", number_begin));
 
                 if (!std::isfinite(value))
                     invalid(str, "the numeric value of a component is too large to represent");

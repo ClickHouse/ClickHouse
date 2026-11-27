@@ -1,0 +1,10 @@
+noopt	1	1	1
+greedy	1	1	1
+dpsub	1	1	1
+cdc	1	1	1
+cda	1	1	1
+cross cdc	2
+four-table noopt	1
+four-table cdc	1
+transitive off	3
+transitive cdc	3

@@ -3,6 +3,7 @@
 #include <Client/ClientBaseHelpers.h>
 #include <Client/Connection.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/chooseNetworkCompressionCodec.h>
 #include <Core/Settings.h>
 
 using namespace DB;

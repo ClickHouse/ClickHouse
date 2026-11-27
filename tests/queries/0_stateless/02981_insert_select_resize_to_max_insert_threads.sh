@@ -30,6 +30,12 @@ ${CLICKHOUSE_CLIENT} -q """
     SYSTEM STOP MERGES t1_local;
 
     INSERT INTO t1_local SELECT * FROM numbers_mt(1e6);
+
+    -- A read from an empty table has one stream. An insert with one input stream into a Distributed table
+    -- keeps a single sink to preserve the input order, so the table must have data to check the resize.
+    SYSTEM STOP MERGES t4_pr;
+
+    INSERT INTO t4_pr SELECT * FROM numbers_mt(1e6);
 """
 
 max_insert_threads=8
@@ -40,7 +46,9 @@ max_insert_threads=8
 # at the requested value regardless of concurrent memory pressure.
 # Without these flags the test is flaky on `per_test_coverage` and other
 # memory-constrained builds. See PR #100383.
-NO_MEM_THROTTLE='--max_threads_min_free_memory_per_thread=0 --max_insert_threads_min_free_memory_per_thread=0'
+# Also disable lowering of the auto `max_threads` (which caps `max_insert_threads`)
+# to the fair share of CPU slots, which depends on the concurrently running tests.
+NO_MEM_THROTTLE='--max_threads_min_free_memory_per_thread=0 --max_insert_threads_min_free_memory_per_thread=0 --use_concurrency_control_for_max_threads=0'
 
 echo "inserting into a remote table from local with concurrency equal to max_insert_threads"
 ${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" $NO_MEM_THROTTLE -q """

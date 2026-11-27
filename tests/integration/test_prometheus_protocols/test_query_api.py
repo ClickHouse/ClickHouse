@@ -1,3 +1,4 @@
+import json
 import urllib
 import uuid
 
@@ -13,6 +14,7 @@ from .prometheus_test_utils import (
     extract_data_from_http_api_response,
     extract_error_from_http_api_response,
     get_response_to_http_api_query,
+    get_response_to_http_api_range_query,
     send_protobuf_to_remote_write,
 )
 
@@ -21,7 +23,7 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/prometheus.xml"],
+    main_configs=["configs/prometheus.xml", "configs/unavailable_shard_cluster.xml"],
     user_configs=["configs/allow_experimental_time_series_table.xml"],
     handle_prometheus_remote_read=(9093, "/read"),
     handle_prometheus_remote_write=(9093, "/write"),
@@ -65,6 +67,10 @@ def send_test_data():
             for i in range(STREAM_ERROR_SERIES_COUNT)
         ]
     )
+    # `rfc3339_metric` is used by the tests of RFC3339 times.
+    send_to_clickhouse(
+        [({"__name__": "rfc3339_metric", "job": "vmalert"}, {1700000000: 1.0, 1700000030: 2.0, 1700000060: 3.0})]
+    )
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -74,10 +80,10 @@ def start_cluster():
         node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
         node.query(
             "CREATE TABLE prometheus_seconds "
-            "(time_series Array(Tuple(DateTime64(0), Float64))) ENGINE=TimeSeries"
+            "(samples Array(Tuple(DateTime64(0), Float64))) ENGINE=TimeSeries"
         )
         node.query(
-            "INSERT INTO prometheus_seconds (metric_name, tags, time_series) VALUES"
+            "INSERT INTO prometheus_seconds (metric_name, tags, samples) VALUES"
             " ('foo_seconds_old', {'shape': 'circle'}, [(toDateTime64(150, 0), 16)]),"
             " ('foo_seconds_exact', {'shape': 'circle'}, [(toDateTime64(151, 0), 17)])"
         )
@@ -158,6 +164,30 @@ def test_range_query_accepts_positive_step_for_equal_start_and_end():
     assert result == '{"resultType": "matrix", "result": [{"metric": {"__name__": "post_body_metric", "job": "test"}, "values": [[1000, "1"]]}]}'
 
 
+# As in Prometheus, a range query is rejected with 400 bad_data if (end - start) / step is greater than 11000.
+def test_range_query_max_points_per_series():
+    def range_query(end, params=None):
+        return get_response_to_http_api_range_query(
+            node.ip_address, 9093, "/api/v1/query_range", "vector(1)", 0, end, 1, params
+        )
+
+    response = range_query(11001)
+    assert response.status_code == 400
+    assert response.json()["errorType"] == "bad_data"
+    assert response.json()["error"] == (
+        "exceeded maximum resolution of 11000 points per timeseries. "
+        "Try decreasing the query resolution (?step=XX) or increasing the setting promql_max_points_per_series"
+    )
+
+    response = range_query(11000)
+    assert response.status_code == 200
+    assert len(response.json()["data"]["result"][0]["values"]) == 11001
+
+    response = range_query(20000, {"promql_max_points_per_series": 0})
+    assert response.status_code == 200
+    assert len(response.json()["data"]["result"][0]["values"]) == 20001
+
+
 def test_query_lookback_delta():
     query = 'foo{shape="circle"}'
     timestamp = 151
@@ -226,6 +256,40 @@ def test_error_while_parsing():
     )
     error_message = extract_error_from_http_api_response(response)
     assert "while parsing PromQL query" in error_message
+
+
+# Errors raised before the query runs (a bad setting, a wrong password) keep their HTTP status
+# and come as a Prometheus error response `{"status":"error",...}` too.
+def test_error_before_dispatch():
+    node.query("CREATE USER IF NOT EXISTS prometheus_password_user IDENTIFIED BY 'right'")
+    for params, status_code, error_type, error in (
+        ({"no_such_setting": "1"}, 404, "not_found", "UNKNOWN_SETTING"),
+        ({"max_threads": "abc"}, 400, "bad_data", "CANNOT_PARSE"),
+        ({"user": "prometheus_password_user", "password": "wrong"}, 403, "bad_data", "AUTHENTICATION_FAILED"),
+    ):
+        response = get_response_to_http_api_query(
+            node.ip_address, 9093, "/api/v1/query", "vector(1)", 150, params=params,
+        )
+        assert response.status_code == status_code, response.text
+        assert response.headers["Content-Type"] == "application/json"
+        assert response.json()["errorType"] == error_type
+        assert error in extract_error_from_http_api_response(response)
+    node.query("DROP USER prometheus_password_user")
+
+
+# A time-series table that cannot be found keeps its HTTP status too.
+def test_unknown_table_before_query():
+    for params, error in (
+        ({"table": "no_such_table"}, "UNKNOWN_TABLE"),
+        ({"database": "no_such_database", "table": "prometheus"}, "UNKNOWN_DATABASE"),
+    ):
+        response = get_response_to_http_api_query(
+            node.ip_address, 9093, "/dynamic_table/api/v1/query", "vector(1)", 150, params=params,
+        )
+        assert response.status_code == 404, response.text
+        assert response.headers["Content-Type"] == "application/json"
+        assert response.json()["errorType"] == "not_found"
+        assert error in extract_error_from_http_api_response(response)
 
 
 # Checks the case when an exception appears before any block has been written to the response buffer.
@@ -363,12 +427,13 @@ def test_table_query_param():
     assert "cannot be overridden" in error
 
 
-def test_generated_sql_always_runs_with_analyzer():
-    # The SQL generated for PromQL marks shared subqueries AS MATERIALIZED, which only the
-    # analyzer honors, so the handler forces the analyzer and enable_materialized_cte
-    # regardless of the caller's enable_analyzer. The materialization itself is covered by
-    # 04816_promql_shared_subqueries_materialized; here it is enough to check the settings
-    # the generated query ran with.
+def test_generated_sql_always_runs_with_materialized_cte():
+    # The SQL generated for PromQL marks shared subqueries AS MATERIALIZED, which the handler
+    # honors by turning enable_materialized_cte on. The materialization itself is covered by
+    # 04816_promql_shared_subqueries_materialized; here it is enough to check the setting the
+    # generated query ran with. `AS MATERIALIZED` also needs the analyzer, but that is no
+    # longer a setting the handler has to pin: the analyzer is the only query analysis since
+    # 26.9, so it is not in the changed settings this row records.
     for path, time_params in (
         ("/api/v1/query", "time=1000"),
         ("/api/v1/query_range", "start=999&end=1002&step=1"),
@@ -376,7 +441,7 @@ def test_generated_sql_always_runs_with_analyzer():
         query_id = f"promql-analyzer-{uuid.uuid4()}"
         url = (
             f"http://{node.ip_address}:9093{path}"
-            f"?query=post_body_metric&{time_params}&enable_analyzer=0"
+            f"?query=post_body_metric&{time_params}"
         )
         response = requests.get(url, headers={"X-ClickHouse-Query-Id": query_id})
         extract_data_from_http_api_response(response)  # raises unless a success envelope
@@ -387,10 +452,199 @@ def test_generated_sql_always_runs_with_analyzer():
         # background interval. Retry for longer than that interval.
         assert_eq_with_retry(
             node,
-            "SELECT Settings['allow_experimental_analyzer'], "
-            "Settings['enable_materialized_cte'] "
+            "SELECT Settings['enable_materialized_cte'] "
             f"FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '{query_id}'",
-            "1\t1\n",
+            "1\n",
             retry_count=30,
             sleep_time=1,
         )
+
+
+# Parameters of other Prometheus-compatible servers that are safe to ignore don't change the result.
+def test_ignored_params():
+    query = 'foo{shape="square"}'
+    expected = execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=150)
+    for name, value in [("trace", "1"), ("round_digits", "3")]:
+        assert (
+            execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=150, params={name: value})
+            == expected
+        )
+
+
+# The SQL that `/api/v1/query` executes is generated by the server, so the request settings passed as URL
+# parameters must not change how it is parsed: neither another `dialect` nor a small `max_query_size`.
+def test_generated_sql_ignores_request_dialect_and_parser_limits():
+    expected = execute_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query", "post_body_metric", timestamp=1000
+    )
+    for params in ({"dialect": "kusto"}, {"max_query_size": "20"}, {"max_parser_depth": "5"}):
+        assert (
+            execute_query_via_http_api(
+                node.ip_address, 9093, "/api/v1/query", "post_body_metric", timestamp=1000, params=params
+            )
+            == expected
+        )
+
+
+# Thanos' deduplication and partial responses are not implemented, so `dedup=true` and `partial_response=true` are rejected.
+def test_thanos_params():
+    query = 'foo{shape="square"}'
+    expected = execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=150)
+    # The spellings of false that Thanos accepts.
+    for name in ["dedup", "partial_response"]:
+        for value in ["false", "0", "f", "F", "False"]:
+            assert execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=150, params={name: value}) == expected
+    for name, value, error in [
+        ("dedup", "true", "The 'dedup=true' parameter is not supported"),
+        ("partial_response", "true", "The 'partial_response=true' parameter is not supported"),
+    ]:
+        response = get_response_to_http_api_query(node.ip_address, 9093, "/api/v1/query", query, 150, params={name: value})
+        assert response.status_code == 400
+        assert response.json()["errorType"] == "bad_data"
+        assert error in extract_error_from_http_api_response(response)
+    # A repeated parameter is rejected if any of its values asks for the option.
+    url = f"http://{node.ip_address}:9093/api/v1/query"
+    for name in ["dedup", "partial_response"]:
+        response = requests.get(url, params=[("query", query), ("time", "150"), (name, "false"), (name, "true")])
+        assert response.status_code == 400
+        assert f"The '{name}=true' parameter is not supported" in extract_error_from_http_api_response(response)
+    # Every value is checked, so a malformed one is an error in any position.
+    for values in [["1", "garbage"], ["garbage", "1"]]:
+        response = requests.get(url, params=[("query", query), ("time", "150")] + [("nocache", value) for value in values])
+        assert response.status_code == 400
+        assert "Invalid value of the 'nocache' parameter: 'garbage'" in response.text
+
+
+# `nocache=1` bypasses the query cache that a settings profile enables.
+def test_nocache_bypasses_query_cache():
+    node.query(
+        "CREATE SETTINGS PROFILE query_cache_profile SETTINGS use_query_cache = 1, query_cache_nondeterministic_function_handling = 'save'"
+    )
+    node.query("CREATE USER query_cache_user IDENTIFIED WITH no_password SETTINGS PROFILE query_cache_profile")
+    node.query("GRANT SELECT ON default.*, CREATE TEMPORARY TABLE ON *.* TO query_cache_user")
+
+    def get_value(params):
+        params = {"user": "query_cache_user", **params}
+        data = execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", "nocache_metric", timestamp=1010, params=params)
+        return json.loads(data)["result"][0]["value"][1]
+
+    send_to_clickhouse([({"__name__": "nocache_metric"}, {1000.0: 1.0})])
+    assert get_value({}) == "1"
+    send_to_clickhouse([({"__name__": "nocache_metric"}, {1005.0: 2.0})])
+    assert get_value({}) == "1"
+    assert get_value({"nocache": "1"}) == "2"
+    # Any `nocache=1` among repeated values bypasses the cache.
+    send_to_clickhouse([({"__name__": "nocache_metric"}, {1008.0: 3.0})])
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/query",
+        params=[("query", "nocache_metric"), ("time", "1010"), ("user", "query_cache_user"), ("nocache", "0"), ("nocache", "1")],
+    )
+    assert json.loads(extract_data_from_http_api_response(response))["result"][0]["value"][1] == "3"
+
+    # `nocache=1` wins over `use_query_cache=1` in the same request.
+    # Another time keeps the cache key apart from query_cache_user's entry, which blocks this user's insert.
+    def get_default_user_value(extra_params):
+        params = [("query", "nocache_metric"), ("time", "1011"), ("use_query_cache", "1"), ("query_cache_nondeterministic_function_handling", "save")]
+        response = requests.get(f"http://{node.ip_address}:9093/api/v1/query", params=params + extra_params)
+        return json.loads(extract_data_from_http_api_response(response))["result"][0]["value"][1]
+
+    assert get_default_user_value([]) == "3"
+    send_to_clickhouse([({"__name__": "nocache_metric"}, {1009.0: 4.0})])
+    assert get_default_user_value([]) == "3"
+    assert get_default_user_value([("nocache", "1")]) == "4"
+
+
+# `partial_response=false` makes an unreachable shard an error even for a user with `skip_unavailable_shards = 1`.
+# The TimeSeries tables use version 9, the last one that can have an external (here Distributed) data table.
+def test_partial_response_false_requires_all_shards():
+    node.query("CREATE TABLE shard_data (id UUID, timestamp DateTime64(3), value Float64) ENGINE=MergeTree ORDER BY (id, timestamp)")
+    node.query("CREATE TABLE dist_data AS shard_data ENGINE=Distributed(unavailable_shard, default, shard_data, 0)")
+    node.query("CREATE TABLE prometheus_dist ENGINE=TimeSeries SETTINGS version = 9 DATA dist_data")
+    node.query("INSERT INTO prometheus_dist (metric_name, tags, samples) VALUES ('dist_metric', {}, [(toDateTime64(1000, 3), 7)])")
+    node.query("CREATE USER skip_shards_user IDENTIFIED WITH no_password SETTINGS skip_unavailable_shards = 1")
+    node.query("GRANT SELECT ON default.*, CREATE TEMPORARY TABLE ON *.* TO skip_shards_user")
+
+    path = "/dynamic_table/api/v1/query"
+    params = {"table": "prometheus_dist", "user": "skip_shards_user"}
+    data = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params)
+    assert json.loads(data)["result"][0]["value"][1] == "7"
+    params["partial_response"] = "false"
+    error = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params, expect_error=True)
+    assert "Connection refused" in error
+
+    # `partial_response=false` wins over `skip_unavailable_shards=1` in the same request.
+    params = {"table": "prometheus_dist", "skip_unavailable_shards": "1"}
+    data = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params)
+    assert json.loads(data)["result"][0]["value"][1] == "7"
+    params["partial_response"] = "false"
+    error = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params, expect_error=True)
+    assert "Connection refused" in error
+
+    # It also wins over the Distributed table's own `skip_unavailable_shards = 1` for a user with the default `skip_unavailable_shards = 0`.
+    node.query("CREATE TABLE shard_data_skip AS shard_data")
+    node.query("CREATE TABLE dist_data_skip AS shard_data ENGINE=Distributed(unavailable_shard, default, shard_data_skip, 0) SETTINGS skip_unavailable_shards = 1")
+    node.query("CREATE TABLE prometheus_dist_skip ENGINE=TimeSeries SETTINGS version = 9 DATA dist_data_skip")
+    node.query("INSERT INTO prometheus_dist_skip (metric_name, tags, samples) VALUES ('dist_metric', {}, [(toDateTime64(1000, 3), 7)])")
+    params = {"table": "prometheus_dist_skip"}
+    data = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params)
+    assert json.loads(data)["result"][0]["value"][1] == "7"
+    params["partial_response"] = "false"
+    error = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params, expect_error=True)
+    assert "Connection refused" in error
+
+
+# Tenancy filters must be rejected, never ignored.
+def test_tenancy_filters_rejected():
+    url = f"http://{node.ip_address}:9093"
+    responses = [
+        (name, get_response_to_http_api_query(node.ip_address, 9093, "/api/v1/query", "foo", 150, params={name: value}))
+        for name, value in [("extra_label", "shape=square"), ("extra_filters", '{shape="square"}'), ("extra_filters[]", '{shape="square"}')]
+    ]
+    responses.append(("extra_label", requests.get(f"{url}/api/v1/series", params={"match[]": "foo", "extra_label": "shape=square"})))
+    responses.append(("extra_filters[]", requests.post(f"{url}/api/v1/query", data={"query": "foo", "time": "150", "extra_filters[]": '{shape="square"}'})))
+    for name, response in responses:
+        assert response.status_code == 400
+        assert response.json()["errorType"] == "bad_data"
+        assert f"The '{name}' parameter is not supported" in extract_error_from_http_api_response(response)
+
+
+# vmalert and other Go clients send times in RFC3339 format; they must give the same result as Unix times.
+@pytest.mark.parametrize(
+    "path, unix_params, rfc3339_params",
+    [
+        ("/api/v1/query", {"time": "1700000060"}, {"time": "2023-11-14T22:14:20Z"}),
+        ("/api/v1/query", {"time": "1700000060"}, {"time": "2023-11-15T00:14:20+02:00"}),
+        ("/api/v1/query", {"time": "1700000045.123"}, {"time": "2023-11-14T17:14:05.123456789-05:00"}),
+        # Any other format parseDateTimeBestEffort understands is accepted too.
+        ("/api/v1/query", {"time": "1700000060"}, {"time": "Tue, 14 Nov 2023 22:14:20 GMT"}),
+        ("/api/v1/query", {"time": "1700000060"}, {"time": "2023-11-14 22:14:20 +0000"}),
+        (
+            "/api/v1/query_range",
+            {"start": "1700000000", "end": "1700000060", "step": "15s"},
+            {"start": "2023-11-14T22:13:20Z", "end": "2023-11-14T22:14:20Z", "step": "15s"},
+        ),
+        (
+            "/api/v1/series",
+            {"start": "1700000000", "end": "1700000060"},
+            {"start": "2023-11-14T22:13:20Z", "end": "2023-11-14T17:14:20-05:00"},
+        ),
+    ],
+)
+def test_rfc3339_times(path, unix_params, rfc3339_params):
+    selector = {"match[]": "rfc3339_metric"} if path == "/api/v1/series" else {"query": "rfc3339_metric"}
+    url = f"http://{node.ip_address}:9093{path}"
+    unix_data = extract_data_from_http_api_response(requests.get(url, params={**selector, **unix_params}))
+    rfc3339_data = extract_data_from_http_api_response(requests.get(url, params={**selector, **rfc3339_params}))
+    assert "rfc3339_metric" in unix_data
+    assert rfc3339_data == unix_data
+
+
+@pytest.mark.parametrize(
+    "time",
+    ["2023-11-14T22:14:20z", "2023-11-14T22:14:20Z junk", "2023-11-14T22:14:20Z ", " 1700000060", "now", "abc"],
+)
+def test_rfc3339_times_invalid(time):
+    error = execute_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query", "rfc3339_metric", params={"time": time}, expect_error=True
+    )
+    assert "Cannot parse a timestamp" in error

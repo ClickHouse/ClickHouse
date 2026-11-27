@@ -179,7 +179,7 @@ private:
     }
 
 public:
-    String getName() const override { return "intervalLengthSum"; }
+    [[nodiscard]] String getName() const override { return "intervalLengthSum"; }
 
     explicit AggregateFunctionIntervalLengthSum(const DataTypes & arguments, const Array & parameters_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>(arguments, parameters_, createResultType())
@@ -195,7 +195,7 @@ public:
 
     /// Parameters are non-semantic here and never reach the serialized state, so parameterized and
     /// parameterless states share one representation and stay Merge-/CAST-compatible.
-    DataTypePtr getNormalizedStateType() const override
+    [[nodiscard]] DataTypePtr getNormalizedStateType() const override
     {
         DataTypes normalized_argument_types;
         normalized_argument_types.reserve(this->argument_types.size());
@@ -204,9 +204,9 @@ public:
         return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), normalized_argument_types, Array{});
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
-    AggregateFunctionPtr getOwnNullAdapter(
+    [[nodiscard]] AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function,
         const DataTypes & arguments,
         const Array & params,
@@ -278,7 +278,7 @@ createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTyp
 
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument of aggregate function {}, must "
-                    "be native integral type, Date/DateTime or Float", arguments.front().get()->getName(), name);
+                    "be native integral type, Date/DateTime or Float", arguments.front()->getName(), name);
 }
 
 }
@@ -289,10 +289,10 @@ void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory & facto
     FunctionDocumentation::Description description = R"(
 Takes multiple numeric ranges and calculates the total length when all overlapping parts are combined into a single unified range.
 
-:::note
+<Note>
 Arguments must be of the same data type.
 Otherwise, an exception will be thrown.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = R"(
 intervalLengthSum(start, end)
@@ -350,7 +350,7 @@ SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, en
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("intervalLengthSum", {createAggregateFunctionIntervalLengthSum<AggregateFunctionIntervalLengthSumData>, documentation});
+    factory.registerFunction("intervalLengthSum", {createAggregateFunctionIntervalLengthSum<AggregateFunctionIntervalLengthSumData>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 }
 
 }

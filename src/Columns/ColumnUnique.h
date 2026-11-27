@@ -1,5 +1,7 @@
 #pragma once
 
+#include <utility>
+
 #include <Columns/IColumnUnique.h>
 #include <Columns/ReverseIndex.h>
 
@@ -14,6 +16,7 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/NaNUtils.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
@@ -28,6 +31,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
@@ -63,6 +67,7 @@ public:
     size_t uniqueInsert(const Field & x) override;
     bool tryUniqueInsert(const Field & x, size_t & index) override;
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;
+    void uniqueInsertRowsFrom(const IColumn & src, std::span<UInt64> rows) override;
     MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     IColumnUnique::IndexesWithOverflow uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length,
                                                                      size_t max_dictionary_size) override;
@@ -83,6 +88,7 @@ public:
     }
     bool isDefaultAt(size_t n) const override { return n == 0; }
     std::string_view getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
+    bool supportsGetDataAt() const override { return getNestedColumn()->supportsGetDataAt(); }
     UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }
     UInt64 getUInt(size_t n) const override { return getNestedColumn()->getUInt(n); }
     Int64 getInt(size_t n) const override { return getNestedColumn()->getInt(n); }
@@ -122,30 +128,48 @@ public:
 
     void forEachSubcolumn(IColumn::ColumnCallback callback) const override
     {
-        callback(column_holder);
+        /// When `is_nullable`, `column_holder` is intentionally shared with
+        /// `nested_column_nullable` (see `createNullMask`), so its `use_count` is
+        /// normally `>= 2`. Exposing it here would make `IColumn::mutate`'s deep
+        /// `chassert(sub->use_count() == 1)` fire on an invariant that `ColumnUnique`
+        /// maintains by design. `ColumnUnique` is the sole writer of `column_holder`;
+        /// the shared reference held by `nested_column_nullable` is read-only and
+        /// managed through `updateNullMask`.
+        if (!is_nullable)
+            callback(column_holder);
     }
 
     void forEachMutableSubcolumn(IColumn::MutableColumnCallback callback) override
     {
-        callback(column_holder);
-        reverse_index.setColumn(getRawColumnPtr());
-        if (is_nullable)
-            nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
+        mutateWithoutNullableView([&] { callback(column_holder); });
     }
 
     void forEachSubcolumnRecursively(IColumn::RecursiveColumnCallback callback) const override
     {
-        callback(*column_holder);
+        /// Mirror the guard in `forEachSubcolumn`: when `is_nullable`, `column_holder`
+        /// is shared with `nested_column_nullable` by design (see `createNullMask`), so
+        /// its `use_count` is `>= 2`. Exposing it here would make `IColumn::mutate`'s deep
+        /// `chassert(sub.use_count() == 1)` walk fire on an invariant `ColumnUnique`
+        /// maintains internally.
+        if (!is_nullable)
+            callback(*column_holder);
         column_holder->forEachSubcolumnRecursively(callback);
     }
 
     void forEachMutableSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override
     {
-        callback(*column_holder);
-        column_holder->forEachMutableSubcolumnRecursively(callback);
-        reverse_index.setColumn(getRawColumnPtr());
-        if (is_nullable)
-            nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
+        /// When `is_nullable`, `nested_column_nullable` keeps a second reference to
+        /// `column_holder` (see `createNullMask`), so `column_holder->use_count() >= 2`.
+        /// Drop that internal reference before exposing `column_holder` for mutation so the
+        /// `assumeMutableRef` ownership check passes; re-create `nested_column_nullable`
+        /// after the in-place mutations are done. Clone `nested_null_mask` because the
+        /// original dictionary's nullable view keeps it shared and `updateNullMask` can
+        /// later resize it. See `mutateWithoutNullableView`.
+        mutateWithoutNullableView([&]
+        {
+            callback(*column_holder);
+            column_holder->forEachMutableSubcolumnRecursively(callback);
+        });
     }
 
     bool structureEquals(const IColumn & rhs) const override
@@ -225,13 +249,65 @@ private:
     mutable IncrementalHash hash;
 
     void createNullMask();
-    void updateNullMask();
+    /// Runs once per inserted value, so the work stays out of line behind the flag.
+    void updateNullMask()
+    {
+        if (is_nullable)
+            updateNullMaskImpl();
+    }
+    void updateNullMaskImpl();
 
     static size_t numSpecialValues(bool is_nullable) { return is_nullable ? 2 : 1; }
+
+    /// Re-creates `reverse_index` and the nullable view after `column_holder` was exposed for mutation.
+    void restoreNullableView()
+    {
+        reverse_index.setColumn(getRawColumnPtr());
+        if (is_nullable)
+            nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
+    }
+
+    /// Drops the nullable view (it keeps a second reference to `column_holder`, see `createNullMask`),
+    /// runs `mutate_subcolumns` and re-creates the view. The view is re-created in ordinary control
+    /// flow, so an exception from that allocation (e.g. `MEMORY_LIMIT_EXCEEDED`) propagates to the
+    /// caller. If anything throws, the view is re-created with the memory limit check disabled before
+    /// rethrowing, so the dictionary never stays without its nullable view or with a stale `reverse_index`.
+    template <typename F>
+    void mutateWithoutNullableView(F && mutate_subcolumns)
+    {
+        try
+        {
+            if (is_nullable)
+            {
+                nested_column_nullable = nullptr;
+                nested_null_mask = IColumn::mutate(nested_null_mask);
+            }
+
+            mutate_subcolumns();
+            restoreNullableView();
+        }
+        catch (...)
+        {
+            LockMemoryExceptionInThread lock(VariableContext::Global);
+            restoreNullableView();
+            throw;
+        }
+    }
     size_t numSpecialValues() const { return numSpecialValues(is_nullable); }
 
-    ColumnType * getRawColumnPtr() { return assert_cast<ColumnType *>(column_holder.get()); }
+    /// `column_holder` is intentionally shared with `nested_column_nullable` for `is_nullable`
+    /// dictionaries (see `createNullMask`), so its `use_count` is normally `>= 2`. The
+    /// non-const overload of `chameleon_ptr::get` would route through `assumeMutableRef`
+    /// and trip `chassert(use_count() == 1)`. Bypass via the const overload + `const_cast`
+    /// — `ColumnUnique` keeps strong ownership of `column_holder` and is the sole writer.
+    ColumnType * getRawColumnPtr() { return const_cast<ColumnType *>(std::as_const(*this).getRawColumnPtr()); }
     const ColumnType * getRawColumnPtr() const { return assert_cast<const ColumnType *>(column_holder.get()); }
+
+    /// `src` must be `ColumnType` or `Nullable(ColumnType)`.
+    std::pair<const ColumnType *, const NullMap *> getValuesAndNullMap(const IColumn & src) const;
+
+    /// The NULL and default value rules of `uniqueInsertRangeFrom`. Returns nothing for any other value.
+    ALWAYS_INLINE std::optional<size_t> getSpecialValueIndex(const ColumnType & src, const NullMap * null_map, size_t row) const;
 
     template <typename IndexType>
     MutableColumnPtr uniqueInsertRangeImpl(
@@ -277,10 +353,14 @@ ColumnUnique<ColumnType>::ColumnUnique(const IDataType & type)
     const auto & holder_type = is_nullable ? *static_cast<const DataTypeNullable &>(type).getNestedType() : type;
     column_holder = holder_type.createColumn()->cloneResized(numSpecialValues());
     reverse_index.setColumn(getRawColumnPtr());
-    createNullMask();
 
+    /// Read fixed-size info before `createNullMask`, which shares `column_holder`
+    /// via `nested_column_nullable` and would trip the `use_count() == 1` assertion
+    /// on the next non-const `column_holder->` access.
     if (column_holder->valuesHaveFixedSize())
         size_of_value_if_fixed = column_holder->sizeOfValueIfFixed();
+
+    createNullMask();
 }
 
 template <typename ColumnType>
@@ -293,10 +373,12 @@ ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nulla
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Holder column for ColumnUnique can't be nullable.");
 
     reverse_index.setColumn(getRawColumnPtr());
-    createNullMask();
 
+    /// See the matching note above: read fixed-size info before `createNullMask`.
     if (column_holder->valuesHaveFixedSize())
         size_of_value_if_fixed = column_holder->sizeOfValueIfFixed();
+
+    createNullMask();
 }
 
 template <typename ColumnType>
@@ -318,17 +400,22 @@ void ColumnUnique<ColumnType>::createNullMask()
 }
 
 template <typename ColumnType>
-void ColumnUnique<ColumnType>::updateNullMask()
+void ColumnUnique<ColumnType>::updateNullMaskImpl()
 {
-    if (is_nullable)
+    if (!nested_null_mask)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Null mask for ColumnUnique is was not created.");
+
+    size_t size = getRawColumnPtr()->size();
+
+    /// `nested_null_mask` is intentionally shared with `nested_column_nullable`
+    /// (see `createNullMask`), so its `use_count` is normally `>= 2`. Access via
+    /// the const overload to bypass the `use_count() == 1` assertion in
+    /// `assumeMutableRef`. `ColumnUnique` is the sole writer.
+    const auto & const_null_mask = std::as_const(*this).nested_null_mask;
+    if (const_null_mask->size() != size)
     {
-        if (!nested_null_mask)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Null mask for ColumnUnique is was not created.");
-
-        size_t size = getRawColumnPtr()->size();
-
-        if (nested_null_mask->size() != size)
-            assert_cast<ColumnUInt8 &>(*nested_null_mask).getData().resize_fill(size);
+        auto & null_mask_data = const_cast<ColumnUInt8 &>(assert_cast<const ColumnUInt8 &>(*const_null_mask)).getData();
+        null_mask_data.resize_fill(size);
     }
 }
 
@@ -391,7 +478,11 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
         }
     }
 
-    auto single_value_column = column_holder->cloneEmpty();
+    /// `column_holder` is shared with `nested_column_nullable` after `createNullMask`
+    /// (for nullable dictionaries), so the non-const `WrappedPtr::operator->` would
+    /// trip `assumeMutableRef`'s `chassert(use_count() == 1)`. `cloneEmpty` is a
+    /// `const` method, so use the const overload via `std::as_const`.
+    auto single_value_column = std::as_const(column_holder)->cloneEmpty();
     single_value_column->insert(x);
     auto single_value_data = single_value_column->getDataAt(0);
 
@@ -409,7 +500,8 @@ bool ColumnUnique<ColumnType>::tryUniqueInsert(const Field & x, size_t & index)
         return true;
     }
 
-    auto single_value_column = column_holder->cloneEmpty();
+    /// See `uniqueInsert` for why `column_holder` is read via the `const` overload.
+    auto single_value_column = std::as_const(column_holder)->cloneEmpty();
     if (!single_value_column->tryInsert(x))
         return false;
 
@@ -449,10 +541,66 @@ size_t ColumnUnique<ColumnType>::uniqueInsertFrom(const IColumn & src, size_t n)
 }
 
 template <typename ColumnType>
+void ColumnUnique<ColumnType>::uniqueInsertRowsFrom(const IColumn & src, std::span<UInt64> rows)
+{
+    const auto [src_column, null_map] = getValuesAndNullMap(src);
+    UInt64 previous_row = std::numeric_limits<UInt64>::max();
+    UInt64 previous_index = 0;
+    for (UInt64 & row : rows)
+    {
+        if (row != previous_row)
+        {
+            previous_row = row;
+            if (auto special_index = getSpecialValueIndex(*src_column, null_map, row))
+                previous_index = *special_index;
+            else
+                previous_index = uniqueInsertFrom(*src_column, row);
+        }
+        row = previous_index;
+    }
+}
+
+template <typename ColumnType>
+std::pair<const ColumnType *, const NullMap *> ColumnUnique<ColumnType>::getValuesAndNullMap(const IColumn & src) const
+{
+    const ColumnType * src_column = nullptr;
+    const NullMap * null_map = nullptr;
+
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&src))
+    {
+        src_column = typeid_cast<const ColumnType *>(&nullable_column->getNestedColumn());
+        null_map = &nullable_column->getNullMapData();
+    }
+    else
+        src_column = typeid_cast<const ColumnType *>(&src);
+
+    if (src_column == nullptr)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Invalid column type for ColumnUnique::insertRangeFrom. "
+                        "Expected {}, got {}", column_holder->getName(), src.getName());
+
+    return {src_column, null_map};
+}
+
+template <typename ColumnType>
+std::optional<size_t> ColumnUnique<ColumnType>::getSpecialValueIndex(const ColumnType & src, const NullMap * null_map, size_t row) const
+{
+    if (null_map && (*null_map)[row])
+        return getNullValueIndex();
+    if (getRawColumnPtr()->compareAt(getNestedTypeDefaultValueIndex(), row, src, 1) == 0)
+        return getNestedTypeDefaultValueIndex();
+    return std::nullopt;
+}
+
+template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueInsertData(const char * pos, size_t length)
 {
-    if (auto index = getNestedTypeDefaultValueIndex(); getRawColumnPtr()->getDataAt(index) == std::string_view(pos, length))
-        return index;
+    /// The reserved prefix slots are not in the reverse index, so the default value is matched here.
+    /// Comparing the first byte first keeps the `memcmp` call out of this path for the values that
+    /// are not the default, which is all of them in a typical dictionary.
+    const size_t default_index = getNestedTypeDefaultValueIndex();
+    const std::string_view default_value = getRawColumnPtr()->getDataAt(default_index);
+    if (default_value.size() == length && (length == 0 || (default_value[0] == pos[0] && default_value == std::string_view(pos, length))))
+        return default_index;
 
     auto insertion_point = reverse_index.insert({pos, length});
 
@@ -562,6 +710,9 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(ReadBuffer 
     if (in.available() < string_size)
         throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize string value in ColumnUnique.");
 
+    if (unlikely(string_size < serialize_string_with_zero_byte))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "String size is smaller than its zero-byte terminator");
+
     size_t ret = uniqueInsertData(in.position(), string_size - serialize_string_with_zero_byte);
     in.ignore(string_size);
     return ret;
@@ -570,39 +721,8 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(ReadBuffer 
 template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
 {
-    if (is_nullable)
-    {
-        UInt8 val = 0;
-        readBinaryLittleEndian<UInt8>(val, in);
-
-        if (val)
-            return getNullValueIndex();
-
-    }
-
-    /// Numbers, FixedString
-    if (size_of_value_if_fixed)
-    {
-        if (in.available() < size_of_value_if_fixed)
-            throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize fixed size value in ColumnUnique.");
-
-        size_t ret = uniqueInsertData(in.position(), size_of_value_if_fixed);
-        in.ignore(size_of_value_if_fixed);
-        return ret;
-
-    }
-
-    /// String
-    /// For compatibility, serialized string value contains zero byte at the end, we just ignore this byte.
-    size_t string_size_with_zero_byte = 0;
-    readBinaryLittleEndian<size_t>(string_size_with_zero_byte, in);
-    if (in.available() < string_size_with_zero_byte)
-        throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize string value in ColumnUnique.");
-
-    size_t ret = uniqueInsertData(in.position(), string_size_with_zero_byte - 1);
-    in.ignore(string_size_with_zero_byte);
-
-    return ret;
+    const auto settings = IColumn::SerializationSettings::createForAggregationState();
+    return uniqueDeserializeAndInsertFromArena(in, &settings);
 }
 
 template <typename ColumnType>
@@ -655,8 +775,6 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
     ReverseIndex<UInt64, ColumnType> * secondary_index,
     size_t max_dictionary_size)
 {
-    const ColumnType * src_column = nullptr;
-    const NullMap * null_map = nullptr;
     auto & positions = positions_column->getData();
 
     auto update_position = [&](UInt64 & next_position) -> MutableColumnPtr
@@ -690,17 +808,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         return nullptr;
     };
 
-    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&src))
-    {
-        src_column = typeid_cast<const ColumnType *>(&nullable_column->getNestedColumn());
-        null_map = &nullable_column->getNullMapData();
-    }
-    else
-        src_column = typeid_cast<const ColumnType *>(&src);
-
-    if (src_column == nullptr)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Invalid column type for ColumnUnique::insertRangeFrom. "
-                        "Expected {}, got {}", column_holder->getName(), src.getName());
+    const auto [src_column, null_map] = getValuesAndNullMap(src);
 
     auto column = getRawColumnPtr();
 
@@ -722,10 +830,8 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
     {
         auto row = start + num_added_rows;
 
-        if (null_map && (*null_map)[row])
-            positions[num_added_rows] = static_cast<IndexType>(getNullValueIndex());
-        else if (column->compareAt(getNestedTypeDefaultValueIndex(), row, *src_column, 1) == 0)
-            positions[num_added_rows] = static_cast<IndexType>(getNestedTypeDefaultValueIndex());
+        if (auto special_index = getSpecialValueIndex(*src_column, null_map, row))
+            positions[num_added_rows] = static_cast<IndexType>(*special_index);
         else
         {
             auto ref = src_column->getDataAt(row);
@@ -819,7 +925,8 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType>::uniqueInsertRangeWi
     size_t length,
     size_t max_dictionary_size)
 {
-    auto overflowed_keys = column_holder->cloneEmpty();
+    /// See `uniqueInsert` for why `column_holder` is read via the `const` overload.
+    auto overflowed_keys = std::as_const(column_holder)->cloneEmpty();
     auto * overflowed_keys_ptr = typeid_cast<ColumnType *>(overflowed_keys.get());
     if (!overflowed_keys_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid keys type for ColumnUnique.");

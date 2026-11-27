@@ -49,14 +49,14 @@ struct Impl
 
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array1_size = array_predicted_offsets[i] - array_predicted_offsets[i - 1];
+            size_t array1_size = array_predicted_offsets[i] - array_predicted_offsets[static_cast<ssize_t>(i) - 1];
             if (array1_size != array_size)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All arrays in function arrayNormalizedGini should have same size");
 
             // Why we need to create a new array here every loop, because array2 will be sorted in calculateNormalizedGini.
             PODArrayWithStackMemory<T2, 1024> array2(array_labels_const.begin(), array_labels_const.end());
 
-            auto [gini_predicted, gini_labels, gini_normalized] = calculateNormalizedGini(array_predicted_data, array_predicted_offsets[i - 1], array2, array_size);
+            auto [gini_predicted, gini_labels, gini_normalized] = calculateNormalizedGini(array_predicted_data, array_predicted_offsets[static_cast<ssize_t>(i) - 1], array2, array_size);
 
             col_gini_predicted[i] = gini_predicted;
             col_gini_labels[i] = gini_labels;
@@ -75,22 +75,22 @@ struct Impl
         PaddedPODArray<Float64> & col_gini_normalized)
     {
         size_t size = col_gini_predicted.size();
-        size_t array_size = size > 0 ? array_predicted_offsets[0] - array_predicted_offsets[-1] : 0;
-
-        if (array_size > MAX_ARRAY_SIZE)
-            throw Exception(
-                ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in arrayNormalizedGini: {}, maximum: {}", array_size, MAX_ARRAY_SIZE);
 
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array1_size = array_predicted_offsets[i] - array_predicted_offsets[i - 1];
-            size_t array2_size = array_labels_offsets[i] - array_labels_offsets[i - 1];
-            if (array1_size != array_size || array2_size != array_size)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All arrays in function arrayNormalizedGini should have same size");
+            size_t array_size = array_predicted_offsets[i] - array_predicted_offsets[static_cast<ssize_t>(i) - 1];
+            size_t array2_size = array_labels_offsets[i] - array_labels_offsets[static_cast<ssize_t>(i) - 1];
 
-            PODArrayWithStackMemory<T2, 1024> array2(array_labels_data.data() + array_labels_offsets[i - 1], array_labels_data.data() + array_labels_offsets[i]);
+            if (array_size > MAX_ARRAY_SIZE)
+                throw Exception(
+                    ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in arrayNormalizedGini: {}, maximum: {}", array_size, MAX_ARRAY_SIZE);
 
-            auto [gini_predicted, gini_labels, gini_normalized] = calculateNormalizedGini(array_predicted_data, array_predicted_offsets[i - 1], array2, array_size);
+            if (array2_size != array_size)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Prediction and label arrays in function arrayNormalizedGini should have same size for each row");
+
+            PODArrayWithStackMemory<T2, 1024> array2(array_labels_data.data() + array_labels_offsets[static_cast<ssize_t>(i) - 1], array_labels_data.data() + array_labels_offsets[i]);
+
+            auto [gini_predicted, gini_labels, gini_normalized] = calculateNormalizedGini(array_predicted_data, array_predicted_offsets[static_cast<ssize_t>(i) - 1], array2, array_size);
 
             col_gini_predicted[i] = gini_predicted;
             col_gini_labels[i] = gini_labels;
@@ -116,11 +116,11 @@ struct Impl
 
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array1_size = array_labels_offsets[i] - array_labels_offsets[i - 1];
+            size_t array1_size = array_labels_offsets[i] - array_labels_offsets[static_cast<ssize_t>(i) - 1];
             if (array1_size != array_size)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All arrays in function arrayNormalizedGini should have same size");
 
-            PODArrayWithStackMemory<T2, 1024> array2(array_labels_data.data() + array_labels_offsets[i - 1], array_labels_data.data() + array_labels_offsets[i]);
+            PODArrayWithStackMemory<T2, 1024> array2(array_labels_data.data() + array_labels_offsets[static_cast<ssize_t>(i) - 1], array_labels_data.data() + array_labels_offsets[i]);
 
             auto [gini_predicted, gini_labels, gini_normalized] = calculateNormalizedGini(array_predicted_const, 0, array2, array_size);
 
@@ -192,12 +192,17 @@ public:
     static constexpr auto name = "arrayNormalizedGini";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayNormalizedGini>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(Array(Number), Array(Number)) -> Tuple(Float64, Float64, Float64)";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -224,7 +229,7 @@ public:
             DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()});
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & col_predicted = arguments[0].column;
         const auto & col_labels = arguments[1].column;

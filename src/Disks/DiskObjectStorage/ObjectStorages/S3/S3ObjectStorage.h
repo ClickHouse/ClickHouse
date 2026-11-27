@@ -9,6 +9,7 @@
 #include <memory>
 #include <IO/S3/S3Capabilities.h>
 #include <IO/S3Settings.h>
+#include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <IO/ReadBufferFromS3.h>
@@ -39,7 +40,7 @@ private:
         ObjectStorageKeyGeneratorPtr key_generator_,
         const String & disk_name_,
         bool for_disk_s3_ = true,
-        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] -> std::unique_ptr<const S3::Client>{ return nullptr; },
+        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = {},
         bool client_restricts_server_credentials_ = true)
         : uri(uri_)
         , disk_name(disk_name_)
@@ -102,14 +103,61 @@ public:
         bool with_tags,
         const std::optional<std::string> & start_after) const override;
 
+    bool supportsDelimitedListing() const override { return true; }
+
+    /// Directory buckets accept a `Delimiter` only when the `Prefix` ends with '/', so the delimiter walk
+    /// must start at a '/' boundary (or the bucket root). For a glob whose fixed prefix ends mid-component,
+    /// the caller may widen the walk to the preceding boundary (see the base declaration).
+    bool supportsDelimitedListingFromPrefix(const std::string & key_prefix) const override
+    {
+        if (client.get()->isS3ExpressBucket())
+            return key_prefix.empty() || key_prefix.ends_with('/');
+        return true;
+    }
+
+    /// S3 Express / directory buckets reject `StartAfter` and only allow the '/' delimiter.
+    bool supportsStartAfterListing() const override { return !client.get()->isS3ExpressBucket(); }
+
+    /// Directory buckets return `ListObjectsV2` results in no particular order.
+    bool listsKeysInLexicographicOrder() const override { return !client.get()->isS3ExpressBucket(); }
+
+    /// Keyspace splitting of flat directories resumes by key, so it is available exactly where `StartAfter`
+    /// is; without it, flat ranges are paginated serially and only the hierarchical delimiter walk runs
+    /// in parallel.
+    bool supportsListingKeyspaceSplit() const override { return supportsStartAfterListing(); }
+
+    /// The same fallback `iterate` and `listObjectsSingleLevel` apply to `max_keys = 0`.
+    size_t getListObjectsDefaultPageSize() const override;
+
+    /// From the limits of S3: a key of at most 1024 bytes, an `ETag` (a quoted MD5, with a part-count
+    /// suffix for multipart uploads), and at most 10 tags per object of at most 128 + 256 Unicode
+    /// characters (up to 4 bytes each in UTF-8).
+    size_t getListedObjectPayloadBytesUpperBound(bool with_tags) const override;
+
+    ObjectStorageListResult listObjectsSingleLevel(
+        const std::string & path_prefix,
+        const std::string & delimiter,
+        size_t max_keys,
+        bool with_tags,
+        const std::string & start_after,
+        const std::string & continuation_token) const override;
+
+    bool supportsPrefixListing() const override { return true; }
+
     /// Uses `DeleteObjectRequest`.
     void removeObjectIfExists(const StoredObject & object) override;
 
     /// Uses `DeleteObjectsRequest` if it is allowed by `s3_capabilities`, otherwise `DeleteObjectRequest`.
     /// `DeleteObjectsRequest` does not exist on GCS, see https://issuetracker.google.com/issues/162653700 .
-    void removeObjectsIfExist(const StoredObjects & objects) override;
+    void removeObjectsIfExist( /// NOLINT
+        const StoredObjects & objects,
+        StoredObjects * successful_objects = nullptr) override;
 
-    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override;
+    void tagObjects( /// NOLINT
+        const StoredObjects & objects,
+        const std::string & tag_key,
+        const std::string & tag_value,
+        StoredObjects * successful_objects = nullptr) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
@@ -144,7 +192,13 @@ public:
 
     bool isRemote() const override { return true; }
 
+    /// The endpoint and the bucket, so that a `<s3_bucket>` entry allows the storage, as it does for the `s3` table function.
+    void checkRemoteHostFilter(const RemoteHostFilter & filter) const override { uri.checkRemoteHostFilter(filter); }
+
     bool supportParallelWrite() const override { return true; }
+
+    /// An object becomes visible only on the completion of `PutObject` or `CompleteMultipartUpload`.
+    bool supportsAtomicWrite() const override { return true; }
 
     ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
@@ -154,12 +208,20 @@ public:
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() override;
 
     bool tryRefreshCredentialsViaCallback() override;
+    bool hasCredentialsRefreshCallback() const override { return static_cast<bool>(credentials_refresh_callback); }
 
     S3::URI getURI() const { return uri; }
     S3Settings getS3Settings() const { return *s3_settings.get(); }
+
+    ObjectStoragePtr cloneImpl() const override;
+
+    /// Throws `ACCESS_DENIED` if the client was built with `s3_allow_server_credentials_in_user_queries` and the session
+    /// of `context` is restricted. Does not change the client.
+    void checkSessionMayUseServerCredentials(const ContextPtr & context) const;
+
 private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
-    void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
+    void removeObjectsImpl(const StoredObjects & objects, bool if_exists, StoredObjects * successful_objects = nullptr);
 
     std::pair<std::string, std::string> splitBucketAndKey(const std::string & remote_path) const;
     std::map<std::string, StoredObjects> groupByBucket(const StoredObjects & objects) const;
@@ -171,9 +233,8 @@ private:
     mutable MultiVersion<S3::Client> client;
     /// The user-query credential restriction mode the current `client` was built under (initialized by the
     /// caller from the policy used to build the initial client -- e.g. a table created with the opt-in starts
-    /// `false`). `applyNewSettings` rebuilds the client when a session with a different restriction mode accesses
-    /// the storage, so a restricted session never reuses a credentialed client built for an opt-in session (and
-    /// vice versa). Defaults to restricted (the server default) for callers that do not pass an explicit value.
+    /// `false`). Only a forced rebuild in `applyNewSettings` changes it. Defaults to restricted
+    /// (the server default) for callers that do not pass an explicit value.
     /// Atomic: `applyNewSettings` can run concurrently on a shared storage.
     mutable std::atomic<bool> client_restricts_server_credentials = true;
     MultiVersion<S3Settings> s3_settings;

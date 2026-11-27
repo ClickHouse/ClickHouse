@@ -1,0 +1,17 @@
+Array needle
+[1,2]
+String needle, index, direct read
+[1,2]
+String needle, index, no direct read
+[1,2]
+String needle, no index
+[1,2]
+String needle, explicit tokenizer, no index
+[1,2]
+hasAllTokens is unaffected
+[1]
+[1]
+hasAnyTokens index condition
+Condition: (mode: Any; tokens: ["abc", "bcd", "cde", "cdef", "def"])
+hasAllTokens index condition
+Condition: (mode: All; tokens: ["abc", "bcd", "cdef"])

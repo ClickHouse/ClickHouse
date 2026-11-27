@@ -37,6 +37,9 @@ TIMEOUT_PR = 30 * 60  # 30 minutes for PR runs
 # fuzzing budget.
 TIMEOUT_MINIMIZATION = 60 * 60
 NO_CHANGES_MSG = "Nothing to run"
+# `format_fuzzer` instances fixed to one format by `FORMAT_NAME`, each with its own corpus,
+# so the inputs one reader accepts do not crowd out the others in a shared corpus.
+FORMAT_FUZZER_FORMATS = ("Parquet", "ORC", "Avro", "Arrow")
 RUNNER_OUTPUT = "/test_output"
 
 
@@ -48,6 +51,19 @@ def zipdir(path, ziph):
                 os.path.join(root, file),
                 file,
             )
+
+
+def add_format_fuzzer_instances(path: Path) -> None:
+    """Link `<format>_format_fuzzer` to `format_fuzzer`, with its options plus `FORMAT_NAME`."""
+    if not (path / "format_fuzzer").exists():
+        return
+    options_path = path / "format_fuzzer.options"
+    options = options_path.read_text() if options_path.exists() else ""
+    for format_name in FORMAT_FUZZER_FORMATS:
+        name = f"{format_name.lower()}_format_fuzzer"
+        (path / name).unlink(missing_ok=True)
+        (path / name).symlink_to("format_fuzzer")
+        (path / f"{name}.options").write_text(f"{options}\n[env]\nformat_name = {format_name}\n")
 
 
 def get_run_command(
@@ -79,6 +95,43 @@ def get_run_command(
         f"--cap-add=SYS_PTRACE {env_str} {image} "
         "python3 /usr/share/clickhouse-test/fuzz/runner.py"
     )
+
+
+def generate_dictionary(
+    fuzzers_path: Path, repo_path: Path, image: DockerImage
+) -> None:
+    # The libFuzzer dictionary (all.dict) lists every function, data type and
+    # keyword known to the server. It is generated here from the release binary,
+    # so it never drifts from the actual SQL grammar (see tests/fuzz/update_dict.sh).
+    clickhouse_bin = fuzzers_path / "clickhouse"
+    assert clickhouse_bin.exists(), "ClickHouse release binary not found"
+    original_mode = clickhouse_bin.stat().st_mode
+    clickhouse_bin.chmod(original_mode | 0o111)
+
+    uid = os.getuid()
+    gid = os.getgid()
+    # The whole repository is mounted (read-only), not just tests/: update_dict.sh
+    # verifies that the source-derived dictionary covers the binary-derived one,
+    # and derives the source root from its own location, so it must run from a
+    # full checkout.
+    cmd = (
+        f"docker run --rm "
+        f"--user {uid}:{gid} "
+        f"--workdir=/fuzzers "
+        f"--volume={fuzzers_path}:/fuzzers "
+        f"--volume={repo_path}:/repo:ro "
+        f'-e CLICKHOUSE_BIN="/fuzzers/clickhouse" '
+        f'-e OUTPUT_DIR="/fuzzers" '
+        f"{image} "
+        f"bash /repo/tests/fuzz/update_dict.sh"
+    )
+    logging.info("Generating fuzzer dictionary: %s", cmd)
+    try:
+        subprocess.check_call(cmd, shell=True)
+    finally:
+        # Everything executable in this directory is a fuzzer target to the
+        # runner, so only the *_fuzzer files may stay executable in it.
+        clickhouse_bin.chmod(original_mode)
 
 
 def count_fuzzers(path: Path) -> int:
@@ -465,6 +518,8 @@ def main():
     is_master = info.pr_number == 0 and info.git_branch == "master"
 
     fuzzers_path = temp_path
+    # Before the corpus download, which drops the corpora of targets that do not exist
+    add_format_fuzzer_instances(fuzzers_path)
     download_corpus(fuzzers_path)
 
     for file in os.listdir(fuzzers_path):
@@ -476,6 +531,11 @@ def main():
             )
             with zipfile.ZipFile(fuzzers_path / file, "r") as zfd:
                 zfd.extractall(seed_corpus_path)
+
+    # A minimization run replays an existing corpus, which libFuzzer takes no
+    # dictionary for, and is given no release binary to generate one from.
+    if not args.minimize_only:
+        generate_dictionary(fuzzers_path, repo_path, docker_image)
 
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)

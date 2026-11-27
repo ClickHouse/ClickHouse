@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS mv_test;
 DROP TABLE IF EXISTS mv_test_target;

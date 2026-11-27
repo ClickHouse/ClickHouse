@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <string_view>
 
 namespace DB
 {
@@ -29,20 +30,21 @@ class CompressionCodecQuantized : public ICompressionCodec
 public:
     explicit CompressionCodecQuantized(const QuantizedCodecParams & params_);
 
-    uint8_t getMethodByte() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
 
-    const QuantizedCodecParams & getParams() const { return params; }
+    [[nodiscard]] const QuantizedCodecParams & getParams() const { return params; }
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
-    bool isCompression() const override { return false; }
-    bool isGenericCompression() const override { return false; }
-    bool isNone() const override { return true; } /// see the class-level comment
+    [[nodiscard]] bool isCompression() const override { return false; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
+    [[nodiscard]] bool isNone() const override { return true; } /// see the class-level comment
 
-    String getDescription() const override
+    [[nodiscard]] String getDescription() const override
     {
         return "Stores a compact quantized companion stream of a dense vector column for fast nearest-neighbour search; "
                "the full-precision data is stored uncompressed.";
@@ -53,5 +55,13 @@ private:
 };
 
 std::optional<QuantizedCodecParams> tryExtractQuantizedCodecParams(const ASTPtr & codec_desc);
+
+/// `rabitq` and `turboquant` assume vectors centered around the origin, so `UInt8` elements (stored and reference) are
+/// shifted by -128 before encoding.
+constexpr float QUANTIZED_CODEC_UINT8_SHIFT = 128.0f;
+inline bool quantizedCodecShiftsUInt8(std::string_view method)
+{
+    return method == "rabitq" || method == "turboquant";
+}
 
 }

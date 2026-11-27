@@ -27,11 +27,13 @@ using ExchangeConnectionAuthenticator = std::function<void(const String & auth_t
 class ExchangeServer : public Poco::Runnable
 {
 public:
-    ExchangeServer(const String & listen_host, UInt16 port, ExchangeConnectionsPtr connections_, ExchangeConnectionAuthenticator authenticate_connection_ = {});
+    ExchangeServer(const String & listen_host, UInt16 port, UInt32 listen_backlog, ExchangeConnectionsPtr connections_, ExchangeConnectionAuthenticator authenticate_connection_ = {});
     ~ExchangeServer() override;
 
     void start();
     void stop();
+    /// The port the server listens on; tells the port chosen for a listen port of 0.
+    UInt16 port() const { return server_socket.address().port(); }
 
     void run() override;
 

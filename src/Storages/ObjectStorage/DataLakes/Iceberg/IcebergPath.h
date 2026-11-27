@@ -38,9 +38,9 @@ public:
 
     /// Extract the raw path string for writing into Iceberg metadata files,
     /// serialization, cache keys, virtual column values, etc.
-    const String & serialize() const { return raw_path; }
+    [[nodiscard]] const String & serialize() const { return raw_path; }
 
-    bool empty() const { return raw_path.empty(); }
+    [[nodiscard]] bool empty() const { return raw_path.empty(); }
 
     auto operator<=>(const IcebergPathFromMetadata & other) const { return raw_path <=> other.raw_path; }
     auto operator==(const IcebergPathFromMetadata & other) const { return raw_path == other.raw_path; }
@@ -55,6 +55,17 @@ private:
     }
     String raw_path;
 };
+
+/// The URI scheme to write for a ClickHouse object storage backend. A local disk is spelled
+/// `file`: `local` is ClickHouse's storage type token, not a filesystem URI scheme, and no
+/// Iceberg implementation resolves it. Every other backend keeps its token, which an external
+/// reader resolves only for `s3`.
+String toIcebergURIScheme(const String & storage_type_name);
+
+/// Build a `<scheme>://<authority><path>` URI for an Iceberg metadata document.
+/// A non-empty authority is always followed by a separator, so a leading `/` stays part of the
+/// object name. An empty authority contributes none: such a path is already absolute.
+String makeIcebergLocationURI(const String & storage_type_name, const String & authority, const String & path);
 
 struct BlobStorageDescription
 {
@@ -115,11 +126,14 @@ public:
     }
 
     /// Convert a metadata path to an actual storage path for I/O operations.
-    String resolve(const IcebergPathFromMetadata & metadata_path) const;
+    [[nodiscard]] String resolve(const IcebergPathFromMetadata & metadata_path) const;
+
+    /// A key for the storage object that `resolve(metadata_path)` addresses, the same for paths the storage treats alike.
+    [[nodiscard]] String storageIdentity(const IcebergPathFromMetadata & metadata_path) const;
 
     static String parseNamespace(std::string_view path);
 
-    IcebergPathFromMetadata reverseResolve(const String & storage_path) const
+    [[nodiscard]] IcebergPathFromMetadata reverseResolve(const String & storage_path) const
     {
         if (storage_path.size() > table_root.size()
             && storage_path.starts_with(table_root))
@@ -129,19 +143,19 @@ public:
 
     /// Convert a metadata path to a catalog-compatible path.
     /// Done this way because backward compatibility reasons.
-    String resolveForCatalog(const IcebergPathFromMetadata & metadata_path) const
+    [[nodiscard]] String resolveForCatalog(const IcebergPathFromMetadata & metadata_path) const
     {
         String catalog_filename = metadata_path.serialize();
-        if (!catalog_filename.starts_with(blob_storage.type_name))
-            catalog_filename = blob_storage.type_name + "://" + blob_storage.namespace_name + "/" + catalog_filename;
+        if (!catalog_filename.contains("://"))
+            catalog_filename = makeIcebergLocationURI(blob_storage.type_name, blob_storage.namespace_name, catalog_filename);
         return catalog_filename;
     }
 
-    const String & getTableLocation() const { return table_location; }
-    const String & getTableRoot() const { return table_root; }
+    [[nodiscard]] const String & getTableLocation() const { return table_location; }
+    [[nodiscard]] const String & getTableRoot() const { return table_root; }
 
 private:
-    bool isInForeignNamespace(const String & raw_path) const;
+    [[nodiscard]] bool isInForeignNamespace(const String & raw_path) const;
 
     String table_location;
     String table_root;

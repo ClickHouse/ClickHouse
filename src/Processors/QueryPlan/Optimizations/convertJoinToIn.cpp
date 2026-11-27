@@ -1,4 +1,7 @@
 #include <Columns/ColumnConst.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Columns/ColumnSet.h>
 #include <Core/Block.h>
 #include <Core/UUID.h>
@@ -8,13 +11,23 @@
 #include <Functions/tuple.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/JoinUtils.h>
+#include <Interpreters/MaterializedCTE.h>
 #include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Storages/StorageMemory.h>
+#include <Storages/StorageMerge.h>
 
 
 namespace DB::ErrorCodes
@@ -37,29 +50,27 @@ struct NamePair
     std::string_view rhs_name;
 };
 
-using NamePairs = std::vector<NamePair>;
+using NamePairs = VectorWithMemoryTracking<NamePair>;
 
 static InConversion buildInConversion(
     const SharedHeader & lhs_input_header,
     const NamePairs & name_pairs,
     std::unique_ptr<QueryPlan> in_source,
-    bool transform_null_in,
-    SizeLimits size_limits,
-    size_t max_size_for_index)
+    FutureSetSettings set_settings)
 {
     ActionsDAG lhs_dag(lhs_input_header->getColumnsWithTypeAndName());
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> lhs_outputs;
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> lhs_outputs;
     for (const auto & output : lhs_dag.getOutputs())
         lhs_outputs.emplace(output->result_name, output);
 
     ActionsDAG rhs_dag(in_source->getCurrentHeader()->getColumnsWithTypeAndName());
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> rhs_outputs;
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> rhs_outputs;
     for (const auto & output : rhs_dag.getOutputs())
         rhs_outputs.emplace(output->result_name, output);
 
     rhs_dag.getOutputs().clear();
 
-    std::vector<const ActionsDAG::Node *> left_columns;
+    ActionsDAG::NodeRawConstPtrs left_columns;
     for (const auto & name_pair : name_pairs)
     {
         auto it = lhs_outputs.find(name_pair.lhs_name);
@@ -92,11 +103,12 @@ static InConversion buildInConversion(
 
     /// right parameter of IN function
     auto future_set = std::make_shared<FutureSetFromSubquery>(
-        get_random_hash(), nullptr, std::move(in_source), nullptr, nullptr, transform_null_in, size_limits, max_size_for_index);
+        get_random_hash(), nullptr, std::move(in_source), nullptr, nullptr, std::move(set_settings));
 
     ColumnConst::Ptr set_col = ColumnConst::create(ColumnSet::create(1, future_set), 0);
-    const ActionsDAG::Node * in_rhs_arg =
-        &lhs_dag.addColumn(std::move(set_col), std::make_shared<DataTypeSet>(), "set column");
+    /// The set is filled from the right side at execution time, so it is not a constant across queries.
+    const ActionsDAG::Node * in_rhs_arg = &lhs_dag.addColumn(
+        std::move(set_col), std::make_shared<DataTypeSet>(), "set column", /*is_deterministic_constant=*/false);
 
     /// IN function
     auto func_in = FunctionFactory::instance().get("in", nullptr);
@@ -130,6 +142,99 @@ static ActionsDAG cloneSubDAGWithHeader(const SharedHeader & stream_header, Acti
     return dag;
 }
 
+static bool hasCommonSubplanNodes(const QueryPlan::Node & root)
+{
+    VectorWithMemoryTracking<const QueryPlan::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (typeid_cast<const CommonSubplanStep *>(node->step.get())
+            || typeid_cast<const CommonSubplanReferenceStep *>(node->step.get()))
+            return true;
+
+        stack.insert(stack.end(), node->children.begin(), node->children.end());
+    }
+    return false;
+}
+
+/// The unbuilt `MATERIALIZED` CTEs a plan reads and leaves to the gate of an outer plan, dependencies first.
+struct CTEsToMaterialize
+{
+    VectorWithMemoryTracking<MaterializedCTEPtr> ctes;
+    UnorderedSetWithMemoryTracking<const MaterializedCTE *> seen;
+    /// A CTE without a plan to materialize here: claimed by another plan and not built yet, or a by-name reference.
+    bool unsatisfiable = false;
+
+    void addCTE(MaterializedCTEPtr cte)
+    {
+        if (!cte || cte->isBuilt() || !seen.insert(cte.get()).second)
+            return;
+
+        if (!cte->plan || !cte->plan->getRootNode())
+        {
+            unsatisfiable = true;
+            return;
+        }
+
+        collect(*cte->plan->getRootNode());
+        ctes.push_back(std::move(cte));
+    }
+
+    void collect(const QueryPlan::Node & root)
+    {
+        VectorWithMemoryTracking<const QueryPlan::Node *> stack{&root};
+        auto add_plan = [&](const QueryPlan * plan)
+        {
+            if (plan && plan->getRootNode())
+                stack.push_back(plan->getRootNode());
+        };
+
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+            const auto * step = node->step.get();
+
+            if (const auto * read = typeid_cast<const ReadFromMemoryStorageStep *>(step))
+            {
+                if (const auto * memory = typeid_cast<const StorageMemory *>(read->getStorage().get()))
+                    addCTE(memory->getMaterializedCTE());
+            }
+            /// The child plans are created later and leave the CTEs of this query tree to the outer gate.
+            else if (const auto * merge = typeid_cast<const ReadFromMerge *>(step))
+            {
+                for (const auto & cte : collectMaterializedCTEsFromQueryTree(merge->getQueryInfo().query_tree))
+                    addCTE(cte);
+            }
+            /// The shards read these CTEs by name, and an unbuilt one is not sent.
+            else if (const auto * remote = typeid_cast<const ReadFromRemote *>(step))
+            {
+                for (const auto & shard : remote->getShards())
+                    for (const auto & cte : collectMaterializedCTEsFromQueryTree(shard.query_tree))
+                        addCTE(cte);
+            }
+            else if (const auto * replicas = typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step))
+            {
+                for (const auto & cte : collectMaterializedCTEsFromQueryTree(replicas->getQueryTree()))
+                    addCTE(cte);
+            }
+            /// A deferred build of these sets strips the gates of their own plans.
+            else if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(step))
+            {
+                for (const auto & set : delayed->getSets())
+                    if (set && !set->get())
+                        add_plan(set->getQueryPlan());
+            }
+            else if (const auto * local = typeid_cast<const ReadFromLocalParallelReplicaStep *>(step))
+                add_plan(local->getQueryPlan());
+
+            stack.insert(stack.end(), node->children.begin(), node->children.end());
+        }
+    }
+};
+
 size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     auto & parent = parent_node->step;
@@ -149,11 +254,14 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     /// Let's support only hash algorithm, because full sorting join may be more memory efficient than IN.
     const auto & join_algorithms = join->getJoinSettings().join_algorithms;
-    if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH) &&
-        !TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH))
+    if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH))
         return 0;
 
     const auto & join_operator = join->getJoinOperator();
+
+    /// An `IN` filter would keep the duplicate rows that the set-operation join removes.
+    if (join_operator.set_operation != JoinSetOperation::None)
+        return 0;
 
     /// Let's allow Strictness::All with a wrong result for now.
     if (join_operator.strictness != JoinStrictness::Any && join_operator.strictness != JoinStrictness::All)
@@ -168,11 +276,16 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         return 0;
 
     /// Only equality expressions are supported.
-    std::vector<std::pair<JoinActionRef, JoinActionRef>> key_pairs;
+    VectorWithMemoryTracking<std::pair<JoinActionRef, JoinActionRef>> key_pairs;
     for (const auto & predicate : join_operator.expression)
     {
         auto [op, lhs, rhs] = predicate.asBinaryPredicate();
         if (op != JoinConditionOperator::Equals)
+            return 0;
+
+        /// `IN` casts the probe key to the type of the set, so `toFixedString('a', 3) IN ('a\0\0')` is false
+        /// while the JOIN matches these keys.
+        if (!JoinCommon::isExactJoinKeyEquality(lhs.getType(), rhs.getType()))
             return 0;
 
         if (lhs.fromLeft() && rhs.fromRight())
@@ -192,6 +305,18 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     /// Check input and output type match
     if (!join->typeChangingSides().empty())
+        return 0;
+
+    /// A `CommonSubplanReferenceStep` holds a raw pointer to a node that must still hold a
+    /// `CommonSubplanStep` when the second pass resolves it. The rewrite below installs new steps at
+    /// both input node addresses and splices the right input into the IN set's own plan.
+    if (hasCommonSubplanNodes(*parent_node->children.at(0))
+        || hasCommonSubplanNodes(*parent_node->children.at(1)))
+        return 0;
+
+    CTEsToMaterialize right_ctes;
+    right_ctes.collect(*parent_node->children.at(1));
+    if (right_ctes.unsatisfiable)
         return 0;
 
     // {
@@ -235,7 +360,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         const auto & left_input_header = parent_node->children.at(0)->step->getOutputHeader();
         auto post_left_header = left_pre_join_actions.updateHeader(*left_input_header);
 
-        std::unordered_map<std::string_view, size_t> forwarded_columns;
+        UnorderedMapWithMemoryTracking<std::string_view, size_t> forwarded_columns;
         for (const auto & column : post_left_header)
             ++forwarded_columns[column.name];
 
@@ -254,18 +379,24 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     makeExpressionNodeOnTopOf(*rhs_in_node, std::move(right_pre_join_actions), nodes, makeDescription("Calculate join right keys"));
     parent_node->children.pop_back();
 
+    auto set_settings = settings.set_settings;
     /// Join equality does not match Nulls.
     /// In case we support NullSafeEquals, we should set transform_null_in = true.
     /// But it would require proper support for sets with multiple keys.
-    bool transform_null_in = false;
+    set_settings.transform_null_in = false;
+    set_settings.size_limits = settings.network_transfer_limits;
+
+    auto in_source = std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes, *settings.source_plan));
+    /// An in-place build of the set materializes these CTEs first; a deferred build strips the steps and uses the outer gate.
+    for (auto it = right_ctes.ctes.rbegin(); it != right_ctes.ctes.rend(); ++it)
+        in_source->addStep(std::make_unique<DelayedMaterializingCTEsStep>(
+            in_source->getCurrentHeader(), VectorWithMemoryTracking<MaterializedCTEPtr>{*it}));
 
     auto in_conversion = buildInConversion(
         lhs_in_node->step->getOutputHeader(),
         name_pairs,
-        std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes)),
-        transform_null_in,
-        settings.network_transfer_limits,
-        settings.use_index_for_in_with_subqueries_max_values);
+        std::move(in_source),
+        std::move(set_settings));
 
     {
         auto filter_name = in_conversion.dag.getOutputs().front()->result_name;

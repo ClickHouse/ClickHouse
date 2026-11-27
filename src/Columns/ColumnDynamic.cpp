@@ -23,6 +23,7 @@
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/checkStackSize.h>
 
 namespace DB
 {
@@ -85,7 +86,12 @@ ColumnDynamic::ColumnDynamic(size_t max_dynamic_types_) : max_dynamic_types(max_
 ColumnDynamic::ColumnDynamic(
     MutableColumnPtr variant_column_, const DataTypePtr & variant_type_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_)
     : variant_column(std::move(variant_column_))
-    , variant_column_ptr(assert_cast<ColumnVariant *>(variant_column.get()))
+    /// Use the const overload of `WrappedPtr::get` so this constructor can be reached from
+    /// `ColumnDynamic::create(const ColumnPtr &, ...)` with shared inputs (where the non-const
+    /// `WrappedPtr::get` would `chassert(use_count() == 1)` via `assumeMutableRef`). The cached
+    /// `variant_column_ptr` is used for read access in immutable mode; mutating operations
+    /// require going through `IColumn::mutate`, which deep-clones the variant column first.
+    , variant_column_ptr(assert_cast<ColumnVariant *>(const_cast<IColumn *>(std::as_const(variant_column).get())))
     , max_dynamic_types(max_dynamic_types_)
     , global_max_dynamic_types(global_max_dynamic_types_)
     , statistics(statistics_)
@@ -96,7 +102,12 @@ ColumnDynamic::ColumnDynamic(
 ColumnDynamic::ColumnDynamic(
     MutableColumnPtr variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_)
     : variant_column(std::move(variant_column_))
-    , variant_column_ptr(assert_cast<ColumnVariant *>(variant_column.get()))
+    /// Use the const overload of `WrappedPtr::get` so this constructor can be reached from
+    /// `ColumnDynamic::create(const ColumnPtr &, ...)` with shared inputs (where the non-const
+    /// `WrappedPtr::get` would `chassert(use_count() == 1)` via `assumeMutableRef`). The cached
+    /// `variant_column_ptr` is used for read access in immutable mode; mutating operations
+    /// require going through `IColumn::mutate`, which deep-clones the variant column first.
+    , variant_column_ptr(assert_cast<ColumnVariant *>(const_cast<IColumn *>(std::as_const(variant_column).get())))
     , variant_info(variant_info_)
     , max_dynamic_types(max_dynamic_types_)
     , global_max_dynamic_types(global_max_dynamic_types_)
@@ -321,6 +332,9 @@ Field ColumnDynamic::operator[](size_t n) const
 
 void ColumnDynamic::get(size_t n, Field & res) const
 {
+    /// Object, Dynamic and Variant values nest into each other to a depth that comes from the data, not from the declared type.
+    checkStackSize();
+
     const auto & variant_col = getVariantColumn();
     /// Check if value is not in shared variant.
     if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
@@ -341,6 +355,8 @@ void ColumnDynamic::get(size_t n, Field & res) const
 
 void ColumnDynamic::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
+    checkStackSize();
+
     const auto & variant_col = getVariantColumn();
     const auto discr = variant_col.globalDiscriminatorAt(n);
     if (discr == ColumnVariant::NULL_DISCRIMINATOR)
@@ -377,6 +393,8 @@ void ColumnDynamic::insertFrom(const IColumn & src_, size_t n)
 void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
 #endif
 {
+    checkStackSize();
+
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
 
     /// Same variants: copy the Variant column directly. Skip this fast path when the source has values in
@@ -456,6 +474,8 @@ void ColumnDynamic::insertRangeFrom(const IColumn & src_, size_t start, size_t l
 void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t length)
 #endif
 {
+    checkStackSize();
+
     if (start + length > src_.size())
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in ColumnDynamic::insertRangeFrom method. "
                                                             "[start({}) + length({}) > src.size()({})]", start, length, src_.size());
@@ -688,6 +708,8 @@ void ColumnDynamic::insertManyFrom(const IColumn & src_, size_t position, size_t
 void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size_t length)
 #endif
 {
+    checkStackSize();
+
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
     auto & variant_col = getVariantColumn();
 
@@ -751,7 +773,7 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
     /// We need to insert single value, try to add only corresponding variant.
     if (src_global_discr == ColumnVariant::NULL_DISCRIMINATOR)
     {
-        insertDefault();
+        insertManyDefaults(length);
         return;
     }
 
@@ -891,6 +913,8 @@ void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
 
 void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
 {
+    checkStackSize();
+
     const auto & variant_col = getVariantColumn();
     auto discr = variant_col.globalDiscriminatorAt(n);
     if (discr == ColumnVariant::NULL_DISCRIMINATOR)
@@ -908,19 +932,27 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
         auto value = getSharedVariant().getDataAt(variant_col.offsetAt(n));
         ReadBufferFromMemory buf(value);
         auto type = decodeDataType(buf);
-        hash.update(type->getName());
+        updateHashWithTypeName(hash, type->getName());
         auto tmp_column = type->createColumn();
         type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, getFormatSettings());
         tmp_column->updateHashWithValue(0, hash);
         return;
     }
 
-    hash.update(variant_info.variant_names[discr]);
+    updateHashWithTypeName(hash, variant_info.variant_names[discr]);
     variant_col.getVariantByGlobalDiscriminator(discr).updateHashWithValue(variant_col.offsetAt(n), hash);
+}
+
+void ColumnDynamic::updateHashWithTypeName(SipHash & hash, std::string_view type_name)
+{
+    hash.update(UInt8(0));
+    hash.update(type_name.size());
+    hash.update(type_name);
 }
 
 void ColumnDynamic::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
 {
+    checkStackSize();
     variant_column_ptr->updateHashWithValueRange(begin, end, hash);
 }
 
@@ -1074,6 +1106,8 @@ void ColumnDynamic::hashSharedValues(const ColumnString & values, const UInt64 *
 
 void ColumnDynamic::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
+    checkStackSize();
+
     /// A value must hash the same whether it sits in a typed variant or the shared variant. Typed rows
     /// are already correct via `ColumnVariant`; only shared rows need decoding to the typed leaf hash.
     const auto & variant_col = getVariantColumn();
@@ -1168,6 +1202,8 @@ int ColumnDynamic::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_di
 int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 #endif
 {
+    checkStackSize();
+
     const auto & left_variant = getVariantColumn();
     const auto & right_dynamic = assert_cast<const ColumnDynamic &>(rhs);
     const auto & right_variant = right_dynamic.getVariantColumn();
@@ -1260,7 +1296,7 @@ struct ColumnDynamic::ComparatorBase
     {
     }
 
-    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         return parent.compareAt(lhs, rhs, parent, nan_direction_hint);
     }
@@ -1294,25 +1330,35 @@ void ColumnDynamic::updatePermutation(IColumn::PermutationSortDirection directio
 
 ColumnPtr ColumnDynamic::compress(bool force_compression) const
 {
+    checkStackSize();
     ColumnPtr variant_compressed = variant_column_ptr->compress(force_compression);
     size_t byte_size = variant_compressed->byteSize();
     return ColumnCompressed::create(size(), byte_size,
         [my_variant_compressed = std::move(variant_compressed), my_variant_info = variant_info, my_max_dynamic_types = max_dynamic_types, my_global_max_dynamic_types = global_max_dynamic_types, my_statistics = statistics]() mutable
         {
+            /// `decompress` returns a fresh `ColumnVariant`, so the top level is reused without a copy.
+            /// A variant branch whose compression was a no-op is still shared with the owner captured
+            /// in the `ColumnVariant` decompression callback (it runs once per read, so it cannot give
+            /// it up), and `IColumn::mutate` in `create` deep copies that branch. This is accepted on
+            /// purpose, for the same reason as in `ColumnObject::compress`: `ColumnDynamic` keeps raw
+            /// mutable access to its variants, so it cannot borrow a shared child, and aliasing it via
+            /// `assumeMutable` is exactly what the ownership checks in `IColumn::mutate` exist to catch.
             return ColumnDynamic::create(my_variant_compressed->decompress(), my_variant_info, my_max_dynamic_types, my_global_max_dynamic_types, my_statistics);
         });
 }
 
 ColumnCheckpointPtr ColumnDynamic::getCheckpoint() const
 {
+    checkStackSize();
     UnorderedMapWithMemoryTracking<String, ColumnCheckpointPtr> variants_checkpoints;
     for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
-        variants_checkpoints[name] = variant_column_ptr->getVariantByGlobalDiscriminator(discr).getCheckpoint();
+        variants_checkpoints[name] = getVariantColumn().getVariantByGlobalDiscriminator(discr).getCheckpoint();
     return std::make_shared<DynamicColumnCheckpoint>(size(), variants_checkpoints);
 }
 
 void ColumnDynamic::updateCheckpoint(ColumnCheckpoint & checkpoint) const
 {
+    checkStackSize();
     auto & variants_checkpoints = assert_cast<DynamicColumnCheckpoint &>(checkpoint).variants_checkpoints;
 
     for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
@@ -1320,9 +1366,9 @@ void ColumnDynamic::updateCheckpoint(ColumnCheckpoint & checkpoint) const
         auto it = variants_checkpoints.find(name);
         /// If column has new variants since last checkpoint create checkpoints for them.
         if (it == variants_checkpoints.end())
-            variants_checkpoints.emplace(name, variant_column_ptr->getVariantByGlobalDiscriminator(discr).getCheckpoint());
+            variants_checkpoints.emplace(name, getVariantColumn().getVariantByGlobalDiscriminator(discr).getCheckpoint());
         else
-            variant_column_ptr->getVariantByGlobalDiscriminator(discr).updateCheckpoint(*it->second);
+            getVariantColumn().getVariantByGlobalDiscriminator(discr).updateCheckpoint(*it->second);
     }
 
     checkpoint.size = size();
@@ -1330,6 +1376,7 @@ void ColumnDynamic::updateCheckpoint(ColumnCheckpoint & checkpoint) const
 
 void ColumnDynamic::rollback(const ColumnCheckpoint & checkpoint)
 {
+    checkStackSize();
     const auto & variants_checkpoints = assert_cast<const DynamicColumnCheckpoint &>(checkpoint).variants_checkpoints;
 
     /// Manually rollback internals of Variant column
@@ -1387,7 +1434,7 @@ void ColumnDynamic::getAllTypeNamesInto(UnorderedSetWithMemoryTracking<String> &
     auto shared_variant_discr = getSharedVariantDiscriminator();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
     {
-        if (i != shared_variant_discr && !variant_column_ptr->getVariantByGlobalDiscriminator(i).empty())
+        if (i != shared_variant_discr && !getVariantColumn().getVariantByGlobalDiscriminator(i).empty())
             names.insert(variant_info.variant_names[i]);
     }
 
@@ -1400,8 +1447,22 @@ void ColumnDynamic::getAllTypeNamesInto(UnorderedSetWithMemoryTracking<String> &
     }
 }
 
+namespace
+{
+
+const ColumnDynamic & getSourceDynamicColumn(const IColumn & source, const ColumnDynamic & column, std::string_view operation)
+{
+    const auto * source_dynamic = typeid_cast<const ColumnDynamic *>(&source);
+    if (!source_dynamic)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for {} of {} is not Dynamic, but {}", operation, column.getName(), source.getName());
+    return *source_dynamic;
+}
+
+}
+
 void ColumnDynamic::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
+    checkStackSize();
     if (source_columns.empty())
         return;
 
@@ -1425,6 +1486,7 @@ void ColumnDynamic::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr
 
 void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
+    checkStackSize();
     /// Internal variants of source dynamic columns may differ.
     /// We want to preallocate memory for all variants we will have after squashing.
     /// It may happen that the total number of variants in source columns will
@@ -1456,7 +1518,7 @@ void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<C
     };
 
     for (const auto & source_column : source_columns)
-        add_variants(assert_cast<const ColumnDynamic &>(*source_column));
+        add_variants(getSourceDynamicColumn(*source_column, *this, "squashing"));
 
     /// Add variants from this dynamic column.
     add_variants(*this);
@@ -1529,6 +1591,8 @@ void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<C
 
 bool ColumnDynamic::dynamicStructureEquals(const IColumn & rhs) const
 {
+    checkStackSize();
+
     if (const auto * rhs_concrete = typeid_cast<const ColumnDynamic *>(&rhs))
         return max_dynamic_types == rhs_concrete->max_dynamic_types && global_max_dynamic_types == rhs_concrete->global_max_dynamic_types
             && variant_info.variant_name == rhs_concrete->variant_info.variant_name
@@ -1538,6 +1602,8 @@ bool ColumnDynamic::dynamicStructureEquals(const IColumn & rhs) const
 
 void ColumnDynamic::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
+    checkStackSize();
+
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "chooseDynamicStructureForMerge should be called only on empty Dynamic column");
 
@@ -1563,7 +1629,8 @@ void ColumnDynamic::chooseDynamicStructureForMerge(const VectorWithMemoryTrackin
 
     for (const auto & source_column : source_columns)
     {
-        const auto & source_dynamic = assert_cast<const ColumnDynamic &>(*source_column);
+        /// The remaining loops over `source_columns` rely on this check.
+        const auto & source_dynamic = getSourceDynamicColumn(*source_column, *this, "merge");
         const auto & source_variant_column = source_dynamic.getVariantColumn();
         const auto & source_variant_info = source_dynamic.getVariantInfo();
         const auto & source_variants = assert_cast<const DataTypeVariant &>(*source_variant_info.variant_type).getVariants();
@@ -1668,10 +1735,12 @@ void ColumnDynamic::chooseDynamicStructureForMerge(const VectorWithMemoryTrackin
 
 void ColumnDynamic::takeExactDynamicStructureFrom(const IColumn & source)
 {
+    checkStackSize();
+
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeExactDynamicStructureFrom should be called only on empty Dynamic column");
 
-    const auto & source_dynamic = assert_cast<const ColumnDynamic &>(source);
+    const auto & source_dynamic = getSourceDynamicColumn(source, *this, "dynamic structure");
     variant_column = source_dynamic.getVariantColumn().cloneEmpty();
     variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
     variant_info = source_dynamic.getVariantInfo();
@@ -1690,6 +1759,8 @@ void ColumnDynamic::takeExactDynamicStructureFrom(const IColumn & source)
 
 void ColumnDynamic::fixDynamicStructure()
 {
+    checkStackSize();
+
     /// Reduce max_dynamic_types to the number of selected variants, so there will be no possibility
     /// to extend selected variants on inserts into this column.
     /// -1 because we don't count shared variant in the limit.
@@ -1704,7 +1775,7 @@ ColumnDynamic::StatisticsPtr ColumnDynamic::getOrCalculateStatistics() const
 
     auto calculated_statistics = std::make_shared<Statistics>();
     for (const auto & [variant_name, discr] : variant_info.variant_name_to_discriminator)
-        calculated_statistics->variants_statistics[variant_name] = variant_column_ptr->getVariantByGlobalDiscriminator(discr).size();
+        calculated_statistics->variants_statistics[variant_name] = getVariantColumn().getVariantByGlobalDiscriminator(discr).size();
 
     const auto & shared_variant = getSharedVariant();
     for (size_t i = 0; i != shared_variant.size(); ++i)
@@ -1724,13 +1795,16 @@ ColumnDynamic::StatisticsPtr ColumnDynamic::getOrCalculateStatistics() const
 
 void ColumnDynamic::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
 {
+    checkStackSize();
+
     /// Assumes dynamic structure has already been set by `takeExactDynamicStructureFrom` or `chooseDynamicStructureForMerge`.
     Statistics new_statistics;
     /// Collect total sizes for variants that are not in our structure (candidates for shared variant statistics).
     UnorderedMapWithMemoryTracking<String, size_t> shared_variant_candidates;
     for (const auto & source_column : source_columns)
     {
-        const auto & source_dynamic = assert_cast<const ColumnDynamic &>(*source_column);
+        /// The later loop over `source_columns` relies on this check.
+        const auto & source_dynamic = getSourceDynamicColumn(*source_column, *this, "statistics");
         const auto & source_statistics = source_dynamic.getOrCalculateStatistics();
 
         /// For variant statistics: if the variant is in our dynamic structure, add directly;

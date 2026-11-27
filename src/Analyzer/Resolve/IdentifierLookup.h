@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/arithmeticOverflow.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -42,36 +43,33 @@ inline const char * toStringLowercase(IdentifierLookupContext identifier_lookup_
   */
 struct IdentifierLookup
 {
+    /// Part boundaries are part of a lookup's identity: quoted `a.b` is one part, `a`.`b` is two.
     Identifier identifier;
     IdentifierLookupContext lookup_context;
     ASTPtr original_ast_node = nullptr;
 
-    /// The lookup is for the qualifier of a qualified matcher (e.g. `db.table.*`).
-    /// Such an identifier is resolved as an expression first and, when that fails, as a table
-    /// expression. So when the qualifier binds to a table expression but the rest of the
-    /// identifier does not name a column, the lookup may return an empty result instead of
-    /// throwing: the caller still has the table expression interpretation to try.
-    /// Unlike `original_ast_node`, this flag participates in comparison and hashing: it changes
-    /// the outcome of a lookup (empty result instead of an exception), so a matcher qualifier
-    /// lookup must not share an identifier resolve cache entry with an ordinary expression lookup.
-    bool is_matcher_qualifier = false;
+    /// Join tree resolution of an expression identifier that binds to columns of several joined tables
+    /// returns a result with `ambiguous_in_join_tree` set instead of throwing `AMBIGUOUS_IDENTIFIER`.
+    /// The caller decides whether another resolution path (aliases) can take over.
+    /// Participates in comparison and hashing because it changes the outcome of a lookup.
+    bool allow_ambiguous_join_tree_identifier = false;
 
-    bool isExpressionLookup() const
+    [[nodiscard]] bool isExpressionLookup() const
     {
         return lookup_context == IdentifierLookupContext::EXPRESSION;
     }
 
-    bool isFunctionLookup() const
+    [[nodiscard]] bool isFunctionLookup() const
     {
         return lookup_context == IdentifierLookupContext::FUNCTION;
     }
 
-    bool isTableExpressionLookup() const
+    [[nodiscard]] bool isTableExpressionLookup() const
     {
         return lookup_context == IdentifierLookupContext::TABLE_EXPRESSION;
     }
 
-    String dump() const
+    [[nodiscard]] String dump() const
     {
         return identifier.getFullName() + ' ' + toString(lookup_context);
     }
@@ -79,9 +77,9 @@ struct IdentifierLookup
 
 inline bool operator==(const IdentifierLookup & lhs, const IdentifierLookup & rhs)
 {
-    return lhs.identifier.getFullName() == rhs.identifier.getFullName()
+    return lhs.identifier.getParts() == rhs.identifier.getParts()
         && lhs.lookup_context == rhs.lookup_context
-        && lhs.is_matcher_qualifier == rhs.is_matcher_qualifier;
+        && lhs.allow_ambiguous_join_tree_identifier == rhs.allow_ambiguous_join_tree_identifier;
 }
 
 [[maybe_unused]] inline bool operator!=(const IdentifierLookup & lhs, const IdentifierLookup & rhs)
@@ -93,9 +91,13 @@ struct IdentifierLookupHash
 {
     size_t operator()(const IdentifierLookup & identifier_lookup) const
     {
-        return std::hash<std::string>()(identifier_lookup.identifier.getFullName())
+        size_t hash = std::hash<std::string>()(identifier_lookup.identifier.getFullName());
+        for (const auto & part : identifier_lookup.identifier.getParts())
+            hash = common::addIgnoreOverflow(common::mulIgnoreOverflow(hash, 31), part.size()); /// Wraps by design.
+
+        return hash
             ^ static_cast<uint8_t>(identifier_lookup.lookup_context)
-            ^ (static_cast<size_t>(identifier_lookup.is_matcher_qualifier) << 8);
+            ^ (static_cast<size_t>(identifier_lookup.allow_ambiguous_join_tree_identifier) << 9);
     }
 };
 
@@ -134,37 +136,46 @@ struct IdentifierResolveResult
     QueryTreeNodePtr resolved_identifier;
     IdentifierResolvePlace resolve_place = IdentifierResolvePlace::NONE;
 
+    /// Only for lookups with `allow_ambiguous_join_tree_identifier`: the identifier binds to columns
+    /// of several joined tables, so `resolved_identifier` is empty and no join tree column may win.
+    bool ambiguous_in_join_tree = false;
+
+    static IdentifierResolveResult ambiguousInJoinTree()
+    {
+        return { .resolved_identifier = nullptr, .resolve_place = IdentifierResolvePlace::NONE, .ambiguous_in_join_tree = true };
+    }
+
     explicit operator bool() const
     {
         chassert(check_invariant());
         return resolved_identifier != nullptr;
     }
 
-    [[maybe_unused]] bool isResolved() const
+    [[nodiscard]] [[maybe_unused]] bool isResolved() const
     {
         chassert(check_invariant());
         return resolve_place != IdentifierResolvePlace::NONE;
     }
 
-    [[maybe_unused]] bool isResolvedFromExpressionArguments() const
+    [[nodiscard]] [[maybe_unused]] bool isResolvedFromExpressionArguments() const
     {
         chassert(check_invariant());
         return resolve_place == IdentifierResolvePlace::EXPRESSION_ARGUMENTS;
     }
 
-    [[maybe_unused]] bool isResolvedFromAliases() const
+    [[nodiscard]] [[maybe_unused]] bool isResolvedFromAliases() const
     {
         chassert(check_invariant());
         return resolve_place == IdentifierResolvePlace::ALIASES;
     }
 
-    [[maybe_unused]] bool isResolvedFromJoinTree() const
+    [[nodiscard]] [[maybe_unused]] bool isResolvedFromJoinTree() const
     {
         chassert(check_invariant());
         return resolve_place == IdentifierResolvePlace::JOIN_TREE;
     }
 
-    [[maybe_unused]] bool isResolvedFromCTEs() const
+    [[nodiscard]] [[maybe_unused]] bool isResolvedFromCTEs() const
     {
         chassert(check_invariant());
         return resolve_place == IdentifierResolvePlace::CTE;
@@ -174,14 +185,14 @@ struct IdentifierResolveResult
     {
         if (!resolved_identifier)
         {
-            buffer << "unresolved";
+            buffer << (ambiguous_in_join_tree ? "ambiguous" : "unresolved");
             return;
         }
 
         buffer << resolved_identifier->formatASTForErrorMessage() << " place " << toString(resolve_place);
     }
 
-    [[maybe_unused]] String dump() const
+    [[nodiscard]] [[maybe_unused]] String dump() const
     {
         WriteBufferFromOwnString buffer;
         dump(buffer);
@@ -190,7 +201,7 @@ struct IdentifierResolveResult
     }
 
 private:
-    bool check_invariant() const noexcept
+    [[nodiscard]] bool check_invariant() const noexcept
     {
         return (resolved_identifier == nullptr) == (resolve_place == IdentifierResolvePlace::NONE);
     }
@@ -232,7 +243,7 @@ struct IdentifierResolveContext
     /// Should be used to resolve aliased expressions.
     IdentifierResolveScope * scope_to_resolve_alias_expression = nullptr;
 
-    bool isInitialContext() const
+    [[nodiscard]] bool isInitialContext() const
     {
         return scope_to_resolve_alias_expression == nullptr;
     }
@@ -240,7 +251,7 @@ struct IdentifierResolveContext
     /// Returns true when all flags are at their defaults. A cached result from a
     /// default lookup must not be reused in a stricter context that disables some
     /// resolution paths (CTEs, database catalog, niladic functions, etc.).
-    bool isDefaultContext() const
+    [[nodiscard]] bool isDefaultContext() const
     {
         return allow_to_check_join_tree
             && allow_to_check_aliases

@@ -14,10 +14,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #
 # Named collections are server-global, so the collection names are scoped to the (unique) test
 # database to avoid collisions across concurrent runs.
+#
+# ast_fuzzer_any_query = 0: the AST fuzzer replays table DDL as a DETACH, or as a `__fuzz_N` clone that
+# inherits the collection reference, either of which leaves metadata naming a collection dropped below.
 NC_FULL="nc_remote_full_${CLICKHOUSE_DATABASE}"
 NC_BARE="nc_remote_bare_${CLICKHOUSE_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} --query "
+SET ast_fuzzer_any_query = 0;
 DROP TABLE IF EXISTS nc_target;
 CREATE TABLE nc_target (x UInt8) ENGINE = Memory;
 INSERT INTO nc_target VALUES (1), (2), (3);

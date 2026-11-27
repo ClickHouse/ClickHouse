@@ -5,8 +5,6 @@
 #include <Parsers/Access/ParserUserNameWithHost.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -23,7 +21,7 @@ bool ParserExecuteAsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
 
     ASTPtr target_user;
-    if (!ParserUserNameWithHost(/*allow_query_parameter=*/ false).parse(pos, target_user, expected))
+    if (!ParserUserNameWithHost(/*allow_query_parameter=*/ true).parse(pos, target_user, expected))
         return false;
 
     auto query = make_intrusive<ASTExecuteAsQuery>();
@@ -77,18 +75,13 @@ bool ParserExecuteAsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserExecuteAsQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementExecuteAs(StatementFactory & factory)
-{
-    factory.registerStatement("EXECUTE AS",
+    documentation["EXECUTE AS"] =
     {
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 <CloudNotSupportedBadge />
 
 Allows to execute queries on behalf of a different user.
@@ -122,13 +115,22 @@ SELECT currentUser(), authenticatedUser(); -- outputs "default    default"
 CREATE USER james;
 EXECUTE AS james SELECT currentUser(), authenticatedUser(); -- outputs "james    default"
 ```
+
+Use a query parameter to pass the target user:
+
+```sql
+SET param_user=james;
+EXECUTE AS {user:Identifier} SELECT currentUser(); -- outputs "james"
+```
 )DOCS_MD",
         .syntax = R"(
 EXECUTE AS target_user
 EXECUTE AS target_user subquery
 )",
         .related = {"GRANT", "CREATE USER", "SET ROLE"},
-    });
+    };
+
+    return documentation;
 }
 
 }

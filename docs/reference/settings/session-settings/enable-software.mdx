@@ -17,7 +17,7 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Enable use of software prefetch in aggregatio
+Enables software prefetching of hash table cells during `GROUP BY`. Prefetching hides memory latency when the aggregation hash table does not fit into the CPU cache, so it is used only once the hash table grows beyond the size of the L2 cache.
 
 ## enable_software_prefetch_in_join {#enable_software_prefetch_in_join}
 

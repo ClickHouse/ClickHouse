@@ -1,4 +1,6 @@
 #include <Storages/MutationCommands.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/ParserAlterQuery.h>
@@ -8,6 +10,7 @@
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTPartition.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
@@ -56,6 +59,21 @@ bool MutationCommand::affectsAllColumns() const
         || type == REWRITE_PARTS;
 }
 
+bool MutationCommand::isClearOfBlockColumns(const StorageInMemoryMetadata & metadata) const
+{
+    return type == DROP_COLUMN && clear && DB::isClearOfBlockColumns(column_name, metadata);
+}
+
+bool isClearOfBlockColumns(const String & column_name, const StorageInMemoryMetadata & metadata)
+{
+    if (column_name != BlockNumberColumn::name && column_name != BlockOffsetColumn::name)
+        return false;
+
+    /// A real column of the table overrides the virtual one.
+    return !metadata.columns.has(column_name)
+        && metadata.virtuals.tryGetDescription(column_name, VirtualsKind::Persistent, VirtualsMaterializationPlace::All) != nullptr;
+}
+
 namespace
 {
 
@@ -86,6 +104,30 @@ boost::intrusive_ptr<ASTAlterCommand> parseAlterCommand(const String & ast_text,
     return boost::intrusive_ptr<ASTAlterCommand>(alter);
 }
 
+}
+
+bool isCommandScopedToPartitions(const ASTAlterCommand & command)
+{
+    auto names_all_partitions = [](const IAST * partition_ast)
+    {
+        const auto * partition = partition_ast->as<ASTPartition>();
+        return partition && partition->all;
+    };
+
+    if (command.partitions)
+    {
+        for (const auto & partition : command.partitions->children)
+        {
+            if (names_all_partitions(partition.get()))
+                return false;
+        }
+        return !command.partitions->children.empty();
+    }
+
+    if (command.partition)
+        return !names_all_partitions(command.partition);
+
+    return false;
 }
 
 boost::intrusive_ptr<const ASTAlterCommand> MutationCommand::ast() const
@@ -137,6 +179,7 @@ std::optional<MutationCommand> MutationCommand::parse(
     res.ast_text = command.formatWithSecretsOneLine();
     res.max_parser_depth = max_parser_depth;
     res.max_parser_backtracks = max_parser_backtracks;
+    res.has_partition = isCommandScopedToPartitions(command);
     if (with_pure_metadata_commands)
     {
         res.type = ALTER_WITHOUT_MUTATION;
@@ -356,6 +399,8 @@ std::string MutationCommands::toString(bool with_pure_metadata_commands) const
 }
 
 
+/// Shared with `MergeTreeData::checkMutationIsPossible`, so of the commands that reach the
+/// heavyweight mutation path, the ones answering here are exactly the ones it refuses.
 bool MutationCommands::hasNonEmptyMutationCommands() const
 {
     for (const auto & command : *this)
@@ -374,6 +419,11 @@ bool MutationCommands::hasAnyUpdateCommand() const
 bool MutationCommands::hasOnlyUpdateCommands() const
 {
     return std::ranges::all_of(*this, [](const auto & command) { return command.type == MutationCommand::Type::UPDATE; });
+}
+
+bool MutationCommands::hasRewritePartsCommand() const
+{
+    return std::ranges::any_of(*this, [](const auto & command) { return command.type == MutationCommand::Type::REWRITE_PARTS; });
 }
 
 bool MutationCommands::containBarrierCommand() const
