@@ -9,6 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -64,15 +65,34 @@ void RabbitMQConnection::connect()
     disconnect();
     const auto settings = configuration.getConnectionSettings();
     LOG_DEBUG(log, "Connecting to RabbitMQ {} (user: {}, vhost: {})", connectionInfoForLog(), settings.address.user, settings.address.vhost);
-    connection = std::make_unique<AMQP::Connection>(settings, log);
+    auto new_connection = std::make_unique<AMQP::Connection>(settings, log);
+
+    std::lock_guard lock(mutex);
+    if (interrupted)
+    {
+        new_connection->close(Poco::Timespan(0));
+        throw Exception(ErrorCodes::ABORTED, "The connection to RabbitMQ {} is interrupted", connectionInfoForLog());
+    }
+    connection = std::move(new_connection);
 }
 
 void RabbitMQConnection::disconnect()
 {
-    if (!connection)
-        return;
-    connection->close(Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(RABBITMQ_CLOSE_TIMEOUT_MS) * 1000));
-    connection.reset();
+    std::unique_ptr<AMQP::Connection> old_connection;
+    {
+        std::lock_guard lock(mutex);
+        old_connection = std::move(connection);
+    }
+    if (old_connection)
+        old_connection->close(Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(RABBITMQ_CLOSE_TIMEOUT_MS) * 1000));
+}
+
+void RabbitMQConnection::interrupt()
+{
+    std::lock_guard lock(mutex);
+    interrupted = true;
+    if (connection)
+        connection->interrupt();
 }
 
 AMQP::Connection & RabbitMQConnection::get()

@@ -199,7 +199,7 @@ Chunk RabbitMQSource::generateImpl()
         consumer = storage.popConsumer(timeout);
     }
 
-    /// The connection failed or was closed by the broker, e.g. after a long time without heartbeats.
+    /// The connection failed or was closed by the broker.
     if (consumer && !consumer->isConsumerStopped() && consumer->needChannelUpdate())
         consumer->updateChannel();
 

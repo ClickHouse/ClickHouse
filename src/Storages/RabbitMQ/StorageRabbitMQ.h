@@ -151,8 +151,6 @@ private:
     void connectionFunc();
     void publisherCleanupFunc();
 
-    /// Sends heartbeats on the connections of the consumers that are not used by a source at the moment.
-    void sendHeartbeatsOfIdleConsumers();
 
     static Names parseSettings(String settings_list);
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);

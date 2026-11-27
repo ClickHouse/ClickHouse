@@ -34,6 +34,8 @@ RabbitMQConsumer::RabbitMQConsumer(
 void RabbitMQConsumer::stop()
 {
     stopped = true;
+    /// A source that is blocked in a read returns at once.
+    connection.interrupt();
 }
 
 void RabbitMQConsumer::setError(const String & what)
@@ -135,21 +137,6 @@ bool RabbitMQConsumer::checkConnection()
         setError("checking the connection");
     }
     return state == State::OK;
-}
-
-void RabbitMQConsumer::heartbeat()
-{
-    if (state != State::OK)
-        return;
-
-    try
-    {
-        connection.get().sendHeartbeatIfNeeded();
-    }
-    catch (...) /// Ok: setError logs the exception
-    {
-        setError("sending a heartbeat");
-    }
 }
 
 ReadBufferPtr RabbitMQConsumer::consume()

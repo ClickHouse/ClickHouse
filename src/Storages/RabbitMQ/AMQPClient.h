@@ -26,8 +26,8 @@ class WriteBufferFromPocoSocket;
 /// A connection has exactly one channel. Every method sends a request and, if the protocol has a reply for it,
 /// waits for the reply. There is no event loop and no background thread: deliveries and publisher confirms,
 /// which the broker sends on its own, are read only inside the calls of the connection, and buffered if they
-/// arrive while waiting for a reply. Heartbeats are sent from the calls as well, so a connection that is not
-/// used for longer than the heartbeat timeout is closed by the broker, which `isUsable` reports afterwards.
+/// arrive while waiting for a reply. AMQP heartbeats are disabled, as nothing would send them while the connection
+/// is not used, e.g. while a materialized view processes a block; TCP keepalive detects a lost peer instead.
 namespace AMQP
 {
 
@@ -123,17 +123,15 @@ public:
     void close(Poco::Timespan timeout);
 
     /// Whether the connection and its channel can still be used: nothing has failed and the broker did not close them.
-    /// Detects a connection that the broker has closed in the meantime, e.g. because of missed heartbeats.
+    /// Detects a connection that the broker has closed in the meantime.
     [[nodiscard]] bool isUsable();
 
     /// The broker has closed the channel, but not the connection. Then this is the reason, otherwise empty.
     [[nodiscard]] const String & getChannelCloseReason() const { return channel_close_reason; }
 
-    /// The heartbeat interval in seconds negotiated with the broker, 0 if heartbeats are disabled.
-    [[nodiscard]] UInt16 getHeartbeatInterval() const { return heartbeat_interval; }
-
-    /// Sends a heartbeat if half of the heartbeat interval passed since the last frame was sent.
-    void sendHeartbeatIfNeeded();
+    /// Shuts the socket down, so that a call blocked in another thread returns with an error. Thread-safe with the
+    /// other methods, which is the only exception: it is how a stopped consumer interrupts a source that reads.
+    void interrupt();
 
     void declareExchange(const String & name, ExchangeType type, bool durable, bool auto_delete, const FieldTable & arguments = {});
     void deleteExchange(const String & name);
@@ -229,9 +227,6 @@ private:
 
     /// Negotiated in `connection.tune`. Before that, the default of RabbitMQ, so that `connection.start` fits.
     UInt32 frame_max = 131072;
-    UInt16 heartbeat_interval = 0;
-    std::chrono::steady_clock::time_point last_sent;
-    std::chrono::steady_clock::time_point last_received;
 
     /// Set when anything fails or the broker closes the connection: the connection can not be used anymore.
     String error;

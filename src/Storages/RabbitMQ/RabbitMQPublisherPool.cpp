@@ -31,13 +31,13 @@ RabbitMQPublisherPtr RabbitMQPublisherPool::acquire()
 {
     while (auto idle = popIdlePublisher())
     {
-        if (!isExpired(*idle) && idle->publisher->isReusable())
+        if (idle->publisher->isReusable())
         {
             LOG_TRACE(log, "Reusing an idle producer connection");
             return std::move(idle->publisher);
         }
 
-        LOG_DEBUG(log, "Discarding an idle producer connection, which is expired or no longer usable");
+        LOG_DEBUG(log, "Discarding an idle producer connection, which is no longer usable");
         idle->publisher->disconnect();
     }
 
@@ -87,7 +87,7 @@ void RabbitMQPublisherPool::cleanupIdlePublishers()
     size_t num_discarded = 0;
     for (auto & idle : publishers_to_check)
     {
-        if (isExpired(idle) || !idle.publisher->isReusable())
+        if (!idle.publisher->isReusable())
         {
             idle.publisher->disconnect();
             ++num_discarded;
@@ -97,7 +97,7 @@ void RabbitMQPublisherPool::cleanupIdlePublishers()
     }
 
     if (num_discarded)
-        LOG_DEBUG(log, "Discarded {} idle producer connections, which are expired or no longer usable", num_discarded);
+        LOG_DEBUG(log, "Discarded {} idle producer connections, which are no longer usable", num_discarded);
 
     std::vector<IdlePublisher> excess_publishers;
     {
@@ -135,18 +135,6 @@ std::optional<RabbitMQPublisherPool::IdlePublisher> RabbitMQPublisherPool::popId
     auto idle = std::move(idle_publishers.back());
     idle_publishers.pop_back();
     return idle;
-}
-
-bool RabbitMQPublisherPool::isExpired(const IdlePublisher & idle)
-{
-    const auto heartbeat_interval = idle.publisher->getHeartbeatInterval();
-    if (heartbeat_interval == 0)
-        return false;
-
-    /// The server closes the connection after the full interval without receiving anything. Half of it leaves
-    /// a margin for the insert itself, and server heartbeats are sent about twice per interval, which keeps
-    /// intermediate network devices from silently dropping the connection.
-    return 2 * (std::chrono::steady_clock::now() - idle.released_at) >= std::chrono::seconds(heartbeat_interval);
 }
 
 }

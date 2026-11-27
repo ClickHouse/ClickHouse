@@ -53,8 +53,6 @@ public:
 
     void disconnect();
 
-    /// Heartbeat interval in seconds negotiated with the server, 0 if heartbeats are disabled.
-    uint16_t getHeartbeatInterval() const { return connection.getHeartbeatInterval(); }
 
 private:
     friend class RabbitMQPublisherTest;

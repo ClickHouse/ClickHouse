@@ -16,7 +16,7 @@ namespace DB
 static constexpr auto SANITY_TIMEOUT = 1000 * 60 * 10; /// 10min.
 
 /// A consumer of the table's queues with its own connection and channel. Deliveries are read from the socket
-/// only while the consumer is used: by a source, which owns the consumer while it reads, or to send heartbeats.
+/// only while the consumer is used by a source, which owns the consumer while it reads.
 /// Only `stop` can be called concurrently with the other methods.
 class RabbitMQConsumer
 {
@@ -75,9 +75,6 @@ public:
     /// Messages that are read from a connection which is closed already are delivered again by the broker, so a source checks
     /// the connection before it lets its block be inserted, to avoid inserting them twice.
     bool checkConnection();
-
-    /// Sends a heartbeat if it is due, so that the broker does not close the connection of an idle consumer.
-    void heartbeat();
 
     /// Closes the connection, which cancels the subscriptions and returns unacknowledged messages to the queues.
     void closeConnections();

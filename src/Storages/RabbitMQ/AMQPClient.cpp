@@ -18,6 +18,10 @@
 #include <algorithm>
 #include <cstring>
 
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/socket.h>
+
 
 namespace DB
 {
@@ -227,6 +231,18 @@ private:
     size_t pos = 0;
 };
 
+/// A lost peer is detected by the kernel, also while the connection is not used: AMQP heartbeats are disabled.
+/// After a minute of silence it is probed every 10 seconds, and declared dead after 6 unanswered probes.
+void enableKeepAlive(Poco::Net::StreamSocket & socket)
+{
+    socket.setKeepAlive(true);
+#if defined(TCP_KEEPIDLE)
+    socket.impl()->setOption(IPPROTO_TCP, TCP_KEEPIDLE, 60);
+    socket.impl()->setOption(IPPROTO_TCP, TCP_KEEPINTVL, 10);
+    socket.impl()->setOption(IPPROTO_TCP, TCP_KEEPCNT, 6);
+#endif
+}
+
 #if USE_SSL
 /// The certificate of the broker is not verified, as it was not with the library used before.
 Poco::Net::Context::Ptr getTLSContext()
@@ -400,6 +416,7 @@ Connection::Connection(const ConnectionSettings & settings_, LoggerPtr log_)
                 /// A new socket for every address: a socket that failed to connect keeps the address family of that attempt.
                 socket = make_socket();
                 socket->connect(addresses[i], settings.connect_timeout);
+                enableKeepAlive(*socket);
                 break;
             }
             catch (...)
@@ -426,7 +443,7 @@ Connection::Connection(const ConnectionSettings & settings_, LoggerPtr log_)
         throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "Cannot connect to RabbitMQ {}: {}", address_for_log, getCurrentExceptionMessage(false));
     }
 
-    LOG_TRACE(log, "Connected to RabbitMQ {} (heartbeat interval {} s, maximum frame size {})", address_for_log, heartbeat_interval, frame_max);
+    LOG_TRACE(log, "Connected to RabbitMQ {} (maximum frame size {})", address_for_log, frame_max);
 }
 
 Connection::~Connection()
@@ -477,7 +494,6 @@ void Connection::sendFrame(UInt8 type, UInt16 channel, std::string_view payload)
     out->write(header, FRAME_HEADER_SIZE);
     out->write(payload.data(), payload.size());
     out->write(static_cast<char>(FRAME_END));
-    last_sent = std::chrono::steady_clock::now();
 }
 
 void Connection::sendMethod(UInt16 channel, UInt16 class_id, UInt16 method_id, std::string_view arguments)
@@ -490,25 +506,11 @@ void Connection::sendMethod(UInt16 channel, UInt16 class_id, UInt16 method_id, s
     sendFrame(FRAME_METHOD, channel, payload);
 }
 
-void Connection::sendHeartbeatIfNeeded()
+void Connection::interrupt()
 {
-    if (!heartbeat_interval || !error.empty())
-        return;
-
-    if (std::chrono::steady_clock::now() - last_sent < std::chrono::seconds(heartbeat_interval) / 2)
-        return;
-
-    try
-    {
-        sendFrame(FRAME_HEARTBEAT, 0, {});
-        out->next();
-    }
-    catch (...)
-    {
-        if (error.empty())
-            error = getCurrentExceptionMessage(false);
-        throw;
-    }
+    /// Only the descriptor is touched, which `shutdown(2)` allows from any thread: a blocked read (also inside the TLS
+    /// library, which would wait for the rest of an incomplete record) returns, and every later read or write fails.
+    ::shutdown(socket->impl()->sockfd(), SHUT_RDWR);
 }
 
 std::optional<Connection::Frame> Connection::receiveFrame(Poco::Timespan timeout)
@@ -568,7 +570,6 @@ Connection::Frame Connection::receiveFrameOrThrow(Clock::time_point deadline)
     if (static_cast<UInt8>(end) != FRAME_END)
         fail(fmt::format("invalid frame end octet 0x{:02x}", static_cast<UInt32>(static_cast<UInt8>(end))));
 
-    last_received = std::chrono::steady_clock::now();
     return frame;
 }
 
@@ -737,17 +738,7 @@ bool Connection::processIncoming(Poco::Timespan timeout)
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::microseconds(timeout.totalMicroseconds());
     while (true)
     {
-        sendHeartbeatIfNeeded();
-
-        auto now = std::chrono::steady_clock::now();
-        auto wait = std::max(deadline - now, std::chrono::steady_clock::duration::zero());
-        if (heartbeat_interval)
-        {
-            /// Wake up in time to send the next heartbeat.
-            const auto heartbeat_due = last_sent + std::chrono::seconds(heartbeat_interval) / 2;
-            wait = std::clamp(heartbeat_due - now, std::chrono::steady_clock::duration::zero(), wait);
-        }
-
+        const auto wait = std::max(deadline - std::chrono::steady_clock::now(), std::chrono::steady_clock::duration::zero());
         if (auto frame = receiveFrame(Poco::Timespan(std::chrono::duration_cast<std::chrono::microseconds>(wait).count())))
         {
             if (auto method = processFrame(std::move(*frame)))
@@ -757,13 +748,7 @@ bool Connection::processIncoming(Poco::Timespan timeout)
             continue;
         }
 
-        /// The broker sends heartbeats too. Its silence for two intervals means that the connection is lost.
-        /// Checked only when nothing is there to read, as a connection that was not used for a while has unread heartbeats.
-        now = std::chrono::steady_clock::now();
-        if (heartbeat_interval && now - last_received > 2 * std::chrono::seconds(heartbeat_interval))
-            fail(fmt::format("no data was received for {} seconds", 2 * heartbeat_interval));
-
-        if (now >= deadline)
+        if (std::chrono::steady_clock::now() >= deadline)
             return false;
     }
 }
@@ -783,11 +768,7 @@ Connection::Method Connection::waitForReply(UInt16 channel, UInt16 class_id, UIn
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while waiting for a reply from RabbitMQ {}", address_for_log);
         }
 
-        sendHeartbeatIfNeeded();
-        auto wait = deadline - now;
-        if (heartbeat_interval)
-            wait = std::clamp(last_sent + std::chrono::seconds(heartbeat_interval) / 2 - now, std::chrono::steady_clock::duration::zero(), wait);
-
+        const auto wait = deadline - now;
         auto frame = receiveFrame(Poco::Timespan(std::chrono::duration_cast<std::chrono::microseconds>(wait).count()));
         if (!frame)
             continue;
@@ -868,7 +849,6 @@ void Connection::handshake()
         Reader reader(tune.arguments);
         reader.readShort(); /// channel max
         const UInt32 proposed_frame_max = reader.readLong();
-        heartbeat_interval = reader.readShort();
 
         /// 0 means no limit, but a frame must fit into memory.
         frame_max = std::clamp(proposed_frame_max, MIN_FRAME_SIZE, MAX_FRAME_SIZE);
@@ -876,7 +856,9 @@ void Connection::handshake()
         String arguments;
         writeShort(arguments, 1); /// channel max: one channel is used.
         writeLong(arguments, frame_max);
-        writeShort(arguments, heartbeat_interval);
+        /// Heartbeats are disabled: without a thread of its own the client cannot send them while it is not used,
+        /// and the broker would close the connection of a consumer whose block a slow materialized view processes.
+        writeShort(arguments, 0);
         sendMethod(0, Class::CONNECTION, ConnectionMethod::TUNE_OK, arguments);
     }
 
