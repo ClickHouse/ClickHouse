@@ -48,6 +48,9 @@ struct RuntimeDataflowStatistics
     /// Counting the compressed blocks read took more ranges than `automatic_parallel_replicas_max_counted_ranges`,
     /// so the bytes are not known. Remembered, so that the query does not pay for counting them again.
     bool input_not_measured = false;
+    /// The `automatic_parallel_replicas_max_counted_ranges` it was not measured within: under a larger limit, or none,
+    /// the query counts them again.
+    size_t max_counted_ranges = 0;
 };
 
 inline RuntimeDataflowStatistics operator+(const RuntimeDataflowStatistics & lhs, const RuntimeDataflowStatistics & rhs)
@@ -58,6 +61,7 @@ inline RuntimeDataflowStatistics operator+(const RuntimeDataflowStatistics & lhs
         .output_bytes = lhs.output_bytes + rhs.output_bytes,
         .total_rows_to_read = lhs.total_rows_to_read + rhs.total_rows_to_read,
         .input_not_measured = lhs.input_not_measured || rhs.input_not_measured,
+        .max_counted_ranges = std::max(lhs.max_counted_ranges, rhs.max_counted_ranges),
     };
 }
 

@@ -65,6 +65,7 @@ extern const Event AutoParallelReplicasSkippedEarly;
 extern const Event AutoParallelReplicasRejectedByThreshold;
 extern const Event AutoParallelReplicasRejectedByDuplicatedReads;
 extern const Event AutoParallelReplicasRejectedByUnmeasuredInput;
+extern const Event AutoParallelReplicasUnmeasuredInputRecounted;
 extern const Event AutoParallelReplicasRejectedByCostModel;
 extern const Event AutoParallelReplicasBytesPerReplica;
 }
@@ -1402,14 +1403,34 @@ static bool decideAtBoundary(
 
         if (apply_plan_with_parallel_replicas && stats->input_not_measured)
         {
-            /// Without the input bytes there is nothing to compare; they are counted again only once the table drifts.
-            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByUnmeasuredInput);
+            const size_t max_counted_ranges = optimization_settings.automatic_parallel_replicas_max_counted_ranges;
+            if (max_counted_ranges && max_counted_ranges <= stats->max_counted_ranges)
+            {
+                /// Without the input bytes there is nothing to compare; they are counted again only once the table drifts,
+                /// or under a larger limit.
+                ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByUnmeasuredInput);
+                LOG_TRACE(
+                    getLogger("AutoParallelReplicas"),
+                    "Parallel replicas are not used: the input of hash {} could not be measured within "
+                    "automatic_parallel_replicas_max_counted_ranges",
+                    single_replica_plan_boundary_hash);
+                return false;
+            }
+
+            /// Statistics are recollected only with the replicas plan; the call with it counts the event.
+            if (!replicas)
+                return true;
+
+            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasUnmeasuredInputRecounted);
             LOG_TRACE(
                 getLogger("AutoParallelReplicas"),
-                "Parallel replicas are not used: the input of hash {} could not be measured within "
-                "automatic_parallel_replicas_max_counted_ranges",
-                single_replica_plan_boundary_hash);
-            return false;
+                "The input of hash {} was not measured within automatic_parallel_replicas_max_counted_ranges = {}, "
+                "counting it again within {}",
+                single_replica_plan_boundary_hash,
+                stats->max_counted_ranges,
+                max_counted_ranges);
+            apply_plan_with_parallel_replicas = false;
+            table_data_drifted_significantly = true;
         }
 
         if (apply_plan_with_parallel_replicas)

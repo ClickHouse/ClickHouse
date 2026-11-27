@@ -91,7 +91,7 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
     if (counted_ranges_limit_exceeded)
     {
         LOG_DEBUG(getLogger("RuntimeDataflowStatisticsCacheUpdater"), "The input is not measured, the statistics only record that");
-        dataflow_cache.update(cache_key, {.total_rows_to_read = total_rows_to_read, .input_not_measured = true});
+        dataflow_cache.update(cache_key, {.total_rows_to_read = total_rows_to_read, .input_not_measured = true, .max_counted_ranges = max_counted_ranges});
         if (undecided_query_key)
             dataflow_cache.forgetUndecided(undecided_query_key);
         return;
