@@ -70,8 +70,7 @@ constexpr size_t COL_BLOCK = 16;
 
 DECLARE_X86_64_MULTITARGET_CODE(
 
-/// Compute the dot products of every row with one tile of centroids, COL_BLOCK centroids at a time, and pass
-/// each (row, block) to `on_block(row, dots, block_start)`. See `CentroidMatrix::build` for the tile layout.
+/// Pass the dot products of each row with each block of COL_BLOCK centroids of one tile to `on_block(row, dots, block_start)`.
 ///
 /// Rows are handled ROW_BLOCK at a time rather than one at a time: scoring a single row re-reads the whole
 /// tile, which is bandwidth-bound at realistic sizes, while a block of rows reuses each tile value
@@ -151,8 +150,7 @@ void scoreTile(
         });
 }
 
-/// Score every row against one tile of centroids, storing every score: row `r`, centroid `c` of the tile goes
-/// to `scores[r * stride + c]`.
+/// Score every row against one tile, storing row `r` against centroid `c` of the tile in `scores[r * stride + c]`.
 void scoreTileAll(
     const Float32 * __restrict vec_data, size_t num_rows, size_t dim,
     const Float32 * __restrict tile_centroids, const Float32 * __restrict tile_sq_norms,
@@ -229,7 +227,6 @@ Float32 coordinateLimit(size_t dim)
         std::sqrt(static_cast<double>(std::numeric_limits<Float32>::max()) / (4.0 * static_cast<double>(dim))));
 }
 
-/// `n` rounded up to a whole number of kernel column blocks.
 size_t roundUpToColBlock(size_t n)
 {
     constexpr size_t col_block = AssignCentroidImpl::COL_BLOCK;
@@ -250,7 +247,6 @@ struct CentroidMatrix
     VectorWithMemoryTracking<Float32> centroid_sq_norms;   /// the squared norm of each centroid, +inf for padding
     VectorWithMemoryTracking<UInt32> ids;                  /// the id to return when that centroid is nearest
 
-    /// The length of `centroid_sq_norms` and `ids`.
     [[nodiscard]] size_t paddedSize() const { return roundUpToColBlock(num_centroids); }
 
     [[nodiscard]] size_t tilePaddedWidth(size_t tile_start) const { return roundUpToColBlock(std::min(tile_width, num_centroids - tile_start)); }
@@ -345,8 +341,7 @@ struct CentroidMatrix
         }
     }
 
-    /// Score `num_rows` dense rows against every centroid. `best_score` and `result_ids` carry the running
-    /// winner per row, across tiles and across calls.
+    /// Score dense rows against every centroid; `best_score` and `result_ids` carry the running winner across calls.
     void scoreRows(const Float32 * vec_data, size_t num_rows, Float32 * best_score, UInt32 * result_ids) const
     {
         for (size_t tile_start = 0; tile_start < num_centroids; tile_start += tile_width)
@@ -383,12 +378,10 @@ struct CentroidMatrix
     }
 };
 
-/// Leaf centroids grouped under coarse centroids. A row is scored against every coarse centroid, then against the
-/// leaves of the COARSE_PROBES nearest ones only, so the result is the nearest leaf of those clusters.
+/// Leaves grouped by coarse centroid. The result is the nearest leaf in the clusters of the COARSE_PROBES nearest coarse centroids.
 struct HierarchicalCentroids
 {
     static constexpr size_t COARSE_PROBES = 16;
-    /// Bounds the coarse scores kept for one chunk of rows.
     static constexpr size_t SCORE_BUFFER_BYTES = 8 * 1024 * 1024;
 
     size_t dim = 0;
@@ -628,8 +621,7 @@ private:
         return matrix;
     }
 
-    /// Read the named dictionary once (columns cid, vec, and level, parent when it has them), cache the result
-    /// until the dictionary reloads.
+    /// Read the named dictionary once (cid, vec, and level, parent when present), cached until the dictionary reloads.
     Centroids getDictionaryCentroids(const String & dict_name) const
     {
         auto dictionary = dict_helper.getDictionary(dict_name);
@@ -730,7 +722,6 @@ private:
                     dict_name, centroid.cid);
         }
 
-        /// The centroids at `rows` (positions in `centroids`), with their cids as ids.
         auto build_matrix = [&](const VectorWithMemoryTracking<size_t> & rows)
         {
             VectorWithMemoryTracking<Float32> row_major(rows.size() * dim);
@@ -766,7 +757,6 @@ private:
                         dict_name, centroid.cid, centroid.level);
                 if (centroid.level == 0)
                     continue;
-                /// Only a complex key can repeat a cid, and then `parent` would not name one centroid.
                 if (!coarse_rows.empty() && centroids[coarse_rows.back()].cid == centroid.cid)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "assignCentroid: dictionary {} has more than one level 1 centroid with cid {}", dict_name, centroid.cid);
