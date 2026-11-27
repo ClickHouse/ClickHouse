@@ -5457,13 +5457,17 @@ void StreamingCursor::PendingReport::finish() noexcept
     auto finished_holder = std::exchange(holder, nullptr);
     std::lock_guard lock(finished_holder->mutex);
     chassert(finished_holder->pending_reports > 0);
-    if (--finished_holder->pending_reports == 0 && finished_holder->no_pending_reports)
+    if (--finished_holder->pending_reports == 0)
     {
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-        /// Writing to an eventfd fails only on a counter overflow, which cannot happen for a single write.
-        [[maybe_unused]] const bool written = finished_holder->no_pending_reports->write();
-        chassert(written);
+        for (const auto & event : finished_holder->no_pending_reports_waiters)
+        {
+            /// Writing to an eventfd fails only on a counter overflow, which cannot happen for a single write.
+            [[maybe_unused]] const bool written = event->write();
+            chassert(written);
+        }
 #endif
+        finished_holder->no_pending_reports_waiters.clear();
     }
 }
 
@@ -5474,20 +5478,21 @@ bool StreamingCursor::hasPendingReports()
     return root_holder.pending_reports > 0;
 }
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-int StreamingCursor::pendingReportsFD()
+void StreamingCursor::notifyWhenNoPendingReports(std::shared_ptr<EventFD> event)
 {
     auto & root_holder = root();
     std::lock_guard lock(root_holder.mutex);
-    if (!root_holder.no_pending_reports)
+    if (root_holder.pending_reports > 0)
     {
-        root_holder.no_pending_reports = std::make_unique<EventFD>();
-        if (root_holder.pending_reports == 0 && !root_holder.no_pending_reports->write())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot notify the end of the pending reports of a streaming cursor");
+        root_holder.no_pending_reports_waiters.push_back(std::move(event));
+        return;
     }
-    return root_holder.no_pending_reports->fd;
-}
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    if (!event->write())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot notify the end of the pending reports of a streaming cursor");
 #endif
+}
 
 
 void Context::setProgressCallback(ProgressCallback callback)

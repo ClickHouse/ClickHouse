@@ -6,6 +6,7 @@ namespace DB
 {
 
 struct StreamingCursor;
+struct EventFD;
 
 /// Passes the rows of an `INSERT SELECT` for an incremental refresh through, and finishes after its input only once every
 /// read of the query reported its streaming cursor, see `StreamingCursor::PendingReport`. A target that commits the cursor
@@ -24,6 +25,8 @@ public:
 
 private:
     const std::shared_ptr<StreamingCursor> cursor;
+    /// Written to by the holder of the cursor when there are no pending reads.
+    std::shared_ptr<EventFD> no_pending_reports;
 };
 
 }

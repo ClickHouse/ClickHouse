@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Access/QueryPrivilegesInfo.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
@@ -405,10 +406,9 @@ struct StreamingCursor
 
     /// Whether some reads did not report yet (the count is in the root holder).
     bool hasPendingReports();
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-    /// A descriptor that becomes readable when there are no pending reads.
-    int pendingReportsFD();
-#endif
+    /// Write to the event once there are no pending reads (right away if there are none). Every waiter has its own event,
+    /// as the executor of a query cannot poll one descriptor for several processors.
+    void notifyWhenNoPendingReports(std::shared_ptr<EventFD> event);
 
     StreamingCursor();
     ~StreamingCursor();
@@ -423,10 +423,9 @@ private:
     /// The paths (split at dots) under which a cursor was already reported, only in the root holder.
     std::set<Strings> reported_paths;
 
-    /// The pending reads, only in the root holder. The event is created on demand, and written to once their count drops
-    /// to zero.
+    /// The pending reads, only in the root holder, and the events to write to once their count drops to zero.
     size_t pending_reports = 0;
-    std::unique_ptr<EventFD> no_pending_reports;
+    VectorWithMemoryTracking<std::shared_ptr<EventFD>> no_pending_reports_waiters;
 };
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
