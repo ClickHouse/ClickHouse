@@ -112,4 +112,5 @@ Asynchronous inserts are the modern replacement for [Buffer tables](/reference/e
 - **No DDL changes required.** Async inserts are transparent — you enable a setting, not create additional tables.
 - **Per-shape buffering.** Async inserts maintain separate buffers per unique query shape and settings combination, enabling granular flush policies. Buffer tables use a single buffer per target table.
 - **Durability.** In default mode (`wait_for_async_insert=1`), data is confirmed on disk before the client receives acknowledgment. Buffer tables behave like fire-and-forget — buffered data is lost on crash.
+- **Authorization.** Both check access again when the data is flushed, against the access-control state current then. A Buffer table also checks every table its flush writes to when the data is inserted, so the `INSERT` fails if any of them is denied. If the user loses a required privilege before the flush, a Buffer table drops the data and logs an error.
 - **Cluster behavior.** In clusters, async insert buffers are maintained per node. Buffer tables require explicit creation on each node.
