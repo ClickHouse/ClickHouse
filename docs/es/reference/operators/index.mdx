@@ -673,9 +673,9 @@ ClickHouse admite los operadores `IS NULL` y `IS NOT NULL`.
   * `0` en caso contrario.
 * Para cualquier otro valor, el operador `IS NULL` siempre devuelve `0`.
 
-Puede optimizarse habilitando la configuración [optimize&#95;functions&#95;to&#95;subcolumns](/es/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). Con `optimize_functions_to_subcolumns = 1`, la función lee solo la [subcolumna](/es/reference/data-types/nullable#finding-null) `null` en lugar de leer y procesar todos los datos de la columna. La consulta `SELECT n IS NULL FROM table` se transforma en `SELECT n.null != 0 FROM TABLE`.
+Cuando la columna no se utiliza en ninguna otra parte de la consulta, la función puede leer solo la [subcolumna](/es/reference/data-types/nullable#finding-null) `null` en lugar de leer y procesar todos los datos de la columna. La consulta `SELECT n IS NULL FROM table` se transforma en `SELECT n.null != 0 FROM TABLE`. Esta optimización se controla mediante la configuración [optimize&#95;functions&#95;to&#95;subcolumns](/es/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns), que está habilitada de forma predeterminada.
 
-{{/* */}}
+{/* */}
 
 ```sql
 SELECT x+100 FROM t_null WHERE y IS NULL
@@ -706,7 +706,7 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
-Se puede optimizar habilitando el ajuste [optimize&#95;functions&#95;to&#95;subcolumns](/es/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). Con `optimize_functions_to_subcolumns = 1`, la función lee solo la subcolumna [null](/es/reference/data-types/nullable#finding-null) en lugar de leer y procesar los datos de toda la columna. La consulta `SELECT n IS NOT NULL FROM table` se convierte en `SELECT NOT n.null FROM TABLE`.
+Cuando la columna no se usa en ningún otro lugar de la consulta, la función puede leer solo la subcolumna [null](/es/reference/data-types/nullable#finding-null) en lugar de leer y procesar los datos de toda la columna. La consulta `SELECT n IS NOT NULL FROM table` se convierte en `SELECT NOT n.null FROM TABLE`. Esta optimización se controla mediante el ajuste [optimize&#95;functions&#95;to&#95;subcolumns](/es/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns), que está habilitado de forma predeterminada.
 
 ## Verificación de valores booleanos {#checking-boolean-values}
 

@@ -88,18 +88,18 @@
 [1]
 []
 []
-14. An Array(String) indexed column: the tokens of all elements form one sequence.
+14. An Array(String) indexed column: a phrase lies within one element.
 -- index tokens are [hello, world, foo]
 [1]
 [1]
--- adjacent across elements
-[1]
-[1]
+-- a phrase does not span elements
 []
 []
-15. A NULL array element leaves no position.
-[1]
-[1]
+[]
+[]
+15. A NULL array element does not join the elements around it.
+[]
+[]
 16. An expression index.
 [1]
 [1]
@@ -122,7 +122,7 @@
 []
 []
 20. An Array column answers a phrase the same way with and without the index.
-[2]
-[2]
-[1]
-[1]
+[]
+[]
+[]
+[]

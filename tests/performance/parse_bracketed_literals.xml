@@ -1,0 +1,21 @@
+<test>
+    <settings>
+        <max_parser_depth>0</max_parser_depth>
+        <max_query_size>0</max_query_size>
+    </settings>
+
+    <!-- Nested brackets whose literal reading fails at the innermost element -->
+    <query>SELECT ignore(formatQuery('SELECT ' || repeat('(1, ', 700) || 'x' || repeat(')', 700)))</query>
+    <query>SELECT ignore(formatQuery('SELECT ' || repeat('[1, ', 700) || 'x' || repeat(']', 700)))</query>
+    <query>SELECT ignore(formatQuery('SELECT ' || repeat('((1, ', 500) || '1' || repeat('))', 500)))</query>
+
+    <!-- Nested brackets folded into one literal level by level -->
+    <query>SELECT ignore(formatQuery('SELECT ' || repeat('[1, ', 700) || '(2)' || repeat(']', 700)))</query>
+    <query>SELECT ignore(formatQuery('SELECT ' || repeat('(1, ', 700) || '(2)' || repeat(')', 700)))</query>
+
+    <!-- Large flat literals, with and without a cast -->
+    <query>SELECT ignore(formatQuery('SELECT [' || arrayStringConcat(range(300000), ', ') || ']'))</query>
+    <query>SELECT ignore(formatQuery('SELECT [' || arrayStringConcat(range(300000), ', ') || ']::Array(UInt32)'))</query>
+    <query>SELECT ignore(formatQuery('SELECT [' || arrayStringConcat(arrayMap(i -> '(' || toString(i) || ', \'s\')', range(50000)), ', ') || ', x]'))</query>
+    <query>SELECT ignore(formatQuery('SELECT ' || arrayStringConcat(arrayMap(i -> '(x + ' || toString(i) || ')::UInt32', range(30000)), ', ')))</query>
+</test>

@@ -501,13 +501,17 @@ SELECT * FROM remote(remote1, database = default, table = test);
 
 ### Exemplo de uso de coleções nomeadas com um dicionário com fonte de dados no ClickHouse {#example-of-using-named-collections-with-a-dictionary-with-source-clickhouse}
 
+<Note title="ClickHouse Cloud">
+  Ao criar um dicionário que lê dados de uma tabela do ClickHouse, inclua o nome de usuário e a senha de um usuário dedicado na cláusula `SOURCE`. Esse usuário precisa ter permissão `SELECT` na tabela de origem. Consulte o [exemplo de fonte de dicionário do ClickHouse](/pt-BR/reference/statements/create/dictionary/sources/clickhouse).
+</Note>
+
 ```sql
 CREATE NAMED COLLECTION remote_dict AS
 host = 'localhost',
 port = 9000,
 database = 'default',
-user = 'default',
-password = '';
+user = 'dict_reader',
+password = 'dict_reader_password';
 
 CREATE DICTIONARY dict(a Int64, b String)
 PRIMARY KEY a
@@ -552,6 +556,22 @@ kafka_max_block_size = '1048576';
     </named_collections>
 </clickhouse>
 ```
+
+### TLS e certificados de cliente {#kafka-mtls-named-collection}
+
+Os caminhos de TLS e `ssl.key.password` são [configurações estendidas do librdkafka](/pt-BR/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections), e não configurações `kafka_*` do motor de tabela Kafka. Em uma coleção nomeada, defina-as com o prefixo `kafka.` em DDL (por exemplo, `kafka.ssl_ca_location`) ou dentro de `<kafka>` em XML (por exemplo, `<ssl_ca_location>`). Quando `ENGINE = Kafka(collection)` usa a coleção, a configuração global `<kafka>` do servidor não é mesclada.
+
+```sql
+CREATE NAMED COLLECTION kafka_mtls AS
+    kafka.security_protocol = 'SASL_SSL',
+    kafka.sasl_mechanism = 'PLAIN',
+    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
+    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
+    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_key_password = 'secret';
+```
+
+Use os `SETTINGS` da tabela para `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format`, `kafka_sasl_username` e `kafka_sasl_password` quando esses valores precisarem variar de uma tabela para outra. Um exemplo completo de `CREATE TABLE` está disponível em [TLS e SASL com coleções nomeadas](/pt-BR/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections).
 
 ### Autenticação OAUTHBEARER/OIDC {#oauthbearer-oidc-authentication}
 

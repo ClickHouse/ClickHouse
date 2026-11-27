@@ -520,6 +520,8 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
 {
     ReplicaState & replica = offset_states[replica_location.offset].replicas[replica_location.index];
     Packet packet = std::move(last_received_packet);
+    /// Take the revision before `finishProcessReplica` below releases the connection.
+    server_revision_of_last_packet = replica.connection->getServerRevision(hedged_connections_factory.getConnectionTimeouts());
     switch (packet.type)
     {
         case Protocol::Server::Data:

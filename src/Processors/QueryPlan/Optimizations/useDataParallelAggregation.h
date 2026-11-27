@@ -29,7 +29,15 @@ namespace QueryPlanOptimizations
 ///     `a % 4 = 0` but land in partitions `0` and `4`).
 ///
 /// Shared by the per-partition request passes (`optimize*PerPartition`) and `applyStreamDisjointness`.
+///
+/// A table partition key that depends on a floating-point column is never accepted: `-0.` and `0.` are the same
+/// key of `GROUP BY`, `DISTINCT` and `LIMIT BY`, but the partition expression can distinguish them
+/// (e.g. `PARTITION BY f` or `PARTITION BY bitShiftRight(reinterpretAsUInt64(f), 63)`), so a group can span partitions.
 bool isPartitionKeyFunctionOfKeys(const KeyDescription & partition_key, const ActionsDAG & key_actions, const Names & key_names);
+
+/// Whether the partition expression `partition_actions` reads a column that can contain a floating-point value,
+/// and so can put `-0.` and `0.` into different partitions.
+bool partitionKeyCanDistinguishSignedZeros(const ActionsDAG & partition_actions);
 
 /// Returns whether the selected outputs of `partition_actions` are determined by `key_names`.
 /// Other outputs of `partition_actions` need not be part of the partition key.

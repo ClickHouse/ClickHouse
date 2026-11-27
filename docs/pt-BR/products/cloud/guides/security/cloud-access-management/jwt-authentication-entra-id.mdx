@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'Entra ID', 'Azure AD', 'Microsoft', 'OAuth', 'OIDC', 'funções de aplicativo', 'autenticação', 'provedor de identidade']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import { EnterprisePlanFeatureBadge } from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 import { VersionBadge } from "/snippets/pt-BR/components/VersionBadge/VersionBadge.jsx";
@@ -56,7 +54,11 @@ Você precisará de:
     * **Supported account types**: tenant único. Dependendo da versão do portal, essa opção aparece como **Single tenant only** ou **Accounts in this organizational directory only**.
     * **Redirect URI**: deixe em branco. Os usuários fazem login com o fluxo de código de dispositivo (device code flow), que não usa um URI de redirecionamento.
 
-    <Image img="/images/cloud/security/jwt/entra-register-application.webp" size="lg" alt="Formulário de registro de aplicação no centro de administração do Microsoft Entra com tipo de conta de tenant único e sem URI de redirecionamento" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Formulário de registro de aplicação no centro de administração do Microsoft Entra com tipo de conta de tenant único e sem URI de redirecionamento](/images/cloud/security/jwt/entra-register-application.webp)
+      </Frame>
+    </div>
 
     Selecione **Register**. Na página **Overview**, copie os seguintes valores:
 
@@ -72,7 +74,11 @@ Você precisará de:
     * Formato Microsoft Graph: `requestedAccessTokenVersion`, na seção `api`.
     * Formato Azure AD Graph: `accessTokenAcceptedVersion`, no nível superior, como na captura de tela abaixo.
 
-    <Image img="/images/cloud/security/jwt/entra-manifest-token-version.webp" size="lg" alt="Editor de manifesto da aplicação com accessTokenAcceptedVersion definido como 2" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Editor de manifesto da aplicação com accessTokenAcceptedVersion definido como 2](/images/cloud/security/jwt/entra-manifest-token-version.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Expor uma API" id="expose-an-api">
@@ -80,7 +86,11 @@ Você precisará de:
 
     1. Ao lado de **Application ID URI**, selecione **Add**, aceite o valor default `api://<CLIENT_ID>` e salve. Os clientes usam essa URI para solicitar tokens para o ClickHouse. Ela não altera a claim `aud` dos tokens v2.0, que continua sendo o client ID.
 
-       <Image img="/images/cloud/security/jwt/entra-application-id-uri.webp" size="lg" alt="Página Expose an API com o painel Application ID URI exibindo o valor default api://" />
+       <div className="ch-image-lg">
+         <Frame>
+           ![Página Expose an API com o painel Application ID URI exibindo o valor default api://](/images/cloud/security/jwt/entra-application-id-uri.webp)
+         </Frame>
+       </div>
 
     2. Selecione **Add a scope** e preencha o formulário. Os usuários solicitam esse escopo ao fazer login. Aplicações que se autenticam com a própria identidade não o utilizam.
 
@@ -92,7 +102,11 @@ Você precisará de:
        | **Admin consent description**  | Qualquer descrição                                     |
        | **State**                      | **Enabled**                                            |
 
-       <Image img="/images/cloud/security/jwt/entra-add-scope.webp" size="lg" alt="Painel Add a scope com o escopo access_as_application, consentimento restrito a administradores e o estado definido como Enabled" />
+       <div className="ch-image-lg">
+         <Frame>
+           ![Painel Add a scope com o escopo access_as_application, consentimento restrito a administradores e o estado definido como Enabled](/images/cloud/security/jwt/entra-add-scope.webp)
+         </Frame>
+       </div>
   </Step>
 
   <Step title="Autorize uma aplicação cliente para permitir o login de usuários" id="authorize-client-application">
@@ -100,7 +114,11 @@ Você precisará de:
 
     Em **Expose an API**, na seção **Authorized client applications**, selecione **Add a client application**. Insira `04b07795-8ddb-461a-bbee-02f9e1bf7b46`, selecione o escopo `api://<CLIENT_ID>/access_as_application` e clique em **Add application**.
 
-    <Image img="/images/cloud/security/jwt/entra-authorize-client-application.webp" size="lg" alt="Painel Add a client application com o ID de cliente do Azure CLI e o escopo access_as_application selecionado" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Painel Add a client application com o ID de cliente do Azure CLI e o escopo access_as_application selecionado](/images/cloud/security/jwt/entra-authorize-client-application.webp)
+      </Frame>
+    </div>
 
     <Note>
       Para usar sua própria aplicação cliente em vez do Azure CLI, registre uma aplicação separada, defina **Allow public client flows** como **Yes** em **Authentication** e pré-autorize o ID de cliente dela aqui. Em seguida, passe esse ID de cliente em `--oauth-client-id` ao [fazer login com o clickhouse-client](#sign-in-with-clickhouse-client). Se o seu tenant não permitir o consentimento do usuário, um administrador também precisará conceder consentimento para as permissões `openid`, `profile` e `offline_access` dessa aplicação.
@@ -122,19 +140,31 @@ Você precisará de:
 
     O exemplo a seguir define três funções de aplicativo cujos valores são nomes de funções do ClickHouse:
 
-    <Image img="/images/cloud/security/jwt/entra-app-roles.webp" size="lg" alt="Página App roles listando ClickHouse Admin, ClickHouse Analyst DB e ClickHouse Read Only com os valores ch_admin, ch_analyst e ch_readonly" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Página App roles listando ClickHouse Admin, ClickHouse Analyst DB e ClickHouse Read Only com os valores ch_admin, ch_analyst e ch_readonly](/images/cloud/security/jwt/entra-app-roles.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Exigir atribuição" id="require-assignment">
     Por padrão, qualquer usuário do seu tenant pode obter um token para o aplicativo. Para restringir os tokens aos usuários, grupos e aplicativos que você atribuir a uma função de aplicativo, abra **Enterprise applications**, selecione o aplicativo com o mesmo nome do seu registro de aplicativo, abra **Properties**, defina **Assignment required?** como **Yes** e selecione **Save**.
 
-    <Image img="/images/cloud/security/jwt/entra-assignment-required.webp" size="lg" alt="Propriedades do aplicativo empresarial com Assignment required definido como Yes" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Propriedades do aplicativo empresarial com Assignment required definido como Yes](/images/cloud/security/jwt/entra-assignment-required.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Atribua usuários e grupos a funções do aplicativo" id="assign-users-and-groups">
     No mesmo aplicativo empresarial, abra **Users and groups** e selecione **Add user/group**. Escolha um usuário ou grupo, selecione uma função de aplicativo e clique em **Assign**. Repita o processo para cada usuário ou grupo.
 
-    <Image img="/images/cloud/security/jwt/entra-assign-users-and-groups.webp" size="lg" alt="Página Users and groups do aplicativo empresarial mostrando um usuário atribuído à função de aplicativo ClickHouse Read Only" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Página Users and groups do aplicativo empresarial mostrando um usuário atribuído à função de aplicativo ClickHouse Read Only](/images/cloud/security/jwt/entra-assign-users-and-groups.webp)
+      </Frame>
+    </div>
 
     Um usuário que tenha várias funções de aplicativo atribuídas, diretamente ou por meio de grupos, recebe todas elas na claim `roles`.
 
