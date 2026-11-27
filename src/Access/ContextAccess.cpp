@@ -92,7 +92,8 @@ namespace
 }
 
 
-AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control)
+AccessRights ContextAccess::addImplicitAccessRights(
+    const AccessRights & access, const AccessControl & access_control, bool limited_by_authentication_grants)
 {
     AccessFlags max_flags;
 
@@ -241,7 +242,9 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         /// granted implicitly to everyone - but only while the feature is enabled and the name is actually
         /// backed by `StorageSystemUserQueryLog`. When it is disabled, the name can back a regular table
         /// (or the raw query log via `query_log.table = user_query_log`), which must not become world-readable.
-        if (access_control.isUserQueryLogEnabled())
+        /// A session limited by the GRANTS clause does not get it: the records include the queries
+        /// made with the other authentication methods of the user.
+        if (access_control.isUserQueryLogEnabled() && !limited_by_authentication_grants)
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "user_query_log");
 
         if (max_flags.contains(AccessType::SHOW_USERS))
@@ -517,7 +520,8 @@ void ContextAccess::calculateAccessRights() const
         mixed_access.makeIntersection(AccessRights{*params.authentication_grants});
 
     access = std::make_shared<AccessRights>(std::move(mixed_access));
-    access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*access, *access_control));
+    access_with_implicit
+        = std::make_shared<AccessRights>(addImplicitAccessRights(*access, *access_control, params.authentication_grants != nullptr));
 
     if (trace_log)
     {

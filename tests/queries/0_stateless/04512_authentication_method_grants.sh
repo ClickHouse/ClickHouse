@@ -18,6 +18,7 @@ user8="u8_04512_${CLICKHOUSE_DATABASE}"
 user9="u9_04512_${CLICKHOUSE_DATABASE}"
 user10="u10_04512_${CLICKHOUSE_DATABASE}"
 user11="u11_04512_${CLICKHOUSE_DATABASE}"
+user12="u12_04512_${CLICKHOUSE_DATABASE}"
 victim="uv_04512_${CLICKHOUSE_DATABASE}"
 role="r_04512_${CLICKHOUSE_DATABASE}"
 role2="r2_04512_${CLICKHOUSE_DATABASE}"
@@ -47,7 +48,7 @@ function login_expect_error()
 
 function cleanup()
 {
-    admin "DROP USER IF EXISTS ${user}, ${user2}, ${user3}, ${user4}, ${user5}, ${user6}, ${user7}, ${user8}, ${user9}, ${user10}, ${user11}, ${victim}"
+    admin "DROP USER IF EXISTS ${user}, ${user2}, ${user3}, ${user4}, ${user5}, ${user6}, ${user7}, ${user8}, ${user9}, ${user10}, ${user11}, ${user12}, ${victim}"
     admin "DROP ROLE IF EXISTS ${role}, ${role2}, ${role2}_x, ${role3}"
 }
 trap cleanup EXIT
@@ -265,3 +266,14 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user11}&password=full11" -d "SE
 # The token has ALTER USER after the intersection, but the role-administration guard still denies the default-role change.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user11}&password=user_token" -d "SET DEFAULT ROLE ${role3} TO ${victim}" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user11}&password=user_token" -d "ALTER USER ${victim} DEFAULT ROLE ${role3}" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
+
+# Only an explicit grant on `system.user_query_log` passes the clause: the implicit one would expose the queries of the full credential.
+echo "-- A token does not get the implicit SELECT on system.user_query_log"
+admin "CREATE USER ${user12} IDENTIFIED WITH plaintext_password BY 'full12', plaintext_password BY 'token12' GRANTS (SELECT ON t1), plaintext_password BY 'log_token12' GRANTS (SELECT(query_id) ON system.user_query_log)"
+admin "GRANT SELECT(query_id) ON system.user_query_log TO ${user12}"
+query_id="04512_user_query_log_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user12}&password=full12&query_id=${query_id}" -d "SELECT 1"
+admin "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user12}&password=token12" -d "SELECT count() FROM system.user_query_log WHERE query_id = '${query_id}'" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user12}&password=log_token12" -d "SELECT count() > 0 FROM system.user_query_log WHERE query_id = '${query_id}'"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user12}&password=log_token12" -d "SELECT query FROM system.user_query_log WHERE query_id = '${query_id}'" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1

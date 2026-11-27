@@ -168,7 +168,8 @@ public:
     /// at all, without disclosing through the error message what it would have seen).
     bool isGrantedWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view filter) const;
 
-    static AccessRights addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control);
+    static AccessRights addImplicitAccessRights(
+        const AccessRights & access, const AccessControl & access_control, bool limited_by_authentication_grants = false);
 
     ContextAccess(const AccessControl & access_control_, const Params & params_);
     ~ContextAccess();
