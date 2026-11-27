@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -118,8 +119,10 @@ public:
         /// The result type is the supertype with the other arguments, and the supertype of `UUID` and `UUID2` is `UUID2`,
         /// which orders the values differently from `UUID`: the conversion of the first argument is then not monotonic.
         /// The result type is not known here, so do not claim monotonicity for a `UUID` or `UUID2` argument.
-        const auto decayed_type = removeNullable(removeLowCardinality(type.getPtr()));
-        if (isUUID(decayed_type) || isUUID2(decayed_type))
+        /// The same holds for a `UUID` or `UUID2` nested anywhere in the type, such as `Nullable(Tuple(UUID))` with
+        /// a `Tuple(UUID2)` alternative: the conversion changes the order of the element.
+        const auto is_uuid_type = [](const IDataType & t) { return WhichDataType(t).isUUID() || WhichDataType(t).isUUID2(); };
+        if (anyInTypeTree(type, is_uuid_type))
             return {};
 
         return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !can_contain_null };
