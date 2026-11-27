@@ -65,8 +65,8 @@ SELECT 'wide', id, _block_number, _block_offset FROM t_clear_block_wide ORDER BY
 SELECT 'compact', id, _block_number, _block_offset FROM t_clear_block_compact ORDER BY id;
 SELECT 'packed', id, _block_number, _block_offset FROM t_clear_block_packed ORDER BY id;
 
--- The next merge stores the values the parts read.
-ALTER TABLE t_clear_block_wide MODIFY SETTING enable_block_number_column = 1;
+-- The next merge stores the values the parts read. `enable_block_number_column` cannot be enabled for a table
+-- with `enable_block_offset_column` and with data, so only `_block_offset` is stored.
 INSERT INTO t_clear_block_wide VALUES (5, 'e');
 OPTIMIZE TABLE t_clear_block_wide FINAL;
 
@@ -146,19 +146,20 @@ SELECT p, id, _block_number, _block_offset FROM t_clear_block_partition ORDER BY
 
 DROP TABLE t_clear_block_partition;
 
--- Together with another command of the same mutation, which then does not store `_block_number`, though
--- `enable_block_number_column` is enabled. And with `IF EXISTS`.
+-- Together with another command of the same mutation, which then stores neither `_block_number` nor `_block_offset`,
+-- though both settings are enabled. And with `IF EXISTS`.
 
 DROP TABLE IF EXISTS t_clear_block_combined;
 
 CREATE TABLE t_clear_block_combined (id UInt64, s String) ENGINE = MergeTree ORDER BY id
-SETTINGS enable_block_number_column = 0, enable_block_offset_column = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+SETTINGS enable_block_number_column = 0, enable_block_offset_column = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 
 INSERT INTO t_clear_block_combined VALUES (1, 'a'), (2, 'b');
 INSERT INTO t_clear_block_combined VALUES (3, 'c'), (4, 'd');
 OPTIMIZE TABLE t_clear_block_combined FINAL;
 
-ALTER TABLE t_clear_block_combined MODIFY SETTING enable_block_number_column = 1;
+-- The part stores neither of the columns, and both settings can be enabled at once for a table with data.
+ALTER TABLE t_clear_block_combined MODIFY SETTING enable_block_number_column = 1, enable_block_offset_column = 1;
 ALTER TABLE t_clear_block_combined CLEAR COLUMN s, CLEAR COLUMN IF EXISTS _block_number;
 
 SELECT 'combined';
