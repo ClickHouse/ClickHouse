@@ -1471,10 +1471,11 @@ target_include_directories(ssl
 target_link_libraries(ssl crypto)
 
 # OpenSSL calls many functions through pointers whose types differ only in pointer types, e.g. `d2i_X509` through
-# `d2i_of_void` or `RSA_free` through `void (*)(void *)`, which strict CFI (`cfi-icall`) rejects. Upstream is fixing
-# them (stacks, sparse arrays and `decode_der2key` free callbacks in 4.0, the first two backported here), but not all
-# yet. Until then, OpenSSL's indirect calls are checked with all pointer types treated alike: return type, arity and
-# non-pointer arguments are still checked. TODO: backport or fix the rest and drop this.
+# `d2i_of_void`, `RSA_free` through `void (*)(void *)` and every provider function through `OSSL_DISPATCH`, which strict
+# CFI (`cfi-icall`) rejects. Upstream fixed stacks and sparse arrays (backported here) and the `decode_der2key` free
+# callbacks (4.1.0); as of 4.1.0 and master (2026-11), the provider dispatch tables and the `X509V3_EXT_METHOD`
+# callbacks still need it. So OpenSSL's indirect calls are checked with all pointer types treated alike: return type,
+# arity, the constness of pointees and non-pointer arguments are still checked. TODO: drop this once upstream fixes the rest.
 if (ENABLE_CFI)
     foreach (target crypto ssl)
         target_compile_options (${target} PRIVATE $<$<COMPILE_LANGUAGE:C>:-fsanitize-cfi-icall-generalize-pointers>)

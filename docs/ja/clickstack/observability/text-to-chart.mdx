@@ -1,0 +1,78 @@
+---
+slug: /clickstack/observability/text-to-chart
+title: 'Text-to-Chart'
+sidebarTitle: 'Text-to-Chart'
+description: 'AI を活用した Text-to-Chart 機能を使用して、ClickHouse オブザーバビリティで自然言語のプロンプトからチャートを生成します。'
+doc_type: 'guide'
+keywords: ['clickstack', 'text-to-chart', 'AI', '可視化', 'Chart Explorer', '自然言語', 'オブザーバビリティ']
+---
+
+ClickHouse オブザーバビリティの Text-to-Chart 機能を使用すると、表示したい内容を文章で記述するだけで可視化を作成できます。メトリクス、フィルタ、group-by フィールドを手動で選択しなくても、「過去 3 日間のサービス別エラー件数」のようなプロンプトを入力するだけで、AI アシスタントが対応するチャートを自動的に生成します。
+
+この機能は大規模言語モデル (LLM) を使用してテキストのプロンプトをクエリに変換し、[Chart Explorer](/ja/clickstack/observability/features/dashboards/overview#navigate-chart-explorer) 上で可視化を構築します。
+
+## 前提条件 {#prerequisites}
+
+チーム管理者が **チーム設定** の **Configure Generative AI** で Generative AI を有効化しておく必要があります。手順については [Generative AI の有効化](/ja/clickstack/observability/notebooks#enabling-generative-ai) を参照してください。AIモデルとプロバイダはプラットフォーム側で自動的に管理されます。
+
+## Text-to-Chart の使い方 {#using-text-to-chart}
+
+<Steps>
+  <Step title="Chart Explorer に移動する" id="navigate-chart-explorer">
+    左側のサイドバーから **Chart Explorer** を選択します。
+  </Step>
+
+  <Step title="データソースを選択する" id="select-data-source">
+    Chart Explorer の上部にある **AIアシスタント** が折りたたまれている場合は、展開します。プロンプトフィールドの横にあるセレクターから、可視化したいデータソース (例: **ログ** や **トレース**) を選択します。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![AIアシスタント を展開し、ログ を選択した状態の Chart Explorer と Generate ボタン](/images/clickstack/observability-text-to-chart-explorer.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="テキストプロンプトを入力する" id="enter-text-prompt">
+    **AIアシスタント** のプロンプトフィールドに、作成したいチャートの内容を自然言語で入力します。例:
+
+    * `Error counts by service over the last 3 days`
+    * `Latency breakdown by endpoint`
+    * `Count of events over time grouped by severity`
+
+    **Generate** をクリックすると、プロンプトに基づいてチャートが生成されます。生成された設定は、下にあるビルダーで確認してください。チャートの種類、フィルタ、グループ化を調整したうえで **Run** をクリックすると、可視化が更新されます。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![AIアシスタント のプロンプトが強調表示された、サービス別エラー件数の生成済みチャート](/images/clickstack/observability-text-to-chart-result.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## プロンプトの例 {#example-prompts}
+
+以下は、オブザーバビリティデータを扱う際の一般的なユースケースを示すプロンプトの例です。
+
+| プロンプト                                             | データソース | 説明                        |
+| ------------------------------------------------- | ------ | ------------------------- |
+| `Error count by service over time`                | ログ     | サービスごとのエラー発生頻度をチャートで表示します |
+| `Average request duration grouped by endpoint`    | トレース   | エンドポイントごとのレイテンシの傾向を表示します  |
+| `P99 latency by service`                          | トレース   | サービスごとのテールレイテンシを特定します     |
+| `Count of 5xx status codes over the last 6 hours` | ログ     | サーバーエラーの傾向を追跡します          |
+
+プロンプトでは、設定済みのデータソースで利用可能な任意のカラムや属性を参照できます。目的のチャートを AI が生成しやすくなるよう、具体的なカラム名、フィルタ、時間範囲をプロンプトに含めてください。
+
+## 制限事項 {#limitations}
+
+* データソースとしてサポートされているのはログとトレースのみです。Prometheus メトリクスには現時点では対応していません。
+* チャートの精度は、プロンプトの明確さと基になるデータの構造に左右されます。生成されたチャートが期待どおりでない場合は、プロンプトの表現を変えるか、カラム名を明示的に指定してみてください。
+
+## 関連情報 {#further-reading}
+
+* [Text-to-Dashboard](/ja/clickstack/observability/text-to-dashboard) — プロンプトから複数のタイルを含むダッシュボードを生成して保存する
+
+* [From text to charts: a faster way to visualize with ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — この機能を紹介するブログ記事
+
+* [ダッシュボードと可視化](/ja/clickstack/observability/features/dashboards/overview) — Chart Explorer を使用したチャートの手動作成
+
+* [検索](/ja/clickstack/observability/features/search) — 全文検索およびプロパティ検索の検索構文

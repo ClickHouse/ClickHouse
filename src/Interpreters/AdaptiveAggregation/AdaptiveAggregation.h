@@ -42,9 +42,9 @@ inline constexpr size_t ADAPTIVE_AGGREGATION_NUM_BUCKETS = 256;
 /// first staged record is the price of storing it once; every repeat is bytes the baseline would
 /// have absorbed as a cheap in-place update. The thaw therefore fires once the wasted staged bytes
 /// per distinct key exceed a bound, which stands repetitive streams down early in proportion to how
-/// heavy their keys and arguments are, but only while the staged records are a fair share of the
-/// thread's rows: a table that absorbs nearly every row in place loses little to a sliver of
-/// repeated misses.
+/// heavy their keys and arguments are. Unless the aggregation has a single input stream, it fires
+/// only while the staged records are a fair share of the thread's rows: a table that absorbs nearly
+/// every row in place loses little to a sliver of repeated misses.
 ///
 /// Merge phase: at the end of input every thread hands its partitions to the session and indexes the cells of its
 /// local table by the same partitions. The merge task owning bucket b then merges the bucket's partitions a few at a

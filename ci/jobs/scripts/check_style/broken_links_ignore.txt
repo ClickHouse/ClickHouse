@@ -11,6 +11,13 @@ https://oauth2.googleapis.com/token
 # XML namespace and relationship type identifiers of Office Open XML (`XLSX`), not web pages.
 http://schemas.openxmlformats.org/
 
+# The sources are unavailable to CI but remain relevant documentation references.
+https://enterprise.docs.odigos.io/
+https://github.com/ClickHouse/opentelemetry-demo/blob/main/src/otelcollector/otelcol-config.yml
+https://hashboard.com
+https://docs.aws.amazon.com/prescriptive-guidance/latest/serverless-etl-aws-glue/aws-glue-data-catalog.html
+https://relational.fit.cvut.cz/dataset/IMDb
+
 # Not pages: SAX feature and property identifiers in base/poco/XML, which only have the form of a URL.
 http://xml.org/sax/features/
 http://xml.org/sax/properties/

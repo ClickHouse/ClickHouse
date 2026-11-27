@@ -114,6 +114,13 @@ Pipe StorageValues::read(
     return Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(block.cloneEmpty()), std::move(chunk)));
 }
 
+std::optional<UInt64> StorageValues::totalRows(ContextPtr) const
+{
+    if (has_prepared_pipe)
+        return {};
+    return res_block.rows();
+}
+
 std::optional<Pipe> StorageValues::extractPreparedPipe()
 {
     if (!has_prepared_pipe || prepared_pipe_was_read)

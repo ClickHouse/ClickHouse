@@ -69,17 +69,11 @@ HTTP를 통해 디렉터리 목록을 조회할 때 사용되는 HTTP 인덱스 
 
 ## max_iceberg_manifest_decode_thread_pool_free_size {#max_iceberg_manifest_decode_thread_pool_free_size}
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
-
-Iceberg 데이터 manifest 파일을 디코딩하는 스레드 풀에 유지할 유휴 대기 스레드의 최대 개수입니다.
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />Iceberg 데이터 매니페스트 파일을 디코딩하는 스레드 풀에 유지할 유휴 대기 스레드의 최대 개수입니다. 이 설정은 사용 중단 권고 상태이며 아무런 효과가 없습니다. Iceberg 매니페스트 파일은 입출력 스레드 풀(IO Thread Pool)에서 읽습니다.
 
 ## max_iceberg_manifest_decode_thread_pool_size {#max_iceberg_manifest_decode_thread_pool_size}
 
-<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="Yes" />
-
-Iceberg 데이터 manifest 파일을 디코딩하는 데 사용할 최대 총 스레드 수입니다.
-
-이 풀은 의도적으로 IO 풀과 분리되어 있습니다. 디코딩 작업은 자신이 생성한 항목을 쿼리가 소비할 때까지 블록될 수 있는 반면, delete manifest 디코딩은 어떤 항목이 소비되기 전에 IO 풀에 있는 자신의 작업이 끝나기를 기다립니다. 따라서 하나의 풀을 공유하면 교착 상태가 발생할 수 있습니다.
+<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />Iceberg 데이터 매니페스트 파일을 디코딩하는 데 사용할 최대 총 스레드 수입니다. 이 설정은 사용 중단 권고 상태이며 아무런 효과가 없습니다. Iceberg 매니페스트 파일은 입출력 스레드 풀(IO Thread Pool)에서 읽습니다.
 
 ## max_keep_alive_requests {#max_keep_alive_requests}
 
