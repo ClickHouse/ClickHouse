@@ -3330,6 +3330,8 @@ def test_namespace_merge_and_distributed_read_children_as_written(started_cluste
     which names the table as `db`.`table`; the name is read as written, not also as table
     `db.table` of the current database. The input query of an `Executable` table is read as
     written too, while that of the `executable` table function is a part of the calling query.
+    An `INSERT ... SELECT` between `Distributed` tables runs a rewritten query on the local replica,
+    and the tables of that query are read as written too.
     A `Buffer` table over a `Distributed` table analyzes the printed query again for the rows
     it holds, and the tables of that query are read as written too.
     A stored table or view is read as written even in a database named `_table_function`, and so is
@@ -3345,6 +3347,8 @@ def test_namespace_merge_and_distributed_read_children_as_written(started_cluste
     L2 = f"local2_{test_ref}"
     D = f"dist_{test_ref}"
     D2 = f"dist2_{test_ref}"
+    OUT = f"out_{test_ref}"
+    DOUT = f"dist_out_{test_ref}"
     E = f"exec_{test_ref}"
     B = f"buf_{test_ref}"
     MV = f"mv_{test_ref}"
@@ -3414,6 +3418,36 @@ def test_namespace_merge_and_distributed_read_children_as_written(started_cluste
             f"USE {CATALOG_NAME}; SELECT count() FROM default.{D}", settings=on, user=user
         )
         assert "ACCESS_DENIED" in err, f"`Distributed` table must read the database table: {err}"
+
+        # `INSERT ... SELECT` between `Distributed` tables runs a rewritten query on the local replica of the shard:
+        # it reads `default.L`, the table of the source, not the catalog table `default.L`
+        node1.query(f"CREATE TABLE default.{OUT} (symbol Nullable(String)) ENGINE = Memory")
+        node1.query(
+            f"CREATE TABLE default.{DOUT} (symbol Nullable(String)) "
+            f"ENGINE = Distributed(cluster_simple, default, {OUT})"
+        )
+        insert_select = f"USE {CATALOG_NAME}; INSERT INTO default.{DOUT} SELECT symbol FROM default.{D}"
+        node1.query(insert_select, settings=on)
+        result = int(node1.query(f"SELECT count() FROM default.{OUT}"))
+        assert result == 1, f"`INSERT ... SELECT` between `Distributed` tables: expected 1 row, got {result}"
+
+        # the user can read the catalog table but not `default.L`
+        node1.query(f"GRANT INSERT ON default.{DOUT} TO {user}")
+        node1.query(f"GRANT INSERT ON default.{OUT} TO {user}")
+        _, err = node1.query_and_get_answer_with_error(insert_select, settings=on, user=user)
+        assert "ACCESS_DENIED" in err, f"`INSERT ... SELECT` must read the database table: {err}"
+        result = int(node1.query(f"SELECT count() FROM default.{OUT}"))
+        assert result == 1, f"nothing is inserted without a grant on the table: expected 1 row, got {result}"
+
+        # a table in a subquery of the rewritten query is read as written too: `default.L2` has no table
+        # of that name in the catalog, so only the name in the subquery has two readings
+        node1.query(
+            f"USE {CATALOG_NAME}; INSERT INTO default.{DOUT} SELECT symbol FROM default.{D2} "
+            f"WHERE symbol IN (SELECT symbol FROM default.{L})",
+            settings=on,
+        )
+        result = int(node1.query(f"SELECT count() FROM default.{OUT}"))
+        assert result == 2, f"`INSERT ... SELECT` with a subquery: expected 2 rows, got {result}"
 
         # a script that copies its input to its output
         script_file = f"{scripts_path}/{script}"
@@ -3514,7 +3548,7 @@ def test_namespace_merge_and_distributed_read_children_as_written(started_cluste
         node1.query(f"DROP USER IF EXISTS {user}")
         node1.query(f"DROP FUNCTION IF EXISTS {F}")
         node1.query("DROP DATABASE IF EXISTS _table_function")
-        for table in (V, MV, B, D, D2, E, VX, VC, EC, L, L2):
+        for table in (V, MV, B, DOUT, OUT, D, D2, E, VX, VC, EC, L, L2):
             node1.query(f"DROP TABLE IF EXISTS default.{table}")
         node1.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`default.{L}`")
         node1.exec_in_container(["rm", "-f", f"{scripts_path}/{script}"], user="root")

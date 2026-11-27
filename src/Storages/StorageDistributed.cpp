@@ -1367,6 +1367,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
 {
     const auto & settings = local_context->getSettingsRef();
     auto new_query = boost::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
+    /// Set when the source below is named by the configured database and table, not by the user.
+    bool source_table_name_is_generated = false;
 
     if (src_distributed.remote_table_function_ptr)
     {
@@ -1403,6 +1405,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         select_with_union_query->list_of_selects->children.push_back(new_select_query);
 
         new_select_query->replaceDatabaseAndTable(src_distributed.getRemoteDatabaseName(), src_distributed.getRemoteTableName());
+        source_table_name_is_generated = true;
 
         new_query->setOrReplace(new_query->select, select_with_union_query);
     }
@@ -1457,6 +1460,9 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     QueryPipeline pipeline;
     ContextMutablePtr query_context = Context::createCopy(local_context);
     query_context->increaseDistributedDepth();
+    /// Read the generated name as written, not also as a table path of the current database.
+    if (source_table_name_is_generated)
+        query_context->setAllowCompoundTableIdentifierQualification(false);
     query_context->setSetting("enable_parallel_replicas", Field{0}); // TODO: allow parallel inserts with PR for distributed tables
 
     /// Strip the initiator-only settings (query-shaping/result-serialisation and the HTTP/path-only

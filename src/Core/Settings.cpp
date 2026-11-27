@@ -10423,6 +10423,10 @@ When the setting is enabled, the analyzer additionally:
   from `additional_table_filters` applied to such a table is read as written too. A `Buffer` table over
   such a table (for example, over a `Distributed` table) reads the rows it still holds through a query
   generated from the calling one, and table names in that query are read as written too.
+  When `parallel_distributed_insert_select` runs an `INSERT ... SELECT` from a `Distributed` table (or from
+  `remote` / `cluster` naming a table) into a `Distributed` table on the shards, the table of the shard is read
+  through a rewritten query. On the local replica (with `prefer_localhost_replica`) the table names of that
+  query, including those in its subqueries, are read as written too.
   Parts of the calling query that are resolved inside
   a SQL function body are read as written too: a lambda passed as an argument, a `WITH` lambda that the body
   calls, and a CTE that the body or such a lambda refers to. Such a CTE stays read as written for its later
