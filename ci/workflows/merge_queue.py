@@ -16,16 +16,17 @@ workflow = Workflow.Config(
     engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         JobConfigs.style_check,
-        JobConfigs.fast_test,
+        JobConfigs.fast_test_mq,
         *[job for job in JobConfigs.build_jobs if job.name == "Build (amd_binary)"],
-        # Reruns the PR's new/changed stateless tests against the merge group
-        # state, catching semantic conflicts with `master` changes that landed
-        # after the PR's last CI run (e.g. a new randomized setting in
-        # `tests/clickhouse-test`). Also reruns the tests that `master` added or
-        # changed after the PR's last CI run, which the PR may break (see
-        # `Targeting.get_merge_queue_drift_tests`). Self-skips when there are no
-        # such tests.
-        *JobConfigs.stateless_tests_flaky_mq_jobs,
+        # Rerun the PR's targeted selection (its changed tests and the tests
+        # covering its changed lines) against the merge group state, so a PR that
+        # was tested against an older `master` is re-validated on the state it
+        # will actually merge into - catching a PR that breaks a test it touches
+        # or covers once combined with the `master` commits ahead of it in the
+        # queue. The queue is meant to fail fast: both jobs stop at 3 failed
+        # tests, and at 30 minutes from their start without failing.
+        *JobConfigs.stateless_tests_targeted_mq_jobs,
+        *JobConfigs.integration_test_targeted_mq_jobs,
         # Reruns the documentation examples against the merge group state, so a
         # pull request and a `master` commit that are each green on their own
         # cannot break them together. Cheap enough to run unconditionally - see
@@ -38,6 +39,10 @@ workflow = Workflow.Config(
         # request touches, which is cheap enough for the queue; the full check on
         # `master` still covers the rest of the tree.
         JobConfigs.tidy_changed_files_job,
+        # The cross-compiled builds that pull requests do not run, see
+        # `MERGE_QUEUE_SPECIAL_BUILD_TYPES`. They need nothing but the source,
+        # so they start right away.
+        *JobConfigs.special_build_mq_jobs,
     ],
     artifacts=[
         *[
@@ -53,9 +58,7 @@ workflow = Workflow.Config(
     enable_cidb=True,
     enable_merge_ready_status=True,
     enable_commit_status_on_failure=True,
-    # Config-time skip for the stateless flaky check on PRs that change no
-    # stateless tests, so non-test PRs do not schedule the runner and restore
-    # the binary only for the job to self-skip inside `functional_tests.py`.
+    enable_job_filtering_by_changes=True,
     workflow_filter_hooks=[should_skip_merge_queue_job],
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",

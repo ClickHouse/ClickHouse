@@ -179,9 +179,9 @@ public:
     {
     }
 
-    std::string getName() const override { return "ReadFromPostgreSQL"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromPostgreSQL"; }
 
-    QueryPlanStepPtr clone() const override
+    [[nodiscard]] QueryPlanStepPtr clone() const override
     {
         return std::make_unique<ReadFromPostgreSQL>(
             requiredSourceColumns(),
@@ -540,7 +540,7 @@ private:
 
         void insert(const Row & row) override
         {
-            stream.write_values(row);
+            stream.write_row(row);
         }
     };
 
@@ -762,7 +762,9 @@ postgres::ConnectionSSLParams StoragePostgreSQL::extractSSLParamsFromArguments(A
     return ssl_params;
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table)
+StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(
+    const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_,
+    const RemoteDescriptionCaller & caller, bool require_table)
 {
     StoragePostgreSQL::Configuration configuration;
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
@@ -795,7 +797,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     {
         size_t max_addresses = context_->getSettingsRef()[Setting::glob_expansion_max_elements];
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(
-            configuration.addresses_expr, max_addresses, 5432);
+            configuration.addresses_expr, max_addresses, 5432, caller);
     }
 
     configuration.username = named_collection.getAny<String>({"username", "user"});
@@ -821,13 +823,14 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
 
 StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(
     ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings,
-    const StorageID * table_id, const ASTSetQuery * settings)
+    const RemoteDescriptionCaller & caller, const StorageID * table_id, const ASTSetQuery * settings)
 {
     StoragePostgreSQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(
             engine_args, context, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr, table_id, settings))
     {
-        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context, /*require_table=*/ true);
+        configuration = StoragePostgreSQL::processNamedCollectionResult(
+            *named_collection, storage_settings, context, caller, /*require_table=*/ true);
     }
     else
     {
@@ -867,7 +870,8 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(
         configuration.addresses_expr = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
         size_t max_addresses = context->getSettingsRef()[Setting::glob_expansion_max_elements];
 
-        configuration.addresses = parseRemoteDescriptionForExternalDatabase(configuration.addresses_expr, max_addresses, 5432);
+        configuration.addresses = parseRemoteDescriptionForExternalDatabase(
+            configuration.addresses_expr, max_addresses, 5432, caller);
         if (configuration.addresses.size() == 1)
         {
             configuration.host = configuration.addresses[0].first;
@@ -898,17 +902,22 @@ void registerStoragePostgreSQL(StorageFactory & factory)
 {
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
-        /// Seed the connection-pool parameters from the query-level `postgresql_*` settings (preserving
-        /// the historical behaviour); a named collection may override them, and an explicit SETTINGS
-        /// clause on the table takes the final precedence.
+        /// Precedence: the SETTINGS clause, the named collection, the session; a new table stores the values from the session
+        /// that differ from the server's.
         PostgreSQLSettings postgresql_settings;
-        postgresql_settings.loadFromQueryContext(*args.getLocalContext());
 
         auto configuration = StoragePostgreSQL::getConfiguration(
-            args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id, args.storage_def->settings);
+            args.engine_args, args.getLocalContext(), &postgresql_settings,
+            globCaller("Table engine 'PostgreSQL'"), &args.table_id, args.storage_def->settings);
 
-        if (args.storage_def)
-            postgresql_settings.loadFromQuery(*args.storage_def);
+        postgresql_settings.loadFromQuery(*args.storage_def);
+
+        /// Unlike `isFreshTableDefinition`, also on the other replicas of a `Replicated` database, which run the original query
+        /// with the initiator's settings. Not on `RESTORE`, which rejects a definition that differs from the backup.
+        bool is_new_definition = !isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax
+            && !args.getLocalContext()->isRecoveryFromStoredMetadata() && !args.is_restore_from_backup;
+        postgresql_settings.loadFromQueryContext(
+            *args.getLocalContext(), args.storage_def->settings, is_new_definition ? args.storage_def : nullptr);
 
         if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
@@ -1013,6 +1022,8 @@ TLS/SSL parameters are forwarded to `libpq` and can be set as named collection k
 - `sslrootcert` (CA certificate, or the special value `system`), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files. They can only be specified in a named collection defined in the server configuration file and cannot be overridden in a query: the server opens the files with its own privileges.
 - `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead of a path. They can be specified anywhere — in a query, in a named collection created with SQL, or as an override of a named collection — and are masked in logs and `SHOW` queries like a password.
 
+Unless both a client certificate (`sslcert` or `sslcert_pem`) and a client key (`sslkey` or `sslkey_pem`) are configured, ClickHouse sends `sslcertmode=disable`, so `libpq` does not authenticate with the service account's ambient default certificate or key (`~/.postgresql/postgresql.{crt,key}`): a connection whose endpoint and user are chosen in SQL must not reuse the service account's default credential.
+
 For example, to require an encrypted connection and verify the server certificate:
 
 ```xml
@@ -1040,7 +1051,7 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 
 ## Settings {#settings}
 
-The connection pool used by the `PostgreSQL` table engine (and the [`postgresql`](/reference/functions/table-functions/postgresql) table function) can be configured per table with a `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting.
+The connection pool used by the `PostgreSQL` table engine (and the [`postgresql`](/reference/functions/table-functions/postgresql) table function) can be configured per table with a `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting. A new table, except one restored from a backup, adds the values it takes this way that differ from the server's values, e.g. set with `SET` or a settings profile of the user, to its `SETTINGS`, so that it keeps them after a server restart. A value equal to the server's is not stored, so such a table follows the server's value if it changes later. A setting that a named collection sets is not taken from the query-level setting, so nothing is stored for it. A stored value is a part of the `SETTINGS` of the table, so it overrides the same key added to the named collection later, and if that key is `NOT OVERRIDABLE`, the table fails to load with `Override not allowed`. In the `SETTINGS` clause of a table, a setting reset with `name = DEFAULT` is not taken from the query-level setting.
 
 ### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
 

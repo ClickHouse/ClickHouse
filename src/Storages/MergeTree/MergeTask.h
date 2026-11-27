@@ -4,6 +4,7 @@
 #include <memory>
 
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/filesystemHelpers.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Formats/MarkInCompressedFile.h>
@@ -23,6 +24,7 @@
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergeCheckpoint.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
@@ -152,10 +154,7 @@ public:
             (*stages.begin())->setRuntimeContext(std::move(prepare_stage_ctx), global_ctx);
         }
 
-    std::future<MergeTreeData::MutableDataPartPtr> getFuture()
-    {
-        return global_ctx->promise.get_future();
-    }
+    MergeTreeData::MutableDataPartPtr takeResultPart() { return std::exchange(global_ctx->result_part, nullptr); }
 
     MergeTreeData::MutableDataPartPtr getUnfinishedPart()
     {
@@ -164,14 +163,14 @@ public:
         return nullptr;
     }
 
-    PlainMarksByName releaseCachedMarks() const
+    [[nodiscard]] PlainMarksByName releaseCachedMarks() const
     {
         PlainMarksByName res;
         std::swap(global_ctx->cached_marks, res);
         return res;
     }
 
-    PlainMarksByName releaseCachedIndexMarks() const
+    [[nodiscard]] PlainMarksByName releaseCachedIndexMarks() const
     {
         PlainMarksByName res;
         std::swap(global_ctx->cached_index_marks, res);
@@ -184,6 +183,8 @@ public:
     }
 
     bool execute();
+
+    void setMergeCheckpoint(MergeCheckpointPtr checkpoint) { global_ctx->checkpoint = std::move(checkpoint); }
 
     void cancel() noexcept;
 
@@ -198,7 +199,7 @@ private:
     {
         virtual void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) = 0;
         virtual StageRuntimeContextPtr getContextForNextStage() = 0;
-        virtual ProfileEvents::Event getTotalTimeProfileEvent() const = 0;
+        [[nodiscard]] virtual ProfileEvents::Event getTotalTimeProfileEvent() const = 0;
         virtual bool execute() = 0;
         virtual void cancel() noexcept = 0;
         virtual ~IStage() = default;
@@ -235,7 +236,6 @@ private:
         Names deduplicate_by_columns{};
         bool cleanup{false};
         bool vertical_lightweight_delete{false};
-        bool vertical_ttl_delete{false};
         /// When true, all source parts are fully expired (MergeType::TTLDrop).
         /// The data pipeline is skipped entirely — no readers are opened,
         /// no buffers allocated, and the result is an empty part.
@@ -247,6 +247,8 @@ private:
         NamesAndTypesList gathering_columns{};
         NameSet merge_required_columns{};
         NamesAndTypesList merging_columns{};
+        /// Subcolumns used by the merging algorithm, read in addition to `merging_columns`.
+        Names merging_subcolumns{};
         NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
         NamesAndTypesList virtual_columns{};
@@ -289,7 +291,8 @@ private:
 
         std::map<String, UInt64> projections_merge_time;
 
-        std::promise<MergeTreeData::MutableDataPartPtr> promise{};
+        /// The finished part until the owner takes it. `cancel` rolls back a part that is still here.
+        MergeTreeData::MutableDataPartPtr result_part;
 
         WrittenOffsetSubstreams written_offset_substreams{};
         /// One per merge, i.e. per part directory: shared by the horizontal writer, every vertical
@@ -297,6 +300,10 @@ private:
         StreamBaseManifestPtr stream_base_manifest{std::make_shared<StreamBaseManifest>()};
         PlainMarksByName cached_marks;
         PlainMarksByName cached_index_marks;
+
+        MergeCheckpointPtr checkpoint;
+        MergeCheckpointIdentity checkpoint_identity;
+        std::optional<size_t> resumed_columns;
 
         MergeTreeTransactionPtr txn;
         String suffix;
@@ -308,6 +315,9 @@ private:
 
         /// Current merge may or may not reduce number of rows. It's not known until the horizontal stage is finished.
         bool merge_may_reduce_rows{false};
+
+        /// Text indexes are rebuilt for the resulting part instead of being merged.
+        bool rebuild_text_indexes{false};
 
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;
@@ -324,6 +334,10 @@ private:
         bool need_remove_expired_values{false};
         bool force_ttl{false};
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
+        /// Set if `finalizeRowsSources` rewrites `rows_sources`: the merging algorithm writes here instead of `rows_sources_temporary_file`.
+        std::shared_ptr<RowsSourcesTemporaryFile> merged_rows_sources;
+        /// For a vertical merge with TTL: which of the rows the merging algorithm emits `TTLTransform` drops.
+        std::shared_ptr<TemporaryDataBuffer> ttl_skip_flags;
         std::optional<ColumnSizeEstimator> column_sizes{};
 
         /// For projections to rebuild
@@ -333,9 +347,9 @@ private:
 
         /// Pre-calculate squash: accumulates raw source blocks before calling calculate().
         /// Shared across all projections since they all consume the same source blocks.
-        /// Only the columns required by at least one projection (plus _row_exists when
-        /// present) are squashed, so wide source columns no projection reads are not
-        /// retained in memory until the squash boundary.
+        /// Only the columns required by at least one projection are squashed, so wide
+        /// source columns no projection reads are not retained in memory until the
+        /// squash boundary.
         std::optional<Squashing> pre_calculate_squash;
         NameSet pre_calculate_required_columns;
         UInt64 pre_calculate_starting_offset{0};
@@ -350,7 +364,7 @@ private:
         size_t initial_reservation{0};
         bool read_with_direct_io{false};
 
-        std::function<bool()> is_cancelled{};
+        std::function<bool()> merge_cancelled{};
 
         /// Local variables for this stage
         size_t sum_input_rows_upper_bound{0};
@@ -373,17 +387,22 @@ private:
         bool execute() override;
         void cancel() noexcept override;
 
-        bool prepare() const;
-        bool executeImpl() const;
+        [[nodiscard]] bool prepare() const;
+        [[nodiscard]] bool executeImpl() const;
         void finalize() const;
+        /// Checks the `rows_sources` of a vertical merge; if the merging algorithm wrote `merged_rows_sources`, rewrites it into the final one.
+        [[nodiscard]] bool finalizeRowsSources() const;
+        /// Each part's `_row_exists` without the mask, for `rewriteRowsSources`; empty unless `vertical_lightweight_delete`.
+        [[nodiscard]] std::vector<QueryPipeline> createPipelinesForReadingRowExists() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
-        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)()const, 3>;
+        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)()const, 4>;
 
         const ExecuteAndFinalizeHorizontalPartSubtasks subtasks
         {
             &ExecuteAndFinalizeHorizontalPart::prepare,
             &ExecuteAndFinalizeHorizontalPart::executeImpl,
+            &ExecuteAndFinalizeHorizontalPart::finalizeRowsSources,
             &ExecuteAndFinalizeHorizontalPart::executeMergeProjections
         };
 
@@ -394,9 +413,21 @@ private:
         void calculateProjectionForBlock(size_t projection_idx, const Block & block, UInt64 starting_offset) const;
         void finalizeProjections() const;
         void constructTaskForProjectionPartsMerge() const;
-        bool executeMergeProjections() const;
+        [[nodiscard]] bool executeMergeProjections() const;
 
-        MergeAlgorithm chooseMergeAlgorithm() const;
+        [[nodiscard]] MergeAlgorithm chooseMergeAlgorithm() const;
+        [[nodiscard]] bool canCheckpointVerticalMerge() const;
+        /// Whether `TTLTransform` writes `ttl_skip_flags` for the rewrite of `rows_sources`.
+        [[nodiscard]] bool recordsTTLSkipFlags() const;
+
+        struct SavedCheckpointLoadResult
+        {
+            MergeCheckpointState state;
+            MergedBlockOutputStream::FinishedColumns finished_columns;
+        };
+        /// Read and check the saved checkpoint, or discard it and throw.
+        [[nodiscard]] SavedCheckpointLoadResult readSavedCheckpoint() const;
+
         void createMergedStream() const;
         void extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const;
 
@@ -407,7 +438,7 @@ private:
         }
 
         StageRuntimeContextPtr getContextForNextStage() override;
-        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeHorizontalStageTotalMilliseconds; }
+        [[nodiscard]] ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeHorizontalStageTotalMilliseconds; }
 
         ExecuteAndFinalizeHorizontalPartRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
@@ -455,6 +486,7 @@ private:
         std::unique_ptr<PullingPipelineExecutor> executor;
         BuildStatisticsTransformMap build_statistics_transforms;
         UInt64 elapsed_execute_ns{0};
+        Stopwatch since_checkpoint;
     };
 
     using VerticalMergeRuntimeContextPtr = std::shared_ptr<VerticalMergeRuntimeContext>;
@@ -470,11 +502,11 @@ private:
             global_ctx = static_pointer_cast<GlobalRuntimeContext>(global);
         }
         StageRuntimeContextPtr getContextForNextStage() override;
-        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeVerticalStageTotalMilliseconds; }
+        [[nodiscard]] ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeVerticalStageTotalMilliseconds; }
 
-        bool prepareVerticalMergeForAllColumns() const;
-        bool executeVerticalMergeForAllColumns() const;
-        bool finalizeVerticalMergeForAllColumns() const;
+        [[nodiscard]] bool prepareVerticalMergeForAllColumns() const;
+        [[nodiscard]] bool executeVerticalMergeForAllColumns() const;
+        [[nodiscard]] bool finalizeVerticalMergeForAllColumns() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
         using VerticalMergeStageSubtasks = std::array<bool(VerticalMergeStage::*)()const, 3>;
@@ -489,10 +521,11 @@ private:
         VerticalMergeStageSubtasks::const_iterator subtasks_iterator = subtasks.begin();
 
         void prepareVerticalMergeForOneColumn() const;
-        bool executeVerticalMergeForOneColumn() const;
+        [[nodiscard]] bool executeVerticalMergeForOneColumn() const;
         void finalizeVerticalMergeForOneColumn() const;
+        void saveCheckpoint() const;
 
-        VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
+        [[nodiscard]] VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
 
         VerticalMergeRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
@@ -519,11 +552,11 @@ private:
         }
 
         StageRuntimeContextPtr getContextForNextStage() override;
-        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeTextIndexStageTotalMilliseconds; }
+        [[nodiscard]] ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeTextIndexStageTotalMilliseconds; }
 
-        bool prepare() const;
-        bool execute() const;
-        bool finalize() const;
+        [[nodiscard]] bool prepare() const;
+        [[nodiscard]] bool execute() const;
+        [[nodiscard]] bool finalize() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
         using MergeTextIndexStageSubtasks = std::array<bool(MergeTextIndexStage::*)()const, 3>;
@@ -539,7 +572,7 @@ private:
         MergeTextIndexRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
 
-        std::vector<TextIndexSegment> getTextIndexSegments(const String & part_name, const String & index_name, size_t part_idx) const;
+        [[nodiscard]] std::vector<TextIndexSegment> getTextIndexSegments(const String & part_name, const String & index_name, size_t part_idx) const;
     };
 
     /// By default this context is uninitialized, but some variables has to be set after construction,
@@ -578,11 +611,11 @@ private:
         }
 
         StageRuntimeContextPtr getContextForNextStage() override;
-        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeProjectionStageTotalMilliseconds; }
+        [[nodiscard]] ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeProjectionStageTotalMilliseconds; }
 
-        bool prepareProjections() const;
-        bool executeProjections() const;
-        bool finalizeProjectionsAndWholeMerge() const;
+        [[nodiscard]] bool prepareProjections() const;
+        [[nodiscard]] bool executeProjections() const;
+        [[nodiscard]] bool finalizeProjectionsAndWholeMerge() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
         using MergeProjectionsStageSubtasks = std::array<bool(MergeProjectionsStage::*)()const, 3>;
@@ -621,18 +654,36 @@ private:
     static bool hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part);
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
     static bool canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx);
-    static bool isVerticalTTLDelete(const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx);
+    static MergeCheckpointIdentity makeMergeCheckpointIdentity(const GlobalRuntimeContext & global_ctx);
+    /// Copies `rows_sources` from `in` to `out`, skipping the rows dropped outside the merging algorithm; returns the kept row count.
+    static size_t rewriteRowsSources(
+        ReadBuffer & in,
+        WriteBuffer & out,
+        std::vector<QueryPipeline> row_exists_per_part,
+        std::unique_ptr<ReadBuffer> ttl_skip_flags,
+        const GlobalRuntimeContext & global_ctx);
     static void addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx);
     static void addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
     static void mergeBuiltStatistics(BuildStatisticsTransformMap && build_statistics_transforms, const GlobalRuntimeContextPtr & global_ctx);
     static BuildStatisticsTransformPtr addBuildStatisticsStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
 };
 
+/// Rolls back the uncommitted transaction of `storage`, removing the blobs it has uploaded; logs a failure.
+void tryUndoTransaction(IDataPartStorage & storage) noexcept;
+
 /// FIXME
 [[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeHere(MergeTaskPtr task)
 {
-    while (task->execute()) {}
-    return task->getFuture().get();
+    try
+    {
+        while (task->execute()) {}
+    }
+    catch (...)
+    {
+        task->cancel();
+        throw;
+    }
+    return task->takeResultPart();
 }
 
 }

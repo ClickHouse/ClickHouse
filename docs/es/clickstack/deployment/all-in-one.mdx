@@ -7,33 +7,30 @@ keywords: ['ClickStack Open Source ', 'observabilidad', 'all-in-one', 'implement
 ---
 
 import JSONSupport from '/snippets/es/_json_support.mdx';
-import { Image } from "/snippets/es/components/Image.jsx";
 
-Esta imagen de Docker integral incluye todos los componentes open source de ClickStack:
+Esta imagen de Docker integral incluye todos los componentes de ClickStack Open Source:
 
 * **ClickHouse**
-* **HyperDX**
-* **colector de OpenTelemetry (OTel)** (expone OTLP en los puertos `4317` y `4318`)
+* **UI de ClickStack**
+* **Colector de OpenTelemetry (OTel)** (expone OTLP en los puertos `4317` y `4318`)
 * **MongoDB** (para el estado persistente de la aplicación)
 
 Esta opción incluye autenticación, lo que permite conservar dashboards, alertas y búsquedas guardadas entre sesiones y usuarios.
 
 <div id="suitable-for">
-  ### Ideal para
+  ### Ideal para {#suitable-for}
 </div>
 
 * Demos
 * Pruebas locales de toda la pila
 
-<div id="deployment-steps">
-  ## Pasos de despliegue
-</div>
+## Pasos de despliegue {#deployment-steps}
 
 <br />
 
 <Steps>
   <Step title="Desplegar con Docker" id="deploy-with-docker">
-    Esto iniciará un OpenTelemetry collector (en los puertos 4317 y 4318) y la UI de HyperDX (en el puerto 8080).
+    Esto iniciará un Colector de OpenTelemetry (en los puertos 4317 y 4318) y la UI de ClickStack (en el puerto 8080).
 
     ```shell
     docker run -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
@@ -46,14 +43,18 @@ Esta opción incluye autenticación, lo que permite conservar dashboards, alerta
     </Info>
   </Step>
 
-  <Step title="Acceder a la UI de HyperDX" id="navigate-to-hyperdx-ui">
-    Visite [http://localhost:8080](http://localhost:8080) para acceder a la UI de HyperDX.
+  <Step title="Acceder a la UI de ClickStack" id="navigate-to-hyperdx-ui">
+    Visite [http://localhost:8080](http://localhost:8080) para acceder a la UI de ClickStack.
 
     Cree un usuario e introduzca un nombre de usuario y una contraseña que cumplan los requisitos.
 
     Al hacer clic en `Create`, se crearán fuentes de datos para la instancia integrada de ClickHouse.
 
-    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="UI de HyperDX" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![UI de ClickStack](/images/use-cases/observability/hyperdx-login.webp)
+      </Frame>
+    </div>
 
     Para ver un ejemplo de uso de una instancia alternativa de ClickHouse, consulte [&quot;Uso con ClickHouse Cloud&quot;](#using-clickhouse-cloud).
   </Step>
@@ -64,7 +65,7 @@ Esta opción incluye autenticación, lo que permite conservar dashboards, alerta
 </Steps>
 
 <div id="persisting-data-and-settings">
-  ## Persistencia de datos y configuración
+  ## Persistencia de datos y configuración {#persisting-data-and-settings}
 </div>
 
 Para conservar los datos y la configuración entre reinicios del contenedor, puede modificar el comando de Docker anterior para montar las rutas `/data/db`, `/var/lib/clickhouse` y `/var/log/clickhouse-server`. Por ejemplo:
@@ -84,7 +85,7 @@ docker run \
 ```
 
 <div id="deploying-to-production">
-  ## Despliegue en producción
+  ## Despliegue en producción {#deploying-to-production}
 </div>
 
 Esta opción no debería desplegarse en producción por las siguientes razones:
@@ -92,11 +93,9 @@ Esta opción no debería desplegarse en producción por las siguientes razones:
 * **Almacenamiento no persistente:** Todos los datos se almacenan mediante el sistema de archivos `overlay` nativo de Docker. Esta configuración no ofrece un buen rendimiento a escala, y los datos se perderán si el contenedor se elimina o se reinicia, a menos que los usuarios [monten las rutas de archivo necesarias](#persisting-data-and-settings).
 * **Falta de aislamiento entre componentes:** Todos los componentes se ejecutan dentro de un único contenedor de Docker. Esto impide el escalado y la monitorización independientes, y aplica cualquier límite de `cgroup` de forma global a todos los procesos. Como resultado, los componentes pueden competir por la CPU y la memoria.
 
-<div id="customizing-ports-deploy">
-  ## Personalizar puertos
-</div>
+## Personalizar puertos {#customizing-ports-deploy}
 
-Si necesitas personalizar los puertos de la aplicación (8080) o de la API (8000) en los que se ejecuta HyperDX Local, tendrás que modificar el comando `docker run` para redirigir los puertos correspondientes y configurar algunas variables de entorno.
+Si necesitas personalizar los puertos de la aplicación (8080) o de la API (8000) en los que se ejecuta la UI de ClickStack Local, tendrás que modificar el comando `docker run` para redirigir los puertos correspondientes y configurar algunas variables de entorno.
 
 Los puertos de OpenTelemetry se pueden personalizar simplemente modificando las opciones de redirección de puertos. Por ejemplo, sustituyendo `-p 4318:4318` por `-p 4999:4318` para cambiar el puerto HTTP de OpenTelemetry a 4999.
 
@@ -104,9 +103,7 @@ Los puertos de OpenTelemetry se pueden personalizar simplemente modificando las 
 docker run -p 8080:8080 -p 4317:4317 -p 4999:4318 clickhouse/clickstack-all-in-one:latest
 ```
 
-<div id="using-clickhouse-cloud">
-  ## Uso con ClickHouse Cloud
-</div>
+## Uso con ClickHouse Cloud {#using-clickhouse-cloud}
 
 Esta distribución puede utilizarse con ClickHouse Cloud. Aunque la instancia local de ClickHouse se seguirá desplegando (y se ignorará), el OTel collector puede configurarse para usar una instancia de ClickHouse Cloud estableciendo las variables de entorno `CLICKHOUSE_ENDPOINT`, `CLICKHOUSE_USER` y `CLICKHOUSE_PASSWORD`.
 
@@ -122,10 +119,10 @@ docker run -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=defa
 
 El `CLICKHOUSE_ENDPOINT` debe ser el endpoint HTTPS de ClickHouse Cloud, incluido el puerto `8443`, por ejemplo, `https://mxl4k3ul6a.us-east-2.aws.clickhouse.com:8443`
 
-Una vez conectado a la UI de HyperDX, vaya a [`Configuración del equipo`](http://localhost:8080/team) y cree una conexión a su servicio de ClickHouse Cloud; después, cree las sources necesarias.
+Una vez conectado a la UI de ClickStack, vaya a [`Configuración del equipo`](http://localhost:8080/team) y cree una conexión a su servicio de ClickHouse Cloud; después, cree las sources necesarias.
 
 <div id="configuring-collector">
-  ## Configuración del OpenTelemetry collector
+  ## Configuración del OpenTelemetry collector {#configuring-collector}
 </div>
 
 La configuración del OTel collector puede modificarse si es necesario; consulta [&quot;Modificación de la configuración&quot;](/es/clickstack/ingesting-data/collector#modifying-otel-collector-configuration).

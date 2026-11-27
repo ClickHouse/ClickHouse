@@ -3,17 +3,20 @@ sidebarTitle: 'Arquitectura'
 slug: /cloud/reference/architecture
 title: 'Arquitectura de ClickHouse Cloud'
 description: 'Esta página describe la arquitectura de ClickHouse Cloud'
-keywords: ['ClickHouse Cloud', 'arquitectura en la nube', 'separación del almacenamiento y el cómputo']
-doc_type: 'referencia'
+keywords: ['ClickHouse Cloud', 'arquitectura en la nube', 'separación del almacenamiento y la capacidad de cómputo']
+doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
 import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-<Image img="/images/cloud/reference/architecture.webp" size="lg" alt="Arquitectura de Cloud" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Arquitectura de Cloud](/images/cloud/reference/architecture.webp)
+  </Frame>
+</div>
 
 <div id="storage-backed-by-object-store">
-  ## Almacenamiento basado en almacenamiento de objetos
+  ## Almacenamiento basado en almacenamiento de objetos {#storage-backed-by-object-store}
 </div>
 
 * Almacenamiento prácticamente ilimitado
@@ -21,7 +24,7 @@ import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge
 * Coste significativamente menor para almacenar datos, especialmente los que se consultan con menos frecuencia
 
 <div id="compute">
-  ## Cómputo
+  ## Cómputo {#compute}
 </div>
 
 * Escalado e inactividad automáticos: no es necesario dimensionarlo de antemano ni sobredimensionarlo para los picos de uso
@@ -29,40 +32,40 @@ import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge
 * Seguro y de alta disponibilidad de forma predeterminada
 
 <div id="administration">
-  ## Administración
+  ## Administración {#administration}
 </div>
 
 * Nos encargamos de la configuración, la monitorización, las copias de seguridad y la facturación.
 * Los controles de costes están habilitados de forma predeterminada y puede ajustarlos desde la consola de Cloud.
 
 <div id="service-isolation">
-  ## Aislamiento del servicio
+  ## Aislamiento del servicio {#service-isolation}
 </div>
 
 <div id="network-isolation">
-  ### Aislamiento de red
+  ### Aislamiento de red {#network-isolation}
 </div>
 
 Todos los servicios están aislados a nivel de red.
 
 <div id="compute-isolation">
-  ### Aislamiento del cómputo
+  ### Aislamiento del cómputo {#compute-isolation}
 </div>
 
 Todos los servicios se implementan en pods separados, dentro de sus respectivos espacios de nombres de Kubernetes, con aislamiento a nivel de red.
 
 <div id="storage-isolation">
-  ### Aislamiento del almacenamiento
+  ### Aislamiento del almacenamiento {#storage-isolation}
 </div>
 
-Todos los servicios usan una subruta independiente dentro de un bucket compartido (AWS, GCP) o de un contenedor de almacenamiento (Azure).
+En AWS, cada instancia usa un prefijo independiente dentro de un bucket compartido.
 
 En AWS, el acceso al almacenamiento se controla mediante AWS IAM, y cada IAM role es único para cada servicio. Para el servicio Enterprise, se puede habilitar [CMEK](/es/products/cloud/guides/security/cmek) para proporcionar un aislamiento avanzado de los datos en reposo. Por el momento, CMEK solo es compatible con servicios de AWS.
 
-En GCP y Azure, los servicios cuentan con aislamiento en el almacenamiento de objetos (todos los servicios tienen sus propios buckets o contenedores de almacenamiento).
+En GCP, cada instancia usa un bucket independiente. En Azure, cada instancia usa un contenedor de almacenamiento independiente.
 
 <div id="compute-compute-separation">
-  ## Cómputo-cómputo separation
+  ## Cómputo-cómputo separation {#compute-compute-separation}
 </div>
 
 [Cómputo-cómputo separation](/es/products/cloud/features/infrastructure/warehouses) te permite crear varios grupos de nodos de cómputo, cada uno con su propia URL de servicio, que utilizan el mismo almacenamiento de objetos compartido. Esto permite aislar el cómputo para distintos casos de uso, como separar las lecturas de las escrituras, aunque compartan los mismos datos. También permite un uso más eficiente de los recursos al escalar de forma independiente los grupos de cómputo según sea necesario.

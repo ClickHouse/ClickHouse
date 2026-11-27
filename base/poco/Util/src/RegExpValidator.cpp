@@ -40,7 +40,7 @@ RegExpValidator::~RegExpValidator()
 void RegExpValidator::validate(const Option& option, const std::string& value)
 {
 	if (!RegularExpression::match(value, _regexp, RegularExpression::RE_ANCHORED | RegularExpression::RE_UTF8))
-		throw InvalidArgumentException(format("argument for %s does not match regular expression %s", option.fullName(), _regexp));
+		throw InvalidArgumentException(Poco::format("argument for %s does not match regular expression %s", option.fullName(), _regexp));
 }
 
 

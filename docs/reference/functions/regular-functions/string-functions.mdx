@@ -1396,7 +1396,7 @@ Extracts text content from HTML or XHTML.
 
 This function removes HTML tags, comments, and script/style elements, leaving only the text content. It handles:
 - Removal of all HTML/XML tags
-- Removal of comments (`{/* */}`)
+- Removal of comments (`<!-- -->`)
 - Removal of script and style elements with their content
 - Processing of CDATA sections (copied verbatim)
 - Proper whitespace handling and normalization
@@ -2062,12 +2062,16 @@ münchen
 
 Introduced in: v26.3.0
 
-The function is used for natural sorting.
+Returns a key for natural sorting: strings ordered by their keys are in natural order, in which a sequence of digits is compared as a number, so `a2` is before `a10`.
+
+The optional argument `mode` selects how the characters that are not digits are compared:
+- `0` (default): the characters are compared one by one with the characters or the number at the same position of the other string. So `host-1` is before `host2`, because `-` is compared with the number `2`.
+- `1`: a sequence of non-digit characters is compared as a whole with the sequence at the same position of the other string, and a number is compared only if the sequences before it are equal. So `host2` is before `host-1`, because `host` is compared with `host-`. This is the order of the PromQL function `sort_by_label`.
 
 **Syntax**
 
 ```sql
-naturalSortKey(s)
+naturalSortKey(s[, mode])
 ```
 
 **Aliases**: `NATURAL_SORT_KEY`
@@ -2075,6 +2079,7 @@ naturalSortKey(s)
 **Arguments**
 
 - `s` — A string to convert to natural sort key. [`String`](/reference/data-types/string)
+- `mode` — Optional. How non-digit characters are compared: `0` (default) or `1`. [`const UInt*`](/reference/data-types/int-uint)
 
 **Returned value**
 
@@ -2096,6 +2101,20 @@ SELECT s FROM t ORDER BY naturalSortKey(s);
 │ a1  │
 │ a02 │
 └─────┘
+```
+
+**The two modes**
+
+```sql title=Query
+SELECT
+    arraySort(s -> naturalSortKey(s), ['host-1', 'host10', 'host2']) AS default_mode,
+    arraySort(s -> naturalSortKey(s, 1), ['host-1', 'host10', 'host2']) AS mode_1;
+```
+
+```response title=Response
+┌─default_mode────────────────┬─mode_1──────────────────────┐
+│ ['host-1','host2','host10'] │ ['host2','host10','host-1'] │
+└─────────────────────────────┴─────────────────────────────┘
 ```
 
 ## normalizeUTF8NFC {#normalizeUTF8NFC}
@@ -2781,7 +2800,7 @@ space(n)
 
 **Returned value**
 
-Returns astring containing a space repeated `n` times. If `n <= 0`, the function returns the empty string. [`String`](/reference/data-types/string)
+Returns a string containing a space repeated `n` times. If `n <= 0`, the function returns the empty string. [`String`](/reference/data-types/string)
 
 **Examples**
 

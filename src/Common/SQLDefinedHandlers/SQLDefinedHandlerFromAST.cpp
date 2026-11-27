@@ -9,6 +9,10 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTParallelWithQuery.h>
+#include <Parsers/ASTSQLSecurity.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/QueryParameterVisitor.h>
 
@@ -302,6 +306,44 @@ bool isMutatingHTTPMethod(const String & method)
     return method == "POST" || method == "PUT" || method == "DELETE";
 }
 
+
+void collectExecutedStatementsMutable(ASTPtr & query, std::vector<ASTPtr *> & result)
+{
+    if (query->as<ASTParallelWithQuery>())
+    {
+        for (auto & child : query->children)
+            collectExecutedStatementsMutable(child, result);
+        return;
+    }
+
+    if (auto * execute_as = query->as<ASTExecuteAsQuery>(); execute_as && execute_as->subquery)
+    {
+        result.push_back(&query);
+        collectExecutedStatementsMutable(execute_as->subquery, result);
+        return;
+    }
+
+    result.push_back(&query);
+}
+
+}
+
+std::vector<ASTPtr *> getExecutedStatements(ASTPtr & query)
+{
+    std::vector<ASTPtr *> result;
+    collectExecutedStatementsMutable(query, result);
+    return result;
+}
+
+bool isSelectShapedStatement(const IAST & statement)
+{
+    return statement.as<ASTSelectWithUnionQuery>() || statement.as<ASTSelectQuery>() || statement.as<ASTSelectIntersectExceptQuery>();
+}
+
+bool isInsertIntoTableStatement(const IAST & statement)
+{
+    const auto * insert = statement.as<ASTInsertQuery>();
+    return insert && insert->getQueryKind() == IAST::QueryKind::Insert && !insert->table_function && insert->table;
 }
 
 SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
@@ -343,6 +385,14 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
     handler->url = create.url;
     handler->type = type;
 
+    if (create.sql_security)
+    {
+        const auto & sql_security = create.sql_security->as<const ASTSQLSecurity &>();
+        handler->sql_security_type = sql_security.type;
+        if (sql_security.type == SQLSecurityType::DEFINER && sql_security.definer)
+            handler->definer = sql_security.definer->toString();
+    }
+
     if (handler->url.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Handler `{}` URL cannot be empty", create.handler_name);
 
@@ -364,7 +414,8 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
     /// A handler whose query modifies data must accept at least one mutating HTTP method. Otherwise, the HTTP
     /// execution path enables `readonly` for every allowed (safe) method, and the handler could never run its
     /// query - so reject it here with a clear error instead of silently creating a broken handler.
-    if (queryRequiresMutatingMethod(*create.query)
+    handler->requires_mutating_method = queryRequiresMutatingMethod(*create.query);
+    if (handler->requires_mutating_method
         && std::none_of(handler->methods.begin(), handler->methods.end(), isMutatingHTTPMethod))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -400,6 +451,15 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
     /// Collect them from the already-parsed AST rather than re-parsing the formatted string: re-parsing would
     /// apply the default parser depth/backtrack limits and could reject a query the user's parser settings accepted.
     handler->receive_params = analyzeReceiveQueryParams(create.query);
+    handler->uses_request_body_param = handler->receive_params.contains("_request_body");
+
+    /// A named capture group `_request_body` of the `URL REGEXP` binds the parameter from the URL (see
+    /// `PredefinedQueryHandler::customizeContext`), so the handler never reads it from the request body. Drop it
+    /// from the parameters bound by the handler layer, so that the body-consumption contract below (the methods
+    /// check and `411 Length Required`) matches the execution, and the body is never read for it. The handler still
+    /// rejects `_request_body` passed in the URL query string (see `uses_request_body_param`).
+    if (handler->url_regex && handler->url_regex->NamedCapturingGroups().contains("_request_body"))
+        handler->receive_params.erase("_request_body");
 
     /// A statement that takes the request body as its data must be the handler's own query: neither `EXECUTE AS`
     /// nor `PARALLEL WITH` forwards the request tail to the statements it runs, so a wrapped one would silently
@@ -432,7 +492,8 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
 
     /// An `INSERT` handler takes the request body as its data, and a query using `_request_body` reads the body
     /// explicitly. Only these handlers need `Content-Length` on a non-chunked request (see `SQLDefinedHandler`).
-    handler->consumes_request_body = queryConsumesRequestBody(*create.query)
+    handler->feeds_request_body_to_query = queryConsumesRequestBody(*create.query);
+    handler->consumes_request_body = handler->feeds_request_body_to_query
         || handler->receive_params.contains("_request_body");
 
     /// A handler whose query reads the HTTP request body can never receive one over a safe method:
@@ -489,12 +550,16 @@ void mergeAlterIntoCreateHandler(ASTCreateHandlerQuery & create, const ASTCreate
         create.handler_type = alter.handler_type;
 
     if (alter.query)
-    {
-        /// Replace the query child. The query is the only child of ASTCreateHandlerQuery.
-        create.children.clear();
         create.query = alter.query->clone();
+
+    if (alter.sql_security)
+        create.sql_security = alter.sql_security->clone();
+
+    create.children.clear();
+    if (create.query)
         create.children.push_back(create.query);
-    }
+    if (create.sql_security)
+        create.children.push_back(create.sql_security);
 }
 
 }

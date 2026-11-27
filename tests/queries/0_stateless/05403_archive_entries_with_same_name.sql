@@ -38,8 +38,7 @@ SELECT 'file skip union', count(), sum(x), sum(y) FROM file(currentDatabase() ||
 
 SELECT 's3Cluster lines', _size, count(), arraySort(groupArray(line)) FROM s3Cluster('test_cluster_two_shards', 'http://localhost:11111/test/05403_' || currentDatabase() || '_dup.zip :: *', 'test', 'testtest', 'LineAsString') GROUP BY _size ORDER BY _size SETTINGS cluster_function_process_archive_on_multiple_nodes = 1;
 SELECT 's3Cluster parquet', _size, count(), sum(x), sum(y) FROM s3Cluster('test_cluster_two_shards', 'http://localhost:11111/test/05403_' || currentDatabase() || '_dup.tar.gz :: *', 'test', 'testtest', 'Parquet') GROUP BY _size ORDER BY _size SETTINGS cluster_function_process_archive_on_multiple_nodes = 1, schema_inference_mode = 'union';
--- Whole archives can be handed out more than once, so only distinct lines are compared.
-SELECT 's3Cluster whole archive', _size, arraySort(groupUniqArray(line)) FROM s3Cluster('test_cluster_two_shards', 'http://localhost:11111/test/05403_' || currentDatabase() || '_dup.zip :: *', 'test', 'testtest', 'LineAsString') GROUP BY _size ORDER BY _size SETTINGS cluster_function_process_archive_on_multiple_nodes = 0;
+SELECT 's3Cluster whole archive', _size, count(), arraySort(groupArray(line)) FROM s3Cluster('test_shard_localhost', 'http://localhost:11111/test/05403_' || currentDatabase() || '_dup.zip :: *', 'test', 'testtest', 'LineAsString') GROUP BY _size ORDER BY _size SETTINGS cluster_function_process_archive_on_multiple_nodes = 0;
 SYSTEM FLUSH LOGS query_log;
 SELECT 'cache hits', i.label, sum(l.ProfileEvents[i.event]) >= i.entries
 FROM system.query_log AS l
