@@ -18,7 +18,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/LockMemoryExceptionInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 
 #include <Processors/ConcatProcessor.h>
@@ -324,10 +325,13 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     /// The two readings are owned differently. The captured plan goes to the log capture, which the
     /// `Context` holds, because the query log still needs it once the pipeline is gone. The clocks
     /// and analyzers go to the pipeline, which is their only owner, so that they are freed with it.
+    /// Both are made as the server's, so they do not take from the memory the query may use while it runs. The captured
+    /// plan is released as the server's too. The profiler is not: its analyzers hold parts of the query, like its joins.
     if (log_capture)
     {
         /// Profiling is a diagnostic and does not get to fail a query that would otherwise run.
-        MemoryTrackerBlockerInThread block_memory_tracker;
+        ServerOwnedMemoryScope server_owned;
+        LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
 
         try
         {
