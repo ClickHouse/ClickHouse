@@ -1,9 +1,10 @@
 <clickhouse>
     <kafka>
         <producer>
-            <!-- Long enough for the statistics interval (3 s) plus the assertion window
-                 in the blocked-insert tests; short enough to bound their teardown. -->
-            <message_timeout_ms>60000</message_timeout_ms>
+            <!-- The blocked-insert tests need the insert to outlast a Keeper outage detection (the
+                 activation task checks the session once a minute) plus their assertion window.
+                 Dropping the dead destination aborts the insert, so the teardown does not wait. -->
+            <message_timeout_ms>120000</message_timeout_ms>
         </producer>
     </kafka>
 </clickhouse>

@@ -178,6 +178,16 @@ def test_statistics_survive_keeper_outage(kafka_cluster):
                 timeout=120,
                 look_behind_lines=0,
             )
+            # The log above precedes the shutdown of streaming, so wait until its task is deactivated:
+            # from then on only the drain task can serve the events.
+            streaming_tasks = (
+                "SELECT count() FROM system.background_schedule_pool "
+                "WHERE database = 'test' AND table = 'kafka' AND pool = 'message_broker'"
+            )
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline and instance.query(streaming_tasks).strip() != "0":
+                time.sleep(1)
+            assert instance.query(streaming_tasks).strip() == "0", "streaming is still active"
             wait_for_statistics("kafka")
 
         k.kafka_produce(kafka_cluster, topic_name, ["message_2"])
@@ -206,17 +216,18 @@ def test_statistics_survive_blocked_mv_insert(kafka_cluster):
             """
         )
 
+        messages_produced = "SELECT value FROM system.events WHERE event = 'KafkaMessagesProduced'"
+        produced_before = instance.query(messages_produced).strip()
         k.kafka_produce(kafka_cluster, topic_name, ["message_1"])
 
-        # Sync on the read completing (the insert starts blocking immediately after).
-        deadline_read = time.monotonic() + 10
-        while time.monotonic() < deadline_read:
-            if instance.query(
-                "SELECT count() FROM system.kafka_consumers "
-                "WHERE table = 'kafka' AND num_messages_read > 0"
-            ).strip() == "1":
-                break
+        # Wait until the view's insert reaches the dead destination: it blocks there until the message
+        # expires, holding the consumer.
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline and instance.query(messages_produced).strip() == produced_before:
             time.sleep(1)
+        assert instance.query(messages_produced).strip() != produced_before, (
+            "the insert did not reach the dead destination"
+        )
 
         try:
             ts_first = None
@@ -236,8 +247,7 @@ def test_statistics_survive_blocked_mv_insert(kafka_cluster):
                 "statistics events accumulate in the reply queue during a busy-but-not-polling hold"
             )
         finally:
-            # The producer timeout (60 s in the test config) bounds the blocked insert,
-            # so the teardown only waits that long after dropping the dead destination.
+            # Dropping the dead destination aborts the blocked insert.
             instance.query("DROP TABLE IF EXISTS test.dead_dst SYNC", ignore_error=True)
 
 
@@ -258,17 +268,26 @@ def test_statistics_survive_blocked_insert_during_keeper_outage(kafka_cluster):
             """
         )
 
+        messages_produced = "SELECT value FROM system.events WHERE event = 'KafkaMessagesProduced'"
+        streaming_cycle = (
+            "SELECT query_id FROM system.background_schedule_pool "
+            "WHERE database = 'test' AND table = 'kafka' AND pool = 'message_broker' AND executing"
+        )
+        produced_before = instance.query(messages_produced).strip()
         k.kafka_produce(kafka_cluster, topic_name, ["message_1"])
 
-        # Sync on the read completing (the insert starts blocking immediately after).
-        deadline_read = time.monotonic() + 10
-        while time.monotonic() < deadline_read:
-            if instance.query(
-                "SELECT count() FROM system.kafka_consumers "
-                "WHERE table = 'kafka' AND num_messages_read > 0"
-            ).strip() == "1":
+        # The view's insert into the dead destination reaches its producer and then blocks there until
+        # the message expires, keeping the streaming task in one cycle.
+        cycle = ""
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            cycle = instance.query(streaming_cycle).strip()
+            if cycle and instance.query(messages_produced).strip() != produced_before:
                 break
             time.sleep(1)
+        assert cycle and instance.query(messages_produced).strip() != produced_before, (
+            "the insert did not reach the dead destination"
+        )
 
         try:
             with PartitionManager() as pm:
@@ -296,6 +315,15 @@ def test_statistics_survive_blocked_insert_during_keeper_outage(kafka_cluster):
                     f"rdkafka_stat is not served while a blocked insert overlaps a Keeper "
                     f"outage (ts {ts_first} -> {ts_second})"
                 )
+                # Both observations must have happened while the insert still held the streaming task
+                # and, with it, the activation task.
+                assert instance.query(streaming_cycle).strip() == cycle, "the insert was released"
+                activation_running = (
+                    "SELECT count() FROM system.background_schedule_pool "
+                    "WHERE database = 'test' AND table = 'kafka' "
+                    "AND log_name LIKE '%(activating task)' AND executing"
+                )
+                assert instance.query(activation_running).strip() == "1", "the activation task is not stuck"
         finally:
             instance.query("DROP TABLE IF EXISTS test.dead_dst SYNC", ignore_error=True)
 
