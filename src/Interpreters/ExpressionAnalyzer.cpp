@@ -2,8 +2,8 @@
 #include <Interpreters/ExpressionContainsArrayJoin.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <WindowFunctions/IGeneralWindowFunction.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
@@ -46,6 +46,7 @@
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/PasteJoin.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/RowDataStore.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/SpillingHashJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -96,6 +97,7 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsUInt64 min_count_to_compile_sort_description;
     extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
+    extern const SettingsUInt64 min_string_column_bytes_for_hash_join_row_store;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsUInt64 parallel_hash_join_threshold;
     extern const SettingsHashJoinLayout hash_join_layout;
@@ -601,7 +603,6 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAG & actions, Aggrega
 
 void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
     const WindowDescriptions & existing_descriptions,
-    AggregateFunctionPtr aggregate_function,
     WindowDescription & desc, const IAST * ast)
 {
     const auto & definition = ast->as<const ASTWindowDefinition &>();
@@ -719,21 +720,7 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
     desc.full_sort_description.insert(desc.full_sort_description.end(),
         desc.order_by.begin(), desc.order_by.end());
 
-    const auto window_function = aggregate_function ? asGeneralWindowFunction(aggregate_function) : nullptr;
     desc.frame.is_default = definition.frame_is_default;
-    if (desc.frame.is_default && window_function)
-    {
-        auto default_window_frame_opt = window_function->getDefaultFrame();
-        if (default_window_frame_opt)
-        {
-            desc.frame = *default_window_frame_opt;
-            /// Append the default frame description to window_name, make sure it will be put into
-            /// a proper window description.
-            desc.window_name += " " + desc.frame.toString();
-            return;
-        }
-    }
-
     desc.frame.type = definition.frame_type;
     desc.frame.begin_type = definition.frame_begin_type;
     desc.frame.begin_preceding = definition.frame_begin_preceding;
@@ -770,8 +757,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
             const auto & elem = ptr->as<const ASTWindowListElement &>();
             WindowDescription desc;
             desc.window_name = elem.name;
-            makeWindowDescriptionFromAST(*current_context, window_descriptions,
-                nullptr, desc, elem.definition.get());
+            makeWindowDescriptionFromAST(*current_context, window_descriptions, desc, elem.definition.get());
 
             auto [it, inserted] = window_descriptions.insert(
                 {elem.name, std::move(desc)});
@@ -792,22 +778,19 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
         chassert(function_node.isWindowFunction());
 
         WindowFunctionDescription window_function;
-        window_function.function_node = &function_node;
-        window_function.column_name
-            = window_function.function_node->getColumnName();
+        window_function.column_name = function_node.getColumnName();
         window_function.function_parameters
-            = window_function.function_node->parameters
+            = function_node.parameters
                 ? getAggregateFunctionParametersArray(
-                    window_function.function_node->parameters, "", getContext())
+                    function_node.parameters, "", getContext())
                 : Array();
 
         // Requiring a constant reference to a shared pointer to non-const AST
         // doesn't really look sane, but the visitor does indeed require it.
         // Hence, we clone the node (not very sane either, I know).
-        getRootActionsNoMakeSet(window_function.function_node->clone(), actions);
+        getRootActionsNoMakeSet(function_node.clone(), actions);
 
-        const ASTs & arguments
-            = window_function.function_node->arguments->children;
+        const ASTs & arguments = function_node.arguments->children;
         window_function.argument_types.resize(arguments.size());
         window_function.argument_names.resize(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -819,21 +802,45 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
             {
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                     "Unknown identifier '{}' in window function '{}'",
-                    name, window_function.function_node->formatForErrorMessage());
+                    name, function_node.formatForErrorMessage());
             }
 
             window_function.argument_types[i] = node->result_type;
             window_function.argument_names[i] = name;
         }
 
-        AggregateFunctionProperties properties;
-        window_function.aggregate_function = AggregateFunctionFactory::instance().get(
-            window_function.function_node->name,
-            window_function.function_node->getNullsAction(),
-            window_function.argument_types,
-            window_function.function_parameters,
-            properties,
-            AggregateFunctionStateVariant::Window);
+        if (WindowFunctionFactory::instance().isWindowFunctionName(function_node.name))
+        {
+            const DataTypes bound_types = WindowFunctionFactory::instance().bindArgumentTypes(function_node.name, window_function.argument_types);
+            for (size_t i = 0; i < arguments.size(); ++i)
+            {
+                if (window_function.argument_types[i]->equals(*bound_types[i]))
+                    continue;
+
+                String cast_name = fmt::format("_CAST({}, '{}')", window_function.argument_names[i], bound_types[i]->getName());
+                const auto & argument_node = actions.findInOutputs(window_function.argument_names[i]);
+                actions.addOrReplaceInOutputs(actions.addCast(argument_node, bound_types[i], cast_name, current_context));
+                window_function.argument_types[i] = bound_types[i];
+                window_function.argument_names[i] = std::move(cast_name);
+            }
+
+            window_function.general_function = WindowFunctionFactory::instance().get(
+                function_node.name,
+                function_node.getNullsAction(),
+                window_function.argument_types,
+                window_function.function_parameters);
+        }
+        else
+        {
+            AggregateFunctionProperties properties;
+            window_function.aggregate_function = AggregateFunctionFactory::instance().get(
+                function_node.name,
+                function_node.getNullsAction(),
+                window_function.argument_types,
+                window_function.function_parameters,
+                properties,
+                AggregateFunctionStateVariant::Window);
+        }
 
         // Find the window corresponding to this function. It may be either
         // referenced by name and previously defined in WINDOW clause, or it
@@ -858,8 +865,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
             auto default_window_name = definition.getDefaultWindowName();
             WindowDescription desc;
             desc.window_name = default_window_name;
-            makeWindowDescriptionFromAST(*current_context, window_descriptions,
-                window_function.aggregate_function, desc, &definition);
+            makeWindowDescriptionFromAST(*current_context, window_descriptions, desc, &definition);
 
             auto full_sort_description = desc.full_sort_description;
 
@@ -1000,7 +1006,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 {
     if (context->getSettingsRef()[Setting::enable_hash_join_row_store]
         && context->getSettingsRef()[Setting::min_rows_ratio_for_hash_join_row_store] == 0.0)
-        analyzed_join->setRowStoreEnabled(true);
+        analyzed_join->setRowStoreCandidateColumns(computeRowStoreCandidateColumns(
+            *analyzed_join, *right_sample_block, 0, context->getSettingsRef()[Setting::min_string_column_bytes_for_hash_join_row_store]));
 
     if (analyzed_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(analyzed_join, right_sample_block);
@@ -1556,20 +1563,23 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
         getRootActionsNoMakeSet(getSelectQuery()->window(), step.actions()->dag);
     }
 
+    for (const ASTPtr & ast : syntax->window_function_asts)
+    {
+        // (1b) Actions for function arguments, and also the inline window
+        // definitions (1a).
+        // Requiring a constant reference to a shared pointer to non-const AST
+        // doesn't really look sane, but the visitor does indeed require it.
+        getRootActionsNoMakeSet(ast->clone(), step.actions()->dag);
+    }
+
     for (const auto & [_, w] : window_descriptions)
     {
+        // (2b) Required function argument columns.
         for (const auto & f : w.window_functions)
         {
-            // (1b) Actions for function arguments, and also the inline window
-            // definitions (1a).
-            // Requiring a constant reference to a shared pointer to non-const AST
-            // doesn't really look sane, but the visitor does indeed require it.
-            getRootActionsNoMakeSet(f.function_node->clone(), step.actions()->dag);
-
-            // (2b) Required function argument columns.
-            for (const auto & a : f.function_node->arguments->children)
+            for (const auto & name : f.argument_names)
             {
-                step.addRequiredOutput(a->getColumnName());
+                step.addRequiredOutput(name);
             }
         }
 
@@ -2279,7 +2289,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 for (const auto & f : w.window_functions)
                 {
                     query_analyzer.columns_after_window.push_back(
-                        {f.column_name, f.aggregate_function->getResultType()});
+                        {f.column_name, f.getResultType()});
                 }
             }
 

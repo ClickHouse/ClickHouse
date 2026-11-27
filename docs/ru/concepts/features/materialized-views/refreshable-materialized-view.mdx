@@ -6,13 +6,15 @@ keywords: ['refreshable materialized view', 'обновление', 'materialize
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 [refreshable materialized views](/ru/reference/statements/create/view#refreshable-materialized-view) концептуально схожи с materialized view в традиционных OLTP-базах данных: они сохраняют результат указанного запроса для быстрого доступа и снижают необходимость многократно выполнять ресурсоемкие запросы. В отличие от [incremental materialized view](/ru/concepts/features/materialized-views/incremental-materialized-view) в ClickHouse, здесь запрос нужно периодически выполнять по всему набору данных, а его результаты сохраняются в целевой таблице для дальнейших запросов. Теоретически этот результирующий набор должен быть меньше исходного набора данных, что позволяет последующим запросам выполняться быстрее.
 
 На диаграмме показано, как работают Refreshable Materialized Views:
 
-<Image img="/images/materialized-view/refreshable-materialized-view-diagram.webp" size="lg" alt="Диаграмма refreshable materialized view" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Диаграмма refreshable materialized view](/images/materialized-view/refreshable-materialized-view-diagram.webp)
+  </Frame>
+</div>
 
 Вы также можете посмотреть следующее видео:
 
@@ -21,7 +23,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </Frame>
 
 <div id="when-should-refreshable-materialized-views-be-used">
-  ## Когда следует использовать refreshable materialized views?
+  ## Когда следует использовать refreshable materialized views? {#when-should-refreshable-materialized-views-be-used}
 </div>
 
 ClickHouse incremental materialized views чрезвычайно эффективны и, как правило, масштабируются значительно лучше, чем подход с refreshable materialized views, особенно когда требуется выполнить агрегацию по одной таблице. Поскольку агрегация вычисляется только для каждого блока данных по мере его вставки, а инкрементальные состояния затем сливаются в итоговой таблице, запрос всегда выполняется лишь на подмножестве данных. Этот метод может масштабироваться до PB данных и обычно является предпочтительным.
@@ -55,7 +57,7 @@ SYSTEM REFRESH VIEW table_name_mv;
 </Warning>
 
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
-  ## Когда в последний раз обновлялась refreshable materialized view?
+  ## Когда в последний раз обновлялась refreshable materialized view? {#when-was-a-refreshable-materialized-view-last-refreshed}
 </div>
 
 Чтобы узнать, когда refreshable materialized view обновлялась в последний раз, вы можете выполнить запрос к системной таблице [`system.view_refreshes`](/ru/reference/system-tables/view_refreshes), как показано ниже:
@@ -74,7 +76,7 @@ FROM system.view_refreshes;
 ```
 
 <div id="how-can-i-change-the-refresh-rate">
-  ## Как изменить частоту обновления?
+  ## Как изменить частоту обновления? {#how-can-i-change-the-refresh-rate}
 </div>
 
 Чтобы изменить частоту обновления refreshable materialized view, используйте синтаксис [`ALTER TABLE...MODIFY REFRESH`](/ru/reference/statements/alter/view#alter-table--modify-refresh-statement).
@@ -93,7 +95,7 @@ MODIFY REFRESH EVERY 30 SECONDS;
 ```
 
 <div id="using-append-to-add-new-rows">
-  ## Использование `APPEND` для добавления новых строк
+  ## Использование `APPEND` для добавления новых строк {#using-append-to-add-new-rows}
 </div>
 
 Функция `APPEND` позволяет добавлять новые строки в конец таблицы, не заменяя представление целиком.
@@ -199,13 +201,13 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="examples">
-  ## Примеры
+  ## Примеры {#examples}
 </div>
 
 Теперь рассмотрим, как использовать refreshable materialized views на примере нескольких наборов данных.
 
 <div id="stack-overflow">
-  ### Stack Overflow
+  ### Stack Overflow {#stack-overflow}
 </div>
 
 В [руководстве по денормализации данных](/ru/guides/clickhouse/data-modelling/denormalization) показаны различные методы денормализации данных на примере набора данных Stack Overflow. Мы загружаем данные в следующие таблицы: `votes`, `users`, `badges`, `posts` и `postlinks`.
@@ -257,7 +259,7 @@ LEFT JOIN (
 </Note>
 
 <div id="imdb">
-  ### IMDb
+  ### IMDb {#imdb}
 </div>
 
 В [руководстве по интеграции dbt и ClickHouse](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/index) мы заполнили набор данных IMDb следующими таблицами: `actors`, `directors`, `genres`, `movie_directors`, `movies` и `roles`.

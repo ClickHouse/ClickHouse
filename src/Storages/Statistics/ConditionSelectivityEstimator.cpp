@@ -47,7 +47,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
 {
     if (filter == nullptr && prewhere == nullptr)
     {
-        return estimateRelationProfile();
+        return estimateRelationProfile(metadata);
     }
     else if (filter == nullptr)
     {
@@ -86,7 +86,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
     const std::vector<RPNBuilderTreeNode> & nodes) const
 {
     if (nodes.empty())
-        return estimateRelationProfile();
+        return estimateRelationProfile(metadata);
 
     /// Build a combined RPN sequence by concatenating per-node RPNs and inserting an
     /// FUNCTION_AND token after every node past the first (standard postfix AND for
@@ -127,19 +127,38 @@ static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const Co
 }
 
 /// NDV is clamped by the caller to the estimated row count; the value range and NULL fraction
-/// describe the whole relation regardless of the filter.
-static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStatisticsPtr & stats)
+/// describe the selected parts regardless of the filter. `described_rows` are the rows the statistics
+/// have to count to cover the relation, deleted rows included.
+static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStatisticsPtr & stats, UInt64 described_rows)
 {
     ColumnStats result;
     result.num_distinct_values = num_distinct_values;
     if (!stats)
         return result;
 
+    result.ndv_provenance.origin = stats->hasCardinality() ? ColumnStatsOrigin::MeasuredStatistics : ColumnStatsOrigin::SyntheticFallback;
     auto estimate = stats->getEstimate();
     result.min_value = std::move(estimate.estimated_min);
     result.max_value = std::move(estimate.estimated_max);
-    if (estimate.estimated_null_count && estimate.rows_count)
+    if (result.min_value && result.max_value)
+        result.range_provenance.origin = ColumnStatsOrigin::MeasuredStatistics;
+    /// A NULL count merged with a summary that has none (e.g. of a data lake file with bounds alone) misses the NULLs of
+    /// its rows, so the NULL fraction is unknown, while the bounds still cover the values.
+    if (estimate.estimated_null_count && estimate.null_count_covers_all_rows && estimate.rows_count)
         result.null_fraction = std::min(1.0, static_cast<Float64>(*estimate.estimated_null_count) / static_cast<Float64>(estimate.rows_count));
+    if (auto avg_string_bytes = stats->getAvgStringBytes())
+        result.avg_bytes = *avg_string_bytes;
+
+    /// Bounds merged with a summary that has none (e.g. of a data lake file) miss the values of its rows. The distinct
+    /// count of such statistics is set from data lake metadata, possibly from the bounds (see `ManifestColumnStatistics`),
+    /// so it is marked as well.
+    if (!estimate.min_max_covers_all_values)
+        result.addTransformation(PartialStatisticsCoverage);
+
+    /// Compared with the rows before deletes: the statistics still count the deleted rows, so the live rows can be
+    /// as few as the counted ones although a part or file has no statistic.
+    if (stats->getNumRows() < described_rows)
+        result.addTransformation(PartialStatisticsCoverage);
     return result;
 }
 
@@ -232,25 +251,38 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
         final_rows = 0;
     else if (final_rows > static_cast<Float64>(total_rows))
         final_rows = static_cast<Float64>(total_rows);
+    /// Round instead of truncating, and keep at least one row while the selectivity is positive: an equality
+    /// on a column with as many distinct values as rows gives `rows * (1 / rows)`, a hair below 1 in floating
+    /// point, and an estimate of 0 rows tells the join order optimizer that the relation is empty. Every join
+    /// with it then looks free, and the order of the rest of the joins is decided by ties.
+    if (final_rows > 0)
+        final_rows = std::max(1.0, std::round(final_rows));
     result.rows = static_cast<UInt64>(final_rows);
     for (const auto & [column_name, estimator] : column_estimators)
     {
         if (!isCompatibleStatistics(metadata, estimator.stats, column_name))
             continue;
 
-        UInt64 cardinality = std::min(result.rows, estimator.estimateCardinality());
-        result.column_stats.emplace(column_name, makeColumnStats(cardinality, estimator.stats));
+        const UInt64 estimated_cardinality = estimator.estimateCardinality();
+        UInt64 cardinality = std::min(result.rows, estimated_cardinality);
+        auto column_stats = makeColumnStats(cardinality, estimator.stats, described_rows);
+        column_stats.addTransformation(RowSubset);
+        if (result.rows < estimated_cardinality)
+            column_stats.ndv_provenance.add(EstimatedRowCountClamp);
+        result.column_stats.emplace(column_name, std::move(column_stats));
     }
     return result;
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata) const
 {
     RelationProfile result;
     result.rows = total_rows;
     for (const auto & [column_name, estimator] : column_estimators)
     {
-        result.column_stats.emplace(column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats));
+        if (!isCompatibleStatistics(metadata, estimator.stats, column_name))
+            continue;
+        result.column_stats.emplace(column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats, described_rows));
     }
     return result;
 }
@@ -306,6 +338,28 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     /// atom we then discard is exactly the work this reuse is meant to avoid.
     SetPtr set_for_ranges;
     DataTypePtr column_type;
+
+    /// A constant conjunct, e.g. `x IS NOT NULL` folded to `1` for a non-`Nullable` column, passes every row or none.
+    /// Left as an unknown condition, it would scale the estimate by `default_unknown_cond_factor`. NULL stays undecided,
+    /// as below.
+    if (!node.isFunction() && node.tryGetConstant(const_value, const_type) && const_type->canBeUsedInBooleanContext())
+    {
+        std::optional<bool> value;
+        switch (const_value.getType())
+        {
+            case Field::Types::UInt64: value = const_value.safeGet<UInt64>() != 0; break;
+            case Field::Types::Int64: value = const_value.safeGet<Int64>() != 0; break;
+            case Field::Types::Float64: value = const_value.safeGet<Float64>() != 0.0; break;
+            case Field::Types::Bool: value = const_value.safeGet<bool>(); break;
+            default: break;
+        }
+        if (value)
+        {
+            out.function = *value ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+            return true;
+        }
+        return false;
+    }
 
     if (node.isFunction())
     {
@@ -643,6 +697,13 @@ ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder(Conte
 void ConditionSelectivityEstimatorBuilder::incrementRowCount(UInt64 rows)
 {
     estimator->total_rows += rows;
+    estimator->described_rows += rows;
+}
+
+void ConditionSelectivityEstimatorBuilder::subtractDeletedRows(UInt64 rows)
+{
+    chassert(rows <= estimator->total_rows);
+    estimator->total_rows -= std::min(rows, estimator->total_rows);
 }
 
 void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats)

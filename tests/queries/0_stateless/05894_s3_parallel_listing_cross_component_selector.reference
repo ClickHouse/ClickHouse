@@ -1,0 +1,26 @@
+root/}{ab/cd}{/*.csv, parallelism 1
+test/root/}ab/cd{/x.csv	30
+test/root/}ab/cd{/y.csv	30
+root/}{ab/cd}{/*.csv, parallelism 8
+test/root/}ab/cd{/x.csv	30
+test/root/}ab/cd{/y.csv	30
+root/}{ab/cd,zz/q}{/*.csv, parallelism 1
+test/root/}ab/cd{/x.csv	30
+test/root/}ab/cd{/y.csv	30
+test/root/}zz/q{/v.csv	10000
+root/}{ab/cd,zz/q}{/*.csv, parallelism 8
+test/root/}ab/cd{/x.csv	30
+test/root/}ab/cd{/y.csv	30
+test/root/}zz/q{/v.csv	10000
+root/*/*/*.csv, parallelism 1
+test/root/}ab/cd{/x.csv	30
+test/root/}ab/cd{/y.csv	30
+test/root/}ab/other/x.csv	1000
+test/root/}zz/q{/v.csv	10000
+test/root/}{ab/cd}{/x.csv	100000
+root/*/*/*.csv, parallelism 8
+test/root/}ab/cd{/x.csv	30
+test/root/}ab/cd{/y.csv	30
+test/root/}ab/other/x.csv	1000
+test/root/}zz/q{/v.csv	10000
+test/root/}{ab/cd}{/x.csv	100000

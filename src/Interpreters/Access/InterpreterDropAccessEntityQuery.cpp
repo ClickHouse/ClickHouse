@@ -1,4 +1,6 @@
 #include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
+#include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
+#include <Common/quoteString.h>
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/AccessControl.h>
@@ -40,10 +42,11 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());
 
+    /// Must be done before replication: a DDL worker resolves a bare table name in its own current database.
+    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(updated_query_ptr, getContext());
-
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
     auto do_drop = [&](const Strings & names, const String & storage_name)
     {
@@ -70,6 +73,11 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
         for (const auto & [_, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{}))
             database->waitDatabaseStarted();
 
+        /// The definers of SQL-defined HTTP handlers are registered when the handlers are loaded, which happens lazily.
+        /// With replicated storage, a handler stored on another replica is registered only by the background reload,
+        /// so re-read the handlers to see it.
+        SQLDefinedHandlersFactory::instance().loadLatest();
+
         auto & definer_dependencies = DefinerDependencies::instance();
         for (const auto & name : query.names->toStrings())
         {
@@ -84,6 +92,8 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
                     objects.push_back(toString(uuid));
                 /// Otherwise the object is gone and the dependency is stale.
             }
+            for (const auto & handler : definer_dependencies.getHandlersForDefiner(name))
+                objects.push_back("handler " + backQuoteIfNeed(handler));
             if (!objects.empty())
                 throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "User `{}` is used as a definer of {}.", name, toString(objects));
         }
