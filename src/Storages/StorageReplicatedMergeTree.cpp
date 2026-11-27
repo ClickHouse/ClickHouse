@@ -8325,8 +8325,12 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
             String log_entry_str;
             Coordination::Stat log_entry_stat;
             bool exists = getZooKeeper()->tryGet(fs::path(table_zookeeper_path) / "log" / log_entry_name, log_entry_str, &log_entry_stat);
+            /// The log is cleaned up concurrently, so the node may have been removed after we listed it.
+            if (!exists)
+                continue;
+
             ReplicatedMergeTreeLogEntryData log_entry = *ReplicatedMergeTreeLogEntry::parse(log_entry_str, log_entry_stat, format_version);
-            if (exists && entry.log_entry_id == log_entry.log_entry_id)
+            if (entry.log_entry_id == log_entry.log_entry_id)
             {
                 LOG_DEBUG(log, "Found log entry with id `{}` in the log", entry.log_entry_id);
 
@@ -8392,7 +8396,12 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
         String queue_entry_str;
         Coordination::Stat queue_entry_stat;
         bool exists = getZooKeeper()->tryGet(fs::path(table_zookeeper_path) / "replicas" / replica / "queue" / entry_name, queue_entry_str, &queue_entry_stat);
-        if (exists && queue_entry_str == entry_str)
+        /// The replica executes and removes its queue entries concurrently, so the node may have been removed after we listed it.
+        /// It cannot be parsed then; if it was the entry we are looking for, it has been already processed.
+        if (!exists)
+            continue;
+
+        if (queue_entry_str == entry_str)
         {
             queue_entry_to_wait_for = entry_name;
             break;
@@ -9446,6 +9455,24 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
 
         std::set<CommittingBlock::Op> ops{CommittingBlock::Op::NewPart, CommittingBlock::Op::Mutation};
         waitForCommittingOpsToFinish(zookeeper, context_copy->getPartitionIdToMaxBlock(getStorageID().uuid), ops, backoff_ms, sync_timeout);
+    }
+    else
+    {
+        /// The wait above pulls the mutations into the queue. Without it, a mutation that has a block number but is not
+        /// created in Keeper yet is not seen below, like the other committing operations this setting does not wait for.
+        queue.updateMutations(zookeeper);
+    }
+
+    /// The patch of the update would store the values of `_block_number` and `_block_offset` of the parts the mutation has
+    /// not rewritten yet, and it would be applied to the rewritten parts, which have other values: to other rows or to none.
+    auto metadata_snapshot_handle = getInMemoryMetadataPtr(context_copy, false);
+    StorageMetadataPtr metadata_snapshot = metadata_snapshot_handle;
+    if (auto mutations = queue.getUnfinishedClearsOfBlockColumns(*context_copy->getPartitionIdToMaxBlock(getStorageID().uuid), *metadata_snapshot);
+        !mutations.empty())
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot execute a lightweight update, because mutation {} that clears columns `_block_number` and `_block_offset` "
+            "is not finished. Wait until it finishes, or kill it", fmt::join(mutations, ", "));
     }
 
     /// With `enable_shared_storage_snapshot_in_query` the update reads with the snapshot of this table
@@ -11724,9 +11751,13 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         String files_not_to_remove_str;
         zookeeper_ptr->tryGet(zc_zookeeper_path, files_not_to_remove_str);
 
-        files_not_to_remove.clear();
+        /// The hardlinked files are recorded only under the first path, so the files of all the paths must be kept.
         if (!files_not_to_remove_str.empty())
-            boost::split(files_not_to_remove, files_not_to_remove_str, boost::is_any_of("\n "));
+        {
+            NameSet path_files_not_to_remove;
+            boost::split(path_files_not_to_remove, files_not_to_remove_str, boost::is_any_of("\n "));
+            files_not_to_remove.insert(path_files_not_to_remove.begin(), path_files_not_to_remove.end());
+        }
 
         String zookeeper_part_uniq_node = fs::path(zc_zookeeper_path) / part_id;
 

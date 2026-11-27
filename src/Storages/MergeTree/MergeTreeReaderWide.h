@@ -103,12 +103,12 @@ private:
 
     FileStreams streams;
 
-    /// A substream of a column resolved once, in `addStreams`: the name of its file in the part (none when the part
-    /// has no file for it), its key in the substreams cache and its slot in `avg_value_size_hints` (none without
-    /// a file, or until `avgValueSizeHintSlot` for a substream resolved later). The callbacks `readData` hands to
-    /// the serialization run for every substream of every granule, and building these names there again
-    /// (`getFileNameForStream`, `getSubstreamsCacheKeyForStream`) dominated the cost of reading a column of many
-    /// substreams.
+    /// A substream of a column resolved once, in `addStreams` or on first use in `readData`: the name of its file in
+    /// the part (none when the part has no file for it), its key in the substreams cache and its slot in
+    /// `avg_value_size_hints` (none without a file, or until `avgValueSizeHintSlot` for a substream resolved later).
+    /// The callbacks `readData` hands to the serialization run for every substream of every granule, and building
+    /// these names there again (`getFileNameForStream`, `getSubstreamsCacheKeyForStream`) dominated the cost of
+    /// reading a column of many substreams.
     struct ResolvedSubstream
     {
         std::optional<String> stream_name;
@@ -117,15 +117,16 @@ private:
     };
 
     /// The resolved substreams of one column by their substreams cache key, the only rendering of a path that is
-    /// injective (several paths may share a file). Filled in `addStreams` and read-only afterwards, so the reading
-    /// threads look paths up without synchronization; a path missing from it (a dynamic subcolumn discovered by
-    /// the prefix) is resolved the slow way by the caller.
+    /// injective (several paths may share a file). Filled in `addStreams`; a path only the prefix lists (a dynamic
+    /// subcolumn) is added on first use by the callbacks of `readData`, which run on the reading thread while no
+    /// prefix task runs. The prefix callbacks (prefixes thread pool) only look paths up.
     using ResolvedSubstreams = std::unordered_map<String, ResolvedSubstream>;
 
     std::unordered_map<String, ResolvedSubstreams> resolved_substreams_by_column;
 
     /// The resolved substreams of a column, or nullptr for a column `addStreams` wasn't called for.
     const ResolvedSubstreams * findResolvedSubstreams(const String & column_name) const;
+    ResolvedSubstreams * findResolvedSubstreams(const String & column_name);
 
     /// The substream of `substream_path`: its entry in `substreams` (nullptr for a column without entries), or,
     /// for a path unknown there, `computed` filled on the spot, which must outlive the returned reference.
@@ -134,6 +135,13 @@ private:
         const NameAndTypePair & name_and_type,
         const ISerialization::SubstreamPath & substream_path,
         ResolvedSubstream & computed) const;
+
+    /// The entry of `substream_path` in `substreams`, resolved and added if there is none. Only for the callbacks
+    /// of `readData`, see `ResolvedSubstreams`. Inserting into an `unordered_map` invalidates no reference.
+    const ResolvedSubstream & resolveAndAddSubstream(
+        ResolvedSubstreams & substreams,
+        const NameAndTypePair & name_and_type,
+        const ISerialization::SubstreamPath & substream_path);
 
     /// The slot of the average value size hint of `resolved`, or nullptr when the part has no file for it.
     /// Called on the reading thread only, see the body.

@@ -398,58 +398,57 @@ void JoinStepLogical::describeActions(JSONBuilder::JSONMap & map) const
 
 bool JoinStepLogical::canRemoveUnusedColumns() const
 {
-    /// Position-based unused column removal can break HashJoin (and probably other joins too).
-    /// It is not clear yet why exactly, but the issue is probably around dealing with duplicate
-    /// columns by name instead of positions in TableJoin/HashJoin.
+    return true;
+}
 
-    /// Collect all INPUT nodes reachable from join condition nodes.
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
-    UnorderedSetWithMemoryTracking<std::string_view> left_condition_input_names;
-    UnorderedSetWithMemoryTracking<std::string_view> right_condition_input_names;
+/// The inputs with a name clash: a join condition reads the name, and the header of that side has it more than once.
+/// The physical join finds its keys by name, so it cannot tell such columns apart, and they are not touched.
+static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> findInputsWithNameClash(
+    const JoinOperator & join_operator, const JoinExpressionActions & expression_actions, const SharedHeaders & input_headers)
+{
+    const auto side_of = [&](const ActionsDAG::Node * input) -> size_t { return JoinActionRef(input, expression_actions).fromLeft() ? 0 : 1; };
 
-    VectorWithMemoryTracking<const ActionsDAG::Node *> stack;
+    ActionsDAG::NodeRawConstPtrs conditions;
     for (const auto & join_action : join_operator.expression)
-        stack.push_back(join_action.getNode());
+        conditions.push_back(join_action.getNode());
     for (const auto & join_action : join_operator.residual_filter)
-        stack.push_back(join_action.getNode());
+        conditions.push_back(join_action.getNode());
 
-    while (!stack.empty())
+    std::array<UnorderedSetWithMemoryTracking<std::string_view>, 2> clashing_names;
+    for (const auto * node : findReachableNodes(conditions))
     {
-        const auto * node = stack.back();
-        stack.pop_back();
-
-        if (!visited.insert(node).second)
+        if (node->type != ActionsDAG::ActionType::INPUT)
             continue;
 
-        if (node->type == ActionsDAG::ActionType::INPUT)
-        {
-            auto ref = JoinActionRef(node, expression_actions);
-            if (ref.fromLeft())
-                left_condition_input_names.insert(node->result_name);
-            else if (ref.fromRight())
-                right_condition_input_names.insert(node->result_name);
-        }
-
-        for (const auto * child : node->children)
-            stack.push_back(child);
+        const size_t side = side_of(node);
+        if (std::ranges::count(*input_headers.at(side), node->result_name, &ColumnWithTypeAndName::name) > 1)
+            clashing_names[side].insert(node->result_name);
     }
 
-    auto has_duplicated_condition_input = [](const Block & header, const UnorderedSetWithMemoryTracking<std::string_view> & condition_names)
-    {
-        for (const auto & name : condition_names)
-        {
-            size_t count = 0;
-            for (size_t i = 0; i < header.columns(); ++i)
-            {
-                if (header.getByPosition(i).name == name && ++count > 1)
-                    return true;
-            }
-        }
-        return false;
-    };
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> inputs;
+    for (const auto * input : expression_actions.getActionsDAG()->getInputs())
+        if (clashing_names[side_of(input)].contains(input->result_name))
+            inputs.insert(input);
 
-    return !has_duplicated_condition_input(*input_headers.at(0), left_condition_input_names)
-        && !has_duplicated_condition_input(*input_headers.at(1), right_condition_input_names);
+    return inputs;
+}
+
+static bool readsAnyOf(const ActionsDAG::Node * node, const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & inputs)
+{
+    return !inputs.empty() && anyReachableNode({node}, [&](const ActionsDAG::Node * child) { return inputs.contains(child); });
+}
+
+VectorWithMemoryTracking<size_t> JoinStepLogical::getOutputPositionsWithNameClash() const
+{
+    const auto name_clash_inputs = findInputsWithNameClash(join_operator, expression_actions, input_headers);
+
+    VectorWithMemoryTracking<size_t> positions;
+    const auto & outputs = expression_actions.getActionsDAG()->getOutputs();
+    for (size_t position = 0; position < outputs.size(); ++position)
+        if (readsAnyOf(outputs[position], name_clash_inputs))
+            positions.push_back(position);
+
+    return positions;
 }
 
 JoinStepLogical::UnneededColumnsPlan
@@ -462,6 +461,9 @@ JoinStepLogical::analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> &
     /// For JoinStepLogical, the output header maps directly to DAG outputs (no pass-throughs).
     const SetWithMemoryTracking<size_t> unneeded_positions_set(unneeded_output_positions.begin(), unneeded_output_positions.end());
 
+    /// Columns with a name clash are not touched: the join keeps all the inputs of such a name and what it outputs of them.
+    const auto name_clash_inputs = findInputsWithNameClash(join_operator, expression_actions, input_headers);
+
     ActionsDAG::NodeRawConstPtrs kept_output_nodes;
     const auto & dag_outputs = actions_dag.getOutputs();
     if (!unneeded_positions_set.empty() && *unneeded_positions_set.rbegin() >= dag_outputs.size())
@@ -473,7 +475,7 @@ JoinStepLogical::analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> &
         const auto * output_node = dag_outputs[position];
         /// Do not remove join_dummy_result from the outputs, because it was added to ensure at least one
         /// output column, so it is kept even when it is not required.
-        if (!unneeded_positions_set.contains(position) || isDummyColumnOfThisStep(output_node))
+        if (!unneeded_positions_set.contains(position) || isDummyColumnOfThisStep(output_node) || readsAnyOf(output_node, name_clash_inputs))
             kept_output_nodes.push_back(output_node);
         else
             plan.dropped_output_positions.push_back(position);
@@ -488,6 +490,10 @@ JoinStepLogical::analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> &
 
     for (const auto & join_action : join_operator.residual_filter)
         plan.extra_pruning_roots.push_back(join_action.getNode());
+
+    for (const auto * input : actions_dag.getInputs())
+        if (name_clash_inputs.contains(input))
+            plan.extra_pruning_roots.push_back(input);
 
     bool has_required_input_from_left = false;
     bool has_required_input_from_right = false;

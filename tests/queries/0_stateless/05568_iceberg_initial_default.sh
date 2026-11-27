@@ -187,6 +187,13 @@ for table, mode in zip(sys.argv[1::2], sys.argv[2::2]):
             fields.append({"id": new_id(), "name": name, "required": False, "initial-default": [{str(member): v} for v in default],
                 "type": {"type": "list", "element-id": element, "element-required": False, "element": {"type": "struct", "fields": [
                     {"id": member, "name": "y", "required": False, "type": "int"}]}}})
+    elif mode == "element_list_member":
+        # A list of structs is added to the elements of `l`.
+        member, element = new_id(), new_id()
+        next(f for f in fields if f["name"] == "l")["type"]["element"]["fields"].append({"id": new_id(), "name": "a", "required": False,
+            "initial-default": [{str(member): 5}, {str(member): 6}],
+            "type": {"type": "list", "element-id": element, "element-required": False, "element": {"type": "struct", "fields": [
+                {"id": member, "name": "v", "required": False, "type": "int"}]}}})
     elif mode == "bad_long":
         fields.append({"id": new_id(), "name": "d", "required": False, "type": "long", "initial-default": "abc"})
     elif mode == "bad_timestamp":
@@ -423,12 +430,15 @@ for format in Parquet ORC Avro; do
         after+="
             SELECT a, t, l, d, r, s, n, ll FROM icebergLocal('${table}/');
             SELECT t.x, t.y, s.x, n.x FROM icebergLocal('${table}/');
+            SELECT l.x, l.y FROM icebergLocal('${table}/');
+            SELECT a FROM icebergLocal('${table}/') WHERE has(l.y, 5);
             SELECT a FROM icebergLocal('${table}/') WHERE d = 7 SETTINGS optimize_move_to_prewhere = 1;
             SELECT a FROM icebergLocal('${table}/') WHERE d = 7 SETTINGS optimize_move_to_prewhere = 0;"
         if [ "${format}" = Parquet ]; then
             # A field with a default is not a missing column.
             after+="
-                SELECT a, t, l, d, r, s, ll FROM icebergLocal('${table}/') SETTINGS input_format_parquet_allow_missing_columns = 0;"
+                SELECT a, t, l, d, r, s, ll FROM icebergLocal('${table}/') SETTINGS input_format_parquet_allow_missing_columns = 0;
+                SELECT l.y FROM icebergLocal('${table}/') SETTINGS input_format_parquet_allow_missing_columns = 0;"
         fi
     fi
 
@@ -727,6 +737,20 @@ for format in Parquet ORC Avro; do
         SELECT 'list member', g, p FROM icebergLocal('${table}/');
         SELECT 'list member', g.y, p.y FROM icebergLocal('${table}/');
         SELECT 'list member', count() FROM icebergLocal('${table}/') WHERE has(g.y, 5) AND has(p.y, 9);"
+
+    # The subcolumn of a list added to the elements of an existing list is that subcolumn of its default.
+    if [ "${format}" != Avro ]; then
+        table="${format}_element_list_member"
+        create+="
+            CREATE TABLE t_element_list_member (k Int32, l Array(Tuple(x Nullable(Int32)))) ENGINE = IcebergLocal('${table}/', '${format}');
+            INSERT INTO t_element_list_member VALUES (1, [(11), (12)]);"
+        evolve+=("${table}" element_list_member)
+        bind+=("${table}")
+        after+="
+            SELECT 'element list member', l FROM icebergLocal('${table}/');
+            SELECT 'element list member', l.a, l.a.v FROM icebergLocal('${table}/');
+            SELECT 'element list member', l.a.v FROM icebergLocal('${table}/');"
+    fi
 
     ${LOCAL} --allow_insert_into_iceberg=1 -q "${create}"
     null_struct "${null_structs[@]}"
