@@ -14,7 +14,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 ## index_mark_cache_policy {#index_mark_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />次级索引标记缓存淘汰策略名称。可选值：`LRU`、`SLRU`、`SIEVE`。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />二级索引标记缓存的缓存淘汰策略。可选值：`LRU`、`SLRU`、`SIEVE`。缓存容量请参阅 [`index_mark_cache_size`](/zh/reference/settings/server-settings/settings/index-mark#index_mark_cache_size)，SLRU 策略中受保护队列的大小请参阅 [`index_mark_cache_size_ratio`](/zh/reference/settings/server-settings/settings/index-mark#index_mark_cache_size_ratio)。
 
 ## index_mark_cache_prewarm_ratio {#index_mark_cache_prewarm_ratio}
 

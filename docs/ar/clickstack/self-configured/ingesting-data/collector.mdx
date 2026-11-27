@@ -1,0 +1,432 @@
+---
+slug: /clickstack/self-configured/ingesting-data/collector
+description: 'تهيئة مُجمِّع OpenTelemetry الخاص بـ ClickStack لعمليات النشر المُدارة ذاتيًا.'
+sidebarTitle: 'مُجمِّع OpenTelemetry'
+title: 'مُجمِّع OpenTelemetry'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['ClickHouse Observability', 'مُجمِّع OpenTelemetry', 'OTLP']
+---
+
+import ExtendingConfig from '/snippets/ar/_extending_config.mdx';
+
+<Note>
+  تتناول هذه الصفحة **Self-managed ClickHouse Observability**. للاطلاع على التجربة المُدارة بالكامل الموصى بها، راجع الوثائق [هنا](/ar/clickstack/observability/ingesting-data/opentelemetry).
+</Note>
+
+<Tip>
+  **جرّب OTel FYI: وثائق OTel collector بأسلوب مبسّط**
+
+  يقدّم [OTel FYI](https://otel.fyi) وثائق واضحة وموجزة لمُجمِّع OpenTelemetry، تغطي المستقبِلات والمعالجات والمُصدِّرات ومسارات معالجة البيانات، ما يجعله مرجعًا مساعدًا ممتازًا عند تهيئة مُجمِّع OTel الخاص بـ ClickStack.
+</Tip>
+
+تتضمن هذه الصفحة تفاصيل حول تهيئة مُجمِّع OpenTelemetry ‏(OTel) الرسمي الخاص بـ ClickStack.
+
+## أدوار المجمّع {#collector-roles-self-configured}
+
+يمكن نشر مُجمِّعات OpenTelemetry في دورين رئيسيين:
+
+* **الوكيل** - تجمع مثيلات الوكيل البيانات على الحافة، كالخوادم أو عُقد Kubernetes، أو تستقبل الأحداث مباشرةً من التطبيقات المزوّدة بأدوات الرصد عبر OpenTelemetry SDK. وفي الحالة الأخيرة، يعمل مثيل الوكيل إلى جانب التطبيق أو على المضيف نفسه الذي يعمل عليه التطبيق (كحاوية جانبية أو ضمن مجموعة العمليات الخلفية). ويمكن للوكلاء إرسال بياناتهم إما مباشرةً إلى ClickHouse أو إلى مثيل بوابة. وفي الحالة الأولى، يُعرف ذلك باسم [نمط نشر الوكيل](https://opentelemetry.io/docs/collector/deployment/agent/).
+
+* **البوابة** - توفر مثيلات البوابة خدمة مستقلة (كنشر في Kubernetes مثلًا)، وتكون عادةً واحدة لكل عنقود أو مركز بيانات أو منطقة. وتستقبل هذه المثيلات الأحداث من التطبيقات (أو من جامعي البيانات الآخرين العاملين كوكلاء) عبر نقطة نهاية OTLP واحدة. وفي العادة تُنشر مجموعة من مثيلات البوابة، ويُستخدم موازن أحمال جاهز لتوزيع الحمل فيما بينها. وإذا أرسلت جميع الوكلاء والتطبيقات إشاراتها إلى نقطة النهاية الواحدة هذه، فغالبًا ما يُعرف ذلك باسم [نمط نشر البوابة](https://opentelemetry.io/docs/collector/deployment/gateway/).
+
+**مهم: يتولّى جامع البيانات، بما في ذلك في التوزيعات الافتراضية من ClickStack، [دور البوابة الموضح أدناه](#collector-roles-self-configured)، إذ يستقبل البيانات من الوكلاء أو من SDKS.**
+
+عادةً ما يستخدم المستخدمون الذين ينشرون OTel collector في دور الوكيل [توزيعة contrib الافتراضية من جامع البيانات](https://github.com/open-telemetry/opentelemetry-collector-contrib) بدلًا من إصدار ClickStack، مع حريتهم في استخدام تقنيات أخرى متوافقة مع OTLP مثل [Fluentd](https://www.fluentd.org/) و[Vector](https://vector.dev/).
+
+## نشر جامع البيانات {#configuring-the-collector-self-configured}
+
+<br />
+
+نوصي، متى أمكن ذلك، باستخدام توزيعة ClickStack الرسمية من جامع البيانات في دور البوابة عند الإرسال إلى Self-managed ClickHouse Observability. وإذا اخترت استخدام جامع بيانات خاص بك، فتأكد من أنه يتضمن [مُصدِّر ClickHouse](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
+
+يمكن نشر جامع البيانات إما عبر Helm (الخيار الموصى به في Kubernetes) أو عبر Docker. يتضمن [مخطط Helm الرسمي لـ ClickStack](https://github.com/ClickHouse/ClickStack-helm-charts) [مخطط Helm لمُجمِّع OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts) من المصدر الأصلي بوصفه مخططًا فرعيًا، مع صورة توزيعة ClickStack مُهيأة مسبقًا. ولنشر جامع بيانات مستقل، يمكن استخدام المخطط من المصدر الأصلي مباشرةً مع صورة ClickStack، كما هو موضح أدناه.
+
+<Tabs>
+  <Tab title="Helm">
+    أضف مستودع OpenTelemetry Helm من المصدر الأصلي:
+
+    ```shell
+    helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+    helm repo update
+    ```
+
+    أنشئ ملف `values.yaml` لتهيئة صورة ClickStack وبيانات اعتماد Self-managed ClickHouse Observability:
+
+    ```yaml
+    # values.yaml
+    mode: deployment
+
+    image:
+      repository: docker.clickhouse.com/clickhouse/clickstack-otel-collector
+      tag: "2.19.0"
+
+    ports:
+      otlp:
+        enabled: true
+      otlp-http:
+        enabled: true
+
+    extraEnvs:
+      - name: CLICKHOUSE_ENDPOINT
+        value: "https://your-instance.clickhouse.cloud:8443"
+      - name: CLICKHOUSE_USER
+        value: "default"
+      - name: CLICKHOUSE_PASSWORD
+        value: "<password>"
+    ```
+
+    ثبّت المخطط:
+
+    ```shell
+    helm install clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
+    ```
+
+    في عمليات النشر ضمن بيئة الإنتاج، نوصي بتخزين `CLICKHOUSE_PASSWORD` في سرّ Kubernetes والإشارة إليه عبر `extraEnvsFrom` بدلاً من كتابة القيمة مباشرةً.
+  </Tab>
+
+  <Tab title="Docker">
+    لنشر توزيعة ClickStack من موصل OTel في وضع مستقل، شغّل أمر docker التالي:
+
+    ```shell
+    docker run -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+    ```
+
+    <Info>
+      **تحديث اسم الصورة**
+
+      تُنشر صور ClickStack الآن باسم `clickhouse/clickstack-*` (بدلاً من `docker.hyperdx.io/hyperdx/*` سابقًا).
+    </Info>
+  </Tab>
+</Tabs>
+
+تتم تهيئة مثيل ClickHouse المستهدف عبر متغيرات البيئة `CLICKHOUSE_ENDPOINT` و`CLICKHOUSE_USER` و`CLICKHOUSE_PASSWORD`. ويجب أن يكون `CLICKHOUSE_ENDPOINT` نقطة نهاية HTTP الكاملة لـ ClickHouse Cloud، بما في ذلك البروتوكول والمنفذ، مثل: `https://99rr6dm6v3.us-central1.gcp.clickhouse.cloud:8443`.
+
+للاطلاع على تفاصيل الحصول على بيانات اعتماد Self-managed ClickHouse Observability الخاصة بك، راجع [هذه الصفحة](/ar/products/cloud/guides/sql-console/connection-details).
+
+<Info>
+  **مستخدم بيئة الإنتاج**
+
+  يجب استخدام مستخدم يملك [بيانات الاعتماد المناسبة](/ar/clickstack/self-configured/ingesting-data/collector#creating-an-ingestion-user-self-configured) في بيئة الإنتاج.
+</Info>
+
+### تعديل التهيئة {#modifying-otel-collector-configuration-managed-self-configured}
+
+#### تهيئة مثيل Self-managed ClickHouse Observability {#configuring-managed-clickstack-self-configured}
+
+يمكن تهيئة مُجمِّع OpenTelemetry لاستخدام مثيل Self-managed ClickHouse Observability عبر متغيرات البيئة `CLICKHOUSE_ENDPOINT` و`CLICKHOUSE_USER` و`CLICKHOUSE_PASSWORD`. وتختلف طريقة تعيينها بحسب أسلوب النشر الذي تعتمده:
+
+<Tabs>
+  <Tab title="Helm">
+    تجاوز العناصر المعنية ضمن `extraEnvs` في ملف `values.yaml`، ثم رقِّ الإصدار:
+
+    ```yaml
+    # values.yaml
+    extraEnvs:
+      - name: CLICKHOUSE_ENDPOINT
+        value: "<HTTPS_ENDPOINT>"
+      - name: CLICKHOUSE_USER
+        value: "<CLICKHOUSE_USER>"
+      - name: CLICKHOUSE_PASSWORD
+        value: "<CLICKHOUSE_PASSWORD>"
+    ```
+
+    ```shell
+    helm upgrade clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
+    ```
+  </Tab>
+
+  <Tab title="Docker">
+    يمكن تهيئة صورة مُجمِّع OpenTelemetry المستقل عبر متغيرات البيئة:
+
+    ```shell
+    export CLICKHOUSE_ENDPOINT=<HTTPS ENDPOINT>
+    export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+    export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+    ```
+
+    ```shell
+    docker run -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+    ```
+  </Tab>
+</Tabs>
+
+<ExtendingConfig />
+
+#### Docker Compose {#docker-compose-otel-managed-self-configured}
+
+عند استخدام Docker Compose، عدِّل تهيئة collector عبر متغيرات البيئة نفسها المذكورة أعلاه:
+
+```yaml
+  otel-collector:
+    image: clickhouse/clickstack-otel-collector
+    environment:
+      CLICKHOUSE_ENDPOINT: 'https://mxl4k3ul6a.us-east-2.aws.clickhouse-staging.com:8443'
+      HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+      CLICKHOUSE_USER: 'default'
+      CLICKHOUSE_PASSWORD: 'password'
+      CUSTOM_OTELCOL_CONFIG_FILE: '/etc/otelcol-contrib/custom.config.yaml'
+    ports:
+      - '13133:13133' # health_check extension
+      - '24225:24225' # fluentd receiver
+      - '4317:4317' # OTLP gRPC receiver
+      - '4318:4318' # OTLP http receiver
+      - '8888:8888' # metrics extension
+    volumes:
+      - ./custom-config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+    restart: always
+    networks:
+      - internal
+```
+
+## تأمين جامع البيانات {#securing-the-collector-self-configured}
+
+لا يكون مُجمِّع OpenTelemetry الخاص بـ ClickStack مؤمَّنًا افتراضيًا عند نشره خارج التوزيعات مفتوحة المصدر، ولا يشترط المصادقة على منافذ OTLP الخاصة به.
+
+لتأمين إدخال البيانات، حدِّد رمز مصادقة عند نشر جامع البيانات باستخدام متغير البيئة `OTLP_AUTH_TOKEN`. وتختلف طريقة تعيينه بحسب طريقة النشر التي تعتمدها:
+
+<Tabs>
+  <Tab title="Helm">
+    أضِف `OTLP_AUTH_TOKEN` إلى `extraEnvs` في ملف `values.yaml`، ثم رقِّ الإصدار:
+
+    ```yaml
+    # values.yaml
+    extraEnvs:
+      - name: OTLP_AUTH_TOKEN
+        value: "a_very_secure_string"
+      - name: CLICKHOUSE_ENDPOINT
+        value: "<HTTPS_ENDPOINT>"
+      - name: CLICKHOUSE_USER
+        value: "<CLICKHOUSE_USER>"
+      - name: CLICKHOUSE_PASSWORD
+        value: "<CLICKHOUSE_PASSWORD>"
+    ```
+
+    ```shell
+    helm upgrade clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
+    ```
+
+    لعمليات النشر في بيئة الإنتاج، نوصي بتخزين `OTLP_AUTH_TOKEN` و`CLICKHOUSE_PASSWORD` في سرّ Kubernetes والإشارة إليهما عبر `extraEnvsFrom`.
+  </Tab>
+
+  <Tab title="Docker">
+    ```sh
+    export CLICKHOUSE_ENDPOINT=<HTTPS_ENDPOINT>
+    export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+    export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+    export OTLP_AUTH_TOKEN="a_very_secure_string"
+
+    docker run \
+      -e OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
+      -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+      -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
+      -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+      -p 4317:4317 \
+      -p 4318:4318 \
+      clickhouse/clickstack-otel-collector:latest
+    ```
+  </Tab>
+</Tabs>
+
+نوصي أيضًا بما يلي:
+
+* تهيئة جامع البيانات للاتصال بـ ClickHouse عبر HTTPS.
+* إنشاء مستخدم مخصص لإدخال البيانات بصلاحيات محدودة - انظر أدناه.
+* تفعيل TLS لنقطة نهاية OTLP، لضمان تشفير الاتصال بين SDKs/الوكلاء وجامع البيانات. ويمكن تهيئة ذلك عبر [تهيئة collector مخصصة](#extending-collector-config).
+
+### إنشاء مستخدم لإدخال البيانات {#creating-an-ingestion-user-self-configured}
+
+نوصي بإنشاء قاعدة بيانات ومستخدم مخصصين لـ OTel collector لإدخال البيانات إلى Self-managed ClickHouse Observability. ويجب أن يمتلك هذا المستخدم صلاحية إنشاء [الجداول التي يستخدمها جامع البيانات](/ar/clickstack/self-configured/ingesting-data/schemas) وإدراج البيانات فيها.
+
+```sql
+CREATE DATABASE otel;
+CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY 'ClickH0u3eRocks123!';
+GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
+```
+
+يفترض ما سبق أن جامع البيانات مهيَّأ لاستخدام قاعدة البيانات `otel`. ويمكن التحكم في ذلك عبر متغير البيئة `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`، الذي يُمرَّر إلى جامع البيانات [بالطريقة نفسها المتبعة مع متغيرات البيئة الأخرى](#modifying-otel-collector-configuration-managed-self-configured).
+
+## المعالجة - التصفية والتحويل والإثراء {#processing-filtering-transforming-enriching-self-configured}
+
+سيرغب المستخدمون حتمًا في تصفية رسائل الأحداث وتحويلها وإثرائها أثناء الإدخال. ونظرًا لتعذّر تعديل تهيئة موصل ClickStack، نوصي المستخدمين الذين يحتاجون إلى مزيد من تصفية الأحداث ومعالجتها باتباع أحد الخيارين التاليين:
+
+* نشر نسختهم الخاصة من OTel collector لإجراء التصفية والمعالجة، ثم إرسال الأحداث إلى مُجمِّع ClickStack عبر OTLP لإدخالها في ClickHouse.
+* نشر نسختهم الخاصة من OTel collector وإرسال الأحداث مباشرةً إلى ClickHouse باستخدام مُصدِّر ClickHouse.
+
+إذا كانت المعالجة تتم باستخدام OTel collector، فإننا نوصي بإجراء التحويلات على مثيلات البوابة وتقليص العمل المُنفَّذ على مثيلات الوكيل إلى أدنى حد. فبذلك تظل الموارد التي تحتاجها الوكلاء العاملة على الخوادم عند الحافة في أدنى مستوى ممكن. وعادةً ما يقتصر المستخدمون في الوكلاء على التصفية (للحد من استخدام الشبكة غير الضروري)، وتعيين الطابع الزمني (عبر المشغّلات)، والإثراء الذي يتطلب سياقًا. فعلى سبيل المثال، إذا كانت مثيلات البوابة موجودة في عنقود Kubernetes مختلف، فيجب إجراء إثراء k8s في الوكيل.
+
+يدعم OpenTelemetry ميزات المعالجة والتصفية التالية التي يمكنك الاستفادة منها:
+
+* **المعالجات** - تتلقى المعالجات البيانات التي جمعتها [المستقبِلات وتعدّلها أو تحوّلها](https://opentelemetry.io/docs/collector/transforming-telemetry/) قبل إرسالها إلى المُصدِّرات. وتُطبَّق المعالجات وفق ترتيبها في قسم `processors` من تهيئة collector. وهي اختيارية، لكن [يُوصى عادةً](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor#recommended-processors) بمجموعة دنيا منها. وعند استخدام OTel collector مع ClickHouse، نوصي بالاقتصار على المعالجات التالية:
+
+* [memory&#95;limiter](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/memorylimiterprocessor/README.md)، ويُستخدم لمنع نفاد الذاكرة في جامع البيانات. راجع [تقدير الموارد](#estimating-resources-self-configured) للاطلاع على التوصيات.
+
+* أي معالج يُجري الإثراء استنادًا إلى السياق. على سبيل المثال، يتيح [Kubernetes Attributes Processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/k8sattributesprocessor) تعيين سمات الموارد تلقائيًا للامتدادات (spans) والمقاييس والسجلات باستخدام بيانات k8s الوصفية، كإثراء الأحداث بمعرّف الـ pod المصدر.
+
+* [أخذ العينات بأسلوب tail أو head](https://opentelemetry.io/docs/concepts/sampling/) للتتبعات عند الحاجة.
+
+* [التصفية الأساسية](https://opentelemetry.io/docs/collector/transforming-telemetry/) - إسقاط الأحداث غير المطلوبة إذا تعذّر ذلك عبر المشغّل (انظر أدناه).
+
+* [التجميع في دفعات](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor) - وهو ضروري عند العمل مع ClickHouse لضمان إرسال البيانات على دفعات. راجع [&quot;تحسين عمليات الإدراج&quot;](#optimizing-inserts-self-configured).
+
+* **المشغّلات** - توفّر [المشغّلات](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) أبسط وحدة معالجة متاحة في المستقبِل. وهي تدعم التحليل النحوي الأساسي، مما يتيح تعيين حقول مثل Severity وTimestamp. كما تدعم التحليل النحوي لـ JSON والتعبيرات النمطية (regex)، إلى جانب تصفية الأحداث والتحويلات الأساسية. ونوصي بإجراء تصفية الأحداث في هذه المرحلة.
+
+نوصي المستخدمين بتجنّب الإفراط في معالجة الأحداث باستخدام المشغّلات أو [معالجات التحويل](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/transformprocessor/README.md)، إذ قد يترتب على ذلك عبء كبير على الذاكرة ووحدة المعالجة المركزية، لا سيما عند التحليل النحوي لـ JSON. ويمكن إجراء المعالجة كلها في ClickHouse وقت الإدراج باستخدام العروض المادية (materialized views) والأعمدة، مع بعض الاستثناءات، وتحديدًا الإثراء المعتمد على السياق، مثل إضافة بيانات k8s الوصفية. لمزيد من التفاصيل، راجع [استخراج البنية باستخدام SQL](/ar/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql).
+
+### مثال {#example-processing-self-configured}
+
+توضح التهيئة التالية كيفية جمع [ملف السجل غير المهيكل](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-unstructured.log.gz) هذا. ويمكن أن يستخدم هذه التهيئةَ جامعُ بيانات يعمل في دور الوكيل ويرسل البيانات إلى بوابة ClickStack.
+
+لاحظ استخدام المشغّلات لاستخراج البنية من أسطر السجل (`regex_parser`) وتصفية الأحداث، إلى جانب معالج يجمّع الأحداث في دفعات ويحدّ من استخدام الذاكرة.
+
+```yaml file=code_snippets/ClickStack/config-unstructured-logs-with-processor.yaml
+receivers:
+  filelog:
+    include:
+      - /opt/data/logs/access-unstructured.log
+    start_at: beginning
+    operators:
+      - type: regex_parser
+        regex: '^(?P<ip>[\d.]+)\s+-\s+-\s+\[(?P<timestamp>[^\]]+)\]\s+"(?P<method>[A-Z]+)\s+(?P<url>[^\s]+)\s+HTTP/[^\s]+"\s+(?P<status>\d+)\s+(?P<size>\d+)\s+"(?P<referrer>[^"]*)"\s+"(?P<user_agent>[^"]*)"'
+        timestamp:
+          parse_from: attributes.timestamp
+          layout: '%d/%b/%Y:%H:%M:%S %z'
+          #22/Jan/2019:03:56:14 +0330
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 10000
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 2048
+    spike_limit_mib: 256
+exporters:
+  # HTTP setup
+  otlphttp/hdx:
+    endpoint: 'http://localhost:4318'
+    headers:
+      authorization: <YOUR_INGESTION_API_KEY>
+    compression: gzip
+
+  # gRPC setup (alternative)
+  otlp/hdx:
+    endpoint: 'localhost:4317'
+    headers:
+      authorization: <YOUR_API_INGESTION_KEY>
+    compression: gzip
+service:
+  telemetry:
+    metrics:
+      address: 0.0.0.0:9888 # Modified as 2 collectors running on same host
+  pipelines:
+    logs:
+      receivers: [filelog]
+      processors: [batch]
+      exporters: [otlphttp/hdx]
+
+```
+
+إذا كنت قد هيّأت `OTLP_AUTH_TOKEN`، فاستخدم هذا الرمز المميز قيمةً لترويسة التفويض في المثال أعلاه. راجع [تأمين جامع البيانات](#securing-the-collector-self-configured).
+
+للاطلاع على خيارات تهيئة أكثر تقدمًا، ننصح بالرجوع إلى [توثيق مُجمِّع OpenTelemetry](https://opentelemetry.io/docs/collector/).
+
+## تحسين عمليات الإدراج {#optimizing-inserts-self-configured}
+
+لتحقيق أداء إدراج عالٍ مع ضمان اتساق قوي، ينبغي الالتزام ببعض القواعد البسيطة عند إدراج بيانات إمكانية المراقبة في ClickHouse عبر مُجمِّع ClickStack. ومع التهيئة الصحيحة لـ OTel collector، يصبح اتباع القواعد التالية أمرًا يسيرًا. كما يساعد ذلك على تجنّب [المشكلات الشائعة](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse) التي يواجهها المستخدمون عند استخدام ClickHouse لأول مرة.
+
+### التجميع في دفعات {#batching-self-configured}
+
+افتراضيًا، يؤدي كل إدراج يُرسَل إلى ClickHouse إلى إنشاء ClickHouse فورًا جزءًا من التخزين يحتوي على بيانات الإدراج إلى جانب بيانات وصفية أخرى يلزم تخزينها. لذلك، فإن إرسال عدد أقل من عمليات الإدراج يحمل كلٌّ منها بيانات أكثر، بدلًا من إرسال عدد أكبر من عمليات الإدراج يحمل كلٌّ منها بيانات أقل، يقلّل عدد عمليات الكتابة المطلوبة. نوصي بإدراج البيانات في دفعات كبيرة نسبيًا لا تقل عن 1,000 صف في المرة الواحدة. لمزيد من التفاصيل، راجع [هذا المقال](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance).
+
+افتراضيًا، تكون عمليات الإدراج في ClickHouse متزامنة وعديمة الأثر عند التكرار (idempotent) إذا كانت متطابقة. وبالنسبة إلى جداول عائلة محركات merge tree، يُجري ClickHouse افتراضيًا [إزالة التكرارات من عمليات الإدراج](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#5-deduplication-at-insert-time) تلقائيًا. وهذا يعني أن عمليات الإدراج تتحمّل حالات كالتالية:
+
+* (1) إذا واجهت العقدة المستقبِلة للبيانات مشكلات، فستنتهي مهلة استعلام الإدراج (أو يُعاد error أكثر تحديدًا) ولن يُستلَم إقرار بالاستلام.
+* (2) إذا كتبت العقدة البيانات، لكن تعذّر إرجاع الإقرار بالاستلام إلى مُرسِل الاستعلام بسبب انقطاع الشبكة، فسيتلقى المُرسِل إما انتهاء مهلة أو error في الشبكة.
+
+من منظور جامع البيانات، قد يصعب التمييز بين الحالتين (1) و(2). ومع ذلك، يمكن في كلتا الحالتين ببساطة إعادة محاولة الإدراج غير المؤكَّد استلامه فورًا. وما دام استعلام الإدراج المُعاد يحتوي على البيانات نفسها وبالترتيب نفسه، فسيتجاهله ClickHouse تلقائيًا إذا كان الإدراج الأصلي (غير المؤكَّد استلامه) قد نجح.
+
+لهذا السبب، تستخدم توزيعة ClickStack من OTel collector [معالج الدُفعات](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md)، مما يضمن إرسال عمليات الإدراج على هيئة دفعات متسقة من الصفوف تستوفي المتطلبات المذكورة أعلاه. إذا كان من المتوقع أن يعمل جامع البيانات بمعدل معالجة مرتفع (أحداث في الثانية)، وأمكن إرسال 10,000 حدث على الأقل في كل إدراج، فعادةً لا يحتاج المسار إلى أي تجميع في دفعات غير هذا. ويمكن استخدام قيم تصل إلى 100,000 إذا سمحت الذاكرة بذلك. في هذه الحالة، سيُفرّغ جامع البيانات الدفعات قبل بلوغ `timeout` الخاص بمعالج الدُفعات، مما يُبقي زمن الاستجابة من البداية إلى النهاية للمسار منخفضًا ويحافظ على اتساق حجم الدفعات.
+
+### استخدام عمليات الإدراج غير المتزامنة {#use-asynchronous-inserts-self-configured}
+
+عادةً ما يضطر المستخدمون إلى إرسال دفعات أصغر عندما يكون معدل النقل لجامع البيانات منخفضًا، ومع ذلك يتوقعون وصول البيانات إلى ClickHouse بأدنى زمن استجابة ممكن من البداية إلى النهاية. وفي هذه الحالة، تُرسَل دفعات صغيرة عند انقضاء `timeout` الخاص بمعالج الدفعات. وقد يتسبب ذلك في مشكلات، وهنا تصبح عمليات الإدراج غير المتزامنة ضرورية. ونادرًا ما تحدث هذه المشكلة إذا كنت ترسل البيانات إلى مُجمِّع ClickStack الذي يعمل كبوابة (Gateway)، إذ تخفف هذه المجمّعات من حدة المشكلة لأنها تعمل على تجميع البيانات - راجع [أدوار المجمّع](#collector-roles-self-configured).
+
+إذا تعذّر ضمان دفعات كبيرة، يمكنك تفويض التجميع في دفعات إلى ClickHouse باستخدام [عمليات الإدراج غير المتزامنة](/ar/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). فمع عمليات الإدراج غير المتزامنة، تُدرَج البيانات أولًا في ذاكرة مؤقتة، ثم تُكتب لاحقًا بشكل غير متزامن إلى تخزين قاعدة البيانات.
+
+<div className="ch-image-md">
+  <Frame>
+    ![عمليات الإدراج غير المتزامنة](/images/use-cases/observability/observability-6.webp)
+  </Frame>
+</div>
+
+عند [تفعيل عمليات الإدراج غير المتزامنة](/ar/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)، وحين ① يستقبل ClickHouse استعلام إدراج، تُكتب بيانات الاستعلام ② فورًا في مخزن مؤقت في الذاكرة. وعند ③ حدوث التفريغ التالي للذاكرة المؤقتة، تُ[فرز](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) بياناتها وتُكتب كجزء (part) في تخزين قاعدة البيانات. لاحظ أن البيانات لا تكون متاحة للبحث عبر الاستعلامات قبل تفريغها إلى تخزين قاعدة البيانات، علمًا بأن تفريغ الذاكرة المؤقتة [قابل للتهيئة](/ar/concepts/features/operations/insert/asyncinserts).
+
+لتفعيل عمليات الإدراج غير المتزامنة لجامع البيانات، أضف `async_insert=1` إلى سلسلة الاتصال. ونوصي باستخدام `wait_for_async_insert=1` (القيمة الافتراضية) للحصول على ضمانات التسليم - راجع [هنا](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) لمزيد من التفاصيل.
+
+تُدرَج البيانات الناتجة عن الإدراج غير المتزامن بمجرد تفريغ الذاكرة المؤقتة في ClickHouse. ويحدث ذلك إما بعد تجاوز [`async_insert_max_data_size`](/ar/reference/settings/session-settings/async-insert#async_insert_max_data_size) أو بعد مرور [`async_insert_busy_timeout_ms`](/ar/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms) مللي ثانية على أول استعلام INSERT. وإذا ضُبط `async_insert_stale_timeout_ms` على قيمة غير صفرية، فستُدرَج البيانات بعد مرور `async_insert_stale_timeout_ms milliseconds` على آخر استعلام. ويمكنك ضبط هذه الإعدادات للتحكم في زمن الاستجابة من البداية إلى النهاية لمسار البيانات لديك. أما الإعدادات الإضافية التي يمكن استخدامها لضبط تفريغ الذاكرة المؤقتة، فهي موثقة [هنا](/ar/reference/settings/session-settings/async-insert#async_insert). وبوجه عام، تكون القيم الافتراضية مناسبة.
+
+<Info>
+  **جرّب عمليات الإدراج غير المتزامنة التكيفية**
+
+  في الحالات التي يُستخدم فيها عدد قليل من الوكلاء بمعدل نقل منخفض، مع متطلبات صارمة لزمن الاستجابة من البداية إلى النهاية، قد تكون [عمليات الإدراج غير المتزامنة التكيفية](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts) مفيدة. وبوجه عام، لا تناسب هذه العمليات حالات استخدام إمكانية المراقبة ذات معدل النقل العالي، كما هو الحال مع ClickHouse.
+</Info>
+
+أخيرًا، لا يكون سلوك إزالة التكرارات المعتاد في عمليات الإدراج المتزامنة في ClickHouse مفعّلًا افتراضيًا عند استخدام عمليات الإدراج غير المتزامنة. وعند الحاجة، راجع الإعداد [`async_insert_deduplicate`](/ar/reference/settings/session-settings/async-insert#async_insert_deduplicate).
+
+تتوفر التفاصيل الكاملة حول تهيئة هذه الميزة في [صفحة التوثيق](/ar/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts) هذه، أو في [منشور المدونة](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) المتعمق.
+
+## التحجيم {#scaling-self-configured}
+
+يعمل مُجمِّع OTel الخاص بـ ClickStack بوصفه مثيل بوابة؛ راجع [أدوار المجمّع](#collector-roles-self-configured). توفّر هذه المثيلات خدمة مستقلة، عادةً لكل مركز بيانات أو لكل منطقة، وتستقبل الأحداث من التطبيقات (أو من جامعي البيانات الآخرين العاملين في دور الوكيل) عبر نقطة نهاية OTLP واحدة. وعادةً ما تُنشر مجموعة من مثيلات جامع البيانات، مع موازن أحمال جاهز يوزّع الحمل فيما بينها.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![التوسّع باستخدام البوابات](/images/use-cases/observability/clickstack-with-gateways.webp)
+  </Frame>
+</div>
+
+تهدف هذه المعمارية إلى إعفاء الوكلاء من المعالجة كثيفة الحوسبة، وبالتالي تقليل استهلاكهم للموارد إلى أدنى حد. إذ يمكن لبوابات ClickStack هذه تنفيذ مهام التحويل التي كانت ستقع على عاتق الوكلاء لولا ذلك. علاوة على ذلك، تستطيع البوابات، بتجميعها الأحداث من وكلاء عديدين، ضمان إرسال دفعات كبيرة إلى ClickHouse، مما يتيح إدراجًا فعّالًا. ويسهل تحجيم جامعي البيانات العاملين كبوابات كلما أُضيف مزيد من الوكلاء ومصادر SDK وازداد معدل نقل الأحداث.
+
+### إضافة Kafka {#adding-kafka-self-configured}
+
+قد يلاحظ القرّاء أن المعماريات السابقة لا تستخدم Kafka كقائمة انتظار للرسائل.
+
+يُعدّ استخدام قائمة انتظار Kafka ذاكرةً مؤقتة للرسائل نمطَ تصميم شائعًا في معماريات تسجيل السجلات، وقد انتشر بفضل مكدس ELK. ويحقق هذا النمط بعض المزايا، أبرزها توفير ضمانات أقوى لتسليم الرسائل والمساعدة في التعامل مع الضغط العكسي (backpressure). إذ تُرسَل الرسائل من وكلاء الجمع إلى Kafka وتُكتب على القرص. ومن الناحية النظرية، يُفترض أن يوفر مثيل Kafka العنقودي ذاكرة مؤقتة للرسائل ذات معدل معالجة مرتفع، لأن كتابة البيانات خطيًا على القرص تتطلب عبئًا حسابيًا إضافيًا أقل من تحليل الرسالة ومعالجتها. ففي Elastic مثلًا، يتسبب التقسيم إلى رموز والفهرسة في عبء إضافي كبير. كما أن نقل البيانات بعيدًا عن الوكلاء يقلل من خطر فقدان الرسائل بسبب تدوير السجلات عند المصدر. وأخيرًا، يوفر Kafka بعض إمكانات إعادة تشغيل الرسائل والنسخ المتماثل cross-region، وهو ما قد يكون مفيدًا في بعض حالات الاستخدام.
+
+ومع ذلك، يستطيع ClickHouse إدراج البيانات بسرعة كبيرة، إذ يصل إلى ملايين الصفوف في الثانية على عتاد متوسط المواصفات، ونادرًا ما يحدث ضغط عكسي من جهته. وغالبًا ما يعني الاعتماد على قائمة انتظار Kafka مزيدًا من التعقيد المعماري والتكلفة. فإذا كان بإمكانك التسليم بأن السجلات لا تحتاج إلى ضمانات التسليم نفسها التي تتطلبها المعاملات المصرفية وغيرها من البيانات بالغة الأهمية، فإننا نوصي بتجنب التعقيد الذي يضيفه Kafka.
+
+أما إذا كنت تحتاج إلى ضمانات تسليم عالية أو إلى إمكانية إعادة تشغيل البيانات (وربما إلى مصادر متعددة)، فقد يكون Kafka إضافة مفيدة إلى المعمارية.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![إضافة Kafka](/images/use-cases/observability/observability-8.webp)
+  </Frame>
+</div>
+
+في هذه الحالة، يمكن تهيئة وكلاء OTel لإرسال البيانات إلى Kafka عبر [مُصدِّر Kafka](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md)، بينما تستهلك مثيلات البوابة الرسائل باستخدام [مستقبِل Kafka](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md). ولمزيد من التفاصيل، نوصي بالرجوع إلى وثائق Confluent وOTel.
+
+<Info>
+  **تهيئة OTel collector**
+
+  يمكن تهيئة توزيعة مُجمِّع OpenTelemetry الخاص بـ ClickStack للعمل مع Kafka باستخدام [تهيئة collector مخصصة](#extending-collector-config).
+</Info>
+
+## تقدير الموارد {#estimating-resources-self-configured}
+
+تعتمد متطلبات الموارد لـ OTel collector على معدل نقل الأحداث، وحجم الرسائل، ومقدار المعالجة المُنفَّذة. ويوفّر مشروع OpenTelemetry [اختبارات أداء معيارية](https://opentelemetry.io/docs/collector/benchmarks/) يمكن للمستخدمين الاستعانة بها لتقدير متطلبات الموارد.
+
+[بحسب تجربتنا](https://clickhouse.com/blog/building-a-logging-platform-with-clickhouse-and-saving-millions-over-datadog#architectural-overview)، يستطيع مثيل بوابة ClickStack مزوّد بـ 3 أنوية و12GB من RAM معالجة نحو 60k حدث في الثانية. ويفترض ذلك وجود مسار معالجة بسيط يقتصر على إعادة تسمية الحقول دون استخدام أي تعبيرات نمطية.
+
+أما مثيلات الوكيل المسؤولة عن إرسال الأحداث إلى البوابة، والتي يقتصر عملها على تعيين الطابع الزمني للحدث، فنوصي المستخدمين بتحديد مواردها بناءً على عدد السجلات المتوقع في الثانية. وفيما يلي أرقام تقريبية يمكنك اعتمادها كنقطة بداية:
+
+| معدل تسجيل السجلات | الموارد المخصصة لوكيل جامع البيانات |
+| ------------------ | ----------------------------------- |
+| 1k/ثانية           | 0.2CPU، 0.2GiB                      |
+| 5k/ثانية           | 0.5 CPU، 0.5GiB                     |
+| 10k/ثانية          | 1 CPU، 1GiB                         |
+
+## اختيار المخطط: Map مقابل JSON {#schema-choice-self-configured}
+
+يُنشئ مُجمِّع ClickStack افتراضيًا جداول تخزّن السمات في أعمدة من النوع `Map(LowCardinality(String), String)`، وهو المخطط الموصى به لأحمال العمل الخاصة بإمكانية المراقبة. كما يتوفر مخطط يعتمد النوع `JSON` بشكل تجريبي لتقييمه على أحمال العمل التي تتضمن مجموعة صغيرة ومستقرة من مفاتيح السمات.
+
+للاطلاع على المقارنة الكاملة، ومتى يكون كلٌّ منهما مناسبًا، ومتغيرات البيئة اللازمة لتمكين المخطط المعتمد على نوع JSON، إضافةً إلى الدليل التفصيلي للترحيل، راجع [Map مقابل نوع JSON](/ar/clickstack/self-configured/ingesting-data/schema/map-vs-json).

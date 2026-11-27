@@ -2,16 +2,12 @@
 slug: /cloud/managed-postgres/guides/cloudflare-workers
 sidebarTitle: 'Cloudflare Workers'
 title: 'Использование Cloudflare Workers с ClickHouse Managed Postgres'
-description: 'Выполнение запросов к ClickHouse Managed Postgres из Cloudflare Worker через Hyperdrive: node-postgres, TLS с проверкой сертификата, локальная разработка и развертывание на workers.dev'
+description: 'Выполнение запросов к ClickHouse Managed Postgres из воркера Cloudflare через Hyperdrive: node-postgres, TLS с проверкой сертификата, локальная разработка и развертывание на workers.dev'
 keywords: ['managed postgres', 'cloudflare', 'cloudflare workers', 'hyperdrive', 'wrangler', 'node-postgres', 'pg', 'serverless', 'edge', 'tls', 'verify-full']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-cloudflare-workers-beta" />
-
-[Cloudflare Workers](https://developers.cloudflare.com/workers/) выполняют ваш код в сети Cloudflare, а [Hyperdrive](https://developers.cloudflare.com/hyperdrive/) поддерживает пул соединений из этой сети с вашей базой данных, поэтому при каждом запросе не нужно заново выполнять TCP- и TLS-рукопожатие. В этом руководстве вы создадите конфигурацию Hyperdrive, которая проверяет сертификат вашего инстанса, напишете на TypeScript Worker, который создаёт и читает строки с помощью [`node-postgres`](https://node-postgres.com/) (`pg`), запустите его локально командой `wrangler dev` и развернёте на `workers.dev`.
+[Cloudflare Workers](https://developers.cloudflare.com/workers/) выполняют ваш код в сети Cloudflare, а [Hyperdrive](https://developers.cloudflare.com/hyperdrive/) поддерживает пул соединений из этой сети с вашей базой данных, поэтому при каждом запросе не нужно заново выполнять TCP- и TLS-рукопожатие. В этом руководстве вы создадите конфигурацию Hyperdrive, которая проверяет сертификат вашего инстанса, напишете на TypeScript воркер, который создаёт и читает строки с помощью [`node-postgres`](https://node-postgres.com/) (`pg`), запустите его локально командой `wrangler dev` и развернёте на `workers.dev`.
 
 ## Предварительные требования {#prerequisites}
 

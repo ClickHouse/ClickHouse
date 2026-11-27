@@ -432,6 +432,11 @@ public:
     FuzzConfig(DB::ClientBase * c, const String & path);
 
     bool processServerQuery(bool outlog, const String & query);
+    static const std::vector<std::pair<String, String>> helper_query_settings;
+    /// `query` into the out file, with the session settings that break helper queries reset and `settings` appended
+    String helperQuery(const String & query, const String & format = "TabSeparated", const String & settings = "") const;
+    /// The client's session values of `helper_query_settings` that differ from the defaults, which the helper query hides
+    std::vector<std::pair<String, String>> changedHelperQuerySettings() const;
 
 private:
     template <typename T, typename ParseFunc>
@@ -457,7 +462,7 @@ private:
     void loadFunctions();
 
 public:
-    void loadServerConfigurations();
+    void loadServerConfigurations(RandomGenerator & rg);
 
     String getConnectionHostAndPort(bool secure) const;
 
@@ -521,6 +526,9 @@ public:
     void comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const;
 
     void validateClickHouseHealth();
+
+    /// Run `CHECK <target>`, e.g. `ALL TABLES` or `TABLE d.t`, and throw on a corrupted part
+    void checkTablesIntegrity(const String & target);
 };
 
 }

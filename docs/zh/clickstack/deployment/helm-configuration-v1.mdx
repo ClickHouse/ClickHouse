@@ -14,19 +14,15 @@ keywords: ['ClickStack 配置', 'Helm Secret', 'API 密钥设置', '入口配置
 
 本指南介绍 ClickStack Helm 部署的配置选项。有关基本安装，请参见 [Helm 部署主指南](/zh/clickstack/deployment/helm-v1)。
 
-<div id="api-key-setup">
-  ## API 密钥设置
-</div>
+## API key设置 {#api-key-setup}
 
-成功部署 ClickStack 后，请配置 API 密钥以启用遥测数据采集：
+成功部署 ClickStack 后，请配置 API key以启用遥测数据采集：
 
-1. **通过已配置的入口或服务端点访问你的 HyperDX 实例**
-2. **登录 HyperDX 仪表板**，然后前往团队设置，生成或获取你的 API 密钥
-3. **使用以下任一方法更新你的部署**，添加 API 密钥：
+1. **通过已配置的入口或服务端点访问你的 ClickStack 用户界面实例**
+2. **登录 ClickStack 用户界面仪表板**，然后前往团队设置，生成或获取你的 API key
+3. **使用以下任一方法更新你的部署**，添加 API key：
 
-<div id="api-key-values-file">
-  ### 方法 1：通过 Helm upgrade 使用 values 文件更新
-</div>
+### 方法 1：通过 Helm upgrade 使用 values 文件更新 {#api-key-values-file}
 
 将 API 密钥 添加到您的 `values.yaml` 中：
 
@@ -41,17 +37,13 @@ hyperdx:
 helm upgrade my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-<div id="api-key-set-flag">
-  ### 方法 2：通过 Helm upgrade 命令结合 --set 参数更新
-</div>
+### 方法 2：通过 Helm upgrade 命令结合 `--set` 参数更新 {#api-key-set-flag}
 
 ```shell
 helm upgrade my-clickstack clickstack/clickstack --set hyperdx.apiKey="your-api-key-here"
 ```
 
-<div id="restart-pods">
-  ### 重启 Pod (容器组) 以使更改生效
-</div>
+### 重启 Pod (容器组) 以使更改生效 {#restart-pods}
 
 更新 API 密钥后，重启 Pod (容器组) 以加载新的配置：
 
@@ -63,15 +55,11 @@ kubectl rollout restart deployment my-clickstack-clickstack-app my-clickstack-cl
   该 Chart 会自动使用您的 API key 创建一个 Kubernetes secret (`<release-name>-app-secrets`) 。除非您想使用外部 secret，否则无需额外配置 secret。
 </Note>
 
-<div id="secret-management">
-  ## Secret 管理
-</div>
+## Secret 管理 {#secret-management}
 
 对于 API 密钥或数据库凭据等敏感数据，请使用 Kubernetes Secret 进行管理。
 
-<div id="using-pre-configured-secrets">
-  ### 使用预先配置的 Secret
-</div>
+### 使用预先配置的 Secret {#using-pre-configured-secrets}
 
 Helm 图表包含一个默认的 Secret 模板，位于 [`charts/clickstack/templates/secrets.yaml`](https://github.com/hyperdxio/helm-charts/blob/main/charts/clickstack/templates/secrets.yaml)。该文件提供了管理 Secret 的基础结构。
 
@@ -95,9 +83,7 @@ data:
 kubectl apply -f secrets.yaml
 ```
 
-<div id="creating-a-custom-secret">
-  ### 创建自定义 Secret
-</div>
+### 创建自定义 Secret {#creating-a-custom-secret}
 
 手动创建自定义 Kubernetes Secret：
 
@@ -106,9 +92,7 @@ kubectl create secret generic hyperdx-secret \
   --from-literal=API_KEY=my-secret-api-key
 ```
 
-<div id="referencing-a-secret">
-  ### 在 values.yaml 中引用 Secret
-</div>
+### 在 values.yaml 中引用 Secret {#referencing-a-secret}
 
 ```yaml
 hyperdx:
@@ -119,15 +103,11 @@ hyperdx:
         key: API_KEY
 ```
 
-<div id="ingress-setup">
-  ## 入口设置
-</div>
+## 入口设置 {#ingress-setup}
 
-若要通过域名公开 HyperDX UI 和 API，请在 `values.yaml` 中启用入口。
+若要通过域名公开 ClickStack 用户界面和 API，请在 `values.yaml` 中启用入口。
 
-<div id="general-ingress-configuration">
-  ### 通用入口配置
-</div>
+### 通用入口配置 {#general-ingress-configuration}
 
 ```yaml
 hyperdx:
@@ -143,9 +123,7 @@ hyperdx:
   `hyperdx.frontendUrl` 应与入口的主机名保持一致，并包含协议 (例如 `https://hyperdx.yourdomain.com`) 。这样可确保所有生成的链接、Cookie 和重定向都能正常工作。
 </Info>
 
-<div id="enabling-tls">
-  ### 启用 TLS (HTTPS)
-</div>
+### 启用 TLS (HTTPS) {#enabling-tls}
 
 要通过 HTTPS 保护您的部署：
 
@@ -169,9 +147,7 @@ hyperdx:
       tlsSecretName: "hyperdx-tls"
 ```
 
-<div id="example-ingress-configuration">
-  ### 示例入口配置
-</div>
+### 示例入口配置 {#example-ingress-configuration}
 
 供参考，生成的入口资源如下：
 
@@ -202,9 +178,7 @@ spec:
       secretName: hyperdx-tls
 ```
 
-<div id="common-ingress-pitfalls">
-  ### 常见入口问题
-</div>
+### 常见入口问题 {#common-ingress-pitfalls}
 
 **路径与重写配置：**
 
@@ -229,9 +203,7 @@ spec:
 kubectl -n ingress-nginx get pods -l app.kubernetes.io/name=ingress-nginx -o jsonpath="{.items[0].spec.containers[0].image}"
 ```
 
-<div id="otel-collector-ingress">
-  ## OTel collector 入口
-</div>
+## OTel collector 入口 {#otel-collector-ingress}
 
 如果需要通过入口公开 OTel collector 的端点 (用于链路追踪、指标和日志) ，请使用 `additionalIngresses` 配置。这在需要从集群外发送遥测数据，或为 collector 使用自定义域名时非常有用。
 
@@ -267,9 +239,7 @@ hyperdx:
   如果你不需要将 OTel collector 对外暴露，可以跳过此配置。对于大多数用户，通用的入口配置已经足够。
 </Note>
 
-<div id="troubleshooting-ingress">
-  ## 入口故障排查
-</div>
+## 入口故障排查 {#troubleshooting-ingress}
 
 **检查入口资源：**
 
@@ -306,9 +276,7 @@ curl -I https://hyperdx.yourdomain.com/_next/static/chunks/main-xxxx.js
 
 * 更改后，清除浏览器缓存以及所有 CDN/代理缓存，以免继续使用过期资源
 
-<div id="customizing-values">
-  ## 自定义配置值
-</div>
+## 自定义配置值 {#customizing-values}
 
 您可以使用 `--set` 参数来自定义设置：
 
@@ -347,9 +315,7 @@ hyperdx:
 helm install my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-<div id="next-steps">
-  ## 后续步骤
-</div>
+## 后续步骤 {#next-steps}
 
 * [部署选项 (v1.x) ](/zh/clickstack/deployment/helm-deployment-options-v1) - 外部系统和最小化部署
 * [Cloud 部署 (v1.x) ](/zh/clickstack/deployment/helm-cloud-v1) - GKE、EKS 和 AKS 配置

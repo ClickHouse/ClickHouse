@@ -1,0 +1,304 @@
+---
+slug: /clickstack/observability/integration-examples/aws-lambda
+title: 'Monitorización de logs de AWS Lambda con ClickHouse Observability mediante Rotel'
+sidebarTitle: 'Logs de AWS Lambda'
+description: 'Recopile logs de AWS Lambda con la Rotel Lambda Extension, mantenida por la comunidad, y envíelos a ClickHouse Observability.'
+doc_type: 'guide'
+keywords: ['AWS', 'Lambda', 'OTEL', 'ClickHouse Observability', 'logs', 'CloudWatch']
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+import { CommunityMaintainedBadge } from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+Recopile los logs de las funciones y de la extensión con la Rotel Lambda Extension y envíelos directamente a ClickHouse Observability a través de OTLP. La extensión se ejecuta junto a su función Lambda, por lo que no necesita un recolector independiente. También puede añadir instrumentación de OpenTelemetry para recopilar trazas.
+
+## Requisitos previos {#prerequisites}
+
+* Un servicio de ClickHouse Observability
+* Una función de AWS Lambda empaquetada como archivo ZIP y con un tiempo de ejecución compatible con [Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension)
+* AWS CLI v2 configurada para la región de su función, si utiliza los ejemplos de la CLI
+* Permiso para actualizar las capas y las variables de entorno de la función
+* Acceso a la red desde la función de Lambda hasta su endpoint OTLP, incluido el acceso saliente para funciones en una VPC
+
+### Datos de conexión {#connection-details}
+
+<Tabs>
+  <Tab title="Totalmente gestionado">
+    <BetaBadge label="Oferta en fase beta" />
+
+    Abra ClickHouse Observability y vaya a **Team Settings → Data → Managed Telemetry**. Copie su endpoint OTLP HTTP y su clave de API.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Datos de conexión de Managed Telemetry](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Utilice el endpoint exacto, incluido el puerto, como valor de `ROTEL_OTLP_EXPORTER_ENDPOINT` en los pasos siguientes. Use el endpoint HTTP base, sin el sufijo `/v1/logs`, y establezca el protocolo en `http`. El servicio administrado requiere un encabezado `Authorization=Bearer YOUR_API_KEY`.
+  </Tab>
+
+  <Tab title="Autogestionado">
+    Use el endpoint OTLP HTTP y los ajustes de autenticación de su recolector. Omita `ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS` si el destino no requiere autenticación. El endpoint debe ser accesible desde Lambda; tenga en cuenta que `localhost` hace referencia al entorno de ejecución de Lambda. Consulte la [guía de configuración autogestionada](/es/clickstack/self-configured/getting-started/managed).
+
+    Use estos valores de destino en los ejemplos de variables de entorno de Lambda y de `rotel.env` que se muestran a continuación:
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_COLLECTOR_HOST:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=YOUR_INGESTION_KEY"
+    ```
+  </Tab>
+</Tabs>
+
+## Integración con funciones Lambda existentes {#existing-lambda}
+
+<Steps>
+  <Step title="Seleccione la capa adecuada de Rotel Lambda Extension" id="choose-layer">
+    Elija una capa que corresponda a la arquitectura de su función (`amd64` o `arm64`), a su tiempo de ejecución y a su región de AWS. Copie el ARN completo de la capa, con su versión incluida, desde las [versiones de Rotel](https://github.com/streamfold/rotel-lambda-extension/releases). Utilice ese ARN en los ejemplos siguientes; las versiones de la capa y su disponibilidad varían según la región.
+  </Step>
+
+  <Step title="Añada la capa de Rotel a su función Lambda" id="add-layer">
+    Reemplace `YOUR_ROTEL_LAYER_ARN` por el ARN que seleccionó y `my-function` por el nombre de su función.
+
+##### Opción 1: Consola de AWS {#console}
+
+    1. Abra la consola de AWS Lambda
+    2. Vaya a su función Lambda
+    3. Desplácese hasta la sección **Layers** y haga clic en **Add a layer**
+    4. Seleccione **Specify an ARN**
+    5. Introduzca el ARN de la capa de Rotel:
+       ```text
+       YOUR_ROTEL_LAYER_ARN
+       ```
+    6. Haga clic en **Add**
+
+##### Opción 2: AWS CLI {#cli}
+
+    Exporte la lista actual de capas:
+
+    ```bash
+    aws lambda get-function-configuration \
+      --function-name my-function \
+      --query 'Layers[].Arn || `[]`' \
+      --output json > layers.json
+    ```
+
+    Añada el ARN de la capa de Rotel como cadena al array de `layers.json`, conservando las entradas existentes. A continuación, aplique la lista completa:
+
+    ```bash
+    aws lambda update-function-configuration \
+      --function-name my-function \
+      --layers file://layers.json
+    aws lambda wait function-updated --function-name my-function
+    ```
+
+##### Opción 3: AWS SAM {#sam}
+
+    ```yaml
+    Resources:
+      MyFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+          # ... other configuration ...
+          Layers:
+            # Keep any existing layer entries here.
+            - YOUR_ROTEL_LAYER_ARN
+    ```
+  </Step>
+
+  <Step title="Configure la extensión para exportar datos a ClickHouse Observability" id="configure-extension">
+    En la consola de Lambda, abra **Configuration → Environment variables** y añada los ajustes que se indican a continuación, sin eliminar las variables existentes. Se trata de valores de configuración de Lambda, no de comandos que deba ejecutar en su terminal local. Al introducir los valores en la consola, omita las comillas que aparecen en los ejemplos.
+
+##### Configuración básica (variables de entorno) {#basic-config}
+
+    Añada estas variables de entorno a su función Lambda:
+
+    ```bash
+    # OTLP HTTP endpoint from Connection details
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+
+    # Required for managed ingestion
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer YOUR_API_KEY"
+
+    # Optional: Service name (defaults to Lambda function name)
+    ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
+    ```
+
+##### Configuración avanzada (mediante un archivo .env) {#advanced-config}
+
+    Para configuraciones más complejas, cree un archivo `rotel.env` en el paquete de su función Lambda:
+
+    **rotel.env:**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer YOUR_API_KEY"
+    ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,deployment.environment=production"
+    ```
+
+    A continuación, defina la variable de entorno para que apunte a este archivo:
+
+    ```bash
+    ROTEL_ENV_FILE=/var/task/rotel.env
+    ```
+
+##### Uso de AWS Secrets Manager o Parameter Store {#secrets}
+
+    Puede almacenar la clave de API en AWS Secrets Manager o Parameter Store y hacer referencia a su ARN en `rotel.env`. Los siguientes ejemplos usan autenticación totalmente gestionada y parten de que el secreto contiene únicamente la clave de API; Rotel añade el prefijo `Bearer` a partir de la configuración. Para un recolector autogestionado que use una API key de ingesta, omita el prefijo `Bearer `. Reemplace la región, la cuenta y los nombres de secretos del ejemplo por los suyos:
+
+    **Ejemplo de AWS Secrets Manager:**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer ${arn:aws:secretsmanager:us-east-1:123456789012:secret:observability-api-key-abc123}"
+    ```
+
+    **Ejemplo con AWS Parameter Store:**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer ${arn:aws:ssm:us-east-1:123456789012:parameter/observability-api-key}"
+    ```
+
+    **Permisos de IAM necesarios:**
+
+    Agregue estos permisos al rol de ejecución de su función Lambda:
+
+    Para Secrets Manager:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "secretsmanager:GetSecretValue",
+            "secretsmanager:BatchGetSecretValue"
+          ],
+          "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:observability-api-key-*"
+        }
+      ]
+    }
+    ```
+
+    Para Parameter Store:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "ssm:GetParameters"
+          ],
+          "Resource": "arn:aws:ssm:us-east-1:123456789012:parameter/observability-api-key"
+        }
+      ]
+    }
+    ```
+
+    <Note>
+      La recuperación de secretos se realiza durante la inicialización y puede aumentar la latencia de arranque en frío. Consulte la [configuración de secretos de Rotel](https://github.com/streamfold/rotel-lambda-extension#secrets) para conocer los formatos compatibles y los permisos necesarios. Las claves de cifrado gestionadas por el cliente también pueden requerir el permiso `kms:Decrypt`.
+    </Note>
+  </Step>
+
+  <Step title="Pruebe la integración" id="test-integration">
+    Invoque su función Lambda con un evento que esta acepte y asegúrese de que el handler escriba un log. Sustituya esta carga útil de ejemplo si su función espera un evento distinto:
+
+    ```bash
+    aws lambda invoke \
+      --function-name my-function \
+      --cli-binary-format raw-in-base64-out \
+      --payload '{"test": "data"}' \
+      response.json
+    ```
+
+    Revise los logs de Lambda en busca de errores:
+
+    ```bash
+    aws logs tail /aws/lambda/my-function --follow
+    ```
+  </Step>
+
+  <Step title="Compruebe los logs" id="verify-logs">
+    Abra **Búsqueda** en ClickHouse Observability, seleccione su fuente **Logs** y filtre por `ServiceName:my-lambda-api` si utilizó el nombre del servicio de ejemplo. De lo contrario, utilice el nombre de su función Lambda. Seleccione **Last 15 minutes**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Vista de registros de Lambda](/images/clickstack/lambda/lambda-log-view.webp)
+      </Frame>
+    </div>
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Detalle de registro de Lambda](/images/clickstack/lambda/lambda-log.webp)
+      </Frame>
+    </div>
+
+    Busque estos atributos clave en los logs:
+
+    * `service.name`: el nombre del servicio que configuró o, de forma predeterminada, el nombre de la función Lambda
+    * `faas.name`: nombre de la función de AWS Lambda
+    * `faas.invocation_id`: ID único de la invocación
+    * `cloud.provider`: &quot;aws&quot;
+    * `cloud.platform`: &quot;aws&#95;lambda&quot;
+  </Step>
+</Steps>
+
+## Desactivar CloudWatch Logs (optimización de costes) {#disable-cloudwatch}
+
+De forma predeterminada, AWS Lambda envía todos los logs a CloudWatch Logs, lo que puede resultar costoso a gran escala. Una vez que haya comprobado que los logs llegan a ClickHouse Observability, puede desactivar el registro en CloudWatch para reducir costes.
+
+<Steps>
+  <Step title="Eliminar los permisos de CloudWatch del rol de ejecución" id="remove-permissions">
+    1. Abra la Consola de AWS y vaya a **AWS Lambda**
+    2. Vaya a su función Lambda
+    3. Seleccione **Configuration** → **Permisos**
+    4. Haga clic en el nombre del rol de ejecución para abrir la consola de IAM
+    5. Elimine los permisos de escritura en CloudWatch Logs que utiliza esta función. Si el rol es compartido, utilice un rol dedicado antes de realizar este cambio:
+       * Si utiliza una política personalizada, edítela para eliminar `logs:CreateLogGroup`, `logs:CreateLogStream` y `logs:PutLogEvents`
+       * Si utiliza la política gestionada por AWS `AWSLambdaBasicExecutionRole`, quítela del rol
+    6. Guarde el rol
+  </Step>
+
+  <Step title="Comprobar que el registro en CloudWatch está desactivado" id="verify-disabled">
+    Vuelva a invocar la función y compruebe que:
+
+    1. No aparecen eventos nuevos en el grupo de registros de CloudWatch de la función
+    2. Los logs siguen llegando a ClickHouse Observability
+
+    ```bash
+    aws logs tail /aws/lambda/my-function --since 5m --follow
+    ```
+  </Step>
+</Steps>
+
+## Añadir autoinstrumentación de OpenTelemetry {#auto-instrumentation}
+
+Rotel puede recibir telemetría de una capa de instrumentación específica del lenguaje instalada junto a ella. Siga las [instrucciones de autoinstrumentación de Rotel](https://github.com/streamfold/rotel-lambda-extension#auto-instrumentation) y la documentación enlazada sobre las capas de lenguaje para elegir una capa compatible y establecer `AWS_LAMBDA_EXEC_WRAPPER`.
+
+Al añadir la instrumentación, conserve la capa de Rotel y cualquier otra capa existente. Después de invocar la función, seleccione su fuente **Trazas** en ClickHouse Observability y filtre por el nombre del servicio configurado. Para correlacionar logs y trazas, la instrumentación de la aplicación debe incluir los ID de traza y de span en sus logs.
+
+## Aplicaciones de ejemplo {#examples}
+
+Consulte la aplicación de ejemplo en Python que muestra el uso de Rotel Lambda Extension:
+
+* **[Python + ClickHouse](https://github.com/streamfold/python-aws-lambda-clickhouse-example)**: aplicación en Python con instrumentación manual de OpenTelemetry que envía trazas y logs directamente a ClickHouse
+
+## Únase a la comunidad de Rotel {#join-rotel-community}
+
+Si tiene preguntas sobre Rotel, únase al [servidor de Discord de Rotel](https://rotel.dev) y comparta allí sus comentarios o dudas. Si desea contribuir con mejoras, consulte el repositorio de [Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension).
+
+## Recursos adicionales {#resources}
+
+* **[Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension)**: código fuente y documentación detallada
+* **[Rotel Core](https://github.com/streamfold/rotel)**: el plano de datos OTEL ligero en el que se basa la extensión

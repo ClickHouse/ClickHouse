@@ -427,6 +427,8 @@ def main():
 
         uid = os.getuid()
         gid = os.getgid()
+        # Most pull requests of a release already have an entry in `CHANGELOG.md` on master, and `changelog.py` copies it. Requesting each of them from GitHub exhausts the hourly rate limit of the token: the script then sleeps until the limit is reset, and the job runs out of its time.
+        changelog_on_master = "./ci/tmp/changelog_on_master.md"
         for cmd in [
             "echo 'List versions'",
             "./utils/list-versions/list-versions.sh"
@@ -435,6 +437,7 @@ def main():
             "./utils/list-versions/update-docker-version.sh",
             "echo 'Generate ChangeLog'",
             "docker pull clickhouse/style-test:latest",
+            f"git show origin/master:CHANGELOG.md > {changelog_on_master}",
             # changelog.py runs in the container (no host gh session): the robot token goes in via -e GH_TOKEN / --gh-user-or-token, and the string carries $GH_TOKEN, not its value.
             f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
             f" -e GH_TOKEN --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
@@ -442,6 +445,7 @@ def main():
             f" ./ci/tools/changelog.py -v --debug-helpers"
             f' --gh-user-or-token "$GH_TOKEN"'
             f" --jobs=5"
+            f" --reuse-entries-from={changelog_on_master}"
             f" --output=./docs/changelogs/{release_info.release_tag}.md {release_info.release_tag}",
             f"git add ./docs/changelogs/{release_info.release_tag}.md",
             "echo 'Generate Security'",

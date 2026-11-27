@@ -56,6 +56,22 @@ std::optional<EncryptionHeaderCache::HeaderBytes> EncryptionHeaderCache::read(co
     return {};
 }
 
+EncryptionHeaderCache::HeaderBytes EncryptionHeaderCache::getOrSet(const String & storage_path, const std::function<HeaderBytes()> & load)
+{
+    Key key = makeKey(storage_path);
+    bool loaded = false;
+    auto load_func = [&]
+    {
+        auto entry = std::make_shared<Entry>(load());
+        loaded = true;
+        return entry;
+    };
+    auto entry = cache.getOrSet(key, load_func).first;
+    ProfileEvents::increment(loaded ? ProfileEvents::EncryptionHeaderCacheMisses : ProfileEvents::EncryptionHeaderCacheHits);
+    LOG_TEST(logger, "{} entry for storage_path: {}, header_bytes: {}", loaded ? "Loaded" : "Read", storage_path, entry->bytes.size());
+    return entry->bytes;
+}
+
 void EncryptionHeaderCache::clear()
 {
     cache.clear();
