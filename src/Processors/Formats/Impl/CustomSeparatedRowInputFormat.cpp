@@ -852,9 +852,17 @@ void registerCustomSeparatedSchemaReader(FormatFactory & factory)
                 String result = getAdditionalFormatInfoByEscapingRule(settings, settings.custom.escaping_rule);
                 if (!with_names)
                     result += fmt::format(", column_names_for_schema_inference={}, try_detect_header={}", settings.column_names_for_schema_inference, settings.custom.try_detect_header);
+                /// The escaping rule is a setting here, not part of the format name, and `Escaped` and `Raw` share one key in
+                /// getAdditionalFormatInfoByEscapingRule although they split fields differently (`Escaped` reads a backslash and
+                /// the character after it as one unit, `Raw` does not). The other two decide how the text is split into rows
+                /// and values, so they change the schema, the row count, or whether the file can be read at all.
                 return result + fmt::format(
-                        ", result_before_delimiter={}, row_before_delimiter={}, field_delimiter={},"
+                        ", escaping_rule={}, skip_trailing_empty_lines={}, allow_variable_number_of_columns={},"
+                        " result_before_delimiter={}, row_before_delimiter={}, field_delimiter={},"
                         " row_after_delimiter={}, row_between_delimiter={}, result_after_delimiter={}",
+                        escapingRuleToString(settings.custom.escaping_rule),
+                        settings.custom.skip_trailing_empty_lines,
+                        settings.custom.allow_variable_number_of_columns,
                         settings.custom.result_before_delimiter,
                         settings.custom.row_before_delimiter,
                         settings.custom.field_delimiter,
