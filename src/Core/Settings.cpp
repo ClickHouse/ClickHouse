@@ -4732,7 +4732,7 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
         {"26.12", "direct,hash,ie_join", "direct,hash,inequality", "Renamed `ie_join` to `inequality`. The former name `ie_join` is still accepted as an alias."}, \
         {"26.11", "direct,parallel_hash,hash,ie_join", "direct,hash,ie_join", "`parallel_hash` is an obsolete alias of `hash` and was dropped from the default list; it is still accepted. Listing `hash` or `parallel_hash` does not control how parallel the join is."}, \
         {"26.8", "direct,parallel_hash,hash", "direct,parallel_hash,hash,ie_join", "Appended `ie_join` (now named `inequality`) to the default list, so a join whose `ON` section has only inequality conditions is executed with the inequality join algorithm instead of a `CROSS JOIN` with a filter. Being last, it is used only when the other algorithms do not apply."}, \
-        {"24.12", "default", "direct,parallel_hash,hash", "'default' was deprecated in favor of explicitly specified join algorithms, also parallel_hash is now preferred over hash"}) \
+        {"24.12", "default", "direct,parallel_hash,hash", "'default' was deprecated in favor of explicitly specified join algorithms, also parallel_hash is now preferred over hash. `compatibility` does not restore 'default': with a version before 24.12 it gives 'direct,parallel_hash,hash'.", CompatibilitySetting::Ignore}) \
     DECLARE(Bool, allow_block_nested_loop_join, true, R"(
 Allow executing a `JOIN` with an arbitrary `ON` condition, one with no equality between the joined tables, as a [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition).
 
@@ -11247,7 +11247,8 @@ Enable the experimental XGBoost integration: the `XGBOOST` dictionary layout and
     DECLARE(Bool, enable_elasticsearch, false, R"(
 Enable the experimental Elasticsearch integration: the `Elasticsearch` table engine and the `elasticsearch` table function.
 )", EXPERIMENTAL, \
-        {"26.11", false, false, "New setting to gate the experimental Elasticsearch integration (the `Elasticsearch` table engine and the `elasticsearch` table function)."}) \
+        {"26.11", false, false, "New setting to gate the experimental Elasticsearch integration (the `Elasticsearch` table engine and the `elasticsearch` table function)."}, \
+        {"26.10", false, false, "New setting to gate the experimental Elasticsearch integration (the `Elasticsearch` table engine and the `elasticsearch` table function)."}) \
     DECLARE_WITH_ALIAS(Bool, enable_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine. Possible values:
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
@@ -11857,7 +11858,7 @@ For a read from object storage, the setting also allows skipping the Parquet row
 
 Works with parallel replicas (`enable_parallel_replicas = 1`): each replica prunes the granules it reads with the filter it built itself. That filter can be partial - for a `RIGHT` join the build side is the one split among the replicas, so each replica's filter covers only its own share of it - but the result stays correct, because exactly one side of the join is split, every matching pair of rows meets on exactly one replica, and each replica emits a disjoint share of the result.
 
-The granule pruning does not happen with a distributed query plan (`make_distributed_plan = 1`). There the setting is a no-op: the query returns the same result and the JOIN runtime filter itself behaves exactly as it does with this setting disabled, only the granule pruning is lost.
+With a distributed query plan (`make_distributed_plan = 1`), the granule pruning happens only if the runtime filter reaches the stage that reads the probe side: that stage also executes the JOIN (as with a broadcast join), or `distributed_plan_join_runtime_filters` sends the filter there. Otherwise the setting is a no-op: the query returns the same result and the JOIN runtime filter itself behaves exactly as it does with this setting disabled, only the granule pruning is lost. A probe side read that finishes before its filter is ready is not pruned either.
 
 With `FINAL` on the probe side, granules are pruned only by a join key that is a sorting key column of the table; a skip index is used for that only if `use_skip_indexes_if_final = 1`.
 
