@@ -10,12 +10,13 @@ integration:
   - category: 'data_visualization'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
 import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
 <div id="initial-sql-tab">
-  ## Вкладка Initial SQL {#initial-sql-tab}
+  ## Вкладка Initial SQL
 </div>
 
 Если на вкладке Advanced установлен флажок *Set Session ID* (по умолчанию), вы можете задать [настройки](/ru/reference/settings/session-settings) для сеанса с помощью
@@ -25,7 +26,7 @@ SET my_setting=value;
 ```
 
 <div id="advanced-tab">
-  ## Вкладка Advanced {#advanced-tab}
+  ## Вкладка Advanced
 </div>
 
 В 99% случаев вкладка Advanced вам не нужна, но в оставшемся 1% можно использовать следующие настройки:
@@ -45,7 +46,7 @@ SET my_setting=value;
 * Флажок **Set Session ID**. Он нужен для задания настроек на уровне сеанса на вкладке Initial SQL и генерирует `session_id` с временной меткой и псевдослучайным числом в формате `"tableau-jdbc-connector-*{timestamp}*-*{number}*"`
 
 <div id="limited-support-for-uint64-int128-uint256-data-types">
-  ## Ограниченная поддержка типов данных UInt64, Int128, (U)Int256 {#limited-support-for-uint64-int128-uint256-data-types}
+  ## Ограниченная поддержка типов данных UInt64, Int128, (U)Int256
 </div>
 
 По умолчанию драйвер отображает поля типов *UInt64, Int128, (U)Int256* как строки, **но именно отображает, а не преобразует их**. Это означает, что при попытке задать следующее вычисляемое поле вы получите ошибку

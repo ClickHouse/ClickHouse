@@ -6,11 +6,15 @@ tags: ['성능 및 최적화']
 keywords: ['기본 키']
 ---
 
-## 기본 키(primary key) 확인하기 {#checking-your-primary-key}
+<div id="checking-your-primary-key">
+  ## 기본 키(primary key) 확인하기
+</div>
 
 기본 키(primary key)를 기준으로 정렬하거나 필터링한다고 생각했는데도 쿼리 속도가 예상보다 느린 경우가 있을 수 있습니다. 이 문서에서는 기본 키가 실제로 사용되는지 확인하는 방법과, 사용되지 않는 일반적인 이유를 설명합니다.
 
-## 테이블 생성 {#create-table}
+<div id="create-table">
+  ## 테이블 생성
+</div>
 
 다음과 같은 간단한 테이블을 예로 들어 보겠습니다:
 
@@ -26,7 +30,9 @@ ORDER BY (code, toUnixTimestamp(timestamp))
 
 순서 지정 키의 두 번째 항목에 `toUnixTimestamp(timestamp)`가 포함되어 있다는 점에 유의하세요.
 
-## 데이터 채우기 {#populate-data}
+<div id="populate-data">
+  ## 데이터 채우기
+</div>
 
 이 테이블을 1억 행으로 채우십시오:
 
@@ -48,7 +54,9 @@ FROM logs
 1 row in set. Elapsed: 0.002 sec.
 ```
 
-## 기본 필터링 {#basic-filtering}
+<div id="basic-filtering">
+  ## 기본 필터링
+</div>
 
 코드로 필터링하면 출력 결과에서 스캔된 행 수를 확인할 수 있습니다. - `49.15 thousand`. 이는 전체 1억 개 행 중 일부에 해당한다는 점에 유의하십시오.
 
@@ -58,11 +66,11 @@ FROM logs
 WHERE code = '200'
 
 ┌────────c─┐
-│ 65607542 │ -- 65.61 million
+│ 65607542 │ -- 6,561만
 └──────────┘
 
-1 row in set. Elapsed: 0.021 sec. Processed 49.15 thousand rows, 49.17 KB (2.34 million rows/s., 2.34 MB/s.)
-Peak memory usage: 92.70 KiB.
+1개 행이 설정되었습니다. 경과 시간: 0.021초. 49.15천 개의 행, 49.17 KB 처리됨 (초당 2.34백만 개의 행, 2.34 MB/s.)
+최대 메모리 사용량: 92.70 KiB.
 ```
 
 또한 `EXPLAIN indexes=1` 절로 인덱스가 사용되는지 확인할 수 있습니다:
@@ -104,7 +112,9 @@ PrimaryKey
   순서 지정 키에서 뒤쪽에 있는 키로 필터링하면 튜플 앞쪽에 있는 키로 필터링하는 경우보다 효율이 떨어집니다. 이유는 [여기](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)를 참고하십시오.
 </Note>
 
-## 여러 키로 필터링하기 {#multi-key-filtering}
+<div id="multi-key-filtering">
+  ## 여러 키로 필터링하기
+</div>
 
 `code`와 `timestamp`를 기준으로 필터링한다고 가정해 보겠습니다.
 
@@ -146,7 +156,9 @@ WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= 
 
 이 경우 두 순서 지정 키가 모두 행을 필터링하는 데 사용되며, 그 결과 `87`개의 그래뉼만 읽으면 됩니다.
 
-## 정렬에서 키 사용하기 {#using-keys-in-sorting}
+<div id="using-keys-in-sorting">
+  ## 정렬에서 키 사용하기
+</div>
 
 ClickHouse는 효율적인 정렬을 위해 순서 지정 키도 활용할 수 있습니다. 구체적으로는 다음과 같습니다.
 

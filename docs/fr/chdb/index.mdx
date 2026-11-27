@@ -2,16 +2,18 @@
 title: 'chDB'
 sidebarTitle: 'Aperçu'
 slug: /chdb
-description: 'chDB est un moteur SQL OLAP in-process basé sur ClickHouse'
+description: 'chDB est un moteur SQL OLAP in-process propulsé par ClickHouse'
 keywords: ['chdb', 'embarqué', 'clickhouse-lite', 'in-process', 'in process']
 doc_type: 'guide'
 ---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
 
 chDB est un moteur SQL OLAP in-process rapide, basé sur [ClickHouse](https://github.com/clickhouse/clickhouse) v25.8.2.1.
 Vous pouvez l’utiliser si vous souhaitez bénéficier de la puissance de ClickHouse depuis un langage de programmation, sans avoir à vous connecter à un serveur ClickHouse.
 
 <div id="key-features">
-  ## Fonctionnalités clés {#key-features}
+  ## Fonctionnalités clés
 </div>
 
 * **Moteur SQL OLAP in-process** - Propulsé par ClickHouse, inutile d’installer serveur ClickHouse
@@ -22,7 +24,7 @@ Vous pouvez l’utiliser si vous souhaitez bénéficier de la puissance de Click
 * **DataStore API** - API compatible avec Pandas, avec optimisation SQL, prenant en charge plus de 630 méthodes
 
 <div id="datastore">
-  ## DataStore : API compatible avec pandas {#datastore}
+  ## DataStore : API compatible avec pandas
 </div>
 
 **NOUVEAU !** DataStore propose une API compatible avec pandas qui associe la syntaxe familière de pandas aux performances de ClickHouse.
@@ -35,7 +37,7 @@ Vous pouvez l’utiliser si vous souhaitez bénéficier de la puissance de Click
 </Tip>
 
 <div id="one-line-migration">
-  ### Migration en une seule ligne {#one-line-migration}
+  ### Migration en une seule ligne
 </div>
 
 ```python
@@ -48,7 +50,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 ```
 
 <div id="performance-highlights">
-  ### Points forts des performances {#performance-highlights}
+  ### Points forts des performances
 </div>
 
 | Opération         | pandas  | DataStore | Gain de vitesse |
@@ -60,7 +62,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 *Benchmarks sur 10 M de lignes*
 
 <div id="datastore-features">
-  ### Fonctionnalités de DataStore {#datastore-features}
+  ### Fonctionnalités de DataStore
 </div>
 
 * **630+ méthodes d’API** - 209 méthodes de pandas DataFrame, plus de 185 méthodes d’accesseur
@@ -71,7 +73,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 Pour en savoir plus : [Documentation DataStore](/fr/chdb/datastore/index)
 
 <div id="what-languages-are-supported-by-chdb">
-  ## Quels langages sont pris en charge par chDB ? {#what-languages-are-supported-by-chdb}
+  ## Quels langages sont pris en charge par chDB ?
 </div>
 
 chDB propose les bindings de langage suivants :
@@ -84,14 +86,14 @@ chDB propose les bindings de langage suivants :
 * [C et C++](/fr/chdb/install/c)
 
 <div id="how-do-i-get-started">
-  ## Comment commencer ? {#how-do-i-get-started}
+  ## Comment commencer ?
 </div>
 
 * Si vous utilisez [Go](/fr/chdb/install/go), [Rust](/fr/chdb/install/rust), [NodeJS](/fr/chdb/install/nodejs), [Bun](/fr/chdb/install/bun) ou [C et C++](/fr/chdb/install/c), consultez les pages dédiées à ces langages.
-* Si vous utilisez Python, consultez le [guide de prise en main pour les développeurs](/fr/chdb/getting-started) ou la [formation chDB à la demande](https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python).
+* Si vous utilisez Python, consultez le [guide de prise en main pour les développeurs](/fr/chdb/getting-started) ou le [cours à la demande sur chDB](https://learn.clickhouse.com/user_catalog_class/show/1901178).
 
 <div id="for-pandas-users">
-  ### Pour les utilisateurs de pandas {#for-pandas-users}
+  ### Pour les utilisateurs de pandas
 </div>
 
 Commencez par l’API DataStore pour retrouver une expérience proche de pandas avec les performances de ClickHouse :
@@ -103,7 +105,7 @@ Commencez par l’API DataStore pour retrouver une expérience proche de pandas 
 * [Guide des performances](/fr/chdb/guides/pandas-performance) - Conseils d’optimisation
 
 <div id="datastore-reference">
-  ### Référence de l’API DataStore {#datastore-reference}
+  ### Référence de l’API DataStore
 </div>
 
 * [Méthodes de fabrique](/fr/chdb/datastore/factory-methods) - Créer à partir de fichiers, de bases de données et du stockage cloud
@@ -114,7 +116,7 @@ Commencez par l’API DataStore pour retrouver une expérience proche de pandas 
 * [Débogage](/fr/chdb/debugging/index) - explain(), profilage, journalisation
 
 <div id="sql-guides">
-  ### Guides de l’API SQL {#sql-guides}
+  ### Guides de l’API SQL
 </div>
 
 * [Référence de l’API Python](/fr/chdb/api/python) - Documentation complète de l’API SQL
@@ -127,7 +129,7 @@ Commencez par l’API DataStore pour retrouver une expérience proche de pandas 
 * [Utiliser la base de données clickhouse-local](/fr/chdb/guides/clickhouse-local)
 
 <div id="an-introductory-video">
-  ## Une vidéo d’introduction {#an-introductory-video}
+  ## Une vidéo d’introduction
 </div>
 
 Regardez une brève présentation de chDB et découvrez comment il apporte toute la puissance de ClickHouse à votre environnement Python :
@@ -139,7 +141,7 @@ Regardez une brève présentation de chDB et découvrez comment il apporte toute
 </div>
 
 <div id="performance-benchmarks">
-  ## Benchmarks de performance {#performance-benchmarks}
+  ## Benchmarks de performance
 </div>
 
 chDB offre des performances exceptionnelles dans divers scénarios :
@@ -148,22 +150,20 @@ chDB offre des performances exceptionnelles dans divers scénarios :
 * **[DataFrame Benchmark](https://benchmark.clickhouse.com/#eyJzeXN0ZW0iOnsiQWxsb3lEQiI6dHJ1ZSwiQWxsb3lEQiAodHVuZWQpIjp0cnVlLCJBdGhlbmEgKHBhcnRpdGlvbmVkKSI6dHJ1ZSwiQXRoZW5hIChzaW5nbGUpIjp0cnVlLCJBdXJvcmEgZm9yIE15U1FMIjp0cnVlLCJBdXJvcmEgZm9yIFBvc3RncmVTUUwiOnRydWUsIkJ5Q29uaXR5Ijp0cnVlLCJCeXRlSG91c2UiOnRydWUsImNoREIgKERhdGFGcmFtZSkiOnRydWUsImNoREIgKFBhcnF1ZXQsIHBhcnRpdGlvbmVkKSI6dHJ1ZSwiY2hEQiI6dHJ1ZSwiQ2l0dXMiOnRydWUsIkNsaWNrSG91c2UgQ2xvdWQgKGF3cykiOnRydWUsIkNsaWNrSG91c2UgQ2xvdWQgKGF6dXJlKSI6dHJ1ZSwiQ2xpY2tIb3VzZSBDbG91ZCAoZ2NwKSI6dHJ1ZSwiQ2xpY2tIb3VzZSAoZGF0YSBsYWtlLCBwYXJ0aXRpb25lZCkiOnRydWUsIkNsaWNrSG91c2UgKGRhdGEgbGFrZSwgc2luZ2xlKSI6dHJ1ZSwiQ2xpY2tIb3VzZSAoUGFycXVldCwgcGFydGl0aW9uZWQpIjp0cnVlLCJDbGlja0hvdXNlIChQYXJxdWV0LCBzaW5nbGUpIjp0cnVlLCJDbGlja0hvdXNlICh3ZWIpIjp0cnVlLCJDbGlja0hvdXNlIjp0cnVlLCJDbGlja0hvdXNlICh0dW5lZCkiOnRydWUsIkNsaWNrSG91c2UgKHR1bmVkLCBtZW1vcnkpIjp0cnVlLCJDbG91ZGJlcnJ5Ijp0cnVlLCJDcmF0ZURCIjp0cnVlLCJDcnVuY2h5IEJyaWRnZSBmb3IgQW5hbHl0aWNzIChQYXJxdWV0KSI6dHJ1ZSwiRGF0YWJlbmQiOnRydWUsIkRhdGFGdXNpb24gKFBhcnF1ZXQsIHBhcnRpdGlvbmVkKSI6dHJ1ZSwiRGF0YUZ1c2lvbiAoUGFycXVldCwgc2luZ2xlKSI6dHJ1ZSwiQXBhY2hlIERvcmlzIjp0cnVlLCJEcnVpZCI6dHJ1ZSwiRHVja0RCIChEYXRhRnJhbWUpIjp0cnVlLCJEdWNrREIgKFBhcnF1ZXQsIHBhcnRpdGlvbmVkKSI6dHJ1ZSwiRHVja0RCIjp0cnVlLCJFbGFzdGljc2VhcmNoIjp0cnVlLCJFbGFzdGljc2VhcmNoICh0dW5lZCkiOmZhbHNlLCJHbGFyZURCIjp0cnVlLCJHcmVlbnBsdW0iOnRydWUsIkhlYXZ5QUkiOnRydWUsIkh5ZHJhIjp0cnVlLCJJbmZvYnJpZ2h0Ijp0cnVlLCJLaW5ldGljYSI6dHJ1ZSwiTWFyaWFEQiBDb2x1bW5TdG9yZSI6dHJ1ZSwiTWFyaWFEQiI6ZmFsc2UsIk1vbmV0REIiOnRydWUsIk1vbmdvREIiOnRydWUsIk1vdGhlcmR1Y2siOnRydWUsIk15U1FMIChNeUlTQU0pIjp0cnVlLCJNeVNRTCI6dHJ1ZSwiT3hsYSI6dHJ1ZSwiUGFuZGFzIChEYXRhRnJhbWUpIjp0cnVlLCJQYXJhZGVEQiAoUGFycXVldCwgcGFydGl0aW9uZWQpIjp0cnVlLCJQYXJhZGVEQiAoUGFycXVldCwgc2luZ2xlKSI6dHJ1ZSwiUGlub3QiOnRydWUsIlBvbGFycyAoRGF0YUZyYW1lKSI6dHJ1ZSwiUG9zdGdyZVNRTCAodHVuZWQpIjpmYWxzZSwiUG9zdGdyZVNRTCI6dHJ1ZSwiUXVlc3REQiAocGFydGl0aW9uZWQpIjp0cnVlLCJRdWVzdERCIjp0cnVlLCJSZWRzaGlmdCI6dHJ1ZSwiU2luZ2xlU3RvcmUiOnRydWUsIlNub3dmbGFrZSI6dHJ1ZSwiU1FMaXRlIjp0cnVlLCJTdGFyUm9ja3MiOnRydWUsIlRhYmxlc3BhY2UiOnRydWUsIlRlbWJvIE9MQVAgKGNvbHVtbmFyKSI6dHJ1ZSwiVGltZXNjYWxlREIgKGNvbXByZXNzaW9uKSI6dHJ1ZSwiVGltZXNjYWxlREIiOnRydWUsIlVtYnJhIjp0cnVlfSwidHlwZSI6eyJDIjpmYWxzZSwiY29sdW1uLW9yaWVudGVkIjpmYWxzZSwiUG9zdGdyZVNRTCBjb21wYXRpYmxlIjpmYWxzZSwibWFuYWdlZCI6ZmFsc2UsImdjcCI6ZmFsc2UsInN0YXRlbGVzcyI6ZmFsc2UsIkphdmEiOmZhbHNlLCJDKysiOmZhbHNlLCJNeVNRTCBjb21wYXRpYmxlIjpmYWxzZSwicm93LW9yaWVudGVkIjpmYWxzZSwiQ2xpY2tIb3VzZSBkZXJpdmF0aXZlIjpmYWxzZSwiZW1iZWRkZWQiOmZhbHNlLCJzZXJ2ZXJsZXNzIjpmYWxzZSwiZGF0YWZyYW1lIjp0cnVlLCJhd3MiOmZhbHNlLCJhenVyZSI6ZmFsc2UsImFuYWx5dGljYWwiOmZhbHNlLCJSdXN0IjpmYWxzZSwic2VhcmNoIjpmYWxzZSwiZG9jdW1lbnQiOmZhbHNlLCJzb21ld2hhdCBQb3N0Z3JlU1FMIGNvbXBhdGlibGUiOmZhbHNlLCJ0aW1lLXNlcmllcyI6ZmFsc2V9LCJtYWNoaW5lIjp7IjE2IHZDUFUgMTI4R0IiOnRydWUsIjggdkNQVSA2NEdCIjp0cnVlLCJzZXJ2ZXJsZXNzIjp0cnVlLCIxNmFjdSI6dHJ1ZSwiYzZhLjR4bGFyZ2UsIDUwMGdiIGdwMiI6dHJ1ZSwiTCI6dHJ1ZSwiTSI6dHJ1ZSwiUyI6dHJ1ZSwiWFMiOnRydWUsImM2YS5tZXRhbCwgNTAwZ2IgZ3AyIjp0cnVlLCIxOTJHQiI6dHJ1ZSwiMjRHQiI6dHJ1ZSwiMzYwR0IiOnRydWUsIjQ4R0IiOnRydWUsIjcyMEdCIjp0cnVlLCI5NkdCIjp0cnVlLCJkZXYiOnRydWUsIjcwOEdCIjp0cnVlLCJjNW4uNHhsYXJnZSwgNTAwZ2IgZ3AyIjp0cnVlLCJBbmFseXRpY3MtMjU2R0IgKDY0IHZDb3JlcywgMjU2IEdCKSI6dHJ1ZSwiYzUuNHhsYXJnZSwgNTAwZ2IgZ3AyIjp0cnVlLCJjNmEuNHhsYXJnZSwgMTUwMGdiIGdwMiI6dHJ1ZSwiY2xvdWQiOnRydWUsImRjMi44eGxhcmdlIjp0cnVlLCJyYTMuMTZ4bGFyZ2UiOnRydWUsInJhMy40eGxhcmdlIjp0cnVlLCJyYTMueGxwbHVzIjp0cnVlLCJTMiI6dHJ1ZSwiUzI0Ijp0cnVlLCIyWEwiOnRydWUsIjNYTCI6dHJ1ZSwiNFhMIjp0cnVlLCJYTCI6dHJ1ZSwiTDEgLSAxNkNQVSAzMkdCIjp0cnVlLCJjNmEuNHhsYXJnZSwgNTAwZ2IgZ3AzIjp0cnVlfSwiY2x1c3Rlcl9zaXplIjp7IjEiOnRydWUsIjIiOnRydWUsIjQiOnRydWUsIjgiOnRydWUsIjE2Ijp0cnVlLCIzMiI6dHJ1ZSwiNjQiOnRydWUsIjEyOCI6dHJ1ZSwic2VydmVybGVzcyI6dHJ1ZX0sIm1ldHJpYyI6ImhvdCIsInF1ZXJpZXMiOlt0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlXX0=)** - Comparaison des moteurs DataFrame
 * **[DataStore vs Pandas](/fr/chdb/datastore/index#performance)** - Jusqu’à 20 fois plus rapide que Pandas pour les opérations courantes
 
-<div className="ch-image-md">
-  <Frame>
-    ![Résultats des tests de performance sur les DataFrame](/images/chdb/df_bench.webp)
-  </Frame>
-</div>
+<Image img="/images/chdb/df_bench.webp" alt="Résultats du benchmark DataFrame" size="md" />
 
-## À propos de chDB {#about-chdb}
+<div id="about-chdb">
+  ## À propos de chDB
+</div>
 
 * Lisez toute l&#39;histoire de la naissance du projet chDB sur le [blog](https://clickhouse.com/blog/chdb-embedded-clickhouse-rocket-engine-on-a-bicycle)
 * Découvrez chDB et ses cas d&#39;utilisation sur le [blog](https://clickhouse.com/blog/welcome-chdb-to-clickhouse)
-* Suivez la [formation chDB à la demande](https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python)
+* Suivez le [cours chDB à la demande](https://learn.clickhouse.com/user_catalog_class/show/1901178)
 * Découvrez chDB dans votre navigateur grâce aux [exemples codapi](https://antonz.org/trying-chdb/)
 * Pour plus d&#39;exemples, voir (https://github.com/chdb-io/chdb/tree/main/examples)
 
 <div id="license">
-  ## Licence {#license}
+  ## Licence
 </div>
 
 chDB est disponible sous la licence Apache, version 2.0. Consultez le fichier [LICENSE](https://github.com/chdb-io/chdb/blob/main/LICENSE.txt) pour plus d’informations.

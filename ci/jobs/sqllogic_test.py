@@ -93,20 +93,6 @@ class ClickHouseBinary:
             return False
         return True
 
-    def died_result(self):
-        retcode = self.proc.poll()
-        if retcode is None:
-            return None
-        with open(self.log_file, "rb") as f:
-            f.seek(max(0, os.path.getsize(self.log_file) - 64 * 1024 * 1024))
-            lines = f.read().decode(errors="replace").splitlines()
-        fatal = [line for line in lines if "<Fatal>" in line]
-        return Result(
-            name="Server died",
-            status=Result.Status.FAIL,
-            info="\n".join([f"Server exited with code {retcode}", *(fatal or lines)[-200:]]),
-        )
-
 
 def load_stage_reports(out_dir, mode_name):
     """Load report.json files from each stage under a mode's output directory."""
@@ -707,12 +693,6 @@ def main():
                 command=report_and_thresholds,
             )
         )
-
-    # A server that died mid-run otherwise shows only as a short test count.
-    if results[0].is_ok():
-        died = ch.died_result()
-        if died:
-            results.append(died)
 
     report_files = []
     if os.path.isfile(report_html_path):

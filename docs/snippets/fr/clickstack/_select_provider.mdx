@@ -22,10 +22,10 @@ Lorsque vous indiquez les CPU et la mémoire, estimez-les en fonction de votre d
 | 100–500 TB / mois          | 30 vCPU × 3 répliques          |
 | 1 PB+ / mois               | 59 vCPU × 3 répliques          |
 
-Ces recommandations reposent sur les hypothèses suivantes :
+Ces recommandations reposent sur les hypothèses suivantes :
 
 * Le volume de données correspond au **volume d’ingestion non compressé** par mois et s’applique aussi bien aux logs qu’aux traces.
-* Les modèles de requêtes sont typiques des cas d’usage d’observabilité, la plupart des requêtes portant sur des **données récentes**, généralement des 24 dernières heures.
+* Les modèles de requêtes sont typiques des cas d’usage d’observabilité, la plupart des requêtes portant sur des **données récentes**, généralement des 24 dernières heures.
 * L’ingestion est relativement **uniforme sur l’ensemble du mois**. Si vous prévoyez un trafic irrégulier ou des pics, vous devez prévoir une marge de capacité supplémentaire.
 * Le stockage est géré séparément via le stockage objet ClickHouse Cloud et ne constitue pas un facteur limitant pour la rétention. Nous partons du principe que les données conservées plus longtemps sont rarement consultées.
 
@@ -37,6 +37,6 @@ Bien que deux répliques puissent répondre aux exigences de CPU et de mémoire 
   Ces valeurs sont **uniquement des estimations** et doivent être utilisées comme point de départ. Les besoins réels dépendent de la complexité des requêtes, de la concurrence, des politiques de rétention et de la variabilité du débit d’ingestion. Surveillez toujours l’utilisation des ressources et adaptez le dimensionnement si nécessaire.
 </Note>
 
-Une fois vos besoins définis, le provisionnement de votre service prendra plusieurs minutes. N’hésitez pas à explorer le reste de la [console ClickHouse Cloud](/fr/products/cloud/getting-started/intro) pendant le provisionnement.
+Une fois vos besoins définis, le provisionnement de votre service Managed ClickStack prendra რამდენიმე minutes. N’hésitez pas à explorer le reste de la [console ClickHouse Cloud](/fr/products/cloud/getting-started/intro) pendant le provisionnement.
 
 Une fois **le provisionnement terminé, l’option &#39;ClickStack&#39; dans le menu de gauche sera activée**.

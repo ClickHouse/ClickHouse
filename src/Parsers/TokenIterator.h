@@ -32,14 +32,27 @@ public:
     {
     }
 
-    ALWAYS_INLINE const Token & operator[] (size_t index)
+    const Token & operator[] (size_t index)
     {
-        if (index < data.size()) [[likely]]
+        while (true)
         {
-            max_pos = std::max(max_pos, index);
-            return data[index];
+            if (index < data.size())
+            {
+                max_pos = std::max(max_pos, index);
+                return data[index];
+            }
+
+            if (!data.empty() && data.back().isEnd())
+            {
+                max_pos = data.size() - 1;
+                return data.back();
+            }
+
+            Token token = lexer.nextToken();
+
+            if (!skip_insignificant || token.isSignificant())
+                data.emplace_back(token);
         }
-        return lexUntil(index);
     }
 
     const Token & max()
@@ -53,10 +66,6 @@ public:
     {
         max_pos = 0;
     }
-
-private:
-    /// Lexes the tokens up to `index`, out of line: the parser looks at tokens already lexed far more often.
-    NO_INLINE const Token & lexUntil(size_t index);
 };
 
 
@@ -112,9 +121,8 @@ inline std::string_view textBetween(TokenIterator begin, TokenIterator end)
     return {begin->begin, static_cast<size_t>(end->end - begin->begin)};
 }
 
-/// Returns positions of unmatched parentheses. The walk stops at the first semicolon at or after `statement_end`
-/// where every bracket is closed: what follows can only add brackets of later statements.
+/// Returns positions of unmatched parentheses.
 using UnmatchedParentheses = std::vector<Token>;
-UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin, const char * statement_end);
+UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin);
 
 }

@@ -19,17 +19,20 @@ ClickHouse поддерживает интеграцию с нескольким
   `SET allow_database_iceberg = 1;`
 </Note>
 
-## Предварительные требования {#prerequisites}
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
 
 Перед созданием подключения из ClickHouse к каталогу среды выполнения Lakehouse (BigLake Metastore) убедитесь, что у вас есть:
 
 * **Проект Google Cloud** с включенным каталогом среды выполнения Lakehouse
-* Учётные данные одного из следующих типов:
-  * **Ключ сервисного аккаунта**: созданный через [Google Cloud Console](https://docs.cloud.google.com/iam/docs/keys-create-delete) файл ключа в формате JSON служебной учётной записи, у которой есть доступ к каталогу и к бакету GCS. Этот вариант рекомендуется для серверов, поскольку он не зависит от пользовательского сеанса.
-  * **Учетные данные Application Default** (OAuth client ID и client secret) для приложения, созданные через [Google Cloud Console](https://docs.cloud.google.com/docs/authentication/provide-credentials-adc), а также **токен обновления**, полученный после прохождения OAuth-потока с соответствующими областями доступа (например, `https://www.googleapis.com/auth/bigquery` и областью доступа к хранилищу для GCS)
+* **Учетные данные Application Default** (OAuth client ID и client secret) для приложения, созданные через [Google Cloud Console](https://docs.cloud.google.com/docs/authentication/provide-credentials-adc)
+* **Токен обновления**, полученный после прохождения OAuth-потока с соответствующими областями доступа (например, `https://www.googleapis.com/auth/bigquery` и областью доступа к хранилищу для GCS)
 * Путь к **хранилищу**: бакет GCS (и необязательный префикс), где хранятся ваши таблицы, например `gs://your-bucket` или `gs://your-bucket/prefix`
 
-## Создание подключения между каталогом среды выполнения Lakehouse и ClickHouse {#creating-a-connection}
+<div id="creating-a-connection">
+  ## Создание подключения между каталогом среды выполнения Lakehouse и ClickHouse
+</div>
 
 После настройки учетных данных OAuth создайте в ClickHouse базу данных, использующую движок базы данных [DataLakeCatalog](/ru/reference/engines/database-engines/datalake):
 
@@ -47,21 +50,9 @@ SETTINGS
     warehouse = 'gs://<bucket_name>/<optional-prefix>';
 ```
 
-Чтобы вместо этого выполнять аутентификацию с помощью ключа сервисного аккаунта, передайте содержимое файла ключа в формате JSON в параметре `google_service_account_key`, а проект — в `google_project_id`. ClickHouse подписывает этим ключом JWT, обменивает его на токен доступа и автоматически обновляет этот токен. Тот же токен используется для чтения файлов данных из GCS. Ключ маскируется в выводе `SHOW CREATE DATABASE` и в журналах.
-
-```sql
-CREATE DATABASE lakehouse_runtime_catalog
-ENGINE = DataLakeCatalog('https://biglake.googleapis.com/iceberg/v1/restcatalog')
-SETTINGS
-    catalog_type = 'biglake',
-    google_service_account_key = '{"type": "service_account", "client_email": "...", "private_key": "...", ...}',
-    google_project_id = '<gcp-project-id>',
-    warehouse = 'gs://<bucket_name>/<optional-prefix>';
-```
-
-Настройка `google_service_account_key` и настройки `google_adc_*` являются взаимоисключающими. Ни одну из них нельзя использовать вместе с настройкой `disk`, поскольку таблица, размещённая на диске, читает свои файлы данных с учётными данными диска, а не каталога.
-
-## Запросы к таблицам каталога среды выполнения Lakehouse из ClickHouse {#querying-lakehouse-runtime-tables}
+<div id="querying-lakehouse-runtime-tables">
+  ## Запросы к таблицам каталога среды выполнения Lakehouse из ClickHouse
+</div>
 
 После создания подключения можно выполнять запросы к таблицам, зарегистрированным в каталоге среды выполнения Lakehouse.
 
@@ -95,7 +86,9 @@ SELECT count(*) FROM `lakehouse_runtime_catalog.my_iceberg_table`;
 SHOW CREATE TABLE `lakehouse_runtime_catalog.my_iceberg_table`;
 ```
 
-## Загрузка данных из Lakehouse в ClickHouse {#loading-data-into-clickhouse}
+<div id="loading-data-into-clickhouse">
+  ## Загрузка данных из Lakehouse в ClickHouse
+</div>
 
 Чтобы загрузить данные из таблицы каталога среды выполнения Lakehouse в локальную таблицу ClickHouse для ускорения повторных запросов, создайте таблицу MergeTree и выполните вставку из каталога:
 

@@ -13,21 +13,21 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## aggregate_function_input_format {#aggregate_function_input_format}
+<div id="aggregate_function_input_format">
+  ## aggregate_function_input_format
+</div>
 
 <SettingsInfoBlock type="AggregateFunctionInputFormat" default_value="state" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "state"},{"label": "Nueva configuración para controlar el formato de entrada de AggregateFunction durante las operaciones INSERT. El valor de la configuración es state de forma predeterminada"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "state"},{"label": "Nueva configuración para controlar el formato de entrada de AggregateFunction durante las operaciones INSERT. El valor de la configuración se establece en `state` de forma predeterminada"}]}]} />
 
-Cómo leen los formatos de entrada las columnas de tipo `AggregateFunction`.
+Formato de la entrada de AggregateFunction durante las operaciones INSERT.
 
 Valores posibles:
 
-* `state` — el estado serializado de la función de agregación, tal como lo escriben los formatos de salida (valor predeterminado).
-* `value` — un valor del argumento de la función de agregación, o una tupla de los argumentos si hay varios. El valor se agrega para formar el estado.
-* `array` — un array de valores, tal como se describe en la opción `value` anterior. Todos los elementos del array se agregan para formar el estado.
-
-En los modos `value` y `array`, el formato lee la columna como si tuviera el tipo de los valores: `T` para `AggregateFunction(f, T)`, `Tuple(T1, T2)` para `AggregateFunction(f, T1, T2)`, o un `Array` de ese tipo en el modo `array`. Los valores se escriben con la representación que el formato emplea para ese tipo: un número o una cadena en un formato de texto, un array JSON en los formatos JSON, la codificación binaria del tipo en `RowBinary` o `Native`, una columna de ese tipo en `Parquet`, etc. Esto se aplica a todos los formatos de entrada, y también a `AggregateFunction` anidado en `Array`, `Tuple` o `Map`.
+* `state` — Cadena binaria con el estado serializado (valor predeterminado). Este es el comportamiento predeterminado, en el que se espera que los valores de AggregateFunction sean datos binarios.
+* `value` — El formato espera un único valor del argumento de la función de agregación o, en caso de varios argumentos, una tupla con ellos. Se deserializarán mediante el IDataType correspondiente o DataTypeTuple y luego se agregarán para formar el estado.
+* `array` — El formato espera un Array de valores, como se describe en la opción `value` anterior. Todos los elementos del array se agregarán para formar el estado.
 
 **Ejemplos**
 
@@ -47,11 +47,6 @@ INSERT INTO example FORMAT CSV
 123,456
 ```
 
-```sql
-INSERT INTO example FORMAT JSONEachRow
-{"user_id": 123, "avg_session_length": 456}
-```
-
 Con `aggregate_function_input_format = 'array'`:
 
 ```sql
@@ -59,14 +54,11 @@ INSERT INTO example FORMAT CSV
 123,"[456,789,101]"
 ```
 
-```sql
-INSERT INTO example FORMAT JSONEachRow
-{"user_id": 123, "avg_session_length": [456, 789, 101]}
-```
+Nota: los formatos `value` y `array` son más lentos que el formato `state` predeterminado, ya que requieren crear y agregar valores durante la inserción.
 
-Nota: los formatos `value` y `array` son más lentos que el formato predeterminado `state`, ya que requieren crear y agregar valores durante la inserción.
-
-## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
+<div id="aggregate_functions_null_for_empty">
+  ## aggregate_functions_null_for_empty
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

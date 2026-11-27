@@ -21,7 +21,7 @@ bool ParserExecuteAsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
 
     ASTPtr target_user;
-    if (!ParserUserNameWithHost(/*allow_query_parameter=*/ true).parse(pos, target_user, expected))
+    if (!ParserUserNameWithHost(/*allow_query_parameter=*/ false).parse(pos, target_user, expected))
         return false;
 
     auto query = make_intrusive<ASTExecuteAsQuery>();
@@ -73,64 +73,6 @@ bool ParserExecuteAsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     }
 
     return true;
-}
-
-std::map<String, Documentation> ParserExecuteAsQuery::getDocumentation() const
-{
-    std::map<String, Documentation> documentation;
-
-    documentation["EXECUTE AS"] =
-    {
-        .description = R"DOCS_MD(
-<CloudNotSupportedBadge />
-
-Allows to execute queries on behalf of a different user.
-
-## Syntax {#syntax}
-
-```sql
-EXECUTE AS target_user;
-EXECUTE AS target_user subquery;
-```
-
-The first form (without `subquery`) sets that all the following queries in the current session will be executed on behalf of the specified `target_user`.
-
-The second form (with `subquery`) executes only the specified `subquery` on behalf of the specified `target_user`.
-
-In order to work both forms require config setting `access_control_improvements.allow_impersonate_user`
-to be set to `1` and the `IMPERSONATE` privilege to be granted. For example, the following commands
-```sql
-GRANT IMPERSONATE ON user1 TO user2;
-GRANT IMPERSONATE ON * TO user3;
-```
-allow user `user2` to execute commands `EXECUTE AS user1 ...` and also allow user `user3` to execute commands as any user.
-
-While impersonating another user function [currentUser()](/reference/functions/regular-functions/other-functions#currentUser) returns the name of that other user,
-and function [authenticatedUser()](/reference/functions/regular-functions/other-functions#authenticatedUser) returns the name of the user who has been actually authenticated.
-
-## Examples {#examples}
-
-```sql
-SELECT currentUser(), authenticatedUser(); -- outputs "default    default"
-CREATE USER james;
-EXECUTE AS james SELECT currentUser(), authenticatedUser(); -- outputs "james    default"
-```
-
-Use a query parameter to pass the target user:
-
-```sql
-SET param_user=james;
-EXECUTE AS {user:Identifier} SELECT currentUser(); -- outputs "james"
-```
-)DOCS_MD",
-        .syntax = R"(
-EXECUTE AS target_user
-EXECUTE AS target_user subquery
-)",
-        .related = {"GRANT", "CREATE USER", "SET ROLE"},
-    };
-
-    return documentation;
 }
 
 }

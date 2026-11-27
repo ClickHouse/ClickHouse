@@ -8,6 +8,8 @@
 -- does not start at the archive's header, so its header is read with a request of its own.
 -- Nothing may load the marks or the primary key before the queries, so that both queries load them themselves:
 -- otherwise the shared caches decide whether a query reads them.
+-- The merges are not compared: in this version the `ProfileEvents` of a merge in `system.part_log` count only the
+-- merge thread itself, not the threads that prefetch for it, so they do not count the same requests for both disks.
 
 DROP TABLE IF EXISTS t_plain;
 DROP TABLE IF EXISTS t_encrypted;
@@ -29,20 +31,14 @@ OPTIMIZE TABLE t_encrypted FINAL;
 -- A mark range, with the randomized settings that change how the data is read pinned.
 SELECT sum(length(s)) FROM t_plain WHERE k BETWEEN 10000 AND 60000
 SETTINGS max_threads = 1, remote_filesystem_read_method = 'threadpool', remote_filesystem_read_prefetch = 1, use_uncompressed_cache = 0,
-    use_page_cache_for_object_storage = 0, use_page_cache_for_disks_without_file_cache = 0, use_columns_cache = 0,
-    enable_parallel_replicas = 0, allow_prefetched_read_pool_for_remote_filesystem = 0, log_comment = '05871_plain';
+    use_page_cache_for_object_storage = 0, use_page_cache_for_disks_without_file_cache = 0,
+    enable_parallel_replicas = 0, log_comment = '05871_plain';
 SELECT sum(length(s)) FROM t_encrypted WHERE k BETWEEN 10000 AND 60000
 SETTINGS max_threads = 1, remote_filesystem_read_method = 'threadpool', remote_filesystem_read_prefetch = 1, use_uncompressed_cache = 0,
-    use_page_cache_for_object_storage = 0, use_page_cache_for_disks_without_file_cache = 0, use_columns_cache = 0,
-    enable_parallel_replicas = 0, allow_prefetched_read_pool_for_remote_filesystem = 0, log_comment = '05871_encrypted';
+    use_page_cache_for_object_storage = 0, use_page_cache_for_disks_without_file_cache = 0,
+    enable_parallel_replicas = 0, log_comment = '05871_encrypted';
 
-SYSTEM FLUSH LOGS part_log, query_log;
-
-SELECT
-    sumIf(ProfileEvents['S3GetObject'], table = 't_plain') > 0,
-    sumIf(ProfileEvents['S3GetObject'], table = 't_encrypted') = sumIf(ProfileEvents['S3GetObject'], table = 't_plain')
-FROM system.part_log
-WHERE database = currentDatabase() AND event_type = 'MergeParts';
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     sumIf(ProfileEvents['S3GetObject'], log_comment = '05871_plain') > 0,

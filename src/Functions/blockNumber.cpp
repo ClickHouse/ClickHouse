@@ -54,9 +54,9 @@ public:
         return false;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "() -> UInt64";
+        return std::make_shared<DataTypeUInt64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
@@ -91,16 +91,24 @@ FROM
             )",
             R"(
 ┌─blockNumber()─┐
-│             6 │
-│             6 │
 │             7 │
 │             7 │
+└───────────────┘
+┌─blockNumber()─┐
 │             8 │
 │             8 │
+└───────────────┘
+┌─blockNumber()─┐
 │             9 │
 │             9 │
+└───────────────┘
+┌─blockNumber()─┐
 │            10 │
 │            10 │
+└───────────────┘
+┌─blockNumber()─┐
+│            11 │
+│            11 │
 └───────────────┘
             )"
         }

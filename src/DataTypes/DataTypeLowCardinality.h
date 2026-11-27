@@ -62,15 +62,9 @@ public:
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type);
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type, MutableColumnPtr && keys);
 
-    size_t getNumberOfChildren() const override { return 1; }
-    const DataTypePtr & getChild(size_t index) const override
-    {
-        chassert(index == 0);
-        return dictionary_type;
-    }
+    void forEachChild(const ChildCallback & callback) const override;
 
 private:
-    DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     template <typename ... Params>
@@ -91,8 +85,6 @@ private:
 
 /// Returns dictionary type if type is DataTypeLowCardinality, type otherwise.
 DataTypePtr removeLowCardinality(const DataTypePtr & type);
-/// Same as above, but does not copy the shared pointer.
-const IDataType & removeLowCardinality(const IDataType & type [[clang::lifetimebound]]);
 
 /// Remove LowCardinality recursively from all nested types.
 DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type);

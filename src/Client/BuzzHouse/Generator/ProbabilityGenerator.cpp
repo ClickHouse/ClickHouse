@@ -3,8 +3,6 @@
 #include <Common/Exception.h>
 
 #include <algorithm>
-#include <cmath>
-#include <limits>
 #include <random>
 
 #include <base/defines.h>
@@ -29,13 +27,12 @@ ProbabilityGenerator::ProbabilityGenerator(
     , seed(in_seed ? in_seed : randomSeed())
     , generator(seed)
     , cdf(nvalues, 0.0)
-    , all_enabled(nvalues, true)
     , enabled_values(nvalues, true)
     , description(desc)
 {
     ensureAtLeastOneEnabled(enabled_values);
-    base_probabilities = generateInitial();
-    probabilities = deriveProbabilities(enabled_values);
+    probabilities = generateInitial();
+    applyEnabledMaskAndRenorm(probabilities);
     buildCdf();
 }
 
@@ -61,15 +58,16 @@ const std::vector<bool> & ProbabilityGenerator::getEnabledMask() const
 
 void ProbabilityGenerator::setEnabled(const std::vector<bool> & mask)
 {
-    if (mask.size() != nvalues)
-        throw DB::Exception(
-            DB::ErrorCodes::BUZZHOUSE, "Enabled mask size {} does not match {} options at {}", mask.size(), nvalues, description);
-    /// The masked distribution depends only on the base and the mask, so an unchanged mask is a no-op.
-    if (mask == enabled_values)
-        return;
     ensureAtLeastOneEnabled(mask);
-    probabilities = deriveProbabilities(mask);
     enabled_values = mask;
+
+    /// Zero out disabled and renormalize among enabled.
+    applyEnabledMaskAndRenorm(probabilities);
+
+    /// If you're using bounded realism / drifting, enforce bounds among enabled.
+    if (strategy == ProbabilityStrategy::BoundedRealism || strategy == ProbabilityStrategy::Drifting)
+        clampToBoundsAndRenormEnabled(probabilities, enabled_values);
+
     buildCdf();
 }
 
@@ -111,7 +109,6 @@ void ProbabilityGenerator::tick()
         if (ops_emitted % drift_every_n_ops == 0)
         {
             applyDrift();
-            probabilities = deriveProbabilities(enabled_values);
             buildCdf();
         }
     }
@@ -128,12 +125,9 @@ void ProbabilityGenerator::ensureAtLeastOneEnabled(const std::vector<bool> & mas
 
 size_t ProbabilityGenerator::lastEnabledIndex() const
 {
-    for (size_t i = nvalues; i > 0;)
-    {
-        --i;
+    for (size_t i = nvalues; i-- > 0;)
         if (enabled_values[i])
             return i;
-    }
     /// Should be impossible due to invariant
     return 0;
 }
@@ -152,21 +146,30 @@ std::vector<double> ProbabilityGenerator::generateInitial()
 
 std::vector<double> ProbabilityGenerator::genBalanced()
 {
-    std::vector<double> w(nvalues, 0.0);
-    std::exponential_distribution<double> exp_dist(1.0);
-    const int attempts = std::max(1, balanced_resample_attempts);
-
-    /// Resample a few times to avoid extreme skew; the last attempt is kept regardless.
-    for (int attempt = 1;; ++attempt)
+    /// Resample a few times to avoid extreme skew among enabled ops.
+    for (int attempt = 0; attempt < std::max(1, balanced_resample_attempts); ++attempt)
     {
-        for (auto & x : w)
-            x = exp_dist(generator) + kEpsilon;
-        normalizeEnabledInPlace(w, all_enabled);
+        std::vector<double> w(nvalues, 0.0);
+        std::exponential_distribution<double> exp_dist(1.0);
+        for (size_t i = 0; i < nvalues; ++i)
+            w[i] = enabled_values[i] ? (exp_dist(generator) + kEpsilon) : 0.0;
 
-        const auto [mn, mx] = minmaxEnabled(w, all_enabled);
-        if (attempt >= attempts || (mn > 0.0 && mx / mn <= balanced_max_ratio))
+        normalizeEnabledInPlace(w, enabled_values);
+
+        const auto [mn, mx] = minmaxEnabled(w, enabled_values);
+        const double ratio = (mn > 0.0) ? (mx / mn) : std::numeric_limits<double>::infinity();
+        if (ratio <= balanced_max_ratio)
             return w;
     }
+
+    /// fallback
+    std::vector<double> w(nvalues, 0.0);
+    std::exponential_distribution<double> exp_dist(1.0);
+    for (size_t i = 0; i < nvalues; ++i)
+        w[i] = enabled_values[i] ? (exp_dist(generator) + kEpsilon) : 0.0;
+
+    normalizeEnabledInPlace(w, enabled_values);
+    return w;
 }
 
 std::vector<double> ProbabilityGenerator::genBounded()
@@ -175,26 +178,42 @@ std::vector<double> ProbabilityGenerator::genBounded()
 
     for (size_t i = 0; i < nvalues; ++i)
     {
+        if (!enabled_values[i])
+        {
+            w[i] = 0.0;
+            continue;
+        }
         const auto b = bounds[i];
         if (b.min < 0.0 || b.max < 0.0 || b.min > b.max)
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Invalid bounds at {} index {}: min={}, max={}", description, i, b.min, b.max);
         std::uniform_real_distribution<double> unif(b.min, b.max);
         w[i] = unif(generator);
     }
-    normalizeEnabledInPlace(w, all_enabled);
-    clampToBoundsAndRenormEnabled(w, all_enabled);
+    normalizeEnabledInPlace(w, enabled_values);
+    clampToBoundsAndRenormEnabled(w, enabled_values);
     return w;
 }
 
 void ProbabilityGenerator::applyDrift()
 {
-    /// Drift the unmasked base, so disabled ops keep drifting and stay meaningful when re-enabled.
+    /// drift only enabled ops
     std::uniform_real_distribution<double> unif(-drift_strength, drift_strength);
+    std::vector<double> w = probabilities;
 
-    for (auto & w : base_probabilities)
-        w = std::max(w * (1.0 + unif(generator)), 0.0);
-    normalizeEnabledInPlace(base_probabilities, all_enabled);
-    clampToBoundsAndRenormEnabled(base_probabilities, all_enabled);
+    for (size_t i = 0; i < nvalues; ++i)
+    {
+        if (!enabled_values[i])
+        {
+            w[i] = 0.0;
+            continue;
+        }
+        w[i] = w[i] * (1.0 + unif(generator));
+        w[i] = std::max(w[i], 0.0);
+    }
+
+    normalizeEnabledInPlace(w, enabled_values);
+    clampToBoundsAndRenormEnabled(w, enabled_values);
+    probabilities = w;
 }
 
 void ProbabilityGenerator::buildCdf()
@@ -218,15 +237,13 @@ void ProbabilityGenerator::buildCdf()
         cdf[i] = 1.0;
 }
 
-std::vector<double> ProbabilityGenerator::deriveProbabilities(const std::vector<bool> & mask)
+void ProbabilityGenerator::applyEnabledMaskAndRenorm(std::vector<double> & p) const
 {
-    /// The base is never modified here, so disabling an op does not lose its share.
-    std::vector<double> p = base_probabilities;
-
-    normalizeEnabledInPlace(p, mask);
-    if (strategy == ProbabilityStrategy::BoundedRealism || strategy == ProbabilityStrategy::Drifting)
-        clampToBoundsAndRenormEnabled(p, mask);
-    return p;
+    chassert(p.size() == nvalues && enabled_values.size() == nvalues);
+    for (size_t i = 0; i < nvalues; ++i)
+        if (!enabled_values[i])
+            p[i] = 0.0;
+    normalizeEnabledInPlace(p, enabled_values);
 }
 
 void ProbabilityGenerator::normalizeEnabledInPlace(std::vector<double> & v, const std::vector<bool> & enabled) const
@@ -290,18 +307,10 @@ void ProbabilityGenerator::clampToBoundsAndRenormEnabled(std::vector<double> & p
         sum_min += bounds[i].min;
         sum_max += bounds[i].max;
     }
-    /// The bounds are set for all ops, so a small enabled subset may not reach 1 or exceed it.
-    /// Then scale the subset's bounds proportionally, which keeps their ratios feasible.
-    const double min_scale = sum_min > 1.0 + kEpsilon ? 1.0 / sum_min : 1.0;
-    const double max_scale = sum_max < 1.0 - kEpsilon ? 1.0 / sum_max : 1.0;
-    std::vector<double> lo(nvalues);
-    std::vector<double> hi(nvalues);
-
-    for (size_t i = 0; i < nvalues; ++i)
-    {
-        lo[i] = bounds[i].min * min_scale;
-        hi[i] = std::min(1.0, bounds[i].max * max_scale);
-    }
+    if (sum_min > 1.0 + kEpsilon)
+        throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Inconsistent bounds for enabled subset at {} (cannot min sum to 1)", description);
+    if (sum_max < 1.0 - kEpsilon)
+        throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Inconsistent bounds for enabled subset at {} (cannot max sum to 1)", description);
 
     std::vector<bool> fixed(nvalues, false);
     for (int iter = 0; iter < kClampMaxIterations; ++iter)
@@ -315,14 +324,14 @@ void ProbabilityGenerator::clampToBoundsAndRenormEnabled(std::vector<double> & p
                 continue;
             }
 
-            if (p[i] < lo[i])
+            if (p[i] < bounds[i].min)
             {
-                p[i] = lo[i];
+                p[i] = bounds[i].min;
                 fixed[i] = true;
             }
-            else if (p[i] > hi[i])
+            else if (p[i] > bounds[i].max)
             {
-                p[i] = hi[i];
+                p[i] = bounds[i].max;
                 fixed[i] = true;
             }
             else

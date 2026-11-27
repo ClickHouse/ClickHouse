@@ -35,28 +35,23 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 2; }
 
     /// Function timeSeriesThrowDuplicateSeriesIf uses information stored in the query context, it's deterministic in the scope of the current query.
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return true; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
 
     /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
-    [[nodiscard]] bool isStateful() const override { return true; }
+    bool isStateful() const override { return true; }
 
     /// Disable constant folding: the per-query tags collector is not populated at analysis time.
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
+    bool isSuitableForConstantFolding() const override { return false; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(NativeNumber, UInt64) -> UInt8";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
         return std::make_shared<DataTypeUInt8>();
@@ -83,7 +78,7 @@ public:
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForGroup(name, arguments, 1);
     }
 
-    [[nodiscard]] ColumnPtr
+    ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
@@ -115,7 +110,7 @@ public:
     }
 
 private:
-    [[nodiscard]] size_t findPositionOfNonZero(const ColumnPtr & column, const DataTypePtr & data_type) const
+    size_t findPositionOfNonZero(const ColumnPtr & column, const DataTypePtr & data_type) const
     {
         WhichDataType which{data_type};
         if (which.isUInt8())
@@ -146,7 +141,7 @@ private:
     }
 
     template <typename T>
-    [[nodiscard]] size_t findPositionOfNonZeroImpl(const ColumnPtr & column, const DataTypePtr & data_type) const
+    size_t findPositionOfNonZeroImpl(const ColumnPtr & column, const DataTypePtr & data_type) const
     {
         const auto * in = checkAndGetColumn<ColumnVector<T>>(column.get());
 
@@ -195,33 +190,26 @@ but uses a different error code and formats the error message differently.
         {"group", "Group of tags.", {"UInt64"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `0`.", {"UInt8"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "One series per group",
+    FunctionDocumentation::Examples examples = {{
+        "Example",
         R"(
 CREATE TABLE test(tags Array(Tuple(String, String))) engine=Memory;
 
 INSERT INTO test VALUES ([('__name__', 'up')]);
 
-SELECT timeSeriesThrowDuplicateSeriesIf(count() > 1, timeSeriesTagsToGroup(tags))
+SELECT timeSeriesTagsToGroup(tags) AS group
 FROM test
-GROUP BY timeSeriesTagsToGroup(tags);
-        )",
-        "0",
-    },
-    {
-        "Two series with the same tags",
-        R"(
+GROUP BY group
+HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- OK
+
 INSERT INTO test VALUES ([('__name__', 'up')]);
 
-SELECT timeSeriesThrowDuplicateSeriesIf(count() > 1, timeSeriesTagsToGroup(tags))
+SELECT timeSeriesTagsToGroup(tags) AS group
 FROM test
-GROUP BY timeSeriesTagsToGroup(tags);
+GROUP BY group
+HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- Throws exception "Multiple series have the same tags {'__name__': 'up'}"
         )",
-        R"(
-Received exception:
-Code: 768. DB::Exception: Multiple series have the same tags {'__name__': 'up'}, duplicate series in the same result set are not allowed. (DUPLICATE_TIME_SERIES)
-        )",
+        "",
     }};
     FunctionDocumentation::IntroducedIn introduced_in = {26, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;

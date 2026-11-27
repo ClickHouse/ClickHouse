@@ -19,7 +19,7 @@ public:
         ChunkBufferPtr chunk_buffer_,
         size_t max_streams_);
 
-    [[nodiscard]] String getName() const override { return "ReadFromCommonBuffer"; }
+    String getName() const override { return "ReadFromCommonBuffer"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 private:

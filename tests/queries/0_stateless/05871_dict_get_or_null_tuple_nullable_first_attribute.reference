@@ -1,8 +1,0 @@
-0	(NULL,NULL)	Tuple(\n    a Nullable(String),\n    b Nullable(UInt64))
-1	('x',10)	Tuple(\n    a Nullable(String),\n    b Nullable(UInt64))
-2	(NULL,20)	Tuple(\n    a Nullable(String),\n    b Nullable(UInt64))
-3	(NULL,NULL)	Tuple(\n    a Nullable(String),\n    b Nullable(UInt64))
-0	(NULL,NULL)
-1	(10,'x')
-2	(20,NULL)
-3	(NULL,NULL)

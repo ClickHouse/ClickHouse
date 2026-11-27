@@ -4,19 +4,25 @@ title: 'avgResample'
 description: 'مثال على استخدام المُركِّب Resample مع avg'
 keywords: ['avg', 'Resample', 'مُركِّب', 'أمثلة', 'avgResample']
 sidebarTitle: 'avgResample'
-doc_type: 'reference'
+doc_type: 'مرجع'
 ---
 
-## الوصف {#description}
+<div id="description">
+  ## الوصف
+</div>
 
 يمكن تطبيق المُركِّب [`Resample`](/ar/reference/functions/aggregate-functions/combinators#-resample)
 على دالة التجميع [`count`](/ar/reference/functions/aggregate-functions/count)
 لعدّ قيم عمود المفتاح المحدد ضمن عدد ثابت
 من الفترات (`N`).
 
-## مثال للاستخدام {#example-usage}
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
 
-### مثال أساسي {#basic-example}
+<div id="basic-example">
+  ### مثال أساسي
+</div>
 
 لنلقِ نظرة على مثال. سننشئ جدولًا يضم `name` و`age` و
 `wage` للموظفين، وسنُدرِج فيه بعض البيانات:
@@ -29,7 +35,7 @@ CREATE TABLE employee_data
     wage Float32
 ) 
 ENGINE = MergeTree()
-ORDER BY tuple();
+ORDER BY tuple()
 
 INSERT INTO employee_data (name, age, wage) VALUES
     ('John', 16, 10.0),
@@ -43,7 +49,7 @@ INSERT INTO employee_data (name, age, wage) VALUES
 لنحسب متوسط أجور الأشخاص الذين تقع أعمارهم ضمن الفترتين `[30,60)`
 و`[60,75)` (حيث إن `[` غير شامل و`)` شامل). وبما أننا نستخدم تمثيل العمر
 كعدد صحيح، فستكون الأعمار ضمن الفترتين `[30, 59]` و`[60,74]`.
-وللقيام بذلك، نطبّق المُركِّب `Resample` على الدالة التجميعية `avg`.
+وللقيام بذلك، نطبّق المُركِّب `Resample` على الدالة التجميعية `avg`.
 
 ```sql
 WITH avg_wage AS
@@ -62,7 +68,9 @@ FROM avg_wage;
 └──────────────────┘
 ```
 
-## انظر أيضًا {#see-also}
+<div id="see-also">
+  ## انظر أيضًا
+</div>
 
 * [`count`](/ar/reference/functions/aggregate-functions/count)
 * [`Resample مُركِّب`](/ar/reference/functions/aggregate-functions/combinators#-resample)

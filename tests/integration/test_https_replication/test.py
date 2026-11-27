@@ -101,8 +101,7 @@ def test_replication_after_partition(both_https_cluster):
     ires.wait()
 
     assert_eq_with_retry(node1, "SELECT count() FROM test_table", "100")
-    node2.query("SYSTEM SYNC REPLICA test_table", timeout=120)
-    assert node2.query("SELECT count() FROM test_table") == "100\n"
+    assert_eq_with_retry(node2, "SELECT count() FROM test_table", "100")
 
 
 node3 = cluster.add_instance(

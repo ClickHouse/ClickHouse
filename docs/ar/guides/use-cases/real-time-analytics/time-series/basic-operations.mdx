@@ -5,7 +5,7 @@ description: 'عمليات السلاسل الزمنية الأساسية في C
 slug: /use-cases/time-series/basic-operations
 keywords: ['السلاسل الزمنية', 'العمليات الأساسية', 'إدخال البيانات', 'الاستعلام عن', 'التصفية', 'التجميع', 'التجميع التلخيصي']
 show_related_blogs: true
-doc_type: 'guide'
+doc_type: 'دليل'
 ---
 
 يوفّر ClickHouse عدة أساليب للتعامل مع بيانات السلاسل الزمنية، ما يتيح لك تجميع نقاط البيانات وتحليلها عبر فترات زمنية مختلفة.
@@ -34,7 +34,7 @@ ORDER BY (time);
 ```sql
 INSERT INTO wikistat 
 SELECT *
-FROM s3('https://ClickHouse-public-datasets.s3.amazonaws.com/wikistat/partitioned/wikistat*.native.zst', NOSIGN)
+FROM s3('https://ClickHouse-public-datasets.s3.amazonaws.com/wikistat/partitioned/wikistat*.native.zst') 
 LIMIT 1e9;
 ```
 

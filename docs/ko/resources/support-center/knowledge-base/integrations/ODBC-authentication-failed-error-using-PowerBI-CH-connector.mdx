@@ -6,7 +6,11 @@ tags: ['네이티브 클라이언트 및 인터페이스', '오류 및 예외']
 keywords: ['ODBC', 'Power BI Connector', '인증 실패']
 ---
 
-## 질문 {#question}
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="question">
+  ## 질문
+</div>
 
 커넥터를 사용해 PowerBI에서 ClickHouse에 연결하려고 하면 인증 오류가 발생합니다.
 
@@ -23,14 +27,10 @@ See also /etc/clickhouse-server/users.ml on the server where
 ClickHouse is installed.
 ```
 
-<div className="ch-image-md">
-  <Frame>
-    ![Power BI ODBC 인증 오류 대화 상자](/images/knowledgebase/powerbi_odbc_authentication_error.webp)
-  </Frame>
-</div>
+<Image img="/images/knowledgebase/powerbi_odbc_authentication_error.webp" size="md" alt="Power BI ODBC 인증 오류 대화 상자" border />
 
 <div id="answer">
-  ## 답변 {#answer}
+  ## 답변
 </div>
 
 ClickHouse ODBC 드라이버를 [1.4.1](https://github.com/ClickHouse/clickhouse-odbc/releases/tag/1.4.1.20250523) 버전으로 업데이트하십시오.

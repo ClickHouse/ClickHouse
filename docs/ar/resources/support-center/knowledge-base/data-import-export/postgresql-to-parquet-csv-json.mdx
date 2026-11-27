@@ -6,7 +6,9 @@ tags: ['تصدير البيانات', 'تنسيقات البيانات']
 keywords: ['PostgreSQL', 'Parquet', 'CSV', 'JSON']
 ---
 
-## كيفية تصدير بيانات PostgreSQL إلى Parquet أو CSV أو JSON {#how-to-export-postgresql-data-to-parquet-csv-or-json}
+<div id="how-to-export-postgresql-data-to-parquet-csv-or-json">
+  ## كيفية تصدير بيانات PostgreSQL إلى Parquet أو CSV أو JSON
+</div>
 
 هذا سهل باستخدام `clickhouse-local`:
 
@@ -21,7 +23,9 @@ keywords: ['PostgreSQL', 'Parquet', 'CSV', 'JSON']
 curl https://clickhouse.com/ | sh
 ```
 
-## تصدير PostgreSQL إلى Parquet {#export-postgresql-to-parquet}
+<div id="export-postgresql-to-parquet">
+  ## تصدير PostgreSQL إلى Parquet
+</div>
 
 تتيح دالة الجدول `postgresql` تنفيذ استعلامات `SELECT` (و`INSERT`) على البيانات المخزنة على خادم PostgreSQL بعيد. على سبيل المثال، لعرض كامل محتويات جدول في PostgreSQL:
 
@@ -55,7 +59,9 @@ INTO OUTFILE 'my_output_file.parquet'"
   بما أن اسم ملف الإخراج ينتهي بالامتداد `.parquet`، يفترض ClickHouse أننا نريد استخدام صيغة Parquet، لذا لاحظ أننا أغفلنا عبارة `FORMAT Parquet`.
 </Note>
 
-## تصدير PostgreSQL إلى CSV {#export-postgresql-to-csv}
+<div id="export-postgresql-to-csv">
+  ## تصدير PostgreSQL إلى CSV
+</div>
 
 الأمر مماثل لما هو عليه مع Parquet، باستثناء أننا نحدّد اسم ملف أنسب للمخرجات:
 
@@ -73,7 +79,9 @@ INTO OUTFILE 'my_output_file.csv'"
 
 هذا كل ما في الأمر! يتعرّف ClickHouse على الامتداد `.csv` في اسم ملف الإخراج، فيُخرج البيانات بصيغة القيم المفصولة بفواصل. وفيما عدا ذلك، فهو الأمر نفسه تمامًا كما في الأعلى.
 
-## تصدير PostgreSQL إلى JSON {#export-postgresql-to-json}
+<div id="export-postgresql-to-json">
+  ## تصدير PostgreSQL إلى JSON
+</div>
 
 للتحويل من PostgreSQL إلى JSON، ما علينا سوى تغيير اسم الملف، وسيتعرّف ClickHouse على التنسيق تلقائيًا:
 
@@ -108,7 +116,9 @@ INTO OUTFILE 'my_output_file.ndjson'"
   ```
 </Note>
 
-## تمرير PostgreSQL إلى عملية أخرى كتدفّق {#stream-postgresql-to-another-process}
+<div id="stream-postgresql-to-another-process">
+  ## تمرير PostgreSQL إلى عملية أخرى كتدفّق
+</div>
 
 بدلًا من استخدام `INTO OUTFILE`، يمكنك تمرير نتائج `دالة الجدول` إلى عملية أخرى كتدفّق. إليك مثالًا بسيطًا لتوضيح البنية - نحسب عدد الصفوف باستخدام أمر Linux `wc -l`:
 

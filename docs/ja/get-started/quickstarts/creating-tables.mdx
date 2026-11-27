@@ -1,6 +1,5 @@
 ---
-sidebarTitle: 'ClickHouse でのテーブルの作成'
-searchable: true
+sidebarTitle: 'テーブルの作成'
 title: 'ClickHouse でのテーブルの作成'
 slug: /guides/creating-tables
 description: 'ClickHouse でのテーブルの作成について学びます'
@@ -38,15 +37,15 @@ CREATE DATABASE IF NOT EXISTS helloworld
 次の `my_first_table` という名前のテーブルは、`helloworld` データベースに作成されます。
 
 ```sql
-CREATE TABLE helloworld.my_first_table
-(
-    user_id UInt32,
-    message String,
-    timestamp DateTime,
-    metric Float32
-)
-ENGINE = MergeTree()
-PRIMARY KEY (user_id, timestamp)
+  CREATE TABLE helloworld.my_first_table
+  (
+      user_id UInt32,
+      message String,
+      timestamp DateTime,
+      metric Float32
+  )
+  ENGINE = MergeTree()
+  PRIMARY KEY (user_id, timestamp)
 ```
 
 上の例では、`my_first_table` は 4 つのカラムを持つ `MergeTree` テーブルです。
@@ -67,7 +66,7 @@ PRIMARY KEY (user_id, timestamp)
 </Note>
 
 <div id="a-brief-intro-to-primary-keys">
-  ## 主キーの簡単な紹介 {#a-brief-intro-to-primary-keys}
+  ## 主キーの簡単な紹介
 </div>
 
 先に進む前に、ClickHouse で主キーがどのように機能するのかを理解しておくことが重要です (主キーの実装は
@@ -87,7 +86,7 @@ ClickHouse テーブルの主キーは、データがディスクに書き込ま
 カラムファイルに格納されるデータは、まず `user_id`、次に `timestamp` の順にソートされます。
 
 <Tip>
-  詳細については、ClickHouse Academy の [Modeling Data トレーニングモジュール](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550440) を参照してください。
+  For more details, check out the [Modeling Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328860/?utm_source=clickhouse\&utm_medium=docs) in ClickHouse Academy.
 </Tip>
 
 <div className="mt-8">

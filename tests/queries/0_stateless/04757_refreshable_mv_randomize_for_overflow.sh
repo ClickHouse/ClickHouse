@@ -23,15 +23,3 @@ for _ in {1..100}; do
     sleep 0.1
 done
 $CLICKHOUSE_CLIENT -q "$query"
-
-# An absurd period never elapses: `CalendarTimeInterval::advance` saturates instead of overflowing, which made such
-# views refresh right away, in a loop, or at a time in the past. `EMPTY` skips the first refresh, so none may run.
-$CLICKHOUSE_CLIENT -q "
-    create materialized view rmv_seconds refresh every 9223372036854775000 second (x Int64) engine Memory empty as select 1 as x;
-    create materialized view rmv_seconds_wrap refresh every 10000000000000000000 second (x Int64) engine Memory empty as select 1 as x;
-    create materialized view rmv_years refresh every 768614336404564650 year (x Int64) engine Memory empty as select 1 as x;
-    create materialized view rmv_after refresh after 10000000000000000000 second (x Int64) engine Memory empty as select 1 as x;"
-sleep 2
-$CLICKHOUSE_CLIENT -q "
-    select view, status, last_refresh_time is null from system.view_refreshes
-    where database = currentDatabase() and view like 'rmv\\_%' order by view"

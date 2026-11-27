@@ -24,7 +24,9 @@ description: 'Estratégias de otimização de custos compartilhadas em encontros
 
 *Saiba como o [ClickHouse Cloud pode ajudar a gerenciar os custos operacionais](/pt-BR/products/cloud/getting-started/intro)*.
 
-## Estratégia de compressão: LZ4 vs ZSTD em produção {#compression-strategy}
+<div id="compression-strategy">
+  ## Estratégia de compressão: LZ4 vs ZSTD em produção
+</div>
 
 Quando o Microsoft Clarity precisou lidar com centenas de terabytes de dados, descobriu que as escolhas de compressão têm um impacto enorme nos custos. Na escala em que opera, cada ganho de armazenamento faz diferença, e a equipe se deparou com um trade-off clássico: desempenho versus custos de armazenamento. O Microsoft Clarity lida com volumes massivos — dois petabytes de dados não compactados por mês em todas as contas, processando cerca de 60.000 consultas por hora em oito nós e atendendo bilhões de visualizações de página de milhões de sites. Nessa escala, a estratégia de compressão se torna um fator crítico de custo.
 
@@ -37,7 +39,9 @@ Inicialmente, eles usavam a compressão padrão [LZ4](/pt-BR/reference/statement
 * Impacto de desempenho gerenciável na ingestão e nas consultas
 * Redução significativa dos custos na escala de centenas de TB
 
-## Estratégia de retenção baseada em colunas {#column-retention}
+<div id="column-retention">
+  ## Estratégia de retenção baseada em colunas
+</div>
 
 Uma das técnicas mais eficazes de otimização de custos vem da análise de quais colunas estão realmente sendo usadas. O Microsoft Clarity implementa estratégias sofisticadas de retenção baseada em colunas usando os recursos nativos de telemetria do ClickHouse. O ClickHouse fornece métricas detalhadas sobre o uso de armazenamento por coluna, bem como padrões de consulta abrangentes: quais colunas são acessadas, com que frequência, a duração das consultas e estatísticas gerais de uso.
 
@@ -54,7 +58,9 @@ Essa abordagem orientada por dados permite tomar decisões estratégicas sobre p
 
 * [Gerenciamento de dados - TTL em nível de coluna](/pt-BR/guides/use-cases/observability/build-your-own/managing-data)
 
-## Gerenciamento de dados baseado em partições {#partition-management}
+<div id="partition-management">
+  ## Gerenciamento de dados baseado em partições
+</div>
 
 A Microsoft Clarity descobriu que a estratégia de particionamento afeta tanto o desempenho quanto a simplicidade operacional. A abordagem deles: particionar por data e ordenar por hora. Essa estratégia oferece vários benefícios além da eficiência na limpeza — ela permite uma limpeza de dados simples, simplifica os cálculos de faturamento do serviço voltado ao cliente e atende aos requisitos de conformidade com o GDPR para exclusão por linha.
 
@@ -69,7 +75,9 @@ A Microsoft Clarity descobriu que a estratégia de particionamento afeta tanto o
 
 * [Gerenciamento de dados - Partições](/pt-BR/guides/use-cases/observability/build-your-own/managing-data#partitions)
 
-## Estratégia de conversão de string para inteiro {#string-integer-conversion}
+<div id="string-integer-conversion">
+  ## Estratégia de conversão de string para inteiro
+</div>
 
 Plataformas de analytics frequentemente enfrentam desafios de armazenamento com dados categóricos que se repetem em milhões de linhas. A equipe de engenharia da Microsoft encontrou esse problema em seus dados de analytics de busca e desenvolveu uma solução eficaz que reduziu em 60% o armazenamento dos conjuntos de dados afetados.
 
@@ -90,7 +98,9 @@ Essa arquitetura preserva a experiência do usuário — as pessoas continuam ve
   Este é um exemplo usado especificamente no cenário de dados do Microsoft Clarity. Se você tem todos os seus dados no ClickHouse ou não tem restrições para mover dados para o ClickHouse, prefira usar [dictionaries](/pt-BR/concepts/features/dictionaries/index).
 </Note>
 
-## Vídeos {#video-sources}
+<div id="video-sources">
+  ## Vídeos
+</div>
 
 * **[Microsoft Clarity e ClickHouse](https://www.youtube.com/watch?v=rUVZlquVGw0)** - Equipe do Microsoft Clarity
 * **[A jornada do ClickHouse na Contentsquare](https://www.youtube.com/watch?v=zvuCBAl2T0Q)** - Doron Hoffman &amp; Guram Sigua (ContentSquare)

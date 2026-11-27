@@ -1,3 +1,4 @@
+#include <Common/assert_cast.h>
 #include <Common/Macros.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageFactory.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
@@ -31,18 +32,6 @@ void checkSingleLocation(const ClusterConfigurationPtr & cluster)
 {
     if (cluster->getConfiguration().size() > 1)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Disk supports only single location clusters");
-}
-
-const WebObjectStorage & getWebObjectStorage(const ObjectStoragePtr & object_storage, std::string_view metadata_type)
-{
-    const auto * web_object_storage = dynamic_cast<const WebObjectStorage *>(object_storage.get());
-    if (!web_object_storage)
-        throw Exception(
-            ErrorCodes::INVALID_CONFIG_PARAMETER,
-            "Metadata type `{}` requires a web object storage, but the disk is configured with {} object storage",
-            metadata_type,
-            object_storage->getName());
-    return *web_object_storage;
 }
 
 std::string getObjectKeyCompatiblePrefix(
@@ -221,21 +210,8 @@ static void registerPlainRewritableMetadataStorage(MetadataStorageFactory & fact
 
         const auto local_object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
         std::string key_compatibility_prefix = getObjectKeyCompatiblePrefix(local_object_storage, config, config_prefix);
-        /// Hard links make the metadata of a directory unreadable by servers older than 26.10, so they can be disabled.
-        bool enable_hard_links = config.getBool(config_prefix + ".enable_hard_links", true);
 
-        /// Like `enable_hard_links`, the snapshot settings are read only when the disk is created,
-        /// `SYSTEM RELOAD CONFIG` does not apply them.
-        PlainRewritableSnapshotSettings snapshot_settings;
-        snapshot_settings.enabled = config.getBool(config_prefix + ".metadata_snapshot_enabled", snapshot_settings.enabled);
-        snapshot_settings.write_delay_ms = config.getUInt64(config_prefix + ".metadata_snapshot_write_delay_ms", snapshot_settings.write_delay_ms);
-
-        /// A disk attached with `read_only` is wrapped with `ReadOnlyDiskWrapper` after the metadata storage is created,
-        /// and its object storage is writable. It has to consume the snapshot and never publish or remove it.
-        bool read_only_disk = config.getBool(config_prefix + ".read_only", false);
-
-        return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(
-            local_object_storage, key_compatibility_prefix, enable_hard_links, snapshot_settings, read_only_disk);
+        return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(local_object_storage, key_compatibility_prefix);
     });
 }
 
@@ -253,7 +229,7 @@ static void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFacto
 
         const auto local_object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
 
-        return std::make_shared<MetadataStorageFromStaticFilesWebServer>(getWebObjectStorage(local_object_storage, "web"));
+        return std::make_shared<MetadataStorageFromStaticFilesWebServer>(assert_cast<const WebObjectStorage &>(*local_object_storage));
     });
 }
 
@@ -271,7 +247,7 @@ static void registerMetadataStorageFromIndexPages(MetadataStorageFactory & facto
 
         const auto local_object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
 
-        return std::make_shared<MetadataStorageFromIndexPages>(getWebObjectStorage(local_object_storage, "web_index"));
+        return std::make_shared<MetadataStorageFromIndexPages>(assert_cast<const WebObjectStorage &>(*local_object_storage));
     });
 }
 

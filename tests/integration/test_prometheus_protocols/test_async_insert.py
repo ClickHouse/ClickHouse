@@ -1,16 +1,11 @@
-import uuid
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 from .prometheus_test_utils import (
     convert_metrics_metadata_to_protobuf,
     convert_time_series_to_protobuf,
-    execute_query_via_http_api,
     get_response_to_remote_write,
     send_protobuf_to_remote_write,
-    types_pb2,
 )
 
 
@@ -38,6 +33,7 @@ def cleanup_after_test():
         yield
     finally:
         node.query("DROP TABLE IF EXISTS prometheus SYNC")
+        node.query("DROP TABLE IF EXISTS samples SYNC")
 
 
 def get_async_insert_query_count():
@@ -45,67 +41,6 @@ def get_async_insert_query_count():
         node.query(
             "SELECT sum(value) FROM system.events WHERE event = 'AsyncInsertQuery'"
         )
-    )
-
-
-def get_profile_event(event):
-    return int(
-        node.query(
-            f"SELECT sum(value) FROM system.events WHERE event = '{event}'"
-        )
-    )
-
-
-def write_request_with_exemplar(metric_name, samples=None):
-    timestamp = 1724112000
-    write_request = convert_time_series_to_protobuf(
-        [({"__name__": metric_name}, samples or {timestamp: 1.5})]
-    )
-    write_request.timeseries[0].exemplars.append(
-        types_pb2.Exemplar(
-            labels=[types_pb2.Label(name="trace_id", value="abc")],
-            value=1.5,
-            timestamp=timestamp * 1000,
-        )
-    )
-    return write_request
-
-
-# Every bucket of samples goes to its own partition, so with `max_partitions_per_insert_block=1`
-# a write of samples in two buckets fails.
-TWO_BUCKETS = {1724112000: 1.5, 1724115601: 2.5}
-
-
-def create_table_with_partition_per_bucket():
-    node.query(
-        "CREATE TABLE prometheus ENGINE=TimeSeries "
-        "SAMPLES INNER ENGINE=AggregatingMergeTree PARTITION BY bucket ORDER BY (id, bucket)"
-    )
-
-
-def test_async_insert_metric_families_deduplication_cache():
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
-
-    metadata = [("cached_metric", "GAUGE", "Test metric", "seconds")]
-    protobuf = convert_metrics_metadata_to_protobuf(metadata)
-    hits_before = get_profile_event(
-        "TimeSeriesMetricFamiliesDeduplicationCacheHits"
-    )
-
-    # Every remote write is acknowledged after its data is flushed,
-    # so the second one finds the metric family in the deduplication cache.
-    for _ in range(2):
-        send_protobuf_to_remote_write(
-            node.ip_address, 9093, "/write?async_insert=1", protobuf
-        )
-
-    assert (
-        node.query("SELECT count() FROM timeSeriesMetricFamilies(prometheus)")
-        == "1\n"
-    )
-    assert (
-        get_profile_event("TimeSeriesMetricFamiliesDeduplicationCacheHits")
-        == hits_before + 1
     )
 
 
@@ -135,7 +70,7 @@ def test_async_insert_acknowledged_after_flush():
         convert_metrics_metadata_to_protobuf(metrics_metadata),
     )
 
-    assert node.query("SELECT sum(length(samples)) FROM timeSeriesData(prometheus)") == "2\n"
+    assert node.query("SELECT count() FROM timeSeriesData(prometheus)") == "2\n"
     assert (
         node.query(
             "SELECT tags['job'] FROM timeSeriesTags(prometheus) "
@@ -145,8 +80,8 @@ def test_async_insert_acknowledged_after_flush():
     )
     assert (
         node.query(
-            "SELECT type, help, unit FROM timeSeriesMetricFamilies(prometheus) "
-            "WHERE metric_family = 'async_metric'"
+            "SELECT type, help, unit FROM timeSeriesMetrics(prometheus) "
+            "WHERE metric_family_name = 'async_metric'"
         )
         == "gauge\tTest metric\tseconds\n"
     )
@@ -155,186 +90,20 @@ def test_async_insert_acknowledged_after_flush():
 
 
 def test_async_insert_no_acknowledgement_on_failure():
-    # Every bucket of samples goes to its own partition of the samples table, and the request limits
-    # an insert block to one partition, so a request with two samples in different buckets fails.
     node.query(
-        "CREATE TABLE prometheus ENGINE=TimeSeries "
-        "SAMPLES INNER ENGINE=AggregatingMergeTree PARTITION BY bucket ORDER BY (id, bucket)"
+        "CREATE TABLE samples (id UUID, timestamp DateTime64(3), value Float64, "
+        "CONSTRAINT reject_all CHECK value < 0) ENGINE=MergeTree ORDER BY (id, timestamp)"
     )
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries DATA samples")
 
-    time_series = [({"__name__": "async_metric"}, {1724112000: 1.5, 1724115601: 2.5})]
+    time_series = [({"__name__": "async_metric"}, {1724112000: 1.5})]
     response = get_response_to_remote_write(
         node.ip_address,
         9093,
-        "/write?async_insert=1&max_partitions_per_insert_block=1",
+        "/write?async_insert=1",
         convert_time_series_to_protobuf(time_series),
     )
 
     assert not response.ok
-    assert "TOO_MANY_PARTS" in response.text
-    assert node.query("SELECT count() FROM timeSeriesSamples(prometheus)") == "0\n"
-
-
-def test_async_insert_counts_dropped_exemplars():
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
-
-    before = get_profile_event("PrometheusRemoteWriteDroppedExemplars")
-    query_id = f"remote-write-{uuid.uuid4()}"
-    send_protobuf_to_remote_write(
-        node.ip_address,
-        9093,
-        f"/write?async_insert=1&query_id={query_id}",
-        write_request_with_exemplar("exemplar_async_metric"),
-    )
-
-    # The flush counts the exemplar before the write is acknowledged.
-    assert get_profile_event("PrometheusRemoteWriteDroppedExemplars") - before == 1
-
-    # The event is attributed to the flush query of this request in the query log.
-    node.query("SYSTEM FLUSH LOGS")
-    flush_query_id = node.query(
-        f"SELECT flush_query_id FROM system.asynchronous_insert_log WHERE query_id = '{query_id}'"
-    ).strip()
-    assert flush_query_id
-    assert (
-        node.query(
-            "SELECT ProfileEvents['PrometheusRemoteWriteDroppedExemplars'] FROM system.query_log "
-            f"WHERE type = 'QueryFinish' AND query_id = '{flush_query_id}'"
-        )
-        == "1\n"
-    )
-
-
-@pytest.mark.parametrize("async_insert", [0, 1])
-def test_async_insert_failure_counts_no_dropped_exemplars(async_insert):
-    create_table_with_partition_per_bucket()
-
-    write_request = write_request_with_exemplar("exemplar_rejected_metric", TWO_BUCKETS)
-    before = get_profile_event("PrometheusRemoteWriteDroppedExemplars")
-    response = get_response_to_remote_write(
-        node.ip_address,
-        9093,
-        f"/write?async_insert={async_insert}&max_partitions_per_insert_block=1",
-        write_request,
-    )
-
-    # The write is rejected, so its exemplar is not counted as dropped.
-    assert "TOO_MANY_PARTS" in response.text
-    assert get_profile_event("PrometheusRemoteWriteDroppedExemplars") - before == 0
-
-
-def test_async_insert_flush_timeout_returns_503():
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
-
-    # With a zero wait timeout and a 3-second flush deadline the wait always times out
-    # before the flush happens.
-    time_series = [({"__name__": "timeout_metric"}, {1724112000: 1.5})]
-    response = get_response_to_remote_write(
-        node.ip_address,
-        9093,
-        "/write?async_insert=1&wait_for_async_insert_timeout=0"
-        "&async_insert_use_adaptive_busy_timeout=0&async_insert_busy_timeout_max_ms=3000",
-        convert_time_series_to_protobuf(time_series),
-    )
-
-    # The remote-write spec makes senders drop data on 4xx statuses (other than 429),
-    # so the wait timeout must map to a retryable 503, not 408.
-    assert response.status_code == 503
-    assert "Wait for asynchronous insert timeout" in response.text
-
-    # The data stays in the server's asynchronous insert queue and is flushed later.
-    assert_eq_with_retry(
-        node, "SELECT count() FROM timeSeriesSamples(prometheus)", "1", retry_count=60
-    )
-
-    # A PromQL instant query at the sample's timestamp returns the flushed data.
-    assert execute_query_via_http_api(
-        node.ip_address, 9093, "/api/v1/query", "timeout_metric", timestamp=1724112000
-    ) == (
-        '{"resultType": "vector", "result": '
-        '[{"metric": {"__name__": "timeout_metric"}, "value": [1724112000, "1.5"]}]}'
-    )
-
-
-def test_async_insert_flush_timeout_counts_dropped_exemplars():
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
-
-    write_request = write_request_with_exemplar("exemplar_timeout_metric")
-    before = get_profile_event("PrometheusRemoteWriteDroppedExemplars")
-    response = get_response_to_remote_write(
-        node.ip_address,
-        9093,
-        "/write?async_insert=1&wait_for_async_insert_timeout=0"
-        "&async_insert_use_adaptive_busy_timeout=0&async_insert_busy_timeout_max_ms=3000",
-        write_request,
-    )
-    assert response.status_code == 503
-
-    # The sample is flushed later, so its exemplar is counted as dropped too.
-    assert_eq_with_retry(
-        node, "SELECT count() FROM timeSeriesSamples(prometheus)", "1", retry_count=60
-    )
-    assert_eq_with_retry(
-        node,
-        "SELECT sum(value) FROM system.events WHERE event = 'PrometheusRemoteWriteDroppedExemplars'",
-        str(before + 1),
-        retry_count=60,
-    )
-
-
-def test_async_insert_failed_late_flush_counts_no_dropped_exemplars():
-    create_table_with_partition_per_bucket()
-
-    write_request = write_request_with_exemplar("exemplar_late_rejected_metric", TWO_BUCKETS)
-    before = get_profile_event("PrometheusRemoteWriteDroppedExemplars")
-    failed_before = get_profile_event("FailedAsyncInsertQuery")
-    response = get_response_to_remote_write(
-        node.ip_address,
-        9093,
-        "/write?async_insert=1&max_partitions_per_insert_block=1&wait_for_async_insert_timeout=0"
-        "&async_insert_use_adaptive_busy_timeout=0&async_insert_busy_timeout_max_ms=3000",
-        write_request,
-    )
-    assert response.status_code == 503
-
-    # The flush after the timeout is rejected, so the exemplar is not counted as dropped.
-    assert_eq_with_retry(
-        node,
-        f"SELECT sum(value) > {failed_before} FROM system.events WHERE event = 'FailedAsyncInsertQuery'",
-        "1",
-        retry_count=60,
-    )
-    assert get_profile_event("PrometheusRemoteWriteDroppedExemplars") - before == 0
-
-
-def test_async_insert_flush_timeout_is_clamped():
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
-
-    def remote_write(metric_name, wait_for_async_insert_timeout):
-        # A 3-second flush deadline: a wait shorter than that times out, a longer one does not.
-        return get_response_to_remote_write(
-            node.ip_address,
-            9093,
-            f"/write?async_insert=1&wait_for_async_insert_timeout={wait_for_async_insert_timeout}"
-            "&async_insert_use_adaptive_busy_timeout=0&async_insert_busy_timeout_max_ms=3000",
-            convert_time_series_to_protobuf(
-                [({"__name__": metric_name}, {1724112000: 1.5})]
-            ),
-        )
-
-    # 1e10 seconds is accepted by the setting but overflows the millisecond-to-nanosecond
-    # conversion that `wait_for` performs; capped at one year it outlasts the flush.
-    response = remote_write("clamped_pos_metric", 10000000000)
-    assert response.status_code == 204
-    # No retry here: the acknowledgement means the wait outlasted the flush.
-    assert node.query("SELECT count() FROM timeSeriesSamples(prometheus)") == "1\n"
-
-    # An in-range timeout is used as given, so the reported number is the one that applied.
-    response = remote_write("in_range_metric", 0.001)
-    assert response.status_code == 503
-    assert "Wait for asynchronous insert timeout (1 ms) exceeded" in response.text
-
-    # A timed-out wait keeps the data in the queue, so every sample arrives after the flush.
-    assert_eq_with_retry(
-        node, "SELECT count() FROM timeSeriesSamples(prometheus)", "2", retry_count=60
-    )
+    assert "VIOLATED_CONSTRAINT" in response.text
+    assert node.query("SELECT count() FROM samples") == "0\n"

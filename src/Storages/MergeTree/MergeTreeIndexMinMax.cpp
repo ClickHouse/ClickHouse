@@ -1,11 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
-#include <DataTypes/TypeTree.h>
 
 #include <Interpreters/ExpressionAnalyzer.h>
-
-#include <base/arithmeticOverflow.h>
-
-#include <limits>
 
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
@@ -133,9 +128,6 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
         }
 
-        normalizeBoolFields(min_ref);
-        normalizeBoolFields(max_ref);
-
         if (update_in_place)
         {
             hyperrectangle[i].left_included = true;
@@ -216,8 +208,6 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     : index_data_types(index.data_types)
     , condition(buildCondition(index, filter_dag, context))
 {
-    /// The granule bound comes from `getExtremes`, which skips NaN.
-    condition.relaxAtomsOverNaNHidingColumns(index_data_types);
 }
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
@@ -230,7 +220,6 @@ bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
          KeyCondition::RPNElement::FUNCTION_NOT_IN_SET,
          KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE,
          KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON,
-         KeyCondition::RPNElement::FUNCTION_ATOM_GROUP,
          KeyCondition::RPNElement::FUNCTION_IS_NULL,
          KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL,
          KeyCondition::RPNElement::ALWAYS_FALSE});
@@ -265,16 +254,30 @@ MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_dag, context);
 }
 
-MergeTreeIndexFormat MergeTreeIndexMinMax::getPhysicalFormat(
-    const MergeTreeDataPartChecksums & checksums, const IDataPartStorage & storage, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat MergeTreeIndexMinMax::getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
 {
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", &storage))
+    if (indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx2", &part.getDataPartStorage()))
         return {2, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}};
 
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", &storage))
+    if (indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx", &part.getDataPartStorage()))
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
 
     return {0 /* unknown */, {}};
+}
+
+MergeTreeIndexSubstreams MergeTreeIndexMinMax::getAllSubstreamsInPart(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & relative_path_prefix,
+    const IDataPartStorage * storage) const
+{
+    /// minmax format changed `.idx` (v1) -> `.idx2` (v2); a part may carry both. Return every
+    /// extension present, not just the preferred one, so cleanup does not miss the stale file.
+    MergeTreeIndexSubstreams substreams;
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", storage))
+        substreams.push_back({MergeTreeIndexSubstream::Type::Regular, "", ".idx2"});
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", storage))
+        substreams.push_back({MergeTreeIndexSubstream::Type::Regular, "", ".idx"});
+    return substreams;
 }
 
 MergeTreeIndexBulkGranulesMinMax::MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_,
@@ -309,9 +312,6 @@ void MergeTreeIndexBulkGranulesMinMax::deserializeBinary(size_t granule_num, Rea
         serialization->deserializeBinary(scratch, istr, format_settings);
         serialization->deserializeBinary(value, istr, format_settings);
     }
-
-    normalizeBoolFields(value);
-
     /// If index granularity is not 1, we insert the same value as the min
     /// or max for all the corresponding granules. For our top-K purpose, this
     /// is safe and maybe lead to false positives, but never wrong results.
@@ -373,11 +373,7 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, std::vector<MinMax
     }
     else
     {
-        /// The product is a lower bound on how many granules to keep, so it saturates instead of wrapping.
-        size_t min_granules_to_select = 0;
-        if (common::mulOverflow(n, index_granularity, min_granules_to_select))
-            min_granules_to_select = std::numeric_limits<size_t>::max();
-
+        auto min_granules_to_select = n * index_granularity;
         auto threshold = queue.top();
         for (size_t i = 0; i < min_granules_to_select && !queue.empty(); ++i)
         {
@@ -453,11 +449,7 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
     }
     else
     {
-        /// The product is a lower bound on how many granules to keep, so it saturates instead of wrapping.
-        size_t min_granules_to_select = 0;
-        if (common::mulOverflow(n, index_granularity, min_granules_to_select))
-            min_granules_to_select = std::numeric_limits<size_t>::max();
-
+        auto min_granules_to_select = n * index_granularity;
         auto threshold = queue.top();
         for (size_t i = 0; i < min_granules_to_select && !queue.empty(); ++i)
         {
@@ -520,7 +512,8 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach, const Mer
                     "with different data types. Consider using typed subcolumns or cast column to a specific data type",
                     column.type->getName(), column.name);
         };
-        forEachInTypeTree(*column.type, check_not_dynamic_or_variant);
+        check_not_dynamic_or_variant(*column.type);
+        column.type->forEachChild(check_not_dynamic_or_variant);
     }
 }
 

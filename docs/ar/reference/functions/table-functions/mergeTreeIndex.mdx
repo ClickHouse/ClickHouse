@@ -11,13 +11,17 @@ doc_type: 'reference'
 
 يمثل محتويات ملفات الفهرس والعلامات الخاصة بجداول MergeTree. ويمكن استخدامه للاستبطان.
 
-## البنية {#syntax}
+<div id="syntax">
+  ## البنية
+</div>
 
 ```sql
 mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 ```
 
-## المعاملات {#arguments}
+<div id="arguments">
+  ## المعاملات
+</div>
 
 | المعامل       | الوصف                                                             |
 | ------------- | ----------------------------------------------------------------- |
@@ -26,9 +30,9 @@ mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 | `with_marks`  | ما إذا كان سيتم تضمين الأعمدة التي تحتوي على العلامات في النتيجة. |
 | `with_minmax` | ما إذا كان سيتم تضمين فهرس الحد الأدنى-الحد الأقصى في النتيجة.    |
 
-يتطلب تحديد بنية النتيجة، باستخدام `DESCRIBE` مثلًا، امتياز `SHOW COLUMNS` على الجدول المصدر، في حين تتطلب القراءة منه امتياز `SELECT` على الأعمدة المقروءة.
-
-## القيمة المُعادة {#returned-value}
+<div id="returned-value">
+  ## القيمة المُعادة
+</div>
 
 كائن جدول يحتوي على أعمدة تتضمن قيماً لـ primary فهرس وفهرس الحد الأدنى-الحد الأقصى (إذا كانا مُمكّنين) في source جدول، وأعمدة تتضمن قيماً لـ علامات (إذا كانت مُمكّنة) لجميع الملفات المحتملة في data parts الخاصة بـ source جدول، بالإضافة إلى virtual columns:
 
@@ -38,7 +42,9 @@ mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 
 قد يحتوي عمود علامات على القيمة `(NULL, NULL)` إذا كان العمود غير موجود في data part أو إذا لم تُكتب علامات لأحد substreams الخاصة به (على سبيل المثال، في compact parts).
 
-## مثال للاستخدام {#usage-example}
+<div id="usage-example">
+  ## مثال للاستخدام
+</div>
 
 ```sql
 CREATE TABLE test_table

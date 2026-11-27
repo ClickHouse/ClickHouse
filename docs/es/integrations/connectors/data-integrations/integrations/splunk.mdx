@@ -7,6 +7,8 @@ title: 'Almacenamiento de los registros de auditoría de ClickHouse Cloud en Spl
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 import { PartnerBadge } from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -18,39 +20,29 @@ Este complemento le permite almacenar los [registros de auditoría de ClickHouse
 Este complemento solo incluye una entrada modular; no proporciona ninguna UI adicional.
 
 <div id="installation">
-  # Instalación {#installation}
+  # Instalación
 </div>
 
-## Para Splunk Enterprise {#for-splunk-enterprise}
-
-Descargue el ClickHouse Cloud Audit Add-on for Splunk desde [Splunkbase](https://splunkbase.splunk.com/app/7709).
-
-<div className="ch-image-lg">
-  <Frame>
-    ![Sitio web de Splunkbase con la página de descarga del ClickHouse Cloud Audit Add-on for Splunk](/images/integrations/tools/data-integration/splunk/splunk_001.webp)
-  </Frame>
+<div id="for-splunk-enterprise">
+  ## Para Splunk Enterprise
 </div>
 
-En Splunk Enterprise, vaya a Apps -&gt; Manage y, a continuación, haga clic en Install app from file.
+Descargue ClickHouse Cloud Audit Add-on for Splunk desde [Splunkbase](https://splunkbase.splunk.com/app/7709).
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Interfaz de Splunk Enterprise con la página de administración de aplicaciones y la opción Install app from file](/images/integrations/tools/data-integration/splunk/splunk_002.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_001.webp" size="lg" alt="Sitio web de Splunkbase que muestra la página de descarga de ClickHouse Cloud Audit Add-on for Splunk" border />
 
-Seleccione el archivo comprimido que descargó de Splunkbase y haga clic en Upload.
+En Splunk Enterprise, vaya a Apps -&gt; Manage. Luego, haga clic en Install app from file.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Cuadro de diálogo de instalación de aplicaciones de Splunk para cargar el complemento de ClickHouse](/images/integrations/tools/data-integration/splunk/splunk_003.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_002.webp" size="lg" alt="Interfaz de Splunk Enterprise que muestra la página de administración de Apps con la opción Install app from file" border />
 
-Si todo ha ido bien, debería ver instalada la aplicación ClickHouse Audit logs. De lo contrario, consulte los logs de Splunkd para detectar posibles errores.
+Seleccione el archivo comprimido descargado desde Splunkbase y haga clic en Upload.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_003.webp" size="lg" alt="Cuadro de diálogo de instalación de la aplicación de Splunk para cargar el complemento de ClickHouse" border />
+
+Si todo va bien, ahora debería ver instalada la aplicación de registros de auditoría de ClickHouse. Si no es así, consulte los logs de Splunkd para identificar cualquier error.
 
 <div id="modular-input-configuration">
-  # Configuración de la entrada modular {#modular-input-configuration}
+  # Configuración de la entrada modular
 </div>
 
 Para configurar la entrada modular, primero necesitarás cierta información de tu despliegue de ClickHouse Cloud:
@@ -58,84 +50,54 @@ Para configurar la entrada modular, primero necesitarás cierta información de 
 * El ID de la organización
 * Una [API Key de administrador](/es/products/cloud/features/admin-features/api/openapi)
 
-## Obtener información de ClickHouse Cloud {#getting-information-from-clickhouse-cloud}
+<div id="getting-information-from-clickhouse-cloud">
+  ## Obtener información de ClickHouse Cloud
+</div>
 
 Inicie sesión en la [consola de ClickHouse Cloud](https://console.clickhouse.cloud/).
 
-Vaya a Organization -&gt; Organization details. Allí podrá copiar el ID de la organización.
+Vaya a Organization -&gt; Organization details. Allí podrá copiar el Organization ID.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Consola de ClickHouse Cloud que muestra la página Organization details con el ID de la organización](/images/integrations/tools/data-integration/splunk/splunk_004.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_004.webp" size="lg" alt="Consola de ClickHouse Cloud que muestra la página Organization details con el Organization ID" border />
 
 Luego, en el menú lateral izquierdo, vaya a API Keys.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Consola de ClickHouse Cloud que muestra la sección API Keys en el menú de navegación izquierdo](/images/integrations/tools/data-integration/splunk/splunk_005.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_005.webp" size="lg" alt="Consola de ClickHouse Cloud que muestra la sección API Keys en el menú de navegación izquierdo" border />
 
 Cree una API Key, asígnele un nombre descriptivo y seleccione privilegios de `Admin`. Haga clic en Generate API Key.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Consola de ClickHouse Cloud que muestra la interfaz de creación de una API Key con privilegios de Administrador seleccionados](/images/integrations/tools/data-integration/splunk/splunk_006.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_006.webp" size="lg" alt="Consola de ClickHouse Cloud que muestra la interfaz de creación de una API Key con privilegios de Admin seleccionados" border />
 
 Guarde la API Key y el secreto en un lugar seguro.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Consola de ClickHouse Cloud que muestra la API Key generada y el secreto que deben guardarse](/images/integrations/tools/data-integration/splunk/splunk_007.webp)
-  </Frame>
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_007.webp" size="lg" alt="Consola de ClickHouse Cloud que muestra la API Key y el secreto generados para guardarlos" border />
+
+<div id="configure-data-input-in-splunk">
+  ## Configura la entrada de datos en Splunk
 </div>
 
-## Configurar la entrada de datos en Splunk {#configure-data-input-in-splunk}
+De nuevo en Splunk, ve a Settings -&gt; Data inputs.
 
-De vuelta en Splunk, vaya a Settings -&gt; Data inputs.
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_008.webp" size="lg" alt="Interfaz de Splunk que muestra el menú Settings con la opción Data inputs" border />
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Interfaz de Splunk que muestra el menú Settings con la opción Data inputs](/images/integrations/tools/data-integration/splunk/splunk_008.webp)
-  </Frame>
+Selecciona la entrada de datos ClickHouse Cloud Audit Logs.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_009.webp" size="lg" alt="Página Data inputs de Splunk que muestra la opción ClickHouse Cloud Audit Logs" border />
+
+Haz clic en &quot;New&quot; para configurar una nueva instancia de la entrada de datos.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_010.webp" size="lg" alt="Interfaz de Splunk para configurar una nueva entrada de datos ClickHouse Cloud Audit Logs" border />
+
+Una vez que hayas introducido toda la información, haz clic en Next.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_011.webp" size="lg" alt="Página de configuración de Splunk con la configuración de la entrada de datos de ClickHouse completada" border />
+
+La entrada ya está configurada; ya puedes empezar a explorar los registros de auditoría.
+
+<div id="usage">
+  # Uso
 </div>
-
-Seleccione la entrada de datos ClickHouse Cloud Audit Logs.
-
-<div className="ch-image-lg">
-  <Frame>
-    ![Página Data inputs de Splunk que muestra la opción ClickHouse Cloud Audit Logs](/images/integrations/tools/data-integration/splunk/splunk_009.webp)
-  </Frame>
-</div>
-
-Haga clic en «New» para configurar una nueva instancia de la entrada de datos.
-
-<div className="ch-image-lg">
-  <Frame>
-    ![Interfaz de Splunk para configurar una nueva entrada de datos ClickHouse Cloud Audit Logs](/images/integrations/tools/data-integration/splunk/splunk_010.webp)
-  </Frame>
-</div>
-
-Cuando haya introducido toda la información, haga clic en Next.
-
-<div className="ch-image-lg">
-  <Frame>
-    ![Página de configuración de Splunk con los ajustes de la entrada de datos de ClickHouse ya completados](/images/integrations/tools/data-integration/splunk/splunk_011.webp)
-  </Frame>
-</div>
-
-La entrada ya está configurada y puede empezar a consultar los registros de auditoría.
-
-# Uso {#usage}
 
 La entrada modular almacena los datos en Splunk. Para verlos, puede usar la vista de búsqueda general de Splunk.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Interfaz de búsqueda de Splunk que muestra datos de registro de auditoría de ClickHouse](/images/integrations/tools/data-integration/splunk/splunk_012.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_012.webp" size="lg" alt="Interfaz de búsqueda de Splunk que muestra datos de registro de auditoría de ClickHouse" border />

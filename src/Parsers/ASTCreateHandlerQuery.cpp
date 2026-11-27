@@ -1,5 +1,4 @@
 #include <Parsers/ASTCreateHandlerQuery.h>
-#include <Parsers/ASTSQLSecurity.h>
 
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
@@ -13,12 +12,11 @@ ASTPtr ASTCreateHandlerQuery::clone() const
 {
     auto res = make_intrusive<ASTCreateHandlerQuery>(*this);
     res->children.clear();
-    res->query.reset();
-    res->sql_security.reset();
     if (query)
-        res->set(res->query, query->clone());
-    if (sql_security)
-        res->set(res->sql_security, sql_security->clone());
+    {
+        res->query = query->clone();
+        res->children.push_back(res->query);
+    }
     return res;
 }
 
@@ -72,13 +70,7 @@ void ASTCreateHandlerQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSet
     }
 
     if (handler_type)
-        ostr << " TYPE " << backQuoteIfNeed(*handler_type); /// The parser reads the type as one identifier.
-
-    if (sql_security && sql_security->as<ASTSQLSecurity &>().type)
-    {
-        ostr << " ";
-        sql_security->format(ostr, settings, state, frame);
-    }
+        ostr << " TYPE " << *handler_type;
 
     if (query)
     {

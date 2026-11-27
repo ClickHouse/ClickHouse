@@ -1,8 +1,8 @@
 ---
-title: 'ClickPipe de resincronización de una base de datos'
-description: 'Documentación para un ClickPipe de resincronización de una base de datos'
+title: 'Resync de un ClickPipe de una base de datos'
+description: 'Documentación para Resync de un ClickPipe de una base de datos'
 slug: /integrations/clickpipes/postgres/resync
-sidebarTitle: 'ClickPipe de resincronización'
+sidebarTitle: 'Resync ClickPipe'
 doc_type: 'guide'
 keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestión de datos', 'sincronización en tiempo real']
 integration:
@@ -10,8 +10,10 @@ integration:
   - category: 'clickpipes'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 <div id="what-postgres-resync-do">
-  ### ¿Qué hace Resync? {#what-postgres-resync-do}
+  ### ¿Qué hace Resync?
 </div>
 
 Resync implica las siguientes operaciones, en este orden:
@@ -24,7 +26,7 @@ Resync implica las siguientes operaciones, en este orden:
 Se conservan todos los ajustes del ClickPipe original en el ClickPipe de resync. Las estadísticas del ClickPipe original se borran en la UI.
 
 <div id="use-cases-postgres-resync">
-  ### Casos de uso para Resync de un ClickPipe {#use-cases-postgres-resync}
+  ### Casos de uso para Resync de un ClickPipe
 </div>
 
 Estos son algunos escenarios:
@@ -38,17 +40,15 @@ Estos son algunos escenarios:
   ya que cada vez se realiza una carga inicial con hilos paralelos.
 </Note>
 
-### Guía para Resync de ClickPipe {#guide-postgres-resync}
+<div id="guide-postgres-resync">
+  ### Guía para Resync de ClickPipe
+</div>
 
 1. En la pestaña **Data Sources**, haga clic en el ClickPipe de Postgres que desea hacer Resync.
 2. Vaya a la pestaña **Settings**.
 3. Haga clic en el botón **Resync**.
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
 
 4. Debería aparecer un cuadro de diálogo de confirmación. Haga clic de nuevo en **Resync**.
 5. Vaya a la pestaña **Metrics**.

@@ -10,21 +10,24 @@ integration:
    - category: 'clickpipes'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/ar/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
-  ## إصدارات Postgres المدعومة {#supported-postgres-versions}
+  ## إصدارات Postgres المدعومة
 </div>
 
 تدعم ClickPipes إصدار Aurora المتوافق مع PostgreSQL، الإصدار 12 وما بعده.
 
-## تمكين النسخ المتماثل المنطقي {#enable-logical-replication}
+<div id="enable-logical-replication">
+  ## تمكين النسخ المتماثل المنطقي
+</div>
 
-يمكنك تخطي هذا القسم إذا كان مثيل Aurora لديك مُعدًّا بالفعل بالإعدادات التالية:
+يمكنك تخطي هذا القسم إذا كان مثيل Aurora لديك مُعدًّا بالفعل بالإعدادات التالية:
 
 * `rds.logical_replication = 1`
 
-عادةً ما يكون هذا الإعداد مُعدًّا مسبقًا إذا كنت قد استخدمت سابقًا أداة أخرى لنسخ البيانات.
+عادةً ما يكون هذا الإعداد مُعدًّا مسبقًا إذا كنت قد استخدمت سابقًا أداة أخرى لنسخ البيانات.
 
 ```text
 postgres=> SHOW rds.logical_replication ;
@@ -34,42 +37,28 @@ postgres=> SHOW rds.logical_replication ;
 (1 row)
 ```
 
-إذا لم يكن هذا مُعدًّا بالفعل، فاتبع الخطوات التالية:
+إذا لم يكن هذا مُعدًّا بالفعل، فاتبع الخطوات التالية:
 
 1. أنشئ مجموعة معلمات جديدة لإصدار Aurora PostgreSQL لديك بالإعداد المطلوب:
    * اضبط `rds.logical_replication` على 1
 
-<div className="ch-image-lg">
-  <Frame>
-    ![مكان العثور على مجموعات المعلمات في Aurora](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp" alt="مكان العثور على مجموعات المعلمات في Aurora" size="lg" border />
 
-<div className="ch-image-lg">
-  <Frame>
-    ![تغيير rds.logical_replication](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp" alt="تغيير rds.logical_replication" size="lg" border />
 
 2. طبّق مجموعة المعلمات الجديدة على عنقود Aurora PostgreSQL لديك
 
-<div className="ch-image-lg">
-  <Frame>
-    ![تعديل Aurora PostgreSQL باستخدام مجموعة معلمات جديدة](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp" alt="تعديل Aurora PostgreSQL باستخدام مجموعة معلمات جديدة" size="lg" border />
 
 3. أعد تشغيل عنقود Aurora لتطبيق التغييرات
 
-<div className="ch-image-lg">
-  <Frame>
-    ![إعادة تشغيل Aurora PostgreSQL](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
-  </Frame>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp" alt="إعادة تشغيل Aurora PostgreSQL" size="lg" border />
+
+<div id="configure-database-user">
+  ## إعداد مستخدم قاعدة البيانات
 </div>
 
-## إعداد مستخدم قاعدة البيانات {#configure-database-user}
-
-اتصل بالمثيل الكاتب في Aurora PostgreSQL كمستخدم مسؤول، ثم نفّذ الأوامر التالية:
+اتصل بمثيل الكتابة في Aurora PostgreSQL كمستخدم مسؤول، ثم نفّذ الأوامر التالية:
 
 1. أنشئ مستخدمًا مخصصًا لـ ClickPipes:
 
@@ -94,7 +83,7 @@ postgres=> SHOW rds.logical_replication ;
 4. أنشئ [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) يتضمن الجداول التي تريد تكرارها. نوصي بشدة بقصر الـ publication على الجداول التي تحتاج إليها فقط لتجنّب أي حمل إضافي على الأداء.
 
 <Warning>
-  يجب أن يكون لأي جدول مُدرج في الـ publication **مفتاح أساسي** معرّف، *أو* أن تكون **replica identity** الخاصة به مضبوطة على `FULL`. راجع [الأسئلة الشائعة حول Postgres](/ar/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) للحصول على إرشادات بشأن تحديد النطاق.
+  يجب أن يكون لأي table مُدرج في الـ publication **مفتاح أساسي** معرّف، *أو* أن تكون **replica identity** الخاصة به مضبوطة على `FULL`. راجع [الأسئلة الشائعة حول Postgres](/ar/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) للحصول على إرشادات بشأن تحديد النطاق.
 </Warning>
 
 * لإنشاء publication لجداول محددة:
@@ -103,16 +92,16 @@ postgres=> SHOW rds.logical_replication ;
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-* لإنشاء publication لجميع الجداول ضمن schema محدد:
+  * لإنشاء publication لجميع الجداول ضمن schema محدد:
 
-  ```sql
-  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-  ```
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
 
-يحدّد الـ publication المسمى `clickpipes` مجموعة الجداول التي ستُبث أحداث التغيير الخاصة بها إلى ClickPipes. نوصي بعدم استخدام `FOR ALL TABLES` إلا إذا كنت تنوي تكرار كل جدول، لأن تضمين جداول غير ضرورية يزيد من حركة WAL من Postgres إلى ClickPipes ويقلّل من الكفاءة الإجمالية للنسخ المتماثل.
+يحدّد الـ publication المسمى `clickpipes` مجموعة الجداول التي ستُبث أحداث التغيير الخاصة بها إلى ClickPipes. نوصي بعدم استخدام `FOR ALL TABLES` إلا إذا كنت تنوي تكرار كل table، لأن تضمين جداول غير ضرورية يزيد من حركة WAL من Postgres إلى ClickPipes ويقلّل من الكفاءة الإجمالية للنسخ المتماثل.
 
 <div id="iam-authentication">
-  ### استخدام مصادقة IAM (اختياري) {#iam-authentication}
+  ### استخدام مصادقة IAM (اختياري)
 </div>
 
 <IAMAuthentication engine="postgres" service="aurora">
@@ -122,33 +111,27 @@ postgres=> SHOW rds.logical_replication ;
 </IAMAuthentication>
 
 <div id="configure-network-access">
-  ## إعداد الوصول إلى الشبكة {#configure-network-access}
+  ## إعداد الوصول إلى الشبكة
 </div>
 
-### التحكم في الوصول المستند إلى IP {#ip-based-access-control}
+<div id="ip-based-access-control">
+  ### التحكم في الوصول المستند إلى IP
+</div>
 
 إذا كنت تريد تقييد حركة المرور الواردة إلى عنقود Aurora، فيُرجى إضافة [عناوين IP الثابتة لـ NAT الواردة في الوثائق](/ar/integrations/clickpipes/networking/static-ips) إلى `Inbound rules` في مجموعة الأمان الخاصة بـ Aurora.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![أين تجد مجموعة الأمان في Aurora PostgreSQL؟](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="أين يمكنك العثور على مجموعة الأمان في Aurora PostgreSQL؟" size="lg" border />
 
-<div className="ch-image-lg">
-  <Frame>
-    ![تعديل قواعد حركة المرور الواردة لمجموعة الأمان أعلاه](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="حرّر قواعد Inbound لمجموعة الأمان أعلاه" size="lg" border />
 
 <div id="private-access-via-aws-privatelink">
-  ### الوصول الخاص عبر AWS PrivateLink {#private-access-via-aws-privatelink}
+  ### الوصول الخاص عبر AWS PrivateLink
 </div>
 
 للاتصال بعنقود Aurora الخاص بك من خلال شبكة خاصة، يمكنك استخدام AWS PrivateLink. اتبع [دليل إعداد AWS PrivateLink لـ ClickPipes](/ar/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) لإعداد الاتصال.
 
 <div id="aurora-specific-considerations">
-  ### اعتبارات خاصة بـ Aurora {#aurora-specific-considerations}
+  ### اعتبارات خاصة بـ Aurora
 </div>
 
 عند إعداد ClickPipes مع Aurora PostgreSQL، ضع هذه الاعتبارات في حسبانك:
@@ -162,7 +145,7 @@ postgres=> SHOW rds.logical_replication ;
 4. **اعتبارات التخزين**: تكون طبقة التخزين في Aurora مشتركة بين جميع المثيلات في العنقود، ما قد يوفّر أداءً أفضل للنسخ المتماثل المنطقي مقارنةً بـ RDS القياسي.
 
 <div id="dealing-with-dynamic-cluster-endpoints">
-  ### التعامل مع نقاط نهاية العنقود الديناميكية {#dealing-with-dynamic-cluster-endpoints}
+  ### التعامل مع نقاط نهاية العنقود الديناميكية
 </div>
 
 في حين توفّر Aurora نقاط نهاية ثابتة تُوجِّه الاتصالات تلقائيًا إلى المثيل المناسب، فإليك بعض الأساليب الإضافية لضمان اتصال ثابت:
@@ -172,7 +155,7 @@ postgres=> SHOW rds.logical_replication ;
 2. إذا كنت تستخدم النسخ المتماثل عبر المناطق، ففكّر في إعداد ClickPipes منفصلة لكل Region لتقليل زمن الاستجابة وتحسين تحمّل الأعطال.
 
 <div id="whats-next">
-  ## ما الخطوة التالية؟ {#whats-next}
+  ## ما الخطوة التالية؟
 </div>
 
 يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/postgres/index) وبدء إدخال البيانات من عنقود Aurora PostgreSQL لديك إلى ClickHouse Cloud.

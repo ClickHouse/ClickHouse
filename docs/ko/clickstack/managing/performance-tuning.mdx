@@ -1,6 +1,6 @@
 ---
 slug: /use-cases/observability/clickstack/performance_tuning
-title: '성능 튜닝'
+title: 'ClickStack - 성능 튜닝'
 sidebarTitle: '성능 튜닝'
 description: 'ClickStack용 성능 튜닝 - ClickHouse 관측성 스택'
 doc_type: 'guide'
@@ -10,23 +10,20 @@ keywords: ['clickstack', '관측성', '로그', '성능', '최적화']
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 import OtelLogsSchema from '/snippets/ko/clickstack/_schema_otel_logs.mdx';
-
 import OtelTracesSchema from '/snippets/ko/clickstack/_schema_otel_traces.mdx';
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 <div id="introduction">
-  ## 소개 {#introduction}
+  ## 소개
 </div>
 
 이 가이드는 ClickStack에서 가장 일반적이면서도 효과적인 성능 최적화 방법에 중점을 두며, 일반적으로 하루 수십 테라바이트 규모까지의 실제 관측성 워크로드 대부분을 최적화하는 데 충분합니다.
 
 이러한 최적화는 의도된 순서에 따라, 가장 간단하면서 효과가 큰 기법부터 시작해 더 고급스럽고 특화된 튜닝으로 나아가도록 구성되어 있습니다. 초기 최적화는 먼저 적용해야 하며, 이들만으로도 상당한 성능 향상을 얻는 경우가 많습니다. 데이터 규모가 커지고 워크로드 요구 사항이 높아질수록, 뒤에 나오는 기법을 검토할 가치도 점점 커집니다.
 
-<Tip>
-  [ClickHouse Observability](/ko/clickstack/observability)를 사용하면 관측성 백엔드 운영에 드는 시간은 줄이고 문제 조사에 더 많은 시간을 쏟을 수 있습니다. 지금 [ClickHouse Cloud에 가입](https://clickhouse.cloud/signUp?loc=docs-clickstack-performance-tuning-inline)하여 시작하세요.
-</Tip>
-
 <div id="clickhouse-concepts">
-  ## ClickHouse 개념 {#clickhouse-concepts}
+  ## ClickHouse 개념
 </div>
 
 이 가이드에서 설명하는 최적화를 적용하기 전에 몇 가지 핵심 ClickHouse 개념을 이해하는 것이 중요합니다.
@@ -75,10 +72,10 @@ ClickHouse에서 테이블은 [데이터베이스](/ko/reference/statements/crea
 * [ClickHouse가 데이터를 저장하는 방식: 파트와 그래뉼](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes) - 그래뉼과 프라이머리 키를 자세히 다루며, ClickHouse에서 데이터가 어떻게 구조화되고 쿼리되는지 설명하는 고급 가이드입니다.
 * [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree)- 명령과 내부 세부 사항을 이해하는 데 유용한 고급 MergeTree 참고 가이드입니다.
 
-아래에 설명된 모든 최적화는 표준 ClickHouse SQL을 사용해 기본 테이블에 직접 적용할 수 있으며, [ClickHouse Cloud SQL 콘솔](/ko/integrations/connectors/sql-clients/sql-console) 또는 [ClickHouse client](/ko/concepts/features/interfaces/client)를 통해 적용할 수 있습니다.
+아래에 설명된 모든 최적화는 표준 ClickHouse SQL을 사용해 기본 테이블에 직접 적용할 수 있으며, [ClickHouse Cloud SQL 콘솔](/ko/integrations/connectors/sql-clients/sql-console) 또는 [ClickHouse client](/ko/concepts/features/interfaces/cli)를 통해 적용할 수 있습니다.
 
 <div id="materialize-frequently-queried-attributes">
-  ## 최적화 1. 자주 쿼리되는 속성 구체화하기 {#materialize-frequently-queried-attributes}
+  ## 최적화 1. 자주 쿼리되는 속성 구체화하기
 </div>
 
 ClickStack 사용자를 위한 첫 번째이자 가장 간단한 최적화는 `LogAttributes`, `ScopeAttributes`, `ResourceAttributes`에서 자주 쿼리되는 속성을 식별하고, materialized 컬럼을 사용해 이를 최상위 컬럼으로 승격하는 것입니다.
@@ -86,7 +83,7 @@ ClickStack 사용자를 위한 첫 번째이자 가장 간단한 최적화는 `L
 이 최적화만으로도 ClickStack 배포를 하루 수십 테라바이트 규모까지 확장하기에 충분한 경우가 많으며, 더 고급 튜닝 기법을 검토하기 전에 먼저 적용해야 합니다.
 
 <div id="why-materialize-attributes">
-  ### 왜 속성을 구체화하나요 {#why-materialize-attributes}
+  ### 왜 속성을 구체화하나요
 </div>
 
 ClickStack는 Kubernetes 레이블, 서비스 메타데이터, 사용자 정의 속성과 같은 메타데이터를 `Map(String, String)` 컬럼에 저장합니다. 이는 유연성을 제공하지만, 맵의 하위 키를 쿼리할 때 성능에 중요한 영향을 미칩니다.
@@ -108,19 +105,17 @@ materialized 컬럼:
   ClickStack는 맵에서 추출한 materialized 컬럼을 자동으로 감지하며, 사용자가 계속 원래 속성 경로로 쿼리하더라도 쿼리 실행 중 이를 투명하게 사용합니다.
 </Note>
 
-### 예시 {#materialize-column-example}
+<div id="materialize-column-example">
+  ### 예시
+</div>
 
-Kubernetes 메타데이터가 `ResourceAttributes`에 저장되는 기본 ClickStack trace 스키마(schema)를 살펴보겠습니다:
+Kubernetes 메타데이터가 `ResourceAttributes`에 저장되는 기본 ClickStack 트레이스 스키마를 살펴보겠습니다:
 
 <OtelTracesSchema />
 
-Lucene 구문을 사용해 trace를 필터링할 수 있습니다. 예: `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`:
+Lucene 구문을 사용해 트레이스를 필터링할 수 있습니다. 예: `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![트레이스 필터링](/images/clickstack/performance_guide/trace_filtering.webp)
-  </Frame>
-</div>
+<Image img="/images/clickstack/performance_guide/trace_filtering.webp" size="lg" alt="트레이스 필터링" />
 
 그러면 다음과 유사한 SQL 프레디케이트가 생성됩니다:
 
@@ -128,7 +123,7 @@ Lucene 구문을 사용해 trace를 필터링할 수 있습니다. 예: `Resourc
 ResourceAttributes['k8s.pod.name'] = 'checkout-675775c4cc-f2p9c'
 ```
 
-Map 키에 접근하므로 ClickHouse는 일치하는 각 행에 대해 `ResourceAttributes` 컬럼 전체를 읽어야 합니다. Map에 키가 많으면 이 컬럼의 크기가 매우 커질 수 있습니다.
+맵 키에 접근하므로 ClickHouse는 일치하는 각 행에 대해 `ResourceAttributes` 컬럼 전체를 읽어야 합니다. 맵에 키가 많으면 이 컬럼의 크기가 매우 커질 수 있습니다.
 
 이 속성을 자주 조회한다면 최상위 컬럼으로 구체화하는 것이 좋습니다.
 
@@ -144,13 +139,9 @@ MATERIALIZED ResourceAttributes['k8s.pod.name']
 
 이제 Lucene 구문을 사용해, 예를 들어 `PodName:"checkout-675775c4cc-f2p9c"`와 같이 파드 이름을 효율적으로 조회할 수 있습니다.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![트레이스 필터링 v2](/images/clickstack/performance_guide/trace_filtering_v2.webp)
-  </Frame>
-</div>
+<Image img="/images/clickstack/performance_guide/trace_filtering_v2.webp" size="lg" alt="트레이스 필터링 v2" />
 
-새로 삽입되는 데이터에서는 이렇게 하면 Map에 전혀 접근하지 않아도 되므로 I/O가 크게 줄어듭니다.
+새로 삽입되는 데이터에서는 이렇게 하면 맵에 전혀 접근하지 않아도 되므로 I/O가 크게 줄어듭니다.
 
 하지만 사용자가 예를 들어 `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`와 같은 기존 속성 경로로 계속 쿼리하더라도, **ClickStack은 내부적으로 쿼리를 자동으로 재작성하여** materialized `PodName` 컬럼을 사용합니다. 즉, 다음 프레디케이트를 사용합니다:
 
@@ -165,7 +156,7 @@ PodName = 'checkout-675775c4cc-f2p9c'
 </Note>
 
 <div id="materializing-historical-data">
-  ### 과거 데이터 구체화하기 {#materializing-historical-data}
+  ### 과거 데이터 구체화하기
 </div>
 
 materialized 컬럼은 해당 컬럼이 생성된 후 삽입된 데이터에만 자동으로 적용됩니다. 기존 데이터의 경우 materialized 컬럼을 조회하는 쿼리는 자동으로 원본 맵을 읽도록 처리됩니다.
@@ -202,7 +193,7 @@ ORDER BY create_time DESC;
 </Warning>
 
 <div id="adding-skip-indexes">
-  ## 최적화 2. 스킵 인덱스 추가 {#adding-skip-indexes}
+  ## 최적화 2. 스킵 인덱스 추가
 </div>
 
 자주 쿼리되는 속성을 구체화한 다음 단계의 최적화는, 쿼리 실행 중 ClickHouse가 읽어야 하는 데이터 양을 더 줄이기 위해 데이터 스키핑 인덱스를 추가하는 것입니다.
@@ -222,7 +213,7 @@ ORDER BY create_time DESC;
 logs 테이블은 Bloom 필터 대신 전반적으로 `text(tokenizer = 'array')` 인덱스를 사용하며, 전문 검색을 위해 `lower(Body)`에 `text(tokenizer = 'splitByNonAlpha')` 인덱스를 추가합니다. 전체 DDL은 [&quot;ClickStack에서 사용하는 테이블 및 스키마&quot;](/ko/clickstack/ingesting-data/schemas#logs)를 참조하십시오.
 
 <div id="bloom-filters">
-  ### 블룸 필터 {#bloom-filters}
+  ### 블룸 필터
 </div>
 
 블룸 필터 인덱스는 ClickStack에서 가장 널리 사용되는 스킵 인덱스 유형입니다. 블룸 필터 인덱스는 카디널리티가 높은 문자열 컬럼, 즉 일반적으로 고유값이 수만 개 이상인 경우에 특히 적합합니다. 거짓 양성 비율 0.01에 세분화 수준 1을 사용하는 설정은 시작점으로 적절한 기본값이며, 스토리지 오버헤드와 효과적인 프루닝 간의 균형을 잘 맞춰 줍니다.
@@ -253,7 +244,7 @@ GRANULARITY 1
 모든 스킵 인덱스와 마찬가지로, 블룸 필터도 선택적으로 추가하고 실제 쿼리 패턴을 기준으로 검증하여 측정 가능한 효과를 제공하는지 확인해야 합니다. [&quot;스킵 인덱스 효과 평가&quot;](#evaluating-skip-index-effectiveness)를 참조하십시오.
 
 <div id="text-indexes">
-  ### 텍스트 인덱스 {#text-indexes}
+  ### 텍스트 인덱스
 </div>
 
 [Text indexes](/ko/reference/engines/table-engines/mergetree-family/textindexes)는 블룸 필터의 대안입니다. 블룸 필터는 그래뉼을 확실하게 제외할 수 있는 확률적 구조이지만 false positives가 발생할 수 있으므로, 제외되지 않은 그래뉼은 여전히 로드한 뒤 `WHERE` 조건으로 평가해야 합니다. 텍스트 인덱스는 토큰을 part 내의 정확한 오프셋에 매핑하는 역인덱스입니다. 그래뉼이 아니라 오프셋을 기준으로 평가하며 false positives가 없기 때문에, 일반적으로 기반 컬럼을 로드하지 않고도 `WHERE` 조건을 처리할 수 있습니다. 이를 [직접 읽기](https://github.com/ClickHouse/clickhouse-docs/pull/6356/%E2%80%A6) 최적화라고 합니다. 데이터 로딩은 쿼리 시점에서 가장 큰 비중을 차지하는 경우가 많으므로, 직접 읽기는 쿼리 지연 시간을 의미 있게 줄일 수 있습니다.
@@ -268,7 +259,7 @@ GRANULARITY 1
 | `splitByNonAlpha` | 일반 텍스트 문자열에 대한 단어 수준 전문 검색      | `Body`, `lower(Body)`, `SpanName` |
 
 <div id="array-tokenizer">
-  #### 맵 및 배열 컬럼용 Array 토크나이저 {#array-tokenizer}
+  #### 맵 및 배열 컬럼용 Array 토크나이저
 </div>
 
 기본 로그 스키마는 `array` 토크나이저를 사용해 `mapKeys`와 구체화된 item 배열에 인덱스를 설정합니다:
@@ -283,7 +274,9 @@ INDEX idx_log_attr_items LogAttributeItems TYPE text(tokenizer = 'array')
 맵 컬럼을 스캔하지 않고도 제외할 수 있습니다. 이것이 [Map 직접 읽기 최적화](#map-direct-read-optimization)를
 효율적으로 만드는 메커니즘입니다.
 
-#### 로그 본문의 `splitByNonAlpha` {#text-index-body}
+<div id="text-index-body">
+  #### 로그 본문의 `splitByNonAlpha`
+</div>
 
 `Body` 컬럼의 전문 검색은 `splitByNonAlpha` 텍스트
 인덱스를 사용하면 성능상 이점이 있습니다. ClickStack은 대소문자를 구분하지 않는
@@ -302,17 +295,15 @@ ClickStack에서 `lower(Body)`에 대한 `text(tokenizer = 'splitByNonAlpha')` �
 <Info>
   **텍스트 인덱스와 `tokenbf_v1`**
 
-  현재 기본 trace 스키마(schema)는 정규화된 `SpanName` 토큰을 인덱싱하기 위해
-  `text(tokenizer = 'splitByNonAlpha', preprocessor = lower(SpanName))`를 사용합니다.
-  이전 trace 스키마(schema)에서는 `tokenbf_v1`을 사용할 수 있으며, 이는 기능적으로는 비슷하지만
-  ClickHouse 26.2 이상에서는 더 이상 권장되지 않습니다.
+  이전 `tokenbf_v1` 인덱스 유형은 (`lower(SpanName)`에 대해 기본 traces 스키마에서
+  여전히 사용됨) 기능적으로는 비슷하지만 ClickHouse 26.2 이상에서는 더 이상 권장되지 않습니다.
   새로운 텍스트 검색 인덱스에는 `text(tokenizer = ...)`를 사용해야 합니다.
 </Info>
 
 토크나이저 옵션, 전처리기, 검증에 대한 자세한 참고 정보는 [전문 검색 문서](/ko/reference/engines/table-engines/mergetree-family/textindexes)를 참조하십시오.
 
 <div id="text-indexes-in-default-logs-schema">
-  #### 기본 logs 스키마의 텍스트 인덱스 {#text-indexes-in-default-logs-schema}
+  #### 기본 logs 스키마의 텍스트 인덱스
 </div>
 
 upstream에서 동기화된 기본 `otel_logs` 스키마에는 앞서 설명한 모든 텍스트 인덱스가 포함되어 있습니다. 즉, `TraceId`에는 `text(tokenizer = 'array')`가, 각 `mapKeys(...)`와 `*AttributeItems` 배열에는 `text(tokenizer = 'array')`가, 그리고 전문 검색을 위해 `lower(Body)`에는 `text(tokenizer = 'splitByNonAlpha')`가 적용됩니다. 표준 DDL은 [&quot;ClickStack에서 사용하는 테이블 및 스키마&quot;](/ko/clickstack/ingesting-data/schemas#logs)에서 확인할 수 있으며, 동일한 스키마를 아래에도 그대로 실었습니다.
@@ -320,7 +311,7 @@ upstream에서 동기화된 기본 `otel_logs` 스키마에는 앞서 설명한 
 <OtelLogsSchema />
 
 <div id="min-max-indexes">
-  ### MinMax 인덱스 {#min-max-indexes}
+  ### MinMax 인덱스
 </div>
 
 MinMax 인덱스는 각 그래뉼의 최소값과 최대값을 저장하며, 매우 가볍습니다. 특히 숫자 컬럼과 범위 쿼리에서 효과적입니다. 모든 쿼리의 속도를 높여 주지는 않을 수 있지만, 비용이 낮기 때문에 숫자 필드에는 거의 항상 추가할 만한 가치가 있습니다.
@@ -353,7 +344,7 @@ ADD INDEX idx_kafka_offset KafkaOffset TYPE minmax GRANULARITY 1
 다시 한번, 인덱스를 사용 가능하게 하려면 먼저 [구체화](#materialize-skip-index)해야 합니다.
 
 <div id="materialize-skip-index">
-  ### 스킵 인덱스 구체화 {#materialize-skip-index}
+  ### 스킵 인덱스 구체화
 </div>
 
 스킵 인덱스를 추가한 후에는 새로 수집된 데이터에만 적용됩니다. 기존 데이터는 인덱스를 명시적으로 구체화하기 전까지는 그 이점을 활용할 수 없습니다.
@@ -420,19 +411,21 @@ WHERE database = 'otel'
 
 스킵 인덱스에 대한 자세한 내용은 가이드 [&quot;Understanding ClickHouse data skipping indexes.&quot;](/ko/concepts/features/performance/skip-indexes/skipping-indexes-examples)를 참조하십시오.
 
-### 스킵 인덱스 효과 평가 {#evaluating-skip-index-effectiveness}
+<div id="evaluating-skip-index-effectiveness">
+  ### 스킵 인덱스 효과 평가
+</div>
 
-스킵 인덱스 프루닝을 평가하는 가장 신뢰할 수 있는 방법은 `EXPLAIN indexes = 1`을 사용하는 것입니다. 이 명령은 쿼리 계획의 각 단계에서 얼마나 많은 [파트](/ko/concepts/core-concepts/parts)와 [그래뉼(granule)](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing)이 제외되는지를 보여줍니다. 대부분의 경우 Skip 단계에서 그래뉼(granule) 수가 크게 줄어드는 것이 바람직하며, 이상적으로는 프라이머리 키가 이미 검색 범위를 줄인 다음이어야 합니다. 스킵 인덱스는 파티션 프루닝과 프라이머리 키 프루닝 이후에 평가되므로, 그 효과는 남아 있는 파트와 그래뉼(granule)을 기준으로 측정하는 것이 가장 적절합니다.
+스킵 인덱스 프루닝을 평가하는 가장 신뢰할 수 있는 방법은 `EXPLAIN indexes = 1`을 사용하는 것입니다. 이 명령은 쿼리 계획의 각 단계에서 얼마나 많은 [파트](/ko/concepts/core-concepts/parts)와 [그래뉼](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing)이 제외되는지를 보여줍니다. 대부분의 경우 Skip 단계에서 그래뉼 수가 크게 줄어드는 것이 바람직하며, 이상적으로는 기본 키(primary key)가 이미 검색 범위를 줄인 다음이어야 합니다. 스킵 인덱스는 파티션 프루닝과 기본 키 프루닝 이후에 평가되므로, 그 효과는 남아 있는 파트와 그래뉼을 기준으로 측정하는 것이 가장 적절합니다.
 
 `EXPLAIN`은 프루닝이 실제로 발생하는지 확인해 주지만, 전체적인 속도 향상을 보장하지는 않습니다. 스킵 인덱스를 평가하는 데에도 비용이 들며, 특히 인덱스가 큰 경우 그 비용이 더 커질 수 있습니다. 실제 성능 개선을 확인하려면 인덱스를 추가하고 구체화하기 전후에 항상 쿼리를 벤치마크하십시오.
 
-예를 들어, 기본 trace 스키마(schema)에는 `TraceId`에 대한 텍스트 인덱스가 포함되어 있습니다:
+예를 들어, 기본 Traces schema에 포함된 TraceId용 기본 블룸 필터 스킵 인덱스를 살펴보겠습니다:
 
 ```sql
-INDEX idx_trace_id TraceId TYPE text(tokenizer = 'array')
+INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1
 ```
 
-선택도가 높은 쿼리가 이 인덱스를 사용하는지 확인하려면 `EXPLAIN indexes = 1`을 사용할 수 있습니다:
+선택도가 높은 쿼리에서 얼마나 효과적인지 확인하려면 `EXPLAIN indexes = 1`을 사용할 수 있습니다:
 
 ```sql
 EXPLAIN indexes = 1
@@ -443,14 +436,19 @@ WHERE (ServiceName = 'accounting')
 
 ReadFromMergeTree (otel_v2.otel_traces)
 Indexes:
+  PrimaryKey
+    Keys:
+      ServiceName
+    Parts: 6/18
+    Granules: 255/35898
   Skip
     Name: idx_trace_id
-    Description: text
+    Description: bloom_filter GRANULARITY 1
+    Parts: 1/6
+    Granules: 1/255
 ```
 
-보고되는 정확한 파트와 그래뉼(granule) 수는 데이터에 따라 달라집니다. 선택도가 높은 쿼리에서는
-프라이머리 키 프루닝이 먼저 검색 범위를 좁히고, 이어서 텍스트 인덱스가
-읽어야 하는 데이터를 더 줄일 수 있습니다.
+이 경우 먼저 프라이머리 키 필터가 데이터 범위를 크게 줄이고(35898개 그래뉼에서 255개까지), 이어서 블룸 필터가 이를 단 1개의 그래뉼(1/255)로 더 줄입니다. 이것이 스킵 인덱스에 가장 이상적인 패턴입니다. 프라이머리 키 프루닝으로 검색 범위를 좁힌 다음, 스킵 인덱스로 남아 있는 대부분을 제거합니다.
 
 실제 영향을 검증하려면 안정적인 설정으로 쿼리를 벤치마크하고 실행 시간을 비교하십시오. 결과 직렬화 오버헤드를 피하려면 `FORMAT Null`을 사용하고, 실행을 반복 가능하게 유지하려면 쿼리 조건 캐시를 비활성화하십시오:
 
@@ -484,11 +482,11 @@ Peak memory usage: 198.39 MiB.
 `use_query_condition_cache`를 비활성화하면 캐시된 필터링 판단이 결과에 영향을 주지 않게 되며, `use_skip_indexes = 0`을 설정하면 비교를 위한 명확한 기준선을 마련할 수 있습니다. 프루닝이 효과적이고 인덱스 평가 비용이 낮다면, 위 예시처럼 인덱스가 적용된 쿼리가 상당히 더 빨라야 합니다.
 
 <Tip>
-  `EXPLAIN`에 그래뉼(granule) 프루닝이 거의 표시되지 않거나 스킵 인덱스가 매우 큰 경우에는 인덱스 평가 비용이 이점을 상쇄할 수 있습니다. `EXPLAIN indexes = 1`로 프루닝을 확인한 다음, 벤치마크를 수행해 엔드투엔드 성능 개선을 검증하십시오.
+  `EXPLAIN`에 granule 프루닝이 거의 표시되지 않거나 스킵 인덱스가 매우 큰 경우에는 인덱스 평가 비용이 이점을 상쇄할 수 있습니다. `EXPLAIN indexes = 1`로 프루닝을 확인한 다음, 벤치마크를 수행해 엔드투엔드 성능 개선을 검증하십시오.
 </Tip>
 
 <div id="when-to-add-skip-indexes">
-  ### 스킵 인덱스를 추가해야 하는 경우 {#when-to-add-skip-indexes}
+  ### 스킵 인덱스를 추가해야 하는 경우
 </div>
 
 스킵 인덱스는 사용자가 가장 자주 사용하는 필터 유형과 파트 및 그래뉼 내 데이터 분포를 기준으로 선별적으로 추가해야 합니다. 목표는 인덱스 자체를 평가하는 비용을 상쇄할 만큼 충분한 그래뉼을 걸러내는 것이므로, 운영 환경과 유사한 데이터로 벤치마크하는 것이 필수적입니다.
@@ -500,7 +498,7 @@ Peak memory usage: 198.39 MiB.
 블룸 필터는 각 값의 출현 빈도가 비교적 낮은 고카디널리티 String 컬럼에서 가장 효과적입니다. 즉, 대부분의 파트와 그래뉼에 검색 대상 값이 포함되지 않은 경우입니다. 경험적으로 블룸 필터는 해당 컬럼에 고유한 값이 최소 10,000개 이상 있을 때 가장 유망하며, 100,000개 이상의 고유 값을 가질 때 가장 좋은 성능을 보이는 경우가 많습니다. 또한 일치하는 값이 소수의 연속된 파트에 모여 있을 때 더 효과적인데, 이는 일반적으로 해당 컬럼이 순서 지정 키와 연관되어 있을 때 발생합니다. 다시 말해, 실제 효과는 환경에 따라 달라질 수 있으므로 실제 환경에 가까운 테스트를 대체할 수 있는 방법은 없습니다.
 
 <div id="map-direct-read-optimization">
-  ## Optimization 3. 맵 직접 읽기 {#map-direct-read-optimization}
+  ## Optimization 3. 맵 직접 읽기
 </div>
 
 `LogAttributes['k8s.pod.name'] =
@@ -524,7 +522,7 @@ primitive를 지원하면 런타임에 맵 첨자 필터를 재작성합니다. 
 활성화하십시오.
 
 <div id="map-direct-read-schema">
-  ### 스키마 {#map-direct-read-schema}
+  ### 스키마
 </div>
 
 가속할 각 맵 컬럼에 대해 ClickStack은
@@ -561,7 +559,7 @@ TYPE text(tokenizer = 'array')
 | `otel_traces` | `ResourceAttributeItems`, `SpanAttributeItems`                       | `idx_res_attr_items`, `idx_span_attr_items`                        |
 
 <div id="map-direct-read-rewrite">
-  ### 쿼리 재작성 {#map-direct-read-rewrite}
+  ### 쿼리 재작성
 </div>
 
 사용자가 ClickStack UI 또는 SDK를 통해 맵 하위 키를 기준으로 필터링하면, ClickStack은 이를 다음과 같이 재작성합니다:
@@ -586,39 +584,20 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
 별도 변경 없이도 성능 향상 효과를 얻습니다.
 
 <div id="map-direct-read-version">
-  ### ClickHouse 버전 요구 사항 {#map-direct-read-version}
+  ### ClickHouse 버전 요구 사항
 </div>
 
 쿼리 재작성에는 텍스트 인덱스가 적용된 배열 컬럼에서 토큰 수준 프루닝을 직접 지원하는 ClickHouse 버전이 필요합니다. ClickStack은
 연결된 서버 버전(`SELECT version()`, 연결별로 캐시됨)을 감지하고,
-서버가 아래의 해당 기준 버전을 충족할 때만 재작성된 형식을 사용합니다.
-이전 버전은 자동으로 원래의 맵 서브스크립트 형식으로 대체됩니다.
+서버가 기준 버전 이상일 때만 재작성된 형식을 사용합니다. 이전
+서버 버전은 자동으로 원래의 맵 서브스크립트 형식으로 대체됩니다.
 
-<Tabs>
-  <Tab title="ClickHouse Cloud">
-    ClickHouse Cloud 빌드와 오픈 소스 릴리스는 독립적인 버전 라인을 사용합니다.
-    아래의 Cloud 최소 버전을 사용하십시오.
-
-    | ClickHouse 브랜치 | 최소 Cloud 버전   |
-    | -------------- | ------------- |
-    | 26.2           | `26.2.1.307`  |
-    | 26.3           | `26.3.0.0`    |
-    | 26.4           | `26.4.1.1740` |
-    | 26.5+          | 모든 버전         |
-
-    최소 버전 `26.3.0.0`은 해당 브랜치의 최저 버전이므로 모든 `26.3` 빌드가
-    지원됩니다.
-  </Tab>
-
-  <Tab title="오픈 소스">
-    | ClickHouse 브랜치 | 최소 오픈 소스 버전  |
-    | -------------- | ------------ |
-    | 26.2           | `26.2.19.43` |
-    | 26.3           | `26.3.12.3`  |
-    | 26.4           | `26.4.3.37`  |
-    | 26.5+          | 모든 버전        |
-  </Tab>
-</Tabs>
+| ClickHouse 브랜치 | 최소 버전      |
+| -------------- | ---------- |
+| 26.2           | 26.2.19.43 |
+| 26.3           | 26.3.12.3  |
+| 26.4           | 26.4.3.37  |
+| 26.5+          | 모든 버전      |
 
 <Info>
   **왜 MATERIALIZED가 아니라 ALIAS인가**
@@ -631,7 +610,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
 </Info>
 
 <div id="modifying-the-primary-key">
-  ## 최적화 4. 프라이머리 키 수정 {#modifying-the-primary-key}
+  ## 최적화 4. 프라이머리 키 수정
 </div>
 
 프라이머리 키(primary key)는 대부분의 워크로드에서 ClickHouse 성능 튜닝의 핵심 요소 중 하나입니다. 이를 효과적으로 튜닝하려면 작동 방식과 쿼리 패턴과의 상호작용을 이해해야 합니다. 궁극적으로 프라이머리 키는 사용자의 데이터 접근 방식, 특히 가장 자주 필터링하는 컬럼에 맞아야 합니다.
@@ -664,7 +643,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
 **프라이머리 키는 각 테이블별로 분리해서 변경해야 합니다. 로그에 적합한 것이 트레이스나 메트릭에는 적합하지 않을 수 있습니다.**
 
 <div id="choosing-a-primary-key">
-  ### 프라이머리 키 선택하기 {#choosing-a-primary-key}
+  ### 프라이머리 키 선택하기
 </div>
 
 먼저 특정 테이블의 액세스 패턴이 기본값과 크게 다른지 확인합니다. 예를 들어, 일반적으로 서비스 이름보다 Kubernetes 노드로 로그를 먼저 필터링하고, 이것이 주요 워크플로라면 프라이머리 키를 변경하는 것이 타당할 수 있습니다.
@@ -687,7 +666,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
 정렬 키에 사용할 컬럼의 부분 집합을 식별한 후에는 이를 특정한 순서로 선언해야 합니다. 이 순서는 쿼리에서 보조 키 컬럼에 대한 필터링 효율성과 테이블 데이터 파일의 압축률 모두에 큰 영향을 줄 수 있습니다. 일반적으로는 카디널리티가 낮은 것부터 높은 것 순으로 키를 배치하는 것이 가장 좋습니다. 다만 정렬 키에서 뒤쪽에 오는 컬럼에 대한 필터링은 튜플 앞쪽에 오는 컬럼보다 효율이 떨어진다는 점도 함께 고려해야 합니다. 이러한 특성의 균형을 맞추고 액세스 패턴을 고려하십시오. 무엇보다도 다양한 변형을 테스트하십시오. 정렬 키와 최적화 방법을 더 잘 이해하려면 [&quot;Choosing a Primary Key.&quot;](/ko/concepts/best-practices/choosing-a-primary-key)를 읽어 보시기 바랍니다. 프라이머리 키 튜닝과 내부 데이터 구조를 더 깊이 이해하려면 [&quot;A practical introduction to primary indexes in ClickHouse.&quot;](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)도 참고하는 것이 좋습니다.
 
 <div id="changing-the-primary-key">
-  ### 프라이머리 키 변경 {#changing-the-primary-key}
+  ### 프라이머리 키 변경
 </div>
 
 데이터 수집 전에 액세스 패턴이 확실하다면, 해당 데이터 타입의 테이블을 삭제한 뒤 다시 생성하면 됩니다.
@@ -762,11 +741,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
   <Step title="Merge 테이블에서 읽도록 ClickStack UI 업데이트" id="update-clickstack-ui-to-read-from-merge-tree">
     ClickStack UI가 로그 데이터 소스의 테이블로 `otel_logs_merge`를 사용하도록 구성합니다.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Merge 테이블 선택](/images/clickstack/performance_guide/select_merge_table.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/performance_guide/select_merge_table.webp" size="lg" alt="Merge 테이블 선택" />
 
     이 시점에는 원래 프라이머리 키를 사용하는 `otel_logs`로 계속 쓰기가 이루어지고, 읽기에는 Merge 테이블이 사용됩니다. 사용자에게 보이는 변경 사항은 없으며 수집에도 영향이 없습니다.
   </Step>
@@ -816,7 +791,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
 </Info>
 
 <div id="row-lookup-block-columns">
-  ### 블록 컬럼을 활용한 행 조회 가속화 {#row-lookup-block-columns}
+  ### 블록 컬럼을 활용한 행 조회 가속화
 </div>
 
 기본 ClickStack 로그 스키마는 쿼리 성능에 직접적인 영향을 주지는 않지만,
@@ -850,7 +825,7 @@ MODIFY SETTING enable_block_number_column = 1, enable_block_offset_column = 1
 머지로 재작성되기 전까지는 기존의 행별 조회를 계속 사용합니다.
 
 <div id="exploiting-materialized-views">
-  ## 최적화 5. materialized view 활용 {#exploiting-materialized-views}
+  ## 최적화 5. materialized view 활용
 </div>
 
 <BetaBadge />
@@ -860,7 +835,7 @@ ClickStack은 시간에 따른 분당 평균 요청 Duration 계산처럼 집계
 ClickStack에서 이 기능을 사용하는 방법에 대한 자세한 내용은 전용 가이드 [&quot;ClickStack - Materialized Views.&quot;](/ko/clickstack/managing/materialized-views)를 참조하십시오.
 
 <div id="exploting-projections">
-  ## 최적화 6. 프로젝션 활용 {#exploting-projections}
+  ## 최적화 6. 프로젝션 활용
 </div>
 
 프로젝션은 materialized 컬럼, 스킵 인덱스, 프라이머리 키, materialized view를 검토한 뒤에 고려할 수 있는 마지막 고급 최적화 기법입니다. 프로젝션과 materialized view는 비슷해 보일 수 있지만, ClickStack에서는 용도가 다르며 각각 적합한 사용 시나리오도 다릅니다.
@@ -869,16 +844,16 @@ ClickStack에서 이 기능을 사용하는 방법에 대한 자세한 내용은
   <iframe src="https://www.youtube.com/embed/6CdnUdZSEG0?si=1zUyrP-tCvn9tXse" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-실제로 **프로젝션은 동일한 행을 **다른 물리적 순서**로 저장하는 테이블의 추가적인 숨은 복사본**으로 볼 수 있습니다. 따라서 프로젝션은 기반 테이블의 `ORDER BY` 키와는 별도의 자체 프라이머리 인덱스를 가지며, ClickHouse는 원래 정렬 순서와 맞지 않는 액세스 패턴에서도 데이터를 더 효과적으로 프루닝할 수 있습니다.
+실제로 **프로젝션은 동일한 행을 **다른 물리적 순서**로 저장하는 테이블의 추가적인 숨은 복사본**으로 볼 수 있습니다. 따라서 프로젝션은 기본 테이블의 `ORDER BY` 키와는 별도의 자체 프라이머리 인덱스를 가지며, ClickHouse는 원래 정렬 순서와 맞지 않는 액세스 패턴에서도 데이터를 더 효과적으로 가지치기할 수 있습니다.
 
-materialized view도 다른 순서 지정 키를 가진 별도의 대상 테이블에 행을 명시적으로 기록함으로써 비슷한 효과를 낼 수 있습니다. 핵심 차이점은 **프로젝션은 ClickHouse가 자동으로 투명하게 유지 관리**하는 반면, materialized view는 ClickStack이 의도적으로 등록하고 선택해야 하는 명시적 테이블이라는 점입니다.
+materialized view도 다른 정렬 키를 가진 별도의 대상 테이블에 행을 명시적으로 기록함으로써 비슷한 효과를 낼 수 있습니다. 핵심 차이점은 **프로젝션은 ClickHouse가 자동으로 투명하게 유지 관리**하는 반면, materialized view는 ClickStack이 의도적으로 등록하고 선택해야 하는 명시적 테이블이라는 점입니다.
 
-쿼리가 기반 테이블을 대상으로 하면 ClickHouse는 기본 레이아웃과 사용 가능한 프로젝션을 평가하고, 각 프라이머리 인덱스를 샘플링한 뒤, 가장 적은 그래뉼(granule)을 읽으면서도 올바른 결과를 생성할 수 있는 레이아웃을 선택합니다. 이 결정은 쿼리 분석기가 자동으로 내립니다.
+쿼리가 기본 테이블을 대상으로 하면 ClickHouse는 기본 레이아웃과 사용 가능한 프로젝션을 평가하고, 각 프라이머리 인덱스를 샘플링한 뒤, 가장 적은 그래뉼을 읽으면서도 올바른 결과를 생성할 수 있는 레이아웃을 선택합니다. 이 결정은 쿼리 분석기가 자동으로 내립니다.
 
 따라서 ClickStack에서 프로젝션은 다음과 같은 경우의 **순수한 데이터 재정렬**에 가장 적합합니다.
 
 * 액세스 패턴이 기본 프라이머리 키와 근본적으로 다릅니다
-* 단일 순서 지정 키로 모든 워크플로를 포괄하기 어렵습니다
+* 단일 정렬 키로 모든 워크플로를 포괄하기 어렵습니다
 * ClickHouse가 최적의 물리적 레이아웃을 투명하게 선택하도록 하고 싶습니다
 
 사전 집계와 메트릭 가속에는 ClickStack이 **명시적인 materialized view**를 강력히 권장합니다. 이렇게 하면 애플리케이션 계층이 뷰 선택과 사용을 완전히 제어할 수 있습니다.
@@ -890,7 +865,7 @@ materialized view도 다른 순서 지정 키를 가진 별도의 대상 테이�
 * [materialized view와 프로젝션 비교](/ko/concepts/features/projections/materialized-views-versus-projections)
 
 <div id="example-projections">
-  ### 프로젝션 예시 {#example-projections}
+  ### 프로젝션 예시
 </div>
 
 트레이스 테이블이 ClickStack의 기본 액세스 패턴에 맞게 최적화되어 있다고 가정하겠습니다.
@@ -959,7 +934,7 @@ ORDER BY t;
 실제 운영에서는 프로젝션이, 더 넓은 범위의 검색에서 트레이스 중심 드릴다운으로 자주 피벗하는 워크플로에 가장 적합합니다(예: 특정 TraceId의 모든 스팬을 가져오는 경우).
 
 <div id="projection-costs-and-guidance">
-  ### 비용과 지침 {#projection-costs-and-guidance}
+  ### 비용과 지침
 </div>
 
 * **삽입 오버헤드**: 서로 다른 정렬 키를 사용하는 `SELECT *` 프로젝션은 사실상 데이터를 두 번 쓰는 것과 같으므로, 쓰기 I/O가 증가하며 수집을 지속하려면 추가 CPU와 디스크 처리량이 필요할 수 있습니다.
@@ -972,7 +947,7 @@ ORDER BY t;
 * [구체화된 뷰(Materialized View)와 프로젝션](/ko/concepts/features/projections/materialized-views-versus-projections)
 
 <div id="lightweight-projections">
-  ### `_part_offset`를 사용하는 경량 프로젝션 {#lightweight-projections}
+  ### `_part_offset`를 사용하는 경량 프로젝션
 </div>
 
 <BetaBadge />
@@ -988,7 +963,9 @@ ORDER BY t;
 * [&#95;part&#95;offset로 더 스마트한 스토리지](/ko/concepts/features/projections/projections#smarter_storage_with_part_offset)
 * [블로그 설명 및 예시](https://clickhouse.com/blog/projections-secondary-indices#example-combining-multiple-projection-indexes)
 
-### 대안 {#projection-alternatives}
+<div id="projection-alternatives">
+  ### 대안
+</div>
 
 여러 `ORDER BY` 키가 필요하다면 프로젝션만이 유일한 선택지는 아닙니다. 운영상의 제약과 ClickStack에서 쿼리를 어떻게 라우팅할지에 따라 다음 옵션을 고려하십시오.
 

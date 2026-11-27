@@ -6,6 +6,7 @@ doc_type: 'guide'
 keywords: ['clickstack', 'kubernetes', 'السجلات', 'observability', 'مراقبة الحاويات']
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
 import DemoArchitecture from '/snippets/ar/_demo.mdx';
 
 يتيح لك هذا الدليل جمع السجلات والمقاييس من نظام Kubernetes لديك وإرسالها إلى **ClickStack** لعرضها وتحليلها. وبالنسبة إلى البيانات التجريبية، يمكنك اختياريًا استخدام النسخة المتفرعة الخاصة بـ ClickStack من OpenTelemetry demo الرسمي.
@@ -15,7 +16,7 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 </Frame>
 
 <div id="prerequisites">
-  ## المتطلبات الأساسية {#prerequisites}
+  ## المتطلبات الأساسية
 </div>
 
 يتطلب هذا الدليل توفّر ما يلي لديك:
@@ -24,13 +25,18 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 * **[Helm](https://helm.sh/)** v3+
 * **`kubectl`**، مُعدّ للتفاعل مع عنقودك
 
-## خيارات النشر {#deployment-options}
+<div id="deployment-options">
+  ## خيارات النشر
+</div>
 
-ينشر هذا الدليل ClickStack بالكامل داخل عنقود Kubernetes لديك، بما في ذلك:
+يمكنك اتباع هذا الدليل باستخدام أحد خياري النشر التاليين:
 
-* ClickHouse
-* واجهة مستخدم ClickStack
-* MongoDB (يُستخدم لحالة لوحة المعلومات وإعداداتها)
+* **Open Source ClickStack**: انشر ClickStack بالكامل داخل عنقود Kubernetes لديك، بما في ذلك:
+  * ClickHouse
+  * HyperDX
+  * MongoDB (يُستخدم لحالة لوحة المعلومات وإعداداتها)
+
+* **Managed ClickStack**، مع إدارة ClickHouse وواجهة ClickStack ‏(HyperDX) في ClickHouse Cloud. وهذا يلغي الحاجة إلى تشغيل ClickHouse أو HyperDX داخل عنقودك.
 
 لمحاكاة حركة مرور التطبيق، يمكنك اختياريًا نشر النسخة المتفرعة الخاصة بـ ClickStack من [**OpenTelemetry Demo Application**](https://github.com/ClickHouse/opentelemetry-demo). ويؤدي ذلك إلى إنشاء بيانات القياس عن بُعد، بما في ذلك السجلات والمقاييس والتتبعات. وإذا كانت لديك بالفعل أحمال عمل قيد التشغيل في عنقودك، فيمكنك تخطي هذه الخطوة ومراقبة الكبسولات والعُقد والحاويات الحالية.
 
@@ -100,7 +106,7 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
   <Step title="أضِف مستودع Helm chart الخاص بـ ClickStack" id="add-helm-clickstack">
     لنشر ClickStack، نستخدم [Helm chart الرسمي](/ar/clickstack/deployment/helm).
 
-    ويتطلب ذلك إضافة مستودع Helm الخاص بواجهة مستخدم ClickStack:
+    ويتطلب ذلك إضافة مستودع Helm الخاص بـ HyperDX:
 
     ```shell
     helm repo add hyperdx https://hyperdxio.github.io/helm-charts
@@ -109,40 +115,59 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
   </Step>
 
   <Step title="نشر ClickStack" id="deploy-clickstack">
-    بعد تثبيت مخطط Helm، يمكنك نشر ClickStack في عنقودك.
+    بعد تثبيت مخطط Helm، يمكنك نشر ClickStack في عنقودك. يمكنك إما تشغيل جميع المكوّنات، بما في ذلك ClickHouse وHyperDX، داخل بيئة Kubernetes لديك، أو الاكتفاء بنشر OTel collector والاعتماد على Managed ClickStack لكلٍّ من ClickHouse وواجهة HyperDX.
 
     <br />
 
-    يثبّت الأمر التالي ClickStack في مساحة الأسماء `otel-demo`. ويقوم مخطط Helm بنشر ما يلي:
+    <Accordion title="ClickStack Open Source (مُدار ذاتيًا)">
+      يثبّت الأمر التالي ClickStack في مساحة الأسماء `otel-demo`. ويقوم مخطط Helm بنشر ما يلي:
 
-    * مثيل ClickHouse
-    * واجهة مستخدم ClickStack
-    * توزيعة ClickStack من OTel collector
-    * MongoDB لتخزين حالة تطبيق واجهة مستخدم ClickStack
+      * مثيل ClickHouse
+      * HyperDX
+      * توزيعة ClickStack من OTel collector
+      * MongoDB لتخزين حالة تطبيق HyperDX
 
-    <Note>
-      قد تحتاج إلى تعديل `storageClassName` وفقًا لإعدادات عنقود Kubernetes لديك.
-    </Note>
+      <Note>
+        قد تحتاج إلى تعديل `storageClassName` وفقًا لإعدادات عنقود Kubernetes لديك.
+      </Note>
 
-    يمكن للمستخدمين الذين لا ينشرون العرض التوضيحي لـ OTel تعديل ذلك واختيار مساحة أسماء مناسبة.
-
-    ```shell
-    helm install my-hyperdx hyperdx/hdx-oss-v2   --set clickhouse.persistence.dataSize=100Gi --set global.storageClassName="standard-rwo" -n otel-demo
-    ```
-
-    <Warning>
-      **ClickStack في بيئة الإنتاج**
-
-      يثبّت هذا المخطط أيضًا ClickHouse وOTel collector. وبالنسبة إلى بيئة الإنتاج، يُوصى باستخدام مشغِّلَي ClickHouse وOTel collector.
-
-      لتعطيل clickhouse وOTel collector، عيّن القيم التالية:
+      يمكن للمستخدمين الذين لا ينشرون العرض التوضيحي لـ OTel تعديل ذلك واختيار مساحة أسماء مناسبة.
 
       ```shell
-      helm install myrelease <chart-name-or-path> --set clickhouse.enabled=false --set clickhouse.persistence.enabled=false --set otel.enabled=false
+      helm install my-hyperdx hyperdx/hdx-oss-v2   --set clickhouse.persistence.dataSize=100Gi --set global.storageClassName="standard-rwo" -n otel-demo
       ```
-    </Warning>
 
-    للتحقق من حالة النشر، شغّل الأمر التالي وتأكد من أن جميع المكوّنات في حالة `Running`:
+      <Warning>
+        **ClickStack في بيئة الإنتاج**
+
+        يثبّت هذا المخطط أيضًا ClickHouse وOTel collector. وبالنسبة إلى بيئة الإنتاج، يُوصى باستخدام مشغِّلَي ClickHouse وOTel collector و/أو استخدام Managed ClickStack.
+
+        لتعطيل clickhouse وOTel collector، عيّن القيم التالية:
+
+        ```shell
+        helm install myrelease <chart-name-or-path> --set clickhouse.enabled=false --set clickhouse.persistence.enabled=false --set otel.enabled=false
+        ```
+      </Warning>
+    </Accordion>
+
+    <Accordion title="Managed ClickStack">
+      إذا كنت تفضّل استخدام Managed ClickStack، فيمكنك نشر ClickStack و[تعطيل ClickHouse المضمَّن](/ar/clickstack/deployment/helm#using-clickhouse-cloud).
+
+      <Note>
+        ينشر المخطط حاليًا كلًا من HyperDX وMongoDB دائمًا. ومع أن هذه المكوّنات توفّر مسار وصول بديلًا، فإنها غير مدمجة مع آليات المصادقة في ClickHouse Cloud. وهذه المكوّنات مخصّصة للمسؤولين في نموذج النشر هذا، [إذ توفّر الوصول إلى مفتاح API الآمن للإدخال](#retrieve-ingestion-api-key) اللازم لإدخال البيانات عبر OTel collector المنشور، ولكن لا ينبغي إتاحتها للمستخدمين النهائيين.
+      </Note>
+
+      ```shell
+      # حدّد بيانات اعتماد ClickHouse Cloud
+      export CLICKHOUSE_URL=<CLICKHOUSE_CLOUD_URL> # عنوان URL الكامل لـ https
+      export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+      export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+
+      helm install my-hyperdx hyperdx/hdx-oss-v2  --set clickhouse.enabled=false --set clickhouse.persistence.enabled=false --set otel.clickhouseEndpoint=${CLICKHOUSE_URL} --set clickhouse.config.users.otelUserName=${CLICKHOUSE_USER} --set clickhouse.config.users.otelUserPassword=${CLICKHOUSE_PASSWORD} --set global.storageClassName="standard-rwo" -n otel-demo
+      ```
+    </Accordion>
+
+    للتحقق من حالة النشر، شغّل الأمر التالي وتأكد من أن جميع المكوّنات في حالة `Running`. لاحظ أن ClickHouse لن يظهر إذا كنت تستخدم Managed ClickStack:
 
     ```shell
     kubectl get pods -l "app.kubernetes.io/name=hdx-oss-v2" -n otel-demo
@@ -155,10 +180,14 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
     ```
   </Step>
 
-  <Step title="الوصول إلى واجهة مستخدم ClickStack" id="access-the-hyperdx-ui">
+  <Step title="الوصول إلى واجهة HyperDX" id="access-the-hyperdx-ui">
+    <Note>
+      حتى عند استخدام Managed ClickStack، يظل مثيل HyperDX المحلي المنشور في Kubernetes cluster مطلوبًا. فهو يوفّر مفتاح استيعاب يديره OpAMP server المضمَّن مع HyperDX، ما يؤمّن استيعاب البيانات عبر OTel collector المنشور — وهي ميزة غير متاحة حاليًا في Managed ClickStack.
+    </Note>
+
     لأسباب أمنية، تستخدم الخدمة `ClusterIP` ولا تكون مكشوفة خارجيًا افتراضيًا.
 
-    للوصول إلى واجهة مستخدم ClickStack، نفّذ توجيه المنفذ من 3000 إلى المنفذ المحلي 8080.
+    للوصول إلى واجهة HyperDX، نفّذ توجيه المنفذ من 3000 إلى المنفذ المحلي 8080.
 
     ```shell
     kubectl port-forward \
@@ -167,15 +196,11 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
      -n otel-demo
     ```
 
-    انتقل إلى [http://localhost:8080](http://localhost:8080) للوصول إلى واجهة مستخدم ClickStack.
+    انتقل إلى [http://localhost:8080](http://localhost:8080) للوصول إلى واجهة HyperDX.
 
     أنشئ مستخدمًا، ووفّر اسم مستخدم وكلمة مرور يستوفيان متطلبات التعقيد.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![واجهة مستخدم ClickStack](/images/use-cases/observability/hyperdx-login.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
   </Step>
 
   <Step title="استرداد مفتاح API للإدخال" id="retrieve-ingestion-api-key">
@@ -183,11 +208,7 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 
     انتقل إلى [`Team Settings`](http://localhost:8080/team) وانسخ `Ingestion API Key` من قسم `API Keys`. يضمن مفتاح API هذا أمان إدخال البيانات عبر OpenTelemetry collector.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![نسخ مفتاح API](/images/use-cases/observability/copy_api_key.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/copy_api_key.webp" alt="نسخ مفتاح API" size="lg" />
   </Step>
 
   <Step title="إنشاء سر Kubernetes لمفتاح API" id="create-api-key-kubernetes-secret">
@@ -209,13 +230,9 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
     kubectl rollout restart deployment -n otel-demo -l app.kubernetes.io/part-of=opentelemetry-demo
     ```
 
-    يُفترض أن تبدأ الآن بيانات التتبّع والسجلات من الخدمات التجريبية بالتدفّق إلى واجهة مستخدم ClickStack.
+    يُفترض أن تبدأ الآن بيانات التتبّع والسجلات من الخدمات التجريبية بالتدفّق إلى HyperDX.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![بيانات Kubernetes في واجهة مستخدم ClickStack](/images/use-cases/observability/hyperdx-kubernetes-data.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/hyperdx-kubernetes-data.webp" alt="بيانات HyperDX على Kubernetes" size="lg" />
   </Step>
 
   <Step title="أضف مستودع Helm الخاص بـ OpenTelemetry" id="add-otel-helm-repo">
@@ -230,11 +247,11 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
   </Step>
 
   <Step title="نشر مكوّنات الـ collector في Kubernetes" id="deploy-kubernetes-collector-components">
-    لجمع السجلات والمقاييس من كلٍّ من المجموعة نفسها وكل عقدة على حدة، سنحتاج إلى نشر مُجمِّعَي بيانات OpenTelemetry منفصلَين، لكلٍّ منهما ملف manifest خاص به. يعمل الملفان المُرفقان - `k8s_deployment.yaml` و`k8s_daemonset.yaml`  - معًا لجمع بيانات القياس الشاملة من مجموعة Kubernetes الخاصة بك.
+    لجمع السجلات والمقاييس من كلٍّ من المجموعة نفسها وكل عقدة على حدة، سنحتاج إلى نشر مُجمِّعَي بيانات OpenTelemetry منفصلَين، لكلٍّ منهما ملف manifest خاص به. يعمل الملفان المُرفقان - `k8s_deployment.yaml` و`k8s_daemonset.yaml` - معًا لجمع بيانات القياس الشاملة من مجموعة Kubernetes الخاصة بك.
 
-    * `k8s_deployment.yaml` ينشر **مثيلًا واحدًا من OpenTelemetry Collector** مسؤولًا عن جمع **الأحداث والبيانات الوصفية على مستوى العُنقود بأكمله**. ويجمع أحداث Kubernetes ومقاييس العُنقود، ويُثري بيانات الرصد بملصقات البودات وتعليقاتها التوضيحية. ويعمل هذا المجمِّع كعملية نشر مستقلة مع نسخة متماثلة واحدة لتجنّب تكرار البيانات.
+    * `k8s_deployment.yaml` ينشر **مثيلًا واحدًا من OpenTelemetry Collector** مسؤولًا عن جمع **الأحداث والبيانات الوصفية على مستوى العُنقود بأكمله**. ويجمع أحداث Kubernetes ومقاييس العُنقود، ويُثري بيانات الرصد بملصقات البودات وتعليقاتها التوضيحية. ويعمل هذا المجمِّع كعملية نشر مستقلة مع نسخة متماثلة واحدة لتجنّب تكرار البيانات.
 
-    * `k8s_daemonset.yaml` ينشر **مجمِّعًا قائمًا على DaemonSet** يعمل على كل عقدة في العُنقود. ويجمع **المقاييس على مستوى العقدة وعلى مستوى البود**، بالإضافة إلى سجلات الحاويات، باستخدام مكوّنات مثل `kubeletstats` و`hostmetrics` وKubernetes Attribute Processor. وتُثري هذه المجمِّعات السجلات بالبيانات الوصفية وترسلها إلى واجهة مستخدم ClickStack باستخدام مُصدِّر OTLP.
+    * `k8s_daemonset.yaml` ينشر **مجمِّعًا قائمًا على DaemonSet** يعمل على كل عقدة في العُنقود. ويجمع **المقاييس على مستوى العقدة وعلى مستوى البود**، بالإضافة إلى سجلات الحاويات، باستخدام مكوّنات مثل `kubeletstats` و`hostmetrics` وKubernetes Attribute Processor. وتُثري هذه المجمِّعات السجلات بالبيانات الوصفية وترسلها إلى HyperDX باستخدام مُصدِّر OTLP.
 
     تُتيح هذه الملفات التعريفية مجتمعةً رصدًا شاملًا للمكدس الكامل عبر الكلستر، من البنية التحتية وصولًا إلى بيانات القياس عن بُعد على مستوى التطبيق، وترسل البيانات المُثراة إلى ClickStack للتحليل المركزي.
 
@@ -425,32 +442,40 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
     </Accordion>
   </Step>
 
-  <Step title="استكشف بيانات Kubernetes في واجهة مستخدم ClickStack" id="explore-kubernetes-data-hyperdx">
-    انتقل إلى واجهة مستخدم ClickStack المنشورة على Kubernetes.
+  <Step title="استكشف بيانات Kubernetes في HyperDX" id="explore-kubernetes-data-hyperdx">
+    انتقل إلى واجهة مستخدم HyperDX الخاصة بك، سواء عبر المثيل المنشور على Kubernetes أو من خلال Managed ClickStack.
 
     <p />
 
-    للوصول إلى واجهة مستخدم ClickStack المنشورة محليًا، يمكنك إجراء إعادة توجيه للمنفذ باستخدام الأمر التالي، ثم الوصول إلى واجهة مستخدم ClickStack على [http://localhost:8080](http://localhost:8080).
+    <Accordion title="Managed ClickStack">
+      إذا كنت تستخدم Managed ClickStack، فما عليك سوى تسجيل الدخول إلى خدمة ClickHouse Cloud الخاصة بك واختيار &quot;ClickStack&quot; من القائمة اليمنى. ستتم مصادقتك تلقائيًا، ولن تحتاج إلى إنشاء مستخدم.
 
-    ```shell
-    kubectl port-forward \
-     pod/$(kubectl get pod -l app.kubernetes.io/name=hdx-oss-v2 -o jsonpath='{.items[0].metadata.name}' -n otel-demo) \
-      8080:3000 \
-     -n otel-demo
-    ```
+      سيتم إنشاء مصادر البيانات للسجلات والمقاييس والتتبعات مسبقًا لك.
+    </Accordion>
 
-    <Info>
-      **ClickStack في بيئة الإنتاج**
-
-      في بيئة الإنتاج، نوصي باستخدام مورد Ingress مع TLS. على سبيل المثال:
+    <Accordion title="ClickStack Open Source">
+      للوصول إلى HyperDX المنشور محليًا، يمكنك إجراء إعادة توجيه للمنفذ باستخدام الأمر التالي، ثم الوصول إلى HyperDX على [http://localhost:8080](http://localhost:8080).
 
       ```shell
-      helm upgrade my-hyperdx hyperdx/hdx-oss-v2 \
-      --set hyperdx.ingress.enabled=true \
-      --set hyperdx.ingress.host=your-domain.com \
-      --set hyperdx.ingress.tls.enabled=true
+      kubectl port-forward \
+       pod/$(kubectl get pod -l app.kubernetes.io/name=hdx-oss-v2 -o jsonpath='{.items[0].metadata.name}' -n otel-demo) \
+        8080:3000 \
+       -n otel-demo
       ```
-    </Info>
+
+      <Info>
+        **ClickStack في بيئة الإنتاج**
+
+        في بيئة الإنتاج، نوصي باستخدام مورد Ingress مع TLS إذا لم تكن تستخدم Managed ClickStack. على سبيل المثال:
+
+        ```shell
+        helm upgrade my-hyperdx hyperdx/hdx-oss-v2 \
+        --set hyperdx.ingress.enabled=true \
+        --set hyperdx.ingress.host=your-domain.com \
+        --set hyperdx.ingress.tls.enabled=true
+        ```
+      </Info>
+    </Accordion>
 
     لاستكشاف بيانات Kubernetes، انتقل إلى لوحة المعلومات المخصّصة على `/kubernetes`، مثل [http://localhost:8080/kubernetes](http://localhost:8080/kubernetes).
 
@@ -458,8 +483,4 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
   </Step>
 </Steps>
 
-<div className="ch-image-lg">
-  <Frame>
-    ![ClickHouse على Kubernetes](/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="ClickHouse على Kubernetes" size="lg" />

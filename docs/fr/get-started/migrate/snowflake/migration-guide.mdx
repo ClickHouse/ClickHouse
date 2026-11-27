@@ -1,12 +1,14 @@
 ---
 sidebarTitle: 'Guide de migration'
 slug: /migrations/snowflake
-description: 'Migration de Snowflake vers ClickHouse'
+description: 'Migrer depuis Snowflake vers ClickHouse'
 keywords: ['Snowflake']
 title: 'Migrer depuis Snowflake vers ClickHouse'
 show_related_blogs: false
 doc_type: 'guide'
 ---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
 
 > Ce guide explique comment migrer des données de Snowflake vers ClickHouse.
 
@@ -17,15 +19,11 @@ de ClickHouse.
 
 <Steps>
   <Step title="Exporter des données depuis Snowflake" id="1-exporting-data-from-snowflake">
-    <div className="ch-image-md">
-      <Frame>
-        ![Migration de Snowflake vers ClickHouse](/images/migrations/migrate_snowflake_clickhouse.webp)
-      </Frame>
-    </div>
+    <Image img="/images/migrations/migrate_snowflake_clickhouse.webp" size="md" alt="Migrer de Snowflake vers ClickHouse" />
 
     L&#39;exportation de données depuis Snowflake nécessite l&#39;utilisation d&#39;un stage externe, comme illustré dans le schéma ci-dessus.
 
-    Supposons que nous voulions exporter une table Snowflake avec le schéma suivant :
+    Supposons que nous voulions exporter une table Snowflake avec le schéma suivant :
 
     ```sql
     CREATE TABLE MYDATASET (
@@ -54,7 +52,7 @@ de ClickHouse.
     COPY INTO @external_stage/mydataset from mydataset max_file_size=157286400 header=true;
     ```
 
-    Pour un dataset d&#39;environ 5 To avec une taille de fichier maximale de 150 Mo, et en utilisant un warehouse Snowflake 2X-Large situé dans la même région AWS `us-east-1`, la copie des données vers le bucket S3 prendra environ 30 minutes.
+    Pour un dataset d&#39;environ 5 To avec une taille de fichier maximale de 150 Mo, et en utilisant un warehouse Snowflake 2X-Large situé dans la même région AWS `us-east-1`, la copie des données vers le bucket S3 prendra environ 30 minutes.
   </Step>
 
   <Step title="Importer dans ClickHouse" id="2-importing-to-clickhouse">
@@ -62,7 +60,7 @@ de ClickHouse.
 
     Cet exemple utilise la [fonction de table s3](/fr/reference/functions/table-functions/s3) pour AWS S3, mais la [fonction de table gcs](/fr/reference/functions/table-functions/gcs) peut être utilisée pour Google Cloud Storage, et la [fonction de table azureBlobStorage](/fr/reference/functions/table-functions/azureBlobStorage) pour Azure Blob Storage.
 
-    En supposant le schéma de table cible suivant :
+    En supposant le schéma de table cible suivant :
 
     ```sql
     CREATE TABLE default.mydataset
@@ -76,7 +74,7 @@ de ClickHouse.
     ORDER BY (timestamp)
     ```
 
-    Nous pouvons ensuite utiliser la commande `INSERT INTO SELECT` pour insérer les données depuis S3 dans une table ClickHouse :
+    Nous pouvons ensuite utiliser la commande `INSERT INTO SELECT` pour insérer les données depuis S3 dans une table ClickHouse :
 
     ```sql
     INSERT INTO mydataset
@@ -106,7 +104,7 @@ de ClickHouse.
   </Step>
 
   <Step title="Tester la réussite de l'exportation des données" id="3-testing-successful-data-export">
-    Pour vérifier que vos données ont bien été insérées, exécutez simplement une requête `SELECT` sur votre nouvelle table :
+    Pour vérifier que vos données ont bien été insérées, exécutez simplement une requête `SELECT` sur votre nouvelle table :
 
     ```sql
     SELECT * FROM mydataset LIMIT 10;

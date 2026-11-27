@@ -1,32 +1,25 @@
 ---
 slug: /use-cases/observability/clickstack/monitoring-aws-cloudwatch-logs
-title: 'ClickHouse Observability로 AWS CloudWatch 로그 모니터링하기'
-sidebarTitle: 'AWS CloudWatch 로그 모니터링'
-description: 'OpenTelemetry CloudWatch 수신기를 사용하여 AWS CloudWatch 로그를 자가 관리형 환경의 ClickHouse Observability로 전달합니다'
+title: 'Managed ClickStack로 AWS CloudWatch 로그 모니터링'
+description: 'OpenTelemetry CloudWatch 수신기를 통해 AWS CloudWatch 로그를 Managed ClickStack로 전달'
 doc_type: 'guide'
-keywords: ['clickstack', 'aws', 'cloudwatch', 'logs', 'self-managed', 'ClickHouse Observability', 'otel']
+keywords: ['clickstack', 'aws', 'cloudwatch', '로그', 'managed', '관측성', 'otel']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
-<Note>
-  **현재 자가 관리형 경로를 사용 중입니다**
+이 가이드에서는 OpenTelemetry [`awscloudwatch` 수신기](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver)를 사용해 AWS CloudWatch Logs를 Managed ClickStack으로 전달한 뒤, ClickStack UI에서 확인하는 방법을 안내합니다.
 
-  [자가 관리형 환경](/ko/clickstack/self-configured/overview)을 사용하여 ClickHouse Observability를 직접 설정하는 방식을 선택했습니다. 이 경로에서는 OpenTelemetry collector를 직접 실행하고, ClickHouse Cloud 서비스로의 데이터 수집을 관리하며, 스키마(schema)를 튜닝하고, 웨어하우스(warehouses)를 사용해 수집 워크로드와 쿼리 워크로드를 분리합니다. 자세한 내용은 [OpenTelemetry collector](/ko/clickstack/self-configured/ingesting-data/collector), [성능 튜닝](/ko/clickstack/self-configured/managing/performance-tuning), [읽기 및 쓰기 워크로드 분리](/ko/clickstack/self-configured/managing/isolating-read-write)를 참조하십시오.
+별도의 collector를 실행해 AWS API를 통해 CloudWatch를 폴링하고, 이벤트를 OTLP를 통해 ClickStack collector로 전달합니다. API 지연 시간과 비용을 최소화하려면 이 collector를 로그 그룹과 동일한 AWS 계정 및 리전에 두십시오.
 
-  수집, 스키마(schemas), 컴퓨트를 ClickHouse가 대신 처리하는 서버리스 환경을 원한다면 기본 ClickHouse Observability 환경을 사용하고, 대신 [OpenTelemetry로 AWS CloudWatch 로그 수집하기](/ko/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs-serverless) 가이드를 따르십시오.
-</Note>
+이 가이드는 [Setting up your OpenTelemetry Collector](/ko/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector)를 완료했고 ClickStack collector가 실행 중이라고 가정합니다.
 
-이 가이드에서는 OpenTelemetry [`awscloudwatch` 수신기](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver)를 사용하여 AWS CloudWatch 로그를 ClickHouse Observability로 전달하고, ClickStack UI에서 확인하는 과정을 안내합니다.
-
-AWS API로 CloudWatch를 폴링하고 OTLP를 통해 이벤트를 ClickStack 수집기로 전달하는 별도의 collector를 실행합니다. API 지연 시간과 비용을 최소화하려면 이 collector를 로그 그룹과 동일한 AWS 계정 및 리전에 배치하십시오.
-
-이 가이드는 [OpenTelemetry Collector 설정](/ko/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector)을 완료했고 ClickStack 수집기가 실행 중이라고 가정합니다.
-
-ClickStack 수집기는 **Docker 컨테이너**로 배포하거나([OpenTelemetry Collector 설정](/ko/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector) 참조), 업스트림 OpenTelemetry Helm 차트와 ClickStack 수집기 이미지를 사용하여 Kubernetes에 **Helm 릴리스**로 배포할 수 있습니다([collector 배포](/ko/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured) 참조). **해당 수집기의 OTLP 엔드포인트를 반드시 기록해 두고**, 배포 시 설정한 `OTLP_AUTH_TOKEN`도 함께 기록해 두십시오.
+ClickStack collector는 **Docker 컨테이너**로 배포할 수도 있고([Setting up your OpenTelemetry Collector](/ko/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) 참조), Kubernetes에서 ClickStack collector 이미지와 upstream OpenTelemetry Helm 차트를 사용해 **Helm 릴리스**로 배포할 수도 있습니다([Deploying the collector](/ko/clickstack/ingesting-data/collector#configuring-the-collector) 참조). **해당 OTLP 엔드포인트**와 배포 시 설정한 `OTLP_AUTH_TOKEN`을 반드시 기록해 두십시오.
 
 <Steps>
   <Step title="사전 요구 사항을 준비합니다" id="gather-prerequisites">
@@ -65,15 +58,12 @@ ClickStack 수집기는 **Docker 컨테이너**로 배포하거나([OpenTelemetr
       "Version": "2012-10-17",
       "Statement": [
         {
-          "Sid": "CloudWatchLogsList",
-          "Effect": "Allow",
-          "Action": "logs:DescribeLogGroups",
-          "Resource": "*"
-        },
-        {
           "Sid": "CloudWatchLogsRead",
           "Effect": "Allow",
-          "Action": "logs:FilterLogEvents",
+          "Action": [
+            "logs:DescribeLogGroups",
+            "logs:FilterLogEvents"
+          ],
           "Resource": "arn:aws:logs:*:YOUR_ACCOUNT_ID:log-group:*"
         }
       ]
@@ -267,19 +257,11 @@ ClickStack 수집기는 **Docker 컨테이너**로 배포하거나([OpenTelemetr
   <Step title="ClickStack UI에서 확인" id="confirm-in-ui">
     [ClickHouse Cloud 콘솔](https://console.clickhouse.cloud)에서 서비스를 열고 왼쪽 메뉴에서 **ClickStack**을 선택합니다.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![ClickStack 실행](/images/use-cases/observability/clickstack-cloud-v2.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="ClickStack 실행" border />
 
     **검색** 보기에서 소스를 `Logs`로 전환하고 시간 범위를 **최근 15분**으로 설정합니다. CloudWatch 이벤트는 두어 번의 폴링 주기 내에 표시됩니다.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![CloudWatch 로그가 표시된 ClickStack 검색 보기](/images/clickstack/cloudwatch/log-search-view-clickstack.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/cloudwatch/log-search-view-clickstack.webp" size="lg" alt="CloudWatch 로그가 표시된 ClickStack 검색 보기" />
 
     각 이벤트에는 원본 로그 그룹과 스트림이 리소스 속성으로 포함됩니다:
 
@@ -290,19 +272,11 @@ ClickStack 수집기는 **Docker 컨테이너**로 배포하거나([OpenTelemetr
 
     다음 속성이 포함되도록 검색을 `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body`로 수정합니다:
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![CloudWatch 로그와 속성이 표시된 ClickStack 검색 보기](/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp" size="lg" alt="CloudWatch 로그와 속성이 표시된 ClickStack 검색 보기" />
 
     메타데이터를 확인하려면 로그 항목을 선택합니다:
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![로그 상세 보기의 CloudWatch 속성](/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp" size="lg" alt="로그 상세 보기의 CloudWatch 속성" />
 
     아무것도 표시되지 않으면 다음을 확인합니다:
 
@@ -317,25 +291,17 @@ ClickStack 수집기는 **Docker 컨테이너**로 배포하거나([OpenTelemetr
 
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">`cloudwatch-logs-dashboard.json` 다운로드</TrackedLink>한 다음 ClickStack UI에서 **Dashboards**로 이동해 **Import**를 클릭합니다.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![대시보드 가져오기 버튼](/images/clickstack/clickstack-import-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/clickstack-import-dashboard.webp" size="lg" alt="대시보드 가져오기 버튼" />
 
     JSON 파일을 업로드하고 **Finish Import**를 클릭합니다.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![가져오기 완료 대화 상자](/images/clickstack/cloudwatch/finish-clickstack-import.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/cloudwatch/finish-clickstack-import.webp" size="lg" alt="가져오기 완료 대화 상자" />
   </Step>
 
   <Step title="추가 참고 자료" id="further-reading">
-    * 데모 데이터세트, 전체 문제 해결 방법, 조정 옵션은 [AWS CloudWatch Logs 통합 참고](/ko/clickstack/observability/integration-examples/cloudwatch#self-managed)를 참조하십시오.
-    * OTLP endpoint의 TLS와 최소 권한 수집 사용자를 통한 [collector 보안 설정](/ko/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
-    * collector에서 [이벤트 처리, 필터링 및 보강](/ko/clickstack/self-configured/ingesting-data/collector#processing-filtering-transforming-enriching-self-configured).
-    * 운영 환경으로 전환할 때의 권장 사항은 [운영 환경으로 전환](/ko/clickstack/self-configured/managing/production)을 참조하십시오.
+    * 데모 데이터세트, 전체 문제 해결 방법, 조정 옵션은 [AWS CloudWatch Logs 통합 참고](/ko/clickstack/integration-examples/cloudwatch)를 참조하십시오.
+    * OTLP endpoint의 TLS와 최소 권한 수집 사용자를 통한 [collector 보안 설정](/ko/clickstack/ingesting-data/collector#securing-the-collector).
+    * collector에서 [이벤트 처리, 필터링 및 보강](/ko/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching).
+    * 운영 환경으로 전환할 때의 권장 사항은 [운영 환경으로 전환](/ko/clickstack/managing/production)을 참조하십시오.
   </Step>
 </Steps>

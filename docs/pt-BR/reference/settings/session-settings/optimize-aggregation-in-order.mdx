@@ -13,15 +13,13 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## optimize_aggregation_in_order {#optimize_aggregation_in_order}
+<div id="optimize_aggregation_in_order">
+  ## optimize_aggregation_in_order
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Habilita a otimização de [GROUP BY](/pt-BR/reference/statements/select/group-by) em consultas [SELECT](/pt-BR/reference/statements/select/index) para agregar dados seguindo a ordem correspondente em tabelas [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree).
-
-Também se aplica a um único `uniqExact` (ou `count(DISTINCT)`) sem `GROUP BY` sobre uma tabela ordenada pelo seu argumento: os valores distintos são contados à medida que chegam, já em ordem, e por isso não precisam ser mantidos em memória. Com várias threads, a leitura é dividida em intervalos da sorting key, que são contados em paralelo; quando essa divisão não é possível (por exemplo, com um argumento de ponto flutuante ou uma função da sorting key), é usada a agregação convencional.
-
-As projeções são escolhidas antes da ordem de agregação. Se uma [projeção](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#projections) lê menos grânulos do que a tabela, ela é usada mesmo que não esteja ordenada pela chave do `GROUP BY`; nesse caso, a agregação mantém todos os grupos em memória em vez de agregar em ordem.
 
 Valores possíveis:
 
@@ -32,7 +30,9 @@ Valores possíveis:
 
 * [Otimização de GROUP BY](/pt-BR/reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 
-## optimize_aggregation_in_order_limit {#optimize_aggregation_in_order_limit}
+<div id="optimize_aggregation_in_order_limit">
+  ## optimize_aggregation_in_order_limit
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

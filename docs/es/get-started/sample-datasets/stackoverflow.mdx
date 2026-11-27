@@ -8,22 +8,20 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 Este conjunto de datos contiene todos los registros de `Posts`, `Users`, `Votes`, `Comments`, `Badges`, `PostHistory` y `PostLinks` de Stack Overflow.
 
-Puede descargar versiones en Parquet de los datos pre-prepared, que contienen todas las publicaciones hasta abril de 2024, o descargar los datos más recientes en formato XML y cargarlos. Stack Overflow proporciona actualizaciones de estos datos periódicamente; históricamente, cada 3 meses.
+Puede descargar versiones en Parquet de los datos ya preparadas, que contienen todas las publicaciones hasta abril de 2024, o descargar los datos más recientes en formato XML y cargarlos. Stack Overflow proporciona actualizaciones de estos datos periódicamente; históricamente, cada 3 meses.
 
 El siguiente diagrama muestra el esquema de las tablas disponibles asumiendo el formato Parquet.
 
-<div className="ch-image-md">
-  <Frame>
-    ![Esquema de Stack Overflow](/images/getting-started/example-datasets/stackoverflow.webp)
-  </Frame>
-</div>
+<Image img="/images/getting-started/example-datasets/stackoverflow.webp" alt="Esquema de Stack Overflow" size="md" />
 
 Puede encontrar una descripción del esquema de estos datos [aquí](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede).
 
 <div id="pre-prepared-data">
-  ## Datos preparados de antemano {#pre-prepared-data}
+  ## Datos preparados de antemano
 </div>
 
 Proporcionamos una copia de estos datos en formato Parquet, actualizada a abril de 2024. Aunque, para ClickHouse, es pequeño en cuanto al número de filas (60 millones de publicaciones), este conjunto de datos contiene volúmenes significativos de texto y columnas String de gran tamaño.
@@ -34,27 +32,29 @@ CREATE DATABASE stackoverflow
 
 Los siguientes tiempos corresponden a un clúster de ClickHouse Cloud de 96 GiB y 24 vCPU ubicado en `eu-west-2`. El conjunto de datos está ubicado en `eu-west-3`.
 
-### Posts {#posts}
+<div id="posts">
+  ### Posts
+</div>
 
 ```sql
 CREATE TABLE stackoverflow.posts
 (
-    `Id` Int32 CODEC(Delta, Default),
+    `Id` Int32 CODEC(Delta(4), ZSTD(1)),
     `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
     `AcceptedAnswerId` UInt32,
     `CreationDate` DateTime64(3, 'UTC'),
     `Score` Int32,
-    `ViewCount` UInt32 CODEC(Delta, Default),
+    `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
     `Body` String,
     `OwnerUserId` Int32,
     `OwnerDisplayName` String,
     `LastEditorUserId` Int32,
     `LastEditorDisplayName` String,
-    `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
+    `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
     `LastActivityDate` DateTime64(3, 'UTC'),
     `Title` String,
     `Tags` String,
-    `AnswerCount` UInt16 CODEC(Delta, Default),
+    `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
     `CommentCount` UInt8,
     `FavoriteCount` UInt8,
     `ContentLicense` LowCardinality(String),
@@ -64,9 +64,9 @@ CREATE TABLE stackoverflow.posts
 )
 ENGINE = MergeTree
 PARTITION BY toYear(CreationDate)
-ORDER BY (PostTypeId, toDate(CreationDate), CreationDate);
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate)
 
-INSERT INTO stackoverflow.posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
+INSERT INTO stackoverflow.posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
 ```
 
 ```response
@@ -75,7 +75,9 @@ INSERT INTO stackoverflow.posts SELECT * FROM s3('https://datasets-documentation
 
 Posts también está disponible por año; p. ej. [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2020.parquet)
 
-### Votes {#votes}
+<div id="votes">
+  ### Votes
+</div>
 
 ```sql
 CREATE TABLE stackoverflow.votes
@@ -88,9 +90,9 @@ CREATE TABLE stackoverflow.votes
     `BountyAmount` UInt8
 )
 ENGINE = MergeTree
-ORDER BY (VoteTypeId, CreationDate, PostId, UserId);
+ORDER BY (VoteTypeId, CreationDate, PostId, UserId)
 
-INSERT INTO stackoverflow.votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet', NOSIGN)
+INSERT INTO stackoverflow.votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
 ```
 
 ```response
@@ -99,7 +101,9 @@ INSERT INTO stackoverflow.votes SELECT * FROM s3('https://datasets-documentation
 
 Votes también está disponible por año; p. ej., [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/2020.parquet)
 
-### Comments {#comments}
+<div id="comments">
+  ### Comments
+</div>
 
 ```sql
 CREATE TABLE stackoverflow.comments
@@ -113,9 +117,9 @@ CREATE TABLE stackoverflow.comments
     `UserDisplayName` LowCardinality(String)
 )
 ENGINE = MergeTree
-ORDER BY CreationDate;
+ORDER BY CreationDate
 
-INSERT INTO stackoverflow.comments SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/*.parquet', NOSIGN)
+INSERT INTO stackoverflow.comments SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/*.parquet')
 ```
 
 ```response
@@ -124,14 +128,16 @@ INSERT INTO stackoverflow.comments SELECT * FROM s3('https://datasets-documentat
 
 Comments también están disponibles por año; por ejemplo, [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/2020.parquet)
 
-### Users {#users}
+<div id="users">
+  ### Users
+</div>
 
 ```sql
 CREATE TABLE stackoverflow.users
 (
     `Id` Int32,
     `Reputation` LowCardinality(String),
-    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
+    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
     `DisplayName` String,
     `LastAccessDate` DateTime64(3, 'UTC'),
     `AboutMe` String,
@@ -143,16 +149,18 @@ CREATE TABLE stackoverflow.users
     `AccountId` Int32
 )
 ENGINE = MergeTree
-ORDER BY (Id, CreationDate);
+ORDER BY (Id, CreationDate)
 
-INSERT INTO stackoverflow.users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
+INSERT INTO stackoverflow.users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet')
 ```
 
 ```response
 0 rows in set. Elapsed: 10.988 sec. Processed 22.48 million rows, 1.36 GB (2.05 million rows/s., 124.10 MB/s.)
 ```
 
-### Badges {#badges}
+<div id="badges">
+  ### Badges
+</div>
 
 ```sql
 CREATE TABLE stackoverflow.badges
@@ -165,16 +173,18 @@ CREATE TABLE stackoverflow.badges
     `TagBased` Bool
 )
 ENGINE = MergeTree
-ORDER BY UserId;
+ORDER BY UserId
 
-INSERT INTO stackoverflow.badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet', NOSIGN)
+INSERT INTO stackoverflow.badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
 ```
 
 ```response
 0 rows in set. Elapsed: 6.635 sec. Processed 51.29 million rows, 797.05 MB (7.73 million rows/s., 120.13 MB/s.)
 ```
 
-### PostLinks {#postlinks}
+<div id="postlinks">
+  ### PostLinks
+</div>
 
 ```sql
 CREATE TABLE stackoverflow.postlinks
@@ -186,16 +196,18 @@ CREATE TABLE stackoverflow.postlinks
     `LinkTypeId` Enum8('Linked' = 1, 'Duplicate' = 3)
 )
 ENGINE = MergeTree
-ORDER BY (PostId, RelatedPostId);
+ORDER BY (PostId, RelatedPostId)
 
-INSERT INTO stackoverflow.postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet', NOSIGN)
+INSERT INTO stackoverflow.postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet')
 ```
 
 ```response
 0 rows in set. Elapsed: 1.534 sec. Processed 6.55 million rows, 129.70 MB (4.27 million rows/s., 84.57 MB/s.)
 ```
 
-### PostHistory {#posthistory}
+<div id="posthistory">
+  ### PostHistory
+</div>
 
 ```sql
 CREATE TABLE stackoverflow.posthistory
@@ -212,9 +224,9 @@ CREATE TABLE stackoverflow.posthistory
     `UserDisplayName` String
 )
 ENGINE = MergeTree
-ORDER BY (CreationDate, PostId);
+ORDER BY (CreationDate, PostId)
 
-INSERT INTO stackoverflow.posthistory SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posthistory/*.parquet', NOSIGN)
+INSERT INTO stackoverflow.posthistory SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posthistory/*.parquet')
 ```
 
 ```response
@@ -222,13 +234,13 @@ INSERT INTO stackoverflow.posthistory SELECT * FROM s3('https://datasets-documen
 ```
 
 <div id="original-dataset">
-  ## Conjunto de datos original {#original-dataset}
+  ## Conjunto de datos original
 </div>
 
 El conjunto de datos original está disponible en formato XML comprimido (7zip) en [https://archive.org/download/stackexchange](https://archive.org/download/stackexchange), en archivos con el prefijo `stackoverflow.com*`.
 
 <div id="download">
-  ### Descargar {#download}
+  ### Descargar
 </div>
 
 ```bash
@@ -244,7 +256,7 @@ wget https://archive.org/download/stackexchange/stackoverflow.com-Votes.7z
 Estos archivos pueden ocupar hasta 35 GB y tardar unos 30 minutos en descargarse, según la conexión a internet; el servidor de descarga limita la velocidad a unos 20 MB/s.
 
 <div id="convert-to-json">
-  ### Convertir a JSON {#convert-to-json}
+  ### Convertir a JSON
 </div>
 
 En el momento de redactar esta guía, ClickHouse no admite XML de forma nativa como formato de entrada. Para cargar los datos en ClickHouse, primero los convertimos a NDJSON.
@@ -292,13 +304,13 @@ clickhouse local --query "SELECT * FROM file('posts.json', JSONEachRow, 'Id Int3
 ```
 
 <div id="example-queries">
-  ## Consultas de ejemplo {#example-queries}
+  ## Consultas de ejemplo
 </div>
 
 Algunas consultas sencillas para empezar.
 
 <div id="most-popular-tags-on-stack-overflow">
-  ### Etiquetas más populares en Stack Overflow {#most-popular-tags-on-stack-overflow}
+  ### Etiquetas más populares en Stack Overflow
 </div>
 
 ```sql
@@ -330,7 +342,7 @@ Peak memory usage: 224.03 MiB.
 ```
 
 <div id="user-with-the-most-answers-active-accounts">
-  ### Usuario con más respuestas (cuentas activas) {#user-with-the-most-answers-active-accounts}
+  ### Usuario con más respuestas (cuentas activas)
 </div>
 
 La cuenta debe tener un `UserId`.
@@ -360,7 +372,7 @@ Peak memory usage: 206.45 MiB.
 ```
 
 <div id="clickhouse-related-posts-with-the-most-views">
-  ### Publicaciones sobre ClickHouse con más visualizaciones {#clickhouse-related-posts-with-the-most-views}
+  ### Publicaciones sobre ClickHouse con más visualizaciones
 </div>
 
 ```sql
@@ -394,7 +406,7 @@ Peak memory usage: 240.01 MiB.
 ```
 
 <div id="most-controversial-posts">
-  ### Publicaciones más polémicas {#most-controversial-posts}
+  ### Publicaciones más polémicas
 </div>
 
 ```sql
@@ -432,7 +444,7 @@ Peak memory usage: 6.05 GiB.
 ```
 
 <div id="attribution">
-  ## Atribución {#attribution}
+  ## Atribución
 </div>
 
 Agradecemos a Stack Overflow por proporcionar estos datos bajo la licencia `cc-by-sa 4.0`, y reconocemos sus esfuerzos y la fuente original de los datos en [https://archive.org/details/stackexchange](https://archive.org/details/stackexchange).

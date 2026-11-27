@@ -938,9 +938,9 @@ public:
     {
     }
 
-    [[nodiscard]] bool isTryLimitReached() const { return failed_tries_count >= kTryLimit; }
+    bool isTryLimitReached() const { return failed_tries_count >= kTryLimit; }
 
-    [[nodiscard]] bool isCompleted() const { return is_completed; }
+    bool isCompleted() const { return is_completed; }
 
     void perform()
     {
@@ -1029,9 +1029,9 @@ public:
     {
     }
 
-    [[nodiscard]] bool isTryLimitReached() const { return failed_tries_count >= kTryLimit; }
+    bool isTryLimitReached() const { return failed_tries_count >= kTryLimit; }
 
-    [[nodiscard]] bool isCompleted() const { return is_completed; }
+    bool isCompleted() const { return is_completed; }
 
     void perform()
     {

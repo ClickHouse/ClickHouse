@@ -1,32 +1,38 @@
 ---
 slug: /use-cases/observability/clickstack/config
 title: 'Options de configuration'
-description: 'Options de configuration pour ClickStack - la stack d’observability de ClickHouse'
-keywords: ['configuration de ClickStack', 'configuration de l’observability', 'paramètres de l’interface utilisateur de ClickStack', 'configuration du collecteur', 'variables d’environnement']
+description: 'Options de configuration pour ClickStack - la stack d’observabilité de ClickHouse'
+keywords: ['configuration de ClickStack', 'configuration de l’observabilité', 'paramètres HyperDX', 'configuration du collecteur', 'variables d’environnement']
 doc_type: 'reference'
 ---
 
-Les options de configuration suivantes sont disponibles pour chaque composant de ClickStack :
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Les options de configuration suivantes sont disponibles pour chaque composant de ClickStack :
 
 <div id="modifying-settings">
-  ## Paramètres pour les distributions open source {#modifying-settings}
+  ## Paramètres pour les distributions open source
 </div>
 
-### Docker {#docker}
+<div id="docker">
+  ### Docker
+</div>
 
-Si vous utilisez [Tout-en-un](/fr/clickstack/deployment/all-in-one), [interface utilisateur de ClickStack uniquement](/fr/clickstack/deployment/hyperdx-only) ou le [Mode local](/fr/clickstack/deployment/local-mode-only), il suffit de définir le paramètre souhaité via une variable d’environnement, par exemple.
+Si vous utilisez [Tout-en-un](/fr/clickstack/deployment/all-in-one), [HyperDX uniquement](/fr/clickstack/deployment/hyperdx-only) ou le [mode local](/fr/clickstack/deployment/local-mode-only), il suffit de définir le paramètre souhaité via une variable d’environnement, par exemple.
 
 ```shell
-docker run -e HYPERDX_APP_PORT=8081 -p 8081:8081 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
+docker run  -e HYPERDX_LOG_LEVEL='debug' -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
 ```
 
-### Docker Compose {#docker-compose}
+<div id="docker-compose">
+  ### Docker Compose
+</div>
 
-Si vous utilisez le guide de déploiement [Docker Compose](/fr/clickstack/deployment/docker-compose), vous pouvez utiliser le fichier [`.env`](https://github.com/ClickHouse/clickstack/blob/main/.env) pour modifier les paramètres.
+Si vous utilisez le guide de déploiement [Docker Compose](/fr/clickstack/deployment/docker-compose), vous pouvez utiliser le fichier [`.env`](https://github.com/hyperdxio/hyperdx/blob/main/.env) pour modifier les paramètres.
 
-Vous pouvez également surcharger explicitement les paramètres dans le fichier [`docker-compose.yml`](https://github.com/ClickHouse/clickstack/blob/main/docker-compose.yml), par exemple :
+Vous pouvez également surcharger explicitement les paramètres dans le fichier [`docker-compose.yaml`](https://github.com/hyperdxio/hyperdx/blob/main/docker-compose.yml), par exemple :
 
-Exemple :
+Exemple :
 
 ```yaml
 services:
@@ -37,103 +43,128 @@ services:
       # ... other settings
 ```
 
-### Helm {#helm}
+<div id="helm">
+  ### Helm
+</div>
 
-Utilisez le [guide de déploiement Helm](/fr/clickstack/deployment/helm) pour installer les opérateurs et le chart ClickStack. Avant de personnaliser un déploiement, récupérez les valeurs actuelles du chart :
+<div id="customizing-values">
+  #### Personnaliser les values (facultatif)
+</div>
+
+Vous pouvez personnaliser la configuration à l’aide des options `--set`, par exemple :
 
 ```shell
-helm show values clickstack/clickstack > values.yaml
+helm install my-hyperdx hyperdx/hdx-oss-v2 \
+  --set replicaCount=2 \
+  --set resources.limits.cpu=500m \
+  --set resources.limits.memory=512Mi \
+  --set resources.requests.cpu=250m \
+  --set resources.requests.memory=256Mi \
+  --set ingress.enabled=true \
+  --set ingress.annotations."kubernetes\.io/ingress\.class"=nginx \
+  --set ingress.hosts[0].host=hyperdx.example.com \
+  --set ingress.hosts[0].paths[0].path=/ \
+  --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific \
+  --set env[0].name=CLICKHOUSE_USER \
+  --set env[0].value=abc
 ```
 
-Définissez séparément l&#39;environnement de l&#39;application et celui du collecteur à l&#39;aide des valeurs du chart Helm, puis appliquez votre configuration :
+Vous pouvez aussi modifier le `values.yaml`. Pour récupérer les valeurs par défaut :
 
 ```shell
-helm upgrade --install my-clickstack clickstack/clickstack -f values.yaml
+helm show values hyperdx/hdx-oss-v2 > values.yaml
 ```
 
-Consultez la page [Configuration Helm](/fr/clickstack/deployment/helm-configuration) pour connaître les valeurs prises en charge ainsi que la configuration de l&#39;Entrée, des ressources et des secrets. L&#39;ancien chart `hyperdx/hdx-oss-v2` utilise une structure de valeurs différente.
+Exemple de configuration :
 
-## Application interface utilisateur de ClickStack {#hyperdx}
+```yaml
+replicaCount: 2
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: nginx
+  hosts:
+    - host: hyperdx.example.com
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  env:
+    - name: CLICKHOUSE_USER
+      value: abc
+```
 
-### Connexions {#connection-settings}
+<div id="hyperdx">
+  ## Application ClickStack UI (HyperDX)
+</div>
 
-Configurez la connexion à la base de données utilisée par vos sources dans Paramètres de l’équipe.
+<div id="datasource-settings">
+  ### Paramètres de la source de données
+</div>
 
-| Paramètre                  | Description                                                                                                                                                                                                                                                                           |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Connection Name`          | Nom permettant d’identifier cette connexion dans les paramètres de la source.                                                                                                                                                                                                         |
-| `Host`                     | Endpoint HTTP(S) de ClickHouse, port inclus. Il est distinct de l’endpoint d’exportation du collecteur.                                                                                                                                                                               |
-| `Username`                 | Nom d’utilisateur ClickHouse ; valeur par défaut : `default`.                                                                                                                                                                                                                         |
-| `Password`                 | Mot de passe ClickHouse ; vide par défaut.                                                                                                                                                                                                                                            |
-| `Query Log Setting Prefix` | Préfixe facultatif d’un paramètre ClickHouse personnalisé qui enregistre l’e-mail de l’utilisateur courant dans les journaux de requêtes. Ajoutez le même préfixe à la configuration `custom_settings_prefixes` de ClickHouse, faute de quoi les requêtes seront rejetées.            |
-| `Prometheus compatible`    | Lorsque cette option est disponible, Host est traité comme un point de terminaison API compatible Prometheus pour les requêtes PromQL relayées par proxy. Cette connexion ne peut pas être utilisée pour les sources de logs, de traces ou de métriques OTel reposant sur ClickHouse. |
-
-### Paramètres de la source de données {#datasource-settings}
-
-L’interface utilisateur de ClickStack nécessite que l’utilisateur définisse une source pour chacun des types/piliers de données d’observability :
+La ClickStack UI nécessite que l’utilisateur définisse une source pour chacun des types/piliers de données d’observabilité :
 
 * `Logs`
 * `Traces`
 * `Metrics`
 * `Sessions`
 
-Cette configuration peut être effectuée dans l’application depuis `Team Settings -> Sources`, comme illustré ci-dessous pour les logs :
+Cette configuration peut être effectuée dans l’application depuis `Team Settings -> Sources`, comme illustré ci-dessous pour les logs :
 
-<div className="ch-image-md">
-  <Frame>
-    ![Configuration de la source dans l’interface utilisateur de ClickStack](/images/use-cases/observability/hyperdx-25.webp)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/hyperdx-25.webp" alt="Configuration de la source HyperDX" size="md" />
 
-Chaque source nécessite des correspondances de tables et de colonnes pour que l’interface utilisateur de ClickStack puisse interroger ses données. Les sources de métriques peuvent utiliser des tables distinctes selon le type de métrique. L’interrupteur `Enabled` s’affiche lors de la modification d’une source existante ; les `Query Settings` définis au niveau de la source acceptent jusqu’à dix paires nom/valeur.
+Chacune de ces sources nécessite qu’au moins une table soit spécifiée lors de la création, ainsi qu’un ensemble de colonnes permettant à HyperDX d’interroger les données.
 
 Si vous utilisez le [schéma OpenTelemetry (OTel) par défaut](/fr/guides/use-cases/observability/build-your-own/integrating-opentelemetry#out-of-the-box-schema) fourni avec ClickStack, ces colonnes peuvent être déterminées automatiquement pour chacune des sources. Si vous [modifiez le schéma](#clickhouse) ou utilisez un schéma personnalisé, vous devez spécifier et mettre à jour ces correspondances.
 
 <Note>
-  Selon sa [configuration de schéma](#collector-schema-and-retention), le collecteur crée les tables au moyen de migrations de schéma ou du mécanisme legacy de création de schéma géré par l’exportateur. Les correspondances de colonnes suivent les conventions OpenTelemetry, notamment le [modèle de données des logs](https://opentelemetry.io/docs/specs/otel/logs/data-model/).
+  Le schéma ClickHouse par défaut fourni avec ClickStack est celui créé par le [ClickHouse exporter for the OTel collector](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). Ces noms de colonnes correspondent à la spécification officielle d’OTel, documentée [ici](https://opentelemetry.io/docs/specs/otel/logs/data-model/).
 </Note>
 
-Les paramètres suivants sont disponibles pour chaque source :
+Les paramètres suivants sont disponibles pour chaque source :
 
 <div id="logs">
-  #### Logs {#logs}
+  #### Logs
 </div>
 
-| Paramètre                                | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Obligatoire | Inféré dans le schéma par défaut | Valeur inférée                                     |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | -------------------------------- | -------------------------------------------------- |
-| `Nom`                                    | Nom de la source.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Oui         | No                               | –                                                  |
-| `Section`                                | Libellé facultatif permettant de regrouper les sources dans le sélecteur de sources. Les sources appartenant à une même section apparaissent ensemble, et la recherche tient compte du nom de la section en plus de celui de la source.                                                                                                                                                                                                                                                                                                                                                                                   | No          | No                               | –                                                  |
-| `Connexion au serveur`                   | Nom de la connexion au serveur.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Oui         | No                               | `Par défaut`                                       |
-| `Base de données`                        | Nom de la base de données ClickHouse.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Yes         | Yes                              | `default`                                          |
-| `Table`                                  | Nom de la table cible. Définissez `otel_logs` si le schéma par défaut est utilisé.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Yes         | No                               |                                                    |
-| `Paramètres de requête`                  | [Paramètres de session](/fr/reference/settings/session-settings) au niveau des requêtes, définis chacun par un nom de paramètre et une valeur, appliqués à chaque requête exécutée sur cette source.                                                                                                                                                                                                                                                                                                                                                                                                                         | No          | No                               | –                                                  |
-| `Activé`                                 | Une source désactivée est conservée, mais masquée dans les sélecteurs de sources et n’est jamais sélectionnée automatiquement.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | No          | No                               | Activé                                             |
-| `Colonne d’horodatage`                   | Colonne ou expression DateTime faisant partie de votre clé primaire.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Oui         | Oui                              | `TimestampTime`                                    |
-| `Sélection par défaut`                   | Colonnes affichées dans les résultats de recherche par défaut.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Oui         | Oui                              | `Timestamp`, `ServiceName`, `SeverityText`, `Body` |
-| `Expression du nom du service`           | Expression ou colonne correspondant au nom du service.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Non         | Oui                              | `ServiceName`                                      |
-| `Expression de version du service`       | Expression ou colonne identifiant la version d’un service en cours d’exécution, utilisée pour tracer des [marqueurs de version](/fr/clickstack/features/dashboards/release-markers) sur les graphiques des tableaux de bord. Utilise par défaut l’attribut de ressource OpenTelemetry `service.version` lorsqu’elle est laissée vide.                                                                                                                                                                                                                                                                                     | Non         | Non                              | `ResourceAttributes['service.version']`            |
-| `Expression de niveau de journalisation` | Expression ou colonne correspondant au niveau de journalisation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Non         | Oui                              | `SeverityText`                                     |
-| `Expression du corps`                    | Expression ou colonne correspondant au message de journal.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Non         | Oui                              | `Body`                                             |
-| `Expression des attributs de journal`    | Expression ou colonne pour les attributs de journal personnalisés.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Non         | Oui                              | `LogAttributes`                                    |
-| `Expression d’attributs de ressource`    | Expression ou colonne pour les attributs au niveau de la ressource.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Non         | Oui                              | `ResourceAttributes`                               |
-| `Colonne d’horodatage affichée`          | Colonne d’horodatage facultative, de précision supérieure, utilisée pour l’affichage dans l’UI. Si elle n’est pas renseignée, la colonne Timestamp est utilisée par défaut.                                                                                                                                                                                                                                                                                                                                                                                                                                               | No          | Yes                              | `Timestamp`                                        |
-| `Source de métriques corrélée`           | Source de métriques associée (par ex. les métriques de l’interface utilisateur de ClickStack).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | No          | No                               | –                                                  |
-| `Source de traces corrélée`              | Source de traces liée (par exemple, les traces de l’interface utilisateur de ClickStack).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | No          | No                               | –                                                  |
-| `Expression d’ID de trace`               | Expression ou colonne utilisée pour extraire l’ID de trace.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | No          | Oui                              | `TraceId`                                          |
-| `Expression d’ID de span`                | Expression ou colonne utilisée pour extraire l’ID de span.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Non         | Oui                              | `SpanId`                                           |
-| `Expression de colonne implicite`        | Colonne utilisée pour la recherche en texte intégral lorsqu’aucun champ n’est spécifié (syntaxe Lucene). Il s’agit généralement du corps du journal.                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Non         | Oui                              | `Body`                                             |
-| `Liste des colonnes connues`             | Pour les sources basées sur une table [`Distributed`](/fr/reference/engines/table-engines/special/distributed) ou [`Merge`](/fr/reference/engines/table-engines/special/merge) dont les tables cibles n&#39;ont pas les mêmes ensembles de colonnes. Liste, séparée par des virgules, des colonnes disponibles dans toutes les tables cibles, utilisée à la place de `SELECT *` lors de la récupération des données complètes d&#39;une ligne (par exemple, dans le panneau latéral de la ligne). Laissez vide pour sélectionner toutes les colonnes. Uniquement des noms de colonnes ; aucune expression ni aucun alias. | No          | No                               | –                                                  |
-| `Utiliser l’index textuel`               | Indique si les recherches basées sur Lucene utilisent `hasAllTokens` lors d’une recherche dans la colonne implicite.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Non         | Non                              | `Auto (détecté à partir du schéma)`                |
-| `Highlighted Attributes`                 | Expressions ou colonnes affichées à l’ouverture des détails des logs. Les expressions renvoyant des URL s’affichent sous forme de liens.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Non         | Non                              | –                                                  |
-| `Highlighted Trace Attributes`           | Expressions ou colonnes extraites de chaque journal d&#39;une trace, affichées au-dessus de la vue en cascade de la trace. Les expressions qui renvoient des URL s&#39;affichent sous forme de liens.                                                                                                                                                                                                                                                                                                                                                                                                                     | Non         | No                               | –                                                  |
-| `Vues matérialisées`                     | [Views matérialisées](/fr/clickstack/managing/materialized-views) préagrégées associées à cette source, utilisées automatiquement pour accélérer les requêtes éligibles. Consultez [Views matérialisées](#materialized-views-settings).                                                                                                                                                                                                                                                                                                                                                                                   | No          | No                               | –                                                  |
-| `Vues matérialisées de métadonnées`      | Vues matérialisées utilisées pour accélérer la découverte des champs et la saisie semi-automatique des valeurs. Consultez les [vues matérialisées de métadonnées](#metadata-materialized-views-settings).                                                                                                                                                                                                                                                                                                                                                                                                                 | No          | Yes                              | `<table>_kv_rollup_15m`                            |
-| `Ordre par défaut`                       | Expression `ORDER BY` qui remplace l’ordre de tri par défaut des résultats de recherche. Laissez ce champ vide pour utiliser la valeur par défaut détectée automatiquement. Ce paramètre peut ensuite être personnalisé pour chaque recherche.                                                                                                                                                                                                                                                                                                                                                                            | No          | No                               | –                                                  |
-| `Expression du numéro de sévérité`       | Valeur numérique de la sévérité OpenTelemetry (1–24), si elle figure dans la table.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Non         | Oui, si présente                 | `SeverityNumber`                                   |
-| `Expression du nom d’événement`          | Nom de l’événement OpenTelemetry, s’il figure dans la table.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Non         | Oui, lorsqu’il est présent       | `EventName`                                        |
+| Paramètre                                | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Obligatoire | Inféré dans le schéma par défaut | Valeur inférée                                     |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | -------------------------------- | -------------------------------------------------- |
+| `Nom`                                    | Nom de la source.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Oui         | No                               | –                                                  |
+| `Section`                                | Libellé facultatif permettant de regrouper les sources dans le sélecteur de sources. Les sources appartenant à une même section apparaissent ensemble, et la recherche tient compte du nom de la section en plus de celui de la source.                                                                                                                                                                                                                                                                                                                                                                             | Non         | Non                              | –                                                  |
+| `Connexion au serveur`                   | Nom de la connexion au serveur.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Oui         | No                               | `Par défaut`                                       |
+| `Base de données`                        | Nom de la base de données ClickHouse.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Yes         | Yes                              | `default`                                          |
+| `Table`                                  | Nom de la table cible. Définissez `otel_logs` si le schéma par défaut est utilisé.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Yes         | No                               |                                                    |
+| `Paramètres de requête`                  | [Paramètres de session](/fr/reference/settings/session-settings) au niveau des requêtes, définis chacun par un nom de paramètre et une valeur, appliqués à chaque requête exécutée sur cette source.                                                                                                                                                                                                                                                                                                                                                                                                                   | No          | No                               | –                                                  |
+| `Activé`                                 | Une source désactivée est conservée, mais masquée dans les sélecteurs de sources et n’est jamais sélectionnée automatiquement.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Non         | No                               | Activé                                             |
+| `Colonne d’horodatage`                   | Colonne ou expression DateTime faisant partie de votre clé primaire.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Oui         | Oui                              | `TimestampTime`                                    |
+| `Sélection par défaut`                   | Colonnes affichées dans les résultats de recherche par défaut.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Oui         | Oui                              | `Timestamp`, `ServiceName`, `SeverityText`, `Body` |
+| `Expression du nom du service`           | Expression ou colonne correspondant au nom du service.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Oui         | Oui                              | `ServiceName`                                      |
+| `Expression de niveau de journalisation` | Expression ou colonne correspondant au niveau de journalisation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Oui         | Oui                              | `SeverityText`                                     |
+| `Expression du corps`                    | Expression ou colonne correspondant au message de journal.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Oui         | Oui                              | `Body`                                             |
+| `Expression des attributs de journal`    | Expression ou colonne pour les attributs de journal personnalisés.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Oui         | Oui                              | `LogAttributes`                                    |
+| `Expression d’attributs de ressource`    | Expression ou colonne pour les attributs au niveau de la ressource.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Oui         | Oui                              | `ResourceAttributes`                               |
+| `Colonne d’horodatage affichée`          | Colonne d’horodatage facultative, de précision supérieure, utilisée pour l’affichage dans l’UI. Si elle n’est pas renseignée, la colonne Timestamp est utilisée par défaut.                                                                                                                                                                                                                                                                                                                                                                                                                                         | Non         | Oui                              | `Timestamp`                                        |
+| `Source de métriques corrélée`           | Source de métriques associée (par ex. les métriques HyperDX).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Non         | No                               | –                                                  |
+| `Source de traces corrélée`              | Source de traces liée (par exemple, les traces HyperDX).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | No          | No                               | –                                                  |
+| `Expression d’ID de trace`               | Expression ou colonne utilisée pour extraire l’ID de trace.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Oui         | Oui                              | `TraceId`                                          |
+| `Expression d’ID de span`                | Expression ou colonne utilisée pour extraire l’ID de span.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Oui         | Oui                              | `SpanId`                                           |
+| `Expression de colonne implicite`        | Colonne utilisée pour la recherche en texte intégral lorsqu’aucun champ n’est spécifié (syntaxe Lucene). Il s’agit généralement du corps du journal.                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Oui         | Oui                              | `Body`                                             |
+| `Liste des colonnes connues`             | Pour les sources basées sur une table [`Distributed`](/fr/reference/engines/table-engines/special/distributed) ou [`Merge`](/fr/reference/engines/table-engines/special/merge) dont les tables cibles n&#39;ont pas les mêmes ensembles de colonnes. Liste, séparée par des virgules, des colonnes disponibles dans toutes les tables cibles, utilisée à la place de `SELECT *` lors de la récupération des données complètes d&#39;une ligne (par exemple, dans le panneau latéral de la ligne). Laissez vide pour sélectionner toutes les colonnes. Uniquement des noms de colonnes ; aucune expression ni aucun alias. | Non         | No                               | –                                                  |
+| `Utiliser l’index textuel`               | Indique si les recherches basées sur Lucene utilisent `hasAllTokens` lors d’une recherche dans la colonne implicite.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | No          | Non                              | `Auto (détecté à partir du schéma)`                |
+| `Highlighted Attributes`                 | Expressions ou colonnes affichées à l’ouverture des détails des logs. Les expressions renvoyant des URL s’affichent sous forme de liens.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Non         | Non                              | –                                                  |
+| `Highlighted Trace Attributes`           | Expressions ou colonnes extraites de chaque journal d&#39;une trace, affichées au-dessus de la vue en cascade de la trace. Les expressions qui renvoient des URL s&#39;affichent sous forme de liens.                                                                                                                                                                                                                                                                                                                                                                                                               | No          | No                               | –                                                  |
+| `Vues matérialisées`                     | [Views matérialisées](/fr/clickstack/managing/materialized-views) préagrégées associées à cette source, utilisées automatiquement pour accélérer les requêtes éligibles. Consultez [Views matérialisées](#materialized-views-settings).                                                                                                                                                                                                                                                                                                                                                                                | No          | No                               | –                                                  |
+| `Vues matérialisées de métadonnées`      | Vues matérialisées utilisées pour accélérer la découverte des champs et la saisie semi-automatique des valeurs. Consultez les [vues matérialisées de métadonnées](#metadata-materialized-views-settings).                                                                                                                                                                                                                                                                                                                                                                                                           | No          | Yes                              | `<table>_kv_rollup_15m`                            |
+| `Ordre par défaut`                       | Expression `ORDER BY` qui remplace l’ordre de tri par défaut des résultats de recherche. Laissez ce champ vide pour utiliser la valeur par défaut détectée automatiquement. Ce paramètre peut ensuite être personnalisé pour chaque recherche.                                                                                                                                                                                                                                                                                                                                                                      | No          | No                               | –                                                  |
 
 <div id="traces">
-  #### Traces {#traces}
+  #### Traces
 </div>
 
 | Paramètre                        | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Obligatoire | Déduit dans le schéma par défaut | Valeur déduite                                                                                        |
@@ -154,30 +185,29 @@ Les paramètres suivants sont disponibles pour chaque source :
 | `Parent Span Id Expression`      | Expression ou colonne pour les ID des spans parents.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Oui         | Oui                              | `ParentSpanId`                                                                                        |
 | `Span Name Expression`           | Expression ou colonne pour les noms de span.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Oui         | Oui                              | `SpanName`                                                                                            |
 | `Span Kind Expression`           | Expression ou colonne pour le type de span (par ex. client, server).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Oui         | Oui                              | `SpanKind`                                                                                            |
-| `Correlated Log Source`          | Facultatif. Source de logs liée (par ex. logs de l’interface utilisateur de ClickStack).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Non         | Non                              | –                                                                                                     |
+| `Correlated Log Source`          | Facultatif. Source de logs liée (par ex. logs HyperDX).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Non         | Non                              | –                                                                                                     |
 | `Correlated Session Source`      | Facultatif. Source de session liée.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Non         | Non                              | –                                                                                                     |
-| `Correlated Metric Source`       | Facultatif. Source de métriques liée (par ex. métriques de l’interface utilisateur de ClickStack).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Non         | Non                              | –                                                                                                     |
-| `Status Code Expression`         | Expression du code de statut du span.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Non         | Oui                              | `StatusCode`                                                                                          |
-| `Status Message Expression`      | Expression du message de statut du span.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Non         | Oui                              | `StatusMessage`                                                                                       |
-| `Service Name Expression`        | Expression ou colonne pour le nom du service.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Non         | Oui                              | `ServiceName`                                                                                         |
-| `Service Version Expression`     | Expression ou colonne identifiant la version en cours d’exécution d’un service, utilisée pour afficher des [marqueurs de version](/fr/clickstack/features/dashboards/release-markers) sur les graphiques du tableau de bord. Utilise par défaut l’attribut de ressource OpenTelemetry `service.version` lorsqu’elle est laissée vide.                                                                                                                                                                                                                                                         | Non         | Non                              | `ResourceAttributes['service.version']`                                                               |
-| `Resource Attributes Expression` | Expression ou colonne pour les attributs au niveau de la ressource.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Non         | Oui                              | `ResourceAttributes`                                                                                  |
-| `Event Attributes Expression`    | Expression ou colonne pour les attributs d&#39;événement.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Non         | Oui                              | `SpanAttributes`                                                                                      |
+| `Correlated Metric Source`       | Facultatif. Source de métriques liée (par ex. métriques HyperDX).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Non         | Non                              | –                                                                                                     |
+| `Status Code Expression`         | Expression du code de statut du span.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Oui         | Oui                              | `StatusCode`                                                                                          |
+| `Status Message Expression`      | Expression du message de statut du span.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Oui         | Oui                              | `StatusMessage`                                                                                       |
+| `Service Name Expression`        | Expression ou colonne pour le nom du service.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Oui         | Oui                              | `ServiceName`                                                                                         |
+| `Resource Attributes Expression` | Expression ou colonne pour les attributs au niveau de la ressource.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Oui         | Oui                              | `ResourceAttributes`                                                                                  |
+| `Event Attributes Expression`    | Expression ou colonne pour les attributs d&#39;événement.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Oui         | Oui                              | `SpanAttributes`                                                                                      |
 | `Sample Rate Expression`         | Colonne ou expression contenant le poids d’échantillonnage en amont (`1/N`). Lorsqu’elle est définie, les agrégations (`count`, `avg`, `sum`, `quantile`) sont corrigées pour l’échantillonnage. Les percentiles utilisent alors `quantileTDigestWeighted`, qui est une approximation, de sorte que les valeurs exactes peuvent légèrement différer. Laissez vide si les spans ne sont pas échantillonnés.                                                                                                                                                                                 | Non         | Non                              | –                                                                                                     |
-| `Span Events Expression`         | Expression pour extraire les événements du span. Il s&#39;agit généralement d&#39;une colonne de type `Nested`. Cela permet d&#39;afficher les stack traces d&#39;exception avec les language SDKs pris en charge.                                                                                                                                                                                                                                                                                                                                                                         | Non         | Oui                              | `Events`                                                                                              |
+| `Span Events Expression`         | Expression pour extraire les événements du span. Il s&#39;agit généralement d&#39;une colonne de type `Nested`. Cela permet d&#39;afficher les stack traces d&#39;exception avec les language SDKs pris en charge.                                                                                                                                                                                                                                                                                                                                                                         | Oui         | Oui                              | `Events`                                                                                              |
 | `Span Links Expression`          | Expression pour extraire les liens de span, utilisée pour capturer les liens d’un span vers des spans d’autres traces. Le type attendu est `Nested(TraceId String, SpanId String, TraceState String, Attributes Map(LowCardinality(String), String))`.                                                                                                                                                                                                                                                                                                                                     | Non         | Oui                              | `Links`                                                                                               |
-| `Implicit Column Expression`     | Colonne utilisée pour la recherche en texte intégral si aucun champ n&#39;est spécifié (style Lucene). Il s&#39;agit généralement du corps du log.                                                                                                                                                                                                                                                                                                                                                                                                                                         | Non         | Oui                              | `SpanName`                                                                                            |
-| `Known Columns List`             | Pour les sources basées sur une table [`Distributed`](/fr/reference/engines/table-engines/special/distributed) ou [`Merge`](/fr/reference/engines/table-engines/special/merge) dont les tables cibles ont des ensembles de colonnes différents. Liste séparée par des virgules des colonnes disponibles dans toutes les tables cibles, utilisée à la place de `SELECT *` lors de la récupération de données complètes de ligne (par exemple, dans le panneau latéral de la ligne). Laissez vide pour sélectionner toutes les colonnes. Noms de colonnes uniquement ; aucune expression ni alias. | Non         | Non                              | –                                                                                                     |
+| `Implicit Column Expression`     | Colonne utilisée pour la recherche en texte intégral si aucun champ n&#39;est spécifié (style Lucene). Il s&#39;agit généralement du corps du log.                                                                                                                                                                                                                                                                                                                                                                                                                                         | Oui         | Oui                              | `SpanName`                                                                                            |
+| `Known Columns List`             | Pour les sources basées sur une table [`Distributed`](/fr/reference/engines/table-engines/special/distributed) ou [`Merge`](/fr/reference/engines/table-engines/special/merge) dont les tables cibles ont des ensembles de colonnes différents. Liste séparée par des virgules des colonnes disponibles dans toutes les tables cibles, utilisée à la place de `SELECT *` lors de la récupération de données complètes de ligne (par exemple, dans le panneau latéral de la ligne). Laissez vide pour sélectionner toutes les colonnes. Noms de colonnes uniquement ; aucune expression ni alias. | Non         | Non                              | –                                                                                                     |
 | `Use Text Index`                 | Indique si les recherches basées sur Lucene génèrent `hasAllTokens` lors de la recherche dans la colonne implicite.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Non         | Non                              | `Auto (detect from schema)`                                                                           |
 | `Displayed Timestamp Column`     | Colonne d’horodatage facultative, de précision supérieure, utilisée dans l’UI. Utilise par défaut `Timestamp Column` lorsqu’elle n’est pas fournie.                                                                                                                                                                                                                                                                                                                                                                                                                                        | Non         | Oui                              | `Timestamp`                                                                                           |
 | `Highlighted Attributes`         | Expressions ou colonnes affichées à l&#39;ouverture des détails d&#39;un span. Les expressions qui renvoient des URL seront affichées sous forme de liens.                                                                                                                                                                                                                                                                                                                                                                                                                                 | Non         | Non                              | –                                                                                                     |
 | `Highlighted Trace Attributes`   | Expressions ou colonnes extraites de chaque span d&#39;une trace, affichées au-dessus du trace waterfall. Les expressions qui renvoient des URL seront affichées sous forme de liens.                                                                                                                                                                                                                                                                                                                                                                                                      | Non         | Non                              | –                                                                                                     |
-| `Materialized Views`             | [Vues matérialisées](/fr/clickstack/managing/materialized-views) préagrégées enregistrées pour cette source, utilisées automatiquement pour accélérer les requêtes éligibles. Consultez [Vues matérialisées](#materialized-views-settings).                                                                                                                                                                                                                                                                                                                                                | Non         | Non                              | –                                                                                                     |
+| `Materialized Views`             | [Vues matérialisées](/fr/clickstack/managing/materialized-views) préagrégées enregistrées pour cette source, utilisées automatiquement pour accélérer les requêtes éligibles. Consultez [Vues matérialisées](#materialized-views-settings).                                                                                                                                                                                                                                                                                                                                                   | Non         | Non                              | –                                                                                                     |
 | `Metadata Materialized Views`    | Vues matérialisées utilisées pour accélérer la découverte des champs et l’autocomplétion des valeurs. Consultez [Vues matérialisées de métadonnées](#metadata-materialized-views-settings).                                                                                                                                                                                                                                                                                                                                                                                                | Non         | Oui                              | `<table>_kv_rollup_15m`                                                                               |
 | `Default Order By`               | Expression `ORDER BY` qui remplace l’ordre par défaut des résultats de recherche. Laissez vide pour utiliser la valeur par défaut détectée automatiquement. Vous pourrez la personnaliser ultérieurement pour chaque recherche.                                                                                                                                                                                                                                                                                                                                                            | Non         | Non                              | –                                                                                                     |
 
 <div id="metrics">
-  #### Métriques {#metrics}
+  #### Métriques
 </div>
 
 | Paramètre                     | Description                                                                                                                                                                                                                                 | Obligatoire | Inféré dans le schéma par défaut | Valeur inférée                       |
@@ -186,24 +216,16 @@ Les paramètres suivants sont disponibles pour chaque source :
 | `Section`                     | Libellé facultatif pour regrouper les sources dans le sélecteur de sources. Les sources qui partagent une même section apparaissent ensemble, et la recherche porte aussi sur le nom de la section, en plus du nom de la source.            | Non         | Non                              | –                                    |
 | `Server Connection`           | Nom de la connexion au serveur.                                                                                                                                                                                                             | Oui         | Non                              | `Default`                            |
 | `Database`                    | Nom de la base de données ClickHouse.                                                                                                                                                                                                       | Oui         | Oui                              | `default`                            |
-| `Query Settings`              | Jusqu’à dix [paramètres de session](/fr/reference/settings/session-settings) au niveau des requêtes, chacun indiqué sous la forme d’un nom de paramètre et d’une valeur, qui sont ajoutés à chaque requête exécutée sur cette source.       | Non         | Non                              | –                                    |
-| `Enabled`                     | Interrupteur en haut du formulaire de source. Une source désactivée est conservée, mais masquée dans les sélecteurs de sources et jamais sélectionnée automatiquement. Affiché uniquement lors de la modification d’une source existante. | Non         | Non                              | Activé                               |
+| `Query Settings`              | Jusqu’à dix [paramètres de session](/fr/reference/settings/session-settings) au niveau des requêtes, chacun indiqué sous la forme d’un nom de paramètre et d’une valeur, qui sont ajoutés à chaque requête exécutée sur cette source.          | Non         | Non                              | –                                    |
+| `Enabled`                     | Bouton bascule en haut du formulaire de source. Une source désactivée est conservée, mais masquée dans les sélecteurs de sources et jamais sélectionnée automatiquement. Affiché uniquement lors de la modification d’une source existante. | Non         | Non                              | Activé                               |
 | `Gauge Table`                 | Table stockant les métriques de type Gauge.                                                                                                                                                                                                 | Non         | Oui                              | `otel_metrics_gauge`                 |
 | `Histogram Table`             | Table stockant les métriques de type histogramme.                                                                                                                                                                                           | Non         | Oui                              | `otel_metrics_histogram`             |
 | `Sum Table`                   | Table stockant les métriques de type somme (Counter).                                                                                                                                                                                       | Non         | Oui                              | `otel_metrics_sum`                   |
 | `Exponential Histogram Table` | Table stockant les métriques de type histogramme exponentiel.                                                                                                                                                                               | Non         | Oui                              | `otel_metrics_exponential_histogram` |
-| `Correlated Log Source`       | Facultatif. Source de logs liée (par ex. logs de l’interface utilisateur de ClickStack).                                                                                                                                                    | Non         | Non                              | –                                    |
-| `Summary Table`               | Table stockant les métriques de type summary. La prise en charge des métriques summary et des histogrammes exponentiels n’est pas encore complète.                                                                                          | Non         | Oui                              | `otel_metrics_summary`               |
-| `Minimum auto granularity`    | Taille minimale des intervalles pour la granularité de graphique sélectionnée automatiquement. Ne remplace pas une granularité de graphique définie explicitement.                                                                          | Non         | Non                              | Aucun minimum                        |
-
-Une source de métriques stocke également ses correspondances de timestamp et d’attributs de ressource (normalement `TimeUnix` et `ResourceAttributes`). Un champ unifié `series Table` n’est affiché que pour les équipes pour lesquelles la prise en charge de la table de séries de métriques est activée.
-
-#### PromQL {#promql-source-settings}
-
-Lorsque PromQL est activé, vous pouvez créer une source PromQL. Outre les champs communs nom, connexion, base de données, table, paramètres de requête et activé, elle dispose du champ **Minimum auto granularity**. Pour une connexion à ClickHouse, sélectionnez la table utilisant le moteur `TimeSeries`. L&#39;expression du timestamp est définie automatiquement. Le champ Minimum auto granularity détermine également l&#39;intervalle de collecte utilisé pour calculer `$__rate_interval` ; s&#39;il n&#39;est pas défini, un intervalle de collecte de 15 secondes est utilisé par défaut.
+| `Correlated Log Source`       | Facultatif. Source de logs liée (par ex. logs HyperDX).                                                                                                                                                                                     | Non         | Non                              | –                                    |
 
 <div id="settings">
-  #### Sessions {#settings}
+  #### Sessions
 </div>
 
 | Paramètre                        | Description                                                                                                                                                                                                                              | Obligatoire | Inféré dans le schéma par défaut | Valeur inférée       |
@@ -220,7 +242,7 @@ Lorsque PromQL est activé, vous pouvez créer une source PromQL. Outre les cham
 | `Resource Attributes Expression` | Expression permettant d&#39;extraire les métadonnées associées à la ressource.                                                                                                                                                           | Non         | Oui                              | `ResourceAttributes` |
 
 <div id="materialized-views-settings">
-  #### Vues matérialisées {#materialized-views-settings}
+  #### Vues matérialisées
 </div>
 
 Des vues matérialisées peuvent être enregistrées pour les sources de données de logs et de traces afin que les requêtes d’agrégation éligibles soient exécutées à partir de la vue pré-agrégée plutôt que de la table source. Pour savoir comment créer et enregistrer des vues, consultez [« Vues matérialisées »](/fr/clickstack/managing/materialized-views).
@@ -240,7 +262,7 @@ Chaque vue enregistrée est configurée avec les paramètres suivants :
 La plupart de ces paramètres sont déduits du schéma de la vue lorsque la table cible est sélectionnée.
 
 <div id="metadata-materialized-views-settings">
-  #### Vues matérialisées de métadonnées {#metadata-materialized-views-settings}
+  #### Vues matérialisées de métadonnées
 </div>
 
 Les vues matérialisées de métadonnées accélèrent la découverte des champs pour les filtres et l’autocomplétion. Elles peuvent être configurées sur les sources de données Log et Trace.
@@ -251,16 +273,18 @@ Les vues matérialisées de métadonnées accélèrent la découverte des champs
 | `KV Rollup Table`  | Table d’agrégation des paires clé/valeur présentes dans la table source.            |
 | `granularité temporelle`      | L’intervalle temporel utilisé par les tables d’agrégation, par exemple `15 minute`. |
 
-#### Highlighted Attributes {#highlighted-attributes}
+<div id="highlighted-attributes">
+  #### Highlighted Attributes
+</div>
 
-Les Highlighted Attributes et les Highlighted Trace Attributes peuvent être configurés dans les sources de données de logs et de traces.
+Les Highlighted Attributes et les Highlighted Trace Attributes peuvent être configurés dans les sources de données Log et Trace.
 
 * Les Highlighted Attributes sont des colonnes ou des expressions affichées pour chaque log ou span lors de l’affichage des détails du log ou du span.
 * Les Highlighted Trace Attributes sont des colonnes ou des expressions récupérées pour chaque log ou span d’une trace, puis affichées au-dessus de la trace waterfall.
 
 Ces attributs sont définis dans la configuration de la source et peuvent être des expressions SQL arbitraires. Si l’expression SQL renvoie une valeur au format URL, l’attribut sera affiché sous forme de lien. Les valeurs vides ne sont pas affichées.
 
-Chaque attribut est configuré avec les paramètres suivants :
+Chaque attribut est configuré avec les paramètres suivants :
 
 | Paramètre           | Description                                                                                                   |
 | ------------------- | ------------------------------------------------------------------------------------------------------------- |
@@ -268,225 +292,239 @@ Chaque attribut est configuré avec les paramètres suivants :
 | `Alias`             | Facultatif. Le libellé affiché pour l’attribut à la place de l’expression SQL.                                |
 | `Lucene Expression` | Facultatif. Une version Lucene de l’expression SQL, utilisée lors de la recherche de cette valeur d’attribut. |
 
-Par exemple, cette source de trace a été configurée avec un Highlighted Attribute et un Highlighted Trace Attribute :
+Par exemple, cette source de trace a été configurée avec un Highlighted Attribute et un Highlighted Trace Attribute :
 
-<div className="ch-image-md">
-  <Frame>
-    ![Configuration des Highlighted Attributes](/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp" alt="Configuration des Highlighted Attributes" size="md" />
 
-Ces attributs s’affichent dans le panneau latéral après avoir cliqué sur un log ou un span :
+Ces attributs s’affichent dans le panneau latéral après avoir cliqué sur un log ou un span :
 
-<div className="ch-image-md">
-  <Frame>
-    ![Highlighted Attributes](/images/use-cases/observability/hyperdx-highlighted-attributes.webp)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes.webp" alt="Highlighted Attributes" size="md" />
 
 Cliquer sur un attribut permet d’utiliser cet attribut comme valeur de recherche. Si l’expression Lucene facultative est fournie dans la configuration de l’attribut, elle sera utilisée pour la recherche à la place de l’expression SQL.
 
-<div className="ch-image-md">
-  <Frame>
-    ![Recherche avec les Highlighted Attributes](/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp)
-  </Frame>
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp" alt="Recherche des Highlighted Attributes" size="md" />
+
+<div id="correlated-sources">
+  ### Sources corrélées
 </div>
 
-### Sources corrélées {#correlated-sources}
+Pour activer une corrélation complète entre les sources dans ClickStack, vous devez configurer des sources corrélées pour les logs, les traces, les métriques et les sessions. Cela permet à HyperDX d’associer les données liées et de fournir un contexte détaillé lors de l’affichage des événements.
 
-Pour activer une corrélation complète entre les sources dans ClickStack, vous devez configurer des sources corrélées pour les logs, les traces, les métriques et les sessions. Cela permet à l’interface utilisateur de ClickStack d’associer les données liées et de fournir un contexte détaillé lors de l’affichage des événements.
+* `Logs` : peuvent être corrélés avec les traces et les métriques.
+* `Traces` : peuvent être corrélées avec les logs, les sessions et les métriques.
+* `Metrics` : peuvent être corrélées avec les logs.
+* `Sessions` : peuvent être corrélées avec les traces.
 
-* `Logs` : peuvent être corrélés avec les traces et les métriques.
-* `Traces` : peuvent être corrélées avec les logs, les sessions et les métriques.
-* `Metrics` : peuvent être corrélées avec les logs.
-* `Sessions` : peuvent être corrélées avec les traces.
+La configuration de ces corrélations active plusieurs fonctionnalités. Par exemple, HyperDX peut afficher les logs pertinents aux côtés d’une trace ou mettre en évidence des anomalies de métriques liées à une session.
 
-La configuration de ces corrélations active plusieurs fonctionnalités. Par exemple, l’interface utilisateur de ClickStack peut afficher les logs pertinents aux côtés d’une trace ou mettre en évidence des anomalies de métriques liées à une session.
+Par exemple, ci-dessous, la source de logs est configurée avec des sources corrélées :
 
-Par exemple, ci-dessous, la source de logs est configurée avec des sources corrélées :
+<Image img="/images/use-cases/observability/hyperdx-26.webp" alt="Source corrélée HyperDX" size="md" />
 
-<div className="ch-image-md">
-  <Frame>
-    ![Source corrélée dans l’interface utilisateur de ClickStack](/images/use-cases/observability/hyperdx-26.webp)
-  </Frame>
+<div id="application-configuration-settings">
+  ### Paramètres de configuration de l’application
 </div>
 
-### Paramètres du client ClickHouse {#clickhouse-client-settings}
+<Info>
+  **HyperDX dans ClickHouse Cloud**
 
-La section **ClickHouse Client Settings** des Paramètres de l’équipe contrôle le comportement des requêtes pour l’équipe.
+  Ces paramètres ne peuvent pas être modifiés lorsque HyperDX est hébergé dans ClickHouse Cloud.
+</Info>
 
-| Paramètre                           | Valeur par défaut | Description                                                                                                                         |
-| ----------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `Search Row Limit`                  | `200`             | Nombre de lignes renvoyées par requête sur la page Search et dans les vignettes de tableau de bord de recherche. Plage : 1–100,000. |
-| `Query Timeout (seconds)`           | `60`              | Temps d’exécution maximal d’une requête ; `0` signifie illimité.                                                                    |
-| `Max Rows to Read (METADATA ONLY)`  | `3000000`         | Nombre maximal de lignes lues pour les requêtes de métadonnées ; `0` signifie illimité.                                             |
-| `Filter Keys Fetch Limit`           | `100`             | Nombre de clés de filtre récupérées par colonne de type map. Plage : 1–1,000.                                                       |
-| `Field Metadata Queries`            | Activé            | Contrôle la récupération des métadonnées des champs depuis ClickHouse.                                                              |
-| `Parallelize Queries When Possible` | Désactivé         | Exécute en parallèle les requêtes fenêtrées éligibles, ce qui peut augmenter la charge maximale sur la base de données.             |
+* `HYPERDX_API_KEY`
+  * **Par défaut :** Aucune (obligatoire)
+  * **Description :** Clé d&#39;authentification pour l&#39;API HyperDX.
+  * **Recommandations :**
+  * Obligatoire pour la télémétrie et la journalisation
+  * En développement local, il peut s&#39;agir de n&#39;importe quelle valeur non vide
+  * En production, utilisez une clé sûre et unique
+  * Peut être obtenue sur la page Team Settings après la création du compte
 
-Pour les autorisations et les politiques de sécurité, consultez [Contrôle d’accès basé sur les rôles](/fr/clickstack/managing/rbac). Pour les destinations de notification, consultez [Alertes](/fr/clickstack/features/alerts).
+* `HYPERDX_LOG_LEVEL`
+  * **Par défaut :** `info`
+  * **Description :** Définit le niveau de verbosité de la journalisation.
+  * **Options :** `debug`, `info`, `warn`, `error`
+  * **Recommandations :**
+  * Utilisez `debug` pour un débogage détaillé
+  * Utilisez `info` pour un fonctionnement normal
+  * Utilisez `warn` ou `error` en production pour réduire le volume des logs
 
-### Paramètres de configuration de l’application {#application-configuration-settings}
+* `HYPERDX_API_PORT`
+  * **Par défaut :** `8000`
+  * **Description :** Port du serveur API HyperDX.
+  * **Recommandations :**
+  * Assurez-vous que ce port est disponible sur votre hôte
+  * Modifiez-le en cas de conflit de port
+  * Il doit correspondre au port défini dans la configuration de vos clients API
 
-Ces variables d’environnement permettent de configurer ClickStack en mode auto-hébergé. Elles ne sont pas configurables pour l’interface utilisateur de ClickStack hébergée dans ClickHouse Cloud. Sauf indication contraire, les valeurs par défaut indiquées ci-dessous sont celles des points d’entrée officiels des conteneurs ; Docker Compose peut les surcharger. Après toute modification de son environnement, redémarrez le service concerné.
+* `HYPERDX_APP_PORT`
+  * **Par défaut :** `8000`
+  * **Description :** Port de l’application frontale HyperDX.
+  * **Conseils :**
+  * Assurez-vous que ce port est disponible sur votre hôte.
+  * Modifiez-le en cas de conflit de port.
+  * Il doit être accessible depuis votre navigateur.
 
-#### Réseau et stockage {#network-and-storage}
+* `HYPERDX_APP_URL`
+  * **Par défaut :** `http://localhost`
+  * **Description :** URL de base de l’application.
+  * **Recommandations :**
+  * Définissez-la sur votre domaine en production
+  * Incluez le protocole (http/https)
+  * N’ajoutez pas de slash final
 
-| Variable                      | Valeur par défaut                  | Description                                                                                                                                                             |
-| ----------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `HYPERDX_API_PORT`            | `8000`                             | Port du serveur API dans le conteneur de l’application. Si vous le modifiez, mettez à jour la correspondance de ports Docker.                                           |
-| `HYPERDX_APP_PORT`            | `8080`                             | Port du frontend dans le conteneur de l’application. Si vous le modifiez, mettez à jour la correspondance de ports Docker.                                              |
-| `HYPERDX_APP_URL`             | `http://localhost`                 | Origine publique du frontend, sans le port. Utilisée avec `HYPERDX_APP_PORT` pour construire `FRONTEND_URL`.                                                            |
-| `FRONTEND_URL`                | `HYPERDX_APP_URL:HYPERDX_APP_PORT` | URL publique complète du frontend, utilisée pour les redirections. À définir explicitement si vous utilisez un proxy inverse ou HTTPS.                                  |
-| `HYPERDX_APP_LISTEN_HOSTNAME` | `0.0.0.0`                          | Adresse d’écoute du frontend dans le conteneur UI seule.                                                                                                                |
-| `HYPERDX_OPAMP_PORT`          | `4320`                             | Port du serveur OpAMP, utilisé par les collecteurs pour récupérer leur configuration et les clés d’ingestion. Le conteneur le mappe vers `OPAMP_PORT`.                  |
-| `MONGO_URI`                   | Selon le déploiement               | Chaîne de connexion MongoDB. Les déploiements Compose et all-in-one utilisent `mongodb://db:27017/hyperdx`. Le point d’entrée all-in-one définit lui-même cette valeur. |
-| `SERVER_URL`                  | Selon le déploiement               | URL interne de l’API utilisée par le serveur frontend. Les déploiements Compose et all-in-one la font pointer vers le port local de l’API.                              |
+* `MONGO_URI`
+  * **Par défaut :** `mongodb://db:27017/hyperdx`
+  * **Description :** Chaîne de connexion à MongoDB.
+  * **Recommandations :**
+  * Utilisez la valeur par défaut pour le développement local avec Docker
+  * En production, utilisez une chaîne de connexion sécurisée
+  * Incluez l’authentification si nécessaire
+  * **Exemple :** `mongodb://user:pass@host:port/db`
 
-Si vous exécutez l’API directement plutôt que via le point d’entrée du conteneur, définissez `PORT` et `OPAMP_PORT` pour les points d’écoute de l’API et d’OpAMP. Les variables `HYPERDX_*_PORT` ne sont que des raccourcis propres au conteneur et au déploiement.
+* `MINER_API_URL`
+  * **Par défaut :** `http://miner:5123`
+  * **Description :** URL du service d’analyse des motifs de logs.
+  * **Recommandations :**
+  * Utilisez la valeur par défaut pour le développement local avec Docker
+  * Définissez l’URL de votre service `miner` en production
+  * Doit être accessible depuis le service API
 
-#### Authentification et sécurité {#authentication-and-security}
+* `FRONTEND_URL`
+  * **Par défaut :** `http://localhost:3000`
+  * **Description :** URL de l’application frontale.
+  * **Recommandations :**
+  * Utilisez la valeur par défaut pour le développement local
+  * Définissez votre domaine en production
+  * Doit être accessible depuis le service API
 
-| Variable                          | Par défaut                                                  | Description                                                                                                                                                                                                                                                                                                            |
-| --------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `EXPRESS_SESSION_SECRET`          | Généré pour chaque processus API lorsqu’il n’est pas défini | Secret de signature des sessions. Définissez une valeur robuste et persistante, partagée par toutes les répliques de l’API, afin que les sessions soient conservées après un redémarrage. Les déploiements authentifiés rejettent l’ancien secret public de démonstration et génèrent à la place une valeur aléatoire. |
-| `INGESTION_API_KEY`               | Non défini                                                  | Clé d’ingestion supplémentaire facultative pour l’image tout-en-un authentifiée. Cette surcharge d’amorçage n’est pas prise en charge par l’image de production limitée à l’UI. Dans les autres cas, utilisez la clé d’ingestion fournie par votre équipe.                                                             |
-| `WEBHOOK_HOSTNAME_ALLOWLIST`      | Vide                                                        | Exceptions, séparées par des virgules, qui autorisent les webhooks vers des destinations privées ou réservées. Les entrées de type nom d’hôte autorisent également les sous-domaines ; les entrées IP doivent correspondre exactement. Laissez cette variable vide, sauf si ces destinations sont de confiance.        |
-| `TOKEN_ENCRYPTION_KEY`            | Non défini                                                  | Clé de 32 octets, encodée en base64 ou en hexadécimal, servant à chiffrer les jetons tiers stockés. Si elle n’est pas définie, ces jetons sont stockés en plaintext. Ne modifiez pas cette clé et protégez-la comme un secret.                                                                                         |
-| `EXTERNAL_API_RATE_LIMIT_MAX`     | `100`                                                       | Entier positif limitant le nombre de requêtes à l’API externe v2 par API key et par minute.                                                                                                                                                                                                                            |
-| `EXTERNAL_API_SEARCH_MAX_RESULTS` | `2000`                                                      | Nombre maximum de résultats acceptés par l’API de recherche externe. Doit être un entier supérieur ou égal à `100` ; en cas de valeur invalide, la valeur par défaut est utilisée.                                                                                                                                     |
-| `ENABLE_SWAGGER`                  | `false`                                                     | Active la documentation de l’API uniquement lorsque `NODE_ENV` est différent de `production`. Sans effet dans les images de production publiées.                                                                                                                                                                       |
+* `OTEL_SERVICE_NAME`
+  * **Par défaut :** `hdx-oss-api`
+  * **Description :** Nom du service pour l’instrumentation OpenTelemetry.
+  * **Recommandation :**
+  * Utilisez un nom explicite pour votre service HyperDX. S’applique si HyperDX s’instrumente lui-même.
+  * Permet d’identifier le service HyperDX dans les données de télémétrie
 
-#### Amorçage et provisionnement {#bootstrap-and-provisioning}
+* `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT`
+  * **Par défaut :** `http://localhost:4318`
+  * **Description :** endpoint du collecteur OpenTelemetry.
+  * **Recommandations :**
+  * Pertinent pour l’auto-instrumentation d’HyperDX.
+  * Utilisez la valeur par défaut pour le développement local
+  * Définissez l’URL de votre collecteur en production
+  * Doit être accessible depuis votre service HyperDX
 
-| Variable                              | Valeur par défaut     | Description                                                                                                                                                                                                                 |
-| ------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DEFAULT_CONNECTIONS`                 | Dépend du déploiement | Tableau JSON des connexions utilisées lors de l’amorçage d’une instance vide. Compose et all-in-one fournissent une connexion à un ClickHouse local. Ce mécanisme ne permet pas de mettre à jour des connexions existantes. |
-| `DEFAULT_SOURCES`                     | Dépend du déploiement | Tableau JSON des sources utilisées lors de l’amorçage d’une instance vide. Compose et all-in-one fournissent les sources Logs, Traces, Metrics et Sessions. Le point d’entrée all-in-one définit lui-même cette valeur.     |
-| `DASHBOARD_PROVISIONER_DIR`           | Non défini            | Répertoire contenant les définitions des tableaux de bord provisionnés. Lorsqu’elle est définie, le provisionneur de tableaux de bord démarre dans le conteneur dédié à l’UI.                                               |
-| `DASHBOARD_PROVISIONER_TEAM_ID`       | Non défini            | Équipe à laquelle sont attribués les tableaux de bord provisionnés. Obligatoire, sauf si `DASHBOARD_PROVISIONER_ALL_TEAMS=true`. Prévaut si les deux sont définies.                                                         |
-| `DASHBOARD_PROVISIONER_ALL_TEAMS`     | `false`               | Provisionne les tableaux de bord pour toutes les équipes au lieu d’une seule.                                                                                                                                               |
-| `ALERT_NOTIFICATION_FETCH_TIMEOUT_MS` | `30000`               | Délai d’attente, en millisecondes, des notifications d’alerte envoyées par webhook et Slack.                                                                                                                                |
-| `RUN_SCHEDULED_TASKS_EXTERNALLY`      | `false`               | Exécute les tâches planifiées une seule fois au lieu de les planifier au sein du processus de tâches. À utiliser uniquement lorsqu’un planificateur externe se charge de déclencher les tâches.                             |
+* `USAGE_STATS_ENABLED`
+  * **Par défaut :** `true`
+  * **Description :** Active ou désactive la collecte de statistiques d’utilisation.
+  * **Recommandation :**
+  * Définissez cette valeur sur `false` pour désactiver le suivi de l’utilisation
+  * Utile pour les déploiements sensibles à la confidentialité
+  * La valeur par défaut est `true` afin d’améliorer le produit
 
-Pour les déploiements en mode local, ce sont `NEXT_PUBLIC_HDX_LOCAL_DEFAULT_CONNECTIONS` et `NEXT_PUBLIC_HDX_LOCAL_DEFAULT_SOURCES` qui fournissent les valeurs par défaut JSON, directement dans le navigateur. Ces valeurs sont publiques : n’y placez aucun identifiant de production.
+* `IS_OSS`
+  * **Par défaut :** `true`
+  * **Description :** Indique si l’application fonctionne en mode OSS.
+  * **Recommandation :**
+  * Conservez `true` pour les déploiements open-source
+  * Définissez `false` pour les déploiements d’entreprise
+  * Affecte la disponibilité des fonctionnalités
 
-#### Assistant IA {#ai-assistant-configuration}
+* `IS_LOCAL_MODE`
+  * **Par défaut :** `false`
+  * **Description :** Indique si l’application s’exécute en mode local.
+  * **Recommandations :**
+  * Définir sur `true` pour un développement local
+  * Désactive certaines fonctionnalités de production
+  * Utile pour les tests et le développement
 
-| Variable             | Valeur par défaut                           | Description                                                                                                                                            |
-| -------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `AI_PROVIDER`        | Non défini                                  | Fournisseur d’IA : `anthropic` ou `openai`. Le fournisseur compatible avec OpenAI utilise l’API Responses.                                             |
-| `AI_API_KEY`         | Non défini                                  | API key du fournisseur sélectionné.                                                                                                                    |
-| `AI_BASE_URL`        | Valeur par défaut du fournisseur            | Endpoint personnalisé du fournisseur (facultatif).                                                                                                     |
-| `AI_MODEL_NAME`      | `claude-sonnet-4-5-20250929` pour Anthropic | Identifiant du modèle. Obligatoire pour le fournisseur compatible avec OpenAI.                                                                         |
-| `AI_REQUEST_HEADERS` | Non défini                                  | Objet JSON contenant des en-têtes de requête supplémentaires pour le fournisseur compatible avec OpenAI.                                               |
-| `ANTHROPIC_API_KEY`  | Non défini                                  | Clé Anthropic legacy. Utilisée à des fins de rétrocompatibilité lorsqu’aucun `AI_PROVIDER` n’est configuré. Privilégiez `AI_PROVIDER` et `AI_API_KEY`. |
+* `EXPRESS_SESSION_SECRET`
+  * **Par défaut :** `hyperdx is cool 👋`
+  * **Description :** Secret pour la gestion des sessions Express.
+  * **Recommandations :**
+  * À modifier en production
+  * Utiliser une chaîne aléatoire forte
+  * Le conserver de façon sécurisée
 
-#### Journalisation et auto-instrumentation {#logging-and-self-instrumentation}
+* `ENABLE_SWAGGER`
+  * **Par défaut :** `false`
+  * **Description :** Active ou désactive la documentation de l’API Swagger.
+  * **Recommandation :**
+  * Définissez cette option sur `true` pour activer la documentation de l’API
+  * Utile pour le développement et les tests
+  * À désactiver en production
 
-Ces paramètres contrôlent la télémétrie émise par ClickStack lui-même, et non l’authentification des utilisateurs ni la télémétrie entrante des applications.
+* `BETA_CH_OTEL_JSON_SCHEMA_ENABLED`
+  * **Par défaut :** `false`
+  * **Description :** Active la prise en charge bêta du type JSON dans HyperDX. Voir aussi [`OTEL_AGENT_FEATURE_GATE_ARG`](#otel-collector) pour activer la prise en charge de JSON dans l’OTel collector.
+  * **Recommandations :**
+    * Active une **fonctionnalité en bêta**. Les schémas de type JSON sont **déconseillés** pour les workloads d’observabilité courants. Voir [Map vs JSON type](/fr/clickstack/ingesting-data/schema/map-vs-json) pour une comparaison et savoir dans quels cas utiliser l’un ou l’autre.
+    * Définissez cette valeur sur `true` pour activer la prise en charge de JSON dans la ClickStack UI.
 
-| Variable                                                                                                                                            | Valeur par défaut                                                                                       | Description                                                                                                                                                                                                                                                                                                                                        |
-| --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `HYPERDX_LOG_LEVEL`                                                                                                                                 | `info` dans l’API ; `debug` dans le fichier `.env` de Compose ; forcée à `error` par l’image all-in-one | Niveau de journalisation de l’application.                                                                                                                                                                                                                                                                                                         |
-| `HYPERDX_API_KEY`                                                                                                                                   | Non définie                                                                                             | Clé d’ingestion facultative pour la télémétrie propre à ClickStack. Il ne s’agit pas de la clé d’authentification de l’API permettant d’accéder aux données de votre équipe. Lorsque `HDX_EXPORTER_ENABLED=true`, le frontend expose cette clé d’auto-télémétrie au navigateur ; n’utilisez pas une clé donnant accès à de la télémétrie sensible. |
-| `OTEL_SERVICE_NAME`                                                                                                                                 | Dépend du déploiement                                                                                   | Nom du service pour l’auto-instrumentation côté serveur. Compose la définit sur `hdx-oss-app`.                                                                                                                                                                                                                                                     |
-| `NEXT_PUBLIC_OTEL_SERVICE_NAME`                                                                                                                     | `hdx-oss-dev-app`                                                                                       | Nom du service pour l’auto-instrumentation du frontend.                                                                                                                                                                                                                                                                                            |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`                                                                                                                       | Dépend du déploiement                                                                                   | Point de terminaison OTLP côté serveur. Compose la définit sur `http://otel-collector:4318`.                                                                                                                                                                                                                                                       |
-| `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT`                                                                                                           | Endpoint du serveur, à défaut `http://localhost:4318`                                                   | Point de terminaison OTLP du frontend. Un exportateur exécuté dans le navigateur nécessite une adresse joignable depuis celui-ci.                                                                                                                                                                                                                  |
-| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`                                     | Non définies                                                                                            | URL OTLP côté serveur, par type de signal.                                                                                                                                                                                                                                                                                                         |
-| `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | URL côté serveur correspondante                                                                         | URL du frontend, par type de signal ; elles ont préséance sur les valeurs côté serveur correspondantes.                                                                                                                                                                                                                                            |
-| `NEXT_PUBLIC_OTEL_RESOURCE_ATTRIBUTES`                                                                                                              | Non définie                                                                                             | Attributs de ressource `key=value` séparés par des virgules pour l’auto-instrumentation dans le navigateur.                                                                                                                                                                                                                                        |
-| `HDX_EXPORTER_ENABLED`                                                                                                                              | `true`                                                                                                  | Active l’exportateur d’auto-instrumentation de l’application frontend.                                                                                                                                                                                                                                                                             |
-| `USAGE_STATS_ENABLED`                                                                                                                               | `true`                                                                                                  | Définissez-la sur `false` pour désactiver la collecte des statistiques d’utilisation.                                                                                                                                                                                                                                                              |
+<div id="otel-collector">
+  ## Collecteur OpenTelemetry
+</div>
 
-#### Fonctionnalités facultatives et modes de déploiement {#optional-features-and-deployment-modes}
+Voir [&quot;ClickStack OpenTelemetry Collector&quot;](/fr/clickstack/ingesting-data/collector) pour plus de détails.
 
-| Variable                           | Par défaut | Description                                                                                                                                                                                                                                                                                                           |
-| ---------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ENABLE_PROMQL`                    | `false`    | Active la prise en charge de PromQL par l’API. Définissez également l’option frontend correspondante et configurez le point de terminaison Prometheus et le schéma du collecteur.                                                                                                                                     |
-| `NEXT_PUBLIC_ENABLE_PROMQL`        | `false`    | Active PromQL dans l’UI.                                                                                                                                                                                                                                                                                              |
-| `NEXT_PUBLIC_ENABLE_ADHOC_FILTERS` | `false`    | Active les filtres ad hoc dans l’UI.                                                                                                                                                                                                                                                                                  |
-| `NEXT_PUBLIC_ENABLE_ALERT_DETAILS` | `false`    | Active la page de détails de l’alerte ; cette fonctionnalité doit actuellement être activée explicitement.                                                                                                                                                                                                            |
-| `NEXT_PUBLIC_IS_LLM_COST_ENABLED`  | `false`    | Active l’estimation des coûts LLM à partir du catalogue de prix des modèles fourni. Les prix peuvent différer de ceux prévus dans votre contrat fournisseur.                                                                                                                                                          |
-| `NEXT_PUBLIC_INSTANCE_LABEL`       | Vide       | Étiquette ajoutée au titre de l’onglet du navigateur et affichée dans la barre latérale, pratique pour distinguer les instances.                                                                                                                                                                                      |
-| `ENABLE_DATADOG_RECEIVER`          | `false`    | Active le récepteur de traces Datadog dans la configuration du collecteur générée par OpAMP. Le récepteur, sur le port `8126`, vérifie `DD-API-KEY` lorsque des clés d’ingestion d’équipe existent et que l’authentification du collecteur est appliquée ; dans le cas contraire, il n’exige aucune authentification. |
-| `BETA_CH_OTEL_JSON_SCHEMA_ENABLED` | `false`    | Sélectionne des correspondances de sources par défaut compatibles JSON dans le point d’entrée tout-en-un. À utiliser conjointement avec `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_JSON_ENABLE` sur le collecteur.                                                                                                                    |
+* `CLICKHOUSE_ENDPOINT`
+  * **Par défaut :** *Aucune (obligatoire)* si l’image est autonome. Avec une distribution All-in-one ou Docker Compose, cette valeur pointe vers l’instance ClickHouse intégrée.
+  * **Description :** URL HTTPS de l’instance ClickHouse vers laquelle exporter les données de télémétrie.
+  * **Conseils :**
+    * Doit être un endpoint HTTPS complet, port inclus (par ex. `https://clickhouse.example.com:8443`)
+    * Obligatoire pour que le collecteur puisse envoyer des données à ClickHouse
 
-`NEXT_PUBLIC_IS_LOCAL_MODE` est l’option de construction du frontend propre à la [distribution Mode local](/fr/clickstack/deployment/local-mode-only). Il ne s’agit pas d’un commutateur de développement générique. Utilisez la distribution adaptée plutôt que de désactiver l’authentification sur un déploiement existant. `IS_LOCAL_MODE` et `IS_OSS` sont des noms de constantes de l’application, et non des variables d’environnement à définir. `NEXT_PUBLIC_IS_OSS` est un paramètre de construction ; ce n’est pas un commutateur d’édition Enterprise. `MINER_API_URL` n’est plus utilisé par la version actuelle de l’application.
+* `CLICKHOUSE_USER`
+  * **Par défaut :** `default`
+  * **Description :** Nom d’utilisateur utilisé pour s’authentifier auprès de l’instance ClickHouse.
+  * **Conseils :**
+    * Assurez-vous que l’utilisateur dispose des permissions `INSERT` et `CREATE TABLE`
+    * Il est recommandé de créer un utilisateur dédié à l’ingestion
 
-Si vous utilisez la configuration de proxy inverse fournie pour un sous-chemin, définissez `HYPERDX_BASE_PATH` et `NEXT_PUBLIC_HYPERDX_BASE_PATH` avec le même préfixe (par exemple `/clickstack`), et incluez ce préfixe dans `FRONTEND_URL`.
+* `CLICKHOUSE_PASSWORD`
+  * **Par défaut :** *Aucun (obligatoire si l’authentification est activée)*
+  * **Description :** Mot de passe de l’utilisateur ClickHouse indiqué.
+  * **Conseils :**
+    * Obligatoire si un mot de passe est défini pour ce compte utilisateur
+    * Stockez-le de façon sécurisée via des secrets dans les déploiements de production
 
-Certains paramètres du frontend sont lus au moment de la construction. En particulier, toute modification de `NEXT_PUBLIC_HYPERDX_BASE_PATH` (le préfixe de chemin du déploiement), de `NEXT_PUBLIC_NOINDEX` (indexation par les moteurs de recherche) ou des options de mode de la distribution impose de reconstruire le frontend avec ces valeurs. Les paramètres d’exécution lus via `next-runtime-env`, tels que `NEXT_PUBLIC_INSTANCE_LABEL`, peuvent être fournis au conteneur au démarrage.
+* `HYPERDX_LOG_LEVEL`
+  * **Par défaut :** `info`
+  * **Description :** Niveau de verbosité des logs du collecteur.
+  * **Conseils :**
+    * Accepte des valeurs telles que `debug`, `info`, `warn`, `error`
+    * Utilisez `debug` pendant le dépannage
 
-## Collecteur OpenTelemetry {#otel-collector}
+* `OPAMP_SERVER_URL`
+  * **Par défaut :** *Aucune (obligatoire)* si l’image est autonome. Avec une distribution All-in-one ou Docker Compose, cette valeur pointe vers l’instance HyperDX déployée.
+  * **Description :** URL du serveur OpAMP utilisé pour gérer le collecteur (par ex. une instance HyperDX). Par défaut, il utilise le port `4320`.
+  * **Conseils :**
+    * Doit pointer vers votre instance HyperDX
+    * Active la configuration dynamique et l’ingestion sécurisée
+    * Si elle est omise, l’ingestion sécurisée est désactivée, sauf si une valeur `OTLP_AUTH_TOKEN` est spécifiée.
 
-Pour les instructions de déploiement, consultez [Collecteur OpenTelemetry ClickStack](/fr/clickstack/ingesting-data/collector). Définissez les variables du collecteur sur le conteneur du collecteur, et pas uniquement sur celui de l&#39;UI. Avec Compose, une valeur déclarée dans `.env` n&#39;est transmise à un conteneur que si `docker-compose.yml` y fait référence.
+* `OTLP_AUTH_TOKEN`
+  * **Par défaut :** *Aucun*. Utilisé uniquement avec l’image autonome.
+  * **Description :** Permet de spécifier un jeton d’authentification OTLP. S’il est défini, toute communication nécessite ce jeton Bearer.
+  * **Conseils :**
+    * Recommandé si vous utilisez l’image autonome du collecteur en production.
 
-### Connexion et authentification {#collector-connection-and-authentication}
+* `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`
+  * **Par défaut :** `default`
+  * **Description :** Base de données ClickHouse dans laquelle le collecteur écrit les données de télémétrie.
+  * **Conseils :**
+    * Définissez-le si vous utilisez un nom de base de données personnalisé
+    * Assurez-vous que l’utilisateur indiqué a accès à cette base de données
 
-| Variable                                    | Valeur par défaut                                          | Description                                                                                                                                                                                                                                                           |
-| ------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CLICKHOUSE_ENDPOINT`                       | Dépend du déploiement                                      | URL de connexion de l’exportateur ClickHouse. Compose et all-in-one utilisent `tcp://ch-server:9000?dial_timeout=10s`. Pour ClickHouse Cloud, utilisez l’endpoint natif sécurisé, par exemple `tcp://<host>:9440?secure=true`. Il ne se limite pas à HTTPS.           |
-| `CLICKHOUSE_USER`                           | `default` dans l’outil de migration                        | Nom d’utilisateur ClickHouse. Définissez-le explicitement pour un collecteur autonome afin que les migrations et les exportateurs utilisent le compte prévu.                                                                                                          |
-| `CLICKHOUSE_PASSWORD`                       | Vide                                                       | Mot de passe du compte ClickHouse.                                                                                                                                                                                                                                    |
-| `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE` | `default` dans les déploiements intégrés et les migrations | Base de données cible. Définissez-la explicitement pour un collecteur autonome.                                                                                                                                                                                       |
-| `OPAMP_SERVER_URL`                          | Non définie en mode autonome                               | URL OpAMP de l’interface utilisateur de ClickStack, généralement `http://<app>:4320`. Lorsqu’elle est définie, le collecteur passe par le superviseur pour obtenir la configuration et les clés d’ingestion de l’équipe. Sinon, il utilise la configuration autonome. |
-| `OTLP_AUTH_TOKEN`                           | Non définie                                                | Jeton bearer statique pour l’ingestion OTLP autonome. Ignoré lorsque l’authentification OIDC est sélectionnée.                                                                                                                                                        |
-| `OIDC_ISSUER_URL`                           | Non définie                                                | Active l’authentification OIDC pour l’ingestion OTLP autonome. A la préséance sur `OTLP_AUTH_TOKEN`.                                                                                                                                                                  |
-| `OIDC_AUDIENCE`                             | Non définie                                                | Audience obligatoire lorsque `OIDC_ISSUER_URL` est définie ; le démarrage échoue si elle est omise.                                                                                                                                                                   |
-
-Sans OpAMP, OIDC ni `OTLP_AUTH_TOKEN`, le récepteur OTLP autonome ne dispose d’aucune authentification. Le compte ClickHouse doit avoir la permission d’insérer des données de télémétrie et, lorsque la création du schéma ou les migrations sont activées, de créer ou de modifier les objets de base de données requis.
-
-### Exportation, batching et configuration personnalisée {#collector-export-and-batching}
-
-| Variable                                 | Valeur par défaut    | Description                                                                                                                                                                                          |
-| ---------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `HYPERDX_OTEL_EXPORTER_TIMEOUT`          | `5s`                 | Délai d’attente de l’exportation vers ClickHouse.                                                                                                                                                    |
-| `HYPERDX_OTEL_BATCH_SEND_BATCH_SIZE`     | `10000`              | Nombre d’éléments à partir duquel un batch est envoyé.                                                                                                                                               |
-| `HYPERDX_OTEL_BATCH_SEND_BATCH_MAX_SIZE` | `0`                  | Taille maximale d’un batch ; `0` signifie aucune limite de taille.                                                                                                                                   |
-| `HYPERDX_OTEL_BATCH_TIMEOUT`             | `5s`                 | Délai maximal avant l’envoi d’un batch.                                                                                                                                                              |
-| `CUSTOM_OTELCOL_CONFIG_FILE`             | Non défini           | Chemin d’un fichier YAML monté, fusionné avec la configuration du collecteur en mode autonome ou OpAMP. Voir [configuration personnalisée du collecteur](/fr/clickstack/ingesting-data/collector).      |
-| `HYPERDX_LOG_LEVEL`                      | Selon le déploiement | Niveau de journalisation interne du collecteur. À définir explicitement pour un collecteur autonome, par exemple `info`. Compose fournit `debug` ; l’image all-in-one impose `error`.                |
-| `OTEL_SUPERVISOR_LOGS`                   | `false`              | Définissez cette variable sur `true` pour transmettre la sortie du collecteur via le superviseur OpAMP. S’applique uniquement en mode superviseur.                                                   |
-| `OTEL_AGENT_FEATURE_GATE_ARG`            | Non défini           | Argument feature-gate supplémentaire pour le collecteur. L’ancienne valeur `--feature-gates=clickhouse.json` est déconseillée ; utilisez plutôt `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_JSON_ENABLE=true`. |
-
-### Schéma et rétention {#collector-schema-and-retention}
-
-| Variable                                       | Valeur par défaut                         | Description                                                                                                                                                                                                                                                                                |
-| ---------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `HYPERDX_OTEL_EXPORTER_CREATE_LEGACY_SCHEMA`   | `false` ; surchargée à `true` par Compose | Utilise la création de schéma legacy gérée par l&#39;exportateur au lieu de l&#39;outil de migration.                                                                                                                                                                                      |
-| `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_JSON_ENABLE` | `false`                                   | Active le mode JSON de l&#39;exportateur et sélectionne la création de schéma legacy. Les schémas utilisant le type JSON ne sont pas recommandés pour les charges de travail d&#39;observability classiques ; consultez [Map vs type JSON](/fr/clickstack/ingesting-data/schema/map-vs-json). |
-| `HYPERDX_OTEL_EXPORTER_TABLES_TTL`             | `720h`                                    | Rétention par défaut (une durée Go telle que `720h`, ou un nombre de jours tel que `30d`) des tables créées par les migrations et par les exportateurs legacy générés par OpAMP. La configuration autonome de l&#39;exportateur legacy utilise une valeur fixe de `720h`.                  |
-| `HYPERDX_OTEL_EXPORTER_LOGS_TTL`               | `HYPERDX_OTEL_EXPORTER_TABLES_TTL`        | Rétention des logs pour les tables gérées par les migrations.                                                                                                                                                                                                                              |
-| `HYPERDX_OTEL_EXPORTER_TRACES_TTL`             | `HYPERDX_OTEL_EXPORTER_TABLES_TTL`        | Rétention des traces pour les tables gérées par les migrations.                                                                                                                                                                                                                            |
-| `HYPERDX_OTEL_EXPORTER_METRICS_TTL`            | `HYPERDX_OTEL_EXPORTER_TABLES_TTL`        | Rétention des métriques pour les tables gérées par les migrations.                                                                                                                                                                                                                         |
-| `HYPERDX_OTEL_EXPORTER_SESSIONS_TTL`           | `HYPERDX_OTEL_EXPORTER_TABLES_TTL`        | Rétention des sessions pour les tables gérées par les migrations.                                                                                                                                                                                                                          |
-| `HYPERDX_OTEL_EXPORTER_RECONCILE_TABLE_TTL`    | `false`                                   | Permet, sur option, d&#39;appliquer les TTL configurés aux tables existantes gérées par les migrations. Vérifiez les modifications de rétention avant d&#39;activer ce paramètre : des TTL plus courts peuvent supprimer des données existantes.                                           |
-
-Les TTL par signal et le paramètre de réconciliation concernent l&#39;outil de migration, qui est ignoré lorsque la création de schéma legacy est activée.
-
-### TLS pour la migration {#collector-migration-tls}
-
-Ces variables configurent la connexion à ClickHouse de l&#39;outil de migration. Elles ne configurent pas automatiquement le TLS des exportateurs : si vous utilisez des certificats personnalisés, configurez séparément les exportateurs du collecteur.
-
-| Variable                              | Valeur par défaut | Description                                                                                            |
-| ------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------ |
-| `CLICKHOUSE_TLS_CA_FILE`              | Non définie       | Chemin du fichier de certificat de CA.                                                                 |
-| `CLICKHOUSE_TLS_CERT_FILE`            | Non définie       | Chemin du certificat client pour le TLS mutuel.                                                        |
-| `CLICKHOUSE_TLS_KEY_FILE`             | Non définie       | Chemin de la clé privée du client pour le TLS mutuel.                                                  |
-| `CLICKHOUSE_TLS_SERVER_NAME_OVERRIDE` | Non définie       | Nom de serveur utilisé pour la vérification du certificat.                                             |
-| `CLICKHOUSE_TLS_INSECURE_SKIP_VERIFY` | `false`           | Désactive la vérification du certificat serveur lorsque la valeur est `true`. À réserver au dépannage. |
-
-### Métriques compatibles avec Prometheus {#collector-prometheus-metrics}
-
-| Variable                                 | Valeur par défaut                                                  | Description                                                                                                                                                                                                                                                                                          |
-| ---------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ENABLE_PROMQL`                          | `false`                                                            | Active la création du schéma PromQL dans l’outil de migration. En mode OpAMP, activez également PromQL sur l’API et le frontend.                                                                                                                                                                     |
-| `CLICKHOUSE_PROMETHEUS_METRICS_ENDPOINT` | Non définie en mode autonome ; `ch-server:9363` en mode all-in-one | Endpoint compatible avec Prometheus. Accepte `host:port`, `http://host:port` ou `https://host:port` ; n’incluez pas de path. Définir cette variable active l’écriture distante en mode autonome. Le point d’entrée déduit `HYPERDX_PROMETHEUS_SCHEME` et `HYPERDX_PROMETHEUS_TLS_INSECURE` de l’URL. |
+* `OTEL_AGENT_FEATURE_GATE_ARG`
+  * **Par défaut :** `<empty string>`
+  * **Description :** Active les feature flags dans le collecteur. S’il est défini sur `--feature-gates=clickhouse.json`, il active la prise en charge bêta du type JSON dans le collecteur et garantit que les schémas sont créés avec ce type. Voir aussi [`BETA_CH_OTEL_JSON_SCHEMA_ENABLED`](#hyperdx) pour activer la prise en charge de JSON dans HyperDX.
+  * **Conseils :**
+    * Active une **fonctionnalité bêta**. Les schémas typés JSON sont **déconseillés** pour les charges de travail d’observabilité classiques. Voir [Map vs JSON type](/fr/clickstack/ingesting-data/schema/map-vs-json) pour une comparaison et les cas d’usage adaptés à chacun.
+    * Définissez-le sur `--feature-gates=clickhouse.json` pour créer de nouvelles tables avec le type JSON.
 
 <div id="clickhouse">
-  ## ClickHouse {#clickhouse}
+  ## ClickHouse
 </div>
 
 ClickStack Open Source est livré avec une configuration ClickHouse par défaut conçue pour fonctionner à l’échelle de plusieurs téraoctets, mais les utilisateurs peuvent librement la modifier et l’optimiser en fonction de leur charge de travail.

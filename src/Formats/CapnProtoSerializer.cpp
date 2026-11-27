@@ -932,7 +932,7 @@ namespace
             if (!checkIfStructIsNamedUnion(struct_schema))
                 throw Exception(
                     ErrorCodes::CAPN_PROTO_BAD_CAST,
-                    "Cannot convert column \"{}\": Nullable can be represented only as a named union of type Void and nested type. "
+                    "Cannot convert column \"{}\": Nullable can be represented only as a named union of type Void and nested type."
                     "Given CapnProto struct is not a named union: {}",
                     column_name,
                     getCapnProtoFullTypeName(capnp_type));
@@ -941,7 +941,7 @@ namespace
             if (union_fields.size() != 2)
                 throw Exception(
                     ErrorCodes::CAPN_PROTO_BAD_CAST,
-                    "Cannot convert column \"{}\": Nullable can be represented only as a named union of type Void and nested type. "
+                    "Cannot convert column \"{}\": Nullable can be represented only as a named union of type Void and nested type."
                     "Given CapnProto union have more than 2 fields: {}",
                     column_name,
                     getCapnProtoFullTypeName(capnp_type));
@@ -968,7 +968,7 @@ namespace
             else
                 throw Exception(
                     ErrorCodes::CAPN_PROTO_BAD_CAST,
-                    "Cannot convert column \"{}\": Nullable can be represented only as a named union of type Void and nested type. "
+                    "Cannot convert column \"{}\": Nullable can be represented only as a named union of type Void and nested type."
                     "Given CapnProto union doesn't have field with type Void: {}",
                     column_name,
                     getCapnProtoFullTypeName(capnp_type));
@@ -1095,7 +1095,7 @@ namespace
             const auto * array_column = assert_cast<const ColumnArray *>(column.get());
             const auto & nested_column = array_column->getDataPtr();
             const auto & offsets = array_column->getOffsets();
-            auto offset = offsets[static_cast<ssize_t>(row_num) - 1];
+            auto offset = offsets[row_num - 1];
             UInt32 size = static_cast<UInt32>(offsets[row_num] - offset);
 
             if (!field_builder)

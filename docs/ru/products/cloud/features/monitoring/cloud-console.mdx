@@ -7,14 +7,16 @@ sidebarTitle: 'Консоль ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 Сервисы в ClickHouse Cloud поставляются со встроенными компонентами мониторинга, которые дают пользователям доступ к панелям мониторинга и уведомлениям. По умолчанию все пользователи в консоли ClickHouse Cloud имеют доступ к этим панелям мониторинга.
 
 <div id="dashboards">
-  ## Панели мониторинга {#dashboards}
+  ## Панели мониторинга
 </div>
 
 <div id="service-health">
-  ### Состояние сервиса {#service-health}
+  ### Состояние сервиса
 </div>
 
 Панель мониторинга состояния сервиса можно использовать для отслеживания общего состояния сервиса. ClickHouse Cloud считывает из системных таблиц и сохраняет метрики, отображаемые на этой панели мониторинга, чтобы их можно было просматривать, даже когда сервис находится в неактивном состоянии.
@@ -22,13 +24,13 @@ doc_type: 'guide'
 {/* TODO: Добавить скриншот панели мониторинга Service Health */}
 
 <div id="resource-utilization">
-  ### Использование ресурсов {#resource-utilization}
+  ### Использование ресурсов
 </div>
 
 Панель мониторинга Infrastructure предоставляет подробную информацию о ресурсах, которые использует процесс ClickHouse. ClickHouse Cloud собирает и хранит метрики, отображаемые на этой панели мониторинга, из системных таблиц, чтобы их можно было просматривать, даже когда сервис переведён в состояние простоя.
 
 <div id="memory-and-cpu">
-  #### Память и CPU {#memory-and-cpu}
+  #### Память и CPU
 </div>
 
 Графики **Выделенный CPU** и **Выделенная память** показывают общий объем вычислительных ресурсов, доступных для каждой реплики в вашем сервисе. Эти значения можно изменить с помощью [возможностей масштабирования](/ru/products/cloud/features/autoscaling/overview) ClickHouse Cloud.
@@ -55,20 +57,18 @@ doc_type: 'guide'
 | Использование CPU    | Системная метрика CPU       | Max       | `ClickHouseServer_UsageCores` через конечную точку Prometheus |
 
 <div id="data-transfer">
-  #### Передача данных {#data-transfer}
+  #### Передача данных
 </div>
 
 Графики показывают объём входящего и исходящего трафика ClickHouse Cloud. Подробнее см. в разделе [сетевая передача данных](/ru/products/cloud/reference/billing/network-data-transfer).
 
-### Advanced dashboard {#advanced-dashboard}
+<div id="advanced-dashboard">
+  ### Advanced dashboard
+</div>
 
 Эта панель мониторинга — измененная версия [встроенной панели расширенной обсервабилити](/ru/products/cloud/features/monitoring/advanced-dashboard), где каждая серия показывает метрики по каждой реплике. Эта панель мониторинга полезна для мониторинга и устранения неполадок, связанных с ClickHouse.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Advanced dashboard в ClickHouse Cloud](/images/cloud/manage/monitoring/advanced_dashboard.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="Advanced dashboard в ClickHouse Cloud" border />
 
 <Note>
   ClickHouse Cloud собирает и хранит метрики, отображаемые на этой панели мониторинга, из системных таблиц, поэтому их можно просматривать, даже когда сервис переведен в неактивное состояние. Доступ к этим метрикам не отправляет запрос к самому сервису и не выводит неактивные сервисы из этого состояния.
@@ -76,7 +76,7 @@ doc_type: 'guide'
 
 В таблице ниже каждому графику на Advanced Dashboard сопоставлены соответствующая метрика ClickHouse, системная таблица-источник и тип агрегации:
 
-| Graph                                        | Corresponding ClickHouse имя метрики                                                                                                                                    | Системная таблица              | Aggregation Type          |
+| Graph                                        | Corresponding ClickHouse metric name                                                                                                                                    | System table              | Aggregation Type          |
 | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ------------------------- |
 | Запросы/сек                                  | `ProfileEvent_Query`                                                                                                                                                    | `metric_log`              | Сумма / bucketSizeSeconds |
 | Выполняющиеся запросы                        | `CurrentMetric_Query`                                                                                                                                                   | `metric_log`              | Среднее                   |
@@ -107,61 +107,51 @@ doc_type: 'guide'
 
 Подробную информацию о каждой визуализации и о том, как использовать их для устранения неполадок, см. в [документации по Advanced Dashboard](/ru/products/cloud/features/monitoring/advanced-dashboard).
 
-## Query insights {#query-insights}
+<div id="query-insights">
+  ## Query insights
+</div>
 
 **Query Insights** — возможность, которая упрощает работу со встроенным журналом запросов ClickHouse с помощью различных визуализаций и таблиц. Таблица ClickHouse `system.query_log` — важный источник информации для оптимизации запросов, отладки и мониторинга общего состояния и производительности кластера.
 
-После выбора сервиса пункт **Мониторинг** на левой боковой панели раскрывается, и в нем появляется подпункт **Query insights**:
+После выбора сервиса пункт **Monitoring** на левой боковой панели раскрывается, и в нем появляется подпункт **Query insights**:
 
-<div className="ch-image-md">
-  <Frame>
-    ![Обзор интерфейса Query Insights](/images/cloud/sqlconsole/insights_overview.webp)
-  </Frame>
+<Image img="/images/cloud/sqlconsole/insights_overview.webp" size="md" alt="Обзор интерфейса Query Insights" border />
+
+<div id="top-level-metrics">
+  ### Метрики верхнего уровня
 </div>
-
-### Метрики верхнего уровня {#top-level-metrics}
 
 Сводные блоки со статистикой в верхней части показывают основные метрики запросов за выбранный период времени. Ниже графики временных рядов отображают объем запросов, задержку и долю ошибок с разбивкой по типу запросов (select, insert, other). График задержки можно настроить для отображения задержек p50, p90 и p99:
 
-<div className="ch-image-md">
-  <Frame>
-    ![График задержки Query Insights](/images/cloud/sqlconsole/insights_latency.webp)
-  </Frame>
+<Image img="/images/cloud/sqlconsole/insights_latency.webp" size="md" alt="График задержки Query Insights" border />
+
+<div id="recent-queries">
+  ### Недавние запросы
 </div>
 
-### Последние запросы {#recent-queries}
+В таблице отображаются записи журнала запросов, сгруппированные по нормализованному хэшу запроса и пользователю в выбранном временном диапазоне. Недавние запросы можно фильтровать и сортировать по любому доступному полю, а также настраивать отображение дополнительных полей, таких как таблицы и задержки p90 и p99:
 
-В таблице отображаются записи журнала запросов, сгруппированные по нормализованному хэшу запроса и пользователю в выбранном временном диапазоне. Последние запросы можно фильтровать и сортировать по любому доступному полю, а также настраивать отображение дополнительных полей, таких как таблицы и задержки p90 и p99:
+<Image img="/images/cloud/sqlconsole/insights_recent.webp" size="md" alt="Таблица недавних запросов Query Insights" border />
 
-<div className="ch-image-md">
-  <Frame>
-    ![Таблица последних запросов в Query Insights](/images/cloud/sqlconsole/insights_recent.webp)
-  </Frame>
+<div id="query-drill-down">
+  ### Детализация запроса
 </div>
 
-### Детализация запроса {#query-drill-down}
+При выборе запроса из таблицы **Recent queries** откроется выдвижная панель с метриками и информацией по выбранному запросу:
 
-При выборе запроса из таблицы **Последние запросы** откроется выдвижная панель с метриками и информацией по выбранному запросу:
-
-<div className="ch-image-md">
-  <Frame>
-    ![Интерфейс Query Insights: детализация запроса](/images/cloud/sqlconsole/insights_drilldown.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="Интерфейс Query Insights: детализация запроса" border />
 
 Все метрики на вкладке **Query info** являются агрегированными, но также можно просматривать метрики отдельных запусков, выбрав вкладку **Query history**:
 
-<div className="ch-image-sm">
-  <Frame>
-    ![Интерфейс Query Insights: информация о запросе](/images/cloud/sqlconsole/insights_query_info.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/sqlconsole/insights_query_info.webp" size="sm" alt="Интерфейс Query Insights: информация о запросе" border />
 
 На этой панели для каждого запуска запроса можно развернуть элементы `Settings` и `Profile Events`, чтобы увидеть дополнительную информацию.
 
-## Связанные страницы {#related}
+<div id="related">
+  ## Связанные страницы
+</div>
 
 * [Уведомления](/ru/products/cloud/features/monitoring/notifications) — Настройка оповещений о событиях масштабирования, ошибках и биллинге
 * [Advanced dashboard](/ru/products/cloud/features/monitoring/advanced-dashboard) — Подробное описание каждой визуализации панели мониторинга
-* [Запросы к системным таблицам](/ru/products/cloud/features/monitoring/system-tables) — Выполнение пользовательских SQL-запросов к системным таблицам для углублённой диагностики
-* [Конечная точка Prometheus](/ru/products/cloud/features/monitoring/prometheus) — Экспорт метрик в Grafana, Datadog и другие инструменты, совместимые с Prometheus
+* [Запросы к системным таблицам](/ru/products/cloud/features/monitoring/system-tables) — Выполняйте произвольные SQL-запросы к системным таблицам для детального анализа внутреннего состояния системы
+* [Конечная точка Prometheus](/ru/products/cloud/features/monitoring/prometheus) — Экспортируйте метрики в Grafana, Datadog или другие инструменты, совместимые с Prometheus

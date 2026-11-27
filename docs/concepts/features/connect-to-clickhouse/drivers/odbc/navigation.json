@@ -1,6 +1,0 @@
-{
-  "group": "ODBC driver",
-  "pages": [
-    "concepts/features/connect-to-clickhouse/drivers/odbc/index"
-  ]
-}

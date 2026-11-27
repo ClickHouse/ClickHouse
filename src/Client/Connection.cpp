@@ -2,13 +2,11 @@
 #include <cstddef>
 #include <iterator>
 #include <memory>
-#include <optional>
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Compression/chooseNetworkCompressionCodec.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SocketPeerClosed.h>
@@ -20,7 +18,6 @@
 #include <Formats/NativeWriter.h>
 #include <Client/ClientApplicationBase.h>
 #include <Client/Connection.h>
-#include <Formats/FormatSettings.h>
 #include <Client/ConnectionParameters.h>
 #include <Client/sanitizeUntrustedServerString.h>
 #include <Common/logger_useful.h>
@@ -28,24 +25,21 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/DNSResolver.h>
-#include <Common/makeSocketAddress.h>
 #include <Common/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/formatReadable.h>
 #include <Common/randomSeed.h>
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
-#include <Core/QueryProcessingStage.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
+#include <Compression/CompressionFactory.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISink.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <QueryPipeline/QueryPipeline.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/FailPoint.h>
 #include <Client/JWTProvider.h>
@@ -55,7 +49,6 @@
 #include "config.h"
 
 #include <base/scope_guard.h>
-#include <base/sleep.h>
 #include <fmt/ranges.h>
 
 #if USE_SSL
@@ -76,6 +69,12 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsString network_compression_method;
+    extern const SettingsInt64 network_zstd_compression_level;
+}
+
 namespace FailPoints
 {
     extern const char receive_timeout_on_table_status_response[];
@@ -93,7 +92,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
@@ -105,13 +103,13 @@ Connection::~Connection()
 
 Connection::Connection(const String & host_, UInt16 port_,
     const String & default_database_,
-    const String & user_, std::string_view password_,
+    const String & user_, const String & password_,
     const String & proto_send_chunked_, const String & proto_recv_chunked_,
     [[maybe_unused]] const SSHKey & ssh_private_key_,
     [[maybe_unused]] const String & jwt_,
     const String & quota_key_,
     const String & cluster_,
-    std::string_view cluster_secret_,
+    const String & cluster_secret_,
     const String & client_name_,
     Protocol::Compression compression_,
     Protocol::Secure secure_,
@@ -120,7 +118,6 @@ Connection::Connection(const String & host_, UInt16 port_,
 #if USE_JWT_CPP && USE_SSL
     , std::shared_ptr<JWTProvider> jwt_provider_
 #endif
-    , SocketFactory socket_factory_
 )
     : host(host_), port(port_), default_database(default_database_)
     , user(user_), password(password_)
@@ -140,7 +137,6 @@ Connection::Connection(const String & host_, UInt16 port_,
     , secure(secure_)
     , tls_sni_override(tls_sni_override_)
     , bind_host(bind_host_)
-    , socket_factory(std::move(socket_factory_))
     , log_wrapper(*this)
 {
     /// Don't connect immediately, only on first need.
@@ -149,19 +145,6 @@ Connection::Connection(const String & host_, UInt16 port_,
         user = "default";
 
     setDescription();
-}
-
-std::unique_ptr<Poco::Net::StreamSocket> Connection::defaultSocketFactory(bool secure)
-{
-    if (secure)
-    {
-#if USE_SSL
-        return std::make_unique<Poco::Net::SecureStreamSocket>();
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
-#endif
-    }
-    return std::make_unique<Poco::Net::StreamSocket>();
 }
 
 
@@ -203,12 +186,6 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
     auto addresses = DNSResolver::instance().resolveAddressList(host, port);
     const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
 
-    /// The local address to bind to is resolved once, before the loop over the peer addresses: it
-    /// does not change between the attempts.
-    std::optional<Poco::Net::SocketAddress> bind_address;
-    if (!bind_host.empty())
-        bind_address = makeBindAddress(bind_host, 0);
-
     /// An address that is already known to accept connections goes first: the addresses are tried
     /// one by one, and every unresponsive one in front of it costs a whole connection timeout.
     if (preferred_address)
@@ -227,11 +204,11 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
         if (isConnected())
             disconnect();
 
-        socket = socket_factory(static_cast<bool>(secure));
-
         if (static_cast<bool>(secure))
         {
 #if USE_SSL
+            socket = std::make_unique<Poco::Net::SecureStreamSocket>();
+
             /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
             /// work we need to pass host name separately. It will be send into TLS Hello packet to let
             /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
@@ -241,22 +218,30 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
             /// so any errors during negotiation would be properly processed
             static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setLazyHandshake(true);
 
-            if (bind_address)
-                static_cast<Poco::Net::SecureStreamSocket *>(socket.get())->bind(*bind_address, true);
+            if (!bind_host.empty())
+            {
+                Poco::Net::SocketAddress socket_address(bind_host, 0);
+
+                static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->bind(socket_address, true);
+            }
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
 #endif
         }
         else
         {
-            if (bind_address)
-                static_cast<Poco::Net::StreamSocket *>(socket.get())->bind(*bind_address, true);
+            socket = std::make_unique<Poco::Net::StreamSocket>();
+
+            if (!bind_host.empty())
+            {
+                Poco::Net::SocketAddress socket_address(bind_host, 0);
+
+                static_cast<Poco::Net::StreamSocket *>(socket.get())->bind(socket_address, true);
+            }
         }
 
         try
         {
-            /// Set only now, so a failure in the local setup above is not reported as this peer's.
-            current_resolved_address = *it;
             if (async_callback)
             {
                 address_connect_timeout_expired = false;
@@ -269,7 +254,7 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
                 }
 
                 if (auto err = socket->impl()->socketError())
-                    Poco::Net::SocketImpl::error(err, it->toString());
+                    socket->impl()->error(err); // Throws an exception /// NOLINT(readability-static-accessed-through-instance)
 
                 socket->setBlocking(true);
             }
@@ -278,6 +263,7 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
                 socket->connect(*it, connection_timeout);
             }
 
+            current_resolved_address = *it;
             have_more_addresses_to_connect = false;
             break;
         }
@@ -310,32 +296,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 {
     /// if connection was broken it is necessary to cancel it before reconnecting
     disconnect();
-    current_resolved_address.reset();
-    setDescription();
-
-    /// The socket error names the dialled address in its canonical form (IPv6 literals are bracketed).
-    /// Suppress the duplicate only when the configured host is that very address, not a name resolving to it.
-    const auto endpoint_already_named = [this](const String & message)
-    {
-        if (!current_resolved_address || port != current_resolved_address->port())
-            return false;
-        const auto address = current_resolved_address->host().toString();
-        return (host == address || host == "[" + address + "]")
-            && message.contains(current_resolved_address->toString());
-    };
 
     ProfileEvents::increment(ProfileEvents::DistributedConnectionConnectCount);
-
-    /// Remove the possibly stale entries from the DNS cache. The local `bind_host` too: a client
-    /// program has no `DNSCacheUpdater`, so a cached source address that is no longer assigned to
-    /// this host would otherwise fail every bind until the process is restarted.
-    auto remove_stale_entries_from_dns_cache = [this]
-    {
-        DNSResolver::instance().removeHostFromCache(host);
-        if (!bind_host.empty())
-            DNSResolver::instance().removeHostFromCache(bind_host);
-    };
-
     try
     {
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}. Bind_Host: {}",
@@ -374,16 +336,11 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 #endif
         }
 
-        {
-            /// The buffers live as long as the connection, which outlives the query that connects it. Only here: the
-            /// I/O around can suspend the coroutine that connects, and a blocker left active would block its thread.
-            MemoryTrackerBlockerInThread connection_buffers_not_charged_to_the_query;
-            in = std::make_shared<ReadBufferFromPocoSocketChunked>(*socket);
-            in->setAsyncCallback(async_callback);
+        in = std::make_shared<ReadBufferFromPocoSocketChunked>(*socket);
+        in->setAsyncCallback(async_callback);
 
-            out = std::make_shared<WriteBufferFromPocoSocketChunked>(*socket);
-            out->setAsyncCallback(async_callback);
-        }
+        out = std::make_shared<WriteBufferFromPocoSocketChunked>(*socket);
+        out->setAsyncCallback(async_callback);
         connected = true;
         setDescription();
 
@@ -456,36 +413,33 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     {
         disconnect();
 
-        remove_stale_entries_from_dns_cache();
+        /// Remove this possible stale entry from cache
+        DNSResolver::instance().removeHostFromCache(host);
 
-        /// Add server address to exception unless the error already names it. Exception will preserve stack trace.
-        if (!endpoint_already_named(e.displayText()))
-            e.addMessage("({})", getDescription(/*with_extra*/ true));
+        /// Add server address to exception. Exception will preserve stack trace.
+        e.addMessage("({})", getDescription(/*with_extra*/ true));
         throw;
     }
     catch (Poco::Net::NetException & e)
     {
         disconnect();
 
-        remove_stale_entries_from_dns_cache();
+        /// Remove this possible stale entry from cache
+        DNSResolver::instance().removeHostFromCache(host);
 
-        /// Add server address to exception unless the error already names it. Exception will remember new stack trace.
-        /// It's a pity that more precise exception type is lost.
-        if (endpoint_already_named(e.displayText()))
-            throw NetException(ErrorCodes::NETWORK_ERROR, "{}", e.displayText());
+        /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
         throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription(/*with_extra*/ true));
     }
     catch (Poco::TimeoutException & e)
     {
         disconnect();
 
-        remove_stale_entries_from_dns_cache();
+        /// Remove this possible stale entry from cache
+        DNSResolver::instance().removeHostFromCache(host);
 
-        /// This exception can only be thrown from socket->connect(), so add the connection timeout.
+        /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
+        /// This exception can only be thrown from socket->connect(), so add information about connection timeout.
         const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
-        if (endpoint_already_named(e.displayText()))
-            throw NetException(
-                ErrorCodes::SOCKET_TIMEOUT, "{} (connection timeout {} ms)", e.displayText(), connection_timeout.totalMilliseconds());
         throw NetException(
             ErrorCodes::SOCKET_TIMEOUT,
             "{} ({}, connection timeout {} ms)",
@@ -517,11 +471,7 @@ void Connection::cancel() noexcept
 void Connection::reset() noexcept
 {
     maybe_compressed_out.reset();
-    {
-        /// Allocated by `connect`, not charged to any query.
-        MemoryTrackerBlockerInThread connection_buffers_not_charged_to_the_query;
-        out.reset();
-    }
+    out.reset();
     socket.reset();
     nonce.reset();
 
@@ -531,11 +481,7 @@ void Connection::reset() noexcept
 
 void Connection::disconnect()
 {
-    {
-        /// Allocated by `connect`, not charged to any query.
-        MemoryTrackerBlockerInThread connection_buffers_not_charged_to_the_query;
-        in.reset();
-    }
+    in.reset();
     last_input_packet_type.reset();
 
     // no point to finalize tcp connections
@@ -554,7 +500,7 @@ void Connection::sendHello()
       * Limiting number of possible characters in user-controlled part of handshake
       *  will mitigate this possibility but doesn't solve it completely.
       */
-    auto has_control_character = [](std::string_view s)
+    auto has_control_character = [](const std::string & s)
     {
         for (auto c : s)
             if (isControlASCII(c))
@@ -757,7 +703,7 @@ void Connection::receiveHello()
         {
             Settings settings;
             /// A server of another version may send values that this version rejects.
-            settings.read(*in, /* skip_invalid_values= */ true);
+            settings.read(*in, SettingsWriteFormat::STRINGS_WITH_FLAGS, /* skip_invalid_values= */ true);
             settings_from_server = settings.changes();
         }
 
@@ -991,7 +937,8 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     {
 #if USE_SSL
         std::string data(salt);
-        data += std::to_string(nonce.value());
+        if (nonce.has_value())
+            data += std::to_string(nonce.value());
         data += cluster_secret;
         data += "TablesStatusRequest";
         /// Bind the hash to the request body so a relayed hash cannot be reused for a
@@ -1037,11 +984,6 @@ void Connection::sendQuery(
     std::function<void(const Progress &)>)
 {
     OpenTelemetry::SpanHolder span("Connection::sendQuery()", OpenTelemetry::SpanKind::CLIENT);
-
-    /// Only an intermediate result can have rows that carry no columns: at `Complete` a result always has
-    /// columns. A block of this kind in answer to any other query is malformed data.
-    rows_without_columns_expected = stage != QueryProcessingStage::Complete;
-
     span.addAttribute("clickhouse.query_id", query_id_);
     span.addAttribute("clickhouse.query", query);
     span.addAttribute("target", [this] () { return this->getHost() + ":" + std::to_string(this->getPort()); });
@@ -1084,7 +1026,28 @@ void Connection::sendQuery(
     socket->setReceiveTimeout(timeouts.receive_timeout);
     socket->setSendTimeout(timeouts.send_timeout);
 
-    compression_codec = chooseNetworkCompressionCodec(settings);
+    if (settings)
+    {
+        std::optional<int> level;
+        std::string method = Poco::toUpper((*settings)[Setting::network_compression_method].toString());
+
+        /// Bad custom logic
+        /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
+        /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
+        /// be broken afterwards.
+        if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
+
+        /// More bad custom logic
+        if (method == "ZSTD")
+            level = (*settings)[Setting::network_zstd_compression_level];
+
+        CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(*settings));
+        compression_codec = CompressionCodecFactory::instance().get(method, level);
+    }
+    else
+        compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
 
     query_id = query_id_;
 
@@ -1144,23 +1107,9 @@ void Connection::sendQuery(
             settings_to_send = &*modified_settings;
         }
 
-        if (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS)
-        {
-            settings_to_send->write(*out);
-        }
-        else
-        {
-            /// Older servers expect settings in a binary format, which is no longer supported.
-            /// Only an empty list of settings can be sent: it is the same in both formats.
-            if (!settings_to_send->changes().empty())
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Server with protocol revision {} expects settings in the binary format, which is no longer supported "
-                    "(the minimum revision to pass settings is {})",
-                    server_revision,
-                    DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS);
-            Settings::writeEmpty(*out);
-        }
+        auto settings_format = (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
+                                                                                                          : SettingsWriteFormat::BINARY;
+        settings_to_send->write(*out, settings_format);
     }
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
@@ -1181,16 +1130,18 @@ void Connection::sendQuery(
     if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)
     {
         /// Hash
-        if (client_info && !cluster_secret.empty())
+        ///
+        /// Send correct hash only for !INITIAL_QUERY, due to:
+        /// - this will avoid extra protocol complexity for simplest cases
+        /// - there is no need in hash for the INITIAL_QUERY anyway
+        ///   (since there is no secure/non-secure changes)
+        if (client_info && !cluster_secret.empty() && client_info->query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         {
 #if USE_SSL
-            if (!nonce.has_value())
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                    "Server {} with protocol revision {} is too old for interserver secret, the minimum is {}",
-                    getDescription(), server_revision, DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2);
-
             std::string data(salt);
-            data += std::to_string(nonce.value());
+            // For backward compatibility
+            if (nonce.has_value())
+                data += std::to_string(nonce.value());
             data += cluster_secret;
             data += query;
             data += query_id;
@@ -1234,7 +1185,14 @@ void Connection::sendQuery(
         /// round-trips intact.
         writeQueryParameters(query_parameters, *out);
 
-    resetQueryBuffers();
+    maybe_compressed_in.reset();
+    if (maybe_compressed_out && maybe_compressed_out != out)
+        maybe_compressed_out->finalize();
+    maybe_compressed_out.reset();
+    block_in.reset();
+    block_logs_in.reset();
+    block_profile_events_in.reset();
+    block_out.reset();
 
     out->finishChunk();
 
@@ -1246,28 +1204,6 @@ void Connection::sendQuery(
     }
 
     completed = true;
-}
-
-
-void Connection::resetQueryBuffers()
-{
-    maybe_compressed_in.reset();
-    if (maybe_compressed_out && maybe_compressed_out != out)
-        maybe_compressed_out->finalize();
-    maybe_compressed_out.reset();
-    block_in.reset();
-    block_logs_in.reset();
-    block_profile_events_in.reset();
-    block_out.reset();
-}
-
-
-void Connection::releaseQueryBuffers() noexcept
-{
-    /// Data still buffered is flushed by the next `sendQuery`.
-    if (maybe_compressed_out && maybe_compressed_out != out && maybe_compressed_out->offset())
-        return;
-    resetQueryBuffers();
 }
 
 
@@ -1309,7 +1245,7 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         else
             maybe_compressed_out = out;
 
-        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, std::make_shared<const Block>(block.cloneEmpty()), optionalFormatSettings());
+        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, std::make_shared<const Block>(block.cloneEmpty()), format_settings);
     }
 
     if (scalar)
@@ -1487,7 +1423,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 
     for (auto & elem : data)
     {
-        CompletedPipelineExecutor * executor = nullptr;
+        PipelineExecutorPtr executor;
         auto on_cancel = [& executor]() { executor->cancel(); };
 
         if (!elem->pipe)
@@ -1503,13 +1439,8 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
                 return nullptr;
             return sink;
         });
-        auto query_pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
-        query_pipeline.setNumThreads(1);
-        query_pipeline.setConcurrencyControl(false);
-        query_pipeline.disableReadProgress();
-        CompletedPipelineExecutor completed_executor(query_pipeline);
-        executor = &completed_executor;
-        completed_executor.execute();
+        executor = pipeline.execute();
+        executor->execute(/*num_threads = */ 1, false);
 
         auto read_rows = sink->getNumReadRows();
         rows += read_rows;
@@ -1783,8 +1714,7 @@ void Connection::initBlockInput()
         initMaybeCompressedInput();
         /// The server may send marshalled result blocks; their consumers convert them back.
         block_in = std::make_unique<NativeReader>(
-            *maybe_compressed_in, server_revision, optionalFormatSettings(), ISerialization::KindSet::all());
-        block_in->setAllowRowsWithoutColumns(rows_without_columns_expected);
+            *maybe_compressed_in, server_revision, format_settings, ISerialization::KindSet::all());
     }
 }
 
@@ -1801,7 +1731,7 @@ void Connection::initBlockLogsInput()
         }
 
         /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
-        block_logs_in = std::make_unique<NativeReader>(*logs_buf, server_revision, optionalFormatSettings());
+        block_logs_in = std::make_unique<NativeReader>(*logs_buf, server_revision, format_settings);
     }
 }
 
@@ -1817,7 +1747,7 @@ void Connection::initBlockProfileEventsInput()
             profile_events_buf = maybe_compressed_in.get();
         }
 
-        block_profile_events_in = std::make_unique<NativeReader>(*profile_events_buf, server_revision, optionalFormatSettings());
+        block_profile_events_in = std::make_unique<NativeReader>(*profile_events_buf, server_revision, format_settings);
     }
 }
 
@@ -1950,18 +1880,6 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
     }
 
     return connection;
-}
-
-void Connection::setFormatSettings(const FormatSettings & settings)
-{
-    format_settings = std::make_shared<const FormatSettings>(settings);
-}
-
-std::optional<FormatSettings> Connection::optionalFormatSettings() const
-{
-    if (format_settings)
-        return *format_settings;
-    return std::nullopt;
 }
 
 }

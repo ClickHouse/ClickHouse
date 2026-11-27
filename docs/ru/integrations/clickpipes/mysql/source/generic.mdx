@@ -14,20 +14,24 @@ integration:
   Если вы используете одного из поддерживаемых провайдеров (см. боковую панель), обратитесь к руководству для этого провайдера.
 </Info>
 
-## Включите хранение бинарного лога {#enable-binlog-retention}
+<div id="enable-binlog-retention">
+  ## Включите хранение бинарного лога
+</div>
 
 Бинарные логи содержат информацию об изменениях данных на сервере MySQL и необходимы для репликации.
 
-### MySQL 8.x и новее {#binlog-v8-x}
+<div id="binlog-v8-x">
+  ### MySQL 8.x и новее
+</div>
 
 Чтобы включить бинарное логирование на вашем экземпляре MySQL, убедитесь, что заданы следующие параметры:
 
 ```sql
-log_bin = ON                        -- default value
-binlog_format = ROW                 -- default value
-binlog_row_image = FULL             -- default value
+log_bin = ON                        -- значение по умолчанию
+binlog_format = ROW                 -- значение по умолчанию
+binlog_row_image = FULL             -- значение по умолчанию
 binlog_row_metadata = FULL
-binlog_expire_logs_seconds = 259200  -- 3 days or higher; default is 30 days
+binlog_expire_logs_seconds = 86400  -- 1 день или больше; по умолчанию 30 дней
 ```
 
 Чтобы проверить эти параметры, выполните следующие SQL-команды:
@@ -47,23 +51,25 @@ SET PERSIST log_bin = ON;
 SET PERSIST binlog_format = ROW;
 SET PERSIST binlog_row_image = FULL;
 SET PERSIST binlog_row_metadata = FULL;
-SET PERSIST binlog_expire_logs_seconds = 259200;
+SET PERSIST binlog_expire_logs_seconds = 86400;
 ```
 
 Если вы изменили настройку `log_bin`, вам НЕОБХОДИМО ПЕРЕЗАПУСТИТЬ экземпляр MySQL, чтобы изменения вступили в силу.
 
 После изменения настроек перейдите к [настройке пользователя базы данных](#configure-database-user).
 
-### MySQL 5.7 {#binlog-v5-x}
+<div id="binlog-v5-x">
+  ### MySQL 5.7
+</div>
 
 Чтобы включить бинарное логирование на экземпляре MySQL 5.7, убедитесь, что заданы следующие параметры:
 
 ```sql
-server_id = 1            -- or greater; anything but 0
+server_id = 1            -- или больше; любое значение, кроме 0
 log_bin = ON
-binlog_format = ROW      -- default value
-binlog_row_image = FULL  -- default value
-expire_logs_days = 3     -- or higher; 0 would mean logs are preserved forever
+binlog_format = ROW      -- значение по умолчанию
+binlog_row_image = FULL  -- значение по умолчанию
+expire_logs_days = 1     -- или больше; 0 означает, что журналы хранятся бессрочно
 ```
 
 Чтобы проверить эти настройки, выполните следующие SQL-команды:
@@ -84,7 +90,7 @@ server_id = 1
 log_bin = ON
 binlog_format = ROW
 binlog_row_image = FULL
-expire_logs_days = 3
+expire_logs_days = 1
 ```
 
 Чтобы изменения вступили в силу, НЕОБХОДИМО ПЕРЕЗАПУСТИТЬ экземпляр MySQL.
@@ -93,7 +99,9 @@ expire_logs_days = 3
   Исключение столбцов и изменения схемы не поддерживаются в MySQL 5.7 и более ранних версиях. Эти возможности зависят от метаданных таблицы, недоступных в binlog до [MySQL 8.0.1](https://dev.mysql.com/blog-archive/more-metadata-is-written-into-binary-log/).
 </Note>
 
-## Настройка пользователя базы данных {#configure-database-user}
+<div id="configure-database-user">
+  ## Настройка пользователя базы данных
+</div>
 
 Подключитесь к своему экземпляру MySQL от имени пользователя root и выполните следующие команды:
 
@@ -120,7 +128,9 @@ expire_logs_days = 3
   Обязательно замените `clickpipes_user` и `some_secure_password` на нужные вам имя пользователя и пароль.
 </Note>
 
-## Настройка SSL/TLS (рекомендуется) {#ssl-tls-configuration}
+<div id="ssl-tls-configuration">
+  ## Настройка SSL/TLS (рекомендуется)
+</div>
 
 SSL‑сертификаты обеспечивают защищённое подключение к вашей базе данных MySQL. Настройка зависит от типа сертификата:
 
@@ -134,7 +144,9 @@ SSL‑сертификаты обеспечивают защищённое по�
 
 Дополнительные сведения о вариантах SSL/TLS см. в разделе [FAQ](/ru/integrations/clickpipes/mysql/faq#tls-certificate-validation-error).
 
-## Что дальше? {#whats-next}
+<div id="whats-next">
+  ## Что дальше?
+</div>
 
 Теперь вы можете [создать свой ClickPipe](/ru/integrations/clickpipes/mysql/index) и начать приём данных из вашего экземпляра MySQL в ClickHouse Cloud.
 Обязательно сохраните сведения о подключении, которые вы использовали при настройке экземпляра MySQL: они понадобятся вам при создании ClickPipe.

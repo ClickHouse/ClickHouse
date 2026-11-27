@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database, no-ordinary-database, no-shared-merge-tree, no-fasttest
+# Tags: no-parallel, no-replicated-database, no-ordinary-database, no-shared-merge-tree
 # no-parallel: The `PAUSEABLE_ONCE` failpoint fires exactly once globally; a concurrent
 #   `CREATE OR REPLACE` from another parallel test could steal the pause.
 # no-replicated-database: Failpoints are single-server.

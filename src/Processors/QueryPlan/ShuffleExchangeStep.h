@@ -23,9 +23,9 @@ public:
         chassert(hash_cast_types.empty() || hash_cast_types.size() == key_names.size());
     }
 
-    [[nodiscard]] String getName() const override { return "ShuffleExchange"; }
+    String getName() const override { return "ShuffleExchange"; }
 
-    [[nodiscard]] QueryPlanStepPtr clone() const override
+    QueryPlanStepPtr clone() const override
     {
         return std::make_unique<ShuffleExchangeStep>(input_headers.front(), key_names, source_bucket_count, result_bucket_count, hash_cast_types);
     }
@@ -35,22 +35,22 @@ public:
         /// Doesn't change the pipeline if executed directly
     }
 
-    [[nodiscard]] const Names & getKeys() const
+    const Names & getKeys() const
     {
         return key_names;
     }
 
-    [[nodiscard]] size_t getSourceBucketCount() const override
+    size_t getSourceBucketCount() const override
     {
         return source_bucket_count;
     }
 
-    [[nodiscard]] size_t getResultBucketCount() const override
+    size_t getResultBucketCount() const override
     {
         return result_bucket_count;
     }
 
-    [[nodiscard]] std::pair<QueryPlanStepPtr, QueryPlanStepPtr> createSinkAndSourcePair(const String & exchange_id, const Strings & source_shards) const override;
+    std::pair<QueryPlanStepPtr, QueryPlanStepPtr> createSinkAndSourcePair(const String & exchange_id, const Strings & source_shards) const override;
 
 private:
     void updateOutputHeader() override

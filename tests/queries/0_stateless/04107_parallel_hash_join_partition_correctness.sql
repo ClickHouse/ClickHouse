@@ -1,5 +1,6 @@
--- Joins with a Nullable right key must return the same rows with the serial and the parallel layout.
--- Each ASOF run stores its rows in a table.
+-- every query is run with the default (`hash`) algorithm and again with
+-- `parallel_hash` forced from the very first block (parallel_hash_join_threshold = 1)
+-- across multiple partitions; both must produce identical rows.
 
 DROP TABLE IF EXISTS t_left;
 DROP TABLE IF EXISTS t_right_nullable;
@@ -29,120 +30,118 @@ INSERT INTO t_asof_right
            concat('ar', toString(number)) AS tag
     FROM numbers(20);
 
-SET join_algorithm = 'hash';
+-- Sanity: the workload actually scatters across partitions.
 SET max_threads = 4;
+SET parallel_hash_join_threshold = 1;
 SET query_plan_join_swap_table = 0;
 SET query_plan_convert_outer_join_to_inner_join = 0;
+
+-- For each query: run with hash, then parallel_hash, compare with EXCEPT in both directions.
+-- A correct implementation prints zero rows for every diff section.
 
 SELECT '--- INNER nullable right ---';
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l INNER JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS hash_join_layout='serial'
+    SETTINGS join_algorithm='hash'
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l INNER JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS hash_join_layout='parallel'
-) SETTINGS log_comment = '04107_inner';
+    SETTINGS join_algorithm='parallel_hash'
+);
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l INNER JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS hash_join_layout='parallel'
+    SETTINGS join_algorithm='parallel_hash'
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l INNER JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS hash_join_layout='serial'
-) SETTINGS log_comment = '04107_inner_reverse';
+    SETTINGS join_algorithm='hash'
+);
 
 SELECT '--- LEFT nullable right ---';
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l LEFT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS hash_join_layout='serial'
+    SETTINGS join_algorithm='hash'
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l LEFT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS hash_join_layout='parallel'
-) SETTINGS log_comment = '04107_left';
+    SETTINGS join_algorithm='parallel_hash'
+);
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l LEFT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS hash_join_layout='parallel'
+    SETTINGS join_algorithm='parallel_hash'
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l LEFT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS hash_join_layout='serial'
-) SETTINGS log_comment = '04107_left_reverse';
+    SETTINGS join_algorithm='hash'
+);
 
 SELECT '--- RIGHT nullable right (exercises NotJoinedHash partition iteration) ---';
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l RIGHT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS hash_join_layout='serial'
+    SETTINGS join_algorithm='hash'
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l RIGHT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS hash_join_layout='parallel'
-) SETTINGS log_comment = '04107_right';
+    SETTINGS join_algorithm='parallel_hash'
+);
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l RIGHT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS hash_join_layout='parallel'
+    SETTINGS join_algorithm='parallel_hash'
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l RIGHT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS hash_join_layout='serial'
-) SETTINGS log_comment = '04107_right_reverse';
+    SETTINGS join_algorithm='hash'
+);
 
 SELECT '--- FULL nullable right ---';
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l FULL JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS hash_join_layout='serial'
+    SETTINGS join_algorithm='hash'
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l FULL JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS hash_join_layout='parallel'
-) SETTINGS log_comment = '04107_full';
+    SETTINGS join_algorithm='parallel_hash'
+);
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l FULL JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS hash_join_layout='parallel'
+    SETTINGS join_algorithm='parallel_hash'
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l FULL JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS hash_join_layout='serial'
-) SETTINGS log_comment = '04107_full_reverse';
+    SETTINGS join_algorithm='hash'
+);
 
 SELECT '--- ASOF LEFT nullable timestamp ---';
-CREATE TABLE asof_serial ENGINE = Memory AS
-SELECT l.k AS k, l.ts AS ts, l.v AS v, r.ts AS r_ts, r.tag AS tag
-FROM t_asof_left l ASOF LEFT JOIN t_asof_right r ON l.k = r.k AND l.ts >= r.ts
-SETTINGS hash_join_layout='serial', log_comment='04107_asof_left_serial';
-CREATE TABLE asof_parallel ENGINE = Memory AS
-SELECT l.k AS k, l.ts AS ts, l.v AS v, r.ts AS r_ts, r.tag AS tag
-FROM t_asof_left l ASOF LEFT JOIN t_asof_right r ON l.k = r.k AND l.ts >= r.ts
-SETTINGS hash_join_layout='parallel', log_comment='04107_asof_left_parallel';
-SELECT count() FROM (SELECT * FROM asof_serial EXCEPT SELECT * FROM asof_parallel);
-SELECT count() FROM (SELECT * FROM asof_parallel EXCEPT SELECT * FROM asof_serial);
+SELECT count() FROM (
+    SELECT l.k, l.ts, l.v, r.ts, r.tag
+    FROM t_asof_left l ASOF LEFT JOIN t_asof_right r ON l.k = r.k AND l.ts >= r.ts
+    SETTINGS join_algorithm='hash'
+    EXCEPT
+    SELECT l.k, l.ts, l.v, r.ts, r.tag
+    FROM t_asof_left l ASOF LEFT JOIN t_asof_right r ON l.k = r.k AND l.ts >= r.ts
+    SETTINGS join_algorithm='parallel_hash'
+);
+SELECT count() FROM (
+    SELECT l.k, l.ts, l.v, r.ts, r.tag
+    FROM t_asof_left l ASOF LEFT JOIN t_asof_right r ON l.k = r.k AND l.ts >= r.ts
+    SETTINGS join_algorithm='parallel_hash'
+    EXCEPT
+    SELECT l.k, l.ts, l.v, r.ts, r.tag
+    FROM t_asof_left l ASOF LEFT JOIN t_asof_right r ON l.k = r.k AND l.ts >= r.ts
+    SETTINGS join_algorithm='hash'
+);
 
+-- Spot-check exact rows (small, hand-verifiable) under parallel_hash:
 SELECT '--- parallel_hash exact rows: INNER ---';
 SELECT l.k, l.v, r.k, r.v
 FROM t_left l INNER JOIN t_right_nullable r ON l.k = r.k
 ORDER BY l.k, r.v
-SETTINGS hash_join_layout='parallel';
+SETTINGS join_algorithm='parallel_hash';
 
 SELECT '--- parallel_hash exact rows: RIGHT (right-only rows have NULL/empty left) ---';
 SELECT l.k, l.v, r.k, r.v
 FROM t_left l RIGHT JOIN t_right_nullable r ON l.k = r.k
 ORDER BY r.k NULLS LAST, r.v
-SETTINGS join_use_nulls=1, hash_join_layout='parallel';
+SETTINGS join_algorithm='parallel_hash', join_use_nulls=1;
 
 SELECT '--- parallel_hash exact rows: ASOF (rows where r.ts was NULL must NOT appear) ---';
 SELECT l.k, l.ts, r.ts, r.tag
 FROM t_asof_left l ASOF LEFT JOIN t_asof_right r ON l.k = r.k AND l.ts >= r.ts
 ORDER BY l.k, l.ts
-SETTINGS hash_join_layout='parallel';
+SETTINGS join_algorithm='parallel_hash';
 
--- Each EXCEPT query with a Nullable right key must have built one serial and one parallel join, and
--- the serial and the parallel ASOF query must each have built one join of their layout. A `Replicated`
--- database also logs each `CREATE TABLE ... AS SELECT` as a secondary query of its DDL worker, with the
--- same log comment, so only initial queries count.
-SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, ProfileEvents['HashJoinBuiltWithSerialLayout'] AS serial, ProfileEvents['HashJoinBuiltWithParallelLayout'] AS parallel
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query
-    AND log_comment IN ('04107_inner', '04107_inner_reverse', '04107_left', '04107_left_reverse',
-        '04107_right', '04107_right_reverse', '04107_full', '04107_full_reverse',
-        '04107_asof_left_serial', '04107_asof_left_parallel')
-ORDER BY event_time_microseconds;
-
-DROP TABLE asof_serial;
-DROP TABLE asof_parallel;
 DROP TABLE t_left;
 DROP TABLE t_right_nullable;
 DROP TABLE t_asof_left;

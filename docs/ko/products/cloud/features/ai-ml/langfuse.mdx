@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'Langfuse 기반 AI 엔지니어링'
+sidebarTitle: 'Langfuse'
 slug: /cloud/features/ai-ml/langfuse
 title: 'Langfuse'
 description: 'Langfuse는 팀이 협업하여 LLM 애플리케이션을 디버깅하고 분석하며 반복적으로 개선해 나갈 수 있도록 돕는 오픈소스 LLM 엔지니어링 플랫폼입니다.'
@@ -7,7 +7,7 @@ doc_type: 'reference'
 ---
 
 <div id="what-is-langfuse">
-  ## Langfuse란 무엇입니까? {#what-is-langfuse}
+  ## Langfuse란 무엇입니까?
 </div>
 
 [Langfuse](https://langfuse.com)는 팀이 LLM 애플리케이션을 함께 디버깅하고, 분석하며, 반복적으로 개선할 수 있도록 지원하는 오픈 소스 LLM 엔지니어링 플랫폼입니다. ClickHouse 생태계의 일부이며, 확장 가능하고 고성능인 관측성 백엔드를 제공하기 위해 핵심적으로 **ClickHouse**를 사용합니다.
@@ -15,7 +15,7 @@ doc_type: 'reference'
 ClickHouse의 열 지향 스토리지와 빠른 분석 기능을 활용해 Langfuse는 낮은 지연 시간으로 수십억 개의 트레이스와 이벤트를 처리할 수 있으므로, 처리량이 높은 프로덕션 워크로드에 적합합니다.
 
 <div id="why-langfuse">
-  ## 왜 Langfuse를 선택해야 하나요? {#why-langfuse}
+  ## 왜 Langfuse를 선택해야 하나요?
 </div>
 
 * **오픈 소스:** 맞춤형 통합을 위한 공개 API를 제공하는 완전한 오픈 소스
@@ -26,7 +26,7 @@ ClickHouse의 열 지향 스토리지와 빠른 분석 기능을 활용해 Langf
 * **완전한 플랫폼:** LLM 애플리케이션 개발 수명 주기 전반을 위한 도구 모음
 
 <div id="deployment-options">
-  ## 배포 옵션 {#deployment-options}
+  ## 배포 옵션
 </div>
 
 Langfuse는 다양한 보안 및 인프라 요구 사항에 맞춰 유연한 배포 옵션을 제공합니다.
@@ -36,7 +36,7 @@ Langfuse는 다양한 보안 및 인프라 요구 사항에 맞춰 유연한 배
 **[자체 호스팅](https://langfuse.com/self-hosting)** Langfuse는 완전한 오픈소스(MIT 라이선스)이며, Docker 또는 Kubernetes를 사용해 자체 인프라에 무료로 배포할 수 있습니다. 관측성 데이터를 저장하기 위해 자체 ClickHouse 인스턴스를 운영하거나 ClickHouse Cloud를 사용할 수 있으므로, 데이터를 완전히 제어할 수 있습니다. 
 
 <div id="architecture">
-  ## 아키텍처 {#architecture}
+  ## 아키텍처
 </div>
 
 Langfuse는 오픈 소스 구성 요소만 사용하며, 로컬, 클라우드 인프라 또는 온프레미스 환경에 배포할 수 있습니다:
@@ -74,11 +74,11 @@ flowchart TB
 ```
 
 <div id="features">
-  ## 기능 {#features}
+  ## 기능
 </div>
 
 <div id="observability">
-  ### 관측성 {#observability}
+  ### 관측성
 </div>
 
 [관측성](https://langfuse.com/docs/observability/overview)은 LLM 애플리케이션을 이해하고 디버깅하는 데 필수적입니다. 기존 소프트웨어와 달리 LLM 애플리케이션은 복잡하고 비결정적인 상호작용을 포함하므로 모니터링과 디버깅이 어려울 수 있습니다. Langfuse는 애플리케이션에서 정확히 무슨 일이 일어나는지 파악할 수 있도록 포괄적인 트레이싱 기능을 제공합니다.
@@ -124,7 +124,7 @@ flowchart TB
 </Tabs>
 
 <div id="prompt-management">
-  ### 프롬프트 관리 {#prompt-management}
+  ### 프롬프트 관리
 </div>
 
 [프롬프트 관리](https://langfuse.com/docs/prompt-management/overview)는 효과적인 LLM 애플리케이션을 구축하는 데 매우 중요합니다. Langfuse는 개발 라이프사이클 전반에서 프롬프트를 관리하고, 버전을 관리하며, 최적화할 수 있도록 다양한 도구를 제공합니다.
@@ -176,7 +176,7 @@ flowchart TB
 </Tabs>
 
 <div id="evaluation">
-  ### 평가 및 데이터셋 {#evaluation}
+  ### 평가 및 데이터셋
 </div>
 
 [평가](https://langfuse.com/docs/evaluation/overview)는 LLM 애플리케이션의 품질과 신뢰성을 보장하는 데 매우 중요합니다. Langfuse는 개발 환경에서 테스트하든 프로덕션 성능을 모니터링하든, 요구 사항에 맞게 활용할 수 있는 유연한 평가 도구를 제공합니다.
@@ -234,7 +234,7 @@ flowchart TB
 </Tabs>
 
 <div id="quickstarts">
-  ## 빠른 시작 {#quickstarts}
+  ## 빠른 시작
 </div>
 
 몇 분 만에 Langfuse를 시작할 수 있습니다. 현재 필요에 가장 적합한 옵션을 선택하세요:
@@ -244,7 +244,7 @@ flowchart TB
 * [평가 설정](https://langfuse.com/docs/evaluation/overview)
 
 <div id="learn-more">
-  ## 자세히 알아보기 {#learn-more}
+  ## 자세히 알아보기
 </div>
 
 * [Langfuse 문서](https://langfuse.com/docs)

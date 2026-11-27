@@ -15,12 +15,12 @@ doc_type: 'reference'
 ```sql
 cume_dist ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        | [window_name])
+        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column])
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 ```
 
-该函数始终读取整个分区；如果指定了窗口帧，则会被忽略。
+默认且必需的窗口帧定义为 `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`。
 
 有关窗口函数语法的更多信息，请参见：[Window Functions - Syntax](/zh/reference/functions/window-functions/index#syntax)。
 

@@ -6,7 +6,11 @@ tags: ['보안 및 인증']
 keywords: ['SSL', 'Let/`s Encrypt']
 ---
 
-## 따라야 할 단계 {#steps-to-follow}
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="steps-to-follow">
+  ## 따라야 할 단계
+</div>
 
 다음 단계에 따라 무료 자동화 공개 인증 기관(CA)인 [Let&#39;s Encrypt](https://letsencrypt.org/)를 사용해 단일 ClickHouse 서버에서 SSL을 활성화할 수 있습니다. Let&#39;s Encrypt는 누구나 HTTPS로 웹사이트를 쉽게 보호할 수 있도록 설계되었습니다. 인증서 발급과 갱신 과정을 자동화하므로 수동 개입 없이도 웹사이트를 안전하게 유지할 수 있습니다.
 
@@ -53,11 +57,7 @@ product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
 
 <br />
 
-<div className="ch-image-md">
-  <Frame>
-    ![80번 포트가 열려 있는 AWS Security Group 구성 화면](/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp)
-  </Frame>
-</div>
+<Image img="/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp" size="md" alt="80번 포트가 열려 있는 AWS Security Group 구성 화면" border />
 
 3. 예를 들어 `apt`를 사용하여 [`certbot`](https://certbot.eff.org/instructions)을 설치하십시오
 

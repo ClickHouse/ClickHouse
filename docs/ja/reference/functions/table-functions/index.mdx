@@ -8,7 +8,9 @@ doc_type: 'reference'
 
 テーブル関数 は、テーブルを構築するための機能です。
 
-## 使用方法 {#usage}
+<div id="usage">
+  ## 使用方法
+</div>
 
 テーブル関数は、`SELECT`クエリの[`FROM`](/ja/reference/statements/select/from)
 句で使用できます。たとえば、`file`テーブル関数を使って、ローカル
@@ -85,7 +87,5 @@ cat numbers.csv
 ```
 
 <Note>
-  ほとんどのテーブル関数は実行に `CREATE TEMPORARY TABLE` 権限を必要とするため、
-  [`readonly`](/ja/concepts/features/configuration/settings/permissions-for-queries#readonly) が 1 に設定されている場合、
-  テーブル関数を実行する `SELECT` や `INSERT` は拒否されます。
+  [allow&#95;ddl](/ja/reference/settings/session-settings/allow#allow_ddl) 設定が無効な場合、テーブル関数は使用できません。
 </Note>

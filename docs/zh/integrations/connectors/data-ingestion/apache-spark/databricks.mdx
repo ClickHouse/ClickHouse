@@ -7,6 +7,8 @@ title: '集成 ClickHouse 与 Databricks'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -14,7 +16,7 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 ClickHouse Spark connector 可与 Databricks 无缝集成。本指南介绍 Databricks 的平台专属配置、安装和使用方式。
 
 <div id="api-selection">
-  ## Databricks 的 API 选择 {#api-selection}
+  ## Databricks 的 API 选择
 </div>
 
 默认情况下，Databricks 使用 Unity Catalog，这会阻止 Spark 目录注册。在这种情况下，你**必须**使用 **TableProvider API** (基于格式的访问) 。
@@ -27,10 +29,12 @@ ClickHouse Spark connector 可与 Databricks 无缝集成。本指南介绍 Data
 | **已禁用** (No isolation shared)  | Catalog API               | 需要使用访问模式为 &quot;No isolation shared&quot; 的集群 |
 
 <div id="installation">
-  ## 在 Databricks 上进行安装 {#installation}
+  ## 在 Databricks 上进行安装
 </div>
 
-### 选项 1：通过 Databricks UI 上传 JAR {#installation-ui}
+<div id="installation-ui">
+  ### 选项 1：通过 Databricks UI 上传 JAR
+</div>
 
 1. 构建或[下载](https://repo1.maven.org/maven2/com/clickhouse/spark/)运行时 JAR：
    ```bash
@@ -49,22 +53,14 @@ ClickHouse Spark connector 可与 Databricks 无缝集成。本指南介绍 Data
    * 选择 **DBFS** 或 **Workspace** → 导航到已上传的 JAR 文件
    * 点击 **Install**
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Databricks Libraries 选项卡](/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp" alt="Databricks Libraries 选项卡" />
 
-<div className="ch-image-lg">
-  <Frame>
-    ![从工作区卷安装库](/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp" alt="从工作区卷安装库" />
 
 4. 重启集群以加载该库
 
 <div id="installation-cli">
-  ### 选项 2：通过 Databricks CLI 安装 {#installation-cli}
+  ### 选项 2：通过 Databricks CLI 安装
 </div>
 
 ```bash
@@ -78,7 +74,9 @@ databricks libraries install \
   --jar dbfs:/FileStore/jars/clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}-{{ stable_version }}.jar
 ```
 
-### 选项 3：Maven 坐标 (推荐) {#installation-maven}
+<div id="installation-maven">
+  ### 选项 3：Maven 坐标 (推荐)
+</div>
 
 1. 进入你的 Databricks 工作区：
    * 前往 **Compute** → 选择你的集群
@@ -92,22 +90,18 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Databricks Maven 库配置](/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp" alt="Databricks Maven 库配置" />
 
 3. 点击 **Install**，然后重启集群以加载该库
 
 <div id="tableprovider-api">
-  ## 使用 TableProvider API {#tableprovider-api}
+  ## 使用 TableProvider API
 </div>
 
 启用 Unity Catalog (默认) 时，你**必须**使用 TableProvider API (基于 format 的访问) ，因为 Unity Catalog 会阻止 Spark 目录 注册。如果你使用访问模式为 &quot;No isolation shared&quot; 的集群 并禁用了 Unity Catalog，则可以改用 [Catalog API](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required)。
 
 <div id="reading-data-table-provider">
-  ### 读取数据 {#reading-data-table-provider}
+  ### 读取数据
 </div>
 
 <Tabs>
@@ -151,7 +145,7 @@ com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scal
 </Tabs>
 
 <div id="writing-data-unity">
-  ### 写入数据 {#writing-data-unity}
+  ### 写入数据
 </div>
 
 <Tabs>
@@ -200,11 +194,11 @@ com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scal
 </Note>
 
 <div id="considerations">
-  ## Databricks 特定注意事项 {#considerations}
+  ## Databricks 特定注意事项
 </div>
 
 <div id="access-mode">
-  ### 访问模式要求 {#access-mode}
+  ### 访问模式要求
 </div>
 
 ClickHouse Spark Connector 要求使用 **Dedicated** (原为 Single User) 访问模式。启用 Unity Catalog 时，不支持 **Standard** (原为 Shared) 访问模式，因为在该配置下，Databricks 会阻止外部 DataSource V2 连接器。
@@ -217,7 +211,7 @@ ClickHouse Spark Connector 要求使用 **Dedicated** (原为 Single User) 访�
 | Standard (Shared)       | 已禁用           | ✅ 是  |
 
 <div id="secret-management">
-  ### 机密管理 {#secret-management}
+  ### 机密管理
 </div>
 
 使用 Databricks secret scope (机密作用域) 安全存储 ClickHouse 凭据：
@@ -232,7 +226,7 @@ password = dbutils.secrets.get(scope="clickhouse", key="password")
 {/* TODO: 添加 Databricks secret scope（机密作用域）配置的屏幕截图 */}
 
 <div id="clickhouse-cloud">
-  ### ClickHouse Cloud 连接 {#clickhouse-cloud}
+  ### ClickHouse Cloud 连接
 </div>
 
 从 Databricks 连接 ClickHouse Cloud 时：
@@ -241,11 +235,11 @@ password = dbutils.secrets.get(scope="clickhouse", key="password")
 2. 启用 **SSL** (`ssl: true`)
 
 <div id="examples">
-  ## 示例 {#examples}
+  ## 示例
 </div>
 
 <div id="workflow-example">
-  ### 完整工作流示例 {#workflow-example}
+  ### 完整工作流示例
 </div>
 
 <Tabs>
@@ -336,7 +330,9 @@ password = dbutils.secrets.get(scope="clickhouse", key="password")
   </Tab>
 </Tabs>
 
-## 相关文档 {#related}
+<div id="related">
+  ## 相关文档
+</div>
 
 * [Spark 原生连接器指南](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - 完整连接器文档
 * [TableProvider API 文档](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#using-the-tableprovider-api) - 基于格式的访问说明

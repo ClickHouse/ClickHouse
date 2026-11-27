@@ -14,7 +14,9 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 该表函数可用于从 YTsaurus 集群中读取数据。
 
-## 语法 {#syntax}
+<div id="syntax">
+  ## 语法
+</div>
 
 ```sql
 ytsaurus(http_proxy_url, cypress_path, oauth_token, format)
@@ -22,11 +24,13 @@ ytsaurus(http_proxy_url, cypress_path, oauth_token, format)
 
 <Info>
   这是一个 Experimental 功能，未来版本中可能会发生不兼容旧版本的变更。
-  可通过 [enable&#95;ytsaurus&#95;table&#95;function](/zh/reference/settings/session-settings/enable#enable_ytsaurus_table_function) 设置启用 YTsaurus 表函数。
-  输入命令 `set enable_ytsaurus_table_function = 1`。
+  可通过 [allow&#95;experimental&#95;ytsaurus&#95;table&#95;function](/zh/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_table_function) 设置启用 YTsaurus 表函数。
+  输入命令 `set allow_experimental_ytsaurus_table_function = 1`。
 </Info>
 
-## 参数 {#arguments}
+<div id="arguments">
+  ## 参数
+</div>
 
 * `http_proxy_url` — YTsaurus HTTP 代理的 URL。
 * `cypress_path` — 数据源的 Cypress 路径。

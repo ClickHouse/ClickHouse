@@ -33,7 +33,6 @@
 #include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <boost/functional/hash.hpp>
-#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -54,7 +53,7 @@ namespace ErrorCodes
 /// Extract token info from the original AST before cloning.
 /// Traverses AST in DFS order and collects LiteralTokenInfo for each literal from the token_map.
 static void extractLiteralTokensImpl(
-    const ASTPtr & ast, const LiteralTokenMap & token_map, VectorWithMemoryTracking<std::optional<LiteralTokenInfo>> & result, ContextPtr context)
+    const ASTPtr & ast, const LiteralTokenMap & token_map, std::vector<std::optional<LiteralTokenInfo>> & result, ContextPtr context)
 {
     if (auto * literal = ast->as<ASTLiteral>())
     {
@@ -106,10 +105,10 @@ static void extractLiteralTokensImpl(
     }
 }
 
-static VectorWithMemoryTracking<std::optional<LiteralTokenInfo>> extractLiteralTokens(
+static std::vector<std::optional<LiteralTokenInfo>> extractLiteralTokens(
     const ASTPtr & ast, const LiteralTokenMap & token_map, ContextPtr context)
 {
-    VectorWithMemoryTracking<std::optional<LiteralTokenInfo>> result;
+    std::vector<std::optional<LiteralTokenInfo>> result;
     extractLiteralTokensImpl(ast, token_map, result, context);
     return result;
 }
@@ -126,9 +125,9 @@ struct SpecialParserType
     bool is_tuple = false;
     bool is_map = false;
     /// Type and nullability
-    VectorWithMemoryTracking<std::pair<Field::Types::Which, bool>> nested_types;
+    std::vector<std::pair<Field::Types::Which, bool>> nested_types;
 
-    [[nodiscard]] bool useDefaultParser() const
+    bool useDefaultParser() const
     {
         return main_type == Field::Types::String || (!nested_types.empty()
             && std::all_of(
@@ -228,10 +227,10 @@ class ReplaceLiteralsVisitor
 public:
     LiteralsInfo replaced_literals;
     ContextPtr context;
-    const VectorWithMemoryTracking<std::optional<LiteralTokenInfo>> & token_info_vec;
+    const std::vector<std::optional<LiteralTokenInfo>> & token_info_vec;
     size_t token_info_index = 0;
 
-    ReplaceLiteralsVisitor(ContextPtr context_, const VectorWithMemoryTracking<std::optional<LiteralTokenInfo>> & token_info_vec_)
+    ReplaceLiteralsVisitor(ContextPtr context_, const std::vector<std::optional<LiteralTokenInfo>> & token_info_vec_)
         : context(context_), token_info_vec(token_info_vec_) { }
 
     void visit(ASTPtr & ast, bool force_nullable)
@@ -249,7 +248,7 @@ public:
     }
 
 private:
-    void visitChildren(ASTPtr & ast, const ColumnNumbers & dont_visit_children, const VectorWithMemoryTracking<char> & force_nullable)
+    void visitChildren(ASTPtr & ast, const ColumnNumbers & dont_visit_children, const std::vector<char> & force_nullable)
     {
         for (size_t i = 0; i < ast->children.size(); ++i)
             if (std::find(dont_visit_children.begin(), dont_visit_children.end(), i) == dont_visit_children.end())
@@ -275,7 +274,7 @@ private:
         /// Allow nullable arguments if function never returns NULL
         ColumnNumbers can_always_be_nullable = builder->getArgumentsThatDontImplyNullableReturnType(function.arguments->children.size());
 
-        VectorWithMemoryTracking<char> force_nullable_arguments(function.arguments->children.size(), force_nullable);
+        std::vector<char> force_nullable_arguments(function.arguments->children.size(), force_nullable);
         for (auto & idx : can_always_be_nullable)
             if (idx < force_nullable_arguments.size())
                 force_nullable_arguments[idx] = true;
@@ -621,7 +620,6 @@ bool ConstantExpressionTemplate::tryParseExpression(
     return true;
 }
 
-NO_SANITIZE_UNSIGNED_OVERFLOW
 bool ConstantExpressionTemplate::parseLiteralAndAssertType(
     ReadBuffer & istr, const TokenIterator & token_iterator, const IDataType * complex_type, size_t column_idx, const Settings & settings)
 {

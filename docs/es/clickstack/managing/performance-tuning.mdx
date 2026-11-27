@@ -1,6 +1,6 @@
 ---
 slug: /use-cases/observability/clickstack/performance_tuning
-title: 'Optimización del rendimiento'
+title: 'ClickStack - optimización del rendimiento'
 sidebarTitle: 'Optimización del rendimiento'
 description: 'Optimización del rendimiento para ClickStack - la pila de observabilidad de ClickHouse'
 doc_type: 'guide'
@@ -10,23 +10,20 @@ keywords: ['clickstack', 'observabilidad', 'logs', 'rendimiento', 'optimización
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 import OtelLogsSchema from '/snippets/es/clickstack/_schema_otel_logs.mdx';
-
 import OtelTracesSchema from '/snippets/es/clickstack/_schema_otel_traces.mdx';
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 <div id="introduction">
-  ## Introducción {#introduction}
+  ## Introducción
 </div>
 
 Esta guía se centra en las optimizaciones de rendimiento más comunes y eficaces para ClickStack, suficientes para optimizar la mayoría de las cargas de trabajo reales de observabilidad, normalmente de hasta decenas de terabytes de datos al día.
 
 Las optimizaciones se presentan en un orden intencionado, empezando por las técnicas más simples y de mayor impacto, y avanzando hacia ajustes más avanzados y especializados. Las optimizaciones iniciales deben aplicarse primero y, a menudo, por sí solas ofrecerán mejoras sustanciales. A medida que aumentan los volúmenes de datos y las cargas de trabajo se vuelven más exigentes, cada vez merece más la pena explorar las técnicas posteriores.
 
-<Tip>
-  Dedique más tiempo a investigar incidencias y menos a gestionar su backend de observabilidad con [ClickHouse Observability](/es/clickstack/observability). [Regístrese en ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-clickstack-performance-tuning-inline) para empezar.
-</Tip>
-
 <div id="clickhouse-concepts">
-  ## Conceptos de ClickHouse {#clickhouse-concepts}
+  ## Conceptos de ClickHouse
 </div>
 
 Antes de aplicar cualquiera de las optimizaciones descritas en esta guía, es importante estar familiarizado con algunos conceptos básicos de ClickHouse.
@@ -75,10 +72,10 @@ Se recomienda revisar la siguiente documentación de ClickHouse antes de realiza
 * [Cómo almacena datos ClickHouse: partes y gránulos](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) - Guía más avanzada sobre cómo se estructuran y consultan los datos en ClickHouse, con explicaciones detalladas de los gránulos y las claves primarias.
 * [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree)- Guía avanzada de referencia de MergeTree útil para comandos y detalles internos.
 
-Todas las optimizaciones descritas a continuación pueden aplicarse directamente sobre las tablas subyacentes mediante ClickHouse SQL estándar, ya sea a través de la [consola SQL de ClickHouse Cloud](/es/integrations/connectors/sql-clients/sql-console) o del [cliente de ClickHouse](/es/concepts/features/interfaces/client).
+Todas las optimizaciones descritas a continuación pueden aplicarse directamente sobre las tablas subyacentes mediante ClickHouse SQL estándar, ya sea a través de la [consola SQL de ClickHouse Cloud](/es/integrations/connectors/sql-clients/sql-console) o del [cliente de ClickHouse](/es/concepts/features/interfaces/cli).
 
 <div id="materialize-frequently-queried-attributes">
-  ## Optimización 1. Materializar atributos consultados con frecuencia {#materialize-frequently-queried-attributes}
+  ## Optimización 1. Materializar atributos consultados con frecuencia
 </div>
 
 La primera y más sencilla optimización para los usuarios de ClickStack es identificar los atributos que se consultan con frecuencia en `LogAttributes`, `ScopeAttributes` y `ResourceAttributes`, y convertirlos en columnas de nivel superior mediante columnas materializadas.
@@ -86,7 +83,7 @@ La primera y más sencilla optimización para los usuarios de ClickStack es iden
 Por sí sola, esta optimización suele ser suficiente para escalar despliegues de ClickStack a decenas de terabytes al día y debe aplicarse antes de considerar técnicas de ajuste más avanzadas.
 
 <div id="why-materialize-attributes">
-  ### Por qué materializar atributos {#why-materialize-attributes}
+  ### Por qué materializar atributos
 </div>
 
 ClickStack almacena metadatos, como etiquetas de Kubernetes, metadatos de servicios y atributos personalizados, en columnas `Map(String, String)`. Aunque esto aporta flexibilidad, consultar subclaves de un mapa tiene una implicación importante en el rendimiento.
@@ -108,7 +105,9 @@ Columnas materializadas:
   ClickStack detecta automáticamente las columnas materializadas extraídas de mapas y las utiliza de forma transparente durante la ejecución de consultas, incluso cuando los usuarios siguen consultando la ruta del atributo original.
 </Note>
 
-### Ejemplo {#materialize-column-example}
+<div id="materialize-column-example">
+  ### Ejemplo
+</div>
 
 Considere el esquema predeterminado de ClickStack para las trazas, donde los metadatos de Kubernetes se almacenan en `ResourceAttributes`:
 
@@ -116,11 +115,7 @@ Considere el esquema predeterminado de ClickStack para las trazas, donde los met
 
 Un usuario puede filtrar trazas mediante la sintaxis de Lucene, p. ej., `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Filtrado de trazas](/images/clickstack/performance_guide/trace_filtering.webp)
-  </Frame>
-</div>
+<Image img="/images/clickstack/performance_guide/trace_filtering.webp" size="lg" alt="Filtrado de trazas" />
 
 Esto genera un predicado SQL similar a:
 
@@ -144,11 +139,7 @@ A partir de ahora, los datos **nuevos** almacenarán el nombre del pod de Kubern
 
 Ahora los usuarios pueden consultar los nombres de los pods de Kubernetes de forma eficiente con sintaxis Lucene; por ejemplo, `PodName:"checkout-675775c4cc-f2p9c"`
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Filtrado de trazas v2](/images/clickstack/performance_guide/trace_filtering_v2.webp)
-  </Frame>
-</div>
+<Image img="/images/clickstack/performance_guide/trace_filtering_v2.webp" size="lg" alt="Filtrado de trazas v2" />
 
 En los datos recién insertados, esto evita por completo el acceso al Map y reduce significativamente la E/S.
 
@@ -165,7 +156,7 @@ Esto garantiza que los usuarios aprovechen la optimización sin cambiar dashboar
 </Note>
 
 <div id="materializing-historical-data">
-  ### Materialización de datos históricos {#materializing-historical-data}
+  ### Materialización de datos históricos
 </div>
 
 Las columnas materializadas solo se aplican automáticamente a los datos insertados después de crear la columna. Para los datos existentes, las consultas sobre la columna materializada recurrirán de forma transparente a la lectura del mapa original.
@@ -202,7 +193,7 @@ Espere hasta que `is_done = 1` en la mutación correspondiente.
 </Warning>
 
 <div id="adding-skip-indexes">
-  ## Optimización 2. Añadir índices de omisión {#adding-skip-indexes}
+  ## Optimización 2. Añadir índices de omisión
 </div>
 
 Después de materializar los atributos que se consultan con frecuencia, la siguiente optimización es añadir índices de omisión de datos para reducir aún más la cantidad de datos que ClickHouse necesita leer durante la ejecución de la consulta.
@@ -222,7 +213,7 @@ Estos índices se centran en tres patrones comunes:
 La tabla de logs usa índices `text(tokenizer = 'array')` en todo el esquema en lugar de filtros de Bloom, y añade un índice `text(tokenizer = 'splitByNonAlpha')` en `lower(Body)` para la búsqueda de texto completo. Consulte [&quot;Tables and schemas used by ClickStack&quot;](/es/clickstack/ingesting-data/schemas#logs) para ver el DDL completo.
 
 <div id="bloom-filters">
-  ### Filtros de Bloom {#bloom-filters}
+  ### Filtros de Bloom
 </div>
 
 Los índices de filtro de Bloom son el tipo de índice de omisión más utilizado en ClickStack. Son especialmente adecuados para columnas de texto con alta cardinalidad, normalmente con al menos decenas de miles de valores distintos. Una tasa de falsos positivos de 0.01 con granularidad 1 es un buen valor predeterminado para empezar, ya que equilibra la sobrecarga de almacenamiento con una depuración eficaz.
@@ -253,7 +244,7 @@ Los filtros de Bloom son más eficaces cuando la distribución de los valores ha
 Como ocurre con todos los índices de omisión, los filtros de Bloom deben añadirse de forma selectiva y validarse con patrones de consulta reales para garantizar que aportan un beneficio medible; consulte [&quot;Evaluar la eficacia del índice de omisión.&quot;](#evaluating-skip-index-effectiveness)
 
 <div id="text-indexes">
-  ### Índices de texto {#text-indexes}
+  ### Índices de texto
 </div>
 
 Los [índices de texto](/es/reference/engines/table-engines/mergetree-family/textindexes) ofrecen una alternativa a los filtros Bloom. Un filtro Bloom es una estructura probabilística que puede descartar gránulos de forma definitiva, pero tiene una tasa de falsos positivos, por lo que los gránulos que no excluye deben seguir cargándose y evaluándose con la condición `WHERE`. Los índices de texto son índices invertidos que asignan tokens a desplazamientos exactos dentro de una parte. Como evalúan desplazamientos en lugar de gránulos y no producen falsos positivos, normalmente pueden resolver la condición `WHERE` sin cargar la columna subyacente. Esta es una optimización conocida como [lectura directa](https://github.com/ClickHouse/clickhouse-docs/pull/6356/%E2%80%A6). Dado que la carga de datos suele ser el principal factor en el tiempo de consulta, la lectura directa puede reducir de forma significativa la latencia de la consulta.
@@ -268,7 +259,7 @@ Dos tokenizadores cubren la mayoría de los patrones de ClickStack:
 | `splitByNonAlpha` | Búsqueda de texto completo a nivel de palabra en cadenas de texto libre | `Body`, `lower(Body)`, `SpanName` |
 
 <div id="array-tokenizer">
-  #### Tokenizador `array` para columnas Map y columnas de tipo array {#array-tokenizer}
+  #### Tokenizador `array` para columnas Map y columnas de tipo array
 </div>
 
 El esquema predeterminado de logs crea índices sobre `mapKeys` y los arrays materializados de elementos con
@@ -284,7 +275,9 @@ clave de atributo conocida permite entonces descartar cualquier fila que no la c
 columna Map correspondiente. Este es el mecanismo que hace que la [optimización de lectura directa de Map](#map-direct-read-optimization)
 sea rentable.
 
-#### `splitByNonAlpha` para el cuerpo de los logs {#text-index-body}
+<div id="text-index-body">
+  #### `splitByNonAlpha` para el cuerpo de los logs
+</div>
 
 La búsqueda de texto completo en la columna `Body` se beneficia de un índice de texto
 `splitByNonAlpha`. ClickStack define este índice en `lower(Body)` para que las búsquedas de
@@ -303,17 +296,15 @@ las cargas de trabajo de logs de observabilidad, esta es, con diferencia, la may
 <Info>
   **Índices de texto frente a `tokenbf_v1`**
 
-  El esquema predeterminado actual de trazas usa
-  `text(tokenizer = 'splitByNonAlpha', preprocessor = lower(SpanName))` para indexar
-  tokens normalizados de `SpanName`. Los esquemas de trazas más antiguos pueden usar `tokenbf_v1`, que
-  es funcionalmente similar, pero está obsoleto en ClickHouse 26.2 y versiones posteriores. Los nuevos
-  índices de búsqueda de texto deben usar `text(tokenizer = ...)`.
+  El antiguo tipo de índice `tokenbf_v1` (que todavía se usa en el esquema predeterminado de trazas para
+  `lower(SpanName)`) es funcionalmente similar, pero está en desuso en ClickHouse 26.2
+  y versiones posteriores. Los nuevos índices de búsqueda de texto deben usar `text(tokenizer = ...)`.
 </Info>
 
 Para obtener una referencia más detallada sobre las opciones de tokenizador, preprocesadores y verificación, consulta la [documentación de búsqueda de texto completo](/es/reference/engines/table-engines/mergetree-family/textindexes).
 
 <div id="text-indexes-in-default-logs-schema">
-  #### Índices de texto en el esquema predeterminado de logs {#text-indexes-in-default-logs-schema}
+  #### Índices de texto en el esquema predeterminado de logs
 </div>
 
 El esquema predeterminado `otel_logs`, sincronizado con upstream, incluye todos los índices de texto mencionados anteriormente: `text(tokenizer = 'array')` en `TraceId`, en cada arreglo `mapKeys(...)` y `*AttributeItems`, y `text(tokenizer = 'splitByNonAlpha')` en `lower(Body)` para la búsqueda de texto completo. Para ver el DDL canónico, consulta [&quot;Tables and schemas used by ClickStack&quot;](/es/clickstack/ingesting-data/schemas#logs); a continuación se reproduce el mismo esquema.
@@ -321,7 +312,7 @@ El esquema predeterminado `otel_logs`, sincronizado con upstream, incluye todos 
 <OtelLogsSchema />
 
 <div id="min-max-indexes">
-  ### Índices MinMax {#min-max-indexes}
+  ### Índices MinMax
 </div>
 
 Los índices MinMax almacenan los valores mínimo y máximo por gránulo y son extremadamente ligeros. Son especialmente eficaces para columnas numéricas y consultas por rango. Aunque puede que no aceleren todas las consultas, tienen un coste bajo y casi siempre merece la pena añadirlos a campos numéricos.
@@ -354,7 +345,7 @@ Esto permite que ClickHouse omita partes de forma eficiente al filtrar por rango
 De nuevo, el índice debe [materializarse](#materialize-skip-index) antes de estar disponible.
 
 <div id="materialize-skip-index">
-  ### Materializar el índice de omisión {#materialize-skip-index}
+  ### Materializar el índice de omisión
 </div>
 
 Después de añadir un índice de omisión, este solo se aplica a los datos ingeridos recientemente. Los datos históricos no se beneficiarán del índice hasta que se materialice explícitamente.
@@ -421,20 +412,21 @@ Por lo tanto, ajustar los parámetros del filtro de Bloom es una optimización q
 
 Para obtener más información sobre los índices de omisión, consulta la guía [&quot;Comprender los índices de omisión de datos de ClickHouse.&quot;](/es/concepts/features/performance/skip-indexes/skipping-indexes-examples)
 
-### Evaluación de la eficacia de los índices de omisión {#evaluating-skip-index-effectiveness}
+<div id="evaluating-skip-index-effectiveness">
+  ### Evaluación de la eficacia de los skip indexes
+</div>
 
-La forma más fiable de evaluar la poda de los índices de omisión es usar `EXPLAIN indexes = 1`, que muestra cuántas [partes](/es/concepts/core-concepts/parts) y [gránulos](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) se descartan en cada etapa de la planificación de la consulta. En la mayoría de los casos, conviene ver una reducción significativa del número de gránulos en la etapa Skip, idealmente después de que la clave primaria ya haya reducido el espacio de búsqueda. Los índices de omisión se evalúan después de la poda de particiones y de la poda por clave primaria, por lo que su impacto se mide mejor en relación con las partes y los gránulos que quedan.
+La forma más fiable de evaluar la poda de los skip indexes es usar `EXPLAIN indexes = 1`, que muestra cuántas [partes](/es/concepts/core-concepts/parts) y [gránulos](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) se descartan en cada etapa de la planificación de la consulta. En la mayoría de los casos, conviene ver una reducción significativa del número de gránulos en la etapa Skip, idealmente después de que la clave primaria ya haya reducido el espacio de búsqueda. Los skip indexes se evalúan después de la poda de particiones y de la poda por clave primaria, por lo que su impacto se mide mejor en relación con las partes y los gránulos que quedan.
 
-`EXPLAIN` confirma si se está aplicando la poda, pero no garantiza una mejora neta del rendimiento. Los índices de omisión tienen un coste de evaluación, especialmente si el índice es grande. Haga siempre benchmark de las consultas antes y después de añadir y materializar un índice para confirmar mejoras reales de rendimiento.
+`EXPLAIN` confirma si se está aplicando la poda, pero no garantiza una mejora neta del rendimiento. Los skip indexes tienen un coste de evaluación, especialmente si el índice es grande. Haga siempre benchmark de las consultas antes y después de añadir y materializar un índice para confirmar mejoras reales de rendimiento.
 
-Por ejemplo, el esquema de trazas predeterminado incluye un índice de texto para `TraceId`:
+Por ejemplo, considere el skip index predeterminado de filtro Bloom para TraceId incluido en el esquema Traces predeterminado:
 
 ```sql
-INDEX idx_trace_id TraceId TYPE text(tokenizer = 'array')
+INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1
 ```
 
-Puedes usar `EXPLAIN indexes = 1` para confirmar que una consulta selectiva usa este
-índice:
+Puedes usar `EXPLAIN indexes = 1` para ver lo eficaz que es en una consulta selectiva:
 
 ```sql
 EXPLAIN indexes = 1
@@ -445,14 +437,19 @@ WHERE (ServiceName = 'accounting')
 
 ReadFromMergeTree (otel_v2.otel_traces)
 Indexes:
+  PrimaryKey
+    Keys:
+      ServiceName
+    Parts: 6/18
+    Granules: 255/35898
   Skip
     Name: idx_trace_id
-    Description: text
+    Description: bloom_filter GRANULARITY 1
+    Parts: 1/6
+    Granules: 1/255
 ```
 
-El número exacto de partes y gránulos que se muestra depende de los datos. En una consulta selectiva,
-la poda por clave primaria acota primero el espacio de búsqueda, y el índice de texto puede
-reducir aún más los datos que deben leerse.
+En este caso, el filtro de la clave primaria reduce primero de forma considerable el conjunto de datos (de 35898 gránulos a 255), y luego el filtro Bloom lo reduce aún más hasta un único gránulo (1/255). Este es el patrón ideal para los skip indexes: el filtrado por clave primaria acota la búsqueda y, después, el skip index descarta la mayor parte de lo que queda.
 
 Para validar el impacto real, haz un benchmark de la consulta con ajustes estables y compara el tiempo de ejecución. Usa `FORMAT Null` para evitar la sobrecarga de la serialización de resultados y desactiva la caché de condiciones de consulta para que las ejecuciones sean repetibles:
 
@@ -468,7 +465,7 @@ SETTINGS use_query_condition_cache = 0
 Peak memory usage: 41.97 MiB.
 ```
 
-Ahora ejecuta la misma consulta con los índices de omisión deshabilitados:
+Ahora ejecuta la misma consulta con los skip indexes deshabilitados:
 
 ```sql
 SELECT *
@@ -486,11 +483,11 @@ Peak memory usage: 198.39 MiB.
 Desactivar `use_query_condition_cache` garantiza que los resultados no se vean afectados por decisiones de filtrado almacenadas en caché, y establecer `use_skip_indexes = 0` proporciona una base de referencia limpia para la comparación. Si la poda es efectiva y el coste de evaluar el índice es bajo, la consulta indexada debería ser notablemente más rápida, como en el ejemplo anterior.
 
 <Tip>
-  Si `EXPLAIN` muestra una poda de gránulos mínima, o el índice de omisión de datos es muy grande, el coste de evaluar el índice puede anular cualquier beneficio. Usa `EXPLAIN indexes = 1` para confirmar la poda y luego ejecuta un benchmark para confirmar mejoras de rendimiento de extremo a extremo.
+  Si `EXPLAIN` muestra una poda de gránulos mínima, o el skip index es muy grande, el coste de evaluar el índice puede anular cualquier beneficio. Usa `EXPLAIN indexes = 1` para confirmar la poda y luego ejecuta un benchmark para confirmar mejoras de rendimiento de extremo a extremo.
 </Tip>
 
 <div id="when-to-add-skip-indexes">
-  ### Cuándo añadir índices de omisión de datos {#when-to-add-skip-indexes}
+  ### Cuándo añadir índices de omisión de datos
 </div>
 
 Los índices de omisión de datos deben añadirse de forma selectiva, en función de los tipos de filtros que los usuarios aplican con más frecuencia y de la distribución de los datos en las partes y los gránulos. El objetivo es descartar suficientes gránulos como para compensar el coste de evaluar el propio índice, por lo que es esencial hacer benchmarks con datos parecidos a los de producción.
@@ -502,7 +499,7 @@ Los índices de omisión de datos deben añadirse de forma selectiva, en funció
 Los filtros Bloom son más eficaces en columnas de texto con alta cardinalidad en las que cada valor tiene una frecuencia relativamente baja, lo que significa que la mayoría de las partes y los gránulos no contienen el valor buscado. Como regla general, los filtros Bloom son más prometedores cuando la columna tiene al menos 10.000 valores distintos, y a menudo ofrecen el mejor rendimiento con más de 100.000 valores distintos. También son más eficaces cuando los valores coincidentes se agrupan en un número reducido de partes secuenciales, lo que normalmente ocurre cuando la columna está correlacionada con la clave de ordenación. De nuevo, esto puede variar según el caso; nada sustituye a las pruebas en el mundo real.
 
 <div id="map-direct-read-optimization">
-  ## Optimización 3. Lectura directa de Map {#map-direct-read-optimization}
+  ## Optimización 3. Lectura directa de Map
 </div>
 
 Cuando se filtra por una subclave de Map como `LogAttributes['k8s.pod.name'] =
@@ -530,7 +527,7 @@ columnas Map adicionales que quiere acelerar además de las predeterminadas, sig
 habilitarlas.
 
 <div id="map-direct-read-schema">
-  ### Esquema {#map-direct-read-schema}
+  ### Esquema
 </div>
 
 Para cada columna `Map` que quieras acelerar, ClickStack define una
@@ -567,7 +564,7 @@ Los esquemas predeterminados de ClickStack incluyen estas columnas e índices:
 | `otel_traces` | `ResourceAttributeItems`, `SpanAttributeItems`                       | `idx_res_attr_items`, `idx_span_attr_items`                        |
 
 <div id="map-direct-read-rewrite">
-  ### Reescritura de consultas {#map-direct-read-rewrite}
+  ### Reescritura de consultas
 </div>
 
 Cuando un usuario filtra por una subclave de Map a través de la UI de ClickStack o del SDK, ClickStack
@@ -593,46 +590,26 @@ La reescritura se aplica automáticamente: las consultas guardadas, dashboards y
 hacen referencia a `LogAttributes['key']` se benefician de esta mejora de velocidad sin ningún cambio.
 
 <div id="map-direct-read-version">
-  ### Requisitos de versión de ClickHouse {#map-direct-read-version}
+  ### Requisitos de versión de ClickHouse
 </div>
 
 La reescritura de consultas requiere una versión de ClickHouse que admita la
 poda directa a nivel de token en columnas de arrays indexadas por texto. ClickStack detecta la
 versión del servidor conectado (`SELECT version()`, almacenada en caché por conexión) y solo
-emite la forma reescrita cuando el servidor alcanza el umbral correspondiente
-que se indica a continuación. Las versiones más antiguas vuelven a la forma original de subíndice de Map
-automáticamente.
+emite la forma reescrita cuando el servidor alcanza o supera el umbral. Los
+servidores más antiguos vuelven automáticamente a la forma original de subíndice de Map.
 
-<Tabs>
-  <Tab title="ClickHouse Cloud">
-    Las compilaciones de ClickHouse Cloud y las versiones de código abierto usan líneas de versión independientes.
-    Use las versiones mínimas de Cloud indicadas a continuación.
-
-    | Rama de ClickHouse | Versión mínima de Cloud |
-    | ------------------ | ----------------------- |
-    | 26.2               | `26.2.1.307`            |
-    | 26.3               | `26.3.0.0`              |
-    | 26.4               | `26.4.1.1740`           |
-    | 26.5+              | Todas las versiones     |
-
-    El mínimo `26.3.0.0` es la base de la rama, por lo que todas las compilaciones `26.3` son
-    compatibles.
-  </Tab>
-
-  <Tab title="Código abierto">
-    | Rama de ClickHouse | Versión mínima de código abierto |
-    | ------------------ | -------------------------------- |
-    | 26.2               | `26.2.19.43`                     |
-    | 26.3               | `26.3.12.3`                      |
-    | 26.4               | `26.4.3.37`                      |
-    | 26.5+              | Todas las versiones              |
-  </Tab>
-</Tabs>
+| Rama de ClickHouse | Versión mínima      |
+| ------------------ | ------------------- |
+| 26.2               | 26.2.19.43          |
+| 26.3               | 26.3.12.3           |
+| 26.4               | 26.4.3.37           |
+| 26.5+              | Todas las versiones |
 
 <Info>
   **Por qué ALIAS y no MATERIALIZED**
 
-  El array items es una vista de datos que ya están en la columna Map.
+  El array `items` es una vista de datos que ya están en la columna Map.
   Almacenarlo dos veces —una vez en el Map y otra en el array— duplicaría la E/S de escritura
   sin aportar nuevos patrones de consulta. El índice de texto de la columna `ALIAS` se
   construye en el momento de la inserción a partir de los mismos datos de origen, por lo que la optimización solo añade
@@ -640,7 +617,7 @@ automáticamente.
 </Info>
 
 <div id="modifying-the-primary-key">
-  ## Optimización 4. Modificar la clave primaria {#modifying-the-primary-key}
+  ## Optimización 4. Modificar la clave primaria
 </div>
 
 La clave primaria es uno de los componentes más importantes para optimizar el rendimiento de ClickHouse en la mayoría de las cargas de trabajo. Para ajustarla eficazmente, es necesario comprender cómo funciona y cómo interactúa con los patrones de consulta. En última instancia, la clave primaria debe ajustarse a la forma en que los usuarios acceden a los datos, en particular a las columnas por las que se filtra con más frecuencia.
@@ -673,7 +650,7 @@ Al elegir una clave primaria, también hay otros factores que conviene tener en 
 **Las claves primarias deben cambiarse de forma aislada en cada tabla. Lo que tiene sentido para logs puede no tenerlo para trazas o métricas.**
 
 <div id="choosing-a-primary-key">
-  ### Cómo elegir una clave primaria {#choosing-a-primary-key}
+  ### Cómo elegir una clave primaria
 </div>
 
 Primero, determine si sus patrones de acceso difieren sustancialmente de los valores predeterminados de una tabla concreta. Por ejemplo, si normalmente filtra los logs por nodo de Kubernetes antes que por nombre del servicio, y esto representa un flujo de trabajo predominante, puede justificar un cambio en la clave primaria.
@@ -696,7 +673,7 @@ Pueden aplicarse algunas reglas sencillas para ayudar a elegir una clave de orde
 Una vez identificado el subconjunto de columnas para la clave de ordenación, estas deben declararse en un orden específico. Este orden puede influir significativamente tanto en la eficiencia del filtrado sobre columnas secundarias de la clave en las consultas como en la relación de compresión de los archivos de datos de la tabla. En general, lo mejor es ordenar las claves en orden ascendente de cardinalidad. Esto debe equilibrarse con el hecho de que el filtrado sobre columnas que aparecen más adelante en la clave de ordenación será menos eficiente que el filtrado sobre las que aparecen antes en la tupla. Equilibre estos comportamientos y tenga en cuenta sus patrones de acceso. Lo más importante es probar distintas variantes. Para comprender mejor las claves de ordenación y cómo optimizarlas, se recomienda leer [&quot;Cómo elegir una clave primaria.&quot;](/es/concepts/best-practices/choosing-a-primary-key). Para profundizar aún más en el ajuste de la clave primaria y en las estructuras de datos internas, consulte [&quot;Una introducción práctica a los índices primarios dispersos en ClickHouse.&quot;](/es/guides/clickhouse/data-modelling/sparse-primary-indexes)
 
 <div id="changing-the-primary-key">
-  ### Cambio de la clave primaria {#changing-the-primary-key}
+  ### Cambio de la clave primaria
 </div>
 
 Si tienes claros los patrones de acceso antes de la ingestión de datos, simplemente elimina y vuelve a crear la tabla para el tipo de datos correspondiente.
@@ -771,11 +748,7 @@ A continuación se usa el mismo ejemplo de introducir `SeverityText` como primer
   <Step title="Actualizar la UI de ClickStack para leer desde la tabla Merge" id="update-clickstack-ui-to-read-from-merge-tree">
     Configura la UI de ClickStack para usar `otel_logs_merge` como tabla de la fuente de datos de logs.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Seleccionar tabla Merge](/images/clickstack/performance_guide/select_merge_table.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/performance_guide/select_merge_table.webp" size="lg" alt="Seleccionar tabla Merge" />
 
     En este punto, las escrituras continúan en `otel_logs` con la clave primaria original, mientras que las lecturas usan la tabla Merge. No hay cambios visibles para los usuarios ni impacto en la ingestión.
   </Step>
@@ -787,7 +760,7 @@ A continuación se usa el mismo ejemplo de introducir `SeverityText` como primer
     EXCHANGE TABLES otel_logs AND otel_logs_23_01_2025
     ```
 
-    Las escrituras ahora se dirigen a la nueva tabla `otel_logs` con la clave primaria actualizada. Los datos existentes permanecen en `otel_logs_23_01_2025` y siguen siendo accesibles a través de la tabla Merge. El sufijo indica la fecha en que se aplicó el cambio y representa la marca de tiempo más reciente contenida en esa tabla.
+    Las escrituras ahora se dirigen a la nueva tabla `otel_logs` con la clave primaria actualizada. Los datos existentes permanecen en `otel_logs_23_01_2025` y siguen siendo accesibles a través de la tabla Merge. El sufijo indica la fecha en que se aplicó el cambio y representa la marca temporal más reciente contenida en esa tabla.
 
     Este proceso permite cambiar la clave primaria sin interrumpir la ingestión y sin impacto visible para el usuario.
   </Step>
@@ -825,7 +798,7 @@ Este proceso puede adaptarse si se requieren más cambios en la clave primaria. 
 </Info>
 
 <div id="row-lookup-block-columns">
-  ### Aceleración de búsquedas por fila con columnas de bloque {#row-lookup-block-columns}
+  ### Aceleración de búsquedas por fila con columnas de bloque
 </div>
 
 El esquema predeterminado de logs de ClickStack habilita dos configuraciones de MergeTree que no
@@ -860,7 +833,7 @@ La configuración se aplica a los datos escritos después del `ALTER`. Las parte
 usando el método anterior de búsqueda por fila hasta que una fusión las reescriba.
 
 <div id="exploiting-materialized-views">
-  ## Optimización 5. Uso de vistas materializadas {#exploiting-materialized-views}
+  ## Optimización 5. Uso de vistas materializadas
 </div>
 
 <BetaBadge />
@@ -870,7 +843,7 @@ ClickStack puede aprovechar las [vistas materializadas incrementales](/es/concep
 Para obtener más información sobre cómo usar esta funcionalidad en ClickStack, consulta nuestra guía específica [&quot;ClickStack - Vistas materializadas.&quot;](/es/clickstack/managing/materialized-views)
 
 <div id="exploting-projections">
-  ## Optimización 6. Aprovechar las proyecciones {#exploting-projections}
+  ## Optimización 6. Aprovechar las proyecciones
 </div>
 
 Las proyecciones representan una optimización avanzada final que puede considerarse una vez evaluadas las columnas materializadas, los índices de omisión de datos, las claves primarias y las vistas materializadas. Aunque las proyecciones y las vistas materializadas pueden parecer similares, en ClickStack cumplen funciones distintas y conviene usarlas en escenarios diferentes.
@@ -900,7 +873,7 @@ Para obtener más contexto, consulte:
 * [Vistas materializadas frente a proyecciones](/es/concepts/features/projections/materialized-views-versus-projections)
 
 <div id="example-projections">
-  ### Proyecciones de ejemplo {#example-projections}
+  ### Proyecciones de ejemplo
 </div>
 
 Supongamos que su tabla de trazas está optimizada para el patrón de acceso predeterminado de ClickStack:
@@ -969,7 +942,7 @@ Las consultas que no restringen `TraceId`, o que filtran principalmente por otra
 En la práctica, las proyecciones son más adecuadas para flujos de trabajo en los que se pasa con frecuencia de una búsqueda amplia a un análisis detallado centrado en una traza (por ejemplo, recuperar todos los spans de un `TraceId` específico).
 
 <div id="projection-costs-and-guidance">
-  ### Costes y recomendaciones {#projection-costs-and-guidance}
+  ### Costes y recomendaciones
 </div>
 
 * **Sobrecarga de inserción**: Una proyección `SELECT *` con una clave de ordenación distinta equivale, en la práctica, a escribir los datos dos veces, lo que incrementa la E/S de escritura y puede requerir CPU adicional y mayor rendimiento de disco para sostener la ingestión.
@@ -982,7 +955,7 @@ Para obtener información de fondo más detallada, consulte:
 * [Vistas materializadas frente a proyecciones](/es/concepts/features/projections/materialized-views-versus-projections)
 
 <div id="lightweight-projections">
-  ### Proyecciones ligeras con `_part_offset` {#lightweight-projections}
+  ### Proyecciones ligeras con `_part_offset`
 </div>
 
 <BetaBadge />
@@ -998,7 +971,9 @@ Las versiones más recientes de ClickHouse también admiten proyecciones aún m�
 * [Almacenamiento más inteligente con &#95;part&#95;offset](/es/concepts/features/projections/projections#smarter_storage_with_part_offset)
 * [Explicación y ejemplos en el blog](https://clickhouse.com/blog/projections-secondary-indices#example-combining-multiple-projection-indexes)
 
-### Alternativas {#projection-alternatives}
+<div id="projection-alternatives">
+  ### Alternativas
+</div>
 
 Si necesita varias claves de ordenación, las proyecciones no son la única opción. Según las restricciones operativas y cómo quiera que ClickStack dirija las consultas, considere lo siguiente:
 

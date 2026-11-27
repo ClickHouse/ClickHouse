@@ -7,16 +7,22 @@ sidebarTitle: 'avgResample'
 doc_type: 'reference'
 ---
 
-## Descrição {#description}
+<div id="description">
+  ## Descrição
+</div>
 
 O combinador [`Resample`](/pt-BR/reference/functions/aggregate-functions/combinators#-resample)
 pode ser aplicado à função de agregação [`count`](/pt-BR/reference/functions/aggregate-functions/count)
 para contar os valores de uma coluna-chave especificada em um número fixo
 de intervalos (`N`).
 
-## Exemplo de uso {#example-usage}
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
 
-### Exemplo básico {#basic-example}
+<div id="basic-example">
+  ### Exemplo básico
+</div>
 
 Vamos ver um exemplo. Criaremos uma tabela que contém `name`, `age` e
 `wage` dos funcionários e inseriremos alguns dados nela:
@@ -29,7 +35,7 @@ CREATE TABLE employee_data
     wage Float32
 ) 
 ENGINE = MergeTree()
-ORDER BY tuple();
+ORDER BY tuple()
 
 INSERT INTO employee_data (name, age, wage) VALUES
     ('John', 16, 10.0),
@@ -62,7 +68,9 @@ FROM avg_wage;
 └──────────────────┘
 ```
 
-## Veja também {#see-also}
+<div id="see-also">
+  ## Veja também
+</div>
 
 * [`count`](/pt-BR/reference/functions/aggregate-functions/count)
 * [`combinador Resample`](/pt-BR/reference/functions/aggregate-functions/combinators#-resample)

@@ -9,9 +9,9 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<BetaBadge />
+<ExperimentalBadge />
 
 <Note>
   يعمل التكامل مع كتالوج Nessie مع جداول Iceberg فقط.
@@ -29,22 +29,26 @@ Nessie هو كتالوج معاملاتي مفتوح المصدر لبحيرات
 * **جاهز للإنتاج** للنشر على Docker أو Kubernetes
 
 <Note>
-  هذه الميزة في المرحلة التجريبية (Beta). فعّلها باستخدام:
-  `SET allow_database_iceberg = 1;`
-
-  في الإصدارات الأقدم من 25.8، حيث تُعدّ الميزة تجريبية (Experimental)، استخدم `SET allow_experimental_database_iceberg = 1;` بدلاً من ذلك.
+  نظراً لأن هذه الميزة تجريبية، ستحتاج إلى تفعيلها باستخدام:
+  `SET allow_experimental_database_iceberg = 1;`
 </Note>
 
-## إعداد بيئة التطوير المحلية {#local-development-setup}
+<div id="local-development-setup">
+  ## إعداد بيئة التطوير المحلية
+</div>
 
 للتطوير والاختبار محليًا، يمكنك استخدام إعداد Nessie قائم على الحاويات. يُعد هذا النهج مثاليًا للتعلّم، وإنشاء النماذج الأولية، وبيئات التطوير.
 
-### المتطلبات المسبقة {#local-prerequisites}
+<div id="local-prerequisites">
+  ### المتطلبات المسبقة
+</div>
 
 1. **Docker وDocker Compose**: تأكد من أن Docker مُثبّت ويعمل.
 2. **إعداد نموذجي**: يمكنك استخدام إعداد docker-compose الرسمي لـ Nessie
 
-### إعداد كتالوج Nessie المحلي {#setting-up-local-nessie-catalog}
+<div id="setting-up-local-nessie-catalog">
+  ### إعداد كتالوج Nessie المحلي
+</div>
 
 يمكنك استخدام [إعداد docker-compose الرسمي لـ Nessie](https://projectnessie.org/guides/) الذي يوفّر بيئة متكاملة تضم Nessie، ومستودع إصدارات داخل الذاكرة، وMinIO لتخزين الكائنات.
 
@@ -148,7 +152,9 @@ docker-compose logs -f
   يستخدم إعداد Nessie مستودع إصدارات داخل الذاكرة، ويتطلب تحميل البيانات التجريبية إلى جداول Iceberg أولًا. تأكد من أن البيئة قد أنشأت الجداول وعبّأتها بالبيانات قبل محاولة الاستعلام عنها من خلال ClickHouse.
 </Note>
 
-### الاتصال بـ كتالوج Nessie المحلي {#connecting-to-local-nessie-catalog}
+<div id="connecting-to-local-nessie-catalog">
+  ### الاتصال بـ كتالوج Nessie المحلي
+</div>
 
 اتصل بحاوية ClickHouse الخاصة بك:
 
@@ -159,14 +165,16 @@ docker exec -it nessie-clickhouse clickhouse-client
 ثم أنشئ اتصال قاعدة البيانات إلى كتالوج Nessie:
 
 ```sql
-SET allow_database_iceberg = 1;
+SET allow_experimental_database_iceberg = 1;
 
 CREATE DATABASE demo
 ENGINE = DataLakeCatalog('http://nessie:19120/iceberg', 'admin', 'password')
 SETTINGS catalog_type = 'rest', storage_endpoint = 'http://minio:9002/my-bucket', warehouse = 'warehouse'
 ```
 
-## الاستعلام عن جداول كتالوج Nessie باستخدام ClickHouse {#querying-nessie-catalog-tables-using-clickhouse}
+<div id="querying-nessie-catalog-tables-using-clickhouse">
+  ## الاستعلام عن جداول كتالوج Nessie باستخدام ClickHouse
+</div>
 
 الآن بعد إعداد الاتصال، يمكنك البدء في الاستعلام من خلال كتالوج Nessie. على سبيل المثال:
 
@@ -250,7 +258,9 @@ SHOW CREATE TABLE `default.taxis`;
 └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## تحميل البيانات من بحيرة البيانات لديك إلى ClickHouse {#loading-data-from-your-data-lake-into-clickhouse}
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## تحميل البيانات من بحيرة البيانات لديك إلى ClickHouse
+</div>
 
 إذا كنت بحاجة إلى تحميل بيانات من كتالوج Nessie إلى ClickHouse، فابدأ بإنشاء جدول ClickHouse محلي:
 

@@ -12,24 +12,26 @@ Crée une table [Merge](/fr/reference/engines/table-engines/special/merge) tempo
 Le schéma de la table est dérivé des tables sous-jacentes en faisant l’union de leurs colonnes et en déterminant des types communs.
 Les mêmes colonnes virtuelles sont disponibles que pour une table utilisant le moteur de table [Merge](/fr/reference/engines/table-engines/special/merge).
 
-## Syntaxe {#syntax}
+<div id="syntax">
+  ## Syntaxe
+</div>
 
 ```sql
 merge(['db_name',] 'tables_regexp')
 ```
 
-## Arguments {#arguments}
+<div id="arguments">
+  ## Arguments
+</div>
 
 | Argument        | Description                                                                                                                                                                                                                                                                                                                                                              |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `db_name`       | Valeurs possibles (facultatif, la valeur par défaut est `currentDatabase()`) :<br />    - nom de base de données,<br />    - expression constante qui renvoie une chaîne contenant un nom de base de données, par exemple `currentDatabase()`,<br />    - `REGEXP(expression)`, où `expression` est une expression régulière correspondant aux noms de bases de données. |
 | `tables_regexp` | Une expression régulière correspondant aux noms de tables dans la ou les bases de données spécifiées.                                                                                                                                                                                                                                                                    |
 
-## Droits d’accès {#access-rights}
-
-Les tables correspondantes sont lues selon les mêmes règles d’accès que pour le table engine [Merge](/fr/reference/engines/table-engines/special/merge#access-rights). Les données sont lues uniquement à partir des tables correspondantes visibles par l’utilisateur courant, c’est-à-dire celles sur lesquelles il dispose du privilège [`SHOW TABLES`](/fr/reference/statements/grant#show), et le schéma de table est déduit exclusivement de ces tables. Une table correspondante que l’utilisateur ne peut pas voir est ignorée sans générer d’erreur. La déduction du schéma nécessite le privilège [`SHOW COLUMNS`](/fr/reference/statements/grant#show) sur les tables dont il est déduit. La lecture d’une table correspondante visible par l’utilisateur nécessite le privilège [`SELECT`](/fr/reference/statements/grant#select) sur les colonnes lues par la requête ; à défaut, la requête échoue avec l’erreur `ACCESS_DENIED`.
-
-## Voir aussi {#related}
+<div id="related">
+  ## Voir aussi
+</div>
 
 * moteur de table [Merge](/fr/reference/engines/table-engines/special/merge)
 

@@ -80,8 +80,6 @@ ColumnPtr FunctionArrayResize::executeImpl(const ColumnsWithTypeAndName & argume
     /// plain integer to use its real value (rounded towards zero), consistent with Float and integer sizes.
     if (isDecimal(arguments[1].type))
         size_column = castColumn(arguments[1], std::make_shared<DataTypeInt64>());
-    else
-        checkIntegerArgumentFitsInt64(*size_column, getName(), "size");
 
     if (!arguments[0].type->equals(*return_type))
         array_column = castColumn(arguments[0], return_type);
@@ -118,11 +116,7 @@ ColumnPtr FunctionArrayResize::executeImpl(const ColumnsWithTypeAndName & argume
     else
     {
         auto default_column = result_array.getData().cloneEmpty();
-        /// `Nothing` has a trivial default, but its `insertDefaultInto` throws.
-        if (return_nested_type->isDefaultInsertTrivial())
-            default_column->insertDefault();
-        else
-            return_nested_type->insertDefaultInto(*default_column);
+        default_column->insertDefault();
         appended_column = ColumnConst::create(std::move(default_column), size);
     }
 

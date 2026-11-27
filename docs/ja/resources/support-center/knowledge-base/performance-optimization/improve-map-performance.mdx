@@ -6,35 +6,37 @@ tags: ['パフォーマンスと最適化']
 keywords: ['Map パフォーマンス']
 ---
 
-## 問題 {#problem}
+<div id="problem">
+  ## 問題
+</div>
 
 `a['key']` のような Map のルックアップは線形計算量で動作するため ([こちら](/ja/reference/data-types/map)で説明しています) 、非効率になる場合があります。これは、テーブルから特定のキーに対応する値を選択するには、Map カラム内の全行 (N) にわたってすべてのキー (約 M) を走査する必要があり、結果として約 MxN 回のルックアップが発生するためです。
 
 Map を使ったルックアップは、String カラムに比べて 10 倍遅くなることがあります。以下の実験でも、コールドクエリで約 10 倍の速度低下が見られるほか、処理されるデータ量にも桁違いの差 (7.21 MB 対 5.65 GB) があることが示されています。
 
 ```sql
--- create table with SpanNAme as String and ResourceAttributes as Map
+-- SpanNameをStringとして、ResourceAttributesをMapとしてテーブルを作成する
 DROP TABLE IF EXISTS tbl;
 CREATE TABLE tbl (
-    `Timestamp` DateTime64(9) CODEC(Delta, Default),
-    `TraceId` String,
-    `ServiceName` LowCardinality(String),
-    `Duration` UInt8, -- Int64
-    `SpanName` LowCardinality(String),
-    `ResourceAttributes` Map(LowCardinality(String), String)
+    `Timestamp` DateTime64(9) CODEC (Delta(8), ZSTD(1)),
+    `TraceId` String CODEC (ZSTD(1)),
+    `ServiceName` LowCardinality(String) CODEC (ZSTD(1)),
+    `Duration` UInt8 CODEC (ZSTD(1)), -- Int64
+    `SpanName` LowCardinality(String) CODEC (ZSTD(1)),
+    `ResourceAttributes` Map(LowCardinality(String), String) CODEC (ZSTD(1))
 )
 ENGINE = MergeTree
 PARTITION BY toDate(Timestamp)
 ORDER BY (ServiceName, SpanName, toUnixTimestamp(Timestamp), TraceId);
 
--- create UDF to generate random Map data for ResourceAttributes
+-- ResourceAttributes用のランダムなMapデータを生成するUDFを作成する
 DROP FUNCTION IF EXISTS genmap;
 CREATE FUNCTION genmap AS (n) -> arrayMap (x-> (x::String, (x*rand32())::String), range(1, n));
 
--- check that genmap is working as intended
+-- genmapが意図通りに動作しているか確認する
 SELECT genmap(10)::Map(String, String);
 
--- insert 1M rows
+-- 100万行を挿入する
 INSERT INTO tbl
 SELECT
     now() - randUniform(1, 1000000.) as Timestamp,
@@ -45,7 +47,7 @@ SELECT
     genmap(rand64()%500)::Map(String, String) as ResourceAttributes
 FROM numbers(1_000_000);
 
--- querying for SpanName is faster
+-- SpanNameへのクエリは高速
 -- [cold] 0 rows in set. Elapsed: 0.642 sec. Processed 1.00 million rows, 7.21 MB (1.56 million rows/s., 11.22 MB/s.)
 -- [warm] 0 rows in set. Elapsed: 0.164 sec. Processed 1.00 million rows, 7.21 MB (6.10 million rows/s., 43.99 MB/s.)
 SELECT
@@ -57,7 +59,7 @@ SELECT
 FROM tbl
 GROUP BY SpanName ORDER BY 1 DESC LIMIT 50 FORMAT Null;
 
--- query for ResourceAttributes is slower
+-- ResourceAttributesへのクエリは低速
 -- [cold] 0 rows in set. Elapsed: 6.432 sec. Processed 1.00 million rows, 5.65 GB (155.46 thousand rows/s., 879.07 MB/s.)
 -- [warm] 0 rows in set. Elapsed: 5.935 sec. Processed 1.00 million rows, 5.65 GB (168.50 thousand rows/s., 952.81 MB/s.)
 SELECT

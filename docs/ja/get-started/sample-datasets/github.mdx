@@ -8,6 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 このデータセットには、ClickHouse リポジトリのすべてのコミットと変更が含まれています。これは、ClickHouse に付属するネイティブの `git-import` ツールを使用して生成できます。
 
 生成されたデータには、次の各テーブルに対応する `tsv` ファイルが含まれます。
@@ -23,7 +25,7 @@ doc_type: 'guide'
 * `line_changes` - 2.7G - 7,535,157 行
 
 <div id="generating-the-data">
-  ## データの生成 {#generating-the-data}
+  ## データの生成
 </div>
 
 この手順は任意です。データは無償で提供しています。詳しくは [Downloading and inserting the data](#downloading-and-inserting-the-data) を参照してください。
@@ -68,7 +70,7 @@ CREATE TABLE git.commits
 * Linux - `~/clickhouse git-import` - 160分
 
 <div id="downloading-and-inserting-the-data">
-  ## データのダウンロードと挿入 {#downloading-and-inserting-the-data}
+  ## データのダウンロードと挿入
 </div>
 
 以下のデータを使用すると、動作環境を再現できます。なお、このデータセットは play.clickhouse.com でも利用できます。詳細は [Queries](#queries) を参照してください。
@@ -184,7 +186,7 @@ CREATE TABLE git.line_changes
 
 ```sql
 INSERT INTO git.commits SELECT *
-FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/commits.tsv.xz', NOSIGN, 'TSV', 'hash String,author LowCardinality(String), time DateTime, message String, files_added UInt32, files_deleted UInt32, files_renamed UInt32, files_modified UInt32, lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/commits.tsv.xz', 'TSV', 'hash String,author LowCardinality(String), time DateTime, message String, files_added UInt32, files_deleted UInt32, files_renamed UInt32, files_modified UInt32, lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32')
 ```
 
 ```response
@@ -195,7 +197,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 
 ```sql
 INSERT INTO git.file_changes SELECT *
-FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/file_changes.tsv.xz', NOSIGN, 'TSV', 'change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6), path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32, commit_hash String, author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/file_changes.tsv.xz', 'TSV', 'change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6), path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32, commit_hash String, author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
 ```
 
 ```response
@@ -206,7 +208,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 
 ```sql
 INSERT INTO git.line_changes SELECT *
-FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/line_changes.tsv.xz', NOSIGN, 'TSV', '    sign Int8, line_number_old UInt32, line_number_new UInt32, hunk_num UInt32, hunk_start_line_number_old UInt32, hunk_start_line_number_new UInt32, hunk_lines_added UInt32,\n    hunk_lines_deleted UInt32, hunk_context LowCardinality(String), line LowCardinality(String), indent UInt8, line_type Enum(\'Empty\' = 0, \'Comment\' = 1, \'Punct\' = 2, \'Code\' = 3), prev_commit_hash String, prev_author LowCardinality(String), prev_time DateTime, file_change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6),\n    path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), file_lines_added UInt32, file_lines_deleted UInt32, file_hunks_added UInt32, file_hunks_removed UInt32, file_hunks_changed UInt32, commit_hash String,\n    author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/line_changes.tsv.xz', 'TSV', '    sign Int8, line_number_old UInt32, line_number_new UInt32, hunk_num UInt32, hunk_start_line_number_old UInt32, hunk_start_line_number_new UInt32, hunk_lines_added UInt32,\n    hunk_lines_deleted UInt32, hunk_context LowCardinality(String), line LowCardinality(String), indent UInt8, line_type Enum(\'Empty\' = 0, \'Comment\' = 1, \'Punct\' = 2, \'Code\' = 3), prev_commit_hash String, prev_author LowCardinality(String), prev_time DateTime, file_change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6),\n    path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), file_lines_added UInt32, file_lines_deleted UInt32, file_hunks_added UInt32, file_hunks_removed UInt32, file_hunks_changed UInt32, commit_hash String,\n    author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
 ```
 
 ```response
@@ -214,7 +216,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 ```
 
 <div id="queries">
-  ## クエリ {#queries}
+  ## クエリ
 </div>
 
 このツールは、ヘルプ出力でいくつかのクエリを提示します。ここでは、それらに加えて、関連する補足的な問いにも回答しています。これらのクエリは、ツール上の任意の順序ではなく、おおむね複雑さが増す順に並べています。
@@ -222,7 +224,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 このデータセットは、[play.clickhouse.com](https://sql.clickhouse.com?query_id=DCQPNPAIMAQXRLHYURLKVJ) の `git_clickhouse` データベースで利用できます。すべてのクエリについて、この環境へのリンクを用意しており、必要に応じてデータベース名を調整しています。データ収集時点の違いにより、play の結果はここで示したものと異なる場合がある点に注意してください。
 
 <div id="history-of-a-single-file">
-  ### 単一ファイルの履歴 {#history-of-a-single-file}
+  ### 単一ファイルの履歴
 </div>
 
 最もシンプルなクエリです。ここでは、`StorageReplicatedMergeTree.cpp` のすべてのコミットメッセージを見ていきます。新しいメッセージのほうが興味深いことが多いため、最新のものが先に来るようにソートしています。
@@ -302,7 +304,7 @@ LIMIT 10
 名前変更を考慮して[ファイルの行ごとのコミット履歴](#line-by-line-commit-history-of-a-file)を求める、より複雑なこのクエリのバリエーションもあります。
 
 <div id="find-the-current-active-files">
-  ### 現在有効なファイルを特定する {#find-the-current-active-files}
+  ### 現在有効なファイルを特定する
 </div>
 
 これは、後続の分析でリポジトリ内の現在のファイルだけを対象にしたい場合に重要です。この集合は、リネームも削除もされていないファイル (その後に再追加や再リネームもされていないもの) として推定します。
@@ -440,7 +442,7 @@ git ls-files | grep -v -E 'generated\.cpp|^(contrib|docs?|website|libs/(libcityh
 これらの違いが分析に大きな影響を及ぼすことはないはずです。**このクエリの改善案を歓迎します**。
 
 <div id="list-files-with-most-modifications">
-  ### 変更回数が最も多いファイルを一覧表示 {#list-files-with-most-modifications}
+  ### 変更回数が最も多いファイルを一覧表示
 </div>
 
 現時点のファイルのみに絞ると、変更回数は削除数と追加数の合計として扱います。
@@ -499,7 +501,7 @@ LIMIT 10
 ```
 
 <div id="what-day-of-the-week-do-commits-usually-occur">
-  ### コミットは通常、何曜日に行われますか？ {#what-day-of-the-week-do-commits-usually-occur}
+  ### コミットは通常、何曜日に行われますか？
 </div>
 
 [play](https://sql.clickhouse.com?query_id=GED2STFSYJDRAA59H8RLIV)
@@ -527,11 +529,13 @@ GROUP BY dayOfWeek(time) AS day_of_week
 
 金曜日には多少生産性が落ちることを考えると、これは納得できます。週末にもコードがコミットされているのはすばらしいですね！コントリビューターの皆さんに心より感謝します！
 
-### サブディレクトリ/ファイルの履歴 - 行数、コミット数、コントリビューター数の推移 {#history-of-subdirectoryfile---number-of-lines-commits-and-contributors-over-time}
+<div id="history-of-subdirectoryfile---number-of-lines-commits-and-contributors-over-time">
+  ### サブディレクトリ/ファイルの履歴 - 行数、コミット数、コントリビューター数の推移
+</div>
 
 このままだと、フィルタリングなしでは表示や可視化が現実的でないほど大きなクエリ結果になります。そのため、次の例ではファイルまたはサブディレクトリで絞り込めるようにしています。ここでは `toStartOfWeek` 関数を使って週単位でグループ化しています。必要に応じて調整してください。
 
-[実行](https://sql.clickhouse.com?query_id=REZRXDVU7CAWT5WKNJSTNY)
+[play](https://sql.clickhouse.com?query_id=REZRXDVU7CAWT5WKNJSTNY)
 
 ```sql
 SELECT
@@ -567,22 +571,14 @@ LIMIT 10
 
 **追加・削除された行数:**
 
-<div className="ch-image-md">
-  <Frame>
-    ![追加・削除された行数](/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp)
-  </Frame>
-</div>
+<Image img="/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp" alt="追加・削除された行数" size="md" />
 
 **コミット数と著者数:**
 
-<div className="ch-image-md">
-  <Frame>
-    ![コミット数と著者数](/images/getting-started/example-datasets/superset-commits-authors.webp)
-  </Frame>
-</div>
+<Image img="/images/getting-started/example-datasets/superset-commits-authors.webp" alt="コミット数と著者数" size="md" />
 
 <div id="list-files-with-maximum-number-of-authors">
-  ### 著者数が最も多いファイルを一覧表示する {#list-files-with-maximum-number-of-authors}
+  ### 著者数が最も多いファイルを一覧表示する
 </div>
 
 現時点で存在するファイルのみに絞ります。
@@ -641,7 +637,7 @@ LIMIT 10
 ```
 
 <div id="oldest-lines-of-code-in-the-repository">
-  ### リポジトリ内で最も古いコードの行 {#oldest-lines-of-code-in-the-repository}
+  ### リポジトリ内で最も古いコードの行
 </div>
 
 現在のファイルのみが対象です。
@@ -702,7 +698,7 @@ LIMIT 10
 ```
 
 <div id="files-with-longest-history">
-  ### 履歴が最も長いファイル {#files-with-longest-history}
+  ### 履歴が最も長いファイル
 </div>
 
 現在のファイルのみが対象です。
@@ -764,7 +760,7 @@ LIMIT 10
 中核となるデータ構造である Merge Tree は、長い改良の歴史の中で、当然ながら絶えず進化を続けてきました！
 
 <div id="distribution-of-contributors-with-respect-to-docs-and-code-over-the-month">
-  ### 1 か月を通した docs とコードに対するコントリビューターの分布 {#distribution-of-contributors-with-respect-to-docs-and-code-over-the-month}
+  ### 1 か月を通した docs とコードに対するコントリビューターの分布
 </div>
 
 **データ収集時に、`docs/` フォルダー内の変更はコミット 履歴が非常に煩雑なため除外されています。そのため、このクエリの結果は正確ではありません。**
@@ -831,7 +827,7 @@ FROM
 月末にかけてやや増えるかもしれませんが、全体としてはおおむね均等に分布しています。繰り返しになりますが、これはデータ挿入時に docs filter でフィルタリングされるため、あまり信頼できません。
 
 <div id="authors-with-the-most-diverse-impact">
-  ### 最も幅広く影響している著者 {#authors-with-the-most-diverse-impact}
+  ### 最も幅広く影響している著者
 </div>
 
 ここでいう多様性とは、著者が貢献した重複のないファイル数を指します。
@@ -914,7 +910,7 @@ LIMIT 10
 ```
 
 <div id="favorite-files-for-an-author">
-  ### ある著者がよく扱うファイル {#favorite-files-for-an-author}
+  ### ある著者がよく扱うファイル
 </div>
 
 ここでは創業者の [Alexey Milovidov](https://github.com/alexey-milovidov) を選び、分析対象を現時点のファイルに限定します。
@@ -1006,7 +1002,7 @@ LIMIT 10
 これは、彼の関心のある分野をより反映しているのかもしれません。
 
 <div id="largest-files-with-lowest-number-of-authors">
-  ### 著者数が少ない大きなファイル {#largest-files-with-lowest-number-of-authors}
+  ### 著者数が少ない大きなファイル
 </div>
 
 このためには、まず最も大きなファイルを特定する必要があります。各ファイルについて、コミット の履歴から完全にファイルを復元してサイズを見積もるのは、非常にコストがかかります。
@@ -1184,7 +1180,7 @@ LIMIT 10
 ```
 
 <div id="commits-and-lines-of-code-distribution-by-time-by-weekday-by-author-for-specific-subdirectories">
-  ### 時間別・曜日別・著者別のコミット数とコード行数の分布；特定のサブディレクトリ {#commits-and-lines-of-code-distribution-by-time-by-weekday-by-author-for-specific-subdirectories}
+  ### 時間別・曜日別・著者別のコミット数とコード行数の分布；特定のサブディレクトリ
 </div>
 
 ここでは、これを曜日ごとの追加・削除行数として見ます。この例では、[Functionsディレクトリ](https://github.com/ClickHouse/ClickHouse/tree/master/src/Functions)に着目します。
@@ -1316,11 +1312,13 @@ FROM
 24 rows in set. Elapsed: 0.038 sec. Processed 266.05 thousand rows, 14.66 MB (7.09 million rows/s., 390.69 MB/s.)
 ```
 
-### どの著者が他の著者のコードを書き換える傾向にあるかを示す著者マトリックス {#matrix-of-authors-that-shows-what-authors-tends-to-rewrite-another-authors-code}
+<div id="matrix-of-authors-that-shows-what-authors-tends-to-rewrite-another-authors-code">
+  ### どの著者が他の著者のコードを書き換える傾向にあるかを示す著者マトリックス
+</div>
 
 `sign = -1` はコードの削除を示します。句読点と空行の挿入は除外しています。
 
-[実行](https://sql.clickhouse.com?query_id=448O8GWAHY3EM6ZZ7AGLAM)
+[play](https://sql.clickhouse.com?query_id=448O8GWAHY3EM6ZZ7AGLAM)
 
 ```sql
 SELECT
@@ -1366,22 +1364,14 @@ LIMIT 100
 
 Sankey chart (SuperSet) を使うと、これを見やすく可視化できます。ビジュアルの幅を広げるため、`LIMIT BY` を 3 に増やし、各著者についてコードを最も多く削除した上位 3 人を取得しています。
 
-<div className="ch-image-md">
-  <Frame>
-    ![Superset 著者マトリックス](/images/getting-started/example-datasets/superset-authors-matrix.webp)
-  </Frame>
-</div>
+<Image img="/images/getting-started/example-datasets/superset-authors-matrix.webp" alt="Superset 著者マトリクス" size="md" />
 
 Alexey は明らかに他の人のコードを削除するのが好きなようです。コード削除の傾向をよりバランスよく見るため、彼を除外しましょう。
 
-<div className="ch-image-md">
-  <Frame>
-    ![Superset 著者マトリックス v2](/images/getting-started/example-datasets/superset-authors-matrix_v2.webp)
-  </Frame>
-</div>
+<Image img="/images/getting-started/example-datasets/superset-authors-matrix_v2.webp" alt="Superset 著者マトリクス v2" size="md" />
 
 <div id="who-is-the-highest-percentage-contributor-per-day-of-week">
-  ### 各曜日で、コミットに占める割合が最も高いコントリビューターは誰ですか？ {#who-is-the-highest-percentage-contributor-per-day-of-week}
+  ### 各曜日で、コミットに占める割合が最も高いコントリビューターは誰ですか？
 </div>
 
 コミット数だけで見ると:
@@ -1504,7 +1494,7 @@ INNER JOIN
 ```
 
 <div id="distribution-of-code-age-across-repository">
-  ### リポジトリ内のコード年齢の分布 {#distribution-of-code-age-across-repository}
+  ### リポジトリ内のコード年齢の分布
 </div>
 
 分析対象は現在のファイルに限定しています。簡潔にするため、結果は深さ 2、各ルートフォルダーあたり 5 ファイルまでに絞っています。必要に応じて調整してください。
@@ -1591,7 +1581,7 @@ LIMIT 5 BY root
 ```
 
 <div id="what-percentage-of-code-for-an-author-has-been-removed-by-other-authors">
-  ### 著者が書いたコードのうち、他の著者に削除された割合はどれくらいですか？ {#what-percentage-of-code-for-an-author-has-been-removed-by-other-authors}
+  ### 著者が書いたコードのうち、他の著者に削除された割合はどれくらいですか？
 </div>
 
 この問いに答えるには、ある著者が書いた行数を、別のコントリビューターによって削除されたその著者の総行数で割ります。
@@ -1645,7 +1635,7 @@ LIMIT 10
 ```
 
 <div id="list-files-that-were-rewritten-most-number-of-times">
-  ### 最も頻繁に書き換えられたファイルを一覧表示するには？ {#list-files-that-were-rewritten-most-number-of-times}
+  ### 最も頻繁に書き換えられたファイルを一覧表示するには？
 </div>
 
 この問いに対する最もシンプルな方法は、各 `path` について行の変更回数を数えることです (現在存在するファイルに限定) 。例:
@@ -1792,7 +1782,7 @@ LIMIT 10
 ```
 
 <div id="what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository">
-  ### コードがリポジトリに最も残りやすいのは何曜日ですか？ {#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository}
+  ### コードがリポジトリに最も残りやすいのは何曜日ですか？
 </div>
 
 このためには、コードの各行を一意に特定する必要があります。同じ行が1つのファイル内に複数回現れることがあるため、ここではパスと行の内容を使ってそれを近似的に識別します。
@@ -1858,7 +1848,7 @@ GROUP BY dayOfWeek(added_day) AS day_of_week_added
 ```
 
 <div id="files-sorted-by-average-code-age">
-  ### 平均コード年齢でソートしたファイル {#files-sorted-by-average-code-age}
+  ### 平均コード年齢でソートしたファイル
 </div>
 
 このクエリは、パスと行の内容を使ってコードの各行を一意に識別するという、[コードがリポジトリに残る可能性が最も高い曜日はいつですか](#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository) と同じ考え方に基づいています。
@@ -1952,7 +1942,7 @@ LIMIT 10
 ```
 
 <div id="who-tends-to-write-more-tests--cpp-code--comments">
-  ### テスト / CPP コード / コメントをより多く書く傾向があるのは誰でしょうか？ {#who-tends-to-write-more-tests--cpp-code--comments}
+  ### テスト / CPP コード / コメントをより多く書く傾向があるのは誰でしょうか？
 </div>
 
 この問いには、いくつかのアプローチがあります。コードとテストの比率に着目すると、このクエリは比較的シンプルで、`tests` を含むフォルダーへのコントリビューション数を数え、それが総コントリビューション数に占める比率を算出します。
@@ -2092,7 +2082,7 @@ LIMIT 10
 コードへの貢献度でソートしている点に注意してください。主要な貢献者はいずれもこの割合が驚くほど高く、それが私たちのコードの読みやすさの一因となっています。
 
 <div id="how-does-an-authors-commits-change-over-time-with-respect-to-codecomments-percentage">
-  ### コード/コメントの割合に対して、著者のコミットは時系列でどのように変化するでしょうか？ {#how-does-an-authors-commits-change-over-time-with-respect-to-codecomments-percentage}
+  ### コード/コメントの割合に対して、著者のコミットは時系列でどのように変化するでしょうか？
 </div>
 
 これを著者ごとに計算するのは簡単です。
@@ -2214,7 +2204,7 @@ LIMIT 20
 喜ばしいことに、コメント率はほぼ一定で、著者の貢献期間が長くなっても低下しません。
 
 <div id="what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay">
-  ### コードが書き換えられるまでの平均時間と中央値 (コード劣化の半減期) はどれくらいですか？ {#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay}
+  ### コードが書き換えられるまでの平均時間と中央値 (コード劣化の半減期) はどれくらいですか？
 </div>
 
 書き換えを特定するには、[最も多く書き換えられた、または最も多くの著者によって書き換えられたファイルを一覧表示する](#list-files-that-were-rewritten-most-number-of-times) と同じ原理を使いますが、ここではすべてのファイルを対象にします。各ファイルについて書き換えの間隔を算出するために、ウィンドウ関数 を使用します。これにより、すべてのファイルにわたる平均値と中央値を計算できます。
@@ -2278,7 +2268,7 @@ FROM rewrites
 ```
 
 <div id="what-is-the-worst-time-to-write-code-in-sense-that-the-code-has-highest-chance-to-be-re-written">
-  ### コードが最も書き直されやすいのは、いつ書かれた場合ですか？ {#what-is-the-worst-time-to-write-code-in-sense-that-the-code-has-highest-chance-to-be-re-written}
+  ### コードが最も書き直されやすいのは、いつ書かれた場合ですか？
 </div>
 
 [コードが書き直されるまでの平均時間と中央値 (コード劣化の半減期) はどれくらいですか？](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay) および [最も多く書き直された、または最も多くの著者によって書き直されたファイルを一覧表示する](#list-files-that-were-rewritten-most-number-of-times) と同様ですが、ここでは曜日ごとに集計します。必要に応じて、たとえば月ごとに集計するよう調整してください。
@@ -2346,7 +2336,7 @@ GROUP BY dayOfWeek
 ```
 
 <div id="which-authors-code-is-the-most-sticky">
-  ### どの著者のコードが最も長く残るのでしょうか？ {#which-authors-code-is-the-most-sticky}
+  ### どの著者のコードが最も長く残るのでしょうか？
 </div>
 
 ここでいう &quot;sticky&quot; とは、著者のコードが書き換えられるまでどれくらい維持されるかを指します。前の質問 [コードが書き換えられるまでの平均時間と中央値 (コード劣化の半減期) はどれくらいですか？](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay) と同様に、書き換えの指標には同じ基準、つまりファイルに対して追加が50%、削除が50%発生した時点を用います。著者ごとの平均書き換え時間を算出し、対象は3つ以上のファイルに関与した contributors に限定します。
@@ -2427,7 +2417,7 @@ LIMIT 10
 ```
 
 <div id="most-consecutive-days-of-commits-by-an-author">
-  ### 著者ごとの最長連続コミット日数 {#most-consecutive-days-of-commits-by-an-author}
+  ### 著者ごとの最長連続コミット日数
 </div>
 
 このクエリでは、まず著者がコミットした日を計算する必要があります。著者ごとにパーティション化したウィンドウ関数を使うことで、各コミット間の日数を計算できます。各コミットについて、前回のコミットから 1 日しか経過していなければ連続 (1)、そうでなければ 0 とし、この結果を `consecutive_day` に格納します。
@@ -2486,7 +2476,7 @@ LIMIT 10
 ```
 
 <div id="line-by-line-commit-history-of-a-file">
-  ### ファイルの行単位のコミット履歴 {#line-by-line-commit-history-of-a-file}
+  ### ファイルの行単位のコミット履歴
 </div>
 
 ファイル名は変更できます。この場合、名前変更イベントが記録され、`path` カラムにはファイルの新しいパスが設定され、`old_path` には以前の場所が入ります。例:
@@ -2571,11 +2561,11 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="unsolved-questions">
-  ## 未解決の課題 {#unsolved-questions}
+  ## 未解決の課題
 </div>
 
 <div id="git-blame">
-  ### Git blame {#git-blame}
+  ### Git blame
 </div>
 
 これは、現時点では `array functions` で状態を保持できないため、正確な結果を得るのが特に難しいからです。これを可能にするのが `arrayFold` や `arrayReduce` で、各反復で状態を保持できるようになります。

@@ -1,5 +1,0 @@
-<clickhouse>
-    <backups>
-        <allowed_disk>disk_s3_plain_rewritable</allowed_disk>
-    </backups>
-</clickhouse>

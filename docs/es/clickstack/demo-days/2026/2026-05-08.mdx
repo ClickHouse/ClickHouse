@@ -7,15 +7,17 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Demo days']
 ---
 
-## Mejor manejo de secretos en webhooks {#improved-handling-of-secrets-in-webhooks}
+<div id="improved-handling-of-secrets-in-webhooks">
+  ## Mejor manejo de secretos en webhooks
+</div>
 
-*Demostración a cargo de [@dhable](https://github.com/dhable)*
+*Demostración de [@dhable](https://github.com/dhable)*
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/aD7sT5dc470" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-Las URL y las cabeceras de los webhooks suelen incluir credentials a la vista. Una URL de webhook de Slack lleva el token secreto en la ruta, y un webhook HTTP normalmente necesita una cabecera `Authorization` para autenticarse. Hasta esta versión, la API interna de la UI de ClickStack para listar y editar webhooks devolvía todo ese contenido en cada solicitud, lo que significaba que cualquier miembro autenticado del equipo podía leer los secretos con solo consultar la API.
+Las URL y las cabeceras de los webhooks suelen incluir credentials a la vista. Una URL de webhook de Slack lleva el token secreto en la ruta, y un webhook HTTP normalmente necesita una cabecera `Authorization` para autenticarse. Hasta esta versión, la API interna de HyperDX para listar y editar webhooks devolvía todo ese contenido en cada solicitud, lo que significaba que cualquier miembro autenticado del equipo podía leer los secretos con solo consultar la API.
 
 Este cambio aplica el mismo patrón de redacción que ya usaba la API pública. Las URL de los webhooks se devuelven con la ruta reemplazada por `****`, de modo que el token de Slack (o cualquier otra clave incrustada en la ruta) nunca sale del servidor. Las cabeceras también se redactan de forma predeterminada, ya que no tenemos una forma fiable de saber cuáles contienen secretos, así que todos los valores se sustituyen por `****` y solo quedan visibles los nombres de las cabeceras.
 
@@ -23,7 +25,9 @@ El formulario de edición trata el valor redactado como &quot;sin cambios&quot;:
 
 **PR relacionadas:** [#2239](https://github.com/hyperdxio/hyperdx/pull/2239) [HDX-4173] Redactar campos sensibles de las respuestas de la API interna de webhooks
 
-## Metadatos adicionales en las alertas {#extra-metadata-in-alerts}
+<div id="extra-metadata-in-alerts">
+  ## Metadatos adicionales en las alertas
+</div>
 
 *Demo de [@dhable](https://github.com/dhable)*
 
@@ -39,9 +43,11 @@ Ya que estábamos en ello, este PR también mejora la UX de las alertas disparad
 
 **PR relacionados:** [#2210](https://github.com/hyperdxio/hyperdx/pull/2210) [HDX-3044] Añadir un campo de nota opcional a las alertas
 
-## Posibles temas {#possible-themes}
+<div id="possible-themes">
+  ## Posibles temas
+</div>
 
-*Demostración a cargo de [@elizabetdev](https://github.com/elizabetdev)*
+*Demo de [@elizabetdev](https://github.com/elizabetdev)*
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/JZYGz6ZOPf4" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
@@ -51,6 +57,6 @@ Este fue un experimento de hackathon que introdujo tres temas inspirados en IDE 
 
 Al final, la PR se cerró en lugar de fusionarse. El equipo está avanzando hacia ClickUI, que actualmente solo admite un tema, y mantener varios conjuntos paralelos de tokens supondría trabajo continuo, sobre todo cuando se empieza a verificar correctamente el contraste en cada combinación. Se decidió esperar a que ClickUI admita varios temas.
 
-Nos pareció que había una idea de diseño del experimento que valía la pena conservar para cuando esto se retome. En la primera iteración se recoloreaba el logotipo de la UI de ClickStack según el tema, y eso hacía que se perdiera la identidad de marca. El enfoque más limpio: un tema claro muestra el logotipo oscuro, un tema oscuro muestra el logotipo claro, y la marca denominativa verde de la UI de ClickStack permanece intacta.
+Nos pareció que había una idea de diseño del experimento que valía la pena conservar para cuando esto se retome. En la primera iteración se recoloreaba el logotipo de HyperDX según el tema, y eso hacía que se perdiera la identidad de marca. El enfoque más limpio: un tema claro muestra el logotipo oscuro, un tema oscuro muestra el logotipo claro, y la marca denominativa verde de HyperDX permanece intacta.
 
 **PR relacionadas:** [#2191](https://github.com/hyperdxio/hyperdx/pull/2191) feat: add IDE-inspired themes (Nord, Catppuccin, One Dark)

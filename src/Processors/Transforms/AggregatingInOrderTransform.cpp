@@ -4,13 +4,11 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Core/SortCursor.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <Columns/replaceNegativeZeros.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Common/MemoryTracker.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/sortBlock.h>
 #include <base/range.h>
 
@@ -19,7 +17,7 @@ namespace DB
 
 namespace FailPoints
 {
-extern const char aggregating_in_order_transform_cancel_mid_loop[];
+extern const char aggregating_in_order_transform_mid_loop_pause[];
 }
 
 AggregatingInOrderTransform::AggregatingInOrderTransform(
@@ -134,11 +132,6 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             key_columns_raw[i] = materialized_columns.back().get();
     }
 
-    /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
-    /// Only the hashed keys are replaced; `key_columns` keep the original values for finding the sorted ranges.
-    if (group_by_key)
-        replaceNegativeZeros(key_columns_raw, materialized_columns);
-
     Aggregator::NestedColumnsHolder nested_columns_holder;
     Aggregator::AggregateFunctionInstructions aggregate_function_instructions;
     if (!params->params.only_merge)
@@ -200,15 +193,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         }
 
         if (interval_index == 5)
-        {
-            /// This runs inside `IProcessor::work()`, which must only use CPU and never wait, so the
-            /// hook cancels the query the same way `KILL QUERY` does instead of blocking: the
-            /// check above then observes the cancellation on the next interval.
-            fiu_do_on(FailPoints::aggregating_in_order_transform_cancel_mid_loop, {
-                if (auto query_context = CurrentThread::tryGetQueryContext())
-                    query_context->killCurrentQuery();
-            });
-        }
+            FailPointInjection::pauseFailPoint(FailPoints::aggregating_in_order_transform_mid_loop_pause);
         ++interval_index;
 
         /// Find the first position of new (not current) key in current chunk

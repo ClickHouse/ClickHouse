@@ -7,7 +7,9 @@ doc_type: 'guide'
 keywords: ['ClickStack', '데모 데이']
 ---
 
-## 버전 인식 기반의 개선된 스키마 필터링 {#version-aware-improved-schema-filtering}
+<div id="version-aware-improved-schema-filtering">
+  ## 버전 인식 기반의 개선된 스키마 필터링
+</div>
 
 *[@knudtty](https://github.com/knudtty)의 시연*
 
@@ -21,7 +23,9 @@ keywords: ['ClickStack', '데모 데이']
 
 **관련 PR:** [#2341](https://github.com/hyperdxio/hyperdx/pull/2341) feat: 로그 및 traces에 기본 direct&#95;read 최적화 추가, [#2405](https://github.com/hyperdxio/hyperdx/pull/2405) feat(common-utils): SQL 필터에 direct&#95;read 키-값 항목 최적화 적용, [#2376](https://github.com/hyperdxio/hyperdx/pull/2376) feat: 필터와 자동 완성에 text index 사용
 
-## 더 나은 로그 파싱 {#better-log-parsing}
+<div id="better-log-parsing">
+  ## 더 나은 로그 파싱
+</div>
 
 *시연: [@dhable](https://github.com/dhable)*
 
@@ -35,7 +39,9 @@ keywords: ['ClickStack', '데모 데이']
 
 **관련 PR:** [#2363](https://github.com/hyperdxio/hyperdx/pull/2363) fix(log-parser): body가 level 필드를 포함한 JSON으로 파싱될 때 문자열 추론 건너뛰기
 
-## MCP 서버 개선 사항 {#mcp-server-improvements}
+<div id="mcp-server-improvements">
+  ## MCP 서버 개선 사항
+</div>
 
 *시연: [@brandon-pereira](https://github.com/brandon-pereira)*
 
@@ -47,21 +53,25 @@ keywords: ['ClickStack', '데모 데이']
 
 **관련 PR:** [#2337](https://github.com/hyperdxio/hyperdx/pull/2337) feat(mcp): MCP 도구 품질 개선 — 오류 힌트, 공용 헬퍼, 더 나은 메시지, [#2396](https://github.com/hyperdxio/hyperdx/pull/2396) refactor(mcp): 도구 프리픽스를 hyperdx&#95;에서 clickstack&#95;로 변경, [#2343](https://github.com/hyperdxio/hyperdx/pull/2343) feat(mcp): patch&#95;dashboard, get&#95;dashboard&#95;tile, search&#95;dashboards 도구 추가, [#2418](https://github.com/hyperdxio/hyperdx/pull/2418) fix(mcp): 읽기 쉬운 차트 범례를 위한 alias 설명 및 예시 개선, [#2412](https://github.com/hyperdxio/hyperdx/pull/2412) refactor: 공용 헬퍼와 schema 수준 검사를 사용해 MCP ObjectId 검증 단순화
 
-## 새로운 시리즈 색상 팔레트 {#new-series-color-palette}
+<div id="new-series-color-palette">
+  ## 새로운 시리즈 색상 팔레트
+</div>
 
-*데모 진행자: [@elizabetdev](https://github.com/elizabetdev)*
+*시연: [@elizabetdev](https://github.com/elizabetdev)*
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/YzECP3diWvg" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-Elizabet는 Alex의 색상 선택기 작업을 지원하기 위해 ClickStack UI와 ClickStack 테마 전반에서 데이터 시각화 색상 팔레트를 통합하는 작업을 진행했습니다. 두 테마는 각각 별도의 팔레트와 예외 규칙을 사용하고 있었기 때문에 색상 체계를 파악하기가 불필요하게 복잡했습니다. 목표는 두 테마 모두에서 사용할 수 있는 단일 팔레트를 만드는 것이었습니다.
+Elizabet는 Alex의 색상 선택기 작업을 지원하기 위해 HyperDX와 ClickStack 테마 전반에서 데이터 시각화 색상 팔레트를 통합하는 작업을 진행했습니다. 두 테마는 각각 별도의 팔레트와 예외 규칙을 사용하고 있었기 때문에 색상 체계를 파악하기가 불필요하게 복잡했습니다. 목표는 두 테마 모두에서 사용할 수 있는 단일 팔레트를 만드는 것이었습니다.
 
 대비와 접근성을 확인하기 위해 Elizabet는 색각 시뮬레이션 도구를 사용하여 업계 표준 팔레트(Tableau, Observable, IBM)를 테스트했습니다. ClickHouse 팔레트는 성능이 좋지 않았습니다. 녹색이 흰색 배경에서 충분한 대비를 제공하지 못했습니다. Tableau와 Observable은 각각 최소 1개의 검사에서 실패했고, IBM 팔레트는 모든 검사를 통과했지만 색상이 5개뿐이라 충분하지 않았습니다. 전체적으로는 Observable의 팔레트가 가장 적합했고, 파란색을 약간 조정한 뒤 이제 두 테마에서 공통으로 사용됩니다.
 
-**관련 PR:** [#2362](https://github.com/hyperdxio/hyperdx/pull/2362) refactor(theme): 차트 팔레트 토큰 이름을 hue 이름으로 변경하고 테마 전반에서 통합
+**관련 PR:** [#2362](https://github.com/hyperdxio/hyperdx/pull/2362) refactor(theme): chart 팔레트 토큰 이름을 hue 이름으로 변경하고 테마 전반에서 통합
 
-## 고정 헤더를 지원하는 새로운 페이지 레이아웃 {#new-page-layout-with-sticky-header}
+<div id="new-page-layout-with-sticky-header">
+  ## 고정 헤더를 지원하는 새로운 페이지 레이아웃
+</div>
 
 *데모: [@elizabetdev](https://github.com/elizabetdev)*
 
@@ -75,7 +85,9 @@ Elizabet는 Alex의 색상 선택기 작업을 지원하기 위해 ClickStack UI
 
 **관련 PR:** [#2282](https://github.com/hyperdxio/hyperdx/pull/2282) PageHeader/PageLayout 추가 및 Sessions 마이그레이션, [#2345](https://github.com/hyperdxio/hyperdx/pull/2345) 목록 페이지에서 PageHeader 제목 사용, [#2346](https://github.com/hyperdxio/hyperdx/pull/2346) Service Map을 PageLayout으로 마이그레이션, [#2347](https://github.com/hyperdxio/hyperdx/pull/2347) Kubernetes 대시보드를 PageLayout으로 마이그레이션, [#2348](https://github.com/hyperdxio/hyperdx/pull/2348) ClickHouse 대시보드를 PageLayout으로 마이그레이션, [#2364](https://github.com/hyperdxio/hyperdx/pull/2364) feat(dashboard): sticky 쿼리 toolbar와 함께 PageLayout으로 마이그레이션, [#2394](https://github.com/hyperdxio/hyperdx/pull/2394) fix(PageHeader): sticky header가 drawer overlay 아래에 유지되도록 수정
 
-## 새 데이터 소스 셀렉터와 시리즈용 색상 선택기 {#new-datasource-selector-and-color-picking-for-series}
+<div id="new-datasource-selector-and-color-picking-for-series">
+  ## 새 데이터 소스 셀렉터와 시리즈용 색상 선택기
+</div>
 
 *시연: [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -89,7 +101,9 @@ Alex가 소개한 2가지 UI 개선 사항입니다. 데이터 소스 셀렉터�
 
 **관련 PR:** [#2365](https://github.com/hyperdxio/hyperdx/pull/2365) feat(source-picker): chip + kebab menu UX, [#2265](https://github.com/hyperdxio/hyperdx/pull/2265) feat(app): number tile static color picker
 
-## 대시보드 작업에 대한 더 나은 힌트 {#better-hints-for-dashboard-actions}
+<div id="better-hints-for-dashboard-actions">
+  ## 대시보드 작업에 대한 더 나은 힌트
+</div>
 
 *[@alex-fedotyev](https://github.com/alex-fedotyev)의 데모*
 

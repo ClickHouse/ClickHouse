@@ -64,22 +64,33 @@ public:
         return std::make_shared<FunctionSerial>(std::move(context_));
     }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] bool isStateful() const override { return true; }
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
-    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
+    bool isStateful() const override { return true; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
+    bool isSuitableForConstantFolding() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(String, [const UInt]) -> UInt64";
+        FunctionArgumentDescriptors mandatory_args
+        {
+            {"series_identifier", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
+        };
+
+        FunctionArgumentDescriptors optional_args{
+            {"start_value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), &isColumnConst, "const UInt*"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeUInt64>();
     }
 
     /// Increments the counter and returns the old counter.
@@ -131,7 +142,7 @@ public:
         return counter;
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto component_guard = Coordination::setCurrentComponent("FunctionSerial::executeImpl");
         auto col_res = ColumnUInt64::create();
@@ -219,9 +230,9 @@ The series are stored in Keeper nodes under the path, which can be configured in
 SELECT generateSerialID('id1')
         )",
         R"(
-┌─generateSerialID('id1')─┐
-│                       0 │
-└─────────────────────────┘
+┌─generateSerialID('id1')──┐
+│                        1 │
+└──────────────────────────┘
         )"
     },
     {
@@ -230,27 +241,24 @@ SELECT generateSerialID('id1')
 SELECT generateSerialID('id1')
         )",
         R"(
-┌─generateSerialID('id1')─┐
-│                       1 │
-└─────────────────────────┘
+┌─generateSerialID('id1')──┐
+│                        2 │
+└──────────────────────────┘
         )"
     },
     {
         "column call",
         R"(
-CREATE TABLE test_table (CounterID UInt32, UserID UInt32, ver UInt32) ENGINE = Memory;
-INSERT INTO test_table VALUES (1, 3, 3), (1, 1, 1), (1, 2, 2), (1, 5, 5), (1, 4, 4);
-
 SELECT *, generateSerialID('id1') FROM test_table
         )",
         R"(
-┌─CounterID─┬─UserID─┬─ver─┬─generateSerialID('id1')─┐
-│         1 │      3 │   3 │                       2 │
-│         1 │      1 │   1 │                       3 │
-│         1 │      2 │   2 │                       4 │
-│         1 │      5 │   5 │                       5 │
-│         1 │      4 │   4 │                       6 │
-└───────────┴────────┴─────┴─────────────────────────┘
+┌─CounterID─┬─UserID─┬─ver─┬─generateSerialID('id1')──┐
+│         1 │      3 │   3 │                        3 │
+│         1 │      1 │   1 │                        4 │
+│         1 │      2 │   2 │                        5 │
+│         1 │      5 │   5 │                        6 │
+│         1 │      4 │   4 │                        7 │
+└───────────┴────────┴─────┴──────────────────────────┘
         )"
     },
     {
@@ -259,9 +267,9 @@ SELECT *, generateSerialID('id1') FROM test_table
 SELECT generateSerialID('id2', 100)
         )",
         R"(
-┌─generateSerialID('id2', 100)─┐
-│                          100 │
-└──────────────────────────────┘
+┌─generateSerialID('id2', 100)──┐
+│                           100 │
+└───────────────────────────────┘
         )"
     },
     {
@@ -270,9 +278,9 @@ SELECT generateSerialID('id2', 100)
 SELECT generateSerialID('id2', 100)
         )",
         R"(
-┌─generateSerialID('id2', 100)─┐
-│                          101 │
-└──────────────────────────────┘
+┌─generateSerialID('id2', 100)──┐
+│                           101 │
+└───────────────────────────────┘
         )"
 }
 };

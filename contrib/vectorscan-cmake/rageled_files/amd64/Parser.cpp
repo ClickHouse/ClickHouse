@@ -174,7 +174,7 @@ namespace ue2 {
 			/* leverage ComponentClass to generate the vertices */
 			auto cc = getComponentClass(mode);
 			assert(cc);
-			cc->add((u8)c);
+			cc->add(c);
 			cc->finalize();
 			currentSeq->addComponent(std::move(cc));
 		} else {
@@ -272,7 +272,7 @@ namespace ue2 {
 	}
 	
 	
-#line 1917 "Parser.rl"
+#line 1916 "Parser.rl"
 
 	
 
@@ -4117,7 +4117,7 @@ static const short _regex_actions[] = {
 	static const int regex_en_main = 746;
 	
 	
-#line 1919 "Parser.rl"
+#line 1918 "Parser.rl"
 
 	
 	/** \brief Main parser call, returns root Component or nullptr. */
@@ -4199,7 +4199,7 @@ static const short _regex_actions[] = {
 				act = 0;
 			}
 			
-#line 1990 "Parser.rl"
+#line 1989 "Parser.rl"
 
 
 #line 4197 "Parser.cpp"
@@ -4256,9 +4256,9 @@ static const short _regex_actions[] = {
 							}
 							
 							_mid = _lower + ((_upper-_lower) >> 1);
-							if ( ((unsigned char)(*p)) < (*( _mid)) )
+							if ( ( (*( p))) < (*( _mid)) )
 								_upper = _mid - 1;
-							else if ( ((unsigned char)(*p)) > (*( _mid)) )
+							else if ( ( (*( p))) > (*( _mid)) )
 								_lower = _mid + 1;
 							else {
 								_trans += (unsigned int)(_mid - _keys);
@@ -4279,9 +4279,9 @@ static const short _regex_actions[] = {
 							}
 							
 							_mid = _lower + (((_upper-_lower) >> 1) & ~1);
-							if ( ((unsigned char)(*p)) < (*( _mid)) )
+							if ( ( (*( p))) < (*( _mid)) )
 								_upper = _mid - 2;
-							else if ( ((unsigned char)(*p)) > (*( _mid + 1)) )
+							else if ( ( (*( p))) > (*( _mid + 1)) )
 								_lower = _mid + 2;
 							else {
 								_trans += (unsigned int)((_mid - _keys)>>1);
@@ -4353,7 +4353,7 @@ static const short _regex_actions[] = {
 						{
 							case 0:  {
 									{
-#line 287 "Parser.rl"
+#line 286 "Parser.rl"
 									label.clear();}
 								
 #line 4346 "Parser.cpp"
@@ -4362,8 +4362,8 @@ static const short _regex_actions[] = {
 							}
 							case 1:  {
 									{
-#line 288 "Parser.rl"
-									label.push_back((((unsigned char)(*p))));}
+#line 287 "Parser.rl"
+									label.push_back((( (*( p)))));}
 								
 #line 4354 "Parser.cpp"
 
@@ -4371,7 +4371,7 @@ static const short _regex_actions[] = {
 							}
 							case 2:  {
 									{
-#line 289 "Parser.rl"
+#line 288 "Parser.rl"
 									octAccumulator = 0;}
 								
 #line 4362 "Parser.cpp"
@@ -4380,7 +4380,7 @@ static const short _regex_actions[] = {
 							}
 							case 3:  {
 									{
-#line 290 "Parser.rl"
+#line 289 "Parser.rl"
 									accumulator = 0;}
 								
 #line 4370 "Parser.cpp"
@@ -4389,10 +4389,10 @@ static const short _regex_actions[] = {
 							}
 							case 4:  {
 									{
-#line 291 "Parser.rl"
+#line 290 "Parser.rl"
 									
 									octAccumulator = 0;
-									pushOct(&octAccumulator, (((unsigned char)(*p))));
+									pushOct(&octAccumulator, (( (*( p)))));
 								}
 								
 #line 4381 "Parser.cpp"
@@ -4401,10 +4401,10 @@ static const short _regex_actions[] = {
 							}
 							case 5:  {
 									{
-#line 295 "Parser.rl"
+#line 294 "Parser.rl"
 									
 									accumulator = 0;
-									pushDec(&accumulator, (((unsigned char)(*p))));
+									pushDec(&accumulator, (( (*( p)))));
 								}
 								
 #line 4392 "Parser.cpp"
@@ -4413,7 +4413,7 @@ static const short _regex_actions[] = {
 							}
 							case 6:  {
 									{
-#line 299 "Parser.rl"
+#line 298 "Parser.rl"
 									repeatN = 0; repeatM = 0; }
 								
 #line 4400 "Parser.cpp"
@@ -4422,8 +4422,8 @@ static const short _regex_actions[] = {
 							}
 							case 7:  {
 									{
-#line 300 "Parser.rl"
-									pushDec(&repeatN, (((unsigned char)(*p)))); }
+#line 299 "Parser.rl"
+									pushDec(&repeatN, (( (*( p))))); }
 								
 #line 4408 "Parser.cpp"
 
@@ -4431,8 +4431,8 @@ static const short _regex_actions[] = {
 							}
 							case 8:  {
 									{
-#line 301 "Parser.rl"
-									pushDec(&repeatM, (((unsigned char)(*p)))); }
+#line 300 "Parser.rl"
+									pushDec(&repeatM, (( (*( p))))); }
 								
 #line 4416 "Parser.cpp"
 
@@ -4440,8 +4440,8 @@ static const short _regex_actions[] = {
 							}
 							case 9:  {
 									{
-#line 302 "Parser.rl"
-									pushOct(&octAccumulator, (((unsigned char)(*p)))); }
+#line 301 "Parser.rl"
+									pushOct(&octAccumulator, (( (*( p))))); }
 								
 #line 4424 "Parser.cpp"
 
@@ -4449,8 +4449,8 @@ static const short _regex_actions[] = {
 							}
 							case 10:  {
 									{
-#line 303 "Parser.rl"
-									pushDec(&accumulator, (((unsigned char)(*p)))); }
+#line 302 "Parser.rl"
+									pushDec(&accumulator, (( (*( p))))); }
 								
 #line 4432 "Parser.cpp"
 
@@ -4458,10 +4458,10 @@ static const short _regex_actions[] = {
 							}
 							case 11:  {
 									{
-#line 304 "Parser.rl"
+#line 303 "Parser.rl"
 									
 									accumulator *= 16;
-									accumulator += (((unsigned char)(*p))) - '0';
+									accumulator += (( (*( p)))) - '0';
 								}
 								
 #line 4443 "Parser.cpp"
@@ -4470,10 +4470,10 @@ static const short _regex_actions[] = {
 							}
 							case 12:  {
 									{
-#line 308 "Parser.rl"
+#line 307 "Parser.rl"
 									
 									accumulator *= 16;
-									accumulator += 10 + (((unsigned char)(*p))) - 'a';
+									accumulator += 10 + (( (*( p)))) - 'a';
 								}
 								
 #line 4454 "Parser.cpp"
@@ -4482,10 +4482,10 @@ static const short _regex_actions[] = {
 							}
 							case 13:  {
 									{
-#line 312 "Parser.rl"
+#line 311 "Parser.rl"
 									
 									accumulator *= 16;
-									accumulator += 10 + (((unsigned char)(*p))) - 'A';
+									accumulator += 10 + (( (*( p)))) - 'A';
 								}
 								
 #line 4465 "Parser.cpp"
@@ -4494,7 +4494,7 @@ static const short _regex_actions[] = {
 							}
 							case 14:  {
 									{
-#line 432 "Parser.rl"
+#line 431 "Parser.rl"
 									
 									newMode = mode;
 								}
@@ -4505,9 +4505,9 @@ static const short _regex_actions[] = {
 							}
 							case 15:  {
 									{
-#line 439 "Parser.rl"
+#line 438 "Parser.rl"
 									
-									switch ((((unsigned char)(*p)))) {
+									switch ((( (*( p))))) {
 										case 'i':
 										newMode.caseless = true;
 										break;
@@ -4532,9 +4532,9 @@ static const short _regex_actions[] = {
 							}
 							case 16:  {
 									{
-#line 458 "Parser.rl"
+#line 457 "Parser.rl"
 									
-									switch ((((unsigned char)(*p)))) {
+									switch ((( (*( p))))) {
 										case 'i':
 										newMode.caseless = false;
 										break;
@@ -4559,7 +4559,7 @@ static const short _regex_actions[] = {
 							}
 							case 17:  {
 									{
-#line 512 "Parser.rl"
+#line 511 "Parser.rl"
 									repeatM = repeatN;}
 								
 #line 4535 "Parser.cpp"
@@ -4568,7 +4568,7 @@ static const short _regex_actions[] = {
 							}
 							case 18:  {
 									{
-#line 512 "Parser.rl"
+#line 511 "Parser.rl"
 									repeatM = ComponentRepeat::NoLimit;}
 								
 #line 4543 "Parser.cpp"
@@ -4577,7 +4577,7 @@ static const short _regex_actions[] = {
 							}
 							case 19:  {
 									{
-#line 724 "Parser.rl"
+#line 723 "Parser.rl"
 									negated = !negated; }
 								
 #line 4551 "Parser.cpp"
@@ -4586,9 +4586,9 @@ static const short _regex_actions[] = {
 							}
 							case 20:  {
 									{
-#line 725 "Parser.rl"
+#line 724 "Parser.rl"
 									{p = p - 1; } {{
-#line 1911 "Parser.rl"
+#line 1910 "Parser.rl"
 											
 											DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
 											if ((int)stack.size() == top) {
@@ -4603,7 +4603,7 @@ static const short _regex_actions[] = {
 							}
 							case 21:  {
 									{
-#line 726 "Parser.rl"
+#line 725 "Parser.rl"
 									if (!inCharClass) { // not inside [..]
 										currentCls->finalize();
 										currentSeq->addComponent(std::move(currentCls));
@@ -4617,7 +4617,7 @@ static const short _regex_actions[] = {
 							}
 							case 22:  {
 									{
-#line 732 "Parser.rl"
+#line 731 "Parser.rl"
 									throw LocatedParseError("Malformed property"); }
 								
 #line 4588 "Parser.cpp"
@@ -4635,9 +4635,9 @@ static const short _regex_actions[] = {
 							}
 							case 26:  {
 									{
-#line 552 "Parser.rl"
+#line 551 "Parser.rl"
 									{te = p+1;{
-#line 552 "Parser.rl"
+#line 551 "Parser.rl"
 											
 											throw LocatedParseError("(*UTF8) must be at start of "
 											"expression, encountered");
@@ -4650,9 +4650,9 @@ static const short _regex_actions[] = {
 							}
 							case 27:  {
 									{
-#line 556 "Parser.rl"
+#line 555 "Parser.rl"
 									{te = p+1;{
-#line 556 "Parser.rl"
+#line 555 "Parser.rl"
 											
 											throw LocatedParseError("(*UTF) must be at start of "
 											"expression, encountered");
@@ -4665,9 +4665,9 @@ static const short _regex_actions[] = {
 							}
 							case 28:  {
 									{
-#line 560 "Parser.rl"
+#line 559 "Parser.rl"
 									{te = p+1;{
-#line 560 "Parser.rl"
+#line 559 "Parser.rl"
 											
 											throw LocatedParseError("(*UCP) must be at start of "
 											"expression, encountered");
@@ -4680,9 +4680,9 @@ static const short _regex_actions[] = {
 							}
 							case 29:  {
 									{
-#line 566 "Parser.rl"
+#line 565 "Parser.rl"
 									{te = p+1;{
-#line 566 "Parser.rl"
+#line 565 "Parser.rl"
 											
 											ParseMode temp_mode;
 											assert(ts - 2 >= ptr); // parser needs the '(*' at the start too.
@@ -4698,9 +4698,9 @@ static const short _regex_actions[] = {
 							}
 							case 30:  {
 									{
-#line 573 "Parser.rl"
+#line 572 "Parser.rl"
 									{te = p+1;{
-#line 573 "Parser.rl"
+#line 572 "Parser.rl"
 											
 											throw LocatedParseError("Unknown control verb");
 										}
@@ -4712,9 +4712,9 @@ static const short _regex_actions[] = {
 							}
 							case 31:  {
 									{
-#line 573 "Parser.rl"
+#line 572 "Parser.rl"
 									{te = p;p = p - 1;{
-#line 573 "Parser.rl"
+#line 572 "Parser.rl"
 											
 											throw LocatedParseError("Unknown control verb");
 										}
@@ -4726,10 +4726,10 @@ static const short _regex_actions[] = {
 							}
 							case 32:  {
 									{
-#line 573 "Parser.rl"
+#line 572 "Parser.rl"
 									{p = ((te))-1;
 										{
-#line 573 "Parser.rl"
+#line 572 "Parser.rl"
 											
 											throw LocatedParseError("Unknown control verb");
 										}
@@ -4741,9 +4741,9 @@ static const short _regex_actions[] = {
 							}
 							case 33:  {
 									{
-#line 583 "Parser.rl"
+#line 582 "Parser.rl"
 									{te = p+1;{
-#line 583 "Parser.rl"
+#line 582 "Parser.rl"
 											currentCls->add(CLASS_UCP_CC, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4753,9 +4753,9 @@ static const short _regex_actions[] = {
 							}
 							case 34:  {
 									{
-#line 584 "Parser.rl"
+#line 583 "Parser.rl"
 									{te = p+1;{
-#line 584 "Parser.rl"
+#line 583 "Parser.rl"
 											currentCls->add(CLASS_UCP_CF, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4765,9 +4765,9 @@ static const short _regex_actions[] = {
 							}
 							case 35:  {
 									{
-#line 585 "Parser.rl"
+#line 584 "Parser.rl"
 									{te = p+1;{
-#line 585 "Parser.rl"
+#line 584 "Parser.rl"
 											currentCls->add(CLASS_UCP_CN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4777,9 +4777,9 @@ static const short _regex_actions[] = {
 							}
 							case 36:  {
 									{
-#line 587 "Parser.rl"
+#line 586 "Parser.rl"
 									{te = p+1;{
-#line 587 "Parser.rl"
+#line 586 "Parser.rl"
 											currentCls->add(CLASS_UCP_CS, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4789,9 +4789,9 @@ static const short _regex_actions[] = {
 							}
 							case 37:  {
 									{
-#line 589 "Parser.rl"
+#line 588 "Parser.rl"
 									{te = p+1;{
-#line 589 "Parser.rl"
+#line 588 "Parser.rl"
 											currentCls->add(CLASS_UCP_LL, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4801,9 +4801,9 @@ static const short _regex_actions[] = {
 							}
 							case 38:  {
 									{
-#line 590 "Parser.rl"
+#line 589 "Parser.rl"
 									{te = p+1;{
-#line 590 "Parser.rl"
+#line 589 "Parser.rl"
 											currentCls->add(CLASS_UCP_LM, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4813,9 +4813,9 @@ static const short _regex_actions[] = {
 							}
 							case 39:  {
 									{
-#line 591 "Parser.rl"
+#line 590 "Parser.rl"
 									{te = p+1;{
-#line 591 "Parser.rl"
+#line 590 "Parser.rl"
 											currentCls->add(CLASS_UCP_LO, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4825,9 +4825,9 @@ static const short _regex_actions[] = {
 							}
 							case 40:  {
 									{
-#line 592 "Parser.rl"
+#line 591 "Parser.rl"
 									{te = p+1;{
-#line 592 "Parser.rl"
+#line 591 "Parser.rl"
 											currentCls->add(CLASS_UCP_LT, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4837,9 +4837,9 @@ static const short _regex_actions[] = {
 							}
 							case 41:  {
 									{
-#line 593 "Parser.rl"
+#line 592 "Parser.rl"
 									{te = p+1;{
-#line 593 "Parser.rl"
+#line 592 "Parser.rl"
 											currentCls->add(CLASS_UCP_LU, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4849,9 +4849,9 @@ static const short _regex_actions[] = {
 							}
 							case 42:  {
 									{
-#line 594 "Parser.rl"
+#line 593 "Parser.rl"
 									{te = p+1;{
-#line 594 "Parser.rl"
+#line 593 "Parser.rl"
 											currentCls->add(CLASS_UCP_L_AND, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4861,9 +4861,9 @@ static const short _regex_actions[] = {
 							}
 							case 43:  {
 									{
-#line 596 "Parser.rl"
+#line 595 "Parser.rl"
 									{te = p+1;{
-#line 596 "Parser.rl"
+#line 595 "Parser.rl"
 											currentCls->add(CLASS_UCP_MC, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4873,9 +4873,9 @@ static const short _regex_actions[] = {
 							}
 							case 44:  {
 									{
-#line 598 "Parser.rl"
+#line 597 "Parser.rl"
 									{te = p+1;{
-#line 598 "Parser.rl"
+#line 597 "Parser.rl"
 											currentCls->add(CLASS_UCP_MN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4885,9 +4885,9 @@ static const short _regex_actions[] = {
 							}
 							case 45:  {
 									{
-#line 600 "Parser.rl"
+#line 599 "Parser.rl"
 									{te = p+1;{
-#line 600 "Parser.rl"
+#line 599 "Parser.rl"
 											currentCls->add(CLASS_UCP_ND, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4897,9 +4897,9 @@ static const short _regex_actions[] = {
 							}
 							case 46:  {
 									{
-#line 601 "Parser.rl"
+#line 600 "Parser.rl"
 									{te = p+1;{
-#line 601 "Parser.rl"
+#line 600 "Parser.rl"
 											currentCls->add(CLASS_UCP_NL, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4909,9 +4909,9 @@ static const short _regex_actions[] = {
 							}
 							case 47:  {
 									{
-#line 602 "Parser.rl"
+#line 601 "Parser.rl"
 									{te = p+1;{
-#line 602 "Parser.rl"
+#line 601 "Parser.rl"
 											currentCls->add(CLASS_UCP_NO, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4921,9 +4921,9 @@ static const short _regex_actions[] = {
 							}
 							case 48:  {
 									{
-#line 604 "Parser.rl"
+#line 603 "Parser.rl"
 									{te = p+1;{
-#line 604 "Parser.rl"
+#line 603 "Parser.rl"
 											currentCls->add(CLASS_UCP_PC, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4933,9 +4933,9 @@ static const short _regex_actions[] = {
 							}
 							case 49:  {
 									{
-#line 605 "Parser.rl"
+#line 604 "Parser.rl"
 									{te = p+1;{
-#line 605 "Parser.rl"
+#line 604 "Parser.rl"
 											currentCls->add(CLASS_UCP_PD, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4945,9 +4945,9 @@ static const short _regex_actions[] = {
 							}
 							case 50:  {
 									{
-#line 606 "Parser.rl"
+#line 605 "Parser.rl"
 									{te = p+1;{
-#line 606 "Parser.rl"
+#line 605 "Parser.rl"
 											currentCls->add(CLASS_UCP_PE, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4957,9 +4957,9 @@ static const short _regex_actions[] = {
 							}
 							case 51:  {
 									{
-#line 607 "Parser.rl"
+#line 606 "Parser.rl"
 									{te = p+1;{
-#line 607 "Parser.rl"
+#line 606 "Parser.rl"
 											currentCls->add(CLASS_UCP_PF, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4969,9 +4969,9 @@ static const short _regex_actions[] = {
 							}
 							case 52:  {
 									{
-#line 608 "Parser.rl"
+#line 607 "Parser.rl"
 									{te = p+1;{
-#line 608 "Parser.rl"
+#line 607 "Parser.rl"
 											currentCls->add(CLASS_UCP_PI, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4981,9 +4981,9 @@ static const short _regex_actions[] = {
 							}
 							case 53:  {
 									{
-#line 609 "Parser.rl"
+#line 608 "Parser.rl"
 									{te = p+1;{
-#line 609 "Parser.rl"
+#line 608 "Parser.rl"
 											currentCls->add(CLASS_UCP_PO, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -4993,9 +4993,9 @@ static const short _regex_actions[] = {
 							}
 							case 54:  {
 									{
-#line 610 "Parser.rl"
+#line 609 "Parser.rl"
 									{te = p+1;{
-#line 610 "Parser.rl"
+#line 609 "Parser.rl"
 											currentCls->add(CLASS_UCP_PS, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5005,9 +5005,9 @@ static const short _regex_actions[] = {
 							}
 							case 55:  {
 									{
-#line 612 "Parser.rl"
+#line 611 "Parser.rl"
 									{te = p+1;{
-#line 612 "Parser.rl"
+#line 611 "Parser.rl"
 											currentCls->add(CLASS_UCP_SC, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5017,9 +5017,9 @@ static const short _regex_actions[] = {
 							}
 							case 56:  {
 									{
-#line 613 "Parser.rl"
+#line 612 "Parser.rl"
 									{te = p+1;{
-#line 613 "Parser.rl"
+#line 612 "Parser.rl"
 											currentCls->add(CLASS_UCP_SK, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5029,9 +5029,9 @@ static const short _regex_actions[] = {
 							}
 							case 57:  {
 									{
-#line 614 "Parser.rl"
+#line 613 "Parser.rl"
 									{te = p+1;{
-#line 614 "Parser.rl"
+#line 613 "Parser.rl"
 											currentCls->add(CLASS_UCP_SM, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5041,9 +5041,9 @@ static const short _regex_actions[] = {
 							}
 							case 58:  {
 									{
-#line 615 "Parser.rl"
+#line 614 "Parser.rl"
 									{te = p+1;{
-#line 615 "Parser.rl"
+#line 614 "Parser.rl"
 											currentCls->add(CLASS_UCP_SO, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5053,9 +5053,9 @@ static const short _regex_actions[] = {
 							}
 							case 59:  {
 									{
-#line 617 "Parser.rl"
+#line 616 "Parser.rl"
 									{te = p+1;{
-#line 617 "Parser.rl"
+#line 616 "Parser.rl"
 											currentCls->add(CLASS_UCP_ZL, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5065,9 +5065,9 @@ static const short _regex_actions[] = {
 							}
 							case 60:  {
 									{
-#line 618 "Parser.rl"
+#line 617 "Parser.rl"
 									{te = p+1;{
-#line 618 "Parser.rl"
+#line 617 "Parser.rl"
 											currentCls->add(CLASS_UCP_ZP, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5077,9 +5077,9 @@ static const short _regex_actions[] = {
 							}
 							case 61:  {
 									{
-#line 619 "Parser.rl"
+#line 618 "Parser.rl"
 									{te = p+1;{
-#line 619 "Parser.rl"
+#line 618 "Parser.rl"
 											currentCls->add(CLASS_UCP_ZS, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5089,9 +5089,9 @@ static const short _regex_actions[] = {
 							}
 							case 62:  {
 									{
-#line 620 "Parser.rl"
+#line 619 "Parser.rl"
 									{te = p+1;{
-#line 620 "Parser.rl"
+#line 619 "Parser.rl"
 											currentCls->add(CLASS_UCP_XAN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5101,9 +5101,9 @@ static const short _regex_actions[] = {
 							}
 							case 63:  {
 									{
-#line 621 "Parser.rl"
+#line 620 "Parser.rl"
 									{te = p+1;{
-#line 621 "Parser.rl"
+#line 620 "Parser.rl"
 											currentCls->add(CLASS_UCP_XPS, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5113,9 +5113,9 @@ static const short _regex_actions[] = {
 							}
 							case 64:  {
 									{
-#line 622 "Parser.rl"
+#line 621 "Parser.rl"
 									{te = p+1;{
-#line 622 "Parser.rl"
+#line 621 "Parser.rl"
 											currentCls->add(CLASS_UCP_XSP, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5125,9 +5125,9 @@ static const short _regex_actions[] = {
 							}
 							case 65:  {
 									{
-#line 623 "Parser.rl"
+#line 622 "Parser.rl"
 									{te = p+1;{
-#line 623 "Parser.rl"
+#line 622 "Parser.rl"
 											currentCls->add(CLASS_UCP_XWD, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5137,9 +5137,9 @@ static const short _regex_actions[] = {
 							}
 							case 66:  {
 									{
-#line 624 "Parser.rl"
+#line 623 "Parser.rl"
 									{te = p+1;{
-#line 624 "Parser.rl"
+#line 623 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_ARABIC, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5149,9 +5149,9 @@ static const short _regex_actions[] = {
 							}
 							case 67:  {
 									{
-#line 625 "Parser.rl"
+#line 624 "Parser.rl"
 									{te = p+1;{
-#line 625 "Parser.rl"
+#line 624 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_ARMENIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5161,9 +5161,9 @@ static const short _regex_actions[] = {
 							}
 							case 68:  {
 									{
-#line 626 "Parser.rl"
+#line 625 "Parser.rl"
 									{te = p+1;{
-#line 626 "Parser.rl"
+#line 625 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_AVESTAN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5173,9 +5173,9 @@ static const short _regex_actions[] = {
 							}
 							case 69:  {
 									{
-#line 627 "Parser.rl"
+#line 626 "Parser.rl"
 									{te = p+1;{
-#line 627 "Parser.rl"
+#line 626 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_BALINESE, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5185,9 +5185,9 @@ static const short _regex_actions[] = {
 							}
 							case 70:  {
 									{
-#line 628 "Parser.rl"
+#line 627 "Parser.rl"
 									{te = p+1;{
-#line 628 "Parser.rl"
+#line 627 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_BAMUM, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5197,9 +5197,9 @@ static const short _regex_actions[] = {
 							}
 							case 71:  {
 									{
-#line 629 "Parser.rl"
+#line 628 "Parser.rl"
 									{te = p+1;{
-#line 629 "Parser.rl"
+#line 628 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_BATAK, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5209,9 +5209,9 @@ static const short _regex_actions[] = {
 							}
 							case 72:  {
 									{
-#line 630 "Parser.rl"
+#line 629 "Parser.rl"
 									{te = p+1;{
-#line 630 "Parser.rl"
+#line 629 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_BENGALI, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5221,9 +5221,9 @@ static const short _regex_actions[] = {
 							}
 							case 73:  {
 									{
-#line 631 "Parser.rl"
+#line 630 "Parser.rl"
 									{te = p+1;{
-#line 631 "Parser.rl"
+#line 630 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_BOPOMOFO, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5233,9 +5233,9 @@ static const short _regex_actions[] = {
 							}
 							case 74:  {
 									{
-#line 632 "Parser.rl"
+#line 631 "Parser.rl"
 									{te = p+1;{
-#line 632 "Parser.rl"
+#line 631 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_BRAHMI, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5245,9 +5245,9 @@ static const short _regex_actions[] = {
 							}
 							case 75:  {
 									{
-#line 633 "Parser.rl"
+#line 632 "Parser.rl"
 									{te = p+1;{
-#line 633 "Parser.rl"
+#line 632 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_BRAILLE, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5257,9 +5257,9 @@ static const short _regex_actions[] = {
 							}
 							case 76:  {
 									{
-#line 634 "Parser.rl"
+#line 633 "Parser.rl"
 									{te = p+1;{
-#line 634 "Parser.rl"
+#line 633 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_BUGINESE, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5269,9 +5269,9 @@ static const short _regex_actions[] = {
 							}
 							case 77:  {
 									{
-#line 635 "Parser.rl"
+#line 634 "Parser.rl"
 									{te = p+1;{
-#line 635 "Parser.rl"
+#line 634 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_BUHID, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5281,9 +5281,9 @@ static const short _regex_actions[] = {
 							}
 							case 78:  {
 									{
-#line 636 "Parser.rl"
+#line 635 "Parser.rl"
 									{te = p+1;{
-#line 636 "Parser.rl"
+#line 635 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_CANADIAN_ABORIGINAL, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5293,9 +5293,9 @@ static const short _regex_actions[] = {
 							}
 							case 79:  {
 									{
-#line 637 "Parser.rl"
+#line 636 "Parser.rl"
 									{te = p+1;{
-#line 637 "Parser.rl"
+#line 636 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_CARIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5305,9 +5305,9 @@ static const short _regex_actions[] = {
 							}
 							case 80:  {
 									{
-#line 638 "Parser.rl"
+#line 637 "Parser.rl"
 									{te = p+1;{
-#line 638 "Parser.rl"
+#line 637 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_CHAM, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5317,9 +5317,9 @@ static const short _regex_actions[] = {
 							}
 							case 81:  {
 									{
-#line 639 "Parser.rl"
+#line 638 "Parser.rl"
 									{te = p+1;{
-#line 639 "Parser.rl"
+#line 638 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_CHEROKEE, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5329,9 +5329,9 @@ static const short _regex_actions[] = {
 							}
 							case 82:  {
 									{
-#line 640 "Parser.rl"
+#line 639 "Parser.rl"
 									{te = p+1;{
-#line 640 "Parser.rl"
+#line 639 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_COMMON, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5341,9 +5341,9 @@ static const short _regex_actions[] = {
 							}
 							case 83:  {
 									{
-#line 641 "Parser.rl"
+#line 640 "Parser.rl"
 									{te = p+1;{
-#line 641 "Parser.rl"
+#line 640 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_COPTIC, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5353,9 +5353,9 @@ static const short _regex_actions[] = {
 							}
 							case 84:  {
 									{
-#line 642 "Parser.rl"
+#line 641 "Parser.rl"
 									{te = p+1;{
-#line 642 "Parser.rl"
+#line 641 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_CUNEIFORM, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5365,9 +5365,9 @@ static const short _regex_actions[] = {
 							}
 							case 85:  {
 									{
-#line 643 "Parser.rl"
+#line 642 "Parser.rl"
 									{te = p+1;{
-#line 643 "Parser.rl"
+#line 642 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_CYPRIOT, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5377,9 +5377,9 @@ static const short _regex_actions[] = {
 							}
 							case 86:  {
 									{
-#line 644 "Parser.rl"
+#line 643 "Parser.rl"
 									{te = p+1;{
-#line 644 "Parser.rl"
+#line 643 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_CYRILLIC, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5389,9 +5389,9 @@ static const short _regex_actions[] = {
 							}
 							case 87:  {
 									{
-#line 645 "Parser.rl"
+#line 644 "Parser.rl"
 									{te = p+1;{
-#line 645 "Parser.rl"
+#line 644 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_DESERET, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5401,9 +5401,9 @@ static const short _regex_actions[] = {
 							}
 							case 88:  {
 									{
-#line 646 "Parser.rl"
+#line 645 "Parser.rl"
 									{te = p+1;{
-#line 646 "Parser.rl"
+#line 645 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_DEVANAGARI, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5413,9 +5413,9 @@ static const short _regex_actions[] = {
 							}
 							case 89:  {
 									{
-#line 647 "Parser.rl"
+#line 646 "Parser.rl"
 									{te = p+1;{
-#line 647 "Parser.rl"
+#line 646 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_EGYPTIAN_HIEROGLYPHS, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5425,9 +5425,9 @@ static const short _regex_actions[] = {
 							}
 							case 90:  {
 									{
-#line 648 "Parser.rl"
+#line 647 "Parser.rl"
 									{te = p+1;{
-#line 648 "Parser.rl"
+#line 647 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_ETHIOPIC, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5437,9 +5437,9 @@ static const short _regex_actions[] = {
 							}
 							case 91:  {
 									{
-#line 649 "Parser.rl"
+#line 648 "Parser.rl"
 									{te = p+1;{
-#line 649 "Parser.rl"
+#line 648 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_GEORGIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5449,9 +5449,9 @@ static const short _regex_actions[] = {
 							}
 							case 92:  {
 									{
-#line 650 "Parser.rl"
+#line 649 "Parser.rl"
 									{te = p+1;{
-#line 650 "Parser.rl"
+#line 649 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_GLAGOLITIC, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5461,9 +5461,9 @@ static const short _regex_actions[] = {
 							}
 							case 93:  {
 									{
-#line 651 "Parser.rl"
+#line 650 "Parser.rl"
 									{te = p+1;{
-#line 651 "Parser.rl"
+#line 650 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_GOTHIC, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5473,9 +5473,9 @@ static const short _regex_actions[] = {
 							}
 							case 94:  {
 									{
-#line 652 "Parser.rl"
+#line 651 "Parser.rl"
 									{te = p+1;{
-#line 652 "Parser.rl"
+#line 651 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_GREEK, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5485,9 +5485,9 @@ static const short _regex_actions[] = {
 							}
 							case 95:  {
 									{
-#line 653 "Parser.rl"
+#line 652 "Parser.rl"
 									{te = p+1;{
-#line 653 "Parser.rl"
+#line 652 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_GUJARATI, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5497,9 +5497,9 @@ static const short _regex_actions[] = {
 							}
 							case 96:  {
 									{
-#line 654 "Parser.rl"
+#line 653 "Parser.rl"
 									{te = p+1;{
-#line 654 "Parser.rl"
+#line 653 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_GURMUKHI, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5509,9 +5509,9 @@ static const short _regex_actions[] = {
 							}
 							case 97:  {
 									{
-#line 656 "Parser.rl"
+#line 655 "Parser.rl"
 									{te = p+1;{
-#line 656 "Parser.rl"
+#line 655 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_HANGUL, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5521,9 +5521,9 @@ static const short _regex_actions[] = {
 							}
 							case 98:  {
 									{
-#line 657 "Parser.rl"
+#line 656 "Parser.rl"
 									{te = p+1;{
-#line 657 "Parser.rl"
+#line 656 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_HANUNOO, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5533,9 +5533,9 @@ static const short _regex_actions[] = {
 							}
 							case 99:  {
 									{
-#line 658 "Parser.rl"
+#line 657 "Parser.rl"
 									{te = p+1;{
-#line 658 "Parser.rl"
+#line 657 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_HEBREW, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5545,9 +5545,9 @@ static const short _regex_actions[] = {
 							}
 							case 100:  {
 									{
-#line 659 "Parser.rl"
+#line 658 "Parser.rl"
 									{te = p+1;{
-#line 659 "Parser.rl"
+#line 658 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_HIRAGANA, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5557,9 +5557,9 @@ static const short _regex_actions[] = {
 							}
 							case 101:  {
 									{
-#line 660 "Parser.rl"
+#line 659 "Parser.rl"
 									{te = p+1;{
-#line 660 "Parser.rl"
+#line 659 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_IMPERIAL_ARAMAIC, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5569,9 +5569,9 @@ static const short _regex_actions[] = {
 							}
 							case 102:  {
 									{
-#line 661 "Parser.rl"
+#line 660 "Parser.rl"
 									{te = p+1;{
-#line 661 "Parser.rl"
+#line 660 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_INHERITED, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5581,9 +5581,9 @@ static const short _regex_actions[] = {
 							}
 							case 103:  {
 									{
-#line 662 "Parser.rl"
+#line 661 "Parser.rl"
 									{te = p+1;{
-#line 662 "Parser.rl"
+#line 661 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_INSCRIPTIONAL_PAHLAVI, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5593,9 +5593,9 @@ static const short _regex_actions[] = {
 							}
 							case 104:  {
 									{
-#line 663 "Parser.rl"
+#line 662 "Parser.rl"
 									{te = p+1;{
-#line 663 "Parser.rl"
+#line 662 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_INSCRIPTIONAL_PARTHIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5605,9 +5605,9 @@ static const short _regex_actions[] = {
 							}
 							case 105:  {
 									{
-#line 664 "Parser.rl"
+#line 663 "Parser.rl"
 									{te = p+1;{
-#line 664 "Parser.rl"
+#line 663 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_JAVANESE, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5617,9 +5617,9 @@ static const short _regex_actions[] = {
 							}
 							case 106:  {
 									{
-#line 665 "Parser.rl"
+#line 664 "Parser.rl"
 									{te = p+1;{
-#line 665 "Parser.rl"
+#line 664 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_KAITHI, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5629,9 +5629,9 @@ static const short _regex_actions[] = {
 							}
 							case 107:  {
 									{
-#line 666 "Parser.rl"
+#line 665 "Parser.rl"
 									{te = p+1;{
-#line 666 "Parser.rl"
+#line 665 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_KANNADA, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5641,9 +5641,9 @@ static const short _regex_actions[] = {
 							}
 							case 108:  {
 									{
-#line 667 "Parser.rl"
+#line 666 "Parser.rl"
 									{te = p+1;{
-#line 667 "Parser.rl"
+#line 666 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_KATAKANA, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5653,9 +5653,9 @@ static const short _regex_actions[] = {
 							}
 							case 109:  {
 									{
-#line 668 "Parser.rl"
+#line 667 "Parser.rl"
 									{te = p+1;{
-#line 668 "Parser.rl"
+#line 667 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_KAYAH_LI, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5665,9 +5665,9 @@ static const short _regex_actions[] = {
 							}
 							case 110:  {
 									{
-#line 669 "Parser.rl"
+#line 668 "Parser.rl"
 									{te = p+1;{
-#line 669 "Parser.rl"
+#line 668 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_KHAROSHTHI, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5677,9 +5677,9 @@ static const short _regex_actions[] = {
 							}
 							case 111:  {
 									{
-#line 670 "Parser.rl"
+#line 669 "Parser.rl"
 									{te = p+1;{
-#line 670 "Parser.rl"
+#line 669 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_KHMER, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5689,9 +5689,9 @@ static const short _regex_actions[] = {
 							}
 							case 112:  {
 									{
-#line 671 "Parser.rl"
+#line 670 "Parser.rl"
 									{te = p+1;{
-#line 671 "Parser.rl"
+#line 670 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_LAO, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5701,9 +5701,9 @@ static const short _regex_actions[] = {
 							}
 							case 113:  {
 									{
-#line 672 "Parser.rl"
+#line 671 "Parser.rl"
 									{te = p+1;{
-#line 672 "Parser.rl"
+#line 671 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_LATIN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5713,9 +5713,9 @@ static const short _regex_actions[] = {
 							}
 							case 114:  {
 									{
-#line 673 "Parser.rl"
+#line 672 "Parser.rl"
 									{te = p+1;{
-#line 673 "Parser.rl"
+#line 672 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_LEPCHA, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5725,9 +5725,9 @@ static const short _regex_actions[] = {
 							}
 							case 115:  {
 									{
-#line 674 "Parser.rl"
+#line 673 "Parser.rl"
 									{te = p+1;{
-#line 674 "Parser.rl"
+#line 673 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_LIMBU, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5737,9 +5737,9 @@ static const short _regex_actions[] = {
 							}
 							case 116:  {
 									{
-#line 675 "Parser.rl"
+#line 674 "Parser.rl"
 									{te = p+1;{
-#line 675 "Parser.rl"
+#line 674 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_LINEAR_B, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5749,9 +5749,9 @@ static const short _regex_actions[] = {
 							}
 							case 117:  {
 									{
-#line 676 "Parser.rl"
+#line 675 "Parser.rl"
 									{te = p+1;{
-#line 676 "Parser.rl"
+#line 675 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_LISU, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5761,9 +5761,9 @@ static const short _regex_actions[] = {
 							}
 							case 118:  {
 									{
-#line 677 "Parser.rl"
+#line 676 "Parser.rl"
 									{te = p+1;{
-#line 677 "Parser.rl"
+#line 676 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_LYCIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5773,9 +5773,9 @@ static const short _regex_actions[] = {
 							}
 							case 119:  {
 									{
-#line 678 "Parser.rl"
+#line 677 "Parser.rl"
 									{te = p+1;{
-#line 678 "Parser.rl"
+#line 677 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_LYDIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5785,9 +5785,9 @@ static const short _regex_actions[] = {
 							}
 							case 120:  {
 									{
-#line 679 "Parser.rl"
+#line 678 "Parser.rl"
 									{te = p+1;{
-#line 679 "Parser.rl"
+#line 678 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_MALAYALAM, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5797,9 +5797,9 @@ static const short _regex_actions[] = {
 							}
 							case 121:  {
 									{
-#line 680 "Parser.rl"
+#line 679 "Parser.rl"
 									{te = p+1;{
-#line 680 "Parser.rl"
+#line 679 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_MANDAIC, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5809,9 +5809,9 @@ static const short _regex_actions[] = {
 							}
 							case 122:  {
 									{
-#line 681 "Parser.rl"
+#line 680 "Parser.rl"
 									{te = p+1;{
-#line 681 "Parser.rl"
+#line 680 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_MEETEI_MAYEK, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5821,9 +5821,9 @@ static const short _regex_actions[] = {
 							}
 							case 123:  {
 									{
-#line 682 "Parser.rl"
+#line 681 "Parser.rl"
 									{te = p+1;{
-#line 682 "Parser.rl"
+#line 681 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_MONGOLIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5833,9 +5833,9 @@ static const short _regex_actions[] = {
 							}
 							case 124:  {
 									{
-#line 683 "Parser.rl"
+#line 682 "Parser.rl"
 									{te = p+1;{
-#line 683 "Parser.rl"
+#line 682 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_MYANMAR, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5845,9 +5845,9 @@ static const short _regex_actions[] = {
 							}
 							case 125:  {
 									{
-#line 684 "Parser.rl"
+#line 683 "Parser.rl"
 									{te = p+1;{
-#line 684 "Parser.rl"
+#line 683 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_NEW_TAI_LUE, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5857,9 +5857,9 @@ static const short _regex_actions[] = {
 							}
 							case 126:  {
 									{
-#line 685 "Parser.rl"
+#line 684 "Parser.rl"
 									{te = p+1;{
-#line 685 "Parser.rl"
+#line 684 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_NKO, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5869,9 +5869,9 @@ static const short _regex_actions[] = {
 							}
 							case 127:  {
 									{
-#line 686 "Parser.rl"
+#line 685 "Parser.rl"
 									{te = p+1;{
-#line 686 "Parser.rl"
+#line 685 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_OGHAM, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5881,9 +5881,9 @@ static const short _regex_actions[] = {
 							}
 							case 128:  {
 									{
-#line 687 "Parser.rl"
+#line 686 "Parser.rl"
 									{te = p+1;{
-#line 687 "Parser.rl"
+#line 686 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_OL_CHIKI, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5893,9 +5893,9 @@ static const short _regex_actions[] = {
 							}
 							case 129:  {
 									{
-#line 688 "Parser.rl"
+#line 687 "Parser.rl"
 									{te = p+1;{
-#line 688 "Parser.rl"
+#line 687 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_OLD_ITALIC, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5905,9 +5905,9 @@ static const short _regex_actions[] = {
 							}
 							case 130:  {
 									{
-#line 689 "Parser.rl"
+#line 688 "Parser.rl"
 									{te = p+1;{
-#line 689 "Parser.rl"
+#line 688 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_OLD_PERSIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5917,9 +5917,9 @@ static const short _regex_actions[] = {
 							}
 							case 131:  {
 									{
-#line 690 "Parser.rl"
+#line 689 "Parser.rl"
 									{te = p+1;{
-#line 690 "Parser.rl"
+#line 689 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_OLD_SOUTH_ARABIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5929,9 +5929,9 @@ static const short _regex_actions[] = {
 							}
 							case 132:  {
 									{
-#line 691 "Parser.rl"
+#line 690 "Parser.rl"
 									{te = p+1;{
-#line 691 "Parser.rl"
+#line 690 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_OLD_TURKIC, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5941,9 +5941,9 @@ static const short _regex_actions[] = {
 							}
 							case 133:  {
 									{
-#line 692 "Parser.rl"
+#line 691 "Parser.rl"
 									{te = p+1;{
-#line 692 "Parser.rl"
+#line 691 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_ORIYA, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5953,9 +5953,9 @@ static const short _regex_actions[] = {
 							}
 							case 134:  {
 									{
-#line 693 "Parser.rl"
+#line 692 "Parser.rl"
 									{te = p+1;{
-#line 693 "Parser.rl"
+#line 692 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_OSMANYA, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5965,9 +5965,9 @@ static const short _regex_actions[] = {
 							}
 							case 135:  {
 									{
-#line 694 "Parser.rl"
+#line 693 "Parser.rl"
 									{te = p+1;{
-#line 694 "Parser.rl"
+#line 693 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_PHAGS_PA, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5977,9 +5977,9 @@ static const short _regex_actions[] = {
 							}
 							case 136:  {
 									{
-#line 695 "Parser.rl"
+#line 694 "Parser.rl"
 									{te = p+1;{
-#line 695 "Parser.rl"
+#line 694 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_PHOENICIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -5989,9 +5989,9 @@ static const short _regex_actions[] = {
 							}
 							case 137:  {
 									{
-#line 696 "Parser.rl"
+#line 695 "Parser.rl"
 									{te = p+1;{
-#line 696 "Parser.rl"
+#line 695 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_REJANG, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6001,9 +6001,9 @@ static const short _regex_actions[] = {
 							}
 							case 138:  {
 									{
-#line 697 "Parser.rl"
+#line 696 "Parser.rl"
 									{te = p+1;{
-#line 697 "Parser.rl"
+#line 696 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_RUNIC, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6013,9 +6013,9 @@ static const short _regex_actions[] = {
 							}
 							case 139:  {
 									{
-#line 698 "Parser.rl"
+#line 697 "Parser.rl"
 									{te = p+1;{
-#line 698 "Parser.rl"
+#line 697 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_SAMARITAN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6025,9 +6025,9 @@ static const short _regex_actions[] = {
 							}
 							case 140:  {
 									{
-#line 699 "Parser.rl"
+#line 698 "Parser.rl"
 									{te = p+1;{
-#line 699 "Parser.rl"
+#line 698 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_SAURASHTRA, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6037,9 +6037,9 @@ static const short _regex_actions[] = {
 							}
 							case 141:  {
 									{
-#line 700 "Parser.rl"
+#line 699 "Parser.rl"
 									{te = p+1;{
-#line 700 "Parser.rl"
+#line 699 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_SHAVIAN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6049,9 +6049,9 @@ static const short _regex_actions[] = {
 							}
 							case 142:  {
 									{
-#line 701 "Parser.rl"
+#line 700 "Parser.rl"
 									{te = p+1;{
-#line 701 "Parser.rl"
+#line 700 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_SINHALA, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6061,9 +6061,9 @@ static const short _regex_actions[] = {
 							}
 							case 143:  {
 									{
-#line 702 "Parser.rl"
+#line 701 "Parser.rl"
 									{te = p+1;{
-#line 702 "Parser.rl"
+#line 701 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_SUNDANESE, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6073,9 +6073,9 @@ static const short _regex_actions[] = {
 							}
 							case 144:  {
 									{
-#line 703 "Parser.rl"
+#line 702 "Parser.rl"
 									{te = p+1;{
-#line 703 "Parser.rl"
+#line 702 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_SYLOTI_NAGRI, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6085,9 +6085,9 @@ static const short _regex_actions[] = {
 							}
 							case 145:  {
 									{
-#line 704 "Parser.rl"
+#line 703 "Parser.rl"
 									{te = p+1;{
-#line 704 "Parser.rl"
+#line 703 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_SYRIAC, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6097,9 +6097,9 @@ static const short _regex_actions[] = {
 							}
 							case 146:  {
 									{
-#line 705 "Parser.rl"
+#line 704 "Parser.rl"
 									{te = p+1;{
-#line 705 "Parser.rl"
+#line 704 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_TAGALOG, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6109,9 +6109,9 @@ static const short _regex_actions[] = {
 							}
 							case 147:  {
 									{
-#line 706 "Parser.rl"
+#line 705 "Parser.rl"
 									{te = p+1;{
-#line 706 "Parser.rl"
+#line 705 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_TAGBANWA, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6121,9 +6121,9 @@ static const short _regex_actions[] = {
 							}
 							case 148:  {
 									{
-#line 707 "Parser.rl"
+#line 706 "Parser.rl"
 									{te = p+1;{
-#line 707 "Parser.rl"
+#line 706 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_TAI_LE, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6133,9 +6133,9 @@ static const short _regex_actions[] = {
 							}
 							case 149:  {
 									{
-#line 708 "Parser.rl"
+#line 707 "Parser.rl"
 									{te = p+1;{
-#line 708 "Parser.rl"
+#line 707 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_TAI_THAM, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6145,9 +6145,9 @@ static const short _regex_actions[] = {
 							}
 							case 150:  {
 									{
-#line 709 "Parser.rl"
+#line 708 "Parser.rl"
 									{te = p+1;{
-#line 709 "Parser.rl"
+#line 708 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_TAI_VIET, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6157,9 +6157,9 @@ static const short _regex_actions[] = {
 							}
 							case 151:  {
 									{
-#line 710 "Parser.rl"
+#line 709 "Parser.rl"
 									{te = p+1;{
-#line 710 "Parser.rl"
+#line 709 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_TAMIL, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6169,9 +6169,9 @@ static const short _regex_actions[] = {
 							}
 							case 152:  {
 									{
-#line 711 "Parser.rl"
+#line 710 "Parser.rl"
 									{te = p+1;{
-#line 711 "Parser.rl"
+#line 710 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_TELUGU, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6181,9 +6181,9 @@ static const short _regex_actions[] = {
 							}
 							case 153:  {
 									{
-#line 712 "Parser.rl"
+#line 711 "Parser.rl"
 									{te = p+1;{
-#line 712 "Parser.rl"
+#line 711 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_THAANA, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6193,9 +6193,9 @@ static const short _regex_actions[] = {
 							}
 							case 154:  {
 									{
-#line 713 "Parser.rl"
+#line 712 "Parser.rl"
 									{te = p+1;{
-#line 713 "Parser.rl"
+#line 712 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_THAI, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6205,9 +6205,9 @@ static const short _regex_actions[] = {
 							}
 							case 155:  {
 									{
-#line 714 "Parser.rl"
+#line 713 "Parser.rl"
 									{te = p+1;{
-#line 714 "Parser.rl"
+#line 713 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_TIBETAN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6217,9 +6217,9 @@ static const short _regex_actions[] = {
 							}
 							case 156:  {
 									{
-#line 715 "Parser.rl"
+#line 714 "Parser.rl"
 									{te = p+1;{
-#line 715 "Parser.rl"
+#line 714 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_TIFINAGH, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6229,9 +6229,9 @@ static const short _regex_actions[] = {
 							}
 							case 157:  {
 									{
-#line 716 "Parser.rl"
+#line 715 "Parser.rl"
 									{te = p+1;{
-#line 716 "Parser.rl"
+#line 715 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_UGARITIC, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6241,9 +6241,9 @@ static const short _regex_actions[] = {
 							}
 							case 158:  {
 									{
-#line 717 "Parser.rl"
+#line 716 "Parser.rl"
 									{te = p+1;{
-#line 717 "Parser.rl"
+#line 716 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_VAI, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6253,9 +6253,9 @@ static const short _regex_actions[] = {
 							}
 							case 159:  {
 									{
-#line 718 "Parser.rl"
+#line 717 "Parser.rl"
 									{te = p+1;{
-#line 718 "Parser.rl"
+#line 717 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_YI, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6265,9 +6265,9 @@ static const short _regex_actions[] = {
 							}
 							case 160:  {
 									{
-#line 719 "Parser.rl"
+#line 718 "Parser.rl"
 									{te = p+1;{
-#line 719 "Parser.rl"
+#line 718 "Parser.rl"
 											currentCls->add(CLASS_UCP_ANY, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6277,9 +6277,9 @@ static const short _regex_actions[] = {
 							}
 							case 161:  {
 									{
-#line 720 "Parser.rl"
+#line 719 "Parser.rl"
 									{te = p+1;{
-#line 720 "Parser.rl"
+#line 719 "Parser.rl"
 											throw LocatedParseError("Unknown property"); }
 									}}
 								
@@ -6289,9 +6289,9 @@ static const short _regex_actions[] = {
 							}
 							case 162:  {
 									{
-#line 582 "Parser.rl"
+#line 581 "Parser.rl"
 									{te = p;p = p - 1;{
-#line 582 "Parser.rl"
+#line 581 "Parser.rl"
 											currentCls->add(CLASS_UCP_C, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6301,9 +6301,9 @@ static const short _regex_actions[] = {
 							}
 							case 163:  {
 									{
-#line 586 "Parser.rl"
+#line 585 "Parser.rl"
 									{te = p;p = p - 1;{
-#line 586 "Parser.rl"
+#line 585 "Parser.rl"
 											currentCls->add(CLASS_UCP_CO, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6313,9 +6313,9 @@ static const short _regex_actions[] = {
 							}
 							case 164:  {
 									{
-#line 588 "Parser.rl"
+#line 587 "Parser.rl"
 									{te = p;p = p - 1;{
-#line 588 "Parser.rl"
+#line 587 "Parser.rl"
 											currentCls->add(CLASS_UCP_L, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6325,9 +6325,9 @@ static const short _regex_actions[] = {
 							}
 							case 165:  {
 									{
-#line 595 "Parser.rl"
+#line 594 "Parser.rl"
 									{te = p;p = p - 1;{
-#line 595 "Parser.rl"
+#line 594 "Parser.rl"
 											currentCls->add(CLASS_UCP_M, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6337,9 +6337,9 @@ static const short _regex_actions[] = {
 							}
 							case 166:  {
 									{
-#line 597 "Parser.rl"
+#line 596 "Parser.rl"
 									{te = p;p = p - 1;{
-#line 597 "Parser.rl"
+#line 596 "Parser.rl"
 											currentCls->add(CLASS_UCP_ME, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6349,9 +6349,9 @@ static const short _regex_actions[] = {
 							}
 							case 167:  {
 									{
-#line 599 "Parser.rl"
+#line 598 "Parser.rl"
 									{te = p;p = p - 1;{
-#line 599 "Parser.rl"
+#line 598 "Parser.rl"
 											currentCls->add(CLASS_UCP_N, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6361,9 +6361,9 @@ static const short _regex_actions[] = {
 							}
 							case 168:  {
 									{
-#line 603 "Parser.rl"
+#line 602 "Parser.rl"
 									{te = p;p = p - 1;{
-#line 603 "Parser.rl"
+#line 602 "Parser.rl"
 											currentCls->add(CLASS_UCP_P, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6373,9 +6373,9 @@ static const short _regex_actions[] = {
 							}
 							case 169:  {
 									{
-#line 611 "Parser.rl"
+#line 610 "Parser.rl"
 									{te = p;p = p - 1;{
-#line 611 "Parser.rl"
+#line 610 "Parser.rl"
 											currentCls->add(CLASS_UCP_S, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6385,9 +6385,9 @@ static const short _regex_actions[] = {
 							}
 							case 170:  {
 									{
-#line 616 "Parser.rl"
+#line 615 "Parser.rl"
 									{te = p;p = p - 1;{
-#line 616 "Parser.rl"
+#line 615 "Parser.rl"
 											currentCls->add(CLASS_UCP_Z, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6397,9 +6397,9 @@ static const short _regex_actions[] = {
 							}
 							case 171:  {
 									{
-#line 655 "Parser.rl"
+#line 654 "Parser.rl"
 									{te = p;p = p - 1;{
-#line 655 "Parser.rl"
+#line 654 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_HAN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6409,9 +6409,9 @@ static const short _regex_actions[] = {
 							}
 							case 172:  {
 									{
-#line 720 "Parser.rl"
+#line 719 "Parser.rl"
 									{te = p;p = p - 1;{
-#line 720 "Parser.rl"
+#line 719 "Parser.rl"
 											throw LocatedParseError("Unknown property"); }
 									}}
 								
@@ -6421,10 +6421,10 @@ static const short _regex_actions[] = {
 							}
 							case 173:  {
 									{
-#line 582 "Parser.rl"
+#line 581 "Parser.rl"
 									{p = ((te))-1;
 										{
-#line 582 "Parser.rl"
+#line 581 "Parser.rl"
 											currentCls->add(CLASS_UCP_C, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6434,10 +6434,10 @@ static const short _regex_actions[] = {
 							}
 							case 174:  {
 									{
-#line 586 "Parser.rl"
+#line 585 "Parser.rl"
 									{p = ((te))-1;
 										{
-#line 586 "Parser.rl"
+#line 585 "Parser.rl"
 											currentCls->add(CLASS_UCP_CO, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6447,10 +6447,10 @@ static const short _regex_actions[] = {
 							}
 							case 175:  {
 									{
-#line 588 "Parser.rl"
+#line 587 "Parser.rl"
 									{p = ((te))-1;
 										{
-#line 588 "Parser.rl"
+#line 587 "Parser.rl"
 											currentCls->add(CLASS_UCP_L, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6460,10 +6460,10 @@ static const short _regex_actions[] = {
 							}
 							case 176:  {
 									{
-#line 595 "Parser.rl"
+#line 594 "Parser.rl"
 									{p = ((te))-1;
 										{
-#line 595 "Parser.rl"
+#line 594 "Parser.rl"
 											currentCls->add(CLASS_UCP_M, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6473,10 +6473,10 @@ static const short _regex_actions[] = {
 							}
 							case 177:  {
 									{
-#line 597 "Parser.rl"
+#line 596 "Parser.rl"
 									{p = ((te))-1;
 										{
-#line 597 "Parser.rl"
+#line 596 "Parser.rl"
 											currentCls->add(CLASS_UCP_ME, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6486,10 +6486,10 @@ static const short _regex_actions[] = {
 							}
 							case 178:  {
 									{
-#line 599 "Parser.rl"
+#line 598 "Parser.rl"
 									{p = ((te))-1;
 										{
-#line 599 "Parser.rl"
+#line 598 "Parser.rl"
 											currentCls->add(CLASS_UCP_N, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6499,10 +6499,10 @@ static const short _regex_actions[] = {
 							}
 							case 179:  {
 									{
-#line 603 "Parser.rl"
+#line 602 "Parser.rl"
 									{p = ((te))-1;
 										{
-#line 603 "Parser.rl"
+#line 602 "Parser.rl"
 											currentCls->add(CLASS_UCP_P, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6512,10 +6512,10 @@ static const short _regex_actions[] = {
 							}
 							case 180:  {
 									{
-#line 611 "Parser.rl"
+#line 610 "Parser.rl"
 									{p = ((te))-1;
 										{
-#line 611 "Parser.rl"
+#line 610 "Parser.rl"
 											currentCls->add(CLASS_UCP_S, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6525,10 +6525,10 @@ static const short _regex_actions[] = {
 							}
 							case 181:  {
 									{
-#line 655 "Parser.rl"
+#line 654 "Parser.rl"
 									{p = ((te))-1;
 										{
-#line 655 "Parser.rl"
+#line 654 "Parser.rl"
 											currentCls->add(CLASS_SCRIPT_HAN, negated); {top -= 1;cs = stack[top];goto _again;} }
 									}}
 								
@@ -6538,10 +6538,10 @@ static const short _regex_actions[] = {
 							}
 							case 182:  {
 									{
-#line 720 "Parser.rl"
+#line 719 "Parser.rl"
 									{p = ((te))-1;
 										{
-#line 720 "Parser.rl"
+#line 719 "Parser.rl"
 											throw LocatedParseError("Unknown property"); }
 									}}
 								
@@ -6551,9 +6551,9 @@ static const short _regex_actions[] = {
 							}
 							case 183:  {
 									{
-#line 735 "Parser.rl"
+#line 734 "Parser.rl"
 									{te = p+1;{
-#line 735 "Parser.rl"
+#line 734 "Parser.rl"
 											
 											currentCls->add(CLASS_UCP_C, negated); 
 											if (!inCharClass) {
@@ -6570,9 +6570,9 @@ static const short _regex_actions[] = {
 							}
 							case 184:  {
 									{
-#line 743 "Parser.rl"
+#line 742 "Parser.rl"
 									{te = p+1;{
-#line 743 "Parser.rl"
+#line 742 "Parser.rl"
 											
 											currentCls->add(CLASS_UCP_L, negated); 
 											if (!inCharClass) {
@@ -6589,9 +6589,9 @@ static const short _regex_actions[] = {
 							}
 							case 185:  {
 									{
-#line 751 "Parser.rl"
+#line 750 "Parser.rl"
 									{te = p+1;{
-#line 751 "Parser.rl"
+#line 750 "Parser.rl"
 											
 											currentCls->add(CLASS_UCP_M, negated); 
 											if (!inCharClass) {
@@ -6608,9 +6608,9 @@ static const short _regex_actions[] = {
 							}
 							case 186:  {
 									{
-#line 759 "Parser.rl"
+#line 758 "Parser.rl"
 									{te = p+1;{
-#line 759 "Parser.rl"
+#line 758 "Parser.rl"
 											
 											currentCls->add(CLASS_UCP_N, negated); 
 											if (!inCharClass) {
@@ -6627,9 +6627,9 @@ static const short _regex_actions[] = {
 							}
 							case 187:  {
 									{
-#line 767 "Parser.rl"
+#line 766 "Parser.rl"
 									{te = p+1;{
-#line 767 "Parser.rl"
+#line 766 "Parser.rl"
 											
 											currentCls->add(CLASS_UCP_P, negated); 
 											if (!inCharClass) {
@@ -6646,9 +6646,9 @@ static const short _regex_actions[] = {
 							}
 							case 188:  {
 									{
-#line 775 "Parser.rl"
+#line 774 "Parser.rl"
 									{te = p+1;{
-#line 775 "Parser.rl"
+#line 774 "Parser.rl"
 											
 											currentCls->add(CLASS_UCP_S, negated); 
 											if (!inCharClass) {
@@ -6665,9 +6665,9 @@ static const short _regex_actions[] = {
 							}
 							case 189:  {
 									{
-#line 783 "Parser.rl"
+#line 782 "Parser.rl"
 									{te = p+1;{
-#line 783 "Parser.rl"
+#line 782 "Parser.rl"
 											
 											currentCls->add(CLASS_UCP_Z, negated); 
 											if (!inCharClass) {
@@ -6684,9 +6684,9 @@ static const short _regex_actions[] = {
 							}
 							case 190:  {
 									{
-#line 792 "Parser.rl"
+#line 791 "Parser.rl"
 									{te = p+1;{
-#line 792 "Parser.rl"
+#line 791 "Parser.rl"
 											throw LocatedParseError("Unknown property"); }
 									}}
 								
@@ -6696,9 +6696,9 @@ static const short _regex_actions[] = {
 							}
 							case 191:  {
 									{
-#line 798 "Parser.rl"
+#line 797 "Parser.rl"
 									{te = p+1;{
-#line 798 "Parser.rl"
+#line 797 "Parser.rl"
 											
 											throw LocatedParseError("Unsupported POSIX collating "
 											"element");
@@ -6711,9 +6711,9 @@ static const short _regex_actions[] = {
 							}
 							case 192:  {
 									{
-#line 805 "Parser.rl"
+#line 804 "Parser.rl"
 									{te = p+1;{
-#line 805 "Parser.rl"
+#line 804 "Parser.rl"
 											
 											currentCls->add(CLASS_ALNUM, false);
 										}
@@ -6725,9 +6725,9 @@ static const short _regex_actions[] = {
 							}
 							case 193:  {
 									{
-#line 808 "Parser.rl"
+#line 807 "Parser.rl"
 									{te = p+1;{
-#line 808 "Parser.rl"
+#line 807 "Parser.rl"
 											
 											currentCls->add(CLASS_ALNUM, true);
 										}
@@ -6739,9 +6739,9 @@ static const short _regex_actions[] = {
 							}
 							case 194:  {
 									{
-#line 811 "Parser.rl"
+#line 810 "Parser.rl"
 									{te = p+1;{
-#line 811 "Parser.rl"
+#line 810 "Parser.rl"
 											
 											currentCls->add(CLASS_ALPHA, false);
 										}
@@ -6753,9 +6753,9 @@ static const short _regex_actions[] = {
 							}
 							case 195:  {
 									{
-#line 814 "Parser.rl"
+#line 813 "Parser.rl"
 									{te = p+1;{
-#line 814 "Parser.rl"
+#line 813 "Parser.rl"
 											
 											currentCls->add(CLASS_ALPHA, true);
 										}
@@ -6767,9 +6767,9 @@ static const short _regex_actions[] = {
 							}
 							case 196:  {
 									{
-#line 817 "Parser.rl"
+#line 816 "Parser.rl"
 									{te = p+1;{
-#line 817 "Parser.rl"
+#line 816 "Parser.rl"
 											
 											currentCls->add(CLASS_ASCII, false);
 										}
@@ -6781,9 +6781,9 @@ static const short _regex_actions[] = {
 							}
 							case 197:  {
 									{
-#line 820 "Parser.rl"
+#line 819 "Parser.rl"
 									{te = p+1;{
-#line 820 "Parser.rl"
+#line 819 "Parser.rl"
 											
 											currentCls->add(CLASS_ASCII, true);
 										}
@@ -6795,9 +6795,9 @@ static const short _regex_actions[] = {
 							}
 							case 198:  {
 									{
-#line 823 "Parser.rl"
+#line 822 "Parser.rl"
 									{te = p+1;{
-#line 823 "Parser.rl"
+#line 822 "Parser.rl"
 											
 											currentCls->add(CLASS_BLANK, false);
 										}
@@ -6809,9 +6809,9 @@ static const short _regex_actions[] = {
 							}
 							case 199:  {
 									{
-#line 826 "Parser.rl"
+#line 825 "Parser.rl"
 									{te = p+1;{
-#line 826 "Parser.rl"
+#line 825 "Parser.rl"
 											
 											currentCls->add(CLASS_BLANK, true);
 										}
@@ -6823,9 +6823,9 @@ static const short _regex_actions[] = {
 							}
 							case 200:  {
 									{
-#line 829 "Parser.rl"
+#line 828 "Parser.rl"
 									{te = p+1;{
-#line 829 "Parser.rl"
+#line 828 "Parser.rl"
 											
 											currentCls->add(CLASS_CNTRL, false);
 										}
@@ -6837,9 +6837,9 @@ static const short _regex_actions[] = {
 							}
 							case 201:  {
 									{
-#line 832 "Parser.rl"
+#line 831 "Parser.rl"
 									{te = p+1;{
-#line 832 "Parser.rl"
+#line 831 "Parser.rl"
 											
 											currentCls->add(CLASS_CNTRL, true);
 										}
@@ -6851,9 +6851,9 @@ static const short _regex_actions[] = {
 							}
 							case 202:  {
 									{
-#line 835 "Parser.rl"
+#line 834 "Parser.rl"
 									{te = p+1;{
-#line 835 "Parser.rl"
+#line 834 "Parser.rl"
 											
 											currentCls->add(CLASS_DIGIT, false);
 										}
@@ -6865,9 +6865,9 @@ static const short _regex_actions[] = {
 							}
 							case 203:  {
 									{
-#line 838 "Parser.rl"
+#line 837 "Parser.rl"
 									{te = p+1;{
-#line 838 "Parser.rl"
+#line 837 "Parser.rl"
 											
 											currentCls->add(CLASS_DIGIT, true);
 										}
@@ -6879,9 +6879,9 @@ static const short _regex_actions[] = {
 							}
 							case 204:  {
 									{
-#line 841 "Parser.rl"
+#line 840 "Parser.rl"
 									{te = p+1;{
-#line 841 "Parser.rl"
+#line 840 "Parser.rl"
 											
 											currentCls->add(CLASS_GRAPH, false);
 										}
@@ -6893,9 +6893,9 @@ static const short _regex_actions[] = {
 							}
 							case 205:  {
 									{
-#line 844 "Parser.rl"
+#line 843 "Parser.rl"
 									{te = p+1;{
-#line 844 "Parser.rl"
+#line 843 "Parser.rl"
 											
 											currentCls->add(CLASS_GRAPH, true);
 										}
@@ -6907,9 +6907,9 @@ static const short _regex_actions[] = {
 							}
 							case 206:  {
 									{
-#line 847 "Parser.rl"
+#line 846 "Parser.rl"
 									{te = p+1;{
-#line 847 "Parser.rl"
+#line 846 "Parser.rl"
 											
 											currentCls->add(CLASS_LOWER, false);
 										}
@@ -6921,9 +6921,9 @@ static const short _regex_actions[] = {
 							}
 							case 207:  {
 									{
-#line 850 "Parser.rl"
+#line 849 "Parser.rl"
 									{te = p+1;{
-#line 850 "Parser.rl"
+#line 849 "Parser.rl"
 											
 											currentCls->add(CLASS_LOWER, true);
 										}
@@ -6935,9 +6935,9 @@ static const short _regex_actions[] = {
 							}
 							case 208:  {
 									{
-#line 853 "Parser.rl"
+#line 852 "Parser.rl"
 									{te = p+1;{
-#line 853 "Parser.rl"
+#line 852 "Parser.rl"
 											
 											currentCls->add(CLASS_PRINT, false);
 										}
@@ -6949,9 +6949,9 @@ static const short _regex_actions[] = {
 							}
 							case 209:  {
 									{
-#line 856 "Parser.rl"
+#line 855 "Parser.rl"
 									{te = p+1;{
-#line 856 "Parser.rl"
+#line 855 "Parser.rl"
 											
 											currentCls->add(CLASS_PRINT, true);
 										}
@@ -6963,9 +6963,9 @@ static const short _regex_actions[] = {
 							}
 							case 210:  {
 									{
-#line 859 "Parser.rl"
+#line 858 "Parser.rl"
 									{te = p+1;{
-#line 859 "Parser.rl"
+#line 858 "Parser.rl"
 											
 											currentCls->add(CLASS_PUNCT, false);
 										}
@@ -6977,9 +6977,9 @@ static const short _regex_actions[] = {
 							}
 							case 211:  {
 									{
-#line 862 "Parser.rl"
+#line 861 "Parser.rl"
 									{te = p+1;{
-#line 862 "Parser.rl"
+#line 861 "Parser.rl"
 											
 											currentCls->add(CLASS_PUNCT, true);
 										}
@@ -6991,9 +6991,9 @@ static const short _regex_actions[] = {
 							}
 							case 212:  {
 									{
-#line 866 "Parser.rl"
+#line 865 "Parser.rl"
 									{te = p+1;{
-#line 866 "Parser.rl"
+#line 865 "Parser.rl"
 											
 											currentCls->add(CLASS_SPACE, false);
 										}
@@ -7005,9 +7005,9 @@ static const short _regex_actions[] = {
 							}
 							case 213:  {
 									{
-#line 869 "Parser.rl"
+#line 868 "Parser.rl"
 									{te = p+1;{
-#line 869 "Parser.rl"
+#line 868 "Parser.rl"
 											
 											currentCls->add(CLASS_SPACE, true);
 										}
@@ -7019,9 +7019,9 @@ static const short _regex_actions[] = {
 							}
 							case 214:  {
 									{
-#line 872 "Parser.rl"
+#line 871 "Parser.rl"
 									{te = p+1;{
-#line 872 "Parser.rl"
+#line 871 "Parser.rl"
 											
 											currentCls->add(CLASS_UPPER, false);
 										}
@@ -7033,9 +7033,9 @@ static const short _regex_actions[] = {
 							}
 							case 215:  {
 									{
-#line 875 "Parser.rl"
+#line 874 "Parser.rl"
 									{te = p+1;{
-#line 875 "Parser.rl"
+#line 874 "Parser.rl"
 											
 											currentCls->add(CLASS_UPPER, true);
 										}
@@ -7047,9 +7047,9 @@ static const short _regex_actions[] = {
 							}
 							case 216:  {
 									{
-#line 878 "Parser.rl"
+#line 877 "Parser.rl"
 									{te = p+1;{
-#line 878 "Parser.rl"
+#line 877 "Parser.rl"
 											
 											currentCls->add(CLASS_WORD, false);
 										}
@@ -7061,9 +7061,9 @@ static const short _regex_actions[] = {
 							}
 							case 217:  {
 									{
-#line 881 "Parser.rl"
+#line 880 "Parser.rl"
 									{te = p+1;{
-#line 881 "Parser.rl"
+#line 880 "Parser.rl"
 											
 											currentCls->add(CLASS_WORD, true);
 										}
@@ -7075,9 +7075,9 @@ static const short _regex_actions[] = {
 							}
 							case 218:  {
 									{
-#line 884 "Parser.rl"
+#line 883 "Parser.rl"
 									{te = p+1;{
-#line 884 "Parser.rl"
+#line 883 "Parser.rl"
 											
 											currentCls->add(CLASS_XDIGIT, false);
 										}
@@ -7089,9 +7089,9 @@ static const short _regex_actions[] = {
 							}
 							case 219:  {
 									{
-#line 887 "Parser.rl"
+#line 886 "Parser.rl"
 									{te = p+1;{
-#line 887 "Parser.rl"
+#line 886 "Parser.rl"
 											
 											currentCls->add(CLASS_XDIGIT, true);
 										}
@@ -7103,9 +7103,9 @@ static const short _regex_actions[] = {
 							}
 							case 220:  {
 									{
-#line 892 "Parser.rl"
+#line 891 "Parser.rl"
 									{te = p+1;{
-#line 892 "Parser.rl"
+#line 891 "Parser.rl"
 											
 											throw LocatedParseError("Invalid POSIX named class");
 										}
@@ -7117,12 +7117,12 @@ static const short _regex_actions[] = {
 							}
 							case 221:  {
 									{
-#line 895 "Parser.rl"
+#line 894 "Parser.rl"
 									{te = p+1;{
-#line 895 "Parser.rl"
+#line 894 "Parser.rl"
 											
 											{{
-#line 1911 "Parser.rl"
+#line 1910 "Parser.rl"
 													
 													DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
 													if ((int)stack.size() == top) {
@@ -7138,9 +7138,9 @@ static const short _regex_actions[] = {
 							}
 							case 222:  {
 									{
-#line 898 "Parser.rl"
+#line 897 "Parser.rl"
 									{te = p+1;{
-#line 898 "Parser.rl"
+#line 897 "Parser.rl"
 											/*noop*/}
 									}}
 								
@@ -7150,9 +7150,9 @@ static const short _regex_actions[] = {
 							}
 							case 223:  {
 									{
-#line 900 "Parser.rl"
+#line 899 "Parser.rl"
 									{te = p+1;{
-#line 900 "Parser.rl"
+#line 899 "Parser.rl"
 											
 											currentCls->add('\x08');
 										}
@@ -7164,9 +7164,9 @@ static const short _regex_actions[] = {
 							}
 							case 224:  {
 									{
-#line 904 "Parser.rl"
+#line 903 "Parser.rl"
 									{te = p+1;{
-#line 904 "Parser.rl"
+#line 903 "Parser.rl"
 											
 											currentCls->add('\x09');
 										}
@@ -7178,9 +7178,9 @@ static const short _regex_actions[] = {
 							}
 							case 225:  {
 									{
-#line 908 "Parser.rl"
+#line 907 "Parser.rl"
 									{te = p+1;{
-#line 908 "Parser.rl"
+#line 907 "Parser.rl"
 											
 											currentCls->add('\x0a');
 										}
@@ -7192,9 +7192,9 @@ static const short _regex_actions[] = {
 							}
 							case 226:  {
 									{
-#line 912 "Parser.rl"
+#line 911 "Parser.rl"
 									{te = p+1;{
-#line 912 "Parser.rl"
+#line 911 "Parser.rl"
 											
 											currentCls->add('\x0d');
 										}
@@ -7206,9 +7206,9 @@ static const short _regex_actions[] = {
 							}
 							case 227:  {
 									{
-#line 916 "Parser.rl"
+#line 915 "Parser.rl"
 									{te = p+1;{
-#line 916 "Parser.rl"
+#line 915 "Parser.rl"
 											
 											currentCls->add('\x0c');
 										}
@@ -7220,9 +7220,9 @@ static const short _regex_actions[] = {
 							}
 							case 228:  {
 									{
-#line 920 "Parser.rl"
+#line 919 "Parser.rl"
 									{te = p+1;{
-#line 920 "Parser.rl"
+#line 919 "Parser.rl"
 											
 											currentCls->add('\x07');
 										}
@@ -7234,9 +7234,9 @@ static const short _regex_actions[] = {
 							}
 							case 229:  {
 									{
-#line 924 "Parser.rl"
+#line 923 "Parser.rl"
 									{te = p+1;{
-#line 924 "Parser.rl"
+#line 923 "Parser.rl"
 											
 											currentCls->add('\x1b');
 										}
@@ -7248,9 +7248,9 @@ static const short _regex_actions[] = {
 							}
 							case 230:  {
 									{
-#line 928 "Parser.rl"
+#line 927 "Parser.rl"
 									{te = p+1;{
-#line 928 "Parser.rl"
+#line 927 "Parser.rl"
 											
 											currentCls->add(CLASS_HORZ, false);
 										}
@@ -7262,9 +7262,9 @@ static const short _regex_actions[] = {
 							}
 							case 231:  {
 									{
-#line 932 "Parser.rl"
+#line 931 "Parser.rl"
 									{te = p+1;{
-#line 932 "Parser.rl"
+#line 931 "Parser.rl"
 											
 											currentCls->add(CLASS_HORZ, true);
 										}
@@ -7276,9 +7276,9 @@ static const short _regex_actions[] = {
 							}
 							case 232:  {
 									{
-#line 936 "Parser.rl"
+#line 935 "Parser.rl"
 									{te = p+1;{
-#line 936 "Parser.rl"
+#line 935 "Parser.rl"
 											
 											currentCls->add(CLASS_VERT, false);
 										}
@@ -7290,9 +7290,9 @@ static const short _regex_actions[] = {
 							}
 							case 233:  {
 									{
-#line 940 "Parser.rl"
+#line 939 "Parser.rl"
 									{te = p+1;{
-#line 940 "Parser.rl"
+#line 939 "Parser.rl"
 											
 											currentCls->add(CLASS_VERT, true);
 										}
@@ -7304,14 +7304,14 @@ static const short _regex_actions[] = {
 							}
 							case 234:  {
 									{
-#line 944 "Parser.rl"
+#line 943 "Parser.rl"
 									{te = p+1;{
-#line 944 "Parser.rl"
+#line 943 "Parser.rl"
 											
 											negated = false;
 											{p = p - 1; }
 											{{
-#line 1911 "Parser.rl"
+#line 1910 "Parser.rl"
 													
 													DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
 													if ((int)stack.size() == top) {
@@ -7327,14 +7327,14 @@ static const short _regex_actions[] = {
 							}
 							case 235:  {
 									{
-#line 950 "Parser.rl"
+#line 949 "Parser.rl"
 									{te = p+1;{
-#line 950 "Parser.rl"
+#line 949 "Parser.rl"
 											
 											negated = false;
 											{p = p - 1; }
 											{{
-#line 1911 "Parser.rl"
+#line 1910 "Parser.rl"
 													
 													DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
 													if ((int)stack.size() == top) {
@@ -7350,14 +7350,14 @@ static const short _regex_actions[] = {
 							}
 							case 236:  {
 									{
-#line 956 "Parser.rl"
+#line 955 "Parser.rl"
 									{te = p+1;{
-#line 956 "Parser.rl"
+#line 955 "Parser.rl"
 											
 											negated = true;
 											{p = p - 1; }
 											{{
-#line 1911 "Parser.rl"
+#line 1910 "Parser.rl"
 													
 													DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
 													if ((int)stack.size() == top) {
@@ -7373,14 +7373,14 @@ static const short _regex_actions[] = {
 							}
 							case 237:  {
 									{
-#line 962 "Parser.rl"
+#line 961 "Parser.rl"
 									{te = p+1;{
-#line 962 "Parser.rl"
+#line 961 "Parser.rl"
 											
 											negated = true;
 											{p = p - 1; }
 											{{
-#line 1911 "Parser.rl"
+#line 1910 "Parser.rl"
 													
 													DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
 													if ((int)stack.size() == top) {
@@ -7396,9 +7396,9 @@ static const short _regex_actions[] = {
 							}
 							case 238:  {
 									{
-#line 972 "Parser.rl"
+#line 971 "Parser.rl"
 									{te = p+1;{
-#line 972 "Parser.rl"
+#line 971 "Parser.rl"
 											
 											currentCls->add(octAccumulator);
 										}
@@ -7410,9 +7410,9 @@ static const short _regex_actions[] = {
 							}
 							case 239:  {
 									{
-#line 975 "Parser.rl"
+#line 974 "Parser.rl"
 									{te = p+1;{
-#line 975 "Parser.rl"
+#line 974 "Parser.rl"
 											
 											currentCls->add(octAccumulator);
 										}
@@ -7424,9 +7424,9 @@ static const short _regex_actions[] = {
 							}
 							case 240:  {
 									{
-#line 979 "Parser.rl"
+#line 978 "Parser.rl"
 									{te = p+1;{
-#line 979 "Parser.rl"
+#line 978 "Parser.rl"
 											
 											string oct(ts + 3, te - ts - 4);
 											unsigned long val;
@@ -7448,9 +7448,9 @@ static const short _regex_actions[] = {
 							}
 							case 241:  {
 									{
-#line 999 "Parser.rl"
+#line 998 "Parser.rl"
 									{te = p+1;{
-#line 999 "Parser.rl"
+#line 998 "Parser.rl"
 											
 											currentCls->add(accumulator);
 										}
@@ -7462,12 +7462,12 @@ static const short _regex_actions[] = {
 							}
 							case 242:  {
 									{
-#line 1003 "Parser.rl"
+#line 1002 "Parser.rl"
 									{te = p+1;{
-#line 1003 "Parser.rl"
+#line 1002 "Parser.rl"
 											
 											// whatever we found here
-											currentCls->add((u8)*(ts + 1));
+											currentCls->add(*(ts + 1));
 											
 										}
 									}}
@@ -7478,9 +7478,9 @@ static const short _regex_actions[] = {
 							}
 							case 243:  {
 									{
-#line 1009 "Parser.rl"
+#line 1008 "Parser.rl"
 									{te = p+1;{
-#line 1009 "Parser.rl"
+#line 1008 "Parser.rl"
 											
 											string hex(ts + 3, te - ts - 4);
 											unsigned long val;
@@ -7502,9 +7502,9 @@ static const short _regex_actions[] = {
 							}
 							case 244:  {
 									{
-#line 1027 "Parser.rl"
+#line 1026 "Parser.rl"
 									{te = p+1;{
-#line 1027 "Parser.rl"
+#line 1026 "Parser.rl"
 											
 											if (te - ts < 3) {
 												assert(te - ts == 2);
@@ -7522,9 +7522,9 @@ static const short _regex_actions[] = {
 							}
 							case 245:  {
 									{
-#line 1037 "Parser.rl"
+#line 1036 "Parser.rl"
 									{te = p+1;{
-#line 1037 "Parser.rl"
+#line 1036 "Parser.rl"
 											
 											currentCls->add(CLASS_WORD, false);
 										}
@@ -7536,9 +7536,9 @@ static const short _regex_actions[] = {
 							}
 							case 246:  {
 									{
-#line 1041 "Parser.rl"
+#line 1040 "Parser.rl"
 									{te = p+1;{
-#line 1041 "Parser.rl"
+#line 1040 "Parser.rl"
 											
 											currentCls->add(CLASS_WORD, true);
 										}
@@ -7550,9 +7550,9 @@ static const short _regex_actions[] = {
 							}
 							case 247:  {
 									{
-#line 1045 "Parser.rl"
+#line 1044 "Parser.rl"
 									{te = p+1;{
-#line 1045 "Parser.rl"
+#line 1044 "Parser.rl"
 											
 											currentCls->add(CLASS_SPACE, false);
 										}
@@ -7564,9 +7564,9 @@ static const short _regex_actions[] = {
 							}
 							case 248:  {
 									{
-#line 1049 "Parser.rl"
+#line 1048 "Parser.rl"
 									{te = p+1;{
-#line 1049 "Parser.rl"
+#line 1048 "Parser.rl"
 											
 											currentCls->add(CLASS_SPACE, true);
 										}
@@ -7578,9 +7578,9 @@ static const short _regex_actions[] = {
 							}
 							case 249:  {
 									{
-#line 1053 "Parser.rl"
+#line 1052 "Parser.rl"
 									{te = p+1;{
-#line 1053 "Parser.rl"
+#line 1052 "Parser.rl"
 											
 											currentCls->add(CLASS_DIGIT, false);
 										}
@@ -7592,9 +7592,9 @@ static const short _regex_actions[] = {
 							}
 							case 250:  {
 									{
-#line 1057 "Parser.rl"
+#line 1056 "Parser.rl"
 									{te = p+1;{
-#line 1057 "Parser.rl"
+#line 1056 "Parser.rl"
 											
 											currentCls->add(CLASS_DIGIT, true);
 										}
@@ -7606,9 +7606,9 @@ static const short _regex_actions[] = {
 							}
 							case 251:  {
 									{
-#line 1060 "Parser.rl"
+#line 1059 "Parser.rl"
 									{te = p+1;{
-#line 1060 "Parser.rl"
+#line 1059 "Parser.rl"
 											
 											currentCls->addDash();
 										}
@@ -7620,9 +7620,9 @@ static const short _regex_actions[] = {
 							}
 							case 252:  {
 									{
-#line 278 "Parser.rl"
+#line 277 "Parser.rl"
 									{te = p+1;{
-#line 278 "Parser.rl"
+#line 277 "Parser.rl"
 											
 											ostringstream str;
 											str << "'\\" << *(ts + 1) << "' at index " << ts - ptr
@@ -7637,9 +7637,9 @@ static const short _regex_actions[] = {
 							}
 							case 253:  {
 									{
-#line 278 "Parser.rl"
+#line 277 "Parser.rl"
 									{te = p+1;{
-#line 278 "Parser.rl"
+#line 277 "Parser.rl"
 											
 											ostringstream str;
 											str << "'\\" << *(ts + 1) << "' at index " << ts - ptr
@@ -7654,9 +7654,9 @@ static const short _regex_actions[] = {
 							}
 							case 254:  {
 									{
-#line 278 "Parser.rl"
+#line 277 "Parser.rl"
 									{te = p+1;{
-#line 278 "Parser.rl"
+#line 277 "Parser.rl"
 											
 											ostringstream str;
 											str << "'\\" << *(ts + 1) << "' at index " << ts - ptr
@@ -7671,12 +7671,12 @@ static const short _regex_actions[] = {
 							}
 							case 255:  {
 									{
-#line 1077 "Parser.rl"
+#line 1076 "Parser.rl"
 									{te = p+1;{
-#line 1077 "Parser.rl"
+#line 1076 "Parser.rl"
 											
 											// add the literal char
-											currentCls->add((u8)*(ts + 1));
+											currentCls->add(*(ts + 1));
 										}
 									}}
 								
@@ -7686,9 +7686,9 @@ static const short _regex_actions[] = {
 							}
 							case 256:  {
 									{
-#line 1083 "Parser.rl"
+#line 1082 "Parser.rl"
 									{te = p+1;{
-#line 1083 "Parser.rl"
+#line 1082 "Parser.rl"
 											
 											assert(mode.utf8);
 											currentCls->add(readUtf8CodePoint2c(ts));
@@ -7701,9 +7701,9 @@ static const short _regex_actions[] = {
 							}
 							case 257:  {
 									{
-#line 1088 "Parser.rl"
+#line 1087 "Parser.rl"
 									{te = p+1;{
-#line 1088 "Parser.rl"
+#line 1087 "Parser.rl"
 											
 											assert(mode.utf8);
 											currentCls->add(readUtf8CodePoint3c(ts));
@@ -7716,9 +7716,9 @@ static const short _regex_actions[] = {
 							}
 							case 258:  {
 									{
-#line 1093 "Parser.rl"
+#line 1092 "Parser.rl"
 									{te = p+1;{
-#line 1093 "Parser.rl"
+#line 1092 "Parser.rl"
 											
 											assert(mode.utf8);
 											currentCls->add(readUtf8CodePoint4c(ts));
@@ -7731,9 +7731,9 @@ static const short _regex_actions[] = {
 							}
 							case 259:  {
 									{
-#line 1098 "Parser.rl"
+#line 1097 "Parser.rl"
 									{te = p+1;{
-#line 1098 "Parser.rl"
+#line 1097 "Parser.rl"
 											
 											assert(mode.utf8);
 											throwInvalidUtf8();
@@ -7746,9 +7746,9 @@ static const short _regex_actions[] = {
 							}
 							case 260:  {
 									{
-#line 1107 "Parser.rl"
+#line 1106 "Parser.rl"
 									{te = p+1;{
-#line 1107 "Parser.rl"
+#line 1106 "Parser.rl"
 											throw LocatedParseError("Character class intersection/subtraction is not supported"); }
 									}}
 								
@@ -7758,9 +7758,9 @@ static const short _regex_actions[] = {
 							}
 							case 261:  {
 									{
-#line 1110 "Parser.rl"
+#line 1109 "Parser.rl"
 									{te = p+1;{
-#line 1110 "Parser.rl"
+#line 1109 "Parser.rl"
 											
 											currentCls->add((u8)*ts);
 										}
@@ -7772,9 +7772,9 @@ static const short _regex_actions[] = {
 							}
 							case 262:  {
 									{
-#line 1114 "Parser.rl"
+#line 1113 "Parser.rl"
 									{te = p+1;{
-#line 1114 "Parser.rl"
+#line 1113 "Parser.rl"
 											
 											currentCls->finalize();
 											currentSeq->addComponent(std::move(currentCls));
@@ -7788,9 +7788,9 @@ static const short _regex_actions[] = {
 							}
 							case 263:  {
 									{
-#line 968 "Parser.rl"
+#line 967 "Parser.rl"
 									{te = p;p = p - 1;{
-#line 968 "Parser.rl"
+#line 967 "Parser.rl"
 											throw LocatedParseError("Malformed property"); }
 									}}
 								
@@ -7800,9 +7800,9 @@ static const short _regex_actions[] = {
 							}
 							case 264:  {
 									{
-#line 969 "Parser.rl"
+#line 968 "Parser.rl"
 									{te = p;p = p - 1;{
-#line 969 "Parser.rl"
+#line 968 "Parser.rl"
 											throw LocatedParseError("Malformed property"); }
 									}}
 								
@@ -7812,9 +7812,9 @@ static const short _regex_actions[] = {
 							}
 							case 265:  {
 									{
-#line 972 "Parser.rl"
+#line 971 "Parser.rl"
 									{te = p;p = p - 1;{
-#line 972 "Parser.rl"
+#line 971 "Parser.rl"
 											
 											currentCls->add(octAccumulator);
 										}
@@ -7826,9 +7826,9 @@ static const short _regex_actions[] = {
 							}
 							case 266:  {
 									{
-#line 975 "Parser.rl"
+#line 974 "Parser.rl"
 									{te = p;p = p - 1;{
-#line 975 "Parser.rl"
+#line 974 "Parser.rl"
 											
 											currentCls->add(octAccumulator);
 										}
@@ -7840,9 +7840,9 @@ static const short _regex_actions[] = {
 							}
 							case 267:  {
 									{
-#line 994 "Parser.rl"
+#line 993 "Parser.rl"
 									{te = p;p = p - 1;{
-#line 994 "Parser.rl"
+#line 993 "Parser.rl"
 											
 											throw LocatedParseError("Value in \\o{...} sequence is non-octal or missing braces");
 										}
@@ -7854,9 +7854,9 @@ static const short _regex_actions[] = {
 							}
 							case 268:  {
 									{
-#line 999 "Parser.rl"
+#line 998 "Parser.rl"
 									{te = p;p = p - 1;{
-#line 999 "Parser.rl"
+#line 998 "Parser.rl"
 											
 											currentCls->add(accumulator);
 										}
@@ -7868,9 +7868,9 @@ static const short _regex_actions[] = {
 							}
 							case 269:  {
 									{
-#line 1023 "Parser.rl"
+#line 1022 "Parser.rl"
 									{te = p;p = p - 1;{
-#line 1023 "Parser.rl"
+#line 1022 "Parser.rl"
 											
 											throw LocatedParseError("Value in \\x{...} sequence is non-hex or missing }");
 									}
@@ -7882,9 +7882,9 @@ static const short _regex_actions[] = {
 						}
 						case 270:  {
 								{
-#line 1027 "Parser.rl"
+#line 1026 "Parser.rl"
 								{te = p;p = p - 1;{
-#line 1027 "Parser.rl"
+#line 1026 "Parser.rl"
 										
 										if (te - ts < 3) {
 											assert(te - ts == 2);
@@ -7902,9 +7902,9 @@ static const short _regex_actions[] = {
 						}
 						case 271:  {
 								{
-#line 1098 "Parser.rl"
+#line 1097 "Parser.rl"
 								{te = p;p = p - 1;{
-#line 1098 "Parser.rl"
+#line 1097 "Parser.rl"
 										
 										assert(mode.utf8);
 										throwInvalidUtf8();
@@ -7917,9 +7917,9 @@ static const short _regex_actions[] = {
 						}
 						case 272:  {
 								{
-#line 1104 "Parser.rl"
+#line 1103 "Parser.rl"
 								{te = p;p = p - 1;{
-#line 1104 "Parser.rl"
+#line 1103 "Parser.rl"
 										throw LocatedParseError("Nested character classes are not supported"); }
 								}}
 							
@@ -7929,9 +7929,9 @@ static const short _regex_actions[] = {
 						}
 						case 273:  {
 								{
-#line 1110 "Parser.rl"
+#line 1109 "Parser.rl"
 								{te = p;p = p - 1;{
-#line 1110 "Parser.rl"
+#line 1109 "Parser.rl"
 										
 										currentCls->add((u8)*ts);
 									}
@@ -7943,10 +7943,10 @@ static const short _regex_actions[] = {
 						}
 						case 274:  {
 								{
-#line 994 "Parser.rl"
+#line 993 "Parser.rl"
 								{p = ((te))-1;
 									{
-#line 994 "Parser.rl"
+#line 993 "Parser.rl"
 										
 										throw LocatedParseError("Value in \\o{...} sequence is non-octal or missing braces");
 									}
@@ -7958,10 +7958,10 @@ static const short _regex_actions[] = {
 						}
 						case 275:  {
 								{
-#line 1023 "Parser.rl"
+#line 1022 "Parser.rl"
 								{p = ((te))-1;
 									{
-#line 1023 "Parser.rl"
+#line 1022 "Parser.rl"
 										
 										throw LocatedParseError("Value in \\x{...} sequence is non-hex or missing }");
 								}
@@ -7973,10 +7973,10 @@ static const short _regex_actions[] = {
 					}
 					case 276:  {
 							{
-#line 1098 "Parser.rl"
+#line 1097 "Parser.rl"
 							{p = ((te))-1;
 								{
-#line 1098 "Parser.rl"
+#line 1097 "Parser.rl"
 									
 									assert(mode.utf8);
 									throwInvalidUtf8();
@@ -7989,10 +7989,10 @@ static const short _regex_actions[] = {
 					}
 					case 277:  {
 							{
-#line 1104 "Parser.rl"
+#line 1103 "Parser.rl"
 							{p = ((te))-1;
 								{
-#line 1104 "Parser.rl"
+#line 1103 "Parser.rl"
 									throw LocatedParseError("Nested character classes are not supported"); }
 							}}
 						
@@ -8002,9 +8002,9 @@ static const short _regex_actions[] = {
 					}
 					case 278:  {
 							{
-#line 1128 "Parser.rl"
+#line 1127 "Parser.rl"
 							{te = p+1;{
-#line 1128 "Parser.rl"
+#line 1127 "Parser.rl"
 									
 									if (currentCls->isNegated()) {
 										// Already seen a caret; the second one is not a meta-character.
@@ -8023,9 +8023,9 @@ static const short _regex_actions[] = {
 					}
 					case 279:  {
 							{
-#line 1141 "Parser.rl"
+#line 1140 "Parser.rl"
 							{te = p+1;{
-#line 1141 "Parser.rl"
+#line 1140 "Parser.rl"
 									
 									currentCls->add(']');
 									inCharClassEarly = false;
@@ -8038,11 +8038,11 @@ static const short _regex_actions[] = {
 					}
 					case 280:  {
 							{
-#line 1146 "Parser.rl"
+#line 1145 "Parser.rl"
 							{te = p+1;{
-#line 1146 "Parser.rl"
+#line 1145 "Parser.rl"
 									{{
-#line 1911 "Parser.rl"
+#line 1910 "Parser.rl"
 											
 											DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
 											if ((int)stack.size() == top) {
@@ -8058,9 +8058,9 @@ static const short _regex_actions[] = {
 					}
 					case 281:  {
 							{
-#line 1147 "Parser.rl"
+#line 1146 "Parser.rl"
 							{te = p+1;{
-#line 1147 "Parser.rl"
+#line 1146 "Parser.rl"
 									/*noop*/}
 							}}
 						
@@ -8070,9 +8070,9 @@ static const short _regex_actions[] = {
 					}
 					case 282:  {
 							{
-#line 1150 "Parser.rl"
+#line 1149 "Parser.rl"
 							{te = p+1;{
-#line 1150 "Parser.rl"
+#line 1149 "Parser.rl"
 									
 									inCharClassEarly = false;
 									{p = p - 1; }
@@ -8085,9 +8085,9 @@ static const short _regex_actions[] = {
 					}
 					case 283:  {
 							{
-#line 1150 "Parser.rl"
+#line 1149 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 1150 "Parser.rl"
+#line 1149 "Parser.rl"
 									
 									inCharClassEarly = false;
 									{p = p - 1; }
@@ -8100,9 +8100,9 @@ static const short _regex_actions[] = {
 					}
 					case 284:  {
 							{
-#line 1162 "Parser.rl"
+#line 1161 "Parser.rl"
 							{te = p+1;{
-#line 1162 "Parser.rl"
+#line 1161 "Parser.rl"
 									
 									{cs = 746;goto _again;}}
 							}}
@@ -8113,9 +8113,9 @@ static const short _regex_actions[] = {
 					}
 					case 285:  {
 							{
-#line 1167 "Parser.rl"
+#line 1166 "Parser.rl"
 							{te = p+1;{
-#line 1167 "Parser.rl"
+#line 1166 "Parser.rl"
 									
 									assert(mode.utf8);
 									/* leverage ComponentClass to generate the vertices */
@@ -8132,9 +8132,9 @@ static const short _regex_actions[] = {
 					}
 					case 286:  {
 							{
-#line 1176 "Parser.rl"
+#line 1175 "Parser.rl"
 							{te = p+1;{
-#line 1176 "Parser.rl"
+#line 1175 "Parser.rl"
 									
 									assert(mode.utf8);
 									/* leverage ComponentClass to generate the vertices */
@@ -8151,9 +8151,9 @@ static const short _regex_actions[] = {
 					}
 					case 287:  {
 							{
-#line 1185 "Parser.rl"
+#line 1184 "Parser.rl"
 							{te = p+1;{
-#line 1185 "Parser.rl"
+#line 1184 "Parser.rl"
 									
 									assert(mode.utf8);
 									/* leverage ComponentClass to generate the vertices */
@@ -8170,9 +8170,9 @@ static const short _regex_actions[] = {
 					}
 					case 288:  {
 							{
-#line 1194 "Parser.rl"
+#line 1193 "Parser.rl"
 							{te = p+1;{
-#line 1194 "Parser.rl"
+#line 1193 "Parser.rl"
 									
 									assert(mode.utf8);
 									throwInvalidUtf8();
@@ -8185,9 +8185,9 @@ static const short _regex_actions[] = {
 					}
 					case 289:  {
 							{
-#line 1200 "Parser.rl"
+#line 1199 "Parser.rl"
 							{te = p+1;{
-#line 1200 "Parser.rl"
+#line 1199 "Parser.rl"
 									
 									addLiteral(currentSeq, *ts, mode);
 								}
@@ -8199,9 +8199,9 @@ static const short _regex_actions[] = {
 					}
 					case 290:  {
 							{
-#line 1194 "Parser.rl"
+#line 1193 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 1194 "Parser.rl"
+#line 1193 "Parser.rl"
 									
 									assert(mode.utf8);
 									throwInvalidUtf8();
@@ -8214,9 +8214,9 @@ static const short _regex_actions[] = {
 					}
 					case 291:  {
 							{
-#line 1200 "Parser.rl"
+#line 1199 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 1200 "Parser.rl"
+#line 1199 "Parser.rl"
 									
 									addLiteral(currentSeq, *ts, mode);
 								}
@@ -8228,10 +8228,10 @@ static const short _regex_actions[] = {
 					}
 					case 292:  {
 							{
-#line 1194 "Parser.rl"
+#line 1193 "Parser.rl"
 							{p = ((te))-1;
 								{
-#line 1194 "Parser.rl"
+#line 1193 "Parser.rl"
 									
 									assert(mode.utf8);
 									throwInvalidUtf8();
@@ -8244,9 +8244,9 @@ static const short _regex_actions[] = {
 					}
 					case 293:  {
 							{
-#line 1210 "Parser.rl"
+#line 1209 "Parser.rl"
 							{te = p+1;{
-#line 1210 "Parser.rl"
+#line 1209 "Parser.rl"
 									
 									{top -= 1;cs = stack[top];goto _again;}
 								}
@@ -8258,9 +8258,9 @@ static const short _regex_actions[] = {
 					}
 					case 294:  {
 							{
-#line 1215 "Parser.rl"
+#line 1214 "Parser.rl"
 							{te = p+1;{
-#line 1215 "Parser.rl"
+#line 1214 "Parser.rl"
 									
 									assert(mode.utf8);
 									currentCls->add(readUtf8CodePoint2c(ts));
@@ -8274,9 +8274,9 @@ static const short _regex_actions[] = {
 					}
 					case 295:  {
 							{
-#line 1221 "Parser.rl"
+#line 1220 "Parser.rl"
 							{te = p+1;{
-#line 1221 "Parser.rl"
+#line 1220 "Parser.rl"
 									
 									assert(mode.utf8);
 									currentCls->add(readUtf8CodePoint3c(ts));
@@ -8290,9 +8290,9 @@ static const short _regex_actions[] = {
 					}
 					case 296:  {
 							{
-#line 1227 "Parser.rl"
+#line 1226 "Parser.rl"
 							{te = p+1;{
-#line 1227 "Parser.rl"
+#line 1226 "Parser.rl"
 									
 									assert(mode.utf8);
 									currentCls->add(readUtf8CodePoint4c(ts));
@@ -8306,9 +8306,9 @@ static const short _regex_actions[] = {
 					}
 					case 297:  {
 							{
-#line 1233 "Parser.rl"
+#line 1232 "Parser.rl"
 							{te = p+1;{
-#line 1233 "Parser.rl"
+#line 1232 "Parser.rl"
 									
 									assert(mode.utf8);
 									throwInvalidUtf8();
@@ -8321,11 +8321,11 @@ static const short _regex_actions[] = {
 					}
 					case 298:  {
 							{
-#line 1239 "Parser.rl"
+#line 1238 "Parser.rl"
 							{te = p+1;{
-#line 1239 "Parser.rl"
+#line 1238 "Parser.rl"
 									
-									currentCls->add((u8)*ts);
+									currentCls->add(*ts);
 									inCharClassEarly = false;
 								}
 							}}
@@ -8336,9 +8336,9 @@ static const short _regex_actions[] = {
 					}
 					case 299:  {
 							{
-#line 1233 "Parser.rl"
+#line 1232 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 1233 "Parser.rl"
+#line 1232 "Parser.rl"
 									
 									assert(mode.utf8);
 									throwInvalidUtf8();
@@ -8351,11 +8351,11 @@ static const short _regex_actions[] = {
 					}
 					case 300:  {
 							{
-#line 1239 "Parser.rl"
+#line 1238 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 1239 "Parser.rl"
+#line 1238 "Parser.rl"
 									
-									currentCls->add((u8)*ts);
+									currentCls->add(*ts);
 									inCharClassEarly = false;
 								}
 							}}
@@ -8366,10 +8366,10 @@ static const short _regex_actions[] = {
 					}
 					case 301:  {
 							{
-#line 1233 "Parser.rl"
+#line 1232 "Parser.rl"
 							{p = ((te))-1;
 								{
-#line 1233 "Parser.rl"
+#line 1232 "Parser.rl"
 									
 									assert(mode.utf8);
 									throwInvalidUtf8();
@@ -8382,9 +8382,9 @@ static const short _regex_actions[] = {
 					}
 					case 302:  {
 							{
-#line 1251 "Parser.rl"
+#line 1250 "Parser.rl"
 							{te = p+1;{
-#line 1251 "Parser.rl"
+#line 1250 "Parser.rl"
 									inComment = false; {cs = 746;goto _again;}}
 							}}
 						
@@ -8403,9 +8403,9 @@ static const short _regex_actions[] = {
 					}
 					case 304:  {
 							{
-#line 1263 "Parser.rl"
+#line 1262 "Parser.rl"
 							{te = p+1;{
-#line 1263 "Parser.rl"
+#line 1262 "Parser.rl"
 									inComment = false; {cs = 746;goto _again;}}
 							}}
 						
@@ -8424,7 +8424,7 @@ static const short _regex_actions[] = {
 					}
 					case 306:  {
 							{
-#line 1499 "Parser.rl"
+#line 1498 "Parser.rl"
 							{act = 290;}}
 						
 #line 8113 "Parser.cpp"
@@ -8433,7 +8433,7 @@ static const short _regex_actions[] = {
 					}
 					case 307:  {
 							{
-#line 1516 "Parser.rl"
+#line 1515 "Parser.rl"
 							{act = 292;}}
 						
 #line 8121 "Parser.cpp"
@@ -8442,7 +8442,7 @@ static const short _regex_actions[] = {
 					}
 					case 308:  {
 							{
-#line 1745 "Parser.rl"
+#line 1744 "Parser.rl"
 							{act = 332;}}
 						
 #line 8129 "Parser.cpp"
@@ -8451,9 +8451,9 @@ static const short _regex_actions[] = {
 					}
 					case 309:  {
 							{
-#line 364 "Parser.rl"
+#line 363 "Parser.rl"
 							{te = p+1;{
-#line 364 "Parser.rl"
+#line 363 "Parser.rl"
 									
 									if (sequences.empty()) {
 										throw LocatedParseError("Unmatched parentheses");
@@ -8469,9 +8469,9 @@ static const short _regex_actions[] = {
 					}
 					case 310:  {
 							{
-#line 1282 "Parser.rl"
+#line 1281 "Parser.rl"
 							{te = p+1;{
-#line 1282 "Parser.rl"
+#line 1281 "Parser.rl"
 									
 									currentSeq->addAlternation();
 								}
@@ -8483,9 +8483,9 @@ static const short _regex_actions[] = {
 					}
 					case 311:  {
 							{
-#line 1287 "Parser.rl"
+#line 1286 "Parser.rl"
 							{te = p+1;{
-#line 1287 "Parser.rl"
+#line 1286 "Parser.rl"
 									
 									throw LocatedParseError("POSIX named classes are only "
 									"supported inside a class");
@@ -8498,9 +8498,9 @@ static const short _regex_actions[] = {
 					}
 					case 312:  {
 							{
-#line 1294 "Parser.rl"
+#line 1293 "Parser.rl"
 							{te = p+1;{
-#line 1294 "Parser.rl"
+#line 1293 "Parser.rl"
 									
 									throw LocatedParseError("Unsupported POSIX collating "
 									"element");
@@ -8513,9 +8513,9 @@ static const short _regex_actions[] = {
 					}
 					case 313:  {
 							{
-#line 1301 "Parser.rl"
+#line 1300 "Parser.rl"
 							{te = p+1;{
-#line 1301 "Parser.rl"
+#line 1300 "Parser.rl"
 									
 									{cs = 839;goto _again;}}
 							}}
@@ -8526,9 +8526,9 @@ static const short _regex_actions[] = {
 					}
 					case 314:  {
 							{
-#line 1305 "Parser.rl"
+#line 1304 "Parser.rl"
 							{te = p+1;{
-#line 1305 "Parser.rl"
+#line 1304 "Parser.rl"
 									/* noop */ }
 							}}
 						
@@ -8538,9 +8538,9 @@ static const short _regex_actions[] = {
 					}
 					case 315:  {
 							{
-#line 1307 "Parser.rl"
+#line 1306 "Parser.rl"
 							{te = p+1;{
-#line 1307 "Parser.rl"
+#line 1306 "Parser.rl"
 									
 									currentSeq->addComponent(generateComponent(CLASS_ANY, false, mode));
 								}
@@ -8552,9 +8552,9 @@ static const short _regex_actions[] = {
 					}
 					case 316:  {
 							{
-#line 1311 "Parser.rl"
+#line 1310 "Parser.rl"
 							{te = p+1;{
-#line 1311 "Parser.rl"
+#line 1310 "Parser.rl"
 									
 									if (mode.utf8) {
 										throw LocatedParseError("\\C is unsupported in UTF8");
@@ -8569,9 +8569,9 @@ static const short _regex_actions[] = {
 					}
 					case 317:  {
 							{
-#line 1325 "Parser.rl"
+#line 1324 "Parser.rl"
 							{te = p+1;{
-#line 1325 "Parser.rl"
+#line 1324 "Parser.rl"
 									
 									if (!currentSeq->addRepeat(0, ComponentRepeat::NoLimit,
 									ComponentRepeat::REPEAT_NONGREEDY)) {
@@ -8586,9 +8586,9 @@ static const short _regex_actions[] = {
 					}
 					case 318:  {
 							{
-#line 1332 "Parser.rl"
+#line 1331 "Parser.rl"
 							{te = p+1;{
-#line 1332 "Parser.rl"
+#line 1331 "Parser.rl"
 									
 									if (!currentSeq->addRepeat(0, ComponentRepeat::NoLimit,
 									ComponentRepeat::REPEAT_POSSESSIVE)) {
@@ -8603,9 +8603,9 @@ static const short _regex_actions[] = {
 					}
 					case 319:  {
 							{
-#line 1346 "Parser.rl"
+#line 1345 "Parser.rl"
 							{te = p+1;{
-#line 1346 "Parser.rl"
+#line 1345 "Parser.rl"
 									
 									if (!currentSeq->addRepeat(1, ComponentRepeat::NoLimit,
 									ComponentRepeat::REPEAT_NONGREEDY)) {
@@ -8620,9 +8620,9 @@ static const short _regex_actions[] = {
 					}
 					case 320:  {
 							{
-#line 1353 "Parser.rl"
+#line 1352 "Parser.rl"
 							{te = p+1;{
-#line 1353 "Parser.rl"
+#line 1352 "Parser.rl"
 									
 									if (!currentSeq->addRepeat(1, ComponentRepeat::NoLimit,
 									ComponentRepeat::REPEAT_POSSESSIVE)) {
@@ -8637,9 +8637,9 @@ static const short _regex_actions[] = {
 					}
 					case 321:  {
 							{
-#line 1367 "Parser.rl"
+#line 1366 "Parser.rl"
 							{te = p+1;{
-#line 1367 "Parser.rl"
+#line 1366 "Parser.rl"
 									
 									if (!currentSeq->addRepeat(
 									0, 1, ComponentRepeat::REPEAT_NONGREEDY)) {
@@ -8654,9 +8654,9 @@ static const short _regex_actions[] = {
 					}
 					case 322:  {
 							{
-#line 1374 "Parser.rl"
+#line 1373 "Parser.rl"
 							{te = p+1;{
-#line 1374 "Parser.rl"
+#line 1373 "Parser.rl"
 									
 									if (!currentSeq->addRepeat(
 									0, 1, ComponentRepeat::REPEAT_POSSESSIVE)) {
@@ -8671,9 +8671,9 @@ static const short _regex_actions[] = {
 					}
 					case 323:  {
 							{
-#line 1391 "Parser.rl"
+#line 1390 "Parser.rl"
 							{te = p+1;{
-#line 1391 "Parser.rl"
+#line 1390 "Parser.rl"
 									
 									if (repeatN > repeatM || repeatM == 0) {
 										throwInvalidRepeat();
@@ -8691,9 +8691,9 @@ static const short _regex_actions[] = {
 					}
 					case 324:  {
 							{
-#line 1401 "Parser.rl"
+#line 1400 "Parser.rl"
 							{te = p+1;{
-#line 1401 "Parser.rl"
+#line 1400 "Parser.rl"
 									
 									if (repeatN > repeatM || repeatM == 0) {
 										throwInvalidRepeat();
@@ -8711,9 +8711,9 @@ static const short _regex_actions[] = {
 					}
 					case 325:  {
 							{
-#line 324 "Parser.rl"
+#line 323 "Parser.rl"
 							{te = p+1;{
-#line 324 "Parser.rl"
+#line 323 "Parser.rl"
 									
 									inComment = true;
 									{cs = 850;goto _again;}}
@@ -8725,11 +8725,11 @@ static const short _regex_actions[] = {
 					}
 					case 326:  {
 							{
-#line 1418 "Parser.rl"
+#line 1417 "Parser.rl"
 							{te = p+1;{
-#line 1418 "Parser.rl"
+#line 1417 "Parser.rl"
 									{p = p - 1; } {{
-#line 1911 "Parser.rl"
+#line 1910 "Parser.rl"
 											
 											DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
 											if ((int)stack.size() == top) {
@@ -8745,9 +8745,9 @@ static const short _regex_actions[] = {
 					}
 					case 327:  {
 							{
-#line 1422 "Parser.rl"
+#line 1421 "Parser.rl"
 							{te = p+1;{
-#line 1422 "Parser.rl"
+#line 1421 "Parser.rl"
 									assert(0); {p += 1; goto _out; } }
 							}}
 						
@@ -8757,9 +8757,9 @@ static const short _regex_actions[] = {
 					}
 					case 328:  {
 							{
-#line 1429 "Parser.rl"
+#line 1428 "Parser.rl"
 							{te = p+1;{
-#line 1429 "Parser.rl"
+#line 1428 "Parser.rl"
 									
 									auto bound = mode.multiline ? ComponentBoundary::BEGIN_LINE
 									: ComponentBoundary::BEGIN_STRING;
@@ -8773,9 +8773,9 @@ static const short _regex_actions[] = {
 					}
 					case 329:  {
 							{
-#line 1436 "Parser.rl"
+#line 1435 "Parser.rl"
 							{te = p+1;{
-#line 1436 "Parser.rl"
+#line 1435 "Parser.rl"
 									
 									auto bound = mode.multiline ? ComponentBoundary::END_LINE
 									: ComponentBoundary::END_STRING_OPTIONAL_LF;
@@ -8789,9 +8789,9 @@ static const short _regex_actions[] = {
 					}
 					case 330:  {
 							{
-#line 1442 "Parser.rl"
+#line 1441 "Parser.rl"
 							{te = p+1;{
-#line 1442 "Parser.rl"
+#line 1441 "Parser.rl"
 									
 									auto bound = ComponentBoundary::BEGIN_STRING;
 									currentSeq->addComponent(std::make_unique<ComponentBoundary>(bound));
@@ -8804,9 +8804,9 @@ static const short _regex_actions[] = {
 					}
 					case 331:  {
 							{
-#line 1447 "Parser.rl"
+#line 1446 "Parser.rl"
 							{te = p+1;{
-#line 1447 "Parser.rl"
+#line 1446 "Parser.rl"
 									
 									auto bound = ComponentBoundary::END_STRING_OPTIONAL_LF;
 									currentSeq->addComponent(std::make_unique<ComponentBoundary>(bound));
@@ -8819,9 +8819,9 @@ static const short _regex_actions[] = {
 					}
 					case 332:  {
 							{
-#line 1452 "Parser.rl"
+#line 1451 "Parser.rl"
 							{te = p+1;{
-#line 1452 "Parser.rl"
+#line 1451 "Parser.rl"
 									
 									auto bound = ComponentBoundary::END_STRING;
 									currentSeq->addComponent(std::make_unique<ComponentBoundary>(bound));
@@ -8834,9 +8834,9 @@ static const short _regex_actions[] = {
 					}
 					case 333:  {
 							{
-#line 1457 "Parser.rl"
+#line 1456 "Parser.rl"
 							{te = p+1;{
-#line 1457 "Parser.rl"
+#line 1456 "Parser.rl"
 									
 									currentSeq->addComponent(
 									std::make_unique<ComponentWordBoundary>(ts - ptr, false, mode));
@@ -8849,9 +8849,9 @@ static const short _regex_actions[] = {
 					}
 					case 334:  {
 							{
-#line 1462 "Parser.rl"
+#line 1461 "Parser.rl"
 							{te = p+1;{
-#line 1462 "Parser.rl"
+#line 1461 "Parser.rl"
 									
 									currentSeq->addComponent(
 									std::make_unique<ComponentWordBoundary>(ts - ptr, true, mode));
@@ -8864,9 +8864,9 @@ static const short _regex_actions[] = {
 					}
 					case 335:  {
 							{
-#line 1472 "Parser.rl"
+#line 1471 "Parser.rl"
 							{te = p+1;{
-#line 1472 "Parser.rl"
+#line 1471 "Parser.rl"
 									
 									addLiteral(currentSeq, '\x09', mode);
 								}
@@ -8878,9 +8878,9 @@ static const short _regex_actions[] = {
 					}
 					case 336:  {
 							{
-#line 1476 "Parser.rl"
+#line 1475 "Parser.rl"
 							{te = p+1;{
-#line 1476 "Parser.rl"
+#line 1475 "Parser.rl"
 									
 									addLiteral(currentSeq, '\x0a', mode);
 								}
@@ -8892,9 +8892,9 @@ static const short _regex_actions[] = {
 					}
 					case 337:  {
 							{
-#line 1480 "Parser.rl"
+#line 1479 "Parser.rl"
 							{te = p+1;{
-#line 1480 "Parser.rl"
+#line 1479 "Parser.rl"
 									
 									addLiteral(currentSeq, '\x0d', mode);
 								}
@@ -8906,9 +8906,9 @@ static const short _regex_actions[] = {
 					}
 					case 338:  {
 							{
-#line 1484 "Parser.rl"
+#line 1483 "Parser.rl"
 							{te = p+1;{
-#line 1484 "Parser.rl"
+#line 1483 "Parser.rl"
 									
 									addLiteral(currentSeq, '\x0c', mode);
 								}
@@ -8920,9 +8920,9 @@ static const short _regex_actions[] = {
 					}
 					case 339:  {
 							{
-#line 1488 "Parser.rl"
+#line 1487 "Parser.rl"
 							{te = p+1;{
-#line 1488 "Parser.rl"
+#line 1487 "Parser.rl"
 									
 									addLiteral(currentSeq, '\x07', mode);
 								}
@@ -8934,9 +8934,9 @@ static const short _regex_actions[] = {
 					}
 					case 340:  {
 							{
-#line 1492 "Parser.rl"
+#line 1491 "Parser.rl"
 							{te = p+1;{
-#line 1492 "Parser.rl"
+#line 1491 "Parser.rl"
 									
 									addLiteral(currentSeq, '\x1b', mode);
 								}
@@ -8948,9 +8948,9 @@ static const short _regex_actions[] = {
 					}
 					case 341:  {
 							{
-#line 1496 "Parser.rl"
+#line 1495 "Parser.rl"
 							{te = p+1;{
-#line 1496 "Parser.rl"
+#line 1495 "Parser.rl"
 									
 									addLiteral(currentSeq, octAccumulator, mode);
 								}
@@ -8962,9 +8962,9 @@ static const short _regex_actions[] = {
 					}
 					case 342:  {
 							{
-#line 481 "Parser.rl"
+#line 480 "Parser.rl"
 							{te = p+1;{
-#line 481 "Parser.rl"
+#line 480 "Parser.rl"
 									
 									if (accumulator == 0) {
 										throw LocatedParseError("Numbered reference cannot be zero");
@@ -8979,9 +8979,9 @@ static const short _regex_actions[] = {
 					}
 					case 343:  {
 							{
-#line 488 "Parser.rl"
+#line 487 "Parser.rl"
 							{te = p+1;{
-#line 488 "Parser.rl"
+#line 487 "Parser.rl"
 									
 									// Accumulator is a negative offset.
 									if (accumulator == 0) {
@@ -9001,9 +9001,9 @@ static const short _regex_actions[] = {
 					}
 					case 344:  {
 							{
-#line 481 "Parser.rl"
+#line 480 "Parser.rl"
 							{te = p+1;{
-#line 481 "Parser.rl"
+#line 480 "Parser.rl"
 									
 									if (accumulator == 0) {
 										throw LocatedParseError("Numbered reference cannot be zero");
@@ -9018,9 +9018,9 @@ static const short _regex_actions[] = {
 					}
 					case 345:  {
 							{
-#line 488 "Parser.rl"
+#line 487 "Parser.rl"
 							{te = p+1;{
-#line 488 "Parser.rl"
+#line 487 "Parser.rl"
 									
 									// Accumulator is a negative offset.
 									if (accumulator == 0) {
@@ -9040,9 +9040,9 @@ static const short _regex_actions[] = {
 					}
 					case 346:  {
 							{
-#line 500 "Parser.rl"
+#line 499 "Parser.rl"
 							{te = p+1;{
-#line 500 "Parser.rl"
+#line 499 "Parser.rl"
 									
 									currentSeq->addComponent(std::make_unique<ComponentBackReference>(label));
 								}
@@ -9054,9 +9054,9 @@ static const short _regex_actions[] = {
 					}
 					case 347:  {
 							{
-#line 500 "Parser.rl"
+#line 499 "Parser.rl"
 							{te = p+1;{
-#line 500 "Parser.rl"
+#line 499 "Parser.rl"
 									
 									currentSeq->addComponent(std::make_unique<ComponentBackReference>(label));
 								}
@@ -9068,9 +9068,9 @@ static const short _regex_actions[] = {
 					}
 					case 348:  {
 							{
-#line 500 "Parser.rl"
+#line 499 "Parser.rl"
 							{te = p+1;{
-#line 500 "Parser.rl"
+#line 499 "Parser.rl"
 									
 									currentSeq->addComponent(std::make_unique<ComponentBackReference>(label));
 								}
@@ -9082,9 +9082,9 @@ static const short _regex_actions[] = {
 					}
 					case 349:  {
 							{
-#line 500 "Parser.rl"
+#line 499 "Parser.rl"
 							{te = p+1;{
-#line 500 "Parser.rl"
+#line 499 "Parser.rl"
 									
 									currentSeq->addComponent(std::make_unique<ComponentBackReference>(label));
 								}
@@ -9096,9 +9096,9 @@ static const short _regex_actions[] = {
 					}
 					case 350:  {
 							{
-#line 500 "Parser.rl"
+#line 499 "Parser.rl"
 							{te = p+1;{
-#line 500 "Parser.rl"
+#line 499 "Parser.rl"
 									
 									currentSeq->addComponent(std::make_unique<ComponentBackReference>(label));
 								}
@@ -9110,9 +9110,9 @@ static const short _regex_actions[] = {
 					}
 					case 351:  {
 							{
-#line 1557 "Parser.rl"
+#line 1556 "Parser.rl"
 							{te = p+1;{
-#line 1557 "Parser.rl"
+#line 1556 "Parser.rl"
 									
 									ostringstream str;
 									str << "Onigiruma subroutine call at index " << ts - ptr <<
@@ -9127,9 +9127,9 @@ static const short _regex_actions[] = {
 					}
 					case 352:  {
 							{
-#line 1568 "Parser.rl"
+#line 1567 "Parser.rl"
 							{te = p+1;{
-#line 1568 "Parser.rl"
+#line 1567 "Parser.rl"
 									
 									string oct(ts + 3, te - ts - 4);
 									unsigned long val;
@@ -9151,9 +9151,9 @@ static const short _regex_actions[] = {
 					}
 					case 353:  {
 							{
-#line 1586 "Parser.rl"
+#line 1585 "Parser.rl"
 							{te = p+1;{
-#line 1586 "Parser.rl"
+#line 1585 "Parser.rl"
 									
 									addEscapedHex(currentSeq, accumulator, mode);
 								}
@@ -9165,9 +9165,9 @@ static const short _regex_actions[] = {
 					}
 					case 354:  {
 							{
-#line 1590 "Parser.rl"
+#line 1589 "Parser.rl"
 							{te = p+1;{
-#line 1590 "Parser.rl"
+#line 1589 "Parser.rl"
 									
 									string hex(ts + 3, te - ts - 4);
 									unsigned long val;
@@ -9189,9 +9189,9 @@ static const short _regex_actions[] = {
 					}
 					case 355:  {
 							{
-#line 1608 "Parser.rl"
+#line 1607 "Parser.rl"
 							{te = p+1;{
-#line 1608 "Parser.rl"
+#line 1607 "Parser.rl"
 									
 									if (te - ts < 3) {
 										assert(te - ts == 2);
@@ -9209,9 +9209,9 @@ static const short _regex_actions[] = {
 					}
 					case 356:  {
 							{
-#line 1618 "Parser.rl"
+#line 1617 "Parser.rl"
 							{te = p+1;{
-#line 1618 "Parser.rl"
+#line 1617 "Parser.rl"
 									
 									ostringstream str;
 									str << "'\\" << *(ts + 1) << "' at index " << ts - ptr
@@ -9226,9 +9226,9 @@ static const short _regex_actions[] = {
 					}
 					case 357:  {
 							{
-#line 1626 "Parser.rl"
+#line 1625 "Parser.rl"
 							{te = p+1;{
-#line 1626 "Parser.rl"
+#line 1625 "Parser.rl"
 									
 									auto cc = generateComponent(CLASS_WORD, false, mode);
 									currentSeq->addComponent(std::move(cc));
@@ -9241,9 +9241,9 @@ static const short _regex_actions[] = {
 					}
 					case 358:  {
 							{
-#line 1631 "Parser.rl"
+#line 1630 "Parser.rl"
 							{te = p+1;{
-#line 1631 "Parser.rl"
+#line 1630 "Parser.rl"
 									
 									auto cc = generateComponent(CLASS_WORD, true, mode);
 									currentSeq->addComponent(std::move(cc));
@@ -9256,9 +9256,9 @@ static const short _regex_actions[] = {
 					}
 					case 359:  {
 							{
-#line 1636 "Parser.rl"
+#line 1635 "Parser.rl"
 							{te = p+1;{
-#line 1636 "Parser.rl"
+#line 1635 "Parser.rl"
 									
 									auto cc = generateComponent(CLASS_SPACE, false, mode);
 									currentSeq->addComponent(std::move(cc));
@@ -9271,9 +9271,9 @@ static const short _regex_actions[] = {
 					}
 					case 360:  {
 							{
-#line 1641 "Parser.rl"
+#line 1640 "Parser.rl"
 							{te = p+1;{
-#line 1641 "Parser.rl"
+#line 1640 "Parser.rl"
 									
 									auto cc = generateComponent(CLASS_SPACE, true, mode);
 									currentSeq->addComponent(std::move(cc));
@@ -9286,9 +9286,9 @@ static const short _regex_actions[] = {
 					}
 					case 361:  {
 							{
-#line 1646 "Parser.rl"
+#line 1645 "Parser.rl"
 							{te = p+1;{
-#line 1646 "Parser.rl"
+#line 1645 "Parser.rl"
 									
 									auto cc = generateComponent(CLASS_DIGIT, false, mode);
 									currentSeq->addComponent(std::move(cc));
@@ -9301,9 +9301,9 @@ static const short _regex_actions[] = {
 					}
 					case 362:  {
 							{
-#line 1651 "Parser.rl"
+#line 1650 "Parser.rl"
 							{te = p+1;{
-#line 1651 "Parser.rl"
+#line 1650 "Parser.rl"
 									
 									auto cc = generateComponent(CLASS_DIGIT, true, mode);
 									currentSeq->addComponent(std::move(cc));
@@ -9316,9 +9316,9 @@ static const short _regex_actions[] = {
 					}
 					case 363:  {
 							{
-#line 1656 "Parser.rl"
+#line 1655 "Parser.rl"
 							{te = p+1;{
-#line 1656 "Parser.rl"
+#line 1655 "Parser.rl"
 									
 									auto cc = generateComponent(CLASS_HORZ, false, mode);
 									currentSeq->addComponent(std::move(cc));
@@ -9331,9 +9331,9 @@ static const short _regex_actions[] = {
 					}
 					case 364:  {
 							{
-#line 1661 "Parser.rl"
+#line 1660 "Parser.rl"
 							{te = p+1;{
-#line 1661 "Parser.rl"
+#line 1660 "Parser.rl"
 									
 									auto cc = generateComponent(CLASS_HORZ, true, mode);
 									currentSeq->addComponent(std::move(cc));
@@ -9346,9 +9346,9 @@ static const short _regex_actions[] = {
 					}
 					case 365:  {
 							{
-#line 1666 "Parser.rl"
+#line 1665 "Parser.rl"
 							{te = p+1;{
-#line 1666 "Parser.rl"
+#line 1665 "Parser.rl"
 									
 									auto cc = generateComponent(CLASS_VERT, false, mode);
 									currentSeq->addComponent(std::move(cc));
@@ -9361,9 +9361,9 @@ static const short _regex_actions[] = {
 					}
 					case 366:  {
 							{
-#line 1671 "Parser.rl"
+#line 1670 "Parser.rl"
 							{te = p+1;{
-#line 1671 "Parser.rl"
+#line 1670 "Parser.rl"
 									
 									auto cc = generateComponent(CLASS_VERT, true, mode);
 									currentSeq->addComponent(std::move(cc));
@@ -9376,16 +9376,16 @@ static const short _regex_actions[] = {
 					}
 					case 367:  {
 							{
-#line 1676 "Parser.rl"
+#line 1675 "Parser.rl"
 							{te = p+1;{
-#line 1676 "Parser.rl"
+#line 1675 "Parser.rl"
 									
 									assert(!currentCls && !inCharClass);
 									currentCls = getComponentClass(mode);
 									negated = false;
 									{p = p - 1; }
 									{{
-#line 1911 "Parser.rl"
+#line 1910 "Parser.rl"
 											
 											DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
 											if ((int)stack.size() == top) {
@@ -9401,16 +9401,16 @@ static const short _regex_actions[] = {
 					}
 					case 368:  {
 							{
-#line 1684 "Parser.rl"
+#line 1683 "Parser.rl"
 							{te = p+1;{
-#line 1684 "Parser.rl"
+#line 1683 "Parser.rl"
 									
 									assert(!currentCls && !inCharClass);
 									currentCls = getComponentClass(mode);
 									negated = false;
 									{p = p - 1; }
 									{{
-#line 1911 "Parser.rl"
+#line 1910 "Parser.rl"
 											
 											DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
 											if ((int)stack.size() == top) {
@@ -9426,16 +9426,16 @@ static const short _regex_actions[] = {
 					}
 					case 369:  {
 							{
-#line 1692 "Parser.rl"
+#line 1691 "Parser.rl"
 							{te = p+1;{
-#line 1692 "Parser.rl"
+#line 1691 "Parser.rl"
 									
 									assert(!currentCls && !inCharClass);
 									currentCls = getComponentClass(mode);
 									negated = true;
 									{p = p - 1; }
 									{{
-#line 1911 "Parser.rl"
+#line 1910 "Parser.rl"
 											
 											DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
 											if ((int)stack.size() == top) {
@@ -9451,16 +9451,16 @@ static const short _regex_actions[] = {
 					}
 					case 370:  {
 							{
-#line 1700 "Parser.rl"
+#line 1699 "Parser.rl"
 							{te = p+1;{
-#line 1700 "Parser.rl"
+#line 1699 "Parser.rl"
 									
 									assert(!currentCls && !inCharClass);
 									currentCls = getComponentClass(mode);
 									negated = true;
 									{p = p - 1; }
 									{{
-#line 1911 "Parser.rl"
+#line 1910 "Parser.rl"
 											
 											DEBUG_PRINTF("stack %zu top %d\n", stack.size(), top);
 											if ((int)stack.size() == top) {
@@ -9476,9 +9476,9 @@ static const short _regex_actions[] = {
 					}
 					case 371:  {
 							{
-#line 1712 "Parser.rl"
+#line 1711 "Parser.rl"
 							{te = p+1;{
-#line 1712 "Parser.rl"
+#line 1711 "Parser.rl"
 									
 									ostringstream str;
 									str << "\\R at index " << ts - ptr << " not supported.";
@@ -9492,9 +9492,9 @@ static const short _regex_actions[] = {
 					}
 					case 372:  {
 							{
-#line 1719 "Parser.rl"
+#line 1718 "Parser.rl"
 							{te = p+1;{
-#line 1719 "Parser.rl"
+#line 1718 "Parser.rl"
 									
 									ostringstream str;
 									str << "\\K at index " << ts - ptr << " not supported.";
@@ -9508,9 +9508,9 @@ static const short _regex_actions[] = {
 					}
 					case 373:  {
 							{
-#line 1734 "Parser.rl"
+#line 1733 "Parser.rl"
 							{te = p+1;{
-#line 1734 "Parser.rl"
+#line 1733 "Parser.rl"
 									
 									ostringstream str;
 									str << "\\G at index " << ts - ptr << " not supported.";
@@ -9524,9 +9524,9 @@ static const short _regex_actions[] = {
 					}
 					case 374:  {
 							{
-#line 1740 "Parser.rl"
+#line 1739 "Parser.rl"
 							{te = p+1;{
-#line 1740 "Parser.rl"
+#line 1739 "Parser.rl"
 									
 									currentSeq->addComponent(std::make_unique<ComponentEUS>(ts - ptr, mode));
 								}
@@ -9538,9 +9538,9 @@ static const short _regex_actions[] = {
 					}
 					case 375:  {
 							{
-#line 1745 "Parser.rl"
+#line 1744 "Parser.rl"
 							{te = p+1;{
-#line 1745 "Parser.rl"
+#line 1744 "Parser.rl"
 									
 									addLiteral(currentSeq, *(ts + 1), mode);
 								}
@@ -9552,9 +9552,9 @@ static const short _regex_actions[] = {
 					}
 					case 376:  {
 							{
-#line 318 "Parser.rl"
+#line 317 "Parser.rl"
 							{te = p+1;{
-#line 318 "Parser.rl"
+#line 317 "Parser.rl"
 									
 									inComment = true;
 									{cs = 849;goto _again;}}
@@ -9566,9 +9566,9 @@ static const short _regex_actions[] = {
 					}
 					case 377:  {
 							{
-#line 435 "Parser.rl"
+#line 434 "Parser.rl"
 							{te = p+1;{
-#line 435 "Parser.rl"
+#line 434 "Parser.rl"
 									
 									mode = newMode;
 									currentSeq->addComponent(std::make_unique<ComponentEmpty>());
@@ -9581,9 +9581,9 @@ static const short _regex_actions[] = {
 					}
 					case 378:  {
 							{
-#line 357 "Parser.rl"
+#line 356 "Parser.rl"
 							{te = p+1;{
-#line 357 "Parser.rl"
+#line 356 "Parser.rl"
 									
 									PUSH_SEQUENCE;
 									mode = newMode;
@@ -9598,9 +9598,9 @@ static const short _regex_actions[] = {
 					}
 					case 379:  {
 							{
-#line 371 "Parser.rl"
+#line 370 "Parser.rl"
 							{te = p+1;{
-#line 371 "Parser.rl"
+#line 370 "Parser.rl"
 									
 									PUSH_SEQUENCE;
 									currentSeq = enterSequence(currentSeq,
@@ -9615,9 +9615,9 @@ static const short _regex_actions[] = {
 					}
 					case 380:  {
 							{
-#line 377 "Parser.rl"
+#line 376 "Parser.rl"
 							{te = p+1;{
-#line 377 "Parser.rl"
+#line 376 "Parser.rl"
 									
 									PUSH_SEQUENCE;
 									currentSeq = enterSequence(currentSeq,
@@ -9632,9 +9632,9 @@ static const short _regex_actions[] = {
 					}
 					case 381:  {
 							{
-#line 383 "Parser.rl"
+#line 382 "Parser.rl"
 							{te = p+1;{
-#line 383 "Parser.rl"
+#line 382 "Parser.rl"
 									
 									PUSH_SEQUENCE;
 									currentSeq = enterSequence(currentSeq,
@@ -9649,9 +9649,9 @@ static const short _regex_actions[] = {
 					}
 					case 382:  {
 							{
-#line 389 "Parser.rl"
+#line 388 "Parser.rl"
 							{te = p+1;{
-#line 389 "Parser.rl"
+#line 388 "Parser.rl"
 									
 									PUSH_SEQUENCE;
 									currentSeq = enterSequence(currentSeq,
@@ -9666,9 +9666,9 @@ static const short _regex_actions[] = {
 					}
 					case 383:  {
 							{
-#line 395 "Parser.rl"
+#line 394 "Parser.rl"
 							{te = p+1;{
-#line 395 "Parser.rl"
+#line 394 "Parser.rl"
 									
 									throw LocatedParseError("Embedded code is not supported");
 								}
@@ -9680,9 +9680,9 @@ static const short _regex_actions[] = {
 					}
 					case 384:  {
 							{
-#line 395 "Parser.rl"
+#line 394 "Parser.rl"
 							{te = p+1;{
-#line 395 "Parser.rl"
+#line 394 "Parser.rl"
 									
 									throw LocatedParseError("Embedded code is not supported");
 								}
@@ -9694,9 +9694,9 @@ static const short _regex_actions[] = {
 					}
 					case 385:  {
 							{
-#line 418 "Parser.rl"
+#line 417 "Parser.rl"
 							{te = p+1;{
-#line 418 "Parser.rl"
+#line 417 "Parser.rl"
 									
 									PUSH_SEQUENCE;
 									currentSeq = enterSequence(currentSeq,
@@ -9710,9 +9710,9 @@ static const short _regex_actions[] = {
 					}
 					case 386:  {
 							{
-#line 338 "Parser.rl"
+#line 337 "Parser.rl"
 							{te = p+1;{
-#line 338 "Parser.rl"
+#line 337 "Parser.rl"
 									
 									assert(!label.empty()); // should be guaranteed by machine
 									char c = *label.begin();
@@ -9736,9 +9736,9 @@ static const short _regex_actions[] = {
 					}
 					case 387:  {
 							{
-#line 401 "Parser.rl"
+#line 400 "Parser.rl"
 							{te = p+1;{
-#line 401 "Parser.rl"
+#line 400 "Parser.rl"
 									
 									throw LocatedParseError("Subpattern reference unsupported");
 								}
@@ -9750,9 +9750,9 @@ static const short _regex_actions[] = {
 					}
 					case 388:  {
 							{
-#line 401 "Parser.rl"
+#line 400 "Parser.rl"
 							{te = p+1;{
-#line 401 "Parser.rl"
+#line 400 "Parser.rl"
 									
 									throw LocatedParseError("Subpattern reference unsupported");
 								}
@@ -9764,9 +9764,9 @@ static const short _regex_actions[] = {
 					}
 					case 389:  {
 							{
-#line 1791 "Parser.rl"
+#line 1790 "Parser.rl"
 							{te = p+1;{
-#line 1791 "Parser.rl"
+#line 1790 "Parser.rl"
 									
 									auto a = std::make_unique<ComponentAssertion>(
 									ComponentAssertion::LOOKAHEAD, ComponentAssertion::POS);
@@ -9785,9 +9785,9 @@ static const short _regex_actions[] = {
 					}
 					case 390:  {
 							{
-#line 1802 "Parser.rl"
+#line 1801 "Parser.rl"
 							{te = p+1;{
-#line 1802 "Parser.rl"
+#line 1801 "Parser.rl"
 									
 									auto a = std::make_unique<ComponentAssertion>(
 									ComponentAssertion::LOOKAHEAD, ComponentAssertion::NEG);
@@ -9806,9 +9806,9 @@ static const short _regex_actions[] = {
 					}
 					case 391:  {
 							{
-#line 1813 "Parser.rl"
+#line 1812 "Parser.rl"
 							{te = p+1;{
-#line 1813 "Parser.rl"
+#line 1812 "Parser.rl"
 									
 									auto a = std::make_unique<ComponentAssertion>(
 									ComponentAssertion::LOOKBEHIND, ComponentAssertion::POS);
@@ -9827,9 +9827,9 @@ static const short _regex_actions[] = {
 					}
 					case 392:  {
 							{
-#line 1824 "Parser.rl"
+#line 1823 "Parser.rl"
 							{te = p+1;{
-#line 1824 "Parser.rl"
+#line 1823 "Parser.rl"
 									
 									auto a = std::make_unique<ComponentAssertion>(
 									ComponentAssertion::LOOKBEHIND, ComponentAssertion::NEG);
@@ -9848,9 +9848,9 @@ static const short _regex_actions[] = {
 					}
 					case 393:  {
 							{
-#line 1836 "Parser.rl"
+#line 1835 "Parser.rl"
 							{te = p+1;{
-#line 1836 "Parser.rl"
+#line 1835 "Parser.rl"
 									
 									throw LocatedParseError("Pattern recursion not supported");
 								}
@@ -9862,9 +9862,9 @@ static const short _regex_actions[] = {
 					}
 					case 394:  {
 							{
-#line 404 "Parser.rl"
+#line 403 "Parser.rl"
 							{te = p+1;{
-#line 404 "Parser.rl"
+#line 403 "Parser.rl"
 									
 									if (accumulator == 0) {
 										throw LocatedParseError("Numbered reference cannot be zero");
@@ -9881,9 +9881,9 @@ static const short _regex_actions[] = {
 					}
 					case 395:  {
 							{
-#line 412 "Parser.rl"
+#line 411 "Parser.rl"
 							{te = p+1;{
-#line 412 "Parser.rl"
+#line 411 "Parser.rl"
 									
 									PUSH_SEQUENCE;
 									assert(!label.empty());
@@ -9898,9 +9898,9 @@ static const short _regex_actions[] = {
 					}
 					case 396:  {
 							{
-#line 1852 "Parser.rl"
+#line 1851 "Parser.rl"
 							{te = p+1;{
-#line 1852 "Parser.rl"
+#line 1851 "Parser.rl"
 									
 									ostringstream str;
 									str << "Callout at index " << ts - ptr << " not supported.";
@@ -9914,9 +9914,9 @@ static const short _regex_actions[] = {
 					}
 					case 397:  {
 							{
-#line 1860 "Parser.rl"
+#line 1859 "Parser.rl"
 							{te = p+1;{
-#line 1860 "Parser.rl"
+#line 1859 "Parser.rl"
 									
 									throw LocatedParseError("Unrecognised character after (?");
 								}
@@ -9928,9 +9928,9 @@ static const short _regex_actions[] = {
 					}
 					case 398:  {
 							{
-#line 1865 "Parser.rl"
+#line 1864 "Parser.rl"
 							{te = p+1;{
-#line 1865 "Parser.rl"
+#line 1864 "Parser.rl"
 									
 									assert(mode.utf8);
 									/* leverage ComponentClass to generate the vertices */
@@ -9947,9 +9947,9 @@ static const short _regex_actions[] = {
 					}
 					case 399:  {
 							{
-#line 1874 "Parser.rl"
+#line 1873 "Parser.rl"
 							{te = p+1;{
-#line 1874 "Parser.rl"
+#line 1873 "Parser.rl"
 									
 									assert(mode.utf8);
 									/* leverage ComponentClass to generate the vertices */
@@ -9966,9 +9966,9 @@ static const short _regex_actions[] = {
 					}
 					case 400:  {
 							{
-#line 1883 "Parser.rl"
+#line 1882 "Parser.rl"
 							{te = p+1;{
-#line 1883 "Parser.rl"
+#line 1882 "Parser.rl"
 									
 									assert(mode.utf8);
 									/* leverage ComponentClass to generate the vertices */
@@ -9985,9 +9985,9 @@ static const short _regex_actions[] = {
 					}
 					case 401:  {
 							{
-#line 1892 "Parser.rl"
+#line 1891 "Parser.rl"
 							{te = p+1;{
-#line 1892 "Parser.rl"
+#line 1891 "Parser.rl"
 									
 									assert(mode.utf8);
 									throwInvalidUtf8();
@@ -10000,9 +10000,9 @@ static const short _regex_actions[] = {
 					}
 					case 402:  {
 							{
-#line 1901 "Parser.rl"
+#line 1900 "Parser.rl"
 							{te = p+1;{
-#line 1901 "Parser.rl"
+#line 1900 "Parser.rl"
 									
 									if (mode.ignore_space == false) {
 										addLiteral(currentSeq, *ts, mode);
@@ -10016,9 +10016,9 @@ static const short _regex_actions[] = {
 					}
 					case 403:  {
 							{
-#line 1906 "Parser.rl"
+#line 1905 "Parser.rl"
 							{te = p+1;{
-#line 1906 "Parser.rl"
+#line 1905 "Parser.rl"
 									
 									addLiteral(currentSeq, *ts, mode);
 								}
@@ -10030,9 +10030,9 @@ static const short _regex_actions[] = {
 					}
 					case 404:  {
 							{
-#line 330 "Parser.rl"
+#line 329 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 330 "Parser.rl"
+#line 329 "Parser.rl"
 									
 									PUSH_SEQUENCE;
 									auto seq = std::make_unique<ComponentSequence>();
@@ -10047,9 +10047,9 @@ static const short _regex_actions[] = {
 					}
 					case 405:  {
 							{
-#line 423 "Parser.rl"
+#line 422 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 423 "Parser.rl"
+#line 422 "Parser.rl"
 									
 									assert(!currentCls);
 									assert(!inCharClass); // not reentrant
@@ -10066,9 +10066,9 @@ static const short _regex_actions[] = {
 					}
 					case 406:  {
 							{
-#line 1318 "Parser.rl"
+#line 1317 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 1318 "Parser.rl"
+#line 1317 "Parser.rl"
 									
 									if (!currentSeq->addRepeat(0, ComponentRepeat::NoLimit,
 									ComponentRepeat::REPEAT_GREEDY)) {
@@ -10083,9 +10083,9 @@ static const short _regex_actions[] = {
 					}
 					case 407:  {
 							{
-#line 1339 "Parser.rl"
+#line 1338 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 1339 "Parser.rl"
+#line 1338 "Parser.rl"
 									
 									if (!currentSeq->addRepeat(1, ComponentRepeat::NoLimit,
 									ComponentRepeat::REPEAT_GREEDY)) {
@@ -10100,9 +10100,9 @@ static const short _regex_actions[] = {
 					}
 					case 408:  {
 							{
-#line 1360 "Parser.rl"
+#line 1359 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 1360 "Parser.rl"
+#line 1359 "Parser.rl"
 									
 									if (!currentSeq->addRepeat(
 									0, 1, ComponentRepeat::REPEAT_GREEDY)) {
@@ -10117,9 +10117,9 @@ static const short _regex_actions[] = {
 					}
 					case 409:  {
 							{
-#line 1381 "Parser.rl"
+#line 1380 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 1381 "Parser.rl"
+#line 1380 "Parser.rl"
 									
 									if (repeatN > repeatM || repeatM == 0) {
 										throwInvalidRepeat();
@@ -10137,9 +10137,9 @@ static const short _regex_actions[] = {
 					}
 					case 410:  {
 							{
-#line 1496 "Parser.rl"
+#line 1495 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 1496 "Parser.rl"
+#line 1495 "Parser.rl"
 									
 									addLiteral(currentSeq, octAccumulator, mode);
 								}
@@ -10151,9 +10151,9 @@ static const short _regex_actions[] = {
 					}
 					case 411:  {
 							{
-#line 1499 "Parser.rl"
+#line 1498 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 1499 "Parser.rl"
+#line 1498 "Parser.rl"
 									
 									// If there are enough capturing sub expressions, this may be
 									// a back reference
@@ -10172,9 +10172,9 @@ static const short _regex_actions[] = {
 					}
 					case 412:  {
 							{
-#line 481 "Parser.rl"
+#line 480 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 481 "Parser.rl"
+#line 480 "Parser.rl"
 									
 									if (accumulator == 0) {
 										throw LocatedParseError("Numbered reference cannot be zero");
@@ -10189,9 +10189,9 @@ static const short _regex_actions[] = {
 					}
 					case 413:  {
 							{
-#line 481 "Parser.rl"
+#line 480 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 481 "Parser.rl"
+#line 480 "Parser.rl"
 									
 									if (accumulator == 0) {
 										throw LocatedParseError("Numbered reference cannot be zero");
@@ -10206,9 +10206,9 @@ static const short _regex_actions[] = {
 					}
 					case 414:  {
 							{
-#line 488 "Parser.rl"
+#line 487 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 488 "Parser.rl"
+#line 487 "Parser.rl"
 									
 									// Accumulator is a negative offset.
 									if (accumulator == 0) {
@@ -10228,9 +10228,9 @@ static const short _regex_actions[] = {
 					}
 					case 415:  {
 							{
-#line 1565 "Parser.rl"
+#line 1564 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 1565 "Parser.rl"
+#line 1564 "Parser.rl"
 									
 									throw LocatedParseError("Invalid reference after \\g");
 								}
@@ -10242,9 +10242,9 @@ static const short _regex_actions[] = {
 					}
 					case 416:  {
 							{
-#line 1582 "Parser.rl"
+#line 1581 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 1582 "Parser.rl"
+#line 1581 "Parser.rl"
 									
 									throw LocatedParseError("Value in \\o{...} sequence is non-octal or missing braces");
 								}
@@ -10256,9 +10256,9 @@ static const short _regex_actions[] = {
 					}
 					case 417:  {
 							{
-#line 1586 "Parser.rl"
+#line 1585 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 1586 "Parser.rl"
+#line 1585 "Parser.rl"
 									
 									addEscapedHex(currentSeq, accumulator, mode);
 								}
@@ -10270,9 +10270,9 @@ static const short _regex_actions[] = {
 					}
 					case 418:  {
 							{
-#line 1604 "Parser.rl"
+#line 1603 "Parser.rl"
 							{te = p;p = p - 1;{
-#line 1604 "Parser.rl"
+#line 1603 "Parser.rl"
 									
 									throw LocatedParseError("Value in \\x{...} sequence is non-hex or missing }");
 							}
@@ -10284,9 +10284,9 @@ static const short _regex_actions[] = {
 				}
 				case 419:  {
 						{
-#line 1608 "Parser.rl"
+#line 1607 "Parser.rl"
 						{te = p;p = p - 1;{
-#line 1608 "Parser.rl"
+#line 1607 "Parser.rl"
 								
 								if (te - ts < 3) {
 									assert(te - ts == 2);
@@ -10304,9 +10304,9 @@ static const short _regex_actions[] = {
 				}
 				case 420:  {
 						{
-#line 1708 "Parser.rl"
+#line 1707 "Parser.rl"
 						{te = p;p = p - 1;{
-#line 1708 "Parser.rl"
+#line 1707 "Parser.rl"
 								throw LocatedParseError("Malformed property"); }
 						}}
 					
@@ -10316,9 +10316,9 @@ static const short _regex_actions[] = {
 				}
 				case 421:  {
 						{
-#line 1709 "Parser.rl"
+#line 1708 "Parser.rl"
 						{te = p;p = p - 1;{
-#line 1709 "Parser.rl"
+#line 1708 "Parser.rl"
 								throw LocatedParseError("Malformed property"); }
 						}}
 					
@@ -10328,9 +10328,9 @@ static const short _regex_actions[] = {
 				}
 				case 422:  {
 						{
-#line 1727 "Parser.rl"
+#line 1726 "Parser.rl"
 						{te = p;p = p - 1;{
-#line 1727 "Parser.rl"
+#line 1726 "Parser.rl"
 								
 								ostringstream str;
 								str << "\\k at index " << ts - ptr << " not supported.";
@@ -10344,9 +10344,9 @@ static const short _regex_actions[] = {
 				}
 				case 423:  {
 						{
-#line 1750 "Parser.rl"
+#line 1749 "Parser.rl"
 						{te = p;p = p - 1;{
-#line 1750 "Parser.rl"
+#line 1749 "Parser.rl"
 								
 								assert(ts + 1 == pe);
 								ostringstream str;
@@ -10361,9 +10361,9 @@ static const short _regex_actions[] = {
 				}
 				case 424:  {
 						{
-#line 398 "Parser.rl"
+#line 397 "Parser.rl"
 						{te = p;p = p - 1;{
-#line 398 "Parser.rl"
+#line 397 "Parser.rl"
 								
 								throw LocatedParseError("Conditional subpattern unsupported");
 							}
@@ -10375,9 +10375,9 @@ static const short _regex_actions[] = {
 				}
 				case 425:  {
 						{
-#line 1860 "Parser.rl"
+#line 1859 "Parser.rl"
 						{te = p;p = p - 1;{
-#line 1860 "Parser.rl"
+#line 1859 "Parser.rl"
 								
 								throw LocatedParseError("Unrecognised character after (?");
 							}
@@ -10389,9 +10389,9 @@ static const short _regex_actions[] = {
 				}
 				case 426:  {
 						{
-#line 1892 "Parser.rl"
+#line 1891 "Parser.rl"
 						{te = p;p = p - 1;{
-#line 1892 "Parser.rl"
+#line 1891 "Parser.rl"
 								
 								assert(mode.utf8);
 								throwInvalidUtf8();
@@ -10404,9 +10404,9 @@ static const short _regex_actions[] = {
 				}
 				case 427:  {
 						{
-#line 1906 "Parser.rl"
+#line 1905 "Parser.rl"
 						{te = p;p = p - 1;{
-#line 1906 "Parser.rl"
+#line 1905 "Parser.rl"
 								
 								addLiteral(currentSeq, *ts, mode);
 							}
@@ -10418,10 +10418,10 @@ static const short _regex_actions[] = {
 				}
 				case 428:  {
 						{
-#line 330 "Parser.rl"
+#line 329 "Parser.rl"
 						{p = ((te))-1;
 							{
-#line 330 "Parser.rl"
+#line 329 "Parser.rl"
 								
 								PUSH_SEQUENCE;
 								auto seq = std::make_unique<ComponentSequence>();
@@ -10436,10 +10436,10 @@ static const short _regex_actions[] = {
 				}
 				case 429:  {
 						{
-#line 423 "Parser.rl"
+#line 422 "Parser.rl"
 						{p = ((te))-1;
 							{
-#line 423 "Parser.rl"
+#line 422 "Parser.rl"
 								
 								assert(!currentCls);
 								assert(!inCharClass); // not reentrant
@@ -10456,10 +10456,10 @@ static const short _regex_actions[] = {
 				}
 				case 430:  {
 						{
-#line 1565 "Parser.rl"
+#line 1564 "Parser.rl"
 						{p = ((te))-1;
 							{
-#line 1565 "Parser.rl"
+#line 1564 "Parser.rl"
 								
 								throw LocatedParseError("Invalid reference after \\g");
 							}
@@ -10471,10 +10471,10 @@ static const short _regex_actions[] = {
 				}
 				case 431:  {
 						{
-#line 1582 "Parser.rl"
+#line 1581 "Parser.rl"
 						{p = ((te))-1;
 							{
-#line 1582 "Parser.rl"
+#line 1581 "Parser.rl"
 								
 								throw LocatedParseError("Value in \\o{...} sequence is non-octal or missing braces");
 							}
@@ -10486,10 +10486,10 @@ static const short _regex_actions[] = {
 				}
 				case 432:  {
 						{
-#line 1604 "Parser.rl"
+#line 1603 "Parser.rl"
 						{p = ((te))-1;
 							{
-#line 1604 "Parser.rl"
+#line 1603 "Parser.rl"
 								
 								throw LocatedParseError("Value in \\x{...} sequence is non-hex or missing }");
 						}
@@ -10501,10 +10501,10 @@ static const short _regex_actions[] = {
 			}
 			case 433:  {
 					{
-#line 1727 "Parser.rl"
+#line 1726 "Parser.rl"
 					{p = ((te))-1;
 						{
-#line 1727 "Parser.rl"
+#line 1726 "Parser.rl"
 							
 							ostringstream str;
 							str << "\\k at index " << ts - ptr << " not supported.";
@@ -10518,10 +10518,10 @@ static const short _regex_actions[] = {
 			}
 			case 434:  {
 					{
-#line 398 "Parser.rl"
+#line 397 "Parser.rl"
 					{p = ((te))-1;
 						{
-#line 398 "Parser.rl"
+#line 397 "Parser.rl"
 							
 							throw LocatedParseError("Conditional subpattern unsupported");
 						}
@@ -10533,10 +10533,10 @@ static const short _regex_actions[] = {
 			}
 			case 435:  {
 					{
-#line 1860 "Parser.rl"
+#line 1859 "Parser.rl"
 					{p = ((te))-1;
 						{
-#line 1860 "Parser.rl"
+#line 1859 "Parser.rl"
 							
 							throw LocatedParseError("Unrecognised character after (?");
 						}
@@ -10548,10 +10548,10 @@ static const short _regex_actions[] = {
 			}
 			case 436:  {
 					{
-#line 1892 "Parser.rl"
+#line 1891 "Parser.rl"
 					{p = ((te))-1;
 						{
-#line 1892 "Parser.rl"
+#line 1891 "Parser.rl"
 							
 							assert(mode.utf8);
 							throwInvalidUtf8();
@@ -10564,10 +10564,10 @@ static const short _regex_actions[] = {
 			}
 			case 437:  {
 					{
-#line 1906 "Parser.rl"
+#line 1905 "Parser.rl"
 					{p = ((te))-1;
 						{
-#line 1906 "Parser.rl"
+#line 1905 "Parser.rl"
 							
 							addLiteral(currentSeq, *ts, mode);
 						}
@@ -10584,7 +10584,7 @@ static const short _regex_actions[] = {
 							case 290:  {
 								p = ((te))-1;
 								{
-#line 1499 "Parser.rl"
+#line 1498 "Parser.rl"
 									
 									// If there are enough capturing sub expressions, this may be
 									// a back reference
@@ -10600,7 +10600,7 @@ static const short _regex_actions[] = {
 							case 292:  {
 								p = ((te))-1;
 								{
-#line 1516 "Parser.rl"
+#line 1515 "Parser.rl"
 									
 									// if there are enough left parens to this point, back ref
 									if (accumulator < groupIndex) {
@@ -10637,7 +10637,7 @@ static const short _regex_actions[] = {
 							case 332:  {
 								p = ((te))-1;
 								{
-#line 1745 "Parser.rl"
+#line 1744 "Parser.rl"
 									
 									addLiteral(currentSeq, *(ts + 1), mode);
 								}
@@ -10690,7 +10690,7 @@ else {
 _out: {}
 }
 
-#line 1991 "Parser.rl"
+#line 1990 "Parser.rl"
 
 
 if (p != pe && *p != '\0') {

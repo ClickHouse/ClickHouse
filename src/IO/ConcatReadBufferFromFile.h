@@ -40,7 +40,6 @@ public:
 private:
     bool nextImpl() override;
     void appendBuffer(SeekableReadBuffer * buffer, bool own, size_t size);
-    void setWorkingBufferFromCurrent();
 
     struct BufferInfo
     {

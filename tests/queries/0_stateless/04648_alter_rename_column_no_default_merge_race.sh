@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-fasttest
+# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings
 # Tag no-parallel: uses the server-global failpoint mt_select_parts_to_mutate_no_free_threads
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/80648, the facet where the
 # renamed column has no default expression, so a merge that wrongly expires it loses the values for
@@ -90,6 +90,7 @@ ${CLICKHOUSE_CLIENT} --query="DROP TABLE t_rename_no_default"
 # carry a default expression, so it is a type where the bug is unavoidable rather than observable.
 ${CLICKHOUSE_CLIENT} --query="
     DROP TABLE IF EXISTS t_rename_no_default_dynamic;
+    SET allow_experimental_dynamic_type = 1;
     CREATE TABLE t_rename_no_default_dynamic (x UInt64, y UInt64)
     ENGINE = MergeTree() ORDER BY x
     SETTINGS min_bytes_for_wide_part = 0;

@@ -456,7 +456,7 @@ SELECT
     toTypeName(dictGet('mixed_test_flat', 'profile', 1)) AS profile_type_name,
     toTypeName(dictGet('mixed_test_flat', 'settings', 1)) AS settings_type_name;
 
--- Section J. JSON path introspection (`JSONAllPaths*`, `JSONDynamicPaths`, `JSONSharedDataPaths`)
+-- Section J. JSON path introspection (`JSONAllPaths*`, `JSONDynamicPaths`)
 SELECT '=== JSONAllPaths on dictGet JSON result ===' as test;
 SELECT
     JSONAllPaths(dictGet('mixed_test_flat', 'profile', 1)) AS profile_all_paths;
@@ -468,10 +468,6 @@ SELECT
 SELECT '=== JSONDynamicPaths on dictGet JSON result ===' as test;
 SELECT
     JSONDynamicPaths(dictGet('mixed_test_flat', 'profile', 1)) AS profile_dynamic_paths;
-
-SELECT '=== JSONSharedDataPaths on dictGet JSON result ===' as test;
-SELECT
-    JSONSharedDataPaths(dictGet('mixed_test_flat', 'profile', 1)) AS profile_shared_data_paths;
 
 -- Section K. JSON value comparison via `dictGet`
 SELECT '=== JSON value comparison ===' as test;

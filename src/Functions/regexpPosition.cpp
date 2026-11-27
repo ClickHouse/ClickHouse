@@ -28,19 +28,17 @@ public:
     static constexpr auto name = "regexpPosition";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRegexpPosition>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    /// A zero position or occurrence is not valid.
-    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 5}; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 5}; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 2 || arguments.size() > 7)
             throw Exception(
@@ -70,12 +68,12 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & column_haystack = arguments[0].column;
 
@@ -155,7 +153,7 @@ public:
             if (col_haystack_vector)
             {
                 const auto & offsets = col_haystack_vector->getOffsets();
-                const size_t row_data_offset = i == 0 ? 0 : offsets[static_cast<ssize_t>(i) - 1];
+                const size_t row_data_offset = i == 0 ? 0 : offsets[i - 1];
                 row_size = offsets[i] - row_data_offset;
                 row_data = reinterpret_cast<const char *>(&col_haystack_vector->getChars()[row_data_offset]);
             }
@@ -313,9 +311,9 @@ SELECT
     regexpPosition('foo123bar456', '([a-z]+)([0-9]+)', 1, 2, 0, '', 2);
             )",
             R"(
-┌─regexpPosition('hello world', 'world')─┬─regexpPosition('aXbXcXd', 'X', 1, 2)─┬─regexpPosition('aXbXcXd', 'X', 1, 2, 1)─┬─regexpPosition('Hello WORLD', 'world', 1, 1, 0, 'i')─┬─regexpPosition('foo123bar456', '([a-z]+)([0-9]+)', 1, 2, 0, '', 2)─┐
-│                                      7 │                                    4 │                                       5 │                                                    7 │                                                                 10 │
-└────────────────────────────────────────┴──────────────────────────────────────┴─────────────────────────────────────────┴──────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────┘
+┌─...─┬─...─┬─...─┬─...─┬─...─┐
+│   7 │   4 │   5 │   7 │  10 │
+└─────┴─────┴─────┴─────┴─────┘
             )"
         }
     };

@@ -7,10 +7,15 @@ keywords: ['postgres', 'postgresql', 'logical replication', '移行', 'data tran
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 このガイドでは、PeerDB を使用して PostgreSQL データベースを ClickHouse Managed Postgres に移行する方法を、手順を追って説明します。
 
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-peerdb-beta" />
+
 <div id="migration-peerdb-prerequisites">
-  ## 前提条件 {#migration-peerdb-prerequisites}
+  ## 前提条件
 </div>
 
 * ソース PostgreSQL データベースへのアクセス。
@@ -18,7 +23,7 @@ doc_type: 'guide'
 * マシンに PeerDB がインストールされていること。[PeerDB GitHub リポジトリ](https://github.com/PeerDB-io/peerdb?tab=readme-ov-file#get-started) のインストール手順に従ってください。必要なのは、リポジトリをクローンして `docker-compose up` を実行することだけです。このガイドでは **PeerDB UI** を使用します。PeerDB の起動後、`http://localhost:3000` からアクセスできます。
 
 <div id="migration-peerdb-considerations-before">
-  ## 移行前の考慮事項 {#migration-peerdb-considerations-before}
+  ## 移行前の考慮事項
 </div>
 
 移行を開始する前に、次の点を考慮してください。
@@ -28,41 +33,33 @@ doc_type: 'guide'
 * **ネットワーク接続**: ソースデータベースとターゲットデータベースの両方に対して、PeerDB が実行されているマシンから到達できることを確認してください。接続を許可するには、ファイアウォールルールまたはセキュリティグループの設定が必要になる場合があります。
 
 <div id="migration-peerdb-create-peers">
-  ## ピアを作成する {#migration-peerdb-create-peers}
+  ## ピアを作成する
 </div>
 
 まず、ソースデータベースとターゲットデータベースの両方に対してピアを作成する必要があります。ピアは、データベースへの接続を表します。PeerDB UI で、サイドバーの「Peers」をクリックして「Peers」セクションに移動します。新しいピアを作成するには、`+ New peer` ボタンをクリックします。
 
-### ソースピアの作成 {#migration-peerdb-source-peer}
-
-ホスト、ポート、データベース名、ユーザー名、パスワードなどの接続情報を入力して、移行元のPostgreSQLデータベース用のピアを作成します。入力が完了したら、`Create peer` ボタンをクリックしてピアを保存します。
-
-<div className="ch-image-md">
-  <Frame>
-    ![ソースピアの作成](/images/managed-postgres/peerdb/source-peer.webp)
-  </Frame>
+<div id="migration-peerdb-source-peer">
+  ### ソースピアの作成
 </div>
 
-### ターゲットピアの作成 {#migration-peerdb-target-peer}
+ホスト、ポート、データベース名、ユーザー名、パスワードなどの接続情報を入力して、ソース PostgreSQL データベース用のピアを作成します。入力が完了したら、`Create peer` ボタンをクリックしてピアを保存します。
+
+<Image img="/images/managed-postgres/peerdb/source-peer.webp" alt="ソースピアの作成" size="md" border />
+
+<div id="migration-peerdb-target-peer">
+  ### ターゲットピアの作成
+</div>
 
 同様に、必要な接続情報を指定して、ClickHouse Managed Postgres インスタンス用のピアを作成します。インスタンスの[接続情報](/ja/products/managed-postgres/connection)は、ClickHouse Cloudコンソールから取得できます。詳細を入力したら、`Create peer` ボタンをクリックしてターゲットピアを保存します。
 
-<div className="ch-image-md">
-  <Frame>
-    ![ターゲットピアの作成](/images/managed-postgres/peerdb/target-peer.webp)
-  </Frame>
-</div>
+<Image img="/images/managed-postgres/peerdb/target-peer.webp" alt="ターゲットピアの作成" size="md" border />
 
 これで、&quot;Peers&quot; セクションにソースピアとターゲットピアの両方が表示されるはずです。
 
-<div className="ch-image-md">
-  <Frame>
-    ![ピア一覧](/images/managed-postgres/peerdb/peers.webp)
-  </Frame>
-</div>
+<Image img="/images/managed-postgres/peerdb/peers.webp" alt="ピア一覧" size="md" border />
 
 <div id="migration-peerdb-source-schema-dump">
-  ### ソーススキーマのダンプを取得する {#migration-peerdb-source-schema-dump}
+  ### ソーススキーマのダンプを取得する
 </div>
 
 ソースデータベースの構成をターゲットデータベースに再現するには、ソースデータベースのスキーマダンプを取得する必要があります。`pg_dump` を使うと、ソース PostgreSQL データベースのスキーマのみのダンプを作成できます。
@@ -110,7 +107,7 @@ pg_dump -d 'postgresql://<user>:<password>@<host>:<port>/<database>'  -s > sourc
 ```
 
 <div id="migration-peerdb-remove-constraints-indexes">
-  #### スキーマダンプから一意制約と索引を削除する {#migration-peerdb-remove-constraints-indexes}
+  #### スキーマダンプから一意制約と索引を削除する
 </div>
 
 これをターゲットデータベースに適用する前に、これらの制約によって PeerDB からターゲットテーブルへのインジェストが妨げられないよう、ダンプファイルから UNIQUE 制約と索引を削除する必要があります。削除には次を使用できます。
@@ -126,7 +123,7 @@ sed -i.bak -E '/CREATE UNIQUE INDEX/,/;/d; /(CONSTRAINT.*UNIQUE|ADD CONSTRAINT.*
 ```
 
 <div id="migration-peerdb-apply-schema-dump">
-  ### スキーマダンプをターゲットデータベースに適用する {#migration-peerdb-apply-schema-dump}
+  ### スキーマダンプをターゲットデータベースに適用する
 </div>
 
 スキーマダンプファイルを整理したら、`psql` で[接続](/ja/products/managed-postgres/connection)し、スキーマダンプファイルを実行して、ターゲットの ClickHouse Managed Postgres データベースに適用できます。
@@ -141,15 +138,13 @@ psql -h <target_host> -p <target_port> -U <target_username> -d <target_database>
 ALTER ROLE <target_role> SET session_replication_role = replica;
 ```
 
-## ミラーを作成する {#migration-peerdb-create-mirror}
+<div id="migration-peerdb-create-mirror">
+  ## ミラーを作成する
+</div>
 
 次に、ソースピアとターゲットピア間のデータ移行プロセスを定義するため、ミラーを作成します。PeerDB UI で、サイドバーの &quot;Mirrors&quot; をクリックして &quot;Mirrors&quot; セクションに移動します。新しいミラーを作成するには、`+ New mirror` ボタンをクリックします。
 
-<div className="ch-image-md">
-  <Frame>
-    ![ミラーの作成](/images/managed-postgres/peerdb/create-mirror.webp)
-  </Frame>
-</div>
+<Image img="/images/managed-postgres/peerdb/create-mirror.webp" alt="ミラーの作成" size="md" border />
 
 1. 移行内容が分かる名前をミラーに付けます。
 2. ドロップダウンメニューから、先ほど作成したソースピアとターゲットピアを選択します。
@@ -158,19 +153,11 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 * Soft delete が OFF になっていること。
 * `Advanced settings` を展開し、**Postgres type system が有効**で、**PeerDB columns が無効**になっていることを確認します。
 
-<div className="ch-image-md">
-  <Frame>
-    ![ミラー設定](/images/managed-postgres/peerdb/settings.webp)
-  </Frame>
-</div>
+<Image img="/images/managed-postgres/peerdb/settings.webp" alt="ミラー設定" size="md" border />
 
 4. 移行するテーブルを選択します。特定のテーブルを選ぶことも、ソースデータベース内のすべてのテーブルを選ぶこともできます。
 
-<div className="ch-image-md">
-  <Frame>
-    ![テーブル選択](/images/managed-postgres/peerdb/table-picker.webp)
-  </Frame>
-</div>
+<Image img="/images/managed-postgres/peerdb/table-picker.webp" alt="テーブル選択" size="md" border />
 
 <Info>
   **テーブルの選択**
@@ -182,26 +169,20 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 
 &quot;Mirrors&quot; セクションに、新しく作成したミラーが表示されます。
 
-<div className="ch-image-md">
-  <Frame>
-    ![ミラー一覧](/images/managed-postgres/peerdb/mirrors.webp)
-  </Frame>
-</div>
+<Image img="/images/managed-postgres/peerdb/mirrors.webp" alt="ミラー一覧" size="md" border />
 
-## 初期ロードを待つ {#migration-peerdb-initial-load}
+<div id="migration-peerdb-initial-load">
+  ## 初期ロードを待つ
+</div>
 
 ミラーを作成すると、PeerDB はソースからターゲットデータベースへの初期データロードを開始します。ミラーをクリックし、**初期ロード** タブを開くと、初期データ移行の進捗を確認できます。
 
-<div className="ch-image-md">
-  <Frame>
-    ![初期ロードの進捗](/images/managed-postgres/peerdb/initial-load.webp)
-  </Frame>
-</div>
+<Image img="/images/managed-postgres/peerdb/initial-load.webp" alt="初期ロードの進捗" size="md" border />
 
 初期ロードが完了すると、移行が完了したことを示すステータスが表示されます。
 
 <div id="migration-peerdb-monitoring">
-  ## 初期ロードとレプリケーションの監視 {#migration-peerdb-monitoring}
+  ## 初期ロードとレプリケーションの監視
 </div>
 
 ソースピアをクリックすると、PeerDB が実行中のコマンド一覧を確認できます。たとえば、次のとおりです。
@@ -211,7 +192,7 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 3. その後、FETCH コマンドを実行してソースデータベースからデータを取得し、PeerDB がそれらをターゲットデータベースに同期します。
 
 <div id="migration-peerdb-considerations">
-  ## 移行後の作業 {#migration-peerdb-considerations}
+  ## 移行後の作業
 </div>
 
 <Note>
@@ -322,15 +303,17 @@ END $$;
 </Info>
 
 <div id="migration-peerdb-references">
-  ## 参考資料 {#migration-peerdb-references}
+  ## 参考資料
 </div>
 
 * [ClickHouse Managed Postgres ドキュメント](/ja/products/managed-postgres/overview)
 * [CDC 作成に関する PeerDB ガイド](https://docs.peerdb.io/mirror/cdc-pg-pg)
 * [Postgres ClickPipe よくある質問 (PeerDB にも同様に当てはまります) ](/ja/integrations/clickpipes/postgres/faq)
 
-## 次のステップ {#migration-pgdump-pg-restore-next-steps}
+<div id="migration-pgdump-pg-restore-next-steps">
+  ## 次のステップ
+</div>
 
-おめでとうございます！pg&#95;dump と pg&#95;restore を使用して、PostgreSQL データベースを ClickHouse Managed Postgres へ正常に移行できました。これで、ClickHouse Managed Postgres の機能や ClickHouse とのインテグレーションを試す準備が整いました。まずは、10 分で完了するクイックスタートから始めましょう：
+おめでとうございます。pg&#95;dump と pg&#95;restore を使用して、PostgreSQL データベースを ClickHouse Managed Postgres に正常に移行できました。これで、ClickHouse Managed Postgres の機能や ClickHouse とのインテグレーションを試す準備は万端です。まずは、10 分で読める以下のクイックスタートをご覧ください。
 
 * [ClickHouse Managed Postgres クイックスタートガイド](/ja/products/managed-postgres/quickstart)

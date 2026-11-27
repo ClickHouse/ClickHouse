@@ -10,7 +10,9 @@ import SelfManaged from '/snippets/zh/_self_managed_only_automated.mdx';
 
 <SelfManaged />
 
-## CPU 扩缩容调控器 {#cpu-scaling-governor}
+<div id="cpu-scaling-governor">
+  ## CPU 扩缩容调控器
+</div>
 
 始终使用 `performance` 扩缩容调控器。对于持续高负载场景，`on-demand` 扩缩容调控器的效果会差很多。
 
@@ -18,12 +20,16 @@ import SelfManaged from '/snippets/zh/_self_managed_only_automated.mdx';
 $ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
-## CPU 限制 {#cpu-limitations}
+<div id="cpu-limitations">
+  ## CPU 限制
+</div>
 
 处理器可能会过热。使用 `dmesg` 查看 CPU 的时钟频率是否因过热而受到限制。
 这种限制也可能由外部在数据中心层面设置。你可以在负载状态下使用 `turbostat` 对其进行监控。
 
-## RAM {#ram}
+<div id="ram">
+  ## RAM
+</div>
 
 对于少量数据 (压缩后不超过约 200 GB) ，最佳做法是使用与数据量相当的内存。
 对于大量数据以及需要处理交互式 (在线) 查询的场景，应配备合理容量的 RAM (128 GB 或更多) ，以便热点数据子集能够放入页缓存中。
@@ -38,7 +44,9 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 使用 `perf top` 观察内核在内存管理上耗费的时间。
 也无需分配永久大页。
 
-### 使用少于 16GB RAM 的环境 {#using-less-than-16gb-of-ram}
+<div id="using-less-than-16gb-of-ram">
+  ### 使用少于 16GB RAM 的环境
+</div>
 
 建议的 RAM 容量为 32 GB 或更高。
 
@@ -59,7 +67,9 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
   命令。
 * 我们不建议在低内存机器上使用 S3 或 Kafka 集成，因为它们需要大量内存用于缓冲区。
 
-## 存储子系统 {#storage-subsystem}
+<div id="storage-subsystem">
+  ## 存储子系统
+</div>
 
 如果预算允许，优先使用 SSD。
 如果不允许，就使用 HDD。7200 RPM 的 SATA HDD 也够用。
@@ -67,7 +77,9 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 相比少量外接磁盘柜的服务器，更应优先选择大量配备本地硬盘的服务器。
 但如果是存放很少查询的归档数据，磁盘柜也可以。
 
-## RAID {#raid}
+<div id="raid">
+  ## RAID
+</div>
 
 使用 HDD 时，可以将其组建为 RAID-10、RAID-5、RAID-6 或 RAID-50。
 在 Linux 上，软件 RAID (使用 `mdadm`) 更合适。
@@ -98,7 +110,9 @@ $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 
 确保你的操作系统已为 NVME 和 SSD 磁盘启用 [`fstrim`](https://en.wikipedia.org/wiki/Trim_\(computing\)) (通常通过 cron 作业或 systemd 服务实现) 。
 
-## 文件系统 {#file-system}
+<div id="file-system">
+  ## 文件系统
+</div>
 
 Ext4 是最可靠的选择。请将挂载选项设为 `noatime`。XFS 也同样适用。
 大多数其他文件系统通常也都可以正常使用。
@@ -110,18 +124,24 @@ Ext4 是最可靠的选择。请将挂载选项设为 `noatime`。XFS 也同样�
 
 虽然 ClickHouse 可以运行在 NFS 上，但这并不是最佳选择。
 
-## Linux 内核 {#linux-kernel}
+<div id="linux-kernel">
+  ## Linux 内核
+</div>
 
 不要使用过时的 Linux 内核。
 
-## 网络 {#network}
+<div id="network">
+  ## 网络
+</div>
 
 如果您使用 IPv6，请增大路由缓存的大小。
 3.2 之前的 Linux 内核在 IPv6 实现方面存在许多问题。
 
 如果条件允许，请至少使用 10 GB 网络。1 Gb 也能用，但在修补拥有数十 TB 数据的副本，或处理包含大量中间数据的分布式查询时，性能会差很多。
 
-## Huge Pages {#huge-pages}
+<div id="huge-pages">
+  ## Huge Pages
+</div>
 
 始终将 透明大页 (THP) 设置为 `madvise`。在较旧的内核 (5.9 之前) 中，将 THP 设为 `always` 可能会导致明显的性能下降——内核会花费大量时间进行内存碎片整理，尤其是在 RAM 达到 64 GB 以上的系统上。内核 5.9 引入了主动合并整理机制，对 THP 的处理改进了很多；但如果 THP 设为 `always`，ClickHouse 仍会在启动时发出警告，因此无论内核版本如何，仍推荐使用 `madvise`。
 
@@ -137,7 +157,9 @@ $ GRUB_CMDLINE_LINUX_DEFAULT="transparent_hugepage=madvise ..."
 
 之后，运行 `sudo update-grub` 命令，然后重启使更改生效。
 
-## 虚拟机监控程序配置 {#hypervisor-configuration}
+<div id="hypervisor-configuration">
+  ## 虚拟机监控程序配置
+</div>
 
 如果你使用 OpenStack，请设置
 
@@ -158,7 +180,9 @@ cpu_mode=host-passthrough
 这对 ClickHouse 通过 `cpuid` 指令获取正确信息非常重要。
 否则，如果虚拟机监控程序运行在较旧的 CPU 型号上，可能会因 `Illegal instruction` 而崩溃。
 
-## ClickHouse Keeper 和 ZooKeeper {#zookeeper}
+<div id="zookeeper">
+  ## ClickHouse Keeper 和 ZooKeeper
+</div>
 
 对于 ClickHouse 集群，建议使用 ClickHouse Keeper 来替代 ZooKeeper。参见 [ClickHouse Keeper](/zh/guides/oss/deployment-and-scaling/keeper/index) 文档。
 
@@ -168,16 +192,16 @@ cpu_mode=host-passthrough
 
 如果你想将现有的 ZooKeeper 集群拆分为两个，正确的方法是先增加其副本数量，然后再将其重新配置为两个独立的集群。
 
-在测试环境中，或者在摄取速率较低的环境中，你可以让 ClickHouse Keeper 与 ClickHouse 运行在同一台服务端上。
-对于生产环境，我们建议为 ClickHouse 和 ZooKeeper/Keeper 使用独立的服务端，或者将 ClickHouse 文件和 Keeper 文件放在不同的磁盘上。因为 ZooKeeper/Keeper 对磁盘延迟非常敏感，而 ClickHouse 可能会占用所有可用的系统资源。
+在测试环境中，或者在摄取速率较低的环境中，你可以让 ClickHouse Keeper 与 ClickHouse 运行在同一台服务器上。
+对于生产环境，我们建议为 ClickHouse 和 ZooKeeper/Keeper 使用独立的服务器，或者将 ClickHouse 文件和 Keeper 文件放在不同的磁盘上。因为 ZooKeeper/Keeper 对磁盘延迟非常敏感，而 ClickHouse 可能会占用所有可用的系统资源。
 
-你可以在 ZooKeeper 集群中使用 observer 节点，但 ClickHouse 服务端不应与 observer 交互。
+你可以在 ZooKeeper 集群中使用 observer 节点，但 ClickHouse 服务器不应与 observer 交互。
 
 不要更改 `minSessionTimeout` 设置，过大的值可能会影响 ClickHouse 重启时的稳定性。
 
 在默认设置下，ZooKeeper 就像一颗定时炸弹：
 
-> 使用默认配置时，ZooKeeper 服务端不会删除旧 snapshots 和 logs 文件 (参见 `autopurge`) ，而这属于 operator 的职责。
+> 使用默认配置时，ZooKeeper server 不会删除旧 snapshots 和 logs 文件 (参见 `autopurge`) ，而这属于 operator 的职责。
 
 必须拆除这颗炸弹。
 
@@ -230,12 +254,12 @@ preAllocSize=131072
 # is started. The default snapCount is 100000.
 snapCount=3000000
 
-# If this option is defined, requests will be logged to a trace file named
+# If this option is defined, requests will be will logged to a trace file named
 # traceFile.year.month.day.
 #traceFile=
 
 # Leader accepts client connections. Default value is "yes". The leader machine
-# coordinates updates. For higher update throughput at the slight expense of
+# coordinates updates. For higher update throughput at thes slight expense of
 # read throughput the leader can be configured to not accept clients and focus
 # on coordination.
 leaderServes=yes
@@ -314,10 +338,14 @@ script
 end script
 ```
 
-## 防病毒软件 {#antivirus-software}
+<div id="antivirus-software">
+  ## 防病毒软件
+</div>
 
 如果您使用防病毒软件，请将其配置为跳过存放 ClickHouse 数据文件的文件夹 (`/var/lib/clickhouse`) ，否则可能会导致性能下降，并在数据摄取和后台合并期间出现意外错误。
 
-## 相关内容 {#related-content}
+<div id="related-content">
+  ## 相关内容
+</div>
 
 * [刚开始使用 ClickHouse？这里有 13 个“致命误区”以及如何避免它们](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)

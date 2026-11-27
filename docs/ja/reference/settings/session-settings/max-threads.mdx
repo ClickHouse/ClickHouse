@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## max_threads {#max_threads}
+<div id="max_threads">
+  ## max_threads
+</div>
 
 <SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
@@ -34,13 +36,17 @@ SMT (例: Intel HyperThreading) がない場合、これは CPU コア数に対�
 ClickHouse Cloud ユーザーの場合、デフォルト値は `auto(N)` と表示されます。ここで N は、2vCPU/8GiB、4vCPU/16GiB など、サービスの vCPU サイズに対応します。
 すべてのサービスサイズの一覧は、Cloud Console の Settings タブを参照してください。
 
-## max_threads_for_indexes {#max_threads_for_indexes}
+<div id="max_threads_for_indexes">
+  ## max_threads_for_indexes
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 索引の処理に使用するスレッドの最大数。
 
-## max_threads_min_free_memory_per_thread {#max_threads_min_free_memory_per_thread}
+<div id="max_threads_min_free_memory_per_thread">
+  ## max_threads_min_free_memory_per_thread
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
@@ -48,7 +54,7 @@ ClickHouse Cloud ユーザーの場合、デフォルト値は `auto(N)` と表�
 
 サーバーがメモリ逼迫状態にある場合、`max_threads` を引き下げて、メモリ制限に達する可能性が高い高並列のクエリが開始されるのを防ぎます。
 
-空きメモリは、サーバーの `max_server_memory_usage` から、グローバルメモリトラッカーで現在追跡されているメモリ使用量を差し引いて算出されます。この空きメモリが `max_threads` にこの値を掛けた値より小さい場合、`max_threads` は `N * value <= free_memory` を満たす最大の N まで引き下げられ、最小値は `1` です。空きメモリはクエリごとに 1 回、その実行計画の構築時に取得されます。これにより、クエリのすべての部分が同じスレッド数で計画されます。
+空きメモリは、サーバーの `max_server_memory_usage` から、グローバルメモリトラッカーで現在追跡されているメモリ使用量を差し引いて算出されます。この空きメモリが `max_threads` にこの値を掛けた値より小さい場合、`max_threads` は `N * value <= free_memory` を満たす最大の N まで引き下げられ、最小値は `1` です。
 
 この制限を無効にするには、`0` に設定します。
 

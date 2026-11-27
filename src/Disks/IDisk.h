@@ -54,8 +54,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class ConfigurationWithUsageTracking;
-
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 using DisksMap = std::map<String, DiskPtr, std::less<>>;
@@ -130,9 +128,6 @@ class ISyncGuard
 public:
     ISyncGuard() = default;
     virtual ~ISyncGuard() = default;
-
-    /// Synchronize explicitly, propagating failures instead of logging them in the destructor.
-    virtual void sync();
 };
 
 using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
@@ -171,10 +166,6 @@ public:
 
     /// Space available for reservation (available space minus reserved space).
     virtual std::optional<UInt64> getUnreservedSpace() const = 0;
-
-    /// Reserves like `reserve`, and also sets `unreserved_space` to the unreserved space of the disk after the attempt.
-    virtual ReservationPtr reserveAndGetUnreservedSpace(
-        UInt64 bytes, const std::optional<ReservationConstraints> & constraints, std::optional<UInt64> & unreserved_space);
 
     /// Amount of bytes which should be kept free on the disk.
     virtual UInt64 getKeepingFreeSpace() const { return 0; }
@@ -488,9 +479,6 @@ public:
     /// Whether removing a directory with `removeSharedRecursive` is cheaper than removing its files one by one.
     virtual bool prefersRecursiveRemoval() const { return false; }
 
-    /// Whether a new file written by `writeFile` appears at once: a reader sees either no file or the complete one.
-    virtual bool supportsAtomicFileCreation() const { return false; }
-
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
 
@@ -579,6 +567,9 @@ public:
     virtual bool supportsStat() const { return false; }
     virtual struct stat stat(const String & /*path*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support stat"); }
 
+    virtual bool supportsChmod() const { return false; }
+    virtual void chmod(const String & /*path*/, mode_t /*mode*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support chmod"); }
+
     /// Was disk created to be used without storage configuration?
     bool isCustomDisk() const { return custom_disk_settings_hash != 0; }
     UInt128 getCustomDiskSettings() const { return custom_disk_settings_hash; }
@@ -606,22 +597,6 @@ public:
 
     bool isCaseInsensitive();
 
-    /// A disk is created from a section of the configuration, and some of its parts keep a reference
-    /// to that configuration and read it later (see `HDFSObjectStorage`). `DiskFactory` does not pass
-    /// the configuration itself, but a proxy tracking which of its keys are used, and this proxy has
-    /// to live at least as long as the disk created from it.
-    void keepConfigurationAlive(std::shared_ptr<const ConfigurationWithUsageTracking> config)
-    {
-        creation_config = std::move(config);
-    }
-
-    /// The proxy the disk was created from, see `keepConfigurationAlive`. It is used to find out
-    /// which elements of the definition of the disk are read by this disk type.
-    std::shared_ptr<const ConfigurationWithUsageTracking> getCreationConfiguration() const
-    {
-        return creation_config;
-    }
-
 protected:
     const String name;
 
@@ -644,9 +619,6 @@ private:
     UInt128 custom_disk_settings_hash = 0;
     bool custom_disk_uses_server_credentials = false;
 
-    /// The configuration the disk was created from, see keepConfigurationAlive.
-    std::shared_ptr<const ConfigurationWithUsageTracking> creation_config;
-
     /// True if underlying filesystem is case-insensitive,
     /// e.g. file_name and FILE_NAME are the same files.
     std::atomic_bool is_case_insensitive = false;
@@ -666,17 +638,17 @@ class IReservation : boost::noncopyable
 {
 public:
     /// Get reservation size.
-    [[nodiscard]] virtual UInt64 getSize() const = 0;
+    virtual UInt64 getSize() const = 0;
 
     /// Space available for reservation
     /// (with this reservation already take into account).
-    [[nodiscard]] virtual std::optional<UInt64> getUnreservedSpace() const = 0;
+    virtual std::optional<UInt64> getUnreservedSpace() const = 0;
 
     /// Get i-th disk where reservation take place.
     virtual DiskPtr getDisk(size_t i = 0) const = 0; /// NOLINT
 
     /// Get all disks, used in reservation
-    [[nodiscard]] virtual Disks getDisks() const = 0;
+    virtual Disks getDisks() const = 0;
 
     /// Changes amount of reserved space.
     virtual void update(UInt64 new_size) = 0;

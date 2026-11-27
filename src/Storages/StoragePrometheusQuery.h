@@ -26,9 +26,6 @@ public:
 
     static VirtualColumnsDescription createVirtuals();
 
-    /// Sets the settings the SQL generated from a PromQL query relies on in the context the query is executed with.
-    static void applySettingsForPrometheusQuery(Context & context);
-
     void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,

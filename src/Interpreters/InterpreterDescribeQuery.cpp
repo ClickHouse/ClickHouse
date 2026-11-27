@@ -14,9 +14,9 @@
 #include <Analyzer/TableNode.h>
 #include <Core/Settings.h>
 #include <Storages/StorageView.h>
-#include <Storages/SubcolumnCodecs.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -36,6 +36,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool describe_compact_output;
     extern const SettingsBool describe_include_subcolumns;
     extern const SettingsBool describe_include_virtual_columns;
@@ -158,8 +159,16 @@ void InterpreterDescribeQuery::fillColumnsFromSubquery(const ASTTableExpression 
 
 void InterpreterDescribeQuery::fillColumnsFromSubqueryImpl(const ASTPtr & select_query, const ContextPtr & current_context)
 {
-    SelectQueryOptions select_query_options;
-    SharedHeader sample_block = InterpreterSelectQueryAnalyzer(select_query, current_context, select_query_options).getSampleBlock();
+    SharedHeader sample_block;
+    if (settings[Setting::allow_experimental_analyzer])
+    {
+        SelectQueryOptions select_query_options;
+        sample_block = InterpreterSelectQueryAnalyzer(select_query, current_context, select_query_options).getSampleBlock();
+    }
+    else
+    {
+        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(select_query, current_context);
+    }
 
     for (auto && column : *sample_block)
         columns.emplace_back(column.name, column.type);
@@ -198,8 +207,6 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
             /// `SHOW COLUMNS` on the view but without direct grants on the inner tables can still describe
             /// a `SQL SECURITY DEFINER` view.
             auto view_context = view_metadata->getSQLSecurityOverriddenContext(current_context);
-            if (current_context->hasQueryContext())
-                current_context->getQueryContext()->addSQLSecurityOverriddenBody(storage_view->getStorageID(), view_context, query);
             fillColumnsFromSubqueryImpl(query, view_context);
             return;
         }
@@ -336,10 +343,8 @@ void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, b
             res_columns[i++]->insertDefault();
             res_columns[i++]->insert(column.comment);
 
-            ASTPtr codec = ISerialization::isSpecialCompressionAllowed(path)
-                ? getSubstreamCodecDescription(path, column) : nullptr;
-            if (codec)
-                res_columns[i++]->insert(codec->as<ASTFunction>()->arguments->formatForLogging());
+            if (column.codec && ISerialization::isSpecialCompressionAllowed(path))
+                res_columns[i++]->insert(column.codec->as<ASTFunction>()->arguments->formatForLogging());
             else
                 res_columns[i++]->insertDefault();
 

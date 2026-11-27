@@ -2,37 +2,37 @@
 slug: /primary-indexes
 title: 'プライマリインデックス'
 description: 'ClickHouseにおけるスパースプライマリインデックスの仕組み'
-keywords: ['スパースプライマリインデックス', 'プライマリインデックス', 'インデックス']
+keywords: ['スパースプライマリインデックス', 'プライマリインデックス', '索引']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 <Tip>
-  **高度なインデックスの詳細をお探しですか？**
+  **高度な索引の詳細をお探しですか？**
 
   このページでは、ClickHouse のスパースプライマリインデックスの概要、構築方法、動作の仕組み、そしてクエリの高速化にどのように役立つかを紹介します。
 
-  より高度なインデックス戦略や詳細な技術解説については、[プライマリインデックスの詳細解説](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes) を参照してください。
+  より高度な索引戦略や詳細な技術解説については、[primary indexes deep dive](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes) を参照してください。
 </Tip>
 
 <div id="how-does-the-sparse-primary-index-work-in-clickHouse">
-  ## ClickHouse におけるスパースプライマリインデックスの仕組み {#how-does-the-sparse-primary-index-work-in-clickHouse}
+  ## ClickHouse におけるスパースプライマリインデックスの仕組み
 </div>
 
 <br />
 
 ClickHouse のスパースプライマリインデックスは、テーブルの主キーカラムに対するクエリ条件に一致するデータを含む可能性がある[グラニュール](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (行のブロック) を効率的に特定するのに役立ちます。次のセクションでは、このインデックスがそれらのカラムの値からどのように構築されるかを説明します。
 
-### スパースプライマリインデックスの作成 {#sparse-primary-index-creation}
+<div id="sparse-primary-index-creation">
+  ### スパースプライマリインデックスの作成
+</div>
 
 スパースプライマリインデックスがどのように構築されるかを説明するために、いくつかのアニメーションを使って [uk&#95;price&#95;paid&#95;simple](/ja/concepts/core-concepts/parts) テーブルを見ていきます。
 
 [おさらい](/ja/concepts/core-concepts/parts)として、主キー (town, street) を持つ ① の例のテーブルでは、② 挿入されたデータは ③ 主キーカラムの値でソートされ、圧縮されたうえで、各カラムごとに別々のファイルとしてディスクに保存されます。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![](/images/managing-data/core-concepts/primary-index-light_01.webp)
-  </Frame>
-</div>
+<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
 
 <br />
 
@@ -42,52 +42,36 @@ ClickHouse のスパースプライマリインデックスは、テーブルの
 
 このグラニュール構造こそが、プライマリインデックスを **スパース** にしている理由でもあります。ClickHouse はすべての行を索引化するのではなく、⑤ 各グラニュールにつき 1 行、具体的には先頭の行の主キー値だけを保存します。その結果、グラニュールごとに 1 つの索引エントリが作成されます。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![](/images/managing-data/core-concepts/primary-index-light_02.webp)
-  </Frame>
+<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg" />
+
+<br />
+
+<br />
+
+このスパース性のおかげで、プライマリインデックスはメモリ内に完全に収まるほど小さく、主キーカラムに対する述語条件を持つクエリを高速にフィルタリングできます。次のセクションでは、これがそのようなクエリの高速化にどのように役立つかを説明します。
+
+<div id="primary-index-usage">
+  ### プライマリ索引の使用
 </div>
 
-<br />
+次のアニメーションでは、スパースプライマリ索引がクエリの高速化にどのように使われるかを示します。
 
-<br />
-
-このスパース性のおかげで、プライマリインデックスはメモリ内に完全に収まるほど小さく、主キーカラムに対する述語を持つクエリを高速にフィルタリングできます。次のセクションでは、これがそのようなクエリの高速化にどのように役立つかを説明します。
-
-### プライマリインデックスの使用 {#primary-index-usage}
-
-次のアニメーションでは、スパースプライマリインデックスがクエリの高速化にどのように使われるかを示します。
-
-<div className="ch-image-lg">
-  <Frame>
-    ![](/images/managing-data/core-concepts/primary-index-light_03.webp)
-  </Frame>
-</div>
+<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
 
 <br />
 
 <br />
 
-<Steps>
-  <Step title="クエリ条件を解析する">
-    この例のクエリには、2 つの主キーカラムの両方に対する述語が含まれています: `town = 'LONDON' AND street = 'OXFORD STREET'`.
-  </Step>
+① この例のクエリには、2 つの主キーカラムの両方に対する条件が含まれています: `town = 'LONDON' AND street = 'OXFORD STREET'`.
 
-  <Step title="プライマリインデックスを読み込む">
-    クエリを高速化するために、ClickHouse はテーブルのプライマリインデックスをメモリに読み込みます。
-  </Step>
+② クエリを高速化するために、ClickHouse はテーブルのプライマリ索引をメモリに読み込みます。
 
-  <Step title="一致するグラニュールを特定する">
-    次に、インデックスエントリをスキャンして、述語に一致する行を含む可能性があるグラニュール、つまりスキップできないグラニュールを特定します。
-  </Step>
+③ 次に、索引エントリを走査して、条件に一致する行を含む可能性があるグラニュール、つまりスキップできないグラニュールを特定します。
 
-  <Step title="グラニュールを読み込み処理する">
-    その後、それらのグラニュールと、クエリに必要な他のカラムに対応するグラニュールがメモリに読み込まれ、[処理](/ja/concepts/core-concepts/query-parallelism) されます。
-  </Step>
-</Steps>
+④ その後、それらのグラニュールと、クエリに必要な他のカラムに対応するグラニュールがメモリに読み込まれ、[処理](/ja/concepts/core-concepts/query-parallelism) されます。
 
 <div id="monitoring-primary-indexes">
-  ## プライマリインデックスの監視 {#monitoring-primary-indexes}
+  ## プライマリインデックスの監視
 </div>
 
 テーブル内の各[データパート](/ja/concepts/core-concepts/parts)には、それぞれ固有のプライマリインデックスがあります。これらのプライマリインデックスの内容は、[mergeTreeIndex](/ja/reference/functions/table-functions/mergeTreeIndex)テーブル関数を使って確認できます。
@@ -200,7 +184,7 @@ SELECT count() FROM uk.uk_price_paid_simple;
 ```
 
 <div id="key-takeaways">
-  ## 重要なポイント {#key-takeaways}
+  ## 重要なポイント
 </div>
 
 * **スパースプライマリインデックス** は、主キーカラムに対するクエリ条件に一致する行を含む可能性があるグラニュールを特定することで、ClickHouse が不要なデータを読み飛ばせるようにします。
@@ -213,7 +197,9 @@ SELECT count() FROM uk.uk_price_paid_simple;
 
 * `mergeTreeIndex` テーブル関数を使って **索引の内容を確認** でき、`EXPLAIN` 句で索引の利用状況を確認できます。
 
-## 詳細情報 {#where-to-find-more-information}
+<div id="where-to-find-more-information">
+  ## 詳細情報
+</div>
 
 ClickHouse のスパースプライマリ索引の仕組みや、従来のデータベース索引との違い、利用時のベストプラクティスについて詳しくは、索引に関する詳細な[解説](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)をご覧ください。
 

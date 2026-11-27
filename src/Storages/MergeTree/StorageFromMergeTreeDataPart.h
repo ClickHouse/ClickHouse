@@ -60,8 +60,6 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool hasBucketedMapSerialization() const override { return storage.hasBucketedMapSerialization(); }
-
     String getPartitionId() const
     {
         return partition_id;

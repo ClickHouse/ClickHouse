@@ -38,9 +38,6 @@ public:
 
     ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
 
-    ReservationPtr reserveAndGetUnreservedSpace(
-        UInt64 bytes, const std::optional<ReservationConstraints> & constraints, std::optional<UInt64> & unreserved_space) override;
-
     std::optional<UInt64> getTotalSpace() const override;
     std::optional<UInt64> getAvailableSpace() const override;
     std::optional<UInt64> getUnreservedSpace() const override;
@@ -150,13 +147,16 @@ public:
     bool supportsStat() const override { return true; }
     struct stat stat(const String & path) const override;
 
+    bool supportsChmod() const override { return true; }
+    void chmod(const String & path, mode_t mode) override;
+
     ObjectStoragePtr getObjectStorage() override;
 
 protected:
     void checkAccessImpl(const String & path) override;
 
 private:
-    bool tryReserve(UInt64 bytes, const std::optional<ReservationConstraints> & constraints, UInt64 & unreserved_space);
+    std::optional<UInt64> tryReserve(UInt64 bytes, const std::optional<ReservationConstraints> & constraints = std::nullopt);
 
     /// Setup disk for healthy check.
     /// Throw exception if it's not possible to setup necessary files and directories.
@@ -170,7 +170,7 @@ private:
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
 
-    mutable std::mutex reservation_mutex;
+    static std::mutex reservation_mutex;
 
     std::atomic<bool> broken{false};
     std::atomic<bool> readonly{false};

@@ -1,6 +1,0 @@
-0: OK
-1000: OK
-2147483: OK
-2147484: Kafka property `topic.metadata.propagation.max.ms` must be an integer between 0 and 2147483, got `2147484`. (BAD_ARGUMENTS)
-3600000: Kafka property `topic.metadata.propagation.max.ms` must be an integer between 0 and 2147483, got `3600000`. (BAD_ARGUMENTS)
-0x36ee80: Kafka property `topic.metadata.propagation.max.ms` must be an integer between 0 and 2147483, got `0x36ee80`. (BAD_ARGUMENTS)

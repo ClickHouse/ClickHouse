@@ -1,28 +1,19 @@
 ---
 slug: /use-cases/observability/clickstack/tuning-clickstack-schema
-title: 'ClickHouse Observability 튜닝: 스키마 다듬기'
-sidebarTitle: '스키마 튜닝'
-description: 'ClickHouse Observability의 자가 관리형 환경에서 쿼리 성능과 스토리지 효율성을 높일 수 있도록 ClickStack 스키마를 다듬습니다'
+title: 'Managed ClickStack 튜닝 - 스키마 다듬기'
+description: 'Managed ClickStack에서 쿼리 성능과 스토리지 효율성을 높일 수 있도록 ClickStack 스키마를 다듬습니다'
 doc_type: 'guide'
-keywords: ['clickstack', 'tuning', 'schema', 'self-managed', 'ClickHouse Observability', 'performance', 'optimization', 'storage']
+keywords: ['clickstack', '튜닝', '스키마', 'managed', '관측성', '성능', '최적화', '스토리지']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
 ---
 
-<Note>
-  **자가 관리형 경로를 사용 중입니다**
+ClickStack을 한동안 운영해 왔다면, 기본 스키마만으로도 대부분의 관측성 워크로드를 별도 변경 없이 처리할 수 있다는 점을 이미 느끼셨을 것입니다. 이 페이지는 그것만으로 더 이상 충분하지 않을 때를 위한 것입니다. 즉, 쿼리 지연 시간이 늘어나기 시작했거나 액세스 패턴이 기본값에서 벗어난 경우입니다.
 
-  [자가 관리형 환경](/ko/clickstack/self-configured/overview)을 사용하여 ClickHouse Observability를 직접 설정하는 방식을 선택했습니다. 이 경로에서는 OpenTelemetry collector를 직접 실행하고, ClickHouse Cloud 서비스로의 수집을 관리하며, 스키마를 튜닝하고, 웨어하우스(warehouses)를 사용하여 수집 워크로드와 쿼리 워크로드를 분리합니다. 자세한 내용은 [OpenTelemetry collector](/ko/clickstack/self-configured/ingesting-data/collector), [성능 튜닝](/ko/clickstack/self-configured/managing/performance-tuning), [읽기 및 쓰기 워크로드 분리](/ko/clickstack/self-configured/managing/isolating-read-write)를 참조하십시오.
+실무에서 효과를 보는 방법은 대체로 네 가지 최적화로 정리할 수 있습니다. 아래 항목은 대략적인 투입 노력 순서대로 나열되어 있습니다. 처음 두 가지는 점진적으로 적용할 수 있는 로컬 `ALTER TABLE` 변경입니다. 세 번째는 동일한 집계가 dashboard에서 반복적으로 실행될 때 효과적입니다. 네 번째는 테이블 migration이 필요하므로 가장 복잡합니다.
 
-  ClickHouse가 수집, 스키마(schemas), 컴퓨트를 대신 처리하는 서버리스 환경을 원한다면 스키마가 자동으로 관리되는 기본 ClickHouse Observability 환경을 사용하십시오. 자세한 내용은 [시작하기](/ko/clickstack/observability/getting-started)를 참조하십시오.
-</Note>
-
-ClickHouse Observability를 한동안 운영해 왔다면, 기본 스키마만으로도 대부분의 관측성 워크로드를 별도 변경 없이 처리할 수 있다는 점을 이미 느끼셨을 것입니다. 이 페이지는 그것만으로 더 이상 충분하지 않을 때를 위한 것입니다. 즉, 쿼리 지연 시간이 늘어나기 시작했거나 액세스 패턴이 기본값에서 벗어난 경우입니다.
-
-실무에서 효과를 보는 방법은 대체로 네 가지 최적화로 정리할 수 있습니다. 아래 항목은 대략적인 투입 노력 순서대로 나열되어 있습니다. 처음 두 가지는 점진적으로 적용할 수 있는 로컬 `ALTER TABLE` 변경입니다. 세 번째는 동일한 집계가 대시보드에서 반복적으로 실행될 때 효과적입니다. 네 번째는 테이블 migration이 필요하므로 가장 복잡합니다.
-
-아래 요약은 의도적으로 짧게 작성했습니다. 각 변경의 배경 설명, 벤치마크, 그리고 이를 기존 데이터에 적용하는 방법은 [성능 튜닝](/ko/clickstack/self-configured/managing/performance-tuning)을 참조하십시오.
+아래 요약은 의도적으로 짧게 작성했습니다. 각 변경의 배경 설명, 벤치마크, 그리고 이를 기존 데이터에 적용하는 방법은 [성능 튜닝](/ko/clickstack/managing/performance-tuning)을 참조하십시오.
 
 <Steps>
   <Step title="자주 쿼리하는 속성 구체화하기" id="materialize-attributes">
@@ -38,7 +29,7 @@ ClickHouse Observability를 한동안 운영해 왔다면, 기본 스키마만�
 
     기존 행은 `ALTER TABLE otel_logs MATERIALIZE COLUMN ServiceVersion`도 실행하기 전까지 새 컬럼이 비어 있습니다.
 
-    자세히 보기: [자주 쿼리하는 속성 구체화하기](/ko/clickstack/self-configured/managing/performance-tuning#materialize-frequently-queried-attributes).
+    자세히 보기: [자주 쿼리하는 속성 구체화하기](/ko/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes).
   </Step>
 
   <Step title="스킵 인덱스 추가하기" id="add-skip-indexes">
@@ -55,15 +46,15 @@ ClickHouse Observability를 한동안 운영해 왔다면, 기본 스키마만�
 
     스킵 인덱스는 실제로 그래뉼을 가지치기할 때만 평가 비용만큼의 효과를 냅니다. 도움이 되었다고 가정하기 전에 대표적인 쿼리에 대해 `EXPLAIN indexes = 1`로 확인하십시오.
 
-    자세히 보기: [스킵 인덱스 추가하기](/ko/clickstack/self-configured/managing/performance-tuning#adding-skip-indexes).
+    자세히 보기: [스킵 인덱스 추가하기](/ko/clickstack/managing/performance-tuning#adding-skip-indexes).
   </Step>
 
   <Step title="반복되는 집계 미리 계산하기" id="materialized-views">
-    대시보드에서 같은 집계가 반복해서 실행된다면(오류율 기준 상위 서비스, 엔드포인트별 p99 지연 시간, 분당 요청 수), materialized view가 삽입 시점에 결과를 계산해 작은 롤업 테이블에 기록합니다. 그러면 대시보드는 원시 로그나 traces 대신 롤업 테이블을 조회하게 되며, 비용이 훨씬 적게 듭니다.
+    대시보드에서 같은 집계가 반복해서 실행된다면(오류율 기준 상위 서비스, 엔드포인트별 p99 지연 시간, 분당 요청 수), materialized view가 삽입 시점에 결과를 계산해 작은 롤업 테이블에 기록합니다. 그러면 대시보드는 원시 logs나 traces 대신 롤업 테이블을 조회하게 되며, 비용이 훨씬 적게 듭니다.
 
     이 방식은 대시보드 조회가 빈번하고 기본 테이블이 클 때 효과적입니다. 대신 삽입 시점에 CPU를 더 사용하게 되고, 유지 관리할 두 번째 테이블이 추가됩니다.
 
-    자세히 보기: [materialized view 활용하기](/ko/clickstack/self-configured/managing/performance-tuning#exploiting-materialized-views).
+    자세히 보기: [materialized view 활용하기](/ko/clickstack/managing/performance-tuning#exploiting-materialized-views).
   </Step>
 
   <Step title="액세스 패턴에 맞는 프라이머리 키 선택하기" id="choose-primary-key">
@@ -82,12 +73,14 @@ ClickHouse Observability를 한동안 운영해 왔다면, 기본 스키마만�
 
     ClickHouse는 프라이머리 키를 제자리에서 수정할 수 없으므로, 이것은 단순한 `ALTER`가 아니라 테이블 migration입니다. 성능 튜닝 가이드에서는 새 테이블 생성, 수집 경로 전환, 그리고 기존 대시보드가 이전 데이터와 새 데이터 모두에서 계속 동작하도록 `Merge` 테이블을 사용하는 방법을 안내합니다.
 
-    자세히 보기: [프라이머리 키 수정하기](/ko/clickstack/self-configured/managing/performance-tuning#modifying-the-primary-key).
+    자세히 보기: [프라이머리 키 수정하기](/ko/clickstack/managing/performance-tuning#modifying-the-primary-key).
   </Step>
 </Steps>
 
-## 추가 참고 자료 {#further-reading}
+<div id="further-reading">
+  ## 추가 참고 자료
+</div>
 
-* [성능 튜닝](/ko/clickstack/self-configured/managing/performance-tuning): 프로젝션과 행 조회 가속화를 포함한 전체 가이드입니다.
-* [ClickStack에서 사용하는 테이블과 스키마](/ko/clickstack/self-configured/ingesting-data/schemas): 이러한 최적화의 기반이 되는 기준 DDL입니다.
-* [프로덕션 환경으로 전환](/ko/clickstack/self-configured/managing/production): 더 폭넓은 프로덕션 권장 사항입니다.
+* [성능 튜닝](/ko/clickstack/managing/performance-tuning): 프로젝션과 행 조회 가속화를 포함한 전체 가이드입니다.
+* [ClickStack에서 사용하는 테이블과 스키마](/ko/clickstack/ingesting-data/schemas): 이러한 최적화의 기반이 되는 기준 DDL입니다.
+* [프로덕션 환경으로 전환](/ko/clickstack/managing/production): 더 폭넓은 프로덕션 권장 사항입니다.

@@ -4,6 +4,8 @@
 -- values that could not be converted, while the result column used to be built from the bare
 -- (non-Nullable) element type, causing a column type mismatch in insertFrom.
 
+SET allow_experimental_dynamic_type = 1;
+SET allow_experimental_variant_type = 1;
 SET use_variant_as_common_type = 1;
 
 -- { echo }

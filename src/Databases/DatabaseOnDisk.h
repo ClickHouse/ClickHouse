@@ -1,7 +1,5 @@
 #pragma once
 
-#include <atomic>
-
 #include <Databases/DatabasesCommon.h>
 #include <Disks/IDisk.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -92,18 +90,6 @@ public:
 
     void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
 
-    /// Throws `TOO_MANY_TABLES` if adding `tables_to_add` more table-like objects would exceed the
-    /// `max_tables` limit. More than one slot is needed for the engines that create hidden inner
-    /// tables (`MaterializedView`, `TimeSeries`): all of them must be accounted for at once,
-    /// otherwise the inner tables are created and the outer object is then rejected. The check is
-    /// done before an operation starts, so it is best-effort under concurrency.
-    void checkTablesLimit(size_t tables_to_add = 1) const;
-    void checkTablesLimitUnlocked(size_t tables_to_add = 1) const TSA_REQUIRES(mutex);
-
-    /// Supports `ALTER DATABASE ... MODIFY SETTING max_tables = ...` for Atomic and Ordinary
-    /// databases. Other engines derived from this class reject the query.
-    void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
-
 protected:
     static constexpr const char * create_suffix = ".tmp";
     static constexpr const char * drop_suffix = ".tmp_drop";
@@ -122,10 +108,8 @@ protected:
     virtual ASTPtr getCreateQueryFromMetadata(const String & table_name, bool throw_on_error) const;
     ASTPtr getCreateQueryFromStorage(const String & table_name, const StoragePtr & storage, bool throw_on_error) const;
 
-    /// `table_metadata_tmp_path` is empty when nothing has been written yet: then `statement` is written to `table_metadata_path` at the commit.
     virtual void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
-                                   const String & table_metadata_tmp_path, const String & table_metadata_path,
-                                   const String & statement, ContextPtr query_context);
+                                   const String & table_metadata_tmp_path, const String & table_metadata_path, ContextPtr query_context);
 
     virtual void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach);
     virtual void setDetachedTableNotInUseForce(const UUID & /*uuid*/) {}
@@ -135,9 +119,6 @@ protected:
 
     const String metadata_path;
     const String data_path;
-
-    /// Limit on the number of tables in the database (`max_tables` setting). 0 means unlimited.
-    std::atomic<UInt64> max_tables = 0;
 };
 
 }

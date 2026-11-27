@@ -1,4 +1,5 @@
 #include <Disks/IDisk.h>
+#include <Core/ServerUUID.h>
 #include <Core/UUID.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -32,6 +33,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 IDisk::IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
@@ -52,14 +54,6 @@ IDisk::IDisk(const String & name_)
 }
 
 IDisk::~IDisk() = default;
-
-ReservationPtr IDisk::reserveAndGetUnreservedSpace(
-    UInt64 bytes, const std::optional<ReservationConstraints> & constraints, std::optional<UInt64> & unreserved_space)
-{
-    ReservationPtr reservation = constraints ? reserve(bytes, *constraints) : reserve(bytes);
-    unreserved_space = reservation ? reservation->getUnreservedSpace() : getUnreservedSpace();
-    return reservation;
-}
 
 bool IDisk::isDirectoryEmpty(const String & path) const
 {
@@ -215,11 +209,6 @@ void IDisk::truncateFile(const String &, size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
-void ISyncGuard::sync()
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Explicit synchronization is not implemented for this guard");
-}
-
 SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
 {
     return nullptr;
@@ -240,13 +229,6 @@ void IDisk::startup(bool skip_access_check)
                 "Skip access check for disk {} (read-only disk).",
                 getName());
         }
-        else if (isBroken())
-        {
-            /// `startupImpl` already logged why. The disk checker, if enabled, clears the flag once the disk recovers.
-            LOG_WARNING(getLogger("IDisk"),
-                "Skip access check for disk {} (disk is broken).",
-                getName());
-        }
         else
             checkAccess();
     }
@@ -260,7 +242,12 @@ void IDisk::startup(bool skip_access_check)
 
 void IDisk::checkAccess()
 {
-    checkAccessImpl(fmt::format("clickhouse_access_check_{}", toString(UUIDHelpers::generateV4())));
+    DB::UUID server_uuid = DB::ServerUUID::get();
+    if (server_uuid == DB::UUIDHelpers::Nil)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
+    const String path = fmt::format("clickhouse_access_check_{}", toString(server_uuid));
+
+    checkAccessImpl(path);
 }
 
 /// NOTE: should we mark the disk readonly if the write/unlink fails instead of throws?
@@ -324,12 +311,12 @@ catch (Exception & e)
 
 bool IDisk::isCaseInsensitive()
 {
-    if (is_case_sensitivity_checked)
-        return is_case_insensitive;
-
     /// For readonly disk we cannot perform the case sensitivity check.
     if (isReadOnly())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot check if filesystem is case insensitive: disk {} is readonly", name);
+
+    if (is_case_sensitivity_checked)
+        return is_case_insensitive;
 
     std::unique_lock lock(case_sensitivity_check_mutex);
     const String path = fmt::format("clickhouse_case_sensitivity_check_{}", toString(DB::UUIDHelpers::generateV4()));

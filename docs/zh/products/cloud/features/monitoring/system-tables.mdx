@@ -7,6 +7,8 @@ sidebarTitle: '系统表'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 所有 ClickHouse 实例都自带一组位于 `system` 数据库中的[系统表](/zh/reference/system-tables/overview)，其中包含以下信息：
 
 * 服务器状态、进程和环境。
@@ -16,7 +18,7 @@ doc_type: 'guide'
 直接查询这些表有助于监控 ClickHouse 部署，尤其适用于深入查看内部信息和进行调试。
 
 <div id="using-cloud-console">
-  ## 使用 ClickHouse Cloud 控制台 {#using-cloud-console}
+  ## 使用 ClickHouse Cloud 控制台
 </div>
 
 ClickHouse Cloud 控制台内置了可用于查询系统表的 [SQL 控制台](/zh/products/cloud/features/sql-console-features/sql-console) 和 [仪表盘工具](/zh/products/cloud/features/sql-console-features/dashboards)。例如，下面的查询展示了在过去两小时内新建了多少个 parts (以及创建频率) ：
@@ -50,24 +52,22 @@ ORDER BY
   您还可以使用这些查询在 Cloud Console 中[创建自定义仪表板](https://clickhouse.com/blog/essential-monitoring-queries-creating-a-dashboard-in-clickHouse-cloud)。
 </Tip>
 
-## 内置高级可观测性仪表盘 {#built-in-advanced-observability-dashboard}
-
-ClickHouse 内置了高级可观测性仪表盘功能，可通过 `$HOST:$PORT/dashboard` 访问 (需要用户名和密码) ，显示 `system.dashboards` 中包含的 Cloud 概览指标。
-
-<div className="ch-image-lg">
-  <Frame>
-    ![原生高级可观测性仪表盘](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
-  </Frame>
+<div id="built-in-advanced-observability-dashboard">
+  ## 内置高级可观测性仪表板
 </div>
 
+ClickHouse 内置了高级可观测性仪表板功能，可通过 `$HOST:$PORT/dashboard` 访问 (需要用户名和密码) ，显示 `system.dashboards` 中包含的 Cloud 概览指标。
+
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="原生高级可观测性仪表板" border />
+
 <Note>
-  此仪表盘需要直接对 ClickHouse 实例进行身份验证，并且独立于 [Cloud 控制台 高级仪表盘](/zh/products/cloud/features/monitoring/cloud-console#advanced-dashboard)；后者可通过 Cloud 控制台 UI 访问，无需额外身份验证。
+  此仪表板需要直接对 ClickHouse 实例进行身份验证，并且独立于 [Cloud Console 高级仪表板](/zh/products/cloud/features/monitoring/cloud-console#advanced-dashboard)；后者可通过 Cloud Console UI 访问，无需额外身份验证。
 </Note>
 
-有关可用可视化内容以及如何使用它们进行故障排查的更多信息，请参阅[高级仪表盘文档](/zh/products/cloud/features/monitoring/advanced-dashboard)。
+有关可用可视化内容以及如何使用它们进行故障排查的更多信息，请参阅[高级仪表板文档](/zh/products/cloud/features/monitoring/advanced-dashboard)。
 
 <div id="querying-across-nodes">
-  ## 跨节点和版本查询 {#querying-across-nodes}
+  ## 跨节点和版本查询
 </div>
 
 为了全面查看整个集群，用户可以结合使用 `clusterAllReplicas` 函数和 `merge` 函数。`clusterAllReplicas` 函数支持跨 &quot;default&quot; 集群中的所有副本查询系统表，并将各节点的数据汇总为统一结果。与 `merge` 函数结合使用时，它可用于访问集群中特定表的全部系统数据。
@@ -94,7 +94,7 @@ FORMAT VERTICAL
 更多详情，请参见[跨节点查询](/zh/reference/system-tables/overview#querying-across-nodes)。
 
 <div id="system-considerations">
-  ## 系统注意事项 {#system-considerations}
+  ## 系统注意事项
 </div>
 
 <Warning>
@@ -103,9 +103,11 @@ FORMAT VERTICAL
 
 如果需要与生产环境隔离的实时生产监控，建议使用[与 Prometheus 兼容的指标端点](/zh/products/cloud/features/monitoring/prometheus)或 [Cloud Console 仪表盘](/zh/products/cloud/features/monitoring/cloud-console)。这两者都使用预先抓取的指标，不会向底层服务发出查询。
 
-## 相关页面 {#related}
+<div id="related">
+  ## 相关页面
+</div>
 
-* [系统表参考](/zh/reference/system-tables/overview) — 所有可用系统表的完整参考
-* [Cloud Console 监控](/zh/products/cloud/features/monitoring/cloud-console) — 零配置仪表盘，且不会影响服务性能
+* [系统表参考](/zh/reference/system-tables/overview) — 所有可用系统表的完整参考文档
+* [Cloud Console 监控](/zh/products/cloud/features/monitoring/cloud-console) — 零配置仪表盘，不影响服务性能
 * [Prometheus 端点](/zh/products/cloud/features/monitoring/prometheus) — 将指标导出到外部监控工具
-* [高级仪表板](/zh/products/cloud/features/monitoring/advanced-dashboard) — 仪表板可视化的详细参考
+* [高级仪表板](/zh/products/cloud/features/monitoring/advanced-dashboard) — 仪表板可视化的详细参考文档

@@ -8,8 +8,10 @@ keywords: ['ClickStack']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 <div id="migrating-agents-from-elastic">
-  ## ترحيل الوكلاء من Elastic {#migrating-agents-from-elastic}
+  ## ترحيل الوكلاء من Elastic
 </div>
 
 يوفّر Elastic Stack عددًا من وكلاء جمع بيانات Observability. وتحديدًا:
@@ -21,7 +23,7 @@ doc_type: 'guide'
 يعتمد أفضل مسار للترحيل على الوكلاء المستخدمين حاليًا. وفي الأقسام التالية، نوثّق خيارات الترحيل لكل نوع رئيسي من الوكلاء. وهدفنا هو تقليل العوائق، وإتاحة مواصلة استخدام وكلائك الحاليين أثناء مرحلة الانتقال كلما أمكن ذلك.
 
 <div id="prefered-migration-path">
-  ## مسار الترحيل المفضّل {#prefered-migration-path}
+  ## مسار الترحيل المفضّل
 </div>
 
 حيثما أمكن، نوصي بالترحيل إلى [جامع OpenTelemetry (OTel)](https://opentelemetry.io/docs/collector/) لجمع جميع السجلات والمقاييس والآثار، مع نشر الـ جامع عند [الطرفية بدور agent](/ar/clickstack/ingesting-data/collector#collector-roles). ويمثّل هذا النهج الوسيلة الأكثر كفاءة لإرسال البيانات، كما يجنّب التعقيد المعماري وعمليات تحويل البيانات.
@@ -33,16 +35,18 @@ doc_type: 'guide'
 </Info>
 
 <div id="clickhouse-otel-endpoint">
-  ## نقطة نهاية OpenTelemetry في ClickHouse {#clickhouse-otel-endpoint}
+  ## نقطة نهاية OpenTelemetry في ClickHouse
 </div>
 
-تُستقبل جميع البيانات في ClickStack عبر مثيل **جامع OpenTelemetry (OTel)**، الذي يعمل كنقطة الإدخال الأساسية للسجلات والمقاييس والتتبعات وبيانات الجلسات. نوصي باستخدام [توزيعة ClickStack](/ar/clickstack/ingesting-data/opentelemetry#installing-otel-collector) الرسمية من الـ جامع لهذا المثيل، ما لم تكن [مضمّنة بالفعل في deployment mode الخاص بـ ClickStack](/ar/clickstack/deployment/oss).
+تُستقبل جميع البيانات في ClickStack عبر مثيل **جامع OpenTelemetry (OTel)**، الذي يعمل كنقطة الإدخال الأساسية للسجلات والمقاييس والتتبعات وبيانات الجلسات. نوصي باستخدام [توزيعة ClickStack](/ar/clickstack/ingesting-data/opentelemetry#installing-otel-collector) الرسمية من الـ جامع لهذا المثيل، ما لم تكن [مضمّنة بالفعل في deployment mode الخاص بـ ClickStack](/ar/clickstack/deployment/overview).
 
-يرسل المستخدمون البيانات إلى هذا الـ جامع من خلال [language SDKs](/ar/clickstack/ingesting-data/sdks/index) أو عبر وكلاء لجمع البيانات يجمعون مقاييس البنية التحتية والسجلات (مثل OTel جوامع بدور [وكيل](/ar/clickstack/ingesting-data/collector#collector-roles) أو تقنيات أخرى مثل [Fluentd](https://www.fluentd.org/) أو [Vector](https://vector.dev/)). وبالنسبة إلى الفرق التي تريد pipeline مُدارة لـ OpenTelemetry، يوفّر [Bindplane](/ar/clickstack/integration-partners/bindplane) حلًا أصيلًا لـ OpenTelemetry مع وجهة أصلية لـ ClickStack، مما يبسّط جمع بيانات telemetry ومعالجتها وتوجيهها.
+يرسل المستخدمون البيانات إلى هذا الـ جامع من خلال [language SDKs](/ar/clickstack/ingesting-data/sdks/index) أو عبر agents لجمع البيانات يجمعون مقاييس البنية التحتية والسجلات (مثل OTel جوامع بدور [agent](/ar/clickstack/ingesting-data/collector#collector-roles) أو تقنيات أخرى مثل [Fluentd](https://www.fluentd.org/) أو [Vector](https://vector.dev/)). وبالنسبة إلى الفرق التي تريد pipeline مُدارة لـ OpenTelemetry، يوفّر [Bindplane](/ar/clickstack/integration-partners/bindplane) حلًا أصيلًا لـ OpenTelemetry مع وجهة أصلية لـ ClickStack، مما يبسّط جمع بيانات telemetry ومعالجتها وتوجيهها.
 
-**نفترض أن هذا الـ جامع متاح لجميع خطوات ترحيل الوكيل**.
+**نفترض أن هذا الـ جامع متاح لجميع خطوات ترحيل agent**.
 
-## الترحيل من Beats {#migrating-to-beats}
+<div id="migrating-to-beats">
+  ## الترحيل من Beats
+</div>
 
 قد يرغب المستخدمون الذين لديهم عمليات نشر واسعة لـ Beat في الإبقاء عليها عند الترحيل إلى ClickStack.
 
@@ -52,19 +56,15 @@ doc_type: 'guide'
 
 نوصي بإجراء هذا التحويل باستخدام [Vector](https://vector.dev)، وهو pipeline بيانات observability خفيف وعالي الأداء يدعم لغة تحويل قوية تُسمى Vector Remap Language (VRL).
 
-إذا كانت وكلاء Filebeat لديك مُهيأة لإرسال البيانات إلى Kafka — وهو مخرج تدعمه Beats — فيمكن لـ Vector استهلاك تلك الأحداث من Kafka، وتطبيق تحويلات المخطط باستخدام VRL، ثم إعادة توجيهها عبر OTLP إلى مُجمِّع OpenTelemetry الموزّع مع ClickStack.
+إذا كانت وكلاء Filebeat لديك مُهيأة لإرسال البيانات إلى Kafka — وهو مخرج تدعمه Beats — فيمكن لـ Vector استهلاك تلك الأحداث من Kafka، وتطبيق تحويلات schema باستخدام VRL، ثم إعادة توجيهها عبر OTLP إلى جامع OpenTelemetry الموزّع مع ClickStack.
 
-بدلًا من ذلك، يدعم Vector أيضًا استقبال الأحداث عبر بروتوكول Lumberjack الذي يستخدمه Logstash. ويتيح ذلك لوكلاء Beats إرسال البيانات مباشرةً إلى Vector، حيث يمكن تطبيق عملية التحويل نفسها قبل إعادة توجيهها إلى ClickStack مُجمِّع OpenTelemetry عبر OTLP.
+بدلًا من ذلك، يدعم Vector أيضًا استقبال الأحداث عبر بروتوكول Lumberjack الذي يستخدمه Logstash. ويتيح ذلك لوكلاء Beats إرسال البيانات مباشرةً إلى Vector، حيث يمكن تطبيق عملية التحويل نفسها قبل إعادة توجيهها إلى ClickStack جامع OpenTelemetry عبر OTLP.
 
 نوضح كلتا هاتين المعماريتين أدناه.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![ترحيل الوكلاء](/images/use-cases/observability/clickstack-migrating-agents-ui.png)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/clickstack-migrating-agents.webp" alt="ترحيل الوكلاء" size="lg" background />
 
-في المثال التالي، نقدّم الخطوات الأولية لتهيئة Vector لاستقبال أحداث السجلات من Filebeat عبر بروتوكول Lumberjack. كما نوفّر VRL لربط أحداث ECS الواردة بمواصفة OTel، قبل إرسالها إلى ClickStack مُجمِّع OpenTelemetry عبر OTLP. ويمكن للمستخدمين الذين يستهلكون الأحداث من Kafka استبدال مصدر Vector Logstash بـ [مصدر Kafka](https://vector.dev/docs/reference/configuration/sources/kafka/) — مع بقاء جميع الخطوات الأخرى كما هي.
+في المثال التالي، نقدّم الخطوات الأولية لتهيئة Vector لاستقبال أحداث السجلات من Filebeat عبر بروتوكول Lumberjack. كما نوفّر VRL لربط أحداث ECS الواردة بمواصفة OTel، قبل إرسالها إلى ClickStack جامع OpenTelemetry عبر OTLP. ويمكن للمستخدمين الذين يستهلكون الأحداث من Kafka استبدال مصدر Vector Logstash بـ [مصدر Kafka](https://vector.dev/docs/reference/configuration/sources/kafka/) — مع بقاء جميع الخطوات الأخرى كما هي.
 
 <Steps>
   <Step title="تثبيت Vector" id="install-vector">
@@ -249,13 +249,9 @@ doc_type: 'guide'
             authorization: ${YOUR_INGESTION_API_KEY}
     ```
 
-    يتم إنشاء `YOUR_INGESTION_API_KEY` بواسطة ClickStack. يمكنك العثور على المفتاح في واجهة مستخدم ClickStack ضمن `Team Settings → API Keys`.
+    يتم إنشاء `YOUR_INGESTION_API_KEY` بواسطة ClickStack. يمكنك العثور على المفتاح في واجهة ClickStack (HyperDX) ضمن `Team Settings → API Keys`.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![مفاتيح إدخال البيانات](/images/use-cases/observability/ingestion-keys.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="مفاتيح إدخال البيانات" size="lg" />
 
     يظهر أدناه الإعداد الكامل النهائي:
 
@@ -317,7 +313,7 @@ doc_type: 'guide'
 </Steps>
 
 <div id="migrating-from-elastic-agent">
-  ## الترحيل من Elastic Agent {#migrating-from-elastic-agent}
+  ## الترحيل من Elastic Agent
 </div>
 
 يجمع Elastic Agent مكونات Elastic Beats المختلفة في حزمة واحدة. ويتكامل هذا الوكيل مع [Elastic Fleet](https://www.elastic.co/docs/reference/fleet/fleet-server)، مما يتيح إدارته وتهيئته مركزيًا.
@@ -329,7 +325,9 @@ doc_type: 'guide'
 
 نستعرض كلا الخيارين أدناه.
 
-### إرسال البيانات عبر Vector {#sending-data-via-vector}
+<div id="sending-data-via-vector">
+  ### إرسال البيانات عبر Vector
+</div>
 
 <Steps>
   <Step title="تثبيت Vector وتهيئته" id="install-configure-vector">
@@ -341,19 +339,11 @@ doc_type: 'guide'
 
     يمكن إجراء التهيئة المركزية عبر Kibana من خلال إضافة [Output إلى Fleet](https://www.elastic.co/docs/reference/fleet/fleet-settings#output-settings).
 
-    <div className="ch-image-md">
-      <Frame>
-        ![إضافة مخرج Logstash](/images/use-cases/observability/add-logstash-output.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/add-logstash-output.webp" alt="إضافة مخرج Logstash" size="md" />
 
     يمكن بعد ذلك استخدام هذا الـ Output ضمن [سياسة وكيل](https://www.elastic.co/docs/reference/fleet/agent-policy). وهذا يعني تلقائيًا أن أي وكلاء يستخدمون هذه السياسة سيرسلون بياناتهم إلى Vector.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![إعدادات الوكيل](/images/use-cases/observability/agent-output-settings.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/agent-output-settings.webp" alt="إعدادات الوكيل" size="md" />
 
     ونظرًا إلى أن هذا يتطلب تهيئة اتصال آمن عبر TLS، فنوصي بالرجوع إلى الدليل [&quot;تهيئة SSL/TLS لمخرج Logstash&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output)، مع افتراض أن مثيل Vector لديك يؤدي دور Logstash.
 
@@ -375,9 +365,11 @@ doc_type: 'guide'
   </Step>
 </Steps>
 
-### شغّل Elastic Agent كمُجمِّع OpenTelemetry {#run-agent-as-otel}
+<div id="run-agent-as-otel">
+  ### شغّل Elastic Agent كجامع OpenTelemetry
+</div>
 
-يتضمن Elastic Agent جامع EDOT مضمّنًا يتيح لك تزويد تطبيقاتك وبنيتك التحتية بأدوات جمع بيانات الرصد مرة واحدة، ثم إرسال البيانات إلى عدة مزوّدين وأنظمة التخزين الخلفية.
+يتضمن Elastic Agent جامع EDOT مضمّنًا يتيح لك تزويد تطبيقاتك وبنيتك التحتية بآليات OpenTelemetry مرة واحدة، ثم إرسال البيانات إلى عدة مزوّدين وواجهات خلفية.
 
 <Info>
   **تكاملات الوكيل والتنسيق**
@@ -385,7 +377,7 @@ doc_type: 'guide'
   لن يتمكن المستخدمون الذين يشغّلون جامع EDOT الموزّع مع Elastic Agent من الاستفادة من [التكاملات الحالية التي يوفّرها الوكيل](https://www.elastic.co/docs/reference/fleet/manage-integrations). بالإضافة إلى ذلك، لا يمكن إدارة الجامع مركزيًا عبر Fleet، ما يفرض على المستخدم تشغيل [الوكيل في الوضع المستقل](https://www.elastic.co/docs/reference/fleet/configure-standalone-elastic-agents) وإدارة التهيئة بنفسه.
 </Info>
 
-لتشغيل Elastic Agent مع جامع EDOT، راجع [دليل Elastic الرسمي](https://www.elastic.co/docs/reference/fleet/otel-agent-transform). وبدلًا من تهيئة نقطة نهاية Elastic كما هو موضح في الدليل، أزل `exporters` الحالية وهيّئ خرج OTLP لإرسال البيانات إلى ClickStack مُجمِّع OpenTelemetry. على سبيل المثال، تصبح تهيئة المصدّرات كما يلي:
+لتشغيل Elastic Agent مع جامع EDOT، راجع [دليل Elastic الرسمي](https://www.elastic.co/docs/reference/fleet/otel-agent-transform). وبدلًا من تهيئة نقطة نهاية Elastic كما هو موضح في الدليل، أزل `exporters` الحالية وهيّئ خرج OTLP لإرسال البيانات إلى ClickStack جامع OpenTelemetry. على سبيل المثال، تصبح تهيئة المصدّرات كما يلي:
 
 ```yaml
 exporters:
@@ -401,16 +393,12 @@ exporters:
 <Info>
   **Managed ClickStack**
 
-  افتراضيًا، لا يلزم مفتاح API للإدخال عند تشغيل مُجمِّع OpenTelemetry في الوضع المستقل مع Managed ClickStack. ومع ذلك، يمكن تأمين الإدخال عبر تحديد رمز مصادقة OTLP. راجع [&quot;تأمين الـ جامع&quot;](/ar/clickstack/ingesting-data/collector#securing-the-collector).
+  افتراضيًا، لا يلزم مفتاح API للاستيعاب عند تشغيل جامع OpenTelemetry في الوضع المستقل مع Managed ClickStack. ومع ذلك، يمكن تأمين الاستيعاب عبر تحديد رمز مصادقة OTLP. راجع [&quot;تأمين الـ جامع&quot;](/ar/clickstack/ingesting-data/collector#securing-the-collector).
 </Info>
 
 يُنشئ ClickStack القيمة `YOUR_INGESTION_API_KEY` المستخدمة هنا. يمكنك العثور على المفتاح في ClickStack UI ضمن `Team Settings → API Keys`.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![مفاتيح الإدخال](/images/use-cases/observability/ingestion-keys.webp)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/ingestion-keys.webp" alt="مفاتيح الاستيعاب" size="lg" />
 
 إذا كان Vector مُهيأً لاستخدام mutual TLS، مع الشهادة والمفاتيح التي جرى إنشاؤها باتباع الخطوات الواردة في دليل [&quot;تكوين SSL/TLS لمخرج Logstash&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output)، فسيلزم تهيئة الـ exporter ‏`otlp` وفقًا لذلك، على سبيل المثال.
 
@@ -429,7 +417,7 @@ exporters:
 ```
 
 <div id="migrating-from-elastic-otel-collector">
-  ## الترحيل من Elastic جامع OpenTelemetry {#migrating-from-elastic-otel-collector}
+  ## الترحيل من Elastic جامع OpenTelemetry
 </div>
 
 يمكن للمستخدمين الذين يشغّلون بالفعل [Elastic جامع OpenTelemetry (EDOT)](https://www.elastic.co/docs/reference/opentelemetry) إعادة تهيئة وكلائهم بسهولة لإرسال البيانات إلى ClickStack جامع OpenTelemetry عبر OTLP. والخطوات المتضمنة مطابقة تمامًا لتلك الموضّحة أعلاه لتشغيل [Elastic Agent كـ جامع OpenTelemetry](#run-agent-as-otel). ويمكن استخدام هذا النهج مع جميع أنواع البيانات.

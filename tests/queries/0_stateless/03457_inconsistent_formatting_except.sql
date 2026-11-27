@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 -- { echo }
 
 SELECT (*) EXCEPT SELECT 1;

@@ -19,7 +19,9 @@ Esta página aborda as seguintes opções para integrar o PostgreSQL ao ClickHou
   Conheça nosso serviço [ClickHouse Managed Postgres](/pt-BR/products/managed-postgres/overview). Com armazenamento NVMe fisicamente colocalizado com o compute, ele oferece desempenho até 10x mais rápido para workloads com gargalo de disco em comparação com alternativas que usam armazenamento conectado à rede, como EBS, e permite replicar seus dados do Postgres para o ClickHouse usando o conector Postgres CDC no ClickPipes.
 </Tip>
 
-## Usando o motor de tabela PostgreSQL {#using-the-postgresql-table-engine}
+<div id="using-the-postgresql-table-engine">
+  ## Usando o motor de tabela PostgreSQL
+</div>
 
 O motor de tabela `PostgreSQL` permite realizar operações **SELECT** e **INSERT** em dados armazenados em um servidor PostgreSQL remoto a partir do ClickHouse.
 Este artigo ilustra métodos básicos de integração usando uma única tabela.
@@ -203,7 +205,9 @@ Este artigo ilustra métodos básicos de integração usando uma única tabela.
   </Step>
 </Steps>
 
-## Usando o mecanismo de banco de dados MaterializedPostgreSQL {#using-the-materializedpostgresql-database-engine}
+<div id="using-the-materializedpostgresql-database-engine">
+  ## Usando o mecanismo de banco de dados MaterializedPostgreSQL
+</div>
 
 <CloudNotSupportedBadge />
 
@@ -299,7 +303,7 @@ Este artigo ilustra métodos básicos de integração usando um banco de dados, 
     2. Ative o recurso experimental do PostgreSQL para o mecanismo de banco de dados:
 
     ```sql
-    SET enable_database_materialized_postgresql=1
+    SET allow_experimental_database_materialized_postgresql=1
     ```
 
     3. Crie o novo banco de dados que será replicado e defina a tabela inicial:

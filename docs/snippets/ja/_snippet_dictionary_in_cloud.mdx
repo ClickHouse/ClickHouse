@@ -2,10 +2,7 @@
 title: Cloud での Snippet Dictionary
 ---
 
-<Note title="ClickHouse Cloud">
-  Dictionary を作成するには [`CREATE DICTIONARY`](/ja/reference/statements/create/dictionary#creating-a-dictionary-with-a-ddl-query) を使用してください。
-
-  ClickHouse テーブルからデータを読み取る Dictionary を作成する場合は、`SOURCE` 句に専用ユーザーのユーザー名とパスワードを指定してください。このユーザーには、ソーステーブルに対する `SELECT` のアクセス許可が必要です。詳しくは [ClickHouse Dictionary ソースの例](/ja/reference/statements/create/dictionary/sources/clickhouse)を参照してください。
-
-  サポートされている Dictionary ソースの一覧は、[Cloud Compatibility ガイド](/ja/products/cloud/guides/cloud-compatibility)で確認してください。
-</Note>
+<Tip>
+  ClickHouse Cloud で Dictionary を使用している場合は、DDLクエリオプションを使用して Dictionary を作成し、`default` ユーザーとして作成してください。
+  また、サポートされている Dictionary ソースの一覧は、[Cloud Compatibility ガイド](/ja/products/cloud/guides/cloud-compatibility)で確認してください。
+</Tip>

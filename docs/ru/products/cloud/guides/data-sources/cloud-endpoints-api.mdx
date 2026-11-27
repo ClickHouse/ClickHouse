@@ -3,11 +3,15 @@ slug: /manage/data-sources/cloud-endpoints-api
 sidebarTitle: 'IP-адреса Cloud'
 title: 'IP-адреса Cloud'
 description: 'На этой странице описаны возможности безопасности API Cloud Endpoints в ClickHouse. Здесь подробно рассказывается, как защитить ваши развертывания ClickHouse, управляя доступом с помощью механизмов аутентификации и авторизации.'
-doc_type: 'reference'
+doc_type: 'справочник'
 keywords: ['ClickHouse Cloud', 'статические IP-адреса', 'конечные точки Cloud', 'API', 'безопасность', 'исходящие IP-адреса', 'входящие IP-адреса', 'межсетевой экран']
 ---
 
-## API статических IP-адресов {#static-ips-api}
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<div id="static-ips-api">
+  ## API статических IP-адресов
+</div>
 
 Если вам нужно получить список статических IP-адресов, вы можете использовать следующую конечную точку ClickHouse Cloud API: [`https://api.clickhouse.cloud/static-ips.json`](https://api.clickhouse.cloud/static-ips.json). Этот API предоставляет конечные точки сервисов ClickHouse Cloud, такие как входящие/исходящие IP-адреса и конечные точки S3 для каждого региона и облачного провайдера.
 
@@ -48,16 +52,8 @@ keywords: ['ClickHouse Cloud', 'статические IP-адреса', 'кон
 
 Например, для экземпляра AWS RDS, работающего в `us-east-2` и которому нужно подключиться к сервису ClickHouse Cloud, должны быть настроены следующие входящие правила группы безопасности:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Правила группы безопасности AWS](/images/_snippets/aws-rds-mysql.webp)
-  </Frame>
-</div>
+<Image img="/images/_snippets/aws-rds-mysql.webp" size="lg" alt="Правила группы безопасности AWS" border />
 
 Для того же сервиса ClickHouse Cloud, работающего в `us-east-2`, но на этот раз подключенного к MySQL в GCP, список `Authorized networks` должен выглядеть так:
 
-<div className="ch-image-md">
-  <Frame>
-    ![Разрешённые сети GCP](/images/_snippets/gcp-authorized-network.webp)
-  </Frame>
-</div>
+<Image img="/images/_snippets/gcp-authorized-network.webp" size="md" alt="Авторизованные сети GCP" border />

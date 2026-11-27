@@ -1,24 +1,26 @@
 ---
 slug: /use-cases/observability/clickstack/getting-started/oss
 title: 'ClickStack Open Source の使用を開始する'
-sidebarTitle: 'はじめに'
+sidebarTitle: 'オープンソース'
 description: 'ClickStack Open Source をローカルで実行し、テストデータを送信してインジェストが正常に機能することを確認します'
 doc_type: 'guide'
 keywords: ['ClickStack Open Source', '使用開始', 'Docker デプロイメント', 'OpenTelemetry', 'ローカルデプロイメント']
 ---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
 
 ClickStack Open Source をローカルで実行し、その OpenTelemetry Collector 経由でテストイベントを送信して、イベントが ClickStack UI で利用可能であることを確認します。
 
 ClickStack Open Source では、ClickHouse backend、ClickStack UI、インジェストパイプラインを実行・管理します。オールインワンイメージには、これらのコンポーネントと MongoDB がローカルでの評価・テスト用に単一の Docker コンテナーへバンドルされています。
 
 <Tip>
-  [ClickHouse Observability](/ja/clickstack/observability) なら、インフラストラクチャを管理することなくログ、メトリクス、トレースを探索できます。[ClickHouse Cloud に登録](https://clickhouse.cloud/signUp?loc=docs-clickstack-oss-inline)して今すぐ始めましょう。
+  Managed ClickStack も利用できます。詳細は [Managed ClickStack](/ja/clickstack/getting-started/managed) を参照してください。
 </Tip>
 
 以下の手順では、認証済みのオールインワンイメージを使用します。アカウントを作成せずにローカル UI を利用する場合は、代わりに [Docker を使用するローカルモードのウォークスルー](/ja/clickstack/deployment/local-mode-only) に従ってください。
 
 <div id="before-you-begin">
-  ## 始める前に {#before-you-begin}
+  ## 始める前に
 </div>
 
 [Docker](https://docs.docker.com/get-docker/)をインストールし、以下のポートが使用可能であることを確認します。
@@ -30,7 +32,9 @@ ClickStack Open Source では、ClickHouse backend、ClickStack UI、インジ�
 
 継続的なワークロードや本番ワークロードについては、[オープンソースでのデプロイメントオプション](/ja/clickstack/deployment/oss)および[本番環境への移行](/ja/clickstack/managing/production)を参照してください。
 
-## オールインワンイメージで ClickStack Open Source をセットアップする {#set-up-clickstack-open-source}
+<div id="set-up-clickstack-open-source">
+  ## オールインワンイメージで ClickStack Open Source をセットアップする
+</div>
 
 <Steps titleSize="h3">
   <Step title="ClickStack を起動する" id="deploy-stack-with-docker">
@@ -73,9 +77,9 @@ ClickStack Open Source では、ClickHouse backend、ClickStack UI、インジ�
 
     ClickStack はバンドルされた ClickHouse インスタンスに自動的に接続し、ログ、トレース、メトリクス、セッション用のデータソースを作成します。
 
-#### インジェスト API key をコピーする {#copy-ingestion-api-key}
+    #### インジェスト API key をコピーする
 
-    左側のメニューの **Get Started** セクションで **Add Data** を選択し、**インジェスト API key** をコピーします。バンドルされた OpenTelemetry Collector に送信するテレメトリーには、このキーを `authorization` ヘッダーに含める必要があります。
+    左側のメニューの **Get Started** セクションで **Add Data** を選択し、**Ingestion API Key** をコピーします。バンドルされた OpenTelemetry Collector に送信するテレメトリーには、このキーを `authorization` ヘッダーに含める必要があります。
   </Step>
 
   <Step title="テストデータを送信する" id="send-test-data">
@@ -123,22 +127,18 @@ ClickStack Open Source では、ClickHouse backend、ClickStack UI、インジ�
 
     検索結果には、サービス名が `clickstack-docs-test` のテストイベントが表示されます。
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![ClickStack ingestion test イベントを表示する ClickStack Open Source のログビュー](/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp" size="lg" alt="ClickStack ingestion test イベントを表示する ClickStack Open Source のログビュー" border />
   </Step>
 </Steps>
 
 これで、ローカルの ClickStack インスタンス、動作するインジェストエンドポイント、ClickStack で確認できるテストイベントが用意されました。
 
 <div id="next-steps">
-  ## 次のステップ {#next-steps}
+  ## 次のステップ
 </div>
 
 <div id="send-application-and-infrastructure-data">
-  ### アプリケーションとインフラストラクチャのデータを送信する {#send-application-and-infrastructure-data}
+  ### アプリケーションとインフラストラクチャのデータを送信する
 </div>
 
 ClickStack に送信するデータに応じて、ガイドを選択してください。
@@ -162,7 +162,7 @@ ClickStack に送信するデータに応じて、ガイドを選択してくだ
 </CardGroup>
 
 <div id="explore-sample-data">
-  ### サンプルデータを探索する {#explore-sample-data}
+  ### サンプルデータを探索する
 </div>
 
 サンプルデータセットを使用して、より充実したテレメトリーでClickStackを探索できます。
@@ -184,7 +184,7 @@ ClickStack に送信するデータに応じて、ガイドを選択してくだ
 Dockerをインストールせずに事前に読み込まれたデータを探索するには、[ホスト型ClickStackデモ](/ja/clickstack/example-datasets/remote-demo-data)を使用します。
 
 <div id="generate-synthetic-data">
-  ### 合成データを生成する {#generate-synthetic-data}
+  ### 合成データを生成する
 </div>
 
 既存のアプリケーションやデータセットがない場合でも、ジェネレーターを使用してインジェストをテストできます。
@@ -202,7 +202,7 @@ Dockerをインストールせずに事前に読み込まれたデータを探�
 [ClickStack のすべてのサンプルデータとデモ](/ja/clickstack/example-datasets/index)を参照してください。
 
 <div id="prepare-for-production">
-  ### 本番運用の準備 {#prepare-for-production}
+  ### 本番運用の準備
 </div>
 
 ClickStack を継続的なワークロードで使用する前に、デプロイメントおよび本番運用に関するガイダンスを確認してください。

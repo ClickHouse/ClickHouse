@@ -13,7 +13,9 @@ ClickStack の[デフォルトスキーマ](/ja/clickstack/ingesting-data/schema
 
 **一般的なオブザーバビリティのワークロードでは、[デフォルトの `Map` ベースのスキーマ](/ja/clickstack/ingesting-data/schemas)をそのまま使用することを推奨します。** JSON 型は、属性キーの種類が少なく、かつ安定しているワークロードで評価したいユーザー向けに利用できますが、一般用途向けの推奨スキーマではありません。
 
-## Map が推奨されるデフォルトである理由 {#why-map}
+<div id="why-map">
+  ## Map が推奨されるデフォルトである理由
+</div>
 
 オブザーバビリティデータの大部分は、resource attributes、scope attributes、span 属性、log 属性のような attribute によって占められます。これらは通常、規模が大きく、カーディナリティが高く、高スループットで取り込まれます。こうした attribute にどのスキーマを選ぶかが、取り込みコストとストレージレイアウトを左右する最も重要な要因です。
 
@@ -26,7 +28,9 @@ ClickStack の[デフォルトスキーマ](/ja/clickstack/ingesting-data/schema
 * **索引を使った選択的なルックアップ。** map のキーと値に対するテキスト索引により、すべての行をスキャンしなくても point lookup を実行できます。
 * **高スループットでも予測可能な動作。** `Map` は、tracing や logs で一般的な、バースト的でスキーマレスな attribute 群を、キーごとのオーバーヘッドなしで処理できます。
 
-## デフォルトで JSON を使わないのはなぜか {#why-not-json}
+<div id="why-not-json">
+  ## デフォルトで JSON を使わないのはなぜか
+</div>
 
 `JSON` 型は、これとは異なるアプローチを取ります。挿入時に、ClickHouse は見つかった各パスごとに、強く型付けされた専用のサブカラムを動的に作成します。読み取り時には、要求されたサブカラムだけを読み込めばよく、型も保持され、クエリ時のキャストも不要なため、これは魅力的です。
 
@@ -34,7 +38,9 @@ ClickStack の[デフォルトスキーマ](/ja/clickstack/ingesting-data/schema
 
 bucketed map シリアライゼーションによって `Map` の従来の読み取り時オーバーヘッドの大半が解消されたため、一般的なオブザーバビリティのワークロードでは、`JSON` の読み取り時の利点は、もはや取り込み時のコストを上回りません。
 
-## それでも JSON を検討すべき場合 {#when-to-consider-json}
+<div id="when-to-consider-json">
+  ## それでも JSON を検討すべき場合
+</div>
 
 JSON 型は、次の条件をすべて満たす場合に、妥当な選択肢となり得ます。
 
@@ -45,7 +51,9 @@ JSON 型は、次の条件をすべて満たす場合に、妥当な選択肢と
 
 これらの条件をすべて満たさない場合は、[デフォルトの `Map` ベースのスキーマ](/ja/clickstack/ingesting-data/schemas)を引き続き使用してください。
 
-## ベータステータス {#beta-status}
+<div id="beta-status">
+  ## ベータステータス
+</div>
 
 <BetaBadge />
 
@@ -57,18 +65,34 @@ JSON 型は、次の条件をすべて満たす場合に、妥当な選択肢と
 
 ClickStack はバージョン `2.0.4` から JSON 型をベータサポートしています。
 
-## JSON サポートの有効化 {#enabling-json-support}
+<div id="enabling-json-support">
+  ## JSON サポートの有効化
+</div>
 
-[デフォルトの`Map`ベースのスキーマ](/ja/clickstack/ingesting-data/schemas)ではなく JSON型のスキーマを使用するには、以下の環境変数を設定します。
+[デフォルトの`Map`ベースのスキーマ](/ja/clickstack/ingesting-data/schemas)ではなく JSON 型のスキーマを使用するには、以下の環境変数を設定します。
 
-| 変数                                                              | 設定先            | 用途                                                                |
-| --------------------------------------------------------------- | -------------- | ----------------------------------------------------------------- |
-| `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` | OTel collector | ClickHouse で JSON型 を使用したスキーマを作成します。                           |
-| `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true`                         | ClickStack UI  | アプリケーションレイヤーで JSON型のスキーマに対してクエリできるようにします。ClickStack Open Source のみ。 |
+| 変数                                                              | 設定先                     | 用途                                                                |
+| --------------------------------------------------------------- | ----------------------- | ----------------------------------------------------------------- |
+| `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` | OTel collector          | ClickHouse で JSON type を使用したスキーマを作成します。                           |
+| `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true`                         | HyperDX (ClickStack UI) | アプリケーション層で JSON 型のスキーマに対してクエリできるようにします。ClickStack Open Source のみ。 |
 
-<a id="oss-clickstack" />
+<div id="managed-clickstack">
+  ### Managed ClickStack
+</div>
 
-collector を含むすべてのデプロイメントに `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` を設定し、ClickStack UI のアプリケーションレイヤーが JSON型のスキーマにクエリを実行できるよう、`BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true` を設定します。
+Managed ClickStack で JSON サポートを有効にするには、collector を設定する前に support@clickhouse.com へお問い合わせください。この機能は、ClickHouse Cloud の ClickStack UI (HyperDX) でも有効にする必要があります。
+
+collector で `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` を設定します。例:
+
+```shell
+docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+```
+
+<div id="oss-clickstack">
+  ### オープンソースの ClickStack
+</div>
+
+collector を含むすべてのデプロイメントで `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` を設定し、HyperDX のアプリケーションレイヤーでは `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true` を設定して、JSON 型のスキーマに対してクエリを実行できるようにします。
 
 例:
 
@@ -76,12 +100,14 @@ collector を含むすべてのデプロイメントに `OTEL_AGENT_FEATURE_GATE
 docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
 ```
 
-## MapベースのスキーマからJSONへの移行 {#migrating-from-map-to-json}
+<div id="migrating-from-map-to-json">
+  ## MapベースのスキーマからJSONへの移行
+</div>
 
 <Warning>
   **後方互換性**
 
-  [JSON型](/ja/reference/formats/JSON/JSON) は、既存のMapベースのスキーマと **後方互換性がありません**。この機能を有効にすると、`JSON` 型を使用する新しいテーブルが作成され、データを手動で移行する必要があります。
+  [JSON 型](/ja/reference/formats/JSON/JSON) は、既存のMapベースのスキーマと **後方互換性がありません**。この機能を有効にすると、`JSON` 型を使用する新しいテーブルが作成され、データを手動で移行する必要があります。
 </Warning>
 
 [デフォルトのMapベースのスキーマ](/ja/clickstack/ingesting-data/schemas) から移行するには、次の手順に従ってください。
@@ -90,7 +116,7 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
   <Step title="OTel collector を停止する" id="stop-the-collector" />
 
   <Step title="既存のテーブル名を変更し、データソースを更新する" id="rename-existing-tables-sources">
-    既存のテーブル名を変更し、ClickStack UI のデータソースを更新します。
+    既存のテーブル名を変更し、HyperDX のデータソースを更新します。
 
     たとえば、次のようにします。
 
@@ -104,18 +130,20 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
     `OTEL_AGENT_FEATURE_GATE_ARG` を設定して OTel collector をデプロイします。
   </Step>
 
-  <Step title="JSONスキーマ対応を有効にして ClickStack UI コンテナーを再起動する" id="restart-the-hyperdx-container">
+  <Step title="JSONスキーマ対応を有効にして HyperDX コンテナーを再起動する" id="restart-the-hyperdx-container">
     ```shell
     export BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true
     ```
   </Step>
 
   <Step title="新しいデータソースを作成する" id="create-new-data-sources">
-    JSONテーブルを参照する新しいデータソースを ClickStack UI で作成します。
+    JSONテーブルを参照する新しいデータソースを HyperDX で作成します。
   </Step>
 </Steps>
 
-### 既存データの移行 (任意) {#migrating-existing-data}
+<div id="migrating-existing-data">
+  ### 既存データの移行 (任意)
+</div>
 
 古いデータを新しい JSON テーブルに移行するには:
 

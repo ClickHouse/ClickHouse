@@ -394,7 +394,7 @@ typedef uint64_t uintmax_t;
 /* #undef HAVE_BSDXML_H */
 
 /* Define to 1 if you have the <bzlib.h> header file. */
-/* #undef HAVE_BZLIB_H */
+#define HAVE_BZLIB_H 1
 
 /* Define to 1 if you have the `chflags' function. */
 /* #undef HAVE_CHFLAGS */
@@ -715,7 +715,7 @@ typedef uint64_t uintmax_t;
 /* #undef HAVE_LIBBSDXML */
 
 /* Define to 1 if you have the `bz2' library (-lbz2). */
-/* #undef HAVE_LIBBZ2 */
+#define HAVE_LIBBZ2 1
 
 /* Define to 1 if you have the `b2' library (-lb2). */
 /* #undef HAVE_LIBB2 */

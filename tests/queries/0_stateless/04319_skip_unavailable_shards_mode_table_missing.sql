@@ -1,7 +1,4 @@
--- Tags: no-parallel, no-flaky-check, shard, no-darwin
--- no-darwin: intermittently hangs on the macOS CI runner (~33% of runs): `DROP DATABASE shard_0`
--- blocks for 60+ seconds after the failing `unavailable`-mode INSERT, hitting the per-test timeout.
--- Passes on Linux. Root cause not found yet; needs further investigation.
+-- Tags: no-parallel, no-flaky-check, shard
 
 -- Tests the `skip_unavailable_shards_mode` setting on the INSERT path.
 -- The underlying table exists only on shard_0; it is missing on shard_1.

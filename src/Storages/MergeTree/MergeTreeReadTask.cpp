@@ -24,14 +24,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-NamesAndTypesList IndexReadTask::getNamesAndTypesList() const
-{
-    NamesAndTypesList res;
-    for (const auto & column : columns)
-        res.emplace_back(column.name, column.type);
-    return res;
-}
-
 String MergeTreeReadTaskColumns::dump() const
 {
     WriteBufferFromOwnString s;
@@ -88,20 +80,6 @@ void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges, 
         patches[i]->getReader()->updateAllMarkRanges(patches_ranges[i]);
 }
 
-void MergeTreeReadTask::Readers::updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps)
-{
-    main->updateReadRequestMap(request_map);
-
-    for (auto & reader : prewhere)
-        reader->updateReadRequestMap(request_map);
-
-    if (!patch_request_maps.empty() && patch_request_maps.size() != patches.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} patch request maps for {} patch readers", patch_request_maps.size(), patches.size());
-
-    for (size_t i = 0; i < patch_request_maps.size(); ++i)
-        patches[i]->getReader()->updateReadRequestMap(patch_request_maps[i]);
-}
-
 MergeTreeReadTask::MergeTreeReadTask(
     MergeTreeReadTaskInfoPtr info_,
     Readers readers_,
@@ -120,10 +98,24 @@ MergeTreeReadTask::MergeTreeReadTask(
 {
     if (updater)
     {
-        const auto & registry = updater->getReadRangesRegistry();
-        readers.main->setReadRangesRegistry(registry);
-        for (auto & reader : readers.prewhere)
-            reader->setReadRangesRegistry(registry);
+        dataflow_cache_update_cb = [&](const ColumnsWithTypeAndName & columns,
+                                       const NameSet & partially_read_columns,
+                                       size_t read_bytes,
+                                       std::optional<bool> & should_continue_sampling) -> void
+        {
+            chassert(updater);
+            const auto & part_columns = info->data_part_info->getColumns();
+            /// Cached map by shared pointer -- no per-block copy; null for borrowed parts (no size info).
+            static const std::unordered_map<String, ColumnSize> no_column_sizes;
+            auto column_sizes = info->data_part_info->getColumnSizes();
+            updater->recordInputColumns(
+                columns,
+                partially_read_columns,
+                part_columns,
+                column_sizes ? *column_sizes : no_column_sizes,
+                read_bytes,
+                should_continue_sampling);
+        };
     }
 }
 
@@ -189,9 +181,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     const MergeTreeReadTaskInfoPtr & read_info,
     const Extras & extras,
     const MarkRanges & ranges,
-    const std::vector<MarkRanges> & patches_ranges,
-    const MarkRangesPtr & read_request_map,
-    const std::vector<MarkRangesPtr> & patch_read_request_maps)
+    const std::vector<MarkRanges> & patches_ranges)
 {
     Readers new_readers;
 
@@ -205,7 +195,6 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             ranges,
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
-            extras.columns_cache,
             extras.mark_cache,
             is_prewhere ? nullptr : read_info->deserialization_prefixes_cache.get(),
             extras.reader_settings,
@@ -226,12 +215,11 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
         const IndexReadTask * index_read_task = read_info->index_read_tasks.empty()
             ? nullptr
             : getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step, *read_info->data_part_info);
-
         if (index_read_task)
         {
             new_readers.prewhere.push_back(createMergeTreeReaderIndex(
                 new_readers.main.get(),
-                *index_read_task,
+                index_read_task->index,
                 pre_columns_per_step,
                 read_info->read_hints.index_granules));
         }
@@ -254,7 +242,6 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             patches_ranges[part_idx],
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
-            extras.columns_cache,
             extras.mark_cache,
             /*deserialization_prefixes_cache=*/ nullptr,
             extras.reader_settings,
@@ -269,11 +256,6 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             create_patch_reader(i),
             extras.patch_join_cache));
     }
-
-    const auto & map = read_request_map ? read_request_map : read_info->read_request_map;
-    const auto & patch_maps = patch_read_request_maps.empty() ? read_info->patch_read_request_maps : patch_read_request_maps;
-    if (map || !patch_maps.empty())
-        new_readers.updateReadRequestMap(map, patch_maps);
 
     return new_readers;
 }
@@ -364,7 +346,7 @@ void MergeTreeReadTask::initializeReadersChain(
 
     PrewhereExprInfo all_prewhere_actions;
 
-    if (index_build_context || lazy_materializing_rows || info->delete_bitmap)
+    if (index_build_context || lazy_materializing_rows)
         initializeIndexReader(index_build_context, lazy_materializing_rows);
 
     for (const auto & step : info->mutation_steps)
@@ -405,10 +387,9 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPt
         }
     }
 
-    if (index_read_result || lazy_materializing_rows || info->delete_bitmap)
+    if (index_read_result || lazy_materializing_rows)
     {
-        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(
-            readers.main.get(), std::move(index_read_result), part_rows, info->delete_bitmap);
+        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result), part_rows);
     }
 
 }
@@ -462,21 +443,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     UInt64 recommended_rows = estimateNumRows();
     UInt64 rows_to_read = std::max(static_cast<UInt64>(1), std::min(block_size_params.max_block_size_rows, recommended_rows));
 
-    /// A block that is a whole stripe of the columns cache is read whole, beyond `rows_to_read`, because it shares the
-    /// columns of the cache. But the functions and filters of the query run over the whole block and copy what passes,
-    /// so the rows that pass the filters of `PREWHERE` must stay within `rows_to_read`, which keeps a block of wide rows
-    /// to `preferred_block_size_bytes`. A selective `PREWHERE` lets whole stripes be read, as the filtered rows cost
-    /// little to the later steps. Never beyond `max_block_size_rows`, which a `LIMIT` lowers to read no more than it needs.
-    UInt64 max_stripe_block_rows = block_size_params.max_block_size_rows;
-    if (size_predictor)
-    {
-        double filtration_ratio = std::max(block_size_params.min_filtration_ratio, 1.0 - size_predictor->filtered_rows_ratio);
-        double rows_before_filtration = static_cast<double>(rows_to_read) / filtration_ratio;
-        if (rows_before_filtration < static_cast<double>(max_stripe_block_rows))
-            max_stripe_block_rows = std::max(rows_to_read, static_cast<UInt64>(rows_before_filtration));
-    }
-
-    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges, max_stripe_block_rows);
+    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges, dataflow_cache_update_cb);
 
     /// All rows were filtered. Repeat.
     if (read_result.num_rows == 0)
@@ -508,10 +475,8 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
         {
             /// We may have columns that have other references, usually it is a constant column that has been created during analysis
             /// (that will not be const here anymore, i.e. after materialize()). The contract is - not to shrink if column is shared.
-            /// But if some subcolumns are shared, we'll clone them via IColumn::mutate() and then safely shrink.
-            /// Shrinking reallocates the column, so don't do it if only a little memory would be freed (e.g. for small blocks).
-            static constexpr size_t min_bytes_to_free_by_shrinking = 4096;
-            if (column->use_count() == 1 && column->allocatedBytes() >= column->byteSize() + min_bytes_to_free_by_shrinking)
+            /// But if some subcolumns are shared, we'll clone them via IColumn::mutate() and then safely shrink
+            if (column->use_count() == 1)
             {
                 auto mutable_column = IColumn::mutate(std::move(column));
                 mutable_column->shrinkToFit();
@@ -539,14 +504,11 @@ void MergeTreeReadTask::addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges
     prewhere_unmatched_marks.insert(prewhere_unmatched_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
 }
 
-bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere(bool prewhere_filters_by_top_k_threshold) const
+bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere() const
 {
     /// Only `prepared_index` (a `MergeTreeReaderIndex`) sits ahead of the PREWHERE readers in the
     /// reader chain and is able to skip whole marks via `canSkipMark`.
-    if (!readers.prepared_index)
-        return false;
-    return prewhere_filters_by_top_k_threshold ? readers.prepared_index->canSkipAnyMarkBesidesTopKPrimaryKey()
-                                               : readers.prepared_index->canSkipAnyMark();
+    return readers.prepared_index && readers.prepared_index->canSkipAnyMark();
 }
 
 bool MergeTreeReadTask::appliesMutationsBeforePrewhere() const

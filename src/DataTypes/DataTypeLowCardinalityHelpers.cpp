@@ -251,8 +251,7 @@ ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const 
 
     if (const auto * from_tuple_type = typeid_cast<const DataTypeTuple *>(from_type.get()))
     {
-        if (const auto * to_tuple_type = typeid_cast<const DataTypeTuple *>(to_type.get());
-            to_tuple_type && to_tuple_type->getElements().size() == from_tuple_type->getElements().size())
+        if (const auto * to_tuple_type = typeid_cast<const DataTypeTuple *>(to_type.get()))
         {
             const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get());
             if (!column_tuple)
@@ -268,9 +267,7 @@ ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const 
             {
                 auto & element = columns[i];
                 auto element_no_lc = recursiveLowCardinalityTypeConversion(element, from_elements.at(i), to_elements.at(i));
-                /// Only compare pointer identity here: go through the const `get` so a shared
-                /// tuple element is not treated as mutable (`assumeMutableRef`) just for a read.
-                if (std::as_const(element).get() != element_no_lc.get())
+                if (element.get() != element_no_lc.get())
                 {
                     element = element_no_lc;
                     has_converted = true;

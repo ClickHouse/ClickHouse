@@ -18,29 +18,23 @@ public:
         bool with_ties_ = false, /// Limit with ties.
         SortDescription description_ = {});
 
-    [[nodiscard]] String getName() const override { return "FractionalLimit"; }
+    String getName() const override { return "FractionalLimit"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    [[nodiscard]] Float64 getLimitFraction() const { return limit_fraction; }
+    Float64 getLimitFraction() const { return limit_fraction; }
 
-    [[nodiscard]] bool withTies() const { return with_ties; }
-
-    [[nodiscard]] QueryPlanStepPtr clone() const override;
+    bool withTies() const { return with_ties; }
 
     void serialize(Serialization & ctx) const override;
-    [[nodiscard]] bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    [[nodiscard]] bool hasCorrelatedExpressions() const override { return false; }
-
-    /// The fraction is resolved against the whole result, so `apply_prelimit` never pushes this to a
-    /// shard and it runs on the initiator.
-    [[nodiscard]] bool supportsDataflowStatisticsCollection() const override { return true; }
+    bool hasCorrelatedExpressions() const override { return false; }
 
 private:
     void updateOutputHeader() override { output_header = input_headers.front(); }

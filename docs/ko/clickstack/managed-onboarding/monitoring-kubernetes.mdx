@@ -1,30 +1,23 @@
 ---
 slug: /use-cases/observability/clickstack/monitoring-kubernetes
-title: 'ClickHouse Observability를 사용한 Kubernetes 모니터링'
-sidebarTitle: 'Kubernetes 모니터링'
-description: '자가 관리형 환경에서 Kubernetes 클러스터의 로그, 인프라 메트릭, 이벤트를 ClickHouse Observability로 수집합니다'
+title: 'Managed ClickStack를 사용한 Kubernetes 모니터링'
+description: 'Kubernetes 클러스터의 로그, 인프라 메트릭, 이벤트를 Managed ClickStack으로 수집합니다'
 doc_type: 'guide'
-keywords: ['clickstack', 'kubernetes', 'k8s', 'self-managed', 'ClickHouse Observability', 'logs', 'metrics', 'events', 'daemonset', 'helm']
+keywords: ['clickstack', 'kubernetes', 'k8s', 'managed', 'observability', 'logs', 'metrics', 'events', 'daemonset', 'helm']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
 ---
 
-<Note>
-  **현재 자가 관리형 경로를 사용하고 있습니다**
+import { Image } from "/snippets/ko/components/Image.jsx";
 
-  [자가 관리형 환경](/ko/clickstack/self-configured/overview)을 사용하여 ClickHouse Observability를 직접 설정하는 방식을 선택했습니다. 이 경로에서는 OpenTelemetry collector를 직접 실행하고, ClickHouse Cloud 서비스로의 수집을 관리하고, 스키마(schema)를 튜닝하며, 웨어하우스를 사용하여 수집 워크로드와 쿼리 워크로드를 분리합니다. 자세한 내용은 [OpenTelemetry collector](/ko/clickstack/self-configured/ingesting-data/collector), [성능 튜닝](/ko/clickstack/self-configured/managing/performance-tuning), [읽기 및 쓰기 워크로드 격리](/ko/clickstack/self-configured/managing/isolating-read-write)를 참조하십시오.
+이 가이드는 클러스터에서 로그, 인프라 메트릭, Kubernetes 이벤트를 Managed ClickStack으로 수집한 다음, 기본 제공 Kubernetes 대시보드에서 확인하는 과정을 안내합니다.
 
-  수집, 스키마, 컴퓨팅을 ClickHouse가 대신 처리하는 서버리스 환경을 원하십니까? 그렇다면 기본 ClickHouse Observability 환경을 사용하고 [OpenTelemetry를 사용한 Kubernetes 모니터링](/ko/clickstack/managed-onboarding/monitoring-kubernetes-serverless)을 따르십시오.
-</Note>
+이 패턴은 표준 OpenTelemetry 방식입니다. [OpenTelemetry Helm 차트](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector)를 통해 2개의 collector를 배포하며, 각 collector는 OTLP를 통해 ClickStack 게이트웨이 collector로 전달합니다. **데몬셋**은 모든 노드에서 실행되어 컨테이너 로그와 큐블릿 메트릭을 수집합니다. 단일 레플리카를 사용하는 **배포**는 Kubernetes 이벤트와 클러스터 전체 메트릭을 수집합니다. 게이트웨이 역할에 대한 자세한 내용은 [Collector roles](/ko/clickstack/ingesting-data/collector#collector-roles)를 참조하십시오.
 
-이 가이드는 클러스터에서 로그, 인프라 메트릭, Kubernetes 이벤트를 ClickHouse Observability로 수집한 다음, 기본 제공 Kubernetes 대시보드에서 확인하는 과정을 안내합니다.
+이 가이드는 [OpenTelemetry Collector 설정하기](/ko/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector)를 완료했으며, ClickStack 게이트웨이 collector가 실행 중이라고 가정합니다.
 
-이 패턴은 표준 OpenTelemetry 방식입니다. [OpenTelemetry Helm 차트](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector)를 통해 2개의 collector를 배포하며, 각 collector는 OTLP를 통해 ClickStack 게이트웨이 collector로 전달합니다. **데몬셋**은 모든 노드에서 실행되어 컨테이너 로그와 큐블릿 메트릭을 수집합니다. 단일 레플리카를 사용하는 **배포**는 Kubernetes 이벤트와 클러스터 전체 메트릭을 수집합니다. 게이트웨이 역할에 대한 자세한 내용은 [Collector roles](/ko/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured)를 참조하십시오.
-
-이 가이드는 [OpenTelemetry Collector 설정하기](/ko/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector)를 완료했으며, ClickStack 게이트웨이 collector가 실행 중이라고 가정합니다.
-
-Kubernetes에서 실행되는 워크로드의 경우, 게이트웨이 collector 자체도 **ClickStack collector image를 사용하는 upstream OpenTelemetry Helm 차트를 통해 동일한 클러스터 내부에** 배포해야 합니다. 설치하려면 [collector 배포하기](/ko/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured)의 Helm 경로를 따르십시오. **이 OTLP endpoint를 반드시 기록해 두십시오**.
+Kubernetes에서 실행되는 워크로드의 경우, 게이트웨이 collector 자체도 **ClickStack collector image를 사용하는 upstream OpenTelemetry Helm 차트를 통해 동일한 클러스터 내부에** 배포해야 합니다. 설치하려면 [collector 배포하기](/ko/clickstack/ingesting-data/collector#configuring-the-collector)의 Helm 경로를 따르십시오. **이 OTLP endpoint를 반드시 기록해 두십시오**.
 
 <Steps>
   <Step title="사전 요구 사항 준비" id="gather-prerequisites">
@@ -309,27 +302,15 @@ Kubernetes에서 실행되는 워크로드의 경우, 게이트웨이 collector 
   <Step title="ClickStack UI에서 확인" id="confirm-in-ui">
     [ClickHouse Cloud 콘솔](https://console.clickhouse.cloud)에서 서비스를 열고 왼쪽 메뉴에서 **ClickStack**을 선택합니다.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![ClickStack 시작](/images/use-cases/observability/clickstack-cloud-v2.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="ClickStack 시작" border />
 
     **검색** 뷰에서 소스를 `Logs`로 전환하고 시간 범위를 **Last 15 minutes**로 설정합니다. 그러면 클러스터 전반의 컨테이너 로그가 몇 초 안에 표시되며, `k8s.namespace.name`, `k8s.pod.name`, `k8s.node.name`과 같은 속성으로 보강되어 나타납니다.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Kubernetes 로그가 포함된 ClickStack 검색 뷰](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/clickstack-search-with-k8-logs.webp" size="lg" alt="Kubernetes 로그가 포함된 ClickStack 검색 뷰" />
 
     인프라 메트릭과 이벤트를 함께 보려면 **Dashboards** -&gt; **Kubernetes**로 이동해 기본 제공 **Kubernetes** 대시보드를 엽니다. `Pods`, `Nodes`, `Namespaces` 탭에 모두 데이터가 표시되어야 합니다.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![ClickStack Kubernetes 대시보드](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/clickstack-dashboard-kubernetes.webp" size="lg" alt="ClickStack Kubernetes 대시보드" border />
 
     아무것도 표시되지 않으면:
 
@@ -339,10 +320,10 @@ Kubernetes에서 실행되는 워크로드의 경우, 게이트웨이 collector 
   </Step>
 
   <Step title="추가 참고 자료" id="further-reading">
-    * 전체 수신기, processor 및 튜닝 옵션은 [Kubernetes 통합 참고](/ko/clickstack/observability/integration-examples/kubernetes#self-managed)를 참조하십시오.
-    * 애플리케이션 측 보강에 대한 자세한 내용은 [resource 태그를 파드로 전달하기](/ko/clickstack/observability/integration-examples/kubernetes#application-metadata)를 참조하십시오.
-    * OTLP endpoint에서 TLS를 사용하고 최소 권한 수집 사용자를 적용하는 방법은 [collector 보안 설정](/ko/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)을 참조하십시오.
-    * 예상 처리량에 맞는 gateway 및 agent 배포의 리소스 산정은 [리소스 산정](/ko/clickstack/self-configured/ingesting-data/collector#estimating-resources-self-configured)을 참조하십시오.
-    * 프로덕션 환경 전환 시 권장 사항은 [프로덕션 환경으로 전환하기](/ko/clickstack/self-configured/managing/production)를 참조하십시오.
+    * 전체 수신기, processor 및 튜닝 옵션은 [Kubernetes 통합 참고](/ko/clickstack/integration-examples/kubernetes)를 참조하십시오.
+    * 애플리케이션 측 보강에 대한 자세한 내용은 [resource 태그를 파드로 전달하기](/ko/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods)를 참조하십시오.
+    * OTLP endpoint에서 TLS를 사용하고 최소 권한 수집 사용자를 적용하는 방법은 [collector 보안 설정](/ko/clickstack/ingesting-data/collector#securing-the-collector)을 참조하십시오.
+    * 예상 처리량에 맞는 gateway 및 agent 배포의 리소스 산정은 [리소스 산정](/ko/clickstack/ingesting-data/collector#estimating-resources)을 참조하십시오.
+    * 프로덕션 환경 전환 시 권장 사항은 [프로덕션 환경으로 전환하기](/ko/clickstack/managing/production)를 참조하십시오.
   </Step>
 </Steps>

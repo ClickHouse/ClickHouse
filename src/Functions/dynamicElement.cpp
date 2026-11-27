@@ -36,23 +36,15 @@ public:
     static constexpr auto name = "dynamicElement";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDynamicElement>(); }
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// Documentation-only — the result type is the requested variant
-    /// element (or array of), looked up dynamically from the const-string
-    /// or const-Array(String) type-name in the second argument.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(Dynamic, const String) -> Any";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const size_t number_of_arguments = arguments.size();
 
@@ -83,7 +75,7 @@ public:
         return return_type;
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & input_arg = arguments[0];
         const IDataType * input_type = input_arg.type.get();
@@ -118,7 +110,7 @@ public:
     }
 
 private:
-    [[nodiscard]] DataTypePtr getRequestedType(const ColumnPtr & type_name_column) const
+    DataTypePtr getRequestedType(const ColumnPtr & type_name_column) const
     {
         const auto * name_col = checkAndGetColumnConst<ColumnString>(type_name_column.get());
         if (!name_col)
@@ -132,7 +124,7 @@ private:
         return element_type;
     }
 
-    [[nodiscard]] ColumnPtr wrapInArraysAndConstIfNeeded(ColumnPtr res, const Columns & array_offsets, bool input_arg_is_const, size_t input_rows_count) const
+    ColumnPtr wrapInArraysAndConstIfNeeded(ColumnPtr res, const Columns & array_offsets, bool input_arg_is_const, size_t input_rows_count) const
     {
         for (auto it = array_offsets.rbegin(); it != array_offsets.rend(); ++it)
             res = ColumnArray::create(res, *it);

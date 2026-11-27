@@ -10,7 +10,7 @@ namespace DB
 class ParserPartition : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "partition"; }
+    const char * getName() const override { return "partition"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

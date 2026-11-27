@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
+# Tags: no-fasttest, no-parallel-replicas
+# ^ no-fasttest: needs Parquet support.
 # no-parallel-replicas: aggregate bytes accounting differs with parallel replicas.
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/105333

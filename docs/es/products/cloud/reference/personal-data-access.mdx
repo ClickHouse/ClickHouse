@@ -7,8 +7,10 @@ doc_type: 'reference'
 keywords: ['ClickHouse Cloud', 'datos personales', 'DSAR', 'solicitud de acceso del interesado', 'política de privacidad', 'RGPD']
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 <div id="intro">
-  ## Introducción {#intro}
+  ## Introducción
 </div>
 
 Como usuario registrado, ClickHouse le permite ver y gestionar los datos de su cuenta personal, incluida su información de contacto. Según su rol, esto también puede incluir acceso a la información de contacto de otros usuarios de su organización, los detalles de la API key y otra información relevante. Puede gestionar estos datos directamente desde la consola de ClickHouse en modalidad de autoservicio.
@@ -22,7 +24,7 @@ Dependiendo de dónde se encuentre, la legislación aplicable también puede oto
 Consulte la Política de privacidad de ClickHouse para obtener más información sobre los datos personales que ClickHouse recopila y cómo pueden utilizarse.
 
 <div id="self-service">
-  ## Autoservicio {#self-service}
+  ## Autoservicio
 </div>
 
 De forma predeterminada, ClickHouse permite a los usuarios consultar sus datos personales directamente desde la consola de ClickHouse.
@@ -41,7 +43,9 @@ A continuación, se presenta un resumen de los datos que ClickHouse recopila dur
 
 Nota: Las URL con `OrgID` deben actualizarse para reflejar el `OrgID` de su cuenta específica.
 
-### Clientes actuales {#current-customers}
+<div id="current-customers">
+  ### Clientes actuales
+</div>
 
 Si tiene una cuenta con nosotros y la opción de autoservicio no ha resuelto su incidencia relacionada con sus datos personales, puede enviar una solicitud de acceso del interesado conforme a la Política de Privacidad. Para hacerlo, inicie sesión en su cuenta de ClickHouse y abra un [caso de soporte](https://console.clickhouse.cloud/support). Esto nos ayuda a verificar su identidad y a agilizar el proceso para atender su solicitud.
 
@@ -49,23 +53,19 @@ Asegúrese de incluir los siguientes datos en su caso de soporte:
 
 | Campo       | Texto que debe incluir en su solicitud                                                             |
 | ----------- | -------------------------------------------------------------------------------------------------- |
-| Asunto      | Solicitud de acceso del interesado (DSAR)                                                                 |
+| Asunto      | Data Subject Access Request (DSAR)                                                                 |
 | Descripción | Descripción detallada de la información que desea que ClickHouse busque, recopile y/o proporcione. |
 
-<div className="ch-image-sm">
-  <Frame>
-    ![Formulario de caso de soporte en ClickHouse Cloud](/images/cloud/security/support-case-form.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/security/support-case-form.webp" size="sm" alt="Formulario de caso de soporte en ClickHouse Cloud" border />
 
 <div id="individuals-without-an-account">
-  ### Personas sin cuenta {#individuals-without-an-account}
+  ### Personas sin cuenta
 </div>
 
 Si no tiene una cuenta con nosotros y la opción de autoservicio anterior no ha resuelto su problema relacionado con sus datos personales, y desea presentar una solicitud de acceso del interesado de conformidad con la Política de Privacidad, puede enviar estas solicitudes por correo electrónico a [privacy@clickhouse.com](mailto:privacy@clickhouse.com).
 
 <div id="identity-verification">
-  ## Verificación de identidad {#identity-verification}
+  ## Verificación de identidad
 </div>
 
 Si envía por correo electrónico una solicitud de acceso del interesado, podremos pedirle información específica para ayudarnos a confirmar su identidad y tramitar su solicitud. La legislación aplicable puede exigirnos o permitirnos rechazar su solicitud. Si rechazamos su solicitud, le informaremos del motivo, salvo que existan restricciones legales.

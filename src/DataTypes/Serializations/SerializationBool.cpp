@@ -1,5 +1,4 @@
 #include <Common/SipHash.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationBool.h>
 
 #include <Columns/ColumnsNumber.h>
@@ -402,13 +401,6 @@ ReturnType deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, const 
     auto * col = checkAndGetDeserializeColumnType(column);
 
     char symbol = toLowerIfAlphaASCII(*istr.position());
-    if ((symbol == '1' || symbol == '0') && !settings.allow_special_bool_values)
-    {
-        if constexpr (throw_exception)
-            throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse boolean value here: '{}', numeric 1/0 is not allowed", symbol);
-        return ReturnType(false);
-    }
-
     switch (symbol)
     {
         case 't':

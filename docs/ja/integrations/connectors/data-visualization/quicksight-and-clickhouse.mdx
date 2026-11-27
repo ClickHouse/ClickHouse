@@ -10,14 +10,16 @@ integration:
   - category: 'data_visualization'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
-QuickSight は、公式の MySQL データソースと ダイレクトクエリ モードを使用して、MySQL インターフェイス経由でオンプレミスの ClickHouse 環境 (23.11+) に接続できます。
+QuickSight は、公式の MySQL データソースと Direct Query モードを使用して、MySQL インターフェイス経由でオンプレミスの ClickHouse 環境 (23.11+) に接続できます。
 
 <div id="on-premise-clickhouse-server-setup">
-  ## オンプレミスでの ClickHouse サーバー のセットアップ {#on-premise-clickhouse-server-setup}
+  ## オンプレミスでの ClickHouse サーバー のセットアップ
 </div>
 
 MySQL インターフェイスを有効にした ClickHouse サーバー の設定方法については、[公式ドキュメント](/ja/concepts/features/interfaces/mysql)を参照してください。
@@ -110,83 +112,57 @@ mysql> show databases;
 Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
 ```
 
-## QuickSight を ClickHouse に接続する {#connecting-quicksight-to-clickhouse}
-
-まず [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com) にアクセスし、Datasets に移動して &quot;New dataset&quot; をクリックします。
-
-<div className="ch-image-md">
-  <Frame>
-    ![Datasets セクションの New dataset ボタンが表示された Amazon QuickSight ダッシュボード](/images/integrations/data-visualization/quicksight_01.webp)
-  </Frame>
+<div id="connecting-quicksight-to-clickhouse">
+  ## QuickSight を ClickHouse に接続する
 </div>
+
+まず、[https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com) にアクセスし、Datasets に移動して「New dataset」をクリックします。
+
+<Image size="md" img="/images/integrations/data-visualization/quicksight_01.webp" alt="Datasets セクションで New dataset ボタンが表示されている Amazon QuickSight ダッシュボード" border />
 
 <br />
 
-QuickSight に標準で付属している公式の MySQL コネクタ (名前は **MySQL**) を検索します。
+QuickSight に含まれている公式の MySQL コネクタ (名前は **MySQL**) を検索します。
 
-<div className="ch-image-md">
-  <Frame>
-    ![検索結果で MySQL がハイライトされた QuickSight のデータソース選択画面](/images/integrations/data-visualization/quicksight_02.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/quicksight_02.webp" alt="検索結果で MySQL が強調表示されている QuickSight のデータソース選択画面" border />
 
 <br />
 
-接続情報を入力します。MySQL インターフェイスのポートはデフォルトで 9004 ですが、
-サーバー構成によっては異なる場合があるので注意してください。
+接続情報を指定します。MySQL インターフェイスのポートはデフォルトで 9004 ですが、
+サーバー設定によって異なる場合があるので注意してください。
 
-<div className="ch-image-md">
-  <Frame>
-    ![ホスト名、ポート、データベース、認証情報のフィールドを含む QuickSight の MySQL 接続設定フォーム](/images/integrations/data-visualization/quicksight_03.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/quicksight_03.webp" alt="hostname、ポート、データベース、認証情報のフィールドがある QuickSight の MySQL 接続設定フォーム" border />
 
 <br />
 
-ClickHouse からデータを取得する方法は 2 つあります。1 つ目は、一覧からテーブルを選択する方法です。
+ここで、ClickHouse からデータを取得する方法は 2 つあります。1 つ目は、一覧からテーブルを選択する方法です。
 
-<div className="ch-image-md">
-  <Frame>
-    ![ClickHouse から利用可能なデータベーステーブルを表示する QuickSight のテーブル選択インターフェイス](/images/integrations/data-visualization/quicksight_04.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/quicksight_04.webp" alt="ClickHouse で利用可能なデータベーステーブルが表示されている QuickSight のテーブル選択インターフェイス" border />
 
 <br />
 
-もう 1 つは、カスタム SQL を指定してデータを取得する方法です。
+また、データを取得するために custom SQL を指定することもできます。
 
-<div className="ch-image-md">
-  <Frame>
-    ![ClickHouse からデータを取得するための QuickSight のカスタム SQL クエリエディタ](/images/integrations/data-visualization/quicksight_05.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/quicksight_05.webp" alt="ClickHouse からデータを取得するための QuickSight の custom SQL クエリエディタ" border />
 
 <br />
 
-&quot;Edit/Preview data&quot; をクリックすると、自動検出されたテーブル構造を確認できます。カスタム SQL でデータにアクセスする場合は、ここで SQL を調整することもできます。
+「Edit/Preview data」をクリックすると、取得したテーブル構造を確認したり、custom SQL でデータにアクセスする場合はその内容を調整したりできます。
 
-<div className="ch-image-md">
-  <Frame>
-    ![カラムとサンプルデータを含むテーブル構造を表示する QuickSight のデータプレビュー](/images/integrations/data-visualization/quicksight_06.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/quicksight_06.webp" alt="カラムとサンプルデータを含むテーブル構造が表示されている QuickSight のデータプレビュー" border />
 
 <br />
 
-UI の左下で &quot;ダイレクトクエリ&quot; モードが選択されていることを確認してください。
+UI の左下で「Direct Query」モードが選択されていることを確認してください。
 
-<div className="ch-image-md">
-  <Frame>
-    ![画面下部でダイレクトクエリモードのオプションがハイライトされた QuickSight インターフェイス](/images/integrations/data-visualization/quicksight_07.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/quicksight_07.webp" alt="下隅で Direct Query モードのオプションが強調表示されている QuickSight インターフェイス" border />
 
 <br />
 
-あとは、データセットをパブリッシュして新しい可視化を作成するだけです。
+これで、dataset を公開して新しい visualization を作成できます。
 
 <div id="known-limitations">
-  ## 既知の制限 {#known-limitations}
+  ## 既知の制限
 </div>
 
 * SPICE インポートは想定どおりに動作しないため、代わりに Direct Query モードを使用してください。詳細は [#58553](https://github.com/ClickHouse/ClickHouse/issues/58553) を参照してください。

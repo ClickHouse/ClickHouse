@@ -23,13 +23,9 @@ public:
         return std::make_shared<FunctionHilbertEncode>();
     }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    /// `hilbertEncode` only implements the one- and two-dimensional curves; `executeImpl` below
-    /// rejects anything wider. Declare that limit so the call is rejected during analysis.
-    [[nodiscard]] size_t getMaxDimensions() const override { return 2; }
-
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
             return ColumnUInt64::create();

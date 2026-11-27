@@ -57,7 +57,7 @@ FROM
     SELECT contingencyState(b, c) OVER () AS s, cramersVState(b, c) OVER () AS s2, theilsUState(b, c) OVER () AS s3
     FROM t_crosstab_window_state LIMIT 1
 )
-SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_fallback_to_local_execution = 0;
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1;
 SELECT round(contingency(b, c), 6), round(cramersV(b, c), 6), round(theilsU(b, c), 6) FROM t_crosstab_window_state;
 
 DROP TABLE t_crosstab_window_state;

@@ -39,7 +39,9 @@ SELECT 1;
 clickhouse-benchmark [keys] < queries_file;
 ```
 
-## コマンドラインオプション {#clickhouse-benchmark-command-line-options}
+<div id="clickhouse-benchmark-command-line-options">
+  ## コマンドラインオプション
+</div>
 
 * `--query=QUERY` — 実行するクエリ。このパラメータを指定しない場合、`clickhouse-benchmark` は標準入力からクエリを読み取ります。
 * `--query_id=ID` — クエリ ID。
@@ -52,10 +54,6 @@ clickhouse-benchmark [keys] < queries_file;
 * `-h HOST`, `--host=HOST` — サーバーホスト。デフォルト値: `localhost`。[比較モード](#clickhouse-benchmark-comparison-mode) では複数の `-h` オプションを使用できます。
 * `-i N`, `--iterations=N` — クエリの総数。デフォルト値: 0 (無限に繰り返します) 。
 * `-r`, `--randomize` — 入力クエリが複数ある場合、クエリの実行順をランダムにします。
-* `--arrival-rate=R` — [open-loop モード](#clickhouse-benchmark-open-loop-mode) を有効にします。クエリは平均で毎秒 `R` 件のレートで、ランダムなタイミングで到着します。`--arrival-rate=5,10,20` のようにレートをカンマ区切りで指定すると、各レートで順番にベンチマークを実行し、レートごとに 1 つのレポートを作成します。この場合は `--iterations` または `--timelimit` の指定が必要です。
-* `--max-in-flight=N` — open-loop モードで同時に実行されるクエリの最大数。デフォルト値: 256。
-* `--seed=N` — 到着時刻、`--randomize` 使用時のクエリの順序、および open-loop モードでのサーバーの選択に使用する乱数生成器の seed。同じ seed とオプションを指定すれば、同じ実行を再現できます。到着時刻は seed とレートのみに依存し、クエリやサーバーには依存しないため、同一の到着スケジュールで異なるクエリの組み合わせやサーバーを比較できます。デフォルト: ランダムな seed (open-loop モードでは開始時に出力されます) 。
-* `--per-query` — 終了時に各クエリの統計情報を出力します。出力内容は、クエリ数とエラー数、QPS、レイテンシのパーセンタイル、最大レイテンシ、およびサーバー上でのクエリの平均 CPU 時間です。
 * `-s`, `--secure` — `TLS` 接続を使用します。
 * `-t N`, `--timelimit=N` — 秒単位の時間制限。指定した時間制限に達すると、`clickhouse-benchmark` はクエリの送信を停止します。デフォルト値: 0 (時間制限は無効) 。
 * `--port=N` — サーバーポート。デフォルト値: 9000。[比較モード](#clickhouse-benchmark-comparison-mode) では複数の `--port` オプションを使用できます。
@@ -77,12 +75,16 @@ clickhouse-benchmark [keys] < queries_file;
 
 クエリに [設定](/ja/concepts/features/configuration/settings/overview) を適用する場合は、`--<session setting name>= SETTING_VALUE` の形式で指定してください。例: `--max_memory_usage=1048576`。
 
-## 環境変数オプション {#clickhouse-benchmark-environment-variable-options}
+<div id="clickhouse-benchmark-environment-variable-options">
+  ## 環境変数オプション
+</div>
 
 ユーザー名、パスワード、ホストは、環境変数 `CLICKHOUSE_USER`、`CLICKHOUSE_PASSWORD`、`CLICKHOUSE_HOST` を使用して設定できます。
 コマンドライン引数 `--user`、`--password`、`--host` を指定した場合は、環境変数よりそちらが優先されます。
 
-## 出力 {#clickhouse-benchmark-output}
+<div id="clickhouse-benchmark-output">
+  ## 出力
+</div>
 
 デフォルトでは、`clickhouse-benchmark` は `--delay` で指定した各間隔ごとにレポートを出力します。
 
@@ -125,58 +127,17 @@ localhost:9000, queries 10, QPS: 6.772, RPS: 67904487.440, MiB/s: 518.070, resul
 
 * クエリ実行時間のパーセンタイル。
 
-## open-loop モード {#clickhouse-benchmark-open-loop-mode}
-
-デフォルトでは、`clickhouse-benchmark` はクローズドループで動作します。つまり、`--concurrency` 個の各クライアントは、前のクエリの結果が返ってきた時点で次のクエリを送信します。サーバーの処理が遅くなると受信するクエリが減るため、負荷はサーバーの状態に合わせて調整されます。
-
-`--arrival-rate` を指定すると、負荷はサーバーに依存しなくなります。多数の独立したユーザーからのリクエストのように、クエリは一定の平均レートでランダムなタイミングに到着します。2 つの到着の間隔は、平均 `1 / R` の指数分布に従う確率変数です (ポアソン過程) 。各クエリは、前のクエリがまだ実行中であっても、その到着時刻に送信されます。
-
-同時に実行されるクエリは最大 `--max-in-flight` 個です。到着時にすべてが使用中の場合、そのクエリはいずれかが完了するまでクライアント側のキューで待機します。クエリのレイテンシはクローズドループの場合と同じ方法で測定されるため (`--client-side-time` を参照) 、キューでの待機時間は含まれません。キューで待機した到着の数は別途報告されます。
-
-`--iterations` オプションは到着数を指定します。`clickhouse-benchmark` はそれらすべての完了を待ちます。`--timelimit` オプションを指定すると、制限時間を過ぎた時点で到着が停止します。処理中のクエリは最後まで実行され、キュー内の到着は未送信として報告されます。
-
-レポートには、さらに次のような 2 行が含まれます。例:
-
-```text
-Arrivals: 1061, target rate: 100.000/s, achieved rate: 106.100/s, queued: 0 (max queue size 0).
-In flight: mean 0.223, max 4 of 256.
-```
-
-* `Arrivals`: 到着数。
-* `target rate`: `--arrival-rate` で指定したレート。
-* `achieved rate`: 到着数を到着プロセスの所要時間で割った値。目標レートとはランダムな誤差の分だけ異なり、この誤差は実行時間が長いほど小さくなります。
-* `queued`: `--max-in-flight` のスロットがすべて使用中だったためにクライアント側のキューで待機した到着の数と、このキューの最大長。
-* `not sent`: 実行停止時点でまだキューに残っていた到着の数。0 でない場合にのみ表示されます。
-* `In flight`: 同時に実行されているクエリ数の時間加重平均と最大値。
-
-open-loop の到着では QPS は到着レートに追従するため、負荷のコストを知る手がかりにはほとんどなりません。open-loop モードでは、各サーバーのステータス文字列に次の項目も含まれます。
-
-* `CPU`: サーバー上のクエリが 1 秒あたりに消費する CPU時間 (コア数換算)。
-* `CPU per query`: サーバー上の 1 クエリあたりの平均 CPU時間 (秒)。
-
-どちらの値にも、実行中に失敗したクエリ (`--ignore-error` 使用時) が含まれます。失敗したクエリもサーバーに負荷をかけるためです。
-
-CPU時間は、サーバーがクエリごとに送信する `UserTimeMicroseconds` と `SystemTimeMicroseconds` のプロファイルイベントの合計です。そのため、クエリを実行するスレッドが対象となり、クエリの総 CPU コストの近似値となります。分散クエリの場合は、イニシエーターがリモートサーバーのプロファイルイベントを転送するため、クエリが実行されるすべてのサーバーの値が合計されます。サーバーがプロファイルイベントを送信しない場合 (例: `--send_profile_events=0` を指定した場合)、ステータス文字列には `CPU: not reported by the server` と表示されます。
-
-混在ワークロードを実行するには、クエリのクラスごとに 1 つずつ、複数の `clickhouse-benchmark` プロセスを同時に実行します。各プロセスは、それぞれのクラスの統計を報告します。各プロセスには個別の `--seed` を指定するか、何も指定しないでください。同じ seed を持つプロセスは同じ乱数数列を生成するため、到着が一致します (レートが異なる場合は、互いにスケーリングしたコピーになります)。seed がそれぞれ独立していれば、全プロセスを統合した到着もポアソン過程になります。
-
-例:
-
-```bash
-# 100 queries per second for 10 seconds; the lines above are from this run.
-$ clickhouse-benchmark --arrival-rate=100 --seed=42 --timelimit=10 --query "SELECT sum(number) FROM numbers(1000000)"
-
-# A sweep over four rates, 60 seconds each, with per-query statistics.
-$ clickhouse-benchmark --arrival-rate=5,10,20,40 --timelimit=60 --randomize --per-query < queries.tsv
-```
-
-## 比較モード {#clickhouse-benchmark-comparison-mode}
+<div id="clickhouse-benchmark-comparison-mode">
+  ## 比較モード
+</div>
 
 `clickhouse-benchmark` は、稼働中の 2 台の ClickHouseサーバーのパフォーマンスを比較できます。
 
 比較モードを使用するには、両方のサーバーのエンドポイントを、`--host` と `--port` の 2 組のオプションで指定します。各オプションは引数リスト内の位置に基づいて対応付けられ、最初の `--host` は最初の `--port` に対応し、以降も同様です。`clickhouse-benchmark` は両方のサーバーへの接続を確立してからクエリを送信します。各クエリはランダムに選択されたサーバーに送信されます。結果は表に表示されます。
 
-## 例 {#clickhouse-benchmark-example}
+<div id="clickhouse-benchmark-example">
+  ## 例
+</div>
 
 ```bash
 $ echo "SELECT * FROM system.numbers LIMIT 10000000 OFFSET 10000000" | clickhouse-benchmark --host=localhost --port=9001 --host=localhost --port=9000 -i 10

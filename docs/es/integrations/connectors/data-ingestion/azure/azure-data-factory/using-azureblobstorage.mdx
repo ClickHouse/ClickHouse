@@ -10,6 +10,8 @@ integration:
    - category: 'data_ingestion'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 Esta es una de las formas más eficientes y sencillas de copiar datos desde
 Azure Blob Storage o Azure Data Lake Storage a ClickHouse. Con esta función de
 tabla, puede indicar a ClickHouse que se conecte directamente al almacenamiento de Azure y
@@ -26,7 +28,9 @@ para usar esta función de forma eficaz. Para obtener más detalles y opciones a
 consulte la documentación oficial:
 [página de documentación de la función de tabla `azureBlobStorage`](/es/reference/functions/table-functions/azureBlobStorage)
 
-## Obtención de claves de acceso de Azure Blob Storage {#acquiring-azure-blob-storage-access-keys}
+<div id="acquiring-azure-blob-storage-access-keys">
+  ## Obtención de claves de acceso de Azure Blob Storage
+</div>
 
 Para permitir que ClickHouse acceda a Azure Blob Storage, necesitará una cadena de conexión con una clave de acceso.
 
@@ -34,26 +38,16 @@ Para permitir que ClickHouse acceda a Azure Blob Storage, necesitará una cadena
 
 2. En el menú de la izquierda, seleccione **Claves de acceso** en la sección **Seguridad +
    redes**.
-
-   <div className="ch-image-lg">
-     <Frame>
-       ![Configuración del almacén de datos de Azure](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp)
-     </Frame>
-   </div>
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp" size="lg" alt="Configuración del almacén de datos de Azure" border />
 
 3. Elija **key1** o **key2** y haga clic en el botón **Mostrar** junto al
    campo **Cadena de conexión**.
-
-   <div className="ch-image-lg">
-     <Frame>
-       ![Claves de acceso del almacén de datos de Azure](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp)
-     </Frame>
-   </div>
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp" size="lg" alt="Claves de acceso del almacén de datos de Azure" border />
 
 4. Copie la cadena de conexión: la usará como parámetro en la función de tabla azureBlobStorage.
 
 <div id="querying-the-data-from-azure-blob-storage">
-  ## Consultar datos desde Azure Blob Storage {#querying-the-data-from-azure-blob-storage}
+  ## Consultar datos desde Azure Blob Storage
 </div>
 
 Abra la consola de consultas de ClickHouse que prefiera; puede ser la
@@ -87,7 +81,9 @@ SELECT * FROM azureBlobStorage(
 Esto le permite incorporar de forma eficiente datos externos en ClickHouse sin
 necesidad de pasos intermedios de ETL.
 
-## Un ejemplo sencillo con el conjunto de datos Environmental Sensors {#simple-example-using-the-environmental-sensors-dataset}
+<div id="simple-example-using-the-environmental-sensors-dataset">
+  ## Un ejemplo sencillo con el conjunto de datos Environmental Sensors
+</div>
 
 Como ejemplo, descargaremos un único archivo del conjunto de datos Environmental Sensors.
 
@@ -112,18 +108,18 @@ Como ejemplo, descargaremos un único archivo del conjunto de datos Environmenta
 Ahora que todo está configurado, puede consultar los datos directamente desde Azure Blob Storage:
 
 ```sql
-SELECT *
-FROM azureBlobStorage(
-    '<YOUR CONNECTION STRING>', 
-    'sensors',
-    '2019-06_bmp180.csv.zst', 
-    'CSVWithNames')
-LIMIT 10
-SETTINGS format_csv_delimiter = ';'
+    SELECT *
+    FROM azureBlobStorage(
+        '<YOUR CONNECTION STRING>', 
+        'sensors',
+        '2019-06_bmp180.csv.zst', 
+        'CSVWithNames')
+    LIMIT 10
+    SETTINGS format_csv_delimiter = ';'
 ```
 
 7. Para cargar los datos en una tabla, cree una versión simplificada del
-   esquema utilizado en el conjunto de datos original:
+   esquema utilizado en el dataset original:
    ```sql
    CREATE TABLE sensors
    (
@@ -158,11 +154,13 @@ SETTINGS format_csv_delimiter = ';'
 La tabla sensors ya contiene los datos del archivo `2019-06_bmp180.csv.zst`
 almacenado en Azure Blob Storage.
 
-## Recursos adicionales {#additional-resources}
+<div id="additional-resources">
+  ## Recursos adicionales
+</div>
 
 Esta es solo una introducción básica al uso de la función azureBlobStorage. Para
-conocer opciones más avanzadas y detalles de configuración, consulte la documentación
-oficial:
+conocer opciones más avanzadas y detalles de configuración, consulte la
+documentación oficial:
 
 * [Función de tabla azureBlobStorage](/es/reference/functions/table-functions/azureBlobStorage)
 * [Formatos de datos de entrada y salida](/es/reference/formats/index)

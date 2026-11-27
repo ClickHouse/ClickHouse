@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 WITH ('a', 'b')::Tuple(c1 String, c2 String) AS t
 SELECT t.c1, t.c2;

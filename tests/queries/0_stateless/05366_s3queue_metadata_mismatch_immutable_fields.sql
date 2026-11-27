@@ -8,10 +8,6 @@
 -- there, so each of the immutable fields below is rejected with `METADATA_MISMATCH` on its own.
 -- The object storage is never contacted: the metadata check happens while the engine is built.
 
--- Keep this file's DDL and keeper rewrites out of the AST fuzzer: a fuzzed rewrite can leave a `metadata` node that is not
--- JSON, and a replayed `CREATE` is a second queue on the same `keeper_path`; either one can stop the next server start.
-SET ast_fuzzer_any_query = 0;
-
 DROP TABLE IF EXISTS tq_base;
 DROP TABLE IF EXISTS tq_bucket_base;
 
@@ -95,14 +91,6 @@ SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LI
 DROP TABLE tq_same;
 DROP TABLE tq_bucket_base;
 DROP TABLE tq_base;
-
--- In `exclusive` mode each server reads its own path, so the paths may differ, but the bucket must be the same.
-CREATE TABLE tq_x1 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_x1/*', NOSIGN, 'CSV') SETTINGS mode = 'exclusive', keeper_path = '/clickhouse/{database}/05366_exclusive';
-CREATE TABLE tq_x2 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_x2/*', NOSIGN, 'CSV') SETTINGS mode = 'exclusive', keeper_path = '/clickhouse/{database}/05366_exclusive';
--- A different bucket is rejected.
-CREATE TABLE tq_x3 (x String) ENGINE = S3Queue('http://localhost:11111/other/05366_x1/*', NOSIGN, 'CSV') SETTINGS mode = 'exclusive', keeper_path = '/clickhouse/{database}/05366_exclusive'; -- { serverError METADATA_MISMATCH }
-SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE 'tq_x%';
-DROP TABLE tq_x2; DROP TABLE tq_x1;
 
 -- An `AzureQueue` and an `S3Queue` with the same endpoint, bucket and path read different storages.
 CREATE TABLE tq_type_azure (x String) ENGINE = AzureQueue('http://localhost:11111', 'test', '05366_type/*', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_type';

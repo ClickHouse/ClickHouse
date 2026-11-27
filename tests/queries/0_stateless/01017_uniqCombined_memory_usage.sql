@@ -9,9 +9,6 @@
 
 SET use_uncompressed_cache = 0;
 SET memory_profiler_step = 1;
--- The limits below measure the memory of the states, so the aggregation must not spill. A spill threshold taken as a
--- share of `max_memory_usage` would make it write a part, and the buffers of the write do not fit in these limits.
-SET max_bytes_ratio_before_external_group_by = 0;
 
 -- HashTable for UInt32 (used until (1<<13) elements), hence 8192 elements
 SELECT 'UInt32';

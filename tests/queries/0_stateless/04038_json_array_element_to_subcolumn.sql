@@ -1,5 +1,7 @@
 -- Tags: no-fasttest, no-parallel-replicas
 
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS test_json_arr;
 
 CREATE TABLE test_json_arr (json JSON) ENGINE = MergeTree ORDER BY tuple();
@@ -90,8 +92,8 @@ SELECT json.a[-1].b FROM test_json_arr ORDER BY toString(json.a[-1].b);
 SELECT 'where_clause';
 SELECT json.a[1].b FROM test_json_arr WHERE json.a[1].b = 1;
 
--- 15. FINAL over a row-selecting engine (ReplacingMergeTree) allows optimization
-SELECT 'final_allowed';
+-- 15. FINAL modifier should block optimization
+SELECT 'final_blocked';
 DROP TABLE IF EXISTS test_json_final;
 CREATE TABLE test_json_final (json JSON) ENGINE = ReplacingMergeTree ORDER BY tuple();
 INSERT INTO test_json_final VALUES ('{"a": [{"b": 1}]}');

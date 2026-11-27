@@ -112,31 +112,6 @@ void assertNaN(ReadBuffer & buf);
 template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in);
 template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in);
 
-/// [begin, end) inside right-padded storage (`PaddedBufferStorage`); two pointers, so it is passed in registers.
-class PaddedRange
-{
-public:
-    template <PaddedBufferStorage Storage>
-    PaddedRange(const Storage & storage, size_t offset, size_t size)
-        : begin_pos(reinterpret_cast<const char *>(storage.data()) + offset)
-        , end_pos(begin_pos + size)
-    {
-        chassert(offset <= storage.size());
-        chassert(size <= storage.size() - offset);
-    }
-
-    [[nodiscard]] const char * begin() const { return begin_pos; }
-    [[nodiscard]] const char * end() const { return end_pos; }
-
-private:
-    const char * begin_pos;
-    const char * end_pos;
-};
-
-/// Parses `range` as one whole number. Returns false, leaving `x` unchanged, exactly when `tryReadFloatTextPrecise` on a
-/// padded in-memory buffer holding `range` fails or leaves bytes unread (so also for an empty range).
-template <typename T> bool tryParseFloatFromPaddedRange(T & x, PaddedRange range);
-
 template <typename T> void readFloatImpreciseForCompatibility(T & x, ReadBuffer & in);
 template <typename T> bool tryReadFloatImpreciseForCompatibility(T & x, ReadBuffer & in);
 

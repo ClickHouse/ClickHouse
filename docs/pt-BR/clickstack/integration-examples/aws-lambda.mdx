@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['AWS', 'Lambda', 'OTel', 'ClickStack', 'logs', 'CloudWatch']
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -26,13 +28,13 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
 </Info>
 
 <div id="existing-lambda">
-  ## Integração com funções Lambda existentes {#existing-lambda}
+  ## Integração com funções Lambda existentes
 </div>
 
 Esta seção aborda como configurar suas funções AWS Lambda existentes para enviar logs e traces ao ClickStack usando a Rotel Lambda Extension.
 
 <div id="prerequisites">
-  ### Pré-requisitos {#prerequisites}
+  ### Pré-requisitos
 </div>
 
 * Instância do ClickStack em execução
@@ -43,7 +45,7 @@ Esta seção aborda como configurar suas funções AWS Lambda existentes para en
 <Steps>
   <Step title="Escolha a camada apropriada do Rotel Lambda Extension" id="choose-layer">
     Escolha a camada do Lambda que corresponda à arquitetura de runtime da sua função Lambda. O campo `{version}`
-    depende da região da AWS em que você está implantando. Consulte a página de [lançamentos](https://github.com/rotel-dev/rotel-lambda-extension/releases)
+    depende da região da AWS em que você está implantando. Consulte a página de [lançamentos](https://github.com/streamfold/rotel-lambda-extension/releases)
     para encontrar os números de versão mais recentes correspondentes à sua região.
 
     | Arquitetura  | ARN                                                                          |
@@ -61,10 +63,10 @@ Esta seção aborda como configurar suas funções AWS Lambda existentes para en
     * sa-east-1
   </Step>
 
-  <Step title="Adicione a camada do Rotel à sua função Lambda" id="add-layer">
+  <Step title="Adicione a layer do Rotel à sua função Lambda" id="add-layer">
     *Nestes exemplos, substitua `{arch}`, `{region}` e `{version}` pelos valores apropriados acima.*
 
-##### Opção 1: AWS Console {#console}
+    ##### Opção 1: AWS Console
 
     1. Abra o console do AWS Lambda
     2. Acesse sua função Lambda
@@ -76,7 +78,7 @@ Esta seção aborda como configurar suas funções AWS Lambda existentes para en
        ```
     6. Clique em **Add**
 
-##### Opção 2: AWS CLI {#cli}
+    ##### Opção 2: AWS CLI
 
     ```bash
     aws lambda update-function-configuration \
@@ -84,7 +86,7 @@ Esta seção aborda como configurar suas funções AWS Lambda existentes para en
       --layers arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
     ```
 
-##### Opção 3: AWS SAM {#sam}
+    ##### Opção 3: AWS SAM
 
     ```yaml
     Resources:
@@ -100,7 +102,7 @@ Esta seção aborda como configurar suas funções AWS Lambda existentes para en
   <Step title="Configure a extensão para exportar para o ClickStack" id="configure-extension">
     A Rotel Lambda Extension é configurada por meio de variáveis de ambiente. Você precisa configurar o endpoint do exporter OTLP para apontar para sua instância do ClickStack. Os exemplos presumem que sua função do AWS Lambda consegue acessar a instância do ClickStack.
 
-##### Configuração básica (variáveis de ambiente) {#basic-config}
+    ##### Configuração básica (variáveis de ambiente)
 
     Adicione estas variáveis de ambiente à sua função do Lambda:
 
@@ -115,7 +117,7 @@ Esta seção aborda como configurar suas funções AWS Lambda existentes para en
     ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
     ```
 
-##### Configuração avançada (usando um arquivo .env) {#advanced-config}
+    ##### Configuração avançada (usando um arquivo .env)
 
     Para configurações mais complexas, crie um arquivo `rotel.env` no pacote da sua função Lambda:
 
@@ -133,7 +135,7 @@ Esta seção aborda como configurar suas funções AWS Lambda existentes para en
     ROTEL_ENV_FILE=/var/task/rotel.env
     ```
 
-##### Como usar o AWS Secrets Manager ou o Parameter Store {#secrets}
+    ##### Como usar o AWS Secrets Manager ou o Parameter Store
 
     Para implantações em produção, armazene valores sensíveis, como chaves de API, no AWS Secrets Manager ou no Parameter Store:
 
@@ -212,20 +214,12 @@ Esta seção aborda como configurar suas funções AWS Lambda existentes para en
     ```
   </Step>
 
-  <Step title="Verifique os logs na interface do ClickStack" id="verify-logs">
-    Depois de concluir a configuração, faça login na Interface do ClickStack (a UI do ClickStack) e verifique se os logs estão chegando:
+  <Step title="Verifique os logs no HyperDX" id="verify-logs">
+    Depois de concluir a configuração, faça login no HyperDX (a UI do ClickStack) e verifique se os logs estão chegando:
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Visualização de logs do Lambda](/images/clickstack/lambda/lambda-log-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/lambda/lambda-log-view.webp" alt="Visualização de logs do Lambda" />
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Detalhes do log do Lambda](/images/clickstack/lambda/lambda-log.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/lambda/lambda-log.webp" alt="Detalhes do log do Lambda" />
 
     Procure estes atributos-chave nos logs:
 
@@ -238,16 +232,16 @@ Esta seção aborda como configurar suas funções AWS Lambda existentes para en
 </Steps>
 
 <div id="disable-cloudwatch">
-  ## Desativando o CloudWatch Logs (otimização de custos) {#disable-cloudwatch}
+  ## Desabilitando o CloudWatch Logs (otimização de custos)
 </div>
 
-Por padrão, o AWS Lambda envia todos os logs para o CloudWatch Logs, o que pode sair caro em escala. Depois de verificar que os logs estão chegando ao ClickStack, você pode desativar o logging do CloudWatch para reduzir custos.
+Por padrão, o AWS Lambda envia todos os logs para o CloudWatch Logs, o que pode sair caro em escala. Depois de verificar que os logs estão chegando ao ClickStack, você pode desabilitar o logging do CloudWatch para reduzir custos.
 
 <Steps>
   <Step title="Remova as permissões do CloudWatch do perfil de execução" id="remove-permissions">
     1. Abra o AWS Console e navegue até **AWS Lambda**
     2. Acesse sua função Lambda
-    3. Selecione **Configuration** → **Permissões**
+    3. Selecione **Configuration** → **Permissions**
     4. Clique no nome do perfil de execução para abrir o console do IAM
     5. Edite a role e remova quaisquer actions `logs:*`:
        * Se estiver usando uma policy personalizada, edite-a para remover `logs:CreateLogGroup`, `logs:CreateLogStream` e `logs:PutLogEvents`
@@ -255,11 +249,11 @@ Por padrão, o AWS Lambda envia todos os logs para o CloudWatch Logs, o que pode
     6. Salve a role
   </Step>
 
-  <Step title="Verifique se o logging do CloudWatch está desativado" id="verify-disabled">
+  <Step title="Verifique se o logging do CloudWatch está desabilitado" id="verify-disabled">
     Invoque sua função novamente e verifique se:
 
     1. Nenhum novo log stream do CloudWatch é criado
-    2. Os logs continuam aparecendo no ClickStack/Interface do ClickStack
+    2. Os logs continuam aparecendo no ClickStack/HyperDX
 
     ```bash
     # Isso não deve mostrar nenhum novo log stream após a alteração da policy
@@ -272,7 +266,9 @@ Por padrão, o AWS Lambda envia todos os logs para o CloudWatch Logs, o que pode
   </Step>
 </Steps>
 
-## Adicionando a instrumentação automática do OpenTelemetry {#auto-instrumentation}
+<div id="auto-instrumentation">
+  ## Adicionando a instrumentação automática do OpenTelemetry
+</div>
 
 A Rotel Lambda Extension funciona perfeitamente com camadas de instrumentação automática do OpenTelemetry para coletar traces distribuídos e métricas, além de logs.
 
@@ -323,28 +319,32 @@ A Rotel Lambda Extension funciona perfeitamente com camadas de instrumentação 
     ```
   </Step>
 
-  <Step title="Verifique os traces na Interface do ClickStack" id="verify-traces">
+  <Step title="Verifique os traces no HyperDX" id="verify-traces">
     Depois de invocar sua função:
 
-    1. Acesse a visualização **Traces** na Interface do ClickStack
+    1. Acesse a visualização **Traces** no HyperDX
     2. Você deverá ver traces com spans da sua função Lambda
     3. Os traces serão correlacionados com os logs por meio dos atributos `trace_id` e `span_id`
   </Step>
 </Steps>
 
-## Aplicativos de exemplo {#examples}
+<div id="examples">
+  ## Aplicativos de exemplo
+</div>
 
 Confira o aplicativo de exemplo em Python que demonstra a Rotel Lambda Extension:
 
-* **[Python + ClickHouse](https://github.com/rotel-dev/python-aws-lambda-clickhouse-example)**: Aplicativo Python com instrumentação manual com OpenTelemetry, enviando traces e logs diretamente para o ClickHouse
+* **[Python + ClickHouse](https://github.com/streamfold/python-aws-lambda-clickhouse-example)**: Aplicativo Python com instrumentação manual com OpenTelemetry, enviando traces e logs diretamente para o ClickHouse
 
-## Participe da comunidade Rotel {#join-rotel-community}
-
-Se você tiver dúvidas sobre o Rotel, entre no [servidor do Discord da Rotel](https://rotel.dev/discord) e compartilhe seu feedback ou suas perguntas. Confira a [Rotel Lambda Extension](https://github.com/rotel-dev/rotel-lambda-extension) para contribuir com melhorias.
-
-<div id="resources">
-  ## Recursos adicionais {#resources}
+<div id="join-rotel-community">
+  ## Participe da comunidade Rotel
 </div>
 
-* **[Rotel Lambda Extension](https://github.com/rotel-dev/rotel-lambda-extension)**: Código-fonte e documentação detalhada
-* **[Rotel Core](https://github.com/rotel-dev/rotel)**: O plano de dados leve do OTel que dá suporte à extensão
+Se você tiver dúvidas sobre o Rotel, entre no [servidor do Discord da Rotel](https://rotel.dev) e compartilhe seu feedback ou suas perguntas. Confira a [Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension) para contribuir com melhorias.
+
+<div id="resources">
+  ## Recursos adicionais
+</div>
+
+* **[Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension)**: Código-fonte e documentação detalhada
+* **[Rotel Core](https://github.com/streamfold/rotel)**: O plano de dados leve do OTel que dá suporte à extensão

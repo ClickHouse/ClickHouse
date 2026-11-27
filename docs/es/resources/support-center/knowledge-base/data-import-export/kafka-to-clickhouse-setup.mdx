@@ -6,7 +6,9 @@ tags: ['Ingestión de datos']
 keywords: ['Kafka']
 ---
 
-## Descripción general {#overview}
+<div id="overview">
+  ## Descripción general
+</div>
 
 Este artículo explica el proceso de enviar datos desde un topic de Kafka a una tabla de ClickHouse. Usaremos el feed de cambios recientes de Wiki, que proporciona un [flujo de eventos](https://stream.wikimedia.org/v2/stream/recentchange) que representa los cambios realizados en varias propiedades de Wikimedia. Los pasos incluyen:
 
@@ -14,7 +16,9 @@ Este artículo explica el proceso de enviar datos desde un topic de Kafka a una 
 2. Ingestar un flujo de datos en un topic de Kafka
 3. Crear una tabla de ClickHouse que se suscriba al topic
 
-# 1. Configurar Kafka en Ubuntu {#1-setup-kafka-on-ubuntu}
+<div id="1-setup-kafka-on-ubuntu">
+  # 1. Configurar Kafka en Ubuntu
+</div>
 
 1. Cree una instancia **ec2** de Ubuntu y conéctese a ella por SSH:
 
@@ -66,7 +70,9 @@ bin/kafka-topics.sh --create --topic wikimedia --bootstrap-server localhost:9092
 bin/kafka-topics.sh --list --bootstrap-server localhost:9092
 ```
 
-# 2. Ingestar el flujo de Wikimedia a Kafka {#2-ingest-the-wikimedia-stream-into-kafka}
+<div id="2-ingest-the-wikimedia-stream-into-kafka">
+  # 2. Ingestar el flujo de Wikimedia a Kafka
+</div>
 
 1. Primero necesitamos algunas utilidades:
 
@@ -95,7 +101,9 @@ bin/kafka-console-consumer.sh --topic wikimedia --from-beginning --bootstrap-ser
 
 5. Pulsa **Ctrl+c** para detener el comando anterior.
 
-# 3. Ingestar los datos en ClickHouse {#3-ingest-the-data-into-clickhouse}
+<div id="3-ingest-the-data-into-clickhouse">
+  # 3. Ingestar los datos en ClickHouse
+</div>
 
 1. Este es el aspecto de los datos entrantes:
 

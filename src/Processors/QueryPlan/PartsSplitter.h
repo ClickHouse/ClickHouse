@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 
 #include <Interpreters/Context_fwd.h>
@@ -23,9 +22,6 @@ struct SplitPartsRangesResult
 /// Check if the primary key types are safe for splitting (no floats with NaN, etc.).
 bool isSafePrimaryKey(const KeyDescription & primary_key);
 
-/// The same check for a single key column, for a consumer that splits by a primary key prefix.
-bool isSafePrimaryDataKeyType(const IDataType & data_type);
-
 /// Derives whether parts are read in descending primary-key order from the sorting key's reverse
 /// flags. Returns nullopt when the primary-key columns mix ascending and descending order, in which
 /// case primary-key-range splitting is not possible.
@@ -41,7 +37,7 @@ struct SplitPartsWithRangesByPrimaryKeyResult
     Pipes merging_pipes;
     /// Borders between consecutive `merging_pipes` in the table's key order (see `SplitPartsByRanges::borders`);
     /// empty when the intersecting ranges were not split into layers.
-    VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> borders;
+    std::vector<std::vector<Field>> borders;
 };
 
 /** Splits parts ranges into:
@@ -68,21 +64,19 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
   * If setting use_skip_indexes_if_final_exact_mode=1, then we need to expand
   * the initial set of granules returned from the skip index by
   * looking for that initial set of PK ranges across all other newer parts.
-  * If within_partition is true (all versions of a row are in one partition), granules are only added back from parts of the same partition.
   */
 RangesInDataParts findPKRangesForFinalAfterSkipIndex(
     const KeyDescription & primary_key,
     const KeyDescription & sorting_key,
     RangesInDataParts & ranges_in_data_parts,
-    bool within_partition,
     const LoggerPtr & logger);
 
 struct SplitPartsByRanges
 {
-    using Values = VectorWithMemoryTracking<Field>;
+    using Values = std::vector<Field>;
 
-    VectorWithMemoryTracking<RangesInDataParts> layers;
-    VectorWithMemoryTracking<Values> borders;
+    std::vector<RangesInDataParts> layers;
+    std::vector<Values> borders;
     bool in_reverse_order = false;
 };
 
@@ -106,7 +100,7 @@ Pipes readByLayers(
 void addLayerRangeFilterToPipe(
     Pipe & pipe,
     const KeyDescription & primary_key,
-    const VectorWithMemoryTracking<SplitPartsByRanges::Values> & borders,
+    const std::vector<std::vector<Field>> & borders,
     size_t layer_index,
     bool in_reverse_order,
     ContextPtr context);

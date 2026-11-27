@@ -20,29 +20,33 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 ClickHouse prend en charge l’intégration avec plusieurs catalogues (Unity, Glue, REST, Polaris, etc.). Ce guide vous accompagne pas à pas pour interroger vos données à l’aide de ClickHouse et de la spécification [catalogue REST](https://github.com/apache/iceberg/blob/main/open-api/rest-catalog-open-api.yaml/).
 
-Le catalogue REST est une spécification d’API normalisée pour les catalogues Iceberg, prise en charge par différentes plateformes, notamment :
+Le catalogue REST est une spécification d’API normalisée pour les catalogues Iceberg, prise en charge par différentes plateformes, notamment :
 
 * **Environnements de développement locaux** (avec des configurations docker-compose)
 * **Services managés** comme Tabular.io
 * Implémentations **auto-hébergées** de catalogue REST
 
 <Note>
-  Cette fonctionnalité étant en bêta, vous devez l’activer avec :
+  Cette fonctionnalité étant en bêta, vous devez l’activer avec :
   `SET allow_database_iceberg = 1;`
-
-  Dans les versions antérieures à la 25.8, où la fonctionnalité est expérimentale, utilisez plutôt `SET allow_experimental_database_iceberg = 1;`. Les commandes SQL ci-dessous utilisent ce nom, car la configuration Docker de ce guide fige la version de ClickHouse à 25.5.6.
 </Note>
 
-## Configuration d’un environnement de développement local {#local-development-setup}
+<div id="local-development-setup">
+  ## Configuration d’un environnement de développement local
+</div>
 
 Pour le développement et les tests en local, vous pouvez utiliser une configuration de catalogue REST conteneurisée. Cette approche est idéale pour l’apprentissage, le prototypage et les environnements de développement.
 
-### Prérequis {#local-prerequisites}
+<div id="local-prerequisites">
+  ### Prérequis
+</div>
 
 1. **Docker and Docker Compose** : assurez-vous que Docker est installé et en cours d’exécution.
 2. **Exemple de configuration** : vous pouvez utiliser différentes configurations docker-compose (voir Autres images Docker ci-dessous).
 
-### Configuration d’un catalogue REST local {#setting-up-local-rest-catalog}
+<div id="setting-up-local-rest-catalog">
+  ### Configuration d’un catalogue REST local
+</div>
 
 Vous pouvez utiliser diverses implémentations conteneurisées de catalogue REST, comme **[Databricks docker-spark-iceberg](https://github.com/databricks/docker-spark-iceberg/blob/main/docker-compose.yml?ref=blog.min.io)**, qui fournit un environnement complet Spark + Iceberg + catalogue REST avec docker-compose, ce qui en fait une solution idéale pour tester les intégrations Iceberg.
 
@@ -89,18 +93,20 @@ docker-compose logs -f
   La configuration du catalogue REST nécessite que les données d’exemple soient d’abord chargées dans les tables Iceberg. Assurez-vous que l’environnement Spark a bien créé et alimenté les tables avant d’essayer de les interroger via ClickHouse. La disponibilité des tables dépend de la configuration `docker-compose` utilisée et des scripts de chargement des données d’exemple.
 </Note>
 
-### Se connecter au catalogue REST local {#connecting-to-local-rest-catalog}
+<div id="connecting-to-local-rest-catalog">
+  ### Se connecter au REST Catalog local
+</div>
 
-Connectez-vous à votre conteneur ClickHouse :
+Connectez-vous à votre conteneur ClickHouse :
 
 ```bash
 docker exec -it clickhouse clickhouse-client
 ```
 
-Créez ensuite la connexion de base de données au catalogue REST :
+Créez ensuite la connexion de base de données au REST catalog :
 
 ```sql
-SET allow_experimental_database_iceberg = 1;
+SET allow_database_iceberg = 1;
 
 CREATE DATABASE demo
 ENGINE = DataLakeCatalog('http://rest:8181/v1', 'admin', 'password')
@@ -110,7 +116,9 @@ SETTINGS
     warehouse = 'demo'
 ```
 
-## Interroger les tables du catalogue REST avec ClickHouse {#querying-rest-catalog-tables-using-clickhouse}
+<div id="querying-rest-catalog-tables-using-clickhouse">
+  ## Interroger les tables du catalogue REST avec ClickHouse
+</div>
 
 Maintenant que la connexion est établie, vous pouvez commencer à interroger les tables via le catalogue REST. Par exemple :
 
@@ -194,7 +202,9 @@ SHOW CREATE TABLE `default.taxis`;
 └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Chargement des données de votre lac de données vers ClickHouse {#loading-data-from-your-data-lake-into-clickhouse}
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## Chargement des données de votre lac de données vers ClickHouse
+</div>
 
 Si vous devez charger des données à partir du catalogue REST dans ClickHouse, commencez par créer une table locale dans ClickHouse :
 

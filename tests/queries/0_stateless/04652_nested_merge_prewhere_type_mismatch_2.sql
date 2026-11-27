@@ -1,4 +1,6 @@
--- Tags: no-replicated-database, shard
+-- Tags: no-old-analyzer, no-replicated-database, shard
+--       no-old-analyzer: this suite assumes the analyzer as the default, like its first half;
+--       the explicit `SETTINGS enable_analyzer = 0` lines still cover the old one.
 --       no-replicated-database: for the lazy_load_tables section below.
 --       shard: the Remote-engine and Distributed sections need a second server address.
 
@@ -221,6 +223,7 @@ DROP TABLE IF EXISTS sub_buf;
 DROP TABLE IF EXISTS sub_merge;
 DROP TABLE IF EXISTS sub_merge_bad;
 
+SET enable_json_type = 1;
 CREATE TABLE sub_leaf (j JSON, t Tuple(a UInt64), x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO sub_leaf SELECT '{"a":1}'::JSON, tuple(number), number FROM numbers(10);
 CREATE TABLE sub_buf (j JSON, t Tuple(a UInt64), x UInt64)

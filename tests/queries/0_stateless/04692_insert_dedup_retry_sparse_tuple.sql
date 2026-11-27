@@ -1,7 +1,3 @@
--- Tags: no-parallel-replicas
--- no-parallel-replicas: the repeated inserts are deduplicated only if they read the source in the same chunks, and
--- parallel replicas can split the source read differently for each insert.
-
 DROP TABLE IF EXISTS t_dedup_sparse_src;
 DROP TABLE IF EXISTS t_dedup_sparse_dst;
 DROP TABLE IF EXISTS t_dedup_sparse_nested_src;

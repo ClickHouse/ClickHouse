@@ -6,7 +6,7 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ar/clickstack/_config_e
 
 <img src="/images/clickstack/getting-started/start_ingestion.webp" alt="" />
 
-اختر &quot;Start Ingestion&quot;، وسيُطلب منك تحديد مصدر للاستيعاب. تدعم الخدمة كلاً من OpenTelemetry و[Vector](https://vector.dev/) باعتبارهما المصدرين الرئيسيين للاستيعاب. ومع ذلك، يمكن للمستخدمين أيضًا إرسال البيانات مباشرةً إلى ClickHouse ضمن المخطط الخاص بهم باستخدام أي من [التكاملات التي يدعمها ClickHouse Cloud](/ar/integrations/home).
+اختر &quot;Start Ingestion&quot;، وسيُطلب منك تحديد مصدر للاستيعاب. يدعم Managed ClickStack كلاً من OpenTelemetry و[Vector](https://vector.dev/) باعتبارهما المصدرين الرئيسيين للاستيعاب. ومع ذلك، يمكن للمستخدمين أيضًا إرسال البيانات مباشرةً إلى ClickHouse ضمن المخطط الخاص بهم باستخدام أي من [التكاملات التي يدعمها ClickHouse Cloud](/ar/integrations/home).
 
 <img src="/images/clickstack/getting-started/select_source.webp" alt="" />
 
@@ -19,11 +19,11 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ar/clickstack/_config_e
 
 <Tabs>
   <Tab title="OpenTelemetry">
-    لإرسال بيانات OpenTelemetry إلى الخدمة، يُنصح باستخدام OpenTelemetry Collector. يعمل الـ collector كبوابة تستقبل بيانات OpenTelemetry من تطبيقاتك (ومن collectors أخرى) وتُمرّرها إلى ClickHouse Cloud.
+    لإرسال بيانات OpenTelemetry إلى Managed ClickStack، يُنصح باستخدام OpenTelemetry Collector. يعمل الـ collector كبوابة تستقبل بيانات OpenTelemetry من تطبيقاتك (ومن collectors أخرى) وتُمرّرها إلى ClickHouse Cloud.
 
     إذا لم يكن لديك collector قيد التشغيل بالفعل، فابدأ تشغيله باتباع الخطوات أدناه. وإذا كانت لديك collectors موجودة، فستجد أيضًا مثالًا على التهيئة.
 
-### ابدأ collector {#start-a-collector}
+    ### ابدأ collector
 
     يفترض ما يلي المسار الموصى به، وهو استخدام **توزيعة ClickStack من OpenTelemetry Collector**، التي تتضمن معالجة إضافية ومُحسّنة خصيصًا لـ ClickHouse Cloud. إذا كنت تريد استخدام OpenTelemetry Collector الخاص بك، فراجع [&quot;تهيئة collectors الموجودة.&quot;](#configure-existing-collectors)
 
@@ -36,12 +36,12 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ar/clickstack/_config_e
     <Info>
       **النشر إلى بيئة production**
 
-      رغم أن هذا الأمر يستخدم المستخدم `default` للاتصال بالخدمة، ينبغي لك إنشاء مستخدم مخصص عند [الانتقال إلى بيئة production](/ar/clickstack/self-configured/managing/production#create-a-database-ingestion-user-managed) وتعديل التهيئة الخاصة بك.
+      رغم أن هذا الأمر يستخدم المستخدم `default` للاتصال بـ Managed ClickStack، ينبغي لك إنشاء مستخدم مخصص عند [الانتقال إلى بيئة production](/ar/clickstack/managing/production#create-a-database-ingestion-user-managed) وتعديل التهيئة الخاصة بك.
     </Info>
 
     يؤدي تشغيل هذا الأمر الواحد إلى بدء ClickStack collector مع إتاحة OTLP endpoints على المنفذين 4317 ‏(gRPC) و4318 ‏(HTTP). إذا كان لديك بالفعل instrumentation وagents لـ OpenTelemetry، فيمكنك البدء فورًا في إرسال بيانات telemetry إلى هذه endpoints.
 
-### تهيئة collectors الموجودة {#configure-existing-collectors}
+    ### تهيئة collectors الموجودة
 
     يمكنك أيضًا تهيئة OpenTelemetry Collectors الموجودة لديك أو استخدام التوزيعة الخاصة بك من collector.
 
@@ -57,22 +57,22 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ar/clickstack/_config_e
 
     <img src="/images/clickstack/getting-started/otel_collector_start.webp" alt="" />
 
-    لمزيد من التفاصيل حول تهيئة OpenTelemetry collectors، راجع [&quot;إدخال البيانات باستخدام OpenTelemetry.&quot;](/ar/clickstack/self-configured/ingesting-data/collector)
+    لمزيد من التفاصيل حول تهيئة OpenTelemetry collectors، راجع [&quot;إدخال البيانات باستخدام OpenTelemetry.&quot;](/ar/clickstack/ingesting-data/opentelemetry)
 
-### ابدأ إدخال البيانات (اختياري) {#start-ingestion-optional}
+    ### ابدأ إدخال البيانات (اختياري)
 
     إذا كانت لديك تطبيقات أو بنية تحتية قائمة تريد تزويدها بأدوات OpenTelemetry، فانتقل إلى الأدلة ذات الصلة المرتبطة من خلال UI.
 
-    لتزويد تطبيقاتك بالأدوات لجمع traces وlogs، اتبع تعليمات الإصدار المُدار ذاتيًا في [أدلة language SDK](/ar/clickstack/observability/ingesting-data/sdks/index) التي ترسل البيانات إلى OpenTelemetry Collector الخاص بك، والذي يعمل كبوابة لإدخالها إلى الخدمة.
+    لتزويد تطبيقاتك بالأدوات لجمع traces وlogs، استخدم [language SDKs المدعومة](/ar/clickstack/ingesting-data/sdks/index) التي ترسل البيانات إلى OpenTelemetry Collector الخاص بك، والذي يعمل كبوابة لإدخالها إلى Managed ClickStack.
 
-    يمكن [جمع السجلات باستخدام OpenTelemetry Collectors](/ar/clickstack/observability/integration-examples/host-logs#self-managed) التي تعمل في وضع agent، مع إعادة توجيه البيانات إلى collector نفسها. ولمراقبة Kubernetes، اتبع [الدليل المخصص](/ar/clickstack/observability/integration-examples/kubernetes#self-managed). وللتكاملات الأخرى، راجع [أدلة البدء السريع](/ar/clickstack/observability/integration-examples/index) الخاصة بنا.
+    يمكن [جمع السجلات باستخدام OpenTelemetry Collectors](/ar/clickstack/integration-examples/host-logs) التي تعمل في وضع agent، مع إعادة توجيه البيانات إلى collector نفسها. ولمراقبة Kubernetes، اتبع [الدليل المخصص](/ar/clickstack/integration-examples/kubernetes). وللتكاملات الأخرى، راجع [أدلة البدء السريع](/ar/clickstack/integration-examples/index) الخاصة بنا.
 
-### بيانات تجريبية {#demo-data}
+    ### بيانات تجريبية
 
     بدلًا من ذلك، إذا لم تكن لديك بيانات موجودة، فجرّب إحدى مجموعات البيانات النموذجية لدينا.
 
-    * [مجموعة بيانات نموذجية](/ar/clickstack/observability/example-datasets/sample-data#self-managed) - حمّل مجموعة بيانات نموذجية من العرض التجريبي العام الخاص بنا. شخّص مشكلة بسيطة.
-    * [الملفات المحلية وmetrics](/ar/clickstack/observability/example-datasets/local-data#self-managed) - حمّل ملفات محلية وراقب النظام على OSX أو Linux باستخدام OTel collector محلي.
+    * [مجموعة بيانات نموذجية](/ar/clickstack/example-datasets/sample-data) - حمّل مجموعة بيانات نموذجية من العرض التجريبي العام الخاص بنا. شخّص مشكلة بسيطة.
+    * [الملفات المحلية وmetrics](/ar/clickstack/example-datasets/local-data) - حمّل ملفات محلية وراقب النظام على OSX أو Linux باستخدام OTel collector محلي.
 
     <br />
   </Tab>
@@ -85,12 +85,12 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ar/clickstack/_config_e
     <Info>
       **الطابع الزمني مطلوب**
 
-      الشرط الصارم الوحيد في الخدمة هو أن تتضمن البيانات **عمود timestamp** (أو حقلًا زمنيًا مكافئًا)، ويمكن تعريفه عند تهيئة data source في ClickStack UI.
+      الشرط الصارم الوحيد في Managed ClickStack هو أن تتضمن البيانات **عمود timestamp** (أو حقلًا زمنيًا مكافئًا)، ويمكن تعريفه عند تهيئة data source في ClickStack UI.
     </Info>
 
     يفترض ما يلي أن لديك مثيلًا من Vector قيد التشغيل ومهيّأ مسبقًا باستخدام ingest pipelines لتسليم البيانات.
 
-### أنشئ قاعدة بيانات وجدولًا {#create-a-database-and-table}
+    ### أنشئ قاعدة بيانات وجدولًا
 
     يتطلب Vector تعريف جدول ومخطط قبل استيعاب البيانات.
 
@@ -126,13 +126,13 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ar/clickstack/_config_e
 
     يجب أن يتوافق جدولك مع مخطط الإخراج الذي يُنتجه Vector. عدّل المخطط حسب الحاجة لبياناتك، مع اتباع [أفضل ممارسات المخطط الموصى بها](/ar/concepts/best-practices/select-data-type).
 
-    نوصي بشدة بفهم كيفية عمل [المفاتيح الأساسية](/ar/concepts/core-concepts/primary-indexes) في ClickHouse واختيار مفتاح ترتيب بناءً على أنماط الوصول لديك. راجع الإرشادات [الخاصة بـ ClickStack](/ar/clickstack/self-configured/managing/performance-tuning#choosing-a-primary-key) بشأن اختيار مفتاح أساسي.
+    نوصي بشدة بفهم كيفية عمل [المفاتيح الأساسية](/ar/concepts/core-concepts/primary-indexes) في ClickHouse واختيار مفتاح ترتيب بناءً على أنماط الوصول لديك. راجع الإرشادات [الخاصة بـ ClickStack](/ar/clickstack/managing/performance-tuning#choosing-a-primary-key) بشأن اختيار مفتاح أساسي.
 
     بمجرد إنشاء الجدول، انسخ مقتطف الإعدادات المعروض. عدّل المُدخل لاستهلاك مسارات المعالجة الحالية لديك، وكذلك الجدول الهدف وقاعدة البيانات إذا لزم الأمر. يُفترض أن تكون بيانات الاعتماد مُعبأة مسبقًا.
 
     <img src="/images/clickstack/getting-started/vector_config.webp" alt="" />
 
-    للمزيد من أمثلة إدخال البيانات باستخدام Vector، راجع [&quot;الإدخال باستخدام Vector&quot;](/ar/clickstack/observability/ingesting-data/vector#self-managed) أو [توثيق ClickHouse sink في Vector](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) للاطلاع على الخيارات المتقدمة.
+    للمزيد من أمثلة إدخال البيانات باستخدام Vector، راجع [&quot;الإدخال باستخدام Vector&quot;](/ar/clickstack/ingesting-data/vector) أو [توثيق ClickHouse sink في Vector](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) للاطلاع على الخيارات المتقدمة.
 
     <br />
   </Tab>

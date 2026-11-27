@@ -1,18 +1,14 @@
-#include <unordered_set>
-
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/checkStackSize.h>
 #include <Common/isValidUTF8.h>
 
 #include "config.h"
 
 #if USE_ANTLR4_GRAMMARS
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
-#include <Common/re2.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdocumentation"
@@ -71,9 +67,9 @@ namespace
             }
         }
 
-        [[nodiscard]] bool hasError() const { return !error_message.empty(); }
-        [[nodiscard]] size_t getErrorPos() const { return error_pos; }
-        [[nodiscard]] const String & getErrorMessage() const { return error_message; }
+        bool hasError() const { return !error_message.empty(); }
+        size_t getErrorPos() const { return error_pos; }
+        const String & getErrorMessage() const { return error_message; }
 
     protected:
         void syntaxError(antlr4::Recognizer * /* recognizer */, antlr4::Token * offending_symbol,
@@ -102,7 +98,7 @@ namespace
 
         /// ANTLR4's lexer returns the position of an error as a line number and a position in that line;
         /// we need to convert them to a byte offset.
-        [[nodiscard]] size_t convertLineAndPositionInLine(size_t line, size_t position_in_line) const
+        size_t convertLineAndPositionInLine(size_t line, size_t position_in_line) const
         {
             size_t char_index = 0;
             if (line != 1)
@@ -136,104 +132,54 @@ namespace
     /// byte. Only the first error is ever reported and a parse with a recorded error always fails,
     /// so lexing the remainder is wasted work - a megabyte of NUL bytes used to keep a thread busy
     /// for minutes, uncancellable because parsing happens during query analysis.
+    /// It also validates multiline STRING tokens as they are emitted, before a later lexer or parser
+    /// error can hide an earlier invalid quoted string.
     class PromQLLexerBailingOutOnError : public antlr4_grammars::PromQLLexer
     {
     public:
-        using antlr4_grammars::PromQLLexer::PromQLLexer;
+        explicit PromQLLexerBailingOutOnError(
+            antlr4::CharStream * input_, std::string_view promql_query_, ErrorListener & error_listener_)
+            : PromQLLexer(input_), promql_query(promql_query_), error_listener(error_listener_) {}
+
+        std::unique_ptr<antlr4::Token> nextToken() override
+        {
+            auto next_token = PromQLLexer::nextToken();
+            if (!error_listener.hasError() && next_token->getType() == STRING && next_token->getLine() != getLine())
+            {
+                const String token_text = next_token->getText();
+                if (!token_text.starts_with('`'))
+                {
+                    String parsed_string;
+                    String error_message;
+                    size_t error_pos = 0;
+                    if (!PrometheusQueryParsingUtil::tryParseStringLiteral(
+                            token_text, parsed_string, &error_message, &error_pos))
+                    {
+                        const size_t token_pos = convertCodePointPositionToByteOffset(promql_query, next_token->getStartIndex());
+                        error_listener.setError(error_message, token_pos + error_pos);
+                        stopLexing();
+                    }
+                }
+            }
+            return next_token;
+        }
 
         void recover(const antlr4::LexerNoViableAltException &) override
         {
             /// Pretend the input ended here, so that the lexer emits EOF and stops.
+            stopLexing();
+        }
+
+    private:
+        void stopLexing()
+        {
             antlr4::CharStream * stream = getInputStream();
             stream->seek(stream->size());
             hitEOF = true;
         }
-    };
 
-    /// A simulator that throws `TOO_DEEP_RECURSION` instead of overflowing the stack while it looks ahead to choose an alternative.
-    class ParserATNSimulatorCheckingStackSize : public antlr4::atn::ParserATNSimulator
-    {
-    public:
-        using antlr4::atn::ParserATNSimulator::ParserATNSimulator;
-
-    protected:
-        void closureCheckingStopState(
-            const std::shared_ptr<antlr4::atn::ATNConfig> & config,
-            antlr4::atn::ATNConfigSet * configs,
-            antlr4::atn::ATNConfig::Set & closure_busy,
-            bool collect_predicates,
-            bool full_ctx,
-            int depth,
-            bool treat_eof_as_epsilon) override
-        {
-            /// The lookahead leaves the rules ending at the same token one by one, each in a nested call, and it
-            /// does so before the parser enters any of those rules, so the checks of the parser don't help.
-            /// The grammar has no decision that looks ahead through nested rules; this guards against adding one.
-            checkStackSize();
-            antlr4::atn::ParserATNSimulator::closureCheckingStopState(
-                config, configs, closure_busy, collect_predicates, full_ctx, depth, treat_eof_as_epsilon);
-        }
-    };
-
-    /// An error strategy that reports a syntax error as the stock one does, and then stops the parser instead of recovering.
-    /// Any syntax error fails the parse and only the first one is reported, so the recovery is wasted work. And it is
-    /// quadratic in the nesting depth: for every rule it leaves, the stock strategy walks all the enclosing rules,
-    /// e.g. once per unclosed parenthesis of `((...((1`.
-    class ErrorStrategyBailingOutOnError : public antlr4::DefaultErrorStrategy
-    {
-    public:
-        void reportError(antlr4::Parser * recognizer, const antlr4::RecognitionException & e) override
-        {
-            antlr4::DefaultErrorStrategy::reportError(recognizer, e);
-            throw antlr4::ParseCancellationException();
-        }
-
-    protected:
-        void reportUnwantedToken(antlr4::Parser * recognizer) override
-        {
-            antlr4::DefaultErrorStrategy::reportUnwantedToken(recognizer);
-            throw antlr4::ParseCancellationException();
-        }
-
-        bool singleTokenInsertion(antlr4::Parser * /* recognizer */) override
-        {
-            /// The stock function finds the tokens which can follow the missing one before it reports anything, and for that
-            /// it leaves the enclosing rules one by one, each in a nested call, in a function that has no place for a stack
-            /// check. So `---...---(1` overflowed the stack there, though the parser itself had passed its checks.
-            return false;
-        }
-    };
-
-    /// A parser that throws `TOO_DEEP_RECURSION` on a deeply nested query instead of overflowing the stack.
-    class PromQLParserCheckingStackSize : public antlr4_grammars::PromQLParser
-    {
-    public:
-        explicit PromQLParserCheckingStackSize(antlr4::TokenStream * input) : antlr4_grammars::PromQLParser(input)
-        {
-            setErrorHandler(std::make_shared<ErrorStrategyBailingOutOnError>());
-
-            /// The new simulator works on the same automaton and caches as the stock one:
-            /// they belong to the grammar, and `setInterpreter` destroys only the stock simulator.
-            const auto * const stock_simulator = getInterpreter<antlr4::atn::ParserATNSimulator>();
-            setInterpreter(new ParserATNSimulatorCheckingStackSize(
-                this, stock_simulator->atn, stock_simulator->decisionToDFA, stock_simulator->getSharedContextCache()));
-        }
-
-        using antlr4_grammars::PromQLParser::enterRecursionRule;
-
-        /// The generated code enters every rule through one of these two functions,
-        /// so any recursion of the parser on nested rules passes a check.
-        void enterRule(antlr4::ParserRuleContext * localctx, size_t state, size_t rule_index) override
-        {
-            checkStackSize();
-            antlr4_grammars::PromQLParser::enterRule(localctx, state, rule_index);
-        }
-
-        void enterRecursionRule(antlr4::ParserRuleContext * localctx, size_t state, size_t rule_index, int precedence) override
-        {
-            checkStackSize();
-            antlr4_grammars::PromQLParser::enterRecursionRule(localctx, state, rule_index, precedence);
-        }
+        std::string_view promql_query;
+        ErrorListener & error_listener;
     };
 
     [[noreturn]] void throwInconsistentSchema(std::string_view context_name, std::string_view token)
@@ -245,8 +191,8 @@ namespace
     class PrometheusQueryTreeBuilder : public antlr4_grammars::PromQLParserBaseVisitor
     {
     public:
-        explicit PrometheusQueryTreeBuilder(std::string_view promql_query_, UInt32 time_scale_, ErrorListener & error_listener_)
-            : promql_query(promql_query_), time_scale(time_scale_), error_listener(error_listener_) {}
+        explicit PrometheusQueryTreeBuilder(std::string_view promql_query_, UInt32 timestamp_scale_, ErrorListener & error_listener_)
+            : promql_query(promql_query_), timestamp_scale(timestamp_scale_), error_listener(error_listener_) {}
 
         Node * makeNode(antlr4::ParserRuleContext * expression)
         {
@@ -262,7 +208,7 @@ namespace
 
     private:
         std::string_view promql_query;
-        UInt32 time_scale;
+        UInt32 timestamp_scale;
         ErrorListener & error_listener;
         std::vector<std::unique_ptr<Node>> nodes;
 
@@ -285,11 +231,6 @@ namespace
             return convertCodePointPositionToByteOffset(promql_query, ctx->getSymbol()->getStartIndex());
         }
 
-        size_t getStartPos(const antlr4::ParserRuleContext * ctx) const
-        {
-            return getStartPos(ctx->getStart());
-        }
-
         size_t getStartPos(const antlr4::Token * token) const
         {
             return convertCodePointPositionToByteOffset(promql_query, token->getStartIndex());
@@ -307,16 +248,11 @@ namespace
             return true;
         }
 
-        bool parseScalar(
-            const antlr4::tree::TerminalNode * ctx,
-            ScalarType & result,
-            bool * is_duration = nullptr,
-            std::optional<Int64> * duration_ms = nullptr)
+        bool parseScalar(const antlr4::tree::TerminalNode * ctx, ScalarType & result)
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseScalar(
-                    getText(ctx), result, &error_message, &error_pos, is_duration, duration_ms))
+            if (!PrometheusQueryParsingUtil::tryParseScalar(getText(ctx), result, &error_message, &error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -328,8 +264,7 @@ namespace
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseTimestamp(
-                    getText(ctx), time_scale, result, &error_message, &error_pos, /* allow_octal_literals */ true))
+            if (!PrometheusQueryParsingUtil::tryParseTimestamp(getText(ctx), timestamp_scale, result, &error_message, &error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -341,8 +276,7 @@ namespace
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseDuration(
-                    getText(ctx), time_scale, result, &error_message, &error_pos, /* allow_octal_literals */ true))
+            if (!PrometheusQueryParsingUtil::tryParseDuration(getText(ctx), timestamp_scale, result, &error_message, &error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -354,7 +288,7 @@ namespace
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseSelectorRange(getText(ctx), time_scale, res_range, &error_message, &error_pos))
+            if (!PrometheusQueryParsingUtil::tryParseSelectorRange(getText(ctx), timestamp_scale, res_range, &error_message, &error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -366,7 +300,7 @@ namespace
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseSubqueryRange(getText(ctx), time_scale, res_range, res_step, &error_message, &error_pos))
+            if (!PrometheusQueryParsingUtil::tryParseSubqueryRange(getText(ctx), timestamp_scale, res_range, res_step, &error_message, &error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -404,63 +338,54 @@ namespace
         Node * makeScalar(antlr4::tree::TerminalNode * ctx)
         {
             ScalarType scalar = 0;
-            bool is_duration = false;
-            std::optional<Int64> duration_ms;
-            if (!parseScalar(ctx, scalar, &is_duration, &duration_ms))
+            if (!parseScalar(ctx, scalar))
             {
                 chassert(error_listener.hasError());
                 return nullptr;
             }
             auto new_node = std::make_unique<Scalar>();
             new_node->scalar = scalar;
-            new_node->is_duration = is_duration;
-            new_node->duration_ms = duration_ms;
-            if (is_duration)
-                new_node->duration_str = getText(ctx);
             return addNode(std::move(new_node));
         }
 
         /// Extracts a metric name.
         String getMetricName(antlr4_grammars::PromQLParser::MetricNameContext * ctx) const { return ctx->getText(); }
 
-        /// Extracts a label name, unquoting quoted names.
-        bool getLabelName(
-            antlr4_grammars::PromQLParser::LabelNameContext * ctx, String & label_name, bool require_non_empty)
+        /// Extracts a label name.
+        String getLabelName(antlr4_grammars::PromQLParser::LabelNameContext * ctx) const { return ctx->getText(); }
+
+        bool getSelectorIdentifier(antlr4_grammars::PromQLParser::SelectorIdentifierContext * ctx, String & identifier)
         {
-            if (auto * string_ctx = ctx->STRING())
+            if (auto * label_name_ctx = ctx->labelName())
             {
-                if (!parseStringLiteral(string_ctx, label_name))
-                    return false;
-
-                if ((require_non_empty && label_name.empty())
-                    || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(label_name.data()), label_name.size()))
-                {
-                    error_listener.setError(
-                        require_non_empty ? "invalid label name for grouping" : "invalid selector identifier",
-                        getStartPos(string_ctx));
-                    return false;
-                }
-
+                identifier = getLabelName(label_name_ctx);
                 return true;
             }
 
-            label_name = ctx->getText();
+            auto * string_ctx = ctx->STRING();
+            if (!string_ctx)
+                throwInconsistentSchema("SelectorIdentifier", ctx->getText());
+
+            if (!parseStringLiteral(string_ctx, identifier))
+                return false;
+
+            if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(identifier.data()), identifier.size()))
+            {
+                error_listener.setError("invalid selector identifier", getStartPos(string_ctx));
+                return false;
+            }
+
             return true;
         }
 
         /// Extracts multiple label names separated by comma.
-        Strings getLabelNameList(antlr4_grammars::PromQLParser::LabelNameListContext * ctx)
+        Strings getLabelNameList(antlr4_grammars::PromQLParser::LabelNameListContext * ctx) const
         {
             Strings label_name_list;
 
             antlr4_grammars::PromQLParser::LabelNameContext * label_name_ctx = nullptr;
             for (size_t i = 0; (label_name_ctx = ctx->labelName(i)) != nullptr; ++i)
-            {
-                String label_name;
-                if (!getLabelName(label_name_ctx, label_name, /* require_non_empty = */ true))
-                    return {};
-                label_name_list.push_back(std::move(label_name));
-            }
+                label_name_list.push_back(getLabelName(label_name_ctx));
 
             return label_name_list;
         }
@@ -468,13 +393,13 @@ namespace
         /// Extracts a matcher.
         bool getMatcher(antlr4_grammars::PromQLParser::LabelMatcherContext * ctx, Matcher & res_matcher)
         {
-            auto * label_name_ctx = ctx->labelName();
+            auto * selector_identifier_ctx = ctx->selectorIdentifier();
             auto * label_value_ctx = ctx->STRING();
             auto * op_ctx = ctx->labelMatcherOperator();
-            if (!label_name_ctx || !label_value_ctx || !op_ctx)
+            if (!selector_identifier_ctx || !label_value_ctx || !op_ctx)
                 throwInconsistentSchema("LabelMatcher", ctx->getText());
 
-            if (!getLabelName(label_name_ctx, res_matcher.label_name, /* require_non_empty = */ false))
+            if (!getSelectorIdentifier(selector_identifier_ctx, res_matcher.label_name))
                 return false;
 
             MatcherType matcher_type = {};
@@ -495,19 +420,6 @@ namespace
             {
                 chassert(error_listener.hasError());
                 return false;
-            }
-
-            if (matcher_type == MatcherType::RE || matcher_type == MatcherType::NRE)
-            {
-                re2::RE2::Options options;
-                options.set_log_errors(false);
-                re2::RE2 regexp(res_matcher.label_value, options);
-                if (!regexp.ok())
-                {
-                    error_listener.setError(
-                        "invalid regular expression in label matcher: " + regexp.error(), getStartPos(ctx));
-                    return false;
-                }
             }
 
             return true;
@@ -543,44 +455,6 @@ namespace
             return matcher;
         }
 
-        [[nodiscard]] bool matcherMatchesEmptyString(const Matcher & matcher) const
-        {
-            switch (matcher.matcher_type)
-            {
-                case MatcherType::EQ:
-                    return matcher.label_value.empty();
-                case MatcherType::NE:
-                    return !matcher.label_value.empty();
-                case MatcherType::RE:
-                case MatcherType::NRE:
-                {
-                    re2::RE2::Options options;
-                    options.set_log_errors(false);
-                    re2::RE2 regexp(matcher.label_value, options);
-                    chassert(regexp.ok());
-
-                    const bool regexp_matches_empty_string = re2::RE2::FullMatch("", regexp);
-                    return matcher.matcher_type == MatcherType::RE
-                        ? regexp_matches_empty_string
-                        : !regexp_matches_empty_string;
-                }
-            }
-
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected PromQL matcher type");
-        }
-
-        bool validateSelectorHasNonEmptyMatcher(const MatcherList & matchers, size_t error_pos)
-        {
-            for (const auto & matcher : matchers)
-            {
-                if (!matcherMatchesEmptyString(matcher))
-                    return true;
-            }
-
-            error_listener.setError("vector selector must contain at least one non-empty matcher", error_pos);
-            return false;
-        }
-
         /// Makes a node for an instant selector.
         Node * makeInstantSelector(antlr4_grammars::PromQLParser::InstantSelectorContext * ctx)
         {
@@ -597,7 +471,7 @@ namespace
                 for (size_t i = 0; (label_matcher_ctx = label_matcher_list_ctx->labelMatcher(i)) != nullptr; ++i)
                 {
                     Matcher matcher;
-                    bool parsed = label_matcher_ctx->labelName()
+                    bool parsed = label_matcher_ctx->selectorIdentifier()
                         ? getMatcher(label_matcher_ctx, matcher)
                         : getMatcherForQuotedMetricName(label_matcher_ctx, matcher);
                     if (!parsed)
@@ -616,9 +490,6 @@ namespace
                     matchers.push_back(std::move(matcher));
                 }
             }
-
-            if (!validateSelectorHasNonEmptyMatcher(matchers, getStartPos(ctx)))
-                return nullptr;
 
             new_node->matchers = std::move(matchers);
             return addNode(std::move(new_node));
@@ -783,27 +654,6 @@ namespace
                     if (auto * extra_labels_ctx = group_right_ctx->labelNameList())
                         new_node->extra_labels = getLabelNameList(extra_labels_ctx);
                 }
-
-                if (!error_listener.hasError() && new_node->on && !new_node->extra_labels.empty())
-                {
-                    std::unordered_set<std::string_view> extra_labels;
-                    extra_labels.reserve(new_node->extra_labels.size());
-                    for (const auto & extra_label : new_node->extra_labels)
-                        extra_labels.emplace(extra_label);
-
-                    for (const auto & label : new_node->labels)
-                    {
-                        if (extra_labels.contains(label))
-                        {
-                            const size_t error_pos = convertCodePointPositionToByteOffset(
-                                promql_query, grouping->getStart()->getStartIndex());
-                            error_listener.setError(
-                                "label " + PrometheusQueryParsingUtil::quoteStringLiteral(label) + " must not occur in ON and GROUP clause at once",
-                                error_pos);
-                            break;
-                        }
-                    }
-                }
             }
             new_node->bool_modifier = bool_modifier;
 
@@ -910,32 +760,18 @@ namespace
 
         Node * makeFunction(antlr4_grammars::PromQLParser::Function_Context * ctx, const std::vector<Node *> & arguments)
         {
-            if (auto * function_name_ctx = ctx->FUNCTION())
-            {
-                const auto function_name = getText(function_name_ctx);
-                if ((function_name == "step" || function_name == "range") && !arguments.empty())
-                {
-                    error_listener.setError(
-                        fmt::format("Function '{}' expects no arguments", function_name),
-                        getStartPos(function_name_ctx));
-                    return nullptr;
-                }
-                return makeFunction(function_name, arguments);
-            }
-            if (ctx->START())
-                return makeFunction("start", arguments);
-            if (ctx->END())
-                return makeFunction("end", arguments);
-            throwInconsistentSchema("Function", ctx->getText());
+            auto * function_name_ctx = ctx->FUNCTION();
+            if (!function_name_ctx)
+                throwInconsistentSchema("Function", ctx->getText());
+
+            auto function_name = getText(function_name_ctx);
+            return makeFunction(function_name, arguments);
         }
 
         /// Returns the result type of a function.
         ResultType getFunctionResultType(std::string_view function_name)
         {
-            if (function_name == "scalar" || function_name == "time" || function_name == "pi"
-                || function_name == "min_of" || function_name == "max_of"
-                || function_name == "start" || function_name == "end"
-                || function_name == "step" || function_name == "range")
+            if (function_name == "scalar" || function_name == "time" || function_name == "pi")
                 return ResultType::SCALAR;
             else
                 return ResultType::INSTANT_VECTOR;
@@ -985,22 +821,6 @@ namespace
         }
 
         /// ANTLR visitors:
-
-        /// The check in the parser doesn't limit the depth of the parse tree: a chain of left-associative
-        /// operators like `1+1+...+1` is parsed in a loop, and its tree is as deep as the chain is long.
-        /// A visitor descends into a child through one of these two functions.
-        std::any visit(antlr4::tree::ParseTree * tree) override
-        {
-            checkStackSize();
-            return antlr4_grammars::PromQLParserBaseVisitor::visit(tree);
-        }
-
-        std::any visitChildren(antlr4::tree::ParseTree * node) override
-        {
-            checkStackSize();
-            return antlr4_grammars::PromQLParserBaseVisitor::visitChildren(node);
-        }
-
         std::any visitLiteral(antlr4_grammars::PromQLParser::LiteralContext * ctx) override
         {
             if (auto * number_ctx = ctx->NUMBER())
@@ -1034,7 +854,7 @@ namespace
             if (!res_node)
             {
                 chassert(error_listener.hasError());
-                return {};
+                return nullptr;
             }
 
             auto * offset_op_ctx = ctx->offsetOp();
@@ -1207,45 +1027,30 @@ namespace
 
 #endif
 
-bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view input, [[maybe_unused]] UInt32 time_scale, [[maybe_unused]] PrometheusQueryTree & res_query, [[maybe_unused]] String * error_message, [[maybe_unused]] size_t * error_pos)
+bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view input, [[maybe_unused]] UInt32 timestamp_scale, [[maybe_unused]] PrometheusQueryTree & res_query, [[maybe_unused]] String * error_message, [[maybe_unused]] size_t * error_pos)
 {
 #if USE_ANTLR4_GRAMMARS
     ErrorListener error_listener{input};
     antlr4::ANTLRInputStream input_stream{input};
 
-    PromQLLexerBailingOutOnError promql_lexer{&input_stream};
+    PromQLLexerBailingOutOnError promql_lexer{&input_stream, input, error_listener};
     promql_lexer.removeErrorListeners();
     promql_lexer.addErrorListener(&error_listener);
 
     antlr4::CommonTokenStream token_stream{&promql_lexer};
 
-    PromQLParserCheckingStackSize promql_parser{&token_stream};
+    antlr4_grammars::PromQLParser promql_parser{&token_stream};
     promql_parser.removeErrorListeners();
     promql_parser.addErrorListener(&error_listener);
 
     antlr4_grammars::PromQLParser::ExpressionContext * expression = nullptr;
     if (!error_listener.hasError())
-    {
-        try
-        {
-            expression = promql_parser.expression();
-        }
-        catch (const antlr4::ParseCancellationException &)
-        {
-            /// The parser stopped at a syntax error, which `error_listener` has already recorded.
-            chassert(error_listener.hasError());
-            if (error_message)
-                *error_message = error_listener.getErrorMessage();
-            if (error_pos)
-                *error_pos = error_listener.getErrorPos();
-            return false;
-        }
-    }
+        expression = promql_parser.expression();
 
     if (!expression)
         error_listener.setError("Couldn't get an expression after parsing promql query", 0);
 
-    PrometheusQueryTreeBuilder builder{input, time_scale, error_listener};
+    PrometheusQueryTreeBuilder builder{input, timestamp_scale, error_listener};
     std::vector<std::unique_ptr<Node>> parsed_nodes;
     Node * parsed_root = nullptr;
     if (expression && !error_listener.hasError())
@@ -1266,7 +1071,7 @@ bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view
     if (!parsed_root)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsing promql query '{}' failed without setting any error message", input);
 
-    res_query = PrometheusQueryTree{std::move(parsed_nodes), parsed_root, time_scale};
+    res_query = PrometheusQueryTree{std::move(parsed_nodes), parsed_root, timestamp_scale};
     return true;
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ANTLR4 support is disabled");

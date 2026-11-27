@@ -70,7 +70,7 @@ namespace ErrorCodes
 namespace
 {
 
-[[clang::no_destroy]] const std::unordered_set<String> possibly_injective_function_names
+const std::unordered_set<String> possibly_injective_function_names
 {
         "dictGet",
         "dictGetString",
@@ -192,10 +192,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NamesAndTypesList & so
                 {
                     auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
                     if (user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
-                    {
-                        UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(context);
                         function_builder = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(function->name, context);
-                    }
                 }
 
                 if (!function_builder)
@@ -563,10 +560,10 @@ void optimizeUsing(const ASTSelectQuery * select_query)
         expression_list = uniq_expressions_list;
 }
 
-void optimizeAggregationFunctions(ASTPtr & query, const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns)
+void optimizeAggregationFunctions(ASTPtr & query)
 {
     /// Move arithmetic operations out of aggregation functions
-    ArithmeticOperationsInAgrFuncVisitor::Data data{tables_with_columns};
+    ArithmeticOperationsInAgrFuncVisitor::Data data;
     ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
 }
 
@@ -686,7 +683,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     /// Move arithmetic operations out of aggregation functions
     if (settings[Setting::optimize_arithmetic_operations_in_aggregate_functions])
-        optimizeAggregationFunctions(query, tables_with_columns);
+        optimizeAggregationFunctions(query);
 
     bool converted_to_cnf = false;
     if (settings[Setting::convert_query_to_cnf])

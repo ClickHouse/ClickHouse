@@ -2,15 +2,17 @@
 title: 스키마 설계
 slug: /integrations/data-formats/json/schema
 description: 'JSON 스키마를 최적으로 설계하는 방법'
-keywords: ['json', 'clickhouse', '삽입', '적재', '포맷', '스키마', '구조화된', '반정형']
+keywords: ['json', 'clickhouse', '삽입', '적재', '포맷', '스키마', '정형', '반정형']
 score: 20
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 [스키마 추론](/ko/guides/clickhouse/data-formats/json/inference)을 사용하면 JSON 데이터의 초기 스키마를 정하고 S3와 같은 위치에 있는 JSON 데이터 파일을 제자리에서 쿼리할 수 있지만, 데이터에 대해서는 최적화된 버전 관리 스키마를 구축하는 것이 좋습니다. 아래에서는 JSON 구조를 모델링하기 위한 권장 접근 방식을 설명합니다.
 
 <div id="static-vs-dynamic-json">
-  ## 정적 JSON과 동적 JSON {#static-vs-dynamic-json}
+  ## 정적 JSON과 동적 JSON
 </div>
 
 JSON 스키마를 정의할 때 가장 중요한 작업은 각 키의 값에 맞는 적절한 타입을 결정하는 것입니다. 이를 위해 JSON 계층 구조의 각 키에 다음 규칙을 재귀적으로 적용할 것을 권장합니다.
@@ -86,7 +88,7 @@ JSON 스키마를 정의할 때 가장 중요한 작업은 각 키의 값에 맞
 </Note>
 
 <div id="handling-static-structures">
-  ## 정적 구조 처리 {#handling-static-structures}
+  ## 정적 구조 처리
 </div>
 
 정적 구조는 이름이 지정된 Tuple, 즉 `Tuple`을 사용해 처리하는 것을 권장합니다. 객체 배열은 튜플 배열, 즉 `Array(Tuple)`로 저장할 수 있습니다. 튜플 내부의 컬럼과 각 컬럼의 타입도 동일한 규칙에 따라 정의해야 합니다. 이렇게 하면 아래와 같이 중첩된 객체를 표현하기 위해 중첩된 Tuple이 사용될 수 있습니다.
@@ -202,7 +204,7 @@ ORDER BY company.name
 ```
 
 <div id="handling-default-values">
-  ### 기본값 처리 {#handling-default-values}
+  ### 기본값 처리
 </div>
 
 JSON 객체는 구조화되어 있더라도 알려진 키 중 일부만 포함된 희소한 경우가 많습니다. 다행히 `Tuple` 타입은 JSON payload에 모든 컬럼이 포함되어 있을 필요가 없습니다. 제공되지 않은 경우에는 기본값이 사용됩니다.
@@ -288,7 +290,7 @@ FORMAT PrettyJSONEachRow
 </Info>
 
 <div id="handling-new-columns">
-  ### 새 컬럼 처리 {#handling-new-columns}
+  ### 새 컬럼 처리
 </div>
 
 구조화된 접근 방식은 JSON 키가 고정되어 있을 때 가장 간단하지만, 스키마 변경을 미리 계획할 수 있다면 이 접근 방식은 계속 사용할 수 있습니다. 즉, 새 키를 사전에 알고 있고 그에 맞춰 스키마를 수정할 수 있는 경우입니다.
@@ -371,7 +373,7 @@ SELECT id, nickname FROM people
 ```
 
 <div id="handling-semi-structured-dynamic-structures">
-  ## 반정형/동적 구조 처리 {#handling-semi-structured-dynamic-structures}
+  ## 반정형/동적 구조 처리
 </div>
 
 키가 동적으로 추가되거나 여러 타입을 가질 수 있는 반정형 JSON 데이터에는 [`JSON`](/ko/reference/data-types/newjson) 타입을 권장합니다.
@@ -502,19 +504,23 @@ SELECT id, nickname FROM people
 * **컬럼 폭증 위험 방지** - JSON 타입은 서브컬럼이 전용 컬럼으로 저장되는 경우 잠재적으로 수천 개의 컬럼까지 확장될 수 있지만, 이로 인해 과도하게 많은 컬럼 파일이 생성되어 성능에 영향을 주는 컬럼 파일 폭증이 발생할 수 있습니다. 이를 완화하기 위해 JSON에 사용되는 기본 [Dynamic type](/ko/reference/data-types/dynamic)은 [`max_dynamic_paths`](/ko/reference/data-types/newjson#reading-json-paths-as-sub-columns) 매개변수를 제공하며, 이 매개변수는 별도 컬럼 파일로 저장되는 고유 경로 수를 제한합니다. 임계값에 도달하면 추가 경로는 컴팩트한 인코딩 포맷을 사용하는 공유 컬럼 파일에 저장되므로, 유연한 데이터 수집을 지원하면서도 성능과 스토리지 효율성을 유지할 수 있습니다. 다만 이 공유 컬럼 파일에 접근할 때는 성능이 다소 떨어집니다. 하지만 JSON 컬럼은 [타입 힌트](#using-type-hints-and-skipping-paths)와 함께 사용할 수 있습니다. &quot;힌트가 지정된&quot; 컬럼은 전용 컬럼과 동일한 성능을 제공합니다.
 * **경로와 타입을 더 쉽게 내부 검사** - JSON 타입은 추론된 타입과 경로를 확인하기 위한 [인트로스펙션 함수](/ko/reference/data-types/newjson#introspection-functions)를 지원하지만, 정적 구조는 예를 들어 `DESCRIBE`를 사용해 더 간단하게 확인할 수 있습니다.
 
-### 단일 JSON 컬럼 {#single-json-column}
+<div id="single-json-column">
+  ### 단일 JSON 컬럼
+</div>
 
 이 접근 방식은 프로토타이핑과 데이터 엔지니어링 작업에 유용합니다. 프로덕션 환경에서는 필요한 경우에만 동적인 하위 구조에 `JSON`을 사용해 보십시오.
 
 <Info>
   **성능 고려 사항**
 
-  단일 JSON 컬럼은 필요하지 않은 JSON 경로를 스키핑(저장하지 않음)하고 [타입 힌트](#using-type-hints-and-skipping-paths)를 사용해 최적화할 수 있습니다. 타입 힌트를 사용하면 서브컬럼의 유형을 사용자가 명시적으로 정의할 수 있으므로, 쿼리 시점에 수행되는 추론 및 간접 처리 과정을 건너뛸 수 있습니다. 이를 통해 명시적 스키마를 사용하는 경우와 동일한 성능을 얻을 수 있습니다. 자세한 내용은 [&quot;타입 힌트 사용 및 경로 건너뛰기&quot;](#using-type-hints-and-skipping-paths)을 참조하십시오.
+  단일 JSON 컬럼은 필요하지 않은 JSON 경로를 스키핑(저장하지 않음)하고 [타입 힌트](#using-type-hints-and-skipping-paths)를 사용해 최적화할 수 있습니다. 타입 힌트를 사용하면 하위 컬럼의 유형을 사용자가 명시적으로 정의할 수 있으므로, 쿼리 시점에 수행되는 추론 및 간접 처리 과정을 건너뛸 수 있습니다. 이를 통해 명시적 스키마를 사용하는 경우와 동일한 성능을 얻을 수 있습니다. 자세한 내용은 [&quot;타입 힌트 사용 및 경로 스키핑&quot;](#using-type-hints-and-skipping-paths)을 참조하십시오.
 </Info>
 
 여기서 단일 JSON 컬럼의 스키마는 단순합니다:
 
 ```sql
+SET enable_json_type = 1;
+
 CREATE TABLE people
 (
     `json` JSON(username String)
@@ -524,11 +530,7 @@ ORDER BY json.username;
 ```
 
 <Note>
-  `username` 컬럼을 정렬/프라이머리 키에 사용하므로 JSON 정의에서 이 컬럼에 대한 [타입 힌트](#using-type-hints-and-skipping-paths)를 제공합니다. 이렇게 하면 ClickHouse가 이 컬럼이 null이 될 수 없음을 인지하고, 어떤 `username` 서브컬럼을 사용해야 하는지도 올바르게 판단할 수 있습니다(유형별로 여러 개가 있을 수 있어, 그렇지 않으면 모호해질 수 있습니다).
-</Note>
-
-<Note>
-  버전 24.8~25.2에서는 테이블을 생성하기 전에 `SET allow_experimental_json_type = 1;`을 실행하여 `JSON` 타입을 활성화하십시오.
+  `username` 컬럼을 정렬/프라이머리 키에 사용하므로 JSON 정의에서 이 컬럼에 대한 [타입 힌트](#using-type-hints-and-skipping-paths)를 제공합니다. 이렇게 하면 ClickHouse가 이 컬럼이 null이 될 수 없음을 인지하고, 어떤 `username` 하위 컬럼을 사용해야 하는지도 올바르게 판단할 수 있습니다(유형별로 여러 개가 있을 수 있어, 그렇지 않으면 모호해질 수 있습니다).
 </Note>
 
 위 테이블에 행을 삽입하려면 `JSONAsObject` 포맷을 사용할 수 있습니다:
@@ -700,7 +702,7 @@ FROM people
 ```
 
 <div id="targeted-json-column">
-  ### 대상 JSON 컬럼 {#targeted-json-column}
+  ### 대상 JSON 컬럼
 </div>
 
 프로토타이핑 및 데이터 엔지니어링 작업에는 유용하지만, 프로덕션 환경에서는 가능한 한 명시적인 스키마(schema)를 사용하시기 바랍니다.
@@ -806,7 +808,7 @@ FORMAT PrettyJsonEachRow
 ```
 
 <div id="using-type-hints-and-skipping-paths">
-  ### 타입 힌트와 스키핑 경로 사용하기 {#using-type-hints-and-skipping-paths}
+  ### 타입 힌트와 스키핑 경로 사용하기
 </div>
 
 타입 힌트를 사용하면 경로와 해당 하위 컬럼의 타입을 지정하여 불필요한 타입 추론을 방지할 수 있습니다. 다음 예시에서는 JSON 컬럼 `company.labels` 안의 JSON 키 `dissolved`, `employees`, `founded`에 대한 타입을 지정합니다.
@@ -972,7 +974,7 @@ FORMAT PrettyJSONEachRow
 ```
 
 <div id="optimizing-performance-with-type-hints">
-  #### 타입 힌트로 성능 최적화하기 {#optimizing-performance-with-type-hints}
+  #### 타입 힌트로 성능 최적화하기
 </div>
 
 타입 힌트는 불필요한 타입 추론을 피하는 수단에 그치지 않습니다. 저장 및 처리 과정의 간접 단계를 완전히 없애고, [최적의 기본 타입](/ko/guides/clickhouse/data-modelling/schema-design#optimizing-types)도 지정할 수 있게 해줍니다. 타입 힌트가 지정된 JSON 경로는 항상 기존 컬럼처럼 저장되므로, [**discriminator 컬럼**](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data)이나 쿼리 시점의 동적 해석이 필요하지 않습니다.
@@ -981,35 +983,25 @@ FORMAT PrettyJSONEachRow
 
 따라서 대체로 일관적이면서도 JSON의 유연성이 필요한 데이터셋에서는, 타입 힌트를 통해 스키마나 수집 파이프라인을 재구성하지 않고도 성능을 유지할 수 있습니다.
 
-### 동적 경로 구성 {#configuring-dynamic-paths}
+<div id="configuring-dynamic-paths">
+  ### 동적 경로 구성
+</div>
 
 ClickHouse는 각 JSON 경로를 진정한 열 지향 레이아웃의 서브컬럼으로 저장하므로, 압축, SIMD 가속 처리, 최소한의 디스크 I/O 등 기존 컬럼에서와 동일한 성능상 이점을 제공합니다. JSON 데이터에서 고유한 각 경로와 타입의 조합은 디스크의 개별 컬럼 파일이 될 수 있습니다.
 
-<div className="ch-image-md">
-  <Frame>
-    ![JSON 경로별 컬럼](/images/integrations/data-ingestion/data-formats/json_column_per_type.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/data-formats/json_column_per_type.webp" size="md" alt="JSON 경로별 컬럼" />
 
 예를 들어 두 JSON 경로가 서로 다른 타입으로 삽입되면, ClickHouse는 각 [구체적인 타입의 값을 별도의 서브컬럼에 저장합니다](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data). 이러한 서브컬럼은 각각 독립적으로 액세스할 수 있어 불필요한 I/O를 최소화합니다. 여러 타입을 가진 컬럼을 쿼리하더라도 값은 여전히 하나의 열 지향 응답으로 반환됩니다.
 
 또한 ClickHouse는 오프셋을 활용해 이러한 서브컬럼이 조밀한 상태를 유지하도록 하며, 존재하지 않는 JSON 경로에 대해서는 기본값을 저장하지 않습니다. 이 방식은 압축 효율을 극대화하고 I/O를 더욱 줄여 줍니다.
 
-<div className="ch-image-md">
-  <Frame>
-    ![JSON 오프셋](/images/integrations/data-ingestion/data-formats/json_offsets.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/data-formats/json_offsets.webp" size="md" alt="JSON 오프셋" />
 
 하지만 카디널리티가 높거나 JSON 구조 변화가 매우 큰 경우(예: telemetry 파이프라인, 로그, 머신러닝 피처 스토어)에는 이러한 동작으로 인해 컬럼 파일 수가 급증할 수 있습니다. 새로운 고유 JSON 경로가 생길 때마다 새 컬럼 파일이 생성되고, 해당 경로 아래에서 타입 변형이 추가될 때마다 컬럼 파일도 하나씩 더 생성됩니다. 이는 읽기 성능 측면에서는 최적이지만, 작은 파일이 지나치게 많아져 파일 디스크립터 고갈, 메모리 사용량 증가, 머지 속도 저하 같은 운영상 문제를 초래합니다.
 
 이를 완화하기 위해 ClickHouse는 오버플로우 서브컬럼이라는 개념을 도입했습니다. 고유한 JSON 경로 수가 임계값을 초과하면, 추가 경로는 compact 인코딩 포맷을 사용하는 하나의 공유 파일에 저장됩니다. 이 파일도 쿼리할 수 있지만, 전용 서브컬럼과 같은 성능 특성의 이점은 누릴 수 없습니다.
 
-<div className="ch-image-md">
-  <Frame>
-    ![공유 JSON 컬럼](/images/integrations/data-ingestion/data-formats/json_shared_column.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/data-formats/json_shared_column.webp" size="md" alt="공유 JSON 컬럼" />
 
 이 임계값은 JSON 타입 선언의 [`max_dynamic_paths`](/ko/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json) 매개변수로 제어됩니다.
 

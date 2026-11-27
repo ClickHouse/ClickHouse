@@ -60,7 +60,7 @@ public:
     }
 
     template <typename F>
-    const CNFQuery & iterateGroups(F func) const /// NOLINT(modernize-use-nodiscard): often called only for its side effect
+    const CNFQuery & iterateGroups(F func) const
     {
         for (const auto & group : statements)
             func(group);
@@ -105,9 +105,9 @@ public:
         return *this;
     }
 
-    [[nodiscard]] const AndGroup & getStatements() const { return statements; }
+    const AndGroup & getStatements() const { return statements; }
 
-    [[nodiscard]] std::string dump() const;
+    std::string dump() const;
 
     /// Converts != -> NOT =; <,>= -> (NOT) <; >,<= -> (NOT) <= for simpler matching
     CNFQuery & pullNotOutFunctions();

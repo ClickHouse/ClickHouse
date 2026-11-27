@@ -14,14 +14,15 @@ doc_type: 'reference'
 
 ```sql
 ntile (buckets)
-  OVER ([[PARTITION BY grouping_column] ORDER BY sorting_column] | [window_name])
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING] | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] ORDER BY sorting_column)
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 ```
 
-Для каждой партиции ntile берёт количество бакетов (положительное целое число) из первой строки партиции в порядке окна; значения в последующих строках игнорируются
+Аргумент `buckets` должен быть константным положительным целым числом.
 
-Требуется предложение `ORDER BY`. Функция всегда читает всю партицию; рамка окна, если она указана, игнорируется.
+Требуется предложение `ORDER BY`. Рамка окна должна охватывать всю партицию (`ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`); это также рамка по умолчанию, которая используется, если она не указана явно.
 
 Подробнее о синтаксисе оконных функций см.: [Оконные функции — синтаксис](/ru/reference/functions/window-functions/index#syntax).
 

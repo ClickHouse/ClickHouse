@@ -6,11 +6,15 @@ tags: ['パフォーマンスと最適化']
 keywords: ['主キー']
 ---
 
-## 主キーの確認 {#checking-your-primary-key}
+<div id="checking-your-primary-key">
+  ## 主キーの確認
+</div>
 
 主キーで並べ替えや絞り込みをしているつもりでも、クエリが想定より遅いことがあります。この記事では、主キーが実際に使われているかを確認する方法と、使われていない主な理由を紹介します。
 
-## テーブルの作成 {#create-table}
+<div id="create-table">
+  ## テーブルの作成
+</div>
 
 次のようなシンプルなテーブルを考えます。
 
@@ -26,7 +30,9 @@ ORDER BY (code, toUnixTimestamp(timestamp))
 
 ソートキーの2番目のエントリに `toUnixTimestamp(timestamp)` が含まれている点に注目してください。
 
-## データを投入する {#populate-data}
+<div id="populate-data">
+  ## データを投入する
+</div>
 
 このテーブルに1億行のデータを投入します:
 
@@ -48,7 +54,9 @@ FROM logs
 1 row in set. Elapsed: 0.002 sec.
 ```
 
-## 基本的なフィルタリング {#basic-filtering}
+<div id="basic-filtering">
+  ## 基本的なフィルタリング
+</div>
 
 `code`でフィルタすると、出力にスキャンされた行数 (`49.15 thousand`) が表示されます。これは、合計1億行の一部にすぎないことがわかります。
 
@@ -58,7 +66,7 @@ FROM logs
 WHERE code = '200'
 
 ┌────────c─┐
-│ 65607542 │ -- 65.61 million
+│ 65607542 │ -- 6561万
 └──────────┘
 
 1 row in set. Elapsed: 0.021 sec. Processed 49.15 thousand rows, 49.17 KB (2.34 million rows/s., 2.34 MB/s.)
@@ -101,10 +109,12 @@ PrimaryKey
 グラニュールは ClickHouse におけるデータ処理の単位で、通常はそれぞれ 8192 行を含みます。グラニュールとその絞り込み方法の詳細については、[こちらのガイド](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#mark-files-are-used-for-locating-granules)を参照することをお勧めします。
 
 <Note>
-  順序キーの後ろのキーでフィルタリングしても、タプル内でそれより前にあるキーでフィルタリングする場合ほど効率的ではありません。その理由については、[こちら](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)を参照してください
+  ソートキーの後ろのキーでフィルタリングしても、タプル内でそれより前にあるキーでフィルタリングする場合ほど効率的ではありません。その理由については、[こちら](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)を参照してください
 </Note>
 
-## 複数キーでのフィルタリング {#multi-key-filtering}
+<div id="multi-key-filtering">
+  ## 複数キーでのフィルタリング
+</div>
 
 `code` と `timestamp` を条件にフィルタリングするとします:
 
@@ -146,7 +156,9 @@ WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= 
 
 この場合、2つのソートキーの両方が行の絞り込みに使われるため、読み取る必要があるグラニュールは `87` 個のみです。
 
-## ソートでキーを使用する {#using-keys-in-sorting}
+<div id="using-keys-in-sorting">
+  ## ソートでキーを使用する
+</div>
 
 ClickHouse は、効率的なソートのために順序キーを活用することもできます。具体的には、
 

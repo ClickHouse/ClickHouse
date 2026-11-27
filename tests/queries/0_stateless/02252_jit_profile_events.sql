@@ -32,29 +32,3 @@ SELECT ProfileEvents['CompileFunction'] FROM system.query_log WHERE event_date >
     AND query == 'SELECT avg(number), avg(number + 1), avg(number + 2) FROM numbers(1) GROUP BY number;'
     AND event_date >= yesterday() AND event_time > now() - interval 10 minute
     LIMIT 1;
-
--- The counter of `min_count_to_compile_expression` is cleared together with the compiled expression cache.
-SET compile_expressions = 1;
-
-SELECT number * 1000003 + 7 FROM numbers(1) SETTINGS min_count_to_compile_expression = 1000000000 FORMAT Null;
-SELECT number * 1000003 + 7 FROM numbers(1) SETTINGS min_count_to_compile_expression = 1000000000 FORMAT Null;
-SELECT number * 1000003 + 7 FROM numbers(1) SETTINGS min_count_to_compile_expression = 1000000000 FORMAT Null;
-SELECT number * 1000003 + 7 FROM numbers(1) SETTINGS min_count_to_compile_expression = 1000000000 FORMAT Null;
-SELECT number * 1000003 + 7 FROM numbers(1) SETTINGS min_count_to_compile_expression = 1000000000 FORMAT Null;
-SELECT number * 1000003 + 7 FROM numbers(1) SETTINGS min_count_to_compile_expression = 1000000000 FORMAT Null;
-SELECT number * 1000003 + 7 FROM numbers(1) SETTINGS min_count_to_compile_expression = 1000000000 FORMAT Null;
-SELECT number * 1000003 + 7 FROM numbers(1) SETTINGS min_count_to_compile_expression = 1000000000 FORMAT Null;
-SELECT number * 1000003 + 7 FROM numbers(1) SETTINGS min_count_to_compile_expression = 1000000000 FORMAT Null;
-SELECT number * 1000003 + 7 FROM numbers(1) SETTINGS min_count_to_compile_expression = 1000000000 FORMAT Null;
-
-SYSTEM CLEAR COMPILED EXPRESSION CACHE;
-
-SELECT number * 1000003 + 7 FROM numbers(1) SETTINGS min_count_to_compile_expression = 10 FORMAT Null;
-
-SYSTEM FLUSH LOGS query_log;
-
-SELECT ProfileEvents['CompileFunction'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
-    current_database = currentDatabase()
-    AND type = 'QueryFinish'
-    AND query == 'SELECT number * 1000003 + 7 FROM numbers(1) SETTINGS min_count_to_compile_expression = 10 FORMAT Null;'
-    LIMIT 1;

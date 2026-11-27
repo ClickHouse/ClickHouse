@@ -1,3 +1,4 @@
+SET allow_experimental_analyzer = 1;
 
 -- Basic functionality with GROUPING and GROUP BY ALL WITH ROLLUP
 SELECT l.number, sum(r.number), grouping(l.number)

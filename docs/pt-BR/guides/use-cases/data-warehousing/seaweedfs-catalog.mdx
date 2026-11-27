@@ -8,9 +8,9 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<BetaBadge />
+<ExperimentalBadge />
 
 <Note>
   A integração com o catálogo SeaweedFS funciona apenas com tabelas Iceberg.
@@ -25,23 +25,27 @@ O SeaweedFS é um armazenamento distribuído de arquivos e objetos de código ab
 * **Manutenção no servidor** - compactação automática de arquivos Parquet e expiração de snapshots, sem serviço de manutenção externo
 
 <Note>
-  Este recurso está em Beta. Habilite-o com:
-  `SET allow_database_iceberg = 1;`
-
-  Em versões anteriores à 25.8, nas quais o recurso é experimental, use `SET allow_experimental_database_iceberg = 1;`.
+  Como este recurso é experimental, você precisará ativá-lo usando:
+  `SET allow_experimental_database_iceberg = 1;`
 </Note>
 
-## Configuração para desenvolvimento local {#local-development-setup}
+<div id="local-development-setup">
+  ## Configuração para desenvolvimento local
+</div>
 
 Para desenvolvimento e testes locais, você pode executar o SeaweedFS e o ClickHouse com o Docker Compose. Essa abordagem é ideal para aprendizado, prototipagem e ambientes de desenvolvimento.
 
-### Pré-requisitos {#local-prerequisites}
+<div id="local-prerequisites">
+  ### Pré-requisitos
+</div>
 
 1. **Docker e Docker Compose**: verifique se o Docker está instalado e em execução
 2. **Versões**: SeaweedFS 4.42 ou posterior; ClickHouse 26.8 ou posterior (as versões desde a 25.8 podem ler e inserir, mas a criação de tabelas pelo catálogo requer a versão 26.8)
 3. **Python com PyIceberg** (opcional): usado abaixo para inserir dados de exemplo
 
-### Configurar o catálogo local do SeaweedFS {#setting-up-local-seaweedfs-catalog}
+<div id="setting-up-local-seaweedfs-catalog">
+  ### Configurar o catálogo local do SeaweedFS
+</div>
 
 **Etapa 1:** Crie uma nova pasta para executar o exemplo e, em seguida, crie um arquivo `s3config.json` com as credenciais do gateway S3 e do catálogo:
 
@@ -68,7 +72,7 @@ Para desenvolvimento e testes locais, você pode executar o SeaweedFS e o ClickH
 services:
   seaweedfs:
     image: chrislusf/seaweedfs:latest
-    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics -admin.port=12646
+    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics
     ports:
       - "8333:8333"   # S3 endpoint
       - "8181:8181"   # Iceberg REST catalog
@@ -97,7 +101,7 @@ networks:
     driver: bridge
 ```
 
-O comando `mini` inicia toda a stack do SeaweedFS em um único contêiner. A flag `-tableBucket=analytics` cria antecipadamente um bucket do S3 Tables chamado `analytics`, que funciona como warehouse do Iceberg. `-admin.port=12646` mantém a porta gRPC de administração derivada pelo SeaweedFS abaixo da faixa de portas efêmeras do Linux, evitando que uma conexão de inicialização a reserve primeiro.
+O comando `mini` inicia toda a stack do SeaweedFS em um único container. A flag `-tableBucket=analytics` cria antecipadamente um bucket do S3 Tables chamado `analytics`, que funciona como warehouse do Iceberg.
 
 **Passo 3:** Execute o seguinte comando para iniciar os serviços:
 
@@ -105,7 +109,9 @@ O comando `mini` inicia toda a stack do SeaweedFS em um único contêiner. A fla
 docker compose up -d
 ```
 
-### Inserindo dados de exemplo {#seeding-sample-data}
+<div id="seeding-sample-data">
+  ### Inserindo dados de exemplo
+</div>
 
 O catálogo está inicialmente vazio. Crie uma tabela e acrescente algumas linhas usando o PyIceberg (`pip install pyiceberg pyarrow`):
 
@@ -138,7 +144,9 @@ table = catalog.create_table("sales.orders", schema=rows.schema)
 table.append(rows)
 ```
 
-### Como se conectar ao catálogo local do SeaweedFS {#connecting-to-local-seaweedfs-catalog}
+<div id="connecting-to-local-seaweedfs-catalog">
+  ### Como se conectar ao catálogo local do SeaweedFS
+</div>
 
 Conecte-se ao contêiner do ClickHouse:
 
@@ -149,7 +157,7 @@ docker exec -it seaweedfs-clickhouse clickhouse-client
 Em seguida, crie a conexão com o banco de dados no catálogo do SeaweedFS:
 
 ```sql
-SET allow_database_iceberg = 1;
+SET allow_experimental_database_iceberg = 1;
 
 CREATE DATABASE lake
 ENGINE = DataLakeCatalog('http://seaweedfs:8181/v1', 'tutorialkey', 'tutorialsecret')
@@ -162,7 +170,9 @@ SETTINGS catalog_type = 'rest',
 
 Os argumentos do engine contêm as credenciais do S3 usadas pelo ClickHouse para ler os dados da tabela, enquanto `catalog_credential` e `oauth_server_uri` autenticam no próprio catálogo por meio do fluxo OAuth2 de credenciais de cliente. O SeaweedFS aceita a mesma chave de acesso e chave secreta para ambos.
 
-## Consultando tabelas do catálogo do SeaweedFS com o ClickHouse {#querying-seaweedfs-catalog-tables-using-clickhouse}
+<div id="querying-seaweedfs-catalog-tables-using-clickhouse">
+  ## Consultando tabelas do catálogo do SeaweedFS com o ClickHouse
+</div>
 
 Agora que a conexão foi estabelecida, você pode começar a fazer consultas por meio do catálogo do SeaweedFS. Por exemplo:
 
@@ -201,13 +211,15 @@ ORDER BY total DESC;
 └────────┴────────┘
 ```
 
-## Criar tabelas e gravar dados do ClickHouse {#creating-tables-and-writing-data-from-clickhouse}
+<div id="creating-tables-and-writing-data-from-clickhouse">
+  ## Criar tabelas e gravar dados do ClickHouse
+</div>
 
 Você também pode criar tabelas no catálogo do SeaweedFS e gravar dados nelas diretamente do ClickHouse:
 
 ```sql
-SET allow_database_iceberg = 1;
-SET allow_insert_into_iceberg = 1;
+SET allow_experimental_database_iceberg = 1;
+SET allow_experimental_insert_into_iceberg = 1;
 SET write_full_path_in_iceberg_metadata = 1;
 
 CREATE TABLE lake.`sales.returns` (id Int64, reason String)
@@ -227,15 +239,15 @@ SELECT * FROM lake.`sales.returns` ORDER BY id;
 
 A cláusula do engine `IcebergS3` especifica o caminho de armazenamento da nova tabela, e `write_full_path_in_iceberg_metadata` faz com que o ClickHouse registre a localização completa da tabela no catálogo.
 
-Em versões anteriores à 26.2, a configuração de insert se chama `allow_experimental_insert_into_iceberg`.
-
 <Note>
   A criação de tabelas por meio de um catálogo requer o ClickHouse 26.8 ou posterior. As versões 26.4 a 26.7 gravam os arquivos da tabela antes de registrar o espaço de nomes, o que o SeaweedFS rejeita, a menos que o espaço de nomes já exista no catálogo; versões anteriores à 26.4 parecem funcionar, mas os arquivos da tabela são gravados no armazenamento de objetos sem serem registrados no catálogo.
 </Note>
 
-O SeaweedFS 4.42 ou posterior adiciona ou corrige metadados quando o ClickHouse confirma um insert, permitindo que o PyIceberg e o Spark leiam os dados inseridos. Isso inclui preencher IDs de campo ausentes, converter caminhos de arquivos relativos ao bucket em localizações absolutas e adicionar um mapeamento padrão de nomes de colunas.
+Quando o ClickHouse confirma um insert, o catálogo do SeaweedFS corrige metadados que o writer experimental ainda não produz: preenche IDs de campo ausentes nos manifests, reescreve caminhos de arquivos relativos ao bucket como localizações absolutas e atribui um mapeamento de nomes padrão à tabela. Leitores rigorosos, como PyIceberg e Spark, podem então ler as linhas gravadas pelo ClickHouse. Isso requer o SeaweedFS 4.42 ou posterior.
 
-## Carregando dados do seu lago de dados para o ClickHouse {#loading-data-from-your-data-lake-into-clickhouse}
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## Carregando dados do seu lago de dados para o ClickHouse
+</div>
 
 Se precisar carregar dados do catálogo do SeaweedFS no ClickHouse, comece criando uma tabela local no ClickHouse:
 

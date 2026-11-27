@@ -13,7 +13,9 @@ doc_type: 'reference'
 
 どちらの関数も、対象が通常の `db`/`table` である場合に `SELECT` クエリと `INSERT` クエリで使用できます。対象自体がテーブル関数である場合 (たとえば `remote('127.0.0.1', numbers(10))`) 、そのテーブルは読み取り専用です。挿入先となるリモートテーブルが存在しないため、`INSERT` は `NOT_IMPLEMENTED` 例外で拒否されます。
 
-## 構文 {#syntax}
+<div id="syntax">
+  ## 構文
+</div>
 
 ```sql
 remote(addresses_expr, [db, table, user [, password], sharding_key][, SETTINGS name = value, ...])
@@ -24,11 +26,13 @@ remoteSecure(addresses_expr, [db.table, user [, password], sharding_key][, SETTI
 remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...])
 ```
 
-## パラメーター {#parameters}
+<div id="parameters">
+  ## パラメータ
+</div>
 
 | 引数                           | 説明                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `addresses_expr`             | リモートサーバーのアドレス、または複数のリモートサーバーのアドレスを生成する式です。フォーマット: `host` または `host:port`。<br /><br />    `host` には、サーバー名、IPv4 アドレス、または IPv6 アドレスを指定できます。IPv6 アドレスは `[]` で囲んで指定する必要があります。<br /><br />    `port` はリモートサーバーの TCP ポートです。ポートを省略した場合、テーブル関数 `remote` ではサーバー設定ファイルの [tcp&#95;port](/ja/reference/settings/server-settings/settings/tcp-port#tcp_port) (デフォルトは 9000) が使用され、テーブル関数 `remoteSecure` では [tcp&#95;port&#95;secure](/ja/reference/settings/server-settings/settings/tcp-port#tcp_port_secure) (デフォルトは 9440) が使用されます。<br /><br />    IPv6 アドレスでは、ポートの指定が必須です。<br /><br />    `addresses_expr` パラメーターのみを指定した場合、`db` と `table` にはデフォルトで `system.one` が使用されます。<br /><br />    型: [String](/ja/reference/data-types/string). |
+| `addresses_expr`             | リモートサーバーのアドレス、または複数のリモートサーバーのアドレスを生成する式です。フォーマット: `host` または `host:port`。<br /><br />    `host` には、サーバー名、IPv4 アドレス、または IPv6 アドレスを指定できます。IPv6 アドレスは `[]` で囲んで指定する必要があります。<br /><br />    `port` はリモートサーバーの TCP ポートです。ポートを省略した場合、テーブル関数 `remote` ではサーバー設定ファイルの [tcp&#95;port](/ja/reference/settings/server-settings/settings/tcp-port#tcp_port) (デフォルトは 9000) が使用され、テーブル関数 `remoteSecure` では [tcp&#95;port&#95;secure](/ja/reference/settings/server-settings/settings/tcp-port#tcp_port_secure) (デフォルトは 9440) が使用されます。<br /><br />    IPv6 アドレスでは、ポートの指定が必須です。<br /><br />    `addresses_expr` パラメータのみを指定した場合、`db` と `table` にはデフォルトで `system.one` が使用されます。<br /><br />    型: [String](/ja/reference/data-types/string). |
 | `db`                         | データベース名。型: [String](/ja/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `table`                      | テーブル名。型: [String](/ja/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `user`                       | ユーザー名。指定しない場合は `default` が使用されます。型: [String](/ja/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -38,11 +42,15 @@ remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...
 
 引数は [名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) を使って渡すこともできます。
 
-## 戻り値 {#returned-value}
+<div id="returned-value">
+  ## 戻り値
+</div>
 
 リモートサーバー上のテーブル。
 
-## 使用方法 {#usage}
+<div id="usage">
+  ## 使用方法
+</div>
 
 テーブル関数 `remote` と `remoteSecure` はリクエストごとに接続を再確立するため、代わりに `Distributed` テーブルを使用することをお勧めします。また、ホスト名が設定されている場合は名前解決が行われ、複数のレプリカを扱う際にエラーはカウントされません。大量のクエリを処理する場合は、必ず事前に `Distributed` テーブルを作成し、`remote` テーブル関数は使用しないでください。
 
@@ -56,7 +64,9 @@ remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...
 
 同じパラメーターを `Remote` および `RemoteSecure` テーブルエンジンでも使用して、アドホックではなく永続テーブルを作成できます。詳しくは [Remote and RemoteSecure engines](/ja/reference/engines/table-engines/special/distributed#distributed-remote-engines) を参照してください。唯一の違いは `SETTINGS` 句です。エンジンでは、これを引数内ではなくエンジン定義の後に指定します。`ENGINE = Remote(...) SETTINGS skip_unavailable_shards = 1`。
 
-### アドレス {#addresses}
+<div id="addresses">
+  ### アドレス
+</div>
 
 ```text
 example01-01-1
@@ -75,9 +85,13 @@ localhost
 example01-01-1,example01-02-1
 ```
 
-## 例 {#examples}
+<div id="examples">
+  ## 例
+</div>
 
-### リモートサーバーからデータを取得する: {#selecting-data-from-a-remote-server}
+<div id="selecting-data-from-a-remote-server">
+  ### リモートサーバーからデータを取得する:
+</div>
 
 ```sql
 SELECT * FROM remote('127.0.0.1', db.remote_engine_table) LIMIT 3;
@@ -92,7 +106,9 @@ CREATE NAMED COLLECTION creds AS
 SELECT * FROM remote(creds, table='remote_engine_table') LIMIT 3;
 ```
 
-### リモートサーバー上のテーブルにデータを挿入する: {#inserting-data-into-a-table-on-a-remote-server}
+<div id="inserting-data-into-a-table-on-a-remote-server">
+  ### リモートサーバー上のテーブルにデータを挿入する:
+</div>
 
 ```sql
 CREATE TABLE remote_table (name String, value UInt32) ENGINE=Memory;
@@ -100,11 +116,15 @@ INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALU
 SELECT * FROM remote_table;
 ```
 
-### あるシステムから別のシステムへのテーブル移行: {#migration-of-tables-from-one-system-to-another}
+<div id="migration-of-tables-from-one-system-to-another">
+  ### あるシステムから別のシステムへのテーブル移行:
+</div>
 
 この例では、サンプルデータセット内の1つのテーブルを使用します。データベースは `imdb`、テーブルは `actors` です。
 
-#### ソース側の ClickHouse システム (現在データをホストしているシステム) で {#on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data}
+<div id="on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data">
+  #### ソース側の ClickHouse システム (現在データをホストしているシステム) で
+</div>
 
 * ソースデータベースとテーブル名 (`imdb.actors`) を確認します
 
@@ -124,18 +144,20 @@ SELECT * FROM remote_table;
   WHERE database = 'imdb' AND table = 'actors'
 ```
 
-Response
+レスポンス
 
 ```sql
-CREATE TABLE imdb.actors (`id` UInt32,
-                          `first_name` String,
-                          `last_name` String,
-                          `gender` FixedString(1))
-                ENGINE = MergeTree
-                ORDER BY (id, first_name, last_name, gender);
+  CREATE TABLE imdb.actors (`id` UInt32,
+                            `first_name` String,
+                            `last_name` String,
+                            `gender` FixedString(1))
+                  ENGINE = MergeTree
+                  ORDER BY (id, first_name, last_name, gender);
 ```
 
-#### 宛先のClickHouseシステムで {#on-the-destination-clickhouse-system}
+<div id="on-the-destination-clickhouse-system">
+  #### 宛先のClickHouseシステムで
+</div>
 
 * 宛先データベースを作成します:
 
@@ -154,7 +176,9 @@ CREATE TABLE imdb.actors (`id` UInt32,
                   ORDER BY (id, first_name, last_name, gender);
   ```
 
-#### ソース側のデプロイメントに戻る {#back-on-the-source-deployment}
+<div id="back-on-the-source-deployment">
+  #### ソース側のデプロイメントに戻る
+</div>
 
 リモートシステム上に作成した新しいデータベースとテーブルにデータを挿入します。ホスト、ポート、ユーザー名、パスワード、宛先データベース、宛先テーブルが必要です。
 
@@ -164,7 +188,9 @@ remoteSecure('remote.clickhouse.cloud:9440', 'imdb.actors', 'USER', 'PASSWORD')
 SELECT * from imdb.actors
 ```
 
-## グロブ展開 {#globs-in-addresses}
+<div id="globs-in-addresses">
+  ## グロブ展開
+</div>
 
 `{ }` 内のパターンは、分片の集合を生成したり、レプリカを指定したりするために使用されます。`{ }` の組が複数ある場合は、対応する集合の直積が生成されます。
 

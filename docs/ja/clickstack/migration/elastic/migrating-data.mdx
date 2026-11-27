@@ -8,7 +8,9 @@ keywords: ['ClickStack']
 doc_type: 'guide'
 ---
 
-## 並行運用戦略 {#parallel-operation-strategy}
+<div id="parallel-operation-strategy">
+  ## 並行運用戦略
+</div>
 
 オブザーバビリティ用途で Elastic から ClickStack へ移行する場合は、過去データの移行を試みるのではなく、**並行運用**のアプローチを推奨します。この戦略には、次のような利点があります。
 
@@ -24,7 +26,9 @@ doc_type: 'guide'
   Elasticsearch から ClickHouse へ重要なデータを移行する方法については、[&quot;データの移行&quot;](#migrating-data) のセクションで紹介しています。ただし、これは大規模なデータセットには推奨されません。Elasticsearch のエクスポート効率に制約があり、対応フォーマットも JSON のみのため、十分な性能が得られないことがほとんどです。
 </Info>
 
-### 実装手順 {#implementation-steps}
+<div id="implementation-steps">
+  ### 実装手順
+</div>
 
 <Steps>
   <Step title="二重インジェストを設定する" id="configure-dual-ingestion">
@@ -50,7 +54,9 @@ doc_type: 'guide'
   </Step>
 </Steps>
 
-### 長期保持 {#long-term-retention}
+<div id="long-term-retention">
+  ### 長期保持
+</div>
 
 より長い保持期間が必要な組織向け:
 
@@ -58,7 +64,9 @@ doc_type: 'guide'
 * ClickStack の[階層型ストレージ](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)機能は、長期データを効率的に管理するのに役立ちます。
 * [materialized view](/ja/concepts/features/materialized-views/incremental-materialized-view)の利用を検討し、集約済みまたはフィルタリング済みの履歴データを保持しつつ、生データは期限切れにできるようにします。
 
-### 移行スケジュール {#migration-timeline}
+<div id="migration-timeline">
+  ### 移行スケジュール
+</div>
 
 移行スケジュールは、データ保持期間の要件によって異なります。
 
@@ -66,11 +74,15 @@ doc_type: 'guide'
 * **より長い保持期間**: データが Elastic から期限切れで削除されるまで、並行運用を継続してください。
 * **履歴データ**: どうしても必要な場合は、特定の履歴データをインポートするために [データの移行](#migrating-data) の利用を検討してください。
 
-## 設定の移行 {#migration-settings}
+<div id="migration-settings">
+  ## 設定の移行
+</div>
 
 Elastic から ClickStack へ移行する際は、索引とストレージの設定を ClickHouse のアーキテクチャに合わせて調整する必要があります。Elasticsearch は、パフォーマンスと耐障害性を確保するために水平スケーリングとシャーディングに依存しているため、既定で複数の分片を使用します。一方、ClickHouse は垂直スケーリング向けに最適化されており、一般に分片数を少なくしたほうが高い性能を発揮します。
 
-### 推奨設定 {#recommended-settings}
+<div id="recommended-settings">
+  ### 推奨設定
+</div>
 
 **単一の分片**から始めて、まずはスケールアップすることを推奨します。この構成は、ほとんどのオブザーバビリティ workloads に適しており、運用管理とクエリのパフォーマンスチューニングの両方をシンプルにできます。
 
@@ -82,7 +94,9 @@ Elastic から ClickStack へ移行する際は、索引とストレージの設
   * 高可用性が必要な場合は、[`ReplicatedMergeTree`](/ja/reference/engines/table-engines/mergetree-family/replication) を使用する
   * 耐障害性の観点では、オブザーバビリティ workloads では通常、[各分片に 1 レプリカ](/ja/reference/engines/table-engines/mergetree-family/replication) で十分です。
 
-### 分片化が必要な場合 {#when-to-shard}
+<div id="when-to-shard">
+  ### 分片化が必要な場合
+</div>
 
 次のような場合は、分片化が必要になることがあります。
 
@@ -92,7 +106,9 @@ Elastic から ClickStack へ移行する際は、索引とストレージの設
 
 分片化が必要な場合は、分片キーと分散テーブルの設定について [Horizontal scaling](/ja/guides/oss/deployment-and-scaling/examples/2-shards-1-replica) を参照してください。
 
-### 保持期間と有効期限 (TTL) {#retention-and-ttl}
+<div id="retention-and-ttl">
+  ### 保持期間と有効期限 (TTL)
+</div>
 
 ClickHouse は、データの有効期限を管理するために、MergeTree テーブルで [TTL句](/ja/clickstack/managing/production#configure-ttl) を使用します。TTL ポリシーでは、次のことが可能です。
 
@@ -102,7 +118,9 @@ ClickHouse は、データの有効期限を管理するために、MergeTree �
 
 移行中も一貫したデータライフサイクルを維持できるよう、ClickHouse の TTL 設定を既存の Elastic の保持ポリシーに合わせることを推奨します。例については、[ClickStack 本番環境の TTL 設定](/ja/clickstack/managing/production#configure-ttl) を参照してください。
 
-## データの移行 {#migrating-data}
+<div id="migrating-data">
+  ## データの移行
+</div>
 
 ほとんどのオブザーバビリティデータについては並行運用を推奨していますが、場合によっては Elasticsearch から ClickHouse へデータを直接移行する必要があります。
 
@@ -424,14 +442,12 @@ ClickHouse は、データの有効期限を管理するために、MergeTree �
       ```
     </Accordion>
 
-    <Note>
-      バージョン 24.8 から 25.2 では、このページのテーブルを作成する前に、`SET allow_experimental_json_type = 1, allow_experimental_variant_type = 1;` を実行して `JSON` 型と `Variant` 型を有効化してください。
-    </Note>
-
     対応するClickHouseのテーブルスキーマ：
 
     <Accordion title="ClickHouse スキーマ">
       ```sql
+      SET enable_json_type = 1;
+
       CREATE TABLE logs_system_syslog
       (
           `@timestamp` DateTime,
@@ -533,6 +549,8 @@ ClickHouse は、データの有効期限を管理するために、MergeTree �
     あるいは、`JSON` カラムを1つ持つテーブルを単純に作成することもできます。
 
     ```sql
+    SET enable_json_type = 1;
+
     CREATE TABLE syslog_json
     (
      `json` JSON(`host.name` String, `@timestamp` DateTime)
@@ -652,9 +670,5 @@ ClickHouse は、データの有効期限を管理するために、MergeTree �
     ```
 
     `@timestamp` フィールド名はエスケープし、入力フォーマットには `JSONAsObject` を使用する必要がある点に注意してください。
-
-    <Note>
-      バージョン 24.8 から 25.2 では、この `clickhouse-client` コマンドに `--allow_experimental_json_type=1` を追加してください。このコマンドは独自の session で実行されるため、`input('json JSON')` を使用するには、その session 内で `JSON` 型が利用可能になっている必要があります。
-    </Note>
   </Step>
 </Steps>

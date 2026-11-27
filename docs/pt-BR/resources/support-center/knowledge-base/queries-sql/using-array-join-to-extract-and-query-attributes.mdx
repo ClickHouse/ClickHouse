@@ -6,11 +6,15 @@ tags: ['Functions']
 keywords: ['arrayJoin']
 ---
 
-## Pergunta {#question}
+<div id="question">
+  ## Pergunta
+</div>
 
 Se eu tiver atributos variados em uma coluna usando o tipo `map`, como posso extraí-los e usá-los em consultas?
 
-## Resposta {#answer}
+<div id="answer">
+  ## Resposta
+</div>
 
 Este é um exemplo básico de como extrair chaves e valores de um campo de atributos variável.
 Esse método criará aparentes duplicatas de cada linha na tabela source/raw. No entanto, como as chaves e os valores são extraídos, eles podem ser colocados na chave primária ou em uma chave secundária com um índice, como um filtro de Bloom.
@@ -93,7 +97,7 @@ SELECT *
 FROM db1.table1_metric_map_mv
 LIMIT 5
 
-Query id: b7384381-53af-4e3e-bc54-871f61c033a6
+ID da consulta: b7384381-53af-4e3e-bc54-871f61c033a6
 
 ┌─id─┬───────────timestamp─┬─metric_name─┬─metric_value─┬─attributes───────────┬─attribute_keys─┬─attribute_values─┐
 │  1 │ 2023-09-20 00:01:00 │ ABC         │           10 │ ('env','prod')       │ env            │ prod             │
@@ -125,7 +129,7 @@ INNER JOIN
     WHERE (attribute_keys = 'server') AND (attribute_values = 'server1')
 ) AS t2_server ON t1_app.id = t2_server.id
 
-Query id: 72ce7f19-b02a-4b6e-81e7-a955f257436d
+ID da consulta: 72ce7f19-b02a-4b6e-81e7-a955f257436d
 
 ┌─id─┬───────────timestamp─┬─metric_name─┬─metric_value─┐
 │  1 │ 2023-09-20 00:01:00 │ ABC         │           10 │

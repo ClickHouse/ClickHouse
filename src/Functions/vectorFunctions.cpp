@@ -1,6 +1,4 @@
 #include <Columns/ColumnTuple.h>
-#include <array>
-#include <string_view>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeInterval.h>
@@ -73,63 +71,29 @@ struct L2SquaredLabel { static constexpr auto name = "2Squared"; };
 struct LinfLabel { static constexpr auto name = "inf"; };
 struct LpLabel { static constexpr auto name = "p"; };
 
-/// "tuple" + `Name` with the first letter uppercased + `suffix`, built at compile time so that the function name is a
-/// constant rather than a `std::string` with a static initializer per instantiation.
-template <class FuncName, size_t suffix_size>
-constexpr auto makeTupleFunctionName(const char (&suffix)[suffix_size])
+constexpr std::string makeFirstLetterUppercase(const std::string & str)
 {
-    constexpr std::string_view base = FuncName::name;
-    constexpr std::string_view prefix = "tuple";
-    std::array<char, prefix.size() + base.size() + suffix_size> res{};
-    size_t pos = 0;
-    for (char c : prefix)
-        res[pos++] = c;
-    for (size_t i = 0; i < base.size(); ++i)
-        res[pos++] = (i == 0 && base[i] >= 'a' && base[i] <= 'z') ? static_cast<char>(base[i] - 'a' + 'A') : base[i];
-    for (size_t i = 0; i < suffix_size; ++i) /// including the terminating zero
-        res[pos++] = suffix[i];
+    std::string res(str);
+    res[0] += 'A' - 'a';
     return res;
 }
-
 
 template <class FuncName>
 class FunctionTupleOperator final : public ITupleFunction
 {
 public:
-    static constexpr auto name_storage = makeTupleFunctionName<FuncName>("");
-    static constexpr const char * name = name_storage.data();
+    /// constexpr cannot be used because std::string allocations cannot persist past constant evaluation
+    static inline auto name = "tuple" + makeFirstLetterUppercase(FuncName::name);
 
     explicit FunctionTupleOperator(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleOperator>(context_); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
 
-    /// Documentation-only — element-wise binary op applied to each pair of
-    /// tuple elements; the result is a tuple whose i-th element type follows
-    /// the underlying scalar op's promotion rules.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(Tuple, Tuple) -> Tuple";
-    }
-
-    /// The declarative signature above is documentation-only — the exact result type isn't
-    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
-    /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
-    /// fallback never evaluates the bare container return type (which would yield a wrong type or
-    /// an internal error).
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-        return getReturnTypeImpl(columns);
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 2)
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
@@ -170,7 +134,7 @@ public:
         return std::make_shared<DataTypeTuple>(std::move(current_types));
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * first_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         Columns current_elements = getTupleElements(*arguments[0].column);
@@ -218,32 +182,11 @@ public:
     explicit FunctionTupleNegate(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleNegate>(context_); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    /// Documentation-only — element-wise `negate` applied to each tuple element;
-    /// the result tuple's i-th element type follows scalar `negate` promotion.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(Tuple) -> Tuple";
-    }
-
-    /// The declarative signature above is documentation-only — the exact result type isn't
-    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
-    /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
-    /// fallback never evaluates the bare container return type (which would yield a wrong type or
-    /// an internal error).
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-        return getReturnTypeImpl(columns);
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"tuple", &isTuple, nullptr, "Tuple"}
@@ -279,7 +222,7 @@ public:
         return std::make_shared<DataTypeTuple>(std::move(types));
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto & cur_types = cur_tuple->getElements();
@@ -307,39 +250,17 @@ template <class FuncName>
 class FunctionTupleOperatorByNumber final : public ITupleFunction
 {
 public:
-    static constexpr auto name_storage = makeTupleFunctionName<FuncName>("ByNumber");
-    static constexpr const char * name = name_storage.data();
+    /// constexpr cannot be used because std::string allocations cannot persist past constant evaluation
+    static inline auto name = "tuple" + makeFirstLetterUppercase(FuncName::name) + "ByNumber";
 
     explicit FunctionTupleOperatorByNumber(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleOperatorByNumber>(context_); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 2; }
 
-    /// Documentation-only — applies the scalar op to each tuple element with
-    /// the same right-hand operand; the result tuple's i-th element type
-    /// follows the underlying scalar op's promotion rules.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(Tuple, Any) -> Tuple";
-    }
-
-    /// The declarative signature above is documentation-only — the exact result type isn't
-    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
-    /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
-    /// fallback never evaluates the bare container return type (which would yield a wrong type or
-    /// an internal error).
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-        return getReturnTypeImpl(columns);
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"tuple", &isTuple, nullptr, "Tuple"},
@@ -376,7 +297,7 @@ public:
         return std::make_shared<DataTypeTuple>(types);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto & cur_types = cur_tuple->getElements();
@@ -416,11 +337,11 @@ public:
     explicit FunctionDotProduct(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionDotProduct>(context_); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 2; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"left_tuple", &isTuple, nullptr, "Tuple"},
@@ -483,7 +404,7 @@ public:
         return res_type;
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
@@ -538,19 +459,11 @@ public:
         return std::make_shared<FunctionDateOrDateTimeOperationTupleOfIntervals>(context_);
     }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 2; }
 
-    /// Documentation-only — applies `plus`/`minus` with each tuple-element
-    /// interval to the date/datetime. The concrete result type depends on
-    /// the date/datetime input and the precision of the intervals.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(Date | Date32 | DateTime | DateTime64, Tuple) -> Any";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"date_or_datetime", &isDateOrDate32OrDateTimeOrDateTime64, nullptr, "Date, Date32, DateTime or DateTime64"},
@@ -591,7 +504,7 @@ public:
         return res_type;
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
         const auto & cur_types = cur_tuple->getElements();
@@ -644,28 +557,11 @@ public:
         return std::make_shared<FunctionTupleOperationInterval>(context_);
     }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 2; }
 
-    /// Documentation-only — accumulates intervals into a tuple of intervals.
-    /// If the right-hand interval shares the unit of the last element of the
-    /// tuple, it's merged in place; otherwise it's appended. The composite
-    /// per-element-interval-kind result isn't expressible in the DSL.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(Tuple | Interval, Interval) -> Tuple";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-        return getReturnTypeImpl(data_types);
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isTuple(arguments[0]) && !isInterval(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -710,7 +606,7 @@ public:
         return std::make_shared<DataTypeTuple>(types);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (!isInterval(arguments[1].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -827,11 +723,11 @@ public:
     explicit FunctionLNorm(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNorm>(context_); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"tuple", &isTuple, nullptr, "Tuple"}
@@ -879,7 +775,7 @@ public:
         return res_type;
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto & cur_types = cur_tuple->getElements();
@@ -928,11 +824,11 @@ public:
     explicit FunctionLNorm(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNorm>(context_); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"tuple", &isTuple, nullptr, "Tuple"}
@@ -982,7 +878,7 @@ public:
         return res_type;
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto & cur_types = cur_tuple->getElements();
@@ -1033,9 +929,9 @@ public:
     explicit FunctionLNorm(ContextPtr context_) : Base(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNorm>(context_); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
 
@@ -1052,7 +948,7 @@ public:
         return sqrt->build({ColumnWithTypeAndName{Base::getReturnTypeImpl(arguments), {}}})->getResultType();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto cur_elements = getTupleElements(*arguments[0].column);
 
@@ -1080,11 +976,11 @@ public:
     explicit FunctionLNorm(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNorm>(context_); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"tuple", &isTuple, nullptr, "Tuple"}
@@ -1134,7 +1030,7 @@ public:
         return res_type;
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto & cur_types = cur_tuple->getElements();
@@ -1183,13 +1079,13 @@ public:
     explicit FunctionLNorm(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNorm>(context_); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 2; }
 
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"tuple", &isTuple, nullptr, "Tuple"},
@@ -1254,7 +1150,7 @@ public:
         return pow->build({ColumnWithTypeAndName{res_type, {}}, inv_p_column})->getResultType();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto & cur_types = cur_tuple->getElements();
@@ -1318,11 +1214,11 @@ public:
     explicit FunctionLDistance(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLDistance>(context_); }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return FuncLabel::name[0] == 'p' ? 3 : 2; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return FuncLabel::name[0] == 'p' ? ColumnNumbers{2} : ColumnNumbers{}; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return FuncLabel::name[0] == 'p' ? 3 : 2; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return FuncLabel::name[0] == 'p' ? ColumnNumbers{2} : ColumnNumbers{}; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionTupleMinus tuple_minus(context);
         // Only pass the first two arguments (the tuples) to tupleMinus
@@ -1338,7 +1234,7 @@ public:
             return func->build({minus_res})->getResultType();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         FunctionTupleMinus tuple_minus(context);
         // Only pass the first two arguments (the tuples) to tupleMinus
@@ -1377,9 +1273,9 @@ public:
     explicit FunctionLNormalize(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNormalize>(context_); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         if constexpr (FuncLabel::name[0] == 'p')
             return 2;
@@ -1387,19 +1283,7 @@ public:
             return 1;
     }
 
-    /// Documentation-only — divides the input vector by its L-norm. The
-    /// `Lp` variant takes a `p` parameter; the others are unary. The result
-    /// element type is computed from `LNorm / TupleDivideByNumber`, so the
-    /// string is surfaced via `system.functions` only.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        if constexpr (FuncLabel::name[0] == 'p')
-            return "(Tuple, const Float | UInt) -> Tuple";
-        else
-            return "(Tuple) -> Tuple";
-    }
-
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         if constexpr (FuncLabel::name[0] == 'p')
             return {1};
@@ -1407,21 +1291,7 @@ public:
             return {};
     }
 
-    /// The declarative signature above is documentation-only — the exact result type isn't
-    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
-    /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
-    /// fallback never evaluates the bare container return type (which would yield a wrong type or
-    /// an internal error).
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-        return getReturnTypeImpl(columns);
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionLNorm<FuncLabel> norm(context);
         auto type = norm.getReturnTypeImpl(arguments);
@@ -1432,7 +1302,7 @@ public:
         return divide.getReturnTypeImpl({arguments[0], norm_res});
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         FunctionLNorm<FuncLabel> norm(context);
         auto type = norm.getReturnTypeImpl(arguments);
@@ -1458,11 +1328,11 @@ public:
     explicit FunctionCosineDistance(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionCosineDistance>(context_); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 2; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"left_tuple", &isTuple, nullptr, "Tuple"},
@@ -1494,7 +1364,7 @@ public:
         return minus->build({one, divide_result})->getResultType();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /// TODO: cosineDistance does not support nullable arguments
         /// https://github.com/ClickHouse/ClickHouse/pull/27933#issuecomment-916670286
@@ -1562,46 +1432,19 @@ public:
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<TupleOrArrayFunction>(context_); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isVariadic() const override { return array_function->isVariadic(); }
+    bool isVariadic() const override { return array_function->isVariadic(); }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return array_function->getNumberOfArguments(); }
+    size_t getNumberOfArguments() const override { return array_function->getNumberOfArguments(); }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return array_function->getArgumentsThatAreAlwaysConstant(); }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return array_function->getArgumentsThatAreAlwaysConstant(); }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    /// Both implementations throw for some values (arrays of different sizes, a decimal overflow, a zero norm).
-    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
-    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    /// Documentation-only — `Traits` may expose a `signature` constant describing
-    /// the shape accepted by both the tuple- and array-path. The actual return
-    /// type is computed by the underlying `tuple_function` / `array_function`,
-    /// so the string is surfaced via `system.functions` only.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        if constexpr (requires { Traits::signature; })
-            return Traits::signature;
-        else
-            return {};
-    }
-
-    /// The signature is documentation-only. Route type-only calls to the selected
-    /// implementation instead of letting the base class evaluate `Traits::signature`.
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-        return getReturnTypeImpl(columns);
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// Since transposed distance functions are variadic, we check the number of arguments, as we won't do it later like with others
         if constexpr (IsTransposedTrait<Traits>::value)
@@ -1632,7 +1475,7 @@ public:
         }
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         bool is_array = checkDataTypes<DataTypeArray>(arguments[0].type.get());
 
@@ -1679,7 +1522,6 @@ extern FunctionPtr createFunctionArrayDotProductTransposedQuantized(ContextPtr c
 struct DotProduct
 {
     static constexpr auto name = "dotProduct";
-    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit) -> Any";
 
     static constexpr auto CreateTupleFunction = FunctionDotProduct::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayDotProduct;
@@ -1688,7 +1530,6 @@ struct DotProduct
 struct L1NormTraits
 {
     static constexpr auto name = "L1Norm";
-    static constexpr auto signature = "(Tuple | Array | QBit) -> Any";
 
     static constexpr auto CreateTupleFunction = FunctionL1Norm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL1Norm;
@@ -1697,7 +1538,6 @@ struct L1NormTraits
 struct L2NormTraits
 {
     static constexpr auto name = "L2Norm";
-    static constexpr auto signature = "(Tuple | Array | QBit) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionL2Norm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL2Norm;
@@ -1706,7 +1546,6 @@ struct L2NormTraits
 struct L2SquaredNormTraits
 {
     static constexpr auto name = "L2SquaredNorm";
-    static constexpr auto signature = "(Tuple | Array | QBit) -> Any";
 
     static constexpr auto CreateTupleFunction = FunctionL2SquaredNorm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL2SquaredNorm;
@@ -1715,7 +1554,6 @@ struct L2SquaredNormTraits
 struct LpNormTraits
 {
     static constexpr auto name = "LpNorm";
-    static constexpr auto signature = "(Tuple | Array | QBit, const Float | UInt) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionLpNorm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLpNorm;
@@ -1724,7 +1562,6 @@ struct LpNormTraits
 struct LinfNormTraits
 {
     static constexpr auto name = "LinfNorm";
-    static constexpr auto signature = "(Tuple | Array | QBit) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionLinfNorm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLinfNorm;
@@ -1765,7 +1602,6 @@ struct LinfNormalizeTraits
 struct L1DistanceTraits
 {
     static constexpr auto name = "L1Distance";
-    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit) -> Any";
 
     static constexpr auto CreateTupleFunction = FunctionL1Distance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL1Distance;
@@ -1774,7 +1610,6 @@ struct L1DistanceTraits
 struct L2DistanceTraits
 {
     static constexpr auto name = "L2Distance";
-    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionL2Distance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL2Distance;
@@ -1783,7 +1618,6 @@ struct L2DistanceTraits
 struct L2SquaredDistanceTraits
 {
     static constexpr auto name = "L2SquaredDistance";
-    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit) -> Any";
 
     static constexpr auto CreateTupleFunction = FunctionL2SquaredDistance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL2SquaredDistance;
@@ -1792,7 +1626,6 @@ struct L2SquaredDistanceTraits
 struct LpDistanceTraits
 {
     static constexpr auto name = "LpDistance";
-    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit, const Float | UInt) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionLpDistance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLpDistance;
@@ -1801,7 +1634,6 @@ struct LpDistanceTraits
 struct LinfDistanceTraits
 {
     static constexpr auto name = "LinfDistance";
-    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionLinfDistance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLinfDistance;
@@ -1810,7 +1642,6 @@ struct LinfDistanceTraits
 struct CosineDistanceTraits
 {
     static constexpr auto name = "cosineDistance";
-    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionCosineDistance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayCosineDistance;
@@ -1820,7 +1651,6 @@ struct L2DistanceTransposedTraits
 {
     static constexpr auto name = "L2DistanceTransposed";
     static constexpr bool is_transposed = true;
-    static constexpr auto signature = "(Array | QBit | FixedString, ...) -> Array(Float64)";
 
     /// Transposed distances are always array functions, but we still need CreateTupleFunction to compile
     static FunctionPtr CreateTupleFunction(ContextPtr) { return nullptr; } /// NOLINT(readability-identifier-naming)
@@ -1831,7 +1661,6 @@ struct CosineDistanceTransposedTraits
 {
     static constexpr auto name = "cosineDistanceTransposed";
     static constexpr bool is_transposed = true;
-    static constexpr auto signature = "(Array | QBit | FixedString, ...) -> Array(Float64)";
 
     static FunctionPtr CreateTupleFunction(ContextPtr) { return nullptr; } /// NOLINT(readability-identifier-naming)
     static constexpr auto CreateArrayFunction = createFunctionArrayCosineDistanceTransposed;
@@ -1914,8 +1743,8 @@ Calculates the element-wise sum of two or more tuples of the same size.
     };
     FunctionDocumentation::ReturnedValue returned_value_tuplePlus = {"Returns a tuple containing the element-wise sums.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tuplePlus = {
-        {"Two tuples", "SELECT tuplePlus((1, 2), (2, 3))", "(3,5)"},
-        {"Three tuples", "SELECT tuplePlus((1, 2), (2, 3), (3, 4))", "(6,9)"}
+        {"Two tuples", "SELECT tuplePlus((1, 2), (2, 3))", "(3, 5)"},
+        {"Three tuples", "SELECT tuplePlus((1, 2), (2, 3), (3, 4))", "(6, 9)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tuplePlus = {21, 11};
     FunctionDocumentation::Category category_tuplePlus = FunctionDocumentation::Category::Tuple;
@@ -1934,8 +1763,8 @@ Calculates the element-wise difference of two or more tuples of the same size, a
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleMinus = {"Returns a tuple containing the element-wise differences.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleMinus = {
-        {"Two tuples", "SELECT tupleMinus((1, 2), (2, 3))", "(-1,-1)"},
-        {"Three tuples", "SELECT tupleMinus((10, 10), (3, 4), (2, 1))", "(5,5)"}
+        {"Two tuples", "SELECT tupleMinus((1, 2), (2, 3))", "(-1, -1)"},
+        {"Three tuples", "SELECT tupleMinus((10, 10), (3, 4), (2, 1))", "(5, 5)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleMinus = {21, 11};
     FunctionDocumentation::Category category_tupleMinus = FunctionDocumentation::Category::Tuple;
@@ -1954,8 +1783,8 @@ Calculates the element-wise product of two or more tuples of the same size.
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleMultiply = {"Returns a tuple containing the element-wise products.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleMultiply = {
-        {"Two tuples", "SELECT tupleMultiply((1, 2), (2, 3))", "(2,6)"},
-        {"Three tuples", "SELECT tupleMultiply((1, 2), (2, 3), (1, 2))", "(2,12)"}
+        {"Two tuples", "SELECT tupleMultiply((1, 2), (2, 3))", "(2, 6)"},
+        {"Three tuples", "SELECT tupleMultiply((1, 2), (2, 3), (1, 2))", "(2, 12)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleMultiply = {21, 11};
     FunctionDocumentation::Category category_tupleMultiply = FunctionDocumentation::Category::Tuple;
@@ -1966,9 +1795,9 @@ Calculates the element-wise product of two or more tuples of the same size.
     FunctionDocumentation::Description description_tupleDivide = R"(
 Calculates the element-wise division of two or more tuples of the same size, applied left-to-right.
 
-<Note>
+:::note
 Division by zero will return `inf`.
-</Note>
+:::
 )";
     FunctionDocumentation::Syntax syntax_tupleDivide = "tupleDivide(t1, t2[, tN, ...])";
     FunctionDocumentation::Arguments arguments_tupleDivide = {
@@ -1977,8 +1806,8 @@ Division by zero will return `inf`.
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleDivide = {"Returns a tuple containing the element-wise quotients.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleDivide = {
-        {"Two tuples", "SELECT tupleDivide((1, 2), (2, 3))", "(0.5,0.6666666666666666)"},
-        {"Three tuples", "SELECT tupleDivide((100.0, 60.0), (5.0, 3.0), (2.0, 4.0))", "(10,5)"}
+        {"Two tuples", "SELECT tupleDivide((1, 2), (2, 3))", "(0.5, 0.6666666666666666)"},
+        {"Three tuples", "SELECT tupleDivide((100.0, 60.0), (5.0, 3.0), (2.0, 4.0))", "(10, 5)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleDivide = {21, 11};
     FunctionDocumentation::Category category_tupleDivide = FunctionDocumentation::Category::Tuple;
@@ -1996,8 +1825,8 @@ Returns a tuple of element-wise remainders from dividing two or more tuples of t
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleModulo = {"Returns a tuple of element-wise remainders. An exception is thrown for division by zero.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleModulo = {
-        {"Two tuples", "SELECT tupleModulo((15, 10, 5), (5, 3, 2))", "(0,1,1)"},
-        {"Three tuples", "SELECT tupleModulo((10, 20), (7, 9), (3, 5))", "(0,2)"}
+        {"Two tuples", "SELECT tupleModulo((15, 10, 5), (5, 3, 2))", "(0, 1, 1)"},
+        {"Three tuples", "SELECT tupleModulo((10, 20), (7, 9), (3, 5))", "(0, 2)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleModulo = {23, 8};
     FunctionDocumentation::Category category_tupleModulo = FunctionDocumentation::Category::Tuple;
@@ -2017,9 +1846,9 @@ Division by 0 causes an exception to be thrown.
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleIntDiv = {"Returns a tuple of integer quotients.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleIntDiv = {
-        {"Two tuples", "SELECT tupleIntDiv((15, 10, 5), (5, 5, 5))", "(3,2,1)"},
-        {"With decimals", "SELECT tupleIntDiv((15, 10, 5), (5.5, 5.5, 5.5))", "(2,1,0)"},
-        {"Three tuples", "SELECT tupleIntDiv((120, 60), (4, 3), (2, 4))", "(15,5)"}
+        {"Two tuples", "SELECT tupleIntDiv((15, 10, 5), (5, 5, 5))", "(3, 2, 1)"},
+        {"With decimals", "SELECT tupleIntDiv((15, 10, 5), (5.5, 5.5, 5.5))", "(2, 1, 0)"},
+        {"Three tuples", "SELECT tupleIntDiv((120, 60), (4, 3), (2, 4))", "(15, 5)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleIntDiv = {23, 8};
     FunctionDocumentation::Category category_tupleIntDiv = FunctionDocumentation::Category::Tuple;
@@ -2039,8 +1868,8 @@ If any tuple contains non-integer elements, the result is calculated by rounding
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleIntDivOrZero = {"Returns a tuple of integer quotients, with 0 for any element where the divisor is 0.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleIntDivOrZero = {
-        {"With zero divisors", "SELECT tupleIntDivOrZero((5, 10, 15), (0, 0, 0))", "(0,0,0)"},
-        {"Three tuples", "SELECT tupleIntDivOrZero((120, 60), (4, 3), (2, 4))", "(15,5)"}
+        {"With zero divisors", "SELECT tupleIntDivOrZero((5, 10, 15), (0, 0, 0))", "(0, 0, 0)"},
+        {"Three tuples", "SELECT tupleIntDivOrZero((120, 60), (4, 3), (2, 4))", "(15, 5)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleIntDivOrZero = {23, 8};
     FunctionDocumentation::Category category_tupleIntDivOrZero = FunctionDocumentation::Category::Tuple;
@@ -2057,7 +1886,7 @@ Calculates the negation of the tuple elements.
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleNegate = {"Returns a tuple with the result of negation.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleNegate = {
-        {"Basic usage", "SELECT tupleNegate((1, 2))", "(-1,-2)"}
+        {"Basic usage", "SELECT tupleNegate((1, 2))", "(-1, -2)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleNegate = {21, 11};
     FunctionDocumentation::Category category_tupleNegate = FunctionDocumentation::Category::Tuple;
@@ -2112,9 +1941,9 @@ subtractTupleOfIntervals(datetime, intervals)
 WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))
         )",
         R"(
-┌─subtractTupleOfIntervals(date, (toIntervalDay(1), toIntervalYear(1)))─┐
-│                                                            2016-12-31 │
-└───────────────────────────────────────────────────────────────────────┘
+┌─subtractTupl⋯alYear(1)))─┐
+│               2016-12-31 │
+└──────────────────────────┘
         )"
     }
     };
@@ -2128,9 +1957,9 @@ WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVA
     FunctionDocumentation::Description description_addInterval = R"(
 Adds an interval to another interval or tuple of intervals.
 
-<Note>
+:::note
 Intervals of the same type will be combined into a single interval. For instance if `toIntervalDay(1)` and `toIntervalDay(2)` are passed then the result will be `(3)` rather than `(1,1)`.
-</Note>
+:::
     )";
     FunctionDocumentation::Syntax syntax_addInterval = R"(
 addInterval(interval_1, interval_2)
@@ -2214,7 +2043,7 @@ Returns a tuple with all elements multiplied by a number.
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleMultiplyByNumber = {"Returns a tuple with multiplied elements.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleMultiplyByNumber = {
-        {"Basic usage", "SELECT tupleMultiplyByNumber((1, 2), -2.1)", "(-2.1,-4.2)"}
+        {"Basic usage", "SELECT tupleMultiplyByNumber((1, 2), -2.1)", "(-2.1, -4.2)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleMultiplyByNumber = {21, 11};
     FunctionDocumentation::Category category_tupleMultiplyByNumber = FunctionDocumentation::Category::Tuple;
@@ -2225,9 +2054,9 @@ Returns a tuple with all elements multiplied by a number.
     FunctionDocumentation::Description description_tupleDivideByNumber = R"(
 Returns a tuple with all elements divided by a number.
 
-<Note>
+:::note
 Division by zero will return `inf`.
-</Note>
+:::
 )";
     FunctionDocumentation::Syntax syntax_tupleDivideByNumber = "tupleDivideByNumber(tuple, number)";
     FunctionDocumentation::Arguments arguments_tupleDivideByNumber = {
@@ -2236,7 +2065,7 @@ Division by zero will return `inf`.
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleDivideByNumber = {"Returns a tuple with divided elements.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleDivideByNumber = {
-        {"Basic usage", "SELECT tupleDivideByNumber((1, 2), 0.5)", "(2,4)"}
+        {"Basic usage", "SELECT tupleDivideByNumber((1, 2), 0.5)", "(2, 4)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleDivideByNumber = {21, 11};
     FunctionDocumentation::Category category_tupleDivideByNumber = FunctionDocumentation::Category::Tuple;
@@ -2254,7 +2083,7 @@ Returns a tuple of the moduli (remainders) of division operations of a tuple and
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleModuloByNumber = {"Returns tuple of the remainders of division. An error is thrown for division by zero.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleModuloByNumber = {
-        {"Basic usage", "SELECT tupleModuloByNumber((15, 10, 5), 2)", "(1,0,1)"}
+        {"Basic usage", "SELECT tupleModuloByNumber((15, 10, 5), 2)", "(1, 0, 1)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleModuloByNumber = {23, 8};
     FunctionDocumentation::Category category_tupleModuloByNumber = FunctionDocumentation::Category::Tuple;
@@ -2273,7 +2102,7 @@ Unlike tupleModuloByNumber, the result is always non-negative.
     };
     FunctionDocumentation::ReturnedValue returned_value_tuplePositiveModuloByNumber = {"Returns a tuple of the non-negative remainders.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tuplePositiveModuloByNumber = {
-        {"Basic usage", "SELECT tuplePositiveModuloByNumber((15, 10, 5), 2)", "(1,0,1)"}
+        {"Basic usage", "SELECT tuplePositiveModuloByNumber((15, 10, 5), 2)", "(1, 0, 1)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tuplePositiveModuloByNumber = {26, 4};
     FunctionDocumentation::Category category_tuplePositiveModuloByNumber = FunctionDocumentation::Category::Tuple;
@@ -2293,8 +2122,8 @@ An error will be thrown for division by 0.
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleIntDivByNumber = {"Returns a tuple of the quotients.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleIntDivByNumber = {
-        {"Basic usage", "SELECT tupleIntDivByNumber((15, 10, 5), 5)", "(3,2,1)"},
-        {"With decimals", "SELECT tupleIntDivByNumber((15.2, 10.7, 5.5), 5.8)", "(2,1,0)"}
+        {"Basic usage", "SELECT tupleIntDivByNumber((15, 10, 5), 5)", "(3, 2, 1)"},
+        {"With decimals", "SELECT tupleIntDivByNumber((15.2, 10.7, 5.5), 5.8)", "(2, 1, 0)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleIntDivByNumber = {23, 8};
     FunctionDocumentation::Category category_tupleIntDivByNumber = FunctionDocumentation::Category::Tuple;
@@ -2314,8 +2143,8 @@ If either the tuple or div contain non-integer elements then the result is calcu
     };
     FunctionDocumentation::ReturnedValue returned_value_tupleIntDivOrZeroByNumber = {"Returns a tuple of the quotients with `0` for quotients where the divisor is `0`.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleIntDivOrZeroByNumber = {
-        {"Basic usage", "SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 5)", "(3,2,1)"},
-        {"With zero divisor", "SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 0)", "(0,0,0)"}
+        {"Basic usage", "SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 5)", "(3, 2, 1)"},
+        {"With zero divisor", "SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 0)", "(0, 0, 0)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleIntDivOrZeroByNumber = {23, 8};
     FunctionDocumentation::Category category_tupleIntDivOrZeroByNumber = FunctionDocumentation::Category::Tuple;
@@ -2563,9 +2392,9 @@ Calculates the sum of the squares of the difference between the corresponding el
 SELECT L2SquaredDistance([1, 2, 3], [0, 0, 0])
             )",
             R"(
-┌─L2SquaredDistance([1, 2, 3], [0, 0, 0])─┐
-│                                      14 │
-└─────────────────────────────────────────┘
+┌─L2SquaredDis⋯ [0, 0, 0])─┐
+│                       14 │
+└──────────────────────────┘
             )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_l2_squared_distance = {22, 7};
@@ -2665,7 +2494,7 @@ Calculates the approximate distance between two points (the values of the vector
     )";
     FunctionDocumentation::Syntax syntax_l2_distance_transposed = "L2DistanceTransposed(vector1, vector2, p[, used_dims])";
     FunctionDocumentation::Arguments arguments_l2_distance_transposed
-        = {{"vectors", "Vectors.", {"QBit(T, UInt64[, UInt64])"}}, {"reference", "Reference vector.", {"Array(T)"}}, {"p", "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more bits increases accuracy at the cost of performance. With `p = 1` only the sign of each element is read and compared against the reference vector at full precision; the setting `qbit_one_bit_symmetric_distance` reduces the reference vector to its signs as well and derives the result from the Hamming distance between the two sign vectors, which is faster.", {"UInt"}}, {"used_dims", "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a multiple of the QBit stride not exceeding its dimension, and the reference vector must have at least this many elements (any extra trailing elements are ignored). Only the stride groups covering these dimensions are read.", {"UInt"}}};
+        = {{"vectors", "Vectors.", {"QBit(T, UInt64[, UInt64])"}}, {"reference", "Reference vector.", {"Array(T)"}}, {"p", "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more bits increases accuracy at the cost of performance.", {"UInt"}}, {"used_dims", "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a multiple of the QBit stride not exceeding its dimension, and the reference vector must have at least this many elements (any extra trailing elements are ignored). Only the stride groups covering these dimensions are read.", {"UInt"}}};
     FunctionDocumentation::ReturnedValue returned_value_l2_distance_transposed = {"Returns the approximate 2-norm distance. Always returns `Float64`.", {"Float64"}};
     FunctionDocumentation::Examples examples_l2_distance_transposed
         = {{"Basic usage",
@@ -2675,9 +2504,9 @@ INSERT INTO qbit VALUES (1, [0, 1]);
 SELECT L2DistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 )",
             R"(
-┌─L2DistanceTransposed(vec, [1, 2], 16)─┐
-│                    1.3922918381215914 │
-└───────────────────────────────────────┘
+┌─L2DistanceTransposed([0, 1], [1, 2], 16)─┐
+│                       1.3922918381215914 │
+└──────────────────────────────────────────┘
             )"}};
     FunctionDocumentation::IntroducedIn introduced_in_l2_distance_transposed = {25, 10};
     FunctionDocumentation::Category category_l2_distance_transposed = FunctionDocumentation::Category::Distance;
@@ -2704,7 +2533,7 @@ Calculates the approximate [cosine distance](https://en.wikipedia.org/wiki/Cosin
            {"p",
             "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level "
             "controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while "
-            "using more bits increases accuracy at the cost of performance. With `p = 1` only the sign of each element is read and compared against the reference vector at full precision; the setting `qbit_one_bit_symmetric_distance` reduces the reference vector to its signs as well and derives the result from the Hamming distance between the two sign vectors, which is faster.",
+            "using more bits increases accuracy at the cost of performance.",
             {"UInt"}},
            {"used_dims",
             "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a "
@@ -2713,22 +2542,17 @@ Calculates the approximate [cosine distance](https://en.wikipedia.org/wiki/Cosin
             {"UInt"}}};
     FunctionDocumentation::ReturnedValue returned_value_cosine_distance_transposed
         = {"Returns the approximate cosine distance (one minus the cosine similarity). Always returns Float64.", {"Float64"}};
-    /// The example rounds the result, and the one of `cosineDistanceTransposedQuantized` below does the same, because the
-    /// unrounded value is not the same on every architecture: the cosine kernels normalize with a reciprocal square root
-    /// approximation, which SimSIMD implements per instruction set, so the result differs in its last digits between an
-    /// aarch64 and an x86_64 server (and between x86_64 servers of different capabilities, since the kernel is resolved from
-    /// the CPU at run time). The distance is documented as approximate anyway - the surplus digits carried no meaning.
     FunctionDocumentation::Examples examples_cosine_distance_transposed
         = {{"Basic usage",
             R"(
 CREATE TABLE qbit (id UInt32, vec QBit(Float64, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, [0, 1]);
-SELECT round(cosineDistanceTransposed(vec, array(1, 2), 16), 6) FROM qbit;
+SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 )",
             R"(
-┌─round(cosineDistanceTransposed(vec, [1, 2], 16), 6)─┐
-│                                            0.105573 │
-└─────────────────────────────────────────────────────┘
+┌─cosineDistanceTransposed([0, 1], [1, 2], 16)─┐
+│                          0.10557280905788935 │
+└──────────────────────────────────────────────┘
             )"}};
     FunctionDocumentation::IntroducedIn introduced_in_cosine_distance_transposed = {26, 1};
     FunctionDocumentation::Category category_cosine_distance_transposed = FunctionDocumentation::Category::Distance;
@@ -2755,7 +2579,7 @@ Calculates the approximate [dot product](https://en.wikipedia.org/wiki/Dot_produ
            {"p",
             "Number of bits from each vector element to use in the calculation (1 to element bit-width). The quantization level controls "
             "the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more "
-            "bits increases accuracy at the cost of performance. With `p = 1` only the sign of each element is read and compared against the reference vector at full precision; the setting `qbit_one_bit_symmetric_distance` reduces the reference vector to its signs as well and derives the result from the Hamming distance between the two sign vectors, which is faster.",
+            "bits increases accuracy at the cost of performance.",
             {"UInt"}},
            {"used_dims",
             "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a "
@@ -2772,9 +2596,9 @@ INSERT INTO qbit VALUES (1, [0, 1]);
 SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
 )",
             R"(
-┌─dotProductTransposed(vec, [1, 2], 16)─┐
-│                                2.0625 │
-└───────────────────────────────────────┘
+┌─dotProductTransposed([0, 1], [1, 2], 16)─┐
+│                                   2.0625 │
+└──────────────────────────────────────────┘
             )"}};
     FunctionDocumentation::IntroducedIn introduced_in_dot_product_transposed = {26, 7};
     FunctionDocumentation::Category category_dot_product_transposed = FunctionDocumentation::Category::Distance;
@@ -2811,9 +2635,7 @@ SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
         "Number of top bits of each stored `QBit` code to use (1 to 8). Fewer bits reconstruct a coarser embedded quantizer using "
         "the Gaussian conditional-mean centroids of the existing Lloyd-Max prefix intervals, for faster I/O with reduced accuracy; "
         "8 bits is the full-precision reconstruction. `p` truncates only the stored `QBit`; an "
-        "`Array(Int8)` reference is always reconstructed at full 8-bit precision. With `p = 1` the setting "
-        "`qbit_one_bit_symmetric_distance` reduces the reference to its signs as well and derives the result from the Hamming "
-        "distance between the two sign vectors, which is faster.",
+        "`Array(Int8)` reference is always reconstructed at full 8-bit precision.",
         {"UInt"}};
     const auto quantized_used_dims_argument = FunctionDocumentation::Argument{
         "used_dims",
@@ -2847,11 +2669,7 @@ CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
 SELECT L2DistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 )",
-            R"(
-┌─L2DistanceTransposedQuantized(vec, CAST('[0.1, -0.5]', 'Array(Float32)'), 8)─┐
-│                                                         0.004942022755037076 │
-└──────────────────────────────────────────────────────────────────────────────┘
-            )"}};
+            ""}};
     FunctionDocumentation::Category category_transposed_quantized = FunctionDocumentation::Category::Distance;
     FunctionDocumentation documentation_l2_distance_transposed_quantized
         = {description_l2_distance_transposed_quantized,
@@ -2883,20 +2701,14 @@ SELECT L2DistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM q
            quantized_used_dims_argument};
     FunctionDocumentation::ReturnedValue returned_value_cosine_distance_transposed_quantized
         = {"Returns the approximate cosine distance (one minus the cosine similarity). Always returns `Float64`.", {"Float64"}};
-    /// Rounded for the reason given at the example of `cosineDistanceTransposed`: the last digits of a cosine distance are
-    /// architecture-dependent.
     FunctionDocumentation::Examples examples_cosine_distance_transposed_quantized
         = {{"Basic usage",
             R"(
 CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
-SELECT round(cosineDistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8), 6) FROM qbit;
+SELECT cosineDistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 )",
-            R"(
-┌─round(cosineDistanceTransposedQuantized(vec, CAST('[0.1, -0.5]', 'Array(Float32)'), 8), 6)─┐
-│                                                                                   0.000027 │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
-            )"}};
+            ""}};
     FunctionDocumentation documentation_cosine_distance_transposed_quantized
         = {description_cosine_distance_transposed_quantized,
            syntax_cosine_distance_transposed_quantized,
@@ -2934,11 +2746,7 @@ CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
 SELECT dotProductTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 )",
-            R"(
-┌─dotProductTransposedQuantized(vec, CAST('[0.1, -0.5]', 'Array(Float32)'), 8)─┐
-│                                                          0.25834959745407104 │
-└──────────────────────────────────────────────────────────────────────────────┘
-            )"}};
+            ""}};
     FunctionDocumentation documentation_dot_product_transposed_quantized
         = {description_dot_product_transposed_quantized,
            syntax_dot_product_transposed_quantized,

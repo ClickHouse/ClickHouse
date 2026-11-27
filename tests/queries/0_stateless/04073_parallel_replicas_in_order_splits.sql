@@ -2,7 +2,7 @@
 
 -- Test that in-order reading with parallel replicas creates multiple splits
 -- (reading streams) within each replica for intra-replica parallelism.
--- Uses a single part to ensure parallelism comes from splits, not from parts.
+-- Uses a single merged part to ensure parallelism comes from splits, not from parts.
 
 DROP TABLE IF EXISTS t_in_order_splits;
 
@@ -10,8 +10,9 @@ CREATE TABLE t_in_order_splits (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 128;
 
 INSERT INTO t_in_order_splits SELECT number, number FROM numbers_mt(1e6);
-SELECT 'parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_in_order_splits' AND active;
+OPTIMIZE TABLE t_in_order_splits FINAL;
 
+SET enable_analyzer = 1;
 SET optimize_read_in_order = 1;
 SET max_threads = 4;
 SET automatic_parallel_replicas_mode = 0;

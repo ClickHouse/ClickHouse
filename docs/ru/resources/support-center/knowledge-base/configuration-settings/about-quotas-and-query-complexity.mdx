@@ -6,7 +6,9 @@ keywords: ['Квоты', 'Сложность запросов']
 description: 'Квоты и сложность запросов — эффективные способы ограничить действия пользователей в ClickHouse. В этой статье базы знаний приведены примеры применения этих двух разных подходов.'
 ---
 
-## О квотах и сложности запросов {#about-quotas-and-query-complexity}
+<div id="about-quotas-and-query-complexity">
+  ## О квотах и сложности запросов
+</div>
 
 [Квоты](/ru/concepts/features/configuration/server-config/quotas) и [сложность запросов](/ru/concepts/features/configuration/settings/query-complexity) — это мощные механизмы, позволяющие ограничивать и контролировать действия пользователей в ClickHouse.
 
@@ -14,7 +16,9 @@ description: 'Квоты и сложность запросов — эффект
 
 В этой статье базы знаний приведены примеры применения этих двух разных подходов.
 
-## Пример данных {#the-sample-data}
+<div id="the-sample-data">
+  ## Пример данных
+</div>
 
 В этих примерах мы будем использовать следующую простую таблицу:
 
@@ -66,7 +70,9 @@ clickhouse-cloud :) SELECT * FROM default.test_table_00006488 LIMIT 5
 -- 5 rows in set. Elapsed: 0.003 sec.
 ```
 
-## Использование квот {#using-quotas}
+<div id="using-quotas">
+  ## Использование квот
+</div>
 
 В этом примере мы создаём роль, к которой применим квоту, позволяющую получать только 10 строк результата в каждом 10-секундном интервале:
 
@@ -130,7 +136,7 @@ clickhouse-cloud :) CREATE QUOTA quota_max_10_result_rows_per_10_seconds FOR INT
 Теперь войдите под пользователем `user_with_quota`
 
 ```sql
--- login as the user where quota is applied through the role
+-- войти как пользователь, к которому квота применяется через роль
 clickhouse-cloud :) SELECT user()
 
 -- SELECT user()
@@ -143,7 +149,7 @@ clickhouse-cloud :) SELECT user()
 
 -- 1 row in set. Elapsed: 0.002 sec.
 
--- list grants
+-- список привилегий
 clickhouse-cloud :) SHOW GRANTS
 
 -- SHOW GRANTS
@@ -156,7 +162,7 @@ clickhouse-cloud :) SHOW GRANTS
 
 -- 1 row in set. Elapsed: 0.001 sec.
 
--- check the time
+-- проверить время
 clickhouse-cloud :) select now()
 
 -- SELECT now()
@@ -169,7 +175,7 @@ clickhouse-cloud :) select now()
 
 -- 1 row in set. Elapsed: 0.001 sec.
 
--- query ten rows
+-- запросить десять строк
 clickhouse-cloud :) SELECT * FROM test_table LIMIT 10
 
 -- SELECT *
@@ -193,7 +199,7 @@ clickhouse-cloud :) SELECT * FROM test_table LIMIT 10
 
 -- 10 rows in set. Elapsed: 0.002 sec.
 
--- attempt to get another row within the 10 seconds interval since the last query
+-- попытка получить ещё одну строку в течение 10-секундного интервала с момента последнего запроса
 clickhouse-cloud :) SELECT * FROM test_table LIMIT 1
 
 -- SELECT *
@@ -208,7 +214,7 @@ clickhouse-cloud :) SELECT * FROM test_table LIMIT 1
 -- Code: 201. DB::Exception: Received from dxqjx1s5lt.eu-west-1.aws.clickhouse.cloud:9440. DB::Exception: Quota for user `user_with_quota` for 10s has been exceeded: result_rows = 11/10. 
 -- Interval will end at 2023-10-25 14:37:50. Name of quota template: `quota_max_10_result_rows_per_10_seconds`. (QUOTA_EXCEEDED)
 
--- check the time
+-- проверить время
 clickhouse-cloud :) select now()
 
 -- SELECT now()
@@ -222,9 +228,11 @@ clickhouse-cloud :) select now()
 -- 1 row in set. Elapsed: 0.001 sec.
 ```
 
-Обратите внимание, что пользователю потребуется подождать ещё 5 секунд, прежде чем он сможет снова получить &quot;QUOTA&quot; в виде набора результатов из 10 строк.
+Обратите внимание, что пользователю потребуется подождать ещё 5 секунд, прежде чем он сможет снова получить &quot;квоту&quot; в виде результирующего набора из 10 строк.
 
-## Использование сложности запросов {#using-query-complexity}
+<div id="using-query-complexity">
+  ## Использование сложности запросов
+</div>
 
 В этом примере мы создадим роль, к которой применим `SETTING` сложности запросов, позволяющий возвращать только 1 строку для каждого запроса.
 

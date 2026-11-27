@@ -6,11 +6,15 @@ tags: ['関数']
 keywords: ['arrayJoin']
 ---
 
-## 質問 {#question}
+<div id="question">
+  ## 質問
+</div>
 
 Map型を使用したカラムに可変の属性がある場合、それらを抽出してクエリで利用するにはどうすればよいですか？
 
-## 回答 {#answer}
+<div id="answer">
+  ## 回答
+</div>
 
 これは、可変の attributes フィールドからキーと値を抽出する基本的な例です。
 この方法では、ソース/raw テーブルの各行から見かけ上の重複が生成されます。ただし、キーと値が抽出されるため、それらを主キーや、bloom filter のような索引を持つセカンダリキーに含めることができます。
@@ -71,7 +75,7 @@ VALUES
 (24, '2023-09-20 00:03:00', 'DEF', 240,{'env':'qa','app':'app1','server':'server1'});
 ```
 
-その後、`array join` を使った materialized view を作成し、Map の 属性 を キー カラムと 値 カラムに展開して抽出できるようにします。  説明のため、以下の例では暗黙的なテーブル (`POPULATE` コマンドと、`.inner.{uuid}...` のようなバッキングテーブル) を使用しています。  ただし、推奨されるベストプラクティスは、明示的なテーブルを使うことです。つまり、まずテーブルを定義し、その上に `TO` コマンドを使って materialized view を作成します。
+その後、`array join` を使った materialized view を作成し、map の attribute を key カラムと value カラムに展開して抽出できるようにします。  説明のため、以下の例では暗黙的なテーブル (`POPULATE` コマンドと、`.inner.{uuid}...` のようなバッキングテーブル) を使用しています。  ただし、推奨されるベストプラクティスは、明示的なテーブルを使うことです。つまり、まずテーブルを定義し、その上に `TO` コマンドを使って materialized view を作成します。
 
 ```
 CREATE MATERIALIZED VIEW db1.table1_metric_map_mv

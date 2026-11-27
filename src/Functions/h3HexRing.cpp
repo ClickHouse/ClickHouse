@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
-#include <Interpreters/CancellationBudget.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
@@ -18,6 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
     extern const int INCORRECT_DATA;
@@ -37,22 +38,34 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3HexRing>(context); }
 
-    [[nodiscard]] std::string getName() const override { return name; }
+    std::string getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
-    /// fail on entirely valid data.
-    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(UInt64, UInt16) -> Array(UInt64)";
+        const auto * arg = arguments[0].get();
+        if (!WhichDataType(arg).isUInt64())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arg->getName(), 1, getName());
+
+        arg = arguments[1].get();
+        if (!WhichDataType(arg).isUInt16())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt16",
+                arg->getName(),
+                2,
+                getName());
+
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)

@@ -1,6 +1,7 @@
 -- Tags: no-fasttest, no-random-settings
 -- Test: Verify that without lazy type hints setting, mutations are triggered
 
+SET enable_json_type = 1;
 SET allow_suspicious_types_in_order_by = 1;
 
 -- Test: Without lazy type hints setting, ALTER should trigger mutation
@@ -11,7 +12,7 @@ INSERT INTO test_json_no_lazy VALUES (1, '{"val": 100}');
 INSERT INTO test_json_no_lazy VALUES (2, '{"val": 200}');
 
 -- Disable lazy type hints (default behavior)
-SET enable_json_lazy_type_hints = 0;
+SET allow_experimental_json_lazy_type_hints = 0;
 
 -- This ALTER should trigger a mutation
 ALTER TABLE test_json_no_lazy MODIFY COLUMN j JSON(val UInt32);

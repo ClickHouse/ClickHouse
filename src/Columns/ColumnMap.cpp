@@ -38,12 +38,7 @@ std::string ColumnMap::getName() const
 ColumnMap::ColumnMap(MutableColumnPtr && nested_, const StatisticsPtr & statistics_)
     : nested(std::move(nested_)), statistics(statistics_)
 {
-    /// Use the const `ColumnPtr` accessor `getNestedColumnPtr` rather than `nested.get()`. The
-    /// latter goes through `WrappedPtr::get` → `assumeMutableRef`, which now
-    /// `chassert(use_count() == 1)`. When this constructor is reached via
-    /// `ColumnMap::create(const ColumnPtr &, ...)`, the caller still holds an immutable reference
-    /// to the underlying column, so `use_count()` is at least 2 and the assertion would fire.
-    const auto * column_array = typeid_cast<const ColumnArray *>(getNestedColumnPtr().get());
+    const auto * column_array = typeid_cast<const ColumnArray *>(nested.get());
     if (!column_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnMap can be created only from array of tuples");
 
@@ -79,8 +74,8 @@ Field ColumnMap::operator[](size_t n) const
 void ColumnMap::get(size_t n, Field & res) const
 {
     const auto & offsets = getNestedColumn().getOffsets();
-    size_t offset = offsets[static_cast<ssize_t>(n) - 1];
-    size_t size = offsets[n] - offsets[static_cast<ssize_t>(n) - 1];
+    size_t offset = offsets[n - 1];
+    size_t size = offsets[n] - offsets[n - 1];
 
     res = Map();
     auto & map = res.safeGet<Map>();
@@ -93,8 +88,8 @@ void ColumnMap::get(size_t n, Field & res) const
 void ColumnMap::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const auto & offsets = getNestedColumn().getOffsets();
-    size_t offset = offsets[static_cast<ssize_t>(n) - 1];
-    size_t size = offsets[n] - offsets[static_cast<ssize_t>(n) - 1];
+    size_t offset = offsets[n - 1];
+    size_t size = offsets[n] - offsets[n - 1];
 
     if (options.notFull(name_buf))
         name_buf << "[";
@@ -122,11 +117,6 @@ UInt64 ColumnMap::getNumberOfDefaultRows() const
     /// One vcall, served by `ColumnArray::getNumberOfDefaultRows`. The IColumnHelper
     /// default would call `isDefaultAt` per row.
     return nested->getNumberOfDefaultRows();
-}
-
-bool ColumnMap::hasOnlyTypeDefaults() const
-{
-    return nested->hasOnlyTypeDefaults();
 }
 
 std::string_view ColumnMap::getDataAt(size_t) const
@@ -181,6 +171,11 @@ std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n, const IColumn:
 void ColumnMap::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     nested->deserializeAndInsertFromArena(in, settings);
+}
+
+void ColumnMap::skipSerializedInArena(ReadBuffer & in) const
+{
+    nested->skipSerializedInArena(in);
 }
 
 void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
@@ -314,13 +309,7 @@ void ColumnMap::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & 
     VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-    {
-        const auto * source_map = typeid_cast<const ColumnMap *>(source_column.get());
-        if (!source_map)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for squashing of {} is not Map, but {}", getName(), source_column->getName());
-
-        nested_source_columns.push_back(source_map->getNestedColumnPtr());
-    }
+        nested_source_columns.push_back(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
     nested->prepareForSquashing(nested_source_columns, factor);
 }
 
@@ -448,13 +437,12 @@ ColumnPtr ColumnMap::compress(bool force_compression) const
 {
     auto compressed = nested->compress(force_compression);
     const auto byte_size = compressed->byteSize();
-    Columns parts{compressed};
     /// The order of evaluation of function arguments is unspecified
     /// and could cause interacting with object in moved-from state
     return ColumnCompressed::create(size(), byte_size, [my_compressed = std::move(compressed), my_statistics=statistics]
     {
         return ColumnMap::create(my_compressed->decompress(), my_statistics);
-    }, std::move(parts));
+    });
 }
 
 void ColumnMap::Statistics::merge(const Statistics & other)
@@ -472,22 +460,16 @@ void ColumnMap::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<Co
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
-        const auto * source_column_map = typeid_cast<const ColumnMap *>(source_column.get());
-        if (!source_column_map)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for merge of {} is not Map, but {}", getName(), source_column->getName());
-
-        nested_source_columns.push_back(source_column_map->getNestedColumnPtr());
+        const auto & source_column_map = assert_cast<const ColumnMap &>(*source_column);
+        nested_source_columns.push_back(source_column_map.getNestedColumnPtr());
     }
     nested->chooseDynamicStructureForMerge(nested_source_columns, max_dynamic_subcolumns);
 }
 
 void ColumnMap::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    const auto * source_map = typeid_cast<const ColumnMap *>(&source);
-    if (!source_map)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot take dynamic structure for {} from {}: it is not Map", getName(), source.getName());
-
-    nested->takeExactDynamicStructureFrom(*source_map->getNestedColumnPtr());
+    const auto & source_map = assert_cast<const ColumnMap &>(source);
+    nested->takeExactDynamicStructureFrom(*source_map.getNestedColumnPtr());
 }
 
 ColumnMap::Statistics ColumnMap::calculateStatisticsForRange(size_t start, size_t end) const
@@ -534,10 +516,4 @@ void ColumnMap::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<Col
 }
 
 
-ColumnPlanes ColumnMap::getPlanes() const
-{
-    ColumnPlanes planes(ColumnPlanes::Shape::Map);
-    planes.children = {&getNestedColumn()};
-    return planes;
-}
 }

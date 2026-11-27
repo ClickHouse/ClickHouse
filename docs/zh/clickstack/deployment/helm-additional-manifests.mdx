@@ -14,7 +14,9 @@ keywords: ['ClickStack 附加清单', 'Helm 自定义资源', 'NetworkPolicy', '
 
 `additionalManifests` 可让你在部署 ClickStack 图表的同时一并部署任意 Kubernetes 对象。可用于图表未原生提供模板的资源，例如 `NetworkPolicy`、`HorizontalPodAutoscaler`、`ServiceAccount`、`PodMonitor`、自定义 `Ingress` 对象，或任何其他 Kubernetes API 对象。
 
-## 工作原理 {#how-it-works}
+<div id="how-it-works">
+  ## 工作原理
+</div>
 
 `additionalManifests` 中的每一项都是一份完整的 Kubernetes 资源定义。该 图表 会：
 
@@ -38,7 +40,9 @@ additionalManifests:
       release: '{{ .Release.Name }}'
 ```
 
-## values 文件约束 {#values-file-constraints}
+<div id="values-file-constraints">
+  ## values 文件约束
+</div>
 
 `additionalManifests` 在 values 文件中配置，而 values 文件会在 `tpl` 运行前先按 YAML 解析。
 
@@ -59,7 +63,9 @@ labels:
   {{- include "clickstack.labels" . | nindent 2 }}
 ```
 
-## 可用的 图表 辅助函数 {#available-chart-helpers}
+<div id="available-chart-helpers">
+  ## 可用的 图表 辅助函数
+</div>
 
 这些辅助函数定义在 `templates/_helpers.tpl` 中：
 
@@ -74,9 +80,13 @@ labels:
 | `clickstack.clickhouse.fullname` | ClickHouse CR 名称       | 可安全用于带引号的标量值      |
 | `clickstack.otel.fullname`       | OTel collector 名称      | 可安全用于带引号的标量值      |
 
-## 示例 {#examples}
+<div id="examples">
+  ## 示例
+</div>
 
-### ServiceAccount {#serviceaccount}
+<div id="serviceaccount">
+  ### ServiceAccount
+</div>
 
 ```yaml
 additionalManifests:
@@ -92,9 +102,11 @@ additionalManifests:
         eks.amazonaws.com/role-arn: "arn:aws:iam::123456789:role/my-role"
 ```
 
-### NetworkPolicy {#networkpolicy}
+<div id="networkpolicy">
+  ### NetworkPolicy
+</div>
 
-限制流向 ClickStack 用户界面 pod (容器组) 的入站流量：
+限制流向 HyperDX pod (容器组) 的入站流量：
 
 ```yaml
 additionalManifests:
@@ -121,7 +133,9 @@ additionalManifests:
               port: 8000
 ```
 
-### HorizontalPodAutoscaler {#horizontalpodautoscaler}
+<div id="horizontalpodautoscaler">
+  ### HorizontalPodAutoscaler
+</div>
 
 ```yaml
 additionalManifests:
@@ -145,7 +159,9 @@ additionalManifests:
               averageUtilization: 75
 ```
 
-### PodMonitor (Prometheus Operator) {#podmonitor}
+<div id="podmonitor">
+  ### PodMonitor (Prometheus Operator)
+</div>
 
 ```yaml
 additionalManifests:
@@ -165,7 +181,9 @@ additionalManifests:
           interval: 30s
 ```
 
-### AWS ALB 入口 {#aws-alb-ingress}
+<div id="aws-alb-ingress">
+  ### AWS ALB 入口
+</div>
 
 使用 [AWS Load Balancer Controller](https://kubernetes-sigs.github.io/aws-load-balancer-controller/) 时，请禁用该 图表 内置的 nginx 入口，并定义自定义的 ALB 入口：
 
@@ -204,7 +222,9 @@ additionalManifests:
 
 有关包含内部 OTel collector 入口和 HPA 的完整 ALB 配置示例，请参阅 [ALB 示例配置值](https://github.com/ClickHouse/ClickStack-helm-charts/tree/main/examples/alb-ingress)。
 
-### TargetGroupBinding {#targetgroupbinding}
+<div id="targetgroupbinding">
+  ### TargetGroupBinding
+</div>
 
 对于需要显式指定 `TargetGroupBinding` 资源的 ALB 场景：
 
@@ -222,7 +242,9 @@ additionalManifests:
       targetType: ip
 ```
 
-## 高级：封装 图表 模板 {#advanced-wrapper-chart-templates}
+<div id="advanced-wrapper-chart-templates">
+  ## 高级：封装 图表 模板
+</div>
 
 如果你需要像 `include "clickstack.labels" . | nindent 4` 这样的结构辅助，应通过封装 图表 的模板 (`templates/*.yaml`) 来渲染，而不要把这些块直接放进 values 文件中。
 
@@ -239,9 +261,13 @@ data:
   appPort: "{{ .Values.hyperdx.ports.app }}"
 ```
 
-## 提示 {#tips}
+<div id="tips">
+  ## 提示
+</div>
 
-### Helm 钩子 {#helm-hooks}
+<div id="helm-hooks">
+  ### Helm 钩子
+</div>
 
 每个 `additionalManifests` 条目都会渲染为独立的 YAML 文档。你可以添加 Helm 钩子注解来控制安装/升级顺序：
 
@@ -264,15 +290,21 @@ additionalManifests:
               command: ["./migrate.sh"]
 ```
 
-### CRD 顺序 {#crd-ordering}
+<div id="crd-ordering">
+  ### CRD 顺序
+</div>
 
 如果附加清单包含自定义资源 (例如 `PodMonitor`) ，则必须确保这些 CRD 在安装或升级前已存在于集群中。
 
-### 合并多个资源 {#combining-multiple-resources}
+<div id="combining-multiple-resources">
+  ### 合并多个资源
+</div>
 
 `additionalManifests` 是一个列表。各项会按列表顺序渲染，并且每一项都会成为一个单独的 YAML 文档。
 
-## 后续步骤 {#next-steps}
+<div id="next-steps">
+  ## 后续步骤
+</div>
 
 * [Helm 主指南](/zh/clickstack/deployment/helm) - 基本安装
 * [配置指南](/zh/clickstack/deployment/helm-configuration) - API 密钥、Secret 和入口

@@ -3,7 +3,7 @@ slug: /use-cases/observability/clickstack/ingesting-data/schema/map-vs-json
 description: 'ClickStack에서 속성에 맵(Map) 타입과 JSON 타입을 언제 사용해야 하는지'
 sidebarTitle: '맵(Map) 타입 vs JSON 타입'
 title: 'ClickStack의 속성에 대한 맵(Map) 타입 vs JSON 타입'
-doc_type: 'reference'
+doc_type: '참고'
 keywords: ['clickstack', 'json', 'map', '속성', '스키마', '관측성']
 ---
 
@@ -13,7 +13,9 @@ ClickStack의 [기본 스키마](/ko/clickstack/ingesting-data/schemas)는 리�
 
 **일반적인 관측성 워크로드에는 [기본 `Map` 기반 스키마](/ko/clickstack/ingesting-data/schemas)를 그대로 사용하는 것을 권장합니다.** JSON 타입은 속성 키 집합이 작고 안정적인 워크로드에서 이를 평가해 보려는 사용자를 위해 제공되지만, 일반적으로 사용하기에 권장되는 스키마는 아닙니다.
 
-## 기본값으로 Map을 권장하는 이유 {#why-map}
+<div id="why-map">
+  ## 기본값으로 Map을 권장하는 이유
+</div>
 
 관측성 데이터는 리소스 속성, 스코프 속성, 스팬 및 로그 속성과 같은 속성이 큰 비중을 차지합니다. 이러한 집합은 일반적으로 규모가 크고 카디널리티가 높으며 고처리량으로 수집됩니다. 따라서 이러한 속성에 어떤 스키마를 선택하느냐가 수집 비용과 저장 레이아웃을 결정하는 가장 중요한 요소입니다.
 
@@ -26,7 +28,9 @@ ClickStack의 [기본 스키마](/ko/clickstack/ingesting-data/schemas)는 리�
 * **인덱스를 통한 선택적 조회가 가능합니다.** 맵 키와 값에 대한 텍스트 인덱스를 사용하면 모든 행을 스캔하지 않고도 포인트 조회를 수행할 수 있습니다.
 * **고처리량 환경에서도 예측 가능한 동작을 제공합니다.** `Map`은 추적과 로그에서 흔히 나타나는 버스트성의 스키마 없는 속성 집합을 키별 오버헤드 없이 처리합니다.
 
-## 기본값으로 JSON을 사용하지 않는 이유 {#why-not-json}
+<div id="why-not-json">
+  ## 기본값으로 JSON을 사용하지 않는 이유
+</div>
 
 `JSON` 타입은 다른 접근 방식을 사용합니다. 데이터 삽입 시점에 ClickHouse는 발견한 각 경로마다 전용의, 강하게 타입 지정된 서브컬럼을 동적으로 생성합니다. 읽기 시점에는 요청한 서브컬럼만 읽으면 되고, 타입도 유지되며, 쿼리 시점의 형 변환도 필요하지 않으므로 이는 매력적입니다.
 
@@ -34,7 +38,9 @@ ClickStack의 [기본 스키마](/ko/clickstack/ingesting-data/schemas)는 리�
 
 bucketed map serialization으로 `Map`의 기존 읽기 시점 오버헤드 대부분이 사라지면서, 일반적인 관측성 워크로드에서는 `JSON`의 읽기 시점 이점이 더 이상 수집 시점 비용을 상쇄하지 못합니다.
 
-## 여전히 JSON을 고려할 수 있는 경우 {#when-to-consider-json}
+<div id="when-to-consider-json">
+  ## 여전히 JSON을 고려할 수 있는 경우
+</div>
 
 다음 조건을 *모두* 충족한다면 JSON 타입이 적절한 선택일 수 있습니다:
 
@@ -45,7 +51,9 @@ bucketed map serialization으로 `Map`의 기존 읽기 시점 오버헤드 대�
 
 이 조건을 모두 충족하지 않는다면 [기본 `Map` 기반 스키마](/ko/clickstack/ingesting-data/schemas)를 계속 사용하십시오.
 
-## 베타 상태 {#beta-status}
+<div id="beta-status">
+  ## 베타 상태
+</div>
 
 <BetaBadge />
 
@@ -57,18 +65,34 @@ bucketed map serialization으로 `Map`의 기존 읽기 시점 오버헤드 대�
 
 ClickStack은 버전 `2.0.4`부터 JSON 타입에 대한 베타 지원을 제공합니다.
 
-## JSON 지원 활성화 {#enabling-json-support}
+<div id="enabling-json-support">
+  ## JSON 지원 활성화
+</div>
 
 [기본 `Map` 기반 스키마](/ko/clickstack/ingesting-data/schemas) 대신 JSON 타입 스키마를 사용하려면 다음 환경 변수를 설정하십시오.
 
-| 변수                                                              | 설정 위치          | 용도                                                                      |
-| --------------------------------------------------------------- | -------------- | ----------------------------------------------------------------------- |
-| `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` | OTel collector | ClickHouse에서 JSON 타입을 사용하는 스키마를 생성합니다.                                  |
-| `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true`                         | ClickStack UI  | 애플리케이션 계층에서 JSON 타입 스키마를 쿼리할 수 있게 합니다. ClickStack Open Source에서만 지원됩니다. |
+| 변수                                                              | 설정 위치                   | 용도                                                                      |
+| --------------------------------------------------------------- | ----------------------- | ----------------------------------------------------------------------- |
+| `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` | OTel collector          | ClickHouse에서 JSON 타입을 사용하는 스키마를 생성합니다.                                  |
+| `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true`                         | HyperDX (ClickStack UI) | 애플리케이션 계층에서 JSON 타입 스키마를 쿼리할 수 있게 합니다. ClickStack Open Source에서만 지원됩니다. |
 
-<a id="oss-clickstack" />
+<div id="managed-clickstack">
+  ### Managed ClickStack
+</div>
 
-collector가 포함된 모든 배포에는 `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'`을 설정하고, ClickStack UI 애플리케이션 계층에는 JSON 타입 스키마를 쿼리할 수 있도록 `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true`를 설정하십시오.
+Managed ClickStack에서 JSON 지원을 활성화하려면 collector를 구성하기 전에 support@clickhouse.com으로 지원팀에 문의하십시오. 이 기능은 ClickHouse Cloud의 ClickStack UI(HyperDX)에서도 활성화해야 합니다.
+
+collector에서 `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'`를 설정하십시오. 예시:
+
+```shell
+docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+```
+
+<div id="oss-clickstack">
+  ### 오픈 소스 ClickStack
+</div>
+
+collector가 포함된 모든 배포에 `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'`를 설정하고, HyperDX 애플리케이션 계층에는 JSON 타입 스키마를 쿼리할 수 있도록 `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true`를 설정합니다.
 
 예시:
 
@@ -76,7 +100,9 @@ collector가 포함된 모든 배포에는 `OTEL_AGENT_FEATURE_GATE_ARG='--featu
 docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
 ```
 
-## Map 기반 스키마에서 JSON으로 마이그레이션하기 {#migrating-from-map-to-json}
+<div id="migrating-from-map-to-json">
+  ## Map 기반 스키마에서 JSON으로 마이그레이션하기
+</div>
 
 <Warning>
   **이전 버전과의 호환성**
@@ -90,7 +116,7 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
   <Step title="OTel collector 중지하기" id="stop-the-collector" />
 
   <Step title="기존 테이블 이름 변경 및 데이터 소스 업데이트" id="rename-existing-tables-sources">
-    기존 테이블의 이름을 변경하고 ClickStack UI에서 데이터 소스를 업데이트합니다.
+    기존 테이블의 이름을 변경하고 HyperDX에서 데이터 소스를 업데이트합니다.
 
     예시:
 
@@ -104,18 +130,20 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
     `OTEL_AGENT_FEATURE_GATE_ARG`를 설정한 상태로 collector를 배포합니다.
   </Step>
 
-  <Step title="JSON 스키마 지원으로 ClickStack UI 컨테이너 재시작하기" id="restart-the-hyperdx-container">
+  <Step title="JSON 스키마 지원으로 HyperDX 컨테이너 재시작하기" id="restart-the-hyperdx-container">
     ```shell
     export BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true
     ```
   </Step>
 
   <Step title="새 데이터 소스 생성하기" id="create-new-data-sources">
-    ClickStack UI에서 JSON 테이블을 가리키는 새 데이터 소스를 생성합니다.
+    HyperDX에서 JSON 테이블을 가리키는 새 데이터 소스를 생성합니다.
   </Step>
 </Steps>
 
-### 기존 데이터 마이그레이션(선택 사항) {#migrating-existing-data}
+<div id="migrating-existing-data">
+  ### 기존 데이터 마이그레이션(선택 사항)
+</div>
 
 기존 데이터를 새 JSON 테이블로 옮기려면 다음을 수행하십시오:
 

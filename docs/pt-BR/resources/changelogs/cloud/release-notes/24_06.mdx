@@ -9,12 +9,16 @@ doc_type: 'changelog'
 
 Alterações relevantes para os serviços do ClickHouse Cloud com base no lançamento v24.6.
 
-## Alteração incompatível com versões anteriores {#backward-incompatible-change}
+<div id="backward-incompatible-change">
+  ## Alteração incompatível com versões anteriores
+</div>
 
 * Retrabalhado o processamento paralelo no modo `Ordered` do armazenamento `S3Queue`. Este PR é incompatível com versões anteriores no modo Ordered se você usava as configurações `s3queue_processing_threads_num` ou `s3queue_total_shards_num`. A configuração `s3queue_total_shards_num` foi removida; antes, seu uso só era permitido com `s3queue_allow_experimental_sharded_mode`, que agora está descontinuada. Foi adicionada uma nova configuração: `s3queue_buckets`. [#64349](https://github.com/ClickHouse/ClickHouse/pull/64349) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Foram adicionadas as novas funções `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID` e `dateTime64ToSnowflakeID`. Diferentemente das funções existentes `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake` e `dateTime64ToSnowflake`, as novas funções são compatíveis com a função `generateSnowflakeID`, ou seja, aceitam os IDs Snowflake gerados por `generateSnowflakeID` e produzem IDs Snowflake do mesmo tipo que `generateSnowflakeID` (isto é, `UInt64`). Além disso, as novas funções usam por padrão o epoch UNIX (isto é, 1970-01-01), assim como `generateSnowflakeID`. Se necessário, é possível informar um epoch diferente, por exemplo, o epoch do Twitter/X de 2010-11-04, também conhecido como 1288834974657 ms desde o epoch UNIX. As antigas funções de conversão estão descontinuadas e serão removidas após um período de transição: para continuar usando-as, habilite a configuração `allow_deprecated_snowflake_conversion_functions`. [#64948](https://github.com/ClickHouse/ClickHouse/pull/64948) ([Robert Schulze](https://github.com/rschu1ze)).
 
-## Novo recurso {#new-feature}
+<div id="new-feature">
+  ## Novo recurso
+</div>
 
 * Suporte a tuplas vazias. [#55061](https://github.com/ClickHouse/ClickHouse/pull/55061) ([Amos Bird](https://github.com/amosbird)).
 * Adicionadas funções de codificação e decodificação da Curva de Hilbert. [#60156](https://github.com/ClickHouse/ClickHouse/pull/60156) ([Artem Mustafin](https://github.com/Artemmm91)).
@@ -32,7 +36,9 @@ Alterações relevantes para os serviços do ClickHouse Cloud com base no lança
 * Introduzidas duas colunas adicionais em `system.query_log`: `used_privileges` e `missing_privileges`. `used_privileges` é preenchida com os privilégios verificados durante a execução da consulta, e `missing_privileges` contém os privilégios obrigatórios ausentes. [#64597](https://github.com/ClickHouse/ClickHouse/pull/64597) ([Alexey Katsman](https://github.com/alexkats)).
 * Adicionada a configuração `output_format_pretty_display_footer_column_names`, que, quando habilitada, exibe os nomes das colunas no final da tabela em tabelas longas (50 linhas por padrão), com o valor limite do número mínimo de linhas controlado por `output_format_pretty_display_footer_column_names_min_rows`. [#65144](https://github.com/ClickHouse/ClickHouse/pull/65144) ([Shaun Struwig](https://github.com/Blargian)).
 
-## Melhoria de desempenho {#performance-improvement}
+<div id="performance-improvement">
+  ## Melhoria de desempenho
+</div>
 
 * Corrige regressão de desempenho no `cross join` introduzida em #60459 (24.5). #65243 (Nikita Taranov).
 * Melhora a visibilidade dos reenvios do io&#95;uring. Renomeia o evento de perfil IOUringSQEsResubmits -&gt; IOUringSQEsResubmitsAsync e adiciona um novo, IOUringSQEsResubmitsSync. #63699 (Tomer Shafir).
@@ -62,7 +68,9 @@ Alterações relevantes para os serviços do ClickHouse Cloud com base no lança
 * Atualiza a condição para usar cópia no servidor para backups no Azure blob storage. [#64518](https://github.com/ClickHouse/ClickHouse/pull/64518) ([SmitaRKulkarni](https://github.com/SmitaRKulkarni)).
 * Uso de memória das mesclagens verticais otimizado para tabelas com um grande número de skip indexes. [#64580](https://github.com/ClickHouse/ClickHouse/pull/64580) ([Anton Popov](https://github.com/CurtizJ)).
 
-## Melhoria {#improvement}
+<div id="improvement">
+  ## Melhoria
+</div>
 
 * Restaurou a forma como o ClickHouse funciona e interpreta Tuples no formato CSV. Essa alteração efetivamente reverte ClickHouse/ClickHouse#60994 e o disponibiliza apenas sob algumas configurações: output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns, input&#95;format&#95;csv&#95;deserialize&#95;separate&#95;columns&#95;into&#95;tuple e input&#95;format&#95;csv&#95;try&#95;infer&#95;strings&#95;from&#95;quoted&#95;tuples. #65170 (Nikita Mikhaylov).
 * `SHOW CREATE TABLE` executado em tabelas do sistema agora mostrará o comentário, muito útil e exclusivo de cada tabela, que explicará por que essa tabela é necessária. [#63788](https://github.com/ClickHouse/ClickHouse/pull/63788) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
@@ -88,7 +96,9 @@ Alterações relevantes para os serviços do ClickHouse Cloud com base no lança
 * Desabilita transações para armazenamentos sem suporte, inclusive para visões materializadas. [#64918](https://github.com/ClickHouse/ClickHouse/pull/64918) ([alesapin](https://github.com/alesapin)).
 * Proibir a cláusula `QUALIFY` no analisador antigo. O analisador antigo ignorava `QUALIFY`, o que podia levar à remoção inesperada de dados em mutações. [#65356](https://github.com/ClickHouse/ClickHouse/pull/65356) ([Dmitry Novik](https://github.com/novikd)).
 
-## Correção de bug (comportamento incorreto perceptível ao usuário em uma versão estável oficial) {#bug-fix-user-visible-misbehavior-in-an-official-stable-release}
+<div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release">
+  ## Correção de bug (comportamento incorreto perceptível ao usuário em uma versão estável oficial)
+</div>
 
 * Corrigido o problema em que o skip index &#39;set&#39; não funcionava com IN e indexHint(). #62083 (Michael Kolupaev).
 * Corrige consultas com FINAL que retornam resultados incorretos quando a tabela não usa granularidade adaptativa. #62432 (Duc Canh Le).
@@ -96,7 +106,7 @@ Alterações relevantes para os serviços do ClickHouse Cloud com base no lança
 * Corrigido o rastreamento de uso de memória do Parquet. #63584 (Michael Kolupaev).
 * Corrigido um caso raro de ausência de dados no resultado de uma consulta distribuída. #63691 (vdimir).
 * Corrigida a leitura de colunas do tipo Tuple(Map(LowCardinality(String), String), ...). #63956 (Anton Popov).
-* Corrige a resolução do matcher COLUMNS sem qualificação. Preserva a ordem das colunas de entrada e proíbe o uso de identificadores desconhecidos. #63962 (Dmitry Novik).
+* Corrige a resolução do matcher `COLUMNS` sem qualificação. Preserva a ordem das colunas de entrada e proíbe o uso de identificadores desconhecidos. #63962 (Dmitry Novik).
 * Corrige um erro de aliases cíclicos envolvendo aliases cíclicos de tipos diferentes (expressão e função). #63993 (Nikolai Kochetov).
 * Essa correção usará um contexto redefinido apropriado com o definidor correto para cada view no pipeline de consulta. #64079 (pufit).
 * Correção no analyzer: o erro &quot;coluna não encontrada&quot; ao usar INTERPOLATE foi corrigido. #64096 (Yakov Olkhovskiy).
@@ -104,7 +114,7 @@ Alterações relevantes para os serviços do ClickHouse Cloud com base no lança
 * O cache de consultas agora considera duas consultas idênticas em bancos de dados diferentes como distintas. O comportamento anterior podia ser usado para contornar a falta de privilégios para ler uma tabela. #64199 (Robert Schulze).
 * Corrige um possível encerramento abrupto causado por uma exceção não capturada em ~WriteBufferFromFileDescriptor no StatusFile. #64206 (Kruglov Pavel).
 * Corrige o erro de alias duplicado em consultas distribuídas com ARRAY JOIN. #64226 (Nikolai Kochetov).
-* Corrige accurateCast inesperado ao converter de string para inteiro. #64255 (wudidapaopao).
+* Corrige `accurateCast` inesperado ao converter de string para inteiro. #64255 (wudidapaopao).
 * Corrigida a simplificação de CNF, caso algum grupo OR contenha átomos mutuamente exclusivos. #64256 (Eduard Karacharov).
 * Corrige a validação de tamanho da Query Tree. #64377 (Dmitry Novik).
 * Corrigido erro lógico: conversão inválida na tabela Buffer com PREWHERE. #64388 (Nikolai Kochetov).
@@ -114,7 +124,7 @@ Alterações relevantes para os serviços do ClickHouse Cloud com base no lança
 * Corrigido o erro Cannot find column em consultas distribuídas com CTE constante na chave do GROUP BY. #64519 (Nikolai Kochetov).
 * Corrige a saída da função formatDateTimeInJodaSyntax quando um formatador gera um número ímpar de caracteres e o último caractere é 0. Por exemplo, SELECT formatDateTimeInJodaSyntax(toDate(&#39;2012-05-29&#39;), &#39;D&#39;) agora retorna corretamente 150, em vez de 15, como retornava antes. #64614 (LiuNeng).
 * Não reescreva a agregação se o combinador -If já estiver sendo usado. #64638 (Dmitry Novik).
-* Corrige a inferência de tipo de float (em caso de buffer pequeno, isto é, `--max_read_buffer_size` 1). #64641 (Azat Khuzhin).
+* Corrige a inferência de tipo de float (em caso de buffer pequeno, isto é, --max&#95;read&#95;buffer&#95;size 1). #64641 (Azat Khuzhin).
 * Corrige um bug que poderia fazer com que TTLs com expressões deixassem de funcionar. #64694 (alesapin).
 * Correção da remoção das expressões WHERE e PREWHERE que são sempre true (no novo analisador). #64695 (Nikolai Kochetov).
 * Corrigida a eliminação excessiva de partes por índices de texto baseados em tokens (ngrambf , full&#95;text) ao filtrar com base no resultado de startsWith, endsWith, match, multiSearchAny. #64720 (Eduard Karacharov).
@@ -128,7 +138,7 @@ Alterações relevantes para os serviços do ClickHouse Cloud com base no lança
 * Corrige o erro de incompatibilidade na estrutura do Block em consultas que usam PREWHERE ao ler da visão materializada quando a visão materializada tem colunas de tipos diferentes da tabela de origem. Corrige #64611. #64855 (Nikolai Kochetov).
 * Corrige uma falha rara quando a tabela tem TTL com subconsulta + banco de dados replicado + réplicas paralelas + analyzer. É realmente raro, mas, por favor, não use TTL com subconsultas. #64858 (alesapin).
 * Corrigida a consulta ALTER MODIFY COMMENT que estava quebrada para VIEWs parametrizadas em ClickHouse/ClickHouse#54211. #65031 (Nikolay Degterinsky).
-* Corrige host&#95;id em DatabaseReplicated quando o parâmetro cluster&#95;secure&#95;connection está habilitado. Antes, todas as conexões no cluster criadas por DatabaseReplicated não eram seguras, mesmo com o parâmetro habilitado. #65054 (Nikolay Degterinsky).
+* Corrige `host&#95;id` em DatabaseReplicated quando o parâmetro `cluster&#95;secure&#95;connection` está habilitado. Antes, todas as conexões no cluster criadas por DatabaseReplicated não eram seguras, mesmo com o parâmetro habilitado. #65054 (Nikolay Degterinsky).
 * Correção do erro Not-ready Set após a otimização PREWHERE para o StorageMerge. #65057 (Nikolai Kochetov).
 * Evita gravar em um buffer finalizado em armazenamentos do tipo File. #65063 (Kruglov Pavel).
 * Corrige a duração potencialmente infinita da consulta em caso de aliases cíclicos. Corrige #64849. #65081 (Nikolai Kochetov).

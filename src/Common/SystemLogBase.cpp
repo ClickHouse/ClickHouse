@@ -36,7 +36,6 @@
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Common/BlobStorageLogWriter.h>
 
-#include <Common/DimensionalMetrics.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SelfContained.h>
@@ -49,13 +48,6 @@
 
 #include <Common/logger_useful.h>
 
-
-namespace DimensionalMetrics
-{
-    extern MetricFamily & SystemLogFlushes;
-    extern MetricFamily & SystemLogFlushedRows;
-    extern MetricFamily & SystemLogDroppedRows;
-}
 
 namespace DB
 {
@@ -91,43 +83,6 @@ namespace ErrorCodes
 
 ISystemLog::~ISystemLog() = default;
 
-namespace SystemLogMetrics
-{
-
-void createQueueCounters(const String & database, const String & table)
-{
-    DimensionalMetrics::add(DimensionalMetrics::SystemLogDroppedRows, {database, table, "queue_full"}, 0);
-}
-
-void createFlushCounters(const String & database, const String & table)
-{
-    DimensionalMetrics::add(DimensionalMetrics::SystemLogFlushes, {database, table, "success"}, 0);
-    DimensionalMetrics::add(DimensionalMetrics::SystemLogFlushes, {database, table, "failure"}, 0);
-    DimensionalMetrics::add(DimensionalMetrics::SystemLogFlushedRows, {database, table}, 0);
-    DimensionalMetrics::add(DimensionalMetrics::SystemLogDroppedRows, {database, table, "flush_failed"}, 0);
-}
-
-void onFlushSuccess(const String & database, const String & table, size_t rows)
-{
-    DimensionalMetrics::add(DimensionalMetrics::SystemLogFlushes, {database, table, "success"});
-    DimensionalMetrics::add(DimensionalMetrics::SystemLogFlushedRows, {database, table}, static_cast<DimensionalMetrics::Value>(rows));
-}
-
-void onFlushFailure(const String & database, const String & table, size_t rows)
-{
-    DimensionalMetrics::add(DimensionalMetrics::SystemLogFlushes, {database, table, "failure"});
-    DimensionalMetrics::add(
-        DimensionalMetrics::SystemLogDroppedRows, {database, table, "flush_failed"}, static_cast<DimensionalMetrics::Value>(rows));
-}
-
-void onQueueFull(const String & database, const String & table, size_t rows)
-{
-    DimensionalMetrics::add(
-        DimensionalMetrics::SystemLogDroppedRows, {database, table, "queue_full"}, static_cast<DimensionalMetrics::Value>(rows));
-}
-
-}
-
 
 template <typename LogElement>
 SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settings_)
@@ -139,8 +94,6 @@ SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settin
 
     if (settings.turn_off_logger)
         log->setLevel(0);
-
-    SystemLogMetrics::createQueueCounters(settings.database, settings.table);
 }
 
 static thread_local bool recursive_push_call = false;
@@ -328,15 +281,10 @@ typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
     }
 
     if (prev_ignored_logs)
-    {
         LOG_ERROR(log, "Queue had been full at {}, accepted {} logs, ignored {} logs.",
                     result.last_log_index - result.logs.size(),
                     result.logs.size(),
                     prev_ignored_logs);
-
-        /// The whole batch is added here and not one row at a time in `push`, which is a hot path.
-        SystemLogMetrics::onQueueFull(settings.database, settings.table, prev_ignored_logs);
-    }
 
     return result;
 }
@@ -348,35 +296,6 @@ void SystemLogQueue<LogElement>::shutdown()
     is_shutdown = true;
     /// Tell thread to shutdown.
     flush_event.notify_all();
-}
-
-template <typename LogElement>
-void SystemLogQueue<LogElement>::restart()
-{
-    std::unique_lock lock(mutex);
-
-    /// Only a queue that a previous owner shut down needs resetting. A queue that was merely
-    /// created early is still collecting for its first owner: the logging channel is attached in
-    /// buildLoggers, long before the SystemLog that drains it exists, and everything logged in
-    /// between must survive.
-    if (!is_shutdown)
-        return;
-
-    /// Everything below describes the previous owner: its table (prepared_tables), how far its
-    /// saving thread got (flushed_index) and whatever it never drained (pop() returns early on
-    /// shutdown without emptying the queue). The new owner has a different table -- system log
-    /// metadata does not survive an engine teardown -- so leaving prepared_tables above the new
-    /// front index would make its first SYSTEM FLUSH LOGS report success without creating
-    /// anything. Hand back a queue in exactly its constructed state. Nothing is lost: while the
-    /// latch was set every push was dropped anyway.
-    queue.clear();
-    queue_front_index = 0;
-    requested_flush_index = std::numeric_limits<Index>::min();
-    flushed_index = 0;
-    requested_prepare_tables = std::numeric_limits<Index>::min();
-    prepared_tables = -1;
-    ignored_logs = 0;
-    is_shutdown = false;
 }
 
 template <typename LogElement>

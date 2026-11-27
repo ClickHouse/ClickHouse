@@ -19,7 +19,9 @@ doc_type: 'reference'
   有关 ReplacingMergeTree 的详细指南 (包括最佳实践以及性能优化方法) 可参见[此处](/zh/concepts/features/operations/update/replacing-merge-tree)。
 </Note>
 
-## 创建表 {#creating-a-table}
+<div id="creating-a-table">
+  ## 创建表
+</div>
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -41,21 +43,25 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
   行的唯一性由表中的 `ORDER BY` 部分决定，而不是 `PRIMARY KEY`。
 </Note>
 
-## ReplacingMergeTree 参数 {#replacingmergetree-parameters}
+<div id="replacingmergetree-parameters">
+  ## ReplacingMergeTree 参数
+</div>
 
-### `ver` {#ver}
+<div id="ver">
+  ### `ver`
+</div>
 
-`ver` —— 版本号列。类型为 `UInt*`、`Date`、`DateTime` 或 `DateTime64`。可选参数。它也可以是另一列的子列，例如 `Tuple` 的某个元素或 `JSON` 的某个类型化路径：`ReplacingMergeTree(meta.ver)`。
+`ver` —— 版本号列。类型为 `UInt*`、`Date`、`DateTime` 或 `DateTime64`。可选参数。
 
 合并时，`ReplacingMergeTree` 会在所有排序键相同的行中只保留一行：
 
-* 如果未设置 `ver`，则保留选集中最后一行。选集是指参与合并的一组 parts 中的一组行。最近创建的 part (即最后一次插入) 会是选集中的最后一个。因此，去重后，对于每个唯一的排序键，都会保留最近一次插入中的最后一行。
-* 如果指定了 `ver`，则保留版本号最大的一行。如果多行的 `ver` 相同，则对这些行应用&quot;未指定 `ver`&quot;时的规则，也就是说，会保留最近插入的那一行。
+* 如果未设置 `ver`，则保留选集中最后一行。选集是指参与合并的一组 parts 中的一组行。最近创建的 part (即最后一次 insert) 会是选集中的最后一个。因此，去重后，对于每个唯一的排序键，都会保留最近一次 insert 中的最后一行。
+* 如果指定了 `ver`，则保留版本号最大的一行。如果多行的 `ver` 相同，则对这些行应用“未指定 `ver`”时的规则，也就是说，会保留最近 insert 的那一行。
 
 示例：
 
 ```sql
--- without ver - the last inserted 'wins'
+-- 不带 ver - 最后插入的行会被保留
 CREATE TABLE myFirstReplacingMT
 (
     `key` Int64,
@@ -74,7 +80,7 @@ SELECT * FROM myFirstReplacingMT FINAL;
 │   1 │ second  │ 2020-01-01 00:00:00 │
 └─────┴─────────┴─────────────────────┘
 
--- with ver - the row with the biggest ver 'wins'
+-- 带 ver - ver 最大的行会被保留
 CREATE TABLE mySecondReplacingMT
 (
     `key` Int64,
@@ -94,11 +100,13 @@ SELECT * FROM mySecondReplacingMT FINAL;
 └─────┴─────────┴─────────────────────┘
 ```
 
-### `is_deleted` {#is_deleted}
+<div id="is_deleted">
+  ### `is_deleted`
+</div>
 
 `is_deleted` — 合并期间使用的列名，用于确定该行中的数据表示状态还是应被删除；`1` 表示“已删除”行，`0` 表示“状态”行。
 
-列数据类型 — `UInt8`。与 `ver` 一样，它可以是另一列的子列。
+列数据类型 — `UInt8`。
 
 <Note>
   只有在使用 `ver` 时，才能启用 `is_deleted`。
@@ -119,7 +127,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
 示例：
 
 ```sql
--- with ver and is_deleted
+-- 使用 ver 和 is_deleted
 CREATE OR REPLACE TABLE myThirdReplacingMT
 (
     `key` Int64,
@@ -138,7 +146,7 @@ select * from myThirdReplacingMT final;
 
 0 rows in set. Elapsed: 0.003 sec.
 
--- delete rows with is_deleted
+-- 使用 is_deleted 删除行
 OPTIMIZE TABLE myThirdReplacingMT FINAL CLEANUP;
 
 INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 00:00:00', 0);
@@ -150,7 +158,9 @@ select * from myThirdReplacingMT final;
 └─────┴─────────┴─────────────────────┴────────────┘
 ```
 
-## 查询子句 {#query-clauses}
+<div id="query-clauses">
+  ## 查询子句
+</div>
 
 创建 `ReplacingMergeTree` 表时，需要使用与创建 `MergeTree` 表时相同的[子句](/zh/reference/engines/table-engines/mergetree-family/mergetree)。
 
@@ -175,7 +185,9 @@ select * from myThirdReplacingMT final;
   * `ver` - 版本列。可选参数。说明请参见上文。
 </details>
 
-## 查询时去重 &amp; FINAL {#query-time-de-duplication--final}
+<div id="query-time-de-duplication--final">
+  ## 查询时去重 &amp; FINAL
+</div>
 
 在 合并 时，ReplacingMergeTree 会使用 `ORDER BY` 列的值 (用于创建表) 作为唯一标识来识别重复行，并且只保留版本最高的那一行。不过，这只能保证最终正确性——并不保证这些行一定会被去重，因此你不应依赖它。因此，由于查询时会将更新行和删除行也计算在内，查询结果可能会不正确。
 

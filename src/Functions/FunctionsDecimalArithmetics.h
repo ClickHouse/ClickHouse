@@ -93,7 +93,7 @@ struct DecimalOpHelpers
         UInt16 idx = 0;
         Int256 temp = 0;
 
-        while (temp < divisor && max_index >= idx)
+        while (temp < divisor && max_index > idx)
         {
             temp = temp * 10 + number[idx];
             ++idx;
@@ -238,28 +238,16 @@ public:
     static constexpr auto name = Transform::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsDecimalArithmetics>(); }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return Transform::suitable_for_short_circuit; }
-    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return Transform::valid_on_default_arguments; }
-    /// `divideDecimal` throws on a zero divisor, `multiplyDecimal` on overflow.
-    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return Transform::suitable_for_short_circuit; }
 
-    /// Documentation-only — arithmetic on two `Decimal` operands; the optional
-    /// third argument is a const-`UInt8` scale for the result. The output is
-    /// a `Decimal256` with that scale; the legacy `getReturnTypeImpl` below
-    /// stays authoritative.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(Decimal, Decimal, [const UInt8]) -> Decimal256";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2 && arguments.size() != 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -301,27 +289,17 @@ public:
         return std::make_shared<DataTypeDecimal256>(DecimalUtils::max_precision<Decimal256>, scale);
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
-        return getReturnTypeImpl(columns);
-    }
-
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
-
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return resolveOverload(arguments, result_type, input_rows_count);
     }
 
 private:
     // long resolver to call proper templated func
-    [[nodiscard]] ColumnPtr resolveOverload(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    ColumnPtr resolveOverload(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         WhichDataType which_dividend(arguments[0].type.get());
         WhichDataType which_divisor(arguments[1].type.get());

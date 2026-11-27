@@ -6,12 +6,12 @@
 -- All checks rely on `extractAll(explain, 'Prewhere filter column: ...')`,
 -- so the test stays robust to EXPLAIN formatting and indentation changes.
 
-SET min_marks_per_part_to_load_statistics = 0;
 SET explain_query_plan_default = 'legacy';
 SET allow_statistics = 1;
 SET use_statistics = 1;
 SET mutations_sync = 1;
-SET optimize_move_to_prewhere = 1;
+SET enable_analyzer = 1;
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 SET optimize_functions_to_subcolumns = 1;
 SET materialize_statistics_on_insert = 1;
 SET allow_reorder_prewhere_conditions = 1; -- CI may inject False, preventing statistics-based reordering of prewhere conditions

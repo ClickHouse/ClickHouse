@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <QueryPipeline/Pipe.h>
@@ -17,17 +16,14 @@ namespace DB
 /// Adds the FINAL merge transform for the table's merging engine on top of `pipe`, collapsing rows
 /// that share the sort key into the single FINAL result. The pipe's input streams must already be
 /// sorted by `sort_description`. For `Replacing` with `enable_vertical_final`, appends the
-/// `SelectByIndicesTransform` that materializes the vertical-final result. `read_in_reverse` means
-/// the input streams are read in the reverse order relative to the storage order (supported only
-/// for `Replacing`, see `ReplacingSortedAlgorithm`).
+/// `SelectByIndicesTransform` that materializes the vertical-final result.
 void addMergingFinal(
     Pipe & pipe,
     const SortDescription & sort_description,
     MergeTreeData::MergingParams merging_params,
     const StorageMetadataPtr & metadata_snapshot,
     size_t max_block_size_rows,
-    bool enable_vertical_final,
-    bool read_in_reverse = false);
+    bool enable_vertical_final);
 
 /// One lane of a distributed task's read: the marks it reads. When `needs_merge` it is a FINAL intersecting
 /// layer (read in order, trimmed to `(borders[index-1], borders[index]]`, then merge-deduplicated); otherwise
@@ -36,7 +32,7 @@ struct DistributedReadBucket
 {
     RangesInDataPartsDescription marks;
     bool needs_merge = false;
-    VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> borders;
+    std::vector<std::vector<Field>> borders;
     size_t index = 0;
 };
 
@@ -71,7 +67,7 @@ Pipe buildFullFinalMergePipe(
 /// non-intersecting lanes, all united. `read_lane_in_order` and `read_non_intersecting` turn lane marks into
 /// pipes (the part-source seam).
 Pipe buildDistributedFinalPipe(
-    const VectorWithMemoryTracking<DistributedReadBucket> & lanes,
+    const std::vector<DistributedReadBucket> & lanes,
     const StorageMetadataPtr & metadata_snapshot,
     MergeTreeData::MergingParams merging_params,
     size_t max_block_size_rows,

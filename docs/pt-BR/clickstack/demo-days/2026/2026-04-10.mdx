@@ -7,7 +7,9 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Demo days']
 ---
 
-## Filtros de fonte de dados fixáveis {#pinnable-datasource-filters}
+<div id="pinnable-datasource-filters">
+  ## Filtros de fonte de dados fixáveis
+</div>
 
 *Demonstração por [@brandon-pereira](https://github.com/brandon-pereira)*
 
@@ -21,7 +23,9 @@ Este tem sido um dos recursos mais solicitados pela comunidade. Isso significa q
 
 **PRs relacionadas:** [#2047](https://github.com/hyperdxio/hyperdx/pull/2047) [HDX-2300] introduz Filtros Compartilhados para visibilidade e descoberta de filtros em toda a equipe
 
-## Reativando um serviço no ClickStack Cloud {#waking-service-from-clickstack-cloud}
+<div id="waking-service-from-clickstack-cloud">
+  ## Reativando um serviço no ClickStack Cloud
+</div>
 
 *Demonstração de [@brandon-pereira](https://github.com/brandon-pereira)*
 
@@ -33,7 +37,9 @@ Agora, os usuários do ClickStack Cloud podem reativar um serviço em suspensão
 
 Agora o app cuida de tudo do início ao fim. Quando um serviço está em suspensão, a opção exibida é &quot;ativar serviço&quot;, e o app faz todo o processo sem que você precise sair da tela em que está. É uma pequena melhoria de usabilidade que elimina uma interrupção frustrante de várias etapas no seu fluxo de trabalho, especialmente se você estiver acessando o ClickStack após um período de inatividade e quiser ir direto aos seus dados.
 
-## Habilitação consistente dos recursos de IA {#consistent-enabling-of-ai-features}
+<div id="consistent-enabling-of-ai-features">
+  ## Habilitação consistente dos recursos de IA
+</div>
 
 *Demonstração de [@brandon-pereira](https://github.com/brandon-pereira)*
 
@@ -45,7 +51,9 @@ Os recursos de IA no ClickStack agora são ativados exclusivamente pelo plano de
 
 Agora, a caixa de seleção dentro do ClickStack leva ao ClickHouse Cloud e, fora isso, permanece desabilitada. Se você ativar a opção no ClickHouse Cloud, o recurso ficará disponível no ClickStack automaticamente. Isso torna a ativação da IA consistente e previsível, além de eliminar a dúvida sobre qual configuração realmente controla o comportamento.
 
-## Alertas com SQL puro {#raw-sql-alerting}
+<div id="raw-sql-alerting">
+  ## Alertas com SQL puro
+</div>
 
 *Demonstração de [@pulpdrew](https://github.com/pulpdrew)*
 
@@ -59,15 +67,17 @@ Isso abre casos de uso realmente poderosos. A demonstração mostra uma consulta
 
 **PRs relacionadas:** [#2073](https://github.com/hyperdxio/hyperdx/pull/2073) feat: Implementar alertas para tiles de dashboard baseados em SQL puro, [#2085](https://github.com/hyperdxio/hyperdx/pull/2085) refactor: Criar o componente TileAlertEditor
 
-## Melhorias na TUI da Interface do ClickStack {#hyperdx-tui-improvements}
+<div id="hyperdx-tui-improvements">
+  ## Melhorias na TUI do HyperDX
+</div>
 
 *Demonstração por [@wrn14897](https://github.com/wrn14897)*
 
 <Frame>
-  <iframe src="https://www.youtube.com/embed/cIigBpcrYlw" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  <iframe src="https://www.youtube.com/embed/cIigBpcrYlw" title="Player de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-A interface de terminal do ClickStack está cada vez mais fácil de começar a usar. Agora você pode instalá-la globalmente com `npm install -g @hyperdx/cli` e depois executar `hdx` para iniciá-la. Use a flag `--tui` para abrir diretamente a interface interativa no terminal. O binário também está disponível via `npm` como `hdx`, então não há uma etapa de instalação separada depois que o pacote estiver instalado.
+A interface de terminal do HyperDX está cada vez mais fácil de começar a usar. Agora você pode instalá-la globalmente com `npm install -g @hyperdx/cli` e depois executar `hdx` para iniciá-la. Use a flag `--tui` para abrir diretamente a interface interativa no terminal. O binário também está disponível via `npm` como `hdx`, então não há uma etapa de instalação separada depois que o pacote estiver instalado.
 
 Dois recursos importantes foram lançados esta semana junto com as melhorias na instalação. As mensagens de erro agora são renderizadas com destaque adequado e exibição estruturada no terminal, seguindo os padrões de formatação do frontend web, para que você tenha o mesmo nível de detalhe tanto no navegador quanto na TUI. Também há uma nova prévia de SQL para que você possa ver a consulta executada nos bastidores. Além disso, uma nova página de alertas pode ser acessada via `Shift+A` a partir do visualizador de eventos, oferecendo uma visão geral de todos os alertas configurados e do histórico recente de acionamentos, sem sair do terminal.
 

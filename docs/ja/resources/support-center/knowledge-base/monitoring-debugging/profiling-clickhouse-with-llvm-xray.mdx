@@ -5,8 +5,10 @@ description: "LLVM の XRay インストルメンテーションプロファイ�
 tags: ['パフォーマンスと最適化', 'ツールとユーティリティ']
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 <div id="types-of-profilers">
-  ## プロファイラの種類 {#types-of-profilers}
+  ## プロファイラの種類
 </div>
 
 LLVM にはすでに、コードをインストルメントして [インストルメンテーション
@@ -20,7 +22,9 @@ LLVM にはすでに、コードをインストルメントして [インスト�
 対象になります。[perf](https://en.wikipedia.org/wiki/Perf_%28Linux%29) は非常によく知られた
 統計的プロファイラです。
 
-## XRay のインテグレーションを使用した ClickHouse のプロファイリング {#profiling-clickhouse-using-xray-integration}
+<div id="profiling-clickhouse-using-xray-integration">
+  ## XRay のインテグレーションを使用した ClickHouse のプロファイリング
+</div>
 
 ClickHouse 25.12 では、XRay が統合されており、関数に新しいインストルメンテーションポイントをシームレスに追加できます。
 そのため、公式リリースにはこの機能がすでに含まれており、有効にしていないときでも全体的なパフォーマンスに
@@ -45,23 +49,21 @@ SYSTEM INSTRUMENT REMOVE ALL
 ```
 
 system.trace&#95;log に収集されたデータを [Chrome
-フォーマット](/ja/reference/system-tables/trace_log#chrome-event-trace-format) に変換し、[Perfetto](https://ui.perfetto.dev) で
+形式](/ja/reference/system-tables/trace_log#chrome-event-trace-format) に変換し、[Perfetto](https://ui.perfetto.dev) で
 可視化します。各エントリの query&#95;id、cpu&#95;id、stacktrace に
 注目してください。
 
-<div className="ch-image-md">
-  <Frame>
-    ![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
-  </Frame>
-</div>
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp" size="md" alt="time-order" />
 
 <div id="profiling-a-native-application-using-xray">
-  ## XRay を使用したネイティブアプリケーションのプロファイリング {#profiling-a-native-application-using-xray}
+  ## XRay を使用したネイティブアプリケーションのプロファイリング
 </div>
 
 以下のセクションは、XRay の内部的な仕組みと、ネイティブアプリケーションのプロファイリングにそのまま利用する方法を理解するための参考として残しています。
 
-### コードをインストルメントする {#instrument-the-code}
+<div id="instrument-the-code">
+  ### コードをインストルメントする
+</div>
 
 次のソースコードを想像してください。
 
@@ -119,7 +121,7 @@ Idx Name          Size      VMA               LMA               File off  Algn
 ```
 
 <div id="run-the-process-with-proper-env-var-values-to-collect-the-trace">
-  ### 適切な環境変数の値を設定してプロセスを実行し、トレースを収集する {#run-the-process-with-proper-env-var-values-to-collect-the-trace}
+  ### 適切な環境変数の値を設定してプロセスを実行し、トレースを収集する
 </div>
 
 デフォルトでは、明示的に要求しない限り、プロファイラによる収集は行われません。つまり、
@@ -135,7 +137,7 @@ Finish
 ```
 
 <div id="convert-the-trace">
-  ### トレースを変換する {#convert-the-trace}
+  ### トレースを変換する
 </div>
 
 XRay のトレースは、いくつかのフォーマットに変換できます。`trace_event` フォーマットは、パースしやすく、
@@ -146,7 +148,7 @@ llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xra
 ```
 
 <div id="visualize-the-trace">
-  ### トレースを可視化する {#visualize-the-trace}
+  ### トレースを可視化する
 </div>
 
 [speedscope.app](https://www.speedscope.app/) や
@@ -155,32 +157,26 @@ llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xra
 Perfetto は複数のスレッドの可視化やデータのクエリをしやすくしますが、speedscope は
 データのフレームグラフやサンドイッチビューの生成に適しています。
 
-#### 時系列順 {#time-order}
-
-<div className="ch-image-md">
-  <Frame>
-    ![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
-  </Frame>
+<div id="time-order">
+  #### 時系列順
 </div>
 
-#### Left Heavy {#left-heavy}
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp" size="md" alt="時系列順" />
 
-<div className="ch-image-md">
-  <Frame>
-    ![left-heavy](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
-  </Frame>
+<div id="left-heavy">
+  #### 左側に偏る
 </div>
 
-#### サンドイッチ {#sandwitch}
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp" size="md" alt="左側に偏る" />
 
-<div className="ch-image-md">
-  <Frame>
-    ![サンドイッチ](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
-  </Frame>
+<div id="sandwitch">
+  #### サンドイッチ
 </div>
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp" size="md" alt="サンドイッチ" />
 
 <div id="check-out-the-docs">
-  ## ドキュメントを確認する {#check-out-the-docs}
+  ## ドキュメントを確認する
 </div>
 
 * [SYSTEM INSTRUMENT](/ja/reference/statements/system#instrument) — インストルメンテーションポイントを追加

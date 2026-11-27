@@ -15,7 +15,7 @@ ClickHouseでは、お客様の支援やプラットフォーム機能の強化�
 </Info>
 
 <div id="ai-support">
-  ## AI サポート {#ai-support}
+  ## AI サポート
 </div>
 
 AI サポートを有効にする設定は、`organization:manage` 権限を持つユーザーが確認および変更できます。この設定は、組織の設定ページで利用できます。
@@ -23,22 +23,26 @@ AI サポートを有効にする設定は、`organization:manage` 権限を持�
 ClickHouse では、設定やトラブルシューティングに関する支援を受けられるよう、顧客がチャット エージェントとやり取りできる AI 機能を提供しています。このエージェントは、当社のドキュメントおよびケース管理システムの情報をもとに、顧客からの問い合わせに迅速に回答します。
 
 <div id="sharing-data-for-product-improvement">
-  ## 製品改善のためのデータ共有 {#sharing-data-for-product-improvement}
+  ## 製品改善のためのデータ共有
 </div>
 
 製品改善のためのデータ共有を有効にする設定は、`organization:manage` 権限を持つユーザーが確認および変更できます。この設定は、組織の設定ページで利用できます。
 
 組織で、製品改善を目的として ClickHouse とデータを共有する管理者レベルの設定がオンになっている場合、ClickHouse は、モデル評価 (精度、性能、安全性/コンプライアンステスト) 、サービスの信頼性・安全性・ユーザー体験の向上、分析の実施などの目的で、AI 機能の利用を通じてユーザーが生成または収集したデータ (入力、出力、ログ、メタデータを含みますが、ClickHouse Cloud へのクエリの直接的な結果は除きます) を使用することがあります。当社は、このデータをモデルのトレーニング、再トレーニング、またはファインチューニングに使用することはありません。
 
-## Assistant {#clickhouse-assistant}
+<div id="clickhouse-assistant">
+  ## ClickHouse Assistant
+</div>
 
-[Assistant](/ja/agents/assistant/using-ai-chat) を有効にする設定は、`service:manage-generative-ai` 権限を持つユーザーが確認および変更できます。この設定はサービス設定ページで利用できます。この機能では、次の 2 つの異なる機能を利用できます。
+[ClickHouse Assistant](/ja/products/cloud/features/ai-ml/ask-ai) を有効にする設定は、`service:manage-generative-ai` 権限を持つユーザーが確認および変更できます。この設定はサービス設定ページで利用できます。この機能では、次の 2 つの異なる機能を利用できます。
 
-| 機能   | Description                 | Data used                                   | User validation                        |
-| :-------- | :-------------------------- | :------------------------------------------ | :------------------------------------- |
-| SQL AI    | クエリを作成・分析し、改善案を提示します        | サービスメタデータ、クエリテキスト、プロンプト入力                   | 出力はクエリ実行前にユーザーに提示され、内容を確認できます          |
-| Assistant | ユーザーが自然言語で質問し、回答を得られるようにします | サービスのメタデータとコンテンツ、ClickHouse のドキュメント、プロンプト入力 | 出力は確認用に表示されるため、使用前にユーザーが内容を検証する必要があります |
+| Feature              | Description                 | Data used                                   | User validation                        |
+| :------------------- | :-------------------------- | :------------------------------------------ | :------------------------------------- |
+| SQL AI               | クエリを作成・分析し、改善案を提示します        | サービスメタデータ、クエリテキスト、プロンプト入力                   | 出力はクエリ実行前にユーザーに提示され、内容を確認できます          |
+| ClickHouse Assistant | ユーザーが自然言語で質問し、回答を得られるようにします | サービスのメタデータとコンテンツ、ClickHouse のドキュメント、プロンプト入力 | 出力は確認用に表示されるため、使用前にユーザーが内容を検証する必要があります |
 
-## Model Context Protocol {#model-comtext-protocol}
+<div id="model-comtext-protocol">
+  ## Model Context Protocol
+</div>
 
 [ClickHouse MCP](/ja/products/cloud/features/ai-ml/remote-mcp) を使用すると、お客様は ClickHouse サービス内のデータを活用する独自のエージェントをより簡単に作成できます。これには別途セットアップが必要で、データの処理にはお客様が選択した AI モデルが使用されます。ClickHouse がお客様の AI モデルを管理したり、それらにアクセスしたりすることはありません。

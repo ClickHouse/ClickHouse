@@ -11,13 +11,17 @@ doc_type: 'reference'
 
 MergeTreeテーブルの索引ファイルおよびマークファイルの内容を表します。イントロスペクションに使用できます。
 
-## 構文 {#syntax}
+<div id="syntax">
+  ## 構文
+</div>
 
 ```sql
 mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 ```
 
-## 引数 {#arguments}
+<div id="arguments">
+  ## 引数
+</div>
 
 | 引数            | 説明                      |
 | ------------- | ----------------------- |
@@ -26,9 +30,9 @@ mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 | `with_marks`  | 結果にマーク付きのカラムを含めるかどうか。   |
 | `with_minmax` | 結果に min-max 索引を含めるかどうか。 |
 
-`DESCRIBE` などで結果の構造を取得するには、ソーステーブルに対する `SHOW COLUMNS` 権限が必要です。また、データを読み取るには、読み取り対象のカラムに対する `SELECT` 権限が必要です。
-
-## 戻り値 {#returned-value}
+<div id="returned-value">
+  ## 戻り値
+</div>
 
 ログソーステーブルのプライマリインデックスおよび min-max 索引 (有効な場合) の値を持つカラム、ログソーステーブルのデータパーツ内の取り得るすべてのファイルについて マーク (有効な場合) の値を持つカラム、ならびに仮想カラムを含むテーブルオブジェクトです。
 
@@ -38,7 +42,9 @@ mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 
 カラムがデータパーツ内に存在しない場合、またはそのサブストリームのいずれかの マーク が書き込まれていない場合 (たとえば compact パーツ) には、マーク カラムに `(NULL, NULL)` が含まれることがあります。
 
-## 使用例 {#usage-example}
+<div id="usage-example">
+  ## 使用例
+</div>
 
 ```sql
 CREATE TABLE test_table

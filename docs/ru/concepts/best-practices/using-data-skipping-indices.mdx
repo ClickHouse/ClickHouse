@@ -8,6 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 Индексы пропуска данных стоит рассматривать после того, как уже выполнены основные рекомендации: оптимизированы типы, выбран подходящий первичный ключ и использованы materialized views. Если вы только начинаете знакомиться с индексами пропуска данных, хорошей отправной точкой будет [это руководство](/ru/concepts/features/performance/skip-indexes/skipping-indexes).
 
 Эти типы индексов могут ускорить выполнение запросов, если применять их осознанно и понимать, как именно они работают.
@@ -46,29 +48,31 @@ ClickHouse предоставляет мощный механизм под на�
 
 Более подробное руководство по индексам пропуска данных смотрите [здесь](/ru/reference/statements/alter/skipping-index).
 
-## Пример {#example}
+<div id="example">
+  ## Пример
+</div>
 
 Рассмотрим следующую оптимизированную таблицу. Она содержит данные Stack Overflow: по одной строке на каждый пост.
 
 ```sql
 CREATE TABLE stackoverflow.posts
 (
-  `Id` Int32 CODEC(Delta, Default),
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
   `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
   `AcceptedAnswerId` UInt32,
   `CreationDate` DateTime64(3, 'UTC'),
   `Score` Int32,
-  `ViewCount` UInt32 CODEC(Delta, Default),
+  `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
   `Body` String,
   `OwnerUserId` Int32,
   `OwnerDisplayName` String,
   `LastEditorUserId` Int32,
   `LastEditorDisplayName` String,
-  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
+  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
   `LastActivityDate` DateTime64(3, 'UTC'),
   `Title` String,
   `Tags` String,
-  `AnswerCount` UInt16 CODEC(Delta, Default),
+  `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
   `CommentCount` UInt8,
   `FavoriteCount` UInt8,
   `ContentLicense` LowCardinality(String),
@@ -157,22 +161,22 @@ ALTER TABLE stackoverflow.posts MATERIALIZE INDEX view_count_idx;
 ```sql
 CREATE TABLE stackoverflow.posts
 (
-  `Id` Int32 CODEC(Delta, Default),
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
   `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
   `AcceptedAnswerId` UInt32,
   `CreationDate` DateTime64(3, 'UTC'),
   `Score` Int32,
-  `ViewCount` UInt32 CODEC(Delta, Default),
+  `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
   `Body` String,
   `OwnerUserId` Int32,
   `OwnerDisplayName` String,
   `LastEditorUserId` Int32,
   `LastEditorDisplayName` String,
-  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
+  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
   `LastActivityDate` DateTime64(3, 'UTC'),
   `Title` String,
   `Tags` String,
-  `AnswerCount` UInt16 CODEC(Delta, Default),
+  `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
   `CommentCount` UInt8,
   `FavoriteCount` UInt8,
   `ContentLicense` LowCardinality(String),
@@ -188,11 +192,7 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 Следующая анимация показывает, как для таблицы из примера строится наш minmax-индекс пропуска данных, отслеживающий минимальные и максимальные значения `ViewCount` для каждого блока строк (гранулы) в таблице:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Построение индексов пропуска данных](/images/bestpractices/building_skipping_indices.webp)
-  </Frame>
-</div>
+<Image img="/images/bestpractices/building_skipping_indices.webp" size="lg" alt="Построение индексов пропуска данных" />
 
 Повторив предыдущий запрос, можно увидеть заметное повышение производительности. Обратите внимание на уменьшение числа просканированных строк:
 
@@ -257,15 +257,13 @@ WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
 
 Мы также показываем анимацию того, как minmax индекс пропуска данных отбрасывает все блоки строк, которые заведомо не могут содержать совпадений с предикатом `ViewCount` &gt; 10,000,000 в нашем примере запроса:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Использование индексов пропуска данных](/images/bestpractices/using_skipping_indices.webp)
-  </Frame>
+<Image img="/images/bestpractices/using_skipping_indices.webp" size="lg" alt="Использование индексов пропуска данных" />
+
+<div id="related-docs">
+  ## Связанные документы
 </div>
 
-## Связанные материалы {#related-docs}
-
 * [Руководство по индексам пропуска данных](/ru/concepts/features/performance/skip-indexes/skipping-indexes)
-* [Примеры использования индексов пропуска данных](/ru/concepts/features/performance/skip-indexes/skipping-indexes-examples)
+* [Примеры индексов пропуска данных](/ru/concepts/features/performance/skip-indexes/skipping-indexes-examples)
 * [Управление индексами пропуска данных](/ru/reference/statements/alter/skipping-index)
-* [Сведения в системной таблице](/ru/reference/system-tables/data_skipping_indices)
+* [Информация о системной таблице](/ru/reference/system-tables/data_skipping_indices)

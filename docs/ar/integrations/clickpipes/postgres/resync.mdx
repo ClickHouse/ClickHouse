@@ -10,8 +10,10 @@ integration:
   - category: 'clickpipes'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 <div id="what-postgres-resync-do">
-  ### ماذا تفعل إعادة المزامنة؟ {#what-postgres-resync-do}
+  ### ماذا تفعل إعادة المزامنة؟
 </div>
 
 تتضمن إعادة المزامنة العمليات التالية بالترتيب:
@@ -24,7 +26,7 @@ integration:
 تُحتفَظ جميع إعدادات ClickPipe الأصلي في ClickPipe إعادة المزامنة. وتُمسَح إحصاءات ClickPipe الأصلي في واجهة المستخدم.
 
 <div id="use-cases-postgres-resync">
-  ### حالات استخدام إعادة مزامنة ClickPipe {#use-cases-postgres-resync}
+  ### حالات استخدام إعادة مزامنة ClickPipe
 </div>
 
 فيما يلي بعض السيناريوهات:
@@ -39,18 +41,14 @@ integration:
 </Note>
 
 <div id="guide-postgres-resync">
-  ### دليل إعادة مزامنة ClickPipe {#guide-postgres-resync}
+  ### دليل إعادة مزامنة ClickPipe
 </div>
 
 1. في علامة تبويب **Data Sources**، انقر على Postgres ClickPipe الذي تريد إعادة مزامنته.
 2. انتقل إلى علامة تبويب **Settings**.
 3. انقر على زر **إعادة مزامنة**.
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
 
 4. ينبغي أن يظهر مربع حوار للتأكيد. انقر على **إعادة مزامنة** مرة أخرى.
 5. انتقل إلى علامة تبويب **Metrics**.

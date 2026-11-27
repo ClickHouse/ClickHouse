@@ -8,7 +8,7 @@ keywords: ['ClickStack', 'デモデイズ']
 ---
 
 <div id="schema-migration-tool">
-  ## スキーマ移行ツール {#schema-migration-tool}
+  ## スキーマ移行ツール
 </div>
 
 *[@wrn14897](https://github.com/wrn14897) によるデモ*
@@ -22,13 +22,13 @@ keywords: ['ClickStack', 'デモデイズ']
 次の段階では、デプロイメント全体にわたるスキーマ変更への対応が予定されており、この機能は一般提供にさらに近づく見込みです。 
 
 <div id="source-level-filters-for-alerts-and-mcp">
-  ## アラートとMCPのログソースレベルフィルター {#source-level-filters-for-alerts-and-mcp}
+  ## アラートとMCPのログソースレベルフィルター
 </div>
 
 *デモ: [@pulpdrew](https://github.com/pulpdrew)*
 
 <Frame>
-  <iframe src="https://www.youtube.com/embed/z0Lbggcy6dU" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  <iframe src="https://www.youtube.com/embed/z0Lbggcy6dU" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
 Drewが、ClickStack全体でのログソースフィルター対応の大幅な拡張を紹介します。アラートは、ログソースフィルターが必要なダッシュボードタイルや Raw SQL タイルでも設定できるようになり、フィルターが不足している場合や、クエリに挿入用のフィルターマクロが含まれていない場合には、わかりやすいインラインガイダンスが表示されます。保存済み検索アラートも同様の動作に対応しています。
@@ -40,7 +40,7 @@ MCPでも、ログソースフィルターを認識できるようになりま�
 **関連PR:** [#2459](https://github.com/hyperdxio/hyperdx/pull/2459) feat: 除外されたログソーススコープのフィルターがあるタイルにアイコンを表示, [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) feat: ダッシュボードフィルターにログソーススコープを追加
 
 <div id="candidate-columns-when-building-sources">
-  ## ログソース作成時の候補カラム {#candidate-columns-when-building-sources}
+  ## ログソース作成時の候補カラム
 </div>
 
 *デモ: [@karl-power](https://github.com/karl-power)*
@@ -55,34 +55,38 @@ MCPでも、ログソースフィルターを認識できるようになりま�
 
 **関連 PR:** [#2436](https://github.com/hyperdxio/hyperdx/pull/2436) feat: ログソースフィールドの候補提案を追加
 
-## group-by を使用した異常アラート (作業中) {#anomaly-alerts-with-group-by}
+<div id="anomaly-alerts-with-group-by">
+  ## group-by を使用した異常アラート (WIP)
+</div>
 
-*デモ担当者: [@fleon](https://github.com/fleon)*
+*[@fleon](https://github.com/fleon) によるデモ*
 
 <Frame>
-  <iframe src="https://www.youtube.com/embed/70UzCRUTK7M" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  <iframe src="https://www.youtube.com/embed/70UzCRUTK7M" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
 この取り組みは、グループ化された時系列に対する異常検知の使い勝手に関する課題に対応するものです。すべての系列に異常バンドを同時に表示すると、すぐに見づらくなってしまいます。Himanshu のアプローチでは、ホバー時には凡例から異常バンドを表示しつつ、単一の系列が選択されている場合は引き続きチャート上に直接描画します。
 
 この機能は現在も活発に開発が進められており、リリースまでにさらに改善が加えられる予定です。
 
-## MCP評価マルチモデルセレクター {#mcp-eval-multi-model-selector}
+<div id="mcp-eval-multi-model-selector">
+  ## MCP評価マルチモデルセレクター
+</div>
 
-*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+*[@brandon-pereira](https://github.com/brandon-pereira) によるデモ*
 
 <Frame>
-  <iframe src="https://www.youtube.com/embed/1O47NXHDzUY" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  <iframe src="https://www.youtube.com/embed/1O47NXHDzUY" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
 MCP評価フレームワークで、単一の評価スイートを複数のモデルに対して同時に実行できるようになりました。Brandonは、Fableのリリースを受けて、この機能を使い、1回の実行でFable、Opus、Sonnetを比較する様子を紹介しています。
 
-ClickHouseとClickStack UIの両方の評価スイートで、ClickStack固有の質問に対してはFableが大幅に優れた結果を示しました。このモデルが使えればいいのですが :).
+ClickHouseとHyperDXの両方の評価スイートで、ClickStack固有の質問に対してはFableが大幅に優れた結果を示しました。このモデルが使えればいいのですが :).
 
 **関連PR:** [#2438](https://github.com/hyperdxio/hyperdx/pull/2438) feat(hdx-eval): evalバッチでのマルチモデル比較をサポート, [#2414](https://github.com/hyperdxio/hyperdx/pull/2414) feat: MCPサーバーのbenchmarking向けAI評価フレームワーク
 
 <div id="all-notebook-tools-now-use-the-mcp">
-  ## すべてのノートブックツールが MCP を使用するようになりました {#all-notebook-tools-now-use-the-mcp}
+  ## すべてのノートブックツールが MCP を使用するようになりました
 </div>
 
 *デモ: [@brandon-pereira](https://github.com/brandon-pereira)*
@@ -96,7 +100,7 @@ ClickHouseとClickStack UIの両方の評価スイートで、ClickStack固有�
 次は Raw SQL のノートブックタイルを予定しています。
 
 <div id="datadog-receiver">
-  ## Datadog receiver {#datadog-receiver}
+  ## Datadog receiver
 </div>
 
 *デモ: [@SpencerTorres](https://github.com/SpencerTorres)*
@@ -112,7 +116,7 @@ Spencer が Datadog receiver の改善点を紹介します。
 Datadog の 64 ビット数値 trace ID は 128 ビットの OpenTelemetry フォーマットにも拡張されるようになり、ClickStack 内で適切なトレース相関が可能になります。この receiver は ClickStack collector のディストリビューションに含まれる予定で、エンドツーエンドのトレース相関については今後さらにテストが行われる予定です。
 
 <div id="event-patterns-any-column">
-  ## イベントパターン: 任意のカラム {#event-patterns-any-column}
+  ## イベントパターン: 任意のカラム
 </div>
 
 *デモ: [@knudtty](https://github.com/knudtty)*
@@ -128,7 +132,7 @@ Aaron はまた、Drain アルゴリズムがイベントをパターンにグ�
 **関連PR:** [#2460](https://github.com/hyperdxio/hyperdx/pull/2460) feat: 任意のカラムに対するイベントパターンマッチング用のパターンカラムセレクターを追加
 
 <div id="span-links">
-  ## スパンリンク (WIP) {#span-links}
+  ## スパンリンク (WIP)
 </div>
 
 *[@alex-fedotyev](https://github.com/alex-fedotyev) によるデモ*
@@ -144,7 +148,7 @@ Alex が、ClickStack のトレースビューアーにおけるスパンリン�
 **関連 PR:** [#2463](https://github.com/hyperdxio/hyperdx/pull/2463) feat(traces): トレースビューアーでスパンリンクを表示
 
 <div id="time-series-highlighting-on-hover">
-  ## ホバー時の時系列の強調表示 {#time-series-highlighting-on-hover}
+  ## ホバー時の時系列の強調表示
 </div>
 
 *デモ: [@alex-fedotyev](https://github.com/alex-fedotyev)*
@@ -160,7 +164,7 @@ Alex が、ClickStack のトレースビューアーにおけるスパンリン�
 **関連 PR:** [#2456](https://github.com/hyperdxio/hyperdx/pull/2456) feat: 時系列チャートのツールチップでカーソルに最も近い系列を強調表示
 
 <div id="duplicate-series">
-  ## 系列の複製 {#duplicate-series}
+  ## 系列の複製
 </div>
 
 *デモ: [@alex-fedotyev](https://github.com/alex-fedotyev)*
@@ -176,7 +180,7 @@ Alex は、P50 と P95 の比較を作成しながら、このワークフロー
 **関連PR:** [#2453](https://github.com/hyperdxio/hyperdx/pull/2453) feat(chart-explorer): chart builder で系列を複製
 
 <div id="editable-pill-filters">
-  ## 編集可能なピル型フィルター (開発中) {#editable-pill-filters}
+  ## 編集可能なピル型フィルター (開発中)
 </div>
 
 *デモ: [@alex-fedotyev](https://github.com/alex-fedotyev)*

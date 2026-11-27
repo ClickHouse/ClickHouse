@@ -4,10 +4,12 @@ slug: /integrations/kafka/cloud/confluent/http
 description: 'Использование коннектора HTTP Sink с Kafka Connect и ClickHouse'
 title: 'Confluent коннектор HTTP Sink'
 doc_type: 'guide'
-keywords: ['Confluent коннектор HTTP Sink', 'HTTP Sink ClickHouse', 'коннектор HTTP для Kafka ', 'HTTP-интеграция ClickHouse', 'Confluent Cloud HTTP Sink']
+keywords: ['Confluent коннектор HTTP Sink', 'HTTP Sink ClickHouse', 'коннектор HTTP для Kafka
+', 'HTTP-интеграция ClickHouse', 'Confluent Cloud HTTP Sink']
 ---
 
 import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
+import { Image } from "/snippets/ru/components/Image.jsx";
 
 Коннектор HTTP Sink не зависит от типа данных, поэтому ему не требуется схема Kafka; кроме того, он поддерживает специфичные для ClickHouse типы данных, такие как Map и Array. За эту дополнительную гибкость приходится платить небольшим усложнением конфигурации.
 
@@ -17,7 +19,9 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
   Коннектор HTTP Sink распространяется по лицензии [Confluent Enterprise License](https://docs.confluent.io/kafka-connect-http/current/overview.html#license).
 </Note>
 
-### Шаги быстрого старта {#quick-start-steps}
+<div id="quick-start-steps">
+  ### Шаги быстрого старта
+</div>
 
 <Steps>
   <Step title="Соберите сведения о подключении" id="1-gather-your-connection-details">
@@ -28,7 +32,7 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
     У вас есть два варианта:
 
     * **Самоуправляемый:** Загрузите пакет Confluent и установите его локально. Следуйте инструкциям по установке коннектора, описанным [здесь](https://docs.confluent.io/kafka-connect-http/current/overview.html).
-      Если вы используете метод установки confluent-hub, ваши локальные файлы конфигурации будут обновлены.
+      Если вы используете метод установки `confluent-hub`, ваши локальные файлы конфигурации будут обновлены.
 
     * **Confluent Cloud:** Для тех, кто использует Confluent Cloud для хостинга Kafka, доступна полностью управляемая версия HTTP Sink. Для этого требуется, чтобы ваша среда ClickHouse была доступна из Confluent Cloud.
 
@@ -57,11 +61,7 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
   <Step title="Настройка HTTP Sink" id="4-configure-http-sink">
     Создайте Kafka топик и экземпляр коннектора HTTP Sink:
 
-    <div className="ch-image-sm">
-      <Frame>
-        ![Интерфейс Confluent Cloud, показывающий, как создать коннектор HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp" size="sm" alt="Интерфейс Confluent Cloud, показывающий, как создать коннектор HTTP Sink" border />
 
     <br />
 
@@ -78,11 +78,7 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
       В этом HTTP Url легко допустить ошибку. Убедитесь, что экранирование выполнено корректно, чтобы избежать проблем.
     </Note>
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Интерфейс Confluent Cloud, показывающий настройки аутентификации для коннектора HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/http_auth.webp)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/data-ingestion/kafka/confluent/http_auth.webp" size="lg" alt="Интерфейс Confluent Cloud, показывающий настройки аутентификации для коннектора HTTP Sink" border />
 
     <br />
 
@@ -96,21 +92,13 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
         * `Retry on HTTP codes` - 400-500, но при необходимости скорректируйте; например, это может измениться, если перед ClickHouse используется HTTP proxy.
         * `Maximum Reties` - значение по умолчанию (10) подходит, но при необходимости вы можете увеличить его для более надёжных повторных попыток.
 
-    <div className="ch-image-sm">
-      <Frame>
-        ![Интерфейс Confluent Cloud, показывающий дополнительные параметры конфигурации для коннектора HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp" size="sm" alt="Интерфейс Confluent Cloud, показывающий дополнительные параметры конфигурации для коннектора HTTP Sink" border />
   </Step>
 
   <Step title="Проверка подключения" id="5-testing-the-connectivity">
     Создайте сообщение в топике, настроенном для вашего HTTP Sink
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Интерфейс Confluent Cloud, показывающий, как создать тестовое сообщение в топике Kafka](/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp" size="md" alt="Интерфейс Confluent Cloud, показывающий, как создать тестовое сообщение в топике Kafka" border />
 
     <br />
 
@@ -119,11 +107,11 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
 </Steps>
 
 <div id="troubleshooting">
-  ### Устранение неполадок {#troubleshooting}
+  ### Устранение неполадок
 </div>
 
 <div id="http-sink-doesnt-batch-messages">
-  #### HTTP Sink не выполняет батчинг сообщений {#http-sink-doesnt-batch-messages}
+  #### HTTP Sink не выполняет батчинг сообщений
 </div>
 
 Из [документации по Sink](https://docs.confluent.io/kafka-connectors/http/current/overview.html#http-sink-connector-for-cp):
@@ -134,11 +122,11 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
 2. При добавлении параметров в URL HTTP API для каждой записи может формироваться уникальный URL. По этой причине батчинг отключается при использовании дополнительных параметров URL.
 
 <div id="400-bad-request">
-  #### 400 Некорректный запрос {#400-bad-request}
+  #### 400 Некорректный запрос
 </div>
 
 <div id="cannot_parse_quoted_string">
-  ##### CANNOT_PARSE_QUOTED_STRING {#cannot_parse_quoted_string}
+  ##### CANNOT_PARSE_QUOTED_STRING
 </div>
 
 Если при вставке объекта JSON в столбец `String` в HTTP Sink возникает следующая ошибка:
@@ -150,7 +138,7 @@ Code: 26. DB::ParsingException: Cannot parse JSON string: expected opening quote
 Установите параметр `input_format_json_read_objects_as_strings=1` в URL в виде закодированной строки `SETTINGS%20input_format_json_read_objects_as_strings%3D1`
 
 <div id="load-the-github-dataset-optional">
-  ### Загрузите набор данных GitHub (необязательно) {#load-the-github-dataset-optional}
+  ### Загрузите набор данных GitHub (необязательно)
 </div>
 
 Обратите внимание: в этом примере сохраняются поля типа Array из набора данных GitHub. Мы предполагаем, что в примерах у вас есть пустой топик github, и для вставки сообщений в Kafka используем [kcat](https://github.com/edenhill/kcat).

@@ -18,8 +18,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     size_t part_uncompressed_bytes,
     WrittenOffsetSubstreams * written_offset_substreams,
     bool try_adaptive_codec,
-    PackedFilesWriter * external_packed_skip_indices_writer,
-    StreamBaseManifestPtr stream_base_manifest)
+    PackedFilesWriter * external_packed_skip_indices_writer)
     : IMergedBlockOutputStream(
           std::move(data_settings),
           data_part->getDataPartStoragePtr(),
@@ -34,10 +33,9 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || prewarm_caches.primary_index_cache;
 
     /// Granularity is never recomputed while writing only columns.
-    /// Only merges and mutations write columns separately.
     MergeTreeWriterSettings writer_settings(
         data_part->storage.getContext()->getSettingsRef(),
-        getWriteSettingsForMergeOrMutation(data_part->storage.getContext()->getWriteSettings(), data_part->storage.supportsReplication()),
+        data_part->storage.getContext()->getWriteSettings(),
         storage_settings,
         data_part,
         data_part->index_granularity_info.mark_type.adaptive,
@@ -48,7 +46,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         try_adaptive_codec);
 
     writer_settings.external_packed_skip_indices_writer = external_packed_skip_indices_writer;
-    writer_settings.stream_base_manifest = std::move(stream_base_manifest);
 
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),
@@ -104,7 +101,7 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
 
     for (const String & removed_file : removed_files)
     {
-        files_to_remove_after_finish.insert(removed_file);
+        new_part->getDataPartStorage().removeFileIfExists(removed_file);
         all_checksums.files.erase(removed_file);
     }
 
@@ -115,10 +112,6 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
 void MergedColumnOnlyOutputStream::finish(bool sync)
 {
     writer->finish(sync);
-
-    /// Only after the writer finishes: a disk transaction registers a written file when its buffer is finalized.
-    for (const auto & file : files_to_remove_after_finish)
-        data_part_storage->removeFileIfExists(file);
 }
 
 void MergedColumnOnlyOutputStream::cancel() noexcept

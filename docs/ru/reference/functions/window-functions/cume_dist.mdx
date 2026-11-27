@@ -15,12 +15,12 @@ doc_type: 'reference'
 ```sql
 cume_dist ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        | [window_name])
+        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column])
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 ```
 
-Функция всегда читает всю партицию; рамка окна, если она указана, игнорируется.
+Используемое по умолчанию и обязательное определение рамки окна: `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
 
 Подробнее о синтаксисе оконных функций см.: [Оконные функции — синтаксис](/ru/reference/functions/window-functions/index#syntax).
 

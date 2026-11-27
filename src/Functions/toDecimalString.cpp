@@ -29,23 +29,30 @@ public:
     static constexpr auto name = "toDecimalString";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToDecimalString>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 2; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(Number, const NativeInteger) -> String";
+        FunctionArgumentDescriptors mandatory_args = {
+            {"Value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
+            {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), &isColumnConst, "const Integer"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, {});
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
 private:
     /// For operations with Integer/Float
@@ -175,7 +182,7 @@ private:
     }
 
 public:
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         switch (arguments[0].type->getTypeId())
         {
@@ -205,7 +212,7 @@ public:
 
 private:
     template <typename T>
-    [[nodiscard]] ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const auto * precision_col = checkAndGetColumn<ColumnVector<UInt8>>(arguments[1].column.get());
         const auto * precision_col_const = checkAndGetColumnConst<ColumnVector<UInt8>>(arguments[1].column.get());

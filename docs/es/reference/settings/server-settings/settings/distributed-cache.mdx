@@ -12,72 +12,22 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estos ajustes configuran el servidor de ClickHouse y se generan automáticamente a partir del código fuente de ClickHouse.
 
-## distributed_cache_apply_throttling_settings_from_client {#distributed_cache_apply_throttling_settings_from_client}
+<div id="distributed_cache_apply_throttling_settings_from_client">
+  ## distributed_cache_apply_throttling_settings_from_client
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Indica si el servidor de caché debe aplicar la configuración de throttling recibida del client.
 
-## distributed_cache_keep_up_free_connections_ratio {#distributed_cache_keep_up_free_connections_ratio}
+<div id="distributed_cache_keep_up_free_connections_ratio">
+  ## distributed_cache_keep_up_free_connections_ratio
+</div>
 
 <SettingsInfoBlock type="Float" default_value="0.1" changeable_without_restart="No" />Límite no estricto del número de conexiones activas que la caché distribuida intentará mantener libres. Cuando el número de conexiones libres descienda por debajo de distributed&#95;cache&#95;keep&#95;up&#95;free&#95;connections&#95;ratio * max&#95;connections, se cerrarán las conexiones con la actividad más antigua hasta que el número vuelva a situarse por encima del límite.
 
-## distributed_cache_temporary_data_background_retry_delay_milliseconds {#distributed_cache_temporary_data_background_retry_delay_milliseconds}
+<div id="distributed_cache_write_pool_size">
+  ## distributed_cache_write_pool_size
+</div>
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="30000" changeable_without_restart="No" />Retardo, en milisegundos, antes de un reintento en segundo plano de datos temporales committed.
-
-## distributed_cache_temporary_data_cleanup_period_milliseconds {#distributed_cache_temporary_data_cleanup_period_milliseconds}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="1000" changeable_without_restart="No" />Período, en milisegundos, entre limpiezas sucesivas de los datos temporales committed caducados.
-
-## distributed_cache_temporary_data_confirmation_retry_delay_milliseconds {#distributed_cache_temporary_data_confirmation_retry_delay_milliseconds}
-
-<SettingsInfoBlock type="UInt64" default_value="500" changeable_without_restart="No" />Tiempo de espera, en milisegundos, antes de reintentar la confirmación de la publicación de datos temporales committed.
-
-## distributed_cache_temporary_data_control_hello_timeout_milliseconds {#distributed_cache_temporary_data_control_hello_timeout_milliseconds}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="2000" changeable_without_restart="No" />Un control de datos temporales committed prolonga la duración de un archivo, como máximo, hasta el instante del hello de la conexión de control + este tiempo de espera + el TTL, en milisegundos. El Client espera la respuesta durante ese mismo tiempo después del hello. El Client utiliza su propio valor, que lee al crear un archivo committed (en el caso de las renovaciones en segundo plano, durante el inicio). Un valor distinto en el Client y en el servidor de Distributed Cache no reduce la duración de un archivo por debajo del hello + el TTL.
-
-## distributed_cache_temporary_data_max_bytes_per_server {#distributed_cache_temporary_data_max_bytes_per_server}
-
-<SettingsInfoBlock type="UInt64" default_value="1099511627776" changeable_without_restart="No" />Tamaño total máximo, en bytes, de los archivos temporales committed que conserva un servidor de Distributed Cache. Los archivos temporales committed quedan fijados en la caché del sistema de archivos y no se pueden desalojar hasta que se liberan o caducan, por lo que este límite acota cuánto espacio de la caché pueden ocupar. El valor predeterminado es 1 TiB. Cuando se alcanza el límite, el servidor rechaza la publicación de nuevos archivos temporales committed. `0` significa sin límite.
-
-## distributed_cache_temporary_data_max_connections_bypassing_pool {#distributed_cache_temporary_data_max_connections_bypassing_pool}
-
-<SettingsInfoBlock type="UInt64" default_value="5000" changeable_without_restart="Yes" />Solo tiene efecto en ClickHouse Cloud. Número máximo de conexiones por servidor de Distributed Cache que los archivos temporales pueden abrir sin pasar por el grupo de conexiones. Cuando se alcanza el límite, los datos temporales esperan a que haya disponible una conexión de un pool durante `distributed_cache_wait_connection_from_pool_milliseconds` y, si no la obtienen, fallan. `0` significa sin límite. Los breves intercambios de control de datos temporales committed (confirmación, renovación, liberación) siempre abren una nueva conexión y no se contabilizan. Se puede cambiar sin reiniciar.
-
-## distributed_cache_temporary_data_max_control_batch_ids {#distributed_cache_temporary_data_max_control_batch_ids}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="1024" changeable_without_restart="No" />Número máximo de IDs de datos temporales committed que el Client envía en una única solicitud de control. Los valores superiores a 65536 se limitan a 65536 (el límite del protocolo).
-
-## distributed_cache_temporary_data_max_files_per_server {#distributed_cache_temporary_data_max_files_per_server}
-
-<SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />Número máximo de archivos temporales committed que conserva un servidor de Distributed Cache. El valor predeterminado es alto porque el límite solo actúa como salvaguarda para acotar la memoria utilizada en el seguimiento de los archivos; la capacidad está limitada principalmente por `distributed_cache_temporary_data_max_bytes_per_server`. Cuando se alcanza el límite, el servidor rechaza la publicación de nuevos archivos temporales committed. `0` significa sin límite.
-
-## distributed_cache_temporary_data_pool_behaviour_on_limit {#distributed_cache_temporary_data_pool_behaviour_on_limit}
-
-<SettingsInfoBlock type="DistributedCachePoolBehaviourOnLimit" default_value="allocate_bypassing_pool" changeable_without_restart="Yes" />Solo tiene efecto en ClickHouse Cloud. Comportamiento de las conexiones de la Distributed Cache para datos temporales cuando se alcanza el límite del grupo de conexiones. Los datos temporales no disponen de un almacenamiento de objetos al que recurrir, por lo que, de forma predeterminada, se abre una conexión que omite el grupo en lugar de fallar. Se aplica a los archivos temporales de las consultas y de las operaciones en segundo plano (fusiones, copias de seguridad). Los breves intercambios de control de los datos temporales committed (confirmación, renovación, liberación) siempre abren una nueva conexión y no utilizan este parámetro de configuración. Con `wait`, espera una conexión de un pool durante `distributed_cache_wait_connection_from_pool_milliseconds` y, a continuación, falla. Se puede cambiar sin reiniciar.
-
-## distributed_cache_temporary_data_renewal_period_seconds {#distributed_cache_temporary_data_renewal_period_seconds}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="900" changeable_without_restart="No" />Período, en segundos, entre las renovaciones committed de la propiedad de los datos temporales.
-
-## distributed_cache_temporary_data_ttl_seconds {#distributed_cache_temporary_data_ttl_seconds}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="3600" changeable_without_restart="No" />Duración, en segundos, de un archivo temporal committed.
-
-## distributed_cache_warmer_max_bytes_in_queue {#distributed_cache_warmer_max_bytes_in_queue}
-
-<SettingsInfoBlock type="UInt64" default_value="107374182400" changeable_without_restart="No" />Solo tiene efecto en ClickHouse Cloud. Tamaño total máximo de los rangos que el precalentador de caché mantiene en cola para un disco sin caché del sistema de archivos local; una vez superado este límite, se descartan los rangos más antiguos (si hay una caché local, el precalentador usa su `max_size`). Cero significa sin límite.
-
-## distributed_cache_warmer_max_file_segment_size {#distributed_cache_warmer_max_file_segment_size}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="33554432" changeable_without_restart="No" />Solo tiene efecto en ClickHouse Cloud. Tamaño de los rangos en los que el precalentador de caché lee una parte recuperada para cargarla en la Distributed Cache cuando el disco de la parte no dispone de caché del sistema de archivos local (si hay una caché local, el precalentador usa su `max_file_segment_size`).
-
-## distributed_cache_warmer_max_segments_in_queue {#distributed_cache_warmer_max_segments_in_queue}
-
-<SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />Solo tiene efecto en ClickHouse Cloud. Número máximo de rangos que el precalentador de caché mantiene en cola para un disco sin caché del sistema de archivos local; al superarse este límite, se descartan los rangos más antiguos (si hay una caché local, el precalentador utiliza su `max_elements`). Cero significa sin límite.
-
-## distributed_cache_write_pool_size {#distributed_cache_write_pool_size}
-
-<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />El número máximo de solicitudes de escritura de la caché distribuida que pueden ejecutarse simultáneamente en un hilo en segundo plano (entre todas las consultas). Cuando se alcanza el límite, se omite la escritura en la caché de escritura directa (los datos se siguen escribiendo en el almacenamiento de objetos), por lo que no queda bloqueada esperando un slot ni crea un número ilimitado de hilos. Las escrituras de datos temporales no utilizan hilos en segundo plano y no se ven afectadas por el límite.
+<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />El número máximo de solicitudes de escritura de la caché distribuida que pueden ejecutarse simultáneamente en un hilo en segundo plano (entre todas las consultas). Cuando se alcanza el límite, la escritura pasa por la caché en línea (en el hilo que realiza la llamada) en lugar de hacerlo en un hilo en segundo plano, por lo que no queda bloqueada esperando un slot ni crea un número ilimitado de hilos.
 
 {/*AUTOGENERATED_END*/}

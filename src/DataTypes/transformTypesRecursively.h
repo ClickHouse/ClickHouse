@@ -20,24 +20,6 @@ void transformTypesRecursively(
     std::function<void(DataTypes &, TypeIndexesSet &)> transform_complex_types,
     const FormatSettings * format_settings = nullptr);
 
-/// Answers with the type to put in place of `left`, which may be `left` itself, or nullptr to refuse the pair.
-using PairedLeafCallback = std::function<DataTypePtr(const DataTypePtr & left, const DataTypePtr & right)>;
-
-/// Walks `left` and `right` together through Nullable, LowCardinality, Array, Map, Tuple and Variant, and
-/// rebuilds `left` out of what `on_leaf` answers for the pairs of leaves the walk reaches. Returns `left`
-/// itself when no leaf moved, a rebuilt type when one did, and nullptr when `on_leaf` refused a pair or the
-/// two structures do not line up.
-///
-/// A level is rebuilt only if one of its children moved, because a rebuild loses that level's customization
-/// (`Point` is a named `Tuple`). Where the two sides carry different custom names neither survives a rebuild,
-/// so such a level resolves to `right` when the pair is `equals`-equal and every child cleared, and is
-/// refused otherwise. A `Nullable` or `LowCardinality` present on `right` alone is stepped over, since
-/// neither wrapper hides a leaf.
-/// With left_is_common_type, `left` is a common type of `right` and other types, so the walk pairs them the way
-/// the common type was built: a named and an unnamed Tuple by position, through a custom name on `right` alone
-/// (`Nested`), and the typed paths of two JSON types by path. A `Nothing` on `right` (the element of an empty
-/// array) contributes nothing to the common type, so that part of `left` is kept as is.
-DataTypePtr replaceNestedTypesInPair(
-    const DataTypePtr & left, const DataTypePtr & right, const PairedLeafCallback & on_leaf, bool left_is_common_type = false);
+void callOnNestedSimpleTypes(DataTypePtr & type, std::function<void(DataTypePtr &)> callback);
 
 }

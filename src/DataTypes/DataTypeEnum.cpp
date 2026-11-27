@@ -12,6 +12,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/SipHash.h>
 #include <Columns/ColumnSparse.h>
+#include <Poco/UTF8Encoding.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 
@@ -76,7 +77,6 @@ DataTypeEnum<Type>::DataTypeEnum(const Values & values_, bool is_add_, RelativeF
     , type_name(generateName(this->getValues()))
     , is_add(is_add_)
     , relative_flags(is_add_ ? std::move(relative_flags_) : std::vector<UInt8>{})
-    , serialization_hash(SerializationEnum<Type>::getHash(this->getValues()))
 {
     if (is_add && relative_flags.size() != this->getValues().size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -144,7 +144,7 @@ bool DataTypeEnum<Type>::textCanContainOnlyValidUTF8() const
             if (pos + length > end)
                 return false;
 
-            if (UTF8::isLegalSequence(reinterpret_cast<const UInt8 *>(pos), length))
+            if (Poco::UTF8Encoding::isLegal(reinterpret_cast<const unsigned char *>(pos), static_cast<int>(length)))
                 pos += length;
             else
                 return false;
@@ -166,7 +166,7 @@ Field DataTypeEnum<Type>::castToName(const Field & value_or_name) const
 {
     if (value_or_name.getType() == Field::Types::String)
     {
-        (void)this->getValue(value_or_name.safeGet<String>()); /// Check correctness
+        this->getValue(value_or_name.safeGet<String>()); /// Check correctness
         return value_or_name.safeGet<String>();
     }
     if (value_or_name.getType() == Field::Types::Int64)
@@ -189,7 +189,7 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
     {
         Int64 value = value_or_name.safeGet<Int64>();
         checkOverflow<Type>(value);
-        (void)this->getNameForValue(static_cast<Type>(value)); /// Check correctness
+        this->getNameForValue(static_cast<Type>(value)); /// Check correctness
         return value;
     }
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "DataTypeEnum: Unsupported type of field {}", value_or_name.getTypeName());
@@ -328,8 +328,8 @@ static std::vector<UInt8> autoAssignNumberForEnum(const ASTPtr & arguments, bool
 
     if (assign_count != 0 && assign_count != arguments->children.size() - 1)
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
-                        "All elements of Enum data type after the first one must be of the same form: "
-                        "either all 'name' = number, or all 'name'");
+                        "All elements of Enum data type must be of form: "
+                        "'name' = number or 'name', where name is string literal and number is an integer");
 
     arguments->children = assign_number_child;
     return relative_flags;

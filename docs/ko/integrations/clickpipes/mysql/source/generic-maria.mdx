@@ -14,19 +14,21 @@ integration:
   지원되는 제공업체(사이드바 참조) 중 하나를 사용하는 경우, 해당 제공업체의 전용 가이드를 참조하십시오.
 </Info>
 
-## 바이너리 로그 보존 활성화 {#enable-binlog-retention}
+<div id="enable-binlog-retention">
+  ## 바이너리 로그 보존 활성화
+</div>
 
 바이너리 로그에는 MariaDB 서버 인스턴스에서 수행된 데이터 변경 정보가 포함되며, 복제에 필요합니다.
 
 MariaDB 인스턴스에서 바이너리 로깅을 활성화하려면 다음 설정이 구성되어 있는지 확인하십시오.
 
 ```sql
-server_id = 1               -- or greater; anything but 0
+server_id = 1               -- 1 이상; 0이 아닌 값
 log_bin = ON
 binlog_format = ROW
 binlog_row_image = FULL
-binlog_row_metadata = FULL  -- introduced in 10.5.0
-expire_logs_days = 3        -- or higher; 0 would mean logs are preserved forever
+binlog_row_metadata = FULL  -- 10.5.0에서 도입됨
+expire_logs_days = 1        -- 1 이상; 0으로 설정하면 로그가 영구 보존됨
 ```
 
 이러한 설정을 확인하려면 다음 SQL 명령을 실행하세요:
@@ -48,8 +50,8 @@ server_id = 1
 log_bin = ON
 binlog_format = ROW
 binlog_row_image = FULL
-binlog_row_metadata = FULL  ; only in 10.5.0 and newer
-expire_logs_days = 3
+binlog_row_metadata = FULL  ; 10.5.0 이상에서만 사용 가능
+expire_logs_days = 1
 ```
 
 원본 데이터베이스가 레플리카인 경우 `log_slave_updates`도 반드시 활성화해야 합니다.
@@ -60,7 +62,9 @@ expire_logs_days = 3
   `binlog_row_metadata` 설정이 아직 도입되지 않았기 때문에 MariaDB &lt;= 10.4에서는 컬럼 제외를 지원하지 않습니다.
 </Note>
 
-## 데이터베이스 사용자 구성 {#configure-database-user}
+<div id="configure-database-user">
+  ## 데이터베이스 사용자 구성
+</div>
 
 root 사용자로 MariaDB 인스턴스에 연결한 다음, 아래 명령을 실행합니다.
 
@@ -76,19 +80,20 @@ root 사용자로 MariaDB 인스턴스에 연결한 다음, 아래 명령을 실
    GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
    ```
 
-3. 사용자에게 복제 권한을 부여합니다. MariaDB 10.5.9 이상에서는 `SLAVE MONITOR` 권한도 필요합니다.
+3. 사용자에게 복제 권한을 부여합니다.
 
    ```sql
    GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
-   GRANT SLAVE MONITOR ON *.* TO 'clickpipes_user'@'%';
    ```
 
 <Note>
   `clickpipes_user`와 `some_secure_password`를 원하는 사용자 이름과 비밀번호로 바꾸십시오.
 </Note>
 
-## SSL/TLS 구성(권장) {#ssl-tls-configuration}
+<div id="ssl-tls-configuration">
+  ## SSL/TLS 구성(권장)
+</div>
 
 SSL 인증서는 MariaDB 데이터베이스에 대한 보안 연결을 보장합니다. 구성은 인증서 유형에 따라 달라집니다.
 
@@ -102,7 +107,9 @@ SSL 인증서는 MariaDB 데이터베이스에 대한 보안 연결을 보장합
 
 SSL/TLS 옵션에 대한 자세한 내용은 [FAQ](/ko/integrations/clickpipes/mysql/faq#tls-certificate-validation-error)를 확인하십시오.
 
-## 다음 단계 {#whats-next}
+<div id="whats-next">
+  ## 다음 단계
+</div>
 
 이제 [ClickPipe를 생성](/ko/integrations/clickpipes/mysql/index)하고 MariaDB 인스턴스의 데이터를 ClickHouse Cloud로 수집하기 시작할 수 있습니다.
 ClickPipe 생성 과정에서 필요하므로 MariaDB 인스턴스를 설정할 때 사용한 연결 정보를 반드시 기록해 두십시오.

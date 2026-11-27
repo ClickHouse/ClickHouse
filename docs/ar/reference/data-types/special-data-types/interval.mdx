@@ -39,7 +39,9 @@ SELECT toTypeName(INTERVAL 4 DAY)
 └──────────────────────────────┘
 ```
 
-## ملاحظات حول الاستخدام {#usage-remarks}
+<div id="usage-remarks">
+  ## ملاحظات حول الاستخدام
+</div>
 
 يمكنك استخدام القيم من النوع `Interval` في العمليات الحسابية مع القيم من النوع [Date](/ar/reference/data-types/date) و[DateTime](/ar/reference/data-types/datetime). على سبيل المثال، يمكنك إضافة 4 أيام إلى الوقت الحالي:
 
@@ -87,33 +89,9 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## التجميع {#aggregation}
-
-عند تطبيق الدوال `sum` و`avg` و`min` و`max` و`any` على column من النوع `Interval`، فإنها تُرجع فاصلًا زمنيًا من النوع نفسه.
-تجمع `sum` عدد الوحدات، بينما تحسب `avg` متوسطها وتقرّب النتيجة إلى عدد صحيح
-من الوحدات:
-
-```sql
-SELECT
-    sum(duration) AS total_duration,
-    avg(duration) AS avg_duration,
-    toTypeName(total_duration)
-FROM VALUES('duration IntervalMillisecond',
-    toIntervalMillisecond(100), toIntervalMillisecond(200), toIntervalMillisecond(300))
-```
-
-```text
-┌─total_duration─┬─avg_duration─┬─toTypeName(total_duration)─┐
-│            600 │          200 │ IntervalMillisecond        │
-└────────────────┴──────────────┴────────────────────────────┘
-```
-
-تُحوَّل القيم ذات الوحدات المختلفة إلى وحدة مشتركة قبل تجميعها، ولذلك
-فإن جمع دقيقة وثانية ينتج عنه 61 ثانية. أما `Month` و`Quarter` و`Year` فلا تجمعها وحدة مشتركة
-مع الوحدات الأصغر - إذ لا يتكوّن الشهر من عدد ثابت من الأيام - ولذا لا يمكن مزجها
-معها إطلاقًا.
-
-## الفواصل الزمنية المختلطة النوع {#mixed-type-intervals}
+<div id="mixed-type-intervals">
+  ## الفواصل الزمنية المختلطة النوع
+</div>
 
 يمكن إنشاء فواصل زمنية مختلطة النوع، مثل عدة ساعات وعدة دقائق، باستخدام البنية `INTERVAL 'value' <from_kind> TO <to_kind>`.
 وتكون النتيجة قيمة من النوع `Tuple` تتكوّن من فاصلين زمنيين أو أكثر.
@@ -156,9 +134,9 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 └────────────────────────────────────────────┘
 ```
 
-## انظر أيضًا {#see-also}
+<div id="see-also">
+  ## انظر أيضًا
+</div>
 
-* المشغّل [INTERVAL](/ar/reference/operators/index#interval)
+* المعامل [INTERVAL](/ar/reference/operators/index#interval)
 * دوال تحويل النوع [toInterval](/ar/reference/functions/regular-functions/type-conversion-functions#toIntervalYear)
-* الدالة التجميعية [avg](/ar/reference/functions/aggregate-functions/avg)
-* الدالة التجميعية [sum](/ar/reference/functions/aggregate-functions/sum)

@@ -50,7 +50,7 @@ void registerAggregateFunctionsQuantileExactInclusive(AggregateFunctionFactory &
 void registerAggregateFunctionsQuantileExactInclusive(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
     FunctionDocumentation::Description description = R"(
 Similar to [`quantileExact`](/reference/functions/aggregate-functions/quantileExact), this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
@@ -94,7 +94,7 @@ SELECT quantileExactInclusive(0.1)(number), quantileExactInclusive(0.9)(number) 
         )",
         R"(
 ┌─quantileExactInclusive(0.1)(number)─┬─quantileExactInclusive(0.9)(number)─┐
-│                  0.8999999999999999 │                                 8.1 │
+│                                 0.9 │                                 8.1 │
 └─────────────────────────────────────┴─────────────────────────────────────┘
         )"
     }
@@ -103,7 +103,7 @@ SELECT quantileExactInclusive(0.1)(number), quantileExactInclusive(0.9)(number) 
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileExactInclusive::name, { createAggregateFunctionQuantile<FuncQuantileExactInclusive>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction(NameQuantileExactInclusive::name, { createAggregateFunctionQuantile<FuncQuantileExactInclusive>, documentation});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously using the inclusive method.

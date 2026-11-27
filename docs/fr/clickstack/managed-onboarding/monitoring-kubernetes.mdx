@@ -1,34 +1,27 @@
 ---
 slug: /use-cases/observability/clickstack/monitoring-kubernetes
-title: 'Monitoring de Kubernetes avec ClickHouse Observability'
-sidebarTitle: 'Superviser Kubernetes'
-description: 'Collectez les logs, les métriques d’infrastructure et les événements d’un cluster Kubernetes dans ClickHouse Observability avec l’expérience autogérée'
+title: 'Monitoring de Kubernetes avec Managed ClickStack'
+description: 'Collectez les logs, les métriques d’infrastructure et les événements d’un cluster Kubernetes dans Managed ClickStack'
 doc_type: 'guide'
-keywords: ['clickstack', 'kubernetes', 'k8s', 'self-managed', 'ClickHouse Observability', 'logs', 'métriques', 'événements', 'daemonset', 'helm']
+keywords: ['clickstack', 'kubernetes', 'k8s', 'managed', 'observability', 'logs', 'métriques', 'événements', 'daemonset', 'helm']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
 ---
 
-<Note>
-  **Vous avez choisi l’option autogérée**
+import { Image } from "/snippets/fr/components/Image.jsx";
 
-  Vous avez choisi de configurer ClickHouse Observability vous-même, à l’aide de l’[expérience autogérée](/fr/clickstack/self-configured/overview). Avec cette option, vous exécutez le collecteur OpenTelemetry, gérez l’ingestion dans votre service ClickHouse Cloud, optimisez le schéma et séparez les charges de travail d’ingestion et de requête à l’aide de warehouses. Consultez [Collecteur OpenTelemetry](/fr/clickstack/self-configured/ingesting-data/collector), [Optimisation des performances](/fr/clickstack/self-configured/managing/performance-tuning) et [Isoler les charges de travail de lecture et d’écriture](/fr/clickstack/self-configured/managing/isolating-read-write).
+Ce guide vous explique comment collecter les logs, les métriques d’infrastructure et les événements Kubernetes d’un cluster dans Managed ClickStack, puis les consulter dans le tableau de bord Kubernetes intégré.
 
-  Vous préférez une expérience sans serveur dans laquelle ClickHouse gère pour vous l’ingestion, les schémas et les ressources de calcul ? Utilisez plutôt l’expérience ClickHouse Observability par défaut et suivez le guide [Monitoring de Kubernetes avec OpenTelemetry](/fr/clickstack/managed-onboarding/monitoring-kubernetes-serverless).
-</Note>
+Le schéma suit le modèle standard d’OpenTelemetry : deux collecteurs sont déployés via le [chart Helm OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector), chacun transférant les données vers votre collecteur passerelle ClickStack via OTLP. Un **DaemonSet** s’exécute sur chaque nœud pour collecter les logs des conteneurs et les métriques du kubelet. Un **Deployment** avec une seule réplique collecte les événements Kubernetes et les métriques à l’échelle du cluster. Pour en savoir plus sur le rôle de passerelle, voir [Rôles des collecteurs](/fr/clickstack/ingesting-data/collector#collector-roles).
 
-Ce guide vous explique comment collecter les logs, les métriques d’infrastructure et les événements Kubernetes d’un cluster dans ClickHouse Observability, puis les consulter dans le tableau de bord Kubernetes intégré.
+Ce guide suppose que vous avez terminé [Configuration de votre OpenTelemetry Collector](/fr/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) et qu’un collecteur passerelle ClickStack est déjà en cours d’exécution.
 
-Le schéma suit le modèle standard d’OpenTelemetry : deux collecteurs sont déployés via le [chart Helm OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector), chacun transférant les données vers votre collecteur passerelle ClickStack via OTLP. Un **DaemonSet** s’exécute sur chaque nœud pour collecter les logs des conteneurs et les métriques du kubelet. Un **Deployment** avec une seule réplique collecte les événements Kubernetes et les métriques à l’échelle du cluster. Pour en savoir plus sur le rôle de passerelle, voir [Rôles des collecteurs](/fr/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured).
-
-Ce guide suppose que vous avez terminé [Configuration de votre OpenTelemetry Collector](/fr/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector) et qu’un collecteur passerelle ClickStack est déjà en cours d’exécution.
-
-Pour une charge de travail exécutée dans Kubernetes, le collecteur passerelle doit lui-même être déployé **dans le même cluster à l’aide du chart Helm OpenTelemetry upstream avec l’image du collecteur ClickStack**. Suivez la procédure Helm dans [Déploiement du collecteur](/fr/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured) pour l’installer. **Veillez à avoir consigné cet endpoint OTLP**.
+Pour une charge de travail exécutée dans Kubernetes, le collecteur passerelle doit lui-même être déployé **dans le même cluster à l’aide du chart Helm OpenTelemetry upstream avec l’image du collecteur ClickStack**. Suivez la procédure Helm dans [Déploiement du collecteur](/fr/clickstack/ingesting-data/collector#configuring-the-collector) pour l’installer. **Veillez à avoir consigné cet endpoint OTLP**.
 
 <Steps>
   <Step title="Rassemblez les prérequis" id="gather-prerequisites">
-    Vous aurez besoin de :
+    Vous aurez besoin de :
 
     * D’un **cluster Kubernetes** (v1.20+ recommandé) avec `kubectl` configuré pour y accéder.
     * De **[Helm](https://helm.sh/) v3+**.
@@ -43,7 +36,7 @@ Pour une charge de travail exécutée dans Kubernetes, le collecteur passerelle 
   </Step>
 
   <Step title="Créez le secret d’authentification et la ConfigMap" id="create-secret-and-configmap">
-    Choisissez l’espace de noms dans lequel vous souhaitez déployer les collecteurs, puis créez un secret contenant `OTLP_AUTH_TOKEN` ainsi qu’une ConfigMap pointant vers votre gateway :
+    Choisissez l’espace de noms dans lequel vous souhaitez déployer les collecteurs, puis créez un secret contenant `OTLP_AUTH_TOKEN` ainsi qu’une ConfigMap pointant vers votre gateway :
 
     ```shell
     export OTLP_AUTH_TOKEN="a-strong-shared-secret"
@@ -74,7 +67,7 @@ Pour une charge de travail exécutée dans Kubernetes, le collecteur passerelle 
   <Step title="Déployer le collecteur du cluster" id="deploy-cluster-collector">
     Il s’agit d’un déploiement à une seule réplique qui collecte les **événements Kubernetes** et les **métriques à l’échelle du cluster** (nombre de nœuds, phases des pods, état des déploiements, etc.). Exécuter plus d’une réplique produirait des doublons.
 
-    Enregistrez ce qui suit dans `k8s_deployment.yaml` :
+    Enregistrez ce qui suit dans `k8s_deployment.yaml` :
 
     <Accordion title="k8s_deployment.yaml">
       ```yaml
@@ -131,7 +124,7 @@ Pour une charge de travail exécutée dans Kubernetes, le collecteur passerelle 
       ```
     </Accordion>
 
-    Installez-le :
+    Installez-le :
 
     ```shell
     helm install k8s-otel-deployment open-telemetry/opentelemetry-collector \
@@ -143,7 +136,7 @@ Pour une charge de travail exécutée dans Kubernetes, le collecteur passerelle 
   <Step title="Déployer le collecteur de nœud" id="deploy-node-collector">
     Il s’agit d’un DaemonSet qui s’exécute sur chaque nœud afin de collecter les **logs des conteneurs**, les **métriques de l’hôte** et les **métriques du kubelet** (utilisation du CPU et de la mémoire pour chaque pod et chaque conteneur, par rapport aux requêtes et aux limites).
 
-    Enregistrez le contenu suivant dans `k8s_daemonset.yaml` :
+    Enregistrez le contenu suivant dans `k8s_daemonset.yaml` :
 
     <Accordion title="k8s_daemonset.yaml">
       ```yaml
@@ -240,7 +233,7 @@ Pour une charge de travail exécutée dans Kubernetes, le collecteur passerelle 
       ```
     </Accordion>
 
-    Installez-le :
+    Installez-le :
 
     ```shell
     helm install k8s-otel-daemonset open-telemetry/opentelemetry-collector \
@@ -248,7 +241,7 @@ Pour une charge de travail exécutée dans Kubernetes, le collecteur passerelle 
       -n ${NAMESPACE}
     ```
 
-    Vérifiez que les deux déploiements sont opérationnels :
+    Vérifiez que les deux déploiements sont opérationnels :
 
     ```shell
     kubectl get pods -n ${NAMESPACE} -l app.kubernetes.io/name=opentelemetry-collector
@@ -309,29 +302,17 @@ Pour une charge de travail exécutée dans Kubernetes, le collecteur passerelle 
   <Step title="Vérifier dans l’interface ClickStack" id="confirm-in-ui">
     Ouvrez votre service dans la [console ClickHouse Cloud](https://console.clickhouse.cloud) et sélectionnez **ClickStack** dans le menu de gauche.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Lancer ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="Lancer ClickStack" border />
 
     Dans la vue **Search**, sélectionnez `Logs` comme source et définissez l’intervalle de temps sur **Last 15 minutes**. Les logs des conteneurs de tout le cluster devraient apparaître en quelques secondes, enrichis d’attributs comme `k8s.namespace.name`, `k8s.pod.name` et `k8s.node.name`.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Vue Search de ClickStack avec les logs Kubernetes](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/clickstack-search-with-k8-logs.webp" size="lg" alt="Vue Search de ClickStack avec les logs Kubernetes" />
 
     Pour voir les métriques et événements d’infrastructure dans leur contexte, ouvrez le tableau de bord **Kubernetes** intégré en accédant à **Dashboards** -&gt; **Kubernetes**. Les onglets `Pods`, `Nodes` et `Namespaces` devraient tous contenir des données.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Tableau de bord Kubernetes de ClickStack](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/clickstack-dashboard-kubernetes.webp" size="lg" alt="Tableau de bord Kubernetes de ClickStack" border />
 
-    Si rien ne s’affiche :
+    Si rien ne s’affiche :
 
     * Vérifiez que les pods du DaemonSet et du déploiement sont `Running`, puis consultez leurs logs avec `kubectl logs -n ${NAMESPACE} <pod>`.
     * Confirmez que `YOUR_OTEL_COLLECTOR_ENDPOINT` est accessible depuis l’intérieur du cluster (`kubectl exec` dans l’un des pods du collector, puis exécutez `curl` dessus).
@@ -339,10 +320,10 @@ Pour une charge de travail exécutée dans Kubernetes, le collecteur passerelle 
   </Step>
 
   <Step title="Pour aller plus loin" id="further-reading">
-    * [Référence de l’intégration Kubernetes](/fr/clickstack/observability/integration-examples/kubernetes#self-managed) pour la liste complète des récepteurs, processeurs et options de réglage.
-    * [Transfert des tags de ressource vers les pods](/fr/clickstack/observability/integration-examples/kubernetes#application-metadata) pour plus de détails sur l’enrichissement côté application.
-    * [Sécuriser le collecteur](/fr/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) avec TLS sur l’endpoint OTLP et des utilisateurs d’ingestion dotés du strict minimum de privilèges.
-    * [Estimer les ressources](/fr/clickstack/self-configured/ingesting-data/collector#estimating-resources-self-configured) pour les déploiements gateway et agent en fonction du débit attendu.
-    * [Passage en production](/fr/clickstack/self-configured/managing/production) pour des recommandations de mise en production.
+    * [Référence de l’intégration Kubernetes](/fr/clickstack/integration-examples/kubernetes) pour la liste complète des récepteurs, processeurs et options de réglage.
+    * [Transfert des tags de ressource vers les pods](/fr/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) pour plus de détails sur l’enrichissement côté application.
+    * [Sécuriser le collecteur](/fr/clickstack/ingesting-data/collector#securing-the-collector) avec TLS sur l’endpoint OTLP et des utilisateurs d’ingestion dotés du strict minimum de privilèges.
+    * [Estimer les ressources](/fr/clickstack/ingesting-data/collector#estimating-resources) pour les déploiements gateway et agent en fonction du débit attendu.
+    * [Passage en production](/fr/clickstack/managing/production) pour des recommandations de mise en production.
   </Step>
 </Steps>

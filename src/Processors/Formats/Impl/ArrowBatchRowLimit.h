@@ -23,17 +23,13 @@ namespace DB
 ///
 /// A type with no Arrow equivalent is not covered either, since only serializing its values reveals their
 /// encoded size. Both uncovered shapes are rejected by the writer instead of being split.
-///
-/// With `variant_json_settings`, a `Variant` is measured as written with `output_format_arrow_variant_as_json_string`:
-/// the JSON text of each value, serialized with these settings. This serializes the values once more.
 size_t maxRowsFittingOneArrowBatch(
     const IColumn & column,
     const DataTypePtr & type,
     size_t begin,
     size_t end,
     bool fixed_string_as_fixed_byte_array,
-    UInt64 max_batch_bytes = MAX_ARROW_BUFFER_SIZE,
-    const FormatSettings * variant_json_settings = nullptr);
+    UInt64 max_batch_bytes = MAX_ARROW_BUFFER_SIZE);
 
 /// The largest `n` such that rows [begin, begin + n) of every column stay within `max_batch_bytes`: the
 /// number of rows of the next record batch of a chunk. The work is proportional to the returned number of
@@ -44,8 +40,7 @@ size_t maxRowsFittingOneArrowBatch(
     size_t begin,
     size_t end,
     bool fixed_string_as_fixed_byte_array,
-    UInt64 max_batch_bytes,
-    const FormatSettings * variant_json_settings = nullptr);
+    UInt64 max_batch_bytes);
 
 }
 

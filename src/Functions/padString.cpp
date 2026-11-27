@@ -72,7 +72,7 @@ namespace
             }
         }
 
-        [[nodiscard]] ALWAYS_INLINE size_t numCharsInPadString() const
+        ALWAYS_INLINE size_t numCharsInPadString() const
         {
             if constexpr (is_utf8)
                 return utf8_offsets.size() - 1;
@@ -80,7 +80,7 @@ namespace
                 return pad_string.size();
         }
 
-        [[nodiscard]] ALWAYS_INLINE size_t numCharsToNumBytes(size_t count) const
+        ALWAYS_INLINE size_t numCharsToNumBytes(size_t count) const
         {
             if constexpr (is_utf8)
                 return utf8_offsets[count];
@@ -156,26 +156,36 @@ namespace
             return std::make_shared<FunctionPadString>(name, is_right_pad, is_utf8);
         }
 
-        [[nodiscard]] String getName() const override { return function_name; }
+        String getName() const override { return function_name; }
 
-        [[nodiscard]] bool isVariadic() const override { return true; }
-        [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+        bool isVariadic() const override { return true; }
+        size_t getNumberOfArguments() const override { return 0; }
 
-        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+        bool useDefaultImplementationForConstants() const override { return false; }
 
-        [[nodiscard]] String getSignatureString() const override
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            return "(StringOrFixedString, Integer, [const String]) -> String";
+            FunctionArgumentDescriptors mandatory_args{
+                {"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
+                {"length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "UInt*"},
+            };
+            FunctionArgumentDescriptors optional_args{
+                {"pad_string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "String"}
+            };
+
+            validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+            return std::make_shared<DataTypeString>();
         }
 
-        [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {
             return std::make_shared<DataTypeString>();
         }
 
-        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             auto column_string = arguments[0].column;
             auto column_length = arguments[1].column;
@@ -217,9 +227,9 @@ namespace
         void executeForSource(SourceStrings && strings, const ColumnPtr & column_length, const String & pad_string, StringSink & res_sink) const
         {
             const auto & chars = strings.getElements();
-            bool is_actually_utf8 = is_utf8
-                && !(isAllASCII(reinterpret_cast<const UInt8 *>(pad_string.data()), pad_string.size())
-                    && isAllASCII(chars.data(), chars.size()));
+            bool all_ascii = isAllASCII(reinterpret_cast<const UInt8 *>(pad_string.data()), pad_string.size())
+                                && isAllASCII(chars.data(), chars.size());
+            bool is_actually_utf8 = is_utf8 && !all_ascii;
 
             if (!is_actually_utf8)
             {

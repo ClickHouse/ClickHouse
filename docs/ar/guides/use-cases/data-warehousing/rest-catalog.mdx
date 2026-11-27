@@ -29,20 +29,24 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 <Note>
   نظرًا إلى أن هذه الميزة لا تزال تجريبية، ستحتاج إلى تمكينها باستخدام:
   `SET allow_database_iceberg = 1;`
-
-  في الإصدارات السابقة للإصدار 25.8، التي كانت فيها الميزة تجريبية، استخدم `SET allow_experimental_database_iceberg = 1;` بدلًا من ذلك. تستخدم أوامر SQL أدناه هذا الاسم، لأن إعداد Docker في هذا الدليل يثبّت الإصدار ClickHouse 25.5.6.
 </Note>
 
-## إعداد بيئة التطوير المحلية {#local-development-setup}
+<div id="local-development-setup">
+  ## إعداد بيئة التطوير المحلية
+</div>
 
 لأغراض التطوير والاختبار المحليَّين، يمكنك استخدام إعداد REST catalog مُشغَّل ضمن حاويات. ويُعد هذا النهج مثاليًا للتعلّم، وبناء النماذج الأوّلية، وبيئات التطوير.
 
-### المتطلبات الأساسية {#local-prerequisites}
+<div id="local-prerequisites">
+  ### المتطلبات الأساسية
+</div>
 
 1. **Docker وDocker Compose**: تأكد من أن Docker مُثبّت ويعمل
 2. **إعداد تجريبي**: يمكنك استخدام إعدادات `docker-compose` مختلفة (انظر صور Docker البديلة أدناه)
 
-### إعداد كتالوج REST محلي {#setting-up-local-rest-catalog}
+<div id="setting-up-local-rest-catalog">
+  ### إعداد كتالوج REST محلي
+</div>
 
 يمكنك استخدام تطبيقات مختلفة لـ كتالوج REST تعمل داخل حاويات، مثل **[Databricks docker-spark-iceberg](https://github.com/databricks/docker-spark-iceberg/blob/main/docker-compose.yml?ref=blog.min.io)**، إذ يوفّر بيئة متكاملة تضم Spark + Iceberg + كتالوج REST باستخدام docker-compose، ما يجعله خيارًا مثاليًا لاختبار تكاملات Iceberg.
 
@@ -89,7 +93,9 @@ docker-compose logs -f
   يتطلب إعداد كتالوج REST تحميل بيانات العينة إلى جداول Iceberg أولاً. تأكد من أن بيئة Spark قد أنشأت الجداول وعبّأتها بالبيانات قبل محاولة الاستعلام عنها عبر ClickHouse. ويعتمد توفر الجداول على إعداد `docker-compose` المستخدم والبرامج النصية لتحميل بيانات العينة.
 </Note>
 
-### الاتصال بـ كتالوج REST المحلي {#connecting-to-local-rest-catalog}
+<div id="connecting-to-local-rest-catalog">
+  ### الاتصال بـ كتالوج REST المحلي
+</div>
 
 اتصل بحاوية ClickHouse لديك:
 
@@ -100,7 +106,7 @@ docker exec -it clickhouse clickhouse-client
 ثم أنشئ اتصال قاعدة البيانات مع كتالوج REST:
 
 ```sql
-SET allow_experimental_database_iceberg = 1;
+SET allow_database_iceberg = 1;
 
 CREATE DATABASE demo
 ENGINE = DataLakeCatalog('http://rest:8181/v1', 'admin', 'password')
@@ -110,7 +116,9 @@ SETTINGS
     warehouse = 'demo'
 ```
 
-## الاستعلام عن جداول كتالوج REST باستخدام ClickHouse {#querying-rest-catalog-tables-using-clickhouse}
+<div id="querying-rest-catalog-tables-using-clickhouse">
+  ## الاستعلام عن جداول كتالوج REST باستخدام ClickHouse
+</div>
 
 بعد إعداد الاتصال، يمكنك البدء في الاستعلام عبر كتالوج REST. على سبيل المثال:
 
@@ -194,7 +202,9 @@ SHOW CREATE TABLE `default.taxis`;
 └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## تحميل البيانات من بحيرة البيانات لديك إلى ClickHouse {#loading-data-from-your-data-lake-into-clickhouse}
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## تحميل البيانات من بحيرة البيانات لديك إلى ClickHouse
+</div>
 
 إذا كنت بحاجة إلى تحميل بيانات من كتالوج REST إلى ClickHouse، فابدأ بإنشاء جدول ClickHouse محلي:
 

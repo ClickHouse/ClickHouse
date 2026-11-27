@@ -18,23 +18,33 @@ La configuración de su clúster de ClickHouse depende en gran medida del caso d
 * Costos de hardware
 * Costos de mantenimiento
 
-## Disco {#disk}
+<div id="disk">
+  ## Disco
+</div>
 
 Los tipos de discos que debe usar con ClickHouse dependen del volumen de datos y de los requisitos de latencia o de throughput.
 
-### Optimización del rendimiento {#optimizing-for-performance}
+<div id="optimizing-for-performance">
+  ### Optimización del rendimiento
+</div>
 
 Para maximizar el rendimiento, recomendamos adjuntar directamente [volúmenes SSD de IOPS aprovisionadas de AWS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/provisioned-iops.html) o la oferta equivalente de su proveedor de servicios en la nube, optimizada para E/S.
 
-### Optimización de los costos de almacenamiento {#optimizing-for-storage-costs}
+<div id="optimizing-for-storage-costs">
+  ### Optimización de los costos de almacenamiento
+</div>
 
 Para reducir los costos, puede usar [volúmenes EBS SSD de uso general](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/general-purpose.html).
 
 También puede implementar almacenamiento por niveles con SSD y HDD en una [arquitectura hot/warm/cold](/es/concepts/features/operations/delete/ttl#implementing-a-hotwarmcold-architecture). Como alternativa, también es posible usar [AWS S3](https://aws.amazon.com/s3/) como almacenamiento para separar el cómputo y el almacenamiento. Consulte nuestra guía para usar ClickHouse de código abierto con separación de cómputo y almacenamiento [aquí](/es/guides/oss/deployment-and-scaling/separation-storage-compute). La separación de cómputo y almacenamiento está disponible de forma predeterminada en ClickHouse Cloud.
 
-## CPU {#cpu}
+<div id="cpu">
+  ## CPU
+</div>
 
-### ¿Qué CPU debo usar? {#which-cpu-should-i-use}
+<div id="which-cpu-should-i-use">
+  ### ¿Qué CPU debo usar?
+</div>
 
 El tipo de CPU que debe usar depende de su patrón de uso. No obstante, en general, las aplicaciones con muchas consultas concurrentes frecuentes, que procesan más datos o que usan UDFs con uso intensivo de cómputo requerirán más núcleos de CPU.
 
@@ -52,11 +62,15 @@ Para cargas de trabajo de almacenamiento de datos y consultas analíticas ad hoc
 
 ***
 
-### ¿Cuál debería ser el uso de CPU? {#what-should-cpu-utilization-be}
+<div id="what-should-cpu-utilization-be">
+  ### ¿Cuál debería ser el uso de CPU?
+</div>
 
 No existe un objetivo estándar de uso de CPU para ClickHouse. Utilice una herramienta como [iostat](https://linux.die.net/man/1/iostat) para medir el uso medio de CPU y, en función de ello, dimensione sus servidores para gestionar picos de tráfico inesperados. Sin embargo, para casos de uso analíticos o de almacenamiento de datos con consultas ad hoc, debería apuntar a un uso de CPU del 10-20%.
 
-### ¿Cuántos núcleos de CPU debo usar? {#how-many-cpu-cores-should-i-use}
+<div id="how-many-cpu-cores-should-i-use">
+  ### ¿Cuántos núcleos de CPU debo usar?
+</div>
 
 La cantidad de núcleos de CPU que deberías usar depende de tu carga de trabajo. Sin embargo, en general recomendamos las siguientes relaciones de memoria por núcleo de CPU según el tipo de CPU:
 
@@ -66,7 +80,9 @@ La cantidad de núcleos de CPU que deberías usar depende de tu carga de trabajo
 
 Por ejemplo, al usar CPU de tipo M, recomendamos aprovisionar 100 GB de memoria por cada 25 núcleos de CPU. Para determinar la cantidad de memoria adecuada para tu aplicación, es necesario hacer profiling del uso de memoria. Puedes leer [esta guía sobre cómo depurar problemas de memoria](/es/concepts/features/performance/troubleshoot/debugging-memory-issues) o usar el [dashboard de observabilidad integrado](/es/guides/oss/deployment-and-scaling/monitoring/monitoring) para supervisar ClickHouse.
 
-## Memoria {#memory}
+<div id="memory">
+  ## Memoria
+</div>
 
 Al igual que con la elección de la CPU, la elección de la proporción de memoria a almacenamiento, y entre memoria y CPU, depende de su caso de uso.
 
@@ -78,7 +94,9 @@ La cantidad de RAM necesaria generalmente depende de:
 Sin embargo, por lo general, cuanta más memoria tenga, más rápido se ejecutarán sus consultas.
 Si su caso de uso es sensible al precio, también pueden funcionar cantidades menores de memoria, ya que es posible habilitar ajustes ([`max_bytes_before_external_group_by`](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) y [`max_bytes_before_external_sort`](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort)) para permitir el volcado de datos a disco, pero tenga en cuenta que esto puede afectar significativamente al rendimiento de las consultas.
 
-### ¿Cuál debería ser la proporción entre memoria y almacenamiento? {#what-should-the-memory-to-storage-ratio-be}
+<div id="what-should-the-memory-to-storage-ratio-be">
+  ### ¿Cuál debería ser la proporción entre memoria y almacenamiento?
+</div>
 
 Para volúmenes de datos bajos, una proporción de memoria a almacenamiento de 1:1 es aceptable, pero la memoria total no debería ser inferior a 8 GB.
 
@@ -86,7 +104,9 @@ Para casos de uso con períodos largos de retención de datos o con volúmenes d
 
 Para casos de uso con acceso frecuente, como las cargas de trabajo orientadas al cliente, recomendamos usar más memoria, con una proporción de memoria a almacenamiento de entre 1:30 y 1:50.
 
-## Réplicas {#replicas}
+<div id="replicas">
+  ## Réplicas
+</div>
 
 Recomendamos tener al menos tres réplicas por segmento (o dos réplicas con [Amazon EBS](https://aws.amazon.com/ebs/)). Además, sugerimos escalar verticalmente todas las réplicas antes de añadir réplicas adicionales (escalado horizontal).
 
@@ -94,13 +114,17 @@ ClickHouse no divide automáticamente los datos en segmentos, y volver a segment
 
 Considera usar [ClickHouse Cloud](https://clickhouse.com/cloud), que escala automáticamente y te permite controlar fácilmente la cantidad de réplicas según tu caso de uso.
 
-## Configuraciones de ejemplo para grandes cargas de trabajo {#example-configurations-for-large-workloads}
+<div id="example-configurations-for-large-workloads">
+  ## Configuraciones de ejemplo para grandes cargas de trabajo
+</div>
 
 Las configuraciones de ClickHouse dependen en gran medida de los requisitos específicos de su aplicación. [Póngase en contacto con el equipo de ventas](https://clickhouse.com/company/contact?loc=docs-sizing-and-hardware-recommendations) si desea que le ayudemos a optimizar su arquitectura en términos de coste y rendimiento.
 
 Con el fin de ofrecer orientación (no recomendaciones), a continuación se muestran algunas configuraciones de ejemplo de usuarios de ClickHouse en producción:
 
-### Fortune 500 B2B SaaS {#fortune-500-b2b-saas}
+<div id="fortune-500-b2b-saas">
+  ### Fortune 500 B2B SaaS
+</div>
 
 <table>
   <tr>
@@ -176,7 +200,9 @@ Con el fin de ofrecer orientación (no recomendaciones), a continuación se mues
   </tr>
 </table>
 
-### Operador de telecomunicaciones de Fortune 500 para un caso de uso de logging {#fortune-500-telecom-operator-for-a-logging-use-case}
+<div id="fortune-500-telecom-operator-for-a-logging-use-case">
+  ### Operador de telecomunicaciones de Fortune 500 para un caso de uso de logging
+</div>
 
 <table>
   <tr>
@@ -200,7 +226,7 @@ Con el fin de ofrecer orientación (no recomendaciones), a continuación se mues
 
   <tr>
     <td><strong>Disco por nodo</strong></td>
-    <td>16TB</td>
+    <td>13TB</td>
   </tr>
 
   <tr>
@@ -247,7 +273,9 @@ Con el fin de ofrecer orientación (no recomendaciones), a continuación se mues
   </tr>
 </table>
 
-## Más lecturas {#further-reading}
+<div id="further-reading">
+  ## Más lecturas
+</div>
 
 A continuación se incluyen entradas de blog publicadas sobre arquitecturas de empresas que usan ClickHouse de código abierto:
 

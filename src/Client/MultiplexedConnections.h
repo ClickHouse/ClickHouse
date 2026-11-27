@@ -1,7 +1,5 @@
 #pragma once
 
-#include <atomic>
-#include <limits>
 #include <mutex>
 #include <Common/Throttler.h>
 #include <Client/Connection.h>
@@ -45,8 +43,6 @@ public:
 
     bool supportsQueryPlanSerializationVersion(UInt64 version) const override;
 
-    UInt64 getServerRevisionOfLastPacket() const override { return server_revision_of_last_packet; }
-
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response) override;
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
     void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) override;
@@ -64,6 +60,7 @@ public:
     /// Without locking, because sendCancel() does not change this number.
     size_t size() const override { return replica_states.size(); }
 
+    /// Without locking, because sendCancel() does not change the state of the replicas.
     bool hasActiveConnections() const override { return active_connection_count > 0; }
 
     void setReplicaInfo(ReplicaInfo value) override { replica_info = value; }
@@ -85,8 +82,6 @@ private:
     {
         Connection * connection = nullptr;
         ConnectionPool::Entry pool_entry;
-        /// The protocol revision of the replica, known once the query is sent to it.
-        UInt64 server_revision = 0;
     };
 
     /// Get a replica where you can read the data.
@@ -99,8 +94,7 @@ private:
     const Settings & settings;
 
     /// The current number of valid connections to the replicas of this shard.
-    /// Atomic: `hasActiveConnections` reads it without `cancel_mutex` while `receivePacket` runs on another thread.
-    std::atomic<size_t> active_connection_count = 0;
+    size_t active_connection_count = 0;
 
     std::vector<ReplicaState> replica_states;
     std::unordered_map<int, size_t> fd_to_replica_state_idx;
@@ -112,7 +106,6 @@ private:
 
     bool sent_query = false;
     bool cancelled = false;
-    UInt64 server_revision_of_last_packet = std::numeric_limits<UInt64>::max();
 
     /// std::nullopt if parallel reading from replicas is not used
     std::optional<ReplicaInfo> replica_info;

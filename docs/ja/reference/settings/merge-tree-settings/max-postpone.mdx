@@ -13,29 +13,37 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.merge&#95;tree&#95;settings](/ja/reference/system-tables/merge_tree_settings) で利用でき、ClickHouse のソースコードから自動生成されています。
 
-## max_postpone_time_for_failed_mutations_ms {#max_postpone_time_for_failed_mutations_ms}
+<div id="max_postpone_time_for_failed_mutations_ms">
+  ## max_postpone_time_for_failed_mutations_ms
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="300000" />
 
-同じデータパーツに対して失敗したミューテーションを再試行するまでの、指数バックオフの最大時間 (ミリ秒) です。遅延は失敗が繰り返されるたびに長くなり、この値が上限となります。`0` に設定すると、延期せずに再試行します。
+失敗したミューテーションの最大延期時間。
 
-## max_postpone_time_for_failed_replicated_fetches_ms {#max_postpone_time_for_failed_replicated_fetches_ms}
+<div id="max_postpone_time_for_failed_replicated_fetches_ms">
+  ## max_postpone_time_for_failed_replicated_fetches_ms
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "レプリケーションキュー内のフェッチタスクを延期できるようにする新しい設定を追加しました。"}]}]} />
 
-`ReplicatedMergeTree` のレプリケーションキューで失敗した `GET_PART` タスクを再試行するまでの、指数バックオフの最大待機時間 (ミリ秒) です。失敗が繰り返されるたびに遅延は増加しますが、この値を超えることはありません。`0` に設定すると延期は無効になります。
+失敗したレプリケーションフェッチの最大延期時間。
 
-## max_postpone_time_for_failed_replicated_merges_ms {#max_postpone_time_for_failed_replicated_merges_ms}
+<div id="max_postpone_time_for_failed_replicated_merges_ms">
+  ## max_postpone_time_for_failed_replicated_merges_ms
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "レプリケーションキュー内のマージタスクの延期を有効にする新しい設定が追加されました。"}]}]} />
 
-`ReplicatedMergeTree` のレプリケーションキューで失敗した `MERGE_PARTS` タスクを再試行するまでの、指数バックオフによる待機時間の最大値 (ミリ秒) です。待機時間は失敗が繰り返されるたびに増加し、この値が上限となります。延期を無効にするには `0` を設定します。
+失敗したレプリケーションマージの最大延期時間。
 
-## max_postpone_time_for_failed_replicated_tasks_ms {#max_postpone_time_for_failed_replicated_tasks_ms}
+<div id="max_postpone_time_for_failed_replicated_tasks_ms">
+  ## max_postpone_time_for_failed_replicated_tasks_ms
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="300000" />
 

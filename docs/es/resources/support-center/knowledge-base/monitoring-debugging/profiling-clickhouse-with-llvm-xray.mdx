@@ -5,8 +5,10 @@ description: "Aprende a perfilar ClickHouse con el perfilador de instrumentació
 tags: ['Rendimiento y optimización', 'Herramientas y utilidades']
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 <div id="types-of-profilers">
-  ## Tipos de profilers {#types-of-profilers}
+  ## Tipos de profilers
 </div>
 
 LLVM ya incluye una herramienta que instrumenta el código y nos permite realizar [perfilado por instrumentación](https://en.wikipedia.org/wiki/Profiling_\(computer_programming\)#Instrumentation). A
@@ -19,7 +21,9 @@ Los profilers estadísticos nos permiten ejecutar el código sin necesidad de ha
 periódicamente para ver el estado de la aplicación. Por lo tanto, solo se tienen en cuenta las funciones que se están ejecutando cuando se toma la instantánea.
 [perf](https://en.wikipedia.org/wiki/Perf_%28Linux%29) es un profiler estadístico muy conocido.
 
-## Perfilado de ClickHouse con la integración de XRay {#profiling-clickhouse-using-xray-integration}
+<div id="profiling-clickhouse-using-xray-integration">
+  ## Perfilado de ClickHouse con la integración de XRay
+</div>
 
 En ClickHouse 25.12, XRay viene integrado para añadir de forma transparente nuevos puntos de instrumentación a las funciones.
 Así, cualquier versión oficial ya incluye esta funcionalidad, que puede activarse bajo demanda sin
@@ -48,20 +52,18 @@ Convertimos los datos recopilados en system.trace&#95;log [al formato de Chrome]
 visualizarlos en [Perfetto](https://ui.perfetto.dev). Observe el query&#95;id, cpu&#95;id y la traza de pila de
 cada registro.
 
-<div className="ch-image-md">
-  <Frame>
-    ![orden temporal](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
-  </Frame>
-</div>
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp" size="md" alt="orden temporal" />
 
 <div id="profiling-a-native-application-using-xray">
-  ## Perfilado de una aplicación nativa con XRay {#profiling-a-native-application-using-xray}
+  ## Perfilado de una aplicación nativa con XRay
 </div>
 
 La siguiente sección se incluye como referencia para comprender cómo funciona XRay internamente y cómo puede
 utilizarse sin configuración adicional para perfilar una aplicación nativa.
 
-### Instrumentar el código {#instrument-the-code}
+<div id="instrument-the-code">
+  ### Instrumentar el código
+</div>
 
 Supongamos el siguiente código fuente:
 
@@ -120,7 +122,7 @@ Idx Name          Size      VMA               LMA               File off  Algn
 ```
 
 <div id="run-the-process-with-proper-env-var-values-to-collect-the-trace">
-  ### Ejecutar el proceso con los valores adecuados de las variables de entorno para recopilar la traza {#run-the-process-with-proper-env-var-values-to-collect-the-trace}
+  ### Ejecutar el proceso con los valores adecuados de las variables de entorno para recopilar la traza
 </div>
 
 De forma predeterminada, no se recopilan datos del profiler a menos que se solicite explícitamente. En otras palabras, salvo que
@@ -136,7 +138,7 @@ Finish
 ```
 
 <div id="convert-the-trace">
-  ### Convertir la traza {#convert-the-trace}
+  ### Convertir la traza
 </div>
 
 Las trazas de XRay se pueden convertir a varios formatos. El formato `trace_event` es muy útil porque
@@ -147,7 +149,7 @@ llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xra
 ```
 
 <div id="visualize-the-trace">
-  ### Visualiza la traza {#visualize-the-trace}
+  ### Visualiza la traza
 </div>
 
 Podemos usar interfaces web como [speedscope.app](https://www.speedscope.app/) o
@@ -156,32 +158,26 @@ Podemos usar interfaces web como [speedscope.app](https://www.speedscope.app/) o
 Aunque Perfetto facilita la visualización de varios hilos y la realización de consultas sobre los datos, speedscope es mejor
 para generar un flamegraph y una vista tipo sándwich de tus datos.
 
-#### Orden temporal {#time-order}
-
-<div className="ch-image-md">
-  <Frame>
-    ![orden temporal](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
-  </Frame>
+<div id="time-order">
+  #### Orden temporal
 </div>
 
-#### Left Heavy {#left-heavy}
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp" size="md" alt="time-order" />
 
-<div className="ch-image-md">
-  <Frame>
-    ![left-heavy](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
-  </Frame>
+<div id="left-heavy">
+  #### Cargado a la izquierda
 </div>
 
-#### Sándwich {#sandwitch}
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp" size="md" alt="cargado a la izquierda" />
 
-<div className="ch-image-md">
-  <Frame>
-    ![sándwich](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
-  </Frame>
+<div id="sandwitch">
+  #### Sándwich
 </div>
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp" size="md" alt="sándwich" />
 
 <div id="check-out-the-docs">
-  ## Consulta la documentación {#check-out-the-docs}
+  ## Consulta la documentación
 </div>
 
 * [SYSTEM INSTRUMENT](/es/reference/statements/system#instrument) — Añade

@@ -7,7 +7,9 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Demo days']
 ---
 
-## Herramienta de migración de esquemas {#schema-migration-tool}
+<div id="schema-migration-tool">
+  ## Herramienta de migración de esquemas
+</div>
 
 *Demo de [@wrn14897](https://github.com/wrn14897)*
 
@@ -19,7 +21,9 @@ La herramienta de migración de esquemas es una nueva funcionalidad de ClickStac
 
 A continuación, está previsto el soporte para cambios de esquema a nivel de todo el despliegue, lo que acerca esta funcionalidad a la disponibilidad general. 
 
-## Filtros a nivel de fuente para alertas y MCP {#source-level-filters-for-alerts-and-mcp}
+<div id="source-level-filters-for-alerts-and-mcp">
+  ## Filtros a nivel de fuente para alertas y MCP
+</div>
 
 *Demo de [@pulpdrew](https://github.com/pulpdrew)*
 
@@ -35,7 +39,9 @@ El MCP también pasó a reconocer los filtros de fuente. Los agentes pueden dete
 
 **PR relacionadas:** [#2459](https://github.com/hyperdxio/hyperdx/pull/2459) feat: mostrar un icono en tiles con filtros excluidos con alcance de fuente, [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) feat: añadir alcance de fuente a los filtros del dashboard
 
-## Columnas candidatas al crear fuentes {#candidate-columns-when-building-sources}
+<div id="candidate-columns-when-building-sources">
+  ## Columnas candidatas al crear fuentes
+</div>
 
 *Demo de [@karl-power](https://github.com/karl-power)*
 
@@ -49,33 +55,39 @@ Una nueva advertencia también destaca los casos en los que se ha configurado un
 
 **PR relacionadas:** [#2436](https://github.com/hyperdxio/hyperdx/pull/2436) feat: add source field suggestions
 
-## Alertas de anomalías con group-by (WIP) {#anomaly-alerts-with-group-by}
+<div id="anomaly-alerts-with-group-by">
+  ## Alertas de anomalías con group-by (WIP)
+</div>
 
 *Demo de [@fleon](https://github.com/fleon)*
 
 <Frame>
-  <iframe src="https://www.youtube.com/embed/70UzCRUTK7M" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  <iframe src="https://www.youtube.com/embed/70UzCRUTK7M" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
 Este trabajo aborda un problema de usabilidad en la detección de anomalías para series temporales agrupadas. Mostrar bandas de anomalías en todas las series a la vez se vuelve ilegible rápidamente. El enfoque de Himanshu hace que las bandas de anomalías aparezcan en la leyenda al pasar el cursor, mientras que sigue mostrándolas directamente en el gráfico cuando se selecciona una sola serie.
 
 Esta funcionalidad sigue en desarrollo activo y aún está pendiente de más mejoras antes de su lanzamiento.
 
-## Selector multmodelo para evaluación de MCP {#mcp-eval-multi-model-selector}
+<div id="mcp-eval-multi-model-selector">
+  ## Selector multmodelo para evaluación de MCP
+</div>
 
 *Demo de [@brandon-pereira](https://github.com/brandon-pereira)*
 
 <Frame>
-  <iframe src="https://www.youtube.com/embed/1O47NXHDzUY" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  <iframe src="https://www.youtube.com/embed/1O47NXHDzUY" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-El marco de evaluación de MCP ahora permite ejecutar una única suite de evaluación con varios modelos simultáneamente. Brandon muestra esta funcionalidad comparando Fable, Opus y Sonnet en una sola ejecución tras el lanzamiento de Fable.
+El marco de evaluación de MCP ahora permite ejecutar una única suite de evaluación con varios modelos simultáneamente. Brandon muestra esta función comparando Fable, Opus y Sonnet en una sola ejecución tras el lanzamiento de Fable.
 
-Tanto en la suite de evaluación de ClickHouse como en la de la UI de ClickStack, Fable obtuvo resultados considerablemente mejores en preguntas específicas de ClickStack. Ojalá pudiéramos usar el modelo :).
+Tanto en la suite de evaluación de ClickHouse como en la de HyperDX, Fable obtuvo resultados considerablemente mejores en preguntas específicas de ClickStack. Ojalá pudiéramos usar el modelo :).
 
 **PR relacionadas:** [#2438](https://github.com/hyperdxio/hyperdx/pull/2438) feat(hdx-eval): compatibilidad con comparación multmodelo en lotes de evaluación, [#2414](https://github.com/hyperdxio/hyperdx/pull/2414) feat: marco de evaluación de IA para benchmark de servidores MCP
 
-## Todas las herramientas del notebook ahora usan el MCP {#all-notebook-tools-now-use-the-mcp}
+<div id="all-notebook-tools-now-use-the-mcp">
+  ## Todas las herramientas del notebook ahora usan el MCP
+</div>
 
 *Demo de [@brandon-pereira](https://github.com/brandon-pereira)*
 
@@ -87,7 +99,9 @@ Todas las herramientas de investigación del notebook ahora se ejecutan a travé
 
 Lo próximo previsto son los tiles de Raw SQL del notebook.
 
-## receiver de Datadog {#datadog-receiver}
+<div id="datadog-receiver">
+  ## receiver de Datadog
+</div>
 
 *Demo de [@SpencerTorres](https://github.com/SpencerTorres)*
 
@@ -101,7 +115,9 @@ Anteriormente, los payloads de logs de Datadog se ingerían principalmente como 
 
 Los ID de traza numéricos de 64 bits de Datadog también se expanden al formato de 128 bits de OpenTelemetry, lo que permite una correlación de trazas adecuada en ClickStack. Se espera que el receiver se incluya en la distribución del ClickStack collector, y se prevén más pruebas sobre la correlación de trazas de extremo a extremo.
 
-## Patrones de eventos: cualquier columna {#event-patterns-any-column}
+<div id="event-patterns-any-column">
+  ## Patrones de eventos: cualquier columna
+</div>
 
 *Demo de [@knudtty](https://github.com/knudtty)*
 
@@ -115,7 +131,9 @@ Aaron también explica la lógica de enmascaramiento que se utiliza para normali
 
 **PR relacionadas:** [#2460](https://github.com/hyperdxio/hyperdx/pull/2460) feat: añadir un selector de columna de patrones para la coincidencia de patrones de eventos en cualquier columna
 
-## Enlaces entre spans (WIP) {#span-links}
+<div id="span-links">
+  ## Enlaces entre spans (WIP)
+</div>
 
 *Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -129,7 +147,9 @@ La implementación actual muestra los spans enlazados y sus atributos asociados 
 
 **PR relacionadas:** [#2463](https://github.com/hyperdxio/hyperdx/pull/2463) feat(traces): mostrar enlaces entre spans en el visor de trazas
 
-## Resaltado de series temporales al pasar el cursor {#time-series-highlighting-on-hover}
+<div id="time-series-highlighting-on-hover">
+  ## Resaltado de series temporales al pasar el cursor
+</div>
 
 *Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -143,7 +163,9 @@ Esta función surgió a partir de los comentarios de equipos que estaban migrand
 
 **PR relacionadas:** [#2456](https://github.com/hyperdxio/hyperdx/pull/2456) feat: resaltar la serie más cercana al cursor en la información sobre herramientas de los gráficos de series temporales
 
-## Series duplicadas {#duplicate-series}
+<div id="duplicate-series">
+  ## Series duplicadas
+</div>
 
 *Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -157,7 +179,9 @@ Alex muestra el flujo de trabajo creando una comparación entre P50 y P95.
 
 **PR relacionadas:** [#2453](https://github.com/hyperdxio/hyperdx/pull/2453) feat(chart-explorer): duplicate a series in the chart builder
 
-## Filtros en píldoras editables (WIP) {#editable-pill-filters}
+<div id="editable-pill-filters">
+  ## Filtros en píldoras editables (WIP)
+</div>
 
 *Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
 

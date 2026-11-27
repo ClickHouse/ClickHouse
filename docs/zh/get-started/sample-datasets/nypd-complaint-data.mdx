@@ -22,12 +22,16 @@ keywords: ['示例数据集', 'nypd', '犯罪数据', '样本数据', '公共数
 **来源**： [data.cityofnewyork.us](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)
 **使用条款**： https://www1.nyc.gov/home/terms-of-use.page
 
-## 前置条件 {#prerequisites}
+<div id="prerequisites">
+  ## 前置条件
+</div>
 
 * 访问 [NYPD Complaint Data Current (Year To Date)](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243) 页面，点击 Export 按钮，然后选择 **TSV for Excel** 下载数据集。
 * 安装 [ClickHouse server 和客户端](/zh/get-started/setup/install)
 
-### 关于本指南中所述命令的说明 {#a-note-about-the-commands-described-in-this-guide}
+<div id="a-note-about-the-commands-described-in-this-guide">
+  ### 关于本指南中所述命令的说明
+</div>
 
 本指南中的命令分为两类：
 
@@ -38,11 +42,15 @@ keywords: ['示例数据集', 'nypd', '犯罪数据', '样本数据', '公共数
   本指南中的示例默认你已将 TSV 文件保存到 `${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv`；如有需要，请相应调整命令。
 </Note>
 
-## 了解 TSV 文件 {#familiarize-yourself-with-the-tsv-file}
+<div id="familiarize-yourself-with-the-tsv-file">
+  ## 了解 TSV 文件
+</div>
 
 在开始使用 ClickHouse 数据库之前，先了解一下这些数据。
 
-### 查看 TSV 源文件中的字段 {#look-at-the-fields-in-the-source-tsv-file}
+<div id="look-at-the-fields-in-the-source-tsv-file">
+  ### 查看 TSV 源文件中的字段
+</div>
 
 这是一个查询 TSV 文件的命令示例，但先不要运行。
 
@@ -62,7 +70,7 @@ CMPLNT_FR_TM                Nullable(String)
 ```
 
 <Tip>
-  大多数情况下，上面的命令会告诉你输入数据中的哪些字段是数值，哪些是字符串，哪些是 Tuple。但也并非总是如此。由于 ClickHouse 经常用于处理包含数十亿条记录的数据集，为了避免为了推断 schema 而解析数十亿行数据，系统默认只检查一定数量 (100) 的行来[推断 schema](/zh/guides/clickhouse/data-formats/json/inference)。下面的结果可能与你实际看到的不一致，因为该数据集每年都会更新数次。查看数据字典可以看到，CMPLNT&#95;NUM 被指定为文本，而不是数值。通过使用设置 `SETTINGS input_format_max_rows_to_read_for_schema_inference=2000` 覆盖默认的 100 行推断限制，
+  大多数情况下，上面的命令会告诉你输入数据中的哪些字段是数值，哪些是 String，哪些是 Tuple。但也并非总是如此。由于 ClickHouse 经常用于处理包含数十亿条记录的数据集，为了避免为了推断 schema 而解析数十亿行数据，系统默认只检查一定数量 (100) 的行来[推断 schema](/zh/guides/clickhouse/data-formats/json/inference)。下面的结果可能与你实际看到的不一致，因为该数据集每年都会更新数次。查看数据字典可以看到，CMPLNT&#95;NUM 被指定为文本，而不是数值。通过使用设置 `SETTINGS input_format_max_rows_to_read_for_schema_inference=2000` 覆盖默认的 100 行推断限制，
   你可以更准确地了解其中的内容。
 
   注意：从 22.5 版本开始，用于推断 schema 的默认值已变为 25,000 行，因此，只有在你使用较旧版本，或需要采样超过 25,000 行时，才需要更改此设置。
@@ -117,7 +125,9 @@ New Georeferenced Column Nullable(String)
 
 此时，你应检查 TSV 文件中的列是否与[数据集网页](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)中 **Columns in this Dataset** 部分列出的名称和类型一致。数据类型并不算很具体：所有数值字段都设为 `Nullable(Float64)`，其余字段则都为 `Nullable(String)`。创建用于存储这些数据的 ClickHouse 表时，你可以指定更合适、性能更优的类型。
 
-### 确定合适的 schema {#determine-the-proper-schema}
+<div id="determine-the-proper-schema">
+  ### 确定合适的 schema
+</div>
 
 要判断这些字段应使用什么类型，首先必须了解数据的实际情况。例如，字段 `JURISDICTION_CODE` 是数值型：它应该使用 `UInt8`、`Enum`，还是 `Float64` 更合适？
 
@@ -201,7 +211,9 @@ clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
 
 在撰写本文时所使用的数据集中，`PARK_NM` 列里只有几百个不同的公园和游乐场。根据 [LowCardinality](/zh/reference/data-types/lowcardinality#description) 的建议，`LowCardinality(String)` 字段中的不同字符串数量最好保持在 10,000 以下，因此这已经算是很小的数量了。
 
-### DateTime 字段 {#datetime-fields}
+<div id="datetime-fields">
+  ### DateTime 字段
+</div>
 
 根据[数据集网页](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)中 **Columns in this Dataset** 部分的信息，可以看到有表示已报告事件开始和结束时间的日期和时间字段。查看 `CMPLNT_FR_DT` 和 `CMPLT_TO_DT` 的最小值和最大值，可以大致判断这些字段是否始终有值：
 
@@ -261,7 +273,9 @@ FORMAT PrettyCompact"
 └───────────────────┴───────────────────┘
 ```
 
-## 制定计划 {#make-a-plan}
+<div id="make-a-plan">
+  ## 制定计划
+</div>
 
 根据上述调查：
 
@@ -279,7 +293,9 @@ FORMAT PrettyCompact"
   还有很多类型需要调整，这些都可以通过遵循相同的调查步骤来确定。查看某个字段中不同字符串的数量、数值的最小值和最大值，然后据此做出判断。指南后面给出的表 schema 中包含许多低基数 String 和无符号整数字段，而浮点数值字段很少。
 </Note>
 
-## 拼接日期和时间字段 {#concatenate-the-date-and-time-fields}
+<div id="concatenate-the-date-and-time-fields">
+  ## 拼接日期和时间字段
+</div>
 
 要将日期和时间字段 `CMPLNT_FR_DT` 和 `CMPLNT_FR_TM` 拼接成一个可转换为 `DateTime` 的 `String`，请选择用拼接运算符连接这两个字段：`CMPLNT_FR_DT || ' ' || CMPLNT_FR_TM`。`CMPLNT_TO_DT` 和 `CMPLNT_TO_TM` 字段的处理方式也相同。
 
@@ -307,7 +323,9 @@ FORMAT PrettyCompact"
 └─────────────────────┘
 ```
 
-## 将日期和时间 String 转换为 DateTime64 类型 {#convert-the-date-and-time-string-to-a-datetime64-type}
+<div id="convert-the-date-and-time-string-to-a-datetime64-type">
+  ## 将日期和时间 String 转换为 DateTime64 类型
+</div>
 
 在本指南前面的内容中，我们发现 TSV 文件中存在早于 1970 年 1 月 1 日的日期，这意味着这些日期需要使用 64 位 DateTime 类型。日期还需要从 `MM/DD/YYYY` 格式转换为 `YYYY/MM/DD` 格式。这两项操作都可以通过 [`parseDateTime64BestEffort()`](/zh/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort) 完成。
 
@@ -360,14 +378,18 @@ FORMAT PrettyCompact"
   上面显示为 `1925` 的日期是由数据错误造成的。原始数据中有几条记录的年份写成了 `1019` - `1022`，实际应为 `2019` - `2022`。由于 `1925` 年 1 月 1 日是 64 位 DateTime 可表示的最早日期，这些记录都会被存储为这一天。
 </Note>
 
-## 创建表 {#create-a-table}
+<div id="create-a-table">
+  ## 创建表
+</div>
 
 上文针对各列所用数据类型作出的决定，体现在下面的表 schema
 中。我们还需要确定该表使用的 `ORDER BY` 和 `PRIMARY KEY`。`ORDER BY` 或 `PRIMARY KEY`
 中至少必须指定一个。下面提供了一些关于如何确定应将哪些列包含在 `ORDER BY` 中的指导原则，更多信息请参见本文档末尾的 *后续步骤*
 部分。
 
-### `ORDER BY` 和 `PRIMARY KEY` 子句 {#order-by-and-primary-key-clauses}
+<div id="order-by-and-primary-key-clauses">
+  ### `ORDER BY` 和 `PRIMARY KEY` 子句
+</div>
 
 * `ORDER BY` 元组应包含用于查询过滤条件的字段
 * 为了最大限度提高磁盘上的压缩效果，`ORDER BY` 元组应按基数升序排列
@@ -459,7 +481,9 @@ CREATE TABLE NYPD_Complaint (
   ORDER BY ( borough, offense_description, date_reported )
 ```
 
-### 查找表的主键 {#finding-the-primary-key-of-a-table}
+<div id="finding-the-primary-key-of-a-table">
+  ### 查找表的主键
+</div>
 
 ClickHouse 的 `system` 数据库中，具体来说是 `system.table`，包含了你刚创建的这个表的全部信息。下面这个查询会显示 `ORDER BY` (排序键) 和 `PRIMARY KEY`：
 
@@ -489,11 +513,15 @@ table:         NYPD_Complaint
 1 row in set. Elapsed: 0.001 sec.
 ```
 
-## 预处理并导入数据 {#preprocess-import-data}
+<div id="preprocess-import-data">
+  ## 预处理并导入数据
+</div>
 
 我们将使用 `clickhouse-local` 工具对数据进行预处理，并使用 `clickhouse-client` 将其上传。
 
-### 使用的 `clickhouse-local` 参数 {#clickhouse-local-arguments-used}
+<div id="clickhouse-local-arguments-used">
+  ### 使用的 `clickhouse-local` 参数
+</div>
 
 <Tip>
   下方 `clickhouse-local` 的参数中出现了 `table='input'`。`clickhouse-local` 会接收提供的输入 (`cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv`) ，并将其插入到一个表中。默认情况下，该表名为 `table`。本指南将表名设置为 `input`，以便更清楚地展示数据流。`clickhouse-local` 的最后一个参数是一条从该表中选择数据的查询 (`FROM input`) ，然后通过管道传递给 `clickhouse-client`，以填充 `NYPD_Complaint` 表。
@@ -543,7 +571,9 @@ cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv \
   | clickhouse-client --query='INSERT INTO NYPD_Complaint FORMAT TSV'
 ```
 
-## 验证数据 {#validate-data}
+<div id="validate-data">
+  ## 验证数据
+</div>
 
 <Note>
   该数据集每年会更新一次或多次，因此你的计数结果可能与本文档中的内容不一致。
@@ -576,9 +606,13 @@ WHERE name = 'NYPD_Complaint'
 └─────────────────────────────────┘
 ```
 
-## 执行一些查询 {#run-queries}
+<div id="run-queries">
+  ## 执行一些查询
+</div>
 
-### 查询 1：按月比较投诉数量 {#query-1-compare-the-number-of-complaints-by-month}
+<div id="query-1-compare-the-number-of-complaints-by-month">
+  ### 查询 1：按月比较投诉数量
+</div>
 
 ```sql title="Query"
 SELECT
@@ -611,7 +645,9 @@ Query id: 7fbd4244-b32a-4acf-b1f3-c3aa198e74d9
 12 rows in set. Elapsed: 0.006 sec. Processed 208.99 thousand rows, 417.99 KB (37.48 million rows/s., 74.96 MB/s.)
 ```
 
-### 查询 2. 比较各区的投诉总数 {#query-2-compare-total-number-of-complaints-by-borough}
+<div id="query-2-compare-total-number-of-complaints-by-borough">
+  ### 查询 2. 比较各区的投诉总数
+</div>
 
 ```sql title="Query"
 SELECT
@@ -638,6 +674,8 @@ Query id: 8cdcdfd4-908f-4be0-99e3-265722a2ab8d
 6 rows in set. Elapsed: 0.008 sec. Processed 208.99 thousand rows, 209.43 KB (27.14 million rows/s., 27.20 MB/s.)
 ```
 
-## 后续步骤 {#next-steps}
+<div id="next-steps">
+  ## 后续步骤
+</div>
 
 [ClickHouse 稀疏主索引实用入门](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes) 介绍了 ClickHouse 的索引与传统关系型数据库有何不同、ClickHouse 如何构建和使用稀疏主索引，以及索引的最佳实践。

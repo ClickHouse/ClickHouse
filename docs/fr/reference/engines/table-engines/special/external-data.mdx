@@ -22,20 +22,20 @@ Dans le client en ligne de commande, vous pouvez spécifier une section de param
 
 Vous pouvez avoir plusieurs sections comme celle-ci, en fonction du nombre de tables transmises.
 
-`--external` – Marque le début d&#39;une clause.
-`--file` – Chemin vers le fichier contenant le dump de la table, ou -, qui fait référence à stdin.
+**–external** – Marque le début d&#39;une clause.
+**–file** – Chemin vers le fichier contenant le dump de la table, ou -, qui fait référence à stdin.
 Une seule table peut être lue depuis stdin.
 
-Les paramètres suivants sont facultatifs : `--name` – Nom de la table. S&#39;il est omis, &#95;data est utilisé.
-`--format` – Format des données dans le fichier. S&#39;il est omis, TabSeparated est utilisé.
-`--scalar` – Envoie les données sous forme de scalaire au lieu d&#39;une table temporaire. Les données doivent contenir exactement une ligne ; si elles contiennent plusieurs colonnes, elles sont regroupées dans un seul tuple. La valeur est accessible dans la requête via `__getScalar('name')`.
+Les paramètres suivants sont facultatifs : **–name**– Nom de la table. S&#39;il est omis, &#95;data est utilisé.
+**–format** – Format des données dans le fichier. S&#39;il est omis, TabSeparated est utilisé.
+**–scalar** – Envoie les données sous forme de scalaire au lieu d&#39;une table temporaire. Les données doivent contenir exactement une ligne ; si elles contiennent plusieurs colonnes, elles sont regroupées dans un seul tuple. La valeur est accessible dans la requête via `__getScalar('name')`.
 
-L&#39;un des paramètres suivants est requis : `--types` – Une liste de types de colonnes séparés par des virgules. Par exemple : `UInt64,String`. Les colonnes seront nommées &#95;1, &#95;2, ...
-`--structure` – La structure de la table au format`UserID UInt64`, `URL String`. Définit les noms et les types des colonnes.
+L&#39;un des paramètres suivants est requis :**–types** – Une liste de types de colonnes séparés par des virgules. Par exemple : `UInt64,String`. Les colonnes seront nommées &#95;1, &#95;2, ...
+**–structure**– La structure de la table au format`UserID UInt64`, `URL String`. Définit les noms et les types des colonnes.
 
 Les fichiers spécifiés dans &#39;file&#39; seront analysés selon le format spécifié dans &#39;format&#39;, à l&#39;aide des types de données spécifiés dans &#39;types&#39; ou &#39;structure&#39;. La table sera téléversée vers le serveur et y sera accessible en tant que table temporaire sous le nom indiqué dans &#39;name&#39;.
 
-Exemples :
+Exemples :
 
 ```bash
 $ echo -ne "1\n2\n3\n" | clickhouse-client --query="SELECT count() FROM test.visits WHERE TraficSourceID IN _data" --external --file=- --types=Int8
@@ -52,7 +52,7 @@ $ echo 41 | clickhouse-client --query="SELECT __getScalar('threshold') + 1" --ex
 
 Lors de l&#39;utilisation de l&#39;interface HTTP, les données externes sont transmises au format multipart/form-data. Chaque table est envoyée sous la forme d&#39;un fichier distinct. Le nom de la table est déduit du nom du fichier. `query_string` reçoit les paramètres `name_format`, `name_types` et `name_structure`, où `name` désigne le nom de la table à laquelle ces paramètres correspondent. La signification de ces paramètres est la même que lors de l&#39;utilisation du client en ligne de commande.
 
-Exemple :
+Exemple :
 
 ```bash
 $ cat /etc/passwd | sed 's/:/\t/g' > passwd.tsv

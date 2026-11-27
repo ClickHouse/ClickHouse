@@ -1,4 +1,3 @@
-import contextlib
 import os
 import sys
 
@@ -58,13 +57,10 @@ def create_secure_channel():
     return channel
 
 
-@contextlib.contextmanager
 def create_insecure_channel():
-    # Closed even when it never becomes ready: gRPC shares its connection and reconnect backoff with every later
-    # channel to this address in the process.
-    with grpc.insecure_channel(get_grpc_url()) as channel:
-        grpc.channel_ready_future(channel).result(timeout=2)
-        yield channel
+    channel = grpc.insecure_channel(get_grpc_url())
+    grpc.channel_ready_future(channel).result(timeout=2)
+    return channel
 
 
 def create_secure_channel_with_wrong_client_certificate():

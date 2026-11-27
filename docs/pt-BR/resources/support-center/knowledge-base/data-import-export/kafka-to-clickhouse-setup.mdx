@@ -6,15 +6,19 @@ tags: ['Ingestão de Dados']
 keywords: ['Kafka']
 ---
 
-## Visão geral {#overview}
+<div id="overview">
+  ## Visão geral
+</div>
 
-Este artigo apresenta o processo de envio de dados de um tópico Kafka para uma tabela do ClickHouse. Usaremos o feed de mudanças recentes da Wiki, que fornece um [stream de eventos](https://stream.wikimedia.org/v2/stream/recentchange) que representa alterações feitas em várias propriedades da Wikimedia. As etapas incluem:
+Este artigo apresenta o processo de envio de dados de um tópico Kafka para uma tabela do ClickHouse. Usaremos o feed de mudanças recentes da Wiki, que fornece um [fluxo de eventos](https://stream.wikimedia.org/v2/stream/recentchange) que representa alterações feitas em várias propriedades da Wikimedia. As etapas incluem:
 
 1. Como configurar o Kafka no Ubuntu
-2. Fazer a ingestão de um stream de dados em um tópico Kafka
+2. Fazer a ingestão de um fluxo de dados em um tópico Kakfa
 3. Criar uma tabela do ClickHouse que se inscreve no tópico
 
-# 1. Configurar o Kafka no Ubuntu {#1-setup-kafka-on-ubuntu}
+<div id="1-setup-kafka-on-ubuntu">
+  # 1. Configurar o Kafka no Ubuntu
+</div>
 
 1. Crie uma **instância** Ubuntu **ec2** e conecte-se a ela via SSH:
 
@@ -66,7 +70,9 @@ bin/kafka-topics.sh --create --topic wikimedia --bootstrap-server localhost:9092
 bin/kafka-topics.sh --list --bootstrap-server localhost:9092
 ```
 
-# 2. Faça a ingestão do stream da Wikimedia no Kafka {#2-ingest-the-wikimedia-stream-into-kafka}
+<div id="2-ingest-the-wikimedia-stream-into-kafka">
+  # 2. Faça a ingestão do stream da Wikimedia no Kafka
+</div>
 
 1. Primeiro, precisamos de alguns utilitários:
 
@@ -95,7 +101,9 @@ bin/kafka-console-consumer.sh --topic wikimedia --from-beginning --bootstrap-ser
 
 5. Pressione **Ctrl+c** para interromper o comando anterior.
 
-# 3. Faça a ingestão dos dados no ClickHouse {#3-ingest-the-data-into-clickhouse}
+<div id="3-ingest-the-data-into-clickhouse">
+  # 3. Faça a ingestão dos dados no ClickHouse
+</div>
 
 1. Veja como são os dados recebidos:
 

@@ -1,11 +1,9 @@
 #include "config.h"
-#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #if USE_EMBEDDED_COMPILER
 
 #include <stack>
 
-#include <Common/CacheBase.h>
 #include <Common/logger_useful.h>
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
@@ -32,18 +30,6 @@ namespace
     std::mutex expression_jit_mutex;
     /// See `aggregator_jit_instance` in `Aggregator.cpp` for the rationale of `shared_ptr` ownership.
     std::shared_ptr<CHJIT> expression_jit_instance;
-
-    /// How many times each expression was seen, so it is compiled only after `min_count_to_compile_expression` uses.
-    /// SLRU: expressions seen once (e.g. with distinct literals) are evicted before the ones seen more often.
-    using ExpressionCompileCounter = CacheBase<UInt128, std::atomic<UInt64>, UInt128Hash>;
-    constexpr size_t MAX_EXPRESSION_COMPILE_COUNTER_ENTRIES = 10000;
-
-    ExpressionCompileCounter & getExpressionCompileCounter()
-    {
-        static ExpressionCompileCounter counter(
-            CurrentMetrics::end(), CurrentMetrics::end(), MAX_EXPRESSION_COMPILE_COUNTER_ENTRIES, MAX_EXPRESSION_COMPILE_COUNTER_ENTRIES);
-        return counter;
-    }
 }
 
 static std::shared_ptr<CHJIT> getJITInstancePtr()
@@ -56,11 +42,8 @@ static std::shared_ptr<CHJIT> getJITInstancePtr()
 
 void resetExpressionJITInstance()
 {
-    {
-        std::lock_guard lock(expression_jit_mutex);
-        expression_jit_instance.reset();
-    }
-    getExpressionCompileCounter().clear();
+    std::lock_guard lock(expression_jit_mutex);
+    expression_jit_instance.reset();
 }
 
 static LoggerPtr getLogger()
@@ -107,13 +90,13 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (!canBeNativeType(*result_type))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "LLVMExecutableFunction unexpected result type in: {}", result_type->getName());
@@ -213,10 +196,6 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
 
     const DataTypePtr & getResultType() const override { return dag.back().result_type; }
-
-    const std::vector<FunctionBasePtr> & getNestedFunctions() const { return nested_functions; }
-
-    const CompileDAG & getCompileDAG() const { return dag; }
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
@@ -321,10 +300,15 @@ static FunctionBasePtr compile(
     const CompileDAG & dag,
     size_t min_count_to_compile_expression)
 {
+    static std::unordered_map<UInt128, UInt64, UInt128Hash> counter;
+    static std::mutex mutex;
+
     auto hash_key = dag.hash();
-    auto count = getExpressionCompileCounter().getOrSet(hash_key, [] { return std::make_shared<std::atomic<UInt64>>(0); }).first;
-    if ((*count)++ < min_count_to_compile_expression)
-        return nullptr;
+    {
+        std::lock_guard lock(mutex);
+        if (counter[hash_key]++ < min_count_to_compile_expression)
+            return nullptr;
+    }
 
     auto llvm_function = std::make_shared<LLVMFunction>(dag);
 
@@ -368,7 +352,7 @@ static const ActionsDAG::Node * removeAliasIfNecessary(const ActionsDAG::Node * 
     return node_no_alias;
 }
 
-static bool isCompilableFunction(const ActionsDAG::Node & node, const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes)
+static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION)
         return false;
@@ -417,10 +401,10 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const UnorderedS
     return function.isCompilable();
 }
 
-CompileDAG getCompilableDAG(
+static CompileDAG getCompilableDAG(
     const ActionsDAG::Node * root,
     ActionsDAG::NodeRawConstPtrs & children,
-    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes)
+    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     /// Extract CompileDAG from root actions dag node.
 
@@ -518,60 +502,7 @@ CompileDAG getCompilableDAG(
     return dag;
 }
 
-const std::vector<FunctionBasePtr> * ActionsDAG::getCompiledFunctions(const IFunctionBase & function)
-{
-    const auto * llvm_function = typeid_cast<const LLVMFunction *>(&function);
-    return llvm_function ? &llvm_function->getNestedFunctions() : nullptr;
-}
-
-ActionsDAG::NodeRawConstPtrs ActionsDAG::getCompiledConjuncts(const Node & node)
-{
-    if (!node.function_base)
-        return {};
-
-    const auto * llvm_function = typeid_cast<const LLVMFunction *>(node.function_base.get());
-    if (!llvm_function)
-        return {};
-
-    const auto & dag = llvm_function->getCompileDAG();
-    if (dag.getNodesCount() == 0 || dag.getInputNodesCount() != node.children.size())
-        return {};
-
-    /// The i-th INPUT of the compiled DAG is the i-th child of the node, see `compileFunctions`.
-    std::vector<const Node *> input_to_child(dag.getNodesCount(), nullptr);
-    for (size_t i = 0, next_child = 0; i < dag.getNodesCount(); ++i)
-        if (dag[i].type == CompileDAG::CompileType::INPUT)
-            input_to_child[i] = node.children[next_child++];
-
-    auto is_and = [&](size_t i)
-    {
-        return dag[i].type == CompileDAG::CompileType::FUNCTION && dag[i].function->getName() == "and";
-    };
-
-    NodeRawConstPtrs conjuncts;
-    if (!is_and(dag.getNodesCount() - 1))
-        return conjuncts;
-
-    std::vector<size_t> stack{dag.getNodesCount() - 1};
-    while (!stack.empty())
-    {
-        size_t i = stack.back();
-        stack.pop_back();
-        if (is_and(i))
-            stack.insert(stack.end(), dag[i].arguments.begin(), dag[i].arguments.end());
-        /// Only INPUTs are returned: `in` and its variants are never compiled (`FunctionIn` is not compilable and
-        /// a `Set` argument has no native type), so they stay children of `node` and `isAlwaysFalseByEmptySet` can
-        /// inspect their sets. If `in` becomes compilable, this walk must also handle its FUNCTION nodes in the DAG.
-        else if (input_to_child[i])
-            conjuncts.push_back(input_to_child[i]);
-    }
-    return conjuncts;
-}
-
-void ActionsDAG::compileFunctions(
-    size_t min_count_to_compile_expression,
-    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes,
-    std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag)
+void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     struct Data
     {
@@ -598,7 +529,7 @@ void ActionsDAG::compileFunctions(
     };
 
     std::stack<Frame> stack;
-    UnorderedSetWithMemoryTracking<const Node *> visited_nodes;
+    std::unordered_set<const Node *> visited_nodes;
 
     /** Algorithm is to iterate over each node in ActionsDAG, and update node compilable_children_size.
       * After this procedure data for each node is initialized.
@@ -715,15 +646,9 @@ void ActionsDAG::compileFunctions(
             for (const auto * child : new_children)
                 arguments.emplace_back(child->column, child->result_type, child->result_name);
 
-            auto executable_function = fn->prepare(arguments);
-
-            /// Taken before the first replacement, so it holds the DAG as built.
-            if (uncompiled_actions_dag && !*uncompiled_actions_dag)
-                *uncompiled_actions_dag = std::make_shared<ActionsDAG>(clone());
-
             node->type = ActionsDAG::ActionType::FUNCTION;
             node->function_base = fn;
-            node->function = std::move(executable_function);
+            node->function = fn->prepare(arguments);
             node->children.swap(new_children);
             node->is_function_compiled = true;
             node->column = nullptr;

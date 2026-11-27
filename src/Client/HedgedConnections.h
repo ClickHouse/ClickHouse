@@ -1,9 +1,7 @@
 #pragma once
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
 
-#include <atomic>
 #include <functional>
-#include <limits>
 #include <queue>
 #include <optional>
 
@@ -99,8 +97,6 @@ public:
 
     bool supportsQueryPlanSerializationVersion(UInt64 version) const override;
 
-    UInt64 getServerRevisionOfLastPacket() const override { return server_revision_of_last_packet; }
-
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendReadTaskResponse in not supported with HedgedConnections");
@@ -165,10 +161,6 @@ private:
 
     void disableChangingReplica(const ReplicaLocation & replica_location);
 
-    /// Stops the factory and retracts pending replica replacements: after the factory is
-    /// stopped no replacement can arrive, so a pending flag would never be cleared.
-    void stopChoosingReplicasAndRetractPending();
-
     void startNewReplica();
 
     void checkNewReplica();
@@ -198,8 +190,7 @@ private:
     std::queue<int> offsets_queue;
 
     /// The current number of valid connections to the replicas of this shard.
-    /// Atomic: `hasActiveConnections` reads it without `cancel_mutex` while `receivePacket` runs on another thread.
-    std::atomic<size_t> active_connection_count = 0;
+    size_t active_connection_count = 0;
 
     /// We count offsets in which we can't change replica anymore,
     /// it's needed to cancel choosing new replicas when we
@@ -222,13 +213,12 @@ private:
 
     Packet last_received_packet;
 
-    Epoll epoll{EpollNesting::HedgedConnections};
+    Epoll epoll;
     ContextPtr context;
     const Settings & settings;
     ThrottlerPtr throttler;
     bool sent_query = false;
     bool cancelled = false;
-    UInt64 server_revision_of_last_packet = std::numeric_limits<UInt64>::max();
 
     ReplicaInfo replica_info;
 

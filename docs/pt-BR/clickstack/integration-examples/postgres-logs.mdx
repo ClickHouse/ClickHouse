@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['PostgreSQL', 'Postgres', 'logs', 'OTEL', 'ClickStack', 'monitoramento de banco de dados']
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/pt-BR/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -16,7 +18,7 @@ import { TrackedLink } from "/snippets/pt-BR/components/GalaxyTrackedLink/Galaxy
 </Info>
 
 <div id="existing-postgres">
-  ## Integração com um PostgreSQL existente {#existing-postgres}
+  ## Integração com um PostgreSQL existente
 </div>
 
 Esta seção aborda como configurar sua instalação existente do PostgreSQL para enviar logs ao ClickStack, modificando a configuração do OTel collector do ClickStack.
@@ -24,7 +26,7 @@ Esta seção aborda como configurar sua instalação existente do PostgreSQL par
 Se quiser testar a integração de logs do PostgreSQL antes de configurar seu próprio ambiente, você pode usar nossa configuração pré-configurada e os dados de amostra na seção [&quot;Dataset de demonstração&quot;](/pt-BR/clickstack/integration-examples/postgres-logs#demo-dataset).
 
 <div id="prerequisites">
-  ##### Pré-requisitos {#prerequisites}
+  ##### Pré-requisitos
 </div>
 
 * Instância do ClickStack em execução
@@ -86,7 +88,7 @@ Se quiser testar a integração de logs do PostgreSQL antes de configurar seu pr
   </Step>
 
   <Step title="Crie uma configuração personalizada do OTel collector" id="custom-otel">
-    O ClickStack permite estender a configuração padrão do OpenTelemetry Collector montando um arquivo de configuração personalizado e definindo uma variável de ambiente. A configuração personalizada é mesclada à configuração padrão gerenciada pela Interface do ClickStack via OpAMP.
+    O ClickStack permite estender a configuração padrão do OpenTelemetry Collector montando um arquivo de configuração personalizado e definindo uma variável de ambiente. A configuração personalizada é mesclada à configuração padrão gerenciada pelo HyperDX via OpAMP.
 
     Crie um arquivo chamado `postgres-logs-monitoring.yaml` com a configuração a seguir:
 
@@ -135,7 +137,7 @@ Se quiser testar a integração de logs do PostgreSQL antes de configurar seu pr
     * Processa entradas de log com várias linhas (os erros geralmente se estendem por várias linhas)
     * Analisa o formato CSV com todos os campos padrão de log do PostgreSQL
     * Extrai os timestamps para preservar o horário original dos logs
-    * Adiciona o atributo `source: postgresql` para filtragem na Interface do ClickStack
+    * Adiciona o atributo `source: postgresql` para filtragem no HyperDX
     * Encaminha os logs para o exporter do ClickHouse por meio de um pipeline dedicado
 
     <Note>
@@ -154,7 +156,7 @@ Se quiser testar a integração de logs do PostgreSQL antes de configurar seu pr
     2. Definir a variável de ambiente `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`
     3. Montar o diretório de logs do PostgreSQL para que o collector possa lê-los
 
-##### Opção 1: Docker Compose {#docker-compose}
+    ##### Opção 1: Docker Compose
 
     Atualize a configuração da implantação do ClickStack:
 
@@ -171,7 +173,7 @@ Se quiser testar a integração de logs do PostgreSQL antes de configurar seu pr
           # ... other volumes ...
     ```
 
-##### Opção 2: Docker Run (Imagem all-in-one) {#all-in-one}
+    ##### Opção 2: Docker Run (Imagem all-in-one)
 
     Se você estiver usando a imagem all-in-one com docker run:
 
@@ -189,29 +191,23 @@ Se quiser testar a integração de logs do PostgreSQL antes de configurar seu pr
     </Note>
   </Step>
 
-  <Step title="Verificando logs na Interface do ClickStack" id="verifying-logs">
-    Depois de configurar, entre na Interface do ClickStack e verifique se os logs estão chegando:
+  <Step title="Verificando logs no HyperDX" id="verifying-logs">
+    Depois de configurar, entre no HyperDX e verifique se os logs estão chegando:
 
     1. Acesse a Search view
     2. Defina `source` como Logs
     3. Filtre por `source:postgresql` para ver logs específicos do PostgreSQL
     4. Você deverá ver entradas de log estruturadas com campos como `user_name`, `database_name`, `error_severity`, `message`, `query` etc.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Search view de logs](/images/clickstack/postgres/postgres-logs-search-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/postgres/postgres-logs-search-view.webp" alt="Search view de logs" />
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Log view](/images/clickstack/postgres/postgres-log-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/postgres/postgres-log-view.webp" alt="Log view" />
   </Step>
 </Steps>
 
-## Dataset de demonstração {#demo-dataset}
+<div id="demo-dataset">
+  ## Dataset de demonstração
+</div>
 
 Para usuários que querem testar a integração de logs do PostgreSQL antes de configurar seus sistemas de produção, fornecemos um conjunto de dados de exemplo com logs do PostgreSQL pré-gerados e padrões realistas.
 
@@ -282,34 +278,28 @@ Para usuários que querem testar a integração de logs do PostgreSQL antes de c
     ```
   </Step>
 
-  <Step title="Verifique os logs na interface do ClickStack" id="verify-demo-logs">
+  <Step title="Verifique os logs no HyperDX" id="verify-demo-logs">
     Quando o ClickStack estiver em execução:
 
-    1. Abra a [interface do ClickStack](http://localhost:8080/) e faça login na sua conta (talvez seja necessário criar uma conta primeiro)
+    1. Abra o [HyperDX](http://localhost:8080/) e faça login na sua conta (talvez seja necessário criar uma conta primeiro)
     2. Navegue até a Search view e defina a source como `Logs`
     3. Defina o intervalo de tempo como **2025-11-09 00:00:00 - 2025-11-12 00:00:00**
 
     <Info>
       **Exibição de fuso horário**
 
-      A interface do ClickStack exibe os timestamps no fuso horário local do navegador. Os dados de demonstração cobrem **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**. O intervalo amplo garante que você verá os logs de demonstração independentemente da sua localização. Depois que os logs aparecerem, você pode restringir o intervalo para um período de 24 horas e obter visualizações mais claras.
+      O HyperDX exibe os timestamps no fuso horário local do navegador. Os dados de demonstração cobrem **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**. O intervalo amplo garante que você verá os logs de demonstração independentemente da sua localização. Depois que os logs aparecerem, você pode restringir o intervalo para um período de 24 horas e obter visualizações mais claras.
     </Info>
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Search view de logs](/images/clickstack/postgres/postgres-logs-search-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/postgres/postgres-logs-search-view.webp" alt="Search view de logs" />
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Log view](/images/clickstack/postgres/postgres-log-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/postgres/postgres-log-view.webp" alt="Log view" />
   </Step>
 </Steps>
 
-## Dashboards e visualizações {#dashboards}
+<div id="dashboards">
+  ## Dashboards e visualizações
+</div>
 
 Para ajudar você a começar a monitorar o PostgreSQL com o ClickStack, fornecemos visualizações essenciais dos logs do PostgreSQL.
 
@@ -319,32 +309,20 @@ Para ajudar você a começar a monitorar o PostgreSQL com o ClickStack, fornecem
   </Step>
 
   <Step title="Importe o dashboard pré-configurado" id="import-dashboard">
-    1. Abra a interface do ClickStack e navegue até a seção Dashboards
+    1. Abra o HyperDX e navegue até a seção Dashboards
     2. Clique em **Import Dashboard** no canto superior direito, no menu de reticências
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Botão de importar dashboard](/images/clickstack/import-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/import-dashboard.webp" alt="Botão de importar dashboard" />
 
-    3. Faça upload do arquivo `postgresql-logs-dashboard.json` e clique em **Concluir Importação**
+    3. Faça upload do arquivo `postgresql-logs-dashboard.json` e clique em **Finish Import**
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Concluir importação](/images/clickstack/postgres/import-logs-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/postgres/import-logs-dashboard.webp" alt="Concluir importação" />
   </Step>
 
   <Step title="Visualize o dashboard" id="created-dashboard">
     O dashboard será criado com todas as visualizações pré-configuradas:
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Dashboard de logs](/images/clickstack/postgres/postgres-logs-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/postgres/postgres-logs-dashboard.webp" alt="Dashboard de logs" />
 
     <Note>
       Para o dataset de demonstração, defina o intervalo de tempo como **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)** (ajuste com base no seu fuso horário local). Por padrão, o dashboard importado não terá um intervalo de tempo especificado.
@@ -353,11 +331,11 @@ Para ajudar você a começar a monitorar o PostgreSQL com o ClickStack, fornecem
 </Steps>
 
 <div id="troubleshooting">
-  ## Solução de problemas {#troubleshooting}
+  ## Solução de problemas
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### Configuração personalizada não está sendo carregada {#troubleshooting-not-loading}
+  ### Configuração personalizada não está sendo carregada
 </div>
 
 Verifique se a variável de ambiente está definida:
@@ -372,7 +350,9 @@ Verifique se o arquivo de configuração personalizado está montado e acessíve
 docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml | head -10
 ```
 
-### Logs não aparecem na Interface do ClickStack {#no-logs}
+<div id="no-logs">
+  ### Logs não aparecem no HyperDX
+</div>
 
 Verifique se a configuração efetiva inclui o receiver filelog:
 
@@ -393,7 +373,7 @@ docker exec <container> cat /tmp/postgres-demo/postgresql.log | wc -l
 ```
 
 <div id="next-steps">
-  ## Próximas etapas {#next-steps}
+  ## Próximas etapas
 </div>
 
 * Configure [alertas](/pt-BR/clickstack/features/alerts) para eventos críticos (falhas de conexão, consultas lentas, picos de erro)
@@ -401,6 +381,8 @@ docker exec <container> cat /tmp/postgres-demo/postgresql.log | wc -l
 * Crie dashboards personalizados para padrões de consulta específicos da aplicação
 * Configure `log_min_duration_statement` para identificar consultas lentas de acordo com seus requisitos de desempenho
 
-## Colocando em produção {#going-to-production}
+<div id="going-to-production">
+  ## Colocando em produção
+</div>
 
 Este guia usa o OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel collector e enviar dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.

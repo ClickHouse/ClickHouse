@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['호스트 로그', 'systemd', 'syslog', 'OTel', 'ClickStack', '시스템 모니터링', '서버 로그']
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -16,7 +18,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="existing-hosts">
-  ## 기존 호스트 통합 {#existing-hosts}
+  ## 기존 호스트 통합
 </div>
 
 이 섹션에서는 ClickStack OTel collector 구성을 수정해 모든 시스템 로그 파일(syslog, auth, kernel, daemon, 애플리케이션 로그)을 읽도록 설정하여, 기존 호스트에서 시스템 로그를 ClickStack으로 전송하는 방법을 설명합니다.
@@ -24,7 +26,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 기존 환경을 직접 구성하기 전에 호스트 로그 통합을 테스트하려면, [&quot;데모 데이터세트&quot;](/ko/clickstack/integration-examples/host-logs#demo-dataset) 섹션의 사전 구성된 설정과 샘플 데이터를 사용해 볼 수 있습니다.
 
 <div id="prerequisites">
-  ##### 사전 요구 사항 {#prerequisites}
+  ##### 사전 요구 사항
 </div>
 
 * 실행 중인 ClickStack 인스턴스
@@ -186,7 +188,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     * 표준 경로에서 syslog 파일 읽기
     * 구조화된 필드(timestamp, 호스트명, unit/service, PID, 메시지)를 추출할 수 있도록 syslog 포맷을 파싱하세요
     * 원본 로그 타임스탬프를 유지
-    * ClickStack UI에서 필터링할 수 있도록 `source: host-logs` 속성을 추가하십시오
+    * HyperDX에서 필터링할 수 있도록 `source: host-logs` 속성을 추가하십시오
     * 전용 파이프라인을 통해 로그를 ClickHouse exporter로 전송
 
     <Note>
@@ -204,7 +206,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     2. 환경 변수 `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`를 설정합니다
     3. collector가 syslog 디렉터리를 읽을 수 있도록 해당 디렉터리를 마운트합니다
 
-##### 옵션 1: Docker Compose {#docker-compose}
+    ##### 옵션 1: Docker Compose
 
     ClickStack 배포 구성을 업데이트합니다:
 
@@ -221,7 +223,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
           # ... other volumes ...
     ```
 
-##### 옵션 2: Docker Run(올인원 이미지) {#all-in-one}
+    ##### 옵션 2: Docker Run(올인원 이미지)
 
     docker run으로 올인원 이미지를 사용하는 경우:
 
@@ -239,29 +241,23 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="ClickStack UI에서 로그 확인하기" id="verifying-logs">
-    구성이 완료되면 ClickStack UI에 로그인한 후 로그가 정상적으로 유입되는지 확인합니다:
+  <Step title="HyperDX에서 로그 확인하기" id="verifying-logs">
+    구성이 완료되면 HyperDX에 로그인한 후 로그가 정상적으로 유입되는지 확인합니다:
 
     1. Search view로 이동합니다
     2. source를 Logs로 설정합니다
     3. `source:host-logs`로 필터링하여 호스트별 로그를 확인합니다
     4. `unit`, `hostname`, `pid`, `message` 등의 필드가 포함된 구조화된 로그 항목이 표시되어야 합니다
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Search view](/images/clickstack/host-logs/search-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/host-logs/search-view.webp" alt="Search view" />
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Log view](/images/clickstack/host-logs/log-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/host-logs/log-view.webp" alt="Log view" />
   </Step>
 </Steps>
 
-## 데모 데이터세트 {#demo-dataset}
+<div id="demo-dataset">
+  ## 데모 데이터세트
+</div>
 
 프로덕션 시스템을 구성하기 전에 호스트 로그 통합을 테스트하려는 사용자를 위해, 실제 환경과 유사한 패턴이 포함된 미리 생성된 시스템 로그 샘플 데이터세트를 제공합니다.
 
@@ -343,34 +339,28 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="ClickStack UI에서 로그 확인" id="verify-demo-logs">
+  <Step title="HyperDX에서 로그 확인" id="verify-demo-logs">
     ClickStack이 실행되면 다음을 수행하세요:
 
-    1. [ClickStack UI](http://localhost:8080/)를 열고 계정에 로그인하세요(먼저 계정을 만들어야 할 수 있습니다)
+    1. [HyperDX](http://localhost:8080/)를 열고 계정에 로그인하세요(먼저 계정을 만들어야 할 수 있습니다)
     2. Search view로 이동한 다음 source를 `Logs`로 설정하세요
     3. 시간 범위를 **2025-11-10 00:00:00 - 2025-11-13 00:00:00**으로 설정하세요
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Search view](/images/clickstack/host-logs/search-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/host-logs/search-view.webp" alt="Search view" />
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Log view](/images/clickstack/host-logs/log-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/host-logs/log-view.webp" alt="Log view" />
 
     <Info>
       **시간대 표시**
 
-      ClickStack UI는 브라우저의 로컬 시간대를 기준으로 timestamp를 표시합니다. 데모 데이터는 **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)** 범위를 포함합니다. 넉넉한 시간 범위를 설정하면 위치와 관계없이 데모 로그를 확인할 수 있습니다. 로그가 표시되면 더 명확한 시각화를 위해 범위를 24시간으로 좁힐 수 있습니다.
+      HyperDX는 브라우저의 로컬 시간대를 기준으로 timestamp를 표시합니다. 데모 데이터는 **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)** 범위를 포함합니다. 넉넉한 시간 범위를 설정하면 위치와 관계없이 데모 로그를 확인할 수 있습니다. 로그가 표시되면 더 명확한 시각화를 위해 범위를 24시간으로 좁힐 수 있습니다.
     </Info>
   </Step>
 </Steps>
 
-## 대시보드 및 시각화 {#dashboards}
+<div id="dashboards">
+  ## 대시보드 및 시각화
+</div>
 
 ClickStack를 사용해 호스트 로그 모니터링을 시작할 수 있도록 시스템 로그용 핵심 시각화를 제공합니다.
 
@@ -380,32 +370,20 @@ ClickStack를 사용해 호스트 로그 모니터링을 시작할 수 있도록
   </Step>
 
   <Step title="사전 구축된 대시보드 가져오기" id="import-dashboard">
-    1. ClickStack UI를 열고 대시보드 섹션으로 이동합니다
-    2. 오른쪽 상단의 줄임표 메뉴에서 **대시보드 가져오기**를 클릭합니다
+    1. HyperDX를 열고 Dashboards 섹션으로 이동합니다
+    2. 오른쪽 상단의 줄임표 메뉴에서 **Import Dashboard**를 클릭합니다
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![대시보드 가져오기 버튼](/images/clickstack/import-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/import-dashboard.webp" alt="대시보드 가져오기 버튼" />
 
-    3. `host-logs-dashboard.json` 파일을 업로드한 다음 **가져오기 완료**를 클릭합니다
+    3. `host-logs-dashboard.json` 파일을 업로드한 다음 **Finish Import**를 클릭합니다
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![가져오기 완료](/images/clickstack/host-logs/import-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="가져오기 완료" />
   </Step>
 
   <Step title="대시보드 보기" id="created-dashboard">
     모든 시각화가 미리 구성된 상태로 대시보드가 생성됩니다.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![로그 대시보드](/images/clickstack/host-logs/host-logs-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="로그 대시보드" />
 
     주요 시각화는 다음과 같습니다:
 
@@ -417,17 +395,17 @@ ClickStack를 사용해 호스트 로그 모니터링을 시작할 수 있도록
     * 서비스 재시작 활동
 
     <Note>
-      데모 데이터세트의 경우 시간 범위를 **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**&#xB85C; 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되어 있지 않습니다.
+      데모 데이터세트의 경우 시간 범위를 **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**로 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되어 있지 않습니다.
     </Note>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## 문제 해결 {#troubleshooting}
+  ## 문제 해결
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### 사용자 지정 구성이 로드되지 않는 경우 {#troubleshooting-not-loading}
+  ### 사용자 지정 구성이 로드되지 않는 경우
 </div>
 
 환경 변수가 설정되어 있는지 확인하세요:
@@ -442,15 +420,17 @@ docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
 docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml | head -10
 ```
 
-### ClickStack UI에 로그가 표시되지 않는 경우 {#no-logs}
+<div id="no-logs">
+  ### HyperDX에 logs가 표시되지 않는 경우
+</div>
 
 **syslog 파일이 존재하며 계속 기록되고 있는지 확인하세요:**
 
 ```bash
-# Check if syslog exists
+# syslog 파일이 존재하는지 확인
 ls -la /var/log/syslog /var/log/messages
 
-# Verify logs are being written
+# 로그가 기록되고 있는지 확인
 tail -f /var/log/syslog
 ```
 
@@ -479,7 +459,7 @@ docker exec <container> cat /tmp/host-demo/journal.log | wc -l
 ```
 
 <div id="logs-not-parsing">
-  ### 로그가 제대로 파싱되지 않는 경우 {#logs-not-parsing}
+  ### 로그가 제대로 파싱되지 않는 경우
 </div>
 
 **사용 중인 syslog 포맷이 선택한 구성과 일치하는지 확인하세요:**
@@ -503,7 +483,7 @@ tail -5 /var/log/system.log
 포맷이 맞지 않으면 [사용자 지정 OTel collector 구성 만들기](#custom-otel) 섹션에서 알맞은 구성 탭을 선택하세요.
 
 <div id="next-steps">
-  ## 다음 단계 {#next-steps}
+  ## 다음 단계
 </div>
 
 * 중요한 시스템 이벤트(서비스 장애, 인증 실패, 디스크 경고)에 대한 [알림](/ko/clickstack/features/alerts)을 설정하세요
@@ -511,6 +491,8 @@ tail -5 /var/log/system.log
 * 종합적인 문제 해결을 위해 호스트 로그를 애플리케이션 로그와 연관시키세요
 * 보안 모니터링(SSH 시도, sudo 사용, 방화벽 차단)을 위한 사용자 지정 대시보드를 만드세요
 
-## 프로덕션 환경으로 전환하기 {#going-to-production}
+<div id="going-to-production">
+  ## 프로덕션 환경으로 전환하기
+</div>
 
 이 가이드는 빠른 설정을 위해 ClickStack에 내장된 OpenTelemetry Collector를 기반으로 합니다. 프로덕션 배포에서는 자체 OTel Collector를 실행하고 데이터를 ClickStack의 OTLP 엔드포인트로 전송하는 것을 권장합니다. 프로덕션 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.

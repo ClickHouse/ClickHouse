@@ -8,12 +8,12 @@ echo '%language=C++
 %compare-strncmp
 %global-table
 %{
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-fallthrough"
-#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#pragma clang diagnostic ignored "-Wunused-macros"
-#pragma clang diagnostic ignored "-Wmissing-field-initializers"
-#pragma clang diagnostic ignored "-Wshorten-64-to-32"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
+#pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
+#pragma GCC diagnostic ignored "-Wunused-macros"
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#pragma GCC diagnostic ignored "-Wshorten-64-to-32"
 // NOLINTBEGIN(google-runtime-int,hicpp-use-nullptr,modernize-use-nullptr,modernize-macro-to-enum)
 %}
 struct NameAndGlyph {

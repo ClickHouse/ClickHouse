@@ -6,6 +6,8 @@ title: 'MySQL インターフェイス'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 ClickHouse は MySQL wire protocol をサポートしています。これにより、ネイティブな ClickHouse コネクタを持たない一部のクライアントでも、代わりに MySQL プロトコルを利用できます。以下の BI ツールで動作確認されています。
 
 * [Looker Studio](/ja/integrations/connectors/data-visualization/looker-studio-and-clickhouse)
@@ -26,48 +28,34 @@ ClickHouse は MySQL wire protocol をサポートしています。これによ
   この設定は無効にできず、まれなエッジケースでは、ClickHouse の通常のクエリ インターフェイスと MySQL クエリ インターフェイスに送られるクエリとで動作が異なる場合があります。
 </Note>
 
-## ClickHouse Cloud で MySQL インターフェイスを有効にする {#enabling-the-mysql-interface-on-clickhouse-cloud}
+<div id="enabling-the-mysql-interface-on-clickhouse-cloud">
+  ## ClickHouse Cloud で MySQL インターフェイスを有効にする
+</div>
 
 1. ClickHouse Cloud サービスを作成したら、`Connect` ボタンをクリックします。
 
 <br />
 
-<div className="ch-image-md">
-  <Frame>
-    ![認証情報画面 - Prompt](/images/interfaces/mysql0.webp)
-  </Frame>
-</div>
+<Image img="/images/interfaces/mysql0.webp" alt="認証情報画面 - Prompt" size="md" />
 
 2. `Connect with` ドロップダウンを `MySQL` に変更します。
 
 <br />
 
-<div className="ch-image-md">
-  <Frame>
-    ![認証情報画面 - MySQL を選択](/images/interfaces/mysql1.webp)
-  </Frame>
-</div>
+<Image img="/images/interfaces/mysql1.webp" alt="認証情報画面 - MySQL を選択" size="md" />
 
 3. このサービスで MySQL インターフェイスを有効にするには、スイッチをオンにします。これにより、このサービスでポート `3306` が開放され、専用の MySQL ユーザー名が表示された MySQL 接続画面が表示されます。パスワードは、このサービスのデフォルトユーザーのパスワードと同じです。
 
 <br />
 
-<div className="ch-image-md">
-  <Frame>
-    ![認証情報画面 - MySQL が有効](/images/interfaces/mysql2.webp)
-  </Frame>
-</div>
+<Image img="/images/interfaces/mysql2.webp" alt="認証情報画面 - MySQL が有効" size="md" />
 
 表示されている MySQL 接続文字列をコピーします。
 
-<div className="ch-image-md">
-  <Frame>
-    ![認証情報画面 - 接続文字列](/images/interfaces/mysql3.webp)
-  </Frame>
-</div>
+<Image img="/images/interfaces/mysql3.webp" alt="認証情報画面 - 接続文字列" size="md" />
 
 <div id="creating-multiple-mysql-users-in-clickhouse-cloud">
-  ## ClickHouse Cloud で複数の MySQL ユーザーを作成する {#creating-multiple-mysql-users-in-clickhouse-cloud}
+  ## ClickHouse Cloud で複数の MySQL ユーザーを作成する
 </div>
 
 デフォルトでは、組み込みの `mysql4<subdomain>` ユーザーがあり、`default` ユーザーと同じパスワードを使用します。`<subdomain>` の部分は、ClickHouse Cloud ホスト名の最初のセグメントです。この形式は、安全な接続を実装していても [TLS ハンドシェイクで SNI 情報を提供しない](https://www.cloudflare.com/learning/ssl/what-is-sni) ツールで利用するために必要です。こうしたツールでは、ユーザー名に追加のヒントがないと内部ルーティングを行えません (MySQL コンソールクライアントはそのようなツールの 1 つです) 。
@@ -111,7 +99,7 @@ ClickHouse は MySQL wire protocol をサポートしています。これによ
 4. 作成したユーザーを使用して、MySQL インターフェイス経由で ClickHouse Cloud サービスに接続します。
 
 <div id="troubleshooting-multiple-mysql-users-in-clickhouse-cloud">
-  ### ClickHouse Cloud で複数の MySQL ユーザーを使用する場合のトラブルシューティング {#troubleshooting-multiple-mysql-users-in-clickhouse-cloud}
+  ### ClickHouse Cloud で複数の MySQL ユーザーを使用する場合のトラブルシューティング
 </div>
 
 新しい MySQL ユーザーを作成し、MySQL CLI クライアント経由で接続した際に次のエラーが表示される場合:
@@ -123,7 +111,7 @@ ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization pa
 この場合、ユーザー名が [上記](#creating-multiple-mysql-users-in-clickhouse-cloud) で説明した `mysql4<subdomain>_<username>` 形式に従っていることを確認してください。
 
 <div id="enabling-the-mysql-interface-on-self-managed-clickhouse">
-  ## セルフマネージド ClickHouse で MySQL インターフェイスを有効にする {#enabling-the-mysql-interface-on-self-managed-clickhouse}
+  ## セルフマネージド ClickHouse で MySQL インターフェイスを有効にする
 </div>
 
 サーバーの設定ファイルに [mysql&#95;port](/ja/reference/settings/server-settings/settings/mysql#mysql_port) 設定を追加します。たとえば、`config.d/` [フォルダ](/ja/concepts/features/configuration/server-config/configuration-files) に新しい XML ファイルを作成し、そこでポートを定義できます。
@@ -141,7 +129,7 @@ ClickHouse server を起動し、MySQL 互換プロトコルを待ち受けて�
 ```
 
 <div id="connect-mysql-to-clickhouse">
-  ## MySQL を ClickHouse に接続する {#connect-mysql-to-clickhouse}
+  ## MySQL を ClickHouse に接続する
 </div>
 
 次のコマンドは、MySQL クライアント `mysql` を ClickHouse に接続する方法を示しています。

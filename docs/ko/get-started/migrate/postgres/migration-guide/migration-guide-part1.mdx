@@ -8,17 +8,17 @@ sidebarTitle: '1부'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 > 이 문서는 PostgreSQL에서 ClickHouse로 마이그레이션하는 가이드의 **1부**입니다. 실용적인 예시를 통해 실시간 복제(CDC) 방식으로 마이그레이션을 효율적으로 수행하는 방법을 설명합니다. 여기서 다루는 많은 개념은 PostgreSQL에서 ClickHouse로 수동으로 대량 데이터를 전송할 때에도 적용됩니다.
 
-## 데이터셋 {#dataset}
+<div id="dataset">
+  ## 데이터셋
+</div>
 
 Postgres에서 ClickHouse로의 일반적인 마이그레이션을 보여주는 예시 데이터셋으로, [여기](/ko/get-started/sample-datasets/stackoverflow)에 문서화된 Stack Overflow 데이터셋을 사용합니다. 이 데이터셋에는 2008년부터 2024년 4월까지 Stack Overflow에서 생성된 모든 `post`, `vote`, `user`, `comment`, `badge`가 포함되어 있습니다. 이 데이터에 대한 PostgreSQL 스키마(스키마)는 아래와 같습니다.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![PostgreSQL Stack Overflow 스키마](/images/migrations/postgres-stackoverflow-schema.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="PostgreSQL Stack Overflow 스키마" />
 
 *PostgreSQL에서 테이블을 생성하는 DDL 명령은 [여기](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==)에서 확인할 수 있습니다.*
 
@@ -67,14 +67,14 @@ psql < postlinks.sql
 
 ClickHouse 기준으로는 작은 편이지만, 이 데이터셋은 Postgres에서는 상당한 규모입니다. 위 데이터는 2024년 첫 3개월을 다루는 일부 하위 집합입니다.
 
-> 예시 결과에서는 Postgres와 ClickHouse의 성능 차이를 보여주기 위해 전체 데이터셋을 사용하지만, 아래에 설명된 모든 단계는 더 작은 하위 집합에도 동일하게 적용됩니다. 전체 데이터셋을 Postgres에 로드하려는 사용자는 [여기](https://pastila.nl/?00d47a08/1c5224c0b61beb480539f15ac375619d#XNj5vX3a7ZjkdiX7In8wqA==)를 참조하십시오. 위 스키마에 적용된 외래 키 제약 조건 때문에 PostgreSQL용 전체 데이터셋에는 참조 무결성을 만족하는 행만 포함됩니다. 이러한 제약 조건이 없는 [Parquet 버전](/ko/get-started/sample-datasets/stackoverflow)이 필요한 경우, 이를 ClickHouse에 직접 쉽게 로드할 수 있습니다.
+> 예시 결과에서는 Postgres와 ClickHouse의 성능 차이를 보여주기 위해 전체 데이터셋을 사용하지만, 아래에 설명된 모든 단계는 더 작은 하위 집합에도 동일하게 적용됩니다. 전체 데이터셋을 Postgres에 로드하려는 사용자는 [여기](https://pastila.nl/?00d47a08/1c5224c0b61beb480539f15ac375619d#XNj5vX3a7ZjkdiX7In8wqA==)를 참조하십시오. 위 스키마에 적용된 외래 키 제약 조건 때문에 PostgreSQL용 전체 데이터셋에는 참조 무결성을 만족하는 행만 포함됩니다. 이러한 제약 조건이 없는 [Parquet 버전](/ko/get-started/sample-datasets/stackoverflow)이 필요한 경우, 이를 ClickHouse에 직접 쉽게 로드할 수 있습니다。
 
 <div id="migrating-data">
-  ## 데이터 마이그레이션 {#migrating-data}
+  ## 데이터 마이그레이션
 </div>
 
 <div id="real-time-replication-or-cdc">
-  ### 실시간 복제 (CDC) {#real-time-replication-or-cdc}
+  ### 실시간 복제 (CDC)
 </div>
 
 ClickPipes for PostgreSQL을 설정하려면 이 [가이드](/ko/integrations/clickpipes/postgres/index)를 참조하십시오. 이 가이드에서는 다양한 유형의 소스 Postgres 인스턴스를 다룹니다.
@@ -111,16 +111,18 @@ ORDER BY id;
 
 설정이 완료되면 ClickPipes가 PostgreSQL의 모든 데이터를 ClickHouse로 마이그레이션하기 시작합니다. 네트워크 상태와 배포 규모에 따라 Stack Overflow 데이터셋은 몇 분이면 마이그레이션이 완료됩니다.
 
-### 수동 대량 로드 및 주기적 업데이트 {#initial-bulk-load-with-periodic-updates}
+<div id="initial-bulk-load-with-periodic-updates">
+  ### 수동 대량 로드 및 주기적 업데이트
+</div>
 
 수동 방식으로 데이터셋의 초기 대량 로드는 다음 방법으로 수행할 수 있습니다.
 
-* **테이블 함수** - ClickHouse에서 [Postgres 테이블 함수](/ko/reference/functions/table-functions/postgresql)를 사용해 Postgres에서 데이터를 `SELECT`한 뒤 ClickHouse 테이블에 `INSERT`합니다. 수백 GB 규모의 데이터셋까지 대량 로드하는 경우에 적합합니다.
+* **테이블 함수** - ClickHouse에서 [Postgres table function](/ko/reference/functions/table-functions/postgresql)을 사용해 Postgres에서 데이터를 `SELECT`한 뒤 ClickHouse 테이블에 `INSERT`합니다. 수백 GB 규모의 데이터셋까지 대량 로드하는 경우에 적합합니다.
 * **내보내기** - CSV 또는 SQL 스크립트 파일과 같은 중간 포맷으로 내보냅니다. 그런 다음 이 파일들을 `INSERT FROM INFILE` 절을 통해 클라이언트에서 ClickHouse로 로드하거나, 객체 스토리지와 관련 함수(예: s3, gcs)를 사용해 로드할 수 있습니다.
 
 PostgreSQL에서 데이터를 수동으로 로드할 때는 먼저 ClickHouse에 테이블을 생성해야 합니다. Stack Overflow 데이터셋을 사용해 ClickHouse에서 테이블 스키마를 최적화하는 방법은 이 [데이터 모델링 문서](/ko/guides/clickhouse/data-modelling/schema-design#establish-initial-schema)를 참조하십시오.
 
-PostgreSQL과 ClickHouse의 데이터 타입은 서로 다를 수 있습니다. 각 테이블 컬럼의 대응 타입을 확인하려면 [Postgres 테이블 함수](/ko/reference/functions/table-functions/postgresql)와 함께 `DESCRIBE` 명령을 사용할 수 있습니다. 다음 명령은 PostgreSQL의 `posts` 테이블 구조를 보여줍니다. 환경에 맞게 수정하십시오:
+PostgreSQL과 ClickHouse의 데이터 타입은 서로 다를 수 있습니다. 각 테이블 컬럼의 대응 타입을 확인하려면 [Postgres table function](/ko/reference/functions/table-functions/postgresql)과 함께 `DESCRIBE` 명령을 사용할 수 있습니다. 다음 명령은 PostgreSQL의 `posts` 테이블 구조를 보여줍니다. 환경에 맞게 수정하십시오:
 
 ```sql title="Query"
 DESCRIBE TABLE postgresql('<host>:<port>', 'postgres', 'posts', '<username>', '<password>')
@@ -162,7 +164,7 @@ ORDER BY tuple()
 COMMENT 'Optimized types'
 ```
 
-간단한 `INSERT INTO SELECT`를 사용해 PostgreSQL에서 데이터를 읽어 ClickHouse에 삽입할 수 있습니다:
+간단한 `INSERT INTO SELECT`를 사용해 PostgresSQL에서 데이터를 읽어 ClickHouse에 삽입할 수 있습니다:
 
 ```sql title="Query"
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>:<port>', 'postgres', 'posts', '<username>', '<password>')
@@ -177,7 +179,7 @@ INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>:<port>', 'postg
 여기서는 `CreationDate`를 사용한 초기 적재와 증분 적재를 보여줍니다(행이 업데이트되면 이 값도 함께 업데이트된다고 가정합니다)..
 
 ```sql
--- initial load
+-- 초기 적재
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password')
 
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password') WHERE CreationDate > ( SELECT (max(CreationDate) FROM stackoverflow.posts)

@@ -10,7 +10,9 @@ integration:
   - category: 'clickpipes'
 ---
 
-### هل يمكنني الاستعلام عن حقول منفصلة في نوع البيانات JSON؟ {#can-i-query-for-individual-fields-in-the-json-datatype}
+<div id="can-i-query-for-individual-fields-in-the-json-datatype">
+  ### هل يمكنني الاستعلام عن حقول منفصلة في نوع البيانات JSON؟
+</div>
 
 للوصول مباشرةً إلى الحقول، مثل `{"user_id": 123}`، يمكنك استخدام **ترميز النقطة**:
 
@@ -32,7 +34,9 @@ SELECT sum(doc.shipping.cost::Float32) AS total_shipping_cost FROM t1;
 
 لمعرفة المزيد عن العمل مع JSON، راجع [دليل Working with JSON](/ar/integrations/clickpipes/mongodb/quickstart).
 
-### كيف أُسطّح مستندات MongoDB المتداخلة في ClickHouse؟ {#how-do-i-flatten-the-nested-mongodb-documents-in-clickhouse}
+<div id="how-do-i-flatten-the-nested-mongodb-documents-in-clickhouse">
+  ### كيف أُسطّح مستندات MongoDB المتداخلة في ClickHouse؟
+</div>
 
 تُكرَّر مستندات MongoDB في ClickHouse افتراضيًا بوصفها من النوع JSON، مع الحفاظ على البنية المتداخلة. لديك عدة خيارات لتسطيح هذه البيانات. إذا كنت تريد تسطيح البيانات إلى أعمدة، فيمكنك استخدام العروض العادية أو العروض المادية أو الوصول إليها وقت الاستعلام.
 
@@ -42,53 +46,59 @@ SELECT sum(doc.shipping.cost::Float32) AS total_shipping_cost FROM t1;
 
 للاطلاع على أمثلة مفصلة، راجع [دليل Working with JSON](/ar/integrations/clickpipes/mongodb/quickstart).
 
-### هل يمكنني الاتصال بقواعد بيانات MongoDB التي لا تحتوي على عنوان IP عام أو الموجودة ضمن شبكات خاصة؟ {#can-i-connect-mongodb-databases-that-dont-have-a-public-ip-or-are-in-private-networks}
+<div id="can-i-connect-mongodb-databases-that-dont-have-a-public-ip-or-are-in-private-networks">
+  ### هل يمكنني الاتصال بقواعد بيانات MongoDB التي لا تحتوي على عنوان IP عام أو الموجودة ضمن شبكات خاصة؟
+</div>
 
 نعم. راجع [شبكات ClickPipes](/ar/integrations/clickpipes/networking) لمعرفة الطرق التي تتيح لـ ClickPipes الوصول إلى مصدر بيانات غير متاح عبر الإنترنت العام.
 
-### ماذا يحدث إذا حذفت قاعدة بيانات أو جدولًا من قاعدة بيانات MongoDB الخاصة بي؟ {#what-happens-if-i-delete-a-database-table-from-my-mongodb-database}
+<div id="what-happens-if-i-delete-a-database-table-from-my-mongodb-database">
+  ### ماذا يحدث إذا حذفت قاعدة بيانات أو جدولًا من قاعدة بيانات MongoDB الخاصة بي؟
+</div>
 
 عند حذف قاعدة بيانات أو جدول من MongoDB، سيواصل ClickPipes العمل، لكن قاعدة البيانات أو الجدول المحذوف سيتوقف عن تكرار التغييرات. وستظل الجداول المقابلة في ClickHouse محفوظة.
 
-### كيف يتعامل موصل MongoDB CDC مع المعاملات؟ {#how-does-mongodb-cdc-connector-handle-transactions}
+<div id="how-does-mongodb-cdc-connector-handle-transactions">
+  ### كيف يتعامل موصل MongoDB CDC مع المعاملات؟
+</div>
 
 تُعالَج كل تغييرات المستندات داخل المعاملة كلٌّ على حدة في ClickHouse. وتُطبَّق التغييرات بالترتيب الذي تظهر به في `oplog`؛ ولا تُنسَخ إلى ClickHouse إلا التغييرات التي تم تثبيتها. وإذا أُلغيت معاملة في MongoDB، فلن تظهر هذه التغييرات في تدفق التغييرات.
 
 للاطّلاع على مزيد من الأمثلة، راجع [دليل Working with JSON](/ar/integrations/clickpipes/mongodb/quickstart).
 
-### كيف أتعامل مع خطأ `resume of change stream was not possible, as the resume point may no longer be in the oplog.`؟ {#resume-point-may-no-longer-be-in-the-oplog-error}
+<div id="resume-point-may-no-longer-be-in-the-oplog-error">
+  ### كيف أتعامل مع خطأ `resume of change stream was not possible, as the resume point may no longer be in the oplog.`؟
+</div>
 
 يحدث هذا الخطأ عادةً عند اقتطاع oplog وتعذّر على ClickPipe استئناف تدفق التغييرات من النقطة المتوقعة. لحل هذه المشكلة، [أعِد مزامنة ClickPipe](/ar/integrations/clickpipes/mongodb/resync). ولتجنّب تكرار هذه المشكلة، نوصي بزيادة فترة الاحتفاظ بـ oplog. راجع الإرشادات الخاصة بـ [MongoDB Atlas](/ar/integrations/clickpipes/mongodb/source/atlas#enable-oplog-retention)، و[MongoDB المُدار ذاتيًا](/ar/integrations/clickpipes/mongodb/source/generic#enable-oplog-retention)، أو [Amazon DocumentDB](/ar/integrations/clickpipes/mongodb/source/documentdb#configure-change-stream-log-retention).
 
-### كيف أتعامل مع الخطأ `Cannot open a new cursor since too many cursors are already opened`؟ {#too-many-cursors-error}
-
-يقيّد بعض مزوّدي خدمات MongoDB المُدارة، مثل Amazon DocumentDB، عدد المؤشرات التي يمكن فتحها في آنٍ واحد على كل مثيل. وفي Amazon DocumentDB، يتوقف هذا الحد على فئة المثيل؛ فعلى سبيل المثال، لا تسمح مثيلات `t3.medium` و`t4g.medium` إلا بـ 30 مؤشرًا مفتوحًا. راجع [حدود المثيلات](https://docs.aws.amazon.com/documentdb/latest/devguide/limits.html#limits.instance) لمعرفة الحد الخاص بكل فئة مثيل.
-
-يحتاج ClickPipe إلى مؤشر لقراءة دفق التغييرات. وعندما تستهلك أحمال العمل الأخرى على المثيل جميع المؤشرات المتاحة، يتعذّر على ClickPipe فتح دفق التغييرات. وفي هذه الحالة، يعيد ClickPipe المحاولة تلقائيًا ويستأنف عملية replication بمجرد أن تتوفر مؤشرات.
-
-لحل هذه المشكلة:
-
-1. تحقّق من عدد المؤشرات المفتوحة على المثيل الذي يقرأ منه ClickPipe. اتصل بالمثيل باستخدام `mongosh` ونفّذ `db.serverStatus().metrics.cursor.open`. وفي Amazon DocumentDB، يمكنك أيضًا مقارنة المقياسين `DatabaseCursorsMax` و`DatabaseCursorsLimit` في Amazon CloudWatch.
-2. قلّل عدد المؤشرات التي تُبقيها أحمال العمل الأخرى مفتوحة، كأن تُغلق المؤشرات عندما لا يعود التطبيق بحاجة إليها.
-3. إذا كان عبء العمل لديك يتطلب مزيدًا من المؤشرات، فرقِّ المثيل إلى فئة مثيل أكبر.
-
-### كيف تتم إدارة النسخ المتماثل؟ {#how-is-replication-managed}
+<div id="how-is-replication-managed">
+  ### كيف تتم إدارة النسخ المتماثل؟
+</div>
 
 نستخدم واجهة برمجة تطبيقات Change Streams الأصلية في MongoDB لتتبّع التغييرات في قاعدة البيانات. توفّر واجهة برمجة تطبيقات Change Streams تدفقًا قابلاً للاستئناف لتغييرات قاعدة البيانات بالاستفادة من `oplog` (سجل العمليات) في MongoDB. ويستخدم ClickPipe رموز الاستئناف في MongoDB لتتبّع الموضع داخل `oplog` وضمان نسخ كل تغيير إلى ClickHouse.
 
-### ما تفضيل القراءة الذي ينبغي أن أستخدمه؟ {#which-read-preference-should-i-use}
+<div id="which-read-preference-should-i-use">
+  ### ما تفضيل القراءة الذي ينبغي أن أستخدمه؟
+</div>
 
 يعتمد تفضيل القراءة المناسب على حالة الاستخدام لديك. إذا كنت تريد تقليل الحمل على العقدة الأساسية، فنوصي باستخدام تفضيل القراءة `secondaryPreferred`. وإذا كنت تريد تحسين كمون الإدخال، فنوصي باستخدام تفضيل القراءة `primaryPreferred`. لمزيد من التفاصيل، راجع [وثائق MongoDB](https://www.mongodb.com/docs/manual/core/read-preference/#read-preference-modes-1).
 
-### هل يدعم ClickPipe الخاص بـ MongoDB بنية Sharded Cluster؟ {#does-the-mongodb-clickpipe-support-sharded-cluster}
+<div id="does-the-mongodb-clickpipe-support-sharded-cluster">
+  ### هل يدعم ClickPipe الخاص بـ MongoDB بنية Sharded Cluster؟
+</div>
 
 نعم، يدعم ClickPipe الخاص بـ MongoDB كلًا من Replica Set وSharded Cluster.
 
-### هل يدعم MongoDB ClickPipe ‏Amazon DocumentDB؟ {#documentdb-support}
+<div id="documentdb-support">
+  ### هل يدعم MongoDB ClickPipe ‏Amazon DocumentDB؟
+</div>
 
 نعم، يدعم MongoDB ClickPipe ‏Amazon DocumentDB 5.0. راجع [دليل إعداد المصدر لـ Amazon DocumentDB](/ar/integrations/clickpipes/mongodb/source/documentdb) لمزيد من التفاصيل.
 
-### هل يدعم MongoDB ClickPipe ‏PrivateLink؟ {#privatelink-support}
+<div id="privatelink-support">
+  ### هل يدعم MongoDB ClickPipe ‏PrivateLink؟
+</div>
 
 ندعم PrivateLink لعناقيد MongoDB (وDocumentDB) في AWS فقط.
 
@@ -98,19 +108,4 @@ SELECT sum(doc.shipping.cost::Float32) AS total_shipping_cost FROM t1;
 
 بالنسبة إلى اتصال Replica Set، يمكنك إعداد PrivateLink لـ MongoDB باستخدام VPC Resource أو VPC Endpoint Service. وإذا اخترت VPC Resource، فستحتاج إلى إنشاء تهيئة مورد `GROUP`، بالإضافة إلى تهيئة مورد `CHILD` لكل عقدة في العنقود. أما إذا اخترت VPC Endpoint Service، فستحتاج إلى إنشاء Endpoint Service منفصلة (وموازن تحميل شبكة NLB منفصل) لكل عقدة في العنقود.
 
-راجع وثائق [AWS PrivateLink](/ar/integrations/clickpipes/networking/aws-privatelink) لمزيد من التفاصيل. يُرجى التواصل مع دعم ClickHouse للحصول على المساعدة.
-
-### لماذا يكون حجم جدول `_peerdb_raw_mirror_*` كبيرًا جدًا، وكيف يمكنني الحدّ منه؟ {#raw-mirror-table-retention}
-
-يكتب ClickPipe من نوع CDC (التقاط تغييرات البيانات) أحداث التغيير أولًا في جدول خام يُسمّى `_peerdb_raw_mirror_<pipe id>` في قاعدة البيانات الهدف، ثم يُطبّعها في الجداول المستهدفة. ولا تقتطع ClickPipes هذا الجدول. وتبعًا لتوقيت إنشاء مسار استيعاب البيانات، قد لا يكون للجدول أي TTL، فيحتفظ بجميع الأحداث. تحقّق من ذلك باستخدام `SHOW CREATE TABLE`، ثم أضِف TTL أو عدّله باستخدام:
-
-```sql
-ALTER TABLE <db>._peerdb_raw_mirror_<id>
-    MODIFY TTL toDateTime(fromUnixTimestamp64Nano(_peerdb_timestamp)) + INTERVAL 30 DAY;
-```
-
-إذا لم يكن للجدول الخام مفتاح تقسيم، فإن أول تمريرة لـ TTL تعيد كتابة أجزاء البيانات الموجودة، وقد تُحدث عمليات I/O ملحوظة في الخلفية عندما يكون الجدول كبيرًا. يمكنك متابعة تقدمها في `system.mutations`.
-
-<Warning>
-  يُقيَّم TTL وفقًا لزمن الساعة الفعلي، ولا يأخذ حالة مسار استيعاب البيانات في الحسبان. فإذا أُوقف المسار مؤقتًا أو توقف عن المعالجة لمدة تتجاوز قيمة TTL، فستُحذف الأحداث التي لم تُطبَّع بعد ولن تصل إلى الجداول المستهدفة أبدًا. لذا اختر مدة احتفاظ أطول من أي إيقاف مؤقت مُخطَّط له.
-</Warning>
+راجع وثائق [AWS PrivateLink for ClickPipes](/ar/integrations/clickpipes/networking/aws-privatelink) لمزيد من التفاصيل. يُرجى التواصل مع دعم ClickHouse للحصول على المساعدة.

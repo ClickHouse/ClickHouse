@@ -1,109 +1,57 @@
 import argparse
-import json
-import re
-import struct
 from pathlib import Path
 
+from pip._vendor.packaging.version import Version
+
+from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
+IMAGE_UBUNTU = "clickhouse/test-old-ubuntu"
+IMAGE_CENTOS = "clickhouse/test-old-centos"
+DOWNLOAD_RETRIES_COUNT = 5
+
 temp_path = Path(f"{Utils.cwd()}/ci/tmp")
 
-# The release binary is statically linked against the bundled musl, so the glibc
-# symbol-version audit and the "does it start on an ancient distribution" checks
-# that this job used to run are settled at link time (see the `readelf` assertion
-# in the build job). What remains worth checking at runtime is rseq: the bundled
-# libc registers a per-thread rseq area with the kernel itself, and `sched_getcpu`
-# (hence the per-CPU counters) falls back to a slower path when that fails. The
-# warning in `system.warnings` is the observable signal, so exercise both sides:
-# registration succeeds regardless of the distribution's own libc, and a kernel
-# that refuses the syscall is reported.
-RSEQ_WARNING_QUERY = "select count() as warnings from system.warnings where message like '%rseq%'"
 
-# Docker seccomp profile that makes the `rseq` syscall fail with ENOSYS, which is
-# what a pre-4.18 kernel or a restrictive sandbox looks like to the process.
-SECCOMP_NO_RSEQ = {
-    "defaultAction": "SCMP_ACT_ALLOW",
-    "syscalls": [{"names": ["rseq"], "action": "SCMP_ACT_ERRNO", "errnoRet": 38}],
-}
+def process_glibc_check():
+    # See https://sourceware.org/glibc/wiki/Glibc%20Timeline
+    if Utils.is_amd():
+        max_glibc_version = "2.4"
+    elif Utils.is_arm():
+        max_glibc_version = "2.18"  # because of build with newer sysroot?
+    else:
+        raise RuntimeError("Can't determine max glibc version")
 
-
-def rseq_check(image: str, expect_rseq: bool, extra_args: str = "") -> str:
-    # The condition is over the column of the one-row subquery: an outer `count()` would count that
-    # row and always be 1.
-    condition = "warnings" if expect_rseq else "not(warnings)"
-    return (
-        f"docker run --rm --volume={temp_path}/clickhouse:/clickhouse {extra_args} {image} "
-        f'/clickhouse local --tmp --query "select throwIf({condition}) from ({RSEQ_WARNING_QUERY})"'
+    commands = (
+        [
+            f"readelf -s --wide {temp_path}/clickhouse | grep '@GLIBC_' > {temp_path}/glibc.log",
+            # FIXME: odbc bridge is not present in the deb package
+            # f"readelf -s --wide {temp_path}/clickhouse-odbc-bridge | grep '@GLIBC_' >> {temp_path}/glibc.log",
+            # FIXME: library bridge is not present in the deb package
+            # f"readelf -s --wide {temp_path}/clickhouse-library-bridge | grep '@GLIBC_' >> {temp_path}/glibc.log",
+        ],
     )
 
-
-def process_pie_check():
-    # Nothing in the build fails when the binary comes out position dependent: -fPIE only makes the
-    # code relocatable, and whether the executable itself is position independent is the linker's
-    # decision, so it is checked on the packaged binary instead. A static-PIE is `DYN` with
-    # `DF_1_PIE` set just like a dynamically linked one, so the check is the same as on glibc.
-    header = Shell.get_output(
-        f"readelf -h --wide {temp_path}/clickhouse", verbose=True, strict=True
-    )
-    elf_type = re.search(r"^\s*Type:\s+(\w+)", header, re.MULTILINE)
-    if not elf_type:
-        print(f"FAILED: no ELF type in the header:\n{header}")
-        return False
+    for command in commands:
+        Shell.check(command, verbose=True, strict=True)
 
     ok = True
-    if elf_type.group(1) != "DYN":
-        print(
-            f"FAILED: ELF type is [{elf_type.group(1)}], a position independent executable is [DYN]"
-        )
-        ok = False
-
-    # A shared library is `DYN` as well, so the type alone does not say that this is a position
-    # independent *executable*. `DF_1_PIE` is what the linker sets for `-pie` and nothing else.
-    dynamic = Shell.get_output(
-        f"readelf -d --wide {temp_path}/clickhouse", verbose=True, strict=True
-    )
-    flags = re.search(r"^.*\(FLAGS_1\)\s+Flags:(.*)$", dynamic, re.MULTILINE)
-    if not flags or "PIE" not in flags.group(1).split():
-        print(f"FAILED: DF_1_PIE is not set: [{flags.group(0).strip() if flags else 'no FLAGS_1'}]")
-        ok = False
-
+    with open(f"{temp_path}/glibc.log", "r", encoding="utf-8") as log:
+        for line in log:
+            if line.strip():
+                columns = line.strip().split(" ")
+                symbol_with_glibc = columns[-2]  # sysconf@GLIBC_2.2.5
+                _, version = symbol_with_glibc.split("@GLIBC_")
+                if version == "PRIVATE":
+                    print(f"FAILED: PRIVATE version: {symbol_with_glibc}")
+                    ok = False
+                elif Version(version) > Version(max_glibc_version):
+                    print(
+                        f"FAILED: version is more than max version [{max_glibc_version}]: [{symbol_with_glibc}]"
+                    )
+                    ok = False
     return ok
-
-
-def process_runpath_check():
-    # Only system libraries are needed, so any library search path points into the build tree.
-    dynamic = Shell.get_output(
-        f"readelf -d --wide {temp_path}/clickhouse", verbose=True, strict=True
-    )
-    paths = re.findall(r"^.*\((?:RPATH|RUNPATH)\).*$", dynamic, re.MULTILINE)
-    for path in paths:
-        print(f"FAILED: [{path.strip()}]")
-    return not paths
-
-
-def process_pauth_check():
-    # `retaa` and `retab` raise SIGILL on cores without `FEAT_PAuth` (Graviton2, Ampere Altra), see
-    # https://github.com/ClickHouse/ClickHouse/issues/131748. They appear in code compiled for
-    # ARMv8.3 or later with `-mbranch-protection=pac-ret`.
-    forbidden = [struct.pack("<I", word) for word in (0xD65F0BFF, 0xD65F0FFF)]
-    data = Path(f"{temp_path}/clickhouse").read_bytes()
-    shoff = struct.unpack_from("<Q", data, 0x28)[0]
-    shentsize, shnum = struct.unpack_from("<HH", data, 0x3A)
-    found = 0
-    for i in range(shnum):
-        _, sh_type, sh_flags, _, offset, size = struct.unpack_from(
-            "<IIQQQQ", data, shoff + i * shentsize
-        )
-        if sh_type != 1 or not sh_flags & 4:  # SHT_PROGBITS, SHF_EXECINSTR
-            continue
-        for pattern in forbidden:
-            pos = data.find(pattern, offset, offset + size)
-            while pos != -1:
-                found += (pos - offset) % 4 == 0
-                pos = data.find(pattern, pos + 1, offset + size)
-    print(f"Found {found} `retaa`/`retab` instructions")
-    return found == 0
 
 
 def parse_args():
@@ -114,6 +62,14 @@ def parse_args():
 
 def main():
     stopwatch = Utils.Stopwatch()
+
+    check_name = Info().job_name
+    assert check_name
+    check_glibc = True
+    # currently hardcoded to x86, don't enable for AARCH64
+    check_distributions = (
+        "aarch64" not in check_name.lower() and "arm" not in check_name.lower()
+    )
 
     for package in temp_path.iterdir():
         if package.suffix == ".deb":
@@ -127,65 +83,37 @@ def main():
         verbose=True,
         strict=True,
     )
-
-    seccomp_profile = temp_path / "seccomp_no_rseq.json"
-    seccomp_profile.write_text(json.dumps(SECCOMP_NO_RSEQ), encoding="utf-8")
+    # Shell.check(f"chmod +x {temp_path}/clickhouse", verbose=True, strict=True)
 
     test_results = []
 
-    test_results.append(
-        Result.from_commands_run(
-            name="position independent executable",
-            command=process_pie_check,
-        )
-    )
-
-    test_results.append(
-        Result.from_commands_run(
-            name="no RPATH or RUNPATH",
-            command=process_runpath_check,
-        )
-    )
-
-    if Utils.is_arm():
+    if check_glibc:
         test_results.append(
             Result.from_commands_run(
-                name="no instructions that need FEAT_PAuth",
-                command=process_pauth_check,
+                name="glibc version",
+                command=process_glibc_check,
             )
         )
 
-    if Utils.is_amd():
-        # No aarch64 image exists for this release; on amd64 it shows that the
-        # registration does not depend on the distribution's glibc (2.15 here).
+    if check_distributions:
         test_results.append(
             Result.from_commands_run(
-                name="ubuntu12 (rseq available)",
-                command=[rseq_check("ubuntu:12.04", expect_rseq=True)],
+                name="ubuntu12",
+                command=[
+                    f"docker run --volume={temp_path}/clickhouse:/clickhouse ubuntu:12.04 /clickhouse local --query 'select 1'",
+                ],
                 with_info=True,
             )
         )
-
-    test_results.append(
-        Result.from_commands_run(
-            name="ubuntu22 (rseq available)",
-            command=[rseq_check("ubuntu:22.04", expect_rseq=True)],
-            with_info=True,
+        test_results.append(
+            Result.from_commands_run(
+                name="centos5",
+                command=[
+                    f"docker run --volume={temp_path}/clickhouse:/clickhouse centos:5 /clickhouse local --query 'select 1'"
+                ],
+                with_info=True,
+            )
         )
-    )
-    test_results.append(
-        Result.from_commands_run(
-            name="ubuntu22 (rseq blocked by seccomp)",
-            command=[
-                rseq_check(
-                    "ubuntu:22.04",
-                    expect_rseq=False,
-                    extra_args=f"--security-opt seccomp={seccomp_profile}",
-                )
-            ],
-            with_info=True,
-        )
-    )
 
     Result.create_from(results=test_results, stopwatch=stopwatch).complete_job()
 

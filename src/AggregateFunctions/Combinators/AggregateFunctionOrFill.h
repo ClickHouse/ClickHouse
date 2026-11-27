@@ -44,7 +44,7 @@ public:
         // nothing
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         if constexpr (UseNull)
             return nested_function->getName() + "OrNull";
@@ -52,7 +52,7 @@ public:
             return nested_function->getName() + "OrDefault";
     }
 
-    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
     {
         if (!this->haveSameDefinition(rhs))
             return false;
@@ -75,48 +75,38 @@ public:
         place[size_of_data] |= rhs_place[rhs_size_of_data];
     }
 
-    [[nodiscard]] bool isVersioned() const override
+    bool isVersioned() const override
     {
         return nested_function->isVersioned();
     }
 
-    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
-    {
-        return nested_function->getVersionFromRevision(revision);
-    }
-
-    [[nodiscard]] size_t getDefaultVersion() const override
+    size_t getDefaultVersion() const override
     {
         return nested_function->getDefaultVersion();
     }
 
-    [[nodiscard]] DataTypePtr getStateType() const override
-    {
-        return this->getStateTypeWithVersionOf(*nested_function);
-    }
-
-    [[nodiscard]] bool isState() const override
+    bool isState() const override
     {
         return nested_function->isState();
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override
+    bool allocatesMemoryInArena() const override
     {
         return nested_function->allocatesMemoryInArena();
     }
 
-    [[nodiscard]] bool hasTrivialDestructor() const override
+    bool hasTrivialDestructor() const override
     {
         return nested_function->hasTrivialDestructor();
     }
 
-    [[nodiscard]] size_t sizeOfData() const override
+    size_t sizeOfData() const override
     {
         /// Pad to alignment so that arrays of states (e.g. in -ForEach) keep each element aligned.
         return ::Memory::alignUp(size_of_data + sizeof(char), alignOfData());
     }
 
-    [[nodiscard]] size_t alignOfData() const override
+    size_t alignOfData() const override
     {
         return nested_function->alignOfData();
     }
@@ -171,33 +161,6 @@ public:
             for (size_t i = row_begin; i < row_end; ++i)
                 if (places[i])
                     (places[i] + place_offset)[size_of_data] = 1;
-        }
-    }
-
-    void addBatchWithNonNullPlaces( /// NOLINT
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos = -1) const override
-    {
-        if (if_argument_pos >= 0)
-        {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = row_begin; i < row_end; ++i)
-            {
-                if (flags[i])
-                    add(places[i] + place_offset, columns, i, arena);
-            }
-        }
-        else
-        {
-            nested_function->addBatchWithNonNullPlaces(
-                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
-            for (size_t i = row_begin; i < row_end; ++i)
-                (places[i] + place_offset)[size_of_data] = 1;
         }
     }
 
@@ -280,43 +243,6 @@ public:
         place[size_of_data] |= rhs[size_of_data];
     }
 
-    /// The state is the nested state followed by one presence byte, so the parallel merge is forwarded to the
-    /// nested function (with the same places) and the presence byte is folded separately.
-    [[nodiscard]] bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
-    [[nodiscard]] bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
-    [[nodiscard]] size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override { return nested_function->getEstimatedMergeWork(place); }
-    [[nodiscard]] size_t getStateBytesPerDistinctInput() const override { return nested_function->getStateBytesPerDistinctInput(); }
-
-    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
-    {
-        return nested_function->isLargeMergePair(place, rhs);
-    }
-    [[nodiscard]] bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
-
-    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
-    {
-        nested_function->parallelizeMergePrepare(places, thread_pool, is_cancelled);
-    }
-
-    void mergeImpl(
-        AggregateDataPtr __restrict place,
-        ConstAggregateDataPtr rhs,
-        ThreadPool & thread_pool,
-        std::atomic<bool> & is_cancelled,
-        Arena * arena) const override
-    {
-        nested_function->merge(place, rhs, thread_pool, is_cancelled, arena);
-        place[size_of_data] |= rhs[size_of_data];
-    }
-
-    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
-    {
-        for (size_t i = 1; i < places.size(); ++i)
-            places[0][size_of_data] |= places[i][size_of_data];
-
-        nested_function->parallelizeMergeMulti(places, thread_pool, is_cancelled, arena);
-    }
-
     void mergeBatch(
         size_t row_begin,
         size_t row_end,
@@ -338,20 +264,6 @@ public:
         nested_function->serialize(place, buf, version);
 
         writeChar(place[size_of_data], buf);
-    }
-
-    [[nodiscard]] std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
-    {
-        if (auto nested_bound = nested_function->getSerializedSizeBound(version))
-            return *nested_bound + sizeof(char);
-        return std::nullopt;
-    }
-
-    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
-    {
-        dst = nested_function->serializeToMemory(place, dst, version);
-        writeBinary(place[size_of_data], dst);
-        return dst;
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
@@ -476,10 +388,8 @@ public:
                     nested_function->insertResultInto(place, to, arena);
             }
         }
-        else if (this->result_type->isDefaultInsertTrivial())
-            to.insertDefault();
         else
-            this->result_type->insertDefaultInto(to);
+            to.insertDefault();
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
@@ -521,7 +431,7 @@ public:
         }
     }
 
-    [[nodiscard]] AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
+    AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 
     /// After `Nullable(Tuple)` was introduced, Tuple's `canBeInsideNullable` now returns true,
     /// which changed the default null adapter for Tuple-returning functions:
@@ -535,7 +445,7 @@ public:
     /// We hardcode the check for `sumCount` rather than matching all single-arg Tuple-returning
     /// functions, so that future functions with the same shape get the correct new behavior
     /// (`<true, true>`) by default and are not silently forced into the legacy adapter.
-    [[nodiscard]] AggregateFunctionPtr getOwnNullAdapter(
+    AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function_,
         const DataTypes & arguments,
         const Array & params,

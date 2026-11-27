@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "Data sources",
+      "group": "データソース",
       "pages": [
         "ja/integrations/connectors/data-sources/index",
         {
@@ -44,7 +44,7 @@
     },
     {
       "expanded": true,
-      "group": "Data visualization",
+      "group": "データ可視化",
       "pages": [
         "ja/integrations/connectors/data-visualization/index",
         {
@@ -75,12 +75,10 @@
             "ja/integrations/connectors/data-visualization/tableau/tableau-analysis-tips"
           ]
         },
-        "ja/integrations/connectors/data-visualization/thoughtspot-and-clickhouse",
         {
           "expanded": false,
-          "group": "Community integrations",
+          "group": "コミュニティインテグレーション",
           "pages": [
-            "ja/integrations/connectors/data-visualization/community-integrations/arcodash-and-clickhouse",
             "ja/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse",
             "ja/integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse",
             "ja/integrations/connectors/data-visualization/community-integrations/databrain-and-clickhouse",
@@ -102,17 +100,11 @@
     },
     {
       "expanded": true,
-      "group": "Data ingestion",
+      "group": "データ取り込み",
       "pages": [
+        "ja/integrations/connectors/data-ingestion/index",
         "ja/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
-        {
-          "expanded": false,
-          "group": "Apache Airflow",
-          "pages": [
-            "ja/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
-            "ja/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin"
-          ]
-        },
+        "ja/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
         "ja/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
         {
           "expanded": false,
@@ -147,7 +139,7 @@
             "ja/integrations/connectors/data-ingestion/GCP/google-dataflow/templates",
             {
               "expanded": false,
-              "group": "Dataflow templates",
+              "group": "Dataflow テンプレート",
               "pages": [
                 "ja/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse",
                 "ja/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse"
@@ -157,7 +149,15 @@
         },
         "ja/integrations/connectors/data-ingestion/etl-tools/bladepipe-and-clickhouse",
         {
-          "$ref": "data-ingestion/etl-tools/dbt/navigation.json"
+          "expanded": false,
+          "group": "dbt",
+          "pages": [
+            "ja/integrations/connectors/data-ingestion/etl-tools/dbt/index",
+            "ja/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations",
+            "ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations",
+            "ja/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view",
+            "ja/integrations/connectors/data-ingestion/etl-tools/dbt/guides"
+          ]
         },
         "ja/integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
         {
@@ -179,20 +179,11 @@
           ]
         },
         {
-          "group": "Striim",
-          "pages": [
-            "ja/integrations/connectors/data-ingestion/etl-tools/striim/index",
-            "ja/integrations/connectors/data-ingestion/etl-tools/striim/get-started",
-            "ja/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline"
-          ]
-        },
-        {
           "expanded": false,
-          "group": "Community integrations",
+          "group": "コミュニティインテグレーション",
           "pages": [
             "ja/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
             "ja/integrations/connectors/data-ingestion/community-integrations/erathos",
-            "ja/integrations/connectors/data-ingestion/community-integrations/sqlflow",
             {
               "group": "Estuary",
               "pages": [
@@ -207,12 +198,11 @@
     },
     {
       "expanded": true,
-      "group": "Data integrations",
+      "group": "データインテグレーション",
       "pages": [
         "ja/integrations/connectors/tools/data-integration-index",
         "ja/integrations/connectors/data-integrations/integrations/retool",
         "ja/integrations/connectors/data-integrations/integrations/easypanel",
-        "ja/integrations/connectors/data-integrations/integrations/microsoft-fabric",
         "ja/integrations/connectors/data-integrations/integrations/middleware",
         "ja/integrations/connectors/data-integrations/integrations/notion",
         "ja/integrations/connectors/data-integrations/integrations/splunk"
@@ -220,7 +210,7 @@
     },
     {
       "expanded": true,
-      "group": "SQL-clients",
+      "group": "SQLクライアント",
       "pages": [
         "ja/integrations/connectors/sql-clients/index",
         "ja/integrations/connectors/sql-clients/sql-console",
@@ -228,7 +218,6 @@
         "ja/integrations/connectors/sql-clients/dbeaver",
         "ja/integrations/connectors/sql-clients/dbvisualizer",
         "ja/integrations/connectors/sql-clients/jupysql",
-        "ja/integrations/connectors/sql-clients/libredb-studio",
         "ja/integrations/connectors/sql-clients/probedeck",
         "ja/integrations/connectors/sql-clients/qstudio",
         "ja/integrations/connectors/sql-clients/tablum",
@@ -237,7 +226,7 @@
     },
     {
       "expanded": true,
-      "group": "Tools",
+      "group": "ツール",
       "pages": [
         "ja/integrations/connectors/tools/index",
         "ja/integrations/connectors/tools/misc-index",
@@ -247,5 +236,6 @@
       ]
     }
   ],
-  "item": "Connectors"
+  "icon": "/images/icons/icon-connectors.svg",
+  "item": "コネクタ"
 }

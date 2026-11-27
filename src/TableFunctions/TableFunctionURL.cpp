@@ -1,8 +1,5 @@
 #include <TableFunctions/TableFunctionURL.h>
 
-#include <Access/Common/AccessFlags.h>
-#include <Access/ContextAccess.h>
-
 #include <TableFunctions/registerTableFunctions.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -32,8 +29,9 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_url_wildcard_from_index_pages;
+    extern const SettingsBool allow_experimental_url_wildcard_from_index_pages;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsString url_base;
@@ -41,7 +39,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -50,20 +47,13 @@ namespace
 {
     void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context)
     {
-        if (context->getSettingsRef()[Setting::allow_url_wildcard_from_index_pages])
+        if (context->getSettingsRef()[Setting::allow_experimental_url_wildcard_from_index_pages])
             return;
 
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Wildcard expansion for `url` from HTTP index pages is experimental. "
-            "Set `allow_url_wildcard_from_index_pages = 1` to enable it");
-    }
-
-    /// The web object storage behind the index pages follows redirects without the per-hop check of `StorageURL`,
-    /// so a filtered `READ ON URL` cannot bound them: the path needs the grant on the whole source.
-    void checkWholeSourceAccessForURLWildcard(const ContextPtr & context)
-    {
-        context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::URL));
+            "Set `allow_experimental_url_wildcard_from_index_pages = 1` to enable it");
     }
 
     ASTs makeWebObjectStorageEngineArgs(
@@ -90,7 +80,7 @@ namespace
             {
                 ASTs equals_args;
                 equals_args.emplace_back(make_intrusive<ASTLiteral>(header_name));
-                equals_args.emplace_back(make_intrusive<ASTLiteral>(String(header_value)));
+                equals_args.emplace_back(make_intrusive<ASTLiteral>(header_value));
                 header_equals.emplace_back(makeASTOperator("equals", std::move(equals_args)));
             }
 
@@ -110,8 +100,19 @@ namespace
 
 VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
+    auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
+    auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
+    size_t table_function_arguments_size = table_function_arguments_nodes.size();
+
     VectorWithMemoryTracking<size_t> result;
-    appendNamedArgumentIndexes(query_node_table_function, result, {"headers"});
+
+    for (size_t i = 0; i < table_function_arguments_size; ++i)
+    {
+        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
+        if (function_node && function_node->getFunctionName() == "headers")
+            result.push_back(i);
+    }
+
     return result;
 }
 
@@ -129,7 +130,6 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 
         filename = configuration.url;
         structure = configuration.structure;
-        is_structure_not_overridable = structure == "auto" && !named_collection->isOverridable("structure", /* default_value= */ true);
         compression_method = configuration.compression_method;
 
         format = configuration.format;
@@ -157,10 +157,6 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         if (headers_ast)
             args.push_back(headers_ast);
     }
-
-    /// `url_base` is not persisted in `CREATE TABLE ... AS url(...)`, so a relative URL may resolve to a different
-    /// backend on another replica or after a restart, see `hasUnreplicatedTableDataOnDisk`.
-    is_relative_url = !StorageURL::isAbsoluteURL(filename);
 
     /// Resolve relative URLs against the url_base setting.
     const auto & url_base = context->getSettingsRef()[Setting::url_base].value;
@@ -284,8 +280,6 @@ StoragePtr TableFunctionURL::executeImpl(
         ContextMutablePtr delegate_context = Context::createCopy(context);
         delegate_context->setSetting("parallel_replicas_for_cluster_engines", false);
 
-        /// The delegate creates the storage, so it needs the `PARTITION BY` expression to write partitions.
-        delegate->setPartitionBy(partition_by);
         return delegate->execute(
             ast_function,
             delegate_context,
@@ -333,33 +327,15 @@ bool TableFunctionURL::hasStaticStructure() const
     return delegate ? delegate->hasStaticStructure() : (structure != "auto");
 }
 
-bool TableFunctionURL::hasUnreplicatedTableDataOnDisk() const
+void TableFunctionURL::setPartitionBy(const ASTPtr & partition_by_)
 {
-    /// A relative URL is rejected conservatively: the backend it dispatches to depends on the `url_base` setting
-    /// of the replica executing the query, which can differ across replicas of a `Replicated` database.
-    if (is_relative_url)
-        return true;
-    return delegate ? delegate->hasUnreplicatedTableDataOnDisk() : ITableFunctionFileLike::hasUnreplicatedTableDataOnDisk();
-}
-
-bool TableFunctionURL::callerGrantAppliesOnWorkers(const ContextPtr & context, const String & cluster_name)
-{
-    return context->getAccess()->isGranted(AccessType::READ, toStringSource(AccessTypeObjects::Source::URL))
-        || !context->getCluster(cluster_name)->getSecret().empty();
-}
-
-void TableFunctionURL::checkCallerGrantAppliesOnWorkers(const ContextPtr & context, const String & cluster_name)
-{
-    if (!callerGrantAppliesOnWorkers(context, cluster_name))
-        throw Exception(
-            ErrorCodes::ACCESS_DENIED,
-            "Not enough privileges. To execute this query, it's necessary to have the grant READ ON URL without a filter: "
-            "the cluster workers follow redirects as the cluster user");
+    if (delegate)
+        delegate->setPartitionBy(partition_by_);
 }
 
 StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr context,
-    const std::string & table_name, const String & compression_method_, bool is_insert_query, bool is_table_definition) const
+    const std::string & table_name, const String & compression_method_, bool is_insert_query) const
 {
     const auto & settings = context->getSettingsRef();
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
@@ -372,13 +348,15 @@ StoragePtr TableFunctionURL::getStorage(
     /// old literal/template expansion and read different (or no) files than the non-cluster path.
     const bool use_web_wildcard = !is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(source);
 
-    const bool can_use_parallel_replicas = context->canReplaceClusterEngineWithClusterVariant()
+    const bool can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
+        && settings[Setting::parallel_replicas_for_cluster_engines]
+        && context->canUseTaskBasedParallelReplicas()
+        && !context->isDistributed()
         && !is_secondary_query
         && !is_insert_query
-        && !use_web_wildcard
-        && callerGrantAppliesOnWorkers(context, parallel_replicas_cluster_name);
+        && !use_web_wildcard;
 
-    if (can_use_parallel_replicas && !context->isSQLSecurityOverriddenBody())
+    if (can_use_parallel_replicas)
     {
         return std::make_shared<StorageURLCluster>(
             context,
@@ -387,7 +365,7 @@ StoragePtr TableFunctionURL::getStorage(
             format_,
             compression_method_,
             StorageID(getDatabaseName(), table_name),
-            is_structure_not_overridable ? ColumnsDescription{} : columns,
+            getActualTableStructure(context, true),
             ConstraintsDescription{},
             configuration);
     }
@@ -395,7 +373,6 @@ StoragePtr TableFunctionURL::getStorage(
     if (use_web_wildcard)
     {
         checkExperimentalURLWildcardFromIndexPages(context);
-        checkWholeSourceAccessForURLWildcard(context);
         auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
 
         auto engine_args = makeWebObjectStorageEngineArgs(source, format_, structure, compression_method_, configuration.headers);
@@ -438,10 +415,7 @@ StoragePtr TableFunctionURL::getStorage(
         configuration.headers,
         configuration.http_method,
         nullptr,
-        /*distributed_processing=*/ false,
-        globCaller(),
-        /*is_replayed_definition=*/ false,
-        /*check_redirect_access=*/ !is_table_definition);
+        /*distributed_processing=*/false);
 }
 
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context, bool is_insert_query) const
@@ -457,7 +431,6 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
         if (configuration.http_method.empty() && urlPathHasListableGlobs(filename))
         {
             checkExperimentalURLWildcardFromIndexPages(context);
-            checkWholeSourceAccessForURLWildcard(context);
 
             auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
             auto engine_args = makeWebObjectStorageEngineArgs(filename, format, structure, compression_method, configuration.headers);
@@ -484,9 +457,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
                 std::nullopt,
-                context,
-                globCaller(),
-                /*check_redirect_access=*/ true).first;
+                context).first;
         }
         else
         {
@@ -495,9 +466,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
                 std::nullopt,
-                context,
-                globCaller(),
-                /*check_redirect_access=*/ true);
+                context);
         }
 
         HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
@@ -532,6 +501,9 @@ std::optional<String> TableFunctionURL::tryGetFormatFromFirstArgument()
 void registerTableFunctionURL(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionURL>({.description = R"DOCS_MD(
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
 `url` function creates a table from the `URL` with given `format` and `structure`.
 
 `url` function may be used in `SELECT` and `INSERT` queries on data in [URL](/reference/engines/table-engines/special/url) tables.
@@ -604,38 +576,6 @@ Patterns in `{ }` are used to generate a set of shards or to specify failover ad
 Character `|` inside patterns is used to specify failover addresses. They are iterated in the same order as listed in the pattern. The number of generated addresses is limited by [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements) setting.
 For path glob syntax in the URL path (such as `*`, `{a,b}`, `{N..M}`, and `**`), see [Globs in path](/reference/functions/table-functions/file#globs-in-path). Note that `?` starts the query string in a URL and cannot be used as a wildcard in the path component.
 
-The addresses are generated one by one as the query reads them, so `glob_expansion_max_elements` limits how many of them a single query may read rather than how large the pattern is. A query that stops early can use a pattern that describes many more addresses than the limit:
-
-```sql
--- Reads a single address, even though the pattern describes 100020001 of them.
-SELECT * FROM url('https://example.com/data-{0..10000}-{0..10000}.tsv', TSV, 'x UInt64') LIMIT 1 SETTINGS max_threads = 1;
-
--- Reading all of them is still rejected.
-SELECT count() FROM url('https://example.com/data-{0..10000}-{0..10000}.tsv', TSV, 'x UInt64');
-```
-
-The example above pins the query to a single stream. A query reading in parallel starts several sources up front, and each of them takes an address from the generator before the `LIMIT` cancels the reading, so a few addresses can be read instead of one; the number of them is bounded by the number of streams, not by the size of the pattern.
-
-A `_path` or `_file` predicate is applied to each address as it is generated, so the addresses it rejects are generated and counted against the limit as well; only the reading of the matching ones is skipped.
-
-### Patterns generate addresses, they do not filter a listing {#patterns-generate-addresses}
-
-Plain HTTP offers no way to enumerate the files a server has, so a pattern in `url` is a *generator* of addresses rather than a *filter* over the files that exist. Every address the query reads has to be generated and requested, and their number is limited by [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements). Addresses that turn out not to exist are skipped while reading, as long as [http_skip_not_found_url_for_globs](/reference/settings/session-settings/http#http_skip_not_found_url_for_globs) is enabled.
-
-Object storage table functions such as [s3](/reference/functions/table-functions/s3) work the other way round: the pattern is compiled into a regular expression and matched against the listing of the bucket, so a pattern that describes an enormous key space costs nothing extra. The same pattern is therefore read in full by `s3` and rejected by `url`:
-
-```sql
--- Matched against the bucket listing, so only the objects that exist are read.
-SELECT count() FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
-
--- The same pattern would have to generate 100020001 addresses for `url`, and is rejected.
-SELECT count() FROM url('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
--- Code: 36. DB::Exception: Table function 'url': first argument generates too many result addresses: 100020001,
--- while at most 1000 are allowed (see the 'glob_expansion_max_elements' setting). ...
-```
-
-Use `s3` (or another object storage table function) when the pattern is meant to be matched against a listing, and raise `glob_expansion_max_elements` only when every generated address really has to be requested.
-
 ## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
 
 For `url` and the `URL` table engine, ClickHouse can expand wildcards by fetching HTTP index pages (HTML or plaintext) and extracting URLs from the response body. This enables patterns like `/**/` when the server exposes directory listings.
@@ -655,7 +595,7 @@ Example:
 ```sql
 SELECT count()
 FROM url('https://ftp.gnu.org/gnu/wget/wget-1.21*.tar.gz', 'RawBLOB')
-SETTINGS max_threads = 1, allow_url_wildcard_from_index_pages = 1;
+SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
 ```
 
 ## Virtual Columns {#virtual-columns}
@@ -713,6 +653,6 @@ SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
 ## Related {#related}
 
 - [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, urlSecretArguments(0));
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
 }
 }

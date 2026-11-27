@@ -1,4 +1,5 @@
 -- Tags: no-fasttest
+SET enable_json_type = 1;
 SET output_format_native_write_json_as_string = 0;
 
 -- String -> JSON: accurateCastOrNull returns NULL for incompatible data (already worked before the fix)

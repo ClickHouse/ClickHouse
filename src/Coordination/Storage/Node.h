@@ -37,7 +37,7 @@ struct FullNode
 
     uint32_t serialized_size = 0; // assigned only when deserializing node
 
-    [[nodiscard]] std::string_view getData() const { return std::string_view(data_ptr, stats.data_size); }
+    std::string_view getData() const { return std::string_view(data_ptr, stats.data_size); }
     void setData(std::string_view data) { data_ptr = data.data(); stats.data_size = static_cast<uint32_t>(data.size()); }
 
     /// Assigns `path_hash` if it's 0.
@@ -102,10 +102,10 @@ struct BlockData
 
     /// The data buffer is in memory immediately after the BlockData struct.
     char * data() { return reinterpret_cast<char *>(this + 1); }
-    [[nodiscard]] const char * data() const { return reinterpret_cast<const char *>(this + 1); }
+    const char * data() const { return reinterpret_cast<const char *>(this + 1); }
 
     /// Estimate how many bytes serialized node would take. Never underestimates.
-    [[nodiscard]] size_t nodeSerializedSizeUpperBound(const FullNode & node) const;
+    size_t nodeSerializedSizeUpperBound(const FullNode & node) const;
 
     /// Initializes the block, taking base values for delta encoding from `node`.
     /// `node` itself is not written.
@@ -131,7 +131,7 @@ struct BlockData
     void parseHeader();
 
     /// Make a copy with capacity = size.
-    [[nodiscard]] BlockPtr copyAndShrinkToFit() const;
+    BlockPtr copyAndShrinkToFit() const;
 
 private:
     /// Constructed only via create()/reserve(), which allocate the object together with its trailing
@@ -143,19 +143,19 @@ private:
 /// Decode/encode a field stored as a zigzag delta relative to a base value. The arithmetic is done
 /// on unsigned types so wraparound is well-defined (signed overflow would be UB).
 /// (Note: signed and unsigned addition are the same operation. Ditto for subtraction.)
-inline uint64_t NO_SANITIZE_UNSIGNED_OVERFLOW decodeZigZagDelta64(uint64_t base, uint64_t zigzag_delta)
+inline uint64_t decodeZigZagDelta64(uint64_t base, uint64_t zigzag_delta)
 {
     return base + static_cast<uint64_t>(DB::decodeZigZag(zigzag_delta));
 }
-inline uint64_t NO_SANITIZE_UNSIGNED_OVERFLOW encodeZigZagDelta64(uint64_t base, uint64_t value)
+inline uint64_t encodeZigZagDelta64(uint64_t base, uint64_t value)
 {
     return DB::encodeZigZag(static_cast<int64_t>(value - base));
 }
-inline uint32_t NO_SANITIZE_UNSIGNED_OVERFLOW decodeZigZagDelta32(uint32_t base, uint32_t zigzag_delta)
+inline uint32_t decodeZigZagDelta32(uint32_t base, uint32_t zigzag_delta)
 {
     return base + static_cast<uint32_t>(DB::decodeZigZag32(zigzag_delta));
 }
-inline uint32_t NO_SANITIZE_UNSIGNED_OVERFLOW encodeZigZagDelta32(uint32_t base, uint32_t value)
+inline uint32_t encodeZigZagDelta32(uint32_t base, uint32_t value)
 {
     return DB::encodeZigZag32(static_cast<int32_t>(value - base));
 }

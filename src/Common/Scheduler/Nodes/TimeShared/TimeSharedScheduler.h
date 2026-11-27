@@ -71,7 +71,7 @@ public:
     {
         if (scheduler.joinable())
         {
-            stop_flag.store(true, std::memory_order_relaxed);
+            stop_flag.store(true);
             events.enqueue([]{}); // just to wake up thread
             scheduler.join();
             if (graceful)
@@ -122,8 +122,6 @@ public:
 
             // Deactivate if required
             deactivate(&iter->second);
-            if (current == nullptr)
-                flushThroughputOnDeactivation();
 
             // Detach
             removed->setParentNode(nullptr);
@@ -143,10 +141,7 @@ public:
         while (true)
         {
             if (current == nullptr) // No active resources
-            {
-                flushThroughputOnDeactivation();
                 return {nullptr, false};
-            }
 
             // Dequeue request from current resource
             // We ask request of any kind and the nodes prioritize Release over Acquire internally (if both are supported)
@@ -161,7 +156,7 @@ public:
             if (request == nullptr) // Possible in case of request cancel, just retry
                 continue;
 
-            incrementDequeued(request->cost, current != nullptr);
+            incrementDequeued(request->cost);
             return {request, current != nullptr};
         }
     }
@@ -212,7 +207,7 @@ private:
                 value->next = nullptr;
                 value->prev = nullptr;
                 current = nullptr;
-                incrementCounter(busy_periods);
+                busy_periods++;
                 return;
             }
             // Just move current to next to avoid invalidation
@@ -229,7 +224,7 @@ private:
         DB::setThreadName(name);
         EventQueue::SchedulerThread scheduler_thread(&events);
 
-        while (!stop_flag.load(std::memory_order_relaxed))
+        while (!stop_flag.load())
         {
             // Dequeue and execute single request
             auto [request, _] = dequeueRequest();

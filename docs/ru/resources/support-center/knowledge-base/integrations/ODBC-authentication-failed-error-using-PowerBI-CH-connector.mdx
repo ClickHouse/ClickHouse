@@ -6,7 +6,11 @@ tags: ['Нативные клиенты и интерфейсы', 'Ошибки 
 keywords: ['ODBC', 'коннектор Power BI', 'ошибка аутентификации']
 ---
 
-## Вопрос {#question}
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<div id="question">
+  ## Вопрос
+</div>
 
 При попытке подключиться к ClickHouse из Power BI с помощью коннектора вы получаете ошибку аутентификации.
 
@@ -23,14 +27,10 @@ See also /etc/clickhouse-server/users.ml on the server where
 ClickHouse is installed.
 ```
 
-<div className="ch-image-md">
-  <Frame>
-    ![Диалоговое окно с ошибкой аутентификации ODBC в Power BI](/images/knowledgebase/powerbi_odbc_authentication_error.webp)
-  </Frame>
-</div>
+<Image img="/images/knowledgebase/powerbi_odbc_authentication_error.webp" size="md" alt="Диалоговое окно ошибки аутентификации ODBC в Power BI" border />
 
 <div id="answer">
-  ## Ответ {#answer}
+  ## Ответ
 </div>
 
 Обновите ClickHouse ODBC Driver до версии [1.4.1](https://github.com/ClickHouse/clickhouse-odbc/releases/tag/1.4.1.20250523).

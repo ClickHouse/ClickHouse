@@ -40,6 +40,7 @@ import dataclasses
 import json
 import os
 import re
+import shlex
 import shutil
 import sys
 import tempfile
@@ -56,10 +57,11 @@ from ci.jobs.scripts.clickhouse_version import (
 )
 from ci.praktika.gh import GH
 from ci.praktika.git import Git
-from ci.praktika.s3 import S3
 from ci.praktika.utils import Shell
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../tools"))
+# S3Helper requires boto3 (installed on release machines); ssh has no external deps.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../tests/ci"))
+from s3_helper import S3Helper  # noqa: E402
 from ssh import SSHAgent  # noqa: E402
 
 GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse")
@@ -95,12 +97,28 @@ class Labels:
     RELEASE_LTS = "release-lts"
 
 
-def is_latest_release_branch(branch: str) -> bool:
-    """Whether `branch` has the highest major.minor among the release branches of `origin`."""
-    # A glob cannot say "digits only": one or two digits for each of major and minor
-    patterns = " ".join(f"'refs/remotes/origin/{major}.{minor}'" for major in ("[1-9]", "[1-9][0-9]") for minor in ("[1-9]", "[1-9][0-9]"))
-    latest_branch = Shell.get_output(f"git for-each-ref --sort=-version:refname --count=1 --format='%(refname:lstrip=3)' {patterns}", strict=True)
-    assert latest_branch, "no release branches among the origin branches"
+def is_latest_release_branch(branch: str, repo: str = GITHUB_REPOSITORY) -> bool:
+    """Whether `branch` is the latest release branch — i.e. the head branch of
+    the most recently created `release`-labeled PR. Release-domain logic (knows
+    the `release` label / branch convention), so it lives here rather than in
+    the generic praktika GH helper.
+
+    The `gh pr list` read is retried and a persistent failure raises: mistaking
+    a transient GitHub error for "not the latest branch" would silently skip the
+    floating `latest` docker tag for an otherwise successful release. A
+    successful `--json` read always prints at least `[]`, so an empty result
+    means the command failed; genuinely no release PR is an empty JSON array."""
+    raw = GH.get_output_with_retries(
+        f'gh pr list --label release --repo {shlex.quote(repo)} --search "sort:created"'
+        f" -L1 --json headRefName"
+    )
+    if not raw:
+        raise RuntimeError(
+            f"gh pr list failed for release PRs in repo [{repo}] after retries; "
+            f"refusing to treat a failed lookup as 'not the latest release branch'"
+        )
+    prs = json.loads(raw)
+    latest_branch = prs[0]["headRefName"] if prs else ""
     print(
         f"Latest release branch [{latest_branch}], checking [{branch}]:"
         f" is_latest={latest_branch == branch}"
@@ -142,22 +160,21 @@ class ReleaseProgress:
     TEST_TGZ = "test TGZ packages"
     TEST_RPM = "test RPM packages"
     TEST_DEB = "test DEB packages"
+    MERGE_CREATED_PRS = "merge created PRs"
     COMPLETED = "completed"
 
 
 class ReleaseContextManager:
-    def __init__(self, release_progress, commit_sha=None):
+    def __init__(self, release_progress):
         self.release_progress = release_progress
         self.release_info = None
-        # Only STARTED reads it; passed in because the module-global `args` is unset in-process.
-        self.commit_sha = commit_sha
 
     def __enter__(self):
         if self.release_progress == ReleaseProgress.STARTED:
             self.release_info = ReleaseInfo(
                 release_branch="NA",
                 release_type="NA",
-                commit_sha=self.commit_sha,
+                commit_sha=args.ref,
                 release_tag="NA",
                 version="NA",
                 codename="NA",
@@ -196,6 +213,9 @@ class ReleaseInfo:
     is_bump_landed: bool = True
     # True once the release tag for this commit has been pushed, so this run re-publishes an existing release rather than creating one.
     is_tag_pushed: bool = True
+    changelog_pr: str = ""
+    version_bump_pr: str = ""
+    prs_merged: bool = False
     release_url: str = ""
     debian: str = ""
     rpm: str = ""
@@ -221,12 +241,7 @@ class ReleaseInfo:
         return self
 
     def prepare(
-        self,
-        commit_ref: str,
-        release_type: str,
-        dry_run: bool = False,
-        skip_repo: bool = False,
-        skip_docker: bool = False,
+        self, commit_ref: str, release_type: str, dry_run: bool = False
     ) -> "ReleaseInfo":
         assert release_type in ("patch", "new")
         # `commit_ref` (the workflow `ref` input) is interpolated into git
@@ -246,22 +261,14 @@ class ReleaseInfo:
         self.is_bump_landed = False
 
         if release_type == "new":
-            # The master bump must follow the cut directly, which only the master tip allows.
-            assert commit_ref == "master", f"a new release branch starts at the master tip, got ref [{commit_ref}]"
-            # The freshest tip leaves master the least time to move before the bump push.
-            Shell.check(
-                f"{GIT_PREFIX} fetch --quiet origin +refs/heads/master:refs/remotes/origin/master",
-                strict=True,
-                verbose=True,
-            )
-            # The local master is the cut, and the master bump step commits on it.
-            Shell.check(f"{GIT_PREFIX} checkout -B master origin/master", strict=True, verbose=True)
+            if commit_ref != "master":
+                Shell.check(
+                    f"git merge-base --is-ancestor {commit_ref} origin/master",
+                    strict=True,
+                    verbose=True,
+                )
             with checkout(commit_ref):
                 commit_sha = Git.get_commit_sha(commit_ref)
-                # The private release branch starts at the private sync of this PR, which only a PR merge has.
-                assert Git.merge_pr_number(commit_sha), (
-                    f"the master tip {commit_sha} is not a pull request merge; run again after the next pull request merges"
-                )
                 git = Git()
                 version = CHVersion.get_current_version()
                 release_branch = f"{version.major}.{version.minor}"
@@ -270,13 +277,6 @@ class ReleaseInfo:
                 assert (
                     git.latest_tag == expected_prev_tag
                 ), f"BUG: latest tag [{git.latest_tag}], expected [{expected_prev_tag}]"
-                # The release PR is the last step of a cut, so without it the previous run failed past the master bump.
-                prev_version = CHVersion.get_version_at_commit(expected_prev_tag)
-                prev_branch = f"{prev_version.major}.{prev_version.minor}"
-                assert GH.get_pr_url_by_branch(branch=prev_branch, repo=GITHUB_REPOSITORY), (
-                    f"Refusing to cut [{release_branch}]: the previous cut [{prev_branch}] has no release PR."
-                    " Finish that cut by hand (its branch version bump and release PR): a rerun would cut the next release instead"
-                )
                 release_tag = version.describe
 
         if release_type == "patch":
@@ -298,7 +298,7 @@ class ReleaseInfo:
                 branch_version = CHVersion.get_current_version()
             self.is_bump_landed = version.is_older(branch_version)
 
-            if is_latest_release_branch(release_branch):
+            if is_latest_release_branch(release_branch, repo=GITHUB_REPOSITORY):
                 print("This is going to be the latest release!")
                 latest_release = True
 
@@ -356,19 +356,10 @@ class ReleaseInfo:
                     f"release tag [{released.split()[0]}]: either the ref targets a commit with a "
                     f"superseded release, or there is a bug in the release/versioning logic"
                 )
-        # skip-repo/skip-docker only re-publish an existing release, so reject them against a ref that resolves to a new (untagged) release.
-        assert self.is_tag_pushed or not (skip_repo or skip_docker), (
-            "skip-repo/skip-docker re-publish an existing release and must be "
-            "run against its release tag (recovery); the given ref resolves to "
-            "a new release. Pass the release tag as the ref."
-        )
         self.release_type = release_type
         return self
 
     def push_release_tag(self, dry_run: bool) -> None:
-        # A recovery finds the tag already published — nothing to do.
-        if self.is_tag_pushed:
-            return
         print(
             f"Create and push release tag [{self.release_tag}], commit [{self.commit_sha}]"
         )
@@ -396,9 +387,6 @@ class ReleaseInfo:
             print("WARNING: failed to create backport labels for the new branch")
 
     def push_new_release_branch(self, dry_run: bool) -> None:
-        # A recovery/rerun of an already-tagged release re-runs nothing here.
-        if self.is_tag_pushed:
-            return
         version = CHVersion.get_current_version()
         new_release_branch = self.release_branch
         version_after_release = copy(version)
@@ -436,46 +424,10 @@ class ReleaseInfo:
             f"v{new_release_branch}-affected", "c2bfff", dry_run=dry_run
         )
 
-    def push_master_bump(self, dry_run: bool) -> None:
-        # Before the tag and the branch, so a master that moved rejects it with nothing published; detached, so the local master stays the cut.
-        with checkout(self.commit_sha):
-            version = CHVersion.get_current_version()
-            version.bump_release()
-            version.with_description(VersionType.TESTING)
-            version.githash = self.commit_sha
-            version.write()
-            update_contributors(raise_error=True)
-            Shell.check(
-                f"{GIT_PREFIX} commit '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}' "
-                f"-m 'Update autogenerated version to {self.version} and contributors'",
-                strict=True,
-                dry_run=dry_run,
-                verbose=True,
-            )
-            Git.push(
-                GITHUB_REPOSITORY,
-                "HEAD:refs/heads/master",
-                dry_run=dry_run,
-                strict=True,
-                retries=3,
-                git_prefix=GIT_PREFIX,
-            )
-            if dry_run:
-                # Nothing was committed, so revert the working-tree edits after previewing them.
-                Shell.check(
-                    f"{GIT_PREFIX} diff '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'"
-                    f" && {GIT_PREFIX} checkout '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'",
-                    verbose=True,
-                )
+    def get_version_bump_branch(self):
+        return f"bump_version_{self.version}"
 
     def update_version_and_contributors_list(self, dry_run: bool) -> None:
-        # A superseded (late) recovery must not rewrite the branch version backwards.
-        if self.release_type == "patch" and self.is_bump_landed:
-            print(
-                f"Branch {self.release_branch} already advanced past this release "
-                f"(late recovery) — skipping version bump"
-            )
-            return
         with checkout(self.commit_sha):
             version = CHVersion.get_current_version()
             if self.release_type == "patch":
@@ -552,12 +504,90 @@ class ReleaseInfo:
 
         if self.release_type == "new":
             release_type = version.get_stable_release_type()
+            print("Update version on master branch")
+            branch_upd = self.get_version_bump_branch()
+            with checkout(self.commit_sha):
+                version = CHVersion.get_current_version()
+                version.bump_release()
+                version.with_description(VersionType.TESTING)
+            with checkout("master"):
+                with checkout_new(branch_upd):
+                    # The post-release bump on master must point VERSION_GITHASH
+                    # at master's head, not back at the release commit.
+                    version.githash = Shell.get_output_or_raise("git rev-parse HEAD")
+                    version.write()
+                    update_contributors(raise_error=True)
+                    actor = os.getenv("GITHUB_ACTOR", "") or "me"
+                    body = (
+                        f"Automatic version bump after release {self.release_tag}\n"
+                        "### Changelog category (leave one):\n"
+                        "- Not for changelog (changelog entry is not required)\n"
+                    )
+                    Shell.check(
+                        f"{GIT_PREFIX} commit '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}' "
+                        f"-m 'Update autogenerated version to {self.version} and contributors'",
+                        strict=True,
+                        dry_run=dry_run,
+                        verbose=True,
+                    )
+                    # Rerun-safe (mirrors the changelog PR path): a previous
+                    # attempt may have already pushed this branch and opened the
+                    # PR. Force-push the freshly rebuilt branch, and only open the
+                    # PR if one does not already exist for it.
+                    Git.push(
+                        GITHUB_REPOSITORY,
+                        f"HEAD:refs/heads/{branch_upd}",
+                        force=True,
+                        dry_run=dry_run,
+                        strict=True,
+                        retries=3,  # transient workflow-scope timeout (see push_release_tag)
+                    )
+                    existing_bump_pr = (
+                        "" if dry_run
+                        else GH.get_pr_url_by_branch(
+                            branch=branch_upd, repo=GITHUB_REPOSITORY
+                        )
+                    )
+                    if existing_bump_pr:
+                        print(
+                            f"Version bump PR already exists [{existing_bump_pr}]"
+                            " - skipping create"
+                        )
+                    else:
+                        Shell.check(
+                            f"gh pr create --repo {GITHUB_REPOSITORY} --title 'Update version after release' "
+                            f"--head {branch_upd} --base master --body \"{body}\" --assignee {actor}"
+                            # 'do not test': this bot PR is auto-enqueued to the
+                            # merge queue, so it must not run the full PR CI.
+                            f" --label 'do not test'",
+                            strict=True,
+                            dry_run=dry_run,
+                            verbose=True,
+                        )
+                    if dry_run:
+                        Shell.check(
+                            f"{GIT_PREFIX} diff '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'",
+                            verbose=True,
+                        )
+                        Shell.check(
+                            f"{GIT_PREFIX} checkout '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'",
+                            verbose=True,
+                        )
+                        self.version_bump_pr = "dry-run"
+                    else:
+                        self.version_bump_pr = GH.get_pr_url_by_branch(
+                            branch=branch_upd, repo=GITHUB_REPOSITORY
+                        )
+
             print("Create Release PR")
             with checkout(self.release_branch):
                 pr_labels = f"--label {Labels.RELEASE}"
                 if release_type == VersionType.LTS:
                     pr_labels += f" --label {Labels.RELEASE_LTS}"
-                # Rerun-safe: only open the release PR if the branch has none, so a rerun reuses it instead of failing on a duplicate `gh pr create`.
+                # Rerun-safe (mirrors the version-bump PR path): a previous
+                # attempt may have already opened the release PR for this branch.
+                # Only open it if one does not already exist, so a rerun reuses it
+                # instead of failing on a duplicate `gh pr create`.
                 existing_release_pr = (
                     "" if dry_run
                     else GH.get_pr_url_by_branch(
@@ -580,6 +610,28 @@ class ReleaseInfo:
                         strict=True,
                         verbose=True,
                     )
+
+    def get_change_log_branch(self):
+        return f"auto/{self.release_tag}"
+
+    def update_release_info(self, dry_run: bool) -> "ReleaseInfo":
+        if self.release_type == "patch":
+            if not self.changelog_pr:
+                branch = self.get_change_log_branch()
+                url = "dry-run" if dry_run else GH.get_pr_url_by_branch(branch=branch, repo=GITHUB_REPOSITORY)
+                print(f"ChangeLog PR url [{url}]")
+                self.changelog_pr = url
+            self.docker = f"docker run --rm clickhouse/clickhouse:{self.version} clickhouse --version"
+        else:
+            branch = self.get_version_bump_branch()
+            url = "dry-run" if dry_run else GH.get_pr_url_by_branch(branch=branch, repo=GITHUB_REPOSITORY)
+            print(f"Version bump PR url [{url}]")
+            self.version_bump_pr = url
+
+        self.release_url = f"https://github.com/{GITHUB_REPOSITORY}/releases/tag/{self.release_tag}"
+        print(f"Release url [{self.release_url}]")
+        self.dump()
+        return self
 
     def create_gh_release(self, packages_files: List[str], dry_run: bool) -> None:
         repo = GITHUB_REPOSITORY
@@ -625,17 +677,77 @@ class ReleaseInfo:
             for cmd in cmds_upload:
                 print(f"  * {cmd}")
             self.release_url = "dry-run"
-        if self.release_type == "patch":
-            self.docker = f"docker run --rm clickhouse/clickhouse:{self.version} clickhouse --version"
         self.dump()
+
+    def _enqueue_release_pr(self, pr_url: str, label: str, dry_run: bool) -> bool:
+        """Add a release bot PR to `master`'s merge queue so it actually merges.
+
+        `master` is behind a merge queue, and `gh pr merge --auto`
+        (`enablePullRequestAutoMerge`) is disabled there, so the PR is added via
+        `enqueuePullRequest` - GitHub merges it from the queue once its required
+        checks pass. The PR is opened before the long package export / docker
+        publish, so its `CH Inc sync` check has time to run before this enqueue at
+        the end of the release; the retries ride out any short remaining wait.
+        Best-effort: it never raises, so a PR that is not yet mergeable does not
+        fail the already-published release (merge_prs then only warns; a later
+        rerun re-enqueues it).
+        """
+        pr_num = 23456 if dry_run else int(pr_url.rsplit("/", 1)[-1])
+        if not dry_run:
+            # Idempotent for recovery / reruns: only an open PR needs enqueuing.
+            # Non-strict read: a transient gh failure must not fail the release.
+            state = Shell.get_output(
+                f"gh pr view {pr_num} --repo {GITHUB_REPOSITORY}"
+                f" --json state --jq .state"
+            ).strip()
+            if not state:
+                print(f"ERROR: could not fetch state for {label} PR #{pr_num}")
+                return False
+            if state != "OPEN":
+                print(f"{label} PR #{pr_num} is {state}, nothing to merge")
+                return True
+        print(f"Enqueuing {label} PR to the merge queue")
+        return Git.enqueue_pull_request(
+            pr_num, GITHUB_REPOSITORY, dry_run=dry_run, retries=10, delay=30
+        )
+
+    def merge_prs(self, dry_run: bool) -> None:
+        res = True
+        # A recovery / rerun may find no PR (it was already merged and the branch
+        # lookup returned nothing) - that is a no-op, not a failure.
+        if self.release_type == "patch":
+            if self.changelog_pr:
+                res = self._enqueue_release_pr(self.changelog_pr, "ChangeLog", dry_run)
+            else:
+                print("No ChangeLog PR to merge")
+        if self.release_type == "new":
+            if self.version_bump_pr:
+                res = res and self._enqueue_release_pr(
+                    self.version_bump_pr, "Version Bump", dry_run
+                )
+            else:
+                print("No Version Bump PR to merge")
+        else:
+            if not dry_run:
+                assert not self.version_bump_pr
+        self.prs_merged = res
+        if not res:
+            # Best-effort: by the time this runs the release itself (tag, GitHub
+            # release, packages) is already published, so a failed PR enqueue must
+            # not fail the release. Leave the PR open to be landed separately and
+            # only warn - do not raise.
+            print(
+                "WARNING: could not enqueue the release PR(s) to the merge queue; "
+                "they must be landed separately. The release itself is unaffected."
+            )
 
 
 class PackageDownloader:
     # The package/build-job/filename contract lives in `release_packages`, the
     # single source of truth shared with the `AutoReleases` gate
     # (`tests/ci/auto_release.py`), so the producer here and the checker there
-    # cannot drift. The package set depends on the release commit, see
-    # `release_packages.commit_packages`.
+    # cannot drift. Re-export the two constants callers read off the class.
+    PACKAGES = release_packages.PACKAGES
     PACKAGE_ARCHS = release_packages.PACKAGE_ARCHS
     MACOS_PACKAGE_TO_BIN_SUFFIX = {
         "amd": "macos",
@@ -646,12 +758,13 @@ class PackageDownloader:
     def __init__(self, release, commit_sha, version):
         assert version.startswith(release), "Invalid release branch or version"
         with_signed_macos = release_packages.commit_has_macos_signing(commit_sha)
-        with_illumos = release_packages.commit_has_illumos_build(commit_sha)
         self.with_signed_macos = with_signed_macos
-        self.package_names = list(release_packages.commit_packages(commit_sha))
+        self.package_names = list(self.PACKAGES)
         self.release = release
-        self.s3_commit_prefix = release_packages.s3_commit_prefix(release, commit_sha)
+        self.s3_release_prefix = release_packages.s3_release_prefix(release)
+        self.commit_sha = commit_sha
         self.version = version
+        self.s3 = S3Helper()
         self.deb_package_files = []
         self.rpm_package_files = []
         self.tgz_package_files = []
@@ -659,13 +772,9 @@ class PackageDownloader:
         self.macos_signed_files = (
             [f"{f}.zip" for f in self.macos_package_files] if with_signed_macos else []
         )
-        self.illumos_package_files = (
-            ["clickhouse-illumos-amd64.zst"] if with_illumos else []
-        )
         self.file_to_job_name = {}
         self.macos_binary_to_job_name = {}
         self.macos_signed_to_job_name = {}
-        self.illumos_binary_to_job_name = {}
 
         Shell.check(f"mkdir -p {self.LOCAL_DIR}")
 
@@ -675,7 +784,7 @@ class PackageDownloader:
             "tgz": self.tgz_package_files,
         }
         for repo_type, package_file, job_name in release_packages.iter_package_objects(
-            version, self.package_names
+            version
         ):
             files_by_repo_type[repo_type].append(package_file)
             self.file_to_job_name[package_file] = job_name
@@ -695,9 +804,6 @@ class PackageDownloader:
                 )
                 assert dest_zip in self.macos_signed_files
                 self.macos_signed_to_job_name[dest_zip] = job_name_sign
-
-        if with_illumos:
-            self.illumos_binary_to_job_name["clickhouse-illumos-amd64.zst"] = "build_amd_illumos"
 
     def get_deb_packages_files(self):
         return self.deb_package_files
@@ -723,7 +829,6 @@ class PackageDownloader:
         assert self.local_rpm_packages_ready()
         assert self.local_macos_packages_ready()
         assert self.local_macos_signed_ready()
-        assert self.local_illumos_packages_ready()
         res = []
         for pkg in (
             self.deb_package_files
@@ -731,7 +836,6 @@ class PackageDownloader:
             + self.tgz_package_files
             + self.macos_package_files
             + self.macos_signed_files
-            + self.illumos_package_files
         ):
             res.append(self.LOCAL_DIR + "/" + pkg)
         return res
@@ -748,15 +852,16 @@ class PackageDownloader:
             local_path = self.LOCAL_DIR + "/" + package_file
             print(f"Downloading: [{package_file}]")
             s3_path = "/".join([
-                self.s3_commit_prefix,
+                self.s3_release_prefix,
+                self.commit_sha,
                 self.file_to_job_name[package_file],
                 package_file,
             ])
-            if not S3.copy_file_from_s3(
-                s3_path=f"{S3_BUILDS_BUCKET}/{s3_path}",
-                local_path=local_path,
-            ):
-                raise AssertionError(f"No such object [s3://{S3_BUILDS_BUCKET}/{s3_path}]")
+            self.s3.download_file(
+                bucket=S3_BUILDS_BUCKET,
+                s3_path=s3_path,
+                local_file_path=local_path,
+            )
 
         for macos_binary, job_name in self.macos_binary_to_job_name.items():
             local_path = self.LOCAL_DIR + "/" + macos_binary
@@ -767,43 +872,31 @@ class PackageDownloader:
             # be skipped — always re-download to overwrite it.
             print(f"Downloading: [{job_name}] binary to [{macos_binary}]")
             s3_path = "/".join([
-                self.s3_commit_prefix,
+                self.s3_release_prefix,
+                self.commit_sha,
                 job_name,
                 "clickhouse",
             ])
-            if not S3.copy_file_from_s3(
-                s3_path=f"{S3_BUILDS_BUCKET}/{s3_path}",
-                local_path=local_path,
-            ):
-                raise AssertionError(f"No such object [s3://{S3_BUILDS_BUCKET}/{s3_path}]")
+            self.s3.download_file(
+                bucket=S3_BUILDS_BUCKET,
+                s3_path=s3_path,
+                local_file_path=local_path,
+            )
 
         for macos_zip, job_name in self.macos_signed_to_job_name.items():
             local_path = self.LOCAL_DIR + "/" + macos_zip
             print(f"Downloading: [{job_name}] signed zip to [{macos_zip}]")
             s3_path = "/".join([
-                self.s3_commit_prefix,
+                self.s3_release_prefix,
+                self.commit_sha,
                 job_name,
                 release_packages.MACOS_SIGNED_S3_OBJECT,
             ])
-            if not S3.copy_file_from_s3(
-                s3_path=f"{S3_BUILDS_BUCKET}/{s3_path}",
-                local_path=local_path,
-            ):
-                raise AssertionError(f"No such object [s3://{S3_BUILDS_BUCKET}/{s3_path}]")
-
-        for illumos_binary, job_name in self.illumos_binary_to_job_name.items():
-            local_path = self.LOCAL_DIR + "/" + illumos_binary
-            print(f"Downloading: [{job_name}] binary to [{illumos_binary}]")
-            s3_path = "/".join([
-                self.s3_commit_prefix,
-                job_name,
-                release_packages.ILLUMOS_S3_OBJECT,
-            ])
-            if not S3.copy_file_from_s3(
-                s3_path=f"{S3_BUILDS_BUCKET}/{s3_path}",
-                local_path=local_path,
-            ):
-                raise AssertionError(f"No such object [s3://{S3_BUILDS_BUCKET}/{s3_path}]")
+            self.s3.download_file(
+                bucket=S3_BUILDS_BUCKET,
+                s3_path=s3_path,
+                local_file_path=local_path,
+            )
 
     def local_deb_packages_ready(self) -> bool:
         return all(Path(self.LOCAL_DIR + "/" + f).is_file() for f in self.deb_package_files)
@@ -819,9 +912,6 @@ class PackageDownloader:
 
     def local_macos_signed_ready(self) -> bool:
         return all(Path(self.LOCAL_DIR + "/" + f).is_file() for f in self.macos_signed_files)
-
-    def local_illumos_packages_ready(self) -> bool:
-        return all(Path(self.LOCAL_DIR + "/" + f).is_file() for f in self.illumos_package_files)
 
 
 @contextmanager
@@ -880,14 +970,29 @@ def parse_args() -> argparse.Namespace:
         help="Initial step to prepare info like release branch, release tag, etc.",
     )
     parser.add_argument(
-        "--skip-repo",
+        "--push-release-tag",
         action="store_true",
-        help="Recovery run that only re-exports repo packages for an already-created release",
+        help="Creates and pushes git tag",
     )
     parser.add_argument(
-        "--skip-docker",
+        "--push-new-release-branch",
         action="store_true",
-        help="Recovery run that only rebuilds docker images for an already-created release",
+        help="Creates and pushes new release branch and corresponding service gh tags for backports",
+    )
+    parser.add_argument(
+        "--create-bump-version-pr",
+        action="store_true",
+        help="Updates version, contributors list and creates PR",
+    )
+    parser.add_argument(
+        "--download-packages",
+        action="store_true",
+        help="Downloads all required packages from s3",
+    )
+    parser.add_argument(
+        "--create-gh-release",
+        action="store_true",
+        help="Create GH Release object and attach all packages",
     )
     parser.add_argument(
         "--post-status",
@@ -924,9 +1029,7 @@ if __name__ == "__main__":
         _ssh_agent.print_keys()
 
     if args.prepare_release_info:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.STARTED, commit_sha=args.ref
-        ) as release_info:
+        with ReleaseContextManager(release_progress=ReleaseProgress.STARTED) as release_info:
             assert (
                 args.ref and args.release_type
             ), "--ref and --release-type must be provided with --prepare-release-info"
@@ -934,8 +1037,48 @@ if __name__ == "__main__":
                 commit_ref=args.ref,
                 release_type=args.release_type,
                 dry_run=args.dry_run,
-                skip_repo=args.skip_repo,
-                skip_docker=args.skip_docker,
+            )
+
+    if args.download_packages:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.DOWNLOAD_PACKAGES
+        ) as release_info:
+            p = PackageDownloader(
+                release=release_info.release_branch,
+                commit_sha=release_info.commit_sha,
+                version=release_info.version,
+            )
+            p.run()
+
+    if args.push_release_tag:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.PUSH_RELEASE_TAG
+        ) as release_info:
+            release_info.push_release_tag(dry_run=args.dry_run)
+
+    if args.push_new_release_branch:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.PUSH_NEW_RELEASE_BRANCH
+        ) as release_info:
+            release_info.push_new_release_branch(dry_run=args.dry_run)
+
+    if args.create_bump_version_pr:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.BUMP_VERSION
+        ) as release_info:
+            release_info.update_version_and_contributors_list(dry_run=args.dry_run)
+
+    if args.create_gh_release:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.CREATE_GH_RELEASE
+        ) as release_info:
+            p = PackageDownloader(
+                release=release_info.release_branch,
+                commit_sha=release_info.commit_sha,
+                version=release_info.version,
+            )
+            release_info.create_gh_release(
+                packages_files=p.get_all_packages_files(), dry_run=args.dry_run
             )
 
     if args.post_status:

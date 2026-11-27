@@ -1,8 +1,6 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/123756: with `use_aggregation_memory_tracker = 0` the two-level conversion of `GROUP BY` also counts the memory held by the rest of the query.
 
 SET max_threads = 1;
--- The adaptive aggregator also takes one thread and does not convert to two-level by these thresholds.
-SET enable_adaptive_aggregator = 0;
 SET max_untracked_memory = 0;
 SET max_bytes_before_external_group_by = 1000000000;
 SET max_bytes_ratio_before_external_group_by = 0;
@@ -15,7 +13,7 @@ JOIN (SELECT number AS id, toFixedString(toString(number % 10), 64) AS k FROM nu
 ON l.id = r.id
 GROUP BY g
 FORMAT Null
-SETTINGS log_comment = 'aggregation_memory_tracker';
+SETTINGS log_comment = 'aggregation_memory_tracker', use_aggregation_memory_tracker = 1;
 
 SELECT r.k AS g, groupArray(l.s)
 FROM (SELECT number AS id, leftPad(toString(number), 10, '0') AS s FROM numbers(1000)) AS l

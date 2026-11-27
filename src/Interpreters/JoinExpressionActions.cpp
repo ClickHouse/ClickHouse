@@ -246,7 +246,10 @@ JoinActionRef::JoinActionRef(NodeRawPtr node_, std::weak_ptr<JoinExpressionActio
         auto raw_nodes = data_ptr->actions_dag.getNodes() | std::views::transform([](const ActionsDAG::Node & node) { return &node; });
         if (!std::ranges::contains(raw_nodes, node_ptr))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Cannot create JoinActionRef for node {} not in actions DAG", node_ptr->result_name);
+                "Cannot create JoinActionRef for node {} not in actions DAG: [{}] <- {}",
+                    node_ptr->result_name,
+                    fmt::join(raw_nodes | std::views::transform([](const ActionsDAG::Node * node) { return fmt::ptr(node); }), ", "),
+                    fmt::ptr(node_ptr));
     }
 #endif
 }
@@ -461,11 +464,11 @@ std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef> JoinActionRef::a
     return {op, lhs, rhs};
 }
 
-VectorWithMemoryTracking<JoinActionRef> JoinActionRef::getArguments(bool recursive) const
+std::vector<JoinActionRef> JoinActionRef::getArguments(bool recursive) const
 {
     UNUSED(recursive);
     const auto * node = getNode();
-    VectorWithMemoryTracking<JoinActionRef> arguments;
+    std::vector<JoinActionRef> arguments;
     auto data_ptr = getData();
     for (const auto & child : node->children)
         arguments.emplace_back(child, data_ptr);
@@ -488,7 +491,7 @@ std::shared_ptr<JoinExpressionActions::Data> JoinActionRef::getData() const
     return data_ptr;
 }
 
-std::shared_ptr<JoinExpressionActions::Data> JoinActionRef::getData(const VectorWithMemoryTracking<JoinActionRef> & actions)
+std::shared_ptr<JoinExpressionActions::Data> JoinActionRef::getData(const std::vector<JoinActionRef> & actions)
 {
     if (actions.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get actions DAG for empty actions");

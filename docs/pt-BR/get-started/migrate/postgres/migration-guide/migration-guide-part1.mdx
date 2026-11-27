@@ -8,17 +8,17 @@ sidebarTitle: 'Parte 1'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 > Esta é a **Parte 1** de um guia sobre a migração do PostgreSQL para o ClickHouse. Por meio de um exemplo prático, ela mostra como realizar essa migração com eficiência usando uma abordagem de replicação em tempo real (CDC). Muitos dos conceitos abordados também se aplicam a transferências manuais em massa de dados do PostgreSQL para o ClickHouse.
 
-## Conjunto de dados {#dataset}
+<div id="dataset">
+  ## Conjunto de dados
+</div>
 
 Como exemplo de conjunto de dados para mostrar uma migração típica de Postgres para ClickHouse, usamos o conjunto de dados do Stack Overflow documentado [aqui](/pt-BR/get-started/sample-datasets/stackoverflow). Ele contém todos os `post`, `vote`, `user`, `comment` e `badge` registrados no Stack Overflow de 2008 até abr. de 2024. O esquema do PostgreSQL para esses dados é mostrado abaixo:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Esquema PostgreSQL do Stack Overflow](/images/migrations/postgres-stackoverflow-schema.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="Esquema PostgreSQL do Stack Overflow" />
 
 *Os comandos DDL para criar as tabelas no PostgreSQL estão disponíveis [aqui](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==).*
 
@@ -26,7 +26,7 @@ Esse esquema, embora não seja necessariamente o mais otimizado, explora vários
 
 Vamos migrar cada um desses conceitos para seus equivalentes no ClickHouse.
 
-Para os usuários que desejam popular esse conjunto de dados em uma instância do PostgreSQL para testar as etapas da migração, disponibilizamos os dados para download no formato `pg_dump` junto com o DDL, e os comandos subsequentes de carregamento de dados são mostrados abaixo:
+Para os usuários que desejam carregar esse conjunto de dados em uma instância do PostgreSQL para testar as etapas da migração, disponibilizamos os dados para download no formato `pg_dump` junto com o DDL, e os comandos subsequentes de carregamento de dados são mostrados abaixo:
 
 ```bash
 # users
@@ -70,11 +70,11 @@ Embora seja pequeno para o ClickHouse, este conjunto de dados é substancial par
 > Embora os resultados do nosso exemplo usem o conjunto de dados completo para mostrar as diferenças de desempenho entre o Postgres e o ClickHouse, todas as etapas documentadas abaixo são funcionalmente idênticas com o subconjunto menor. Os usuários que quiserem carregar o conjunto de dados completo no Postgres podem ver [aqui](https://pastila.nl/?00d47a08/1c5224c0b61beb480539f15ac375619d#XNj5vX3a7ZjkdiX7In8wqA==). Devido às restrições de chave estrangeira impostas pelo esquema acima, o conjunto de dados completo para PostgreSQL contém apenas linhas que satisfazem a integridade referencial. Uma [versão em Parquet](/pt-BR/get-started/sample-datasets/stackoverflow), sem essas restrições, pode ser carregada facilmente diretamente no ClickHouse, se necessário.
 
 <div id="migrating-data">
-  ## Migração de dados {#migrating-data}
+  ## Migração de dados
 </div>
 
 <div id="real-time-replication-or-cdc">
-  ### Replicação em tempo real (CDC) {#real-time-replication-or-cdc}
+  ### Replicação em tempo real (CDC)
 </div>
 
 Consulte este [guia](/pt-BR/integrations/clickpipes/postgres/index) para configurar o ClickPipes para PostgreSQL. O guia aborda vários tipos diferentes de instâncias de origem do Postgres.
@@ -111,7 +111,9 @@ ORDER BY id;
 
 Depois de configurado, o ClickPipes começa a migrar todos os dados do PostgreSQL para o ClickHouse. Dependendo da rede e do porte das implantações, isso deve levar apenas alguns minutos para o conjunto de dados do Stack Overflow.
 
-### Carga manual em massa com atualizações periódicas {#initial-bulk-load-with-periodic-updates}
+<div id="initial-bulk-load-with-periodic-updates">
+  ### Carga manual em massa com atualizações periódicas
+</div>
 
 Com uma abordagem manual, a carga inicial em massa do conjunto de dados pode ser feita por meio de:
 
@@ -162,7 +164,7 @@ ORDER BY tuple()
 COMMENT 'Optimized types'
 ```
 
-Podemos popular isso com um simples `INSERT INTO SELECT`, lendo os dados do PostgreSQL e inserindo-os no ClickHouse:
+Podemos preencher isso com um simples `INSERT INTO SELECT`, lendo os dados do PostgreSQL e inserindo-os no ClickHouse:
 
 ```sql title="Query"
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>:<port>', 'postgres', 'posts', '<username>', '<password>')
@@ -177,7 +179,7 @@ As cargas incrementais, por sua vez, podem ser agendadas. Se a tabela do Postgre
 Demonstramos uma carga inicial e uma carga incremental usando `CreationDate` (presumimos que ela seja atualizada se as linhas forem atualizadas)..
 
 ```sql
--- initial load
+-- carga inicial
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password')
 
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password') WHERE CreationDate > ( SELECT (max(CreationDate) FROM stackoverflow.posts)

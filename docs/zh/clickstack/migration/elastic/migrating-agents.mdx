@@ -8,8 +8,10 @@ keywords: ['ClickStack']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 <div id="migrating-agents-from-elastic">
-  ## 从 Elastic 迁移agent {#migrating-agents-from-elastic}
+  ## 从 Elastic 迁移agent
 </div>
 
 Elastic Stack 提供了多种可观测性数据采集agent。具体包括：
@@ -21,7 +23,7 @@ Elastic Stack 提供了多种可观测性数据采集agent。具体包括：
 最佳迁移路径取决于当前使用的agent。在接下来的各节中，我们将介绍每种主要agent类型的迁移方案。我们的目标是尽可能降低迁移成本，并在可能的情况下，让你在过渡期间继续使用现有agent。
 
 <div id="prefered-migration-path">
-  ## 首选迁移路径 {#prefered-migration-path}
+  ## 首选迁移路径
 </div>
 
 在条件允许的情况下，我们建议将所有日志、指标和 trace 采集迁移到 [OpenTelemetry (OTel) Collector](https://opentelemetry.io/docs/collector/)，并将其以[边缘侧 agent 角色](/zh/clickstack/ingesting-data/collector#collector-roles)部署。这是发送数据最高效的方式，也能避免额外的架构复杂性和数据转换。
@@ -33,16 +35,18 @@ Elastic Stack 提供了多种可观测性数据采集agent。具体包括：
 </Info>
 
 <div id="clickhouse-otel-endpoint">
-  ## ClickHouse OpenTelemetry 端点 {#clickhouse-otel-endpoint}
+  ## ClickHouse OpenTelemetry 端点
 </div>
 
-所有数据都会经由一个 **OpenTelemetry (OTel) collector** 实例摄取到 ClickStack 中，该实例是日志、指标、链路追踪和会话数据的主要入口。对于此实例，我们建议使用 collector 的官方 [ClickStack 发行版](/zh/clickstack/ingesting-data/opentelemetry#installing-otel-collector)，前提是它尚未[包含在你的 ClickStack 部署模式中](/zh/clickstack/deployment/oss)。
+所有数据都会经由一个 **OpenTelemetry (OTel) collector** 实例摄取到 ClickStack 中，该实例是日志、指标、链路追踪和会话数据的主要入口。对于此实例，我们建议使用 collector 的官方 [ClickStack 发行版](/zh/clickstack/ingesting-data/opentelemetry#installing-otel-collector)，前提是它尚未[包含在你的 ClickStack 部署模式中](/zh/clickstack/deployment/overview)。
 
 用户可通过[语言 SDKs](/zh/clickstack/ingesting-data/sdks/index)，或通过采集基础设施指标和日志的数据收集 agent，将数据发送到该 collector (例如承担 [agent](/zh/clickstack/ingesting-data/collector#collector-roles) 角色的 OTel collectors，或其他技术，如 [Fluentd](https://www.fluentd.org/) 或 [Vector](https://vector.dev/)) 。对于希望使用托管 OpenTelemetry 管道的团队，[Bindplane](/zh/clickstack/integration-partners/bindplane) 提供了一种 OpenTelemetry 原生解决方案，并内置原生 ClickStack 目标端，可简化遥测数据的采集、处理和路由。
 
 **我们假定在所有 agent 迁移步骤中，此 collector 都可用。**
 
-## 从 Beats 迁移 {#migrating-to-beats}
+<div id="migrating-to-beats">
+  ## 从 Beats 迁移
+</div>
 
 对于已大规模部署 Beats 的用户，在迁移到 ClickStack 时，可能希望保留这些现有部署。
 
@@ -58,11 +62,7 @@ Beats agent 使用 [Elastic Common Schema (ECS)](https://www.elastic.co/docs/ref
 
 下面我们将展示这两种架构。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![迁移 agents](/images/use-cases/observability/clickstack-migrating-agents-ui.png)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/clickstack-migrating-agents.webp" alt="迁移 agents" size="lg" background />
 
 在下面的示例中，我们给出了将 Vector 配置为通过 Lumberjack 协议从 Filebeat 接收日志事件的初始步骤。我们还提供了用于将入站 ECS 事件映射到 OTel 规范的 VRL，然后再通过 OTLP 将其发送到 ClickStack OpenTelemetry collector。从 Kafka 消费事件的用户可以将 Vector 的 Logstash source 替换为 [Kafka source](https://vector.dev/docs/reference/configuration/sources/kafka/)，其余步骤保持不变。
 
@@ -249,13 +249,9 @@ Beats agent 使用 [Elastic Common Schema (ECS)](https://www.elastic.co/docs/ref
             authorization: ${YOUR_INGESTION_API_KEY}
     ```
 
-    此处的 `YOUR_INGESTION_API_KEY` 由 ClickStack 生成。您可以在 ClickStack UI 的 `Team Settings → API Keys` 中找到该密钥。
+    此处的 `YOUR_INGESTION_API_KEY` 由 ClickStack 生成。您可以在 ClickStack UI (HyperDX) 的 `Team Settings → API Keys` 中找到该密钥。
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![摄取密钥](/images/use-cases/observability/ingestion-keys.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="摄取密钥" size="lg" />
 
     完整的最终配置如下所示：
 
@@ -317,7 +313,7 @@ Beats agent 使用 [Elastic Common Schema (ECS)](https://www.elastic.co/docs/ref
 </Steps>
 
 <div id="migrating-from-elastic-agent">
-  ## 从 Elastic Agent 迁移 {#migrating-from-elastic-agent}
+  ## 从 Elastic Agent 迁移
 </div>
 
 Elastic Agent 将不同的 Elastic Beats 整合为一个软件包。它可与 [Elastic Fleet](https://www.elastic.co/docs/reference/fleet/fleet-server) 集成，从而实现集中编排和配置。
@@ -329,7 +325,9 @@ Elastic Agent 将不同的 Elastic Beats 整合为一个软件包。它可与 [E
 
 下面我们将演示这两种方式。
 
-### 通过 Vector 发送数据 {#sending-data-via-vector}
+<div id="sending-data-via-vector">
+  ### 通过 Vector 发送数据
+</div>
 
 <Steps>
   <Step title="安装并配置 Vector" id="install-configure-vector">
@@ -341,23 +339,15 @@ Elastic Agent 将不同的 Elastic Beats 整合为一个软件包。它可与 [E
 
     要在 Kibana 中进行集中配置，可以[向 Fleet 添加一个 Output](https://www.elastic.co/docs/reference/fleet/fleet-settings#output-settings)。
 
-    <div className="ch-image-md">
-      <Frame>
-        ![添加 Logstash 输出](/images/use-cases/observability/add-logstash-output.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/add-logstash-output.webp" alt="添加 Logstash 输出" size="md" />
 
     然后即可在 [agent policy](https://www.elastic.co/docs/reference/fleet/agent-policy) 中使用此 Output。这意味着，所有使用该策略的 agent 都会自动将其数据发送到 Vector。
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Agent 设置](/images/use-cases/observability/agent-output-settings.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/agent-output-settings.webp" alt="Agent 设置" size="md" />
 
     由于这需要配置基于 TLS 的安全通信，我们建议参考指南[“为 Logstash 输出配置 SSL/TLS”](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output)。按照该指南操作时，可将用户的 Vector 实例视为充当 Logstash 角色。
 
-    请注意，这还要求用户将 Vector 中的 Logstash source 也配置为双向 TLS。使用[该指南中生成的](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs)键和证书，正确配置输入端。
+    请注意，这还要求用户将 Vector 中的 Logstash source 也配置为双向 TLS。使用[该指南中生成的](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs)密钥和证书，正确配置输入端。
 
     ```yaml
     sources:
@@ -375,7 +365,9 @@ Elastic Agent 将不同的 Elastic Beats 整合为一个软件包。它可与 [E
   </Step>
 </Steps>
 
-### 将 Elastic agent 作为 OpenTelemetry collector 运行 {#run-agent-as-otel}
+<div id="run-agent-as-otel">
+  ### 将 Elastic agent 作为 OpenTelemetry collector 运行
+</div>
 
 Elastic agent 内嵌了 EDOT Collector，让您只需为应用程序和基础设施进行一次埋点，即可将数据发送到多个供应商和后端。
 
@@ -406,13 +398,9 @@ exporters:
 
 此处的 `YOUR_INGESTION_API_KEY` 由 ClickStack 生成。您可以在 ClickStack UI 的 `Team Settings → API Keys` 中找到该密钥。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![摄取键](/images/use-cases/observability/ingestion-keys.webp)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/ingestion-keys.webp" alt="摄取密钥" size="lg" />
 
-如果 Vector 已配置为使用双向 TLS，并且证书和键是按照指南[“为 Logstash 输出配置 SSL/TLS”](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output)中的步骤生成的，则还需要相应配置 `otlp` 导出器，例如：
+如果 Vector 已配置为使用双向 TLS，并且证书和私钥是按照指南[“为 Logstash 输出配置 SSL/TLS”](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output)中的步骤生成的，则还需要相应配置 `otlp` 导出器，例如：
 
 ```yaml
 exporters:
@@ -429,7 +417,7 @@ exporters:
 ```
 
 <div id="migrating-from-elastic-otel-collector">
-  ## 从 Elastic OpenTelemetry Collector 迁移 {#migrating-from-elastic-otel-collector}
+  ## 从 Elastic OpenTelemetry Collector 迁移
 </div>
 
 对于已经在运行 [Elastic OpenTelemetry Collector (EDOT)](https://www.elastic.co/docs/reference/opentelemetry) 的用户，只需重新配置其 agent，通过 OTLP 将数据发送到 ClickStack OpenTelemetry collector 即可。所需步骤与上文介绍的将 [Elastic Agent 作为 OpenTelemetry collector 运行](#run-agent-as-otel) 的步骤完全相同。此方法适用于所有数据类型。

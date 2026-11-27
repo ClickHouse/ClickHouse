@@ -7,7 +7,6 @@
 #include <Core/NamesAndTypes.h>
 
 #include <initializer_list>
-#include <utility>
 #include <vector>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -39,10 +38,6 @@ private:
     Container data;
     IndexByName index_by_name;
 
-    /// The number of rows of a block that has no columns, see `setRowsWithoutColumns`.
-    /// It is zero while the block has columns: the rows are in the columns then.
-    size_t rows_without_columns = 0;
-
 public:
     BlockInfo info;
 
@@ -50,27 +45,6 @@ public:
     Block(std::initializer_list<ColumnWithTypeAndName> il);
     Block(const ColumnsWithTypeAndName & data_); /// NOLINT
     Block(ColumnsWithTypeAndName && data_); /// NOLINT
-
-    Block(const Block &) = default;
-    Block & operator=(const Block &) = default;
-
-    /// A block that was moved from has neither columns nor rows, the same as a `Chunk`.
-    Block(Block && other) noexcept
-        : data(std::move(other.data))
-        , index_by_name(std::move(other.index_by_name))
-        , rows_without_columns(std::exchange(other.rows_without_columns, 0))
-        , info(std::move(other.info))
-    {
-    }
-
-    Block & operator=(Block && other) noexcept
-    {
-        data = std::move(other.data);
-        index_by_name = std::move(other.index_by_name);
-        rows_without_columns = std::exchange(other.rows_without_columns, 0);
-        info = std::move(other.info);
-        return *this;
-    }
 
     /// insert the column at the specified position
     void insert(size_t position, ColumnWithTypeAndName elem);
@@ -88,10 +62,10 @@ public:
     /// References are invalidated after calling functions above.
 
     ColumnWithTypeAndName & getByPosition(size_t position) { return data[position]; }
-    [[nodiscard]] const ColumnWithTypeAndName & getByPosition(size_t position) const { return data[position]; }
+    const ColumnWithTypeAndName & getByPosition(size_t position) const { return data[position]; }
 
     ColumnWithTypeAndName & safeGetByPosition(size_t position);
-    [[nodiscard]] const ColumnWithTypeAndName & safeGetByPosition(size_t position) const;
+    const ColumnWithTypeAndName & safeGetByPosition(size_t position) const;
 
     ColumnWithTypeAndName* findByName(const std::string & name, bool case_insensitive = false)
     {
@@ -99,11 +73,11 @@ public:
             const_cast<const Block *>(this)->findByName(name, case_insensitive));
     }
 
-    [[nodiscard]] const ColumnWithTypeAndName * findByName(std::string_view name, bool case_insensitive = false) const;
+    const ColumnWithTypeAndName * findByName(std::string_view name, bool case_insensitive = false) const;
 
-    [[nodiscard]] const ColumnWithTypeAndName * findByName(const std::string & name, bool case_insensitive = false) const;
-    [[nodiscard]] std::optional<ColumnWithTypeAndName> findSubcolumnByName(const std::string & name) const;
-    [[nodiscard]] std::optional<ColumnWithTypeAndName> findColumnOrSubcolumnByName(const std::string & name) const;
+    const ColumnWithTypeAndName * findByName(const std::string & name, bool case_insensitive = false) const;
+    std::optional<ColumnWithTypeAndName> findSubcolumnByName(const std::string & name) const;
+    std::optional<ColumnWithTypeAndName> findColumnOrSubcolumnByName(const std::string & name) const;
 
     ColumnWithTypeAndName & getByName(const std::string & name, bool case_insensitive = false)
     {
@@ -111,95 +85,77 @@ public:
             const_cast<const Block *>(this)->getByName(name, case_insensitive));
     }
 
-    [[nodiscard]] const ColumnWithTypeAndName & getByName(const std::string & name, bool case_insensitive = false) const;
-    [[nodiscard]] ColumnWithTypeAndName getSubcolumnByName(const std::string & name) const;
-    [[nodiscard]] ColumnWithTypeAndName getColumnOrSubcolumnByName(const std::string & name) const;
+    const ColumnWithTypeAndName & getByName(const std::string & name, bool case_insensitive = false) const;
+    ColumnWithTypeAndName getSubcolumnByName(const std::string & name) const;
+    ColumnWithTypeAndName getColumnOrSubcolumnByName(const std::string & name) const;
 
     Container::iterator begin() { return data.begin(); }
     Container::iterator end() { return data.end(); }
-    [[nodiscard]] Container::const_iterator begin() const { return data.begin(); }
-    [[nodiscard]] Container::const_iterator end() const { return data.end(); }
-    [[nodiscard]] Container::const_iterator cbegin() const { return data.cbegin(); }
-    [[nodiscard]] Container::const_iterator cend() const { return data.cend(); }
+    Container::const_iterator begin() const { return data.begin(); }
+    Container::const_iterator end() const { return data.end(); }
+    Container::const_iterator cbegin() const { return data.cbegin(); }
+    Container::const_iterator cend() const { return data.cend(); }
 
-    [[nodiscard]] bool has(const std::string & name, bool case_insensitive = false) const;
+    bool has(const std::string & name, bool case_insensitive = false) const;
 
-    [[nodiscard]] size_t getPositionByName(const std::string & name, bool case_insensitive = false) const;
-    [[nodiscard]] std::optional<size_t> findPositionByName(std::string_view name, bool case_insensitive = false) const;
+    size_t getPositionByName(const std::string & name, bool case_insensitive = false) const;
+    std::optional<size_t> findPositionByName(std::string_view name, bool case_insensitive = false) const;
 
-    [[nodiscard]] const ColumnsWithTypeAndName & getColumnsWithTypeAndName() const;
-    [[nodiscard]] NamesAndTypesList getNamesAndTypesList() const;
-    [[nodiscard]] NamesAndTypes getNamesAndTypes() const;
-    [[nodiscard]] Names getNames() const;
-    [[nodiscard]] NameSet getNameSet() const;
-    [[nodiscard]] DataTypes getDataTypes() const;
-    [[nodiscard]] Names getDataTypeNames() const;
+    const ColumnsWithTypeAndName & getColumnsWithTypeAndName() const;
+    NamesAndTypesList getNamesAndTypesList() const;
+    NamesAndTypes getNamesAndTypes() const;
+    Names getNames() const;
+    NameSet getNameSet() const;
+    DataTypes getDataTypes() const;
+    Names getDataTypeNames() const;
 
     /// Hash table match `column name -> position in the block`.
 
-    [[nodiscard]] const IndexByName & getIndexByName() const { return index_by_name; }
+    const IndexByName & getIndexByName() const { return index_by_name; }
 
-    [[nodiscard]] Serializations getSerializations() const;
-    [[nodiscard]] Serializations getSerializations(const SerializationInfoByName & hints) const;
+    Serializations getSerializations() const;
+    Serializations getSerializations(const SerializationInfoByName & hints) const;
 
-    /// Returns the number of rows: from the first column in the block that is not nullptr,
-    /// and for a block with no columns, the number set by `setRowsWithoutColumns` (zero by default).
-    [[nodiscard]] size_t rows() const;
+    /// Returns number of rows from first column in block, not equal to nullptr. If no columns, returns 0.
+    size_t rows() const;
 
-    /// Sets the number of rows of a block that has no columns. Such a block is not empty when the number
-    /// is not zero: its rows carry no values at all, and their number is all the data there is. It is what
-    /// a shard produces for `SELECT count() OVER () FROM distributed_table WHERE x > 0`, where the
-    /// initiator needs the number of rows and nothing else.
-    ///
-    /// The number of rows of a block with no columns is never derived: removing every column of a block
-    /// leaves a block without rows, and so does making a block out of a header with no columns
-    /// (`cloneWithColumns`, `setColumns`). The code that turns rows into a block with no columns has to
-    /// call this method. Inserting a column resets the number: the block takes its rows from its columns then.
-    ///
-    /// It is a logical error to call it for a block that has columns.
-    void setRowsWithoutColumns(size_t num_rows);
-
-    [[nodiscard]] size_t columns() const { return data.size(); }
+    size_t columns() const { return data.size(); }
 
     /// Checks that every column in block is not nullptr and has same number of elements.
     void checkNumberOfRows(bool allow_null_columns = false) const;
 
     /// Approximate number of bytes in memory - for profiling and limits.
-    [[nodiscard]] size_t bytes() const;
+    size_t bytes() const;
 
     /// Approximate number of allocated bytes in memory - for profiling and limits.
-    [[nodiscard]] size_t allocatedBytes() const;
+    size_t allocatedBytes() const;
 
-    /// The block has neither columns nor rows, the same as for a `Chunk`: it is not data at all, but the
-    /// absence of it, e.g. the end of the data, or a timeout while waiting for it. A header is empty when
-    /// it has no columns. A block with no columns is not empty when it has rows, see
-    /// `setRowsWithoutColumns`: ask `columns` to know whether there are columns.
-    [[nodiscard]] bool empty() const { return data.empty() && rows_without_columns == 0; }
+    bool empty() const { return !columns(); }
 
     /** Get a list of column names separated by commas. */
-    [[nodiscard]] std::string dumpNames() const;
+    std::string dumpNames() const;
 
     /** List of names, types and lengths of columns. Designed for debugging. */
-    [[nodiscard]] std::string dumpStructure() const;
+    std::string dumpStructure() const;
 
     /** List of column names and positions from index */
-    [[nodiscard]] std::string dumpIndex() const;
+    std::string dumpIndex() const;
 
     /** Get the same block, but empty. */
-    [[nodiscard]] Block cloneEmpty() const;
+    Block cloneEmpty() const;
 
-    [[nodiscard]] Columns getColumns() const;
+    Columns getColumns() const;
     void setColumns(const Columns & columns);
     void setColumn(size_t position, ColumnWithTypeAndName column);
-    [[nodiscard]] Block cloneWithColumns(const Columns & columns) const;
-    [[nodiscard]] Block cloneWithoutColumns() const;
-    [[nodiscard]] Block cloneWithCutColumns(size_t start, size_t length) const;
+    Block cloneWithColumns(const Columns & columns) const;
+    Block cloneWithoutColumns() const;
+    Block cloneWithCutColumns(size_t start, size_t length) const;
 
     /** Get empty columns with the same types as in block. */
-    [[nodiscard]] MutableColumns cloneEmptyColumns() const;
+    MutableColumns cloneEmptyColumns() const;
 
     /** Get empty columns with the same types as in block and given serializations. */
-    [[nodiscard]] MutableColumns cloneEmptyColumns(const Serializations & serializations) const;
+    MutableColumns cloneEmptyColumns(const Serializations & serializations) const;
 
     /** Get columns from block for mutation. Columns in block will be nullptr. */
     MutableColumns mutateColumns();
@@ -211,14 +167,14 @@ public:
     Block cloneWithColumns(MutableColumns && columns) const;
 
     /** Get a block with columns that have been rearranged in the order of their names. */
-    [[nodiscard]] Block sortColumns() const;
+    Block sortColumns() const;
 
     /** See IColumn::shrinkToFit() */
-    [[nodiscard]] Block shrinkToFit() const;
+    Block shrinkToFit() const;
 
-    [[nodiscard]] Block compress() const;
+    Block compress() const;
 
-    [[nodiscard]] Block decompress() const;
+    Block decompress() const;
 
     void clear();
     void swap(Block & other) noexcept;

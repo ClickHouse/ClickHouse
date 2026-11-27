@@ -10,8 +10,10 @@ integration:
   - category: 'clickpipes'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 <div id="what-mysql-resync-do">
-  ### ¿Qué hace Resync? {#what-mysql-resync-do}
+  ### ¿Qué hace Resync?
 </div>
 
 Resync implica las siguientes operaciones, en este orden:
@@ -24,7 +26,7 @@ Resync implica las siguientes operaciones, en este orden:
 Toda la configuración del ClickPipe original se conserva en el ClickPipe de resync. Las estadísticas del ClickPipe original se borran en la UI.
 
 <div id="use-cases-mysql-resync">
-  ### Casos de uso para hacer Resync a un ClickPipe {#use-cases-mysql-resync}
+  ### Casos de uso para hacer Resync a un ClickPipe
 </div>
 
 Estos son algunos escenarios:
@@ -37,21 +39,19 @@ Estos son algunos escenarios:
   ya que cada vez implica una carga inicial con hilos paralelos.
 </Note>
 
-### Guía para hacer Resync de ClickPipe {#guide-mysql-resync}
+<div id="guide-mysql-resync">
+  ### Guía para hacer Resync de ClickPipe
+</div>
 
 1. En la pestaña **Data Sources**, haz clic en el MySQL ClickPipe al que quieras hacer Resync.
 2. Ve a la pestaña **Settings**.
 3. Haz clic en el botón **Resync**.
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
 
 4. Debería aparecer un cuadro de diálogo de confirmación. Haz clic de nuevo en **Resync**.
 5. Ve a la pestaña **Metrics**.
 6. En unos 5 segundos (y también al actualizar la página), el estado del pipe debería ser **Setup** o **Snapshot**.
-7. La carga inicial del Resync puede supervisarse en la pestaña **Tables** - en la sección **Estadísticas de carga inicial**.
+7. La carga inicial del Resync puede supervisarse en la pestaña **Tables** - en la sección **Initial Load Stats**.
 8. Una vez completada la carga inicial, el pipe intercambiará de forma atómica las tablas `_resync` por las tablas originales. Durante el intercambio, el estado será **Resync**.
 9. Una vez completado el intercambio, el pipe pasará al estado **Running** y realizará CDC si está habilitado.

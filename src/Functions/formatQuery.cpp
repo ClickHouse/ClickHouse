@@ -56,33 +56,25 @@ public:
         implicit_select = settings[Setting::implicit_select];
     }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    /// The captured parser settings decide whether a query is formatted or rejected, and how the
-    /// data types in it are rendered, see `IFunctionBase::updateHash`.
-    void updateHash(SipHash & hash) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        hash.update(max_query_size);
-        hash.update(max_parser_depth);
-        hash.update(max_parser_backtracks);
-        hash.update(print_pretty_type_names);
-        hash.update(implicit_select);
+        FunctionArgumentDescriptors args{
+            {"query", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
+        };
+        validateFunctionArguments(*this, arguments, args);
+
+        DataTypePtr string_type = std::make_shared<DataTypeString>();
+        if (error_handling == ErrorHandling::Null)
+            return std::make_shared<DataTypeNullable>(string_type);
+        return string_type;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    /// An empty string is not a query.
-    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return error_handling != ErrorHandling::Exception; }
-
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return error_handling == ErrorHandling::Null
-            ? "(String) -> Nullable(String)"
-            : "(String) -> String";
-    }
-
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr col_query = arguments[0].column;
 
@@ -195,7 +187,11 @@ REGISTER_FUNCTION(formatQuery)
             .examples{
                 {"multiline",
                  "SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');",
-                 R"(SELECT\n    a,\n    b\nFROM tab\nWHERE (a > 3) AND (b < 3))"}},
+                 "SELECT\n"
+                 "    a,\n"
+                 "    b\n"
+                 "FROM tab\n"
+                 "WHERE (a > 3) AND (b < 3)"}},
             .introduced_in = {23, 10},
             .category = FunctionDocumentation::Category::Other});
 }
@@ -213,7 +209,11 @@ REGISTER_FUNCTION(formatQueryOrNull)
             .examples{
                 {"multiline",
                  "SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');",
-                 R"(SELECT\n    a,\n    b\nFROM tab\nWHERE (a > 3) AND (b < 3))"}},
+                 "SELECT\n"
+                 "    a,\n"
+                 "    b\n"
+                 "FROM tab\n"
+                 "WHERE (a > 3) AND (b < 3)"}},
             .introduced_in = {23, 11},
             .category = FunctionDocumentation::Category::Other});
 }

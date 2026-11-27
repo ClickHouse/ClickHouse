@@ -56,12 +56,12 @@ void IMergingTransformBase::onNewInput()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "onNewInput is not implemented for {}", getName());
 }
 
-void IMergingTransformBase::addInput(const Block & input_header)
+void IMergingTransformBase::addInput()
 {
     if (have_all_inputs)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "IMergingTransform already have all inputs.");
 
-    inputs.emplace_back(input_header, this);
+    inputs.emplace_back(outputs.front().getHeader(), this);
     onNewInput();
 }
 
@@ -73,120 +73,84 @@ void IMergingTransformBase::setHaveAllInputs()
     have_all_inputs = true;
 }
 
-bool IMergingTransformBase::tryInitializeInput(size_t input_num)
+IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
 {
-    auto & input_state = input_states[input_num];
-    auto & input = input_state.port;
-    if (input.isFinished())
-    {
-        input_state.is_initialized = true;
-        return true;
-    }
-
-    input.setNeeded();
-
-    if (!input.hasData())
-        return false;
-
-    /// setNotNeeded after reading first chunk, because in optimismtic case
-    /// (e.g. with optimized 'ORDER BY primary_key LIMIT n' and small 'n')
-    /// we won't have to read any chunks anymore;
-    /// If virtual row exists, let it pass through, so don't read more chunks.
-    auto chunk = input.pull(true);
-    bool virtual_row = isVirtualRow(chunk);
-    if (limit_hint == 0 && !virtual_row)
-        input.setNeeded();
-
-    if (!virtual_row && limit_hint && chunk.getNumRows() < limit_hint)
-        input.setNeeded();
-
-    /// With `always_read_till_end` every source is read in full regardless of where the
-    /// merge stops, so deferring a source behind its virtual row cannot save any reads.
-    /// It would only serialize them: a source left NotNeeded here does not start reading,
-    /// and once the merge finishes, the drain in `prepare` wakes the leftover sources one
-    /// at a time. Keep them producing concurrently from the start instead. (Currently the
-    /// planner sets this flag only on merges over remote streams, which carry no virtual
-    /// rows — see `addMergeSortingStep` — so this is enforcing the invariant locally
-    /// rather than fixing a reachable case.)
-    if (always_read_till_end)
-        input.setNeeded();
-
-    if (!virtual_row && !chunk.hasRows())
-    {
-        if (!input.isFinished())
-        {
-            input.setNeeded();
-            return false;
-        }
-
-        input_state.is_initialized = true;
-        return true;
-    }
-
-    state.init_chunks[input_num].set(std::move(chunk));
-    input_state.is_initialized = true;
-    return true;
-}
-
-IProcessor::Status IMergingTransformBase::prepareInitializeInputs(const UpdatedInputPorts * updated_inputs)
-{
-    /// The first call visits every input. Later calls visit only the inputs whose state changed,
-    /// otherwise waiting for the first chunks of N inputs costs O(N^2).
+    /// Add information about inputs.
     if (input_states.empty())
     {
         input_states.reserve(inputs.size());
         for (auto & input : inputs)
             input_states.emplace_back(input);
 
-        input_port_to_num.reserve(inputs.size());
-        for (size_t input_num = 0; input_num < input_states.size(); ++input_num)
-            input_port_to_num.emplace_back(&input_states[input_num].port, input_num);
-        std::ranges::sort(input_port_to_num);
-
         state.init_chunks.resize(inputs.size());
-        num_uninitialized_inputs = inputs.size();
-        updated_inputs = nullptr;
     }
 
-    if (updated_inputs)
+    /// Check for inputs we need.
+    bool all_inputs_has_data = true;
+    auto it = inputs.begin();
+    for (size_t i = 0; it != inputs.end(); ++i, ++it)
     {
-        for (const auto * input : *updated_inputs)
+        auto & input = *it;
+        if (input.isFinished())
+            continue;
+
+        if (input_states[i].is_initialized)
+            continue;
+
+        input.setNeeded();
+
+        if (!input.hasData())
         {
-            auto it = std::ranges::lower_bound(input_port_to_num, input, {}, &std::pair<const InputPort *, size_t>::first);
-            chassert(it != input_port_to_num.end() && it->first == input);
-            size_t input_num = it->second;
-            if (!input_states[input_num].is_initialized && tryInitializeInput(input_num))
-                --num_uninitialized_inputs;
+            all_inputs_has_data = false;
+            continue;
         }
-    }
-    else
-    {
-        for (size_t input_num = 0; input_num < input_states.size(); ++input_num)
+
+        /// setNotNeeded after reading first chunk, because in optimismtic case
+        /// (e.g. with optimized 'ORDER BY primary_key LIMIT n' and small 'n')
+        /// we won't have to read any chunks anymore;
+        /// If virtual row exists, let it pass through, so don't read more chunks.
+        auto chunk = input.pull(true);
+        bool virtual_row = isVirtualRow(chunk);
+        if (limit_hint == 0 && !virtual_row)
+            input.setNeeded();
+
+        if (!virtual_row && limit_hint && chunk.getNumRows() < limit_hint)
+            input.setNeeded();
+
+        /// With `always_read_till_end` every source is read in full regardless of where the
+        /// merge stops, so deferring a source behind its virtual row cannot save any reads.
+        /// It would only serialize them: a source left NotNeeded here does not start reading,
+        /// and once the merge finishes, the drain in `prepare` wakes the leftover sources one
+        /// at a time. Keep them producing concurrently from the start instead. (Currently the
+        /// planner sets this flag only on merges over remote streams, which carry no virtual
+        /// rows — see `addMergeSortingStep` — so this is enforcing the invariant locally
+        /// rather than fixing a reachable case.)
+        if (always_read_till_end)
+            input.setNeeded();
+
+        if (!virtual_row && !chunk.hasRows())
         {
-            if (!input_states[input_num].is_initialized && tryInitializeInput(input_num))
-                --num_uninitialized_inputs;
+            if (!input.isFinished())
+            {
+                input.setNeeded();
+                all_inputs_has_data = false;
+            }
+
+            continue;
         }
+
+        state.init_chunks[i].set(std::move(chunk));
+        input_states[i].is_initialized = true;
     }
 
-    if (num_uninitialized_inputs)
+    if (!all_inputs_has_data)
         return Status::NeedData;
 
-    input_port_to_num = {};
     is_initialized = true;
     return Status::Ready;
 }
 
 IProcessor::Status IMergingTransformBase::prepare()
-{
-    return prepareImpl(nullptr);
-}
-
-IProcessor::Status IMergingTransformBase::prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & /*updated_outputs*/)
-{
-    return prepareImpl(&updated_inputs);
-}
-
-IProcessor::Status IMergingTransformBase::prepareImpl(const UpdatedInputPorts * updated_inputs)
 {
     if (!have_all_inputs)
         return Status::NeedData;
@@ -220,7 +184,7 @@ IProcessor::Status IMergingTransformBase::prepareImpl(const UpdatedInputPorts * 
         output.push(std::move(state.output_chunk));
 
     if (!is_initialized)
-        return prepareInitializeInputs(updated_inputs);
+        return prepareInitializeInputs();
 
     if (!state.inputs_to_prefetch.empty())
     {
@@ -291,26 +255,13 @@ IProcessor::Status IMergingTransformBase::prepareImpl(const UpdatedInputPorts * 
             {
                 input.setNeeded();
             }
-            if (!input_chunk.hasRows() && !virtual_row)
+            if (!input_chunk.hasRows() && !virtual_row && !input.isFinished())
             {
-                if (!input.isFinished())
-                {
-                    input.setNeeded();
-                    return Status::NeedData;
-                }
+                input.setNeeded();
+                return Status::NeedData;
+            }
 
-                /// The input finished with an empty chunk: there is nothing to consume.
-                /// Passing it to the algorithm would put an empty cursor into the sorting
-                /// queue (`Logical error: 'max_rows > 0'` in the batch merge, out-of-bounds
-                /// row access in the heap comparisons). Report the source as exhausted
-                /// instead, like the initialization path does for empty first chunks.
-                state.input_chunk.set(Chunk());
-                state.no_data = true;
-            }
-            else
-            {
-                state.has_input = true;
-            }
+            state.has_input = true;
         }
         else
         {

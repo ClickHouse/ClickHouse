@@ -84,19 +84,15 @@ keeperclusters.clickhouse.com        2025-01-06T00:00:00Z
 Se quiser configurar as opções de implantação do operador, siga as etapas abaixo.
 
 <Steps>
-  <Step>
-    ### Clonar o repositório
-
+  <Step title="Clonar o repositório" id="clone-the-repository">
     ```bash
     git clone https://github.com/ClickHouse/clickhouse-operator.git
     cd clickhouse-operator
     ```
   </Step>
 
-  <Step>
-    ### Configurar opções de instalação
-
-    Edite `config/default/kustomization.yaml` para ativar ou desativar recursos, conforme necessário.
+  <Step title="Configurar opções de instalação" id="configure-installation-options">
+    Edite config/default/kustomization.yaml para ativar ou desativar recursos, conforme necessário.
 
     * Para desativar os webhooks, comente as seções `[WEBHOOK]` e `[CERTMANAGER]`.
     * Para ativar o endpoint seguro de métricas, comente as seções `[METRICS]` e descomente as seções `[METRICS SECURE]` e `[CERTMANAGER]`.
@@ -104,9 +100,7 @@ Se quiser configurar as opções de implantação do operador, siga as etapas ab
     * Para ativar as políticas de rede do operador, descomente a seção `[NETWORK POLICY]`.
   </Step>
 
-  <Step>
-    ### Compilar e implantar
-
+  <Step title="Compilar e implantar" id="build-and-deploy">
     Compile os manifestos do operador e aplique-os:
 
     ```bash
