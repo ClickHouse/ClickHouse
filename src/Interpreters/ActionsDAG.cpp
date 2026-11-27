@@ -3845,7 +3845,7 @@ bool conjunctDependsOnAllowedInput(const ActionsDAG::Node * conjunct, const Unor
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForConjunction(
     NodeRawConstPtrs conjunction,
     const ColumnsWithTypeAndName & all_inputs,
-    UnorderedMapWithMemoryTracking<const Node *, const Node *> * cloned_nodes)
+    UnorderedMapWithMemoryTracking<const Node *, const Node *> * cloned_nodes_mapping)
 {
     if (conjunction.empty())
         return {};
@@ -3938,8 +3938,8 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
         return {};
     }
 
-    if (cloned_nodes)
-        *cloned_nodes = std::move(nodes_mapping);
+    if (cloned_nodes_mapping)
+        *cloned_nodes_mapping = std::move(nodes_mapping);
 
     return ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter, false};
 }
@@ -4226,19 +4226,19 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             rejected_conjunctions.push_back(atom);
     chassert(rejected_conjunctions.size() == rejected_count);
 
-    UnorderedMapWithMemoryTracking<const Node *, const Node *> left_stream_cloned_nodes;
-    UnorderedMapWithMemoryTracking<const Node *, const Node *> right_stream_cloned_nodes;
+    UnorderedMapWithMemoryTracking<const Node *, const Node *> left_stream_cloned_nodes_mapping;
+    UnorderedMapWithMemoryTracking<const Node *, const Node *> right_stream_cloned_nodes_mapping;
     auto left_stream_filter_to_push_down = createActionsForConjunction(
-        left_stream_allowed_conjunctions, left_stream_header.getColumnsWithTypeAndName(), &left_stream_cloned_nodes);
+        left_stream_allowed_conjunctions, left_stream_header.getColumnsWithTypeAndName(), &left_stream_cloned_nodes_mapping);
     auto right_stream_filter_to_push_down = createActionsForConjunction(
-        right_stream_allowed_conjunctions, right_stream_header.getColumnsWithTypeAndName(), &right_stream_cloned_nodes);
+        right_stream_allowed_conjunctions, right_stream_header.getColumnsWithTypeAndName(), &right_stream_cloned_nodes_mapping);
 
     auto replace_equivalent_columns_in_filter = [&equivalent_expression_nodes](
         const ActionsDAG & filter,
         size_t filter_pos,
         const Block & stream_header,
         const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & columns_to_replace,
-        const UnorderedMapWithMemoryTracking<const Node *, const Node *> & cloned_nodes)
+        const UnorderedMapWithMemoryTracking<const Node *, const Node *> & cloned_nodes_mapping)
     {
         std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> input_nodes_to_replace;
 
@@ -4247,8 +4247,8 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> expression_nodes;
         for (const auto & [node, name] : equivalent_expression_nodes)
         {
-            auto cloned_it = cloned_nodes.find(node);
-            if (cloned_it == cloned_nodes.end())
+            auto cloned_it = cloned_nodes_mapping.find(node);
+            if (cloned_it == cloned_nodes_mapping.end())
                 continue;
 
             expression_nodes.insert(cloned_it->second);
@@ -4358,14 +4358,14 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             left_stream_filter_to_push_down->filter_pos,
             left_stream_header,
             equivalent_right_stream_column_to_left_stream_column,
-            left_stream_cloned_nodes);
+            left_stream_cloned_nodes_mapping);
 
     if (right_stream_filter_to_push_down)
         right_stream_filter_to_push_down->dag = replace_equivalent_columns_in_filter(right_stream_filter_to_push_down->dag,
             right_stream_filter_to_push_down->filter_pos,
             right_stream_header,
             equivalent_left_stream_column_to_right_stream_column,
-            right_stream_cloned_nodes);
+            right_stream_cloned_nodes_mapping);
 
     /*
      * We should check the presence of a split filter column name in stream columns to avoid removing the required column.

@@ -474,12 +474,11 @@ static VectorWithMemoryTracking<JoinActionRefPair> buildEquialentSetsForJoinStep
 }
 
 /// The pushed-down filter computes a key and the JOIN computes it again, so the key must return the same
-/// value twice within one query and must not change the number of rows. This pass already requires both
-/// properties of the filters it pushes.
+/// value twice within one query, must not change the number of rows, and one more evaluation must not be observable.
 static bool canComputeJoinKeyTwice(const JoinActionRef & key)
 {
     static constexpr auto changes_between_evaluations = [](const IFunctionBase & function)
-    { return function.isStateful() || !function.isDeterministicInScopeOfQuery(); };
+    { return function.isStateful() || !function.isDeterministicInScopeOfQuery() || function.hasObservableSideEffects(); };
 
     const auto key_dag = JoinExpressionActions::getSubDAG(key);
     for (const auto & node : key_dag.getNodes())
