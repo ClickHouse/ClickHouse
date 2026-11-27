@@ -2,15 +2,15 @@
 slug: /cloud/data-sources/secure-iceberg
 sidebarTitle: 'Безопасный доступ к данным Iceberg'
 title: 'Безопасный доступ к данным Iceberg'
-description: 'В этой статье показано, как клиенты ClickHouse Cloud могут безопасно получать доступ к данным Apache Iceberg в Объектном хранилище с помощью ролевой модели доступа.'
+description: 'В этой статье показано, как клиенты ClickHouse Cloud могут безопасно получать доступ к данным Apache Iceberg в Объектном хранилище с помощью доступа на основе ролей.'
 keywords: ['Iceberg', 'RBAC', 'Amazon S3', 'аутентификация']
 doc_type: 'guide'
 ---
 
-ClickHouse Cloud поддерживает безопасный ролевой доступ к данным Iceberg, хранящимся в Объектном хранилище (обычно S3), с использованием доверительной связи AWS IAM на основе ARN. В этом руководстве используется тот же подход к безопасной настройке, что и в [Безопасный доступ к данным S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely), а также добавляется специфичная для Iceberg конфигурация в ClickHouse.
+ClickHouse Cloud поддерживает безопасный доступ на основе ролей к данным Iceberg, хранящимся в Объектном хранилище (обычно S3), с использованием доверительной связи AWS IAM на основе ARN. В этом руководстве используется тот же подход к безопасной настройке, что и в [Безопасный доступ к данным S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely), а также добавляется специфичная для Iceberg конфигурация в ClickHouse.
 
 <div id="overview">
-  ## Обзор
+  ## Обзор {#overview}
 </div>
 
 * Получите идентификатор сервисной роли ClickHouse Cloud (IAM).
@@ -18,9 +18,7 @@ ClickHouse Cloud поддерживает безопасный ролевой д
 * Прикрепите к роли политики доступа к объектам и каталогу для Iceberg.
 * Используйте табличные функции Iceberg или движок таблицы IcebergS3 с ролевыми учётными данными.
 
-<div id="obtaining-the-clickhouse-service-iam-role-arn">
-  ## Получите идентификатор сервисной роли ClickHouse (ARN)
-</div>
+## Получите идентификатор роли сервиса ClickHouse (ARN) {#obtaining-the-clickhouse-service-iam-role-arn}
 
 <Steps>
   <Step title="1. Войдите в свою учетную запись ClickHouse Cloud." id="login" />
@@ -31,23 +29,19 @@ ClickHouse Cloud поддерживает безопасный ролевой д
 
   <Step title={<>4. Прокрутите страницу до раздела <strong>Network security information</strong>.</>} id="network-security-information" />
 
-  <Step title={<>5. Скопируйте значение <strong>Идентификатор сервисной роли (IAM)</strong>.</>} id="service-role-iam-value">
+  <Step title={<>5. Скопируйте значение <strong>Идентификатор роли сервиса (IAM)</strong>.</>} id="service-role-iam-value">
     Этот ARN требуется для политики доверия роли IAM в AWS, которая будет использоваться для доступа к вашим данным Iceberg.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Получение ARN сервисной роли IAM ClickHouse](/images/cloud/security/secures3_arn.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Получение ARN сервисной роли IAM ClickHouse](/images/cloud/security/secures3_arn.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="setting-up-iam-assume-role">
-  ## Настройка роли IAM с AssumeRole
+  ## Настройка роли IAM с AssumeRole {#setting-up-iam-assume-role}
 </div>
 
 <Steps>
@@ -128,11 +122,11 @@ ClickHouse Cloud поддерживает безопасный ролевой д
 </Steps>
 
 <div id="configure-iceberg-access">
-  ## Настроить доступ к Iceberg в ClickHouse Cloud
+  ## Настроить доступ к Iceberg в ClickHouse Cloud {#configure-iceberg-access}
 </div>
 
 <div id="iceberg-table-function-with-role-arn">
-  ### Вариант A: табличная функция Iceberg с ARN роли
+  ### Вариант A: табличная функция Iceberg с ARN роли {#iceberg-table-function-with-role-arn}
 </div>
 
 Используйте табличную функцию `icebergS3` с параметром `NOSIGN` и ролевыми учётными данными. ClickHouse Cloud вызовет STS, чтобы взять на себя эту роль.
@@ -147,7 +141,7 @@ FROM icebergS3(
 ```
 
 <div id="persistent-iceberg-table-engine">
-  ### Вариант B: Постоянный движок таблицы Iceberg
+  ### Вариант B: Постоянный движок таблицы Iceberg {#persistent-iceberg-table-engine}
 </div>
 
 ```sql
@@ -164,7 +158,7 @@ ENGINE = IcebergS3(
 ```
 
 <div id="glue-catalog-plus-icebergs3">
-  ### Вариант C: каталог Glue + IcebergS3
+  ### Вариант C: каталог Glue + IcebergS3 {#glue-catalog-plus-icebergs3}
 </div>
 
 ```sql
@@ -185,7 +179,7 @@ SETTINGS
 > Примечание: при использовании каталога Glue убедитесь, что у вашей роли IAM есть разрешения S3 и Glue на чтение и просмотр списков.
 
 <div id="datalake-catalog-for-glue">
-  ### Вариант D: каталог DataLake для Glue
+  ### Вариант D: каталог DataLake для Glue {#datalake-catalog-for-glue}
 </div>
 
 <Note>
@@ -205,7 +199,7 @@ SETTINGS
 ```
 
 <div id="validate-access">
-  ## Проверьте доступ
+  ## Проверьте доступ {#validate-access}
 </div>
 
 1. Выполните простой запрос:
@@ -218,7 +212,7 @@ LIMIT 5;
 2. Проверьте, нет ли ошибок IAM, таких как `AccessDenied` или `InvalidAccessKeyId`.
 
 <div id="troubelshooting">
-  ## Устранение неполадок
+  ## Устранение неполадок {#troubelshooting}
 </div>
 
 * Проверьте ARN роли в настройках сервиса ClickHouse Cloud.

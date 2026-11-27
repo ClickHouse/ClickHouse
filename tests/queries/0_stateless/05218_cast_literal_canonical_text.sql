@@ -46,3 +46,5 @@ SELECT formatQuerySingleLine('SELECT CAST(- 1 AS Int128), CAST([0.1 /* c */, 0.2
 SELECT -0.0::Float64, -0e0::Float64, CAST(-0.0 AS Float64), (-0.0::BFloat16), -0::Float64, -0::UInt8, CAST(-0.0 AS Decimal32(2));
 SELECT formatQuerySingleLine('SELECT -0.0::Float64, CAST([-0.0, -0] AS Array(Decimal32(2))), CAST((-0.0) AS Decimal32(2)), -0::UInt8') AS formatted,
     formatQuerySingleLine(formatted) = formatted;
+SELECT formatQuerySingleLine('SELECT [-0, 1]::Array(Int128), [1, null]::Array(Nullable(Int128))') AS formatted,
+    formatQuerySingleLine(formatted) = formatted;

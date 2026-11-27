@@ -148,8 +148,8 @@ _FINAL_BINARIES = ("programs/clickhouse", "programs/clickhouse-keeper")
 # size row is required.
 _SIZE_ONLY_BINARIES = ("programs/clickhouse-stripped",)
 
-# These builds link the server binary only as the reference of the PR performance
-# comparison, so its link trace and symbols are kept out of their upload.
+# These builds link only for the PR builds (the reference of the PR performance
+# comparison, the ThinLTO cache), so their link traces and symbols are kept out of their upload.
 _OBJECTS_ONLY_BUILDS = ("arm_release_performance_reference",)
 
 
@@ -270,9 +270,9 @@ def check():
         if objects_only:
             # lld writes the link trace next to its output: <output>.time-trace
             # up to LLVM 22, <output>.time-trace.json from LLVM 23 on.
-            for rel in _FINAL_BINARIES:
-                for suffix in (".time-trace", ".time-trace.json"):
-                    (Path(build_dir) / f"{rel}{suffix}").unlink(missing_ok=True)
+            for trace in Path(build_dir).rglob("*.time-trace*"):
+                if trace.name.endswith((".time-trace", ".time-trace.json")):
+                    trace.unlink()
         Shell.check(
             "./utils/prepare-time-trace/prepare-time-trace.sh "
             f"{build_dir} {profiles_dir.absolute()}",

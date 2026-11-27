@@ -1,0 +1,254 @@
+---
+slug: /clickstack/managed-onboarding/migrating-from-datadog-serverless
+title: '既存のエージェントを使用した Datadog からの移行'
+sidebarTitle: 'Datadog からの移行'
+description: 'すでに運用している Datadog エージェントの送信先を ClickHouse オブザーバビリティの Datadog 互換エンドポイントに向けることで、Datadog と併用しながら、あるいは Datadog の代わりに、アプリケーションを変更せずにログ、トレース、メトリクスを探索できます。'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'Datadog', 'Datadog Agent', 'migration', 'dual shipping', 'additional_endpoints', 'Datadog receiver', 'logs', 'traces', 'metrics']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+<Info>
+  **概要**
+
+  すでに運用している Datadog エージェントに、サービスの Datadog 互換エンドポイントを追加し (Datadog と併用、または Datadog の代わりとして)、エージェントを再起動します。これだけで、ログ、トレース、メトリクスが ClickHouse オブザーバビリティに表示されます。collector のデプロイは不要で、アプリケーションを変更する必要も一切ありません。
+
+  所要時間: 約 15 分
+</Info>
+
+ここでは、ClickHouse オブザーバビリティのサービスをすでに作成しており、テレメトリーが Datadog エージェント経由で送信されていることを前提とします。自社のデータでサービスの動作を確認するために、これらのエージェントを置き換えたり、アプリケーションに手を加えたりする必要はありません。
+
+ClickHouse オブザーバビリティには Datadog 互換エンドポイントが用意されています。このエンドポイントは、エージェントがすでに生成しているログ、トレース、メトリクスを受け取り、OpenTelemetry 形式に変換してサービスに保存します。必要な変更はエージェントの設定だけです。これにより、次のことが可能になります。
+
+* サンプルデータセットではなく、実際の本番環境のテレメトリーを使って ClickHouse オブザーバビリティを評価できます。
+* 2 つのプラットフォームを並行して比較しながら、Datadog へのデータ送信を継続できます。
+* 段階的に移行できます。エージェントをグループ単位で切り替え、OpenTelemetry のインストルメンテーションも自分のペースで導入できます。
+
+<img src="/images/clickstack/observability/clickstack-datadog-agents-overview-dark.svg" alt="ホスト、Kubernetes クラスター、コンテナ上の Datadog エージェントはそのままで、ログ、トレース、メトリクスを ClickHouse オブザーバビリティの Datadog 互換エンドポイントに送信し、そこから ClickStack UI にデータが供給されます。比較期間中は、必要に応じて Datadog への送信も継続できます。" width="720" height="300" className="ch-transparent hidden dark:block" style={{ width: '100%', height: 'auto', margin: '16px 0 8px', background: 'transparent', borderRadius: 0 }} />
+
+<img src="/images/clickstack/observability/clickstack-datadog-agents-overview-light.svg" alt="ホスト、Kubernetes クラスター、コンテナ上の Datadog エージェントはそのままで、ログ、トレース、メトリクスを ClickHouse オブザーバビリティの Datadog 互換エンドポイントに送信し、そこから ClickStack UI にデータが供給されます。比較期間中は、必要に応じて Datadog への送信も継続できます。" width="720" height="300" className="ch-transparent block dark:hidden" style={{ width: '100%', height: 'auto', margin: '16px 0 8px', background: 'transparent', borderRadius: 0 }} />
+
+<Note>
+  **すでに OpenTelemetry を使用している場合**
+
+  テレメトリーが OpenTelemetry コレクターを経由している場合は、エクスポーターを 1 つ追加するだけです。詳しくは [OpenTelemetry Collector の接続](/ja/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless) を参照してください。アプリケーションを直接インストルメントする場合は、[OpenTelemetry によるアプリケーションの計装](/ja/clickstack/managed-onboarding/instrument-application-serverless) を参照してください。
+</Note>
+
+## 前提条件 {#prerequisites}
+
+* ClickHouse オブザーバビリティのサービス。まだお持ちでない場合は、[Getting Started ガイド](/ja/clickstack/observability/getting-started)の手順に従って作成してください。
+* 評価に使用するホスト、コンテナ、または Kubernetes クラスター上で Datadog エージェント 7 が稼働し、対象のログとメトリクスをすでに収集していること。トレースについては、アプリケーションが Datadog のトレーシングライブラリ経由で、すでに Agent にトレースを送信している必要があります。
+* Agent の設定 (`datadog.yaml` または同等の環境変数) へのアクセス権と、Agent を再起動するためのアクセス許可。
+* Agent のホストからサービスのテレメトリーエンドポイントへの、ポート `8126` でのアウトバウンド HTTPS アクセス。
+
+## Datadog エージェントを接続する {#connect-your-datadog-agents}
+
+<Steps>
+  <Step title="接続情報をコピー" id="copy-connection-details">
+    ClickHouse オブザーバビリティのサービスを開きます。データが届くまでは、**Start sending telemetry** ページが表示されます。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![データがまだない現在のサービスと、Use an existing OpenTelemetry setup、Instrument with AI、Follow setup guides の3つのオプションが表示された Start sending telemetry ページ](/images/clickstack/getting-started/observability-start-sending-telemetry.png)
+      </Frame>
+    </div>
+
+    **Use an existing OpenTelemetry setup** の下にある **View connection details** を選択します。**URL** タブには、OTLP エンドポイント `https://YOUR_OTEL_HOST:4318` と APIキーが表示されます。**Reveal key** を選択してキー全体を表示し、コピーボタンでコピーします。
+
+    <div className="ch-image-md">
+      <Frame>
+        ![URL、Collector config、Env vars のオプションと、マスクされた接続情報が表示された Set up OpenTelemetry ダイアログ](/images/clickstack/getting-started/observability-connection-details.png)
+      </Frame>
+    </div>
+
+    Datadog 互換エンドポイントは OTLP エンドポイントと同じホスト上にあり、ポートが `4318` ではなく `8126` になります。また、サービスの APIキーはそのまま Datadog の APIキーとしても使用できます。本ガイドの以降の手順では、次のプレースホルダーを使用します。
+
+    | プレースホルダー                      | 値                                                    |
+    | ----------------------------- | ---------------------------------------------------- |
+    | `YOUR_API_KEY`                | サービスの APIキー                                          |
+    | `YOUR_OTEL_HOST`              | OTLP エンドポイントのホスト名 (`https://` とポートを除く)               |
+    | `https://YOUR_OTEL_HOST:8126` | メトリクスとトレース用の Datadog 互換エンドポイント                       |
+    | `YOUR_OTEL_HOST:8126`         | 同じエンドポイントを `host:port` 形式で表したもの (Agent のログ設定で使用する形式) |
+
+    同じ値は、**チーム設定 → マネージドテレメトリー** からいつでも確認できます。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![マスクされた OTLP HTTPエンドポイントと APIキーが表示された、チーム設定内のマネージドテレメトリーページ](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Datadog エージェントを設定する" id="configure-your-datadog-agents">
+    エージェントがデータを送信する方法を選択します。どちらのオプションも、`datadog.yaml` または環境変数で Agent の設定を変更するだけで、Agent が収集する内容には影響しません。まず 1 つのエージェントで試してデータが届くことを確認してから、他のエージェントにも変更を展開してください。
+
+    <Tabs>
+      <Tab title="Datadog と併用する" id="alongside-datadog">
+        Agent はすべてのペイロードを複数の宛先に送信できます。既存の `api_key` と `site` はそのまま残し、メトリクス、トレース、ログの追加エンドポイントとしてサービスを追加します。Datadog ではこの方式を [dual shipping](https://docs.datadoghq.com/agent/configuration/dual-shipping/) として説明しています。
+
+        ```yaml
+        # datadog.yaml: api_key と site はそのまま残し、以下の設定を追加します。
+
+        # メトリクス
+        additional_endpoints:
+          "https://YOUR_OTEL_HOST:8126":
+            - "YOUR_API_KEY"
+
+        # v2 メトリクス取り込みを使用します。
+        use_v3_api:
+          series:
+            enabled: false
+
+        # トレース
+        apm_config:
+          additional_endpoints:
+            "https://YOUR_OTEL_HOST:8126":
+              - "YOUR_API_KEY"
+
+        # ログ
+        logs_config:
+          force_use_http: true
+          additional_endpoints:
+            - api_key: "YOUR_API_KEY"
+              Host: "YOUR_OTEL_HOST"
+              Port: 8126
+              is_reliable: true
+        ```
+
+        Datadog にはこれまでどおりすべてのデータが送信されます。宛先ごとに個別の APIキーを使用するため、Datadog のキーが ClickHouse オブザーバビリティに渡ることも、ClickHouse オブザーバビリティのキーが Datadog に渡ることもありません。追加エンドポイントへのログ送信は HTTP 経由でのみ行われるため、`force_use_http` で HTTP 送信を有効にします。また、`is_reliable: true` を指定すると、新しいエンドポイントに一時的に接続できない場合でも、Agent はログを破棄せずにバッファして再試行します。ファイル内に `apm_config` または `logs_config` がすでに存在する場合は、新しいキーを既存のセクションに追加してください。
+      </Tab>
+
+      <Tab title="Datadog の代わりに使用する" id="instead-of-datadog">
+        エージェントを完全に移行するには、プライマリの宛先をサービスに向け、サービスの APIキーを使用します。
+
+        ```yaml
+        api_key: "YOUR_API_KEY"
+
+        # メトリクスの宛先
+        dd_url: "https://YOUR_OTEL_HOST:8126"
+
+        # v2 メトリクス取り込みを使用します。
+        use_v3_api:
+          series:
+            enabled: false
+
+        # トレースの宛先
+        apm_config:
+          enabled: true
+          apm_dd_url: "https://YOUR_OTEL_HOST:8126"
+
+        # ログの宛先
+        logs_enabled: true
+        logs_config:
+          logs_dd_url: "YOUR_OTEL_HOST:8126"
+          force_use_http: true
+          logs_no_ssl: false
+
+        remote_updates: false
+        remote_configuration:
+          enabled: false
+        ```
+
+        これらの設定で変更されるのは、Agent のログ、トレース、メトリクスの送信先のみです。Agent が収集するログを変更したり、インストルメンテーションを追加したりするものではないため、既存のログ収集インテグレーションとトレーシングの設定はそのまま維持してください。リモート設定を無効にしているのは、有効のままだと Agent が Datadog にとって無効となったキーで設定を問い合わせ続けてしまうためです。
+      </Tab>
+    </Tabs>
+
+    <Accordion title="環境変数で設定する">
+      コンテナおよび Kubernetes のデプロイメントでは、通常 `DD_` 環境変数を使用して Agent を設定します。これらの環境変数は `datadog.yaml` の設定をオーバーライドします。Docker コマンド、Helm の設定値、または Operator の spec で指定してください。
+
+      Datadog と並行してデータを送信するには:
+
+      ```shell
+      DD_ADDITIONAL_ENDPOINTS='{"https://YOUR_OTEL_HOST:8126": ["YOUR_API_KEY"]}'
+      DD_APM_ADDITIONAL_ENDPOINTS='{"https://YOUR_OTEL_HOST:8126": ["YOUR_API_KEY"]}'
+      DD_LOGS_CONFIG_FORCE_USE_HTTP=true
+      DD_LOGS_CONFIG_ADDITIONAL_ENDPOINTS='[{"api_key": "YOUR_API_KEY", "Host": "YOUR_OTEL_HOST", "Port": 8126, "is_reliable": true}]'
+      ```
+
+      Datadog ではなくこちらに送信するには、次のようにします。
+
+      ```shell
+      DD_API_KEY=YOUR_API_KEY
+      DD_DD_URL=https://YOUR_OTEL_HOST:8126
+      DD_APM_ENABLED=true
+      DD_APM_DD_URL=https://YOUR_OTEL_HOST:8126
+      DD_LOGS_ENABLED=true
+      DD_LOGS_CONFIG_LOGS_DD_URL=YOUR_OTEL_HOST:8126
+      DD_LOGS_CONFIG_FORCE_USE_HTTP=true
+      DD_REMOTE_CONFIGURATION_ENABLED=false
+      ```
+
+      Agent 7.81 以降では、メトリクスはデフォルトで新しい series インテークに送信されます。この設定のエージェントからメトリクスが届かない場合は、上記のファイルベースの例と同様に、そのエージェントの `datadog.yaml` に `use_v3_api.series.enabled: false` を追加してください。
+    </Accordion>
+  </Step>
+
+  <Step title="エージェントを再起動し、状態を確認する" id="restart-and-check">
+    設定を適用するには、Agent を再起動します。Linux の場合:
+
+    ```shell
+    sudo systemctl restart datadog-agent
+    sudo datadog-agent status
+    ```
+
+    MacOS の場合:
+
+    ```shell
+    sudo launchctl kickstart -k system/com.datadoghq.agent
+    datadog-agent status
+    ```
+
+    コンテナ化された Agent の場合は、環境変数を更新してコンテナまたはポッドを再デプロイし、そのコンテナ内で `agent status` を実行します。
+
+    status の出力では、**Forwarder**、**APM Agent**、**Logs Agent** の各セクションにそれぞれの宛先が一覧表示されます。エージェントが正常であれば、エンドポイントがエラーなしで表示されます。`403` 応答が返される場合は、APIキーが誤っているか、**Reveal key** を選択する前にキーをコピーしています。接続エラーやタイムアウトが発生する場合は、ホスト名の入力ミス、`8126` 以外のポートの使用、またはアウトバウンドアクセスのブロックが考えられます。
+  </Step>
+</Steps>
+
+## データの到着を確認する {#confirm-data-is-arriving}
+
+サービスの **Start sending telemetry** ページに戻り、**Check for data** を選択します。テレメトリーが到着すると、サービスの状態が **Data received** に変わり、**Start exploring** を選択できるようになります。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![サービスの状態が Data received と表示され、探索の準備が整ったことを示すメッセージと、有効になった Start exploring ボタンが表示されている Start sending telemetry ページ](/images/clickstack/getting-started/observability-data-received.png)
+  </Frame>
+</div>
+
+**Start exploring** を選択して **検索** を開きます。**Logs** ログソースを選択し、時間範囲を **Last 15 minutes** に設定して、Agent が付与する `service` タグの値で `ServiceName` をフィルタします。レコードを展開すると、Agent の `host`、`env`、コンテナ、Kubernetes の各タグがリソース属性として表示されます。また、Datadog の `status` は `SeverityText` にマッピングされるため、`level:error` 形式のフィルタも OpenTelemetry ログと同じように機能します。
+
+{/* TODO(dale): Datadog エージェントからのログと、そのサービス属性およびホスト属性が表示されている検索画面のスクリーンショット。 */}
+
+**Traces** ログソースに切り替えると、Datadog のトレーシングライブラリから報告されたサービスを確認できます。`dd.trace_id` を含むログは対応するスパンと相関付けられるため、トレースを開くと関連するログレコードも併せて表示されます。メトリクスを確認するには、**Chart Explorer** を開いて **Time Series** と **Metrics** ログソースを選択し、`system.cpu.user` など Agent が報告するメトリクスをチャートに表示します。
+
+{/* TODO(dale): Datadog トレーシングライブラリが出力したトレースと、それに関連付けられたログのスクリーンショット。 */}
+
+## 何も表示されない場合 {#if-nothing-shows-up}
+
+* まず Agent のステータスを確認してください。認証、エンドポイント、ネットワークの問題は、宛先ごとにそこで報告されます。並行構成では、お使いのエンドポイントでエラーが発生しても、Datadog へのデータ送信が止まることはありません。
+* APIキーを確認してください。キーは完全な値である必要があります (**Reveal key** を選択するとコピーできます) 。このキーはヘッダーとしてではなく、お使いのエンドポイント向けの Datadog `api_key` として使用されます。
+* エンドポイントを確認してください。メトリクスとトレースではスキーム付きの `https://YOUR_OTEL_HOST:8126` を、ログ設定ではスキームなしの `YOUR_OTEL_HOST:8126` を使用します。ホスト名は OTLP エンドポイントと同じもので、ポートは `4318` ではなく `8126` です。
+* ログが届かない場合は、`logs_enabled: true` が設定されていること、および想定しているインテグレーションまたはファイルに対してログ収集が設定されていることを確認してください。このエンドポイントは HTTP 経由のログのみを受け付けるため、`force_use_http` を `true` にする必要があります。
+* トレースが届かない場合は、`apm_config.enabled: true` が設定されていること、およびアプリケーションが Agent にトレースを送信していることを確認してください。エンドポイントは Agent が転送したデータを受信するだけで、アプリケーションをインストルメントするものではありません。
+* メトリクスが届かない場合は、エージェントが `use_v3_api.series.enabled: false` によって v2 の series インテークを使用していることを確認してください。
+* **検索** で時間範囲を広げ、フィルタをすべて解除してください。デフォルトのログソースが **Logs** ではなく **Traces** になっている可能性があります。
+* サービス自体の問題かどうかを切り分けるには、**チーム設定 → マネージドテレメトリー** に移動し、**Send a Test Log** を使用してください。そのログが **検索** に表示されれば、サービスはデータを受信しており、問題は Agent とエンドポイントの間にあります。
+
+## エンドポイントが受け付けるデータ {#what-the-endpoint-accepts}
+
+このエンドポイントは Datadog エージェント が使用するプロトコルを解釈し、各ペイロードがサービスに到達する前に OpenTelemetry 形式へ変換します。
+
+* **ログ：** Datadog のタイムスタンプ、ボディ、ステータスは、それぞれ OpenTelemetry のタイムスタンプ、ボディ、重大度に変換されます。構造化された JSON ログはデコードされるため、各フィールドをクエリできます。ホスト名、サービス名、環境、および既知のコンテナ、クラウド、Kubernetes のタグはリソース属性に変換されます。
+* **トレース：** Datadog のトレーシングライブラリから送信されたスパンは、サービス、リソース、タグのデータを保持します。また、128 ビットのトレースIDが復元されるため、Datadog 由来のログやスパンを、OpenTelemetry でインストルメントされたサービスと相関付けることができます。
+* **メトリクス：** v2 インテークに送信される系列が対象で、Agent のホストメトリクス、カスタムメトリクス、DogStatsD のゲージおよびカウンターが含まれます。ディストリビューションはスケッチとして受信されます。
+* **圧縮：** Agent 7.59 以降では HTTP ペイロードが Zstandard で圧縮されます。エンドポイントは gzip と Zstandard のどちらも受け付けます。
+
+このエンドポイントは OpenTelemetry Collector の Datadogレシーバー (アルファ段階のコンポーネント) をベースに構築されており、ClickHouse オブザーバビリティでは実験的な機能として提供されています。モニター、パイプライン、プロセッサーなど、Datadog 独自のバックエンド機能は対象外です。セルフマネージド環境で自前の receiver を実行する方法を含む移行ガイドの全文については、[Datadog からの移行](/ja/clickstack/observability/migration/datadog)を参照してください。
+
+## 次のステップ {#next-steps}
+
+* **評価を拡大する。** より多くのエージェントに並行構成を適用し、重要なワークロードで両プラットフォームを比較します。準備が整ったら、エージェントを置き換え構成に切り替えます。いずれのステップでも、アプリケーション側の変更は一切不要です。
+* [OpenTelemetry によるアプリケーションの計装](/ja/clickstack/managed-onboarding/instrument-application-serverless): 新規または移行済みのサービスからは OpenTelemetry SDKs を使って OTLP エンドポイントへ直接データを送信し、それ以外は引き続き Datadog エージェントでカバーします。
+* [OpenTelemetry Collector の接続](/ja/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless): OpenTelemetry コレクターも運用している場合は、同じサービスを送信先に指定します。
+* [検索](/ja/clickstack/observability/features/search): Datadog から取り込んだログとトレースを、Lucene 形式の構文または SQL でクエリします。
+* [ダッシュボード](/ja/clickstack/observability/features/dashboards/overview)と[アラート](/ja/clickstack/observability/features/alerts): Datadog で活用しているビューやモニターを、同じデータを対象に再構築します。

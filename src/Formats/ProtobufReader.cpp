@@ -433,33 +433,33 @@ void ProtobufReader::ignoreGroup()
             case VARINT:
             {
                 ignoreVarint();
-                break;
+                continue;
             }
             case BITS64:
             {
                 ignore(8);
-                break;
+                continue;
             }
             case LENGTH_DELIMITED:
             {
                 ignore(readVarint());
-                break;
+                continue;
             }
             case GROUP_START:
             {
                 ++level;
-                break;
+                continue;
             }
             case GROUP_END:
             {
                 if (!--level)
                     return;
-                break;
+                continue;
             }
             case BITS32:
             {
                 ignore(4);
-                break;
+                continue;
             }
         }
         throwUnknownFormat();
