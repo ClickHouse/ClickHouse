@@ -749,6 +749,8 @@ void BackupImpl::readBackupMetadata()
     size_of_entries = 0;
 
     bool contents_seen = false;
+    /// Absent in manifests written before the setting existed, when every backup was deduplicated.
+    bool deduplicate_files = true;
 
     /// Strict parsers: reject trailing garbage / unknown boolean text (fail closed with BACKUP_DAMAGED)
     /// instead of DB::parse's lenient truncation (e.g. <size>12x34</size> read as 12).
@@ -799,6 +801,9 @@ void BackupImpl::readBackupMetadata()
 
         if (h.contains("backup_id"))
             backup_id = req("backup_id");
+
+        if (h.contains("deduplicate_files"))
+            deduplicate_files = to_bool(req("deduplicate_files"), "deduplicate_files");
 
         if (h.contains("base_backup") && !base_backup_info)
         {
@@ -904,7 +909,7 @@ void BackupImpl::readBackupMetadata()
         /// Update counters before `info` is moved below.
         ++num_files;
         total_size += info.size;
-        bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == info.file_name));
+        bool has_entry = !deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == info.file_name));
         if (has_entry)
         {
             ++num_entries;
