@@ -411,14 +411,45 @@ struct ReplaceRegexpImpl
         }
     }
 
+    /// Calls `processStringJIT` for every row.
+    /// Not inlined on purpose. The caller is compiled into one large function together with every other code
+    /// path of `FunctionStringReplace::executeImpl`, and inside it the unrelated paths decide which variables of
+    /// this loop stay in registers. The loop is sensitive to that: it calls the matcher for every match, keeps
+    /// its state across these calls, and is bound by the dependencies between consecutive matches.
+    NO_INLINE static void processStringsJIT(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        size_t input_rows_count,
+        ColumnString::Chars & res_data,
+        ColumnString::Offsets & res_offsets,
+        const RegexpJITMatcher & matcher,
+        const uint8_t ** capture_starts,
+        const uint8_t ** capture_ends,
+        const Instructions & instructions,
+        CancellationBudget budget)
+    {
+        ColumnString::Offset res_offset = 0;
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            budget.charge();
+
+            size_t from = haystack_offsets[static_cast<ssize_t>(i) - 1];
+
+            const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
+            const size_t hs_length = static_cast<size_t>(haystack_offsets[i] - from);
+
+            processStringJIT(hs_data, hs_length, res_data, res_offset, matcher, capture_starts, capture_ends, instructions, budget);
+            res_offsets[i] = res_offset;
+        }
+    }
+
     /// Like calling `processString` for every row, but may run the regexp once per distinct haystack and copy
     /// the cached result for repeats; `ReplaceRegexpModeController` decides when that pays.
     /// Rows without the required prefix cannot match and are copied through directly.
     /// The result offset is a local and `budget` is taken by value, not by reference to the caller's variables:
     /// the closures below refer to them, and a closure that is not inlined makes what it refers to escape. The
-    /// callers are inlined together with this function, so their variables would escape as well, and the loop
-    /// over the JIT-compiled matcher, which calls opaque code for every match, could no longer keep its offset
-    /// and budget in registers.
+    /// callers are inlined together with this function, so their variables would escape as well, and the code
+    /// using them could no longer keep them in registers across calls.
     template <typename GetHaystack>
     static void processStringsDeduplicated(
         GetHaystack && get_haystack,
@@ -623,19 +654,9 @@ struct ReplaceRegexpImpl
 
         if (matcher)
         {
-            ColumnString::Offset res_offset = 0;
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                budget.charge();
-
-                size_t from = haystack_offsets[static_cast<ssize_t>(i) - 1];
-
-                const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
-                const size_t hs_length = static_cast<size_t>(haystack_offsets[i] - from);
-
-                processStringJIT(hs_data, hs_length, res_data, res_offset, matcher, capture_starts.data(), capture_ends.data(), instructions, budget);
-                res_offsets[i] = res_offset;
-            }
+            processStringsJIT(
+                haystack_data, haystack_offsets, input_rows_count, res_data, res_offsets,
+                matcher, capture_starts.data(), capture_ends.data(), instructions, budget);
             return;
         }
 
