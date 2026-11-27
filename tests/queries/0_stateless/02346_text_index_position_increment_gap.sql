@@ -10,6 +10,7 @@ SET text_index_hint_max_selectivity = 1.;
 DROP TABLE IF EXISTS tab;
 DROP TABLE IF EXISTS tab_gap;
 DROP TABLE IF EXISTS tab_lc;
+DROP TABLE IF EXISTS tab_lc_empty;
 DROP TABLE IF EXISTS tab_pp;
 DROP TABLE IF EXISTS tab_string;
 DROP TABLE IF EXISTS tab_array_tokenizer;
@@ -90,6 +91,21 @@ SELECT token, groupUniqArray(positions) FROM mergeTreeTextIndex(currentDatabase(
 SELECT count() FROM tab_lc WHERE hasPhrase(arr, 'brown fox');
 SELECT count() FROM tab_lc WHERE hasPhrase(arr, 'quick brown');
 
+SELECT 'LowCardinality elements without tokens add no gap';
+CREATE TABLE tab_lc_empty
+(
+    id UInt32,
+    arr Array(LowCardinality(String)),
+    INDEX idx(arr) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS allow_experimental_text_index_phrase_search = 1;
+
+INSERT INTO tab_lc_empty SELECT number, ['hello', '', 'world'] FROM numbers(16);
+SELECT token, groupUniqArray(positions) FROM mergeTreeTextIndex(currentDatabase(), tab_lc_empty, idx) GROUP BY token ORDER BY token;
+SELECT count() FROM tab_lc_empty WHERE hasPhrase(arr, 'hello world');
+
 SELECT 'a postprocessor';
 CREATE TABLE tab_pp
 (
@@ -149,6 +165,7 @@ CREATE TABLE tab_err (arr Array(String), INDEX idx(arr) TYPE text(tokenizer = sp
 DROP TABLE tab;
 DROP TABLE tab_gap;
 DROP TABLE tab_lc;
+DROP TABLE tab_lc_empty;
 DROP TABLE tab_pp;
 DROP TABLE tab_string;
 DROP TABLE tab_array_tokenizer;

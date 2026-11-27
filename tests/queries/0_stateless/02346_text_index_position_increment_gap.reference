@@ -43,6 +43,10 @@ fox	[[65]]
 quick	[[0]]
 0
 17
+LowCardinality elements without tokens add no gap
+hello	[[0]]
+world	[[64]]
+0
 a postprocessor
 0	brown	[1]
 0	fox	[65]

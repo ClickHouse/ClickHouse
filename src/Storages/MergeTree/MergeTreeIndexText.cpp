@@ -2267,7 +2267,8 @@ void MergeTreeIndexTextGranuleBuilder::addDocumentsFromLowCardinality(
                     buffer_size = tokens_map.getBufferSizeInCells();
                 }
             }
-            else
+            /// A cached value without tokens takes no positions, so the pending gap stays for the next element.
+            else if (begin != end)
             {
                 const UInt32 first_position = context.enable_positions ? takeTokenPositions(static_cast<UInt32>(end - begin)) : 0;
                 for (size_t j = begin; j < end; ++j)
