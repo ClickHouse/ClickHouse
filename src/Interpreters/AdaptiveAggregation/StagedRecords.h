@@ -394,8 +394,8 @@ size_t stagedFixedKeyBytes(size_t packed_key_bytes)
 /// table did. A count format also has `count(record)`; `max_count`, the largest count of one record; and
 /// `addToCount(record, rows)`, which grows the count of a written record while the count keeps its stored
 /// width (see `AdaptivePartitionTails`), and returns whether it did. An argument format tells with
-/// `with_multiplicity` whether its records carry the number of rows they stand for, which it then reads and
-/// writes (see `StagedRecordMultiplicity`). The writer reserves the size that `bytesForKey(key_size, count)`
+/// `with_multiplicity` whether it reads the number of rows that its records stand for (see
+/// `StagedRecordMultiplicity`). The writer reserves the size that `bytesForKey(key_size, count)`
 /// (key formats) or `bytesFor` (argument formats) gives and fills the record from `writeHeader(record, hash,
 /// key_size, ...)`, whose last argument is the count of a count record or the size of an argument record. It
 /// returns the position where the writer stores the `keyBytes(key_size)` bytes of the key. The formats of a
@@ -703,15 +703,26 @@ struct StagedKeysAndPackedStringRecord
     const StagedKeysAndPackedStringKey<Table, with_count> key_layout;
 };
 
+/// How an argument format holds the multiplicity of its records, the number of rows that a record of a row
+/// selection stands for (see `AdaptiveArgumentLayout::multiplicity_offset`): in no record, in every record,
+/// or as the layout says, which every read then checks (see `visitStagedRecordFormat`).
+enum class StagedMultiplicity
+{
+    none,
+    every_record,
+    from_layout,
+};
+
 /// The multiplicity of the records of an argument format, which every argument format derives from: whether
-/// the records carry the number of rows they stand for (`with_multiplicity`), and when they do, its reading
-/// and writing, as a staged multiplicity at `AdaptiveArgumentLayout::multiplicity_offset`. The offset is one
-/// for all the records of the query, because the fixed-size arguments before it have one size.
-template <bool with_multiplicity_>
+/// the format reads the multiplicity of a record (`with_multiplicity`), and when it does, its reading and,
+/// for a format whose every record carries one, its writing, as a staged multiplicity at
+/// `AdaptiveArgumentLayout::multiplicity_offset`. The offset is one for all the records of the query, because
+/// the fixed-size arguments before it have one size.
+template <StagedMultiplicity>
 struct StagedRecordMultiplicity;
 
 template <>
-struct StagedRecordMultiplicity<false>
+struct StagedRecordMultiplicity<StagedMultiplicity::none>
 {
     static constexpr bool with_multiplicity = false;
 
@@ -719,7 +730,7 @@ struct StagedRecordMultiplicity<false>
 };
 
 template <>
-struct StagedRecordMultiplicity<true>
+struct StagedRecordMultiplicity<StagedMultiplicity::every_record>
 {
     static constexpr bool with_multiplicity = true;
 
@@ -737,13 +748,33 @@ struct StagedRecordMultiplicity<true>
     const size_t multiplicity_offset;
 };
 
+/// The multiplicity as the layout has it, which every read checks: the record of a layout without one stands
+/// for one row.
+template <>
+struct StagedRecordMultiplicity<StagedMultiplicity::from_layout>
+{
+    static constexpr bool with_multiplicity = true;
+
+    explicit StagedRecordMultiplicity(const AdaptiveArgumentLayout & layout)
+        : multiplicity_offset(layout.multiplicity_offset)
+    {
+    }
+
+    [[nodiscard]] UInt32 multiplicity(const char * record) const
+    {
+        return multiplicity_offset ? readStagedMultiplicity(record + *multiplicity_offset) : 1;
+    }
+
+    const std::optional<size_t> multiplicity_offset;
+};
+
 /// Argument records of a key of fixed-width values and a string, whose bucket table is `Table`: {fixed-size
 /// arguments, [UInt32 record size,] key, variable-size arguments}, the key as `StagedKeysAndPackedStringKey`
 /// stores it. A record whose variable-size arguments are all `String`s, or that has none, needs no stored
 /// size: the reader skips the strings to find its end, as in `StagedByteKeyStringArgumentRecord`. Another
 /// record stores its size, as in `StagedByteKeyGeneralArgumentRecord`.
-template <typename Table, bool stores_record_size, bool with_multiplicity_>
-struct StagedKeysAndPackedStringArgumentRecord : StagedRecordMultiplicity<with_multiplicity_>
+template <typename Table, bool stores_record_size, StagedMultiplicity multiplicity_>
+struct StagedKeysAndPackedStringArgumentRecord : StagedRecordMultiplicity<multiplicity_>
 {
     using Key = typename Table::Key;
     using Keys = decltype(Key::keys);
@@ -754,7 +785,7 @@ struct StagedKeysAndPackedStringArgumentRecord : StagedRecordMultiplicity<with_m
     static constexpr bool fixed_width_key = false;
 
     StagedKeysAndPackedStringArgumentRecord(const AdaptiveArgumentLayout & layout, size_t key_bytes)
-        : StagedRecordMultiplicity<with_multiplicity_>(layout)
+        : StagedRecordMultiplicity<multiplicity_>(layout)
         , record_size_offset(layout.fixed_bytes)
         , key_layout(layout.fixed_bytes + (stores_record_size ? sizeof(UInt32) : 0), key_bytes)
         , strings(layout.variable_fields.size())
@@ -868,8 +899,8 @@ struct StagedFixedKeyRecord
 
 /// Argument records of a fixed-width key with only fixed-size arguments: {fixed-size arguments, key}, of one size for
 /// the query.
-template <typename Key, bool with_multiplicity_>
-struct StagedFixedKeyFixedArgumentRecord : StagedRecordMultiplicity<with_multiplicity_>
+template <typename Key, StagedMultiplicity multiplicity_>
+struct StagedFixedKeyFixedArgumentRecord : StagedRecordMultiplicity<multiplicity_>
 {
     static constexpr bool with_count = false;
     static constexpr bool with_arguments = true;
@@ -877,7 +908,7 @@ struct StagedFixedKeyFixedArgumentRecord : StagedRecordMultiplicity<with_multipl
     static constexpr bool fixed_width_key = true;
 
     StagedFixedKeyFixedArgumentRecord(const AdaptiveArgumentLayout & layout, size_t key_bytes)
-        : StagedRecordMultiplicity<with_multiplicity_>(layout)
+        : StagedRecordMultiplicity<multiplicity_>(layout)
         , key_offset(layout.fixed_bytes)
         , fixed_key(key_bytes)
         , stride(key_offset + key_bytes)
@@ -908,8 +939,8 @@ struct StagedFixedKeyFixedArgumentRecord : StagedRecordMultiplicity<with_multipl
 
 /// Argument records of a fixed-width key whose variable-size arguments are all `String`s: {fixed-size arguments, key,
 /// each `String` argument as `writeStagedString` stages it}. A record's size follows from the lengths.
-template <typename Key, bool with_multiplicity_>
-struct StagedFixedKeyStringArgumentRecord : StagedRecordMultiplicity<with_multiplicity_>
+template <typename Key, StagedMultiplicity multiplicity_>
+struct StagedFixedKeyStringArgumentRecord : StagedRecordMultiplicity<multiplicity_>
 {
     static constexpr bool with_count = false;
     static constexpr bool with_arguments = true;
@@ -917,7 +948,7 @@ struct StagedFixedKeyStringArgumentRecord : StagedRecordMultiplicity<with_multip
     static constexpr bool fixed_width_key = true;
 
     StagedFixedKeyStringArgumentRecord(const AdaptiveArgumentLayout & layout, size_t key_bytes)
-        : StagedRecordMultiplicity<with_multiplicity_>(layout)
+        : StagedRecordMultiplicity<multiplicity_>(layout)
         , key_offset(layout.fixed_bytes)
         , fixed_key(key_bytes)
         , strings(layout.variable_fields.size())
@@ -954,8 +985,8 @@ struct StagedFixedKeyStringArgumentRecord : StagedRecordMultiplicity<with_multip
 /// Argument records of a fixed-width key with another variable-size argument: {fixed-size arguments, UInt32 record
 /// size, key, variable-size arguments}. The serialization of such an argument keeps its length to itself, so the record
 /// stores its own size.
-template <typename Key, bool with_multiplicity_>
-struct StagedFixedKeyGeneralArgumentRecord : StagedRecordMultiplicity<with_multiplicity_>
+template <typename Key, StagedMultiplicity multiplicity_>
+struct StagedFixedKeyGeneralArgumentRecord : StagedRecordMultiplicity<multiplicity_>
 {
     static constexpr bool with_count = false;
     static constexpr bool with_arguments = true;
@@ -963,7 +994,7 @@ struct StagedFixedKeyGeneralArgumentRecord : StagedRecordMultiplicity<with_multi
     static constexpr bool fixed_width_key = true;
 
     StagedFixedKeyGeneralArgumentRecord(const AdaptiveArgumentLayout & layout, size_t key_bytes)
-        : StagedRecordMultiplicity<with_multiplicity_>(layout)
+        : StagedRecordMultiplicity<multiplicity_>(layout)
         , size_offset(layout.fixed_bytes)
         , key_offset(size_offset + sizeof(UInt32))
         , fixed_key(key_bytes)
@@ -996,8 +1027,8 @@ struct StagedFixedKeyGeneralArgumentRecord : StagedRecordMultiplicity<with_multi
 
 /// Argument records of a byte-staged key whose variable-size arguments, if any, are all `String`s: {fixed-size
 /// arguments, hash, key size, key, each `String` argument as `writeStagedString` stages it}.
-template <typename Key, typename Hash, bool with_multiplicity_>
-struct StagedByteKeyStringArgumentRecord : StagedRecordMultiplicity<with_multiplicity_>
+template <typename Key, typename Hash, StagedMultiplicity multiplicity_>
+struct StagedByteKeyStringArgumentRecord : StagedRecordMultiplicity<multiplicity_>
 {
     static constexpr bool with_count = false;
     static constexpr bool with_arguments = true;
@@ -1006,7 +1037,7 @@ struct StagedByteKeyStringArgumentRecord : StagedRecordMultiplicity<with_multipl
     using StoredHash = typename Hash::Stored;
 
     explicit StagedByteKeyStringArgumentRecord(const AdaptiveArgumentLayout & layout)
-        : StagedRecordMultiplicity<with_multiplicity_>(layout)
+        : StagedRecordMultiplicity<multiplicity_>(layout)
         , hash_offset(layout.fixed_bytes)
         , size_offset(hash_offset + sizeof(StoredHash))
         , strings(layout.variable_fields.size())
@@ -1067,8 +1098,8 @@ struct StagedByteKeyStringArgumentRecord : StagedRecordMultiplicity<with_multipl
 /// Argument records of a byte-staged key with another variable-size argument: {fixed-size arguments, hash, UInt32
 /// record size, key size, key, variable-size arguments}. The record stores its own size, as in
 /// `StagedFixedKeyGeneralArgumentRecord`.
-template <typename Key, typename Hash, bool with_multiplicity_>
-struct StagedByteKeyGeneralArgumentRecord : StagedRecordMultiplicity<with_multiplicity_>
+template <typename Key, typename Hash, StagedMultiplicity multiplicity_>
+struct StagedByteKeyGeneralArgumentRecord : StagedRecordMultiplicity<multiplicity_>
 {
     static constexpr bool with_count = false;
     static constexpr bool with_arguments = true;
@@ -1077,7 +1108,7 @@ struct StagedByteKeyGeneralArgumentRecord : StagedRecordMultiplicity<with_multip
     using StoredHash = typename Hash::Stored;
 
     explicit StagedByteKeyGeneralArgumentRecord(const AdaptiveArgumentLayout & layout)
-        : StagedRecordMultiplicity<with_multiplicity_>(layout)
+        : StagedRecordMultiplicity<multiplicity_>(layout)
         , hash_offset(layout.fixed_bytes)
         , record_size_offset(hash_offset + sizeof(StoredHash))
         , size_offset(record_size_offset + sizeof(UInt32))
@@ -1127,9 +1158,9 @@ struct StagedByteKeyGeneralArgumentRecord : StagedRecordMultiplicity<with_multip
     const size_t size_offset;
 };
 
-/// The argument formats of `visitStagedRecordFormat`, whose records carry a multiplicity when
-/// `with_multiplicity`.
-template <typename Method, bool with_multiplicity, typename F>
+/// The argument formats of `visitStagedRecordFormat`, which hold the multiplicity of their records as
+/// `multiplicity` says.
+template <typename Method, StagedMultiplicity multiplicity, typename F>
 ALWAYS_INLINE decltype(auto) visitStagedArgumentRecordFormat(const AdaptiveArgumentLayout & layout, size_t packed_key_bytes, F && f)
 {
     using Key = AdaptiveRecordKey<Method>;
@@ -1138,24 +1169,24 @@ ALWAYS_INLINE decltype(auto) visitStagedArgumentRecordFormat(const AdaptiveArgum
         using Table = AdaptiveBucketTable<Method>;
         const size_t key_bytes = stagedFixedKeyBytes<Method>(packed_key_bytes);
         if (layout.variable_fields_are_strings)
-            return f(StagedKeysAndPackedStringArgumentRecord<Table, /*stores_record_size=*/false, with_multiplicity>(layout, key_bytes));
-        return f(StagedKeysAndPackedStringArgumentRecord<Table, /*stores_record_size=*/true, with_multiplicity>(layout, key_bytes));
+            return f(StagedKeysAndPackedStringArgumentRecord<Table, /*stores_record_size=*/false, multiplicity>(layout, key_bytes));
+        return f(StagedKeysAndPackedStringArgumentRecord<Table, /*stores_record_size=*/true, multiplicity>(layout, key_bytes));
     }
     else if constexpr (adaptive_key_stages_bytes<Key>)
     {
         using Hash = AdaptiveStagedHash<Method>;
         if (layout.variable_fields_are_strings)
-            return f(StagedByteKeyStringArgumentRecord<Key, Hash, with_multiplicity>(layout));
-        return f(StagedByteKeyGeneralArgumentRecord<Key, Hash, with_multiplicity>(layout));
+            return f(StagedByteKeyStringArgumentRecord<Key, Hash, multiplicity>(layout));
+        return f(StagedByteKeyGeneralArgumentRecord<Key, Hash, multiplicity>(layout));
     }
     else
     {
         const size_t key_bytes = stagedFixedKeyBytes<Method>(packed_key_bytes);
         if (layout.variable_fields.empty())
-            return f(StagedFixedKeyFixedArgumentRecord<Key, with_multiplicity>(layout, key_bytes));
+            return f(StagedFixedKeyFixedArgumentRecord<Key, multiplicity>(layout, key_bytes));
         if (layout.variable_fields_are_strings)
-            return f(StagedFixedKeyStringArgumentRecord<Key, with_multiplicity>(layout, key_bytes));
-        return f(StagedFixedKeyGeneralArgumentRecord<Key, with_multiplicity>(layout, key_bytes));
+            return f(StagedFixedKeyStringArgumentRecord<Key, multiplicity>(layout, key_bytes));
+        return f(StagedFixedKeyGeneralArgumentRecord<Key, multiplicity>(layout, key_bytes));
     }
 }
 
@@ -1163,11 +1194,15 @@ ALWAYS_INLINE decltype(auto) visitStagedArgumentRecordFormat(const AdaptiveArgum
 /// `count`, key-only records for one without aggregate functions, which has no layout, and argument records
 /// otherwise. The argument records of a fixed-width key have one size when every argument has a fixed size,
 /// and those of any key need no stored record size when the variable-size arguments are all `String`s. The
-/// argument records carry a multiplicity when the layout has one (see `StagedRecordMultiplicity`).
-/// `packed_key_bytes` is the sum of the sizes of the key columns (see `stagedFixedKeyBytes`). The writer and
-/// every reader of the records dispatch through it, so they agree on the format. It is inlined with `f` into
-/// the caller, so the caller's loops keep their state in registers.
-template <typename Method, typename F>
+/// argument records carry a multiplicity when the layout has one (see `StagedRecordMultiplicity`). `f` gets
+/// one of two argument formats, which know at compile time whether every record carries one, so a loop over
+/// the records holds no test for it. With `multiplicity_from_layout`, it gets one format, which checks the
+/// layout at every read, so `f` is compiled once: the writer's lean loop takes the two formats, and the
+/// merge's walks, whose hash table insert per record outweighs the test, take the one. `packed_key_bytes` is
+/// the sum of the sizes of the key columns (see `stagedFixedKeyBytes`). The writer and every reader of the
+/// records dispatch through it, so they agree on the format. It is inlined with `f` into the caller, so the
+/// caller's loops keep their state in registers.
+template <typename Method, bool multiplicity_from_layout = false, typename F>
 ALWAYS_INLINE decltype(auto) visitStagedRecordFormat(
     const AdaptiveArgumentLayout * layout, bool is_simple_count, size_t packed_key_bytes, F && f)
 {
@@ -1199,9 +1234,14 @@ ALWAYS_INLINE decltype(auto) visitStagedRecordFormat(
         if (!layout)
             return f(StagedFixedKeyRecord<Key, /*with_count_=*/false>(key_bytes));
     }
-    if (layout->multiplicity_offset)
-        return visitStagedArgumentRecordFormat<Method, /*with_multiplicity=*/true>(*layout, packed_key_bytes, f);
-    return visitStagedArgumentRecordFormat<Method, /*with_multiplicity=*/false>(*layout, packed_key_bytes, f);
+    if constexpr (multiplicity_from_layout)
+        return visitStagedArgumentRecordFormat<Method, StagedMultiplicity::from_layout>(*layout, packed_key_bytes, f);
+    else
+    {
+        if (layout->multiplicity_offset)
+            return visitStagedArgumentRecordFormat<Method, StagedMultiplicity::every_record>(*layout, packed_key_bytes, f);
+        return visitStagedArgumentRecordFormat<Method, StagedMultiplicity::none>(*layout, packed_key_bytes, f);
+    }
 }
 
 }

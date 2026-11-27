@@ -719,7 +719,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
     };
 
     StagedRecordWalk walk;
-    visitStagedRecordFormat<Method>(
+    visitStagedRecordFormat<Method, /*multiplicity_from_layout=*/true>(
         adaptive_argument_layout.get(), is_simple_count, adaptive_packed_key_bytes, [&]<typename Record>(const Record & format) ALWAYS_INLINE
     {
         if constexpr (Record::with_count)
@@ -843,7 +843,7 @@ size_t NO_INLINE Aggregator::countPartitionGroups(
     using Key = AdaptiveRecordKey<Method>;
     const bool prefetch = prefetchesStagedKeys<Key>(counting_table);
     size_t skipped = 0;
-    visitStagedRecordFormat<Method>(
+    visitStagedRecordFormat<Method, /*multiplicity_from_layout=*/true>(
         adaptive_argument_layout.get(), is_simple_count, adaptive_packed_key_bytes, [&]<typename Record>(const Record & format) ALWAYS_INLINE
     {
         if constexpr (Record::with_arguments)
