@@ -1,4 +1,7 @@
+import os
+
 from praktika import Job
+from praktika.settings import Settings
 from praktika.utils import Utils
 
 from ci.defs.functional_test_selection import targeted_variants
@@ -103,8 +106,21 @@ integration_dind_env = dind_containment_env(LIMITED_MEM)
 # different runs (and missed the cache). Whole GiB is stable across such hosts.
 BINARY_DOCKER_MEM = Utils.physical_memory() // 1024**3 * 1024**3
 
+# Only a pull request against the default branch of the public repository runs
+# without host networking; every other context keeps it. Read the trigger from the
+# environment directly: this module is imported during workflow discovery, before the
+# praktika environment is resolvable.
+HOST_NETWORK = (
+    ""
+    if (
+        os.getenv("GITHUB_REPOSITORY") == "ClickHouse/ClickHouse"
+        and os.getenv("GITHUB_BASE_REF") == Settings.MAIN_BRANCH
+    )
+    else "+--network=host"
+)
+
 BINARY_DOCKER_COMMAND = (
-    "clickhouse/binary-builder+--network=host"
+    f"clickhouse/binary-builder{HOST_NETWORK}"
     f"+--memory={BINARY_DOCKER_MEM * 95 // 100}"
     f"+--memory-reservation={BINARY_DOCKER_MEM * 9 // 10}"
     f"+--volume=.:/ClickHouse"
@@ -387,15 +403,10 @@ class JobConfigs:
         name=JobNames.FAST_TEST,
         runs_on=RunnerLabels.ARM_LARGE,
         command="python3 ./ci/jobs/fast_test.py",
-        run_in_docker="clickhouse/fasttest+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+--volume=.:/ClickHouse",
+        run_in_docker=f"clickhouse/fasttest{HOST_NETWORK}+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+--volume=.:/ClickHouse",
         digest_config=fast_test_digest_config,
         result_name_for_cidb="Tests",
         needs_submodules=True,
-    )
-    # The merge queue writes the sccache bucket and needs the EC2 metadata endpoint for credentials
-    fast_test_mq = fast_test.copy()
-    fast_test_mq.run_in_docker = fast_test.run_in_docker.replace(
-        "fasttest+", "fasttest+--network=host+", 1
     )
     darwin_fast_test_jobs = Job.Config(
         name="Fast test",
