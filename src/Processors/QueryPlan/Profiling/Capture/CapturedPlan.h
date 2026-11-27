@@ -22,14 +22,14 @@ struct PrettyNamesPerPlan;
 
 struct CapturedStep
 {
-    String id;
+    UInt64 id = 0;
     String type;
     String description;
     VectorWithMemoryTracking<String> details;
 
     /// Ids of this step's children, and of the roots of any plans it has already built
     /// (`getBuiltChildPlans`).
-    VectorWithMemoryTracking<String> children;
+    VectorWithMemoryTracking<UInt64> children;
 
     std::optional<AnalyzedStepData> statistics;
 
@@ -51,7 +51,7 @@ struct CollectedStatistics
 struct CapturedPlan
 {
     /// Id of the root node
-    String root_id;
+    UInt64 root_id = 0;
     /// Hash of the shape of the whole plan, see `hashQueryPlanShape`: equal for two plans that differ
     /// only in their constants.
     std::optional<UInt64> shape_hash;
