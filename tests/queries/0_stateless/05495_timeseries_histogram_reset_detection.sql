@@ -6,7 +6,9 @@ SET optimize_on_insert = 0;
 DROP TABLE IF EXISTS ts_reset_detection;
 DROP TABLE IF EXISTS histogram_reset_cases;
 
--- Each row is one input series. Run every case with both integer and float histograms.
+-- Each row is one input series. Run every case with both integer and float histograms. `MergeTree`, not `Memory`: with parallel
+-- replicas, a joined `Memory` table is sent to the replicas as an external table, and then cancelling the replicas that got no
+-- ranges to read logs a `NETWORK_ERROR`.
 CREATE TABLE histogram_reset_cases
 (
     name String,
@@ -20,7 +22,7 @@ CREATE TABLE histogram_reset_cases
     negative Array(Array(Tuple(index Int32, count Int64))) DEFAULT [[], []],
     bounds Array(Array(Float64)) DEFAULT [[], []],
     expected Array(UInt8)
-) ENGINE = Memory;
+) ENGINE = MergeTree ORDER BY name;
 
 INSERT INTO histogram_reset_cases (name, zeros, expected) VALUES
     ('total_count_decrease', [10, 9], [0, 1]);
