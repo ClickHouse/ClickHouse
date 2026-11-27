@@ -1,11 +1,9 @@
 -- right side of the plan carries only the Nullable key
 Header: __table2.k Nullable(String)
 Header: __table2.k Nullable(String)
-__table2.k Nullable(String)
 toNullable(__table2.k) Nullable(String)
-Expression (Right Pre Join Actions)
+Expression ((Right Pre Join Actions + Change column names to column identifiers))
 Header: toNullable(__table2.k) Nullable(String)
-Header: __table2.k String
 -- LEFT
 a	a	10
 b	\N	\N
@@ -103,11 +101,9 @@ c	c	31
 -- partial_merge
 Header: __table2.k Nullable(String)
 Header: __table2.k Nullable(String)
-__table2.k Nullable(String)
 toNullable(__table2.k) Nullable(String)
-Expression (Right Pre Join Actions)
+Expression ((Right Pre Join Actions + Change column names to column identifiers))
 Header: toNullable(__table2.k) Nullable(String)
-Header: __table2.k String
 a	a	10
 b	\N	\N
 c	c	30
@@ -135,11 +131,9 @@ LowCardinality(Nullable(String))
 -- auto, switched to partial_merge
 Header: __table2.k Nullable(String)
 Header: __table2.k Nullable(String)
-__table2.k Nullable(String)
 toNullable(__table2.k) Nullable(String)
-Expression (Right Pre Join Actions)
+Expression ((Right Pre Join Actions + Change column names to column identifiers))
 Header: toNullable(__table2.k) Nullable(String)
-Header: __table2.k String
 a	a	10
 b	\N	\N
 c	c	30
@@ -162,12 +156,10 @@ c	c
 -- full_sorting_merge
 Header: __table2.k Nullable(String)
 Header: __table2.k Nullable(String)
-__table2.k Nullable(String)
 toNullable(__table2.k) Nullable(String)
 Header: toNullable(__table2.k) Nullable(String)
-Expression (Right Pre Join Actions)
+Expression ((Right Pre Join Actions + Change column names to column identifiers))
 Header: toNullable(__table2.k) Nullable(String)
-Header: __table2.k String
 a	a	10
 b	\N	\N
 c	c	30

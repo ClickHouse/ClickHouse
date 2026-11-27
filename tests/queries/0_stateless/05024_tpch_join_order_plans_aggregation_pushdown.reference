@@ -50,14 +50,13 @@ Expression (Project names)
                                 ShuffleExchange
                                   ReadFromMergeTree (ParallelRead default.lineitem)
 -- customer distribution by nation: pushed (variant A) under the same SF100 hints
-Expression (Project names)
-  Expression ((Before ORDER BY + Projection))
-    Sorting
-      Aggregating
-        JoinLogical (Local HashJoin  swapped)
-          Expression (Change column names to column identifiers)
-            ReadFromMergeTree (default.nation)
-          GatherExchange
-            Aggregating
-              Expression (Change column names to column identifiers)
-                ReadFromMergeTree (ParallelRead default.customer)
+Expression ((Project names + (Before ORDER BY + Projection)))
+  Sorting
+    Aggregating
+      JoinLogical (Local HashJoin  swapped)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.nation)
+        GatherExchange
+          Aggregating
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.customer)

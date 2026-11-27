@@ -41,15 +41,14 @@ check block number / offset mapping
 12	1	1
 
 index lookup
-Expression (((Project names + Projection) + (WHERE + Change column names to column identifiers)))
-  Expression
-    ReadFromMergeTree (_commit_order)
-    Indexes:
-      PrimaryKey
-        Keys:
-          _block_number
-          _block_offset
-        Parts: 1/1
-        Granules: 2/12
-        Search Algorithm: binary search
-      Ranges: 1
+Expression (((Project names + Projection) + ))
+  ReadFromMergeTree (_commit_order)
+  Indexes:
+    PrimaryKey
+      Keys:
+        _block_number
+        _block_offset
+      Parts: 1/1
+      Granules: 2/12
+      Search Algorithm: binary search
+    Ranges: 1

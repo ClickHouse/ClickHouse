@@ -494,23 +494,10 @@ void optimizeTreeSecondPass(
     /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down
     if (optimization_settings.optimize_prewhere)
     {
-        /// A filter moved entirely to PREWHERE leaves an expression in its place, after the expressions were merged.
-        /// Merge it with the expression above, as optimizing the plan again would: a plan fragment of plan-based
-        /// parallel replicas is optimized again, and automatic parallel replicas can't match it with this plan otherwise.
-        UnorderedSetWithMemoryTracking<const QueryPlan::Node *> moved_filters;
         traverseQueryPlan(stack, root,
             [&](auto & frame_node)
             {
-                const bool is_filter = typeid_cast<const FilterStep *>(frame_node.step.get()) != nullptr;
                 optimizePrewhere(frame_node, optimization_settings.remove_unused_columns);
-                if (is_filter && typeid_cast<const ExpressionStep *>(frame_node.step.get()))
-                    moved_filters.insert(&frame_node);
-            },
-            [&](auto & frame_node)
-            {
-                if (optimization_settings.merge_expressions && typeid_cast<const ExpressionStep *>(frame_node.step.get())
-                    && frame_node.children.size() == 1 && moved_filters.contains(frame_node.children.front()))
-                    tryMergeExpressions(&frame_node, nodes, extra_settings);
             });
     }
 
@@ -997,6 +984,22 @@ void optimizeTreeSecondPass(
 
             stack.pop_back();
         }
+    }
+
+    /// The passes after the merge of the expressions leave adjacent expressions: PREWHERE puts one in the place of a filter
+    /// it takes entirely, lazy materialization for joins adds one above `JoinLazyColumnsStep`. Merge them, as optimizing the
+    /// plan again would: a plan fragment of plan-based parallel replicas is optimized again, and automatic parallel replicas
+    /// can't match it with this plan otherwise.
+    if (optimization_settings.merge_expressions)
+    {
+        traverseQueryPlan(stack, root, NoOp{},
+            [&](auto & frame_node)
+            {
+                if (typeid_cast<const ExpressionStep *>(frame_node.step.get()))
+                    while (tryMergeExpressions(&frame_node, nodes, extra_settings))
+                    {
+                    }
+            });
     }
 
     /// The merges above rebuild `FilterStep`s and drop the QCC key, so re-walk to set it again

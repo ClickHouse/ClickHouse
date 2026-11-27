@@ -36,8 +36,9 @@ SET automatic_parallel_replicas_max_duplicated_read_ratio = 1;
 -- before the cost model, where its reads are to be declined.
 SET optimize_move_to_prewhere = 1;
 
--- Plan-based parallel replicas does not always match the plans of these queries, and then collects no statistics:
--- https://github.com/ClickHouse/ClickHouse/issues/131450
+-- With `query_plan_merge_filters = 0`, plan-based parallel replicas does not match the plans of these queries, and then
+-- collects no statistics: the expression left by PREWHERE under a filter is not merged into it, see
+-- https://github.com/ClickHouse/ClickHouse/pull/129107
 SET parallel_replicas_plan_based = 0;
 SET enable_parallel_replicas = 1;
 SET automatic_parallel_replicas_mode = 1;

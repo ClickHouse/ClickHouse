@@ -8,15 +8,14 @@ Expression (((Project names + Projection) + (WHERE + Change column names to colu
     Ranges: 1
 
 reading indexed columns
-Expression (((Project names + Projection) + (WHERE + Change column names to column identifiers)))
-  Expression
-    ReadFromMergeTree (commit_order)
-    Indexes:
-      PrimaryKey
-        Keys:
-          _block_number
-          _block_offset
-        Parts: 1/1
-        Granules: 2/40
-        Search Algorithm: binary search
-      Ranges: 1
+Expression (((Project names + Projection) + ))
+  ReadFromMergeTree (commit_order)
+  Indexes:
+    PrimaryKey
+      Keys:
+        _block_number
+        _block_offset
+      Parts: 1/1
+      Granules: 2/40
+      Search Algorithm: binary search
+    Ranges: 1

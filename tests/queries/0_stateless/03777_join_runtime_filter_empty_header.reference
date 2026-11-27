@@ -5,16 +5,12 @@ Header: c0 UInt8
     Join (JOIN FillRightFirst)
     Header: __join_result_dummy UInt8
             __table3.c0 UInt8
-      Expression (Left Pre Join Actions)
+      Expression ((Left Pre Join Actions + (Change column names to column identifiers + (Compute alias columns + (Project names + (Projection + Change column names to column identifiers))))))
       Header: __join_result_dummy UInt8
-        Expression ((Change column names to column identifiers + (Compute alias columns + (Project names + (Projection + Change column names to column identifiers)))))
-        Header: 
-          ReadFromSystemOne
-          Header: dummy UInt8
-      Expression (Right Pre Join Actions)
+        ReadFromSystemOne
+        Header: dummy UInt8
+      Expression ((Right Pre Join Actions + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
       Header: __table3.c0 UInt8
-        Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
-        Header: __table3.c0 UInt8
-          ReadFromSystemOne
-          Header: dummy UInt8
+        ReadFromSystemOne
+        Header: dummy UInt8
 1

@@ -48,9 +48,10 @@ SELECT 'nested_arr_new=1', count() FROM items_arrjoin INNER JOIN tags_arrjoin
 --     action line regardless of internal `__tableN.colname` aliasing,
 --     so this assertion does not bind to internal alias text and stays
 --     stable across renderer / alias-naming churn. Bug = 2; fix = 1.
+--     `[^+]` skips the description of a merged step, `(Before ARRAY JOIN + ...)`.
 SELECT 'arrjoin_count_in_plan_new=1',
-    countSubstrings(arrayStringConcat(groupArray(explain), char(10)),
-                    'ARRAY JOIN ')
+    countMatches(arrayStringConcat(groupArray(explain), char(10)),
+                 'ARRAY JOIN [^+]')
 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM items_arrjoin INNER JOIN tags_arrjoin
@@ -75,8 +76,8 @@ FROM (
 --     fix-vs-bug signal here because each arrayJoin performs its own
 --     row expansion (see 03832_array_join_filter_push_down_cross_join.sql).
 SELECT 'and_conjunct_arrjoin_count_in_plan_new=1',
-    countSubstrings(arrayStringConcat(groupArray(explain), char(10)),
-                    'ARRAY JOIN ')
+    countMatches(arrayStringConcat(groupArray(explain), char(10)),
+                 'ARRAY JOIN [^+]')
 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM items_arrjoin INNER JOIN tags_arrjoin
@@ -127,8 +128,8 @@ SELECT 'bilateral_left_where_count_new=0', count() FROM items_arrjoin AS L
     ON arrayJoin(L.tag_ids) = arrayJoin(R.arr)
     WHERE L.filter_key = 'target';
 SELECT 'bilateral_left_where_arrjoin_count_in_plan_new=1',
-    countSubstrings(arrayStringConcat(groupArray(explain), char(10)),
-                    'ARRAY JOIN ')
+    countMatches(arrayStringConcat(groupArray(explain), char(10)),
+                 'ARRAY JOIN [^+]')
 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM items_arrjoin AS L
@@ -149,8 +150,8 @@ SELECT 'bilateral_right_where_count_new=0', count() FROM items_arrjoin AS L
     ON arrayJoin(L.tag_ids) = arrayJoin(R.arr)
     WHERE R.filter_key = 'rtarget';
 SELECT 'bilateral_right_where_arrjoin_count_in_plan_new=1',
-    countSubstrings(arrayStringConcat(groupArray(explain), char(10)),
-                    'ARRAY JOIN ')
+    countMatches(arrayStringConcat(groupArray(explain), char(10)),
+                 'ARRAY JOIN [^+]')
 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM items_arrjoin AS L
@@ -170,8 +171,8 @@ SELECT 'bilateral_both_where_count_new=0', count() FROM items_arrjoin AS L
     ON arrayJoin(L.tag_ids) = arrayJoin(R.arr)
     WHERE L.filter_key = 'target' AND R.filter_key = 'rtarget';
 SELECT 'bilateral_both_where_arrjoin_count_in_plan_new=1',
-    countSubstrings(arrayStringConcat(groupArray(explain), char(10)),
-                    'ARRAY JOIN ')
+    countMatches(arrayStringConcat(groupArray(explain), char(10)),
+                 'ARRAY JOIN [^+]')
 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM items_arrjoin AS L
