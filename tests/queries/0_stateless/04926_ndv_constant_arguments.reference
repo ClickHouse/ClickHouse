@@ -22,3 +22,7 @@ arrayMap(x -> length(addressToSymbol(x)) + n, [toUInt64(1)])[1]
 Join: probe[10] ⋈ aggregated[no_stats~100]
 length(addressToSymbol(n))
 Join: probe[10] ⋈ aggregated[no_stats~100]
+ifNull(x, toNullable(toUInt64(100)))
+Join: probe[10] ⋈ aggregated[6]
+x + 1
+Join: probe[10] ⋈ aggregated[5]

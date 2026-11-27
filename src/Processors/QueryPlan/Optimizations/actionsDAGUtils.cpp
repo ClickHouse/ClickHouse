@@ -850,6 +850,7 @@ std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDA
     const auto function_name = node.function_base->getName();
     ActionsDAGLineageKind kind{};
     size_t source_child_index = 0;
+    bool is_generic_function = false;
     if ((function_name == "materialize" || function_name == "toNullable" || function_name == "identity") && node.children.size() == 1)
         kind = ActionsDAGLineageKind::ValuePreserving;
     else if (function_name == "_CAST" || function_name == "CAST")
@@ -875,12 +876,15 @@ std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDA
             return {};
         source_child_index = *non_constant_child;
         kind = ActionsDAGLineageKind::DistinctValuesBound;
+        is_generic_function = true;
     }
 
-    /// NDV counts only non-null values. A hop turning a Nullable source argument into a
-    /// non-Nullable result can map NULL to one additional counted value.
-    const bool collapses_null
-        = isNullableOrLowCardinalityNullable(node.children[source_child_index]->result_type) && !isNullableOrLowCardinalityNullable(node.result_type);
+    /// NDV counts only non-null values. A hop can map NULL in a Nullable source argument to one additional counted
+    /// value unless it propagates NULL: a non-Nullable result can hold no NULL, and a function that handles NULLs
+    /// itself need not return one, as `ifNull(x, toNullable(0))`.
+    const bool propagates_null = isNullableOrLowCardinalityNullable(node.result_type)
+        && (!is_generic_function || (node.function && node.function->isNullPropagating(node.result_type)));
+    const bool collapses_null = isNullableOrLowCardinalityNullable(node.children[source_child_index]->result_type) && !propagates_null;
     const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
                                      ->equals(*removeLowCardinalityAndNullable(node.children[source_child_index]->result_type))
         && (kind == ActionsDAGLineageKind::ValuePreserving || function_name == "_CAST" || function_name == "CAST"

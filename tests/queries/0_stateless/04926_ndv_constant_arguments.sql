@@ -228,3 +228,41 @@ SELECT extract(explain, 'Join:.*') FROM
     ON probe.n = aggregated.key
 )
 WHERE explain LIKE '% Join:%';
+
+-- NDV counts only non-NULL values. `nullable_source.x` has the 5 values 1, 3, 5, 7 and 9, and NULL in every other row.
+CREATE TABLE nullable_source (x Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'uniq';
+INSERT INTO nullable_source SELECT if(number % 2 = 0, NULL, number % 10) FROM numbers(100);
+
+-- `ifNull` returns a Nullable result here but maps NULL to the value 100: 6 groups, one more than `NDV(x) = 5`.
+SELECT 'ifNull(x, toNullable(toUInt64(100)))';
+SELECT extract(explain, 'Join:.*') FROM
+(
+    EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT *
+    FROM probe
+    JOIN
+    (
+        SELECT ifNull(x, toNullable(toUInt64(100))) AS key, count()
+        FROM nullable_source
+        GROUP BY key
+    ) AS aggregated
+    ON probe.n = aggregated.key
+)
+WHERE explain LIKE '% Join:%';
+
+-- `plus` maps NULL to NULL, so `NDV(x) = 5` bounds its non-NULL results.
+SELECT 'x + 1';
+SELECT extract(explain, 'Join:.*') FROM
+(
+    EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT *
+    FROM probe
+    JOIN
+    (
+        SELECT x + 1 AS key, count()
+        FROM nullable_source
+        GROUP BY key
+    ) AS aggregated
+    ON probe.n = aggregated.key
+)
+WHERE explain LIKE '% Join:%';
