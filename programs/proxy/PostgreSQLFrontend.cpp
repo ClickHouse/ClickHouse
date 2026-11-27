@@ -72,9 +72,20 @@ struct CancelDelivery
     const FrontendContext * ctx;
     Backend * backend;
     const String * packet;
-    UInt64 timeout_ms;
+    std::chrono::steady_clock::time_point deadline;   /// Of the whole broadcast.
     std::atomic<size_t> * delivered;
 };
+
+/// The time left for one step of a delivery, in milliseconds. Zero if the broadcast is over:
+/// its time budget is used up, or the proxy is shutting down.
+UInt64 remainingForDelivery(const CancelDelivery & task)
+{
+    if (relaysAborted())
+        return 0;
+    const auto remaining_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        task.deadline - std::chrono::steady_clock::now()).count();
+    return remaining_ms > 0 ? std::min<UInt64>(task.ctx->config.connect_timeout_ms, remaining_ms) : 0;
+}
 
 int deliverCancelRequest(CancelDelivery * task) noexcept
 {
@@ -82,8 +93,31 @@ int deliverCancelRequest(CancelDelivery * task) noexcept
     try
     {
         const UInt16 port = backendPortFor(ListenerProtocol::PostgreSQL, task->backend->config(), ctx.listener.port);
-        FiberSocket socket = FiberSocket::connect(resolveAddress(task->backend->config().host, port), task->timeout_ms);
-        socket.setTimeouts(task->timeout_ms, task->timeout_ms);
+        const String & host = task->backend->config().host;
+
+        /// The resolution of a host name is a blocking call without a timeout, run on a thread of a fixed pool,
+        /// and the deliveries of a batch may queue for these threads. The budget of the broadcast is checked
+        /// once a thread is available, right before the lookup, so the queued deliveries end when it is over
+        /// and only the lookups in flight (at most one per thread of the pool) are waited for.
+        Poco::Net::SocketAddress address;
+        if (Poco::Net::IPAddress ip; Poco::Net::IPAddress::tryParse(host, ip))
+        {
+            address = Poco::Net::SocketAddress(ip, port);
+        }
+        else
+        {
+            silk::FiberScheduler::ThreadModeScope thread_mode;
+            if (!remainingForDelivery(*task))
+                return 0;
+            address = Poco::Net::SocketAddress(host, port);
+        }
+
+        /// The connection has what is left of the budget after the resolution.
+        const UInt64 timeout_ms = remainingForDelivery(*task);
+        if (!timeout_ms)
+            return 0;
+        FiberSocket socket = FiberSocket::connect(address, timeout_ms);
+        socket.setTimeouts(timeout_ms, timeout_ms);
         socket.sendAll(task->packet->data(), task->packet->size());
         socket.close();
         task->delivered->fetch_add(1, std::memory_order_relaxed);
@@ -129,8 +163,6 @@ void broadcastCancelRequest(const String & packet, const FrontendContext & ctx)
         const auto remaining_ms = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
         if (remaining_ms <= 0 || relaysAborted())
             break;
-        const UInt64 timeout_ms = std::min<UInt64>(ctx.config.connect_timeout_ms, remaining_ms);
-
         const size_t batch_size = std::min(backends.size() - attempted, max_concurrent_deliveries);
         std::vector<silk::FiberFuture> futures(batch_size);
         size_t started = 0;
@@ -141,7 +173,7 @@ void broadcastCancelRequest(const String & packet, const FrontendContext & ctx)
         });
         for (size_t i = 0; i < batch_size; ++i)
         {
-            CancelDelivery task{&ctx, backends[attempted + i].get(), &packet, timeout_ms, &delivered};
+            CancelDelivery task{&ctx, backends[attempted + i].get(), &packet, deadline, &delivered};
             if (silk::FiberScheduler::run(deliverCancelRequest, CancelDelivery(task), &futures[started]) == 0)
                 ++started;
             else
