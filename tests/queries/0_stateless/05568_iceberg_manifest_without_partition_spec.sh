@@ -107,13 +107,14 @@ done
 rm -rf "./${work_dir}"
 
 # A maintenance operation that is the first to read the manifests of the table object.
+# Only the counts this test is about are printed, so that other columns of the result do not change the reference.
 work_dir="${CLICKHOUSE_TEST_UNIQUE_NAME}_expire"
 rm -rf "./${work_dir}"
 mkdir -p "./${work_dir}"
 cp -r "$DATA/impala/hadoop_catalog/ice/iceberg_v2_delete_equality_partitioned" "./${work_dir}/"
 $CLICKHOUSE_LOCAL --session_timezone UTC --allow_insert_into_iceberg 1 --allow_expire_snapshots 1 --query "
     CREATE TABLE IF NOT EXISTS t (i Nullable(Int32), s String, d Date) ENGINE = IcebergLocal('$PWD/${work_dir}/iceberg_v2_delete_equality_partitioned');
-    ALTER TABLE t EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1, dry_run = 1);"
+    ALTER TABLE t EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1, dry_run = 1);" | grep -E '^(deleted_manifest_lists_count|dry_run)\s'
 rm -rf "./${work_dir}"
 
 # Manifests without `schema` around a column rename. The schema of an ORC file is known from the `schema-id` of its manifest

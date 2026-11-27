@@ -33,14 +33,8 @@ ICEBERG_SPECIFICATION_VIOLATION
 field ids of the partition record are incomplete, invalid or not unique
 ICEBERG_SPECIFICATION_VIOLATION
 ICEBERG_SPECIFICATION_VIOLATION
-deleted_data_files_count	0
-deleted_position_delete_files_count	0
-deleted_equality_delete_files_count	0
-deleted_manifest_files_count	0
 deleted_manifest_lists_count	3
-deleted_statistics_files_count	0
 dry_run	1
-failed_deletions_count	0
 7
 8
 9
