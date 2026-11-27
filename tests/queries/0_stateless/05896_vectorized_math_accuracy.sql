@@ -6,11 +6,11 @@ SELECT 'exact';
 SELECT exp(0), log(1), sigmoid(0), tanh(0), exp(toFloat32(0)), log(toFloat32(1)), sigmoid(toFloat32(0));
 
 SELECT 'special values';
-SELECT exp(nan), exp(inf), exp(-inf), exp(710), exp(-746), exp(709.782712893384) < inf;
-SELECT log(0), log(-0.), log(-1), log(-inf), log(inf), log(nan), log(5e-324) < -744;
-SELECT tanh(inf), tanh(-inf), tanh(nan), tanh(-0.), tanh(1000), tanh(-1000);
-SELECT sigmoid(inf), sigmoid(-inf), sigmoid(nan), sigmoid(1000), sigmoid(-1000);
-SELECT exp(toFloat32(nan)), exp(toFloat32(inf)), exp(toFloat32(89)), exp(toFloat32(-110)), log(toFloat32(0)), log(toFloat32(-1)), tanh(toFloat32(inf)), sigmoid(toFloat32(-inf));
+SELECT isNaN(exp(nan)), exp(inf), exp(-inf), exp(710), exp(-746), exp(709.782712893384) < inf;
+SELECT log(0), log(-0.), isNaN(log(-1)), isNaN(log(-inf)), log(inf), isNaN(log(nan)), log(5e-324) < -744;
+SELECT tanh(inf), tanh(-inf), isNaN(tanh(nan)), tanh(-0.), tanh(1000), tanh(-1000);
+SELECT sigmoid(inf), sigmoid(-inf), isNaN(sigmoid(nan)), sigmoid(1000), sigmoid(-1000);
+SELECT isNaN(exp(toFloat32(nan))), exp(toFloat32(inf)), exp(toFloat32(89)), exp(toFloat32(-110)), log(toFloat32(0)), isNaN(log(toFloat32(-1))), tanh(toFloat32(inf)), sigmoid(toFloat32(-inf));
 
 SELECT 'tiny arguments';
 SELECT abs(tanh(1e-20) - 1e-20) <= 1e-35, abs(sigmoid(1e-20) - 0.5) <= 1e-16, abs(exp(1e-20) - 1) <= 1e-16;
