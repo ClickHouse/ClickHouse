@@ -642,18 +642,34 @@ NamedCollectionPtr getCurrentCollection(const NamedCollectionPtr & table_collect
     return collection;
 }
 
+/// The name librdkafka uses: without the `topic.` prefix and with the aliases of the properties that the flat settings write.
+String canonicalKafkaPropertyName(String name)
+{
+    if (name.starts_with("topic."))
+        name.erase(0, 6);
+    if (name == "compression.type")
+        return "compression.codec";
+    if (name == "sasl.mechanisms")
+        return "sasl.mechanism";
+    return name;
+}
+
 /// The properties of the client that the table definition overrides with nested keys, e.g. `kafka.consumer.sasl_username`.
 /// They take priority over the flat `kafka_*` settings of the collection.
-std::unordered_set<String> getNestedOverrides(const NamedCollectionPtr & table_collection, std::string_view client_section)
+std::unordered_set<String> getNestedOverrides(const NamedCollectionPtr & table_collection, std::string_view client_section, const Names & topics)
 {
     std::unordered_set<String> res;
     if (!table_collection)
         return res;
     const String client_prefix = "kafka." + String(client_section) + ".";
-    for (const auto & key : table_collection->getKeys())
+    for (const auto & raw_key : table_collection->getKeys())
     {
-        if (!table_collection->isQueryOverridden(key))
+        if (!table_collection->isQueryOverridden(raw_key))
             continue;
+        const auto normalized_key = tryNormalizeNamedCollectionKey(raw_key);
+        if (!normalized_key)
+            continue;
+        const String & key = *normalized_key;
         if (key.starts_with("kafka.consumer.") || key.starts_with("kafka.producer."))
         {
             if (!key.starts_with(client_prefix))
@@ -662,9 +678,27 @@ std::unordered_set<String> getNestedOverrides(const NamedCollectionPtr & table_c
         else if (!key.starts_with("kafka."))
             continue;
         const auto property_key = namedCollectionPropertyKey(key);
-        if (property_key.empty() || !(key.size() == 6 + property_key.size() || key.size() == client_prefix.size() + property_key.size()))
-            continue; /// A topic section.
-        res.insert(toKafkaPropertyName(String(property_key)));
+        if (property_key.empty())
+            continue;
+        /// A topic section only counts when it is the one the table reads.
+        const auto section_end = key.size() - property_key.size() - 1;
+        const auto section_start = key.rfind('.', section_end - 1) + 1;
+        if (section_end < key.size() && key[section_end] == '.' && key.compare(section_start, 6, "kafka_") == 0)
+        {
+            const String section_path = key.substr(0, section_end);
+            const auto section = std::string_view(key).substr(section_start, section_end - section_start);
+            bool applies = false;
+            if (isNamedTopicSection(section))
+            {
+                const String name_key = section_path + "." + KafkaConfigLoader::CONFIG_NAME_TAG;
+                applies = table_collection->has(name_key) && std::ranges::contains(topics, table_collection->get<String>(name_key));
+            }
+            else
+                applies = std::ranges::any_of(topics, [&](const String & topic) { return section == "kafka_" + topic; });
+            if (!applies)
+                continue;
+        }
+        res.insert(canonicalKafkaPropertyName(toKafkaPropertyName(String(property_key))));
     }
     return res;
 }
@@ -689,7 +723,8 @@ void updateConfigurationFromConfig(
     specific_config_updater(kafka_config, current_params);
 
     auto kafka_settings = storage.getKafkaSettings();
-    const auto nested_overrides = getNestedOverrides(params.collection, specific_config_updater == loadConsumerConfig ? "consumer" : "producer");
+    const auto nested_overrides = getNestedOverrides(
+        params.collection, specific_config_updater == loadConsumerConfig ? "consumer" : "producer", params.topics);
     const auto is_overridden = [&](const char * name) { return nested_overrides.contains(name); };
     if (!kafka_settings[KafkaSetting::kafka_security_protocol].value.empty() && !is_overridden("security.protocol"))
         kafka_config.set("security.protocol", kafka_settings[KafkaSetting::kafka_security_protocol]);

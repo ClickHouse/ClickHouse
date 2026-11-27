@@ -96,8 +96,10 @@ $CLICKHOUSE_CLIENT -q "
         kafka_topic_list = 'topic',
         kafka_group_name = 'group',
         kafka_format = 'JSONEachRow',
-        kafka_sasl_username = 'stored_05621';
-    CREATE TABLE kafka_flat (x UInt64) ENGINE = Kafka(${collection}_flat, \`kafka.consumer.sasl_username\` = 'override_05621')
+        kafka_sasl_username = 'stored_05621',
+        kafka_sasl_mechanism = 'PLAIN';
+    CREATE TABLE kafka_flat (x UInt64) ENGINE = Kafka(${collection}_flat, \`kafka.consumer.sasl_username\` = 'override_05621',
+        \`kafka.consumer.sasl_mechanisms\` = 'SCRAM-SHA-256')
         SETTINGS kafka_poll_timeout_ms = 100, kafka_flush_interval_ms = 100;
 "
 logs=$($CLICKHOUSE_CLIENT --send_logs_level=trace -q "
@@ -105,6 +107,8 @@ logs=$($CLICKHOUSE_CLIENT --send_logs_level=trace -q "
 " 2>&1 >/dev/null)
 echo "nested override of flat setting set: $(grep -c 'Consumer set property sasl.username:override_05621' <<< "$logs")"
 echo "flat setting set: $(grep -c 'Consumer set property sasl.username:stored_05621' <<< "$logs")"
+echo "nested alias override of flat setting set: $(grep -c 'Consumer set property sasl.mechanisms:SCRAM-SHA-256' <<< "$logs")"
+echo "flat setting set with alias override: $(grep -c 'Consumer set property sasl.mechanism:PLAIN' <<< "$logs")"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE kafka_secret;
