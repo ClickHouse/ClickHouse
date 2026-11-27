@@ -23,7 +23,7 @@ SELECT number FROM numbers(10) EXCEPT SELECT number FROM numbers(5)
     SETTINGS log_comment = '05185_except' FORMAT Null;
 
 SELECT number FROM numbers(10) INTERSECT DISTINCT SELECT number FROM numbers(5)
-    SETTINGS log_comment = '05185_intersect_distinct' FORMAT Null;
+    SETTINGS log_comment = '05185_intersect_distinct', rewrite_intersect_except_distinct_to_join = 0 FORMAT Null;
 
 SELECT number FROM numbers(10) INTERSECT SELECT number FROM numbers(5) UNION ALL SELECT 7
     SETTINGS log_comment = '05185_mixed' FORMAT Null;

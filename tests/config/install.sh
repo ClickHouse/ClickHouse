@@ -236,6 +236,7 @@ ln -sf $SRC_PATH/config.d/max_num_to_warn.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/listen.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/text_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/blob_storage_log.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/disk_transaction_wait_for_blob_removal.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/predicate_statistics_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/custom_settings_prefixes.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/collect_connection_metrics.xml $DEST_SERVER_PATH/config.d/
