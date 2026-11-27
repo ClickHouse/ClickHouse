@@ -1,4 +1,3 @@
-set enable_json_type=1;
 
 create table test (json JSON) engine=Memory;
 insert into test values ('{}'), ('{"a" : 42}'), ('{"b" : {"c" : 42}}');

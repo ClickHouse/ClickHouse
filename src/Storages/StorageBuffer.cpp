@@ -54,7 +54,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MemoryTracker.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/ThreadPool.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -793,7 +793,7 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
     size_t mutated_columns = 0;
     try
     {
-        MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+        ServerOwnedMemoryScope temporarily_disable_memory_tracker;
 
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
         {
@@ -1356,7 +1356,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     }
     auto destination_metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
 
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+    ServerOwnedMemoryScope temporarily_disable_memory_tracker;
 
     auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = destination_id;

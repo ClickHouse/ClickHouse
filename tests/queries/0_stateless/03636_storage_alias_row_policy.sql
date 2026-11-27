@@ -4,7 +4,6 @@ DROP TABLE IF EXISTS test_merge;
 DROP TABLE IF EXISTS test_alias;
 DROP TABLE IF EXISTS test_table;
 
-SET allow_experimental_alias_table_engine = 1;
 SET enable_full_text_index = 1;
 SET use_skip_indexes = 1;
 SET query_plan_direct_read_from_text_index = 1;

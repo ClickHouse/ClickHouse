@@ -1,14 +1,19 @@
 -- Tags: no-fasttest
 -- no-fasttest: the JSON case needs the JSON type.
 
--- A skip index must not skip granules because of a function that can return another value on each evaluation,
--- such as `rand`: the index computes the condition on the values it stores, not on the rows.
+-- A skip index or the primary key must not skip granules because of a function that can return another value on each
+-- evaluation, such as `rand`: the index computes the condition on the values it stores, not on the rows.
 -- https://github.com/ClickHouse/ClickHouse/issues/89615
 
 DROP TABLE IF EXISTS t_set;
 DROP TABLE IF EXISTS t_map;
 DROP TABLE IF EXISTS t_json;
 DROP TABLE IF EXISTS t_name;
+DROP TABLE IF EXISTS t_name_minmax;
+DROP TABLE IF EXISTS t_name_key;
+DROP TABLE IF EXISTS t_name_wrapped;
+DROP TABLE IF EXISTS t_name_wrapped_set;
+DROP TABLE IF EXISTS t_name_array_join;
 
 -- One value of `id` per granule: a granule skipped by mistake loses all of its rows.
 CREATE TABLE t_set (id UInt64, INDEX s_idx id TYPE set(0) GRANULARITY 1)
@@ -42,6 +47,59 @@ SELECT '-- set index on a column named rand()';
 SELECT 'rand', count() BETWEEN 3500 AND 4500 FROM t_name WHERE rand() % 2 = 0;
 SELECT 'id < 10 AND rand', count() BETWEEN 3500 AND 4500 FROM t_name WHERE id < 10 AND rand() % 2 = 0;
 SELECT 'rand, index used', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_name WHERE rand() % 2 = 0 SETTINGS enable_parallel_replicas = 0, use_query_condition_cache = 0) WHERE explain LIKE '%Name: r_idx%';
+SELECT 'id < 10 AND rand > 2, per granule', count() > 7000 FROM t_name WHERE id < 10 AND rand() > 2 SETTINGS secondary_indices_enable_bulk_filtering = 0;
+
+-- Every second granule stores 1 in `rand()`, the others 2.
+CREATE TABLE t_name_minmax (id UInt64, `rand()` UInt32, INDEX r_idx `rand()` TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_name_minmax SELECT number, 1 + intDiv(number, 8) % 2 FROM numbers(8000);
+
+-- The first half of the rows has `rand()` = 1, the second half 2.
+CREATE TABLE t_name_key (`rand()` UInt32, id UInt64)
+ENGINE = MergeTree ORDER BY `rand()`
+SETTINGS index_granularity = 8, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_name_key SELECT 1 + intDiv(number, 4000), number FROM numbers(8000);
+
+SELECT '-- minmax index and primary key on a column named rand()';
+SELECT 'minmax, rand > 2', count() > 7000 FROM t_name_minmax WHERE rand() > 2;
+SELECT 'primary key, rand > 2', count() > 7000 FROM t_name_key WHERE rand() > 2;
+SELECT 'primary key, rand NOT IN', count() > 7000 FROM t_name_key WHERE rand() NOT IN (1, 2);
+
+-- The key column is named like a deterministic function of `rand`, and stores 1 in every row.
+CREATE TABLE t_name_wrapped (`modulo(rand(), 2)` UInt8, id UInt64)
+ENGINE = MergeTree ORDER BY `modulo(rand(), 2)`
+SETTINGS index_granularity = 8, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_name_wrapped SELECT 1, number FROM numbers(8000);
+
+SELECT 'primary key, rand % 2 = 0', count() BETWEEN 3500 AND 4500 FROM t_name_wrapped WHERE rand() % 2 = 0;
+
+-- The set index column is named like a deterministic function of `blockSize`, and stores 0 in every row.
+CREATE TABLE t_name_wrapped_set (`plus(blockSize(), 1)` UInt64, id UInt64, INDEX r_idx `plus(blockSize(), 1)` TYPE set(0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 8, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_name_wrapped_set SELECT 0, number FROM numbers(8000);
+
+SELECT 'set, blockSize() + 1 > 1, bulk', count() FROM t_name_wrapped_set WHERE blockSize() + 1 > 1 SETTINGS secondary_indices_enable_bulk_filtering = 1;
+SELECT 'set, blockSize() + 1 > 1, per granule', count() FROM t_name_wrapped_set WHERE blockSize() + 1 > 1 SETTINGS secondary_indices_enable_bulk_filtering = 0;
+
+-- The key and both indexes use a column named like the `ARRAY JOIN` result, and store 0 in every row.
+CREATE TABLE t_name_array_join
+(
+    `arrayJoin(arr)` UInt8,
+    arr Array(UInt8),
+    INDEX m_idx `arrayJoin(arr)` TYPE minmax GRANULARITY 1,
+    INDEX s_idx `arrayJoin(arr)` TYPE set(0) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY `arrayJoin(arr)`
+SETTINGS index_granularity = 8, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_name_array_join SELECT 0, [toUInt8(1)] FROM numbers(8000);
+
+SELECT 'ARRAY JOIN, primary key', count() FROM t_name_array_join ARRAY JOIN arr AS x WHERE x = 1 SETTINGS ignore_data_skipping_indices = 'm_idx,s_idx';
+SELECT 'ARRAY JOIN, minmax', count() FROM t_name_array_join ARRAY JOIN arr AS x WHERE x = 1 SETTINGS use_primary_key = 0, ignore_data_skipping_indices = 's_idx';
+SELECT 'ARRAY JOIN, set, bulk', count() FROM t_name_array_join ARRAY JOIN arr AS x WHERE x = 1 SETTINGS use_primary_key = 0, ignore_data_skipping_indices = 'm_idx', secondary_indices_enable_bulk_filtering = 1;
+SELECT 'ARRAY JOIN, set, per granule', count() FROM t_name_array_join ARRAY JOIN arr AS x WHERE x = 1 SETTINGS use_primary_key = 0, ignore_data_skipping_indices = 'm_idx', secondary_indices_enable_bulk_filtering = 0;
+SELECT 'ARRAY JOIN, no pruning', count() FROM t_name_array_join ARRAY JOIN arr AS x WHERE x = 1 SETTINGS use_primary_key = 0, use_skip_indexes = 0;
 
 -- Every second granule has the key 'k', the others only the key 'z'.
 CREATE TABLE t_map (id UInt64, m Map(String, String), INDEX ki mapKeys(m) TYPE text(tokenizer = 'array') GRANULARITY 1)
@@ -72,3 +130,8 @@ DROP TABLE t_set;
 DROP TABLE t_map;
 DROP TABLE t_json;
 DROP TABLE t_name;
+DROP TABLE t_name_minmax;
+DROP TABLE t_name_key;
+DROP TABLE t_name_wrapped;
+DROP TABLE t_name_wrapped_set;
+DROP TABLE t_name_array_join;
