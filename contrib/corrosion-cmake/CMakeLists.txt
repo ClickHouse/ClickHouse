@@ -502,6 +502,16 @@ function(clickhouse_config_crate_env target_name)
     # but the CMake build for OpenSSL results in headers in two different places
     corrosion_set_env_vars(${target_name} "CFLAGS=${RUST_CFLAGS} -I ${ClickHouse_SOURCE_DIR}/contrib/openssl/include/")
     corrosion_set_env_vars(${target_name} "CXXFLAGS=${RUST_CXXFLAGS}")
+    # The C and C++ code of build scripts (the `cc` crate) is compiled with the same launcher as ours, which gives the
+    # compiler the source file by a relative path (see `cmake/relative_source_path.sh`). Corrosion sets `CC_<target>` with
+    # underscores in the target; the `cc` crate prefers the variant with dashes. The custom wrapper is the name of the
+    # script, so that the `cc` crate still recognizes the compiler.
+    if (RELATIVE_SOURCE_PATH_LAUNCHER)
+        corrosion_set_env_vars(${target_name}
+            "CC_${Rust_CARGO_TARGET}=${RELATIVE_SOURCE_PATH_LAUNCHER} ${CMAKE_C_COMPILER}"
+            "CXX_${Rust_CARGO_TARGET}=${RELATIVE_SOURCE_PATH_LAUNCHER} ${CMAKE_CXX_COMPILER}"
+            "CC_KNOWN_WRAPPER_CUSTOM=relative_source_path")
+    endif()
     corrosion_set_env_vars(${target_name} "RUSTFLAGS=${RUSTFLAGS}")
     corrosion_set_env_vars(${target_name} "RUSTDOCFLAGS=${RUSTFLAGS}")
     if (CMAKE_OSX_SYSROOT)

@@ -368,6 +368,15 @@ if (ENABLE_BUILD_PATH_MAPPING)
     # leaving bare relative paths like "src/Foo.cpp" that the symbolizer resolves to "./src/Foo.cpp").
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fdebug-compilation-dir=. -ffile-prefix-map=${PROJECT_SOURCE_DIR}/=")
     set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -fdebug-compilation-dir=. -ffile-prefix-map=${PROJECT_SOURCE_DIR}/=")
+
+    # `-ffile-prefix-map` does not apply to the path of the source file that Clang writes into the module, which goes
+    # into the hashes of ThinLTO, so the compiler gets it relative to the build directory (see the script).
+    # A nested build (see NATIVE_BUILD_TARGETS) gets the launcher from this one.
+    set (RELATIVE_SOURCE_PATH_LAUNCHER "${PROJECT_SOURCE_DIR}/cmake/relative_source_path.sh")
+    if (NOT USING_DUMMY_LAUNCHERS AND NOT CMAKE_CXX_COMPILER_LAUNCHER MATCHES "/cmake/relative_source_path.sh")
+        set (CMAKE_CXX_COMPILER_LAUNCHER "${RELATIVE_SOURCE_PATH_LAUNCHER}" ${CMAKE_CXX_COMPILER_LAUNCHER})
+        set (CMAKE_C_COMPILER_LAUNCHER "${RELATIVE_SOURCE_PATH_LAUNCHER}" ${CMAKE_C_COMPILER_LAUNCHER})
+    endif ()
 endif ()
 
 option (ENABLE_BUILD_PROFILING "Enable profiling of build time" OFF)
