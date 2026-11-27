@@ -6,6 +6,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
+#include <Processors/QueryPlan/QueryPlanShapeHash.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <IO/WriteBufferFromString.h>
@@ -172,14 +173,21 @@ void QueryPlanLogCapture::declineCapture(const ContextPtr & context, const char 
         reason);
 }
 
+void QueryPlanLogCapture::captureShapeHash(const QueryPlan & plan)
+{
+    shape_hash = hashQueryPlanShape(plan);
+}
+
 void QueryPlanLogCapture::capturePlanStructure(const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names, size_t max_description_length)
 {
-    /// One plan per query, and nothing is asked of this before it.
+    /// One plan per query, and nothing but the shape hash is asked of this before it.
     chassert(!captured);
 
     /// Without statistics: the query has not run yet. They are filled in by `captureStatistics`.
     captured = CapturedPlan::capture(walk, planExplainOptions(), max_description_length, /*steps_to_stats=*/ nullptr, &pretty_names);
     captured->collected = collected;
+
+    captured->shape_hash = shape_hash;
 }
 
 void QueryPlanLogCapture::captureStatistics(QueryPipeline & pipeline)

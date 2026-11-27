@@ -214,6 +214,8 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
+    [[nodiscard]] const StorageSnapshotPtr & getStorageSnapshot() const { return storage_snapshot; }
+
 private:
     const Names column_names;
     ContextPtr local_context;

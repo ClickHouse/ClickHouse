@@ -40,6 +40,12 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    [[nodiscard]] const InequalityJoinConditions & getConditions() const { return conditions; }
+    [[nodiscard]] const std::optional<InequalityJoinResidualCondition> & getResidual() const { return residual; }
+    [[nodiscard]] JoinKind getQueryKind() const { return query_kind; }
+    [[nodiscard]] JoinStrictness getQueryStrictness() const { return query_strictness; }
+    [[nodiscard]] bool areInputsSortedByFirstKey() const { return inputs_sorted_by_first_key; }
+
 private:
     void updateOutputHeader() override;
 

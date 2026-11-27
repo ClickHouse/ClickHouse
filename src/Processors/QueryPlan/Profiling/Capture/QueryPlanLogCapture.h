@@ -31,6 +31,11 @@ public:
     /// Reports why a query that asked for its plan is not going to get one.
     static void declineCapture(const ContextPtr & context, const char * reason);
 
+    /// Records the hash of the shape of the plan (see `hashQueryPlanShape`), which the captured plan
+    /// carries. Called before the pipeline is built, like the pretty names are read: building it
+    /// moves the `ActionsDAG` out of every expression step, and the hash is derived from them.
+    void captureShapeHash(const QueryPlan & plan);
+
     /// Records the shape of the plan as values. Called once the pipeline has been built, which is
     /// both the first moment the index analysis and the lazily built child plans exist, and the
     /// last moment the plan does. Nothing after this touches the plan.
@@ -60,5 +65,8 @@ private:
     /// The plan, as values. Taken when the structure is captured and valid from then on, so the
     /// plan itself is not kept: it belongs to the interpreter and dies whenever that does.
     std::optional<CapturedPlan> captured;
+
+    /// Taken before the pipeline is built, and put into `captured` once it exists.
+    std::optional<UInt64> shape_hash;
 };
 }

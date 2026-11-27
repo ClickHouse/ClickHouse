@@ -317,6 +317,13 @@ private:
     std::shared_ptr<CompiledFunctionHolder> compiled_function_holder;
 };
 
+const CompileDAG * CompileDAG::tryGetFrom(const IFunctionBase & function)
+{
+    if (const auto * llvm_function = typeid_cast<const LLVMFunction *>(&function))
+        return &llvm_function->getCompileDAG();
+    return nullptr;
+}
+
 static FunctionBasePtr compile(
     const CompileDAG & dag,
     size_t min_count_to_compile_expression)

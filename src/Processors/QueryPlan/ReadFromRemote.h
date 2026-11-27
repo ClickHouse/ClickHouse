@@ -62,6 +62,8 @@ public:
 
     void allowReadingShardFromSeveralReplicas(bool allow) { allow_reading_shard_from_several_replicas = allow; }
 
+    [[nodiscard]] QueryProcessingStage::Enum getStage() const { return stage; }
+    [[nodiscard]] const StorageID & getMainTable() const { return main_table; }
     const ClusterProxy::SelectStreamFactory::Shards & getShards() const { return shards; }
 
 private:

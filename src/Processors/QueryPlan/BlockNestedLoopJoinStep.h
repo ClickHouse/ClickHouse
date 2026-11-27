@@ -62,6 +62,8 @@ public:
 
     [[nodiscard]] StepAnalyzer makeAnalyzer() const override;
 
+    [[nodiscard]] const BlockNestedLoopPredicate & getPredicate() const { return predicate; }
+
 private:
     void updateOutputHeader() override;
 

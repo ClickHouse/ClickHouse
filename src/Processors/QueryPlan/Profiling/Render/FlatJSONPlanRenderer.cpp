@@ -5,6 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <Processors/QueryPlan/Profiling/Capture/PlanIndexStats.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/QueryPlanShapeHash.h>
 #include <base/types.h>
 
 #include <memory>
@@ -231,6 +232,7 @@ JSONBuilder::ItemPtr capturedStepToJSON(const CapturedStep & step)
     map->add("NodeType", step.type);
     map->add("NodeId", step.id);
 
+
     if (!step.description.empty())
         map->add("Description", step.description);
 
@@ -264,6 +266,8 @@ JSONBuilder::ItemPtr capturedPlanToJSON(const CapturedPlan & captured)
     auto result = std::make_unique<JSONBuilder::JSONMap>();
     result->add("Version", QUERY_PLAN_JSON_VERSION);
     result->add("Root", captured.root_id);
+    if (captured.shape_hash)
+        result->add("ShapeHash", formatQueryPlanShapeHash(*captured.shape_hash));
 
     if (captured.execution_time_ns)
         result->add("ExecutionTimeNs", *captured.execution_time_ns);
