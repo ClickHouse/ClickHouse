@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 name="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 backups_disk_path="$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.disks WHERE name='backups'")"
 
-small_create="CREATE TABLE t (a UInt64, s String) ENGINE=MergeTree ORDER BY a SETTINGS min_bytes_for_wide_part=0"
+small_create="CREATE TABLE t (a UInt64, s String) ENGINE=MergeTree ORDER BY a SETTINGS min_bytes_for_wide_part=0, min_bytes_for_full_part_storage=0"
 small_insert="INSERT INTO t SELECT number, toString(number) FROM numbers(50)"
 
 # Case 1: num_packs > 0 in an archive backup is corruption (archives are never packed on write): RESTORE must report BACKUP_DAMAGED.

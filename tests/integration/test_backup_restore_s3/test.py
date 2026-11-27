@@ -711,18 +711,12 @@ def test_backup_to_s3_native_copy_multipart(cluster):
     )
 
 
-def _count_backup_objects(cluster, backup_name):
-    objects = cluster.minio_client.list_objects(
-        "root", f"data/backups/{backup_name}/", recursive=True
+def _list_backup_objects(cluster, backup_name):
+    return list(
+        cluster.minio_client.list_objects(
+            "root", f"data/backups/{backup_name}/", recursive=True
+        )
     )
-    return sum(1 for _ in objects)
-
-
-def _backup_objects_size(cluster, backup_name):
-    objects = cluster.minio_client.list_objects(
-        "root", f"data/backups/{backup_name}/", recursive=True
-    )
-    return sum(obj.size for obj in objects)
 
 
 def test_backup_to_s3_packed_format(cluster):
@@ -742,7 +736,8 @@ def test_backup_to_s3_packed_format(cluster):
     # Each member read is bounded to its range. Restore reads the metadata, each pack's index (at most the whole
     # pack) and every stored byte once, so at most twice the backup; an unbounded read per member pulls the rest
     # of its pack each time.
-    backup_size = _backup_objects_size(cluster, backup_name)
+    backup_objects = _list_backup_objects(cluster, backup_name)
+    backup_size = sum(o.size for o in backup_objects)
     assert (
         restore_events["ReadBufferFromS3Bytes"] <= 2 * backup_size
     ), f"restore read {restore_events['ReadBufferFromS3Bytes']} bytes from a backup of {backup_size} bytes"
@@ -756,7 +751,7 @@ def test_backup_to_s3_packed_format(cluster):
             f"SELECT num_files, num_entries FROM system.backups WHERE id = '{backup_name}'"
         ).split(),
     )
-    objects = _count_backup_objects(cluster, backup_name)
+    objects = len(backup_objects)
     assert (
         objects == num_entries + 1 and num_entries < num_files
     ), f"packing did not reduce backup object count: objects={objects} entries={num_entries} files={num_files}"

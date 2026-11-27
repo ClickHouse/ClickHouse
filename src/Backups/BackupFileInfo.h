@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Logger.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -97,5 +98,11 @@ BackupFileInfo buildFileInfoForBackupEntry(String file_name, const BackupEntryPt
 
 /// Builds the file infos for the entries. Consumes `backup_entries`.
 BackupFileInfosAndEntries buildFileInfosForBackupEntries(BackupEntries && backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element);
+
+/// Selects the members of each PackedFilesIO ".packed" object from this host's `file_infos`, index-aligned with its
+/// backup entries. The outer index is pack_id; the inner values are indices into `file_infos`, one per data file: the
+/// entry whose bytes the pack stores. Its duplicates can't stand in: they can differ in base_size, and restore rebuilds
+/// the data file from that entry.
+VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> selectPackMembers(const BackupFileInfos & file_infos);
 
 }

@@ -5,7 +5,6 @@
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupIO_S3.h>
-#include <Backups/BackupPacker.h>
 #include <Backups/findCharacterNotPreservedByXML.h>
 #include <IO/PackedFilesReader.h>
 #include <IO/PackedFilesIO.h>
@@ -18,9 +17,11 @@
 #include <Common/Hex.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/UUID.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <IO/Archives/IArchiveWriter.h>
+#include <IO/Archives/PackedArchiveWriter.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/createArchiveWriter.h>
 #include <IO/ConcatReadBufferFromFile.h>
@@ -615,7 +616,7 @@ void BackupImpl::writeBackupMetadata()
 
     /// Bump the version and emit num_packs only if a pack was actually written; an all-large-file packed
     /// backup is a one-object-per-file backup and stays readable by older servers.
-    const bool has_packs = isPacked() && (num_packs > 0);
+    const bool has_packs = isPacked() && (packs.count > 0);
 
     int version_to_write = INITIAL_BACKUP_VERSION;
     if (has_packs)
@@ -642,7 +643,7 @@ void BackupImpl::writeBackupMetadata()
              << "</data_file_name_generator>";
 
     if (has_packs)
-        *out << "<num_packs>" << num_packs << "</num_packs>";
+        *out << "<num_packs>" << packs.count << "</num_packs>";
 
     if (base_backup_info)
     {
@@ -738,8 +739,8 @@ void BackupImpl::writeBackupMetadata()
     *out << "</contents>";
 
     /// One entry per pack object, sized as writeFilePack wrote it.
-    num_entries += num_packs;
-    size_of_entries += size_of_packs;
+    num_entries += packs.count;
+    size_of_entries += packs.total_size;
 
     *out << "</config>";
 
@@ -866,8 +867,8 @@ void BackupImpl::readBackupMetadata()
 
         if (h.contains("num_packs"))
         {
-            num_packs = to_uint64(req("num_packs"), "num_packs");
-            if (num_packs > 0)
+            packs.count = to_uint64(req("num_packs"), "num_packs");
+            if (packs.count > 0)
             {
                 if (layout == BackupLayout::Archive)
                     throw Exception(ErrorCodes::BACKUP_DAMAGED,
@@ -876,7 +877,7 @@ void BackupImpl::readBackupMetadata()
                 if (version < PACKED_FORMAT_VERSION)
                     throw Exception(ErrorCodes::BACKUP_DAMAGED,
                         "Backup {}: Metadata declares {} packs but its version {} predates the packed format (version {})",
-                        backup_name_for_logging, num_packs, version, PACKED_FORMAT_VERSION);
+                        backup_name_for_logging, packs.count, version, PACKED_FORMAT_VERSION);
             }
         }
 
@@ -1512,7 +1513,7 @@ std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFileByObjectKey(const Ba
 
 void BackupImpl::loadPackIndexes()
 {
-    for (size_t pack_id = 0; pack_id < num_packs; ++pack_id)
+    for (size_t pack_id = 0; pack_id < packs.count; ++pack_id)
     {
         const String pack_object = getBackupPackObjectName(pack_id);
 
@@ -1545,7 +1546,7 @@ void BackupImpl::loadPackIndexes()
                     quoteString(pack_object),
                     pack_object_size);
 
-            if (!packed_members.emplace(member_name, MemberLocation{pack_id, file_offset.offset, file_offset.size}).second)
+            if (!packs.member_locations.emplace(member_name, MemberLocation{pack_id, file_offset.offset, file_offset.size}).second)
                 throw Exception(
                     ErrorCodes::BACKUP_DAMAGED,
                     "Backup {}: Member {} appears in more than one pack",
@@ -1559,7 +1560,7 @@ void BackupImpl::checkPacksMatchManifest(const UnorderedSetWithMemoryTracking<St
 {
     for (const auto & data_file_name : declared_packed_files)
     {
-        if (!packed_members.contains(data_file_name))
+        if (!packs.member_locations.contains(data_file_name))
             throw Exception(
                 ErrorCodes::BACKUP_DAMAGED,
                 "Backup {}: Data file {} is marked as packed in the metadata but no pack contains it",
@@ -1567,7 +1568,7 @@ void BackupImpl::checkPacksMatchManifest(const UnorderedSetWithMemoryTracking<St
                 quoteString(data_file_name));
     }
 
-    for (const auto & [member_name, _] : packed_members)
+    for (const auto & [member_name, _] : packs.member_locations)
     {
         if (!declared_packed_files.contains(member_name))
             throw Exception(
@@ -1577,7 +1578,7 @@ void BackupImpl::checkPacksMatchManifest(const UnorderedSetWithMemoryTracking<St
                 quoteString(member_name));
     }
 
-    if (packed_members.empty())
+    if (packs.member_locations.empty())
         return; /// Nothing packed: skip the walk over file_infos, which can hold millions of entries.
 
     /// Restore reads the index's byte range verbatim (see readPackedMember), so an index that
@@ -1585,8 +1586,8 @@ void BackupImpl::checkPacksMatchManifest(const UnorderedSetWithMemoryTracking<St
     /// (size, checksum), so a deduplicated data file is checked once, against the entry restore resolves.
     for (const auto & [size_and_checksum, info] : file_infos)
     {
-        auto it = packed_members.find(info.data_file_name);
-        if (it == packed_members.end())
+        auto it = packs.member_locations.find(info.data_file_name);
+        if (it == packs.member_locations.end())
             continue;
 
         const auto & member = it->second;
@@ -1647,7 +1648,7 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
                 file_name);
         }
         info = it->second;
-        if (auto pit = packed_members.find(info.data_file_name); pit != packed_members.end())
+        if (auto pit = packs.member_locations.find(info.data_file_name); pit != packs.member_locations.end())
             packed_location = pit->second;
     }
 
@@ -1848,7 +1849,7 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
                 formatSizeAndChecksum(size_and_checksum));
         }
         info = it->second;
-        is_packed = packed_members.contains(info.data_file_name);
+        is_packed = packs.member_locations.contains(info.data_file_name);
     }
 
     if (info.encrypted_by_disk && !destination_disk->getDataSourceDescription().is_encrypted)
@@ -2019,47 +2020,47 @@ void BackupImpl::writeFilePack(size_t pack_id, const PackMembers & members)
     if (!lock_file_before_first_file_checked.exchange(true))
         checkLockFile(true);
 
-    /// Each member streams its physical suffix [base_size, size), like own-object writes. Members are read
-    /// representatives (BackupPacker::selectPackMembers), so base_size matches what restore reconstructs the
-    /// (size, checksum) class with.
-    std::vector<BackupPacker::MemberSource> pack_members;
-    pack_members.reserve(members.size());
+    /// Each member streams its physical suffix [base_size, size), like own-object writes. Members are the
+    /// representatives selectPackMembers chose, the entries restore keys on, so base_size matches what restore
+    /// reconstructs the (size, checksum) class with.
+    VectorWithMemoryTracking<PackedArchiveWriter::Member> member_sizes;
+    member_sizes.reserve(members.size());
     UInt64 total_logical_size = 0;
     for (const auto & [info, backup_entry] : members)
     {
-        const UInt64 physical_size = info.size - info.base_size;
         total_logical_size += info.size;
-        pack_members.push_back(BackupPacker::MemberSource{
-            info.data_file_name,
-            physical_size,
-            [backup_entry, base_size = info.base_size, read_settings = writer->getReadSettings()]() -> std::unique_ptr<ReadBuffer>
-            {
-                auto read_buffer = backup_entry->getReadBuffer(read_settings);
-                if (base_size != 0)
-                    read_buffer->seek(base_size, SEEK_SET);
-                return read_buffer;
-            }});
+        member_sizes.push_back({info.data_file_name, info.size - info.base_size});
     }
 
     const String pack_object = getBackupPackObjectName(pack_id);
     LOG_TRACE(log, "Writing backup pack {} with {} members", pack_object, members.size());
-    const UInt64 pack_object_size = BackupPacker::writePack(
-        writer->writeFile(pack_object), pack_members, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+    auto out = writer->writeFile(pack_object);
+    PackedArchiveWriter pack_writer(std::move(out), std::move(member_sizes), PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+    const auto read_settings = writer->getReadSettings();
+    for (const auto & [info, backup_entry] : members)
+    {
+        /// Opened one at a time: a pack can hold thousands of small members.
+        auto read_buffer = backup_entry->getReadBuffer(read_settings);
+        if (info.base_size != 0)
+            read_buffer->seek(info.base_size, SEEK_SET);
+        pack_writer.writeMember(info.data_file_name, *read_buffer);
+    }
+    const UInt64 pack_object_size = pack_writer.finalize();
 
     if (params.fsync_backup_files)
         writer->syncFileToDisk(pack_object);
 
     /// A pack is one entry sized as the whole object, front index included; num_files/total_size still track
-    /// logical files. writeBackupMetadata and readBackupMetadata mirror this.
+    /// logical files. writeBackupMetadata resets these counters and adds the packs back from `packs`;
+    /// readBackupMetadata mirrors it.
     std::lock_guard lock{mutex};
     num_files += members.size();
     total_size += total_logical_size;
     ++num_entries;
     size_of_entries += pack_object_size;
     uncompressed_size += pack_object_size;
-    /// writeBackupMetadata resets the counters above and adds the packs back from these.
-    ++num_packs;
-    size_of_packs += pack_object_size;
+    ++packs.count;
+    packs.total_size += pack_object_size;
 }
 
 

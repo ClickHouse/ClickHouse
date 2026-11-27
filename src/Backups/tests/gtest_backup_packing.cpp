@@ -1,12 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <Backups/BackupCoordinationFileInfos.h>
 #include <Backups/BackupFileInfo.h>
-#include <Backups/BackupPacker.h>
 
 using namespace DB;
 
@@ -99,19 +99,12 @@ TEST(BackupPacking, PackMemberUsesReadRepresentativeBaseSize)
     BackupFileInfos resolved = coordination.getFileInfos("");
 
     /// Representative = smallest file_name of the class => "a_rep" (base_size 0).
-    const BackupFileInfo * representative = nullptr;
-    for (const auto & info : resolved)
-        if (info.file_name == "a_rep")
-            representative = &info;
-    ASSERT_NE(representative, nullptr);
-
-    auto member_indices_by_pack_id = BackupPacker::selectPackMembers(resolved);
+    auto member_indices_by_pack_id = selectPackMembers(resolved);
     ASSERT_EQ(member_indices_by_pack_id.size(), 1u);
     const auto & member_indices = member_indices_by_pack_id[0];
     ASSERT_EQ(member_indices.size(), 1u);
     const BackupFileInfo & member = resolved[member_indices[0]];
     EXPECT_EQ(member.file_name, "a_rep");
-    EXPECT_EQ(member.base_size, representative->base_size);
     EXPECT_EQ(member.base_size, 0u);
 }
 

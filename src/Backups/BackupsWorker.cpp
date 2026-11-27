@@ -8,7 +8,6 @@
 #include <Backups/BackupFactory.h>
 #include <Backups/BackupInMemory.h>
 #include <Backups/BackupInfo.h>
-#include <Backups/BackupPacker.h>
 #include <Backups/BackupSettings.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/IBackupEntry.h>
@@ -991,8 +990,8 @@ void BackupsWorker::writeBackupEntries(
 
     std::atomic_bool failed = false;
 
-    /// Packed entries are written by the pack pass below, not by the per-entry path.
-    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> member_indices_by_pack_id = BackupPacker::selectPackMembers(file_infos);
+    /// Groups the packed members by pack; the pack pass below writes them.
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> member_indices_by_pack_id = selectPackMembers(file_infos);
 
     bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
     auto & thread_pool = getThreadPool(thread_pool_id);

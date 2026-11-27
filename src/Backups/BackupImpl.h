@@ -172,8 +172,18 @@ private:
         UInt64 size = 0;
     };
 
-    /// Reads each pack's front index (packs_0000 .. packs_{num_packs-1}), checks that every member fits in its pack,
-    /// and fills `packed_members`.
+    /// Pack objects of a packed backup. Empty for other layouts.
+    struct Packs
+    {
+        /// data_file_name -> its location inside a pack. Built once at restore start (see loadPackIndexes).
+        UnorderedMapWithMemoryTracking<String, MemberLocation> member_locations;
+        /// Number of pack objects: from the manifest on read, counted as they are written on write.
+        size_t count = 0;
+        UInt64 total_size = 0; /// Total size of the written pack objects, front indexes included.
+    };
+
+    /// Reads each pack's front index (packs_0000 .. packs_{packs.count-1}), checks that every member fits in its pack,
+    /// and fills `packs.member_locations`.
     void loadPackIndexes() TSA_REQUIRES(mutex);
     /// Fails closed unless the pack indexes and the manifest agree on which data files are packed and on each
     /// member's size.
@@ -181,7 +191,7 @@ private:
     std::unique_ptr<ReadBufferFromFileBase> readPackedMember(const MemberLocation & member) const;
 
     /// How the backup's objects are laid out, set at construction. Packed is set only on write, from the setting;
-    /// a read finds packed members via `packed_members`.
+    /// a read finds packed members via `packs.member_locations`.
     enum class BackupLayout : uint8_t
     {
         PerFile, /// One object per backed-up file.
@@ -219,12 +229,7 @@ private:
     /// Instead of `file_infos` when the backup is opened only for lookups (`CreateParams::for_file_lookups_only`): the sizes
     /// and checksums of its files, sorted and without duplicates. Without empty files.
     std::vector<SizeAndChecksum> sizes_and_checksums TSA_GUARDED_BY(mutex);
-    /// data_file_name -> its location inside a pack. Built once at restore start (see loadPackIndexes).
-    /// Empty for non-packed backups.
-    UnorderedMapWithMemoryTracking<String, MemberLocation> packed_members TSA_GUARDED_BY(mutex);
-    /// Number of pack objects: from the manifest on read, counted as they are written on write.
-    size_t num_packs TSA_GUARDED_BY(mutex) = 0;
-    UInt64 size_of_packs TSA_GUARDED_BY(mutex) = 0; /// Total size of the written pack objects, front indexes included.
+    Packs packs TSA_GUARDED_BY(mutex);
     /// object_key -> file name, only used by lightweight snapshot
     std::unordered_map<String, String> file_object_keys TSA_GUARDED_BY(mutex);
     std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);

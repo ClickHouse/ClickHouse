@@ -61,12 +61,13 @@ void PackedArchiveWriter::writeMember(const String & name, ReadBuffer & in)
     ++next_member;
 }
 
-void PackedArchiveWriter::finalize()
+UInt64 PackedArchiveWriter::finalize()
 {
     if (next_member != members.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Cannot finalize packed archive: only {} of {} members written", next_member, members.size());
     out->finalize();
+    return out->count();
 }
 
 PackedArchiveWriter::~PackedArchiveWriter()
