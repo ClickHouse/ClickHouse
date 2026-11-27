@@ -512,7 +512,7 @@ public:
         }
     }
 
-    size_t getBytesPerRowAdded() const override { return bytes_per_row_added; }
+    [[nodiscard]] size_t getBytesPerRowAdded() const override { return bytes_per_row_added; }
 
     void transformChildNode(Tuple & initial_node) override
     {
