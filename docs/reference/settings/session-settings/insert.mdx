@@ -17,7 +17,9 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-If setting is enabled, Allow materialized columns in INSERT.
+If enabled, `MATERIALIZED` columns can be listed in the column list of an `INSERT` query, and the inserted values are stored instead of being calculated from the column expressions. For `Distributed` tables, the values of `MATERIALIZED` columns are then also sent to the shards.
+
+If disabled, listing a `MATERIALIZED` column in an `INSERT` query throws an exception, and the values of such columns are always calculated from their expressions.
 
 ## insert_deduplicate {#insert_deduplicate}
 

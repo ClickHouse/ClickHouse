@@ -1,0 +1,8 @@
+CREATE DATABASE default_1
+ENGINE = SQLite('default_1')
+COMMENT 'old'
+SQLite('default_1')	old
+CREATE DATABASE default_1
+ENGINE = SQLite('default_1')
+COMMENT 'new'
+SQLite('default_1')	new

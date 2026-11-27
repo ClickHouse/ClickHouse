@@ -413,8 +413,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// 'Block structure mismatch in JoinStep'. A duplicated NON-key build column, or a duplicated key
     /// on the probe side (where the filter is only applied and preserves the header), is harmless, so
     /// guard the build-side keys specifically. Skipping the filter is always correctness-safe. Mirrors
-    /// JoinStepLogical::canRemoveUnusedColumns(), which disables a sibling optimization on duplicated
-    /// join-condition inputs.
+    /// `JoinStepLogical::analyzeUnneededColumns`, which keeps duplicated join-condition inputs when it
+    /// removes the unused columns.
     {
         NameSet build_key_names;
         for (const auto & condition : join_operator.expression)
