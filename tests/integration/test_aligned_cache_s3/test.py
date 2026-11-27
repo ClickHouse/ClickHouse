@@ -98,6 +98,9 @@ def test_cache_size(started_cluster):
 
     node.restart_clickhouse()
 
+    for disk in ["aligned_cache", "aligned_cache_evict", "aligned_cache_reserve_ahead"]:
+        node.query(f"SYSTEM WAIT BLOBS CLEANUP '{disk}'")
+
     cache_size = node.query(
         """
             SELECT value FROM system.metrics WHERE name = 'FilesystemCacheSize';

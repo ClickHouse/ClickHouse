@@ -69,17 +69,11 @@ Padrão: `10485760` (10 MiB).
 
 ## max_iceberg_manifest_decode_thread_pool_free_size {#max_iceberg_manifest_decode_thread_pool_free_size}
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Sim" />
-
-Número máximo de threads ociosas em standby a serem mantidas no thread pool para a decodificação de Iceberg data manifest files.
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />Número máximo de threads ociosas em standby a serem mantidas no pool de threads para a decodificação de Iceberg data manifest files. A configuração está obsoleta e não tem efeito: os arquivos de manifesto do Iceberg são lidos no pool de threads de E/S.
 
 ## max_iceberg_manifest_decode_thread_pool_size {#max_iceberg_manifest_decode_thread_pool_size}
 
-<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="Sim" />
-
-Número total máximo de threads a serem usadas para decodificar Iceberg data manifest files.
-
-O pool é intencionalmente separado do pool de E/S: uma task de decodificação pode ficar bloqueada até que a consulta consuma as entries que ela produziu, enquanto a decodificação do delete manifest aguarda suas tasks no pool de E/S antes que qualquer entry seja consumida — compartilhar um único pool poderia causar deadlock.
+<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />Número total máximo de threads a serem usadas para decodificar Iceberg data manifest files. A configuração está obsoleta e não tem efeito: os arquivos de manifesto do Iceberg são lidos no pool de threads de E/S.
 
 ## max_keep_alive_requests {#max_keep_alive_requests}
 
