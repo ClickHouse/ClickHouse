@@ -4771,6 +4771,11 @@ bool ReadFromMergeTree::canReadInReverseOrder() const
             && context->getSettingsRef()[Setting::optimize_read_in_reverse_order_final]);
 }
 
+bool ReadFromMergeTree::canReadInOrderWithPrefix(size_t prefix_size) const
+{
+    return prefix_size <= storage_snapshot->metadata->getSortingKey().column_names.size();
+}
+
 bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit)
 {
     /// if direction is not set, use current one
@@ -4780,9 +4785,11 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (direction != 1 && !canReadInReverseOrder())
         return false;
 
-    /// The prefix indexes this snapshot's sorting key, and a clone of its expression list is resized
-    /// to `prefix_size`, which appends null `ASTPtr` children when the prefix is longer than the key.
-    if (prefix_size > storage_snapshot->metadata->getSortingKey().column_names.size())
+    /// The prefix indexes this snapshot's sorting key: `getSortingKeyPrefixExpression` and the readers
+    /// take its first `prefix_size` column names, which is out of bounds when the prefix is longer than the key.
+    /// `ReadFromMerge::requestReadingInOrder` hands one prefix to the reads of all its children and asks
+    /// `canReadInOrderWithPrefix` of every one of them first, so that none is switched when one refuses.
+    if (!canReadInOrderWithPrefix(prefix_size))
         return false;
 
     /// Only a later request that WIDENS an already-established prefix (distinct/aggregation-in-order

@@ -51,6 +51,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/sortBlock.h>
 #include <Poco/String.h>
+#include <Planner/AnalyzeExpression.h>
 
 #if USE_AVRO
 
@@ -2680,11 +2681,11 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
             /// Each key is evaluated alone on its own inputs, so a column named like the key is never taken for it.
             /// A computed key is not named like a source column, which a later identity key may denote.
             ASTPtr key_ast = keys[i];
-            auto syntax_result = TreeRewriter(context).analyze(key_ast, source_block.getNamesAndTypesList());
+            auto key_actions = analyzeExpressionToActions(key_ast, source_block.getNamesAndTypesList(), context);
             Block key_block;
-            for (const auto & column_name : syntax_result->requiredSourceColumns())
+            for (const auto & column_name : key_actions->getRequiredColumns())
                 key_block.insert(source_block.getByName(column_name));
-            ExpressionAnalyzer(key_ast, syntax_result, context).getActions(false)->execute(key_block);
+            key_actions->execute(key_block);
 
             auto key_column = key_block.getByName(sort_column_name);
             while (block.has(key_column.name) || (!is_identifier && source_block.has(key_column.name)))

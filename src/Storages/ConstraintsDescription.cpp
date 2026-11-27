@@ -4,16 +4,20 @@
 #include <Core/Block.h>
 #include <Interpreters/ComparisonGraph.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeCNFConverter.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
+#include <Interpreters/misc.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
+#include <Planner/AnalyzeExpression.h>
 
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Interpreters/ExpressionContainsArrayJoin.h>
 
@@ -24,15 +28,124 @@
 #include <Analyzer/Passes/CNF.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
+#include <Storages/StorageSet.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
 }
+
+namespace
+{
+
+/// Recursively detect a subquery that would be executed during `CHECK` constraint
+/// validation on every insert.  Such subqueries are dangerous because they run
+/// arbitrary work for each inserted block, so both bare subqueries (`CHECK (SELECT 1)`)
+/// and scalar subqueries nested under functions (`CHECK equals((SELECT 1), 1)`) are
+/// rejected.  The single allowed exception is a direct subquery on the set side of an
+/// `IN`-family operator (`x IN (SELECT ...)`): it becomes a "not-ready set" built lazily
+/// at insert time (see `getExpressions`), which matches the legacy behaviour. A table name
+/// on the set side (`x IN table`) is forbidden because it also produces a not-ready set,
+/// but without a SELECT pipeline to materialize it - unless it is a `Set` table, see `isSetTable`. A subquery hidden inside the set side
+/// (`x IN (1, (SELECT 1))`) is not a not-ready set and is rejected like any other nested
+/// scalar subquery.
+///
+/// Every bare identifier on the set side is a table name, even when a column of the table has
+/// the same name: the DDL interpreters run `AddDefaultDatabaseVisitor` over the constraint before
+/// it reaches this check, and that visitor turns the set-side identifier of an `IN` operator into
+/// a table identifier qualified with the current database (`x IN arr` becomes `x IN default.arr`)
+/// and stores it in that form in the table metadata. Use `has(arr, x)` to test membership in an
+/// array column.
+///
+/// The one table allowed on the set side is a `Set` table (`x IN set_table`): its set is already
+/// built, so checking the constraint neither runs a query nor needs a pipeline to materialize it,
+/// and released versions accepted such constraints.
+bool isSetTable(const ASTPtr & set_side, const ContextPtr & context)
+{
+    boost::intrusive_ptr<ASTTableIdentifier> table_identifier;
+    if (const auto * table = set_side->as<ASTTableIdentifier>())
+        table_identifier = make_intrusive<ASTTableIdentifier>(table->getTableId());
+    else if (const auto * identifier = set_side->as<ASTIdentifier>())
+        table_identifier = identifier->createTable();
+
+    if (!table_identifier)
+        return false;
+
+    auto table_id = context->tryResolveStorageID(table_identifier->getTableId());
+    if (!table_id)
+        return false;
+
+    /// Whether the table exists and which engine it has decides whether the constraint is accepted, so check
+    /// that the user may see the table before looking it up: otherwise the outcome of the DDL would reveal the
+    /// existence and the engine of a table the user has no access to. The check does not depend on whether the
+    /// table exists.
+    context->checkAccess(AccessType::SHOW_TABLES, table_id.getDatabaseName(), table_id.getTableName());
+
+    auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+    return storage && castStorage<StorageSet>(storage, DeferredTable::Load);
+}
+
+bool containsForbiddenSubquery(const ASTPtr & ast, const ContextPtr & context)
+{
+    if (ast->as<ASTSubquery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+        return true;
+
+    if (const auto * func = ast->as<ASTFunction>(); func && functionIsInOrGlobalInOperator(func->name) && func->arguments)
+    {
+        const auto & arguments = func->arguments->children;
+        if (!arguments.empty())
+        {
+            /// Validate every argument except the set side (the last one).
+            for (size_t i = 0; i + 1 < arguments.size(); ++i)
+                if (containsForbiddenSubquery(arguments[i], context))
+                    return true;
+
+            /// The set side is allowed to be a direct subquery (`x IN (SELECT ...)`),
+            /// which becomes a not-ready set built lazily at insert time.  Any other
+            /// shape must still be validated: a scalar subquery nested in a tuple or
+            /// list (`x IN (1, (SELECT 1))`) would otherwise run on every insert.
+            const auto & set_side = arguments.back();
+            if (set_side->as<ASTIdentifier>() || set_side->as<ASTTableIdentifier>())
+                return !isSetTable(set_side, context);
+            if (!set_side->as<ASTSubquery>() && containsForbiddenSubquery(set_side, context))
+                return true;
+        }
+        return false;
+    }
+
+    for (const auto & child : ast->children)
+        if (containsForbiddenSubquery(child, context))
+            return true;
+
+    return false;
+}
+
+/// Throw if the `CHECK` constraint expression contains a forbidden subquery.
+/// SQL user-defined functions are inlined by the Analyzer during `analyzeExpressionToActionsDAG`,
+/// so a subquery hidden inside a UDF body would bypass an AST-level check of the expression itself.
+/// Run the check on a copy with SQL UDFs expanded the same way the Analyzer would inline them
+/// (the expansion rejects recursive UDFs, so it always terminates).
+void checkExpressionDoesntContainSubqueries(const ASTPtr & expr, const ContextPtr & context)
+{
+    ASTPtr expanded_expr = expr->clone();
+    UserDefinedSQLFunctionVisitor::visit(expanded_expr, context);
+    if (containsForbiddenSubquery(expanded_expr, context))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Subqueries and table names are not allowed in CHECK constraints, except a direct subquery or a Set table on the right-hand side of an IN operator. "
+            "A bare identifier on the right-hand side of IN is a table name, even if a column with that name exists; "
+            "use has(arr, x) to test membership in an array column");
+}
+
+}
+
 
 String ConstraintsDescription::toString() const
 {
@@ -174,10 +287,18 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
         auto * constraint_ptr = constraint->as<ASTConstraintDeclaration>();
         if (constraint_ptr->type == ASTConstraintDeclaration::Type::CHECK)
         {
-            // TreeRewriter::analyze has query as non-const argument so to avoid accidental query changes we clone it
             ASTPtr expr = constraint_ptr->expr->clone();
-            auto syntax_result = TreeRewriter(context).analyze(expr, source_columns_);
-            auto constraint_dag = ExpressionAnalyzer(constraint_ptr->expr->clone(), syntax_result, context).getActionsDAG(false, true);
+            /// The DDL paths reject such constraints already (see `validateNoSubqueries`); this covers
+            /// metadata that was created before that validation existed.
+            checkExpressionDoesntContainSubqueries(expr, context);
+            /// Do not build `IN (subquery)` sets eagerly here: the constraint actions are
+            /// compiled while the INSERT pipeline is being constructed (in the
+            /// `CheckConstraintsTransform` constructor), before the sample-block handshake.
+            /// Executing the subquery now would emit a stray `Progress` packet to the client.
+            /// `CheckConstraintsTransform::onConsume` builds the sets at the right time via
+            /// `VirtualColumnUtils::buildSetsForDAG`, matching the legacy behavior.
+            auto constraint_dag = analyzeExpressionToActionsDAG(
+                expr, source_columns_, context, /* add_aliases */ false, /* project_result */ true, /* build_subquery_sets */ false);
 
             /// Prepend actions that extract the required subcolumns from their parent columns, so the expression
             /// can be evaluated on a block that contains only the top-level columns.
@@ -188,6 +309,30 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
         }
     }
     return res;
+}
+
+bool ConstraintsDescription::hasForbiddenSubquery(const ASTPtr & constraint, const ContextPtr & context)
+{
+    const auto * constraint_ptr = constraint ? constraint->as<ASTConstraintDeclaration>() : nullptr;
+    if (!constraint_ptr || constraint_ptr->type != ASTConstraintDeclaration::Type::CHECK)
+        return false;
+
+    ASTPtr expanded_expr = constraint_ptr->expr->clone();
+    UserDefinedSQLFunctionVisitor::visit(expanded_expr, context);
+    return containsForbiddenSubquery(expanded_expr, context);
+}
+
+void ConstraintsDescription::validateNoSubqueries(const ASTs & constraints_, const ContextPtr & context)
+{
+    for (const auto & constraint : constraints_)
+    {
+        if (!constraint)
+            continue;
+
+        const auto * constraint_ptr = constraint->as<ASTConstraintDeclaration>();
+        if (constraint_ptr && constraint_ptr->type == ASTConstraintDeclaration::Type::CHECK)
+            checkExpressionDoesntContainSubqueries(constraint_ptr->expr, context);
+    }
 }
 
 void ConstraintsDescription::checkExpressionsPreserveRowCount() const
