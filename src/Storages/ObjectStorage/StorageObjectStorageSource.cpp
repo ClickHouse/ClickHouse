@@ -197,6 +197,12 @@ namespace
         return headers->safeGet<Map>();
     }
 
+    /// Only `Web` registers `_headers` as the response headers; on other storages it can only be a Hive partition key.
+    bool responseHeadersRequested(const StorageObjectStorageConfiguration & configuration, const ReadFromFormatInfo & read_from_format_info)
+    {
+        return configuration.getType() == ObjectStorageType::Web && read_from_format_info.requested_virtual_columns.contains("_headers");
+    }
+
     String getPathComponentForGlobMatching(const String & path)
     {
         return String(stripQueryAndFragment(path));
@@ -1504,7 +1510,7 @@ Chunk StorageObjectStorageSource::generate()
             /// `_headers` is added along with the other virtual columns, in the order they are requested in,
             /// which is the order of the columns in the header of the source.
             std::optional<Map> http_response_headers;
-            if (read_from_format_info.requested_virtual_columns.contains("_headers"))
+            if (responseHeadersRequested(*configuration, read_from_format_info))
                 http_response_headers = tryGetHeadersFromReadBuffer(reader.readBuffer()).value_or(objectAttributesToMap(object_metadata->attributes));
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
@@ -2063,7 +2069,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     /// requested `_headers` virtual column (the HTTP response headers of the data `GET`) would have to fall
     /// back to the metadata-probe headers (usually a `HEAD`), which can differ from the actual `GET`
     /// response. Skip the shortcut when `_headers` is requested so the real `GET` headers are used.
-    const bool headers_requested = read_from_format_info.requested_virtual_columns.contains("_headers");
+    const bool headers_requested = responseHeadersRequested(*configuration, read_from_format_info);
 
     std::optional<size_t> num_rows_from_cache
         = need_only_count && !headers_requested && !object_info->file_bucket_info
