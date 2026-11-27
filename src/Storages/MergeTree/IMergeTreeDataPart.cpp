@@ -2867,6 +2867,10 @@ void IMergeTreeDataPart::loadExistingRowsCount()
     if (existing_rows_count.has_value())
         return;
 
+    /// Patch rows update other parts; their `_row_exists` values are not a visibility mask for the patch itself.
+    if (info.isPatch())
+        return;
+
     if (!rows_count || !hasLightweightDelete())
         existing_rows_count = rows_count;
     else if (supportLightweightDeleteMutate()
