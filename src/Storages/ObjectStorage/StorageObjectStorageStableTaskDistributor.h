@@ -2,6 +2,7 @@
 
 #include <Client/Connection.h>
 #include <Common/Logger.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <unordered_set>
@@ -46,6 +47,8 @@ private:
 
     std::vector<std::vector<ObjectInfoPtr>> connection_to_files;
     std::unordered_map<std::string, ObjectInfoPtr> unprocessed_files;
+    /// Archives already handed out or queued when archives are sent as a whole.
+    UnorderedSetWithMemoryTracking<String> scheduled_archives;
     std::vector<size_t> remaining_bytes;
 
     std::vector<std::string> ids_of_nodes;

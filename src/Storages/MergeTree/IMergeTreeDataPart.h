@@ -521,6 +521,11 @@ public:
     /// that is producing the part: nothing on disk records it, so it stays `false` for a loaded part.
     bool default_codec_is_explicit_recompression = false;
 
+    /// Shared data serialization version of the `JSON` columns written into this part, chosen by
+    /// `MergeTreeData::chooseObjectSharedDataSerializationVersion` by the code that creates the part.
+    /// In-memory state of the write: each written column stores its version in its serialization prefix.
+    std::optional<MergeTreeObjectSharedDataSerializationVersion> object_shared_data_serialization_version;
+
     /// Set by `loadChecksums` when `checksums.txt` was missing on disk and had to be regenerated
     /// during the current load. The regenerated file is compressed with the *current* built-in
     /// default codec (`CompressionCodecFactory::getDefaultCodec`), not the codec the part was written

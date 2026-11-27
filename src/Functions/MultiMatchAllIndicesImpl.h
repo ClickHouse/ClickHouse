@@ -107,15 +107,6 @@ struct MultiMatchAllIndicesImpl
 
         MultiRegexps::ScratchPtr smart_scratch(scratch);
 
-        auto on_match = [](unsigned int id,
-                           unsigned long long /* from */, // NOLINT
-                           unsigned long long /* to */, // NOLINT
-                           unsigned int /* flags */,
-                           void * context) -> int
-        {
-            static_cast<PaddedPODArray<ResultType>*>(context)->push_back(id);
-            return 0;
-        };
         UInt64 offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -124,14 +115,12 @@ struct MultiMatchAllIndicesImpl
             if (length > std::numeric_limits<UInt32>::max())
                 throw Exception(ErrorCodes::TOO_MANY_BYTES, "Too long string to search");
             /// scan, check, update the offsets array and the offset of haystack.
-            err = hs_scan(
+            err = MultiRegexps::scan(
                 regexps->getDB(),
                 reinterpret_cast<const char *>(haystack_data.data()) + offset,
                 static_cast<unsigned>(length),
-                0,
                 smart_scratch.get(),
-                on_match,
-                &res);
+                [&](unsigned int id) { res.push_back(id); });
             if (err != HS_SUCCESS)
                 throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan with vectorscan");
             offsets[i] = res.size();
@@ -231,16 +220,6 @@ struct MultiMatchAllIndicesImpl
 
             MultiRegexps::ScratchPtr smart_scratch(scratch);
 
-            auto on_match = [](unsigned int id,
-                               unsigned long long /* from */, // NOLINT
-                               unsigned long long /* to */, // NOLINT
-                               unsigned int /* flags */,
-                               void * context) -> int
-            {
-                static_cast<PaddedPODArray<ResultType>*>(context)->push_back(id);
-                return 0;
-            };
-
             const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset;
 
             /// vectorscan restriction.
@@ -248,14 +227,12 @@ struct MultiMatchAllIndicesImpl
                 throw Exception(ErrorCodes::TOO_MANY_BYTES, "Too long string to search");
 
             /// scan, check, update the offsets array and the offset of haystack.
-            err = hs_scan(
+            err = MultiRegexps::scan(
                 regexps->getDB(),
                 reinterpret_cast<const char *>(haystack_data.data()) + prev_haystack_offset,
                 static_cast<unsigned>(cur_haystack_length),
-                0,
                 smart_scratch.get(),
-                on_match,
-                &res);
+                [&](unsigned int id) { res.push_back(id); });
             if (err != HS_SUCCESS)
                 throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan with vectorscan");
 

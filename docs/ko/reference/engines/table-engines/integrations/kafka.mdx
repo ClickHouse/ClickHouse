@@ -62,10 +62,12 @@ SETTINGS
 
 필수 매개변수:
 
-* `kafka_broker_list` — 쉼표로 구분된 broker 목록입니다(예: `localhost:9092`).
+* `kafka_broker_list` — 쉼표로 구분된 브로커 목록입니다(예: `localhost:9092`).
 * `kafka_topic_list` — Kafka 토픽 목록입니다.
-* `kafka_group_name` — Kafka 컨슈머 그룹입니다. 읽기 오프셋은 각 그룹별로 개별 추적됩니다. 클러스터에서 메시지 중복을 원하지 않으면 모든 곳에서 동일한 그룹 이름을 사용하십시오.
+* `kafka_group_name` — Kafka 컨슈머 그룹입니다. 읽기 오프셋은 각 그룹별로 개별 추적됩니다. 클러스터에서 메시지 중복을 원하지 않으면 모든 곳에서 동일한 그룹 이름을 사용하십시오. 매크로 확장(예: `'consumers_{replica}'`)을 지원하므로, 각 레플리카가 자체 컨슈머 그룹을 사용해 모든 메시지를 읽도록 할 수 있습니다.
 * `kafka_format` — 메시지 포맷입니다. `JSONEachRow`와 같이 SQL `FORMAT` 함수와 동일한 표기법을 사용합니다. 자세한 내용은 [포맷](/ko/reference/formats/index) 섹션을 참조하십시오.
+
+`kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_client_id`, `kafka_schema`의 값은 매크로 확장을 지원합니다. `{database}`와 `{table}`은 해당 테이블의 데이터베이스 이름과 테이블 이름으로 대체되며, `{shard}`, `{replica}` 등 그 밖의 매크로는 서버의 `macros` 구성에서 가져옵니다.
 
 선택 매개변수:
 
@@ -106,18 +108,71 @@ SETTINGS
 * `kafka_partition_shard_num` — 정적 파티션-세그먼트 연결을 위한 현재 세그먼트 번호입니다. 1 이상 `kafka_shard_count` 이하여야 합니다. 파티션은 `partition_id % kafka_shard_count == kafka_partition_shard_num - 1` 수식으로 할당됩니다. 매크로 확장을 지원합니다(예: `'{shard}'`). `kafka_shard_count`와 함께 사용해야 합니다. StorageKafka2에서만 지원됩니다(`kafka_keeper_path` 및 `kafka_replica_name` 필요). 기본값: `''`(비활성화됨).
 * `kafka_shard_count` — 소비에 참여하는 총 세그먼트 수입니다. `kafka_partition_shard_num`과 함께 사용하여 파티션을 정적으로 할당합니다. `kafka_partition_shard_num`과 함께 사용해야 합니다. StorageKafka2에서만 지원됩니다. 기본값: `0`(비활성화됨).
 
+## 이름이 지정된 컬렉션을 사용한 TLS 및 SASL {#kafka-tls-sasl-named-collections}
+
+Kafka 테이블 엔진은 [librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) 설정 중 일부만 테이블 수준의 `kafka_*` 매개변수(예: `kafka_security_protocol`, `kafka_sasl_mechanism`, `kafka_sasl_username`, `kafka_sasl_password`)로 제공합니다. **TLS 인증서 경로, 개인 키, 키 비밀번호는 테이블 설정(table settings)이 아닙니다**. 이러한 항목은 확장 `librdkafka` 속성으로 구성하십시오.
+
+`ENGINE = Kafka(named_collection)`을 사용할 때는 다음과 같습니다.
+
+* 이름이 지정된 컬렉션의 최상위 `kafka_*` 키는 Kafka 테이블 엔진 설정(브로커, 토픽, 포맷 및 위에 나열된 프로토콜/SASL 설정)입니다.
+* `CREATE NAMED COLLECTION`에서 `kafka.` 접두사가 붙은 키나 XML에서 `<kafka>` 아래에 중첩된 키는 `librdkafka`로 전달됩니다. 이때 키 이름의 밑줄은 점으로 변환됩니다(예: `kafka.ssl_ca_location` → `ssl.ca.location`, 또는 `<kafka>` 아래의 `<ssl_ca_location>` → `ssl.ca.location`).
+
+이름이 지정된 컬렉션을 사용하면 **`config.xml`에 있는 서버 전역 `<kafka>` 블록은 머지되지 않습니다**. 따라서 각 컬렉션에는 테이블에 필요한 모든 확장 속성이 포함되어야 합니다. 여기에는 TLS 파일과, 비어 있지 않은 테이블 `SETTINGS`로 지정하지 않은 경우의 `security.protocol`도 포함됩니다.
+
+클라이언트 인증서를 사용하는 `SASL_SSL`의 일반적인 레이아웃(layout)은 다음과 같습니다. TLS 경로와 `ssl.key.password`는 이름이 지정된 컬렉션에 저장하고, `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format` 및 필요에 따라 `kafka_sasl_username` / `kafka_sasl_password`는 테이블의 `SETTINGS` 절에서 설정합니다. `kafka.security_protocol`과 `kafka_security_protocol`은 모두 `security.protocol`을 설정하며, 비어 있지 않은 테이블 설정이 우선 적용됩니다. 컬렉션에 해당 속성이 이미 저장되어 있으면 테이블 설정은 이름이 지정된 컬렉션 재정의로 처리됩니다. 이 경우 해당 컬렉션에 대한 `SHOW NAMED COLLECTIONS SECRETS` 권한이 필요하며, 키가 `NOT OVERRIDABLE`이면 `Override not allowed` 오류가 발생합니다. `kafka_sasl_mechanism`, `kafka_sasl_username`, `kafka_sasl_password`에도 동일한 규칙이 적용됩니다.
+
+예시(인증서 경로는 해당 테이블의 컨슈머를 실행하는 모든 ClickHouse 서버에 존재해야 합니다):
+
+```sql
+CREATE NAMED COLLECTION kafka_mtls AS
+    kafka.security_protocol = 'SASL_SSL',
+    kafka.sasl_mechanism = 'PLAIN',
+    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
+    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
+    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_key_password = 'secret';
+
+CREATE TABLE queue (
+    id UInt64,
+    payload String
+) ENGINE = Kafka(kafka_mtls)
+SETTINGS
+    kafka_broker_list = 'broker:9092',
+    kafka_topic_list = 'topic',
+    kafka_group_name = 'group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_username = 'user',
+    kafka_sasl_password = 'password';
+```
+
+XML로 정의한 이름이 지정된 컬렉션(named collection)에서 동일한 확장 설정을 지정하는 예시는 다음과 같습니다.
+
+```xml
+<clickhouse>
+    <named_collections>
+        <kafka_mtls>
+            <kafka>
+                <security_protocol>SASL_SSL</security_protocol>
+                <sasl_mechanism>PLAIN</sasl_mechanism>
+                <ssl_ca_location>/etc/clickhouse/certs/ca.pem</ssl_ca_location>
+                <ssl_certificate_location>/etc/clickhouse/certs/client.pem</ssl_certificate_location>
+                <ssl_key_location>/etc/clickhouse/certs/client.key</ssl_key_location>
+                <ssl_key_password>secret</ssl_key_password>
+            </kafka>
+        </kafka_mtls>
+    </named_collections>
+</clickhouse>
+```
+
+TLS 관련 속성 전체 목록은 [librdkafka 구성 참고 문서](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md)를 참조하십시오. 이름이 지정된 컬렉션을 사용하지 않고 서버 전체 기본값을 설정하려면 아래의 [구성](#configuration) 섹션을 참조하십시오.
+
 ## OAUTHBEARER/OIDC 인증 {#oauthbearer-oidc-authentication}
 
 `OAUTHBEARER` 인증에는 [librdkafka 구성 속성](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md)이 사용됩니다. OIDC 클라이언트 자격 증명 흐름을 사용하려면 `sasl.oauthbearer.method`, `sasl.oauthbearer.client.id`, `sasl.oauthbearer.client.secret`, `sasl.oauthbearer.token.endpoint.url`, `sasl.oauthbearer.scope`를 구성하십시오.
 
 ClickHouse XML에서 이러한 속성을 정의할 때는 마침표를 밑줄로 바꾸십시오. 예를 들어 `sasl.oauthbearer.client.id`에는 `<sasl_oauthbearer_client_id>`를 사용합니다.
 
-`ENGINE = Kafka(named_collection)`에서는 이름이 지정된 컬렉션에 두 개의 네임스페이스를 사용합니다.
-
-* 최상위 `kafka_*` 키는 `kafka_security_protocol`, `kafka_sasl_mechanism`과 같은 Kafka 테이블 엔진 설정입니다.
-* `<kafka>` 아래에 중첩된 키는 앞서 나열한 OIDC 속성을 비롯한 확장 `librdkafka` 설정입니다.
-
-이름이 지정된 컬렉션을 사용하면 서버의 전역 `<kafka>` 구성은 병합되지 않습니다. 따라서 각 컬렉션에 필요한 OIDC 속성을 모두 포함해야 합니다. 전체 예시는 [Kafka 이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication)을 참조하십시오.
+`ENGINE = Kafka(named_collection)`에서는 확장 `librdkafka` 설정(OIDC 포함)에도 [이름이 지정된 컬렉션을 사용한 TLS 및 SASL](#kafka-tls-sasl-named-collections)에서 설명한 것과 동일한 `kafka.` / `<kafka>` 네임스페이스를 사용합니다. 이름이 지정된 컬렉션을 사용하면 서버의 전역 `<kafka>` 구성은 머지되지 않습니다. 따라서 각 컬렉션에 필요한 OIDC 속성을 모두 포함해야 합니다. 전체 예시는 [Kafka 이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication)을 참조하십시오.
 
 예시:
 
@@ -296,7 +351,7 @@ SETTINGS
     kafka_sasl_mechanism = 'AWS_MSK_IAM';
 ```
 
-AWS 리전은 패턴 매칭을 사용해 broker endpoint에서 자동으로 추출됩니다:
+AWS 리전은 패턴 매칭을 사용해 브로커 endpoint에서 자동으로 추출됩니다:
 
 * Provisioned MSK: `b-X.cluster.kafka.<region>.amazonaws.com:9098`
 * Serverless MSK: `boot-X.kafka-serverless.<region>.amazonaws.com:9098`
@@ -304,7 +359,7 @@ AWS 리전은 패턴 매칭을 사용해 broker endpoint에서 자동으로 추�
 
 **AWS 자격 증명:**
 
-자격 증명은 해당 파일이 있으면 항상 `~/.aws/credentials` 및 `~/.aws/config`(AWS profile 파일)에서 로드됩니다. EC2 instance profile, 환경 변수(`AWS_ACCESS_KEY_ID` 등), ECS 작업 역할 및 기타 자동 자격 증명 소스도 사용하도록 설정하려면 서버 구성에 다음을 추가하십시오:
+기본적으로 서버는 `AWS_MSK_IAM`에 사용할 AWS 자격 증명을 확인하지 않으므로, `AWS credentials are empty or expired` 오류와 함께 인증이 실패합니다. 서버가 실행 환경에서 자동으로 제공되는 AWS 아이덴티티로 인증하도록 하려면 서버 구성에 다음을 추가하십시오:
 
 ```xml
 <kafka>
@@ -312,7 +367,15 @@ AWS 리전은 패턴 매칭을 사용해 broker endpoint에서 자동으로 추�
 </kafka>
 ```
 
+실행 환경에서 자동으로 제공되는 자격 증명 소스는 환경 변수(`AWS_ACCESS_KEY_ID` 등), EC2 인스턴스 프로파일(IMDS), 서비스 계정용 IAM 역할(IRSA), ECS 작업 역할, SSO, 그리고 `~/.aws/credentials` 및 `~/.aws/config` 프로필 파일입니다.
+
 이 설정은 서버 관리자만 설정할 수 있습니다. 기본값: `false`.
+
+<Warning>
+  이 설정은 안전하지 않습니다. 이 설정을 활성화하면 `KAFKA` 소스 권한과 `CREATE TABLE` 권한을 가진 모든 사용자가 테이블 설정(table settings)에서 `AWS_MSK_IAM` 메커니즘, 브로커 목록, AWS 리전을 지정할 수 있습니다. 그러면 서버는 자신의 AWS 아이덴티티로 `kafka-cluster:Connect` 토큰에 서명한 뒤, 이 토큰을 사용자가 지정한 브로커로 전송합니다. 토큰에는 AWS 액세스 키 ID와 전체 STS 세션 토큰이 포함되어 있으므로, 토큰을 수신한 호스트는 이를 재사용해 서버를 가장하여 해당 리전의 MSK 클러스터에 접근할 수 있습니다.
+
+  Kafka 테이블을 생성할 수 있는 모든 사용자에게 서버의 AWS 아이덴티티를 맡길 수 있을 만큼 신뢰하는 경우에만 이 설정을 활성화하십시오. 또한 [remote&#95;url&#95;allow&#95;hosts](/ko/reference/settings/server-settings/settings/remote#remote_url_allow_hosts)를 사용해 Kafka 테이블이 연결할 수 있는 호스트를 제한하십시오. 이 설정은 기본적으로 비어 있으며, 이 경우 모든 호스트가 허용됩니다.
+</Warning>
 
 **PrivateLink 및 사용자 지정 DNS:**
 

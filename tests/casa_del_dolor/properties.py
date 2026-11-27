@@ -2749,6 +2749,24 @@ def modify_user_settings(
         if (cluster_for_parallel_replicas_xml.text or "").strip() not in cluster_names:
             cluster_for_parallel_replicas_xml.text = random.choice(cluster_names)
 
+    # Allocation failures inside merges and mutations, whose thread groups take the `background` profile, built
+    # only at startup. Without that profile they use the default one, so a new profile inherits it.
+    if random.randint(1, 3) == 1:
+        modified = True
+        profiles_xml = root.find("profiles")
+        if profiles_xml is None:
+            profiles_xml = ET.SubElement(root, "profiles")
+        background_xml = profiles_xml.find("background")
+        if background_xml is None:
+            background_xml = ET.SubElement(profiles_xml, "background")
+            ET.SubElement(background_xml, "profile").text = "default"
+        fault_xml = background_xml.find("memory_tracker_fault_probability")
+        if fault_xml is None:
+            fault_xml = ET.SubElement(
+                background_xml, "memory_tracker_fault_probability"
+            )
+        fault_xml.text = "0.001"
+
     if modified:
         ET.indent(tree, space="    ", level=0)  # indent tree
         temp_path = None

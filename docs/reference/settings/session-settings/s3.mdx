@@ -73,6 +73,18 @@ Possible values:
 
 Maximum number of files that could be returned in batch by ListObject request
 
+## s3_list_object_parallelism {#s3_list_object_parallelism}
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "New setting to list globbed paths on S3-compatible object storage (the `s3` and `s3Cluster` table functions, the `S3` table engine, and their `gcs`, `cosn`, `oss` aliases) with several concurrent `ListObjects` requests by walking the common-prefix tree in parallel."}]}]}/>
+
+Number of concurrent `ListObjects` requests used to list files when the path contains globs, for reads from S3-compatible object storage: the `s3` table function, the `S3` table engine, the `s3Cluster` table function, and the `gcs`, `cosn`, `oss` aliases of them.
+
+When greater than `1`, the matching files are listed by walking the "directory" tree (the common prefixes formed by the `/` delimiter) with this many threads in parallel, instead of paginating the whole prefix in a single serial stream. This can dramatically speed up queries over buckets with millions of objects, especially for hierarchically partitioned layouts (e.g. `year=*/month=*/`), where whole non-matching subtrees are pruned during the walk.
+
+A value of `1` (the default) keeps the previous serial listing behavior. Recursive globs (`**`) always use serial listing.
+
 ## s3_min_upload_part_size {#s3_min_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />

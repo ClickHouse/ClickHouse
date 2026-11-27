@@ -314,6 +314,8 @@ Beyond handling large transformations, microbatch provides the ability to:
 
 For detailed microbatch usage, refer to the [official documentation](https://docs.getdbt.com/docs/build/incremental-microbatch).
 
+Batch boundaries are in UTC, regardless of the server's or the `event_time` column's time zone.
+
 ##### Available Microbatch Configurations {#available-microbatch-configurations}
 
 | Option             | Description                                                                                                                                                                                                                                                                                                                                | Default if any |
