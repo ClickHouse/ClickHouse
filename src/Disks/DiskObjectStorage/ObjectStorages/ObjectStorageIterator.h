@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <functional>
 #include <memory>
 
 namespace DB
@@ -23,6 +24,9 @@ public:
 
     /// Returns the number of elements in the batches that were fetched so far.
     [[nodiscard]] virtual size_t getAccumulatedSize() const = 0;
+
+    /// Called while the iterator follows empty pages, where the caller cannot check for a stop itself. May throw.
+    virtual void setStopCheck(std::function<void()> /* stop_check */) {}
 
     virtual ~IObjectStorageIterator() = default;
 

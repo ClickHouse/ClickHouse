@@ -165,6 +165,8 @@ check_remove_orphan_files()
     remove_orphans "older_than = '${ts}', location = 'metadata/'"
     metric_at_least deleted_metadata_files_count 1
     exists metadata/v0.metadata.json
+    $CH -q "ALTER TABLE ${TABLE} EXECUTE remove_orphan_files(older_than = '${ts}', location = 'no_such_dir/')" 2>&1 \
+        | grep -o -m1 'does not exist' | head -1
     data
 
     echo "--- many orphans in one run"

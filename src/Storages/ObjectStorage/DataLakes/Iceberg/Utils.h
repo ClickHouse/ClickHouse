@@ -260,6 +260,10 @@ enum class FileCategory : uint8_t
 
 FileCategory inspectFileCategory(const String & relative_path);
 
+/// Throws when the query is killed or past its time limit, also under `timeout_overflow_mode = 'break'`:
+/// a maintenance command must never act on a partially collected file set.
+void throwIfQueryCancelled(const ContextPtr & context);
+
 /// The fields of the table's default sort order; null if it has none.
 Poco::JSON::Array::Ptr getDefaultSortOrderFields(const Poco::JSON::Object::Ptr & metadata_object);
 

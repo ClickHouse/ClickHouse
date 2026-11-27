@@ -37,6 +37,7 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
         auto manifest_list_path = IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(Iceberg::f_manifest_list));
         files.manifest_list_paths.insert(manifest_list_path);
 
+        throwIfQueryCancelled(context);
         auto manifest_keys = getManifestList(
             object_storage, persistent_table_components, context, manifest_list_path, log);
 
@@ -46,6 +47,7 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
             if (!files.manifest_paths.insert(manifest_entry.manifest_file_path).second)
                 continue;
 
+            throwIfQueryCancelled(context);
             auto entries_handle = getManifestFileEntriesHandle(
                 object_storage, persistent_table_components, context, log, manifest_entry, current_schema_id);
 
