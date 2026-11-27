@@ -188,7 +188,8 @@ ASTPtr tryBuildAdditionalFilterAST(
     Tables * external_tables,
     ContextMutablePtr & context,
     /// The conjuncts the conversion leaves out of a positive `AND`, when asked.
-    VectorWithMemoryTracking<const ActionsDAG::Node *> * dropped_conjuncts = nullptr);
+    VectorWithMemoryTracking<const ActionsDAG::Node *> * dropped_conjuncts = nullptr,
+    bool convert_sets_from_subqueries = true);
 
 /// The conjuncts of `condition` (`ActionsDAG::extractConjunctionAtoms`) the splice would leave out of the
 /// remote query - all of them where it does not run.
