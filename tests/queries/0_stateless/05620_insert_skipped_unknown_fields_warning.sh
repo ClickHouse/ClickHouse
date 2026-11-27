@@ -44,10 +44,13 @@ ASYNC="async_insert=1&wait_for_async_insert=1"
 printf '{"a":8,"u_async_%s":1}' "$DB" | insert t JSONEachRow "$ASYNC&query_id=${DB}_async"
 printf '{"a":9,"u_async_optout_%s":1}' "$DB" | insert t JSONEachRow "$ASYNC&input_format_warn_on_skipped_unknown_fields=0"
 printf '{"a":10,"u_async_fmt_%s":1}' "$DB" | insert t TSV "$ASYNC&input_format=JSONEachRow"
-# Two inserts of the same query and field, queued and then flushed together: each one gets its own warning.
+# Two inserts of the same query and field, queued and then flushed together: each one gets its own warning,
+# both with a format the flush reuses for every insert (JSONEachRow) and with one it creates anew for each (MySQLDump).
+BATCH="async_insert=1&wait_for_async_insert=0&async_insert_use_adaptive_busy_timeout=0&async_insert_busy_timeout_max_ms=10000000"
 for i in 1 2; do
-    printf '{"a":%d,"u_batch_%s":1}' "$((10 + i))" "$DB" \
-        | insert t JSONEachRow "async_insert=1&wait_for_async_insert=0&async_insert_use_adaptive_busy_timeout=0&async_insert_busy_timeout_max_ms=10000000&query_id=${DB}_batch$i"
+    printf '{"a":%d,"u_batch_%s":1}' "$((10 + i))" "$DB" | insert t JSONEachRow "$BATCH&query_id=${DB}_batch$i"
+    printf "INSERT INTO \`t\` (\`a\`, \`u_batch_mysqldump_%s\`) VALUES (%d, 'x');\n" "$DB" "$((20 + i))" \
+        | insert t MySQLDump "$BATCH&input_format_mysql_dump_table_name=t&query_id=${DB}_mysqldump_batch$i"
 done
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH ASYNC INSERT QUEUE t"
 
@@ -84,6 +87,9 @@ echo "async query id $(warnings "position(message, 'Field \`u_async_${DB}\` of t
 echo "async format $(warnings "position(message, 'Field \`u_async_fmt_${DB}\` ') > 0 AND position(message, ' in format JSONEachRow ') > 0")"
 for i in 1 2; do
     echo "batch $i $(warnings "position(message, 'Field \`u_batch_${DB}\` of the input data of query ${DB}_batch$i ') > 0")"
+done
+for i in 1 2; do
+    echo "mysqldump batch $i $(warnings "position(message, 'Field \`u_batch_mysqldump_${DB}\` of the input data of query ${DB}_mysqldump_batch$i ') > 0")"
 done
 
 $CLICKHOUSE_CLIENT -q "SELECT * FROM t ORDER BY a, b; SELECT k, sumMerge(s) FROM t_agg GROUP BY k; SELECT * FROM t_case"

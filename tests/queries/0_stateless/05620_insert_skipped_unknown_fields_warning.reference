@@ -35,6 +35,8 @@ async query id 1
 async format 1
 batch 1 1
 batch 2 1
+mysqldump batch 1 1
+mysqldump batch 2 1
 1	b_default
 1	b_default
 1	b_default
@@ -54,5 +56,7 @@ batch 2 1
 12	b_default
 13	b_default
 14	b_default
+21	b_default
+22	b_default
 1	5
 1	2
