@@ -18,6 +18,8 @@
 #include <IO/ReadBuffer.h>
 
 
+#include <utility>
+
 namespace DB
 {
 
@@ -40,12 +42,16 @@ ColumnFixedArray::ColumnFixedArray(MutableColumnPtr && nested_column, size_t n_)
     if (n == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of ColumnFixedArray cannot be zero");
 
-    if (isColumnConst(*data))
+    /// The checks below only read the nested column, so they use the const access: the non-const access of `WrappedPtr`
+    /// asserts that the column is not shared, while `create(const ColumnPtr &, size_t)` is called with a shared nested column.
+    const auto & const_data = std::as_const(data);
+
+    if (isColumnConst(*const_data))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnFixedArray cannot have ColumnConst as its nested column");
 
-    if (data->size() % n != 0)
+    if (const_data->size() % n != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "The size of the nested column {} of ColumnFixedArray is not a multiple of the array size {}", data->size(), n);
+            "The size of the nested column {} of ColumnFixedArray is not a multiple of the array size {}", const_data->size(), n);
 }
 
 std::string ColumnFixedArray::getName() const
