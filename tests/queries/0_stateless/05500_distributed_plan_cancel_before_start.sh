@@ -41,17 +41,23 @@ TASK_LINES="SELECT countIf(message LIKE 'Queueing task %') AS queued, countIf(me
     FROM $TEXT_LOG AND position(message, '$UNIQUE_ID') > 0"
 
 # Every queued task is cancelled while unknown to the worker: up to two batches are held there, the rest were not sent.
-expect_eventually "every queued task remembered" "SELECT queued > 0 AND remembered = queued FROM ($TASK_LINES)"
+wait_for "SELECT queued > 0 AND remembered = queued FROM ($TASK_LINES)"
 
 # The held batches reach `startTasks` now; the senders skip the other batches as the query is cancelled.
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT stateless_worker_pause_before_start_task"
 wait $CLIENT_PID
-expect_eventually "every task that arrived ignored" "SELECT arrived > 0 AND ignored = arrived FROM ($TASK_LINES)"
+wait_for "SELECT arrived > 0 AND ignored = arrived FROM ($TASK_LINES)"
 
-# No task of the query ran on the worker. Tasks run in the worker's default database, so they are found through the initial query.
+# Tasks run in the worker's default database, so they are found through the initial query.
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 RECENT="event_date >= yesterday() AND event_time >= now() - INTERVAL 300 SECOND"
-$CLICKHOUSE_CLIENT --query "SELECT 'initial query logged', count() > 0 FROM system.query_log
-    WHERE $RECENT AND current_database = currentDatabase() AND query_id = '$QUERY_ID'"
-$CLICKHOUSE_CLIENT --query "SELECT 'tasks executed', count() FROM system.query_log WHERE $RECENT AND query_id != '$QUERY_ID'
-    AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE $RECENT AND current_database = currentDatabase() AND query_id = '$QUERY_ID')"
+echo "-- The query is killed while the worker holds its first batches: the worker remembers every queued task as cancelled while"
+echo "-- unknown, ignores every task of the batches that arrive after the kill (one or two of them, so only that some arrived is"
+echo "-- shown), and runs none. initial_query_logged shows that the lookup of the tasks finds the query."
+$CLICKHOUSE_CLIENT --query "
+    SELECT queued, remembered = queued AS all_remembered, arrived > 0 AS batches_arrived, ignored = arrived AS all_arrived_ignored,
+        (SELECT count() > 0 FROM system.query_log
+            WHERE $RECENT AND current_database = currentDatabase() AND query_id = '$QUERY_ID') AS initial_query_logged,
+        (SELECT count() FROM system.query_log WHERE $RECENT AND query_id != '$QUERY_ID' AND initial_query_id = '$QUERY_ID') AS ran
+    FROM ($TASK_LINES)
+    FORMAT TSVWithNames"
