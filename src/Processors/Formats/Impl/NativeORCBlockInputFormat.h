@@ -166,7 +166,8 @@ public:
         NameSet absent_columns_ = {},
         UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults_ = {},
         UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints_ = {},
-        UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids_ = {});
+        UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids_ = {},
+        NameSet columns_missing_below_lists_ = {});
 
     void orcTableToCHChunk(
         Chunk & res,
@@ -208,6 +209,8 @@ private:
     /// ORC column ids of the structs of the file a field of which has no Iceberg field id: their fields are matched by name,
     /// also when the fields read have one.
     const UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids;
+    /// Requested columns below a list of structs that the file lacks: they are left out of the type hint of their table.
+    const NameSet columns_missing_below_lists;
 };
 }
 #endif

@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/NestedUtils.h>
 #include <Interpreters/castColumn.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -303,16 +304,41 @@ ColumnPtr createMissingColumn(
     size_t num_rows,
     bool allow_missing_columns,
     size_t column_i,
-    BlockMissingValues * block_missing_values)
+    BlockMissingValues * block_missing_values,
+    NestedColumnExtractHelper * nested)
 {
     if (!allow_missing_columns)
         throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", header_column.name);
 
     if (block_missing_values)
         block_missing_values->setBits(column_i, num_rows);
-    auto column = header_column.type->createColumn();
-    header_column.type->insertManyDefaultsInto(*column, num_rows);
-    return column;
+
+    ColumnPtr on_path;
+    for (size_t dot = header_column.name.rfind('.'); nested && !on_path && dot != String::npos && dot != 0;
+         dot = header_column.name.rfind('.', dot - 1))
+    {
+        if (auto column = nested->extractColumn(header_column.name.substr(0, dot)))
+            on_path = column->column->convertToFullColumnIfConst();
+    }
+
+    DataTypePtr type = header_column.type;
+    Columns offsets;
+    while (on_path && typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        const auto * array = typeid_cast<const ColumnArray *>(on_path.get());
+        if (!array)
+            break;
+        offsets.push_back(array->getOffsetsPtr());
+        on_path = array->getDataPtr();
+        type = assert_cast<const DataTypeArray &>(*type).getNestedType();
+    }
+
+    auto column = type->createColumn();
+    type->insertManyDefaultsInto(*column, on_path ? on_path->size() : num_rows);
+    ColumnPtr result = std::move(column);
+    for (auto it = offsets.rbegin(); it != offsets.rend(); ++it)
+        result = ColumnArray::create(result, *it);
+    return result;
 }
 
 void matchTupleElementsByName(ColumnWithTypeAndName & column, const DataTypePtr & requested_type)

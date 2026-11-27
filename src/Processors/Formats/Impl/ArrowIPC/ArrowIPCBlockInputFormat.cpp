@@ -963,6 +963,7 @@ Chunk ArrowIPC::buildChunk(
         if (!decoded_index)
         {
             bool read_from_nested = false;
+            NestedColumnExtractHelper * nested = nullptr;
 
             /// A subcolumn of a `Nested`/struct field: `table.a` is extracted from the Arrow field `table`.
             const String nested_table_name = Nested::extractTableName(header_column.name);
@@ -978,9 +979,10 @@ Chunk ArrowIPC::buildChunk(
                     auto helper = std::make_shared<NestedColumnExtractHelper>(*block, case_insensitive);
                     extractor_it = nested_extractors.emplace(*nested_index, std::make_pair(block, helper)).first;
                 }
+                nested = extractor_it->second.second.get();
                 /// The requested spelling, not the lower-cased one: the helper matches names
                 /// case-insensitively itself, and an exact element name outranks a folded match.
-                if (auto nested_column = extractor_it->second.second->extractColumn(header_column.name))
+                if (auto nested_column = nested->extractColumn(header_column.name))
                 {
                     column = *nested_column;
                     if (case_insensitive)
@@ -991,7 +993,7 @@ Chunk ArrowIPC::buildChunk(
 
             if (!read_from_nested)
             {
-                columns.push_back(createMissingColumn(header_column, num_rows, allow_missing_columns, i, block_missing_values_ptr));
+                columns.push_back(createMissingColumn(header_column, num_rows, allow_missing_columns, i, block_missing_values_ptr, nested));
                 continue;
             }
         }

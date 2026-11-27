@@ -1116,8 +1116,14 @@ static void getFileReader(
 }
 
 /// With `ambiguous`, a name that matches several fields only case-insensitively sets it and resolves to nothing instead of throwing.
+/// `list_element` is set to the element struct of the innermost list crossed.
 static const ORC::Type * traverseDownORCTypeByName(
-    const std::string & target, const ORC::Type * orc_type, DataTypePtr & type, bool ignore_case, bool * ambiguous = nullptr)
+    const std::string & target,
+    const ORC::Type * orc_type,
+    DataTypePtr & type,
+    bool ignore_case,
+    bool * ambiguous = nullptr,
+    const ORC::Type ** list_element = nullptr)
 {
     /// Recurses the file-controlled ORC type tree. The matching CH type (and the requested column
     /// name) bound the depth in practice, but keep a stack backstop here too, since this runs in
@@ -1173,7 +1179,7 @@ static const ORC::Type * traverseDownORCTypeByName(
     if (ORC::STRUCT == orc_type->getKind())
     {
         const auto [next_target, next_orc_type] = search_struct_field(target, orc_type);
-        return next_orc_type ? traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case, ambiguous) : nullptr;
+        return next_orc_type ? traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case, ambiguous, list_element) : nullptr;
     }
     if (ORC::LIST == orc_type->getKind())
     {
@@ -1184,6 +1190,8 @@ static const ORC::Type * traverseDownORCTypeByName(
         const auto * orc_nested_type = orc_type->getSubtype(0);
         if (array_type && ORC::STRUCT == orc_nested_type->getKind())
         {
+            if (list_element)
+                *list_element = orc_nested_type;
             auto next_type_and_target = search_struct_field(target, orc_nested_type);
             const auto & next_target = next_type_and_target.first;
             const auto * next_orc_type = next_type_and_target.second;
@@ -1191,7 +1199,7 @@ static const ORC::Type * traverseDownORCTypeByName(
             {
                 /// Adjust CH type to avoid inconsistency between CH and ORC type brought by flattened Nested type.
                 type = array_type->getNestedType();
-                return traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case, ambiguous);
+                return traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case, ambiguous, list_element);
             }
         }
     }
@@ -1446,15 +1454,23 @@ static bool isORCTypeRead(
     return false;
 }
 
-/// The field of an ORC struct with the fewest columns, or the struct itself if it has no fields.
+/// The field of an ORC struct that is cheapest to read for the struct's size: a primitive of fixed width if there is one, else the
+/// field with the fewest columns; the struct itself if it has no fields.
 static const ORC::Type & getNarrowestORCStructField(const ORC::Type & orc_struct)
 {
+    auto cost = [](const ORC::Type & field)
+    {
+        const auto kind = field.getKind();
+        const bool fixed_width_primitive = field.getSubtypeCount() == 0 && kind != ORC::STRING && kind != ORC::BINARY
+            && kind != ORC::VARCHAR && kind != ORC::CHAR;
+        return std::make_pair(!fixed_width_primitive, field.getMaximumColumnId() - field.getColumnId());
+    };
+
     const ORC::Type * narrowest = &orc_struct;
     for (UInt64 i = 0; i < orc_struct.getSubtypeCount(); ++i)
     {
         const auto * field = orc_struct.getSubtype(i);
-        if (narrowest == &orc_struct
-            || field->getMaximumColumnId() - field->getColumnId() < narrowest->getMaximumColumnId() - narrowest->getColumnId())
+        if (narrowest == &orc_struct || cost(*field) < cost(*narrowest))
             narrowest = field;
     }
     return *narrowest;
@@ -1633,6 +1649,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
 
     UnorderedSetWithMemoryTracking<UInt64> include_typeids;
     VectorWithMemoryTracking<const ORC::Type *> requested_structs;
+    NameSet columns_missing_below_lists;
     /// A same-named field of an absent column has another field id: it is not read. The filter push-down resolves the
     /// columns of the filter by name, so it is disabled if that is not the field that the reader reads by field id.
     bool absent_column_has_namesake = false;
@@ -1645,11 +1662,17 @@ void NativeORCBlockInputFormat::prepareFileReader()
         /// Under the data lake schema the fields of a struct are selected below by field id, so the name of a column is
         /// resolved through the structs only for an absent one.
         const ORC::Type * orc_type = nullptr;
+        const ORC::Type * list_element = nullptr;
         const bool absent = absent_columns.contains(column.name);
         bool name_is_ambiguous = false;
         if (!column_mapper || absent)
             orc_type = traverseDownORCTypeByName(
-                column.name, &file_schema, adjusted_type, ignore_case, absent ? &name_is_ambiguous : nullptr);
+                column.name,
+                &file_schema,
+                adjusted_type,
+                ignore_case,
+                absent ? &name_is_ambiguous : nullptr,
+                column_mapper ? nullptr : &list_element);
         if (absent && (orc_type || name_is_ambiguous))
         {
             absent_column_has_namesake = true;
@@ -1706,6 +1729,12 @@ void NativeORCBlockInputFormat::prepareFileReader()
         }
         if (orc_type)
             updateIncludeTypeIds(adjusted_type, orc_type, ignore_case, include_typeids, requested_structs);
+        /// A field missing below a list still has the sizes of its arrays, so the list's struct is read for them.
+        else if (list_element)
+        {
+            requested_structs.push_back(list_element);
+            columns_missing_below_lists.insert(column.name);
+        }
     }
 
     /// A requested struct none of whose requested fields is in the file is still read, through its narrowest field,
@@ -1769,7 +1798,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
         std::move(absent_columns),
         std::move(absent_column_defaults),
         std::move(nested_table_type_hints),
-        std::move(structs_without_field_ids));
+        std::move(structs_without_field_ids),
+        std::move(columns_missing_below_lists));
 
     if (format_settings.orc.filter_push_down && format_filter_info && format_filter_info->key_condition && !sargs
         && !absent_column_has_namesake)
@@ -1996,7 +2026,8 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     NameSet absent_columns_,
     UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults_,
     UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints_,
-    UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids_)
+    UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids_,
+    NameSet columns_missing_below_lists_)
     : header(header_)
     , allow_missing_columns(allow_missing_columns_)
     , null_as_default(null_as_default_)
@@ -2009,6 +2040,7 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     , absent_column_defaults(std::move(absent_column_defaults_))
     , nested_table_type_hints(std::move(nested_table_type_hints_))
     , structs_without_field_ids(std::move(structs_without_field_ids_))
+    , columns_missing_below_lists(std::move(columns_missing_below_lists_))
 {
 }
 
@@ -3577,6 +3609,7 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
         if (orc_column_it == name_to_column_ptr.end())
         {
             bool read_from_nested = false;
+            NestedColumnExtractHelper * nested = nullptr;
 
             /// Check if it's a column from nested table.
             String nested_table_name = Nested::extractTableName(header_column.name);
@@ -3591,10 +3624,14 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                     NamesAndTypesList nested_columns;
                     for (const auto & name_and_type : header.getNamesAndTypesList())
                     {
-                        if (name_and_type.name.starts_with(nested_table_name + "."))
+                        /// Not a column the file lacks: an element read only for its size would be filled with it.
+                        if (name_and_type.name.starts_with(nested_table_name + ".")
+                            && !columns_missing_below_lists.contains(name_and_type.name))
                             nested_columns.push_back(name_and_type);
                     }
-                    auto nested_table_type = Nested::collect(nested_columns).front().type;
+                    DataTypePtr nested_table_type;
+                    if (!nested_columns.empty())
+                        nested_table_type = Nested::collect(nested_columns).front().type;
 
                     const auto & orc_column_with_type = orc_nested_column_it->second;
                     /// Under the data lake schema the fields of a struct are matched by field id and get their defaults, which
@@ -3629,9 +3666,10 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                     nested_tables[resolved_nested_table_name] = {block_ptr, column_extractor};
                 }
 
+                nested = nested_tables[resolved_nested_table_name].second.get();
                 /// The requested spelling, not the file's one: the helper matches names
                 /// case-insensitively itself, and an exact element name outranks a folded match.
-                auto nested_column = nested_tables[resolved_nested_table_name].second->extractColumn(header_column.name);
+                auto nested_column = nested->extractColumn(header_column.name);
                 if (nested_column)
                 {
                     column = *nested_column;
@@ -3650,7 +3688,7 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                 }
                 columns_list.push_back(createMissingColumn(
                     header_column, num_rows, allow_missing_columns || absent_columns.contains(header_column.name), column_i,
-                    block_missing_values));
+                    block_missing_values, nested));
                 continue;
             }
         }
