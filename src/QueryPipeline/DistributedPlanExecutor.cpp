@@ -88,6 +88,7 @@ namespace ProfileEvents
 {
     extern const Event DistributedPlanRemoteTasks;
     extern const Event DistributedPlanTaskBatches;
+    extern const Event DistributedPlanRemoteTasksSent;
     extern const Event DistributedPlanLocalExecution;
     extern const Event DistributedPlanHostsUsed;
     extern const Event RuntimeFilterReceiveBranchFailures;
@@ -2298,6 +2299,7 @@ protected:
                 LOG_DEBUG(logger, "Sending a batch of {} tasks of {} stages to {}", task_count, batch->stages.size(), worker_endpoint_uris[worker]);
                 sendTaskBatch(worker_endpoint_uris[worker], unique_query_id_string, *batch, unique_query_id_string, collectors, context);
                 ProfileEvents::increment(ProfileEvents::DistributedPlanTaskBatches);
+                ProfileEvents::increment(ProfileEvents::DistributedPlanRemoteTasksSent, task_count);
                 for (const auto & batch_stage : batch->stages)
                     for (const auto & batch_task : batch_stage.tasks)
                         running_tasks.startPolling(batch_stage.name, makeUniqueTaskId(unique_query_id, batch_task.task.task_id));
