@@ -570,6 +570,10 @@ struct RuntimeFilterIndexAnalysisDescriptor
     bool is_global_row_index = false;
     /// The cast between the key and the filter, nullptr if there is none.
     FunctionBasePtr key_cast;
+    /// The probe key is an element of the array column `key_column_name` (`ARRAY JOIN` or `arrayJoin`).
+    bool is_array_element = false;
+    /// The element comes from `LEFT ARRAY JOIN`: an empty array gives one default element.
+    bool is_left_array_join = false;
 };
 using RuntimeFilterIndexAnalysisDescriptors = VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor>;
 

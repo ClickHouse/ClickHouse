@@ -1,0 +1,45 @@
+-- the results are the same as without the runtime filter
+5	10
+5	10
+5	10
+5	10
+5	10
+5	10
+5	10
+4	9
+-- the default element of LEFT ARRAY JOIN is in the filter: the granule of empty arrays stays
+21	16130
+21	16130
+21	16130
+21	16130
+-- not used: a set index, LEFT ANTI JOIN, the setting is off, too many values
+5	10
+3963	3965750
+5	10
+5	10
+5	10
+-- a filter or a second key below ARRAY JOIN keeps the index of the array in use
+5	10
+5	10
+-- a key column with the name of the element expression is not taken for the element
+5	10
+5	10
+-- granules skipped by the runtime filter
+rf_aj_01_bloom_array_join	1	1
+rf_aj_02_bloom_function	1	1
+rf_aj_03_bloom_left	1	1
+rf_aj_04_text_array_join	1	1
+rf_aj_05_text_function	1	1
+rf_aj_06_fixed_string	1	1
+rf_aj_07_two_arrays_and_filter	1	1
+rf_aj_08_bloom_left_default	0	0
+rf_aj_09_text_left_default	0	0
+rf_aj_10_fixed_string_left_default	0	0
+rf_aj_11_set_index	0	0
+rf_aj_12_anti	0	0
+rf_aj_13_setting_off	0	0
+rf_aj_14_bloom_many_values	0	0
+rf_aj_15_text_many_values	0	0
+rf_aj_16_probe_filter	1	1
+rf_aj_17_second_key	1	1
+rf_aj_18_named_key_column	1	1

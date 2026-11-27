@@ -1524,6 +1524,16 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected name {} of the global row index key, expected {}",
                 key_node_ptr->result_name, runtime_filter_global_row_index_node_name);
     }
+    else if (descriptor.is_array_element)
+    {
+        /// an index of the array finds the elements through `arrayJoin(column)`, and it needs the values, not a range
+        if (!exact_values)
+            return nullptr;
+        key_node_ptr = &findOrAddInput(dag, column_name, column_type);
+        if (descriptor.is_left_array_join)
+            key_node_ptr = &dag.addFunction(FunctionFactory::instance().get("emptyArrayToSingle", context), {key_node_ptr}, {});
+        key_node_ptr = &dag.addArrayJoin(*key_node_ptr, {});
+    }
     else
         key_node_ptr = &dag.addInput(column_name, column_type);
     const auto & key_node = *key_node_ptr;

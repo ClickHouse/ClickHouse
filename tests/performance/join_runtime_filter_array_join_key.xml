@@ -1,0 +1,31 @@
+<test>
+    <!-- a JOIN runtime filter on an element of an array column skips granules with the index of the array -->
+    <create_query>
+        CREATE TABLE rf_array_join_key
+        (
+            id UInt64,
+            ids_bloom Array(String),
+            ids_text Array(String),
+            INDEX idx_ids_bloom ids_bloom TYPE bloom_filter(0.025) GRANULARITY 1,
+            INDEX idx_ids_text ids_text TYPE text(tokenizer = 'array')
+        )
+        ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+    <create_query>CREATE TABLE rf_array_join_key_lookup (v String) ENGINE = MergeTree ORDER BY v</create_query>
+
+    <fill_query>
+        INSERT INTO rf_array_join_key
+        SELECT number, [toString(number % 1000000), toString((number + 1) % 1000000)], [toString(number % 1000000), toString((number + 1) % 1000000)]
+        FROM numbers(10000000)
+    </fill_query>
+    <fill_query>INSERT INTO rf_array_join_key_lookup SELECT toString(number) FROM numbers(30)</fill_query>
+
+    <query>SELECT count() FROM rf_array_join_key ARRAY JOIN ids_bloom AS src JOIN rf_array_join_key_lookup AS l ON src = l.v</query>
+    <query>SELECT count() FROM rf_array_join_key ARRAY JOIN ids_text AS src JOIN rf_array_join_key_lookup AS l ON src = l.v</query>
+    <query>SELECT count() FROM rf_array_join_key JOIN rf_array_join_key_lookup AS l ON arrayJoin(ids_text) = l.v</query>
+    <!-- no value of the filter is in the table: the index analysis is only a cost -->
+    <query>SELECT count() FROM rf_array_join_key ARRAY JOIN ids_bloom AS src JOIN (SELECT concat('x', v) AS v FROM rf_array_join_key_lookup) AS l ON src = l.v</query>
+
+    <drop_query>DROP TABLE IF EXISTS rf_array_join_key</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rf_array_join_key_lookup</drop_query>
+</test>
