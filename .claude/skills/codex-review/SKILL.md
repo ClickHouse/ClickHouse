@@ -43,7 +43,7 @@ EFFORT=$(git config --global --get codex-review.effort)
 If either is empty, or `--model` was passed, find the model CI uses:
 
 ```bash
-grep -oP 'f"-m \K[\w.-]+' ci/jobs/codex_review_job.py | head -1
+grep -oP '^MODEL = "\K[^"]+' ci/jobs/codex_review_job.py
 ```
 
 Ask with `AskUserQuestion` (one call, two questions):
@@ -102,12 +102,15 @@ Steering is exactly what makes the review miss things.
 
 Local binaries are the one addition: if you built the branch in this session (or the user told you where a
 build of it is), tell codex the absolute path of the binary so it can reproduce scenarios instead of
-reasoning about them. Say only where it is and that it may be older than HEAD; do not say what to run.
-Leave `BINARY_NOTE` empty if you do not know of a build of this branch; do not search for one.
+reasoning about them. Do the same for a known build of the base, which the review uses to tell defects
+the branch introduces from pre-existing ones. Say only where each one is, what it was built from, and that
+it may be older than that commit; do not say what to run. Leave `BINARY_NOTE` empty if you do not know of
+such a build; do not search for one.
 
 ```bash
 mkdir -p tmp
-N=$(( $(ls tmp/codex_review_*.log 2>/dev/null | wc -l) + 1 ))
+LOG="tmp/codex_review_$(date +%Y%m%d_%H%M%S).log"
+REPO="ClickHouse/ClickHouse"   # or ClickHouse/ClickHouse-private: the upstream of the remote found in step 3
 BINARY_NOTE=""   # e.g. "A ClickHouse binary built from this branch is at /abs/build/programs/clickhouse (may be older than HEAD)."
 PROMPT="Follow the Review Instructions in .claude/skills/review/SKILL.md.
 Repo is checked out at the branch to review.
@@ -116,17 +119,24 @@ Review the changes on the current branch. Get the diff with 'git diff ${BASE}...
 current code, not only the diff.
 ${BINARY_NOTE}
 Write the review to stdout using the REQUESTED OUTPUT FORMAT from .claude/skills/review/SKILL.md.
-Do not use gh and do not post anything."
+Use gh only to read. Search for an existing issue about a pre-existing defect with
+\`gh search issues --repo ${REPO} --state open --limit 10 '<keywords>'\`, once per defect: the search API
+allows 30 requests per minute. Do not post anything."
 
 MODEL_ARGS=(); [ "$MODEL" != default ] && MODEL_ARGS=(-m "$MODEL")
 codex exec "${MODEL_ARGS[@]}" -c "model_reasoning_effort=$EFFORT" \
-  -s workspace-write -c approval_policy=never --color never "$PROMPT" < /dev/null \
-  > "tmp/codex_review_$N.log" 2>&1
+  -s workspace-write -c sandbox_workspace_write.network_access=true \
+  -c approval_policy=never --color never "$PROMPT" < /dev/null \
+  > "$LOG" 2>&1
 ```
 
 - Run from the repo root, in the background (it takes many minutes); you are notified when it exits.
-- No network access flag: unlike CI it must not use `gh` or post anything.
+- Network is on, as in CI, so the review can read issues and PR discussion. Unlike CI, it must not post:
+  its `gh` runs with your credentials.
 - Read the final review from the end of the log (the part after the last `codex` marker).
+- If the log ends with `flagged for possible cybersecurity risk` and has no final review, run the same
+  command again with `--cyber-access-program daybreak_blue` after `codex exec`, same model. CI falls back
+  to `FALLBACK_MODEL` instead, which loses findings.
 
 ## 5. Present the findings
 

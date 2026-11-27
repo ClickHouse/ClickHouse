@@ -54,8 +54,8 @@ APPROVAL_ATTEMPTS = 7
 # via `codex login --with-api-key`.
 OPENAI_KEY_SECRET = "/ci/llm/openai_api_key"
 
-MODEL = "gpt-6.1-sol"
-# `gpt-6.1-sol` refuses some reviews with "This content was flagged for possible
+MODEL = "gpt-6.2-sol"
+# `gpt-6.2-sol` refuses some reviews with "This content was flagged for possible
 # cybersecurity risk"; the remaining attempts then use `FALLBACK_MODEL`. When it is
 # at capacity, only the last attempt does: a same-model retry usually recovers.
 FALLBACK_MODEL = "gpt-5.4"
