@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
@@ -519,10 +520,53 @@ namespace
 }
 
 std::shared_ptr<EnginePredicate> getEnginePredicate(
-    const DB::ActionsDAG & filter, std::exception_ptr & exception, DB::ContextPtr context,
+    const DB::ActionsDAG & filter,
+    std::exception_ptr & exception,
+    DB::ContextPtr context,
+    const DB::NamesAndTypesList & table_schema,
     DeltaTimestampColumns timestamp_columns)
 {
-    return std::make_unique<EnginePredicate>(filter, exception, context, std::move(timestamp_columns));
+    return std::make_unique<EnginePredicate>(filter, exception, context, table_schema, std::move(timestamp_columns));
+}
+
+bool EnginePredicate::canReferenceColumn(const std::string & name) const
+{
+    for (const auto & column : table_schema)
+    {
+        if (name == column.name)
+        {
+            /// The kernel would split the name of such a column into a path.
+            return !name.contains('.');
+        }
+
+        if (!name.starts_with(column.name) || name.size() <= column.name.size() || name[column.name.size()] != '.')
+            continue;
+
+        /// Every element of the rest of the path must be a named field of a struct.
+        auto type = column.type;
+        std::string_view path = std::string_view(name).substr(column.name.size() + 1);
+        while (true)
+        {
+            /// `null` is the null map of a `Nullable` column, not a field of the struct.
+            const bool is_nullable = type->isNullable();
+            const auto * tuple = typeid_cast<const DB::DataTypeTuple *>(DB::removeNullable(type).get());
+            if (!tuple || !tuple->hasExplicitNames())
+                return false;
+
+            const auto pos = path.find('.');
+            const auto field = path.substr(0, pos);
+            const auto index = tuple->tryGetPositionByName(field);
+            if (!index || (is_nullable && field == "null"))
+                return false;
+
+            if (pos == std::string_view::npos)
+                return true;
+
+            type = tuple->getElement(*index);
+            path = path.substr(pos + 1);
+        }
+    }
+    return false;
 }
 
 /// Contains state for EngineIterator
@@ -956,6 +1000,9 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                 if (isColumnNode(node->children[0]))
                 {
+                    if (!iterator_data.predicate.canReferenceColumn(node->children[0]->result_name))
+                        return VISITOR_FAILED_OR_UNSUPPORTED;
+
                     const auto column_name = KernelUtils::toDeltaString(node->children[0]->result_name);
                     uintptr_t column = KernelUtils::unwrapResult(
                         ::visit_expression_column(iterator_data.state,
@@ -1016,6 +1063,9 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                 if (literal_node && column_node)
                 {
+                    if (!iterator_data.predicate.canReferenceColumn(column_node->result_name))
+                        return VISITOR_FAILED_OR_UNSUPPORTED;
+
                     /// A Delta timestamp column never takes the non-accurate cast below,
                     /// which would truncate a literal finer than microseconds.
                     if (const auto * delta_column = iterator_data.predicate.getTimestampColumn(column_node->result_name))
@@ -1082,7 +1132,8 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                     return visitor(iterator_data.state, column, constant);
                 }
 
-                if (auto comparison = matchDateComparison(node, *op, DB::getFormatSettings(iterator_data.predicate.getContext())))
+                if (auto comparison = matchDateComparison(node, *op, DB::getFormatSettings(iterator_data.predicate.getContext()));
+                    comparison && iterator_data.predicate.canReferenceColumn(comparison->column->result_name))
                     return visitComparisonOverDateConversion(iterator_data, *comparison);
             }
 

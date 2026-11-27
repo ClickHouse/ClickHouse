@@ -1595,18 +1595,26 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
             escapeJSON(t.getSparkCatalogName()),
             t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"));
     }
-    else if (t.isAnyStreamingEngine())
+    else if (t.isAnyStreamingEngine() || t.isAnyQueueEngine() || t.isFileLogEngine())
     {
+        /// For a queue, the path within the bucket or container, and the compression the objects are written with.
+        /// For FileLog, the path of the files
+        const bool is_queue = t.isAnyQueueEngine();
+        const bool is_filelog = t.isFileLogEngine();
+
         buf += fmt::format(
             R"(,"engine":"{}","topic":"{}","group":"{}")",
             t.getDolorEngineName(),
-            escapeJSON(t.topic.value()),
-            escapeJSON(t.group.value_or("")));
+            escapeJSON((is_queue || is_filelog) ? t.getTablePath() : t.topic.value()),
+            escapeJSON(is_queue ? t.file_comp.value_or("auto") : (is_filelog ? "" : t.group.value_or(""))));
     }
-    else if (t.isFileEngine())
+    else if (t.isDataFileEngine())
     {
         buf += fmt::format(
-            R"(,"engine":"file","path":"{}","compression":"{}")", escapeJSON(t.getTablePath()), escapeJSON(t.file_comp.value_or("none")));
+            R"(,"engine":"file","path":"{}","compression":"{}","storage":"{}")",
+            escapeJSON(t.getTablePath()),
+            escapeJSON(t.file_comp.value_or("auto")),
+            t.isS3Engine() ? "s3" : (t.isAzureEngine() ? "azure" : (t.isURLEngine() ? "url" : "local")));
     }
     buf += "}";
     fc.outf << "--External table " << buf << std::endl;
@@ -1695,6 +1703,16 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
                      sv->set_value("'" + catalog_url + "'");
                  }});
         }
+    }
+    else if (t.isAnyS3Engine() || t.isAnyAzureEngine())
+    {
+        /// The same storage as without dolor, which only writes objects to the path
+        te->add_params()->set_rvalue(t.isOnS3() ? fc.minio_server.value().named_collection : fc.azurite_server.value().named_collection);
+    }
+    else if (t.isURLEngine())
+    {
+        /// The same server as without dolor, which only writes the data file there
+        te->add_params()->set_svalue(t.getTablePath(rg, false));
     }
     else if (t.isAnyStreamingEngine())
     {
@@ -2077,14 +2095,41 @@ void ExternalIntegrations::setDefaultSettings(const PeerTableDatabase pt, const 
 void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
 {
     String buf;
-    String replaced;
-    std::error_code ec;
+    String helper_names;
+    const auto set_on_peer = [&](const String & nname, const String & nvalue)
+    {
+        String replaced;
 
+        for (const auto & c : nvalue)
+        {
+            switch (c)
+            {
+                case '\'': replaced += "\\'"; break;
+                case '\\': replaced += "\\\\"; break;
+                case '\b': replaced += "\\b"; break;
+                case '\f': replaced += "\\f"; break;
+                case '\r': replaced += "\\r"; break;
+                case '\n': replaced += "\\n"; break;
+                case '\t': replaced += "\\t"; break;
+                case '\0': replaced += "\\0"; break;
+                case '\a': replaced += "\\a"; break;
+                case '\v': replaced += "\\v"; break;
+                default: replaced += c;
+            }
+        }
+        /// Some settings may not exist in earlier ClickHouse versions, so we can ignore the errors here
+        auto u = clickhouse->performQueryOnServerOrRemote(pt, fmt::format("SET {} = '{}';", nname, replaced));
+        UNUSED(u);
+    };
+
+    for (const auto & [nname, _] : FuzzConfig::helper_query_settings)
+    {
+        helper_names += fmt::format("{}'{}'", helper_names.empty() ? "" : ", ", nname);
+    }
+    /// `system.settings` shows the values the helper query overrides, so take the session ones from the client
     if (fc.processServerQuery(
             false,
-            fmt::format(
-                "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
-                fc.fuzzer_out_file.generic_string())))
+            fc.helperQuery(fmt::format("SELECT `name`, `value` FROM system.settings WHERE changed = 1 AND `name` NOT IN ({})", helper_names))))
     {
         std::ifstream infile(fc.fuzzer_out_file);
         while (std::getline(infile, buf) && buf.size() > 1)
@@ -2094,32 +2139,13 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
                 buf.pop_back();
             }
             const auto tabchar = buf.find('\t');
-            const auto nname = buf.substr(0, tabchar);
-            const auto nvalue = buf.substr(tabchar + 1);
-
-            replaced.resize(0);
-            for (const auto & c : nvalue)
-            {
-                switch (c)
-                {
-                    case '\'': replaced += "\\'"; break;
-                    case '\\': replaced += "\\\\"; break;
-                    case '\b': replaced += "\\b"; break;
-                    case '\f': replaced += "\\f"; break;
-                    case '\r': replaced += "\\r"; break;
-                    case '\n': replaced += "\\n"; break;
-                    case '\t': replaced += "\\t"; break;
-                    case '\0': replaced += "\\0"; break;
-                    case '\a': replaced += "\\a"; break;
-                    case '\v': replaced += "\\v"; break;
-                    default: replaced += c;
-                }
-            }
-            /// Some settings may not exist in earlier ClickHouse versions, so we can ignore the errors here
-            auto u = clickhouse->performQueryOnServerOrRemote(pt, fmt::format("SET {} = '{}';", nname, replaced));
-            UNUSED(u);
+            set_on_peer(buf.substr(0, tabchar), buf.substr(tabchar + 1));
             buf.resize(0);
         }
+    }
+    for (const auto & [nname, nvalue] : fc.changedHelperQuerySettings())
+    {
+        set_on_peer(nname, nvalue);
     }
 }
 
