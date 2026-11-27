@@ -1,0 +1,417 @@
+---
+slug: /clickstack/observability/migration/elastic/migrating-agents
+title: 'Migración de agentes desde Elastic'
+sidebarTitle: 'Migración de agentes'
+description: 'Migre los agentes de Elastic a ClickHouse Observability, totalmente gestionado, con ajustes de conexión específicos para implementaciones autogestionadas.'
+show_related_blogs: true
+keywords: ['ClickHouse Observability']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+## Migración de agentes desde Elastic {#migrating-agents-from-elastic-self-configured}
+
+Elastic Stack ofrece varios agentes de recopilación de datos de observabilidad. En concreto:
+
+* La [familia Beats](https://www.elastic.co/beats), como [Filebeat](https://www.elastic.co/beats/filebeat), [Metricbeat](https://www.elastic.co/beats/metricbeat) y [Packetbeat](https://www.elastic.co/beats/packetbeat), todos basados en la biblioteca `libbeat`. Estos Beats admiten el [envío de datos a Elasticsearch, Kafka, Redis o Logstash](https://www.elastic.co/docs/reference/beats/filebeat/configuring-output) mediante el protocolo Lumberjack.
+* [`Elastic Agent`](https://www.elastic.co/elastic-agent) es un agente unificado capaz de recopilar logs, métricas y trazas. Este agente puede gestionarse de forma centralizada mediante [Elastic Fleet Server](https://www.elastic.co/docs/reference/fleet/manage-elastic-agents-in-fleet) y admite como salida Elasticsearch, Logstash, Kafka o Redis.
+* Elastic también ofrece una distribución del [Colector de OpenTelemetry: EDOT](https://www.elastic.co/docs/reference/opentelemetry). Aunque por ahora no puede orquestarse desde Fleet Server, ofrece una vía más flexible y abierta si está migrando a ClickHouse Observability.
+
+La mejor estrategia de migración depende de los agentes que utilice actualmente. En las secciones siguientes se describen las opciones de migración para cada uno de los principales tipos de agente. Nuestro objetivo es reducir al mínimo las fricciones y, siempre que sea posible, permitirle seguir utilizando sus agentes actuales durante la transición.
+
+## Ruta de migración recomendada {#prefered-migration-path-self-configured}
+
+Siempre que sea posible, recomendamos migrar al [Colector de OpenTelemetry (OTel)](https://opentelemetry.io/docs/collector/) para toda la recopilación de logs, métricas y trazas, desplegando el recolector en el [edge con un rol de agente](/es/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured). Es la forma más eficiente de enviar datos y evita tanto la complejidad arquitectónica como la transformación de datos.
+
+<Info>
+  **¿Por qué el Colector de OpenTelemetry?**
+
+  El Colector de OpenTelemetry ofrece una solución sostenible e independiente del proveedor para la ingestión de datos de observabilidad. Somos conscientes de que algunas organizaciones gestionan flotas de miles (o incluso decenas de miles) de agentes de Elastic. Para estos usuarios, mantener la compatibilidad con la infraestructura de agentes existente puede ser fundamental. Esta documentación está pensada para dar soporte a ese escenario y, al mismo tiempo, ayudar a los equipos a realizar una transición gradual hacia una recopilación basada en OpenTelemetry.
+</Info>
+
+## Endpoint de OpenTelemetry de ClickHouse {#clickhouse-otel-endpoint-self-configured}
+
+Configure el destino antes de seguir los pasos de migración del agente. Los ejemplos de Vector y EDOT que se muestran a continuación envían datos de OpenTelemetry mediante OTLP HTTP.
+
+<Tabs>
+  <Tab title="Totalmente gestionado">
+    <BetaBadge label="Oferta Beta" />
+
+    Copie su endpoint OTLP HTTP y su clave de API desde **Team Settings → Data → Managed Telemetry**. Defina estas variables en el entorno donde se ejecute Vector o EDOT:
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    Utilice el endpoint exacto, con su puerto incluido y sin el sufijo `/v1/logs`. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/observability/ingesting-data/opentelemetry) para obtener los datos de conexión.
+  </Tab>
+
+  <Tab title="Autogestionado">
+    Despliegue el recolector receptor siguiendo la [guía de configuración autogestionada](/es/clickstack/self-configured/getting-started/managed). Defina su endpoint OTLP HTTP accesible y el encabezado de autorización en el entorno donde se ejecute Vector o EDOT:
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_COLLECTOR_TOKEN'
+    ```
+
+    Si protegió el recolector receptor con `OTLP_AUTH_TOKEN`, utilice ese token como valor de autorización. Si la autenticación está deshabilitada, omita el encabezado `authorization` en los ejemplos. Consulte [Protección del recolector](/es/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
+
+    Utilice `localhost` solo cuando el emisor y el receptor compartan el mismo espacio de nombres de red. Si el receptor tiene TLS habilitado, utilice su punto de conexión HTTPS y configure la confianza en su certificado.
+  </Tab>
+</Tabs>
+
+## Migración desde Beats {#migrating-to-beats-self-configured}
+
+Los usuarios con implementaciones extensas de Beats pueden optar por conservarlas al migrar a ClickHouse Observability.
+
+**Por el momento, esta opción solo se ha probado con Filebeat y, por tanto, solo es adecuada para logs.**
+
+Los agentes de Beats utilizan el [Elastic Common Schema (ECS)](https://www.elastic.co/docs/reference/ecs), que actualmente está [en proceso de fusionarse con la especificación de OpenTelemetry](https://github.com/open-telemetry/opentelemetry-specification/blob/main/oteps/0199-support-elastic-common-schema-in-opentelemetry.md) que utiliza ClickHouse Observability. Sin embargo, estos [esquemas aún difieren considerablemente](https://www.elastic.co/docs/reference/ecs/ecs-otel-alignment-overview), por lo que, de momento, corresponde a los usuarios transformar los eventos en formato ECS al formato OpenTelemetry antes de su ingestión en ClickHouse Observability.
+
+Recomendamos realizar esta transformación con [Vector](https://vector.dev), una canalización de datos de observabilidad ligera y de alto rendimiento que admite un potente lenguaje de transformación llamado Vector Remap Language (VRL).
+
+Si sus agentes de Filebeat están configurados para enviar datos a Kafka (una salida compatible con Beats), Vector puede consumir esos eventos desde Kafka, aplicarles transformaciones de esquema mediante VRL y, a continuación, reenviarlos mediante OTLP a su endpoint OTLP configurado.
+
+Como alternativa, Vector también admite la recepción de eventos a través del protocolo Lumberjack que utiliza Logstash. Así, los agentes de Beats pueden enviar datos directamente a Vector, donde se aplica el mismo proceso de transformación antes de reenviarlos mediante OTLP a su endpoint OTLP configurado.
+
+A continuación, se ilustran ambas arquitecturas.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Agentes de Beats que envían logs a través de Vector al recolector, ClickHouse y la UI de ClickStack](/images/use-cases/observability/clickstack-migrating-agents-ui.png)
+  </Frame>
+</div>
+
+En el siguiente ejemplo, se indican los pasos iniciales para configurar Vector de modo que reciba eventos de log de Filebeat mediante el protocolo Lumberjack. Se incluye el código VRL necesario para establecer la correspondencia entre los eventos ECS entrantes y la especificación de OTel antes de enviarlos mediante OTLP a su endpoint OTLP configurado. Los usuarios que consuman eventos desde Kafka pueden reemplazar la fuente Logstash de Vector por la [fuente de Kafka](https://vector.dev/docs/reference/configuration/sources/kafka/); el resto de los pasos no cambia.
+
+<Steps>
+  <Step title="Instale vector" id="install-vector-self-configured">
+    Instale Vector siguiendo la [guía de instalación oficial](https://vector.dev/docs/setup/installation/).
+
+    Instale Vector en un host accesible desde sus agentes de Filebeat.
+
+    Al [pasar Vector a producción](https://vector.dev/docs/setup/going-to-prod/), puede seguir las buenas prácticas de arquitectura y seguridad.
+  </Step>
+
+  <Step title="Configurar vector" id="configure-vector-self-configured">
+    Vector debe configurarse para recibir eventos mediante el protocolo Lumberjack, emulando una instancia de Logstash. Para ello, configure una [fuente `logstash`](https://vector.dev/docs/reference/configuration/sources/logstash/) en Vector:
+
+    ```yaml
+    sources:
+      beats:
+        type: logstash
+        address: 0.0.0.0:5044
+        tls:
+          enabled: false  # Set to true if you're using TLS
+          # The files below are generated from the steps at https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs
+          # crt_file: logstash.crt
+          # key_file: logstash.key
+          # ca_file: ca.crt
+          # verify_certificate: true
+    ```
+
+    <Info>
+      **Configuración TLS**
+
+      Si se requiere TLS mutuo, genere los certificados y las claves siguiendo la guía de Elastic [&quot;Configure SSL/TLS for the Logstash output&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output). Después, podrá especificarlos en la configuración tal como se muestra más arriba.
+    </Info>
+
+    Los eventos se recibirán en formato ECS. Pueden convertirse al esquema de OpenTelemetry mediante un transformador de Vector Remap Language (VRL). Configurar este transformador es sencillo; el script se guarda en un archivo independiente:
+
+    ```yaml
+    transforms:
+      remap_filebeat:
+        inputs: ["beats"]
+        type: "remap"
+        file: 'beat_to_otel.vrl'
+    ```
+
+    Tenga en cuenta que recibe eventos de la fuente `beats` anterior. A continuación se muestra nuestro script de remap. Este script solo se ha probado con eventos de log, pero puede servir como base para otros formatos.
+
+    <Accordion title="VRL - de ECS a OTel">
+      ```javascript
+      # Define keys to ignore at root level
+      ignored_keys = ["@metadata"]
+
+      # Define resource key prefixes
+      resource_keys = ["host", "cloud", "agent", "service"]
+
+      # Create separate objects for resource and log record fields
+      resource_obj = {}
+      log_record_obj = {}
+
+      # Copy all non-ignored root keys to appropriate objects
+      root_keys = keys(.)
+      for_each(root_keys) -> |_index, key| {
+          if !includes(ignored_keys, key) {
+              val, err = get(., [key])
+              if err == null {
+                  # Check if this is a resource field
+                  is_resource = false
+                  if includes(resource_keys, key) {
+                      is_resource = true
+                  }
+
+                  # Add to appropriate object
+                  if is_resource {
+                      resource_obj = set(resource_obj, [key], val) ?? resource_obj
+                  } else {
+                      log_record_obj = set(log_record_obj, [key], val) ?? log_record_obj
+                  }
+              }
+          }
+      }
+
+      # Flatten both objects separately
+      flattened_resources = flatten(resource_obj, separator: ".")
+      flattened_logs = flatten(log_record_obj, separator: ".")
+
+      # Process resource attributes
+      resource_attributes = []
+      resource_keys_list = keys(flattened_resources)
+      for_each(resource_keys_list) -> |_index, field_key| {
+          field_value, err = get(flattened_resources, [field_key])
+          if err == null && field_value != null {
+              attribute, err = {
+                  "key": field_key,
+                  "value": {
+                      "stringValue": to_string(field_value)
+                  }
+              }
+              if (err == null) {
+                  resource_attributes = push(resource_attributes, attribute)
+              }
+          }
+      }
+
+      # Process log record attributes
+      log_attributes = []
+      log_keys_list = keys(flattened_logs)
+      for_each(log_keys_list) -> |_index, field_key| {
+          field_value, err = get(flattened_logs, [field_key])
+          if err == null && field_value != null {
+              attribute, err = {
+                  "key": field_key,
+                  "value": {
+                      "stringValue": to_string(field_value)
+                  }
+              }
+              if (err == null) {
+                  log_attributes = push(log_attributes, attribute)
+              }
+          }
+      }
+
+      # Get timestamp for timeUnixNano (convert to nanoseconds)
+      timestamp_nano = if exists(.@timestamp) {
+          to_unix_timestamp!(parse_timestamp!(.@timestamp, format: "%Y-%m-%dT%H:%M:%S%.3fZ"), unit: "nanoseconds")
+      } else {
+          to_unix_timestamp(now(), unit: "nanoseconds")
+      }
+
+      # Get message/body field
+      body_value = if exists(.message) {
+          to_string!(.message)
+      } else if exists(.body) {
+          to_string!(.body)
+      } else {
+          ""
+      }
+
+      # Create the OpenTelemetry structure
+      . = {
+          "resourceLogs": [
+              {
+                  "resource": {
+                      "attributes": resource_attributes
+                  },
+                  "scopeLogs": [
+                      {
+                          "scope": {},
+                          "logRecords": [
+                              {
+                                  "timeUnixNano": to_string(timestamp_nano),
+                                  "severityNumber": 9,
+                                  "severityText": "info",
+                                  "body": {
+                                      "stringValue": body_value
+                                  },
+                                  "attributes": log_attributes
+                              }
+                          ]
+                      }
+                  ]
+              }
+          ]
+      }
+      ```
+    </Accordion>
+
+    Por último, envíe los eventos transformados a su endpoint OTLP configurado. Para ello, debe configurar un destino OTLP en Vector que tome como entrada los eventos de la transformación `remap_filebeat`:
+
+    ```yaml
+    sinks:
+      otlp:
+        type: opentelemetry
+        inputs: [remap_filebeat] # receives events from a remap transform - see below
+        protocol:
+          type: http
+          uri: "${OTEL_EXPORTER_OTLP_ENDPOINT}/v1/logs"
+          method: post
+          encoding:
+            codec: json
+          framing:
+            method: newline_delimited
+          headers:
+            content-type: application/json
+            authorization: "${OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+    ```
+
+    Utilice las [variables de conexión](#clickhouse-otel-endpoint-self-configured) de su implementación. La URI de Vector incluye `/v1/logs` porque esta salida envía registros de log.
+
+    A continuación se muestra nuestra configuración final completa:
+
+    ```yaml
+    sources:
+      beats:
+        type: logstash
+        address: 0.0.0.0:5044
+        tls:
+          enabled: false  # Set to true if you're using TLS
+            #crt_file: /data/elasticsearch-9.0.1/logstash/logstash.crt
+            #key_file: /data/elasticsearch-9.0.1/logstash/logstash.key
+            #ca_file: /data/elasticsearch-9.0.1/ca/ca.crt
+            #verify_certificate: true
+
+    transforms:
+      remap_filebeat:
+        inputs: ["beats"]
+        type: "remap"
+        file: 'beat_to_otel.vrl'
+
+    sinks:
+      otlp:
+        type: opentelemetry
+        inputs: [remap_filebeat]
+        protocol:
+          type: http
+          uri: "${OTEL_EXPORTER_OTLP_ENDPOINT}/v1/logs"
+          method: post
+          encoding:
+            codec: json
+          framing:
+            method: newline_delimited
+          headers:
+            content-type: application/json
+            authorization: "${OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+    ```
+  </Step>
+
+  <Step title="Configurar Filebeat" id="configure-filebeat-self-configured">
+    Configure Filebeat para que use la salida de Logstash hacia Vector y reemplace cualquier configuración de salida existente. Sustituya `YOUR_VECTOR_HOST` por el host donde se ejecuta Vector; use `localhost` solo si ambos se ejecutan en el mismo host. Configure TLS de modo que coincida con la entrada de Vector:
+
+    ```yaml
+    # ------------------------------ Logstash Output -------------------------------
+    output.logstash:
+      # The Logstash hosts
+      hosts: ["YOUR_VECTOR_HOST:5044"]
+
+      # Optional SSL. By default is off.
+      # List of root certificates for HTTPS server verifications
+      #ssl.certificate_authorities: ["/etc/pki/root/ca.pem"]
+
+      # Certificate for SSL client authentication
+      #ssl.certificate: "/etc/pki/client/cert.pem"
+
+      # Client Certificate Key
+      #ssl.key: "/etc/pki/client/cert.key"
+    ```
+  </Step>
+</Steps>
+
+## Migración desde Elastic Agent {#migrating-from-elastic-agent-self-configured}
+
+Elastic Agent consolida los distintos Elastic Beats en un único paquete. Este agente se integra con [Elastic Fleet](https://www.elastic.co/docs/reference/fleet/fleet-server), lo que permite orquestarlo y configurarlo de forma centralizada.
+
+Los usuarios que tienen Elastic Agents desplegados disponen de varias opciones de migración:
+
+* Configurar el agente para que envíe datos a un endpoint de Vector mediante el protocolo Lumberjack. **Por ahora, esta opción solo se ha probado con usuarios que recopilan datos de logs con Elastic Agent.** Puede configurarse de forma centralizada desde la interfaz de usuario de Fleet en Kibana.
+* [Ejecutar el agente como Elastic OpenTelemetry Collector (EDOT)](https://www.elastic.co/docs/reference/fleet/otel-agent). Elastic Agent incluye un EDOT Collector integrado que permite instrumentar sus aplicaciones e infraestructura una sola vez y enviar datos a múltiples proveedores y backends. Con esta configuración, basta con configurar el EDOT Collector para que reenvíe los eventos mediante OTLP al endpoint OTLP que haya configurado. **Este enfoque admite todos los tipos de eventos.**
+
+A continuación, mostramos ambas opciones.
+
+### Envío de datos mediante Vector {#sending-data-via-vector-self-configured}
+
+<Steps>
+  <Step title="Instalar y configurar Vector" id="install-configure-vector-self-configured">
+    Instale y configure Vector siguiendo los [mismos pasos](#install-vector-self-configured) documentados para la migración desde Filebeat.
+  </Step>
+
+  <Step title="Configurar Elastic Agent" id="configure-elastic-agent-self-configured">
+    Elastic Agent debe configurarse para enviar datos mediante Lumberjack, el protocolo de Logstash. Se trata de un [patrón de implementación compatible](https://www.elastic.co/docs/manage-data/ingest/ingest-reference-architectures/ls-networkbridge) que puede configurarse de forma centralizada o [mediante el archivo de configuración del agente `elastic-agent.yaml`](https://www.elastic.co/docs/reference/fleet/logstash-output) si se despliega sin Fleet.
+
+    La configuración centralizada a través de Kibana se realiza añadiendo [una salida a Fleet](https://www.elastic.co/docs/reference/fleet/fleet-settings#output-settings).
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Añadir salida de Logstash](/images/use-cases/observability/add-logstash-output.webp)
+      </Frame>
+    </div>
+
+    A continuación, esta salida puede utilizarse en una [política de agente](https://www.elastic.co/docs/reference/fleet/agent-policy). De este modo, todos los agentes que utilicen la política enviarán automáticamente sus datos a Vector.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Ajustes del agente](/images/use-cases/observability/agent-output-settings.webp)
+      </Frame>
+    </div>
+
+    Dado que es necesario configurar una comunicación segura mediante TLS, recomendamos seguir la guía [&quot;Configure SSL/TLS for the salida de Logstash&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output), teniendo en cuenta que la instancia de Vector asume el rol de Logstash.
+
+    Tenga en cuenta que esto también requiere configurar la fuente de Logstash en Vector para usar TLS mutuo. Utilice las claves y los certificados [generados en la guía](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs) para configurar la entrada correctamente.
+
+    ```yaml
+    sources:
+      beats:
+        type: logstash
+        address: 0.0.0.0:5044
+        tls:
+          enabled: true  # Establézcalo en true si utiliza TLS.
+          # Los siguientes archivos se generan siguiendo los pasos de https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs
+          crt_file: logstash.crt
+          key_file: logstash.key
+          ca_file: ca.crt
+          verify_certificate: true
+    ```
+  </Step>
+</Steps>
+
+### Ejecutar Elastic Agent como Colector de OpenTelemetry {#run-agent-as-otel-self-configured}
+
+Elastic Agent incluye un EDOT Collector integrado que le permite instrumentar sus aplicaciones e infraestructura una sola vez y enviar datos a múltiples proveedores y backends.
+
+<Info>
+  **Integraciones y orquestación del agente**
+
+  Los usuarios que ejecuten el EDOT Collector distribuido con Elastic Agent no podrán aprovechar las [integraciones existentes que ofrece el agente](https://www.elastic.co/docs/reference/fleet/manage-integrations). Además, Fleet no puede gestionar el recolector de forma centralizada, lo que obliga al usuario a ejecutar el [agente en modo independiente](https://www.elastic.co/docs/reference/fleet/configure-standalone-elastic-agents) y a gestionar la configuración por su cuenta.
+</Info>
+
+Para ejecutar Elastic Agent con el EDOT Collector, siga la [guía oficial de Elastic](https://www.elastic.co/docs/reference/fleet/otel-agent-transform). Configure un exportador OTLP HTTP con sus [variables de conexión](#clickhouse-otel-endpoint-self-configured):
+
+```yaml
+exporters:
+  otlphttp/clickhouse:
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+    headers:
+      authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+```
+
+Agregue `otlphttp/clickhouse` a la lista `exporters` de cada canalización de logs, métricas o trazas que desee reenviar. Conserve los receivers y procesadores existentes. Para realizar la ingestión en paralelo, mantenga el exportador de Elastic en esas canalizaciones y elimínelo cuando esté listo para dejar de enviar datos a Elastic.
+
+El exportador utiliza el endpoint base y añade automáticamente la ruta de cada señal. Si el receptor es HTTPS y utiliza una autoridad de certificación privada, configure `tls.ca_file`; si, además, ese receptor requiere TLS mutuo, configure también `tls.cert_file` y `tls.key_file`. Estos ajustes protegen la conexión entre EDOT y OTLP con independencia de la configuración TLS entre Filebeat y Vector.
+
+## Migración desde el Colector de OpenTelemetry de Elastic {#migrating-from-elastic-otel-collector-self-configured}
+
+Los usuarios que ya utilizan el [Colector de OpenTelemetry de Elastic (EDOT)](https://www.elastic.co/docs/reference/opentelemetry) solo tienen que reconfigurar sus agentes para que envíen los datos mediante OTLP al endpoint OTLP que haya configurado. Los pasos son idénticos a los descritos anteriormente para ejecutar el [Elastic Agent como Colector de OpenTelemetry](#run-agent-as-otel-self-configured). Este enfoque es válido para todos los tipos de datos.

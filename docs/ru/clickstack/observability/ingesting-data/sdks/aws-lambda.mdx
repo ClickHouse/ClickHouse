@@ -1,0 +1,135 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/aws-lambda
+description: 'Настройка и конфигурирование AWS Lambda для ClickHouse Observability и самоуправляемых развертываний.'
+title: 'AWS Lambda'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
+sidebarTitle: 'AWS Lambda'
+---
+
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+Для функций Node.js с асинхронными обработчиками используйте ClickStack Node.js SDK. Для других сред выполнения или обработчиков на основе функций обратного вызова используйте описанные ниже слои Lambda для OpenTelemetry.
+
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+
+## Асинхронные обработчики Node.js {#nodejs-async-handlers}
+
+Используйте среду выполнения Lambda для Node.js, удовлетворяющую минимальному требованию SDK — Node.js 22.15. Установите SDK и включите его в пакет развертывания:
+
+```shell
+npm install @clickhouse/clickstack-node
+```
+
+Задайте следующие переменные окружения Lambda, чтобы инициализировать SDK до загрузки обработчика и задать имя сервиса:
+
+```text
+NODE_OPTIONS=--import @clickhouse/clickstack-node/register
+OTEL_SERVICE_NAME=my-lambda-function
+```
+
+Оберните асинхронный обработчик в `withFlush`, чтобы буферизованная телеметрия успела экспортироваться до завершения вызова:
+
+```javascript
+// index.mjs
+import { withFlush } from '@clickhouse/clickstack-node';
+
+export const handler = withFlush(async (event) => {
+  console.log('request received');
+  return { statusCode: 200, body: 'OK' };
+});
+```
+
+Укажите `index.handler` в качестве обработчика функции. Если вы собираете функцию бандлером, оставьте SDK и инструментированные зависимости внешними и включите их в пакет развертывания. Не подключайте в этой конфигурации дополнительно слой Lambda с автоматическим инструментированием.
+
+Задайте приведённые ниже переменные пункта назначения в настройках окружения лямбда-функции. Конечная точка должна быть доступна из вашей функции. SDK завершает сброс данных до истечения предельного срока вызова; `withFlush` не поддерживает обработчики на основе функций обратного вызова.
+
+### Настройте пункт назначения {#configure-destination}
+
+<Tabs>
+  <Tab title="Полностью управляемый">
+    <BetaBadge label="Бета-версия" />
+
+    Откройте **Team Settings → Data → Managed Telemetry** в своём сервисе и скопируйте **конечную точку OTLP HTTP** и **API key**. Укажите полную конечную точку HTTPS вместе с портом:
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+
+  <Tab title="Самоуправляемый">
+    Укажите конечную точку OTLP HTTP вашего коллектора и ключ для ингестии. Если для коллектора не настроен TLS, используйте `http://` вместо `https://`. Подробнее о настройке коллектора см. в разделе [Загрузка данных с помощью OpenTelemetry](/ru/clickstack/observability/ingesting-data/opentelemetry#self-managed).
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+</Tabs>
+
+## Другие среды выполнения и обработчики {#other-runtimes-and-handlers}
+
+Следуйте официальным [инструкциям по автоматическому инструментированию Lambda](https://opentelemetry.io/docs/platforms/faas/lambda-auto-instrument/), чтобы выбрать слои для своей среды выполнения, архитектуры и региона AWS и настроить обёртку инструментирования.
+
+Добавьте и настройте [слой Lambda для OpenTelemetry Collector](https://opentelemetry.io/docs/platforms/faas/lambda-collector/). Экспортеры SDK приложения должны по-прежнему отправлять данные в локальный коллектор, как описано в вышестоящей документации. Исходящее соединение коллектора настраивается ниже.
+
+### Настройка пункта назначения для Lambda Collector {#configure-lambda-collector-destination}
+
+Задайте `CLICKHOUSE_OTLP_ENDPOINT` и `CLICKHOUSE_INGESTION_API_KEY` в переменных окружения вашей лямбда-функции. Добавьте следующий экспортер в конфигурацию коллектора.
+
+<Tabs>
+  <Tab title="Полностью управляемый">
+    <BetaBadge label="Бета-версия" />
+
+    Откройте **Team Settings → Data → Managed Telemetry** в вашем сервисе и скопируйте **конечную точку OTLP HTTP** и **API key**. Укажите в `CLICKHOUSE_OTLP_ENDPOINT` полный адрес конечной точки HTTPS вместе с портом, а в `CLICKHOUSE_INGESTION_API_KEY` — ключ.
+
+    ```yaml
+    exporters:
+      otlphttp/clickhouse:
+        endpoint: ${env:CLICKHOUSE_OTLP_ENDPOINT}
+        headers:
+          Authorization: "Bearer ${env:CLICKHOUSE_INGESTION_API_KEY}"
+    ```
+  </Tab>
+
+  <Tab title="Самоуправляемый">
+    Укажите в `CLICKHOUSE_OTLP_ENDPOINT` конечную точку OTLP HTTP вашего коллектора, а в `CLICKHOUSE_INGESTION_API_KEY` — его ключ ингестии. Конечная точка должна быть доступна из вашей лямбда-функции. О настройке коллектора-получателя см. [Загрузка данных с помощью OpenTelemetry](/ru/clickstack/observability/ingesting-data/opentelemetry#self-managed).
+
+    ```yaml
+    exporters:
+      otlphttp/clickhouse:
+        endpoint: ${env:CLICKHOUSE_OTLP_ENDPOINT}
+        headers:
+          Authorization: "${env:CLICKHOUSE_INGESTION_API_KEY}"
+    ```
+  </Tab>
+</Tabs>
+
+Добавьте `otlphttp/clickhouse` в список `exporters` каждого конвейера сигналов, данные которого нужно отправлять. Например, для вышестоящего приёмника `otlp`:
+
+```yaml
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlphttp/clickhouse]
+    metrics:
+      receivers: [otlp]
+      exporters: [otlphttp/clickhouse]
+    logs:
+      receivers: [otlp]
+      exporters: [otlphttp/clickhouse]
+```
+
+Добавьте эти настройки в конфигурацию коллектора, сохранив имеющиеся в ней настройки приёмников и процессоров. Упакуйте конфигурацию вместе с функцией и укажите путь к ней в переменной `OPENTELEMETRY_COLLECTOR_CONFIG_URI`, например `/var/task/collector.yaml`, следуя инструкциям по настройке коллектора из вышестоящей документации.
+
+## Проверка ингестии {#verify-ingestion}
+
+Разверните и вызовите функцию. В ClickHouse Observability выберите недавний временной диапазон и найдите имя сервиса вашей функции в разделе Traces. Если ваше инструментирование генерирует логи и метрики, проверьте также разделы Logs и Metrics: добавление конвейера не включает их сбор автоматически.
+
+Сведения о конфигурации слоя и устранении неполадок см. в [документации OpenTelemetry Lambda](https://github.com/open-telemetry/opentelemetry-lambda).

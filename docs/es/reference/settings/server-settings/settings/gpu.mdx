@@ -12,6 +12,14 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estos ajustes configuran el servidor de ClickHouse y se generan automáticamente a partir del código fuente de ClickHouse.
 
+## gpu_expression_kernel_cache_elements_size {#gpu_expression_kernel_cache_elements_size}
+
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />El número máximo de kernels en la caché de kernels que el motor de GPU compila para las expresiones. El cambio surte efecto sin necesidad de reiniciar.
+
+## gpu_expression_kernel_cache_size {#gpu_expression_kernel_cache_size}
+
+<SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="No" />Tamaño máximo, en bytes de PTX, de la caché de los kernels que el motor de GPU compila para las expresiones. Los kernels que superan el límite se descargan del dispositivo. El cambio surte efecto sin necesidad de reiniciar.
+
 ## gpu_memory_pool_release_threshold {#gpu_memory_pool_release_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="18446744073709551615" changeable_without_restart="No" />Cantidad de memoria liberada del dispositivo que el grupo de memoria predeterminado de la GPU retiene en lugar de devolverla al controlador. Con el valor predeterminado, el grupo crece hasta alcanzar el pico de uso de las consultas y se mantiene en ese tamaño hasta que el servidor se detiene.

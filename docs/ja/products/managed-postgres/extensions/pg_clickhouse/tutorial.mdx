@@ -174,36 +174,24 @@ ClickHouse Managed Postgres を使用している場合は、`pg_clickhouse` を
 server を作成し、スキーマをインポートします。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse Cloud コンソールの taxi データベース用 pg_clickhouse セットアップフォーム](/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Cloud コンソールの taxi データベース用 pg_clickhouse セットアップフォーム](/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp)
+  </Frame>
 </div>
 
 セットアップが完了すると、コンソールに確認メッセージが表示され、foreign
 server がサーバーリストに表示されます。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse Cloud コンソールの taxi データベース用 pg_clickhouse セットアップ完了画面](/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Cloud コンソールの taxi データベース用 pg_clickhouse セットアップ完了画面](/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![taxi pg_clickhouse 接続を示す foreign server リスト](/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp)
-
-</Frame>
-
+  <Frame>
+    ![taxi pg_clickhouse 接続を示す foreign server リスト](/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp)
+  </Frame>
 </div>
 
 これで Postgres の **SQL console** を開き、インポートしたテーブルをクエリできます。
@@ -351,11 +339,11 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
 次に、テーブルに対してクエリを実行します：
 
 ```pgsql
- SELECT count(*) FROM taxi.trips;
-   count
- ---------
-  1999657
- (1 row)
+SELECT count(*) FROM taxi.trips;
+  count
+---------
+ 1999657
+(1 row)
 ```
 
 クエリがどれだけ高速に実行されるかに注目してください。pg&#95;clickhouse は `COUNT()` 集約を含む
@@ -363,12 +351,12 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
 行だけが返されます。確認するには [EXPLAIN] を使用します:
 
 ```pgsql
- EXPLAIN select count(*) from taxi.trips;
-                    QUERY PLAN
- -------------------------------------------------
-  Foreign Scan  (cost=1.00..-0.90 rows=1 width=8)
-    Relations: Aggregate on (trips)
- (2 rows)
+EXPLAIN select count(*) from taxi.trips;
+                   QUERY PLAN
+-------------------------------------------------
+ Foreign Scan  (cost=1.00..-0.90 rows=1 width=8)
+   Relations: Aggregate on (trips)
+(2 rows)
 ```
 
 &quot;Foreign Scan&quot; がプランの最上位に表示されている点に注目してください。これは、
@@ -630,7 +618,7 @@ Airport (EWR) の名前に対応付けられています。
    行政区ごとに合計します。乗車地の地区が不明なケースがかなり多いことに
    注目してください。
 
-## JOIN を行う {#perform-a-join}
+## 結合を行う {#perform-a-join}
 
 `taxi_zone_dictionary` と `trips`
 テーブルを結合するクエリをいくつか作成します。
@@ -662,32 +650,32 @@ Airport (EWR) の名前に対応付けられています。
    Time: 48.449 ms
    ```
 
-<Note>
-  上記の `JOIN` クエリの出力は、先ほどの `dictGet`
-  クエリと同じであることがわかります (ただし、`Unknown` の値は含まれません) 。内部的には、
-  ClickHouse は `taxi_zone_dictionary` Dictionary に対して `dictGet` 関数を
-  実際に呼び出していますが、`JOIN` 構文のほうが
-  SQL 開発者にはなじみやすいものです。
-</Note>
+   <Note>
+     上記の `JOIN` クエリの出力は、先ほどの `dictGet`
+     クエリと同じであることがわかります (ただし、`Unknown` の値は含まれません) 。内部的には、
+     ClickHouse は `taxi_zone_dictionary` Dictionary に対して `dictGet` 関数を
+     実際に呼び出していますが、`JOIN` 構文のほうが
+     SQL 開発者にはなじみやすいものです。
+   </Note>
 
-```pgsql
-    taxi=# explain SELECT
-            count(1) AS total,
-            "Borough"
-        FROM taxi.trips
-        JOIN taxi.taxi_zone_dictionary
-          ON trips.pickup_nyct2010_gid = toUInt64(taxi.taxi_zone_dictionary."LocationID")
-        WHERE pickup_nyct2010_gid > 0
-          AND dropoff_nyct2010_gid IN (132, 138)
-        GROUP BY "Borough"
-        ORDER BY total DESC;
-                                  QUERY PLAN
-    -----------------------------------------------------------------------
-     Foreign Scan  (cost=1.00..5.10 rows=1000 width=40)
-       Relations: Aggregate on ((trips) INNER JOIN (taxi_zone_dictionary))
-    (2 rows)
-    Time: 2.012 ms
-```
+   ```pgsql
+   taxi=# explain SELECT
+           count(1) AS total,
+           "Borough"
+       FROM taxi.trips
+       JOIN taxi.taxi_zone_dictionary
+         ON trips.pickup_nyct2010_gid = toUInt64(taxi.taxi_zone_dictionary."LocationID")
+       WHERE pickup_nyct2010_gid > 0
+         AND dropoff_nyct2010_gid IN (132, 138)
+       GROUP BY "Borough"
+       ORDER BY total DESC;
+                                 QUERY PLAN
+   -----------------------------------------------------------------------
+    Foreign Scan  (cost=1.00..5.10 rows=1000 width=40)
+      Relations: Aggregate on ((trips) INNER JOIN (taxi_zone_dictionary))
+   (2 rows)
+   Time: 2.012 ms
+   ```
 
 2. このクエリは、チップ額が最も高い 1000 件の乗車データの行を返し、
    続いて各行を Dictionary と内部結合します。
@@ -719,8 +707,8 @@ Airport (EWR) の名前に対応付けられています。
 
 [GitHub]: https://github.com/ClickHouse/pg_clickhouse/releases "GitHub 上の pg_clickhouse リリース"
 
-[pg_clickhouse イメージ]: https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse "GitHub 上の pg_clickhouse OCI イメージ"
+[pg_clickhouse image]: https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse "GitHub 上の pg_clickhouse OCI イメージ"
 
-[Postgres イメージ]: https://hub.docker.com/_/postgres "Docker Hub 上の Postgres OCI イメージ"
+[Postgres image]: https://hub.docker.com/_/postgres "Docker Hub 上の Postgres OCI イメージ"
 
 [Refreshing dictionary data using LIFETIME]: /reference/statements/create/dictionary/lifetime "ClickHouse ドキュメント: LIFETIME を使用した Dictionary データの更新"

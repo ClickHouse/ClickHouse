@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_page_cache_for_disks_without_file_cache">
-  ## use_page_cache_for_disks_without_file_cache
-</div>
+## use_page_cache_for_disks_without_file_cache {#use_page_cache_for_disks_without_file_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Используйте кэш страниц в пространстве пользователя для удалённых дисков, на которых не включён файловый кэш.
 
-<div id="use_page_cache_for_local_disks">
-  ## use_page_cache_for_local_disks
-</div>
+## use_page_cache_for_local_disks {#use_page_cache_for_local_disks}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,9 +29,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Использовать кэш страниц в пространстве пользователя при чтении с локальных дисков. Применяется для тестирования и вряд ли даст заметный прирост производительности на практике. Требует `local_filesystem_read_method = 'pread'` или `'read'`. Не отключает кэш страниц ОС; для этого можно использовать `min_bytes_to_use_direct_io`. Влияет только на обычные таблицы, но не на табличную функцию `file()` и не на движок таблицы `File()`.
 
-<div id="use_page_cache_for_object_storage">
-  ## use_page_cache_for_object_storage
-</div>
+## use_page_cache_for_object_storage {#use_page_cache_for_object_storage}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -43,9 +37,15 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Используйте кэш страниц в пространстве пользователя при чтении из табличных функций для объектных хранилищ (s3, azure, hdfs) и движков таблиц (S3, Azure, HDFS).
 
-<div id="use_page_cache_with_distributed_cache">
-  ## use_page_cache_with_distributed_cache
-</div>
+## use_page_cache_lookahead_for_text_index {#use_page_cache_lookahead_for_text_index}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Новая настройка"}]}]} />
+
+Файлы текстового индекса, которые читаются не последовательно (словарь, списки вхождений, позиции), по умолчанию читаются через кэш страниц в пространстве пользователя с упреждающим чтением на один блок, чтобы после каждого чтения можно было повторно использовать удалённое соединение. Включите эту настройку, чтобы эти файлы, как и все остальные, использовали `page_cache_lookahead_blocks`.
+
+## use_page_cache_with_distributed_cache {#use_page_cache_with_distributed_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

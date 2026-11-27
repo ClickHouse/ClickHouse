@@ -65,6 +65,8 @@ Int8	String	Array(String)	Bool	JSON	JSON
 === JSONAllPathsWithTypes on dictGet JSON result ===
 {'age':'Int8','city':'String','country':'String','hobbies':'Array(String)','skills.languages':'Array(String)','skills.programming':'Array(String)'}
 === JSONDynamicPaths on dictGet JSON result ===
+[]
+=== JSONSharedDataPaths on dictGet JSON result ===
 ['age','city','country','hobbies','skills.languages','skills.programming']
 === JSON value comparison ===
 1	0	0	0	1

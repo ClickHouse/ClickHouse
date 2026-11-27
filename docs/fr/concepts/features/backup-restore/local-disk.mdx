@@ -9,19 +9,13 @@ doc_type: 'guide'
 import ExampleSetup from '/snippets/fr/_example_setup.mdx';
 import Syntax from '/snippets/fr/_syntax.mdx';
 
-<div id="syntax">
-  ## Syntaxe
-</div>
+## Syntaxe {#syntax}
 
 <Syntax />
 
-<div id="configure-backup-destinations-for-disk">
-  ## Configurer les destinations de sauvegarde sur disque
-</div>
+## Configurer les destinations de sauvegarde sur disque {#configure-backup-destinations-for-disk}
 
-<div id="configure-a-backup-destination">
-  ### Configurer une destination de sauvegarde sur un disque local
-</div>
+### Configurer une destination de sauvegarde sur un disque local {#configure-a-backup-destination}
 
 Dans les exemples ci-dessous, la destination de sauvegarde est indiquée sous la forme `Disk('backups', '1.zip')`.
 Pour utiliser le moteur de sauvegarde `Disk`, vous devez d’abord ajouter un fichier spécifiant
@@ -51,9 +45,7 @@ la liste **allowed&#95;disk** de **backups** :
 </clickhouse>
 ```
 
-<div id="backuprestore-using-an-s3-disk">
-  ### Configurer une destination de sauvegarde pour un disque S3
-</div>
+### Configurer une destination de sauvegarde pour un disque S3 {#backuprestore-using-an-s3-disk}
 
 Il est également possible d’effectuer `BACKUP`/`RESTORE` vers S3 en configurant un disque S3 dans la
 configuration de stockage de ClickHouse. Configurez le disque comme suit en ajoutant un fichier dans
@@ -102,13 +94,9 @@ RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
     la syntaxe `BACKUP ... TO S3(<endpoint>)` pour ce cas d&#39;usage.
 </Note>
 
-<div id="usage-examples">
-  ## Exemples d’utilisation de la sauvegarde/restauration sur disque local
-</div>
+## Exemples d’utilisation de la sauvegarde/restauration sur disque local {#usage-examples}
 
-<div id="backup-and-restore-a-table">
-  ### Sauvegarder et restaurer une table
-</div>
+### Sauvegarder et restaurer une table {#backup-and-restore-a-table}
 
 <ExampleSetup />
 
@@ -173,9 +161,7 @@ L’archive de cette sauvegarde a la structure suivante :
 D&#39;autres formats que zip peuvent également être utilisés. Voir [&quot;Sauvegardes sous forme d&#39;archives tar&quot;](#backups-as-tar-archives)
 ci-dessous pour plus d&#39;informations.
 
-<div id="incremental-backups">
-  ### Sauvegardes incrémentielles sur disque
-</div>
+### Sauvegardes incrémentielles sur disque {#incremental-backups}
 
 Dans ClickHouse, une sauvegarde de base est la sauvegarde complète initiale à partir de laquelle sont créées les
 sauvegardes incrémentielles suivantes. Les sauvegardes incrémentielles ne stockent que les modifications
@@ -207,9 +193,7 @@ RESTORE TABLE test_db.test_table AS test_db.test_table2
 FROM Disk('backups', 'incremental-a.zip');
 ```
 
-<div id="assign-a-password-to-the-backup">
-  ### Sécuriser une sauvegarde
-</div>
+### Sécuriser une sauvegarde {#assign-a-password-to-the-backup}
 
 Les sauvegardes écrites sur disque peuvent être protégées par un mot de passe appliqué au fichier.
 Le mot de passe peut être défini à l&#39;aide du paramètre `password`.
@@ -236,9 +220,7 @@ FROM Disk('backups', 'password-protected.zip')
 SETTINGS password='qwerty'
 ```
 
-<div id="backups-as-tar-archives">
-  ### Sauvegardes sous forme d’archives tar
-</div>
+### Sauvegardes sous forme d’archives tar {#backups-as-tar-archives}
 
 Les sauvegardes peuvent être stockées non seulement sous forme d’archives zip, mais aussi d’archives tar.
 Le fonctionnement est identique à celui des archives zip, à ceci près que la protection par mot de passe n&#39;est
@@ -274,9 +256,7 @@ Les suffixes de fichiers de compression pris en charge sont :
 * `.tzst`
 * `.tar.xz`
 
-<div id="compression-settings">
-  ### Paramètres de compression
-</div>
+### Paramètres de compression {#compression-settings}
 
 La méthode et le niveau de compression peuvent être spécifiés à l’aide des
 paramètres `compression_method` et `compression_level`, respectivement.
@@ -291,14 +271,12 @@ TO Disk('backups', 'filename.zip')
 SETTINGS compression_method='lzma', compression_level=3
 ```
 
-<div id="restore-specific-partitions">
-  ### Restaurer des partitions spécifiques
-</div>
+### Restaurer des partitions spécifiques {#restore-specific-partitions}
 
 S&#39;il faut restaurer des partitions spécifiques associées à une table, il est possible de les préciser.
 
 Créons une table partitionnée simple en quatre partitions, insérons-y des données, puis
-effectuons une sauvegarde des première et quatrième partitions uniquement :
+effectuons une sauvegarde des première et quatrième partitions uniquement :
 
 <Accordion title="Préparation">
   ```sql
@@ -340,14 +318,14 @@ effectuons une sauvegarde des première et quatrième partitions uniquement :
   ```
 </Accordion>
 
-Exécutez la commande suivante pour sauvegarder les partitions 1 et 4 :
+Exécutez la commande suivante pour sauvegarder les partitions 1 et 4 :
 
 ```sql
 BACKUP TABLE test_db.partitioned PARTITIONS '1', '4'
 TO Disk('backups', 'partitioned.zip')
 ```
 
-Exécutez la commande suivante pour restaurer les partitions 1 et 4 :
+Exécutez la commande suivante pour restaurer les partitions 1 et 4 :
 
 ```sql
 RESTORE TABLE test_db.partitioned PARTITIONS '1', '4'

@@ -1,0 +1,299 @@
+---
+slug: /clickstack/observability/integration-examples/nginx-traces
+title: 'ClickHouse Observability による Nginx トレースの監視'
+sidebarTitle: 'Nginx トレース'
+description: 'マネージドまたはセルフマネージドのインジェストを利用し、ClickHouse Observability で Nginx トレースを収集・検索・可視化します。'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'Nginx', 'traces', 'otel']
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+OpenTelemetry Nginx モジュールを使用して Nginx から分散トレースを収集し、ClickHouse Observability に送信します。Nginx をインストールせずにこのインテグレーションを試すには、[デモデータセット](#demo-dataset)をご利用ください。
+
+## 前提条件 {#prerequisites}
+
+* ClickHouse Observability サービス
+* 独自のトレースを使用する場合：OpenTelemetry モジュールを組み込んだ Nginx 環境と、その設定を更新するためのアクセス許可 (以下の Docker の例では `nginx:1.27-otel` を使用します)
+* デモデータセットを使用する場合：`curl` と Docker
+
+### 接続情報 {#connection-details}
+
+<Tabs>
+  <Tab title="完全マネージド型">
+    <BetaBadge label="ベータ版" />
+
+    ClickHouse Observability を開き、**チーム設定 → Data → Managed Telemetry** に移動します。**Copy connection details** でエンドポイントと APIキーをコピーするか、**Reveal key** を選択してマスクされたキーを表示します。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Managed Telemetry の接続情報](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Nginx モジュールは **OTLP/gRPC** (通常はポート **4317**) でエクスポートします。JSON デモは **OTLP/HTTP** (通常はポート **4318**) を使用します。それぞれのプロトコルに対応するエンドポイントを指定し、TLS が必要な場合は `https://` を含めてください。
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_GRPC_ENDPOINT='https://YOUR_OTEL_HOST:4317'
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    プレースホルダーをサービスの接続情報に置き換えてください。HTTP エンドポイントには `/v1/traces` を付けないベース URL を指定します。このパスは collector のエクスポーターが自動的に付加します。
+  </Tab>
+
+  <Tab title="セルフマネージド">
+    collector の OTLP エンドポイントと認証設定を使用してください。collector で認証が不要な場合は、Nginx の `header authorization` ディレクティブとデモ collector の `headers` ブロックを省略してください。詳細は[セルフマネージド版のスタートガイド](/ja/clickstack/self-configured/getting-started/managed)を参照してください。
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_GRPC_ENDPOINT='http://YOUR_COLLECTOR_HOST:4317'
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+gRPC エンドポイントには Nginx から接続可能である必要があります。Docker Desktop を使用する場合、ホスト上の collector には `host.docker.internal` で接続します。共有 Docker ネットワーク上のコンテナからは、collector のコンテナ名を指定します。TLS なしのローカルエンドポイントには `http://` を使用してください。
+
+## 既存の Nginx との連携 {#existing-nginx}
+
+<Steps>
+  <Step title="OpenTelemetry Nginx モジュールをインストールする" id="install-module">
+    `nginx:1.27-otel` イメージには `ngx_otel_module.so` が含まれています。Docker 以外の環境にインストールする場合は、[Nginx OpenTelemetry モジュールのドキュメント](https://nginx.org/en/docs/ngx_otel_module.html)にリンクされているインストール手順に従ってください。
+  </Step>
+
+  <Step title="Nginx のトレーシングを設定する" id="configure-nginx">
+    以下の Docker の例ではテンプレートを使用し、コンテナの起動スクリプトが接続用の環境変数を置換するようにしています。これを `nginx.conf.template` として保存します。`return 200` を返す location は簡易的なスモークテスト用です。実際のアプリケーションでは、既存のサーバーおよびルーティングの設定はそのまま残し、ここに示すトレーシング用ディレクティブを追加してください。
+
+    ```nginx
+    load_module modules/ngx_otel_module.so;
+
+    events {
+        worker_connections 1024;
+    }
+
+    http {
+        otel_exporter {
+            endpoint ${OTEL_EXPORTER_OTLP_GRPC_ENDPOINT};
+            header authorization "${OTEL_EXPORTER_OTLP_AUTHORIZATION}";
+        }
+
+        otel_service_name "nginx-proxy";
+        otel_trace on;
+
+        server {
+            listen 80;
+
+            location / {
+                otel_trace_context propagate;
+                otel_span_name "$request_method $uri";
+                otel_span_attr http.status_code $status;
+                otel_span_attr http.request.method $request_method;
+                otel_span_attr http.route $uri;
+                return 200 "Nginx tracing is enabled\n";
+            }
+        }
+    }
+    ```
+
+    同じディレクトリに、次の内容を `compose.yaml` として保存します。
+
+    ```yaml
+    services:
+      nginx:
+        image: nginx:1.27-otel
+        ports:
+          - "8081:80"
+        environment:
+          OTEL_EXPORTER_OTLP_GRPC_ENDPOINT: ${OTEL_EXPORTER_OTLP_GRPC_ENDPOINT}
+          OTEL_EXPORTER_OTLP_AUTHORIZATION: ${OTEL_EXPORTER_OTLP_AUTHORIZATION}
+          NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
+          NGINX_ENVSUBST_FILTER: ^OTEL_EXPORTER_OTLP_
+        volumes:
+          - ./nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
+    ```
+
+    置換フィルタにより、`$request_method` や `$uri` などの Nginx 変数は置換されずに保持されます。なお、`nginx.conf` を直接マウントした場合、Nginx はシェルの環境変数を自動的に置換しません。Docker 以外の環境では、設定を検証する前に接続用のプレースホルダーを実際の値に置き換え、キーを含むファイルへのアクセスを制限してください。
+  </Step>
+
+  <Step title="Nginx を検証して起動する" id="run-nginx">
+    同じ端末で[接続用の変数](#connection-details)を設定してから、次のコマンドを実行します。
+
+    ```bash
+    docker compose run --rm nginx nginx -t
+    docker compose up -d nginx
+    curl http://localhost:8081/
+    ```
+
+    リクエストごとに、メソッド、パス、ステータスコード、所要時間を含むスパンが作成されます。既存のデプロイメントの場合は、アプリケーションの URL にリクエストを送信してください。テンプレートや環境変数を変更した場合は、`docker compose up -d --force-recreate nginx` を実行して変更を反映します。
+  </Step>
+
+  <Step title="UI でトレースを確認する" id="verifying-traces">
+    **検索** を開いて **Traces** を選択し、`ServiceName:nginx-proxy` でフィルタします。送信したリクエストを含む時間範囲を選択し、エクスポートが完了するまで数秒待ちます。トレースを開くと、スパンと HTTP 属性を確認できます。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![検索ビューに表示された Nginx トレース](/images/clickstack/observability-nginx-demo-traces.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## デモデータセット {#demo-dataset}
+
+このサンプルには、9 つのエンドポイントにわたる 1,000 件の Nginx スパンが含まれており、成功したリクエスト、HTTP エラー、さまざまなレイテンシのデータが揃っています。送信する前に、[接続用の変数](#connection-details)を設定してください。
+
+<Steps>
+  <Step title="サンプルデータセットをダウンロードする" id="download-sample">
+    ```bash
+    curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/nginx-traces-sample.json
+    ```
+  </Step>
+
+  <Step title="デモ用 collector を設定する" id="configure-demo-collector">
+    ダウンロード先のディレクトリに、以下の内容を `nginx-traces-demo.yaml` として保存します。
+
+    ```yaml
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+      transform/demo_timestamps:
+        error_mode: propagate
+        trace_statements:
+          - context: span
+            statements:
+              - set(cache["duration_ns"], end_time_unix_nano - start_time_unix_nano)
+              - >-
+                set(start_time,
+                  Now() - Duration("2m") -
+                  (Time("2025-10-27T19:36:05Z", "%Y-%m-%dT%H:%M:%SZ") - start_time)
+                )
+              - set(end_time_unix_nano, start_time_unix_nano + cache["duration_ns"])
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: "${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+
+    service:
+      pipelines:
+        traces/nginx-demo:
+          receivers: [otlp]
+          processors: [memory_limiter, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    <Note>
+      デモ専用の `transform/demo_timestamps` プロセッサーは、スパンの所要時間とトラフィックパターンを維持したまま、このサンプルの時刻を、インジェストの 2 分前を終点とするおよそ過去 24 時間の範囲にシフトします。独自の Nginx トレースを送信する場合は、元のタイムスタンプが保持されるよう、このプロセッサーを省略してください。なお、サンプルを再送信するとスパンが重複する可能性があります。
+    </Note>
+  </Step>
+
+  <Step title="デモ用 collector を実行する" id="run-demo-collector">
+    <Note>
+      宛先の collector がこのコンピューター上で稼働している場合は、`OTEL_EXPORTER_OTLP_ENDPOINT` を `http://host.docker.internal:4318` に設定してください。以下のコマンドには Docker ホストのマッピングが含まれています。
+    </Note>
+
+    接続用の変数を設定した端末で、設定ファイルのあるディレクトリから OpenTelemetry Collector Contrib `0.161.0` を実行します。この端末は開いたままにしておいてください。
+
+    ```bash
+    docker run --rm --name nginx-traces-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -p 127.0.0.1:14318:4318 \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/nginx-traces-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    ローカルの receiver は、ポート `4318` で稼働中の既存の collector との競合を避けるため、ポート `14318` を使用します。collector は、上記の認証設定を使って、設定済みのエンドポイントにトレースを転送します。
+  </Step>
+
+  <Step title="トレースを送信する" id="send-traces">
+    別の端末を開き、ダウンロード先のディレクトリから元のサンプルをローカルの collector に送信します。
+
+    ```bash
+    curl --fail-with-body -sS http://localhost:14318/v1/traces \
+      -H "Content-Type: application/json" \
+      --data-binary @nginx-traces-sample.json
+    ```
+
+    `{}` や `{"partialSuccess":{}}` のような空の成功レスポンスが返れば、ローカルの collector がリクエストを受け付けています。collector の出力にエクスポートエラーがないか確認し、バッチがサービスに届くまで数秒待ちます。完了したら **Ctrl+C** でデモ用 collector を停止します。
+  </Step>
+
+  <Step title="デモトレースを確認する" id="verify-demo-traces">
+    **検索** を開いて **Traces** を選択し、`ServiceName:nginx-proxy` でフィルタリングします。シフトされたデータセット全体が含まれるよう、**Last 2 days** を選択してください。トレースを開くと、HTTP 属性を確認できます。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![検索ビューに表示された Nginx トレースの例](/images/clickstack/observability-nginx-demo-traces.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## ダッシュボードと可視化 {#dashboards}
+
+<Steps>
+  <Step title="ダッシュボード設定をダウンロードする" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-traces-dashboard.json'} download="nginx-traces-dashboard.json" eventName="docs.nginx_traces_monitoring.dashboard_download">ダッシュボードの設定ファイルをダウンロード</TrackedLink>します。
+  </Step>
+
+  <Step title="ダッシュボードをインポートする" id="import-dashboard">
+    1. **ダッシュボード** を開き、右上の **Import** をクリックします。
+    2. `nginx-traces-dashboard.json` をアップロードします。
+    3. 各チャートを **Traces** ログソースにマッピングし、**Finish Import** をクリックします。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Import ボタンが強調表示された ダッシュボード ページ](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="ダッシュボードを表示する" id="created-dashboard">
+    `ServiceName:nginx-proxy` でフィルタし、トレースが含まれる時間範囲を選択します。デモデータの場合は **Last 2 days** を選択してください。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Nginx トレースのダッシュボードの例](/images/clickstack/observability-nginx-traces-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## トラブルシューティング {#troubleshooting}
+
+### Nginx が起動しない {#nginx-fails-to-start}
+
+`docker compose run --rm nginx nginx -t` を実行して、生成された設定を検証します。不明な `otel_*` ディレクティブに関するエラーやモジュールファイルが見つからないというエラーが出る場合は、モジュールがインストールされていないか、読み込まれていません。`-otel` イメージを使用していること、およびテンプレートがドキュメントに記載されたパスにマウントされていることを確認してください。
+
+### トレースが表示されない {#no-traces}
+
+* gRPC エンドポイントと、宛先の collector で必要な認証を確認してください。マネージドサービスでは `Bearer` プレフィックスを使用します。Nginx モジュールには HTTP エンドポイントを使用しないでください。
+* Nginx コンテナからエンドポイントに接続可能であること、およびそのスキームが宛先の TLS 設定と一致していることを確認してください。
+* リクエストを送信してください。アイドル状態の Nginx インスタンスでは、リクエストのスパンは生成されません。
+* **Traces**、サービス名のフィルタ、および選択した時間範囲を確認してください。デモの場合は、`transform/demo_timestamps` が collector パイプラインに含まれていることを確認したうえで、**Last 2 days** を選択してください。
+* デモの場合は、collector を実行している端末に認証エラーやエクスポートエラーが出ていないか確認してください。また、collector の HTTP エンドポイントと authorization の値が接続情報と一致しているかも確認してください。
+* `docker compose logs nginx` で Nginx のエラーを確認してください。Docker 以外の環境では、Nginx のエラーログを確認してください。
+
+## 次のステップ {#next-steps}
+
+* エラーやレイテンシのしきい値に基づく[アラート](/ja/clickstack/observability/features/alerts)を設定します。
+* [ダッシュボード](/ja/clickstack/observability/features/dashboards/overview)をさらに作成します。
+* Nginx と宛先の間に collector を配置する場合は、[OpenTelemetry データの送信](/ja/clickstack/observability/ingesting-data/opentelemetry)を参照してください。

@@ -7,13 +7,8 @@
 -- step checks, so a randomized `optimize_aggregation_in_order = 1` would make every other case
 -- reject for that reason instead of the one it means to exercise.
 
--- The free-memory cap of the thread count is off, so the queries keep their four streams on a loaded server.
-SET max_threads = 4;
-SET max_threads_min_free_memory_per_thread = 0;
 SET max_block_size = 8192;
 SET adaptive_aggregator_freeze_threshold = 128;
-SET group_by_two_level_threshold = 10000000;
-SET group_by_two_level_threshold_bytes = 500000000;
 SET collect_hash_table_stats_during_aggregation = 0;
 SET log_queries = 1;
 SET log_profile_events = 1;
@@ -33,10 +28,9 @@ SELECT
 -- has no counterpart for. A limit above the group count keeps the result deterministic,
 -- because the break never fires - which also means the exactness pair alone cannot tell a
 -- rejection from a wrongly engaged run, so the freeze counter is asserted below on top of it.
--- The arms read `numbers_mt` with a UInt32 key instead of `t_admission`, because the assertion
--- needs a shape the admission would accept if not for the mode: the single-part table reads as
--- one stream, and a `% 10000` key narrows to UInt16, whose fixed hash map has no two-level
--- form - either would get the pair rejected before the mode is even considered.
+-- The arms need a shape the admission would accept if not for the mode: their UInt32 key has a
+-- two-level form, while a `% 10000` key narrows to UInt16, whose fixed hash map has none, and
+-- would get the pair rejected before the mode is even considered.
 SELECT 'Group-by limits in a dropping mode (not admitted)';
 SELECT
     (SELECT count(), sum(s) FROM (SELECT number % 200000 AS k, sum(number) AS s FROM numbers_mt(400000) GROUP BY k SETTINGS optimize_aggregation_in_order = 0, max_rows_to_group_by = 1000000, group_by_overflow_mode = 'break', enable_adaptive_aggregator = 0))

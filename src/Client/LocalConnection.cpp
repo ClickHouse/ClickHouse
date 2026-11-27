@@ -671,6 +671,13 @@ void LocalConnection::sendQueryPlan(const QueryPlan &)
 
 void LocalConnection::sendData(const Block & block, const String &, bool)
 {
+    /// Data sent to the server always has columns.
+    if (block.columns() == 0 && block.rows() > 0)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot send a block of {} rows without columns as data to the server",
+            block.rows());
+
     if (block.empty())
         return;
 

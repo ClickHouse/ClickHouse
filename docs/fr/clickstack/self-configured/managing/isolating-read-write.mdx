@@ -1,0 +1,291 @@
+---
+slug: /clickstack/self-configured/managing/isolating-read-write
+title: 'Isoler les charges de travail de lecture et d’écriture'
+sidebarTitle: 'Isoler la lecture et l’écriture'
+description: 'Séparer les charges de travail d’ingestion et de requête liées à l’observability grâce aux entrepôts ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'entrepôts', 'séparation calcul-calcul', 'lecture seule', 'isolation', 'ingestion', 'mise à l’échelle']
+---
+
+import { ScalePlanFeatureBadge } from "/snippets/fr/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+<Note>
+  Cette page porte sur **Self-managed ClickHouse Observability**. Pour l’expérience entièrement gérée recommandée, consultez la documentation [ici](/fr/clickstack/observability/overview).
+</Note>
+
+Les charges de travail d’observability soumettent les mêmes données à deux sollicitations très différentes. L’ingestion est continue et intensive en écriture, et les fusions en arrière-plan continuent de consommer du CPU et de la mémoire bien après la fin d’une insertion. La charge de requêtes, elle, est irrégulière : les tableaux de bord et les recherches culminent lors d’un incident, précisément au moment où une réponse lente est la moins acceptable.
+
+Avec les [entrepôts](/fr/products/cloud/features/infrastructure/warehouses) ClickHouse Cloud, les deux charges de travail peuvent être servies à partir des mêmes données par des capacités de calcul distinctes, si bien qu’aucune ne dispute à l’autre le CPU et la mémoire.
+
+<ScalePlanFeatureBadge feature="Compute-compute separation" />
+
+Les entrepôts étant une fonctionnalité de ClickHouse Cloud, la configuration décrite ici s’applique à Self-managed ClickHouse Observability : chaque côté de la division est dimensionné, mis à l’échelle et mis en veille indépendamment, sur une seule copie des données.
+
+<Note>
+  **Quand l’isolation en vaut-elle la peine ?**
+
+  L’isolation s’adresse aux déploiements de grande envergure avec ingestion continue. En deçà d’environ 100 TB/mois de données stockées, un seul service de lecture-écriture absorbe normalement les deux charges de travail, et un second service n&#39;est probablement pas nécessaire. Utilisez le [modèle de dimensionnement](/fr/clickstack/self-configured/managing/estimating-resources) pour estimer votre volume compressé mensuel.
+</Note>
+
+## Pourquoi isoler les lectures des écritures {#why-isolate}
+
+* **Les écritures ne dégradent plus les lectures.** L’ingestion continue OpenTelemetry (les insertions elles-mêmes, ainsi que les fusions en arrière-plan qui les suivent) entre en concurrence avec les requêtes des tableaux de bord et de recherche pour le CPU et la mémoire. La latence de lecture peut se dégrader sensiblement pendant l’ingestion, puis se rétablit dès qu’elle s’arrête.
+* **Les lectures ne perturbent plus les écritures.** La contention s’exerce dans les deux sens : une requête ad hoc lourde ou un rendu coûteux de tableau de bord peut épuiser la mémoire du service et faire purement et simplement échouer les insertions, au lieu de seulement les ralentir.
+* **Les ressources de calcul en lecture seule sont entièrement dédiées aux requêtes.** Les services en lecture seule n’effectuent aucune fusion en arrière-plan, hormis sur les tables système. Ils se mettent également en veille sans délai, contrairement aux services en lecture-écriture, que les fusions peuvent maintenir actifs.
+* **Chaque côté est dimensionné indépendamment.** Le [modèle de dimensionnement](/fr/clickstack/self-configured/managing/estimating-resources) estime séparément le calcul pour l’ingestion et la capacité de calcul pour les requêtes, et un entrepôt vous permet de provisionner chacun sous la forme d’un service distinct. Au-delà de la référence de 1 QPS du modèle, la capacité de calcul pour les requêtes devient prépondérante : son [exemple détaillé](/fr/clickstack/self-configured/managing/estimating-resources#worked-example) à 5 QPS aboutit à 58 vCPU pour l’ingestion contre 290 pour les requêtes. Un petit service d’écriture peut donc alimenter un service de lecture beaucoup plus grand.
+* **La mise en veille et la mise à l’échelle automatique se configurent par service.** Chaque service dispose de ses propres paramètres de nombre de réplicas, de mise à l’échelle automatique et d’auto-idling : le service d’écriture peut ainsi rester actif en permanence pour l’ingestion continue, tandis que le service de lecture se met en veille en dehors des heures ouvrées.
+* **Le stockage n’est pas dupliqué.** Les services d’un entrepôt partagent le même dossier de stockage d’objet et les mêmes tables, et [le stockage n’est facturé qu’une seule fois](/fr/products/cloud/features/infrastructure/warehouses#pricing).
+* **L’accès peut être restreint par endpoint.** Les listes d’accès IP s’appliquent par service : l’endpoint d’écriture peut ainsi n’être accessible que depuis vos collecteurs, et l’endpoint de lecture uniquement depuis votre UI d’observability. Consultez notre guide sur le [contrôle d’accès réseau](/fr/products/cloud/features/infrastructure/warehouses#network-access-control).
+
+## Architecture {#architecture}
+
+La topologie recommandée repose sur un entrepôt contenant un service de lecture-écriture pour l’ingestion et un service en lecture seule pour l’UI d’observability :
+
+| Service    | Type             | Responsabilités                                                                       | Clients                                                                                  |
+| ---------- | ---------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Principal  | Lecture-écriture | Ingestion, fusions en arrière-plan, DDL (création de tables, TTL, vues matérialisées) | Collecteur OpenTelemetry, ClickPipes, Vector, console SQL / client pour l’administration |
+| Secondaire | Lecture seule    | Recherche, tableaux de bord, notebooks, évaluation des alertes                        | UI d’observability                                                                       |
+
+Lors de la planification de la topologie, tenez compte des points suivants :
+
+* Le premier service d’un entrepôt est toujours en lecture-écriture, et le type d’un service est **défini à sa création** : pour passer de la lecture seule à la lecture-écriture (ou inversement), créez un nouveau service dans l’entrepôt.
+* Tous les services d’un entrepôt partagent le même fournisseur de services cloud, la même région, la même version de ClickHouse et le même Keeper, ainsi que le calendrier des mises à niveau du service principal.
+* Utilisez **un seul** service de lecture-écriture pour l’ingestion. Les fusions sont réparties entre tous les services de lecture-écriture qui partagent le stockage : une fusion liée à une insertion sur un service peut donc être exécutée par un autre. Si cet autre service traite également des requêtes lourdes, celles-ci entrent en concurrence avec la fusion pour le CPU et la mémoire du service qui l’exécute, ce qui ralentit les fusions liées aux insertions du premier service et, par conséquent, la performance d’insertion. Réservez les charges de travail de requêtes au service en lecture seule, et n’ajoutez un second service de lecture-écriture que si vous devez [séparer les fusions de l’ingestion](#separating-merges).
+
+## Configuration d&#39;un déploiement isolé {#setup}
+
+<Steps>
+  <Step title="Préparer le service de lecture-écriture" id="prepare-read-write-service">
+    Utilisez votre service existant — ou le service principal d’un nouvel entrepôt — pour l’ingestion, en le dimensionnant selon le calcul pour l’ingestion estimé par le [modèle de dimensionnement](/fr/clickstack/self-configured/managing/estimating-resources).
+
+    Créez la base de données et l’utilisateur dédié à l’ingestion sur ce service. Comme tous les services d’un entrepôt partagent les mêmes contrôles d’accès, les utilisateurs que vous créez ici sont disponibles sur l’ensemble des services de l’entrepôt :
+
+    ```sql
+    CREATE DATABASE otel;
+    CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY '<strong-password>';
+    GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
+    ```
+
+    Générez le mot de passe à l&#39;aide d&#39;un outil tel que `openssl rand -base64 24` et stockez-le dans un gestionnaire de secrets plutôt que dans un manifest ou dans l&#39;historique de l&#39;interpréteur de commandes. Pour plus de détails, consultez notre guide [Créer un utilisateur d&#39;ingestion](/fr/clickstack/self-configured/ingesting-data/collector#creating-an-ingestion-user-self-configured).
+
+    Si ce service fait déjà partie d&#39;un entrepôt, sachez que les instructions DDL au niveau de la base de données peuvent rester bloquées lorsqu&#39;un autre service de cet entrepôt est mis en veille (voir [Administration et DDL](#administration)).
+  </Step>
+
+  <Step title="Ajoutez un service en lecture seule à l’entrepôt" id="add-read-only-service">
+    Dans la Console ClickHouse Cloud, cliquez sur le signe plus du service que vous venez de préparer afin de créer un second service partageant ses données. Sélectionnez **lecture seule** comme type de service, puis dimensionnez-le selon la capacité de calcul pour les requêtes estimée par le modèle de dimensionnement.
+
+    Pour la procédure complète, consultez notre guide [Comment configurer un entrepôt](/fr/products/cloud/features/infrastructure/warehouses#setup-warehouses).
+  </Step>
+
+  <Step title="Dirigez l’ingestion vers le service de lecture-écriture" id="point-ingestion">
+    Configurez votre collecteur pour qu&#39;il exporte les données vers le point de terminaison de service **read-write**, en vous authentifiant en tant qu&#39;utilisateur d&#39;ingestion :
+
+    ```shell
+    CLICKHOUSE_ENDPOINT=https://<read-write-service>.clickhouse.cloud:8443
+    CLICKHOUSE_USER=hyperdx_ingest
+    CLICKHOUSE_PASSWORD=<strong-password>
+    HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=otel
+    ```
+
+    Pour plus de détails, consultez les [options de configuration du collecteur](/fr/clickstack/self-configured/managing/config#otel-collector), ou les paramètres équivalents pour [Vector](/fr/clickstack/observability/ingesting-data/vector) et les autres modes d&#39;ingestion.
+
+    Les écritures envoyées à l&#39;endpoint en lecture seule sont rejetées : le collecteur doit donc toujours cibler le service de lecture-écriture.
+  </Step>
+
+  <Step title="Configurez l’UI d’observability pour utiliser le service en lecture seule" id="point-clickstack">
+    L&#39;UI d&#39;observability se connecte toujours au service ClickHouse depuis lequel elle est lancée dans la Console ClickHouse Cloud. Pour l&#39;exécuter sur des ressources de calcul en lecture seule :
+
+    1. Sélectionnez le service en lecture seule dans la Console ClickHouse Cloud.
+    2. Sélectionnez **ClickStack** dans le menu de navigation de gauche.
+
+    Toutes les requêtes émises par l&#39;UI s&#39;exécutent alors sur ces ressources de calcul en lecture seule. Aucune configuration n&#39;est nécessaire dans l&#39;UI d&#39;observability. Consultez notre guide sur l&#39;[utilisation de l&#39;UI d&#39;observability avec des ressources de calcul en lecture seule](/fr/clickstack/self-configured/deployment/managed#clickstack-read-only-compute).
+
+    <Warning>
+      **L&#39;état de l&#39;UI d&#39;observability est propre à chaque service**
+
+      Les tableaux de bord, les recherches enregistrées, les alertes et les sources appartiennent au service depuis lequel l&#39;UI d&#39;observability a été lancée et ne sont pas transférés vers un autre service du même entrepôt, même si les deux services partagent les mêmes données. Les sources utilisant le [schéma OpenTelemetry par défaut](/fr/clickstack/self-configured/deployment/managed#adding-data-sources) sont détectées automatiquement sur le nouveau service : la recherche sur ces données fonctionne donc immédiatement. En revanche, les sources personnalisées ou configurées manuellement, ainsi que tout ce que vous avez enregistré, doivent être recréées.
+
+      Choisissez le service depuis lequel vous souhaitez exécuter l&#39;UI d&#39;observability avant de créer des tableaux de bord. Si vous migrez un déploiement existant, notez que les alertes créées sur le service précédent continuent d&#39;y être évaluées (sur les ressources de calcul de ce service) jusqu&#39;à ce que vous les supprimiez.
+    </Warning>
+  </Step>
+
+  <Step title="Vérifiez la division" id="verify">
+    Lancez une recherche ou ouvrez un tableau de bord dans l’UI d’observability, puis vérifiez sur quel service les requêtes ont été exécutées. Les tables `system` sont écrites sur le nœud qui a exécuté la requête ; pour un service comportant plusieurs répliques, il faut donc utiliser [`clusterAllReplicas`](/fr/reference/system-tables/overview#querying-across-nodes) avec le nom de cluster `default` afin de toutes les couvrir. Sur le service en **lecture seule**, vous devriez voir les requêtes d’observability :
+
+    ```sql
+    SELECT
+        user,
+        query_kind,
+        http_user_agent,
+        count()
+    FROM clusterAllReplicas('default', system.query_log)
+    WHERE event_time > now() - toIntervalMinute(10)
+      AND type = 'QueryFinish'
+      AND is_initial_query = 1
+    GROUP BY ALL
+    ORDER BY count() DESC;
+    ```
+
+    Un ensemble de résultats vide ne signifie pas à lui seul que les requêtes sont allées ailleurs : `system.query_log` est écrit sur disque périodiquement (toutes les 7.5 secondes par défaut), si bien qu&#39;une requête exécutée juste après une recherche risque de ne pas encore la voir. Patientez un instant puis relancez-la, ou forcez le vidage avec [`SYSTEM FLUSH LOGS`](/fr/reference/statements/system#flush-logs) si vous disposez du grant nécessaire.
+
+    C&#39;est le regroupement par `user` et `http_user_agent` qui permet d&#39;attribuer le trafic : il distingue l&#39;UI de la console SQL et de tout autre client se connectant à l&#39;endpoint, quelles que soient les tables vers lesquelles pointent vos sources. Le filtrage sur `is_initial_query = 1` conserve une ligne par requête, telle qu&#39;elle a été soumise. Les requêtes secondaires issues de l&#39;exécution distribuée, ainsi que les requêtes internes qui évaluent les [vues matérialisées](/fr/reference/system-tables/query_views_log), sont journalisées séparément avec `is_initial_query = 0`.
+
+    Sur le service **read-write**, la même requête doit faire apparaître les insertions de l&#39;utilisateur d&#39;ingestion et aucun trafic de requêtes d&#39;observability.
+
+    La vérification la plus fiable consiste à exécuter la requête sur chaque service tour à tour, car le cluster `default` ne contient que les répliques du service auquel vous êtes connecté. Pour obtenir une vue agrégée sur l&#39;ensemble de l&#39;entrepôt, utilisez plutôt le nom de cluster `all_groups.default` :
+
+    ```sql
+    SELECT
+        hostName() AS host,
+        query_kind,
+        count()
+    FROM clusterAllReplicas('all_groups.default', system.query_log)
+    WHERE event_time > now() - toIntervalMinute(10)
+      AND type = 'QueryFinish'
+      AND is_initial_query = 1
+    GROUP BY ALL;
+    ```
+
+    Deux points sont à garder à l&#39;esprit avec cette requête : les services mis en veille ne peuvent renvoyer aucune ligne, réveillez-les donc au préalable si vous avez besoin d&#39;un ensemble de résultats complet ; par ailleurs, `hostName()` identifie une réplique et non un service. Pour attribuer une activité à un service précis, interrogez directement ce service.
+  </Step>
+</Steps>
+
+## Séparer les fusions de l’ingestion {#separating-merges}
+
+À des débits d’ingestion soutenus très élevés, ce sont les fusions, plutôt que les insertions elles-mêmes, qui deviennent le principal coût sur le service d’ingestion. Comme les fusions sont assignées à l’ensemble des services en lecture-écriture qui partagent le stockage, elles peuvent aussi se retrouver sur un service que vous destiniez à un autre usage.
+
+Pour ces déploiements, il est possible de retirer entièrement les fusions du service d’ingestion, ce qui donne une topologie à trois services :
+
+| Service   | Type                                  | Responsabilités                                                       |
+| --------- | ------------------------------------- | --------------------------------------------------------------------- |
+| Ingestion | Lecture-écriture, fusions désactivées | Accepte uniquement les insertions                                     |
+| Fusion    | Lecture-écriture                      | Exécute toutes les fusions et mutations en arrière-plan de l’entrepôt |
+| Requête   | Lecture seule                         | Dessert l’UI d’observability                                          |
+
+<Info>
+  **Nécessite une demande auprès de l’assistance**
+
+  La désactivation des fusions sur un service de lecture-écriture n’est pas configurable depuis la Console Cloud. [Contactez l’assistance](https://clickhouse.com/support/program) pour l’appliquer à un service.
+</Info>
+
+Cette topologie mérite d’être envisagée lorsque l’ingestion sature à elle seule un service, ou lorsque vous avez besoin de deux services en lecture-écriture parce que les deux doivent écrire. Si votre charge de travail de requêtes provient entièrement de l’UI d’observability, qui ne fait que lire, la [séparation plus simple entre lecture-écriture et lecture seule](#architecture) suffit et constitue l’approche la mieux prise en charge.
+
+Si vous adoptez cette topologie, tenez compte des points suivants :
+
+* **Ne comptez sur l’auto-idling pour aucun des deux services en lecture-écriture.** Un service dont les fusions sont désactivées traite tout de même les événements de téléchargement et de suppression de parts générés par les insertions effectuées ailleurs dans l’entrepôt, et un nombre élevé de parts non fusionnées peut à lui seul empêcher la mise en veille. Prévoyez que les deux services en lecture-écriture restent actifs en permanence.
+* **N’exécutez aucune requête sur les services en lecture-écriture.** Les requêtes `SELECT` lourdes sur un service de lecture-écriture entrent en concurrence avec les fusions pour le CPU et la mémoire, ce qui est précisément le mode de défaillance que cette topologie vise à éviter. Faites pointer l’UI d’observability vers le service en lecture seule, comme décrit [ci-dessus](#point-clickstack).
+* **Les mutations éventuelles sont suivies sur le service qui les exécute.** Les mutations sont rares en observability : le schéma d’observability par défaut définit [`ttl_only_drop_parts = 1`](/fr/clickstack/self-configured/managing/ttl), de sorte que la rétention ordinaire supprime des parts expirées entières lors des fusions TTL au lieu d’éliminer des lignes par mutation. Si vous soumettez au service d’ingestion un `ALTER` qui génère une mutation, celle-ci est exécutée par le service de fusion, et sa progression apparaît dans [`system.mutations`](/fr/reference/system-tables/mutations) sur ce dernier plutôt que sur le service d’ingestion.
+
+## Administration et DDL {#administration}
+
+Toutes les modifications de schéma doivent être exécutées sur le service **read-write**, notamment :
+
+* La création de tables, effectuée automatiquement par le collecteur ClickStack lors de la première ingestion
+* La [modification du TTL](/fr/clickstack/self-configured/managing/ttl#modifying-ttl) pour changer la durée de rétention
+* La création de [vues matérialisées](/fr/clickstack/self-configured/managing/materialized-views) pour accélérer les requêtes
+* L&#39;ajout d&#39;[index de saut, de projections et d&#39;autres optimisations de performance](/fr/clickstack/self-configured/managing/performance-tuning)
+
+Les utilisateurs, les rôles et les privilèges accordés ne sont pas des modifications de schéma : ils sont partagés par tous les services de l&#39;entrepôt, si bien que chacun ne doit être créé qu&#39;une seule fois, depuis n&#39;importe quel service. Les [étapes de configuration](#prepare-read-write-service) ci-dessus créent l&#39;utilisateur d&#39;ingestion. Tout autre client que vous connectez au service en lecture seule doit s&#39;authentifier avec un utilisateur de requête distinct, en lecture seule, disposant des [autorisations requises par l&#39;UI d&#39;observabilité](/fr/clickstack/self-configured/managing/production#user-permissions), et non avec les privilèges d&#39;ingestion présentés ci-dessus.
+
+Connectez-vous au service read-write à l&#39;aide de la [console SQL](/fr/products/cloud/features/sql-console-features/sql-console) ou du [client ClickHouse](/fr/concepts/features/interfaces/client). Comme l&#39;entrepôt partage le stockage et les contrôles d&#39;accès, les modifications sont immédiatement visibles par le service en lecture seule. Si vous avez [séparé les fusions de l&#39;ingestion](#separating-merges), les statements peuvent être soumis à l&#39;un ou l&#39;autre des services read-write ; notez toutefois que les mutations sont exécutées et suivies sur le service de fusion.
+
+<Warning>
+  **Les opérations DDL sur les bases de données peuvent se bloquer lorsqu&#39;un autre service est mis en veille**
+
+  Les statements `CREATE`, `RENAME` et `DROP DATABASE` peuvent être bloqués par des services mis en veille ou arrêtés dans l&#39;entrepôt et rester alors en attente indéfiniment. Ce cas survient facilement dans cette topologie, car les services en lecture seule se mettent en veille sans délai. Exécutez les statements au niveau de la base de données avec [`distributed_ddl_task_timeout=0`](/fr/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout), défini par requête ou pour la session :
+
+  ```sql
+  CREATE DATABASE otel
+  SETTINGS distributed_ddl_task_timeout=0
+  ```
+
+  Un service que vous avez arrêté manuellement doit être redémarré pour que des requêtes puissent s&#39;y exécuter.
+</Warning>
+
+Les vues matérialisées sont déclenchées par l&#39;insertion ; elles sont donc exécutées par le service read-write. Le service en lecture seule interroge leurs tables cibles comme n&#39;importe quelle autre table, y compris celles des vues [enregistrées pour une source de données](/fr/clickstack/self-configured/managing/config#materialized-views-settings) afin d&#39;accélérer les requêtes.
+
+## Isoler les charges de travail agentiques {#agentic-workloads}
+
+Les assistants IA connectés via le [serveur MCP](/fr/clickstack/observability/mcp) génèrent du trafic de lecture comme n&#39;importe quel tableau de bord, mais leur profil de charge est différent : un agent qui enquête sur un incident émet de nombreuses requêtes exploratoires en rafale, sur des plages que personne n&#39;a choisies à l&#39;avance. Si les agents et l&#39;UI partagent un même service en lecture seule, ces pics de charge pénalisent les tableaux de bord qu&#39;un ingénieur consulte pendant ce même incident.
+
+Le même modèle d&#39;entrepôt s&#39;applique : attribuez aux agents leurs propres ressources de calcul en lecture seule.
+
+<Steps>
+  <Step title="Ajouter un second service en lecture seule" id="agentic-add-service">
+    Créez un autre service en lecture seule dans l&#39;entrepôt, exactement comme dans [la configuration ci-dessus](#add-read-only-service). Il lit les mêmes tables que le service qui dessert l&#39;UI, sans aucune donnée à copier.
+
+    Lancez ensuite une première fois l&#39;UI d&#39;observability sur ce service depuis la Console Cloud, comme décrit dans [pointer l&#39;UI d&#39;observability vers un service en lecture seule](#point-clickstack). Le MCP Cloud nécessite un service sur lequel l&#39;UI d&#39;observability est activée, en plus du MCP lui-même ; consultez les [prérequis MCP](/fr/clickstack/observability/mcp#managed-prerequisites).
+
+    Dimensionnez-le en fonction de la charge de requêtes attendue de la part des agents plutôt que du QPS des tableaux de bord issu du modèle de dimensionnement, et laissez l&#39;auto-idling activé : l&#39;usage agentique étant généralement intermittent, le service peut se mettre en veille entre deux investigations.
+  </Step>
+
+  <Step title="Activer MCP sur ce service" id="agentic-enable-mcp">
+    Ouvrez le service en lecture seule dans la Console ClickHouse Cloud, cliquez sur **Connect**, sélectionnez **Connect with MCP** et activez l&#39;option. Consultez [activer le serveur MCP distant](/fr/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server).
+  </Step>
+
+  <Step title="Pointer les clients MCP vers ce service" id="agentic-point-clients">
+    Le point de terminaison MCP dans le cloud est le même pour tous les services : les requêtes sont acheminées selon l&#39;en-tête `x-service-id` et, en son absence, elles sont envoyées au premier service d&#39;observability utilisé par votre compte. Copiez votre configuration MCP existante et ajoutez l&#39;en-tête avec l&#39;ID du nouveau service en lecture seule :
+
+    ```shell
+    claude mcp add --transport http clickstack https://mcp.clickhouse.cloud/clickstack \
+      --header "x-service-id: <read-only-agent-service-id>"
+    ```
+
+    Tout client MCP peut transmettre cet en-tête ; consultez [Cibler un service spécifique](/fr/clickstack/observability/mcp#managed-service-override) pour la configuration équivalente dans Cursor, VS Code et d&#39;autres outils.
+  </Step>
+</Steps>
+
+<Warning>
+  **MCP enregistre un état sur le service qu&#39;il cible**
+
+  Le serveur MCP peut créer des tableaux de bord, des alertes et des recherches enregistrées, en plus d&#39;exécuter des requêtes, et cet état est rattaché au service vers lequel la requête a été acheminée, comme tout [l&#39;état de l&#39;UI d&#39;observability](#point-clickstack). Un tableau de bord créé par un agent sur le service des agents n&#39;apparaîtra pas dans l&#39;UI d&#39;observability lancée depuis le service utilisé par vos ingénieurs, et une alerte créée sur ce service est évaluée avec ses ressources de calcul ; or un service d&#39;agents en veille retardera ou manquera ces évaluations, comme décrit [ci-dessous](#isolating-alerts). Acheminez les agents censés créer des artefacts durables vers le service utilisé par votre équipe.
+</Warning>
+
+## Alertes {#alerts}
+
+Une alerte est évaluée sur le service à partir duquel elle a été créée : les alertes s&#39;exécutent donc sur la même capacité de calcul que l&#39;UI, c&#39;est-à-dire le service en lecture seule dans cette topologie.
+
+<Note>
+  **Self-managed ClickHouse Observability**
+
+  Pour activer les alertes, au moins un utilisateur disposant des permissions **Administrateur du service** doit se connecter au moins une fois à l&#39;UI d&#39;observability. Cette connexion provisionne l&#39;utilisateur de base de données dédié chargé d&#39;exécuter les requêtes d&#39;alerte ; cet utilisateur est partagé par tous les services de l&#39;entrepôt. Consultez notre guide sur l&#39;[Attribution de l&#39;accès à Self-managed ClickHouse Observability](/fr/clickstack/self-configured/deployment/managed#configure-access).
+</Note>
+
+L&#39;évaluation des alertes constitue une charge de travail de requêtes récurrente. Prenez-la en compte dans le QPS sur lequel vous basez le dimensionnement du service en lecture seule : le [modèle de dimensionnement](/fr/clickstack/self-configured/managing/estimating-resources#refining-sizing-assumptions) agrège les requêtes de recherche, de tableau de bord et d&#39;alerte en un seul chiffre.
+
+### Isoler l&#39;évaluation des alertes {#isolating-alerts}
+
+La charge liée aux alertes ne peut pas être acheminée de manière centralisée, car ce sont les utilisateurs qui créent les alertes : toute personne qui ajoute une alerte dans l&#39;UI d&#39;observability l&#39;ajoute au service sur lequel elle travaille, et l&#39;alerte est évaluée sur la capacité de calcul de ce service. Aucun paramètre ne permet de déplacer ailleurs les alertes d&#39;un service.
+
+En revanche, vous pouvez isoler les alertes que vous gérez de manière centralisée, c&#39;est-à-dire celles qu&#39;une équipe plateforme maintient pour l&#39;ensemble de l&#39;organisation, qui sont généralement aussi celles évaluées le plus fréquemment. Attribuez-leur un service en lecture seule dédié dans l&#39;entrepôt, et créez-les depuis l&#39;UI d&#39;observability lancée sur ce service :
+
+| Service   | Type          | Usage                                                                        |
+| --------- | ------------- | ---------------------------------------------------------------------------- |
+| Ingestion | Read-write    | Collecteur OpenTelemetry                                                     |
+| Requêtes  | Lecture seule | UI d&#39;observability et alertes créées par les utilisateurs pour eux-mêmes |
+| Alertes   | Lecture seule | Alertes communes maintenues par l&#39;équipe plateforme                      |
+
+<Warning>
+  **Désactivez l&#39;auto-idling sur le service d&#39;alertes**
+
+  Configurer des alertes sur un service ne l&#39;empêche pas de se mettre en veille. Les évaluations d&#39;alertes qui arrivent sur un service mis en veille sont retardées le temps de son réveil, voire échouent purement et simplement : un service d&#39;alertes dont l&#39;auto-idling est activé risque donc de manquer des évaluations. Désactivez l&#39;auto-idling sur ce service et prévoyez qu&#39;il reste actif en permanence. Il en va de même partout où vos alertes sont évaluées : si elles s&#39;exécutent sur le service qui sert l&#39;UI, ce service ne peut pas non plus être mis en veille.
+</Warning>
+
+Les compromis restants découlent du fait que l&#39;état est propre à chaque service :
+
+* Les alertes communes, ainsi que les tableaux de bord associés, n&#39;existent que sur le service d&#39;alertes et ne sont pas visibles par les utilisateurs travaillant sur le service de requêtes. Les notifications sont envoyées aux mêmes [destinations](/fr/clickstack/observability/features/alerts) dans les deux cas : les utilisateurs perdent donc la visibilité sur les définitions, mais pas les alertes elles-mêmes.
+* Les sources du service d&#39;alertes sont des objets distincts. Celles qui utilisent le [schéma OpenTelemetry par défaut](/fr/clickstack/self-configured/deployment/managed#adding-data-sources) sont détectées automatiquement, mais les sources personnalisées doivent également y être configurées avant qu&#39;une alerte puisse y faire référence.
+
+Si un ensemble d&#39;alertes est suffisamment réduit pour que sa charge d&#39;évaluation soit négligeable par rapport au trafic des tableaux de bord, conservez tout sur un seul service en lecture seule : le coût opérationnel de la maintenance des définitions à deux endroits l&#39;emporte alors sur le gain.
+
+## Autres considérations {#considerations}
+
+**Auto-idling.** La première requête adressée à un service en lecture seule mis en veille doit attendre le démarrage du service : une utilisation intermittente se paie donc d&#39;un peu de latence, en échange de coûts réduits. Ne comptez pas sur les alertes pour empêcher la mise en veille : désactivez l&#39;auto-idling sur tout service chargé de les évaluer, comme décrit [plus haut](#isolating-alerts). L&#39;ingestion continue maintient certes le service de lecture-écriture actif, mais si votre ingestion est intermittente ou planifiée, le premier batch après une période d&#39;inactivité subit la même attente, ce qui se traduit par un retard de la télémétrie.
+
+**Sauvegardes.** Les sauvegardes sont effectuées uniquement sur le service principal, et couvrent les données de l&#39;ensemble de l&#39;entrepôt. La restauration d&#39;une sauvegarde crée un tout nouveau service, qui n&#39;est pas connecté à l&#39;entrepôt existant.
+
+**Limites du nombre de réplicas.** Le nombre total de répliques de l&#39;ensemble des services d&#39;un entrepôt est plafonné par défaut. Voir les [limites d’utilisation](/fr/products/cloud/guides/best-practices/usagelimits).
+
+**Isoler l&#39;observability des autres charges de travail.** Si vous ajoutez l&#39;UI d&#39;observability à un service qui exécute déjà d&#39;autres charges de travail, comme de l&#39;analyse de données applicative en temps réel, cette même fonctionnalité d&#39;entrepôt permet de dédier à l&#39;observability sa propre capacité de calcul. Consultez notre guide [Isoler les charges de travail d&#39;observability](/fr/clickstack/self-configured/managing/estimating-resources#isolating-workloads).
+
+Pour connaître l&#39;ensemble des comportements et limitations des entrepôts, consultez notre guide sur les [entrepôts](/fr/products/cloud/features/infrastructure/warehouses).
