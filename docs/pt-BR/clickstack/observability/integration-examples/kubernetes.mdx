@@ -1,0 +1,281 @@
+---
+slug: /clickstack/observability/integration-examples/kubernetes
+description: 'Colete logs de contêineres, métricas de infraestrutura e eventos do Kubernetes com o OpenTelemetry e envie-os para o ClickHouse Observability.'
+title: 'Monitoramento do Kubernetes com o ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['kubernetes', 'logs', 'métricas', 'observabilidade', 'monitoramento de contêineres']
+sidebarTitle: 'Kubernetes'
+---
+
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+Colete logs de contêineres, métricas de nós e do cluster e eventos do Kubernetes com dois coletores OpenTelemetry: um Conjunto de Daemon em cada nó e uma única Implantação para os dados de todo o cluster.
+
+## Pré-requisitos {#prerequisites}
+
+* Um serviço ClickHouse Observability
+* Um cluster do Kubernetes com nós Linux e permissão para criar cargas de trabalho, Funções de cluster e montagens do tipo host-path
+* `kubectl` configurado para o cluster de destino e Helm 3 instalado
+* Acesso à rede dos coletores ao endpoint OTLP HTTP do seu serviço, à API do Kubernetes e aos agentes de nó do Kubernetes
+
+Esses coletores reúnem dados de infraestrutura. Instrumente suas aplicações separadamente para enviar métricas e rastros de aplicação; consulte [Integrações com OpenTelemetry](/pt-BR/clickstack/observability/ingesting-data/opentelemetry).
+
+## Detalhes de conexão {#connection-details}
+
+<Tabs>
+  <Tab title="Totalmente gerenciado">
+    <BetaBadge label="Oferta em versão beta" />
+
+    Abra o ClickHouse Observability e acesse **Team Settings → Dados → Telemetria Gerenciada**. Copie o endpoint OTLP HTTP e a chave de API.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Detalhes de conexão da Telemetria Gerenciada](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Defina estas variáveis no seu terminal:
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    Use o endpoint exatamente como informado, incluindo a porta, sem o sufixo `/v1/logs` ou `/v1/metrics`.
+  </Tab>
+
+  <Tab title="Autogerenciado" id="self-managed">
+    Use o endpoint OTLP HTTP do seu coletor acessível a partir do cluster, junto com as respectivas configurações de autenticação. Se a autenticação estiver desabilitada, defina `OTEL_EXPORTER_OTLP_AUTHORIZATION` como uma string vazia e omita o bloco `headers` do exportador abaixo. Consulte o [guia de configuração autogerenciada](/pt-BR/clickstack/self-configured/getting-started/managed).
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+## Implantar os coletores {#deploy-collectors}
+
+<Steps>
+  <Step title="Crie o namespace e as configurações de conexão" id="connection-settings">
+    Verifique se o `kubectl` aponta para o cluster correto:
+
+    ```bash
+    kubectl config current-context
+    kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
+
+    kubectl create configmap observability-connection -n observability \
+      --from-literal=endpoint="$OTEL_EXPORTER_OTLP_ENDPOINT" \
+      --dry-run=client -o yaml | kubectl apply -f -
+
+    kubectl create secret generic observability-connection -n observability \
+      --from-literal=authorization="$OTEL_EXPORTER_OTLP_AUTHORIZATION" \
+      --dry-run=client -o yaml | kubectl apply -f -
+    ```
+
+    Os dois coletores usam essas configurações no namespace `observability`.
+  </Step>
+
+  <Step title="Salve a configuração compartilhada" id="shared-configuration">
+    Salve o conteúdo a seguir como `k8s_common.yaml`:
+
+    ```yaml
+    image:
+      repository: otel/opentelemetry-collector-contrib
+      tag: "0.161.0"
+    command:
+      name: otelcol-contrib
+    resources:
+      limits:
+        memory: 512Mi
+    presets:
+      kubernetesAttributes:
+        enabled: true
+    extraEnvs:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        valueFrom:
+          configMapKeyRef:
+            name: observability-connection
+            key: endpoint
+      - name: OTEL_EXPORTER_OTLP_AUTHORIZATION
+        valueFrom:
+          secretKeyRef:
+            name: observability-connection
+            key: authorization
+    service:
+      enabled: false
+    ports:
+      otlp:
+        enabled: false
+      otlp-http:
+        enabled: false
+      jaeger-compact:
+        enabled: false
+      jaeger-thrift:
+        enabled: false
+      jaeger-grpc:
+        enabled: false
+      zipkin:
+        enabled: false
+    config:
+      receivers:
+        otlp: null
+        jaeger: null
+        zipkin: null
+        prometheus: null
+      exporters:
+        debug: null
+        otlp_http/observability:
+          endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+          headers:
+            authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+          compression: gzip
+      processors:
+        batch:
+          timeout: 5s
+          send_batch_size: 500
+          send_batch_max_size: 500
+      service:
+        pipelines:
+          logs:
+            receivers: []
+            exporters: [otlp_http/observability]
+          metrics:
+            receivers: []
+            exporters: [otlp_http/observability]
+          traces: null
+    ```
+
+    As predefinições do chart adicionam os receptores, o processador de metadados do Kubernetes, as regras de RBAC e as montagens de que cada coletor precisa. A configuração compartilhada encaminha logs e métricas para o seu serviço e desabilita os receptores de ingestão de aplicações que não são utilizados.
+  </Step>
+
+  <Step title="Configurar a coleta nos nós" id="daemonset-configuration">
+    Salve o conteúdo a seguir como `k8s_daemonset.yaml`:
+
+    ```yaml
+    mode: daemonset
+    presets:
+      logsCollection:
+        enabled: true
+        storeCheckpoints: true
+      hostMetrics:
+        enabled: true
+      kubeletMetrics:
+        enabled: true
+    config:
+      receivers:
+        kubeletstats:
+          insecure_skip_verify: true
+    ```
+
+    O Conjunto de Daemon lê os logs dos contêineres e coleta métricas do host e do agente de nó do Kubernetes. Os pontos de verificação preservam as posições de leitura dos logs entre restarts do coletor. Esta predefinição executa o coletor como root para gravar os pontos de verificação no nó; as configurações de segurança de pods do seu cluster devem permitir as montagens de host que ele utiliza.
+
+    O exemplo ignora a verificação de certificados do agente de nó do Kubernetes em clusters cujos certificados desse agente não são considerados confiáveis pelo coletor. Se o seu cluster fornecer certificados confiáveis para o agente de nó do Kubernetes, defina `insecure_skip_verify` como `false` e configure a CA adequada.
+  </Step>
+
+  <Step title="Configurar a coleta do cluster" id="deployment-configuration">
+    Salve o conteúdo como `k8s_deployment.yaml`:
+
+    ```yaml
+    mode: deployment
+    replicaCount: 1
+    presets:
+      kubernetesEvents:
+        enabled: true
+      clusterMetrics:
+        enabled: true
+    ```
+
+    Mantenha uma única réplica para evitar a coleta duplicada de métricas e eventos do cluster.
+  </Step>
+
+  <Step title="Instale as releases do Helm" id="install-collectors">
+    Execute os comandos a partir do diretório que contém os três arquivos de configuração. Estes exemplos usam o chart do Coletor OpenTelemetry `0.175.1` e o Collector Contrib `0.161.0`:
+
+    ```bash
+    helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+    helm repo update open-telemetry
+
+    helm upgrade --install observability-nodes open-telemetry/opentelemetry-collector \
+      --version 0.175.1 --namespace observability \
+      -f k8s_common.yaml -f k8s_daemonset.yaml --wait
+
+    helm upgrade --install observability-cluster open-telemetry/opentelemetry-collector \
+      --version 0.175.1 --namespace observability \
+      -f k8s_common.yaml -f k8s_deployment.yaml --wait
+    ```
+
+    Verifique os coletores:
+
+    ```bash
+    kubectl get pods -n observability
+    kubectl logs -n observability -l app.kubernetes.io/instance=observability-nodes --tail=50
+    kubectl logs -n observability -l app.kubernetes.io/instance=observability-cluster --tail=50
+    ```
+
+    Se os seus nós tiverem taints de agendamento, adicione as `tolerations` adequadas ao arquivo `k8s_daemonset.yaml` para os nós que você pretende monitorar.
+  </Step>
+
+  <Step title="Verifique os dados" id="verify-data">
+    Aguarde alguns intervalos de coleta e, em seguida, abra o ClickHouse Observability:
+
+    * Em **Busca**, selecione sua fonte de dados **Logs** e **Last 15 minutes**. Expanda um log de contêiner e verifique atributos como `k8s.namespace.name`, `k8s.pod.name` e `k8s.node.name`.
+    * No **Chart Explorer**, selecione sua fonte de dados **Metrics** e procure métricas que comecem com `k8s.` ou `system.`.
+    * Consulte sua fonte de dados **Logs** para acompanhar os eventos do Kubernetes à medida que ocorrem. O volume de eventos depende da atividade do cluster.
+  </Step>
+</Steps>
+
+## Metadados da aplicação {#application-metadata}
+
+Para aplicações instrumentadas, adicione metadados do pod do Kubernetes por meio da downward API do Kubernetes. Mescle esta lista `env` à configuração existente do contêiner da sua aplicação, preservando os atributos de recurso já definidos:
+
+```yaml
+env:
+  - name: OTEL_SERVICE_NAME
+    value: my-app
+  - name: POD_NAME
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.name
+  - name: POD_UID
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.uid
+  - name: POD_NAMESPACE
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.namespace
+  - name: NODE_NAME
+    valueFrom:
+      fieldRef:
+        fieldPath: spec.nodeName
+  - name: OTEL_RESOURCE_ATTRIBUTES
+    value: k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME)
+```
+
+O processador de metadados do Kubernetes enriquece os logs de contêiner coletados com metadados da carga de trabalho. Essas variáveis da aplicação associam a identidade do pod do Kubernetes à telemetria emitida pelo SDK do OpenTelemetry da sua aplicação.
+
+## Solução de problemas {#troubleshooting}
+
+### Os coletores não iniciam {#collectors-not-starting}
+
+Inspecione os eventos do pod do Kubernetes com `kubectl describe pod -n observability POD_NAME`. Verifique os downloads de imagens, as restrições de agendamento e as restrições de segurança do pod do Kubernetes, além de confirmar que o ConfigMap e o Secret existem no mesmo namespace dos releases.
+
+### Nenhum log ou métrica é exibido {#no-data}
+
+Verifique os logs do coletor em busca de erros de autenticação ou de exportação. Confirme se o endpoint de destino está acessível a partir do cluster. Em caso de erros do agente de nó do Kubernetes, verifique a conectividade com a porta `10250`, as configurações de certificado e as permissões de RBAC geradas. A coleta de logs de contêineres exige acesso ao diretório `/var/log/pods` do nó; ambientes de nós restritos ou serverless podem não oferecer suporte a essas montagens do host.
+
+### Configurações de conexão alteradas {#connection-settings-changed}
+
+Após atualizar o ConfigMap ou o Secret, reinicie os coletores para que recarreguem suas variáveis de ambiente:
+
+```bash
+kubectl rollout restart daemonset -n observability -l app.kubernetes.io/instance=observability-nodes
+kubectl rollout restart deployment -n observability -l app.kubernetes.io/instance=observability-cluster
+```
+
+## Próximas etapas {#next-steps}
+
+* Crie [dashboards](/pt-BR/clickstack/observability/features/dashboards/overview) para monitorar a saúde do cluster e das cargas de trabalho.
+* Configure [alertas](/pt-BR/clickstack/observability/features/alerts).
+* Consulte o [Chart do Helm do OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/opentelemetry-collector-0.175.1/charts/opentelemetry-collector) para ver outras configurações de implantação.

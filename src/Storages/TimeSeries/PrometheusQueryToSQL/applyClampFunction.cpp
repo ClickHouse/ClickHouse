@@ -3,6 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 
@@ -10,54 +11,8 @@
 #include <limits>
 
 
-namespace DB::ErrorCodes
-{
-    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
-}
-
-
 namespace DB::PrometheusQueryToSQL
 {
-
-namespace
-{
-    /// Checks if the types of the specified arguments are valid for a clamping function.
-    void checkArgumentTypes(
-        const PrometheusQueryTree::Function * function_node,
-        const std::vector<SQLQueryPiece> & arguments,
-        size_t expected_num_arguments,
-        const ConverterContext & context)
-    {
-        const auto & function_name = function_node->function_name;
-
-        if (arguments.size() != expected_num_arguments)
-        {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Function '{}' expects {} arguments, but was called with {} arguments",
-                            function_name, expected_num_arguments, arguments.size());
-        }
-
-        if (arguments[0].type != ResultType::INSTANT_VECTOR)
-        {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Function '{}' expects first argument of type {}, but expression {} has type {}",
-                            function_name, ResultType::INSTANT_VECTOR,
-                            getPromQLText(arguments[0], context), arguments[0].type);
-        }
-
-        for (size_t i = 1; i != arguments.size(); ++i)
-        {
-            if (arguments[i].type != ResultType::SCALAR)
-            {
-                throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                                "Function '{}' expects argument #{} of type {}, but expression {} has type {}",
-                                function_name, i + 1, ResultType::SCALAR,
-                                getPromQLText(arguments[i], context), arguments[i].type);
-            }
-        }
-    }
-}
-
 
 bool isClampFunction(std::string_view function_name)
 {
@@ -74,7 +29,10 @@ SQLQueryPiece applyClampFunction(
     bool has_max = (function_name != "clamp_min");
     size_t num_arguments = 1 + has_min + has_max;
 
-    checkArgumentTypes(function_node, arguments, num_arguments, context);
+    checkNumberOfArguments(function_node, arguments, num_arguments);
+    checkArgumentType(function_node, arguments, 0, ResultType::INSTANT_VECTOR, context);
+    for (size_t i = 1; i != arguments.size(); ++i)
+        checkArgumentType(function_node, arguments, i, ResultType::SCALAR, context);
 
     size_t min_index = 1;
     size_t max_index = has_min ? 2 : 1;

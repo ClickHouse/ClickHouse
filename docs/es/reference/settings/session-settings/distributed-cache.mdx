@@ -160,6 +160,16 @@ Solo tiene efecto en ClickHouse Cloud. Número máximo de paquetes en tránsito 
 
 Solo tiene efecto en ClickHouse Cloud. Número mínimo de bytes para realizar un seek en caché distribuida.
 
+## distributed_cache_min_inflight_bytes_to_discard_connection {#distributed_cache_min_inflight_bytes_to_discard_connection}
+
+<CloudOnlyBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="4194304" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "4194304"},{"label": "Nueva configuración para conservar una conexión de la Distributed Cache con una pequeña cantidad de datos in-flight cuando se cancela una solicitud de lectura. El valor predeterminado es 4 MiB; 0 restaura el comportamiento anterior (descartar la conexión siempre que aún puedan llegar datos)."}]}]} />
+
+Solo tiene efecto en ClickHouse Cloud. Cuando se cancela una solicitud de lectura de la Distributed Cache mientras aún pueden llegar datos, la conexión se descarta si el número estimado de bytes in-flight supera este valor; en caso contrario, se devuelve al grupo y la siguiente solicitud que use la conexión se encarga de vaciarlos. Con 0, la conexión se descarta siempre. En un reposicionamiento, `distributed_cache_min_inflight_bytes_to_discard_connection_on_seek` decide primero si se vuelve a enviar la solicitud por la misma conexión; si, por el contrario, la solicitud se cancela, también se aplica este parámetro de configuración. A diferencia de aquel, aquí 0 significa «descartar siempre». No tiene efecto si `distributed_cache_discard_connection_if_unread_data` está deshabilitado, ya que en ese caso la conexión se conserva siempre.
+
 ## distributed_cache_min_inflight_bytes_to_discard_connection_on_seek {#distributed_cache_min_inflight_bytes_to_discard_connection_on_seek}
 
 <CloudOnlyBadge />
@@ -260,7 +270,7 @@ Solo tiene efecto en ClickHouse Cloud. Muestra las columnas `certificate` y `sig
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "3000"},{"label": "Nueva configuración"}]}]} />
 
-Solo tiene efecto en ClickHouse Cloud. Tiempo de espera para enviar datos al servidor de caché distribuida, en milisegundos. Si un client necesita enviar datos pero no puede enviar ningún byte dentro de este intervalo, se lanza una excepción.
+Solo tiene efecto en ClickHouse Cloud. Tiempo de espera para enviar datos al servidor de Distributed Cache, en milisegundos. Si un client necesita enviar datos pero no puede enviar ningún byte dentro de este intervalo, se lanza una excepción.
 
 ## distributed_cache_tcp_keep_alive_timeout_ms {#distributed_cache_tcp_keep_alive_timeout_ms}
 

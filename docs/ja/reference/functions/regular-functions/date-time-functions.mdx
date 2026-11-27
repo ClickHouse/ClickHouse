@@ -1407,11 +1407,11 @@ SELECT now(), dateTrunc('hour', now(), 'Asia/Istanbul');
 この関数の逆の操作を行うのは [`parseDateTime`](/ja/reference/functions/regular-functions/type-conversion-functions#parseDateTime) です。
 
 置換フィールドを使用すると、結果の文字列のパターンを定義できます。
-以下の表の Example カラムは、`2018-01-02 22:33:44` をフォーマットした結果を示しています。
+以下の表の 例 カラムは、`2018-01-02 22:33:44` をフォーマットした結果を示しています。
 
 **置換フィールド:**
 
-| Placeholder | Description                           | Example    |
+| プレースホルダー | 説明                           | 例    |
 | ----------- | ------------------------------------- | ---------- |
 | %a          | 省略形の曜日名 (Mon-Sun)                     | Mon        |
 | %b          | 省略形の月名 (Jan-Dec)                      | Jan        |
@@ -1528,7 +1528,7 @@ LIMIT 10
 
 ## formatDateTimeInJodaSyntax {#formatDateTimeInJodaSyntax}
 
-導入バージョン: v20.1.0
+導入バージョン: v23.1.0
 
 `formatDateTime`に似ていますが、MySQL形式ではなくJoda形式で日時をフォーマットする点が異なります。[Joda Timeのドキュメント](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html)を参照してください。
 
@@ -4724,10 +4724,12 @@ SELECT toStartOfISOYear(toDateTime('2023-04-21 10:20:30'))
 
 たとえば、
 
-* `toStartOfInterval(t, INTERVAL 1 YEAR)` は `toStartOfYear(t)` と同じ結果を返します。
-* `toStartOfInterval(t, INTERVAL 1 MONTH)` は `toStartOfMonth(t)` と同じ結果を返します。
-* `toStartOfInterval(t, INTERVAL 1 DAY)` は `toStartOfDay(t)` と同じ結果を返します。
-* `toStartOfInterval(t, INTERVAL 15 MINUTE)` は `toStartOfFifteenMinutes(t)` と同じ結果を返します。
+* `toStartOfInterval(t, INTERVAL 1 YEAR)` は `toStartOfYear(t)` と同じ境界に丸めます。
+* `toStartOfInterval(t, INTERVAL 1 MONTH)` は `toStartOfMonth(t)` と同じ境界に丸めます。
+* `toStartOfInterval(t, INTERVAL 1 DAY)` は `toStartOfDay(t)` と同じ境界に丸めます。
+* `toStartOfInterval(t, INTERVAL 15 MINUTE)` は `toStartOfFifteenMinutes(t)` と同じ境界に丸めます。
+
+結果の型は、これらの関数の結果の型と異なる場合があります (後述)。
 
 計算は、特定の時点を基準に行われます。
 
@@ -4751,6 +4753,13 @@ unit に `WEEK` を指定した場合、`toStartOfInterval` は週の開始日�
 
 2 番目のオーバーロードは、TimescaleDB の `time_bucket()` 関数、または PostgreSQL の `date_bin()` 関数をエミュレートします。
 
+結果は `value` 引数と同じ型になります。`Date` には `Date`、`Date32` には `Date32`、`DateTime` には `DateTime`、`DateTime64` には小数点以下の桁数が同じ `DateTime64` が返されます。
+唯一の例外は、`DateTime64` 引数の小数点以下の桁数より細かい秒未満の単位を指定した場合です (たとえば、`DateTime64(0)` に対する `INTERVAL 1500 MILLISECOND`)。この場合、結果はバケット境界を表現できるよう、単位に応じた小数点以下の桁数になります。
+`Date` または `DateTime` の範囲を下回る結果 (たとえば、`1970-01-01` を週単位で切り捨てた場合) は、その型の最小値に制限されます。
+設定 [`to_start_of_interval_preserves_argument_type`](/ja/reference/settings/session-settings#to_start_of_interval_preserves_argument_type) を無効化した場合、結果の型は 26.11 より前のバージョンと同様に、インターバルの単位によって決まります。
+`WEEK` 以上の単位では `Date`、`DAY` から `SECOND` までの単位では `DateTime`、秒未満の単位では単位に応じた小数点以下の桁数の `DateTime64` になります。
+これは `origin` を指定しないオーバーロードに適用されます。`origin` を指定するオーバーロードでは、この場合も引数の型が維持されます。ただし、`DateTime64` 引数に秒未満の単位を組み合わせた場合、結果は単位に応じた小数点以下の桁数になります。
+
 **構文**
 
 ```sql
@@ -4762,12 +4771,12 @@ toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 
 **引数**
 
-* `value` — 切り下げる日付または日時の値。[`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
+* `value` — 切り下げる日付または日時の値。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 * `x` — インターバルの長さを表す数値。- `unit` — インターバルの単位: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND. - `time_zone` — 任意。文字列で指定するタイムゾーン名。- `origin` — 任意。計算の始点 (2 番目のオーバーロードのみ)。
 
 **戻り値**
 
-入力値を含むインターバルの開始時点を返します。[`DateTime`](/ja/reference/data-types/datetime)
+入力値を含むインターバルの開始時点を、入力値と同じ型で返します。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 
 **例**
 
@@ -4779,7 +4788,7 @@ SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
 
 ```response title=Response
 ┌─toStartOfInterval(toDateTime('2023-01-15 14:30:00'), toIntervalMonth(1))─┐
-│                                                               2023-01-01 │
+│                                                      2023-01-01 00:00:00 │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -5372,6 +5381,7 @@ int32samoa: 1546300800
 導入バージョン: v23.8.0
 
 日付または日時の値を、あるタイムゾーンから UTC タイムゾーンのタイムスタンプに変換します。この関数は主に、Apache Spark や同様のフレームワークとの互換性を確保するために用意されています。
+夏時間の切り替えによって 2 回現れるローカル時刻や存在しないローカル時刻は、`toDateTime` と同様に変換されます。
 
 **構文**
 

@@ -11,6 +11,7 @@
 namespace DB
 {
 struct KafkaSettings;
+class NamedCollection;
 class VirtualColumnsDescription;
 
 struct KafkaConfigLoader
@@ -53,5 +54,10 @@ struct KafkaConfigLoader
 
     template <typename TKafkaStorage>
     static cppkafka::Configuration getProducerConfiguration(TKafkaStorage & storage, const ProducerConfigParams & params);
+
+    /// Throws if a named collection created with SQL sets a librdkafka property that is not explicitly allowed.
+    /// The same check is done when the configuration of a consumer or a producer is loaded, because the named
+    /// collection can change while the table exists.
+    static void checkNamedCollection(const NamedCollection & collection);
 };
 }

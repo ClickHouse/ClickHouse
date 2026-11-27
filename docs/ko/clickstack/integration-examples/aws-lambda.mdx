@@ -26,13 +26,13 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
 </Info>
 
 <div id="existing-lambda">
-  ## 기존 Lambda 함수와의 통합
+  ## 기존 Lambda 함수와의 통합 {#existing-lambda}
 </div>
 
 이 섹션에서는 Rotel Lambda Extension을 사용해 기존 AWS Lambda 함수에서 로그와 트레이스를 ClickStack으로 전송하도록 구성하는 방법을 설명합니다.
 
 <div id="prerequisites">
-  ### 사전 요구 사항
+  ### 사전 요구 사항 {#prerequisites}
 </div>
 
 * 실행 중인 ClickStack 인스턴스
@@ -64,7 +64,7 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
   <Step title="Lambda 함수에 Rotel 레이어 추가" id="add-layer">
     *이 예시에서는 `{arch}`, `{region}`, `{version}`을 위의 적절한 값으로 바꾸십시오.*
 
-    ##### 옵션 1: AWS Console
+##### 옵션 1: AWS Console {#console}
 
     1. AWS Lambda 콘솔을 엽니다
     2. Lambda 함수로 이동합니다
@@ -76,7 +76,7 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
        ```
     6. **Add**를 클릭합니다
 
-    ##### 옵션 2: AWS CLI
+##### 옵션 2: AWS CLI {#cli}
 
     ```bash
     aws lambda update-function-configuration \
@@ -84,7 +84,7 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
       --layers arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
     ```
 
-    ##### 옵션 3: AWS SAM
+##### 옵션 3: AWS SAM {#sam}
 
     ```yaml
     Resources:
@@ -100,7 +100,7 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
   <Step title="확장 기능이 ClickStack으로 내보내도록 구성하기" id="configure-extension">
     Rotel Lambda Extension은 환경 변수를 사용해 구성합니다. OTLP exporter endpoint가 ClickStack 인스턴스를 가리키도록 구성해야 합니다. 다음 예시에서는 AWS Lambda 함수가 ClickStack 인스턴스에 연결할 수 있다고 가정합니다.
 
-    ##### 기본 구성(환경 변수)
+##### 기본 구성(환경 변수) {#basic-config}
 
     다음 환경 변수를 Lambda 함수에 추가하세요:
 
@@ -115,7 +115,7 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
     ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
     ```
 
-    ##### 고급 구성 (`.env` 파일 사용)
+##### 고급 구성 (`.env` 파일 사용) {#advanced-config}
 
     더 복잡한 구성이 필요하다면 Lambda 함수 번들 내에 `rotel.env` 파일을 생성하세요:
 
@@ -133,7 +133,7 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
     ROTEL_ENV_FILE=/var/task/rotel.env
     ```
 
-    ##### AWS Secrets Manager 또는 Parameter Store 사용
+##### AWS Secrets Manager 또는 Parameter Store 사용 {#secrets}
 
     프로덕션 배포 환경에서는 API Key와 같은 민감한 값을 AWS Secrets Manager 또는 Parameter Store에 저장하세요.
 
@@ -212,27 +212,19 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
     ```
   </Step>
 
-  <Step title="HyperDX에서 로그 확인" id="verify-logs">
-    구성이 완료되면 HyperDX(ClickStack의 UI)에 로그인한 후 로그가 정상적으로 유입되는지 확인합니다.
+  <Step title="ClickStack UI에서 로그 확인" id="verify-logs">
+    구성이 완료되면 ClickStack UI(ClickStack의 UI)에 로그인한 후 로그가 정상적으로 유입되는지 확인합니다.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Lambda 로그 보기](/images/clickstack/lambda/lambda-log-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Lambda 로그 보기](/images/clickstack/lambda/lambda-log-view.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Lambda 로그 세부 정보](/images/clickstack/lambda/lambda-log.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Lambda 로그 세부 정보](/images/clickstack/lambda/lambda-log.webp)
+      </Frame>
     </div>
 
     로그에서 다음과 같은 주요 속성을 확인하십시오.
@@ -246,14 +238,14 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
 </Steps>
 
 <div id="disable-cloudwatch">
-  ## CloudWatch Logs 비활성화(비용 최적화)
+  ## CloudWatch Logs 비활성화(비용 최적화) {#disable-cloudwatch}
 </div>
 
 기본적으로 AWS Lambda는 모든 로그를 CloudWatch Logs로 전송하며, 규모가 커지면 비용이 많이 발생할 수 있습니다. 로그가 ClickStack으로 정상적으로 수집되는 것을 확인했다면 비용을 줄이기 위해 CloudWatch 로깅을 비활성화할 수 있습니다.
 
 <Steps>
   <Step title="실행 역할에서 CloudWatch 권한 제거" id="remove-permissions">
-    1. AWS Console을 열고 **AWS Lambda**로 이동합니다
+    1. AWS 콘솔을 열고 **AWS Lambda**로 이동합니다
     2. 대상 Lambda 함수로 이동합니다
     3. **Configuration** → **Permissions**를 선택합니다
     4. 실행 역할 이름을 클릭해 IAM 콘솔을 엽니다
@@ -267,7 +259,7 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
     함수를 다시 호출한 뒤 다음을 확인합니다:
 
     1. 새로운 CloudWatch 로그 스트림이 생성되지 않습니다
-    2. 로그가 계속 ClickStack/HyperDX에 표시됩니다
+    2. 로그가 계속 ClickStack/ClickStack UI에 표시됩니다
 
     ```bash
     # 정책 변경 후에는 새 로그 스트림이 표시되지 않아야 합니다
@@ -281,7 +273,7 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
 </Steps>
 
 <div id="auto-instrumentation">
-  ## OpenTelemetry 자동 계측 추가
+  ## OpenTelemetry 자동 계측 추가 {#auto-instrumentation}
 </div>
 
 Rotel Lambda Extension은 OpenTelemetry 자동 계측 레이어와 원활하게 연동되어, 로그뿐 아니라 분산 트레이스와 메트릭도 수집합니다.
@@ -333,31 +325,27 @@ Rotel Lambda Extension은 OpenTelemetry 자동 계측 레이어와 원활하게 
     ```
   </Step>
 
-  <Step title="HyperDX에서 트레이스 확인" id="verify-traces">
+  <Step title="ClickStack UI에서 트레이스 확인" id="verify-traces">
     함수를 호출한 후 다음을 확인하십시오:
 
-    1. HyperDX의 **Traces** 보기로 이동합니다
+    1. ClickStack UI의 **Traces** 보기로 이동합니다
     2. Lambda 함수의 스팬이 포함된 트레이스가 표시되어야 합니다
     3. 트레이스는 `trace_id` 및 `span_id` 속성을 통해 로그와 연관됩니다
   </Step>
 </Steps>
 
-<div id="examples">
-  ## 예시 애플리케이션
-</div>
+## 예시 애플리케이션 {#examples}
 
 Rotel Lambda Extension을 보여주는 Python 예시 앱을 확인하세요:
 
 * **[Python + ClickHouse](https://github.com/rotel-dev/python-aws-lambda-clickhouse-example)**: 수동으로 OpenTelemetry 계측을 적용한 Python 애플리케이션으로, 트레이스와 로그를 ClickHouse로 직접 전송합니다
 
-<div id="join-rotel-community">
-  ## Rotel 커뮤니티에 참여하세요
-</div>
+## Rotel 커뮤니티에 참여하세요 {#join-rotel-community}
 
 Rotel에 관해 궁금한 점이 있으면 [Rotel Discord 서버](https://rotel.dev/discord) 에 참여하여 피드백을 남기거나 질문해 주세요. 개선에 기여하려면 [Rotel Lambda Extension](https://github.com/rotel-dev/rotel-lambda-extension) 도 살펴보세요.
 
 <div id="resources">
-  ## 추가 자료
+  ## 추가 자료 {#resources}
 </div>
 
 * **[Rotel Lambda Extension](https://github.com/rotel-dev/rotel-lambda-extension)**: 소스 코드 및 자세한 문서

@@ -166,7 +166,7 @@ Configuración de la compresión de datos para las tablas con motor [MergeTree](
 * Si una parte de datos coincide con varios conjuntos de condiciones, ClickHouse usa el último conjunto de condiciones que coincida (las secciones `<case>` se comprueban en orden y cada coincidencia sobrescribe la elección anterior).
 
 <Note>
-  Si no se cumple ninguna condición para una parte de datos, ClickHouse usa el valor predeterminado integrado que tiene en cuenta el tamaño: `LZ4` por debajo de 100 MB y `ZSTD(3)` a partir de ese valor. Al igual que en las condiciones `min_part_size` anteriores, el tamaño es el que se conoce en el momento en que se debe elegir el códec, antes de escribir los datos: `0` para una parte recién insertada, y el tamaño de las partes de origen para un merge o una mutación. Por lo tanto, una reescritura que reduce su entrada, como un `TTL DELETE` o un merge de collapsing, se clasifica según el tamaño de la entrada y puede producir una parte por debajo del umbral que aun así sea `ZSTD(3)`.
+  Si no se cumple ninguna condición para una parte de datos, ClickHouse usa el valor predeterminado integrado que tiene en cuenta el tamaño: `LZ4` por debajo de 100 MB y `ZSTD(3)` a partir de ese valor. Al igual que en las condiciones `min_part_size` anteriores, el tamaño es el que se conoce en el momento en que se debe elegir el códec, antes de escribir los datos: el tamaño sin comprimir del bloque insertado para una parte recién insertada, y el tamaño de las partes de origen para un merge o una mutación. Así, las inserciones pequeñas se escriben con `LZ4` y las grandes, directamente con `ZSTD(3)`. Por lo tanto, una reescritura que reduce su entrada, como un `TTL DELETE` o un merge de collapsing, se clasifica según el tamaño de la entrada y puede producir una parte por debajo del umbral que aun así sea `ZSTD(3)`.
 </Note>
 
 **Ejemplo**
@@ -486,6 +486,63 @@ Este ajuste especifica la ruta de la caché.
 <filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>
 ```
 
+## filesystem_isolation {#filesystem_isolation}
+
+<SettingsInfoBlock type="FilesystemIsolationMode" default_value="disabled" changeable_without_restart="No" />
+
+Indica si el servidor se aísla del sistema de archivos del host durante el inicio, manteniendo visibles solo las rutas que necesita, tal como hace un contenedor. Así, un atacante que logre ejecutar código dentro del proceso del servidor no encontrará ningún shell ni otro programa que ejecutar, y no podrá leer ni modificar los archivos del host fuera de los directorios del servidor.
+
+Durante el inicio, antes de lanzar ningún thread, el servidor se traslada a un nuevo [espacio de nombres de montaje](https://man7.org/linux/man-pages/man7/mount_namespaces.7.html) cuya raíz es un `tmpfs` vacío de solo lectura, monta en él mediante bind mount, en sus ubicaciones habituales, únicamente las rutas que necesita, y elimina la raíz original con `pivot_root`. Lo que permanece visible:
+
+* Las rutas de la configuración en las que escribe el servidor: `path`, `tmp_path`, `user_files_path`, `format_schema_path`, `filesystem_caches_path`, los directorios de los discos locales y de los metadatos de los demás discos en `storage_configuration`, los directorios de los archivos de log, del archivo pid y de `core_path`, los directorios de almacenamiento del Keeper integrado, `access_control_path`, las rutas de todas las entradas `local_directory` en `user_directories`, `user_defined_path`, `workload_path`, `named_collections_storage.path` y `backups.allowed_path`. Se montan en modo lectura-escritura, pero con `noexec`, para que nada de lo que se escriba en ellas pueda ejecutarse.
+* Las rutas de la configuración que el servidor solo lee, montadas en modo solo lectura: el directorio del archivo de configuración, los directorios de los archivos incluidos y de los destinos de los enlaces simbólicos presentes entre los archivos de configuración, `users_config`, `user_scripts_path` (los programas que contiene pueden ejecutarse), `top_level_domains_path`, `google_protos_path`, los directorios de los certificados TLS y las claves de `openSSL`, `grpc` y `ldap_servers`, el keytab de Kerberos y el programa `clickhouse-odbc-bridge` situado junto al ejecutable del servidor, con su cargador dinámico y las bibliotecas compartidas que necesita, tal como las localiza el cargador dinámico. Las ubicaciones de los logs del bridge (`logger.odbc_bridge_log`, `logger.odbc_bridge_errlog`, `logger.odbc_bridge_stdout`, `logger.odbc_bridge_stderr`) admiten escritura.
+* El ejecutable del servidor y las bibliotecas compartidas con las que está enlazado, junto con los enlaces simbólicos contiguos que apuntan a ellas (como `libc.so.6`), y el directorio de los perfiles de heap de jemalloc si su opción `prof_prefix` está configurada.
+* Lo que necesita cualquier programa en Linux: `/proc` (con `/proc/sys`, `/proc/sysrq-trigger`, `/proc/bus`, `/proc/fs` y `/proc/irq`, y los montajes que contienen, en modo solo lectura, como en los contenedores de Docker), `/sys` (solo lectura), `/dev/null`, `/dev/zero`, `/dev/full`, `/dev/random`, `/dev/urandom`, una instancia privada de `devpts` en `/dev/pts` con `/dev/ptmx` para los pseudoterminales de la terminal web y del servidor SSH, la configuración de red en `/etc` (`hosts`, `resolv.conf`, `nsswitch.conf`, `host.conf`, `gai.conf`, `services`, `protocols`), `/etc/passwd`, `/etc/group`, `/etc/localtime`, la base de datos de zonas horarias y los certificados de CA (`/etc/ssl`, `/etc/pki`, `/etc/ca-certificates`, `/usr/share/ca-certificates`, `/usr/local/share/ca-certificates`) con los destinos de los enlaces que contienen, al igual que en un directorio de CA indicado en `caConfig`, `/usr/lib/debug` para los símbolos de las trazas de pila, el socket del gestor de servicios indicado en la variable de entorno `NOTIFY_SOCKET` y `/dev/log` si `logger.use_syslog` está habilitado. Si `/dev/log` es un enlace simbólico, como `/dev/log -> /run/systemd/journal/dev-log` con systemd, el directorio de su destino es visible, de modo que se detecta un socket recreado allí por un servicio reiniciado. Un socket situado directamente en `/dev` que el daemon de syslog recrea al reiniciarse no vuelve a detectarse hasta que se reinicia el servidor, porque el `/dev` del host no es visible.
+* Un `/tmp` privado y vacío.
+* Las rutas indicadas en la sección `filesystem_isolation_paths` de la configuración, mediante los elementos `<read_only>` y `<read_write>`.
+
+Los enlaces simbólicos que se encuentran a lo largo de una ruta se recrean dentro del entorno aislado, y sus destinos también se hacen visibles. Un directorio que contiene un archivo indicado en la configuración, como un certificado, se monta completo, de modo que, si el archivo se renueva y se reemplaza por uno nuevo, este resulte visible. Si dicho archivo es un enlace simbólico, como ocurre con los certificados de Let&#39;s Encrypt, también se montan los directorios en los que se encuentran los destinos de los enlaces. Los directorios con permiso de escritura que no existen se crean antes del aislamiento, tal como lo haría el servidor de todos modos.
+
+No hay nada más visible; en particular, no hay ninguna shell: las [Funciones Definidas por el Usuario Ejecutables](/es/sql-reference/functions/udf), los diccionarios ejecutables, la función de tabla `executable` y el motor de tablas `Executable` solo pueden ejecutar programas que no necesiten nada fuera de las rutas visibles. Para ejecutar un script, haga visibles su intérprete y las bibliotecas con las que está enlazado, por ejemplo:
+
+```xml
+<filesystem_isolation_paths>
+<read_only>/bin</read_only>
+<read_only>/usr/bin</read_only>
+<read_only>/lib</read_only>
+<read_only>/lib64</read_only>
+<read_only>/usr/lib</read_only>
+</filesystem_isolation_paths>
+```
+
+o desactivar el aislamiento. Lo mismo se aplica a un archivo al que un motor de tabla, una función de tabla o un diccionario hace referencia mediante una ruta absoluta situada fuera de las rutas visibles. Los controladores de las Funciones Definidas por el Usuario Ejecutables (`allow_experimental_executable_udf_drivers`) no son compatibles: se rechaza `CREATE FUNCTION` con un controlador, porque los programas que generan los controladores se encuentran en `dynamic_user_defined_executable_functions_path`, que admite escritura y, por lo tanto, no es ejecutable. `clickhouse-odbc-bridge` también se ejecuta dentro del aislamiento, por lo que, para usar la función de tabla `odbc` y los diccionarios, los controladores ODBC y su configuración (`/etc/odbc.ini`, `/etc/odbcinst.ini`) deben hacerse visibles.
+
+Si el proceso tiene `CAP_SYS_ADMIN`, crea únicamente un espacio de nombres de montaje y conserva las capacidades que utiliza, como `CAP_NET_BIND_SERVICE`, `CAP_IPC_LOCK`, `CAP_SYS_NICE` y `CAP_NET_ADMIN`, y descarta las que le permitirían deshacer el aislamiento (`CAP_SYS_ADMIN`, `CAP_SYS_CHROOT`, `CAP_SYS_PTRACE`, `CAP_DAC_READ_SEARCH`, `CAP_SETUID`, `CAP_SETGID`, `CAP_MKNOD`, `CAP_SYS_MODULE`, `CAP_SYS_RAWIO` y similares). En caso contrario, crea además un espacio de nombres de usuario, en el que asigna únicamente su propio usuario y grupo a sí mismos, y pierde todas sus capacidades, ya que no son válidas fuera del nuevo espacio de nombres de usuario: a partir de ese momento, ya no puede escuchar en un puerto inferior a 1024, bloquear su ejecutable en memoria, aumentar la prioridad de los threads ni recopilar las métricas por thread de `taskstats`. Durante el inicio, una advertencia indica las capacidades perdidas. En ambos casos, el servidor establece `PR_SET_NO_NEW_PRIVS` y todos los montajes son `nosuid`.
+
+No siempre está permitido crear un espacio de nombres de usuario sin privilegios: en algunos sistemas está desactivado mediante los sysctls `kernel.unprivileged_userns_clone` y `user.max_user_namespaces`, y Ubuntu, a partir de la versión 24.04, solo lo permite a los programas que tengan un perfil de AppArmor que lo autorice (consulte el sysctl `kernel.apparmor_restrict_unprivileged_userns`). Los entornos de ejecución de contenedores como Docker también lo rechazan, salvo que el contenedor tenga `CAP_SYS_ADMIN`. Antes de aislarse, el servidor comprueba en un proceso hijo si puede hacerlo, de modo que un fallo no lo deje en un espacio de nombres sin sus capacidades.
+
+El `/proc` del host es visible desde dentro, ya que uno nuevo requeriría un nuevo espacio de nombres PID. El proceso watchdog (`clickhouse-watchdog`) se crea mediante fork después del aislamiento y también se ejecuta dentro de él. Sin embargo, a través de `/proc/<pid>/root`, `/proc/<pid>/cwd` y `/proc/<pid>/fd`, el servidor puede acceder al sistema de archivos del host tal como lo ve cualquier otro proceso del mismo usuario que se ejecute fuera del aislamiento, por lo que no debe ejecutarse nada más con el usuario del servidor: basta con un usuario dedicado, como el que crean los paquetes.
+
+El aislamiento se aplica una sola vez, durante el inicio, antes de que el servidor inicie ningún thread, y no puede modificarse posteriormente: un valor modificado o un `filesystem_isolation_paths` modificado en una configuración recargada surte efecto tras un reinicio, y una ruta que procede de ZooKeeper mediante `from_zk` no se tiene en cuenta. Se aplica antes del filtro [`seccomp`](/es/reference/settings/server-settings/settings/other#seccomp), que rechaza las llamadas al sistema que lo desharían.
+
+Valores posibles:
+
+* `disabled`: el servidor no aísla el sistema de archivos.
+* `best_effort`: el servidor aísla el sistema de archivos si tiene permiso para crear los espacios de nombres y montar sistemas de archivos en ellos; de lo contrario, registra una advertencia con el motivo y se ejecuta sin aislamiento.
+* `enforce`: el servidor aísla el sistema de archivos o no se inicia.
+
+Cualquier fallo que se produzca después de que el servidor haya entrado en el nuevo espacio de nombres, como una ruta que no se pueda montar, detiene el inicio tanto en el modo `best_effort` como en el modo `enforce`.
+
+`system.server_settings` indica el modo vigente: `disabled` si el servidor se ejecuta sin aislamiento.
+
+El aislamiento es una funcionalidad del núcleo de Linux. En otros sistemas operativos, `best_effort` registra una advertencia y `enforce` impide que el servidor se inicie.
+
+**Ejemplo**
+
+```xml
+<filesystem_isolation>best_effort</filesystem_isolation>
+```
+
 ## google_protos_path {#google_protos_path}
 
 <SettingsInfoBlock type="String" default_value="/usr/share/clickhouse/protos/" changeable_without_restart="No" />
@@ -526,9 +583,7 @@ Tiempo de caducidad de HSTS en segundos.
 
 ## iceberg_manifest_decode_thread_pool_queue_size {#iceberg_manifest_decode_thread_pool_queue_size}
 
-<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
-
-El número máximo de jobs que se pueden programar en el pool de hilos para decodificar archivos de manifiesto de datos de Iceberg.
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />El número máximo de trabajos que se pueden programar en el pool de hilos para decodificar archivos de manifiesto de datos de Iceberg. Este parámetro de configuración está obsoleto y no tiene ningún efecto: los archivos de manifiesto de Iceberg se leen en el grupo de hilos de E/S.
 
 ## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
 
@@ -660,26 +715,26 @@ La ubicación y el formato de los mensajes de registro.
 
 **Claves**:
 
-| Key                          | Description                                                                                                                                                                                                                                                                                                                                                                    |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `async`                      | Cuando es `true` (predeterminado), el registro se realiza de forma asíncrona (un hilo en segundo plano por canal de salida). En caso contrario, se registrará dentro del hilo que llama a LOG                                                                                                                                                                                  |
-| `async_queue_max_size`       | Cuando se usa el registro asíncrono, es la cantidad máxima de mensajes que se mantendrán en la cola a la espera de vaciarse. Los mensajes adicionales se descartarán                                                                                                                                                                                                           |
-| `console`                    | Habilita el registro en la consola. Establézcalo en `1` o `true` para habilitarlo. El valor predeterminado es `1` si ClickHouse no se ejecuta en modo daemon; en caso contrario, `0`.                                                                                                                                                                                          |
-| `console_log_level`          | Nivel de registro para la salida de la consola. El valor predeterminado es `level`.                                                                                                                                                                                                                                                                                            |
-| `console_shutdown_log_level` | Shutdown level se usa para establecer el nivel de registro de la consola durante el apagado del servidor.                                                                                                                                                                                                                                                                      |
-| `console_startup_log_level`  | nivel de inicio se usa para establecer el nivel de registro de la consola durante el inicio del servidor. Después del inicio, el nivel de registro vuelve a la configuración `console_log_level`                                                                                                                                                                                 |
-| `count`                      | política de rotación: cuántos archivos de registro históricos conserva ClickHouse como máximo.                                                                                                                                                                                                                                                                                 |
-| `errorlog`                   | La ruta del archivo de registro de errores.                                                                                                                                                                                                                                                                                                                                    |
-| `formatting.type`            | Formato de registro para la salida de la consola. Actualmente, solo se admite `json`                                                                                                                                                                                                                                                                                           |
-| `level`                      | Nivel de registro. Valores aceptables: `none` (desactiva el registro), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                                                                                                                                                                                                               |
-| `log`                        | La ruta del archivo de registro.                                                                                                                                                                                                                                                                                                                                               |
+| Key                          | Description                                                                                                                                                                                                                                                                                                                                                                         |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `async`                      | Cuando es `true` (predeterminado), el registro se realiza de forma asíncrona (un hilo en segundo plano por canal de salida). En caso contrario, se registrará dentro del hilo que llama a LOG                                                                                                                                                                                       |
+| `async_queue_max_size`       | Cuando se usa el registro asíncrono, es la cantidad máxima de mensajes que se mantendrán en la cola a la espera de vaciarse. Los mensajes adicionales se descartarán                                                                                                                                                                                                                |
+| `console`                    | Habilita el registro en la consola. Establézcalo en `1` o `true` para habilitarlo. El valor predeterminado es `1` si ClickHouse no se ejecuta en modo daemon; en caso contrario, `0`.                                                                                                                                                                                               |
+| `console_log_level`          | Nivel de log para la salida de la consola. El valor predeterminado es `level`.                                                                                                                                                                                                                                                                                                 |
+| `console_shutdown_log_level` | Shutdown level se usa para establecer el nivel de log de la consola durante el apagado del Servidor.                                                                                                                                                                                                                                                                           |
+| `console_startup_log_level`  | nivel de inicio se usa para establecer el nivel de log de la consola durante el inicio del Servidor. Después del inicio, el nivel de log vuelve a la configuración `console_log_level`                                                                                                                                                                                    |
+| `count`                      | política de rotación: cuántos archivos de registro históricos conserva ClickHouse como máximo.                                                                                                                                                                                                                                                                                      |
+| `errorlog`                   | La ruta del archivo de registro de errores.                                                                                                                                                                                                                                                                                                                                         |
+| `formatting.type`            | Formato de registro para la salida de la consola. Actualmente, solo se admite `json`                                                                                                                                                                                                                                                                                                |
+| `level`                      | Nivel de log. Valores aceptados: `none` (desactiva el registro), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                                                                                                                                                                                                                    |
+| `log`                        | La ruta del archivo de registro.                                                                                                                                                                                                                                                                                                                                                    |
 | `rotation`                   | política de rotación: controla cuándo se rotan los archivos de registro. La rotación puede basarse en el tamaño, el tiempo o una combinación de ambos. Ejemplos: 100M, daily, 100M,daily. Una vez que el archivo de registro supera el tamaño especificado o se alcanza el intervalo de tiempo indicado, se le cambia el nombre, se archiva y se crea un nuevo archivo de registro. |
-| `shutdown_level`             | Shutdown level se usa para establecer el nivel del logger raíz durante el apagado del servidor.                                                                                                                                                                                                                                                                                |
-| `size`                       | política de rotación: tamaño máximo de los archivos de registro en bytes. Una vez que el tamaño del archivo de registro supera este umbral, se le cambia el nombre, se archiva y se crea un nuevo archivo de registro.                                                                                                                                                         |
-| `startup_level`              | nivel de inicio se usa para establecer el nivel del logger raíz durante el inicio del servidor. Después del inicio, el nivel de registro vuelve a la configuración `level`                                                                                                                                                                                                      |
-| `stream_compress`            | Comprime los mensajes de registro con LZ4. Establézcalo en `1` o `true` para habilitarlo.                                                                                                                                                                                                                                                                                      |
-| `syslog_level`               | Nivel de registro para el envío a syslog.                                                                                                                                                                                                                                                                                                                                      |
-| `use_syslog`                 | También reenvía la salida del registro a syslog.                                                                                                                                                                                                                                                                                                                               |
+| `shutdown_level`             | Shutdown level se usa para establecer el nivel del logger raíz durante el apagado del Servidor.                                                                                                                                                                                                                                                                                     |
+| `size`                       | política de rotación: tamaño máximo de los archivos de registro en bytes. Una vez que el tamaño del archivo de registro supera este umbral, se le cambia el nombre, se archiva y se crea un nuevo archivo de registro.                                                                                                                                                              |
+| `startup_level`              | nivel de inicio se usa para establecer el nivel del logger raíz durante el inicio del Servidor. Después del inicio, el nivel de log vuelve a la configuración `level`                                                                                                                                                                                                          |
+| `stream_compress`            | Comprime los mensajes de registro con LZ4. Establézcalo en `1` o `true` para habilitarlo.                                                                                                                                                                                                                                                                                           |
+| `syslog_level`               | Nivel de log para el envío a syslog.                                                                                                                                                                                                                                                                                                                                           |
+| `use_syslog`                 | También reenvía la salida del registro a syslog.                                                                                                                                                                                                                                                                                                                                    |
 
 **Especificadores de formato de registro**
 
@@ -1529,6 +1584,27 @@ ClickHouse comprobará el tipo de resolver de mayor prioridad para el protocolo 
 comprobará el siguiente tipo de resolver de mayor prioridad, hasta llegar al resolver de entorno.
 Esto también permite usar una combinación de tipos de resolver.
 
+## quick_startup {#quick_startup}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
+
+Inicia el servidor lo más rápido posible omitiendo el trabajo opcional que realiza durante el inicio:
+
+* el `<mlock>` del ejecutable, como con `mlock_executable` = `false`;
+* la reasignación del ejecutable a páginas enormes, como con `remap_executable` = `false`;
+* la comprobación de integridad del ejecutable, como con `skip_binary_checksum_checks` = `true`;
+* las comprobaciones del entorno (como la fuente de reloj, las páginas enormes transparentes, la sobreasignación de memoria, los límites del kernel, la contabilidad de retardos y la lectura anticipada del disco), que solo generan advertencias en `system.warnings`.
+
+La validación de la configuración no se omite.
+
+El código ejecutable ocupa unos 500 MiB, y tanto `<mlock>` como la comprobación de integridad lo leen por completo. Con la caché de páginas en frío y un disco de red, esto tarda varios segundos, que suponen la mayor parte del tiempo de inicio. Resulta útil cuando el servidor se reinicia con frecuencia, como en pruebas, pruebas de rendimiento e instancias de corta duración. La contrapartida es que el código puede paginarse fuera de la memoria cuando hay presión de memoria y que un ejecutable corrupto no se detecta durante el inicio.
+
+**Ejemplo**
+
+```xml
+<quick_startup>true</quick_startup>
+```
+
 ## remap_executable {#remap_executable}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
@@ -1662,6 +1738,10 @@ Ejemplo:
 </ssh_server>
 ```
 
+## stream_kafka_locks_refresh_polls {#stream_kafka_locks_refresh_polls}
+
+<SettingsInfoBlock type="UInt64" default_value="15" changeable_without_restart="Yes" />Número de sondeos tras los cuales un consumidor de Kafka con offsets almacenados en Keeper vuelve a comprobar qué particiones tiene asignadas
+
 ## table_engines_require_grant {#table_engines_require_grant}
 
 <CloudNotSupportedBadge />
@@ -1698,9 +1778,9 @@ Configuración de la [tabla del sistema text&#95;log](/es/reference/system-table
 
 Además:
 
-| Configuración | Descripción                                                                   | Valor predeterminado |
-| ------------- | ----------------------------------------------------------------------------- | -------------------- |
-| `level`       | Nivel máximo de Message (por defecto, `Trace`) que se almacenará en la tabla. | `Trace`              |
+| Configuración | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                                | Valor predeterminado                                                    |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `level`       | Nivel máximo de mensaje que se almacena en la tabla. Si se establece explícitamente, el nivel del registrador raíz se eleva como mínimo a este valor, de modo que `text_log` puede ser más detallado que el archivo de registro del servidor (`logger.level`). Si no se establece, se almacenan los mensajes hasta el nivel más detallado de las salidas de registro configuradas (`logger.level`, `console_log_level`, `errorlog_level`, `syslog_level`). | `Trace` (limitado por las demás salidas de registro si no se establece) |
 
 **Ejemplo**
 

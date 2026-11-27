@@ -1,5 +1,4 @@
 -- Tags: memory-engine
-SET allow_experimental_dynamic_type=1;
 
 DROP TABLE IF EXISTS test_dynamic_compressed;
 CREATE TABLE test_dynamic_compressed (d Dynamic) ENGINE=Memory SETTINGS compress=1;
