@@ -10,14 +10,6 @@
 
 #include "config.h"
 
-/** FastOps is a fast vector math library from Mikhail Parakhin, https://www.linkedin.com/in/mikhail-parakhin/
-  * Enabled by default.
-  */
-#if USE_FASTOPS
-#    include <fastops/fastops.h>
-#endif
-
-
 namespace DB
 {
 
@@ -84,7 +76,7 @@ private:
     {
         if constexpr (Impl::rows_per_iteration == 0)
         {
-            /// Process all data as a whole and use FastOps implementation
+            /// Process all data as a whole with a vectorized implementation (see `HighwayMath.h`)
 
             /// If the argument is integer, convert to Float64 beforehand
             if constexpr (!is_floating_point<T>)

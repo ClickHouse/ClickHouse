@@ -197,7 +197,7 @@ add_contrib (aws-cmake
 add_contrib (simdjson-cmake simdjson)
 add_contrib (simdutf-cmake simdutf)
 add_contrib (rapidjson-cmake rapidjson)
-add_contrib (fastops-cmake fastops)
+add_contrib (highway-cmake highway)
 add_contrib (libuv-cmake libuv)
 add_contrib (liburing-cmake liburing)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv

@@ -1,5 +1,8 @@
 #include <Functions/FunctionMathUnary.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/HighwayMath.h>
+
+#include <cmath>
 
 namespace DB
 {
@@ -14,43 +17,36 @@ namespace
 
 struct SigmoidName { static constexpr auto name = "sigmoid"; };
 
-#if USE_FASTOPS
-
-namespace
+struct Impl
 {
-    struct Impl
-    {
-        static constexpr auto name = SigmoidName::name;
-        static constexpr auto rows_per_iteration = 0;
-        static constexpr bool always_returns_float64 = false;
+    static constexpr auto name = SigmoidName::name;
+    static constexpr auto rows_per_iteration = 0;
+    static constexpr bool always_returns_float64 = false;
 
-        template <typename T>
-        static void execute(const T * src, size_t size, T * dst)
+    template <typename T>
+    static void execute(const T * src, size_t size, T * dst)
+    {
+        if constexpr (std::is_same_v<T, BFloat16>)
         {
-            if constexpr (std::is_same_v<T, BFloat16>)
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function `{}` is not implemented for BFloat16", name);
-            }
-            else
-            {
-                NFastOps::Sigmoid<>(src, size, dst);
-            }
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function `{}` is not implemented for BFloat16", name);
         }
-    };
-}
+        else
+        {
+#if USE_HIGHWAY
+            HighwayMath::sigmoid(src, size, dst);
+#else
+            for (size_t i = 0; i < size; ++i)
+            {
+                /// Unlike 1 / (1 + exp(-x)), does not overflow to 0 for large negative arguments.
+                T e = std::exp(-std::abs(src[i]));
+                dst[i] = (src[i] < 0 ? e : T(1)) / (T(1) + e);
+            }
+#endif
+        }
+    }
+};
 
 using FunctionSigmoid = FunctionMathUnary<Impl>;
-
-#else
-
-double sigmoid(double x)
-{
-    return 1.0 / (1.0 + exp(-x));
-}
-
-using FunctionSigmoid = FunctionMathUnary<UnaryFunctionVectorized<SigmoidName, sigmoid>>;
-
-#endif
 
 }
 

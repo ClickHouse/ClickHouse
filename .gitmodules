@@ -73,9 +73,6 @@
 [submodule "contrib/rapidjson"]
 	path = contrib/rapidjson
 	url = https://github.com/ClickHouse/rapidjson
-[submodule "contrib/fastops"]
-	path = contrib/fastops
-	url = https://github.com/ClickHouse/fastops
 [submodule "contrib/sparsehash-c11"]
 	path = contrib/sparsehash-c11
 	url = https://github.com/sparsehash/sparsehash-c11
@@ -481,3 +478,6 @@
 	path = contrib/gdeflate
 	url = https://github.com/ClickHouse/libdeflate.git
 	branch = gdeflate
+[submodule "contrib/highway"]
+	path = contrib/highway
+	url = https://github.com/google/highway
