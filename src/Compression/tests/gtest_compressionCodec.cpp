@@ -3419,7 +3419,8 @@ TEST_F(WallabyTest, MalformedHeaders)
     std::vector<char> decompressed(uncompressed_size);
     auto codec32 = codecFor(sizeof(Float32));
     EXPECT_EQ(codec32->decompress(compressed.data(), static_cast<UInt32>(compressed.size()), decompressed.data()), uncompressed_size);
-    EXPECT_EQ(0, memcmp(decompressed.data(), values.data(), uncompressed_size));
+    /// The output is the serialized little-endian stream, not native `Float64` objects.
+    EXPECT_EQ(decompressed, seriesBytes<Float64>(values.size(), [&](size_t i) { return values[i]; }));
 }
 
 /// Blocks that the encoder made when the format (version 2) was fixed. They pin the format independently of the
