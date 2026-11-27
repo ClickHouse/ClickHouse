@@ -1177,8 +1177,13 @@ void MergeTreeReaderTextIndex::setPrecomputedGranule(const IndexGranulesMap & gr
 
     if (it != granules.end() && it->second)
     {
+        /// The postings streams are keyed by the tokens of the granule, so a different granule invalidates them.
+        const bool granule_changed = it->second != granule;
+
         resetCursors();
         postings_blocks.clear();
+        if (granule_changed)
+            postings_streams.clear();
         setIndexGranule(it->second);
     }
 }
