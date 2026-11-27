@@ -10146,7 +10146,9 @@ Set to 1 to accept any amount of duplicated reading, which restores the behaviou
     DECLARE(UInt64, automatic_parallel_replicas_max_counted_ranges, 1'000'000, R"(
 The maximum number of ranges of compressed blocks automatic parallel replicas keep to measure the bytes a query reads
 while collecting its statistics. When it is reached, the input of the query is not measured, and automatic parallel
-replicas are not used for it until its statistics are collected again. 0 means no limit.
+replicas are not used for it: as after any collection that ends without a decision, the next executions with the same
+settings skip building the plan with parallel replicas, see `automatic_parallel_replicas_undecided_retry_after_executions`.
+0 means no limit.
 )", 0, \
         {"26.12", 0, 1'000'000, "New setting."}) \
     DECLARE(Float, automatic_parallel_replicas_statistics_drift_ratio, 1.5, R"(
