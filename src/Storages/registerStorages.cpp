@@ -91,7 +91,7 @@ void registerStorageKafka(StorageFactory & factory);
 void registerStorageRabbitMQ(StorageFactory & factory);
 #endif
 
-#if USE_NATSIO
+#if USE_NATS
 void registerStorageNATS(StorageFactory & factory);
 #endif
 
@@ -205,7 +205,7 @@ void registerStorages()
     registerStorageRabbitMQ(factory);
 #endif
 
-#if USE_NATSIO
+#if USE_NATS
     registerStorageNATS(factory);
 #endif
 

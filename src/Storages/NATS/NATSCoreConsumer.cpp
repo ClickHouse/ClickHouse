@@ -1,39 +1,36 @@
 #include <Storages/NATS/NATSCoreConsumer.h>
 
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_CONNECT_NATS;
-}
-
 void NATSCoreConsumer::subscribeImpl()
 {
-    std::vector<NATSSubscriptionPtr> created_subscriptions;
-    created_subscriptions.reserve(getSubjects().size());
-
+    sids.clear();
     for (const auto & subject : getSubjects())
     {
-        natsSubscription * subscription = nullptr;
-        auto status = natsConnection_QueueSubscribe(&subscription, getNativeConnection(), subject.c_str(), getQueueName().c_str(), onMsg, static_cast<void *>(this));
-        if (status != NATS_OK)
-            throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Failed to subscribe consumer to subject {}", subject);
-
-        created_subscriptions.emplace_back(subscription, &natsSubscription_Destroy);
+        sids.push_back(getConnection().subscribe(subject, getQueueName()));
         LOG_DEBUG(getLogger(), "Subscribed to subject {}", subject);
-
-        natsSubscription_SetPendingLimits(subscription, -1, -1);
     }
 
-    /// Prevent early message loss by forcing the server to process the async subscription.
-    auto status = natsConnection_Flush(getNativeConnection());
-    if (status != NATS_OK)
-        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Failed to flush subscriptions for the consumer");
+    /// Prevent early message loss by waiting until the server has processed the subscriptions.
+    getConnection().flush();
 
-    LOG_DEBUG(getLogger(), "Consumer subscribed to {} subjects", created_subscriptions.size());
+    LOG_DEBUG(getLogger(), "Consumer subscribed to {} subjects", sids.size());
+}
 
-    setSubscriptions(std::move(created_subscriptions));
+void NATSCoreConsumer::unsubscribeImpl()
+{
+    for (const auto sid : sids)
+        getConnection().unsubscribe(sid);
+    sids.clear();
+    getConnection().flush();
+}
+
+std::optional<NATSClient::Message> NATSCoreConsumer::receiveImpl(UInt64 timeout_ms)
+{
+    return getConnection().receive(Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(timeout_ms) * 1000));
 }
 
 }

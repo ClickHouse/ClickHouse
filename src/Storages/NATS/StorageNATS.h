@@ -2,12 +2,10 @@
 
 #include <atomic>
 #include <mutex>
-#include <uv.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Storages/NATS/NATSConnection.h>
-#include <Storages/NATS/NATSHandler.h>
 #include <Storages/NATS/NATSSettings.h>
 #include <Storages/NATS/NATS_fwd.h>
 #include <Poco/Semaphore.h>
@@ -97,12 +95,7 @@ private:
 
     LoggerPtr log;
 
-    NATSHandler event_handler;
-    std::unique_ptr<ThreadFromGlobalPool> event_loop_thread;
-
-    mutable std::mutex consumers_connection_mutex;
-    NATSConnectionPtr consumers_connection TSA_GUARDED_BY(consumers_connection_mutex); /// Connection for all consumers
-    /// Serializes `createConsumersConnection` and `createConsumers`, which both background tasks call.
+    /// Serializes `createConsumers`, which both background tasks call.
     std::mutex consumers_setup_mutex;
     NATSConfiguration configuration;
 
@@ -111,9 +104,8 @@ private:
     std::mutex consumers_mutex;
     std::vector<INATSConsumerPtr> consumers; /// available NATS consumers
 
-    /// maximum number of messages in NATS queue (x-max-length). Also used
-    /// to setup size of inner consumer for received messages
-    uint32_t queue_size;
+    /// Whether the consumers in the pool were connected when they were checked last, see `maintainIdleConsumers`.
+    std::atomic<bool> consumers_connected{false};
 
     std::mutex task_mutex;
     BackgroundSchedulePoolTaskHolder streaming_task;
@@ -135,7 +127,7 @@ private:
 
     void scheduleStreamingTasksImpl() override;
 
-    INATSConsumerPtr createConsumer(const NATSConnectionPtr & connection) TSA_REQUIRES(consumers_setup_mutex);
+    INATSConsumerPtr createConsumer() TSA_REQUIRES(consumers_setup_mutex);
     INATSProducerPtr createProducer(String subject);
 
     bool isSubjectInSubscriptions(const std::string & subject);
@@ -144,20 +136,20 @@ private:
     void initializeConsumersFunc();
     void threadFunc();
 
-    NATSConnectionPtr getConsumersConnection() const;
-    void setConsumersConnection(NATSConnectionPtr connection) TSA_REQUIRES(consumers_setup_mutex);
-    void createConsumersConnection();
+    /// Connects (with `nats_startup_connect_tries` attempts). Throws `CANNOT_CONNECT_NATS`.
+    void connectWithRetries(NATSConnection & connection) const;
+    String connectionInfoForLog() const;
+
     void createConsumers();
-    void dropConsumers() TSA_REQUIRES(consumers_setup_mutex);
 
     bool subscribeConsumers();
-    /// Replaces the subscription of every consumer that stopped consuming and has an empty queue.
-    void resubscribeStaleConsumers();
+    /// Answers the `PING` of the server on the connections of the consumers in the pool, and connects again (and
+    /// subscribes again) the ones that lost their connection. Returns the error of the first consumer that cannot
+    /// connect, empty if all of them are connected.
+    String maintainIdleConsumers();
     void unsubscribeConsumers();
     /// Unsubscribes the consumers in the pool which are still subscribed, without touching `consumers_ready`.
     void unsubscribeHandedBackConsumers();
-
-    void stopEventLoop();
 
     static Names parseList(const String & list, char delim);
     static String getTableBasedName(String name, const StorageID & table_id);

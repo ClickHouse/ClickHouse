@@ -74,8 +74,10 @@ endif()
 if (TARGET ch_contrib::amqp_cpp)
     set(USE_AMQPCPP 1)
 endif()
-if (TARGET ch_contrib::nats_io)
-    set(USE_NATSIO 1)
+# The NATS client is implemented in `src/Storages/NATS/NATSClient.cpp` and does not need third-party libraries.
+option(ENABLE_NATS "Enable the NATS table engine" ${ENABLE_LIBRARIES})
+if (ENABLE_NATS)
+    set(USE_NATS 1)
 endif()
 # The Cassandra client is implemented in `src/Dictionaries/CassandraClient.cpp` and does not need third-party libraries.
 option(ENABLE_CASSANDRA "Enable Cassandra dictionary source" ${ENABLE_LIBRARIES})

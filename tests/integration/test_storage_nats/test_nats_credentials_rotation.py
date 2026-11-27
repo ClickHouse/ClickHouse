@@ -152,19 +152,15 @@ def test_nats_credentials_rejected_after_rotation(started_cluster):
     wait_for_consumed_above(0)
 
     # The broker starts rejecting the credentials of the table, the way it does after the password
-    # has been rotated on its side, and drops the live connection. The client library retries once
-    # and gives up on the second identical authorization error, closing the connection for good.
-    # The table reports the closed connection under its own name, with the error the broker
-    # answered, so that an operator with several NATS tables can tell whose credentials to fix.
+    # has been rotated on its side, and drops the live connection. The table tries to connect again
+    # and reports the failure under its own name, with the error the broker answered, so that an
+    # operator with several NATS tables can tell whose credentials to fix.
     set_broker_state("reject")
     instance.wait_for_log_line(
-        r"StorageNATS \(test\.nats\): The NATS client library closed the connection to .* "
-        r"Last error: Authorization Violation\.",
+        r"StorageNATS \(test\.nats\): Cannot connect to NATS .*Authorization Violation",
         timeout=120,
     )
 
-    # The connection was closed on the thread which serves every NATS table of the server, and
-    # before the fix the event loop adapter segfaulted there, taking the whole server down.
     assert instance.query("SELECT 1") == "1\n"
 
     consumed_before = wait_for_consumption_to_stop()

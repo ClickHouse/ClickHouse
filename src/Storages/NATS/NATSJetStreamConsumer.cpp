@@ -1,5 +1,11 @@
 #include <Storages/NATS/NATSJetStreamConsumer.h>
 
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
+
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
+
 namespace DB
 {
 
@@ -9,94 +15,130 @@ namespace ErrorCodes
     extern const int INVALID_STATE;
 }
 
-void NATSJetStreamConsumer::nackMessage(natsMsg * msg)
+/// The size of a pull request. The server also limits the unacknowledged messages by `max_ack_pending` of the consumer.
+static constexpr size_t PULL_BATCH = 1000;
+/// A pull request expires after this time if it is not filled, then the next read sends a new one.
+static constexpr auto PULL_EXPIRES = std::chrono::seconds(1);
+/// A pull request is considered finished this long after it expired, even if the server did not say so.
+static constexpr auto PULL_EXPIRY_GRACE = std::chrono::seconds(5);
+
+namespace
 {
-    natsMsg_Nak(msg, nullptr);
+
+/// The description of the error in a reply of the JetStream API, or empty if it is not an error.
+String getAPIError(const NATSClient::Message & reply)
+{
+    if (reply.status == 503)
+        return "JetStream is not available on the server (no responders)";
+    if (reply.status != 0)
+        return fmt::format("status {} {}", reply.status, reply.status_description);
+
+    Poco::JSON::Parser parser;
+    const auto object = parser.parse(reply.data).extract<Poco::JSON::Object::Ptr>();
+    if (!object->has("error"))
+        return {};
+    const auto error = object->getObject("error");
+    return error->has("description") ? error->getValue<String>("description") : "unknown error";
+}
+
 }
 
 NATSJetStreamConsumer::NATSJetStreamConsumer(
-    NATSConnectionPtr connection,
+    const NATSConfiguration & configuration,
     String stream_name_,
     String consumer_name_,
     const std::vector<String> & subjects,
     const String & subscribe_queue_name,
     LoggerPtr log,
-    uint32_t queue_size,
     const std::atomic<bool> & stopped)
-    : INATSConsumer(std::move(connection), subjects, subscribe_queue_name, log, queue_size, stopped)
+    : INATSConsumer(configuration, subjects, subscribe_queue_name, log, stopped)
     , stream_name(std::move(stream_name_))
     , consumer_name(std::move(consumer_name_))
-    , jet_stream_ctx(nullptr, &jsCtx_Destroy)
 {
 }
 
 void NATSJetStreamConsumer::subscribeImpl()
 {
-    auto er = jsOptions_Init(&jet_stream_options);
-    if (er != NATS_OK)
-        throw Exception(
-            ErrorCodes::CANNOT_CONNECT_NATS,
-            "Failed to create NATS jet stream options for {}. Nats last error: {}", getConnection()->connectionInfoForLog(), natsStatus_GetText(er));
-
-    jsCtx * new_jet_stream_ctx = nullptr;
-    er = natsConnection_JetStream(&new_jet_stream_ctx, getNativeConnection(), &jet_stream_options);
-    if (er != NATS_OK)
-        throw Exception(
-            ErrorCodes::CANNOT_CONNECT_NATS,
-            "Failed to create NATS jet stream ctx for {}. Nats last error: {}", getConnection()->connectionInfoForLog(), natsStatus_GetText(er));
-    jet_stream_ctx.reset(new_jet_stream_ctx);
-
-    er = jsSubOptions_Init(&subscribe_options);
-    if (er != NATS_OK)
-        throw Exception(
-            ErrorCodes::CANNOT_CONNECT_NATS,
-            "Failed to create NATS jet stream subscribe options for {}. Error: {}", getConnection()->connectionInfoForLog(), natsStatus_GetText(er));
-
-    subscribe_options.Stream = stream_name.c_str();
-    subscribe_options.Consumer = consumer_name.c_str();
-    subscribe_options.ManualAck = true;
-
-    if (!getQueueName().empty())
-        subscribe_options.Queue = getQueueName().c_str();
-
-    std::vector<NATSSubscriptionPtr> created_subscriptions;
-    created_subscriptions.reserve(getSubjects().size());
-
-    for (const auto & subject : getSubjects())
-    {
-        created_subscriptions.emplace_back(subscribeToSubject(subject));
-        LOG_DEBUG(getLogger(), "Subscribed to subject {}", subject);
-    }
-    LOG_DEBUG(getLogger(), "Consumer subscribed to {} subjects", created_subscriptions.size());
-
-    setSubscriptions(std::move(created_subscriptions));
-}
-
-NATSSubscriptionPtr NATSJetStreamConsumer::subscribeToSubject(const String & subject)
-{
     if (consumer_name.empty())
         throw Exception(ErrorCodes::INVALID_STATE, "To use NATS jet stream consumers, you must specify `nats_consumer_name` setting");
 
-    natsSubscription * subscription = nullptr;
-    auto status = js_PullSubscribeAsync(
-        &subscription,
-        jet_stream_ctx.get(),
-        subject.c_str(),
-        consumer_name.c_str(),
-        onMsg,
-        static_cast<void *>(this),
-        &jet_stream_options,
-        &subscribe_options,
-        nullptr);
-    if (status != NATS_OK)
+    /// The consumer must exist: it is created and configured by the user, e.g. with its filter subjects.
+    const auto reply = getConnection().request(
+        fmt::format("$JS.API.CONSUMER.INFO.{}.{}", stream_name, consumer_name), "", Poco::Timespan(10, 0));
+    if (const auto error = getAPIError(reply); !error.empty())
         throw Exception(
             ErrorCodes::CANNOT_CONNECT_NATS,
-            "Failed to subscribe consumer to subject {}. Error: {} {}", subject, natsStatus_GetText(status), getNATSLastError());
+            "Failed to subscribe to the NATS JetStream consumer {} of stream {}: {}", consumer_name, stream_name, error);
 
-    NATSSubscriptionPtr result(subscription, &natsSubscription_Destroy);
-    natsSubscription_SetPendingLimits(result.get(), -1, -1);
+    inbox = getConnection().newInbox();
+    sid = getConnection().subscribe(inbox, "");
+    pull_outstanding = false;
+    getConnection().flush();
 
-    return result;
+    LOG_DEBUG(getLogger(), "Consumer subscribed to the JetStream consumer {} of stream {}", consumer_name, stream_name);
+}
+
+void NATSJetStreamConsumer::unsubscribeImpl()
+{
+    getConnection().unsubscribe(sid);
+    getConnection().flush();
+    sid = 0;
+    pull_outstanding = false;
+}
+
+void NATSJetStreamConsumer::requestPull()
+{
+    const auto expires_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(PULL_EXPIRES).count();
+    getConnection().publish(
+        fmt::format("$JS.API.CONSUMER.MSG.NEXT.{}.{}", stream_name, consumer_name),
+        inbox,
+        fmt::format("{{\"batch\":{},\"expires\":{}}}", PULL_BATCH, expires_ns));
+    pull_outstanding = true;
+    pull_remaining = PULL_BATCH;
+    pull_expires_at = std::chrono::steady_clock::now() + PULL_EXPIRES;
+}
+
+std::optional<NATSClient::Message> NATSJetStreamConsumer::receiveImpl(UInt64 timeout_ms)
+{
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+    while (true)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        if (pull_outstanding && now > pull_expires_at + PULL_EXPIRY_GRACE)
+            pull_outstanding = false;
+        if (!pull_outstanding)
+            requestPull();
+
+        const auto wait = std::chrono::duration_cast<std::chrono::microseconds>(std::max(deadline - now, std::chrono::steady_clock::duration::zero()));
+        auto message = getConnection().receive(Poco::Timespan(wait.count()));
+        if (!message)
+            return {};
+
+        if (message->sid != sid)
+            continue;
+
+        if (message->status == 0)
+        {
+            if (--pull_remaining == 0)
+                pull_outstanding = false;
+            return message;
+        }
+
+        /// 100: an idle heartbeat. 404: no messages, 408: the request expired, 409: e.g. the limit of waiting requests.
+        if (message->status != 100)
+        {
+            pull_outstanding = false;
+            if (message->status != 404 && message->status != 408)
+            {
+                /// Not requested again right away, so that a server that keeps refusing is not asked in a loop.
+                LOG_DEBUG(getLogger(), "The JetStream pull request ended with status {} {}", message->status, message->status_description);
+                return {};
+            }
+        }
+
+        if (std::chrono::steady_clock::now() >= deadline)
+            return {};
+    }
 }
 
 }

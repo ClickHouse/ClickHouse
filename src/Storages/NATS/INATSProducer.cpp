@@ -1,26 +1,26 @@
 #include <Storages/NATS/INATSProducer.h>
 
-#include <atomic>
-#include <Columns/ColumnString.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <base/scope_guard.h>
+
+#include <thread>
 
 
 namespace DB
 {
 
 static const auto BATCH = 1000;
-static const auto MAX_BUFFERED = 131072;
 
-/// A publish failing with any other status (e.g. a timeout during a leader change of the stream) is retried with backoff.
+/// How long the producing task waits for the next message before it checks the connection and the shutdown again.
+static constexpr UInt64 POP_TIMEOUT_MS = 100;
+
+/// A publish failing with a retryable status (e.g. a timeout during a leader change of the stream) is retried with backoff.
 static constexpr size_t MAX_PUBLISH_RETRIES = 5;
 static constexpr auto PUBLISH_RETRY_INITIAL_WAIT = std::chrono::milliseconds(100);
 
 namespace ErrorCodes
 {
     extern const int ABORTED;
-    extern const int LOGICAL_ERROR;
     extern const int INVALID_STATE;
     extern const int CANNOT_CONNECT_NATS;
 }
@@ -36,20 +36,7 @@ INATSProducer::INATSProducer(NATSConnectionPtr connection_, String subject_, std
 
 void INATSProducer::finishImpl()
 {
-    try
-    {
-        if (connection)
-        {
-            if (!shutdown_called && connection->isConnected())
-                natsConnection_Flush(connection->getConnection());
-
-            connection->disconnect();
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log);
-    }
+    connection->disconnect();
 
     if (shutdown_called)
         throw Exception(ErrorCodes::ABORTED, "Table is detached");
@@ -83,40 +70,42 @@ void INATSProducer::produce(const String & message, size_t, const Columns &, siz
 
 void INATSProducer::publish()
 {
-    while (pending_payload || !payloads.empty())
+    for (size_t i = 0; i < BATCH; ++i)
     {
-        if (!connection->isConnected() || natsConnection_Buffered(connection->getConnection()) > MAX_BUFFERED)
-            break;
-
         if (!pending_payload)
         {
             String payload;
-            if (!payloads.pop(payload))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not pop payload");
+            /// Wait only for the first message, the rest of the batch is what is already there.
+            const bool popped = i == 0 ? payloads.tryPop(payload, POP_TIMEOUT_MS) : payloads.tryPop(payload);
+            if (!popped)
+                break;
             pending_payload = std::move(payload);
         }
 
-        natsStatus status = publishMessage(*pending_payload);
-        if (status != NATS_OK)
+        String error;
+        const auto status = publishMessage(*pending_payload, error);
+        if (status == PublishStatus::Ok)
         {
-            LOG_DEBUG(log, "Something went wrong during publishing to NATS subject. Nats status text: {}. Last error message: {}",
-                      natsStatus_GetText(status), getNATSLastError());
-            /// A retry cannot succeed: the client rejects a message over max_payload before sending it, and NATS_ERR is
-            /// the stream rejecting the message.
-            if (status == NATS_NO_RESPONDERS)
-                publish_error = "there is no JetStream stream for this subject";
-            else if (status == NATS_MAX_PAYLOAD || status == NATS_ERR || pending_payload_retries == MAX_PUBLISH_RETRIES || cancelled)
-                publish_error = fmt::format("{}. Last error message: {}", natsStatus_GetText(status), getNATSLastError());
-            else
-            {
-                std::this_thread::sleep_for(PUBLISH_RETRY_INITIAL_WAIT * (1 << pending_payload_retries));
-                ++pending_payload_retries;
-            }
-            break;
+            pending_payload.reset();
+            pending_payload_retries = 0;
+            continue;
         }
-        pending_payload.reset();
-        pending_payload_retries = 0;
+
+        LOG_DEBUG(log, "Something went wrong during publishing to NATS subject: {}", error);
+        if (status == PublishStatus::Fail || pending_payload_retries == MAX_PUBLISH_RETRIES || cancelled)
+        {
+            publish_error = error;
+        }
+        else
+        {
+            std::this_thread::sleep_for(PUBLISH_RETRY_INITIAL_WAIT * (1 << pending_payload_retries));
+            ++pending_payload_retries;
+        }
+        break;
     }
+
+    /// Answers the `PING` of the server and notices an error it reported.
+    getConnection().processIncoming();
 }
 
 void INATSProducer::stopProducingTask()
@@ -126,16 +115,40 @@ void INATSProducer::stopProducingTask()
 
 void INATSProducer::startProducingTaskLoop()
 {
-    SCOPE_EXIT(nats_ReleaseThreadMemory());
-
     try
     {
         while (publish_error.empty() && !shutdown_called && (pending_payload || !payloads.isFinishedAndEmpty()))
         {
             if (!connection->isConnected())
-                std::this_thread::sleep_for(std::chrono::milliseconds(connection->getReconnectWait()));
-            else
+            {
+                if (cancelled)
+                {
+                    publish_error = fmt::format("the connection is lost: {}", connection->lastErrorForLog());
+                    break;
+                }
+
+                LOG_DEBUG(log, "The connection to NATS is lost ({}), connecting again", connection->lastErrorForLog());
+                try
+                {
+                    connection->connect();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Cannot connect to NATS");
+                    std::this_thread::sleep_for(std::chrono::milliseconds(connection->getReconnectWait()));
+                }
+                continue;
+            }
+
+            try
+            {
                 publish();
+            }
+            catch (...)
+            {
+                /// The connection failed: the pending message is published again on a new connection.
+                tryLogCurrentException(log, "Cannot publish to NATS");
+            }
         }
 
         if (!publish_error.empty() || shutdown_called)
@@ -145,13 +158,8 @@ void INATSProducer::startProducingTaskLoop()
             return;
         }
 
-        while (!connection->isConnected() && !shutdown_called)
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(connection->getReconnectWait()));
-        }
-
-        if (connection->isConnected() && natsConnection_Buffered(connection->getConnection()) > 0)
-            natsConnection_Flush(connection->getConnection());
+        /// Wait until the server has received everything.
+        connection->get().flush();
     }
     catch (...)
     {

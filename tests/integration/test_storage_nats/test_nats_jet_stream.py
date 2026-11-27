@@ -2594,7 +2594,7 @@ def test_nats_no_connection_at_startup_1(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     assert(
-        "Cannot connect to Nats"
+        "Cannot connect to NATS"
         in
         instance.query_and_get_error(
             """

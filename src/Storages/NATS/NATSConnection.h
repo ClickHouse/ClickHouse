@@ -2,23 +2,13 @@
 
 #include <Common/Logger.h>
 #include <Common/SecretString.h>
+#include <Storages/NATS/NATSClient.h>
 #include <base/types.h>
 
-#include <nats.h>
-
-#include <mutex>
+#include <memory>
 
 namespace DB
 {
-
-/// `nats_GetLastError` returns a null pointer when the thread has not recorded an error yet, and
-/// formatting a null `const char *` throws `fmt::format_error` instead of reporting the failure
-/// that is being logged. Never hand its result to a format string directly.
-inline const char * getNATSLastError()
-{
-    const char * last_error = nats_GetLastError(nullptr);
-    return last_error ? last_error : "none";
-}
 
 struct NATSConfiguration
 {
@@ -38,77 +28,47 @@ struct NATSConfiguration
     int reconnect_wait{};
 
     bool secure{};
+
+    /// The settings of the client. A credentials file is read here, so it is read again on every connect.
+    NATSClient::ConnectionSettings getConnectionSettings() const;
 };
 
-using NATSOptionsPtr = std::unique_ptr<natsOptions, decltype(&natsOptions_Destroy)>;
-using NATSStatisticsPtr = std::unique_ptr<natsStatistics, decltype(&natsStatistics_Destroy)>;
-
-/// Loads the TLS material into `options`. Both calls parse the files immediately, so one which
-/// cannot be read or parsed is reported here instead of at connect time.
-void loadNATSCertificates(natsOptions * options, const NATSConfiguration & configuration);
-
-/// Loads the TLS material into throwaway options, which reports a file that cannot be read or parsed
-/// without opening a connection.
+/// Loads the TLS material, which reports a file that cannot be read or parsed without opening a connection.
 void validateNATSCertificates(const NATSConfiguration & configuration);
 
+/// A connection to NATS, which `connect` establishes again once it is lost.
+/// Not thread-safe: a connection is used by one thread at a time.
 class NATSConnection
 {
-    using Lock = std::lock_guard<std::mutex>;
-
 public:
-    NATSConnection(const NATSConfiguration & configuration_, LoggerPtr log_, NATSOptionsPtr options_);
+    NATSConnection(const NATSConfiguration & configuration_, LoggerPtr log_);
     ~NATSConnection();
 
+    /// Whether there is a connection, nothing has failed and the server has not closed it.
     bool isConnected();
-    bool isDisconnected();
-    bool isClosed();
 
-    /// Must be called from event loop thread
-    bool connect();
+    /// Connects, closing the previous connection first. Throws `CANNOT_CONNECT_NATS`.
+    void connect();
 
     void disconnect();
 
-    natsConnection * getConnection() { return connection.get(); }
+    /// The current connection. Requires a successful `connect` before.
+    NATSClient::Connection & get();
+
     [[nodiscard]] int getReconnectWait() const { return configuration.reconnect_wait; }
+    [[nodiscard]] UInt64 getMaxConnectTries() const { return configuration.max_connect_tries; }
 
-    /// How many times the client has re-established this connection. The client restores a
-    /// subscription itself, but only its `SUB` line, so anything a subscription was waiting for on
-    /// the broker is gone: whoever needs it back has to notice this count changing.
-    UInt64 getReconnectCount();
-
+    /// The addresses can contain credentials, so they are not shown.
     [[nodiscard]] String connectionInfoForLog() const;
 
-    /// The error the client library recorded last on the connection, `Authorization Violation`
-    /// for a connection it closed for good after the server rejected the credentials twice. The
-    /// library keeps it on a closed connection, which lets the table report why it lost the one it
-    /// is replacing; the asynchronous error handler below cannot do that, because it only knows the
-    /// connection, not the table.
-    String lastErrorForLog();
+    /// Why the connection was lost or could not be established, e.g. `Authorization Violation`.
+    [[nodiscard]] String lastErrorForLog() const;
 
 private:
-    [[nodiscard]] bool isConnectedImpl(const Lock & connection_lock) const;
-    [[nodiscard]] bool isDisconnectedImpl(const Lock & connection_lock) const;
-    [[nodiscard]] bool isClosedImpl(const Lock & connection_lock) const;
-
-    void connectImpl(const Lock & connection_lock);
-
-    void disconnectImpl(const Lock & connection_lock);
-
-    static void disconnectedCallback(natsConnection * nc, void * connection);
-    static void reconnectedCallback(natsConnection * nc, void * connection);
-    static void errorCallback(natsConnection * nc, natsSubscription * subscription, natsStatus status, void * connection);
-
-    NATSConfiguration configuration;
+    const NATSConfiguration configuration;
     LoggerPtr log;
-
-    NATSOptionsPtr options;
-    NATSStatisticsPtr statistics;
-    std::unique_ptr<natsConnection, decltype(&natsConnection_Destroy)> connection;
-
-    std::mutex mutex;
-
-    /// disconnectedCallback may be called after connection destroy
-    static LoggerPtr callback_logger;
+    std::unique_ptr<NATSClient::Connection> connection;
+    String last_error;
 };
 
 using NATSConnectionPtr = std::shared_ptr<NATSConnection>;

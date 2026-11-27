@@ -1142,7 +1142,7 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
 
 
 def test_nats_no_connection_at_startup_1(nats_cluster):
-    assert "Cannot connect to Nats" in instance.query_and_get_error(
+    assert "Cannot connect to NATS" in instance.query_and_get_error(
         """
             CREATE TABLE test.cs (key UInt64, value UInt64)
                 ENGINE = NATS

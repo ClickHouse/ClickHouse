@@ -4,13 +4,13 @@
 #include <optional>
 #include <Core/Names.h>
 #include <Storages/NATS/NATSConnection.h>
-#include <Storages/NATS/NATSHandler.h>
 #include <Storages/IMessageProducer.h>
 #include <Common/ConcurrentBoundedQueue.h>
 
 namespace DB
 {
 
+/// Publishes the messages of an INSERT from its producing task, which owns the connection.
 class INATSProducer : public AsynchronousMessageProducer
 {
 public:
@@ -20,14 +20,22 @@ public:
     void cancel() noexcept override;
 
 protected:
-    NATSConnectionPtr & getConnection(){return connection;}
-    natsConnection * getNativeConnection(){return connection->getConnection();}
+    enum class PublishStatus : uint8_t
+    {
+        Ok,
+        /// A transient failure, e.g. a timeout during a leader change of the stream.
+        Retry,
+        /// A retry cannot succeed, e.g. the stream rejects the message.
+        Fail,
+    };
 
-    const String & getSubject() const{return subject;}
+    NATSClient::Connection & getConnection() { return connection->get(); }
+    const String & getSubject() const { return subject; }
+
+    /// Throws if the connection fails: the message is published again after connecting again.
+    virtual PublishStatus publishMessage(const String & message, String & error) = 0;
 
 private:
-    virtual natsStatus publishMessage(const String & message) = 0;
-
     String getProducingTaskName() const override { return "NatsProducingTask"; }
 
     void stopProducingTask() override;

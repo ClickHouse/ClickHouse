@@ -31,8 +31,8 @@ inline std::unordered_map<String, ValueMaskingFunc> settingsToHide()
             std::string masked_value;
             if (!value.tryGet<std::string>(masked_value))
                 return {};
-            /// libnats takes the scheme as optional and ends the userinfo at the LAST '@' of the whole
-            /// value (`contrib/nats-io/src/url.c`, `natsUrl_Create`), so no URI authority bounds it.
+            /// The NATS client takes the scheme as optional and ends the userinfo at the LAST '@' of the whole
+            /// value (`NATSClient::ServerAddress::parse`), so no URI authority bounds it.
             if (masked_value.contains('@'))
                 masked_value = DB::HIDDEN_SECRET;
             return fmt::format("'{}'", masked_value);

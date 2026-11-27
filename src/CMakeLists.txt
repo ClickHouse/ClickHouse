@@ -196,7 +196,7 @@ if (TARGET ch_contrib::rdkafka)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
 
-if (TARGET ch_contrib::nats_io)
+if (USE_NATS)
     add_headers_and_sources(dbms Storages/NATS)
 endif()
 
@@ -729,9 +729,6 @@ if (TARGET ch_contrib::rdkafka)
     target_link_libraries(dbms PUBLIC ch_contrib::rdkafka ch_contrib::cppkafka)
 endif()
 
-if (TARGET ch_contrib::nats_io)
-    target_link_libraries(dbms PRIVATE ch_contrib::nats_io ch_contrib::uv)
-endif()
 
 if (TARGET ch_contrib::sasl2)
     target_link_libraries(dbms PRIVATE ch_contrib::sasl2)

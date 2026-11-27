@@ -11,7 +11,7 @@ public:
     using INATSProducer::INATSProducer;
 
 private:
-    natsStatus publishMessage(const String & message) override;
+    PublishStatus publishMessage(const String & message, String & error) override;
 };
 
 }

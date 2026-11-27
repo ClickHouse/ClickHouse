@@ -90,7 +90,6 @@ extern const NATSSettingsString nats_stream;
 extern const NATSSettingsString nats_username;
 }
 
-static const uint32_t QUEUE_SIZE = 100000;
 static const auto RESCHEDULE_MS = 500;
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
@@ -114,14 +113,13 @@ namespace
 {
 
 /// Checks a NATS address against the remote host filter and returns the address rebuilt from its parsed
-/// parts - the string to hand to libnats in place of the original value. The remote host filter must see
-/// exactly the host and port libnats will dial, so the value is not passed on as it was written: the
-/// rebuilt address is `[scheme://][credentials@]host:port` with an explicit port, a form libnats
+/// parts - the string to hand to the NATS client in place of the original value. The remote host filter must see
+/// exactly the host and port the client will dial, so the value is not passed on as it was written: the
+/// rebuilt address is `[scheme://][credentials@]host:port` with an explicit port, a form the client
 /// re-parses to the same host and port.
 ///
-/// libnats reads a URL of the form `[scheme://][user[:password]@]host[:port]` as a C string, splits the
-/// credentials at the last `@`, substitutes `localhost` for an empty host, allows a `/path` after the
-/// port, and connects to port 4222 when none is given (`natsUrl_Create`). An address which such a
+/// The client (`NATSClient::ServerAddress::parse`) reads a URL of the form `[scheme://][user[:password]@]host[:port]`, splits the
+/// credentials at the last `@`, allows a `/path` after the port, and connects to port 4222 when none is given. An address which such a
 /// re-parse could read differently - a NUL, a `/`, an empty host, a character outside printable ASCII -
 /// is rejected instead of repaired. Throws `UNACCEPTABLE_URL` for a host the filter does not allow and
 /// `BAD_ARGUMENTS` for an address it cannot parse safely.
@@ -180,9 +178,7 @@ StorageNATS::StorageNATS(
     , num_consumers((*nats_settings)[NATSSetting::nats_num_consumers].value)
     , max_rows_per_message((*nats_settings)[NATSSetting::nats_max_rows_per_message])
     , log(getLogger("StorageNATS (" + table_id_.getFullTableName() + ")"))
-    , event_handler(log)
     , semaphore(0, static_cast<int>(num_consumers))
-    , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
     , throw_on_startup_failure(mode <= LoadingStrictnessLevel::CREATE)
     , fresh_definition(fresh_definition_)
 {
@@ -202,7 +198,7 @@ StorageNATS::StorageNATS(
     auto nats_client_cert_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_client_cert_file]);
     auto nats_client_key_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_client_key_file]);
 
-    /// `libnats` sends every configured authentication method in the `CONNECT` frame, so a table
+    /// The client sends every configured authentication method in the `CONNECT` frame, so a table
     /// authentication method must not be combined with the server-global fallback: inline
     /// credentials can be used with a query-supplied destination.
     /// The decision is made on provenance rather than on the resulting values. A query which
@@ -264,20 +260,20 @@ StorageNATS::StorageNATS(
     nats_context = addSettings(getContext());
     nats_context->makeQueryContext();
 
-    event_loop_thread = std::make_unique<ThreadFromGlobalPool>([this] { event_handler.runLoop(); });
-
     try
     {
+        /// The server must be reachable with these credentials, so that a wrong definition is reported at once.
+        /// The consumers connect themselves later.
         if (!getContext()->getMessageQueueDisableInsertion())
-            createConsumersConnection();
+        {
+            NATSConnection probe(configuration, log);
+            connectWithRetries(probe);
+        }
     }
     catch (...)
     {
         if (throw_on_startup_failure)
-        {
-            stopEventLoop();
             throw;
-        }
 
         tryLogCurrentException(log);
     }
@@ -290,10 +286,7 @@ StorageNATS::StorageNATS(
         getStorageID(), "NATSInitializeConsumersTask", [this] { initializeConsumersFunc(); });
     initialize_consumers_task->deactivate();
 }
-StorageNATS::~StorageNATS()
-{
-    stopEventLoop();
-}
+StorageNATS::~StorageNATS() = default;
 
 VirtualColumnsDescription StorageNATS::createVirtuals(StreamingHandleErrorMode handle_error_mode)
 {
@@ -369,19 +362,30 @@ ContextMutablePtr StorageNATS::addSettings(ContextPtr local_context) const
 }
 
 
-void StorageNATS::stopEventLoop()
+void StorageNATS::connectWithRetries(NATSConnection & connection) const
 {
-    event_handler.stopLoop();
-
-    LOG_TRACE(log, "Waiting for event loop thread");
-    Stopwatch watch;
-    if (event_loop_thread)
+    const UInt64 tries = std::max<UInt64>(configuration.max_connect_tries, 1);
+    for (UInt64 i = 0;; ++i)
     {
-        if (event_loop_thread->joinable())
-            event_loop_thread->join();
-        event_loop_thread.reset();
+        try
+        {
+            connection.connect();
+            return;
+        }
+        catch (...)
+        {
+            if (i + 1 >= tries)
+                throw Exception(
+                    ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to NATS {}: {}", connectionInfoForLog(), getCurrentExceptionMessage(false));
+            LOG_DEBUG(log, "Connect to {} attempt #{} failed: {}", connectionInfoForLog(), i + 1, getCurrentExceptionMessage(false));
+        }
     }
-    LOG_TRACE(log, "Event loop thread finished in {} ms.", watch.elapsedMilliseconds());
+}
+
+String StorageNATS::connectionInfoForLog() const
+{
+    /// The addresses can contain credentials.
+    return configuration.url.empty() ? "cluster: [hidden]" : "url: [hidden]";
 }
 
 void StorageNATS::initializeConsumersFunc()
@@ -389,14 +393,11 @@ void StorageNATS::initializeConsumersFunc()
     if (consumers_ready)
         return;
 
-    try
+    createConsumers();
+
+    if (const auto error = maintainIdleConsumers(); !error.empty())
     {
-        createConsumersConnection();
-        createConsumers();
-    }
-    catch (...)
-    {
-        LOG_WARNING(log, "Cannot initialize consumers: {}", getCurrentExceptionMessage(false));
+        LOG_WARNING(log, "Cannot initialize consumers: {}", error);
         initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
         return;
     }
@@ -423,66 +424,6 @@ void StorageNATS::initializeConsumersFunc()
     streaming_task->activateAndSchedule();
 }
 
-NATSConnectionPtr StorageNATS::getConsumersConnection() const
-{
-    std::lock_guard lock(consumers_connection_mutex);
-    return consumers_connection;
-}
-
-void StorageNATS::setConsumersConnection(NATSConnectionPtr connection)
-{
-    std::lock_guard lock(consumers_connection_mutex);
-    consumers_connection = std::move(connection);
-}
-
-void StorageNATS::createConsumersConnection()
-{
-    /// The NATS client library closes a connection for good once the server has rejected the same
-    /// credentials on two consecutive reconnect attempts - a rotated password and an expired token
-    /// both take that path - and it never reopens a closed connection. Build a new one, otherwise
-    /// the table would stay silently idle until it is detached and attached again.
-    NATSConnectionPtr closed_connection;
-    {
-        std::lock_guard setup_lock(consumers_setup_mutex);
-        if (auto connection = getConsumersConnection(); connection && connection->isClosed())
-        {
-            dropConsumers();
-            setConsumersConnection(nullptr);
-            closed_connection = std::move(connection);
-        }
-    }
-
-    if (closed_connection)
-    {
-        /// The table name is in the logger. The error handler of the client library reports the
-        /// rejected credentials too, but it knows only the connection, so this is the line which
-        /// tells an operator which table lost its connection and why.
-        LOG_WARNING(
-            log,
-            "The NATS client library closed the connection to {} for good. Last error: {}. Creating a new one",
-            closed_connection->connectionInfoForLog(),
-            closed_connection->lastErrorForLog());
-        closed_connection.reset();
-    }
-
-    std::lock_guard setup_lock(consumers_setup_mutex);
-    if (getConsumersConnection())
-        return;
-
-    auto connect_future = event_handler.createConnection(configuration);
-    setConsumersConnection(connect_future.get());
-}
-
-void StorageNATS::dropConsumers()
-{
-    unsubscribeConsumers();
-
-    /// A consumer subscribes through the connection it was created with, so it cannot outlive it.
-    const size_t num_consumers_to_drop = num_created_consumers.exchange(0);
-    for (size_t i = 0; i < num_consumers_to_drop; ++i)
-        popConsumer();
-}
-
 void StorageNATS::createConsumers()
 {
     std::lock_guard setup_lock(consumers_setup_mutex);
@@ -490,21 +431,10 @@ void StorageNATS::createConsumers()
     if (num_created_consumers != 0)
         return;
 
-    const auto connection = getConsumersConnection();
-    if (!connection)
-        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot create NATS consumers without a connection");
-
     for (size_t i = 0; i < num_consumers; ++i)
     {
-        try
-        {
-            pushConsumer(createConsumer(connection));
-            ++num_created_consumers;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-        }
+        pushConsumer(createConsumer());
+        ++num_created_consumers;
     }
 }
 
@@ -546,40 +476,26 @@ bool StorageNATS::subscribeConsumers()
     return are_consumers_initialized;
 }
 
-void StorageNATS::resubscribeStaleConsumers()
+String StorageNATS::maintainIdleConsumers()
 {
     std::lock_guard lock(consumers_mutex);
+    String first_error;
     for (auto & consumer : consumers)
     {
-        if (!consumer->needsResubscribe())
-            continue;
+        const bool was_subscribed = consumer->isSubscribed();
+        String error;
+        if (!consumer->maintainConnection(error) && first_error.empty())
+            first_error = error;
 
-        /// Let the streaming cycles insert what is buffered first: a stale subscription receives
-        /// nothing more, so the queue drains, and the consumer keeps reporting until then.
-        if (!consumer->queueEmpty())
-        {
-            LOG_DEBUG(log, "A subscription stopped consuming from the NATS server, resubscribing once the buffered messages are drained");
-            continue;
-        }
-
-        LOG_INFO(log, "A subscription stopped consuming from the NATS server, resubscribing");
-
-        /// `onMsg` can still have appended something, which goes back to the broker.
-        consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
-        consumer->unsubscribe();
-
-        try
-        {
-            consumer->subscribe();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-            /// An unsubscribed consumer no longer reports that it needs to be recovered.
+        /// A consumer that could not subscribe again has to be subscribed by `subscribeConsumers`.
+        if (was_subscribed && !consumer->isSubscribed())
             consumers_ready.store(false);
-            break;
-        }
     }
+
+    /// The consumers that sources hold are not checked: they are used.
+    if (!consumers.empty())
+        consumers_connected.store(first_error.empty());
+    return first_error;
 }
 
 void StorageNATS::unsubscribeHandedBackConsumers()
@@ -637,8 +553,7 @@ void StorageNATS::read(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    const auto connection = getConsumersConnection();
-    if (!connection || num_created_consumers == 0)
+    if (num_created_consumers == 0)
         throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "NATS consumers setup not finished. Connection might be not established");
 
     if (!local_context->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
@@ -658,8 +573,8 @@ void StorageNATS::read(
 
     FailPointInjection::pauseFailPoint(FailPoints::nats_pause_before_checking_direct_select_connection);
 
-    if (!connection->isConnected())
-        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "No connection to {}", connection->connectionInfoForLog());
+    if (!consumers_connected)
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "No connection to {}", connectionInfoForLog());
 
     Pipes pipes;
     pipes.reserve(num_created_consumers);
@@ -788,25 +703,23 @@ void StorageNATS::shutdown(bool /* is_drop */)
     /// Just a paranoid try catch, it is not actually needed.
     try
     {
-        unsubscribeConsumers();
-
-        if (const auto connection = getConsumersConnection())
-        {
-            if (connection->isConnected())
-                natsConnection_Flush(connection->getConnection());
-
-            connection->disconnect();
-        }
-
+        /// Wait until direct `SELECT` queries give the consumers back. They are stopped, so it does not take long.
+        std::vector<INATSConsumerPtr> all_consumers;
         for (size_t i = 0; i < num_created_consumers; ++i)
-            popConsumer();
+            all_consumers.push_back(popConsumer());
+
+        for (auto & consumer : all_consumers)
+        {
+            consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
+            consumer->unsubscribe();
+            consumer->disconnect();
+        }
+        consumers_ready.store(false);
     }
     catch (...)
     {
         tryLogCurrentException(log);
     }
-
-    stopEventLoop();
 }
 
 void StorageNATS::pushConsumer(INATSConsumerPtr consumer)
@@ -842,30 +755,31 @@ INATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
 }
 
 
-INATSConsumerPtr StorageNATS::createConsumer(const NATSConnectionPtr & connection)
+INATSConsumerPtr StorageNATS::createConsumer()
 {
     auto stream_name = getStreamName();
     if (stream_name.empty())
     {
         auto queue_name = (*nats_settings)[NATSSetting::nats_queue_group].changed ? (*nats_settings)[NATSSetting::nats_queue_group].value
                                                                                   : getStorageID().getFullTableName();
-        return std::make_shared<NATSCoreConsumer>(connection, subjects, queue_name, log, queue_size, shutdown_called);
+        return std::make_shared<NATSCoreConsumer>(configuration, subjects, queue_name, log, shutdown_called);
     }
 
     auto queue_name = (*nats_settings)[NATSSetting::nats_queue_group];
 
     return std::make_shared<NATSJetStreamConsumer>(
-        connection, std::move(stream_name), getConsumerName(), subjects, queue_name, log, queue_size, shutdown_called);
+        configuration, std::move(stream_name), getConsumerName(), subjects, queue_name, log, shutdown_called);
 }
 
 INATSProducerPtr StorageNATS::createProducer(String subject)
 {
-    auto connection_future = event_handler.createConnection(configuration);
+    auto connection = std::make_shared<NATSConnection>(configuration, log);
+    connectWithRetries(*connection);
 
     if (!getStreamName().empty())
-        return std::make_unique<NATSJetStreamProducer>(connection_future.get(), std::move(subject), shutdown_called, log);
+        return std::make_unique<NATSJetStreamProducer>(std::move(connection), std::move(subject), shutdown_called, log);
     else
-        return std::make_unique<NATSCoreProducer>(connection_future.get(), std::move(subject), shutdown_called, log);
+        return std::make_unique<NATSCoreProducer>(std::move(connection), std::move(subject), shutdown_called, log);
 }
 
 bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)
@@ -918,44 +832,19 @@ void StorageNATS::threadFunc()
 {
     auto table_id = getStorageID();
 
-    /// A closed connection is dead for good, and the cycle below only waits for one to reconnect,
-    /// so build a new connection and new consumers here. Only the connection: whether the new
-    /// consumers subscribe is decided below, the same way as for any other cycle. A stopped or
-    /// paused table must hold no subscription - with core NATS a message delivered to it is
-    /// dropped, and in a queue group it is taken away from the members which are still running -
-    /// but it does keep its connection, so it can still run the one-shot cycle a `SYSTEM REFRESH`
-    /// entitles it to, and `SYSTEM START` finds it ready.
-    ///
-    /// No connection at all means a previous attempt dropped the closed one and then failed to
-    /// connect, so try again.
-    if (const auto connection = getConsumersConnection(); !shutdown_called && (!connection || connection->isClosed()))
-    {
-        try
-        {
-            createConsumersConnection();
-            createConsumers();
-        }
-        catch (...)
-        {
-            LOG_WARNING(log, "Cannot reinitialize consumers: {}", getCurrentExceptionMessage(false));
-            streaming_task->scheduleAfter(RESCHEDULE_MS);
-            return;
-        }
-    }
+    /// Keep the connections of the consumers alive, also of a stopped table, so that `SYSTEM REFRESH` and `SYSTEM START`
+    /// find it ready, and connect again the lost ones. A stopped or paused table must hold no subscription - with core NATS
+    /// a message delivered to it is dropped, and in a queue group it is taken away from the members which are still running.
+    if (!shutdown_called)
+        maintainIdleConsumers();
 
     bool consumers_queues_are_empty = false;
 
     if (consumers_ready && subscription_stale.exchange(false))
         unsubscribeConsumers();
 
-    /// A subscription the NATS client has closed, or one that outlived a reconnect, never receives
-    /// another message, so replace it here, keeping everything the consumer already holds locally.
-    if (consumers_ready)
-        resubscribeStaleConsumers();
-
     const size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-    const auto connection = getConsumersConnection();
-    const bool is_connected = connection && connection->isConnected();
+    const bool is_connected = consumers_connected;
     const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
     const UInt64 refresh_epoch = last_seen_refresh_epoch.load();
     const bool deps_ready = num_views == 0 || checkDependencies(table_id);
@@ -1133,7 +1022,7 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
             source_consumer->ackConsumed();
     }
 
-    if (const auto connection = getConsumersConnection(); !connection || !connection->isConnected())
+    if (!consumers_connected)
     {
         LOG_TRACE(log, "Reschedule streaming. Unable to restore connection");
         return true;
@@ -1261,7 +1150,7 @@ bool resolveCredentialSource(
     const bool username_from_collection = !username_in_collection.empty() && !username_assigned_by_query;
     const bool password_from_collection = !password_in_collection.empty() && !password_assigned_by_query;
     const bool token_from_collection = !token_in_collection.empty() && !token_assigned_by_query;
-    /// Query-supplied inline credentials replace a configured credentials file before `libnats`
+    /// Query-supplied inline credentials replace a configured credentials file before the client
     /// opens the connection. In that case the file is no longer a credential source that needs
     /// to stay bound to the collection's destination.
     const bool credential_file_remains_from_collection = credential_file_from_collection && !credentials_assigned_by_query;
@@ -1280,7 +1169,7 @@ bool resolveCredentialSource(
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "The named collection can specify only one of `nats_credential_file` and `nats_credentials`");
 
-    /// `libnats` sends all configured authentication fields in its `CONNECT` frame. The final
+    /// The client sends all configured authentication fields in its `CONNECT` frame. The final
     /// effective settings must therefore select exactly one authentication family. This is checked
     /// independently of provenance: query overrides can otherwise combine methods on an auth-empty
     /// named collection, and a named collection itself can store the ambiguous configuration.
@@ -1447,7 +1336,7 @@ void registerStorageNATS(StorageFactory & factory)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_subjects` setting");
 
         /// Credential validation makes decisions from the effective settings, so it must see the
-        /// same macro-expanded values that `StorageNATS` passes to `libnats`. In particular, an
+        /// same macro-expanded values that `StorageNATS` passes to the client. In particular, an
         /// empty macro must not turn a non-empty query credential into an empty replacement after
         /// the check that prevents dropping credentials from a named collection.
         auto macros = args.getContext()->getMacros();

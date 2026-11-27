@@ -2,14 +2,10 @@
 
 #include <Storages/NATS/INATSConsumer.h>
 
-namespace Poco
-{
-class Logger;
-}
-
 namespace DB
 {
 
+/// Core NATS: a subscription per subject, in the queue group of the table. Messages are not acknowledged.
 class NATSCoreConsumer : public INATSConsumer
 {
 public:
@@ -17,6 +13,11 @@ public:
 
 protected:
     void subscribeImpl() override;
+    void unsubscribeImpl() override;
+    std::optional<NATSClient::Message> receiveImpl(UInt64 timeout_ms) override;
+
+private:
+    std::vector<UInt64> sids;
 };
 
 }
