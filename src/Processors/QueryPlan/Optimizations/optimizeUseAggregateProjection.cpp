@@ -42,8 +42,10 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/Statistics.h>
+#include <Storages/Statistics/StatisticsPartPruner.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Planner/PlannerExpressionAnalysis.h>
 #include <Planner/PlannerProjection.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -61,9 +63,11 @@ namespace Setting
 {
     extern const SettingsBool force_optimize_projection;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 min_marks_per_part_to_load_statistics;
     extern const SettingsBool prefer_optimize_projection;
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool use_statistics_for_min_max_aggregation;
+    extern const SettingsBool use_statistics_for_part_pruning;
     extern const SettingsBool use_statistics_for_sum_avg_aggregation;
 }
 
@@ -635,26 +639,27 @@ struct AggregateProjectionCandidates
 
     /// If not empty, try to answer the aggregation from per-part column statistics.
     VectorWithMemoryTracking<StatisticsAggregate> statistics_aggregates;
+    /// Set only when statistics may prove that every row of a part matches the filter.
+    std::shared_ptr<StatisticsPartPruner> statistics_filter_pruner;
 
     /// Why each projection that was not used could not be used.
     UnorderedMapWithMemoryTracking<String, String> reject_reasons;
 };
 
-/// Check if the whole aggregation can be answered from per-part column statistics: there is no
-/// `GROUP BY` and no filter, and every aggregate is `count`, or a `StatisticsAggregate` over a physical column
-/// whose declared statistics track it for the column type (`canStatisticsTrackMinMax`, `canStatisticsTrackSum`).
+/// No `GROUP BY`. Every aggregate is `count`, or `min`/`max`/`sum`/`avg`/`sumCount` on a physical
+/// column that statistics track (`canStatisticsTrackMinMax`, `canStatisticsTrackSum`). A filter is
+/// allowed only when it is deterministic and `use_statistics_for_part_pruning` is on; a part is then
+/// kept only when statistics prove every row matches.
 ///
-/// Statistics describe the physical rows of a part as they were written, so anything that changes
-/// the visible rows or values at read time disables the optimization: lightweight deletes, pending
-/// ALTER MODIFY/RENAME/DROP COLUMN mutations (checked per part), the delete bitmap of a unique-key table, and masking
-/// policies.
-/// (Pending data mutations and patch parts are already rejected by canUseProjectionForReadingStep,
-/// and FINAL together with SAMPLE are rejected there as well.)
+/// Statistics describe stored rows, so lightweight deletes, row and masking policies, and the
+/// unique-key delete bitmap disable this. Pending `ALTER` mutations are checked per part.
+/// Data mutations, patch parts, `FINAL`, and `SAMPLE` are rejected by `canUseProjectionForReadingStep`.
 static VectorWithMemoryTracking<StatisticsAggregate> getStatisticsAggregates(
     const AggregatingStep & aggregating,
     ReadFromMergeTree & reading,
     const StorageMetadataPtr & metadata,
     const DAGIndex & query_index,
+    const ActionsDAG::Node * filter_node,
     const ContextPtr & context)
 {
     const bool use_min_max = context->getSettingsRef()[Setting::use_statistics_for_min_max_aggregation];
@@ -670,7 +675,16 @@ static VectorWithMemoryTracking<StatisticsAggregate> getStatisticsAggregates(
         return {};
 
     const auto & query_info = reading.getQueryInfo();
-    if (query_info.prewhere_info || query_info.row_level_filter || query_info.filter_actions_dag)
+    if (query_info.row_level_filter || reading.getRowLevelFilter()
+        || getEffectiveRowPolicyFilter(reading.getMergeTreeData(), context))
+        return {};
+
+    if (!filter_node && (query_info.prewhere_info || query_info.filter_actions_dag))
+        return {};
+
+    if (filter_node
+        && (!context->getSettingsRef()[Setting::use_statistics_for_part_pruning]
+            || !VirtualColumnUtils::isDeterministicInScopeOfQuery(filter_node)))
         return {};
 
     /// TODO(unique-key): support statistics-based answers; they don't see the delete bitmap.
@@ -957,10 +971,26 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     /// When no projection can serve the aggregation, try to answer it directly
     /// from per-part column statistics.
     if (can_use_statistics && !candidates.minmax_projection && candidates.real.empty()
-        && candidates.only_count_column.empty() && !dag.filter_node)
+        && (candidates.only_count_column.empty() || dag.filter_node))
     {
-        candidates.statistics_aggregates
-            = getStatisticsAggregates(aggregating, reading, metadata, query_index, context);
+        auto stats_aggregates
+            = getStatisticsAggregates(aggregating, reading, metadata, query_index, dag.filter_node, context);
+        if (!stats_aggregates.empty())
+        {
+            if (dag.filter_node)
+            {
+                auto filter_pruner = std::make_shared<StatisticsPartPruner>(metadata, *dag.filter_node, context);
+                if (filter_pruner->canMatchWholePart())
+                {
+                    candidates.statistics_aggregates = std::move(stats_aggregates);
+                    candidates.statistics_filter_pruner = std::move(filter_pruner);
+                }
+            }
+            else
+            {
+                candidates.statistics_aggregates = std::move(stats_aggregates);
+            }
+        }
     }
 
     return candidates;
@@ -1051,6 +1081,7 @@ static constexpr const char * STATISTICS_PROJECTION_NAME = "_statistics_projecti
 /// with one row of aggregate function states, or an empty block if no part could be covered.
 static Block makeBlockFromStatistics(
     const VectorWithMemoryTracking<StatisticsAggregate> & stats_aggregates,
+    StatisticsPartPruner * filter_pruner,
     ReadFromMergeTree::AnalysisResult & remaining_select_result,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const StorageMetadataPtr & metadata,
@@ -1070,6 +1101,18 @@ static Block makeBlockFromStatistics(
     for (const auto & stats_aggregate : stats_aggregates)
         if (stats_aggregate.kind != StatisticsAggregate::Kind::Count || stats_aggregate.is_nullable)
             required_columns.insert(stats_aggregate.column_name);
+
+    VectorWithMemoryTracking<std::pair<String, DataTypePtr>> filter_column_types;
+    if (filter_pruner)
+    {
+        const auto & metadata_columns = metadata->getColumns();
+        for (const auto & column_name : filter_pruner->getRequiredColumns())
+        {
+            required_columns.insert(column_name);
+            const auto * metadata_column = metadata_columns.tryGet(column_name);
+            filter_column_types.emplace_back(column_name, metadata_column ? metadata_column->type : nullptr);
+        }
+    }
 
     auto & parts_with_ranges = remaining_select_result.parts_with_ranges;
 
@@ -1102,6 +1145,25 @@ static Block makeBlockFromStatistics(
         return part->rows_count != 0;
     };
 
+    /// Match the statistics-based part pruning and `PREWHERE` ordering: statistics already in memory are
+    /// always used, but loading them from disk must not cost more than the small read left by the indexes.
+    bool load_statistics_from_disk = true;
+    if (filter_pruner)
+    {
+        const auto statistics_cache = context->getStatisticsCache();
+        size_t parts_to_load_statistics = 0;
+        for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
+        {
+            if (part_may_use_statistics(part_index)
+                && !parts_with_ranges[part_index].data_part->areStatisticsCached(required_columns, statistics_cache.get()))
+                ++parts_to_load_statistics;
+        }
+
+        const size_t min_marks = MergeTreeDataSelectExecutor::getMinMarksToLoadStatistics(
+            context->getSettingsRef()[Setting::min_marks_per_part_to_load_statistics], parts_to_load_statistics);
+        load_statistics_from_disk = remaining_select_result.selected_marks >= min_marks;
+    }
+
     /// Returns false only if `only_from_memory` and the estimates of the part need reads from disk.
     auto load_part_estimates = [&](size_t part_index, bool only_from_memory)
     {
@@ -1115,7 +1177,10 @@ static Block makeBlockFromStatistics(
             if (required_columns.empty())
                 parts_estimates[part_index] = Estimates{};
             else if (!only_from_memory)
-                parts_estimates[part_index] = part->getEstimates(required_columns);
+            {
+                if (load_statistics_from_disk)
+                    parts_estimates[part_index] = part->getEstimates(required_columns);
+            }
             else if (auto estimates = part->tryGetEstimatesFromMemory(required_columns))
                 parts_estimates[part_index] = std::move(*estimates);
             else
@@ -1129,9 +1194,31 @@ static Block makeBlockFromStatistics(
         return true;
     };
 
-    auto part_covered_by_statistics = [&](const RangesInDataPart & part_with_ranges, const Estimates & estimates)
+    auto part_covered_by_statistics = [&](const RangesInDataPart & part_with_ranges, Estimates & estimates)
     {
         const auto & part = part_with_ranges.data_part;
+
+        if (filter_pruner)
+        {
+            for (const auto & [column_name, metadata_type] : filter_column_types)
+            {
+                auto it = estimates.find(column_name);
+                if (it == estimates.end())
+                    continue;
+
+                auto part_column = part->tryGetColumn(column_name);
+                if (!part_column || !metadata_type
+                    || !isRepresentationPreservingConversion(part_column->type.get(), metadata_type.get())
+                    || it->second.rows_count != part->rows_count)
+                {
+                    estimates.erase(it);
+                }
+            }
+
+            const auto mask = filter_pruner->checkPartCanMatch(estimates);
+            if (!mask.can_be_true || mask.can_be_false)
+                return false;
+        }
 
         VectorWithMemoryTracking<const Field *> part_values(stats_aggregates.size(), nullptr);
         VectorWithMemoryTracking<UInt64> part_non_null_rows(stats_aggregates.size(), part->rows_count);
@@ -1225,7 +1312,7 @@ static Block makeBlockFromStatistics(
     auto consume_part_estimates = [&](size_t part_index)
     {
         auto & part_with_ranges = parts_with_ranges[part_index];
-        const auto estimates = std::move(parts_estimates[part_index]);
+        auto estimates = std::move(parts_estimates[part_index]);
         if (!estimates || !part_covered_by_statistics(part_with_ranges, *estimates))
             parts_to_read.push_back(std::move(part_with_ranges));
     };
@@ -1441,25 +1528,6 @@ UseProjectionsResult optimizeUseAggregateProjections(
             hypothetical->outcome.reason = "the implicit projection of min, max and count serves the query";
         }
     }
-    else if (!candidates.statistics_aggregates.empty())
-    {
-        parent_reading_select_result = reading->getAnalyzedResult();
-        if (!parent_reading_select_result)
-            parent_reading_select_result = reading->selectRangesToRead(false);
-
-        if (parent_reading_select_result->parts_with_ranges.empty())
-            return reject_all("the read selects no parts");
-
-        /// Copy parent analysis result to isolate modifications. This result will store the
-        /// remaining parts (without statistics), to be used for normal reading.
-        inexact_ranges_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>(*parent_reading_select_result);
-        statistics_block = makeBlockFromStatistics(
-            candidates.statistics_aggregates, *inexact_ranges_select_result,
-            reading->getMutationsSnapshot(), metadata, context, logger);
-
-        if (statistics_block.empty())
-            return result;
-    }
     else if (!candidates.real.empty() || !candidates.only_count_column.empty())
     {
         parent_reading_select_result = reading->getAnalyzedResult();
@@ -1660,17 +1728,48 @@ UseProjectionsResult optimizeUseAggregateProjections(
             }
         }
 
-        /// No suitable projection found, and exact count optimization is not used.
-        if (!best_candidate && exact_count == 0)
+        if (!best_candidate && exact_count == 0 && candidates.statistics_aggregates.empty())
         {
             if (hypothetical)
                 recordHypotheticalOutcome(*hypothetical, result, findCandidate(candidates.real, hypothetical_projection), false);
             return result;
         }
     }
-    else
+    else if (candidates.statistics_aggregates.empty())
     {
         return result;
+    }
+
+    if (!best_candidate && exact_count == 0)
+    {
+        if (!parent_reading_select_result)
+        {
+            parent_reading_select_result = reading->getAnalyzedResult();
+            if (!parent_reading_select_result)
+                parent_reading_select_result = reading->selectRangesToRead(false);
+        }
+
+        if (parent_reading_select_result->parts_with_ranges.empty())
+            return reject_all("the read selects no parts");
+
+        /// Copy parent analysis result to isolate modifications. This result will store the
+        /// remaining parts (without statistics), to be used for normal reading.
+        inexact_ranges_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>(*parent_reading_select_result);
+        statistics_block = makeBlockFromStatistics(
+            candidates.statistics_aggregates,
+            candidates.statistics_filter_pruner.get(),
+            *inexact_ranges_select_result,
+            reading->getMutationsSnapshot(),
+            metadata,
+            context,
+            logger);
+
+        if (statistics_block.empty())
+        {
+            if (hypothetical)
+                recordHypotheticalOutcome(*hypothetical, result, findCandidate(candidates.real, hypothetical_projection), false);
+            return result;
+        }
     }
 
     /// Identify projections selected as the best candidates and update their stat descriptions with appropriate logging

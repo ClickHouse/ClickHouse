@@ -11,6 +11,8 @@ SET parallel_replicas_local_plan = 1;
 SET optimize_move_to_prewhere = 1;
 SET optimize_use_projections = 1;
 SET optimize_use_implicit_projections = 1;
+-- Keep `ReadFromMergeTree` in the plan so `EXPLAIN indexes = 1` reports statistics part pruning.
+SET use_statistics_for_min_max_aggregation = 0, use_statistics_for_sum_avg_aggregation = 0;
 
 DROP TABLE IF EXISTS t_stats_prune_in;
 

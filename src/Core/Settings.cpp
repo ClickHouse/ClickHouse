@@ -2403,7 +2403,7 @@ The minimum number of marks left to read after the primary key analysis, per dat
 
 Loading statistics costs a few reads per data part, and on a cold start it can take longer than reading the data itself when the primary key already narrows the read to a small number of granules. If fewer marks than this setting multiplied by the number of parts whose statistics would be loaded are left to read, statistics are not loaded for these optimizations: parts are not pruned by statistics, and `PREWHERE` conditions are ordered by the sizes of their columns, as for tables without statistics. Statistics that are already in memory are used regardless of the size of the read.
 
-Answering `min`, `max` and `count` from statistics (see `use_statistics_for_min_max_aggregation`) replaces the read and is not affected by this setting.
+Answering aggregations without filters from statistics (see `use_statistics_for_min_max_aggregation`) replaces the read and is not affected by this setting. For filtered aggregations, only statistics already in memory are used below this threshold; above it, statistics are loaded to answer the parts whose rows all match the filter.
 
 Possible values:
 
@@ -2414,9 +2414,10 @@ Possible values:
     DECLARE(Bool, use_statistics_for_min_max_aggregation, true, R"(
 Answer `min`, `max` and `count` aggregations from per-part column statistics instead of reading data.
 
-When enabled, a query of the form `SELECT min(column), max(column), count() FROM table` without `GROUP BY` and filters
-is answered from column statistics (e.g. MinMax statistics, see the `auto_statistics_types` MergeTree setting)
-for the data parts that have them materialized, and only the remaining parts are read.
+When enabled, `SELECT min(column), max(column), count() FROM table` without `GROUP BY` is answered from
+per-part `basic` or `minmax` statistics (see `auto_statistics_types`) for parts that have them materialized,
+and only the remaining parts are read. With a `WHERE` or `PREWHERE` and `use_statistics_for_part_pruning`
+enabled, a part is answered from statistics only when those statistics prove every row matches the filter.
 `count()` is also answered together with the aggregations of `use_statistics_for_sum_avg_aggregation`.
 
 Possible values:
@@ -2427,9 +2428,10 @@ Possible values:
         {"26.9", false, true, "New setting to answer `min`, `max` and `count` aggregations without `GROUP BY` and filters from per-part column statistics for parts that have them materialized, reading only the remaining parts. previous_value=false so `compatibility` with versions before 26.9 keeps the optimization disabled and restores the pre-existing plan."}) \
     DECLARE(Bool, use_statistics_for_sum_avg_aggregation, true, R"(
 Answer `sum`, `avg` and `sumCount` aggregations over integer and `Decimal` columns that are not `LowCardinality`,
-without `GROUP BY` and filters, from per-part column statistics (the `basic` statistics type, see the
-`auto_statistics_types` `MergeTree` setting) for the data parts that have them materialized, and read only the remaining
-parts. `count(column)` of a column that is not `LowCardinality` is answered there from the number of rows. Over a
+without `GROUP BY`, from per-part `basic` statistics (see `auto_statistics_types`) for parts that have them
+materialized, and read only the remaining parts. With a `WHERE` or `PREWHERE` and `use_statistics_for_part_pruning`
+enabled, a part is answered from statistics only when those statistics prove every row matches the filter.
+`count(column)` of a column that is not `LowCardinality` is answered from the number of rows. Over a
 `Nullable` column, the statistics hold the sum of the non-NULL values and the NULL count, which the aggregates skip.
 The result is exactly the same as when reading the data.
 
