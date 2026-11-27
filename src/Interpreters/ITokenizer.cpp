@@ -262,6 +262,16 @@ SplitByStringTokenizer::SplitByStringTokenizer(const std::vector<String> & separ
     }
 
     all_separators_single_byte = std::ranges::all_of(separators, [](const auto & separator) { return separator.size() == 1; });
+
+    if (!all_separators_single_byte && std::ranges::all_of(separators, [](const auto & separator) { return separator.size() <= sizeof(UInt64); }))
+    {
+        short_separators.reserve(separators.size());
+        for (const auto & separator : separators)
+            short_separators.push_back({
+                .bytes = unalignedLoadLittleEndian<UInt64>(separator.data(), separator.size()),
+                .mask = maskLowBits<UInt64>(static_cast<unsigned char>(8 * separator.size())),
+                .length = separator.size()});
+    }
 }
 
 bool SplitByStringTokenizer::nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
