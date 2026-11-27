@@ -1,0 +1,59 @@
+--- no grants
+timeSeriesSamples: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesData: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesTags: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesTimeRanges: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesMetricFamilies: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesMetrics: describe ACCESS_DENIED, select ACCESS_DENIED
+insert: ACCESS_DENIED
+other engine: ACCESS_DENIED
+no table: ACCESS_DENIED
+--- SELECT on the TimeSeries table only
+timeSeriesSamples: describe OK, select OK
+timeSeriesData: describe OK, select OK
+timeSeriesTags: describe OK, select OK
+timeSeriesTimeRanges: describe OK, select OK
+timeSeriesMetricFamilies: describe OK, select OK
+timeSeriesMetrics: describe OK, select OK
+insert: ACCESS_DENIED
+other engine: ACCESS_DENIED
+no table: ACCESS_DENIED
+--- SELECT on the target tables only
+timeSeriesSamples: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesData: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesTags: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesTimeRanges: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesMetricFamilies: describe ACCESS_DENIED, select ACCESS_DENIED
+timeSeriesMetrics: describe ACCESS_DENIED, select ACCESS_DENIED
+insert: ACCESS_DENIED
+other engine: ACCESS_DENIED
+no table: ACCESS_DENIED
+--- SELECT on the database
+timeSeriesSamples: describe OK, select OK
+timeSeriesData: describe OK, select OK
+timeSeriesTags: describe OK, select OK
+timeSeriesTimeRanges: describe OK, select OK
+timeSeriesMetricFamilies: describe OK, select OK
+timeSeriesMetrics: describe OK, select OK
+insert: ACCESS_DENIED
+other engine: UNEXPECTED_TABLE_ENGINE
+no table: UNKNOWN_TABLE
+--- SELECT and INSERT on the database
+timeSeriesSamples: describe OK, select OK
+timeSeriesData: describe OK, select OK
+timeSeriesTags: describe OK, select OK
+timeSeriesTimeRanges: describe OK, select OK
+timeSeriesMetricFamilies: describe OK, select OK
+timeSeriesMetrics: describe OK, select OK
+insert: OK
+other engine: UNEXPECTED_TABLE_ENGINE
+no table: UNKNOWN_TABLE
+--- metric families
+injected
+--- an external Alias target
+describe without the grant on the target: ACCESS_DENIED
+describe an inner target: OK
+describe: ACCESS_DENIED
+describe metrics: ACCESS_DENIED
+describe alias: ACCESS_DENIED
+describe with the grant on the table the alias points to: OK

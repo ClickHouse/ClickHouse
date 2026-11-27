@@ -279,3 +279,19 @@ def test_series_records_query_finish():
         )
         > 0
     )
+
+
+def test_series_refuses_a_row_policy_on_the_table():
+    node.query("CREATE ROW POLICY p_series ON prometheus USING 0 TO ALL")
+    try:
+        data = get_bad_data_from_api("/api/v1/series?match[]=cpu_usage")
+        assert "row policy" in data["error"]
+    finally:
+        node.query("DROP ROW POLICY p_series ON prometheus")
+
+
+def test_series_refuses_a_table_filter_on_the_table():
+    data = get_bad_data_from_api(
+        "/api/v1/series?match[]=cpu_usage", params={"additional_table_filters": "{'default.prometheus': '0'}"}
+    )
+    assert "additional_table_filters" in data["error"]

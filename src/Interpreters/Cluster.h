@@ -275,6 +275,10 @@ public:
         ConnectionPoolPtrs per_replica_pools;
         bool has_internal_replication = false;
         String default_database;
+        /// The pools of the replicas that are not asked as local ones, and the pool over them.
+        /// Empty and nullptr if the shard has no local replica or no other replica.
+        ConnectionPoolPtrs remote_replicas_pools;
+        ConnectionPoolWithFailoverPtr remote_replicas_pool;
     };
 
     using ShardsInfo = std::vector<ShardInfo>;

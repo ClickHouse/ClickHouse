@@ -45,6 +45,7 @@
 #include <Common/randomSeed.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/setThreadName.h>
 
 #include <Parsers/ASTAsterisk.h>
@@ -138,6 +139,7 @@
 
 #include <memory>
 #include <filesystem>
+#include <numeric>
 
 namespace fs = std::filesystem;
 
@@ -1091,8 +1093,9 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         if (table_expression_modifiers)
             table_function_node->setTableExpressionModifiers(*table_expression_modifiers);
 
-        /// Subquery in table function `view` may reference tables that don't exist on the initiator.
-        if (table_function_node->getTableFunctionName() == "view")
+        /// Subquery in table function `view` may reference tables that don't exist on the initiator, and so may the table of `timeSeriesSelector`.
+        const auto & remote_table_function_name = table_function_node->getTableFunctionName();
+        if (remote_table_function_name == "view" || remote_table_function_name == "timeSeriesSelector")
         {
             auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
             auto column_names_and_types = distributed_storage_snapshot->getColumns(get_column_options);
@@ -1105,7 +1108,9 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
             auto storage = std::make_shared<StorageDummy>(fake_storage_id, ColumnsDescription{column_names_and_types});
 
-            table_function_node->resolve({}, std::move(storage), query_context, /*unresolved_arguments_indexes_=*/{ 0 });
+            VectorWithMemoryTracking<size_t> unresolved_arguments_indexes(table_function_node->getArguments().getNodes().size());
+            std::iota(unresolved_arguments_indexes.begin(), unresolved_arguments_indexes.end(), 0);
+            table_function_node->resolve({}, std::move(storage), query_context, std::move(unresolved_arguments_indexes));
         }
         else
         {

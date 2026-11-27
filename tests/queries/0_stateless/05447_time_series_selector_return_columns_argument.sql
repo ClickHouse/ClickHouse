@@ -38,6 +38,10 @@ SELECT '-- the time range is applied before the conversion';
 SELECT count(), min(timestamp), max(timestamp) FROM timeSeriesSelector(ts_buckets, 'm', 120, 4000, 'timestamp_and_value');
 SELECT sum(length(samples)) FROM timeSeriesSelector(ts_rows, 'm', 120, 4000, 'samples');
 
+SELECT '-- the value sent by the distributed PromQL read returns the same columns';
+SELECT timestamp, value FROM timeSeriesSelector(ts_buckets, 'm{env="prod"}', 0, 5000, 'timestamp_and_value_checked') ORDER BY timestamp;
+DESCRIBE timeSeriesSelector(ts_rows, 'm', 0, 5000, 'timestamp_and_value_checked');
+
 SELECT '-- the argument is required and must be one of the two values';
 SELECT count() FROM timeSeriesSelector(ts_buckets, 'm', 0, 5000); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT count() FROM timeSeriesSelector(ts_buckets, 'm', 0, 5000, 'rows'); -- { serverError BAD_ARGUMENTS }

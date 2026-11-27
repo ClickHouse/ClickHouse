@@ -209,6 +209,22 @@ def test_table_of_version_5():
     assert data == {"cpu_usage": ALL_METADATA["cpu_usage"]}
 
 
+def test_metadata_refuses_a_row_policy_on_the_table():
+    node.query("CREATE ROW POLICY p_metadata ON prometheus USING 0 TO ALL")
+    try:
+        data = get_bad_data_from_api("/api/v1/metadata")
+        assert "row policy" in data["error"]
+    finally:
+        node.query("DROP ROW POLICY p_metadata ON prometheus")
+
+
+def test_metadata_refuses_a_table_filter_on_the_table():
+    data = get_bad_data_from_api(
+        "/api/v1/metadata", params={"additional_table_filters": "{'default.prometheus': '0'}"}
+    )
+    assert "additional_table_filters" in data["error"]
+
+
 # The endpoint reads the metric families through `timeSeriesMetricFamilies` as the user of the request,
 # so it needs `SHOW COLUMNS` on the TimeSeries table, which `SELECT` on the table implies.
 def test_metadata_requires_show_columns():

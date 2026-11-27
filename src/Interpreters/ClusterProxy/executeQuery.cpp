@@ -162,6 +162,15 @@ namespace
 namespace ClusterProxy
 {
 
+Cluster::ShardInfo makeShardInfoWithoutLocalReplicas(const Cluster::ShardInfo & shard_info)
+{
+    Cluster::ShardInfo res = shard_info;
+    res.local_addresses.clear();
+    res.per_replica_pools = shard_info.remote_replicas_pools;
+    res.pool = shard_info.remote_replicas_pool;
+    return res;
+}
+
 void stripDatabaseSetting(Settings & settings)
 {
     /// Also reset a `database` that is merely *marked* changed (e.g. explicitly reset to the

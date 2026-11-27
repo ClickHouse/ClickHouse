@@ -1,5 +1,6 @@
 #include <TableFunctions/TableFunctionTimeSeries.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Common/quoteString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -83,6 +84,22 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTable(const Cont
     return time_series_storage->getTargetTable(target_kind, context);
 }
 
+template <ViewTarget::Kind target_kind>
+StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTableWithAccess(const ContextPtr & context, AccessType access_type) const
+{
+    context->checkAccess(access_type, time_series_storage_id);
+    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
+    auto target_table = time_series_storage->getTargetTable(target_kind, context);
+    /// An inner target belongs to the TimeSeries table, like the inner table of a materialized view. An external target
+    /// is a table of its own and needs the grant too, and an `Alias` one also on the table it points to.
+    if (!time_series_storage->isInnerTable(target_kind))
+    {
+        context->checkAccess(access_type, target_table->getStorageID());
+        checkSourceStorageAccess(context, target_table, target_table->getStorageID(), access_type);
+    }
+    return target_table;
+}
+
 
 template <ViewTarget::Kind target_kind>
 std::optional<String> TableFunctionTimeSeriesTarget<target_kind>::getParallelReplicasReadID() const
@@ -96,15 +113,16 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
         ContextPtr context,
         const String & /* table_name */,
         ColumnsDescription /* cached_columns */,
-        bool /* is_insert_query */) const
+        bool is_insert_query) const
 {
-    return getTargetTable(context);
+    return getTargetTableWithAccess(context, is_insert_query ? AccessType::INSERT : AccessType::SELECT);
 }
 
 template <ViewTarget::Kind target_kind>
 ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStructure(ContextPtr context, bool /* is_insert_query */) const
 {
-    auto metadata_snapshot = getTargetTable(context)->getInMemoryMetadataPtr(context, false);
+    /// DESCRIBE passes `is_insert_query` as true, so the structure needs what DESCRIBE of a table needs.
+    auto metadata_snapshot = getTargetTableWithAccess(context, AccessType::SHOW_COLUMNS)->getInMemoryMetadataPtr(context, false);
     return metadata_snapshot->columns;
 }
 
@@ -242,6 +260,7 @@ in the columns chosen by the argument `return_columns`:
   The samples of a time series can be returned in multiple rows, for example one row per time bucket of the samples table.
   Use the aggregate function `timeSeriesGroupArray` to merge the rows of a time series.
 - `'timestamp_and_value'` - the columns `timestamp` and `value` with one sample per row.
+  The value `'timestamp_and_value_checked'` returns the same columns, and is used by PromQL queries over a Distributed table: a server that predates the check of row policies on the source table refuses it.
 
 A `TimeSeries` table of version 11 or later stores buckets of samples as arrays, the tables of earlier versions store one sample per row.
 The samples are converted when the requested columns differ from the layout of the table, which costs some time; the PromQL functions
@@ -265,7 +284,7 @@ FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTE
 
     factory.registerFunction<TableFunctionPrometheusQuery</* range = */ false>>(
         {.description = R"DOCS_MD(
-Evaluates a prometheus query using data from a TimeSeries table.
+Evaluates a prometheus query using data from a TimeSeries table, or from a Distributed table over per-shard TimeSeries tables (samples are then selected on every shard and the query is evaluated on the initiator).
 
 ## Syntax {#syntax}
 
@@ -277,8 +296,8 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 ## Arguments {#arguments}
 
-- `db_name` - The name of the database where a TimeSeries table is located.
-- `time_series_table` - The name of a TimeSeries table.
+- `db_name` - The name of the database where the table is located.
+- `time_series_table` - The name of a TimeSeries table, or of a Distributed table over per-shard TimeSeries tables.
 - `promql_query` - A query written in [PromQL syntax](https://prometheus.io/docs/prometheus/latest/querying/basics/).
 - `evaluation_time` - The evaluation timestamp, with millisecond or finer precision. To evaluate a query at the current time, use `now()` as `evaluation_time`.
 
@@ -351,7 +370,7 @@ SELECT * FROM prometheusQuery(mytable, 'rate(http_requests{job="prometheus"}[10m
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
     factory.registerFunction<TableFunctionPrometheusQuery</* range = */ true>>(
         {.description = R"DOCS_MD(
-Evaluates a prometheus query using data from a TimeSeries table over a range of evaluation times.
+Evaluates a prometheus query over a range of evaluation times, using data from a TimeSeries table or from a Distributed table over per-shard TimeSeries tables.
 
 ## Syntax {#syntax}
 
@@ -363,8 +382,8 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 
 ## Arguments {#arguments}
 
-- `db_name` - The name of the database where a TimeSeries table is located.
-- `time_series_table` - The name of a TimeSeries table.
+- `db_name` - The name of the database where the table is located.
+- `time_series_table` - The name of a TimeSeries table, or of a Distributed table over per-shard TimeSeries tables.
 - `promql_query` - A query written in [PromQL syntax](https://prometheus.io/docs/prometheus/latest/querying/basics/).
 - `start_time` - The start time of the evaluation range, with millisecond or finer precision.
 - `end_time` - The end time of the evaluation range, with millisecond or finer precision.
