@@ -2867,9 +2867,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
         }
     };
 
-    /// A mutation matches the columns of a part by exact name, so `CLEAR COLUMN` of a Nested group clears its columns one
-    /// by one: the group as `MergeTreeData::checkAlterEligibility` checks it, in the columns before the ALTER, each under
-    /// the name the previous commands gave it.
+    /// A mutation matches the columns of a part by exact name, so `CLEAR COLUMN` of a Nested group clears its columns one by one.
     const ColumnsDescription columns_before_alter = metadata.columns;
     NameToNameMap renamed_columns; /// name before the ALTER -> name after the previous commands
     for (const auto & alter_cmd : *this)
