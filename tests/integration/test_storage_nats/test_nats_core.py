@@ -4,6 +4,7 @@ import logging
 import random
 import threading
 import time
+import uuid
 
 import pytest
 from google.protobuf.internal.encoder import _VarintBytes
@@ -529,6 +530,48 @@ def test_nats_insert(nats_cluster):
 
     result = "\n".join(insert_messages)
     nats_helpers.check_result(result, True)
+
+
+@pytest.mark.parametrize("ddl", ["DROP", "DETACH"])
+def test_nats_insert_racing_drop(nats_cluster, ddl):
+    # The table shutdown stops the event loop that sends the producer's messages, so the INSERT must fail, not wait forever.
+    table = f"test.nats_racing_{ddl.lower()}"
+    instance.query(
+        f"""
+        CREATE TABLE {table} (key UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'insert_racing_{ddl.lower()}',
+                     nats_format = 'TSV';
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, table)
+
+    query_id = f"nats_insert_racing_{ddl.lower()}_{uuid.uuid4().hex}"
+    result = {}
+
+    def insert():
+        result["error"] = instance.query_and_get_error(
+            f"INSERT INTO {table} SELECT number FROM numbers(50000000)", query_id=query_id, timeout=120
+        )
+        result["end"] = time.monotonic()
+
+    thread = threading.Thread(target=insert, daemon=True)
+    thread.start()
+
+    deadline = time.monotonic() + 60
+    written_rows = f"SELECT sum(written_rows) FROM system.processes WHERE query_id = '{query_id}'"
+    while instance.query(written_rows).strip() == "0":
+        assert time.monotonic() < deadline, "the INSERT did not start"
+        time.sleep(0.1)
+
+    instance.query(f"{ddl} TABLE {table}")
+    ddl_end = time.monotonic()
+    thread.join(timeout=60)
+    assert not thread.is_alive(), f"the INSERT hangs after {ddl} TABLE"
+    assert "Table is detached" in result["error"] and "(ABORTED)" in result["error"], result["error"]
+    # A flush onto the stopped event loop would wait for its 10 s timeout.
+    assert result["end"] - ddl_end < 9, result["end"] - ddl_end
 
 
 def test_nats_insert_materialized_column(nats_cluster):
@@ -1761,6 +1804,36 @@ def test_nats_stream_error_mode_multirow_message(nats_cluster):
 
     # The exact error text depends on the parser, so only check that it is not empty.
     assert instance.query("SELECT length(err) > 0 FROM test.dst WHERE a = 0") == "1\n"
+
+
+def test_nats_stream_error_mode_enum_type_default(nats_cluster):
+    """The row of a broken message gets the type default: the smallest element of an Enum without 0."""
+    instance.query(
+        """
+        CREATE TABLE test.nats (a UInt64, e Enum8('a' = 1, 'b' = 2))
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'stream_enum',
+                     nats_format = 'JSONEachRow',
+                     nats_handle_error_mode = 'stream';
+        CREATE TABLE test.dst (a UInt64, e Enum8('a' = 1, 'b' = 2), failed UInt8)
+            ENGINE = MergeTree ORDER BY a;
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.mv TO test.dst AS
+            SELECT a, e, isNotNull(_error) AS failed FROM test.nats;
+        """
+    )
+    nats_helpers.wait_for_mv_attached_to_table(instance, "test.nats")
+
+    asyncio.run(publish_messages(nats_cluster, "stream_enum", ['{"a":1,"e":"b"}', "not json"]))
+
+    nats_helpers.wait_query_result(instance, "SELECT count() FROM test.dst", 2)
+    assert instance.query("SELECT a, e, failed FROM test.dst ORDER BY a") == "0\ta\t1\n1\tb\t0\n"
 
 
 def test_nats_wait_for_flush_interval_reads_all_consumers(nats_cluster):

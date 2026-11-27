@@ -14,10 +14,10 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 <ClickHouseSupportedBadge />
 
-يمكن لـ QuickSight الاتصال بإعداد ClickHouse المحلي (23.11+) عبر واجهة MySQL باستخدام مصدر البيانات الرسمي لـ MySQL ووضع Direct Query.
+يمكن لـ QuickSight الاتصال بإعداد ClickHouse المحلي (23.11+) عبر واجهة MySQL باستخدام مصدر البيانات الرسمي لـ MySQL ووضع استعلام مباشر.
 
 <div id="on-premise-clickhouse-server-setup">
-  ## إعداد خادم ClickHouse محليًا
+  ## إعداد خادم ClickHouse محليًا {#on-premise-clickhouse-server-setup}
 </div>
 
 يُرجى الرجوع إلى [الوثائق الرسمية](/ar/concepts/features/interfaces/mysql) لمعرفة كيفية إعداد خادم ClickHouse مع تمكين واجهة MySQL.
@@ -110,113 +110,83 @@ mysql> show databases;
 Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
 ```
 
-<div id="connecting-quicksight-to-clickhouse">
-  ## ربط QuickSight بـ ClickHouse
-</div>
+## ربط QuickSight بـ ClickHouse {#connecting-quicksight-to-clickhouse}
 
-أولًا، انتقل إلى [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com)، ثم افتح Datasets وانقر على &quot;New dataset&quot;:
+أولاً، انتقل إلى [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com)، ثم إلى قسم Datasets وانقر على &quot;New dataset&quot;:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![لوحة معلومات Amazon QuickSight تعرض زر New dataset في قسم Datasets](/images/integrations/data-visualization/quicksight_01.webp)
-
-</Frame>
-
+  <Frame>
+    ![لوحة معلومات Amazon QuickSight تعرض زر New dataset في قسم Datasets](/images/integrations/data-visualization/quicksight_01.webp)
+  </Frame>
 </div>
 
 <br />
 
-ابحث عن موصل MySQL الرسمي المضمّن في QuickSight (باسم **MySQL** فقط):
+ابحث عن موصل MySQL الرسمي المضمّن في QuickSight (واسمه **MySQL** فقط):
 
 <div className="ch-image-md">
-
-<Frame>
-
-![شاشة اختيار مصدر البيانات في QuickSight مع تمييز MySQL في نتائج البحث](/images/integrations/data-visualization/quicksight_02.webp)
-
-</Frame>
-
+  <Frame>
+    ![شاشة اختيار مصدر البيانات في QuickSight مع تمييز MySQL في نتائج البحث](/images/integrations/data-visualization/quicksight_02.webp)
+  </Frame>
 </div>
 
 <br />
 
-حدّد تفاصيل الاتصال الخاصة بك. يُرجى ملاحظة أن منفذ واجهة MySQL هو 9004 افتراضيًا،
-وقد يختلف حسب تهيئة الخادم لديك.
+أدخل بيانات الاتصال الخاصة بك. لاحظ أن منفذ واجهة MySQL هو 9004 افتراضياً،
+وقد يختلف بحسب تكوين الخادم لديك.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![نموذج تهيئة اتصال MySQL في QuickSight مع حقول اسم المضيف والمنفذ وقاعدة البيانات وبيانات الاعتماد](/images/integrations/data-visualization/quicksight_03.webp)
-
-</Frame>
-
+  <Frame>
+    ![نموذج تهيئة اتصال MySQL في QuickSight مع حقول اسم المضيف والمنفذ وقاعدة البيانات وبيانات الاعتماد](/images/integrations/data-visualization/quicksight_03.webp)
+  </Frame>
 </div>
 
 <br />
 
-لديك الآن خياران لجلب البيانات من ClickHouse. أولًا، يمكنك اختيار جدول من القائمة:
+يتاح لك الآن خياران لجلب البيانات من ClickHouse. الأول هو اختيار جدول من القائمة:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![واجهة اختيار الجداول في QuickSight تعرض جداول قاعدة البيانات المتاحة من ClickHouse](/images/integrations/data-visualization/quicksight_04.webp)
-
-</Frame>
-
+  <Frame>
+    ![واجهة اختيار الجداول في QuickSight تعرض جداول قاعدة البيانات المتاحة من ClickHouse](/images/integrations/data-visualization/quicksight_04.webp)
+  </Frame>
 </div>
 
 <br />
 
-بدلًا من ذلك، يمكنك إدخال استعلام SQL مخصص لجلب بياناتك:
+أما الثاني فهو كتابة استعلام SQL مخصّص لجلب بياناتك:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![محرر استعلامات SQL المخصصة في QuickSight لجلب البيانات من ClickHouse](/images/integrations/data-visualization/quicksight_05.webp)
-
-</Frame>
-
+  <Frame>
+    ![محرر استعلامات SQL المخصّصة في QuickSight لجلب البيانات من ClickHouse](/images/integrations/data-visualization/quicksight_05.webp)
+  </Frame>
 </div>
 
 <br />
 
-عند النقر على &quot;Edit/Preview data&quot;، ينبغي أن تتمكن من رؤية بنية الجدول المستكشفة أو تعديل استعلام SQL المخصص، إذا اخترت هذه الطريقة للوصول إلى البيانات:
+عند النقر على &quot;Edit/Preview data&quot;، يمكنك الاطلاع على بنية الجدول المستخرجة بفحص الحالة الداخلية، أو تعديل استعلام SQL المخصّص إن كنت قد اخترت هذه الطريقة للوصول إلى البيانات:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![معاينة البيانات في QuickSight تعرض بنية الجدول مع الأعمدة وبيانات نموذجية](/images/integrations/data-visualization/quicksight_06.webp)
-
-</Frame>
-
+  <Frame>
+    ![معاينة البيانات في QuickSight تعرض بنية الجدول مع الأعمدة وعينة البيانات](/images/integrations/data-visualization/quicksight_06.webp)
+  </Frame>
 </div>
 
 <br />
 
-تأكد من تحديد وضع &quot;Direct Query&quot; في الزاوية السفلية اليسرى من واجهة المستخدم:
+تأكد من تحديد وضع &quot;استعلام مباشر&quot; في الزاوية السفلية اليسرى من الـ UI:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![واجهة QuickSight مع تمييز خيار وضع Direct Query في الزاوية السفلية](/images/integrations/data-visualization/quicksight_07.webp)
-
-</Frame>
-
+  <Frame>
+    ![واجهة QuickSight مع تمييز خيار وضع الاستعلام المباشر في الزاوية السفلية](/images/integrations/data-visualization/quicksight_07.webp)
+  </Frame>
 </div>
 
 <br />
 
-يمكنك الآن المتابعة لنشر مجموعة البيانات وإنشاء تصور جديد!
+يمكنك الآن المتابعة إلى نشر مجموعة البيانات وإنشاء تصور جديد!
 
 <div id="known-limitations">
-  ## القيود المعروفة
+  ## القيود المعروفة {#known-limitations}
 </div>
 
 * لا يعمل استيراد SPICE على النحو المتوقع؛ يُرجى استخدام وضع Direct Query بدلًا من ذلك. راجع [#58553](https://github.com/ClickHouse/ClickHouse/issues/58553).

@@ -17,11 +17,11 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="ShortCircuitFunctionEvaluation" default_value="enable" />
 
-يسمح بحساب الدوال [if](/ar/reference/functions/regular-functions/conditional-functions#if) و[multiIf](/ar/reference/functions/regular-functions/conditional-functions#multiIf) و[and](/ar/reference/functions/regular-functions/logical-functions#and) و[or](/ar/reference/functions/regular-functions/logical-functions#or) وفقًا [للتقييم المختصر](https://en.wikipedia.org/wiki/Short-circuit_evaluation). يساعد ذلك على تحسين تنفيذ التعبيرات المعقدة في هذه الدوال ومنع الاستثناءات المحتملة (مثل القسمة على صفر عندما لا يكون ذلك متوقعًا).
+يسمح بحساب الدوال [if](/ar/reference/functions/regular-functions/conditional-functions#if) و[multiIf](/ar/reference/functions/regular-functions/conditional-functions#multiIf) و[and](/ar/reference/functions/regular-functions/logical-functions#and) و[or](/ar/reference/functions/regular-functions/logical-functions#or) و[coalesce](/ar/reference/functions/regular-functions/functions-for-nulls#coalesce) و[ifNull](/ar/reference/functions/regular-functions/functions-for-nulls#ifNull) وفقًا [للتقييم المختصر](https://en.wikipedia.org/wiki/Short-circuit_evaluation). يساعد ذلك على تحسين تنفيذ التعبيرات المعقدة في هذه الدوال ومنع الاستثناءات المحتملة (مثل القسمة على صفر عندما لا يكون ذلك متوقعًا).
 
 القيم الممكنة:
 
-* `enable` — يفعّل التقييم المختصر للدوال المناسبة لذلك (التي قد تطرح استثناءً أو تكون كثيفة حسابيًا).
+* `enable` — يفعّل التقييم المختصر للدوال المناسبة لذلك (التي قد ترفع استثناءً أو تكون كثيفة حسابيًا).
 * `force_enable` — يفعّل التقييم المختصر لجميع الدوال.
 * `disable` — يعطّل التقييم المختصر.
 

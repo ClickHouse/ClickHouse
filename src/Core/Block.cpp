@@ -22,6 +22,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
 
+#include <algorithm>
 #include <iterator>
 #include <ranges>
 
@@ -370,6 +371,9 @@ void Block::insert(size_t position, ColumnWithTypeAndName elem)
     }
 
     data.emplace(data.begin() + position, std::move(elem));
+
+    /// The block takes its rows from its columns now.
+    rows_without_columns = 0;
 }
 
 
@@ -384,6 +388,9 @@ void Block::insert(ColumnWithTypeAndName elem)
             "(columns with identical name must have identical structure)", true, ErrorCodes::AMBIGUOUS_COLUMN_NAME);
 
     data.emplace_back(std::move(elem));
+
+    /// The block takes its rows from its columns now.
+    rows_without_columns = 0;
 }
 
 
@@ -629,7 +636,20 @@ size_t Block::rows() const
         if (elem.column)
             return elem.column->size();
 
-    return 0;
+    /// The rows of a block with no columns carry no values, so their number is kept aside.
+    /// It is zero for a block that has columns.
+    return rows_without_columns;
+}
+
+
+void Block::setRowsWithoutColumns(size_t num_rows)
+{
+    if (!data.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot set the number of rows of a block that has columns: it takes its rows from them. Columns: {}",
+            dumpStructure());
+
+    rows_without_columns = num_rows;
 }
 
 
@@ -855,6 +875,9 @@ Block Block::cloneWithCutColumns(size_t start, size_t length) const
     for (auto & column_to_cut : copy.data)
         column_to_cut.column = column_to_cut.column->cut(start, length);
 
+    /// The rows of a block with no columns carry no values, so only their number is cut.
+    copy.rows_without_columns = start < rows_without_columns ? std::min(length, rows_without_columns - start) : 0;
+
     return copy;
 }
 
@@ -877,6 +900,7 @@ Block Block::sortColumns() const
     for (const auto & it : sorted_index_by_name)
         sorted_block.insert(data[it->second]);
 
+    sorted_block.rows_without_columns = rows_without_columns;
     return sorted_block;
 }
 
@@ -885,7 +909,9 @@ Block Block::shrinkToFit() const
     Columns new_columns(data.size(), nullptr);
     for (size_t i = 0; i < data.size(); ++i)
         new_columns[i] = data[i].column->cloneResized(data[i].column->size());
-    return cloneWithColumns(new_columns);
+    Block res = cloneWithColumns(new_columns);
+    res.rows_without_columns = rows_without_columns;
+    return res;
 }
 
 Block Block::compress() const
@@ -894,7 +920,9 @@ Block Block::compress() const
     Columns new_columns(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
         new_columns[i] = data[i].column->compress(/*force_compression=*/false);
-    return cloneWithColumns(new_columns);
+    Block res = cloneWithColumns(new_columns);
+    res.rows_without_columns = rows_without_columns;
+    return res;
 }
 
 Block Block::decompress() const
@@ -903,7 +931,9 @@ Block Block::decompress() const
     Columns new_columns(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
         new_columns[i] = data[i].column->decompress();
-    return cloneWithColumns(new_columns);
+    Block res = cloneWithColumns(new_columns);
+    res.rows_without_columns = rows_without_columns;
+    return res;
 }
 
 
@@ -1101,6 +1131,7 @@ void Block::clear()
     info = BlockInfo();
     data.clear();
     index_by_name.clear();
+    rows_without_columns = 0;
 }
 
 void Block::swap(Block & other) noexcept
@@ -1108,6 +1139,7 @@ void Block::swap(Block & other) noexcept
     std::swap(info, other.info);
     data.swap(other.data);
     index_by_name.swap(other.index_by_name);
+    std::swap(rows_without_columns, other.rows_without_columns);
 }
 
 
@@ -1213,6 +1245,11 @@ Block concatenateBlocks(const Blocks & blocks)
     }
 
     out.setColumns(std::move(columns));
+
+    /// The rows of blocks with no columns carry no values, so only their number is concatenated.
+    if (out.columns() == 0)
+        out.setRowsWithoutColumns(num_rows);
+
     return out;
 }
 

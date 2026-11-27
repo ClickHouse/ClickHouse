@@ -143,6 +143,7 @@ public:
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) override { return delegate->generateObjectKeyForPath(path); }
     void recordBlobsReplication(const StoredObject & blob, const Locations & missing_locations) override { delegate->recordBlobsReplication(blob, missing_locations); }
     StoredObjects getSubmittedForRemovalBlobs() override { return delegate->getSubmittedForRemovalBlobs(); }
+    BatchIds getSubmittedForRemovalBatches() override { return delegate->getSubmittedForRemovalBatches(); }
 };
 
 class MetadataStorageWithPathWrapper final : public IMetadataStorage
@@ -308,14 +309,29 @@ public:
         return delegate->getBlobsToRemove(cluster, max_count);
     }
 
+    BatchesToRemove getBatchesToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override
+    {
+        return delegate->getBatchesToRemove(cluster, max_count);
+    }
+
     int64_t recordAsRemoved(const StoredObjects & blobs) override
     {
         return delegate->recordAsRemoved(blobs);
     }
 
+    int64_t recordBatchesAsRemoved(const BatchesToRemove & batches) override
+    {
+        return delegate->recordBatchesAsRemoved(batches);
+    }
+
     [[nodiscard]] bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override
     {
         return delegate->hasPendingRemovalBlobs(blobs);
+    }
+
+    [[nodiscard]] bool hasPendingRemovalBatches(const BatchIds & batch_ids) const override
+    {
+        return delegate->hasPendingRemovalBatches(batch_ids);
     }
 
     [[nodiscard]] bool hasDeadBlobsQueue() const override

@@ -133,6 +133,16 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 إذا كانت القيمة true، فسيستخدم ClickHouse خوارزمية النسخ المتماثلة المتوازية أيضًا مع جداول MergeTree غير المُكرَّرة
 
+## parallel_replicas_for_object_storage_tables {#parallel_replicas_for_object_storage_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "إعداد جديد لقراءة الجداول التي تستخدم محرك تخزين كائني عبر النسخ المتماثلة المتوازية."}]}]} />
+
+يقرأ جدولًا يستخدم محرك تخزين كائني تتوفر له دالة جدول من نوع `-Cluster` (`S3`، `AzureBlobStorage`، `HDFS`، `Iceberg`، `IcebergS3`، `IcebergAzure`، `IcebergHDFS`، `IcebergLocal`، `DeltaLake`، `DeltaLakeS3`، `DeltaLakeAzure`، `Hudi`، `Paimon`، `PaimonS3`، `PaimonAzure`، `PaimonHDFS`) عبر النسخ المتماثلة في `cluster_for_parallel_replicas`، على غرار ما يفعله `parallel_replicas_for_cluster_engines` مع دوال الجداول. ليس لهذا الإعداد أي تأثير إذا كان `parallel_replicas_for_cluster_engines` معطّلًا.
+
+لا تشارك النسخة المتماثلة في القراءة إلا إذا كان الجدول موجودًا عليها، ويجب أن يكون تعريف الجدول متطابقًا على جميع النسخ المتماثلة.
+
 ## parallel_replicas_for_queries_with_multiple_tables {#parallel_replicas_for_queries_with_multiple_tables}
 
 <BetaBadge />

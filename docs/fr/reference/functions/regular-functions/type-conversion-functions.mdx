@@ -19,31 +19,41 @@ Les fonctions `to<type>` et [cast](#CAST) se comportent différemment dans certa
 
 Exemple :
 
-```sql
+```sql title="Query"
 SELECT
     toTypeName(toLowCardinality('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
+```
 
+```text title="Response"
 ┌─source_type────────────┬─to_type_result_type────┬─cast_result_type─┐
 │ LowCardinality(String) │ LowCardinality(String) │ String           │
 └────────────────────────┴────────────────────────┴──────────────────┘
+```
 
+```sql title="Query"
 SELECT
     toTypeName(toNullable('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
+```
 
+```text title="Response"
 ┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
 │ Nullable(String) │ Nullable(String)    │ String           │
 └──────────────────┴─────────────────────┴──────────────────┘
+```
 
+```sql title="Query"
 SELECT
     toTypeName(toNullable('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
 SETTINGS cast_keep_nullable = 1
+```
 
+```text title="Response"
 ┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
 │ Nullable(String) │ Nullable(String)    │ Nullable(String) │
 └──────────────────┴─────────────────────┴──────────────────┘
@@ -114,17 +124,62 @@ Voir aussi la fonction [`toUnixTimestamp`](/fr/reference/functions/regular-funct
 
 ## CAST {#CAST}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Convertit une valeur en un type de données spécifié.
 Contrairement à la fonction reinterpret, CAST tente de produire la même valeur dans le type cible.
 Si ce n&#39;est pas possible, une exception est levée.
 
+`CAST` supprime le wrapper `LowCardinality`. À l’inverse, les fonctions `to<Type>` le conservent.
+Les fonctions `to<Type>` conservent également le wrapper `Nullable`. `CAST` supprime `Nullable` par défaut, mais
+le conserve lorsque le paramètre [`cast_keep_nullable`](/fr/reference/settings/session-settings/cast#cast_keep_nullable)
+est activé.
+
+```sql title="Query"
+SELECT
+    toTypeName(toLowCardinality('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type────────────┬─to_type_result_type────┬─cast_result_type─┐
+│ LowCardinality(String) │ LowCardinality(String) │ String           │
+└────────────────────────┴────────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ String           │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+SETTINGS cast_keep_nullable = 1
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ Nullable(String) │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
+
 Lorsque `x` est écrit sous forme de nombre et que `T` est un `Decimal` ou un entier de plus de 64 bits, les chiffres
 du nombre sont lus directement avec `T`, ce qui évite toute perte de précision. Sans cela,
 `CAST(0.1 AS Decimal256(76))` lirait d’abord `0.1` comme un `Float64` et renverrait
 `0.1000000000000000127244406382982157680441515146893321226564617167921968152`. Cela vaut pour un
-nombre écrit directement comme argument ; un nombre utilisé d’abord dans une expression, comme dans
+nombre écrit directement comme argument ; un nombre utilisé d’abord dans une expression, comme dans
 `CAST(0.1 + 0 AS Decimal256(76))`, est toujours lu comme un `Float64`. Un nombre qui n’est pas écrit directement en
 notation décimale — parce qu’il est entre parenthèses, en hexadécimal ou précédé d’un signe plus — est lu avec `T` à partir de sa
 représentation une fois réécrite dans une requête. S’il comporte une partie fractionnaire, cette représentation correspond au `Float64` le plus proche.
@@ -2725,16 +2780,16 @@ toBFloat16('42.7'):            42.5
 
 ## toBFloat16OrNull {#toBFloat16OrNull}
 
-Introduite dans : v1.1.0
+Introduite dans : v1.1.0
 
 Convertit une valeur d’entrée de type String en une valeur de type BFloat16.
 Si la chaîne ne représente pas une valeur à virgule flottante, la fonction renvoie NULL.
 
-Arguments pris en charge :
+Arguments pris en charge :
 
 * Représentations sous forme de chaîne de valeurs numériques.
 
-Arguments non pris en charge (renvoient `NULL`) :
+Arguments non pris en charge (renvoient `NULL`) :
 
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales.
 * Valeurs numériques.
@@ -2743,7 +2798,7 @@ Arguments non pris en charge (renvoient `NULL`) :
   La fonction autorise une perte de précision silencieuse lors de la conversion depuis la représentation sous forme de chaîne.
 </Note>
 
-Voir aussi :
+Voir aussi :
 
 * [`toBFloat16`](#toBFloat16).
 * [`toBFloat16OrZero`](#toBFloat16OrZero).
@@ -2760,7 +2815,7 @@ toBFloat16OrNull(x)
 
 **Valeur renvoyée**
 
-Renvoie une valeur brain-float de 16 bits, sinon `NULL`. [`BFloat16`](/fr/reference/data-types/float) ou [`NULL`](/fr/reference/syntax#null)
+Renvoie une valeur brain-float de 16 bits, sinon `NULL`. [`BFloat16`](/fr/reference/data-types/float) ou [`NULL`](/fr/reference/syntax#null)
 
 **Exemples**
 
