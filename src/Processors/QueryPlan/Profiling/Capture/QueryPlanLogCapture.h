@@ -9,7 +9,6 @@ namespace DB
 {
 
 class QueryPipeline;
-struct QueryPlanShapeHashes;
 struct Settings;
 class StepProfiler;
 using StepProfilerPtr = std::shared_ptr<StepProfiler>;
@@ -39,10 +38,10 @@ public:
     /// May throw: the caller starting the capture is what keeps a diagnostic from failing a
     /// query that would otherwise have run.
     ///
-    /// `shape_hashes` must have been computed from the same plan, before its pipeline was built, like
-    /// `pretty_names`. Each captured step gets the hash of its subtree, and the plan the root's.
+    /// `shape_hash` must have been computed from the same plan, before its pipeline was built, like
+    /// `pretty_names` (see `hashQueryPlanShape`).
     void capturePlanStructure(
-        const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names, const QueryPlanShapeHashes & shape_hashes, size_t max_description_length);
+        const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names, UInt64 shape_hash, size_t max_description_length);
 
     /// Forgets the captured plan, so that a query whose profiling could not be set up logs no
     /// plan at all rather than one that can never be given its statistics.

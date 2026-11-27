@@ -1,8 +1,7 @@
 -- Tags: no-old-analyzer
 
 -- Verifies the `ShapeHash` of the plan in `system.query_log.query_plan`: equal for plans that differ
--- only in their constants, and different when the plan differs. Every node carries the hash of its
--- subtree, and the root's is the plan's.
+-- only in their constants, and different when the plan differs.
 --
 -- Queries are told apart by `log_comment` rather than by a marker in the query text, because a
 -- marker literal would itself be part of the plan being hashed. Each group of queries is named by
@@ -191,19 +190,6 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initi
   AND match(log_comment, '^(same|different)')
 GROUP BY group_name
 ORDER BY group_name;
-
--- Every step carries the hash of its subtree, and the root step's is the plan's.
-WITH
-    toJSONString(query_plan) AS plan,
-    JSONExtractArrayRaw(plan, 'Nodes') AS nodes,
-    arrayFirst(node -> JSONExtractString(node, 'NodeId') = JSONExtractString(plan, 'Root'), nodes) AS root
-SELECT
-    'shape_hash',
-    length(nodes) > 1,
-    arrayAll(node -> match(JSONExtractString(node, 'ShapeHash'), '^[0-9a-f]{16}$'), nodes),
-    JSONExtractString(root, 'ShapeHash') = JSONExtractString(plan, 'ShapeHash')
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'same_join_1';
 
 DROP TABLE t_plan_hash;
 DROP TABLE t_plan_hash_right;

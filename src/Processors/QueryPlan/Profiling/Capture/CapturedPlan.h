@@ -36,11 +36,6 @@ struct CapturedStep
     /// What index and projection analysis decided. Only a `ReadFromMergeTree` has any.
     PlanIndexStats indexes;
     PlanProjectionStats projections;
-
-    /// Hash of the shape of the subtree under this step, see `hashQueryPlanShape`. Absent for a step
-    /// that did not exist yet when the plan was hashed, such as one in a child plan built while the
-    /// pipeline was.
-    std::optional<UInt64> shape_hash;
 };
 
 /// Statistics a query collects only when asked to, because collecting them costs extra.

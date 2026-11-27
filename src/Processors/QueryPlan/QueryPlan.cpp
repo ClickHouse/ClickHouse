@@ -267,15 +267,15 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         convertToDistributed(effective_settings);
 
     /// Read while the `ActionsDAG`s are still in the steps: building the pipeline below moves them
-    /// into the `ExpressionActions`, and the names and the shape hashes are derived from them. Only
+    /// into the `ExpressionActions`, and the names and the shape hash are derived from them. Only
     /// over the child plans the steps already hold, unlike `explainPlan`: asking a step to build one
     /// would make capturing the plan change the work the query does.
     PrettyNamesPerPlan pretty_names;
-    QueryPlanShapeHashes shape_hashes;
+    UInt64 shape_hash = 0;
     if (log_capture)
     {
         pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this, /*only_built_child_plans=*/ true);
-        shape_hashes = hashQueryPlanShape(*this);
+        shape_hash = hashQueryPlanShape(*this);
     }
 
     struct Frame
@@ -338,7 +338,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         {
             const PlanWalk walk = PlanWalk::of(*this, /*only_built_child_plans=*/ true);
 
-            log_capture->capturePlanStructure(walk, pretty_names, shape_hashes, optimization_settings.max_step_description_length);
+            log_capture->capturePlanStructure(walk, pretty_names, shape_hash, optimization_settings.max_step_description_length);
             last_pipeline->setStepProfiler(std::make_shared<StepProfiler>(walk, log_capture->getCollected().work_intervals));
         }
         catch (...)

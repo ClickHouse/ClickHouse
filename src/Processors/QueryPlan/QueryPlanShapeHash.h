@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <base/types.h>
 
 
@@ -9,7 +8,7 @@ namespace DB
 
 class QueryPlan;
 
-/// Hashes of the shape of a plan: equal for two plans that differ only in their constants, and
+/// The hash of the shape of a plan: equal for two plans that differ only in their constants, and
 /// different whenever planning or optimization made a different choice.
 ///
 /// Each step hashes what was chosen for it -- the step type, the shape of its expressions, its
@@ -22,20 +21,13 @@ class QueryPlan;
 ///
 /// Not stable across releases: a release that changes what the optimizer does changes the plans,
 /// and their hashes with them.
-struct QueryPlanShapeHashes
-{
-    UInt64 root = 0;
-
-    /// Hash of the subtree under each step, keyed by `IQueryPlanStep::getUniqID`.
-    UnorderedMapWithMemoryTracking<String, UInt64> steps;
-};
-
+///
 /// Must run after the plan is optimized and before its pipeline is built, since building the
 /// pipeline moves the `ActionsDAG` out of every expression step.
 ///
 /// Only the child plans the steps have already built are hashed, so that hashing a plan does not
 /// change the work the query does (see `IQueryPlanStep::getBuiltChildPlans`).
-QueryPlanShapeHashes hashQueryPlanShape(const QueryPlan & plan);
+UInt64 hashQueryPlanShape(const QueryPlan & plan);
 
 /// `hash` as the fixed-width hex string the plan document carries it as. A JSON number cannot carry
 /// it: readers that parse numbers as doubles, JavaScript among them, lose everything past 2^53.

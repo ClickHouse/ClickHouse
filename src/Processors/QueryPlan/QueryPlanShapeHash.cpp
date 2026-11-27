@@ -842,38 +842,35 @@ void hashStep(const IQueryPlanStep & step, SipHash & hash)
     }
 }
 
-UInt64 hashNode(const QueryPlan::Node & node, QueryPlanShapeHashes & result)
+UInt64 hashNode(const QueryPlan::Node & node)
 {
     SipHash hash;
     hashStep(*node.step, hash);
 
     hash.update(node.children.size());
     for (const auto * child : node.children)
-        hash.update(hashNode(*child, result));
+        hash.update(hashNode(*child));
 
     const auto child_plans = node.step->getBuiltChildPlans();
     hash.update(child_plans.size());
     for (const auto * child_plan : child_plans)
     {
         if (child_plan && child_plan->getRootNode())
-            hash.update(hashNode(*child_plan->getRootNode(), result));
+            hash.update(hashNode(*child_plan->getRootNode()));
         else
             hash.update(0);
     }
 
-    const UInt64 value = hash.get64();
-    result.steps.emplace(node.step->getUniqID(), value);
-    return value;
+    return hash.get64();
 }
 
 }
 
-QueryPlanShapeHashes hashQueryPlanShape(const QueryPlan & plan)
+UInt64 hashQueryPlanShape(const QueryPlan & plan)
 {
-    QueryPlanShapeHashes result;
     if (const auto * root = plan.getRootNode())
-        result.root = hashNode(*root, result);
-    return result;
+        return hashNode(*root);
+    return 0;
 }
 
 String formatQueryPlanShapeHash(UInt64 hash)

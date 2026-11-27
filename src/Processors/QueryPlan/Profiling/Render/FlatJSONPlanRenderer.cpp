@@ -232,8 +232,6 @@ JSONBuilder::ItemPtr capturedStepToJSON(const CapturedStep & step)
     map->add("NodeType", step.type);
     map->add("NodeId", step.id);
 
-    if (step.shape_hash)
-        map->add("ShapeHash", formatQueryPlanShapeHash(*step.shape_hash));
 
     if (!step.description.empty())
         map->add("Description", step.description);

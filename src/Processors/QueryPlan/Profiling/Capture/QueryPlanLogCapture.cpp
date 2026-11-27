@@ -6,7 +6,6 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
-#include <Processors/QueryPlan/QueryPlanShapeHash.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <IO/WriteBufferFromString.h>
@@ -174,7 +173,7 @@ void QueryPlanLogCapture::declineCapture(const ContextPtr & context, const char 
 }
 
 void QueryPlanLogCapture::capturePlanStructure(
-    const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names, const QueryPlanShapeHashes & shape_hashes, size_t max_description_length)
+    const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names, UInt64 shape_hash, size_t max_description_length)
 {
     /// One plan per query, and nothing is asked of this before it.
     chassert(!captured);
@@ -183,12 +182,7 @@ void QueryPlanLogCapture::capturePlanStructure(
     captured = CapturedPlan::capture(walk, planExplainOptions(), max_description_length, /*steps_to_stats=*/ nullptr, &pretty_names);
     captured->collected = collected;
 
-    captured->shape_hash = shape_hashes.root;
-    for (auto & node : captured->nodes)
-    {
-        if (auto it = shape_hashes.steps.find(node.id); it != shape_hashes.steps.end())
-            node.shape_hash = it->second;
-    }
+    captured->shape_hash = shape_hash;
 }
 
 void QueryPlanLogCapture::captureStatistics(QueryPipeline & pipeline)
