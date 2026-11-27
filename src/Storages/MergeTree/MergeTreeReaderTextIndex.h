@@ -47,10 +47,20 @@ public:
     /// by absolute row number, so a read may start or stop inside a mark.
     [[nodiscard]] bool canReadIncompleteGranules() const override { return can_read_incomplete_granules; }
 
-    /// The columns `fallback_reader` reads, and the ranges of the postings and positions files the streams read. These files
-    /// are not compressed, see `MergeTreeReaderStream::recordBytesConsumed`.
-    void registerReadRanges() override;
-    void setReadRangesRegistry(ReadRangesRegistryPtr registry) override;
+    /// Only the columns `fallback_reader` reads: the posting lists are not counted.
+    void registerReadRanges() override
+    {
+        if (fallback_reader)
+            fallback_reader->registerReadRanges();
+    }
+
+    void setReadRangesRegistry(ReadRangesRegistryPtr registry) override
+    {
+        if (fallback_reader)
+            fallback_reader->setReadRangesRegistry(registry);
+        IMergeTreeReader::setReadRangesRegistry(std::move(registry));
+    }
+
     void updateAllMarkRanges(const MarkRanges & ranges) override;
     void updateReadRequestMap(MarkRangesPtr request_map) override;
 
@@ -64,7 +74,7 @@ private:
     void initializeFallbackReader(const IMergeTreeReader * main_reader);
     void createEmptyColumns(MutableColumns & columns, size_t max_rows_to_read) const;
     /// Opens the postings stream of one token, with the buffer sized to the token's largest segment.
-    [[nodiscard]] std::unique_ptr<MergeTreeReaderStream> makePostingsStream(const TokenPostingsInfo & token_info);
+    [[nodiscard]] std::unique_ptr<MergeTreeReaderStream> makePostingsStream(const TokenPostingsInfo & token_info) const;
     /// The postings stream of a token, opened on first use and kept in `postings_streams`.
     MergeTreeReaderStream & getPostingsStream(std::string_view token, const TokenPostingsInfo & token_info);
 
@@ -152,17 +162,6 @@ private:
     /// Per-virtual-column flag: true if this column's query was abandoned during the scan
     /// and the predicate must be evaluated directly via fallback_expressions.
     std::vector<bool> use_fallback;
-    /// The ranges of a file the streams read since `registerReadRanges`.
-    struct FileRangesRead
-    {
-        CompressedBlockRanges ranges;
-        ReadRangesRegistry::ReadRanges * read_ranges = nullptr;
-        /// The name of the file in the part, which tells it apart from the files of the columns.
-        String file_name;
-    };
-    FileRangesRead postings_ranges_read;
-    FileRangesRead positions_ranges_read;
-
     /// A separate stream is created for each token to read postings blocks continuously without additional seeks.
     absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> postings_streams;
 
