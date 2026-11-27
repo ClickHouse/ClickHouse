@@ -215,15 +215,20 @@ constexpr size_t remote_read_buffer_bytes = 4UL << 20;
 /// for the device leaves it to the others, and few, as each keeps groups of its own.
 constexpr size_t max_lanes = 8;
 
-/// Two readers fill the link when they only copy compressed blocks into pinned memory; a reader
-/// that also expands the columns is bound by the CPU, and a quarter of the cores keep up with the
-/// link, where more of them hold more buffers on both sides of it than they gain.
+/// Readers of parts on a local disk whose columns the device expands. A reader and its upload wait for the device at every
+/// batch, and the lanes are as many as the readers, so two leave the device idle: cold TPC-H Q1 over SF100 in ZSTD on an
+/// A10G took 4.0 s with two readers and 3.1 s with four. Each reader holds a batch on the device, and eight with batches
+/// of 256 MiB ran out of its 24 GB, while more readers of smaller batches were no faster.
+constexpr size_t device_expanding_readers = 4;
+
+/// A reader that also expands the columns is bound by the CPU, and a quarter of the cores keep up with the link, where
+/// more of them hold more buffers on both sides of it than they gain.
 size_t automaticReaders(const SharedState & state)
 {
     if (std::ranges::any_of(state.parts, [](const PartToRead & part) { return part.part->isStoredOnRemoteDisk(); }))
         return remote_disk_readers;
     if (expandsOnDevice(state.decompression))
-        return 2;
+        return device_expanding_readers;
     return std::max<size_t>(2, getNumberOfCPUCoresToUse() / 4);
 }
 

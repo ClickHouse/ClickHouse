@@ -11963,23 +11963,21 @@ How many threads read the parts of a `GROUP BY` that `allow_experimental_gpu_agg
 compressed blocks (`ReadFromGPUCompressedColumns`), each a part at a time. 0 chooses by what the
 threads have to do.
 
-A reading thread copies the compressed blocks of a part into pinned host memory for the device to
-fetch, and one thread copies slower than the link carries - about 4 GB/s against 6 GB/s of PCIe 3
-on a Tesla T4 - so one reader leaves the link idle, and two fill it: over 300 million rows grouped
-by a `UInt8` key, one reader took 0.95 s, two 0.53 s, and four or eight were slower than two.
+A reading thread copies the compressed blocks of a part into pinned host memory, and its batches
+are sent, expanded and grouped as it reads them, with as many grouping lanes on the device as there
+are readers, up to eight. A reader waits for the device at every batch, so two readers leave it
+idle: cold TPC-H Q1 over SF100 in ZSTD on an A10G took 4.0 s with two readers and 3.1 s with four.
+Each reader holds a batch on the device, and eight readers of batches of 256 MiB ran out of its
+24 GB, while more readers of smaller batches were no faster. So with 0 the query gets four readers
+when the columns are expanded on the device.
 
 With `gpu_aggregation_decompression = 'host'` the reading threads expand the columns as well, which
-is work per byte rather than per block, and two threads no longer keep up with the link: grouping
-300 million rows of a `UInt64` by a `UInt32` key took 1.34 s with two readers, 0.84 s with four and
-0.77 s with eight. Yet each reader holds a part's buffers in pinned memory and on the device, and
-with four columns of a part in flight eight readers lost what they gained: grouping by two keys took
-1.37 s with four readers and 1.78 s with eight. So with 0 the query gets two readers when the
-columns are expanded on the device, and a quarter of the CPU cores, at least two, when they are
-expanded on the host. Parts on a remote disk, such as S3, get 32 readers either way: a reader there
-waits for responses most of the time, and over S3 TPC-H Q6 took 5.7 s with eight readers, 2.6 s
-with sixteen and 2.1 s with 32.
+is work per byte rather than per block, and the query gets a quarter of the CPU cores, at least
+two. Parts on a remote disk, such as S3, get 32 readers either way: a reader there waits for
+responses most of the time, and over S3 TPC-H Q6 took 5.7 s with eight readers, 2.6 s with sixteen
+and 2.1 s with 32.
 
-Each reader holds a part's compressed blocks in pinned memory and its expanded columns on the
+Each reader holds a batch of compressed blocks in pinned memory and its expanded columns on the
 device while they are grouped, so more readers take more of both.
 )", EXPERIMENTAL, \
         {"26.11", 0, 0, "New experimental setting, the number of threads that read parts for a GPU aggregation over compressed blocks; 0 chooses by whether the columns are expanded on the device or on the host."}) \
