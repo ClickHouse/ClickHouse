@@ -175,6 +175,10 @@ private:
     /// Mapping from znode path to Mutations Status
     std::map<String, MutationStatus> mutations_by_znode;
 
+    /// Mutations whose entries were removed before the mutations were finished on this replica,
+    /// that is, the killed ones, see `isMutationKilled`. There is one element per such mutation, and they are rare.
+    std::set<String> killed_mutations;
+
     /// Mapping from part name to postpone reason
     mutable std::map<String, String> current_parts_postpone_reasons;
 
@@ -562,6 +566,12 @@ public:
     /// important for better readability of exception message. If mutation was
     /// killed doesn't return any ids.
     std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatus(const String & znode_name, std::set<String> * mutation_ids = nullptr) const;
+
+    /// Returns true if this replica has seen the entry of the mutation removed before the mutation was finished here.
+    /// The entry of a finished mutation is removed by the cleanup thread, and `getIncompleteMutationsStatus` returns
+    /// empty optional for it as well, so it is the way to tell a killed mutation from a finished one whose entry is gone.
+    /// It returns false until the queue notices that the entry is removed.
+    bool isMutationKilled(const String & znode_name) const;
 
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
 

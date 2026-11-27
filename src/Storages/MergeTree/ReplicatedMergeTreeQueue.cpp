@@ -1191,6 +1191,10 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 {
                     LOG_DEBUG(log, "Removing killed mutation {} from local state.", entry.znode_name);
                     some_active_mutations_were_killed = true;
+                    /// A mutation that is not greater than the mutation pointer is considered done
+                    /// even if it is not marked as done yet, see `tryFinalizeMutations`.
+                    if (entry.znode_name > mutation_pointer)
+                        killed_mutations.insert(entry.znode_name);
                     if (entry.isAlterMutation())
                     {
                         LOG_DEBUG(log, "Removed alter {} because mutation {} were killed.", entry.alter_version, entry.znode_name);
@@ -1364,6 +1368,9 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
         if (mutation_was_active)
         {
             decrementMutationsCounters(mutation_counters, entry->commands);
+            /// See the comment in `updateMutations`.
+            if (entry->znode_name > mutation_pointer)
+                killed_mutations.insert(entry->znode_name);
         }
 
         if (hasSupportedMetadataMutation(entry->commands))
@@ -2878,6 +2885,12 @@ std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMu
         }
     }
     return result;
+}
+
+bool ReplicatedMergeTreeQueue::isMutationKilled(const String & znode_name) const
+{
+    std::shared_lock lock(state_mutex);
+    return killed_mutations.contains(znode_name);
 }
 
 std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatus() const

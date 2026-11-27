@@ -1,5 +1,14 @@
-mt: the synchronous mutation is finished
-mt	2
-rmt: the synchronous mutation is finished
-rmt1	2
-rmt2	2
+MergeTree, the mutation is finished and its entry is removed
+the query is finished successfully
+2
+MergeTree, the mutation is killed, the next one is finished and its entry is removed
+the query has failed, because the mutation was killed
+102
+ReplicatedMergeTree, the mutation is finished on both replicas and its entry is removed
+the query is finished successfully
+2
+2
+ReplicatedMergeTree, the mutation is killed, the next one is finished on both replicas and its entry is removed
+the query has failed, because the mutation was killed
+102
+102

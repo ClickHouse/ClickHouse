@@ -790,10 +790,17 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
     /// finished everywhere, and it can do it before this query notices that the mutation is finished
     /// (it is the usual case if `finished_mutations_to_keep` is zero). So, when the entry is missing,
     /// the mutation pointer of a replica tells whether the mutation has been finished on that replica.
+    ///
+    /// The pointer also passes a killed mutation once a later mutation is finished, so the kill is taken
+    /// from this replica first: its queue remembers the mutations whose entries were removed before
+    /// the mutations were finished here. The only case that cannot be told apart is a mutation that was finished
+    /// on this replica and then killed before another replica finished it, if that replica has finished
+    /// a later mutation by the time this query looks at its pointer.
     auto check_mutation_without_entry_is_finished = [&](const String & replica)
     {
         String mutation_pointer_value;
-        bool is_finished = getZooKeeper()->tryGet(fs::path(zookeeper_path) / "replicas" / replica / "mutation_pointer", mutation_pointer_value)
+        bool is_finished = !queue.isMutationKilled(mutation_id)
+            && getZooKeeper()->tryGet(fs::path(zookeeper_path) / "replicas" / replica / "mutation_pointer", mutation_pointer_value)
             && mutation_pointer_value >= mutation_id;
 
         if (!is_finished)
