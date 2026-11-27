@@ -19,7 +19,9 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "New setting."}]}]}/>
 
-Allow multipart copy in S3.
+Allows copying objects within S3 (for example, when making a backup to S3 or moving data between S3 disks) with a multipart copy (`UploadPartCopy`) when the object is larger than `s3_max_single_operation_copy_size`.
+
+If disabled, objects are copied with a single `CopyObject` request regardless of their size, and if that is not possible, the data is read and uploaded again. Disable it for S3-compatible storages that do not support `UploadPartCopy`.
 
 ## s3_allow_parallel_part_upload {#s3_allow_parallel_part_upload}
 

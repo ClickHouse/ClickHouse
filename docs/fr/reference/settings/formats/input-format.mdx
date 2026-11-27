@@ -856,7 +856,7 @@ Valeurs possibles :
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Nouveau paramètre permettant d'utiliser des colonnes géo dans un fichier Parquet"}]}]} />
 
-Lors de la lecture de fichiers Parquet, décode les colonnes géométriques en types géométriques ClickHouse (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` ou `Geometry`). S&#39;applique aux colonnes décrites par les métadonnées `geo` de GeoParquet, ainsi qu&#39;aux colonnes annotées avec le type logique Parquet `GEOMETRY` ou `GEOGRAPHY`. Lorsque ce paramètre est désactivé, ces colonnes sont lues en tant que `String` contenant les octets WKB (ou WKT) bruts, sauf si un type géographique est explicitement demandé.
+Lors de la lecture de fichiers Parquet, décode les colonnes géométriques en types géométriques ClickHouse (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` ou `Geometry`). S&#39;applique aux colonnes décrites par les métadonnées `geo` de GeoParquet, ainsi qu&#39;aux colonnes annotées avec le type logique Parquet `GEOMETRY` ou `GEOGRAPHY`. Lorsque ce paramètre est désactivé, ces colonnes sont lues en tant que `String` contenant les octets WKB (ou WKT) bruts, sauf si un type géographique est explicitement demandé. Les colonnes utilisant l&#39;encodage natif (GeoArrow) de GeoParquet 1.1 sont alors lues avec les types imbriqués sous-jacents `Array` et `Tuple`.
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 
@@ -1219,6 +1219,22 @@ Pour le format Values : si le champ n’a pas pu être analysé par le parseur 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Pour le format Values : si le champ n’a pas pu être analysé par le parseur en flux, exécuter le parseur SQL et tenter de l’interpréter comme une expression SQL.
+
+## input_format_vortex_filter_push_down {#input_format_vortex_filter_push_down}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre permettant de pousser les parties traduisibles des conditions WHERE portant sur des colonnes de premier niveau de type entier, à virgule flottante, string\/binaire, `Bool`, `Date`, `Date32` et `DateTime64` jusque dans le parcours du format Vortex, ce qui peut réduire le nombre de lignes décodées ; une condition qui n'est que partiellement traduisible est élargie en une condition qui conserve au moins toutes les lignes correspondantes, et ClickHouse réapplique le filtre complet après le parcours."}]}]} />
+
+Lors de la lecture de fichiers Vortex, pousse les parties traduisibles des conditions WHERE portant sur des colonnes de premier niveau de type entier, à virgule flottante, string/binaire, `Bool`, `Date`, `Date32` et `DateTime64` jusque dans le parcours, afin qu&#39;une requête sélective lise et décode moins de données. Seule la partie traduite de la condition est appliquée lors du parcours : une condition qui n&#39;est que partiellement traduisible est élargie en une condition qui conserve au moins toutes les lignes correspondantes, si bien que des lignes non correspondantes peuvent malgré tout être lues et décodées. ClickHouse réapplique ensuite le filtre complet après le parcours.
+
+## input_format_vortex_preserve_order {#input_format_vortex_preserve_order}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre permettant de renvoyer les lignes d’un fichier Vortex dans l’ordre du fichier ; par défaut, le fichier est décodé en parallèle et l’ordre des lignes n’est pas garanti."}]}]} />
+
+Renvoie les lignes d’un fichier Vortex dans l’ordre du fichier. Par défaut, les divisions de lignes d’un fichier sont décodées en parallèle (voir `max_parsing_threads`) et renvoyées dès qu’elles sont prêtes : l’ordre des lignes n’est donc pas garanti. Avec ce paramètre, une division lente bloque celles qui la suivent. Déconseillé, car l’ordre des lignes n’est généralement pas garanti et d’autres étapes du pipeline de requête peuvent ne pas le respecter.
 
 ## input_format_with_names_use_header {#input_format_with_names_use_header}
 

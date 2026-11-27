@@ -88,9 +88,8 @@ public:
         /// Deltas of the open block's finished documents, then the open document's raw positions.
         PaddedPODArray<UInt32, 64> values;
         size_t open_document_begin = 0;
-        /// One per document of the open block.
-        PODArray<UInt32, 64> frequencies_minus_one;
-        bool has_frequency_run = false;
+        /// (local rank, freq - 1) of the open block's documents with more than one position.
+        PODArray<UInt32, 16> frequency_exceptions;
         size_t docs_in_block = 0;
         /// Payloads of the sealed blocks.
         PaddedPODArray<UInt8> staged;
@@ -141,7 +140,6 @@ void validateTokenPositions(const TokenPostingsInfo & info, size_t file_size);
 class PositionListBuilder
 {
 public:
-    /// Positions may repeat or go backwards within a row: each element of a tokenized Array restarts them at 0.
     void add(UInt32 doc_id, UInt32 position)
     {
         if (has_document && doc_id != current_doc)

@@ -1,7 +1,6 @@
--- The optimization rewrites `SELECT agg() FROM t GROUP BY k LIMIT n`
--- into the same query with `max_rows_to_group_by = n` and
--- `group_by_overflow_mode = 'any'`, so the aggregation stops as soon as
--- `n` distinct keys are produced instead of grouping the full input.
+-- The optimization aggregates `SELECT k FROM t GROUP BY k LIMIT n` as with
+-- `max_rows_to_group_by = n` and `group_by_overflow_mode = 'any'`, so the
+-- aggregation does not add keys to the groups once it has `n` distinct keys.
 
 DROP TABLE IF EXISTS t_trivial_group_by_limit;
 
@@ -114,12 +113,9 @@ SETTINGS optimize_trivial_group_by_limit_query = 1;
 SELECT count() FROM (SELECT k FROM (SELECT number AS k FROM numbers(5)) GROUP BY k WITH TOTALS LIMIT 100)
 SETTINGS optimize_trivial_group_by_limit_query = 0;
 
--- The pass mutates the subquery's own context (`getMutableContext`), not the outer
--- query's context, so the outer query's `group_by_overflow_mode` should still observe
--- its default (`throw`) after the optimized subquery has switched it to `any` internally.
--- (`max_rows_to_group_by` is mutated together with the mode and would make for an
--- equivalent assertion, but the CI test profile overrides its default value, so this
--- test asserts on `group_by_overflow_mode` only — both leak together if leakage occurs.)
+-- The optimization of the subquery does not change the settings of the outer query.
+-- (The test asserts on `group_by_overflow_mode` only, because the CI test profile
+-- overrides the default value of `max_rows_to_group_by`.)
 SELECT
     (SELECT count() FROM (SELECT k FROM t_trivial_group_by_limit GROUP BY k LIMIT 5)) AS inner_count,
     getSetting('group_by_overflow_mode') AS outer_group_by_overflow_mode

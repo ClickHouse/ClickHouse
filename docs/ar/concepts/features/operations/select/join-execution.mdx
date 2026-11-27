@@ -1,0 +1,53 @@
+---
+title: 'كيف ينفّذ ClickHouse عمليات الربط (JOIN)'
+sidebarTitle: 'التنفيذ'
+description: 'مرحلتا البناء والفحص، وتحسينات مخطط الاستعلامات لعمليات JOIN.'
+keywords: ['JOIN execution', 'build side', 'probe side', 'JOIN planner', 'JOIN reordering', 'filter pushdown']
+doc_type: 'guide'
+---
+
+تُنفَّذ معظم خوارزميات الربط على مرحلتين:
+
+* **مرحلة البناء.** يقرأ ClickHouse أحد المُدخلين بالكامل ويخزّنه في بنية بيانات تدعم المطابقة، مثل جدول تجزئة أو مجموعة من الكتل المرتّبة. ويُسمّى هذا المُدخل جانب البناء.
+* **مرحلة الفحص.** يقرأ ClickHouse المُدخل الآخر على هيئة دفق، كتلةً تلو الأخرى، ويطابق كل صف مع بنية البيانات الناتجة عن مرحلة البناء. ويُسمّى هذا المُدخل جانب الفحص.
+
+لا تبدأ مرحلة الفحص إلا بعد انتهاء مرحلة البناء، ولذلك يتحدّد مقدار الذاكرة الذي تحتاجه عملية JOIN بصورة رئيسية بحجم جانب البناء.
+
+افتراضيًا، يكون الجانب الأيمن من JOIN هو جانب البناء، والجانب الأيسر هو جانب الفحص. غير أن بعض الخوارزميات تخرج عن هذا النموذج: فـ[خوارزمية `direct`](/ar/concepts/features/operations/select/join-algorithms#direct) لا تتضمّن مرحلة بناء، لأن الجانب الأيمن موجود مسبقًا كبنية مفتاح-قيمة. أما [خوارزمية `full_sorting_merge`](/ar/concepts/features/operations/select/join-algorithms#full-sorting-merge) فتفرز كلا المُدخلين ثم تدمجهما. في حين تجمع [خوارزمية `ie_join`](/ar/concepts/features/operations/select/join-algorithms#ie-join) كلا المُدخلين بالكامل قبل ربطهما.
+
+## سلوك مخطط الاستعلامات {#query-planner-behavior}
+
+يمكن لمخطط الاستعلامات تعديل مدخلات عملية JOIN قبل تنفيذ الخوارزمية، وذلك من خلال التحسينات التالية.
+
+### الاختيار التلقائي لجانب build-side {#automatic-build-side-selection}
+
+بدءًا من الإصدار 24.12، يستطيع مخطط الاستعلامات تبديل مُدخلَي عملية JOIN ليصبح المُدخل الأصغر هو جانب البناء. إذ يقارن عدد الصفوف المُقدَّر لكلا المُدخلين، ويُبدّلهما في عمليات JOIN القائمة على التجزئة متى قُدِّر أن المُدخل الأيسر هو الأصغر. ويتحكم الإعداد [`query_plan_join_swap_table`](/ar/reference/settings/session-settings/query-plan#query_plan_join_swap_table) في هذا السلوك.
+
+عند تبديل المُدخلين، تُنفَّذ عملية `LEFT` JOIN بوصفها `RIGHT` JOIN، والعكس بالعكس. ويظهر الترتيب الناتج عن التبديل في إخراج `EXPLAIN`.
+
+### إعادة ترتيب عمليات الربط بين جداول متعددة {#multi-table-join-reordering}
+
+عندما يربط استعلام عدة جداول ضمن الاستعلام الفرعي نفسه، يمكن لمخطط الاستعلامات تغيير ترتيب ربط هذه الجداول. ويحدد الإعداد [`query_plan_optimize_join_order_limit`](/ar/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) الحد الأقصى لعدد الجداول التي يعيد مخطط الاستعلامات ترتيبها. القيمة الافتراضية هي `10`، أما القيمة `1` فتعطّل إعادة الترتيب.
+
+### استخدام إحصاءات الأعمدة {#use-of-column-statistics}
+
+يعتمد اختيار build-side وإعادة ترتيب عمليات الربط على تقديرات عدد الصفوف. وفي غياب إحصاءات الأعمدة، يستنتج مخطط الاستعلامات هذه التقديرات من الفهرس الأساسي، وقد لا تكون دقيقة. أما عند توفر [إحصاءات الأعمدة](/ar/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)، فيعتمد مخطط الاستعلامات على الإحصاءات لتقدير انتقائية عوامل التصفية وعدد العناصر في مفاتيح الربط (JOIN).
+
+يتحكم الإعداد [`use_statistics`](/ar/reference/settings/session-settings/use-statistics#use_statistics) في ما إذا كان مُحسِّن الاستعلامات يستخدم الإحصاءات. ويتحكم الإعداد [`materialize_statistics_on_insert`](/ar/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert) في ما إذا كانت الإحصاءات تُبنى للبيانات المُدرَجة حديثًا.
+
+### ترحيل عامل التصفية {#filter-pushdown}
+
+عند تمكين [`query_plan_filter_push_down`](/ar/reference/settings/session-settings/query-plan#query_plan_filter_push_down)، ينقل مخطط الاستعلامات شروط `WHERE` إلى ما قبل عملية JOIN، بحيث يُصفّى كل مُدخل قبل مرحلتي البناء والفحص.
+
+* يُطبَّق الشرط الذي يشير إلى أعمدة مُدخل واحد فقط على ذلك المُدخل وحده.
+* في `LEFT` JOIN، لا تُرحَّل الشروط إلى المُدخل الأيمن. وفي `RIGHT` JOIN، لا تُرحَّل الشروط إلى المُدخل الأيسر.
+* يمكن أيضًا تطبيق الشرط المفروض على مفتاح الربط في أحد المُدخلين على المُدخل الآخر، لأن قيم أعمدة المفتاح في المُدخلين متساوية في كل صف متطابق.
+* لا تُرحَّل الشروط إلى جانب أيمن مُستكمَل مسبقًا، مثل القاموس، ولا إلى الجانب الأيمن من `ASOF` JOIN.
+
+## صفحات ذات صلة {#related-pages}
+
+* [استخدام عمليات JOIN في ClickHouse](/ar/concepts/features/operations/select/joining-tables)
+* [خوارزميات الربط](/ar/concepts/features/operations/select/join-algorithms)
+* [إدارة الذاكرة في عمليات JOIN والكتابة إلى القرص](/ar/concepts/features/operations/select/join-memory-management)
+* [إعدادات JOIN](/ar/concepts/features/operations/select/join-settings)
+* [تقليل عمليات JOIN وتحسينها](/ar/concepts/best-practices/minimize-optimize-joins)

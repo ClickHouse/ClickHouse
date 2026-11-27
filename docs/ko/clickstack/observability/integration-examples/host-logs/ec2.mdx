@@ -1,0 +1,419 @@
+---
+slug: /clickstack/observability/integration-examples/host-logs/ec2
+title: 'ClickHouse Observability로 EC2 호스트 로그 모니터링'
+sidebarTitle: 'EC2 호스트 로그'
+description: 'OpenTelemetry로 EC2 syslog 파일을 수집하고 ClickHouse Observability에서 인스턴스 메타데이터로 보강합니다.'
+doc_type: 'guide'
+keywords: ['EC2', 'AWS', '호스트 로그', 'systemd', 'syslog', 'OTEL', 'ClickHouse Observability', '시스템 모니터링', '클라우드 메타데이터']
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+OpenTelemetry collector로 EC2 syslog 파일을 수집하고 인스턴스 메타데이터와 함께 ClickHouse Observability로 전송합니다. EC2 인스턴스 없이 이 통합을 체험해 보려면 [데모 데이터셋](#demo-dataset)을 사용하십시오.
+
+## 사전 요구 사항 {#prerequisites}
+
+* ClickHouse Observability 서비스
+* 자체 로그를 사용하는 경우: syslog 파일이 있고, 인스턴스 메타데이터 서비스에 액세스할 수 있으며, collector를 설치하고 실행할 권한(permission)이 있는 Linux EC2 인스턴스
+* 데모를 실행하는 경우: Docker
+* collector 또는 샘플을 다운로드할 `curl`
+
+### 연결 정보 {#connection-details}
+
+<Tabs>
+  <Tab title="완전 관리형">
+    <BetaBadge label="베타 제공" />
+
+    ClickHouse Observability를 열고 **팀 설정 → 데이터 → Managed Telemetry**로 이동한 다음, OTLP HTTP 엔드포인트와 API Key를 복사하십시오. **연결 정보 복사**를 클릭하여 구성을 복사하거나, **Reveal key**를 클릭하여 마스킹된 키를 확인할 수 있습니다.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Managed Telemetry 연결 정보](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    아래 OTLP 익스포터 예시를 사용하려면 collector를 실행할 터미널에서 다음 변수를 설정하십시오.
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    플레이스홀더를 서비스의 정확한 엔드포인트(포트 포함)와 API Key로 대체하십시오. 엔드포인트에는 `/v1/logs` 접미사 없이 기본 HTTP 엔드포인트를 사용하십시오. 신호 경로는 익스포터가 자동으로 추가합니다.
+  </Tab>
+
+  <Tab title="자가 관리형">
+    연결할 수 있는 collector의 OTLP HTTP 엔드포인트(예: `http://YOUR_COLLECTOR_HOST:4318`)와 인증 설정을 사용하십시오. collector에 인증이 필요하지 않다면 아래 구성에서 익스포터의 `headers` 블록을 생략하십시오. 설정 방법은 [자가 관리형 시작 가이드](/ko/clickstack/self-configured/getting-started/managed)를 참조하십시오.
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+EC2 인스턴스에서 해당 엔드포인트에 연결할 수 있어야 합니다. Docker 데모에서는 로컬 컴퓨터에서 실행 중인 대상 collector에 `http://host.docker.internal:4318`로 연결할 수 있으며, 필요한 호스트 매핑은 데모 명령에 이미 포함되어 있습니다.
+
+## 기존 EC2 인스턴스와 통합 {#existing-ec2}
+
+로그를 수집할 EC2 인스턴스에서 다음 단계를 수행하십시오.
+
+<Steps>
+  <Step title="인스턴스 메타데이터 및 syslog 확인" id="verify-metadata">
+    IMDSv2를 사용하여 인스턴스 메타데이터 서비스에 액세스할 수 있는지 확인하십시오.
+
+    ```bash
+    TOKEN=$(curl -fsS --connect-timeout 5 -X PUT \
+      -H 'X-aws-ec2-metadata-token-ttl-seconds: 300' \
+      http://169.254.169.254/latest/api/token)
+    curl -fsS --connect-timeout 5 -H "X-aws-ec2-metadata-token: $TOKEN" \
+      http://169.254.169.254/latest/meta-data/instance-id
+    ```
+
+    응답에 인스턴스 ID가 포함되어 있어야 합니다. collector는 이 메타데이터 서비스를 사용하여 로그에 인스턴스 ID, 유형, 리전, 가용 영역, 계정 ID를 추가합니다. 아래 구성은 EC2 태그를 수집하지 않습니다.
+
+    syslog 파일의 위치를 찾아 포맷을 확인하세요:
+
+    ```bash
+    # Ubuntu/Debian
+    tail -20 /var/log/syslog
+
+    # Amazon Linux/RHEL
+    tail -20 /var/log/messages
+    ```
+
+    인스턴스에 실제로 존재하는 경로를 사용하십시오. 로그가 systemd 저널에만 기록된다면 [Systemd/Journald 가이드](/ko/clickstack/observability/integration-examples/systemd)를 참고하여 수집하십시오.
+  </Step>
+
+  <Step title="collector 설치" id="install-collector">
+    인스턴스 아키텍처에 맞는 OpenTelemetry Collector Contrib `0.161.0`을 다운로드하십시오.
+
+    ```bash
+    case "$(uname -m)" in
+      x86_64) ARCH=amd64 ;;
+      aarch64) ARCH=arm64 ;;
+      *) echo "Unsupported architecture"; exit 1 ;;
+    esac
+    curl -fLO "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.161.0/otelcol-contrib_0.161.0_linux_${ARCH}.tar.gz"
+    tar -xzf "otelcol-contrib_0.161.0_linux_${ARCH}.tar.gz" otelcol-contrib
+    sudo install -m 755 otelcol-contrib /usr/local/bin/otelcol-contrib
+    /usr/local/bin/otelcol-contrib --version
+    ```
+  </Step>
+
+  <Step title="collector 구성" id="configure-collector">
+    해당하는 구성을 `ec2-host-logs.yaml`로 저장하십시오. 파일의 타임스탬프 포맷에 맞는 구성을 선택하고, syslog 경로가 다르면 `include`를 수정하십시오.
+
+    <Tabs>
+      <Tab title="ISO 타임스탬프">
+        `2026-10-15T12:34:56.123456+00:00`과 같은 형식의 타임스탬프:
+
+        ```yaml
+        receivers:
+          filelog/ec2:
+            include: [/var/log/syslog]
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                timestamp:
+                  parse_from: attributes.timestamp
+                  layout_type: gotime
+                  layout: '2006-01-02T15:04:05.999999999Z07:00'
+                  location: UTC
+              - type: add
+                field: attributes.source
+                value: ec2-host-logs
+              - type: add
+                field: resource["service.name"]
+                value: ec2-host-service
+              - type: copy
+                from: attributes.hostname
+                to: resource["host.name"]
+
+        processors:
+          memory_limiter:
+            check_interval: 1s
+            limit_mib: 256
+            spike_limit_mib: 64
+          resourcedetection/ec2:
+            detectors: [ec2]
+            timeout: 5s
+            override: false
+          batch:
+            timeout: 5s
+            send_batch_size: 500
+            send_batch_max_size: 500
+
+        exporters:
+          otlp_http/observability:
+            endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+            headers:
+              authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+        service:
+          pipelines:
+            logs/ec2:
+              receivers: [filelog/ec2]
+              processors: [memory_limiter, resourcedetection/ec2, batch]
+              exporters: [otlp_http/observability]
+        ```
+      </Tab>
+
+      <Tab title="기존 syslog">
+        `Oct 15 12:34:56`과 같은 형식의 타임스탬프:
+
+        ```yaml
+        receivers:
+          filelog/ec2:
+            include: [/var/log/messages]
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\w+\s+\d+ \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                timestamp:
+                  parse_from: attributes.timestamp
+                  layout_type: gotime
+                  layout: 'Jan _2 15:04:05'
+                  location: UTC
+              - type: add
+                field: attributes.source
+                value: ec2-host-logs
+              - type: add
+                field: resource["service.name"]
+                value: ec2-host-service
+              - type: copy
+                from: attributes.hostname
+                to: resource["host.name"]
+
+        processors:
+          memory_limiter:
+            check_interval: 1s
+            limit_mib: 256
+            spike_limit_mib: 64
+          resourcedetection/ec2:
+            detectors: [ec2]
+            timeout: 5s
+            override: false
+          batch:
+            timeout: 5s
+            send_batch_size: 500
+            send_batch_max_size: 500
+
+        exporters:
+          otlp_http/observability:
+            endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+            headers:
+              authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+        service:
+          pipelines:
+            logs/ec2:
+              receivers: [filelog/ec2]
+              processors: [memory_limiter, resourcedetection/ec2, batch]
+              exporters: [otlp_http/observability]
+        ```
+
+        기존 syslog 타임스탬프에는 연도와 시간대가 없습니다. 연도는 파서가 추론하며, 호스트가 UTC로 로그를 기록하지 않는다면 `location`을 호스트의 IANA 시간대로 설정하십시오.
+      </Tab>
+    </Tabs>
+
+    수신기는 원본 로그 행을 그대로 유지하면서 호스트명, unit, PID(있는 경우), 메시지를 추출합니다. `resourcedetection/ec2` 프로세서는 EC2 리소스 속성을 추가합니다. 인스턴스 태그도 수집하려면 [EC2 detector 구성](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/v0.161.0/processor/resourcedetectionprocessor#aws-ec2)과 필요한 권한(permission)을 참조하십시오.
+  </Step>
+
+  <Step title="collector를 실행하십시오" id="run-collector">
+    이 터미널에서 [연결 변수](#connection-details)를 설정한 다음, 구성 파일이 있는 디렉터리에서 실행하십시오. collector에는 syslog 파일에 대한 읽기 권한(permission)이 필요합니다.
+
+    ```bash
+    sudo --preserve-env=OTEL_EXPORTER_OTLP_ENDPOINT,OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      /usr/local/bin/otelcol-contrib --config="$(pwd)/ec2-host-logs.yaml"
+    ```
+
+    터미널을 닫지 말고 열어 두십시오. 수신기는 `start_at: end`를 사용하므로, 시작 이후 syslog 파일에 기록되는 새 활동을 발생시키십시오. 지속적으로 수집하려면 사용 중인 배포 프로세스를 통해 서비스를 구성하고, 해당 서비스에 연결 변수를 전달하십시오.
+  </Step>
+
+  <Step title="로그 확인" id="verify-logs">
+    **검색**을 열고 **Logs** 소스를 선택한 다음 `ServiceName:ec2-host-service`로 필터링하고 **Last 15 minutes**를 선택하십시오. 레코드를 펼친 후 리소스 속성에서 `cloud.provider`, `cloud.region`, `cloud.availability_zone`, `host.id`, `host.type` 값을 확인하십시오.
+  </Step>
+</Steps>
+
+## 데모 데이터셋 {#demo-dataset}
+
+샘플 데이터에는 24시간 분량의 syslog 로그 행 11,658개가 포함되어 있습니다. collector가 시뮬레이션된 EC2 메타데이터를 추가하고 타임스탬프를 갱신하므로 AWS 계정이 없어도 됩니다.
+
+<Steps>
+  <Step title="샘플 다운로드" id="download-sample">
+    ```bash
+    mkdir -p ec2-demo
+    cd ec2-demo
+    curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/host-logs/journal.log
+    ```
+  </Step>
+
+  <Step title="데모 collector 구성" id="configure-demo-collector">
+    다음 내용을 다운로드 디렉터리에 `ec2-host-logs-demo.yaml` 파일로 저장하십시오:
+
+    ```yaml
+    receivers:
+      filelog/ec2:
+        include: [/var/log/host/journal.log]
+        start_at: beginning
+        operators:
+          - type: regex_parser
+            regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+            timestamp:
+              parse_from: attributes.timestamp
+              layout: '%Y-%m-%dT%H:%M:%S%z'
+              location: UTC
+          - type: add
+            field: attributes.source
+            value: ec2-demo
+          - type: add
+            field: resource["service.name"]
+            value: ec2-demo
+          - type: copy
+            from: attributes.hostname
+            to: resource["host.name"]
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+      transform/demo_timestamps:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(time, Now() - Duration("2m") - (Time("2025-11-11T23:59:01Z", "%Y-%m-%dT%H:%M:%SZ") - time))
+      resource/ec2_demo:
+        attributes:
+          - key: cloud.provider
+            value: "aws"
+            action: insert
+          - key: cloud.platform
+            value: "aws_ec2"
+            action: insert
+          - key: cloud.region
+            value: "us-east-1"
+            action: insert
+          - key: cloud.availability_zone
+            value: "us-east-1a"
+            action: insert
+          - key: host.id
+            value: "i-0abc123def456789"
+            action: insert
+          - key: host.type
+            value: "t3.medium"
+            action: insert
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+    service:
+      pipelines:
+        logs/ec2:
+          receivers: [filelog/ec2]
+          processors: [memory_limiter, resource/ec2_demo, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    <Note>
+      데모 전용 타임스탬프 변환은 샘플 데이터를 수집 시점 2분 전까지의 약 24시간 범위로 이동합니다. 자체 로그의 원래 타임스탬프를 유지하려면 [EC2 인스턴스 구성](#existing-ec2)을 사용하십시오.
+    </Note>
+  </Step>
+
+  <Step title="데모 collector 실행" id="run-demo-collector">
+    [연결 변수](#connection-details)를 설정한 후, 다운로드 디렉터리에서 다음 명령을 실행하십시오.
+
+    ```bash
+    docker run --rm --name ec2-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/ec2-host-logs-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v "$(pwd):/var/log/host:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    collector가 샘플 데이터를 내보내는 동안 터미널을 열어 두고, 출력에 오류가 없는지 확인하십시오. 새 컨테이너를 다시 시작하면 샘플 로그가 중복으로 수집될 수 있습니다.
+  </Step>
+
+  <Step title="데모 로그를 확인하십시오" id="verify-demo-logs">
+    **검색**을 열고 **Logs** 소스를 선택한 다음, `ServiceName:ec2-demo`로 필터링하고 **Last 2 days**를 선택하십시오. 로그 항목을 펼쳐 시뮬레이션된 리소스 속성을 확인하십시오. `cloud.region`은 `us-east-1`, `host.id`는 `i-0abc123def456789`, `host.type`은 `t3.medium`이어야 합니다. 데이터를 확인했으면 **Ctrl+C**를 눌러 collector를 중지하십시오.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse Observability 검색 화면의 EC2 데모 로그](/images/clickstack/observability-ec2-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 대시보드 및 시각화 {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json" download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">대시보드 구성 다운로드</TrackedLink>} id="download-dashboard" />
+
+  <Step title="대시보드 가져오기" id="import-dashboard">
+    1. **대시보드**를 열고 오른쪽 상단의 **Import**를 클릭하세요.
+    2. `host-logs-dashboard.json` 파일을 업로드하세요.
+    3. 차트를 **로그** 소스에 매핑한 다음 **Finish Import**를 클릭하세요.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![대시보드 가져오기 버튼](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="대시보드 보기" id="view-dashboard">
+    가져온 대시보드에는 선택한 시간 범위의 로그가 표시됩니다. 표본 데이터를 다른 서비스와 구분하려면 필요에 따라 `ServiceName:ec2-demo`로 필터(filter)를 적용하세요. 전체 표본을 확인하려면 **Last 2 days**를 선택하세요. `ResourceAttributes.cloud.region:us-east-1` 또는 `ResourceAttributes.host.id:i-0abc123def456789`와 같은 EC2 리소스 속성으로 필터(filter)를 적용할 수도 있습니다.
+
+    대시보드에는 로그 볼륨, 시스템 유닛, SSH 활동, 방화벽 차단, 서비스 재시작 현황이 포함됩니다. 수집 파이프라인에서 Severity 값을 제공하지 않으면 Severity는 비어 있습니다.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse Observability의 호스트 로그 대시보드](/images/clickstack/observability-ec2-dashboard.png)
+      </Frame>
+    </div>
+
+    <Note>
+      EC2 서비스로 필터(filter)를 적용한 후에도 SSH activity, Firewall blocks 또는 제목 없는 보안 이벤트 차트가 비어 있다면, 해당 차트의 집계 필터(filter)에서 `ServiceName = 'host-demo' AND` 조건을 찾아 제거하세요. 그런 다음 대시보드의 서비스 이름 필터(filter)로 EC2 로그를 선택하세요.
+    </Note>
+  </Step>
+</Steps>
+
+## 문제 해결 {#troubleshooting}
+
+### EC2 메타데이터가 누락된 경우 {#no-metadata}
+
+EC2 인스턴스에서 메타데이터 검사를 실행하십시오. IMDS가 활성화되어 있는지, 그리고 로컬 방화벽 또는 프록시 설정이 `169.254.169.254`에 대한 요청을 허용하는지 확인하십시오. 프록시를 사용한다면 `NO_PROXY`에 해당 주소를 추가하여 프록시 대상에서 제외하십시오. collector 출력에 메타데이터 감지 오류가 있는지 확인하십시오. 데모는 시뮬레이션된 메타데이터를 사용하므로 IMDS에 접속하지 않습니다.
+
+### 로그가 표시되지 않는 경우 {#no-logs}
+
+* `include`에 지정한 경로가 존재하는지, collector가 해당 경로를 읽을 수 있는지 확인하십시오.
+* collector가 시작된 후에 새 로그 항목을 생성하십시오. `start_at: end` 설정은 기존 내용을 건너뜁니다.
+* collector 출력에 인증 오류나 내보내기 오류가 있는지 확인하고, 인스턴스에서 엔드포인트에 연결할 수 있는지 확인하십시오.
+* **로그** 소스, 서비스 이름 필터(filter), 시간 범위를 확인하십시오. 데모에서는 **Last 2 days**를 사용하십시오.
+
+### 로그가 올바르게 파싱되지 않는 경우 {#logs-not-parsing}
+
+파일의 타임스탬프가 선택한 구성과 맞는지 확인하십시오. 기존 syslog를 사용한다면 호스트 시간대를 올바르게 설정하십시오. 구성된 포맷과 일치하는 파일만 수집하십시오.
+
+## 다음 단계 {#next-steps}
+
+* 인증 실패나 서비스 오류가 발생하면 통지받을 수 있도록 [알림](/ko/clickstack/observability/features/alerts)을 설정하십시오.
+* EC2 리소스 속성으로 필터링하여 특정 인스턴스나 리전을 조사하십시오.
+* 배포 방법은 [OpenTelemetry 데이터 전송](/ko/clickstack/observability/ingesting-data/opentelemetry)을 참조하십시오.

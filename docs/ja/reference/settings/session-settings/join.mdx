@@ -15,13 +15,13 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 ## join_algorithm {#join_algorithm}
 
-<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
+<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,hash,ie_join" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "`ie_join` がデフォルトリストに追加されました。これにより、`ON` 句に不等条件のみを含む 結合 は、フィルタを伴う `CROSS JOIN` ではなく IEJoin で実行されます。最後に指定されているため、他のアルゴリズムが適用されない場合にのみ使用されます。"}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' は、JOIN アルゴリズムを明示的に指定する方式が導入されたため非推奨になりました。また、現在は hash より parallel_hash が優先されます"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "`ie_join` がデフォルトリストに追加されました。これにより、`ON` 句に不等条件のみを含む 結合 は、フィルタを伴う `CROSS JOIN` ではなく IEJoin で実行されます。最後に指定されているため、他のアルゴリズムが適用されない場合にのみ使用されます。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "direct,hash,ie_join"},{"label": "`parallel_hash` は `hash` の廃止されたエイリアスであるため、デフォルトリストから削除されました。引き続き指定することは可能です。`hash` や `parallel_hash` を列挙しても、結合 の並列度は制御されません。"}]}, {"id": "row-3","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' は、JOIN アルゴリズムを明示的に指定する方式が導入されたため非推奨になりました。また、現在は hash より parallel_hash が優先されます"}]}]} />
 
 使用する [JOIN](/ja/reference/statements/select/join) アルゴリズムを指定します。
 
-複数のアルゴリズムを指定できます。特定のクエリでは、kind/strictness とテーブルエンジンに基づいて、利用可能なアルゴリズムが選択されます。
+複数のアルゴリズムを指定できます。特定のクエリでは、種類/strictness とテーブルエンジンに基づいて、利用可能なアルゴリズムが選択されます。
 
 ハッシュベースのアルゴリズムのスピルは、`join_algorithm` とは別に設定します。すべてのハッシュベースのアルゴリズムは、[`max_bytes_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) と [`max_bytes_ratio_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) をスピル threshold として使用します。
 
@@ -41,19 +41,19 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 `grace_hash` は最初の block から外部処理になります。右テーブルは直ちにパーティション分割されますが、`hash` と `parallel_hash` はまずメモリ上に収集し、スピル threshold を超えた時点で初めてパーティション分割します。右側がメモリに収まらないことが既に分かっており、インメモリのフェーズを省略したい場合に選択してください。スピル threshold 自体は、すべての hash アルゴリズムが使用するものと同じ [`max_bytes_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) であり、`legacy_join_size_limits_trigger_spilling` が有効でない限り、この 2 つのいずれかがゼロ以外である必要があります。threshold がない場合、`grace_hash` はスキップされてリスト内の次のアルゴリズムが使用され、唯一のアルゴリズムである場合は拒否されます。
 
-grace 結合の第 1 フェーズでは、右テーブルを読み取り、キーカラムの hash 値に応じて N 個の bucket に分割します (初期状態では、N は `grace_hash_join_initial_buckets` です)。これは、各 bucket を独立して処理できるように行われます。最初の bucket の行はメモリ内 hash table に追加され、その他はディスクに保存されます。hash table がスピル threshold を超えて増大すると、各行に割り当てられた bucket とともに bucket 数が増加します。現在の bucket に属さない行はすべてフラッシュされ、再割り当てされます。
+grace 結合の第 1 フェーズでは、右テーブルを読み取り、キーカラムの hash 値に応じて N 個の bucket に分割します (初期状態では、N は `grace_hash_join_initial_buckets` です)。これは、各 bucket を独立して処理できるように行われます。最初の bucket の行はメモリ内 ハッシュテーブル に追加され、その他はディスクに保存されます。ハッシュテーブル がスピル threshold を超えて増大すると、各行に割り当てられた bucket とともに bucket 数が増加します。現在の bucket に属さない行はすべてフラッシュされ、再割り当てされます。
 
 `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN` をサポートします。
 
 * hash
 
-[ハッシュ結合 algorithm](https://en.wikipedia.org/wiki/Hash_join) が使用されます。kind と strictness のすべての組み合わせ、および `JOIN ON` 句で `OR` によって結合される複数の結合キーをサポートする、最も汎用的な実装です。
+[ハッシュ結合 algorithm](https://en.wikipedia.org/wiki/Hash_join) が使用されます。種類 と strictness のすべての組み合わせ、および `JOIN ON` 句で `OR` によって結合される複数の結合キーをサポートする、最も汎用的な実装です。
 
 `hash` アルゴリズムを使用する場合、`JOIN` の右側は RAM に読み込まれます。
 
 * parallel&#95;hash
 
-`hash` 結合のバリエーションで、データを bucket に分割し、このプロセスを高速化するために 1 つではなく複数の hashtable を同時に構築します。
+`hash` と同じで、互換性のために残されています。`INNER`、`LEFT`、`RIGHT`、`FULL` のハッシュ結合では、最大 `max_threads` 個のスレッドでハッシュテーブルを構築でき、複数スレッドで構築するかどうかは `parallel_hash_join_threshold` によって決まります。結合の種類が許す限り常に複数スレッドで構築するには、`parallel_hash_join_threshold` を `0` に設定します。
 
 `parallel_hash` アルゴリズムを使用する場合、`JOIN` の右側は RAM に読み込まれます。
 

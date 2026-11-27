@@ -22,6 +22,16 @@ Obsolete setting, does nothing.
 
 Minimal uncompressed size in bytes to use full type of storage for data part instead of packed
 
+## min_bytes_for_object_shared_data_main_serialization_version {#min_bytes_for_object_shared_data_main_serialization_version}
+<SettingsInfoBlock type="UInt64" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "New setting"}]}]}/>
+
+Minimal uncompressed size in bytes of a part to write the shared data inside JSON type with the main version from
+[object_shared_data_serialization_version](/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version).
+Smaller parts use [object_shared_data_serialization_version_for_small_parts](/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts).
+For a merged part, the size is the total size of the merged parts, for a mutated part the size of the source part.
+`0` disables the size check.
+
 ## min_bytes_for_wide_part {#min_bytes_for_wide_part}
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 

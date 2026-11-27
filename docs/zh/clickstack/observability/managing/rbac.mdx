@@ -1,0 +1,182 @@
+---
+slug: /clickstack/observability/managing/rbac
+title: '基于角色的访问控制（RBAC）'
+sidebarTitle: '基于角色的访问控制'
+toc_max_heading_level: 2
+description: '在 ClickHouse Observability 中配置基于角色的访问控制，管理团队对仪表盘、保存的搜索、数据源、告警等资源的权限。'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'rbac', '角色', '权限', '访问控制', '安全']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="Beta 版本" />
+
+ClickHouse Observability 提供基于角色的访问控制 (RBAC) ，您可以定义自定义角色，对[仪表盘](/zh/clickstack/observability/features/dashboards/overview)、[保存的搜索](/zh/clickstack/observability/features/search)、数据源、[告警](/zh/clickstack/observability/features/alerts)、Webhook 和笔记本设置细粒度权限。权限分为两个级别：一是资源级访问 (按资源类型设置为无权限、只读或管理) ；二是可选的细粒度规则，可按名称、标签或 ID 限制对单个资源的访问。该服务内置三个角色，您也可以根据团队需求创建自定义角色。
+
+## 用户访问权限前置条件 {#user-access-prerequisites}
+
+该服务通过 ClickHouse Cloud 进行身份验证。用户必须属于您的 ClickHouse Cloud 组织，并拥有 Observability 服务的访问权限。有关组织成员管理，请参阅[管理云用户](/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users)。
+
+Cloud SQL 控制台访问级别与 Observability 访问权限的对应关系如下：
+
+| Cloud SQL 控制台访问权限      | Observability 访问权限                                                      |
+| ---------------------- | ----------------------------------------------------------------------- |
+| **SQL 控制台管理员** (完全访问)  | 拥有该服务的完全访问权限。启用[告警](/zh/clickstack/observability/features/alerts)时必须具备此权限。 |
+| **SQL 控制台只读** (只读)     | 可查看可观测性数据并创建仪表盘。                                                        |
+| **无权限**                | 无法访问该服务。                                                                |
+
+打开 **团队设置 → 成员与角色**，即可查看团队成员及其当前的 Observability 角色。点击 **Manage in Console** 可在 ClickHouse Cloud 中管理组织成员。
+
+## 内置角色 {#built-in-roles}
+
+该服务包含三个系统内置角色，这些角色不可编辑或删除。默认情况下，管理员角色会分配给团队创建者。
+
+| 权限         | 管理员 |  成员 |  只读 |
+| ---------- | :-: | :-: | :-: |
+| 查看所有资源     |  ✓  |  ✓  |  ✓  |
+| 管理仪表盘      |  ✓  |  ✓  |     |
+| 管理保存的搜索    |  ✓  |  ✓  |     |
+| 管理数据源      |  ✓  |  ✓  |     |
+| 管理告警       |  ✓  |  ✓  |     |
+| 管理 Webhook |  ✓  |  ✓  |     |
+| 管理笔记本      |  ✓  |  ✓  |     |
+| 更新团队设置     |  ✓  |  ✓  |     |
+| 创建/删除团队    |  ✓  |     |     |
+| 管理用户和邀请    |  ✓  |     |     |
+
+## 为团队成员分配角色 {#assigning-roles}
+
+**团队设置** 中的 **成员与角色** 选项卡列出了所有团队成员及其当前角色。如需更改角色，请点击用户名旁的 **编辑**，然后选择新角色。每个用户只能拥有一个角色。
+
+### 新用户默认角色 {#default-new-user-role}
+
+在 **团队设置** → **成员与角色** 中，通过角色列表下方的 **新用户默认角色**，选择为自动加入团队的用户分配的角色。如果未设置默认角色，新用户将被分配 **成员** 角色。
+
+## 创建自定义角色 {#creating-a-role}
+
+<Steps>
+  <Step title="进入团队设置" id="step-navigate">
+    打开 **团队设置** → **成员与角色**，找到 **RBAC 角色** 部分。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![RBAC 角色](/images/clickstack/rbac/rbac-section.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="添加新角色" id="step-add-role">
+    点击 **+ 添加角色**。输入 **角色名称**，并可按需添加 **描述**。
+  </Step>
+
+  <Step title="配置权限并保存" id="step-configure">
+    为该角色设置权限，然后点击 **创建角色**。
+
+    <div className="ch-image-md">
+      <Frame>
+        ![添加角色弹窗](/images/clickstack/rbac/add-role-modal.webp)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+自定义角色会与系统内置角色一同显示在 RBAC 角色部分，并带有 **编辑** 和 **删除** 按钮。
+
+## 角色权限 {#role-permissions}
+
+### 资源权限 {#resource-permissions}
+
+每个角色会为每种资源类型分别授予一个访问级别。访问级别共有以下三种：
+
+| 访问级别    | 允许的操作                    |
+| ------- | ------------------------ |
+| **无权限** | 该资源类型对该角色完全不可见。          |
+| **只读**  | 可查看资源及其配置，但不能创建、编辑或删除资源。 |
+| **管理**  | 完全控制，可创建、编辑和删除该类型的资源。    |
+
+可控制的资源类型包括：
+
+* **[仪表盘](/zh/clickstack/observability/features/dashboards/overview)** — 已保存的仪表盘布局和图表。
+* **[保存的搜索](/zh/clickstack/observability/features/search)** — 已持久化的日志/trace/事件查询。
+* **数据源** — 用于查询可观测性数据的数据源。
+* **[告警](/zh/clickstack/observability/features/alerts)** — 告警规则及其通知设置。
+* **Webhook** — [告警](/zh/clickstack/observability/features/alerts)投递通知的出站目标端 (例如 Slack、PagerDuty 和通用 HTTP 端点) 。此处不是指可观测性 API。
+* **笔记本** — 用于协作调查的笔记本。
+
+### 管理权限 {#administrative-permissions}
+
+除资源权限外，每个角色还包含两项管理设置：
+
+* **用户** (无权限 · 只读) — 控制该角色能否查看团队成员及其角色。组织成员需通过 **Manage in Console** 进行管理。
+* **团队** (只读 · 管理) — 控制该角色能否查看或修改团队级设置，例如安全策略和 RBAC 配置。
+
+### 细粒度访问规则 {#fine-grained-access-rules}
+
+仪表盘、保存的搜索、数据源和笔记本支持细粒度控制，可将访问权限限定到某一类别中的单个资源。如需将某个角色的访问范围限定为特定资源，而不是授予其对整个资源类型的全面访问权限，请使用这些控制。
+
+#### 默认访问与细粒度控制 {#access-control-modes}
+
+每种资源类型都有一个**访问控制模式**：
+
+* **默认访问** — 对该类型的所有资源统一应用一个访问级别 (无权限、只读或管理) 。
+* **细粒度控制** — 允许您定义访问规则，按条件匹配特定资源。未匹配任何规则的资源默认无权限。
+
+如需切换模式，请在角色编辑器中点击展开箭头展开相应的资源类型，然后切换**访问控制模式**开关。
+
+<div className="ch-image-md">
+  <Frame>
+    ![角色编辑器中的默认访问与细粒度控制模式](/images/clickstack/rbac/default-vs-fine-grained.webp)
+  </Frame>
+</div>
+
+#### 配置访问规则 {#configuring-access-rules}
+
+每条访问规则由一个**条件**和一个**访问级别**组成。条件根据资源的属性进行匹配：
+
+<div className="ch-image-md">
+  <Frame>
+    ![条件工具提示：按名称或标签（显示在标题中）或按 ID（可在 URL 中找到）匹配资源](/images/clickstack/rbac/condition-tip.webp)
+  </Frame>
+</div>
+
+| 条件字段     | 运算符              | 匹配内容                                                               | 示例                                                    |
+| -------- | ---------------- | ------------------------------------------------------------------ | ----------------------------------------------------- |
+| **Name** | `is`, `contains` | 资源的显示名称，例如仪表盘标题。                                                   | Name contains `production`：匹配标题中包含“production”的所有仪表盘。 |
+| **标签**  | `is`, `contains` | 通过资源视图右上角的标签面板为资源分配的标签。仅适用于 仪表盘、保存的搜索 和 笔记本。 | 标签 is `critical`：匹配带有“critical”标签的资源。                |
+| **ID**   | `is`, `contains` | 资源标识符，打开资源后可在 URL 栏中找到。                                            | ID is `abc123`：仅匹配某个特定资源。                             |
+
+下方截图中，URL 栏内高亮显示了仪表盘 ID，右上角的标签面板中可以看到“TESTING”标签。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![仪表盘的 URL 栏中显示资源 ID，右上角显示一个标签](/images/clickstack/rbac/dashboard-id-and-tag-example.webp)
+  </Frame>
+</div>
+
+每种资源类型均可添加多条规则。各规则按“或”逻辑独立判断：只要资源匹配**任意**一条规则，即可访问；未匹配任何规则的资源则无法访问。
+
+<div className="ch-image-md">
+  <Frame>
+    ![访问规则“或”逻辑的工具提示](/images/clickstack/rbac/access-rules-tip.webp)
+  </Frame>
+</div>
+
+**示例**：如需为某个角色授予测试仪表盘的只读访问权限，请展开 仪表盘，切换到细粒度控制 (Fine-Grained Controls) ，然后添加以下两条规则：
+
+* **Name** `contains` `testing`，访问级别为 **只读**
+* **标签** `is` `testing`，访问级别为 **只读**
+
+仪表盘只要匹配其中任一规则，即可访问。
+
+<div className="ch-image-md">
+  <Frame>
+    ![以“或”连接的两条细粒度访问规则：Name contains testing，访问级别为 只读；标签 is testing，访问级别为 只读](/images/clickstack/rbac/dashboard-fine-grained-example.webp)
+  </Frame>
+</div>
+
+## 安全策略 {#security-policies}
+
+在 **团队设置 → 成员与角色 → 安全策略** 中启用 **禁用数据导出** 后，团队中的所有成员都将看不到日志数据 (包括行详情) 的下载和复制控件。用户仍可在屏幕上选中文本，API 和 MCP 服务器也仍会返回数据。此设置并不会阻止对底层数据的访问。
+
+生成式 AI 相关控件位于 **团队设置 → API 与智能体 → 配置生成式 AI** 下。详情请参阅[配置生成式 AI](/zh/clickstack/observability/managing/config#generative-ai)。

@@ -389,8 +389,9 @@ public:
     virtual void createAndDeserializeBatch(PaddedPODArray<AggregateDataPtr> & data, AggregateDataPtr __restrict place, size_t total_size_of_state, size_t limit, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const = 0;
 
     /// Sets a just-created state to what it would be after aggregating `count` rows whose values add up to `sum`, for
-    /// callers that already know both (e.g. the aggregation from column statistics). Implemented by `sum`, `avg` and
-    /// `sumCount`; `sum` is a `Field` of the result type of `sum` over the argument. Other functions throw.
+    /// callers that already know both (e.g. the aggregation from column statistics). Implemented by `sum`, `avg`,
+    /// `sumCount` and `count`; `sum` is a `Field` of the result type of `sum` over the argument, and ignored by `count`.
+    /// Over a `Nullable` argument, `count` is the number of non-NULL rows. Other functions throw.
     virtual void setSumAndCount(AggregateDataPtr __restrict place, const Field & sum, UInt64 count) const;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
@@ -444,7 +445,7 @@ public:
     virtual MergedValueBound getMergedValueBound() const { return MergedValueBound::Unknown; }
 
     /** The inner loop that uses the function pointer is better than using the virtual function.
-      * The reason is that in the case of virtual functions GCC 5.1.2 generates code,
+      * The reason is that in the case of virtual functions the compiler can generate code,
       *  which, at each iteration of the loop, reloads the function address (the offset value in the virtual function table) from memory to the register.
       * This gives a performance drop on simple queries around 12%.
       * After the appearance of better compilers, the code can be removed.
@@ -529,7 +530,7 @@ public:
         ssize_t if_argument_pos = -1) const = 0;
 
     /** In addition to addBatch, this method collects multiple rows of arguments into array "places"
-      *  as long as they are between offsets[i-1] and offsets[i]. This is used for arrayReduce and
+      *  as long as they are between offsets[static_cast<ssize_t>(i) - 1] and offsets[i]. This is used for arrayReduce and
       *  -Array combinator. It might also be used generally to break data dependency when array
       *  "places" contains a large number of same values consecutively.
       */
@@ -551,6 +552,16 @@ public:
         AggregateDataPtr __restrict place,
         size_t place_stride,
         const IColumn ** columns,
+        Arena * arena) const = 0;
+
+    /// The same as addBatchConsecutivePlaces, but the rows with `null_map[i] != 0` are skipped.
+    virtual void addBatchConsecutivePlacesNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        size_t place_stride,
+        const IColumn ** columns,
+        const UInt8 * null_map,
         Arena * arena) const = 0;
 
     /** The case when the aggregation key is UInt8
@@ -638,23 +649,6 @@ public:
 
     /// Returns the parameters passed to the constructor as is.
     const Array & getParameters() const override { return parameters; }
-
-    // Any aggregate function can be calculated over a window, but there are some
-    // window functions such as rank() that require a different interface, e.g.
-    // because they don't respect the window frame, or need to be notified when
-    // a new peer group starts. They pretend to be normal aggregate functions,
-    // but will fail if you actually try to use them in Aggregator. The
-    // WindowTransform recognizes these functions and handles them differently.
-    // We could have a separate factory for window functions, and make all
-    // aggregate functions implement IWindowFunction interface and so on. This
-    // would be more logically correct, but more complex. We only have a handful
-    // of true window functions, so this hack-ish interface suffices.
-    virtual bool isOnlyWindowFunction() const
-    {
-        if (auto nested = getNestedFunction())
-            return nested->isOnlyWindowFunction();
-        return false;
-    }
 
     /// Description of AggregateFunction in form of name(parameters)(argument_types).
     String getDescription() const;
@@ -1013,6 +1007,20 @@ public:
             static_cast<const Derived *>(this)->add(place, columns, i, arena);
     }
 
+    void addBatchConsecutivePlacesNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        size_t place_stride,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena * arena) const override
+    {
+        for (size_t i = row_begin; i < row_end; ++i, place += place_stride)
+            if (!null_map[i])
+                static_cast<const Derived *>(this)->add(place, columns, i, arena);
+    }
+
     void addBatchLookupTable8(
         size_t row_begin,
         size_t row_end,
@@ -1186,22 +1194,20 @@ public:
         std::unique_ptr<Data[]> places{new Data[256 * UNROLL_COUNT]};
         bool has_data[256 * UNROLL_COUNT]{}; /// Separate flags array to avoid heavy initialization.
 
-        size_t i = row_begin;
-
-        /// Aggregate data into different lookup tables.
-
-        size_t size_unrolled = (row_end - row_begin) / UNROLL_COUNT * UNROLL_COUNT;
-        for (; i < size_unrolled; i += UNROLL_COUNT)
+        /// Table `j` gets the `j`-th of `UNROLL_COUNT` consecutive row ranges, so merging tables in order keeps row order.
+        size_t range_size = (row_end - row_begin) / UNROLL_COUNT;
+        for (size_t offset = 0; offset < range_size; ++offset)
         {
             for (size_t j = 0; j < UNROLL_COUNT; ++j)
             {
-                size_t idx = j * 256 + key[i + j];
+                size_t row = row_begin + j * range_size + offset;
+                size_t idx = j * 256 + key[row];
                 if (unlikely(!has_data[idx]))
                 {
                     new (&places[idx]) Data;
                     has_data[idx] = true;
                 }
-                func.add(reinterpret_cast<char *>(&places[idx]), columns, i + j, nullptr);
+                func.add(reinterpret_cast<char *>(&places[idx]), columns, row, nullptr);
             }
         }
 
@@ -1225,7 +1231,7 @@ public:
 
         /// Process tails and add directly to the final destination.
 
-        for (; i < row_end; ++i)
+        for (size_t i = row_begin + range_size * UNROLL_COUNT; i < row_end; ++i)
         {
             size_t k = key[i];
             AggregateDataPtr & place = map[k];
@@ -1265,9 +1271,11 @@ struct AggregateFunctionProperties
       */
     bool is_order_dependent = false;
 
-    /** The result is correct only if each state receives its rows in order, while `merge` puts the states in order by
-      * itself (example: `deltaSumTimestamp`, which compares each row with the previous one and orders the states it
-      * merges by their timestamps). An aggregation that adds the rows of several streams to one state cannot honor it.
+    /** The result is correct only if each state receives its rows in order. In another order the result is wrong,
+      * not just different as for `is_order_dependent` (examples: `deltaSum` and `deltaSumTimestamp`, which compare
+      * each row with the previous one). `deltaSumTimestamp` orders the states it merges by their timestamps, so it
+      * is correct on any number of streams, while `deltaSum` is correct only on one. An aggregation that adds the
+      * rows of several streams to one state cannot honor it.
       */
     bool requires_ordered_rows_per_state = false;
 

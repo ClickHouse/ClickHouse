@@ -1,0 +1,59 @@
+---
+slug: /clickstack/self-configured/ingesting-data/schemas
+description: '자체 관리형 ClickHouse Observability에서 사용하는 테이블 및 스키마'
+sidebarTitle: '테이블 및 스키마'
+title: '테이블 및 스키마'
+doc_type: 'reference'
+keywords: ['clickstack', '스키마', '데이터 모델', '테이블 설계', '로그']
+---
+
+import OtelLogsSchema from '/snippets/ko/clickstack/_schema_otel_logs.mdx';
+import OtelTracesSchema from '/snippets/ko/clickstack/_schema_otel_traces.mdx';
+import OtelMetricsGaugeSchema from '/snippets/ko/clickstack/_schema_otel_metrics_gauge.mdx';
+import OtelMetricsSumSchema from '/snippets/ko/clickstack/_schema_otel_metrics_sum.mdx';
+import OtelMetricsHistogramSchema from '/snippets/ko/clickstack/_schema_otel_metrics_histogram.mdx';
+import OtelMetricsExponentialHistogramSchema from '/snippets/ko/clickstack/_schema_otel_metrics_exponential_histogram.mdx';
+import OtelMetricsSummarySchema from '/snippets/ko/clickstack/_schema_otel_metrics_summary.mdx';
+import HyperdxSessionsSchema from '/snippets/ko/clickstack/_schema_hyperdx_sessions.mdx';
+
+<Note>
+  이 페이지에서는 **자체 관리형 ClickHouse Observability**를 다룹니다. 권장되는 완전 관리형 환경은 [여기](/ko/clickstack/observability/overview)의 문서를 참조하십시오.
+</Note>
+
+ClickHouse Observability Collector는 [ClickHouse 익스포터](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md)를 사용하여 ClickHouse에 테이블을 생성하고 데이터를 삽입합니다.
+
+`default` 데이터베이스에는 데이터 타입(data type)별로 다음 테이블이 생성됩니다. 이 대상 데이터베이스(target database)는 collector를 호스팅하는 image에서 환경 변수 `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`를 수정하여 변경할 수 있습니다.
+
+## 로그 {#logs}
+
+<OtelLogsSchema />
+
+## Traces {#traces}
+
+<OtelTracesSchema />
+
+## 메트릭 {#metrics}
+
+### 게이지 메트릭 {#gauge}
+
+<OtelMetricsGaugeSchema />
+
+### Sum 메트릭 {#sum}
+
+<OtelMetricsSumSchema />
+
+### 히스토그램 메트릭 {#histogram}
+
+<OtelMetricsHistogramSchema />
+
+### 지수 히스토그램 {#exponential-histograms}
+
+<OtelMetricsExponentialHistogramSchema />
+
+### Summary 테이블 {#summary-table}
+
+<OtelMetricsSummarySchema />
+
+## 세션(Sessions) {#sessions}
+
+<HyperdxSessionsSchema />

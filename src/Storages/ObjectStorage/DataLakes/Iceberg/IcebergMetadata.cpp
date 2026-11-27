@@ -27,6 +27,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#include <Processors/Formats/Impl/Puffin/PuffinCommon.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
@@ -1684,8 +1685,6 @@ std::optional<Int64> tryGetInt64(const Poco::Dynamic::Var & value)
 /// entries and the blobs that the file keeps from an earlier snapshot.
 std::unordered_map<Int32, UInt64> readTableStatisticsDistinctValues(const Poco::JSON::Array::Ptr & statistics, Int64 snapshot_id)
 {
-    static constexpr auto theta_sketch_blob_type = "apache-datasketches-theta-v1";
-
     std::unordered_map<Int32, UInt64> distinct_values;
     if (!statistics)
         return distinct_values;
@@ -1705,7 +1704,7 @@ std::unordered_map<Int32, UInt64> readTableStatisticsDistinctValues(const Poco::
 
             const auto type = blob->get(f_type);
             const auto fields = blob->getArray(f_fields);
-            if (!type.isString() || type.convert<String>() != theta_sketch_blob_type || !fields || fields->size() != 1
+            if (!type.isString() || type.convert<String>() != PUFFIN_DATASKETCHES_THETA_BLOB_TYPE || !fields || fields->size() != 1
                 || tryGetInt64(blob->get(f_metadata_snapshot_id)) != snapshot_id)
                 continue;
 
@@ -2040,6 +2039,7 @@ void IcebergMetadata::modifyFormatSettings(FormatSettings & format_settings, con
     /// The format settings of an engine table are not taken from the query, so a query's request for order is applied here.
     if (local_context.getSettingsRef()[Setting::input_format_parquet_preserve_order])
         format_settings.parquet.preserve_order = true;
+    Iceberg::useUTCForORCTimestamps(format_settings);
 }
 
 void IcebergMetadata::addDeleteTransformers(
@@ -2191,6 +2191,7 @@ void IcebergMetadata::addDeleteTransformers(
 
 SinkToStoragePtr IcebergMetadata::write(
     SharedHeader sample_block,
+    StorageMetadataPtr metadata_snapshot,
     const StorageID & table_id,
     ObjectStoragePtr /*object_storage*/,
     StorageObjectStorageConfigurationPtr configuration,
@@ -2201,7 +2202,12 @@ SinkToStoragePtr IcebergMetadata::write(
     if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
     {
         checkTableRootIsQueriedPath("INSERT");
-        return std::make_shared<IcebergStorageSink>(object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
+        /// The schema the query planned the inserted columns with, pinned in the metadata snapshot like for a read.
+        std::optional<Int32> planned_schema_id;
+        if (metadata_snapshot && metadata_snapshot->datalake_table_state)
+            planned_schema_id = std::get<Iceberg::TableStateSnapshot>(*metadata_snapshot->datalake_table_state).schema_id;
+        return std::make_shared<IcebergStorageSink>(
+            object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id, planned_schema_id);
     }
     else
     {

@@ -15,7 +15,6 @@
 namespace DB
 {
 
-
 #define CLIENT_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, connect_timeout_ms, S3::DEFAULT_CONNECT_TIMEOUT_MS, "", 0) \
     DECLARE(UInt64, request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, "", 0) \
@@ -28,6 +27,7 @@ namespace DB
     DECLARE(Bool, use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, "", 0) \
     DECLARE(Bool, is_virtual_hosted_style, false, "", 0) \
     DECLARE(Bool, gcs_issue_compose_request, false, "", 0) \
+    DECLARE(S3RequestPayer, request_payer, S3RequestPayer::NONE, "", 0) \
     DECLARE(S3UriStyle, uri_style, S3UriStyle::AUTO, "", 0)
 
 #define AUTH_SETTINGS(DECLARE, ALIAS) \
@@ -257,6 +257,14 @@ NormalizedHTTPHeaderEntries S3AuthSettings::getHeaders() const
     result.append(access_headers);
 
     return result;
+}
+
+HTTPHeaderEntries S3AuthSettings::getRequestPayerHeaders() const
+{
+    if ((*this)[S3AuthSetting::request_payer] == S3RequestPayer::NONE)
+        return {};
+
+    return {{"x-amz-request-payer", "requester"}};
 }
 
 

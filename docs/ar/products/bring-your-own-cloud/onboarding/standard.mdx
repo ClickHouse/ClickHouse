@@ -4,11 +4,11 @@ slug: /cloud/reference/byoc/onboarding/standard
 sidebarTitle: 'العملية القياسية'
 keywords: ['BYOC', 'السحابة', 'استخدام سحابتك الخاصة', 'التهيئة']
 description: 'نشر ClickHouse على البنية التحتية السحابية الخاصة بك'
-doc_type: 'مرجع'
+doc_type: 'reference'
 ---
 
 <div id="what-is-standard-onboarding">
-  ## ما هي التهيئة القياسية؟
+  ## ما هي التهيئة القياسية؟ {#what-is-standard-onboarding}
 </div>
 
 تُعد **التهيئة القياسية** مسار العمل الإرشادي الافتراضي لنشر ClickHouse في حسابك السحابي باستخدام BYOC. في هذا النهج، يتولى ClickHouse Cloud توفير جميع موارد السحابة الأساسية اللازمة لعملية النشر—مثل VPC/VNet، والشبكات الفرعية، ومجموعات الأمان، وعنقود Kubernetes ‏(EKS/GKE/AKS)، وأدوار IAM/حسابات الخدمة/service principals الداعمة—داخل حساب AWS أو مشروع GCP أو اشتراك Azure الخاص بك. ويضمن ذلك إعدادًا متسقًا وآمنًا، ويقلل إلى الحد الأدنى من الخطوات اليدوية المطلوبة من فريقك.
@@ -24,13 +24,13 @@ doc_type: 'مرجع'
 </Note>
 
 <div id="request-access">
-  ## طلب الوصول
+  ## طلب الوصول {#request-access}
 </div>
 
 لبدء عملية التهيئة، يُرجى [التواصل معنا](https://clickhouse.com/cloud/bring-your-own-cloud). سيرشدك فريقنا إلى متطلبات BYOC، ويساعدك على اختيار خيارات النشر الأنسب، ويضيف حسابك إلى قائمة السماح.
 
 <div id="onboarding-process">
-  ## التهيئة
+  ## التهيئة {#onboarding-process}
 </div>
 
 ### جهّز حساب AWS/مشروع GCP/اشتراك Azure {#prepare-an-aws-account}
@@ -40,13 +40,9 @@ doc_type: 'مرجع'
 <Steps>
   <Step title="اختر مزوّد خدمة سحابية" id="choose-cloud-provider">
     <div className="ch-image-lg ch-image-background-black">
-
-    <Frame>
-
-    ![اختيار موفر الخدمات السحابية لـ BYOC](/images/cloud/reference/byoc-onboarding-1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![اختيار موفر الخدمات السحابية لـ BYOC](/images/cloud/reference/byoc-onboarding-1.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -58,21 +54,16 @@ doc_type: 'مرجع'
     </Warning>
 
     <div className="ch-image-lg ch-image-background-black">
-
-    <Frame>
-
-    ![تهيئة حساب BYOC](/images/cloud/reference/byoc-onboarding-2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![تهيئة حساب BYOC](/images/cloud/reference/byoc-onboarding-2.webp)
+      </Frame>
     </div>
 
     <Note>
       لا يتضمن هذا الإعداد الأولي حاويات التخزين وVPC/VNet ومجموعة Kubernetes وموارد الحوسبة المطلوبة لتشغيل ClickHouse. وسيتم توفيرها في الخطوة التالية.
     </Note>
 
-<a id="terraform-module-aws" />
-#### وحدة Terraform لـ AWS
+#### وحدة Terraform لـ AWS {#terraform-module-aws}
 
     إذا كنت تفضل استخدام Terraform بدلًا من CloudFormation لعمليات النشر على AWS، فاستخدم وحدة [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
 
@@ -91,8 +82,7 @@ doc_type: 'مرجع'
       كانت الوحدة تُوزَّع سابقًا كأرشيف tarball على `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. لا يزال عنوان URL هذا متاحًا، لكنه مهمل — استخدم وحدة GitHub المذكورة أعلاه.
     </Note>
 
-<a id="aws-external-id" />
-#### المعرّف الخارجي لـ AWS
+#### المعرّف الخارجي لـ AWS {#aws-external-id}
 
     في AWS، يثق دور IAM الذي يُنشأ أثناء الإعداد بـ ClickHouse Cloud باستخدام [معرّف خارجي](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html) (`sts:ExternalId`) للحماية من هجمات «النائب الملتبس». تنشئ واجهة ClickHouse Cloud معرّفًا خارجيًا لحساب AWS الخاص بك عند بدء عملية الإعداد، وتملؤه مسبقًا في رابط CloudFormation؛ وإذا كنت تستخدم Terraform، فمرّر القيمة نفسها باعتبارها `external_id`. تشترك جميع البنى التحتية لـ BYOC ضمن حساب AWS نفسه في المعرّف الخارجي ذاته.
 
@@ -117,17 +107,12 @@ doc_type: 'مرجع'
     * **مناطق التوافر**: إذا كنت تخطط لاستخدام VPC peering، فقد تساعد محاذاة مناطق التوافر بين الحساب المصدر وحساب BYOC على خفض تكاليف حركة المرور بين مناطق التوافر. على سبيل المثال، في AWS، قد تمثل لاحقات مناطق التوافر (`a` و`b` و`c`) معرّفات لمناطق فعلية مختلفة بين الحسابات. راجع [دليل AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) لمزيد من التفاصيل.
 
     <div className="ch-image-lg ch-image-background-black">
-
-    <Frame>
-
-    ![إعداد البنية التحتية لنموذج BYOC](/images/cloud/reference/byoc-onboarding-3.webp)
-
-    </Frame>
-
+      <Frame>
+        ![إعداد البنية التحتية لنموذج BYOC](/images/cloud/reference/byoc-onboarding-3.webp)
+      </Frame>
     </div>
 
-<a id="preflight-validation" />
-#### التحقق المسبق
+#### التحقق المسبق {#preflight-validation}
 
     عند النقر على **Set up Infrastructure**، تُجري ClickHouse Cloud مجموعة من فحوصات ما قبل التشغيل **للقراءة فقط** على حسابك قبل إنشاء أي موارد. وإذا اجتازت جميع الفحوصات، فيستمر التوفير. أما إذا فشل أحد الفحوصات، فيتوقف الإعداد مؤقتًا وتعرض الواجهة الخطأ بدقة، بحيث يمكنك إصلاحه قبل إنشاء أي موارد.
 
@@ -142,13 +127,9 @@ doc_type: 'مرجع'
     عند فشل عمليات التحقق، يُدرج كل منها مع الإجراء المقابل له وسبب الفشل (على سبيل المثال، `iam:CreateRole · explicitDeny`). وسّع **Show passed checks** لمراجعة جميع العمليات التي نجحت.
 
     <div className="ch-image-lg ch-image-background-black">
-
-    <Frame>
-
-    ![فحوصات إعداد Cloud الفاشلة التي أبلغ عنها التحقق المسبق لـ BYOC](/images/cloud/reference/byoc-onboarding-preflight-failed.png)
-
-    </Frame>
-
+      <Frame>
+        ![فحوصات إعداد Cloud الفاشلة التي أبلغ عنها التحقق المسبق لـ BYOC](/images/cloud/reference/byoc-onboarding-preflight-failed.png)
+      </Frame>
     </div>
 
     لمعالجة حالات الفشل، أعد تشغيل أحدث stack من CloudFormation أو Terraform الخاص بـ ClickHouse — أو امنح الـ actions المُبلّغ عنها لهوية الإدارة (دور IAM / حساب خدمة / service principal) — ثم اختر أحد الخيارين التاليين:
@@ -171,24 +152,19 @@ doc_type: 'مرجع'
   </Step>
 </Steps>
 
-<a id="create-clickhouse-service" />
-### أنشئ أول خدمة ClickHouse BYOC
+### أنشئ أول خدمة ClickHouse BYOC {#create-clickhouse-service}
 
 بعد توفير البنية التحتية لـ BYOC، تصبح جاهزًا لإطلاق أول خدمة ClickHouse. افتح وحدة تحكم ClickHouse Cloud، وحدد بيئة BYOC الخاصة بك، ثم اتبع الإرشادات لإنشاء خدمة جديدة.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![BYOC إنشاء خدمة جديدة](/images/cloud/reference/byoc-new-service-1.webp)
-
-</Frame>
-
+  <Frame>
+    ![BYOC إنشاء خدمة جديدة](/images/cloud/reference/byoc-new-service-1.webp)
+  </Frame>
 </div>
 
 أثناء إنشاء الخدمة، ستُهيّئ الخيارات التالية:
 
 * **اسم الخدمة**: أدخل اسمًا واضحًا ووصفيًا لخدمة ClickHouse الخاصة بك.
 * **البنية التحتية لـ BYOC**: حدّد بيئة BYOC، بما في ذلك الحساب السحابي والمنطقة التي ستعمل فيها خدمتك.
-* **تهيئة الموارد**: اختر مقدار CPU والذاكرة المخصصَين لنسخ ClickHouse المتماثلة.
+* **إعدادات الموارد**: اختر مقدار CPU والذاكرة المخصصَين لنسخ ClickHouse المتماثلة.
 * **عدد النسخ المتماثلة**: حدّد عدد النسخ المتماثلة لتعزيز التوافر العالي.

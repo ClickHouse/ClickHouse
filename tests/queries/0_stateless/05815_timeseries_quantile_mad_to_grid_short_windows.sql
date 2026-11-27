@@ -35,4 +35,8 @@ FROM
 WITH [101, 102, 103]::Array(DateTime) AS timestamps, [0., -0., -0.]::Array(Float64) AS values
 SELECT toString(timeSeriesMadToGrid(103, 103, 0, 10)(timestamps, values)), toString(timeSeriesMadToGrid(102, 103, 1, 10)(timestamps, values));
 
+-- A window without samples has no result, also right after a window with them.
+WITH [100]::Array(DateTime) AS timestamps, [1.]::Array(Float64) AS values
+SELECT timeSeriesQuantileToGrid(100, 200, 100, 30)(timestamps, values, 0.5), timeSeriesMadToGrid(100, 200, 100, 30)(timestamps, values);
+
 DROP TABLE ts;
