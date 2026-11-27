@@ -56,24 +56,24 @@ public:
     {
         using FilesPtr = std::shared_ptr<const std::vector<ProcessedManifestFileEntryPtr>>;
 
-        const std::vector<ProcessedManifestFileEntryPtr> & getFilesWithoutDeleted(FileContentType content_type) const;
+        [[nodiscard]] const std::vector<ProcessedManifestFileEntryPtr> & getFilesWithoutDeleted(FileContentType content_type) const;
 
-        bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
+        [[nodiscard]] bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
 
         /// Whether LIMIT lazy materialization can re-read every data file of this manifest
         /// by physical row numbers: all data files are Parquet, none of them needs schema
         /// evolution, and there are no equality deletes (both schema evolution and equality
         /// deletes force reading all physical columns, see IcebergMetadata::getInitialSchemaByPath).
-        bool areAllDataFilesEligibleForLazyMaterialization(Int32 table_schema_id) const;
+        [[nodiscard]] bool areAllDataFilesEligibleForLazyMaterialization(Int32 table_schema_id) const;
 
         /// Sum of the file-level `record_count` over the live files of the given content type.
         /// Returns std::nullopt if any file carries a malformed (negative) record count.
-        std::optional<UInt64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
+        [[nodiscard]] std::optional<UInt64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
 
-        std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
+        [[nodiscard]] std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
         /// nullptr if the partition spec has no usable field. Kept in the handle so files can be pruned after the iterator is gone.
-        const DB::KeyDescription * getPartitionKeyDescription() const { return partition_key.get(); }
+        [[nodiscard]] const DB::KeyDescription * getPartitionKeyDescription() const { return partition_key.get(); }
 
     private:
         friend class ManifestFileIterator;
@@ -195,6 +195,15 @@ using ManifestIteratorPtr = std::shared_ptr<ManifestFileIterator>;
 std::unordered_map<Int32, DB::Range> getDataFileHyperrectangles(
     const ProcessedManifestFileEntry & entry,
     const std::unordered_map<Int32, DB::DataTypePtr> & column_types,
+    const IcebergPathFromMetadata & path_to_manifest_file);
+
+/// Lower and upper bound of the column with field id `column_id` in a data file, exactly as its manifest declares them,
+/// decoded as `column_type`, the column's type in the schema with which the file was written. nullopt for a delete file
+/// or when the bounds are missing or do not decode.
+std::optional<std::pair<DB::Field, DB::Field>> getDataFileColumnBounds(
+    const ProcessedManifestFileEntry & entry,
+    Int32 column_id,
+    const DB::DataTypePtr & column_type,
     const IcebergPathFromMetadata & path_to_manifest_file);
 }
 

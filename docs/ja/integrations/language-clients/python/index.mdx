@@ -32,7 +32,7 @@ ClickHouse Connect は、中核となるデータベースドライバーであ�
 
 | コンポーネント    | サポート対象バージョン                                                                                                                                                                        |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Python     | 3.10 〜 3.14。3.14t などのフリースレッドビルドは試験的にサポートされています。                                                                                                                                    |
+| Python     | 3.10 〜 3.15。3.14t や 3.15t などのフリースレッドビルドは実験的にサポートされています。                                                                                                                            |
 | ClickHouse | 現在サポート中の ClickHouse リリース。CI では、[こちらに記載されている LTS および stable のリリースシリーズ](https://github.com/ClickHouse/clickhouse-connect/blob/main/.github/clickhouse-versions.json)に対してテストを実施しています。 |
 | SQLAlchemy | 同期ダイアレクトの場合は 1.4.40 以降、3.0 未満。非同期ダイアレクトの場合は 2.0.44 以降、3.0 未満。                                                                                                                      |
 | Pandas     | 2.x および 3.x                                                                                                                                                                        |
@@ -40,7 +40,7 @@ ClickHouse Connect は、中核となるデータベースドライバーであ�
 | aiohttp    | 3.9 以降                                                                                                                                                                             |
 | Platforms  | 各 Python バージョン向けに公開されている wheel アーキテクチャ上の Linux、macOS、Windows                                                                                                                       |
 
-この package には、利用可能な環境向けのコンパイル済み wheel が含まれており、Cython 拡張機能をビルドできない場合は pure Python 実装にフォールバックします。PyArrow は Python 3.10 〜 3.14 をサポートしています。Python 3.14 では PyArrow 22 以降が必要です。
+この パッケージ には、利用可能な環境向けのコンパイル済み wheel が含まれており、Cython 拡張機能をビルドできない場合は pure Python 実装にフォールバックします。PyArrow は Python 3.10 〜 3.15 をサポートしています。Python 3.14 では PyArrow 22 以降、Python 3.15 では PyArrow 26 以降が必要です。Python 3.14 以降では、`lz4` は任意の追加依存関係グループとなり、デフォルトの圧縮には標準ライブラリの zstd モジュールが使用されます。`lz4` は CPython 3.15 向けおよび Python 3.14 以降のフリースレッド版の wheel をまだ公開していないため、これらのバージョンで `lz4` 追加依存関係グループをインストールすると `lz4` がソースコードからビルドされ、C コンパイラが必要になります。
 
 ## インストール {#installation}
 
@@ -50,7 +50,7 @@ pip を使用して、[PyPI](https://pypi.org/project/clickhouse-connect/) か�
 pip install clickhouse-connect
 ```
 
-オプションのインテグレーションは、extras を使ってインストールします:
+オプションのインテグレーションは、追加依存関係グループ を使ってインストールします:
 
 ```bash
 pip install "clickhouse-connect[async]"      # Native asyncio client
@@ -62,6 +62,7 @@ pip install "clickhouse-connect[sqlalchemy-async]" # Async SQLAlchemy dialect
 pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
 pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
 pip install "clickhouse-connect[rust]"       # Experimental Rust codec
+pip install "clickhouse-connect[lz4]"        # lz4 compression on Python 3.14+
 pip install "clickhouse-connect[tzdata]"     # IANA time zones on minimal systems
 ```
 
@@ -88,10 +89,10 @@ ClickHouse Connect は、ソースコードからインストールすること�
 pip cache remove clickhouse_connect
 ```
 
-3つの拡張機能モジュールがすべて存在するかを確認します。存在する場合は `True` と出力されます:
+4つの拡張機能モジュールがすべて存在するかを確認します。存在する場合は `True` と出力されます:
 
 ```bash
-python -c "from importlib.util import find_spec; print(all(find_spec(m) for m in ('clickhouse_connect.driverc.buffer', 'clickhouse_connect.driverc.dataconv', 'clickhouse_connect.driverc.npconv')))"
+python -c "from importlib.util import find_spec; print(all(find_spec(m) for m in ('clickhouse_connect.driverc.buffer', 'clickhouse_connect.driverc.dataconv', 'clickhouse_connect.driverc.npconv', 'clickhouse_connect.driverc.sqlscan')))"
 ```
 
 `clickhouse_connect.driverc.npconv` を直接インポートする場合も、NumPy がインストールされている必要があります。

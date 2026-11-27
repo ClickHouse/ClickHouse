@@ -30,7 +30,7 @@ ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments, const cha
     if (!num_arguments)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing arguments for function arrayEnumerateUniqRanked");
 
-    DepthType clear_depth = 1;
+    UInt64 clear_depth = 1;
     size_t i = 0;
     if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(arguments[0].type.get()); !type_array)
     {
@@ -42,7 +42,7 @@ ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments, const cha
         if (f.getType() != Field::Types::UInt64 || f.safeGet<UInt64>() == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "First argument of {} must be a positive integer", function_name);
 
-        clear_depth = static_cast<DepthType>(f.safeGet<UInt64>());
+        clear_depth = f.safeGet<UInt64>();
         i++;
     }
 
@@ -124,7 +124,7 @@ ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments, const cha
             clear_depth,
             max_array_depth);
 
-    return {clear_depth, depths, max_array_depth};
+    return {static_cast<DepthType>(clear_depth), depths, max_array_depth};
 }
 
 }

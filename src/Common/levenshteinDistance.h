@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <type_traits>
+#include <Common/Exception.h>
 
 namespace DB
 {

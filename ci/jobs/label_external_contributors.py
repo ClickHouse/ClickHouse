@@ -53,8 +53,10 @@ def _parse_iso8601(value: str) -> datetime.datetime:
     return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-def fetch_issues_and_prs(repo: str, since: datetime.datetime = None) -> list:
-    url = f"repos/{repo}/issues?state=all&per_page=100"
+def fetch_issues_and_prs(
+    repo: str, since: datetime.datetime = None, state: str = "all"
+) -> list:
+    url = f"repos/{repo}/issues?state={state}&per_page=100"
     if since is not None:
         url += f"&since={since.strftime('%Y-%m-%dT%H:%M:%SZ')}"
     out = Shell.get_output(
@@ -74,7 +76,7 @@ def add_external_label(repo: str, number: int, is_pr: bool) -> bool:
     )
 
 
-def label_external_contributors(days: int, backfill: bool) -> bool:
+def label_external_contributors(days: int, backfill: bool, state: str = "all") -> bool:
     repo = Info().repo_name
     org = repo.split("/")[0]
     members = fetch_org_members(org)
@@ -91,8 +93,8 @@ def label_external_contributors(days: int, backfill: bool) -> bool:
         since = cutoff
         print(f"Scanning issues and pull requests created since {cutoff.isoformat()}")
 
-    items = fetch_issues_and_prs(repo, since=since)
-    print(f"Fetched {len(items)} item(s)")
+    items = fetch_issues_and_prs(repo, since=since, state=state)
+    print(f"Fetched {len(items)} item(s) (state={state})")
 
     labeled = []
     failed = []
@@ -137,9 +139,18 @@ if __name__ == "__main__":
         dest="backfill",
         help="backfill: scan the entire history regardless of creation date",
     )
+    parser.add_argument(
+        "--state",
+        choices=["open", "closed", "all"],
+        default="all",
+        help="restrict to items in this state (default all); "
+        "'open' is much cheaper for a backfill",
+    )
     args = parser.parse_args()
 
     Result.from_commands_run(
         name="Label external contributors",
-        command=lambda: label_external_contributors(args.days, args.backfill),
+        command=lambda: label_external_contributors(
+            args.days, args.backfill, args.state
+        ),
     ).complete_job()

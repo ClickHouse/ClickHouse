@@ -1,4 +1,5 @@
 import datetime
+import os
 import pymongo
 import pytest
 import urllib
@@ -6,7 +7,9 @@ import urllib
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import mongo_pass
-from helpers.test_tools import TSV
+from helpers.test_tools import TSV, wait_condition
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
 @pytest.fixture(scope="module")
@@ -674,3 +677,79 @@ def test_oid_columns_named_argument(started_cluster):
         node.query(f"SELECT * FROM {mixed_form} WHERE data = 'not-oid'")
 
     oid_table.drop()
+
+
+def test_block_boundary(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
+    db = mongo_connection["test_block_boundary"]
+    block_boundary_table = db["block_boundary_table"]
+    block_boundary_table.insert_many([{"key": i} for i in range(0, 25)])
+
+    node = started_cluster.instances["node"]
+    table_func = "mongodb('mongo_no_cred:27017', 'test_block_boundary', 'block_boundary_table', '', '', structure='key UInt64')"
+
+    # The document at each block boundary used to be returned twice.
+    for max_block_size in [10, 25, 100]:
+        assert TSV(node.query(f"SELECT count(), uniqExact(key) FROM {table_func} SETTINGS max_block_size = {max_block_size}")) == TSV("25\t25\n")
+
+    block_boundary_table.drop()
+
+
+@pytest.fixture(scope="module")
+def malformed_cursor_batch_server(started_cluster):
+    node = started_cluster.instances["node"]
+    port_file = "/tmp/malformed_cursor_batch_server.port"
+    node.copy_file_to_container(
+        os.path.join(SCRIPT_DIR, "malformed_cursor_batch_server.py"),
+        "/tmp/malformed_cursor_batch_server.py",
+    )
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"rm -f {port_file}; python3 /tmp/malformed_cursor_batch_server.py {port_file}"
+            " > /var/log/clickhouse-server/malformed_cursor_batch_server.log 2>&1",
+        ],
+        detach=True,
+    )
+    # The server binds to port 0 in the container of `node`, and writes the port to the port file when it listens.
+    port = wait_condition(
+        lambda: node.exec_in_container(
+            ["bash", "-c", f"cat {port_file} 2>/dev/null"], nothrow=True
+        ).strip(),
+        lambda reply: reply.isdigit(),
+        max_attempts=40,
+        delay=0.5,
+    )
+    return f"127.0.0.1:{port}"
+
+
+def test_malformed_cursor_batch(started_cluster, malformed_cursor_batch_server):
+    # A MongoDB server that returned a malformed document in a cursor batch used to abort the ClickHouse server
+    # (`BSON_ASSERT` in `_mongoc_cursor_response_read` of the C driver). Now the query fails with an exception.
+    # The fake MongoDB server answers `find` and `getMore` with hand-encoded replies.
+    # The collection name selects the reply.
+    node = started_cluster.instances["node"]
+
+    def select(collection):
+        return (
+            f"SELECT * FROM mongodb('{malformed_cursor_batch_server}', 'db', '{collection}', '', '', 'v String', "
+            "'serverSelectionTimeoutMS=30000&socketTimeoutMS=30000')"
+        )
+
+    # The fake server is good enough for the driver when all documents are valid.
+    assert node.query(select("valid")) == "hello\nhello\n"
+    assert node.query(select("empty")) == ""
+
+    for collection in [
+        # Neither a short length nor a missing NUL terminator must abort the process.
+        "short",
+        "nonnul",
+        # Reject a bad document after reading a valid one, even when the cursor is still open.
+        "after_valid",
+        # The same validation must apply to a `getMore` reply.
+        "next_batch",
+    ]:
+        error = node.query_and_get_error(select(collection))
+        assert "Invalid BSON document in cursor reply." in error, (collection, error)
+        assert node.query("SELECT 1") == "1\n", collection

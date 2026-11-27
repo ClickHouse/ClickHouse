@@ -39,6 +39,13 @@ interrupt_running_refresh() {
             create materialized view $view_name refresh every 1 year $view_settings (x Int64) engine Memory empty as
                 select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
             system refresh $view_name;"
+        # The refresh is `Running` while it creates its target table, which can take seconds (e.g. with the
+        # database disk on object storage). A new view's `read_rows` keeps its value after the refresh, so
+        # this wait for the first row cannot miss it; it also ends if the refresh fails.
+        while [ "`$CLICKHOUSE_CLIENT -q "select read_rows >= 1 or exception != '' from refreshes where view = '$view_name' -- $LINENO"`" != 1 ] && clickhouse_test_time_left
+        do
+            sleep 0.1
+        done
         # At most 8 of the 10 rows read: at least 2 seconds of the refresh are left.
         running=`$CLICKHOUSE_CLIENT -q "
             select status = 'Running' and read_rows between 1 and 8 from refreshes where view = '$view_name';

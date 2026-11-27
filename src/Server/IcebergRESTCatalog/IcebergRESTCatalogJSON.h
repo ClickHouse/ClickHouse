@@ -23,7 +23,9 @@ Poco::JSON::Object::Ptr parseJSONObject(const String & data, const String & what
 /// Current time in the unit of Iceberg metadata timestamps.
 Int64 nowMs();
 
-/// Helpers to validate client requests. They throw `BAD_ARGUMENTS` for a missing or wrong-typed key.
+/// Helpers to validate client requests. They throw `BAD_ARGUMENTS` for a malformed body or a missing or wrong-typed key.
+
+Poco::JSON::Object::Ptr parseRequestBody(const String & body);
 
 Int64 getInteger(const Poco::JSON::Object & object, const String & key);
 /// Returns nullopt for an absent or null key.

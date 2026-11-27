@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: needs the Parquet format which is not built in fasttest.
 
 # The dictionary-filter push-down bounds the memory it uses before decoding a dictionary page: it
 # predicts the decoded footprint from the page header (`Dictionary::decodedFootprintUpperBound`) and

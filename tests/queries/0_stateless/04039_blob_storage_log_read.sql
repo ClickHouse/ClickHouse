@@ -1,6 +1,9 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: Depends on S3
 
+-- The reads go through the distributed cache by default where it is enabled, but the test checks the reads of this server.
+SET table_engine_read_through_distributed_cache = 0;
+
 SET enable_blob_storage_log_for_read_operations = 1;
 
 INSERT INTO FUNCTION s3(s3_conn, url = 'http://localhost:11111/test/04039_data/file_'||currentDatabase()||'.csv', structure = 'number UInt64', format = CSV)

@@ -95,6 +95,8 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::getProvider(const 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No global context to resolve a stateless worker cluster");
     /// One configuration for the whole lookup, so the selection, the signature and the build agree.
     const auto & config = global_context->getConfigRef();
+    if (!config.getBool("stateless_worker_client.enabled", false))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Stateless worker client is not enabled in configuration");
     /// The default cluster is cached under one key whether it was selected by an empty value or by name.
     const String canonical = canonicalizeClusterName(config, cluster_name);
 
@@ -159,10 +161,6 @@ std::vector<std::pair<String, StatelessWorkersProviderPtr>> StatelessWorkersProv
 StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::buildProvider(
     const Poco::Util::AbstractConfiguration & config, const String & cluster_name)
 {
-    if (!config.getBool("stateless_worker_client.enabled", false))
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Stateless worker client is not enabled in configuration");
-
     const String config_prefix = clusterConfigPrefix(cluster_name);
     const Strings sources = getWorkerSources(config, config_prefix);
     if (sources.size() != 1)

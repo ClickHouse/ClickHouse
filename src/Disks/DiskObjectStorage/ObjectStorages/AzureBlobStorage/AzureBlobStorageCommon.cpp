@@ -14,6 +14,7 @@
 #include <IO/AzureBlobStorage/PocoHTTPClient.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StringUtils.h>
 #include <Common/formatReadable.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/re2.h>
@@ -214,13 +215,21 @@ String ContainerClientWrapper::GetBlobPath(const String & blob_name) const
         "Failed to parse Azure connection string or blob URL: {}", e.what());
 }
 
+/// The connection string the clients are created from. A disk can set it together with an `endpoint`, whose host
+/// the clients then do not use. The default-constructed `auth_method` of a SAS or catalog path is empty.
+static const String & getClientConnectionString(const ConnectionParams & params)
+{
+    const auto & connection_string = std::get<ConnectionString>(params.auth_method).toUnderType();
+    return connection_string.empty() ? params.endpoint.storage_account_url : connection_string;
+}
+
 String ConnectionParams::getConnectionURL() const
 {
     if (std::holds_alternative<ConnectionString>(auth_method))
     {
         try
         {
-            auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(endpoint.storage_account_url);
+            auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(getClientConnectionString(*this));
             return parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl();
         }
         catch (const std::logic_error & e)
@@ -274,6 +283,12 @@ void ConnectionParams::checkSessionMayUseServerIdentity(bool restrict_server_cre
         throwServerCredentialsRestricted();
 }
 
+void ConnectionParams::checkSessionMayUseServerIdentityIgnoringSharedFlag(bool restrict_server_credentials) const
+{
+    if (restrict_server_credentials && follows_session_restriction && usesServerManagedCredentials())
+        throwServerCredentialsRestricted();
+}
+
 AuthMethod ConnectionParams::getPermittedAuthMethod() const
 {
     if (checkOrDropServerManagedCredentials())
@@ -288,7 +303,7 @@ String ConnectionParams::getConnectionURLWithoutQuery() const
         try
         {
             /// `ParseConnectionString` appends the SAS of the connection string to `BlobServiceUrl` as its query.
-            auto url = Azure::Storage::_internal::ParseConnectionString(endpoint.storage_account_url).BlobServiceUrl;
+            auto url = Azure::Storage::_internal::ParseConnectionString(getClientConnectionString(*this)).BlobServiceUrl;
             const auto query = url.GetQueryParameters();
             for (const auto & [key, value] : query)
                 url.RemoveQueryParameter(key);
@@ -300,7 +315,7 @@ String ConnectionParams::getConnectionURLWithoutQuery() const
         }
     }
 
-    return endpoint.storage_account_url.substr(0, endpoint.storage_account_url.find_first_of("?#"));
+    return String(stripQueryAndFragment(endpoint.storage_account_url));
 }
 
 std::unique_ptr<ServiceClient> ConnectionParams::createForService() const
@@ -396,7 +411,7 @@ static bool containerExists(const ContainerClient & client)
 
     try
     {
-        client.GetProperties();
+        (void)client.GetProperties();
         return true;
     }
     catch (const Azure::Storage::StorageException & e)
@@ -452,6 +467,8 @@ std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & par
             ProfileEvents::increment(ProfileEvents::DiskAzureCreateContainer);
 
         auto raw_client = service_client->CreateBlobContainer(params.endpoint.container_name).Value;
+        /// `CreateBlobContainer` returns a client without `ClickhouseOptions`.
+        raw_client.SetClickhouseOptions(params.client_options.ClickhouseOptions);
         return std::make_unique<ContainerClient>(std::move(raw_client), params.endpoint.prefix);
     }
     catch (const Azure::Storage::StorageException & e)
@@ -475,6 +492,15 @@ AuthConfig readAuthConfig(const Poco::Util::AbstractConfiguration & config, cons
         auth_config.connection_string = config.getString(config_prefix + ".connection_string");
     auth_config.use_workload_identity = config.getBool(config_prefix + ".use_workload_identity", false);
     return auth_config;
+}
+
+String getETag(const Azure::ETag & etag, const String & blob_path)
+{
+    if (!etag.HasValue() || etag.ToString().empty())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Azure Blob Storage endpoint did not return a non-empty ETag for blob {}; a conforming endpoint always sends it", blob_path);
+    return etag.ToString();
 }
 
 AuthMethod getAuthMethod(const AuthConfig & auth_config)

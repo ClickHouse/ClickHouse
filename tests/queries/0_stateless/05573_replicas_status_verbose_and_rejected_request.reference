@@ -1,0 +1,6 @@
+t_live	0
+t_ro	1
+live replica lines: 1
+read-only replica lines: 1
+external database lines: 0
+refused request status: 500

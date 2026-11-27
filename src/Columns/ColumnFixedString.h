@@ -97,6 +97,7 @@ public:
     bool isDefaultAt(size_t index) const override;
 
     bool hasOnlyTypeDefaults() const override;
+    ColumnPtr createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
 
     void insert(const Field & x) override;
 
@@ -176,6 +177,13 @@ public:
 #else
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #endif
+
+    void insertFromEither(
+        const IColumn & src_true,
+        bool src_true_is_const,
+        const IColumn & src_false,
+        bool src_false_is_const,
+        const IColumn::Filter & condition) override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 

@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
+#include <Formats/FormatSettings.h>
 
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/ColumnsDescription.h>
@@ -20,7 +21,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
-#include <Compression/CompressionCodecAdaptive.h>
+#include <Compression/Adaptive/CompressionCodecAdaptive.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
@@ -85,17 +86,26 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
         initPrimaryIndex();
 
     initSkipIndices();
+
+    for (const auto & column : columns_list)
+    {
+        UInt64 min_compress_block_size = settings.min_compress_block_size;
+        const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getNameInStorage());
+        /// Honor an explicit column override even when it is 0 ("start a new block at every boundary");
+        /// inheritance is expressed by not setting it (or RESET SETTING), i.e. tryGet returning null.
+        if (column_desc)
+            if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
+                min_compress_block_size = value->safeGet<UInt64>();
+        min_compress_block_sizes.emplace(column.name, min_compress_block_size);
+    }
 }
 
 UInt64 MergeTreeDataPartWriterOnDisk::getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const
 {
-    const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
-    /// Honor an explicit column override even when it is 0 ("start a new block at every boundary");
-    /// inheritance is expressed by not setting it (or RESET SETTING), i.e. tryGet returning null.
-    if (column_desc)
-        if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
-            return value->safeGet<UInt64>();
-    return settings.min_compress_block_size;
+    const auto it = min_compress_block_sizes.find(name_and_type.name);
+    if (it == min_compress_block_sizes.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not in the columns list of the part writer", name_and_type.name);
+    return it->second;
 }
 
 void MergeTreeDataPartWriterOnDisk::cancel() noexcept
@@ -657,6 +667,9 @@ Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
 
 void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
 {
+    for (auto & column : block)
+        column.column = column.column->convertToFullColumnIfConst();
+
     /// If block sample is empty, initialize it using current block (it will be the first block to write).
     if (block_sample.empty())
     {
@@ -733,7 +746,7 @@ void MergeTreeDataPartWriterOnDisk::initStreamsIfNeeded()
 
 void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
 {
-    if (columns_substreams.getTotalSubstreams() || (index_granularity_info.mark_type.part_type == MergeTreeDataPartType::Compact && !index_granularity_info.mark_type.with_substreams))
+    if (columns_substreams.getTotalSubstreams())
         return;
 
     /// Block sample is required. It's initialized in prepareBlockForWriting on first written block.
@@ -792,7 +805,7 @@ CompressionCodecPtr MergeTreeDataPartWriterOnDisk::getSubstreamCodec(
 
     /// Adaptive could pick an unencrypted codec for some blocks and drop the encryption. Thus skip adaptivity for an encrypting codec.
     if (settings.apply_adaptive_codec && use_default_codec && !codec->isEncryption())
-        return std::make_shared<CompressionCodecAdaptive>(substream_type, codec);
+        return std::make_shared<CompressionCodecAdaptive>(substream_type, codec, settings.adaptive_codec_selection_period);
 
     return codec;
 }

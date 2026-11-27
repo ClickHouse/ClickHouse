@@ -56,7 +56,7 @@ public:
         }
     }
 
-    const char * getName() const override { return "GeneratorJSONPath"; }
+    [[nodiscard]] const char * getName() const override { return "GeneratorJSONPath"; }
 
     /**
      * This method exposes API of traversing all paths, described by JSONPath,

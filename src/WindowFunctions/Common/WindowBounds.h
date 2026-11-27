@@ -8,7 +8,7 @@ namespace DB
 
 struct WindowBounds
 {
-    size_t rows = 0;
+    Int64 rows = 0;
     PaddedPODArray<Int64> row;
     PaddedPODArray<Int64> frame_start;
     PaddedPODArray<Int64> frame_end;
@@ -19,5 +19,6 @@ struct WindowBounds
 };
 
 void clearBounds(WindowBounds & bounds);
+Int64 findNextFrameChange(const WindowBounds & bounds, Int64 from, bool account_start, bool account_end);
 
 }

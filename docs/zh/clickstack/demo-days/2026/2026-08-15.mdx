@@ -7,9 +7,7 @@ doc_type: 'guide'
 keywords: ['ClickStack', '演示日']
 ---
 
-<div id="dashboard-variables">
-  ## 仪表盘变量
-</div>
+## 仪表盘变量 {#dashboard-variables}
 
 *由 [@pulpdrew](https://github.com/pulpdrew) 演示*
 
@@ -35,9 +33,7 @@ keywords: ['ClickStack', '演示日']
 
 **相关 PR：** [#2836](https://github.com/hyperdxio/hyperdx/pull/2836) 添加过滤器变量配置，[#2873](https://github.com/hyperdxio/hyperdx/pull/2873) 在原始 SQL 图表中替换变量，[#2874](https://github.com/hyperdxio/hyperdx/pull/2874) 为 SQL 仪表盘变量添加自动补全和验证，[#2901](https://github.com/hyperdxio/hyperdx/pull/2901) 在图表构建器卡片中支持仪表盘变量，[#2910](https://github.com/hyperdxio/hyperdx/pull/2910) 在告警查询中将变量展开为空值，[#2923](https://github.com/hyperdxio/hyperdx/pull/2923) 支持依赖变量的值查询，[#2937](https://github.com/hyperdxio/hyperdx/pull/2937) 支持宏中的嵌套宏和变量引用，[#2944](https://github.com/hyperdxio/hyperdx/pull/2944) 将仪表盘变量添加到外部 API
 
-<div id="alert-detail-page-with-evaluation-history">
-  ## 包含评估历史的告警详情页
-</div>
+## 包含评估历史的告警详情页 {#alert-detail-page-with-evaluation-history}
 
 *由 [@wrn14897](https://github.com/wrn14897) 演示*
 
@@ -57,15 +53,13 @@ keywords: ['ClickStack', '演示日']
 
 **相关 PR：**[#2833](https://github.com/hyperdxio/hyperdx/pull/2833) 告警评估读取模型和 `GET /alerts/:id/evaluations`、[#2834](https://github.com/hyperdxio/hyperdx/pull/2834) 在 AlertHistory 中持久化告警评估错误和分析数据、[#2835](https://github.com/hyperdxio/hyperdx/pull/2835) 包含评估历史的告警详情页、[#2928](https://github.com/hyperdxio/hyperdx/pull/2928) 将告警图表标记与所评估桶的起始位置对齐、[#2931](https://github.com/hyperdxio/hyperdx/pull/2931) 支持从告警详情页编辑和删除告警
 
-<div id="investigating-alerts-and-mcp-tool-annotations">
-  ## 调查告警和 MCP 工具注解
-</div>
+## 调查告警和 MCP 工具注解 {#investigating-alerts-and-mcp-tool-annotations}
 
-*演示者：[ @brandon-pereira](https://github.com/brandon-pereira)*
+*演示者：[@brandon-pereira](https://github.com/brandon-pereira)*
 
 <iframe width="768" height="432" src="https://www.youtube.com/embed/942yeJitK4Q" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 
-已触发的告警现在提供“调查”按钮。无论是在告警页面还是告警详情页，点击该按钮都会创建一个 notebook 调查。
+**仅限 ClickHouse Observability：**&#x5DF2;触发的告警现在提供“调查”按钮。无论是在告警页面还是告警详情页，点击该按钮都会创建一个 notebook 调查。
 
 最终目标是在告警触发时自动启动这些调查。该按钮是一个实用的过渡步骤，而非最终形态。
 
@@ -79,11 +73,9 @@ ClickStack MCP server 中的每个工具现在也都包含注解提示。此前�
 
 MCP 现在会优先引导智能体使用这些构建器工具，仅在确实无法表达查询时才使用原始 SQL。变更后，评估评分显著提升。
 
-**相关 PR：**[#2838](https://github.com/hyperdxio/hyperdx/pull/2838) 为所有工具添加 MCP 工具注解 (`readOnlyHint` 等) ；[#2840](https://github.com/hyperdxio/hyperdx/pull/2840) 引导智能体使用构建器查询工具而非原始 SQL；[#2870](https://github.com/hyperdxio/hyperdx/pull/2870) 引导仪表盘智能体使用按序列划分的卡片过滤器。“调查”按钮本身没有可链接的公开 PR。
+**相关 PR：**[#2838](https://github.com/hyperdxio/hyperdx/pull/2838) 为所有工具添加 MCP 工具注解 (`readOnlyHint` 等) ；[#2840](https://github.com/hyperdxio/hyperdx/pull/2840) 引导智能体使用构建器查询工具而非原始 SQL；[#2870](https://github.com/hyperdxio/hyperdx/pull/2870) 引导仪表盘智能体使用按序列划分的卡片筛选条件。“调查”按钮本身没有可链接的公开 PR。
 
-<div id="multi-series-metric-charts-in-a-single-query">
-  ## 单个查询中的多序列指标图表
-</div>
+## 单个查询中的多序列指标图表 {#multi-series-metric-charts-in-a-single-query}
 
 *由 [@wrn14897](https://github.com/wrn14897) 演示*
 
@@ -101,9 +93,7 @@ MCP 现在会优先引导智能体使用这些构建器工具，仅在确实无�
 
 **相关 PR：** [#2858](https://github.com/hyperdxio/hyperdx/pull/2858) 扩展多序列指标合并的整数测试覆盖范围，[#2859](https://github.com/hyperdxio/hyperdx/pull/2859) 将多序列指标合并计算移至 ClickHouse，[#2907](https://github.com/hyperdxio/hyperdx/pull/2907) 多序列指标卡片的 alert-task 覆盖范围，[#2916](https://github.com/hyperdxio/hyperdx/pull/2916) 修复混合浮点数和整数聚合的多序列指标图表，[#2872](https://github.com/hyperdxio/hyperdx/pull/2872) 公式表达式模型，[#2908](https://github.com/hyperdxio/hyperdx/pull/2908) 在组合指标查询中渲染公式，[#2909](https://github.com/hyperdxio/hyperdx/pull/2909) 用于指标公式的图表编辑器 UI
 
-<div id="lucene-autocomplete-and-password-requirement-fixes">
-  ## Lucene 自动补全和密码要求修复
-</div>
+## Lucene 自动补全和密码要求修复 {#lucene-autocomplete-and-password-requirement-fixes}
 
 *演示者：[ @pulpdrew](https://github.com/pulpdrew)*
 

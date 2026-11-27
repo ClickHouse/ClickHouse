@@ -6,9 +6,7 @@ tags: ['Exportação de Dados', 'Formatos de Dados']
 keywords: ['PostgreSQL', 'Parquet', 'CSV', 'JSON']
 ---
 
-<div id="how-to-export-postgresql-data-to-parquet-csv-or-json">
-  ## Como exportar dados do PostgreSQL para Parquet, CSV ou JSON
-</div>
+## Como exportar dados do PostgreSQL para Parquet, CSV ou JSON {#how-to-export-postgresql-data-to-parquet-csv-or-json}
 
 Isso é fácil com `clickhouse-local`:
 
@@ -23,9 +21,7 @@ Estes exemplos usam `clickhouse-local`, que faz parte do binário do ClickHouse.
 curl https://clickhouse.com/ | sh
 ```
 
-<div id="export-postgresql-to-parquet">
-  ## Exportar o PostgreSQL para Parquet
-</div>
+## Exportar o PostgreSQL para Parquet {#export-postgresql-to-parquet}
 
 A função de tabela `postgresql` permite executar consultas `SELECT` (e `INSERT`) em dados armazenados em um servidor PostgreSQL remoto. Por exemplo, para visualizar todo o conteúdo de uma tabela no PostgreSQL:
 
@@ -59,9 +55,7 @@ INTO OUTFILE 'my_output_file.parquet'"
   Como o nome do arquivo de saída tem a extensão `.parquet`, o ClickHouse presume que queremos o formato Parquet, então repare que omitimos a cláusula `FORMAT Parquet`.
 </Note>
 
-<div id="export-postgresql-to-csv">
-  ## Exportar PostgreSQL para CSV
-</div>
+## Exportar PostgreSQL para CSV {#export-postgresql-to-csv}
 
 É o mesmo processo do Parquet, exceto pelo fato de especificarmos um nome de arquivo mais apropriado para a saída:
 
@@ -79,9 +73,7 @@ INTO OUTFILE 'my_output_file.csv'"
 
 É isso! O ClickHouse reconhece a extensão `.csv` no nome do arquivo de saída e exporta os dados como valores separados por vírgula. Fora isso, é exatamente o mesmo comando mostrado acima.
 
-<div id="export-postgresql-to-json">
-  ## Exportar PostgreSQL para JSON
-</div>
+## Exportar PostgreSQL para JSON {#export-postgresql-to-json}
 
 Para exportar do PostgreSQL para JSON, basta alterar o nome do arquivo, e o ClickHouse identificará o formato:
 
@@ -116,9 +108,7 @@ INTO OUTFILE 'my_output_file.ndjson'"
   ```
 </Note>
 
-<div id="stream-postgresql-to-another-process">
-  ## Enviar PostgreSQL para outro processo
-</div>
+## Enviar PostgreSQL para outro processo {#stream-postgresql-to-another-process}
 
 Em vez de usar `INTO OUTFILE`, você pode enviar os resultados de uma função de tabela para outro processo. Aqui está um exemplo simples para demonstrar a sintaxe: contamos o número de linhas usando o comando Linux `wc -l`:
 

@@ -120,6 +120,7 @@ def test_profile_events(cluster):
     instance.query("DROP TABLE IF EXISTS test_s3.test_s3")
     instance.query("DROP DATABASE IF EXISTS test_s3")
     instance.query("CREATE DATABASE test_s3")
+    instance.query("SYSTEM WAIT BLOBS CLEANUP 's3'")
 
     metrics0 = get_s3_events(instance)
     minio0 = get_minio_stat(cluster)

@@ -1,7 +1,10 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 -- Tests delayed materialization of statistics in merge instead of during insert (setting 'materialize_statistics_on_insert = 0').
 -- (The concrete statistics type, column data type and predicate type don't matter)
 -- Checks by the predicate evaluation order in EXPLAIN. This is quite fragile, a better approach would be helpful (maybe 'send_logs_level'?)
 
+SET min_marks_per_part_to_load_statistics = 0;
 SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;

@@ -55,6 +55,8 @@ For such types, the per-row threshold comparison performed by the dynamic filter
 
 When this setting is `0`, dynamic filtering is restricted to columns whose values have a fixed maximum size in memory (numbers, `Date`, `DateTime`, `FixedString`, `Enum`, `Nullable` of such types, `Tuple` of such types). When set to `1`, dynamic filtering applies to variable-length types as well.
 
+Reads of Parquet files still skip whole row groups by the statistics of a `String` sort column when this setting is `0`; the setting only controls the per-row filter.
+
 Possible values:
 
 - 0 — Disabled.

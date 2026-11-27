@@ -10,22 +10,20 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Las actualizaciones y eliminaciones replicadas de Postgres a ClickHouse generan filas duplicadas en ClickHouse debido a su estructura de almacenamiento de datos y al proceso de replicación. Esta página explica por qué ocurre esto y qué estrategias usar en ClickHouse para gestionar los duplicados.
 
 <div id="how-does-data-get-replicated">
-  ## ¿Cómo se replican los datos?
+  ## ¿Cómo se replican los datos? {#how-does-data-get-replicated}
 </div>
 
 <div id="PostgreSQL-logical-decoding">
-  ### Decodificación lógica de PostgreSQL
+  ### Decodificación lógica de PostgreSQL {#PostgreSQL-logical-decoding}
 </div>
 
 ClickPipes usa [Postgres Logical Decoding](https://www.pgedge.com/blog/logical-replication-evolution-in-chronological-order-clustering-solution-built-around-logical-replication) para capturar los cambios a medida que se producen en Postgres. El proceso de decodificación lógica en Postgres permite que clientes como ClickPipes reciban los cambios en un formato legible para las personas, es decir, como una serie de INSERTs, UPDATEs y DELETEs.
 
 <div id="replacingmergetree">
-  ### ReplacingMergeTree
+  ### ReplacingMergeTree {#replacingmergetree}
 </div>
 
 ClickPipes mapea las tablas de Postgres a ClickHouse mediante el motor [ReplacingMergeTree](/es/reference/engines/table-engines/mergetree-family/replacingmergetree). ClickHouse ofrece su mejor rendimiento con cargas de trabajo de solo anexado y no recomienda UPDATEs frecuentes. Aquí es donde ReplacingMergeTree resulta especialmente potente.
@@ -58,13 +56,15 @@ PRIMARY KEY id
 ORDER BY id;
 ```
 
-<div id="illustrative-example">
-  ### Ejemplo ilustrativo
-</div>
+### Ejemplo ilustrativo {#illustrative-example}
 
 La siguiente ilustración muestra un ejemplo básico de sincronización de una tabla `users` entre PostgreSQL y ClickHouse mediante ClickPipes.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp" alt="carga inicial de ClickPipes" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![carga inicial de ClickPipes](/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp)
+  </Frame>
+</div>
 
 **Paso 1** muestra la instantánea inicial de las 2 filas en PostgreSQL y cómo ClickPipes realiza la carga inicial de esas 2 filas en ClickHouse. Como puede observar, ambas filas se copian tal cual en ClickHouse.
 
@@ -72,12 +72,12 @@ La siguiente ilustración muestra un ejemplo básico de sincronización de una t
 
 **Paso 3** muestra cómo ClickPipes replica las operaciones INSERT, UPDATE y DELETE en ClickHouse como inserciones versionadas. UPDATE aparece como una nueva versión de la fila con ID 2, mientras que DELETE aparece como una nueva versión del ID 1, marcada como true mediante `_is_deleted`. Debido a esto, ClickHouse tiene tres filas más que PostgreSQL.
 
-Como resultado, ejecutar una consulta sencilla como `SELECT count(*) FROM users;` puede producir resultados distintos en ClickHouse y PostgreSQL. Según la [documentación de ClickHouse sobre merges](/es/concepts/core-concepts/merges#replacing-merges), las versiones obsoletas de las filas acaban descartándose durante el proceso de fusión. Sin embargo, el momento en que se produce esta fusión es impredecible, lo que significa que las consultas en ClickHouse pueden devolver resultados inconsistentes hasta que eso ocurra.
+Como resultado, ejecutar una consulta sencilla como `SELECT count(*) FROM users;` puede producir resultados distintos en ClickHouse y PostgreSQL. Según la [documentación de ClickHouse sobre fusiones](/es/concepts/core-concepts/merges#replacing-merges), las versiones obsoletas de las filas acaban descartándose durante el proceso de fusión. Sin embargo, el momento en que se produce esta fusión es impredecible, lo que significa que las consultas en ClickHouse pueden devolver resultados inconsistentes hasta que eso ocurra.
 
 ¿Cómo podemos garantizar resultados idénticos en las consultas tanto en ClickHouse como en PostgreSQL?
 
 <div id="deduplicate-using-final-keyword">
-  ### Deduplicar con la palabra clave FINAL
+  ### Deduplicar con la palabra clave FINAL {#deduplicate-using-final-keyword}
 </div>
 
 La forma recomendada de deduplicar datos en las consultas de ClickHouse es usar el [modificador FINAL.](/es/reference/statements/select/from#final-modifier) Esto garantiza que solo se devuelvan las filas sin duplicados.
@@ -133,7 +133,7 @@ LIMIT 10
 ```
 
 <div id="final-setting">
-  #### configuración FINAL
+  #### configuración FINAL {#final-setting}
 </div>
 
 En lugar de añadir el modificador FINAL a cada nombre de tabla de la consulta, puedes usar la [configuración FINAL](/es/reference/settings/session-settings/other#final) para aplicarlo automáticamente a todas las tablas de la consulta.
@@ -150,7 +150,7 @@ SELECT count(*) FROM posts;
 ```
 
 <div id="row-policy">
-  #### ROW policy
+  #### ROW policy {#row-policy}
 </div>
 
 Una forma sencilla de ocultar el filtro redundante `_peerdb_is_deleted = 0` es usar [ROW policy.](/es/concepts/features/security/access-rights#row-policy-management) A continuación se muestra un ejemplo que crea una política de filas para excluir las filas eliminadas de todas las consultas sobre la tabla votes.
@@ -163,7 +163,7 @@ CREATE ROW POLICY cdc_policy ON votes FOR SELECT USING _peerdb_is_deleted = 0 TO
 > Las políticas de fila se aplican a una lista de usuarios y roles. En este ejemplo, se aplican a todos los usuarios y roles. Esto puede ajustarse para aplicarlas solo a usuarios o roles específicos.
 
 <div id="query-like-with-postgres">
-  ### Consultar como en Postgres
+  ### Consultar como en Postgres {#query-like-with-postgres}
 </div>
 
 Migrar un conjunto de datos analítico de PostgreSQL a ClickHouse suele requerir modificar las consultas de la aplicación para adaptarlas a las diferencias en la forma en que se gestionan los datos y se ejecutan las consultas.
@@ -171,7 +171,7 @@ Migrar un conjunto de datos analítico de PostgreSQL a ClickHouse suele requerir
 En esta sección se explorarán técnicas para eliminar duplicados de los datos sin modificar las consultas originales.
 
 <div id="views">
-  #### Vistas
+  #### Vistas {#views}
 </div>
 
 Las [vistas](/es/reference/statements/create/view#normal-view) son una excelente forma de ocultar la palabra clave FINAL de la consulta, ya que no almacenan ningún dato y simplemente leen de otra tabla cada vez que se accede a ellas.
@@ -200,7 +200,7 @@ LIMIT 10
 ```
 
 <div id="refreshable-material-view">
-  #### Vista materializada actualizable
+  #### Vista materializada actualizable {#refreshable-material-view}
 </div>
 
 Otro enfoque es usar una [vista materializada actualizable](/es/concepts/features/materialized-views/refreshable-materialized-view), que permite programar la ejecución de consultas para deduplicar filas y almacenar los resultados en una tabla de destino. Con cada actualización programada, la tabla de destino se sustituye por los resultados más recientes de la consulta.

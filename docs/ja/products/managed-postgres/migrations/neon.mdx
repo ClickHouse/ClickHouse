@@ -2,7 +2,6 @@
 sidebarTitle: 'Neon'
 title: 'Neon から ClickHouse Managed Postgres への移行'
 description: 'Neon から ClickHouse Managed Postgres へ PostgreSQL データを移行する方法を学びます'
-slug: /products/managed-postgres/migrations/neon
 keywords: ['postgres', 'postgresql', 'neon', 'migration','managed postgres']
 doc_type: 'guide'
 ---
@@ -59,12 +58,21 @@ ClickPipes を利用すれば、数テラバイト規模の Postgres データ�
 
 ## 移行時の考慮事項 {#migration-considerations}
 
-### 分岐 {#branches}
+### ブランチ {#branches}
 
 Neon は copy-on-write による即時のブランチ作成を提供します。ClickHouse Managed Postgres は local NVMe storage を使用することで、高速かつ予測可能で信頼性の高い Postgres のパフォーマンスを実現しています。
 そのトレードオフとして、ブランチの作成は瞬時には完了しません。ブランチは [ポイントインタイムリカバリ (PITR)](/ja/products/managed-postgres/backup-and-restore) を利用して独立したデプロイメントとして作成され、通常は数分以内に利用可能になります。
 
-日常的な開発では、production データを代表するサニタイズ済みのデータ (たとえば数ギガバイト程度) を含む小規模な ClickHouse Managed Postgres 開発用 database を用意し、必要に応じてそこから PITR ブランチを作成する運用を推奨します。ブランチの作成とクリーンアップは、公式 CLI である [clickhousectl](/ja/concepts/features/interfaces/cli)、[OpenAPI](/ja/products/managed-postgres/openapi)、または [Terraform](/ja/products/managed-postgres/terraform) から自動化できます。
+日常的な開発では、production データを代表するサニタイズ済みのデータ (たとえば数ギガバイト程度) を含む小規模な ClickHouse Managed Postgres 開発用 データベース を用意し、必要に応じてそこから PITR ブランチを作成する運用を推奨します。ブランチの作成とクリーンアップは、公式 CLI である [clickhousectl](/ja/concepts/features/interfaces/cli)、[OpenAPI](/ja/products/managed-postgres/openapi)、または [Terraform](/ja/products/managed-postgres/terraform) から自動化できます。clickhousectl と APIキーを使用する場合、ブランチの作成は新しいサービスへのポイントインタイム復元として行われます。
+
+```bash
+clickhousectl cloud postgres restore <postgres-id> \
+  --name dev-branch-42 --restore-target 2026-10-20T12:00:00Z
+clickhousectl cloud postgres reset-password <branch-id> --generate
+clickhousectl cloud postgres delete <branch-id>
+```
+
+`restore` は新しいサービスの ID を返しますが、パスワードは返さないため、ブランチが `running` になったら `reset-password` でパスワードを設定してください。`--ip-allow` ルールまたは `--block-public-access` を指定しない限り、ブランチには作成元の現在の IPv4 アクセスルールが適用されます。`delete` はブランチとそのデータを完全に削除します。
 
 この手法で数百の開発環境を管理しているお客様もいます。フォークおよび sandbox の利用体験については、現在も改善を進めています。詳細は [ブランチのドキュメント](/ja/products/managed-postgres/branching) を参照してください。
 
@@ -91,12 +99,12 @@ Neon は copy-on-write による即時のブランチ作成を提供します。
 
 ### 接続数の上限 {#connection-limits}
 
-ClickHouse Managed Postgres は、デフォルトで 500 件の direct Postgres 接続をサポートします。Neon の workload がこの数を超える場合は、次の方法を利用できます:
+ClickHouse Managed Postgres は、デフォルトで 500 件の direct Postgres 接続をサポートします。Neon の ワークロード がこの数を超える場合は、次の方法を利用できます:
 
 * アプリケーション側で接続プーリングを使用する。
 * 最大 5,000 件のクライアント接続をサポートする、バンドル済みの PgBouncer インスタンスを使用する。
 * direct 接続をさらに増やす必要がある場合は `max_connections` の値を引き上げる。
-  * `max_connections` は **Settings → Edit parameters** から変更できます。変更内容によっては再起動が必要です。詳細は[設定に関するドキュメント](/ja/products/managed-postgres/settings#changing-configuration)を参照してください。
+  * `max_connections` は **Settings → Edit parameters** から、または `clickhousectl cloud postgres config patch <postgres-id> --set max_connections=1000` で変更できます。変更内容によっては再起動が必要です。再起動は `clickhousectl cloud postgres restart <postgres-id>` で実行できます。詳細は[設定に関するドキュメント](/ja/products/managed-postgres/settings#changing-configuration)を参照してください。
 
 ### 移行中のスキーマ変更 {#schema-changes}
 

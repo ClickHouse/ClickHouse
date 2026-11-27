@@ -6,10 +6,8 @@ title: 'HTTPインターフェイス'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="prerequisites">
-  ## 前提条件
+  ## 前提条件 {#prerequisites}
 </div>
 
 この記事の例では、以下が必要です。
@@ -52,7 +50,11 @@ Web UI は、クエリ実行中の進行状況の表示、クエリのキャン�
 
 Web UI は、プロフェッショナルユーザー向けに設計されています。
 
-<Image img="/images/play.webp" size="md" alt="ClickHouse Web UI のスクリーンショット" />
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Web UI のスクリーンショット](/images/play.webp)
+  </Frame>
+</div>
 
 ヘルスチェック用スクリプトでは `GET /ping` リクエストを使用してください。このハンドラーは常に &quot;Ok.&quot; を返します (末尾に改行付き) 。バージョン 18.12.13 以降で利用できます。レプリカの遅延を確認するには、関連項目として `/replicas_status` も参照してください。
 
@@ -64,7 +66,7 @@ Ok.
 ```
 
 <div id="querying">
-  ## HTTP/HTTPS 経由でのクエリ
+  ## HTTP/HTTPS 経由でのクエリ {#querying}
 </div>
 
 HTTP/HTTPS 経由でクエリを実行する方法は 3 つあります。
@@ -349,11 +351,42 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 
 クエリにすでに `FROM` 句が含まれている場合、パス部分ではダウンロードするファイル名のみを指定します。
 
+### パスで指定されるテーブルへのデータのアップロード {#path-table-inserts}
+
+`/database/table.format` への HTTP `PUT` リクエストは、リクエストボディを既存のテーブルに挿入します。デフォルトでは、パスの拡張子によって入力形式が決まります。通常の `INSERT` と同様に、`input_format` 設定はパスで指定されたフォーマットよりも優先され、その次に双方向の `format` 設定が適用されます。リクエストには、デコード済みのデータが少なくとも 1 バイト含まれている必要があり、`query` パラメーターを含めることはできません。この方法は、ファイル名にターゲットテーブルと入力形式の両方がすでに含まれている場合に便利です。
+
+```bash
+printf '1,"one"\n2,"two"\n' \
+  | curl -X PUT -H 'Content-Type: text/csv' --data-binary @- \
+      'http://localhost:8123/my_db/hits.CSV'
+
+printf '{"a":3,"b":"three"}\n' \
+  | curl -X PUT -H 'Content-Type: application/json' --data-binary @- \
+      'http://localhost:8123/my_db/hits.JSONEachRow'
+```
+
+テーブルはあらかじめ存在している必要があります。データベースをプレフィックスとして付けたアップロードでは、`http_allow_database_as_path` によって
+`/database/table.format` パスが有効になります。データベースを指定しない `/table.format` 形式のアップロードには、従来どおり
+`http_allow_table_as_file` が必要です。リクエストボディには `.CSV.gz` のような圧縮形式の接尾辞を付けることができ、サーバーは
+伸長してから行を挿入します。パスで指定されるテーブルへの `PUT` アップロードは通常の `INSERT` セマンティクスに従うため、同じリクエストを繰り返すと
+行が重複して挿入される場合があります。テーブルの自動作成、スキーマ推論、マルチパートアップロードには
+対応していません。クエリやアップロードの動作をカスタマイズする必要がある場合は、通常の [HTTP 経由の `INSERT`](#insert-queries) を使用してください。
+
+最後のパス部分はパスの分割後にパーセントデコードされるため、`hits%2ECSV` のようにフォーマット区切りのドットをエンコードした形式も
+受け付けられます。
+
+```bash
+# The path suffix describes the compressed request body.
+gzip -c rows.csv \
+  | curl -X PUT --data-binary @- \
+      'http://localhost:8123/my_db/hits.CSV.gz'
+```
+
 <div id="insert-queries">
-  ## HTTP/HTTPS 経由の INSERT クエリ
+  ## HTTP/HTTPS 経由の INSERT クエリ {#insert-queries}
 </div>
 
-`INSERT` クエリでは、データの送信に `POST` メソッドを使用する必要があります。この場合、クエリの先頭部分を URL パラメーターに記述し、挿入するデータは `POST` で渡せます。挿入するデータとしては、たとえば MySQL のタブ区切りの dump を使用できます。このように、`INSERT` クエリは MySQL の `LOAD DATA LOCAL INFILE` の代替として使用できます。
+クエリを明示的に指定する必要がある場合は、従来の `POST` メソッドによるデータ送信が便利です。クエリの先頭部分を URL パラメータに記述し、挿入するデータは `POST` で渡せます。挿入するデータとしては、たとえば MySQL のタブ区切りの ダンプ を使用できます。このように、`INSERT` クエリは MySQL の `LOAD DATA LOCAL INFILE` の代替として使用できます。
 
 ### 例 {#examples}
 
@@ -499,7 +532,7 @@ Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
 プレフィックスなしで単一のメッセージを送信する場合は [`ProtobufSingle`](/ja/reference/formats/Protobuf/ProtobufSingle) を、1 つの `Envelope` メッセージのサブメッセージとして行を送信する場合は [`ProtobufList`](/ja/reference/formats/Protobuf/ProtobufList) を使用してください。
 
 <div id="compression">
-  ## 圧縮
+  ## 圧縮 {#compression}
 </div>
 
 圧縮は、大量のデータを送信する際のネットワークトラフィックを削減したり、圧縮済みのダンプを直接作成したりする場合に利用できます。
@@ -532,7 +565,7 @@ ClickHouse にレスポンスを圧縮させるには、リクエストに `Acce
 </Info>
 
 <div id="examples-compression">
-  ## 例
+  ## 例 {#examples-compression}
 </div>
 
 圧縮データをサーバーへ送信するには:
@@ -565,7 +598,7 @@ curl -sS "http://localhost:8123/?enable_http_compression=1" \
 ```
 
 <div id="default-database">
-  ## デフォルトデータベース
+  ## デフォルトデータベース {#default-database}
 </div>
 
 `database` URL パラメータまたは `X-ClickHouse-Database` ヘッダーで、デフォルトのデータベースを指定できます。
@@ -587,7 +620,7 @@ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?databa
 デフォルトでは、サーバー設定に登録されているデータベースが既定のデータベースとして使用されます。初期状態では、これは `default` という名前のデータベースです。別の方法として、テーブル名の前にドット区切りでデータベース名を付けて、いつでもデータベースを指定できます。
 
 <div id="authentication">
-  ## 認証
+  ## 認証 {#authentication}
 </div>
 
 ユーザー名とパスワードは、次の3つの方法のいずれかで指定できます。
@@ -715,40 +748,40 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
   レスポンスコードとHTTPヘッダーをクライアントに送信した後でクエリ処理エラーが発生する事態を避けるため、バッファリングを使用してください。この場合、エラーメッセージはレスポンスボディの末尾に書き込まれるため、クライアント側ではパース段階でしかエラーを検出できません。
 </Tip>
 
-<div id="setting-role-with-query-parameters">
-  ## クエリパラメータでロールを設定する
-</div>
+## クエリパラメータによるロールの設定 {#setting-role-with-query-parameters}
 
 この機能は ClickHouse 24.4 で追加されました。
 
-状況によっては、ステートメント自体を実行する前に、まず付与済みのロールを設定する必要があります。
-ただし、マルチステートメントは許可されていないため、`SET ROLE` とステートメントを一緒に送信することはできません。
+状況によっては、ステートメント自体を実行する前に、付与済みのロールを先に設定しておく必要があります。
+ただし、マルチステートメントは許可されていないため、`SET ROLE` とステートメントをまとめて送信することはできません：
 
 ```bash
 curl -sS "http://localhost:8123" --data-binary "SET ROLE my_role;SELECT * FROM my_table;"
 ```
 
-上記のコマンドを実行すると、エラーが発生します:
+上記のコマンドを実行すると、次のエラーが発生します。
 
 ```sql
 Code: 62. DB::Exception: Syntax error (Multi-statements are not allowed)
 ```
 
-この制限を回避するには、代わりに `role` クエリパラメータを使用してください。
+この制限を回避するには、代わりに `role` クエリパラメータを使用します：
 
 ```bash
 curl -sS "http://localhost:8123?role=my_role" --data-binary "SELECT * FROM my_table;"
 ```
 
-これは、ステートメントの前に `SET ROLE my_role` を実行するのと同じです。
+これは、ステートメントの前に `SET ROLE my_role` を実行するのと同等です。
 
-さらに、複数の `role` クエリパラメータを指定することも可能です。
+また、`role` クエリパラメータは複数指定することもできます。
 
 ```bash
 curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "SELECT * FROM my_table;"
 ```
 
-この場合、`?role=my_role&role=my_other_role` は、ステートメントの前に `SET ROLE my_role, my_other_role` を実行するのと同じように機能します。
+この場合、`?role=my_role&role=my_other_role` は、ステートメントの前に `SET ROLE my_role, my_other_role` を実行した場合と同様に動作します。
+
+`role` クエリパラメータは、`access_control_improvements.readonly_restricts_set_role` サーバー設定の影響を受けません。このサーバー設定が拒否するのは `SET ROLE` ステートメントのみです。
 
 ## HTTPレスポンスコードに関する注意点 {#http_response_codes_caveats}
 
@@ -842,13 +875,15 @@ __exception__
 ```
 
 <div id="cli-queries-with-parameters">
-  ## パラメータ付きクエリ
+  ## パラメータ付きクエリ {#cli-queries-with-parameters}
 </div>
 
 パラメータ付きのクエリを作成し、対応する HTTP リクエストパラメータから値を渡せます。詳しくは、[CLI のパラメータ付きクエリ](/ja/concepts/features/interfaces/client#cli-queries-with-parameters)を参照してください。
 
 <div id="examples">
-  ### 例
+  <a id="example-3" />
+
+  ### 例 {#example-3}
 </div>
 
 ```bash
@@ -856,7 +891,7 @@ $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHER
 ```
 
 <div id="tabs-in-url-parameters">
-  ### URL パラメータ内のタブ
+  ### URL パラメータ内のタブ {#tabs-in-url-parameters}
 </div>
 
 クエリパラメータは `escaped` フォーマットとして解析されます。これには、たとえば NULL を `\N` として曖昧さなく解析できるといった利点があります。つまり、タブ文字は `\t` (または `\` とタブ文字) としてエンコードする必要があります。たとえば、次の例では `abc` と `123` の間に実際のタブが含まれており、入力文字列は 2 つの値に分割されます。
@@ -886,21 +921,21 @@ curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar(
 ['abc','123']
 ```
 
-<div id="predefined_http_interface">
-  ## 事前定義済み HTTP インターフェイス
-</div>
+## 事前定義済み HTTP インターフェイス {#predefined_http_interface}
 
-ClickHouse は、HTTP インターフェイス経由で特定のクエリをサポートしています。たとえば、次のようにテーブルにデータを書き込むことができます。
+ClickHouse は、HTTP インターフェースを介して特定のクエリをサポートしています。たとえば、次のようにしてテーブルにデータを書き込めます。
 
 ```bash
 $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
 ```
 
-ClickHouse は、[Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter) のようなサードパーティーツールとの連携を容易にする、事前定義済み HTTP インターフェイスもサポートしています。では、例を見てみましょう。
+ClickHouse は事前定義済み HTTP インターフェイスもサポートしており、[Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter) のような third-party ツールとより簡単に連携できます。例を見てみましょう。
 
-まず、このセクションをサーバー設定ファイルに追加します。
+同じハンドラーは、サーバー設定ファイルを編集せずに SQL から定義することもできます。詳細は [`CREATE HANDLER`](/ja/reference/statements/create/handler) を参照してください。
 
-`http_handlers` は複数の `rule` を含むように設定します。ClickHouse は受信した HTTP リクエストを `rule` で事前定義された種類に照らして照合し、最初に一致したルールのハンドラーを実行します。一致に成功すると、ClickHouse は対応する事前定義済みクエリを実行します。
+まず、次のセクションをサーバー設定ファイルに追加します。
+
+`http_handlers` には複数の `rule` を含めるように設定します。ClickHouse は受信した HTTPリクエストを `rule` 内の事前定義された型と照合し、最初に一致したルールのハンドラーが実行されます。一致した場合、ClickHouse は対応する事前定義クエリを実行します。
 
 ```yaml title="config.xml"
 <http_handlers>
@@ -917,7 +952,7 @@ ClickHouse は、[Prometheus exporter](https://github.com/ClickHouse/clickhouse_
 </http_handlers>
 ```
 
-これで、Prometheusフォーマットのデータを取得するために、URL に直接リクエストできます。
+これで、URL に直接リクエストを送信して、Prometheus 形式のデータを取得できます。
 
 ```bash
 $ curl -v 'http://localhost:8123/predefined_query'
@@ -940,23 +975,23 @@ $ curl -v 'http://localhost:8123/predefined_query'
 < Keep-Alive: timeout=10
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","memory_usage":"8451671"}
 <
-# HELP "Query" "実行中のクエリ数"
+# HELP "Query" "Number of executing queries"
 # TYPE "Query" counter
 "Query" 1
 
-# HELP "Merge" "実行中のバックグラウンドマージ数"
+# HELP "Merge" "Number of executing background merges"
 # TYPE "Merge" counter
 "Merge" 0
 
-# HELP "PartMutation" "ミューテーション数 (ALTER DELETE/UPDATE)"
+# HELP "PartMutation" "Number of mutations (ALTER DELETE/UPDATE)"
 # TYPE "PartMutation" counter
 "PartMutation" 0
 
-# HELP "ReplicatedFetch" "レプリカからフェッチ中のデータパーツ数"
+# HELP "ReplicatedFetch" "Number of data parts being fetched from replica"
 # TYPE "ReplicatedFetch" counter
 "ReplicatedFetch" 0
 
-# HELP "ReplicatedSend" "レプリカへ送信中のデータパーツ数"
+# HELP "ReplicatedSend" "Number of data parts being sent to replicas"
 # TYPE "ReplicatedSend" counter
 "ReplicatedSend" 0
 
@@ -965,9 +1000,9 @@ $ curl -v 'http://localhost:8123/predefined_query'
 * Connection #0 to host localhost left intact
 ```
 
-`http_handlers` の設定オプションは次のとおりです。
+`http_handlers` の設定オプションは次のように動作します。
 
-`rule` では、以下のパラメータを設定できます。
+`rule` では、次のパラメータを設定できます。
 
 * `method`
 * `headers`
@@ -975,7 +1010,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 * `full_url`
 * `handler`
 
-各項目については以下で説明します。
+以下では、それぞれについて説明します。
 
 * `method` は、HTTPリクエストの method 部分の照合を担当します。`method` は、HTTPプロトコルにおける [`method`]
   (https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) の定義に完全に準拠しています。これは任意の設定です。設定ファイルで定義されていない場合、
@@ -1056,12 +1091,11 @@ max_final_threads    2
 max_threads    1
 ```
 
-<div id="virtual-param-request-body">
-  #### 仮想パラメータ `_request_body`
-</div>
+#### 仮想パラメータ `_request_body` {#virtual-param-request-body}
 
 URLパラメータ、ヘッダー、クエリパラメータに加えて、`predefined_query_handler` は特殊な仮想パラメータ `_request_body` もサポートしています。
 これは、生の HTTP リクエストボディを文字列として保持します。
+この値は常にリクエストボディからバインドされます。URL で `_request_body` (または `param__request_body`) を渡したり、`url` または `headers` の正規表現の名前付きグループでキャプチャしたりすると、例外が発生して拒否されます。また、名前付き session 内で設定された `_request_body` (`SET param__request_body = ...`) は無視されます。
 これにより、任意のデータフォーマットを受け付け、それをクエリ内で処理できる柔軟な REST API を作成できます。
 
 たとえば、`_request_body` を使用して、POST リクエストで JSON データを受け取り、それをテーブルに挿入する REST エンドポイント を実装できます。
@@ -1125,9 +1159,7 @@ max_threads 1
 max_final_threads   2
 ```
 
-<div id="static">
-  ### static
-</div>
+### static {#static}
 
 `static` では、[`content_type`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type)、[status](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status)、および `response_content` を返せます。`response_content` では、指定した内容を返せます。
 
@@ -1201,10 +1233,10 @@ curl -vv  -H 'XXX:xxx' 'http://localhost:8123/hi'
 Say Hi!%
 ```
 
-クライアントに送信されるconfigurationの内容を見つけます。
+クライアントに送信される設定の内容を見つけます。
 
 ```yaml
-<get_config_static_handler><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></get_config_static_handler>
+<get_config_static_handler><![CDATA[<html><head><meta http-equiv="refresh" content="0; url=/play"></head><body><a href="/play">ClickHouse Web UI</a></body></html>]]></get_config_static_handler>
 
 <http_handlers>
         <rule>
@@ -1238,10 +1270,10 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","memory_usage":"8451671"}
 <
 * Connection #0 to host localhost left intact
-<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
+<html><head><meta http-equiv="refresh" content="0; url=/play"></head><body><a href="/play">ClickHouse Web UI</a></body></html>%
 ```
 
-クライアントに送信するファイルの内容を確認するには:
+クライアントに送信されたファイルの内容を確認するには、次のようにします。
 
 ```yaml
 <http_handlers>
@@ -1319,7 +1351,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 ```
 
 <div id="redirect">
-  ### redirect
+  ### redirect {#redirect}
 </div>
 
 `redirect` は `location` に `302` リダイレクトします
@@ -1342,7 +1374,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 ```
 
 <div id="http-response-headers">
-  ## HTTP レスポンスヘッダー
+  ## HTTP レスポンスヘッダー {#http-response-headers}
 </div>
 
 ClickHouse では、設定可能なあらゆる種類のハンドラーに適用できるカスタム HTTP レスポンスヘッダーを設定できます。これらのヘッダーは `http_response_headers` 設定で指定でき、ヘッダー名とその値を表すキー・バリューのペアを受け付けます。この機能は、カスタムのセキュリティヘッダーや CORS ポリシー、その他 ClickHouse HTTP インターフェイス全体で必要となる HTTP ヘッダー要件に対応する際に特に便利です。

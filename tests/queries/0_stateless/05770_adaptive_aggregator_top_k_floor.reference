@@ -1,0 +1,12 @@
+count
+1	80000
+2	64000
+3	48000
+matches the baseline	1
+the merge drains almost no record	1
+uniqExact
+1	80000
+2	64000
+3	48000
+matches the baseline	1
+the merge drains almost no record	1

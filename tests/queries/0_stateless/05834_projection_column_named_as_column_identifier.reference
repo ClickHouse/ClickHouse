@@ -1,0 +1,18 @@
+p_normal	1	100
+p_normal	1	200
+p_aggregate	100	1
+p_aggregate	200	1
+p_aggregate	300	0
+1	100
+1	200
+100	1
+200	1
+300	0
+100	100
+200	200
+300	300
+p_normal_added	1	100
+p_normal_added	1	200
+p_aggregate_added	100	1
+p_aggregate_added	200	1
+p_aggregate_added	300	0

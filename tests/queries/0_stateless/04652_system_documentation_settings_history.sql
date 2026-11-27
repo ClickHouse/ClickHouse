@@ -1,3 +1,5 @@
+-- Tags: no-msan
+
 -- The documentation of a setting in `system.documentation` (the source of the built-in `/docs` Web UI and of the
 -- `help` command) carries the history of the changes of its default value: the version in which the setting was
 -- introduced and every later change of the default, with the reason for the change. The history is the same data
@@ -75,9 +77,28 @@ WITH
 SELECT count() FROM system.documentation
 WHERE type = 'Setting' AND (name IN (SELECT name FROM documented)) != (position(description, '**History**') > 0);
 
-WITH changed AS (SELECT DISTINCT arrayJoin(tupleElement(changes, 'name')) AS name FROM system.settings_changes WHERE type = 'MergeTree')
+-- The same for MergeTree settings, including the history of an alias as for `alias_registrations`. MergeTree aliases
+-- are not listed in `system.merge_tree_settings`, so they are taken from their documentation.
+WITH
+    records AS
+    (
+        SELECT tupleElement(arrayJoin(changes) AS c, 'name') AS setting, tupleElement(c, 'reason') AS reason
+        FROM system.settings_changes WHERE type = 'MergeTree'
+    ),
+    aliases AS
+    (
+        SELECT name, extract(description, '^Alias of `([^`]+)`') AS alias_for
+        FROM system.documentation WHERE type = 'MergeTree Setting' AND alias_for != ''
+    ),
+    documented AS
+    (
+        SELECT DISTINCT setting AS name FROM records
+        UNION DISTINCT
+        SELECT DISTINCT a.name AS name FROM aliases AS a INNER JOIN records AS r ON r.setting = a.alias_for
+        WHERE match(r.reason, '(?i)alias|renam') AND match(r.reason, '(?:^|[^0-9A-Za-z_])' || a.name || '(?:$|[^0-9A-Za-z_])')
+    )
 SELECT count() FROM system.documentation
-WHERE type = 'MergeTree Setting' AND (name IN (SELECT name FROM changed)) != (position(description, '**History**') > 0);
+WHERE type = 'MergeTree Setting' AND (name IN (SELECT name FROM documented)) != (position(description, '**History**') > 0);
 
 -- Server settings are not covered by the `compatibility` setting, so no history of their changes is recorded.
 SELECT count() FROM system.documentation WHERE type = 'Server Setting' AND position(description, '**History**') > 0;

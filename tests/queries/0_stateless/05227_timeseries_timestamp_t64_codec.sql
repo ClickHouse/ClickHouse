@@ -70,7 +70,7 @@ DROP TABLE ts_t64;
 CREATE TABLE ts_t64_source ENGINE = TimeSeries;
 CREATE TABLE ts_t64 AS ts_t64_source ENGINE = TimeSeries
 SAMPLES INNER COLUMNS (samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float64))),
-                       CODEC samples.timestamp (Delta, T64, ZSTD(3)), CODEC samples.value (ALP, ZSTD(3)));
+                       CODEC samples.timestamp (Delta, T64, ZSTD(3)), CODEC samples.value (ALP, ZSTD(4)));
 DROP TABLE ts_t64_source;
 SELECT type, subcolumn_codecs, count()
 FROM system.columns

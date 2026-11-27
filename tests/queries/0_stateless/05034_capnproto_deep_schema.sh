@@ -5,6 +5,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `clickhouse-local` caches the schemas given with `format_schema_source` under its working directory.
+WORKDIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+mkdir -p "$WORKDIR"
+cd "$WORKDIR" || exit 1
+
 # `grep -c` prints only the count, so a run where the guard did not fire used to discard the
 # message that appeared instead of it.
 guard_message_count() {
@@ -67,3 +72,5 @@ DESC format(CapnProto, '') SETTINGS format_schema = '${SCHEMA_DIR}/imports_shall
 "
 
 rm -rf "${SCHEMA_DIR}"
+
+rm -rf "$WORKDIR"
