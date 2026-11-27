@@ -68,6 +68,7 @@ set (SUPPORT_SOURCES
     "${CH}/src/Common/AllocatorWithMemoryTracking.cpp"
     "${CH}/src/Common/CalendarTimeInterval.cpp"
     "${CH}/src/Common/ErrorCodes.cpp"
+    "${CH}/src/Common/ErrorCodesRegistry.cpp"
     "${CH}/src/Common/FiberLocal.cpp"
     "${CH}/src/Common/FieldVisitorConvertToNumber.cpp"
     "${CH}/src/Common/FieldVisitorDump.cpp"
