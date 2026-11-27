@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatFactory.h>
@@ -66,7 +67,7 @@ protected:
     /// recalculate the widths after the columns have been widened to fit the names of the Tuple groups,
     /// because the visible width of a value containing a tab depends on the position where the value starts.
     void calculateWidths(
-        const Block & header, const Chunk & chunk, bool split_by_lines, size_t value_width_limit,
+        const ColumnsWithTypeAndName & header, const Chunk & chunk, bool split_by_lines, size_t value_width_limit,
         const Widths & min_widths, bool & out_has_newlines,
         WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names);
 

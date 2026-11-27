@@ -8,6 +8,10 @@
 -- there, so each of the immutable fields below is rejected with `METADATA_MISMATCH` on its own.
 -- The object storage is never contacted: the metadata check happens while the engine is built.
 
+-- Keep this file's DDL and keeper rewrites out of the AST fuzzer: a fuzzed rewrite can leave a `metadata` node that is not
+-- JSON, and a replayed `CREATE` is a second queue on the same `keeper_path`; either one can stop the next server start.
+SET ast_fuzzer_any_query = 0;
+
 DROP TABLE IF EXISTS tq_base;
 DROP TABLE IF EXISTS tq_bucket_base;
 

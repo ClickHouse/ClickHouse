@@ -1561,6 +1561,8 @@ Example:
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
+For tables of the `MergeTree` family, `CLEAR COLUMN` also accepts the virtual columns [`_block_number` and `_block_offset`](/reference/engines/table-engines/mergetree-family/mergetree#virtual-columns). Either name clears both of them, so that a part returns its minimum block number as `_block_number` and `_part_offset` as `_block_offset`.
+
 ## COMMENT COLUMN {#comment-column}
 
 ```sql
@@ -2632,11 +2634,11 @@ The following operations are available:
 
 ## ADD INDEX {#add-index}
 
-`ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [FIRST|AFTER name]` - Adds index description to tables metadata.
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [FIRST|AFTER name]` - Adds index description to tables metadata. [`CREATE INDEX`](/reference/statements/create/skipping-index) adds an index with a standalone statement.
 
 ## DROP INDEX {#drop-index}
 
-`ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name` - Removes index description from tables metadata and deletes index files from disk. Implemented as a [mutation](/reference/statements/alter/index#mutations).
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name` - Removes index description from tables metadata and deletes index files from disk. Implemented as a [mutation](/reference/statements/alter/index#mutations). [`DROP INDEX ... ON`](/reference/statements/drop#drop-index) is the standalone form.
 
 ## MATERIALIZE INDEX {#materialize-index}
 
@@ -2669,7 +2671,7 @@ ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] n
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [IN PARTITION partition_name]
 )",
         .parent = "ALTER",
-        .related = {"ALTER", "CREATE TABLE", "HYPOTHETICAL INDEX", "ALTER TABLE ... PROJECTION"},
+        .related = {"ALTER", "CREATE TABLE", "CREATE INDEX", "HYPOTHETICAL INDEX", "ALTER TABLE ... PROJECTION"},
     };
 
     documentation["ALTER TABLE ... PROJECTION"] =
