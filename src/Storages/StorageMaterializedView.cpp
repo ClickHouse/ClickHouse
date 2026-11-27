@@ -5,8 +5,8 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTExpressionList.h>
@@ -44,7 +44,6 @@
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <QueryPipeline/SizeLimits.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -62,23 +61,21 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsDouble limit;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 log_queries_cut_to_length;
-    extern const SettingsUInt64 max_bytes_to_read;
-    extern const SettingsUInt64 max_bytes_to_read_leaf;
-    extern const SettingsSeconds max_execution_time;
-    extern const SettingsSeconds max_execution_time_leaf;
-    extern const SettingsUInt64 max_result_bytes;
-    extern const SettingsUInt64 max_result_rows;
-    extern const SettingsUInt64 max_rows_to_read;
-    extern const SettingsUInt64 max_rows_to_read_leaf;
+    extern const SettingsDouble limit;
     extern const SettingsDouble offset;
+    extern const SettingsOverflowMode distinct_overflow_mode;
+    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
+    extern const SettingsOverflowMode join_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsOverflowMode result_overflow_mode;
+    extern const SettingsOverflowMode set_overflow_mode;
+    extern const SettingsOverflowMode sort_overflow_mode;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsOverflowMode timeout_overflow_mode_leaf;
+    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 namespace ServerSetting
@@ -195,48 +192,48 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Incremental refresh requires exactly one source table, but the query references other tables (in a JOIN or a subquery)");
 
-        /// The refresh resumes from the cursor that the read reports after it reaches the end of the snapshot. A `LIMIT`
-        /// stops the read before that, so the cursor would stay unchanged and the next refresh would append the same rows
-        /// again; and the cursor of the rows that were read would skip the rows read but discarded by the limit.
-        /// `LIMIT BY` stops the read as well, once every group that can appear has reached its limit (e.g. `LIMIT 1 BY tuple()`).
-        const auto & select = select_with_union->as<ASTSelectWithUnionQuery &>().list_of_selects->children[0]->as<ASTSelectQuery &>();
-        /// The settings the query will run with: the `SETTINGS` clause of the query is applied on top of the context.
-        Settings query_settings = context->getSettingsCopy();
-        if (auto select_settings = select.settings())
-            query_settings.applyChanges(select_settings->as<ASTSetQuery &>().changes);
-        if (select.limitLength() || select.limitOffset() || select.limitAfter() || select.limitUntil()
-            || select.limitBy() || select.limitByLength() || select.limitByOffset()
-            || query_settings[Setting::limit] != 0 || query_settings[Setting::offset] != 0)
+        /// A streaming read reports the cursor after all the rows of the bounded stream, also when the query does not
+        /// need the rest of them (see `MergeTreeCommitOrderSource::handleShutdown`). A `LIMIT` stops the read while
+        /// the rest of the rows still belongs to the result of the query over the whole source, so these rows would
+        /// never be appended. Operations like `DISTINCT` and `LIMIT BY` stop the read only when the rest of the rows
+        /// cannot change the result, so they are allowed.
+        const auto & select = *select_with_union->as<ASTSelectWithUnionQuery &>().list_of_selects->children[0]->as<ASTSelectQuery>();
+        if (select.limitLength() || select.limitOffset() || select.limitAfter() || select.limitUntil())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT and OFFSET are not supported in the query of an incremental refresh");
+        /// The `SETTINGS` clause of the query is not applied to the context when the view is created. Apply it to
+        /// a copy of the context in the same way as the refresh does, so that a `profile` in the clause is resolved
+        /// to the settings of the profile: the query runs with them, and not with the changes as they are written.
+        auto settings_context = Context::createCopy(context);
+        if (const auto & select_settings = select.settings())
+            settings_context->applySettingsChanges(select_settings->as<ASTSetQuery &>().changes);
+        const Settings & query_settings = settings_context->getSettingsRef();
+
+        if (query_settings[Setting::limit] != 0 || query_settings[Setting::offset] != 0)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Incremental refresh does not support LIMIT, OFFSET and LIMIT BY: the source would not be read to the end of its snapshot");
+                "The settings `limit` and `offset` are not supported in the query of an incremental refresh");
 
-        /// The same for the limits that stop the read without an error. They can be overridden in the `SETTINGS` clause of the query.
-        auto reject_break_mode = [](bool has_limit, OverflowMode mode, std::string_view mode_setting)
+        /// With the overflow mode `break`, a query that reaches a limit finishes successfully with a partial result,
+        /// while the read reports the cursor after all the rows of the bounded stream: the rows that were not read
+        /// (or not passed further) would never be appended. Only the mode `throw` is allowed: the refresh fails
+        /// and the cursor stays in place.
+        auto check_overflow_mode = [](const char * name, OverflowMode mode)
         {
-            if (has_limit && mode == OverflowMode::BREAK)
+            if (mode == OverflowMode::BREAK)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Incremental refresh does not support a limit with {} = 'break': the source would not be read to the end of its snapshot",
-                    mode_setting);
+                    "The setting `{}` = 'break' is not supported in the query of an incremental refresh, "
+                    "because a partial result would lose the rows of the source", name);
         };
-        reject_break_mode(
-            query_settings[Setting::max_rows_to_read] != 0 || query_settings[Setting::max_bytes_to_read] != 0,
-            query_settings[Setting::read_overflow_mode], "read_overflow_mode");
-        reject_break_mode(
-            query_settings[Setting::max_result_rows] != 0 || query_settings[Setting::max_result_bytes] != 0,
-            query_settings[Setting::result_overflow_mode], "result_overflow_mode");
-        reject_break_mode(
-            query_settings[Setting::max_execution_time].totalMicroseconds() != 0,
-            query_settings[Setting::timeout_overflow_mode], "timeout_overflow_mode");
-        reject_break_mode(
-            query_settings[Setting::max_rows_to_read_leaf] != 0 || query_settings[Setting::max_bytes_to_read_leaf] != 0,
-            query_settings[Setting::read_overflow_mode_leaf], "read_overflow_mode_leaf");
-        reject_break_mode(
-            query_settings[Setting::max_execution_time_leaf].totalMicroseconds() != 0,
-            query_settings[Setting::timeout_overflow_mode_leaf], "timeout_overflow_mode_leaf");
-
-        /// The other ways to stop the read early (`DISTINCT` that has got all its rows, `GROUP BY` or `DISTINCT` with
-        /// the overflow mode `break`, etc.) do not need the rest of the source for the result, and cannot be listed
-        /// exhaustively. For them, the source of the refresh is read to the end anyway, see `ReadToEndTransform`.
+        check_overflow_mode("read_overflow_mode", query_settings[Setting::read_overflow_mode]);
+        check_overflow_mode("read_overflow_mode_leaf", query_settings[Setting::read_overflow_mode_leaf]);
+        check_overflow_mode("group_by_overflow_mode", query_settings[Setting::group_by_overflow_mode]);
+        check_overflow_mode("sort_overflow_mode", query_settings[Setting::sort_overflow_mode]);
+        check_overflow_mode("result_overflow_mode", query_settings[Setting::result_overflow_mode]);
+        check_overflow_mode("timeout_overflow_mode", query_settings[Setting::timeout_overflow_mode]);
+        check_overflow_mode("timeout_overflow_mode_leaf", query_settings[Setting::timeout_overflow_mode_leaf]);
+        check_overflow_mode("set_overflow_mode", query_settings[Setting::set_overflow_mode]);
+        check_overflow_mode("join_overflow_mode", query_settings[Setting::join_overflow_mode]);
+        check_overflow_mode("transfer_overflow_mode", query_settings[Setting::transfer_overflow_mode]);
+        check_overflow_mode("distinct_overflow_mode", query_settings[Setting::distinct_overflow_mode]);
 
         const auto * identifier = source_table_expr.database_and_table_name->as<ASTTableIdentifier>();
         if (!identifier)

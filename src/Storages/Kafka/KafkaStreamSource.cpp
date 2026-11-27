@@ -372,10 +372,11 @@ Chunk KafkaStreamSource::generate()
             case StreamingHandleErrorMode::STREAM:
             {
                 exception_message = e.message();
+                /// The default of the data type, which is not the default of the column for some types (e.g. `Enum`).
                 for (size_t i = 0; i < result_columns.size(); ++i)
                 {
                     result_columns[i]->rollback(*checkpoints[i]);
-                    result_columns[i]->insertDefault();
+                    non_virtual_header.getByPosition(i).type->insertDefaultInto(*result_columns[i]);
                 }
                 return 1;
             }

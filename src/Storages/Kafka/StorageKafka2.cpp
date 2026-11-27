@@ -576,8 +576,8 @@ void StorageKafka2::readStream(
 
     Pipe pipe(std::move(source));
     /// An incremental refresh of a materialized view: the source reports the cursor only when it reaches the end.
-    if (modified_context->getStreamingCursor())
-        pipe.addSimpleTransform([](const SharedHeader & header) { return std::make_shared<ReadToEndTransform>(header); });
+    if (auto streaming_cursor = modified_context->getStreamingCursor())
+        pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<ReadToEndTransform>(header, streaming_cursor); });
 
     auto step = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
     step->setStepDescription("Read from Kafka STREAM");

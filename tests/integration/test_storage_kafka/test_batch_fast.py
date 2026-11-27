@@ -3024,6 +3024,14 @@ def test_kafka_engine_put_errors_to_stream_enum_type_default(
             instance.query(f"SELECT i, e, failed FROM test.{kafka_table}_data ORDER BY i")
             == "0\ta\t1\n1\tb\t0\n"
         )
+        # The same through `STREAM`, which reads the messages with its own consumer.
+        assert (
+            instance.query(
+                f"SELECT i, e, length(_error) > 0 FROM test.{kafka_table} STREAM BOUNDED ORDER BY i",
+                settings={"enable_streaming_queries": 1},
+            )
+            == "0\ta\t1\n1\tb\t0\n"
+        )
 
         instance.query(f"""
             DROP TABLE test.{kafka_table};
