@@ -2851,6 +2851,12 @@ void LogEntryStorage::ensureReadAheadPoolLocked()
         threads,
         2 * (readahead_settings.max_peer_readers + 1),
         /*shutdown_on_exception_=*/false); /// a failed fill must not disable read-ahead process-wide
+    /// A fill task parks inside its job until its reader is closed (see `fillTask`), so a worker occupies a
+    /// thread of the global pool for an unlimited time. It must take a slot of the global pool: otherwise the
+    /// parked workers together with the permanent threads could hold all the threads of the global pool while
+    /// slots are still left, and a thread that is queued there would never start. When there is no slot left,
+    /// `trySchedule` fails, and the caller falls back to a direct read (see `makeReaderLocked`).
+    readahead_pool->setJobsAreLongLived();
 }
 
 void LogEntryStorage::evictIdleReadersLocked(std::chrono::steady_clock::time_point now)
@@ -3723,11 +3729,14 @@ Changelog::Changelog(
         if (existing_changelogs.empty())
             LOG_WARNING(log, "No logs exists in {}. It's Ok if it's the first run of clickhouse-keeper.", disk->getPath());
 
-        background_changelog_operations_thread = std::make_unique<ThreadFromGlobalPool>([this] { backgroundChangelogOperationsThread(); });
+        background_changelog_operations_thread = std::make_unique<ThreadFromGlobalPool>(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { backgroundChangelogOperationsThread(); });
 
-        write_thread = std::make_unique<ThreadFromGlobalPool>([this] { writeThread(); });
+        write_thread = std::make_unique<ThreadFromGlobalPool>(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { writeThread(); });
 
-        append_completion_thread = std::make_unique<ThreadFromGlobalPool>([this] { appendCompletionThread(); });
+        append_completion_thread = std::make_unique<ThreadFromGlobalPool>(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { appendCompletionThread(); });
 
         current_writer = std::make_unique<ChangelogWriter>(
             existing_changelogs,
@@ -3740,6 +3749,25 @@ Changelog::Changelog(
     catch (...)
     {
         tryLogCurrentException(log);
+
+        /// Starting one of the worker threads may throw, e.g. `CANNOT_SCHEDULE_TASK`. Unwinding
+        /// would then destroy the already-started joinable `ThreadFromGlobalPool`s, which aborts.
+        /// Finish the queues the workers block on and join whatever threads were started, so the
+        /// real error propagates instead. (`shutdown` cannot be used here: it dereferences the
+        /// thread pointers unconditionally, and some of them may not be created yet.)
+        if (!changelog_operation_queue.isFinished())
+            changelog_operation_queue.finish();
+        if (!write_operations.isFinished())
+            write_operations.finish();
+        if (!append_completion_queue.isFinished())
+            append_completion_queue.finish();
+
+        for (const auto * thread : {&background_changelog_operations_thread, &write_thread, &append_completion_thread})
+        {
+            if (*thread && (*thread)->joinable())
+                (*thread)->join();
+        }
+
         throw;
     }
 }

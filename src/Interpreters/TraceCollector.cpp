@@ -74,7 +74,24 @@ TraceCollector::TraceCollector()
     /// through again.
     TraceSender::shutdown.store(false);
 
-    thread = ThreadFromGlobalPoolWithoutTraceCollector(&TraceCollector::run, this);
+    try
+    {
+        thread = ThreadFromGlobalPoolWithoutTraceCollector(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker,
+            &TraceCollector::run,
+            this);
+    }
+    catch (...)
+    {
+        /// The destructor does not run for a partially constructed object, so roll back
+        /// the process-global `TraceSender` state here: close the gate, wait for senders
+        /// already past it, and close the pipe, so that a later `TraceCollector` can open it again.
+        TraceSender::shutdown.store(true);
+        while (TraceSender::in_flight.load() > 0)
+            std::this_thread::yield();
+        tryClosePipe();
+        throw;
+    }
 }
 
 void TraceCollector::initialize(std::shared_ptr<TraceLog> trace_log_)

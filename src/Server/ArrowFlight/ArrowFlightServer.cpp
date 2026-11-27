@@ -780,24 +780,35 @@ void ArrowFlightServer::start()
 
     initialized = true;
 
-    if (tickets_lifetime_seconds || poll_descriptors_lifetime_seconds || prepared_statements_lifetime_seconds != 0)
+    try
     {
-        cleanup_thread.emplace([this]
+        if (tickets_lifetime_seconds || poll_descriptors_lifetime_seconds || prepared_statements_lifetime_seconds != 0)
         {
-            try
+            cleanup_thread.emplace(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this]
             {
-                DB::setThreadName(ThreadName::ARROW_FLIGHT_EXPR);
-                while (!stopped)
+                try
                 {
-                    calls_data->waitNextExpirationTime();
-                    calls_data->cancelExpired();
+                    DB::setThreadName(ThreadName::ARROW_FLIGHT_EXPR);
+                    while (!stopped)
+                    {
+                        calls_data->waitNextExpirationTime();
+                        calls_data->cancelExpired();
+                    }
                 }
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Failed to cleanup");
-            }
-        });
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to cleanup");
+                }
+            });
+        }
+    }
+    catch (...)
+    {
+        /// Starting a thread can throw CANNOT_SCHEDULE_TASK when the global thread pool is full.
+        /// Shut the already listening gRPC server down before letting the exception out,
+        /// so that the error is reported instead of leaving a half-started server behind.
+        stop();
+        throw;
     }
 }
 

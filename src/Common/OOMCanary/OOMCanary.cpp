@@ -140,7 +140,7 @@ void OOMCanary::start()
 
     try
     {
-        monitor_thread = ThreadFromGlobalPool([this] { monitorThread(); });
+        monitor_thread = ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { monitorThread(); });
     }
     catch (...)
     {

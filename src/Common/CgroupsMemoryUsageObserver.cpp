@@ -37,7 +37,8 @@ void CgroupsMemoryUsageObserver::startThread()
 {
     if (!thread.joinable())
     {
-        thread = ThreadFromGlobalPool(&CgroupsMemoryUsageObserver::runThread, this);
+        thread = ThreadFromGlobalPool(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, &CgroupsMemoryUsageObserver::runThread, this);
         LOG_INFO(log, "Started cgroup current memory usage observer thread");
     }
 }
