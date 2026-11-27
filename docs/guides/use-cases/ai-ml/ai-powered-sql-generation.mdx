@@ -32,7 +32,7 @@ export ANTHROPIC_API_KEY=your_api_key
 export OPENAI_API_KEY=your_api_key
 ```
 
-Alternatively, you can [provide a configuration file](/concepts/features/interfaces/client#ai-sql-generation-configuration). When neither is set, the assistant uses the [`aiGenerate`](/sql-reference/functions/ai-functions) function of the server you are connected to, if its administrator has enabled AI functions - see [providers](/concepts/features/interfaces/client#ai-sql-generation-providers).
+Alternatively, you can [provide a configuration file](/concepts/features/interfaces/client#ai-sql-generation-configuration). When neither is set, the assistant uses the [`aiGenerate`](/sql-reference/functions/ai-functions) function of the server you are connected to. This takes two things on the server: default credentials configured for AI functions (the `ai_function_text_default_credentials` setting), and AI functions not being disabled (the `allow_ai_functions` setting, which is on by default). Without the credentials the assistant is not available - see [providers](/concepts/features/interfaces/client#ai-sql-generation-providers).
 
 ## Connecting to the ClickHouse SQL playground {#connecting-to-the-clickhouse-sql-playground}
 
@@ -146,7 +146,7 @@ To start a fresh conversation, type `? clear`.
 
 ### Queries that change data {#queries-that-change-data}
 
-The assistant runs only read-only queries on its own. Anything else - writes, DDL, `SET`, or a read that can reach outside of the server, such as a table function or a table of an external engine - is shown at the prompt first, and runs only after you confirm it:
+The assistant runs only read-only queries on its own. Anything else - writes, DDL, `SET`, or a read that can reach outside of the server, such as a table function or a table of an external engine - is shown at the prompt first, and runs only after you confirm it. The one exception is reading the schema: for a table of a database backed by an external system (`MySQL`, `PostgreSQL`, a data-lake catalog), the assistant fetches the definition of the table from that system without asking. It reads metadata only, and the credentials in it are masked - see [security](/concepts/features/interfaces/client#ai-sql-generation-security). The confirmation looks like this:
 
 ```text
 Run this query? [Y/n]
