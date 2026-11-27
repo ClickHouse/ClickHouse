@@ -351,6 +351,8 @@ For `SAN:DNS` and `SAN:URI` the certificate must contain exactly one Subject Alt
 Explicit credentials always take precedence over the certificate: when the request carries an `Authorization` header, the `X-ClickHouse-User` or `X-ClickHouse-Key` headers, the `user` or `password` query parameters, or is served by a handler with fixed credentials (the `user` key inside `handler` of an `http_handlers` rule), those credentials are used and the certificate is not considered for authentication, exactly as before.
 
 The derived user must still be configured with the `ssl_certificate` authentication method listing a matching certificate subject: the setting only substitutes the user name that was previously taken from the `X-ClickHouse-User` header, it does not bypass the subject check.
+
+A request that a browser marks as initiated by another origin is never authenticated by the certificate alone and is rejected, because a browser presents the client certificate even with the requests that another site makes it send, such as a cross-site form submission. A request is treated as cross-origin when its `Sec-Fetch-Site` header is neither `same-origin` nor `none`, or, if that header is absent, when its `Origin` header does not match `https://` followed by the `Host` header. Clients that send neither header are not affected, and neither are requests with explicit credentials, including the `X-ClickHouse-SSL-Certificate-Auth: on` header.
 )", 0) \
     DECLARE(String, tmp_policy, "", R"(
 Policy for storage with temporary data. All files with `tmp` prefix will be removed at start.

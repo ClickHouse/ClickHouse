@@ -115,6 +115,36 @@ namespace
                         "Invalid value '{}' of the `ssl_certificate_username_field` server setting: "
                         "must be 'CN', 'SAN:DNS' or 'SAN:URI'", field);
     }
+
+    /// Whether the browser marked the request as initiated by another origin.
+    ///
+    /// A TLS client certificate is an ambient credential: a browser that has it presents it on
+    /// every connection to the server, including the requests that another site makes the browser
+    /// send, such as a cross-site form submission. The explicit certificate authentication is not
+    /// affected: a form cannot add the `X-ClickHouse-SSL-Certificate-Auth` header, and a scripted
+    /// request that adds it needs a CORS preflight. Authentication by the certificate alone has no
+    /// such protection, so it must not be applied to cross-origin requests (CSRF).
+    ///
+    /// Browsers describe the initiator in the `Sec-Fetch-Site` header (sent with every request to
+    /// an HTTPS endpoint; a script can neither set nor remove it) and, in browsers that predate it,
+    /// in the `Origin` header (sent with every request that is not `GET` or `HEAD`, and those two
+    /// methods imply `readonly`). Other clients send neither header and are not affected.
+    bool isCrossOriginBrowserRequest(const HTTPServerRequest & request)
+    {
+        if (request.has("Sec-Fetch-Site"))
+        {
+            /// `none` is a navigation initiated by the user, e.g. an address typed in or a bookmark.
+            const auto & site = request.get("Sec-Fetch-Site");
+            return site != "same-origin" && site != "none";
+        }
+
+        /// A client certificate is only available when the server itself terminates TLS, so the
+        /// scheme of the request is always `https`. An absent `Host` never matches.
+        if (request.has("Origin"))
+            return Poco::icompare(request.get("Origin"), "https://" + request.get("Host", "")) != 0;
+
+        return false;
+    }
 #endif
 }
 
@@ -330,6 +360,19 @@ bool authenticateUserByHTTP(
         /// `ssl_certificate_username_field` server setting. The derived user is still subject to
         /// the `ssl_certificate` authentication method: its configured subjects must match the
         /// certificate, as if the user name arrived in the `X-ClickHouse-User` header.
+        ///
+        /// A cross-origin request from a browser is rejected instead of being authenticated as
+        /// the default session user: the client did present a certificate, and silently running
+        /// the request as another user would be worse than refusing it.
+        if (isCrossOriginBrowserRequest(request))
+        {
+            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "Invalid authentication: a cross-origin request cannot be authenticated by the TLS client certificate alone. "
+                "Pass the `X-ClickHouse-SSL-Certificate-Auth: on` HTTP header or other credentials explicitly");
+            session.onAuthenticationFailure(std::nullopt, client_address, exception);
+            throw exception; /// NOLINT
+        }
+
         certificate_subjects = peer_certificate->extractAllSubjects();
         user = extractUserNameFromCertificateSubjects(certificate_subjects, ssl_certificate_username_field);
         checkUserNameNotEmptyAndServerHasEnoughMemory(user, "TLS client certificate", global_context, session, client_address);

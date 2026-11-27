@@ -61,11 +61,13 @@ def get_ssl_context(cert_name):
     return context
 
 
-def execute_query_https(node, query, cert_name=None, headers=None, params=None):
+def execute_query_https(
+    node, query, cert_name=None, headers=None, params=None, method="GET"
+):
     url = f"https://{node.ip_address}:{HTTPS_PORT}/?query={urllib.parse.quote(query)}"
     if params:
         url += "&" + urllib.parse.urlencode(params)
-    request = urllib.request.Request(url)
+    request = urllib.request.Request(url, method=method)
     for key, value in (headers or {}).items():
         request.add_header(key, value)
     response = urllib.request.urlopen(
@@ -149,6 +151,51 @@ def test_legacy_header_still_works():
         )
         == "client1\n"
     )
+
+
+def test_cross_origin_browser_requests_are_rejected():
+    # A browser presents the client certificate even with the requests that another site makes
+    # it send (e.g. a form submission), so the certificate alone must not authenticate them.
+    same_origin = f"https://{node_cn.ip_address}:{HTTPS_PORT}"
+    foreign_origin = "https://attacker.example"
+    insert = "INSERT INTO csrf VALUES (1)"
+
+    node_cn.query("CREATE TABLE csrf (x UInt8) ENGINE = MergeTree ORDER BY x")
+    try:
+        for headers in [
+            {"Origin": foreign_origin},
+            {"Origin": "null"},
+            {"Sec-Fetch-Site": "cross-site"},
+            {"Sec-Fetch-Site": "same-site"},
+            # A script cannot set `Sec-Fetch-Site`, so it wins over a matching `Origin`.
+            {"Sec-Fetch-Site": "cross-site", "Origin": same_origin},
+        ]:
+            with pytest.raises(Exception) as err:
+                execute_query_https(
+                    node_cn, insert, cert_name="client1", headers=headers, method="POST"
+                )
+            assert "403" in str(err.value), headers
+        assert node_cn.query("SELECT count() FROM csrf") == "0\n"
+
+        # Requests from the same origin (e.g. from a page served by the server itself) and
+        # requests with the explicit certificate authentication are still accepted.
+        for headers in [
+            {"Origin": same_origin},
+            {"Sec-Fetch-Site": "same-origin", "Origin": same_origin},
+            {"Sec-Fetch-Site": "none"},
+            {
+                "Origin": foreign_origin,
+                "Sec-Fetch-Site": "cross-site",
+                "X-ClickHouse-SSL-Certificate-Auth": "on",
+                "X-ClickHouse-User": "client1",
+            },
+        ]:
+            execute_query_https(
+                node_cn, insert, cert_name="client1", headers=headers, method="POST"
+            )
+        assert node_cn.query("SELECT count() FROM csrf") == "4\n"
+    finally:
+        node_cn.query("DROP TABLE IF EXISTS csrf")
 
 
 def test_san_uri_extraction():
