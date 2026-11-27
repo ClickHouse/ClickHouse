@@ -7,7 +7,6 @@
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/MultiwayMergeJoinStep.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -279,7 +278,6 @@ struct JoinsAndSourcesWithCommonPrimaryKeyPrefix
     };
 
     ListWithMemoryTracking<JoinAndSharding> joins;
-    ListWithMemoryTracking<std::pair<MultiwayMergeJoinStep *, JoinStep::PrimaryKeySharding>> multiway_joins;
     /// Separately, store joins which use full sorting merge algorithm.
     /// We should mark this joins to keep the number of streams for the left table the same.
     ListWithMemoryTracking<JoinStep *> joins_to_keep_in_order;
@@ -306,7 +304,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
 {
     // std::cerr << "... apply for prefix " << data.common_prefix << " and joins " << data.joins.size() << std::endl;
 
-    if (data.common_prefix == 0 || (data.joins.empty() && data.multiway_joins.empty()))
+    if (data.common_prefix == 0 || data.joins.empty())
         return;
 
     /// Here we take all the parts from all the sources.
@@ -385,12 +383,6 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     {
         join_and_sharding.sharding.resize(data.common_prefix);
         join_and_sharding.join->enableJoinByLayers(std::move(join_and_sharding.sharding));
-    }
-
-    for (auto & [multiway_join, sharding] : data.multiway_joins)
-    {
-        sharding.resize(data.common_prefix);
-        multiway_join->enableJoinByLayers(std::move(sharding));
     }
 
     /// Apply sharding for JOIN sorting steps.
@@ -521,7 +513,6 @@ void optimizeJoinByShards(QueryPlan::Node & root)
                 result->joins.is_reverse_order = sharding.is_reverse_order;
                 result->joins.joins.emplace_back(join_step, std::move(sharding));
                 result->joins.joins.splice(result->joins.joins.end(), std::move(frame.results.back()->joins.joins));
-                result->joins.multiway_joins.splice(result->joins.multiway_joins.end(), std::move(frame.results.back()->joins.multiway_joins));
                 result->joins.sources.splice(result->joins.sources.end(), std::move(frame.results.back()->joins.sources));
                 result->joins.sorting_steps.splice(result->joins.sorting_steps.end(), std::move(frame.results.back()->joins.sorting_steps));
                 /// The pre-sorts of both sides feed a sharded join now, so they sort each shard independently.
@@ -549,47 +540,6 @@ void optimizeJoinByShards(QueryPlan::Node & root)
                 /// TODO : check if any type conversion is needed for join_use_nulls.
                 result = std::move(frame.results.front());
                 result->joins.joins_to_keep_in_order.emplace_back(join_step);
-            }
-        }
-        else if (auto * multiway_join = typeid_cast<MultiwayMergeJoinStep *>(frame.node->step.get()))
-        {
-            /// Every input is matched against the first one, so the inputs can form any tree.
-            bool can_split = frame.results.size() >= 2
-                && std::ranges::all_of(frame.results, [](const auto & input) { return input.has_value(); });
-            VectorWithMemoryTracking<JoinStep::PrimaryKeySharding> shardings;
-            for (size_t i = 1; can_split && i < frame.results.size(); ++i)
-            {
-                TableJoin::JoinOnClause clause;
-                clause.key_names_left = multiway_join->getKeyNames(0);
-                clause.key_names_right = multiway_join->getKeyNames(i);
-                VectorWithMemoryTracking<size_t> matched_clause_keys;
-                auto sharding = findCommonPrimaryKeyPrefixByJoinKey(
-                    frame.results.front()->joins.sources.front(), frame.results.front()->dag,
-                    frame.results[i]->joins.sources.front(), frame.results[i]->dag,
-                    clause, matched_clause_keys);
-
-                can_split = !sharding.empty() && (shardings.empty() || sharding.is_reverse_order == shardings.front().is_reverse_order);
-                shardings.push_back(std::move(sharding));
-            }
-
-            if (can_split)
-            {
-                result = std::move(frame.results.front());
-                result->joins.is_reverse_order = shardings.front().is_reverse_order;
-                result->joins.sorting_steps.splice(result->joins.sorting_steps.end(), std::move(result->joins.pending_sorting_steps));
-                for (size_t i = 1; i < frame.results.size(); ++i)
-                {
-                    auto & input = frame.results[i]->joins;
-                    result->joins.common_prefix = std::min({result->joins.common_prefix, shardings[i - 1].size(), input.common_prefix});
-                    result->joins.joins.splice(result->joins.joins.end(), std::move(input.joins));
-                    result->joins.multiway_joins.splice(result->joins.multiway_joins.end(), std::move(input.multiway_joins));
-                    result->joins.sources.splice(result->joins.sources.end(), std::move(input.sources));
-                    result->joins.sorting_steps.splice(result->joins.sorting_steps.end(), std::move(input.sorting_steps));
-                    result->joins.sorting_steps.splice(result->joins.sorting_steps.end(), std::move(input.pending_sorting_steps));
-                    result->joins.joins_to_keep_in_order.splice(result->joins.joins_to_keep_in_order.end(), std::move(input.joins_to_keep_in_order));
-                    frame.results[i] = std::nullopt;
-                }
-                result->joins.multiway_joins.emplace_back(multiway_join, std::move(shardings.front()));
             }
         }
         else if (typeid_cast<DelayedCreatingSetsStep *>(frame.node->step.get()))

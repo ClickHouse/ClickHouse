@@ -121,8 +121,6 @@ public:
 
     [[nodiscard]] const JoinEstimation & getEstimation() const { return estimation; }
     [[nodiscard]] UInt64 getClusterId() const { return cluster_id; }
-    [[nodiscard]] size_t getMaxBlockSize() const { return max_block_size; }
-    [[nodiscard]] size_t getMaxStreams() const { return max_streams; }
 
 private:
     bool optimized = false;
