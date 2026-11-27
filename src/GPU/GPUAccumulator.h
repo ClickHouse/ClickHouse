@@ -15,7 +15,6 @@
 
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
-#include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/IDataType.h>
 
 #include <deque>
@@ -32,60 +31,28 @@
 namespace DB::GPU
 {
 
-/// A stream of a GPU read: a substream of one of its columns, as MergeTree stores it, see `ISerialization::enumerateStreams`.
-/// Each is staged, sent and expanded on its own.
-struct GPUReadStream
+/// The streams of a column of a GPU read, as MergeTree stores it: its values, and of a `String` its bytes and the sizes
+/// of its rows, as `string_serialization_version = 'with_size_stream'` writes them.
+enum class GPUStream : uint8_t
 {
-    /// The column of the read.
-    size_t column;
-    ISerialization::SubstreamPath path;
-    /// `UInt64` of the sizes of a `String`, `UInt8` of its bytes.
-    GPUElementType element_type;
-    /// Of the bytes of a `String`: the stream of its sizes.
-    std::optional<size_t> sizes;
-
-    bool isSizes() const;
-    bool isVariable() const { return sizes.has_value(); }
-    size_t elementBytes() const { return sizeOf(element_type); }
+    Values,
+    Sizes,
 };
 
-/// What a GPU read brings: its columns, the keys, then the values, then the columns of the `WHERE` that are neither, and
-/// their streams. A `String` is read with its sizes in a stream of their own.
-class GPUReadLayout
+/// A column of a batch of a reader on the host: a run of each of its streams.
+struct GPUStagedColumn
 {
-public:
-    /// With `collect`, the values are collected rather than aggregated, see `collectElementTypeOf`. `filter_aliases` is
-    /// empty, or of each column of the `WHERE`, the key or value it is, if any.
-    GPUReadLayout(
-        const DataTypes & key_types,
-        const DataTypes & value_types,
-        bool collect,
-        const DataTypes & filter_types,
-        const std::vector<std::optional<uint32_t>> & filter_aliases,
-        size_t batch_bytes);
+    CompressedHostColumn values;
+    /// Of a `String` only.
+    CompressedHostColumn sizes;
 
-    size_t numStreams() const { return streams.size(); }
-    /// The stream of the values, or of the bytes, of a column.
-    size_t valuesStreamOf(size_t column) const;
-    /// The stream of `column` at `path`, as `enumerateStreams` gives it.
-    size_t streamOf(size_t column, const ISerialization::SubstreamPath & path) const;
-
-    const std::vector<GPUElementType> keys;
-    const std::vector<GPUElementType> values;
-    const std::vector<GPUElementType> filter_types;
-    /// Of each column of the `WHERE`: the column of the read it is.
-    std::vector<size_t> filter_columns;
-    std::vector<GPUReadStream> streams;
-    size_t batch_rows = 0;
-
-private:
-    std::vector<size_t> values_streams;
+    void clear();
 };
 
-/// A batch of a reader on the host: a run of each stream of the layout.
+/// A batch of a reader on the host: a run of each column the reader reads.
 struct GPUStagedBatch
 {
-    std::vector<CompressedHostColumn> streams;
+    std::vector<GPUStagedColumn> columns;
     /// Set on the last batch of a part: the rows of the part. The uploader then sends every row it holds.
     std::optional<size_t> part_rows;
 
@@ -96,7 +63,7 @@ struct GPUStagedBatch
 class GPUStagedBatchPool
 {
 public:
-    std::unique_ptr<GPUStagedBatch> take(size_t num_streams);
+    std::unique_ptr<GPUStagedBatch> take(size_t num_columns);
     void give(std::unique_ptr<GPUStagedBatch> batch);
 
 private:
@@ -104,18 +71,19 @@ private:
     std::vector<std::unique_ptr<GPUStagedBatch>> free_batches;
 };
 
-/// Stages the blocks a reader reads into batches, by the streams of the layout. A batch is sealed when every stream has
-/// `batch_rows` rows, a stream fills its pinned memory, a block cannot follow the staged ones, or a part ends.
+/// Stages the blocks a reader reads of columns of `column_types` into batches. A batch is sealed when every column has
+/// about `batch_bytes` of rows, a stream fills its pinned memory, a block cannot follow the staged ones, or a part ends.
 class GPUBlockStager
 {
 public:
     static constexpr size_t max_column_bytes = 32UL << 20;
 
-    GPUBlockStager(std::shared_ptr<const GPUReadLayout> layout_, std::shared_ptr<GPUStagedBatchPool> pool_);
+    GPUBlockStager(std::vector<GPUElementType> column_types_, size_t batch_bytes, std::shared_ptr<GPUStagedBatchPool> pool_);
 
     /// The stream takes `kept_bytes` of what the block expands to, after `skipped_bytes`.
     void addCompressedBlock(
-        size_t stream,
+        size_t column,
+        GPUStream stream,
         UInt8 method,
         std::string_view payload,
         size_t decompressed_bytes,
@@ -123,8 +91,8 @@ public:
         size_t skipped_bytes,
         size_t kept_bytes);
 
-    std::span<char> reserveRawBytes(size_t stream, size_t max_bytes, size_t expected_bytes);
-    void commitRawBytes(size_t stream, size_t bytes);
+    std::span<char> reserveRawBytes(size_t column, GPUStream stream, size_t max_bytes, size_t expected_bytes);
+    void commitRawBytes(size_t column, GPUStream stream, size_t bytes);
 
     /// The part ends, of `num_rows` rows: seals the batch being staged, even an empty one.
     void finishPart(size_t num_rows);
@@ -132,17 +100,18 @@ public:
     std::unique_ptr<GPUStagedBatch> takeSealed();
 
 private:
-    CompressedHostColumn & streamOrThrow(size_t stream);
+    CompressedHostColumn & streamOrThrow(size_t column, GPUStream stream);
     bool isFull() const;
     void seal(std::optional<size_t> part_rows = {});
 
-    const std::shared_ptr<const GPUReadLayout> layout;
+    const std::vector<GPUElementType> column_types;
+    const size_t batch_rows;
     const std::shared_ptr<GPUStagedBatchPool> pool;
     std::unique_ptr<GPUStagedBatch> current;
     std::deque<std::unique_ptr<GPUStagedBatch>> sealed;
 };
 
-/// The streams of a batch on the device, as its layout numbers them. Freed in the order of the uploader's stream, after
+/// The columns of a batch on the device, as the reader reads them. Freed in the order of the uploader's stream, after
 /// the stream given to `moveTo` is done with them.
 class GPUDeviceBatch
 {
@@ -154,27 +123,19 @@ public:
     ~GPUDeviceBatch();
 
     size_t rows() const { return num_rows; }
-
-    DeviceColumnView column(size_t column) const;
-    std::vector<DeviceColumnView> keys() const;
-    std::vector<DeviceColumnView> values() const;
-    std::vector<DeviceFixedColumn> filterColumns() const;
+    const std::vector<DeviceColumnView> & columns() const { return column_views; }
 
     void moveTo(cuda::stream_ref stream);
 
 private:
     friend class GPUBatchUploader;
 
-    GPUDeviceBatch(std::shared_ptr<StreamPtr> upload_stream_, std::shared_ptr<const GPUReadLayout> layout_);
+    explicit GPUDeviceBatch(std::shared_ptr<StreamPtr> upload_stream_);
 
     /// Shared, so the memory is freed in the uploader's stream order even after the uploader is gone.
     std::shared_ptr<StreamPtr> upload_stream;
-    std::shared_ptr<const GPUReadLayout> layout;
     std::vector<DeviceBuffer> buffers;
-    /// Of each stream, where its rows start; of a stream of sizes, the offsets of the rows, one more than them.
-    std::vector<char *> starts;
-    /// Of each stream of the bytes of a `String`, those that the rows of the batch take.
-    std::vector<uint64_t> variable_bytes;
+    std::vector<DeviceColumnView> column_views;
     size_t num_rows = 0;
     EventPtr ready = createEvent();
     EventPtr consumed;
@@ -182,33 +143,47 @@ private:
 };
 
 /// Sends the staged batches of one reader to the device and expands them, on a stream of its own. A batch has the rows
-/// that every stream has; the rest of each stream waits on the device for the next one.
+/// that every column has; the rest of each column waits on the device for the next one.
 class GPUBatchUploader
 {
 public:
-    explicit GPUBatchUploader(std::shared_ptr<const GPUReadLayout> layout_);
+    explicit GPUBatchUploader(std::vector<GPUElementType> column_types_);
 
     GPUBatchUploader(const GPUBatchUploader &) = delete;
     GPUBatchUploader & operator=(const GPUBatchUploader &) = delete;
 
     /// The staged memory is free once it returns, on an exception too, after which the uploader takes no more batches.
-    /// Nothing where no row is complete in every stream.
+    /// Nothing where no row is complete in every column.
     std::optional<GPUDeviceBatch> upload(const GPUStagedBatch & staged);
 
 private:
+    /// What the batches so far did not take of a column: its bytes, and of a `String` the offsets of its rows left,
+    /// from 0, and the bytes of a size that a block cut, fewer than 8.
+    struct Carried
+    {
+        DeviceBuffer values;
+        DeviceBuffer offsets;
+        DeviceBuffer size_tail;
+    };
+
     std::optional<GPUDeviceBatch> expand(const GPUStagedBatch & staged);
 
     /// Declared first, so that the buffers below are freed in its order before it goes.
     const std::shared_ptr<StreamPtr> stream;
-    const std::shared_ptr<const GPUReadLayout> layout;
-    /// Of each stream, what the batches so far did not take: bytes, or of a stream of sizes, the offsets left, from 0.
-    std::vector<DeviceBuffer> carried;
-    /// Of each stream of sizes, the bytes of a size that a block cut, fewer than 8.
-    std::vector<DeviceBuffer> carried_size_tails;
+    const std::vector<GPUElementType> column_types;
+    std::vector<Carried> carried;
     DecompressionBatch decompression;
     EventPtr staged_sent = createEvent();
     size_t part_rows_sent = 0;
     bool failed = false;
+};
+
+/// The columns of a batch that a lane takes, by their positions in it: a column may be both a key and in the `WHERE`.
+struct GPUBatchColumns
+{
+    std::vector<size_t> keys;
+    std::vector<size_t> values;
+    std::vector<size_t> where;
 };
 
 /// An argument of an aggregate that is an expression over the values, such as `l_extendedprice * (1 - l_discount)`,
@@ -226,10 +201,10 @@ struct GPUComputedArgument
 class GPUGroupingLane
 {
 public:
-    /// The aggregates take the values, then the computed arguments.
+    /// The batches it takes are of columns of `column_types`. The aggregates take the values, then the computed arguments.
     GPUGroupingLane(
-        std::vector<GPUElementType> keys_,
-        std::vector<GPUElementType> values_,
+        const std::vector<GPUElementType> & column_types,
+        GPUBatchColumns columns_,
         std::vector<GPUGroupByAggregate> aggregates_,
         std::vector<GPUComputedArgument> computed_,
         std::optional<CompiledGPUExpression> where_,
@@ -260,6 +235,7 @@ private:
     CudfGroupBy & groupByOrThrow() const;
     std::vector<DeviceColumnView> withComputedArguments(const std::vector<DeviceColumnView> & value_columns, size_t rows);
 
+    const GPUBatchColumns batch_columns;
     const std::vector<GPUElementType> keys;
     const std::vector<GPUElementType> values;
     const std::vector<GPUGroupByAggregate> aggregates;
@@ -277,7 +253,7 @@ private:
     std::optional<size_t> num_groups;
 };
 
-/// Aggregates without `GROUP BY`, of the values of batches of a layout without keys and without a `WHERE`.
+/// Aggregates without `GROUP BY`: each of the columns of a batch, in order.
 class GPUAccumulator
 {
 public:
