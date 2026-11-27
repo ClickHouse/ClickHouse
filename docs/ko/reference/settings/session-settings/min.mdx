@@ -17,9 +17,6 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="10485760" />
 
-* 유형: 부호 없는 정수
-* 기본값: 1 MiB
-
 각 스레드가 병렬로 파싱할 바이트 단위의 최소 청크 크기입니다.
 
 ## min_compress_block_size {#min_compress_block_size}
@@ -53,6 +50,23 @@ String 유형의 URL 컬럼(값당 평균 크기 60바이트)을 기록한다고
 <SettingsInfoBlock type="Float" default_value="0.5" />
 
 집계에서 연속 키 최적화에 사용하는 캐시를 활성화된 상태로 유지하기 위한 최소 적중률
+
+## min_marks_per_part_to_load_statistics {#min_marks_per_part_to_load_statistics}
+
+<SettingsInfoBlock type="UInt64" default_value="64" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "64"},{"label": "프라이머리 키 분석 후 읽을 양이 적은 경우 통계 로딩을 건너뛰는 새로운 설정입니다."}]}]} />
+
+파트 프루닝과 `PREWHERE` 조건 순서 결정에 사용할 컬럼 통계(Column Statistics)를 로드하기 위해, 프라이머리 키 분석 후 남아 있어야 하는 읽을 마크의 최소 개수입니다. 이 값은 통계가 아직 메모리에 없는 데이터 파트(data part)당 기준으로 적용됩니다.
+
+통계를 로딩하려면 데이터 파트마다 몇 번의 읽기가 필요합니다. 프라이머리 키가 이미 읽기 범위를 소수의 그래뉼로 좁혀 놓은 경우, 콜드 스타트 시에는 통계 로딩이 데이터 자체를 읽는 것보다 오래 걸릴 수 있습니다. 남은 읽을 마크 수가 이 설정값에 통계를 로드할 파트 수를 곱한 값보다 적으면, 이러한 최적화를 위한 통계를 로드하지 않습니다. 즉, 통계를 이용한 파트 프루닝은 수행되지 않으며, `PREWHERE` 조건은 통계가 없는 테이블과 마찬가지로 컬럼 크기를 기준으로 정렬됩니다. 이미 메모리에 있는 통계는 읽기 크기와 관계없이 사용됩니다.
+
+통계를 이용해 `min`, `max`, `count`를 계산하는 기능(`use_statistics_for_min_max_aggregation` 참조)은 읽기 자체를 대체하므로 이 설정의 영향을 받지 않습니다.
+
+가능한 값:
+
+* 0 — 읽기 크기와 관계없이 통계를 로드합니다.
+* 양의 정수 — 데이터 파트당 마크 수입니다.
 
 ## min_os_cpu_wait_time_ratio_to_throw {#min_os_cpu_wait_time_ratio_to_throw}
 
@@ -102,6 +116,18 @@ String 유형의 URL 컬럼(값당 평균 크기 60바이트)을 기록한다고
 
 `Resize` 노드의 split을 비활성화하려면 이 설정을 0으로 설정합니다. 그러면 파이프라인 생성 중 `Resize` 노드가 분할되지 않아 더 작은 노드로 나뉘지 않고 원래 구조를 유지합니다.
 
+## min_rows_for_packed_string_keys_in_hash_join {#min_rows_for_packed_string_keys_in_hash_join}
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "100000"},{"label": "새로운 설정: `enable_packed_string_keys_in_hash_join`은 조인의 오른쪽이 100000개 이상의 행으로 추정되거나 추정값이 없는 경우에만 적용됩니다."}]}]} />
+
+`enable_packed_string_keys_in_hash_join`이 적용되는 데 필요한 조인 오른쪽의 최소 추정 행 수입니다. 규모가 작은 조인에서는 이 설정으로 얻는 이점이 거의 없으며, 키가 길면 오히려 더 느려질 수 있습니다.
+
+`collect_hash_table_stats_during_joins`가 활성화되어 있으면, 추정값은 동일한 조인을 이전에 실행했을 때의 오른쪽 행 수입니다. 그렇지 않으면 쿼리 최적화 도구(Query Optimizer)의 추정값을 사용합니다. `parallel_hash_join_threshold`도 동일한 추정값을 사용합니다. 추정값이 없는 조인에는 항상 `enable_packed_string_keys_in_hash_join`이 적용됩니다.
+
+0으로 설정하면 최솟값 제한이 없습니다.
+
 ## min_rows_ratio_for_hash_join_row_store {#min_rows_ratio_for_hash_join_row_store}
 
 <SettingsInfoBlock type="Double" default_value="3" />
@@ -109,6 +135,14 @@ String 유형의 URL 컬럼(값당 평균 크기 60바이트)을 기록한다고
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "5"},{"label": "해시 조인 페이로드를 행 우선 형식으로 변환하기 위한 조인 출력 행과 빌드 측 행 간 최소 예상 비율을 제어하는 새로운 설정입니다. 0이면 변환이 항상 허용됩니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "3"},{"label": "해시 조인 행 저장소를 활성화하기 위한 조인 출력 행과 빌드 측 행 간 최소 예상 비율을 낮췄습니다."}]}]} />
 
 해시 조인 페이로드를 행 우선 형식으로 변환하기 위한 조인 출력 행과 빌드 측 행 간 최소 예상 비율입니다. 0이면 변환이 항상 허용됩니다.
+
+## min_string_column_bytes_for_hash_join_row_store {#min_string_column_bytes_for_hash_join_row_store}
+
+<SettingsInfoBlock type="UInt64" default_value="8388608" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8388608"},{"label": "빌드 측 `String` 컬럼을 해시 조인 행 저장소(row store)에 저장하기 위한 최소 추정 크기를 제어하는 새로운 설정입니다."}]}]} />
+
+빌드 측 `String` 컬럼을 해시 조인 행 저장소(row store)에 저장하기 위한 최소 추정 크기입니다. 추정 크기는 추정 행 수에 통계상의 평균 값 크기를 곱하여 계산합니다. 0으로 설정하면 `String` 컬럼은 행 저장소에 저장되지 않습니다.
 
 ## min_table_rows_to_use_projection_index {#min_table_rows_to_use_projection_index}
 

@@ -1,4 +1,3 @@
-#include <Compression/CompressionFactory.h>
 #include <IO/Operators.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -23,39 +22,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-
-/// Resolves the codecs to use for estimating the compressed size of a whole column.
-///
-/// The writer applies a column's `CODEC` per substream: it resolves the codec description against the
-/// substream's type and, for structural substreams (`Array` offsets, null map, ...), keeps only the
-/// generic codecs and ignores the type entirely. The estimation these codecs feed serializes the whole
-/// column into a single buffer, so a type-specific codec can only be used when the column consists of a
-/// single stream carrying the column type itself, i.e. a plain numeric or date column. For every other
-/// column keep only the generic codecs - they dominate the ratio anyway - exactly as the writer does for
-/// structural substreams.
-///
-/// Which of the two applies is not decided here - the metadata does not describe the sample on its own,
-/// so `estimateCompressedColumnSize` picks between them per block. Only the type-specific resolution has
-/// to happen here, because it can throw: `T64` on a `Tuple` or `GCD` on a `Nullable` is rejected by the
-/// factory, so it is attempted only for a type whose default serialization is a single stream of it.
-ColumnCodecs resolveCodecsForWholeColumn(const ColumnDescription & description, const CompressionCodecPtr & default_codec)
-{
-    auto & factory = CompressionCodecFactory::instance();
-    auto generic = factory.get(description.codec, nullptr, default_codec, /*only_generic=*/true);
-
-    if (!isSerializedAsSingleStreamOfColumnType(*description.type->getDefaultSerialization(), description.type))
-        return {.generic = std::move(generic)};
-
-    return {
-        .type_specific = factory.get(description.codec, description.type.get(), default_codec),
-        .type_specific_for = description.type,
-        .generic = std::move(generic)};
-}
-
 }
 
 NamesAndTypesList IndexReadTask::getNamesAndTypesList() const
@@ -154,42 +120,10 @@ MergeTreeReadTask::MergeTreeReadTask(
 {
     if (updater)
     {
-        /// Resolved once rather than per block, and taken from the table metadata because a part does
-        /// not record the codecs of its columns: `default_codec` is only the part-wide default, and a
-        /// part's `ColumnsDescription` is built from a `NamesAndTypesList`, which carries no codec.
-        /// A borrowed part carries no part-level codec; the server default stands in for it, which is the
-        /// same substitution `CompressionCodecFactory::get` makes for a null current default.
-        const auto part_codec = info->data_part_info->getDefaultCompressionCodec();
-        const auto default_codec = part_codec ? part_codec : CompressionCodecFactory::instance().getDefaultCodec();
-        const auto & metadata_columns = readers.main->getStorageSnapshot()->metadata->getColumns();
-        ColumnCodecByName resolved_codecs;
-        for (const auto & name : info->task_columns.getAllColumnNames())
-        {
-            const auto * description = metadata_columns.tryGet(name);
-            if (description && description->codec)
-                resolved_codecs.emplace(name, resolveCodecsForWholeColumn(*description, default_codec));
-        }
-
-        dataflow_cache_update_cb = [this, default_codec, column_codecs = std::move(resolved_codecs)](const ColumnsWithTypeAndName & columns,
-                                                           const NameSet & partially_read_columns,
-                                                           size_t read_bytes,
-                                                           std::optional<bool> & should_continue_sampling) -> void
-        {
-            chassert(updater);
-            const auto & part_columns = info->data_part_info->getColumns();
-            /// Cached map by shared pointer -- no per-block copy; null for borrowed parts (no size info).
-            static const std::unordered_map<String, ColumnSize> no_column_sizes;
-            auto column_sizes = info->data_part_info->getColumnSizes();
-            updater->recordInputColumns(
-                columns,
-                partially_read_columns,
-                part_columns,
-                column_sizes ? *column_sizes : no_column_sizes,
-                column_codecs,
-                default_codec,
-                read_bytes,
-                should_continue_sampling);
-        };
+        const auto & registry = updater->getReadRangesRegistry();
+        readers.main->setReadRangesRegistry(registry);
+        for (auto & reader : readers.prewhere)
+            reader->setReadRangesRegistry(registry);
     }
 }
 
@@ -528,7 +462,21 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     UInt64 recommended_rows = estimateNumRows();
     UInt64 rows_to_read = std::max(static_cast<UInt64>(1), std::min(block_size_params.max_block_size_rows, recommended_rows));
 
-    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges, dataflow_cache_update_cb, block_size_params.max_block_size_rows);
+    /// A block that is a whole stripe of the columns cache is read whole, beyond `rows_to_read`, because it shares the
+    /// columns of the cache. But the functions and filters of the query run over the whole block and copy what passes,
+    /// so the rows that pass the filters of `PREWHERE` must stay within `rows_to_read`, which keeps a block of wide rows
+    /// to `preferred_block_size_bytes`. A selective `PREWHERE` lets whole stripes be read, as the filtered rows cost
+    /// little to the later steps. Never beyond `max_block_size_rows`, which a `LIMIT` lowers to read no more than it needs.
+    UInt64 max_stripe_block_rows = block_size_params.max_block_size_rows;
+    if (size_predictor)
+    {
+        double filtration_ratio = std::max(block_size_params.min_filtration_ratio, 1.0 - size_predictor->filtered_rows_ratio);
+        double rows_before_filtration = static_cast<double>(rows_to_read) / filtration_ratio;
+        if (rows_before_filtration < static_cast<double>(max_stripe_block_rows))
+            max_stripe_block_rows = std::max(rows_to_read, static_cast<UInt64>(rows_before_filtration));
+    }
+
+    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges, max_stripe_block_rows);
 
     /// All rows were filtered. Repeat.
     if (read_result.num_rows == 0)

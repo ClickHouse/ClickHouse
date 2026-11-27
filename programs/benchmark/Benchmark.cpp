@@ -1188,7 +1188,8 @@ private:
         if (should_reconnect)
             entry->disconnect();
 
-        RemoteQueryExecutor executor(*entry, query, std::make_shared<const Block>(), global_context, nullptr, Scalars(), Tables(), query_processing_stage);
+        /// No header: the structure of the result is not known, and the blocks are taken as the server sends them.
+        RemoteQueryExecutor executor(*entry, query, SharedHeader{}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
 
         if (!query_id.empty())
             executor.setQueryId(query_id);

@@ -1,16 +1,16 @@
 ---
-sidebarTitle: 'Kafka table engine'
+sidebarTitle: 'Moteur de table Kafka'
 slug: /integrations/kafka/kafka-table-engine
 description: 'Utilisation du moteur de table Kafka'
 title: 'Utilisation du moteur de table Kafka'
 doc_type: 'guide'
-keywords: ['kafka', 'moteur de table', 'streaming', 'temps réel', 'file de messages']
+keywords: ['kafka', 'moteur de table', 'diffusion en continu', 'temps réel', 'file de messages']
 ---
 
 Le moteur de table Kafka peut être utilisé pour [**lire** des données à partir d’](#kafka-to-clickhouse)et [**écrire** des données dans](#clickhouse-to-kafka) Apache Kafka et d’autres brokers compatibles avec l’API Kafka (par exemple, Redpanda, Amazon MSK).
 
 <div id="kafka-to-clickhouse">
-  ### Kafka vers ClickHouse
+  ### Kafka vers ClickHouse {#kafka-to-clickhouse}
 </div>
 
 <Note>
@@ -19,28 +19,22 @@ Le moteur de table Kafka peut être utilisé pour [**lire** des données à part
 
 Pour utiliser le moteur de table Kafka, vous devez avoir une connaissance générale des [vues matérialisées de ClickHouse](/fr/concepts/features/materialized-views/cascading-materialized-views).
 
-<div id="overview">
-  #### Vue d’ensemble
-</div>
+#### Vue d’ensemble {#overview}
 
-Nous nous concentrons d’abord sur le cas d’usage le plus courant : utiliser le moteur de table Kafka pour insérer des données de Kafka dans ClickHouse.
+Nous nous concentrons d’abord sur le cas d’usage le plus courant : utiliser le moteur de table Kafka pour insérer des données de Kafka dans ClickHouse.
 
-Le moteur de table Kafka permet à ClickHouse de lire directement depuis un topic Kafka. Bien qu’utile pour consulter les messages d’un topic, ce moteur, par conception, n’autorise qu’une lecture unique : lorsqu’une requête est exécutée sur la table, il consomme les données de la file d’attente et avance l’offset du consommateur avant de renvoyer les résultats à l’appelant. En pratique, les données ne peuvent donc pas être relues sans réinitialiser ces offsets.
+Le moteur de table Kafka permet à ClickHouse de lire directement depuis un topic Kafka. Bien qu’utile pour consulter les messages d’un topic, ce moteur, par conception, n’autorise qu’une lecture unique : lorsqu’une requête est exécutée sur la table, il consomme les données de la file d’attente et avance l’offset du consommateur avant de renvoyer les résultats à l’appelant. En pratique, les données ne peuvent donc pas être relues sans réinitialiser ces offsets.
 
-Pour conserver ces données après lecture via le moteur de table, il nous faut un moyen de les capturer et de les insérer dans une autre table. Les vues matérialisées basées sur des déclencheurs offrent nativement cette fonctionnalité. Une vue matérialisée déclenche une lecture sur le moteur de table et reçoit des lots de documents. La clause TO détermine la destination des données — généralement une table de la [famille MergeTree](/fr/reference/engines/table-engines/mergetree-family/index). Ce processus est illustré ci-dessous :
+Pour conserver ces données après lecture via le moteur de table, il nous faut un moyen de les capturer et de les insérer dans une autre table. Les vues matérialisées basées sur des déclencheurs offrent nativement cette fonctionnalité. Une vue matérialisée déclenche une lecture sur le moteur de table et reçoit des lots de documents. La clause TO détermine la destination des données — généralement une table de la [famille MergeTree](/fr/reference/engines/table-engines/mergetree-family/index). Ce processus est illustré ci-dessous :
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Schéma d’architecture du moteur de table Kafka](/images/integrations/data-ingestion/kafka/kafka_01.webp)
-
-</Frame>
-
+  <Frame>
+    ![Schéma d’architecture du moteur de table Kafka](/images/integrations/data-ingestion/kafka/kafka_01.webp)
+  </Frame>
 </div>
 
 <div id="steps">
-  #### Étapes
+  #### Étapes {#steps}
 </div>
 
 <Steps>
@@ -219,11 +213,11 @@ Pour conserver ces données après lecture via le moteur de table, il nous faut 
 </Steps>
 
 <div id="common-operations">
-  #### Opérations courantes
+  #### Opérations courantes {#common-operations}
 </div>
 
 <div id="stopping--restarting-message-consumption">
-  ##### Arrêt et redémarrage de la consommation des messages
+  ##### Arrêt et redémarrage de la consommation des messages {#stopping--restarting-message-consumption}
 </div>
 
 Pour arrêter la consommation des messages, vous pouvez détacher la table utilisant le moteur Kafka :
@@ -239,7 +233,7 @@ ATTACH TABLE github_queue;
 ```
 
 <div id="adding-kafka-metadata">
-  ##### Ajout des métadonnées Kafka
+  ##### Ajout des métadonnées Kafka {#adding-kafka-metadata}
 </div>
 
 Il peut être utile de conserver les métadonnées des messages Kafka d’origine après leur ingestion dans ClickHouse. Par exemple, nous pouvons vouloir savoir quelle quantité d’un topic ou d’une partition donnée nous avons consommée. À cette fin, le moteur de table Kafka met à disposition plusieurs [colonnes virtuelles](/fr/reference/engines/table-engines/index#table_engines-virtual_columns). Celles-ci peuvent être enregistrées comme colonnes dans notre table cible en modifiant notre schéma et l’instruction SELECT de la vue matérialisée.
@@ -302,13 +296,13 @@ Le résultat se présente comme suit :
 | Oxonium         | CommitCommentEvent | 2011-02-12 12:31:28 | github | 0         |
 
 <div id="modify-kafka-engine-settings">
-  ##### Modifier les paramètres du moteur Kafka
+  ##### Modifier les paramètres du moteur Kafka {#modify-kafka-engine-settings}
 </div>
 
 Nous recommandons de supprimer la table utilisant le moteur Kafka, puis de la recréer avec les nouveaux paramètres. La vue matérialisée n&#39;a pas besoin d&#39;être modifiée pendant cette opération : la consommation des messages reprendra une fois la table utilisant le moteur Kafka recréée.
 
 <div id="debugging-issues">
-  ##### Débogage des problèmes
+  ##### Débogage des problèmes {#debugging-issues}
 </div>
 
 Les erreurs, notamment les problèmes d’authentification, ne sont pas signalées dans les réponses aux commandes DDL du moteur Kafka. Pour diagnostiquer ces problèmes, nous vous recommandons d’utiliser le fichier journal principal de ClickHouse, clickhouse-server.err.log. Il est également possible d’activer, via la configuration, une journalisation supplémentaire au niveau trace pour la bibliothèque client Kafka sous-jacente [librdkafka](https://github.com/edenhill/librdkafka).
@@ -320,7 +314,7 @@ Les erreurs, notamment les problèmes d’authentification, ne sont pas signalé
 ```
 
 <div id="handling-malformed-messages">
-  ##### Gestion des messages mal formés
+  ##### Gestion des messages mal formés {#handling-malformed-messages}
 </div>
 
 Kafka est souvent utilisé comme un « fourre-tout » pour les données. Cela conduit à des topics contenant des formats de message hétérogènes et des noms de champs incohérents. Évitez cela et exploitez des fonctionnalités de Kafka comme Kafka Streams ou ksqlDB pour garantir que les messages sont bien formés et cohérents avant d’être insérés dans Kafka. Si ces options ne sont pas envisageables, ClickHouse propose quelques fonctionnalités utiles.
@@ -330,13 +324,13 @@ Kafka est souvent utilisé comme un « fourre-tout » pour les données. Cela 
 * Envisagez le paramètre `kafka_skip_broken_messages`. Il oblige l’utilisateur à spécifier un niveau de tolérance par bloc pour les messages mal formés, en tenant compte de kafka&#95;max&#95;block&#95;size. Si cette tolérance est dépassée (mesurée en nombre absolu de messages), le comportement habituel reprendra avec une exception, et les autres messages seront ignorés.
 
 <div id="delivery-semantics-and-challenges-with-duplicates">
-  ##### Sémantique de livraison et problèmes liés aux doublons
+  ##### Sémantique de livraison et problèmes liés aux doublons {#delivery-semantics-and-challenges-with-duplicates}
 </div>
 
 Le moteur de table Kafka a une sémantique « au moins une fois ». Des doublons peuvent se produire dans plusieurs cas rares bien connus. Par exemple, des messages peuvent être lus depuis Kafka et insérés avec succès dans ClickHouse. Avant que le nouvel offset puisse être enregistré, la connexion à Kafka est perdue. Il est alors nécessaire de réessayer le bloc. Le bloc peut être [dédupliqué ](/fr/reference/engines/table-engines/mergetree-family/replication)en utilisant une table distribuée ou ReplicatedMergeTree comme table cible. Bien que cela réduise le risque de lignes en doublon, cela repose sur des blocs identiques. Des événements tels qu’un rééquilibrage Kafka peuvent invalider cette hypothèse et provoquer des doublons dans de rares cas.
 
 <div id="quorum-based-inserts">
-  ##### Insertions avec quorum
+  ##### Insertions avec quorum {#quorum-based-inserts}
 </div>
 
 Vous pouvez avoir besoin d’[insertions avec quorum](/fr/reference/settings/session-settings/insert-quorum#insert_quorum) lorsque des garanties de livraison plus strictes sont nécessaires dans ClickHouse. Ce paramètre ne peut pas être défini sur la vue matérialisée ni sur la table cible. Il peut toutefois être défini pour des profils utilisateur, par ex.
@@ -350,25 +344,19 @@ Vous pouvez avoir besoin d’[insertions avec quorum](/fr/reference/settings/ses
 ```
 
 <div id="clickhouse-to-kafka">
-  ### ClickHouse vers Kafka
+  ### ClickHouse vers Kafka {#clickhouse-to-kafka}
 </div>
 
 Bien qu’il s’agisse d’un cas d’utilisation plus rare, les données de ClickHouse peuvent également être stockées dans Kafka. Par exemple, nous allons insérer manuellement des lignes dans une table utilisant le moteur Kafka. Ces données seront lues par ce même moteur Kafka, dont la vue matérialisée placera les données dans une table MergeTree. Enfin, nous montrons comment utiliser des vues matérialisées avec des insertions dans Kafka pour alimenter des tables à partir de tables sources existantes.
 
-<div id="steps-1">
-  #### Étapes
-</div>
+#### Étapes {#steps-1}
 
-Notre objectif initial est illustré au mieux ci-dessous :
+Notre objectif initial est illustré au mieux ci-dessous :
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Schéma du moteur de table Kafka avec des insertions](/images/integrations/data-ingestion/kafka/kafka_02.webp)
-
-</Frame>
-
+  <Frame>
+    ![Schéma du moteur de table Kafka avec des insertions](/images/integrations/data-ingestion/kafka/kafka_02.webp)
+  </Frame>
 </div>
 
 Nous supposons que vous avez créé les tables et les vues dans les étapes de [Kafka vers ClickHouse](#kafka-to-clickhouse) et que le topic a été entièrement consommé.
@@ -381,7 +369,7 @@ Nous supposons que vous avez créé les tables et les vues dans les étapes de [
     SELECT count() FROM github;
     ```
 
-    Vous devriez avoir 200 000 lignes :
+    Vous devriez avoir 200 000 lignes :
 
     ```response
     ┌─count()─┐
@@ -395,13 +383,13 @@ Nous supposons que vous avez créé les tables et les vues dans les étapes de [
     INSERT INTO github_queue SELECT * FROM github LIMIT 100 FORMAT JSONEachRow
     ```
 
-    Recomptez les lignes de GitHub pour confirmer que leur nombre a augmenté de 100. Comme le montre le schéma ci-dessus, des lignes ont été insérées dans Kafka via le moteur de table Kafka avant d’être relues par ce même moteur et insérées dans la table cible GitHub par notre vue matérialisée !
+    Recomptez les lignes de GitHub pour confirmer que leur nombre a augmenté de 100. Comme le montre le schéma ci-dessus, des lignes ont été insérées dans Kafka via le moteur de table Kafka avant d’être relues par ce même moteur et insérées dans la table cible GitHub par notre vue matérialisée !
 
     ```sql
     SELECT count() FROM github;
     ```
 
-    Vous devriez voir 100 lignes supplémentaires :
+    Vous devriez voir 100 lignes supplémentaires :
 
     ```response
     ┌─count()─┐
@@ -414,13 +402,9 @@ Nous supposons que vous avez créé les tables et les vues dans les étapes de [
     Nous pouvons utiliser des vues matérialisées pour envoyer des messages vers un moteur Kafka (et un topic) lorsque des documents sont insérés dans une table. Lorsque des lignes sont insérées dans la table GitHub, une vue matérialisée est déclenchée, ce qui entraîne l&#39;insertion de ces lignes dans un moteur Kafka puis dans un nouveau topic. Là encore, le schéma suivant l&#39;illustre le mieux :
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Schéma du moteur de table Kafka avec des vues matérialisées](/images/integrations/data-ingestion/kafka/kafka_03.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Schéma du moteur de table Kafka avec des vues matérialisées](/images/integrations/data-ingestion/kafka/kafka_03.webp)
+      </Frame>
     </div>
 
     Créez un nouveau topic Kafka `github_out` ou un équivalent. Assurez-vous qu&#39;un moteur de table Kafka `github_out_queue` pointe vers ce topic.
@@ -504,44 +488,36 @@ Nous supposons que vous avez créé les tables et les vues dans les étapes de [
 </Steps>
 
 <div id="clusters-and-performance">
-  ### Clusters et performance
+  ### Clusters et performance {#clusters-and-performance}
 </div>
 
-<div id="working-with-clickhouse-clusters">
-  #### Utiliser des clusters ClickHouse
-</div>
+#### Utiliser des clusters ClickHouse {#working-with-clickhouse-clusters}
 
 Grâce aux groupes de consommateurs Kafka, plusieurs instances ClickHouse peuvent lire à partir d’un même topic. Chaque consommateur est affecté à une partition du topic dans une correspondance 1:1. Lorsque vous faites évoluer la consommation de ClickHouse à l’aide du moteur de table Kafka, gardez à l’esprit que le nombre total de consommateurs au sein d’un cluster ne peut pas dépasser le nombre de partitions du topic. Assurez-vous donc au préalable que le partitionnement du topic est correctement configuré.
 
 Plusieurs instances ClickHouse peuvent être configurées pour lire à partir d’un topic avec le même identifiant de groupe de consommateurs, spécifié lors de la création du moteur de table Kafka. Chaque instance lira donc une ou plusieurs partitions et insérera des segments dans sa table cible locale. Les tables cibles peuvent ensuite être configurées pour utiliser ReplicatedMergeTree afin de gérer la duplication des données. Cette approche permet de faire évoluer les lectures Kafka avec le cluster ClickHouse, à condition de disposer d’un nombre suffisant de partitions Kafka.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Schéma du moteur de table Kafka avec des clusters ClickHouse](/images/integrations/data-ingestion/kafka/kafka_04.webp)
-
-</Frame>
-
+  <Frame>
+    ![Schéma du moteur de table Kafka avec des clusters ClickHouse](/images/integrations/data-ingestion/kafka/kafka_04.webp)
+  </Frame>
 </div>
 
-<div id="tuning-performance">
-  #### Réglage des performances
-</div>
+#### Optimisation des performances {#tuning-performance}
 
-Tenez compte des points suivants si vous cherchez à augmenter le débit d&#39;une table Kafka Engine :
+Tenez compte des points suivants pour augmenter le débit d’une table utilisant le moteur Kafka :
 
-* Les performances varient selon la taille des messages, le format et les types de tables cibles. Un débit de 100k lignes/s sur un seul moteur de table peut être considéré comme atteignable. Par défaut, les messages sont lus par blocs, selon le paramètre kafka&#95;max&#95;block&#95;size. Par défaut, celui-ci est défini sur [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings/max-insert#max_insert_block_size), dont la valeur par défaut est 1,048,576. Sauf si les messages sont extrêmement volumineux, cette valeur devrait presque toujours être augmentée. Des valeurs comprises entre 500k et 1M ne sont pas rares. Testez et évaluez l&#39;effet sur le débit.
-* Le nombre de consommateurs pour un moteur de table peut être augmenté avec kafka&#95;num&#95;consumers. Cependant, par défaut, les inserts sont linéarisés dans un seul thread, sauf si kafka&#95;thread&#95;per&#95;consumer est modifié par rapport à sa valeur par défaut de 1. Définissez cette valeur sur 1 pour vous assurer que les flushes sont effectués en parallèle. Notez que créer une table utilisant le moteur Kafka avec N consommateurs (et kafka&#95;thread&#95;per&#95;consumer=1) est logiquement équivalent à créer N Kafka engines, chacun avec une vue matérialisée et kafka&#95;thread&#95;per&#95;consumer=0.
-* Augmenter le nombre de consommateurs n&#39;est pas sans coût. Chaque consommateur maintient ses propres buffers et threads, ce qui augmente la surcharge sur le server. Tenez compte de cette surcharge et privilégiez d&#39;abord une mise à l&#39;échelle linéaire sur votre cluster, si possible.
-* Si le débit des messages Kafka est variable et que les retards sont acceptables, envisagez d&#39;augmenter le stream&#95;flush&#95;interval&#95;ms afin que des blocs plus volumineux soient flushed.
-* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/fr/reference/settings/server-settings/settings/background#background_message_broker_schedule_pool_size) définit le nombre de threads exécutant les tâches d&#39;arrière-plan. Ces threads sont utilisés pour le streaming Kafka. Ce setting est appliqué au démarrage du ClickHouse server et ne peut pas être modifié dans une session utilisateur. Sa valeur par défaut est de 16. Si vous observez des dépassements de délai dans les logs, il peut être judicieux d&#39;augmenter cette valeur.
-* Pour la communication avec Kafka, la bibliothèque librdkafka est utilisée, et elle crée elle-même des threads. Un grand nombre de tables Kafka, ou de consommateurs, peut donc entraîner un grand nombre de commutations de contexte. Répartissez cette charge sur le cluster, en ne répliquant que les tables cibles si possible, ou envisagez d&#39;utiliser un moteur de table pour lire depuis plusieurs topics - une liste de values est prise en charge. Plusieurs vues matérialisées peuvent lire à partir d&#39;une seule table, chacune filtrant les données d&#39;un topic spécifique.
+* Les performances varient selon la taille des messages, leur format et les types de target table. Un débit de 100k lignes/s sur un seul table engine peut être considéré comme atteignable. Par défaut, les messages sont lus par blocs, dont la taille est contrôlée par le paramètre kafka&#95;max&#95;block&#95;size. Par défaut, celui-ci prend la valeur de [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings/max-insert#max_insert_block_size), qui vaut 1,048,576 par défaut. À moins que les messages ne soient extrêmement volumineux, il est presque toujours préférable d’augmenter cette valeur. Des valeurs comprises entre 500k et 1M ne sont pas rares. Testez et mesurez l’effet sur le débit.
+* Le nombre de consommateurs d’un table engine peut être augmenté à l’aide de kafka&#95;num&#95;consumers. Cependant, par défaut, les insertions sont linéarisées dans un seul fil d’exécution, sauf si kafka&#95;thread&#95;per&#95;consumer est modifié par rapport à sa valeur par défaut de 1. Définissez-le à 1 pour que les vidages soient effectués en parallèle. Notez que créer une table utilisant le moteur Kafka avec N consommateurs (et kafka&#95;thread&#95;per&#95;consumer=1) est logiquement équivalent à créer N moteurs Kafka, chacun avec une vue matérialisée et kafka&#95;thread&#95;per&#95;consumer=0.
+* Augmenter le nombre de consommateurs n’est pas sans coût. Chaque consommateur gère ses propres tampons et fils d’exécution, ce qui accroît le surcoût sur le serveur. Gardez ce surcoût à l’esprit et, si possible, privilégiez d’abord une mise à l’échelle linéaire sur votre cluster.
+* Si le débit des messages Kafka est variable et que des délais sont acceptables, envisagez d’augmenter stream&#95;flush&#95;interval&#95;ms afin de vider des blocs plus volumineux.
+* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/fr/reference/settings/server-settings/settings/background#background_message_broker_schedule_pool_size) définit le nombre de fils d’exécution chargés des tâches en arrière-plan. Ces fils d’exécution sont utilisés pour la diffusion en continu Kafka. Ce paramètre est appliqué au démarrage du serveur ClickHouse et ne peut pas être modifié dans une session utilisateur ; sa valeur par défaut est 16. Si vous constatez des délais d’expiration dans les journaux, il peut être judicieux de l’augmenter.
+* La communication avec Kafka repose sur la bibliothèque librdkafka, qui crée elle-même des fils d’exécution. Un grand nombre de tables Kafka ou de consommateurs peut donc entraîner de nombreux changements de contexte. Répartissez cette charge sur le cluster, en ne répliquant si possible que les target table, ou envisagez d’utiliser un seul table engine pour lire plusieurs topics (une liste de valeurs est prise en charge). Plusieurs vues matérialisées peuvent lire une même table, chacune filtrant les données d’un topic spécifique.
 
-Tout changement de settings doit être testé. Nous recommandons de surveiller le lag des consommateurs Kafka pour vous assurer que votre dimensionnement est correct.
+Toute modification de paramètres doit être testée. Nous recommandons de surveiller le retard des consommateurs Kafka afin de vérifier que votre dimensionnement est adapté.
 
 <div id="additional-settings">
-  #### Paramètres supplémentaires
+  #### Paramètres supplémentaires {#additional-settings}
 </div>
 
 Outre les paramètres décrits ci-dessus, les éléments suivants peuvent être utiles :
