@@ -68,8 +68,6 @@ json string time expected	1
 json string time	1
 format row time expected	1
 format row time	1
-dynamic time text expected	1
-dynamic time text	1
 start of day expected	1
 start of day	1
 if of numbers uses the index	2

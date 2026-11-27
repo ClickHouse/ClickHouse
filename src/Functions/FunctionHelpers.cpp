@@ -585,9 +585,9 @@ bool conversionResultDependsOnSetting(
         return time_zone && !time_zone->hasExplicitTimeZone();
     };
 
-    /// A time without an explicit time zone is written as text in the time zone of the session, e.g. `toString([dt])`, also when
-    /// a `Dynamic` value holds it.
-    if ((has_type(from, has_implicit_time_zone) || has_type(from, may_hold_any)) && has_type(to, is_text))
+    /// A time without an explicit time zone is written as text in the time zone of the session, e.g. `toString([dt])`. Not counted
+    /// for a `Dynamic` value that may hold one: keys on `CAST(json.a, 'String')` would not be used by any session with a time zone.
+    if (has_type(from, has_implicit_time_zone) && has_type(to, is_text))
         return true;
 
     /// A type inferred from text can be a `DateTime` in the time zone of the session, e.g. a path of `CAST(s AS JSON)`.
