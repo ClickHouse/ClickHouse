@@ -1248,7 +1248,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(
     const auto & from_element_types = from_type->getElements();
     const auto & to_element_types = to_type->getElements();
 
-    const auto source_positions = getTupleCastElementPositions(*from_type, *to_type);
+    const auto source_positions = getTupleCastElementPositions(*from_type, *to_type, settings.tuple_elements_matching);
     ElementWrappers element_wrappers;
     element_wrappers.reserve(to_element_types.size());
     for (size_t i = 0; i < to_element_types.size(); ++i)
@@ -4022,6 +4022,7 @@ FunctionCast::WrapperType FunctionCast::createWrapperIfCanConvert(const DataType
 {
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         /// We can avoid try/catch here if we will implement check that 2 types can be cast, but it
         /// requires quite a lot of work. By now let's simply use try/catch.
         /// First, check that we can create a wrapper.
@@ -5072,7 +5073,7 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
 
     /// The element conversions of a Tuple do not all read its null map, so they would convert the placeholders of its NULL rows.
     const bool exclude_source_nulls = source_is_nullable && !nested_types_equal
-        && (cast_type == CastType::accurate || isTuple(from_nested_type));
+        && (cast_type == CastType::accurate || isTuple(from_nested_type) || !from_nested_type->isDefaultInsertTrivial());
 
     /// A conversion asked to report its failures as NULL needs a nullable result even when `to_type` cannot
     /// hold NULL (see `prepareUnpackDictionaries`).
@@ -5393,9 +5394,10 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
 
 FunctionConvertSettingsPtr createFunctionConvertSettings(
     const ContextPtr & context,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior,
+    TupleElementsMatching tuple_elements_matching)
 {
-    return std::make_shared<const FunctionConvertSettings>(context, date_time_overflow_behavior);
+    return std::make_shared<const FunctionConvertSettings>(context, date_time_overflow_behavior, tuple_elements_matching);
 }
 
 FunctionBasePtr createFunctionBaseCast(
