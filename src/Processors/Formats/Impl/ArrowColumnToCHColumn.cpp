@@ -42,7 +42,6 @@
 #include <Columns/ColumnNothing.h>
 #include <Interpreters/castColumn.h>
 #include <Formats/castColumnToRequestedType.h>
-#include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <algorithm>
 #include <bit>
 #include <arrow/builder.h>
@@ -86,7 +85,6 @@ namespace ErrorCodes
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
     extern const int BAD_ARGUMENTS;
     extern const int DUPLICATE_COLUMN;
-    extern const int THERE_IS_NO_COLUMN;
     extern const int UNKNOWN_EXCEPTION;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
@@ -1903,6 +1901,7 @@ struct ReadColumnFromArrowColumnSettings
     bool allow_geoparquet_parser;
     bool enable_json_parsing;
     bool empty_timezone_as_utc;
+    bool null_as_default;
 };
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
@@ -2152,7 +2151,11 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             {
                 /// Cast key column to target type, because it can happen
                 /// that parsed type cannot be ClickHouse Map key type.
-                key_column = castColumn({key_column, key_type, "key"}, key_type_hint);
+                ColumnWithTypeAndName key{key_column, key_type, "key"};
+                const RequestedTypeCastSettings cast_settings{
+                    .null_as_default = settings.null_as_default, .case_insensitive = settings.case_insensitive_matching};
+                castColumnToRequestedType(key, key_type_hint, cast_settings);
+                key_column = key.column;
                 key_type = key_type_hint;
             }
 
@@ -2278,6 +2281,8 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 : nullptr;
             if (tuple_type)
             {
+                matchTupleElementsByName(nested_column, nested_type_hint);
+                array_data_column = nested_column.column;
                 auto unwrapped = Nested::unwrapNullableTuple({array_data_column, nested_column.type, column_name});
                 array_data_column = unwrapped.column;
                 const auto & result_tuple = assert_cast<const DataTypeTuple &>(*unwrapped.type);
@@ -2425,48 +2430,6 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                             "Arrow Struct column '{}': field '{}' has {} rows but parent struct declares {}",
                             column_name, tuple_names[i], tuple_elements[i]->size(), expected_rows);
                 }
-            }
-
-            /// If the type hint is a named tuple, match the read fields to the hint elements by name,
-            /// as the requested column type expects: fields that are missing in the hint are dropped,
-            /// and hint elements without a matching field are filled by default values. The generic
-            /// tuple conversion applied afterwards converts tuples with disjoint sets of element
-            /// names positionally, and here the fields must be matched by name regardless of how
-            /// many of them match, consistently with the other format readers.
-            if (tuple_type_hint && tuple_type_hint->hasExplicitNames() && !is_map_nested_column)
-            {
-                UnorderedMapWithMemoryTracking<std::string_view, size_t> read_positions;
-                for (size_t i = 0; i < tuple_names.size(); ++i)
-                    read_positions.emplace(tuple_names[i], i);
-
-                Columns matched_elements;
-                DataTypes matched_types;
-                Strings matched_names;
-                const auto & hint_names = tuple_type_hint->getElementNames();
-                matched_elements.reserve(hint_names.size());
-                matched_types.reserve(hint_names.size());
-                matched_names.reserve(hint_names.size());
-
-                for (size_t i = 0; i < hint_names.size(); ++i)
-                {
-                    auto it = read_positions.find(hint_names[i]);
-                    if (it != read_positions.end())
-                    {
-                        matched_elements.emplace_back(std::move(tuple_elements[it->second]));
-                        matched_types.emplace_back(std::move(tuple_types[it->second]));
-                    }
-                    else
-                    {
-                        const auto & hint_element_type = tuple_type_hint->getElement(i);
-                        matched_elements.emplace_back(hint_element_type->createColumn()->cloneResized(arrow_column->length()));
-                        matched_types.emplace_back(hint_element_type);
-                    }
-                    matched_names.emplace_back(hint_names[i]);
-                }
-
-                tuple_elements = std::move(matched_elements);
-                tuple_types = std::move(matched_types);
-                tuple_names = std::move(matched_names);
             }
 
             ColumnPtr tuple_column;
@@ -2835,6 +2798,7 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         .allow_geoparquet_parser = allow_geoparquet_parser,
         .enable_json_parsing = enable_json_parsing,
         .empty_timezone_as_utc = emptyTimezoneAsUTC(format_name, format_settings),
+        .null_as_default = false,
     };
 
     ColumnsWithTypeAndName sample_columns;
@@ -2965,6 +2929,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
         .allow_geoparquet_parser = allow_geoparquet_parser,
         .enable_json_parsing = enable_json_parsing,
         .empty_timezone_as_utc = emptyTimezoneAsUTC(format_name, format_settings),
+        .null_as_default = null_as_default,
     };
 
     Columns columns;
@@ -3046,15 +3011,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
 
             if (!read_from_nested)
             {
-                if (!allow_missing_columns)
-                    throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", header_column.name};
-
-                column.name = header_column.name;
-                column.type = header_column.type;
-                column.column = header_column.column->cloneResized(num_rows);
-                columns.push_back(std::move(column.column));
-                if (block_missing_values)
-                    block_missing_values->setBits(column_i, num_rows);
+                columns.push_back(createMissingColumn(header_column, num_rows, allow_missing_columns, column_i, block_missing_values));
                 continue;
             }
         }
@@ -3075,14 +3032,12 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
                 clickhouse_columns_to_parquet);
         }
 
-        if (null_as_default)
-            insertNullAsDefaultIfNeeded(column, header_column, column_i, block_missing_values);
-
         /// In ArrowStream batches can have different dictionaries.
         if (is_stream)
             dictionary_infos.clear();
 
-        castColumnToRequestedType(column, header_column.type);
+        const RequestedTypeCastSettings cast_settings{.null_as_default = null_as_default, .case_insensitive = case_insensitive_matching};
+        castColumnToRequestedType(column, header_column.type, cast_settings, column_i, block_missing_values);
         columns.push_back(std::move(column.column));
     }
 

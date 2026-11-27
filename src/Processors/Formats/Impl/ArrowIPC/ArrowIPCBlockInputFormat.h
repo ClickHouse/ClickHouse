@@ -94,8 +94,8 @@ private:
     /// Values are decoded only for these fields; root row counts are validated for every field.
     /// The set is populated by `prepareReader`.
     UnorderedSetWithMemoryTracking<String> requested_top_level_fields;
-    /// Each requested column's target ClickHouse type, keyed by its normalized name (including dotted
-    /// subcolumn names like `t.d`). Passed to the decoder for the recursive `date32` numeric type hint: a
+    /// Each requested column's target ClickHouse type, keyed as `RecordBatchDecoder::bindRequestedTypes` binds it (including
+    /// dotted subcolumn names like `t.d`). Passed to the decoder for the recursive `date32` numeric type hint: a
     /// `date32` mapped (at any nesting) to a numeric target is read as the raw `Int32` day number without
     /// the `Date32` range check, matching the Apache Arrow library reader's numeric type-hint behavior.
     UnorderedMapWithMemoryTracking<String, DataTypePtr> requested_field_target_types;
