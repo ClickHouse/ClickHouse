@@ -326,7 +326,7 @@ public:
             const typename Data::SearchType key = keyAt(key_column, i);
             const size_t position = i - begin;
 
-            AggregateDataPtr nested_place;
+            AggregateDataPtr nested_place = nullptr;
             if (position < cache.size && keysEqual(cache.keys[position], key))
             {
                 nested_place = cache.places[position];
