@@ -4,6 +4,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Core/SortDescription.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -47,7 +48,7 @@ private:
     const Block header;
     /// `header` plus the aggregate function arguments that `argument_expressions` calculate from its columns.
     Block aggregator_header;
-    std::vector<std::pair<ExpressionActionsPtr, Names>> argument_expressions;
+    VectorWithMemoryTracking<std::pair<ExpressionActionsPtr, Names>> argument_expressions;
     /// Calculates the sorting key from the columns of the header. Empty if the table has no sorting key.
     ExpressionActionsPtr sorting_key_expression;
     /// The columns of the header the sorting key is calculated from.

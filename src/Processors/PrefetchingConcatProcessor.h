@@ -4,8 +4,8 @@
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 
-#include <deque>
-#include <vector>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -48,14 +48,14 @@ public:
 private:
     struct Buffer
     {
-        std::deque<Chunk> chunks;
+        DequeWithMemoryTracking<Chunk> chunks;
         size_t bytes = 0;
     };
 
     size_t current_input_idx = 0;
     size_t max_buffered_bytes;
     size_t min_buffered_chunks;
-    std::vector<Buffer> buffers;
+    VectorWithMemoryTracking<Buffer> buffers;
 };
 
 }
