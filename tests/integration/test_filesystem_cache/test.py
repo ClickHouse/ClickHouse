@@ -1267,6 +1267,8 @@ SETTINGS disk = disk(type = cache,
 
     node.query("INSERT INTO test_proactive_cleanup SELECT randomString(2000);")
     node.query("SELECT * FROM test_proactive_cleanup FORMAT Null")
+    # The disk's access check file is removed in the background, and its cache entry with it.
+    node.query(f"SYSTEM WAIT BLOBS CLEANUP '{cache_name}'")
 
     cached = int(
         node.query(

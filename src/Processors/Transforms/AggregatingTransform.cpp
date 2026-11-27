@@ -1330,15 +1330,26 @@ private:
             params->aggregator.mergeWithoutKeyDataImpl(*data, shared_data->is_cancelled);
             if (updater)
                 updater->recordAggregationStateSizes(*first, /*bucket=*/-1);
-            auto agg_chunk = params->aggregator.prepareChunkAndFillWithoutKey(
-                *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
-            if (updater)
-                updater->recordAggregationKeySizes(
-                    agg_chunk.chunk, params->aggregator.getKeysPositions(), params->aggregator.getKeyTypes());
 
-            if (agg_chunk.chunk.getNumRows() > 0)
-                single_level_chunks.emplace_back(convertToChunk(std::move(agg_chunk)));
+            /// The merge of single-level tables under `group_by_overflow_mode = 'any'` folds the keys that do not
+            /// fit into `max_rows_to_group_by` into the overflow row, so for them the overflow row is emitted only
+            /// after that merge, in `mergeSingleLevel`.
+            if (first->type == AggregatedDataVariants::Type::without_key || first->isTwoLevel())
+                emitWithoutKeyChunk();
         }
+    }
+
+    void emitWithoutKeyChunk()
+    {
+        AggregatedDataVariantsPtr & first = data->at(0);
+        auto agg_chunk = params->aggregator.prepareChunkAndFillWithoutKey(
+            *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
+        if (updater)
+            updater->recordAggregationKeySizes(
+                agg_chunk.chunk, params->aggregator.getKeysPositions(), params->aggregator.getKeyTypes());
+
+        if (agg_chunk.chunk.getNumRows() > 0)
+            single_level_chunks.emplace_back(convertToChunk(std::move(agg_chunk)));
     }
 
     void mergeSingleLevel()
@@ -1383,6 +1394,10 @@ private:
             else
                 throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
         }
+
+        /// The overflow row of single-level data, deferred by `initialize` until the merge has folded the refused keys into it.
+        if (params->params.overflow_row)
+            emitWithoutKeyChunk();
 
         const size_t max_rows_per_block = Aggregator::singleLevelChunkRowsForFanOut(first->sizeWithoutOverflowRow(), output_streams);
         if (max_rows_per_block)
