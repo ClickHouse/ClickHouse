@@ -11,6 +11,8 @@ SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
 SET enable_join_runtime_filters_index_analysis = 1;
 SET use_skip_indexes_on_data_read = 1;
+-- CI may inject `enable_join_seal_gated_reading`, which prunes the granules after `SelectedMarks` is counted.
+SET enable_join_seal_gated_reading = 0;
 
 DROP TABLE IF EXISTS mv;
 DROP TABLE IF EXISTS src;
