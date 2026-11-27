@@ -10,6 +10,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DeadLetterQueue.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 
@@ -18,6 +19,11 @@ namespace DB
 namespace Setting
 {
 extern const SettingsMilliseconds rabbitmq_max_wait_ms;
+}
+
+namespace FailPoints
+{
+extern const char rabbitmq_pause_before_consuming_first_message[];
 }
 
 /// Cap for the self-driven wait when the flush interval is 0 (i.e. no per-cycle time budget), so a
@@ -334,6 +340,9 @@ Chunk RabbitMQSource::generateImpl()
             /// idle cycle may wait up to the poll timeout for its first message. If a view was created or dropped
             /// meanwhile, end the cycle without consuming: the next cycle delivers the message to the new set of
             /// views instead of acking it unseen by the new view.
+            if (total_rows == 0 && streaming_views)
+                FailPointInjection::pauseFailPoint(FailPoints::rabbitmq_pause_before_consuming_first_message);
+
             if (total_rows == 0 && dependentViewsChanged())
             {
                 LOG_TRACE(log, "Dependent views changed since the streaming cycle started, ending the cycle");

@@ -2329,8 +2329,8 @@ def test_rabbitmq_idle_table_does_not_rebuild_insert_pipeline(rabbitmq_cluster, 
 
 
 def test_rabbitmq_view_added_to_idle_table_gets_new_messages(rabbitmq_cluster, db, unique):
-    # A materialized view created while an idle streaming cycle waits for a message must receive the messages
-    # published after its CREATE returns: the cycle's insert pipeline was built for the views at its start.
+    # A materialized view created while a streaming cycle waits for its first message must receive that message
+    # and the following ones: the cycle's insert pipeline was built for the views that existed at its start.
     instance.query(
         f"""
         CREATE TABLE {db}.rabbit (key UInt64)
@@ -2345,6 +2345,9 @@ def test_rabbitmq_view_added_to_idle_table_gets_new_messages(rabbitmq_cluster, d
         CREATE MATERIALIZED VIEW {db}.mv1 TO {db}.t1 AS SELECT key FROM {db}.rabbit;
         """
     )
+    instance.wait_for_log_line(
+        rf"StorageRabbitMQ \({db}\.rabbit\).*Started streaming to 1 attached views"
+    )
 
     credentials = pika.PlainCredentials("root", "clickhouse")
     parameters = pika.ConnectionParameters(
@@ -2353,23 +2356,17 @@ def test_rabbitmq_view_added_to_idle_table_gets_new_messages(rabbitmq_cluster, d
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
-    # Create mv2 right after a streaming cycle that knows only mv1 has started, then publish. The server log is
-    # tailed on the host, as the cycle waits for a message only for stream_poll_timeout_ms (500 ms).
-    started = f"StorageRabbitMQ ({db}.rabbit): Started streaming to 1 attached views"
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    with open(os.path.join(instance.path, "logs", "clickhouse-server.log"), errors="replace") as log:
-        log.seek(0, os.SEEK_END)
-        tail = ""
-        while started not in tail:
-            assert time.monotonic() < deadline, "Streaming cycle did not start"
-            chunk = log.read()
-            if not chunk:
-                time.sleep(0.005)
-            tail = tail[-len(started):] + chunk
-    instance.query(f"CREATE MATERIALIZED VIEW {db}.mv2 TO {db}.t2 AS SELECT key FROM {db}.rabbit")
-    for key in range(100):
-        channel.basic_publish(exchange=unique, routing_key="", body=json.dumps({"key": key}))
-    connection.close()
+    # The failpoint holds a cycle whose pipeline knows only mv1 right before it consumes its first message, so
+    # mv2 is always created after the pipeline was built and before anything was consumed (and acked).
+    instance.query("SYSTEM ENABLE FAILPOINT rabbitmq_pause_before_consuming_first_message")
+    try:
+        for key in range(100):
+            channel.basic_publish(exchange=unique, routing_key="", body=json.dumps({"key": key}))
+        connection.close()
+        instance.query("SYSTEM WAIT FAILPOINT rabbitmq_pause_before_consuming_first_message PAUSE")
+        instance.query(f"CREATE MATERIALIZED VIEW {db}.mv2 TO {db}.t2 AS SELECT key FROM {db}.rabbit")
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT rabbitmq_pause_before_consuming_first_message")
 
     check_expected_result_polling(100, f"SELECT count() FROM {db}.t1")
     check_expected_result_polling(100, f"SELECT count() FROM {db}.t2")
