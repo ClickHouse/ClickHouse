@@ -44,11 +44,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # Optional PGO+BOLT optimized toolchain override
-ARG TOOLCHAIN_COMMIT=51fdb0b1b64e10e205041802cd91d962fb1d281c
+ARG TOOLCHAIN_COMMIT=d7b43a1e7f5c3047c525770062645fc4718c6514
 # S3 directory of that commit's artifacts. Praktika owns the prefix layout and
 # has changed it, so the location is pinned next to the commit instead of being
 # spelled from it; update_toolchain_dockerfile.py rewrites both lines together.
-ARG TOOLCHAIN_S3_DIR=REFs/master/51fdb0b1b64e10e205041802cd91d962fb1d281c/optimizetoolchain
+ARG TOOLCHAIN_S3_DIR=REFs/static-musl-toolchain/d7b43a1e7f5c3047c525770062645fc4718c6514/optimizetoolchain
 RUN if [ "$TOOLCHAIN_COMMIT" != "none" ]; then \
     arch=${TARGETARCH:-amd64} && \
     case $arch in \
