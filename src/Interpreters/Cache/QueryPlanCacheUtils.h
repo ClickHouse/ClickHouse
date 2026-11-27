@@ -78,7 +78,8 @@ std::optional<ValidatedQueryPlanCacheEntry> validateQueryPlanCacheEntryAndBuildS
 void checkAccessForQueryPlanCacheHit(
     const ContextPtr & context,
     const StorageID & storage_id,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StoragePtr & storage,
+    const StorageSnapshotPtr & storage_snapshot,
     const Names & selected_columns,
     const Names & access_checked_columns);
 

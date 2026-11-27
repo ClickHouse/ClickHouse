@@ -3771,7 +3771,8 @@ static BlockIO executeQueryImpl(
                             checkAccessForQueryPlanCacheHit(
                                 context,
                                 validated_cache_entry->storage_id,
-                                validated_cache_entry->metadata_snapshot,
+                                validated_cache_entry->storage,
+                                validated_cache_entry->storage_snapshot,
                                 cached_entry->selected_columns,
                                 cached_entry->access_checked_columns);
 

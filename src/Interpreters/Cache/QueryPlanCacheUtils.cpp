@@ -24,6 +24,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Storages/IStorage.h>
 #include <Storages/MaterializedView/RefreshSet.h>
@@ -41,7 +42,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int ACCESS_DENIED;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int UNKNOWN_TABLE;
@@ -614,33 +614,18 @@ std::optional<ValidatedQueryPlanCacheEntry> validateQueryPlanCacheEntryAndBuildS
 void checkAccessForQueryPlanCacheHit(
     const ContextPtr & context,
     const StorageID & storage_id,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StoragePtr & storage,
+    const StorageSnapshotPtr & storage_snapshot,
     const Names & selected_columns,
     const Names & access_checked_columns)
 {
-    if (selected_columns.empty() && metadata_snapshot && !metadata_snapshot->getColumns().empty())
-    {
-        auto access = context->getAccess();
-        const auto & columns = metadata_snapshot->getColumns();
-        bool any_column_granted = std::ranges::any_of(columns, [&](const auto & column)
-        {
-            return access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name);
-        });
-
-        if (!any_column_granted)
-            throw Exception(
-                ErrorCodes::ACCESS_DENIED,
-                "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
-                context->getUserName(),
-                storage_id.getFullTableName());
-    }
-    else
-    {
-        context->checkAccess(AccessType::SELECT, storage_id, selected_columns);
-    }
+    /// The same checks as the planner does on a miss (see `prepareBuildQueryPlanForTableExpression`): a subcolumn
+    /// is covered by a grant on its column or on its exact name, and a query that selects no columns
+    /// (e.g. `SELECT count()`) needs a grant on any one column or explicitly granted subcolumn.
+    checkAccessRights(storage, storage_id, storage_snapshot, selected_columns, context);
 
     if (!access_checked_columns.empty())
-        context->checkAccess(AccessType::SELECT, storage_id, access_checked_columns);
+        checkAccessRights(storage, storage_id, storage_snapshot, access_checked_columns, context);
 }
 
 void checkStorageSupportsTransactionsForQueryPlanCacheHit(
