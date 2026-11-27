@@ -138,7 +138,7 @@ SELECT extractAllGroupsVertical(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 導入バージョン: v26.7.0
 
-Naive Bayes Dictionary ([`NAIVE_BAYES`](/ja/reference/statements/create/dictionary/layouts/naive-bayes) レイアウト) と同じトークン化方式でテキストを N-gram に分割します。`byte`、`codepoint`、`token` モードに対応し、必要に応じて境界パディングも指定できます。これを使うと、その Dictionary が取り込む事前集計済みの `(ngram, class_id, count)` 学習データを作成できるため、学習用 N-gram を [`naiveBayesClassifier`](/ja/reference/functions/regular-functions/machine-learning-functions#naivebayesclassifier) がクエリ時に生成するものと完全に一致させられます。
+Naive Bayes Dictionary ([`NAIVE_BAYES`](/ja/reference/statements/create/dictionary/layouts/naive-bayes) レイアウト) と同じトークン化方式でテキストを N-gram に分割します。`byte`、`codepoint`、`token` モードに対応し、必要に応じて境界パディングも指定できます。これを使うと、その Dictionary が取り込む事前集計済みの `(ngram, class_id, count)` 学習データを作成できるため、学習用 N-gram を [`naiveBayesClassifier`](/ja/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifier) がクエリ時に生成するものと完全に一致させられます。
 
 **構文**
 
@@ -421,7 +421,7 @@ SELECT splitByNonAlpha('user@domain.com');
 
 * 空でない正規表現の一致が文字列の先頭または末尾にある場合
 * 空でない正規表現の一致が連続して複数回発生する場合
-* 正規表現が空でなく、元の文字列 string が空の場合。
+* 正規表現が空でなく、元の文字列が空の場合。
 
 <Note>
   設定 [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (デフォルト: `0`) は、引数 `max_substrings > 0` の場合に、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。

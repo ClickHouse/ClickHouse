@@ -7,8 +7,6 @@
 -- read_in_order_use_virtual_row=1 disables MergingSortedTransform batch passthrough,
 -- forcing row-by-row insertFrom that uses the corrupted offsets.
 
-SET enable_json_type = 1;
-SET allow_experimental_variant_type = 1;
 SET use_variant_as_common_type = 1;
 SET session_timezone = 'UTC';
 

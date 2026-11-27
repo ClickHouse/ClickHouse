@@ -3,9 +3,9 @@
 #include <base/types.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
-#include <Functions/CancellationBudget.h>
 #include <Functions/checkHyperscanRegexp.h>
 #include <Functions/Regexps.h>
+#include <Interpreters/CancellationBudget.h>
 
 #include "config.h"
 

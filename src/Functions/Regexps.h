@@ -175,6 +175,42 @@ using CompilerErrorPtr = std::unique_ptr<hs_compile_error_t, HyperscanDeleter<de
 using ScratchPtr = std::unique_ptr<hs_scratch_t, HyperscanDeleter<decltype(&hs_free_scratch), &hs_free_scratch>>;
 using DataBasePtr = std::unique_ptr<hs_database_t, HyperscanDeleter<decltype(&hs_free_database), &hs_free_database>>;
 
+/// An exception must not unwind through `hs_scan`: the scratch would stay marked as in use, and `hs_free_scratch` does not free it then.
+template <typename OnMatch>
+hs_error_t scan(const hs_database_t * db, const char * data, unsigned int length, hs_scratch_t * scratch, OnMatch && on_match)
+{
+    struct Context
+    {
+        OnMatch & on_match;
+        std::exception_ptr exception;
+    };
+    Context context{on_match, {}};
+
+    auto callback = [](unsigned int id,
+                       unsigned long long /* from */, // NOLINT
+                       unsigned long long /* to */, // NOLINT
+                       unsigned int /* flags */,
+                       void * ptr) noexcept -> int
+    {
+        auto & ctx = *static_cast<Context *>(ptr);
+        try
+        {
+            ctx.on_match(id);
+            return 0;
+        }
+        catch (...)
+        {
+            ctx.exception = std::current_exception();
+            return 1;
+        }
+    };
+
+    hs_error_t err = hs_scan(db, data, length, 0, scratch, callback, &context);
+    if (context.exception)
+        std::rethrow_exception(context.exception);
+    return err;
+}
+
 /// Database is immutable/thread-safe across multiple threads. Scratch is not but we can copy it whenever we use it in the searcher.
 class Regexps
 {

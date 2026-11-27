@@ -189,3 +189,5 @@ For traces, verify a known trace ID rather than relying only on successful Agent
 The Datadog receiver is experimental. It translates Datadog logs, traces, and supported metrics into the OpenTelemetry data model used by ClickHouse Observability. The configuration above selects the v2 metrics intake; other Datadog backend features are outside this migration flow.
 
 You can retain your existing Datadog instrumentation while migrating applications to OpenTelemetry gradually.
+
+With a self-managed ClickStack collector, applications can also send DogStatsD custom metrics straight to the collector, and the collector can derive request, error, and duration metrics from traces. See [Receiving StatsD metrics](/clickstack/self-configured/ingesting-data/collector#statsd-receiver) and [Deriving metrics from spans](/clickstack/self-configured/ingesting-data/collector#span-metrics).

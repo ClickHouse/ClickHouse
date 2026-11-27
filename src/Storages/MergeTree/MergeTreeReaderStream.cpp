@@ -10,6 +10,7 @@
 #include <utility>
 #include <filesystem>
 #include <IO/ByteRangeSet.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 namespace fs = std::filesystem;
 
@@ -80,6 +81,10 @@ void MergeTreeReaderStream::init()
     if (!read_settings.local_fs_settings.buffer_size || !read_settings.remote_fs_settings.buffer_size)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
 
+    /// The reader bounds its reads at the right offset of its last mark, see `adjustRightMark`. Knowing it up front
+    /// lets a pipeline stage that reads before the bound is set, such as the encryption header, already use it.
+    const size_t right_offset = getRightOffset(getLastMark(all_mark_ranges));
+
     auto build_read_buffer = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
     {
         ReadPipeline pipeline;
@@ -88,6 +93,8 @@ void MergeTreeReaderStream::init()
             read_settings,
             estimated_sum_mark_range_bytes,
             pipeline);
+        if (right_offset)
+            pipeline.setInitialReadUntilPosition(right_offset);
 
         return pipeline.build();
     };
@@ -111,7 +118,7 @@ void MergeTreeReaderStream::init()
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
             std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
-            [this, estimated_sum_mark_range_bytes, read_settings]()
+            [this, estimated_sum_mark_range_bytes, read_settings, right_offset]()
                 -> std::unique_ptr<ReadBufferFromFileBase>
             {
                 auto local_component_guard = Coordination::setCurrentComponent("MergeTreeReaderStream::create_buffer");
@@ -121,6 +128,8 @@ void MergeTreeReaderStream::init()
                     read_settings,
                     estimated_sum_mark_range_bytes,
                     pipeline);
+                if (right_offset)
+                    pipeline.setInitialReadUntilPosition(right_offset);
 
                 return pipeline.build();
             },
@@ -154,6 +163,9 @@ void MergeTreeReaderStream::init()
         data_buffer = read_buffer_holder.get();
         compressed_data_buffer = static_cast<CompressedReadBufferFromFile *>(read_buffer_holder.get());
     }
+
+    if (compressed_data_buffer)
+        compressed_data_buffer->setRangesReadSink(ranges_read);
 
     announceReadRequestMap();
 
@@ -326,6 +338,81 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
 {
     init();
     return data_buffer;
+}
+
+ReadRangesRegistry::ReadRangesRegistry(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_)
+    : block(std::move(block_))
+    , duplicated(duplicated_)
+{
+}
+
+ReadRangesRegistry::ReadRanges & ReadRangesRegistry::getReadRanges(const String & path)
+{
+    std::lock_guard lock(mutex);
+    /// References to the elements of an unordered map stay valid when it grows.
+    return read_ranges_by_path[path];
+}
+
+size_t ReadRangesRegistry::ReadRanges::add(CompressedBlockRanges & ranges)
+{
+    std::lock_guard lock(mutex);
+    size_t bytes = 0;
+    for (const auto & [begin, end] : ranges)
+    {
+        chassert(begin <= end);
+        /// The first counted range that overlaps or touches the range.
+        auto it = united_ranges.upper_bound(begin);
+        if (it != united_ranges.begin() && std::prev(it)->second >= begin)
+            --it;
+        if (it == united_ranges.end() || it->first > end)
+        {
+            bytes += end - begin;
+            united_ranges.emplace_hint(it, begin, end);
+            continue;
+        }
+
+        /// Merge the range and the counted ranges it overlaps or touches into the first of them, which is extended in place,
+        /// as reading goes on from where the previous block ended.
+        const auto first = it;
+        size_t covered = 0;
+        size_t merged_end = end;
+        for (; it != united_ranges.end() && it->first <= end; ++it)
+        {
+            if (it->second > begin && it->first < end)
+                covered += std::min(end, it->second) - std::max(begin, it->first);
+            merged_end = std::max(merged_end, it->second);
+        }
+        bytes += end - begin - covered;
+        first->second = merged_end;
+        united_ranges.erase(std::next(first), it);
+        if (begin < first->first)
+        {
+            auto node = united_ranges.extract(first);
+            node.key() = begin;
+            united_ranges.insert(std::move(node));
+        }
+    }
+    ranges.clear();
+    return bytes;
+}
+
+void ReadRangesRegistry::registerRanges(ReadRanges & file_ranges, CompressedBlockRanges & ranges)
+{
+    if (ranges.empty())
+        return;
+
+    const size_t bytes = file_ranges.add(ranges);
+    (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(bytes, std::memory_order_relaxed);
+}
+
+void MergeTreeReaderStream::setRangesReadSink(CompressedBlockRanges * ranges_read_)
+{
+    if (!settings.is_compressed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot count the compressed blocks read from a stream of uncompressed data");
+    /// The buffer is created on the first read, see `init`.
+    ranges_read = ranges_read_;
+    if (compressed_data_buffer)
+        compressed_data_buffer->setRangesReadSink(ranges_read);
 }
 
 size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
@@ -664,15 +751,98 @@ size_t MergeTreeReaderStreamAllOfMultipleColumns::getRightOffset(size_t right_ma
 
 std::pair<size_t, size_t> MergeTreeReaderStreamAllOfMultipleColumns::estimateMarkRangeBytes(const MarkRanges & mark_ranges)
 {
+    if (marks_count == 0)
+        return {0, 0};
+
+    loadMarks();
+    const size_t num_columns = marks_getter->getNumColumns();
+    if (num_columns == 1)
+        return estimateMarkRangeBytesOneColumn(mark_ranges, 0);
+
+    /// The stream reads all columns, and all columns of a stripe lie together in the file, from the mark of the first
+    /// column to the start of the next stripe. So walk whole stripes instead of estimating every column separately for
+    /// every mark: that costs the number of stripes times the number of columns, not the number of marks times the number
+    /// of columns with a search of the stripe end for each, which is slow for a part with a `JSON` column with many paths
+    /// and substream marks (thousands of columns).
+    ///
+    /// The sum is the size of the whole stripes. The maximum sizes the read buffer, and the reader seeks to every column
+    /// it reads, skipping the others, so it is the largest span of a single column, not the whole stripe: otherwise
+    /// reading one of many separately compressed columns would read the whole stripe. The span is the same as in
+    /// `estimateMarkRangeBytesOneColumn`, which estimated every column before: from the mark of the column to its end in
+    /// the stripe, or to its end in the next stripe if its mark there is in the middle of a compressed block (see
+    /// `getRightOffsetOneColumn`). The latter is not a tight bound, but a smaller buffer makes reading several columns of
+    /// a stripe slower: the reader refills the buffer more often and reads the skipped columns between them again.
+    const size_t last_column = num_columns - 1;
     size_t max_range_bytes = 0;
     size_t sum_range_bytes = 0;
 
-    for (size_t i = 0; i < marks_loader->getNumColumns(); ++i)
+    /// The first mark after the stripe of `mark` is the first one whose first column starts after the last column of
+    /// `mark`, see `getStartOfNextStripeMark`.
+    auto find_next_stripe = [&](size_t mark)
     {
-        auto [current_max, current_sum] = estimateMarkRangeBytesOneColumn(mark_ranges, i);
+        const auto last_column_mark = marks_getter->getMark(mark, last_column);
+        size_t next_stripe = mark + 1;
+        while (next_stripe < marks_count && marks_getter->getMark(next_stripe, 0) <= last_column_mark)
+            ++next_stripe;
+        return next_stripe;
+    };
 
-        max_range_bytes = std::max(max_range_bytes, current_max);
-        sum_range_bytes += current_sum;
+    auto get_stripe_offset = [&](size_t stripe_mark) -> size_t
+    {
+        return stripe_mark == marks_count ? file_size : marks_getter->getMark(stripe_mark, 0).offset_in_compressed_file;
+    };
+
+    for (const auto & mark_range : mark_ranges)
+    {
+        size_t mark = mark_range.begin;
+        size_t next_stripe = mark < mark_range.end ? find_next_stripe(mark) : 0;
+
+        while (mark < mark_range.end)
+        {
+            const size_t begin_offset = marks_getter->getMark(mark, 0).offset_in_compressed_file;
+            const size_t end_offset = get_stripe_offset(next_stripe);
+            sum_range_bytes += end_offset - begin_offset;
+
+            /// The stripe after the next one, needed only when a column continues to the next stripe.
+            std::optional<size_t> stripe_after_next;
+            const bool range_continues_to_next_stripe = next_stripe < marks_count && next_stripe <= mark_range.end;
+
+            /// A column of the stripe ends where the next column starts, the last one ends at the start of the next stripe.
+            /// If `mark` is in the middle of the stripe, the next column starts before its mark at `mark`, so this is an
+            /// upper bound of the span.
+            size_t column_begin = begin_offset;
+            for (size_t column = 0; column < num_columns; ++column)
+            {
+                const size_t next_column_offset = column == last_column
+                    ? end_offset
+                    : marks_getter->getMark(mark, column + 1).offset_in_compressed_file;
+
+                size_t column_end = next_column_offset;
+                if (range_continues_to_next_stripe
+                    && marks_getter->getMark(next_stripe, column).offset_in_decompressed_block != 0)
+                {
+                    if (column == last_column)
+                    {
+                        if (!stripe_after_next)
+                            stripe_after_next = find_next_stripe(next_stripe);
+                        column_end = get_stripe_offset(*stripe_after_next);
+                    }
+                    else
+                    {
+                        column_end = marks_getter->getMark(next_stripe, column + 1).offset_in_compressed_file;
+                    }
+                }
+
+                if (column_end > column_begin)
+                    max_range_bytes = std::max(max_range_bytes, column_end - column_begin);
+
+                column_begin = std::max(column_begin, next_column_offset);
+            }
+
+            mark = next_stripe;
+            if (mark < mark_range.end)
+                next_stripe = stripe_after_next ? *stripe_after_next : find_next_stripe(mark);
+        }
     }
 
     return {max_range_bytes, sum_range_bytes};

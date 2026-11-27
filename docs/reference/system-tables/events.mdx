@@ -448,7 +448,7 @@ Number of times automatic parallel replicas reached the cost model and compared 
 
 ### AutoParallelReplicasNoStatistics {#autoparallelreplicasnostatistics}
 
-Number of times automatic parallel replicas had no statistics yet, so it collected them instead of deciding
+Number of times automatic parallel replicas had no statistics yet, so it collected them instead of deciding. Also counted, beside `AutoParallelReplicasRetryDeferred`, when a recent collection that a step could not take part in, or that measured nothing, is why the plan with parallel replicas is not built again
 
 ### AutoParallelReplicasOptimizationMicroseconds {#autoparallelreplicasoptimizationmicroseconds}
 
@@ -460,11 +460,11 @@ Time spent building the plan with parallel replicas that automatic parallel repl
 
 ### AutoParallelReplicasPlansNotComparable {#autoparallelreplicasplansnotcomparable}
 
-Number of times automatic parallel replicas skipped a query after building the plan with parallel replicas, or at a boundary remembered from building it earlier, because it could not match that plan with the local one well enough to compare or use it: for example, it could not pair their reads, or tell which read the replicas would split. The `AutoParallelReplicas` logger says which case it was
+Number of times automatic parallel replicas skipped a query after building the plan with parallel replicas, or at a boundary remembered from building it earlier, because it could not match that plan with the local one well enough to compare or use it: for example, it could not pair their reads, or tell which read the replicas would split. The `AutoParallelReplicas` logger says which case it was. Also counted, beside `AutoParallelReplicasRetryDeferred`, when such a recent build is why the plan is not built again
 
 ### AutoParallelReplicasPlanWithoutParallelReplicas {#autoparallelreplicasplanwithoutparallelreplicas}
 
-Number of times automatic parallel replicas skipped a query after building the plan with parallel replicas, because the planner did not use parallel replicas in it, for example for too few rows per replica or a correlated subquery. The `Planner` logger says why
+Number of times automatic parallel replicas skipped a query after building the plan with parallel replicas, because the planner did not use parallel replicas in it, for example for too few rows per replica or a correlated subquery. The `Planner` logger says why. Also counted, beside `AutoParallelReplicasRetryDeferred`, when such a recent build is why the plan is not built again
 
 ### AutoParallelReplicasRejectedByCostModel {#autoparallelreplicasrejectedbycostmodel}
 
@@ -477,6 +477,10 @@ Number of times automatic parallel replicas declined although the cost model fav
 ### AutoParallelReplicasRejectedByThreshold {#autoparallelreplicasrejectedbythreshold}
 
 Number of times automatic parallel replicas declined although the cost model favoured parallel replicas, because the read was below `automatic_parallel_replicas_min_bytes_per_replica`
+
+### AutoParallelReplicasRetryDeferred {#autoparallelreplicasretrydeferred}
+
+Number of times automatic parallel replicas did not build the plan with parallel replicas because building it for the same plan recently ended without a decision, and fewer than `automatic_parallel_replicas_undecided_retry_after_executions` executions have skipped it since. The event of that earlier outcome, such as `AutoParallelReplicasPlansNotComparable`, is counted beside it
 
 ### AutoParallelReplicasSkippedDueToQuery {#autoparallelreplicasskippedduetoquery}
 
@@ -1668,6 +1672,10 @@ Distributed Cache read buffer event. The number of read request retries after a 
 
 Distributed Cache read buffer event. Number of times a retriable read error did not succeed within the read request retries limit
 
+### DistrCacheReadsSkippedRegistryNotReady {#distrcachereadsskippedregistrynotready}
+
+Distributed Cache client event. Number of read buffers of object storage disks that asked for the distributed cache but were created without it because the distributed cache registry was not ready (e.g. no cache server was registered)
+
 ### DistrCacheReadThrottlerBytes {#distrcachereadthrottlerbytes}
 
 Bytes passed through 'max_distributed_cache_read_bandwidth_for_server' throttler.
@@ -2131,6 +2139,18 @@ Total time spent during distributed index analysis
 ### DistributedIndexAnalysisMissingParts {#distributedindexanalysismissingparts}
 
 Number of missing parts during distributed index analysis that will be resolved locally
+
+### DistributedIndexAnalysisOnWorkersAnalyzedParts {#distributedindexanalysisonworkersanalyzedparts}
+
+Number of parts a stateless worker analyzed for index analysis
+
+### DistributedIndexAnalysisOnWorkersParts {#distributedindexanalysisonworkersparts}
+
+Number of parts sent to stateless workers for index analysis (on the coordinator)
+
+### DistributedIndexAnalysisOnWorkersTasks {#distributedindexanalysisonworkerstasks}
+
+Number of tasks sent to stateless workers for index analysis (on the coordinator)
 
 ### DistributedIndexAnalysisReplicaFallback {#distributedindexanalysisreplicafallback}
 
@@ -2771,6 +2791,18 @@ Counts the total number of times the global thread pool has shrunk by removing t
 ### GlobalThreadPoolThreadCreationMicroseconds {#globalthreadpoolthreadcreationmicroseconds}
 
 Total time spent waiting for new threads to start.
+
+### GPUAggregationBatches {#gpuaggregationbatches}
+
+Number of batches of rows sent to a GPU by the experimental GPU aggregation. One batch is one transfer and one reduction or grouping.
+
+### GPUAggregationMicroseconds {#gpuaggregationmicroseconds}
+
+Total time spent transferring batches of rows to a GPU and aggregating them there.
+
+### GPUAggregationRows {#gpuaggregationrows}
+
+Number of rows aggregated on a GPU by the experimental GPU aggregation.
 
 ### GranulesDroppedByPartitionKey {#granulesdroppedbypartitionkey}
 
@@ -3416,6 +3448,14 @@ Number of times a Keeper changelog read-ahead reader could not be created becaus
 
 Number of times a Keeper changelog read-ahead serve request timed out waiting for the fill task and fell back to a direct read of the remaining tail
 
+### KeeperLogStoreAppend {#keeperlogstoreappend}
+
+Number of entries appended to the Keeper log store
+
+### KeeperLogStoreAppendMicroseconds {#keeperlogstoreappendmicroseconds}
+
+Time spent appending entries to the Keeper log store, including the changelog lock wait (the entry is written and fsynced by the background changelog writer, see KeeperChangelogFileSyncMicroseconds)
+
 ### KeeperLSMTCommittedEntryBytes {#keeperlsmtcommittedentrybytes}
 
 Serialized bytes of entries appended to the Keeper LSMT committed memtable
@@ -3692,6 +3732,10 @@ Number of set requests
 
 Number of set watches requests
 
+### KeeperSnapshotApplyMicroseconds {#keepersnapshotapplymicroseconds}
+
+Time spent applying a Keeper snapshot to the Keeper state machine
+
 ### KeeperSnapshotApplys {#keepersnapshotapplys}
 
 Number of snapshot applying
@@ -3715,6 +3759,10 @@ Time spent in fsync for Keeper snapshot files
 ### KeeperSnapshotRemoteLoaderErrors {#keepersnapshotremoteloadererrors}
 
 Number of remote read errors in RemoteSnapshotLoader while serving a snapshot to a follower
+
+### KeeperSnapshotWriteMicroseconds {#keepersnapshotwritemicroseconds}
+
+Time spent writing a Keeper snapshot file (serialization, compression and sync)
 
 ### KeeperSnapshotWrittenBytes {#keepersnapshotwrittenbytes}
 
@@ -4808,6 +4856,10 @@ Number of replicas used to execute a query with task-based parallel replicas
 
 The total number of parquet row groups pruned by bloom filters.
 
+### ParquetColumnChunksPagesLocatedFromHeaders {#parquetcolumnchunkspageslocatedfromheaders}
+
+Number of Parquet column chunks without an offset index whose pages holding the rows read by lazy materialization were located from their page headers, so that only those pages were read
+
 ### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
 
 Row groups whose column data a Parquet reader of a file in object storage or at a URL started reading before their decoding was scheduled, within its share of max_download_threads
@@ -4844,6 +4896,10 @@ The number of Parquet files that a read skipped without opening them, because th
 
 Total time spent reading and deserializing parquet file footers (not served from the parquet metadata cache).
 
+### ParquetMetadataCacheColumnIndexHits {#parquetmetadatacachecolumnindexhits}
+
+Number of Parquet column chunks whose column index was taken from the parquet metadata cache instead of being read from the file.
+
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 
 Number of times parquet metadata has been found in the cache.
@@ -4851,6 +4907,10 @@ Number of times parquet metadata has been found in the cache.
 ### ParquetMetadataCacheMisses {#parquetmetadatacachemisses}
 
 Number of times parquet metadata has not been found in the cache and had to be read from disk.
+
+### ParquetMetadataCacheOffsetIndexHits {#parquetmetadatacacheoffsetindexhits}
+
+Number of Parquet column chunks whose offset index was taken from the parquet metadata cache instead of being read from the file.
 
 ### ParquetMetadataCacheWeightLost {#parquetmetadatacacheweightlost}
 
@@ -4923,6 +4983,10 @@ The number of parquet row groups whose `ORDER BY ... LIMIT` sort column range wa
 ### ParquetTopKSkippedRowGroups {#parquettopkskippedrowgroups}
 
 The number of parquet row groups skipped while reading because their min/max statistics showed that they can't contain rows of the `ORDER BY ... LIMIT` result (see `use_top_k_dynamic_filtering`)
+
+### PartCheckPassedAfterPageCacheReadError {#partcheckpassedafterpagecachereaderror}
+
+Number of times a data part of a ReplicatedMergeTree table that failed to be read passed its check with direct I/O, bypassing the OS page cache. The read error was probably caused by wrong data in the page cache, not by the data on disk.
 
 ### PartsLockHoldMicroseconds {#partslockholdmicroseconds}
 
@@ -6856,6 +6920,10 @@ Number of segments skipped because the output region was already resolved (all-o
 
 Number of times a text index pattern dictionary scan was skipped because an earlier scan of the same part exceeded the posting-list threshold.
 
+### TextIndexPatternScanSkippedByCost {#textindexpatternscanskippedbycost}
+
+Number of times a text index pattern dictionary scan of a part was skipped because the dictionary blocks to scan take more bytes than the rows still readable after the primary key and prior skip indexes take in the indexed columns.
+
 ### TextIndexPhraseCandidates {#textindexphrasecandidates}
 
 Candidate rows (postings intersection) examined by candidate-driven phrase search.
@@ -7183,6 +7251,10 @@ Number of new-row keys that superseded a live row in an existing part on the UNI
 ### UniqueKeyDedupProbes {#uniquekeydedupprobes}
 
 Number of new-row keys probed against existing parts on the UNIQUE KEY INSERT write-path.
+
+### UniqueKeyDeleteRows {#uniquekeydeleterows}
+
+Number of rows marked dead by synchronous DELETE on UNIQUE KEY tables.
 
 ### UniqueKeyIndexCacheHits {#uniquekeyindexcachehits}
 

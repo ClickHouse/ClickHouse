@@ -17,6 +17,18 @@
 namespace DB
 {
 
+/// The digest of the storage is a rolling sum of the digests of its nodes. Nodes are added and
+/// removed in an arbitrary order, so the sum is taken modulo 2^64 and wraps around on purpose.
+inline void NO_SANITIZE_UNSIGNED_OVERFLOW addToDigest(uint64_t & digest, uint64_t node_digest)
+{
+    digest += node_digest;
+}
+
+inline void NO_SANITIZE_UNSIGNED_OVERFLOW removeFromDigest(uint64_t & digest, uint64_t node_digest)
+{
+    digest -= node_digest;
+}
+
 class KeeperStorage;
 struct KeeperSnapshotReader;
 

@@ -12,34 +12,24 @@ doc_type: 'guide'
 
 重複排除は、同期挿入、非同期挿入、`INSERT ... SELECT` クエリに対応しています。`deduplicate_insert` 設定は、同期挿入と非同期挿入を制御します。`INSERT ... SELECT` には追加の注意が必要で、専用の設定があります。[挿入の重複排除を制御する設定](#settings-that-control-insert-deduplication)を参照してください。
 
-<div id="limitations">
-  ## 制限事項
-</div>
+## 制限事項 {#limitations}
 
-<div id="uncertain-insert-status">
-  ### 不確実な挿入ステータス
-</div>
+### 不確実な挿入ステータス {#uncertain-insert-status}
 
 ユーザーは、挿入操作が成功するまで再試行する必要があります。すべての再試行が失敗した場合、データが挿入されたかどうかは判断できません。materialized view が関係する場合、データがどのテーブルに現れている可能性があるのかも不明です。materialized view がソーステーブルと同期していない可能性もあります。
 
-<div id="deduplication-window-limit">
-  ### 重複排除ウィンドウの上限
-</div>
+### 重複排除ウィンドウの上限 {#deduplication-window-limit}
 
 再試行の過程で、`*_deduplication_window` を超える数の他の挿入操作が行われると、重複排除が意図どおりに機能しない場合があります。この場合、同じデータが複数回挿入される可能性があります。
 
-<div id="settings-that-control-insert-deduplication">
-  ## 挿入の重複排除を制御する設定
-</div>
+## 挿入の重複排除を制御する設定 {#settings-that-control-insert-deduplication}
 
 ClickHouse が挿入時に重複排除を行うのは、次の両方の条件が満たされる場合のみです。
 
 1. 宛先テーブルで重複排除ログが保持されていること。これはテーブルレベルの設定です。
 2. クエリで重複排除が有効になっていること。これはクエリレベルの設定です。
 
-<div id="insert-deduplication-for-tables">
-  ### テーブルレベルの設定
-</div>
+### テーブルレベルの設定 {#insert-deduplication-for-tables}
 
 **挿入時の重複排除をサポートするのは `*MergeTree` エンジンのみです。**
 
@@ -51,9 +41,7 @@ ClickHouse が挿入時に重複排除を行うのは、次の両方の条件が
   [`replicated_deduplication_window_for_async_inserts`](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_for_async_inserts) および [`replicated_deduplication_window_seconds_for_async_inserts`](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds_for_async_inserts) はレガシー設定です。現在、同期挿入と非同期挿入は 1 つの重複排除ログを共有するため、`replicated_deduplication_window` が両方を制御します。レガシー設定は古い ClickHouse Keeper ディレクトリの範囲のみを制限しており、これはローリングアップグレード中に重要になります。
 </Note>
 
-<div id="query-level-insert-deduplication">
-  ### クエリレベルの設定
-</div>
+### クエリレベルの設定 {#query-level-insert-deduplication}
 
 | 設定                                                                                                                                                    | 適用対象                      | デフォルト                  | 目的                                  |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ---------------------- | ----------------------------------- |
@@ -70,17 +58,13 @@ ClickHouse が挿入時に重複排除を行うのは、次の両方の条件が
 
 `deduplicate_insert = disable` で実行したクエリでは、そのブロックの `block_id` は書き込まれないことに注意してください。このようなデータは、後から `deduplicate_insert = enable` を指定して挿入を再試行しても重複排除できません。宛先テーブルに重複排除ログがない場合も同様です。何も記録されないため、再試行時に照合できません。
 
-<div id="precedence">
-  ### 優先順位
-</div>
+### 優先順位 {#precedence}
 
 1. `INSERT ... SELECT` クエリでは、`deduplicate_insert_select` が使用されます。[INSERT ... SELECT の重複排除](#deduplication-for-insert-select)を参照してください。
 2. その他のすべての `INSERT` では、`deduplicate_insert` が使用されます。
 3. `insert_deduplicate` と `async_insert_deduplicate` は、`deduplicate_insert` が `backward_compatible_choice` の場合にのみ読み取られます。
 
-<div id="legacy-and-obsolete-settings">
-  ### レガシーおよび廃止された設定
-</div>
+### レガシーおよび廃止された設定 {#legacy-and-obsolete-settings}
 
 | 設定                                                                                                       | ステータス                                                                | 代替設定                        |
 | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | --------------------------- |
@@ -95,9 +79,7 @@ ClickHouse が挿入時に重複排除を行うのは、次の両方の条件が
 
 バージョン 26.2 では、`async_insert` と `deduplicate_blocks_in_dependent_materialized_views` のデフォルトも有効に変更されました。[`compatibility`](/ja/reference/settings/session-settings/compatibility#compatibility) 互換性設定は、これら 3 つすべてを制御します。`compatibility` を `26.2` より前のバージョンに設定すると、これらの設定には以前のデフォルトが適用されます。`deduplicate_insert` は `backward_compatible_choice` となり、`insert_deduplicate` と `async_insert_deduplicate` に判断を委ねます。明示的に設定した値は常に優先され、`compatibility` の影響を受けません。
 
-<div id="how-insert-deduplication-works">
-  ## 挿入の重複排除の仕組み
-</div>
+## 挿入の重複排除の仕組み {#how-insert-deduplication-works}
 
 ClickHouse にデータが挿入されると、行数とバイト数に基づいてデータはブロックに分割されます。
 
@@ -107,9 +89,7 @@ ClickHouse にデータが挿入されると、行数とバイト数に基づい
 
 `INSERT ... VALUES` クエリでは、挿入されるデータのブロックへの分割は決定論的であり、設定によって決まります。したがって、挿入を再試行する際は、初回の操作と同じ設定値を使用する必要があります。
 
-<div id="deduplication-for-insert-select">
-  ## `INSERT ... SELECT` の重複排除
-</div>
+## `INSERT ... SELECT` の重複排除 {#deduplication-for-insert-select}
 
 `INSERT ... SELECT` クエリでは、`SELECT` 部分が試行のたびに同じデータを同じ順序で返す必要があります。そうでない場合、ブロックと `block_id` が異なるため、再試行は重複として認識されません。
 
@@ -138,9 +118,7 @@ ClickHouse はログソースデータが変更されていないことを検証
 
 再試行にどのような意味を持たせたいかに応じて、適切な方法を選択してください。また、大量のデータを挿入すると、ブロック数が重複排除ログウィンドウの上限を超えることがあり、その場合 ClickHouse はブロックを重複排除すべきか判断できなくなります。
 
-<div id="deduplication-for-asynchronous-inserts">
-  ## 非同期挿入の重複排除
-</div>
+## 非同期挿入の重複排除 {#deduplication-for-asynchronous-inserts}
 
 非同期挿入 (バージョン 26.2 以降はデフォルトで有効な [`async_insert`](/ja/reference/settings/session-settings/async-insert#async_insert)) では、同期挿入と同様に、再試行時に重複排除が行われます。`deduplicate_insert` は両方を制御するため、個別の設定は不要です。
 
@@ -150,9 +128,7 @@ ClickHouse はログソースデータが変更されていないことを検証
   バージョン 26.2 より前では、非同期挿入の重複排除はデフォルトで無効で、`async_insert_deduplicate` によって制御されていました。この設定は現在、`deduplicate_insert` が `backward_compatible_choice` の場合にのみ読み取られます。
 </Note>
 
-<div id="asynchronous-insert-deduplication-granularity">
-  ### 重複排除の粒度
-</div>
+### 重複排除の粒度 {#asynchronous-insert-deduplication-granularity}
 
 サーバーは複数の非同期挿入を1つのバッチにまとめ、そのバッチを1つ以上のパーツとして書き込みます。パーティションキーの値ごとに、少なくとも1つのパーツが作成されます。重複排除はバッチ単位ではなく、ユーザークエリ単位で行われます。
 
@@ -167,19 +143,17 @@ ClickHouse はログソースデータが変更されていないことを検証
 
 [`system.events`](/ja/reference/system-tables/events) の `DuplicatedAsyncInserts` および `SelfDuplicatedAsyncInserts` イベントは、これら2つのケースをカウントします。
 
-<div id="asynchronous-inserts-and-materialized-views">
-  ### 非同期挿入とmaterialized view
-</div>
+### 非同期挿入と materialized view {#asynchronous-inserts-and-materialized-views}
 
-非同期挿入の重複排除は、依存するmaterialized viewと連動して機能します。ルールは単純です。1つのブロックが入力されると、1つのブロックが出力されます。ビューの内部クエリが1つの入力ブロックを1つの出力ブロックに変換する場合、重複排除は機能します。ビューが2つ目のブロックを出力すると、ClickHouseは`NOT_IMPLEMENTED`例外をスローします。
+非同期挿入の重複排除は、依存する materialized view でも機能します。原則は「1 ブロック入力、1 ブロック出力」です。ClickHouse は、フラッシュ済みの 1 つのバッチに対するビューの出力を、内部クエリの処理内容 (フィルタリング、集約、`ARRAY JOIN`、行を増やす `JOIN` など) にかかわらず、単一のブロックとして書き込みます。このブロックは、ブロックサイズの設定 [`min_insert_block_size_rows`](/ja/reference/settings/session-settings/min-insert#min_insert_block_size_rows) や [`min_insert_block_size_bytes`](/ja/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) によって分割されることはありません。
 
-ビューの出力が1つのブロックに収まらない場合、2つ目のブロックが出力されます。[`max_block_size`](/ja/reference/settings/session-settings/max#max_block_size)は、1つのブロックに収まる行数を設定します。カラム変換、フィルタリング、集約で行数が増えることはないため、常に1つのブロックに収まります。`JOIN`では行数が増える場合があります。結果が`max_block_size`以下であれば機能しますが、それを超えると失敗します。
+制約となるのはメモリです。1 つのバッチに対するビューの出力全体がメモリ上に保持されるため、そのサイズはおおよそ「バッチのサイズ × ビューが入力 1 行あたりに生成する行数」になります。これがクエリおよびサーバーのメモリ制限に収まらない場合、挿入は `MEMORY_LIMIT_EXCEEDED` 例外で失敗します。これが主に問題となるのは、大きな配列に対する `ARRAY JOIN` や、多数の行に一致する `JOIN` など、行数を増やすビューです。このようなビューでは、次のいずれかの対処が可能です。
 
-複数のブロックを出力するビューを介して挿入するには、`deduplicate_blocks_in_dependent_materialized_views = 0`を設定するか、同期挿入を使用します。
+* [`async_insert_max_data_size`](/ja/reference/settings/session-settings/async-insert#async_insert_max_data_size) でバッチを小さくする。
+* [`deduplicate_blocks_in_dependent_materialized_views`](/ja/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views) を `0` に設定する。この場合、ビューの出力は通常のサイズのブロックに分割されますが、挿入を再試行すると、ビューの書き込み先に同じデータが再度挿入されます。
+* 同期挿入を使用する。同期挿入では、複数のブロックからなるビューの出力も重複排除されます。
 
-<div id="insert-deduplication-with-materialized-views">
-  ## materialized view における挿入の重複排除
-</div>
+## materialized view における挿入の重複排除 {#insert-deduplication-with-materialized-views}
 
 テーブルに 1 つ以上の materialized view がある場合、挿入されたデータは、定義された変換を適用したうえで、それらの view の宛先にも挿入されます。変換後のデータも、再試行時には重複排除されます。ClickHouse は、materialized view に対する重複排除を、ターゲットテーブルに挿入されたデータを重複排除するのと同じ方法で実行します。
 
@@ -193,13 +167,9 @@ materialized view 配下のテーブルでの重複排除は、ユーザープ�
 
 materialized view 配下のテーブルにブロックを挿入する際、ClickHouse はソーステーブルの `block_id` と追加の識別子を組み合わせた文字列をハッシュ化して `block_id` を計算します。これにより、materialized view 内で正確な重複排除が保証され、materialized view 配下の宛先テーブルに到達する前にどのような変換が適用されたかにかかわらず、元の挿入に基づいてデータを区別できるようになります。
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
-<div id="identical-blocks-after-materialized-view-transformations">
-  ### materialized view の変換後に生成される同一ブロック
-</div>
+### materialized view の変換後に生成される同一ブロック {#identical-blocks-after-materialized-view-transformations}
 
 materialized view 内の変換処理で生成された同一ブロックは、基になっている挿入データが異なるため、重複排除されません。
 
@@ -319,9 +289,7 @@ ORDER by all;
 
 ここでは、insert を再試行すると、すべてのデータが重複排除されることがわかります。重複排除は `dst` テーブルと `mv_dst` テーブルの両方で有効です。
 
-<div id="identical-blocks-on-insertion">
-  ### INSERT時の同一ブロック
-</div>
+### INSERT時の同一ブロック {#identical-blocks-on-insertion}
 
 ```sql
 CREATE TABLE dst
@@ -362,9 +330,7 @@ ORDER BY all;
 
 上記の設定では、select– の結果として 2 つのブロックが生成されるため、table `dst` への挿入用にも 2 つのブロックがあるはずです。しかし実際には、table `dst` に挿入されたのは 1 つのブロックだけであることがわかります。これは、2 つ目のブロックが重複排除されたためです。このブロックは同じデータを持ち、さらに挿入されたデータからハッシュとして計算される重複排除用の秘密鍵 `block_id` も同一です。この動作は想定どおりではありません。このようなケースが発生することはまれですが、理論上は起こりえます。このようなケースを正しく処理するには、ユーザーが `insert_deduplication_token` を指定する必要があります。以下の例でこれを修正してみましょう。
 
-<div id="identical-blocks-in-insertion-with-insert_deduplication_token">
-  ### `insert_deduplication_token` を使用した挿入時の同一ブロック
-</div>
+### `insert_deduplication_token` を使用した挿入時の同一ブロック {#identical-blocks-in-insertion-with-insert_deduplication_token}
 
 ```sql
 CREATE TABLE dst
@@ -459,9 +425,7 @@ ORDER BY all;
 
 その挿入も、挿入されたデータが異なっていても重複排除の対象になります。`insert_deduplication_token` のほうが優先される点に注意してください。`insert_deduplication_token` が指定されている場合、ClickHouse はデータのハッシュ値を使用しません。
 
-<div id="different-insert-operations-generate-the-same-data-after-transformation-in-the-underlying-table-of-the-materialized-view">
-  ### 異なる挿入操作でも、materialized viewの基になるテーブルでは変換後に同じデータが生成される
-</div>
+### 異なる挿入操作でも、materialized viewの基になるテーブルでは変換後に同じデータが生成される {#different-insert-operations-generate-the-same-data-after-transformation-in-the-underlying-table-of-the-materialized-view}
 
 ```sql
 CREATE TABLE dst
@@ -559,9 +523,7 @@ ORDER by all;
 
 毎回異なるデータを挿入します。しかし、`mv_dst` テーブルには毎回同じデータが挿入されます。ソースデータが異なるため、データは重複排除されません。
 
-<div id="different-materialized-view-inserts-into-one-underlying-table-with-equivalent-data">
-  ### 同等のデータを 1 つの基になるテーブルに挿入する異なる materialized view
-</div>
+### 同等のデータを 1 つの基になるテーブルに挿入する異なる materialized view {#different-materialized-view-inserts-into-one-underlying-table-with-equivalent-data}
 
 ```sql
 CREATE TABLE dst
